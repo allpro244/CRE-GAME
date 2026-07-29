@@ -413,6 +413,17 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
           <div className="memo-row"><span className="lbl">In-place NOI (actual rent roll)</span><span className="num">{E.fmtMoney(pf.noiNow)}/yr</span></div>
           {canBuy && <div className="memo-row"><span className="lbl">Going-in cap rate at {listing.agreed ? 'agreed price' : 'your offer'} <Hint text="Year-one NOI from the actual leases divided by what you'd pay. Compare to your borrowing cost." /></span>
             <span className={'num ' + (capEff > rate ? 'pos' : 'neg')}>{capEff.toFixed(2)}%</span></div>}
+          {pf.noiNow > pf.noiStab * 1.2 && (
+            <div className="alert-strip" style={{ margin: '6px 0', fontSize: 11.5 }}>
+              ⚠ OVER-RENTED: the in-place roll runs ~{Math.round((pf.noiNow / Math.max(1, pf.noiStab) - 1) * 100)}% above what this market now supports.
+              That fat going-in cap is borrowed from the future — every expiring lease rolls DOWN toward market. Underwrite the stabilized number, not year one.
+            </div>
+          )}
+          {pf.noiStab > pf.noiNow * 1.35 && (listing.occ ?? 0) > 0.6 && (
+            <div className="alert-strip" style={{ margin: '6px 0', fontSize: 11.5, borderColor: 'var(--green)' }}>
+              Under-rented: leases sit well below today's market — rollover is your friend here, if you can carry it that long.
+            </div>
+          )}
           {listing.feasDone ? (<>
             <div className="memo-row"><span className="lbl">Stabilized NOI (at ~{pct(pf.tOcc)}, market rents)</span><span className="num">{E.fmtMoney(pf.noiStab)}/yr</span></div>
             <div className="memo-row"><span className="lbl">Market cap rate for this block/grade</span><span className="num">{pf.cap.toFixed(2)}%</span></div>

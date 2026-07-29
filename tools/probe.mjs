@@ -20,7 +20,7 @@ for (let m = 0; m < 24; m++) {
     caps.push(pf.capNow);
     if (l.type === 'multifamily') mfCaps.push(pf.capNow);
     const rate = s2.econ.rate + 2.0;
-    if (pf.capNow > rate + 0.3) { qual++; if (600000 > l.price*0.3 + 165000) afford++; }
+    if (pf.capNow > rate + 0.3) { qual++; if (600000 > l.price*0.25 + 15000 + 150000) afford++; }
   }
   s2 = E.advanceMonth(s2);
 }

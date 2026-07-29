@@ -1221,6 +1221,59 @@ export function buildingArt(p: ArtParams, g: PrismGeom): ArtEl[] {
     out.push({ k: 'l', ...faceLine(bb, br, 0.04, 0.96, ht - 0.8), s: '#3f5a46', w: 1.2, o: 0.7 });   // roof-line planting
   }
 
+  // ================= micro-detail passes: every building, every roof =================
+  // Rooftop clutter: real flat roofs are a mess of RTUs, vents, and hatches. Gabled
+  // and ridged archetypes keep their clean rooflines.
+  const GABLED = new Set<Archetype>(['garden-walkup', 'wood-office', 'porch-office', 'courtyard-garden', 'townhome-row', 'quonset', 'sawtooth', 'pemb', 'twin-gable']);
+  if (!GABLED.has(arch) && ht > 8) {
+    const nV = Math.min(5, 1 + Math.floor(p.sf / 18000) + (p.age > 25 ? 1 : 0));
+    for (let i = 0; i < nV; i++) {
+      const c0 = lerp(lerp(bb, br, 0.15 + r() * 0.68), tl, 0.12 + r() * 0.45);
+      if (r() < 0.45) {   // mushroom vent
+        out.push({ k: 'c', cx: c0[0], cy: c0[1] - ht - 0.4, r: 0.5 + r() * 0.4, f: '#4e565e', o: 0.9 });
+      } else {            // a small RTU with its shadow edge
+        out.push({ k: 'p', pts: `${(c0[0] - 1.1).toFixed(1)},${(c0[1] - ht).toFixed(1)} ${(c0[0] + 1.1).toFixed(1)},${(c0[1] - ht).toFixed(1)} ${(c0[0] + 1.1).toFixed(1)},${(c0[1] - ht - 1.1).toFixed(1)} ${(c0[0] - 1.1).toFixed(1)},${(c0[1] - ht - 1.1).toFixed(1)}`, f: '#454c54', s: TRIM, w: 0.3 });
+      }
+    }
+    if (p.age > 18 && r() < 0.35) {   // the satellite dish nobody removed
+      const d0 = lerp(lerp(bb, br, 0.82), tl, 0.15);
+      out.push({ k: 'l', x1: d0[0], y1: d0[1] - ht, x2: d0[0], y2: d0[1] - ht - 0.8, s: '#4e565e', w: 0.4 });
+      out.push({ k: 'c', cx: d0[0] + 0.3, cy: d0[1] - ht - 1.0, r: 0.7, f: '#c8cdd2', o: 0.9 });
+    }
+  }
+  // Fire escapes: the pre-war brick wears its exit stairs on the outside
+  if ((arch === 'brick-loft' || arch === 'brownstone-row' || arch === 'courtyard-brick') && p.age > 30 && ht > 12) {
+    const u0 = 0.60, u1 = 0.76;
+    const zRows = Math.min(floors - 1, 5);
+    const step = (ht - 7) / Math.max(1, zRows);
+    const a1 = lerp(bb, br, u0), b1 = lerp(bb, br, u1);
+    for (let fl = 0; fl < zRows; fl++) {
+      const ya = 4.5 + fl * step;
+      out.push({ k: 'l', x1: a1[0], y1: a1[1] - ya, x2: b1[0], y2: b1[1] - ya, s: '#1a1d21', w: 0.5, o: 0.8 });
+      out.push({ k: 'l', x1: fl % 2 ? a1[0] : b1[0], y1: (fl % 2 ? a1[1] : b1[1]) - ya, x2: fl % 2 ? b1[0] : a1[0], y2: (fl % 2 ? b1[1] : a1[1]) - ya - step, s: '#1a1d21', w: 0.4, o: 0.7 });
+    }
+    out.push({ k: 'l', x1: a1[0], y1: a1[1] - 4.5, x2: a1[0], y2: a1[1] - 4.5 - zRows * step, s: '#1a1d21', w: 0.35, o: 0.6 });
+    out.push({ k: 'l', x1: b1[0], y1: b1[1] - 4.5, x2: b1[0], y2: b1[1] - 4.5 - zRows * step, s: '#1a1d21', w: 0.35, o: 0.6 });
+  }
+  // Window AC units: old workforce housing cools itself one window at a time
+  if ((p.type === 'multifamily' || p.type === 'mixed') && p.age > 25 && q < 85 && !GABLED.has(arch)) {
+    const nAC = 2 + Math.floor(r() * 3);
+    for (let i = 0; i < nAC; i++) {
+      const u = 0.15 + r() * 0.68, y = 3 + r() * Math.max(2, ht - 7);
+      out.push({ k: 'p', pts: patch(bb, br, u, u + 0.035, y, y + 0.9), f: '#c8cdd2', o: 0.85 });
+    }
+  }
+  // Blade signs: occupied street retail hangs its name out over the sidewalk
+  if ((arch === 'storefront-row' || arch === 'main-street' || arch === 'market-hall') && p.occ > 0.4) {
+    for (let i = 0; i < 2; i++) {
+      if (r() > p.occ) continue;
+      const u = 0.22 + i * 0.42 + r() * 0.1;
+      const s0 = lerp(bb, br, u);
+      out.push({ k: 'l', x1: s0[0], y1: s0[1] - 7.6, x2: s0[0] + 1.6, y2: s0[1] - 7.3, s: '#3c4249', w: 0.4 });
+      out.push({ k: 'p', pts: `${(s0[0] + 0.9).toFixed(1)},${(s0[1] - 7.5).toFixed(1)} ${(s0[0] + 2.2).toFixed(1)},${(s0[1] - 7.2).toFixed(1)} ${(s0[0] + 2.2).toFixed(1)},${(s0[1] - 5.5).toFixed(1)} ${(s0[0] + 0.9).toFixed(1)},${(s0[1] - 5.8).toFixed(1)}`, f: pick(r, ['#8a3b3b', '#3b5a4a', '#3c4a6a', '#8a6a30'] as const), o: 0.95, cls: r() < 0.4 ? 'twk' : undefined, dly: r() * 3 });
+    }
+  }
+
   // ---- weathering: old buildings streak; poor ones streak more ----
   const streaks = p.age > 30 ? (q < 68 ? 3 : q < 98 ? 2 : 1) : p.age > 18 && q < 75 ? 1 : 0;
   for (let i = 0; i < streaks; i++) {

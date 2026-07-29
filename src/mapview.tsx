@@ -498,15 +498,18 @@ const ROAD_STYLE: Record<number, { stroke: string; w: number; dash?: string }> =
   4: { stroke: '#6a6f76', w: 6.4 },
   5: { stroke: '#8a7a5c', w: 1.8, dash: '7 5' },
 };
-const StreetLife = memo(function StreetLife({ runs, seed }: { runs: RoadRun[]; seed: number }) {
+const StreetLife = memo(function StreetLife({ runs, seed, detail }: { runs: RoadRun[]; seed: number; detail: boolean }) {
   const els: React.ReactNode[] = [];
   let a = seed | 0;
   const r = () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   const CAR_COLS = ['#5a6570', '#6e5f52', '#4a5a6a', '#75706a', '#5f4a4a', '#57636a'];
-  let cars = 0, trees = 0;
+  let cars = 0, trees = 0, xwalks = 0, lamps = 0, peds = 0;
+  let trainPlaced = false;
+  const xwSeen = new Set<string>();
   for (const run of runs) {
     const [p0, p1] = run.pts;
     const len = Math.abs(p1[0] - p0[0]) + Math.abs(p1[1] - p0[1]);
+    const horiz = Math.abs(p1[0] - p0[0]) > Math.abs(p1[1] - p0[1]);
     if (run.cls === 3 || run.cls === 2) {
       // traffic scales with road class; two directions ride slightly offset gutters
       const n = Math.min(5, Math.round(len * (run.cls === 3 ? 0.55 : 0.3) * (0.5 + r())));
@@ -514,10 +517,24 @@ const StreetLife = memo(function StreetLife({ runs, seed }: { runs: RoadRun[]; s
         const u = 0.06 + r() * 0.88;
         const gx = p0[0] + (p1[0] - p0[0]) * u, gy = p0[1] + (p1[1] - p0[1]) * u;
         const side = r() < 0.5 ? -0.055 : 0.055;
-        const horiz = Math.abs(p1[0] - p0[0]) > Math.abs(p1[1] - p0[1]);
         const [cx, cy] = isoPt(gx + (horiz ? 0 : side), gy + (horiz ? side : 0));
-        els.push(<polygon key={'c' + cars} points={`${(cx - 1.5).toFixed(1)},${(cy - 0.2).toFixed(1)} ${(cx + 0.3).toFixed(1)},${(cy + 0.7).toFixed(1)} ${(cx + 1.5).toFixed(1)},${(cy + 0.1).toFixed(1)} ${(cx - 0.3).toFixed(1)},${(cy - 0.8).toFixed(1)}`}
-          fill={CAR_COLS[Math.floor(r() * CAR_COLS.length)]} opacity={0.9} />);
+        const roll = r();
+        if (roll < 0.10 && run.cls === 3) {
+          // a bus: long, liveried, unmistakable
+          els.push(<g key={'c' + cars}>
+            <polygon points={`${(cx - 2.6).toFixed(1)},${(cy - 0.3).toFixed(1)} ${(cx + 0.6).toFixed(1)},${(cy + 1.2).toFixed(1)} ${(cx + 2.6).toFixed(1)},${(cy + 0.2).toFixed(1)} ${(cx - 0.6).toFixed(1)},${(cy - 1.3).toFixed(1)}`} fill={r() < 0.5 ? '#a86a2a' : '#3c5a7a'} opacity={0.95} />
+            <line x1={cx - 1.6} y1={cy - 0.1} x2={cx + 1.2} y2={cy + 0.6} stroke="#d8dde0" strokeWidth={0.4} opacity={0.8} />
+          </g>);
+        } else if (roll < 0.24) {
+          // a box truck: cab + white body
+          els.push(<g key={'c' + cars}>
+            <polygon points={`${(cx - 2.0).toFixed(1)},${(cy - 0.2).toFixed(1)} ${(cx + 0.6).toFixed(1)},${(cy + 1.1).toFixed(1)} ${(cx + 2.0).toFixed(1)},${(cy + 0.3).toFixed(1)} ${(cx - 0.6).toFixed(1)},${(cy - 1.0).toFixed(1)}`} fill="#c8cdd2" opacity={0.95} />
+            <polygon points={`${(cx + 1.4).toFixed(1)},${(cy + 0.6).toFixed(1)} ${(cx + 2.4).toFixed(1)},${(cy + 1.1).toFixed(1)} ${(cx + 2.9).toFixed(1)},${(cy + 0.8).toFixed(1)} ${(cx + 1.9).toFixed(1)},${(cy + 0.3).toFixed(1)}`} fill={pick2(r, CAR_COLS)} opacity={0.95} />
+          </g>);
+        } else {
+          els.push(<polygon key={'c' + cars} points={`${(cx - 1.5).toFixed(1)},${(cy - 0.2).toFixed(1)} ${(cx + 0.3).toFixed(1)},${(cy + 0.7).toFixed(1)} ${(cx + 1.5).toFixed(1)},${(cy + 0.1).toFixed(1)} ${(cx - 0.3).toFixed(1)},${(cy - 0.8).toFixed(1)}`}
+            fill={CAR_COLS[Math.floor(r() * CAR_COLS.length)]} opacity={0.9} />);
+        }
         cars++;
       }
     }
@@ -527,7 +544,6 @@ const StreetLife = memo(function StreetLife({ runs, seed }: { runs: RoadRun[]; s
       for (let i = 0; i < n && trees < 340; i++) {
         const u = 0.1 + r() * 0.8;
         const gx = p0[0] + (p1[0] - p0[0]) * u, gy = p0[1] + (p1[1] - p0[1]) * u;
-        const horiz = Math.abs(p1[0] - p0[0]) > Math.abs(p1[1] - p0[1]);
         const side = r() < 0.5 ? -0.09 : 0.09;
         const [cx, cy] = isoPt(gx + (horiz ? 0 : side), gy + (horiz ? side : 0));
         els.push(<g key={'t' + trees}>
@@ -537,6 +553,95 @@ const StreetLife = memo(function StreetLife({ runs, seed }: { runs: RoadRun[]; s
         trees++;
       }
     }
+    // one freight consist rolls the rail line — the spur is not decoration
+    if (run.cls === 5 && !trainPlaced && len >= 4) {
+      trainPlaced = true;
+      const u0 = 0.15 + r() * 0.3;
+      for (let i = 0; i < 5; i++) {
+        const u = u0 + i * (0.55 / len);
+        const gx = p0[0] + (p1[0] - p0[0]) * u, gy = p0[1] + (p1[1] - p0[1]) * u;
+        const [cx, cy] = isoPt(gx, gy);
+        els.push(<polygon key={'tr' + i} points={`${(cx - 1.9).toFixed(1)},${(cy - 0.3).toFixed(1)} ${(cx + 0.4).toFixed(1)},${(cy + 0.85).toFixed(1)} ${(cx + 1.9).toFixed(1)},${(cy + 0.1).toFixed(1)} ${(cx - 0.4).toFixed(1)},${(cy - 1.05).toFixed(1)}`}
+          fill={i === 0 ? '#5a4a3a' : pick2(r, ['#6e4a34', '#4a5a52', '#54586a', '#6a5a44'])} opacity={0.95} />);
+      }
+    }
+    if (!detail) continue;
+    // ---------- close-zoom dressing ----------
+    if (run.cls >= 3) {
+      // crosswalks at both ends of every arterial run — the ladder is one dashed stroke
+      for (const end of [0, 1] as const) {
+        if (xwalks >= 150) break;
+        const ex = end === 0 ? p0 : p1, other = end === 0 ? p1 : p0;
+        const key = ex[0].toFixed(1) + ':' + ex[1].toFixed(1) + (horiz ? 'h' : 'v');
+        if (xwSeen.has(key)) continue;
+        xwSeen.add(key);
+        const dirx = Math.sign(other[0] - ex[0]), diry = Math.sign(other[1] - ex[1]);
+        const cxg = ex[0] + dirx * 0.34, cyg = ex[1] + diry * 0.34;
+        const w2 = 0.13;
+        const a2 = isoPt(cxg + (horiz ? 0 : w2), cyg + (horiz ? w2 : 0));
+        const b2 = isoPt(cxg - (horiz ? 0 : w2), cyg - (horiz ? w2 : 0));
+        els.push(<line key={'xw' + xwalks} x1={a2[0]} y1={a2[1]} x2={b2[0]} y2={b2[1]} stroke="#eee9d6" strokeWidth={1.6} strokeDasharray="0.9 0.7" opacity={0.85} />);
+        xwalks++;
+      }
+      // streetlights march the arterial, alternating sides
+      const nL = Math.min(4, Math.floor(len / 1.4));
+      for (let i = 0; i < nL && lamps < 120; i++) {
+        const u = (i + 0.5) / nL;
+        const side = i % 2 === 0 ? -0.085 : 0.085;
+        const gx = p0[0] + (p1[0] - p0[0]) * u, gy = p0[1] + (p1[1] - p0[1]) * u;
+        const [cx, cy] = isoPt(gx + (horiz ? 0 : side), gy + (horiz ? side : 0));
+        els.push(<g key={'lp' + lamps}>
+          <line x1={cx} y1={cy} x2={cx} y2={cy - 3.1} stroke="#4a5058" strokeWidth={0.45} />
+          <line x1={cx} y1={cy - 3.1} x2={cx + (i % 2 === 0 ? 1.0 : -1.0)} y2={cy - 2.9} stroke="#4a5058" strokeWidth={0.4} />
+          <circle cx={cx + (i % 2 === 0 ? 1.0 : -1.0)} cy={cy - 2.9} r={0.45} fill="#e8d9a0" opacity={0.9} />
+        </g>);
+        lamps++;
+      }
+    }
+    if (run.cls <= 2 && peds < 80) {
+      // people on the sidewalk — two dots and they read as a person
+      const n = Math.min(2, Math.round(len * 0.2 * r()));
+      for (let i = 0; i < n && peds < 80; i++) {
+        const u = 0.15 + r() * 0.7;
+        const side = r() < 0.5 ? -0.075 : 0.075;
+        const gx = p0[0] + (p1[0] - p0[0]) * u, gy = p0[1] + (p1[1] - p0[1]) * u;
+        const [cx, cy] = isoPt(gx + (horiz ? 0 : side), gy + (horiz ? side : 0));
+        els.push(<g key={'pd' + peds}>
+          <line x1={cx} y1={cy} x2={cx} y2={cy - 1.1} stroke={pick2(r, ['#5a4a4a', '#3c4a6a', '#4a5a44', '#6a5444'])} strokeWidth={0.55} />
+          <circle cx={cx} cy={cy - 1.4} r={0.35} fill="#c9a985" opacity={0.95} />
+        </g>);
+        peds++;
+      }
+    }
+  }
+  return <g style={{ pointerEvents: 'none' }}>{els}</g>;
+});
+const pick2 = <T,>(r: () => number, arr: readonly T[]): T => arr[Math.floor(r() * arr.length) % arr.length];
+
+// Boats on the water: hulls and wakes, seeded per tile — the river works too.
+const WaterLife = memo(function WaterLife({ tiles, seed }: { tiles: TileGeom[]; seed: number }) {
+  const els: React.ReactNode[] = [];
+  let boats = 0;
+  for (const t of tiles) {
+    if (!t.water || boats >= 14) continue;
+    let a = (seed ^ Math.imul(t.i + 1, 2654435761)) | 0;
+    const r = () => { a = (a + 0x6D2B79F5) | 0; let v = Math.imul(a ^ (a >>> 15), 1 | a); v = (v + Math.imul(v ^ (v >>> 7), 61 | v)) ^ v; return ((v ^ (v >>> 14)) >>> 0) / 4294967296; };
+    if (r() > 0.30) continue;
+    const [cx, cy] = isoPt(t.x + (r() - 0.5) * 0.5, t.y + (r() - 0.5) * 0.5);
+    const barge = r() < 0.3;
+    els.push(<g key={'bt' + t.i}>
+      <line x1={cx - 3.5} y1={cy + 1.4} x2={cx - 0.8} y2={cy + 0.3} stroke="#dfeaf2" strokeWidth={0.5} opacity={0.55} />
+      <line x1={cx - 2.7} y1={cy + 2.2} x2={cx - 0.4} y2={cy + 1.1} stroke="#dfeaf2" strokeWidth={0.4} opacity={0.4} />
+      {barge ? (
+        <polygon points={`${(cx - 0.6).toFixed(1)},${(cy - 0.4).toFixed(1)} ${(cx + 2.6).toFixed(1)},${(cy + 1.2).toFixed(1)} ${(cx + 3.6).toFixed(1)},${(cy + 0.7).toFixed(1)} ${(cx + 0.4).toFixed(1)},${(cy - 0.9).toFixed(1)}`} fill="#6a5a44" stroke="#3a332a" strokeWidth={0.3} opacity={0.95} />
+      ) : (
+        <>
+          <polygon points={`${(cx - 0.4).toFixed(1)},${(cy - 0.2).toFixed(1)} ${(cx + 1.6).toFixed(1)},${(cy + 0.8).toFixed(1)} ${(cx + 2.3).toFixed(1)},${(cy + 0.4).toFixed(1)} ${(cx + 0.3).toFixed(1)},${(cy - 0.6).toFixed(1)}`} fill="#e8e6dd" stroke="#8a8f94" strokeWidth={0.3} opacity={0.95} />
+          <line x1={cx + 0.9} y1={cy + 0.1} x2={cx + 0.9} y2={cy - 1.6} stroke="#5a5148" strokeWidth={0.4} />
+        </>
+      )}
+    </g>);
+    boats++;
   }
   return <g style={{ pointerEvents: 'none' }}>{els}</g>;
 });
@@ -594,6 +699,15 @@ const TileBaseIso = memo(function TileBaseIso({ tiles }: { tiles: TileGeom[] }) 
     if (t.park) {
       let a = (t.i * 2654435761) | 0;
       const r = () => { a = (a + 0x6D2B79F5) | 0; let v = Math.imul(a ^ (a >>> 15), 1 | a); v = (v + Math.imul(v ^ (v >>> 7), 61 | v)) ^ v; return ((v ^ (v >>> 14)) >>> 0) / 4294967296; };
+      // paths cross the lawn; every third park keeps a pond
+      const [pc0, pc1] = [isoPt(t.x - 0.42, t.y), isoPt(t.x + 0.42, t.y)];
+      const [pc2, pc3] = [isoPt(t.x, t.y - 0.42), isoPt(t.x, t.y + 0.42)];
+      trees.push(<line key={'pp0' + t.i} x1={pc0[0]} y1={pc0[1]} x2={pc1[0]} y2={pc1[1]} stroke="#cfc4a4" strokeWidth={1.1} opacity={0.8} />);
+      trees.push(<line key={'pp1' + t.i} x1={pc2[0]} y1={pc2[1]} x2={pc3[0]} y2={pc3[1]} stroke="#cfc4a4" strokeWidth={1.1} opacity={0.8} />);
+      if (r() < 0.34) {
+        const [px2, py2] = isoPt(t.x + 0.2, t.y + 0.18);
+        trees.push(<ellipse key={'pd' + t.i} cx={px2} cy={py2} rx={4.6} ry={2.2} fill="#5b9ec9" stroke="#4a86ad" strokeWidth={0.6} opacity={0.95} />);
+      }
       for (let k = 0; k < 6; k++) {
         const [cx, cy] = isoPt(t.x + (r() - 0.5) * 0.62, t.y + (r() - 0.5) * 0.62);
         trees.push(<circle key={'pt' + t.i + '_' + k} cx={cx} cy={cy - 1.8} r={1.7 + r() * 1.3} fill={r() < 0.5 ? '#4e7d40' : '#5b8a4a'} opacity={0.95} />);
@@ -961,7 +1075,8 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
               <polyline className="shim" points={pts} fill="none" stroke="#3c608a" strokeWidth={2} strokeDasharray="2 14" strokeLinecap="round" opacity={0.7} /></g>;
           })()}
           <RoadsIso runs={runs} />
-          {zb >= 1 && <StreetLife runs={runs} seed={state.seed} />}
+          {zb >= 1 && <WaterLife tiles={tilesGeom} seed={state.seed} />}
+          {zb >= 1 && <StreetLife runs={runs} seed={state.seed} detail={zb >= 2} />}
           {transitActive && (() => {
             const ef = state.effects.find(e => e.kind === 'transit')!;
             const done = 1 - ef.monthsLeft / 14;

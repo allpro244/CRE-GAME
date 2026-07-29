@@ -19,7 +19,7 @@ function lerpColor(a: [number, number, number], b: [number, number, number], t: 
   const c = a.map((x, i) => Math.round(x + (b[i] - x) * t));
   return `rgb(${c[0]},${c[1]},${c[2]})`;
 }
-const DARK: [number, number, number] = [19, 25, 31];
+const DARK: [number, number, number] = [206, 210, 198];   // daylight base the lenses saturate from
 const TS = 52;   // px per tile
 const SUB = 3;   // subdivision per tile for the continuous field
 
@@ -209,7 +209,7 @@ function defaultConstr(type: E.PType, sf: number): string {
   return 'podium';
 }
 
-interface IsoBld { tight?: boolean; cx: number; cy: number; w: number; h: number; ht: number; col: string; listed: boolean; key: string; prog?: number; mine?: boolean; type?: E.PType; construction?: string; quality?: number; age?: number; sf?: number; occ?: number; seed?: number; stories?: number }
+interface IsoBld { tight?: boolean; roof?: string; cx: number; cy: number; w: number; h: number; ht: number; col: string; listed: boolean; key: string; prog?: number; mine?: boolean; type?: E.PType; construction?: string; quality?: number; age?: number; sf?: number; occ?: number; seed?: number; stories?: number }
 
 // Greedy maximal-rectangle decomposition of a cell set: one prism per rectangle
 // instead of one per quarter-acre cell. An L-shaped assembly becomes two prisms.
@@ -253,25 +253,30 @@ function useIsoBuildings(state: GameState): IsoBld[] {
       const cells = E.footprintCells(o);
       if (!cells.length) return;
       const t = state.tiles[o.tileI];
+      const ROOFS: Record<E.PType, string[]> = {
+        retail: ['#c56a4a', '#b8574a', '#c9895a'], office: ['#8d99a6', '#7a8a99', '#a3adb5'],
+        industrial: ['#b5b9bd', '#a9aeb3', '#c2c5c8'], mixed: ['#a58a6a', '#c56a4a', '#8d99a6'],
+        multifamily: ['#b0654a', '#7a8a99', '#9a7a5a'],
+      };
       const fab = fabricOf(t.zone, o.type);
       const m = massing(o.type, o.construction ?? defaultConstr(o.type, o.sf), o.sf, cells.length, fab);
       const ht = prog === undefined ? m.ht : Math.max(3, m.ht * prog);
       for (const [ri, r] of cellRects(cells).entries()) {
         const [cx, cy] = parcelCenter(t.x, t.y, r.px, r.py, r.pw, r.ph);
         const [w, h] = parcelSpan(r.pw, r.ph);
-        out.push({ cx, cy, w: w * m.shrink, h: h * m.shrink, ht, col, listed, key: key + '_r' + ri, prog, mine, stories: m.stories, tight: fab === 'wall',
+        out.push({ cx, cy, w: w * m.shrink, h: h * m.shrink, ht, col, listed, key: key + '_r' + ri, prog, mine, stories: m.stories, tight: fab === 'wall', roof: prog !== undefined ? undefined : ROOFS[o.type][Math.abs((state.seed ^ (o.tileI * 31)) + ri) % 3],
           type: o.type, construction: o.construction, quality: o.quality, age: o.age, sf: o.sf, occ: (o as any).occ,
           seed: (state.seed ^ ((o.tileI + 1) * 0x9e3779b9) ^ ri) | 0 });
       }
     };
     for (const b of state.stock) {
       const prog = b.buildLeft ? 1 - b.buildLeft / Math.max(1, b.buildTotal ?? 1) : undefined;
-      place(b, b.buildLeft ? '#7a6636' : b.owner !== 'private' ? '#46608c' : '#4a5560', !!b.listedId, 'b' + b.id, prog);
+      place(b, b.buildLeft ? '#d9b87a' : b.owner !== 'private' ? '#b9c9de' : '#e7e0cf', !!b.listedId, 'b' + b.id, prog);
     }
     for (const a of state.assets) {
       const prog = a.mode === 'construction' && a.project
         ? 1 - a.project.monthsLeft / Math.max(1, a.project.monthsBuilt + a.project.monthsLeft) : undefined;
-      place(a, a.mode === 'construction' ? '#8a7030' : '#d9a648', false, 'a' + a.id, prog, true);
+      place(a, a.mode === 'construction' ? '#dcc07e' : '#f0c464', false, 'a' + a.id, prog, true);
     }
     for (const hd of state.land) {
       const t = state.tiles[hd.tileI];
@@ -302,7 +307,7 @@ const IsoCity = memo(function IsoCity({ blds, detail }: { blds: IsoBld[]; detail
   return (
     <g style={{ pointerEvents: 'none' }}>
       {blds.map(b => {
-        const stroke = b.listed ? 'var(--green)' : '#0b0f13';
+        const stroke = b.listed ? '#1f9d55' : b.mine ? '#b07d1e' : '#6a6f66';
         const sw = b.listed ? 1.1 : 0.4;
         const f = prismFaces(b.cx, b.cy, b.w, b.h, b.ht);
         const st = b.prog !== undefined ? '#c98a2e' : stroke;
@@ -310,9 +315,9 @@ const IsoCity = memo(function IsoCity({ blds, detail }: { blds: IsoBld[]; detail
         return (
           <g key={b.key}>
             {detail && b.ht > 3 && !b.tight && <polygon points={rectPoly(b.cx + b.w * 0.12, b.cy + b.h * 0.12, b.w, b.h)} fill="#000" opacity={0.22} />}
-            <polygon points={f.l} fill={shade(b.col, 0.56)} stroke={st} strokeWidth={sw} strokeDasharray={dash} />
-            <polygon points={f.r} fill={shade(b.col, 0.79)} stroke={st} strokeWidth={sw} strokeDasharray={dash} />
-            <polygon points={f.t} fill={shade(b.col, 1.16)} stroke={st} strokeWidth={sw} strokeDasharray={dash} />
+            <polygon points={f.l} fill={shade(b.col, 0.66)} stroke={st} strokeWidth={sw} strokeDasharray={dash} />
+            <polygon points={f.r} fill={shade(b.col, 0.98)} stroke={st} strokeWidth={sw} strokeDasharray={dash} />
+            <polygon points={f.t} fill={b.roof ?? shade(b.col, 1.12)} stroke={st} strokeWidth={sw} strokeDasharray={dash} />
             {detail && <BldDetail b={b} />}
           </g>
         );
@@ -468,11 +473,11 @@ function roadRuns(roads: E.RoadNet): RoadRun[] {
   return runs;
 }
 const ROAD_STYLE: Record<number, { stroke: string; w: number; dash?: string }> = {
-  1: { stroke: '#242c35', w: 2.0 },
-  2: { stroke: '#303a45', w: 3.0 },
-  3: { stroke: '#414c58', w: 4.6 },
-  4: { stroke: '#4b5763', w: 6.4 },
-  5: { stroke: '#544a36', w: 1.8, dash: '7 5' },
+  1: { stroke: '#8f959c', w: 2.0 },
+  2: { stroke: '#82888f', w: 3.0 },
+  3: { stroke: '#74797f', w: 4.6 },
+  4: { stroke: '#6a6f76', w: 6.4 },
+  5: { stroke: '#8a7a5c', w: 1.8, dash: '7 5' },
 };
 const StreetLife = memo(function StreetLife({ runs, seed }: { runs: RoadRun[]; seed: number }) {
   const els: React.ReactNode[] = [];
@@ -524,8 +529,8 @@ const RoadsIso = memo(function RoadsIso({ runs }: { runs: RoadRun[] }) {
         return (
           <g key={i}>
             <polyline points={pts} fill="none" stroke={st.stroke} strokeWidth={st.w} strokeDasharray={st.dash} strokeLinecap="round" />
-            {r.cls === 3 && <polyline points={pts} fill="none" stroke="#59636f" strokeWidth={0.7} strokeDasharray="5 7" />}
-            {r.cls === 4 && <polyline points={pts} fill="none" stroke="#5d6875" strokeWidth={0.8} strokeDasharray="10 4" />}
+            {r.cls === 3 && <polyline points={pts} fill="none" stroke="#e8e4d0" strokeWidth={0.7} strokeDasharray="5 7" />}
+            {r.cls === 4 && <polyline points={pts} fill="none" stroke="#f0ead6" strokeWidth={0.8} strokeDasharray="10 4" />}
           </g>
         );
       })}
@@ -558,7 +563,7 @@ type TileGeom = { i: number; x: number; y: number; water: boolean; park?: boolea
 
 const TileBaseIso = memo(function TileBaseIso({ tiles }: { tiles: TileGeom[] }) {
   return <g>{tiles.map(t => (
-    <polygon key={'st' + t.i} points={diamond(t.x, t.y)} fill={t.park ? '#18301f' : t.water ? '#1b3149' : '#171c22'} stroke="#0b0f13" strokeWidth={0.5} />
+    <polygon key={'st' + t.i} points={diamond(t.x, t.y)} fill={t.park ? '#79a865' : t.water ? '#5b9ec9' : '#cdd2c4'} stroke="#9aa094" strokeWidth={0.5} />
   ))}</g>;
 });
 
@@ -581,7 +586,7 @@ const LensCellsIso = memo(function LensCellsIso({ tiles, grids, vals, hue, zb }:
       cells.push(
         <polygon key={t.i + '-' + px + '-' + py} points={rectPoly(cx, cy, w * 0.9, h * 0.9)}
           fill={occupied ? base : dimFill}
-          stroke={occupied ? '#0b0f13' : '#39434e'} strokeWidth={zb >= 2 ? 0.55 : 0.3}
+          stroke={occupied ? '#a8ad9e' : '#b8bdae'} strokeWidth={zb >= 2 ? 0.55 : 0.3}
           strokeOpacity={zb >= 1 ? 1 : 0.45} />
       );
     }
@@ -635,9 +640,9 @@ const ZoningIso = memo(function ZoningIso({ tiles, rezonings, zoneStamp }: {
     const p = isoPt(t.x, t.y);
     return <g key={'z' + t.i}>
       <polygon points={diamond(t.x, t.y, 0.96)} fill={ZONE_COL[t.zone.use]} opacity={op} />
-      {pend.has(t.i) && <polygon points={diamond(t.x, t.y, 0.9)} fill="none" stroke="#e8e0c8" strokeWidth={1.4} strokeDasharray="5 4" opacity={0.9} />}
-      <text x={p[0]} y={p[1] + 3} textAnchor="middle" fontSize={8} fontFamily="var(--mono)"
-        fill="#e8e4da" opacity={0.85}>{E.zoneCode(t.zone)}</text>
+      {pend.has(t.i) && <polygon points={diamond(t.x, t.y, 0.9)} fill="none" stroke="#4a4438" strokeWidth={1.4} strokeDasharray="5 4" opacity={0.9} />}
+      <text x={p[0]} y={p[1] + 3} textAnchor="middle" fontSize={8} fontFamily="var(--mono)" fontWeight={600}
+        fill="#2e3328" opacity={0.8}>{E.zoneCode(t.zone)}</text>
     </g>;
   })}</g>;
 });
@@ -651,9 +656,9 @@ const ZoningFlat = memo(function ZoningFlat({ tiles, rezonings, zoneStamp }: {
     const op = t.zone.tier === 1 ? 0.3 : t.zone.tier === 2 ? 0.5 : 0.68;
     return <g key={'z' + t.i}>
       <rect x={t.x * TS + 1} y={t.y * TS + 1} width={TS - 2} height={TS - 2} fill={ZONE_COL[t.zone.use]} opacity={op} />
-      {pend.has(t.i) && <rect x={t.x * TS + 4} y={t.y * TS + 4} width={TS - 8} height={TS - 8} fill="none" stroke="#e8e0c8" strokeWidth={1.4} strokeDasharray="5 4" />}
-      <text x={(t.x + 0.5) * TS} y={(t.y + 0.5) * TS + 3} textAnchor="middle" fontSize={9} fontFamily="var(--mono)"
-        fill="#f2eee4" opacity={0.9}>{E.zoneCode(t.zone)}</text>
+      {pend.has(t.i) && <rect x={t.x * TS + 4} y={t.y * TS + 4} width={TS - 8} height={TS - 8} fill="none" stroke="#4a4438" strokeWidth={1.4} strokeDasharray="5 4" />}
+      <text x={(t.x + 0.5) * TS} y={(t.y + 0.5) * TS + 3} textAnchor="middle" fontSize={9} fontFamily="var(--mono)" fontWeight={600}
+        fill="#2e3328" opacity={0.85}>{E.zoneCode(t.zone)}</text>
     </g>;
   })}</g>;
 });
@@ -886,7 +891,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
         </div>
         {view === 'iso' ? (
         <svg className="map-svg" ref={vpIso.ref} viewBox={vpIso.viewBox} style={vpIso.style} {...vpIso.handlers}>
-          <rect x={0} y={0} width={IW_TOT} height={IH_TOT} rx={6} fill="#0b0f13" />
+          <rect x={0} y={0} width={IW_TOT} height={IH_TOT} rx={6} fill="#a8b7ab" />
           <TileBaseIso tiles={tilesGeom} />
           {lens === 'zoning'
             ? <ZoningIso tiles={state.tiles} rezonings={state.rezonings} zoneStamp={zoneStamp} />
@@ -897,7 +902,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             const seen = new Set<number>();
             const spine = water.filter(t => { if (seen.has(t.y)) return false; seen.add(t.y); return true; });
             const pts = spine.map(t => isoPt(t.x, t.y)).map(p => p[0].toFixed(0) + ',' + p[1].toFixed(0)).join(' ');
-            return <g><polyline points={pts} fill="none" stroke="#23405c" strokeWidth={IH * 0.95} strokeLinecap="round" strokeLinejoin="round" />
+            return <g><polyline points={pts} fill="none" stroke="#4e93c4" strokeWidth={IH * 0.95} strokeLinecap="round" strokeLinejoin="round" />
               <polyline className="shim" points={pts} fill="none" stroke="#3c608a" strokeWidth={2} strokeDasharray="2 14" strokeLinecap="round" opacity={0.7} /></g>;
           })()}
           <RoadsIso runs={runs} />
@@ -1001,7 +1006,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
         </svg>
         ) : (
         <svg className="map-svg" ref={vpFlat.ref} viewBox={vpFlat.viewBox} style={vpFlat.style} {...vpFlat.handlers}>
-          <rect x={-20} y={-18} width={W + 24} height={H + 22} rx={6} fill="#0b0f13" />
+          <rect x={-20} y={-18} width={W + 24} height={H + 22} rx={6} fill="#a8b7ab" />
           {Array.from({ length: E.CONFIG.GRID_W }, (_, i) => (
             <text key={'cx' + i} x={(i + 0.5) * TS} y={-6} textAnchor="middle" fill="var(--dim)" fontSize={10} fontFamily="var(--mono)">{String.fromCharCode(65 + i)}</text>
           ))}
@@ -1014,19 +1019,19 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             : <FieldFlat field={field} hue={hue} />}
           {/* faint block seams so the field reads as a city, not gradient soup */}
           {Array.from({ length: E.CONFIG.GRID_W + 1 }, (_, i) => (
-            <line key={'gv' + i} x1={i * TS} y1={0} x2={i * TS} y2={H} stroke="#0b0f13" strokeWidth={0.8} opacity={0.35} />
+            <line key={'gv' + i} x1={i * TS} y1={0} x2={i * TS} y2={H} stroke="#8f958a" strokeWidth={0.8} opacity={0.5} />
           ))}
           {Array.from({ length: E.CONFIG.GRID_H + 1 }, (_, i) => (
-            <line key={'gh' + i} x1={0} y1={i * TS} x2={W} y2={i * TS} stroke="#0b0f13" strokeWidth={0.8} opacity={0.35} />
+            <line key={'gh' + i} x1={0} y1={i * TS} x2={W} y2={i * TS} stroke="#8f958a" strokeWidth={0.8} opacity={0.5} />
           ))}
           {/* river */}
-          {river && <path d={river} fill="none" stroke="#1c3450" strokeWidth={TS * 0.86} strokeLinecap="round" strokeLinejoin="round" />}
+          {river && <path d={river} fill="none" stroke="#4e93c4" strokeWidth={TS * 0.86} strokeLinecap="round" strokeLinejoin="round" />}
           {river && <path d={river} fill="none" stroke="#2d4f6e" strokeWidth={1.6} strokeDasharray="1 8" strokeLinecap="round" opacity={0.85} />}
           {state.tiles.filter(t => t.park).map(t => (
-            <rect key={'pk' + t.i} x={t.x * TS} y={t.y * TS} width={TS} height={TS} fill="#18301f" />
+            <rect key={'pk' + t.i} x={t.x * TS} y={t.y * TS} width={TS} height={TS} fill="#79a865" />
           ))}
           {state.tiles.filter(t => t.water && !t.park).length > 20 && state.tiles.filter(t => t.water && !t.park).map(t => (
-            <rect key={'wa' + t.i} x={t.x * TS} y={t.y * TS} width={TS} height={TS} fill="#1c3450" />
+            <rect key={'wa' + t.i} x={t.x * TS} y={t.y * TS} width={TS} height={TS} fill="#5b9ec9" />
           ))}
           {/* the street network — every city's is its own */}
           <RoadsFlat runs={runs} />
@@ -1058,10 +1063,10 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             <span key={u}><span style={{ color: ZONE_COL[u] }}>▪</span> {u} {E.ZONE_LABEL[u].toLowerCase()}</span>
           ))}
           {lens === 'zoning' && <span style={{ color: '#e8e0c8' }}>▨ before the council</span>}
-          <span><span style={{ color: 'var(--amber)' }}>▪</span> yours</span>
+          <span><span style={{ color: '#f0c464' }}>▪</span> yours</span>
           <span><span style={{ color: '#a05468' }}>▪</span> rival land banks</span>
-          <span><span style={{ color: '#7d95bd' }}>▪</span> institutional</span>
-          <span><span style={{ color: '#8a97a3' }}>▪</span> private owners</span>
+          <span><span style={{ color: '#b9c9de' }}>▪</span> institutional</span>
+          <span><span style={{ color: '#e7e0cf' }}>▪</span> private owners</span>
           <span style={{ color: 'var(--green)' }}>▪ on the market</span>
           {transitActive && <span style={{ color: 'var(--blue)' }}>▦ new transit corridor</span>}
           {view === 'iso' && <span>massing is honest: towers stand tall, sheds sprawl</span>}
@@ -1073,7 +1078,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
         {!sel ? (
           <div className="dim" style={{ fontSize: 13, lineHeight: 1.6 }}>
             <h3>Block detail</h3>
-            Click any block. Every building in Meridian City is real and standing — most just aren't for sale.
+            Click any block. Every building in this city is real and standing — most just aren't for sale.
             The gradient <i>is</i> the market: value pools around the core and drains toward the edges,
             and rents follow it.
           </div>

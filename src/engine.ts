@@ -371,6 +371,7 @@ export interface GameState {
   comps: Comp[]; autoLease: boolean; prefer1031: boolean;
   land: LandHolding[]; migrations: Migration[];
   sandbox?: boolean;
+  city?: CityKind;          // which map this campaign was cut from (default meridian)
   taxYr: { noi: number; interest: number; depr: number };
   nolCarry: number;         // net operating losses carried forward
   exchange?: { deferred: number; mustSpend: number; deadlineM: number; fromName: string }; // live 1031 clock
@@ -1160,6 +1161,7 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     },
     cash: opts?.sandbox ? 50_000_000 : CONFIG.START_CASH, reputation: opts?.sandbox ? 60 : 20, tier: opts?.sandbox ? CONFIG.tiers.length - 1 : 0,
     sandbox: opts?.sandbox || undefined,
+    city: opts?.city ?? 'meridian',
     stock: [],
     assets: [], listings: [], lois: [], facilities: [], saleOffers: [],
     comps: [], autoLease: false, prefer1031: false,

@@ -172,7 +172,7 @@ function Game({ state, setState, toMenu }: {
     <div className="app">
       <div ref={chromeRef} className="chrome">
       <div className="topbar">
-        <div className="brand"><b>GROUNDWORK</b><span>Meridian City</span></div>
+        <div className="brand"><b>GROUNDWORK</b><span>{state.city === 'island' ? 'New Amsterdam' : 'Meridian City'}</span></div>
         <div className="tb-sep" />
         <div className="tb-stat"><span className="eyebrow">Date</span><span className="v num">{E.monthName(state.month)}</span></div>
         <div className="tb-stat"><span className="eyebrow">Cash</span><span className={'v num ' + (state.cash < 0 ? 'neg' : '')}>{E.fmtMoney(state.cash)}</span></div>

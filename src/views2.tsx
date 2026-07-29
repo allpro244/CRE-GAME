@@ -132,7 +132,7 @@ export function RentRollTable({ state, tenants, sf, retailOf }: {
       <thead><tr><th>Tenant</th><th>SF</th><th>Rate</th><th>Base rent /mo</th>
         {retailOf && <th>Sales /SF <Hint text="Estimated gross sales. Past the breakpoint (market rent ÷ a 9% occupancy-cost norm) you collect 6% of sales as percentage rent. Overage means the trade is outrunning the rents — draw your own conclusion." /></th>}
         {retailOf && <th>Overage /mo</th>}
-        <th>Term ends</th><th>Credit <Hint text="A-credit tenants almost never miss rent. C-credit tenants are where vacancies come from — especially in recessions." /></th></tr></thead>
+        <th>Esc</th><th>Term ends</th><th>Credit <Hint text="A-credit tenants almost never miss rent. C-credit tenants are where vacancies come from — especially in recessions." /></th></tr></thead>
       <tbody>
         {sorted.map(t => {
           const sales = retailOf ? E.tenantSalesPSF(state, retailOf, t) : 0;
@@ -145,6 +145,7 @@ export function RentRollTable({ state, tenants, sf, retailOf }: {
               <td className="num">{E.fmtMoney(t.sf * t.rate / 12)}</td>
               {retailOf && <td className="num">${sales.toFixed(0)}</td>}
               {retailOf && <td className={'num ' + (over > 0 ? 'pos' : 'faint')}>{over > 0 ? '+' + E.fmtMoney(over) : '—'}</td>}
+              <td className="num">{(t.escPct ?? 3).toFixed(1)}%{t.optionRate !== undefined && !t.optionUsed ? <span className="amber" title={`Holds a renewal option: ${t.optionYears ?? 5} yrs at $${t.optionRate.toFixed(2)}/SF — exercised only if the market runs past it`}> ⚙</span> : ''}</td>
               <td className="num">{E.monthName(t.endM)}{t.endM - state.month <= 6 ? <span className="amber"> ⚠</span> : ''}</td>
               <td><span className={'chip credit-' + t.credit}>{E.CREDIT_LABEL[t.credit]}</span></td>
             </tr>
@@ -731,6 +732,8 @@ export function LOIModal({ state, setState, loi, close, variant = 'dialog' }: {
   const theirTerm = isFinal ? loi.counterTermY! : loi.termY;
   const [rate, setRate] = useState(() => Math.round((theirRate ?? mkt) * 100) / 100);
   const [termY, setTermY] = useState(theirTerm ?? 5);
+  const [esc, setEsc] = useState(loi.escPct ?? 2.5);
+  const [grantOpt, setGrantOpt] = useState(false);
   const annual = (r: number) => loi.sf * r;
   const [walked, setWalked] = useState(false);
   const act = (action: E.LOIAction) => {
@@ -759,6 +762,10 @@ export function LOIModal({ state, setState, loi, close, variant = 'dialog' }: {
             <span className={'num ' + ((theirRate ?? 0) >= mkt * 0.97 ? 'pos' : 'dim')}>{E.fmtMoney(annual(theirRate ?? mkt))}/yr</span></div>
         </>) : (
           <div className="memo-row"><span className="lbl">They've invited a proposal. Market for this building</span><span className="num">${mkt.toFixed(2)}/SF</span></div>
+        )}
+        {(loi.escPct !== undefined || loi.optionAsk) && (
+          <div className="memo-row"><span className="lbl">Their structure</span>
+            <span className="num">{loi.escPct !== undefined ? `${loi.escPct}% annual bumps` : ''}{loi.escPct !== undefined && loi.optionAsk ? ' · ' : ''}{loi.optionAsk ? <span className="amber">wants a fixed-rate renewal option</span> : ''}</span></div>
         )}
         {((loi.freeMonths ?? 0) > 0 || (loi.tiPsf ?? 0) > 0) && (() => {
           const r0 = theirRate ?? mkt;
@@ -791,6 +798,17 @@ export function LOIModal({ state, setState, loi, close, variant = 'dialog' }: {
           <label className="f">Term — {termY} years
             <input type="range" min={3} max={10} value={termY} onChange={e => setTermY(Number(e.target.value))} />
           </label>
+          <label className="f">Annual escalations — {esc}% <Hint text="The quiet compounding that pays for buildings. Pushing above what they proposed costs acceptance odds." />
+            <input type="range" min={0} max={4} step={0.5} value={esc} onChange={e => setEsc(Number(e.target.value))} />
+          </label>
+          {loi.optionAsk && (
+            <label className="f" style={{ justifyContent: 'center' }}>
+              <span style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
+                <input type="checkbox" checked={grantOpt} onChange={e => setGrantOpt(e.target.checked)} />
+                Grant the renewal option <Hint text="A fixed-rate option is a one-way door: they exercise it only when the market has run past the strike. It buys ~9 points of acceptance odds today — and could cost you the upside tomorrow." />
+              </span>
+            </label>
+          )}
         </div>
       )}
       {!isFinal && !walked && <div className="dim" style={{ fontSize: 11.5, marginBottom: 10 }}>
@@ -809,7 +827,7 @@ export function LOIModal({ state, setState, loi, close, variant = 'dialog' }: {
         {loi.kind === 'loi' || isFinal
           ? <button className="btn" onClick={() => act({ type: 'accept' })}>Accept {isFinal ? 'final ' : ''}terms (${theirRate?.toFixed(2)})</button>
           : null}
-        {!isFinal && <button className="btn btn-amber" onClick={() => act(loi.kind === 'rfp' ? { type: 'propose', rate, termY } : { type: 'counter', rate, termY })}>
+        {!isFinal && <button className="btn btn-amber" onClick={() => act(loi.kind === 'rfp' ? { type: 'propose', rate, termY, escPct: esc, grantOption: grantOpt } : { type: 'counter', rate, termY, escPct: esc, grantOption: grantOpt })}>
           {loi.kind === 'rfp' ? 'Send proposal' : 'Counter'} at ${rate.toFixed(2)}
         </button>}
       </div>

@@ -161,6 +161,10 @@ export const CREDIT_LABEL = ['C', 'B', 'A'];
 export interface Tenant {
   id: number; name: string; sf: number; rate: number; // $/SF/yr
   startM: number; endM: number; credit: Credit;
+  escPct?: number;        // negotiated annual bump; the quiet compounding that pays for buildings
+  optionRate?: number;    // renewal option you granted: fixed rate, exercised only against you
+  optionYears?: number;
+  optionUsed?: boolean;
 }
 
 export interface LOI {
@@ -170,6 +174,8 @@ export interface LOI {
   rate?: number; termY?: number;         // their proposal (loi) — absent for rfp
   freeMonths?: number;                   // rent abatement they're asking for
   tiPsf?: number;                        // TI package they're asking for, $/SF
+  escPct?: number;                       // annual escalation they're proposing (they want it low)
+  optionAsk?: boolean;                   // they want a fixed-rate renewal option (pure downside for you)
   expiresM: number;
   stage: 'open' | 'countered';           // countered = they already countered your counter (final)
   counterRate?: number; counterTermY?: number;
@@ -996,11 +1002,14 @@ function genRentRoll(state: GameState, a: Pick<Asset, 'tileI' | 'type' | 'sf' | 
     const rate = mkt * rrange(state, lo, hi);
     const termLeft = Math.round(rrange(state, 8, 84));
     const termTotal = Math.max(termLeft + Math.round(rrange(state, 0, 36)), 36);
+    const esc = [0, 2, 2.5, 3, 3][Math.floor(rng(state) * 5)];
     tenants.push({
       id: state.nextId++, name: tenantName(state, a.type), sf,
       rate: Math.round(rate * 100) / 100,
       startM: state.month - (termTotal - termLeft), endM: state.month + termLeft,
       credit: rollCredit(state, a.quality, t.D),
+      escPct: esc,
+      ...(rng(state) < 0.12 ? { optionRate: Math.round(rate * rrange(state, 1.02, 1.15) * 100) / 100, optionYears: 5 } : {}),
     });
     toFill -= sf;
   }
@@ -1046,7 +1055,7 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     lastScoutMonth: -99, approachesLeft: 3, parcelApproach: {}, dealLog: [],
     gameOver: false, transitCorridor: corridor, roads,
     totalRealizedProfit: 0, dealsClosed: 0,
-    version: 16,
+    version: 17,
   };
   generateStock(state);
   // Born in equilibrium: the anchors absorb whatever the initial city explains, so
@@ -2518,11 +2527,13 @@ function spawnLOIs(s: GameState) {
       loi.rate = Math.round(mkt * rrange(s, 0.88, 1.0 + tight * 0.03) * 100) / 100;
       loi.termY = [3, 5, 5, 7, 10][Math.floor(rng(s) * 5)];
     }
-    // tenants negotiate the whole package: abatement and TI asks are routine, and a
-    // soft market emboldens them
+    // tenants negotiate the whole package: abatement, TI, escalations, options —
+    // and a soft market emboldens them
     const soft = clamp((s.econ.cityVac[a.type] - 8) / 10, 0, 0.6);
     if (rng(s) < 0.5 + soft) loi.freeMonths = 1 + Math.floor(rng(s) * (3 + soft * 3));
     if (a.type !== 'multifamily' && rng(s) < 0.4 + soft) loi.tiPsf = Math.round(rrange(s, 4, 14 + soft * 12));
+    loi.escPct = rng(s) < 0.45 ? 0 : rng(s) < 0.6 ? 2 : 2.5;   // they open low; 3% is yours to win
+    if (rng(s) < 0.28 + soft * 0.3) loi.optionAsk = true;
     s.lois.push(loi);
     pushNews(s, 'info', isRFP
       ? `${loi.tenant} (${CREDIT_LABEL[credit]} credit) issued an RFP for ${(sf / 1000).toFixed(1)}K SF at ${a.name} — they want your proposal.`
@@ -2546,7 +2557,7 @@ function chargeSigningCosts(s: GameState, a: Asset, type: PType, sf: number, rat
   pushNews(s, 'info', `Signing costs for ${tenant}: ${fmtMoney(ti)} tenant improvements + ${fmtMoney(lc)} leasing commission = ${fmtMoney(total)} out the door. Leases are bought, not found.`);
 }
 
-function signLease(s: GameState, a: Asset, loi: LOI, rate: number, termY: number, withConcessions = false) {
+function signLease(s: GameState, a: Asset, loi: LOI, rate: number, termY: number, withConcessions = false, escPct?: number, grantOption?: boolean) {
   // space may have shrunk since the LOI arrived — you can't lease the same suite twice
   const vacant = a.sf - leasedSF(a);
   const sfNow = Math.min(loi.sf, Math.floor(vacant / 100) * 100);
@@ -2565,10 +2576,15 @@ function signLease(s: GameState, a: Asset, loi: LOI, rate: number, termY: number
     a.ledger.push({ m: s.month, amt: -(free + extraTI) });
     pushNews(s, 'info', `Concessions for ${loi.tenant}: ${loi.freeMonths ? `${loi.freeMonths} month${loi.freeMonths > 1 ? 's' : ''} free (${fmtMoney(free)})` : ''}${loi.freeMonths && loi.tiPsf ? ' + ' : ''}${loi.tiPsf ? `${fmtMoney(extraTI)} TI package` : ''}. The rate was never the whole deal.`);
   }
+  const esc = escPct ?? loi.escPct ?? 2.5;
+  const opt = grantOption ?? (withConcessions && !!loi.optionAsk);
   a.tenants.push({
     id: s.nextId++, name: loi.tenant, sf: sfNow, rate: Math.round(rate * 100) / 100,
     startM: s.month, endM: s.month + Math.round(termY * 12), credit: loi.credit,
+    escPct: esc,
+    ...(opt ? { optionRate: Math.round(rate * Math.pow(1 + esc / 100, termY) * 1.05 * 100) / 100, optionYears: 5 } : {}),
   });
+  if (opt) pushNews(s, 'info', `${loi.tenant} got their renewal option: 5 more years at a fixed $${(Math.round(rate * Math.pow(1 + esc / 100, termY) * 1.05 * 100) / 100).toFixed(2)}/SF when this term ends. If the market runs past it, that paper is their money — not yours.`);
   recalcOcc(a);
   s.lois = s.lois.filter(x => x.id !== loi.id);
   pushNews(s, 'success', `Lease signed: ${loi.tenant} takes ${(loi.sf / 1000).toFixed(1)}K SF at ${a.name} — $${rate.toFixed(2)}/SF, ${termY} years.`);
@@ -2591,8 +2607,8 @@ function applyRenewal(s: GameState, a: Asset, loi: LOI, rate: number, termY: num
 export type LOIAction =
   | { type: 'accept' }
   | { type: 'decline' }
-  | { type: 'counter'; rate: number; termY: number }   // for LOIs (and counters)
-  | { type: 'propose'; rate: number; termY: number };  // for RFPs
+  | { type: 'counter'; rate: number; termY: number; escPct?: number; grantOption?: boolean }   // for LOIs (and counters)
+  | { type: 'propose'; rate: number; termY: number; escPct?: number; grantOption?: boolean };  // for RFPs
 
 export function respondLOI(state: GameState, loiId: number, action: LOIAction): { s: GameState; outcome: string } {
   const s = clone(state);
@@ -2613,7 +2629,7 @@ export function respondLOI(state: GameState, loiId: number, action: LOIAction): 
     const rate = loi.stage === 'countered' ? (loi.counterRate ?? loi.rate ?? mkt) : (loi.rate ?? mkt);
     const termY = loi.stage === 'countered' ? (loi.counterTermY ?? loi.termY ?? 5) : (loi.termY ?? 5);
     if (loi.kind === 'renewal') { applyRenewal(s, a, loi, rate, termY); return { s, outcome: 'signed' }; }
-    signLease(s, a, loi, rate, termY, true);   // their terms, their concessions
+    signLease(s, a, loi, rate, termY, true, loi.escPct, !!loi.optionAsk);   // their terms, their concessions
     return { s, outcome: 'signed' };
   }
   // counter / propose: tenant decides
@@ -2621,13 +2637,16 @@ export function respondLOI(state: GameState, loiId: number, action: LOIAction): 
   const f = asked / mkt; // how aggressive vs market
   const stick = loi.kind === 'renewal' ? 0.12 : 0; // moving is expensive; incumbents bend a little
   const repEdge = (s.reputation - 50) * 0.001;
-  // your counter is rate/term only — stripping the concessions they asked for costs you odds
+  // stripping the concessions they asked for costs you odds; pushing escalations up costs
+  // a little; granting the option they wanted buys goodwill you'll pay for later
   const concPenalty = ((loi.freeMonths ?? 0) > 0 ? 0.10 : 0) + ((loi.tiPsf ?? 0) > 0 ? 0.08 : 0);
-  const pAccept = clamp(1.62 - f * 1.4 + loi.credit * 0.03 + tight + stick + repEdge - concPenalty + (action.termY >= 7 ? -0.03 : 0), 0.04, 0.95);
+  const escPush = Math.max(0, (action.escPct ?? 2.5) - (loi.escPct ?? 2.5)) * 0.025;
+  const optBoost = action.grantOption && loi.optionAsk ? 0.09 : 0;
+  const pAccept = clamp(1.62 - f * 1.4 + loi.credit * 0.03 + tight + stick + repEdge - concPenalty - escPush + optBoost + (action.termY >= 7 ? -0.03 : 0), 0.04, 0.95);
   const roll = rng(s);
   if (roll < pAccept) {
     if (loi.kind === 'renewal') { applyRenewal(s, a, loi, asked, action.termY); return { s, outcome: 'signed' }; }
-    signLease(s, a, loi, asked, action.termY);
+    signLease(s, a, loi, asked, action.termY, false, action.escPct, action.grantOption);
     return { s, outcome: 'signed' };
   }
   const pWalk = clamp(0.22 + (f - 1.0) * 2.4, 0.15, 0.92); // the further past market you push, the faster the door
@@ -3698,16 +3717,28 @@ function tickAsset(s: GameState, a: Asset): number {
       }
     }
   }
-  // annual escalations: 3% bumps written into every lease — the quiet compounding that pays for buildings
+  // annual escalations at whatever each lease says — the quiet compounding that pays for buildings
   for (const tn of a.tenants) {
     const age = s.month - tn.startM;
     if (age > 0 && age % 12 === 0 && tn.endM > s.month) {
-      tn.rate = Math.round(tn.rate * 1.03 * 100) / 100;
+      tn.rate = Math.round(tn.rate * (1 + (tn.escPct ?? 3) / 100) * 100) / 100;
     }
   }
   // expirations & renewals — significant tenants come back as a renewal proposal you negotiate
   for (const tn of [...a.tenants]) {
     if (tn.endM > s.month) continue;
+    // a fixed-rate option is a one-way door: exercised when it's below market, ignored when it isn't
+    if (tn.optionRate !== undefined && !tn.optionUsed) {
+      tn.optionUsed = true;
+      if (tn.optionRate < mkt * 0.985) {
+        tn.rate = tn.optionRate;
+        tn.startM = s.month; tn.endM = s.month + (tn.optionYears ?? 5) * 12;
+        tn.escPct = tn.escPct ?? 2.5;
+        pushNews(s, 'warn', `${tn.name} EXERCISED their option at ${a.name}: ${(tn.optionYears ?? 5)} more years at $${tn.optionRate.toFixed(2)}/SF against a $${mkt.toFixed(2)} market. The option you granted was worth exactly this much.`);
+        continue;
+      }
+      pushNews(s, 'info', `${tn.name}'s renewal option at ${a.name} lapsed unexercised — the market is below their strike. Now you negotiate fresh.`);
+    }
     const under = tn.rate < mkt * 0.97;
     if (tn.sf >= 4000 && !s.lois.some(x => x.kind === 'renewal' && x.tenantId === tn.id)) {
       const wants = clamp((under ? 0.85 : 0.62)
@@ -3931,7 +3962,7 @@ export function serialize(state: GameState): string { return JSON.stringify(stat
 export function deserialize(json: string): GameState | null {
   try {
     const s = JSON.parse(json);
-    if (s && s.version === 16 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
+    if (s && s.version === 17 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
     return null;
   } catch { return null; }
 }

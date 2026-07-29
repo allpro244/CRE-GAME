@@ -22,14 +22,15 @@ environment used its own `bundle-artifact.sh` for this.
 
 ## Architecture
 
-| File | Lines | What it is |
-|---|---|---|
-| `src/engine.ts` | ~2950 | The entire simulation. Pure functions, no React. Every game rule lives here. |
-| `src/views2.tsx` | ~1100 | Deal board, deal modal, LOI negotiation, portfolio, refi, debt tab |
-| `src/mapview.tsx` | ~860 | Isometric + flat city map, parcel selection, stock/firm cards |
-| `src/App.tsx` | ~695 | Shell, dashboard, economy tab, modals, save/load |
-| `src/charts.tsx` | ~64 | Minimal SVG line/bar charts |
-| `src/index.css` | ~256 | Dark "surveyor terminal" theme (amber #d9a648 on #0e1216) |
+| File | What it is |
+|---|---|
+| `src/engine.ts` | The entire simulation. Pure functions, no React. Every game rule lives here. |
+| `src/views2.tsx` | Deal board, deal drawer/modal, LOI negotiation, portfolio (shared AssetCard), refi, debt tab |
+| `src/mapview.tsx` | Isometric + flat city map, street network rendering, memoized layers, parcel selection, block panel |
+| `src/buildingArt.ts` | Procedural facades & construction sites. Pure: params + prism geometry in, element descriptors out. No React, no engine imports. |
+| `src/App.tsx` | Shell, dashboard, economy tab, modals, save/load |
+| `src/charts.tsx` | Minimal SVG line/bar charts |
+| `src/index.css` | Dark "surveyor terminal" theme (amber #d9a648 on #0e1216) |
 
 **The engine is the product.** It's deliberately pure: `advanceMonth(state) -> state`, no side effects,
 no DOM. That's what makes the headless test harness possible, and it's why balance changes are safe to
@@ -37,7 +38,20 @@ make — you can simulate 30 years in milliseconds before touching the UI.
 
 ### Core state model
 
-- `GameState.tiles` — 14x10 city blocks with desirability, income, employment, industrial suitability, crime
+- `GameState.tiles` — 14x10 city blocks. Each tile's desirability is **anchor + emergence**:
+  `baseD` (geography and street access, fixed at generation except for permanent
+  infrastructure like transit) plus a quarterly **mix term** — occupied SF within ~2 blocks
+  scored as jobs/residents/amenity by a geometric mean (monoculture ≈ 0, balance compounds),
+  scaled with diminishing returns, weighted by average product quality, damped by heavy
+  industrial presence. `pop` and `emp` are likewise anchored (`popBase`/`empBase`) plus
+  endogenous: occupied residential space attracts residents, occupied business space
+  attracts jobs, and demand factors read those. **The game never forecasts** — the map
+  shows what is, the player forms the thesis.
+- `GameState.roads` — the per-seed street network on block boundaries (local / collector /
+  arterial / highway / rail). Arterials jog, locals prune into superblocks and dead ends,
+  bridges are scarce. Access is economic: each tile carries `acc` (arterial frontage,
+  highway/rail proximity, quiet) feeding rents, demand and land value — retail wants
+  frontage, industrial wants the highway and the rail spur, housing pays for quiet.
 - Each block is a **4x4 grid of quarter-acre parcels** (`PGRID`, `PARCEL_AC`). Footprints are cell-index
   sets (`cells: number[]`), so buildings can be L-shaped. Edge-sharing (not corner) defines one site —
   see `isContiguous()`.
@@ -65,7 +79,10 @@ node tools/probe.mjs      # expense ratios, cap rate distribution, dev spreads
 ```
 
 `simtest.mjs` is the safety net. It asserts things like: no parcel is ever double-occupied, every
-listing points at a real stock building, `listedId` and listings stay in bijection, no NaN in net worth.
+listing points at a real stock building, `listedId` and listings stay in bijection, no NaN in net
+worth, the street network is well-formed with no landlocked blocks, desirability stays in bounds,
+and — the strictest one — **the per-tile supply ledger always equals the standing stock** (this
+invariant has already caught three real bookkeeping bugs; keep it).
 **Run it after any engine change.** Balance regressions show up as wild swings in the reported 30-year
 net worth range (healthy is roughly $1M–$40M across seeds, with occasional bankruptcies).
 
@@ -82,8 +99,13 @@ A few things learned the hard way:
   management fees, cutting CAM) quietly moved valuations 15% and needed a cap rate recalibration.
 - **Bump `version` in `newGame()` and `deserialize()` whenever `GameState`'s shape changes.** Old saves
   loading into new code is the one bug class that silently corrupts a campaign.
-- The map renders up to ~1,600 SVG polygons. `IsoCity` is memoized and its geometry is `useMemo`'d on a
-  stamp string — if you add per-frame state to that path, profile it.
+- The map is split into layers memoized on *stable identities* (`tilesGeom`, `grids`, `tileVals`,
+  road runs) with handlers reading a `live` ref — hover/pan/zoom re-render a tooltip, not the city.
+  If you add per-frame state to a layer path, profile it. Buildings render one prism per footprint
+  rectangle (see `cellRects`), with a zoom-bucketed LOD: flat prisms far out, `buildingArt` facades
+  (lit windows track occupancy) past ~1.6×.
+- `useIsoBuildings`' memo stamp tracks counts + construction progress + coarse occupancy. If you
+  add a new way for geometry to change, add it to the stamp or the map won't update.
 - Copy is part of the design. News items, error messages, and hints are written in a dry practitioner's
   voice; keep it.
 

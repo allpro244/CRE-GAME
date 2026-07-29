@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as E from './engine';
 import type { GameState, StockBuilding, Tile } from './engine';
 import { Modal, Hint, BuildingSketch, blockName, pct } from './views2';
+import { buildingArt, siteArt } from './buildingArt';
 
 type Lens = 'value' | 'office' | 'retail' | 'industrial' | 'multifamily' | 'crime' | 'pipeline' | 'comps';
 const LENSES: { id: Lens; label: string }[] = [
@@ -168,7 +169,7 @@ function bldHeight(sf: number, type: E.PType): number {
   return 5 + stories * 4.4;
 }
 
-interface IsoBld { cx: number; cy: number; w: number; h: number; ht: number; col: string; listed: boolean; key: string; prog?: number; mine?: boolean; type?: E.PType; construction?: string; quality?: number; age?: number; sf?: number; seed?: number }
+interface IsoBld { cx: number; cy: number; w: number; h: number; ht: number; col: string; listed: boolean; key: string; prog?: number; mine?: boolean; type?: E.PType; construction?: string; quality?: number; age?: number; sf?: number; occ?: number; seed?: number }
 
 // Greedy maximal-rectangle decomposition of a cell set: one prism per rectangle
 // instead of one per quarter-acre cell. An L-shaped assembly becomes two prisms.
@@ -201,7 +202,8 @@ function useIsoBuildings(state: GameState): IsoBld[] {
   const stamp = state.stock.length + ':' + state.assets.length + ':' + state.land.length
     + ':' + state.stock.reduce((s2, b) => s2 + (b.listedId ? 1 : 0), 0)
     + ':' + state.stock.reduce((s2, b) => s2 + (b.buildLeft ?? 0), 0)
-    + ':' + state.assets.reduce((s2, a) => s2 + (a.project?.monthsLeft ?? 0) + (a.mode === 'construction' ? 1000 : 0), 0);
+    + ':' + state.assets.reduce((s2, a) => s2 + (a.project?.monthsLeft ?? 0) + (a.mode === 'construction' ? 1000 : 0), 0)
+    + ':' + Math.round(state.stock.reduce((s2, b) => s2 + b.occ, 0) * 4);
   return useMemo(() => {
     const out: IsoBld[] = [];
     const place = (o: { tileI: number; sf: number; type: E.PType; quality?: number; age?: number; construction?: string; cells?: number[]; px?: number; py?: number; pw?: number; ph?: number }, col: string, listed: boolean, key: string, prog?: number, mine?: boolean) => {
@@ -214,7 +216,7 @@ function useIsoBuildings(state: GameState): IsoBld[] {
         const [cx, cy] = parcelCenter(t.x, t.y, r.px, r.py, r.pw, r.ph);
         const [w, h] = parcelSpan(r.pw, r.ph);
         out.push({ cx, cy, w: w * 0.94, h: h * 0.94, ht, col, listed, key: key + '_r' + ri, prog, mine,
-          type: o.type, construction: o.construction, quality: o.quality, age: o.age, sf: o.sf,
+          type: o.type, construction: o.construction, quality: o.quality, age: o.age, sf: o.sf, occ: (o as any).occ,
           seed: (state.seed ^ ((o.tileI + 1) * 0x9e3779b9) ^ ri) | 0 });
       }
     };
@@ -265,10 +267,29 @@ const IsoCity = memo(function IsoCity({ blds, detail }: { blds: IsoBld[]; detail
   );
 });
 
-// Placeholder detail layer — Phase D (buildingArt.ts) replaces the body of this.
+// Facades and site dressing from the pure art module — only rendered above the
+// LOD zoom threshold, so the far view stays cheap.
 function BldDetail({ b }: { b: IsoBld }) {
-  if (b.prog !== undefined) return null;
-  return null;
+  const p = (x: number, y: number) => isoPt(x, y);
+  const geom = {
+    bl: p(b.cx - b.w / 2, b.cy + b.h / 2),
+    bb: p(b.cx + b.w / 2, b.cy + b.h / 2),
+    br: p(b.cx + b.w / 2, b.cy - b.h / 2),
+    ht: b.ht,
+  };
+  const els = b.prog !== undefined
+    ? siteArt(geom, b.prog, b.seed ?? 1)
+    : b.type
+      ? buildingArt({ type: b.type, construction: b.construction ?? 'concrete', quality: b.quality ?? 50, age: b.age ?? 10, sf: b.sf ?? 0, occ: b.occ ?? 0, seed: b.seed ?? 1 }, geom)
+      : [];
+  if (!els.length) return null;
+  return (
+    <g>
+      {els.map((e, i) => e.k === 'p'
+        ? <polygon key={i} points={e.pts} fill={e.f ?? 'none'} stroke={e.s} strokeWidth={e.w} opacity={e.o} />
+        : <line key={i} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke={e.s} strokeWidth={e.w} opacity={e.o} strokeDasharray={e.d} />)}
+    </g>
+  );
 }
 
 

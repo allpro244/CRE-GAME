@@ -80,7 +80,7 @@ export const CONFIG = {
   softCostPct: 0.15,
   saleCostPct: 0.03,
   acqLTV: 0.75, indLTVBonus: 0.05, constrLTC: 0.70, refiLTV: 0.70,
-  acqSpread: 2.0, constrSpread: 3.0, refiSpread: 1.75, facilitySpread: 1.6,
+  acqSpread: 2.0, constrSpread: 2.5, refiSpread: 1.75, facilitySpread: 1.6,
   minDSCR: 1.25, refiDSCR: 1.20,
   acqAmortYears: 30, refiAmortMax: 25, loanTermMonths: 120,
   feasCost: 8_000,
@@ -171,7 +171,7 @@ export const QLABEL = ['C', 'B', 'A'];
 export interface CFEntry { m: number; amt: number; }
 export interface ConstrEvent { month: number; kind: string; resolved: boolean; }
 export interface Project {
-  stage: 'diligence' | 'permitting' | 'building';
+  stage: 'diligence' | 'design' | 'permitting' | 'building';
   monthsLeft: number; totalMonths: number;
   hardBudget: number; softBudget: number; spent: number;
   contingency: number; contingencyLeft: number;
@@ -186,6 +186,7 @@ export interface Project {
   dd?: { deposit: number; ddFee: number; landPrice: number; choice: DevChoice; useJV: boolean; known?: SiteCond };
   landCost?: number;
   siteCond?: SiteCond;       // seeded truth; hidden unless diligence found it
+  designTier?: 've' | 'std' | 'signature';
 }
 
 export type SiteCondKind = 'none' | 'soils' | 'easement' | 'utility' | 'tank' | 'archaeology';
@@ -223,6 +224,7 @@ export interface Asset {
   basis: number; acqMonth: number;
   entryNOI: number; entryCap: number;
   project?: Project; renovMonthsLeft?: number;
+  designTier?: 've' | 'std' | 'signature';
   negCFStreak: number;
 }
 
@@ -651,13 +653,14 @@ export function unitMgmtLoad(units: number): number { // extra opex as share of 
   return Math.min(0.04, 0.007 * Math.log2(Math.max(1, units)));
 }
 // market rent for THIS building (grade + unit mix + pad bonus)
-export function assetRentPSF(state: GameState, a: Pick<Asset, 'tileI' | 'type' | 'quality' | 'units' | 'construction'>): number {
+export function assetRentPSF(state: GameState, a: Pick<Asset, 'tileI' | 'type' | 'quality' | 'units' | 'construction'> & { designTier?: 've' | 'std' | 'signature' }): number {
   const t = state.tiles[a.tileI];
   const spec = constrSpec(a as any);
   return marketRentPSF(state, t, a.type)
     * (1 + (qGrade(a.quality) - 1) * 0.06)
     * unitRentPremium(a.units)
-    * (1 + (spec.rentBonus ?? 0));
+    * (1 + (spec.rentBonus ?? 0))
+    * (a.designTier ? DESIGN[a.designTier].rentMult : 1);
 }
 
 export function capRatePct(state: GameState, t: Tile, type: PType, quality: number): number {
@@ -798,7 +801,14 @@ export function assetValue(state: GameState, a: Asset): number {
   }
   const t = state.tiles[a.tileI];
   const noi = stabilizedNOI(state, a);
-  const cap = capRatePct(state, t, a.type, a.quality) / 100;
+  let capPts = capRatePct(state, t, a.type, a.quality);
+  // the design bet, marked to market: commodity product gets repriced hard in a downturn;
+  // signature product holds its bid
+  if (state.econ.phase === 'recession' && a.designTier) {
+    if (a.designTier === 've') capPts += 0.35;
+    else if (a.designTier === 'signature') capPts -= 0.20;
+  }
+  const cap = capPts / 100;
   const stabDiscount = a.mode === 'leaseup' ? clamp(0.75 + 0.25 * (a.occ / 0.85), 0.75, 1) : 1;
   return Math.max(0, (noi / cap) * stabDiscount);
 }
@@ -998,7 +1008,7 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     lastScoutMonth: -99, approachesLeft: 5, parcelApproach: {},
     gameOver: false, transitCorridor: corridor, roads,
     totalRealizedProfit: 0, dealsClosed: 0,
-    version: 13,
+    version: 14,
   };
   generateStock(state);
   // Born in equilibrium: the anchors absorb whatever the initial city explains, so
@@ -1515,24 +1525,33 @@ export interface DevChoice {
   contractType?: 'gmp' | 'costplus';  // who eats overruns above contingency
   bonded?: boolean;                   // surety covers a failed GC (+~1.2% of hard)
   diligence?: boolean;                // tie the land up and dig before you close
+  designTier?: 've' | 'std' | 'signature';
 }
 
 export function maxBuildableSF(l: Listing, type: PType): number {
   return Math.floor(((l.acres ?? 0) * 43_560 * FAR[type] * upzoneBonus(listingParcels(l))) / 1000) * 1000;
 }
 
+export const DESIGN = {
+  ve: { hardMult: 0.94, months: 6, fee: 0.04, rentMult: 0.92, qShift: -6, label: 'Value-engineered' },
+  std: { hardMult: 1, months: 8, fee: 0.045, rentMult: 1, qShift: 0, label: 'Standard' },
+  signature: { hardMult: 1.12, months: 12, fee: 0.06, rentMult: 1.12, qShift: 6, label: 'Signature' },
+} as const;
 export function devCostBreakdown(state: GameState, c: DevChoice, landCost: number) {
   const spec = CONSTR[c.type].find(x => x.id === c.construction) ?? CONSTR[c.type][0];
   const tariff = state.econ.tariffMonthsLeft > 0 ? 1.08 : 1;
   const gmpMult = (c.contractType ?? 'costplus') === 'gmp' ? 1.07 : 1;   // certainty has a price
+  const dsn = DESIGN[c.designTier ?? 'std'];
   const sizeMult = clamp(1.08 - 0.13 * Math.log10(Math.max(3000, c.sf) / 5000), 0.82, 1.12); // scale economies
-  const hard = spec.cost * sizeMult * c.sf * gmpMult * tariff * constrCostIdx(state) * (c.expedited ? 1.08 : 1);
+  const hard = spec.cost * sizeMult * c.sf * gmpMult * dsn.hardMult * tariff * constrCostIdx(state) * (c.expedited ? 1.08 : 1);
   const bond = c.bonded ? hard * 0.012 : 0;                              // the surety's cut
   const soft = hard * CONFIG.softCostPct;
   const cont = hard * c.contingencyPct;
+  const designFee = Math.round(hard * dsn.fee);                          // equity-funded, never loan money
+  const designMonths = dsn.months;
   const total = landCost + hard + bond + soft + cont;
   const months = Math.min(26, Math.max(5, Math.round((4 + c.sf / 7000) * (c.expedited ? 0.75 : 1))));
-  return { hard, soft, cont, bond, total, months, landCost, spec };
+  return { hard, soft, cont, bond, designFee, designMonths, total, months, landCost, spec };
 }
 
 export function validateDev(state: GameState, l: Listing, c: DevChoice): string | null {
@@ -1638,8 +1657,9 @@ export function buyLandAndDevelop(state: GameState, listingId: number, c: DevCho
   const jvChk2 = useJV ? canJV(s, equity) : null;
   if (useJV && jvChk2 && !jvChk2.ok) return { s, err: jvChk2.why };
   const yourEquity2 = useJV ? Math.round(equity * 0.30) : equity;
-  if (s.cash < yourEquity2) return { s, err: `You need ${fmtMoney(yourEquity2)} of equity at closing.` };
+  if (s.cash < yourEquity2 + bd.designFee) return { s, err: `You need ${fmtMoney(yourEquity2 + bd.designFee)} at closing (equity + design fees).` };
   s.cash -= equity - (equity - yourEquity2); // your slice only
+  s.cash -= bd.designFee; // architects and engineers bill from day one — pure equity carry
 
   const t = s.tiles[l.tileI];
   const events: ConstrEvent[] = [];
@@ -1662,24 +1682,26 @@ export function buyLandAndDevelop(state: GameState, listingId: number, c: DevCho
     px: l.parcel?.px, py: l.parcel?.py, pw: l.parcel?.pw, ph: l.parcel?.ph,
     cells: l.parcelCells ?? (l.parcel ? cellsOfRect(l.parcel.px, l.parcel.py, l.parcel.pw, l.parcel.ph) : undefined),
     units: c.units, construction: c.construction,
-    quality: clamp(startQ, 20, bd.spec.qCap), qCap: bd.spec.qCap,
-    age: 0, mode: 'construction',
+    quality: clamp(startQ + DESIGN[c.designTier ?? 'std'].qShift, 20, clamp(bd.spec.qCap + DESIGN[c.designTier ?? 'std'].qShift, 20, 96)),
+    qCap: clamp(bd.spec.qCap + DESIGN[c.designTier ?? 'std'].qShift, 20, 96),
+    age: 0, mode: 'construction', designTier: c.designTier ?? 'std',
     tenants: [], occ: 0, rentStance: 0, maint: 'std',
-    loans: [{ id: s.nextId++, kind: 'constr', balance: 0, ratePct: rate, amortYears: 25, ioMonthsLeft: 999, monthlyPmt: 0, maturityMonth: s.month + bd.months + permitMonths + 14, reserveInitial: reserve, reserveBalance: reserve, floating: !c.fixedRate }],
+    loans: [{ id: s.nextId++, kind: 'constr', balance: 0, ratePct: rate, amortYears: 25, ioMonthsLeft: 999, monthlyPmt: 0, maturityMonth: s.month + bd.months + bd.designMonths + permitMonths + 14, reserveInitial: reserve, reserveBalance: reserve, floating: !c.fixedRate }],
     ledger: [{ m: s.month, amt: -equity }], cumCF: 0,
     basis: bd.total, acqMonth: s.month,
     entryNOI: 0, entryCap: capRatePct(s, t, c.type, startQ),
     project: {
-      stage: 'permitting', monthsLeft: permitMonths, totalMonths: bd.months,
-      hardBudget: bd.hard, softBudget: bd.soft, spent: l.price,
+      stage: 'design', monthsLeft: bd.designMonths, totalMonths: bd.months,
+      hardBudget: bd.hard, softBudget: bd.soft, spent: l.price + bd.designFee,
       contingency: bd.cont, contingencyLeft: bd.cont,
       contractor: c.contractor, expedited: c.expedited, events, drawnSoFar: 0, monthsBuilt: 0,
       contractType: c.contractType ?? 'costplus', bonded: !!c.bonded,
-      siteCond: cond0.kind !== 'none' ? cond0 : undefined, landCost: l.price,
+      siteCond: cond0.kind !== 'none' ? cond0 : undefined, landCost: l.price, designTier: c.designTier ?? 'std',
     },
     negCFStreak: 0,
   };
-  a.deprBasis = Math.round(bd.hard + bd.soft);
+  a.deprBasis = Math.round(bd.hard + bd.soft + bd.designFee);
+  a.basis = bd.total + bd.designFee;
   a.deprTaken = 0;
   if (l.fromLandId) {
     const ids: number[] = (l as any).mergedLand ?? [l.fromLandId];
@@ -1757,9 +1779,9 @@ export function resolveConstrEvent(state: GameState, assetId: number, choice: 'a
     const equity = Math.max(totalCost * c.downPct, totalCost - maxLoan);
     const useJV = dd.useJV && canJV(s, equity).ok;
     const equityDue = Math.max(0, (useJV ? Math.round(equity * 0.30) : equity) - dd.deposit);
-    if (s.cash < equityDue) { walkDD('(You could not have closed anyway — the equity was not there.)'); return s; }
-    s.cash -= equityDue;
-    a.ledger.push({ m: s.month, amt: -equityDue });
+    if (s.cash < equityDue + bd.designFee) { walkDD('(You could not have closed anyway — the equity was not there.)'); return s; }
+    s.cash -= equityDue + bd.designFee;
+    a.ledger.push({ m: s.month, amt: -(equityDue + bd.designFee) });
     const rate = s.econ.rate + CONFIG.constrSpread + (c.fixedRate ? 0.6 : 0);
     const loanAmt = totalCost - equity;
     const buildMonths = bd.months + cond.delayMo;
@@ -1777,7 +1799,10 @@ export function resolveConstrEvent(state: GameState, assetId: number, choice: 'a
     const pool = ['materials', 'labor', 'weather', 'ahead'];   // soils risk was just drilled out
     const nEvents = rng(s) < 0.55 * riskMult ? (rng(s) < 0.35 * riskMult ? 2 : 1) : 0;
     for (let k = 0; k < nEvents; k++) p.events.push({ month: 1 + Math.floor(rng(s) * Math.max(1, buildMonths - 1)), kind: rpick(s, pool), resolved: false });
-    p.stage = 'permitting'; p.monthsLeft = 1 + Math.floor(rng(s) * 3);
+    p.stage = 'design'; p.monthsLeft = bd.designMonths;
+    p.designTier = c.designTier ?? 'std';
+    a.designTier = c.designTier ?? 'std';
+    a.basis = totalCost + dd.ddFee + bd.designFee;
     if (useJV) attachJV(s, a, equity);
     p.dd = undefined;
     pushNews(s, cond.kind === 'none' ? 'success' : 'info',
@@ -3303,6 +3328,14 @@ function tickAsset(s: GameState, a: Asset): number {
       }
       return 0;
     }
+    if (p.stage === 'design') {
+      p.monthsLeft--;
+      if (p.monthsLeft <= 0) {
+        p.stage = 'permitting'; p.monthsLeft = 1 + Math.floor(rng(s) * 3);
+        pushNews(s, 'info', `${a.name}: drawings issued for permit. ${p.designTier === 'signature' ? 'The renderings are getting passed around town.' : p.designTier === 've' ? 'Nothing about it will win awards, and that was the brief.' : ''}`);
+      }
+      return 0;
+    }
     if (p.stage === 'permitting') {
       p.monthsLeft--;
       if (p.monthsLeft <= 0) { p.stage = 'building'; p.monthsLeft = p.totalMonths; pushNews(s, 'info', `${a.name}: permits in hand. Construction begins.`); }
@@ -3690,7 +3723,7 @@ export function serialize(state: GameState): string { return JSON.stringify(stat
 export function deserialize(json: string): GameState | null {
   try {
     const s = JSON.parse(json);
-    if (s && s.version === 13 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
+    if (s && s.version === 14 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
     return null;
   } catch { return null; }
 }

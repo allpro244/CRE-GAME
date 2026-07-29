@@ -155,6 +155,7 @@ export interface Economy {
   costIdx: number;
   rentIdx: Record<PType, number>;
   cityVac: Record<PType, number>;
+  rentMom: Record<PType, number>;   // rent-growth momentum: markets trend, they don't twitch
   hadCrunch: boolean; crunchMonthsLeft: number; tariffMonthsLeft: number; ecomMonthsLeft: number;
   insSpikeMonthsLeft?: number; capInflowMonthsLeft?: number; wfhMonthsLeft?: number;
   constrCycle?: number;
@@ -715,7 +716,11 @@ export function marketRentPSF(state: GameState, t: Tile, type: PType): number {
   if (type === 'industrial') mult = 0.78 + 0.42 * (t.indSuit / 100) + 0.10 * Math.max(acc.hwy, acc.rail);
   if (type === 'mixed') mult = 0.45 + 0.55 * (t.D / 100) + 0.30 * t.income + 0.10 * acc.art;
   if (type === 'multifamily') mult = 0.48 + 0.55 * (t.D / 100) + 0.32 * t.income + 0.07 * acc.quiet - 0.08 * acc.hwy;
-  return CONFIG.baseRent[type] * mult * state.econ.rentIdx[type];
+  // the LOCAL balance: rents on an overbuilt block discount below the citywide index,
+  // and a block with real demand and little product earns a scarcity premium
+  const ratio = t.supply[type] / tileCapacitySF(t, type);
+  const local = clamp(1 - clamp((ratio - 1) * 0.22, 0, 0.30) * 0.85 + clamp(0.65 - ratio, 0, 0.5) * 0.10, 0.74, 1.08);
+  return CONFIG.baseRent[type] * mult * local * state.econ.rentIdx[type];
 }
 
 // units: more (smaller) units → marginally higher rent PSF, more management cost
@@ -751,6 +756,10 @@ export function frontageMult(type: PType, cells?: number[]): number {
   return 1 + scale * (0.07 * (per / cells.length) + (corner > 0 ? 0.04 : 0));
 }
 
+// Where each market clears over a full cycle. Vacancy above this is a tenant's
+// market; below it, the landlord stops returning calls.
+export const EQ_VAC: Record<PType, number> = { office: 13.0, retail: 8.5, industrial: 10.5, mixed: 14.5, multifamily: 11.0 };
+
 export function capRatePct(state: GameState, t: Tile, type: PType, quality: number): number {
   const inflow = (state.econ.capInflowMonthsLeft ?? 0) > 0 ? -0.35 : 0;
   const g = qGrade(quality);
@@ -758,19 +767,24 @@ export function capRatePct(state: GameState, t: Tile, type: PType, quality: numb
   let cap = CONFIG.baseCap[type]
     + (55 - loc) * 0.028
     + (state.econ.rateSmooth - 4.5) * 0.55
+    // buyers price the leasing market, not just the debt market: a soft sector trades wide
+    + clamp((state.econ.cityVac[type] - EQ_VAC[type]) * 0.05, -0.35, 0.7)
     + (g === 2 ? -0.4 : g === 0 ? 0.55 : 0)
     + (t.crime > 55 && type !== 'industrial' ? 0.3 : 0);
   return clamp(cap, 4.2, 11.5) + inflow;
 }
 
 export function tileCapacitySF(t: Tile, type: PType): number {
-  // demand-side capacity, scaled to a 4-acre block of quarter-acre parcels
+  // demand-side capacity, scaled to a 4-acre block of quarter-acre parcels.
+  // Calibrated so the GENERATED city sits modestly below capacity (p50 ~0.85) —
+  // the citywide vacancy readout is real now, so this has to agree with what
+  // generation actually builds or the whole market opens 25% vacant.
   const K = 0.13;
-  if (type === 'office') return (4200 * t.emp + 20_000) * K;
+  if (type === 'office') return (5200 * t.emp + 24_000) * K;
   if (type === 'retail') return (3000 * t.pop * t.income + 20_000) * K;
-  if (type === 'industrial') return (5200 * t.indSuit + 30_000) * K;
-  if (type === 'multifamily') return (2600 * t.pop * (0.6 + 0.4 * t.income) + 20_000) * K;
-  return (1000 * (t.emp + t.pop) + 20_000) * K;
+  if (type === 'industrial') return (13_500 * t.indSuit + 60_000) * K;
+  if (type === 'multifamily') return (4700 * t.pop * (0.6 + 0.4 * t.income) + 30_000) * K;
+  return (1400 * (t.emp + t.pop) + 26_000) * K;
 }
 export function oversupplyPenalty(t: Tile, type: PType): number {
   const ratio = t.supply[type] / tileCapacitySF(t, type);
@@ -778,8 +792,16 @@ export function oversupplyPenalty(t: Tile, type: PType): number {
 }
 export function targetOcc(state: GameState, t: Tile, type: PType): number {
   const df = tileDemandFactor(state, t, type);
-  const base = 1 - Math.max(0.045, (state.econ.cityVac[type] / 100) * (2.0 - df));
-  return clamp(base - oversupplyPenalty(t, type), 0.35, 0.93);
+  // vacancy feeds back into occupancy DAMPED toward equilibrium — the real market's
+  // stabilizer is price: empty space gets cheap, cheap space gets taken. Without the
+  // damping this loop eats the city.
+  const effVac = EQ_VAC[type] + (state.econ.cityVac[type] - EQ_VAC[type]) * 0.6;
+  // price elasticity, the market's true stabilizer: when rents lag the income/cost
+  // trend, tenants take more space; when rents outrun it, demand quietly erodes.
+  // Without this, a soft decade never finds a bottom.
+  const afford = clamp(Math.pow(state.econ.costIdx / state.econ.rentIdx[type], 0.4), 0.86, 1.18);
+  const base = (1 - Math.max(0.045, (effVac / 100) * (2.0 - df))) * afford;
+  return clamp(base - oversupplyPenalty(t, type), 0.35, 0.95);
 }
 
 // ---------- Expenses (itemized) ----------
@@ -1077,6 +1099,7 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
       rate: 4.0, rateSmooth: 4.2, inflation: 2.2, empIdx: 97, confidence: 52, popGrowth: 1.1, costIdx: 1,
       rentIdx: { office: 1, retail: 1, industrial: 1, mixed: 1, multifamily: 1 },
       cityVac: { office: 13.5, retail: 9.5, industrial: 6.0, mixed: 9.0, multifamily: 7.0 },
+      rentMom: { office: 0, retail: 0, industrial: 0, mixed: 0, multifamily: 0 },
       hadCrunch: false, crunchMonthsLeft: 0, tariffMonthsLeft: 0, ecomMonthsLeft: 0,
     },
     cash: opts?.sandbox ? 50_000_000 : CONFIG.START_CASH, reputation: opts?.sandbox ? 60 : 20, tier: opts?.sandbox ? CONFIG.tiers.length - 1 : 0,
@@ -1105,7 +1128,7 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     rezonings: [], rezoneDenied: {},
     gameOver: false, transitCorridor: corridor, roads,
     totalRealizedProfit: 0, dealsClosed: 0,
-    version: 19,
+    version: 20,
   };
   generateStock(state);
   // Born in equilibrium: the anchors absorb whatever the initial city explains, so
@@ -1146,12 +1169,37 @@ function pushNews(state: GameState, kind: NewsItem['kind'], text: string, tileI?
 // ---------- Listings ----------
 function buildableTiles(state: GameState): Tile[] { return state.tiles.filter(t => !t.water); }
 
+// NOI as a share of collected rent, net of recoveries — the shorthand a land buyer
+// pencils with before anyone opens a spreadsheet
+const NOI_MARGIN: Record<PType, number> = { office: 0.63, retail: 0.85, industrial: 0.95, mixed: 0.65, multifamily: 0.51 };
+
 export function landPricePerAcre(state: GameState, t: Tile): number {
   const psfLand = (3 + Math.pow(t.D / 100, 2.2) * 55) * (t.indSuit > 55 ? 0.8 : 1);
   // land trades on what you're ALLOWED to build. Upzoned dirt is worth more the day
   // the council votes — which is the entire entitle-and-flip business.
   const zf = t.zone ? (t.zone.tier === 1 ? 0.86 : t.zone.tier === 3 ? 1.24 : 1) : 1;
-  return psfLand * 43_560 * state.econ.costIdx * zf;
+  const curve = psfLand * 43_560 * state.econ.costIdx * zf;
+  // RESIDUAL value: what a builder could actually pay for this dirt today — achievable
+  // rent to NOI to value at today's cap, minus today's construction cost, times the
+  // density the zoning permits. Rents boom and land runs; costs spike or caps blow
+  // out and the same acre is suddenly worth less. The curve anchors it (location
+  // always carries a floor and a hope premium); the residual bends it.
+  let bestRlv = 0;
+  const allowed = t.zone ? ZONE_ALLOWS[t.zone.use] : PTYPES;
+  for (const ty of allowed) {
+    const rent = marketRentPSF(state, t, ty);
+    const noiPSF = rent * (1 - state.econ.cityVac[ty] / 100) * NOI_MARGIN[ty];
+    const cap = capRatePct(state, t, ty, 65) / 100;
+    const valPSF = noiPSF / cap;
+    const spec = CONSTR[ty][1] ?? CONSTR[ty][0];
+    const costPSF = spec.cost * constrCostIdx(state) * 1.32;   // hard + soft + fees
+    const density = FAR[ty] * (t.zone ? zoneTierMult(t.zone.tier) : 1);
+    const rlv = Math.max(0, valPSF - costPSF) * 0.62 * density * 43_560;   // builder keeps a margin
+    if (rlv > bestRlv) bestRlv = rlv;
+  }
+  // weighted so the GENERATED city prices ~neutral (p50 ≈ 1.0x the curve) and the
+  // residual bends it through the cycle rather than repricing day one
+  return curve * clamp(0.55 + 0.29 * (bestRlv / Math.max(1, curve)), 0.62, 1.6);
 }
 
 // Build the entire standing inventory of Meridian City. Every building exists
@@ -1184,7 +1232,9 @@ function generateStock(state: GameState) {
       if (!spot) break;
       const quality = clamp(rrange(state, 22, 78) + (t.D - 50) * 0.15, 15, 88);
       const df = tileDemandFactor(state, t, ty);
-      const occ = clamp(rrange(state, 0.55, 0.97) * clamp(0.75 + df * 0.2, 0.8, 1.05), 0.25, 0.97);
+      // day-one occupancy centers where the market model will hold it — a going
+      // concern, not a city-wide lease-up in progress
+      const occ = clamp(rrange(state, 0.72, 0.97) * clamp(0.78 + df * 0.2, 0.85, 1.05), 0.35, 0.97);
       state.stock.push({
         id: state.nextId++, tileI: t.i, type: ty, sf,
         px: spot.px, py: spot.py, pw: spot.pw, ph: spot.ph,
@@ -2676,7 +2726,8 @@ function spawnLOIs(s: GameState) {
     const boost = a.mode === 'leaseup' ? 1.5 : 1;
     // the pool of tenants who can absorb a huge block is thin — big suites sit
     const sizeDrag = clamp(1.2 - su / 30_000, 0.3, 1);
-    const p = clamp(CONFIG.absorbBase[a.type] * 1.05 * df * qf * rentComp * boost * sizeDrag * clamp(vacant / a.sf, 0.25, 1), 0.02, 0.35);
+    // in a tight market every vacancy gets toured; in a soft one the phone is quiet
+    const p = clamp(CONFIG.absorbBase[a.type] * 1.05 * df * qf * rentComp * boost * sizeDrag * leasingClimate(s, a.type) * clamp(vacant / a.sf, 0.25, 1), 0.02, 0.35);
     if (rng(s) > p) continue;
     // big-suite tenants come by LOI/RFP; require a meaningful chunk
     const chunkUnits = Math.max(1, Math.min(Math.round(vacant / su), 1 + Math.floor(rng(s) * Math.max(1, a.units / 2))));
@@ -2697,7 +2748,7 @@ function spawnLOIs(s: GameState) {
     }
     // tenants negotiate the whole package: abatement, TI, escalations, options —
     // and a soft market emboldens them
-    const soft = clamp((s.econ.cityVac[a.type] - 8) / 10, 0, 0.6);
+    const soft = clamp((s.econ.cityVac[a.type] - EQ_VAC[a.type]) / 9, 0, 0.65);
     if (rng(s) < 0.5 + soft) loi.freeMonths = 1 + Math.floor(rng(s) * (3 + soft * 3));
     if (a.type !== 'multifamily' && rng(s) < 0.4 + soft) loi.tiPsf = Math.round(rrange(s, 4, 14 + soft * 12));
     loi.escPct = rng(s) < 0.45 ? 0 : rng(s) < 0.6 ? 2 : 2.5;   // they open low; 3% is yours to win
@@ -3265,6 +3316,14 @@ function tickEconomy(s: GameState) {
   if ((e.capInflowMonthsLeft ?? 0) > 0) e.capInflowMonthsLeft!--;
   if ((e.wfhMonthsLeft ?? 0) > 0) e.wfhMonthsLeft!--;
   if (e.ecomMonthsLeft > 0) e.ecomMonthsLeft--;
+  // ---- the leasing market reads the ACTUAL city ----
+  // Standing SF and occupied SF, counted building by building — yours, the firms',
+  // and every private owner's. When somebody overbuilds industrial, industrial
+  // vacancy rises because those exact square feet sit empty, not because a dial moved.
+  const occSF: Record<PType, number> = { office: 0, retail: 0, industrial: 0, mixed: 0, multifamily: 0 };
+  const totSF: Record<PType, number> = { office: 0, retail: 0, industrial: 0, mixed: 0, multifamily: 0 };
+  for (const b of s.stock) if (!b.buildLeft) { occSF[b.type] += b.sf * b.occ; totSF[b.type] += b.sf; }
+  for (const a of s.assets) if (a.mode !== 'construction') { occSF[a.type] += a.sf * a.occ; totSF[a.type] += a.sf; }
   for (const ty of PTYPES) {
     let demandDrift = 0;
     if (ty === 'office') demandDrift = 0.04 + (e.empIdx - 99) * 0.014;
@@ -3272,14 +3331,25 @@ function tickEconomy(s: GameState) {
     if (ty === 'industrial') demandDrift = 0.045 + (e.ecomMonthsLeft > 0 ? 0.08 : 0) + (e.empIdx - 100) * 0.005;
     if (ty === 'mixed') demandDrift = 0.026 + (e.empIdx - 100) * 0.006 + (e.confidence - 55) * 0.002 + e.popGrowth * 0.03;
     if (ty === 'multifamily') demandDrift = 0.05 + e.popGrowth * 0.05 + (e.confidence - 55) * 0.0012;
-    const eqVac = ty === 'industrial' ? 6 : ty === 'retail' ? 8.5 : ty === 'multifamily' ? 6.5 : 10.5;
-    const phaseAppetite = e.phase === 'peak' ? 1.7 : e.phase === 'expansion' ? 1.25 : e.phase === 'recovery' ? 0.7 : 0.25;
-    const ambientSupply = 0.06 * phaseAppetite * clamp(eqVac / e.cityVac[ty], 0.3, 2.0);
-    const reversion = (eqVac - e.cityVac[ty]) * 0.015;
-    e.cityVac[ty] = clamp(e.cityVac[ty] + ambientSupply - demandDrift + reversion + (rng(s) - 0.5) * 0.15, 2.5, 30);
-    const growth = (eqVac - e.cityVac[ty]) * 0.0014 + (e.inflation / 100) * 0.22 / 12; // rents follow supply/demand, only loosely CPI
+    const eqVac = EQ_VAC[ty];
+    // real vacancy in the modeled stock; the ambient metro beyond our blocks leans
+    // toward equilibrium, shifted by where macro demand is pulling
+    const realVac = totSF[ty] > 0 ? (1 - occSF[ty] / totSF[ty]) * 100 : eqVac;
+    const macroShift = clamp(-(demandDrift - 0.04) * 25, -4, 4);
+    const target = realVac * 0.6 + (eqVac + macroShift) * 0.4;
+    e.cityVac[ty] = clamp(e.cityVac[ty] + (target - e.cityVac[ty]) * 0.35 + (rng(s) - 0.5) * 0.12, 2, 32);
+    // rents follow the vacancy gap with MOMENTUM — a tightening market builds rent
+    // growth over quarters and takes quarters to roll over, like a real one
+    const gap = eqVac - e.cityVac[ty];
+    e.rentMom[ty] = e.rentMom[ty] * 0.78 + (gap * 0.0011) * 0.22;
+    const growth = e.rentMom[ty] + (e.inflation / 100) * 0.25 / 12;
     e.rentIdx[ty] = clamp(e.rentIdx[ty] * (1 + growth), 0.5, 4.5);
   }
+}
+// How fast space moves right now, per sector: >1 means tenants are competing for
+// scarce space, <1 means space is competing for scarce tenants.
+export function leasingClimate(s: GameState, ty: PType): number {
+  return clamp(1 + (EQ_VAC[ty] - s.econ.cityVac[ty]) * 0.03, 0.68, 1.35);
 }
 
 function tickStock(s: GameState) {
@@ -3288,7 +3358,9 @@ function tickStock(s: GameState) {
     if (b.buildLeft) continue;  // not standing yet
     if (b.listedId) continue; // frozen while marketed — the flyer photos are already printed
     const t = s.tiles[b.tileI];
-    const tOcc = targetOcc(s, t, b.type) * (0.88 + qGrade(b.quality) * 0.05);
+    // quality sorts winners from losers around the market level — it doesn't
+    // subtract occupancy from the whole city at once
+    const tOcc = targetOcc(s, t, b.type) * (0.975 + qGrade(b.quality) * 0.025);
     b.occ = clamp(b.occ + (tOcc - b.occ) * 0.18 + (rng(s) - 0.5) * 0.05, 0.15, 0.97);
     b.occ = Math.round(b.occ * 100) / 100;
     b.quality = clamp(b.quality - 0.3 + (rng(s) < 0.04 ? 12 : 0), 12, 92); // slow decay; occasional owner renovation
@@ -3992,7 +4064,7 @@ function tickAsset(s: GameState, a: Asset): number {
     const churn = (a.maint === 'low' ? 0.034 : a.maint === 'high' ? 0.019 : 0.025);
     const boost = a.mode === 'leaseup' ? 1.7 : 1;
     const sizeDragMF = clamp(1.12 - a.sf / 300_000, 0.6, 1);
-    const gain = CONFIG.absorbBase[a.type] * 0.45 * df * qf * clamp(rentComp, 0.4, 1.6) * boost * sizeDragMF * Math.max(0, tOcc * 1.03 - a.occ);
+    const gain = CONFIG.absorbBase[a.type] * 0.45 * df * qf * clamp(rentComp, 0.4, 1.6) * boost * sizeDragMF * leasingClimate(s, a.type) * Math.max(0, tOcc * 1.03 - a.occ);
     a.occ = clamp(a.occ - churn * a.occ + gain + (rng(s) - 0.5) * 0.006, 0.05, 0.98);
     if (a.mode === 'leaseup' && a.occ >= 0.85) {
       a.mode = 'operating';
@@ -4008,7 +4080,7 @@ function tickAsset(s: GameState, a: Asset): number {
       const rentComp = 1 - a.rentStance * 2.2;
       const qf = 0.85 + qGrade(a.quality) * 0.12;
       const boost = a.mode === 'leaseup' ? 1.6 : 1;
-      const p = clamp(CONFIG.absorbBase[a.type] * 1.7 * df * qf * rentComp * boost * clamp(vacant / a.sf, 0.2, 1), 0.02, 0.5);
+      const p = clamp(CONFIG.absorbBase[a.type] * 1.7 * df * qf * rentComp * boost * leasingClimate(s, a.type) * clamp(vacant / a.sf, 0.2, 1), 0.02, 0.5);
       if (rng(s) < p) {
         const sf = Math.min(vacant, Math.round(su / 100) * 100);
         a.tenants.push({
@@ -4045,6 +4117,7 @@ function tickAsset(s: GameState, a: Asset): number {
     if (tn.sf >= 4000 && !s.lois.some(x => x.kind === 'renewal' && x.tenantId === tn.id)) {
       const wants = clamp((under ? 0.85 : 0.62)
         + (a.maint === 'high' ? 0.08 : a.maint === 'low' ? -0.16 : 0)
+        + clamp((EQ_VAC[a.type] - s.econ.cityVac[a.type]) * 0.014, -0.12, 0.12)  // nowhere to go in a tight market
         + qGrade(a.quality) * 0.04, 0.15, 0.95);
       if (rng(s) < wants) {
         tn.endM = s.month + 3; // holds over while you talk
@@ -4068,6 +4141,7 @@ function tickAsset(s: GameState, a: Asset): number {
     // small suites renew quietly
     let pRenew = (under ? 0.78 : 0.52)
       + (a.maint === 'high' ? 0.10 : a.maint === 'low' ? -0.16 : 0)
+      + clamp((EQ_VAC[a.type] - s.econ.cityVac[a.type]) * 0.014, -0.12, 0.12)
       + qGrade(a.quality) * 0.04;
     if (rng(s) < clamp(pRenew, 0.1, 0.92)) {
       tn.rate = Math.round(Math.min(mkt * (1 + a.rentStance), tn.rate * 1.12) * 100) / 100;
@@ -4275,7 +4349,7 @@ export function serialize(state: GameState): string { return JSON.stringify(stat
 export function deserialize(json: string): GameState | null {
   try {
     const s = JSON.parse(json);
-    if (s && s.version === 19 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
+    if (s && s.version === 20 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
     return null;
   } catch { return null; }
 }

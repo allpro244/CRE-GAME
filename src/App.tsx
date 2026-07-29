@@ -579,7 +579,8 @@ function EconomyView({ state }: { state: GameState }) {
           const absQ = back3?.occSF ? occ - (back3.occSF[ty] ?? occ) : 0;
           const rg12 = back12?.ri ? ((last?.ri[ty] ?? 1) / (back12.ri[ty] ?? 1) - 1) * 100 : 0;
           const df = land.reduce((s2, t) => s2 + E.tileDemandFactor(state, t, ty), 0) / land.length;
-          const eq = ty === 'industrial' ? 6 : ty === 'retail' ? 8.5 : ty === 'multifamily' ? 6.5 : 10.5;
+          const eq = E.EQ_VAC[ty];
+          const clim = E.leasingClimate(state, ty);
           return (
             <div key={ty} style={{ borderBottom: '1px solid var(--line2)', padding: '10px 0' }}>
               <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'baseline' }}>
@@ -589,6 +590,9 @@ function EconomyView({ state }: { state: GameState }) {
                 <span className={'num ' + (absQ >= 0 ? 'pos' : 'neg')} style={{ fontSize: 12 }}>Absorption <b>{absQ >= 0 ? '+' : ''}{(absQ / 1000).toFixed(0)}K SF/qtr</b></span>
                 <span className="num dim" style={{ fontSize: 12 }}>Demand idx <b>{df.toFixed(2)}</b></span>
                 <span className={'num ' + (rg12 > 0 ? 'pos' : 'neg')} style={{ fontSize: 12 }}>Rent growth <b>{rg12 >= 0 ? '+' : ''}{rg12.toFixed(1)}%/yr</b></span>
+                <span className={'num ' + (clim > 1.06 ? 'pos' : clim < 0.94 ? 'neg' : 'dim')} style={{ fontSize: 12 }}
+                  title="How fast space moves right now: in a landlord's market every vacancy gets toured and concessions vanish; in a tenant's market the phone is quiet and free rent is table stakes.">
+                  {clim > 1.06 ? "Landlord's market" : clim < 0.94 ? "Tenant's market" : 'Balanced'} <b>({clim.toFixed(2)}× velocity)</b></span>
                 {E.pipelineSF(state, ty) > 0 && <span className="num" style={{ fontSize: 12, color: '#e08c3c' }}>Under construction <b>{(E.pipelineSF(state, ty) / 1000).toFixed(0)}K SF</b></span>}
               </div>
               <div className="dim" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.55 }}>{classStory(state, ty, vac, eq, absQ, rg12, df)}</div>

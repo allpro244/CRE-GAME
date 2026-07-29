@@ -90,7 +90,15 @@ amortizing when their IO runway ends — the takeout is your job) · retail co-t
 anchor ≥35% of the building and the inline tenants pull their clauses: some leave within the
 quarter, some take a 15% abatement) · insured casualty (fire/storm/burst mains: deductible now,
 that share of the rent offline for months, expenses running on all of it — worse mid
-insurance-crisis) · a How-to-play primer that opens once on a fresh campaign.
+insurance-crisis) · a How-to-play primer that opens once on a fresh campaign ·
+a REAL leasing market: citywide vacancy per asset class is measured from the actual standing
+stock building by building (overbuild industrial and those exact square feet sit empty), rents
+follow the vacancy gap with momentum and a price-elasticity stabilizer (cheap space fills, dear
+space empties — soft decades find bottoms), tile rents carry a local supply/demand balance term,
+leasing velocity/concessions/renewals all swing with per-type tightness (landlord's vs tenant's
+market), land is priced as a RESIDUAL (achievable rent → NOI → value at today's cap, minus
+today's construction cost, times zoned density, anchored to the location curve), cap rates widen
+in soft sectors, and the Economy tab reports it all like a broker's market report.
 
 ---
 

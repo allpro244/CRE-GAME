@@ -211,59 +211,81 @@ export function DealsView2({ state, setState, openDeal }: {
           })}
         </div>
       )}
-      <div className="dim" style={{ fontSize: 12.5, marginBottom: 12 }}>
-        {regular.length} public listings. Rivals shop this same board — <span style={{ color: '#e08c8c' }}>hot</span> listings won't wait. Every price here is an opening position.
+      <div className="dim" style={{ fontSize: 12.5, marginBottom: 8 }}>
+        {regular.length} public listings — an index, not a workroom. Click a row and the map takes you there.
+        Rivals shop this same board; <span style={{ color: '#e08c8c' }}>hot</span> listings won't wait.
       </div>
       {err && <div className="alert-strip red"><span>{err}</span><button className="btn btn-sm" onClick={() => setErr(null)}>✕</button></div>}
-      <div className="deal-grid">
-        {regular.map(l => {
-          const t = state.tiles[l.tileI];
-          return (
-            <div key={l.id} className="deal-card" onClick={() => openDeal(l.id)}>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                {l.kind === 'land'
-                  ? <span className="chip chip-land">Land</span>
-                  : <span className="chip chip-type">{E.PLABEL[l.type!]}</span>}
-                {l.distressed && <span className="chip chip-distress">Distressed</span>}
-                {l.hot && <span className="chip chip-hot">Hot</span>}
-                <span style={{ flex: 1 }} />
-                <span className="faint" style={{ fontSize: 10.5 }}>Block {blockName(t)}</span>
-              </div>
-              <div className="deal-price num">{E.fmtMoney(l.price)}{l.kind !== 'land' && <span className="faint" style={{ fontSize: 11, fontWeight: 400 }}> · ${((l.price) / Math.max(1, l.sf ?? 1)).toFixed(0)}/SF</span>}</div>
-              <div className="dim" style={{ fontSize: 12 }}>
-                {l.kind === 'land'
-                  ? `${l.acres} acres · desirability ${t.D.toFixed(0)}`
-                  : `${((l.sf ?? 0) / 1000).toFixed(0)}K SF · ${pct(l.occ ?? 0)} leased · ${E.QLABEL[E.qGrade(l.quality ?? 50)]}-grade · ${l.units} unit${(l.units ?? 1) > 1 ? 's' : ''} · ${l.age} yrs`}
-              </div>
-              {l.kind === 'land' && (
-                <div style={{ fontSize: 10.5, display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 2 }}>
-                  {E.PTYPES.map(ty => {
-                    const f = E.tileDemandFactor(state, t, ty);
-                    const cls = f > 1.1 ? 'pos' : f > 0.85 ? 'dim' : 'neg';
-                    const short = ty === 'office' ? 'Off' : ty === 'retail' ? 'Ret' : ty === 'industrial' ? 'Ind' : ty === 'mixed' ? 'Mix' : 'MF';
-                    return <span key={ty} className={cls}>{short} {f > 1.1 ? 'strong' : f > 0.85 ? 'fair' : 'weak'}</span>;
-                  })}
-                </div>
-              )}
-              {l.kind !== 'land' && (() => {
-                const pf = E.proFormaBuilding(state, l);
-                const ltv = E.maxLTV(state, l.type);
-                const pmt = E.monthlyPayment(l.price * ltv, state.econ.rate + E.CONFIG.acqSpread, E.CONFIG.acqAmortYears);
-                const cf = pf.noiNow / 12 - pmt;
-                return (
-                  <div style={{ fontSize: 11, display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 2 }}>
-                    <span className={pf.capNow > state.econ.rate + E.CONFIG.acqSpread ? 'pos' : 'dim'}>Cap {pf.capNow.toFixed(2)}%</span>
-                    <span className={'num ' + (cf >= 0 ? 'pos' : 'neg')}>CF {E.fmtMoney(cf)}/mo <span className="faint">at {pct(ltv)} LTV</span></span>
-                    {l.declinedYou && <span className="neg">Won't deal with you</span>}
-                  </div>
-                );
-              })()}
-              <div className="faint" style={{ fontSize: 10.5 }}>
-                Listed until {E.monthName(l.expiresMonth)}{l.feasDone ? ' · feasibility ✓' : ''}
-              </div>
-            </div>
-          );
-        })}
+      <DealIndex state={state} listings={regular} openDeal={openDeal} />
+    </div>
+  );
+}
+
+// The board as a broker's sheet: every listing, sortable by the numbers that matter,
+// each row flying you to the building on the map.
+function DealIndex({ state, listings, openDeal }: {
+  state: GameState; listings: Listing[]; openDeal: (id: number) => void;
+}) {
+  const [sort, setSort] = useState<{ by: string; asc: boolean }>({ by: 'cap', asc: false });
+  const rate = state.econ.rate + E.CONFIG.acqSpread;
+  const rows = listings.map(l => {
+    const t = state.tiles[l.tileI];
+    if (l.kind === 'land') {
+      const bestFit = E.PTYPES.map(ty => ({ ty, f: E.tileDemandFactor(state, t, ty) })).sort((a, b) => b.f - a.f)[0];
+      return { l, t, land: true, psf: null as number | null, cap: null as number | null, cf: null as number | null, note: `${l.acres} ac · ${E.PLABEL[bestFit.ty]} ${bestFit.f > 1.1 ? 'strong' : bestFit.f > 0.85 ? 'fair' : 'weak'}` };
+    }
+    const pf = E.proFormaBuilding(state, l);
+    const ltv = E.maxLTV(state, l.type);
+    const pmt = E.monthlyPayment(l.price * ltv, rate, E.CONFIG.acqAmortYears);
+    return { l, t, land: false, psf: (l.price) / Math.max(1, l.sf ?? 1), cap: pf.capNow, cf: pf.noiNow / 12 - pmt, note: `${pct(l.occ ?? 0)} leased · ${E.QLABEL[E.qGrade(l.quality ?? 50)]} · ${l.age} yrs` };
+  });
+  const dir = sort.asc ? 1 : -1;
+  const val = (r: typeof rows[0]): number => {
+    if (sort.by === 'price') return r.l.price;
+    if (sort.by === 'sf') return r.l.kind === 'land' ? (r.l.acres ?? 0) * 43560 * 0.001 : (r.l.sf ?? 0);
+    if (sort.by === 'psf') return r.psf ?? -1;
+    if (sort.by === 'cf') return r.cf ?? -1e18;
+    return r.cap ?? -1;
+  };
+  rows.sort((a, b) => (val(a) - val(b)) * dir);
+  const Th = ({ id, label, right = true }: { id: string; label: string; right?: boolean }) => (
+    <th style={{ cursor: 'pointer', textAlign: right ? 'right' : 'left', userSelect: 'none' }}
+      onClick={() => setSort(s => ({ by: id, asc: s.by === id ? !s.asc : false }))}>
+      {label}{sort.by === id ? (sort.asc ? ' ▴' : ' ▾') : ''}
+    </th>
+  );
+  return (
+    <div className="panel" style={{ padding: '6px 10px' }}>
+      <table className="sc">
+        <thead><tr>
+          <th style={{ textAlign: 'left' }}>Type</th><th style={{ textAlign: 'left' }}>Block</th>
+          <Th id="price" label="Price" /><Th id="sf" label="SF" /><Th id="psf" label="$/SF" />
+          <Th id="cap" label="Cap" /><Th id="cf" label="CF/mo @ max LTV" />
+          <th style={{ textAlign: 'left' }}>Notes</th>
+        </tr></thead>
+        <tbody>
+          {rows.map(({ l, t, land, psf, cap, cf, note }) => (
+            <tr key={l.id} onClick={() => openDeal(l.id)} style={{ cursor: 'pointer' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--panel2)')}
+              onMouseLeave={e => (e.currentTarget.style.background = '')}>
+              <td>
+                {land ? <span className="chip chip-land">Land</span> : <span className="chip chip-type">{E.PLABEL[l.type!]}</span>}
+                {l.distressed && <span className="chip chip-distress" style={{ marginLeft: 4 }}>D</span>}
+                {l.hot && <span className="chip chip-hot" style={{ marginLeft: 4 }}>Hot</span>}
+              </td>
+              <td className="num dim">{blockName(t)} <span className="faint" style={{ fontSize: 9 }}>▸ map</span></td>
+              <td className="num">{E.fmtMoney(l.price)}</td>
+              <td className="num">{land ? `${l.acres} ac` : `${((l.sf ?? 0) / 1000).toFixed(0)}K`}</td>
+              <td className="num">{psf !== null ? '$' + psf.toFixed(0) : '—'}</td>
+              <td className={'num ' + (cap !== null && cap > rate ? 'pos' : 'dim')}>{cap !== null ? cap.toFixed(2) + '%' : '—'}</td>
+              <td className={'num ' + (cf === null ? 'dim' : cf >= 0 ? 'pos' : 'neg')}>{cf !== null ? E.fmtMoney(cf) : '—'}</td>
+              <td className="dim" style={{ textAlign: 'left', fontSize: 11 }}>{note}{l.feasDone ? ' · feas ✓' : ''}{l.declinedYou ? <span className="neg"> · won't deal</span> : ''} <span className="faint">to {E.monthName(l.expiresMonth)}</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="faint" style={{ fontSize: 10.5, margin: '6px 2px' }}>
+        Cap and CF are underwritten on in-place income at the asking price, max leverage. Your offer changes both — that negotiation happens on the map.
       </div>
     </div>
   );
@@ -586,8 +608,8 @@ function defaultUnits(ty: PType, cid: string, sf: number): number {
 }
 
 // ---------- LOI negotiation modal ----------
-export function LOIModal({ state, setState, loi, close }: {
-  state: GameState; setState: (s: GameState) => void; loi: LOI; close: () => void;
+export function LOIModal({ state, setState, loi, close, variant = 'dialog' }: {
+  state: GameState; setState: (s: GameState) => void; loi: LOI; close: () => void; variant?: 'dialog' | 'drawer';
 }) {
   const a = state.assets.find(x => x.id === loi.assetId);
   const [msg, setMsg] = useState<string | null>(null);
@@ -613,7 +635,7 @@ export function LOIModal({ state, setState, loi, close }: {
     else close();
   };
   return (
-    <Modal close={close}>
+    <Modal close={close} variant={variant}>
       <h2>{loi.kind === 'rfp' ? 'RFP' : loi.kind === 'renewal' ? 'Renewal proposal' : 'Letter of intent'} — {loi.tenant}</h2>
       <div className="sub">
         {(loi.sf / 1000).toFixed(1)}K SF at {a.name} · <span className={'chip credit-' + loi.credit}>{E.CREDIT_LABEL[loi.credit]} credit</span> · expires {E.monthName(loi.expiresM)}
@@ -963,8 +985,8 @@ function SaleOfferRow({ state, setState, offer, asset, onSold }: {
 }
 
 // ---------- Refi modal (adjustable) ----------
-export function RefiModal({ state, setState, asset, close }: {
-  state: GameState; setState: (s: GameState) => void; asset: Asset; close: () => void;
+export function RefiModal({ state, setState, asset, close, variant = 'dialog' }: {
+  state: GameState; setState: (s: GameState) => void; asset: Asset; close: () => void; variant?: 'dialog' | 'drawer';
 }) {
   const [err, setErr] = useState<string | null>(null);
   const lim = E.refiLimits(state, asset);
@@ -973,7 +995,7 @@ export function RefiModal({ state, setState, asset, close }: {
   const [amortYears, setAmortYears] = useState(25);
   const q = E.refiQuote(state, asset, { amount, amortYears });
   return (
-    <Modal close={close}>
+    <Modal close={close} variant={variant}>
       <h2>Refinance {asset.name}</h2>
       <div className="sub">Choose your proceeds and amortization. The new loan must clear your existing debt; the bank caps you at 70% of value and 1.20× coverage.</div>
       <div className="memo">

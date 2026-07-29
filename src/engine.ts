@@ -898,7 +898,7 @@ function pushNews(state: GameState, kind: NewsItem['kind'], text: string, tileI?
 // ---------- Listings ----------
 function buildableTiles(state: GameState): Tile[] { return state.tiles.filter(t => !t.water); }
 
-function landPricePerAcre(state: GameState, t: Tile): number {
+export function landPricePerAcre(state: GameState, t: Tile): number {
   const psfLand = (1 + Math.pow(t.D / 100, 2.2) * 55) * (t.indSuit > 55 ? 0.40 : 1);
   return psfLand * 43_560 * state.econ.costIdx;
 }

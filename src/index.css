@@ -281,6 +281,12 @@ input[type="number"]:focus { border-color: var(--amber-dim) !important; }
 .inv-btn { cursor: pointer; font-family: inherit; text-align: left; }
 .inv-btn:hover { border-color: var(--amber-dim); background: #1c232b; }
 
+/* blocks that made news this month flash on the map */
+.tile-pulse { animation: tile-pulse 1.7s ease-out forwards; }
+@keyframes tile-pulse {
+  0% { opacity: 0; } 15% { opacity: 0.95; } 55% { opacity: 0.5; } 100% { opacity: 0; }
+}
+
 /* asset name that jumps to the map */
 button.link-name {
   background: none; border: none; padding: 0; cursor: pointer; font-family: inherit;

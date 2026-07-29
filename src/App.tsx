@@ -135,6 +135,20 @@ function Game({ state, setState, toMenu }: {
     setSaved(true); setTimeout(() => setSaved(false), 1400);
   };
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'Space') return;
+      const el = e.target as HTMLElement;
+      if (el && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(el.tagName)) return;
+      if (document.querySelector('.modal-back')) return;
+      if (state.pending.length > 0 || state.gameOver) return;
+      e.preventDefault();
+      advance(1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [advance, state.pending.length, state.gameOver]);
+
   const nw = E.netWorth(state);
   const dscr = E.portfolioDSCR(state);
   const listing = dealId !== null ? state.listings.find(l => l.id === dealId) ?? null : null;
@@ -202,10 +216,10 @@ function Game({ state, setState, toMenu }: {
         onSell={setSellId} onRefi={setRefiId} onLOI={setLoiId} openDeal={id => { setAssetId(null); setDealId(id); }} onSold={p => { setAssetId(null); setPm(p); }} />}
 
       {listing && <DealModal state={state} listing={listing} setState={setState} close={() => setDealId(null)} variant={detailVariant} />}
-      {loi && <LOIModal state={state} setState={setState} loi={loi} close={() => setLoiId(null)} />}
-      {sellAsset && <SellModal state={state} setState={setState} asset={sellAsset} close={() => setSellId(null)} />}
+      {loi && <LOIModal state={state} setState={setState} loi={loi} close={() => setLoiId(null)} variant={detailVariant} />}
+      {sellAsset && <SellModal state={state} setState={setState} asset={sellAsset} close={() => setSellId(null)} variant={detailVariant} />}
       {firmShort && <FirmPortfolioModal state={state} short={firmShort} close={() => setFirmShort(null)} openStock={id => { setFirmShort(null); setStockCardId(id); }} />}
-      {refiAsset && <RefiModal state={state} setState={setState} asset={refiAsset} close={() => setRefiId(null)} />}
+      {refiAsset && <RefiModal state={state} setState={setState} asset={refiAsset} close={() => setRefiId(null)} variant={detailVariant} />}
       {pm && <PostMortemModal pm={pm} close={() => setPm(null)} />}
       {pendingEvt && pendAsset && pendingEvt.type === 'constrEvent' && <EventModal state={state} setState={setState} asset={pendAsset} kind={pendingEvt.eventKind} />}
       {pendingEvt && pendAsset && pendingEvt.type === 'assetEvent' && <AssetEventModal state={state} setState={setState} asset={pendAsset} kind={pendingEvt.eventKind} />}
@@ -229,6 +243,14 @@ function Dashboard({ state, goDeals, openLOI, openFirm, flyTo }: { state: GameSt
   if (state.cash < 0) alerts.push({ red: true, text: `Cash is negative. Three consecutive negative months and the bank starts selling your assets for you.` });
   else if (state.lastMonthCF < 0 && state.cash < -state.lastMonthCF * 5) alerts.push({ red: false, text: `Burn warning: at ${E.fmtMoney(state.lastMonthCF)}/mo, your cash lasts ~${Math.floor(state.cash / -state.lastMonthCF)} months.` });
   if (state.econ.tariffMonthsLeft > 0) alerts.push({ red: false, text: `Material tariffs in effect: hard costs +8% for ~${state.econ.tariffMonthsLeft} more months.` });
+  for (const a of state.assets) for (const l of a.loans) {
+    const left = l.maturityMonth - state.month;
+    if (left > 0 && left <= 12 && l.balance > 0) alerts.push({ red: left <= 6, text: `Balloon coming due: ${E.fmtMoney(l.balance)} on ${a.name} matures ${E.monthName(l.maturityMonth)}. Refinance or sell before the market decides for you.` });
+  }
+  for (const f of state.facilities) {
+    const left = f.maturityMonth - state.month;
+    if (left > 0 && left <= 12 && f.balance > 0) alerts.push({ red: left <= 6, text: `Credit facility balloon: ${E.fmtMoney(f.balance)} matures ${E.monthName(f.maturityMonth)}.` });
+  }
   return (
     <div>
       {alerts.map((a, i) => <div key={i} className={'alert-strip' + (a.red ? ' red' : '')}><span>⚠ {a.text}</span></div>)}
@@ -607,15 +629,15 @@ function EconomyView({ state }: { state: GameState }) {
 }
 
 // ---------------- Small modals ----------------
-function SellModal({ state, setState, asset, close }: {
-  state: GameState; setState: (s: GameState) => void; asset: Asset; close: () => void;
+function SellModal({ state, setState, asset, close, variant = 'dialog' }: {
+  state: GameState; setState: (s: GameState) => void; asset: Asset; close: () => void; variant?: 'dialog' | 'drawer';
 }) {
   const val = E.assetValue(state, asset);
   const [ask, setAsk] = useState(() => Math.round(val / 10000) * 10000);
   const [err, setErr] = useState<string | null>(null);
   const debt = E.assetTotalDebt(state, asset);
   return (
-    <Modal close={close}>
+    <Modal close={close} variant={variant}>
       <h2>List {asset.name} for sale</h2>
       <div className="sub">Selling takes time. Set an ask, then field offers as they come — anywhere from lowballs to full price, depending on the market, your ask, and your name.</div>
       <div className="memo">

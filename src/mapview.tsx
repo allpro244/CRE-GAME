@@ -4,9 +4,9 @@ import type { GameState, StockBuilding, Tile } from './engine';
 import { Modal, Hint, BuildingSketch, blockName, pct } from './views2';
 import { buildingArt, siteArt } from './buildingArt';
 
-type Lens = 'value' | 'office' | 'retail' | 'industrial' | 'multifamily' | 'crime' | 'pipeline' | 'comps';
+type Lens = 'value' | 'land' | 'office' | 'retail' | 'industrial' | 'multifamily' | 'crime' | 'pipeline' | 'comps';
 const LENSES: { id: Lens; label: string }[] = [
-  { id: 'value', label: 'Desirability' }, { id: 'office', label: 'Office rents' },
+  { id: 'value', label: 'Desirability' }, { id: 'land', label: 'Land $' }, { id: 'office', label: 'Office rents' },
   { id: 'retail', label: 'Retail rents' }, { id: 'industrial', label: 'Industrial fit' },
   { id: 'multifamily', label: 'Residential' }, { id: 'crime', label: 'Crime' },
   { id: 'pipeline', label: 'Pipeline' }, { id: 'comps', label: 'Comps' },
@@ -22,6 +22,7 @@ const SUB = 3;   // subdivision per tile for the continuous field
 
 function lensRaw(state: GameState, t: Tile, lens: Lens): number {
   if (lens === 'value') return t.D / 100;
+  if (lens === 'land') return E.landPricePerAcre(state, t) / 1e6;
   if (lens === 'office') return Math.min(1, (E.marketRentPSF(state, t, 'office') - 10) / 30);
   if (lens === 'retail') return Math.min(1, (E.marketRentPSF(state, t, 'retail') - 7) / 22);
   if (lens === 'industrial') return t.indSuit / 100;
@@ -41,7 +42,7 @@ function lensRaw(state: GameState, t: Tile, lens: Lens): number {
   return t.crime / 85;
 }
 const LENS_HUE: Record<Lens, [number, number, number]> = {
-  value: [217, 166, 72], office: [93, 143, 232], retail: [93, 143, 232],
+  value: [217, 166, 72], land: [188, 178, 96], office: [93, 143, 232], retail: [93, 143, 232],
   industrial: [63, 169, 126], multifamily: [186, 128, 224], crime: [222, 95, 95],
   pipeline: [232, 140, 60], comps: [120, 200, 160],
 };
@@ -593,10 +594,30 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const [ghostType, setGhostType] = useState<E.PType | null>(null);
   useEffect(() => { setGhostType(null); }, [selCells?.tileI]); // eslint-disable-line
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSelCells(null); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setSelCells(null); return; }
+      const el = e.target as HTMLElement;
+      if (el && ['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName)) return;
+      if (document.querySelector('.modal-back')) return;
+      const idx = '123456789'.indexOf(e.key);
+      if (idx >= 0 && idx < LENSES.length) { setLens(LENSES[idx].id); return; }
+      if (e.key === 'v' || e.key === 'V') setView(v => v === 'iso' ? 'flat' : 'iso');
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+  // when the clock ticks, the map acknowledges it: blocks that made news pulse briefly
+  const [pulseTiles, setPulseTiles] = useState<number[]>([]);
+  const prevMonth = useRef(state.month);
+  useEffect(() => {
+    if (state.month === prevMonth.current) return;
+    prevMonth.current = state.month;
+    const tiles = [...new Set(state.news.filter(n => n.m === state.month && n.tileI !== undefined).map(n => n.tileI!))];
+    if (!tiles.length) return;
+    setPulseTiles(tiles);
+    const id = setTimeout(() => setPulseTiles([]), 1700);
+    return () => clearTimeout(id);
+  }, [state.month, state.news]);
   const selInfo = useMemo(() => {
     if (!selCells) return null;
     const remaining = new Set(selCells.cells);
@@ -791,6 +812,11 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
               </g>
             );
           })()}
+          {pulseTiles.map(i => {
+            const t = state.tiles[i];
+            return <polygon key={'pu' + i} className="tile-pulse" points={diamond(t.x, t.y, 0.98)} fill="none"
+              stroke="var(--amber)" strokeWidth={2} style={{ pointerEvents: 'none' }} />;
+          })}
           {Array.from({ length: E.CONFIG.GRID_W }, (_, i) => {
             const p = isoPt(i, -0.75);
             return <text key={'cx' + i} x={p[0]} y={p[1]} textAnchor="middle" fill="var(--dim)" fontSize={10} fontFamily="var(--mono)">{String.fromCharCode(65 + i)}</text>;
@@ -854,7 +880,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           {transitActive && <span style={{ color: 'var(--blue)' }}>▦ new transit corridor</span>}
           {view === 'iso' && <span>massing is honest: towers stand tall, sheds sprawl</span>}
           <span style={{ color: '#c98a2e' }}>▨ under construction</span>
-          <span className="faint">scroll to zoom · drag to pan</span>
+          <span className="faint">scroll to zoom · drag to pan · 1-9 lenses · V view · Space advances</span>
         </div>
       </div>
       <div className="panel">

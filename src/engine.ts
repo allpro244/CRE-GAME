@@ -146,6 +146,8 @@ export interface Loan {
   // Run long and it empties — then debt service comes from cash, on a building earning
   // nothing. Floating construction debt reprices monthly; fixed costs +60bps up front.
   reserveInitial?: number; reserveBalance?: number; floating?: boolean;
+  spreadPct?: number;    // margin over base, fixed at origination
+  recourse?: boolean;    // personally guaranteed: better terms, and the deficiency follows you
 }
 
 export interface Facility {
@@ -1552,6 +1554,7 @@ export interface DevChoice {
   bonded?: boolean;                   // surety covers a failed GC (+~1.2% of hard)
   diligence?: boolean;                // tie the land up and dig before you close
   designTier?: 've' | 'std' | 'signature';
+  recourse?: boolean;                 // sign personally: -80bps and +10pts LTC, and it can follow you home
 }
 
 export function maxBuildableSF(l: Listing, type: PType): number {
@@ -1636,7 +1639,7 @@ export const SITE_COND_LABEL: Record<SiteCondKind, string> = {
 export function reserveRunwayMonths(s: GameState, a: Asset): number | null {
   const loan = a.loans[0];
   if (!loan || loan.reserveBalance === undefined || a.mode !== 'construction') return null;
-  const rate = loan.floating ? s.econ.rate + CONFIG.constrSpread : loan.ratePct;
+  const rate = loan.floating ? s.econ.rate + (loan.spreadPct ?? CONFIG.constrSpread) : loan.ratePct;
   const commitment = (a as any).loanCommitment ?? loan.balance;
   const avgBal = Math.max(loan.balance, (loan.balance + commitment) / 2);
   const burn = avgBal * (rate / 100 / 12);
@@ -1691,11 +1694,13 @@ export function buyLandAndDevelop(state: GameState, listingId: number, c: DevCho
     return { s };
   }
   const totalAll = bd.total + knownUpfront;
-  const maxLoan = totalAll * (CONFIG.constrLTC - (s.econ.crunchMonthsLeft > 0 ? 0.1 : 0));
+  const constrSpreadHere = c.recourse ? 3.1 : 3.9;
+  const ltcHere = (c.recourse ? 0.75 : 0.65) - (s.econ.crunchMonthsLeft > 0 ? 0.1 : 0);
+  const maxLoan = totalAll * ltcHere;
   const equity = Math.max(totalAll * c.downPct, totalAll - maxLoan);
   if (s.cash < equity) return { s, err: 'You need ' + fmtMoney(equity) + ' of equity for this capital stack.' };
   const loanAmt = totalAll - equity;
-  const rate = s.econ.rate + CONFIG.constrSpread + (c.fixedRate ? 0.6 : 0);
+  const rate = s.econ.rate + constrSpreadHere + (c.fixedRate ? 0.6 : 0);
   // interest reserve, sized to the expected build at ~60% average drawn balance
   const reserve = Math.round(loanAmt * (rate / 100 / 12) * bd.months * 0.6);
   const jvChk2 = useJV ? canJV(s, equity) : null;
@@ -1732,7 +1737,7 @@ export function buyLandAndDevelop(state: GameState, listingId: number, c: DevCho
     qCap: clamp(bd.spec.qCap + DESIGN[c.designTier ?? 'std'].qShift, 20, 96),
     age: 0, mode: 'construction', designTier: c.designTier ?? 'std',
     tenants: [], occ: 0, rentStance: 0, maint: 'std',
-    loans: [{ id: s.nextId++, kind: 'constr', balance: 0, ratePct: rate, amortYears: 25, ioMonthsLeft: 999, monthlyPmt: 0, maturityMonth: s.month + bd.months + bd.designMonths + permitMonths + 14, reserveInitial: reserve, reserveBalance: reserve, floating: !c.fixedRate }],
+    loans: [{ id: s.nextId++, kind: 'constr', balance: 0, ratePct: rate, amortYears: 25, ioMonthsLeft: 999, monthlyPmt: 0, maturityMonth: s.month + bd.months + bd.designMonths + permitMonths + 14, reserveInitial: reserve, reserveBalance: reserve, floating: !c.fixedRate, spreadPct: constrSpreadHere + (c.fixedRate ? 0.6 : 0), recourse: !!c.recourse }],
     ledger: [{ m: s.month, amt: -equity }], cumCF: 0,
     basis: bd.total, acqMonth: s.month,
     entryNOI: 0, entryCap: capRatePct(s, t, c.type, startQ),
@@ -1821,18 +1826,18 @@ export function resolveConstrEvent(state: GameState, assetId: number, choice: 'a
     const bd = devCostBreakdown(s, c, dd.landPrice);
     const knownCost = cond.kind === 'easement' ? 0 : cond.cost;
     const totalCost = bd.total + knownCost;
-    const maxLoan = totalCost * (CONFIG.constrLTC - (s.econ.crunchMonthsLeft > 0 ? 0.1 : 0));
+    const maxLoan = totalCost * ((c.recourse ? 0.75 : 0.65) - (s.econ.crunchMonthsLeft > 0 ? 0.1 : 0));
     const equity = Math.max(totalCost * c.downPct, totalCost - maxLoan);
     const useJV = dd.useJV && canJV(s, equity).ok;
     const equityDue = Math.max(0, (useJV ? Math.round(equity * 0.30) : equity) - dd.deposit);
     if (s.cash < equityDue + bd.designFee) { walkDD('(You could not have closed anyway — the equity was not there.)'); return s; }
     s.cash -= equityDue + bd.designFee;
     a.ledger.push({ m: s.month, amt: -(equityDue + bd.designFee) });
-    const rate = s.econ.rate + CONFIG.constrSpread + (c.fixedRate ? 0.6 : 0);
+    const rate = s.econ.rate + (c.recourse ? 3.1 : 3.9) + (c.fixedRate ? 0.6 : 0);
     const loanAmt = totalCost - equity;
     const buildMonths = bd.months + cond.delayMo;
     const reserve = Math.round(loanAmt * (rate / 100 / 12) * buildMonths * 0.6);
-    a.loans = [{ id: s.nextId++, kind: 'constr', balance: 0, ratePct: rate, amortYears: 25, ioMonthsLeft: 999, monthlyPmt: 0, maturityMonth: s.month + buildMonths + 3 + 14, reserveInitial: reserve, reserveBalance: reserve, floating: !c.fixedRate }];
+    a.loans = [{ id: s.nextId++, kind: 'constr', balance: 0, ratePct: rate, amortYears: 25, ioMonthsLeft: 999, monthlyPmt: 0, maturityMonth: s.month + buildMonths + 3 + 14, reserveInitial: reserve, reserveBalance: reserve, floating: !c.fixedRate, spreadPct: (c.recourse ? 3.1 : 3.9) + (c.fixedRate ? 0.6 : 0), recourse: !!c.recourse }];
     (a as any).loanCommitment = loanAmt;
     a.basis = totalCost + dd.ddFee;
     a.deprBasis = Math.round(bd.hard + bd.soft + knownCost);
@@ -1865,12 +1870,13 @@ export function resolveConstrEvent(state: GameState, assetId: number, choice: 'a
       const owed = loan?.balance ?? 0;
       const cells = a.cells ?? (a.px !== undefined ? cellsOfRect(a.px, a.py!, a.pw!, a.ph!) : []);
       s.assets = s.assets.filter(x => x.id !== a.id);
-      if (s.cash >= owed) {
-        s.cash -= owed;
+      const isRecourse = !!loan?.recourse;
+      if (s.cash >= owed || isRecourse) {
+        s.cash -= owed;   // a personal guarantee means the deficiency comes out of you either way
         if (cells.length) s.land.push({ id: s.nextId++, tileI: a.tileI, cells: [...cells], basis: p.landCost ?? 0, acquiredM: s.month });
-        pushNews(s, 'warn', `${a.name}: ABANDONED. You repaid ${fmtMoney(owed)} of drawn debt and kept the dirt. Everything else spent is a lesson now.`, a.tileI);
+        pushNews(s, 'warn', `${a.name}: ABANDONED. You repaid ${fmtMoney(owed)} of drawn debt${isRecourse && state.cash < owed ? ' (the guarantee followed you home)' : ''} and kept the dirt. Everything else spent is a lesson now.`, a.tileI);
       } else {
-        pushNews(s, 'warn', `${a.name}: ABANDONED — and you couldn't repay the ${fmtMoney(owed)} drawn. The lender keeps the site. The market keeps the story.`, a.tileI);
+        pushNews(s, 'warn', `${a.name}: ABANDONED — non-recourse, so the lender keeps the site and eats the rest. The market keeps the story.`, a.tileI);
       }
       return s;
     }
@@ -3510,7 +3516,7 @@ function tickAsset(s: GameState, a: Asset): number {
     if (p.haltMonthsLeft && p.haltMonthsLeft > 0) {
       p.haltMonthsLeft--;
       const loan0 = a.loans[0];
-      if (loan0.floating) loan0.ratePct = s.econ.rate + CONFIG.constrSpread;
+      if (loan0.floating) loan0.ratePct = s.econ.rate + (loan0.spreadPct ?? CONFIG.constrSpread);
       const int0 = loan0.balance * (loan0.ratePct / 100 / 12);
       if (loan0.reserveBalance !== undefined && loan0.reserveBalance > 0) {
         const fr = Math.min(loan0.reserveBalance, int0);
@@ -3569,7 +3575,7 @@ function tickAsset(s: GameState, a: Asset): number {
     p.spent += monthlyHard;
     const loan = a.loans[0];
     // floating construction debt reprices every month — a rate spike mid-build compounds
-    if (loan.floating) loan.ratePct = s.econ.rate + CONFIG.constrSpread;
+    if (loan.floating) loan.ratePct = s.econ.rate + (loan.spreadPct ?? CONFIG.constrSpread);
     const commitment = (a as any).loanCommitment ?? 0;
     const draw = Math.min(monthlyHard, Math.max(0, commitment - p.drawnSoFar));
     p.drawnSoFar += draw; loan.balance += draw;
@@ -3796,7 +3802,8 @@ function tickSolvency(s: GameState) {
     if (sellable.length > 0) {
       const worst = sellable.sort((a, b) => (assetNOIMonthly(s, a) - assetDebtService(a)) - (assetNOIMonthly(s, b) - assetDebtService(b)))[0];
       const q = sellQuote(s, worst);
-      const net = q.gross * 0.85 - q.costs - q.payoff - q.facRelease;
+      let net = q.gross * 0.85 - q.costs - q.payoff - q.facRelease;
+      if (net < 0 && !worst.loans.some(ln => ln.recourse)) net = 0;   // non-recourse: the keys are the ceiling
       for (const f of s.facilities) {
         if (!f.assetIds.includes(worst.id)) continue;
         const allocated = facilityShare(s, worst);

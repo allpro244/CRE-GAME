@@ -335,7 +335,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
     units: defaultUnits(firstConstr.type, firstConstr.construction, 10000),
     construction: firstConstr.construction,
     contractor: 'standard', contingencyPct: 0.10, expedited: false, downPct: 0.35, fixedRate: false,
-    contractType: 'costplus', bonded: false, designTier: 'std',
+    contractType: 'costplus', bonded: false, designTier: 'std', recourse: false,
   }));
 
   const runFeas = () => {
@@ -605,6 +605,12 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
             <option value="gmp">Guaranteed Max Price — +7% hard, GC eats overruns</option>
           </select>
         </label>
+        <label className="f">Recourse <Hint text="Sign personally and the bank sharpens its pencil: ~80bps cheaper and 75% LTC instead of 65%. The catch: if the project fails, the deficiency comes out of YOUR cash — non-recourse borrowers can hand back the keys and walk." />
+          <select value={dev.recourse ? '1' : '0'} onChange={e => setDev({ ...dev, recourse: e.target.value === '1' })}>
+            <option value="0">Non-recourse — base +3.9%, 65% LTC, keys-back protection</option>
+            <option value="1">Personal guarantee — base +3.1%, 75% LTC, it follows you</option>
+          </select>
+        </label>
         <label className="f">Payment &amp; performance bond <Hint text="~1.2% of hard cost. If the GC goes bankrupt mid-job, the surety covers the rebid delta and you lose a month or two. Unbonded, a failed GC means a dark site for months, a rebid at today's prices, and a weathering shell." />
           <select value={dev.bonded ? '1' : '0'} onChange={e => setDev({ ...dev, bonded: e.target.value === '1' })}>
             <option value="0">Unbonded — cheaper, exposed</option>
@@ -647,7 +653,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
         <div className="memo-row total"><span className="lbl">Total development cost</span><span className="num">{E.fmtMoney(bd.total + (bd as any).designFee)}</span></div>
         <div className="memo-row"><span className="lbl">Land-close to delivery <Hint text="Diligence (if chosen), then design, then permits, then construction. You are committing to deliver into whatever market exists at the END of this timeline." /></span>
           <span className="num">≈ {(bd as any).designMonths + 2 + bd.months} months</span></div>
-        <div className="memo-row"><span className="lbl">Construction loan (≤{pct(E.CONFIG.constrLTC)} LTC at {(state.econ.rate + E.CONFIG.constrSpread + (dev.fixedRate ? 0.6 : 0)).toFixed(2)}% {dev.fixedRate ? 'FIXED' : 'FLOATING'}, 12-mo IO after delivery)</span><span className="num">{E.fmtMoney(bd.total - equity)}</span></div>
+        <div className="memo-row"><span className="lbl">Construction loan (≤{pct(dev.recourse ? 0.75 : 0.65)} LTC at {(state.econ.rate + (dev.recourse ? 3.1 : 3.9) + (dev.fixedRate ? 0.6 : 0)).toFixed(2)}% {dev.fixedRate ? 'FIXED' : 'FLOATING'}{dev.recourse ? ' · PG' : ' · non-recourse'}, 12-mo IO after delivery)</span><span className="num">{E.fmtMoney(bd.total - equity)}</span></div>
         <div className="memo-row"><span className="lbl">
           <label style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
             <input type="checkbox" checked={!!dev.fixedRate} onChange={e => setDev({ ...dev, fixedRate: e.target.checked })} />
@@ -655,7 +661,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
           </label></span>
           <span className="num dim">{dev.fixedRate ? 'hedged' : 'exposed to the curve'}</span></div>
         <div className="memo-row"><span className="lbl">Interest reserve (loan-funded, sized to a {bd.months}-mo build) <Hint text="Pays the construction interest while you build. Run past schedule and it empties — then debt service comes from your cash, on a building earning nothing." /></span>
-          <span className="num">{E.fmtMoney(Math.round((bd.total - equity) * ((state.econ.rate + E.CONFIG.constrSpread + (dev.fixedRate ? 0.6 : 0)) / 100 / 12) * bd.months * 0.6))}</span></div>
+          <span className="num">{E.fmtMoney(Math.round((bd.total - equity) * ((state.econ.rate + (dev.recourse ? 3.1 : 3.9) + (dev.fixedRate ? 0.6 : 0)) / 100 / 12) * bd.months * 0.6))}</span></div>
         <div className="memo-row"><span className="lbl">Your equity at closing</span><span className={'num ' + (state.cash >= equity ? '' : 'neg')}>{E.fmtMoney(equity)}</span></div>
       </div>
       {pf ? (
@@ -1101,6 +1107,25 @@ export function AssetCard({ state, setState, asset: a, onSell, onRefi, onLOI, op
             </>)}
           </div>
           <div>
+            <h3>Debt terms</h3>
+            {a.loans.length === 0 ? <div className="dim" style={{ fontSize: 12, marginBottom: 8 }}>Unlevered — all equity.</div> : (
+              <table className="sc" style={{ marginBottom: 10 }}>
+                <thead><tr><th>Type</th><th>Balance</th><th>Rate</th><th>Amort</th><th>IO left</th><th>Balloon</th><th>DSCR</th></tr></thead>
+                <tbody>
+                  {a.loans.map(ln => (
+                    <tr key={ln.id}>
+                      <td className="dim">{ln.kind === 'acq' ? 'Acquisition' : ln.kind === 'constr' ? 'Construction' : 'Refi'}{ln.recourse ? ' · PG' : ''}{ln.floating ? ' · FLT' : ''}</td>
+                      <td className="num">{E.fmtMoney(ln.balance)}</td>
+                      <td className="num">{ln.ratePct.toFixed(2)}%</td>
+                      <td className="num">{ln.amortYears} yr</td>
+                      <td className="num">{ln.ioMonthsLeft > 0 && ln.ioMonthsLeft < 900 ? ln.ioMonthsLeft + ' mo' : ln.ioMonthsLeft >= 900 ? 'capitalizing' : '—'}</td>
+                      <td className="num">{E.monthName(ln.maturityMonth)}</td>
+                      <td className={'num ' + (ds > 0 && noi / ds < 1.2 ? 'neg' : 'pos')}>{ds > 0 ? (noi / ds).toFixed(2) + '×' : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
             <h3>Operating statement /mo</h3>
             <table className="sc">
               <tbody>

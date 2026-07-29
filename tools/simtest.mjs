@@ -64,7 +64,7 @@ function run(seed, city) {
           const sf = Math.min(15000, E.maxBuildableSF(l, ty), E.CONFIG.tiers[s.tier].maxSF);
           if (sf >= 4500) {
             const units = ty==='retail' ? Math.max(3, Math.floor(sf/2500)) : 1;
-            const r = E.buyLandAndDevelop(s, l.id, { type: ty, sf, units, construction: specs[ty], contractor:'standard', contingencyPct:0.10, expedited:false, downPct:0.35, contractType: Math.random()<0.5?'gmp':'costplus', bonded: Math.random()<0.5, fixedRate: Math.random()<0.3, designTier: ['ve','std','signature'][Math.floor(Math.random()*3)] });
+            const r = E.buyLandAndDevelop(s, l.id, { type: ty, sf, units, construction: specs[ty], contractor:'standard', contingencyPct:0.10, expedited:false, downPct:0.35, contractType: Math.random()<0.5?'gmp':'costplus', bonded: Math.random()<0.5, recourse: Math.random()<0.4, fixedRate: Math.random()<0.3, designTier: ['ve','std','signature'][Math.floor(Math.random()*3)] });
             if (!r.err) { s = r.s; developed++; }
           }
         }
@@ -134,7 +134,7 @@ function run(seed, city) {
           const sf = Math.min(15000, E.maxBuildableSF(l2, ty), E.CONFIG.tiers[s.tier].maxSF);
           if (sf >= 4500) {
             const units = ty==='retail' ? Math.max(3, Math.floor(sf/2500)) : 1;
-            const r2 = E.buyLandAndDevelop(s, l2.id, { type: ty, sf, units, construction: ty==='industrial'?'metal':'strip', contractor:'standard', contingencyPct:0.10, expedited:false, downPct:0.35, contractType: Math.random()<0.5?'gmp':'costplus', bonded: Math.random()<0.5, designTier: ['ve','std','signature'][Math.floor(Math.random()*3)] });
+            const r2 = E.buyLandAndDevelop(s, l2.id, { type: ty, sf, units, construction: ty==='industrial'?'metal':'strip', contractor:'standard', contingencyPct:0.10, expedited:false, downPct:0.35, contractType: Math.random()<0.5?'gmp':'costplus', bonded: Math.random()<0.5, recourse: Math.random()<0.4, designTier: ['ve','std','signature'][Math.floor(Math.random()*3)] });
             if (!r2.err) { s = r2.s; developed++; }
           }
         }

@@ -875,6 +875,29 @@ export function PortfolioView2({ state, setState, onSell, onRefi, onLOI, goDeals
         <AssetCard key={a.id} state={state} setState={setState} asset={a}
           onSell={onSell} onRefi={onRefi} onLOI={onLOI} openDeal={openDeal} onSold={onSold} onShowOnMap={onShowOnMap} />
       ))}
+      {(state.dealLog ?? []).length > 0 && (
+        <div className="panel" style={{ marginTop: 12 }}>
+          <h3>Deal history — every trade you've made</h3>
+          <table className="sc">
+            <thead><tr><th>Date</th><th>Action</th><th>Property</th><th>SF</th><th>Price</th><th>$/SF</th><th>Cap</th><th>Held</th><th>Profit</th></tr></thead>
+            <tbody>
+              {[...state.dealLog].reverse().slice(0, 30).map((d, i) => (
+                <tr key={i}>
+                  <td className="num">{E.monthName(d.m)}</td>
+                  <td className={d.action === 'sell' || d.action === 'land sell' ? 'pos' : 'dim'}>{d.action}</td>
+                  <td style={{ textAlign: 'left' }}>{d.name}</td>
+                  <td className="num">{d.type === 'land' ? (d.sf / 43_560).toFixed(2) + ' ac' : (d.sf / 1000).toFixed(0) + 'K'}</td>
+                  <td className="num">{E.fmtMoney(d.price)}</td>
+                  <td className="num">{d.sf > 0 && d.type !== 'land' ? '$' + (d.price / d.sf).toFixed(0) : d.sf > 0 ? '$' + (d.price / d.sf).toFixed(0) : '—'}</td>
+                  <td className="num">{d.capPct != null ? d.capPct.toFixed(2) + '%' : '—'}</td>
+                  <td className="num">{d.holdMo != null ? Math.round(d.holdMo / 12 * 10) / 10 + ' yr' : '—'}</td>
+                  <td className={'num ' + (d.profit == null ? 'dim' : d.profit >= 0 ? 'pos' : 'neg')}>{d.profit != null ? E.fmtMoney(d.profit) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

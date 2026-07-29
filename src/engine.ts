@@ -79,7 +79,7 @@ export const CONFIG = {
     mfGrounds: 0.025, mfTurnover: 0.04, mfLeasing: 0.03, // multifamily-specific (turnover/leasing on EGI)
   },
   softCostPct: 0.15,
-  saleCostPct: 0.03,
+  saleCostPct: 0.05,
   acqLTV: 0.75, indLTVBonus: 0.05, constrLTC: 0.70, refiLTV: 0.70,
   acqSpread: 2.0, constrSpread: 2.5, refiSpread: 1.75, facilitySpread: 1.6,
   minDSCR: 1.25, refiDSCR: 1.20,
@@ -260,6 +260,11 @@ export interface Listing {
 export interface Firm { name: string; short: string; style: 'core' | 'aggressive' | 'industrial' | 'value-add' | 'mf'; netWorth: number; alive: boolean; }
 export interface NewsItem { m: number; kind: 'info' | 'rumor' | 'event' | 'deal' | 'warn' | 'success'; text: string; tileI?: number; }
 export interface ActiveEffect { kind: string; monthsLeft: number; tiles: number[]; dPerMonth?: number; empPerMonth?: number; }
+export interface DealLogEntry {
+  m: number; action: 'buy' | 'sell' | 'land buy' | 'land sell' | 'delivered';
+  name: string; type: PType | 'land'; sf: number; price: number;
+  capPct?: number | null; holdMo?: number; profit?: number;
+}
 export interface PendingDecision { type: 'constrEvent' | 'assetEvent'; assetId: number; eventKind: string; payload?: number; data?: { ti?: number; bumpPct?: number; extendMo?: number; tenantName?: string; hikeLo?: number; hikeHi?: number } }
 export interface PostMortem {
   assetName: string; profit: number; irr: number | null;
@@ -319,6 +324,7 @@ export interface GameState {
   lastScoutMonth: number; approachesLeft: number;
   // per-parcel owner memory, keyed 'tileI:cell' — refusals and named asks both persist
   parcelApproach: Record<string, { m: number; outcome: 'refused' | 'ask'; ask?: number }>;
+  dealLog: DealLogEntry[];
   gameOver: boolean; gameOverReason?: string; forcedSaleNotice?: string;
   transitCorridor: number[];
   roads: RoadNet;
@@ -829,7 +835,7 @@ export function assetValue(state: GameState, a: Asset): number {
   }
   const t = state.tiles[a.tileI];
   const noi = stabilizedNOI(state, a);
-  let capPts = capRatePct(state, t, a.type, a.quality);
+  let capPts = capRatePct(state, t, a.type, a.quality) + (isAggregate(a.type) ? 0 : creditCapAdjPts(a.tenants));
   // the design bet, marked to market: commodity product gets repriced hard in a downturn;
   // signature product holds its bid
   if (state.econ.phase === 'recession' && a.designTier) {
@@ -872,6 +878,10 @@ export function lpClaim(state: GameState, a: Asset): number {
   const base = Math.min(eq, owed);
   const residual = Math.max(0, eq - base);
   return Math.round(base + residual * a.jv.lpPct * 0.80); // net of your promote
+}
+function logDeal(s: GameState, e: DealLogEntry) {
+  (s.dealLog ??= []).push(e);
+  if (s.dealLog.length > 200) s.dealLog.shift();
 }
 export function netWorth(state: GameState): number {
   return state.cash
@@ -1033,10 +1043,10 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     news: [], effects: [], scheduledEvents: [],
     nwHistory: [], econHistory: [],
     nextId: 1, pending: [], lastMonthCF: 0, negCashStreak: 0,
-    lastScoutMonth: -99, approachesLeft: 5, parcelApproach: {},
+    lastScoutMonth: -99, approachesLeft: 5, parcelApproach: {}, dealLog: [],
     gameOver: false, transitCorridor: corridor, roads,
     totalRealizedProfit: 0, dealsClosed: 0,
-    version: 15,
+    version: 16,
   };
   generateStock(state);
   // Born in equilibrium: the anchors absorb whatever the initial city explains, so
@@ -1239,9 +1249,18 @@ export function stockOnTile(state: GameState, tileI: number): StockBuilding[] {
 }
 
 // what informed buyers pay: a blend of stabilized potential and the income actually in place
+// SF-weighted credit of a rent roll, mapped to a cap adjustment: an A-credit roll
+// trades ~15bps tight, a C-credit roll ~45bps wide. Buyers underwrite the covenant.
+export function creditCapAdjPts(tenants: Tenant[]): number {
+  if (!tenants.length) return 0;
+  const sfTot = tenants.reduce((x, tn) => x + tn.sf, 0);
+  if (sfTot <= 0) return 0;
+  const wavg = tenants.reduce((x, tn) => x + tn.credit * tn.sf, 0) / sfTot;   // 0=C .. 2=A
+  return (1 - wavg / 2) * 0.6 - 0.15;
+}
 function pricingValue(state: GameState, spec: { tileI: number; type: PType; sf: number; quality: number; units: number; construction: string }, tenants: Tenant[]): number {
   const t = state.tiles[spec.tileI];
-  const cap = capRatePct(state, t, spec.type, spec.quality) / 100;
+  const cap = (capRatePct(state, t, spec.type, spec.quality) + creditCapAdjPts(tenants)) / 100;
   const stab = stabilizedNOI(state, spec as any);
   const potM = (spec.sf * assetRentPSF(state, spec as any)) / 12;
   const egiM = isAggregate(spec.type) ? potM * ((spec as any).occ ?? 0.9) : tenants.reduce((s2, tn) => s2 + tn.sf * tn.rate, 0) / 12;
@@ -1534,6 +1553,7 @@ export function buyBuilding(state: GameState, listingId: number, downPct: number
   s.listings = s.listings.filter(x => x.id !== listingId);
   s.dealsClosed++;
   logComp(s, { m: s.month, type: a.type, sf: a.sf, price: l.price, capPct: l.price > 0 ? Math.round((inPlaceNOIYr(s, l) / l.price) * 10000) / 100 : null, tileI: a.tileI, buyer: 'You' });
+  logDeal(s, { m: s.month, action: 'buy', name: a.name, type: a.type, sf: a.sf, price: l.price, capPct: l.price > 0 ? Math.round((inPlaceNOIYr(s, l) / l.price) * 10000) / 100 : null });
   pushNews(s, 'deal', `You acquired ${a.name} (${(l.sf! / 1000).toFixed(0)}K SF ${PLABEL[l.type!]}, ${a.tenants.length} tenant${a.tenants.length === 1 ? '' : 's'}) for ${fmtMoney(l.price)} at ${Math.round(ltv * 100)}% LTV${l.kind === 'offmarket' ? ' — off market' : ''}.`);
   return { s };
 }
@@ -2238,6 +2258,7 @@ export function closeLandContract(state: GameState, listingId: number): { s: Gam
     cond: cond.kind !== 'none' ? cond : undefined, condKnown: !!uc.known });
   s.listings = s.listings.filter(x => x.id !== l.id);
   s.dealsClosed++;
+  logDeal(s, { m: s.month, action: 'land buy', name: `Block ${blockLabel(s.tiles[l.tileI])} dirt`, type: 'land', sf: Math.round((l.acres ?? 0) * 43_560), price: l.price });
   pushNews(s, 'deal', `CLOSED: ${l.acres} acres at block ${blockLabel(s.tiles[l.tileI])} for ${fmtMoney(l.price)}.${uc.known ? (uc.known.kind === 'none' ? ' The study says clean — you own exactly what you think you own.' : ' You closed knowing the problem. Priced, presumably.') : ' No study — you own the unknowns too.'}`, l.tileI);
   return { s };
 }
@@ -2266,6 +2287,7 @@ export function buyLandHold(state: GameState, listingId: number): { s: GameState
   s.land.push({ id: s.nextId++, tileI: l.tileI, cells: [...cells].sort((a, b) => a - b), basis: cost, acquiredM: s.month });
   s.listings = s.listings.filter(x => x.id !== l.id);
   s.dealsClosed++;
+  logDeal(s, { m: s.month, action: 'land buy', name: `Block ${blockLabel(s.tiles[l.tileI])} dirt`, type: 'land', sf: Math.round(cells.length * PARCEL_AC * 43_560), price: l.price });
   pushNews(s, 'deal', `Land banked: ${Math.round(cells.length * PARCEL_AC * 100) / 100} acres at block ${blockLabel(s.tiles[l.tileI])} for ${fmtMoney(l.price)}. Dirt costs nothing to hold but the carry — and the patience.`, l.tileI);
   return { s };
 }
@@ -2288,6 +2310,7 @@ export function sellLand(state: GameState, holdingId: number): { s: GameState; e
   s.cash += net;
   s.totalRealizedProfit += net - h.basis;
   s.land = s.land.filter(x => x.id !== holdingId);
+  logDeal(s, { m: s.month, action: 'land sell', name: `Block ${blockLabel(s.tiles[h.tileI])} dirt`, type: 'land', sf: Math.round(h.cells.length * PARCEL_AC * 43_560), price: net, holdMo: s.month - h.acquiredM, profit: net - h.basis });
   pushNews(s, net - h.basis >= 0 ? 'success' : 'warn', `Sold your ${Math.round(h.cells.length * PARCEL_AC * 100) / 100} acres at block ${blockLabel(s.tiles[h.tileI])} for ${fmtMoney(net)} — ${net - h.basis >= 0 ? 'a gain' : 'a loss'} of ${fmtMoney(Math.abs(net - h.basis))} against your ${fmtMoney(h.basis)} basis.`, h.tileI);
   return { s };
 }
@@ -2683,7 +2706,7 @@ function settleIncomeTax(s: GameState) {
 }
 
 // 1031: the government will wait — if you redeploy every dollar on the clock
-function saleTaxes(_s: GameState, a: Asset, gross: number): { gain: number; tax: number } {
+export function saleTaxes(_s: GameState, a: Asset, gross: number): { gain: number; tax: number } {
   const costs = gross * CONFIG.saleCostPct;
   const adjBasis = Math.max(0, a.basis - (a.deprTaken ?? 0));
   const gain = gross - costs - adjBasis;
@@ -2883,6 +2906,7 @@ function finalizeSale(s: GameState, a: Asset, gross: number, buyer: string): { s
   });
   s.assets = s.assets.filter(x => x.id !== a.id);
   s.lois = s.lois.filter(x => x.assetId !== a.id);
+  logDeal(s, { m: s.month, action: 'sell', name: a.name, type: a.type, sf: a.sf, price: q.gross, capPct: q.gross > 0 ? Math.round((assetNOIMonthly(s, a) * 12 / q.gross) * 10000) / 100 : null, holdMo: s.month - a.acqMonth, profit });
   pushNews(s, profit >= 0 ? 'success' : 'warn', `Sold ${a.name} to ${buyer} for ${fmtMoney(q.gross)} — ${profit >= 0 ? 'profit' : 'loss'} of ${fmtMoney(Math.abs(profit))}${irr !== null ? ` (${irr.toFixed(1)}% IRR)` : ''}.`);
   return { s, pm };
 }
@@ -3620,6 +3644,7 @@ function tickAsset(s: GameState, a: Asset): number {
       a.entryNOI = stabilizedNOI(s, a);
       a.entryCap = capRatePct(s, t, a.type, a.quality);
       t.supply[a.type] += a.sf;
+      logDeal(s, { m: s.month, action: 'delivered', name: a.name, type: a.type, sf: a.sf, price: a.basis });
       a.project = undefined;
     }
     return 0;
@@ -3895,7 +3920,7 @@ export function serialize(state: GameState): string { return JSON.stringify(stat
 export function deserialize(json: string): GameState | null {
   try {
     const s = JSON.parse(json);
-    if (s && s.version === 15 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
+    if (s && s.version === 16 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
     return null;
   } catch { return null; }
 }

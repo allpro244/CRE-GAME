@@ -670,6 +670,19 @@ function SellModal({ state, setState, asset, close, variant = 'dialog' }: {
         <div className="memo-row"><span className="lbl">Debt to clear at closing</span><span className="num">{E.fmtMoney(debt)}</span></div>
         <div className="memo-row"><span className="lbl">Sale costs (~{Math.round(E.CONFIG.saleCostPct * 100)}%)</span><span className="num">~{E.fmtMoney(val * E.CONFIG.saleCostPct)}</span></div>
       </div>
+      {(() => {
+        const noiYr = E.assetNOIMonthly(state, asset) * 12;
+        const capAtAsk = ask > 0 ? (noiYr / ask) * 100 : 0;
+        const tx = E.saleTaxes(state, asset, ask);
+        return (
+          <div className="memo" style={{ borderLeftColor: 'var(--blue)' }}>
+            <div className="memo-row"><span className="lbl">Implied cap rate at your ask <Hint text="In-place NOI over your asking price — what a buyer sees first. Weak-credit rent rolls trade wider; your appraisal already reflects yours." /></span>
+              <span className={'num ' + (capAtAsk > 0 ? '' : 'dim')}>{capAtAsk > 0 ? capAtAsk.toFixed(2) + '%' : '—'}</span></div>
+            <div className="memo-row"><span className="lbl">Estimated taxes if sold at ask <Hint text="Capital gains plus depreciation recapture. A 1031 election (Debt tab) can defer it — with a clock." /></span>
+              <span className="num">{E.fmtMoney(tx.tax)}</span></div>
+          </div>
+        );
+      })()}
       <label className="f">Asking price — {E.fmtMoney(ask)} <span className="faint">({Math.round((ask / Math.max(1, val)) * 100)}% of appraisal)</span>
         <input type="range" min={Math.round(val * 0.7 / 10000) * 10000} max={Math.round(val * 1.35 / 10000) * 10000} step={10000}
           value={ask} onChange={e => setAsk(Number(e.target.value))} />

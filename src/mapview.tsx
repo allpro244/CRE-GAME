@@ -343,7 +343,7 @@ function BldDetail({ b }: { b: IsoBld }) {
 // ---------- pan / zoom viewport ----------
 function useViewport(bx: number, by: number, bw: number, bh: number) {
   const ref = useRef<SVGSVGElement | null>(null);
-  const [vp, setVp] = useState({ z: 1, x: 0, y: 0 });
+  const [vp, setVp] = useState({ z: 1.25, x: (bw - bw / 1.25) / 2, y: (bh - bh / 1.25) / 2 });
   const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
   const moved = useRef(false);
   const vpRef = useRef(vp);
@@ -357,7 +357,7 @@ function useViewport(bx: number, by: number, bw: number, bh: number) {
   // single atomic update: zoom and recentre together, pinning the point under the cursor
   const zoomAt = useCallback((factor: number, cx?: number, cy?: number) => {
     setVp(p => {
-      const nz = Math.max(1, Math.min(6, p.z * factor));
+      const nz = Math.max(1, Math.min(8, p.z * factor));
       if (nz === p.z) return p;
       const vwOld = bw / p.z, vhOld = bh / p.z;
       const vwNew = bw / nz, vhNew = bh / nz;
@@ -403,7 +403,7 @@ function useViewport(bx: number, by: number, bw: number, bh: number) {
     });
   };
   const onPointerUp = () => { drag.current = null; };
-  const reset = () => setVp({ z: 1, x: 0, y: 0 });
+  const reset = () => setVp({ z: 1.25, x: (bw - bw / 1.25) / 2, y: (bh - bh / 1.25) / 2 });
   // centre the viewport on a point in base coordinates, zooming in if we're wide
   const focusOn = useCallback((p: [number, number]) => {
     setVp(prev => {
@@ -474,7 +474,7 @@ const StreetLife = memo(function StreetLife({ runs, seed }: { runs: RoadRun[]; s
     if (run.cls === 3 || run.cls === 2) {
       // traffic scales with road class; two directions ride slightly offset gutters
       const n = Math.min(5, Math.round(len * (run.cls === 3 ? 0.55 : 0.3) * (0.5 + r())));
-      for (let i = 0; i < n && cars < 140; i++) {
+      for (let i = 0; i < n && cars < 260; i++) {
         const u = 0.06 + r() * 0.88;
         const gx = p0[0] + (p1[0] - p0[0]) * u, gy = p0[1] + (p1[1] - p0[1]) * u;
         const side = r() < 0.5 ? -0.055 : 0.055;
@@ -486,7 +486,7 @@ const StreetLife = memo(function StreetLife({ runs, seed }: { runs: RoadRun[]; s
       }
     } else if (run.cls === 1) {
       const n = Math.min(3, Math.round(len * 0.22 * r()));
-      for (let i = 0; i < n && trees < 110; i++) {
+      for (let i = 0; i < n && trees < 200; i++) {
         const u = 0.1 + r() * 0.8;
         const gx = p0[0] + (p1[0] - p0[0]) * u, gy = p0[1] + (p1[1] - p0[1]) * u;
         const horiz = Math.abs(p1[0] - p0[0]) > Math.abs(p1[1] - p0[1]);
@@ -557,6 +557,9 @@ const LensCellsIso = memo(function LensCellsIso({ tiles, grids, vals, hue, zb }:
     if (t.water) return null;
     const base = lerpColor(DARK, hue, Math.pow(vals[t.i], 0.72) * 0.97 + 0.03);
     const dimFill = lerpColor(DARK, hue, Math.pow(vals[t.i], 0.72) * 0.5 + 0.02);
+    // zoomed out, one diamond per block carries the lens — 280 polygons instead of 4,480.
+    // The per-parcel weave only earns its cost once you can actually see parcels.
+    if (zb === 0) return <polygon key={'p' + t.i} points={diamond(t.x, t.y, 0.97)} fill={dimFill} stroke="#0b0f13" strokeWidth={0.5} />;
     const g = grids[t.i];
     const cells = [];
     for (let py = 0; py < E.PGRID; py++) for (let px = 0; px < E.PGRID; px++) {
@@ -837,7 +840,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
     const b = s.stock.find(x => x.id === occ);
     if (b) { b.listedId ? od(b.listedId) : os(b.id); }
   }, []); // eslint-disable-line
-  const zb = vpIso.z > 1.6 ? 2 : vpIso.z > 1.2 ? 1 : 0;
+  const zb = vpIso.z > 2.3 ? 2 : vpIso.z > 1.7 ? 1 : 0;
 
   return (
     <div className="map-wrap">

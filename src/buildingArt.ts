@@ -30,14 +30,15 @@ export interface ArtParams {
 export interface PrismGeom { bl: [number, number]; bb: [number, number]; br: [number, number]; ht: number }
 
 export type ArtEl =
-  | { k: 'p'; pts: string; f?: string; s?: string; w?: number; o?: number }
-  | { k: 'l'; x1: number; y1: number; x2: number; y2: number; s: string; w: number; o?: number; d?: string };
+  | { k: 'p'; pts: string; f?: string; s?: string; w?: number; o?: number; cls?: string; dly?: number }
+  | { k: 'l'; x1: number; y1: number; x2: number; y2: number; s: string; w: number; o?: number; d?: string; cls?: string; dly?: number }
+  | { k: 'c'; cx: number; cy: number; r: number; f: string; o?: number; cls?: string; dly?: number };
 
 export type Archetype =
-  | 'curtainwall' | 'deco-stepback' | 'punched-midrise' | 'brick-loft'
+  | 'curtainwall' | 'deco-stepback' | 'punched-midrise' | 'brick-loft' | 'wood-office'
   | 'garden-walkup' | 'brownstone-row' | 'podium-balcony' | 'res-tower'
-  | 'storefront-row' | 'strip-parapet' | 'bigbox'
-  | 'dock-shed' | 'sawtooth' | 'tilt-panel'
+  | 'storefront-row' | 'strip-parapet' | 'bigbox' | 'anchor-center' | 'pad-site'
+  | 'dock-shed' | 'sawtooth' | 'tilt-panel' | 'pemb' | 'tin-shed'
   | 'podium-tower' | 'main-street';
 
 const WIN_DARK = '#10151b';    // unlit glazing
@@ -85,37 +86,44 @@ function faceLine(a: [number, number], b: [number, number], u0: number, u1: numb
 // building always wears the same face — and a reload can't re-roll the skyline.
 export function pickArchetype(p: ArtParams, stories: number, r: () => number): Archetype {
   const q = p.quality;
+  // construction is DESTINY: the spec it was built to is the building people see.
+  // A tilt-wall warehouse looks like tilt-wall; a metal building looks like metal.
+  if (p.type === 'industrial') {
+    if (p.construction === 'tilt') return 'tilt-panel';
+    if (p.construction === 'metal') return p.age > 35 && r() < 0.4 ? 'sawtooth' : 'pemb';
+    if (p.construction === 'tin') return p.age > 30 && r() < 0.5 ? 'sawtooth' : 'tin-shed';
+    return 'dock-shed';
+  }
+  if (p.type === 'retail') {
+    if (p.construction === 'pad') return 'pad-site';
+    if (p.construction === 'center') return p.sf >= 12000 ? 'anchor-center' : 'bigbox';
+    // strip construction
+    if (p.sf >= 14000) return 'bigbox';
+    return p.age > 30 && r() < 0.5 ? 'storefront-row' : 'strip-parapet';
+  }
   if (p.type === 'office') {
-    if (stories >= 7 && (q >= 93 || p.construction === 'steel' || p.construction === 'concrete')) {
-      return p.age > 35 || (q >= 83 && q < 108 && r() < 0.45) ? 'deco-stepback' : 'curtainwall';
-    }
-    if (p.age > 28 && r() < 0.5) return 'brick-loft';
+    if (p.construction === 'wood') return stories <= 2 ? 'wood-office' : 'punched-midrise';
+    if (p.construction === 'masonry') return p.age > 28 && r() < 0.5 ? 'brick-loft' : 'punched-midrise';
+    // concrete & steel
+    if (stories >= 7 || q >= 93) return p.age > 35 || (q >= 83 && q < 108 && r() < 0.45) ? 'deco-stepback' : 'curtainwall';
     return 'punched-midrise';
   }
   if (p.type === 'multifamily') {
-    if (p.construction === 'garden' || stories <= 2) return r() < 0.4 ? 'brownstone-row' : 'garden-walkup';
+    if (p.construction === 'garden') return stories <= 2 && r() < 0.4 ? 'brownstone-row' : 'garden-walkup';
+    if (p.construction === 'tower') return 'res-tower';
+    // midrise
     if (stories <= 3 && r() < 0.5) return 'brownstone-row';
-    if (stories >= 9) return 'res-tower';
-    return 'podium-balcony';
+    return stories >= 9 ? 'res-tower' : 'podium-balcony';
   }
-  if (p.type === 'retail') {
-    if (p.sf >= 14000) return 'bigbox';
-    return r() < 0.5 ? 'storefront-row' : 'strip-parapet';
-  }
-  if (p.type === 'industrial') {
-    if (p.construction === 'tilt') return 'tilt-panel';
-    if (p.age > 30 && r() < 0.55) return 'sawtooth';
-    return 'dock-shed';
-  }
-  // mixed
+  // mixed (podium construction)
   return stories >= 6 ? 'podium-tower' : 'main-street';
 }
 
 const ARCH_PALETTE: Record<Archetype, keyof typeof PALETTES> = {
-  'curtainwall': 'glass', 'deco-stepback': 'deco', 'punched-midrise': 'concrete', 'brick-loft': 'brick',
+  'curtainwall': 'glass', 'deco-stepback': 'deco', 'punched-midrise': 'concrete', 'brick-loft': 'brick', 'wood-office': 'stucco',
   'garden-walkup': 'stucco', 'brownstone-row': 'brick', 'podium-balcony': 'stucco', 'res-tower': 'concrete',
-  'storefront-row': 'brick', 'strip-parapet': 'stucco', 'bigbox': 'metal',
-  'dock-shed': 'metal', 'sawtooth': 'brick', 'tilt-panel': 'concrete',
+  'storefront-row': 'brick', 'strip-parapet': 'stucco', 'bigbox': 'metal', 'anchor-center': 'stucco', 'pad-site': 'brick',
+  'dock-shed': 'metal', 'sawtooth': 'brick', 'tilt-panel': 'concrete', 'pemb': 'metal', 'tin-shed': 'metal',
   'podium-tower': 'glass', 'main-street': 'brick',
 };
 
@@ -150,7 +158,8 @@ export function buildingArt(p: ArtParams, g: PrismGeom): ArtEl[] {
         const y0 = ht * y0frac + 2 + fl * rowStep, y1 = Math.min(ht - 2, y0 + Math.min(tall ? 4.0 : 3.2, rowStep * (tall ? 0.72 : 0.55)));
         if (y1 <= y0 + 0.8) continue;
         const lit = sideLit && r() < p.occ * 0.55;
-        out.push({ k: 'p', pts: patch(a, b, u0, u1, y0, y1), f: lit ? WIN_LIT : WIN_DARK, o: lit ? 0.85 : 0.75 });
+        out.push({ k: 'p', pts: patch(a, b, u0, u1, y0, y1), f: lit ? WIN_LIT : WIN_DARK, o: lit ? 0.85 : 0.75,
+          cls: lit && r() < 0.3 ? 'twk' : undefined, dly: lit ? Math.round(r() * 40) / 10 : undefined });
       }
     }
   };
@@ -161,6 +170,36 @@ export function buildingArt(p: ArtParams, g: PrismGeom): ArtEl[] {
   const rooftopBox = (u0: number, u1: number, h: number, col = '#2c343d') => {
     const m0 = lerp(bb, br, u0), m1 = lerp(bb, br, u1);
     out.push({ k: 'p', pts: `${fmt([m0[0], m0[1] - ht])} ${fmt([m1[0], m1[1] - ht])} ${fmt([m1[0], m1[1] - ht - h])} ${fmt([m0[0], m0[1] - ht - h])}`, f: col, s: TRIM, w: 0.4 });
+  };
+  // paved apron in front of the building — parking rows for retail, truck court for docks
+  const apron = (kind: 'park' | 'truck') => {
+    const dx = 6.5, dy = 3.2;   // toward the viewer in iso space
+    out.push({ k: 'p', pts: `${fmt(bb)} ${fmt(br)} ${(br[0] + dx).toFixed(1)},${(br[1] + dy).toFixed(1)} ${(bb[0] + dx).toFixed(1)},${(bb[1] + dy).toFixed(1)}`, f: '#20242a', o: 0.85 });
+    if (kind === 'park') {
+      for (let i = 1; i < 7; i++) {
+        const u = i / 7;
+        const px0 = lerp(bb, br, u);
+        out.push({ k: 'l', x1: px0[0] + dx * 0.25, y1: px0[1] + dy * 0.25, x2: px0[0] + dx * 0.75, y2: px0[1] + dy * 0.75, s: '#3d434b', w: 0.5, o: 0.9 });
+      }
+      // a few parked cars, seeded — an empty lot reads as a dead store
+      for (let i = 0; i < 6; i++) {
+        if (r() > p.occ * 0.8) continue;
+        const u = 0.08 + (i / 6) * 0.84 + r() * 0.04;
+        const c0 = lerp(bb, br, u);
+        out.push({ k: 'p', pts: `${(c0[0] + 1.2).toFixed(1)},${(c0[1] + 0.9).toFixed(1)} ${(c0[0] + 3.4).toFixed(1)},${(c0[1] + 2.0).toFixed(1)} ${(c0[0] + 3.4).toFixed(1)},${(c0[1] + 0.8).toFixed(1)} ${(c0[0] + 1.2).toFixed(1)},${(c0[1] - 0.3).toFixed(1)}`, f: pick(r, ['#5a6570', '#6e5f52', '#4a5a6a', '#75706a', '#5f4a4a'] as const), o: 0.95 });
+      }
+    } else {
+      out.push({ k: 'l', x1: bb[0] + dx * 0.5, y1: bb[1] + dy * 0.5, x2: br[0] + dx * 0.5, y2: br[1] + dy * 0.5, s: '#32383f', w: 0.5, o: 0.7, d: '3 3' });
+    }
+  };
+  // a working stack: smoke drifts while the building is earning
+  const smokeStack = (u: number) => {
+    const base = lerp(lerp(bb, br, u), tl, 0.3);
+    const sx = base[0], sy = base[1] - ht;
+    out.push({ k: 'l', x1: sx, y1: sy + 1, x2: sx, y2: sy - 4.5, s: '#3c4249', w: 1.4 });
+    if (p.occ > 0.35) for (let i = 0; i < 3; i++) {
+      out.push({ k: 'c', cx: sx + 0.4 + i * 0.5, cy: sy - 5.5 - i * 2.2, r: 1.1 + i * 0.5, f: '#8a9097', o: 0.22 - i * 0.05, cls: 'smk', dly: i * 1.3 + r() * 2 });
+    }
   };
   const waterTower = () => {
     // the NYC silhouette: a squat tank on legs at a roof corner
@@ -301,6 +340,7 @@ export function buildingArt(p: ArtParams, g: PrismGeom): ArtEl[] {
     if (arch === 'storefront-row') cornice(ht - 1, 0.8);
   }
   if (arch === 'strip-parapet') {
+    apron('park');
     // the strip center: parapet band with tenant sign ticks
     const y1 = Math.min(ht - 1, 5.5);
     out.push({ k: 'p', pts: patch(bb, br, 0.05, 0.95, 1, y1), f: GLASS, o: 0.6 });
@@ -318,6 +358,7 @@ export function buildingArt(p: ArtParams, g: PrismGeom): ArtEl[] {
     out.push({ k: 'p', pts: patch(bb, br, 0.34, 0.66, Math.min(ht - 1, 6), Math.min(ht - 0.5, 7.2)), f: '#3d4249', o: 0.9 });
     if (p.occ > 0.3) out.push({ k: 'l', ...faceLine(bb, br, 0.40, 0.60, Math.min(ht - 0.5, 6.6)), s: WIN_LIT, w: 1.6, o: 0.8 });
     for (let i = 0; i < 3; i++) rooftopBox(0.2 + i * 0.22, 0.3 + i * 0.22, 1.6, '#454c54');
+    apron('park');
   }
 
   // ================= INDUSTRIAL =================
@@ -349,6 +390,107 @@ export function buildingArt(p: ArtParams, g: PrismGeom): ArtEl[] {
     const s0 = lerp(bl, bb, 0.5), s1 = lerp(bb, br, 0.5);
     out.push({ k: 'l', x1: (bl[0] + s1[0]) / 2, y1: (bl[1] + s1[1]) / 2 - ht, x2: (br[0] + s0[0]) / 2, y2: (br[1] + s0[1]) / 2 - ht, s: '#39434e', w: 1.4, o: 0.7 });
     for (let i = 0; i < 2; i++) rooftopBox(0.25 + i * 0.3, 0.35 + i * 0.3, 1.4, '#454c54');
+    apron('truck');
+  }
+  if (arch === 'pemb') {
+    // pre-engineered metal: ribbed panels, exposed frame lines, a shallow gable
+    // profile, roll-up doors — nobody mistakes this for concrete
+    for (let i = 1; i < 12; i++) {
+      const u = i / 12;
+      const pt = lerp(bb, br, u);
+      out.push({ k: 'l', x1: pt[0], y1: pt[1] - 1, x2: pt[0], y2: pt[1] - (ht - 1.5), s: TRIM, w: 0.25, o: 0.5 });
+    }
+    for (let i = 1; i < 4; i++) {   // main frames read through the skin
+      const u = i / 4;
+      const pt = lerp(bb, br, u);
+      out.push({ k: 'l', x1: pt[0], y1: pt[1] - 0.5, x2: pt[0], y2: pt[1] - ht, s: '#565e66', w: 0.7, o: 0.8 });
+    }
+    // wainscot band in a contrast tone — the classic two-tone metal building
+    out.push({ k: 'p', pts: patch(bb, br, 0.02, 0.98, 0.5, 3.2), f: pick(r, ['#4a5560', '#5c5248', '#4e5a50'] as const), o: 0.8 });
+    const doors = Math.max(1, Math.min(4, Math.round(p.sf / 12000)));
+    for (let i = 0; i < doors; i++) {
+      const u0 = 0.2 + (i / doors) * 0.6;
+      out.push({ k: 'p', pts: patch(bb, br, u0, u0 + 0.6 / doors * 0.55, 0.5, Math.min(ht - 2, 6)), f: '#262e36', s: TRIM, w: 0.4 });
+      out.push({ k: 'l', ...faceLine(bb, br, u0, u0 + 0.6 / doors * 0.55, Math.min(ht - 2, 6) * 0.55), s: '#39434e', w: 0.4, o: 0.8 });
+    }
+    // shallow gable ridge along the roof
+    const g0 = lerp([bl[0], bl[1] - ht], [bb[0], bb[1] - ht], 0.5);
+    const g1 = lerp([br[0], br[1] - ht], [tl[0], tl[1] - ht], 0.5);
+    out.push({ k: 'l', x1: g0[0], y1: g0[1] - 1.6, x2: g1[0], y2: g1[1] - 1.6, s: '#4a525a', w: 1.0, o: 0.9 });
+    apron('truck');
+  }
+  if (arch === 'tin-shed') {
+    // the old tin building: rust patches, a patched roof, one sliding door, a
+    // stack that still smokes when there's work
+    for (let i = 1; i < 10; i++) {
+      const u = i / 10;
+      const pt = lerp(bb, br, u);
+      out.push({ k: 'l', x1: pt[0], y1: pt[1] - 0.5, x2: pt[0], y2: pt[1] - (ht - 1), s: TRIM, w: 0.3, o: 0.45 });
+    }
+    for (let i = 0; i < 4; i++) {   // rust blooms where the coating gave up
+      const u0 = 0.1 + r() * 0.75;
+      const y0 = 1 + r() * (ht - 4);
+      out.push({ k: 'p', pts: patch(bb, br, u0, u0 + 0.08 + r() * 0.1, y0, y0 + 1.5 + r() * 2.5), f: '#6e4a30', o: 0.35 + r() * 0.2 });
+    }
+    out.push({ k: 'p', pts: patch(bb, br, 0.35, 0.62, 0.5, Math.min(ht - 1.5, 6.5)), f: '#262c33', s: TRIM, w: 0.5 });
+    out.push({ k: 'l', ...faceLine(bb, br, 0.35, 0.62, Math.min(ht - 1.5, 6.5)), s: '#4a525a', w: 0.8, o: 0.9 });
+    // patched roof panels in mismatched tones
+    for (let i = 0; i < 3; i++) {
+      const u0 = 0.15 + r() * 0.6, v0 = 0.2 + r() * 0.5;
+      const a0 = lerp([bl[0], bl[1] - ht], [bb[0], bb[1] - ht], u0);
+      const b0 = lerp([br[0], br[1] - ht], [tl[0], tl[1] - ht], u0);
+      const c0 = lerp(a0, b0, v0);
+      out.push({ k: 'p', pts: `${fmt(c0)} ${(c0[0] + 3).toFixed(1)},${(c0[1] + 1.5).toFixed(1)} ${(c0[0] + 5.5).toFixed(1)},${(c0[1] + 0.2).toFixed(1)} ${(c0[0] + 2.5).toFixed(1)},${(c0[1] - 1.3).toFixed(1)}`, f: pick(r, ['#565d64', '#4e4a42', '#5e6067'] as const), o: 0.7 });
+    }
+    if (p.age > 15) smokeStack(0.78);
+    apron('truck');
+  }
+  if (arch === 'pad-site') {
+    // the freestanding pad: glass box, a canopy band, a drive-thru lane and a
+    // monument sign — you have eaten at this building
+    out.push({ k: 'p', pts: patch(bb, br, 0.08, 0.92, 1, Math.min(ht - 1, 5.5)), f: GLASS, o: 0.75 });
+    out.push({ k: 'p', pts: patch(bl, bb, 0.15, 0.85, 1, Math.min(ht - 1, 5.5)), f: GLASS, o: 0.5 });
+    out.push({ k: 'p', pts: patch(bb, br, 0.02, 0.98, Math.min(ht - 1, 5.5), Math.min(ht + 0.5, 7.5)), f: pick(r, ['#7a3b3b', '#3b5a4a', '#5a4a30'] as const), o: 0.9 });
+    if (p.occ > 0.3) out.push({ k: 'l', ...faceLine(bb, br, 0.3, 0.7, Math.min(ht - 0.2, 6.6)), s: WIN_LIT, w: 1.5, o: 0.85, cls: 'twk', dly: r() * 3 });
+    // monument sign out front
+    const m0 = lerp(bb, br, 0.9);
+    out.push({ k: 'l', x1: m0[0] + 3.5, y1: m0[1] + 2, x2: m0[0] + 3.5, y2: m0[1] - 2.5, s: '#3c4249', w: 0.9 });
+    out.push({ k: 'p', pts: `${(m0[0] + 2.4).toFixed(1)},${(m0[1] - 2.5).toFixed(1)} ${(m0[0] + 4.6).toFixed(1)},${(m0[1] - 2.5).toFixed(1)} ${(m0[0] + 4.6).toFixed(1)},${(m0[1] - 4.3).toFixed(1)} ${(m0[0] + 2.4).toFixed(1)},${(m0[1] - 4.3).toFixed(1)}`, f: WIN_LIT, o: p.occ > 0.3 ? 0.8 : 0.25 });
+    apron('park');
+  }
+  if (arch === 'anchor-center') {
+    // the neighborhood center: a taller anchor volume at one end, an inline run
+    // with a continuous canopy, tenant signs, and a field of parking
+    out.push({ k: 'p', pts: patch(bb, br, 0.0, 0.3, 0, ht), f: tint, o: 0.25 });   // anchor mass reads heavier
+    out.push({ k: 'l', x1: lerp(bb, br, 0.3)[0], y1: lerp(bb, br, 0.3)[1] - 0.5, x2: lerp(bb, br, 0.3)[0], y2: lerp(bb, br, 0.3)[1] - ht, s: TRIM, w: 0.8, o: 0.9 });
+    out.push({ k: 'p', pts: patch(bb, br, 0.04, 0.27, 2, Math.min(ht - 1, 7)), f: GLASS, o: 0.6 });   // anchor entry glass
+    if (p.occ > 0.25) out.push({ k: 'l', ...faceLine(bb, br, 0.06, 0.25, Math.min(ht - 0.5, 7.8)), s: WIN_LIT, w: 1.7, o: 0.85 });
+    // inline run: storefront glass under a continuous canopy line
+    out.push({ k: 'p', pts: patch(bb, br, 0.33, 0.96, 1, Math.min(ht * 0.55, 5)), f: GLASS, o: 0.65 });
+    out.push({ k: 'l', ...faceLine(bb, br, 0.31, 0.97, Math.min(ht * 0.55, 5) + 0.8), s: '#3d434b', w: 1.1, o: 0.9 });
+    const tenants = Math.max(3, Math.min(7, Math.round(p.sf / 3500)));
+    for (let i = 0; i < tenants; i++) {
+      if (r() > Math.max(0.3, p.occ)) continue;
+      const u = 0.34 + (i + 0.15) * 0.62 / tenants;
+      out.push({ k: 'l', ...faceLine(bb, br, u, u + 0.4 / tenants, Math.min(ht * 0.55, 5) + 2), s: pick(r, [WIN_LIT, '#b0654a', '#7fae8a', '#8a9fd0'] as const), w: 1.2, o: 0.85, cls: r() < 0.25 ? 'twk' : undefined, dly: r() * 4 });
+    }
+    for (let i = 0; i < 2; i++) rooftopBox(0.4 + i * 0.25, 0.5 + i * 0.25, 1.5, '#454c54');
+    apron('park');
+  }
+  if (arch === 'wood-office') {
+    // the converted-house office: clapboard lines, a pitched roof, a shingle
+    // out front — the lawyer, the dentist, the insurance agency
+    for (let i = 1; i < Math.min(ht - 2, 9); i++) {
+      out.push({ k: 'l', ...faceLine(bb, br, 0.04, 0.96, i * 1.1), s: TRIM, w: 0.25, o: 0.35 });
+    }
+    grid(bb, br, 3, 0.12, true, true);
+    const r0 = lerp(bl, bb, 0.5), r1 = lerp(bb, br, 0.5);
+    const ridge0: [number, number] = [(bl[0] + r1[0]) / 2, (bl[1] + r1[1]) / 2 - ht - 3];
+    const ridge1: [number, number] = [(br[0] + r0[0]) / 2, (br[1] + r0[1]) / 2 - ht - 3];
+    out.push({ k: 'p', pts: `${fmt([bb[0], bb[1] - ht])} ${fmt([br[0], br[1] - ht])} ${fmt(ridge1)} ${fmt(ridge0)}`, f: '#3a3d44', s: TRIM, w: 0.4 });
+    out.push({ k: 'p', pts: `${fmt([bl[0], bl[1] - ht])} ${fmt([bb[0], bb[1] - ht])} ${fmt(ridge0)}`, f: '#2c2f36', s: TRIM, w: 0.4 });
+    out.push({ k: 'p', pts: patch(bb, br, 0.42, 0.58, 0.5, 4.2), f: '#241d16', s: TRIM, w: 0.3 });
+    if (p.occ > 0.3) out.push({ k: 'l', ...faceLine(bb, br, 0.62, 0.85, 3.4), s: WIN_LIT, w: 1.0, o: 0.7 });
   }
   if (arch === 'sawtooth') {
     // the old works: a zigzag roofline with north-light clerestories
@@ -364,6 +506,7 @@ export function buildingArt(p: ArtParams, g: PrismGeom): ArtEl[] {
     // small-paned old windows
     grid(bb, br, 4, 0.15, true, true);
     if (r() < 0.4) waterTower();
+    smokeStack(0.25);
   }
 
   // ================= MIXED upper stories =================

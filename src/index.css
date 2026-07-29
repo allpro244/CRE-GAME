@@ -302,3 +302,11 @@ button.link-name {
   color: var(--ink); text-align: left; transition: color 0.12s;
 }
 button.link-name:hover { color: var(--amber); }
+
+/* ---- the city breathes: window twinkle, drifting smoke, water shimmer ---- */
+@keyframes twk { 0%, 100% { opacity: 0.85; } 50% { opacity: 0.3; } }
+.twk { animation: twk 3.8s ease-in-out infinite; }
+@keyframes smk { 0% { transform: translateY(0); opacity: 0.3; } 100% { transform: translateY(-8px); opacity: 0; } }
+.smk { animation: smk 4.5s linear infinite; }
+@keyframes shim { to { stroke-dashoffset: -64; } }
+.shim { animation: shim 7s linear infinite; }

@@ -328,8 +328,13 @@ function BldDetail({ b }: { b: IsoBld }) {
   return (
     <g>
       {els.map((e, i) => e.k === 'p'
-        ? <polygon key={i} points={e.pts} fill={e.f ?? 'none'} stroke={e.s} strokeWidth={e.w} opacity={e.o} />
-        : <line key={i} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke={e.s} strokeWidth={e.w} opacity={e.o} strokeDasharray={e.d} />)}
+        ? <polygon key={i} points={e.pts} fill={e.f ?? 'none'} stroke={e.s} strokeWidth={e.w} opacity={e.o}
+            className={e.cls} style={e.dly !== undefined ? { animationDelay: e.dly + 's' } : undefined} />
+        : e.k === 'l'
+          ? <line key={i} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke={e.s} strokeWidth={e.w} opacity={e.o} strokeDasharray={e.d}
+              className={e.cls} style={e.dly !== undefined ? { animationDelay: e.dly + 's' } : undefined} />
+          : <circle key={i} cx={e.cx} cy={e.cy} r={e.r} fill={e.f} opacity={e.o}
+              className={e.cls} style={e.dly !== undefined ? { animationDelay: e.dly + 's' } : undefined} />)}
     </g>
   );
 }
@@ -457,6 +462,47 @@ const ROAD_STYLE: Record<number, { stroke: string; w: number; dash?: string }> =
   4: { stroke: '#4b5763', w: 6.4 },
   5: { stroke: '#544a36', w: 1.8, dash: '7 5' },
 };
+const StreetLife = memo(function StreetLife({ runs, seed }: { runs: RoadRun[]; seed: number }) {
+  const els: React.ReactNode[] = [];
+  let a = seed | 0;
+  const r = () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const CAR_COLS = ['#5a6570', '#6e5f52', '#4a5a6a', '#75706a', '#5f4a4a', '#57636a'];
+  let cars = 0, trees = 0;
+  for (const run of runs) {
+    const [p0, p1] = run.pts;
+    const len = Math.abs(p1[0] - p0[0]) + Math.abs(p1[1] - p0[1]);
+    if (run.cls === 3 || run.cls === 2) {
+      // traffic scales with road class; two directions ride slightly offset gutters
+      const n = Math.min(5, Math.round(len * (run.cls === 3 ? 0.55 : 0.3) * (0.5 + r())));
+      for (let i = 0; i < n && cars < 140; i++) {
+        const u = 0.06 + r() * 0.88;
+        const gx = p0[0] + (p1[0] - p0[0]) * u, gy = p0[1] + (p1[1] - p0[1]) * u;
+        const side = r() < 0.5 ? -0.055 : 0.055;
+        const horiz = Math.abs(p1[0] - p0[0]) > Math.abs(p1[1] - p0[1]);
+        const [cx, cy] = isoPt(gx + (horiz ? 0 : side), gy + (horiz ? side : 0));
+        els.push(<polygon key={'c' + cars} points={`${(cx - 1.5).toFixed(1)},${(cy - 0.2).toFixed(1)} ${(cx + 0.3).toFixed(1)},${(cy + 0.7).toFixed(1)} ${(cx + 1.5).toFixed(1)},${(cy + 0.1).toFixed(1)} ${(cx - 0.3).toFixed(1)},${(cy - 0.8).toFixed(1)}`}
+          fill={CAR_COLS[Math.floor(r() * CAR_COLS.length)]} opacity={0.9} />);
+        cars++;
+      }
+    } else if (run.cls === 1) {
+      const n = Math.min(3, Math.round(len * 0.22 * r()));
+      for (let i = 0; i < n && trees < 110; i++) {
+        const u = 0.1 + r() * 0.8;
+        const gx = p0[0] + (p1[0] - p0[0]) * u, gy = p0[1] + (p1[1] - p0[1]) * u;
+        const horiz = Math.abs(p1[0] - p0[0]) > Math.abs(p1[1] - p0[1]);
+        const side = r() < 0.5 ? -0.09 : 0.09;
+        const [cx, cy] = isoPt(gx + (horiz ? 0 : side), gy + (horiz ? side : 0));
+        els.push(<g key={'t' + trees}>
+          <circle cx={cx} cy={cy - 1.6} r={1.5 + r()} fill={r() < 0.5 ? '#2e4a32' : '#37543a'} opacity={0.9} />
+          <line x1={cx} y1={cy} x2={cx} y2={cy - 1.2} stroke="#3a3026" strokeWidth={0.5} />
+        </g>);
+        trees++;
+      }
+    }
+  }
+  return <g style={{ pointerEvents: 'none' }}>{els}</g>;
+});
+
 const RoadsIso = memo(function RoadsIso({ runs }: { runs: RoadRun[] }) {
   return (
     <g style={{ pointerEvents: 'none' }}>
@@ -834,9 +880,11 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             const seen = new Set<number>();
             const spine = water.filter(t => { if (seen.has(t.y)) return false; seen.add(t.y); return true; });
             const pts = spine.map(t => isoPt(t.x, t.y)).map(p => p[0].toFixed(0) + ',' + p[1].toFixed(0)).join(' ');
-            return <polyline points={pts} fill="none" stroke="#23405c" strokeWidth={IH * 0.95} strokeLinecap="round" strokeLinejoin="round" />;
+            return <g><polyline points={pts} fill="none" stroke="#23405c" strokeWidth={IH * 0.95} strokeLinecap="round" strokeLinejoin="round" />
+              <polyline className="shim" points={pts} fill="none" stroke="#3c608a" strokeWidth={2} strokeDasharray="2 14" strokeLinecap="round" opacity={0.7} /></g>;
           })()}
           <RoadsIso runs={runs} />
+          {zb >= 1 && <StreetLife runs={runs} seed={state.seed} />}
           {transitActive && (() => {
             const ef = state.effects.find(e => e.kind === 'transit')!;
             const done = 1 - ef.monthsLeft / 14;

@@ -234,6 +234,7 @@ function useIsoBuildings(state: GameState): IsoBld[] {
     + ':' + state.stock.reduce((s2, b) => s2 + (b.buildLeft ?? 0), 0)
     + ':' + state.assets.reduce((s2, a) => s2 + (a.project?.monthsLeft ?? 0) + (a.mode === 'construction' ? 1000 : 0), 0)
     + ':' + Math.round(state.stock.reduce((s2, b) => s2 + b.occ, 0) * 4)
+    + ':' + Math.round(state.assets.reduce((s2, a) => s2 + a.quality + a.occ * 4 + (a.repair ? 9 : 0), 0))
     + ':' + state.firmLand.length + ':' + state.firmLand.reduce((s2, e) => s2 + e.cells.length, 0);
   return useMemo(() => {
     const out: IsoBld[] = [];
@@ -627,8 +628,9 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
     if (t) { setSelTile(focusTile); vpIso.focusOn(isoPt(t.x, t.y)); }
   }, [focusTile]); // eslint-disable-line
   const gridStamp = state.stock.length + ':' + state.assets.length + ':' + state.listings.length
+    + ':' + state.listings.reduce((s2, l) => s2 + (l.parcel || l.parcelCells ? l.id : 0), 0)
     + ':' + state.land.length + ':' + state.land.reduce((s2, h) => s2 + h.cells.length, 0)
-    + ':' + state.firmLand.length + ':' + state.firmLand.reduce((s2, e) => s2 + e.cells.length, 0);
+    + ':' + state.firmLand.map(e => e.short + e.tileI + '.' + e.cells.length).join('|');
   const grids = useMemo(() => state.tiles.map(t => E.parcelGrid(state, t.i)), [gridStamp, state.seed]); // eslint-disable-line
   const [selCells, setSelCells] = useState<{ tileI: number; cells: number[] } | null>(null);
   // Stable per-seed geometry + a live ref so the memoized layers never re-render on hover.
@@ -1073,7 +1075,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                     <tr key={ty}>
                       <td>{E.PLABEL[ty]}</td>
                       <td className="num">${E.marketRentPSF(state, sel, ty).toFixed(2)}</td>
-                      <td className="num">{E.capRatePct(state, sel, ty, 60).toFixed(1)}%</td>
+                      <td className="num">{E.capRatePct(state, sel, ty, 90).toFixed(1)}%</td>
                       <td className={over > 0.02 ? 'neg' : df > 1.05 ? 'pos' : 'dim'}>
                         {over > 0.02 ? 'Oversupplied' : df > 1.05 ? 'Undersupplied' : 'Balanced'}
                       </td>
@@ -1101,7 +1103,9 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                     return d.holdings.length > 1 ? `Builds together with ${d.holdings.length - 1} adjoining holding(s) — ${Math.round(d.cells.length * E.PARCEL_AC * 100) / 100} acres total` : undefined;
                   })()}
                     onClick={() => {
-                      const r = E.developLand(state, h.id); setState(r.s); if (r.listingId) openDeal(r.listingId);
+                      const r = E.developLand(state, h.id);
+                      if (r.err) { setRzErr(r.err); return; }
+                      setState(r.s); if (r.listingId) openDeal(r.listingId);
                     }}>Break ground ▸{(() => { const d = E.developableFrom(state, h.id); return d.holdings.length > 1 ? ` (${Math.round(d.cells.length * E.PARCEL_AC * 100) / 100} ac)` : ''; })()}</button>
                 </div>
               </div>
@@ -1218,7 +1222,9 @@ function ParcelBuyPanel({ state, setState, tileI, cells, close, ghostType, setGh
   const acres = Math.round(cells.length * E.PARCEL_AC * 100) / 100;
   const bonus = E.upzoneBonus(mainLen);
   const siteAcres = mainLen * E.PARCEL_AC;
-  const sfFor = (ty: E.PType) => Math.min(Math.floor(siteAcres * 43_560 * E.FAR[ty] * bonus), E.CONFIG.tiers[state.tier].maxSF);
+  // same math as the ghost prism: zoning tier caps density, and forbidden uses show 0
+  const sfFor = (ty: E.PType) => !E.zoneAllows(t.zone, ty) ? 0
+    : Math.min(Math.floor(siteAcres * 43_560 * E.FAR[ty] * E.zoneTierMult(t.zone.tier) * bonus), E.CONFIG.tiers[state.tier].maxSF);
   const nextThreshold = mainLen >= 16 ? null : mainLen >= 12 ? { at: 16, pct: 35 } : mainLen >= 8 ? { at: 12, pct: 22 } : { at: 8, pct: 12 };
   return (
     <div className="memo" style={{ borderLeftColor: 'var(--amber)', marginTop: 10 }}>
@@ -1281,7 +1287,7 @@ function ParcelBuyPanel({ state, setState, tileI, cells, close, ghostType, setGh
             const active = ghostType === ty;
             return (
               <button key={ty} className={'btn btn-sm' + (active ? ' btn-amber' : '')} disabled={locked || sf < E.MIN_BUILD_SF}
-                title={locked ? 'Mixed-use unlocks at Tier 2' : sf < E.MIN_BUILD_SF ? 'Site too small for this use' : `Demand ${f > 1.1 ? 'strong' : f > 0.85 ? 'fair' : 'weak'} here`}
+                title={locked ? 'Mixed-use unlocks at Tier 2' : !E.zoneAllows(t.zone, ty) ? `Not permitted in ${E.zoneCode(t.zone)} — rezone first` : sf < E.MIN_BUILD_SF ? 'Zoned density won\'t carry a building this small a site — assemble more lots or upzone' : `Demand ${f > 1.1 ? 'strong' : f > 0.85 ? 'fair' : 'weak'} here`}
                 style={{ fontSize: 10.5, padding: '3px 8px' }}
                 onClick={() => setGhostType(active ? null : ty)}>
                 {E.PLABEL[ty]} <span className={'num ' + (f > 1.1 ? 'pos' : f > 0.85 ? 'dim' : 'neg')}>{(sf / 1000).toFixed(0)}K</span>
@@ -1321,7 +1327,7 @@ export function StockCard({ state, setState, stockId, close, openDeal, variant =
         <div className="metric"><div className="eyebrow">{b.type === 'multifamily' ? 'Apartments' : 'Units'}</div><div className="v num">{b.units}</div></div>
         <div className="metric"><div className="eyebrow">Occupancy</div><div className="v num">{pct(b.occ)}</div></div>
         <div className="metric"><div className="eyebrow">Grade</div><div className="v num">{E.QLABEL[E.qGrade(b.quality)]}</div></div>
-        <div className="metric"><div className="eyebrow">Site</div><div className="v num">{Math.round((b.sf / E.FAR[b.type] / 43560) * 100) / 100} ac</div></div>
+        <div className="metric"><div className="eyebrow">Site</div><div className="v num">{Math.round(E.footprintCells(b).length * E.PARCEL_AC * 100) / 100} ac</div></div>
       </div>
       <div className="dim" style={{ fontSize: 12, margin: '10px 0 12px', lineHeight: 1.55 }}>
         Rent roll and financials are private — you can see the lights on, not the leases.

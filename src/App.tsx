@@ -634,9 +634,9 @@ function EconomyView({ state }: { state: GameState }) {
               return (
                 <tr key={ty}>
                   <td>{E.PLABEL[ty]}</td>
-                  <td className="num">{E.capRatePct(state, prime, ty, 80).toFixed(2)}%</td>
-                  <td className="num">{E.capRatePct(state, avg, ty, 60).toFixed(2)}%</td>
-                  <td className="num">{E.capRatePct(state, weak, ty, 35).toFixed(2)}%</td>
+                  <td className="num">{E.capRatePct(state, prime, ty, 125).toFixed(2)}%</td>
+                  <td className="num">{E.capRatePct(state, avg, ty, 85).toFixed(2)}%</td>
+                  <td className="num">{E.capRatePct(state, weak, ty, 45).toFixed(2)}%</td>
                 </tr>
               );
             })}
@@ -678,7 +678,7 @@ function EconomyView({ state }: { state: GameState }) {
             <tbody>
               {E.PTYPES.map(ty => {
                 const v = state.econ.cityVac[ty];
-                const eq = ty === 'industrial' ? 6 : ty === 'retail' ? 8.5 : ty === 'multifamily' ? 6.5 : 10.5;
+                const eq = E.EQ_VAC[ty];
                 return (
                   <tr key={ty}>
                     <td>{E.PLABEL[ty]}</td>

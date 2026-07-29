@@ -582,6 +582,11 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
         );
       })()}
       {isBuildFlow && <>
+      {isBuildFlow && bMax < E.MIN_BUILD_SF && (
+        <div className="alert-strip red" style={{ marginBottom: 10 }}>
+          Zoned density at {E.zoneCode(t.zone)} won't carry any {E.PLABEL[dev.type].toLowerCase()} building on this site — the paper tops out at {(bMax / 1000).toFixed(1)}K SF and nothing under {(E.MIN_BUILD_SF / 1000).toFixed(1)}K SF passes code. Assemble more lots, pick another product, or upzone the block.
+        </div>
+      )}
       {isBuildFlow && <div className="dim" style={{ fontSize: 11.5, marginBottom: 10 }}>
         Zoned <b style={{ color: 'var(--ink)' }}>{E.zoneCode(t.zone)}</b> ({E.ZONE_LABEL[t.zone.use].toLowerCase()}, {E.zoneTierMult(t.zone.tier)}× density) — permits {E.ZONE_ALLOWS[t.zone.use].map(ty => E.PLABEL[ty].toLowerCase()).join(', ')}.
         At that density a {E.PLABEL[dev.type].toLowerCase()} building here tops out at <b className="num" style={{ color: 'var(--ink)' }}>{(E.maxBuildableSF(state, listing, dev.type) / 1000).toFixed(0)}K SF</b>. Your tier caps projects at {E.CONFIG.tiers[state.tier].maxSF / 1000}K SF.
@@ -893,6 +898,7 @@ export function PortfolioView2({ state, setState, onSell, onRefi, onLOI, goDeals
                   <span className="num">{E.fmtMoney(val)} <span className={val >= h.basis ? 'pos' : 'neg'}>({val >= h.basis ? '+' : ''}{E.fmtMoney(val - h.basis)})</span></span>
                   <button className="btn btn-sm btn-amber" onClick={() => {
                     const r = E.developLand(state, h.id);
+                    if (r.err) { alert(r.err); return; }
                     setState(r.s);
                     if (r.listingId) openDeal(r.listingId);
                   }}>Build ▸</button>
@@ -1055,7 +1061,7 @@ export function AssetCard({ state, setState, asset: a, onSell, onRefi, onLOI, op
   const isMF = E.isAggregate(a.type);
   const offers = state.saleOffers.filter(o => o.assetId === a.id);
   const exAcres = E.excessAcres(a);
-  const canPad = Math.max(...E.PTYPES.map(ty => exAcres * 43560 * E.FAR[ty])) >= 5000;
+  const canPad = exAcres > 0.1 && E.spareParcels(state, a) >= 1;
   const inFac = state.facilities.some(f => f.assetIds.includes(a.id));
   return (
     <div className="asset-card">

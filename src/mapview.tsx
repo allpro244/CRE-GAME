@@ -116,26 +116,6 @@ function riverGeometry(state: GameState) {
   return d;
 }
 
-function footprints(state: GameState, t: Tile) {
-  const r = E.mulberry32((state.seed ^ (t.i * 0x9e3779b9)) | 0);
-  const cx = (t.x + 0.5) * TS, cy = (t.y + 0.5) * TS;
-  const out: { b: StockBuilding | null; assetId?: number; x: number; y: number; w: number; h: number; rot: number }[] = [];
-  const place = (sf: number) => {
-    const ang = r() * Math.PI * 2, rad = 3 + r() * (TS * 0.36);
-    const s = Math.min(13, 4 + Math.sqrt(sf) / 28);
-    return { x: cx + Math.cos(ang) * rad, y: cy + Math.sin(ang) * rad, w: s * (0.9 + r() * 0.7), h: s * (0.7 + r() * 0.5), rot: (r() - 0.5) * 30 };
-  };
-  for (const b of state.stock) {
-    if (b.tileI !== t.i) continue;
-    out.push({ b, ...place(b.sf) });
-    if (out.length >= 10) break;
-  }
-  for (const a of state.assets) {
-    if (a.tileI !== t.i) continue;
-    out.push({ b: null, assetId: a.id, ...place(a.sf) });
-  }
-  return out;
-}
 
 
 // ================= isometric (2.5D) renderer =================
@@ -188,24 +168,54 @@ function bldHeight(sf: number, type: E.PType): number {
   return 5 + stories * 4.4;
 }
 
-interface IsoBld { cx: number; cy: number; w: number; h: number; ht: number; col: string; listed: boolean; key: string; prog?: number; mine?: boolean }
+interface IsoBld { cx: number; cy: number; w: number; h: number; ht: number; col: string; listed: boolean; key: string; prog?: number; mine?: boolean; type?: E.PType; construction?: string; quality?: number; age?: number; sf?: number; seed?: number }
+
+// Greedy maximal-rectangle decomposition of a cell set: one prism per rectangle
+// instead of one per quarter-acre cell. An L-shaped assembly becomes two prisms.
+function cellRects(cells: number[]): { px: number; py: number; pw: number; ph: number }[] {
+  const set = new Set(cells);
+  const used = new Set<number>();
+  const out: { px: number; py: number; pw: number; ph: number }[] = [];
+  for (const c of [...cells].sort((a, b) => a - b)) {
+    if (used.has(c)) continue;
+    const px = c % E.PGRID, py = Math.floor(c / E.PGRID);
+    let pw = 1;
+    while (px + pw < E.PGRID && set.has(c + pw) && !used.has(c + pw)) pw++;
+    let ph = 1;
+    grow: while (py + ph < E.PGRID) {
+      for (let dx = 0; dx < pw; dx++) {
+        const cc = c + ph * E.PGRID + dx;
+        if (!set.has(cc) || used.has(cc)) break grow;
+      }
+      ph++;
+    }
+    for (let dy = 0; dy < ph; dy++) for (let dx = 0; dx < pw; dx++) used.add(c + dy * E.PGRID + dx);
+    out.push({ px, py, pw, ph });
+  }
+  return out;
+}
 
 function useIsoBuildings(state: GameState): IsoBld[] {
-  const stamp = state.stock.length + ':' + state.assets.length + ':' + state.land.length + ':' + state.month
-    + ':' + state.stock.reduce((s2, b) => s2 + (b.listedId ? 1 : 0), 0);
+  // Geometry changes when counts change, something (de)lists, or construction advances —
+  // not merely because the month ticked. Progress sums capture growing heights.
+  const stamp = state.stock.length + ':' + state.assets.length + ':' + state.land.length
+    + ':' + state.stock.reduce((s2, b) => s2 + (b.listedId ? 1 : 0), 0)
+    + ':' + state.stock.reduce((s2, b) => s2 + (b.buildLeft ?? 0), 0)
+    + ':' + state.assets.reduce((s2, a) => s2 + (a.project?.monthsLeft ?? 0) + (a.mode === 'construction' ? 1000 : 0), 0);
   return useMemo(() => {
     const out: IsoBld[] = [];
-    const place = (o: { tileI: number; sf: number; type: E.PType; cells?: number[]; px?: number; py?: number; pw?: number; ph?: number }, col: string, listed: boolean, key: string, prog?: number, mine?: boolean) => {
+    const place = (o: { tileI: number; sf: number; type: E.PType; quality?: number; age?: number; construction?: string; cells?: number[]; px?: number; py?: number; pw?: number; ph?: number }, col: string, listed: boolean, key: string, prog?: number, mine?: boolean) => {
       const cells = E.footprintCells(o);
       if (!cells.length) return;
       const t = state.tiles[o.tileI];
       const full = bldHeight(o.sf, o.type);
       const ht = prog === undefined ? full : Math.max(3, full * prog);
-      for (const c of cells) {
-        const px = c % E.PGRID, py = Math.floor(c / E.PGRID);
-        const [cx, cy] = parcelCenter(t.x, t.y, px, py);
-        const [w, h] = parcelSpan(1, 1);
-        out.push({ cx, cy, w: w * 0.94, h: h * 0.94, ht, col, listed, key: key + '_' + c, prog, mine });
+      for (const [ri, r] of cellRects(cells).entries()) {
+        const [cx, cy] = parcelCenter(t.x, t.y, r.px, r.py, r.pw, r.ph);
+        const [w, h] = parcelSpan(r.pw, r.ph);
+        out.push({ cx, cy, w: w * 0.94, h: h * 0.94, ht, col, listed, key: key + '_r' + ri, prog, mine,
+          type: o.type, construction: o.construction, quality: o.quality, age: o.age, sf: o.sf,
+          seed: (state.seed ^ ((o.tileI + 1) * 0x9e3779b9) ^ ri) | 0 });
       }
     };
     for (const b of state.stock) {
@@ -219,11 +229,10 @@ function useIsoBuildings(state: GameState): IsoBld[] {
     }
     for (const hd of state.land) {
       const t = state.tiles[hd.tileI];
-      for (const c of hd.cells) {
-        const px = c % E.PGRID, py = Math.floor(c / E.PGRID);
-        const [cx, cy] = parcelCenter(t.x, t.y, px, py);
-        const [w, hh] = parcelSpan(1, 1);
-        out.push({ cx, cy, w: w * 0.92, h: hh * 0.92, ht: 1.5, col: '#8a6a2c', listed: false, key: 'L' + hd.id + '_' + c, mine: true });
+      for (const [ri, r] of cellRects(hd.cells).entries()) {
+        const [cx, cy] = parcelCenter(t.x, t.y, r.px, r.py, r.pw, r.ph);
+        const [w, hh] = parcelSpan(r.pw, r.ph);
+        out.push({ cx, cy, w: w * 0.92, h: hh * 0.92, ht: 1.5, col: '#8a6a2c', listed: false, key: 'L' + hd.id + '_r' + ri, mine: true });
       }
     }
     out.sort((p, q) => (p.cx + p.cy) - (q.cx + q.cy)); // painter's algorithm: back to front
@@ -231,7 +240,9 @@ function useIsoBuildings(state: GameState): IsoBld[] {
   }, [stamp, state.seed]); // eslint-disable-line
 }
 
-const IsoCity = memo(function IsoCity({ blds }: { blds: IsoBld[] }) {
+// detail=true above the LOD zoom threshold: facades and site dressing draw;
+// below it every building is a cheap flat prism. Phase D plugs into the detail branch.
+const IsoCity = memo(function IsoCity({ blds, detail }: { blds: IsoBld[]; detail: boolean }) {
   return (
     <g style={{ pointerEvents: 'none' }}>
       {blds.map(b => {
@@ -242,15 +253,23 @@ const IsoCity = memo(function IsoCity({ blds }: { blds: IsoBld[] }) {
         const dash = b.prog !== undefined ? '3 2' : undefined;
         return (
           <g key={b.key}>
+            {detail && b.ht > 3 && <polygon points={rectPoly(b.cx + b.w * 0.12, b.cy + b.h * 0.12, b.w, b.h)} fill="#000" opacity={0.22} />}
             <polygon points={f.l} fill={shade(b.col, 0.56)} stroke={st} strokeWidth={sw} strokeDasharray={dash} />
             <polygon points={f.r} fill={shade(b.col, 0.79)} stroke={st} strokeWidth={sw} strokeDasharray={dash} />
             <polygon points={f.t} fill={shade(b.col, 1.16)} stroke={st} strokeWidth={sw} strokeDasharray={dash} />
+            {detail && <BldDetail b={b} />}
           </g>
         );
       })}
     </g>
   );
 });
+
+// Placeholder detail layer — Phase D (buildingArt.ts) replaces the body of this.
+function BldDetail({ b }: { b: IsoBld }) {
+  if (b.prog !== undefined) return null;
+  return null;
+}
 
 
 // ---------- pan / zoom viewport ----------
@@ -337,6 +356,84 @@ function useViewport(bx: number, by: number, bw: number, bh: number) {
   };
 }
 
+// ---------- memoized layers ----------
+// The map draws thousands of SVG nodes. Splitting it into layers memoized on stable
+// identities means hover, pan and zoom re-render a tooltip div — not the city.
+type TileGeom = { i: number; x: number; y: number; water: boolean };
+
+const TileBaseIso = memo(function TileBaseIso({ tiles }: { tiles: TileGeom[] }) {
+  return <g>{tiles.map(t => (
+    <polygon key={'st' + t.i} points={diamond(t.x, t.y)} fill={t.water ? '#1b3149' : '#171c22'} stroke="#0b0f13" strokeWidth={0.5} />
+  ))}</g>;
+});
+
+const LensCellsIso = memo(function LensCellsIso({ tiles, grids, vals, hue, zb }: {
+  tiles: TileGeom[]; grids: (number | null)[][]; vals: number[]; hue: [number, number, number]; zb: number;
+}) {
+  return <g>{tiles.map(t => {
+    if (t.water) return null;
+    const base = lerpColor(DARK, hue, vals[t.i] * 0.82 + 0.03);
+    const dimFill = lerpColor(DARK, hue, vals[t.i] * 0.4 + 0.02);
+    const g = grids[t.i];
+    const cells = [];
+    for (let py = 0; py < E.PGRID; py++) for (let px = 0; px < E.PGRID; px++) {
+      const occupied = g[py * E.PGRID + px] !== null;
+      const [cx, cy] = parcelCenter(t.x, t.y, px, py);
+      const [w, h] = parcelSpan(1, 1);
+      cells.push(
+        <polygon key={t.i + '-' + px + '-' + py} points={rectPoly(cx, cy, w * 0.9, h * 0.9)}
+          fill={occupied ? base : dimFill}
+          stroke={occupied ? '#0b0f13' : '#39434e'} strokeWidth={zb >= 2 ? 0.55 : 0.3}
+          strokeOpacity={zb >= 1 ? 1 : 0.45} />
+      );
+    }
+    return <g key={'p' + t.i}>{cells}</g>;
+  })}</g>;
+});
+
+const HitLayerIso = memo(function HitLayerIso({ tiles, onEnter, onLeave, onClick }: {
+  tiles: TileGeom[];
+  onEnter: (tileI: number, px: number, py: number, e: React.PointerEvent) => void;
+  onLeave: () => void;
+  onClick: (tileI: number, px: number, py: number) => void;
+}) {
+  return <g>{tiles.map(t => {
+    if (t.water) return null;
+    const hits = [];
+    for (let py = 0; py < E.PGRID; py++) for (let px = 0; px < E.PGRID; px++) {
+      const [cx, cy] = parcelCenter(t.x, t.y, px, py);
+      const [w, h] = parcelSpan(1, 1);
+      hits.push(
+        <polygon key={t.i + '-h-' + px + '-' + py} points={rectPoly(cx, cy, w, h)} fill="transparent"
+          style={{ cursor: 'pointer' }}
+          onPointerEnter={e => onEnter(t.i, px, py, e)}
+          onPointerLeave={onLeave}
+          onClick={() => onClick(t.i, px, py)} />
+      );
+    }
+    return <g key={'hit' + t.i}>{hits}</g>;
+  })}</g>;
+});
+
+const FieldFlat = memo(function FieldFlat({ field, hue }: { field: { x: number; y: number; v: number }[]; hue: [number, number, number] }) {
+  const sub = TS / SUB;
+  return <g>{field.map((c, k) => (
+    <rect key={k} x={c.x * TS} y={c.y * TS} width={sub + 0.5} height={sub + 0.5}
+      fill={lerpColor(DARK, hue, Math.max(0, Math.min(1, c.v)) * 0.82 + 0.03)} />
+  ))}</g>;
+});
+
+// Flat-view buildings from the same parcel-true geometry as the iso view —
+// the two views finally agree about where every building stands.
+const FlatBuildings = memo(function FlatBuildings({ blds }: { blds: IsoBld[] }) {
+  return <g style={{ pointerEvents: 'none' }}>{blds.map(b => (
+    <rect key={b.key} x={(b.cx + 0.5 - b.w / 2) * TS} y={(b.cy + 0.5 - b.h / 2) * TS}
+      width={b.w * TS} height={b.h * TS}
+      fill={b.col} stroke={b.listed ? 'var(--green)' : '#10151a'} strokeWidth={b.listed ? 1.4 : 0.7}
+      strokeDasharray={b.prog !== undefined ? '3 2' : undefined} />
+  ))}</g>;
+});
+
 export function MapView({ state, setState, selTile, setSelTile, openDeal, openStock, openAsset, focusTile }: {
   state: GameState; setState: (s: GameState) => void; selTile: number | null; setSelTile: (i: number | null) => void;
   openDeal: (id: number) => void; openStock: (id: number) => void; openAsset: (id: number) => void;
@@ -355,22 +452,81 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
     const t = state.tiles[focusTile];
     if (t) { setSelTile(focusTile); vpIso.focusOn(isoPt(t.x, t.y)); }
   }, [focusTile]); // eslint-disable-line
-  const gridStamp = state.stock.length + ':' + state.assets.length + ':' + state.listings.length;
+  const gridStamp = state.stock.length + ':' + state.assets.length + ':' + state.listings.length
+    + ':' + state.land.length + ':' + state.land.reduce((s2, h) => s2 + h.cells.length, 0);
   const grids = useMemo(() => state.tiles.map(t => E.parcelGrid(state, t.i)), [gridStamp, state.seed]); // eslint-disable-line
   const [selCells, setSelCells] = useState<{ tileI: number; cells: number[] } | null>(null);
+  // Stable per-seed geometry + a live ref so the memoized layers never re-render on hover.
+  const tilesGeom = useMemo(() => state.tiles.map(t => ({ i: t.i, x: t.x, y: t.y, water: t.water })), [state.seed]); // eslint-disable-line
   const vpIso = useViewport(0, 0, IW_TOT, IH_TOT);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const vpFlat = useViewport(-20, -18, W + 24, H + 22);
   const field = useField(state, lens);
   const river = useMemo(() => riverGeometry(state), [state.seed]);
   const hue = LENS_HUE[lens];
-  const sub = TS / SUB;
 
   const sel = selTile !== null ? state.tiles[selTile] : null;
   const transitActive = state.effects.some(e => e.kind === 'transit');
   const listingsOn = (i: number) => state.listings.filter(l => l.tileI === i);
   const assetsOn = (i: number) => state.assets.filter(a => a.tileI === i);
   const stockOn = (i: number) => state.stock.filter(b => b.tileI === i);
+
+  const live = useRef({ state, grids, openDeal, openStock, openAsset, setSelTile });
+  live.current = { state, grids, openDeal, openStock, openAsset, setSelTile };
+  const hitLeave = useCallback(() => setHover(null), []);
+  const hitEnter = useCallback((tileI: number, px: number, py: number, e: React.PointerEvent) => {
+    const { state: s, grids: g } = live.current;
+    const t = s.tiles[tileI];
+    const occ = g[tileI][py * E.PGRID + px];
+    const r = wrapRef.current?.getBoundingClientRect();
+    let text = `Vacant · ${E.PARCEL_AC} ac`, sub2 = `Block ${blockName(t)} · ${E.fmtMoney(E.parcelPrice(s, t.i, 1, 1))}`;
+    if (occ !== null) {
+      if (occ >= 1_000_000) {
+        const hd = s.land.find(x => x.id === occ - 1_000_000);
+        text = 'Your land'; sub2 = hd ? `${Math.round(hd.cells.length * E.PARCEL_AC * 100) / 100} ac banked · basis ${E.fmtMoney(hd.basis)}` : '';
+      } else if (occ < 0) {
+        const l = s.listings.find(x => x.id === -occ);
+        text = l?.kind === 'land' ? 'Land for sale' : 'For sale'; sub2 = l ? `${E.fmtMoney(l.price)}` : '';
+      } else {
+        const b = s.stock.find(x => x.id === occ);
+        const a = s.assets.find(x => x.id === occ);
+        if (b) {
+          text = `${(b.sf / 1000).toFixed(0)}K SF ${E.PLABEL[b.type]}`;
+          sub2 = b.buildLeft ? `Under construction · ${b.buildLeft} mo left${b.builder ? ' · ' + b.builder : ''}`
+            : `${b.owner === 'private' ? 'Private owner' : b.owner} · ${pct(b.occ)} leased · ${E.QLABEL[E.qGrade(b.quality)]}-grade`;
+        } else if (a) {
+          text = a.name;
+          sub2 = a.mode === 'construction' ? `Your project · ${a.project?.monthsLeft ?? 0} mo left`
+            : `Yours · ${pct(a.occ)} leased · ${E.fmtMoney(E.assetValue(s, a))}`;
+        }
+      }
+    }
+    setHover({ text, sub: sub2, x: e.clientX - (r?.left ?? 0), y: e.clientY - (r?.top ?? 0) });
+  }, []); // eslint-disable-line
+  const hitClick = useCallback((tileI: number, px: number, py: number) => {
+    if (vpIso.moved.current) return;
+    const { state: s, grids: g, openDeal: od, openStock: os, openAsset: oa, setSelTile: st } = live.current;
+    const occ = g[tileI][py * E.PGRID + px];
+    st(tileI);
+    if (occ === null) {
+      const cell = py * E.PGRID + px;
+      setSelCells(prev => {
+        if (!prev || prev.tileI !== tileI) return { tileI, cells: [cell] };
+        const has = prev.cells.includes(cell);
+        const cells = has ? prev.cells.filter(c => c !== cell) : [...prev.cells, cell];
+        return cells.length ? { tileI, cells } : null;
+      });
+      return;
+    }
+    setSelCells(null);
+    if (occ < 0) { od(-occ); return; }
+    if (occ >= 1_000_000) return;   // your banked dirt — the block panel handles it
+    const mine = s.assets.find(x => x.id === occ);
+    if (mine) { oa(mine.id); return; }
+    const b = s.stock.find(x => x.id === occ);
+    if (b) { b.listedId ? od(b.listedId) : os(b.id); }
+  }, []); // eslint-disable-line
+  const zb = vpIso.z > 1.6 ? 2 : vpIso.z > 1.2 ? 1 : 0;
 
   return (
     <div className="map-wrap">
@@ -395,28 +551,8 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
         {view === 'iso' ? (
         <svg className="map-svg" ref={vpIso.ref} viewBox={vpIso.viewBox} style={vpIso.style} {...vpIso.handlers}>
           <rect x={0} y={0} width={IW_TOT} height={IH_TOT} rx={6} fill="#0b0f13" />
-          {state.tiles.map(t => (
-            <polygon key={'st' + t.i} points={diamond(t.x, t.y)} fill={t.water ? '#1b3149' : '#171c22'} stroke="#0b0f13" strokeWidth={0.5} />
-          ))}
-          {state.tiles.map(t => {
-            if (t.water) return null;
-            const base = lerpColor(DARK, hue, tileVals[t.i] * 0.82 + 0.03);
-            const g = grids[t.i];
-            const cells = [];
-            for (let py = 0; py < E.PGRID; py++) for (let px = 0; px < E.PGRID; px++) {
-              const occupied = g[py * E.PGRID + px] !== null;
-              const [cx, cy] = parcelCenter(t.x, t.y, px, py);
-              const [w, h] = parcelSpan(1, 1);
-              cells.push(
-                <polygon key={t.i + '-' + px + '-' + py}
-                  points={rectPoly(cx, cy, w * 0.9, h * 0.9)}
-                  fill={occupied ? base : lerpColor(DARK, hue, tileVals[t.i] * 0.4 + 0.02)}
-                  stroke={occupied ? '#0b0f13' : '#39434e'} strokeWidth={vpIso.z > 1.6 ? 0.55 : 0.3}
-                  strokeOpacity={vpIso.z > 1.2 ? 1 : 0.45} />
-              );
-            }
-            return <g key={'p' + t.i}>{cells}</g>;
-          })}
+          <TileBaseIso tiles={tilesGeom} />
+          <LensCellsIso tiles={tilesGeom} grids={grids} vals={tileVals} hue={hue} zb={zb} />
           {(() => {
             const water = state.tiles.filter(t => t.water).sort((a, b) => (a.y - b.y) || (a.x - b.x));
             if (!water.length) return null;
@@ -447,7 +583,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                 opacity={built ? 1 : 0.6} style={{ pointerEvents: 'none' }} />;
             });
           })()}
-          <IsoCity blds={isoBlds} />
+          <IsoCity blds={isoBlds} detail={zb >= 2} />
           {state.listings.filter(l => l.kind === 'land' && !l.parentAssetId).map(l => {
             const t = state.tiles[l.tileI];
             const p = isoPt(t.x, t.y);
@@ -463,67 +599,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
               </g>
             );
           })}
-          {state.tiles.map(t => {
-            if (t.water) return null;
-            const g = grids[t.i];
-            const hits = [];
-            for (let py = 0; py < E.PGRID; py++) for (let px = 0; px < E.PGRID; px++) {
-              const occ = g[py * E.PGRID + px];
-              const [cx, cy] = parcelCenter(t.x, t.y, px, py);
-              const [w, h] = parcelSpan(1, 1);
-              hits.push(
-                <polygon key={t.i + '-h-' + px + '-' + py} points={rectPoly(cx, cy, w, h)} fill="transparent"
-                  style={{ cursor: 'pointer' }}
-                  onPointerEnter={e => {
-                    const r = wrapRef.current?.getBoundingClientRect();
-                    let text = `Vacant · ${E.PARCEL_AC} ac`, sub = `Block ${blockName(t)} · ${E.fmtMoney(E.parcelPrice(state, t.i, 1, 1))}`;
-                    if (occ !== null) {
-                      if (occ >= 1_000_000) { const hd = state.land.find(x => x.id === occ - 1_000_000);
-                        text = 'Your land'; sub = hd ? `${Math.round(hd.cells.length * E.PARCEL_AC * 100) / 100} ac banked · basis ${E.fmtMoney(hd.basis)}` : ''; }
-                      else if (occ < 0) { const l = state.listings.find(x => x.id === -occ);
-                        text = l?.kind === 'land' ? 'Land for sale' : 'For sale'; sub = l ? `${E.fmtMoney(l.price)}` : ''; }
-                      else {
-                        const b = state.stock.find(x => x.id === occ);
-                        const a = state.assets.find(x => x.id === occ);
-                        if (b) {
-                          text = `${(b.sf / 1000).toFixed(0)}K SF ${E.PLABEL[b.type]}`;
-                          sub = b.buildLeft ? `Under construction · ${b.buildLeft} mo left${b.builder ? ' · ' + b.builder : ''}`
-                            : `${b.owner === 'private' ? 'Private owner' : b.owner} · ${pct(b.occ)} leased · ${E.QLABEL[E.qGrade(b.quality)]}-grade`;
-                        } else if (a) {
-                          text = a.name;
-                          sub = a.mode === 'construction' ? `Your project · ${a.project?.monthsLeft ?? 0} mo left`
-                            : `Yours · ${pct(a.occ)} leased · ${E.fmtMoney(E.assetValue(state, a))}`;
-                        }
-                      }
-                    }
-                    setHover({ text, sub, x: e.clientX - (r?.left ?? 0), y: e.clientY - (r?.top ?? 0) });
-                  }}
-                  onPointerLeave={() => setHover(null)}
-                  onClick={() => {
-                    if (vpIso.moved.current) return;
-                    setSelTile(t.i);
-                    if (occ === null) {
-                      const cell = py * E.PGRID + px;
-                      setSelCells(prev => {
-                        if (!prev || prev.tileI !== t.i) return { tileI: t.i, cells: [cell] };
-                        const has = prev.cells.includes(cell);
-                        const cells = has ? prev.cells.filter(c => c !== cell) : [...prev.cells, cell];
-                        return cells.length ? { tileI: t.i, cells } : null;
-                      });
-                      return;
-                    }
-                    setSelCells(null);
-                    if (occ < 0) { openDeal(-occ); return; }
-                    if (occ >= 1_000_000) return;   // your banked dirt — the block panel handles it
-                    const mine = state.assets.find(x => x.id === occ);
-                    if (mine) { openAsset(mine.id); return; }
-                    const b = state.stock.find(x => x.id === occ);
-                    if (b) { b.listedId ? openDeal(b.listedId) : openStock(b.id); }
-                  }} />
-              );
-            }
-            return <g key={'hit' + t.i}>{hits}</g>;
-          })}
+          <HitLayerIso tiles={tilesGeom} onEnter={hitEnter} onLeave={hitLeave} onClick={hitClick} />
           {sel && <polygon points={diamond(sel.x, sel.y, 0.99)} fill="none" stroke="var(--amber-dim)" strokeWidth={1.4} style={{ pointerEvents: 'none' }} />}
           {selCells && selCells.cells.map(c => {
             const t = state.tiles[selCells.tileI];
@@ -551,10 +627,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             <text key={'cy' + i} x={-10} y={(i + 0.5) * TS + 3.5} textAnchor="middle" fill="var(--dim)" fontSize={10} fontFamily="var(--mono)">{i + 1}</text>
           ))}
           {/* continuous value field */}
-          {field.map((c, k) => (
-            <rect key={k} x={c.x * TS} y={c.y * TS} width={sub + 0.5} height={sub + 0.5}
-              fill={lerpColor(DARK, hue, Math.max(0, Math.min(1, c.v)) * 0.82 + 0.03)} />
-          ))}
+          <FieldFlat field={field} hue={hue} />
           {/* street grain: faint gridlines so the city reads as blocks, not gradient soup */}
           {Array.from({ length: E.CONFIG.GRID_W + 1 }, (_, i) => (
             <line key={'gv' + i} x1={i * TS} y1={0} x2={i * TS} y2={H} stroke="#0b0f13" strokeWidth={1.1} opacity={0.55} />
@@ -574,20 +647,8 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             return <rect key={'t' + i} x={t.x * TS + 1.5} y={t.y * TS + 1.5} width={TS - 3} height={TS - 3} rx={4}
               fill="none" stroke="var(--blue)" strokeWidth={1.5} strokeDasharray="5 4" style={{ pointerEvents: 'none' }} />;
           })}
-          {/* buildings */}
-          {state.tiles.map(t => {
-            if (t.water) return null;
-            return footprints(state, t).map((f, k) => {
-              const listed = f.b?.listedId !== undefined && f.b?.listedId !== null;
-              const fill = f.assetId !== undefined ? 'var(--amber)' : f.b && f.b.owner !== 'private' ? '#46608c' : '#4a5560';
-              return (
-                <g key={t.i + '-' + k} transform={`translate(${f.x} ${f.y}) rotate(${f.rot})`} style={{ pointerEvents: 'none' }}>
-                  <rect x={-f.w / 2} y={-f.h / 2} width={f.w} height={f.h}
-                    fill={fill} stroke={listed ? 'var(--green)' : '#10151a'} strokeWidth={listed ? 1.4 : 0.7} />
-                </g>
-              );
-            });
-          })}
+          {/* buildings — same parcel-true geometry as the iso view */}
+          <FlatBuildings blds={isoBlds} />
           {state.listings.filter(l => l.kind === 'land' && !l.parentAssetId).map(l => {
             const t = state.tiles[l.tileI];
             return <circle key={'l' + l.id} cx={(t.x + 0.78) * TS} cy={(t.y + 0.22) * TS} r={4.5}

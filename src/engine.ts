@@ -34,27 +34,27 @@ export interface ConstrSpec {
 }
 export const CONSTR: Record<PType, ConstrSpec[]> = {
   industrial: [
-    { id: 'tilt', label: 'Tilt-wall concrete', cost: 108, q: 78, qCap: 95 },
-    { id: 'metal', label: 'Pre-engineered metal', cost: 82, q: 58, qCap: 70 },
-    { id: 'tin', label: 'Tin / light steel', cost: 58, q: 36, qCap: 45 },
+    { id: 'tilt', label: 'Tilt-wall concrete', cost: 115, q: 78, qCap: 95 },
+    { id: 'metal', label: 'Pre-engineered metal', cost: 88, q: 58, qCap: 70 },
+    { id: 'tin', label: 'Tin / light steel', cost: 62, q: 36, qCap: 45 },
   ],
   retail: [
-    { id: 'center', label: 'Shopping center', cost: 192, q: 70, qCap: 90, minUnits: 6 },
-    { id: 'strip', label: 'Retail strip', cost: 128, q: 38, qCap: 55, minUnits: 3 },
-    { id: 'pad', label: 'Pad site (single tenant)', cost: 218, q: 74, qCap: 92, fixedUnits: 1, maxSF: 8000, rentBonus: 0.25 },
+    { id: 'center', label: 'Shopping center', cost: 204, q: 70, qCap: 90, minUnits: 6 },
+    { id: 'strip', label: 'Retail strip', cost: 137, q: 38, qCap: 55, minUnits: 3 },
+    { id: 'pad', label: 'Pad site (single tenant)', cost: 230, q: 74, qCap: 92, fixedUnits: 1, maxSF: 8000, rentBonus: 0.25 },
   ],
   office: [
-    { id: 'concrete', label: 'Concrete & steel — Class A', cost: 268, q: 84, qCap: 95 },
-    { id: 'masonry', label: 'Masonry — Class B', cost: 205, q: 60, qCap: 72 },
-    { id: 'wood', label: 'Wood frame — Class C', cost: 152, q: 38, qCap: 45 },
+    { id: 'concrete', label: 'Concrete & steel — Class A', cost: 284, q: 84, qCap: 95 },
+    { id: 'masonry', label: 'Masonry — Class B', cost: 217, q: 60, qCap: 72 },
+    { id: 'wood', label: 'Wood frame — Class C', cost: 160, q: 38, qCap: 45 },
   ],
   mixed: [
-    { id: 'podium', label: 'Podium mixed-use', cost: 252, q: 70, qCap: 92 },
+    { id: 'podium', label: 'Podium mixed-use', cost: 267, q: 70, qCap: 92 },
   ],
   multifamily: [
-    { id: 'garden', label: 'Garden apartments', cost: 165, q: 52, qCap: 68 },
-    { id: 'midrise', label: 'Wood-podium midrise', cost: 210, q: 68, qCap: 84 },
-    { id: 'tower', label: 'Concrete tower — Class A', cost: 295, q: 86, qCap: 95 },
+    { id: 'garden', label: 'Garden apartments', cost: 175, q: 52, qCap: 68 },
+    { id: 'midrise', label: 'Wood-podium midrise', cost: 223, q: 68, qCap: 84 },
+    { id: 'tower', label: 'Concrete tower — Class A', cost: 312, q: 86, qCap: 95 },
   ],
 };
 export const FAR: Record<PType, number> = { industrial: 0.45, retail: 0.45, office: 2.2, mixed: 1.4, multifamily: 1.6 };
@@ -66,7 +66,7 @@ export const CONFIG = {
   START_CASH: 600_000,
   baseRent: { office: 30.5, retail: 20.0, industrial: 8.2, mixed: 31, multifamily: 21.5 } as Record<PType, number>,
   hardCost: { office: 215, retail: 175, industrial: 92, mixed: 245, multifamily: 195 } as Record<PType, number>, // legacy: renovation basis
-  baseCap: { office: 6.7, retail: 7.0, industrial: 6.3, mixed: 6.45, multifamily: 5.95 } as Record<PType, number>,
+  baseCap: { office: 7.0, retail: 7.25, industrial: 6.8, mixed: 6.7, multifamily: 6.2 } as Record<PType, number>,
   absorbBase: { office: 0.10, retail: 0.15, industrial: 0.22, mixed: 0.13, multifamily: 0.20 } as Record<PType, number>,
   // itemized expense ratios (share of potential rent unless noted)
   expense: {

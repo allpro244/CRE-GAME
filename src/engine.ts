@@ -118,6 +118,11 @@ export interface Tile {
 // tile (x, y-1) and (x, y); vt[y][x] between (x-1, y) and (x, y).
 // Classes: 0 none · 1 local · 2 collector · 3 arterial · 4 highway · 5 rail.
 export interface RoadNet { hz: number[][]; vt: number[][] }
+export interface LandContractState {
+  m: number; deposit: number;
+  studyOrdered?: boolean; studyFee?: number; resultM?: number;
+  known?: SiteCond;
+}
 
 export type Phase = 'recovery' | 'expansion' | 'peak' | 'recession';
 export interface Economy {
@@ -245,6 +250,7 @@ export interface Listing {
   reservation?: number; offersLeft?: number; counterAt?: number; agreed?: boolean; noAsk?: boolean;
   resFrac?: number; listMonth?: number; declinedYou?: boolean; parentAssetId?: number; yourSale?: boolean;
   parcel?: Parcel; parcelCells?: number[]; fromLandId?: number;
+  underContract?: LandContractState;
 }
 
 export interface Firm { name: string; short: string; style: 'core' | 'aggressive' | 'industrial' | 'value-add' | 'mf'; netWorth: number; alive: boolean; }
@@ -264,6 +270,8 @@ export interface Parcel { px: number; py: number; pw: number; ph: number }
 export interface LandHolding {
   id: number; tileI: number; cells: number[];
   basis: number; acquiredM: number;
+  cond?: SiteCond;        // the seeded truth, in land terms
+  condKnown?: boolean;    // did you pay for the study, or are you guessing?
 }
 export interface Migration { m: number; tenant: string; fromTileI: number; toTileI: number; sf: number }
 
@@ -1009,7 +1017,7 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     lastScoutMonth: -99, approachesLeft: 5, parcelApproach: {},
     gameOver: false, transitCorridor: corridor, roads,
     totalRealizedProfit: 0, dealsClosed: 0,
-    version: 14,
+    version: 15,
   };
   generateStock(state);
   // Born in equilibrium: the anchors absorb whatever the initial city explains, so
@@ -1576,11 +1584,24 @@ export function validateDev(state: GameState, l: Listing, c: DevChoice): string 
 
 // What's actually under the dirt, seeded from (seed, tileI, sorted cells) — diligence
 // tells the truth, and reloading can't re-roll it. Most sites are clean. Some aren't.
-export function siteCondition(s: GameState, tileI: number, cells: number[], sf: number): SiteCond {
+function siteRoll(s: GameState, tileI: number, cells: number[]): { u: number; u2: number } {
   let h = s.seed ^ Math.imul(tileI + 1, 0x9E3779B9);
   for (const c of [...cells].sort((a, b) => a - b)) h = Math.imul(h ^ (c + 1), 0x85EBCA6B);
   const r = mulberry32(h | 0);
-  const u = r(), u2 = r();
+  return { u: r(), u2: r() };
+}
+// The same dirt tells the same story whether a study finds it or an excavator does.
+export function landSiteCondition(s: GameState, tileI: number, cells: number[], price: number): SiteCond {
+  const { u, u2 } = siteRoll(s, tileI, cells);
+  if (u < 0.62) return { kind: 'none', cost: 0, delayMo: 0 };
+  if (u < 0.74) return { kind: 'soils', cost: roundPrice(price * (0.15 + u2 * 0.25)), delayMo: 1 + Math.round(u2) };
+  if (u < 0.82) return { kind: 'easement', cost: 0, delayMo: 0, sfLossFrac: 0.12 + u2 * 0.15 };
+  if (u < 0.90) return { kind: 'utility', cost: roundPrice(price * (0.20 + u2 * 0.30)), delayMo: 2 };
+  if (u < 0.97) return { kind: 'tank', cost: roundPrice(price * (0.40 + u2 * 0.60)), delayMo: 2 + Math.round(u2 * 2) };
+  return { kind: 'archaeology', cost: roundPrice(price * (0.30 + u2 * 0.40)), delayMo: 5 + Math.round(u2 * 3) };
+}
+export function siteCondition(s: GameState, tileI: number, cells: number[], sf: number): SiteCond {
+  const { u, u2 } = siteRoll(s, tileI, cells);
   if (u < 0.62) return { kind: 'none', cost: 0, delayMo: 0 };
   if (u < 0.74) return { kind: 'soils', cost: Math.round(sf * (6 + u2 * 8)), delayMo: 1 + Math.round(u2) };
   if (u < 0.82) return { kind: 'easement', cost: 0, delayMo: 0, sfLossFrac: 0.12 + u2 * 0.15 };
@@ -1613,6 +1634,10 @@ export function buyLandAndDevelop(state: GameState, listingId: number, c: DevCho
   const vErr = validateDev(s, l, c);
   if (vErr) return { s, err: vErr };
   const bd = devCostBreakdown(s, c, l.price);
+  // a studied holding's known remediation joins the budget and the capital stack
+  const srcHolding0 = l.fromLandId ? state.land.find(x => x.id === l.fromLandId) : undefined;
+  const knownUpfront = srcHolding0?.condKnown && srcHolding0.cond && srcHolding0.cond.kind !== 'none' && !srcHolding0.cond.sfLossFrac
+    ? srcHolding0.cond.cost : 0;
   if (c.diligence) {
     // Under contract, not closed: deposit at risk, DD fee sunk, the truth in 1-2 months.
     const deposit = Math.max(10_000, Math.round(l.price * 0.03));
@@ -1648,10 +1673,11 @@ export function buyLandAndDevelop(state: GameState, listingId: number, c: DevCho
     pushNews(s, 'deal', `${a2.name}: under contract at ${fmtMoney(l.price)} with ${fmtMoney(deposit)} down. Drills and consultants are on site — the truth arrives before your money does.`, l.tileI);
     return { s };
   }
-  const maxLoan = bd.total * (CONFIG.constrLTC - (s.econ.crunchMonthsLeft > 0 ? 0.1 : 0));
-  const equity = Math.max(bd.total * c.downPct, bd.total - maxLoan);
+  const totalAll = bd.total + knownUpfront;
+  const maxLoan = totalAll * (CONFIG.constrLTC - (s.econ.crunchMonthsLeft > 0 ? 0.1 : 0));
+  const equity = Math.max(totalAll * c.downPct, totalAll - maxLoan);
   if (s.cash < equity) return { s, err: 'You need ' + fmtMoney(equity) + ' of equity for this capital stack.' };
-  const loanAmt = bd.total - equity;
+  const loanAmt = totalAll - equity;
   const rate = s.econ.rate + CONFIG.constrSpread + (c.fixedRate ? 0.6 : 0);
   // interest reserve, sized to the expected build at ~60% average drawn balance
   const reserve = Math.round(loanAmt * (rate / 100 / 12) * bd.months * 0.6);
@@ -1672,8 +1698,10 @@ export function buyLandAndDevelop(state: GameState, listingId: number, c: DevCho
     events.push({ month: 1 + Math.floor(rng(s) * (bd.months - 1)), kind: rpick(s, pool), resolved: false });
   }
   if (c.contractor === 'premium' && rng(s) < 0.35) events.push({ month: Math.floor(bd.months * 0.6), kind: 'ahead', resolved: false });
-  // you waived diligence — whatever is under the dirt surfaces at excavation, at a multiple
-  const cond0 = siteCondition(s, t.i, l.parcelCells ?? (l.parcel ? cellsOfRect(l.parcel.px, l.parcel.py, l.parcel.pw, l.parcel.ph) : []), c.sf);
+  // what's under the dirt: a studied holding prices it into the budget; an unstudied
+  // one meets it at excavation, at a multiple
+  const cellsHere = l.parcelCells ?? (l.parcel ? cellsOfRect(l.parcel.px, l.parcel.py, l.parcel.pw, l.parcel.ph) : []);
+  const cond0 = srcHolding0?.condKnown ? { kind: 'none' as SiteCondKind, cost: 0, delayMo: 0 } : siteCondition(s, t.i, cellsHere, c.sf);
   if (cond0.kind !== 'none') events.push({ month: 1 + Math.floor(rng(s) * 3), kind: 'siteSurprise', resolved: false });
   const startQ = bd.spec.q + (c.contractor === 'premium' ? 6 : c.contractor === 'budget' ? -8 : 0);
   const permitMonths = 1 + Math.floor(rng(s) * 3);
@@ -1693,7 +1721,7 @@ export function buyLandAndDevelop(state: GameState, listingId: number, c: DevCho
     entryNOI: 0, entryCap: capRatePct(s, t, c.type, startQ),
     project: {
       stage: 'design', monthsLeft: bd.designMonths, totalMonths: bd.months,
-      hardBudget: bd.hard, softBudget: bd.soft, spent: l.price + bd.designFee,
+      hardBudget: bd.hard + knownUpfront, softBudget: bd.soft, spent: l.price + bd.designFee + knownUpfront,
       contingency: bd.cont, contingencyLeft: bd.cont,
       contractor: c.contractor, expedited: c.expedited, events, drawnSoFar: 0, monthsBuilt: 0,
       contractType: c.contractType ?? 'costplus', bonded: !!c.bonded,
@@ -1701,8 +1729,8 @@ export function buyLandAndDevelop(state: GameState, listingId: number, c: DevCho
     },
     negCFStreak: 0,
   };
-  a.deprBasis = Math.round(bd.hard + bd.soft + bd.designFee);
-  a.basis = bd.total + bd.designFee;
+  a.deprBasis = Math.round(bd.hard + bd.soft + bd.designFee + knownUpfront);
+  a.basis = totalAll + bd.designFee;
   a.deprTaken = 0;
   if (l.fromLandId) {
     const ids: number[] = (l as any).mergedLand ?? [l.fromLandId];
@@ -2126,6 +2154,65 @@ export function approachParcelOwner(state: GameState, tileI: number, cell: numbe
     ? `An owner at block ${blockLabel(t)} has been wanting out for years — they'd take ${fmtMoney(ask)} for the quarter-acre.`
     : `The owner at block ${blockLabel(t)} would listen: ${fmtMoney(ask)} for the quarter-acre. ${d.mult > 1.45 ? 'They know you want it.' : ''}`, tileI);
   return { s, listing: l };
+}
+
+// Go under contract on a land listing: ~3% deposit buys a 60-90 day window to study
+// the site before real money moves. Study, then close or walk — study costs sunk.
+export function contractLand(state: GameState, listingId: number): { s: GameState; err?: string } {
+  const s = clone(state);
+  const l = s.listings.find(x => x.id === listingId);
+  if (!l || l.kind !== 'land' || l.yourSale || l.parentAssetId || l.fromLandId) return { s, err: 'Not that parcel.' };
+  if (l.underContract) return { s, err: 'Already under contract.' };
+  const deposit = Math.max(10_000, roundPrice(l.price * 0.03));
+  if (s.cash < deposit) return { s, err: `The deposit is ${fmtMoney(deposit)}.` };
+  s.cash -= deposit;
+  l.underContract = { m: s.month, deposit };
+  l.expiresMonth = s.month + 3;   // ~90 days to study and close
+  pushNews(s, 'deal', `Under contract: ${l.acres} acres at block ${blockLabel(s.tiles[l.tileI])}, ${fmtMoney(deposit)} down. You have until ${monthName(l.expiresMonth)} to study the dirt and close — or walk and eat the deposit.`, l.tileI);
+  return { s };
+}
+export function orderLandStudy(state: GameState, listingId: number): { s: GameState; err?: string } {
+  const s = clone(state);
+  const l = s.listings.find(x => x.id === listingId);
+  if (!l?.underContract) return { s, err: 'You need the site under contract first.' };
+  if (l.underContract.studyOrdered) return { s, err: 'The consultants are already out there.' };
+  const fee = Math.max(20_000, roundPrice(l.price * 0.01));
+  if (s.cash < fee) return { s, err: `The study runs ${fmtMoney(fee)}.` };
+  s.cash -= fee;
+  l.underContract.studyOrdered = true;
+  l.underContract.studyFee = fee;
+  l.underContract.resultM = s.month + 1;
+  pushNews(s, 'info', `Geotech, environmental and survey ordered on block ${blockLabel(s.tiles[l.tileI])} — ${fmtMoney(fee)}, results in about a month.`, l.tileI);
+  return { s };
+}
+export function closeLandContract(state: GameState, listingId: number): { s: GameState; err?: string } {
+  const s = clone(state);
+  const l = s.listings.find(x => x.id === listingId);
+  if (!l?.underContract) return { s, err: 'No contract to close.' };
+  const uc = l.underContract;
+  const due = l.price - uc.deposit + 5000;
+  if (s.cash < due) return { s, err: `Closing takes ${fmtMoney(due)} (balance + costs).` };
+  const cells = l.parcelCells ?? (l.parcel ? cellsOfRect(l.parcel.px, l.parcel.py, l.parcel.pw, l.parcel.ph) : []);
+  if (!cells.length) return { s, err: 'No parcel geometry.' };
+  s.cash -= due;
+  const cond = uc.known ?? landSiteCondition(s, l.tileI, cells, l.price);
+  s.land.push({ id: s.nextId++, tileI: l.tileI, cells: [...cells].sort((a, b) => a - b),
+    basis: l.price + 5000 + (uc.studyFee ?? 0), acquiredM: s.month,
+    cond: cond.kind !== 'none' ? cond : undefined, condKnown: !!uc.known });
+  s.listings = s.listings.filter(x => x.id !== l.id);
+  s.dealsClosed++;
+  pushNews(s, 'deal', `CLOSED: ${l.acres} acres at block ${blockLabel(s.tiles[l.tileI])} for ${fmtMoney(l.price)}.${uc.known ? (uc.known.kind === 'none' ? ' The study says clean — you own exactly what you think you own.' : ' You closed knowing the problem. Priced, presumably.') : ' No study — you own the unknowns too.'}`, l.tileI);
+  return { s };
+}
+export function walkLandContract(state: GameState, listingId: number): { s: GameState; err?: string } {
+  const s = clone(state);
+  const l = s.listings.find(x => x.id === listingId);
+  if (!l?.underContract) return { s, err: 'No contract to walk from.' };
+  const uc = l.underContract;
+  pushNews(s, 'warn', `You walked from the ${l.acres} acres at block ${blockLabel(s.tiles[l.tileI])}. ${fmtMoney(uc.deposit + (uc.studyFee ?? 0))} sunk — often the cheapest mistake available.`, l.tileI);
+  l.underContract = undefined;
+  l.expiresMonth = s.month + 5;   // seller relists, deposit in pocket
+  return { s };
 }
 
 // Buy a land listing to bank it — closes at the agreed (or asking) price, no development required.
@@ -3140,6 +3227,23 @@ function fireEvent(s: GameState, kind: string, payload?: number) {
 
 function tickListings(s: GameState) {
   for (const l of s.listings) {
+    if (l.underContract) {
+      const uc = l.underContract;
+      if (uc.studyOrdered && !uc.known && uc.resultM !== undefined && s.month >= uc.resultM) {
+        const cells = l.parcelCells ?? (l.parcel ? cellsOfRect(l.parcel.px, l.parcel.py, l.parcel.pw, l.parcel.ph) : []);
+        uc.known = landSiteCondition(s, l.tileI, cells, l.price);
+        pushNews(s, uc.known.kind === 'none' ? 'success' : 'warn',
+          uc.known.kind === 'none'
+            ? `Study back on block ${blockLabel(s.tiles[l.tileI])}: CLEAN. Close with confidence — the window runs to ${monthName(l.expiresMonth)}.`
+            : `Study back on block ${blockLabel(s.tiles[l.tileI])}: ${SITE_COND_LABEL[uc.known.kind]}. ${uc.known.sfLossFrac ? `Buildable area cut ~${Math.round(uc.known.sfLossFrac * 100)}%` : 'Remediation ~' + fmtMoney(uc.known.cost)}. Close eyes-open, or walk for the deposit.`, l.tileI);
+      }
+      if (l.expiresMonth <= s.month) {
+        pushNews(s, 'warn', `Your contract on the ${l.acres} acres at block ${blockLabel(s.tiles[l.tileI])} EXPIRED unclosed. The seller keeps ${fmtMoney(uc.deposit)} and relists.`, l.tileI);
+        l.underContract = undefined;
+        l.expiresMonth = s.month + 5;
+      }
+      continue;   // parcels under contract don't expire, get bid on, or sell to firms
+    }
     if (l.expiresMonth <= s.month) {
       if (l.stockId) {
         const b = s.stock.find(x => x.id === l.stockId);
@@ -3262,7 +3366,7 @@ function tickFirms(s: GameState) {
     if (rng(s) < 0.035 && f.netWorth > 8_000_000) firmDevelops(s, f);
     if (rng(s) > 0.35) continue; // ten firms can't all be buying every quarter
     const fit = (l: Listing): number => {
-      if (l.kind === 'offmarket' || l.yourSale || l.parentAssetId || (l as any).omLead) return 0; // your leads and your land are yours; your sale listings handled separately
+      if (l.kind === 'offmarket' || l.yourSale || l.parentAssetId || (l as any).omLead || l.underContract) return 0; // your leads, contracts and land are yours; your sale listings handled separately
       const t = s.tiles[l.tileI];
       if (f.style === 'industrial') return (l.kind === 'building' && l.type === 'industrial') || (l.kind === 'land' && t.indSuit > 55) ? 0.5 : 0.02;
       if (f.style === 'core') return l.kind === 'building' && !l.distressed && t.D > 60 ? 0.45 : 0.03;
@@ -3728,7 +3832,7 @@ export function serialize(state: GameState): string { return JSON.stringify(stat
 export function deserialize(json: string): GameState | null {
   try {
     const s = JSON.parse(json);
-    if (s && s.version === 14 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
+    if (s && s.version === 15 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
     return null;
   } catch { return null; }
 }

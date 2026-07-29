@@ -64,7 +64,7 @@ function run(seed, city) {
           const sf = Math.min(15000, E.maxBuildableSF(l, ty), E.CONFIG.tiers[s.tier].maxSF);
           if (sf >= 4500) {
             const units = ty==='retail' ? Math.max(3, Math.floor(sf/2500)) : 1;
-            const r = E.buyLandAndDevelop(s, l.id, { type: ty, sf, units, construction: specs[ty], contractor:'standard', contingencyPct:0.10, expedited:false, downPct:0.35, contractType: Math.random()<0.5?'gmp':'costplus', bonded: Math.random()<0.5, fixedRate: Math.random()<0.3, diligence: Math.random()<0.5, designTier: ['ve','std','signature'][Math.floor(Math.random()*3)] });
+            const r = E.buyLandAndDevelop(s, l.id, { type: ty, sf, units, construction: specs[ty], contractor:'standard', contingencyPct:0.10, expedited:false, downPct:0.35, contractType: Math.random()<0.5?'gmp':'costplus', bonded: Math.random()<0.5, fixedRate: Math.random()<0.3, designTier: ['ve','std','signature'][Math.floor(Math.random()*3)] });
             if (!r.err) { s = r.s; developed++; }
           }
         }
@@ -105,6 +105,39 @@ function run(seed, city) {
     for (const a of s.assets) {
       if (a.type === 'office' && a.occ < 0.3 && E.canConvert(s, a).ok && Math.random() < 0.3) {
         const r = E.startConversion(s, a.id); if (!r.err) { s = r.s; converted++; }
+      }
+    }
+    // land contracts: study then close or walk, like a real buyer
+    for (const l of [...s.listings]) {
+      if (l.kind !== 'land' || l.yourSale || l.parentAssetId || l.fromLandId) continue;
+      const uc = l.underContract;
+      if (!uc) {
+        if (Math.random() < 0.05 && s.cash > l.price * 1.4) { const r = E.contractLand(s, l.id); if (!r.err) s = r.s; }
+        continue;
+      }
+      if (!uc.studyOrdered && Math.random() < 0.7) { const r = E.orderLandStudy(s, l.id); if (!r.err) s = r.s; continue; }
+      if (uc.known) {
+        const bad = uc.known.kind !== 'none' && (uc.known.cost > l.price * 0.4 || (uc.known.sfLossFrac ?? 0) > 0.2);
+        const r = bad ? E.walkLandContract(s, l.id) : E.closeLandContract(s, l.id);
+        if (!r.err) { s = r.s; if (!bad) banked++; }
+      }
+    }
+    // develop something we own occasionally
+    if (Math.random() < 0.15 && s.land.length && s.cash > 1200000 && (s.econ.phase==='recovery'||s.econ.phase==='expansion')) {
+      const h = s.land[Math.floor(Math.random() * s.land.length)];
+      const r = E.developLand(s, h.id);
+      if (r.listingId) {
+        s = r.s;
+        const l2 = s.listings.find(x => x.id === r.listingId);
+        if (l2) {
+          const ty = s.tiles[l2.tileI].indSuit > 55 ? 'industrial' : 'retail';
+          const sf = Math.min(15000, E.maxBuildableSF(l2, ty), E.CONFIG.tiers[s.tier].maxSF);
+          if (sf >= 4500) {
+            const units = ty==='retail' ? Math.max(3, Math.floor(sf/2500)) : 1;
+            const r2 = E.buyLandAndDevelop(s, l2.id, { type: ty, sf, units, construction: ty==='industrial'?'metal':'strip', contractor:'standard', contingencyPct:0.10, expedited:false, downPct:0.35, contractType: Math.random()<0.5?'gmp':'costplus', bonded: Math.random()<0.5, designTier: ['ve','std','signature'][Math.floor(Math.random()*3)] });
+            if (!r2.err) { s = r2.s; developed++; }
+          }
+        }
       }
     }
     // land banking (the honest way: call the owner, take the ask) + demolition

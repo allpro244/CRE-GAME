@@ -335,7 +335,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
     units: defaultUnits(firstConstr.type, firstConstr.construction, 10000),
     construction: firstConstr.construction,
     contractor: 'standard', contingencyPct: 0.10, expedited: false, downPct: 0.35, fixedRate: false,
-    contractType: 'costplus', bonded: false, diligence: true, designTier: 'std',
+    contractType: 'costplus', bonded: false, designTier: 'std',
   }));
 
   const runFeas = () => {
@@ -471,6 +471,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
   }
 
   // ---------- land ----------
+  const isBuildFlow = !!(listing.fromLandId || listing.parentAssetId);
   const spec = E.CONSTR[dev.type].find(x => x.id === dev.construction) ?? E.CONSTR[dev.type][0];
   const bMax = Math.min(E.maxBuildableSF(listing, dev.type), E.CONFIG.tiers[state.tier].maxSF, spec.maxSF ?? Infinity);
   const bd = E.devCostBreakdown(state, dev, listing.price);
@@ -518,9 +519,60 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
         </div>
       )}
       {listing.agreed && <div className="alert-strip" style={{ marginBottom: 10 }}>Price agreed at {E.fmtMoney(listing.price)} ✓ — close before {E.monthName(listing.expiresMonth)} or they re-list.</div>}
-      <div className="dim" style={{ fontSize: 11.5, marginBottom: 10 }}>
+      {!isBuildFlow && (() => {
+        const uc = listing.underContract;
+        const deposit = Math.max(10_000, Math.round(listing.price * 0.03 / 1000) * 1000);
+        const studyFee = Math.max(20_000, Math.round(listing.price * 0.01 / 1000) * 1000);
+        const act = (r: { s: GameState; err?: string }) => { if (r.err) setErr(r.err); else { setState(r.s); } };
+        return (
+          <div>
+            <div className="dim" style={{ fontSize: 12.5, lineHeight: 1.6, marginBottom: 10 }}>
+              Buying dirt is its own deal. Go under contract to buy a ~90-day window: study the site for {E.fmtMoney(studyFee)},
+              then close knowing the truth — or walk and forfeit the deposit. Or close today without the study and own the unknowns.
+              What you build here is a separate decision, made later, from your portfolio.
+            </div>
+            {uc ? (
+              <div className="memo" style={{ borderLeftColor: 'var(--amber)' }}>
+                <div className="memo-row"><span className="lbl">Under contract since {E.monthName(uc.m)} · deposit paid</span><span className="num">{E.fmtMoney(uc.deposit)}</span></div>
+                <div className="memo-row"><span className="lbl">Window closes</span><span className="num amber">{E.monthName(listing.expiresMonth)}</span></div>
+                {uc.known ? (
+                  <div className="memo-row"><span className="lbl">Study result</span>
+                    <span className={'num ' + (uc.known.kind === 'none' ? 'pos' : 'neg')}>
+                      {E.SITE_COND_LABEL[uc.known.kind]}{uc.known.kind !== 'none' ? (uc.known.sfLossFrac ? ` · −${Math.round(uc.known.sfLossFrac * 100)}% buildable` : ` · remediation ~${E.fmtMoney(uc.known.cost)}`) : ''}
+                    </span></div>
+                ) : uc.studyOrdered ? (
+                  <div className="memo-row"><span className="lbl">Study underway</span><span className="num dim">results ~{E.monthName(uc.resultM ?? state.month + 1)}</span></div>
+                ) : (
+                  <div className="memo-row"><span className="lbl">No study ordered yet</span>
+                    <button className="btn btn-sm btn-amber" onClick={() => act(E.orderLandStudy(state, listing.id))}>Order study — {E.fmtMoney(studyFee)}</button></div>
+                )}
+                {err && <div className="alert-strip red" style={{ margin: '8px 0' }}>{err}</div>}
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+                  <button className="btn btn-danger" onClick={() => { act(E.walkLandContract(state, listing.id)); close(); }}>Walk — forfeit {E.fmtMoney(uc.deposit + (uc.studyFee ?? 0))}</button>
+                  <button className="btn btn-amber" onClick={() => { const r = E.closeLandContract(state, listing.id); if (r.err) setErr(r.err); else { setState(r.s); close(); } }}>
+                    Close — {E.fmtMoney(listing.price - uc.deposit + 5000)}</button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {err && <div className="alert-strip red" style={{ marginBottom: 8 }}>{err}</div>}
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                  <button className="btn" onClick={close}>Pass</button>
+                  <button className="btn" title="Close today with no study — whatever is under there is yours"
+                    onClick={() => { const r = E.buyLandHold(state, listing.id); if (r.err) setErr(r.err); else { setState(r.s); close(); } }}>
+                    Buy now, no study — {E.fmtMoney(listing.price + 5000)}</button>
+                  <button className="btn btn-amber" title="~3% deposit buys a 90-day window to study before closing"
+                    onClick={() => act(E.contractLand(state, listing.id))}>Go under contract — {E.fmtMoney(deposit)} deposit</button>
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })()}
+      {isBuildFlow && <>
+      {isBuildFlow && <div className="dim" style={{ fontSize: 11.5, marginBottom: 10 }}>
         Coverage limits what the dirt can hold: at a {pct(E.FAR[dev.type], 0)} floor-area ratio for {E.PLABEL[dev.type].toLowerCase()}, this parcel supports up to <b className="num" style={{ color: 'var(--ink)' }}>{(E.maxBuildableSF(listing, dev.type) / 1000).toFixed(0)}K SF</b>. Your tier caps projects at {E.CONFIG.tiers[state.tier].maxSF / 1000}K SF.
-      </div>
+      </div>}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
         <label className="f">Product type
           <select value={dev.type} onChange={e => setType(e.target.value as PType)}>
@@ -579,12 +631,6 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
             <option value="signature">Signature — costly, slow, holds value</option>
           </select>
         </label>
-        <label className="f">Due diligence <Hint text="Tie the land up with a ~3% deposit and 1-2 months of geotech, environmental, survey and utility work (0.6-1.2% of land, min $25K). You learn what's under the dirt BEFORE closing — and can walk for the cost of deposit + diligence. Waive it to close today: whatever is down there surfaces at excavation, at 2-5x, on the clock." />
-          <select value={dev.diligence ? '1' : '0'} onChange={e => setDev({ ...dev, diligence: e.target.value === '1' })}>
-            <option value="1">Full diligence — go under contract, close after the truth</option>
-            <option value="0">Waive — close today, own the unknowns</option>
-          </select>
-        </label>
         <label className="f">Equity share — {pct(dev.downPct)} (min {pct(1 - E.CONFIG.constrLTC)})
           <input type="range" min={30} max={100} value={Math.round(dev.downPct * 100)}
             onChange={e => setDev({ ...dev, downPct: Number(e.target.value) / 100 })} />
@@ -592,9 +638,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
       </div>
       <BuildingSketch a={{ type: dev.type, construction: dev.construction, sf: dev.sf, units: dev.units, quality: spec.q }} w={460} h={100} />
       <div className="memo">
-        <div className="memo-row"><span className="lbl">Land ({listing.acres} ac){dev.diligence ? ' — closes after diligence' : ''}</span><span className="num">{E.fmtMoney(listing.price)}</span></div>
-        {dev.diligence && <div className="memo-row"><span className="lbl">At contract: deposit + diligence (at risk if you walk)</span>
-          <span className="num">{E.fmtMoney(Math.max(10_000, Math.round(listing.price * 0.03)))} + ~{E.fmtMoney(Math.max(25_000, Math.round(listing.price * 0.009)))}</span></div>}
+        <div className="memo-row"><span className="lbl">Land ({listing.acres} ac{listing.fromLandId ? ', already owned — basis carried' : ''})</span><span className="num">{E.fmtMoney(listing.price)}</span></div>
         <div className="memo-row"><span className="lbl">Hard costs — {spec.label.toLowerCase()} @ ${spec.cost}/SF{state.econ.tariffMonthsLeft > 0 ? ' (tariffs +8% ⚠)' : ''}</span><span className="num">{E.fmtMoney(bd.hard)}</span></div>
         <div className="memo-row"><span className="lbl">Soft costs (15%)</span><span className="num">{E.fmtMoney(bd.soft)}</span></div>
         {(bd as any).bond > 0 && <div className="memo-row"><span className="lbl">Performance bond</span><span className="num">{E.fmtMoney((bd as any).bond)}</span></div>}
@@ -602,7 +646,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
         <div className="memo-row"><span className="lbl">Design fees ({E.DESIGN[dev.designTier ?? 'std'].label.toLowerCase()}, equity-funded)</span><span className="num">{E.fmtMoney((bd as any).designFee)}</span></div>
         <div className="memo-row total"><span className="lbl">Total development cost</span><span className="num">{E.fmtMoney(bd.total + (bd as any).designFee)}</span></div>
         <div className="memo-row"><span className="lbl">Land-close to delivery <Hint text="Diligence (if chosen), then design, then permits, then construction. You are committing to deliver into whatever market exists at the END of this timeline." /></span>
-          <span className="num">≈ {(dev.diligence ? 2 : 0) + (bd as any).designMonths + 2 + bd.months} months</span></div>
+          <span className="num">≈ {(bd as any).designMonths + 2 + bd.months} months</span></div>
         <div className="memo-row"><span className="lbl">Construction loan (≤{pct(E.CONFIG.constrLTC)} LTC at {(state.econ.rate + E.CONFIG.constrSpread + (dev.fixedRate ? 0.6 : 0)).toFixed(2)}% {dev.fixedRate ? 'FIXED' : 'FLOATING'}, 12-mo IO after delivery)</span><span className="num">{E.fmtMoney(bd.total - equity)}</span></div>
         <div className="memo-row"><span className="lbl">
           <label style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
@@ -641,13 +685,6 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
       {err && <div className="alert-strip red" style={{ marginBottom: 10 }}>{err}</div>}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
         <button className="btn" onClick={close}>Pass</button>
-        {!listing.parentAssetId && (
-          <button className="btn" title="Close on the dirt and sit on it — no building required"
-            onClick={() => {
-              const r = E.buyLandHold(state, listing.id);
-              if (r.err) setErr(r.err); else { setState(r.s); close(); }
-            }}>Buy &amp; hold — {E.fmtMoney(listing.price + 5000)}</button>
-        )}
         {E.canJV(state, equity).ok && (
           <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--dim)' }}>
             <input type="checkbox" checked={useJV} onChange={e => setUseJV(e.target.checked)} />
@@ -657,8 +694,9 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
         <button className="btn btn-amber" disabled={!!vErr} onClick={() => {
           const r = E.buyLandAndDevelop(state, listing.id, dev, useJV && E.canJV(state, equity).ok);
           if (r.err) setErr(r.err); else { setState(r.s); close(); }
-        }}>Buy land & break ground{useJV && E.canJV(state, equity).ok ? ' (JV)' : ''}</button>
+        }}>Break ground{useJV && E.canJV(state, equity).ok ? ' (JV)' : ''}</button>
       </div>
+      </>}
     </Modal>
   );
 }

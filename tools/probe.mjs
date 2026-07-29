@@ -45,3 +45,20 @@ for (const ty of E.PTYPES) {
   spreads.sort((a,b)=>a-b);
   console.log(ty.padEnd(11), 'dev spread p50/p90/max:', q(spreads,.5), q(spreads,.9), spreads[spreads.length-1].toFixed(2));
 }
+
+// ---- desirability & demand distribution (emergent mix model) ----
+{
+  const pct = (arr, p) => arr.length ? arr[Math.floor(arr.length * p)].toFixed(1) : '—';
+  for (const label of ['month 0', 'month 120']) {
+    const s = E.newGame(42);
+    let st = s;
+    if (label === 'month 120') for (let m = 0; m < 120; m++) st = E.advanceMonth(st);
+    const land = st.tiles.filter(t => !t.water);
+    const D = land.map(t => t.D).sort((a, b) => a - b);
+    const mixNow = E.computeMix(st);
+    const mixVals = land.map(t => mixNow[t.i]).sort((a, b) => a - b);
+    const pop = Math.round(land.reduce((x, t) => x + t.pop, 0) / land.length * 10) / 10;
+    const emp = Math.round(land.reduce((x, t) => x + t.emp, 0) / land.length * 10) / 10;
+    console.log(`${label}: D p10/p50/p90 ${pct(D, .1)}/${pct(D, .5)}/${pct(D, .9)} | mix p50/p90 ${pct(mixVals, .5)}/${pct(mixVals, .9)} | avg pop ${pop} emp ${emp} | cityPop ${E.cityPopulation(st).toLocaleString()}`);
+  }
+}

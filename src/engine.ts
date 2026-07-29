@@ -97,7 +97,14 @@ export const CONFIG = {
 export interface Tile {
   i: number; x: number; y: number;
   water: boolean;
-  D: number; income: number; emp: number; pop: number; indSuit: number; crime: number;
+  // D (desirability) = baseD + what the neighborhood has become. baseD is the anchor —
+  // geography and street access, fixed at generation except for permanent infrastructure
+  // (transit). The rest is emergent: the blend of jobs, residents and retail nearby.
+  D: number; baseD: number;
+  income: number; emp: number; pop: number; indSuit: number; crime: number;
+  // anchors for the demand side: the part of population/jobs the modeled stock doesn't
+  // explain (single-family neighborhoods, small employers). Emergent stock adds on top.
+  popBase: number; empBase: number;
   supply: Record<PType, number>;
   // street access, fixed at city generation: arterial frontage, highway/rail proximity,
   // and how quiet the block is. Retail wants frontage; industrial wants the highway and
@@ -473,7 +480,7 @@ export function generateCity(seed: number): { tiles: Tile[]; corridor: number[];
     const dPort = dist(x, y, PORT.x, PORT.y);
     const indSuit = clamp(16 + 58 * railBand + 30 * gauss(dPort, 3.2) - D * 0.25 + (noise[i] - 0.5) * 20, 3, 100);
     const crime = clamp(68 - 0.58 * D + (noise2[i] - 0.5) * 24, 4, 85);
-    tiles.push({ i, x, y, water, D, income, emp, pop, indSuit, crime, supply: { office: 0, retail: 0, industrial: 0, mixed: 0, multifamily: 0 }, acc: { art: 0, hwy: 0, rail: 0, quiet: 0 } });
+    tiles.push({ i, x, y, water, D, baseD: D, income, emp, pop, indSuit, crime, popBase: pop, empBase: emp, supply: { office: 0, retail: 0, industrial: 0, mixed: 0, multifamily: 0 }, acc: { art: 0, hwy: 0, rail: 0, quiet: 0 } });
   }
   computeAccess(tiles, roads);
   // Streets shape the terrain: frontage lifts a block, a highway next door drags on it
@@ -481,6 +488,7 @@ export function generateCity(seed: number): { tiles: Tile[]; corridor: number[];
   for (const t of tiles) {
     if (t.water) continue;
     t.D = clamp(t.D + 5.5 * t.acc.art + (t.indSuit > 55 ? 0 : -4.5 * t.acc.hwy), 8, 96);
+    t.baseD = t.D;
     t.indSuit = clamp(t.indSuit + 24 * t.acc.hwy + 18 * t.acc.rail, 3, 100);
     t.income = clamp(0.55 + (t.D / 100) * 0.95 + (noise2[t.i] - 0.5) * 0.2, 0.5, 1.7);
   }
@@ -852,6 +860,18 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean }): GameState 
     version: 10,
   };
   generateStock(state);
+  // Born in equilibrium: the anchors absorb whatever the initial city explains, so
+  // desirability, population and jobs only move when the built city changes from here.
+  {
+    const mix0 = computeMix(state);
+    const src0 = demandSources(state);
+    for (const t of state.tiles) {
+      if (t.water) continue;
+      t.baseD = clamp(t.D - mix0[t.i], 0, 98);
+      t.popBase = clamp(t.pop - RES_K * src0.resSrc[t.i], 0, 100);
+      t.empBase = clamp(t.emp / Math.max(0.5, state.econ.empIdx / 100) - JOB_K * src0.jobSrc[t.i], 0, 100);
+    }
+  }
   pushNews(state, 'info', opts?.sandbox
     ? 'SANDBOX MODE: $50,000,000 of equity, top tier unlocked, and a clean reputation. Nothing here counts — go break things.'
     : 'Welcome to Meridian City. You have $600K of equity and a bank that will listen. Buy well.');
@@ -1096,6 +1116,7 @@ function listStockBuilding(state: GameState, b: StockBuilding, opt: { id?: numbe
     acres: Math.round((b.sf / FAR[b.type] / 43_560) * 100) / 100,
     tenants, stockId: b.id,
     parcel: b.px !== undefined ? { px: b.px, py: b.py!, pw: b.pw!, ph: b.ph! } : undefined,
+    parcelCells: b.cells ? [...b.cells] : undefined,
     price: roundPrice(val * mult),
     resFrac: distressed ? rrange(state, 0.86, 0.95) : rrange(state, 0.90, 0.985),
     listMonth: state.month,
@@ -1154,6 +1175,7 @@ function makeOffMarketLead(s: GameState, b: StockBuilding, resBias = 0): Listing
     acres: Math.round((b.sf / FAR[b.type] / 43_560) * 100) / 100,
     tenants: omTenants, stockId: b.id,
     parcel: b.px !== undefined ? { px: b.px, py: b.py!, pw: b.pw!, ph: b.ph! } : undefined,
+    parcelCells: b.cells ? [...b.cells] : undefined,
     price: noAsk ? 0 : roundPrice(reservation * rrange(s, 1.02, 1.10)),
     noAsk, reservation, offersLeft: 3,
     expiresMonth: s.month + 5, hot: false,
@@ -1265,6 +1287,7 @@ export function buyBuilding(state: GameState, listingId: number, downPct: number
   const s = clone(state);
   const l = s.listings.find(x => x.id === listingId);
   if (!l || l.kind === 'land') return { s, err: 'Listing gone.' };
+  if (l.yourSale) return { s, err: 'That\'s your own listing — delist it if you\'ve changed your mind.' };
   if (l.kind === 'offmarket' && !l.agreed) return { s, err: 'The seller hasn\'t agreed to a price yet — make an offer first.' };
   const down = l.price * downPct;
   const loanAmt = l.price - down;
@@ -1292,6 +1315,7 @@ export function buyBuilding(state: GameState, listingId: number, downPct: number
     id: s.nextId++, name: nameFor(s, l.type!), tileI: l.tileI, type: l.type!,
     sf: l.sf!, acres: l.acres ?? Math.round((l.sf! / FAR[l.type!] / 43560) * 100) / 100,
     px: l.parcel?.px, py: l.parcel?.py, pw: l.parcel?.pw, ph: l.parcel?.ph,
+    cells: l.parcelCells ? [...l.parcelCells] : undefined,
     units: l.units ?? 1, construction: l.construction ?? CONSTR[l.type!][0].id,
     quality: l.quality!, qCap: constrSpec({ type: l.type!, construction: l.construction ?? CONSTR[l.type!][0].id }).qCap,
     age: l.age!, mode: 'operating',
@@ -2269,7 +2293,7 @@ function finalizeSale(s: GameState, a: Asset, gross: number, buyer: string): { s
   }
   s.stock.push({
     id: s.nextId++, tileI: a.tileI, type: a.type, sf: a.sf, units: a.units,
-    px: a.px, py: a.py, pw: a.pw, ph: a.ph,
+    px: a.px, py: a.py, pw: a.pw, ph: a.ph, cells: a.cells ? [...a.cells] : undefined,
     quality: Math.round(a.quality), age: Math.round(a.age), construction: a.construction,
     occ: Math.round(a.occ * 100) / 100, owner: 'private',
   });
@@ -2470,30 +2494,103 @@ function tickStock(s: GameState) {
   }
 }
 
+// ---------- The neighborhood mix ----------
+// What makes a corner of the city genuinely desirable is the blend within walking
+// distance: jobs (office), people living there (multifamily), and the retail that
+// serves both. A geometric mean scores the balance — an office monoculture with no
+// housing or shops is dead at night and scores near zero; piling more of what a
+// district already has doesn't help it. Quantity matters with diminishing returns,
+// and the quality of the standing product weights the whole thing. Industrial is
+// its own world: it pays via indSuit, but a heavy industrial presence damps the mix.
+export function computeMix(s: GameState): number[] {
+  const W = CONFIG.GRID_W, H = CONFIG.GRID_H;
+  const n = s.tiles.length;
+  const jobs = new Array(n).fill(0), res = new Array(n).fill(0), amen = new Array(n).fill(0), ind = new Array(n).fill(0);
+  const qSum = new Array(n).fill(0), qSF = new Array(n).fill(0);
+  const add = (tileI: number, type: PType, sf: number, occ: number, quality: number) => {
+    const o = sf * occ;
+    if (type === 'office') jobs[tileI] += o;
+    else if (type === 'multifamily') res[tileI] += o;
+    else if (type === 'retail') amen[tileI] += o;
+    else if (type === 'mixed') { jobs[tileI] += o * 0.35; res[tileI] += o * 0.5; amen[tileI] += o * 0.15; }
+    else ind[tileI] += o;
+    qSum[tileI] += quality * sf; qSF[tileI] += sf;
+  };
+  for (const b of s.stock) if (!b.buildLeft) add(b.tileI, b.type, b.sf, b.occ, b.quality);
+  for (const a of s.assets) if (a.mode !== 'construction') add(a.tileI, a.type, a.sf, a.occ, a.quality);
+  const out = new Array(n).fill(0);
+  for (const t of s.tiles) {
+    if (t.water) continue;
+    let J = 0, R = 0, A = 0, I = 0, qs = 0, qn = 0;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const x = t.x + dx, y = t.y + dy;
+      if (x < 0 || x >= W || y < 0 || y >= H) continue;
+      const ring = Math.max(Math.abs(dx), Math.abs(dy));
+      const w = ring === 0 ? 1 : ring === 1 ? 0.45 : 0.18;
+      const i = y * W + x;
+      J += jobs[i] * w; R += res[i] * w; A += amen[i] * w; I += ind[i] * w;
+      qs += qSum[i] * w; qn += qSF[i] * w;
+    }
+    const TOT = J + R + A;
+    if (TOT <= 0) continue;
+    const balance = 3 * Math.cbrt((J / TOT) * (R / TOT) * (A / TOT)); // 1 in proportion, ~0 when anything is missing
+    const scale = clamp(Math.log1p(TOT / 120_000) / Math.log1p(15), 0, 1); // diminishing returns on sheer bulk
+    const q = qn > 0 ? qs / qn : 50;
+    const qf = 0.80 + 0.5 * (q / 100); // Class C drags a district, Class A lifts it
+    const indShare = I / (TOT + I);
+    out[t.i] = 34 * balance * scale * qf * (1 - 0.45 * indShare);
+  }
+  return out;
+}
+
+// Occupied residential and job space per tile (with a taste of the adjacent blocks) —
+// the raw material for where people live and work.
+const RES_K = 1 / 12_000;  // pop index points per occupied residential SF
+const JOB_K = 1 / 9_000;   // emp index points per occupied job SF
+export function demandSources(s: GameState): { resSrc: number[]; jobSrc: number[] } {
+  const W = CONFIG.GRID_W, H = CONFIG.GRID_H;
+  const n = s.tiles.length;
+  const offO = new Array(n).fill(0), mixO = new Array(n).fill(0), mfO = new Array(n).fill(0), indO = new Array(n).fill(0);
+  const tally = (tileI: number, type: PType, sf: number, occ: number) => {
+    const o = sf * occ;
+    if (type === 'office') offO[tileI] += o;
+    else if (type === 'mixed') mixO[tileI] += o;
+    else if (type === 'multifamily') mfO[tileI] += o;
+    else if (type === 'industrial') indO[tileI] += o;
+  };
+  for (const b of s.stock) if (!b.buildLeft) tally(b.tileI, b.type, b.sf, b.occ);
+  for (const a of s.assets) if (a.mode !== 'construction') tally(a.tileI, a.type, a.sf, a.occ);
+  const resLocal = s.tiles.map(t => mfO[t.i] + 0.5 * mixO[t.i]);
+  const jobLocal = s.tiles.map(t => offO[t.i] + 0.45 * mixO[t.i] + 0.15 * indO[t.i]);
+  const smear = (src: number[]) => s.tiles.map(t => {
+    let ring = 0;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const x = t.x + dx, y = t.y + dy;
+      if (x >= 0 && x < W && y >= 0 && y < H) ring += src[y * W + x];
+    }
+    return src[t.i] + 0.2 * ring;
+  });
+  return { resSrc: smear(resLocal), jobSrc: smear(jobLocal) };
+}
+
 function tickTiles(s: GameState) {
   if (s.month % 3 !== 0) return;
-  const W = CONFIG.GRID_W, H = CONFIG.GRID_H;
-  const dNew: number[] = s.tiles.map(t => t.D);
+  const mix = computeMix(s);
+  // The demand side is people: residents follow the housing that's actually occupied,
+  // jobs follow the business space that's actually occupied — on top of a per-block
+  // anchor for everything the model doesn't track. Build it (and lease it) and they
+  // come; let it empty out and they leave.
+  const { resSrc, jobSrc } = demandSources(s);
   for (const t of s.tiles) {
     if (t.water) continue;
-    let sum = 0, c = 0;
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const nx = t.x + dx, ny = t.y + dy;
-      if (nx >= 0 && nx < W && ny >= 0 && ny < H) {
-        const n = s.tiles[ny * W + nx];
-        if (!n.water) { sum += n.D; c++; }
-      }
-    }
-    const nbr = c ? sum / c : t.D;
-    const growthPull = (s.econ.popGrowth / 1.5) * 0.10;
-    dNew[t.i] = clamp(t.D + (nbr - t.D) * 0.03 + growthPull * (t.D > 45 ? 0.4 : 0.15), 5, 98);
-  }
-  for (const t of s.tiles) {
-    if (t.water) continue;
-    t.D = dNew[t.i];
+    const target = clamp(t.baseD + mix[t.i], 5, 98);
+    t.D = clamp(t.D + (target - t.D) * 0.10, 5, 98);
+    const popTarget = clamp(t.popBase + RES_K * resSrc[t.i], 5, 100);
+    const empTarget = clamp((t.empBase + JOB_K * jobSrc[t.i]) * (s.econ.empIdx / 100), 3, 100);
+    t.pop = clamp(t.pop + (popTarget - t.pop) * 0.10, 5, 100);
+    t.emp = clamp(t.emp + (empTarget - t.emp) * 0.10, 3, 100);
     t.income = clamp(t.income + ((0.55 + (t.D / 100) * 0.95) - t.income) * 0.05, 0.5, 1.75);
     t.crime = clamp(t.crime + ((68 - 0.58 * t.D) - t.crime) * 0.05, 3, 85);
-    t.emp = clamp(t.emp + (s.econ.empIdx - 100) * 0.03, 3, 100);
   }
 }
 
@@ -2502,7 +2599,7 @@ function tickEvents(s: GameState) {
     ef.monthsLeft--;
     for (const ti of ef.tiles) {
       const t = s.tiles[ti];
-      if (ef.dPerMonth) t.D = clamp(t.D + ef.dPerMonth, 5, 98);
+      if (ef.dPerMonth) { t.baseD = clamp(t.baseD + ef.dPerMonth, 0, 98); t.D = clamp(t.D + ef.dPerMonth, 5, 98); }
       if (ef.empPerMonth) t.emp = clamp(t.emp + ef.empPerMonth, 3, 100);
     }
     if (ef.monthsLeft <= 0) s.effects = s.effects.filter(x => x !== ef);
@@ -2665,16 +2762,6 @@ function firmDevelops(s: GameState, f: Firm) {
 
 export function blockLabel(t: Tile): string { return `${String.fromCharCode(65 + t.x)}-${t.y + 1}`; }
 
-// deliveries lift the block and bleed into its neighbors
-function spillover(s: GameState, tileI: number, mag: number) {
-  const t = s.tiles[tileI];
-  t.D = clamp(t.D + mag, 5, 98);
-  for (const n of s.tiles) {
-    if (n.water || n.i === tileI) continue;
-    if (Math.abs(n.x - t.x) <= 1 && Math.abs(n.y - t.y) <= 1) n.D = clamp(n.D + mag * 0.35, 5, 98);
-  }
-}
-
 function tickConstruction(s: GameState) {
   for (const b of s.stock) {
     if (!b.buildLeft) continue;
@@ -2684,7 +2771,6 @@ function tickConstruction(s: GameState) {
       const t = s.tiles[b.tileI];
       t.supply[b.type] += b.sf;
       b.occ = 0.05;
-      spillover(s, b.tileI, 1.1);
       const f = s.firms.find(x => x.short === b.builder);
       pushNews(s, 'event', `DELIVERED: ${(b.sf / 1000).toFixed(0)}K SF of ${PLABEL[b.type].toLowerCase()} at block ${blockLabel(t)}${f ? ` by ${f.name}` : ''}. New supply is competing for your tenants today.`, b.tileI);
       b.builder = undefined;
@@ -2714,8 +2800,22 @@ function tickFirms(s: GameState) {
       const t = s.tiles[l.tileI];
       if (l.kind === 'land') {
         const ty: PType = t.indSuit > 55 ? 'industrial' : f.style === 'core' ? 'office' : rng(s) < 0.5 ? 'retail' : 'mixed';
-        t.supply[ty] += Math.round((l.acres ?? 1) * 43560 * FAR[ty] * 0.6);
-        pushNews(s, 'deal', `${f.name} bought the ${l.acres}-acre parcel you may have been watching — a new ${PLABEL[ty]} project is coming to that block.`);
+        const cells = l.parcelCells ?? (l.parcel ? footprintCells(l.parcel) : null);
+        const acres = l.acres ?? (cells ? cells.length * PARCEL_AC : 1);
+        const sf = Math.round(acres * 43_560 * FAR[ty] * rrange(s, 0.55, 0.9) / 1000) * 1000;
+        if (cells && cells.length && sf >= 4000) {
+          const months = Math.min(26, Math.max(6, Math.round(4 + sf / 7000)));
+          const quality = clamp(rrange(s, 45, 85), 30, 92);
+          s.stock.push({
+            id: s.nextId++, tileI: l.tileI, type: ty, sf, cells: [...cells],
+            units: genUnitsFor(s, ty, sf), quality, age: 0,
+            construction: CONSTR[ty][Math.min(CONSTR[ty].length - 1, 2 - qGrade(quality))].id,
+            occ: 0, owner: f.short, buildLeft: months, buildTotal: months, builder: f.short,
+          });
+          pushNews(s, 'deal', `${f.name} bought the ${l.acres}-acre parcel you may have been watching — ${(sf / 1000).toFixed(0)}K SF of ${PLABEL[ty].toLowerCase()} breaks ground there this month.`, l.tileI);
+        } else {
+          pushNews(s, 'deal', `${f.name} bought the ${l.acres}-acre parcel you may have been watching. For now they're sitting on the dirt.`, l.tileI);
+        }
       } else {
         const b = l.stockId ? s.stock.find(x => x.id === l.stockId) : undefined;
         if (b) { b.owner = f.short; b.listedId = undefined; }
@@ -2727,8 +2827,8 @@ function tickFirms(s: GameState) {
     if (f.style === 'aggressive' && s.econ.crunchMonthsLeft > 6 && rng(s) < 0.25) {
       f.alive = false;
       pushNews(s, 'event', `${f.name} HAS COLLAPSED. Its lenders are liquidating its actual holdings — fire-sale prices, real buildings.`);
-      const held = s.stock.filter(b => b.owner === f.short && !b.listedId);
-      const toSell = held.length ? held.slice(0, 3) : s.stock.filter(b => !b.listedId).slice(0, 2);
+      const held = s.stock.filter(b => b.owner === f.short && !b.listedId && !b.buildLeft);
+      const toSell = held.length ? held.slice(0, 3) : s.stock.filter(b => !b.listedId && !b.buildLeft).slice(0, 2);
       for (const b of toSell) {
         b.occ = Math.min(b.occ, clamp(b.occ * rrange(s, 0.7, 0.9), 0.3, 0.62)); // tenants fled the drama
         listStockBuilding(s, b, { distressed: true, priceMult: rrange(s, 0.66, 0.78), hot: true, expiresMonth: s.month + 4 });
@@ -2820,7 +2920,6 @@ function tickAsset(s: GameState, a: Asset): number {
       a.entryNOI = stabilizedNOI(s, a);
       a.entryCap = capRatePct(s, t, a.type, a.quality);
       t.supply[a.type] += a.sf;
-      spillover(s, a.tileI, 1.4);
       a.project = undefined;
     }
     return 0;

@@ -755,8 +755,47 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
               <div className="metric"><div className="eyebrow">Desirability</div><div className="v num">{sel.D.toFixed(0)}<span className="faint">/100</span></div></div>
               <div className="metric"><div className="eyebrow">Income idx</div><div className="v num">{sel.income.toFixed(2)}×</div></div>
               <div className="metric"><div className="eyebrow">Employment</div><div className="v num">{sel.emp.toFixed(0)}</div></div>
+              <div className="metric"><div className="eyebrow">Residents</div><div className="v num">{sel.pop.toFixed(0)}</div></div>
               <div className="metric"><div className="eyebrow">Crime</div><div className={'v num ' + (sel.crime > 55 ? 'neg' : '')}>{sel.crime.toFixed(0)}</div></div>
             </div>
+            {(() => {
+              // What's actually standing within a short walk — the raw facts a surveyor
+              // would note. Whether the blend is an opportunity is your call, not ours.
+              const near = { office: 0, retail: 0, industrial: 0, mixed: 0, multifamily: 0 } as Record<E.PType, number>;
+              let qSum = 0, qSF = 0;
+              const count = (ty: E.PType, sf: number, q: number, w: number) => {
+                near[ty] += sf * w; qSum += q * sf * w; qSF += sf * w;
+              };
+              for (const b of state.stock) {
+                if (b.buildLeft) continue;
+                const bt = state.tiles[b.tileI];
+                const ring = Math.max(Math.abs(bt.x - sel.x), Math.abs(bt.y - sel.y));
+                if (ring <= 1) count(b.type, b.sf, b.quality, ring === 0 ? 1 : 0.5);
+              }
+              for (const a of state.assets) {
+                if (a.mode === 'construction') continue;
+                const at = state.tiles[a.tileI];
+                const ring = Math.max(Math.abs(at.x - sel.x), Math.abs(at.y - sel.y));
+                if (ring <= 1) count(a.type, a.sf, a.quality, ring === 0 ? 1 : 0.5);
+              }
+              const tot = E.PTYPES.reduce((s2, ty) => s2 + near[ty], 0);
+              if (tot < 1000) return <div className="faint" style={{ fontSize: 11.5, marginTop: 8 }}>Nothing built within a block of here. Blank slates set their own tone.</div>;
+              const grade = qSF > 0 ? E.QLABEL[E.qGrade(qSum / qSF)] : '—';
+              return (
+                <div style={{ marginTop: 8 }}>
+                  <div className="eyebrow" style={{ marginBottom: 4 }}>Within a block's walk · avg {grade}-grade</div>
+                  <div style={{ display: 'flex', height: 8, borderRadius: 3, overflow: 'hidden', background: 'var(--panel3)' }}>
+                    {E.PTYPES.map(ty => near[ty] > 0 && (
+                      <div key={ty} title={`${E.PLABEL[ty]} ${(near[ty] / 1000).toFixed(0)}K SF`}
+                        style={{ width: `${(near[ty] / tot) * 100}%`, background: ty === 'office' ? 'var(--blue)' : ty === 'retail' ? 'var(--amber)' : ty === 'industrial' ? 'var(--green)' : ty === 'mixed' ? '#b07fd9' : '#e88bb8' }} />
+                    ))}
+                  </div>
+                  <div className="faint" style={{ fontSize: 10.5, marginTop: 4, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    {E.PTYPES.map(ty => near[ty] >= 1000 ? <span key={ty}>{E.PLABEL[ty]} {(near[ty] / 1000).toFixed(0)}K</span> : null)}
+                  </div>
+                </div>
+              );
+            })()}
             <table className="sc" style={{ marginTop: 10 }}>
               <thead><tr><th>Use</th><th>Mkt rent</th><th>Cap</th><th>Balance</th></tr></thead>
               <tbody>

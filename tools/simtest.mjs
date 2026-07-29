@@ -140,6 +140,23 @@ function run(seed) {
     defaults += s.news.filter(n=>n.text.includes('defaulted')).length - before > 0 ? 1 : 0;
     const nw = E.netWorth(s);
     if (!isFinite(nw) || !isFinite(s.cash)) throw new Error('NaN at month ' + s.month);
+    // desirability stays inside the model's bounds and the anchor stays finite
+    for (const t of s.tiles) {
+      if (t.water) continue;
+      if (!isFinite(t.D) || t.D < 5 - 1e-9 || t.D > 98 + 1e-9) throw new Error('bad D ' + t.D + ' tile ' + t.i);
+      if (!isFinite(t.baseD) || t.baseD < 0 - 1e-9) throw new Error('bad baseD ' + t.baseD + ' tile ' + t.i);
+      if (!isFinite(t.pop) || !isFinite(t.emp)) throw new Error('bad pop/emp tile ' + t.i);
+    }
+    // supply ledger honesty: per-tile supply must equal what is actually standing
+    {
+      const exp = s.tiles.map(() => ({ office: 0, retail: 0, industrial: 0, mixed: 0, multifamily: 0 }));
+      for (const b of s.stock) if (!b.buildLeft) exp[b.tileI][b.type] += b.sf;
+      for (const a of s.assets) if (a.mode !== 'construction') exp[a.tileI][a.type] += a.sf;
+      for (const t of s.tiles) for (const ty of E.PTYPES) {
+        if (Math.abs((t.supply[ty] ?? 0) - exp[t.i][ty]) > 0.5)
+          throw new Error(`supply drift tile ${t.i} ${ty}: ledger ${t.supply[ty]} vs standing ${exp[t.i][ty]} at month ${s.month}`);
+      }
+    }
     for (const t3 of s.tiles) {
       if (t3.water) continue;
       const seen = new Set();

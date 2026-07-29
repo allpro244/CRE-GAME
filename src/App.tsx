@@ -349,6 +349,28 @@ function Dashboard({ state, goDeals, openLOI, openFirm, flyTo }: { state: GameSt
 function AssetEventModal({ state, setState, asset, kind }: {
   state: GameState; setState: (s: GameState) => void; asset: Asset; kind: string;
 }) {
+  const pd = state.pending.find(x => x.type === 'assetEvent' && x.assetId === asset.id);
+  const data = pd?.data;
+  if (kind === 'tiDemand' && data?.ti) {
+    return (
+      <Modal close={() => {}}>
+        <h2>⚠ {data.tenantName ?? 'Your anchor tenant'} wants improvements</h2>
+        <div className="sub">
+          Their broker's terms: a <b className="num" style={{ color: 'var(--ink)' }}>{E.fmtMoney(data.ti)}</b> improvement package buys a
+          <b> {Math.round((data.extendMo ?? 72) / 12)}-year extension</b> at a
+          <b className="pos"> +{data.bumpPct}% rate step-up</b>. Refuse and they start touring the competition.
+        </div>
+        <div className="dim" style={{ fontSize: 12, marginBottom: 12 }}>
+          Everything is negotiable — a counter at roughly half the package lands about 60% of the time, for a shorter extension and half the bump. Miss, and they sour.
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexDirection: 'column' }}>
+          <button className="btn btn-amber" onClick={() => setState(E.resolveAssetEvent(state, asset.id, 'a'))}>Fund it — {E.fmtMoney(data.ti)} for {Math.round((data.extendMo ?? 72) / 12)} yrs at +{data.bumpPct}%</button>
+          <button className="btn" onClick={() => setState(E.resolveAssetEvent(state, asset.id, 'c'))}>Counter at ~{E.fmtMoney(Math.round(data.ti * 0.55 / 1000) * 1000)} — shorter term, half the bump, ~60% odds</button>
+          <button className="btn" onClick={() => setState(E.resolveAssetEvent(state, asset.id, 'b'))}>Refuse — save the cash, risk the tenant</button>
+        </div>
+      </Modal>
+    );
+  }
   const biggest = [...asset.tenants].sort((a, b) => b.sf - a.sf)[0];
   const roofFull = Math.round(asset.sf * 4.3 * state.econ.costIdx / 1000) * 1000;
   const info: Record<string, { title: string; body: string; a: string; b: string }> = {
@@ -360,7 +382,7 @@ function AssetEventModal({ state, setState, asset, kind }: {
     },
     reassess: {
       title: 'County reassessment',
-      body: `The assessor has repriced ${asset.name} upward — call it the neighborhood's success tax. Accept the higher bill, or spend $25,000 on an appeal with roughly even odds.`,
+      body: `The assessor has repriced ${asset.name} upward — call it the neighborhood's success tax. The notice implies roughly ${data?.hikeLo ? `${E.fmtMoney(data.hikeLo)}–${E.fmtMoney(data.hikeHi ?? data.hikeLo)}` : 'a five-figure sum'} a year in new taxes. Accept the bill, or spend $25,000 on an appeal with roughly even odds.`,
       a: 'Appeal — $25,000, ~55% to win',
       b: 'Accept the new assessment',
     },

@@ -754,6 +754,18 @@ export function LOIModal({ state, setState, loi, close, variant = 'dialog' }: {
         </>) : (
           <div className="memo-row"><span className="lbl">They've invited a proposal. Market for this building</span><span className="num">${mkt.toFixed(2)}/SF</span></div>
         )}
+        {((loi.freeMonths ?? 0) > 0 || (loi.tiPsf ?? 0) > 0) && (() => {
+          const r0 = theirRate ?? mkt;
+          const free = Math.round((loi.freeMonths ?? 0) * loi.sf * r0 / 12);
+          const extraTI = Math.round((loi.tiPsf ?? 0) * loi.sf);
+          const termMo = (theirTerm ?? 5) * 12;
+          const effRate = r0 * (termMo - (loi.freeMonths ?? 0)) / termMo - (loi.tiPsf ?? 0) / (theirTerm ?? 5);
+          return (
+            <div className="memo-row"><span className="lbl">They also want <Hint text="Accepting their terms pays these concessions at signing. Your counter is rate and term only — stripping the package costs you acceptance odds, and they may walk." /></span>
+              <span className="num">{loi.freeMonths ? `${loi.freeMonths} mo free (${E.fmtMoney(free)})` : ''}{loi.freeMonths && loi.tiPsf ? ' + ' : ''}{loi.tiPsf ? `$${loi.tiPsf}/SF TI (${E.fmtMoney(extraTI)})` : ''}
+                <span className="faint"> · effective ${effRate.toFixed(2)}/SF</span></span></div>
+          );
+        })()}
         {(() => {
           const c = E.leaseSigningCosts(state, a.type, loi.sf, isFinal ? (theirRate ?? mkt) : rate, isFinal ? (theirTerm ?? 5) : termY, loi.kind === 'renewal');
           return (c.ti + c.lc) > 0 ? (

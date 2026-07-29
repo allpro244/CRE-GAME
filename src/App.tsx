@@ -640,6 +640,10 @@ function EconomyView({ state }: { state: GameState }) {
                 {cH && cL && <span>Prime office cap <b className="num">{cL.v.toFixed(2)}%</b> <span className="faint">({E.monthName(cL.m)})</span> → <b className="num">{cH.v.toFixed(2)}%</b> <span className="faint">({E.monthName(cH.m)})</span></span>}
                 <span>Construction costs <b className="num">{ci0 > 0 ? '+' + ((ciNow / ci0 - 1) * 100).toFixed(0) : '—'}%</b> since start</span>
                 <span><b className="num">{recessions}</b> recession{recessions === 1 ? '' : 's'} endured</span>
+                {state.swans.map((sw, i) => (
+                  <span key={i} style={{ color: sw.kind === 'miracle' ? 'var(--green)' : 'var(--red)' }}>
+                    ◆ {sw.label} <span className="faint">({E.monthName(sw.m)})</span></span>
+                ))}
               </div>
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 2 }}>
                 {rentRec.map(r => (

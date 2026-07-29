@@ -168,6 +168,9 @@ export interface Economy {
   cityVac: Record<PType, number>;
   rentMom: Record<PType, number>;   // rent-growth momentum: markets trend, they don't twitch
   hadCrunch: boolean; crunchMonthsLeft: number; tariffMonthsLeft: number; ecomMonthsLeft: number;
+  // this game's monetary personality, rolled once from the seed: some careers are
+  // cheap-money eras, some are tight-money grinds, some cycle fast and violent
+  era: { rateBias: number; inflBias: number; vol: number; tempo: number };
   insSpikeMonthsLeft?: number; capInflowMonthsLeft?: number; wfhMonthsLeft?: number;
   constrCycle?: number;
 }
@@ -383,6 +386,7 @@ export interface GameState {
   firmLand: { short: string; tileI: number; cells: number[]; m: number }[];
   rezonings: Rezoning[];
   rezoneDenied: Record<number, number>;   // tileI -> month the council last said no
+  swans: { m: number; kind: string; label: string }[];   // the once-a-generation shocks this game has lived through
   gameOver: boolean; gameOverReason?: string; forcedSaleNotice?: string;
   transitCorridor: number[];
   roads: RoadNet;
@@ -1130,6 +1134,15 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     econ: {
       phase: 'recovery', phaseAge: 6,
       rate: 4.0, rateSmooth: 4.2, inflation: 2.2, empIdx: 97, confidence: 52, popGrowth: 1.1, costIdx: 1,
+      era: (() => {
+        const r = mulberry32((s0 ^ 0x5EEDECA7) | 0);
+        return {
+          rateBias: Math.round((-1.0 + r() * 2.4) * 100) / 100,   // -1.0 .. +1.4 pts on every rate target
+          inflBias: Math.round((-0.5 + r() * 1.5) * 100) / 100,   // -0.5 .. +1.0 on inflation targets
+          vol: Math.round((0.75 + r() * 0.7) * 100) / 100,        // calm seas or whitewater
+          tempo: Math.round((0.8 + r() * 0.5) * 100) / 100,       // fast-cycling or long, slow eras
+        };
+      })(),
       rentIdx: { office: 1, retail: 1, industrial: 1, mixed: 1, multifamily: 1 },
       cityVac: { ...EQ_VAC },
       rentMom: { office: 0, retail: 0, industrial: 0, mixed: 0, multifamily: 0 },
@@ -1158,10 +1171,10 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     nwHistory: [], econHistory: [],
     nextId: 1, pending: [], lastMonthCF: 0, negCashStreak: 0,
     lastScoutMonth: -99, approachesLeft: 3, parcelApproach: {}, dealLog: [], firmLand: [],
-    rezonings: [], rezoneDenied: {},
+    rezonings: [], rezoneDenied: {}, swans: [],
     gameOver: false, transitCorridor: corridor, roads,
     totalRealizedProfit: 0, dealsClosed: 0,
-    version: 22,
+    version: 23,
   };
   generateStock(state);
   // Firms open with real books: they already own the buildings generation assigned
@@ -3398,7 +3411,7 @@ const PHASE_TARGET: Record<Phase, { rate: number; infl: number; emp: number; con
 function tickEconomy(s: GameState) {
   const e = s.econ;
   e.phaseAge++;
-  if (rng(s) < 1 / PHASE_DWELL[e.phase] && e.phaseAge > PHASE_DWELL[e.phase] * 0.5) {
+  if (rng(s) < 1 / (PHASE_DWELL[e.phase] * (e.era?.tempo ?? 1)) && e.phaseAge > PHASE_DWELL[e.phase] * (e.era?.tempo ?? 1) * 0.5) {
     e.phase = PHASE_NEXT[e.phase]; e.phaseAge = 0;
     const msg: Record<Phase, string> = {
       recovery: 'The recession has bottomed. Rates are low, sellers are tired — recoveries are when fortunes are planted.',
@@ -3416,11 +3429,12 @@ function tickEconomy(s: GameState) {
   // above ~3.2% inflation the central bank stops being polite: every extra point of
   // inflation pulls the rate target up 1.6 points. A 6% inflation episode means
   // double-digit prime — the bad times the old-timers still talk about.
+  const era = e.era ?? { rateBias: 0, inflBias: 0, vol: 1, tempo: 1 };
   const fight = Math.max(0, e.inflation - 3.2) * 1.6;
-  e.rate = clamp(e.rate + (t.rate + fight - e.rate) * 0.10 + (rng(s) - 0.5) * 0.18, 2.0, 13.0);
+  e.rate = clamp(e.rate + (t.rate + era.rateBias + fight - e.rate) * 0.10 + (rng(s) - 0.5) * 0.18 * era.vol, 2.0, 13.0);
   e.rateSmooth += (e.rate - e.rateSmooth) * 0.15;
   const tariffHeat = e.tariffMonthsLeft > 0 ? 1.2 : 0;   // tariffs are inflation with paperwork
-  e.inflation = clamp(e.inflation + (t.infl + tariffHeat - e.inflation) * 0.10 + (rng(s) - 0.5) * 0.3, 0, 9);
+  e.inflation = clamp(e.inflation + (t.infl + era.inflBias + tariffHeat - e.inflation) * 0.10 + (rng(s) - 0.5) * 0.3 * era.vol, 0, 9);
   e.empIdx = clamp(e.empIdx + (t.emp - e.empIdx) * 0.07 + (rng(s) - 0.5) * 0.5, 80, 115);
   e.confidence = clamp(e.confidence + (t.conf - e.confidence) * 0.09 + (rng(s) - 0.5) * 2.5, 10, 95);
   e.popGrowth = clamp(0.4 + (e.confidence / 100) * 1.4 + (rng(s) - 0.5) * 0.2, -0.3, 2.4);
@@ -3587,7 +3601,62 @@ function tickTiles(s: GameState) {
   }
 }
 
+// ---------- Black swans ----------
+// Once-a-generation shocks. Most careers see one or two; some see none; nobody
+// sees them coming. Gated: never in the first three years, never within eight
+// years of the last one — a swan is an era-defining memory, not a Tuesday.
+function maybeBlackSwan(s: GameState) {
+  if (s.month < 36) return;
+  const last = s.swans.length ? s.swans[s.swans.length - 1].m : -999;
+  if (s.month - last < 96) return;
+  if (rng(s) > 0.0048) return;   // roughly one per couple of decades of eligible time
+  const kind = rpick(s, ['crash', 'stagflation', 'pandemic', 'quake', 'miracle'] as const);
+  const e = s.econ;
+  if (kind === 'crash') {
+    s.swans.push({ m: s.month, kind, label: 'The Crash' });
+    e.phase = 'recession'; e.phaseAge = 0;
+    e.confidence = clamp(e.confidence - 30, 10, 95);
+    e.hadCrunch = true; e.crunchMonthsLeft = 18;
+    e.rate = clamp(e.rate - 1.5, 2.0, 13.0);   // the cut comes after the damage
+    for (const f of s.firms) if (f.alive) { f.cash -= Math.abs(f.debt) * 0.04; }   // margin calls
+    for (const b of s.stock) if (!b.buildLeft && rng(s) < 0.25) b.occ = clamp(b.occ - rrange(s, 0.05, 0.18), 0.1, 0.97);
+    pushNews(s, 'event', 'THE CRASH. A major lender failed overnight and the credit system seized. LTVs cut, refinancing frozen for ~18 months, tenants failing, and every leveraged balance sheet in the city is getting margin-called. Fortunes are lost this year — and the next ones are bought at the bottom.');
+  } else if (kind === 'stagflation') {
+    s.swans.push({ m: s.month, kind, label: 'The Great Inflation' });
+    e.inflation = clamp(e.inflation + 3.5, 0, 9);
+    e.tariffMonthsLeft = Math.max(e.tariffMonthsLeft, 24);
+    pushNews(s, 'event', 'THE GREAT INFLATION: prices are running away — materials, wages, everything. The central bank will chase this with rates that end in double digits before it ends. Fixed-rate debt just became the best asset you own; floating debt, the worst.');
+  } else if (kind === 'pandemic') {
+    s.swans.push({ m: s.month, kind, label: 'The Pandemic' });
+    e.wfhMonthsLeft = 36; e.ecomMonthsLeft = 30;
+    e.confidence = clamp(e.confidence - 22, 10, 95);
+    e.rate = clamp(e.rate - 2.0, 2.0, 13.0);
+    e.popGrowth = clamp(e.popGrowth - 0.8, -0.3, 2.4);
+    pushNews(s, 'event', 'PANDEMIC. The city empties overnight: offices dark for years, retail on life support, logistics running triple shifts, and money nearly free while the world holds its breath. Every lease signed this decade will remember this month.');
+  } else if (kind === 'quake') {
+    s.swans.push({ m: s.month, kind, label: 'The Quake' });
+    e.costIdx *= 1.14;   // every contractor in the region books solid for two years
+    if (e.constrCycle !== undefined) e.constrCycle = clamp(e.constrCycle * 1.1, 0.85, 1.22);
+    let hit = 0;
+    for (const b of s.stock) if (!b.buildLeft && rng(s) < 0.12) { b.occ = clamp(b.occ * rrange(s, 0.4, 0.75), 0.05, 0.97); b.quality = clamp(b.quality - rrange(s, 8, 20), 10, 150); hit++; }
+    for (const a of s.assets) if (a.mode !== 'construction' && rng(s) < 0.25 && !a.repair) {
+      a.repair = { frac: clamp(rrange(s, 0.15, 0.4), 0.05, 0.6), monthsLeft: 3 + Math.round(rng(s) * 4), what: 'quake' };
+      s.cash -= roundPrice(Math.max(25_000, assetValue(s, a) * 0.006));
+    }
+    pushNews(s, 'event', `THE QUAKE: a magnitude the city builds codes about, not for. ~${hit} buildings damaged, contractors booked solid for two years, costs up 14% overnight. The rebuilding boom starts as soon as the dust settles — for whoever still has cash and standing crews.`);
+  } else {
+    s.swans.push({ m: s.month, kind, label: 'The Boom' });
+    e.phase = 'expansion'; e.phaseAge = 0;
+    e.empIdx = clamp(e.empIdx + 6, 80, 115);
+    e.confidence = clamp(e.confidence + 20, 10, 95);
+    e.capInflowMonthsLeft = 30;
+    e.popGrowth = clamp(e.popGrowth + 0.8, -0.3, 2.4);
+    pushNews(s, 'event', 'THE BOOM: a national champion is moving its headquarters and half its supply chain here. Jobs, people, and institutional capital are all inbound at once — cap rates compress, rents run, and everyone who owns anything looks like a genius for a while. Booms end. Enjoy this one; underwrite like it will.');
+  }
+}
+
 function tickEvents(s: GameState) {
+  maybeBlackSwan(s);
   for (const ef of [...s.effects]) {
     ef.monthsLeft--;
     for (const ti of ef.tiles) {
@@ -4577,7 +4646,7 @@ export function serialize(state: GameState): string { return JSON.stringify(stat
 export function deserialize(json: string): GameState | null {
   try {
     const s = JSON.parse(json);
-    if (s && s.version === 22 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
+    if (s && s.version === 23 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
     return null;
   } catch { return null; }
 }

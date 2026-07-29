@@ -121,23 +121,35 @@ export function BuildingSketch({ a, w = 300, h = 110 }: {
 function QorDash(g: number) { return 'CLASS ' + E.QLABEL[g]; }
 
 // ---------- Rent roll table ----------
-export function RentRollTable({ state, tenants, sf }: { state: GameState; tenants: E.Tenant[]; sf: number }) {
+export function RentRollTable({ state, tenants, sf, retailOf }: {
+  state: GameState; tenants: E.Tenant[]; sf: number;
+  retailOf?: { tileI: number; quality: number };
+}) {
   if (tenants.length === 0) return <div className="dim" style={{ fontSize: 12, padding: '6px 0' }}>Vacant — no tenants in place.</div>;
   const sorted = [...tenants].sort((a, b) => b.sf - a.sf);
   return (
     <table className="sc">
-      <thead><tr><th>Tenant</th><th>SF</th><th>Rate</th><th>Base rent /mo</th><th>Term ends</th><th>Credit <Hint text="A-credit tenants almost never miss rent. C-credit tenants are where vacancies come from — especially in recessions." /></th></tr></thead>
+      <thead><tr><th>Tenant</th><th>SF</th><th>Rate</th><th>Base rent /mo</th>
+        {retailOf && <th>Sales /SF <Hint text="Estimated gross sales. Past the breakpoint (market rent ÷ a 9% occupancy-cost norm) you collect 6% of sales as percentage rent. Overage means the trade is outrunning the rents — draw your own conclusion." /></th>}
+        {retailOf && <th>Overage /mo</th>}
+        <th>Term ends</th><th>Credit <Hint text="A-credit tenants almost never miss rent. C-credit tenants are where vacancies come from — especially in recessions." /></th></tr></thead>
       <tbody>
-        {sorted.map(t => (
-          <tr key={t.id}>
-            <td>{t.name}</td>
-            <td className="num">{(t.sf / 1000).toFixed(1)}K <span className="faint">({pct(t.sf / sf)})</span></td>
-            <td className="num">${t.rate.toFixed(2)}</td>
-            <td className="num">{E.fmtMoney(t.sf * t.rate / 12)}</td>
-            <td className="num">{E.monthName(t.endM)}{t.endM - state.month <= 6 ? <span className="amber"> ⚠</span> : ''}</td>
-            <td><span className={'chip credit-' + t.credit}>{E.CREDIT_LABEL[t.credit]}</span></td>
-          </tr>
-        ))}
+        {sorted.map(t => {
+          const sales = retailOf ? E.tenantSalesPSF(state, retailOf, t) : 0;
+          const over = retailOf ? Math.max(0, sales - E.retailBreakpointPSF(state, retailOf.tileI)) * E.PCT_RENT_RATE * t.sf / 12 : 0;
+          return (
+            <tr key={t.id}>
+              <td>{t.name}</td>
+              <td className="num">{(t.sf / 1000).toFixed(1)}K <span className="faint">({pct(t.sf / sf)})</span></td>
+              <td className="num">${t.rate.toFixed(2)}</td>
+              <td className="num">{E.fmtMoney(t.sf * t.rate / 12)}</td>
+              {retailOf && <td className="num">${sales.toFixed(0)}</td>}
+              {retailOf && <td className={'num ' + (over > 0 ? 'pos' : 'faint')}>{over > 0 ? '+' + E.fmtMoney(over) : '—'}</td>}
+              <td className="num">{E.monthName(t.endM)}{t.endM - state.month <= 6 ? <span className="amber"> ⚠</span> : ''}</td>
+              <td><span className={'chip credit-' + t.credit}>{E.CREDIT_LABEL[t.credit]}</span></td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );
@@ -402,7 +414,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
               {listing.units} apartments · {Math.round((listing.occ ?? 0) * (listing.units ?? 0))} occupied · avg in-place rent {E.fmtMoney((listing.sf! * E.assetRentPSF(state, { tileI: listing.tileI, type: listing.type!, quality: listing.quality!, units: listing.units ?? 1, construction: listing.construction ?? 'garden' } as any) * (listing.occ ?? 0)) / 12 / Math.max(1, Math.round((listing.occ ?? 0) * (listing.units ?? 1))))}/unit/mo.
               Residential leases turn over fast and re-lease fast — occupancy is the whole game.
             </div>
-          ) : <RentRollTable state={state} tenants={listing.tenants ?? []} sf={listing.sf!} />}
+          ) : <RentRollTable state={state} tenants={listing.tenants ?? []} sf={listing.sf!} retailOf={listing.type === 'retail' ? { tileI: listing.tileI, quality: listing.quality ?? 50 } : undefined} />}
         </>)}
         {canBuy && (<>
           <label className="f" style={{ marginTop: 10 }}>Down payment — {pct(downPct)} ({E.fmtMoney(effPrice * downPct)}) <span className="faint">at your {E.fmtMoney(effPrice)} {listing.agreed ? 'agreed price' : 'offer'}</span>
@@ -903,7 +915,7 @@ export function AssetCard({ state, setState, asset: a, onSell, onRefi, onLOI, op
                 <span className="faint" style={{ fontSize: 10.5 }}>Renters churn monthly and re-lease fast — no LOIs here, just occupancy, price, and upkeep.</span>
               </div>
             ) : (<>
-              <RentRollTable state={state} tenants={a.tenants} sf={a.sf} />
+              <RentRollTable state={state} tenants={a.tenants} sf={a.sf} retailOf={a.type === 'retail' ? { tileI: a.tileI, quality: a.quality } : undefined} />
               <div className="faint" style={{ fontSize: 10.5, marginTop: 6 }}>
                 Market for this building: ${E.assetRentPSF(state, a).toFixed(2)}/SF · vacant {( (a.sf - E.leasedSF(a)) / 1000).toFixed(1)}K SF
               </div>
@@ -913,7 +925,7 @@ export function AssetCard({ state, setState, asset: a, onSell, onRefi, onLOI, op
             <h3>Operating statement /mo</h3>
             <table className="sc">
               <tbody>
-                <tr><td>Scheduled rent (EGI)</td><td className="num">{E.fmtMoney(egiM)}</td><td></td></tr>
+                <tr><td>Scheduled rent (EGI){a.type === 'retail' && E.retailOverageMonthly(state, a) > 0 ? <span className="faint" style={{ fontSize: 10 }}> incl. {E.fmtMoney(E.retailOverageMonthly(state, a))} percentage rent</span> : ''}</td><td className="num">{E.fmtMoney(egiM)}</td><td></td></tr>
                 {(() => {
                   const gross = ex.lines.filter(x => x.amt > 0).reduce((s2, x) => s2 + x.amt, 0);
                   return ex.lines.map(l2 => (

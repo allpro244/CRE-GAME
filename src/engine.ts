@@ -639,9 +639,44 @@ export function stabilizedNOI(state: GameState, a: Pick<Asset, 'tileI' | 'type' 
   return (egiM - ex.total) * 12;
 }
 
+// ---------- Percentage rent (retail) ----------
+// Retail leases carry an overage clause: past a natural breakpoint (base rent ÷ 6%),
+// the landlord takes 6% of gross sales. Sales come from the neighborhood — people
+// nearby, their incomes, arterial frontage, the cycle's mood — times the tenant's own
+// draw. Prime corners pay you twice: once in rent, again at the register. The
+// multiplier derives from the tenant id, so no save-format change.
+export function tenantSalesPSF(state: GameState, a: Pick<Asset, 'tileI' | 'quality'>, tn: Tenant): number {
+  const t = state.tiles[a.tileI];
+  const draw = 0.75 + mulberry32((state.seed ^ Math.imul(tn.id, 0x85ebca6b)) | 0)() * 0.5 + tn.credit * 0.06;
+  const acc = t.acc ?? { art: 0, hwy: 0, rail: 0, quiet: 0 };
+  return 330
+    * (0.45 + 0.55 * (t.pop / 100))
+    * (0.55 + 0.45 * t.income)
+    * (0.85 + 0.30 * acc.art)
+    * (0.85 + 0.30 * (state.econ.confidence / 100))
+    * (state.econ.ecomMonthsLeft > 0 ? 0.84 : 1)
+    * (0.92 + qGrade(a.quality) * 0.06)
+    * draw;
+}
+export const PCT_RENT_RATE = 0.06;
+const OCC_COST_NORM = 0.08; // breakpoint sits above a healthy ~9% occupancy-cost — overage means genuine outperformance
+export function retailBreakpointPSF(state: GameState, tileI: number): number {
+  return marketRentPSF(state, state.tiles[tileI], 'retail') / OCC_COST_NORM;
+}
+export function retailOverageMonthly(state: GameState, a: Pick<Asset, 'tileI' | 'type' | 'quality' | 'tenants'>): number {
+  if (a.type !== 'retail') return 0;
+  const bp = retailBreakpointPSF(state, a.tileI);
+  let m = 0;
+  for (const tn of a.tenants) {
+    const sales = tenantSalesPSF(state, a, tn);
+    if (sales > bp) m += tn.sf * PCT_RENT_RATE * (sales - bp) / 12;
+  }
+  return m;
+}
+
 export function assetEGIMonthly(state: GameState, a: Pick<Asset, 'tileI' | 'type' | 'sf' | 'quality' | 'units' | 'construction' | 'tenants' | 'occ'>): number {
   if (isAggregate(a.type)) return (a.sf * assetRentPSF(state, a as any) * (a.occ ?? 0)) / 12;
-  return a.tenants.reduce((s, t) => s + t.sf * t.rate, 0) / 12;
+  return a.tenants.reduce((s, t) => s + t.sf * t.rate, 0) / 12 + retailOverageMonthly(state, a);
 }
 export function assetNOIMonthly(state: GameState, a: Asset): number {
   const potM = (a.sf * assetRentPSF(state, a)) / 12;

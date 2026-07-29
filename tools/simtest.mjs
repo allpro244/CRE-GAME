@@ -13,7 +13,12 @@ function run(seed, city) {
     if (!t.acc || !isFinite(t.acc.art + t.acc.hwy + t.acc.rail + t.acc.quiet)) throw new Error('bad access on tile ' + t.i);
   }
   if (seed % 2 === 0) s = E.setAutoLease(s, true);
-  let banked=0, demoed=0, matched=0, converted=0, listedForSale=0, haggled=0, approaches=0, bought=0, developed=0, sold=0, refis=0, signed=0, walked=0, offers=0, omBought=0, defaults=0, facMade=0;
+  let banked=0, demoed=0, matched=0, converted=0, listedForSale=0, haggled=0, approaches=0, bought=0, developed=0, sold=0, refis=0, signed=0, walked=0, offers=0, omBought=0, defaults=0, facMade=0, rezFiled=0;
+  // zoning invariants at generation: every land tile carries a coherent zone
+  for (const t of s.tiles) {
+    if (t.water) continue;
+    if (!t.zone || !['R', 'C', 'MU', 'M'].includes(t.zone.use) || ![1, 2, 3].includes(t.zone.tier)) throw new Error('bad zone on tile ' + t.i);
+  }
   const startNews = () => s.news.length;
   for (let m = 0; m < 360; m++) {
     while (s.pending.length > 0) {
@@ -157,6 +162,15 @@ function run(seed, city) {
     for (const a of s.assets) {
       if (a.occ <= 0.15 && E.canDemolish(s, a).ok && Math.random() < 0.25) { const r = E.demolish(s, a.id); if (!r.err) { s = r.s; demoed++; } }
     }
+    // entitle-and-flip: file to upzone a block where the bot holds dirt
+    if (s.land.length && Math.random() < 0.06 && s.cash > 300000) {
+      const h = s.land[Math.floor(Math.random() * s.land.length)];
+      const z = s.tiles[h.tileI].zone;
+      if (E.canApplyRezone(s, h.tileI).ok && z.tier < 3) {
+        const r = E.applyRezoning(s, h.tileI, Math.random() < 0.3 ? 'MU' : z.use, (z.tier + 1));
+        if (!r.err) { s = r.s; rezFiled++; }
+      }
+    }
     // manage: refi with custom terms; sell at peak; build facility once
     for (const a of [...s.assets]) {
       if (a.mode==='operating' && s.month - a.acqMonth > 72 && s.econ.phase==='peak' && !a.forSale) {
@@ -187,6 +201,7 @@ function run(seed, city) {
       if (!isFinite(t.D) || t.D < 5 - 1e-9 || t.D > 98 + 1e-9) throw new Error('bad D ' + t.D + ' tile ' + t.i);
       if (!isFinite(t.baseD) || t.baseD < 0 - 1e-9) throw new Error('bad baseD ' + t.baseD + ' tile ' + t.i);
       if (!isFinite(t.pop) || !isFinite(t.emp)) throw new Error('bad pop/emp tile ' + t.i);
+      if (!t.zone || !['R', 'C', 'MU', 'M'].includes(t.zone.use) || ![1, 2, 3].includes(t.zone.tier)) throw new Error('zone corrupted tile ' + t.i + ' month ' + s.month);
     }
     // supply ledger honesty: per-tile supply must equal what is actually standing
     {
@@ -222,7 +237,7 @@ function run(seed, city) {
       if (!isFinite(E.assetValue(s, a))) throw new Error('bad value');
     }
   }
-  return { seed, banked, demoed, land: s.land.length, uc: s.stock.filter(b=>b.buildLeft).length, jvs: s.assets.filter(a=>a.jv).length, matched, converted, nol: Math.round(s.nolCarry/1000), agent: s.autoLease ? 1 : 0, comps: s.comps.length, ci: Math.round((s.econHistory[s.econHistory.length-1].ci ?? 1)*100)/100, listedForSale, haggled, rep: Math.round(s.reputation), approaches, stock: s.stock.length, nw: Math.round(E.netWorth(s)), cash: Math.round(s.cash), bought, omBought, developed, sold, refis, signed, walked, offers, facMade, fac: s.facilities.length, defaults, over: s.gameOver, assets: s.assets.length };
+  return { seed, banked, demoed, rezFiled, rezWon: s.news.filter(n => n.text.includes('APPROVED: block')).length, land: s.land.length, uc: s.stock.filter(b=>b.buildLeft).length, jvs: s.assets.filter(a=>a.jv).length, matched, converted, nol: Math.round(s.nolCarry/1000), agent: s.autoLease ? 1 : 0, comps: s.comps.length, ci: Math.round((s.econHistory[s.econHistory.length-1].ci ?? 1)*100)/100, listedForSale, haggled, rep: Math.round(s.reputation), approaches, stock: s.stock.length, nw: Math.round(E.netWorth(s)), cash: Math.round(s.cash), bought, omBought, developed, sold, refis, signed, walked, offers, facMade, fac: s.facilities.length, defaults, over: s.gameOver, assets: s.assets.length };
 }
 for (const seed of [11, 42, 1337, 90210, 7, 555]) console.log(JSON.stringify(run(seed)));
 for (const seed of [21, 84]) console.log(JSON.stringify({ city: 'island', ...run(seed, 'island') }));

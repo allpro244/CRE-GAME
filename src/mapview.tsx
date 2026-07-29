@@ -4,13 +4,16 @@ import type { GameState, StockBuilding, Tile } from './engine';
 import { Modal, Hint, BuildingSketch, blockName, pct } from './views2';
 import { buildingArt, siteArt } from './buildingArt';
 
-type Lens = 'value' | 'mix' | 'land' | 'office' | 'retail' | 'industrial' | 'multifamily' | 'crime' | 'pipeline' | 'comps';
+type Lens = 'value' | 'mix' | 'land' | 'zoning' | 'office' | 'retail' | 'industrial' | 'multifamily' | 'crime' | 'pipeline' | 'comps';
 const LENSES: { id: Lens; label: string }[] = [
-  { id: 'value', label: 'Desirability' }, { id: 'mix', label: 'Live·Work·Shop' }, { id: 'land', label: 'Land $' }, { id: 'office', label: 'Office rents' },
+  { id: 'value', label: 'Desirability' }, { id: 'mix', label: 'Live·Work·Shop' }, { id: 'land', label: 'Land $' }, { id: 'zoning', label: 'Zoning' },
+  { id: 'office', label: 'Office rents' },
   { id: 'retail', label: 'Retail rents' }, { id: 'industrial', label: 'Industrial fit' },
   { id: 'multifamily', label: 'Residential' }, { id: 'crime', label: 'Crime' },
   { id: 'pipeline', label: 'Pipeline' }, { id: 'comps', label: 'Comps' },
 ];
+// the colors every zoning map has used since 1926
+const ZONE_COL: Record<E.ZoneUse, string> = { R: '#8fb872', C: '#c9604f', MU: '#d29a44', M: '#8579bd' };
 
 function lerpColor(a: [number, number, number], b: [number, number, number], t: number): string {
   const c = a.map((x, i) => Math.round(x + (b[i] - x) * t));
@@ -22,6 +25,7 @@ const SUB = 3;   // subdivision per tile for the continuous field
 
 function lensRaw(state: GameState, t: Tile, lens: Lens): number {
   if (lens === 'value') return t.D / 100;
+  if (lens === 'zoning') return t.zone.tier / 3;
   if (lens === 'land') return E.landPricePerAcre(state, t) / 1e6;
   if (lens === 'office') return Math.min(1, (E.marketRentPSF(state, t, 'office') - 10) / 30);
   if (lens === 'retail') return Math.min(1, (E.marketRentPSF(state, t, 'retail') - 7) / 22);
@@ -42,7 +46,7 @@ function lensRaw(state: GameState, t: Tile, lens: Lens): number {
   return t.crime / 85;
 }
 const LENS_HUE: Record<Lens, [number, number, number]> = {
-  value: [217, 166, 72], mix: [110, 196, 158], land: [188, 178, 96], office: [93, 143, 232], retail: [93, 143, 232],
+  value: [217, 166, 72], mix: [110, 196, 158], land: [188, 178, 96], zoning: [160, 160, 160], office: [93, 143, 232], retail: [93, 143, 232],
   industrial: [63, 169, 126], multifamily: [186, 128, 224], crime: [222, 95, 95],
   pipeline: [232, 140, 60], comps: [120, 200, 160],
 };
@@ -555,6 +559,43 @@ const FieldFlat = memo(function FieldFlat({ field, hue }: { field: { x: number; 
   ))}</g>;
 });
 
+// The zoning map: categorical, not scalar — use class sets the color, tier sets how
+// loud it is. Blocks before the council get a dashed ring; nothing here predicts,
+// it just shows you the paper.
+const ZoningIso = memo(function ZoningIso({ tiles, rezonings, zoneStamp }: {
+  tiles: Tile[]; rezonings: E.Rezoning[]; zoneStamp: string;
+}) {
+  void zoneStamp;
+  const pend = new Set(rezonings.map(r => r.tileI));
+  return <g style={{ pointerEvents: 'none' }}>{tiles.map(t => {
+    if (t.water) return null;
+    const op = t.zone.tier === 1 ? 0.26 : t.zone.tier === 2 ? 0.44 : 0.62;
+    const p = isoPt(t.x, t.y);
+    return <g key={'z' + t.i}>
+      <polygon points={diamond(t.x, t.y, 0.96)} fill={ZONE_COL[t.zone.use]} opacity={op} />
+      {pend.has(t.i) && <polygon points={diamond(t.x, t.y, 0.9)} fill="none" stroke="#e8e0c8" strokeWidth={1.4} strokeDasharray="5 4" opacity={0.9} />}
+      <text x={p[0]} y={p[1] + 3} textAnchor="middle" fontSize={8} fontFamily="var(--mono)"
+        fill="#e8e4da" opacity={0.85}>{E.zoneCode(t.zone)}</text>
+    </g>;
+  })}</g>;
+});
+const ZoningFlat = memo(function ZoningFlat({ tiles, rezonings, zoneStamp }: {
+  tiles: Tile[]; rezonings: E.Rezoning[]; zoneStamp: string;
+}) {
+  void zoneStamp;
+  const pend = new Set(rezonings.map(r => r.tileI));
+  return <g style={{ pointerEvents: 'none' }}>{tiles.map(t => {
+    if (t.water) return null;
+    const op = t.zone.tier === 1 ? 0.3 : t.zone.tier === 2 ? 0.5 : 0.68;
+    return <g key={'z' + t.i}>
+      <rect x={t.x * TS + 1} y={t.y * TS + 1} width={TS - 2} height={TS - 2} fill={ZONE_COL[t.zone.use]} opacity={op} />
+      {pend.has(t.i) && <rect x={t.x * TS + 4} y={t.y * TS + 4} width={TS - 8} height={TS - 8} fill="none" stroke="#e8e0c8" strokeWidth={1.4} strokeDasharray="5 4" />}
+      <text x={(t.x + 0.5) * TS} y={(t.y + 0.5) * TS + 3} textAnchor="middle" fontSize={9} fontFamily="var(--mono)"
+        fill="#f2eee4" opacity={0.9}>{E.zoneCode(t.zone)}</text>
+    </g>;
+  })}</g>;
+});
+
 // Flat-view buildings from the same parcel-true geometry as the iso view —
 // the two views finally agree about where every building stands.
 const FlatBuildings = memo(function FlatBuildings({ blds }: { blds: IsoBld[] }) {
@@ -596,6 +637,8 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const vpFlat = useViewport(-20, -18, W + 24, H + 22);
   const field = useField(state, lens, mixAll);
+  const zoneStamp = useMemo(() => state.tiles.map(t => t.water ? '' : t.zone.use + t.zone.tier).join('') + ':' + state.rezonings.length,
+    [state.tiles, state.rezonings.length]);
   const river = useMemo(() => riverGeometry(state), [state.seed]);
   const runs = useMemo(() => roadRuns(state.roads), [state.seed]); // eslint-disable-line
   const hue = LENS_HUE[lens];
@@ -605,6 +648,15 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const listingsOn = (i: number) => state.listings.filter(l => l.tileI === i);
   const assetsOn = (i: number) => state.assets.filter(a => a.tileI === i);
   const stockOn = (i: number) => state.stock.filter(b => b.tileI === i);
+
+  // ---- rezoning desk: what you ask the council for ----
+  const [rzUse, setRzUse] = useState<E.ZoneUse>('MU');
+  const [rzTier, setRzTier] = useState<1 | 2 | 3>(2);
+  const [rzErr, setRzErr] = useState<string | null>(null);
+  useEffect(() => {
+    setRzErr(null);
+    if (selTile !== null) { const z = state.tiles[selTile].zone; setRzUse(z.use); setRzTier(Math.min(3, z.tier + 1) as 1 | 2 | 3); }
+  }, [selTile]); // eslint-disable-line
 
   // ---- assembly: contiguity analysis, ghost preview, escape to clear ----
   const [ghostType, setGhostType] = useState<E.PType | null>(null);
@@ -666,7 +718,8 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
       }
     }
     const t = state.tiles[selCells.tileI];
-    const best = E.PTYPES.filter(ty => !(ty === 'mixed' && state.tier < 1))
+    const legal = E.PTYPES.filter(ty => !(ty === 'mixed' && state.tier < 1) && E.zoneAllows(t.zone, ty));
+    const best = (legal.length ? legal : E.ZONE_ALLOWS[t.zone.use])
       .map(ty => ({ ty, fit: E.tileDemandFactor(state, t, ty) })).sort((a, b) => b.fit - a.fit)[0].ty;
     return { main, stray, cand: [...cand], best };
   }, [selCells, grids, state]);
@@ -770,7 +823,9 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
         <svg className="map-svg" ref={vpIso.ref} viewBox={vpIso.viewBox} style={vpIso.style} {...vpIso.handlers}>
           <rect x={0} y={0} width={IW_TOT} height={IH_TOT} rx={6} fill="#0b0f13" />
           <TileBaseIso tiles={tilesGeom} />
-          <LensCellsIso tiles={tilesGeom} grids={grids} vals={tileVals} hue={hue} zb={zb} />
+          {lens === 'zoning'
+            ? <ZoningIso tiles={state.tiles} rezonings={state.rezonings} zoneStamp={zoneStamp} />
+            : <LensCellsIso tiles={tilesGeom} grids={grids} vals={tileVals} hue={hue} zb={zb} />}
           {(() => {
             const water = state.tiles.filter(t => t.water && !t.park).sort((a, b) => (a.y - b.y) || (a.x - b.x));
             if (!water.length || water.length > 20) return null;
@@ -843,7 +898,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                 {effGhost && (() => {
                   const bonus = E.upzoneBonus(selInfo.main.length);
                   const sfMax = Math.min(
-                    Math.floor(selInfo.main.length * E.PARCEL_AC * 43_560 * E.FAR[effGhost] * bonus),
+                    Math.floor(selInfo.main.length * E.PARCEL_AC * 43_560 * E.FAR[effGhost] * E.zoneTierMult(t.zone.tier) * bonus),
                     E.CONFIG.tiers[state.tier].maxSF);
                   if (sfMax < E.MIN_BUILD_SF) return null;
                   const ht = massing(effGhost, defaultConstr(effGhost, sfMax), sfMax, selInfo.main.length).ht;
@@ -886,8 +941,10 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           {Array.from({ length: E.CONFIG.GRID_H }, (_, i) => (
             <text key={'cy' + i} x={-10} y={(i + 0.5) * TS + 3.5} textAnchor="middle" fill="var(--dim)" fontSize={10} fontFamily="var(--mono)">{i + 1}</text>
           ))}
-          {/* continuous value field */}
-          <FieldFlat field={field} hue={hue} />
+          {/* continuous value field — or the zoning map, which is paper, not gradient */}
+          {lens === 'zoning'
+            ? <ZoningFlat tiles={state.tiles} rezonings={state.rezonings} zoneStamp={zoneStamp} />
+            : <FieldFlat field={field} hue={hue} />}
           {/* faint block seams so the field reads as a city, not gradient soup */}
           {Array.from({ length: E.CONFIG.GRID_W + 1 }, (_, i) => (
             <line key={'gv' + i} x1={i * TS} y1={0} x2={i * TS} y2={H} stroke="#0b0f13" strokeWidth={0.8} opacity={0.35} />
@@ -930,6 +987,10 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
         </svg>
         )}
         <div className="faint" style={{ fontSize: 11, marginTop: 8, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          {lens === 'zoning' && (['R', 'C', 'MU', 'M'] as E.ZoneUse[]).map(u => (
+            <span key={u}><span style={{ color: ZONE_COL[u] }}>▪</span> {u} {E.ZONE_LABEL[u].toLowerCase()}</span>
+          ))}
+          {lens === 'zoning' && <span style={{ color: '#e8e0c8' }}>▨ before the council</span>}
           <span><span style={{ color: 'var(--amber)' }}>▪</span> yours</span>
           <span><span style={{ color: '#a05468' }}>▪</span> rival land banks</span>
           <span><span style={{ color: '#7d95bd' }}>▪</span> institutional</span>
@@ -953,6 +1014,8 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           <div>
             <h3>Block {blockName(sel)}</h3>
             <div className="metric-row" style={{ marginTop: 2 }}>
+              <div className="metric"><div className="eyebrow">Zoned <Hint text={`${E.ZONE_LABEL[sel.zone.use]} at ${E.zoneTierMult(sel.zone.tier)}× density. Permits: ${E.ZONE_ALLOWS[sel.zone.use].map(ty => E.PLABEL[ty].toLowerCase()).join(', ')}. Standing stock that violates the zone is grandfathered — the paper only governs what gets built next.`} /></div>
+                <div className="v num" style={{ color: ZONE_COL[sel.zone.use] }}>{E.zoneCode(sel.zone)}</div></div>
               <div className="metric"><div className="eyebrow">Desirability</div><div className="v num">{sel.D.toFixed(0)}<span className="faint">/100</span></div></div>
               <div className="metric"><div className="eyebrow">Income idx</div><div className="v num">{sel.income.toFixed(2)}×</div></div>
               <div className="metric"><div className="eyebrow">Employment</div><div className="v num">{sel.emp.toFixed(0)}</div></div>
@@ -1056,6 +1119,54 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                 </div>
               );
             })}
+            {(() => {
+              const app = state.rezonings.find(r => r.tileI === sel.i);
+              if (app) {
+                return (
+                  <div className="memo" style={{ borderLeftColor: '#e8e0c8', marginTop: 10 }}>
+                    <div className="memo-row">
+                      <span className="lbl"><b style={{ color: 'var(--ink)' }}>Before the council</b> — rezone to {app.toUse}-{app.toTier}</span>
+                      <span className="num">hearing ~{E.monthName(app.decideM)}</span>
+                    </div>
+                    <div className="faint" style={{ fontSize: 11, marginTop: 4 }}>{E.rezoneOdds(state, sel.i, app.toUse, app.toTier).read} The room can change between now and the vote.</div>
+                  </div>
+                );
+              }
+              if (!E.playerStandingOn(state, sel.i)) return null;
+              const gate = E.canApplyRezone(state, sel.i);
+              const cost = E.rezoneCost(state, sel.i, rzUse, rzTier);
+              const noop = sel.zone.use === rzUse && sel.zone.tier === rzTier;
+              return (
+                <div className="memo" style={{ borderLeftColor: '#e8e0c8', marginTop: 10 }}>
+                  <div className="memo-row"><span className="lbl"><b style={{ color: 'var(--ink)' }}>Rezoning</b> — you have standing on this block</span></div>
+                  {!gate.ok ? (
+                    <div className="faint" style={{ fontSize: 11, marginTop: 4 }}>{gate.why}</div>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
+                        <select value={rzUse} onChange={e => setRzUse(e.target.value as E.ZoneUse)}
+                          style={{ background: 'var(--panel3)', border: '1px solid var(--line)', color: 'var(--ink)', padding: '5px 8px', borderRadius: 4, fontSize: 12 }}>
+                          {(['R', 'C', 'MU', 'M'] as E.ZoneUse[]).map(u => <option key={u} value={u}>{u} — {E.ZONE_LABEL[u]}</option>)}
+                        </select>
+                        <select value={rzTier} onChange={e => setRzTier(Number(e.target.value) as 1 | 2 | 3)}
+                          style={{ background: 'var(--panel3)', border: '1px solid var(--line)', color: 'var(--ink)', padding: '5px 8px', borderRadius: 4, fontSize: 12 }}>
+                          {[1, 2, 3].map(ti => <option key={ti} value={ti}>Tier {ti} — {E.zoneTierMult(ti as 1 | 2 | 3)}× density</option>)}
+                        </select>
+                        <button className="btn btn-sm btn-amber" disabled={noop}
+                          onClick={() => {
+                            const r = E.applyRezoning(state, sel.i, rzUse, rzTier);
+                            if (r.err) setRzErr(r.err); else { setState(r.s); setRzErr(null); }
+                          }}>File — {E.fmtMoney(cost)}</button>
+                      </div>
+                      <div className="faint" style={{ fontSize: 11, marginTop: 5 }}>
+                        {noop ? 'That’s what the block is already zoned.' : E.rezoneOdds(state, sel.i, rzUse, rzTier).read + ' Filing fees stay spent either way; the hearing lands in 5–9 months.'}
+                      </div>
+                      {rzErr && <div className="alert-strip red" style={{ marginTop: 6 }}>{rzErr}</div>}
+                    </>
+                  )}
+                </div>
+              );
+            })()}
             <h3 style={{ marginTop: 12 }}>Standing inventory</h3>
             <div style={{ maxHeight: 240, overflowY: 'auto' }}>
               {assetsOn(sel.i).map(a => (

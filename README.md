@@ -79,7 +79,13 @@ cold-call parcel owners, assemble contiguous sites lot by lot — visible on the
 break ground when the mass is there, give up on stale assemblies after a holdout wins, and
 occasionally close on an off-market lead you priced but didn't tie up) · lease escalations and
 tenant renewal options (negotiated in the LOI, exercised only when they're in the tenant's favor) ·
-construction pipeline · land banking · demolition · office-to-multifamily conversion · reputation.
+construction pipeline · land banking · demolition · office-to-multifamily conversion · reputation ·
+zoning (every block carries a use class R/C/MU/M and an intensity tier 1-3 generated with the city;
+use gates the product, tier caps density, existing violations are grandfathered; land prices what
+the paper allows, so upzoning is land value — rezoning applications cost real fees, take 5-9 months,
+and live or die at a hearing where neighborhood opposition, spot-zoning coherence, the economic
+phase and your reputation all vote; the council upzones its own transit corridors; AI firms obey
+the same paper).
 
 ---
 

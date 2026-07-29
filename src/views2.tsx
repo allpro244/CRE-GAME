@@ -332,7 +332,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
   const [useJV, setUseJV] = useState(false);
   const firstConstr = CONSTR0(listing, state);
   const [dev, setDev] = useState<DevChoice>(() => ({
-    type: firstConstr.type, sf: Math.min(10000, E.maxBuildableSF(listing, firstConstr.type) || 10000),
+    type: firstConstr.type, sf: Math.min(10000, E.maxBuildableSF(state, listing, firstConstr.type) || 10000),
     units: defaultUnits(firstConstr.type, firstConstr.construction, 10000),
     construction: firstConstr.construction,
     contractor: 'standard', contingencyPct: 0.10, expedited: false, downPct: 0.35, fixedRate: false,
@@ -474,7 +474,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
   // ---------- land ----------
   const isBuildFlow = !!(listing.fromLandId || listing.parentAssetId);
   const spec = E.CONSTR[dev.type].find(x => x.id === dev.construction) ?? E.CONSTR[dev.type][0];
-  const bMax = Math.min(E.maxBuildableSF(listing, dev.type), E.CONFIG.tiers[state.tier].maxSF, spec.maxSF ?? Infinity);
+  const bMax = Math.min(E.maxBuildableSF(state, listing, dev.type), E.CONFIG.tiers[state.tier].maxSF, spec.maxSF ?? Infinity);
   const bd = E.devCostBreakdown(state, dev, listing.price);
   const maxLoan = bd.total * (E.CONFIG.constrLTC - (state.econ.crunchMonthsLeft > 0 ? 0.1 : 0));
   const equity = Math.max(bd.total * dev.downPct, bd.total - maxLoan);
@@ -483,7 +483,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
   const suitTxt = (ty: PType) => { const f = E.tileDemandFactor(state, t, ty); return f > 1.1 ? 'strong' : f > 0.85 ? 'fair' : 'weak'; };
   const setType = (ty: PType) => {
     const c0 = E.CONSTR[ty][ty === 'industrial' ? 1 : 1] ?? E.CONSTR[ty][0];
-    const sf = Math.min(dev.sf, E.maxBuildableSF(listing, ty) || 5000);
+    const sf = Math.min(dev.sf, E.maxBuildableSF(state, listing, ty) || 5000);
     setDev({ ...dev, type: ty, construction: c0.id, sf: Math.max(5000, sf), units: defaultUnits(ty, c0.id, sf) });
   };
   const setConstr = (cid: string) => {
@@ -572,14 +572,15 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
       })()}
       {isBuildFlow && <>
       {isBuildFlow && <div className="dim" style={{ fontSize: 11.5, marginBottom: 10 }}>
-        Coverage limits what the dirt can hold: at a {pct(E.FAR[dev.type], 0)} floor-area ratio for {E.PLABEL[dev.type].toLowerCase()}, this parcel supports up to <b className="num" style={{ color: 'var(--ink)' }}>{(E.maxBuildableSF(listing, dev.type) / 1000).toFixed(0)}K SF</b>. Your tier caps projects at {E.CONFIG.tiers[state.tier].maxSF / 1000}K SF.
+        Zoned <b style={{ color: 'var(--ink)' }}>{E.zoneCode(t.zone)}</b> ({E.ZONE_LABEL[t.zone.use].toLowerCase()}, {E.zoneTierMult(t.zone.tier)}× density) — permits {E.ZONE_ALLOWS[t.zone.use].map(ty => E.PLABEL[ty].toLowerCase()).join(', ')}.
+        At that density a {E.PLABEL[dev.type].toLowerCase()} building here tops out at <b className="num" style={{ color: 'var(--ink)' }}>{(E.maxBuildableSF(state, listing, dev.type) / 1000).toFixed(0)}K SF</b>. Your tier caps projects at {E.CONFIG.tiers[state.tier].maxSF / 1000}K SF.
       </div>}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
         <label className="f">Product type
           <select value={dev.type} onChange={e => setType(e.target.value as PType)}>
             {E.PTYPES.map(ty => (
-              <option key={ty} value={ty} disabled={ty === 'mixed' && state.tier < 1}>
-                {E.PLABEL[ty]} — demand {suitTxt(ty)}{ty === 'mixed' && state.tier < 1 ? ' (Tier 2)' : ''}
+              <option key={ty} value={ty} disabled={(ty === 'mixed' && state.tier < 1) || !E.zoneAllows(t.zone, ty)}>
+                {E.PLABEL[ty]} — {!E.zoneAllows(t.zone, ty) ? `not permitted in ${E.zoneCode(t.zone)}` : `demand ${suitTxt(ty)}`}{ty === 'mixed' && state.tier < 1 ? ' (Tier 2)' : ''}
               </option>
             ))}
           </select>
@@ -709,7 +710,9 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
 }
 function CONSTR0(l: Listing, state: GameState) {
   const t = state.tiles[l.tileI];
-  const ty: PType = t.indSuit > 55 ? 'industrial' : 'retail';
+  let ty: PType = t.indSuit > 55 ? 'industrial' : 'retail';
+  // open the modal on something the zoning actually permits
+  if (!E.zoneAllows(t.zone, ty)) ty = E.ZONE_ALLOWS[t.zone.use].find(x => !(x === 'mixed' && state.tier < 1)) ?? E.ZONE_ALLOWS[t.zone.use][0];
   return { type: ty, construction: E.CONSTR[ty][1].id };
 }
 function defaultUnits(ty: PType, cid: string, sf: number): number {

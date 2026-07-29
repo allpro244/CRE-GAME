@@ -59,6 +59,28 @@ export const CONSTR: Record<PType, ConstrSpec[]> = {
 };
 export const FAR: Record<PType, number> = { industrial: 0.45, retail: 0.45, office: 2.2, mixed: 1.4, multifamily: 1.6 };
 export const MIN_BUILD_SF = 4500;   // every product type is buildable on a single quarter-acre parcel
+
+// ---------- Zoning ----------
+// Every block carries a use class and an intensity tier. The FAR table above is the
+// TYPICAL product; zoning says what the city will actually let you put on the dirt.
+// Tier caps density (t1 suburban-scale, t2 as-of-right typical, t3 core density),
+// use class gates the product. Standing stock that violates its zone is grandfathered —
+// the city doesn't tear down what's already built, it just won't permit more of it.
+export type ZoneUse = 'R' | 'C' | 'MU' | 'M';
+export interface Zone { use: ZoneUse; tier: 1 | 2 | 3 }
+export const ZONE_ALLOWS: Record<ZoneUse, PType[]> = {
+  R: ['multifamily'],
+  C: ['office', 'retail'],
+  MU: ['multifamily', 'office', 'retail', 'mixed'],
+  M: ['industrial'],
+};
+export const ZONE_LABEL: Record<ZoneUse, string> = { R: 'Residential', C: 'Commercial', MU: 'Mixed-Use', M: 'Industrial' };
+export function zoneAllows(z: Zone | undefined, ty: PType): boolean { return !z || ZONE_ALLOWS[z.use].includes(ty); }
+export function zoneTierMult(tier: 1 | 2 | 3): number { return tier === 1 ? 0.6 : tier === 3 ? 1.6 : 1.0; }
+export function zoneCode(z: Zone): string { return `${z.use}-${z.tier}`; }
+// A rezoning application before the council: filed, then decided months later at a
+// hearing. Odds are computed the day of the vote, not the day of filing.
+export interface Rezoning { id: number; tileI: number; toUse: ZoneUse; toTier: 1 | 2 | 3; decideM: number; cost: number }
 export function isAggregate(type: PType): boolean { return type === 'multifamily'; }
 
 export const CONFIG = {
@@ -112,6 +134,8 @@ export interface Tile {
   // and how quiet the block is. Retail wants frontage; industrial wants the highway and
   // the rail spur; housing pays for quiet.
   acc: { art: number; hwy: number; rail: number; quiet: number };
+  // what the city will permit here — see the Zoning block up top
+  zone: Zone;
 }
 
 // Streets live on the boundaries between blocks: hz[y][x] is the segment between
@@ -332,6 +356,8 @@ export interface GameState {
   parcelApproach: Record<string, { m: number; outcome: 'refused' | 'ask'; ask?: number }>;
   dealLog: DealLogEntry[];
   firmLand: { short: string; tileI: number; cells: number[]; m: number }[];
+  rezonings: Rezoning[];
+  rezoneDenied: Record<number, number>;   // tileI -> month the council last said no
   gameOver: boolean; gameOverReason?: string; forcedSaleNotice?: string;
   transitCorridor: number[];
   roads: RoadNet;
@@ -607,7 +633,7 @@ export function generateCity(seed: number, city: CityKind = 'meridian'): { tiles
     const dPort = dist(x, y, PORT.x, PORT.y);
     const indSuit = clamp(16 + 58 * railBand + 30 * gauss(dPort, 3.2) - D * 0.25 + (noise[i] - 0.5) * 20, 3, 100);
     const crime = clamp(68 - 0.58 * D + (noise2[i] - 0.5) * 24, 4, 85);
-    tiles.push({ i, x, y, water, park: parkSet.has(i) || undefined, D, baseD: D, income, emp, pop, indSuit, crime, popBase: pop, empBase: emp, supply: { office: 0, retail: 0, industrial: 0, mixed: 0, multifamily: 0 }, acc: { art: 0, hwy: 0, rail: 0, quiet: 0 } });
+    tiles.push({ i, x, y, water, park: parkSet.has(i) || undefined, D, baseD: D, income, emp, pop, indSuit, crime, popBase: pop, empBase: emp, supply: { office: 0, retail: 0, industrial: 0, mixed: 0, multifamily: 0 }, acc: { art: 0, hwy: 0, rail: 0, quiet: 0 }, zone: { use: 'MU', tier: 1 } });
   }
   computeAccess(tiles, roads);
   // Streets shape the terrain: frontage lifts a block, a highway next door drags on it
@@ -632,6 +658,24 @@ export function generateCity(seed: number, city: CityKind = 'meridian'): { tiles
     t.supply.industrial = Math.round(t.indSuit * 3800 * (0.7 + r() * 0.6));
     t.supply.mixed = Math.round((t.emp + t.pop) * 700 * (0.7 + r() * 0.6));
     t.supply.multifamily = Math.round(t.pop * (0.6 + 0.4 * t.income) * 2100 * (0.7 + r() * 0.6));
+  }
+  // The zoning map reads like every zoning map: industrial where the rail is, commercial
+  // where the jobs are, residential where it's quiet, mixed where the city actually works.
+  // Written AFTER the supply seed so the paper mostly matches the ground — what doesn't
+  // match is grandfathered, same as every real city.
+  for (const t of tiles) {
+    if (t.water) continue;
+    // pop carries a high floor (single-family fabric everywhere), so the jobs test
+    // is asymmetric: strong employment makes a commercial district even where people live
+    let use: ZoneUse;
+    if (t.indSuit > 55) use = 'M';
+    else if (t.emp > 45 && t.emp > t.pop * 1.0) use = 'C';
+    else if (t.pop > t.emp * 1.6) use = 'R';
+    else use = 'MU';
+    let tier: 1 | 2 | 3 = t.D >= 74 ? 3 : t.D >= 44 ? 2 : 1;
+    if (use === 'M' && tier > 2) tier = 2;         // nobody zones for 30-story warehouses
+    if (r() < 0.12) tier = Math.max(1, tier - 1) as 1 | 2 | 3;  // pockets of stale downzoned paper
+    t.zone = { use, tier };
   }
   const corridor: number[] = [];
   const tx = city === 'island' ? W - 2 : (r() < 0.5 ? 1 : W - 2);
@@ -1054,9 +1098,10 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     nwHistory: [], econHistory: [],
     nextId: 1, pending: [], lastMonthCF: 0, negCashStreak: 0,
     lastScoutMonth: -99, approachesLeft: 3, parcelApproach: {}, dealLog: [], firmLand: [],
+    rezonings: [], rezoneDenied: {},
     gameOver: false, transitCorridor: corridor, roads,
     totalRealizedProfit: 0, dealsClosed: 0,
-    version: 18,
+    version: 19,
   };
   generateStock(state);
   // Born in equilibrium: the anchors absorb whatever the initial city explains, so
@@ -1099,7 +1144,10 @@ function buildableTiles(state: GameState): Tile[] { return state.tiles.filter(t 
 
 export function landPricePerAcre(state: GameState, t: Tile): number {
   const psfLand = (3 + Math.pow(t.D / 100, 2.2) * 55) * (t.indSuit > 55 ? 0.8 : 1);
-  return psfLand * 43_560 * state.econ.costIdx;
+  // land trades on what you're ALLOWED to build. Upzoned dirt is worth more the day
+  // the council votes — which is the entire entitle-and-flip business.
+  const zf = t.zone ? (t.zone.tier === 1 ? 0.86 : t.zone.tier === 3 ? 1.24 : 1) : 1;
+  return psfLand * 43_560 * state.econ.costIdx * zf;
 }
 
 // Build the entire standing inventory of Meridian City. Every building exists
@@ -1115,7 +1163,8 @@ function generateStock(state: GameState) {
     const dens = clamp(0.10 + Math.pow(t.D / 100, 1.9) * 0.62 + (t.indSuit > 62 ? 0.02 : 0), 0.06, 0.62) * (t.indSuit > 62 ? 0.75 : 1);
     const budget = Math.round(dens * PGRID * PGRID); // parcels to fill on this block
     // each use competes for land in proportion to the acreage its demand implies
-    const weights: [PType, number][] = PTYPES.map(ty => [ty, tileCapacitySF(t, ty) / (FAR[ty] * 43_560 * PARCEL_AC)] as [PType, number]);
+    // zoning shapes what got built: nonconforming stock exists (it predates the paper) but it's the exception
+    const weights: [PType, number][] = PTYPES.map(ty => [ty, tileCapacitySF(t, ty) / (FAR[ty] * 43_560 * PARCEL_AC) * (zoneAllows(t.zone, ty) ? 1 : 0.12)] as [PType, number]);
     let used = 0, guard = 0;
     while (used < budget && guard++ < 12) {
       const tot = weights.reduce((s2, w) => s2 + w[1], 0);
@@ -1123,7 +1172,7 @@ function generateStock(state: GameState) {
       for (const [tt, w] of weights) { pick -= w; if (pick <= 0) { ty = tt; break; } }
       const [lo, hi] = STOCK_SIZE[ty];
       const room = Math.max(1, budget - used);
-      const maxSF = room * PARCEL_AC * 43_560 * FAR[ty];
+      const maxSF = room * PARCEL_AC * 43_560 * FAR[ty] * zoneTierMult(t.zone.tier);
       let sf = Math.round(clamp(rrange(state, lo, hi), lo, Math.max(lo, maxSF)) / 1000) * 1000;
       if (sf > maxSF) { if (lo > maxSF) break; sf = Math.round(maxSF / 1000) * 1000; }
       const need = parcelsNeeded(sf, ty);
@@ -1588,8 +1637,10 @@ export interface DevChoice {
   recourse?: boolean;                 // sign personally: -80bps and +10pts LTC, and it can follow you home
 }
 
-export function maxBuildableSF(l: Listing, type: PType): number {
-  return Math.floor(((l.acres ?? 0) * 43_560 * FAR[type] * upzoneBonus(listingParcels(l))) / 1000) * 1000;
+export function maxBuildableSF(state: GameState, l: Listing, type: PType): number {
+  const z = state.tiles[l.tileI]?.zone;
+  const zMult = z ? zoneTierMult(z.tier) : 1;
+  return Math.floor(((l.acres ?? 0) * 43_560 * FAR[type] * zMult * upzoneBonus(listingParcels(l))) / 1000) * 1000;
 }
 
 export const DESIGN = {
@@ -1617,8 +1668,12 @@ export function devCostBreakdown(state: GameState, c: DevChoice, landCost: numbe
 export function validateDev(state: GameState, l: Listing, c: DevChoice): string | null {
   const spec = CONSTR[c.type].find(x => x.id === c.construction);
   if (!spec) return 'Pick a construction type.';
-  const bMax = maxBuildableSF(l, c.type);
-  if (c.sf > bMax) return `Site coverage caps a ${PLABEL[c.type].toLowerCase()} building on ${l.acres} acres at ${(bMax / 1000).toFixed(0)}K SF.`;
+  const zt = state.tiles[l.tileI];
+  if (zt && !zoneAllows(zt.zone, c.type)) {
+    return `Block ${blockLabel(zt)} is zoned ${zoneCode(zt.zone)} (${ZONE_LABEL[zt.zone.use].toLowerCase()}) — ${PLABEL[c.type].toLowerCase()} isn't a permitted use. Rezone first, or build what the paper allows.`;
+  }
+  const bMax = maxBuildableSF(state, l, c.type);
+  if (c.sf > bMax) return `Zoning at ${zt ? zoneCode(zt.zone) : '—'} caps a ${PLABEL[c.type].toLowerCase()} building on ${l.acres} acres at ${(bMax / 1000).toFixed(0)}K SF. Upzone the block to go denser.`;
   if (c.sf > CONFIG.tiers[state.tier].maxSF) return `Your firm can take on projects up to ${CONFIG.tiers[state.tier].maxSF / 1000}K SF. Grow to unlock larger.`;
   if (spec.maxSF && c.sf > spec.maxSF) return `${spec.label} tops out at ${spec.maxSF / 1000}K SF.`;
   if (spec.fixedUnits && c.units !== spec.fixedUnits) return `${spec.label} is single-tenant by definition.`;
@@ -2333,6 +2388,91 @@ export function sellLand(state: GameState, holdingId: number): { s: GameState; e
   pushNews(s, net - h.basis >= 0 ? 'success' : 'warn', `Sold your ${Math.round(h.cells.length * PARCEL_AC * 100) / 100} acres at block ${blockLabel(s.tiles[h.tileI])} for ${fmtMoney(net)} — ${net - h.basis >= 0 ? 'a gain' : 'a loss'} of ${fmtMoney(Math.abs(net - h.basis))} against your ${fmtMoney(h.basis)} basis.`, h.tileI);
   return { s };
 }
+// ---------- Rezoning: paper into value ----------
+// You don't need to own the whole block to ask the council to rezone it — you need
+// standing: dirt, a contract, a building, or a project there. What you're really buying
+// is a land-value markup on the day of the vote, which is the oldest trade in the business.
+export function playerStandingOn(s: GameState, tileI: number): boolean {
+  return s.land.some(h => h.tileI === tileI)
+    || s.assets.some(a => a.tileI === tileI)
+    || s.listings.some(l => l.tileI === tileI && !!l.underContract);
+}
+export function rezoneCost(s: GameState, tileI: number, toUse: ZoneUse, toTier: 1 | 2 | 3): number {
+  const z = s.tiles[tileI].zone;
+  const useChange = toUse !== z.use;
+  const tierJump = Math.max(0, toTier - z.tier);
+  // counsel, traffic study, environmental, filing fees — and the bigger the ask, the bigger the bill
+  return roundPrice((35_000 + (useChange ? 55_000 : 0) + 45_000 * tierJump) * s.econ.costIdx);
+}
+// The honest odds — computed fresh each time, because the neighborhood keeps changing.
+export function rezoneOdds(s: GameState, tileI: number, toUse: ZoneUse, toTier: 1 | 2 | 3): { p: number; read: string } {
+  const t = s.tiles[tileI];
+  const z = t.zone;
+  let p = 0.62;
+  // coherence: rezoning to match your neighbors is planning; rezoning against them is spot zoning
+  const W = CONFIG.GRID_W;
+  const neigh = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+    .map(([dx, dy]) => s.tiles[(t.y + dy) * W + t.x + dx])
+    .filter(n => n && !n.water && Math.abs(n.x - t.x) + Math.abs(n.y - t.y) === 1);
+  const matches = neigh.filter(n => n.zone.use === toUse).length;
+  p += matches >= 2 ? 0.14 : matches === 1 ? 0.05 : -0.16;
+  // opposition: the people who live nearby show up to hearings. Industrial and towers draw crowds.
+  const avgPop = neigh.length ? neigh.reduce((a, n) => a + n.pop, 0) / neigh.length : t.pop;
+  if (toUse === 'M') p -= 0.30 * (avgPop / 100);
+  if (toTier === 3) p -= 0.14 * (avgPop / 100);
+  if (toTier - z.tier >= 2) p -= 0.12;                     // two tiers in one ask is greedy
+  if (toUse === 'R' || toUse === 'MU') p += 0.07;           // housing plays well at the podium
+  if (s.econ.phase === 'expansion' || s.econ.phase === 'peak') p += 0.06;  // growth councils say yes
+  if (s.econ.phase === 'recession') p -= 0.04;
+  p += (s.reputation - 50) * 0.002;                          // a good name fills the room with allies
+  p = clamp(p, 0.12, 0.93);
+  const read = p > 0.72 ? 'Counsel likes your chances.'
+    : p > 0.5 ? 'A real fight, but winnable.'
+    : p > 0.3 ? 'Uphill — pack the hearing room.'
+    : 'Counsel advises against filing. Strongly.';
+  return { p, read };
+}
+export function canApplyRezone(s: GameState, tileI: number): { ok: boolean; why?: string } {
+  const t = s.tiles[tileI];
+  if (!t || t.water) return { ok: false, why: 'Nothing to rezone.' };
+  if (s.rezonings.some(r => r.tileI === tileI)) return { ok: false, why: 'This block is already before the council.' };
+  const denied = s.rezoneDenied[tileI];
+  if (denied !== undefined && s.month - denied < 24) return { ok: false, why: `The council said no in ${monthName(denied)}. Reapplying inside two years reads as contempt.` };
+  if (!playerStandingOn(s, tileI)) return { ok: false, why: 'You need standing here — dirt, a contract, or a building — before the council will hear you.' };
+  return { ok: true };
+}
+export function applyRezoning(state: GameState, tileI: number, toUse: ZoneUse, toTier: 1 | 2 | 3): { s: GameState; err?: string } {
+  const s = clone(state);
+  const gate = canApplyRezone(s, tileI);
+  if (!gate.ok) return { s, err: gate.why };
+  const t = s.tiles[tileI];
+  if (t.zone.use === toUse && t.zone.tier === toTier) return { s, err: 'That\'s what the block is already zoned.' };
+  const cost = rezoneCost(s, tileI, toUse, toTier);
+  if (s.cash < cost) return { s, err: `Filing runs ${fmtMoney(cost)} — counsel, studies, fees.` };
+  s.cash -= cost;
+  const months = 5 + Math.round(rng(s) * 4);
+  s.rezonings.push({ id: s.nextId++, tileI, toUse, toTier, decideM: s.month + months, cost });
+  pushNews(s, 'info', `Filed to rezone block ${blockLabel(t)} from ${zoneCode(t.zone)} to ${toUse}-${toTier}. The council hears it in ~${months} months. ${rezoneOdds(s, tileI, toUse, toTier).read}`, tileI);
+  return { s };
+}
+// Hearings resolve on the council's calendar, not yours.
+function tickRezonings(s: GameState) {
+  for (const r of [...s.rezonings]) {
+    if (s.month < r.decideM) continue;
+    s.rezonings = s.rezonings.filter(x => x.id !== r.id);
+    const t = s.tiles[r.tileI];
+    const { p } = rezoneOdds(s, r.tileI, r.toUse, r.toTier);
+    if (rng(s) < p) {
+      const from = zoneCode(t.zone);
+      t.zone = { use: r.toUse, tier: r.toTier };
+      pushNews(s, 'success', `APPROVED: block ${blockLabel(t)} rezoned ${from} → ${zoneCode(t.zone)}. The paper changed; the land under it just repriced.`, r.tileI);
+    } else {
+      s.rezoneDenied[r.tileI] = s.month;
+      pushNews(s, 'warn', `DENIED: the council killed your rezoning at block ${blockLabel(t)}. The neighbors showed up. Your ${fmtMoney(r.cost)} in fees stays spent.`, r.tileI);
+    }
+  }
+}
+
 // Every touching lot you own on this block builds as one site — corners alone don't count.
 export function developableFrom(state: GameState, holdingId: number): { cells: number[]; holdings: number[] } {
   const h = state.land.find(x => x.id === holdingId);
@@ -2947,6 +3087,7 @@ export function advanceMonth(state: GameState): GameState {
   s.month++;
   s.forcedSaleNotice = undefined;
   tickEconomy(s);
+  tickRezonings(s);
   tickTiles(s);
   tickStock(s);
   tickConstruction(s);
@@ -3303,7 +3444,17 @@ function tickEvents(s: GameState) {
 function fireEvent(s: GameState, kind: string, payload?: number) {
   if (kind === 'transit') {
     s.effects.push({ kind: 'transit', monthsLeft: 14, tiles: s.transitCorridor, dPerMonth: 0.9 });
-    pushNews(s, 'event', 'TRANSIT LINE APPROVED: a new rapid line will run through the highlighted corridor. Desirability along the route will climb for the next year.');
+    // the city upzones its own corridor — transit-oriented development is policy, not luck
+    let upzoned = 0;
+    for (const ti of s.transitCorridor) {
+      const t = s.tiles[ti];
+      if (t.water) continue;
+      const before = zoneCode(t.zone);
+      if (t.zone.use === 'R') t.zone = { use: 'MU', tier: t.zone.tier };
+      if (t.zone.tier < 2) t.zone = { use: t.zone.use, tier: 2 };
+      if (zoneCode(t.zone) !== before) upzoned++;
+    }
+    pushNews(s, 'event', `TRANSIT LINE APPROVED: a new rapid line will run through the highlighted corridor. Desirability along the route will climb for the next year${upzoned ? `, and the city upzoned ${upzoned} block${upzoned > 1 ? 's' : ''} along it — transit-oriented development is now as-of-right` : ''}.`);
   } else if (kind === 'employer') {
     const ti = payload ?? rpick(s, s.tiles.filter(t => !t.water)).i;
     const t = s.tiles[ti];
@@ -3416,7 +3567,7 @@ function firmDevelops(s: GameState, f: Firm) {
   const want: PType = f.style === 'industrial' ? 'industrial' : f.style === 'mf' ? 'multifamily'
     : f.style === 'core' ? (rng(s) < 0.5 ? 'office' : 'retail')
       : f.style === 'value-add' ? 'retail' : rpick(s, PTYPES);
-  const cands = s.tiles.filter(t => !t.water && freeParcelCount(s, t.i) >= 3 && tileDemandFactor(s, t, want) > 1.02
+  const cands = s.tiles.filter(t => !t.water && zoneAllows(t.zone, want) && freeParcelCount(s, t.i) >= 3 && tileDemandFactor(s, t, want) > 1.02
     && oversupplyPenalty(t, want) < 0.06);
   if (!cands.length) return;
   cands.sort((a, b) => tileDemandFactor(s, b, want) - tileDemandFactor(s, a, want));
@@ -3425,7 +3576,7 @@ function firmDevelops(s: GameState, f: Firm) {
   const spot = findFreeRect(s, t.i, need, () => rng(s));
   if (!spot) return;
   const acres = spot.pw * spot.ph * PARCEL_AC;
-  const sf = Math.round(acres * 43_560 * FAR[want] * rrange(s, 0.6, 0.95) / 1000) * 1000;
+  const sf = Math.round(acres * 43_560 * FAR[want] * zoneTierMult(t.zone.tier) * rrange(s, 0.6, 0.95) / 1000) * 1000;
   if (sf < 6000) return;
   const months = Math.min(26, Math.max(6, Math.round(4 + sf / 7000)));
   const quality = clamp(rrange(s, 52, 88), 30, 92);
@@ -3459,10 +3610,11 @@ function tickConstruction(s: GameState) {
 
 function firmTakesLand(s: GameState, f: Firm, l: Listing) {
   const t = s.tiles[l.tileI];
-  const ty: PType = t.indSuit > 55 ? 'industrial' : f.style === 'core' ? 'office' : rng(s) < 0.5 ? 'retail' : 'mixed';
+  const pref: PType[] = t.indSuit > 55 ? ['industrial'] : f.style === 'core' ? ['office', 'mixed'] : rng(s) < 0.5 ? ['retail', 'mixed'] : ['mixed', 'retail'];
+  const ty = pref.find(x => zoneAllows(t.zone, x)) ?? ZONE_ALLOWS[t.zone.use][0];
   const cells = l.parcelCells ?? (l.parcel ? footprintCells(l.parcel) : null);
   const acres = l.acres ?? (cells ? cells.length * PARCEL_AC : 1);
-  const sf = Math.round(acres * 43_560 * FAR[ty] * rrange(s, 0.55, 0.9) / 1000) * 1000;
+  const sf = Math.round(acres * 43_560 * FAR[ty] * zoneTierMult(t.zone.tier) * rrange(s, 0.55, 0.9) / 1000) * 1000;
   if (cells && cells.length && sf >= 4000) {
     const months = Math.min(26, Math.max(6, Math.round(4 + sf / 7000)));
     const quality = clamp(rrange(s, 45, 85), 30, 92);
@@ -3491,7 +3643,7 @@ function tickFirmLand(s: GameState) {
   for (const f of s.firms) {
     if (!f.alive || f.netWorth < 5_000_000 || rng(s) > 0.05) continue;
     const want: PType = f.style === 'industrial' ? 'industrial' : f.style === 'mf' ? 'multifamily' : f.style === 'core' ? 'office' : rng(s) < 0.5 ? 'retail' : 'mixed';
-    const cands = s.tiles.filter(t => !t.water && freeParcelCount(s, t.i) >= 2 && tileDemandFactor(s, t, want) > 1.0);
+    const cands = s.tiles.filter(t => !t.water && zoneAllows(t.zone, want) && freeParcelCount(s, t.i) >= 2 && tileDemandFactor(s, t, want) > 1.0);
     if (!cands.length) continue;
     // prefer blocks where they already hold dirt — assemblies want to finish
     const held = s.firmLand.filter(x => x.short === f.short);
@@ -3539,8 +3691,9 @@ function tickFirmLand(s: GameState) {
     const main = groups[0] ?? [];
     const ready = main.length >= 2 && (main.length >= 4 || rng(s) < 0.22);
     if (ready) {
-      const ty: PType = t.indSuit > 55 ? 'industrial' : f.style === 'mf' ? 'multifamily' : f.style === 'core' ? 'office' : rng(s) < 0.5 ? 'retail' : 'mixed';
-      const sf = Math.round(main.length * PARCEL_AC * 43_560 * FAR[ty] * upzoneBonus(main.length) * rrange(s, 0.7, 0.95) / 500) * 500;
+      const pref: PType[] = t.indSuit > 55 ? ['industrial'] : f.style === 'mf' ? ['multifamily', 'mixed'] : f.style === 'core' ? ['office', 'mixed'] : rng(s) < 0.5 ? ['retail', 'mixed'] : ['mixed', 'retail'];
+      const ty = pref.find(x => zoneAllows(t.zone, x)) ?? ZONE_ALLOWS[t.zone.use][0];
+      const sf = Math.round(main.length * PARCEL_AC * 43_560 * FAR[ty] * zoneTierMult(t.zone.tier) * upzoneBonus(main.length) * rrange(s, 0.7, 0.95) / 500) * 500;
       if (sf >= MIN_BUILD_SF) {
         const months = Math.min(26, Math.max(6, Math.round(4 + sf / 7000)));
         const quality = clamp(rrange(s, 50, 88), 30, 92);
@@ -4067,7 +4220,7 @@ export function serialize(state: GameState): string { return JSON.stringify(stat
 export function deserialize(json: string): GameState | null {
   try {
     const s = JSON.parse(json);
-    if (s && s.version === 18 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
+    if (s && s.version === 19 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
     return null;
   } catch { return null; }
 }

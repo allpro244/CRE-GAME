@@ -567,6 +567,46 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const assetsOn = (i: number) => state.assets.filter(a => a.tileI === i);
   const stockOn = (i: number) => state.stock.filter(b => b.tileI === i);
 
+  // ---- assembly: contiguity analysis, ghost preview, escape to clear ----
+  const [ghostType, setGhostType] = useState<E.PType | null>(null);
+  useEffect(() => { setGhostType(null); }, [selCells?.tileI]); // eslint-disable-line
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSelCells(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  const selInfo = useMemo(() => {
+    if (!selCells) return null;
+    const remaining = new Set(selCells.cells);
+    const groups: number[][] = [];
+    while (remaining.size) {
+      const start = remaining.values().next().value as number;
+      const g2 = E.connectedGroup([...remaining], start);
+      for (const c of g2) remaining.delete(c);
+      groups.push(g2);
+    }
+    groups.sort((a, b) => b.length - a.length);
+    const main = groups[0] ?? [];
+    const stray = selCells.cells.filter(c => !main.includes(c));
+    // vacant lots adjoining the main site — the natural next moves
+    const g = grids[selCells.tileI];
+    const cand = new Set<number>();
+    for (const c of main) {
+      const cx = c % E.PGRID, cy = Math.floor(c / E.PGRID);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = cx + dx, ny = cy + dy;
+        if (nx < 0 || ny < 0 || nx >= E.PGRID || ny >= E.PGRID) continue;
+        const n = ny * E.PGRID + nx;
+        if (g[n] === null && !selCells.cells.includes(n)) cand.add(n);
+      }
+    }
+    const t = state.tiles[selCells.tileI];
+    const best = E.PTYPES.filter(ty => !(ty === 'mixed' && state.tier < 1))
+      .map(ty => ({ ty, fit: E.tileDemandFactor(state, t, ty) })).sort((a, b) => b.fit - a.fit)[0].ty;
+    return { main, stray, cand: [...cand], best };
+  }, [selCells, grids, state]);
+  const effGhost = ghostType ?? selInfo?.best ?? null;
+
   const live = useRef({ state, grids, openDeal, openStock, openAsset, setSelTile });
   live.current = { state, grids, openDeal, openStock, openAsset, setSelTile };
   const hitLeave = useCallback(() => setHover(null), []);
@@ -688,13 +728,47 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           })}
           <HitLayerIso tiles={tilesGeom} onEnter={hitEnter} onLeave={hitLeave} onClick={hitClick} />
           {sel && <polygon points={diamond(sel.x, sel.y, 0.99)} fill="none" stroke="var(--amber-dim)" strokeWidth={1.4} style={{ pointerEvents: 'none' }} />}
-          {selCells && selCells.cells.map(c => {
+          {selCells && selInfo && (() => {
             const t = state.tiles[selCells.tileI];
-            const px = c % E.PGRID, py = Math.floor(c / E.PGRID);
-            const [cx, cy] = parcelCenter(t.x, t.y, px, py);
-            const [w, h] = parcelSpan(1, 1);
-            return <polygon key={'sc' + c} points={rectPoly(cx, cy, w, h)} fill="rgba(217,166,72,0.22)" stroke="var(--amber)" strokeWidth={1.8} style={{ pointerEvents: 'none' }} />;
-          })}
+            const cellPoly = (c: number, fill: string, stroke: string, sw: number, dash?: string) => {
+              const px = c % E.PGRID, py = Math.floor(c / E.PGRID);
+              const [cx, cy] = parcelCenter(t.x, t.y, px, py);
+              const [w, h] = parcelSpan(1, 1);
+              return <polygon key={'sc' + c} points={rectPoly(cx, cy, w, h)} fill={fill} stroke={stroke}
+                strokeWidth={sw} strokeDasharray={dash} style={{ pointerEvents: 'none' }} />;
+            };
+            return (
+              <g>
+                {/* the site you're forming */}
+                {selInfo.main.map(c => cellPoly(c, 'rgba(217,166,72,0.24)', 'var(--amber)', 1.8))}
+                {/* stragglers that only touch at a corner — not part of the site */}
+                {selInfo.stray.map(c => cellPoly(c, 'rgba(222,95,95,0.16)', 'var(--red)', 1.5, '4 3'))}
+                {/* vacant lots that would extend the site */}
+                {selInfo.cand.map(c => cellPoly(c, 'none', 'var(--amber-dim)', 0.8, '2 3'))}
+                {/* ghost of what this site could hold */}
+                {effGhost && (() => {
+                  const bonus = E.upzoneBonus(selInfo.main.length);
+                  const sfMax = Math.min(
+                    Math.floor(selInfo.main.length * E.PARCEL_AC * 43_560 * E.FAR[effGhost] * bonus),
+                    E.CONFIG.tiers[state.tier].maxSF);
+                  if (sfMax < 5000) return null;
+                  const ht = bldHeight(sfMax, effGhost);
+                  return cellRects(selInfo.main).map((r, i) => {
+                    const [cx, cy] = parcelCenter(t.x, t.y, r.px, r.py, r.pw, r.ph);
+                    const [w, h] = parcelSpan(r.pw, r.ph);
+                    const f = prismFaces(cx, cy, w * 0.88, h * 0.88, ht);
+                    return (
+                      <g key={'ghost' + i} style={{ pointerEvents: 'none' }}>
+                        <polygon points={f.l} fill="rgba(217,166,72,0.07)" stroke="var(--amber)" strokeWidth={0.8} strokeDasharray="4 3" opacity={0.75} />
+                        <polygon points={f.r} fill="rgba(217,166,72,0.12)" stroke="var(--amber)" strokeWidth={0.8} strokeDasharray="4 3" opacity={0.75} />
+                        <polygon points={f.t} fill="rgba(217,166,72,0.20)" stroke="var(--amber)" strokeWidth={1} strokeDasharray="4 3" opacity={0.9} />
+                      </g>
+                    );
+                  });
+                })()}
+              </g>
+            );
+          })()}
           {Array.from({ length: E.CONFIG.GRID_W }, (_, i) => {
             const p = isoPt(i, -0.75);
             return <text key={'cx' + i} x={p[0]} y={p[1]} textAnchor="middle" fill="var(--dim)" fontSize={10} fontFamily="var(--mono)">{String.fromCharCode(65 + i)}</text>;
@@ -836,9 +910,11 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                 })}
               </tbody>
             </table>
-            {selCells && selCells.tileI === sel.i && (
+            {selCells && selCells.tileI === sel.i && selInfo && (
               <ParcelBuyPanel state={state} setState={setState} tileI={sel.i} cells={selCells.cells}
-                close={() => setSelCells(null)} openDeal={openDeal} />
+                close={() => setSelCells(null)} openDeal={openDeal}
+                ghostType={effGhost} setGhostType={setGhostType}
+                mainLen={selInfo.main.length} strayLen={selInfo.stray.length} />
             )}
             {state.land.filter(h => h.tileI === sel.i).map(h => (
               <div key={h.id} className="memo" style={{ borderLeftColor: 'var(--amber)', marginTop: 10 }}>
@@ -898,19 +974,22 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
 }
 
 
-function ParcelBuyPanel({ state, setState, tileI, cells, close, openDeal }: {
+function ParcelBuyPanel({ state, setState, tileI, cells, close, openDeal, ghostType, setGhostType, mainLen, strayLen }: {
   state: GameState; setState: (s: GameState) => void; tileI: number; cells: number[];
   close: () => void; openDeal: (id: number) => void;
+  ghostType: E.PType | null; setGhostType: (t: E.PType | null) => void;
+  mainLen: number; strayLen: number;
 }) {
   const [err, setErr] = useState<string | null>(null);
   const t = state.tiles[tileI];
   const acres = Math.round(cells.length * E.PARCEL_AC * 100) / 100;
   const price = E.parcelSetPrice(state, tileI, cells);
   const contiguous = E.isContiguous(cells);
-  const bonus = E.upzoneBonus(cells.length);
-  const best = E.PTYPES.map(ty => ({ ty, sf: Math.floor(acres * 43560 * E.FAR[ty] * bonus), fit: E.tileDemandFactor(state, t, ty) }))
-    .sort((a, b) => b.fit - a.fit);
-  const tooSmall = best[0].sf < 5000;
+  const bonus = E.upzoneBonus(mainLen);
+  const siteAcres = mainLen * E.PARCEL_AC;
+  const sfFor = (ty: E.PType) => Math.min(Math.floor(siteAcres * 43_560 * E.FAR[ty] * bonus), E.CONFIG.tiers[state.tier].maxSF);
+  const tooSmall = !E.PTYPES.some(ty => sfFor(ty) >= 5000);
+  const nextThreshold = mainLen >= 16 ? null : mainLen >= 12 ? { at: 16, pct: 35 } : mainLen >= 8 ? { at: 12, pct: 22 } : { at: 8, pct: 12 };
   return (
     <div className="memo" style={{ borderLeftColor: 'var(--amber)', marginTop: 10 }}>
       <div className="memo-row">
@@ -918,16 +997,40 @@ function ParcelBuyPanel({ state, setState, tileI, cells, close, openDeal }: {
         <b className="num">{E.fmtMoney(price)}</b>
       </div>
       <div className="dim" style={{ fontSize: 11.5, margin: '4px 0 8px', lineHeight: 1.5 }}>
-        Click more vacant lots on the map to add them; click a selected lot to drop it. Quarter-acre parcels — bank them as they come, or assemble a site and build.
+        Click more vacant lots to add them; click a selected lot to drop it. Esc clears. Dotted lots adjoin your site.
       </div>
       <div className="memo-row"><span className="lbl">Site</span><span className="num">{acres} acres · {E.fmtMoney(Math.round(price / Math.max(0.01, acres)))}/acre</span></div>
-      <div className="memo-row"><span className="lbl">Buildable as one site <Hint text="Parcels must share an edge. Two lots meeting only at a corner are separate sites — you can still bank both." /></span>
-        <span className={'num ' + (contiguous ? 'pos' : 'neg')}>{contiguous ? 'Yes — all edges connect' : 'No — corner-only touch'}</span></div>
-      {bonus > 1 && <div className="memo-row"><span className="lbl">Assembly upzoning</span><span className="num pos">+{Math.round((bonus - 1) * 100)}% FAR</span></div>}
+      {strayLen > 0 && (
+        <div className="memo-row"><span className="lbl">Buildable as one site <Hint text="Parcels must share an edge. Two lots meeting only at a corner are separate sites — you can still bank both." /></span>
+          <span className="num neg">{strayLen} lot{strayLen > 1 ? 's' : ''} corner-only — bridge or drop {strayLen > 1 ? 'them' : 'it'}</span></div>
+      )}
+      <div className="memo-row">
+        <span className="lbl">Assembly upzoning <Hint text="Bigger contiguous sites earn density: 8 lots +12% FAR, 12 lots +22%, the full block +35%." /></span>
+        <span className="num">{bonus > 1 ? <b className="pos">+{Math.round((bonus - 1) * 100)}% FAR</b> : '—'}
+          {nextThreshold && <span className="faint"> · {nextThreshold.at - mainLen} more lot{nextThreshold.at - mainLen > 1 ? 's' : ''} → +{nextThreshold.pct}%</span>}</span>
+      </div>
       <div className="memo-row"><span className="lbl">Block is {Math.round((1 - E.freeParcelCount(state, tileI) / 16) * 100)}% built out</span>
         <span className="num dim">holdout premium ×{E.holdoutMult(state, tileI, cells.length).toFixed(2)}</span></div>
-      <div className="memo-row"><span className="lbl">Best-fit use here</span>
-        <span className="num">{E.PLABEL[best[0].ty]} — up to {(best[0].sf / 1000).toFixed(0)}K SF</span></div>
+      <div style={{ margin: '8px 0 2px' }}>
+        <div className="eyebrow" style={{ fontSize: 9, marginBottom: 4 }}>Build preview — what this site could hold</div>
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+          {E.PTYPES.map(ty => {
+            const sf = sfFor(ty);
+            const f = E.tileDemandFactor(state, t, ty);
+            const locked = ty === 'mixed' && state.tier < 1;
+            const active = ghostType === ty;
+            return (
+              <button key={ty} className={'btn btn-sm' + (active ? ' btn-amber' : '')} disabled={locked || sf < 5000}
+                title={locked ? 'Mixed-use unlocks at Tier 2' : sf < 5000 ? 'Site too small for this use' : `Demand ${f > 1.1 ? 'strong' : f > 0.85 ? 'fair' : 'weak'} here`}
+                style={{ fontSize: 10.5, padding: '3px 8px' }}
+                onClick={() => setGhostType(active ? null : ty)}>
+                {E.PLABEL[ty]} <span className={'num ' + (f > 1.1 ? 'pos' : f > 0.85 ? 'dim' : 'neg')}>{(sf / 1000).toFixed(0)}K</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="faint" style={{ fontSize: 10.5, marginTop: 4 }}>The dashed massing on the map is this choice at full envelope. Demand color: <span className="pos">strong</span> · <span className="dim">fair</span> · <span className="neg">weak</span>.</div>
+      </div>
       {contiguous && tooSmall && <div className="faint" style={{ fontSize: 11, color: 'var(--amber)' }}>◈ Too small to build on — select more adjoining lots.</div>}
       {err && <div className="alert-strip red" style={{ marginTop: 8 }}>{err}</div>}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8, flexWrap: 'wrap' }}>

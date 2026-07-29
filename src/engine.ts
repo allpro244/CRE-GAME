@@ -99,7 +99,7 @@ export const CONFIG = {
   START_CASH: 600_000,
   baseRent: { office: 30.5, retail: 20.0, industrial: 8.2, mixed: 31, multifamily: 21.5 } as Record<PType, number>,
   hardCost: { office: 215, retail: 175, industrial: 92, mixed: 245, multifamily: 195 } as Record<PType, number>, // legacy: renovation basis
-  baseCap: { office: 7.0, retail: 7.25, industrial: 6.8, mixed: 6.7, multifamily: 6.2 } as Record<PType, number>,
+  baseCap: { office: 7.3, retail: 7.55, industrial: 7.1, mixed: 7.0, multifamily: 6.5 } as Record<PType, number>,
   absorbBase: { office: 0.10, retail: 0.15, industrial: 0.22, mixed: 0.13, multifamily: 0.20 } as Record<PType, number>,
   // itemized expense ratios (share of potential rent unless noted)
   expense: {
@@ -793,12 +793,12 @@ export function capRatePct(state: GameState, t: Tile, type: PType, quality: numb
   const loc = type === 'industrial' ? t.indSuit * 0.7 + t.D * 0.3 : t.D;
   let cap = CONFIG.baseCap[type]
     + (55 - loc) * 0.028
-    + (state.econ.rateSmooth - 4.5) * 0.55
+    + (state.econ.rateSmooth - 5.0) * 0.60
     // buyers price the leasing market, not just the debt market: a soft sector trades wide
     + clamp((state.econ.cityVac[type] - EQ_VAC[type]) * 0.05, -0.35, 0.7)
     + clamp((90 - quality) * 0.011, -0.55, 0.66)   // buyers pay up for every point of product, continuously
     + (t.crime > 55 && type !== 'industrial' ? 0.3 : 0);
-  return clamp(cap, 4.2, 11.5) + inflow;
+  return clamp(cap, 5.0, 12.0) + inflow;
 }
 
 export function tileCapacitySF(t: Tile, type: PType): number {
@@ -3389,10 +3389,10 @@ function recordHistory(s: GameState) {
 const PHASE_DWELL: Record<Phase, number> = { recovery: 18, expansion: 36, peak: 12, recession: 14 };
 const PHASE_NEXT: Record<Phase, Phase> = { recovery: 'expansion', expansion: 'peak', peak: 'recession', recession: 'recovery' };
 const PHASE_TARGET: Record<Phase, { rate: number; infl: number; emp: number; conf: number }> = {
-  recovery: { rate: 3.6, infl: 1.8, emp: 100, conf: 55 },
-  expansion: { rate: 5.2, infl: 2.7, emp: 106, conf: 72 },
-  peak: { rate: 6.8, infl: 3.7, emp: 108, conf: 82 },
-  recession: { rate: 3.8, infl: 1.0, emp: 92, conf: 32 },
+  recovery: { rate: 4.2, infl: 2.0, emp: 100, conf: 55 },
+  expansion: { rate: 6.0, infl: 3.0, emp: 106, conf: 72 },
+  peak: { rate: 7.8, infl: 4.4, emp: 108, conf: 82 },
+  recession: { rate: 4.5, infl: 1.6, emp: 92, conf: 32 },
 };
 
 function tickEconomy(s: GameState) {
@@ -3413,9 +3413,14 @@ function tickEconomy(s: GameState) {
     }
   }
   const t = PHASE_TARGET[e.phase];
-  e.rate = clamp(e.rate + (t.rate - e.rate) * 0.10 + (rng(s) - 0.5) * 0.15, 2.0, 9.5);
+  // above ~3.2% inflation the central bank stops being polite: every extra point of
+  // inflation pulls the rate target up 1.6 points. A 6% inflation episode means
+  // double-digit prime — the bad times the old-timers still talk about.
+  const fight = Math.max(0, e.inflation - 3.2) * 1.6;
+  e.rate = clamp(e.rate + (t.rate + fight - e.rate) * 0.10 + (rng(s) - 0.5) * 0.18, 2.0, 13.0);
   e.rateSmooth += (e.rate - e.rateSmooth) * 0.15;
-  e.inflation = clamp(e.inflation + (t.infl - e.inflation) * 0.10 + (rng(s) - 0.5) * 0.2, 0, 8);
+  const tariffHeat = e.tariffMonthsLeft > 0 ? 1.2 : 0;   // tariffs are inflation with paperwork
+  e.inflation = clamp(e.inflation + (t.infl + tariffHeat - e.inflation) * 0.10 + (rng(s) - 0.5) * 0.3, 0, 9);
   e.empIdx = clamp(e.empIdx + (t.emp - e.empIdx) * 0.07 + (rng(s) - 0.5) * 0.5, 80, 115);
   e.confidence = clamp(e.confidence + (t.conf - e.confidence) * 0.09 + (rng(s) - 0.5) * 2.5, 10, 95);
   e.popGrowth = clamp(0.4 + (e.confidence / 100) * 1.4 + (rng(s) - 0.5) * 0.2, -0.3, 2.4);
@@ -3696,7 +3701,7 @@ function fireEvent(s: GameState, kind: string, payload?: number) {
     }
   } else if (kind === 'rateshock') {
     const up = rng(s) < 0.6;
-    s.econ.rate = clamp(s.econ.rate + (up ? 1.5 : -1.5), 2.0, 9.5);
+    s.econ.rate = clamp(s.econ.rate + (up ? rrange(s, 1.5, 2.5) : -rrange(s, 1.2, 2.0)), 2.0, 13.0);
     pushNews(s, 'event', up ? 'RATE SHOCK: the base rate jumps 150 bps. New debt is pricier and cap rates will drift up — values down.' : 'SURPRISE CUT: the base rate drops 150 bps. Financing is cheap; cap rates will compress — values up.');
   }
 }

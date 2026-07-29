@@ -334,7 +334,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
     type: firstConstr.type, sf: Math.min(10000, E.maxBuildableSF(listing, firstConstr.type) || 10000),
     units: defaultUnits(firstConstr.type, firstConstr.construction, 10000),
     construction: firstConstr.construction,
-    contractor: 'standard', contingencyPct: 0.10, expedited: false, downPct: 0.35,
+    contractor: 'standard', contingencyPct: 0.10, expedited: false, downPct: 0.35, fixedRate: false,
   }));
 
   const runFeas = () => {
@@ -578,7 +578,15 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
         <div className="memo-row"><span className="lbl">Soft costs (15%)</span><span className="num">{E.fmtMoney(bd.soft)}</span></div>
         <div className="memo-row"><span className="lbl">Contingency</span><span className="num">{E.fmtMoney(bd.cont)}</span></div>
         <div className="memo-row total"><span className="lbl">Total development cost</span><span className="num">{E.fmtMoney(bd.total)}</span></div>
-        <div className="memo-row"><span className="lbl">Construction loan (≤{pct(E.CONFIG.constrLTC)} LTC at {(state.econ.rate + E.CONFIG.constrSpread).toFixed(1)}%, interest capitalizes, 12-mo IO after delivery)</span><span className="num">{E.fmtMoney(bd.total - equity)}</span></div>
+        <div className="memo-row"><span className="lbl">Construction loan (≤{pct(E.CONFIG.constrLTC)} LTC at {(state.econ.rate + E.CONFIG.constrSpread + (dev.fixedRate ? 0.6 : 0)).toFixed(2)}% {dev.fixedRate ? 'FIXED' : 'FLOATING'}, 12-mo IO after delivery)</span><span className="num">{E.fmtMoney(bd.total - equity)}</span></div>
+        <div className="memo-row"><span className="lbl">
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
+            <input type="checkbox" checked={!!dev.fixedRate} onChange={e => setDev({ ...dev, fixedRate: e.target.checked })} />
+            Fix the rate (+0.60%) <Hint text="Floating construction debt reprices every month — a rate spike mid-build compounds against you. Fixed costs more on day one and is worth every basis point in the wrong year." />
+          </label></span>
+          <span className="num dim">{dev.fixedRate ? 'hedged' : 'exposed to the curve'}</span></div>
+        <div className="memo-row"><span className="lbl">Interest reserve (loan-funded, sized to a {bd.months}-mo build) <Hint text="Pays the construction interest while you build. Run past schedule and it empties — then debt service comes from your cash, on a building earning nothing." /></span>
+          <span className="num">{E.fmtMoney(Math.round((bd.total - equity) * ((state.econ.rate + E.CONFIG.constrSpread + (dev.fixedRate ? 0.6 : 0)) / 100 / 12) * bd.months * 0.6))}</span></div>
         <div className="memo-row"><span className="lbl">Your equity at closing</span><span className={'num ' + (state.cash >= equity ? '' : 'neg')}>{E.fmtMoney(equity)}</span></div>
       </div>
       {pf ? (
@@ -871,7 +879,14 @@ export function AssetCard({ state, setState, asset: a, onSell, onRefi, onLOI, op
             </div>
             <div className="metric-row">
               <div className="metric"><div className="eyebrow">Constr. loan drawn</div><div className="v num">{E.fmtMoney(a.loans[0]?.balance ?? 0)}</div></div>
-              <div className="metric"><div className="eyebrow">Rate</div><div className="v num">{(a.loans[0]?.ratePct ?? 0).toFixed(1)}% (capitalizing)</div></div>
+              <div className="metric"><div className="eyebrow">Rate</div><div className="v num">{(a.loans[0]?.ratePct ?? 0).toFixed(2)}% {a.loans[0]?.floating ? 'FLT' : 'FIXED'}</div></div>
+              {(() => {
+                const run = E.reserveRunwayMonths(state, a);
+                if (run === null) return null;
+                const label = run <= 0 ? 'EMPTY — burning cash' : run > 24 ? '24+ mo' : run.toFixed(0) + ' mo';
+                return <div className="metric"><div className="eyebrow">Reserve runway <Hint text="Months of construction interest the reserve can still pay at the forward burn rate. At zero, debt service comes out of your cash." /></div>
+                  <div className={'v num ' + (run <= 0 ? 'neg' : run <= 3 ? 'amber' : 'pos')}>{label}</div></div>;
+              })()}
               <div className="metric"><div className="eyebrow">Target class</div><div className="v num">{E.QLABEL[E.qGrade(a.quality)]}</div></div>
             </div>
           </div>

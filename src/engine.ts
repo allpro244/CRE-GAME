@@ -136,6 +136,10 @@ export interface Loan {
   ioMonthsLeft: number;          // interest-only period remaining
   monthlyPmt: number;            // amortizing payment (used once IO ends)
   maturityMonth: number;         // balloon
+  // construction debt: the interest reserve is sized at closing for the EXPECTED build.
+  // Run long and it empties — then debt service comes from cash, on a building earning
+  // nothing. Floating construction debt reprices monthly; fixed costs +60bps up front.
+  reserveInitial?: number; reserveBalance?: number; floating?: boolean;
 }
 
 export interface Facility {
@@ -983,7 +987,7 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     lastScoutMonth: -99, approachesLeft: 5, parcelApproach: {},
     gameOver: false, transitCorridor: corridor, roads,
     totalRealizedProfit: 0, dealsClosed: 0,
-    version: 11,
+    version: 12,
   };
   generateStock(state);
   // Born in equilibrium: the anchors absorb whatever the initial city explains, so
@@ -1496,6 +1500,7 @@ export interface DevChoice {
   type: PType; sf: number; units: number; construction: string;
   contractor: 'budget' | 'standard' | 'premium';
   contingencyPct: number; expedited: boolean; downPct: number;
+  fixedRate?: boolean;   // lock the construction rate for +60bps
 }
 
 export function maxBuildableSF(l: Listing, type: PType): number {
@@ -1534,6 +1539,19 @@ export function validateDev(state: GameState, l: Listing, c: DevChoice): string 
   return null;
 }
 
+// Interest-reserve runway in months, at the forward burn rate (average of current and
+// fully-drawn balance). This is the number a developer actually watches.
+export function reserveRunwayMonths(s: GameState, a: Asset): number | null {
+  const loan = a.loans[0];
+  if (!loan || loan.reserveBalance === undefined || a.mode !== 'construction') return null;
+  const rate = loan.floating ? s.econ.rate + CONFIG.constrSpread : loan.ratePct;
+  const commitment = (a as any).loanCommitment ?? loan.balance;
+  const avgBal = Math.max(loan.balance, (loan.balance + commitment) / 2);
+  const burn = avgBal * (rate / 100 / 12);
+  if (burn <= 1) return 99;
+  return loan.reserveBalance / burn;
+}
+
 export function buyLandAndDevelop(state: GameState, listingId: number, c: DevChoice, useJV = false): { s: GameState; err?: string } {
   const s = clone(state);
   const l = s.listings.find(x => x.id === listingId);
@@ -1545,7 +1563,9 @@ export function buyLandAndDevelop(state: GameState, listingId: number, c: DevCho
   const equity = Math.max(bd.total * c.downPct, bd.total - maxLoan);
   if (s.cash < equity) return { s, err: 'You need ' + fmtMoney(equity) + ' of equity for this capital stack.' };
   const loanAmt = bd.total - equity;
-  const rate = s.econ.rate + CONFIG.constrSpread;
+  const rate = s.econ.rate + CONFIG.constrSpread + (c.fixedRate ? 0.6 : 0);
+  // interest reserve, sized to the expected build at ~60% average drawn balance
+  const reserve = Math.round(loanAmt * (rate / 100 / 12) * bd.months * 0.6);
   const jvChk2 = useJV ? canJV(s, equity) : null;
   if (useJV && jvChk2 && !jvChk2.ok) return { s, err: jvChk2.why };
   const yourEquity2 = useJV ? Math.round(equity * 0.30) : equity;
@@ -1572,7 +1592,7 @@ export function buyLandAndDevelop(state: GameState, listingId: number, c: DevCho
     quality: clamp(startQ, 20, bd.spec.qCap), qCap: bd.spec.qCap,
     age: 0, mode: 'construction',
     tenants: [], occ: 0, rentStance: 0, maint: 'std',
-    loans: [{ id: s.nextId++, kind: 'constr', balance: 0, ratePct: rate, amortYears: 25, ioMonthsLeft: 999, monthlyPmt: 0, maturityMonth: s.month + bd.months + permitMonths + 14 }],
+    loans: [{ id: s.nextId++, kind: 'constr', balance: 0, ratePct: rate, amortYears: 25, ioMonthsLeft: 999, monthlyPmt: 0, maturityMonth: s.month + bd.months + permitMonths + 14, reserveInitial: reserve, reserveBalance: reserve, floating: !c.fixedRate }],
     ledger: [{ m: s.month, amt: -equity }], cumCF: 0,
     basis: bd.total, acqMonth: s.month,
     entryNOI: 0, entryCap: capRatePct(s, t, c.type, startQ),
@@ -3121,11 +3141,25 @@ function tickAsset(s: GameState, a: Asset): number {
     const monthlyHard = (p.hardBudget + p.softBudget) / p.totalMonths;
     p.spent += monthlyHard;
     const loan = a.loans[0];
+    // floating construction debt reprices every month — a rate spike mid-build compounds
+    if (loan.floating) loan.ratePct = s.econ.rate + CONFIG.constrSpread;
     const commitment = (a as any).loanCommitment ?? 0;
     const draw = Math.min(monthlyHard, Math.max(0, commitment - p.drawnSoFar));
     p.drawnSoFar += draw; loan.balance += draw;
     const interest = loan.balance * (loan.ratePct / 100 / 12);
-    loan.balance += interest;
+    if (loan.reserveBalance !== undefined && loan.reserveBalance > 0) {
+      const fromReserve = Math.min(loan.reserveBalance, interest);
+      loan.reserveBalance = Math.round((loan.reserveBalance - fromReserve) * 100) / 100;
+      loan.balance += fromReserve;                 // reserve draws are loan draws
+      const rem = interest - fromReserve;
+      if (rem > 0.5) { s.cash -= rem; a.ledger.push({ m: s.month, amt: -rem }); }
+      if (loan.reserveBalance <= 0) pushNews(s, 'warn', `${a.name}: the interest reserve is EMPTY. Debt service now comes from your cash — on a building earning nothing.`, a.tileI);
+    } else if (loan.reserveBalance !== undefined) {
+      s.cash -= interest;                          // the expensive months
+      a.ledger.push({ m: s.month, amt: -interest });
+    } else {
+      loan.balance += interest;                    // legacy path (non-reserve loans)
+    }
     p.monthsLeft--;
     if (p.monthsLeft <= 0) {
       a.mode = 'leaseup';
@@ -3427,7 +3461,7 @@ export function serialize(state: GameState): string { return JSON.stringify(stat
 export function deserialize(json: string): GameState | null {
   try {
     const s = JSON.parse(json);
-    if (s && s.version === 11 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
+    if (s && s.version === 12 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
     return null;
   } catch { return null; }
 }

@@ -1365,12 +1365,12 @@ export function FirmPortfolioModal({ state, short, close, openStock }: {
   const f = state.firms.find(x => x.short === short);
   if (!f) return null;
   const held = state.stock.filter(b => b.owner === short);
-  const est = (b: StockBuilding) => {
-    const t = state.tiles[b.tileI];
-    const cap = E.capRatePct(state, t, b.type, b.quality) / 100;
-    return E.stabilizedNOI(state, { tileI: b.tileI, type: b.type, sf: b.sf, quality: b.quality, units: b.units, construction: b.construction } as any) * (0.55 + 0.45 * (b.occ / 0.9)) / cap;
-  };
-  const total = held.reduce((s, b) => s + est(b), 0);
+  const est = (b: StockBuilding) => E.stockValue(state, b);
+  const total = E.firmPortfolioValue(state, short);
+  const landBank = E.firmLandBankValue(state, short);
+  const landEntries = state.firmLand.filter(e => e.short === short);
+  const nw = E.firmNetWorth(state, f);
+  const lev = total + landBank > 0 ? f.debt / (total + landBank) : 0;
   const styleTxt = f.style === 'core' ? 'buys stabilized assets in prime blocks and holds forever'
     : f.style === 'aggressive' ? 'develops speculatively with maximum leverage — brilliant until the cycle turns'
     : f.style === 'industrial' ? 'buys and builds along the rail corridor exclusively'
@@ -1379,10 +1379,19 @@ export function FirmPortfolioModal({ state, short, close, openStock }: {
   return (
     <Modal close={close} wide>
       <h2>{f.name} {!f.alive && <span className="chip chip-distress">Collapsed</span>}</h2>
-      <div className="sub">{styleTxt} · reported net worth {E.fmtMoney(f.netWorth)}</div>
-      <div className="dim" style={{ fontSize: 12, marginBottom: 10 }}>
-        {held.length} buildings in Meridian City · est. portfolio value {E.fmtMoney(total)}
-        <Hint text="Estimated from public records and street-level observation. Their actual basis and debt are their business." />
+      <div className="sub">{styleTxt}</div>
+      <div className="metric-row" style={{ marginTop: 6 }}>
+        <div className="metric"><div className="eyebrow">Net worth</div><div className={'v num ' + (nw < 0 ? 'neg' : '')}>{E.fmtMoney(nw)}</div></div>
+        <div className="metric"><div className="eyebrow">Cash</div><div className={'v num ' + (f.cash < 0 ? 'neg' : '')}>{E.fmtMoney(Math.round(f.cash))}</div></div>
+        <div className="metric"><div className="eyebrow">Debt</div><div className="v num">{E.fmtMoney(Math.round(f.debt))}</div></div>
+        <div className="metric"><div className="eyebrow">Portfolio</div><div className="v num">{E.fmtMoney(Math.round(total))}</div></div>
+        <div className="metric"><div className="eyebrow">Land bank</div><div className="v num">{E.fmtMoney(Math.round(landBank))}</div></div>
+        <div className="metric"><div className="eyebrow">Leverage <Hint text="Debt against everything they hold. Past ~75% they're one bad quarter from deleveraging — watch for their buildings hitting the market priced to move." /></div>
+          <div className={'v num ' + (lev > 0.75 ? 'neg' : lev > 0.6 ? '' : 'pos')}>{Math.round(lev * 100)}%</div></div>
+      </div>
+      <div className="dim" style={{ fontSize: 12, margin: '6px 0 10px' }}>
+        {held.length} building{held.length === 1 ? '' : 's'}{landEntries.length ? ` · assembling on ${landEntries.length} block${landEntries.length > 1 ? 's' : ''} (${Math.round(landEntries.reduce((s2, e) => s2 + e.cells.length, 0) * E.PARCEL_AC * 100) / 100} ac)` : ''} —
+        same rules you play under: rent comes in, debt service goes out, and the cycle does not care about the name on the door.
       </div>
       <div style={{ maxHeight: 380, overflowY: 'auto' }}>
         {held.length === 0 && <div className="faint" style={{ fontSize: 12 }}>No holdings on record — everything is in their fund vehicles out of state.</div>}

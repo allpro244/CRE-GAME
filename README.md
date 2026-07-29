@@ -91,6 +91,13 @@ anchor ≥35% of the building and the inline tenants pull their clauses: some le
 quarter, some take a 15% abatement) · insured casualty (fire/storm/burst mains: deductible now,
 that share of the rent offline for months, expenses running on all of it — worse mid
 insurance-crisis) · a How-to-play primer that opens once on a fresh campaign ·
+rivals with REAL BALANCE SHEETS (cash, debt, and a portfolio marked to market quarterly —
+rent comes in, debt service goes out, acquisitions are 65% financed, sale proceeds cross the
+table, distress means deleveraging fire sales you can buy from, insolvency means collapse; they
+file their own rezonings, and the dashboard shows every firm's net worth, debt and leverage —
+click through to their full balance sheet and holdings) ·
+a cycle-records panel (each game's actual economic history: rate peaks and troughs with dates,
+inflation records, prime cap range, per-sector rent run-ups and drawdowns, recessions endured) ·
 a REAL leasing market: citywide vacancy per asset class is measured from the actual standing
 stock building by building (overbuild industrial and those exact square feet sit empty), rents
 follow the vacancy gap with momentum and a price-elasticity stabilizer (cheap space fills, dear

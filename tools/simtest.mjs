@@ -212,6 +212,10 @@ function run(seed, city) {
       if (!isFinite(t.pop) || !isFinite(t.emp)) throw new Error('bad pop/emp tile ' + t.i);
       if (!t.zone || !['R', 'C', 'MU', 'M'].includes(t.zone.use) || ![1, 2, 3].includes(t.zone.tier)) throw new Error('zone corrupted tile ' + t.i + ' month ' + s.month);
     }
+    for (const f of s.firms) {
+      if (!isFinite(f.cash) || !isFinite(f.debt) || !isFinite(f.netWorth)) throw new Error('firm books NaN: ' + f.short);
+      if (f.debt < -1) throw new Error('negative firm debt: ' + f.short);
+    }
     // supply ledger honesty: per-tile supply must equal what is actually standing
     {
       const exp = s.tiles.map(() => ({ office: 0, retail: 0, industrial: 0, mixed: 0, multifamily: 0 }));

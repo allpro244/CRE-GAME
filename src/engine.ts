@@ -91,7 +91,7 @@ export function zoneTierMult(tier: 1 | 2 | 3): number { return tier === 1 ? 0.6 
 export function zoneCode(z: Zone): string { return `${z.use}-${z.tier}`; }
 // A rezoning application before the council: filed, then decided months later at a
 // hearing. Odds are computed the day of the vote, not the day of filing.
-export interface Rezoning { id: number; tileI: number; toUse: ZoneUse; toTier: 1 | 2 | 3; decideM: number; cost: number }
+export interface Rezoning { id: number; tileI: number; toUse: ZoneUse; toTier: 1 | 2 | 3; decideM: number; cost: number; by?: string }  // by: firm short, or undefined = you
 export function isAggregate(type: PType): boolean { return type === 'multifamily'; }
 
 export const CONFIG = {
@@ -305,7 +305,14 @@ export interface Listing {
   underContract?: LandContractState;
 }
 
-export interface Firm { name: string; short: string; style: 'core' | 'aggressive' | 'industrial' | 'value-add' | 'mf'; netWorth: number; alive: boolean; }
+// Firms keep real books now: cash and debt are actual, the portfolio is marked to
+// market every quarter, and netWorth is the cached result — not a random walk.
+export interface Firm {
+  name: string; short: string; style: 'core' | 'aggressive' | 'industrial' | 'value-add' | 'mf';
+  cash: number; debt: number;
+  netWorth: number;   // derived cache: cash + portfolio + land bank - debt, refreshed quarterly
+  alive: boolean;
+}
 export interface NewsItem { m: number; kind: 'info' | 'rumor' | 'event' | 'deal' | 'warn' | 'success'; text: string; tileI?: number; }
 export interface ActiveEffect { kind: string; monthsLeft: number; tiles: number[]; dPerMonth?: number; empPerMonth?: number; }
 export interface DealLogEntry {
@@ -365,7 +372,7 @@ export interface GameState {
   firms: Firm[]; news: NewsItem[]; effects: ActiveEffect[];
   scheduledEvents: { m: number; kind: string; payload?: number }[];
   nwHistory: { m: number; nw: number; cash: number; cf: number }[];
-  econHistory: { m: number; rate: number; infl: number; emp: number; conf: number; phase: Phase; ri: Record<PType, number>; ci?: number; occSF?: Record<PType, number>; totSF?: Record<PType, number>; pop?: number }[];
+  econHistory: { m: number; rate: number; infl: number; emp: number; conf: number; phase: Phase; ri: Record<PType, number>; ci?: number; occSF?: Record<PType, number>; totSF?: Record<PType, number>; pop?: number; cap?: number }[];
   nextId: number;
   pending: PendingDecision[];
   lastMonthCF: number; negCashStreak: number;
@@ -1136,16 +1143,16 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     land: [], migrations: [],
     taxYr: { noi: 0, interest: 0, depr: 0 }, nolCarry: 0,
     firms: [
-      { name: 'Sterling Capital', short: 'STR', style: 'core', netWorth: 48_000_000, alive: true },
-      { name: 'Vertex Development', short: 'VTX', style: 'aggressive', netWorth: 22_000_000, alive: true },
-      { name: 'Ironclad Industrial', short: 'IRN', style: 'industrial', netWorth: 31_000_000, alive: true },
-      { name: 'Copperline Partners', short: 'CPL', style: 'value-add', netWorth: 14_000_000, alive: true },
-      { name: 'Harborview Residential', short: 'HBV', style: 'mf', netWorth: 26_000_000, alive: true },
-      { name: 'Granite Peak Holdings', short: 'GPH', style: 'core', netWorth: 38_000_000, alive: true },
-      { name: 'Bluestem Development', short: 'BLU', style: 'aggressive', netWorth: 9_000_000, alive: true },
-      { name: 'Foundry Row Capital', short: 'FDR', style: 'value-add', netWorth: 11_000_000, alive: true },
-      { name: 'Kestrel Logistics Trust', short: 'KST', style: 'industrial', netWorth: 19_000_000, alive: true },
-      { name: 'Aria Residential Group', short: 'ARG', style: 'mf', netWorth: 16_000_000, alive: true },
+      { name: 'Sterling Capital', short: 'STR', style: 'core', cash: 14_400_000, debt: 0, netWorth: 48_000_000, alive: true },
+      { name: 'Vertex Development', short: 'VTX', style: 'aggressive', cash: 6_600_000, debt: 0, netWorth: 22_000_000, alive: true },
+      { name: 'Ironclad Industrial', short: 'IRN', style: 'industrial', cash: 9_300_000, debt: 0, netWorth: 31_000_000, alive: true },
+      { name: 'Copperline Partners', short: 'CPL', style: 'value-add', cash: 4_200_000, debt: 0, netWorth: 14_000_000, alive: true },
+      { name: 'Harborview Residential', short: 'HBV', style: 'mf', cash: 7_800_000, debt: 0, netWorth: 26_000_000, alive: true },
+      { name: 'Granite Peak Holdings', short: 'GPH', style: 'core', cash: 11_400_000, debt: 0, netWorth: 38_000_000, alive: true },
+      { name: 'Bluestem Development', short: 'BLU', style: 'aggressive', cash: 2_700_000, debt: 0, netWorth: 9_000_000, alive: true },
+      { name: 'Foundry Row Capital', short: 'FDR', style: 'value-add', cash: 3_300_000, debt: 0, netWorth: 11_000_000, alive: true },
+      { name: 'Kestrel Logistics Trust', short: 'KST', style: 'industrial', cash: 5_700_000, debt: 0, netWorth: 19_000_000, alive: true },
+      { name: 'Aria Residential Group', short: 'ARG', style: 'mf', cash: 4_800_000, debt: 0, netWorth: 16_000_000, alive: true },
     ],
     news: [], effects: [], scheduledEvents: [],
     nwHistory: [], econHistory: [],
@@ -1154,9 +1161,19 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     rezonings: [], rezoneDenied: {},
     gameOver: false, transitCorridor: corridor, roads,
     totalRealizedProfit: 0, dealsClosed: 0,
-    version: 21,
+    version: 22,
   };
   generateStock(state);
+  // Firms open with real books: they already own the buildings generation assigned
+  // them; debt is solved so cash + portfolio - debt equals the target net worth.
+  // A firm whose buildings outrun the target simply opens leveraged, like a real one.
+  for (const f of state.firms) {
+    const target = f.netWorth;
+    const port = firmPortfolioValue(state, f.short);
+    if (f.cash + port < target) f.cash = target - port;   // gen gave them little dirt: the rest is dry powder
+    f.debt = Math.max(0, Math.round(f.cash + port - target));
+    f.netWorth = Math.round(f.cash + port - f.debt);
+  }
   // Born in equilibrium: the anchors absorb whatever the initial city explains, so
   // desirability, population and jobs only move when the built city changes from here.
   {
@@ -1662,6 +1679,11 @@ export function buyBuilding(state: GameState, listingId: number, downPct: number
     }
   }
   s.cash -= yourEquity + 15000;
+  {
+    const srcB = l.stockId ? s.stock.find(x => x.id === l.stockId) : undefined;
+    const seller = srcB ? s.firms.find(x => x.short === srcB.owner) : undefined;
+    if (seller) { seller.cash += l.price * 0.45; seller.debt = Math.max(0, seller.debt - l.price * 0.55); }
+  }
   const t = s.tiles[l.tileI];
   const a: Asset = {
     id: s.nextId++, name: nameFor(s, l.type!), tileI: l.tileI, type: l.type!,
@@ -2618,13 +2640,18 @@ function tickRezonings(s: GameState) {
     s.rezonings = s.rezonings.filter(x => x.id !== r.id);
     const t = s.tiles[r.tileI];
     const { p } = rezoneOdds(s, r.tileI, r.toUse, r.toTier);
+    const who = r.by ? (s.firms.find(x => x.short === r.by)?.name ?? r.by) : null;
     if (rng(s) < p) {
       const from = zoneCode(t.zone);
       t.zone = { use: r.toUse, tier: r.toTier };
-      pushNews(s, 'success', `APPROVED: block ${blockLabel(t)} rezoned ${from} → ${zoneCode(t.zone)}. The paper changed; the land under it just repriced.`, r.tileI);
+      pushNews(s, 'success', who
+        ? `APPROVED: ${who}'s rezoning passed — block ${blockLabel(t)} goes ${from} → ${zoneCode(t.zone)}. Every acre on that block just repriced, whoever holds it.`
+        : `APPROVED: block ${blockLabel(t)} rezoned ${from} → ${zoneCode(t.zone)}. The paper changed; the land under it just repriced.`, r.tileI);
     } else {
       s.rezoneDenied[r.tileI] = s.month;
-      pushNews(s, 'warn', `DENIED: the council killed your rezoning at block ${blockLabel(t)}. The neighbors showed up. Your ${fmtMoney(r.cost)} in fees stays spent.`, r.tileI);
+      pushNews(s, 'warn', who
+        ? `DENIED: the council killed ${who}'s rezoning at block ${blockLabel(t)}. The neighbors showed up for that one too.`
+        : `DENIED: the council killed your rezoning at block ${blockLabel(t)}. The neighbors showed up. Your ${fmtMoney(r.cost)} in fees stays spent.`, r.tileI);
     }
   }
 }
@@ -3353,6 +3380,7 @@ function recordHistory(s: GameState) {
     m: s.month, rate: s.econ.rate, infl: s.econ.inflation, emp: s.econ.empIdx, conf: s.econ.confidence,
     phase: s.econ.phase, ri: { ...s.econ.rentIdx },
     ci: constrCostIdx(s), occSF, totSF, pop: cityPopulation(s),
+    cap: (() => { let best = s.tiles[0]; for (const t of s.tiles) if (!t.water && t.D > best.D) best = t; return Math.round(capRatePct(s, best, 'office', 125) * 100) / 100; })(),
   });
   if (s.nwHistory.length > 520) s.nwHistory.shift();
   if (s.econHistory.length > 520) s.econHistory.shift();
@@ -3762,6 +3790,10 @@ function firmDevelops(s: GameState, f: Firm) {
   if (sf < 6000) return;
   const months = Math.min(26, Math.max(6, Math.round(4 + sf / 7000)));
   const quality = clamp(rrange(s, 78, 132), 45, 138);
+  const cost = sf * constrForQuality(want, quality).cost * constrCostIdx(s) * 1.3;
+  if (f.cash < cost * 0.35 + 1_000_000) return;   // same math you face: equity in, loan for the rest
+  f.cash -= cost * 0.35;
+  f.debt += cost * 0.65;
   s.stock.push({
     id: s.nextId++, tileI: t.i, type: want, sf,
     px: spot.px, py: spot.py, pw: spot.pw, ph: spot.ph,
@@ -3792,6 +3824,8 @@ function tickConstruction(s: GameState) {
 
 function firmTakesLand(s: GameState, f: Firm, l: Listing) {
   const t = s.tiles[l.tileI];
+  if (f.cash < l.price + 500_000) return;   // dirt is a cash purchase
+  f.cash -= l.price;
   const pref: PType[] = t.indSuit > 55 ? ['industrial'] : f.style === 'core' ? ['office', 'mixed'] : rng(s) < 0.5 ? ['retail', 'mixed'] : ['mixed', 'retail'];
   const ty = pref.find(x => zoneAllows(t.zone, x)) ?? ZONE_ALLOWS[t.zone.use][0];
   const cells = l.parcelCells ?? (l.parcel ? footprintCells(l.parcel) : null);
@@ -3823,7 +3857,7 @@ function firmTakesLand(s: GameState, f: Firm, l: Listing) {
 function tickFirmLand(s: GameState) {
   // acquire: a firm cold-calls one vacant parcel on a block that fits its book
   for (const f of s.firms) {
-    if (!f.alive || f.netWorth < 5_000_000 || rng(s) > 0.05) continue;
+    if (!f.alive || f.cash < 1_200_000 || rng(s) > 0.05) continue;
     const want: PType = f.style === 'industrial' ? 'industrial' : f.style === 'mf' ? 'multifamily' : f.style === 'core' ? 'office' : rng(s) < 0.5 ? 'retail' : 'mixed';
     const cands = s.tiles.filter(t => !t.water && zoneAllows(t.zone, want) && freeParcelCount(s, t.i) >= 2 && tileDemandFactor(s, t, want) > 1.0);
     if (!cands.length) continue;
@@ -3845,7 +3879,8 @@ function tickFirmLand(s: GameState) {
     const d = parcelDisposition(s, t.i, cell);
     if (d.kind === 'refuse') continue;
     const ask = roundPrice(PARCEL_AC * landPricePerAcre(s, t) * holdoutMult(s, t.i, 1) * d.mult);
-    f.netWorth -= ask;
+    if (f.cash < ask + 600_000) continue;
+    f.cash -= ask;
     const entry = s.firmLand.find(x => x.short === f.short && x.tileI === t.i);
     if (entry) { entry.cells.push(cell); entry.cells.sort((a, b) => a - b); }
     else s.firmLand.push({ short: f.short, tileI: t.i, cells: [cell], m: s.month });
@@ -3876,9 +3911,12 @@ function tickFirmLand(s: GameState) {
       const pref: PType[] = t.indSuit > 55 ? ['industrial'] : f.style === 'mf' ? ['multifamily', 'mixed'] : f.style === 'core' ? ['office', 'mixed'] : rng(s) < 0.5 ? ['retail', 'mixed'] : ['mixed', 'retail'];
       const ty = pref.find(x => zoneAllows(t.zone, x)) ?? ZONE_ALLOWS[t.zone.use][0];
       const sf = Math.round(main.length * PARCEL_AC * 43_560 * FAR[ty] * zoneTierMult(t.zone.tier) * upzoneBonus(main.length) * rrange(s, 0.7, 0.95) / 500) * 500;
-      if (sf >= MIN_BUILD_SF) {
+      const quality = clamp(rrange(s, 75, 132), 45, 138);
+      const cost = sf * constrForQuality(ty, quality).cost * constrCostIdx(s) * 1.3;
+      if (sf >= MIN_BUILD_SF && f.cash >= cost * 0.35 + 1_000_000) {
         const months = Math.min(26, Math.max(6, Math.round(4 + sf / 7000)));
-        const quality = clamp(rrange(s, 75, 132), 45, 138);
+        f.cash -= cost * 0.35;
+        f.debt += cost * 0.65;
         s.stock.push({
           id: s.nextId++, tileI: e.tileI, type: ty, sf, cells: [...main],
           units: genUnitsFor(s, ty, sf), quality, age: 0,
@@ -3891,6 +3929,17 @@ function tickFirmLand(s: GameState) {
         continue;
       }
     }
+    // a finished assembly on cheap paper is worth more upzoned — firms play that game too
+    if (e.cells.length >= 2 && t.zone.tier < 3 && !s.rezonings.some(r => r.tileI === e.tileI)
+      && (s.rezoneDenied[e.tileI] === undefined || s.month - s.rezoneDenied[e.tileI] >= 24) && rng(s) < 0.18) {
+      const cost2 = rezoneCost(s, e.tileI, t.zone.use, (t.zone.tier + 1) as 1 | 2 | 3);
+      if (f.cash > cost2 + 1_500_000) {
+        f.cash -= cost2;
+        const months2 = 5 + Math.round(rng(s) * 4);
+        s.rezonings.push({ id: s.nextId++, tileI: e.tileI, toUse: t.zone.use, toTier: (t.zone.tier + 1) as 1 | 2 | 3, decideM: s.month + months2, cost: cost2, by: f.short });
+        pushNews(s, 'rumor', `${f.name} filed to upzone block ${blockLabel(t)} to ${t.zone.use}-${t.zone.tier + 1}. If it passes, every acre on that block reprices — including anything you hold there.`, e.tileI);
+      }
+    }
     if (s.month - e.m > 36 && rng(s) < 0.2) {
       s.firmLand = s.firmLand.filter(x => x !== e);
       s.listings.push({ id: s.nextId++, tileI: e.tileI, kind: 'land', acres: Math.round(e.cells.length * PARCEL_AC * 100) / 100, parcelCells: [...e.cells], price: roundPrice(e.cells.length * PARCEL_AC * landPricePerAcre(s, t) * 0.92), resFrac: rrange(s, 0.86, 0.95), listMonth: s.month, offersLeft: 3, expiresMonth: s.month + 6, hot: false });
@@ -3900,10 +3949,10 @@ function tickFirmLand(s: GameState) {
   // snipe: your un-agreed off-market leads are not a secret forever
   for (const l of [...s.listings]) {
     if (!(l as any).omLead || l.agreed || l.underContract || rng(s) > 0.04) continue;
-    const f = rpick(s, s.firms.filter(x => x.alive && x.netWorth > 5_000_000));
+    const f = rpick(s, s.firms.filter(x => x.alive && x.cash > l.price + 800_000));
     if (!f) continue;
     const t = s.tiles[l.tileI];
-    f.netWorth -= l.price;
+    f.cash -= l.price;
     const cells = l.parcelCells ?? [];
     const entry = s.firmLand.find(x => x.short === f.short && x.tileI === l.tileI);
     if (entry) entry.cells.push(...cells); else s.firmLand.push({ short: f.short, tileI: l.tileI, cells: [...cells], m: s.month });
@@ -3913,12 +3962,66 @@ function tickFirmLand(s: GameState) {
   }
 }
 
+// Quick mark on a standing building — the number a broker would put on the flyer,
+// cheap enough to run across the whole city every quarter.
+export function stockNOIYr(s: GameState, b: StockBuilding): number {
+  const t = s.tiles[b.tileI];
+  const aq = clamp(b.quality + (t.D - 55) * 0.12, 1, 150);
+  const rent = marketRentPSF(s, t, b.type) * (0.87 + (aq / 150) * 0.25);
+  return b.sf * rent * Math.min(b.occ, 0.97) * NOI_MARGIN[b.type];
+}
+export function stockValue(s: GameState, b: StockBuilding): number {
+  const t = s.tiles[b.tileI];
+  const cap = capRatePct(s, t, b.type, b.quality) / 100;
+  const disc = b.buildLeft ? 0.6 : 1;   // under construction: mostly cost, not yet income
+  return Math.max(0, stockNOIYr(s, { ...b, occ: b.buildLeft ? 0.85 : b.occ }) / cap) * disc;
+}
+export function firmPortfolioValue(s: GameState, short: string): number {
+  let v = 0;
+  for (const b of s.stock) if (b.owner === short) v += stockValue(s, b);
+  return v;
+}
+export function firmLandBankValue(s: GameState, short: string): number {
+  let v = 0;
+  for (const e of s.firmLand) if (e.short === short) v += e.cells.length * PARCEL_AC * landPricePerAcre(s, s.tiles[e.tileI]);
+  return v;
+}
+export function firmNetWorth(s: GameState, f: Firm): number {
+  return Math.round(f.cash + firmPortfolioValue(s, f.short) + firmLandBankValue(s, f.short) - f.debt);
+}
+
 function tickFirms(s: GameState) {
   if (s.month % 3 !== 0) return;
   tickFirmLand(s);
   for (const f of s.firms) {
     if (!f.alive) continue;
-    f.netWorth *= 1 + (s.econ.phase === 'recession' ? -0.012 : 0.008) * (f.style === 'aggressive' ? 2.2 : 1) + (rng(s) - 0.5) * 0.01;
+    // ---- the quarter's actual books: rent in, debt service out, portfolio marked ----
+    let noiQ = 0;
+    for (const b of s.stock) if (b.owner === f.short && !b.buildLeft) noiQ += stockNOIYr(s, b) / 4;
+    const rate = (s.econ.rate + 2.3) / 100;
+    const interest = f.debt * rate / 4;
+    const amort = Math.min(f.debt, f.debt * 0.005);   // slow principal paydown
+    f.cash += noiQ - interest - amort;
+    f.debt -= amort;
+    f.netWorth = firmNetWorth(s, f);
+    // ---- distress: negative cash means the lender is calling — sell something ----
+    if (f.cash < 0) {
+      const held = s.stock.filter(b => b.owner === f.short && !b.listedId && !b.buildLeft);
+      if (held.length) {
+        const sell = held.sort((a, b) => stockValue(s, a) - stockValue(s, b))[Math.floor(held.length * 0.5)] ?? held[0];
+        listStockBuilding(s, sell, { distressed: true, priceMult: rrange(s, 0.78, 0.88), hot: true, expiresMonth: s.month + 4 });
+        pushNews(s, 'deal', `${f.name} is deleveraging — a ${(sell.sf / 1000).toFixed(0)}K SF ${PLABEL[sell.type]} hits the market priced to move. Their problem is your entry point.`, sell.tileI);
+      }
+      if (f.netWorth < 0) {
+        f.alive = false;
+        pushNews(s, 'event', `${f.name} HAS COLLAPSED — the books finally told the truth. Its lenders are liquidating real buildings at fire-sale prices.`);
+        for (const b of s.stock.filter(x => x.owner === f.short && !x.listedId && !x.buildLeft).slice(0, 3)) {
+          b.occ = Math.min(b.occ, clamp(b.occ * rrange(s, 0.7, 0.9), 0.3, 0.62));
+          listStockBuilding(s, b, { distressed: true, priceMult: rrange(s, 0.66, 0.78), hot: true, expiresMonth: s.month + 4 });
+        }
+        continue;
+      }
+    }
     if (rng(s) < 0.035 && f.netWorth > 8_000_000) firmDevelops(s, f);
     if (rng(s) > 0.35) continue; // ten firms can't all be buying every quarter
     const fit = (l: Listing): number => {
@@ -3936,10 +4039,17 @@ function tickFirms(s: GameState) {
       if (l.kind === 'land') {
         firmTakesLand(s, f, l);
       } else {
+        if (f.cash < l.price * 0.35 + 800_000) continue;   // real money: no cash, no closing
         const b = l.stockId ? s.stock.find(x => x.id === l.stockId) : undefined;
-        if (b) { b.owner = f.short; b.listedId = undefined; }
+        if (b) {
+          const seller = s.firms.find(x => x.short === b.owner);
+          if (seller) { seller.cash += l.price * 0.45; seller.debt = Math.max(0, seller.debt - l.price * 0.55); }
+          b.owner = f.short; b.listedId = undefined;
+        }
+        f.cash -= l.price * 0.35;
+        f.debt += l.price * 0.65;
         logComp(s, { m: s.month, type: l.type!, sf: l.sf ?? 0, price: l.price, capPct: l.price > 0 ? Math.round((inPlaceNOIYr(s, l) / l.price) * 10000) / 100 : null, tileI: l.tileI, buyer: f.short });
-        pushNews(s, 'deal', `${f.name} acquired a ${((l.sf ?? 0) / 1000).toFixed(0)}K SF ${PLABEL[l.type!]} building for ${fmtMoney(l.price)}.`);
+        pushNews(s, 'deal', `${f.name} acquired a ${((l.sf ?? 0) / 1000).toFixed(0)}K SF ${PLABEL[l.type!]} building for ${fmtMoney(l.price)} (65% financed).`);
       }
       s.listings = s.listings.filter(x => x.id !== l.id);
     }
@@ -4462,7 +4572,7 @@ export function serialize(state: GameState): string { return JSON.stringify(stat
 export function deserialize(json: string): GameState | null {
   try {
     const s = JSON.parse(json);
-    if (s && s.version === 21 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
+    if (s && s.version === 22 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
     return null;
   } catch { return null; }
 }

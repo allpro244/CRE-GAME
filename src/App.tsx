@@ -327,22 +327,28 @@ function Dashboard({ state, goDeals, openLOI, openFirm, flyTo }: { state: GameSt
         <div className="panel">
           <h3>The competition</h3>
           <table className="sc">
-            <thead><tr><th>Firm</th><th>Style</th><th>Net worth</th></tr></thead>
+            <thead><tr><th>Firm</th><th>Style</th><th>Net worth</th><th>Debt</th><th>Lev</th></tr></thead>
             <tbody>
-              {[...state.firms.map(f => ({ n: f.name, sh: f.short as string | null, s: f.style === 'core' ? 'Core buyer' : f.style === 'aggressive' ? 'Merchant builder' : f.style === 'industrial' ? 'Industrial' : f.style === 'value-add' ? 'Value-add' : 'Multifamily', v: f.netWorth, dead: !f.alive })),
-              { n: 'You', sh: null, s: E.CONFIG.tiers[state.tier].name, v: nw, dead: false }]
+              {[...state.firms.map(f => {
+                const port = E.firmPortfolioValue(state, f.short) + E.firmLandBankValue(state, f.short);
+                return { n: f.name, sh: f.short as string | null, s: f.style === 'core' ? 'Core buyer' : f.style === 'aggressive' ? 'Merchant builder' : f.style === 'industrial' ? 'Industrial' : f.style === 'value-add' ? 'Value-add' : 'Multifamily', v: f.netWorth, d: f.debt, lev: port > 0 ? f.debt / port : 0, dead: !f.alive };
+              }),
+              { n: 'You', sh: null, s: E.CONFIG.tiers[state.tier].name, v: nw, d: state.assets.reduce((s2, a) => s2 + E.assetDebt(a), 0), lev: (() => { const pv = state.assets.reduce((s2, a) => s2 + E.assetValue(state, a), 0); const dv = state.assets.reduce((s2, a) => s2 + E.assetDebt(a), 0); return pv > 0 ? dv / pv : 0; })(), dead: false }]
                 .sort((a, b) => b.v - a.v).map((f, i) => (
                   <tr key={i} style={{ opacity: f.dead ? 0.45 : 1, cursor: f.sh ? 'pointer' : undefined }}
-                    onClick={() => f.sh && openFirm(f.sh)} title={f.sh ? 'View holdings' : undefined}>
+                    onClick={() => f.sh && openFirm(f.sh)} title={f.sh ? 'View their balance sheet and holdings' : undefined}>
                     <td style={{ fontWeight: f.n === 'You' ? 700 : 400, color: f.n === 'You' ? 'var(--amber)' : undefined }}>{f.n}{f.dead ? ' †' : ''}{f.sh ? <span className="faint" style={{ fontSize: 9 }}> ▸</span> : ''}</td>
                     <td className="dim">{f.dead ? 'Collapsed' : f.s}</td>
                     <td className="num">{E.fmtMoney(f.v)}</td>
+                    <td className="num dim">{f.dead ? '—' : E.fmtMoney(Math.round(f.d))}</td>
+                    <td className={'num ' + (f.lev > 0.75 ? 'neg' : 'dim')}>{f.dead ? '—' : Math.round(f.lev * 100) + '%'}</td>
                   </tr>
                 ))}
             </tbody>
           </table>
           <div className="faint" style={{ fontSize: 11, marginTop: 10, lineHeight: 1.5 }}>
-            Rivals shop the public board, but off-market leads you canvass are yours alone.
+            Real books, same rules: rent in, debt service out, marked to market quarterly. A rival past ~75% leverage
+            is one bad quarter from selling you something cheap. Rivals shop the public board, but off-market leads you canvass are yours alone.
           </div>
         </div>
       </div>
@@ -599,6 +605,50 @@ function EconomyView({ state }: { state: GameState }) {
             </div>
           );
         })}
+      </div>
+      <div className="panel" style={{ marginBottom: 14 }}>
+        <h3>Cycle records — this game's economic history <Hint text="The extremes this economy has actually produced since you started. Every number was a month somebody lived through." /></h3>
+        {h.length < 13 ? <div className="dim" style={{ fontSize: 12 }}>Come back after a year — records need history.</div> : (() => {
+          const hi = (arr: { m: number; v: number }[]) => arr.reduce((b2, x) => x.v > b2.v ? x : b2, arr[0]);
+          const lo = (arr: { m: number; v: number }[]) => arr.reduce((b2, x) => x.v < b2.v ? x : b2, arr[0]);
+          const rates = h.map(x => ({ m: x.m, v: x.rate }));
+          const infl = h.map(x => ({ m: x.m, v: x.infl }));
+          const caps = h.filter(x => x.cap !== undefined).map(x => ({ m: x.m, v: x.cap! }));
+          const recessions = h.reduce((n, x, i) => n + (x.phase === 'recession' && h[i - 1]?.phase !== 'recession' ? 1 : 0), 0);
+          const rH = hi(rates), rL = lo(rates), iH = hi(infl);
+          const cH = caps.length ? hi(caps) : null, cL = caps.length ? lo(caps) : null;
+          // per-type rent: biggest run-up and drawdown over the whole history
+          const rentRec = E.PTYPES.map(ty => {
+            let peak = h[0].ri[ty], trough = h[0].ri[ty], maxUp = 0, maxDn = 0;
+            for (const x of h) {
+              const v = x.ri[ty];
+              if (v > peak) peak = v;
+              if (v < trough) trough = v;
+              maxDn = Math.max(maxDn, peak > 0 ? 1 - v / peak : 0);
+              maxUp = Math.max(maxUp, trough > 0 ? v / trough - 1 : 0);
+              if (v < peak * 0.6) peak = v;           // reset after deep busts so records stay episodic
+              if (v > trough * 1.6) trough = v;
+            }
+            return { ty, maxUp, maxDn };
+          });
+          const ciNow = h[h.length - 1].ci ?? 1, ci0 = h[0].ci ?? 1;
+          return (
+            <div style={{ fontSize: 12, lineHeight: 1.8 }}>
+              <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+                <span>Prime rate <b className="num">{rL.v.toFixed(2)}%</b> <span className="faint">({E.monthName(rL.m)})</span> → <b className="num">{rH.v.toFixed(2)}%</b> <span className="faint">({E.monthName(rH.m)})</span> — a <b className="num">{(rH.v - rL.v).toFixed(1)}</b>-point swing</span>
+                <span>Inflation peaked at <b className="num">{iH.v.toFixed(1)}%</b> <span className="faint">({E.monthName(iH.m)})</span></span>
+                {cH && cL && <span>Prime office cap <b className="num">{cL.v.toFixed(2)}%</b> <span className="faint">({E.monthName(cL.m)})</span> → <b className="num">{cH.v.toFixed(2)}%</b> <span className="faint">({E.monthName(cH.m)})</span></span>}
+                <span>Construction costs <b className="num">{ci0 > 0 ? '+' + ((ciNow / ci0 - 1) * 100).toFixed(0) : '—'}%</b> since start</span>
+                <span><b className="num">{recessions}</b> recession{recessions === 1 ? '' : 's'} endured</span>
+              </div>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 2 }}>
+                {rentRec.map(r => (
+                  <span key={r.ty}>{E.PLABEL[r.ty]} rents: <b className="num pos">+{(r.maxUp * 100).toFixed(0)}%</b> best run / <b className="num neg">−{(r.maxDn * 100).toFixed(0)}%</b> worst drawdown</span>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </div>
       <div className="panel" style={{ marginBottom: 14 }}>
         <h3>Recent sale comps <Hint text="Every closed trade in Meridian City — yours and everyone else's. This is how you know what a building is actually worth." /></h3>

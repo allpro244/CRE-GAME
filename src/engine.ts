@@ -178,6 +178,10 @@ export interface Project {
   contractor: 'budget' | 'standard' | 'premium';
   expedited: boolean;
   events: ConstrEvent[]; drawnSoFar: number; monthsBuilt: number;
+  contractType?: 'gmp' | 'costplus';
+  bonded?: boolean;
+  gcReplaced?: boolean;      // one GC failure per project is instructive enough
+  haltMonthsLeft?: number;   // site dark after a GC bankruptcy; the reserve keeps burning
 }
 
 export interface SaleOffer {
@@ -1501,6 +1505,8 @@ export interface DevChoice {
   contractor: 'budget' | 'standard' | 'premium';
   contingencyPct: number; expedited: boolean; downPct: number;
   fixedRate?: boolean;   // lock the construction rate for +60bps
+  contractType?: 'gmp' | 'costplus';  // who eats overruns above contingency
+  bonded?: boolean;                   // surety covers a failed GC (+~1.2% of hard)
 }
 
 export function maxBuildableSF(l: Listing, type: PType): number {
@@ -1510,14 +1516,15 @@ export function maxBuildableSF(l: Listing, type: PType): number {
 export function devCostBreakdown(state: GameState, c: DevChoice, landCost: number) {
   const spec = CONSTR[c.type].find(x => x.id === c.construction) ?? CONSTR[c.type][0];
   const tariff = state.econ.tariffMonthsLeft > 0 ? 1.08 : 1;
-  const contractorMult = c.contractor === 'budget' ? 0.90 : c.contractor === 'premium' ? 1.15 : 1;
+  const gmpMult = (c.contractType ?? 'costplus') === 'gmp' ? 1.07 : 1;   // certainty has a price
   const sizeMult = clamp(1.08 - 0.13 * Math.log10(Math.max(3000, c.sf) / 5000), 0.82, 1.12); // scale economies
-  const hard = spec.cost * sizeMult * c.sf * contractorMult * tariff * constrCostIdx(state) * (c.expedited ? 1.08 : 1);
+  const hard = spec.cost * sizeMult * c.sf * gmpMult * tariff * constrCostIdx(state) * (c.expedited ? 1.08 : 1);
+  const bond = c.bonded ? hard * 0.012 : 0;                              // the surety's cut
   const soft = hard * CONFIG.softCostPct;
   const cont = hard * c.contingencyPct;
-  const total = landCost + hard + soft + cont;
+  const total = landCost + hard + bond + soft + cont;
   const months = Math.min(26, Math.max(5, Math.round((4 + c.sf / 7000) * (c.expedited ? 0.75 : 1))));
-  return { hard, soft, cont, total, months, landCost, spec };
+  return { hard, soft, cont, bond, total, months, landCost, spec };
 }
 
 export function validateDev(state: GameState, l: Listing, c: DevChoice): string | null {
@@ -1574,8 +1581,9 @@ export function buyLandAndDevelop(state: GameState, listingId: number, c: DevCho
 
   const t = s.tiles[l.tileI];
   const events: ConstrEvent[] = [];
-  const riskMult = c.contractor === 'budget' ? 1.7 : c.contractor === 'premium' ? 0.5 : 1;
-  const pool = ['materials', 'labor', 'weather', 'soils', ...(c.contractor === 'budget' ? ['default'] : []), 'ahead'];
+  // cost-plus is the low bid: more surprises reach you, and they're all yours
+  const riskMult = (c.contractType ?? 'costplus') === 'costplus' ? 1.25 : 0.85;
+  const pool = ['materials', 'labor', 'weather', 'soils', 'ahead'];
   const nEvents = rng(s) < 0.55 * riskMult ? (rng(s) < 0.35 * riskMult ? 2 : 1) : 0;
   for (let k = 0; k < nEvents; k++) {
     events.push({ month: 1 + Math.floor(rng(s) * (bd.months - 1)), kind: rpick(s, pool), resolved: false });
@@ -1601,6 +1609,7 @@ export function buyLandAndDevelop(state: GameState, listingId: number, c: DevCho
       hardBudget: bd.hard, softBudget: bd.soft, spent: l.price,
       contingency: bd.cont, contingencyLeft: bd.cont,
       contractor: c.contractor, expedited: c.expedited, events, drawnSoFar: 0, monthsBuilt: 0,
+      contractType: c.contractType ?? 'costplus', bonded: !!c.bonded,
     },
     negCFStreak: 0,
   };
@@ -1631,14 +1640,19 @@ export function resolveConstrEvent(state: GameState, assetId: number, choice: 'a
   if (idx < 0) return s;
   const kind = s.pending[idx].eventKind;
   s.pending.splice(idx, 1);
-  const applyCost = (amt: number, label: string) => {
+  const applyCost = (amt: number, label: string, siteCondition = false) => {
     const fromCont = Math.min(p.contingencyLeft, amt);
     p.contingencyLeft -= fromCont;
     const overflow = amt - fromCont;
     if (overflow > 0) {
-      s.cash -= overflow;
-      a.ledger.push({ m: s.month, amt: -overflow });
-      pushNews(s, 'warn', `${a.name}: ${label} ran ${fmtMoney(amt)} over — contingency covered ${fmtMoney(fromCont)}, you funded ${fmtMoney(overflow)} from cash.`);
+      if (p.contractType === 'gmp' && !siteCondition) {
+        // above the guaranteed maximum, the overrun is the GC's problem — that's what the 7% bought
+        pushNews(s, 'success', `${a.name}: ${label} ran ${fmtMoney(amt)} over — contingency covered ${fmtMoney(fromCont)}, the GC ate ${fmtMoney(overflow)} under the GMP.`);
+      } else {
+        s.cash -= overflow;
+        a.ledger.push({ m: s.month, amt: -overflow });
+        pushNews(s, 'warn', `${a.name}: ${label} ran ${fmtMoney(amt)} over — contingency covered ${fmtMoney(fromCont)}, you funded ${fmtMoney(overflow)} from cash${p.contractType === 'gmp' ? ' (site conditions sit outside the GMP)' : ''}.`);
+      }
     } else {
       pushNews(s, 'info', `${a.name}: ${label} cost ${fmtMoney(amt)}, absorbed by contingency (${fmtMoney(p.contingencyLeft)} left).`);
     }
@@ -3122,6 +3136,50 @@ function tickAsset(s: GameState, a: Asset): number {
       p.monthsLeft--;
       if (p.monthsLeft <= 0) { p.stage = 'building'; p.monthsLeft = p.totalMonths; pushNews(s, 'info', `${a.name}: permits in hand. Construction begins.`); }
       return 0;
+    }
+    // a dark site still costs money: no progress, but the interest clock runs
+    if (p.haltMonthsLeft && p.haltMonthsLeft > 0) {
+      p.haltMonthsLeft--;
+      const loan0 = a.loans[0];
+      if (loan0.floating) loan0.ratePct = s.econ.rate + CONFIG.constrSpread;
+      const int0 = loan0.balance * (loan0.ratePct / 100 / 12);
+      if (loan0.reserveBalance !== undefined && loan0.reserveBalance > 0) {
+        const fr = Math.min(loan0.reserveBalance, int0);
+        loan0.reserveBalance = Math.round((loan0.reserveBalance - fr) * 100) / 100;
+        loan0.balance += fr;
+        const rem0 = int0 - fr;
+        if (rem0 > 0.5) { s.cash -= rem0; a.ledger.push({ m: s.month, amt: -rem0 }); }
+        if (loan0.reserveBalance <= 0) pushNews(s, 'warn', `${a.name}: the interest reserve is EMPTY on a dark site.`, a.tileI);
+      } else if (loan0.reserveBalance !== undefined) {
+        s.cash -= int0; a.ledger.push({ m: s.month, amt: -int0 });
+      }
+      if (p.haltMonthsLeft <= 0) pushNews(s, 'info', `${a.name}: the replacement GC has mobilized. Construction resumes.`, a.tileI);
+      return 0;
+    }
+    // the GC can fail you: rare, uglier unbonded, ugliest in a recession
+    if (!p.gcReplaced && p.monthsBuilt >= 1 && p.monthsLeft > 1) {
+      const pFail = (p.contractType === 'gmp' ? 0.009 : 0.018) * (s.econ.phase === 'recession' ? 1.6 : 1);
+      if (rng(s) < pFail) {
+        p.gcReplaced = true;
+        if (p.bonded) {
+          const slip = 1 + (rng(s) < 0.5 ? 1 : 0);
+          p.monthsLeft += slip;
+          pushNews(s, 'warn', `${a.name}: your GC went under mid-job. Bonded — the surety covers the rebid delta; you lose ${slip} month${slip > 1 ? 's' : ''}. The premium just earned its keep.`, a.tileI);
+        } else {
+          const halt = 3 + Math.floor(rng(s) * 3);
+          p.haltMonthsLeft = halt;
+          const remainFrac = clamp(p.monthsLeft / Math.max(1, p.totalMonths), 0.1, 1);
+          const delta = Math.round(p.hardBudget * remainFrac * (0.08 + rng(s) * 0.10) * (s.econ.constrCycle ?? 1));
+          const fromCont = Math.min(p.contingencyLeft, delta);
+          p.contingencyLeft -= fromCont;
+          const over = delta - fromCont;
+          if (over > 0) { s.cash -= over; a.ledger.push({ m: s.month, amt: -over }); }
+          p.spent += delta;
+          a.quality = clamp(a.quality - (2 + rng(s) * 2), 5, a.qCap);
+          pushNews(s, 'warn', `${a.name}: YOUR CONTRACTOR IS BANKRUPT — and unbonded. The site goes dark ~${halt} months while you rebid at today's prices: ${fmtMoney(delta)} more${over > 0 ? ` (${fmtMoney(over)} straight from cash)` : ''}, the exposed shell weathers, and the interest clock does not care.`, a.tileI);
+          return 0;
+        }
+      }
     }
     p.monthsBuilt++;
     const ev = p.events.find(e => !e.resolved && e.month === p.monthsBuilt);

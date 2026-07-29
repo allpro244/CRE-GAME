@@ -335,6 +335,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
     units: defaultUnits(firstConstr.type, firstConstr.construction, 10000),
     construction: firstConstr.construction,
     contractor: 'standard', contingencyPct: 0.10, expedited: false, downPct: 0.35, fixedRate: false,
+    contractType: 'costplus', bonded: false,
   }));
 
   const runFeas = () => {
@@ -546,11 +547,16 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
             disabled={!!spec.fixedUnits}
             onChange={e => setDev({ ...dev, units: Number(e.target.value) })} />
         </label>
-        <label className="f">Contractor
-          <select value={dev.contractor} onChange={e => setDev({ ...dev, contractor: e.target.value as any })}>
-            <option value="budget">Budget — cost −10%, risky</option>
-            <option value="standard">Standard</option>
-            <option value="premium">Premium — cost +15%, low risk, quality up</option>
+        <label className="f">GC contract <Hint text="Guaranteed Maximum Price: +7% on hard cost, and overruns above contingency are the GC's problem — but unknown site conditions stay yours. Cost-plus: baseline price, every surprise is yours." />
+          <select value={dev.contractType} onChange={e => setDev({ ...dev, contractType: e.target.value as any })}>
+            <option value="costplus">Cost-plus — baseline, you eat every surprise</option>
+            <option value="gmp">Guaranteed Max Price — +7% hard, GC eats overruns</option>
+          </select>
+        </label>
+        <label className="f">Payment &amp; performance bond <Hint text="~1.2% of hard cost. If the GC goes bankrupt mid-job, the surety covers the rebid delta and you lose a month or two. Unbonded, a failed GC means a dark site for months, a rebid at today's prices, and a weathering shell." />
+          <select value={dev.bonded ? '1' : '0'} onChange={e => setDev({ ...dev, bonded: e.target.value === '1' })}>
+            <option value="0">Unbonded — cheaper, exposed</option>
+            <option value="1">Bonded — +1.2% hard, surety-backed</option>
           </select>
         </label>
         <label className="f">Contingency
@@ -576,6 +582,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
         <div className="memo-row"><span className="lbl">Land ({listing.acres} ac)</span><span className="num">{E.fmtMoney(listing.price)}</span></div>
         <div className="memo-row"><span className="lbl">Hard costs — {spec.label.toLowerCase()} @ ${spec.cost}/SF{state.econ.tariffMonthsLeft > 0 ? ' (tariffs +8% ⚠)' : ''}</span><span className="num">{E.fmtMoney(bd.hard)}</span></div>
         <div className="memo-row"><span className="lbl">Soft costs (15%)</span><span className="num">{E.fmtMoney(bd.soft)}</span></div>
+        {(bd as any).bond > 0 && <div className="memo-row"><span className="lbl">Performance bond</span><span className="num">{E.fmtMoney((bd as any).bond)}</span></div>}
         <div className="memo-row"><span className="lbl">Contingency</span><span className="num">{E.fmtMoney(bd.cont)}</span></div>
         <div className="memo-row total"><span className="lbl">Total development cost</span><span className="num">{E.fmtMoney(bd.total)}</span></div>
         <div className="memo-row"><span className="lbl">Construction loan (≤{pct(E.CONFIG.constrLTC)} LTC at {(state.econ.rate + E.CONFIG.constrSpread + (dev.fixedRate ? 0.6 : 0)).toFixed(2)}% {dev.fixedRate ? 'FIXED' : 'FLOATING'}, 12-mo IO after delivery)</span><span className="num">{E.fmtMoney(bd.total - equity)}</span></div>

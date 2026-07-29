@@ -1189,7 +1189,7 @@ export function StockCard({ state, setState, stockId, close, openDeal, variant =
       {err && <div className="alert-strip red" style={{ marginBottom: 10 }}>{err}</div>}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
         {!b.listedId && !b.blacklist && b.owner === 'private' && (
-          <span className="faint" style={{ fontSize: 11, marginRight: 'auto' }}>{state.approachesLeft} of 5 cold calls left this month</span>
+          <span className="faint" style={{ fontSize: 11, marginRight: 'auto' }}>{state.approachesLeft} of 3 cold calls left this month</span>
         )}
         <button className="btn" onClick={close}>Close</button>
         {b.listedId ? (

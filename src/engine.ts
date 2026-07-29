@@ -1043,7 +1043,7 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     news: [], effects: [], scheduledEvents: [],
     nwHistory: [], econHistory: [],
     nextId: 1, pending: [], lastMonthCF: 0, negCashStreak: 0,
-    lastScoutMonth: -99, approachesLeft: 5, parcelApproach: {}, dealLog: [],
+    lastScoutMonth: -99, approachesLeft: 3, parcelApproach: {}, dealLog: [],
     gameOver: false, transitCorridor: corridor, roads,
     totalRealizedProfit: 0, dealsClosed: 0,
     version: 16,
@@ -1407,7 +1407,7 @@ export function canApproach(state: GameState, stockId: number): { ok: boolean; w
   if (b.blacklist) return { ok: false, why: 'This owner stopped taking your calls after your last offer.' };
   if (b.owner !== 'private') return { ok: false, why: `${state.firms.find(f => f.short === b.owner)?.name ?? 'An institution'} owns this one — they don't sell over a phone call.` };
   if (b.approachedM !== undefined && state.month - b.approachedM < 24) return { ok: false, why: 'You asked recently. Owners remember; give it a couple of years.' };
-  if (state.approachesLeft <= 0) return { ok: false, why: 'You\'ve made your 5 calls this month. Even hustle has office hours — more next month.' };
+  if (state.approachesLeft <= 0) return { ok: false, why: 'You\'ve made your 3 calls this month. Even hustle has office hours — more next month.' };
   return { ok: true };
 }
 export function approachOwner(state: GameState, stockId: number): { s: GameState; lead?: Listing; err?: string } {
@@ -2175,7 +2175,7 @@ export function canApproachParcel(s: GameState, tileI: number, cell: number): { 
   const rec = parcelApproachState(s, tileI, cell);
   if (rec?.outcome === 'refused') return { ok: false, why: 'This owner already said no. Give it a couple of years — or a different market.' };
   if (rec?.outcome === 'ask') return { ok: false, why: 'You already have their number.' };
-  if (s.approachesLeft <= 0) return { ok: false, why: 'You\'ve made your 5 calls this month.' };
+  if (s.approachesLeft <= 0) return { ok: false, why: 'You\'ve made your 3 calls this month.' };
   return { ok: true };
 }
 export function approachParcelOwner(state: GameState, tileI: number, cell: number): { s: GameState; refused?: boolean; listing?: Listing; err?: string } {
@@ -2268,8 +2268,14 @@ export function walkLandContract(state: GameState, listingId: number): { s: Game
   if (!l?.underContract) return { s, err: 'No contract to walk from.' };
   const uc = l.underContract;
   pushNews(s, 'warn', `You walked from the ${l.acres} acres at block ${blockLabel(s.tiles[l.tileI])}. ${fmtMoney(uc.deposit + (uc.studyFee ?? 0))} sunk — often the cheapest mistake available.`, l.tileI);
-  l.underContract = undefined;
-  l.expiresMonth = s.month + 5;   // seller relists, deposit in pocket
+  if ((l as any).omLead) {
+    // an off-market owner goes back to not selling — and remembers you wasted their time
+    for (const c of l.parcelCells ?? []) s.parcelApproach[l.tileI + ':' + c] = { m: s.month, outcome: 'refused' };
+    s.listings = s.listings.filter(x => x.id !== l.id);
+  } else {
+    l.underContract = undefined;
+    l.expiresMonth = s.month + 5;   // a marketed property relists, deposit in the seller's pocket
+  }
   return { s };
 }
 
@@ -2941,7 +2947,7 @@ export function advanceMonth(state: GameState): GameState {
     s.exchange = undefined;
   }
   if (s.month % 12 === 11) settleIncomeTax(s);
-  s.approachesLeft = 5; // a fresh month, a fresh call sheet
+  s.approachesLeft = 3; // a fresh month, a fresh call sheet
   s.lastMonthCF = cf;
   s.cash += cf;
   tickSolvency(s);
@@ -3324,9 +3330,14 @@ function tickListings(s: GameState) {
             : `Study back on block ${blockLabel(s.tiles[l.tileI])}: ${SITE_COND_LABEL[uc.known.kind]}. ${uc.known.sfLossFrac ? `Buildable area cut ~${Math.round(uc.known.sfLossFrac * 100)}%` : 'Remediation ~' + fmtMoney(uc.known.cost)}. Close eyes-open, or walk for the deposit.`, l.tileI);
       }
       if (l.expiresMonth <= s.month) {
-        pushNews(s, 'warn', `Your contract on the ${l.acres} acres at block ${blockLabel(s.tiles[l.tileI])} EXPIRED unclosed. The seller keeps ${fmtMoney(uc.deposit)} and relists.`, l.tileI);
-        l.underContract = undefined;
-        l.expiresMonth = s.month + 5;
+        pushNews(s, 'warn', `Your contract on the ${l.acres} acres at block ${blockLabel(s.tiles[l.tileI])} EXPIRED unclosed. The seller keeps ${fmtMoney(uc.deposit)}${(l as any).omLead ? ' and goes back to not selling' : ' and relists'}.`, l.tileI);
+        if ((l as any).omLead) {
+          for (const c of l.parcelCells ?? []) s.parcelApproach[l.tileI + ':' + c] = { m: s.month, outcome: 'refused' };
+          s.listings = s.listings.filter(x => x.id !== l.id);
+        } else {
+          l.underContract = undefined;
+          l.expiresMonth = s.month + 5;
+        }
       }
       continue;   // parcels under contract don't expire, get bid on, or sell to firms
     }

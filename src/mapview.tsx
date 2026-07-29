@@ -46,7 +46,7 @@ function lensRaw(state: GameState, t: Tile, lens: Lens): number {
   return t.crime / 85;
 }
 const LENS_HUE: Record<Lens, [number, number, number]> = {
-  value: [217, 166, 72], mix: [110, 196, 158], land: [188, 178, 96], zoning: [160, 160, 160], office: [93, 143, 232], retail: [93, 143, 232],
+  value: [217, 166, 72], mix: [110, 196, 158], land: [188, 178, 96], zoning: [160, 160, 160], office: [178, 122, 240], retail: [93, 143, 232],
   industrial: [63, 169, 126], multifamily: [186, 128, 224], crime: [222, 95, 95],
   pipeline: [232, 140, 60], comps: [120, 200, 160],
 };
@@ -677,6 +677,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const [hover, setHover] = useState<{ text: string; sub: string; x: number; y: number } | null>(null);
   const [lens, setLens] = useState<Lens>('value');
   const [view, setView] = useState<'iso' | 'flat'>('iso');
+  const [showBldgs, setShowBldgs] = useState(true);
   const W = E.CONFIG.GRID_W * TS, H = E.CONFIG.GRID_H * TS;
   const IW_TOT = (E.CONFIG.GRID_W + E.CONFIG.GRID_H) * (IW / 2) + IOX * 2;
   const IH_TOT = (E.CONFIG.GRID_W + E.CONFIG.GRID_H) * (IH / 2) + IOY + 40;
@@ -869,6 +870,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
         <div className="lens-row">
           {LENSES.map(l => <button key={l.id} className={lens === l.id ? 'active' : ''} onClick={() => setLens(l.id)}>{l.label}</button>)}
           <span style={{ flex: 1 }} />
+          <button className={showBldgs ? '' : 'active'} onClick={() => setShowBldgs(b => !b)} title="Hide the buildings to read the lens and the vacant dirt underneath">{showBldgs ? '◻ hide bldgs' : '◼ show bldgs'}</button>
           <button className={view === 'iso' ? 'active' : ''} onClick={() => setView('iso')} title="Isometric skyline view">◪ 2.5D</button>
           <button className={view === 'flat' ? 'active' : ''} onClick={() => setView('flat')} title="Flat plan view">▦ Plan</button>
           <button onClick={() => (view === 'iso' ? vpIso : vpFlat).zoomAt(1 / 1.35)} title="Zoom out">−</button>
@@ -912,7 +914,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                 opacity={built ? 1 : 0.6} style={{ pointerEvents: 'none' }} />;
             });
           })()}
-          <IsoCity blds={isoBlds} detail={zb >= 2} />
+          {showBldgs && <IsoCity blds={isoBlds} detail={zb >= 2} />}
           {state.listings.filter(l => l.kind === 'land' && !l.parentAssetId).map(l => {
             const t = state.tiles[l.tileI];
             const p = isoPt(t.x, t.y);
@@ -1034,7 +1036,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
               fill="none" stroke="var(--blue)" strokeWidth={1.5} strokeDasharray="5 4" style={{ pointerEvents: 'none' }} />;
           })}
           {/* buildings — same parcel-true geometry as the iso view */}
-          <FlatBuildings blds={isoBlds} />
+          {showBldgs && <FlatBuildings blds={isoBlds} />}
           {state.listings.filter(l => l.kind === 'land' && !l.parentAssetId).map(l => {
             const t = state.tiles[l.tileI];
             return <circle key={'l' + l.id} cx={(t.x + 0.78) * TS} cy={(t.y + 0.22) * TS} r={4.5}
@@ -1316,8 +1318,8 @@ function ParcelBuyPanel({ state, setState, tileI, cells, close, ghostType, setGh
                       if (E.parcelApproachState(st, tileI, c)) continue;
                       if (st.approachesLeft <= 0) break;
                       const r = E.approachParcelOwner(st, tileI, c);
+                      st = r.s;   // the call happened even when nobody answered
                       if (r.err) { setErr(r.err); break; }
-                      st = r.s;
                       if (r.refused) refs++; else asks++;
                     }
                     setState(st);

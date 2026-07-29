@@ -216,7 +216,7 @@ html, body, #root {
   box-shadow: -22px 0 70px rgba(0, 0, 0, 0.55);
   animation: drawer-in 0.26s cubic-bezier(0.22, 1, 0.36, 1);
 }
-.modal-back.drawer.wide .modal { max-width: min(660px, 100%); }
+.modal-back.drawer.wide .modal { max-width: min(880px, 96vw); }
 @keyframes drawer-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
 @media (prefers-reduced-motion: reduce) {
   .modal-back, .modal, .modal-back.drawer .modal { animation: none; }

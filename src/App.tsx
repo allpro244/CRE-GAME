@@ -5,11 +5,15 @@ import { LineChart, Bars } from './charts';
 import { Modal, Hint, DealsView2, DealModal, PortfolioView2, RefiModal, DebtView, LOIModal, AssetDrawer, pct } from './views2';
 import { MapView, StockCard, FirmPortfolioModal } from './mapview';
 
+// storage: the chat-artifact API when it exists, plain localStorage everywhere else —
+// the downloaded single-file build saves like any other web game
 async function storageSet(key: string, val: string) {
-  try { await (window as any).storage?.set?.(key, val); return true; } catch { return false; }
+  try { if ((window as any).storage?.set) { await (window as any).storage.set(key, val); return true; } } catch { /* fall through */ }
+  try { localStorage.setItem(key, val); return true; } catch { return false; }
 }
 async function storageGet(key: string): Promise<string | null> {
-  try { const r = await (window as any).storage?.get?.(key); return r?.value ?? null; } catch { return null; }
+  try { if ((window as any).storage?.get) { const r = await (window as any).storage.get(key); if (r?.value != null) return r.value; } } catch { /* fall through */ }
+  try { return localStorage.getItem(key); } catch { return null; }
 }
 
 type TabId = 'dashboard' | 'map' | 'deals' | 'portfolio' | 'debt' | 'economy';
@@ -325,6 +329,16 @@ function Dashboard({ state, goDeals, openLOI, openFirm, flyTo }: { state: GameSt
           </div>
         </div>
         <div className="panel">
+          <h3>Markets at a glance</h3>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 11.5, marginBottom: 12 }}>
+            {E.PTYPES.map(ty => {
+              const v = state.econ.cityVac[ty], eq = E.EQ_VAC[ty];
+              const soft = v > eq + 2, tight = v < eq - 1;
+              return <span key={ty} className="num" style={{ color: soft ? 'var(--red)' : tight ? 'var(--green)' : 'var(--dim)' }}
+                title={`${E.PLABEL[ty]}: ${v.toFixed(1)}% vacant vs ~${eq}% equilibrium — ${soft ? 'oversupplied, tenants hold the pen' : tight ? 'tight, landlords push rate' : 'balanced'}`}>
+                {E.PLABEL[ty]} {soft ? '▼ soft' : tight ? '▲ tight' : '· balanced'}</span>;
+            })}
+          </div>
           <h3>The competition</h3>
           <table className="sc">
             <thead><tr><th>Firm</th><th>Style</th><th>Net worth</th><th>Debt</th><th>Lev</th></tr></thead>

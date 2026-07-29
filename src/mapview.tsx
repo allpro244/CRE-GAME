@@ -15,11 +15,6 @@ const LENSES: { id: Lens; label: string }[] = [
 // the colors every zoning map has used since 1926
 const ZONE_COL: Record<E.ZoneUse, string> = { R: '#8fb872', C: '#c9604f', MU: '#d29a44', M: '#8579bd' };
 
-function lerpColor(a: [number, number, number], b: [number, number, number], t: number): string {
-  const c = a.map((x, i) => Math.round(x + (b[i] - x) * t));
-  return `rgb(${c[0]},${c[1]},${c[2]})`;
-}
-const DARK: [number, number, number] = [206, 210, 198];   // daylight base the lenses saturate from
 const TS = 52;   // px per tile
 const SUB = 3;   // subdivision per tile for the continuous field
 
@@ -249,7 +244,25 @@ function useIsoBuildings(state: GameState): IsoBld[] {
     + ':' + state.firmLand.length + ':' + state.firmLand.reduce((s2, e) => s2 + e.cells.length, 0);
   return useMemo(() => {
     const out: IsoBld[] = [];
-    const place = (o: { tileI: number; sf: number; type: E.PType; quality?: number; age?: number; construction?: string; cells?: number[]; px?: number; py?: number; pw?: number; ph?: number }, col: string, listed: boolean, key: string, prog?: number, mine?: boolean) => {
+    // Walls follow the build, not the owner: tilt-wall is white precast, Class A office
+    // is blue curtain glass, Class B is brick, retail is tan EIFS, garden walk-ups are
+    // painted stucco. Three seeded shades per material so no two blocks match exactly.
+    const WALLS: Record<string, string[]> = {
+      tilt: ['#dcd9d0', '#d1cfc4', '#d7d1c2'],       // white precast panels
+      metal: ['#b9c5cb', '#c6cbd0', '#aebcb3'],       // PEMB steel skins
+      tin: ['#b3a184', '#a99a86', '#a0a691'],         // weathered light steel
+      center: ['#dcc9a4', '#d3b78e', '#cab798'],      // EIFS tan
+      strip: ['#d8c6a6', '#c9ad85', '#cec19f'],
+      pad: ['#e2d8c2', '#dbcbb0', '#ded4bc'],
+      concrete: ['#4f7396', '#42678a', '#5d80a3'],    // Class A curtain glass
+      masonry: ['#b7876a', '#a67858', '#c19a7e'],     // brick and stone
+      wood: ['#d6cdb4', '#cbc2a8', '#c2b89e'],        // painted Class C
+      podium: ['#c9b9a0', '#5d80a3', '#b7876a'],      // podium mixed: varied
+      garden: ['#cfc3a2', '#c4b28e', '#d3c9ae'],
+      midrise: ['#d9d2be', '#cfc5ac', '#c6bda6'],
+      tower: ['#7a94ac', '#6b869e', '#8aa2b8'],       // residential glass
+    };
+    const place = (o: { tileI: number; sf: number; type: E.PType; quality?: number; age?: number; construction?: string; cells?: number[]; px?: number; py?: number; pw?: number; ph?: number }, col: string | undefined, listed: boolean, key: string, prog?: number, mine?: boolean) => {
       const cells = E.footprintCells(o);
       if (!cells.length) return;
       const t = state.tiles[o.tileI];
@@ -258,20 +271,23 @@ function useIsoBuildings(state: GameState): IsoBld[] {
         industrial: ['#b5b9bd', '#a9aeb3', '#c2c5c8'], mixed: ['#a58a6a', '#c56a4a', '#8d99a6'],
         multifamily: ['#b0654a', '#7a8a99', '#9a7a5a'],
       };
+      const constr = o.construction ?? defaultConstr(o.type, o.sf);
+      const wallPick = Math.abs((state.seed ^ (o.tileI * 53)) + ((o.sf | 0) >> 6)) % 3;
+      const wcol = col ?? (WALLS[constr] ?? WALLS.wood)[wallPick];
       const fab = fabricOf(t.zone, o.type);
-      const m = massing(o.type, o.construction ?? defaultConstr(o.type, o.sf), o.sf, cells.length, fab);
+      const m = massing(o.type, constr, o.sf, cells.length, fab);
       const ht = prog === undefined ? m.ht : Math.max(3, m.ht * prog);
       for (const [ri, r] of cellRects(cells).entries()) {
         const [cx, cy] = parcelCenter(t.x, t.y, r.px, r.py, r.pw, r.ph);
         const [w, h] = parcelSpan(r.pw, r.ph);
-        out.push({ cx, cy, w: w * m.shrink, h: h * m.shrink, ht, col, listed, key: key + '_r' + ri, prog, mine, stories: m.stories, tight: fab === 'wall', roof: prog !== undefined ? undefined : ROOFS[o.type][Math.abs((state.seed ^ (o.tileI * 31)) + ri) % 3],
+        out.push({ cx, cy, w: w * m.shrink, h: h * m.shrink, ht, col: wcol, listed, key: key + '_r' + ri, prog, mine, stories: m.stories, tight: fab === 'wall', roof: prog !== undefined ? undefined : ROOFS[o.type][Math.abs((state.seed ^ (o.tileI * 31)) + ri) % 3],
           type: o.type, construction: o.construction, quality: o.quality, age: o.age, sf: o.sf, occ: (o as any).occ,
           seed: (state.seed ^ ((o.tileI + 1) * 0x9e3779b9) ^ ri) | 0 });
       }
     };
     for (const b of state.stock) {
       const prog = b.buildLeft ? 1 - b.buildLeft / Math.max(1, b.buildTotal ?? 1) : undefined;
-      place(b, b.buildLeft ? '#d9b87a' : b.owner !== 'private' ? '#b9c9de' : '#e7e0cf', !!b.listedId, 'b' + b.id, prog);
+      place(b, b.buildLeft ? '#d9b87a' : undefined, !!b.listedId, 'b' + b.id, prog);
     }
     for (const a of state.assets) {
       const prog = a.mode === 'construction' && a.project
@@ -501,17 +517,19 @@ const StreetLife = memo(function StreetLife({ runs, seed }: { runs: RoadRun[]; s
           fill={CAR_COLS[Math.floor(r() * CAR_COLS.length)]} opacity={0.9} />);
         cars++;
       }
-    } else if (run.cls === 1) {
-      const n = Math.min(3, Math.round(len * 0.22 * r()));
-      for (let i = 0; i < n && trees < 200; i++) {
+    }
+    if (run.cls === 1 || run.cls === 2) {
+      // street trees: thick on locals, a planted median's worth on collectors
+      const n = Math.min(run.cls === 1 ? 3 : 2, Math.round(len * (run.cls === 1 ? 0.26 : 0.14) * (0.4 + r())));
+      for (let i = 0; i < n && trees < 340; i++) {
         const u = 0.1 + r() * 0.8;
         const gx = p0[0] + (p1[0] - p0[0]) * u, gy = p0[1] + (p1[1] - p0[1]) * u;
         const horiz = Math.abs(p1[0] - p0[0]) > Math.abs(p1[1] - p0[1]);
         const side = r() < 0.5 ? -0.09 : 0.09;
         const [cx, cy] = isoPt(gx + (horiz ? 0 : side), gy + (horiz ? side : 0));
         els.push(<g key={'t' + trees}>
-          <circle cx={cx} cy={cy - 1.6} r={1.5 + r()} fill={r() < 0.5 ? '#2e4a32' : '#37543a'} opacity={0.9} />
-          <line x1={cx} y1={cy} x2={cx} y2={cy - 1.2} stroke="#3a3026" strokeWidth={0.5} />
+          <circle cx={cx} cy={cy - 1.6} r={1.5 + r()} fill={r() < 0.5 ? '#4a7a40' : '#578a4a'} opacity={0.95} />
+          <line x1={cx} y1={cy} x2={cx} y2={cy - 1.2} stroke="#5a4a36" strokeWidth={0.5} />
         </g>);
         trees++;
       }
@@ -559,24 +577,47 @@ const RoadsFlat = memo(function RoadsFlat({ runs }: { runs: RoadRun[] }) {
 // ---------- memoized layers ----------
 // The map draws thousands of SVG nodes. Splitting it into layers memoized on stable
 // identities means hover, pan and zoom re-render a tooltip div — not the city.
-type TileGeom = { i: number; x: number; y: number; water: boolean; park?: boolean };
+type TileGeom = { i: number; x: number; y: number; water: boolean; park?: boolean; dust?: boolean };
 
+// Ground: grass, not pavement. Three seeded lawn tones so the field doesn't read
+// flat, dusty hardpan under the industrial zoning, and parks get real canopies.
+const GRASS = ['#8fb168', '#96b76f', '#87aa60'];
+const DUST = ['#b5ac8b', '#aea687', '#bab190'];
 const TileBaseIso = memo(function TileBaseIso({ tiles }: { tiles: TileGeom[] }) {
-  return <g>{tiles.map(t => (
-    <polygon key={'st' + t.i} points={diamond(t.x, t.y)} fill={t.park ? '#79a865' : t.water ? '#5b9ec9' : '#cdd2c4'} stroke="#9aa094" strokeWidth={0.5} />
-  ))}</g>;
+  return <g>{tiles.map(t => {
+    const gi = ((t.x * 7 + t.y * 13) | 0) % 3;
+    const fill = t.park ? '#6f9e53' : t.water ? '#5b9ec9' : t.dust ? DUST[gi] : GRASS[gi];
+    const trees: React.ReactNode[] = [];
+    if (t.park) {
+      let a = (t.i * 2654435761) | 0;
+      const r = () => { a = (a + 0x6D2B79F5) | 0; let v = Math.imul(a ^ (a >>> 15), 1 | a); v = (v + Math.imul(v ^ (v >>> 7), 61 | v)) ^ v; return ((v ^ (v >>> 14)) >>> 0) / 4294967296; };
+      for (let k = 0; k < 6; k++) {
+        const [cx, cy] = isoPt(t.x + (r() - 0.5) * 0.62, t.y + (r() - 0.5) * 0.62);
+        trees.push(<circle key={'pt' + t.i + '_' + k} cx={cx} cy={cy - 1.8} r={1.7 + r() * 1.3} fill={r() < 0.5 ? '#4e7d40' : '#5b8a4a'} opacity={0.95} />);
+      }
+    }
+    return <g key={'st' + t.i}>
+      <polygon points={diamond(t.x, t.y)} fill={fill} stroke={t.water ? '#5b9ec9' : '#c3c5b4'} strokeWidth={t.water ? 0.5 : 1.3} />
+      {trees}
+    </g>;
+  })}</g>;
 });
 
 const LensCellsIso = memo(function LensCellsIso({ tiles, grids, vals, hue, zb }: {
   tiles: TileGeom[]; grids: (number | null)[][]; vals: number[]; hue: [number, number, number]; zb: number;
 }) {
+  // The lens is a translucent wash now — grass shows through where the market is
+  // cold, the hue builds where it's hot. The gradient still IS the market.
+  const hueCss = `rgb(${hue[0]},${hue[1]},${hue[2]})`;
   return <g>{tiles.map(t => {
     if (t.water) return null;
-    const base = lerpColor(DARK, hue, Math.pow(vals[t.i], 0.72) * 0.97 + 0.03);
-    const dimFill = lerpColor(DARK, hue, Math.pow(vals[t.i], 0.72) * 0.5 + 0.02);
+    const v = Math.pow(vals[t.i], 0.72);
+    // Zoomed in you're standing on the street, not reading a heatmap — the wash
+    // thins out so the city looks like a city; pull back and the market reappears.
+    const fade = zb >= 2 ? 0.42 : 1;
     // zoomed out, one diamond per block carries the lens — 280 polygons instead of 4,480.
     // The per-parcel weave only earns its cost once you can actually see parcels.
-    if (zb === 0) return <polygon key={'p' + t.i} points={diamond(t.x, t.y, 0.97)} fill={dimFill} stroke="#0b0f13" strokeWidth={0.5} />;
+    if (zb === 0) return <polygon key={'p' + t.i} points={diamond(t.x, t.y, 0.97)} fill={hueCss} opacity={0.04 + v * 0.52} stroke="#8a8f80" strokeWidth={0.5} strokeOpacity={0.5} />;
     const g = grids[t.i];
     const cells = [];
     for (let py = 0; py < E.PGRID; py++) for (let px = 0; px < E.PGRID; px++) {
@@ -585,9 +626,9 @@ const LensCellsIso = memo(function LensCellsIso({ tiles, grids, vals, hue, zb }:
       const [w, h] = parcelSpan(1, 1);
       cells.push(
         <polygon key={t.i + '-' + px + '-' + py} points={rectPoly(cx, cy, w * 0.9, h * 0.9)}
-          fill={occupied ? base : dimFill}
-          stroke={occupied ? '#a8ad9e' : '#b8bdae'} strokeWidth={zb >= 2 ? 0.55 : 0.3}
-          strokeOpacity={zb >= 1 ? 1 : 0.45} />
+          fill={hueCss} opacity={(occupied ? 0.06 + v * 0.62 : 0.03 + v * 0.4) * fade}
+          stroke={occupied ? '#8f947f' : '#9aa088'} strokeWidth={zb >= 2 ? 0.55 : 0.3}
+          strokeOpacity={zb >= 1 ? 0.6 : 0.3} />
       );
     }
     return <g key={'p' + t.i}>{cells}</g>;
@@ -620,10 +661,21 @@ const HitLayerIso = memo(function HitLayerIso({ tiles, onEnter, onLeave, onClick
 
 const FieldFlat = memo(function FieldFlat({ field, hue }: { field: { x: number; y: number; v: number }[]; hue: [number, number, number] }) {
   const sub = TS / SUB;
+  const hueCss = `rgb(${hue[0]},${hue[1]},${hue[2]})`;
   return <g>{field.map((c, k) => (
     <rect key={k} x={c.x * TS} y={c.y * TS} width={sub + 0.5} height={sub + 0.5}
-      fill={lerpColor(DARK, hue, Math.pow(Math.max(0, Math.min(1, c.v)), 0.72) * 0.97 + 0.03)} />
+      fill={hueCss} opacity={0.04 + Math.pow(Math.max(0, Math.min(1, c.v)), 0.72) * 0.58} />
   ))}</g>;
+});
+
+// Flat-view ground under the lens wash — same grass/dust/park read as the iso view.
+const FlatGround = memo(function FlatGround({ tiles }: { tiles: TileGeom[] }) {
+  return <g>{tiles.map(t => {
+    if (t.water) return null;
+    const gi = ((t.x * 7 + t.y * 13) | 0) % 3;
+    return <rect key={'fg' + t.i} x={t.x * TS} y={t.y * TS} width={TS} height={TS}
+      fill={t.park ? '#6f9e53' : t.dust ? DUST[gi] : GRASS[gi]} stroke="#c3c5b4" strokeWidth={0.8} />;
+  })}</g>;
 });
 
 // The zoning map: categorical, not scalar — use class sets the color, tier sets how
@@ -701,7 +753,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const grids = useMemo(() => state.tiles.map(t => E.parcelGrid(state, t.i)), [gridStamp, state.seed]); // eslint-disable-line
   const [selCells, setSelCells] = useState<{ tileI: number; cells: number[] } | null>(null);
   // Stable per-seed geometry + a live ref so the memoized layers never re-render on hover.
-  const tilesGeom = useMemo(() => state.tiles.map(t => ({ i: t.i, x: t.x, y: t.y, water: t.water, park: t.park })), [state.seed]); // eslint-disable-line
+  const tilesGeom = useMemo(() => state.tiles.map(t => ({ i: t.i, x: t.x, y: t.y, water: t.water, park: t.park, dust: !t.water && t.zone.use === 'M' })), [state.seed]); // eslint-disable-line
   const vpIso = useViewport(0, 0, IW_TOT, IH_TOT);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const vpFlat = useViewport(-20, -18, W + 24, H + 22);
@@ -1013,7 +1065,8 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           {Array.from({ length: E.CONFIG.GRID_H }, (_, i) => (
             <text key={'cy' + i} x={-10} y={(i + 0.5) * TS + 3.5} textAnchor="middle" fill="var(--dim)" fontSize={10} fontFamily="var(--mono)">{i + 1}</text>
           ))}
-          {/* continuous value field — or the zoning map, which is paper, not gradient */}
+          {/* grass under everything, then the value field — or the zoning map, which is paper */}
+          <FlatGround tiles={tilesGeom} />
           {lens === 'zoning'
             ? <ZoningFlat tiles={state.tiles} rezonings={state.rezonings} zoneStamp={zoneStamp} />
             : <FieldFlat field={field} hue={hue} />}
@@ -1065,8 +1118,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           {lens === 'zoning' && <span style={{ color: '#e8e0c8' }}>▨ before the council</span>}
           <span><span style={{ color: '#f0c464' }}>▪</span> yours</span>
           <span><span style={{ color: '#a05468' }}>▪</span> rival land banks</span>
-          <span><span style={{ color: '#b9c9de' }}>▪</span> institutional</span>
-          <span><span style={{ color: '#e7e0cf' }}>▪</span> private owners</span>
+          <span>walls follow the build — glass, brick, precast, EIFS</span>
           <span style={{ color: 'var(--green)' }}>▪ on the market</span>
           {transitActive && <span style={{ color: 'var(--blue)' }}>▦ new transit corridor</span>}
           {view === 'iso' && <span>massing is honest: towers stand tall, sheds sprawl</span>}

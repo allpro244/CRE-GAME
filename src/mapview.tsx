@@ -321,7 +321,7 @@ function BldDetail({ b }: { b: IsoBld }) {
   const els = b.prog !== undefined
     ? siteArt(geom, b.prog, b.seed ?? 1)
     : b.type
-      ? buildingArt({ type: b.type, construction: b.construction ?? 'concrete', quality: b.quality ?? 50, age: b.age ?? 10, sf: b.sf ?? 0, occ: b.occ ?? 0, seed: b.seed ?? 1, stories: b.stories }, geom)
+      ? buildingArt({ type: b.type, construction: b.construction ?? 'concrete', quality: b.quality ?? 75, age: b.age ?? 10, sf: b.sf ?? 0, occ: b.occ ?? 0, seed: b.seed ?? 1, stories: b.stories }, geom)
       : [];
   if (!els.length) return null;
   return (

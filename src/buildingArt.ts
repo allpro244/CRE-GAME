@@ -20,7 +20,7 @@
 export interface ArtParams {
   type: 'office' | 'retail' | 'industrial' | 'mixed' | 'multifamily';
   construction: string;
-  quality: number;   // 0-100
+  quality: number;   // 1-150
   age: number;       // years
   sf: number;
   occ: number;       // 0-1, drives how many windows read as lit
@@ -86,8 +86,8 @@ function faceLine(a: [number, number], b: [number, number], u0: number, u1: numb
 export function pickArchetype(p: ArtParams, stories: number, r: () => number): Archetype {
   const q = p.quality;
   if (p.type === 'office') {
-    if (stories >= 7 && (q >= 62 || p.construction === 'steel' || p.construction === 'concrete')) {
-      return p.age > 35 || (q >= 55 && q < 72 && r() < 0.45) ? 'deco-stepback' : 'curtainwall';
+    if (stories >= 7 && (q >= 93 || p.construction === 'steel' || p.construction === 'concrete')) {
+      return p.age > 35 || (q >= 83 && q < 108 && r() < 0.45) ? 'deco-stepback' : 'curtainwall';
     }
     if (p.age > 28 && r() < 0.5) return 'brick-loft';
     return 'punched-midrise';
@@ -132,12 +132,12 @@ export function buildingArt(p: ArtParams, g: PrismGeom): ArtEl[] {
 
   // ---- facade tint: the archetype's material, weathered by age, cleaned by quality ----
   const tint = pick(r, PALETTES[ARCH_PALETTE[arch]]);
-  const tintOp = Math.max(0.18, Math.min(0.46, 0.40 - p.age * 0.002 + (q - 50) * 0.0012));
+  const tintOp = Math.max(0.18, Math.min(0.46, 0.40 - p.age * 0.002 + (q - 75) * 0.0008));
   out.push({ k: 'p', pts: patch(bb, br, 0, 1, 0, ht), f: tint, o: tintOp });
   out.push({ k: 'p', pts: patch(bl, bb, 0, 1, 0, ht), f: tint, o: tintOp * 0.55 });
 
   // ---- roof surface: membrane, gravel, or a green roof on good new product ----
-  const roofCol = q >= 74 && p.age < 12 && r() < 0.4 ? '#2c4030' : p.age > 30 ? '#3a3d40' : '#2e3338';
+  const roofCol = q >= 111 && p.age < 12 && r() < 0.4 ? '#2c4030' : p.age > 30 ? '#3a3d40' : '#2e3338';
   out.push({ k: 'p', pts: `${fmt([bl[0], bl[1] - ht])} ${fmt([bb[0], bb[1] - ht])} ${fmt([br[0], br[1] - ht])} ${fmt([tl[0], tl[1] - ht])}`, f: roofCol, o: 0.35 });
 
   const grid = (a: [number, number], b: [number, number], cols: number, y0frac: number, sideLit: boolean, tall = false) => {
@@ -174,8 +174,8 @@ export function buildingArt(p: ArtParams, g: PrismGeom): ArtEl[] {
 
   // ================= OFFICE =================
   if (arch === 'curtainwall') {
-    const glass = q >= 78 ? GLASS_HI : GLASS;
-    const bands = Math.max(2, Math.min(5, Math.round(2 + q / 30)));
+    const glass = q >= 117 ? GLASS_HI : GLASS;
+    const bands = Math.max(2, Math.min(5, Math.round(2 + q / 45)));
     for (let i = 0; i < bands; i++) {
       const u0 = 0.10 + (i / bands) * 0.80, u1 = u0 + 0.80 / bands * 0.62;
       out.push({ k: 'p', pts: patch(bb, br, u0, u1, 2, ht - 2), f: glass, o: 0.55 });
@@ -211,7 +211,7 @@ export function buildingArt(p: ArtParams, g: PrismGeom): ArtEl[] {
     if (p.occ > 0.5) out.push({ k: 'l', ...faceLine(bb, br, 0.35, 0.65, ht - 1), s: WIN_LIT, w: 1.2, o: 0.6 });
   }
   if (arch === 'punched-midrise') {
-    grid(bb, br, Math.max(2, Math.min(5, Math.round(2 + q / 25))), p.type === 'mixed' ? 0.22 : 0.06, true);
+    grid(bb, br, Math.max(2, Math.min(5, Math.round(2 + q / 37))), p.type === 'mixed' ? 0.22 : 0.06, true);
     for (let fl = 2; fl < Math.min(floors, 8); fl += 2) {
       out.push({ k: 'l', ...faceLine(bb, br, 0.06, 0.94, fl * fh), s: '#1c2126', w: 0.35, o: 0.5 });
     }
@@ -259,11 +259,11 @@ export function buildingArt(p: ArtParams, g: PrismGeom): ArtEl[] {
   if (arch === 'podium-balcony') {
     // podium band in a contrast tone, balconies above
     out.push({ k: 'p', pts: patch(bb, br, 0.04, 0.96, 0.5, Math.min(ht * 0.22, 7)), f: '#4a5058', o: 0.5 });
-    grid(bb, br, Math.max(3, Math.min(5, Math.round(2 + q / 25))), 0.24, true);
+    grid(bb, br, Math.max(3, Math.min(5, Math.round(2 + q / 37))), 0.24, true);
     for (let fl = 1; fl < Math.min(floors, 9); fl++) {
       out.push({ k: 'l', ...faceLine(bl, bb, 0.2, 0.8, fl * fh), s: '#3a424c', w: 0.8, o: 0.7 });
     }
-    if (q >= 68) out.push({ k: 'l', ...faceLine(bb, br, 0.3, 0.7, ht - 0.8), s: '#3f5a46', w: 1.2, o: 0.6 }); // roof deck planting
+    if (q >= 102) out.push({ k: 'l', ...faceLine(bb, br, 0.3, 0.7, ht - 0.8), s: '#3f5a46', w: 1.2, o: 0.6 }); // roof deck planting
   }
   if (arch === 'res-tower') {
     grid(bb, br, 4, 0.06, true);
@@ -281,7 +281,7 @@ export function buildingArt(p: ArtParams, g: PrismGeom): ArtEl[] {
     const y1 = Math.min(ht - 1, 6.5);
     out.push({ k: 'p', pts: patch(bb, br, 0.06, 0.94, 1, y1), f: GLASS, o: 0.7 });
     out.push({ k: 'p', pts: patch(bl, bb, 0.06, 0.94, 1, y1), f: GLASS, o: 0.45 });
-    const mull = Math.max(2, Math.min(6, Math.round(2 + q / 22)));
+    const mull = Math.max(2, Math.min(6, Math.round(2 + q / 33)));
     for (let i = 1; i < mull; i++) {
       const u = 0.06 + (i / mull) * 0.88;
       const pt = lerp(bb, br, u);
@@ -368,7 +368,7 @@ export function buildingArt(p: ArtParams, g: PrismGeom): ArtEl[] {
 
   // ================= MIXED upper stories =================
   if (arch === 'podium-tower') {
-    const glass = q >= 74 ? GLASS_HI : GLASS;
+    const glass = q >= 111 ? GLASS_HI : GLASS;
     for (let i = 0; i < 3; i++) {
       const u0 = 0.14 + i * 0.26, u1 = u0 + 0.17;
       out.push({ k: 'p', pts: patch(bb, br, u0, u1, ht * 0.26, ht - 2), f: glass, o: 0.5 });
@@ -385,7 +385,7 @@ export function buildingArt(p: ArtParams, g: PrismGeom): ArtEl[] {
   }
 
   // ---- weathering: old buildings streak; poor ones streak more ----
-  const streaks = p.age > 30 ? (q < 45 ? 3 : q < 65 ? 2 : 1) : p.age > 18 && q < 50 ? 1 : 0;
+  const streaks = p.age > 30 ? (q < 68 ? 3 : q < 98 ? 2 : 1) : p.age > 18 && q < 75 ? 1 : 0;
   for (let i = 0; i < streaks; i++) {
     const u = 0.15 + r() * 0.7;
     const pt = lerp(bb, br, u);

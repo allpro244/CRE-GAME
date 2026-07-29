@@ -32,29 +32,32 @@ export interface ConstrSpec {
   id: string; label: string; cost: number; q: number; qCap: number;
   minUnits?: number; fixedUnits?: number; maxSF?: number; rentBonus?: number;
 }
+// Quality lives on a 1-150 scale: ~63 is the C/B line, ~108 the B/A line, and the
+// air above 130 is trophy territory almost nothing reaches without signature design,
+// a capital program, and the address to carry it.
 export const CONSTR: Record<PType, ConstrSpec[]> = {
   industrial: [
-    { id: 'tilt', label: 'Tilt-wall concrete', cost: 115, q: 78, qCap: 95 },
-    { id: 'metal', label: 'Pre-engineered metal', cost: 88, q: 58, qCap: 70 },
-    { id: 'tin', label: 'Tin / light steel', cost: 62, q: 36, qCap: 45 },
+    { id: 'tilt', label: 'Tilt-wall concrete', cost: 115, q: 117, qCap: 142 },
+    { id: 'metal', label: 'Pre-engineered metal', cost: 88, q: 87, qCap: 105 },
+    { id: 'tin', label: 'Tin / light steel', cost: 62, q: 54, qCap: 68 },
   ],
   retail: [
-    { id: 'center', label: 'Shopping center', cost: 204, q: 70, qCap: 90, minUnits: 6 },
-    { id: 'strip', label: 'Retail strip', cost: 137, q: 38, qCap: 55, minUnits: 3 },
-    { id: 'pad', label: 'Pad site (single tenant)', cost: 230, q: 74, qCap: 92, fixedUnits: 1, maxSF: 8000, rentBonus: 0.25 },
+    { id: 'center', label: 'Shopping center', cost: 204, q: 105, qCap: 135, minUnits: 6 },
+    { id: 'strip', label: 'Retail strip', cost: 137, q: 57, qCap: 83, minUnits: 3 },
+    { id: 'pad', label: 'Pad site (single tenant)', cost: 230, q: 111, qCap: 138, fixedUnits: 1, maxSF: 8000, rentBonus: 0.25 },
   ],
   office: [
-    { id: 'concrete', label: 'Concrete & steel — Class A', cost: 284, q: 84, qCap: 95 },
-    { id: 'masonry', label: 'Masonry — Class B', cost: 217, q: 60, qCap: 72 },
-    { id: 'wood', label: 'Wood frame — Class C', cost: 160, q: 38, qCap: 45 },
+    { id: 'concrete', label: 'Concrete & steel — Class A', cost: 284, q: 126, qCap: 142 },
+    { id: 'masonry', label: 'Masonry — Class B', cost: 217, q: 90, qCap: 108 },
+    { id: 'wood', label: 'Wood frame — Class C', cost: 160, q: 57, qCap: 68 },
   ],
   mixed: [
-    { id: 'podium', label: 'Podium mixed-use', cost: 267, q: 70, qCap: 92 },
+    { id: 'podium', label: 'Podium mixed-use', cost: 267, q: 105, qCap: 138 },
   ],
   multifamily: [
-    { id: 'garden', label: 'Garden apartments', cost: 175, q: 52, qCap: 68 },
-    { id: 'midrise', label: 'Wood-podium midrise', cost: 223, q: 68, qCap: 84 },
-    { id: 'tower', label: 'Concrete tower — Class A', cost: 312, q: 86, qCap: 95 },
+    { id: 'garden', label: 'Garden apartments', cost: 175, q: 78, qCap: 102 },
+    { id: 'midrise', label: 'Wood-podium midrise', cost: 223, q: 102, qCap: 126 },
+    { id: 'tower', label: 'Concrete tower — Class A', cost: 312, q: 129, qCap: 142 },
   ],
 };
 export const FAR: Record<PType, number> = { industrial: 0.45, retail: 0.45, office: 2.2, mixed: 1.4, multifamily: 1.6 };
@@ -266,6 +269,9 @@ export interface Asset {
   entryNOI: number; entryCap: number;
   project?: Project; renovMonthsLeft?: number;
   designTier?: 've' | 'std' | 'signature';
+  // capital programs: discrete, completed upgrades and the one in flight
+  programs?: string[];
+  programActive?: { id: string; monthsLeft: number };
   negCFStreak: number;
   // an insured casualty in repair: that fraction of the building earns nothing
   // while taxes and insurance run on all of it
@@ -370,7 +376,7 @@ export interface GameState {
 }
 
 // ---------- helpers ----------
-export function qGrade(q: number): Quality { return q >= 72 ? 2 : q >= 42 ? 1 : 0; }
+export function qGrade(q: number): Quality { return q >= 108 ? 2 : q >= 63 ? 1 : 0; }
 export function roundPrice(n: number): number { return Math.max(1000, Math.round(n / 1000) * 1000); }
 export function constrCostIdx(state: GameState): number { return state.econ.costIdx * (state.econ.constrCycle ?? 1); }
 export function fmtMoney(n: number, compact = true): string {
@@ -731,11 +737,18 @@ export function unitMgmtLoad(units: number): number { // extra opex as share of 
   return Math.min(0.04, 0.007 * Math.log2(Math.max(1, units)));
 }
 // market rent for THIS building (grade + unit mix + pad bonus)
+// What a tenant actually perceives touring the building: the product itself plus the
+// address it stands on. A good building on a great block shows better than the same
+// building over the tracks — the location is part of the product.
+export function apparentQuality(state: GameState, a: Pick<Asset, 'tileI' | 'quality'>): number {
+  const t = state.tiles[a.tileI];
+  return clamp(a.quality + (t.D - 55) * 0.12, 1, 150);
+}
 export function assetRentPSF(state: GameState, a: Pick<Asset, 'tileI' | 'type' | 'quality' | 'units' | 'construction'> & { designTier?: 've' | 'std' | 'signature' }): number {
   const t = state.tiles[a.tileI];
   const spec = constrSpec(a as any);
   return marketRentPSF(state, t, a.type)
-    * (1 + (qGrade(a.quality) - 1) * 0.06)
+    * (0.87 + (apparentQuality(state, a) / 150) * 0.25)   // every point pays, not just the grade lines
     * unitRentPremium(a.units)
     * (1 + (spec.rentBonus ?? 0))
     * (a.designTier ? DESIGN[a.designTier].rentMult : 1)
@@ -762,14 +775,13 @@ export const EQ_VAC: Record<PType, number> = { office: 13.0, retail: 8.5, indust
 
 export function capRatePct(state: GameState, t: Tile, type: PType, quality: number): number {
   const inflow = (state.econ.capInflowMonthsLeft ?? 0) > 0 ? -0.35 : 0;
-  const g = qGrade(quality);
   const loc = type === 'industrial' ? t.indSuit * 0.7 + t.D * 0.3 : t.D;
   let cap = CONFIG.baseCap[type]
     + (55 - loc) * 0.028
     + (state.econ.rateSmooth - 4.5) * 0.55
     // buyers price the leasing market, not just the debt market: a soft sector trades wide
     + clamp((state.econ.cityVac[type] - EQ_VAC[type]) * 0.05, -0.35, 0.7)
-    + (g === 2 ? -0.4 : g === 0 ? 0.55 : 0)
+    + clamp((90 - quality) * 0.011, -0.55, 0.66)   // buyers pay up for every point of product, continuously
     + (t.crime > 55 && type !== 'industrial' ? 0.3 : 0);
   return clamp(cap, 4.2, 11.5) + inflow;
 }
@@ -810,7 +822,9 @@ export function expenseBreakdown(state: GameState, a: Pick<Asset, 'tileI' | 'typ
   const pot = potMonthly ?? (a.sf * assetRentPSF(state, a as any)) / 12;
   const egi = egiMonthly ?? a.tenants.reduce((s, t) => s + t.sf * t.rate, 0) / 12;
   const X = CONFIG.expense;
-  const maintMult = a.maint === 'low' ? 0.55 : a.maint === 'high' ? 1.45 : 1;
+  // modernized systems run cheaper — the one capital program that pays twice
+  const sysMult = ((a as any).programs as string[] | undefined)?.includes('systems') ? 0.95 : 1;
+  const maintMult = (a.maint === 'low' ? 0.55 : a.maint === 'high' ? 1.45 : 1) * sysMult;
   const multi = a.units > 1;
   const mf = a.type === 'multifamily';
   const nnn = a.type === 'retail' || a.type === 'industrial'; // tenants reimburse taxes/insurance/CAM
@@ -874,7 +888,7 @@ export function tenantSalesPSF(state: GameState, a: Pick<Asset, 'tileI' | 'quali
     * (0.85 + 0.30 * acc.art)
     * (0.85 + 0.30 * (state.econ.confidence / 100))
     * (state.econ.ecomMonthsLeft > 0 ? 0.84 : 1)
-    * (0.92 + qGrade(a.quality) * 0.06)
+    * (0.88 + (a.quality / 150) * 0.16)
     * draw;
 }
 export const PCT_RENT_RATE = 0.06;
@@ -1043,7 +1057,7 @@ const TENANT_POOLS: Record<PType, string[]> = {
 };
 function tenantName(state: GameState, type: PType): string { return rpick(state, TENANT_POOLS[type]); }
 function rollCredit(state: GameState, quality: number, D: number): Credit {
-  const p = rng(state) + qGrade(quality) * 0.16 + (D / 100) * 0.18;
+  const p = rng(state) + (quality / 150) * 0.34 + (D / 100) * 0.18;
   return p > 1.05 ? 2 : p > 0.62 ? 1 : 0;
 }
 
@@ -1128,7 +1142,7 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     rezonings: [], rezoneDenied: {},
     gameOver: false, transitCorridor: corridor, roads,
     totalRealizedProfit: 0, dealsClosed: 0,
-    version: 20,
+    version: 21,
   };
   generateStock(state);
   // Born in equilibrium: the anchors absorb whatever the initial city explains, so
@@ -1230,7 +1244,7 @@ function generateStock(state: GameState) {
       const need = parcelsNeeded(sf, ty);
       const spot = findFreeRect(state, t.i, need, () => rng(state));
       if (!spot) break;
-      const quality = clamp(rrange(state, 22, 78) + (t.D - 50) * 0.15, 15, 88);
+      const quality = clamp(rrange(state, 33, 117) + (t.D - 50) * 0.22, 22, 132);
       const df = tileDemandFactor(state, t, ty);
       // day-one occupancy centers where the market model will hold it — a going
       // concern, not a city-wide lease-up in progress
@@ -1256,7 +1270,7 @@ function pickOwnerFirm(state: GameState, ty: PType, quality: number, t: Tile): s
     if (f.style === 'industrial') return ty === 'industrial' ? 8 : 0.04;
     if (f.style === 'mf') return ty === 'multifamily' ? 8 : 0.04;
     if (f.style === 'core') return (ty === 'office' || ty === 'mixed' || ty === 'retail') && quality > 55 && t.D > 50 ? 6 : 0.1;
-    if (f.style === 'value-add') return quality < 48 && ty !== 'multifamily' ? 5 : 0.15;
+    if (f.style === 'value-add') return quality < 72 && ty !== 'multifamily' ? 5 : 0.15;
     return 2; // aggressive buys anything
   };
   let tot = 0; for (const f of state.firms) tot += w(f);
@@ -1412,13 +1426,13 @@ function spawnListing(state: GameState, starter = false) {
     state.listings.push({ id, tileI: t.i, kind: 'land', acres, parcel: spot, price: parcelPrice(state, t.i, spot.pw, spot.ph), resFrac: rrange(state, 0.88, 0.97), listMonth: state.month, offersLeft: 3, expiresMonth, hot });
   } else {
     let pool = state.stock.filter(b => !b.listedId && !b.buildLeft && (starter
-      ? b.sf <= 12000 && b.occ >= 0.80 && b.quality >= 40
+      ? b.sf <= 12000 && b.occ >= 0.80 && b.quality >= 60
       : true));
     if (starter && pool.length === 0) pool = state.stock.filter(b => !b.listedId && b.sf <= 16000 && b.occ >= 0.7);
     if (starter && pool.length === 0) pool = state.stock.filter(b => !b.listedId && b.sf <= 18000);
     if (pool.length === 0) { state.nextId--; return; }
     // struggling buildings come to market more often — that's who sells
-    const weight = (b: StockBuilding) => 1 + (b.occ < 0.62 ? 1.6 : 0) + (b.quality < 38 ? 0.8 : 0) + (b.owner !== 'private' ? 0.4 : 0);
+    const weight = (b: StockBuilding) => 1 + (b.occ < 0.62 ? 1.6 : 0) + (b.quality < 57 ? 0.8 : 0) + (b.owner !== 'private' ? 0.4 : 0);
     let tot = 0; for (const b of pool) tot += weight(b);
     let pick = rng(state) * tot; let b = pool[0];
     for (const cand of pool) { pick -= weight(cand); if (pick <= 0) { b = cand; break; } }
@@ -1428,7 +1442,7 @@ function spawnListing(state: GameState, starter = false) {
 
 function listStockBuilding(state: GameState, b: StockBuilding, opt: { id?: number; starter?: boolean; hot?: boolean; expiresMonth?: number; distressed?: boolean; priceMult?: number }) {
   const id = opt.id ?? state.nextId++;
-  const distressed = opt.distressed ?? (b.occ < 0.62 || (b.quality < 38 && rng(state) < 0.5));
+  const distressed = opt.distressed ?? (b.occ < 0.62 || (b.quality < 57 && rng(state) < 0.5));
   const probe = { tileI: b.tileI, type: b.type, sf: b.sf, quality: b.quality, units: b.units, construction: b.construction };
   const tenants = distressed
     ? genRentRoll(state, { ...probe }, b.occ, 0.82, 1.0)
@@ -1698,9 +1712,9 @@ export function maxBuildableSF(state: GameState, l: Listing, type: PType): numbe
 }
 
 export const DESIGN = {
-  ve: { hardMult: 0.94, months: 6, fee: 0.04, rentMult: 0.92, qShift: -6, label: 'Value-engineered' },
+  ve: { hardMult: 0.94, months: 6, fee: 0.04, rentMult: 0.92, qShift: -9, label: 'Value-engineered' },
   std: { hardMult: 1, months: 8, fee: 0.045, rentMult: 1, qShift: 0, label: 'Standard' },
-  signature: { hardMult: 1.12, months: 12, fee: 0.06, rentMult: 1.12, qShift: 6, label: 'Signature' },
+  signature: { hardMult: 1.12, months: 12, fee: 0.06, rentMult: 1.12, qShift: 9, label: 'Signature' },
 } as const;
 export function devCostBreakdown(state: GameState, c: DevChoice, landCost: number) {
   const spec = CONSTR[c.type].find(x => x.id === c.construction) ?? CONSTR[c.type][0];
@@ -1811,7 +1825,7 @@ export function buyLandAndDevelop(state: GameState, listingId: number, c: DevCho
       px: l.parcel?.px, py: l.parcel?.py, pw: l.parcel?.pw, ph: l.parcel?.ph,
       cells: l.parcelCells ?? (l.parcel ? cellsOfRect(l.parcel.px, l.parcel.py, l.parcel.pw, l.parcel.ph) : undefined),
       units: c.units, construction: c.construction,
-      quality: clamp(bd.spec.q, 20, bd.spec.qCap), qCap: bd.spec.qCap,
+      quality: clamp(bd.spec.q, 30, bd.spec.qCap), qCap: bd.spec.qCap,
       age: 0, mode: 'construction',
       tenants: [], occ: 0, rentStance: 0, maint: 'std',
       loans: [],
@@ -1873,8 +1887,8 @@ export function buyLandAndDevelop(state: GameState, listingId: number, c: DevCho
     px: l.parcel?.px, py: l.parcel?.py, pw: l.parcel?.pw, ph: l.parcel?.ph,
     cells: l.parcelCells ?? (l.parcel ? cellsOfRect(l.parcel.px, l.parcel.py, l.parcel.pw, l.parcel.ph) : undefined),
     units: c.units, construction: c.construction,
-    quality: clamp(startQ + DESIGN[c.designTier ?? 'std'].qShift, 20, clamp(bd.spec.qCap + DESIGN[c.designTier ?? 'std'].qShift, 20, 96)),
-    qCap: clamp(bd.spec.qCap + DESIGN[c.designTier ?? 'std'].qShift, 20, 96),
+    quality: clamp(startQ + DESIGN[c.designTier ?? 'std'].qShift, 30, clamp(bd.spec.qCap + DESIGN[c.designTier ?? 'std'].qShift, 30, 146)),
+    qCap: clamp(bd.spec.qCap + DESIGN[c.designTier ?? 'std'].qShift, 30, 146),
     age: 0, mode: 'construction', designTier: c.designTier ?? 'std',
     tenants: [], occ: 0, rentStance: 0, maint: 'std',
     loans: [{ id: s.nextId++, kind: 'constr', balance: 0, ratePct: rate, amortYears: 25, ioMonthsLeft: 999, monthlyPmt: 0, maturityMonth: s.month + bd.months + bd.designMonths + permitMonths + 14, reserveInitial: reserve, reserveBalance: reserve, floating: !c.fixedRate, spreadPct: constrSpreadHere + (c.fixedRate ? 0.6 : 0), recourse: !!c.recourse }],
@@ -2026,7 +2040,7 @@ export function resolveConstrEvent(state: GameState, assetId: number, choice: 'a
       const loss = cond.sfLossFrac ?? 0.15;
       a.sf = Math.max(MIN_BUILD_SF, Math.round(a.sf * (1 - loss) / 500) * 500);
       a.units = Math.max(1, Math.round(a.units * (1 - loss)));
-      a.quality = clamp(a.quality - 4, 5, a.qCap);
+      a.quality = clamp(a.quality - 6, 8, a.qCap);
       applyCost(Math.round(cond.cost * mult * 0.35) + (cond.kind === 'easement' ? 60_000 : 0), `redesigning around the ${cond.kind}`, true);
       p.monthsLeft += Math.ceil(cond.delayMo / 2);
       pushNews(s, 'info', `${a.name}: value-engineered around it — the building shrinks to ${(a.sf / 1000).toFixed(0)}K SF.`, a.tileI);
@@ -2213,6 +2227,58 @@ export function startConversion(state: GameState, assetId: number): { s: GameSta
 export function renovCost(state: GameState, a: Pick<Asset, 'sf' | 'type'>): number {
   return a.sf * CONFIG.hardCost[a.type] * 0.22 * constrCostIdx(state);
 }
+// ---------- Capital programs: the actionable side of quality ----------
+// A renovation is a sledgehammer. These are the scalpel: discrete, targeted
+// programs that each move quality — and some move more than quality.
+export interface CapProgram {
+  id: string; label: string; desc: string;
+  months: number; costPSF: number; q: number;
+  types?: PType[];        // omitted = any type
+  capUp?: number;         // modern bones raise what the building can ever be
+  opexPct?: number;       // systems work cuts operating cost
+  velocity?: number;      // amenities make space lease faster
+  creditBump?: boolean;   // credit tenants shortlist smart buildings
+}
+export const PROGRAMS: CapProgram[] = [
+  { id: 'lobby', label: 'Lobby & commons refresh', months: 2, costPSF: 6, q: 9, types: ['office', 'mixed', 'multifamily'],
+    desc: 'First impressions are underwriting. Stone, light, and somebody at the desk.' },
+  { id: 'systems', label: 'Mechanical & systems modernization', months: 4, costPSF: 14, q: 14, capUp: 8, opexPct: 0.05,
+    desc: 'New bones: runs ~5% cheaper, and the ceiling on what this building can be rises.' },
+  { id: 'amenity', label: 'Amenity package', months: 3, costPSF: 10, q: 15, types: ['office', 'mixed', 'multifamily'], velocity: 1.08,
+    desc: 'Fitness, terrace, conference. Space that doesn\'t rent, leasing the space that does.' },
+  { id: 'facade', label: 'Facade & site refresh', months: 3, costPSF: 8, q: 10,
+    desc: 'Curb appeal compounds — the block reads better, and so does your rent roll.' },
+  { id: 'smart', label: 'Smart-building systems', months: 2, costPSF: 5, q: 7, types: ['office', 'industrial'], creditBump: true,
+    desc: 'Metering, access, sensors. Credit tenants ask about it before they ask about rent.' },
+];
+export function programCost(state: GameState, a: Asset, p: CapProgram): number {
+  return roundPrice(a.sf * p.costPSF * constrCostIdx(state));
+}
+export function canStartProgram(_state: GameState, a: Asset, p: CapProgram): { ok: boolean; why?: string } {
+  if (a.mode === 'construction') return { ok: false, why: 'Finish building it first.' };
+  if (p.types && !p.types.includes(a.type)) return { ok: false, why: 'Not a fit for this asset type.' };
+  if ((a.programs ?? []).includes(p.id)) return { ok: false, why: 'Already done here.' };
+  if (a.programActive) return { ok: false, why: 'One crew at a time — a program is already running.' };
+  if (a.renovMonthsLeft) return { ok: false, why: 'The renovation crew has the building.' };
+  return { ok: true };
+}
+export function startProgram(state: GameState, assetId: number, programId: string): { s: GameState; err?: string } {
+  const s = clone(state); const a = s.assets.find(x => x.id === assetId);
+  if (!a) return { s };
+  const p = PROGRAMS.find(x => x.id === programId);
+  if (!p) return { s, err: 'No such program.' };
+  const gate = canStartProgram(s, a, p);
+  if (!gate.ok) return { s, err: gate.why };
+  const cost = programCost(s, a, p);
+  if (s.cash < cost) return { s, err: `${p.label} runs ${fmtMoney(cost)} cash.` };
+  s.cash -= cost;
+  a.ledger.push({ m: s.month, amt: -cost });
+  a.basis += cost;
+  a.programActive = { id: p.id, monthsLeft: p.months };
+  pushNews(s, 'info', `${a.name}: ${p.label.toLowerCase()} underway (${fmtMoney(cost)}, ~${p.months} months).`);
+  return { s };
+}
+
 export function startRenovation(state: GameState, assetId: number): { s: GameState; err?: string } {
   const s = clone(state); const a = s.assets.find(x => x.id === assetId);
   if (!a) return { s };
@@ -2721,19 +2787,20 @@ function spawnLOIs(s: GameState) {
     if ((openByAsset.get(a.id) ?? 0) >= 2 || s.lois.length >= 5) continue;
     const t = s.tiles[a.tileI];
     const df = tileDemandFactor(s, t, a.type);
-    const qf = 0.85 + qGrade(a.quality) * 0.12;
+    const qf = 0.78 + (apparentQuality(s, a) / 150) * 0.30;   // demand climbs with every point
     const rentComp = 1 - a.rentStance * 2.2;
     const boost = a.mode === 'leaseup' ? 1.5 : 1;
     // the pool of tenants who can absorb a huge block is thin — big suites sit
     const sizeDrag = clamp(1.2 - su / 30_000, 0.3, 1);
     // in a tight market every vacancy gets toured; in a soft one the phone is quiet
-    const p = clamp(CONFIG.absorbBase[a.type] * 1.05 * df * qf * rentComp * boost * sizeDrag * leasingClimate(s, a.type) * clamp(vacant / a.sf, 0.25, 1), 0.02, 0.35);
+    const amen = (a.programs ?? []).includes('amenity') ? 1.08 : 1;
+    const p = clamp(CONFIG.absorbBase[a.type] * 1.05 * df * qf * rentComp * boost * sizeDrag * amen * leasingClimate(s, a.type) * clamp(vacant / a.sf, 0.25, 1), 0.02, 0.35);
     if (rng(s) > p) continue;
     // big-suite tenants come by LOI/RFP; require a meaningful chunk
     const chunkUnits = Math.max(1, Math.min(Math.round(vacant / su), 1 + Math.floor(rng(s) * Math.max(1, a.units / 2))));
     const sf = Math.min(vacant, Math.round((chunkUnits * su) / 100) * 100);
     if (sf < 800) continue;
-    const credit = rollCredit(s, a.quality, t.D);
+    const credit = rollCredit(s, a.quality + ((a.programs ?? []).includes('smart') ? 12 : 0), t.D);
     const isRFP = rng(s) < 0.3;
     const mkt = assetRentPSF(s, a); // tenant anchors on market, not your stance
     const tight = (s.econ.cityVac[a.type] < 8 ? 1 : 0) + df - 1;
@@ -2742,15 +2809,18 @@ function spawnLOIs(s: GameState) {
       tenant: tenantName(s, a.type), credit, sf,
       expiresM: s.month + 2, stage: 'open',
     };
+    // quality changes the posture across the table: nobody lowballs the best building
+    // in the submarket, because somebody else will take the space
+    const aqn = apparentQuality(s, a) / 150;
     if (!isRFP) {
-      loi.rate = Math.round(mkt * rrange(s, 0.88, 1.0 + tight * 0.03) * 100) / 100;
+      loi.rate = Math.round(mkt * rrange(s, 0.88 + aqn * 0.05, 1.0 + tight * 0.03) * 100) / 100;
       loi.termY = [3, 5, 5, 7, 10][Math.floor(rng(s) * 5)];
     }
     // tenants negotiate the whole package: abatement, TI, escalations, options —
-    // and a soft market emboldens them
+    // a soft market emboldens them; a building with a waiting list does the opposite
     const soft = clamp((s.econ.cityVac[a.type] - EQ_VAC[a.type]) / 9, 0, 0.65);
-    if (rng(s) < 0.5 + soft) loi.freeMonths = 1 + Math.floor(rng(s) * (3 + soft * 3));
-    if (a.type !== 'multifamily' && rng(s) < 0.4 + soft) loi.tiPsf = Math.round(rrange(s, 4, 14 + soft * 12));
+    if (rng(s) < 0.5 + soft - aqn * 0.18) loi.freeMonths = 1 + Math.floor(rng(s) * (3 + soft * 3));
+    if (a.type !== 'multifamily' && rng(s) < 0.4 + soft - aqn * 0.12) loi.tiPsf = Math.round(rrange(s, 4, 14 + soft * 12));
     loi.escPct = rng(s) < 0.45 ? 0 : rng(s) < 0.6 ? 2 : 2.5;   // they open low; 3% is yours to win
     if (rng(s) < 0.28 + soft * 0.3) loi.optionAsk = true;
     s.lois.push(loi);
@@ -2990,7 +3060,7 @@ function tickSaleOffers(s: GameState) {
       const val = assetValue(s, a);
       const fitFirms = s.firms.filter(f => f.alive && (
         (f.style === 'industrial' && a.type === 'industrial') || (f.style === 'mf' && a.type === 'multifamily') ||
-        (f.style === 'core' && a.quality > 55) || f.style === 'aggressive' || f.style === 'value-add' && a.quality < 50));
+        (f.style === 'core' && a.quality > 82) || f.style === 'aggressive' || f.style === 'value-add' && a.quality < 75));
       const buyer = fitFirms.length ? rpick(s, fitFirms).name : 'A family office';
       const rich = s.econ.phase === 'peak' || (s.econ.capInflowMonthsLeft ?? 0) > 0;
       const amount = roundPrice(val * rrange(s, rich ? 0.96 : 0.88, rich ? 1.14 : 1.04));
@@ -3360,10 +3430,10 @@ function tickStock(s: GameState) {
     const t = s.tiles[b.tileI];
     // quality sorts winners from losers around the market level — it doesn't
     // subtract occupancy from the whole city at once
-    const tOcc = targetOcc(s, t, b.type) * (0.975 + qGrade(b.quality) * 0.025);
+    const tOcc = targetOcc(s, t, b.type) * (0.96 + (b.quality / 150) * 0.08);
     b.occ = clamp(b.occ + (tOcc - b.occ) * 0.18 + (rng(s) - 0.5) * 0.05, 0.15, 0.97);
     b.occ = Math.round(b.occ * 100) / 100;
-    b.quality = clamp(b.quality - 0.3 + (rng(s) < 0.04 ? 12 : 0), 12, 92); // slow decay; occasional owner renovation
+    b.quality = clamp(b.quality - 0.45 + (rng(s) < 0.04 ? 18 : 0), 18, 138); // slow decay; occasional owner renovation
     b.age += 0.25;
   }
 }
@@ -3675,7 +3745,7 @@ function firmDevelops(s: GameState, f: Firm) {
   const sf = Math.round(acres * 43_560 * FAR[want] * zoneTierMult(t.zone.tier) * rrange(s, 0.6, 0.95) / 1000) * 1000;
   if (sf < 6000) return;
   const months = Math.min(26, Math.max(6, Math.round(4 + sf / 7000)));
-  const quality = clamp(rrange(s, 52, 88), 30, 92);
+  const quality = clamp(rrange(s, 78, 132), 45, 138);
   s.stock.push({
     id: s.nextId++, tileI: t.i, type: want, sf,
     px: spot.px, py: spot.py, pw: spot.pw, ph: spot.ph,
@@ -3713,7 +3783,7 @@ function firmTakesLand(s: GameState, f: Firm, l: Listing) {
   const sf = Math.round(acres * 43_560 * FAR[ty] * zoneTierMult(t.zone.tier) * rrange(s, 0.55, 0.9) / 1000) * 1000;
   if (cells && cells.length && sf >= 4000) {
     const months = Math.min(26, Math.max(6, Math.round(4 + sf / 7000)));
-    const quality = clamp(rrange(s, 45, 85), 30, 92);
+    const quality = clamp(rrange(s, 68, 128), 45, 138);
     s.stock.push({
       id: s.nextId++, tileI: l.tileI, type: ty, sf, cells: [...cells],
       units: genUnitsFor(s, ty, sf), quality, age: 0,
@@ -3792,7 +3862,7 @@ function tickFirmLand(s: GameState) {
       const sf = Math.round(main.length * PARCEL_AC * 43_560 * FAR[ty] * zoneTierMult(t.zone.tier) * upzoneBonus(main.length) * rrange(s, 0.7, 0.95) / 500) * 500;
       if (sf >= MIN_BUILD_SF) {
         const months = Math.min(26, Math.max(6, Math.round(4 + sf / 7000)));
-        const quality = clamp(rrange(s, 50, 88), 30, 92);
+        const quality = clamp(rrange(s, 75, 132), 45, 138);
         s.stock.push({
           id: s.nextId++, tileI: e.tileI, type: ty, sf, cells: [...main],
           units: genUnitsFor(s, ty, sf), quality, age: 0,
@@ -3840,7 +3910,7 @@ function tickFirms(s: GameState) {
       const t = s.tiles[l.tileI];
       if (f.style === 'industrial') return (l.kind === 'building' && l.type === 'industrial') || (l.kind === 'land' && t.indSuit > 55) ? 0.5 : 0.02;
       if (f.style === 'core') return l.kind === 'building' && !l.distressed && t.D > 60 ? 0.45 : 0.03;
-      if (f.style === 'value-add') return l.kind === 'building' && (l.distressed || (l.quality ?? 60) < 42) ? 0.55 : 0.05;
+      if (f.style === 'value-add') return l.kind === 'building' && (l.distressed || (l.quality ?? 90) < 63) ? 0.55 : 0.05;
       if (f.style === 'mf') return l.kind === 'building' && l.type === 'multifamily' ? 0.55 : (l.kind === 'land' && t.pop > 45 ? 0.2 : 0.03);
       return l.kind === 'land' ? (s.econ.phase === 'peak' || s.econ.phase === 'expansion' ? 0.5 : 0.15) : 0.12;
     };
@@ -3892,8 +3962,21 @@ function tickAsset(s: GameState, a: Asset): number {
   if (a.renovMonthsLeft) {
     a.renovMonthsLeft--;
     if (a.renovMonthsLeft === 0) {
-      a.quality = clamp(a.quality + 30, 0, a.qCap);
+      a.quality = clamp(a.quality + 45, 1, a.qCap);
       pushNews(s, 'success', `${a.name}: renovation complete — building steps up to a ${QLABEL[qGrade(a.quality)]} grade. Rents and renewals follow.`);
+    }
+  }
+  if (a.programActive) {
+    a.programActive.monthsLeft--;
+    if (a.programActive.monthsLeft <= 0) {
+      const p = PROGRAMS.find(x => x.id === a.programActive!.id);
+      a.programActive = undefined;
+      if (p) {
+        if (p.capUp) a.qCap = clamp(a.qCap + p.capUp, 30, 148);
+        a.quality = clamp(a.quality + p.q, 1, a.qCap);
+        a.programs = [...(a.programs ?? []), p.id];
+        pushNews(s, 'success', `${a.name}: ${p.label.toLowerCase()} complete — quality now ${Math.round(a.quality)}/150 (${QLABEL[qGrade(a.quality)]}-grade).${p.opexPct ? ' The building runs cheaper from today.' : ''}${p.velocity ? ' Tours already booking.' : ''}`);
+      }
     }
   }
   if (a.mode === 'construction' && a.project) {
@@ -4019,7 +4102,7 @@ function tickAsset(s: GameState, a: Asset): number {
         a.type = 'multifamily';
         a.units = Math.max(8, Math.round(a.sf / 900));
         a.construction = 'midrise';
-        a.quality = clamp(a.quality + 14, 20, constrSpec({ type: 'multifamily', construction: 'midrise' }).qCap);
+        a.quality = clamp(a.quality + 21, 30, constrSpec({ type: 'multifamily', construction: 'midrise' }).qCap);
         a.qCap = constrSpec(a).qCap;
         a.name = a.name.replace(/Tower|Exchange|Works|Commons/, 'Flats');
         (a as any).converting = undefined;
@@ -4037,6 +4120,8 @@ function tickAsset(s: GameState, a: Asset): number {
   if (a.repair) {
     a.repair.monthsLeft--;
     if (a.repair.monthsLeft <= 0) {
+      // rebuilt, but never quite the same — insurance restores function, not luster
+      a.quality = clamp(a.quality - 3, 10, a.qCap);
       pushNews(s, 'success', `${a.name}: repairs complete — the ${a.repair.what} damage is behind you and the full building is earning again.`, a.tileI);
       a.repair = undefined;
     }
@@ -4058,7 +4143,7 @@ function tickAsset(s: GameState, a: Asset): number {
   if (isAggregate(a.type)) {
     // multifamily runs on aggregate occupancy: renters churn fast and re-lease fast
     const df = tileDemandFactor(s, t, a.type);
-    const qf = 0.85 + qGrade(a.quality) * 0.12;
+    const qf = 0.78 + (apparentQuality(s, a) / 150) * 0.30;
     const rentComp = 1 - a.rentStance * 2.2;
     const tOcc = targetOcc(s, t, a.type);
     const churn = (a.maint === 'low' ? 0.034 : a.maint === 'high' ? 0.019 : 0.025);
@@ -4078,7 +4163,7 @@ function tickAsset(s: GameState, a: Asset): number {
     if (vacant >= su * 0.8) {
       const df = tileDemandFactor(s, t, a.type);
       const rentComp = 1 - a.rentStance * 2.2;
-      const qf = 0.85 + qGrade(a.quality) * 0.12;
+      const qf = 0.78 + (apparentQuality(s, a) / 150) * 0.30;
       const boost = a.mode === 'leaseup' ? 1.6 : 1;
       const p = clamp(CONFIG.absorbBase[a.type] * 1.7 * df * qf * rentComp * boost * leasingClimate(s, a.type) * clamp(vacant / a.sf, 0.2, 1), 0.02, 0.5);
       if (rng(s) < p) {
@@ -4118,7 +4203,7 @@ function tickAsset(s: GameState, a: Asset): number {
       const wants = clamp((under ? 0.85 : 0.62)
         + (a.maint === 'high' ? 0.08 : a.maint === 'low' ? -0.16 : 0)
         + clamp((EQ_VAC[a.type] - s.econ.cityVac[a.type]) * 0.014, -0.12, 0.12)  // nowhere to go in a tight market
-        + qGrade(a.quality) * 0.04, 0.15, 0.95);
+        + (apparentQuality(s, a) / 150) * 0.10, 0.15, 0.95);
       if (rng(s) < wants) {
         tn.endM = s.month + 3; // holds over while you talk
         const ask = Math.round(Math.min(mkt * 0.985, Math.max(tn.rate * 0.97, tn.rate * rrange(s, 0.98, 1.06))) * 100) / 100;
@@ -4142,7 +4227,7 @@ function tickAsset(s: GameState, a: Asset): number {
     let pRenew = (under ? 0.78 : 0.52)
       + (a.maint === 'high' ? 0.10 : a.maint === 'low' ? -0.16 : 0)
       + clamp((EQ_VAC[a.type] - s.econ.cityVac[a.type]) * 0.014, -0.12, 0.12)
-      + qGrade(a.quality) * 0.04;
+      + (apparentQuality(s, a) / 150) * 0.10;
     if (rng(s) < clamp(pRenew, 0.1, 0.92)) {
       tn.rate = Math.round(Math.min(mkt * (1 + a.rentStance), tn.rate * 1.12) * 100) / 100;
       tn.startM = s.month; tn.endM = s.month + Math.round(rrange(s, 36, 72));
@@ -4169,8 +4254,16 @@ function tickAsset(s: GameState, a: Asset): number {
     a.mode = 'operating';
     pushNews(s, 'success', `${a.name} is stabilized at ${Math.round(a.occ * 100)}% occupancy. Permanent financing is now on the table.`);
   }
-  // quality drift
-  a.quality = clamp(a.quality - 0.12 + (a.maint === 'high' ? 0.10 : a.maint === 'low' ? -0.18 : 0), 5, a.qCap);
+  // wear: buildings date fastest in their first fifteen years (the market moves on
+  // from their finishes), slower once they're already dated. Full buildings wear
+  // harder than empty ones, and deferred maintenance compounds.
+  {
+    const ageWear = 0.30 - Math.min(0.16, a.age * 0.008);
+    const useWear = 0.78 + 0.34 * a.occ;
+    const maintAdj = a.maint === 'high' ? 0.16 : a.maint === 'low' ? -0.24 : 0;
+    const qFloor = Math.max(10, a.qCap * 0.22);
+    a.quality = clamp(a.quality - ageWear * useWear + maintAdj, qFloor, a.qCap);
+  }
   a.age += 1 / 12;
   // cash flow
   let noi = assetNOIMonthly(s, a);
@@ -4349,7 +4442,7 @@ export function serialize(state: GameState): string { return JSON.stringify(stat
 export function deserialize(json: string): GameState | null {
   try {
     const s = JSON.parse(json);
-    if (s && s.version === 20 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
+    if (s && s.version === 21 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
     return null;
   } catch { return null; }
 }

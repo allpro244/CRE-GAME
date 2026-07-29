@@ -212,7 +212,7 @@ export function DealsView2({ state, setState, openDeal }: {
                   </div>
                   <div className="deal-price num">{l.agreed ? E.fmtMoney(l.price) : l.noAsk ? 'No asking price' : `Asking ${E.fmtMoney(l.price)}`}</div>
                   <div className="dim" style={{ fontSize: 12 }}>
-                    {((l.sf ?? 0) / 1000).toFixed(0)}K SF · {pct(l.occ ?? 0)} leased · {E.QLABEL[E.qGrade(l.quality ?? 50)]}-grade · {l.units} unit{(l.units ?? 1) > 1 ? 's' : ''}
+                    {((l.sf ?? 0) / 1000).toFixed(0)}K SF · {pct(l.occ ?? 0)} leased · {E.QLABEL[E.qGrade(l.quality ?? 75)]}-grade · {l.units} unit{(l.units ?? 1) > 1 ? 's' : ''}
                   </div>
                   <div className="faint" style={{ fontSize: 10.5 }}>
                     {l.agreed ? `Close by ${E.monthName(l.expiresMonth)} or they walk` : `${l.offersLeft} offer${(l.offersLeft ?? 0) === 1 ? '' : 's'} of patience left · gone by ${E.monthName(l.expiresMonth)}`}
@@ -264,7 +264,7 @@ function DealIndex({ state, listings, openDeal }: {
     const pf = E.proFormaBuilding(state, l);
     const ltv = E.maxLTV(state, l.type);
     const pmt = E.monthlyPayment(l.price * ltv, rate, E.CONFIG.acqAmortYears);
-    return { l, t, land: false, psf: (l.price) / Math.max(1, l.sf ?? 1), cap: pf.capNow, cf: pf.noiNow / 12 - pmt, note: `${pct(l.occ ?? 0)} leased · ${E.QLABEL[E.qGrade(l.quality ?? 50)]} · ${l.age} yrs` };
+    return { l, t, land: false, psf: (l.price) / Math.max(1, l.sf ?? 1), cap: pf.capNow, cf: pf.noiNow / 12 - pmt, note: `${pct(l.occ ?? 0)} leased · ${E.QLABEL[E.qGrade(l.quality ?? 75)]} · ${l.age} yrs` };
   });
   const dir = sort.asc ? 1 : -1;
   const val = (r: typeof rows[0]): number => {
@@ -368,12 +368,12 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
     const dscr = loan > 0 ? pf.noiNow / (pmt * 12) : null;
     const ltvMax = E.maxLTV(state, listing.type);
     const cashNeeded = effPrice * downPct + 15000;
-    const sketch = { type: listing.type!, construction: listing.construction ?? E.CONSTR[listing.type!][0].id, sf: listing.sf!, units: listing.units ?? 1, quality: listing.quality ?? 50 };
+    const sketch = { type: listing.type!, construction: listing.construction ?? E.CONSTR[listing.type!][0].id, sf: listing.sf!, units: listing.units ?? 1, quality: listing.quality ?? 75 };
     return (
       <Modal close={close} wide variant={variant}>
         <h2>{E.PLABEL[listing.type!]} — Block {blockName(t)} {listing.kind === 'offmarket' && <span className="chip chip-om" style={{ verticalAlign: 'middle' }}>Off-market</span>}</h2>
         <div className="sub">
-          {((listing.sf ?? 0) / 1000).toFixed(0)}K SF on {listing.acres} acres · {listing.units} unit{(listing.units ?? 1) > 1 ? 's' : ''} · {E.QLABEL[E.qGrade(listing.quality ?? 50)]}-grade {E.constrSpec(sketch).label.toLowerCase()} · built {2026 - (listing.age ?? 10)}
+          {((listing.sf ?? 0) / 1000).toFixed(0)}K SF on {listing.acres} acres · {listing.units} unit{(listing.units ?? 1) > 1 ? 's' : ''} · {E.QLABEL[E.qGrade(listing.quality ?? 75)]}-grade {E.constrSpec(sketch).label.toLowerCase()} · built {2026 - (listing.age ?? 10)}
           {listing.distressed && <span className="amber"> · distressed — priced to move</span>}
         </div>
         <BuildingSketch a={sketch} w={460} h={110} />
@@ -430,7 +430,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
               {listing.units} apartments · {Math.round((listing.occ ?? 0) * (listing.units ?? 0))} occupied · avg in-place rent {E.fmtMoney((listing.sf! * E.assetRentPSF(state, { tileI: listing.tileI, type: listing.type!, quality: listing.quality!, units: listing.units ?? 1, construction: listing.construction ?? 'garden' } as any) * (listing.occ ?? 0)) / 12 / Math.max(1, Math.round((listing.occ ?? 0) * (listing.units ?? 1))))}/unit/mo.
               Residential leases turn over fast and re-lease fast — occupancy is the whole game.
             </div>
-          ) : <RentRollTable state={state} tenants={listing.tenants ?? []} sf={listing.sf!} retailOf={listing.type === 'retail' ? { tileI: listing.tileI, quality: listing.quality ?? 50 } : undefined} />}
+          ) : <RentRollTable state={state} tenants={listing.tenants ?? []} sf={listing.sf!} retailOf={listing.type === 'retail' ? { tileI: listing.tileI, quality: listing.quality ?? 75 } : undefined} />}
         </>)}
         {canBuy && (<>
           <label className="f" style={{ marginTop: 10 }}>Down payment — {pct(downPct)} ({E.fmtMoney(effPrice * downPct)}) <span className="faint">at your {E.fmtMoney(effPrice)} {listing.agreed ? 'agreed price' : 'offer'}</span>
@@ -991,6 +991,7 @@ export function AssetCard({ state, setState, asset: a, onSell, onRefi, onLOI, op
     : <span className="asset-name">{a.name}</span>;
   const [err, setErr] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [progOpen, setProgOpen] = useState(false);
   const t = state.tiles[a.tileI];
   const lois = state.lois.filter(l => l.assetId === a.id);
   if (a.mode === 'construction' && a.project) {
@@ -1050,7 +1051,10 @@ export function AssetCard({ state, setState, asset: a, onSell, onRefi, onLOI, op
       <div className="asset-head">
         {nameEl}
         <span className="chip chip-type">{E.PLABEL[a.type]}</span>
-        <span className="chip" style={{ border: '1px solid var(--line)', color: 'var(--dim)' }}>{E.QLABEL[E.qGrade(a.quality)]}-grade</span>
+        <span className="chip" style={{ border: '1px solid var(--line)', color: 'var(--dim)' }}
+          title={`Quality ${Math.round(a.quality)}/150 as built · tenants see ${Math.round(E.apparentQuality(state, a))}/150 with the address factored in. Every point moves rent, demand, credit mix, renewals, and exit cap. Age wears it down; maintenance and capital programs push back. Cap for this structure: ${Math.round(a.qCap)}.`}>
+          {E.QLABEL[E.qGrade(a.quality)]}-grade · {Math.round(a.quality)}<span style={{ opacity: 0.6 }}>/150</span></span>
+        {a.programActive && <span className="chip chip-land">{E.PROGRAMS.find(p => p.id === a.programActive!.id)?.label ?? 'Program'} · {a.programActive.monthsLeft} mo</span>}
         {a.mode === 'leaseup' && <span className="chip chip-distress">Lease-up</span>}
         {inFac && <span className="chip chip-om">Cross-collateralized</span>}
         {a.renovMonthsLeft ? <span className="chip chip-land">Renovating · {a.renovMonthsLeft} mo</span> : null}
@@ -1103,9 +1107,11 @@ export function AssetCard({ state, setState, asset: a, onSell, onRefi, onLOI, op
           </div>
         </div>
         <button className="btn btn-sm" onClick={() => setIsOpen(!isOpen)}>{isOpen ? 'Hide' : 'Rent roll & financials ▾'}</button>
+        <button className="btn btn-sm" onClick={() => setProgOpen(!progOpen)}>{progOpen ? 'Hide programs' : 'Capital programs ▾'}</button>
         <span style={{ flex: 1 }} />
-        <button className="btn btn-sm" onClick={() => { const r = E.startRenovation(state, a.id); if (r.err) setErr(r.err); else setState(r.s); }}
-          disabled={!!a.renovMonthsLeft}>Renovate ({E.fmtMoney(E.renovCost(state, a))})</button>
+        <button className="btn btn-sm" title="The sledgehammer: a full repositioning, +45 quality over 3 months"
+          onClick={() => { const r = E.startRenovation(state, a.id); if (r.err) setErr(r.err); else setState(r.s); }}
+          disabled={!!a.renovMonthsLeft || !!a.programActive}>Renovate ({E.fmtMoney(E.renovCost(state, a))})</button>
         <button className="btn btn-sm" onClick={() => onRefi(a.id)}>Refinance</button>
         {a.occ <= 0.15 && !a.forSale && a.mode !== 'construction' && (
           <button className="btn btn-sm btn-danger" title="Tear it down and keep the dirt"
@@ -1130,6 +1136,28 @@ export function AssetCard({ state, setState, asset: a, onSell, onRefi, onLOI, op
       {offers.length > 0 && (
         <div style={{ marginTop: 10 }}>
           {offers.map(o => <SaleOfferRow key={o.id} state={state} setState={setState} offer={o} asset={a} onSold={onSold} />)}
+        </div>
+      )}
+      {progOpen && (
+        <div className="memo" style={{ borderLeftColor: 'var(--amber-dim)', marginTop: 10 }}>
+          <div className="memo-row"><span className="lbl"><b style={{ color: 'var(--ink)' }}>Capital programs</b> — targeted work, one crew at a time. Each moves quality; some move more.</span></div>
+          {E.PROGRAMS.map(p => {
+            const done = (a.programs ?? []).includes(p.id);
+            const gate = E.canStartProgram(state, a, p);
+            const cost = E.programCost(state, a, p);
+            if (p.types && !p.types.includes(a.type)) return null;
+            return (
+              <div key={p.id} style={{ display: 'flex', gap: 10, alignItems: 'baseline', padding: '5px 0', borderTop: '1px solid var(--line2)' }}>
+                <span style={{ minWidth: 230, fontSize: 12, color: done ? 'var(--green)' : 'var(--ink)' }}>{done ? '✓ ' : ''}{p.label}</span>
+                <span className="num faint" style={{ fontSize: 11 }}>+{p.q}q{p.capUp ? ` · cap +${p.capUp}` : ''}{p.opexPct ? ` · opex −${Math.round(p.opexPct * 100)}%` : ''}{p.velocity ? ' · leases faster' : ''}{p.creditBump ? ' · draws credit tenants' : ''} · {p.months} mo</span>
+                <span className="faint" style={{ flex: 1, fontSize: 11 }}>{p.desc}</span>
+                {!done && <button className="btn btn-sm" disabled={!gate.ok} title={gate.why}
+                  onClick={() => { const r = E.startProgram(state, a.id, p.id); if (r.err) setErr(r.err); else setState(r.s); }}>
+                  {E.fmtMoney(cost)}</button>}
+              </div>
+            );
+          })}
+          <div className="faint" style={{ fontSize: 10.5, marginTop: 4 }}>Quality {Math.round(a.quality)}/150 · structural ceiling {Math.round(a.qCap)} — systems work raises the ceiling itself. Wear runs ~{(((0.30 - Math.min(0.16, a.age * 0.008)) * (0.78 + 0.34 * a.occ) * 12)).toFixed(1)} points a year at this age and occupancy{a.maint === 'high' ? ', high maintenance claws back ~2/yr' : a.maint === 'low' ? ', and skimped maintenance gives up ~3 more' : ''}.</div>
         </div>
       )}
       {isOpen && (

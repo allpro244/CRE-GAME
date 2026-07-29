@@ -4,7 +4,7 @@ const s = E.newGame(42);
 for (const ty of E.PTYPES) {
   const t = s.tiles.find(t => !t.water && t.D > 45);
   const units = ty==='industrial'?1:ty==='multifamily'?40:6;
-  const a = { tileI: t.i, type: ty, sf: 20000, quality: 60, units, construction: E.CONSTR[ty][1]?.id ?? E.CONSTR[ty][0].id, maint: 'std', tenants: [], occ: 0.92 };
+  const a = { tileI: t.i, type: ty, sf: 20000, quality: 90, units, construction: E.CONSTR[ty][1]?.id ?? E.CONSTR[ty][0].id, maint: 'std', tenants: [], occ: 0.92 };
   const pot = 20000 * E.assetRentPSF(s, a) / 12;
   const ex = E.expenseBreakdown(s, a, pot, pot*0.92);
   console.log(ty.padEnd(11), 'net exp/pot:', (ex.total/pot).toFixed(3), '| exp/EGI:', (ex.total/(pot*0.92)).toFixed(3));

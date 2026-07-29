@@ -207,7 +207,7 @@ function Game({ state, setState, toMenu }: {
           openAsset={id => { setStockCardId(null); setAssetId(id); }} />}
         {tab === 'deals' && <DealsView2 state={state} setState={setState} openDeal={openDealOnMap} />}
         {tab === 'portfolio' && <PortfolioView2 state={state} setState={setState} onSell={setSellId} onRefi={setRefiId} onLOI={setLoiId} goDeals={() => setTab('deals')}
-          openDeal={openDealOnMap} onSold={p => setPm(p)} onShowOnMap={openAssetOnMap} />}
+          openDeal={openDealOnMap} onSold={p => setPm(p)} onShowOnMap={openAssetOnMap} onShowTile={flyTo} />}
         {tab === 'debt' && <DebtView state={state} setState={setState} />}
         {tab === 'economy' && <EconomyView state={state} />}
       </div>

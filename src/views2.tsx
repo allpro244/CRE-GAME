@@ -539,7 +539,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
           </select>
         </label>
         <label className="f">Building size — {(dev.sf / 1000).toFixed(0)}K SF
-          <input type="range" min={5000} max={Math.max(5000, bMax)} step={1000} value={Math.min(dev.sf, Math.max(5000, bMax))}
+          <input type="range" min={E.MIN_BUILD_SF} max={Math.max(E.MIN_BUILD_SF, bMax)} step={500} value={Math.min(dev.sf, Math.max(E.MIN_BUILD_SF, bMax))}
             onChange={e => setDev({ ...dev, sf: Number(e.target.value) })} />
         </label>
         <label className="f">Units / suites — {dev.units} {spec.fixedUnits ? '(single-tenant)' : ''} <Hint text="More, smaller suites rent for marginally more per SF and diversify tenant risk — but cost more to manage, and small suites lease ambiently while big blocks need LOI negotiations." />
@@ -763,12 +763,13 @@ export function LOIModal({ state, setState, loi, close, variant = 'dialog' }: {
 }
 
 // ---------- Portfolio ----------
-export function PortfolioView2({ state, setState, onSell, onRefi, onLOI, goDeals, openDeal, onSold, onShowOnMap }: {
+export function PortfolioView2({ state, setState, onSell, onRefi, onLOI, goDeals, openDeal, onSold, onShowOnMap, onShowTile }: {
   state: GameState; setState: (s: GameState) => void;
   onSell: (id: number) => void; onRefi: (id: number) => void; onLOI: (id: number) => void; goDeals: () => void;
   openDeal: (id: number) => void; onSold: (pm: E.PostMortem) => void; onShowOnMap?: (id: number) => void;
+  onShowTile?: (tileI: number) => void;
 }) {
-  if (state.assets.length === 0) {
+  if (state.assets.length === 0 && state.land.length === 0) {
     return <div className="panel dim" style={{ fontSize: 13.5, lineHeight: 1.6 }}>
       No assets yet. An empty balance sheet is just potential energy — <button className="btn btn-sm btn-amber" onClick={goDeals}>open the deal board</button>
     </div>;
@@ -796,13 +797,22 @@ export function PortfolioView2({ state, setState, onSell, onRefi, onLOI, goDeals
           {state.land.map(h => {
             const val = E.landValue(state, h);
             return (
-              <div key={h.id} className="memo-row" style={{ borderBottom: '1px solid var(--line2)' }}>
-                <span className="lbl">Block {blockName(state.tiles[h.tileI])} · {Math.round(h.cells.length * E.PARCEL_AC * 100) / 100} acres · held {state.month - h.acquiredM} mo</span>
-                <span className="num">{E.fmtMoney(val)} <span className={val >= h.basis ? 'pos' : 'neg'}>({val >= h.basis ? '+' : ''}{E.fmtMoney(val - h.basis)})</span></span>
+              <div key={h.id} className="memo-row" style={{ borderBottom: '1px solid var(--line2)', gap: 8 }}>
+                <span className="lbl" style={{ cursor: onShowTile ? 'pointer' : undefined }}
+                  onClick={() => onShowTile?.(h.tileI)}
+                  title="Show me on the map">Block {blockName(state.tiles[h.tileI])} · {Math.round(h.cells.length * E.PARCEL_AC * 100) / 100} ac · held {state.month - h.acquiredM} mo · basis {E.fmtMoney(h.basis)} <span className="faint" style={{ fontSize: 9 }}>▸ map</span></span>
+                <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <span className="num">{E.fmtMoney(val)} <span className={val >= h.basis ? 'pos' : 'neg'}>({val >= h.basis ? '+' : ''}{E.fmtMoney(val - h.basis)})</span></span>
+                  <button className="btn btn-sm btn-amber" onClick={() => {
+                    const r = E.developLand(state, h.id);
+                    setState(r.s);
+                    if (r.listingId) openDeal(r.listingId);
+                  }}>Build ▸</button>
+                </span>
               </div>
             );
           })}
-          <div className="faint" style={{ fontSize: 11, marginTop: 6 }}>Dirt pays no rent. It only pays off if the block goes up — or if you build. Manage holdings from the city map.</div>
+          <div className="faint" style={{ fontSize: 11, marginTop: 6 }}>Dirt pays no rent. It only pays off if the block goes up — or if you build. Adjoining holdings build together automatically.</div>
         </div>
       )}
       {state.assets.map(a => (

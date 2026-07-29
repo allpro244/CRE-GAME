@@ -57,7 +57,8 @@ export const CONSTR: Record<PType, ConstrSpec[]> = {
     { id: 'tower', label: 'Concrete tower — Class A', cost: 295, q: 86, qCap: 95 },
   ],
 };
-export const FAR: Record<PType, number> = { industrial: 0.45, retail: 0.25, office: 2.2, mixed: 1.4, multifamily: 1.6 };
+export const FAR: Record<PType, number> = { industrial: 0.45, retail: 0.45, office: 2.2, mixed: 1.4, multifamily: 1.6 };
+export const MIN_BUILD_SF = 4500;   // every product type is buildable on a single quarter-acre parcel
 export function isAggregate(type: PType): boolean { return type === 'multifamily'; }
 
 export const CONFIG = {
@@ -1050,7 +1051,7 @@ function pushNews(state: GameState, kind: NewsItem['kind'], text: string, tileI?
 function buildableTiles(state: GameState): Tile[] { return state.tiles.filter(t => !t.water); }
 
 export function landPricePerAcre(state: GameState, t: Tile): number {
-  const psfLand = (1 + Math.pow(t.D / 100, 2.2) * 55) * (t.indSuit > 55 ? 0.40 : 1);
+  const psfLand = (3 + Math.pow(t.D / 100, 2.2) * 55) * (t.indSuit > 55 ? 0.8 : 1);
   return psfLand * 43_560 * state.econ.costIdx;
 }
 
@@ -1768,7 +1769,7 @@ export function resolveConstrEvent(state: GameState, assetId: number, choice: 'a
     // CLOSE: price the truth in and put real money down
     const c = { ...dd.choice };
     if (cond.sfLossFrac) {
-      a.sf = Math.max(5000, Math.round(a.sf * (1 - cond.sfLossFrac) / 500) * 500);
+      a.sf = Math.max(MIN_BUILD_SF, Math.round(a.sf * (1 - cond.sfLossFrac) / 500) * 500);
       a.units = Math.max(1, Math.round(a.units * (1 - cond.sfLossFrac)));
       c.sf = a.sf; c.units = a.units;
     }
@@ -1830,7 +1831,7 @@ export function resolveConstrEvent(state: GameState, assetId: number, choice: 'a
     }
     if (choice === 'mitigate') {
       const loss = cond.sfLossFrac ?? 0.15;
-      a.sf = Math.max(5000, Math.round(a.sf * (1 - loss) / 500) * 500);
+      a.sf = Math.max(MIN_BUILD_SF, Math.round(a.sf * (1 - loss) / 500) * 500);
       a.units = Math.max(1, Math.round(a.units * (1 - loss)));
       a.quality = clamp(a.quality - 4, 5, a.qCap);
       applyCost(Math.round(cond.cost * mult * 0.35) + (cond.kind === 'easement' ? 60_000 : 0), `redesigning around the ${cond.kind}`, true);
@@ -2097,8 +2098,12 @@ export function approachParcelOwner(state: GameState, tileI: number, cell: numbe
   const chk = canApproachParcel(s, tileI, cell);
   if (!chk.ok) return { s, err: chk.why };
   s.approachesLeft--;
-  const d = parcelDisposition(s, tileI, cell);
   const t = s.tiles[tileI];
+  if (rng(s) < 0.30) {
+    pushNews(s, 'info', `No answer on the quarter-acre at block ${blockLabel(t)} — wrong number, dead line, or an owner who screens. The call is spent either way.`, tileI);
+    return { s, err: 'No answer. Try again another month.' };
+  }
+  const d = parcelDisposition(s, tileI, cell);
   if (d.kind === 'refuse') {
     s.parcelApproach[tileI + ':' + cell] = { m: s.month, outcome: 'refused' };
     pushNews(s, 'info', `The owner of a quarter-acre at block ${blockLabel(t)} isn't selling. Not at your number — not at any number.`, tileI);
@@ -3050,16 +3055,16 @@ function tickEvents(s: GameState) {
     fireEvent(s, ev.kind, ev.payload);
   }
   // operating-asset surprises: the building calls, and it's never good news
-  if (rng(s) < 0.055 && s.pending.length === 0) {
+  if (rng(s) < 0.04 && s.pending.length === 0) {
     const ops = s.assets.filter(a => a.mode !== 'construction');
     if (ops.length > 0) {
       const a = rpick(s, ops);
       // a roof and its rooftop units last ~20 years; new construction doesn't fail
       const roofEligible = a.age >= 20;
       const hasAnchor = !isAggregate(a.type) && a.tenants.length > 0;
-      const pool: string[] = ['reassess'];
+      const pool: string[] = ['reassess', 'reassess'];
       if (roofEligible) pool.push('roof', 'roof');
-      if (hasAnchor) pool.push('tiDemand');
+      if (hasAnchor && rng(s) < 0.5) pool.push('tiDemand');
       s.pending.push({ type: 'assetEvent', assetId: a.id, eventKind: rpick(s, pool) });
     }
   }

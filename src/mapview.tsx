@@ -53,8 +53,8 @@ function useTileValues(state: GameState, lens: Lens, mixAll: number[]): number[]
   return useMemo(() => {
     const rawOf = (t: Tile) => lens === 'mix' ? mixAll[t.i] : lensRaw(state, t, lens);
     const landVals = state.tiles.filter(t => !t.water).map(rawOf).sort((a, b) => a - b);
-    const lo = landVals[Math.floor(landVals.length * 0.06)] ?? 0;
-    const hi = landVals[Math.floor(landVals.length * 0.94)] ?? 1;
+    const lo = landVals[Math.floor(landVals.length * 0.10)] ?? 0;
+    const hi = landVals[Math.floor(landVals.length * 0.90)] ?? 1;
     return state.tiles.map(t => {
       const raw = rawOf(t);
       return hi > lo ? Math.max(0, Math.min(1, (raw - lo) / (hi - lo))) : 0.5;
@@ -493,8 +493,8 @@ const LensCellsIso = memo(function LensCellsIso({ tiles, grids, vals, hue, zb }:
 }) {
   return <g>{tiles.map(t => {
     if (t.water) return null;
-    const base = lerpColor(DARK, hue, vals[t.i] * 0.82 + 0.03);
-    const dimFill = lerpColor(DARK, hue, vals[t.i] * 0.4 + 0.02);
+    const base = lerpColor(DARK, hue, Math.pow(vals[t.i], 0.72) * 0.97 + 0.03);
+    const dimFill = lerpColor(DARK, hue, Math.pow(vals[t.i], 0.72) * 0.5 + 0.02);
     const g = grids[t.i];
     const cells = [];
     for (let py = 0; py < E.PGRID; py++) for (let px = 0; px < E.PGRID; px++) {
@@ -540,7 +540,7 @@ const FieldFlat = memo(function FieldFlat({ field, hue }: { field: { x: number; 
   const sub = TS / SUB;
   return <g>{field.map((c, k) => (
     <rect key={k} x={c.x * TS} y={c.y * TS} width={sub + 0.5} height={sub + 0.5}
-      fill={lerpColor(DARK, hue, Math.max(0, Math.min(1, c.v)) * 0.82 + 0.03)} />
+      fill={lerpColor(DARK, hue, Math.pow(Math.max(0, Math.min(1, c.v)), 0.72) * 0.97 + 0.03)} />
   ))}</g>;
 });
 
@@ -828,7 +828,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                   const sfMax = Math.min(
                     Math.floor(selInfo.main.length * E.PARCEL_AC * 43_560 * E.FAR[effGhost] * bonus),
                     E.CONFIG.tiers[state.tier].maxSF);
-                  if (sfMax < 5000) return null;
+                  if (sfMax < E.MIN_BUILD_SF) return null;
                   const ht = massing(effGhost, defaultConstr(effGhost, sfMax), sfMax, selInfo.main.length).ht;
                   return cellRects(selInfo.main).map((r, i) => {
                     const [cx, cy] = parcelCenter(t.x, t.y, r.px, r.py, r.pw, r.ph);
@@ -1054,7 +1054,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             </div>
             {listingsOn(sel.i).filter(l => l.kind === 'land' && !l.parentAssetId).map(l => (
               <button key={l.id} className="btn btn-sm" style={{ display: 'block', width: '100%', textAlign: 'left', marginTop: 8 }} onClick={() => openDeal(l.id)}>
-                Land parcel · {l.acres} acres — {E.fmtMoney(l.price)}
+                {(l as any).omLead ? 'Their ask' : 'Listed'} · {l.acres} acres — {E.fmtMoney(l.price)}{(l as any).omLead ? ' (off-market)' : ''}
               </button>
             ))}
           </div>
@@ -1138,8 +1138,8 @@ function ParcelBuyPanel({ state, setState, tileI, cells, close, ghostType, setGh
             const locked = ty === 'mixed' && state.tier < 1;
             const active = ghostType === ty;
             return (
-              <button key={ty} className={'btn btn-sm' + (active ? ' btn-amber' : '')} disabled={locked || sf < 5000}
-                title={locked ? 'Mixed-use unlocks at Tier 2' : sf < 5000 ? 'Site too small for this use' : `Demand ${f > 1.1 ? 'strong' : f > 0.85 ? 'fair' : 'weak'} here`}
+              <button key={ty} className={'btn btn-sm' + (active ? ' btn-amber' : '')} disabled={locked || sf < E.MIN_BUILD_SF}
+                title={locked ? 'Mixed-use unlocks at Tier 2' : sf < E.MIN_BUILD_SF ? 'Site too small for this use' : `Demand ${f > 1.1 ? 'strong' : f > 0.85 ? 'fair' : 'weak'} here`}
                 style={{ fontSize: 10.5, padding: '3px 8px' }}
                 onClick={() => setGhostType(active ? null : ty)}>
                 {E.PLABEL[ty]} <span className={'num ' + (f > 1.1 ? 'pos' : f > 0.85 ? 'dim' : 'neg')}>{(sf / 1000).toFixed(0)}K</span>

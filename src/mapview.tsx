@@ -103,7 +103,8 @@ function useField(state: GameState, lens: Lens) {
 }
 
 function riverGeometry(state: GameState) {
-  const water = state.tiles.filter(t => t.water);
+  const water = state.tiles.filter(t => t.water && !t.park);
+  if (water.length > 20) return '';   // island city: shores, not a river
   const byRow = new Map<number, number[]>();
   for (const t of water) { if (!byRow.has(t.y)) byRow.set(t.y, []); byRow.get(t.y)!.push(t.x); }
   const rows = [...byRow.keys()].sort((a, b) => a - b);
@@ -477,11 +478,11 @@ const RoadsFlat = memo(function RoadsFlat({ runs }: { runs: RoadRun[] }) {
 // ---------- memoized layers ----------
 // The map draws thousands of SVG nodes. Splitting it into layers memoized on stable
 // identities means hover, pan and zoom re-render a tooltip div — not the city.
-type TileGeom = { i: number; x: number; y: number; water: boolean };
+type TileGeom = { i: number; x: number; y: number; water: boolean; park?: boolean };
 
 const TileBaseIso = memo(function TileBaseIso({ tiles }: { tiles: TileGeom[] }) {
   return <g>{tiles.map(t => (
-    <polygon key={'st' + t.i} points={diamond(t.x, t.y)} fill={t.water ? '#1b3149' : '#171c22'} stroke="#0b0f13" strokeWidth={0.5} />
+    <polygon key={'st' + t.i} points={diamond(t.x, t.y)} fill={t.park ? '#18301f' : t.water ? '#1b3149' : '#171c22'} stroke="#0b0f13" strokeWidth={0.5} />
   ))}</g>;
 });
 
@@ -575,7 +576,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const grids = useMemo(() => state.tiles.map(t => E.parcelGrid(state, t.i)), [gridStamp, state.seed]); // eslint-disable-line
   const [selCells, setSelCells] = useState<{ tileI: number; cells: number[] } | null>(null);
   // Stable per-seed geometry + a live ref so the memoized layers never re-render on hover.
-  const tilesGeom = useMemo(() => state.tiles.map(t => ({ i: t.i, x: t.x, y: t.y, water: t.water })), [state.seed]); // eslint-disable-line
+  const tilesGeom = useMemo(() => state.tiles.map(t => ({ i: t.i, x: t.x, y: t.y, water: t.water, park: t.park })), [state.seed]); // eslint-disable-line
   const vpIso = useViewport(0, 0, IW_TOT, IH_TOT);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const vpFlat = useViewport(-20, -18, W + 24, H + 22);
@@ -733,8 +734,8 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           <TileBaseIso tiles={tilesGeom} />
           <LensCellsIso tiles={tilesGeom} grids={grids} vals={tileVals} hue={hue} zb={zb} />
           {(() => {
-            const water = state.tiles.filter(t => t.water).sort((a, b) => (a.y - b.y) || (a.x - b.x));
-            if (!water.length) return null;
+            const water = state.tiles.filter(t => t.water && !t.park).sort((a, b) => (a.y - b.y) || (a.x - b.x));
+            if (!water.length || water.length > 20) return null;
             const seen = new Set<number>();
             const spine = water.filter(t => { if (seen.has(t.y)) return false; seen.add(t.y); return true; });
             const pts = spine.map(t => isoPt(t.x, t.y)).map(p => p[0].toFixed(0) + ',' + p[1].toFixed(0)).join(' ');
@@ -847,6 +848,12 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           {/* river */}
           {river && <path d={river} fill="none" stroke="#1c3450" strokeWidth={TS * 0.86} strokeLinecap="round" strokeLinejoin="round" />}
           {river && <path d={river} fill="none" stroke="#2d4f6e" strokeWidth={1.6} strokeDasharray="1 8" strokeLinecap="round" opacity={0.85} />}
+          {state.tiles.filter(t => t.park).map(t => (
+            <rect key={'pk' + t.i} x={t.x * TS} y={t.y * TS} width={TS} height={TS} fill="#18301f" />
+          ))}
+          {state.tiles.filter(t => t.water && !t.park).length > 20 && state.tiles.filter(t => t.water && !t.park).map(t => (
+            <rect key={'wa' + t.i} x={t.x * TS} y={t.y * TS} width={TS} height={TS} fill="#1c3450" />
+          ))}
           {/* the street network — every city's is its own */}
           <RoadsFlat runs={runs} />
           {transitActive && state.transitCorridor.map(i => {

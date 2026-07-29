@@ -4,6 +4,10 @@ A commercial real estate development simulator. You start with $600,000 in Merid
 
 Single-page React + TypeScript app, bundled to one self-contained HTML file.
 
+Two cities: **Meridian** (procedural: river, meandering street grid, superblocks, per-seed
+arterials) and **New Amsterdam** (an island between two rivers: twin cores, a central park,
+avenues, bridges, a shoreline expressway). Same economy, different geography.
+
 ---
 
 ## Running it
@@ -62,6 +66,8 @@ make — you can simulate 30 years in milliseconds before touching the UI.
 ### Major systems
 
 Economy phases · tenant-level rent rolls with LOI/RFP/renewal negotiation · NNN vs gross leases ·
+retail percentage rent (tenant sales from neighborhood traffic; overage past a market-anchored
+breakpoint — where the trade outruns the rents) ·
 multifamily as an aggregate-occupancy asset class · structured debt with balloons, covenants and cash
 sweeps · credit facilities · JV equity with 8% pref and 20% promote · depreciation, recapture, capital
 gains and 1031 exchanges · 10 AI firms that buy *and* develop · construction pipeline · land banking ·

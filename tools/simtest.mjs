@@ -1,7 +1,7 @@
 import * as E from '/tmp/engine.mjs';
 
-function run(seed) {
-  let s = E.newGame(seed);
+function run(seed, city) {
+  let s = E.newGame(seed, city ? { city } : undefined);
   // street network invariants: right shape, sane classes, nobody landlocked
   const W = E.CONFIG.GRID_W, H = E.CONFIG.GRID_H;
   if (!s.roads || s.roads.hz.length !== H + 1 || s.roads.vt.length !== H) throw new Error('roads: bad shape');
@@ -184,3 +184,4 @@ function run(seed) {
   return { seed, banked, demoed, land: s.land.length, uc: s.stock.filter(b=>b.buildLeft).length, jvs: s.assets.filter(a=>a.jv).length, matched, converted, nol: Math.round(s.nolCarry/1000), agent: s.autoLease ? 1 : 0, comps: s.comps.length, ci: Math.round((s.econHistory[s.econHistory.length-1].ci ?? 1)*100)/100, listedForSale, haggled, rep: Math.round(s.reputation), approaches, stock: s.stock.length, nw: Math.round(E.netWorth(s)), cash: Math.round(s.cash), bought, omBought, developed, sold, refis, signed, walked, offers, facMade, fac: s.facilities.length, defaults, over: s.gameOver, assets: s.assets.length };
 }
 for (const seed of [11, 42, 1337, 90210, 7, 555]) console.log(JSON.stringify(run(seed)));
+for (const seed of [21, 84]) console.log(JSON.stringify({ city: 'island', ...run(seed, 'island') }));

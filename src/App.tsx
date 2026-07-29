@@ -19,7 +19,7 @@ export default function App() {
   const [state, setState] = useState<GameState | null>(null);
   const [hasSave, setHasSave] = useState(false);
   useEffect(() => { storageGet('groundwork:auto').then(v => setHasSave(!!v && !!E.deserialize(v))); }, []);
-  const startNew = (sandbox = false) => { setState(E.newGame(undefined, { sandbox })); setScreen('game'); };
+  const startNew = (sandbox = false, city: E.CityKind = 'meridian') => { setState(E.newGame(undefined, { sandbox, city })); setScreen('game'); };
   const continueGame = async () => {
     const v = await storageGet('groundwork:auto');
     const s = v ? E.deserialize(v) : null;
@@ -36,7 +36,9 @@ export default function App() {
           lease, structure the debt — and be greedy and fearful at the right times.
         </p>
         <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-          <button className="btn btn-amber" onClick={() => startNew(false)}>New campaign</button>
+          <button className="btn btn-amber" onClick={() => startNew(false)}>New campaign — Meridian</button>
+          <button className="btn btn-amber" title="A long island between two rivers: twin cores, a park in the middle, bridges, and a shoreline expressway"
+            onClick={() => startNew(false, 'island')}>New Amsterdam</button>
           {hasSave && <button className="btn" onClick={continueGame}>Continue</button>}
           <button className="btn btn-ghost" title="$50,000,000, top tier, clean reputation — for testing"
             onClick={() => startNew(true)}>Sandbox — $50M</button>

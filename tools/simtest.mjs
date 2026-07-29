@@ -1,4 +1,4 @@
-import * as E from '/tmp/engine.mjs';
+const E = await import(process.env.ENGINE ?? '/tmp/engine.mjs');
 
 function run(seed, city) {
   let s = E.newGame(seed, city ? { city } : undefined);

@@ -331,6 +331,7 @@ export interface GameState {
   // per-parcel owner memory, keyed 'tileI:cell' — refusals and named asks both persist
   parcelApproach: Record<string, { m: number; outcome: 'refused' | 'ask'; ask?: number }>;
   dealLog: DealLogEntry[];
+  firmLand: { short: string; tileI: number; cells: number[]; m: number }[];
   gameOver: boolean; gameOverReason?: string; forcedSaleNotice?: string;
   transitCorridor: number[];
   roads: RoadNet;
@@ -1052,10 +1053,10 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     news: [], effects: [], scheduledEvents: [],
     nwHistory: [], econHistory: [],
     nextId: 1, pending: [], lastMonthCF: 0, negCashStreak: 0,
-    lastScoutMonth: -99, approachesLeft: 3, parcelApproach: {}, dealLog: [],
+    lastScoutMonth: -99, approachesLeft: 3, parcelApproach: {}, dealLog: [], firmLand: [],
     gameOver: false, transitCorridor: corridor, roads,
     totalRealizedProfit: 0, dealsClosed: 0,
-    version: 17,
+    version: 18,
   };
   generateStock(state);
   // Born in equilibrium: the anchors absorb whatever the initial city explains, so
@@ -1174,6 +1175,7 @@ export function parcelGrid(state: GameState, tileI: number): (number | null)[] {
   for (const a of state.assets) if (a.tileI === tileI) mark(footprintCells(a), a.id);
   for (const l of state.listings) if (l.tileI === tileI) mark(l.parcelCells ?? (l.parcel ? footprintCells(l.parcel) : []), -l.id);
   for (const h of state.land) if (h.tileI === tileI) mark(h.cells, 1_000_000 + h.id);
+  for (let i = 0; i < (state.firmLand ?? []).length; i++) if (state.firmLand[i].tileI === tileI) mark(state.firmLand[i].cells, 2_000_000 + i);
   return g;
 }
 export function cellsOfRect(px: number, py: number, pw: number, ph: number): number[] {
@@ -1802,12 +1804,14 @@ export function buyLandAndDevelop(state: GameState, listingId: number, c: DevCho
 export function resolveConstrEvent(state: GameState, assetId: number, choice: 'absorb' | 'mitigate' | 'abandon'): GameState {
   const s = clone(state);
   const a = s.assets.find(x => x.id === assetId);
-  if (!a || !a.project) return s;
-  const p = a.project;
+  // dequeue BEFORE the existence guard — a stale decision for a dead project
+  // must never wedge the queue (pending > 0 blocks the clock)
   const idx = s.pending.findIndex(pd => pd.type === 'constrEvent' && pd.assetId === assetId);
   if (idx < 0) return s;
   const kind = s.pending[idx].eventKind;
   s.pending.splice(idx, 1);
+  if (!a || !a.project) return s;
+  const p = a.project;
   const applyCost = (amt: number, label: string, siteCondition = false) => {
     const fromCont = Math.min(p.contingencyLeft, amt);
     p.contingencyLeft -= fromCont;
@@ -3469,13 +3473,114 @@ function firmTakesLand(s: GameState, f: Firm, l: Listing) {
       occ: 0, owner: f.short, buildLeft: months, buildTotal: months, builder: f.short,
     });
     pushNews(s, 'deal', `${f.name} took the ${l.acres}-acre parcel — ${(sf / 1000).toFixed(0)}K SF of ${PLABEL[ty].toLowerCase()} breaks ground there this month.`, l.tileI);
+  } else if (cells && cells.length) {
+    // no build pencils today — the dirt joins the firm's land bank, visible on the map
+    const entry = s.firmLand.find(x => x.short === f.short && x.tileI === l.tileI);
+    if (entry) { entry.cells.push(...cells); entry.cells.sort((a, b) => a - b); }
+    else s.firmLand.push({ short: f.short, tileI: l.tileI, cells: [...cells], m: s.month });
+    pushNews(s, 'deal', `${f.name} took the ${l.acres}-acre parcel. For now they're sitting on the dirt.`, l.tileI);
   } else {
     pushNews(s, 'deal', `${f.name} took the ${l.acres}-acre parcel. For now they're sitting on the dirt.`, l.tileI);
   }
 }
 
+// Firms assemble like you do. Watch a rival stack parcels on a block and you know
+// exactly what's coming — unless you buy the connecting lot first.
+function tickFirmLand(s: GameState) {
+  // acquire: a firm cold-calls one vacant parcel on a block that fits its book
+  for (const f of s.firms) {
+    if (!f.alive || f.netWorth < 5_000_000 || rng(s) > 0.05) continue;
+    const want: PType = f.style === 'industrial' ? 'industrial' : f.style === 'mf' ? 'multifamily' : f.style === 'core' ? 'office' : rng(s) < 0.5 ? 'retail' : 'mixed';
+    const cands = s.tiles.filter(t => !t.water && freeParcelCount(s, t.i) >= 2 && tileDemandFactor(s, t, want) > 1.0);
+    if (!cands.length) continue;
+    // prefer blocks where they already hold dirt — assemblies want to finish
+    const held = s.firmLand.filter(x => x.short === f.short);
+    const t = held.length && rng(s) < 0.7 ? s.tiles[rpick(s, held).tileI] : rpick(s, cands);
+    if (t.water || freeParcelCount(s, t.i) < 1) continue;
+    const g = parcelGrid(s, t.i);
+    const free: number[] = [];
+    for (let c = 0; c < PGRID * PGRID; c++) if (g[c] === null) free.push(c);
+    if (!free.length) continue;
+    // an assembler buys the lot NEXT to their dirt, not a random one across the block
+    const mine = s.firmLand.find(x => x.short === f.short && x.tileI === t.i)?.cells ?? [];
+    const adj = free.filter(c => mine.some(h => {
+      const cx = c % PGRID, cy = Math.floor(c / PGRID), hx = h % PGRID, hy = Math.floor(h / PGRID);
+      return Math.abs(cx - hx) + Math.abs(cy - hy) === 1;
+    }));
+    const cell = adj.length ? rpick(s, adj) : rpick(s, free);
+    const d = parcelDisposition(s, t.i, cell);
+    if (d.kind === 'refuse') continue;
+    const ask = roundPrice(PARCEL_AC * landPricePerAcre(s, t) * holdoutMult(s, t.i, 1) * d.mult);
+    f.netWorth -= ask;
+    const entry = s.firmLand.find(x => x.short === f.short && x.tileI === t.i);
+    if (entry) { entry.cells.push(cell); entry.cells.sort((a, b) => a - b); }
+    else s.firmLand.push({ short: f.short, tileI: t.i, cells: [cell], m: s.month });
+    if ((entry?.cells.length ?? 1) >= 2) pushNews(s, 'rumor', `${f.name} quietly picked up another quarter-acre at block ${blockLabel(t)} — that's ${entry?.cells.length ?? 1} now. Somebody's assembling.`, t.i);
+  }
+  // resolve: build when contiguous mass exists; give up when it's gone stale
+  for (const e of [...s.firmLand]) {
+    const f = s.firms.find(x => x.short === e.short);
+    const t = s.tiles[e.tileI];
+    if (!f?.alive) {
+      s.firmLand = s.firmLand.filter(x => x !== e);
+      s.listings.push({ id: s.nextId++, tileI: e.tileI, kind: 'land', acres: Math.round(e.cells.length * PARCEL_AC * 100) / 100, parcelCells: [...e.cells], price: roundPrice(e.cells.length * PARCEL_AC * landPricePerAcre(s, t) * 0.85), resFrac: rrange(s, 0.85, 0.95), listMonth: s.month, offersLeft: 3, expiresMonth: s.month + 6, hot: true });
+      continue;
+    }
+    // largest contiguous piece of the assembly — the first-bought lot isn't always in it
+    const rem = new Set(e.cells);
+    const groups: number[][] = [];
+    while (rem.size) {
+      const start = rem.values().next().value as number;
+      const grp = connectedGroup([...rem], start);
+      for (const c of grp) rem.delete(c);
+      groups.push(grp);
+    }
+    groups.sort((a, b) => b.length - a.length);
+    const main = groups[0] ?? [];
+    const ready = main.length >= 2 && (main.length >= 4 || rng(s) < 0.22);
+    if (ready) {
+      const ty: PType = t.indSuit > 55 ? 'industrial' : f.style === 'mf' ? 'multifamily' : f.style === 'core' ? 'office' : rng(s) < 0.5 ? 'retail' : 'mixed';
+      const sf = Math.round(main.length * PARCEL_AC * 43_560 * FAR[ty] * upzoneBonus(main.length) * rrange(s, 0.7, 0.95) / 500) * 500;
+      if (sf >= MIN_BUILD_SF) {
+        const months = Math.min(26, Math.max(6, Math.round(4 + sf / 7000)));
+        const quality = clamp(rrange(s, 50, 88), 30, 92);
+        s.stock.push({
+          id: s.nextId++, tileI: e.tileI, type: ty, sf, cells: [...main],
+          units: genUnitsFor(s, ty, sf), quality, age: 0,
+          construction: CONSTR[ty][Math.min(CONSTR[ty].length - 1, 2 - qGrade(quality))].id,
+          occ: 0, owner: f.short, buildLeft: months, buildTotal: months, builder: f.short,
+        });
+        e.cells = e.cells.filter(c => !main.includes(c));
+        if (!e.cells.length) s.firmLand = s.firmLand.filter(x => x !== e);
+        pushNews(s, 'event', `${f.name}'s assembly at block ${blockLabel(t)} is done waiting: ${(sf / 1000).toFixed(0)}K SF of ${PLABEL[ty].toLowerCase()} breaks ground on ${main.length} parcels.`, e.tileI);
+        continue;
+      }
+    }
+    if (s.month - e.m > 36 && rng(s) < 0.2) {
+      s.firmLand = s.firmLand.filter(x => x !== e);
+      s.listings.push({ id: s.nextId++, tileI: e.tileI, kind: 'land', acres: Math.round(e.cells.length * PARCEL_AC * 100) / 100, parcelCells: [...e.cells], price: roundPrice(e.cells.length * PARCEL_AC * landPricePerAcre(s, t) * 0.92), resFrac: rrange(s, 0.86, 0.95), listMonth: s.month, offersLeft: 3, expiresMonth: s.month + 6, hot: false });
+      pushNews(s, 'deal', `${f.name} gave up on its assembly at block ${blockLabel(t)} — the dirt hits the market. Somebody's holdout won.`, e.tileI);
+    }
+  }
+  // snipe: your un-agreed off-market leads are not a secret forever
+  for (const l of [...s.listings]) {
+    if (!(l as any).omLead || l.agreed || l.underContract || rng(s) > 0.04) continue;
+    const f = rpick(s, s.firms.filter(x => x.alive && x.netWorth > 5_000_000));
+    if (!f) continue;
+    const t = s.tiles[l.tileI];
+    f.netWorth -= l.price;
+    const cells = l.parcelCells ?? [];
+    const entry = s.firmLand.find(x => x.short === f.short && x.tileI === l.tileI);
+    if (entry) entry.cells.push(...cells); else s.firmLand.push({ short: f.short, tileI: l.tileI, cells: [...cells], m: s.month });
+    for (const c of cells) s.parcelApproach[l.tileI + ':' + c] = { m: s.month, outcome: 'refused' };
+    s.listings = s.listings.filter(x => x.id !== l.id);
+    pushNews(s, 'warn', `${f.name} closed on the quarter-acre at block ${blockLabel(t)} you had a number on. Your lead, their dirt — known asks don't keep.`, l.tileI);
+  }
+}
+
 function tickFirms(s: GameState) {
   if (s.month % 3 !== 0) return;
+  tickFirmLand(s);
   for (const f of s.firms) {
     if (!f.alive) continue;
     f.netWorth *= 1 + (s.econ.phase === 'recession' ? -0.012 : 0.008) * (f.style === 'aggressive' ? 2.2 : 1) + (rng(s) - 0.5) * 0.01;
@@ -3962,7 +4067,7 @@ export function serialize(state: GameState): string { return JSON.stringify(stat
 export function deserialize(json: string): GameState | null {
   try {
     const s = JSON.parse(json);
-    if (s && s.version === 17 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
+    if (s && s.version === 18 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
     return null;
   } catch { return null; }
 }

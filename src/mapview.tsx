@@ -229,7 +229,8 @@ function useIsoBuildings(state: GameState): IsoBld[] {
     + ':' + state.stock.reduce((s2, b) => s2 + (b.listedId ? 1 : 0), 0)
     + ':' + state.stock.reduce((s2, b) => s2 + (b.buildLeft ?? 0), 0)
     + ':' + state.assets.reduce((s2, a) => s2 + (a.project?.monthsLeft ?? 0) + (a.mode === 'construction' ? 1000 : 0), 0)
-    + ':' + Math.round(state.stock.reduce((s2, b) => s2 + b.occ, 0) * 4);
+    + ':' + Math.round(state.stock.reduce((s2, b) => s2 + b.occ, 0) * 4)
+    + ':' + state.firmLand.length + ':' + state.firmLand.reduce((s2, e) => s2 + e.cells.length, 0);
   return useMemo(() => {
     const out: IsoBld[] = [];
     const place = (o: { tileI: number; sf: number; type: E.PType; quality?: number; age?: number; construction?: string; cells?: number[]; px?: number; py?: number; pw?: number; ph?: number }, col: string, listed: boolean, key: string, prog?: number, mine?: boolean) => {
@@ -261,6 +262,16 @@ function useIsoBuildings(state: GameState): IsoBld[] {
         const [cx, cy] = parcelCenter(t.x, t.y, r.px, r.py, r.pw, r.ph);
         const [w, hh] = parcelSpan(r.pw, r.ph);
         out.push({ cx, cy, w: w * 0.92, h: hh * 0.92, ht: 1.5, col: '#8a6a2c', listed: false, key: 'L' + hd.id + '_r' + ri, mine: true });
+      }
+    }
+    // rival assemblies: same low pad, claret instead of your amber. Two of these
+    // side by side on a block is the tell — somebody wants the whole thing.
+    for (const [ei, e] of state.firmLand.entries()) {
+      const t = state.tiles[e.tileI];
+      for (const [ri, r] of cellRects(e.cells).entries()) {
+        const [cx, cy] = parcelCenter(t.x, t.y, r.px, r.py, r.pw, r.ph);
+        const [w, hh] = parcelSpan(r.pw, r.ph);
+        out.push({ cx, cy, w: w * 0.92, h: hh * 0.92, ht: 1.5, col: '#79394a', listed: false, key: 'F' + ei + '_' + e.tileI + '_' + e.short + '_r' + ri });
       }
     }
     out.sort((p, q) => (p.cx + p.cy) - (q.cx + q.cy)); // painter's algorithm: back to front
@@ -575,7 +586,8 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
     if (t) { setSelTile(focusTile); vpIso.focusOn(isoPt(t.x, t.y)); }
   }, [focusTile]); // eslint-disable-line
   const gridStamp = state.stock.length + ':' + state.assets.length + ':' + state.listings.length
-    + ':' + state.land.length + ':' + state.land.reduce((s2, h) => s2 + h.cells.length, 0);
+    + ':' + state.land.length + ':' + state.land.reduce((s2, h) => s2 + h.cells.length, 0)
+    + ':' + state.firmLand.length + ':' + state.firmLand.reduce((s2, e) => s2 + e.cells.length, 0);
   const grids = useMemo(() => state.tiles.map(t => E.parcelGrid(state, t.i)), [gridStamp, state.seed]); // eslint-disable-line
   const [selCells, setSelCells] = useState<{ tileI: number; cells: number[] } | null>(null);
   // Stable per-seed geometry + a live ref so the memoized layers never re-render on hover.
@@ -674,7 +686,12 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
       if (rec?.outcome === 'refused') { text = 'Not for sale'; sub2 = `owner refused ${E.monthName(rec.m)} — memory is long`; }
     }
     if (occ !== null) {
-      if (occ >= 1_000_000) {
+      if (occ >= 2_000_000) {
+        const fe = s.firmLand[occ - 2_000_000];
+        const f = fe ? s.firms.find(x => x.short === fe.short) : undefined;
+        text = `${f?.name ?? 'A rival'} holds this dirt`;
+        sub2 = fe ? `${fe.cells.length} parcel${fe.cells.length > 1 ? 's assembled' : ''} · buying since ${E.monthName(fe.m)}` : '';
+      } else if (occ >= 1_000_000) {
         const hd = s.land.find(x => x.id === occ - 1_000_000);
         text = 'Your land'; sub2 = hd ? `${Math.round(hd.cells.length * E.PARCEL_AC * 100) / 100} ac banked · basis ${E.fmtMoney(hd.basis)}` : '';
       } else if (occ < 0) {
@@ -713,7 +730,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
     }
     setSelCells(null);
     if (occ < 0) { od(-occ); return; }
-    if (occ >= 1_000_000) return;   // your banked dirt — the block panel handles it
+    if (occ >= 1_000_000) return;   // banked dirt, yours or a rival's — the block panel handles it
     const mine = s.assets.find(x => x.id === occ);
     if (mine) { oa(mine.id); return; }
     const b = s.stock.find(x => x.id === occ);
@@ -914,6 +931,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
         )}
         <div className="faint" style={{ fontSize: 11, marginTop: 8, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           <span><span style={{ color: 'var(--amber)' }}>▪</span> yours</span>
+          <span><span style={{ color: '#a05468' }}>▪</span> rival land banks</span>
           <span><span style={{ color: '#7d95bd' }}>▪</span> institutional</span>
           <span><span style={{ color: '#8a97a3' }}>▪</span> private owners</span>
           <span style={{ color: 'var(--green)' }}>▪ on the market</span>
@@ -1025,6 +1043,19 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                 </div>
               </div>
             ))}
+            {state.firmLand.filter(e => e.tileI === sel.i).map((e, i) => {
+              const f = state.firms.find(x => x.short === e.short);
+              return (
+                <div key={'fl' + i} className="memo" style={{ borderLeftColor: '#a05468', marginTop: 10 }}>
+                  <div className="memo-row">
+                    <span className="lbl"><b style={{ color: 'var(--ink)' }}>{f?.name ?? e.short}</b> holds {Math.round(e.cells.length * E.PARCEL_AC * 100) / 100} acres here — buying since {E.monthName(e.m)}</span>
+                  </div>
+                  <div className="faint" style={{ fontSize: 11, marginTop: 4 }}>
+                    {e.cells.length >= 2 ? 'An assembly in progress. Take a connecting lot and their math changes.' : 'One parcel so far. Could be a land bank; could be the first piece of something.'}
+                  </div>
+                </div>
+              );
+            })}
             <h3 style={{ marginTop: 12 }}>Standing inventory</h3>
             <div style={{ maxHeight: 240, overflowY: 'auto' }}>
               {assetsOn(sel.i).map(a => (

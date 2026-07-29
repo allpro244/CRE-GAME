@@ -74,8 +74,12 @@ harden, recessions soften, refusals are remembered 24 months — listed land on 
 the pressure valve) ·
 multifamily as an aggregate-occupancy asset class · structured debt with balloons, covenants and cash
 sweeps · credit facilities · JV equity with 8% pref and 20% promote · depreciation, recapture, capital
-gains and 1031 exchanges · 10 AI firms that buy *and* develop · construction pipeline · land banking ·
-demolition · office-to-multifamily conversion · reputation.
+gains and 1031 exchanges · 10 AI firms that buy *and* develop · rivals play the land game (firms
+cold-call parcel owners, assemble contiguous sites lot by lot — visible on the map as claret pads —
+break ground when the mass is there, give up on stale assemblies after a holdout wins, and
+occasionally close on an off-market lead you priced but didn't tie up) · lease escalations and
+tenant renewal options (negotiated in the LOI, exercised only when they're in the tenant's favor) ·
+construction pipeline · land banking · demolition · office-to-multifamily conversion · reputation.
 
 ---
 

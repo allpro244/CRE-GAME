@@ -244,7 +244,7 @@ function DealIndex({ state, listings, openDeal }: {
     const t = state.tiles[l.tileI];
     if (l.kind === 'land') {
       const bestFit = E.PTYPES.map(ty => ({ ty, f: E.tileDemandFactor(state, t, ty) })).sort((a, b) => b.f - a.f)[0];
-      return { l, t, land: true, psf: null as number | null, cap: null as number | null, cf: null as number | null, note: `${l.acres} ac · ${E.PLABEL[bestFit.ty]} ${bestFit.f > 1.1 ? 'strong' : bestFit.f > 0.85 ? 'fair' : 'weak'}` };
+      return { l, t, land: true, psf: l.price / Math.max(1, (l.acres ?? 0.25) * 43_560), cap: null as number | null, cf: null as number | null, note: `${l.acres} ac · ${E.PLABEL[bestFit.ty]} ${bestFit.f > 1.1 ? 'strong' : bestFit.f > 0.85 ? 'fair' : 'weak'}` };
     }
     const pf = E.proFormaBuilding(state, l);
     const ltv = E.maxLTV(state, l.type);
@@ -478,7 +478,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
     <Modal close={close} wide variant={variant}>
       <h2>Land — Block {blockName(t)}</h2>
       <div className="sub">
-        {listing.acres} acres · {E.fmtMoney(listing.price)} ({E.fmtMoney(listing.price / (listing.acres ?? 1))}/acre) · desirability {t.D.toFixed(0)} · industrial fit {t.indSuit.toFixed(0)}
+        {listing.acres} acres · {E.fmtMoney(listing.price)} (${(listing.price / Math.max(1, (listing.acres ?? 1) * 43_560)).toFixed(0)}/SF land) · desirability {t.D.toFixed(0)} · industrial fit {t.indSuit.toFixed(0)}
       </div>
       {listing.declinedYou && <div className="alert-strip red" style={{ marginBottom: 10 }}>This landowner won't deal with you after your last offer.</div>}
       {!listing.agreed && !listing.declinedYou && !listing.parentAssetId && (
@@ -734,6 +734,7 @@ export function PortfolioView2({ state, setState, onSell, onRefi, onLOI, goDeals
           <button className={state.autoLease ? 'active' : ''} onClick={() => !state.autoLease && setState(E.setAutoLease(state, true))}>Delegate to agent</button>
         </div>
       </div>
+      {state.assets.length >= 2 && <PortfolioLedger state={state} onShowOnMap={onShowOnMap} />}
       {state.land.length > 0 && (
         <div className="panel" style={{ marginBottom: 12 }}>
           <h3>Land bank</h3>
@@ -753,6 +754,62 @@ export function PortfolioView2({ state, setState, onSell, onRefi, onLOI, goDeals
         <AssetCard key={a.id} state={state} setState={setState} asset={a}
           onSell={onSell} onRefi={onRefi} onLOI={onLOI} openDeal={openDeal} onSold={onSold} onShowOnMap={onShowOnMap} />
       ))}
+    </div>
+  );
+}
+
+// The portfolio as a ledger: sortable one-line-per-asset, rows fly to the map.
+export function PortfolioLedger({ state, onShowOnMap }: { state: GameState; onShowOnMap?: (id: number) => void }) {
+  const [sort, setSort] = useState<{ by: string; asc: boolean }>({ by: 'value', asc: false });
+  const rows = state.assets.map(a => {
+    const uc = a.mode === 'construction';
+    const val = E.assetValue(state, a);
+    const debt = E.assetTotalDebt(state, a);
+    const noi = uc ? 0 : E.assetNOIMonthly(state, a);
+    const ds = uc ? 0 : E.assetDebtService(a);
+    return { a, uc, val, debt, eq: val - debt - E.lpClaim(state, a), noi, cf: noi - ds, irr: E.assetIRR(state, a) };
+  });
+  const dir = sort.asc ? 1 : -1;
+  const val = (r: typeof rows[0]): number =>
+    sort.by === 'occ' ? r.a.occ : sort.by === 'debt' ? r.debt : sort.by === 'eq' ? r.eq
+    : sort.by === 'noi' ? r.noi : sort.by === 'cf' ? r.cf : sort.by === 'irr' ? (r.irr ?? -999) : r.val;
+  rows.sort((x, y) => (val(x) - val(y)) * dir);
+  const Th = ({ id, label }: { id: string; label: string }) => (
+    <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => setSort(s2 => ({ by: id, asc: s2.by === id ? !s2.asc : false }))}>
+      {label}{sort.by === id ? (sort.asc ? ' ▴' : ' ▾') : ''}
+    </th>
+  );
+  const tot = rows.reduce((acc, r) => ({ val: acc.val + r.val, debt: acc.debt + r.debt, eq: acc.eq + r.eq, noi: acc.noi + r.noi, cf: acc.cf + r.cf }), { val: 0, debt: 0, eq: 0, noi: 0, cf: 0 });
+  return (
+    <div className="panel" style={{ marginBottom: 12, padding: '8px 12px' }}>
+      <table className="sc">
+        <thead><tr><th style={{ textAlign: 'left' }}>Asset</th><th style={{ textAlign: 'left' }}>Type</th>
+          <Th id="occ" label="Occ" /><Th id="value" label="Value" /><Th id="debt" label="Debt" /><Th id="eq" label="Equity" />
+          <Th id="noi" label="NOI /mo" /><Th id="cf" label="CF /mo" /><Th id="irr" label="IRR" /></tr></thead>
+        <tbody>
+          {rows.map(({ a, uc, val: v, debt, eq, noi, cf, irr }) => (
+            <tr key={a.id} style={{ cursor: onShowOnMap ? 'pointer' : undefined }} onClick={() => onShowOnMap?.(a.id)}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--panel2)')}
+              onMouseLeave={e => (e.currentTarget.style.background = '')}>
+              <td>{a.name} {uc && <span className="chip chip-land">UC</span>}{a.forSale && <span className="chip chip-agreed">Sale</span>}<span className="faint" style={{ fontSize: 9 }}> ▸ map</span></td>
+              <td className="dim">{E.PLABEL[a.type]}</td>
+              <td className="num">{uc ? '—' : pct(a.occ)}</td>
+              <td className="num">{E.fmtMoney(v)}</td>
+              <td className="num">{E.fmtMoney(debt)}</td>
+              <td className={'num ' + (eq < 0 ? 'neg' : '')}>{E.fmtMoney(eq)}</td>
+              <td className="num">{uc ? '—' : E.fmtMoney(noi)}</td>
+              <td className={'num ' + (cf >= 0 ? 'pos' : 'neg')}>{uc ? '—' : E.fmtMoney(cf)}</td>
+              <td className={'num ' + (irr === null ? 'dim' : irr >= 0 ? 'pos' : 'neg')}>{irr === null ? '—' : irr.toFixed(1) + '%'}</td>
+            </tr>
+          ))}
+          <tr style={{ borderTop: '1px solid var(--line)', fontWeight: 700 }}>
+            <td>Portfolio</td><td></td><td></td>
+            <td className="num">{E.fmtMoney(tot.val)}</td><td className="num">{E.fmtMoney(tot.debt)}</td>
+            <td className="num">{E.fmtMoney(tot.eq)}</td><td className="num">{E.fmtMoney(tot.noi)}</td>
+            <td className={'num ' + (tot.cf >= 0 ? 'pos' : 'neg')}>{E.fmtMoney(tot.cf)}</td><td></td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -1085,6 +1142,24 @@ export function DebtView({ state, setState }: { state: GameState; setState: (s: 
           <span className="faint" style={{ fontSize: 11 }}>{state.prefer1031 ? 'Deferral with a 6-month redeploy clock — miss it and the bill lands whole.' : 'Predictable, boring, and paid from proceeds.'}</span>
         </div>
       </div>
+      {(rows.length > 0 || state.facilities.length > 0) && (
+        <div className="panel" style={{ marginBottom: 14 }}>
+          <h3>Maturity wall <Hint text="Every balloon, in order. The wall is survivable if you refinance early and fatal if you meet it in a credit crunch." /></h3>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            {[...rows.map(r => ({ label: r.asset, bal: r.balance, mat: r.mat })),
+              ...state.facilities.map(f => ({ label: 'Facility', bal: f.balance, mat: f.maturityMonth }))]
+              .sort((a, b) => a.mat - b.mat).map((m, i) => {
+                const left = m.mat - state.month;
+                return (
+                  <div key={i} className="memo" style={{ margin: 0, padding: '6px 10px', borderLeftColor: left <= 6 ? 'var(--red)' : left <= 12 ? 'var(--amber)' : 'var(--line)' }}>
+                    <div className="num" style={{ fontSize: 12.5, fontWeight: 700 }}>{E.fmtMoney(m.bal)}</div>
+                    <div className="faint" style={{ fontSize: 10.5 }}>{m.label} · {E.monthName(m.mat)} ({left} mo)</div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
       <div className="panel" style={{ marginBottom: 14 }}>
         <h3>Property-level loans</h3>
         {rows.length === 0 ? <div className="dim" style={{ fontSize: 12.5 }}>No property loans outstanding.</div> : (

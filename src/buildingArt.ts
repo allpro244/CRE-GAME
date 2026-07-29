@@ -18,6 +18,7 @@ export interface ArtParams {
   sf: number;
   occ: number;       // 0-1, drives how many windows read as lit
   seed: number;      // per-building determinism
+  stories?: number;  // true story count from massing; falls back to height-derived
 }
 export interface PrismGeom { bl: [number, number]; bb: [number, number]; br: [number, number]; ht: number }
 
@@ -58,7 +59,7 @@ export function buildingArt(p: ArtParams, g: PrismGeom): ArtEl[] {
   if (ht < 6) return out;
   const r = rng32(p.seed);
   const q = p.quality;
-  const floors = Math.max(1, Math.round((ht - 5) / 4.4));
+  const floors = p.stories ?? Math.max(1, Math.round((ht - 5) / 4.4));
   const fh = ht / Math.max(1, floors + 0.6); // floor pitch in px
 
   const grid = (a: [number, number], b: [number, number], cols: number, y0frac: number, sideLit: boolean) => {

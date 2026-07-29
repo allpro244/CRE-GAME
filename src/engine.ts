@@ -344,9 +344,16 @@ function generateRoads(r: () => number, riverCol: number[], CBD: { x: number; y:
   const vt: number[][] = Array.from({ length: H }, () => new Array(W + 1).fill(1));
   const isWater = (x: number, y: number) => x >= 0 && x < W && y >= 0 && y < H && x === riverCol[y];
 
-  // Superblocks and dead ends: the grid frays, more at the edges of town.
-  for (let y = 1; y < H; y++) for (let x = 0; x < W; x++) if (r() < 0.16) hz[y][x] = 0;
-  for (let y = 0; y < H; y++) for (let x = 1; x < W; x++) if (r() < 0.16) vt[y][x] = 0;
+  // Superblocks and dead ends: the grid frays at the edges of town, and the
+  // industrial band keeps its streets far apart — big sheds want big blocks.
+  for (let y = 1; y < H; y++) for (let x = 0; x < W; x++) {
+    const pr = (y >= H - 3 ? 0.36 : 0.16) + (x <= 1 || x >= W - 2 ? 0.08 : 0);
+    if (r() < pr) hz[y][x] = 0;
+  }
+  for (let y = 0; y < H; y++) for (let x = 1; x < W; x++) {
+    const pr = (y >= H - 3 ? 0.36 : 0.16) + (x <= 1 || x >= W - 2 ? 0.08 : 0);
+    if (r() < pr) vt[y][x] = 0;
+  }
   for (let x = 0; x < W; x++) { if (r() < 0.55) hz[0][x] = 0; if (r() < 0.55) hz[H][x] = 0; }
   for (let y = 0; y < H; y++) { if (r() < 0.55) vt[y][0] = 0; if (r() < 0.55) vt[y][W] = 0; }
 
@@ -438,9 +445,9 @@ function generateIslandRoads(r: () => number, isWater: (x: number, y: number) =>
   const W = CONFIG.GRID_W, H = CONFIG.GRID_H;
   const hz: number[][] = Array.from({ length: H + 1 }, () => new Array(W).fill(1));
   const vt: number[][] = Array.from({ length: H }, () => new Array(W + 1).fill(1));
-  // dense grid — prune only lightly
-  for (let y = 1; y < H; y++) for (let x = 0; x < W; x++) if (r() < 0.06) hz[y][x] = 0;
-  for (let y = 0; y < H; y++) for (let x = 1; x < W; x++) if (r() < 0.06) vt[y][x] = 0;
+  // dense grid — prune only lightly, except the freight band on the south shore
+  for (let y = 1; y < H; y++) for (let x = 0; x < W; x++) if (r() < (y >= H - 3 ? 0.26 : 0.06)) hz[y][x] = 0;
+  for (let y = 0; y < H; y++) for (let x = 1; x < W; x++) if (r() < (y >= H - 3 ? 0.26 : 0.06)) vt[y][x] = 0;
   // avenues: arterials through both cores, collectors between
   for (let y = 0; y < H; y++) {
     vt[y][CBD.x] = Math.max(vt[y][CBD.x], 3);
@@ -1030,7 +1037,7 @@ function generateStock(state: GameState) {
     for (const ty of PTYPES) t.supply[ty] = 0;
     if (t.water) continue;
     // Meridian City is mostly dirt. Development clusters near the core and thins to nothing at the edges.
-    const dens = clamp(0.10 + Math.pow(t.D / 100, 1.9) * 0.62 + (t.indSuit > 62 ? 0.10 : 0), 0.06, 0.62);
+    const dens = clamp(0.10 + Math.pow(t.D / 100, 1.9) * 0.62 + (t.indSuit > 62 ? 0.02 : 0), 0.06, 0.62) * (t.indSuit > 62 ? 0.75 : 1);
     const budget = Math.round(dens * PGRID * PGRID); // parcels to fill on this block
     // each use competes for land in proportion to the acreage its demand implies
     const weights: [PType, number][] = PTYPES.map(ty => [ty, tileCapacitySF(t, ty) / (FAR[ty] * 43_560 * PARCEL_AC)] as [PType, number]);
@@ -2819,22 +2826,29 @@ function tickListings(s: GameState) {
       }
       if (l.agreed && !l.yourSale) {
         if ((l as any).rivalBid) {
-          const b2 = l.stockId ? s.stock.find(x => x.id === l.stockId) : undefined;
-          if (b2) { b2.owner = s.firms.find(f => f.name === (l as any).rivalName)?.short ?? b2.owner; b2.listedId = undefined; }
-          logComp(s, { m: s.month, type: l.type!, sf: l.sf ?? 0, price: (l as any).rivalBid, capPct: null, tileI: l.tileI, buyer: (l as any).rivalName ?? 'A rival' });
+          const rivalFirm = s.firms.find(f => f.name === (l as any).rivalName);
+          if (l.kind === 'land') {
+            if (rivalFirm) firmTakesLand(s, rivalFirm, l);
+          } else {
+            const b2 = l.stockId ? s.stock.find(x => x.id === l.stockId) : undefined;
+            if (b2) { b2.owner = rivalFirm?.short ?? b2.owner; b2.listedId = undefined; }
+            logComp(s, { m: s.month, type: l.type!, sf: l.sf ?? 0, price: (l as any).rivalBid, capPct: null, tileI: l.tileI, buyer: (l as any).rivalName ?? 'A rival' });
+          }
           pushNews(s, 'warn', `You lost the bidding war: ${(l as any).rivalName} closed at ${fmtMoney((l as any).rivalBid)}. Second place in real estate is a story you tell at bars.`);
         } else {
           s.reputation = clamp(s.reputation - 2, 0, 100);
           pushNews(s, 'warn', 'A seller you had under agreement watched you fail to close. That story travels faster than your good ones.');
         }
       }
-    } else if (l.agreed && !l.yourSale && l.kind !== 'offmarket' && !(l as any).rivalBid && rng(s) < 0.14) {
+    } else if (l.agreed && !l.yourSale && l.kind !== 'offmarket' && !(l as any).rivalBid && !l.parentAssetId && rng(s) < (l.kind === 'land' ? 0.11 : 0.14)) {
       // someone saw the flyer come down and decided they want it more
       const rival = rpick(s, s.firms.filter(f => f.alive));
       (l as any).rivalBid = roundPrice(l.price * rrange(s, 1.03, 1.09));
       (l as any).rivalName = rival.name;
       l.expiresMonth = Math.min(l.expiresMonth, s.month + 1);
-      pushNews(s, 'event', `BIDDING WAR: ${rival.name} just offered ${fmtMoney((l as any).rivalBid)} on the ${((l.sf ?? 0) / 1000).toFixed(0)}K SF ${PLABEL[l.type!]} you have under agreement. Match it this month or the seller walks to them.`);
+      pushNews(s, 'event', l.kind === 'land'
+        ? `BIDDING WAR: ${rival.name} just offered ${fmtMoney((l as any).rivalBid)} on the ${l.acres}-acre parcel you have under agreement. Land you hesitate on is land somebody else assembles.`
+        : `BIDDING WAR: ${rival.name} just offered ${fmtMoney((l as any).rivalBid)} on the ${((l.sf ?? 0) / 1000).toFixed(0)}K SF ${PLABEL[l.type!]} you have under agreement. Match it this month or the seller walks to them.`, l.tileI);
     } else if (l.kind === 'building' && !l.agreed && (l.listMonth ?? s.month) <= s.month - 3 && rng(s) < 0.2) {
       // fatigue: the longer it sits, the softer the seller
       l.price = roundPrice(l.price * rrange(s, 0.965, 0.99));
@@ -2895,6 +2909,27 @@ function tickConstruction(s: GameState) {
   }
 }
 
+function firmTakesLand(s: GameState, f: Firm, l: Listing) {
+  const t = s.tiles[l.tileI];
+  const ty: PType = t.indSuit > 55 ? 'industrial' : f.style === 'core' ? 'office' : rng(s) < 0.5 ? 'retail' : 'mixed';
+  const cells = l.parcelCells ?? (l.parcel ? footprintCells(l.parcel) : null);
+  const acres = l.acres ?? (cells ? cells.length * PARCEL_AC : 1);
+  const sf = Math.round(acres * 43_560 * FAR[ty] * rrange(s, 0.55, 0.9) / 1000) * 1000;
+  if (cells && cells.length && sf >= 4000) {
+    const months = Math.min(26, Math.max(6, Math.round(4 + sf / 7000)));
+    const quality = clamp(rrange(s, 45, 85), 30, 92);
+    s.stock.push({
+      id: s.nextId++, tileI: l.tileI, type: ty, sf, cells: [...cells],
+      units: genUnitsFor(s, ty, sf), quality, age: 0,
+      construction: CONSTR[ty][Math.min(CONSTR[ty].length - 1, 2 - qGrade(quality))].id,
+      occ: 0, owner: f.short, buildLeft: months, buildTotal: months, builder: f.short,
+    });
+    pushNews(s, 'deal', `${f.name} took the ${l.acres}-acre parcel — ${(sf / 1000).toFixed(0)}K SF of ${PLABEL[ty].toLowerCase()} breaks ground there this month.`, l.tileI);
+  } else {
+    pushNews(s, 'deal', `${f.name} took the ${l.acres}-acre parcel. For now they're sitting on the dirt.`, l.tileI);
+  }
+}
+
 function tickFirms(s: GameState) {
   if (s.month % 3 !== 0) return;
   for (const f of s.firms) {
@@ -2914,25 +2949,8 @@ function tickFirms(s: GameState) {
     const scored = s.listings.map(l => ({ l, p: fit(l) })).sort((a, b) => b.p - a.p);
     if (scored.length && rng(s) < scored[0].p) {
       const l = scored[0].l;
-      const t = s.tiles[l.tileI];
       if (l.kind === 'land') {
-        const ty: PType = t.indSuit > 55 ? 'industrial' : f.style === 'core' ? 'office' : rng(s) < 0.5 ? 'retail' : 'mixed';
-        const cells = l.parcelCells ?? (l.parcel ? footprintCells(l.parcel) : null);
-        const acres = l.acres ?? (cells ? cells.length * PARCEL_AC : 1);
-        const sf = Math.round(acres * 43_560 * FAR[ty] * rrange(s, 0.55, 0.9) / 1000) * 1000;
-        if (cells && cells.length && sf >= 4000) {
-          const months = Math.min(26, Math.max(6, Math.round(4 + sf / 7000)));
-          const quality = clamp(rrange(s, 45, 85), 30, 92);
-          s.stock.push({
-            id: s.nextId++, tileI: l.tileI, type: ty, sf, cells: [...cells],
-            units: genUnitsFor(s, ty, sf), quality, age: 0,
-            construction: CONSTR[ty][Math.min(CONSTR[ty].length - 1, 2 - qGrade(quality))].id,
-            occ: 0, owner: f.short, buildLeft: months, buildTotal: months, builder: f.short,
-          });
-          pushNews(s, 'deal', `${f.name} bought the ${l.acres}-acre parcel you may have been watching — ${(sf / 1000).toFixed(0)}K SF of ${PLABEL[ty].toLowerCase()} breaks ground there this month.`, l.tileI);
-        } else {
-          pushNews(s, 'deal', `${f.name} bought the ${l.acres}-acre parcel you may have been watching. For now they're sitting on the dirt.`, l.tileI);
-        }
+        firmTakesLand(s, f, l);
       } else {
         const b = l.stockId ? s.stock.find(x => x.id === l.stockId) : undefined;
         if (b) { b.owner = f.short; b.listedId = undefined; }

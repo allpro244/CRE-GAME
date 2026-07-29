@@ -4,9 +4,9 @@ import type { GameState, StockBuilding, Tile } from './engine';
 import { Modal, Hint, BuildingSketch, blockName, pct } from './views2';
 import { buildingArt, siteArt } from './buildingArt';
 
-type Lens = 'value' | 'land' | 'office' | 'retail' | 'industrial' | 'multifamily' | 'crime' | 'pipeline' | 'comps';
+type Lens = 'value' | 'mix' | 'land' | 'office' | 'retail' | 'industrial' | 'multifamily' | 'crime' | 'pipeline' | 'comps';
 const LENSES: { id: Lens; label: string }[] = [
-  { id: 'value', label: 'Desirability' }, { id: 'land', label: 'Land $' }, { id: 'office', label: 'Office rents' },
+  { id: 'value', label: 'Desirability' }, { id: 'mix', label: 'Live·Work·Shop' }, { id: 'land', label: 'Land $' }, { id: 'office', label: 'Office rents' },
   { id: 'retail', label: 'Retail rents' }, { id: 'industrial', label: 'Industrial fit' },
   { id: 'multifamily', label: 'Residential' }, { id: 'crime', label: 'Crime' },
   { id: 'pipeline', label: 'Pipeline' }, { id: 'comps', label: 'Comps' },
@@ -42,30 +42,32 @@ function lensRaw(state: GameState, t: Tile, lens: Lens): number {
   return t.crime / 85;
 }
 const LENS_HUE: Record<Lens, [number, number, number]> = {
-  value: [217, 166, 72], land: [188, 178, 96], office: [93, 143, 232], retail: [93, 143, 232],
+  value: [217, 166, 72], mix: [110, 196, 158], land: [188, 178, 96], office: [93, 143, 232], retail: [93, 143, 232],
   industrial: [63, 169, 126], multifamily: [186, 128, 224], crime: [222, 95, 95],
   pipeline: [232, 140, 60], comps: [120, 200, 160],
 };
 
 // The market isn't a checkerboard — value pools and drains across the city.
 // Bilinear interpolation over tile centers gives the field its continuous grain.
-function useTileValues(state: GameState, lens: Lens): number[] {
+function useTileValues(state: GameState, lens: Lens, mixAll: number[]): number[] {
   return useMemo(() => {
-    const landVals = state.tiles.filter(t => !t.water).map(t => lensRaw(state, t, lens)).sort((a, b) => a - b);
+    const rawOf = (t: Tile) => lens === 'mix' ? mixAll[t.i] : lensRaw(state, t, lens);
+    const landVals = state.tiles.filter(t => !t.water).map(rawOf).sort((a, b) => a - b);
     const lo = landVals[Math.floor(landVals.length * 0.06)] ?? 0;
     const hi = landVals[Math.floor(landVals.length * 0.94)] ?? 1;
     return state.tiles.map(t => {
-      const raw = lensRaw(state, t, lens);
+      const raw = rawOf(t);
       return hi > lo ? Math.max(0, Math.min(1, (raw - lo) / (hi - lo))) : 0.5;
     });
-  }, [state, lens]);
+  }, [state, lens, mixAll]);
 }
 
-function useField(state: GameState, lens: Lens) {
+function useField(state: GameState, lens: Lens, mixAll: number[]) {
   return useMemo(() => {
     const W = E.CONFIG.GRID_W, H = E.CONFIG.GRID_H;
+    const lensRaw2 = (st: GameState, t: Tile, ln: Lens) => ln === 'mix' ? mixAll[t.i] : lensRaw(st, t, ln);
     // normalize against the city's own spread — a flat lens tells you nothing
-    const landVals = state.tiles.filter(t => !t.water).map(t => lensRaw(state, t, lens)).sort((a, b) => a - b);
+    const landVals = state.tiles.filter(t => !t.water).map(t => lensRaw2(state, t, lens)).sort((a, b) => a - b);
     const lo = landVals[Math.floor(landVals.length * 0.06)] ?? 0;
     const hi = landVals[Math.floor(landVals.length * 0.94)] ?? 1;
     const norm = (raw: number) => hi > lo ? Math.max(0, Math.min(1, (raw - lo) / (hi - lo))) : 0.5;
@@ -74,12 +76,12 @@ function useField(state: GameState, lens: Lens) {
       V.push([]);
       for (let x = 0; x < W; x++) {
         const t = state.tiles[y * W + x];
-        if (!t.water) { V[y].push(norm(lensRaw(state, t, lens))); continue; }
+        if (!t.water) { V[y].push(norm(lensRaw2(state, t, lens))); continue; }
         // water tiles borrow neighbors so the field flows under the river
         let s = 0, n = 0;
         for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
           const nt = state.tiles[(y + dy) * W + (x + dx)];
-          if (nt && !nt.water && nt.x === x + dx) { s += norm(lensRaw(state, nt, lens)); n++; }
+          if (nt && !nt.water && nt.x === x + dx) { s += norm(lensRaw2(state, nt, lens)); n++; }
         }
         V[y].push(n ? s / n : 0.2);
       }
@@ -193,7 +195,7 @@ function defaultConstr(type: E.PType, sf: number): string {
   return 'podium';
 }
 
-interface IsoBld { cx: number; cy: number; w: number; h: number; ht: number; col: string; listed: boolean; key: string; prog?: number; mine?: boolean; type?: E.PType; construction?: string; quality?: number; age?: number; sf?: number; occ?: number; seed?: number }
+interface IsoBld { cx: number; cy: number; w: number; h: number; ht: number; col: string; listed: boolean; key: string; prog?: number; mine?: boolean; type?: E.PType; construction?: string; quality?: number; age?: number; sf?: number; occ?: number; seed?: number; stories?: number }
 
 // Greedy maximal-rectangle decomposition of a cell set: one prism per rectangle
 // instead of one per quarter-acre cell. An L-shaped assembly becomes two prisms.
@@ -239,7 +241,7 @@ function useIsoBuildings(state: GameState): IsoBld[] {
       for (const [ri, r] of cellRects(cells).entries()) {
         const [cx, cy] = parcelCenter(t.x, t.y, r.px, r.py, r.pw, r.ph);
         const [w, h] = parcelSpan(r.pw, r.ph);
-        out.push({ cx, cy, w: w * m.shrink, h: h * m.shrink, ht, col, listed, key: key + '_r' + ri, prog, mine,
+        out.push({ cx, cy, w: w * m.shrink, h: h * m.shrink, ht, col, listed, key: key + '_r' + ri, prog, mine, stories: m.stories,
           type: o.type, construction: o.construction, quality: o.quality, age: o.age, sf: o.sf, occ: (o as any).occ,
           seed: (state.seed ^ ((o.tileI + 1) * 0x9e3779b9) ^ ri) | 0 });
       }
@@ -304,7 +306,7 @@ function BldDetail({ b }: { b: IsoBld }) {
   const els = b.prog !== undefined
     ? siteArt(geom, b.prog, b.seed ?? 1)
     : b.type
-      ? buildingArt({ type: b.type, construction: b.construction ?? 'concrete', quality: b.quality ?? 50, age: b.age ?? 10, sf: b.sf ?? 0, occ: b.occ ?? 0, seed: b.seed ?? 1 }, geom)
+      ? buildingArt({ type: b.type, construction: b.construction ?? 'concrete', quality: b.quality ?? 50, age: b.age ?? 10, sf: b.sf ?? 0, occ: b.occ ?? 0, seed: b.seed ?? 1, stories: b.stories }, geom)
       : [];
   if (!els.length) return null;
   return (
@@ -553,10 +555,10 @@ const FlatBuildings = memo(function FlatBuildings({ blds }: { blds: IsoBld[] }) 
   ))}</g>;
 });
 
-export function MapView({ state, setState, selTile, setSelTile, openDeal, openStock, openAsset, focusTile }: {
+export function MapView({ state, setState, selTile, setSelTile, openDeal, openStock, openAsset, focusTile, advance, advanceUntil }: {
   state: GameState; setState: (s: GameState) => void; selTile: number | null; setSelTile: (i: number | null) => void;
   openDeal: (id: number) => void; openStock: (id: number) => void; openAsset: (id: number) => void;
-  focusTile?: number | null;
+  focusTile?: number | null; advance?: (n: number) => void; advanceUntil?: () => void;
 }) {
   const [hover, setHover] = useState<{ text: string; sub: string; x: number; y: number } | null>(null);
   const [lens, setLens] = useState<Lens>('value');
@@ -565,7 +567,8 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const IW_TOT = (E.CONFIG.GRID_W + E.CONFIG.GRID_H) * (IW / 2) + IOX * 2;
   const IH_TOT = (E.CONFIG.GRID_W + E.CONFIG.GRID_H) * (IH / 2) + IOY + 40;
   const isoBlds = useIsoBuildings(state);
-  const tileVals = useTileValues(state, lens);
+  const mixAll = useMemo(() => E.computeMix(state), [state]);
+  const tileVals = useTileValues(state, lens, mixAll);
   useEffect(() => {
     if (focusTile === null || focusTile === undefined) return;
     const t = state.tiles[focusTile];
@@ -580,7 +583,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const vpIso = useViewport(0, 0, IW_TOT, IH_TOT);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const vpFlat = useViewport(-20, -18, W + 24, H + 22);
-  const field = useField(state, lens);
+  const field = useField(state, lens, mixAll);
   const river = useMemo(() => riverGeometry(state), [state.seed]);
   const runs = useMemo(() => roadRuns(state.roads), [state.seed]); // eslint-disable-line
   const hue = LENS_HUE[lens];
@@ -608,15 +611,21 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
     return () => window.removeEventListener('keydown', onKey);
   }, []);
   // when the clock ticks, the map acknowledges it: blocks that made news pulse briefly
+  // and a one-line digest reports what the month brought
   const [pulseTiles, setPulseTiles] = useState<number[]>([]);
+  const [digest, setDigest] = useState<string | null>(null);
   const prevMonth = useRef(state.month);
   useEffect(() => {
     if (state.month === prevMonth.current) return;
     prevMonth.current = state.month;
-    const tiles = [...new Set(state.news.filter(n => n.m === state.month && n.tileI !== undefined).map(n => n.tileI!))];
-    if (!tiles.length) return;
-    setPulseTiles(tiles);
-    const id = setTimeout(() => setPulseTiles([]), 1700);
+    const items = state.news.filter(n => n.m === state.month);
+    const tiles = [...new Set(items.filter(n => n.tileI !== undefined).map(n => n.tileI!))];
+    if (tiles.length) setPulseTiles(tiles);
+    const kinds: Record<string, number> = {};
+    for (const n of items) kinds[n.kind] = (kinds[n.kind] ?? 0) + 1;
+    const bits = Object.entries(kinds).map(([k, c]) => `${c} ${k}${c > 1 ? 's' : ''}`);
+    setDigest(`${E.monthName(state.month)} · ${bits.length ? bits.join(' · ') : 'a quiet month'}`);
+    const id = setTimeout(() => { setPulseTiles([]); setDigest(null); }, 2400);
     return () => clearTimeout(id);
   }, [state.month, state.news]);
   const selInfo = useMemo(() => {
@@ -719,6 +728,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             <div className="faint" style={{ fontSize: 10.5 }}>{hover.sub}</div>
           </div>
         )}
+        {digest && <div className="month-digest num">{digest}</div>}
         <div className="lens-row">
           {LENSES.map(l => <button key={l.id} className={lens === l.id ? 'active' : ''} onClick={() => setLens(l.id)}>{l.label}</button>)}
           <span style={{ flex: 1 }} />
@@ -727,6 +737,13 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           <button onClick={() => (view === 'iso' ? vpIso : vpFlat).zoomAt(1 / 1.35)} title="Zoom out">−</button>
           <button onClick={() => (view === 'iso' ? vpIso : vpFlat).zoomAt(1.35)} title="Zoom in">+</button>
           <button onClick={() => (view === 'iso' ? vpIso : vpFlat).reset()} title="Fit the whole city">⤢ {(view === 'iso' ? vpIso.z : vpFlat.z).toFixed(1)}×</button>
+          {advance && <>
+            <span style={{ width: 1, alignSelf: 'stretch', background: 'var(--line)', margin: '0 2px' }} />
+            <button className="active" style={{ fontWeight: 700 }} title="Advance one month (Space)"
+              disabled={state.pending.length > 0 || state.gameOver} onClick={() => advance(1)}>▸ month</button>
+            <button title="Run until something needs you" disabled={state.pending.length > 0 || state.gameOver}
+              onClick={advanceUntil}>⏭ event</button>
+          </>}
         </div>
         {view === 'iso' ? (
         <svg className="map-svg" ref={vpIso.ref} viewBox={vpIso.viewBox} style={vpIso.style} {...vpIso.handlers}>
@@ -907,6 +924,9 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
               <div className="metric"><div className="eyebrow">Employment</div><div className="v num">{sel.emp.toFixed(0)}</div></div>
               <div className="metric"><div className="eyebrow">Residents</div><div className="v num">{sel.pop.toFixed(0)}</div></div>
               <div className="metric"><div className="eyebrow">Crime</div><div className={'v num ' + (sel.crime > 55 ? 'neg' : '')}>{sel.crime.toFixed(0)}</div></div>
+              <div className="metric"><div className="eyebrow">Live·Work·Shop <Hint text="How much the blend of homes, jobs and shops within walking distance is adding to this block's desirability right now. Balance compounds; monoculture scores nothing. Quality of the product weighs in." /></div>
+                <div className={'v num ' + (mixAll[sel.i] > 14 ? 'pos' : '')}>{Math.round(Math.min(100, mixAll[sel.i] / 34 * 100))}<span className="faint">/100</span>
+                  <span className="faint" style={{ fontSize: 9.5 }}> +{mixAll[sel.i].toFixed(0)}D</span></div></div>
             </div>
             {(() => {
               // What's actually standing within a short walk — the raw facts a surveyor
@@ -1054,7 +1074,7 @@ function ParcelBuyPanel({ state, setState, tileI, cells, close, openDeal, ghostT
       <div className="dim" style={{ fontSize: 11.5, margin: '4px 0 8px', lineHeight: 1.5 }}>
         Click more vacant lots to add them; click a selected lot to drop it. Esc clears. Dotted lots adjoin your site.
       </div>
-      <div className="memo-row"><span className="lbl">Site</span><span className="num">{acres} acres · {E.fmtMoney(Math.round(price / Math.max(0.01, acres)))}/acre</span></div>
+      <div className="memo-row"><span className="lbl">Site</span><span className="num">{acres} acres · ${(price / Math.max(1, acres * 43_560)).toFixed(0)}/SF land</span></div>
       {strayLen > 0 && (
         <div className="memo-row"><span className="lbl">Buildable as one site <Hint text="Parcels must share an edge. Two lots meeting only at a corner are separate sites — you can still bank both." /></span>
           <span className="num neg">{strayLen} lot{strayLen > 1 ? 's' : ''} corner-only — bridge or drop {strayLen > 1 ? 'them' : 'it'}</span></div>

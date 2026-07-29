@@ -201,6 +201,7 @@ function Game({ state, setState, toMenu }: {
         {state.forcedSaleNotice && <div className="alert-strip red"><span>⚠ {state.forcedSaleNotice}</span></div>}
         {tab === 'dashboard' && <Dashboard state={state} goDeals={() => setTab('deals')} openLOI={id => setLoiId(id)} openFirm={s => setFirmShort(s)} flyTo={flyTo} />}
         {tab === 'map' && <MapView state={state} setState={setState} focusTile={focusTile} selTile={selTile} setSelTile={setSelTile}
+          advance={advance} advanceUntil={advanceUntil}
           openDeal={id => { setStockCardId(null); setAssetId(null); setDealId(id); }}
           openStock={id => { setAssetId(null); setStockCardId(id); }}
           openAsset={id => { setStockCardId(null); setAssetId(id); }} />}

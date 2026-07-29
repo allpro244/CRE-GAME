@@ -31,6 +31,7 @@ function rpick<T>(state: GameState, arr: T[]): T { return arr[Math.floor(rng(sta
 export interface ConstrSpec {
   id: string; label: string; cost: number; q: number; qCap: number;
   minUnits?: number; fixedUnits?: number; maxSF?: number; rentBonus?: number;
+  minCells?: number;   // quarter-acre parcels a real one of these sits on
 }
 // The spec whose quality band a building belongs to. CONSTR arrays are NOT uniformly
 // ordered best-first (multifamily ascends, retail zigzags), so never index them by grade.
@@ -45,12 +46,12 @@ export function constrForQuality(ty: PType, q: number): ConstrSpec {
 // a capital program, and the address to carry it.
 export const CONSTR: Record<PType, ConstrSpec[]> = {
   industrial: [
-    { id: 'tilt', label: 'Tilt-wall concrete', cost: 115, q: 117, qCap: 142 },
-    { id: 'metal', label: 'Pre-engineered metal', cost: 88, q: 87, qCap: 105 },
-    { id: 'tin', label: 'Tin / light steel', cost: 62, q: 54, qCap: 68 },
+    { id: 'tilt', label: 'Tilt-wall concrete', cost: 115, q: 117, qCap: 142, minCells: 4 },
+    { id: 'metal', label: 'Pre-engineered metal', cost: 88, q: 87, qCap: 105, minCells: 4 },
+    { id: 'tin', label: 'Tin / light steel', cost: 62, q: 54, qCap: 68, minCells: 2 },
   ],
   retail: [
-    { id: 'center', label: 'Shopping center', cost: 204, q: 105, qCap: 135, minUnits: 6 },
+    { id: 'center', label: 'Shopping center', cost: 204, q: 105, qCap: 135, minUnits: 6, minCells: 3 },
     { id: 'strip', label: 'Retail strip', cost: 137, q: 57, qCap: 83, minUnits: 3 },
     { id: 'pad', label: 'Pad site (single tenant)', cost: 230, q: 111, qCap: 138, fixedUnits: 1, maxSF: 8000, rentBonus: 0.25 },
   ],
@@ -60,10 +61,10 @@ export const CONSTR: Record<PType, ConstrSpec[]> = {
     { id: 'wood', label: 'Wood frame — Class C', cost: 160, q: 57, qCap: 68 },
   ],
   mixed: [
-    { id: 'podium', label: 'Podium mixed-use', cost: 267, q: 105, qCap: 138 },
+    { id: 'podium', label: 'Podium mixed-use', cost: 267, q: 105, qCap: 138, minCells: 2 },
   ],
   multifamily: [
-    { id: 'garden', label: 'Garden apartments', cost: 175, q: 78, qCap: 102 },
+    { id: 'garden', label: 'Garden apartments', cost: 175, q: 78, qCap: 102, minCells: 2 },
     { id: 'midrise', label: 'Wood-podium midrise', cost: 223, q: 102, qCap: 126 },
     { id: 'tower', label: 'Concrete tower — Class A', cost: 312, q: 129, qCap: 142 },
   ],
@@ -1293,10 +1294,11 @@ function generateStock(state: GameState) {
       const maxSF = room * PARCEL_AC * 43_560 * FAR[ty] * zoneTierMult(t.zone.tier);
       let sf = Math.round(clamp(rrange(state, lo, hi), lo, Math.max(lo, maxSF)) / 1000) * 1000;
       if (sf > maxSF) { if (lo > maxSF) break; sf = Math.round(maxSF / 1000) * 1000; }
-      const need = parcelsNeeded(sf, ty, t.zone.tier);
+      const quality = clamp(rrange(state, 33, 117) + (t.D - 50) * 0.22, 22, 132);
+      const specPick = constrForQuality(ty, quality);
+      const need = Math.max(specPick.minCells ?? 1, parcelsNeeded(sf, ty, t.zone.tier));
       const spot = findFreeRect(state, t.i, need, () => rng(state));
       if (!spot) break;
-      const quality = clamp(rrange(state, 33, 117) + (t.D - 50) * 0.22, 22, 132);
       const df = tileDemandFactor(state, t, ty);
       // day-one occupancy centers where the market model will hold it — a going
       // concern, not a city-wide lease-up in progress
@@ -1797,6 +1799,8 @@ export function validateDev(state: GameState, l: Listing, c: DevChoice): string 
   if (zt && !zoneAllows(zt.zone, c.type)) {
     return `Block ${blockLabel(zt)} is zoned ${zoneCode(zt.zone)} (${ZONE_LABEL[zt.zone.use].toLowerCase()}) — ${PLABEL[c.type].toLowerCase()} isn't a permitted use. Rezone first, or build what the paper allows.`;
   }
+  const minC = spec.minCells ?? 1;
+  if (listingParcels(l) < minC) return `A real ${spec.label.toLowerCase()} wants ${minC * 0.25} acres of dirt — this site is ${listingParcels(l) * 0.25}. Assemble ${minC - listingParcels(l)} more parcel${minC - listingParcels(l) > 1 ? 's' : ''} or pick a lighter spec.`;
   const bMax = maxBuildableSF(state, l, c.type);
   if (c.sf > bMax) return `Zoning at ${zt ? zoneCode(zt.zone) : '—'} caps a ${PLABEL[c.type].toLowerCase()} building on ${l.acres} acres at ${(bMax / 1000).toFixed(0)}K SF. Upzone the block to go denser.`;
   if (c.sf > CONFIG.tiers[state.tier].maxSF) return `Your firm can take on projects up to ${CONFIG.tiers[state.tier].maxSF / 1000}K SF. Grow to unlock larger.`;
@@ -3866,7 +3870,7 @@ function firmDevelops(s: GameState, f: Firm) {
   if (!cands.length) return;
   cands.sort((a, b) => tileDemandFactor(s, b, want) - tileDemandFactor(s, a, want));
   const t = rpick(s, cands.slice(0, 8));
-  const need = 3 + Math.floor(rng(s) * 5);
+  const need = Math.max(constrForQuality(want, 100).minCells ?? 1, 3 + Math.floor(rng(s) * 5));
   const spot = findFreeRect(s, t.i, need, () => rng(s));
   if (!spot) return;
   const acres = spot.pw * spot.ph * PARCEL_AC;
@@ -3990,14 +3994,15 @@ function tickFirmLand(s: GameState) {
     }
     groups.sort((a, b) => b.length - a.length);
     const main = groups[0] ?? [];
-    const ready = main.length >= 2 && (main.length >= 4 || rng(s) < 0.22);
+    const ready = main.length >= 2 && (main.length >= 4 || rng(s) < 0.22);   // spec minCells re-checked below
     if (ready) {
       const pref: PType[] = t.indSuit > 55 ? ['industrial'] : f.style === 'mf' ? ['multifamily', 'mixed'] : f.style === 'core' ? ['office', 'mixed'] : rng(s) < 0.5 ? ['retail', 'mixed'] : ['mixed', 'retail'];
       const ty = pref.find(x => zoneAllows(t.zone, x)) ?? ZONE_ALLOWS[t.zone.use][0];
       const sf = Math.round(main.length * PARCEL_AC * 43_560 * FAR[ty] * zoneTierMult(t.zone.tier) * upzoneBonus(main.length) * rrange(s, 0.7, 0.95) / 500) * 500;
       const quality = clamp(rrange(s, 75, 132), 45, 138);
-      const cost = sf * constrForQuality(ty, quality).cost * constrCostIdx(s) * 1.3;
-      if (sf >= MIN_BUILD_SF && f.cash >= cost * 0.35 + 1_000_000) {
+      const spec2 = constrForQuality(ty, quality);
+      const cost = sf * spec2.cost * constrCostIdx(s) * 1.3;
+      if (sf >= MIN_BUILD_SF && main.length >= (spec2.minCells ?? 1) && f.cash >= cost * 0.35 + 1_000_000) {
         const months = Math.min(26, Math.max(6, Math.round(4 + sf / 7000)));
         f.cash -= cost * 0.35;
         f.debt += cost * 0.65;

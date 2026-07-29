@@ -184,12 +184,22 @@ const MAX_STORIES: Record<string, number> = {
 // typical share of the site the building itself covers — the rest is parking,
 // docks, yards, landscaping
 const COVER: Record<E.PType, number> = { industrial: 0.50, retail: 0.28, office: 0.45, mixed: 0.50, multifamily: 0.40 };
-function massing(type: E.PType, construction: string | undefined, sf: number, siteCells: number): { stories: number; ht: number; shrink: number } {
+// Fabric is what the eye reads as urban: downtown buildings meet their lot lines and
+// each other (adjacent prisms share edges EXACTLY at shrink 1.0 — verified), houses
+// keep yards, industry sits on flat pads. Which fabric applies comes from the zoning.
+type Fabric = 'wall' | 'yard' | 'pad';
+function fabricOf(zone: E.Zone | undefined, type: E.PType): Fabric {
+  if (type === 'industrial' || zone?.use === 'M') return 'pad';
+  if (zone && (zone.use === 'C' || zone.use === 'MU') && zone.tier >= 2) return 'wall';
+  return 'yard';
+}
+function massing(type: E.PType, construction: string | undefined, sf: number, siteCells: number, fabric: Fabric = 'yard'): { stories: number; ht: number; shrink: number } {
   const siteSF = Math.max(1, siteCells) * E.PARCEL_AC * 43_560;
   const maxSt = MAX_STORIES[construction ?? ''] ?? (type === 'industrial' || type === 'retail' ? 1 : 8);
   const stories = Math.max(1, Math.min(maxSt, Math.round(sf / (siteSF * COVER[type]))));
-  const cover = Math.max(0.10, Math.min(0.92, sf / stories / siteSF));
-  return { stories, ht: 4 + stories * 4.2, shrink: Math.max(0.34, Math.min(0.94, Math.sqrt(cover))) };
+  const cover = Math.max(fabric === 'wall' ? 0.55 : 0.10, Math.min(0.92, sf / stories / siteSF));
+  const shrink = fabric === 'wall' ? 1.0 : fabric === 'pad' ? 0.96 : Math.max(0.34, Math.min(0.88, Math.sqrt(cover)));
+  return { stories, ht: 4 + stories * 4.2, shrink };
 }
 function defaultConstr(type: E.PType, sf: number): string {
   if (type === 'office') return sf > 26_000 ? 'concrete' : 'masonry';
@@ -199,7 +209,7 @@ function defaultConstr(type: E.PType, sf: number): string {
   return 'podium';
 }
 
-interface IsoBld { cx: number; cy: number; w: number; h: number; ht: number; col: string; listed: boolean; key: string; prog?: number; mine?: boolean; type?: E.PType; construction?: string; quality?: number; age?: number; sf?: number; occ?: number; seed?: number; stories?: number }
+interface IsoBld { tight?: boolean; cx: number; cy: number; w: number; h: number; ht: number; col: string; listed: boolean; key: string; prog?: number; mine?: boolean; type?: E.PType; construction?: string; quality?: number; age?: number; sf?: number; occ?: number; seed?: number; stories?: number }
 
 // Greedy maximal-rectangle decomposition of a cell set: one prism per rectangle
 // instead of one per quarter-acre cell. An L-shaped assembly becomes two prisms.
@@ -235,6 +245,7 @@ function useIsoBuildings(state: GameState): IsoBld[] {
     + ':' + state.assets.reduce((s2, a) => s2 + (a.project?.monthsLeft ?? 0) + (a.mode === 'construction' ? 1000 : 0), 0)
     + ':' + Math.round(state.stock.reduce((s2, b) => s2 + b.occ, 0) * 4)
     + ':' + Math.round(state.assets.reduce((s2, a) => s2 + a.quality + a.occ * 4 + (a.repair ? 9 : 0), 0))
+    + ':' + state.tiles.reduce((s2, t) => s2 + (t.water ? 0 : ({ R: 1, C: 2, MU: 3, M: 4 } as const)[t.zone.use] * t.zone.tier * ((t.i % 13) + 1)), 0)
     + ':' + state.firmLand.length + ':' + state.firmLand.reduce((s2, e) => s2 + e.cells.length, 0);
   return useMemo(() => {
     const out: IsoBld[] = [];
@@ -242,12 +253,13 @@ function useIsoBuildings(state: GameState): IsoBld[] {
       const cells = E.footprintCells(o);
       if (!cells.length) return;
       const t = state.tiles[o.tileI];
-      const m = massing(o.type, o.construction ?? defaultConstr(o.type, o.sf), o.sf, cells.length);
+      const fab = fabricOf(t.zone, o.type);
+      const m = massing(o.type, o.construction ?? defaultConstr(o.type, o.sf), o.sf, cells.length, fab);
       const ht = prog === undefined ? m.ht : Math.max(3, m.ht * prog);
       for (const [ri, r] of cellRects(cells).entries()) {
         const [cx, cy] = parcelCenter(t.x, t.y, r.px, r.py, r.pw, r.ph);
         const [w, h] = parcelSpan(r.pw, r.ph);
-        out.push({ cx, cy, w: w * m.shrink, h: h * m.shrink, ht, col, listed, key: key + '_r' + ri, prog, mine, stories: m.stories,
+        out.push({ cx, cy, w: w * m.shrink, h: h * m.shrink, ht, col, listed, key: key + '_r' + ri, prog, mine, stories: m.stories, tight: fab === 'wall',
           type: o.type, construction: o.construction, quality: o.quality, age: o.age, sf: o.sf, occ: (o as any).occ,
           seed: (state.seed ^ ((o.tileI + 1) * 0x9e3779b9) ^ ri) | 0 });
       }
@@ -297,7 +309,7 @@ const IsoCity = memo(function IsoCity({ blds, detail }: { blds: IsoBld[]; detail
         const dash = b.prog !== undefined ? '3 2' : undefined;
         return (
           <g key={b.key}>
-            {detail && b.ht > 3 && <polygon points={rectPoly(b.cx + b.w * 0.12, b.cy + b.h * 0.12, b.w, b.h)} fill="#000" opacity={0.22} />}
+            {detail && b.ht > 3 && !b.tight && <polygon points={rectPoly(b.cx + b.w * 0.12, b.cy + b.h * 0.12, b.w, b.h)} fill="#000" opacity={0.22} />}
             <polygon points={f.l} fill={shade(b.col, 0.56)} stroke={st} strokeWidth={sw} strokeDasharray={dash} />
             <polygon points={f.r} fill={shade(b.col, 0.79)} stroke={st} strokeWidth={sw} strokeDasharray={dash} />
             <polygon points={f.t} fill={shade(b.col, 1.16)} stroke={st} strokeWidth={sw} strokeDasharray={dash} />
@@ -322,7 +334,7 @@ function BldDetail({ b }: { b: IsoBld }) {
   const els = b.prog !== undefined
     ? siteArt(geom, b.prog, b.seed ?? 1)
     : b.type
-      ? buildingArt({ type: b.type, construction: b.construction ?? 'concrete', quality: b.quality ?? 75, age: b.age ?? 10, sf: b.sf ?? 0, occ: b.occ ?? 0, seed: b.seed ?? 1, stories: b.stories }, geom)
+      ? buildingArt({ type: b.type, construction: b.construction ?? 'concrete', quality: b.quality ?? 75, age: b.age ?? 10, sf: b.sf ?? 0, occ: b.occ ?? 0, seed: b.seed ?? 1, stories: b.stories, tight: b.tight }, geom)
       : [];
   if (!els.length) return null;
   return (
@@ -954,7 +966,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                     Math.floor(selInfo.main.length * E.PARCEL_AC * 43_560 * E.FAR[effGhost] * E.zoneTierMult(t.zone.tier) * bonus),
                     E.CONFIG.tiers[state.tier].maxSF);
                   if (sfMax < E.MIN_BUILD_SF) return null;
-                  const ht = massing(effGhost, defaultConstr(effGhost, sfMax), sfMax, selInfo.main.length).ht;
+                  const ht = massing(effGhost, defaultConstr(effGhost, sfMax), sfMax, selInfo.main.length, fabricOf(t.zone, effGhost)).ht;
                   return cellRects(selInfo.main).map((r, i) => {
                     const [cx, cy] = parcelCenter(t.x, t.y, r.px, r.py, r.pw, r.ph);
                     const [w, h] = parcelSpan(r.pw, r.ph);

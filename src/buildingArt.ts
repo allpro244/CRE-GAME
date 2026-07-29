@@ -25,6 +25,7 @@ export interface ArtParams {
   sf: number;
   occ: number;       // 0-1, drives how many windows read as lit
   seed: number;      // per-building determinism
+  tight?: boolean;   // street-walled: lot-line to lot-line, no apron room
   stories?: number;  // true story count from massing; falls back to height-derived
 }
 export interface PrismGeom { bl: [number, number]; bb: [number, number]; br: [number, number]; ht: number }
@@ -173,6 +174,7 @@ export function buildingArt(p: ArtParams, g: PrismGeom): ArtEl[] {
   };
   // paved apron in front of the building — parking rows for retail, truck court for docks
   const apron = (kind: 'park' | 'truck') => {
+    if (p.tight) return;   // wall-to-wall buildings have no forecourt
     const dx = 6.5, dy = 3.2;   // toward the viewer in iso space
     out.push({ k: 'p', pts: `${fmt(bb)} ${fmt(br)} ${(br[0] + dx).toFixed(1)},${(br[1] + dy).toFixed(1)} ${(bb[0] + dx).toFixed(1)},${(bb[1] + dy).toFixed(1)}`, f: '#20242a', o: 0.85 });
     if (kind === 'park') {

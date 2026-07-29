@@ -42,7 +42,7 @@ make — you can simulate 30 years in milliseconds before touching the UI.
 
 ### Core state model
 
-- `GameState.tiles` — 14x10 city blocks. Each tile's desirability is **anchor + emergence**:
+- `GameState.tiles` — 20x14 city blocks. Each tile's desirability is **anchor + emergence**:
   `baseD` (geography and street access, fixed at generation except for permanent
   infrastructure like transit) plus a quarterly **mix term** — occupied SF within ~2 blocks
   scored as jobs/residents/amenity by a geometric mean (monoculture ≈ 0, balance compounds),
@@ -59,7 +59,7 @@ make — you can simulate 30 years in milliseconds before touching the UI.
 - Each block is a **4x4 grid of quarter-acre parcels** (`PGRID`, `PARCEL_AC`). Footprints are cell-index
   sets (`cells: number[]`), so buildings can be L-shaped. Edge-sharing (not corner) defines one site —
   see `isContiguous()`.
-- `GameState.stock` — ~190 standing buildings, every one real and owned. Listings are drawn *from* stock.
+- `GameState.stock` — ~500 standing buildings, every one real and owned. Listings are drawn *from* stock.
 - `GameState.assets` — what you own. `GameState.land` — banked vacant parcels.
 - Save format is versioned (`version: 9`); `deserialize()` rejects mismatches rather than crashing.
 

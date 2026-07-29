@@ -604,7 +604,8 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
         <label className="f">Construction
           <select value={dev.construction} onChange={e => setConstr(e.target.value)}>
             {E.CONSTR[dev.type].map(c => (
-              <option key={c.id} value={c.id}>{c.label} — ${c.cost}/SF, Class {E.QLABEL[E.qGrade(c.q)]}</option>
+              <option key={c.id} value={c.id} disabled={(c.minCells ?? 1) > E.listingParcels(listing)}>
+                {c.label} — ${c.cost}/SF, Class {E.QLABEL[E.qGrade(c.q)]}{(c.minCells ?? 1) > E.listingParcels(listing) ? ` (needs ${(c.minCells ?? 1) * 0.25} ac)` : ''}</option>
             ))}
           </select>
         </label>

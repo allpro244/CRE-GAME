@@ -1,5 +1,19 @@
 const E = await import(process.env.ENGINE ?? '/tmp/engine.mjs');
 
+// pick a type the zoning permits, like a player reading the block panel would
+function devChoiceFor(s, l) {
+  const zt = s.tiles[l.tileI];
+  const pref = zt.indSuit > 55 ? ['industrial', 'retail', 'multifamily', 'office'] : ['retail', 'multifamily', 'office', 'industrial'];
+  const ty = pref.find(x => E.zoneAllows(zt.zone, x));
+  if (!ty) return null;
+  const spec = E.CONSTR[ty][1] ?? E.CONSTR[ty][0];
+  const sf = Math.min(15000, E.maxBuildableSF(s, l, ty), E.CONFIG.tiers[s.tier].maxSF, spec.maxSF ?? Infinity);
+  if (sf < 4500) return null;
+  const units = spec.fixedUnits ?? Math.max(spec.minUnits ?? 1,
+    ty === 'industrial' ? 1 : ty === 'multifamily' ? Math.floor(sf / 900) : ty === 'office' ? Math.max(1, Math.floor(sf / 5000)) : Math.max(3, Math.floor(sf / 2500)));
+  return { type: ty, sf, units, construction: spec.id };
+}
+
 function run(seed, city) {
   let s = E.newGame(seed, city ? { city } : undefined);
   // street network invariants: right shape, sane classes, nobody landlocked
@@ -64,12 +78,9 @@ function run(seed, city) {
       if (s.assets.length >= 6) break;
       if (l.kind === 'land') {
         if (s.cash > 900000 && (s.econ.phase==='recovery'||s.econ.phase==='expansion')) {
-          const ty = s.tiles[l.tileI].indSuit > 55 ? 'industrial' : 'retail';
-          const specs = { industrial:'metal', retail:'strip' };
-          const sf = Math.min(15000, E.maxBuildableSF(l, ty), E.CONFIG.tiers[s.tier].maxSF);
-          if (sf >= 4500) {
-            const units = ty==='retail' ? Math.max(3, Math.floor(sf/2500)) : 1;
-            const r = E.buyLandAndDevelop(s, l.id, { type: ty, sf, units, construction: specs[ty], contractor:'standard', contingencyPct:0.10, expedited:false, downPct:0.35, contractType: Math.random()<0.5?'gmp':'costplus', bonded: Math.random()<0.5, recourse: Math.random()<0.4, fixedRate: Math.random()<0.3, designTier: ['ve','std','signature'][Math.floor(Math.random()*3)] });
+          const dc = devChoiceFor(s, l);
+          if (dc) {
+            const r = E.buyLandAndDevelop(s, l.id, { ...dc, contractor:'standard', contingencyPct:0.10, expedited:false, downPct:0.35, contractType: Math.random()<0.5?'gmp':'costplus', bonded: Math.random()<0.5, recourse: Math.random()<0.4, fixedRate: Math.random()<0.3, designTier: ['ve','std','signature'][Math.floor(Math.random()*3)] });
             if (!r.err) { s = r.s; developed++; }
           }
         }
@@ -135,11 +146,9 @@ function run(seed, city) {
         s = r.s;
         const l2 = s.listings.find(x => x.id === r.listingId);
         if (l2) {
-          const ty = s.tiles[l2.tileI].indSuit > 55 ? 'industrial' : 'retail';
-          const sf = Math.min(15000, E.maxBuildableSF(l2, ty), E.CONFIG.tiers[s.tier].maxSF);
-          if (sf >= 4500) {
-            const units = ty==='retail' ? Math.max(3, Math.floor(sf/2500)) : 1;
-            const r2 = E.buyLandAndDevelop(s, l2.id, { type: ty, sf, units, construction: ty==='industrial'?'metal':'strip', contractor:'standard', contingencyPct:0.10, expedited:false, downPct:0.35, contractType: Math.random()<0.5?'gmp':'costplus', bonded: Math.random()<0.5, recourse: Math.random()<0.4, designTier: ['ve','std','signature'][Math.floor(Math.random()*3)] });
+          const dc = devChoiceFor(s, l2);
+          if (dc) {
+            const r2 = E.buyLandAndDevelop(s, l2.id, { ...dc, contractor:'standard', contingencyPct:0.10, expedited:false, downPct:0.35, contractType: Math.random()<0.5?'gmp':'costplus', bonded: Math.random()<0.5, recourse: Math.random()<0.4, designTier: ['ve','std','signature'][Math.floor(Math.random()*3)] });
             if (!r2.err) { s = r2.s; developed++; }
           }
         }

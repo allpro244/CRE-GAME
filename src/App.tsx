@@ -66,6 +66,8 @@ function Game({ state, setState, toMenu }: {
   const [saved, setSaved] = useState(false);
   const [firmShort, setFirmShort] = useState<string | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
+  // first campaign, month zero: the primer opens itself once. Everyone else finds it in the top bar.
+  const [howTo, setHowTo] = useState(() => state.month === 0 && !state.sandbox && state.assets.length === 0 && state.land.length === 0);
   const [focusTile, setFocusTile] = useState<number | null>(null);
   const [assetId, setAssetId] = useState<number | null>(null);
   const flyTo = (tileI: number) => { setFocusTile(tileI); setTab('map'); setTimeout(() => setFocusTile(null), 60); };
@@ -181,6 +183,7 @@ function Game({ state, setState, toMenu }: {
         <button className="btn btn-amber" onClick={() => advance(1)} disabled={state.pending.length > 0 || state.gameOver}>Advance month ▸</button>
         <button className="btn" onClick={() => advance(6)} disabled={state.pending.length > 0 || state.gameOver}>+6 mo ▸▸</button>
         <button className="btn" title="Advance until an event, proposal, or offer needs your attention (max 12 months)" onClick={advanceUntil} disabled={state.pending.length > 0 || state.gameOver}>Until event ⏭</button>
+        <button className="btn btn-ghost" title="The game loop, in one page" onClick={() => setHowTo(true)}>How to play</button>
         <button className="btn btn-ghost" onClick={manualSave}>{saved ? 'Saved ✓' : 'Save'}</button>
         <button className="btn btn-ghost" onClick={() => setSaveOpen(true)}>Slots</button>
         <button className="btn btn-ghost" onClick={async () => { await storageSet('groundwork:auto', E.serialize(state)); toMenu(); }}>Menu</button>
@@ -227,6 +230,7 @@ function Game({ state, setState, toMenu }: {
       {pendingEvt && pendAsset && pendingEvt.type === 'constrEvent' && <EventModal state={state} setState={setState} asset={pendAsset} kind={pendingEvt.eventKind} />}
       {pendingEvt && pendAsset && pendingEvt.type === 'assetEvent' && <AssetEventModal state={state} setState={setState} asset={pendAsset} kind={pendingEvt.eventKind} />}
       {saveOpen && <SaveLoadModal state={state} setState={setState} close={() => setSaveOpen(false)} />}
+      {howTo && <HowToPlayModal close={() => setHowTo(false)} />}
       {state.gameOver && <GameOverModal state={state} restart={() => setState(E.newGame())} />}
     </div>
   );
@@ -343,6 +347,58 @@ function Dashboard({ state, goDeals, openLOI, openFirm, flyTo }: { state: GameSt
         </div>
       </div>
     </div>
+  );
+}
+
+function HowToPlayModal({ close }: { close: () => void }) {
+  const S = ({ n, t, children }: { n: string; t: string; children: React.ReactNode }) => (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+        <span className="num" style={{ color: 'var(--amber)', fontSize: 13 }}>{n}</span>
+        <b style={{ color: 'var(--ink)', fontSize: 13 }}>{t}</b>
+      </div>
+      <div className="dim" style={{ fontSize: 12.5, lineHeight: 1.65, marginTop: 3 }}>{children}</div>
+    </div>
+  );
+  return (
+    <Modal close={close} wide>
+      <h2>How this business works</h2>
+      <div className="sub" style={{ marginBottom: 14 }}>You have $600,000 and a city that doesn't know your name. Everything below is the whole game; the rest is judgment.</div>
+      <div style={{ columns: 2, columnGap: 28 }}>
+        <S n="1" t="Read the city before you spend a dollar.">
+          The map is the market. High rents live where businesses and residents already overlap — walk the lenses (keys 1-9),
+          watch where the value pools, and trust your own read; the game will never tell you where the next hot block is.
+          The Zoning lens shows what the paper allows. The zone chip in the block panel shows what you'd be permitted to build.
+        </S>
+        <S n="2" t="Control dirt cheaply, own it deliberately.">
+          Listed land is the easy way in. Unlisted parcels have owners — call them (3 calls a month); a third won't sell,
+          most want a premium, a few are quietly motivated. Go under contract to buy a study window before you close,
+          or close blind and own the surprises. Watch for rivals assembling parcels near yours — claret pads on the map.
+        </S>
+        <S n="3" t="Build what pencils, not what's pretty.">
+          Break ground from your banked land. The pro forma shows yield-on-cost against the market cap rate — build when the
+          spread is fat, and mind the choices that price risk: GMP vs cost-plus, bonding, recourse, the interest reserve.
+          Development is where fortunes compound and where they end.
+        </S>
+        <S n="4" t="Leasing is the actual job.">
+          Empty buildings are bills with an address. Negotiate LOIs — rate, term, escalations, options, TI — and remember an
+          anchor tenant is load-bearing: lose one and the co-tenancy clauses fire. Renewals are cheaper than vacancies.
+        </S>
+        <S n="5" t="Debt is a tool with teeth.">
+          Construction loans float and want to be taken out at stabilization — permanent financing is cheaper and fixed.
+          Covenants sweep your cash when coverage slips. Recourse follows you home. The Debt tab shows every term you signed.
+        </S>
+        <S n="6" t="Exit like a professional.">
+          Sell into strength, mind the taxes (a 1031 defers them if you re-buy fast), and remember the buyer's cap rate cares
+          about your rent roll's credit, not your feelings. Land on upzoned blocks sells for more than you paid the council in fees —
+          that trade is as old as zoning.
+        </S>
+      </div>
+      <div className="faint" style={{ fontSize: 11, marginTop: 4 }}>Space advances the month. V flips the view. Esc closes things. The city keeps moving whether you do or not.</div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+        <button className="btn btn-amber" onClick={close}>Go to work</button>
+      </div>
+    </Modal>
   );
 }
 

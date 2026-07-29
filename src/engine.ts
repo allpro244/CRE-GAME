@@ -266,6 +266,9 @@ export interface Asset {
   project?: Project; renovMonthsLeft?: number;
   designTier?: 've' | 'std' | 'signature';
   negCFStreak: number;
+  // an insured casualty in repair: that fraction of the building earns nothing
+  // while taxes and insurance run on all of it
+  repair?: { frac: number; monthsLeft: number; what: string };
 }
 
 export interface Listing {
@@ -874,7 +877,8 @@ export function assetEGIMonthly(state: GameState, a: Pick<Asset, 'tileI' | 'type
 }
 export function assetNOIMonthly(state: GameState, a: Asset): number {
   const potM = (a.sf * assetRentPSF(state, a)) / 12;
-  const egiM = assetEGIMonthly(state, a);
+  // a casualty in repair takes its share of the income offline; the expenses don't care
+  const egiM = assetEGIMonthly(state, a) * (a.repair ? 1 - a.repair.frac : 1);
   const ex = expenseBreakdown(state, a, potM, egiM);
   return egiM - ex.total;
 }
@@ -2455,6 +2459,26 @@ export function applyRezoning(state: GameState, tileI: number, toUse: ZoneUse, t
   pushNews(s, 'info', `Filed to rezone block ${blockLabel(t)} from ${zoneCode(t.zone)} to ${toUse}-${toTier}. The council hears it in ~${months} months. ${rezoneOdds(s, tileI, toUse, toTier).read}`, tileI);
   return { s };
 }
+// Losing the anchor trips every co-tenancy clause in the rent roll at once. The
+// inline tenants signed up to be next to the anchor, not next to a vacancy.
+function tripCoTenancy(s: GameState, a: Asset, ex: { name: string; sf: number }) {
+  if (a.type !== 'retail' && a.type !== 'mixed') return;
+  if (ex.sf < a.sf * 0.35 || !a.tenants.length) return;
+  let cut = 0, fled = 0;
+  for (const tn of [...a.tenants]) {
+    if (tn.sf >= ex.sf) continue;
+    const u = rng(s);
+    if (u < 0.22) {
+      tn.endM = Math.min(tn.endM, s.month + 1 + Math.round(rng(s) * 2));  // out-clause: they're gone within the quarter
+      fled++;
+    } else if (u < 0.62) {
+      tn.rate = Math.round(tn.rate * 0.85 * 100) / 100;                    // abated until somebody re-anchors the center
+      cut++;
+    }
+  }
+  if (cut || fled) pushNews(s, 'warn', `CO-TENANCY TRIPPED at ${a.name}: losing ${ex.name} (${(ex.sf / 1000).toFixed(0)}K SF anchor) let the inline tenants pull their clauses — ${fled ? `${fled} invoking out-clauses` : ''}${fled && cut ? ', ' : ''}${cut ? `${cut} taking a 15% abatement` : ''}. Re-anchor the center or watch it unravel.`, a.tileI);
+}
+
 // Hearings resolve on the council's calendar, not yours.
 function tickRezonings(s: GameState) {
   for (const r of [...s.rezonings]) {
@@ -3937,6 +3961,26 @@ function tickAsset(s: GameState, a: Asset): number {
     }
     return 0;
   }
+  // ---- casualty: the 2am phone call. Insured, but insurance never makes you whole ----
+  if (a.repair) {
+    a.repair.monthsLeft--;
+    if (a.repair.monthsLeft <= 0) {
+      pushNews(s, 'success', `${a.name}: repairs complete — the ${a.repair.what} damage is behind you and the full building is earning again.`, a.tileI);
+      a.repair = undefined;
+    }
+  } else if (rng(s) < 0.0012) {
+    const what = rpick(s, ['fire', 'storm', 'burst-main'] as const);
+    const frac = clamp(rrange(s, 0.10, 0.45), 0.05, 0.6);
+    const months = 2 + Math.round(rrange(s, 0, 4));
+    const val = assetValue(s, a);
+    const insCrisis = (s.econ.insSpikeMonthsLeft ?? 0) > 0;
+    const deductible = roundPrice(Math.max(25_000, val * 0.008) * (insCrisis ? 1.6 : 1));
+    s.cash -= deductible;
+    a.ledger.push({ m: s.month, amt: -deductible });
+    a.repair = { frac, monthsLeft: months, what };
+    const label = what === 'fire' ? 'A fire tore through' : what === 'storm' ? 'Storm damage shut down' : 'A burst water main flooded';
+    pushNews(s, 'warn', `CASUALTY at ${a.name}: ${label} ~${Math.round(frac * 100)}% of the building. Insurance covers the rebuild; your deductible is ${fmtMoney(deductible)}${insCrisis ? ' (carriers are repricing mid-crisis)' : ''}, and that share of the rent stops for ~${months} months. Taxes and insurance keep running on all of it.`, a.tileI);
+  }
   // ---- tenant dynamics ----
   const mkt = assetRentPSF(s, a);
   if (isAggregate(a.type)) {
@@ -4017,6 +4061,7 @@ function tickAsset(s: GameState, a: Asset): number {
         chargeMakeReady(s, a, tn.sf);
         logMigration(s, a, tn.name, tn.sf);
         pushNews(s, 'info', `${tn.name} did not renew at ${a.name} — ${(tn.sf / 1000).toFixed(1)}K SF back on the market.`);
+        tripCoTenancy(s, a, tn);
       }
       continue;
     }
@@ -4031,6 +4076,7 @@ function tickAsset(s: GameState, a: Asset): number {
       a.tenants = a.tenants.filter(x => x.id !== tn.id);
       chargeMakeReady(s, a, tn.sf);
       pushNews(s, 'info', `${tn.name} did not renew at ${a.name} — ${(tn.sf / 1000).toFixed(1)}K SF back on the market.`);
+      tripCoTenancy(s, a, tn);
     }
   }
   // defaults by credit (worse in recessions)
@@ -4041,6 +4087,7 @@ function tickAsset(s: GameState, a: Asset): number {
       a.tenants = a.tenants.filter(x => x.id !== tn.id);
       chargeMakeReady(s, a, tn.sf);
       pushNews(s, 'warn', `${tn.name} (${CREDIT_LABEL[tn.credit]} credit) defaulted at ${a.name}. ${(tn.sf / 1000).toFixed(1)}K SF goes dark; the rent stops today.`);
+      tripCoTenancy(s, a, tn);
     }
   }
   recalcOcc(a);
@@ -4055,6 +4102,14 @@ function tickAsset(s: GameState, a: Asset): number {
   let noi = assetNOIMonthly(s, a);
   const ds = assetDebtService(a);
   for (const l of a.loans) {
+    // construction paper is bridge money. When the IO runway ends and it's still on the
+    // books, the lender reprices it +150bps and starts calling — the takeout is YOUR job.
+    if (l.kind === 'constr' && l.ioMonthsLeft === 1 && a.mode !== 'construction' && !(l as any).extBumped) {
+      (l as any).extBumped = true;
+      l.ratePct += 1.5;
+      l.monthlyPmt = monthlyPayment(l.balance, l.ratePct, l.amortYears);
+      pushNews(s, 'warn', `${a.name}: the construction lender's IO runway is up. The loan reprices to ${l.ratePct.toFixed(2)}% and starts amortizing — take it out with permanent financing (Debt tab) or keep paying bridge rates for a stabilized building.`, a.tileI);
+    }
     if (l.ioMonthsLeft > 0) { l.ioMonthsLeft--; }
     else if (l.monthlyPmt > 0) {
       const i = l.balance * (l.ratePct / 100 / 12);

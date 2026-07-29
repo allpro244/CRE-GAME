@@ -85,7 +85,12 @@ use gates the product, tier caps density, existing violations are grandfathered;
 the paper allows, so upzoning is land value — rezoning applications cost real fees, take 5-9 months,
 and live or die at a hearing where neighborhood opposition, spot-zoning coherence, the economic
 phase and your reputation all vote; the council upzones its own transit corridors; AI firms obey
-the same paper).
+the same paper) · construction-to-perm takeout (construction loans reprice +150bps and start
+amortizing when their IO runway ends — the takeout is your job) · retail co-tenancy (lose an
+anchor ≥35% of the building and the inline tenants pull their clauses: some leave within the
+quarter, some take a 15% abatement) · insured casualty (fire/storm/burst mains: deductible now,
+that share of the rent offline for months, expenses running on all of it — worse mid
+insurance-crisis) · a How-to-play primer that opens once on a fresh campaign.
 
 ---
 

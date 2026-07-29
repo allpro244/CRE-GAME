@@ -102,20 +102,24 @@ function Game({ state, setState, toMenu }: {
     setAssetId(id);
   }, [state.assets]); // eslint-disable-line
 
-  // Letters of intent are money on the table — surface them where they can't be missed
+  // Letters of intent are money on the table — surface them where they can't be missed.
+  // Only mark one seen when it actually gets surfaced, so a proposal blocked by another
+  // modal pops the moment the desk is clear; closing one LOI surfaces the next.
   useEffect(() => {
+    if (loiId !== null || state.pending.length > 0 || state.gameOver) return;
     const unseen = state.lois.find(l => !seenLOIs.current.has(l.id));
-    for (const l of state.lois) seenLOIs.current.add(l.id);
-    if (unseen && loiId === null && state.pending.length === 0 && !state.gameOver) {
-      setLoiId(unseen.id);
-    }
-  }, [state.lois]); // eslint-disable-line
+    if (unseen) { seenLOIs.current.add(unseen.id); setLoiId(unseen.id); }
+  }, [state.lois, loiId, state.pending.length, state.gameOver]); // eslint-disable-line
 
+  // the clock stops when a tenant shows interest — a 2-month LOI must never expire
+  // unseen inside a +6mo skip
   const advance = useCallback((n: number) => {
     let s = state;
+    const lois0 = new Set(s.lois.map(l => l.id));
     for (let i = 0; i < n; i++) {
       s = E.advanceMonth(s);
       if (s.pending.length > 0 || s.gameOver || s.forcedSaleNotice) break;
+      if (!s.autoLease && s.lois.some(l => !lois0.has(l.id))) break;
     }
     setState(s);
   }, [state, setState]);

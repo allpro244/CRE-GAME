@@ -376,6 +376,10 @@ function BldDetail({ b }: { b: IsoBld }) {
 // ---------- pan / zoom viewport ----------
 function useViewport(bx: number, by: number, bw: number, bh: number) {
   const ref = useRef<SVGSVGElement | null>(null);
+  // callback ref so the wheel listener attaches when THIS svg mounts — the flat view
+  // mounts late (only when you switch to it), and a plain effect never saw its element
+  const [el, setEl] = useState<SVGSVGElement | null>(null);
+  const refCb = useCallback((n: SVGSVGElement | null) => { ref.current = n; setEl(n); }, []);
   const [vp, setVp] = useState({ z: 1.25, x: (bw - bw / 1.25) / 2, y: (bh - bh / 1.25) / 2 });
   const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
   const moved = useRef(false);
@@ -405,7 +409,6 @@ function useViewport(bx: number, by: number, bw: number, bh: number) {
   }, [bw, bh]);
 
   useEffect(() => {
-    const el = ref.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -417,7 +420,7 @@ function useViewport(bx: number, by: number, bw: number, bh: number) {
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [bw, bh, zoomAt]);
+  }, [el, bw, bh, zoomAt]);
 
   const onPointerDown = (e: React.PointerEvent) => {
     moved.current = false;
@@ -451,7 +454,7 @@ function useViewport(bx: number, by: number, bw: number, bh: number) {
   }, [bw, bh, bx, by]);
 
   return {
-    ref, viewBox: `${bx + vp.x} ${by + vp.y} ${bw / vp.z} ${bh / vp.z}`, z: vp.z, zoomAt, reset, focusOn, moved,
+    ref: refCb, viewBox: `${bx + vp.x} ${by + vp.y} ${bw / vp.z} ${bh / vp.z}`, z: vp.z, zoomAt, reset, focusOn, moved,
     handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerLeave: onPointerUp },
     style: { cursor: drag.current ? 'grabbing' : 'grab', touchAction: 'none' } as React.CSSProperties,
   };
@@ -1218,8 +1221,11 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                   <span className="lbl"><b style={{ color: 'var(--ink)' }}>Your land</b> — {Math.round(h.cells.length * E.PARCEL_AC * 100) / 100} acres held since {E.monthName(h.acquiredM)}</span>
                   <span className="num">{E.fmtMoney(E.landValue(state, h))} <span className={'faint ' + (E.landValue(state, h) >= h.basis ? 'pos' : 'neg')}>vs {E.fmtMoney(h.basis)} basis</span></span>
                 </div>
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 6 }}>
-                  <button className="btn btn-sm" onClick={() => setState(E.sellLand(state, h.id).s)}>Sell the dirt</button>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 6, alignItems: 'center' }}>
+                  {h.forSale && <span className="chip chip-agreed">Listed · ask {E.fmtMoney(h.forSale.ask)}</span>}
+                  {h.forSale
+                    ? <button className="btn btn-sm" onClick={() => setState(E.delistLand(state, h.id))}>Delist</button>
+                    : <button className="btn btn-sm" title="Land sells slowly — list it and field the offers as they trickle in" onClick={() => setState(E.listLandForSale(state, h.id).s)}>List for sale</button>}
                   <button className="btn btn-sm btn-amber" title={(() => {
                     const d = E.developableFrom(state, h.id);
                     return d.holdings.length > 1 ? `Builds together with ${d.holdings.length - 1} adjoining holding(s) — ${Math.round(d.cells.length * E.PARCEL_AC * 100) / 100} acres total` : undefined;

@@ -98,6 +98,10 @@ file their own rezonings, and the dashboard shows every firm's net worth, debt a
 click through to their full balance sheet and holdings) ·
 a cycle-records panel (each game's actual economic history: rate peaks and troughs with dates,
 inflation records, prime cap range, per-sector rent run-ups and drawdowns, recessions endured) ·
+land dispositions as a market (you list your dirt, then field scattered offers — lowball
+assemblers to deadline-rich 1031 money — over months, not clicks) · turn costs (1-3 months
+of rent to make vacated space showable) · per-deal IO pricing (interest-only money quotes
+200-300bps over the 25-year sheet, seeded per listing) ·
 a REAL leasing market: citywide vacancy per asset class is measured from the actual standing
 stock building by building (overbuild industrial and those exact square feet sit empty), rents
 follow the vacancy gap with momentum and a price-elasticity stabilizer (cheap space fills, dear

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import * as E from './engine';
 import type { GameState, Asset, PostMortem } from './engine';
 import { LineChart, Bars } from './charts';
-import { Modal, Hint, DealsView2, DealModal, PortfolioView2, RefiModal, DebtView, LOIModal, pct } from './views2';
+import { Modal, Hint, DealsView2, DealModal, PortfolioView2, RefiModal, DebtView, LOIModal, AssetDrawer, pct } from './views2';
 import { MapView, StockCard, FirmPortfolioModal } from './mapview';
 
 async function storageSet(key: string, val: string) {
@@ -65,8 +65,34 @@ function Game({ state, setState, toMenu }: {
   const [firmShort, setFirmShort] = useState<string | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
   const [focusTile, setFocusTile] = useState<number | null>(null);
+  const [assetId, setAssetId] = useState<number | null>(null);
   const flyTo = (tileI: number) => { setFocusTile(tileI); setTab('map'); setTimeout(() => setFocusTile(null), 60); };
   const seenLOIs = useRef<Set<number>>(new Set());
+
+  // Detail opened from the map rides in as a slide-over so the city stays put behind it.
+  const detailVariant = tab === 'map' ? 'drawer' : 'dialog';
+  // The drawer starts below the top bar + nav; that chrome wraps, so measure it.
+  const chromeRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = chromeRef.current;
+    if (!el) return;
+    const apply = () => document.documentElement.style.setProperty('--chrome-h', el.getBoundingClientRect().height + 'px');
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // From an index (deal board, dashboard), fly to the building first — then open it on the map.
+  const openDealOnMap = useCallback((id: number, tileI?: number) => {
+    const t = tileI ?? state.listings.find(l => l.id === id)?.tileI;
+    if (t !== undefined) flyTo(t);
+    setDealId(id);
+  }, [state.listings]); // eslint-disable-line
+  const openAssetOnMap = useCallback((id: number) => {
+    const a = state.assets.find(x => x.id === id);
+    if (a) flyTo(a.tileI);
+    setAssetId(id);
+  }, [state.assets]); // eslint-disable-line
 
   // Letters of intent are money on the table — surface them where they can't be missed
   useEffect(() => {
@@ -115,12 +141,14 @@ function Game({ state, setState, toMenu }: {
   const sellAsset = sellId !== null ? state.assets.find(a => a.id === sellId) ?? null : null;
   const refiAsset = refiId !== null ? state.assets.find(a => a.id === refiId) ?? null : null;
   const loi = loiId !== null ? state.lois.find(l => l.id === loiId) ?? null : null;
+  const drawerAsset = assetId !== null ? state.assets.find(a => a.id === assetId) ?? null : null;
   const pendingEvt = state.pending[0];
   const pendAsset = pendingEvt ? state.assets.find(a => a.id === pendingEvt.assetId) : undefined;
   const projCount = state.assets.filter(a => a.mode === 'construction').length;
 
   return (
     <div className="app">
+      <div ref={chromeRef} className="chrome">
       <div className="topbar">
         <div className="brand"><b>GROUNDWORK</b><span>Meridian City</span></div>
         <div className="tb-sep" />
@@ -151,21 +179,29 @@ function Game({ state, setState, toMenu }: {
           </button>
         ))}
       </div>
+      </div>
 
       <div className="main">
         {state.forcedSaleNotice && <div className="alert-strip red"><span>⚠ {state.forcedSaleNotice}</span></div>}
-        {tab === 'dashboard' && <Dashboard state={state} goDeals={() => setTab('deals')} openLOI={id => { setTab('portfolio'); setLoiId(id); }} openFirm={s => setFirmShort(s)} flyTo={flyTo} />}
-        {tab === 'map' && <MapView state={state} setState={setState} focusTile={focusTile} selTile={selTile} setSelTile={setSelTile} openDeal={id => { setStockCardId(null); setDealId(id); setTab('deals'); }} openStock={id => setStockCardId(id)} />}
-        {tab === 'deals' && <DealsView2 state={state} setState={setState} openDeal={id => setDealId(id)} />}
+        {tab === 'dashboard' && <Dashboard state={state} goDeals={() => setTab('deals')} openLOI={id => setLoiId(id)} openFirm={s => setFirmShort(s)} flyTo={flyTo} />}
+        {tab === 'map' && <MapView state={state} setState={setState} focusTile={focusTile} selTile={selTile} setSelTile={setSelTile}
+          openDeal={id => { setStockCardId(null); setAssetId(null); setDealId(id); }}
+          openStock={id => { setAssetId(null); setStockCardId(id); }}
+          openAsset={id => { setStockCardId(null); setAssetId(id); }} />}
+        {tab === 'deals' && <DealsView2 state={state} setState={setState} openDeal={openDealOnMap} />}
         {tab === 'portfolio' && <PortfolioView2 state={state} setState={setState} onSell={setSellId} onRefi={setRefiId} onLOI={setLoiId} goDeals={() => setTab('deals')}
-          openDeal={id => { setDealId(id); }} onSold={p => setPm(p)} />}
+          openDeal={openDealOnMap} onSold={p => setPm(p)} onShowOnMap={openAssetOnMap} />}
         {tab === 'debt' && <DebtView state={state} setState={setState} />}
         {tab === 'economy' && <EconomyView state={state} />}
       </div>
 
-      {stockCardId !== null && <StockCard state={state} setState={setState} stockId={stockCardId} close={() => setStockCardId(null)} openDeal={id => { setStockCardId(null); setDealId(id); setTab('deals'); }} />}
+      {stockCardId !== null && <StockCard state={state} setState={setState} stockId={stockCardId} variant={detailVariant}
+        close={() => setStockCardId(null)} openDeal={id => { setStockCardId(null); setDealId(id); }} />}
 
-      {listing && <DealModal state={state} listing={listing} setState={setState} close={() => setDealId(null)} />}
+      {drawerAsset && <AssetDrawer state={state} setState={setState} asset={drawerAsset} close={() => setAssetId(null)}
+        onSell={setSellId} onRefi={setRefiId} onLOI={setLoiId} openDeal={id => { setAssetId(null); setDealId(id); }} onSold={p => { setAssetId(null); setPm(p); }} />}
+
+      {listing && <DealModal state={state} listing={listing} setState={setState} close={() => setDealId(null)} variant={detailVariant} />}
       {loi && <LOIModal state={state} setState={setState} loi={loi} close={() => setLoiId(null)} />}
       {sellAsset && <SellModal state={state} setState={setState} asset={sellAsset} close={() => setSellId(null)} />}
       {firmShort && <FirmPortfolioModal state={state} short={firmShort} close={() => setFirmShort(null)} openStock={id => { setFirmShort(null); setStockCardId(id); }} />}

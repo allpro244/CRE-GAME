@@ -5,10 +5,14 @@ import type { GameState, Listing, Asset, DevChoice, PType, LOI } from './engine'
 export const pct = (v: number, d = 0) => (v * 100).toFixed(d) + '%';
 export const blockName = (t: { x: number; y: number }) => `${String.fromCharCode(65 + t.x)}-${t.y + 1}`;
 
-export function Modal({ children, close, wide }: { children: any; close: () => void; wide?: boolean }) {
+export function Modal({ children, close, wide, variant = 'dialog' }: {
+  children: any; close: () => void; wide?: boolean; variant?: 'dialog' | 'drawer';
+}) {
+  const drawer = variant === 'drawer';
   return (
-    <div className="modal-back" onClick={e => { if (e.target === e.currentTarget) close(); }}>
-      <div className="modal" style={wide ? { maxWidth: 780 } : undefined}>{children}</div>
+    <div className={'modal-back' + (drawer ? ' drawer' : '') + (drawer && wide ? ' wide' : '')}
+      onClick={e => { if (e.target === e.currentTarget) close(); }}>
+      <div className="modal" style={!drawer && wide ? { maxWidth: 780 } : undefined}>{children}</div>
     </div>
   );
 }
@@ -266,8 +270,9 @@ export function DealsView2({ state, setState, openDeal }: {
 }
 
 // ---------- Deal modal (building / off-market / land) ----------
-export function DealModal({ state, listing, setState, close }: {
+export function DealModal({ state, listing, setState, close, variant = 'dialog' }: {
   state: GameState; listing: Listing; setState: (s: GameState) => void; close: () => void;
+  variant?: 'dialog' | 'drawer';
 }) {
   const t = state.tiles[listing.tileI];
   const [err, setErr] = useState<string | null>(null);
@@ -292,7 +297,7 @@ export function DealModal({ state, listing, setState, close }: {
   if (listing.yourSale) {
     const a = state.assets.find(x => x.forSale?.listingId === listing.id);
     return (
-      <Modal close={close}>
+      <Modal close={close} variant={variant}>
         <h2>Your listing — {a?.name ?? 'your property'}</h2>
         <div className="sub">Asking {E.fmtMoney(listing.price)}. Offers arrive over time and land in your Portfolio; the market decides how patient you get to be.</div>
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}><button className="btn" onClick={close}>Close</button></div>
@@ -315,7 +320,7 @@ export function DealModal({ state, listing, setState, close }: {
     const cashNeeded = effPrice * downPct + 15000;
     const sketch = { type: listing.type!, construction: listing.construction ?? E.CONSTR[listing.type!][0].id, sf: listing.sf!, units: listing.units ?? 1, quality: listing.quality ?? 50 };
     return (
-      <Modal close={close} wide>
+      <Modal close={close} wide variant={variant}>
         <h2>{E.PLABEL[listing.type!]} — Block {blockName(t)} {listing.kind === 'offmarket' && <span className="chip chip-om" style={{ verticalAlign: 'middle' }}>Off-market</span>}</h2>
         <div className="sub">
           {((listing.sf ?? 0) / 1000).toFixed(0)}K SF on {listing.acres} acres · {listing.units} unit{(listing.units ?? 1) > 1 ? 's' : ''} · {E.QLABEL[E.qGrade(listing.quality ?? 50)]}-grade {E.constrSpec(sketch).label.toLowerCase()} · built {2026 - (listing.age ?? 10)}
@@ -436,7 +441,7 @@ export function DealModal({ state, listing, setState, close }: {
     setDev({ ...dev, construction: cid, sf, units: c0.fixedUnits ?? Math.max(c0.minUnits ?? 1, dev.units) });
   };
   return (
-    <Modal close={close} wide>
+    <Modal close={close} wide variant={variant}>
       <h2>Land — Block {blockName(t)}</h2>
       <div className="sub">
         {listing.acres} acres · {E.fmtMoney(listing.price)} ({E.fmtMoney(listing.price / (listing.acres ?? 1))}/acre) · desirability {t.D.toFixed(0)} · industrial fit {t.indSuit.toFixed(0)}
@@ -669,13 +674,11 @@ export function LOIModal({ state, setState, loi, close }: {
 }
 
 // ---------- Portfolio ----------
-export function PortfolioView2({ state, setState, onSell, onRefi, onLOI, goDeals, openDeal, onSold }: {
+export function PortfolioView2({ state, setState, onSell, onRefi, onLOI, goDeals, openDeal, onSold, onShowOnMap }: {
   state: GameState; setState: (s: GameState) => void;
   onSell: (id: number) => void; onRefi: (id: number) => void; onLOI: (id: number) => void; goDeals: () => void;
-  openDeal: (id: number) => void; onSold: (pm: E.PostMortem) => void;
+  openDeal: (id: number) => void; onSold: (pm: E.PostMortem) => void; onShowOnMap?: (id: number) => void;
 }) {
-  const [err, setErr] = useState<string | null>(null);
-  const [open, setOpen] = useState<Record<number, boolean>>({});
   if (state.assets.length === 0) {
     return <div className="panel dim" style={{ fontSize: 13.5, lineHeight: 1.6 }}>
       No assets yet. An empty balance sheet is just potential energy — <button className="btn btn-sm btn-amber" onClick={goDeals}>open the deal board</button>
@@ -712,186 +715,220 @@ export function PortfolioView2({ state, setState, onSell, onRefi, onLOI, goDeals
           <div className="faint" style={{ fontSize: 11, marginTop: 6 }}>Dirt pays no rent. It only pays off if the block goes up — or if you build. Manage holdings from the city map.</div>
         </div>
       )}
-      {err && <div className="alert-strip red"><span>{err}</span><button className="btn btn-sm" onClick={() => setErr(null)}>✕</button></div>}
-      {state.assets.map(a => {
-        const t = state.tiles[a.tileI];
-        const lois = state.lois.filter(l => l.assetId === a.id);
-        if (a.mode === 'construction' && a.project) {
-          const p = a.project;
-          const prog = p.stage === 'permitting' ? 0 : p.monthsBuilt / Math.max(1, p.monthsBuilt + p.monthsLeft);
-          return (
-            <div key={a.id} className="asset-card">
-              <div className="asset-head">
-                <span className="asset-name">{a.name}</span>
-                <span className="chip chip-type">{E.PLABEL[a.type]}</span>
-                <span className="chip chip-land">{p.stage === 'permitting' ? 'Permitting' : 'Under construction'}</span>
-                <span className="faint" style={{ fontSize: 11 }}>Block {blockName(t)} · {(a.sf / 1000).toFixed(0)}K SF · {a.units} unit{a.units > 1 ? 's' : ''} · {E.constrSpec(a).label}</span>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 12, alignItems: 'center' }}>
-                <div style={{ marginTop: 10 }}>
-                  <div className="progress"><div style={{ width: pct(prog) }} /></div>
-                  <div className="dim" style={{ fontSize: 11.5, marginTop: 5 }}>
-                    {p.stage === 'permitting'
-                      ? `Waiting on permits — ~${p.monthsLeft} mo`
-                      : `${p.monthsLeft} months to delivery · spent ${E.fmtMoney(p.spent)} of ${E.fmtMoney(a.basis)} · contingency left ${E.fmtMoney(p.contingencyLeft)}`}
-                  </div>
-                  <div className="metric-row">
-                    <div className="metric"><div className="eyebrow">Constr. loan drawn</div><div className="v num">{E.fmtMoney(a.loans[0]?.balance ?? 0)}</div></div>
-                    <div className="metric"><div className="eyebrow">Rate</div><div className="v num">{(a.loans[0]?.ratePct ?? 0).toFixed(1)}% (capitalizing)</div></div>
-                    <div className="metric"><div className="eyebrow">Target class</div><div className="v num">{E.QLABEL[E.qGrade(a.quality)]}</div></div>
-                  </div>
-                </div>
-                <BuildingSketch a={a} w={300} h={100} />
-              </div>
-            </div>
-          );
-        }
-        const val = E.assetValue(state, a);
-        const debt = E.assetTotalDebt(state, a);
-        const noi = E.assetNOIMonthly(state, a);
-        const ds = E.assetDebtService(a);
-        const irr = E.assetIRR(state, a);
-        const cap = E.capRatePct(state, t, a.type, a.quality);
-        const tOcc = E.targetOcc(state, t, a.type);
-        const potM = (a.sf * E.assetRentPSF(state, a)) / 12;
-        const egiM = E.assetEGIMonthly(state, a);
-        const ex = E.expenseBreakdown(state, a, potM, egiM);
-        const isMF = E.isAggregate(a.type);
-        const offers = state.saleOffers.filter(o => o.assetId === a.id);
-        const exAcres = E.excessAcres(a);
-        const canPad = Math.max(...E.PTYPES.map(ty => exAcres * 43560 * E.FAR[ty])) >= 5000;
-        const inFac = state.facilities.some(f => f.assetIds.includes(a.id));
-        const isOpen = !!open[a.id];
-        return (
-          <div key={a.id} className="asset-card">
-            <div className="asset-head">
-              <span className="asset-name">{a.name}</span>
-              <span className="chip chip-type">{E.PLABEL[a.type]}</span>
-              <span className="chip" style={{ border: '1px solid var(--line)', color: 'var(--dim)' }}>{E.QLABEL[E.qGrade(a.quality)]}-grade</span>
-              {a.mode === 'leaseup' && <span className="chip chip-distress">Lease-up</span>}
-              {inFac && <span className="chip chip-om">Cross-collateralized</span>}
-              {a.renovMonthsLeft ? <span className="chip chip-land">Renovating · {a.renovMonthsLeft} mo</span> : null}
-              {a.forSale && <span className="chip chip-agreed">For sale · ask {E.fmtMoney(a.forSale.ask)}</span>}
-              {a.jv && <span className="chip chip-om" title={`Partner: ${E.fmtMoney(a.jv.lpContrib)} in · accrued pref ${E.fmtMoney(Math.round(a.jv.accPref))} · you keep 30% of CF + promote`}>JV · your 30%</span>}
-              {(a as any).converting && <span className="chip chip-land">Converting to apartments</span>}
-              {lois.length > 0 && <button className="chip chip-loi" onClick={() => onLOI(lois[0].id)}>✉ {lois.length} LOI{lois.length > 1 ? 's' : ''} waiting</button>}
-              <span className="faint" style={{ fontSize: 11 }}>Block {blockName(t)} · {(a.sf / 1000).toFixed(0)}K SF · {a.units} unit{a.units > 1 ? 's' : ''}</span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 260px', gap: 12 }}>
-              <div>
-                <div style={{ marginTop: 8, maxWidth: 400 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }} className="dim">
-                    <span>Occupancy {pct(a.occ)} · {isMF ? `${Math.round(a.occ * a.units)}/${a.units} units` : `${a.tenants.length} tenant${a.tenants.length === 1 ? '' : 's'}`}</span><span>market supports ~{pct(tOcc)}</span>
-                  </div>
-                  <div className="occ-bar"><div className="occ-fill" style={{ width: pct(a.occ), background: a.occ < 0.6 ? 'var(--red)' : a.occ < 0.8 ? 'var(--amber)' : 'var(--green)' }} /></div>
-                </div>
-                <div className="metric-row">
-                  <div className="metric"><div className="eyebrow">Value</div><div className="v num">{E.fmtMoney(val)}</div></div>
-                  <div className="metric"><div className="eyebrow">Debt{inFac ? ' (incl. share)' : ''}</div><div className="v num">{E.fmtMoney(debt)}</div></div>
-                  <div className="metric"><div className="eyebrow">{a.jv ? 'Your equity' : 'Equity'}</div><div className={'v num ' + (val - debt - E.lpClaim(state, a) < 0 ? 'neg' : '')}>{E.fmtMoney(val - debt - E.lpClaim(state, a))}</div></div>
-                  <div className="metric"><div className="eyebrow">Rent /mo</div><div className="v num">{E.fmtMoney(egiM)}</div></div>
-                  <div className="metric"><div className="eyebrow">NOI /mo</div><div className="v num">{E.fmtMoney(noi)}</div></div>
-                  <div className="metric"><div className="eyebrow">Debt svc /mo</div><div className="v num">{E.fmtMoney(ds)}</div></div>
-                  <div className="metric"><div className="eyebrow">CF /mo</div><div className={'v num ' + (noi - ds >= 0 ? 'pos' : 'neg')}>{E.fmtMoney(noi - ds)}</div></div>
-                  <div className="metric"><div className="eyebrow">Cap</div><div className="v num">{cap.toFixed(1)}%</div></div>
-                  <div className="metric"><div className="eyebrow">IRR <Hint text="Annualized return on your equity, counting every dollar in and out plus today's net sale value." /></div>
-                    <div className={'v num ' + (irr === null ? '' : irr >= 0 ? 'pos' : 'neg')}>{irr === null ? '—' : irr.toFixed(1) + '%'}</div></div>
-                </div>
-              </div>
-              <BuildingSketch a={a} w={260} h={96} />
-            </div>
-            <div style={{ display: 'flex', gap: 14, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-              <div>
-                <div className="eyebrow" style={{ fontSize: 9, marginBottom: 3 }}>Asking rents</div>
-                <div className="seg">
-                  {[[-0.1, '−10%'], [0, 'Market'], [0.1, '+10%']].map(([v, l]) => (
-                    <button key={String(v)} className={a.rentStance === v ? 'active' : ''}
-                      onClick={() => setState(E.setRentStance(state, a.id, v as number))}>{l as string}</button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <div className="eyebrow" style={{ fontSize: 9, marginBottom: 3 }}>Maintenance</div>
-                <div className="seg">
-                  {(['low', 'std', 'high'] as const).map(m => (
-                    <button key={m} className={a.maint === m ? 'active' : ''} onClick={() => setState(E.setMaint(state, a.id, m))}>{m === 'std' ? 'Standard' : m === 'low' ? 'Low' : 'High'}</button>
-                  ))}
-                </div>
-              </div>
-              <button className="btn btn-sm" onClick={() => setOpen({ ...open, [a.id]: !isOpen })}>{isOpen ? 'Hide' : 'Rent roll & financials ▾'}</button>
-              <span style={{ flex: 1 }} />
-              <button className="btn btn-sm" onClick={() => { const r = E.startRenovation(state, a.id); if (r.err) setErr(r.err); else setState(r.s); }}
-                disabled={!!a.renovMonthsLeft}>Renovate ({E.fmtMoney(E.renovCost(state, a))})</button>
-              <button className="btn btn-sm" onClick={() => onRefi(a.id)}>Refinance</button>
-              {a.occ <= 0.15 && !a.forSale && a.mode !== 'construction' && (
-                <button className="btn btn-sm btn-danger" title="Tear it down and keep the dirt"
-                  onClick={() => { const r = E.demolish(state, a.id); if (r.err) setErr(r.err); else setState(r.s); }}>
-                  Demolish ({E.fmtMoney(E.demolitionCost(state, a))})
-                </button>
-              )}
-              {a.type === 'office' && a.occ <= 0.35 && !a.forSale && (
-                <button className="btn btn-sm" title="Gut it and hand it to renters — 12 months, cash up front"
-                  onClick={() => { const r = E.startConversion(state, a.id); if (r.err) setErr(r.err); else setState(r.s); }}>
-                  Convert to apartments ({E.fmtMoney(E.conversionCost(state, a))})
-                </button>
-              )}
-              {canPad && !a.forSale && <button className="btn btn-sm" title={`~${exAcres} spare acres on this site`} onClick={() => {
-                const r = E.createExcessLandListing(state, a.id);
-                if (r.err) setErr(r.err); else { setState(r.s); if (r.listingId) openDeal(r.listingId); }
-              }}>Build on spare land ({exAcres} ac)</button>}
-              {a.forSale
-                ? <button className="btn btn-sm" onClick={() => setState(E.cancelSale(state, a.id))}>Delist</button>
-                : <button className="btn btn-sm btn-danger" onClick={() => onSell(a.id)}>List for sale</button>}
-            </div>
-            {offers.length > 0 && (
-              <div style={{ marginTop: 10 }}>
-                {offers.map(o => <SaleOfferRow key={o.id} state={state} setState={setState} offer={o} asset={a} onSold={onSold} />)}
-              </div>
-            )}
-            {isOpen && (
-              <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 16 }}>
-                <div>
-                  <h3>{isMF ? 'Unit economics' : 'Rent roll'}</h3>
-                  {isMF ? (
-                    <div className="dim" style={{ fontSize: 12.5, lineHeight: 1.7 }}>
-                      {a.units} apartments · <b style={{ color: 'var(--ink)' }} className="num">{Math.round(a.occ * a.units)}</b> occupied<br />
-                      Avg market rent: <b style={{ color: 'var(--ink)' }} className="num">{E.fmtMoney((a.sf * E.assetRentPSF(state, a) * (1 + a.rentStance)) / 12 / a.units)}</b>/unit/mo<br />
-                      Collections (EGI): <b style={{ color: 'var(--ink)' }} className="num">{E.fmtMoney(egiM)}</b>/mo<br />
-                      <span className="faint" style={{ fontSize: 10.5 }}>Renters churn monthly and re-lease fast — no LOIs here, just occupancy, price, and upkeep.</span>
-                    </div>
-                  ) : (<>
-                    <RentRollTable state={state} tenants={a.tenants} sf={a.sf} />
-                    <div className="faint" style={{ fontSize: 10.5, marginTop: 6 }}>
-                      Market for this building: ${E.assetRentPSF(state, a).toFixed(2)}/SF · vacant {( (a.sf - E.leasedSF(a)) / 1000).toFixed(1)}K SF
-                    </div>
-                  </>)}
-                </div>
-                <div>
-                  <h3>Operating statement /mo</h3>
-                  <table className="sc">
-                    <tbody>
-                      <tr><td>Scheduled rent (EGI)</td><td className="num">{E.fmtMoney(egiM)}</td><td></td></tr>
-                      {(() => {
-                        const gross = ex.lines.filter(x => x.amt > 0).reduce((s2, x) => s2 + x.amt, 0);
-                        return ex.lines.map(l2 => (
-                          <tr key={l2.label}><td className="dim">{l2.amt < 0 ? '+' : '−'} {l2.label}</td><td className={'num' + (l2.amt < 0 ? ' pos' : '')}>{E.fmtMoney(Math.abs(l2.amt))}</td>
-                            <td className="num faint">{gross > 0 && l2.amt > 0 ? pct(l2.amt / gross) : '—'} <span className="faint" style={{ fontSize: 9 }}>{l2.amt > 0 ? 'of opex' : 'recovered'}</span></td></tr>
-                        ));
-                      })()}
-                      <tr style={{ borderTop: '1px solid var(--line)' }}><td><b>NOI</b></td><td className="num"><b>{E.fmtMoney(noi)}</b></td><td></td></tr>
-                      <tr><td className="dim">− Debt service</td><td className="num">{E.fmtMoney(ds)}</td><td></td></tr>
-                      <tr><td><b>Cash flow</b></td><td className={'num ' + (noi - ds >= 0 ? 'pos' : 'neg')}><b>{E.fmtMoney(noi - ds)}</b></td><td></td></tr>
-                    </tbody>
-                  </table>
-                  {a.units === 1 && !isMF && <div className="faint" style={{ fontSize: 10.5, marginTop: 5 }}>Single-tenant NNN: the tenant carries taxes, insurance, and upkeep of the pad.</div>}
-                  {(a.type === 'retail' || a.type === 'industrial') && a.units > 1 && <div className="faint" style={{ fontSize: 10.5, marginTop: 5 }}>NNN: tenants reimburse taxes, insurance & CAM on occupied space — vacancy pays its own way in full.</div>}
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
+      {state.assets.map(a => (
+        <AssetCard key={a.id} state={state} setState={setState} asset={a}
+          onSell={onSell} onRefi={onRefi} onLOI={onLOI} openDeal={openDeal} onSold={onSold} onShowOnMap={onShowOnMap} />
+      ))}
     </div>
+  );
+}
+
+// ---------- Asset card (shared by the Portfolio list and the map's asset drawer) ----------
+export function AssetCard({ state, setState, asset: a, onSell, onRefi, onLOI, openDeal, onSold, defaultOpen = false, onShowOnMap }: {
+  state: GameState; setState: (s: GameState) => void; asset: Asset;
+  onSell: (id: number) => void; onRefi: (id: number) => void; onLOI: (id: number) => void;
+  openDeal: (id: number) => void; onSold: (pm: E.PostMortem) => void; defaultOpen?: boolean;
+  onShowOnMap?: (id: number) => void;
+}) {
+  const nameEl = onShowOnMap
+    ? <button className="asset-name link-name" title="Show me on the map" onClick={() => onShowOnMap(a.id)}>{a.name}<span className="faint" style={{ fontSize: 10, fontWeight: 400 }}> ▸ map</span></button>
+    : <span className="asset-name">{a.name}</span>;
+  const [err, setErr] = useState<string | null>(null);
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const t = state.tiles[a.tileI];
+  const lois = state.lois.filter(l => l.assetId === a.id);
+  if (a.mode === 'construction' && a.project) {
+    const p = a.project;
+    const prog = p.stage === 'permitting' ? 0 : p.monthsBuilt / Math.max(1, p.monthsBuilt + p.monthsLeft);
+    return (
+      <div className="asset-card">
+        <div className="asset-head">
+          {nameEl}
+          <span className="chip chip-type">{E.PLABEL[a.type]}</span>
+          <span className="chip chip-land">{p.stage === 'permitting' ? 'Permitting' : 'Under construction'}</span>
+          <span className="faint" style={{ fontSize: 11 }}>Block {blockName(t)} · {(a.sf / 1000).toFixed(0)}K SF · {a.units} unit{a.units > 1 ? 's' : ''} · {E.constrSpec(a).label}</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 12, alignItems: 'center' }}>
+          <div style={{ marginTop: 10 }}>
+            <div className="progress"><div style={{ width: pct(prog) }} /></div>
+            <div className="dim" style={{ fontSize: 11.5, marginTop: 5 }}>
+              {p.stage === 'permitting'
+                ? `Waiting on permits — ~${p.monthsLeft} mo`
+                : `${p.monthsLeft} months to delivery · spent ${E.fmtMoney(p.spent)} of ${E.fmtMoney(a.basis)} · contingency left ${E.fmtMoney(p.contingencyLeft)}`}
+            </div>
+            <div className="metric-row">
+              <div className="metric"><div className="eyebrow">Constr. loan drawn</div><div className="v num">{E.fmtMoney(a.loans[0]?.balance ?? 0)}</div></div>
+              <div className="metric"><div className="eyebrow">Rate</div><div className="v num">{(a.loans[0]?.ratePct ?? 0).toFixed(1)}% (capitalizing)</div></div>
+              <div className="metric"><div className="eyebrow">Target class</div><div className="v num">{E.QLABEL[E.qGrade(a.quality)]}</div></div>
+            </div>
+          </div>
+          <BuildingSketch a={a} w={300} h={100} />
+        </div>
+      </div>
+    );
+  }
+  const val = E.assetValue(state, a);
+  const debt = E.assetTotalDebt(state, a);
+  const noi = E.assetNOIMonthly(state, a);
+  const ds = E.assetDebtService(a);
+  const irr = E.assetIRR(state, a);
+  const cap = E.capRatePct(state, t, a.type, a.quality);
+  const tOcc = E.targetOcc(state, t, a.type);
+  const potM = (a.sf * E.assetRentPSF(state, a)) / 12;
+  const egiM = E.assetEGIMonthly(state, a);
+  const ex = E.expenseBreakdown(state, a, potM, egiM);
+  const isMF = E.isAggregate(a.type);
+  const offers = state.saleOffers.filter(o => o.assetId === a.id);
+  const exAcres = E.excessAcres(a);
+  const canPad = Math.max(...E.PTYPES.map(ty => exAcres * 43560 * E.FAR[ty])) >= 5000;
+  const inFac = state.facilities.some(f => f.assetIds.includes(a.id));
+  return (
+    <div className="asset-card">
+      <div className="asset-head">
+        {nameEl}
+        <span className="chip chip-type">{E.PLABEL[a.type]}</span>
+        <span className="chip" style={{ border: '1px solid var(--line)', color: 'var(--dim)' }}>{E.QLABEL[E.qGrade(a.quality)]}-grade</span>
+        {a.mode === 'leaseup' && <span className="chip chip-distress">Lease-up</span>}
+        {inFac && <span className="chip chip-om">Cross-collateralized</span>}
+        {a.renovMonthsLeft ? <span className="chip chip-land">Renovating · {a.renovMonthsLeft} mo</span> : null}
+        {a.forSale && <span className="chip chip-agreed">For sale · ask {E.fmtMoney(a.forSale.ask)}</span>}
+        {a.jv && <span className="chip chip-om" title={`Partner: ${E.fmtMoney(a.jv.lpContrib)} in · accrued pref ${E.fmtMoney(Math.round(a.jv.accPref))} · you keep 30% of CF + promote`}>JV · your 30%</span>}
+        {(a as any).converting && <span className="chip chip-land">Converting to apartments</span>}
+        {lois.length > 0 && <button className="chip chip-loi" onClick={() => onLOI(lois[0].id)}>✉ {lois.length} LOI{lois.length > 1 ? 's' : ''} waiting</button>}
+        <span className="faint" style={{ fontSize: 11 }}>Block {blockName(t)} · {(a.sf / 1000).toFixed(0)}K SF · {a.units} unit{a.units > 1 ? 's' : ''}</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 260px', gap: 12 }}>
+        <div>
+          <div style={{ marginTop: 8, maxWidth: 400 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }} className="dim">
+              <span>Occupancy {pct(a.occ)} · {isMF ? `${Math.round(a.occ * a.units)}/${a.units} units` : `${a.tenants.length} tenant${a.tenants.length === 1 ? '' : 's'}`}</span><span>market supports ~{pct(tOcc)}</span>
+            </div>
+            <div className="occ-bar"><div className="occ-fill" style={{ width: pct(a.occ), background: a.occ < 0.6 ? 'var(--red)' : a.occ < 0.8 ? 'var(--amber)' : 'var(--green)' }} /></div>
+          </div>
+          <div className="metric-row">
+            <div className="metric"><div className="eyebrow">Value</div><div className="v num">{E.fmtMoney(val)}</div></div>
+            <div className="metric"><div className="eyebrow">Debt{inFac ? ' (incl. share)' : ''}</div><div className="v num">{E.fmtMoney(debt)}</div></div>
+            <div className="metric"><div className="eyebrow">{a.jv ? 'Your equity' : 'Equity'}</div><div className={'v num ' + (val - debt - E.lpClaim(state, a) < 0 ? 'neg' : '')}>{E.fmtMoney(val - debt - E.lpClaim(state, a))}</div></div>
+            <div className="metric"><div className="eyebrow">Rent /mo</div><div className="v num">{E.fmtMoney(egiM)}</div></div>
+            <div className="metric"><div className="eyebrow">NOI /mo</div><div className="v num">{E.fmtMoney(noi)}</div></div>
+            <div className="metric"><div className="eyebrow">Debt svc /mo</div><div className="v num">{E.fmtMoney(ds)}</div></div>
+            <div className="metric"><div className="eyebrow">CF /mo</div><div className={'v num ' + (noi - ds >= 0 ? 'pos' : 'neg')}>{E.fmtMoney(noi - ds)}</div></div>
+            <div className="metric"><div className="eyebrow">Cap</div><div className="v num">{cap.toFixed(1)}%</div></div>
+            <div className="metric"><div className="eyebrow">IRR <Hint text="Annualized return on your equity, counting every dollar in and out plus today's net sale value." /></div>
+              <div className={'v num ' + (irr === null ? '' : irr >= 0 ? 'pos' : 'neg')}>{irr === null ? '—' : irr.toFixed(1) + '%'}</div></div>
+          </div>
+        </div>
+        <BuildingSketch a={a} w={260} h={96} />
+      </div>
+      {err && <div className="alert-strip red" style={{ marginTop: 10 }}><span>{err}</span><button className="btn btn-sm" onClick={() => setErr(null)}>✕</button></div>}
+      <div style={{ display: 'flex', gap: 14, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div>
+          <div className="eyebrow" style={{ fontSize: 9, marginBottom: 3 }}>Asking rents</div>
+          <div className="seg">
+            {[[-0.1, '−10%'], [0, 'Market'], [0.1, '+10%']].map(([v, l]) => (
+              <button key={String(v)} className={a.rentStance === v ? 'active' : ''}
+                onClick={() => setState(E.setRentStance(state, a.id, v as number))}>{l as string}</button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="eyebrow" style={{ fontSize: 9, marginBottom: 3 }}>Maintenance</div>
+          <div className="seg">
+            {(['low', 'std', 'high'] as const).map(m => (
+              <button key={m} className={a.maint === m ? 'active' : ''} onClick={() => setState(E.setMaint(state, a.id, m))}>{m === 'std' ? 'Standard' : m === 'low' ? 'Low' : 'High'}</button>
+            ))}
+          </div>
+        </div>
+        <button className="btn btn-sm" onClick={() => setIsOpen(!isOpen)}>{isOpen ? 'Hide' : 'Rent roll & financials ▾'}</button>
+        <span style={{ flex: 1 }} />
+        <button className="btn btn-sm" onClick={() => { const r = E.startRenovation(state, a.id); if (r.err) setErr(r.err); else setState(r.s); }}
+          disabled={!!a.renovMonthsLeft}>Renovate ({E.fmtMoney(E.renovCost(state, a))})</button>
+        <button className="btn btn-sm" onClick={() => onRefi(a.id)}>Refinance</button>
+        {a.occ <= 0.15 && !a.forSale && a.mode !== 'construction' && (
+          <button className="btn btn-sm btn-danger" title="Tear it down and keep the dirt"
+            onClick={() => { const r = E.demolish(state, a.id); if (r.err) setErr(r.err); else setState(r.s); }}>
+            Demolish ({E.fmtMoney(E.demolitionCost(state, a))})
+          </button>
+        )}
+        {a.type === 'office' && a.occ <= 0.35 && !a.forSale && (
+          <button className="btn btn-sm" title="Gut it and hand it to renters — 12 months, cash up front"
+            onClick={() => { const r = E.startConversion(state, a.id); if (r.err) setErr(r.err); else setState(r.s); }}>
+            Convert to apartments ({E.fmtMoney(E.conversionCost(state, a))})
+          </button>
+        )}
+        {canPad && !a.forSale && <button className="btn btn-sm" title={`~${exAcres} spare acres on this site`} onClick={() => {
+          const r = E.createExcessLandListing(state, a.id);
+          if (r.err) setErr(r.err); else { setState(r.s); if (r.listingId) openDeal(r.listingId); }
+        }}>Build on spare land ({exAcres} ac)</button>}
+        {a.forSale
+          ? <button className="btn btn-sm" onClick={() => setState(E.cancelSale(state, a.id))}>Delist</button>
+          : <button className="btn btn-sm btn-danger" onClick={() => onSell(a.id)}>List for sale</button>}
+      </div>
+      {offers.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          {offers.map(o => <SaleOfferRow key={o.id} state={state} setState={setState} offer={o} asset={a} onSold={onSold} />)}
+        </div>
+      )}
+      {isOpen && (
+        <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 16 }}>
+          <div>
+            <h3>{isMF ? 'Unit economics' : 'Rent roll'}</h3>
+            {isMF ? (
+              <div className="dim" style={{ fontSize: 12.5, lineHeight: 1.7 }}>
+                {a.units} apartments · <b style={{ color: 'var(--ink)' }} className="num">{Math.round(a.occ * a.units)}</b> occupied<br />
+                Avg market rent: <b style={{ color: 'var(--ink)' }} className="num">{E.fmtMoney((a.sf * E.assetRentPSF(state, a) * (1 + a.rentStance)) / 12 / a.units)}</b>/unit/mo<br />
+                Collections (EGI): <b style={{ color: 'var(--ink)' }} className="num">{E.fmtMoney(egiM)}</b>/mo<br />
+                <span className="faint" style={{ fontSize: 10.5 }}>Renters churn monthly and re-lease fast — no LOIs here, just occupancy, price, and upkeep.</span>
+              </div>
+            ) : (<>
+              <RentRollTable state={state} tenants={a.tenants} sf={a.sf} />
+              <div className="faint" style={{ fontSize: 10.5, marginTop: 6 }}>
+                Market for this building: ${E.assetRentPSF(state, a).toFixed(2)}/SF · vacant {( (a.sf - E.leasedSF(a)) / 1000).toFixed(1)}K SF
+              </div>
+            </>)}
+          </div>
+          <div>
+            <h3>Operating statement /mo</h3>
+            <table className="sc">
+              <tbody>
+                <tr><td>Scheduled rent (EGI)</td><td className="num">{E.fmtMoney(egiM)}</td><td></td></tr>
+                {(() => {
+                  const gross = ex.lines.filter(x => x.amt > 0).reduce((s2, x) => s2 + x.amt, 0);
+                  return ex.lines.map(l2 => (
+                    <tr key={l2.label}><td className="dim">{l2.amt < 0 ? '+' : '−'} {l2.label}</td><td className={'num' + (l2.amt < 0 ? ' pos' : '')}>{E.fmtMoney(Math.abs(l2.amt))}</td>
+                      <td className="num faint">{gross > 0 && l2.amt > 0 ? pct(l2.amt / gross) : '—'} <span className="faint" style={{ fontSize: 9 }}>{l2.amt > 0 ? 'of opex' : 'recovered'}</span></td></tr>
+                  ));
+                })()}
+                <tr style={{ borderTop: '1px solid var(--line)' }}><td><b>NOI</b></td><td className="num"><b>{E.fmtMoney(noi)}</b></td><td></td></tr>
+                <tr><td className="dim">− Debt service</td><td className="num">{E.fmtMoney(ds)}</td><td></td></tr>
+                <tr><td><b>Cash flow</b></td><td className={'num ' + (noi - ds >= 0 ? 'pos' : 'neg')}><b>{E.fmtMoney(noi - ds)}</b></td><td></td></tr>
+              </tbody>
+            </table>
+            {a.units === 1 && !isMF && <div className="faint" style={{ fontSize: 10.5, marginTop: 5 }}>Single-tenant NNN: the tenant carries taxes, insurance, and upkeep of the pad.</div>}
+            {(a.type === 'retail' || a.type === 'industrial') && a.units > 1 && <div className="faint" style={{ fontSize: 10.5, marginTop: 5 }}>NNN: tenants reimburse taxes, insurance & CAM on occupied space — vacancy pays its own way in full.</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Asset drawer (map: click your own building) ----------
+export function AssetDrawer({ state, setState, asset, close, onSell, onRefi, onLOI, openDeal, onSold }: {
+  state: GameState; setState: (s: GameState) => void; asset: Asset; close: () => void;
+  onSell: (id: number) => void; onRefi: (id: number) => void; onLOI: (id: number) => void;
+  openDeal: (id: number) => void; onSold: (pm: E.PostMortem) => void;
+}) {
+  return (
+    <Modal close={close} wide variant="drawer">
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+        <h2>{asset.name}</h2>
+        <button className="btn btn-sm btn-ghost" onClick={close}>Close ✕</button>
+      </div>
+      <div className="sub">Your building · Block {blockName(state.tiles[asset.tileI])}</div>
+      <AssetCard state={state} setState={setState} asset={asset} defaultOpen
+        onSell={onSell} onRefi={onRefi} onLOI={onLOI} openDeal={openDeal} onSold={onSold} />
+    </Modal>
   );
 }
 

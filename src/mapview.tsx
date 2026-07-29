@@ -337,9 +337,10 @@ function useViewport(bx: number, by: number, bw: number, bh: number) {
   };
 }
 
-export function MapView({ state, setState, selTile, setSelTile, openDeal, openStock, focusTile }: {
+export function MapView({ state, setState, selTile, setSelTile, openDeal, openStock, openAsset, focusTile }: {
   state: GameState; setState: (s: GameState) => void; selTile: number | null; setSelTile: (i: number | null) => void;
-  openDeal: (id: number) => void; openStock: (id: number) => void; focusTile?: number | null;
+  openDeal: (id: number) => void; openStock: (id: number) => void; openAsset: (id: number) => void;
+  focusTile?: number | null;
 }) {
   const [hover, setHover] = useState<{ text: string; sub: string; x: number; y: number } | null>(null);
   const [lens, setLens] = useState<Lens>('value');
@@ -513,6 +514,9 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                     }
                     setSelCells(null);
                     if (occ < 0) { openDeal(-occ); return; }
+                    if (occ >= 1_000_000) return;   // your banked dirt — the block panel handles it
+                    const mine = state.assets.find(x => x.id === occ);
+                    if (mine) { openAsset(mine.id); return; }
                     const b = state.stock.find(x => x.id === occ);
                     if (b) { b.listedId ? openDeal(b.listedId) : openStock(b.id); }
                   }} />
@@ -672,11 +676,13 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             <h3 style={{ marginTop: 12 }}>Standing inventory</h3>
             <div style={{ maxHeight: 240, overflowY: 'auto' }}>
               {assetsOn(sel.i).map(a => (
-                <div key={'a' + a.id} className="inv-row" style={{ borderLeft: '2px solid var(--amber)' }}>
+                <button key={'a' + a.id} className="inv-row inv-btn" style={{ borderLeft: '2px solid var(--amber)' }}
+                  onClick={() => openAsset(a.id)}>
                   <span style={{ color: 'var(--amber)' }}>◆</span>
-                  <span style={{ flex: 1 }}>{a.name} — {(a.sf / 1000).toFixed(0)}K SF {E.PLABEL[a.type]}</span>
+                  <span style={{ flex: 1, textAlign: 'left' }}>{a.name} — {(a.sf / 1000).toFixed(0)}K SF {E.PLABEL[a.type]}
+                    {a.mode === 'construction' ? <span style={{ color: '#e08c3c' }}> · building, {a.project?.monthsLeft ?? 0} mo</span> : ''}</span>
                   <span className="num dim">{pct(a.occ)}</span>
-                </div>
+                </button>
               ))}
               {stockOn(sel.i).map(b => (
                 <button key={b.id} className="inv-row inv-btn" onClick={() => openStock(b.id)}>
@@ -760,9 +766,9 @@ function ParcelBuyPanel({ state, setState, tileI, cells, close, openDeal }: {
   );
 }
 
-export function StockCard({ state, setState, stockId, close, openDeal }: {
+export function StockCard({ state, setState, stockId, close, openDeal, variant = 'dialog' }: {
   state: GameState; setState: (s: GameState) => void; stockId: number; close: () => void;
-  openDeal: (id: number) => void;
+  openDeal: (id: number) => void; variant?: 'dialog' | 'drawer';
 }) {
   const [err, setErr] = useState<string | null>(null);
   const b = state.stock.find(x => x.id === stockId);
@@ -772,7 +778,7 @@ export function StockCard({ state, setState, stockId, close, openDeal }: {
   const chk = E.canApproach(state, b.id);
   const ownerLabel = b.owner === 'private' ? 'Private owner' : (state.firms.find(f => f.short === b.owner)?.name ?? b.owner);
   return (
-    <Modal close={close}>
+    <Modal close={close} variant={variant}>
       <h2>{E.PLABEL[b.type]} — Block {blockName(t)}</h2>
       <div className="sub">{spec.label} · built {Math.max(1950, Math.round(2026 - b.age))} · {ownerLabel}{b.blacklist ? ' (not speaking to you)' : ''}</div>
       <BuildingSketch a={b} w={360} h={120} />

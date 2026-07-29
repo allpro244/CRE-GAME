@@ -162,11 +162,33 @@ function shade(hex: string, m: number): string {
   const b = Math.min(255, Math.round((n & 255) * m));
   return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
 }
-// height in px from square footage — this is what makes a tower read as a tower
-function bldHeight(sf: number, type: E.PType): number {
-  const far = E.FAR[type];
-  const stories = Math.max(1, Math.min(34, Math.round(Math.pow(sf / 9000, 0.62) * (far > 1.5 ? 2.4 : far > 0.8 ? 1.5 : 0.8))));
-  return 5 + stories * 4.4;
+// True massing: stories and footprint derived from the building's actual square
+// footage against its actual land. A 60K SF warehouse sprawls one story across the
+// site; 60K SF of Class-A office stands 12 stories on a partial footprint. Height
+// and bulk are honest — you can read a building's SF off the skyline.
+const MAX_STORIES: Record<string, number> = {
+  tilt: 1, metal: 1, tin: 1,                 // industrial
+  center: 2, strip: 1, pad: 1,               // retail
+  concrete: 34, masonry: 6, wood: 3,         // office
+  podium: 8,                                 // mixed
+  garden: 3, midrise: 6, tower: 28,          // multifamily
+};
+// typical share of the site the building itself covers — the rest is parking,
+// docks, yards, landscaping
+const COVER: Record<E.PType, number> = { industrial: 0.50, retail: 0.28, office: 0.45, mixed: 0.50, multifamily: 0.40 };
+function massing(type: E.PType, construction: string | undefined, sf: number, siteCells: number): { stories: number; ht: number; shrink: number } {
+  const siteSF = Math.max(1, siteCells) * E.PARCEL_AC * 43_560;
+  const maxSt = MAX_STORIES[construction ?? ''] ?? (type === 'industrial' || type === 'retail' ? 1 : 8);
+  const stories = Math.max(1, Math.min(maxSt, Math.round(sf / (siteSF * COVER[type]))));
+  const cover = Math.max(0.10, Math.min(0.92, sf / stories / siteSF));
+  return { stories, ht: 4 + stories * 4.2, shrink: Math.max(0.34, Math.min(0.94, Math.sqrt(cover))) };
+}
+function defaultConstr(type: E.PType, sf: number): string {
+  if (type === 'office') return sf > 26_000 ? 'concrete' : 'masonry';
+  if (type === 'industrial') return 'metal';
+  if (type === 'retail') return 'strip';
+  if (type === 'multifamily') return sf > 42_000 ? 'tower' : 'midrise';
+  return 'podium';
 }
 
 interface IsoBld { cx: number; cy: number; w: number; h: number; ht: number; col: string; listed: boolean; key: string; prog?: number; mine?: boolean; type?: E.PType; construction?: string; quality?: number; age?: number; sf?: number; occ?: number; seed?: number }
@@ -210,12 +232,12 @@ function useIsoBuildings(state: GameState): IsoBld[] {
       const cells = E.footprintCells(o);
       if (!cells.length) return;
       const t = state.tiles[o.tileI];
-      const full = bldHeight(o.sf, o.type);
-      const ht = prog === undefined ? full : Math.max(3, full * prog);
+      const m = massing(o.type, o.construction ?? defaultConstr(o.type, o.sf), o.sf, cells.length);
+      const ht = prog === undefined ? m.ht : Math.max(3, m.ht * prog);
       for (const [ri, r] of cellRects(cells).entries()) {
         const [cx, cy] = parcelCenter(t.x, t.y, r.px, r.py, r.pw, r.ph);
         const [w, h] = parcelSpan(r.pw, r.ph);
-        out.push({ cx, cy, w: w * 0.94, h: h * 0.94, ht, col, listed, key: key + '_r' + ri, prog, mine,
+        out.push({ cx, cy, w: w * m.shrink, h: h * m.shrink, ht, col, listed, key: key + '_r' + ri, prog, mine,
           type: o.type, construction: o.construction, quality: o.quality, age: o.age, sf: o.sf, occ: (o as any).occ,
           seed: (state.seed ^ ((o.tileI + 1) * 0x9e3779b9) ^ ri) | 0 });
       }
@@ -752,7 +774,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                     Math.floor(selInfo.main.length * E.PARCEL_AC * 43_560 * E.FAR[effGhost] * bonus),
                     E.CONFIG.tiers[state.tier].maxSF);
                   if (sfMax < 5000) return null;
-                  const ht = bldHeight(sfMax, effGhost);
+                  const ht = massing(effGhost, defaultConstr(effGhost, sfMax), sfMax, selInfo.main.length).ht;
                   return cellRects(selInfo.main).map((r, i) => {
                     const [cx, cy] = parcelCenter(t.x, t.y, r.px, r.py, r.pw, r.ph);
                     const [w, h] = parcelSpan(r.pw, r.ph);
@@ -830,7 +852,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           <span><span style={{ color: '#8a97a3' }}>▪</span> private owners</span>
           <span style={{ color: 'var(--green)' }}>▪ on the market</span>
           {transitActive && <span style={{ color: 'var(--blue)' }}>▦ new transit corridor</span>}
-          {view === 'iso' && <span>building height = floor area</span>}
+          {view === 'iso' && <span>massing is honest: towers stand tall, sheds sprawl</span>}
           <span style={{ color: '#c98a2e' }}>▨ under construction</span>
           <span className="faint">scroll to zoom · drag to pan</span>
         </div>

@@ -356,6 +356,80 @@ function useViewport(bx: number, by: number, bw: number, bh: number) {
   };
 }
 
+// ---------- roads ----------
+// Merge collinear same-class segments into polyline runs; streets draw in the
+// gutter between blocks (boundary coords are at ±0.5 in tile-center space).
+type RoadRun = { cls: number; pts: [number, number][] };
+function roadRuns(roads: E.RoadNet): RoadRun[] {
+  const runs: RoadRun[] = [];
+  const W = E.CONFIG.GRID_W, H = E.CONFIG.GRID_H;
+  for (let y = 0; y <= H; y++) {
+    let x = 0;
+    while (x < W) {
+      const c = roads.hz[y][x];
+      if (!c) { x++; continue; }
+      let x2 = x;
+      while (x2 + 1 < W && roads.hz[y][x2 + 1] === c) x2++;
+      runs.push({ cls: c, pts: [[x - 0.5, y - 0.5], [x2 + 0.5, y - 0.5]] });
+      x = x2 + 1;
+    }
+  }
+  for (let x = 0; x <= W; x++) {
+    let y = 0;
+    while (y < H) {
+      const c = roads.vt[y][x];
+      if (!c) { y++; continue; }
+      let y2 = y;
+      while (y2 + 1 < H && roads.vt[y2 + 1][x] === c) y2++;
+      runs.push({ cls: c, pts: [[x - 0.5, y - 0.5], [x - 0.5, y2 + 0.5]] });
+      y = y2 + 1;
+    }
+  }
+  return runs;
+}
+const ROAD_STYLE: Record<number, { stroke: string; w: number; dash?: string }> = {
+  1: { stroke: '#242c35', w: 2.0 },
+  2: { stroke: '#303a45', w: 3.0 },
+  3: { stroke: '#414c58', w: 4.6 },
+  4: { stroke: '#4b5763', w: 6.4 },
+  5: { stroke: '#544a36', w: 1.8, dash: '7 5' },
+};
+const RoadsIso = memo(function RoadsIso({ runs }: { runs: RoadRun[] }) {
+  return (
+    <g style={{ pointerEvents: 'none' }}>
+      {runs.map((r, i) => {
+        const st = ROAD_STYLE[r.cls];
+        const pts = r.pts.map(p => isoPt(p[0], p[1])).map(q => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' ');
+        return (
+          <g key={i}>
+            <polyline points={pts} fill="none" stroke={st.stroke} strokeWidth={st.w} strokeDasharray={st.dash} strokeLinecap="round" />
+            {r.cls === 3 && <polyline points={pts} fill="none" stroke="#59636f" strokeWidth={0.7} strokeDasharray="5 7" />}
+            {r.cls === 4 && <polyline points={pts} fill="none" stroke="#5d6875" strokeWidth={0.8} strokeDasharray="10 4" />}
+          </g>
+        );
+      })}
+    </g>
+  );
+});
+const RoadsFlat = memo(function RoadsFlat({ runs }: { runs: RoadRun[] }) {
+  return (
+    <g style={{ pointerEvents: 'none' }}>
+      {runs.map((r, i) => {
+        const st = ROAD_STYLE[r.cls];
+        const [a, b] = r.pts;
+        return (
+          <g key={i}>
+            <line x1={(a[0] + 0.5) * TS} y1={(a[1] + 0.5) * TS} x2={(b[0] + 0.5) * TS} y2={(b[1] + 0.5) * TS}
+              stroke={st.stroke} strokeWidth={st.w * 0.8} strokeDasharray={st.dash} strokeLinecap="round" />
+            {r.cls >= 3 && <line x1={(a[0] + 0.5) * TS} y1={(a[1] + 0.5) * TS} x2={(b[0] + 0.5) * TS} y2={(b[1] + 0.5) * TS}
+              stroke="#59636f" strokeWidth={0.6} strokeDasharray="5 7" />}
+          </g>
+        );
+      })}
+    </g>
+  );
+});
+
 // ---------- memoized layers ----------
 // The map draws thousands of SVG nodes. Splitting it into layers memoized on stable
 // identities means hover, pan and zoom re-render a tooltip div — not the city.
@@ -463,6 +537,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const vpFlat = useViewport(-20, -18, W + 24, H + 22);
   const field = useField(state, lens);
   const river = useMemo(() => riverGeometry(state), [state.seed]);
+  const runs = useMemo(() => roadRuns(state.roads), [state.seed]); // eslint-disable-line
   const hue = LENS_HUE[lens];
 
   const sel = selTile !== null ? state.tiles[selTile] : null;
@@ -561,16 +636,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             const pts = spine.map(t => isoPt(t.x, t.y)).map(p => p[0].toFixed(0) + ',' + p[1].toFixed(0)).join(' ');
             return <polyline points={pts} fill="none" stroke="#23405c" strokeWidth={IH * 0.95} strokeLinecap="round" strokeLinejoin="round" />;
           })()}
-          {(() => {
-            const row = 4, col = 7, rail = E.CONFIG.GRID_H - 2;
-            const line = (pts: [number, number][], stroke: string, w: number, dash?: string) => (
-              <polyline points={pts.map(p => p[0].toFixed(0) + ',' + p[1].toFixed(0)).join(' ')} fill="none" stroke={stroke} strokeWidth={w} strokeDasharray={dash} strokeLinecap="round" />
-            );
-            const hRow: [number, number][] = []; for (let x = 0; x < E.CONFIG.GRID_W; x++) hRow.push(isoPt(x, row));
-            const vCol: [number, number][] = []; for (let y = 0; y < E.CONFIG.GRID_H; y++) vCol.push(isoPt(col, y));
-            const rRow: [number, number][] = []; for (let x = 0; x < E.CONFIG.GRID_W; x++) rRow.push(isoPt(x, rail));
-            return <g style={{ pointerEvents: 'none' }}>{line(hRow, '#3c4550', 3.6)}{line(vCol, '#3c4550', 3.6)}{line(rRow, '#4d4432', 2, '8 5')}</g>;
-          })()}
+          <RoadsIso runs={runs} />
           {transitActive && (() => {
             const ef = state.effects.find(e => e.kind === 'transit')!;
             const done = 1 - ef.monthsLeft / 14;
@@ -628,20 +694,18 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           ))}
           {/* continuous value field */}
           <FieldFlat field={field} hue={hue} />
-          {/* street grain: faint gridlines so the city reads as blocks, not gradient soup */}
+          {/* faint block seams so the field reads as a city, not gradient soup */}
           {Array.from({ length: E.CONFIG.GRID_W + 1 }, (_, i) => (
-            <line key={'gv' + i} x1={i * TS} y1={0} x2={i * TS} y2={H} stroke="#0b0f13" strokeWidth={1.1} opacity={0.55} />
+            <line key={'gv' + i} x1={i * TS} y1={0} x2={i * TS} y2={H} stroke="#0b0f13" strokeWidth={0.8} opacity={0.35} />
           ))}
           {Array.from({ length: E.CONFIG.GRID_H + 1 }, (_, i) => (
-            <line key={'gh' + i} x1={0} y1={i * TS} x2={W} y2={i * TS} stroke="#0b0f13" strokeWidth={1.1} opacity={0.55} />
+            <line key={'gh' + i} x1={0} y1={i * TS} x2={W} y2={i * TS} stroke="#0b0f13" strokeWidth={0.8} opacity={0.35} />
           ))}
           {/* river */}
           {river && <path d={river} fill="none" stroke="#1c3450" strokeWidth={TS * 0.86} strokeLinecap="round" strokeLinejoin="round" />}
           {river && <path d={river} fill="none" stroke="#2d4f6e" strokeWidth={1.6} strokeDasharray="1 8" strokeLinecap="round" opacity={0.85} />}
-          {/* arterials through the CBD + rail through the industrial band */}
-          <line x1={0} y1={4.5 * TS} x2={W} y2={4.5 * TS} stroke="#3c4550" strokeWidth={3.4} opacity={0.85} />
-          <line x1={7.5 * TS} y1={0} x2={7.5 * TS} y2={H} stroke="#3c4550" strokeWidth={3.4} opacity={0.85} />
-          <line x1={0} y1={(E.CONFIG.GRID_H - 1.5) * TS} x2={W} y2={(E.CONFIG.GRID_H - 1.5) * TS} stroke="#4d4432" strokeWidth={2} strokeDasharray="8 5" opacity={0.9} />
+          {/* the street network — every city's is its own */}
+          <RoadsFlat runs={runs} />
           {transitActive && state.transitCorridor.map(i => {
             const t = state.tiles[i];
             return <rect key={'t' + i} x={t.x * TS + 1.5} y={t.y * TS + 1.5} width={TS - 3} height={TS - 3} rx={4}

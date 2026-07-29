@@ -99,7 +99,16 @@ export interface Tile {
   water: boolean;
   D: number; income: number; emp: number; pop: number; indSuit: number; crime: number;
   supply: Record<PType, number>;
+  // street access, fixed at city generation: arterial frontage, highway/rail proximity,
+  // and how quiet the block is. Retail wants frontage; industrial wants the highway and
+  // the rail spur; housing pays for quiet.
+  acc: { art: number; hwy: number; rail: number; quiet: number };
 }
+
+// Streets live on the boundaries between blocks: hz[y][x] is the segment between
+// tile (x, y-1) and (x, y); vt[y][x] between (x-1, y) and (x, y).
+// Classes: 0 none · 1 local · 2 collector · 3 arterial · 4 highway · 5 rail.
+export interface RoadNet { hz: number[][]; vt: number[][] }
 
 export type Phase = 'recovery' | 'expansion' | 'peak' | 'recession';
 export interface Economy {
@@ -272,6 +281,7 @@ export interface GameState {
   lastScoutMonth: number; approachesLeft: number;
   gameOver: boolean; gameOverReason?: string; forcedSaleNotice?: string;
   transitCorridor: number[];
+  roads: RoadNet;
   totalRealizedProfit: number; dealsClosed: number;
   version: number;
 }
@@ -317,7 +327,128 @@ function smoothNoise(r: () => number, w: number, h: number): number[] {
   return out;
 }
 
-export function generateCity(seed: number): { tiles: Tile[]; corridor: number[] } {
+// Every city gets its own street network. Arterials jog, locals get pruned into
+// superblocks and dead ends, the river is crossed only where someone built a bridge,
+// and the rail line runs the industrial band with a spur to the port.
+function generateRoads(r: () => number, riverCol: number[], CBD: { x: number; y: number }, UPT: { x: number; y: number }): RoadNet {
+  const W = CONFIG.GRID_W, H = CONFIG.GRID_H;
+  const hz: number[][] = Array.from({ length: H + 1 }, () => new Array(W).fill(1));
+  const vt: number[][] = Array.from({ length: H }, () => new Array(W + 1).fill(1));
+  const isWater = (x: number, y: number) => x >= 0 && x < W && y >= 0 && y < H && x === riverCol[y];
+
+  // Superblocks and dead ends: the grid frays, more at the edges of town.
+  for (let y = 1; y < H; y++) for (let x = 0; x < W; x++) if (r() < 0.16) hz[y][x] = 0;
+  for (let y = 0; y < H; y++) for (let x = 1; x < W; x++) if (r() < 0.16) vt[y][x] = 0;
+  for (let x = 0; x < W; x++) { if (r() < 0.55) hz[0][x] = 0; if (r() < 0.55) hz[H][x] = 0; }
+  for (let y = 0; y < H; y++) { if (r() < 0.55) vt[y][0] = 0; if (r() < 0.55) vt[y][W] = 0; }
+
+  // E-W arterial through the CBD, with staircase jogs.
+  let ay = clamp(CBD.y + (r() < 0.5 ? 0 : 1), 1, H - 1);
+  for (let x = 0; x < W; x++) {
+    hz[ay][x] = Math.max(hz[ay][x], 3);
+    if (x > 1 && x < W - 2 && r() < 0.16) {
+      const ny = clamp(ay + (r() < 0.5 ? -1 : 1), 1, H - 1);
+      if (ny !== ay) { vt[Math.min(ay, ny)][x + 1] = Math.max(vt[Math.min(ay, ny)][x + 1], 3); ay = ny; }
+    }
+  }
+  // N-S arterial through the CBD, same treatment.
+  let ax = clamp(CBD.x + (r() < 0.5 ? 0 : 1), riverCol[0] + 2, W - 1);
+  for (let y = 0; y < H; y++) {
+    vt[y][ax] = Math.max(vt[y][ax], 3);
+    if (y > 0 && y < H - 2 && r() < 0.16) {
+      const nx = clamp(ax + (r() < 0.5 ? -1 : 1), 2, W - 1);
+      if (nx !== ax) { hz[y + 1][Math.min(ax, nx)] = Math.max(hz[y + 1][Math.min(ax, nx)], 3); ax = nx; }
+    }
+  }
+  // Collectors: one through uptown, sometimes more, sometimes one on the far bank.
+  const nCollV = 1 + (r() < 0.6 ? 1 : 0);
+  for (let k = 0; k < nCollV; k++) {
+    const cx = k === 0 ? clamp(UPT.x, 1, W - 1) : 1 + Math.floor(r() * (W - 1));
+    for (let y = 0; y < H; y++) vt[y][cx] = Math.max(vt[y][cx], 2);
+  }
+  const nCollH = 1 + (r() < 0.5 ? 1 : 0);
+  for (let k = 0; k < nCollH; k++) {
+    const cy2 = 1 + Math.floor(r() * (H - 1));
+    for (let x = 0; x < W; x++) hz[cy2][x] = Math.max(hz[cy2][x], 2);
+  }
+  // A staircase boulevard from a corner toward the CBD, some cities only.
+  if (r() < 0.45) {
+    let px = r() < 0.5 ? 1 : W - 2, py = r() < 0.5 ? 1 : H - 2, guard = 0;
+    while ((px !== CBD.x || py !== CBD.y) && guard++ < 40) {
+      if (Math.abs(CBD.x - px) >= Math.abs(CBD.y - py)) {
+        const d = CBD.x > px ? 1 : -1;
+        hz[clamp(py, 1, H - 1)][Math.min(px, px + d)] = Math.max(hz[clamp(py, 1, H - 1)][Math.min(px, px + d)], 2);
+        px += d;
+      } else {
+        const d = CBD.y > py ? 1 : -1;
+        vt[Math.min(py, py + d)][clamp(px, 1, W - 1)] = Math.max(vt[Math.min(py, py + d)][clamp(px, 1, W - 1)], 2);
+        py += d;
+      }
+    }
+  }
+  // Highway: some cities have one skirting an edge. Not all.
+  if (r() < 0.5) {
+    const side = Math.floor(r() * 3);
+    if (side === 0) for (let x = 0; x < W; x++) hz[0][x] = 4;
+    else if (side === 1) for (let y = 0; y < H; y++) vt[y][0] = 4;
+    else for (let y = 0; y < H; y++) vt[y][W] = 4;
+  }
+  // Rail through the industrial band, spur down to the port.
+  for (let x = 0; x < W; x++) hz[H - 1][x] = 5;
+  const spurX = clamp(riverCol[H - 1] + (riverCol[H - 1] < W / 2 ? 1 : -1), 1, W - 1);
+  for (let y = H - 2; y < H; y++) vt[y][spurX] = 5;
+
+  // The river severs the grid. Arterials keep their bridge; add one or two humbler ones.
+  for (let y = 0; y <= H; y++) for (let x = 0; x < W; x++) {
+    const overWater = (y > 0 && isWater(x, y - 1)) || (y < H && isWater(x, y));
+    if (overWater && hz[y][x] > 0 && hz[y][x] < 3) hz[y][x] = 0;
+  }
+  const extraBridges = 1 + (r() < 0.5 ? 1 : 0);
+  for (let k = 0; k < extraBridges; k++) {
+    const yb = 1 + Math.floor(r() * (H - 1));
+    const wx = riverCol[yb];
+    const cls = 1 + (r() < 0.4 ? 1 : 0);
+    hz[yb][wx] = Math.max(hz[yb][wx], cls);
+    if (wx > 0) hz[yb][wx - 1] = Math.max(hz[yb][wx - 1], cls);
+    if (wx < W - 1) hz[yb][wx + 1] = Math.max(hz[yb][wx + 1], cls);
+  }
+  // No block ends up landlocked: everyone gets at least a local street.
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (isWater(x, y)) continue;
+    if (hz[y][x] || hz[y + 1][x] || vt[y][x] || vt[y][x + 1]) continue;
+    if (!isWater(x, y + 1)) hz[y + 1][x] = 1;
+    else if (!isWater(x, y - 1)) hz[y][x] = 1;
+    else vt[y][x + 1] = 1;
+  }
+  return { hz, vt };
+}
+
+function computeAccess(tiles: Tile[], roads: RoadNet) {
+  const W = CONFIG.GRID_W, H = CONFIG.GRID_H;
+  const hwyPts: [number, number][] = [], railPts: [number, number][] = [];
+  for (let y = 0; y <= H; y++) for (let x = 0; x < W; x++) {
+    if (roads.hz[y][x] === 4) hwyPts.push([x, y - 0.5]);
+    if (roads.hz[y][x] === 5) railPts.push([x, y - 0.5]);
+  }
+  for (let y = 0; y < H; y++) for (let x = 0; x <= W; x++) {
+    if (roads.vt[y][x] === 4) hwyPts.push([x - 0.5, y]);
+    if (roads.vt[y][x] === 5) railPts.push([x - 0.5, y]);
+  }
+  const rnd = (v: number) => Math.round(v * 100) / 100;
+  for (const t of tiles) {
+    if (t.water) { t.acc = { art: 0, hwy: 0, rail: 0, quiet: 0 }; continue; }
+    const e = [roads.hz[t.y][t.x], roads.hz[t.y + 1][t.x], roads.vt[t.y][t.x], roads.vt[t.y][t.x + 1]]
+      .filter(c => c !== 4 && c !== 5);
+    const m = e.length ? Math.max(...e) : 0;
+    const art = m === 3 ? 1 : m === 2 ? 0.55 : 0;
+    const dh = hwyPts.length ? Math.min(...hwyPts.map(p => dist(t.x, t.y, p[0], p[1]))) : 99;
+    const dr = railPts.length ? Math.min(...railPts.map(p => dist(t.x, t.y, p[0], p[1]))) : 99;
+    const hwy = gauss(dh, 2.0), rail = gauss(dr, 1.6);
+    t.acc = { art: rnd(art), hwy: rnd(hwy), rail: rnd(rail), quiet: rnd(clamp(1 - art * 0.6 - hwy * 0.85, 0, 1)) };
+  }
+}
+
+export function generateCity(seed: number): { tiles: Tile[]; corridor: number[]; roads: RoadNet } {
   const r = mulberry32(seed);
   const W = CONFIG.GRID_W, H = CONFIG.GRID_H;
   const noise = smoothNoise(r, W, H);
@@ -326,6 +457,7 @@ export function generateCity(seed: number): { tiles: Tile[]; corridor: number[] 
   let rc = 3;
   for (let y = 0; y < H; y++) { riverCol.push(rc); if (r() < 0.4) rc += r() < 0.5 ? -1 : 1; rc = clamp(rc, 2, 4); }
   const CBD = { x: 7, y: 4 }, UPT = { x: 11, y: 2 }, PORT = { x: riverCol[H - 1], y: H - 1 };
+  const roads = generateRoads(r, riverCol, CBD, UPT);
   const tiles: Tile[] = [];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = y * W + x;
@@ -341,7 +473,16 @@ export function generateCity(seed: number): { tiles: Tile[]; corridor: number[] 
     const dPort = dist(x, y, PORT.x, PORT.y);
     const indSuit = clamp(16 + 58 * railBand + 30 * gauss(dPort, 3.2) - D * 0.25 + (noise[i] - 0.5) * 20, 3, 100);
     const crime = clamp(68 - 0.58 * D + (noise2[i] - 0.5) * 24, 4, 85);
-    tiles.push({ i, x, y, water, D, income, emp, pop, indSuit, crime, supply: { office: 0, retail: 0, industrial: 0, mixed: 0, multifamily: 0 } });
+    tiles.push({ i, x, y, water, D, income, emp, pop, indSuit, crime, supply: { office: 0, retail: 0, industrial: 0, mixed: 0, multifamily: 0 }, acc: { art: 0, hwy: 0, rail: 0, quiet: 0 } });
+  }
+  computeAccess(tiles, roads);
+  // Streets shape the terrain: frontage lifts a block, a highway next door drags on it
+  // (unless you're a warehouse — then it's the whole point), rail feeds the industrial band.
+  for (const t of tiles) {
+    if (t.water) continue;
+    t.D = clamp(t.D + 5.5 * t.acc.art + (t.indSuit > 55 ? 0 : -4.5 * t.acc.hwy), 8, 96);
+    t.indSuit = clamp(t.indSuit + 24 * t.acc.hwy + 18 * t.acc.rail, 3, 100);
+    t.income = clamp(0.55 + (t.D / 100) * 0.95 + (noise2[t.i] - 0.5) * 0.2, 0.5, 1.7);
   }
   for (const t of tiles) {
     if (t.water) continue;
@@ -359,30 +500,32 @@ export function generateCity(seed: number): { tiles: Tile[]; corridor: number[] 
     const idx = cy * W + cx;
     if (!tiles[idx].water) corridor.push(idx);
   }
-  return { tiles, corridor };
+  return { tiles, corridor, roads };
 }
 
 // ---------- Market math ----------
 export function tileDemandFactor(state: GameState, t: Tile, type: PType): number {
   const e = state.econ;
+  const acc = t.acc ?? { art: 0, hwy: 0, rail: 0, quiet: 0 };
   let f = 1;
   if (type === 'office') f = 0.45 + 1.15 * (t.emp / 100) * (e.empIdx / 100);
-  if (type === 'retail') f = 0.40 + 1.15 * (t.pop / 100) * t.income * (0.6 + 0.008 * e.confidence);
-  if (type === 'industrial') f = 0.55 + 0.95 * (t.indSuit / 100) * (e.ecomMonthsLeft > 0 ? 1.15 : 1);
+  if (type === 'retail') f = (0.40 + 1.15 * (t.pop / 100) * t.income * (0.6 + 0.008 * e.confidence)) * (0.92 + 0.18 * acc.art);
+  if (type === 'industrial') f = (0.55 + 0.95 * (t.indSuit / 100) * (e.ecomMonthsLeft > 0 ? 1.15 : 1)) * (0.88 + 0.30 * Math.max(acc.hwy, acc.rail));
   if (type === 'mixed') f = 0.40 + 0.65 * (t.emp / 100) + 0.55 * (t.pop / 100) * t.income;
-  if (type === 'multifamily') f = 0.45 + 1.05 * (t.pop / 100) * (0.5 + 0.5 * t.income);
+  if (type === 'multifamily') f = (0.45 + 1.05 * (t.pop / 100) * (0.5 + 0.5 * t.income)) * (0.94 + 0.12 * acc.quiet);
   if (type === 'retail' && e.ecomMonthsLeft > 0) f *= 0.85;
   if (type === 'office' && (e.wfhMonthsLeft ?? 0) > 0) f *= 0.85;
   return clamp(f, 0.35, 1.8);
 }
 
 export function marketRentPSF(state: GameState, t: Tile, type: PType): number {
+  const acc = t.acc ?? { art: 0, hwy: 0, rail: 0, quiet: 0 };
   let mult = 1;
-  if (type === 'office') mult = 0.5 + 0.62 * (t.emp / 100) + 0.45 * (t.D / 100);
-  if (type === 'retail') mult = 0.45 + 0.72 * t.income * (t.pop / 100) + 0.35 * (t.D / 100);
-  if (type === 'industrial') mult = 0.78 + 0.42 * (t.indSuit / 100);
-  if (type === 'mixed') mult = 0.45 + 0.55 * (t.D / 100) + 0.30 * t.income;
-  if (type === 'multifamily') mult = 0.48 + 0.55 * (t.D / 100) + 0.32 * t.income;
+  if (type === 'office') mult = 0.5 + 0.62 * (t.emp / 100) + 0.45 * (t.D / 100) + 0.06 * acc.art;
+  if (type === 'retail') mult = 0.45 + 0.72 * t.income * (t.pop / 100) + 0.35 * (t.D / 100) + 0.20 * acc.art;
+  if (type === 'industrial') mult = 0.78 + 0.42 * (t.indSuit / 100) + 0.10 * Math.max(acc.hwy, acc.rail);
+  if (type === 'mixed') mult = 0.45 + 0.55 * (t.D / 100) + 0.30 * t.income + 0.10 * acc.art;
+  if (type === 'multifamily') mult = 0.48 + 0.55 * (t.D / 100) + 0.32 * t.income + 0.07 * acc.quiet - 0.08 * acc.hwy;
   return CONFIG.baseRent[type] * mult * state.econ.rentIdx[type];
 }
 
@@ -670,7 +813,7 @@ function genRentRoll(state: GameState, a: Pick<Asset, 'tileI' | 'type' | 'sf' | 
 // ---------- Initial state ----------
 export function newGame(seed?: number, opts?: { sandbox?: boolean }): GameState {
   const s0 = seed ?? Math.floor(Math.random() * 2 ** 31);
-  const { tiles, corridor } = generateCity(s0);
+  const { tiles, corridor, roads } = generateCity(s0);
   const state: GameState = {
     seed: s0, rngCursor: s0 ^ 0x1234567,
     month: 0, tiles,
@@ -704,9 +847,9 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean }): GameState 
     nwHistory: [], econHistory: [],
     nextId: 1, pending: [], lastMonthCF: 0, negCashStreak: 0,
     lastScoutMonth: -99, approachesLeft: 5,
-    gameOver: false, transitCorridor: corridor,
+    gameOver: false, transitCorridor: corridor, roads,
     totalRealizedProfit: 0, dealsClosed: 0,
-    version: 9,
+    version: 10,
   };
   generateStock(state);
   pushNews(state, 'info', opts?.sandbox
@@ -2952,7 +3095,7 @@ export function serialize(state: GameState): string { return JSON.stringify(stat
 export function deserialize(json: string): GameState | null {
   try {
     const s = JSON.parse(json);
-    if (s && s.version === 9 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
+    if (s && s.version === 10 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
     return null;
   } catch { return null; }
 }

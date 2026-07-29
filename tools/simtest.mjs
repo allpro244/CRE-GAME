@@ -2,6 +2,16 @@ import * as E from '/tmp/engine.mjs';
 
 function run(seed) {
   let s = E.newGame(seed);
+  // street network invariants: right shape, sane classes, nobody landlocked
+  const W = E.CONFIG.GRID_W, H = E.CONFIG.GRID_H;
+  if (!s.roads || s.roads.hz.length !== H + 1 || s.roads.vt.length !== H) throw new Error('roads: bad shape');
+  for (const row of s.roads.hz) { if (row.length !== W) throw new Error('roads: hz row'); for (const c of row) if (!Number.isInteger(c) || c < 0 || c > 5) throw new Error('roads: bad class ' + c); }
+  for (const row of s.roads.vt) { if (row.length !== W + 1) throw new Error('roads: vt row'); for (const c of row) if (!Number.isInteger(c) || c < 0 || c > 5) throw new Error('roads: bad class ' + c); }
+  for (const t of s.tiles) {
+    if (t.water) continue;
+    if (!(s.roads.hz[t.y][t.x] || s.roads.hz[t.y + 1][t.x] || s.roads.vt[t.y][t.x] || s.roads.vt[t.y][t.x + 1])) throw new Error('landlocked tile ' + t.i);
+    if (!t.acc || !isFinite(t.acc.art + t.acc.hwy + t.acc.rail + t.acc.quiet)) throw new Error('bad access on tile ' + t.i);
+  }
   if (seed % 2 === 0) s = E.setAutoLease(s, true);
   let banked=0, demoed=0, matched=0, converted=0, listedForSale=0, haggled=0, approaches=0, bought=0, developed=0, sold=0, refis=0, signed=0, walked=0, offers=0, omBought=0, defaults=0, facMade=0;
   const startNews = () => s.news.length;

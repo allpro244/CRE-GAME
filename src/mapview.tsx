@@ -1,0 +1,862 @@
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as E from './engine';
+import type { GameState, StockBuilding, Tile } from './engine';
+import { Modal, Hint, BuildingSketch, blockName, pct } from './views2';
+
+type Lens = 'value' | 'office' | 'retail' | 'industrial' | 'multifamily' | 'crime' | 'pipeline' | 'comps';
+const LENSES: { id: Lens; label: string }[] = [
+  { id: 'value', label: 'Desirability' }, { id: 'office', label: 'Office rents' },
+  { id: 'retail', label: 'Retail rents' }, { id: 'industrial', label: 'Industrial fit' },
+  { id: 'multifamily', label: 'Residential' }, { id: 'crime', label: 'Crime' },
+  { id: 'pipeline', label: 'Pipeline' }, { id: 'comps', label: 'Comps' },
+];
+
+function lerpColor(a: [number, number, number], b: [number, number, number], t: number): string {
+  const c = a.map((x, i) => Math.round(x + (b[i] - x) * t));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+const DARK: [number, number, number] = [19, 25, 31];
+const TS = 52;   // px per tile
+const SUB = 3;   // subdivision per tile for the continuous field
+
+function lensRaw(state: GameState, t: Tile, lens: Lens): number {
+  if (lens === 'value') return t.D / 100;
+  if (lens === 'office') return Math.min(1, (E.marketRentPSF(state, t, 'office') - 10) / 30);
+  if (lens === 'retail') return Math.min(1, (E.marketRentPSF(state, t, 'retail') - 7) / 22);
+  if (lens === 'industrial') return t.indSuit / 100;
+  if (lens === 'multifamily') return Math.min(1, (E.marketRentPSF(state, t, 'multifamily') - 11) / 22);
+  if (lens === 'pipeline') {
+    let sf = 0;
+    for (const b of state.stock) if (b.tileI === t.i && b.buildLeft) sf += b.sf;
+    for (const a of state.assets) if (a.tileI === t.i && a.mode === 'construction') sf += a.sf;
+    return Math.min(1, sf / 60000);
+  }
+  if (lens === 'comps') {
+    const near = state.comps.filter(c => c.tileI === t.i && c.sf > 0);
+    if (!near.length) return 0;
+    const psf = near.reduce((s2, c) => s2 + c.price / c.sf, 0) / near.length;
+    return Math.min(1, psf / 320);
+  }
+  return t.crime / 85;
+}
+const LENS_HUE: Record<Lens, [number, number, number]> = {
+  value: [217, 166, 72], office: [93, 143, 232], retail: [93, 143, 232],
+  industrial: [63, 169, 126], multifamily: [186, 128, 224], crime: [222, 95, 95],
+  pipeline: [232, 140, 60], comps: [120, 200, 160],
+};
+
+// The market isn't a checkerboard — value pools and drains across the city.
+// Bilinear interpolation over tile centers gives the field its continuous grain.
+function useTileValues(state: GameState, lens: Lens): number[] {
+  return useMemo(() => {
+    const landVals = state.tiles.filter(t => !t.water).map(t => lensRaw(state, t, lens)).sort((a, b) => a - b);
+    const lo = landVals[Math.floor(landVals.length * 0.06)] ?? 0;
+    const hi = landVals[Math.floor(landVals.length * 0.94)] ?? 1;
+    return state.tiles.map(t => {
+      const raw = lensRaw(state, t, lens);
+      return hi > lo ? Math.max(0, Math.min(1, (raw - lo) / (hi - lo))) : 0.5;
+    });
+  }, [state, lens]);
+}
+
+function useField(state: GameState, lens: Lens) {
+  return useMemo(() => {
+    const W = E.CONFIG.GRID_W, H = E.CONFIG.GRID_H;
+    // normalize against the city's own spread — a flat lens tells you nothing
+    const landVals = state.tiles.filter(t => !t.water).map(t => lensRaw(state, t, lens)).sort((a, b) => a - b);
+    const lo = landVals[Math.floor(landVals.length * 0.06)] ?? 0;
+    const hi = landVals[Math.floor(landVals.length * 0.94)] ?? 1;
+    const norm = (raw: number) => hi > lo ? Math.max(0, Math.min(1, (raw - lo) / (hi - lo))) : 0.5;
+    const V: number[][] = [];
+    for (let y = 0; y < H; y++) {
+      V.push([]);
+      for (let x = 0; x < W; x++) {
+        const t = state.tiles[y * W + x];
+        if (!t.water) { V[y].push(norm(lensRaw(state, t, lens))); continue; }
+        // water tiles borrow neighbors so the field flows under the river
+        let s = 0, n = 0;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const nt = state.tiles[(y + dy) * W + (x + dx)];
+          if (nt && !nt.water && nt.x === x + dx) { s += norm(lensRaw(state, nt, lens)); n++; }
+        }
+        V[y].push(n ? s / n : 0.2);
+      }
+    }
+    const sample = (px: number, py: number) => {
+      const gx = Math.min(W - 1.001, Math.max(0, px - 0.5));
+      const gy = Math.min(H - 1.001, Math.max(0, py - 0.5));
+      const x0 = Math.floor(gx), y0 = Math.floor(gy);
+      const fx = gx - x0, fy = gy - y0;
+      const v00 = V[y0][x0], v10 = V[y0][Math.min(W - 1, x0 + 1)];
+      const v01 = V[Math.min(H - 1, y0 + 1)][x0], v11 = V[Math.min(H - 1, y0 + 1)][Math.min(W - 1, x0 + 1)];
+      return v00 * (1 - fx) * (1 - fy) + v10 * fx * (1 - fy) + v01 * (1 - fx) * fy + v11 * fx * fy;
+    };
+    const cells: { x: number; y: number; v: number }[] = [];
+    const step = 1 / SUB;
+    for (let y = 0; y < H * SUB; y++) for (let x = 0; x < W * SUB; x++) {
+      cells.push({ x: x * step, y: y * step, v: sample((x + 0.5) * step, (y + 0.5) * step) });
+    }
+    return cells;
+  }, [state, lens]);
+}
+
+function riverGeometry(state: GameState) {
+  const water = state.tiles.filter(t => t.water);
+  const byRow = new Map<number, number[]>();
+  for (const t of water) { if (!byRow.has(t.y)) byRow.set(t.y, []); byRow.get(t.y)!.push(t.x); }
+  const rows = [...byRow.keys()].sort((a, b) => a - b);
+  if (!rows.length) return '';
+  const pts = rows.map(y => {
+    const xs = byRow.get(y)!;
+    return [(Math.min(...xs) + Math.max(...xs) + 1) / 2 * TS, (y + 0.5) * TS] as [number, number];
+  });
+  let d = `M${pts[0][0]} ${(rows[0]) * TS - 8}`;
+  for (const p of pts) d += `L${p[0]} ${p[1]}`;
+  d += `L${pts[pts.length - 1][0]} ${(rows[rows.length - 1] + 1) * TS + 8}`;
+  return d;
+}
+
+function footprints(state: GameState, t: Tile) {
+  const r = E.mulberry32((state.seed ^ (t.i * 0x9e3779b9)) | 0);
+  const cx = (t.x + 0.5) * TS, cy = (t.y + 0.5) * TS;
+  const out: { b: StockBuilding | null; assetId?: number; x: number; y: number; w: number; h: number; rot: number }[] = [];
+  const place = (sf: number) => {
+    const ang = r() * Math.PI * 2, rad = 3 + r() * (TS * 0.36);
+    const s = Math.min(13, 4 + Math.sqrt(sf) / 28);
+    return { x: cx + Math.cos(ang) * rad, y: cy + Math.sin(ang) * rad, w: s * (0.9 + r() * 0.7), h: s * (0.7 + r() * 0.5), rot: (r() - 0.5) * 30 };
+  };
+  for (const b of state.stock) {
+    if (b.tileI !== t.i) continue;
+    out.push({ b, ...place(b.sf) });
+    if (out.length >= 10) break;
+  }
+  for (const a of state.assets) {
+    if (a.tileI !== t.i) continue;
+    out.push({ b: null, assetId: a.id, ...place(a.sf) });
+  }
+  return out;
+}
+
+
+// ================= isometric (2.5D) renderer =================
+const IW = 64, IH = 32;              // diamond tile footprint
+const IOX = 40, IOY = 96;            // origin padding: room for towers above row 0
+function isoPt(x: number, y: number): [number, number] {
+  return [IOX + (x - y) * (IW / 2) + (E.CONFIG.GRID_H - 1) * (IW / 2), IOY + (x + y) * (IH / 2)];
+}
+const PG = E.PGRID, STREET = 0.16; // fraction of the block given to surrounding streets
+// map a parcel (px,py) within block (bx,by) to fractional tile coords
+function parcelCenter(bx: number, by: number, px: number, py: number, pw = 1, ph = 1): [number, number] {
+  const inner = 1 - STREET;
+  const cx = (px + pw / 2) / PG, cy = (py + ph / 2) / PG;
+  return [bx - 0.5 + STREET / 2 + cx * inner, by - 0.5 + STREET / 2 + cy * inner];
+}
+function parcelSpan(pw: number, ph: number): [number, number] {
+  const inner = 1 - STREET;
+  return [(pw / PG) * inner, (ph / PG) * inner];
+}
+function rectPoly(cx: number, cy: number, w: number, h: number, lift = 0): string {
+  const p = (x: number, y: number) => isoPt(x, y);
+  const a = p(cx - w / 2, cy - h / 2), b = p(cx + w / 2, cy - h / 2);
+  const c = p(cx + w / 2, cy + h / 2), d = p(cx - w / 2, cy + h / 2);
+  return [a, b, c, d].map(q => `${q[0].toFixed(1)},${(q[1] - lift).toFixed(1)}`).join(' ');
+}
+function prismFaces(cx: number, cy: number, w: number, h: number, ht: number): { l: string; r: string; t: string } {
+  const p = (x: number, y: number) => isoPt(x, y);
+  const bl = p(cx - w / 2, cy + h / 2), bb = p(cx + w / 2, cy + h / 2), br = p(cx + w / 2, cy - h / 2);
+  const L = [bl, bb, [bb[0], bb[1] - ht], [bl[0], bl[1] - ht]];
+  const R = [bb, br, [br[0], br[1] - ht], [bb[0], bb[1] - ht]];
+  const fmt = (arr: any[]) => arr.map(q => `${q[0].toFixed(1)},${q[1].toFixed(1)}`).join(' ');
+  return { l: fmt(L), r: fmt(R), t: rectPoly(cx, cy, w, h, ht) };
+}
+
+function diamond(x: number, y: number, f = 1, lift = 0): string {
+  const [cx, cy] = isoPt(x, y);
+  return `${cx},${cy - (IH * f) / 2 - lift} ${cx + (IW * f) / 2},${cy - lift} ${cx},${cy + (IH * f) / 2 - lift} ${cx - (IW * f) / 2},${cy - lift}`;
+}
+function shade(hex: string, m: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.min(255, Math.round(((n >> 16) & 255) * m));
+  const g = Math.min(255, Math.round(((n >> 8) & 255) * m));
+  const b = Math.min(255, Math.round((n & 255) * m));
+  return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+}
+// height in px from square footage — this is what makes a tower read as a tower
+function bldHeight(sf: number, type: E.PType): number {
+  const far = E.FAR[type];
+  const stories = Math.max(1, Math.min(34, Math.round(Math.pow(sf / 9000, 0.62) * (far > 1.5 ? 2.4 : far > 0.8 ? 1.5 : 0.8))));
+  return 5 + stories * 4.4;
+}
+
+interface IsoBld { cx: number; cy: number; w: number; h: number; ht: number; col: string; listed: boolean; key: string; prog?: number; mine?: boolean }
+
+function useIsoBuildings(state: GameState): IsoBld[] {
+  const stamp = state.stock.length + ':' + state.assets.length + ':' + state.land.length + ':' + state.month
+    + ':' + state.stock.reduce((s2, b) => s2 + (b.listedId ? 1 : 0), 0);
+  return useMemo(() => {
+    const out: IsoBld[] = [];
+    const place = (o: { tileI: number; sf: number; type: E.PType; cells?: number[]; px?: number; py?: number; pw?: number; ph?: number }, col: string, listed: boolean, key: string, prog?: number, mine?: boolean) => {
+      const cells = E.footprintCells(o);
+      if (!cells.length) return;
+      const t = state.tiles[o.tileI];
+      const full = bldHeight(o.sf, o.type);
+      const ht = prog === undefined ? full : Math.max(3, full * prog);
+      for (const c of cells) {
+        const px = c % E.PGRID, py = Math.floor(c / E.PGRID);
+        const [cx, cy] = parcelCenter(t.x, t.y, px, py);
+        const [w, h] = parcelSpan(1, 1);
+        out.push({ cx, cy, w: w * 0.94, h: h * 0.94, ht, col, listed, key: key + '_' + c, prog, mine });
+      }
+    };
+    for (const b of state.stock) {
+      const prog = b.buildLeft ? 1 - b.buildLeft / Math.max(1, b.buildTotal ?? 1) : undefined;
+      place(b, b.buildLeft ? '#7a6636' : b.owner !== 'private' ? '#46608c' : '#4a5560', !!b.listedId, 'b' + b.id, prog);
+    }
+    for (const a of state.assets) {
+      const prog = a.mode === 'construction' && a.project
+        ? 1 - a.project.monthsLeft / Math.max(1, a.project.monthsBuilt + a.project.monthsLeft) : undefined;
+      place(a, a.mode === 'construction' ? '#8a7030' : '#d9a648', false, 'a' + a.id, prog, true);
+    }
+    for (const hd of state.land) {
+      const t = state.tiles[hd.tileI];
+      for (const c of hd.cells) {
+        const px = c % E.PGRID, py = Math.floor(c / E.PGRID);
+        const [cx, cy] = parcelCenter(t.x, t.y, px, py);
+        const [w, hh] = parcelSpan(1, 1);
+        out.push({ cx, cy, w: w * 0.92, h: hh * 0.92, ht: 1.5, col: '#8a6a2c', listed: false, key: 'L' + hd.id + '_' + c, mine: true });
+      }
+    }
+    out.sort((p, q) => (p.cx + p.cy) - (q.cx + q.cy)); // painter's algorithm: back to front
+    return out;
+  }, [stamp, state.seed]); // eslint-disable-line
+}
+
+const IsoCity = memo(function IsoCity({ blds }: { blds: IsoBld[] }) {
+  return (
+    <g style={{ pointerEvents: 'none' }}>
+      {blds.map(b => {
+        const stroke = b.listed ? 'var(--green)' : '#0b0f13';
+        const sw = b.listed ? 1.1 : 0.4;
+        const f = prismFaces(b.cx, b.cy, b.w, b.h, b.ht);
+        const st = b.prog !== undefined ? '#c98a2e' : stroke;
+        const dash = b.prog !== undefined ? '3 2' : undefined;
+        return (
+          <g key={b.key}>
+            <polygon points={f.l} fill={shade(b.col, 0.56)} stroke={st} strokeWidth={sw} strokeDasharray={dash} />
+            <polygon points={f.r} fill={shade(b.col, 0.79)} stroke={st} strokeWidth={sw} strokeDasharray={dash} />
+            <polygon points={f.t} fill={shade(b.col, 1.16)} stroke={st} strokeWidth={sw} strokeDasharray={dash} />
+          </g>
+        );
+      })}
+    </g>
+  );
+});
+
+
+// ---------- pan / zoom viewport ----------
+function useViewport(bx: number, by: number, bw: number, bh: number) {
+  const ref = useRef<SVGSVGElement | null>(null);
+  const [vp, setVp] = useState({ z: 1, x: 0, y: 0 });
+  const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
+  const moved = useRef(false);
+  const vpRef = useRef(vp);
+  vpRef.current = vp;
+
+  const clamp2 = (x: number, y: number, z: number) => ({
+    x: Math.max(0, Math.min(bw - bw / z, x)),
+    y: Math.max(0, Math.min(bh - bh / z, y)),
+  });
+
+  // single atomic update: zoom and recentre together, pinning the point under the cursor
+  const zoomAt = useCallback((factor: number, cx?: number, cy?: number) => {
+    setVp(p => {
+      const nz = Math.max(1, Math.min(6, p.z * factor));
+      if (nz === p.z) return p;
+      const vwOld = bw / p.z, vhOld = bh / p.z;
+      const vwNew = bw / nz, vhNew = bh / nz;
+      const fx = cx === undefined ? 0.5 : (cx - p.x) / vwOld;
+      const fy = cy === undefined ? 0.5 : (cy - p.y) / vhOld;
+      const c = {
+        x: Math.max(0, Math.min(bw - vwNew, p.x + fx * (vwOld - vwNew))),
+        y: Math.max(0, Math.min(bh - vhNew, p.y + fy * (vhOld - vhNew))),
+      };
+      return { z: nz, x: c.x, y: c.y };
+    });
+  }, [bw, bh]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const p = vpRef.current;
+      const r = el.getBoundingClientRect();
+      const cx = p.x + ((e.clientX - r.left) / r.width) * (bw / p.z);
+      const cy = p.y + ((e.clientY - r.top) / r.height) * (bh / p.z);
+      zoomAt(e.deltaY < 0 ? 1.18 : 1 / 1.18, cx, cy);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [bw, bh, zoomAt]);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    moved.current = false;
+    drag.current = { sx: e.clientX, sy: e.clientY, ox: vpRef.current.x, oy: vpRef.current.y };
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d || !ref.current) return;
+    const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved.current = true;
+    const r = ref.current.getBoundingClientRect();
+    setVp(p => {
+      const c = clamp2(d.ox - (dx / r.width) * (bw / p.z), d.oy - (dy / r.height) * (bh / p.z), p.z);
+      return { z: p.z, x: c.x, y: c.y };
+    });
+  };
+  const onPointerUp = () => { drag.current = null; };
+  const reset = () => setVp({ z: 1, x: 0, y: 0 });
+  // centre the viewport on a point in base coordinates, zooming in if we're wide
+  const focusOn = useCallback((p: [number, number]) => {
+    setVp(prev => {
+      const z = Math.max(prev.z, 2.2);
+      const vw = bw / z, vh = bh / z;
+      return {
+        z,
+        x: Math.max(0, Math.min(bw - vw, p[0] - bx - vw / 2)),
+        y: Math.max(0, Math.min(bh - vh, p[1] - by - vh / 2)),
+      };
+    });
+  }, [bw, bh, bx, by]);
+
+  return {
+    ref, viewBox: `${bx + vp.x} ${by + vp.y} ${bw / vp.z} ${bh / vp.z}`, z: vp.z, zoomAt, reset, focusOn, moved,
+    handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerLeave: onPointerUp },
+    style: { cursor: drag.current ? 'grabbing' : 'grab', touchAction: 'none' } as React.CSSProperties,
+  };
+}
+
+export function MapView({ state, setState, selTile, setSelTile, openDeal, openStock, focusTile }: {
+  state: GameState; setState: (s: GameState) => void; selTile: number | null; setSelTile: (i: number | null) => void;
+  openDeal: (id: number) => void; openStock: (id: number) => void; focusTile?: number | null;
+}) {
+  const [hover, setHover] = useState<{ text: string; sub: string; x: number; y: number } | null>(null);
+  const [lens, setLens] = useState<Lens>('value');
+  const [view, setView] = useState<'iso' | 'flat'>('iso');
+  const W = E.CONFIG.GRID_W * TS, H = E.CONFIG.GRID_H * TS;
+  const IW_TOT = (E.CONFIG.GRID_W + E.CONFIG.GRID_H) * (IW / 2) + IOX * 2;
+  const IH_TOT = (E.CONFIG.GRID_W + E.CONFIG.GRID_H) * (IH / 2) + IOY + 40;
+  const isoBlds = useIsoBuildings(state);
+  const tileVals = useTileValues(state, lens);
+  useEffect(() => {
+    if (focusTile === null || focusTile === undefined) return;
+    const t = state.tiles[focusTile];
+    if (t) { setSelTile(focusTile); vpIso.focusOn(isoPt(t.x, t.y)); }
+  }, [focusTile]); // eslint-disable-line
+  const gridStamp = state.stock.length + ':' + state.assets.length + ':' + state.listings.length;
+  const grids = useMemo(() => state.tiles.map(t => E.parcelGrid(state, t.i)), [gridStamp, state.seed]); // eslint-disable-line
+  const [selCells, setSelCells] = useState<{ tileI: number; cells: number[] } | null>(null);
+  const vpIso = useViewport(0, 0, IW_TOT, IH_TOT);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const vpFlat = useViewport(-20, -18, W + 24, H + 22);
+  const field = useField(state, lens);
+  const river = useMemo(() => riverGeometry(state), [state.seed]);
+  const hue = LENS_HUE[lens];
+  const sub = TS / SUB;
+
+  const sel = selTile !== null ? state.tiles[selTile] : null;
+  const transitActive = state.effects.some(e => e.kind === 'transit');
+  const listingsOn = (i: number) => state.listings.filter(l => l.tileI === i);
+  const assetsOn = (i: number) => state.assets.filter(a => a.tileI === i);
+  const stockOn = (i: number) => state.stock.filter(b => b.tileI === i);
+
+  return (
+    <div className="map-wrap">
+      <div className="panel" ref={wrapRef} style={{ position: 'relative' }}>
+        {hover && (
+          <div style={{ position: 'absolute', left: Math.min(hover.x + 14, 460), top: hover.y + 12, zIndex: 5,
+            background: 'var(--panel3)', border: '1px solid var(--line)', borderRadius: 4, padding: '5px 8px',
+            pointerEvents: 'none', fontSize: 11.5, maxWidth: 240 }}>
+            <div style={{ color: 'var(--ink)' }}>{hover.text}</div>
+            <div className="faint" style={{ fontSize: 10.5 }}>{hover.sub}</div>
+          </div>
+        )}
+        <div className="lens-row">
+          {LENSES.map(l => <button key={l.id} className={lens === l.id ? 'active' : ''} onClick={() => setLens(l.id)}>{l.label}</button>)}
+          <span style={{ flex: 1 }} />
+          <button className={view === 'iso' ? 'active' : ''} onClick={() => setView('iso')} title="Isometric skyline view">◪ 2.5D</button>
+          <button className={view === 'flat' ? 'active' : ''} onClick={() => setView('flat')} title="Flat plan view">▦ Plan</button>
+          <button onClick={() => (view === 'iso' ? vpIso : vpFlat).zoomAt(1 / 1.35)} title="Zoom out">−</button>
+          <button onClick={() => (view === 'iso' ? vpIso : vpFlat).zoomAt(1.35)} title="Zoom in">+</button>
+          <button onClick={() => (view === 'iso' ? vpIso : vpFlat).reset()} title="Fit the whole city">⤢ {(view === 'iso' ? vpIso.z : vpFlat.z).toFixed(1)}×</button>
+        </div>
+        {view === 'iso' ? (
+        <svg className="map-svg" ref={vpIso.ref} viewBox={vpIso.viewBox} style={vpIso.style} {...vpIso.handlers}>
+          <rect x={0} y={0} width={IW_TOT} height={IH_TOT} rx={6} fill="#0b0f13" />
+          {state.tiles.map(t => (
+            <polygon key={'st' + t.i} points={diamond(t.x, t.y)} fill={t.water ? '#1b3149' : '#171c22'} stroke="#0b0f13" strokeWidth={0.5} />
+          ))}
+          {state.tiles.map(t => {
+            if (t.water) return null;
+            const base = lerpColor(DARK, hue, tileVals[t.i] * 0.82 + 0.03);
+            const g = grids[t.i];
+            const cells = [];
+            for (let py = 0; py < E.PGRID; py++) for (let px = 0; px < E.PGRID; px++) {
+              const occupied = g[py * E.PGRID + px] !== null;
+              const [cx, cy] = parcelCenter(t.x, t.y, px, py);
+              const [w, h] = parcelSpan(1, 1);
+              cells.push(
+                <polygon key={t.i + '-' + px + '-' + py}
+                  points={rectPoly(cx, cy, w * 0.9, h * 0.9)}
+                  fill={occupied ? base : lerpColor(DARK, hue, tileVals[t.i] * 0.4 + 0.02)}
+                  stroke={occupied ? '#0b0f13' : '#39434e'} strokeWidth={vpIso.z > 1.6 ? 0.55 : 0.3}
+                  strokeOpacity={vpIso.z > 1.2 ? 1 : 0.45} />
+              );
+            }
+            return <g key={'p' + t.i}>{cells}</g>;
+          })}
+          {(() => {
+            const water = state.tiles.filter(t => t.water).sort((a, b) => (a.y - b.y) || (a.x - b.x));
+            if (!water.length) return null;
+            const seen = new Set<number>();
+            const spine = water.filter(t => { if (seen.has(t.y)) return false; seen.add(t.y); return true; });
+            const pts = spine.map(t => isoPt(t.x, t.y)).map(p => p[0].toFixed(0) + ',' + p[1].toFixed(0)).join(' ');
+            return <polyline points={pts} fill="none" stroke="#23405c" strokeWidth={IH * 0.95} strokeLinecap="round" strokeLinejoin="round" />;
+          })()}
+          {(() => {
+            const row = 4, col = 7, rail = E.CONFIG.GRID_H - 2;
+            const line = (pts: [number, number][], stroke: string, w: number, dash?: string) => (
+              <polyline points={pts.map(p => p[0].toFixed(0) + ',' + p[1].toFixed(0)).join(' ')} fill="none" stroke={stroke} strokeWidth={w} strokeDasharray={dash} strokeLinecap="round" />
+            );
+            const hRow: [number, number][] = []; for (let x = 0; x < E.CONFIG.GRID_W; x++) hRow.push(isoPt(x, row));
+            const vCol: [number, number][] = []; for (let y = 0; y < E.CONFIG.GRID_H; y++) vCol.push(isoPt(col, y));
+            const rRow: [number, number][] = []; for (let x = 0; x < E.CONFIG.GRID_W; x++) rRow.push(isoPt(x, rail));
+            return <g style={{ pointerEvents: 'none' }}>{line(hRow, '#3c4550', 3.6)}{line(vCol, '#3c4550', 3.6)}{line(rRow, '#4d4432', 2, '8 5')}</g>;
+          })()}
+          {transitActive && (() => {
+            const ef = state.effects.find(e => e.kind === 'transit')!;
+            const done = 1 - ef.monthsLeft / 14;
+            const n = Math.round(state.transitCorridor.length * Math.max(0, Math.min(1, done)));
+            return state.transitCorridor.map((i, k) => {
+              const t = state.tiles[i];
+              const built = k < n;
+              return <polygon key={'tr' + i} points={diamond(t.x, t.y, 0.94)} fill={built ? 'rgba(93,143,232,0.13)' : 'none'}
+                stroke="var(--blue)" strokeWidth={built ? 2 : 1.2} strokeDasharray={built ? undefined : '4 5'}
+                opacity={built ? 1 : 0.6} style={{ pointerEvents: 'none' }} />;
+            });
+          })()}
+          <IsoCity blds={isoBlds} />
+          {state.listings.filter(l => l.kind === 'land' && !l.parentAssetId).map(l => {
+            const t = state.tiles[l.tileI];
+            const p = isoPt(t.x, t.y);
+            return <circle key={'l' + l.id} cx={p[0]} cy={p[1] - 14} r={4.5} fill="var(--green)" stroke="#0b0f13" strokeWidth={1.5} style={{ pointerEvents: 'none' }} />;
+          })}
+          {state.migrations.filter(mg => state.month - mg.m <= 3).map((mg, k) => {
+            const a = state.tiles[mg.fromTileI], b = state.tiles[mg.toTileI];
+            const p1 = isoPt(a.x, a.y), p2 = isoPt(b.x, b.y);
+            return (
+              <g key={'mg' + k} style={{ pointerEvents: 'none' }}>
+                <line x1={p1[0]} y1={p1[1] - 16} x2={p2[0]} y2={p2[1] - 16} stroke="#e08c8c" strokeWidth={1.6} strokeDasharray="5 4" opacity={0.85} />
+                <circle cx={p2[0]} cy={p2[1] - 16} r={3.5} fill="#e08c8c" />
+              </g>
+            );
+          })}
+          {state.tiles.map(t => {
+            if (t.water) return null;
+            const g = grids[t.i];
+            const hits = [];
+            for (let py = 0; py < E.PGRID; py++) for (let px = 0; px < E.PGRID; px++) {
+              const occ = g[py * E.PGRID + px];
+              const [cx, cy] = parcelCenter(t.x, t.y, px, py);
+              const [w, h] = parcelSpan(1, 1);
+              hits.push(
+                <polygon key={t.i + '-h-' + px + '-' + py} points={rectPoly(cx, cy, w, h)} fill="transparent"
+                  style={{ cursor: 'pointer' }}
+                  onPointerEnter={e => {
+                    const r = wrapRef.current?.getBoundingClientRect();
+                    let text = `Vacant · ${E.PARCEL_AC} ac`, sub = `Block ${blockName(t)} · ${E.fmtMoney(E.parcelPrice(state, t.i, 1, 1))}`;
+                    if (occ !== null) {
+                      if (occ >= 1_000_000) { const hd = state.land.find(x => x.id === occ - 1_000_000);
+                        text = 'Your land'; sub = hd ? `${Math.round(hd.cells.length * E.PARCEL_AC * 100) / 100} ac banked · basis ${E.fmtMoney(hd.basis)}` : ''; }
+                      else if (occ < 0) { const l = state.listings.find(x => x.id === -occ);
+                        text = l?.kind === 'land' ? 'Land for sale' : 'For sale'; sub = l ? `${E.fmtMoney(l.price)}` : ''; }
+                      else {
+                        const b = state.stock.find(x => x.id === occ);
+                        const a = state.assets.find(x => x.id === occ);
+                        if (b) {
+                          text = `${(b.sf / 1000).toFixed(0)}K SF ${E.PLABEL[b.type]}`;
+                          sub = b.buildLeft ? `Under construction · ${b.buildLeft} mo left${b.builder ? ' · ' + b.builder : ''}`
+                            : `${b.owner === 'private' ? 'Private owner' : b.owner} · ${pct(b.occ)} leased · ${E.QLABEL[E.qGrade(b.quality)]}-grade`;
+                        } else if (a) {
+                          text = a.name;
+                          sub = a.mode === 'construction' ? `Your project · ${a.project?.monthsLeft ?? 0} mo left`
+                            : `Yours · ${pct(a.occ)} leased · ${E.fmtMoney(E.assetValue(state, a))}`;
+                        }
+                      }
+                    }
+                    setHover({ text, sub, x: e.clientX - (r?.left ?? 0), y: e.clientY - (r?.top ?? 0) });
+                  }}
+                  onPointerLeave={() => setHover(null)}
+                  onClick={() => {
+                    if (vpIso.moved.current) return;
+                    setSelTile(t.i);
+                    if (occ === null) {
+                      const cell = py * E.PGRID + px;
+                      setSelCells(prev => {
+                        if (!prev || prev.tileI !== t.i) return { tileI: t.i, cells: [cell] };
+                        const has = prev.cells.includes(cell);
+                        const cells = has ? prev.cells.filter(c => c !== cell) : [...prev.cells, cell];
+                        return cells.length ? { tileI: t.i, cells } : null;
+                      });
+                      return;
+                    }
+                    setSelCells(null);
+                    if (occ < 0) { openDeal(-occ); return; }
+                    const b = state.stock.find(x => x.id === occ);
+                    if (b) { b.listedId ? openDeal(b.listedId) : openStock(b.id); }
+                  }} />
+              );
+            }
+            return <g key={'hit' + t.i}>{hits}</g>;
+          })}
+          {sel && <polygon points={diamond(sel.x, sel.y, 0.99)} fill="none" stroke="var(--amber-dim)" strokeWidth={1.4} style={{ pointerEvents: 'none' }} />}
+          {selCells && selCells.cells.map(c => {
+            const t = state.tiles[selCells.tileI];
+            const px = c % E.PGRID, py = Math.floor(c / E.PGRID);
+            const [cx, cy] = parcelCenter(t.x, t.y, px, py);
+            const [w, h] = parcelSpan(1, 1);
+            return <polygon key={'sc' + c} points={rectPoly(cx, cy, w, h)} fill="rgba(217,166,72,0.22)" stroke="var(--amber)" strokeWidth={1.8} style={{ pointerEvents: 'none' }} />;
+          })}
+          {Array.from({ length: E.CONFIG.GRID_W }, (_, i) => {
+            const p = isoPt(i, -0.75);
+            return <text key={'cx' + i} x={p[0]} y={p[1]} textAnchor="middle" fill="var(--dim)" fontSize={10} fontFamily="var(--mono)">{String.fromCharCode(65 + i)}</text>;
+          })}
+          {Array.from({ length: E.CONFIG.GRID_H }, (_, i) => {
+            const p = isoPt(-0.8, i);
+            return <text key={'cy' + i} x={p[0]} y={p[1] + 4} textAnchor="middle" fill="var(--dim)" fontSize={10} fontFamily="var(--mono)">{i + 1}</text>;
+          })}
+        </svg>
+        ) : (
+        <svg className="map-svg" ref={vpFlat.ref} viewBox={vpFlat.viewBox} style={vpFlat.style} {...vpFlat.handlers}>
+          <rect x={-20} y={-18} width={W + 24} height={H + 22} rx={6} fill="#0b0f13" />
+          {Array.from({ length: E.CONFIG.GRID_W }, (_, i) => (
+            <text key={'cx' + i} x={(i + 0.5) * TS} y={-6} textAnchor="middle" fill="var(--dim)" fontSize={10} fontFamily="var(--mono)">{String.fromCharCode(65 + i)}</text>
+          ))}
+          {Array.from({ length: E.CONFIG.GRID_H }, (_, i) => (
+            <text key={'cy' + i} x={-10} y={(i + 0.5) * TS + 3.5} textAnchor="middle" fill="var(--dim)" fontSize={10} fontFamily="var(--mono)">{i + 1}</text>
+          ))}
+          {/* continuous value field */}
+          {field.map((c, k) => (
+            <rect key={k} x={c.x * TS} y={c.y * TS} width={sub + 0.5} height={sub + 0.5}
+              fill={lerpColor(DARK, hue, Math.max(0, Math.min(1, c.v)) * 0.82 + 0.03)} />
+          ))}
+          {/* street grain: faint gridlines so the city reads as blocks, not gradient soup */}
+          {Array.from({ length: E.CONFIG.GRID_W + 1 }, (_, i) => (
+            <line key={'gv' + i} x1={i * TS} y1={0} x2={i * TS} y2={H} stroke="#0b0f13" strokeWidth={1.1} opacity={0.55} />
+          ))}
+          {Array.from({ length: E.CONFIG.GRID_H + 1 }, (_, i) => (
+            <line key={'gh' + i} x1={0} y1={i * TS} x2={W} y2={i * TS} stroke="#0b0f13" strokeWidth={1.1} opacity={0.55} />
+          ))}
+          {/* river */}
+          {river && <path d={river} fill="none" stroke="#1c3450" strokeWidth={TS * 0.86} strokeLinecap="round" strokeLinejoin="round" />}
+          {river && <path d={river} fill="none" stroke="#2d4f6e" strokeWidth={1.6} strokeDasharray="1 8" strokeLinecap="round" opacity={0.85} />}
+          {/* arterials through the CBD + rail through the industrial band */}
+          <line x1={0} y1={4.5 * TS} x2={W} y2={4.5 * TS} stroke="#3c4550" strokeWidth={3.4} opacity={0.85} />
+          <line x1={7.5 * TS} y1={0} x2={7.5 * TS} y2={H} stroke="#3c4550" strokeWidth={3.4} opacity={0.85} />
+          <line x1={0} y1={(E.CONFIG.GRID_H - 1.5) * TS} x2={W} y2={(E.CONFIG.GRID_H - 1.5) * TS} stroke="#4d4432" strokeWidth={2} strokeDasharray="8 5" opacity={0.9} />
+          {transitActive && state.transitCorridor.map(i => {
+            const t = state.tiles[i];
+            return <rect key={'t' + i} x={t.x * TS + 1.5} y={t.y * TS + 1.5} width={TS - 3} height={TS - 3} rx={4}
+              fill="none" stroke="var(--blue)" strokeWidth={1.5} strokeDasharray="5 4" style={{ pointerEvents: 'none' }} />;
+          })}
+          {/* buildings */}
+          {state.tiles.map(t => {
+            if (t.water) return null;
+            return footprints(state, t).map((f, k) => {
+              const listed = f.b?.listedId !== undefined && f.b?.listedId !== null;
+              const fill = f.assetId !== undefined ? 'var(--amber)' : f.b && f.b.owner !== 'private' ? '#46608c' : '#4a5560';
+              return (
+                <g key={t.i + '-' + k} transform={`translate(${f.x} ${f.y}) rotate(${f.rot})`} style={{ pointerEvents: 'none' }}>
+                  <rect x={-f.w / 2} y={-f.h / 2} width={f.w} height={f.h}
+                    fill={fill} stroke={listed ? 'var(--green)' : '#10151a'} strokeWidth={listed ? 1.4 : 0.7} />
+                </g>
+              );
+            });
+          })}
+          {state.listings.filter(l => l.kind === 'land' && !l.parentAssetId).map(l => {
+            const t = state.tiles[l.tileI];
+            return <circle key={'l' + l.id} cx={(t.x + 0.78) * TS} cy={(t.y + 0.22) * TS} r={4.5}
+              fill="var(--green)" stroke="#0b0f13" strokeWidth={1.5} style={{ pointerEvents: 'none' }} />;
+          })}
+          {/* hit targets + selection */}
+          {state.tiles.map(t => t.water ? null : (
+            <rect key={'h' + t.i} x={t.x * TS} y={t.y * TS} width={TS} height={TS} fill="transparent"
+              style={{ cursor: 'pointer' }} onClick={() => { if (!vpFlat.moved.current) setSelTile(t.i); }} />
+          ))}
+          {sel && (
+            <rect x={sel.x * TS + 1} y={sel.y * TS + 1} width={TS - 2} height={TS - 2} rx={5}
+              fill="none" stroke="var(--amber)" strokeWidth={2.2} style={{ pointerEvents: 'none' }} />
+          )}
+        </svg>
+        )}
+        <div className="faint" style={{ fontSize: 11, marginTop: 8, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          <span><span style={{ color: 'var(--amber)' }}>▪</span> yours</span>
+          <span><span style={{ color: '#7d95bd' }}>▪</span> institutional</span>
+          <span><span style={{ color: '#8a97a3' }}>▪</span> private owners</span>
+          <span style={{ color: 'var(--green)' }}>▪ on the market</span>
+          {transitActive && <span style={{ color: 'var(--blue)' }}>▦ new transit corridor</span>}
+          {view === 'iso' && <span>building height = floor area</span>}
+          <span style={{ color: '#c98a2e' }}>▨ under construction</span>
+          <span className="faint">scroll to zoom · drag to pan</span>
+        </div>
+      </div>
+      <div className="panel">
+        {!sel ? (
+          <div className="dim" style={{ fontSize: 13, lineHeight: 1.6 }}>
+            <h3>Block detail</h3>
+            Click any block. Every building in Meridian City is real and standing — most just aren't for sale.
+            The gradient <i>is</i> the market: value pools around the core and drains toward the edges,
+            and rents follow it.
+          </div>
+        ) : (
+          <div>
+            <h3>Block {blockName(sel)}</h3>
+            <div className="metric-row" style={{ marginTop: 2 }}>
+              <div className="metric"><div className="eyebrow">Desirability</div><div className="v num">{sel.D.toFixed(0)}<span className="faint">/100</span></div></div>
+              <div className="metric"><div className="eyebrow">Income idx</div><div className="v num">{sel.income.toFixed(2)}×</div></div>
+              <div className="metric"><div className="eyebrow">Employment</div><div className="v num">{sel.emp.toFixed(0)}</div></div>
+              <div className="metric"><div className="eyebrow">Crime</div><div className={'v num ' + (sel.crime > 55 ? 'neg' : '')}>{sel.crime.toFixed(0)}</div></div>
+            </div>
+            <table className="sc" style={{ marginTop: 10 }}>
+              <thead><tr><th>Use</th><th>Mkt rent</th><th>Cap</th><th>Balance</th></tr></thead>
+              <tbody>
+                {E.PTYPES.map(ty => {
+                  const over = E.oversupplyPenalty(sel, ty);
+                  const df = E.tileDemandFactor(state, sel, ty);
+                  return (
+                    <tr key={ty}>
+                      <td>{E.PLABEL[ty]}</td>
+                      <td className="num">${E.marketRentPSF(state, sel, ty).toFixed(2)}</td>
+                      <td className="num">{E.capRatePct(state, sel, ty, 60).toFixed(1)}%</td>
+                      <td className={over > 0.02 ? 'neg' : df > 1.05 ? 'pos' : 'dim'}>
+                        {over > 0.02 ? 'Oversupplied' : df > 1.05 ? 'Undersupplied' : 'Balanced'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {selCells && selCells.tileI === sel.i && (
+              <ParcelBuyPanel state={state} setState={setState} tileI={sel.i} cells={selCells.cells}
+                close={() => setSelCells(null)} openDeal={openDeal} />
+            )}
+            {state.land.filter(h => h.tileI === sel.i).map(h => (
+              <div key={h.id} className="memo" style={{ borderLeftColor: 'var(--amber)', marginTop: 10 }}>
+                <div className="memo-row">
+                  <span className="lbl"><b style={{ color: 'var(--ink)' }}>Your land</b> — {Math.round(h.cells.length * E.PARCEL_AC * 100) / 100} acres held since {E.monthName(h.acquiredM)}</span>
+                  <span className="num">{E.fmtMoney(E.landValue(state, h))} <span className={'faint ' + (E.landValue(state, h) >= h.basis ? 'pos' : 'neg')}>vs {E.fmtMoney(h.basis)} basis</span></span>
+                </div>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 6 }}>
+                  <button className="btn btn-sm" onClick={() => setState(E.sellLand(state, h.id).s)}>Sell the dirt</button>
+                  <button className="btn btn-sm btn-amber" title={(() => {
+                    const d = E.developableFrom(state, h.id);
+                    return d.holdings.length > 1 ? `Builds together with ${d.holdings.length - 1} adjoining holding(s) — ${Math.round(d.cells.length * E.PARCEL_AC * 100) / 100} acres total` : undefined;
+                  })()}
+                    onClick={() => {
+                      const r = E.developLand(state, h.id); setState(r.s); if (r.listingId) openDeal(r.listingId);
+                    }}>Break ground ▸{(() => { const d = E.developableFrom(state, h.id); return d.holdings.length > 1 ? ` (${Math.round(d.cells.length * E.PARCEL_AC * 100) / 100} ac)` : ''; })()}</button>
+                </div>
+              </div>
+            ))}
+            <h3 style={{ marginTop: 12 }}>Standing inventory</h3>
+            <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+              {assetsOn(sel.i).map(a => (
+                <div key={'a' + a.id} className="inv-row" style={{ borderLeft: '2px solid var(--amber)' }}>
+                  <span style={{ color: 'var(--amber)' }}>◆</span>
+                  <span style={{ flex: 1 }}>{a.name} — {(a.sf / 1000).toFixed(0)}K SF {E.PLABEL[a.type]}</span>
+                  <span className="num dim">{pct(a.occ)}</span>
+                </div>
+              ))}
+              {stockOn(sel.i).map(b => (
+                <button key={b.id} className="inv-row inv-btn" onClick={() => openStock(b.id)}>
+                  <span className="dim">{b.type === 'office' ? '▮' : b.type === 'retail' ? '▬' : b.type === 'industrial' ? '▭' : b.type === 'multifamily' ? '▤' : '▦'}</span>
+                  <span style={{ flex: 1, textAlign: 'left' }}>
+                    {(b.sf / 1000).toFixed(0)}K SF {E.PLABEL[b.type]} · {E.QLABEL[E.qGrade(b.quality)]}
+                    {b.buildLeft ? <span style={{ color: '#e08c3c' }}> · building, {b.buildLeft} mo</span>
+                      : b.listedId ? <span style={{ color: 'var(--green)' }}> · for sale</span>
+                        : b.owner !== 'private' ? <span style={{ color: '#7d95bd' }}> · {b.owner}</span> : ''}
+                  </span>
+                  <span className="num dim">{pct(b.occ)}</span>
+                </button>
+              ))}
+              {stockOn(sel.i).length === 0 && assetsOn(sel.i).length === 0 && (
+                <div className="faint" style={{ fontSize: 12 }}>Nothing built here yet — raw dirt and potential.</div>
+              )}
+            </div>
+            {listingsOn(sel.i).filter(l => l.kind === 'land' && !l.parentAssetId).map(l => (
+              <button key={l.id} className="btn btn-sm" style={{ display: 'block', width: '100%', textAlign: 'left', marginTop: 8 }} onClick={() => openDeal(l.id)}>
+                Land parcel · {l.acres} acres — {E.fmtMoney(l.price)}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+function ParcelBuyPanel({ state, setState, tileI, cells, close, openDeal }: {
+  state: GameState; setState: (s: GameState) => void; tileI: number; cells: number[];
+  close: () => void; openDeal: (id: number) => void;
+}) {
+  const [err, setErr] = useState<string | null>(null);
+  const t = state.tiles[tileI];
+  const acres = Math.round(cells.length * E.PARCEL_AC * 100) / 100;
+  const price = E.parcelSetPrice(state, tileI, cells);
+  const contiguous = E.isContiguous(cells);
+  const bonus = E.upzoneBonus(cells.length);
+  const best = E.PTYPES.map(ty => ({ ty, sf: Math.floor(acres * 43560 * E.FAR[ty] * bonus), fit: E.tileDemandFactor(state, t, ty) }))
+    .sort((a, b) => b.fit - a.fit);
+  const tooSmall = best[0].sf < 5000;
+  return (
+    <div className="memo" style={{ borderLeftColor: 'var(--amber)', marginTop: 10 }}>
+      <div className="memo-row">
+        <span className="lbl"><b style={{ color: 'var(--ink)' }}>{cells.length} vacant parcel{cells.length > 1 ? 's' : ''}</b> selected on block {blockName(t)}</span>
+        <b className="num">{E.fmtMoney(price)}</b>
+      </div>
+      <div className="dim" style={{ fontSize: 11.5, margin: '4px 0 8px', lineHeight: 1.5 }}>
+        Click more vacant lots on the map to add them; click a selected lot to drop it. Quarter-acre parcels — bank them as they come, or assemble a site and build.
+      </div>
+      <div className="memo-row"><span className="lbl">Site</span><span className="num">{acres} acres · {E.fmtMoney(Math.round(price / Math.max(0.01, acres)))}/acre</span></div>
+      <div className="memo-row"><span className="lbl">Buildable as one site <Hint text="Parcels must share an edge. Two lots meeting only at a corner are separate sites — you can still bank both." /></span>
+        <span className={'num ' + (contiguous ? 'pos' : 'neg')}>{contiguous ? 'Yes — all edges connect' : 'No — corner-only touch'}</span></div>
+      {bonus > 1 && <div className="memo-row"><span className="lbl">Assembly upzoning</span><span className="num pos">+{Math.round((bonus - 1) * 100)}% FAR</span></div>}
+      <div className="memo-row"><span className="lbl">Block is {Math.round((1 - E.freeParcelCount(state, tileI) / 16) * 100)}% built out</span>
+        <span className="num dim">holdout premium ×{E.holdoutMult(state, tileI, cells.length).toFixed(2)}</span></div>
+      <div className="memo-row"><span className="lbl">Best-fit use here</span>
+        <span className="num">{E.PLABEL[best[0].ty]} — up to {(best[0].sf / 1000).toFixed(0)}K SF</span></div>
+      {contiguous && tooSmall && <div className="faint" style={{ fontSize: 11, color: 'var(--amber)' }}>◈ Too small to build on — select more adjoining lots.</div>}
+      {err && <div className="alert-strip red" style={{ marginTop: 8 }}>{err}</div>}
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8, flexWrap: 'wrap' }}>
+        <button className="btn btn-sm" onClick={close}>Clear</button>
+        <button className="btn btn-sm btn-amber" title="Buy the dirt and sit on it — no building required"
+          onClick={() => {
+            const r = E.buyParcelsOutright(state, tileI, cells);
+            if (r.err) { setErr(r.err); return; }
+            setState(r.s); close();
+          }}>Buy &amp; hold — {E.fmtMoney(price)}</button>
+        <button className="btn btn-sm" disabled={!contiguous || tooSmall}
+          title={!contiguous ? 'Selected lots only touch at a corner' : tooSmall ? 'Site is too small to build on' : undefined}
+          onClick={() => {
+            const r = E.buyParcelsForDev(state, tileI, cells);
+            if (r.err) { setErr(r.err); return; }
+            setState(r.s); close();
+            if (r.listingId) openDeal(r.listingId);
+          }}>Buy &amp; build now ▸</button>
+      </div>
+    </div>
+  );
+}
+
+export function StockCard({ state, setState, stockId, close, openDeal }: {
+  state: GameState; setState: (s: GameState) => void; stockId: number; close: () => void;
+  openDeal: (id: number) => void;
+}) {
+  const [err, setErr] = useState<string | null>(null);
+  const b = state.stock.find(x => x.id === stockId);
+  if (!b) return null;
+  const t = state.tiles[b.tileI];
+  const spec = E.constrSpec(b);
+  const chk = E.canApproach(state, b.id);
+  const ownerLabel = b.owner === 'private' ? 'Private owner' : (state.firms.find(f => f.short === b.owner)?.name ?? b.owner);
+  return (
+    <Modal close={close}>
+      <h2>{E.PLABEL[b.type]} — Block {blockName(t)}</h2>
+      <div className="sub">{spec.label} · built {Math.max(1950, Math.round(2026 - b.age))} · {ownerLabel}{b.blacklist ? ' (not speaking to you)' : ''}</div>
+      <BuildingSketch a={b} w={360} h={120} />
+      <div className="metric-row" style={{ marginTop: 10 }}>
+        <div className="metric"><div className="eyebrow">Size</div><div className="v num">{(b.sf / 1000).toFixed(0)}K SF</div></div>
+        <div className="metric"><div className="eyebrow">{b.type === 'multifamily' ? 'Apartments' : 'Units'}</div><div className="v num">{b.units}</div></div>
+        <div className="metric"><div className="eyebrow">Occupancy</div><div className="v num">{pct(b.occ)}</div></div>
+        <div className="metric"><div className="eyebrow">Grade</div><div className="v num">{E.QLABEL[E.qGrade(b.quality)]}</div></div>
+        <div className="metric"><div className="eyebrow">Site</div><div className="v num">{Math.round((b.sf / E.FAR[b.type] / 43560) * 100) / 100} ac</div></div>
+      </div>
+      <div className="dim" style={{ fontSize: 12, margin: '10px 0 12px', lineHeight: 1.55 }}>
+        Rent roll and financials are private — you can see the lights on, not the leases.
+        {b.listedId ? ' This one is on the market, though: the flyer has numbers.' : ' Cold-call the owner to find out if there\u2019s a deal inside.'}
+        <Hint text="Occupancy, size, age, and grade are observable from the street and public records. What each tenant pays is not." />
+      </div>
+      {err && <div className="alert-strip red" style={{ marginBottom: 10 }}>{err}</div>}
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
+        {!b.listedId && !b.blacklist && b.owner === 'private' && (
+          <span className="faint" style={{ fontSize: 11, marginRight: 'auto' }}>{state.approachesLeft} of 5 cold calls left this month</span>
+        )}
+        <button className="btn" onClick={close}>Close</button>
+        {b.listedId ? (
+          <button className="btn btn-amber" onClick={() => { close(); openDeal(b.listedId!); }}>View listing ▸</button>
+        ) : (
+          <button className="btn btn-amber" disabled={!chk.ok} title={chk.ok ? undefined : chk.why}
+            onClick={() => {
+              const r = E.approachOwner(state, b.id);
+              setState(r.s);
+              if (r.lead) { close(); openDeal(r.lead.id); }
+              else setErr(r.err ?? 'No luck.');
+            }}>
+            Cold-call the owner (free)
+          </button>
+        )}
+      </div>
+      {!chk.ok && !err && <div className="faint" style={{ fontSize: 11, marginTop: 8, textAlign: 'right' }}>{chk.why}</div>}
+    </Modal>
+  );
+}
+
+export function FirmPortfolioModal({ state, short, close, openStock }: {
+  state: GameState; short: string; close: () => void; openStock: (id: number) => void;
+}) {
+  const f = state.firms.find(x => x.short === short);
+  if (!f) return null;
+  const held = state.stock.filter(b => b.owner === short);
+  const est = (b: StockBuilding) => {
+    const t = state.tiles[b.tileI];
+    const cap = E.capRatePct(state, t, b.type, b.quality) / 100;
+    return E.stabilizedNOI(state, { tileI: b.tileI, type: b.type, sf: b.sf, quality: b.quality, units: b.units, construction: b.construction } as any) * (0.55 + 0.45 * (b.occ / 0.9)) / cap;
+  };
+  const total = held.reduce((s, b) => s + est(b), 0);
+  const styleTxt = f.style === 'core' ? 'buys stabilized assets in prime blocks and holds forever'
+    : f.style === 'aggressive' ? 'develops speculatively with maximum leverage — brilliant until the cycle turns'
+    : f.style === 'industrial' ? 'buys and builds along the rail corridor exclusively'
+    : f.style === 'value-add' ? 'hunts distressed and tired buildings, fixes them, flips them'
+    : 'accumulates apartments and never sells';
+  return (
+    <Modal close={close} wide>
+      <h2>{f.name} {!f.alive && <span className="chip chip-distress">Collapsed</span>}</h2>
+      <div className="sub">{styleTxt} · reported net worth {E.fmtMoney(f.netWorth)}</div>
+      <div className="dim" style={{ fontSize: 12, marginBottom: 10 }}>
+        {held.length} buildings in Meridian City · est. portfolio value {E.fmtMoney(total)}
+        <Hint text="Estimated from public records and street-level observation. Their actual basis and debt are their business." />
+      </div>
+      <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+        {held.length === 0 && <div className="faint" style={{ fontSize: 12 }}>No holdings on record — everything is in their fund vehicles out of state.</div>}
+        {held.sort((a, b) => est(b) - est(a)).map(b => {
+          const t = state.tiles[b.tileI];
+          return (
+            <button key={b.id} className="inv-row inv-btn" onClick={() => openStock(b.id)}>
+              <span className="dim">{b.type === 'office' ? '▮' : b.type === 'retail' ? '▬' : b.type === 'industrial' ? '▭' : b.type === 'multifamily' ? '▤' : '▦'}</span>
+              <span style={{ flex: 1, textAlign: 'left' }}>
+                {(b.sf / 1000).toFixed(0)}K SF {E.PLABEL[b.type]} · Block {blockName(t)} · {E.QLABEL[E.qGrade(b.quality)]}-grade
+                {b.listedId ? <span style={{ color: 'var(--green)' }}> · listed for sale</span> : ''}
+              </span>
+              <span className="num dim">{pct(b.occ)} · ~{E.fmtMoney(est(b))}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+        <button className="btn" onClick={close}>Close</button>
+      </div>
+    </Modal>
+  );
+}

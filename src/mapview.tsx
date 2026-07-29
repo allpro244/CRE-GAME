@@ -668,14 +668,18 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
     const t = s.tiles[tileI];
     const occ = g[tileI][py * E.PGRID + px];
     const r = wrapRef.current?.getBoundingClientRect();
-    let text = `Vacant · ${E.PARCEL_AC} ac`, sub2 = `Block ${blockName(t)} · ${E.fmtMoney(E.parcelPrice(s, t.i, 1, 1))}`;
+    let text = `Unlisted · ${E.PARCEL_AC} ac`, sub2 = `Block ${blockName(t)} · owner not marketing`;
+    {
+      const rec = E.parcelApproachState(s, tileI, py * E.PGRID + px);
+      if (rec?.outcome === 'refused') { text = 'Not for sale'; sub2 = `owner refused ${E.monthName(rec.m)} — memory is long`; }
+    }
     if (occ !== null) {
       if (occ >= 1_000_000) {
         const hd = s.land.find(x => x.id === occ - 1_000_000);
         text = 'Your land'; sub2 = hd ? `${Math.round(hd.cells.length * E.PARCEL_AC * 100) / 100} ac banked · basis ${E.fmtMoney(hd.basis)}` : '';
       } else if (occ < 0) {
         const l = s.listings.find(x => x.id === -occ);
-        text = l?.kind === 'land' ? 'Land for sale' : 'For sale'; sub2 = l ? `${E.fmtMoney(l.price)}` : '';
+        text = (l as any)?.omLead ? 'Known ask — off-market' : l?.kind === 'land' ? 'Land for sale' : 'For sale'; sub2 = l ? `${E.fmtMoney(l.price)}` : '';
       } else {
         const b = s.stock.find(x => x.id === occ);
         const a = s.assets.find(x => x.id === occ);
@@ -775,7 +779,19 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           {state.listings.filter(l => l.kind === 'land' && !l.parentAssetId).map(l => {
             const t = state.tiles[l.tileI];
             const p = isoPt(t.x, t.y);
-            return <circle key={'l' + l.id} cx={p[0]} cy={p[1] - 14} r={4.5} fill="var(--green)" stroke="#0b0f13" strokeWidth={1.5} style={{ pointerEvents: 'none' }} />;
+            return <circle key={'l' + l.id} cx={p[0]} cy={p[1] - 14} r={4.5}
+              fill={(l as any).omLead ? 'var(--amber)' : 'var(--green)'} stroke="#0b0f13" strokeWidth={1.5} style={{ pointerEvents: 'none' }} />;
+          })}
+          {/* owners who said no — assembly planning has memory */}
+          {Object.entries(state.parcelApproach ?? {}).map(([k, rec]) => {
+            if (rec.outcome !== 'refused' || state.month - rec.m >= 24) return null;
+            const [ti, c] = k.split(':').map(Number);
+            const t = state.tiles[ti];
+            if (!t) return null;
+            const [cx, cy] = parcelCenter(t.x, t.y, c % E.PGRID, Math.floor(c / E.PGRID));
+            const p = isoPt(cx, cy);
+            return <text key={'ref' + k} x={p[0]} y={p[1] + 2.5} textAnchor="middle" fontSize={8.5}
+              fill="var(--red)" opacity={0.75} style={{ pointerEvents: 'none' }} fontFamily="var(--mono)">✕</text>;
           })}
           {state.migrations.filter(mg => state.month - mg.m <= 3).map((mg, k) => {
             const a = state.tiles[mg.fromTileI], b = state.tiles[mg.toTileI];
@@ -987,7 +1003,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             </table>
             {selCells && selCells.tileI === sel.i && selInfo && (
               <ParcelBuyPanel state={state} setState={setState} tileI={sel.i} cells={selCells.cells}
-                close={() => setSelCells(null)} openDeal={openDeal}
+                close={() => setSelCells(null)}
                 ghostType={effGhost} setGhostType={setGhostType}
                 mainLen={selInfo.main.length} strayLen={selInfo.stray.length} />
             )}
@@ -1049,43 +1065,70 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
 }
 
 
-function ParcelBuyPanel({ state, setState, tileI, cells, close, openDeal, ghostType, setGhostType, mainLen, strayLen }: {
+function ParcelBuyPanel({ state, setState, tileI, cells, close, ghostType, setGhostType, mainLen, strayLen }: {
   state: GameState; setState: (s: GameState) => void; tileI: number; cells: number[];
-  close: () => void; openDeal: (id: number) => void;
+  close: () => void;
   ghostType: E.PType | null; setGhostType: (t: E.PType | null) => void;
   mainLen: number; strayLen: number;
 }) {
   const [err, setErr] = useState<string | null>(null);
   const t = state.tiles[tileI];
   const acres = Math.round(cells.length * E.PARCEL_AC * 100) / 100;
-  const price = E.parcelSetPrice(state, tileI, cells);
-  const contiguous = E.isContiguous(cells);
   const bonus = E.upzoneBonus(mainLen);
   const siteAcres = mainLen * E.PARCEL_AC;
   const sfFor = (ty: E.PType) => Math.min(Math.floor(siteAcres * 43_560 * E.FAR[ty] * bonus), E.CONFIG.tiers[state.tier].maxSF);
-  const tooSmall = !E.PTYPES.some(ty => sfFor(ty) >= 5000);
   const nextThreshold = mainLen >= 16 ? null : mainLen >= 12 ? { at: 16, pct: 35 } : mainLen >= 8 ? { at: 12, pct: 22 } : { at: 8, pct: 12 };
   return (
     <div className="memo" style={{ borderLeftColor: 'var(--amber)', marginTop: 10 }}>
       <div className="memo-row">
-        <span className="lbl"><b style={{ color: 'var(--ink)' }}>{cells.length} vacant parcel{cells.length > 1 ? 's' : ''}</b> selected on block {blockName(t)}</span>
-        <b className="num">{E.fmtMoney(price)}</b>
+        <span className="lbl"><b style={{ color: 'var(--ink)' }}>{cells.length} unlisted parcel{cells.length > 1 ? 's' : ''}</b> selected on block {blockName(t)}</span>
+        <span className="num dim">{acres} acres</span>
       </div>
       <div className="dim" style={{ fontSize: 11.5, margin: '4px 0 8px', lineHeight: 1.5 }}>
-        Click more vacant lots to add them; click a selected lot to drop it. Esc clears. Dotted lots adjoin your site.
+        Nobody's marketing these. There is no price until you call the owners — some will name a number,
+        some won't sell at any price. Esc clears. Dotted lots adjoin your site.
       </div>
-      <div className="memo-row"><span className="lbl">Site</span><span className="num">{acres} acres · ${(price / Math.max(1, acres * 43_560)).toFixed(0)}/SF land</span></div>
-      {strayLen > 0 && (
-        <div className="memo-row"><span className="lbl">Buildable as one site <Hint text="Parcels must share an edge. Two lots meeting only at a corner are separate sites — you can still bank both." /></span>
-          <span className="num neg">{strayLen} lot{strayLen > 1 ? 's' : ''} corner-only — bridge or drop {strayLen > 1 ? 'them' : 'it'}</span></div>
-      )}
+      {(() => {
+        const recs = cells.map(cc => E.parcelApproachState(state, tileI, cc));
+        const refused = recs.filter(r => r?.outcome === 'refused').length;
+        const unknown = recs.filter(r => !r).length;
+        return (
+          <>
+            <div className="memo-row"><span className="lbl">Owners</span>
+              <span className="num">{unknown > 0 && <span>{unknown} unknown</span>}{refused > 0 && <span className="neg"> · {refused} refused</span>}</span></div>
+            {unknown > 0 && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '4px 0 8px' }}>
+                <button className="btn btn-sm btn-amber" disabled={state.approachesLeft <= 0}
+                  onClick={() => {
+                    let st = state, asks = 0, refs = 0;
+                    for (const c of cells) {
+                      if (E.parcelApproachState(st, tileI, c)) continue;
+                      if (st.approachesLeft <= 0) break;
+                      const r = E.approachParcelOwner(st, tileI, c);
+                      if (r.err) { setErr(r.err); break; }
+                      st = r.s;
+                      if (r.refused) refs++; else asks++;
+                    }
+                    setState(st);
+                    setErr(asks + refs > 0 ? `${asks} owner${asks === 1 ? '' : 's'} will talk · ${refs} refused outright.` : null);
+                  }}>
+                  Approach owner{unknown > 1 ? 's' : ''} — {Math.min(unknown, state.approachesLeft)} of {state.approachesLeft} calls
+                </button>
+                <span className="faint" style={{ fontSize: 10.5 }}>Willing owners drop an amber pin — click it to negotiate or close.</span>
+              </div>
+            )}
+          </>
+        );
+      })()}
       <div className="memo-row">
         <span className="lbl">Assembly upzoning <Hint text="Bigger contiguous sites earn density: 8 lots +12% FAR, 12 lots +22%, the full block +35%." /></span>
         <span className="num">{bonus > 1 ? <b className="pos">+{Math.round((bonus - 1) * 100)}% FAR</b> : '—'}
           {nextThreshold && <span className="faint"> · {nextThreshold.at - mainLen} more lot{nextThreshold.at - mainLen > 1 ? 's' : ''} → +{nextThreshold.pct}%</span>}</span>
       </div>
-      <div className="memo-row"><span className="lbl">Block is {Math.round((1 - E.freeParcelCount(state, tileI) / 16) * 100)}% built out</span>
-        <span className="num dim">holdout premium ×{E.holdoutMult(state, tileI, cells.length).toFixed(2)}</span></div>
+      {strayLen > 0 && (
+        <div className="memo-row"><span className="lbl">Buildable as one site</span>
+          <span className="num neg">{strayLen} lot{strayLen > 1 ? 's' : ''} corner-only — bridge or drop {strayLen > 1 ? 'them' : 'it'}</span></div>
+      )}
       <div style={{ margin: '8px 0 2px' }}>
         <div className="eyebrow" style={{ fontSize: 9, marginBottom: 4 }}>Build preview — what this site could hold</div>
         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
@@ -1104,26 +1147,12 @@ function ParcelBuyPanel({ state, setState, tileI, cells, close, openDeal, ghostT
             );
           })}
         </div>
-        <div className="faint" style={{ fontSize: 10.5, marginTop: 4 }}>The dashed massing on the map is this choice at full envelope. Demand color: <span className="pos">strong</span> · <span className="dim">fair</span> · <span className="neg">weak</span>.</div>
+        <div className="faint" style={{ fontSize: 10.5, marginTop: 4 }}>The dashed massing is what these lots could hold — if you can get them.</div>
       </div>
-      {contiguous && tooSmall && <div className="faint" style={{ fontSize: 11, color: 'var(--amber)' }}>◈ Too small to build on — select more adjoining lots.</div>}
-      {err && <div className="alert-strip red" style={{ marginTop: 8 }}>{err}</div>}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8, flexWrap: 'wrap' }}>
+
+      {err && <div className="alert-strip" style={{ marginTop: 8 }}>{err}</div>}
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
         <button className="btn btn-sm" onClick={close}>Clear</button>
-        <button className="btn btn-sm btn-amber" title="Buy the dirt and sit on it — no building required"
-          onClick={() => {
-            const r = E.buyParcelsOutright(state, tileI, cells);
-            if (r.err) { setErr(r.err); return; }
-            setState(r.s); close();
-          }}>Buy &amp; hold — {E.fmtMoney(price)}</button>
-        <button className="btn btn-sm" disabled={!contiguous || tooSmall}
-          title={!contiguous ? 'Selected lots only touch at a corner' : tooSmall ? 'Site is too small to build on' : undefined}
-          onClick={() => {
-            const r = E.buyParcelsForDev(state, tileI, cells);
-            if (r.err) { setErr(r.err); return; }
-            setState(r.s); close();
-            if (r.listingId) openDeal(r.listingId);
-          }}>Buy &amp; build now ▸</button>
       </div>
     </div>
   );

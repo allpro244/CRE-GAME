@@ -107,11 +107,19 @@ function run(seed, city) {
         const r = E.startConversion(s, a.id); if (!r.err) { s = r.s; converted++; }
       }
     }
-    // land banking + demolition
-    if (Math.random() < 0.04 && s.cash > 900000) {
-      const t2 = s.tiles.filter(x => !x.water && E.freeParcelCount(s, x.i) >= 4)[0];
+    // land banking (the honest way: call the owner, take the ask) + demolition
+    if (Math.random() < 0.08 && s.cash > 900000 && s.approachesLeft > 0) {
+      const t2 = s.tiles.filter(x => !x.water && E.freeParcelCount(s, x.i) >= 4)[Math.floor(Math.random() * 4)] ?? s.tiles.filter(x => !x.water && E.freeParcelCount(s, x.i) >= 4)[0];
       if (t2) { const g = E.parcelGrid(s, t2.i);
-        for (let k = 0; k < 16; k++) if (g[k] === null) { const r = E.buyParcelsOutright(s, t2.i, [k]); if (!r.err) { s = r.s; banked++; } break; } }
+        for (let k = 0; k < 16; k++) if (g[k] === null) {
+          const r = E.approachParcelOwner(s, t2.i, k);
+          s = r.s;
+          if (r.listing && s.cash > r.listing.price + 10000) {
+            const r2 = E.buyLandHold(s, r.listing.id);
+            if (!r2.err) { s = r2.s; banked++; }
+          }
+          break;
+        } }
     }
     for (const a of s.assets) {
       if (a.occ <= 0.15 && E.canDemolish(s, a).ok && Math.random() < 0.25) { const r = E.demolish(s, a.id); if (!r.err) { s = r.s; demoed++; } }

@@ -67,7 +67,11 @@ make — you can simulate 30 years in milliseconds before touching the UI.
 
 Economy phases · tenant-level rent rolls with LOI/RFP/renewal negotiation · NNN vs gross leases ·
 retail percentage rent (tenant sales from neighborhood traffic; overage past a market-anchored
-breakpoint — where the trade outruns the rents) ·
+breakpoint — where the trade outruns the rents) · off-market land friction (unlisted parcels have
+owners: ~a third won't sell at any price, most want 50-100% over market, one in ten is quietly
+motivated; dispositions are seeded per parcel so reloads can't re-roll an owner, hot blocks
+harden, recessions soften, refusals are remembered 24 months — listed land on the deal board is
+the pressure valve) ·
 multifamily as an aggregate-occupancy asset class · structured debt with balloons, covenants and cash
 sweeps · credit facilities · JV equity with 8% pref and 20% promote · depreciation, recapture, capital
 gains and 1031 exchanges · 10 AI firms that buy *and* develop · construction pipeline · land banking ·

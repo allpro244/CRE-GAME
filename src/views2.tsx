@@ -160,7 +160,8 @@ export function DealsView2({ state, setState, openDeal }: {
   state: GameState; setState: (s: GameState) => void; openDeal: (id: number) => void;
 }) {
   const [err, setErr] = useState<string | null>(null);
-  const regular = state.listings.filter(l => l.kind !== 'offmarket' && !l.yourSale).sort((a, b) => a.price - b.price);
+  const regular = state.listings.filter(l => l.kind !== 'offmarket' && !l.yourSale && !(l as any).omLead).sort((a, b) => a.price - b.price);
+  const landLeads = state.listings.filter(l => (l as any).omLead);
   const mine = state.listings.filter(l => l.yourSale);
   const om = state.listings.filter(l => l.kind === 'offmarket');
   const scout = E.canScout(state);
@@ -182,6 +183,19 @@ export function DealsView2({ state, setState, openDeal }: {
           </button>
         </div>
         {!scout.ok && state.cash < E.CONFIG.scoutCost && <div className="faint" style={{ fontSize: 11, marginTop: 6 }}>{scout.why}</div>}
+        {landLeads.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <div className="eyebrow" style={{ marginBottom: 4 }}>Land leads — owners who named a number</div>
+            {landLeads.map(l => (
+              <button key={l.id} className="inv-row inv-btn" onClick={() => openDeal(l.id)}>
+                <span style={{ color: 'var(--amber)' }}>◈</span>
+                <span style={{ flex: 1, textAlign: 'left' }}>{l.acres} ac at block {blockName(state.tiles[l.tileI])}
+                  {l.agreed ? <span className="pos"> · price agreed</span> : ''}</span>
+                <span className="num">{E.fmtMoney(l.price)} <span className="faint">to {E.monthName(l.expiresMonth)}</span></span>
+              </button>
+            ))}
+          </div>
+        )}
         {om.length > 0 && (
           <div className="deal-grid" style={{ marginTop: 12 }}>
             {om.map(l => {
@@ -476,9 +490,10 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
   };
   return (
     <Modal close={close} wide variant={variant}>
-      <h2>Land — Block {blockName(t)}</h2>
+      <h2>Land — Block {blockName(t)} {(listing as any).omLead && <span className="chip chip-om" style={{ verticalAlign: 'middle' }}>Off-market</span>}</h2>
       <div className="sub">
         {listing.acres} acres · {E.fmtMoney(listing.price)} (${(listing.price / Math.max(1, (listing.acres ?? 1) * 43_560)).toFixed(0)}/SF land) · desirability {t.D.toFixed(0)} · industrial fit {t.indSuit.toFixed(0)}
+        {(listing as any).omLead ? ' · this owner wasn\u2019t selling until you called' : ''}
       </div>
       {listing.declinedYou && <div className="alert-strip red" style={{ marginBottom: 10 }}>This landowner won't deal with you after your last offer.</div>}
       {!listing.agreed && !listing.declinedYou && !listing.parentAssetId && (
@@ -593,6 +608,13 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
       {err && <div className="alert-strip red" style={{ marginBottom: 10 }}>{err}</div>}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
         <button className="btn" onClick={close}>Pass</button>
+        {!listing.parentAssetId && (
+          <button className="btn" title="Close on the dirt and sit on it — no building required"
+            onClick={() => {
+              const r = E.buyLandHold(state, listing.id);
+              if (r.err) setErr(r.err); else { setState(r.s); close(); }
+            }}>Buy &amp; hold — {E.fmtMoney(listing.price + 5000)}</button>
+        )}
         {E.canJV(state, equity).ok && (
           <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--dim)' }}>
             <input type="checkbox" checked={useJV} onChange={e => setUseJV(e.target.checked)} />

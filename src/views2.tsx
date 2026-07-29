@@ -335,7 +335,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
     units: defaultUnits(firstConstr.type, firstConstr.construction, 10000),
     construction: firstConstr.construction,
     contractor: 'standard', contingencyPct: 0.10, expedited: false, downPct: 0.35, fixedRate: false,
-    contractType: 'costplus', bonded: false,
+    contractType: 'costplus', bonded: false, diligence: true,
   }));
 
   const runFeas = () => {
@@ -572,6 +572,12 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
             <option value="1">Expedited — +8% cost, −25% time</option>
           </select>
         </label>
+        <label className="f">Due diligence <Hint text="Tie the land up with a ~3% deposit and 1-2 months of geotech, environmental, survey and utility work (0.6-1.2% of land, min $25K). You learn what's under the dirt BEFORE closing — and can walk for the cost of deposit + diligence. Waive it to close today: whatever is down there surfaces at excavation, at 2-5x, on the clock." />
+          <select value={dev.diligence ? '1' : '0'} onChange={e => setDev({ ...dev, diligence: e.target.value === '1' })}>
+            <option value="1">Full diligence — go under contract, close after the truth</option>
+            <option value="0">Waive — close today, own the unknowns</option>
+          </select>
+        </label>
         <label className="f">Equity share — {pct(dev.downPct)} (min {pct(1 - E.CONFIG.constrLTC)})
           <input type="range" min={30} max={100} value={Math.round(dev.downPct * 100)}
             onChange={e => setDev({ ...dev, downPct: Number(e.target.value) / 100 })} />
@@ -579,7 +585,9 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
       </div>
       <BuildingSketch a={{ type: dev.type, construction: dev.construction, sf: dev.sf, units: dev.units, quality: spec.q }} w={460} h={100} />
       <div className="memo">
-        <div className="memo-row"><span className="lbl">Land ({listing.acres} ac)</span><span className="num">{E.fmtMoney(listing.price)}</span></div>
+        <div className="memo-row"><span className="lbl">Land ({listing.acres} ac){dev.diligence ? ' — closes after diligence' : ''}</span><span className="num">{E.fmtMoney(listing.price)}</span></div>
+        {dev.diligence && <div className="memo-row"><span className="lbl">At contract: deposit + diligence (at risk if you walk)</span>
+          <span className="num">{E.fmtMoney(Math.max(10_000, Math.round(listing.price * 0.03)))} + ~{E.fmtMoney(Math.max(25_000, Math.round(listing.price * 0.009)))}</span></div>}
         <div className="memo-row"><span className="lbl">Hard costs — {spec.label.toLowerCase()} @ ${spec.cost}/SF{state.econ.tariffMonthsLeft > 0 ? ' (tariffs +8% ⚠)' : ''}</span><span className="num">{E.fmtMoney(bd.hard)}</span></div>
         <div className="memo-row"><span className="lbl">Soft costs (15%)</span><span className="num">{E.fmtMoney(bd.soft)}</span></div>
         {(bd as any).bond > 0 && <div className="memo-row"><span className="lbl">Performance bond</span><span className="num">{E.fmtMoney((bd as any).bond)}</span></div>}
@@ -873,7 +881,7 @@ export function AssetCard({ state, setState, asset: a, onSell, onRefi, onLOI, op
         <div className="asset-head">
           {nameEl}
           <span className="chip chip-type">{E.PLABEL[a.type]}</span>
-          <span className="chip chip-land">{p.stage === 'permitting' ? 'Permitting' : 'Under construction'}</span>
+          <span className="chip chip-land">{p.stage === 'diligence' ? 'Under contract — diligence' : p.stage === 'permitting' ? 'Permitting' : 'Under construction'}</span>
           <span className="faint" style={{ fontSize: 11 }}>Block {blockName(t)} · {(a.sf / 1000).toFixed(0)}K SF · {a.units} unit{a.units > 1 ? 's' : ''} · {E.constrSpec(a).label}</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 12, alignItems: 'center' }}>

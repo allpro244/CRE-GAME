@@ -719,6 +719,45 @@ function EventModal({ state, setState, asset, kind }: {
       mitigate: 'Re-bid fast to a new GC — +5% cost, +2 months',
     },
   };
+  const p = asset.project;
+  if (kind === 'ddResult' && p?.dd) {
+    const cond = p.dd.known ?? { kind: 'none' as E.SiteCondKind, cost: 0, delayMo: 0 };
+    const clean = cond.kind === 'none';
+    return (
+      <Modal close={() => { }}>
+        <h2>{clean ? '✓' : '⚠'} Diligence is back — {asset.name}</h2>
+        <div className="sub">{E.SITE_COND_LABEL[cond.kind]}{!clean && !cond.sfLossFrac ? ` — ${E.fmtMoney(cond.cost)} to deal with${cond.delayMo ? `, +${cond.delayMo} months` : ''}` : ''}
+          {cond.sfLossFrac ? ` — buildable area shrinks ~${Math.round(cond.sfLossFrac * 100)}%` : ''}</div>
+        <div className="dim" style={{ fontSize: 12.5, lineHeight: 1.6, marginBottom: 12 }}>
+          {clean
+            ? 'The drills found nothing. The site is what it looked like. Close, and this money was spent on certainty.'
+            : 'Now you know — before your equity does. Close with the problem priced into the budget and schedule, or walk: the deposit and diligence are sunk either way, and sometimes that is the best money a developer ever spends.'}
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexDirection: 'column' }}>
+          <button className="btn btn-amber" onClick={() => setState(E.resolveConstrEvent(state, asset.id, 'absorb'))}>Close on the land — proceed{clean ? '' : ' with it priced in'}</button>
+          <button className="btn" onClick={() => setState(E.resolveConstrEvent(state, asset.id, 'mitigate'))}>Walk away — forfeit {E.fmtMoney(p.dd.deposit)} deposit + {E.fmtMoney(p.dd.ddFee)} diligence</button>
+        </div>
+      </Modal>
+    );
+  }
+  if (kind === 'siteSurprise' && p?.siteCond) {
+    const cond = p.siteCond;
+    return (
+      <Modal close={() => { }}>
+        <h2>⚠ Excavation surprise — {asset.name}</h2>
+        <div className="sub">{E.SITE_COND_LABEL[cond.kind]}. You waived diligence; it surfaced anyway — at a multiple, mid-build, on the clock.</div>
+        <div className="dim" style={{ fontSize: 12, marginBottom: 12 }}>
+          Contingency remaining: <b className="num" style={{ color: 'var(--ink)' }}>{E.fmtMoney(p.contingencyLeft)}</b>.
+          {p.contractType === 'gmp' ? ' Site conditions sit OUTSIDE the GMP — this one is yours.' : ''} The interest reserve keeps burning through every delay.
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexDirection: 'column' }}>
+          <button className="btn" onClick={() => setState(E.resolveConstrEvent(state, asset.id, 'absorb'))}>Pay to fix it properly — full cost, full delay</button>
+          <button className="btn" onClick={() => setState(E.resolveConstrEvent(state, asset.id, 'mitigate'))}>Redesign around it — smaller building, partial cost</button>
+          <button className="btn btn-danger" onClick={() => setState(E.resolveConstrEvent(state, asset.id, 'abandon'))}>Abandon the project — repay drawn debt, keep the dirt if you can</button>
+        </div>
+      </Modal>
+    );
+  }
   const d = info[kind] ?? info.materials;
   return (
     <Modal close={() => { }}>

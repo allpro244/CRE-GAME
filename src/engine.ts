@@ -171,7 +171,7 @@ export const QLABEL = ['C', 'B', 'A'];
 export interface CFEntry { m: number; amt: number; }
 export interface ConstrEvent { month: number; kind: string; resolved: boolean; }
 export interface Project {
-  stage: 'permitting' | 'building';
+  stage: 'diligence' | 'permitting' | 'building';
   monthsLeft: number; totalMonths: number;
   hardBudget: number; softBudget: number; spent: number;
   contingency: number; contingencyLeft: number;
@@ -182,7 +182,14 @@ export interface Project {
   bonded?: boolean;
   gcReplaced?: boolean;      // one GC failure per project is instructive enough
   haltMonthsLeft?: number;   // site dark after a GC bankruptcy; the reserve keeps burning
+  // under-contract state: deposit + DD fee at risk until close; land closes after diligence
+  dd?: { deposit: number; ddFee: number; landPrice: number; choice: DevChoice; useJV: boolean; known?: SiteCond };
+  landCost?: number;
+  siteCond?: SiteCond;       // seeded truth; hidden unless diligence found it
 }
+
+export type SiteCondKind = 'none' | 'soils' | 'easement' | 'utility' | 'tank' | 'archaeology';
+export interface SiteCond { kind: SiteCondKind; cost: number; delayMo: number; sfLossFrac?: number }
 
 export interface SaleOffer {
   id: number; assetId: number; amount: number; buyer: string;
@@ -991,7 +998,7 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     lastScoutMonth: -99, approachesLeft: 5, parcelApproach: {},
     gameOver: false, transitCorridor: corridor, roads,
     totalRealizedProfit: 0, dealsClosed: 0,
-    version: 12,
+    version: 13,
   };
   generateStock(state);
   // Born in equilibrium: the anchors absorb whatever the initial city explains, so
@@ -1507,6 +1514,7 @@ export interface DevChoice {
   fixedRate?: boolean;   // lock the construction rate for +60bps
   contractType?: 'gmp' | 'costplus';  // who eats overruns above contingency
   bonded?: boolean;                   // surety covers a failed GC (+~1.2% of hard)
+  diligence?: boolean;                // tie the land up and dig before you close
 }
 
 export function maxBuildableSF(l: Listing, type: PType): number {
@@ -1546,6 +1554,25 @@ export function validateDev(state: GameState, l: Listing, c: DevChoice): string 
   return null;
 }
 
+// What's actually under the dirt, seeded from (seed, tileI, sorted cells) — diligence
+// tells the truth, and reloading can't re-roll it. Most sites are clean. Some aren't.
+export function siteCondition(s: GameState, tileI: number, cells: number[], sf: number): SiteCond {
+  let h = s.seed ^ Math.imul(tileI + 1, 0x9E3779B9);
+  for (const c of [...cells].sort((a, b) => a - b)) h = Math.imul(h ^ (c + 1), 0x85EBCA6B);
+  const r = mulberry32(h | 0);
+  const u = r(), u2 = r();
+  if (u < 0.62) return { kind: 'none', cost: 0, delayMo: 0 };
+  if (u < 0.74) return { kind: 'soils', cost: Math.round(sf * (6 + u2 * 8)), delayMo: 1 + Math.round(u2) };
+  if (u < 0.82) return { kind: 'easement', cost: 0, delayMo: 0, sfLossFrac: 0.12 + u2 * 0.15 };
+  if (u < 0.90) return { kind: 'utility', cost: Math.round(120_000 + u2 * 280_000), delayMo: 2 };
+  if (u < 0.97) return { kind: 'tank', cost: Math.round(250_000 + u2 * 600_000), delayMo: 2 + Math.round(u2 * 2) };
+  return { kind: 'archaeology', cost: Math.round(100_000 + u2 * 200_000), delayMo: 5 + Math.round(u2 * 3) };
+}
+export const SITE_COND_LABEL: Record<SiteCondKind, string> = {
+  none: 'Clean site', soils: 'Poor soils — deep foundations required', easement: 'A recorded easement crosses the site',
+  utility: 'Utility capacity shortfall — sewer and power upgrades', tank: 'Buried tanks — contamination remediation', archaeology: 'Archaeological find',
+};
+
 // Interest-reserve runway in months, at the forward burn rate (average of current and
 // fully-drawn balance). This is the number a developer actually watches.
 export function reserveRunwayMonths(s: GameState, a: Asset): number | null {
@@ -1566,6 +1593,41 @@ export function buyLandAndDevelop(state: GameState, listingId: number, c: DevCho
   const vErr = validateDev(s, l, c);
   if (vErr) return { s, err: vErr };
   const bd = devCostBreakdown(s, c, l.price);
+  if (c.diligence) {
+    // Under contract, not closed: deposit at risk, DD fee sunk, the truth in 1-2 months.
+    const deposit = Math.max(10_000, Math.round(l.price * 0.03));
+    const ddFee = Math.max(25_000, Math.round(l.price * (0.006 + rng(s) * 0.006)));
+    if (s.cash < deposit + ddFee) return { s, err: `Going under contract takes ${fmtMoney(deposit)} deposit + ${fmtMoney(ddFee)} of diligence.` };
+    s.cash -= deposit + ddFee;
+    const t2 = s.tiles[l.tileI];
+    const a2: Asset = {
+      id: s.nextId++, name: nameFor(s, c.type), tileI: l.tileI, type: c.type,
+      sf: c.sf, acres: l.acres ?? 0,
+      px: l.parcel?.px, py: l.parcel?.py, pw: l.parcel?.pw, ph: l.parcel?.ph,
+      cells: l.parcelCells ?? (l.parcel ? cellsOfRect(l.parcel.px, l.parcel.py, l.parcel.pw, l.parcel.ph) : undefined),
+      units: c.units, construction: c.construction,
+      quality: clamp(bd.spec.q, 20, bd.spec.qCap), qCap: bd.spec.qCap,
+      age: 0, mode: 'construction',
+      tenants: [], occ: 0, rentStance: 0, maint: 'std',
+      loans: [],
+      ledger: [{ m: s.month, amt: -(deposit + ddFee) }], cumCF: 0,
+      basis: deposit + ddFee, acqMonth: s.month,
+      entryNOI: 0, entryCap: capRatePct(s, t2, c.type, bd.spec.q),
+      project: {
+        stage: 'diligence', monthsLeft: 1 + (rng(s) < 0.5 ? 1 : 0), totalMonths: bd.months,
+        hardBudget: bd.hard, softBudget: bd.soft, spent: deposit + ddFee,
+        contingency: bd.cont, contingencyLeft: bd.cont,
+        contractor: c.contractor, expedited: c.expedited, events: [], drawnSoFar: 0, monthsBuilt: 0,
+        contractType: c.contractType ?? 'costplus', bonded: !!c.bonded,
+        dd: { deposit, ddFee, landPrice: l.price, choice: { ...c }, useJV },
+      },
+      negCFStreak: 0,
+    };
+    s.assets.push(a2);
+    s.listings = s.listings.filter(x => x.id !== l.id);
+    pushNews(s, 'deal', `${a2.name}: under contract at ${fmtMoney(l.price)} with ${fmtMoney(deposit)} down. Drills and consultants are on site — the truth arrives before your money does.`, l.tileI);
+    return { s };
+  }
   const maxLoan = bd.total * (CONFIG.constrLTC - (s.econ.crunchMonthsLeft > 0 ? 0.1 : 0));
   const equity = Math.max(bd.total * c.downPct, bd.total - maxLoan);
   if (s.cash < equity) return { s, err: 'You need ' + fmtMoney(equity) + ' of equity for this capital stack.' };
@@ -1589,6 +1651,9 @@ export function buyLandAndDevelop(state: GameState, listingId: number, c: DevCho
     events.push({ month: 1 + Math.floor(rng(s) * (bd.months - 1)), kind: rpick(s, pool), resolved: false });
   }
   if (c.contractor === 'premium' && rng(s) < 0.35) events.push({ month: Math.floor(bd.months * 0.6), kind: 'ahead', resolved: false });
+  // you waived diligence — whatever is under the dirt surfaces at excavation, at a multiple
+  const cond0 = siteCondition(s, t.i, l.parcelCells ?? (l.parcel ? cellsOfRect(l.parcel.px, l.parcel.py, l.parcel.pw, l.parcel.ph) : []), c.sf);
+  if (cond0.kind !== 'none') events.push({ month: 1 + Math.floor(rng(s) * 3), kind: 'siteSurprise', resolved: false });
   const startQ = bd.spec.q + (c.contractor === 'premium' ? 6 : c.contractor === 'budget' ? -8 : 0);
   const permitMonths = 1 + Math.floor(rng(s) * 3);
   const a: Asset = {
@@ -1610,6 +1675,7 @@ export function buyLandAndDevelop(state: GameState, listingId: number, c: DevCho
       contingency: bd.cont, contingencyLeft: bd.cont,
       contractor: c.contractor, expedited: c.expedited, events, drawnSoFar: 0, monthsBuilt: 0,
       contractType: c.contractType ?? 'costplus', bonded: !!c.bonded,
+      siteCond: cond0.kind !== 'none' ? cond0 : undefined, landCost: l.price,
     },
     negCFStreak: 0,
   };
@@ -1631,7 +1697,7 @@ export function buyLandAndDevelop(state: GameState, listingId: number, c: DevCho
   return { s };
 }
 
-export function resolveConstrEvent(state: GameState, assetId: number, choice: 'absorb' | 'mitigate'): GameState {
+export function resolveConstrEvent(state: GameState, assetId: number, choice: 'absorb' | 'mitigate' | 'abandon'): GameState {
   const s = clone(state);
   const a = s.assets.find(x => x.id === assetId);
   if (!a || !a.project) return s;
@@ -1658,6 +1724,102 @@ export function resolveConstrEvent(state: GameState, assetId: number, choice: 'a
     }
     p.spent += amt;
   };
+  const walkDD = (why: string) => {
+    const dd = p.dd!;
+    pushNews(s, 'warn', `${a.name}: you walked. The ${fmtMoney(dd.deposit)} deposit and ${fmtMoney(dd.ddFee)} of diligence are gone — cheap next to the mistake they prevented. ${why}`, a.tileI);
+    // the seller keeps the deposit and relists
+    const cells = a.cells ?? (a.px !== undefined ? cellsOfRect(a.px, a.py!, a.pw!, a.ph!) : []);
+    s.assets = s.assets.filter(x => x.id !== a.id);
+    if (cells.length) {
+      s.listings.push({
+        id: s.nextId++, tileI: a.tileI, kind: 'land', acres: Math.round(cells.length * PARCEL_AC * 100) / 100,
+        parcel: a.px !== undefined ? { px: a.px, py: a.py!, pw: a.pw!, ph: a.ph! } : undefined,
+        parcelCells: [...cells], price: dd.landPrice, resFrac: rrange(s, 0.9, 0.99),
+        listMonth: s.month, offersLeft: 3, expiresMonth: s.month + 6, hot: false,
+      });
+    }
+  };
+  if (kind === 'ddResult' && p.dd) {
+    const dd = p.dd;
+    const cond = dd.known ?? { kind: 'none' as SiteCondKind, cost: 0, delayMo: 0 };
+    if (choice !== 'absorb') { walkDD(''); return s; }
+    // CLOSE: price the truth in and put real money down
+    const c = { ...dd.choice };
+    if (cond.sfLossFrac) {
+      a.sf = Math.max(5000, Math.round(a.sf * (1 - cond.sfLossFrac) / 500) * 500);
+      a.units = Math.max(1, Math.round(a.units * (1 - cond.sfLossFrac)));
+      c.sf = a.sf; c.units = a.units;
+    }
+    const bd = devCostBreakdown(s, c, dd.landPrice);
+    const knownCost = cond.kind === 'easement' ? 0 : cond.cost;
+    const totalCost = bd.total + knownCost;
+    const maxLoan = totalCost * (CONFIG.constrLTC - (s.econ.crunchMonthsLeft > 0 ? 0.1 : 0));
+    const equity = Math.max(totalCost * c.downPct, totalCost - maxLoan);
+    const useJV = dd.useJV && canJV(s, equity).ok;
+    const equityDue = Math.max(0, (useJV ? Math.round(equity * 0.30) : equity) - dd.deposit);
+    if (s.cash < equityDue) { walkDD('(You could not have closed anyway — the equity was not there.)'); return s; }
+    s.cash -= equityDue;
+    a.ledger.push({ m: s.month, amt: -equityDue });
+    const rate = s.econ.rate + CONFIG.constrSpread + (c.fixedRate ? 0.6 : 0);
+    const loanAmt = totalCost - equity;
+    const buildMonths = bd.months + cond.delayMo;
+    const reserve = Math.round(loanAmt * (rate / 100 / 12) * buildMonths * 0.6);
+    a.loans = [{ id: s.nextId++, kind: 'constr', balance: 0, ratePct: rate, amortYears: 25, ioMonthsLeft: 999, monthlyPmt: 0, maturityMonth: s.month + buildMonths + 3 + 14, reserveInitial: reserve, reserveBalance: reserve, floating: !c.fixedRate }];
+    (a as any).loanCommitment = loanAmt;
+    a.basis = totalCost + dd.ddFee;
+    a.deprBasis = Math.round(bd.hard + bd.soft + knownCost);
+    a.deprTaken = 0;
+    p.hardBudget = bd.hard + knownCost; p.softBudget = bd.soft;
+    p.contingency = bd.cont; p.contingencyLeft = bd.cont;
+    p.totalMonths = buildMonths; p.landCost = dd.landPrice;
+    p.spent = dd.landPrice + dd.ddFee;
+    const riskMult = (p.contractType ?? 'costplus') === 'costplus' ? 1.25 : 0.85;
+    const pool = ['materials', 'labor', 'weather', 'ahead'];   // soils risk was just drilled out
+    const nEvents = rng(s) < 0.55 * riskMult ? (rng(s) < 0.35 * riskMult ? 2 : 1) : 0;
+    for (let k = 0; k < nEvents; k++) p.events.push({ month: 1 + Math.floor(rng(s) * Math.max(1, buildMonths - 1)), kind: rpick(s, pool), resolved: false });
+    p.stage = 'permitting'; p.monthsLeft = 1 + Math.floor(rng(s) * 3);
+    if (useJV) attachJV(s, a, equity);
+    p.dd = undefined;
+    pushNews(s, cond.kind === 'none' ? 'success' : 'info',
+      cond.kind === 'none'
+        ? `${a.name}: diligence came back CLEAN. You closed knowing it — permits next.`
+        : `${a.name}: closed with eyes open. ${SITE_COND_LABEL[cond.kind]} — ${cond.sfLossFrac ? `buildable area cut ${Math.round(cond.sfLossFrac * 100)}%` : fmtMoney(knownCost) + ' priced into the budget'}${cond.delayMo ? `, +${cond.delayMo} months` : ''}. Known problems are just costs.`, a.tileI);
+    return s;
+  }
+  if (kind === 'siteSurprise' && p.siteCond) {
+    const cond = p.siteCond;
+    const mult = 2 + rng(s) * 3;   // the waived-diligence tax
+    if (choice === 'abandon') {
+      const loan = a.loans[0];
+      const owed = loan?.balance ?? 0;
+      const cells = a.cells ?? (a.px !== undefined ? cellsOfRect(a.px, a.py!, a.pw!, a.ph!) : []);
+      s.assets = s.assets.filter(x => x.id !== a.id);
+      if (s.cash >= owed) {
+        s.cash -= owed;
+        if (cells.length) s.land.push({ id: s.nextId++, tileI: a.tileI, cells: [...cells], basis: p.landCost ?? 0, acquiredM: s.month });
+        pushNews(s, 'warn', `${a.name}: ABANDONED. You repaid ${fmtMoney(owed)} of drawn debt and kept the dirt. Everything else spent is a lesson now.`, a.tileI);
+      } else {
+        pushNews(s, 'warn', `${a.name}: ABANDONED — and you couldn't repay the ${fmtMoney(owed)} drawn. The lender keeps the site. The market keeps the story.`, a.tileI);
+      }
+      return s;
+    }
+    if (choice === 'mitigate') {
+      const loss = cond.sfLossFrac ?? 0.15;
+      a.sf = Math.max(5000, Math.round(a.sf * (1 - loss) / 500) * 500);
+      a.units = Math.max(1, Math.round(a.units * (1 - loss)));
+      a.quality = clamp(a.quality - 4, 5, a.qCap);
+      applyCost(Math.round(cond.cost * mult * 0.35) + (cond.kind === 'easement' ? 60_000 : 0), `redesigning around the ${cond.kind}`, true);
+      p.monthsLeft += Math.ceil(cond.delayMo / 2);
+      pushNews(s, 'info', `${a.name}: value-engineered around it — the building shrinks to ${(a.sf / 1000).toFixed(0)}K SF.`, a.tileI);
+    } else {
+      const cost = cond.kind === 'easement' ? Math.round(150_000 * mult / 2) : Math.round(cond.cost * mult);
+      applyCost(cost, `${SITE_COND_LABEL[cond.kind].toLowerCase()} (found the hard way)`, true);
+      p.monthsLeft += cond.delayMo + 1;
+      if (cond.delayMo > 0) pushNews(s, 'warn', `${a.name}: schedule slips ${cond.delayMo + 1} months. The interest reserve doesn't pause.`, a.tileI);
+    }
+    p.siteCond = undefined;
+    return s;
+  }
   if (kind === 'materials') {
     const amt = p.hardBudget * (0.04 + rng(s) * 0.06);
     if (choice === 'mitigate') { applyCost(amt * 0.45, 'material spike (value-engineered)'); a.quality -= 9; }
@@ -3132,6 +3294,15 @@ function tickAsset(s: GameState, a: Asset): number {
   }
   if (a.mode === 'construction' && a.project) {
     const p = a.project;
+    if (p.stage === 'diligence') {
+      p.monthsLeft--;
+      if (p.monthsLeft <= 0 && !s.pending.some(pd => pd.type === 'constrEvent' && pd.assetId === a.id)) {
+        const cond = siteCondition(s, a.tileI, a.cells ?? [], a.sf);
+        if (p.dd) p.dd.known = cond;
+        s.pending.push({ type: 'constrEvent', assetId: a.id, eventKind: 'ddResult' });
+      }
+      return 0;
+    }
     if (p.stage === 'permitting') {
       p.monthsLeft--;
       if (p.monthsLeft <= 0) { p.stage = 'building'; p.monthsLeft = p.totalMonths; pushNews(s, 'info', `${a.name}: permits in hand. Construction begins.`); }
@@ -3519,7 +3690,7 @@ export function serialize(state: GameState): string { return JSON.stringify(stat
 export function deserialize(json: string): GameState | null {
   try {
     const s = JSON.parse(json);
-    if (s && s.version === 12 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
+    if (s && s.version === 13 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
     return null;
   } catch { return null; }
 }

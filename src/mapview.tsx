@@ -756,12 +756,25 @@ const WaterLife = memo(function WaterLife({ tiles, seed }: { tiles: TileGeom[]; 
 // painted stalls beside the building, cars in proportion to occupancy. A vacant
 // building's empty lot says more about it than any badge. Yard-fabric commercial
 // only — street-wall blocks have no forecourt and industrial keeps truck courts.
-const ParcelLots = memo(function ParcelLots({ blds, seed }: { blds: IsoBld[]; seed: number }) {
+const ParcelLots = memo(function ParcelLots({ blds, seed, level = 2 }: { blds: IsoBld[]; seed: number; level?: number }) {
   const els: React.ReactNode[] = [];
   const CAR_COLS = ['#5a6570', '#6e5f52', '#4a5a6a', '#75706a', '#5f4a4a'];
-  let lots = 0;
+  let lots = 0, bins = 0;
   for (const b of blds) {
-    if (!b.type || b.type === 'industrial' || b.tight || b.prog !== undefined || b.fw === undefined || b.fh === undefined) continue;
+    if (!b.type || b.prog !== undefined || b.fw === undefined || b.fh === undefined) continue;
+    // dense street-wall blocks run on alleys: a dumpster tucked at the side wall
+    if (b.tight) {
+      if (level >= 3 && bins < 70 && ((b.seed ?? 0) & 3) === 0) {
+        const [dx2, dy2] = isoPt(b.cx - b.w / 2 - 0.02, b.cy + b.h * 0.18);
+        els.push(<g key={'bin' + bins}>
+          <polygon points={`${(dx2 - 1.2).toFixed(1)},${(dy2 - 0.2).toFixed(1)} ${(dx2 + 0.2).toFixed(1)},${(dy2 + 0.5).toFixed(1)} ${(dx2 + 1.2).toFixed(1)},${dy2.toFixed(1)} ${(dx2 - 0.2).toFixed(1)},${(dy2 - 0.7).toFixed(1)}`} fill="#3e4a3c" stroke="#252c24" strokeWidth={0.3} />
+          <line x1={dx2 - 1.0} y1={dy2 - 0.9} x2={dx2 + 1.0} y2={dy2 - 0.4} stroke="#252c24" strokeWidth={0.35} />
+        </g>);
+        bins++;
+      }
+      continue;
+    }
+    if (b.type === 'industrial') continue;
     const slackW = b.fw - b.w;
     if (slackW < 0.14 || lots >= 150) continue;
     let a = ((b.seed ?? 1) ^ Math.imul(seed, 0x27d4eb2f)) | 0;
@@ -785,6 +798,72 @@ const ParcelLots = memo(function ParcelLots({ blds, seed }: { blds: IsoBld[]; se
       }
     }
     lots++;
+  }
+  return <g style={{ pointerEvents: 'none' }}>{els}</g>;
+});
+
+// Street furniture: median planting on the arterials, bus shelters and benches
+// where the buses actually run, hydrants and leaning utility poles on the blocks
+// the money forgot. Small props, so they only exist at detail zoom.
+const StreetFurniture = memo(function StreetFurniture({ runs, seed, level, loD }: {
+  runs: RoadRun[]; seed: number; level: number; loD: Set<number>;
+}) {
+  const els: React.ReactNode[] = [];
+  let a = (seed ^ 0x5bd1e995) | 0;
+  const r = () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  let buses = 0, poles = 0, hyds = 0;
+  for (const [ri2, run] of runs.entries()) {
+    const [p0, p1] = run.pts;
+    const horiz = Math.abs(p1[0] - p0[0]) > Math.abs(p1[1] - p0[1]);
+    const len = Math.abs(p1[0] - p0[0]) + Math.abs(p1[1] - p0[1]);
+    const midTile = (() => {
+      const mx = Math.round((p0[0] + p1[0]) / 2), my = Math.round((p0[1] + p1[1]) / 2);
+      return Math.max(0, Math.min(E.CONFIG.GRID_H - 1, my)) * E.CONFIG.GRID_W + Math.max(0, Math.min(E.CONFIG.GRID_W - 1, mx));
+    })();
+    // median planting down the arterial centerline
+    if (run.cls >= 3 && len >= 2) {
+      const q0 = isoPt(p0[0], p0[1]), q1 = isoPt(p1[0], p1[1]);
+      els.push(<line key={'md' + ri2} x1={q0[0]} y1={q0[1]} x2={q1[0]} y2={q1[1]} stroke="#55703f" strokeWidth={1.0} strokeDasharray="2.2 7" opacity={0.75} />);
+    }
+    // a bus shelter and bench partway down some collectors and arterials
+    if (run.cls === 3 && buses < 26 && r() < 0.5) {
+      const u = 0.3 + r() * 0.4;
+      const side = r() < 0.5 ? -0.1 : 0.1;
+      const [bx, by] = isoPt(p0[0] + (p1[0] - p0[0]) * u + (horiz ? 0 : side), p0[1] + (p1[1] - p0[1]) * u + (horiz ? side : 0));
+      els.push(<g key={'bs' + ri2}>
+        <rect x={bx - 1.3} y={by - 2.2} width={2.6} height={1.7} fill="#3c4a54" stroke="#28323a" strokeWidth={0.3} opacity={0.95} />
+        <line x1={bx - 1.5} y1={by - 2.4} x2={bx + 1.5} y2={by - 2.4} stroke="#8a939c" strokeWidth={0.4} />
+        <line x1={bx + 2.2} y1={by - 0.5} x2={bx + 3.4} y2={by - 0.5} stroke="#6b6154" strokeWidth={0.5} />
+      </g>);
+      buses++;
+    }
+    // the blocks the money forgot: hydrants and utility poles with a sagging line
+    if (level >= 3 && run.cls <= 2 && loD.has(midTile)) {
+      if (hyds < 40 && r() < 0.55) {
+        const u = 0.15 + r() * 0.3;
+        const side = r() < 0.5 ? -0.09 : 0.09;
+        const [hx, hy] = isoPt(p0[0] + (p1[0] - p0[0]) * u + (horiz ? 0 : side), p0[1] + (p1[1] - p0[1]) * u + (horiz ? side : 0));
+        els.push(<circle key={'hy' + ri2} cx={hx} cy={hy - 0.5} r={0.55} fill="#a34432" opacity={0.95} />);
+        hyds++;
+      }
+      if (poles < 60 && len >= 1.5) {
+        const pts: [number, number][] = [];
+        for (const u of [0.25, 0.7]) {
+          const side = 0.095;
+          const [px2, py2] = isoPt(p0[0] + (p1[0] - p0[0]) * u + (horiz ? 0 : side), p0[1] + (p1[1] - p0[1]) * u + (horiz ? side : 0));
+          els.push(<g key={'up' + ri2 + '_' + u}>
+            <line x1={px2} y1={py2} x2={px2 + 0.2} y2={py2 - 3.4} stroke="#4a4136" strokeWidth={0.5} />
+            <line x1={px2 - 0.8} y1={py2 - 3.0} x2={px2 + 1.2} y2={py2 - 3.1} stroke="#4a4136" strokeWidth={0.35} />
+          </g>);
+          pts.push([px2 + 0.2, py2 - 3.2]);
+          poles++;
+        }
+        if (pts.length === 2) {
+          els.push(<path key={'uw' + ri2} d={`M${pts[0][0]} ${pts[0][1]} Q${(pts[0][0] + pts[1][0]) / 2} ${Math.max(pts[0][1], pts[1][1]) + 1.2} ${pts[1][0]} ${pts[1][1]}`}
+            fill="none" stroke="#3a352c" strokeWidth={0.3} opacity={0.8} />);
+        }
+      }
+    }
   }
   return <g style={{ pointerEvents: 'none' }}>{els}</g>;
 });
@@ -1194,6 +1273,10 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const river = useMemo(() => riverGeometry(state), [state.seed]);
   const runs = useMemo(() => roadRuns(state.roads), [state.seed]); // eslint-disable-line
   const lamps = useMemo(() => lampPoints(runs), [runs]);
+  // the blocks the money forgot — recomputed only when the count shifts, so the
+  // furniture layer doesn't churn on every desirability drift
+  const loDStamp = state.tiles.reduce((s2, t) => s2 + (!t.water && t.D < 45 ? 1 : 0), 0);
+  const loD = useMemo(() => new Set(state.tiles.filter(t => !t.water && t.D < 45).map(t => t.i)), [loDStamp, state.seed]); // eslint-disable-line
   const hue = LENS_HUE[lens];
   // the hour of day rides the calendar; Off pins the map to noon
   const phase: DayPhase = ambient >= 1 ? dayPhaseOf(state.month) : 'day';
@@ -1428,7 +1511,8 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             });
           })()}
           {ambient >= 2 && zb >= 2 && lens === 'city' && <VacantLots tiles={tilesGeom} grids={grids} seed={state.seed} season={season} />}
-          {ambient >= 2 && zb >= 2 && showBldgs && <ParcelLots blds={isoBlds} seed={state.seed} />}
+          {ambient >= 2 && zb >= 2 && <StreetFurniture runs={runs} seed={state.seed} level={ambient} loD={loD} />}
+          {ambient >= 2 && zb >= 2 && showBldgs && <ParcelLots blds={isoBlds} seed={state.seed} level={ambient} />}
           {showBldgs && <IsoCity blds={isoBlds} detail={zb >= 2} snow={ambient >= 2 && season === 'winter'} winterSun={season === 'winter'} />}
           {/* the hour: a tint over the built city; lights re-emerge above it after dark */}
           {phase !== 'day' && (

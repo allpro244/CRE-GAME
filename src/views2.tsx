@@ -547,7 +547,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
               <button className="btn btn-sm" onClick={runFeas}>Run feasibility — {E.fmtMoney(E.CONFIG.feasCost)}</button></div>
           )}
         </div>
-        {listing.feasDone && (<>
+        {(<>
           <h3 style={{ marginTop: 2 }}>{isMF ? 'Unit economics' : 'Rent roll in place'}</h3>
           {isMF ? (
             <div className="dim" style={{ fontSize: 12.5, padding: '4px 0 8px' }}>

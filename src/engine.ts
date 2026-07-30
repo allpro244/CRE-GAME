@@ -3049,7 +3049,7 @@ function spawnLOIs(s: GameState) {
     const sizeDrag = clamp(1.2 - su / 30_000, 0.3, 1);
     // in a tight market every vacancy gets toured; in a soft one the phone is quiet
     const amen = (a.programs ?? []).includes('amenity') ? (PROGRAMS.find(p => p.id === 'amenity')?.velocity ?? 1) : 1;
-    const p = clamp(CONFIG.absorbBase[a.type] * 0.95 * (s.staff?.leasing ? 1.12 : 1) * df * qf * rentComp * boost * sizeDrag * amen * leasingClimate(s, a.type) * clamp(vacant / a.sf, 0.25, 1), 0.02, 0.34);
+    const p = clamp(CONFIG.absorbBase[a.type] * 1.0 * (s.staff?.leasing ? 1.12 : 1) * df * qf * rentComp * boost * sizeDrag * amen * leasingClimate(s, a.type) * clamp(vacant / a.sf, 0.25, 1), 0.02, 0.34);
     if (rng(s) > p) continue;
     // big-suite tenants come by LOI/RFP; require a meaningful chunk
     const chunkUnits = Math.max(1, Math.min(Math.round(vacant / su), 1 + Math.floor(rng(s) * Math.max(1, a.units / 2))));
@@ -4971,7 +4971,7 @@ function tickAsset(s: GameState, a: Asset): number {
     const boost = a.mode === 'leaseup' ? 1.7 : 1;
     const sizeDragMF = clamp(1.12 - a.sf / 300_000, 0.6, 1);
     const amenMF = (a.programs ?? []).includes('amenity') ? (PROGRAMS.find(p => p.id === 'amenity')?.velocity ?? 1) : 1;
-    const gain = CONFIG.absorbBase[a.type] * 0.43 * (s.staff?.leasing ? 1.08 : 1) * df * qf * clamp(rentComp, 0.4, 1.6) * boost * sizeDragMF * amenMF * leasingClimate(s, a.type) * Math.max(0, tOcc * 1.03 - a.occ);
+    const gain = CONFIG.absorbBase[a.type] * 0.45 * (s.staff?.leasing ? 1.08 : 1) * df * qf * clamp(rentComp, 0.4, 1.6) * boost * sizeDragMF * amenMF * leasingClimate(s, a.type) * Math.max(0, tOcc * 1.03 - a.occ);
     a.occ = clamp(a.occ - churn * a.occ + gain + (rng(s) - 0.5) * 0.006, 0.05, 0.98);
     if (a.mode === 'leaseup' && a.occ >= 0.85) {
       a.mode = 'operating';
@@ -4988,7 +4988,7 @@ function tickAsset(s: GameState, a: Asset): number {
       const qf = 0.78 + (apparentQuality(s, a) / 150) * 0.30;
       const boost = a.mode === 'leaseup' ? 1.6 : 1;
       const amenSm = (a.programs ?? []).includes('amenity') ? (PROGRAMS.find(x => x.id === 'amenity')?.velocity ?? 1) : 1;
-      const p = clamp(CONFIG.absorbBase[a.type] * 1.55 * (s.staff?.leasing ? 1.12 : 1) * df * qf * rentComp * boost * amenSm * leasingClimate(s, a.type) * clamp(vacant / a.sf, 0.2, 1), 0.02, 0.48);
+      const p = clamp(CONFIG.absorbBase[a.type] * 1.62 * (s.staff?.leasing ? 1.12 : 1) * df * qf * rentComp * boost * amenSm * leasingClimate(s, a.type) * clamp(vacant / a.sf, 0.2, 1), 0.02, 0.48);
       if (rng(s) < p) {
         let sf = Math.min(vacant, Math.round(su / 100) * 100);
         if (vacant - sf < Math.max(400, su * 0.5)) sf = vacant;   // tenants take whole suites — no orphan slivers

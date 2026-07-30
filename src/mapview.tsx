@@ -4,34 +4,32 @@ import type { GameState, StockBuilding, Tile } from './engine';
 import { Modal, Hint, BuildingSketch, blockName, pct } from './views2';
 import { buildingArt, siteArt } from './buildingArt';
 
-type Lens = 'value' | 'mix' | 'land' | 'zoning' | 'office' | 'retail' | 'industrial' | 'multifamily' | 'crime' | 'pipeline' | 'comps';
+type Lens = 'city' | 'land' | 'zoning' | 'office' | 'retail' | 'industrial' | 'multifamily' | 'crime' | 'comps';
 const LENSES: { id: Lens; label: string }[] = [
-  { id: 'value', label: 'Desirability' }, { id: 'mix', label: 'Live·Work·Shop' }, { id: 'land', label: 'Land $' }, { id: 'zoning', label: 'Zoning' },
+  { id: 'city', label: 'City' }, { id: 'land', label: 'Land $' }, { id: 'zoning', label: 'Zoning' },
   { id: 'office', label: 'Office rents' },
   { id: 'retail', label: 'Retail rents' }, { id: 'industrial', label: 'Industrial fit' },
-  { id: 'multifamily', label: 'Residential' }, { id: 'crime', label: 'Crime' },
-  { id: 'pipeline', label: 'Pipeline' }, { id: 'comps', label: 'Comps' },
+  { id: 'multifamily', label: 'Residential rents' }, { id: 'crime', label: 'Crime' },
+  { id: 'comps', label: 'Comps' },
 ];
 // the colors every zoning map has used since 1926
 const ZONE_COL: Record<E.ZoneUse, string> = { R: '#8fb872', C: '#c9604f', MU: '#d29a44', M: '#8579bd' };
 
+function lerpColor(a: [number, number, number], b: [number, number, number], t: number): string {
+  const c = a.map((x, i) => Math.round(x + (b[i] - x) * t));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
 const TS = 52;   // px per tile
 const SUB = 3;   // subdivision per tile for the continuous field
 
 function lensRaw(state: GameState, t: Tile, lens: Lens): number {
-  if (lens === 'value') return t.D / 100;
+  if (lens === 'city') return 0;
   if (lens === 'zoning') return t.zone.tier / 3;
   if (lens === 'land') return E.landPricePerAcre(state, t) / 1e6;
   if (lens === 'office') return Math.min(1, (E.marketRentPSF(state, t, 'office') - 10) / 30);
   if (lens === 'retail') return Math.min(1, (E.marketRentPSF(state, t, 'retail') - 7) / 22);
   if (lens === 'industrial') return t.indSuit / 100;
   if (lens === 'multifamily') return Math.min(1, (E.marketRentPSF(state, t, 'multifamily') - 11) / 22);
-  if (lens === 'pipeline') {
-    let sf = 0;
-    for (const b of state.stock) if (b.tileI === t.i && b.buildLeft) sf += b.sf;
-    for (const a of state.assets) if (a.tileI === t.i && a.mode === 'construction') sf += a.sf;
-    return Math.min(1, sf / 60000);
-  }
   if (lens === 'comps') {
     const near = state.comps.filter(c => c.tileI === t.i && c.sf > 0);
     if (!near.length) return 0;
@@ -41,16 +39,16 @@ function lensRaw(state: GameState, t: Tile, lens: Lens): number {
   return t.crime / 85;
 }
 const LENS_HUE: Record<Lens, [number, number, number]> = {
-  value: [217, 166, 72], mix: [110, 196, 158], land: [188, 178, 96], zoning: [160, 160, 160], office: [178, 122, 240], retail: [93, 143, 232],
-  industrial: [63, 169, 126], multifamily: [186, 128, 224], crime: [222, 95, 95],
-  pipeline: [232, 140, 60], comps: [120, 200, 160],
+  city: [206, 210, 198], land: [150, 106, 20], zoning: [160, 160, 160], office: [140, 74, 210], retail: [40, 106, 220],
+  industrial: [30, 140, 92], multifamily: [212, 72, 150], crime: [210, 60, 60],
+  comps: [70, 170, 120],
 };
 
 // The market isn't a checkerboard — value pools and drains across the city.
 // Bilinear interpolation over tile centers gives the field its continuous grain.
-function useTileValues(state: GameState, lens: Lens, mixAll: number[]): number[] {
+function useTileValues(state: GameState, lens: Lens): number[] {
   return useMemo(() => {
-    const rawOf = (t: Tile) => lens === 'mix' ? mixAll[t.i] : lensRaw(state, t, lens);
+    const rawOf = (t: Tile) => lensRaw(state, t, lens);
     const landVals = state.tiles.filter(t => !t.water).map(rawOf).sort((a, b) => a - b);
     const lo = landVals[Math.floor(landVals.length * 0.10)] ?? 0;
     const hi = landVals[Math.floor(landVals.length * 0.90)] ?? 1;
@@ -58,13 +56,13 @@ function useTileValues(state: GameState, lens: Lens, mixAll: number[]): number[]
       const raw = rawOf(t);
       return hi > lo ? Math.max(0, Math.min(1, (raw - lo) / (hi - lo))) : 0.5;
     });
-  }, [state, lens, mixAll]);
+  }, [state, lens]);
 }
 
-function useField(state: GameState, lens: Lens, mixAll: number[]) {
+function useField(state: GameState, lens: Lens) {
   return useMemo(() => {
     const W = E.CONFIG.GRID_W, H = E.CONFIG.GRID_H;
-    const lensRaw2 = (st: GameState, t: Tile, ln: Lens) => ln === 'mix' ? mixAll[t.i] : lensRaw(st, t, ln);
+    const lensRaw2 = (st: GameState, t: Tile, ln: Lens) => lensRaw(st, t, ln);
     // normalize against the city's own spread — a flat lens tells you nothing
     const landVals = state.tiles.filter(t => !t.water).map(t => lensRaw2(state, t, lens)).sort((a, b) => a - b);
     const lo = landVals[Math.floor(landVals.length * 0.06)] ?? 0;
@@ -724,18 +722,18 @@ const TileBaseIso = memo(function TileBaseIso({ tiles }: { tiles: TileGeom[] }) 
 const LensCellsIso = memo(function LensCellsIso({ tiles, grids, vals, hue, zb }: {
   tiles: TileGeom[]; grids: (number | null)[][]; vals: number[]; hue: [number, number, number]; zb: number;
 }) {
-  // The lens is a translucent wash now — grass shows through where the market is
-  // cold, the hue builds where it's hot. The gradient still IS the market.
-  const hueCss = `rgb(${hue[0]},${hue[1]},${hue[2]})`;
+  // Heat maps are analysis, not scenery: the lens paints OPAQUE from a neutral
+  // light base to the full hue, so the gradient reads instantly — the grass lives
+  // in the City view, and the data doesn't have to fight it.
+  const BASE: [number, number, number] = [214, 215, 208];
   return <g>{tiles.map(t => {
     if (t.water) return null;
     const v = Math.pow(vals[t.i], 0.72);
-    // Zoomed in you're standing on the street, not reading a heatmap — the wash
-    // thins out so the city looks like a city; pull back and the market reappears.
-    const fade = zb >= 2 ? 0.42 : 1;
+    const fill = lerpColor(BASE, hue, 0.06 + v * 0.94);
+    const dim = lerpColor(BASE, hue, 0.04 + v * 0.62);
     // zoomed out, one diamond per block carries the lens — 280 polygons instead of 4,480.
     // The per-parcel weave only earns its cost once you can actually see parcels.
-    if (zb === 0) return <polygon key={'p' + t.i} points={diamond(t.x, t.y, 0.97)} fill={hueCss} opacity={0.04 + v * 0.52} stroke="#8a8f80" strokeWidth={0.5} strokeOpacity={0.5} />;
+    if (zb === 0) return <polygon key={'p' + t.i} points={diamond(t.x, t.y, 0.97)} fill={dim} stroke="#8a8f80" strokeWidth={0.5} strokeOpacity={0.5} />;
     const g = grids[t.i];
     const cells = [];
     for (let py = 0; py < E.PGRID; py++) for (let px = 0; px < E.PGRID; px++) {
@@ -744,7 +742,7 @@ const LensCellsIso = memo(function LensCellsIso({ tiles, grids, vals, hue, zb }:
       const [w, h] = parcelSpan(1, 1);
       cells.push(
         <polygon key={t.i + '-' + px + '-' + py} points={rectPoly(cx, cy, w * 0.9, h * 0.9)}
-          fill={hueCss} opacity={(occupied ? 0.06 + v * 0.62 : 0.03 + v * 0.4) * fade}
+          fill={occupied ? fill : dim}
           stroke={occupied ? '#8f947f' : '#9aa088'} strokeWidth={zb >= 2 ? 0.55 : 0.3}
           strokeOpacity={zb >= 1 ? 0.6 : 0.3} />
       );
@@ -779,10 +777,9 @@ const HitLayerIso = memo(function HitLayerIso({ tiles, onEnter, onLeave, onClick
 
 const FieldFlat = memo(function FieldFlat({ field, hue }: { field: { x: number; y: number; v: number }[]; hue: [number, number, number] }) {
   const sub = TS / SUB;
-  const hueCss = `rgb(${hue[0]},${hue[1]},${hue[2]})`;
   return <g>{field.map((c, k) => (
     <rect key={k} x={c.x * TS} y={c.y * TS} width={sub + 0.5} height={sub + 0.5}
-      fill={hueCss} opacity={0.04 + Math.pow(Math.max(0, Math.min(1, c.v)), 0.72) * 0.58} />
+      fill={lerpColor([214, 215, 208], hue, 0.05 + Math.pow(Math.max(0, Math.min(1, c.v)), 0.72) * 0.95)} />
   ))}</g>;
 });
 
@@ -850,7 +847,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   focusTile?: number | null; advance?: (n: number) => void; advanceUntil?: () => void;
 }) {
   const [hover, setHover] = useState<{ text: string; sub: string; x: number; y: number } | null>(null);
-  const [lens, setLens] = useState<Lens>('value');
+  const [lens, setLens] = useState<Lens>('city');
   const [view, setView] = useState<'iso' | 'flat'>('iso');
   const [showBldgs, setShowBldgs] = useState(true);
   const W = E.CONFIG.GRID_W * TS, H = E.CONFIG.GRID_H * TS;
@@ -858,7 +855,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const IH_TOT = (E.CONFIG.GRID_W + E.CONFIG.GRID_H) * (IH / 2) + IOY + 40;
   const isoBlds = useIsoBuildings(state);
   const mixAll = useMemo(() => E.computeMix(state), [state]);
-  const tileVals = useTileValues(state, lens, mixAll);
+  const tileVals = useTileValues(state, lens);
   useEffect(() => {
     if (focusTile === null || focusTile === undefined) return;
     const t = state.tiles[focusTile];
@@ -875,7 +872,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const vpIso = useViewport(0, 0, IW_TOT, IH_TOT);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const vpFlat = useViewport(-20, -18, W + 24, H + 22);
-  const field = useField(state, lens, mixAll);
+  const field = useField(state, lens);
   const zoneStamp = useMemo(() => state.tiles.map(t => t.water ? '' : t.zone.use + t.zone.tier).join('') + ':' + state.rezonings.length,
     [state.tiles, state.rezonings.length]);
   const river = useMemo(() => riverGeometry(state), [state.seed]);
@@ -1065,6 +1062,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           <TileBaseIso tiles={tilesGeom} />
           {lens === 'zoning'
             ? <ZoningIso tiles={state.tiles} rezonings={state.rezonings} zoneStamp={zoneStamp} />
+            : lens === 'city' ? null
             : <LensCellsIso tiles={tilesGeom} grids={grids} vals={tileVals} hue={hue} zb={zb} />}
           {(() => {
             const water = state.tiles.filter(t => t.water && !t.park && !t.canal).sort((a, b) => (a.y - b.y) || (a.x - b.x));
@@ -1202,6 +1200,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           <FlatGround tiles={tilesGeom} />
           {lens === 'zoning'
             ? <ZoningFlat tiles={state.tiles} rezonings={state.rezonings} zoneStamp={zoneStamp} />
+            : lens === 'city' ? null
             : <FieldFlat field={field} hue={hue} />}
           {/* faint block seams so the field reads as a city, not gradient soup */}
           {Array.from({ length: E.CONFIG.GRID_W + 1 }, (_, i) => (
@@ -1271,8 +1270,8 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           <div className="dim" style={{ fontSize: 13, lineHeight: 1.6 }}>
             <h3>Block detail</h3>
             Click any block. Every building in this city is real and standing — most just aren't for sale.
-            The gradient <i>is</i> the market: value pools around the core and drains toward the edges,
-            and rents follow it.
+            The lenses (1-9) are your market read: land pricing, rents by asset class, zoning,
+            crime, comps. Value pools around the cores and the canal — and rents follow it.
           </div>
         ) : (
           <div>

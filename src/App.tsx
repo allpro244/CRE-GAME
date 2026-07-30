@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import * as E from './engine';
 import type { GameState, Asset, PostMortem } from './engine';
 import { LineChart, Bars } from './charts';
-import { Modal, Hint, DealsView2, DealModal, PortfolioView2, RefiModal, DebtView, BooksView, LOIModal, AssetDrawer, pct } from './views2';
+import { Modal, Hint, DealsView2, DealModal, PortfolioView2, RefiModal, DebtView, BooksView, LOIModal, AssetDrawer, CityRegistryView, pct } from './views2';
 import { MapView, StockCard, FirmPortfolioModal } from './mapview';
 
 // storage: the chat-artifact API when it exists, plain localStorage everywhere else —
@@ -16,7 +16,7 @@ async function storageGet(key: string): Promise<string | null> {
   try { return localStorage.getItem(key); } catch { return null; }
 }
 
-type TabId = 'dashboard' | 'map' | 'deals' | 'portfolio' | 'books' | 'debt' | 'economy';
+type TabId = 'dashboard' | 'map' | 'deals' | 'portfolio' | 'books' | 'debt' | 'economy' | 'registry';
 
 export default function App() {
   const [screen, setScreen] = useState<'menu' | 'game'>('menu');
@@ -208,9 +208,9 @@ function Game({ state, setState, toMenu }: {
       </div>
 
       <div className="nav">
-        {(['dashboard', 'map', 'deals', 'portfolio', 'books', 'debt', 'economy'] as TabId[]).map(t => (
+        {(['dashboard', 'map', 'deals', 'portfolio', 'books', 'debt', 'economy', 'registry'] as TabId[]).map(t => (
           <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
-            {t === 'dashboard' ? 'Dashboard' : t === 'map' ? 'City map' : t === 'deals' ? 'Marketplace' : t === 'portfolio' ? 'Portfolio' : t === 'books' ? 'Books' : t === 'debt' ? 'Debt' : 'Economy'}
+            {t === 'dashboard' ? 'Dashboard' : t === 'map' ? 'City map' : t === 'deals' ? 'Marketplace' : t === 'portfolio' ? 'Portfolio' : t === 'books' ? 'Books' : t === 'debt' ? 'Debt' : t === 'economy' ? 'Economy' : 'Registry'}
             {t === 'deals' && state.listings.length > 0 && <span className="badge" style={{ background: 'var(--panel3)', color: 'var(--dim)' }}>{state.listings.length}</span>}
             {t === 'portfolio' && (projCount > 0 || state.lois.length > 0) && <span className="badge">{state.lois.length > 0 ? '✉' + state.lois.length : projCount}</span>}
           </button>
@@ -232,6 +232,9 @@ function Game({ state, setState, toMenu }: {
         {tab === 'books' && <BooksView state={state} setState={setState} />}
         {tab === 'debt' && <DebtView state={state} setState={setState} />}
         {tab === 'economy' && <EconomyView state={state} />}
+        {tab === 'registry' && <CityRegistryView state={state}
+          openStock={id => { setAssetId(null); setStockCardId(id); }}
+          openAsset={id => { setStockCardId(null); setAssetId(id); }} />}
       </div>
 
       {stockCardId !== null && <StockCard state={state} setState={setState} stockId={stockCardId} variant={detailVariant}

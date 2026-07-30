@@ -127,6 +127,11 @@ MOMENTUM and BLIGHT (rising blocks overshoot their fundamentals, high vacancy ne
 block down until somebody fills it) · construction SCALE ECONOMIES (a 70K SF building runs
 ~25% cheaper per foot than a 5K one) · capital programs that AGE OUT (redoable after 5-8
 years, priced off the building they're swung at) · a land price tape in the Economy tab ·
+a CITY REGISTRY tab (every standing building with its metrics — sortable, filterable,
+click-through) · map banners (FOR SALE / OFF-MARKET / UNDER CONSTRUCTION over the
+buildings themselves) · office with a real cycle (remote-work waves are episodes with
+cooldowns and a return-to-office rebound, and cheap space actually refills — office is
+cyclical now, not cursed) · roofs on a 20-30 year clock per property ·
 a REAL leasing market: citywide vacancy per asset class is measured from the actual standing
 stock building by building (overbuild industrial and those exact square feet sit empty), rents
 follow the vacancy gap with momentum and a price-elasticity stabilizer (cheap space fills, dear

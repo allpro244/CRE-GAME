@@ -1186,12 +1186,44 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             });
           })()}
           {showBldgs && <IsoCity blds={isoBlds} detail={zb >= 2} />}
-          {state.listings.filter(l => l.kind === 'land' && !l.parentAssetId).map(l => {
-            const t = state.tiles[l.tileI];
-            const p = isoPt(t.x, t.y);
-            return <circle key={'l' + l.id} cx={p[0]} cy={p[1] - 14} r={4.5}
-              fill={(l as any).omLead ? 'var(--amber)' : 'var(--green)'} stroke="#0b0f13" strokeWidth={1.5} style={{ pointerEvents: 'none' }} />;
-          })}
+          {/* banners: the map tells you what's happening without a legend */}
+          {(() => {
+            const out: React.ReactElement[] = [];
+            const banner = (key: string, x: number, y: number, text: string, bg: string, fg = '#14180f') => {
+              const w = text.length * 4.6 + 10;
+              out.push(
+                <g key={key} style={{ pointerEvents: 'none' }}>
+                  <polygon points={`${x},${y - 9} ${x - 3.5},${y - 14} ${x + 3.5},${y - 14}`} fill={bg} opacity={0.95} />
+                  <rect x={x - w / 2} y={y - 25} width={w} height={11.5} rx={2.5} fill={bg} stroke="#0b0f13" strokeWidth={0.7} opacity={0.95} />
+                  <text x={x} y={y - 16.6} textAnchor="middle" fontSize={7} fontWeight={700} fontFamily="var(--mono)" fill={fg} letterSpacing={0.4}>{text}</text>
+                </g>
+              );
+            };
+            const ctrOf = (tileI: number, cells?: number[], parcel?: { px: number; py: number; pw: number; ph: number }) => {
+              const t = state.tiles[tileI];
+              if (parcel) { const [cx, cy] = parcelCenter(t.x, t.y, parcel.px, parcel.py, parcel.pw, parcel.ph); return isoPt(cx, cy); }
+              if (cells?.length) { const r = cellRects(cells)[0]; const [cx, cy] = parcelCenter(t.x, t.y, r.px, r.py, r.pw, r.ph); return isoPt(cx, cy); }
+              return isoPt(t.x, t.y);
+            };
+            for (const l of state.listings) {
+              if (l.parentAssetId || l.fromLandId) continue;
+              const p = ctrOf(l.tileI, l.parcelCells, l.parcel);
+              if (l.kind === 'land') banner('bl' + l.id, p[0], p[1], (l as any).omLead ? 'OWNER ASKING' : 'LAND FOR SALE', (l as any).omLead ? '#e0c070' : '#8fd08f');
+              else if (l.yourSale) banner('bl' + l.id, p[0], p[1] - 8, 'FOR SALE — YOURS', '#f0c464');
+              else banner('bl' + l.id, p[0], p[1] - 8, l.kind === 'offmarket' ? 'OFF-MARKET' : 'FOR SALE', l.kind === 'offmarket' ? '#e0c070' : '#8fd08f');
+            }
+            for (const b of state.stock) {
+              if (!b.buildLeft) continue;
+              const p = ctrOf(b.tileI, b.cells, b.px !== undefined ? { px: b.px, py: b.py!, pw: b.pw!, ph: b.ph! } : undefined);
+              banner('bu' + b.id, p[0], p[1] - 8, 'UNDER CONSTRUCTION', '#e0a35c');
+            }
+            for (const a of state.assets) {
+              if (a.mode !== 'construction') continue;
+              const p = ctrOf(a.tileI, a.cells, a.px !== undefined ? { px: a.px, py: a.py!, pw: a.pw!, ph: a.ph! } : undefined);
+              banner('ba' + a.id, p[0], p[1] - 8, a.project?.stage === 'building' ? 'UNDER CONSTRUCTION' : (a.project?.stage ?? 'planning').toUpperCase(), '#f0c464');
+            }
+            return out;
+          })()}
           {/* owners who said no — assembly planning has memory */}
           {Object.entries(state.parcelApproach ?? {}).map(([k, rec]) => {
             const [ti, c] = k.split(':').map(Number);

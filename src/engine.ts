@@ -174,6 +174,8 @@ export interface Economy {
   cityVac: Record<PType, number>;
   rentMom: Record<PType, number>;   // rent-growth momentum: markets trend, they don't twitch
   hadCrunch: boolean; crunchMonthsLeft: number; tariffMonthsLeft: number; ecomMonthsLeft: number;
+  rtoMonthsLeft?: number;   // the year after a remote-work wave breaks: office demand rebounds
+  wfhLastM?: number; ecomLastM?: number;   // waves are episodes, not weather — cooldowns between them
   // this game's monetary personality, rolled once from the seed: some careers are
   // cheap-money eras, some are tight-money grinds, some cycle fast and violent
   era: { rateBias: number; inflBias: number; vol: number; tempo: number };
@@ -317,6 +319,8 @@ export interface Asset {
   // an insured casualty in repair: that fraction of the building earns nothing
   // while taxes and insurance run on all of it
   repair?: { frac: number; monthsLeft: number; what: string };
+  roofM?: number;   // when the roof was last replaced — a roof is a 20-30 year event, not a season
+
 }
 
 export interface Listing {
@@ -827,13 +831,14 @@ export function tileDemandFactor(state: GameState, t: Tile, type: PType): number
   const e = state.econ;
   const acc = t.acc ?? { art: 0, hwy: 0, rail: 0, quiet: 0 };
   let f = 1;
-  if (type === 'office') f = 0.45 + 1.15 * (t.emp / 100) * (e.empIdx / 100);
+  if (type === 'office') f = 0.50 + 1.25 * (t.emp / 100) * (e.empIdx / 100);
   if (type === 'retail') f = (0.40 + 1.15 * (t.pop / 100) * t.income * (0.6 + 0.008 * e.confidence)) * (0.92 + 0.18 * acc.art);
   if (type === 'industrial') f = (0.55 + 0.95 * (t.indSuit / 100) * (e.ecomMonthsLeft > 0 ? 1.15 : 1)) * (0.88 + 0.30 * Math.max(acc.hwy, acc.rail));
   if (type === 'mixed') f = 0.40 + 0.65 * (t.emp / 100) + 0.55 * (t.pop / 100) * t.income;
   if (type === 'multifamily') f = (0.45 + 1.05 * (t.pop / 100) * (0.5 + 0.5 * t.income)) * (0.94 + 0.12 * acc.quiet);
   if (type === 'retail' && e.ecomMonthsLeft > 0) f *= 0.85;
   if (type === 'office' && (e.wfhMonthsLeft ?? 0) > 0) f *= 0.85;
+  if (type === 'office' && (e.rtoMonthsLeft ?? 0) > 0) f *= 1.12;   // the return-to-office year
   return clamp(f, 0.35, 1.8);
 }
 
@@ -969,7 +974,9 @@ export function targetOcc(state: GameState, t: Tile, type: PType): number {
   // price elasticity, the market's true stabilizer: when rents lag the income/cost
   // trend, tenants take more space; when rents outrun it, demand quietly erodes.
   // Without this, a soft decade never finds a bottom.
-  const afford = clamp(Math.pow(state.econ.costIdx / state.econ.rentIdx[type], 0.4), 0.86, 1.18);
+  // the ceiling matters: a sector whose rents have halved NEEDS the cheap-space
+  // rebound to find its bottom, or it grinds down forever (office, historically)
+  const afford = clamp(Math.pow(state.econ.costIdx / state.econ.rentIdx[type], 0.4), 0.86, 1.30);
   const base = (1 - Math.max(0.045, (effVac / 100) * (2.0 - df))) * afford;
   return clamp(base - oversupplyPenalty(t, type), 0.35, 0.95);
 }
@@ -2433,13 +2440,15 @@ export function resolveAssetEvent(state: GameState, assetId: number, choice: 'a'
   const pay = (amt: number) => { s.cash -= amt; logCF(s, 'capex', a.name + ' — event cost', -amt); a.ledger.push({ m: s.month, amt: -amt }); };
   if (kind === 'roof') {
     const full = Math.round(a.sf * rrange(s, 3.2, 5.5) * s.econ.costIdx / 1000) * 1000;
-    if (choice === 'a') { // full replacement
+    if (choice === 'a') { // full replacement — good for a generation
       pay(full); a.basis += full;
+      a.roofM = s.month;
       pushNews(s, 'info', `${a.name}: roof and HVAC replaced for ${fmtMoney(full)}. Tenants notice these things — quietly, in renewals.`);
       a.quality = clamp(a.quality + 6, 1, a.qCap);
-    } else { // patch it
+    } else { // patch it — bought a few years, not a roof
       pay(Math.round(full * 0.22));
       a.quality = clamp(a.quality - 10, 1, a.qCap);
+      a.roofM = s.month - 200;   // the question comes back in ~4-13 years instead of 20-30
       if (rng(s) < 0.4) s.scheduledEvents.push({ m: s.month + 6 + Math.floor(rng(s) * 8), kind: 'roofBill', payload: a.id });
       pushNews(s, 'warn', `${a.name}: roof patched for ${fmtMoney(Math.round(full * 0.22))}. Water finds a way; you've bought time, not a roof.`);
     }
@@ -3611,7 +3620,7 @@ function tickSaleOffers(s: GameState) {
       const rich = s.econ.phase === 'peak' || (s.econ.capInflowMonthsLeft ?? 0) > 0;
       const amount = roundPrice(val * rrange(s, rich ? 0.96 : 0.88, rich ? 1.14 : 1.04));
       s.saleOffers.push({ id: s.nextId++, assetId: a.id, amount, buyer, ceiling: roundPrice(amount * rrange(s, 1.0, 1.08)), expiresM: s.month + 2 });
-      pushNews(s, 'event', `UNSOLICITED: ${buyer} called about ${a.name} — ${fmtMoney(amount)}, no listing, no process. ${amount > val ? 'Above your own appraisal. Someone wants it more than you do.' : 'Below your number, but cash is cash.'}`);
+      pushNews(s, 'event', `UNSOLICITED: ${buyer} called about ${a.name} — ${fmtMoney(amount)} (${Math.round((amount / Math.max(1, val)) * 100)}% of appraisal), no listing, no process. ${amount > val ? 'Above your own appraisal. Someone wants it more than you do.' : 'Below your number, but cash is cash.'}`);
     }
   }
   for (const a of s.assets) {
@@ -3625,19 +3634,20 @@ function tickSaleOffers(s: GameState) {
       + (s.reputation - 50) * 0.002
       + Math.min(0.1, (s.month - a.forSale.sinceM) * 0.015);
     if (rng(s) < clamp(p, 0.05, 0.65)) {
-      // offers come in anywhere from 50% to ~100% of value (a hair over at the peak)
-      // your appraisal marks to the market cap rate; buyers want a spread above it,
-      // so most offers land below appraisal — full price is a peak-market gift
+      // buyers respond to the ASK: most offers land below it, and nobody bids over a
+      // number the seller printed unless the market is molten. A cheap ask draws bids
+      // near full; a rich ask draws haircuts against the appraisal underneath it.
       const hi = phase === 'peak' ? 1.05 : 1.0;
-      const amount = roundPrice(val * (0.62 + Math.pow(rng(s), 0.7) * (hi - 0.62)));
+      const anchor = Math.min(a.forSale.ask, val * hi);
+      const amount = roundPrice(anchor * (0.68 + Math.pow(rng(s), 0.7) * 0.32));
       const buyerPool = [...s.firms.filter(f => f.alive).map(f => f.name), 'A family office', 'A 1031 exchange buyer', 'A private syndicate'];
       const o: SaleOffer = {
         id: s.nextId++, assetId: a.id, amount, buyer: rpick(s, buyerPool),
-        ceiling: roundPrice(amount * rrange(s, 1.0, 1.12)),
+        ceiling: roundPrice(Math.min(amount * rrange(s, 1.0, 1.12), Math.max(amount, a.forSale.ask * 1.01))),
         expiresM: s.month + 2,
       };
       s.saleOffers.push(o);
-      pushNews(s, 'event', `OFFER: ${o.buyer} bid ${fmtMoney(amount)} for ${a.name} (${Math.round((amount / Math.max(1, val)) * 100)}% of your appraisal).`);
+      pushNews(s, 'event', `OFFER: ${o.buyer} bid ${fmtMoney(amount)} for ${a.name} (${Math.round((amount / Math.max(1, a.forSale.ask)) * 100)}% of your ${fmtMoney(a.forSale.ask)} ask).`);
     }
   }
   // listed dirt: a thin market of people with very different plans for the same acres.
@@ -4367,7 +4377,15 @@ function tickEconomy(s: GameState) {
   if (e.tariffMonthsLeft > 0) e.tariffMonthsLeft--;
   if ((e.insSpikeMonthsLeft ?? 0) > 0) e.insSpikeMonthsLeft!--;
   if ((e.capInflowMonthsLeft ?? 0) > 0) e.capInflowMonthsLeft!--;
-  if ((e.wfhMonthsLeft ?? 0) > 0) e.wfhMonthsLeft!--;
+  if ((e.wfhMonthsLeft ?? 0) > 0) {
+    e.wfhMonthsLeft!--;
+    if (e.wfhMonthsLeft === 0) {
+      // the wave breaks: pent-up leasing comes back to the tour schedule for a while
+      e.rtoMonthsLeft = 12;
+      pushNews(s, 'event', 'RETURN TO OFFICE: the remote-work wave has crested. Employers are consolidating BACK into space — office tours book out for the next year.');
+    }
+  }
+  if ((e.rtoMonthsLeft ?? 0) > 0) e.rtoMonthsLeft!--;
   if (e.ecomMonthsLeft > 0) e.ecomMonthsLeft--;
   // ---- the leasing market reads the ACTUAL city ----
   // Standing SF and occupied SF, counted building by building — yours, the firms',
@@ -4391,7 +4409,7 @@ function tickEconomy(s: GameState) {
     if (ty === 'mixed') continue;   // derived below from the components
     let demandDrift = 0;
     if (ty === 'office') demandDrift = 0.04 + (e.empIdx - 99) * 0.014;
-    if (ty === 'retail') demandDrift = 0.03 + (e.confidence - 52) * 0.004 + e.popGrowth * 0.04 - (e.ecomMonthsLeft > 0 ? 0.10 : 0);
+    if (ty === 'retail') demandDrift = 0.03 + (e.confidence - 52) * 0.003 + e.popGrowth * 0.035 - (e.ecomMonthsLeft > 0 ? 0.10 : 0);
     if (ty === 'industrial') demandDrift = 0.045 + (e.ecomMonthsLeft > 0 ? 0.08 : 0) + (e.empIdx - 100) * 0.005;
     if (ty === 'multifamily') demandDrift = 0.05 + e.popGrowth * 0.05 + (e.confidence - 55) * 0.0012;
     const eqVac = EQ_VAC[ty];
@@ -4581,6 +4599,7 @@ function maybeBlackSwan(s: GameState) {
   } else if (kind === 'pandemic') {
     s.swans.push({ m: s.month, kind, label: 'The Pandemic' });
     e.wfhMonthsLeft = 36; e.ecomMonthsLeft = 30;
+    e.wfhLastM = s.month; e.ecomLastM = s.month;
     e.confidence = clamp(e.confidence - 22, 10, 95);
     e.rate = clamp(e.rate - 2.0, 2.0, 13.0);
     e.popGrowth = clamp(e.popGrowth - 0.8, -0.3, 2.4);
@@ -4631,8 +4650,12 @@ function tickEvents(s: GameState) {
     const ops = s.assets.filter(a => a.mode !== 'construction');
     if (ops.length > 0) {
       const a = rpick(s, ops);
-      // a roof and its rooftop units last ~20 years; new construction doesn't fail
-      const roofEligible = a.age >= 20;
+      // a roof and its rooftop units last 20-30 years — once it's dealt with, it's
+      // dealt with for a generation. An acquired building's roof has an unknown
+      // vintage, seeded per asset, so the bill lands once per hold, not once a year.
+      const roofWait = 240 + ((Math.imul((s.seed ^ (a.id * 37)) >>> 0, 0x9E3779B9) >>> 21) % 121);   // 20-30 years
+      const lastRoof = a.roofM ?? (a.acqMonth - ((Math.imul((s.seed ^ (a.id * 53)) >>> 0, 0x9E3779B9) >>> 22) % 180));
+      const roofEligible = a.age >= 20 && s.month - lastRoof >= roofWait;
       const hasAnchor = !isAggregate(a.type) && a.tenants.length > 0;
       const pool: string[] = ['reassess', 'reassess'];
       if (roofEligible) pool.push('roof', 'roof');
@@ -4659,10 +4682,12 @@ function tickEvents(s: GameState) {
     const kind = rpick(s, pool);
     if (kind === 'transit' && s.effects.some(e => e.kind === 'transit')) return;
     if (kind === 'tariff' && s.econ.tariffMonthsLeft > 0) return;
-    if (kind === 'ecom' && s.econ.ecomMonthsLeft > 0) return;
+    // structural waves are once-a-decade episodes, not recurring weather — a wave that
+    // just ended can't immediately re-form
+    if (kind === 'ecom' && (s.econ.ecomMonthsLeft > 0 || s.month - (s.econ.ecomLastM ?? -999) < 72)) return;
     if (kind === 'insSpike' && (s.econ.insSpikeMonthsLeft ?? 0) > 0) return;
     if (kind === 'capInflow' && (s.econ.capInflowMonthsLeft ?? 0) > 0) return;
-    if (kind === 'wfh' && (s.econ.wfhMonthsLeft ?? 0) > 0) return;
+    if (kind === 'wfh' && ((s.econ.wfhMonthsLeft ?? 0) > 0 || (s.econ.rtoMonthsLeft ?? 0) > 0 || s.month - (s.econ.wfhLastM ?? -999) < 84)) return;
     const lead = 2 + Math.floor(rng(s) * 3);
     let payload: number | undefined;
     const rumors: Record<string, string> = {
@@ -4708,8 +4733,9 @@ function fireEvent(s: GameState, kind: string, payload?: number) {
     s.econ.tariffMonthsLeft = 18;
     pushNews(s, 'event', 'MATERIAL TARIFFS: hard construction costs up ~8% for the next 18 months. Projects already underway feel it too.');
   } else if (kind === 'ecom') {
-    s.econ.ecomMonthsLeft = 24;
-    pushNews(s, 'event', 'E-COMMERCE SQUEEZE: retail demand softens citywide for ~2 years; industrial and logistics demand strengthens.');
+    s.econ.ecomMonthsLeft = 18;
+    s.econ.ecomLastM = s.month;
+    pushNews(s, 'event', 'E-COMMERCE SQUEEZE: retail demand softens citywide for the next year and a half; industrial and logistics demand strengthens.');
   } else if (kind === 'insSpike') {
     s.econ.insSpikeMonthsLeft = 18;
     pushNews(s, 'event', 'INSURANCE CRISIS: carriers reprice the whole market. Property insurance runs ~45% higher for the next 18 months — a static cost you can\'t occupancy your way out of.');
@@ -4717,13 +4743,15 @@ function fireEvent(s: GameState, kind: string, payload?: number) {
     s.econ.capInflowMonthsLeft = 15;
     pushNews(s, 'event', 'CAPITAL INFLOW: institutional money floods Meridian City. Cap rates compress ~35 bps citywide for about a year — sellers rejoice, buyers grind their teeth.');
   } else if (kind === 'wfh') {
-    s.econ.wfhMonthsLeft = 24;
-    pushNews(s, 'event', 'REMOTE-WORK WAVE: major employers cut their footprints. Office demand weakens citywide for ~2 years. The best buildings will hold; the rest will negotiate.');
+    s.econ.wfhMonthsLeft = 15;
+    s.econ.wfhLastM = s.month;
+    pushNews(s, 'event', 'REMOTE-WORK WAVE: major employers cut their footprints. Office demand weakens citywide for the next year or so — and when it breaks, the return-to-office rush follows.');
   } else if (kind === 'roofBill') {
     const a = s.assets.find(x => x.id === payload);
     if (a && a.age >= 20) {
       const bill = Math.round(a.sf * rrange(s, 4.5, 7) * s.econ.costIdx / 1000) * 1000;
       s.cash -= bill; logCF(s, 'capex', `${a.name} — emergency roof replacement`, -bill); a.ledger.push({ m: s.month, amt: -bill });
+      a.roofM = s.month;   // an emergency replacement is still a replacement
       a.quality = clamp(a.quality - 6, 1, a.qCap);
       pushNews(s, 'warn', `${a.name}: the patched roof failed in a storm — emergency replacement, ${fmtMoney(bill)}. The cheap fix sends its regards.`);
     }

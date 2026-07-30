@@ -4810,7 +4810,7 @@ function tickEconomy(s: GameState) {
     // priced far below what new construction needs stops getting built, scarcity bites,
     // and pricing crawls back toward feasibility; rents far above cost invite the
     // construction wave that grinds them back down.
-    const feas = clamp(e.costIdx / e.rentIdx[ty] - 1, -0.6, 0.6) * 0.0016;
+    const feas = clamp(e.costIdx / e.rentIdx[ty] - 1, -0.8, 0.8) * 0.0045;
     const growth = e.rentMom[ty] + (e.inflation / 100) * 0.5 / 12 + (e.era?.sectorTilt?.[ty] ?? 0) * 0.018 + feas;
     // the bounds ride the cost index: year-80 rents measure against year-80
     // replacement cost, not against a ceiling written for year one

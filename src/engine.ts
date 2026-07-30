@@ -4728,8 +4728,16 @@ function tickEconomy(s: GameState) {
     // the cycle moves rents around that line, not permanently below it.
     // The era's secular wind also reprices the sector directly: capital crowds into
     // this generation's darling and starves its castoff, beyond what vacancy explains.
-    const growth = e.rentMom[ty] + (e.inflation / 100) * 0.5 / 12 + (e.era?.sectorTilt?.[ty] ?? 0) * 0.018;
-    e.rentIdx[ty] = clamp(e.rentIdx[ty] * (1 + growth), 0.5, 4.5);
+    // Feasibility gravity: rents can't diverge from replacement cost forever. A sector
+    // priced far below what new construction needs stops getting built, scarcity bites,
+    // and pricing crawls back toward feasibility; rents far above cost invite the
+    // construction wave that grinds them back down.
+    const feas = clamp(e.costIdx / e.rentIdx[ty] - 1, -0.6, 0.6) * 0.0016;
+    const growth = e.rentMom[ty] + (e.inflation / 100) * 0.5 / 12 + (e.era?.sectorTilt?.[ty] ?? 0) * 0.018 + feas;
+    // the bounds ride the cost index: year-80 rents measure against year-80
+    // replacement cost, not against a ceiling written for year one
+    const anchor = Math.max(1, e.costIdx * 0.8);
+    e.rentIdx[ty] = clamp(e.rentIdx[ty] * (1 + growth), 0.5 * anchor, 4.5 * anchor);
   }
   // mixed reads as the blend of what it contains — kept for display and any legacy reader
   e.cityVac.mixed = Math.round((MIX_DEFAULT.office * e.cityVac.office + MIX_DEFAULT.retail * e.cityVac.retail + MIX_DEFAULT.multifamily * e.cityVac.multifamily) * 100) / 100;

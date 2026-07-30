@@ -1743,13 +1743,13 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             return <g><polyline points={pts} fill="none" stroke="#5b9ec9" strokeWidth={IH * 0.45} strokeLinecap="round" strokeLinejoin="round" />
               <polyline className="shim" points={pts} fill="none" stroke="#3c608a" strokeWidth={1.3} strokeDasharray="2 11" strokeLinecap="round" opacity={0.6} /></g>;
           })()}
-          {ambient >= 1 && zb >= 2 && <Sidewalks runs={runs} />}
+          {ambient >= 1 && zb >= 2 && <g className="lod-fade"><Sidewalks runs={runs} /></g>}
           <RoadsIso runs={runs} wet={weather === 'rain'} plowed={ambient >= 2 && season === 'winter'} />
           {ambient >= 1 && <Bridges runs={runs} tiles={tilesGeom} />}
-          {ambient >= 2 && zb >= 2 && <StreetNames runs={runs} seed={state.seed} />}
+          {ambient >= 2 && zb >= 2 && <g className="lod-fade"><StreetNames runs={runs} seed={state.seed} /></g>}
           {ambient >= 1 && zb >= 1 && <WaterLife tiles={tilesGeom} seed={state.seed} />}
           {ambient >= 1 && zb >= 1 && <StreetLife runs={runs} seed={state.seed} detail={zb >= 2} season={season} loD={loD} hiD={hiD} busy={busy} retailish={retailish} />}
-          {ambient >= 2 && zb >= 2 && <PoliceLayer tiles={copTiles} seed={state.seed} />}
+          {ambient >= 2 && zb >= 2 && <g className="lod-fade"><PoliceLayer tiles={copTiles} seed={state.seed} /></g>}
           {transitActive && (() => {
             const ef = state.effects.find(e => e.kind === 'transit')!;
             const done = 1 - ef.monthsLeft / 14;
@@ -1763,9 +1763,9 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             });
           })()}
           {ambient >= 1 && <CivicLayer tiles={tilesGeom} grids={grids} seed={state.seed} />}
-          {ambient >= 2 && zb >= 2 && lens === 'city' && <VacantLots tiles={tilesGeom} grids={grids} seed={state.seed} season={season} />}
-          {ambient >= 2 && zb >= 2 && <StreetFurniture runs={runs} seed={state.seed} level={ambient} loD={loD} />}
-          {ambient >= 2 && zb >= 2 && showBldgs && <ParcelLots blds={isoBlds} seed={state.seed} level={ambient} />}
+          {ambient >= 2 && zb >= 2 && lens === 'city' && <g className="lod-fade"><VacantLots tiles={tilesGeom} grids={grids} seed={state.seed} season={season} /></g>}
+          {ambient >= 2 && zb >= 2 && <g className="lod-fade"><StreetFurniture runs={runs} seed={state.seed} level={ambient} loD={loD} /></g>}
+          {ambient >= 2 && zb >= 2 && showBldgs && <g className="lod-fade"><ParcelLots blds={isoBlds} seed={state.seed} level={ambient} /></g>}
           {showBldgs && <IsoCity blds={isoBlds} detail={zb >= 2} snow={ambient >= 2 && season === 'winter'} winterSun={season === 'winter'} />}
           {/* weather: rain wets the ground and streams past; fog sits on the far view */}
           {weather === 'rain' && (
@@ -1796,6 +1796,17 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                   <polygon points={`${x},${y - 9} ${x - 3.5},${y - 14} ${x + 3.5},${y - 14}`} fill={bg} opacity={0.95} />
                   <rect x={x - w / 2} y={y - 25} width={w} height={11.5} rx={2.5} fill={bg} stroke="#0b0f13" strokeWidth={0.7} opacity={0.95} />
                   <text x={x} y={y - 16.6} textAnchor="middle" fontSize={7} fontWeight={700} fontFamily="var(--mono)" fill={fg} letterSpacing={0.4}>{text}</text>
+                </g>
+              );
+            };
+            // the quiet cousin: status tags (SOLD, FOR LEASE) at 70% chrome so a hot
+            // month doesn't wallpaper the map
+            const tag = (key: string, x: number, y: number, text: string, bg: string, fg = '#14180f') => {
+              const w = text.length * 3.6 + 7;
+              out.push(
+                <g key={key} style={{ pointerEvents: 'none' }} opacity={0.88}>
+                  <rect x={x - w / 2} y={y - 17} width={w} height={8.5} rx={2} fill={bg} stroke="#0b0f13" strokeWidth={0.5} />
+                  <text x={x} y={y - 10.8} textAnchor="middle" fontSize={5.4} fontWeight={700} fontFamily="var(--mono)" fill={fg} letterSpacing={0.3}>{text}</text>
                 </g>
               );
             };
@@ -1830,14 +1841,14 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                 const t2 = state.tiles[c.tileI];
                 if (!t2) continue;
                 const p = isoPt(t2.x, t2.y);
-                banner('sd' + ci, p[0], p[1] + 4, 'SOLD', '#b8b2a4');
+                tag('sd' + ci, p[0], p[1] + 4, 'SOLD', '#b8b2a4');
                 solds++;
               }
               // chronic vacancy hangs its own banner — the building is asking for help
               let leases = 0;
               const leaseTag = (key: string, tileI: number, cells?: number[], parcel?: { px: number; py: number; pw: number; ph: number }) => {
                 const p = ctrOf(tileI, cells, parcel);
-                banner(key, p[0], p[1] - 2, 'FOR LEASE', '#9db4c9');
+                tag(key, p[0], p[1] - 2, 'FOR LEASE', '#9db4c9');
               };
               for (const b of state.stock) {
                 if (b.buildLeft || b.listedId !== undefined || b.occ >= 0.3 || leases >= 12) continue;

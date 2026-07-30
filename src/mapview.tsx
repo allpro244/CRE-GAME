@@ -323,7 +323,11 @@ function useIsoBuildings(state: GameState): IsoBld[] {
 
 // detail=true above the LOD zoom threshold: facades and site dressing draw;
 // below it every building is a cheap flat prism. Phase D plugs into the detail branch.
-const IsoCity = memo(function IsoCity({ blds, detail }: { blds: IsoBld[]; detail: boolean }) {
+const IsoCity = memo(function IsoCity({ blds, detail, snow = false, winterSun = false }: {
+  blds: IsoBld[]; detail: boolean; snow?: boolean; winterSun?: boolean;
+}) {
+  // the low winter sun throws longer shadows; snow settles on flat roofs
+  const shOff = winterSun ? 0.2 : 0.12;
   return (
     <g style={{ pointerEvents: 'none' }}>
       {blds.map(b => {
@@ -334,10 +338,11 @@ const IsoCity = memo(function IsoCity({ blds, detail }: { blds: IsoBld[]; detail
         const dash = b.prog !== undefined ? '3 2' : undefined;
         return (
           <g key={b.key}>
-            {detail && b.ht > 3 && !b.tight && <polygon points={rectPoly(b.cx + b.w * 0.12, b.cy + b.h * 0.12, b.w, b.h)} fill="#000" opacity={0.22} />}
+            {detail && b.ht > 3 && !b.tight && <polygon points={rectPoly(b.cx + b.w * shOff, b.cy + b.h * shOff, b.w, b.h)} fill="#000" opacity={0.22} />}
             <polygon points={f.l} fill={shade(b.col, 0.66)} stroke={st} strokeWidth={sw} strokeDasharray={dash} />
             <polygon points={f.r} fill={shade(b.col, 0.98)} stroke={st} strokeWidth={sw} strokeDasharray={dash} />
             <polygon points={f.t} fill={b.roof ?? shade(b.col, 1.12)} stroke={st} strokeWidth={sw} strokeDasharray={dash} />
+            {snow && b.prog === undefined && <polygon points={f.t} fill="#dde4ea" opacity={0.55} />}
             {detail && <BldDetail b={b} />}
           </g>
         );
@@ -502,7 +507,7 @@ const ROAD_STYLE: Record<number, { stroke: string; w: number; dash?: string }> =
   4: { stroke: '#6a6f76', w: 6.4 },
   5: { stroke: '#8a7a5c', w: 1.8, dash: '7 5' },
 };
-const StreetLife = memo(function StreetLife({ runs, seed, detail }: { runs: RoadRun[]; seed: number; detail: boolean }) {
+const StreetLife = memo(function StreetLife({ runs, seed, detail, season = 'summer' }: { runs: RoadRun[]; seed: number; detail: boolean; season?: Season }) {
   const els: React.ReactNode[] = [];
   let a = seed | 0;
   const r = () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
@@ -550,8 +555,13 @@ const StreetLife = memo(function StreetLife({ runs, seed, detail }: { runs: Road
         const gx = p0[0] + (p1[0] - p0[0]) * u, gy = p0[1] + (p1[1] - p0[1]) * u;
         const side = r() < 0.5 ? -0.09 : 0.09;
         const [cx, cy] = isoPt(gx + (horiz ? 0 : side), gy + (horiz ? side : 0));
+        const TREE_BY: Record<Season, [string, string]> = {
+          summer: ['#4a7a40', '#578a4a'], spring: ['#5a8c4c', '#679a58'],
+          fall: ['#a3722c', '#8a6530'], winter: ['#6a625a', '#5e5850'],
+        };
+        const [tA, tB] = TREE_BY[season];
         els.push(<g key={'t' + trees}>
-          <circle cx={cx} cy={cy - 1.6} r={1.5 + r()} fill={r() < 0.5 ? '#4a7a40' : '#578a4a'} opacity={0.95} />
+          <circle cx={cx} cy={cy - 1.6} r={(1.5 + r()) * (season === 'winter' ? 0.65 : 1)} fill={r() < 0.5 ? tA : tB} opacity={season === 'winter' ? 0.65 : 0.95} />
           <line x1={cx} y1={cy} x2={cx} y2={cy - 1.2} stroke="#5a4a36" strokeWidth={0.5} />
         </g>);
         trees++;
@@ -771,13 +781,30 @@ type TileGeom = { i: number; x: number; y: number; water: boolean; park?: boolea
 
 // Ground: grass, not pavement. Three seeded lawn tones so the field doesn't read
 // flat, dusty hardpan under the industrial zoning, and parks get real canopies.
-const GRASS = ['#8fb168', '#96b76f', '#87aa60'];
+// The lawn follows the calendar: frost-grey in winter, straw in fall.
+export type Season = 'winter' | 'spring' | 'summer' | 'fall';
+export const seasonOf = (month: number): Season => {
+  const m = ((month % 12) + 12) % 12;   // month 0 = January
+  return m <= 1 || m === 11 ? 'winter' : m <= 4 ? 'spring' : m <= 7 ? 'summer' : 'fall';
+};
+const GRASS_BY: Record<Season, string[]> = {
+  summer: ['#8fb168', '#96b76f', '#87aa60'],
+  spring: ['#93b874', '#9cbe7d', '#8bb06b'],
+  fall: ['#a3a468', '#aaa96e', '#9a9c60'],
+  winter: ['#a4ada0', '#aab3a6', '#9da699'],
+};
+const PARK_BY: Record<Season, string> = { summer: '#6f9e53', spring: '#77a55e', fall: '#8b9153', winter: '#93a08f' };
+const CANOPY_BY: Record<Season, [string, string]> = {
+  summer: ['#4e7d40', '#5b8a4a'], spring: ['#5d8f4c', '#6a9c58'],
+  fall: ['#a3762f', '#8c6a30'], winter: ['#7d746a', '#6e6a62'],
+};
 const DUST = ['#b5ac8b', '#aea687', '#bab190'];
-const TileBaseIso = memo(function TileBaseIso({ tiles }: { tiles: TileGeom[] }) {
+const TileBaseIso = memo(function TileBaseIso({ tiles, season = 'summer' }: { tiles: TileGeom[]; season?: Season }) {
+  const GRASS = GRASS_BY[season];
   return <g>{tiles.map(t => {
     const gi = ((t.x * 7 + t.y * 13) | 0) % 3;
     // canal tiles paint as banks — the water itself is a narrow spine drawn on top
-    const fill = t.park ? '#6f9e53' : t.canal ? GRASS[gi] : t.water ? '#5b9ec9' : t.dust ? DUST[gi] : GRASS[gi];
+    const fill = t.park ? PARK_BY[season] : t.canal ? GRASS[gi] : t.water ? '#5b9ec9' : t.dust ? DUST[gi] : GRASS[gi];
     const trees: React.ReactNode[] = [];
     if (t.park) {
       let a = (t.i * 2654435761) | 0;
@@ -793,7 +820,9 @@ const TileBaseIso = memo(function TileBaseIso({ tiles }: { tiles: TileGeom[] }) 
       }
       for (let k = 0; k < 6; k++) {
         const [cx, cy] = isoPt(t.x + (r() - 0.5) * 0.62, t.y + (r() - 0.5) * 0.62);
-        trees.push(<circle key={'pt' + t.i + '_' + k} cx={cx} cy={cy - 1.8} r={1.7 + r() * 1.3} fill={r() < 0.5 ? '#4e7d40' : '#5b8a4a'} opacity={0.95} />);
+        const [cA, cB] = CANOPY_BY[season];
+        trees.push(<circle key={'pt' + t.i + '_' + k} cx={cx} cy={cy - 1.8} r={(1.7 + r() * 1.3) * (season === 'winter' ? 0.75 : 1)}
+          fill={r() < 0.5 ? cA : cB} opacity={season === 'winter' ? 0.7 : 0.95} />);
       }
     }
     return <g key={'st' + t.i}>
@@ -873,7 +902,7 @@ const FlatGround = memo(function FlatGround({ tiles }: { tiles: TileGeom[] }) {
     if (t.water && !t.canal) return null;
     const gi = ((t.x * 7 + t.y * 13) | 0) % 3;
     return <rect key={'fg' + t.i} x={t.x * TS} y={t.y * TS} width={TS} height={TS}
-      fill={t.park ? '#6f9e53' : t.dust ? DUST[gi] : GRASS[gi]} stroke="#c3c5b4" strokeWidth={0.8} />;
+      fill={t.park ? '#6f9e53' : t.dust ? DUST[gi] : GRASS_BY.summer[gi]} stroke="#c3c5b4" strokeWidth={0.8} />;
   })}</g>;
 });
 
@@ -1040,6 +1069,8 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const hue = LENS_HUE[lens];
   // the hour of day rides the calendar; Off pins the map to noon
   const phase: DayPhase = ambient >= 1 ? dayPhaseOf(state.month) : 'day';
+  // and the season rides the same calendar — Off pins the city to summer
+  const season: Season = ambient >= 1 ? seasonOf(state.month) : 'summer';
 
   const sel = selTile !== null ? state.tiles[selTile] : null;
   const transitActive = state.effects.some(e => e.kind === 'transit');
@@ -1222,8 +1253,8 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
         </div>
         {view === 'iso' ? (
         <svg className="map-svg" ref={vpIso.ref} viewBox={vpIso.viewBox} style={vpIso.style} {...vpIso.handlers}>
-          <rect x={0} y={0} width={IW_TOT} height={IH_TOT} rx={6} fill="#a8b7ab" />
-          <TileBaseIso tiles={tilesGeom} />
+          <rect x={0} y={0} width={IW_TOT} height={IH_TOT} rx={6} fill={season === 'winter' ? '#aeb4ae' : '#a8b7ab'} />
+          <TileBaseIso tiles={tilesGeom} season={season} />
           {lens === 'zoning'
             ? <ZoningIso tiles={state.tiles} rezonings={state.rezonings} zoneStamp={zoneStamp} />
             : lens === 'city' ? null
@@ -1253,7 +1284,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           })()}
           <RoadsIso runs={runs} />
           {ambient >= 1 && zb >= 1 && <WaterLife tiles={tilesGeom} seed={state.seed} />}
-          {ambient >= 1 && zb >= 1 && <StreetLife runs={runs} seed={state.seed} detail={zb >= 2} />}
+          {ambient >= 1 && zb >= 1 && <StreetLife runs={runs} seed={state.seed} detail={zb >= 2} season={season} />}
           {transitActive && (() => {
             const ef = state.effects.find(e => e.kind === 'transit')!;
             const done = 1 - ef.monthsLeft / 14;
@@ -1266,7 +1297,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                 opacity={built ? 1 : 0.6} style={{ pointerEvents: 'none' }} />;
             });
           })()}
-          {showBldgs && <IsoCity blds={isoBlds} detail={zb >= 2} />}
+          {showBldgs && <IsoCity blds={isoBlds} detail={zb >= 2} snow={ambient >= 2 && season === 'winter'} winterSun={season === 'winter'} />}
           {/* the hour: a tint over the built city; lights re-emerge above it after dark */}
           {phase !== 'day' && (
             <g style={{ pointerEvents: 'none' }}>

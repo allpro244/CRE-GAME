@@ -4811,7 +4811,12 @@ function tickEconomy(s: GameState) {
     // priced far below what new construction needs stops getting built, scarcity bites,
     // and pricing crawls back toward feasibility; rents far above cost invite the
     // construction wave that grinds them back down.
-    const feas = clamp(e.costIdx / e.rentIdx[ty] - 1, -0.8, 0.8) * 0.0045;
+    // century-scale sector anchors, phased in with cost drift (zero at genesis, so
+    // the measured 20-year era balance is untouched): industrial's structural
+    // scarcity edge would otherwise win most quarter-centuries of every long game
+    const K: Record<string, number> = { office: 1.12, retail: 1.05, industrial: 0.70, multifamily: 1.18, mixed: 1 };
+    const kEff = 1 + ((K[ty] ?? 1) - 1) * Math.min(1, Math.max(0, (e.costIdx - 1) / 1.5));
+    const feas = clamp(kEff * e.costIdx / e.rentIdx[ty] - 1, -0.8, 0.8) * 0.0045;
     const growth = e.rentMom[ty] + (e.inflation / 100) * 0.5 / 12 + (e.era?.sectorTilt?.[ty] ?? 0) * 0.018 + feas;
     // the bounds ride the cost index: year-80 rents measure against year-80
     // replacement cost, not against a ceiling written for year one
@@ -4844,7 +4849,7 @@ function tickStock(s: GameState) {
     // building that's fallen far on a block that still matters gets the gut reno:
     // big quality jump, units offline for the duration.
     const climate = leasingClimate(s, b.type);
-    let renoP = 0.025 + (t.D >= 60 ? 0.03 : 0) + (climate > 1.04 ? 0.025 : 0);
+    let renoP = 0.03 + (t.D >= 60 ? 0.035 : 0) + (climate > 1.04 ? 0.025 : 0);
     if (climate < 0.95) renoP *= 0.5;   // nobody renovates into a glut
     let bump = 0;
     if (rng(s) < renoP) {
@@ -4968,6 +4973,10 @@ function tickTiles(s: GameState) {
     const target = clamp(t.baseD + mix[t.i] + blight + rot + (t.dMom ?? 0) * 2.2, 5, 98);
     t.D = clamp(t.D + (target - t.D) * 0.10, 5, 98);
     t.dMom = Math.round(clamp((t.dMom ?? 0) * 0.72 + (t.D - prev) * 0.28, -2.2, 2.2) * 1000) / 1000;
+    // the demographic tide moves the anchor itself: boom decades raise every block's
+    // resting population, decline decades drain it — the city genuinely grows and shrinks
+    const dp = s.econ.demo?.regime === 'boom' ? 0.02 : s.econ.demo?.regime === 'decline' ? -0.015 : 0;
+    if (dp) t.popBase = clamp(t.popBase + dp, 0, 100);
     const popTarget = clamp(t.popBase + RES_K * resSrc[t.i], 5, 100);
     const empTarget = clamp((t.empBase + JOB_K * jobSrc[t.i]) * (s.econ.empIdx / 100), 3, 100);
     t.pop = clamp(t.pop + (popTarget - t.pop) * 0.10, 5, 100);
@@ -5672,14 +5681,14 @@ function tickFirmEntrants(s: GameState) {
 // density. This is how real cities replace their stock over a century — block by
 // block, one teardown at a time. Player assets are never touched.
 function tickRedevelopment(s: GameState) {
-  if (rng(s) > 0.6) return;   // roughly every other quarter, when a scrape actually pencils
+  if (rng(s) > 0.8) return;   // most quarters, when a scrape actually pencils
   // developer's residual: what the SITE supports at today's zoning and rents, minus
   // all-in cost (buy the building, knock it down, build new) — scrape when the
   // residual clears a real margin. Underbuilt vintage on prime dirt goes first.
   let best: { b: StockBuilding; ty: PType; sf: number; quality: number; allIn: number; margin: number } | null = null;
   for (const b of s.stock) {
     if (b.buildLeft || b.listedId || b.owner !== 'private') continue;
-    if (b.age < 25 || b.quality > 68 || b.occ > 0.88) continue;   // good buildings don't get scraped
+    if (b.age < 25 || b.quality > 72 || b.occ > 0.9) continue;   // good buildings don't get scraped
     const t = s.tiles[b.tileI];
     const opts = PTYPES.filter(ty => zoneAllows(t.zone, ty));
     if (!opts.length) continue;
@@ -5687,7 +5696,7 @@ function tickRedevelopment(s: GameState) {
     if (tileDemandFactor(s, t, ty) < 1.0 || oversupplyPenalty(t, ty) > 0.06) continue;
     const acres = (b.cells ? b.cells.length : (b.pw ?? 1) * (b.ph ?? 1)) * PARCEL_AC;
     const sf = Math.round(acres * 43_560 * FAR[ty] * zoneTierMult(t.zone.tier) * 0.85 / 1000) * 1000;
-    if (sf < 6000 || sf < b.sf * 1.6) continue;   // a scrape has to add real density, not shuffle it
+    if (sf < 6000 || sf < b.sf * 1.4) continue;   // a scrape has to add real density, not shuffle it
     const quality = clamp(rrange(s, 88, 132), 45, 138);
     const buy = stockValue(s, b) * 1.05;          // the owner gets paid over the income value
     const demo = b.sf * 8 * s.econ.costIdx;
@@ -5695,7 +5704,7 @@ function tickRedevelopment(s: GameState) {
     const allIn = buy + demo + build;
     const newValue = stockNOIYr(s, { ...b, type: ty, sf, quality, occ: 0.9 }) / (capRatePct(s, t, ty, quality) / 100);
     const margin = (newValue - allIn) / allIn;
-    if (margin > 0.15 && (!best || margin > best.margin)) best = { b, ty, sf, quality, allIn, margin };
+    if (margin > 0.10 && (!best || margin > best.margin)) best = { b, ty, sf, quality, allIn, margin };
   }
   if (!best) return;
   const { b, ty, sf, quality, allIn } = best;
@@ -5748,7 +5757,9 @@ function tickFirms(s: GameState) {
         continue;
       }
     }
-    if (rng(s) < 0.035 && f.netWorth > 8_000_000) firmDevelops(s, f);
+    // appetite rides the demographic tide: boom decades build, decline decades don't
+    const devAppetite = 0.05 * (s.econ.demo?.regime === 'boom' ? 1.5 : s.econ.demo?.regime === 'decline' ? 0.5 : 1);
+    if (rng(s) < devAppetite && f.netWorth > 8_000_000) firmDevelops(s, f);
     if (rng(s) > 0.35) continue; // ten firms can't all be buying every quarter
     const fit = (l: Listing): number => {
       if (l.kind === 'offmarket' || l.yourSale || l.parentAssetId || l.fromLandId || (l as any).omLead || l.underContract) return 0; // your leads, contracts and land are yours; your sale listings handled separately

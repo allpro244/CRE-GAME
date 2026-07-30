@@ -54,11 +54,20 @@ make — you can simulate 30 years in milliseconds before touching the UI.
   endogenous: occupied residential space attracts residents, occupied business space
   attracts jobs, and demand factors read those. **The game never forecasts** — the map
   shows what is, the player forms the thesis.
+- **Terrain forms** — each seed rolls a landform over the base city (a bay biting one
+  shore, the north river widening into a sound, an inland lake, or the classic cut) plus
+  unbuildable marsh fringes (`Tile.marsh`). Same block grid underneath — the silhouette is
+  what varies. Cores, parks and the port are protected from the carve.
 - `GameState.roads` — the per-seed street network on block boundaries (local / collector /
-  arterial / highway / rail). Arterials jog, locals prune into superblocks and dead ends,
-  bridges are scarce. Access is economic: each tile carries `acc` (arterial frontage,
-  highway/rail proximity, quiet) feeding rents, demand and land value — retail wants
-  frontage, industrial wants the highway and the rail spur, housing pays for quiet.
+  arterial / highway / rail). Arterials jog, Broadway staircases toward uptown (half of
+  cities roll a second southeast diagonal), locals prune into superblocks with distance
+  from the cores, bridges are scarce. Access is economic: each tile carries `acc`
+  (arterial frontage, highway/rail proximity, quiet) feeding rents, demand and land
+  value — retail wants frontage, industrial wants the highway and the rail spur, housing
+  pays for quiet.
+- **Center-out genesis** — generation fills the core (~85-90% of day-one SF on D≥62 land)
+  and leaves ~a quarter of fringe blocks empty; rival firms weight site selection by
+  desirability, so the city visibly grows outward over a campaign.
 - Each block is a **4x4 grid of quarter-acre parcels** (`PGRID`, `PARCEL_AC`). Footprints are cell-index
   sets (`cells: number[]`), so buildings can be L-shaped. Edge-sharing (not corner) defines one site —
   see `isContiguous()`.

@@ -366,7 +366,7 @@ export interface Listing {
   stockId?: number;
   // negotiation (all building listings have a hidden reservation)
   reservation?: number; offersLeft?: number; counterAt?: number; agreed?: boolean; noAsk?: boolean;
-  resFrac?: number; listMonth?: number; declinedYou?: boolean; parentAssetId?: number; yourSale?: boolean;
+  resFrac?: number; listMonth?: number; declinedYou?: boolean; declinedM?: number; parentAssetId?: number; yourSale?: boolean;
   parcel?: Parcel; parcelCells?: number[]; fromLandId?: number;
   underContract?: LandContractState;
 }
@@ -2125,7 +2125,7 @@ export function makeOffer(state: GameState, listingId: number, amount: number): 
   if (amount >= res * 0.97) {
     const agreedPrice = roundPrice(Math.min(amount, Math.max(res, amount)));
     l.agreed = true; l.price = agreedPrice; l.expiresMonth = s.month + 2;
-    pushNews(s, 'success', `Off-market seller accepted your ${fmtMoney(agreedPrice)} offer. You have ~2 months to close before they get cold feet.`);
+    pushNews(s, 'success', `${l.kind === 'offmarket' ? 'Off-market seller' : 'The seller'} accepted your ${fmtMoney(agreedPrice)} offer. You have ~2 months to close before they get cold feet.`);
     return { s, result: 'accepted' };
   }
   if (amount >= res * (l.kind === 'offmarket' ? 0.85 : 0.90) && (l.offersLeft ?? 0) > 0) {
@@ -2153,6 +2153,7 @@ export function makeOffer(state: GameState, listingId: number, amount: number): 
     msg = `The off-market owner took your ${fmtMoney(amount)} offer as an insult. They've hung up for good — that door doesn't reopen.`;
   } else {
     l.declinedYou = true;
+    l.declinedM = s.month;
     msg = l.kind === 'land'
       ? `The landowner won't deal with you after that ${fmtMoney(amount)} offer. Dirt has feelings too, apparently.`
       : `The seller of the ${((l.sf ?? 0) / 1000).toFixed(0)}K SF ${PLABEL[l.type!]} listing won't deal with you after that ${fmtMoney(amount)} offer. Brokers talk.`;
@@ -5398,6 +5399,15 @@ function tickListings(s: GameState) {
       pushNews(s, 'event', l.kind === 'land'
         ? `BIDDING WAR: ${rival.name} just offered ${fmtMoney((l as any).rivalBid)} on the ${l.acres}-acre parcel you have under agreement. Land you hesitate on is land somebody else assembles.`
         : `BIDDING WAR: ${rival.name} just offered ${fmtMoney((l as any).rivalBid)} on the ${((l.sf ?? 0) / 1000).toFixed(0)}K SF ${PLABEL[l.type!]} you have under agreement. Match it this month or the seller walks to them.`, l.tileI);
+    } else if (l.declinedYou && s.month - (l.declinedM ?? s.month) >= 6) {
+      // grudges fade: six months on, the seller's broker quietly makes the call.
+      // Without this, a long-lived listing nursed its snub forever and the "won't
+      // deal with you" strip read like a bug months after the insult.
+      l.declinedYou = false;
+      l.declinedM = undefined;
+      pushNews(s, 'info', l.kind === 'land'
+        ? `The landowner at block ${blockLabel(s.tiles[l.tileI])} has cooled off — six months is a long time in a soft market. The door is open again.`
+        : `The seller of the ${((l.sf ?? 0) / 1000).toFixed(0)}K SF ${PLABEL[l.type!]} listing has cooled off since your last number. The broker will take your call again.`, l.tileI);
     } else if (l.kind === 'building' && !l.agreed && (l.listMonth ?? s.month) <= s.month - 3 && rng(s) < 0.2) {
       // fatigue: the longer it sits, the softer the seller
       l.price = roundPrice(l.price * rrange(s, 0.965, 0.99));

@@ -789,6 +789,60 @@ const ParcelLots = memo(function ParcelLots({ blds, seed }: { blds: IsoBld[]; se
   return <g style={{ pointerEvents: 'none' }}>{els}</g>;
 });
 
+// Vacant parcels stop reading as lawn and start reading as what they are:
+// neglected potential. Gravel scatter, weed tufts, a run of chain-link on some,
+// and the occasional billboard earning its ground rent. Seeded per cell.
+const VacantLots = memo(function VacantLots({ tiles, grids, seed, season }: {
+  tiles: TileGeom[]; grids: (number | null)[][]; seed: number; season: Season;
+}) {
+  const els: React.ReactNode[] = [];
+  const weedCol = season === 'winter' ? '#8a8474' : season === 'fall' ? '#9a8f5a' : '#7a8a52';
+  let n = 0, boards = 0;
+  for (const t of tiles) {
+    if (t.water || t.park || t.canal || n > 380) continue;
+    const g = grids[t.i];
+    for (let c = 0; c < g.length; c++) {
+      if (g[c] !== null || n > 380) continue;
+      let a = (seed ^ Math.imul(t.i * 16 + c + 1, 0x9e3779b9)) | 0;
+      const r = () => { a = (a + 0x6D2B79F5) | 0; let v = Math.imul(a ^ (a >>> 15), 1 | a); v = (v + Math.imul(v ^ (v >>> 7), 61 | v)) ^ v; return ((v ^ (v >>> 14)) >>> 0) / 4294967296; };
+      const roll = r();
+      if (roll > 0.34) continue;   // most vacant cells stay plain grass — sparse reads better
+      const px = c % E.PGRID, py = Math.floor(c / E.PGRID);
+      const [ccx, ccy] = parcelCenter(t.x, t.y, px, py);
+      // gravel + weeds on all textured cells
+      for (let k = 0; k < 3; k++) {
+        const [gx, gy] = isoPt(ccx + (r() - 0.5) * 0.14, ccy + (r() - 0.5) * 0.14);
+        els.push(k < 2
+          ? <circle key={'vg' + n + '_' + k} cx={gx} cy={gy} r={0.5 + r() * 0.4} fill="#9a9788" opacity={0.7} />
+          : <path key={'vg' + n + '_' + k} d={`M${gx} ${gy} l${(r() - 0.5).toFixed(1)} ${(-1 - r()).toFixed(1)} M${gx} ${gy} l${(r() - 0.5).toFixed(1)} ${(-0.8 - r()).toFixed(1)}`}
+              stroke={weedCol} strokeWidth={0.4} opacity={0.85} />);
+      }
+      if (roll < 0.075) {
+        // chain-link along the street edge: posts and a dashed wire
+        const [f0x, f0y] = isoPt(ccx + 0.1, ccy - 0.1);
+        const [f1x, f1y] = isoPt(ccx + 0.1, ccy + 0.1);
+        els.push(<line key={'vf' + n} x1={f0x} y1={f0y - 1.6} x2={f1x} y2={f1y - 1.6} stroke="#6b6154" strokeWidth={0.4} strokeDasharray="0.9 0.9" opacity={0.9} />);
+        for (const [fx, fy] of [[f0x, f0y], [f1x, f1y]] as const) {
+          els.push(<line key={'vp' + n + '_' + fx.toFixed(0)} x1={fx} y1={fy} x2={fx} y2={fy - 1.6} stroke="#54493c" strokeWidth={0.5} />);
+        }
+      }
+      if (roll >= 0.075 && roll < 0.09 && boards < 6) {
+        // a billboard: two posts and a pale panel, blank — the ad market is soft
+        const [bx, by] = isoPt(ccx, ccy);
+        els.push(<g key={'vb' + n}>
+          <line x1={bx - 1.4} y1={by} x2={bx - 1.4} y2={by - 3.2} stroke="#4a4438" strokeWidth={0.6} />
+          <line x1={bx + 1.4} y1={by + 0.6} x2={bx + 1.4} y2={by - 2.6} stroke="#4a4438" strokeWidth={0.6} />
+          <polygon points={`${bx - 2.6},${by - 3.2} ${bx + 2.6},${by - 2.2} ${bx + 2.6},${by - 5.2} ${bx - 2.6},${by - 6.2}`}
+            fill="#c9c2b2" stroke="#3a332a" strokeWidth={0.4} opacity={0.95} />
+        </g>);
+        boards++;
+      }
+      n++;
+    }
+  }
+  return <g style={{ pointerEvents: 'none' }}>{els}</g>;
+});
+
 // Sidewalks: a pale concrete band each side of every street, with a darker curb
 // line against the asphalt. Drawn under the roads so the road surface reads on
 // top; only above the detail zoom threshold — from far out they'd just be noise.
@@ -1373,6 +1427,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                 opacity={built ? 1 : 0.6} style={{ pointerEvents: 'none' }} />;
             });
           })()}
+          {ambient >= 2 && zb >= 2 && lens === 'city' && <VacantLots tiles={tilesGeom} grids={grids} seed={state.seed} season={season} />}
           {ambient >= 2 && zb >= 2 && showBldgs && <ParcelLots blds={isoBlds} seed={state.seed} />}
           {showBldgs && <IsoCity blds={isoBlds} detail={zb >= 2} snow={ambient >= 2 && season === 'winter'} winterSun={season === 'winter'} />}
           {/* the hour: a tint over the built city; lights re-emerge above it after dark */}

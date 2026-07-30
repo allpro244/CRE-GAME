@@ -189,6 +189,9 @@ export interface Economy {
   era: { rateBias: number; inflBias: number; vol: number; tempo: number; sectorTilt?: Partial<Record<PType, number>> };
   insSpikeMonthsLeft?: number; capInflowMonthsLeft?: number; wfhMonthsLeft?: number;
   constrCycle?: number;
+  // the demographic tide: a multi-decade regime beneath the business cycle — boom
+  // decades pull people and demand in, decline decades drain them out
+  demo?: { regime: 'boom' | 'steady' | 'stagnation' | 'decline'; monthsLeft: number; n: number };
 }
 
 export interface Loan {
@@ -1573,7 +1576,7 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     staff: { analyst: false, pm: false, leasing: false, cm: false },
     lenderRel: { fnb: 30, hbv: 20, col: 12, ibx: 20, mst: 10 },   // the hometown bank starts warmest
     auctions: [], btsRfps: [], rivalry: {},
-    version: 31,
+    version: 32,
   };
   generateStock(state);
   // Firms open with real books: they already own the buildings generation assigned
@@ -4589,7 +4592,8 @@ function pushExpire(s: GameState, l: LOI) {
 }
 
 export function cityPopulation(s: GameState): number {
-  return Math.round(s.tiles.reduce((t2, t) => t2 + (t.water ? 0 : t.pop), 0) * 152);
+  // ~300K at genesis: a real mid-size city with a century of growing (or shrinking) to do
+  return Math.round(s.tiles.reduce((t2, t) => t2 + (t.water ? 0 : t.pop), 0) * 26);
 }
 function recordHistory(s: GameState) {
   s.nwHistory.push({ m: s.month, nw: netWorth(s), cash: s.cash, cf: s.lastMonthCF });
@@ -4637,8 +4641,36 @@ const PHASE_TARGET: Record<Phase, { rate: number; infl: number; emp: number; con
   recession: { rate: 4.5, infl: 1.6, emp: 92, conf: 32 },
 };
 
+// Which way the demographic tide pulls: population growth points, and a smaller
+// business-demand term (a metro that's filling up needs offices and warehouses too).
+const DEMO_POP: Record<string, number> = { boom: 0.9, steady: 0.1, stagnation: -0.45, decline: -1.05 };
+const DEMO_BIZ: Record<string, number> = { boom: 0.010, steady: 0.002, stagnation: -0.006, decline: -0.014 };
+const DEMO_NEWS: Record<string, string> = {
+  boom: 'THE BOOM DECADES BEGIN: the metro is drawing people faster than it can house them. Every unit leases, every corner retail pencils — until everyone builds at once.',
+  steady: 'The demographic tide has settled: steady in-migration, normal absorption. The market rewards discipline again, not just presence.',
+  stagnation: 'THE LONG PLATEAU: in-migration has stalled. Growth still exists, but it has to be taken from someone else — leasing is a knife fight from here.',
+  decline: 'THE EXODUS: the metro is losing people. Vacancy creeps upward citywide, and every pro forma that assumed growth is now wrong. Own the best blocks or own the problem.',
+};
+function tickDemographics(s: GameState) {
+  const e = s.econ;
+  if (!e.demo) e.demo = { regime: 'steady', monthsLeft: 144 + Math.floor(rng(s) * 96), n: 1 };
+  e.demo.monthsLeft--;
+  if (e.demo.monthsLeft <= 0) {
+    const pool: ['boom' | 'steady' | 'stagnation' | 'decline', number][] =
+      [['boom', 0.28], ['steady', 0.32], ['stagnation', 0.24], ['decline', 0.16]];
+    const opts = pool.filter(p => p[0] !== e.demo!.regime);
+    const tot = opts.reduce((x, p) => x + p[1], 0);
+    let r2 = rng(s) * tot;
+    let pick = opts[opts.length - 1][0];
+    for (const [k, w] of opts) { r2 -= w; if (r2 <= 0) { pick = k; break; } }
+    e.demo = { regime: pick, monthsLeft: 144 + Math.floor(rng(s) * 156), n: e.demo.n + 1 };
+    pushNews(s, 'event', DEMO_NEWS[pick]);
+  }
+}
+
 function tickEconomy(s: GameState) {
   const e = s.econ;
+  tickDemographics(s);
   e.phaseAge++;
   if (rng(s) < 1 / (PHASE_DWELL[e.phase] * (e.era?.tempo ?? 1)) && e.phaseAge > PHASE_DWELL[e.phase] * (e.era?.tempo ?? 1) * 0.5) {
     e.phase = PHASE_NEXT[e.phase]; e.phaseAge = 0;
@@ -4666,7 +4698,7 @@ function tickEconomy(s: GameState) {
   e.inflation = clamp(e.inflation + (t.infl + era.inflBias + tariffHeat - e.inflation) * 0.10 + (rng(s) - 0.5) * 0.3 * era.vol, 0, 9);
   e.empIdx = clamp(e.empIdx + (t.emp - e.empIdx) * 0.07 + (rng(s) - 0.5) * 0.5, 80, 115);
   e.confidence = clamp(e.confidence + (t.conf - e.confidence) * 0.09 + (rng(s) - 0.5) * 2.5, 10, 95);
-  e.popGrowth = clamp(0.4 + (e.confidence / 100) * 1.4 + (rng(s) - 0.5) * 0.2, -0.3, 2.4);
+  e.popGrowth = clamp(0.4 + (e.confidence / 100) * 1.4 + (DEMO_POP[e.demo?.regime ?? 'steady'] ?? 0) + (rng(s) - 0.5) * 0.2, -1.2, 2.8);
   e.costIdx *= 1 + (e.inflation * 0.5) / 100 / 12;
   // construction has its own weather: bid climate swings with the cycle and its own momentum
   if (e.constrCycle === undefined) e.constrCycle = 1;
@@ -4707,9 +4739,10 @@ function tickEconomy(s: GameState) {
   for (const ty of PTYPES) {
     if (ty === 'mixed') continue;   // derived below from the components
     let demandDrift = 0;
-    if (ty === 'office') demandDrift = 0.04 + (e.empIdx - 99) * 0.014;
+    const biz = DEMO_BIZ[e.demo?.regime ?? 'steady'] ?? 0;   // the tide lifts (or drains) business demand too
+    if (ty === 'office') demandDrift = 0.04 + (e.empIdx - 99) * 0.014 + biz;
     if (ty === 'retail') demandDrift = 0.022 + (e.confidence - 52) * 0.003 + e.popGrowth * 0.035 - (e.ecomMonthsLeft > 0 ? 0.10 : 0);
-    if (ty === 'industrial') demandDrift = 0.045 + (e.ecomMonthsLeft > 0 ? 0.08 : 0) + (e.empIdx - 100) * 0.005;
+    if (ty === 'industrial') demandDrift = 0.045 + (e.ecomMonthsLeft > 0 ? 0.08 : 0) + (e.empIdx - 100) * 0.005 + biz;
     if (ty === 'multifamily') demandDrift = 0.05 + e.popGrowth * 0.05 + (e.confidence - 55) * 0.0012;
     demandDrift += e.era?.sectorTilt?.[ty] ?? 0;   // the era's secular story: this generation's winner isn't the last one's
     const eqVac = EQ_VAC[ty];
@@ -4912,7 +4945,7 @@ function maybeBlackSwan(s: GameState) {
     e.wfhLastM = s.month; e.ecomLastM = s.month;
     e.confidence = clamp(e.confidence - 22, 10, 95);
     e.rate = clamp(e.rate - 2.0, 2.0, 13.0);
-    e.popGrowth = clamp(e.popGrowth - 0.8, -0.3, 2.4);
+    e.popGrowth = clamp(e.popGrowth - 0.8, -1.2, 2.8);
     pushNews(s, 'event', 'PANDEMIC. The city empties overnight: offices dark for years, retail on life support, logistics running triple shifts, and money nearly free while the world holds its breath. Every lease signed this decade will remember this month.');
   } else if (kind === 'quake') {
     s.swans.push({ m: s.month, kind, label: 'The Quake' });
@@ -4934,7 +4967,7 @@ function maybeBlackSwan(s: GameState) {
     e.empIdx = clamp(e.empIdx + 6, 80, 115);
     e.confidence = clamp(e.confidence + 20, 10, 95);
     e.capInflowMonthsLeft = 30;
-    e.popGrowth = clamp(e.popGrowth + 0.8, -0.3, 2.4);
+    e.popGrowth = clamp(e.popGrowth + 0.8, -1.2, 2.8);
     pushNews(s, 'event', 'THE BOOM: a national champion is moving its headquarters and half its supply chain here. Jobs, people, and institutional capital are all inbound at once — cap rates compress, rents run, and everyone who owns anything looks like a genius for a while. Booms end. Enjoy this one; underwrite like it will.');
   }
 }
@@ -6171,7 +6204,7 @@ export function serialize(state: GameState): string { return JSON.stringify(stat
 export function deserialize(json: string): GameState | null {
   try {
     const s = JSON.parse(json);
-    if (s && s.version === 31 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
+    if (s && s.version === 32 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
     return null;
   } catch { return null; }
 }

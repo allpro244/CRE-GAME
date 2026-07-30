@@ -1394,10 +1394,10 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
         // office runs cold), then a sum-neutral shuffle decides who this era loves.
         // measured so a NEUTRAL roll puts the four sectors at rough parity — the random
         // part then genuinely decides who this era loves and who it starves
-        const HANDICAP: Record<string, number> = { office: 0.045, retail: -0.062, industrial: 0.030, multifamily: -0.013 };
+        const HANDICAP: Record<string, number> = { office: 0.087, retail: -0.096, industrial: 0.064, multifamily: -0.055 };
         const raw: Record<string, number> = { office: r(), retail: r(), industrial: r(), multifamily: r() };
         const avg = (raw.office + raw.retail + raw.industrial + raw.multifamily) / 4;
-        const tiltOf = (ty: string) => Math.round((HANDICAP[ty] + (raw[ty] - avg) * 0.11) * 1000) / 1000;
+        const tiltOf = (ty: string) => Math.round((HANDICAP[ty] + (raw[ty] - avg) * 0.15) * 1000) / 1000;
         return {
           rateBias: Math.round((-1.0 + r() * 2.4) * 100) / 100,   // -1.0 .. +1.4 pts on every rate target
           inflBias: Math.round((-0.5 + r() * 1.5) * 100) / 100,   // -0.5 .. +1.0 on inflation targets

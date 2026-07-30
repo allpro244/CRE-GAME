@@ -1,6 +1,6 @@
 # Groundwork
 
-A commercial real estate development simulator. You start with $600,000 in Meridian City and try to build a portfolio without going broke.
+A commercial real estate development simulator. You start with $600,000 in New Amsterdam and try to build a portfolio without going broke.
 
 Single-page React + TypeScript app, bundled to one self-contained HTML file.
 
@@ -31,7 +31,7 @@ environment used its own `bundle-artifact.sh` for this.
 | File | What it is |
 |---|---|
 | `src/engine.ts` | The entire simulation. Pure functions, no React. Every game rule lives here. |
-| `src/views2.tsx` | Deal board, deal drawer/modal, LOI negotiation, portfolio (shared AssetCard), refi, debt tab |
+| `src/views2.tsx` | Deal board (+auctions, build-to-suit), deal drawer/modal, LOI negotiation, portfolio, refi, debt tab (lenders, hedging), Books tab |
 | `src/mapview.tsx` | Isometric + flat city map, street network rendering, memoized layers, parcel selection, block panel |
 | `src/buildingArt.ts` | Procedural facades & construction sites. Pure: params + prism geometry in, element descriptors out. No React, no engine imports. |
 | `src/App.tsx` | Shell, dashboard, economy tab, modals, save/load |
@@ -104,7 +104,19 @@ inflation records, prime cap range, per-sector rent run-ups and drawdowns, reces
 land dispositions as a market (you list your dirt, then field scattered offers — lowball
 assemblers to deadline-rich 1031 money — over months, not clicks) · turn costs (1-3 months
 of rent to make vacated space showable) · per-deal IO pricing (interest-only money quotes
-200-300bps over the 25-year sheet, seeded per listing) ·
+75-150bps over the 25-year sheet, seeded per listing) ·
+FIVE NAMED LENDERS with personalities and relationships (the hometown bank, the regional,
+the life company, the debt fund, the CMBS desk — each with its own leverage, spread, minimum
+check and crunch behavior; performing loans build a relationship worth up to 50bps, defaults
+burn it) · foreclosure AUCTIONS on the courthouse steps (collapsed rivals' best buildings go
+to a live room — outbid the deepest pocket and settle in cash or hard money) · BUILD-TO-SUIT
+RFPs (credit tenants offer 15-year NNN leases above market for purpose-built product,
+delivered on time — rivals compete for the same paper, late delivery reads the penalty
+clause) · STAFF & G&A (an analyst, a property manager, a leasing director, a construction
+manager — monthly payroll, real engine levers) · RATE HEDGING (swap fixed to floating,
+fix a floater, buy a rate cap priced off the era's volatility) · a PLAYER INCOME STATEMENT
+(every dollar in or out lands categorized in the Books tab — rent, opex, debt service,
+leasing costs, G&A, taxes, capital events; the mystery cash hit is now a line item) ·
 a REAL leasing market: citywide vacancy per asset class is measured from the actual standing
 stock building by building (overbuild industrial and those exact square feet sit empty), rents
 follow the vacancy gap with momentum and a price-elasticity stabilizer (cheap space fills, dear

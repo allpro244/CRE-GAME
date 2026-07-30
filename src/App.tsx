@@ -4,6 +4,31 @@ import type { GameState, Asset, PostMortem } from './engine';
 import { LineChart, Bars } from './charts';
 import { Modal, Hint, DealsView2, DealModal, PortfolioView2, RefiModal, DebtView, BooksView, LOIModal, AssetDrawer, CityRegistryView, pct } from './views2';
 import { MapView, StockCard, FirmPortfolioModal } from './mapview';
+import { SFX, isMuted, toggleMute } from './sound';
+
+// A money figure that rolls to its new value instead of teleporting — the eye catches
+// the direction of travel before the digits settle.
+function RollNum({ value, fmt, className }: { value: number; fmt: (v: number) => string; className?: string }) {
+  const [disp, setDisp] = useState(value);
+  const dispRef = useRef(value);
+  useEffect(() => {
+    const from = dispRef.current, to = value;
+    if (from === to) return;
+    const t0 = performance.now(), dur = 380;
+    let raf = 0;
+    const step = (t: number) => {
+      const k = Math.min(1, (t - t0) / dur);
+      const e = 1 - Math.pow(1 - k, 3);
+      const v = from + (to - from) * e;
+      dispRef.current = v;
+      setDisp(v);
+      if (k < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [value]); // eslint-disable-line
+  return <span className={className}>{fmt(disp)}</span>;
+}
 
 // storage: the chat-artifact API when it exists, plain localStorage everywhere else —
 // the downloaded single-file build saves like any other web game
@@ -121,9 +146,32 @@ function Game({ state, setState, toMenu }: {
     if (loiId !== null && !state.lois.some(l => l.id === loiId)) setLoiId(null);
   }, [state.lois, loiId]);
 
+  // ---- sound: one cue per beat, the most dramatic thing that just happened wins ----
+  const [mute, setMute] = useState(isMuted());
+  const lastNews = useRef<string | null>(null);
+  useEffect(() => {
+    const news = state.news;
+    if (!news.length) return;
+    const sig = news[news.length - 1].m + '|' + news[news.length - 1].text;
+    if (lastNews.current === null) { lastNews.current = sig; return; }   // no chirp on load
+    if (lastNews.current === sig) return;
+    const fresh: typeof news = [];
+    for (let i = news.length - 1; i >= 0 && fresh.length < 8; i--) {
+      if (news[i].m + '|' + news[i].text === lastNews.current) break;
+      fresh.push(news[i]);
+    }
+    lastNews.current = sig;
+    if (fresh.some(n2 => n2.text.startsWith('⚔'))) SFX.rival();
+    else if (fresh.some(n2 => /^Lease signed|^Renewed:/.test(n2.text))) SFX.sign();
+    else if (fresh.some(n2 => n2.kind === 'success' || n2.kind === 'deal')) SFX.close();
+    else if (fresh.some(n2 => n2.kind === 'warn')) SFX.bad();
+    else if (fresh.some(n2 => n2.kind === 'event')) SFX.event();
+  }, [state.news]); // eslint-disable-line
+
   // the clock stops when a tenant shows interest — a 2-month LOI must never expire
   // unseen inside a +6mo skip
   const advance = useCallback((n: number) => {
+    SFX.tick();
     let s = state;
     const lois0 = new Set(s.lois.map(l => l.id));
     for (let i = 0; i < n; i++) {
@@ -136,6 +184,7 @@ function Game({ state, setState, toMenu }: {
 
   // run the clock until the game needs you: an event, a proposal, or an offer
   const advanceUntil = useCallback(() => {
+    SFX.tick();
     let s = state;
     const lois0 = new Set(s.lois.map(l => l.id));
     const offers0 = new Set(s.saleOffers.map(o => o.id));
@@ -189,8 +238,8 @@ function Game({ state, setState, toMenu }: {
         <div className="brand"><b>GROUNDWORK</b><span>{state.city === 'island' ? 'New Amsterdam' : 'Meridian City'}</span></div>
         <div className="tb-sep" />
         <div className="tb-stat"><span className="eyebrow">Date</span><span className="v num">{E.monthName(state.month)}</span></div>
-        <div className="tb-stat"><span className="eyebrow">Cash</span><span className={'v num ' + (state.cash < 0 ? 'neg' : '')}>{E.fmtMoney(state.cash)}</span></div>
-        <div className="tb-stat"><span className="eyebrow">Net worth</span><span className="v num">{E.fmtMoney(nw)}</span></div>
+        <div className="tb-stat"><span className="eyebrow">Cash</span><RollNum value={state.cash} fmt={v => E.fmtMoney(Math.round(v))} className={'v num ' + (state.cash < 0 ? 'neg' : '')} /></div>
+        <div className="tb-stat"><span className="eyebrow">Net worth</span><RollNum value={nw} fmt={v => E.fmtMoney(Math.round(v))} className="v num" /></div>
         <div className="tb-stat"><span className="eyebrow">CF /mo</span><span className={'v num ' + (state.lastMonthCF >= 0 ? 'pos' : 'neg')}>{E.fmtMoney(state.lastMonthCF)}</span></div>
         <div className="tb-stat"><span className="eyebrow">Prime rate <Hint text="Base rate + 3.0%. Your actual loan spreads price off the base rate; prime is the pulse you watch." /></span><span className="v num">{E.primeRate(state).toFixed(2)}%</span></div>
         <div className="tb-stat"><span className="eyebrow">DSCR</span><span className={'v num ' + (dscr !== null && dscr < 1.2 ? 'neg' : '')}>{dscr === null ? '—' : dscr.toFixed(2) + '×'}</span></div>
@@ -204,6 +253,7 @@ function Game({ state, setState, toMenu }: {
         <button className="btn btn-ghost" title="The game loop, in one page" onClick={() => setHowTo(true)}>How to play</button>
         <button className="btn btn-ghost" onClick={manualSave}>{saved ? 'Saved ✓' : 'Save'}</button>
         <button className="btn btn-ghost" onClick={() => setSaveOpen(true)}>Slots</button>
+        <button className="btn btn-ghost" title={mute ? 'Sound is off' : 'Sound is on'} onClick={() => setMute(toggleMute())}>{mute ? '🔇' : '🔊'}</button>
         <button className="btn btn-ghost" onClick={async () => { await storageSet('groundwork:auto', E.serialize(state)); toMenu(); }}>Menu</button>
       </div>
 
@@ -368,7 +418,7 @@ function Dashboard({ state, goDeals, openLOI, openFirm, flyTo }: { state: GameSt
           </div>
           <h3>The competition</h3>
           <table className="sc">
-            <thead><tr><th>Firm</th><th>Style</th><th>Net worth</th><th>Debt</th><th>Lev</th></tr></thead>
+            <thead><tr><th>Firm</th><th>Style</th><th>Net worth</th><th>Debt</th><th>Lev</th><th title="Deals they've taken off your desk">⚔</th></tr></thead>
             <tbody>
               {[...state.firms.map(f => {
                 const port = E.firmPortfolioValue(state, f.short) + E.firmLandBankValue(state, f.short);
@@ -383,6 +433,9 @@ function Dashboard({ state, goDeals, openLOI, openFirm, flyTo }: { state: GameSt
                     <td className="num">{E.fmtMoney(f.v)}</td>
                     <td className="num dim">{f.dead ? '—' : E.fmtMoney(Math.round(f.d))}</td>
                     <td className={'num ' + (f.lev > 0.75 ? 'neg' : 'dim')}>{f.dead ? '—' : Math.round(f.lev * 100) + '%'}</td>
+                    <td className={'num ' + ((f.sh && (state.rivalry?.[f.sh] ?? 0) >= 3) ? 'neg' : 'dim')}
+                      title={f.sh && (state.rivalry?.[f.sh] ?? 0) > 0 ? `${state.rivalry![f.sh]} deal${state.rivalry![f.sh] > 1 ? 's' : ''} they've taken off your desk` : undefined}>
+                      {f.sh && (state.rivalry?.[f.sh] ?? 0) > 0 ? state.rivalry![f.sh] : ''}</td>
                   </tr>
                 ))}
             </tbody>

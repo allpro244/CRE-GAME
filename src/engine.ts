@@ -333,6 +333,8 @@ export interface Listing {
   // building / offmarket
   type?: PType; sf?: number; units?: number; construction?: string; occ?: number; quality?: number; age?: number;
   mix?: MixSplit;              // mixed buildings: the program split
+  playerEngaged?: boolean;     // you made an offer or ran feasibility — the brokers noticed
+  rivalEye?: string;           // a firm is circling: they close within the month if you don't
   tenants?: Tenant[];          // in-place rent roll (revealed by feasibility)
   distressed?: boolean; feasDone?: boolean;
   stockId?: number;
@@ -437,6 +439,11 @@ export interface GameState {
   lenderRel: Record<string, number>;   // lenderId -> relationship 0-100
   auctions: Auction[];
   btsRfps: BtsRfp[];
+  // rivalry: how many deals each firm has taken off your desk — the news remembers
+  rivalry?: Record<string, number>;
+  // a collapsed firm's whole book, one wire: the special-situations desk would rather
+  // sell you everything than run twenty closings
+  bulkDeal?: { short: string; name: string; stockIds: number[]; price: number; expiresM: number };
   version: number;
 }
 
@@ -934,7 +941,7 @@ export function frontageMult(type: PType, cells?: number[]): number {
 // Where each market clears over a full cycle. Vacancy above this is a tenant's
 // market; below it, the landlord stops returning calls.
 // mixed's equilibrium is the blend of its components — it has no market of its own
-export const EQ_VAC: Record<PType, number> = { office: 13.0, retail: 8.5, industrial: 10.5, mixed: 11.2, multifamily: 11.0 };
+export const EQ_VAC: Record<PType, number> = { office: 13.0, retail: 9.2, industrial: 10.5, mixed: 11.2, multifamily: 11.0 };
 
 export function capRatePct(state: GameState, t: Tile, type: PType, quality: number): number {
   const inflow = (state.econ.capInflowMonthsLeft ?? 0) > 0 ? -0.35 : 0;
@@ -1392,8 +1399,8 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     cfLog: [],
     staff: { analyst: false, pm: false, leasing: false, cm: false },
     lenderRel: { fnb: 30, hbv: 20, col: 12, ibx: 20, mst: 10 },   // the hometown bank starts warmest
-    auctions: [], btsRfps: [],
-    version: 28,
+    auctions: [], btsRfps: [], rivalry: {},
+    version: 29,
   };
   generateStock(state);
   // Firms open with real books: they already own the buildings generation assigned
@@ -1841,6 +1848,7 @@ export function makeOffer(state: GameState, listingId: number, amount: number): 
   const s = clone(state);
   const l = s.listings.find(x => x.id === listingId);
   if (!l || l.yourSale || l.declinedYou || l.parentAssetId) return { s, result: 'gone' };
+  l.playerEngaged = true;   // the brokers saw your number — rivals hear about deals in play
   const res = l.kind === 'offmarket'
     ? (l.reservation ?? l.price)
     : Math.round(l.price * (l.resFrac ?? 0.95) * (1 - (s.reputation - 50) * 0.0006)); // sellers bend a bit for a good name
@@ -1904,6 +1912,7 @@ export function doFeasibility(state: GameState, listingId: number): GameState {
   s.cash -= CONFIG.feasCost;
   logCF(s, 'fees', 'Feasibility study', -CONFIG.feasCost);
   l.feasDone = true;
+  l.playerEngaged = true;   // consultants on site — the whole market knows you're circling
   return s;
 }
 
@@ -3676,8 +3685,11 @@ function tickSaleOffers(s: GameState) {
       + clamp((1 - askRatio) * 0.35, -0.08, 0.12)
       + Math.min(0.08, (s.month - h.forSale.sinceM) * 0.006);
     if (rng(s) < clamp(p, 0.02, 0.32)) {
-      const hi = phase === 'peak' ? 1.18 : 1.02;
-      const amount = roundPrice(val * (0.45 + Math.pow(rng(s), 0.65) * (hi - 0.45)));
+      const hi = phase === 'peak' ? 1.18 : 1.04;
+      // a block on the way up draws real bids — the buyers can see the same cranes you can.
+      // Patient dirt in a rising neighborhood is a strategy, not a donation.
+      const heat = clamp(1 + (s.tiles[h.tileI].dMom ?? 0) * 0.06, 0.96, 1.12);
+      const amount = roundPrice(val * (0.58 + Math.pow(rng(s), 0.65) * (hi - 0.58)) * heat);
       const buyers = [...s.firms.filter(f => f.alive).map(f => f.name), 'A homebuilder', 'A self-storage group', 'A 1031 exchange buyer', 'A church group', 'A car-wash chain'];
       s.saleOffers.push({
         id: s.nextId++, landId: h.id, amount, buyer: rpick(s, buyers),
@@ -4231,6 +4243,7 @@ export function advanceMonth(state: GameState): GameState {
   }
   tickLenderRel(s);
   tickAuctions(s);
+  tickBulkDeal(s);
   tickBts(s);
   // the books keep 24 months; older lines age out
   if (s.cfLog) s.cfLog = s.cfLog.filter(e => e.m > s.month - 25);
@@ -4818,6 +4831,10 @@ function tickListings(s: GameState) {
             logComp(s, { m: s.month, type: l.type!, sf: l.sf ?? 0, price: (l as any).rivalBid, capPct: null, tileI: l.tileI, buyer: (l as any).rivalName ?? 'A rival' });
           }
           pushNews(s, 'warn', `You lost the bidding war: ${(l as any).rivalName} closed at ${fmtMoney((l as any).rivalBid)}. Second place in real estate is a story you tell at bars.`);
+          {
+            const rf = s.firms.find(f2 => f2.name === (l as any).rivalName);
+            if (rf) bumpRivalry(s, rf, null);   // the loss line above already told the story; just keep score
+          }
         } else {
           s.reputation = clamp(s.reputation - 2, 0, 100);
           pushNews(s, 'warn', 'A seller you had under agreement watched you fail to close. That story travels faster than your good ones.');
@@ -5071,6 +5088,113 @@ export function firmNetWorth(s: GameState, f: Firm): number {
   return Math.round(f.cash + firmPortfolioValue(s, f.short) + firmLandBankValue(s, f.short) - f.debt);
 }
 
+// The score you didn't ask anyone to keep: every deal a firm takes off your desk.
+export function bumpRivalry(s: GameState, f: Firm, what: string | null) {
+  const r = (s.rivalry ??= {});
+  const n = (r[f.short] = (r[f.short] ?? 0) + 1);
+  if (what === null) return;   // caller already narrated the loss
+  const sting = n === 1 ? 'First blood.'
+    : n === 2 ? 'That\'s twice now.'
+      : n === 3 ? 'Three times. This is personal.'
+        : `That's ${n} deals they've taken off your desk.`;
+  pushNews(s, 'warn', `⚔ ${f.name} CLOSED on ${what} — the deal you were working. ${sting}`);
+}
+
+// A collapsed firm's endgame: with a real portfolio, the lender's special-situations
+// desk offers YOU the whole book at one price before breaking it up.
+function collapseFirm(s: GameState, f: Firm) {
+  f.alive = false;
+  const held = s.stock.filter(x => x.owner === f.short && !x.listedId && !x.buildLeft)
+    .sort((x, y) => stockValue(s, y) - stockValue(s, x));
+  const totVal = held.reduce((x, b) => x + stockValue(s, b), 0);
+  if (held.length >= 4 && totVal > 4_000_000 && !s.bulkDeal) {
+    const price = roundPrice(totVal * rrange(s, 0.78, 0.86));
+    s.bulkDeal = { short: f.short, name: f.name, stockIds: held.map(b => b.id), price, expiresM: s.month + 2 };
+    pushNews(s, 'event', `${f.name} HAS COLLAPSED — and the lender wants ONE closing, not ${held.length}. The whole book — ${held.length} buildings, ${(held.reduce((x, b) => x + b.sf, 0) / 1000).toFixed(0)}K SF — is yours for ${fmtMoney(price)} (${Math.round(price / totVal * 100)}% of the marks) until ${monthName(s.month + 2)}. After that they break it up. The marketplace has the paper.`);
+    return;
+  }
+  pushNews(s, 'event', `${f.name} HAS COLLAPSED — the books finally told the truth. The lender is clearing its real buildings: the best one goes to the courthouse steps, the rest hit the market priced to leave.`);
+  if (held[0]) startAuction(s, held[0], `${f.name} collapsed`);
+  for (const b of held.slice(1, 3)) {
+    b.occ = Math.min(b.occ, clamp(b.occ * rrange(s, 0.7, 0.9), 0.3, 0.62));
+    listStockBuilding(s, b, { distressed: true, priceMult: rrange(s, 0.66, 0.78), hot: true, expiresMonth: s.month + 4 });
+  }
+}
+
+// The bulk window closes: either a rival takes the whole book, or it breaks up.
+function tickBulkDeal(s: GameState) {
+  const bd = s.bulkDeal;
+  if (!bd || bd.expiresM > s.month) return;
+  s.bulkDeal = undefined;
+  const held = bd.stockIds.map(id => s.stock.find(b => b.id === id)).filter((b): b is StockBuilding => !!b && b.owner === bd.short);
+  const rich = s.firms.filter(f2 => f2.alive && f2.cash > bd.price * 0.3);
+  if (held.length && rich.length && rng(s) < 0.4) {
+    const f2 = rpick(s, rich);
+    f2.cash -= bd.price * 0.35; f2.debt += bd.price * 0.65;
+    for (const b of held) b.owner = f2.short;
+    pushNews(s, 'deal', `${f2.name} took the ${bd.name} book — all ${held.length} buildings, one wire, ${fmtMoney(bd.price)}. You watched the discount walk out the door.`);
+    return;
+  }
+  pushNews(s, 'info', `The ${bd.name} bulk window closed unclaimed — the lender breaks the book up the slow way.`);
+  const sorted = held.sort((x, y) => stockValue(s, y) - stockValue(s, x));
+  if (sorted[0]) startAuction(s, sorted[0], `${bd.name}'s book broke up`);
+  for (const b of sorted.slice(1, 4)) {
+    listStockBuilding(s, b, { distressed: true, priceMult: rrange(s, 0.7, 0.8), hot: true, expiresMonth: s.month + 4 });
+  }
+}
+
+// Buy the whole book: every building in a collapsed firm's portfolio, one closing.
+export function acceptBulkDeal(state: GameState, hardMoney: boolean): { s: GameState; err?: string } {
+  const s = clone(state);
+  const bd = s.bulkDeal;
+  if (!bd) return { s, err: 'The window closed.' };
+  const held = bd.stockIds.map(id => s.stock.find(b => b.id === id)).filter((b): b is StockBuilding => !!b && b.owner === bd.short);
+  if (!held.length) { s.bulkDeal = undefined; return { s, err: 'Nothing left in the book.' }; }
+  const costs = 25_000 + held.length * 5_000;
+  const rate = s.econ.rate + 4.25;
+  const loanAmt = hardMoney ? Math.round(bd.price * 0.55) : 0;
+  const cashDue = bd.price - loanAmt + costs;
+  if (s.cash < cashDue) return { s, err: `The wire is ${fmtMoney(cashDue)}${hardMoney ? ' with the bridge' : ' all cash'} — you're short.` };
+  s.cash -= cashDue;
+  logCF(s, 'buy', `Bulk purchase — the ${bd.name} book (${held.length} buildings)`, -cashDue);
+  const totVal = held.reduce((x, b) => x + stockValue(s, b), 0);
+  for (const b of held) {
+    const share = totVal > 0 ? stockValue(s, b) / totVal : 1 / held.length;
+    const basis = Math.round((bd.price + costs) * share);
+    const loanShare = Math.round(loanAmt * share);
+    const t = s.tiles[b.tileI];
+    const a: Asset = {
+      id: s.nextId++, name: nameFor(s, b.type), tileI: b.tileI, type: b.type,
+      sf: b.sf, acres: Math.round((b.sf / FAR[b.type] / 43560) * 100) / 100,
+      px: b.px, py: b.py, pw: b.pw, ph: b.ph, cells: b.cells ? [...b.cells] : undefined,
+      units: b.units, construction: b.construction,
+      mix: b.type === 'mixed' ? mixOf(s, b) : undefined,
+      quality: b.quality, qCap: constrSpec({ type: b.type, construction: b.construction }).qCap,
+      age: b.age, mode: 'operating',
+      tenants: genRentRoll(s, { tileI: b.tileI, type: b.type, sf: b.sf, units: b.units, quality: b.quality, construction: b.construction, mix: b.type === 'mixed' ? mixOf(s, b) : undefined, id: b.id, cells: b.cells, px: b.px, py: b.py, pw: b.pw, ph: b.ph }, b.occ), occ: 0,
+      rentStance: 0, maint: 'std',
+      loans: loanShare > 0 ? [{ id: s.nextId++, kind: 'acq', balance: loanShare, ratePct: rate, amortYears: 25, ioMonthsLeft: 24, monthlyPmt: monthlyPayment(loanShare, rate, 25), maturityMonth: s.month + 24, lenderId: 'ibx' }] : [],
+      ledger: [{ m: s.month, amt: -(basis - loanShare) }], cumCF: 0,
+      basis, acqMonth: s.month,
+      entryNOI: 0, entryCap: capRatePct(s, t, b.type, b.quality),
+      negCFStreak: 0,
+    };
+    if (isAggregate(a.type)) a.occ = b.occ; else recalcOcc(a);
+    a.entryNOI = assetNOIMonthly(s, a) * 12;
+    a.deprBasis = Math.round(basis * 0.80); a.deprTaken = 0;
+    s.assets.push(a);
+    s.stock = s.stock.filter(x => x.id !== b.id);
+    s.listings = s.listings.filter(l => l.stockId !== b.id);
+  }
+  s.bulkDeal = undefined;
+  s.dealsClosed += held.length;
+  if (loanAmt > 0) bumpLenderRel(s, 'ibx', 3);
+  s.reputation = clamp(s.reputation + 4, 0, 100);
+  logDeal(s, { m: s.month, action: 'buy', name: `The ${bd.name} book`, type: held[0].type, sf: held.reduce((x, b) => x + b.sf, 0), price: bd.price });
+  pushNews(s, 'success', `ONE WIRE, ${held.length} BUILDINGS: you took the entire ${bd.name} book for ${fmtMoney(bd.price)}${hardMoney ? `, 55% on Ironbridge bridge paper at ${rate.toFixed(1)}%` : ', all cash'}. The town will be talking about this one for years.`);
+  return { s };
+}
+
 function tickFirms(s: GameState) {
   if (s.month % 3 !== 0) return;
   tickFirmLand(s);
@@ -5094,15 +5218,7 @@ function tickFirms(s: GameState) {
         pushNews(s, 'deal', `${f.name} is deleveraging — a ${(sell.sf / 1000).toFixed(0)}K SF ${PLABEL[sell.type]} hits the market priced to move. Their problem is your entry point.`, sell.tileI);
       }
       if (f.netWorth < 0) {
-        f.alive = false;
-        pushNews(s, 'event', `${f.name} HAS COLLAPSED — the books finally told the truth. The lender is clearing its real buildings: the best one goes to the courthouse steps, the rest hit the market priced to leave.`);
-        const held2 = s.stock.filter(x => x.owner === f.short && !x.listedId && !x.buildLeft)
-          .sort((x, y) => stockValue(s, y) - stockValue(s, x));
-        if (held2[0]) startAuction(s, held2[0], `${f.name} collapsed`);
-        for (const b of held2.slice(1, 3)) {
-          b.occ = Math.min(b.occ, clamp(b.occ * rrange(s, 0.7, 0.9), 0.3, 0.62));
-          listStockBuilding(s, b, { distressed: true, priceMult: rrange(s, 0.66, 0.78), hot: true, expiresMonth: s.month + 4 });
-        }
+        collapseFirm(s, f);
         continue;
       }
     }
@@ -5120,8 +5236,17 @@ function tickFirms(s: GameState) {
     const scored = s.listings.map(l => ({ l, p: fit(l) })).sort((a, b) => b.p - a.p);
     if (scored.length && rng(s) < scored[0].p) {
       const l = scored[0].l;
+      // a deal YOU are working gets one month of warning before a rival closes on it —
+      // the brokers talk, and now so does the news feed
+      if (l.playerEngaged && !l.rivalEye && !l.agreed) {
+        l.rivalEye = f.short;
+        pushNews(s, 'warn', `⚔ ${f.name} is CIRCLING the ${l.kind === 'land' ? `${l.acres}-acre land` : `${((l.sf ?? 0) / 1000).toFixed(0)}K SF ${PLABEL[l.type!]}`} listing you've been working at block ${blockLabel(s.tiles[l.tileI])}. They close within the month if you don't.`, l.tileI);
+        continue;
+      }
+      if (l.agreed && l.playerEngaged) continue;   // an agreed deal is protected by the rival-bid mechanic, not sniped silently
       if (l.kind === 'land') {
         firmTakesLand(s, f, l);
+        if (l.playerEngaged) bumpRivalry(s, f, `the dirt at block ${blockLabel(s.tiles[l.tileI])}`);
       } else {
         if (f.cash < l.price * 0.35 + 800_000) continue;   // real money: no cash, no closing
         const b = l.stockId ? s.stock.find(x => x.id === l.stockId) : undefined;
@@ -5133,21 +5258,13 @@ function tickFirms(s: GameState) {
         f.cash -= l.price * 0.35;
         f.debt += l.price * 0.65;
         logComp(s, { m: s.month, type: l.type!, sf: l.sf ?? 0, price: l.price, capPct: l.price > 0 ? Math.round((inPlaceNOIYr(s, l) / l.price) * 10000) / 100 : null, tileI: l.tileI, buyer: f.short });
-        pushNews(s, 'deal', `${f.name} acquired a ${((l.sf ?? 0) / 1000).toFixed(0)}K SF ${PLABEL[l.type!]} building for ${fmtMoney(l.price)} (65% financed).`);
+        if (l.playerEngaged) bumpRivalry(s, f, `the ${((l.sf ?? 0) / 1000).toFixed(0)}K SF ${PLABEL[l.type!]} at block ${blockLabel(s.tiles[l.tileI])}`);
+        else pushNews(s, 'deal', `${f.name} acquired a ${((l.sf ?? 0) / 1000).toFixed(0)}K SF ${PLABEL[l.type!]} building for ${fmtMoney(l.price)} (65% financed).`);
       }
       s.listings = s.listings.filter(x => x.id !== l.id);
     }
     if (f.style === 'aggressive' && s.econ.crunchMonthsLeft > 6 && rng(s) < 0.25) {
-      f.alive = false;
-      pushNews(s, 'event', `${f.name} HAS COLLAPSED. Its lenders are liquidating its actual holdings — fire-sale prices, real buildings.`);
-      const held = s.stock.filter(b => b.owner === f.short && !b.listedId && !b.buildLeft)
-        .sort((x, y) => stockValue(s, y) - stockValue(s, x));
-      if (held[0]) startAuction(s, held[0], `${f.name} collapsed`);
-      const toSell = held.length ? held.slice(1, 3) : s.stock.filter(b => !b.listedId && !b.buildLeft).slice(0, 2);
-      for (const b of toSell) {
-        b.occ = Math.min(b.occ, clamp(b.occ * rrange(s, 0.7, 0.9), 0.3, 0.62)); // tenants fled the drama
-        listStockBuilding(s, b, { distressed: true, priceMult: rrange(s, 0.66, 0.78), hot: true, expiresMonth: s.month + 4 });
-      }
+      collapseFirm(s, f);
     }
   }
 }
@@ -5752,7 +5869,7 @@ export function serialize(state: GameState): string { return JSON.stringify(stat
 export function deserialize(json: string): GameState | null {
   try {
     const s = JSON.parse(json);
-    if (s && s.version === 28 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
+    if (s && s.version === 29 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
     return null;
   } catch { return null; }
 }

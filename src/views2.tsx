@@ -160,6 +160,52 @@ export function RentRollTable({ state, tenants, sf, retailOf }: {
 }
 
 // ---------- Deals view (with off-market) ----------
+// ---------- The whole book, one wire ----------
+function BulkDealPanel({ state, setState }: { state: GameState; setState: (s: GameState) => void }) {
+  const [err, setErr] = useState<string | null>(null);
+  const bd = state.bulkDeal;
+  if (!bd) return null;
+  const held = bd.stockIds.map(id => state.stock.find(b => b.id === id)).filter((b): b is E.StockBuilding => !!b && b.owner === bd.short);
+  const totVal = held.reduce((x, b) => x + E.stockValue(state, b), 0);
+  const totSF = held.reduce((x, b) => x + b.sf, 0);
+  const costs = 25_000 + held.length * 5_000;
+  const rate = state.econ.rate + 4.25;
+  const bridge = Math.round(bd.price * 0.55);
+  return (
+    <div className="panel" style={{ marginBottom: 14, borderColor: 'var(--amber)' }}>
+      <h3>The {bd.name} book — one wire buys everything</h3>
+      <div className="dim" style={{ fontSize: 12, marginBottom: 8 }}>
+        The lender's special-situations desk wants ONE closing. {held.length} buildings, {(totSF / 1000).toFixed(0)}K SF,
+        marked at {E.fmtMoney(totVal)} — yours for <b style={{ color: 'var(--ink)' }}>{E.fmtMoney(bd.price)}</b> ({Math.round(bd.price / Math.max(1, totVal) * 100)}% of the marks).
+        Window closes {E.monthName(bd.expiresM)}; a rival may take it whole. As-is, tenants and problems included.
+      </div>
+      <table className="sc" style={{ marginBottom: 8 }}>
+        <thead><tr><th>Building</th><th>SF</th><th>Occ</th><th>Quality</th><th>Marked at</th></tr></thead>
+        <tbody>
+          {held.map(b => (
+            <tr key={b.id}>
+              <td>Block {blockName(state.tiles[b.tileI])} — {E.PLABEL[b.type]}</td>
+              <td className="num">{(b.sf / 1000).toFixed(0)}K</td>
+              <td className="num">{pct(b.occ)}</td>
+              <td className="num">{E.QLABEL[E.qGrade(b.quality)]} · {Math.round(b.quality)}</td>
+              <td className="num">{E.fmtMoney(E.stockValue(state, b))}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {err && <div className="alert-strip red" style={{ marginBottom: 8 }}>{err}</div>}
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+        <button className="btn btn-amber" disabled={state.cash < bd.price + costs}
+          onClick={() => { const r = E.acceptBulkDeal(state, false); if (r.err) setErr(r.err); else setState(r.s); }}>
+          All cash — {E.fmtMoney(bd.price + costs)}</button>
+        <button className="btn btn-amber" disabled={state.cash < bd.price - bridge + costs}
+          title={`Ironbridge fronts 55% (${E.fmtMoney(bridge)}) at ${rate.toFixed(1)}%, 24-month interest-only — refinance building by building once they perform`}
+          onClick={() => { const r = E.acceptBulkDeal(state, true); if (r.err) setErr(r.err); else setState(r.s); }}>
+          Ironbridge bridge — {E.fmtMoney(bd.price - bridge + costs)} cash</button>
+      </div>
+    </div>
+  );
+}
 // ---------- The courthouse steps ----------
 function AuctionPanel({ state, setState }: { state: GameState; setState: (s: GameState) => void }) {
   const [bids, setBids] = useState<Record<number, number>>({});
@@ -269,6 +315,7 @@ export function DealsView2({ state, setState, openDeal }: {
   const cooldownLeft = E.CONFIG.scoutCooldown - (state.month - state.lastScoutMonth);
   return (
     <div>
+      <BulkDealPanel state={state} setState={setState} />
       <AuctionPanel state={state} setState={setState} />
       <BtsPanel state={state} setState={setState} />
       <div className="panel" style={{ marginBottom: 14 }}>
@@ -404,6 +451,7 @@ function DealIndex({ state, listings, openDeal }: {
                 {land ? <span className="chip chip-land">Land</span> : <span className="chip chip-type">{E.PLABEL[l.type!]}</span>}
                 {l.distressed && <span className="chip chip-distress" style={{ marginLeft: 4 }}>D</span>}
                 {l.hot && <span className="chip chip-hot" style={{ marginLeft: 4 }}>Hot</span>}
+                {l.rivalEye && <span className="chip chip-distress" style={{ marginLeft: 4 }} title={`${state.firms.find(f => f.short === l.rivalEye)?.name ?? 'A rival'} is circling — they close within the month`}>⚔</span>}
               </td>
               <td className="num dim">{blockName(t)} <span className="faint" style={{ fontSize: 9 }}>▸ map</span></td>
               <td className="num dim">{E.zoneCode(t.zone)}</td>
@@ -518,6 +566,11 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
         )}
         {listing.declinedYou && (
           <div className="alert-strip red" style={{ marginBottom: 10 }}>This seller won't deal with you after your last offer. Brokers talk.</div>
+        )}
+        {listing.rivalEye && !listing.agreed && (
+          <div className="alert-strip red" style={{ marginBottom: 10 }}>
+            ⚔ <b>{state.firms.find(f => f.short === listing.rivalEye)?.name ?? 'A rival'}</b> is circling this one — they close within the month if you don't.
+          </div>
         )}
         {!listing.agreed && !listing.declinedYou && (
           <div className="memo" style={{ borderLeftColor: 'var(--amber)' }}>
@@ -673,6 +726,11 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
         {(listing as any).omLead ? ' · this owner wasn\u2019t selling until you called' : ''}
       </div>
       {listing.declinedYou && <div className="alert-strip red" style={{ marginBottom: 10 }}>This landowner won't deal with you after your last offer.</div>}
+      {listing.rivalEye && !listing.agreed && (
+        <div className="alert-strip red" style={{ marginBottom: 10 }}>
+          ⚔ <b>{state.firms.find(f => f.short === listing.rivalEye)?.name ?? 'A rival'}</b> is circling this dirt — they close within the month if you don't.
+        </div>
+      )}
       {!listing.agreed && !listing.declinedYou && !listing.parentAssetId && (
         <div className="memo" style={{ borderLeftColor: 'var(--amber)' }}>
           <div className="memo-row"><span className="lbl">Asking {E.fmtMoney(listing.price)} — or open with your own number</span></div>

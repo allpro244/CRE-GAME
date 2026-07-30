@@ -4688,8 +4688,8 @@ const PHASE_TARGET: Record<Phase, { rate: number; infl: number; emp: number; con
 
 // Which way the demographic tide pulls: population growth points, and a smaller
 // business-demand term (a metro that's filling up needs offices and warehouses too).
-const DEMO_POP: Record<string, number> = { boom: 0.9, steady: 0.1, stagnation: -0.45, decline: -1.05 };
-const DEMO_BIZ: Record<string, number> = { boom: 0.010, steady: 0.002, stagnation: -0.006, decline: -0.014 };
+const DEMO_POP: Record<string, number> = { boom: 0.9, steady: 0, stagnation: -0.5, decline: -1.05 };
+const DEMO_BIZ: Record<string, number> = { boom: 0.010, steady: 0, stagnation: -0.007, decline: -0.014 };
 const DEMO_NEWS: Record<string, string> = {
   boom: 'THE BOOM DECADES BEGIN: the metro is drawing people faster than it can house them. Every unit leases, every corner retail pencils — until everyone builds at once.',
   steady: 'The demographic tide has settled: steady in-migration, normal absorption. The market rewards discipline again, not just presence.',

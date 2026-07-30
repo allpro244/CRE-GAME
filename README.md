@@ -74,7 +74,30 @@ make — you can simulate 30 years in milliseconds before touching the UI.
 - `GameState.stock` — ~250 standing buildings at generation (the city is young and grows),
   every one real and owned. Listings are drawn *from* stock.
 - `GameState.assets` — what you own. `GameState.land` — banked vacant parcels.
-- Save format is versioned (`version: 9`); `deserialize()` rejects mismatches rather than crashing.
+- Save format is versioned (`version: 32`); `deserialize()` rejects mismatches rather than crashing.
+
+### Century systems
+
+The simulation is calibrated for playthroughs up to ~100 years (city population starts
+around 300K). Six long-run mechanisms keep a late-game city alive instead of frozen:
+
+- **Feasibility gravity** — sector rents can't diverge from replacement cost forever; the
+  rent-index bounds scale with the cost index, and a gravity term (with per-sector anchors
+  that phase in as costs drift) pulls each sector toward feasibility, so development still
+  pencils in year 90 and no index pins to a clamp.
+- **Era rotation** — the secular sector tilt re-rolls every 15–25 years and blends in over
+  three years, with news beats at the turn and at arrival. No sector stays the darling for
+  a whole century.
+- **Demographic tides** — multi-decade regimes (boom / steady / stagnation / decline) move
+  population growth, business demand, and each block's resting population anchor.
+- **Renewal** — firms scrape underbuilt vintage stock when developer's residual math clears
+  a margin and rebuild to current zoning; private owners renovate when the market pays them
+  to (strong blocks stay current, weak blocks rot into a genuine class strata).
+- **Decline with teeth** — concentrated decayed stock drags its neighborhood (`rot`), and
+  major employers can leave, scarring a district's employment and baseD.
+- **Fresh capital** — entrant firms replace collapsed rivals (sized to the era's cost
+  index), and the transit authority draws a new corridor each generation, upzoning as it
+  goes.
 
 ### Major systems
 

@@ -4945,21 +4945,26 @@ function tickTiles(s: GameState) {
   // blight: dark storefronts and empty floors drag a block — vacancy past a healthy
   // frictional level pulls desirability down until somebody fills or razes it
   const W2 = CONFIG.GRID_W, H2 = CONFIG.GRID_H, n2 = s.tiles.length;
-  const totB = new Array(n2).fill(0), occB = new Array(n2).fill(0);
-  for (const b of s.stock) if (!b.buildLeft) { totB[b.tileI] += b.sf; occB[b.tileI] += b.sf * b.occ; }
-  for (const a of s.assets) if (a.mode !== 'construction') { totB[a.tileI] += a.sf; occB[a.tileI] += a.sf * a.occ; }
+  const totB = new Array(n2).fill(0), occB = new Array(n2).fill(0), qB = new Array(n2).fill(0);
+  for (const b of s.stock) if (!b.buildLeft) { totB[b.tileI] += b.sf; occB[b.tileI] += b.sf * b.occ; qB[b.tileI] += b.sf * b.quality; }
+  for (const a of s.assets) if (a.mode !== 'construction') { totB[a.tileI] += a.sf; occB[a.tileI] += a.sf * a.occ; qB[a.tileI] += a.sf * a.quality; }
   for (const t of s.tiles) {
     if (t.water) continue;
-    let totL = totB[t.i], occL = occB[t.i];
+    let totL = totB[t.i], occL = occB[t.i], qL = qB[t.i];
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
       const x = t.x + dx, y = t.y + dy;
-      if (x >= 0 && x < W2 && y >= 0 && y < H2) { const j = y * W2 + x; totL += totB[j] * 0.35; occL += occB[j] * 0.35; }
+      if (x >= 0 && x < W2 && y >= 0 && y < H2) { const j = y * W2 + x; totL += totB[j] * 0.35; occL += occB[j] * 0.35; qL += qB[j] * 0.35; }
     }
     const vacFrac = totL > 0 ? (totL - occL) / (totL + 30_000) : 0;
     const blight = -9 * Math.max(0, vacFrac - 0.06);
+    // rot: a concentration of decayed stock drags the block below its fundamentals —
+    // decline has teeth, and it feeds on itself until somebody renovates or the
+    // wreckers arrive. Weighted by built mass so one shack can't sink a block.
+    const qLocal = totL > 0 ? qL / totL : 75;
+    const rot = -7 * Math.max(0, (52 - qLocal) / 52) * Math.min(1, totL / 60_000);
     const prev = t.D;
     // momentum: a rising block overshoots its fundamentals a little; a falling one undershoots
-    const target = clamp(t.baseD + mix[t.i] + blight + (t.dMom ?? 0) * 2.2, 5, 98);
+    const target = clamp(t.baseD + mix[t.i] + blight + rot + (t.dMom ?? 0) * 2.2, 5, 98);
     t.D = clamp(t.D + (target - t.D) * 0.10, 5, 98);
     t.dMom = Math.round(clamp((t.dMom ?? 0) * 0.72 + (t.D - prev) * 0.28, -2.2, 2.2) * 1000) / 1000;
     const popTarget = clamp(t.popBase + RES_K * resSrc[t.i], 5, 100);
@@ -5078,9 +5083,10 @@ function tickEvents(s: GameState) {
     }
   }
   if (rng(s) < 0.16) {
-    const pool = ['transit', 'employer', 'tariff', 'ecom', 'rateshock', 'insSpike', 'capInflow', 'wfh'];
+    const pool = ['transit', 'employer', 'employerExit', 'tariff', 'ecom', 'rateshock', 'insSpike', 'capInflow', 'wfh'];
     const kind = rpick(s, pool);
     if (kind === 'transit' && s.effects.some(e => e.kind === 'transit')) return;
+    if (kind === 'employerExit' && (s.month < 60 || s.effects.some(e => e.kind === 'employerExit'))) return;
     if (kind === 'tariff' && s.econ.tariffMonthsLeft > 0) return;
     // structural waves are once-a-decade episodes, not recurring weather — a wave that
     // just ended can't immediately re-form
@@ -5093,6 +5099,7 @@ function tickEvents(s: GameState) {
     const rumors: Record<string, string> = {
       transit: 'RUMOR: The transit authority is quietly surveying a new rapid line out of the core. Land along the route would re-price.',
       employer: 'RUMOR: A large employer is scouting Meridian City for a regional campus. Wherever it lands, office demand follows.',
+      employerExit: 'RUMOR: One of the city\'s largest employers is said to be shopping other metros. The brokers who lease to them are pretending not to worry.',
       tariff: 'RUMOR: Trade negotiators are stuck. Contractors are warning about material costs if tariffs land.',
       ecom: 'RUMOR: Retailers report weakening foot traffic as online share grows. Warehouse brokers are smiling.',
       rateshock: 'RUMOR: The central bank is signaling a sharp policy move. Lock rates if you believe them.',
@@ -5102,6 +5109,11 @@ function tickEvents(s: GameState) {
     };
     if (kind === 'employer') {
       const cands = s.tiles.filter(t => !t.water && t.D > 30 && t.D < 70);
+      payload = rpick(s, cands).i;
+    }
+    if (kind === 'employerExit') {
+      const cands = s.tiles.filter(t => !t.water && t.emp > 55);
+      if (!cands.length) return;
       payload = rpick(s, cands).i;
     }
     pushNews(s, 'rumor', rumors[kind]);
@@ -5129,6 +5141,12 @@ function fireEvent(s: GameState, kind: string, payload?: number) {
     const area = s.tiles.filter(x => !x.water && Math.abs(x.x - t.x) <= 1 && Math.abs(x.y - t.y) <= 1).map(x => x.i);
     s.effects.push({ kind: 'employer', monthsLeft: 10, tiles: area, empPerMonth: 1.4, dPerMonth: 0.4 });
     pushNews(s, 'event', 'MAJOR EMPLOYER ARRIVES: a regional campus is coming to the city grid — office and mixed-use demand near the site will strengthen.');
+  } else if (kind === 'employerExit') {
+    const ti = payload ?? rpick(s, s.tiles.filter(t => !t.water && t.emp > 40)).i;
+    const t = s.tiles[ti];
+    const area = s.tiles.filter(x => !x.water && Math.abs(x.x - t.x) <= 1 && Math.abs(x.y - t.y) <= 1).map(x => x.i);
+    s.effects.push({ kind: 'employerExit', monthsLeft: 10, tiles: area, empPerMonth: -1.5, dPerMonth: -0.45 });
+    pushNews(s, 'event', `MAJOR EMPLOYER DEPARTS: the campus near block ${blockLabel(t)} goes dark over the next year. The lunch crowd disappears first, then the leases — the blocks around it will wear this for a decade.`, ti);
   } else if (kind === 'tariff') {
     s.econ.tariffMonthsLeft = 18;
     pushNews(s, 'event', 'MATERIAL TARIFFS: hard construction costs up ~8% for the next 18 months. Projects already underway feel it too.');

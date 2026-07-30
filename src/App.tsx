@@ -166,6 +166,9 @@ function Game({ state, setState, toMenu }: {
     else if (fresh.some(n2 => n2.kind === 'success' || n2.kind === 'deal')) SFX.close();
     else if (fresh.some(n2 => n2.kind === 'warn')) SFX.bad();
     else if (fresh.some(n2 => n2.kind === 'event')) SFX.event();
+    // a seller ending the conversation deserves a modal, not a line lost in the feed
+    const walk = fresh.find(n2 => /won't deal with you|hung up for good|took your .* offer as an insult|isn't selling\. Not at your number/.test(n2.text));
+    if (walk && !notice) setNotice(walk.text);
   }, [state.news]); // eslint-disable-line
 
   // the clock stops when a tenant shows interest — a 2-month LOI must never expire
@@ -889,6 +892,7 @@ function SellModal({ state, setState, asset, close, variant = 'dialog' }: {
   state: GameState; setState: (s: GameState) => void; asset: Asset; close: () => void; variant?: 'dialog' | 'drawer';
 }) {
   const val = E.assetValue(state, asset);
+  const band = E.appraisalBand(state, asset);
   const [ask, setAsk] = useState(() => Math.round(val / 10000) * 10000);
   const [err, setErr] = useState<string | null>(null);
   const debt = E.assetTotalDebt(state, asset);
@@ -897,7 +901,9 @@ function SellModal({ state, setState, asset, close, variant = 'dialog' }: {
       <h2>List {asset.name} for sale</h2>
       <div className="sub">Selling takes time. Set an ask, then field offers as they come — anywhere from lowballs to full price, depending on the market, your ask, and your name.</div>
       <div className="memo">
-        <div className="memo-row"><span className="lbl">Your appraised value</span><span className="num">{E.fmtMoney(val, false)}</span></div>
+        <div className="memo-row"><span className="lbl">Defensible value <Hint text="Appraisal is an opinion, not a fact. This is the range a room of appraisers would sign — tight above 80% leased with fresh comps, wide when the building is empty or the market is frozen. Your mark is the midpoint; where it actually clears is the game." /></span>
+          <span className="num">{E.fmtMoney(band.lo, false)} – {E.fmtMoney(band.hi, false)} <span className="faint">(±{band.halfPts.toFixed(2)} cap pts)</span></span></div>
+        <div className="memo-row"><span className="lbl">Your mark (midpoint)</span><span className="num">{E.fmtMoney(val, false)}</span></div>
         <div className="memo-row"><span className="lbl">Debt to clear at closing</span><span className="num">{E.fmtMoney(debt)}</span></div>
         <div className="memo-row"><span className="lbl">Sale costs (~{Math.round(E.CONFIG.saleCostPct * 100)}%)</span><span className="num">~{E.fmtMoney(val * E.CONFIG.saleCostPct)}</span></div>
       </div>
@@ -905,16 +911,20 @@ function SellModal({ state, setState, asset, close, variant = 'dialog' }: {
         const noiYr = E.assetNOIMonthly(state, asset) * 12;
         const capAtAsk = ask > 0 ? (noiYr / ask) * 100 : 0;
         const tx = E.saleTaxes(state, asset, ask);
+        const lp = E.lpClaim(state, asset);
+        const walkAway = ask - ask * E.CONFIG.saleCostPct - debt - tx.tax - lp;
         return (
           <div className="memo" style={{ borderLeftColor: 'var(--blue)' }}>
             <div className="memo-row"><span className="lbl">Implied cap rate at your ask <Hint text="In-place NOI over your asking price — what a buyer sees first. Weak-credit rent rolls trade wider; your appraisal already reflects yours." /></span>
               <span className={'num ' + (capAtAsk > 0 ? '' : 'dim')}>{capAtAsk > 0 ? capAtAsk.toFixed(2) + '%' : '—'}</span></div>
             <div className="memo-row"><span className="lbl">Estimated taxes if sold at ask <Hint text="Capital gains plus depreciation recapture. A 1031 election (Debt tab) can defer it — with a clock." /></span>
               <span className="num">{E.fmtMoney(tx.tax)}</span></div>
+            <div className="memo-row total"><span className="lbl">Walk-away money at your ask <Hint text="Ask, minus sale costs, debt payoff, taxes, and any JV partner's claim. The number that actually hits your account." /></span>
+              <span className={'num ' + (walkAway >= 0 ? 'pos' : 'neg')}>{E.fmtMoney(walkAway)}</span></div>
           </div>
         );
       })()}
-      <label className="f">Asking price — {E.fmtMoney(ask)} <span className="faint">({Math.round((ask / Math.max(1, val)) * 100)}% of appraisal)</span>
+      <label className="f">Asking price — {E.fmtMoney(ask)} <span className="faint">({Math.round((ask / Math.max(1, val)) * 100)}% of your mark{ask > band.hi ? ' — above anything an appraiser would sign' : ask < band.lo ? ' — below the whole band; it will move fast' : ''})</span>
         <input type="range" min={Math.round(val * 0.7 / 10000) * 10000} max={Math.round(val * 1.35 / 10000) * 10000} step={10000}
           value={ask} onChange={e => setAsk(Number(e.target.value))} />
       </label>

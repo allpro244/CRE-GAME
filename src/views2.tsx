@@ -585,6 +585,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
               <button className="btn btn-sm" onClick={() => setOfferAmt(v => v + 10_000)}>+10K</button>
               <button className="btn btn-sm" onClick={() => setOfferAmt(v => v + 100_000)}>+100K</button>
               <button className="btn btn-amber" onClick={() => {
+                if (offerAmt < 10_000) { setOmOk(false); setOmMsg('Offers start at $10K — the broker won\'t dial for less.'); return; }
                 const r = E.makeOffer(state, listing.id, offerAmt);
                 setState(r.s);
                 if (r.result === 'accepted') { setOmOk(true); setOmMsg(`✓ SELLER AGREED at ${E.fmtMoney(offerAmt)} — paper it before they change their mind.`); }
@@ -618,7 +619,14 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
             <div className="memo-row"><span className="lbl">Stabilized NOI (at ~{pct(pf.tOcc)}, market rents)</span><span className="num">{E.fmtMoney(pf.noiStab)}/yr</span></div>
             <div className="memo-row"><span className="lbl">Market cap rate for this block/grade</span><span className="num">{pf.cap.toFixed(2)}%</span></div>
             <div className="memo-row"><span className="lbl">Weighted avg lease term</span><span className="num">{pf.walt.toFixed(1)} yrs</span></div>
-            {canBuy && <div className="memo-row total"><span className="lbl">Stabilized value estimate</span><span className={'num ' + (pf.upside > 0 ? 'pos' : 'neg')}>{E.fmtMoney(pf.stabValue)} ({pf.upside >= 0 ? '+' : ''}{E.fmtMoney(pf.upside)} vs. price)</span></div>}
+            {canBuy && (() => {
+              const half = E.appraisalHalfPts(state, listing.type!, listing.quality ?? 75, pf.tOcc);
+              const sLo = pf.stabValue * pf.cap / (pf.cap + half), sHi = pf.stabValue * pf.cap / Math.max(3, pf.cap - half);
+              return (
+                <div className="memo-row total"><span className="lbl">Stabilized value — a range, not a fact <Hint text="What a room of appraisers would sign once stabilized. Appraisals scatter — the spread is where deals are found and lost. Tightest above 80% leased with fresh comps in an open market." /></span>
+                  <span className={'num ' + (pf.upside > 0 ? 'pos' : 'neg')}>{E.fmtMoney(sLo)} – {E.fmtMoney(sHi)} <span className="faint">(mid {pf.upside >= 0 ? '+' : ''}{E.fmtMoney(pf.upside)} vs. price)</span></span></div>
+              );
+            })()}
           </>) : (
             <div className="memo-row"><span className="lbl">Stabilized value, upside & full rent roll</span>
               <button className="btn btn-sm" onClick={runFeas}>Run feasibility — {E.fmtMoney(E.CONFIG.feasCost)}</button></div>
@@ -638,8 +646,8 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
             <input type="range" min={Math.ceil((1 - ltvMax) * 100)} max={100} value={Math.round(dpEff * 100)}
               onChange={e => setDownPct(Number(e.target.value) / 100)} />
           </label>
-          <div className="memo" style={{ borderLeftColor: 'var(--blue)' }}>
-            <div className="eyebrow" style={{ fontSize: 9, margin: '2px 0 4px' }}>Term sheets — you called five desks</div>
+          <div className="memo" style={{ borderLeftColor: 'var(--blue)', opacity: dpEff >= 1 ? 0.55 : 1 }}>
+            <div className="eyebrow" style={{ fontSize: 9, margin: '2px 0 4px' }}>{dpEff >= 1 ? 'All cash — no desk involved at closing' : 'Term sheets — you called five desks'}</div>
             {quotes.map(q2 => {
               const ld = E.LENDERS.find(x => x.id === q2.lenderId)!;
               if (!q2.ok) {
@@ -655,7 +663,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
               const rel = state.lenderRel?.[q2.lenderId] ?? 20;
               return (
                 <label key={q2.lenderId} style={{ display: 'flex', gap: 8, alignItems: 'baseline', padding: '2px 0', cursor: 'pointer', fontSize: 12 }}>
-                  <input type="radio" name="acqloan" checked={selQuote?.lenderId === q2.lenderId} onChange={() => setLenderPick(q2.lenderId)} />
+                  <input type="radio" name="acqloan" checked={dpEff < 1 && selQuote?.lenderId === q2.lenderId} disabled={dpEff >= 1} onChange={() => setLenderPick(q2.lenderId)} />
                   <span style={{ minWidth: 128 }}>{ld.short}{rel >= 60 ? ' ★' : ''}</span>
                   <span className="num">{q2.ratePct.toFixed(2)}%</span>
                   <span className="num dim">{q2.amortYears}-yr{q2.ioMonths > 0 ? ` · ${q2.ioMonths}mo IO` : ''} · ≤{Math.round(q2.maxLTV * 100)}%{q2.minDSCR !== undefined ? ` · ${q2.minDSCR.toFixed(2)}× floor` : ''}</span>
@@ -744,7 +752,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
             <button className="btn btn-sm" onClick={() => setOfferAmt(v => (v || listing.price) + 10_000)}>+10K</button>
             <button className="btn btn-sm" onClick={() => setOfferAmt(v => (v || listing.price) + 100_000)}>+100K</button>
             <button className="btn btn-amber" onClick={() => {
-              const amt = offerAmt || Math.round(listing.price * 0.94 / 10000) * 10000;
+              const amt = Math.max(10_000, offerAmt || Math.round(listing.price * 0.94 / 10000) * 10000);
               const r = E.makeOffer(state, listing.id, amt);
               if (r.result === 'accepted') { setOmOk(true); setOmMsg(`✓ SELLER AGREED at ${E.fmtMoney(amt)} — go close it.`); }
               setState(r.s);
@@ -1405,7 +1413,15 @@ export function AssetCard({ state, setState, asset: a, onSell, onRefi, onLOI, op
             <div className="occ-bar"><div className="occ-fill" style={{ width: pct(a.occ), background: a.occ < 0.6 ? 'var(--red)' : a.occ < 0.8 ? 'var(--amber)' : 'var(--green)' }} /></div>
           </div>
           <div className="metric-row">
-            <div className="metric"><div className="eyebrow">Value</div><div className="v num">{E.fmtMoney(val)}</div></div>
+            {(() => {
+              const band = E.appraisalBand(state, a);
+              return (
+                <div className="metric" title={`Appraisal is an opinion: defensible values run ${E.fmtMoney(band.lo)} – ${E.fmtMoney(band.hi)} (±${band.halfPts.toFixed(2)} cap pts around ${band.capMid.toFixed(2)}%). The band tightens above 80% leased, with fresh comps, in an open market. Your mark is the midpoint; a quick sale prices in the lower half.`}>
+                  <div className="eyebrow">Value (opinion)</div><div className="v num">{E.fmtMoney(val)}</div>
+                  <div className="faint num" style={{ fontSize: 9.5 }}>{E.fmtMoney(band.lo)}–{E.fmtMoney(band.hi)}</div>
+                </div>
+              );
+            })()}
             <div className="metric"><div className="eyebrow">Debt{inFac ? ' (incl. share)' : ''}</div><div className="v num">{E.fmtMoney(debt)}</div></div>
             {a.loans.length > 0 && <div className="metric"><div className="eyebrow">Loan terms</div><div className="v num" style={{ fontSize: 12 }}>{a.loans[0].ratePct.toFixed(2)}% <span className="faint">· due {E.monthName(a.loans[0].maturityMonth)}</span></div></div>}
             <div className="metric"><div className="eyebrow">{a.jv ? 'Your equity' : 'Equity'}</div><div className={'v num ' + (val - debt - E.lpClaim(state, a) < 0 ? 'neg' : '')}>{E.fmtMoney(val - debt - E.lpClaim(state, a))}</div></div>
@@ -1761,7 +1777,8 @@ export function RefiModal({ state, setState, asset, close, variant = 'dialog' }:
       <h2>Refinance {asset.name}</h2>
       <div className="sub">Pick a desk, then your proceeds and amortization. The new loan must clear your existing debt and carry 1.20× coverage.</div>
       <div className="memo">
-        <div className="memo-row"><span className="lbl">Appraised value</span><span className="num">{E.fmtMoney(lim.val, false)}</span></div>
+        <div className="memo-row"><span className="lbl">Bank appraisal <Hint text="The bank hires the conservative appraiser: proceeds size off the LOW end of the defensible range, not your mark. Stabilize past 80% leased and the band — and the loan — tightens up." /></span>
+          <span className="num">{E.fmtMoney(lim.val, false)} <span className="faint">(your mark {E.fmtMoney(lim.band?.mid ?? lim.val, false)})</span></span></div>
         <div className="memo-row"><span className="lbl">Existing debt to clear</span><span className="num">{E.fmtMoney(lim.payoff)}</span></div>
       </div>
       <div className="memo" style={{ borderLeftColor: 'var(--blue)' }}>
@@ -2060,6 +2077,26 @@ export function BooksView({ state, setState }: { state: GameState; setState: (s:
   const gaMo = E.STAFF.reduce((s2, st) => s2 + (state.staff?.[st.id] ? Math.round(st.salary * state.econ.costIdx) : 0), 0);
   return (
     <div>
+      <div className="panel" style={{ marginBottom: 14, borderColor: 'var(--amber-dim)' }}>
+        <h3>The team <Hint text="Salaries bill monthly whatever the market is doing — that's what G&A means. Each hire moves a real lever in the engine, not a vibe." /></h3>
+        <div className="dim" style={{ fontSize: 12, marginBottom: 8 }}>
+          Payroll runs {E.fmtMoney(gaMo)}/mo{gaMo > 0 ? ' — it shows up under G&A in the statement below' : ' — right now it’s just you and the spreadsheet'}.
+          {(state.assets?.length ?? 0) > 7 && !state.staff?.pm ? <span className="neg"> You self-manage {state.assets.length} buildings: opex runs 5% heavy until you hire a property manager.</span> : null}
+        </div>
+        {E.STAFF.map(st => {
+          const hired = !!state.staff?.[st.id];
+          return (
+            <div key={st.id} className="memo-row" style={{ gap: 10, borderBottom: '1px solid var(--line2)', alignItems: 'center', padding: '6px 0' }}>
+              <span className="lbl" style={{ minWidth: 190, fontSize: 13 }}><b style={{ color: hired ? 'var(--green)' : 'var(--ink)' }}>{hired ? '✓ ' : ''}{st.title}</b></span>
+              <span className="num" style={{ minWidth: 90, color: hired ? 'var(--amber)' : 'var(--dim)' }}>{E.fmtMoney(Math.round(st.salary * state.econ.costIdx))}/mo</span>
+              <span className="faint" style={{ flex: 1, fontSize: 11 }}>{st.desc}</span>
+              <button className={'btn btn-sm' + (hired ? '' : ' btn-amber')} onClick={() => setState(E.setStaffHired(state, st.id, !hired))}>
+                {hired ? 'Let go' : 'Hire'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
       <div className="panel" style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
           <h3 style={{ flex: 1 }}>Income statement — {E.monthName(m)}{mOff === 0 ? ' (this month so far)' : ''}</h3>
@@ -2107,26 +2144,6 @@ export function BooksView({ state, setState }: { state: GameState; setState: (s:
           </tbody>
         </table>
         <div className="faint" style={{ fontSize: 10.5, marginTop: 6 }}>Click a row to open that month. The books keep 24 months; older lines age out.</div>
-      </div>
-      <div className="panel">
-        <h3>The team <Hint text="Salaries bill monthly whatever the market is doing — that's what G&A means. Each hire moves a real lever in the engine, not a vibe." /></h3>
-        <div className="dim" style={{ fontSize: 12, marginBottom: 8 }}>
-          Payroll runs {E.fmtMoney(gaMo)}/mo{gaMo > 0 ? ' — it shows up under G&A above' : ' — it’s just you and the spreadsheet'}.
-          {(state.assets?.length ?? 0) > 7 && !state.staff?.pm ? <span className="neg"> You self-manage {state.assets.length} buildings: opex runs 5% heavy until you hire a property manager.</span> : null}
-        </div>
-        {E.STAFF.map(st => {
-          const hired = !!state.staff?.[st.id];
-          return (
-            <div key={st.id} className="memo-row" style={{ gap: 10, borderBottom: '1px solid var(--line2)', alignItems: 'center' }}>
-              <span className="lbl" style={{ minWidth: 190 }}><b style={{ color: hired ? 'var(--green)' : 'var(--ink)' }}>{hired ? '✓ ' : ''}{st.title}</b></span>
-              <span className="num dim" style={{ minWidth: 90 }}>{E.fmtMoney(Math.round(st.salary * state.econ.costIdx))}/mo</span>
-              <span className="faint" style={{ flex: 1, fontSize: 11 }}>{st.desc}</span>
-              <button className={'btn btn-sm' + (hired ? '' : ' btn-amber')} onClick={() => setState(E.setStaffHired(state, st.id, !hired))}>
-                {hired ? 'Let go' : 'Hire'}
-              </button>
-            </div>
-          );
-        })}
       </div>
     </div>
   );

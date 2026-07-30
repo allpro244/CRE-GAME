@@ -51,9 +51,9 @@ export const CONSTR: Record<PType, ConstrSpec[]> = {
     { id: 'tin', label: 'Tin / light steel', cost: 62, q: 54, qCap: 68 },
   ],
   retail: [
-    { id: 'center', label: 'Shopping center', cost: 204, q: 105, qCap: 135, minUnits: 6, minCells: 3 },
-    { id: 'strip', label: 'Retail strip', cost: 137, q: 57, qCap: 83, minUnits: 3 },
-    { id: 'pad', label: 'Pad site (single tenant)', cost: 230, q: 111, qCap: 138, fixedUnits: 1, maxSF: 8000, rentBonus: 0.25 },
+    { id: 'center', label: 'Shopping center', cost: 262, q: 105, qCap: 135, minUnits: 6, minCells: 3 },
+    { id: 'strip', label: 'Retail strip', cost: 176, q: 57, qCap: 83, minUnits: 3 },
+    { id: 'pad', label: 'Pad site (single tenant)', cost: 295, q: 111, qCap: 138, fixedUnits: 1, maxSF: 8000, rentBonus: 0.25 },
   ],
   office: [
     { id: 'concrete', label: 'Concrete & steel — Class A', cost: 284, q: 126, qCap: 142 },
@@ -100,8 +100,13 @@ export const CONFIG = {
   START_CASH: 600_000,
   baseRent: { office: 30.5, retail: 20.0, industrial: 8.2, mixed: 31, multifamily: 21.5 } as Record<PType, number>,
   hardCost: { office: 215, retail: 175, industrial: 92, mixed: 245, multifamily: 195 } as Record<PType, number>, // legacy: renovation basis
-  baseCap: { office: 7.3, retail: 7.55, industrial: 7.1, mixed: 7.0, multifamily: 6.5 } as Record<PType, number>,
-  absorbBase: { office: 0.10, retail: 0.15, industrial: 0.22, mixed: 0.13, multifamily: 0.20 } as Record<PType, number>,
+  // retail trades TIGHT: NNN margins, percentage rent, and the strongest demand story
+  // in the city — buyers bid its yield away. It was priced at the widest cap AND the
+  // best economics, which made every strip center a money printer.
+  baseCap: { office: 7.3, retail: 6.35, industrial: 7.1, mixed: 7.0, multifamily: 6.5 } as Record<PType, number>,
+  // retail absorption was so fast that owned retail never experienced a vacant month —
+  // riskless carry. Finding the next shopkeeper takes real time now.
+  absorbBase: { office: 0.10, retail: 0.11, industrial: 0.22, mixed: 0.13, multifamily: 0.20 } as Record<PType, number>,
   // itemized expense ratios (share of potential rent unless noted)
   expense: {
     maint: { office: 0.023, retail: 0.038, industrial: 0.05, mixed: 0.06, multifamily: 0.13 } as Record<PType, number>, // industrial applies to VACANT space only; retail tenants carry most repairs under NNN
@@ -177,8 +182,10 @@ export interface Economy {
   rtoMonthsLeft?: number;   // the year after a remote-work wave breaks: office demand rebounds
   wfhLastM?: number; ecomLastM?: number;   // waves are episodes, not weather — cooldowns between them
   // this game's monetary personality, rolled once from the seed: some careers are
-  // cheap-money eras, some are tight-money grinds, some cycle fast and violent
-  era: { rateBias: number; inflBias: number; vol: number; tempo: number };
+  // cheap-money eras, some are tight-money grinds, some cycle fast and violent.
+  // sectorTilt is the era's secular story — which asset classes this generation
+  // favors and which it grinds down. No two careers agree on the best sector.
+  era: { rateBias: number; inflBias: number; vol: number; tempo: number; sectorTilt?: Partial<Record<PType, number>> };
   insSpikeMonthsLeft?: number; capInflowMonthsLeft?: number; wfhMonthsLeft?: number;
   constrCycle?: number;
 }
@@ -458,10 +465,10 @@ export const CF_LABEL: Record<CFCat, string> = {
 
 export type StaffId = 'analyst' | 'pm' | 'leasing' | 'cm';
 export const STAFF: { id: StaffId; title: string; salary: number; desc: string }[] = [
-  { id: 'analyst', title: 'Acquisitions analyst', salary: 12_000, desc: 'Two more owner calls a month, and the ones you make find the motivated sellers faster.' },
-  { id: 'pm', title: 'Property manager', salary: 15_000, desc: 'Portfolio opex −6%, buildings age slower. Past ~7 assets, self-managing costs you 5% extra — somebody has to answer the 2am calls. Pays for itself on real portfolios, not three small retail pads.' },
-  { id: 'leasing', title: 'Leasing director', salary: 9_000, desc: 'Tours book faster: +25% leasing velocity, tenants come back to the table more often. Worth most while you have empty floors.' },
-  { id: 'cm', title: 'Construction manager', salary: 16_000, desc: 'Site problems caught early: construction surprises 30% rarer, schedules run a touch faster.' },
+  { id: 'analyst', title: 'Acquisitions analyst', salary: 6_000, desc: 'Two more owner calls a month, and the ones you make find the motivated sellers faster.' },
+  { id: 'pm', title: 'Property manager', salary: 8_000, desc: 'Portfolio opex −6%, buildings age slower. Past ~7 assets, self-managing costs you 5% extra — somebody has to answer the 2am calls.' },
+  { id: 'leasing', title: 'Leasing director', salary: 5_000, desc: 'Tours book faster: +25% leasing velocity, tenants come back to the table more often. Worth most while you have empty floors.' },
+  { id: 'cm', title: 'Construction manager', salary: 8_000, desc: 'Site problems caught early: construction surprises 30% rarer, schedules run a touch faster.' },
 ];
 
 export function setStaffHired(state: GameState, id: StaffId, hired: boolean): GameState {
@@ -855,11 +862,13 @@ export function marketRentPSF(state: GameState, t: Tile, type: PType): number {
   // has everything within one elevator ride. It has no market of its own.
   if (type === 'mixed') return mixedBlendRentPSF(state, t, MIX_DEFAULT);
   const acc = t.acc ?? { art: 0, hwy: 0, rail: 0, quiet: 0 };
+  // the ADDRESS carries more of the rent: same building, better block, visibly better
+  // number — location and quality should argue as equals
   let mult = 1;
-  if (type === 'office') mult = 0.5 + 0.62 * (t.emp / 100) + 0.45 * (t.D / 100) + 0.06 * acc.art;
-  if (type === 'retail') mult = 0.45 + 0.72 * t.income * (t.pop / 100) + 0.35 * (t.D / 100) + 0.20 * acc.art;
-  if (type === 'industrial') mult = 0.78 + 0.42 * (t.indSuit / 100) + 0.10 * Math.max(acc.hwy, acc.rail);
-  if (type === 'multifamily') mult = 0.48 + 0.55 * (t.D / 100) + 0.32 * t.income + 0.07 * acc.quiet - 0.08 * acc.hwy;
+  if (type === 'office') mult = 0.44 + 0.62 * (t.emp / 100) + 0.57 * (t.D / 100) + 0.06 * acc.art;
+  if (type === 'retail') mult = 0.39 + 0.72 * t.income * (t.pop / 100) + 0.47 * (t.D / 100) + 0.20 * acc.art;
+  if (type === 'industrial') mult = 0.74 + 0.50 * (t.indSuit / 100) + 0.10 * Math.max(acc.hwy, acc.rail);
+  if (type === 'multifamily') mult = 0.41 + 0.68 * (t.D / 100) + 0.32 * t.income + 0.07 * acc.quiet - 0.08 * acc.hwy;
   // the LOCAL balance: rents on an overbuilt block discount below the citywide index,
   // and a block with real demand and little product earns a scarcity premium.
   // Mixed-use podium slices count toward each component's standing supply here.
@@ -941,13 +950,13 @@ export function frontageMult(type: PType, cells?: number[]): number {
 // Where each market clears over a full cycle. Vacancy above this is a tenant's
 // market; below it, the landlord stops returning calls.
 // mixed's equilibrium is the blend of its components — it has no market of its own
-export const EQ_VAC: Record<PType, number> = { office: 13.0, retail: 9.2, industrial: 10.5, mixed: 11.2, multifamily: 11.0 };
+export const EQ_VAC: Record<PType, number> = { office: 13.0, retail: 10.0, industrial: 10.5, mixed: 11.2, multifamily: 11.0 };
 
 export function capRatePct(state: GameState, t: Tile, type: PType, quality: number): number {
   const inflow = (state.econ.capInflowMonthsLeft ?? 0) > 0 ? -0.35 : 0;
   const loc = type === 'industrial' ? t.indSuit * 0.7 + t.D * 0.3 : t.D;
   let cap = CONFIG.baseCap[type]
-    + (55 - loc) * 0.028
+    + (55 - loc) * 0.038
     + (state.econ.rateSmooth - 5.0) * 0.60
     // buyers price the leasing market, not just the debt market: a soft sector trades wide
     + clamp((state.econ.cityVac[type] - EQ_VAC[type]) * 0.05, -0.35, 0.7)
@@ -1007,12 +1016,12 @@ export function expenseBreakdown(state: GameState, a: Pick<Asset, 'tileI' | 'typ
   const maintAmt = a.type === 'industrial'
     ? pot * X.maint[a.type] * (1 - occShare) * maintMult
     : pot * X.maint[a.type] * maintMult;
-  const selfManaged = a.sf < 20_000; // small buildings don't carry a management company
+  const selfManaged = a.sf < 20_000; // small buildings self-manage — cheaper, not free: your Saturdays have a price
   const lines: ExpenseLine[] = [
     { label: a.type === 'industrial' ? 'Maintenance (vacant space only)' : 'Maintenance & repairs', amt: maintAmt },
     { label: 'Insurance', amt: ins },
     { label: 'Property taxes', amt: tax },
-    { label: selfManaged ? 'Management (self-managed)' : 'Management', amt: selfManaged ? 0 : egi * X.mgmtOfEGI + pot * unitMgmtLoad(mf ? Math.min(a.units, 24) : a.units) },
+    { label: selfManaged ? 'Management (self-managed)' : 'Management', amt: (selfManaged ? 0.5 : 1) * (egi * X.mgmtOfEGI + pot * unitMgmtLoad(mf ? Math.min(a.units, 24) : a.units)) },
   ];
   if (mf) {
     lines.push({ label: 'Landscaping & grounds', amt: pot * X.mfGrounds });
@@ -1043,7 +1052,9 @@ export function stabilizedNOI(state: GameState, a: Pick<Asset, 'tileI' | 'type' 
   const rent = assetRentPSF(state, a as any);
   const occ = targetOcc(state, t, a.type);
   const potM = (a.sf * rent) / 12;
-  const egiM = potM * occ;
+  // retail's percentage rent is income like any other — the market capitalizes it
+  const overM = a.type === 'retail' ? expectedRetailOveragePSFYr(state, a.tileI, a.quality) * a.sf * occ / 12 : 0;
+  const egiM = potM * occ + overM;
   const ex = expenseBreakdown(state, { ...(a as any), maint: 'std', tenants: [] }, potM, egiM);
   return (egiM - ex.total) * 12;
 }
@@ -1054,18 +1065,36 @@ export function stabilizedNOI(state: GameState, a: Pick<Asset, 'tileI' | 'type' 
 // nearby, their incomes, arterial frontage, the cycle's mood — times the tenant's own
 // draw. Prime corners pay you twice: once in rent, again at the register. The
 // multiplier derives from the tenant id, so no save-format change.
-export function tenantSalesPSF(state: GameState, a: Pick<Asset, 'tileI' | 'quality'>, tn: Tenant): number {
+function tileSalesBasePSF(state: GameState, a: Pick<Asset, 'tileI' | 'quality'>): number {
   const t = state.tiles[a.tileI];
-  const draw = 0.75 + mulberry32((state.seed ^ Math.imul(tn.id, 0x85ebca6b)) | 0)() * 0.5 + tn.credit * 0.06;
   const acc = t.acc ?? { art: 0, hwy: 0, rail: 0, quiet: 0 };
-  return 330
-    * (0.45 + 0.55 * (t.pop / 100))
-    * (0.55 + 0.45 * t.income)
-    * (0.85 + 0.30 * acc.art)
-    * (0.85 + 0.30 * (state.econ.confidence / 100))
-    * (state.econ.ecomMonthsLeft > 0 ? 0.84 : 1)
-    * (0.88 + (a.quality / 150) * 0.16)
-    * draw;
+  // occupancy-cost gravity: a shop's sales run ~12.5x its rent (the 8% norm), because
+  // rents ARE a share of sales — they co-move. The neighborhood moves sales around that
+  // anchor, it doesn't detach them. (Detached sales made percentage rent explode on
+  // cheap-rent blocks: the breakpoint collapsed while sales stayed high — free money.)
+  const anchor = marketRentPSF(state, t, 'retail') / OCC_COST_NORM;
+  return anchor
+    * (0.90 + 0.12 * (t.pop / 100))
+    * (0.96 + 0.08 * (state.econ.confidence / 100))
+    * (0.90 + 0.16 * acc.art)
+    * (state.econ.ecomMonthsLeft > 0 ? 0.92 : 1)
+    * (0.94 + (a.quality / 150) * 0.10);
+}
+export function tenantSalesPSF(state: GameState, a: Pick<Asset, 'tileI' | 'quality'>, tn: Tenant): number {
+  const draw = 0.75 + mulberry32((state.seed ^ Math.imul(tn.id, 0x85ebca6b)) | 0)() * 0.5 + tn.credit * 0.06;
+  return tileSalesBasePSF(state, a) * draw;
+}
+// What a generic stabilized retail roll would collect in overage, $/SF/yr — the market
+// prices this in. Overage was invisible to pricing before, which made every retail
+// acquisition come with free income the seller never charged for.
+export function expectedRetailOveragePSFYr(state: GameState, tileI: number, quality: number): number {
+  const base = tileSalesBasePSF(state, { tileI, quality });
+  const bp = retailBreakpointPSF(state, tileI);
+  // integrate over the tenant-draw spread — the winners past the breakpoint carry it
+  const draws = [0.82, 0.95, 1.06, 1.17, 1.30];
+  let sum = 0;
+  for (const d of draws) sum += Math.max(0, base * d - bp);
+  return (sum / draws.length) * PCT_RENT_RATE;
 }
 export const PCT_RENT_RATE = 0.06;
 const OCC_COST_NORM = 0.08; // breakpoint sits above a healthy ~9% occupancy-cost — overage means genuine outperformance
@@ -1357,11 +1386,13 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
       rate: 4.0, rateSmooth: 4.2, inflation: 2.2, empIdx: 97, confidence: 52, popGrowth: 1.1, costIdx: 1,
       era: (() => {
         const r = mulberry32((s0 ^ 0x5EEDECA7) | 0);
+        const tilt = () => Math.round((r() - 0.5) * 0.056 * 1000) / 1000;   // ±0.028 on the sector's demand drift
         return {
           rateBias: Math.round((-1.0 + r() * 2.4) * 100) / 100,   // -1.0 .. +1.4 pts on every rate target
           inflBias: Math.round((-0.5 + r() * 1.5) * 100) / 100,   // -0.5 .. +1.0 on inflation targets
           vol: Math.round((0.75 + r() * 0.7) * 100) / 100,        // calm seas or whitewater
           tempo: Math.round((0.8 + r() * 0.5) * 100) / 100,       // fast-cycling or long, slow eras
+          sectorTilt: { office: tilt(), retail: tilt(), industrial: tilt(), multifamily: tilt() },
         };
       })(),
       rentIdx: { office: 1, retail: 1, industrial: 1, mixed: 1, multifamily: 1 },
@@ -1400,7 +1431,7 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     staff: { analyst: false, pm: false, leasing: false, cm: false },
     lenderRel: { fnb: 30, hbv: 20, col: 12, ibx: 20, mst: 10 },   // the hometown bank starts warmest
     auctions: [], btsRfps: [], rivalry: {},
-    version: 29,
+    version: 30,
   };
   generateStock(state);
   // Firms open with real books: they already own the buildings generation assigned
@@ -1636,8 +1667,11 @@ export function maxRectAt(state: GameState, tileI: number, px: number, py: numbe
 }
 function findFreeRect(state: GameState, tileI: number, need: number, rand: () => number): Parcel | null {
   const g = parcelGrid(state, tileI);
+  // a building's footprint reflects its floor area: a corner store doesn't get to
+  // sprawl across four parcels of land it doesn't use
+  const slack = need <= 2 ? 0 : need <= 5 ? 1 : 2;
   const shapes: [number, number][] = [];
-  for (let w = 1; w <= PGRID; w++) for (let h = 1; h <= PGRID; h++) if (w * h >= need && w * h <= need + 3) shapes.push([w, h]);
+  for (let w = 1; w <= PGRID; w++) for (let h = 1; h <= PGRID; h++) if (w * h >= need && w * h <= need + slack) shapes.push([w, h]);
   shapes.sort((a, b) => (a[0] * a[1]) - (b[0] * b[1]) + (Math.abs(a[0] - a[1]) - Math.abs(b[0] - b[1])) * 0.5);
   for (const [pw, ph] of shapes) {
     const spots: Parcel[] = [];
@@ -1669,7 +1703,8 @@ function pricingValue(state: GameState, spec: { tileI: number; type: PType; sf: 
   const cap = (capRatePct(state, t, spec.type, spec.quality) + creditCapAdjPts(tenants)) / 100;
   const stab = stabilizedNOI(state, spec as any);
   const potM = (spec.sf * assetRentPSF(state, spec as any)) / 12;
-  const egiM = isAggregate(spec.type) ? potM * ((spec as any).occ ?? 0.9) : tenants.reduce((s2, tn) => s2 + tn.sf * tn.rate, 0) / 12;
+  const overM = spec.type === 'retail' ? retailOverageMonthly(state, { tileI: spec.tileI, type: 'retail', quality: spec.quality, tenants } as any) : 0;
+  const egiM = (isAggregate(spec.type) ? potM * ((spec as any).occ ?? 0.9) : tenants.reduce((s2, tn) => s2 + tn.sf * tn.rate, 0) / 12) + overM;
   const ex = expenseBreakdown(state, { ...spec, maint: 'std', tenants } as any, potM, egiM);
   const ip = (egiM - ex.total) * 12;
   const blendNOI = 0.45 * stab + 0.55 * Math.min(stab, Math.max(ip, 0) * 1.25);
@@ -1719,8 +1754,8 @@ function spawnListing(state: GameState, starter = false) {
 }
 
 function listStockBuilding(state: GameState, b: StockBuilding, opt: { id?: number; starter?: boolean; hot?: boolean; expiresMonth?: number; distressed?: boolean; priceMult?: number }) {
-  // a building on the courthouse steps can't also be on the open market
-  if (state.auctions?.some(au => au.stockId === b.id)) return null;
+  // one flyer per building: not while it's already listed, not while it's on the steps
+  if (b.listedId !== undefined || state.auctions?.some(au => au.stockId === b.id)) return null;
   const id = opt.id ?? state.nextId++;
   const distressed = opt.distressed ?? (b.occ < 0.62 || (b.quality < 57 && rng(state) < 0.5));
   const probe = { tileI: b.tileI, type: b.type, sf: b.sf, quality: b.quality, units: b.units, construction: b.construction, mix: b.type === 'mixed' ? mixOf(state, b) : undefined, id: b.id };
@@ -1728,7 +1763,11 @@ function listStockBuilding(state: GameState, b: StockBuilding, opt: { id?: numbe
     ? genRentRoll(state, { ...probe }, b.occ, 0.82, 1.0)
     : genRentRoll(state, { ...probe }, b.occ);
   const val = pricingValue(state, { ...probe, occ: b.occ } as any, tenants);
-  const mult = opt.priceMult ?? (distressed ? rrange(state, 0.72, 0.85) : rrange(state, 0.95, 1.10));
+  // the discount matches what's actually wrong: broken income is priced to move;
+  // a tired-but-full building gets a haircut, not a fire sale — old paint still cashes rent
+  const mult = opt.priceMult ?? (distressed
+    ? (b.occ < 0.62 ? rrange(state, 0.72, 0.85) : rrange(state, 0.87, 0.94))
+    : rrange(state, 0.95, 1.10));
   const l: Listing = {
     id, tileI: b.tileI, kind: 'building',
     type: b.type, sf: b.sf, units: b.units, occ: b.occ, quality: b.quality, age: b.age,
@@ -1749,11 +1788,14 @@ function listStockBuilding(state: GameState, b: StockBuilding, opt: { id?: numbe
     const targetCap = state.econ.rate + CONFIG.acqSpread + rrange(state, 0.9, 1.7);
     l.price = roundPrice(Math.min(l.price, Math.max(val * 0.78, noiIp / (targetCap / 100))));
   }
-  // brokers don't let double-digit caps hit the open market — those trade by phone.
-  // Distress is the exception; everyone can smell it anyway.
+  // brokers don't leave silent bargains on the flyer: a non-distressed listing prices
+  // within ~160bps of its market cap, or it trades by phone before you ever see it.
+  // Distress is the exception — the discount is the story, and everyone can smell it.
   if (!distressed) {
     const noiIp2 = inPlaceNOIYr(state, l);
-    if (noiIp2 > 0 && noiIp2 / l.price > 0.10) l.price = roundPrice(noiIp2 / rrange(state, 0.085, 0.10));
+    const t2 = state.tiles[b.tileI];
+    const capGuard = (capRatePct(state, t2, b.type, b.quality) + 1.6) / 100;
+    if (noiIp2 > 0 && noiIp2 / l.price > capGuard) l.price = roundPrice(noiIp2 / (capGuard * rrange(state, 0.90, 1.0)));
   }
   b.listedId = id;
   state.listings.push(l);
@@ -1848,6 +1890,9 @@ export function makeOffer(state: GameState, listingId: number, amount: number): 
   const s = clone(state);
   const l = s.listings.find(x => x.id === listingId);
   if (!l || l.yourSale || l.declinedYou || l.parentAssetId) return { s, result: 'gone' };
+  // no zero-dollar theater: a number under four figures never reaches the seller,
+  // costs you nothing, and can't generate a counter
+  if (!isFinite(amount) || amount < 1000) return { s, result: 'declined', msg: 'The broker won\'t present that number. Offers start with real money.' };
   l.playerEngaged = true;   // the brokers saw your number — rivals hear about deals in play
   const res = l.kind === 'offmarket'
     ? (l.reservation ?? l.price)
@@ -1925,7 +1970,8 @@ export function maxLTV(state: GameState, type?: PType): number {
 export function inPlaceNOIYr(state: GameState, l: Listing): number {
   const probe = { tileI: l.tileI, type: l.type!, sf: l.sf!, quality: l.quality!, units: l.units ?? 1, construction: l.construction ?? CONSTR[l.type!][0].id, maint: 'std' as const, tenants: l.tenants ?? [], mix: l.mix, id: l.stockId };
   const potM = (l.sf! * assetRentPSF(state, probe as any)) / 12;
-  const egiM = isAggregate(l.type!) ? potM * (l.occ ?? 0) : (l.tenants ?? []).reduce((s2, t) => s2 + t.sf * t.rate, 0) / 12;
+  const overM = l.type === 'retail' ? retailOverageMonthly(state, probe as any) : 0;
+  const egiM = (isAggregate(l.type!) ? potM * (l.occ ?? 0) : (l.tenants ?? []).reduce((s2, t) => s2 + t.sf * t.rate, 0) / 12) + overM;
   const ex = expenseBreakdown(state, probe as any, potM, egiM);
   return (egiM - ex.total) * 12;
 }
@@ -2470,7 +2516,7 @@ export function resolveAssetEvent(state: GameState, assetId: number, choice: 'a'
     } else { // patch it — bought a few years, not a roof
       pay(Math.round(full * 0.22));
       a.quality = clamp(a.quality - 10, 1, a.qCap);
-      a.roofM = s.month - 200;   // the question comes back in ~4-13 years instead of 20-30
+      a.roofM = s.month - 110;   // even a patch buys a decade — the question comes back in ~11-21 years
       if (rng(s) < 0.4) s.scheduledEvents.push({ m: s.month + 6 + Math.floor(rng(s) * 8), kind: 'roofBill', payload: a.id });
       pushNews(s, 'warn', `${a.name}: roof patched for ${fmtMoney(Math.round(full * 0.22))}. Water finds a way; you've bought time, not a roof.`);
     }
@@ -3192,12 +3238,14 @@ export function createExcessLandListing(state: GameState, assetId: number): { s:
 // ---------- Refinance (adjustable terms) ----------
 export interface RefiChoice { amount: number; amortYears: number; }
 export function refiLimits(state: GameState, a: Asset) {
-  const val = assetValue(state, a);
+  // the bank hires the conservative appraiser — proceeds size off the LOW end of the band
+  const band = appraisalBand(state, a);
+  const val = band.lo;
   const rate = state.econ.rate + CONFIG.refiSpread;
   const payoff = assetDebt(a);
   const maxByLTV = val * CONFIG.refiLTV;
   const noiYr = assetNOIMonthly(state, a) * 12;
-  return { val, rate, payoff, maxByLTV, noiYr };
+  return { val, rate, payoff, maxByLTV, noiYr, band };
 }
 export function refiQuote(state: GameState, a: Asset, c: RefiChoice) {
   const lim = refiLimits(state, a);
@@ -3765,16 +3813,48 @@ function respondLandOffer(s: GameState, o: SaleOffer, action: { type: 'accept' }
   return { s, outcome: 'countered' };
 }
 
+// ---------- Appraisal is an opinion ----------
+// Nobody KNOWS what a building is worth — appraisers defensibly disagree, and the band
+// of defensible opinions is widest exactly when you'd most like certainty. Stabilized
+// product (80%+ leased) with fresh comps in an open market prices tight; empty, oddball,
+// or frozen-market product is anyone's guess. The midpoint is your mark. The band is
+// the truth.
+export function appraisalHalfPts(state: GameState, type: PType, quality: number, occ: number): number {
+  const leaseGap = clamp((0.80 - occ) * 2.0, 0, 0.8);                // under 80% leased, the opinions scatter
+  const compsN = state.comps.filter(c => c.type === type && state.month - c.m <= 24).length;
+  const thin = clamp((4 - compsN) * 0.09, 0, 0.36);                  // nothing traded lately → nobody knows
+  const frozen = (state.econ.crunchMonthsLeft > 0 ? 0.30 : 0) + (state.econ.phase === 'recession' ? 0.20 : 0);
+  const odd = quality < 45 || quality > 135 ? 0.15 : 0;              // trophy and junk both defy the comps
+  return clamp(0.45 + leaseGap + thin + frozen + odd, 0.35, 1.6);
+}
+export function appraisalBand(state: GameState, a: Asset): { lo: number; mid: number; hi: number; capMid: number; halfPts: number } {
+  const mid = assetValue(state, a);
+  const t = state.tiles[a.tileI];
+  const capMid = Math.max(4, capRatePct(state, t, a.type, a.quality) + (isAggregate(a.type) ? 0 : creditCapAdjPts(a.tenants)));
+  const halfPts = appraisalHalfPts(state, a.type, a.quality, a.occ ?? 0);
+  return {
+    lo: Math.round(mid * capMid / (capMid + halfPts)),
+    mid: Math.round(mid),
+    hi: Math.round(mid * capMid / Math.max(3.0, capMid - halfPts)),
+    capMid: Math.round(capMid * 100) / 100,
+    halfPts: Math.round(halfPts * 100) / 100,
+  };
+}
+
 // ---------- Selling ----------
 export function sellQuote(state: GameState, a: Asset) {
-  const val = assetValue(state, a);
+  const band = appraisalBand(state, a);
+  // the instant sale is the fast nickel: whoever wires this quarter prices in the LOWER
+  // half of the band. Reaching for the top half means listing it and waiting. The draw
+  // is seeded per asset per quarter — the broker's current opinion, not a slot machine.
+  const r = mulberry32((state.seed ^ Math.imul(a.id + 1, 0x9E3779B9) ^ Math.imul(Math.floor(state.month / 3) + 1, 0x85EBCA6B)) | 0)();
   const sentiment = state.econ.phase === 'peak' ? 1.04 : state.econ.phase === 'recession' ? 0.94 : 1;
-  const gross = val * sentiment;
+  const gross = (band.lo + (band.mid - band.lo) * r) * sentiment;
   const costs = gross * CONFIG.saleCostPct;
   const payoff = assetDebt(a);
   const facRelease = facilityShare(state, a) * 1.05; // release price: allocated share + 5%
   const net = gross - costs - payoff - facRelease;
-  return { gross, costs, payoff, facRelease, net, sentiment };
+  return { gross, costs, payoff, facRelease, net, sentiment, band };
 }
 export function doSell(state: GameState, assetId: number): { s: GameState; pm?: PostMortem; err?: string } {
   const s = clone(state); const a = s.assets.find(x => x.id === assetId);
@@ -4438,9 +4518,10 @@ function tickEconomy(s: GameState) {
     if (ty === 'mixed') continue;   // derived below from the components
     let demandDrift = 0;
     if (ty === 'office') demandDrift = 0.04 + (e.empIdx - 99) * 0.014;
-    if (ty === 'retail') demandDrift = 0.03 + (e.confidence - 52) * 0.003 + e.popGrowth * 0.035 - (e.ecomMonthsLeft > 0 ? 0.10 : 0);
+    if (ty === 'retail') demandDrift = 0.022 + (e.confidence - 52) * 0.003 + e.popGrowth * 0.035 - (e.ecomMonthsLeft > 0 ? 0.10 : 0);
     if (ty === 'industrial') demandDrift = 0.045 + (e.ecomMonthsLeft > 0 ? 0.08 : 0) + (e.empIdx - 100) * 0.005;
     if (ty === 'multifamily') demandDrift = 0.05 + e.popGrowth * 0.05 + (e.confidence - 55) * 0.0012;
+    demandDrift += e.era?.sectorTilt?.[ty] ?? 0;   // the era's secular story: this generation's winner isn't the last one's
     const eqVac = EQ_VAC[ty];
     // real vacancy in the modeled stock; the ambient metro beyond our blocks leans
     // toward equilibrium, shifted by where macro demand is pulling
@@ -4687,7 +4768,7 @@ function tickEvents(s: GameState) {
       const roofEligible = a.age >= 20 && s.month - lastRoof >= roofWait;
       const hasAnchor = !isAggregate(a.type) && a.tenants.length > 0;
       const pool: string[] = ['reassess', 'reassess'];
-      if (roofEligible) pool.push('roof', 'roof');
+      if (roofEligible) pool.push('roof');
       if (hasAnchor && rng(s) < 0.5) pool.push('tiDemand');
       const kind2 = rpick(s, pool);
       // the assessor doesn't call every time the dice say so — reassessments were landing twice as often as they should
@@ -5066,7 +5147,9 @@ export function stockNOIYr(s: GameState, b: StockBuilding): number {
   const t = s.tiles[b.tileI];
   const aq = clamp(b.quality + (t.D - 55) * 0.12, 1, 150);
   const rent = marketRentPSF(s, t, b.type) * (0.87 + (aq / 150) * 0.25);
-  return b.sf * rent * Math.min(b.occ, 0.97) * NOI_MARGIN[b.type];
+  // retail overage is income; the flyer number carries it like everyone's does now
+  const over = b.type === 'retail' ? expectedRetailOveragePSFYr(s, b.tileI, b.quality) * b.sf * Math.min(b.occ, 0.97) : 0;
+  return b.sf * rent * Math.min(b.occ, 0.97) * NOI_MARGIN[b.type] + over;
 }
 export function stockValue(s: GameState, b: StockBuilding): number {
   const t = s.tiles[b.tileI];
@@ -5136,7 +5219,7 @@ function tickBulkDeal(s: GameState) {
     return;
   }
   pushNews(s, 'info', `The ${bd.name} bulk window closed unclaimed — the lender breaks the book up the slow way.`);
-  const sorted = held.sort((x, y) => stockValue(s, y) - stockValue(s, x));
+  const sorted = held.filter(b => b.listedId === undefined).sort((x, y) => stockValue(s, y) - stockValue(s, x));
   if (sorted[0]) startAuction(s, sorted[0], `${bd.name}'s book broke up`);
   for (const b of sorted.slice(1, 4)) {
     listStockBuilding(s, b, { distressed: true, priceMult: rrange(s, 0.7, 0.8), hot: true, expiresMonth: s.month + 4 });
@@ -5561,7 +5644,7 @@ function tickAsset(s: GameState, a: Asset): number {
       const qf = 0.78 + (apparentQuality(s, a) / 150) * 0.30;
       const boost = a.mode === 'leaseup' ? 1.6 : 1;
       const amenSm = (a.programs ?? []).includes('amenity') ? (PROGRAMS.find(x => x.id === 'amenity')?.velocity ?? 1) : 1;
-      const p = clamp(CONFIG.absorbBase[a.type] * 1.62 * (s.staff?.leasing ? 1.25 : 1) * df * qf * rentComp * boost * amenSm * leasingClimate(s, a.type) * clamp(vacant / a.sf, 0.2, 1), 0.02, 0.48);
+      const p = clamp(CONFIG.absorbBase[a.type] * 1.45 * (s.staff?.leasing ? 1.25 : 1) * df * qf * rentComp * boost * amenSm * leasingClimate(s, a.type) * clamp(vacant / a.sf, 0.2, 1), 0.02, 0.44);
       if (rng(s) < p) {
         let sf = Math.min(vacant, Math.round(su / 100) * 100);
         if (vacant - sf < Math.max(400, su * 0.5)) sf = vacant;   // tenants take whole suites — no orphan slivers
@@ -5598,11 +5681,15 @@ function tickAsset(s: GameState, a: Asset): number {
       pushNews(s, 'info', `${tn.name}'s renewal option at ${a.name} lapsed unexercised — the market is below their strike. Now you negotiate fresh.`);
     }
     const under = tn.rate < mktTn * 0.97;
+    // a saturated block bleeds: when the neighborhood is oversupplied with this product,
+    // tenants have cheaper options across the street — renewals stop being automatic.
+    // (Without this, buildings priced for their oversupplied doom never met it.)
+    const localHit = clamp(1 - oversupplyPenalty(t, tn.use ?? a.type) * 2.2, 0.45, 1);
     if (tn.sf >= 4000 && !s.lois.some(x => x.kind === 'renewal' && x.tenantId === tn.id)) {
-      const wants = clamp((under ? 0.85 : 0.62)
+      const wants = clamp(((under ? 0.85 : 0.62)
         + (a.maint === 'high' ? 0.08 : a.maint === 'low' ? -0.16 : 0)
         + clamp((EQ_VAC[a.type] - s.econ.cityVac[a.type]) * 0.014, -0.12, 0.12)  // nowhere to go in a tight market
-        + (apparentQuality(s, a) / 150) * 0.10, 0.15, 0.95);
+        + (apparentQuality(s, a) / 150) * 0.10) * localHit, 0.15, 0.95);
       if (rng(s) < wants) {
         tn.endM = s.month + 3; // holds over while you talk
         const ask = Math.round(Math.min(mktTn * 0.985, Math.max(tn.rate * 0.97, tn.rate * rrange(s, 0.98, 1.06))) * 100) / 100;
@@ -5624,11 +5711,11 @@ function tickAsset(s: GameState, a: Asset): number {
       }
       continue;
     }
-    // small suites renew quietly
-    let pRenew = (under ? 0.78 : 0.52)
+    // small suites renew quietly — unless the block is drowning in empty space
+    let pRenew = ((under ? 0.78 : 0.52)
       + (a.maint === 'high' ? 0.10 : a.maint === 'low' ? -0.16 : 0)
       + clamp((EQ_VAC[a.type] - s.econ.cityVac[a.type]) * 0.014, -0.12, 0.12)
-      + (apparentQuality(s, a) / 150) * 0.10;
+      + (apparentQuality(s, a) / 150) * 0.10) * localHit;
     if (rng(s) < clamp(pRenew, 0.1, 0.92)) {
       tn.rate = Math.round(Math.min(mktTn * (1 + a.rentStance), tn.rate * 1.12) * 100) / 100;
       tn.startM = s.month; tn.endM = s.month + Math.round(rrange(s, 36, 72));
@@ -5765,8 +5852,19 @@ function tickAsset(s: GameState, a: Asset): number {
 }
 
 function tickSolvency(s: GameState) {
-  if (s.cash < 0) s.negCashStreak++; else s.negCashStreak = 0;
+  // a trivial overdraft is a fee, not a foreclosure — banks seize buildings over real
+  // holes, and they call before they act
+  if (s.cash < -25_000) s.negCashStreak++;
+  else if (s.cash >= 0) s.negCashStreak = 0;
+  if (s.cash < 0 && s.cash >= -25_000) {
+    const fee = Math.round(Math.max(250, -s.cash * 0.02));
+    s.cash -= fee;
+    logCF(s, 'fees', 'Overdraft interest', -fee);
+  }
   const grace = s.lastMonthCF > 0 ? 6 : 3;   // cash-flowing borrowers get worked with, not foreclosed
+  if (s.negCashStreak === grace - 1 && s.cash < -25_000) {
+    pushNews(s, 'warn', `THE BANK IS CALLING: ${grace - 1} months in the red. Cover the ${fmtMoney(-s.cash)} overdraft THIS MONTH — sell something, refinance, cut the burn — or the bank picks a building and sells it for you, at their price.`);
+  }
   if (s.negCashStreak >= grace) {
     const sellable = s.assets.filter(a => a.mode !== 'construction');
     if (sellable.length > 0) {
@@ -5834,7 +5932,8 @@ export function proFormaLand(state: GameState, l: Listing, c: DevChoice) {
     const rent = assetRentPSF(state, probe as any) * sc.rentMult;
     const occ = clamp(targetOcc(state, t, c.type) - sc.vacAdd / 100, 0.3, 0.97);
     const potM = (c.sf * rent) / 12;
-    const egiM = potM * occ;
+    const overM = c.type === 'retail' ? expectedRetailOveragePSFYr(state, l.tileI, bd.spec.q) * c.sf * occ / 12 * sc.rentMult : 0;
+    const egiM = potM * occ + overM;
     const ex = expenseBreakdown(state, { ...probe, maint: 'std', tenants: [] } as any, potM, egiM);
     const noi = (egiM - ex.total) * 12;
     const yoc = (noi / bd.total) * 100;
@@ -5869,7 +5968,7 @@ export function serialize(state: GameState): string { return JSON.stringify(stat
 export function deserialize(json: string): GameState | null {
   try {
     const s = JSON.parse(json);
-    if (s && s.version === 29 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
+    if (s && s.version === 30 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
     return null;
   } catch { return null; }
 }

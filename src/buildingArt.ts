@@ -295,6 +295,11 @@ export function buildingArt(p: ArtParams, g: PrismGeom): ArtEl[] {
       }
     } else {
       out.push({ k: 'l', x1: bb[0] + dx * 0.5, y1: bb[1] + dy * 0.5, x2: br[0] + dx * 0.5, y2: br[1] + dy * 0.5, s: '#32383f', w: 0.5, o: 0.7, d: '3 3' });
+      // striped dock bays: a tick where each trailer is supposed to sit
+      for (let i = 1; i < 5; i++) {
+        const p0 = lerp(bb, br, i / 5);
+        out.push({ k: 'l', x1: p0[0] + dx * 0.2, y1: p0[1] + dy * 0.2, x2: p0[0] + dx * 0.85, y2: p0[1] + dy * 0.85, s: '#3d434b', w: 0.4, o: 0.8 });
+      }
     }
   };
   // a working stack: smoke drifts while the building is earning

@@ -507,7 +507,9 @@ const ROAD_STYLE: Record<number, { stroke: string; w: number; dash?: string }> =
   4: { stroke: '#6a6f76', w: 6.4 },
   5: { stroke: '#8a7a5c', w: 1.8, dash: '7 5' },
 };
-const StreetLife = memo(function StreetLife({ runs, seed, detail, season = 'summer' }: { runs: RoadRun[]; seed: number; detail: boolean; season?: Season }) {
+const StreetLife = memo(function StreetLife({ runs, seed, detail, season = 'summer', loD, hiD }: {
+  runs: RoadRun[]; seed: number; detail: boolean; season?: Season; loD?: Set<number>; hiD?: Set<number>;
+}) {
   const els: React.ReactNode[] = [];
   let a = seed | 0;
   const r = () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
@@ -548,8 +550,15 @@ const StreetLife = memo(function StreetLife({ runs, seed, detail, season = 'summ
       }
     }
     if (run.cls === 1 || run.cls === 2) {
-      // street trees: thick on locals, a planted median's worth on collectors
-      const n = Math.min(run.cls === 1 ? 3 : 2, Math.round(len * (run.cls === 1 ? 0.26 : 0.14) * (0.4 + r())));
+      // street trees: thick on locals, a planted median's worth on collectors —
+      // and the canopy follows the money: dense frontage on desirable blocks,
+      // sparse to bare where nobody's watering anything
+      const midTile = (() => {
+        const mx = Math.round((p0[0] + p1[0]) / 2), my = Math.round((p0[1] + p1[1]) / 2);
+        return Math.max(0, Math.min(E.CONFIG.GRID_H - 1, my)) * E.CONFIG.GRID_W + Math.max(0, Math.min(E.CONFIG.GRID_W - 1, mx));
+      })();
+      const dAdj = hiD?.has(midTile) ? 2 : loD?.has(midTile) ? -2 : 0;
+      const n = Math.min((run.cls === 1 ? 3 : 2) + Math.max(0, dAdj), Math.max(0, Math.round(len * (run.cls === 1 ? 0.26 : 0.14) * (0.4 + r())) + dAdj));
       for (let i = 0; i < n && trees < 340; i++) {
         const u = 0.1 + r() * 0.8;
         const gx = p0[0] + (p1[0] - p0[0]) * u, gy = p0[1] + (p1[1] - p0[1]) * u;
@@ -1277,6 +1286,8 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   // furniture layer doesn't churn on every desirability drift
   const loDStamp = state.tiles.reduce((s2, t) => s2 + (!t.water && t.D < 45 ? 1 : 0), 0);
   const loD = useMemo(() => new Set(state.tiles.filter(t => !t.water && t.D < 45).map(t => t.i)), [loDStamp, state.seed]); // eslint-disable-line
+  const hiDStamp = state.tiles.reduce((s2, t) => s2 + (!t.water && t.D > 70 ? 1 : 0), 0);
+  const hiD = useMemo(() => new Set(state.tiles.filter(t => !t.water && t.D > 70).map(t => t.i)), [hiDStamp, state.seed]); // eslint-disable-line
   const hue = LENS_HUE[lens];
   // the hour of day rides the calendar; Off pins the map to noon
   const phase: DayPhase = ambient >= 1 ? dayPhaseOf(state.month) : 'day';
@@ -1497,7 +1508,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           {ambient >= 1 && zb >= 2 && <Sidewalks runs={runs} />}
           <RoadsIso runs={runs} wet={weather === 'rain'} />
           {ambient >= 1 && zb >= 1 && <WaterLife tiles={tilesGeom} seed={state.seed} />}
-          {ambient >= 1 && zb >= 1 && <StreetLife runs={runs} seed={state.seed} detail={zb >= 2} season={season} />}
+          {ambient >= 1 && zb >= 1 && <StreetLife runs={runs} seed={state.seed} detail={zb >= 2} season={season} loD={loD} hiD={hiD} />}
           {transitActive && (() => {
             const ef = state.effects.find(e => e.kind === 'transit')!;
             const done = 1 - ef.monthsLeft / 14;

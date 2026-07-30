@@ -561,7 +561,7 @@ const StreetLife = memo(function StreetLife({ runs, seed, detail, season = 'summ
         };
         const [tA, tB] = TREE_BY[season];
         els.push(<g key={'t' + trees}>
-          <circle cx={cx} cy={cy - 1.6} r={(1.5 + r()) * (season === 'winter' ? 0.65 : 1)} fill={r() < 0.5 ? tA : tB} opacity={season === 'winter' ? 0.65 : 0.95} />
+          <circle cx={cx} cy={cy - 1.6} r={(1.5 + r()) * (season === 'winter' ? 0.5 : 1)} fill={r() < 0.5 ? tA : tB} opacity={season === 'winter' ? 0.5 : 0.95} />
           <line x1={cx} y1={cy} x2={cx} y2={cy - 1.2} stroke="#5a4a36" strokeWidth={0.5} />
         </g>);
         trees++;
@@ -748,6 +748,28 @@ const WaterLife = memo(function WaterLife({ tiles, seed }: { tiles: TileGeom[]; 
       )}
     </g>);
     boats++;
+  }
+  return <g style={{ pointerEvents: 'none' }}>{els}</g>;
+});
+
+// Sidewalks: a pale concrete band each side of every street, with a darker curb
+// line against the asphalt. Drawn under the roads so the road surface reads on
+// top; only above the detail zoom threshold — from far out they'd just be noise.
+const Sidewalks = memo(function Sidewalks({ runs }: { runs: RoadRun[] }) {
+  const els: React.ReactNode[] = [];
+  for (const [i, run] of runs.entries()) {
+    if (run.cls === 5) continue;   // rail has ballast, not pavement
+    const [p0, p1] = run.pts;
+    const horiz = Math.abs(p1[0] - p0[0]) > Math.abs(p1[1] - p0[1]);
+    const walkOff = 0.115, curbOff = 0.078;
+    for (const s of [-1, 1] as const) {
+      const w0 = isoPt(p0[0] + (horiz ? 0 : s * walkOff), p0[1] + (horiz ? s * walkOff : 0));
+      const w1 = isoPt(p1[0] + (horiz ? 0 : s * walkOff), p1[1] + (horiz ? s * walkOff : 0));
+      const c0 = isoPt(p0[0] + (horiz ? 0 : s * curbOff), p0[1] + (horiz ? s * curbOff : 0));
+      const c1 = isoPt(p1[0] + (horiz ? 0 : s * curbOff), p1[1] + (horiz ? s * curbOff : 0));
+      els.push(<line key={'sw' + i + s} x1={w0[0]} y1={w0[1]} x2={w1[0]} y2={w1[1]} stroke="#b2b6ab" strokeWidth={1.3} opacity={0.55} strokeLinecap="round" />);
+      els.push(<line key={'cb' + i + s} x1={c0[0]} y1={c0[1]} x2={c1[0]} y2={c1[1]} stroke="#878c81" strokeWidth={0.45} opacity={0.7} />);
+    }
   }
   return <g style={{ pointerEvents: 'none' }}>{els}</g>;
 });
@@ -1298,6 +1320,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             return <g><polyline points={pts} fill="none" stroke="#5b9ec9" strokeWidth={IH * 0.45} strokeLinecap="round" strokeLinejoin="round" />
               <polyline className="shim" points={pts} fill="none" stroke="#3c608a" strokeWidth={1.3} strokeDasharray="2 11" strokeLinecap="round" opacity={0.6} /></g>;
           })()}
+          {ambient >= 1 && zb >= 2 && <Sidewalks runs={runs} />}
           <RoadsIso runs={runs} wet={weather === 'rain'} />
           {ambient >= 1 && zb >= 1 && <WaterLife tiles={tilesGeom} seed={state.seed} />}
           {ambient >= 1 && zb >= 1 && <StreetLife runs={runs} seed={state.seed} detail={zb >= 2} season={season} />}

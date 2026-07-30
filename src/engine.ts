@@ -1036,7 +1036,7 @@ export function assetRentPSF(state: GameState, a: Pick<Asset, 'tileI' | 'type' |
   const t = state.tiles[a.tileI];
   const spec = constrSpec(a as any);
   return (a.type === 'mixed' ? mixedBlendRentPSF(state, t, mixOf(state, a)) : marketRentPSF(state, t, a.type))
-    * (0.87 + (apparentQuality(state, a) / 150) * 0.25)   // every point pays, not just the grade lines
+    * (0.70 + (apparentQuality(state, a) / 150) * 0.56)   // quality argues with location as an equal: C-grade ~0.83x, A+ ~1.19x, anchored at the citywide mean
     * unitRentPremium(a.units)
     * (1 + (spec.rentBonus ?? 0))
     * (a.designTier ? DESIGN[a.designTier].rentMult : 1)
@@ -1048,7 +1048,7 @@ export function componentRentPSF(state: GameState, a: Pick<Asset, 'tileI' | 'qua
   const t = state.tiles[a.tileI];
   const cells = a.cells ?? (a.px !== undefined ? cellsOfRect(a.px, a.py!, a.pw!, a.ph!) : undefined);
   return marketRentPSF(state, t, comp)
-    * (0.87 + (apparentQuality(state, a) / 150) * 0.25)
+    * (0.70 + (apparentQuality(state, a) / 150) * 0.56)
     * (comp === 'retail' ? frontageMult('retail', cells) : 1)
     * 1.02;
 }

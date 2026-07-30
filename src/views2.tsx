@@ -1778,6 +1778,7 @@ export function DebtView({ state, setState }: { state: GameState; setState: (s: 
   const [amt, setAmt] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   const [payAmt, setPayAmt] = useState<Record<number, number>>({});
+  const [refiAssetId, setRefiAssetId] = useState<number | null>(null);
   const rows: { assetId: number; loanId: number; asset: string; kind: string; balance: number; rate: number; amort: number; io: number; pmt: number; mat: number; floating?: boolean; capStrike?: number; lenderId?: string; isConstr: boolean }[] = [];
   for (const a of state.assets) for (const l of a.loans) {
     rows.push({ assetId: a.id, loanId: l.id, asset: a.name, kind: l.kind === 'acq' ? 'Acquisition' : l.kind === 'constr' ? 'Construction' : 'Refinance', balance: l.balance, rate: l.ratePct, amort: l.amortYears, io: l.ioMonthsLeft, pmt: E.loanMonthlyDS(l), mat: l.maturityMonth, floating: l.floating, capStrike: l.capStrike, lenderId: l.lenderId, isConstr: l.kind === 'constr' });
@@ -1872,6 +1873,11 @@ export function DebtView({ state, setState }: { state: GameState; setState: (s: 
                   <td>
                     {r.isConstr ? <span className="faint" style={{ fontSize: 10 }}>at closing</span> : (
                       <div style={{ display: 'flex', gap: 3 }}>
+                        {(() => {
+                          const a2 = state.assets.find(x => x.id === r.assetId);
+                          return a2 && a2.mode === 'operating' ? <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 6px' }} title="Refinance this property: new loan at today's rates, cash out or pay down"
+                            onClick={() => setRefiAssetId(r.assetId)}>Refi</button> : null;
+                        })()}
                         {!r.floating && <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 6px' }} title="Swap to floating: 35bps inside your coupon today, repriced monthly"
                           onClick={() => { const rr = E.swapToFloating(state, r.assetId, r.loanId); if (rr.err) setErr(rr.err); else setState(rr.s); }}>Float</button>}
                         {r.floating && <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 6px' }} title="Fix at today's base + spread + 35bps"
@@ -1972,6 +1978,10 @@ export function DebtView({ state, setState }: { state: GameState; setState: (s: 
           </>)}
         </>)}
       </div>
+      {refiAssetId !== null && (() => {
+        const a = state.assets.find(x => x.id === refiAssetId);
+        return a ? <RefiModal state={state} setState={setState} asset={a} close={() => setRefiAssetId(null)} /> : null;
+      })()}
     </div>
   );
 }

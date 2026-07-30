@@ -181,6 +181,7 @@ export interface Economy {
   rentMom: Record<PType, number>;   // rent-growth momentum: markets trend, they don't twitch
   hadCrunch: boolean; crunchMonthsLeft: number; tariffMonthsLeft: number; ecomMonthsLeft: number;
   rtoMonthsLeft?: number;   // the year after a remote-work wave breaks: office demand rebounds
+  ecomHangoverLeft?: number;   // after an e-commerce wave: peak-ordered warehouses deliver into the slowdown
   wfhLastM?: number; ecomLastM?: number;   // waves are episodes, not weather — cooldowns between them
   // this game's monetary personality, rolled once from the seed: some careers are
   // cheap-money eras, some are tight-money grinds, some cycle fast and violent.
@@ -201,6 +202,11 @@ export interface Economy {
   // class down hard and bleeds it for a year on top of the general downturn.
   recSeverity?: number;
   bustType?: PType; bustMonthsLeft?: number;
+  // each sector's own slow-moving vacancy norm (~12-year half-life): rent momentum
+  // measures deviation from THIS, not from a fixed constant — so no sector can hold
+  // a structural momentum edge, and only cycles, events, and the era dice move
+  // relative performance
+  vacNorm?: Record<PType, number>;
 }
 
 export interface Loan {
@@ -1527,11 +1533,15 @@ function genMixedRentRoll(state: GameState, a: Pick<Asset, 'tileI' | 'type' | 's
 // rough parity — the random part then genuinely decides winners. Rolled at genesis
 // and re-rolled every generation (see tickEraRotation): no sector stays the darling
 // for a whole century.
-function rollEra(r: () => number): Economy['era'] {
-  const HANDICAP: Record<string, number> = { office: 0.093, retail: -0.082, industrial: 0.016, multifamily: -0.027 };
+function rollEra(r: () => number, hScale = 1): Economy['era'] {
+  // handicaps offset each sector's structural drift so the shuffle genuinely decides
+  // the era. They matter most for the young city; as decades pass the supply-response
+  // equilibrium takes over the leveling job, so re-rolls scale them down (hScale) and
+  // late eras become pure dice.
+  const HANDICAP: Record<string, number> = { office: 0.041, retail: -0.040, industrial: 0.008, multifamily: -0.009 };
   const raw: Record<string, number> = { office: r(), retail: r(), industrial: r(), multifamily: r() };
   const avg = (raw.office + raw.retail + raw.industrial + raw.multifamily) / 4;
-  const tiltOf = (ty: string) => Math.round((HANDICAP[ty] + (raw[ty] - avg) * 0.15) * 1000) / 1000;
+  const tiltOf = (ty: string) => Math.round((HANDICAP[ty] * hScale + (raw[ty] - avg) * 0.15) * 1000) / 1000;
   return {
     rateBias: Math.round((-1.0 + r() * 2.4) * 100) / 100,   // -1.0 .. +1.4 pts on every rate target
     inflBias: Math.round((-0.5 + r() * 1.5) * 100) / 100,   // -0.5 .. +1.0 on inflation targets
@@ -1572,7 +1582,7 @@ function tickEraRotation(s: GameState) {
       pushNews(s, 'event', `A NEW ERA HAS SETTLED IN: ${PLABEL[best].toLowerCase()} is this generation's darling, ${PLABEL[worst].toLowerCase()} its castoff. The last era's playbook now reads like your grandfather's.`);
     }
   } else if (e.eraMonthsLeft <= 0) {
-    e.eraNext = rollEra(() => rng(s));
+    e.eraNext = rollEra(() => rng(s), 1 / (1 + (e.costIdx - 1) / 3));
     e.eraMonthsLeft = 36;
     const { best, worst } = eraExtremes(e.eraNext);
     pushNews(s, 'event', `THE WIND IS TURNING: the smart money is quietly rotating toward ${PLABEL[best].toLowerCase()} and out of ${PLABEL[worst].toLowerCase()}. Secular shifts take years to finish — and reward whoever repositions first.`);
@@ -4739,10 +4749,16 @@ function tickEconomy(s: GameState) {
       // the most overbuilt sector takes the bust personally: an immediate markdown,
       // then a year of bleeding while the excess space gets absorbed or abandoned
       if (rng(s) < 0.4) {
-        // relative overbuild (vacancy vs the sector's own equilibrium), so the sector
-        // with the naturally widest vacancy range doesn't eat every bust
-        const over = (['office', 'retail', 'industrial', 'multifamily'] as PType[])
-          .reduce((x, y) => (e.cityVac[y] / EQ_VAC[y]) > (e.cityVac[x] / EQ_VAC[x]) ? y : x);
+        // overbuild measured against each sector's RESTING vacancy (not raw EQ_VAC) —
+        // office idles high by nature and was eating three of every four busts. The
+        // most-overbuilt sector is the LIKELIEST target, not the certain one: busts
+        // land wherever capital herded this cycle, with room for surprise.
+        const BREST: Record<string, number> = { office: 2.3, retail: -0.6, industrial: 0.8, multifamily: 0.7 };
+        const cands = (['office', 'retail', 'industrial', 'multifamily'] as PType[])
+          .map(ty2 => ({ ty2, w: Math.exp(((e.cityVac[ty2] - EQ_VAC[ty2] - BREST[ty2]) / EQ_VAC[ty2]) * 6) }));
+        const wTot = cands.reduce((x, c) => x + c.w, 0);
+        let draw = rng(s) * wTot, over: PType = cands[0].ty2;
+        for (const c of cands) { draw -= c.w; if (draw <= 0) { over = c.ty2; break; } }
         e.bustType = over;
         e.bustMonthsLeft = 10 + Math.floor(rng(s) * 9);
         e.rentIdx[over] *= 1 - (0.03 + rng(s) * 0.04);
@@ -4803,7 +4819,17 @@ function tickEconomy(s: GameState) {
     }
   }
   if ((e.rtoMonthsLeft ?? 0) > 0) e.rtoMonthsLeft!--;
-  if (e.ecomMonthsLeft > 0) e.ecomMonthsLeft--;
+  if (e.ecomMonthsLeft > 0) {
+    e.ecomMonthsLeft--;
+    if (e.ecomMonthsLeft === 0) {
+      // every logistics gold rush ends the same way: the warehouses ordered at the
+      // peak deliver AFTER the wave breaks, and the surviving retailers get their
+      // foot traffic back. The boom pays for its own hangover.
+      e.ecomHangoverLeft = 16;
+      pushNews(s, 'event', 'THE WAREHOUSE GLUT: the e-commerce wave has crested — and the logistics space ordered at its peak is delivering into the slowdown. Industrial landlords learn what retail already knew; the surviving storefronts quietly refill.');
+    }
+  }
+  if ((e.ecomHangoverLeft ?? 0) > 0) e.ecomHangoverLeft!--;
   // ---- the leasing market reads the ACTUAL city ----
   // Standing SF and occupied SF, counted building by building — yours, the firms',
   // and every private owner's. When somebody overbuilds industrial, industrial
@@ -4827,8 +4853,8 @@ function tickEconomy(s: GameState) {
     let demandDrift = 0;
     const biz = DEMO_BIZ[e.demo?.regime ?? 'steady'] ?? 0;   // the tide lifts (or drains) business demand too
     if (ty === 'office') demandDrift = 0.04 + (e.empIdx - 99) * 0.014 + biz;
-    if (ty === 'retail') demandDrift = 0.022 + (e.confidence - 52) * 0.003 + e.popGrowth * 0.035 - (e.ecomMonthsLeft > 0 ? 0.10 : 0);
-    if (ty === 'industrial') demandDrift = 0.045 + (e.ecomMonthsLeft > 0 ? 0.08 : 0) + (e.empIdx - 100) * 0.005 + biz;
+    if (ty === 'retail') demandDrift = 0.022 + (e.confidence - 52) * 0.003 + e.popGrowth * 0.035 - (e.ecomMonthsLeft > 0 ? 0.10 : 0) + ((e.ecomHangoverLeft ?? 0) > 0 ? 0.04 : 0);
+    if (ty === 'industrial') demandDrift = 0.045 + (e.ecomMonthsLeft > 0 ? 0.08 : 0) - ((e.ecomHangoverLeft ?? 0) > 0 ? 0.06 : 0) + (e.empIdx - 100) * 0.005 + biz;
     if (ty === 'multifamily') demandDrift = 0.05 + e.popGrowth * 0.05 + (e.confidence - 55) * 0.0012;
     demandDrift += e.era?.sectorTilt?.[ty] ?? 0;   // the era's secular story: this generation's winner isn't the last one's
     if (e.phase === 'recession') demandDrift -= ((e.recSeverity ?? 1) - 1) * 0.028;   // a named recession cuts demand everywhere
@@ -4838,7 +4864,16 @@ function tickEconomy(s: GameState) {
     // toward equilibrium, shifted by where macro demand is pulling
     const realVac = totSF[ty] > 0 ? (1 - occSF[ty] / totSF[ty]) * 100 : eqVac;
     const macroShift = clamp(-(demandDrift - 0.04) * 25, -4, 4);
-    const target = realVac * 0.6 + (eqVac + macroShift) * 0.4;
+    // the ambient metro's SUPPLY RESPONSE: rents rich against replacement cost invite
+    // construction beyond the modeled blocks and vacancy drifts up; rents far below
+    // cost mean nothing ambient gets built and scarcity tightens. This — not gravity —
+    // is what keeps any one sector from being the permanent century king: whoever runs
+    // rich gets built against until they aren't. Zero at genesis (ratio starts at 1).
+    // asymmetric: rents rich against cost attract ambient construction FAST (capital
+    // chases visible margins); rents below cost merely slow the ambient pipeline
+    const fRatio = e.rentIdx[ty] / Math.max(0.001, e.costIdx);
+    const supplyPress = clamp((fRatio - 1) * (fRatio > 1 ? 16 : 8), -2.5, 5.5);
+    const target = realVac * 0.6 + (eqVac + macroShift + supplyPress) * 0.4;
     e.cityVac[ty] = clamp(e.cityVac[ty] + (target - e.cityVac[ty]) * 0.35 + (rng(s) - 0.5) * 0.12, 2, 32);
     // rents follow the vacancy gap with MOMENTUM — a tightening market builds rent
     // growth over quarters and takes quarters to roll over, like a real one.
@@ -4848,12 +4883,16 @@ function tickEconomy(s: GameState) {
     // sector's ordinary resting distance from its own eq — office idles a couple of
     // points above eq by nature, and taxing that resting state 45% harder rewrote
     // the era balance the first time this shipped
-    // rent momentum swings around each sector's own RESTING vacancy (measured p50
-    // over 10 seeds x 20y), not raw EQ_VAC — office idles a couple points above its
-    // equilibrium by nature and retail slightly below, and reading the raw gap taxed
-    // office's normal state as if it were a glut, every month, forever
-    const REST: Record<string, number> = { office: 2.3, retail: -0.6, industrial: 0.8, multifamily: 0.7, mixed: 0 };
-    const gap = eqVac + (REST[ty] ?? 0) - e.cityVac[ty];
+    // rent momentum swings around the sector's own long-run vacancy norm — a slow
+    // average of its actual history, not a hand-measured constant. A sector that's
+    // simply ALWAYS tight earns no permanent rent-growth edge from it; only being
+    // tighter than your own normal moves pricing. Structure cancels itself.
+    // initialized at each sector's natural resting vacancy (measured), NOT the raw
+    // starting value — otherwise the drift toward resting state reads as a one-time
+    // structural rent move over the first decade
+    const vn = (e.vacNorm ??= { office: 18.7, retail: 9.1, industrial: 11.7, mixed: EQ_VAC.mixed, multifamily: 13.2 });
+    vn[ty] = vn[ty] * 0.995 + e.cityVac[ty] * 0.005;
+    const gap = vn[ty] - e.cityVac[ty];
     const crisis = gap < -3;
     const mk = crisis ? 0.0016 : 0.0011, mb = crisis ? 0.30 : 0.22;
     e.rentMom[ty] = e.rentMom[ty] * (1 - mb) + (gap * mk) * mb;
@@ -4869,13 +4908,18 @@ function tickEconomy(s: GameState) {
     // century-scale sector anchors, phased in with cost drift (zero at genesis, so
     // the measured 20-year era balance is untouched): industrial's structural
     // scarcity edge would otherwise win most quarter-centuries of every long game
-    const K: Record<string, number> = { office: 1.12, retail: 1.05, industrial: 0.70, multifamily: 1.18, mixed: 1 };
-    const kEff = 1 + ((K[ty] ?? 1) - 1) * Math.min(1, Math.max(0, (e.costIdx - 1) / 1.5));
-    const feas = clamp(kEff * e.costIdx / e.rentIdx[ty] - 1, -0.8, 0.8) * 0.0045;
+    const feas = clamp(1 / Math.max(0.001, fRatio) - 1, -0.8, 0.8) * 0.0045;
     // froth: a giddy peak pushes rents past what vacancy justifies — the overshoot
     // the next recession takes back with interest
     const froth = e.phase === 'peak' ? Math.max(0, e.confidence - 70) * 0.00012 : 0;
-    const growth = e.rentMom[ty] + (e.inflation / 100) * 0.5 / 12 + (e.era?.sectorTilt?.[ty] ?? 0) * 0.018 + feas + froth;
+    // the parity brake: tenants' ultimate weapon against scarcity rents is leaving —
+    // any sector priced sustainably above replacement cost bleeds tenants to
+    // build-to-suit beyond the city line. Sector-neutral (it drags whoever is rich),
+    // and it lives in the growth channel where a slow supply trend can't outrun it —
+    // this is what keeps a land-constrained sector from being the automatic century
+    // winner while leaving cyclical spikes untouched
+    const parityBrake = Math.max(0, fRatio - 1.03) * 0.03;
+    const growth = e.rentMom[ty] + (e.inflation / 100) * 0.5 / 12 + (e.era?.sectorTilt?.[ty] ?? 0) * 0.018 + feas + froth - parityBrake;
     // the bounds ride the cost index: year-80 rents measure against year-80
     // replacement cost, not against a ceiling written for year one
     const anchor = Math.max(1, e.costIdx * 0.8);
@@ -5367,9 +5411,17 @@ function tickListings(s: GameState) {
 
 // Rivals don't just shop the board — they put shovels in the ground.
 function firmDevelops(s: GameState, f: Firm) {
-  const want: PType = f.style === 'industrial' ? 'industrial' : f.style === 'mf' ? 'multifamily'
+  const styled: PType = f.style === 'industrial' ? 'industrial' : f.style === 'mf' ? 'multifamily'
     : f.style === 'core' ? (rng(s) < 0.5 ? 'office' : 'retail')
       : f.style === 'value-add' ? 'retail' : rpick(s, PTYPES);
+  // a third of groundbreakings chase the margin instead of the house style: capital
+  // reads the same rent-vs-replacement-cost flyer you do, and whichever sector runs
+  // richest gets built against until it doesn't. This is what keeps any one asset
+  // class from being the permanent century king.
+  const rcOf = (t2: PType) => s.econ.rentIdx[t2] / Math.max(0.001, s.econ.costIdx);
+  const want: PType = rng(s) < 0.35
+    ? (['office', 'retail', 'industrial', 'multifamily'] as PType[]).reduce((x, y) => rcOf(y) > rcOf(x) ? y : x)
+    : styled;
   const cands = s.tiles.filter(t => !t.water && zoneAllows(t.zone, want) && freeParcelCount(s, t.i) >= 3 && tileDemandFactor(s, t, want) > 1.02
     && oversupplyPenalty(t, want) < 0.06);
   if (!cands.length) return;

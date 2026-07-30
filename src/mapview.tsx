@@ -1619,6 +1619,34 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
               const p = ctrOf(a.tileI, a.cells, a.px !== undefined ? { px: a.px, py: a.py!, pw: a.pw!, ph: a.ph! } : undefined);
               banner('ba' + a.id, p[0], p[1] - 8, a.project?.stage === 'building' ? 'UNDER CONSTRUCTION' : (a.project?.stage ?? 'planning').toUpperCase(), '#f0c464');
             }
+            if (ambient >= 1) {
+              // the market's receipts: a SOLD card sits on last month's trades
+              let solds = 0;
+              for (const [ci, c] of state.comps.entries()) {
+                if (state.month - c.m > 1 || solds >= 10) continue;
+                const t2 = state.tiles[c.tileI];
+                if (!t2) continue;
+                const p = isoPt(t2.x, t2.y);
+                banner('sd' + ci, p[0], p[1] + 4, 'SOLD', '#b8b2a4');
+                solds++;
+              }
+              // chronic vacancy hangs its own banner — the building is asking for help
+              let leases = 0;
+              const leaseTag = (key: string, tileI: number, cells?: number[], parcel?: { px: number; py: number; pw: number; ph: number }) => {
+                const p = ctrOf(tileI, cells, parcel);
+                banner(key, p[0], p[1] - 2, 'FOR LEASE', '#9db4c9');
+              };
+              for (const b of state.stock) {
+                if (b.buildLeft || b.listedId !== undefined || b.occ >= 0.3 || leases >= 12) continue;
+                leaseTag('fl' + b.id, b.tileI, b.cells, b.px !== undefined ? { px: b.px, py: b.py!, pw: b.pw!, ph: b.ph! } : undefined);
+                leases++;
+              }
+              for (const a of state.assets) {
+                if (a.mode !== 'operating' || a.forSale || a.occ >= 0.3 || leases >= 14) continue;
+                leaseTag('fla' + a.id, a.tileI, a.cells, a.px !== undefined ? { px: a.px, py: a.py!, pw: a.pw!, ph: a.ph! } : undefined);
+                leases++;
+              }
+            }
             return out;
           })()}
           {/* owners who said no — assembly planning has memory */}

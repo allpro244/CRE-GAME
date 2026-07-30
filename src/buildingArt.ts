@@ -62,9 +62,28 @@ const GLASS = '#3a4a5c';       // curtain-wall band
 const GLASS_HI = '#4d6478';    // high-grade low-iron glass
 const TRIM = '#0b0f13';
 
+// story caps and site coverage by construction spec — massing truth shared by the
+// map's iso prisms and the portrait elevations, so both views agree on how tall a
+// given building stands. (Type keys are engine PTypes; kept as string maps so this
+// module stays engine-free.)
+export const MAX_STORIES: Record<string, number> = {
+  tilt: 1, metal: 1, tin: 1,                 // industrial
+  center: 2, strip: 1, pad: 1,               // retail
+  concrete: 34, masonry: 6, wood: 3,         // office
+  podium: 8,                                 // mixed
+  garden: 3, midrise: 6, tower: 28,          // multifamily
+};
+export const COVER: Record<string, number> = { industrial: 0.50, retail: 0.28, office: 0.45, mixed: 0.50, multifamily: 0.40 };
+const PARCEL_SF = 0.25 * 43_560;
+export function storiesFor(type: string, construction: string | undefined, sf: number, siteCells: number): number {
+  const siteSF = Math.max(1, siteCells) * PARCEL_SF;
+  const maxSt = MAX_STORIES[construction ?? ''] ?? (type === 'industrial' || type === 'retail' ? 1 : 8);
+  return Math.max(1, Math.min(maxSt, Math.round(sf / (siteSF * (COVER[type] ?? 0.45)))));
+}
+
 // facade tints, laid over the prism face at low opacity — this is where the city
 // stops being ten shades of the same box
-const PALETTES = {
+export const PALETTES = {
   brick: ['#7d4a38', '#8a5340', '#6e4234', '#93604a'],
   limestone: ['#a89a80', '#b3a68c', '#9c8f74'],
   concrete: ['#7e8790', '#6f7880', '#8d949c'],
@@ -191,7 +210,7 @@ export function pickArchetype(p: ArtParams, stories: number, r: () => number): A
   return r() < 0.36 ? 'market-hall' : 'main-street';
 }
 
-const ARCH_PALETTE: Record<Archetype, keyof typeof PALETTES> = {
+export const ARCH_PALETTE: Record<Archetype, keyof typeof PALETTES> = {
   'curtainwall': 'glass', 'deco-stepback': 'deco', 'punched-midrise': 'concrete', 'brick-loft': 'brick', 'wood-office': 'stucco',
   'garden-walkup': 'stucco', 'brownstone-row': 'brick', 'podium-balcony': 'stucco', 'res-tower': 'concrete',
   'storefront-row': 'brick', 'strip-parapet': 'stucco', 'bigbox': 'metal', 'anchor-center': 'stucco', 'pad-site': 'brick',

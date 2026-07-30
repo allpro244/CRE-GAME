@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as E from './engine';
 import type { GameState, StockBuilding, Tile } from './engine';
 import { Modal, Hint, BuildingSketch, blockName, pct } from './views2';
-import { buildingArt, siteArt } from './buildingArt';
+import { buildingArt, siteArt, storiesFor } from './buildingArt';
 
 type Lens = 'city' | 'land' | 'zoning' | 'office' | 'retail' | 'industrial' | 'multifamily' | 'crime' | 'comps';
 const LENSES: { id: Lens; label: string }[] = [
@@ -176,16 +176,7 @@ function shade(hex: string, m: number): string {
 // footage against its actual land. A 60K SF warehouse sprawls one story across the
 // site; 60K SF of Class-A office stands 12 stories on a partial footprint. Height
 // and bulk are honest — you can read a building's SF off the skyline.
-const MAX_STORIES: Record<string, number> = {
-  tilt: 1, metal: 1, tin: 1,                 // industrial
-  center: 2, strip: 1, pad: 1,               // retail
-  concrete: 34, masonry: 6, wood: 3,         // office
-  podium: 8,                                 // mixed
-  garden: 3, midrise: 6, tower: 28,          // multifamily
-};
-// typical share of the site the building itself covers — the rest is parking,
-// docks, yards, landscaping
-const COVER: Record<E.PType, number> = { industrial: 0.50, retail: 0.28, office: 0.45, mixed: 0.50, multifamily: 0.40 };
+// (story caps and coverage live in buildingArt so the portrait module shares them)
 // Fabric is what the eye reads as urban: downtown buildings meet their lot lines and
 // each other (adjacent prisms share edges EXACTLY at shrink 1.0 — verified), houses
 // keep yards, industry sits on flat pads. Which fabric applies comes from the zoning.
@@ -197,8 +188,7 @@ function fabricOf(zone: E.Zone | undefined, type: E.PType): Fabric {
 }
 function massing(type: E.PType, construction: string | undefined, sf: number, siteCells: number, fabric: Fabric = 'yard'): { stories: number; ht: number; shrink: number } {
   const siteSF = Math.max(1, siteCells) * E.PARCEL_AC * 43_560;
-  const maxSt = MAX_STORIES[construction ?? ''] ?? (type === 'industrial' || type === 'retail' ? 1 : 8);
-  const stories = Math.max(1, Math.min(maxSt, Math.round(sf / (siteSF * COVER[type]))));
+  const stories = storiesFor(type, construction, sf, siteCells);
   const cover = Math.max(fabric === 'wall' ? 0.55 : 0.10, Math.min(0.92, sf / stories / siteSF));
   const shrink = fabric === 'wall' ? 1.0 : fabric === 'pad' ? 0.96 : Math.max(0.34, Math.min(0.88, Math.sqrt(cover)));
   return { stories, ht: 4 + stories * 4.2, shrink };

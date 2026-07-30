@@ -1631,10 +1631,12 @@ function generateStock(state: GameState) {
   for (const t of state.tiles) {
     for (const ty of PTYPES) t.supply[ty] = 0;
     if (t.water) continue;
-    // The city starts young: half of what it will become. Development clusters near
-    // the core and thins to nothing at the edges — the rest is the campaign's job.
-    const dens = clamp(0.10 + Math.pow(t.D / 100, 1.9) * 0.62 + (t.indSuit > 62 ? 0.02 : 0), 0.06, t.zone.tier === 3 ? 0.85 : 0.62) * (t.indSuit > 62 ? 0.75 : 1);
-    const budget = Math.round(dens * PGRID * PGRID * 0.5); // parcels to fill on this block — half density at day one
+    // The city starts young and it starts DOWNTOWN: dense core, thinning ring, and a
+    // fringe where most blocks are still dirt — the frontier is the campaign's job.
+    // Low-desirability blocks roll to exist at all; the ones that miss stay empty.
+    if (t.D < 42 && rng(state) > Math.pow(t.D / 42, 1.7)) continue;
+    const dens = clamp(0.02 + Math.pow(t.D / 100, 2.1) * 0.85 + (t.indSuit > 62 ? 0.03 : 0), 0.02, t.zone.tier === 3 ? 0.9 : 0.66) * (t.indSuit > 62 ? 0.75 : 1);
+    const budget = Math.round(dens * PGRID * PGRID * (t.D >= 62 ? 0.6 : 0.5)); // day-one fill, core-weighted
     // each use competes for land in proportion to the acreage its demand implies
     // zoning shapes what got built: nonconforming stock exists (it predates the paper) but it's the exception
     const weights: [PType, number][] = PTYPES.map(ty => [ty, tileCapacitySF(t, ty) / (FAR[ty] * 43_560 * PARCEL_AC) * (zoneAllows(t.zone, ty) ? 1 : 0.12)] as [PType, number]);

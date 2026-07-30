@@ -330,6 +330,10 @@ export interface Asset {
   tenants: Tenant[];
   occ: number; // derived cache: leased SF / sf
   rentStance: number; maint: 'low' | 'std' | 'high';
+  // standing concessions posture: months of free rent advertised to new tenants.
+  // Fills tours faster without cutting face rents (the appraisal reads face) — the
+  // free months come out of your pocket at move-in. Office/MF/mixed only.
+  concessions?: 0 | 1 | 2;
   loans: Loan[];
   ledger: CFEntry[]; cumCF: number;
   bts?: { rfpId: number; tenant: string; credit: 0 | 1 | 2; rate: number; termY: number; deliverBy: number; penalty: number };
@@ -2844,6 +2848,13 @@ export function grantSandboxCash(state: GameState, amount = 50_000_000): GameSta
 export function setRentStance(state: GameState, assetId: number, stance: number): GameState {
   const s = clone(state); const a = s.assets.find(x => x.id === assetId); if (a) a.rentStance = stance; return s;
 }
+export function setConcessions(state: GameState, assetId: number, n: 0 | 1 | 2): GameState {
+  const s = clone(state); const a = s.assets.find(x => x.id === assetId);
+  if (a && (a.type === 'office' || a.type === 'multifamily' || a.type === 'mixed')) a.concessions = n;
+  return s;
+}
+// velocity from advertised free rent: 1 month reads as +35% tour volume, 2 as +70%
+export function concMult(a: { concessions?: number }): number { return 1 + (a.concessions ?? 0) * 0.35; }
 export function setMaint(state: GameState, assetId: number, m: 'low' | 'std' | 'high'): GameState {
   const s = clone(state); const a = s.assets.find(x => x.id === assetId); if (a) a.maint = m; return s;
 }
@@ -3656,7 +3667,7 @@ function spawnLOIs(s: GameState) {
     const sizeDrag = clamp(1.2 - su / 30_000, 0.3, 1);
     // in a tight market every vacancy gets toured; in a soft one the phone is quiet
     const amen = (a.programs ?? []).includes('amenity') ? (PROGRAMS.find(p => p.id === 'amenity')?.velocity ?? 1) : 1;
-    const p = clamp(CONFIG.absorbBase[sector] * 1.0 * (s.staff?.leasing ? 1.25 : 1) * df * qf * rentComp * boost * sizeDrag * amen * leasingClimate(s, sector) * clamp(vacant / (loiUse ? Math.max(vacant, 1) : a.sf), 0.25, 1), 0.02, 0.34);
+    const p = clamp(CONFIG.absorbBase[sector] * 1.0 * (s.staff?.leasing ? 1.25 : 1) * df * qf * rentComp * boost * sizeDrag * amen * concMult(a) * leasingClimate(s, sector) * clamp(vacant / (loiUse ? Math.max(vacant, 1) : a.sf), 0.25, 1), 0.02, 0.34);
     if (rng(s) > p) continue;
     // big-suite tenants come by LOI/RFP; require a meaningful chunk
     const chunkUnits = Math.max(1, Math.min(Math.round(vacant / su), 1 + Math.floor(rng(s) * Math.max(1, unitsRef / 2))));
@@ -6179,8 +6190,18 @@ function tickAsset(s: GameState, a: Asset): number {
     const boost = a.mode === 'leaseup' ? 1.7 : 1;
     const sizeDragMF = clamp(1.12 - a.sf / 300_000, 0.6, 1);
     const amenMF = (a.programs ?? []).includes('amenity') ? (PROGRAMS.find(p => p.id === 'amenity')?.velocity ?? 1) : 1;
-    const gain = CONFIG.absorbBase[a.type] * 0.45 * (s.staff?.leasing ? 1.18 : 1) * df * qf * clamp(rentComp, 0.4, 1.6) * boost * sizeDragMF * amenMF * leasingClimate(s, a.type) * Math.max(0, tOcc * 1.03 - a.occ);
+    const gain = CONFIG.absorbBase[a.type] * 0.45 * (s.staff?.leasing ? 1.18 : 1) * df * qf * clamp(rentComp, 0.4, 1.6) * boost * sizeDragMF * amenMF * concMult(a) * leasingClimate(s, a.type) * Math.max(0, tOcc * 1.03 - a.occ);
+    const occBefore = a.occ;
     a.occ = clamp(a.occ - churn * a.occ + gain + (rng(s) - 0.5) * 0.006, 0.05, 0.98);
+    // the advertised free months come due as renters move in
+    if ((a.concessions ?? 0) > 0 && a.occ > occBefore) {
+      const freeRent = Math.round((a.occ - occBefore) * a.sf * mkt / 12 * a.concessions!);
+      if (freeRent > 0) {
+        s.cash -= freeRent;
+        logCF(s, 'lease-costs', `${a.name} — move-in concessions`, -freeRent);
+        a.ledger.push({ m: s.month, amt: -freeRent });
+      }
+    }
     if (a.mode === 'leaseup' && a.occ >= 0.85) {
       a.mode = 'operating';
       pushNews(s, 'success', `${a.name} is stabilized at ${Math.round(a.occ * 100)}% occupancy. Permanent financing is now on the table.`);
@@ -6199,7 +6220,7 @@ function tickAsset(s: GameState, a: Asset): number {
       const boost = a.mode === 'leaseup' ? 1.7 : 1;
       const rentCompMF = clamp(1 - a.rentStance * 2.2, 0.4, 1.6);
       const curOcc = clamp((row?.sf ?? 0) / mfc.sf, 0, 1);
-      const gain = CONFIG.absorbBase.multifamily * 0.45 * (s.staff?.leasing ? 1.18 : 1) * df * qf * rentCompMF * boost * leasingClimate(s, 'multifamily') * Math.max(0, tOcc * 1.03 - curOcc);
+      const gain = CONFIG.absorbBase.multifamily * 0.45 * (s.staff?.leasing ? 1.18 : 1) * df * qf * rentCompMF * boost * concMult(a) * leasingClimate(s, 'multifamily') * Math.max(0, tOcc * 1.03 - curOcc);
       const newOcc = clamp(curOcc - churn * curOcc + gain + (rng(s) - 0.5) * 0.006, 0, 0.98);
       const occUnits = clamp(Math.round(newOcc * mfc.units), 0, mfc.units);
       const newSF = Math.round(occUnits * (mfc.sf / mfc.units));
@@ -6212,6 +6233,10 @@ function tickAsset(s: GameState, a: Asset): number {
         if (newSF > row.sf) {
           // move-ins sign at today's rent; the block's blended rate follows
           row.rate = Math.round((row.rate * row.sf + mktMF * (newSF - row.sf)) / Math.max(1, newSF) * 100) / 100;
+          if ((a.concessions ?? 0) > 0) {
+            const freeRent = Math.round((newSF - row.sf) * mktMF / 12 * a.concessions!);
+            if (freeRent > 0) { s.cash -= freeRent; logCF(s, 'lease-costs', `${a.name} — move-in concessions`, -freeRent); a.ledger.push({ m: s.month, amt: -freeRent }); }
+          }
         }
         row.sf = newSF;
         row.name = `Residences — ${occUnits} of ${mfc.units} homes`;
@@ -6231,15 +6256,20 @@ function tickAsset(s: GameState, a: Asset): number {
       const qf = 0.78 + (apparentQuality(s, a) / 150) * 0.30;
       const boost = a.mode === 'leaseup' ? 1.6 : 1;
       const amenSm = (a.programs ?? []).includes('amenity') ? (PROGRAMS.find(x => x.id === 'amenity')?.velocity ?? 1) : 1;
-      const p = clamp(CONFIG.absorbBase[a.type] * 1.45 * (s.staff?.leasing ? 1.25 : 1) * df * qf * rentComp * boost * amenSm * leasingClimate(s, a.type) * clamp(vacant / a.sf, 0.2, 1), 0.02, 0.44);
+      const p = clamp(CONFIG.absorbBase[a.type] * 1.45 * (s.staff?.leasing ? 1.25 : 1) * df * qf * rentComp * boost * amenSm * concMult(a) * leasingClimate(s, a.type) * clamp(vacant / a.sf, 0.2, 1), 0.02, 0.44);
       if (rng(s) < p) {
         let sf = Math.min(vacant, Math.round(su / 100) * 100);
         if (vacant - sf < Math.max(400, su * 0.5)) sf = vacant;   // tenants take whole suites — no orphan slivers
+        const signedRate = Math.round(mkt * (1 + a.rentStance) * rrange(s, 0.97, 1.03) * 100) / 100;
         a.tenants.push({
           id: s.nextId++, name: tenantName(s, a.type), sf,
-          rate: Math.round(mkt * (1 + a.rentStance) * rrange(s, 0.97, 1.03) * 100) / 100,
+          rate: signedRate,
           startM: s.month, endM: s.month + Math.round(rrange(s, 24, 60)), credit: rollCredit(s, a.quality + ((a.programs ?? []).includes('smart') ? 12 : 0), t.D),
         });
+        if ((a.concessions ?? 0) > 0) {
+          const freeRent = Math.round(sf * signedRate / 12 * a.concessions!);
+          if (freeRent > 0) { s.cash -= freeRent; logCF(s, 'lease-costs', `${a.name} — signing concessions`, -freeRent); a.ledger.push({ m: s.month, amt: -freeRent }); }
+        }
       }
     }
   }

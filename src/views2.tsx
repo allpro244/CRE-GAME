@@ -1378,6 +1378,17 @@ export function AssetCard({ state, setState, asset: a, onSell, onRefi, onLOI, op
             ))}
           </div>
         </div>
+        {(a.type === 'office' || a.type === 'multifamily' || a.type === 'mixed') && (
+          <div>
+            <div className="eyebrow" style={{ fontSize: 9, marginBottom: 3 }}>Concessions <Hint text="Advertise free rent to new tenants: tours book 35% faster per free month and face rents hold (your appraisal reads face rates, not the giveaway). The free months come out of your pocket at each move-in. The standard lease-up play when speed matters more than this quarter's cash." /></div>
+            <div className="seg">
+              {([[0, 'None'], [1, '1 mo free'], [2, '2 mo free']] as const).map(([v, l]) => (
+                <button key={v} className={(a.concessions ?? 0) === v ? 'active' : ''}
+                  onClick={() => setState(E.setConcessions(state, a.id, v))}>{l}</button>
+              ))}
+            </div>
+          </div>
+        )}
         <div>
           <div className="eyebrow" style={{ fontSize: 9, marginBottom: 3 }}>Maintenance</div>
           <div className="seg">

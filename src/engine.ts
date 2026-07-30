@@ -1962,13 +1962,26 @@ export function buyBuilding(state: GameState, listingId: number, downPct: number
   }
   const pmt = monthlyPayment(loanAmt, rate, lo.amortYears);
   const noiYr = inPlaceNOIYr(s, l);
-  // at 50% LTV or less, the collateral speaks for itself — a loan is always available
-  if (ltv > 0.501) {
-    if (loanAmt > 0 && noiYr / (pmt * 12) < CONFIG.minDSCR && !l.distressed && l.kind !== 'offmarket') {
-      return { s, err: 'DSCR ' + (noiYr / (pmt * 12)).toFixed(2) + '× is below the bank minimum of 1.25×. Put 50% down and any bank will lend on the collateral alone.' };
-    }
-    if (loanAmt > 0 && noiYr / (pmt * 12) < 0.9) {
-      return { s, err: 'Even a bridge lender needs ~0.9× coverage at this leverage. Drop to 50% LTV and the loan is yours.' };
+  // at 50% LTV or less, the collateral speaks for itself — a loan is always available.
+  // Above it, each desk applies ITS OWN coverage floor: the banks want 1.25x, the life
+  // company 1.35x, and Ironbridge will carry 0.75x — lending on anything is their brand.
+  if (ltv > 0.501 && loanAmt > 0) {
+    const dscrIn = noiYr / (pmt * 12);
+    if (lenderId) {
+      const floor = LENDER_MIN_DSCR[lenderId] ?? CONFIG.minDSCR;
+      if (dscrIn < floor) {
+        const nm = LENDERS.find(x => x.id === lenderId)?.short ?? 'The lender';
+        return { s, err: lenderId === 'ibx'
+          ? `Even Ironbridge wants a path to the coupon: ${dscrIn.toFixed(2)}× coverage is under their ${floor.toFixed(2)}× floor. Less leverage — or a building that earns something.`
+          : `${nm} passes at ${dscrIn.toFixed(2)}× coverage — their floor is ${floor.toFixed(2)}×. Ironbridge would look at it, at their price.` };
+      }
+    } else {
+      if (dscrIn < CONFIG.minDSCR && !l.distressed && l.kind !== 'offmarket') {
+        return { s, err: 'DSCR ' + dscrIn.toFixed(2) + '× is below the bank minimum of 1.25×. Ironbridge carries thin coverage at a price — or put 50% down and any bank lends on the collateral alone.' };
+      }
+      if (dscrIn < 0.9) {
+        return { s, err: 'Even a bridge lender needs ~0.9× coverage at this leverage. Drop to 50% LTV and the loan is yours.' };
+      }
     }
   }
   s.cash -= yourEquity + 15000;
@@ -3854,7 +3867,10 @@ export const LENDERS: LenderDef[] = [
   { id: 'ibx', name: 'Ironbridge Credit Partners', short: 'Ironbridge', blurb: 'The debt fund. They will lend on anything, at a price, in any market. The price is the point.' },
   { id: 'mst', name: 'Meridian Street Capital', short: 'Meridian St', blurb: 'The CMBS desk. Sharp pricing on big loans, interest-only years — and the window slams shut the day markets wobble.' },
 ];
-export interface LoanQuote { lenderId: string; ok: boolean; why?: string; ratePct: number; maxLTV: number; amortYears: number; ioMonths: number }
+export interface LoanQuote { lenderId: string; ok: boolean; why?: string; ratePct: number; maxLTV: number; amortYears: number; ioMonths: number; minDSCR?: number }
+// every desk has its own coverage floor: the banks are banks, the life company wants a
+// fortress, and Ironbridge will carry a building that barely pays — the price is the point
+export const LENDER_MIN_DSCR: Record<string, number> = { fnb: 1.25, hbv: 1.25, col: 1.35, ibx: 0.75, mst: 1.20 };
 export function lenderPosture(s: GameState, id: string): 'open' | 'tight' | 'closed' {
   const crunch = s.econ.crunchMonthsLeft > 0, rec = s.econ.phase === 'recession';
   if (id === 'mst') return crunch || rec ? 'closed' : 'open';
@@ -3871,25 +3887,25 @@ export function lenderQuote(s: GameState, lenderId: string, deal: { price: numbe
   if (lenderId === 'fnb') {
     const ltv = crunch ? 0.58 : 0.68;
     if (deal.price * ltv > 6_000_000) return no('Past their legal lending limit — the hometown bank writes checks to $6M of exposure.');
-    return { lenderId, ok: true, ratePct: base + 2.55 - disc, maxLTV: ltv, amortYears: 25, ioMonths: 0 };
+    return { lenderId, ok: true, ratePct: base + 2.55 - disc, maxLTV: ltv, amortYears: 25, ioMonths: 0, minDSCR: LENDER_MIN_DSCR.fnb };
   }
   if (lenderId === 'hbv') {
     const ltv = crunch ? 0.62 : 0.72;
     if (deal.price * ltv > 20_000_000) return no('Above the regional\'s hold size.');
-    return { lenderId, ok: true, ratePct: base + 2.25 + (crunch ? 0.5 : 0) - disc, maxLTV: ltv, amortYears: 30, ioMonths: 0 };
+    return { lenderId, ok: true, ratePct: base + 2.25 + (crunch ? 0.5 : 0) - disc, maxLTV: ltv, amortYears: 30, ioMonths: 0, minDSCR: LENDER_MIN_DSCR.hbv };
   }
   if (lenderId === 'col') {
     const minQ = crunch ? 110 : 96;
     if (deal.quality < minQ) return no(`Life-company money wants ${crunch ? 'trophy' : 'Class A'} product — quality ${minQ}+.`);
     if (deal.price < 6_000_000) return no('Below their minimum check — they don\'t underwrite anything under $6M.');
-    return { lenderId, ok: true, ratePct: base + 1.55 - disc, maxLTV: 0.58, amortYears: 30, ioMonths: 0 };
+    return { lenderId, ok: true, ratePct: base + 1.55 - disc, maxLTV: 0.58, amortYears: 30, ioMonths: 0, minDSCR: LENDER_MIN_DSCR.col };
   }
   if (lenderId === 'ibx') {
-    return { lenderId, ok: true, ratePct: base + (crunch ? 5.4 : 4.1) - disc, maxLTV: crunch ? 0.75 : 0.80, amortYears: 30, ioMonths: 36 };
+    return { lenderId, ok: true, ratePct: base + (crunch ? 5.4 : 4.1) - disc, maxLTV: crunch ? 0.75 : 0.80, amortYears: 30, ioMonths: 36, minDSCR: LENDER_MIN_DSCR.ibx };
   }
   // mst
   if (deal.price < 10_000_000) return no('Below the securitization minimum — CMBS starts at $10M.');
-  return { lenderId, ok: true, ratePct: base + 1.95, maxLTV: 0.75, amortYears: 30, ioMonths: 60 };   // no relationship pricing: the bonds don't know you
+  return { lenderId, ok: true, ratePct: base + 1.95, maxLTV: 0.75, amortYears: 30, ioMonths: 60, minDSCR: LENDER_MIN_DSCR.mst };   // no relationship pricing: the bonds don't know you
 }
 export function lenderQuotesFor(s: GameState, deal: { price: number; type: PType; quality: number }): LoanQuote[] {
   return LENDERS.map(l => lenderQuote(s, l.id, deal));

@@ -343,7 +343,7 @@ export function DealsView2({ state, setState, openDeal }: {
       )}
       <div className="dim" style={{ fontSize: 12.5, marginBottom: 8 }}>
         {regular.length} public listings — an index, not a workroom. Click a row and the map takes you there.
-        Rivals shop this same board; <span style={{ color: '#e08c8c' }}>hot</span> listings won't wait.
+        Rivals shop this same marketplace; <span style={{ color: '#e08c8c' }}>hot</span> listings won't wait.
       </div>
       {err && <div className="alert-strip red"><span>{err}</span><button className="btn btn-sm" onClick={() => setErr(null)}>✕</button></div>}
       <DealIndex state={state} listings={regular} openDeal={openDeal} />
@@ -605,7 +605,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
                   <input type="radio" name="acqloan" checked={selQuote?.lenderId === q2.lenderId} onChange={() => setLenderPick(q2.lenderId)} />
                   <span style={{ minWidth: 128 }}>{ld.short}{rel >= 60 ? ' ★' : ''}</span>
                   <span className="num">{q2.ratePct.toFixed(2)}%</span>
-                  <span className="num dim">{q2.amortYears}-yr{q2.ioMonths > 0 ? ` · ${q2.ioMonths}mo IO` : ''} · ≤{Math.round(q2.maxLTV * 100)}%</span>
+                  <span className="num dim">{q2.amortYears}-yr{q2.ioMonths > 0 ? ` · ${q2.ioMonths}mo IO` : ''} · ≤{Math.round(q2.maxLTV * 100)}%{q2.minDSCR !== undefined ? ` · ${q2.minDSCR.toFixed(2)}× floor` : ''}</span>
                   <span className="num dim">{E.fmtMoney(svc)}/mo</span>
                   <span className="faint" style={{ flex: 1, fontSize: 10.5 }}>{ld.blurb}</span>
                 </label>
@@ -614,8 +614,8 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
             {!selQuote && <div className="alert-strip red" style={{ margin: '6px 0' }}>No desk will touch this one right now — smaller ask, better collateral, or wait out the market.</div>}
             <div className="memo-row" style={{ marginTop: 4 }}><span className="lbl">Loan ({pct(1 - dpEff)} LTV, max {pct(ltvMax)}) · 10-yr balloon</span><span className="num">{E.fmtMoney(loan)}</span></div>
             <div className="memo-row"><span className="lbl">Debt service</span><span className="num">{selQuote ? E.fmtMoney((selQuote.ioMonths > 0 ? loan * selQuote.ratePct / 100 / 12 : E.monthlyPayment(loan, selQuote.ratePct, selQuote.amortYears)) * 12) + '/yr' : '—'}</span></div>
-            <div className="memo-row"><span className="lbl">DSCR on in-place income <Hint text="NOI ÷ annual debt service. The bank wants 1.25×+. Distressed and off-market deals can close on bridge terms as low as 0.9×." /></span>
-              <span className={'num ' + (dscr === null ? '' : dscr >= 1.25 ? 'pos' : 'neg')}>{dscr === null ? '—' : dscr.toFixed(2) + '×'}</span></div>
+            <div className="memo-row"><span className="lbl">DSCR on in-place income <Hint text="NOI ÷ annual debt service. Every desk has its own floor: the banks want 1.25×, the CMBS desk 1.20×, Colonial 1.35× — and Ironbridge will carry 0.75× coverage, because the price is the point." /></span>
+              <span className={'num ' + (dscr === null ? '' : dscr >= (selQuote?.minDSCR ?? 1.25) ? 'pos' : 'neg')}>{dscr === null ? '—' : dscr.toFixed(2) + '×'}{selQuote?.minDSCR !== undefined && dscr !== null ? <span className="faint"> vs {selQuote.minDSCR.toFixed(2)}× floor</span> : ''}</span></div>
             {(() => {
               const eq = effPrice * dpEff;
               const jvc = E.canJV(state, eq);

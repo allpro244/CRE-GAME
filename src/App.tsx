@@ -389,7 +389,7 @@ function Dashboard({ state, goDeals, openLOI, openFirm, flyTo }: { state: GameSt
           </table>
           <div className="faint" style={{ fontSize: 11, marginTop: 10, lineHeight: 1.5 }}>
             Real books, same rules: rent in, debt service out, marked to market quarterly. A rival past ~75% leverage
-            is one bad quarter from selling you something cheap. Rivals shop the public board, but off-market leads you canvass are yours alone.
+            is one bad quarter from selling you something cheap. Rivals shop the public marketplace, but off-market leads you canvass are yours alone.
           </div>
         </div>
       </div>
@@ -819,7 +819,7 @@ function EconomyView({ state }: { state: GameState }) {
               {state.econ.phase === 'recovery' && 'Sellers are tired and money is cheap. Projects started now deliver into the expansion. This is when the good vintages are planted.'}
               {state.econ.phase === 'expansion' && 'Demand is broadening and rents are climbing. Deals still pencil, but every quarter of expansion pulls the peak closer.'}
               {state.econ.phase === 'peak' && 'Everything leases fast and everything is expensive. Whatever breaks ground today delivers into whatever comes next — and what comes next is not another peak. Consider selling into this.'}
-              {state.econ.phase === 'recession' && 'Values are marked down and tenants are fragile. If your debt service is covered, hold. If you have cash, the best deals of the decade are on this board.'}
+              {state.econ.phase === 'recession' && 'Values are marked down and tenants are fragile. If your debt service is covered, hold. If you have cash, the best deals of the decade are in the marketplace right now.'}
             </p>
             {state.econ.crunchMonthsLeft > 0 && <p className="neg">Credit crunch: no refinancings, LTVs cut. ~{state.econ.crunchMonthsLeft} months left.</p>}
             {state.econ.ecomMonthsLeft > 0 && <p className="amber">E-commerce squeeze: retail soft, industrial strong. ~{state.econ.ecomMonthsLeft} months left.</p>}

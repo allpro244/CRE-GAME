@@ -1702,7 +1702,7 @@ export function approachOwner(state: GameState, stockId: number): { s: GameState
   return { s, lead };
 }
 
-export function makeOffer(state: GameState, listingId: number, amount: number): { s: GameState; result: 'accepted' | 'countered' | 'declined' | 'gone'; counter?: number } {
+export function makeOffer(state: GameState, listingId: number, amount: number): { s: GameState; result: 'accepted' | 'countered' | 'declined' | 'gone'; counter?: number; msg?: string } {
   const s = clone(state);
   const l = s.listings.find(x => x.id === listingId);
   if (!l || l.yourSale || l.declinedYou || l.parentAssetId) return { s, result: 'gone' };
@@ -1737,18 +1737,20 @@ export function makeOffer(state: GameState, listingId: number, amount: number): 
     return { s, result: 'countered', counter: l.price };
   }
   s.reputation = clamp(s.reputation - 1.5, 0, 100); // word gets around about lowballers
+  let msg: string;
   if (l.kind === 'offmarket') {
     const sb = l.stockId ? s.stock.find(b => b.id === l.stockId) : undefined;
     if (sb) { sb.blacklist = true; sb.listedId = undefined; }
     s.listings = s.listings.filter(x => x.id !== listingId);
-    pushNews(s, 'warn', `The off-market owner took your ${fmtMoney(amount)} offer as an insult. They've stopped returning calls.`);
+    msg = `The off-market owner took your ${fmtMoney(amount)} offer as an insult. They've hung up for good — that door doesn't reopen.`;
   } else {
     l.declinedYou = true;
-    pushNews(s, 'warn', l.kind === 'land'
+    msg = l.kind === 'land'
       ? `The landowner won't deal with you after that ${fmtMoney(amount)} offer. Dirt has feelings too, apparently.`
-      : `The seller of the ${((l.sf ?? 0) / 1000).toFixed(0)}K SF ${PLABEL[l.type!]} listing won't deal with you after that ${fmtMoney(amount)} offer. Brokers talk.`);
+      : `The seller of the ${((l.sf ?? 0) / 1000).toFixed(0)}K SF ${PLABEL[l.type!]} listing won't deal with you after that ${fmtMoney(amount)} offer. Brokers talk.`;
   }
-  return { s, result: 'declined' };
+  pushNews(s, 'warn', msg);
+  return { s, result: 'declined', msg };
 }
 
 // ---------- Actions ----------

@@ -423,9 +423,10 @@ function DealIndex({ state, listings, openDeal }: {
 }
 
 // ---------- Deal modal (building / off-market / land) ----------
-export function DealModal({ state, listing, setState, close, variant = 'dialog' }: {
+export function DealModal({ state, listing, setState, close, variant = 'dialog', onNotice }: {
   state: GameState; listing: Listing; setState: (s: GameState) => void; close: () => void;
   variant?: 'dialog' | 'drawer';
+  onNotice?: (msg: string) => void;
 }) {
   const t = state.tiles[listing.tileI];
   const [err, setErr] = useState<string | null>(null);
@@ -512,7 +513,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
                 setState(r.s);
                 if (r.result === 'accepted') { setOmOk(true); setOmMsg(`✓ SELLER AGREED at ${E.fmtMoney(offerAmt)} — paper it before they change their mind.`); }
                 else if (r.result === 'countered') { setOmOk(false); setOmMsg(`They countered at ${E.fmtMoney(r.counter!)} — that's their ask now. Meet it, beat it, or walk.`); setOfferAmt(r.counter!); }
-                else if (r.result === 'declined') { close(); }
+                else if (r.result === 'declined') { onNotice?.(r.msg ?? 'The seller declined and ended the conversation.'); close(); }
               }}>Offer {E.fmtMoney(offerAmt)}</button>
             </div>
             <div className="faint" style={{ fontSize: 10.5, marginTop: 6 }}>
@@ -667,7 +668,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog' 
               if (r.result === 'accepted') { setOmOk(true); setOmMsg(`✓ SELLER AGREED at ${E.fmtMoney(amt)} — go close it.`); }
               setState(r.s);
               if (r.result === 'countered') { setOmMsg(`They countered at ${E.fmtMoney(r.counter!)} — that's the new ask.`); setOfferAmt(r.counter!); }
-              else if (r.result === 'declined') close();
+              else if (r.result === 'declined') { onNotice?.(r.msg ?? 'The owner declined and ended the conversation.'); close(); }
               else if (r.result === 'accepted') setOmMsg(null);
             }}>Make offer</button>
           </div>

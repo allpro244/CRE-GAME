@@ -70,6 +70,7 @@ function Game({ state, setState, toMenu }: {
   const [saved, setSaved] = useState(false);
   const [firmShort, setFirmShort] = useState<string | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   // first campaign, month zero: the primer opens itself once. Everyone else finds it in the top bar.
   const [howTo, setHowTo] = useState(() => state.month === 0 && !state.sandbox && state.assets.length === 0 && state.land.length === 0);
   const [focusTile, setFocusTile] = useState<number | null>(null);
@@ -230,7 +231,16 @@ function Game({ state, setState, toMenu }: {
       {drawerAsset && <AssetDrawer state={state} setState={setState} asset={drawerAsset} close={() => setAssetId(null)}
         onSell={setSellId} onRefi={setRefiId} onLOI={setLoiId} openDeal={id => { setAssetId(null); setDealId(id); }} onSold={p => { setAssetId(null); setPm(p); }} />}
 
-      {listing && <DealModal state={state} listing={listing} setState={setState} close={() => setDealId(null)} variant={detailVariant} />}
+      {listing && <DealModal state={state} listing={listing} setState={setState} close={() => setDealId(null)} variant={detailVariant} onNotice={setNotice} />}
+      {notice && (
+        <Modal close={() => setNotice(null)}>
+          <h2>They said no</h2>
+          <div className="alert-strip red" style={{ margin: '10px 0' }}>{notice}</div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button className="btn btn-amber" onClick={() => setNotice(null)}>Understood</button>
+          </div>
+        </Modal>
+      )}
       {loi && <LOIModal state={state} setState={setState} loi={loi} close={() => setLoiId(null)} variant={detailVariant} />}
       {sellAsset && <SellModal state={state} setState={setState} asset={sellAsset} close={() => setSellId(null)} variant={detailVariant} />}
       {firmShort && <FirmPortfolioModal state={state} short={firmShort} close={() => setFirmShort(null)} openStock={id => { setFirmShort(null); setStockCardId(id); }} />}

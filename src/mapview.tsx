@@ -1540,6 +1540,28 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+  // deliveries get their moment: track what left construction this month and
+  // ring it gold — the most important event on the map deserves more than
+  // silently existing
+  const [delivered, setDelivered] = useState<{ tileI: number; cells?: number[]; px?: number; py?: number; pw?: number; ph?: number }[]>([]);
+  const prevUC = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const uc = new Set<string>();
+    for (const b of state.stock) if (b.buildLeft) uc.add('b' + b.id);
+    for (const a of state.assets) if (a.mode === 'construction') uc.add('a' + a.id);
+    const out: { tileI: number; cells?: number[]; px?: number; py?: number; pw?: number; ph?: number }[] = [];
+    for (const k of prevUC.current) {
+      if (uc.has(k)) continue;
+      if (k[0] === 'b') { const b = state.stock.find(x => x.id === Number(k.slice(1))); if (b) out.push(b); }
+      else { const a = state.assets.find(x => x.id === Number(k.slice(1))); if (a) out.push(a); }
+    }
+    prevUC.current = uc;
+    if (out.length) {
+      setDelivered(out);
+      const id = setTimeout(() => setDelivered([]), 3200);
+      return () => clearTimeout(id);
+    }
+  }, [state.month]); // eslint-disable-line
   // when the clock ticks, the map acknowledges it: blocks that made news pulse briefly
   // and a one-line digest reports what the month brought
   const [pulseTiles, setPulseTiles] = useState<number[]>([]);
@@ -1915,6 +1937,23 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             const t = state.tiles[i];
             return <polygon key={'pu' + i} className="tile-pulse" points={diamond(t.x, t.y, 0.98)} fill="none"
               stroke="var(--amber)" strokeWidth={2} style={{ pointerEvents: 'none' }} />;
+          })}
+          {/* delivery: a gold double-ring settles on the finished building */}
+          {ambient >= 1 && delivered.map((d2, k) => {
+            const t = state.tiles[d2.tileI];
+            if (!t) return null;
+            const cells = E.footprintCells(d2 as any);
+            const r0 = cells.length ? cellRects(cells)[0] : { px: 1, py: 1, pw: 2, ph: 2 };
+            const [ccx, ccy] = parcelCenter(t.x, t.y, r0.px, r0.py, r0.pw, r0.ph);
+            const [w2, h2] = parcelSpan(r0.pw, r0.ph);
+            return (
+              <g key={'dv' + k} style={{ pointerEvents: 'none' }}>
+                <polygon className="tile-pulse" points={rectPoly(ccx, ccy, w2 * 1.06, h2 * 1.06)} fill="none" stroke="#f0c464" strokeWidth={2.4}
+                  style={{ animationIterationCount: 3, animationDuration: '1.05s' }} />
+                <polygon className="tile-pulse" points={rectPoly(ccx, ccy, w2 * 0.8, h2 * 0.8)} fill="none" stroke="#f0c464" strokeWidth={1.2}
+                  style={{ animationIterationCount: 3, animationDuration: '1.05s', animationDelay: '0.25s' }} />
+              </g>
+            );
           })}
           {Array.from({ length: E.CONFIG.GRID_W }, (_, i) => {
             const p = isoPt(i, -0.75);

@@ -31,7 +31,18 @@ export interface PortraitSubject {
   proposed?: boolean;        // architect's rendering: pristine, no weathering
   progress?: number;         // 0-1 → construction site scene instead of a facade
   designTier?: 've' | 'std' | 'signature';
+  month?: number;            // campaign month → season: the portrait shares the map's calendar
 }
+
+type PSeason = 'winter' | 'spring' | 'summer' | 'fall';
+const seasonOfMonth = (m: number): PSeason => {
+  const k = ((m % 12) + 12) % 12;
+  return k <= 1 || k === 11 ? 'winter' : k <= 4 ? 'spring' : k <= 7 ? 'summer' : 'fall';
+};
+const LEAF: Record<PSeason, [string, string]> = {
+  summer: ['#3d5a41', '#39494a'], spring: ['#4a6a4c', '#456052'],
+  fall: ['#8a6a2e', '#7a5a30'], winter: ['#5c564e', '#524e46'],
+};
 
 // map identity seed for a building standing on a tile — the same expression the iso
 // layer uses for its first prism, so portrait and map roll the same archetype dice
@@ -126,16 +137,17 @@ function person(x: number, gy: number, fpx: number, key: string, tone = '#0e1319
     <path key={key + 'b'} d={`M${x - w / 2} ${gy} L${x - w * 0.18} ${gy - h * 0.5} L${x - w * 0.4} ${gy - h * 0.78} L${x} ${gy - h * 0.8} L${x + w * 0.4} ${gy - h * 0.78} L${x + w * 0.18} ${gy - h * 0.5} L${x + w / 2} ${gy}`} fill={tone} />,
   ];
 }
-function tree(x: number, gy: number, fpx: number, r: () => number, key: string, lush: boolean): El[] {
+function tree(x: number, gy: number, fpx: number, r: () => number, key: string, lush: boolean, season: PSeason = 'summer'): El[] {
   const h = (18 + r() * 10) * fpx;
   if (h < 5) return [];
-  const cr = h * (0.34 + r() * 0.1);
-  const leaf = lush ? '#3d5a41' : '#39494a';
+  const bare = season === 'winter';
+  const cr = h * (0.34 + r() * 0.1) * (bare ? 0.7 : 1);
+  const leaf = LEAF[season][lush ? 0 : 1];
   return [
     <line key={key + 't'} x1={x} y1={gy} x2={x} y2={gy - h + cr * 0.7} stroke="#2c2620" strokeWidth={Math.max(0.6, fpx * 0.9)} />,
-    <circle key={key + 'c1'} cx={x} cy={gy - h + cr * 0.5} r={cr} fill={leaf} opacity={0.92} />,
-    <circle key={key + 'c2'} cx={x - cr * 0.55} cy={gy - h + cr * 0.85} r={cr * 0.7} fill={shade(leaf, 0.85)} opacity={0.9} />,
-    <circle key={key + 'c3'} cx={x + cr * 0.5} cy={gy - h + cr * 0.9} r={cr * 0.65} fill={shade(leaf, 1.08)} opacity={0.9} />,
+    <circle key={key + 'c1'} cx={x} cy={gy - h + cr * 0.5} r={cr} fill={leaf} opacity={bare ? 0.55 : 0.92} />,
+    <circle key={key + 'c2'} cx={x - cr * 0.55} cy={gy - h + cr * 0.85} r={cr * 0.7} fill={shade(leaf, 0.85)} opacity={bare ? 0.5 : 0.9} />,
+    <circle key={key + 'c3'} cx={x + cr * 0.5} cy={gy - h + cr * 0.9} r={cr * 0.65} fill={shade(leaf, 1.08)} opacity={bare ? 0.5 : 0.9} />,
   ];
 }
 function car(x: number, gy: number, fpx: number, r: () => number, key: string): El[] {
@@ -164,6 +176,7 @@ function streetlight(x: number, gy: number, fpx: number, key: string, lit: boole
 interface Ctx {
   r: () => number; q: number; age: number; occ: number; fpx: number;
   weather: boolean;    // age is allowed to show
+  season: PSeason;     // the portrait shares the map's calendar
   els: El[]; k: number;
 }
 function key(c: Ctx) { return 'e' + (c.k++); }
@@ -246,9 +259,10 @@ function storefronts(c: Ctx, x: number, gy: number, w: number, hFt: number,
   if (opts.arcade) {
     for (let i = 0; i <= bays; i++) {
       const cx2 = x + i * bw;
-      c.els.push(<line key={key(c)} x1={cx2} y1={gy} x2={cx2} y2={gy - h} stroke="#8a7a5c" strokeWidth={clamp(c.fpx * 1.4, 1.2, 3)} opacity={0.95} />);
-      if (i < bays) c.els.push(<path key={key(c)} d={`M${cx2} ${gy - h * 0.8} Q${cx2 + bw / 2} ${gy - h * 1.12} ${cx2 + bw} ${gy - h * 0.8}`}
-        fill="none" stroke="#8a7a5c" strokeWidth={clamp(c.fpx, 0.8, 2)} opacity={0.9} />);
+      c.els.push(<line key={key(c)} x1={cx2} y1={gy} x2={cx2} y2={gy - h} stroke="#6e5836" strokeWidth={clamp(c.fpx * 2, 1.8, 4.2)} opacity={0.98} />);
+      c.els.push(<line key={key(c)} x1={cx2 - clamp(c.fpx * 1.6, 1.4, 3)} y1={gy - h + 0.6} x2={cx2 + clamp(c.fpx * 1.6, 1.4, 3)} y2={gy - h + 0.6} stroke="#5a4830" strokeWidth={1} opacity={0.95} />);
+      if (i < bays) c.els.push(<path key={key(c)} d={`M${cx2} ${gy - h * 0.78} Q${cx2 + bw / 2} ${gy - h * 1.14} ${cx2 + bw} ${gy - h * 0.78}`}
+        fill="none" stroke="#6e5836" strokeWidth={clamp(c.fpx * 1.3, 1.1, 2.6)} opacity={0.95} />);
     }
   }
 }
@@ -389,9 +403,14 @@ function drawTower(c: Ctx, d: Draw) {
   const topY = arch === 'deco-stepback' || arch === 'terrace-tower' ? bodyTop : bodyTop;
   if (arch === 'crown-tower') {
     const cw = w * 0.5;
-    c.els.push(<rect key={key(c)} x={x + (w - cw) / 2} y={topY - clamp(floorPx * 1.2, 4, 14)} width={cw} height={clamp(floorPx * 1.2, 4, 14)}
-      fill={glass} stroke={TRIM} strokeWidth={0.5} />);
-    if (c.occ > 0.3) c.els.push(<rect key={key(c)} x={x + (w - cw) / 2} y={topY - clamp(floorPx * 1.2, 4, 14)} width={cw} height={clamp(floorPx * 1.2, 4, 14)} fill={WIN_LIT} opacity={0.25} />);
+    const chh = clamp(floorPx * 1.2, 4, 14);
+    c.els.push(<rect key={key(c)} x={x + (w - cw) / 2} y={topY - chh} width={cw} height={chh}
+      fill={GLASS_LIT} stroke={TRIM} strokeWidth={0.6} />);
+    for (let i = 1; i < 5; i++) {
+      c.els.push(<line key={key(c)} x1={x + (w - cw) / 2 + (cw / 5) * i} y1={topY - chh + 0.5} x2={x + (w - cw) / 2 + (cw / 5) * i} y2={topY - 0.5} stroke={TRIM} strokeWidth={0.4} opacity={0.7} />);
+    }
+    c.els.push(<path key={key(c)} d={`M${x + (w - cw) / 2} ${topY - chh} L${x + w / 2} ${topY - chh - clamp(floorPx * 0.5, 2, 5)} L${x + (w + cw) / 2} ${topY - chh} Z`} fill={shade(tint, 0.8)} stroke={TRIM} strokeWidth={0.5} />);
+    if (c.occ > 0.3) c.els.push(<rect key={key(c)} x={x + (w - cw) / 2} y={topY - chh} width={cw} height={chh} fill={WIN_LIT} opacity={0.45} />);
     c.els.push(<line key={key(c)} x1={x + w / 2} y1={topY - clamp(floorPx * 1.2, 4, 14)} x2={x + w / 2} y2={topY - clamp(floorPx * 1.2, 4, 14) - 14 * c.fpx * 2} stroke="#39434e" strokeWidth={0.8} />);
     c.els.push(<circle key={key(c)} cx={x + w / 2} cy={topY - clamp(floorPx * 1.2, 4, 14) - 14 * c.fpx * 2} r={1} fill="#c94a3a" opacity={0.95} />);
   } else if (arch !== 'deco-stepback') {
@@ -566,8 +585,8 @@ function drawGarden(c: Ctx, d: Draw) {
   // the court: trees between the wings
   if (arch === 'courtyard-garden') {
     const cx2 = x + w / 2;
-    c.els.push(...tree(cx2 - 6, gy, c.fpx * 0.8, c.r, 'ct1', true));
-    c.els.push(...tree(cx2 + 7, gy, c.fpx * 0.7, c.r, 'ct2', true));
+    c.els.push(...tree(cx2 - 6, gy, c.fpx * 0.8, c.r, 'ct1', true, c.season));
+    c.els.push(...tree(cx2 + 7, gy, c.fpx * 0.7, c.r, 'ct2', true, c.season));
     c.els.push(<line key={key(c)} x1={cx2 - gap / 2 + 2} y1={gy} x2={cx2 + gap / 2 - 2} y2={gy} stroke="#4a5544" strokeWidth={2} opacity={0.6} />);
   }
 }
@@ -624,8 +643,8 @@ function drawRetailRun(c: Ctx, d: Draw) {
   parapetStreaks(c, runX, parapetY + 1, runW, hPx * 0.5);
   // lifestyle centers plant the sidewalk
   if (arch === 'lifestyle-center' || (c.q >= 105 && FAMILY[arch] === 'retailrun')) {
-    c.els.push(...tree(runX + runW * 0.25, gy, c.fpx * 0.7, c.r, 'rt1', true));
-    c.els.push(...tree(runX + runW * 0.7, gy, c.fpx * 0.65, c.r, 'rt2', true));
+    c.els.push(...tree(runX + runW * 0.25, gy, c.fpx * 0.7, c.r, 'rt1', true, c.season));
+    c.els.push(...tree(runX + runW * 0.7, gy, c.fpx * 0.65, c.r, 'rt2', true, c.season));
   }
 }
 
@@ -922,7 +941,8 @@ export function Portrait({ b, w = 460, h = 210, caption = true }: { b: PortraitS
   const wPx = clamp(wPxRaw, 30, W * 0.78);
   const x = (W - wPx) / 2 - (fam === 'pad' ? W * 0.05 : 0);   // pads shift left for the sign
 
-  const c: Ctx = { r, q: b.quality, age, occ, fpx, weather: !b.proposed, els: [], k: 0 };
+  const pseason: PSeason = b.proposed || b.month === undefined ? 'summer' : seasonOfMonth(b.month);
+  const c: Ctx = { r, q: b.quality, age, occ, fpx, weather: !b.proposed, season: pseason, els: [], k: 0 };
   const d: Draw = { x, gy, w: wPx, hPx, stories, tint, arch, sf: b.sf, tenants: b.tenants };
 
   // --- sky ---
@@ -954,6 +974,7 @@ export function Portrait({ b, w = 460, h = 210, caption = true }: { b: PortraitS
   const ground = (
     <g key="gnd">
       <rect x={0} y={gy} width={W} height={8} fill={SIDEWALK} />
+      {pseason === 'winter' && <rect x={0} y={gy} width={W} height={8} fill="#dfe5ea" opacity={0.28} />}
       <line x1={0} y1={gy} x2={W} y2={gy} stroke="#565c64" strokeWidth={0.8} />
       {Array.from({ length: 8 }, (_, i) => (
         <line key={'sj' + i} x1={(i + 0.5) * (W / 8)} y1={gy} x2={(i + 0.4) * (W / 8)} y2={gy + 8} stroke="#2c3138" strokeWidth={0.5} opacity={0.7} />
@@ -986,14 +1007,20 @@ export function Portrait({ b, w = 460, h = 210, caption = true }: { b: PortraitS
     }
   }
 
+  // --- winter: snow settles on the flat parapets and the sidewalk ---
+  if (pseason === 'winter' && b.progress === undefined && (fam === 'tower' || fam === 'midrise' || fam === 'retailrun' || fam === 'bigbox' || fam === 'shed' || fam === 'pad')) {
+    c.els.push(<line key="snowcap" x1={x + 1} y1={gy - hPx + 0.4} x2={x + wPx - 1} y2={gy - hPx + 0.4}
+      stroke="#e2e8ec" strokeWidth={clamp(fpx * 1.6, 1.2, 2.6)} opacity={0.85} strokeLinecap="round" />);
+  }
+
   // --- entourage, scaled by the same feet ---
   const ent: El[] = [];
   const entR = rng32(seed ^ 0x5f5f5f);
   if (b.progress === undefined) {
     // trees flank unless it's an industrial pad
     if (fam !== 'shed' && fam !== 'sawtooth' && fam !== 'yard' && fam !== 'quonset' && fam !== 'bigbox') {
-      ent.push(...tree(x - 18, gy, Math.max(fpx, 0.5), entR, 'tl', b.quality >= 95 || !!b.proposed));
-      if (entR() < 0.7) ent.push(...tree(x + wPx + 16, gy, Math.max(fpx, 0.45), entR, 'tr', b.quality >= 95));
+      ent.push(...tree(x - 18, gy, Math.max(fpx, 0.5), entR, 'tl', b.quality >= 95 || !!b.proposed, pseason));
+      if (entR() < 0.7) ent.push(...tree(x + wPx + 16, gy, Math.max(fpx, 0.45), entR, 'tr', b.quality >= 95, pseason));
     }
     ent.push(...streetlight(x - 34, gy, Math.max(fpx, 0.42), 'sl', occ > 0.05 || !!b.proposed));
     // people in proportion to occupancy; a dead building has a dead sidewalk

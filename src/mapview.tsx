@@ -2380,7 +2380,7 @@ export function StockCard({ state, setState, stockId, close, openDeal, variant =
       <h2>{E.stockName(state, b)}</h2>
       <div className="sub">{E.PLABEL[b.type]} · Block {blockName(t)} · {spec.label} · built {Math.max(1950, Math.round(2026 - b.age))} · {ownerLabel}{b.blacklist ? ' (not speaking to you)' : ''}</div>
       <Portrait b={{ type: b.type, construction: b.construction, sf: b.sf, units: b.units, quality: b.quality,
-        age: b.age, occ: b.occ, seed: mapSeed(state.seed, b.tileI), siteCells: E.footprintCells(b).length || 1,
+        age: b.age, occ: b.occ, month: state.month, seed: mapSeed(state.seed, b.tileI), siteCells: E.footprintCells(b).length || 1,
         progress: b.buildLeft ? 1 - b.buildLeft / Math.max(1, b.buildTotal ?? 1) : undefined }} w={380} h={185} />
       <div className="metric-row" style={{ marginTop: 10 }}>
         <div className="metric"><div className="eyebrow">Size</div><div className="v num">{(b.sf / 1000).toFixed(0)}K SF</div></div>

@@ -468,7 +468,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
           {((listing.sf ?? 0) / 1000).toFixed(0)}K SF on {listing.acres} acres · {listing.units} unit{(listing.units ?? 1) > 1 ? 's' : ''} · {E.QLABEL[E.qGrade(listing.quality ?? 75)]}-grade {E.constrSpec(sketch).label.toLowerCase()} · built {2026 - (listing.age ?? 10)}
           {listing.distressed && <span className="amber"> · distressed — priced to move</span>}
         </div>
-        <Portrait b={{ ...sketch, age: listing.age, occ: listing.occ, seed: mapSeed(state.seed, listing.tileI),
+        <Portrait b={{ ...sketch, age: listing.age, occ: listing.occ, month: state.month, seed: mapSeed(state.seed, listing.tileI),
           siteCells: Math.max(1, Math.round((listing.acres ?? E.PARCEL_AC) / E.PARCEL_AC)), tenants: signTenants(listing.tenants) }} w={460} h={200} />
         {listing.type === 'mixed' && (() => {
           const m = listing.mix ?? E.defaultMixSplit(state.seed, listing.stockId ?? listing.id);
@@ -1296,7 +1296,7 @@ export function AssetCard({ state, setState, asset: a, onSell, onRefi, onLOI, op
           </div>
           {p.stage === 'building'
             ? <Portrait b={{ type: a.type, construction: a.construction, sf: a.sf, units: a.units, quality: a.quality,
-                seed: mapSeed(state.seed, a.tileI), siteCells: E.footprintCells(a).length || 1, progress: Math.max(0.05, prog) }} w={300} h={170} />
+                seed: mapSeed(state.seed, a.tileI), siteCells: E.footprintCells(a).length || 1, progress: Math.max(0.05, prog), month: state.month }} w={300} h={170} />
             : <Portrait b={{ type: a.type, construction: a.construction, sf: a.sf, units: a.units, quality: a.quality,
                 seed: mapSeed(state.seed, a.tileI), siteCells: E.footprintCells(a).length || 1, proposed: true, designTier: a.designTier }} w={300} h={170} />}
         </div>
@@ -1364,7 +1364,7 @@ export function AssetCard({ state, setState, asset: a, onSell, onRefi, onLOI, op
           </div>
         </div>
         <Portrait b={{ type: a.type, construction: a.construction, sf: a.sf, units: a.units, quality: a.quality,
-          age: a.age, occ: a.occ, seed: mapSeed(state.seed, a.tileI), siteCells: E.footprintCells(a).length || 1,
+          age: a.age, occ: a.occ, month: state.month, seed: mapSeed(state.seed, a.tileI), siteCells: E.footprintCells(a).length || 1,
           tenants: signTenants(a.tenants) }} w={260} h={160} />
       </div>
       {err && <div className="alert-strip red" style={{ marginTop: 10 }}><span>{err}</span><button className="btn btn-sm" onClick={() => setErr(null)}>✕</button></div>}

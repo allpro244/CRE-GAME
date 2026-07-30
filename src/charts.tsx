@@ -1,9 +1,11 @@
 // Minimal SVG charts, no dependencies.
 
 export interface Series { name: string; color: string; data: number[]; }
+// index spans to shade behind the lines — recessions, credit crunches
+export interface Band { from: number; to: number; color?: string; }
 
-export function LineChart({ series, labels, height = 140, yFmt }: {
-  series: Series[]; labels?: string[]; height?: number; yFmt?: (v: number) => string;
+export function LineChart({ series, labels, height = 140, yFmt, bands }: {
+  series: Series[]; labels?: string[]; height?: number; yFmt?: (v: number) => string; bands?: Band[];
 }) {
   const W = 560, H = height, PL = 46, PR = 8, PT = 8, PB = 18;
   const all = series.flatMap(s => s.data).filter(v => isFinite(v));
@@ -18,6 +20,11 @@ export function LineChart({ series, labels, height = 140, yFmt }: {
   const ticks = [min + pad, (min + max) / 2, max - pad];
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+      {/* the bad quarters shade the background, FRED-style — the lines then explain themselves */}
+      {bands?.map((b, i) => b.to > b.from ? (
+        <rect key={'bd' + i} x={x(b.from)} y={PT} width={Math.max(1, x(Math.min(b.to, n - 1)) - x(b.from))} height={H - PT - PB}
+          fill={b.color ?? '#8a4a42'} opacity={0.13} />
+      ) : null)}
       {ticks.map((tv, i) => (
         <g key={i}>
           <line x1={PL} x2={W - PR} y1={y(tv)} y2={y(tv)} stroke="var(--line2)" strokeWidth={1} />

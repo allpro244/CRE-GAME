@@ -702,6 +702,19 @@ const SECTORS = E.PTYPES.filter(ty => ty !== 'mixed');
 function EconomyView({ state }: { state: GameState }) {
   const h = state.econHistory;
   const labels = [E.monthName(h[0]?.m ?? 0), E.monthName(state.month)];
+  // recessions shade every chart on this tab, FRED-style — the lines then read
+  // as cause and effect instead of unexplained wiggles
+  const recBands = (() => {
+    const out: { from: number; to: number }[] = [];
+    let start = -1;
+    for (let i = 0; i < h.length; i++) {
+      const rec = h[i].phase === 'recession';
+      if (rec && start < 0) start = i;
+      if (!rec && start >= 0) { out.push({ from: start, to: i }); start = -1; }
+    }
+    if (start >= 0) out.push({ from: start, to: h.length - 1 });
+    return out;
+  })();
   const last = h[h.length - 1];
   const back3 = h[Math.max(0, h.length - 4)];
   const back12 = h[Math.max(0, h.length - 13)];
@@ -727,7 +740,7 @@ function EconomyView({ state }: { state: GameState }) {
             <div className="metric"><div className="eyebrow">Avg apartment rent</div><div className="v num">{E.fmtMoney(avgAptRent)}/mo</div></div>
             <div className="metric"><div className="eyebrow">Renter households</div><div className="v num">{(38 + (state.econ.rate - 4) * 1.2).toFixed(0)}%</div></div>
           </div>
-          <LineChart labels={labels} series={[{ name: 'pop', color: 'var(--green)', data: h.map(x => (x.pop ?? pop) / 1000) }]} yFmt={v => Math.round(v) + 'K'} />
+          <LineChart labels={labels} bands={recBands} series={[{ name: 'pop', color: 'var(--green)', data: h.map(x => (x.pop ?? pop) / 1000) }]} yFmt={v => Math.round(v) + 'K'} />
           <div className="faint" style={{ fontSize: 11, marginTop: 4 }}>Population follows employment and confidence — and multifamily demand follows population.</div>
         </div>
         <div className="panel">
@@ -739,7 +752,7 @@ function EconomyView({ state }: { state: GameState }) {
                 {(state.econ.constrCycle ?? 1) > 1.04 ? 'Overheated' : (state.econ.constrCycle ?? 1) < 0.97 ? 'Hungry GCs' : 'Normal'} ({(((state.econ.constrCycle ?? 1) - 1) * 100).toFixed(1)}%)</div></div>
             <div className="metric"><div className="eyebrow">12-mo change</div><div className="v num">{back12?.ci ? (((last?.ci ?? 1) / back12.ci - 1) * 100).toFixed(1) + '%' : '—'}</div></div>
           </div>
-          <LineChart labels={labels} series={[{ name: 'ci', color: 'var(--amber)', data: h.map(x => (x.ci ?? 1) * 100) }]} yFmt={v => v.toFixed(0)} />
+          <LineChart labels={labels} bands={recBands} series={[{ name: 'ci', color: 'var(--amber)', data: h.map(x => (x.ci ?? 1) * 100) }]} yFmt={v => v.toFixed(0)} />
           <div className="faint" style={{ fontSize: 11, marginTop: 4 }}>Every hard-cost dollar in your pro formas is priced off this line. Recessions are when smart developers buy their bids.</div>
         </div>
       </div>
@@ -886,7 +899,7 @@ function EconomyView({ state }: { state: GameState }) {
       <div className="grid2" style={{ marginBottom: 14 }}>
         <div className="panel">
           <h3>Rates & inflation — <span className="amber">base rate</span> / <span style={{ color: 'var(--blue)' }}>inflation</span></h3>
-          <LineChart labels={labels} series={[
+          <LineChart labels={labels} bands={recBands} series={[
             { name: 'rate', color: 'var(--amber)', data: h.map(x => x.rate) },
             { name: 'infl', color: 'var(--blue)', data: h.map(x => x.infl) },
           ]} yFmt={v => v.toFixed(1) + '%'} />
@@ -896,7 +909,7 @@ function EconomyView({ state }: { state: GameState }) {
         </div>
         <div className="panel">
           <h3>Jobs & mood — <span className="pos">employment idx</span> / <span style={{ color: 'var(--blue)' }}>confidence</span></h3>
-          <LineChart labels={labels} series={[
+          <LineChart labels={labels} bands={recBands} series={[
             { name: 'emp', color: 'var(--green)', data: h.map(x => x.emp) },
             { name: 'conf', color: 'var(--blue)', data: h.map(x => x.conf) },
           ]} yFmt={v => v.toFixed(0)} />
@@ -905,7 +918,7 @@ function EconomyView({ state }: { state: GameState }) {
       <div className="grid2">
         <div className="panel">
           <h3>Citywide rent indices (1.00 = campaign start)</h3>
-          <LineChart labels={labels} series={SECTORS.map((ty, i) => ({
+          <LineChart labels={labels} bands={recBands} series={SECTORS.map((ty, i) => ({
             name: ty, color: ['var(--blue)', 'var(--amber)', 'var(--green)', '#e88bb8'][i],
             data: h.map(x => x.ri?.[ty] ?? 1),
           }))} yFmt={v => v.toFixed(2)} />

@@ -760,13 +760,77 @@ export function generateCity(seed: number, city: CityKind = 'meridian'): { tiles
   // island: a long city between two rivers, bays biting the shoreline, a park mid-island
   const biteT = new Set<number>(), biteB = new Set<number>();
   for (let x = 0; x < W; x++) { if (r() < 0.16) biteT.add(x); if (r() < 0.16) biteB.add(x); }
-  const parkSet = new Set<number>();
-  if (city === 'island') {
-    const px0 = Math.floor(W * 0.45) + Math.floor(r() * 2), py0 = Math.floor(H / 2) - 2;
-    for (let dy = 0; dy < 3; dy++) for (let dx = 0; dx < 2; dx++) parkSet.add((py0 + dy) * W + px0 + dx);
-  }
   const CBD0 = city === 'island' ? { x: Math.round(W * 0.22), y: Math.floor(H / 2) } : { x: Math.round(W * 0.5), y: Math.round(H * 0.4) };
   const UPT0 = city === 'island' ? { x: Math.round(W * 0.71), y: Math.floor(H / 2) - 1 } : { x: Math.round(W * 0.79), y: Math.round(H * 0.2) };
+  // the canal column is computed early so parks can stay off it
+  const canalCol: number[] = [];
+  if (city === 'island') {
+    let cc = Math.round(W * 0.55);
+    for (let y = 0; y < H; y++) {
+      canalCol.push(cc);
+      if (r() < 0.45) cc += r() < 0.5 ? -1 : 1;
+      cc = clamp(cc, Math.round(W * 0.5) - 2, Math.round(W * 0.55) + 2);
+    }
+  }
+  // ---- park forms: the green rolls its own dice ----
+  // One seed gets a Central Park, the next gets a scatter of pocket squares, the
+  // next a shoreline greenway or twin neighborhood parks. Parks are unbuildable
+  // and lift desirability around them — WHERE the green lands reshapes the city.
+  const parkSet = new Set<number>();
+  {
+    const parkable = (x: number, y: number) => {
+      if (x < 1 || x >= W - 1 || y < 2 || y > H - 3) return false;
+      if (Math.max(Math.abs(x - CBD0.x), Math.abs(y - CBD0.y)) <= 1) return false;
+      if (Math.max(Math.abs(x - UPT0.x), Math.abs(y - UPT0.y)) <= 1) return false;
+      if (city === 'island' && canalCol[y] === x) return false;
+      if (city !== 'island' && Math.abs(riverCol[y] - x) <= 0) return false;
+      return true;
+    };
+    const addRect = (x0: number, y0: number, w0: number, h0: number) => {
+      for (let dy = 0; dy < h0; dy++) for (let dx = 0; dx < w0; dx++) {
+        if (parkable(x0 + dx, y0 + dy)) parkSet.add((y0 + dy) * W + x0 + dx);
+      }
+    };
+    const pRoll = r();
+    const pForm = pRoll < 0.30 ? 'central' : pRoll < 0.55 ? 'pockets' : pRoll < 0.78 ? 'twin' : 'greenway';
+    if (pForm === 'central') {
+      // one big park, anywhere in the middle band — the address maker
+      const pw0 = 2 + (r() < 0.4 ? 1 : 0), ph0 = 2 + (r() < 0.5 ? 1 : 0);
+      const px0 = clamp(Math.round(W * 0.28 + r() * W * 0.4), 2, W - pw0 - 2);
+      const py0 = clamp(Math.round(2 + r() * (H - ph0 - 5)), 2, H - ph0 - 3);
+      addRect(px0, py0, pw0, ph0);
+    } else if (pForm === 'twin') {
+      // two neighborhood parks in different quarters
+      addRect(clamp(Math.round(3 + r() * (W * 0.35)), 2, W - 4), clamp(Math.round(2 + r() * (H - 8)), 2, H - 5), 2, 2);
+      addRect(clamp(Math.round(W * 0.55 + r() * (W * 0.35)), 2, W - 4), clamp(Math.round(2 + r() * (H - 8)), 2, H - 5), 2, 2);
+    } else if (pForm === 'greenway') {
+      // an esplanade: a broken ribbon of green along one shore
+      const north = r() < 0.6;
+      const gy = north ? 2 : H - 3;
+      const gx0 = clamp(Math.round(2 + r() * (W * 0.4)), 1, W - 8);
+      const len = 4 + Math.floor(r() * 3);
+      for (let k = 0; k < len; k++) {
+        if (r() < 0.85 && parkable(gx0 + k, gy)) parkSet.add(gy * W + gx0 + k);
+      }
+    }
+    if (pForm === 'pockets' || r() < 0.5) {
+      // pocket squares scattered through the fabric — every one lifts its block
+      const n = pForm === 'pockets' ? 6 + Math.floor(r() * 3) : 2;
+      let placed = 0, guard = 0;
+      while (placed < n && guard++ < 60) {
+        const px2 = 1 + Math.floor(r() * (W - 2)), py2 = 2 + Math.floor(r() * (H - 4));
+        if (!parkable(px2, py2)) continue;
+        // pockets keep their distance from each other
+        let clear = true;
+        for (const pi of parkSet) {
+          if (Math.max(Math.abs(pi % W - px2), Math.abs(Math.floor(pi / W) - py2)) < 3) { clear = false; break; }
+        }
+        if (!clear) continue;
+        parkSet.add(py2 * W + px2);
+        placed++;
+      }
+    }
+  }
   // ---- terrain forms: the rectangle dies here ----
   // Each seed rolls a landform on top of the base city — a bay biting the shore, a
   // wider sound, an inland lake — plus wetland fringes. Same blocks, different city.
@@ -829,19 +893,7 @@ export function generateCity(seed: number, city: CityKind = 'meridian'): { tiles
   }
   const isWaterXY = city === 'island'
     ? (x: number, y: number) => y === 0 || y === H - 1 || (y === 1 && biteT.has(x)) || (y === H - 2 && biteB.has(x)) || parkSet.has(y * W + x) || extraWater.has(y * W + x)
-    : (x: number, y: number) => x === riverCol[y] || extraWater.has(y * W + x);
-  // the canal: a narrow waterway wandering down the island's middle. Water for the
-  // economy (unbuildable, waterfront premium), but the roads bridge it freely —
-  // this city is named after the right place.
-  const canalCol: number[] = [];
-  if (city === 'island') {
-    let cc = Math.round(W * 0.55);
-    for (let y = 0; y < H; y++) {
-      canalCol.push(cc);
-      if (r() < 0.45) cc += r() < 0.5 ? -1 : 1;
-      cc = clamp(cc, Math.round(W * 0.5) - 2, Math.round(W * 0.55) + 2);
-    }
-  }
+    : (x: number, y: number) => x === riverCol[y] || parkSet.has(y * W + x) || extraWater.has(y * W + x);
   const isCanal = (x: number, y: number) => city === 'island' && y > 0 && y < H - 1 && x === canalCol[y] && !parkSet.has(y * W + x);
   const CBD = city === 'island' ? { x: Math.round(W * 0.22), y: Math.floor(H / 2) } : { x: Math.round(W * 0.5), y: Math.round(H * 0.4) };
   const UPT = city === 'island' ? { x: Math.round(W * 0.71), y: Math.floor(H / 2) - 1 } : { x: Math.round(W * 0.79), y: Math.round(H * 0.2) };

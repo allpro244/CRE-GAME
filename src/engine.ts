@@ -192,6 +192,10 @@ export interface Economy {
   // the demographic tide: a multi-decade regime beneath the business cycle — boom
   // decades pull people and demand in, decline decades drain them out
   demo?: { regime: 'boom' | 'steady' | 'stagnation' | 'decline'; monthsLeft: number; n: number };
+  // eras rotate: months until the current era ends; when eraNext is set the wind is
+  // mid-turn, blending the live era toward it over ~3 years
+  eraMonthsLeft?: number;
+  eraNext?: { rateBias: number; inflBias: number; vol: number; tempo: number; sectorTilt?: Partial<Record<PType, number>> };
 }
 
 export interface Loan {
@@ -1510,6 +1514,65 @@ function genMixedRentRoll(state: GameState, a: Pick<Asset, 'tileI' | 'type' | 's
   return tenants;
 }
 
+// The era's secular story: strong enough that ANY ordering can happen — retail can
+// be this generation's loser, office its darling. Handicaps first center the sectors'
+// structural biases (retail runs hot, office runs cold), then a sum-neutral shuffle
+// decides who this era loves. Measured so a NEUTRAL roll puts the four sectors at
+// rough parity — the random part then genuinely decides winners. Rolled at genesis
+// and re-rolled every generation (see tickEraRotation): no sector stays the darling
+// for a whole century.
+function rollEra(r: () => number): Economy['era'] {
+  const HANDICAP: Record<string, number> = { office: 0.087, retail: -0.094, industrial: 0.028, multifamily: -0.021 };
+  const raw: Record<string, number> = { office: r(), retail: r(), industrial: r(), multifamily: r() };
+  const avg = (raw.office + raw.retail + raw.industrial + raw.multifamily) / 4;
+  const tiltOf = (ty: string) => Math.round((HANDICAP[ty] + (raw[ty] - avg) * 0.15) * 1000) / 1000;
+  return {
+    rateBias: Math.round((-1.0 + r() * 2.4) * 100) / 100,   // -1.0 .. +1.4 pts on every rate target
+    inflBias: Math.round((-0.5 + r() * 1.5) * 100) / 100,   // -0.5 .. +1.0 on inflation targets
+    vol: Math.round((0.75 + r() * 0.7) * 100) / 100,        // calm seas or whitewater
+    tempo: Math.round((0.8 + r() * 0.5) * 100) / 100,       // fast-cycling or long, slow eras
+    sectorTilt: { office: tiltOf('office'), retail: tiltOf('retail'), industrial: tiltOf('industrial'), multifamily: tiltOf('multifamily') },
+  };
+}
+const ERA_SECTORS = ['office', 'retail', 'industrial', 'multifamily'] as const;
+function eraExtremes(era: Economy['era']): { best: PType; worst: PType } {
+  let best: PType = 'office', worst: PType = 'office';
+  for (const ty of ERA_SECTORS) {
+    if ((era.sectorTilt?.[ty] ?? 0) > (era.sectorTilt?.[best] ?? 0)) best = ty;
+    if ((era.sectorTilt?.[ty] ?? 0) < (era.sectorTilt?.[worst] ?? 0)) worst = ty;
+  }
+  return { best, worst };
+}
+// Secular regimes turn slowly: every 15-25 years the era re-rolls, then takes three
+// years to blend in — a wind shifting, not a light switch. The player who reads the
+// turn early repositions a decade ahead of the market.
+function tickEraRotation(s: GameState) {
+  const e = s.econ;
+  if (e.eraMonthsLeft === undefined) e.eraMonthsLeft = 180 + Math.floor(rng(s) * 120);
+  e.eraMonthsLeft--;
+  if (e.eraNext) {
+    const k = 1 / Math.max(1, e.eraMonthsLeft + 1);
+    e.era.rateBias += (e.eraNext.rateBias - e.era.rateBias) * k;
+    e.era.inflBias += (e.eraNext.inflBias - e.era.inflBias) * k;
+    e.era.vol += (e.eraNext.vol - e.era.vol) * k;
+    e.era.tempo += (e.eraNext.tempo - e.era.tempo) * k;
+    const tilt = (e.era.sectorTilt ??= {});
+    for (const ty of ERA_SECTORS) tilt[ty] = (tilt[ty] ?? 0) + ((e.eraNext.sectorTilt?.[ty] ?? 0) - (tilt[ty] ?? 0)) * k;
+    if (e.eraMonthsLeft <= 0) {
+      const { best, worst } = eraExtremes(e.eraNext);
+      e.era = e.eraNext;
+      e.eraNext = undefined;
+      e.eraMonthsLeft = 180 + Math.floor(rng(s) * 120);
+      pushNews(s, 'event', `A NEW ERA HAS SETTLED IN: ${PLABEL[best].toLowerCase()} is this generation's darling, ${PLABEL[worst].toLowerCase()} its castoff. The last era's playbook now reads like your grandfather's.`);
+    }
+  } else if (e.eraMonthsLeft <= 0) {
+    e.eraNext = rollEra(() => rng(s));
+    e.eraMonthsLeft = 36;
+    const { best, worst } = eraExtremes(e.eraNext);
+    pushNews(s, 'event', `THE WIND IS TURNING: the smart money is quietly rotating toward ${PLABEL[best].toLowerCase()} and out of ${PLABEL[worst].toLowerCase()}. Secular shifts take years to finish — and reward whoever repositions first.`);
+  }
+}
+
 // ---------- Initial state ----------
 export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKind }): GameState {
   const s0 = seed ?? Math.floor(Math.random() * 2 ** 31);
@@ -1520,26 +1583,7 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     econ: {
       phase: 'recovery', phaseAge: 6,
       rate: 4.0, rateSmooth: 4.2, inflation: 2.2, empIdx: 97, confidence: 52, popGrowth: 1.1, costIdx: 1,
-      era: (() => {
-        const r = mulberry32((s0 ^ 0x5EEDECA7) | 0);
-        // the era's secular story, rolled once: strong enough that ANY ordering can
-        // happen — retail can be this generation's loser, office its darling.
-        // Handicaps first center the sectors' structural biases (retail runs hot,
-        // office runs cold), then a sum-neutral shuffle decides who this era loves.
-        // measured so a NEUTRAL roll puts the four sectors at rough parity — the random
-        // part then genuinely decides who this era loves and who it starves
-        const HANDICAP: Record<string, number> = { office: 0.087, retail: -0.094, industrial: 0.028, multifamily: -0.021 };
-        const raw: Record<string, number> = { office: r(), retail: r(), industrial: r(), multifamily: r() };
-        const avg = (raw.office + raw.retail + raw.industrial + raw.multifamily) / 4;
-        const tiltOf = (ty: string) => Math.round((HANDICAP[ty] + (raw[ty] - avg) * 0.15) * 1000) / 1000;
-        return {
-          rateBias: Math.round((-1.0 + r() * 2.4) * 100) / 100,   // -1.0 .. +1.4 pts on every rate target
-          inflBias: Math.round((-0.5 + r() * 1.5) * 100) / 100,   // -0.5 .. +1.0 on inflation targets
-          vol: Math.round((0.75 + r() * 0.7) * 100) / 100,        // calm seas or whitewater
-          tempo: Math.round((0.8 + r() * 0.5) * 100) / 100,       // fast-cycling or long, slow eras
-          sectorTilt: { office: tiltOf('office'), retail: tiltOf('retail'), industrial: tiltOf('industrial'), multifamily: tiltOf('multifamily') },
-        };
-      })(),
+      era: rollEra(mulberry32((s0 ^ 0x5EEDECA7) | 0)),
       rentIdx: { office: 1, retail: 1, industrial: 1, mixed: 1, multifamily: 1 },
       cityVac: { ...EQ_VAC },
       rentMom: { office: 0, retail: 0, industrial: 0, mixed: 0, multifamily: 0 },
@@ -4671,6 +4715,7 @@ function tickDemographics(s: GameState) {
 function tickEconomy(s: GameState) {
   const e = s.econ;
   tickDemographics(s);
+  tickEraRotation(s);
   e.phaseAge++;
   if (rng(s) < 1 / (PHASE_DWELL[e.phase] * (e.era?.tempo ?? 1)) && e.phaseAge > PHASE_DWELL[e.phase] * (e.era?.tempo ?? 1) * 0.5) {
     e.phase = PHASE_NEXT[e.phase]; e.phaseAge = 0;

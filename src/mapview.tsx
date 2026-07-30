@@ -25,21 +25,31 @@ function lerpColor(a: [number, number, number], b: [number, number, number], t: 
 const TS = 52;   // px per tile
 const SUB = 3;   // subdivision per tile for the continuous field
 
+// Raw lens values run UNCAPPED — the old fixed caps clipped the whole downtown into
+// one flat top band. Normalization happens downstream against the city's own spread.
 function lensRaw(state: GameState, t: Tile, lens: Lens): number {
   if (lens === 'city') return 0;
   if (lens === 'zoning') return t.zone.tier / 3;
   if (lens === 'land') return E.landPricePerAcre(state, t) / 1e6;
-  if (lens === 'office') return Math.min(1, (E.marketRentPSF(state, t, 'office') - 10) / 30);
-  if (lens === 'retail') return Math.min(1, (E.marketRentPSF(state, t, 'retail') - 7) / 22);
+  if (lens === 'office') return E.marketRentPSF(state, t, 'office');
+  if (lens === 'retail') return E.marketRentPSF(state, t, 'retail');
   if (lens === 'industrial') return t.indSuit / 100;
-  if (lens === 'multifamily') return Math.min(1, (E.marketRentPSF(state, t, 'multifamily') - 11) / 22);
+  if (lens === 'multifamily') return E.marketRentPSF(state, t, 'multifamily');
   if (lens === 'comps') {
     const near = state.comps.filter(c => c.tileI === t.i && c.sf > 0);
     if (!near.length) return 0;
-    const psf = near.reduce((s2, c) => s2 + c.price / c.sf, 0) / near.length;
-    return Math.min(1, psf / 320);
+    return near.reduce((s2, c) => s2 + c.price / c.sf, 0) / near.length;
   }
   return t.crime / 85;
+}
+// human-readable value for the scale bar under the map
+function lensFmt(lens: Lens, raw: number): string {
+  if (lens === 'land') return '$' + (raw * 1e6 >= 1e6 ? (raw).toFixed(1) + 'M' : Math.round(raw * 1000) + 'K') + '/ac';
+  if (lens === 'office' || lens === 'retail' || lens === 'multifamily') return '$' + raw.toFixed(0) + '/SF';
+  if (lens === 'comps') return '$' + Math.round(raw) + '/SF';
+  if (lens === 'industrial') return Math.round(raw * 100) + ' fit';
+  if (lens === 'crime') return Math.round(raw * 85) + ' idx';
+  return raw.toFixed(2);
 }
 const LENS_HUE: Record<Lens, [number, number, number]> = {
   city: [206, 210, 198], land: [150, 106, 20], zoning: [160, 160, 160], office: [140, 74, 210], retail: [40, 106, 220],
@@ -49,24 +59,51 @@ const LENS_HUE: Record<Lens, [number, number, number]> = {
 
 // Lens inputs move on the quarterly tile tick plus slow composition changes — a heat
 // map doesn't need to repaint 4,480 parcels because an unrelated action cloned the state.
+// Three-stop ramp with quantized bands: pale base -> full hue -> deep ember, cut
+// into discrete levels so the map reads like a proper choropleth — you can point
+// at a band and name it, instead of squinting at a two-color smear.
+function ramp3(base: [number, number, number], hue: [number, number, number], t: number, bands = 9): string {
+  const q = Math.round(Math.max(0, Math.min(1, t)) * (bands - 1)) / (bands - 1);
+  const deep: [number, number, number] = [hue[0] * 0.42, hue[1] * 0.42, hue[2] * 0.48];
+  return q <= 0.55 ? lerpColor(base, hue, q / 0.55) : lerpColor(hue, deep, (q - 0.55) / 0.45);
+}
 function lensStamp(state: GameState, lens: Lens): string {
   return lens + ':' + state.seed + ':' + Math.floor(state.month / 3) + ':' + state.stock.length
     + ':' + state.assets.length + ':' + ((state.comps?.length ?? 0)) + ':' + state.land.length;
 }
 
 // The market isn't a checkerboard — value pools and drains across the city.
-// Bilinear interpolation over tile centers gives the field its continuous grain.
+// Depth over prettiness: tiles are normalized by RANK against the city's own
+// distribution (so the full ramp is always in play — a tight market still shows
+// its ordering), blended with the linear read so big absolute gaps still look big.
 function useTileValues(state: GameState, lens: Lens): number[] {
   const stamp = lensStamp(state, lens);
   return useMemo(() => {
     const rawOf = (t: Tile) => lensRaw(state, t, lens);
     const landVals = state.tiles.filter(t => !t.water).map(rawOf).sort((a, b) => a - b);
-    const lo = landVals[Math.floor(landVals.length * 0.10)] ?? 0;
-    const hi = landVals[Math.floor(landVals.length * 0.90)] ?? 1;
+    const n = landVals.length || 1;
+    const lo = landVals[Math.floor(n * 0.06)] ?? 0;
+    const hi = landVals[Math.floor(n * 0.94)] ?? 1;
+    const rankOf = (raw: number) => {
+      // binary search: fraction of the city below this value
+      let a = 0, b = n;
+      while (a < b) { const m = (a + b) >> 1; if (landVals[m] < raw) a = m + 1; else b = m; }
+      return a / n;
+    };
     return state.tiles.map(t => {
       const raw = rawOf(t);
-      return hi > lo ? Math.max(0, Math.min(1, (raw - lo) / (hi - lo))) : 0.5;
+      const lin = hi > lo ? Math.max(0, Math.min(1, (raw - lo) / (hi - lo))) : 0.5;
+      return 0.55 * rankOf(raw) + 0.45 * lin;
     });
+  }, [stamp]); // eslint-disable-line
+}
+// p10/p50/p90 raw values for the scale bar
+function useLensScale(state: GameState, lens: Lens): [number, number, number] {
+  const stamp = lensStamp(state, lens);
+  return useMemo(() => {
+    const vals = state.tiles.filter(t => !t.water).map(t => lensRaw(state, t, lens)).sort((a, b) => a - b);
+    const n = vals.length || 1;
+    return [vals[Math.floor(n * 0.1)] ?? 0, vals[Math.floor(n * 0.5)] ?? 0, vals[Math.floor(n * 0.9)] ?? 0];
   }, [stamp]); // eslint-disable-line
 }
 
@@ -1282,9 +1319,9 @@ const LensCellsIso = memo(function LensCellsIso({ tiles, grids, vals, hue, zb }:
   const BASE: [number, number, number] = [214, 215, 208];
   return <g>{tiles.map(t => {
     if (t.water) return null;
-    const v = Math.pow(vals[t.i], 0.72);
-    const fill = lerpColor(BASE, hue, 0.06 + v * 0.94);
-    const dim = lerpColor(BASE, hue, 0.04 + v * 0.62);
+    const v = Math.pow(vals[t.i], 0.85);
+    const fill = ramp3(BASE, hue, 0.04 + v * 0.96);
+    const dim = ramp3(BASE, hue, 0.03 + v * 0.74);
     // zoomed out, one diamond per block carries the lens — 280 polygons instead of 4,480.
     // The per-parcel weave only earns its cost once you can actually see parcels.
     if (zb === 0) return <polygon key={'p' + t.i} points={diamond(t.x, t.y, 0.97)} fill={dim} stroke="#8a8f80" strokeWidth={0.5} strokeOpacity={0.5} />;
@@ -1333,7 +1370,7 @@ const FieldFlat = memo(function FieldFlat({ field, hue }: { field: { x: number; 
   const sub = TS / SUB;
   return <g>{field.map((c, k) => (
     <rect key={k} x={c.x * TS} y={c.y * TS} width={sub + 0.5} height={sub + 0.5}
-      fill={lerpColor([214, 215, 208], hue, 0.05 + Math.pow(Math.max(0, Math.min(1, c.v)), 0.72) * 0.95)} />
+      fill={ramp3([214, 215, 208], hue, 0.04 + Math.pow(Math.max(0, Math.min(1, c.v)), 0.85) * 0.96, 13)} />
   ))}</g>;
 });
 
@@ -1522,6 +1559,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const copStamp = state.tiles.reduce((s2, t) => s2 + (!t.water && t.crime > 65 ? 1 : 0), 0);
   const copTiles = useMemo(() => state.tiles.filter(t => !t.water && t.crime > 65).map(t => ({ i: t.i, x: t.x, y: t.y })), [copStamp, state.seed]); // eslint-disable-line
   const hue = LENS_HUE[lens];
+  const lensScale = useLensScale(state, lens);
   // and the season rides the same calendar — Off pins the city to summer
   const season: Season = ambient >= 1 ? seasonOf(state.month) : 'summer';
   const weather: WeatherKind = ambient >= 2 ? weatherOf(state.seed, state.month) : 'clear';
@@ -2093,6 +2131,13 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           <span><span style={{ color: '#a05468' }}>▪</span> rival land banks</span>
           <span>walls follow the build — glass, brick, precast, EIFS</span>
           {weather !== 'clear' && view === 'iso' && <span className="faint">{weather === 'rain' ? '∕∕ rain this month' : '≋ fog in the valley'}</span>}
+          {lens !== 'city' && lens !== 'zoning' && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 108, height: 8, borderRadius: 2, border: '1px solid var(--line)',
+                background: `linear-gradient(to right, ${Array.from({ length: 9 }, (_, i) => ramp3([214, 215, 208], hue, i / 8)).join(',')})` }} />
+              <span className="num faint" style={{ fontSize: 10 }}>{lensFmt(lens, lensScale[0])} · {lensFmt(lens, lensScale[1])} · <b style={{ color: 'var(--ink)' }}>{lensFmt(lens, lensScale[2])}</b></span>
+            </span>
+          )}
           <span style={{ color: 'var(--green)' }}>▪ on the market</span>
           {transitActive && <span style={{ color: 'var(--blue)' }}>▦ new transit corridor</span>}
           {view === 'iso' && <span>massing is honest: towers stand tall, sheds sprawl</span>}

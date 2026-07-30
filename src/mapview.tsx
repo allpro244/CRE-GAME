@@ -533,8 +533,9 @@ const ROAD_STYLE: Record<number, { stroke: string; w: number; dash?: string }> =
   4: { stroke: '#6a6f76', w: 6.4 },
   5: { stroke: '#8a7a5c', w: 1.8, dash: '7 5' },
 };
-const StreetLife = memo(function StreetLife({ runs, seed, detail, season = 'summer', loD, hiD }: {
+const StreetLife = memo(function StreetLife({ runs, seed, detail, season = 'summer', loD, hiD, busy, retailish }: {
   runs: RoadRun[]; seed: number; detail: boolean; season?: Season; loD?: Set<number>; hiD?: Set<number>;
+  busy?: Set<number>; retailish?: Set<number>;
 }) {
   const els: React.ReactNode[] = [];
   let a = seed | 0;
@@ -547,9 +548,16 @@ const StreetLife = memo(function StreetLife({ runs, seed, detail, season = 'summ
     const [p0, p1] = run.pts;
     const len = Math.abs(p1[0] - p0[0]) + Math.abs(p1[1] - p0[1]);
     const horiz = Math.abs(p1[0] - p0[0]) > Math.abs(p1[1] - p0[1]);
+    const runMid = (() => {
+      const mx = Math.round((p0[0] + p1[0]) / 2), my = Math.round((p0[1] + p1[1]) / 2);
+      return Math.max(0, Math.min(E.CONFIG.GRID_H - 1, my)) * E.CONFIG.GRID_W + Math.max(0, Math.min(E.CONFIG.GRID_W - 1, mx));
+    })();
     if (run.cls === 3 || run.cls === 2) {
-      // traffic scales with road class; two directions ride slightly offset gutters
-      const n = Math.min(5, Math.round(len * (run.cls === 3 ? 0.55 : 0.3) * (0.5 + r())));
+      // traffic scales with road class — and with the jobs on the adjoining blocks:
+      // the arterial past the employment core carries real volume, the one past
+      // empty land carries a stray sedan
+      const empAdj = busy?.has(runMid) ? 2 : 0;
+      const n = Math.min(6, Math.round(len * (run.cls === 3 ? 0.55 : 0.3) * (0.5 + r())) + empAdj);
       for (let i = 0; i < n && cars < 260; i++) {
         const u = 0.06 + r() * 0.88;
         const gx = p0[0] + (p1[0] - p0[0]) * u, gy = p0[1] + (p1[1] - p0[1]) * u;
@@ -647,10 +655,11 @@ const StreetLife = memo(function StreetLife({ runs, seed, detail, season = 'summ
         lamps++;
       }
     }
-    if (run.cls <= 2 && peds < 80) {
-      // people on the sidewalk — two dots and they read as a person
-      const n = Math.min(2, Math.round(len * 0.2 * r()));
-      for (let i = 0; i < n && peds < 80; i++) {
+    if (run.cls <= 2 && peds < 96) {
+      // people on the sidewalk — two dots and they read as a person; retail
+      // frontage draws a few more, and that's the foot traffic you underwrote
+      const n = Math.min(retailish?.has(runMid) ? 4 : 2, Math.round(len * 0.2 * r()) + (retailish?.has(runMid) ? 2 : 0));
+      for (let i = 0; i < n && peds < 96; i++) {
         const u = 0.15 + r() * 0.7;
         const side = r() < 0.5 ? -0.075 : 0.075;
         const gx = p0[0] + (p1[0] - p0[0]) * u, gy = p0[1] + (p1[1] - p0[1]) * u;
@@ -833,6 +842,24 @@ const ParcelLots = memo(function ParcelLots({ blds, seed, level = 2 }: { blds: I
       }
     }
     lots++;
+  }
+  return <g style={{ pointerEvents: 'none' }}>{els}</g>;
+});
+
+// A parked cruiser on the worst blocks — the city's answer to a number the
+// player can already read on the crime lens, made visible on the ground.
+const PoliceLayer = memo(function PoliceLayer({ tiles, seed }: { tiles: { i: number; x: number; y: number }[]; seed: number }) {
+  const els: React.ReactNode[] = [];
+  for (const [k, t] of tiles.entries()) {
+    if (k >= 10) break;
+    const flip = ((seed ^ t.i) & 1) === 0;
+    const [cx, cy] = isoPt(t.x + (flip ? 0.38 : -0.38), t.y + 0.34);
+    els.push(<g key={'pc' + t.i}>
+      <polygon points={`${(cx - 1.7).toFixed(1)},${(cy - 0.2).toFixed(1)} ${(cx + 0.3).toFixed(1)},${(cy + 0.8).toFixed(1)} ${(cx + 1.7).toFixed(1)},${(cy + 0.1).toFixed(1)} ${(cx - 0.3).toFixed(1)},${(cy - 0.9).toFixed(1)}`} fill="#dfe3e6" stroke="#26303a" strokeWidth={0.35} />
+      <line x1={cx - 0.5} y1={cy - 0.5} x2={cx + 0.4} y2={cy - 0.05} stroke="#26303a" strokeWidth={0.5} />
+      <circle cx={cx - 0.15} cy={cy - 0.55} r={0.32} fill="#c04a3a" />
+      <circle cx={cx + 0.35} cy={cy - 0.3} r={0.32} fill="#3c6ac0" />
+    </g>);
   }
   return <g style={{ pointerEvents: 'none' }}>{els}</g>;
 });
@@ -1314,6 +1341,12 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const loD = useMemo(() => new Set(state.tiles.filter(t => !t.water && t.D < 45).map(t => t.i)), [loDStamp, state.seed]); // eslint-disable-line
   const hiDStamp = state.tiles.reduce((s2, t) => s2 + (!t.water && t.D > 70 ? 1 : 0), 0);
   const hiD = useMemo(() => new Set(state.tiles.filter(t => !t.water && t.D > 70).map(t => t.i)), [hiDStamp, state.seed]); // eslint-disable-line
+  const busyStamp = state.tiles.reduce((s2, t) => s2 + (!t.water && t.emp > 55 ? 1 : 0), 0);
+  const busy = useMemo(() => new Set(state.tiles.filter(t => !t.water && t.emp > 55).map(t => t.i)), [busyStamp, state.seed]); // eslint-disable-line
+  const rtStamp = state.tiles.reduce((s2, t) => s2 + (!t.water && (t.supply.retail ?? 0) > 14000 ? 1 : 0), 0);
+  const retailish = useMemo(() => new Set(state.tiles.filter(t => !t.water && (t.supply.retail ?? 0) > 14000).map(t => t.i)), [rtStamp, state.seed]); // eslint-disable-line
+  const copStamp = state.tiles.reduce((s2, t) => s2 + (!t.water && t.crime > 65 ? 1 : 0), 0);
+  const copTiles = useMemo(() => state.tiles.filter(t => !t.water && t.crime > 65).map(t => ({ i: t.i, x: t.x, y: t.y })), [copStamp, state.seed]); // eslint-disable-line
   const hue = LENS_HUE[lens];
   // the hour of day rides the calendar; Off pins the map to noon
   const phase: DayPhase = ambient >= 1 ? dayPhaseOf(state.month) : 'day';
@@ -1534,7 +1567,8 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           {ambient >= 1 && zb >= 2 && <Sidewalks runs={runs} />}
           <RoadsIso runs={runs} wet={weather === 'rain'} />
           {ambient >= 1 && zb >= 1 && <WaterLife tiles={tilesGeom} seed={state.seed} />}
-          {ambient >= 1 && zb >= 1 && <StreetLife runs={runs} seed={state.seed} detail={zb >= 2} season={season} loD={loD} hiD={hiD} />}
+          {ambient >= 1 && zb >= 1 && <StreetLife runs={runs} seed={state.seed} detail={zb >= 2} season={season} loD={loD} hiD={hiD} busy={busy} retailish={retailish} />}
+          {ambient >= 2 && zb >= 2 && <PoliceLayer tiles={copTiles} seed={state.seed} />}
           {transitActive && (() => {
             const ef = state.effects.find(e => e.kind === 'transit')!;
             const done = 1 - ef.monthsLeft / 14;

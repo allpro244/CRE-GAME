@@ -176,6 +176,9 @@ function Game({ state, setState, toMenu }: {
   const [firmShort, setFirmShort] = useState<string | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // outcome of the decision you just made: the news lines the resolution generated,
+  // shown in your face instead of buried in the feed
+  const [evtResult, setEvtResult] = useState<{ kind: string; text: string }[] | null>(null);
   // first campaign, month zero: the primer opens itself once. Everyone else finds it in the top bar.
   const [howTo, setHowTo] = useState(() => state.month === 0 && !state.sandbox && state.assets.length === 0 && state.land.length === 0);
   const [focusTile, setFocusTile] = useState<number | null>(null);
@@ -312,6 +315,15 @@ function Game({ state, setState, toMenu }: {
   const drawerAsset = assetId !== null ? state.assets.find(a => a.id === assetId) ?? null : null;
   const pendingEvt = state.pending[0];
   const pendAsset = pendingEvt ? state.assets.find(a => a.id === pendingEvt.assetId) : undefined;
+  // event modals resolve through this wrapper so the player sees what actually
+  // happened — the resolution's news lines surface as an outcome dialog
+  const resolvePending = (next: GameState) => {
+    const prevHead = state.news[0];
+    const idx = prevHead ? next.news.findIndex(n => n.m === prevHead.m && n.text === prevHead.text && n.kind === prevHead.kind) : next.news.length;
+    const added = next.news.slice(0, idx === -1 ? Math.min(4, next.news.length) : idx);
+    setState(next);
+    if (added.length) setEvtResult(added.map(n => ({ kind: n.kind, text: n.text })));
+  };
   const projCount = state.assets.filter(a => a.mode === 'construction').length;
 
   return (
@@ -393,8 +405,21 @@ function Game({ state, setState, toMenu }: {
       {firmShort && <FirmPortfolioModal state={state} short={firmShort} close={() => setFirmShort(null)} openStock={id => { setFirmShort(null); setStockCardId(id); }} />}
       {refiAsset && <RefiModal state={state} setState={setState} asset={refiAsset} close={() => setRefiId(null)} variant={detailVariant} />}
       {pm && <PostMortemModal pm={pm} close={() => setPm(null)} state={state} />}
-      {pendingEvt && pendAsset && pendingEvt.type === 'constrEvent' && <EventModal state={state} setState={setState} asset={pendAsset} kind={pendingEvt.eventKind} />}
-      {pendingEvt && pendAsset && pendingEvt.type === 'assetEvent' && <AssetEventModal state={state} setState={setState} asset={pendAsset} kind={pendingEvt.eventKind} />}
+      {pendingEvt && pendAsset && pendingEvt.type === 'constrEvent' && <EventModal state={state} setState={resolvePending} asset={pendAsset} kind={pendingEvt.eventKind} />}
+      {pendingEvt && pendAsset && pendingEvt.type === 'assetEvent' && <AssetEventModal state={state} setState={resolvePending} asset={pendAsset} kind={pendingEvt.eventKind} />}
+      {evtResult && !pendingEvt && (
+        <Modal close={() => setEvtResult(null)}>
+          <h2>{evtResult.some(n => n.kind === 'warn') ? '⚠ How it played out' : '✓ How it played out'}</h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '10px 0 14px' }}>
+            {evtResult.map((n, i) => (
+              <div key={i} className={'alert-strip' + (n.kind === 'warn' ? ' red' : '')} style={{ fontSize: 12.5, lineHeight: 1.55 }}>{n.text}</div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button className="btn btn-amber" onClick={() => setEvtResult(null)}>Noted</button>
+          </div>
+        </Modal>
+      )}
       {saveOpen && <SaveLoadModal state={state} setState={setState} close={() => setSaveOpen(false)} />}
       {howTo && <HowToPlayModal close={() => setHowTo(false)} />}
       {state.gameOver && <GameOverModal state={state} restart={() => setState(E.newGame())} />}

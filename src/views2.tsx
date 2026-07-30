@@ -136,6 +136,12 @@ function AuctionPanel({ state, setState }: { state: GameState; setState: (s: Gam
           <div key={au.id} className="memo" style={{ borderLeftColor: 'var(--red)' }}>
             <div className="memo-row"><span className="lbl"><b style={{ color: 'var(--ink)' }}>{(b.sf / 1000).toFixed(0)}K SF {E.PLABEL[b.type]}</b> at block {blockName(t)} · {E.QLABEL[E.qGrade(b.quality)]}-grade · {Math.round(b.occ * 100)}% occupied · {au.source}</span>
               <span className="num dim">appraisal ~{E.fmtMoney(val)}</span></div>
+            {(() => {
+              const noi = E.stockNOIYr(state, b);
+              const ref = Math.max(au.bid, au.reserve);
+              return <div className="memo-row"><span className="lbl dim" style={{ fontSize: 11.5 }}>NOI today <b className="num" style={{ color: 'var(--ink)' }}>{E.fmtMoney(Math.round(noi))}</b>/yr as it sits
+                {ref > 0 && <> · <b className="num" style={{ color: noi / ref * 100 >= 7 ? 'var(--green)' : 'var(--ink)' }}>{(noi / ref * 100).toFixed(1)}%</b> cap at the {au.bid > au.reserve ? 'current bid' : 'reserve'}</>}</span></div>;
+            })()}
             <div className="memo-row"><span className="lbl">Reserve {E.fmtMoney(au.reserve)} · {au.leader ? <span className="neg">current bid {E.fmtMoney(au.bid)} — {au.leader === 'you' ? 'you lead' : `${au.leader} leads`}</span> : 'no bids yet'} · gavel falls {E.monthName(au.endsM)}</span></div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
               <input type="number" step={25000} value={myBid} onChange={e => setBids({ ...bids, [au.id]: Number(e.target.value) })}

@@ -27,6 +27,7 @@ export interface ArtParams {
   seed: number;      // per-building determinism
   tight?: boolean;   // street-walled: lot-line to lot-line, no apron room
   stories?: number;  // true story count from massing; falls back to height-derived
+  hiCrime?: boolean; // the block, not the building: tags show up at the base
 }
 export interface PrismGeom { bl: [number, number]; bb: [number, number]; br: [number, number]; ht: number }
 
@@ -247,6 +248,24 @@ export function buildingArt(p: ArtParams, g: PrismGeom): ArtEl[] {
   const tintOp = Math.max(0.18, Math.min(0.46, 0.40 - p.age * 0.002 + (q - 75) * 0.0008));
   out.push({ k: 'p', pts: patch(bb, br, 0, 1, 0, ht), f: tint, o: tintOp });
   out.push({ k: 'p', pts: patch(bl, bb, 0, 1, 0, ht), f: tint, o: tintOp * 0.55 });
+
+  // ---- distress: the building tells you what the rent roll would ----
+  if (p.occ < 0.2 && p.age > 15) {
+    // plywood over the ground-floor glass — nobody's paying for new panes
+    for (let i = 0; i < 3; i++) {
+      const u0 = 0.15 + i * 0.25 + r() * 0.05;
+      out.push({ k: 'p', pts: patch(bb, br, u0, u0 + 0.11, 1, 4.2), f: '#8a7442', o: 0.9 });
+      out.push({ k: 'l', ...faceLine(bb, br, u0, u0 + 0.11, 2.6), s: '#6e5c34', w: 0.4, o: 0.8 });
+    }
+  }
+  if (p.hiCrime && q < 78 && p.age > 8) {
+    // tags at reach height on the alley side
+    const TAGCOL = ['#7a4f9a', '#3f7a9a', '#9a6a3f'] as const;
+    for (let i = 0; i < 2; i++) {
+      const u0 = 0.1 + r() * 0.6;
+      out.push({ k: 'l', ...faceLine(bl, bb, u0, u0 + 0.12 + r() * 0.08, 1.6 + r() * 1.4), s: pick(r, TAGCOL), w: 1.1, o: 0.6 });
+    }
+  }
 
   // ---- roof surface: membrane, gravel, or a green roof on good new product ----
   const roofCol = q >= 111 && p.age < 12 && r() < 0.4 ? '#2c4030' : p.age > 30 ? '#3a3d40' : '#2e3338';
@@ -1678,7 +1697,18 @@ export function siteArt(g: PrismGeom, prog: number, seed: number): ArtEl[] {
   for (const [a, b] of [[bl, bb], [bb, br]] as [[number, number], [number, number]][]) {
     out.push({ k: 'l', x1: a[0], y1: a[1] - 2.2, x2: b[0], y2: b[1] - 2.2, s: '#8a7030', w: 0.5, o: 0.8, d: '2 2' });
   }
-  if (prog < 0.25) {
+  if (prog < 0.05) {
+    // pre-construction: survey stakes at the corners and a site sign out front —
+    // diligence and design were invisible on the map until now
+    for (const c of [bl, bb, br]) {
+      out.push({ k: 'l', x1: c[0], y1: c[1], x2: c[0], y2: c[1] - 1.6, s: '#e0d8c0', w: 0.6, o: 0.95 });
+      out.push({ k: 'l', x1: c[0] - 0.5, y1: c[1] - 1.4, x2: c[0] + 0.5, y2: c[1] - 1.4, s: '#c04a3a', w: 0.5, o: 0.9 });
+    }
+    const sg = lerp(bb, br, 0.5);
+    out.push({ k: 'l', x1: sg[0] - 1.2, y1: sg[1] + 1, x2: sg[0] - 1.2, y2: sg[1] - 2.6, s: '#54493c', w: 0.5 });
+    out.push({ k: 'l', x1: sg[0] + 1.2, y1: sg[1] + 1.6, x2: sg[0] + 1.2, y2: sg[1] - 2.0, s: '#54493c', w: 0.5 });
+    out.push({ k: 'p', pts: `${(sg[0] - 2).toFixed(1)},${(sg[1] - 2.6).toFixed(1)} ${(sg[0] + 2).toFixed(1)},${(sg[1] - 1.6).toFixed(1)} ${(sg[0] + 2).toFixed(1)},${(sg[1] - 4.2).toFixed(1)} ${(sg[0] - 2).toFixed(1)},${(sg[1] - 5.2).toFixed(1)}`, f: '#ded5c0', s: '#3a332a', w: 0.4 });
+  } else if (prog < 0.25) {
     // early days: excavator scratches and a materials laydown
     const m0 = lerp(bb, br, 0.3);
     out.push({ k: 'p', pts: `${(m0[0] - 2).toFixed(1)},${(m0[1] - 1).toFixed(1)} ${(m0[0] + 3).toFixed(1)},${(m0[1] + 1.5).toFixed(1)} ${(m0[0] + 3).toFixed(1)},${(m0[1] - 0.5).toFixed(1)} ${(m0[0] - 2).toFixed(1)},${(m0[1] - 3).toFixed(1)}`, f: '#5c5030', o: 0.7 });
@@ -1693,6 +1723,13 @@ export function siteArt(g: PrismGeom, prog: number, seed: number): ArtEl[] {
     out.push({ k: 'l', x1: mastTop[0], y1: mastTop[1], x2: mastTop[0] + 7, y2: mastTop[1] + 2, s: '#c98a2e', w: 0.9 });
     // hook line
     out.push({ k: 'l', x1: jibEnd[0] + 4, y1: jibEnd[1], x2: jibEnd[0] + 4, y2: jibEnd[1] + 8 + r() * 6, s: '#8a7030', w: 0.5 });
+    // staging: a site trailer and stacked material inside the fence
+    const tr0 = lerp(bb, br, 0.12);
+    out.push({ k: 'p', pts: `${(tr0[0] - 1.6).toFixed(1)},${(tr0[1] - 0.6).toFixed(1)} ${(tr0[0] + 1.2).toFixed(1)},${(tr0[1] + 0.8).toFixed(1)} ${(tr0[0] + 1.2).toFixed(1)},${(tr0[1] - 1.0).toFixed(1)} ${(tr0[0] - 1.6).toFixed(1)},${(tr0[1] - 2.4).toFixed(1)}`, f: '#c8c2b0', s: '#3a332a', w: 0.3, o: 0.95 });
+    for (let i = 0; i < 2; i++) {
+      const pl = lerp(bb, br, 0.3 + i * 0.14);
+      out.push({ k: 'p', pts: `${(pl[0] - 1).toFixed(1)},${(pl[1] - 0.2).toFixed(1)} ${(pl[0] + 0.8).toFixed(1)},${(pl[1] + 0.7).toFixed(1)} ${(pl[0] + 0.8).toFixed(1)},${(pl[1] - 0.4 - r()).toFixed(1)} ${(pl[0] - 1).toFixed(1)},${(pl[1] - 1.3 - r()).toFixed(1)}`, f: pick(r, ['#6e5a40', '#556052', '#5c5248'] as const), s: '#2a251e', w: 0.25, o: 0.95 });
+    }
   }
   return out;
 }

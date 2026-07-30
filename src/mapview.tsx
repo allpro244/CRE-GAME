@@ -204,7 +204,7 @@ function defaultConstr(type: E.PType, sf: number): string {
   return 'podium';
 }
 
-interface IsoBld { tight?: boolean; roof?: string; cx: number; cy: number; w: number; h: number; ht: number; col: string; listed: boolean; key: string; prog?: number; mine?: boolean; type?: E.PType; construction?: string; quality?: number; age?: number; sf?: number; occ?: number; seed?: number; stories?: number; fw?: number; fh?: number }
+interface IsoBld { tight?: boolean; roof?: string; cx: number; cy: number; w: number; h: number; ht: number; col: string; listed: boolean; key: string; prog?: number; mine?: boolean; type?: E.PType; construction?: string; quality?: number; age?: number; sf?: number; occ?: number; seed?: number; stories?: number; fw?: number; fh?: number; hiCrime?: boolean; works?: boolean }
 
 // Greedy maximal-rectangle decomposition of a cell set: one prism per rectangle
 // instead of one per quarter-acre cell. An L-shaped assembly becomes two prisms.
@@ -245,7 +245,9 @@ function useIsoBuildings(state: GameState): IsoBld[] {
     + ':' + state.stock.reduce((s2, b) => s2 + Math.round(b.occ * 5), 0)
     + ':' + state.assets.reduce((s2, a) => s2 + Math.round(a.quality / 5) * 7 + Math.round(a.occ * 5) + (a.repair ? 9 : 0), 0)
     + ':' + state.tiles.reduce((s2, t) => s2 + (t.water ? 0 : ({ R: 1, C: 2, MU: 3, M: 4 } as const)[t.zone.use] * t.zone.tier * ((t.i % 13) + 1)), 0)
-    + ':' + state.firmLand.length + ':' + state.firmLand.reduce((s2, e) => s2 + e.cells.length, 0);
+    + ':' + state.firmLand.length + ':' + state.firmLand.reduce((s2, e) => s2 + e.cells.length, 0)
+    + ':' + state.tiles.reduce((s2, t) => s2 + (t.crime > 60 ? 1 : 0), 0)
+    + ':' + state.assets.reduce((s2, a) => s2 + ((a.renovMonthsLeft || a.repair || a.programActive) ? a.id : 0), 0);
   return useMemo(() => {
     const out: IsoBld[] = [];
     // Walls follow the build, not the owner: tilt-wall is white precast, Class A office
@@ -266,7 +268,7 @@ function useIsoBuildings(state: GameState): IsoBld[] {
       midrise: ['#d9d2be', '#cfc5ac', '#c6bda6'],
       tower: ['#7a94ac', '#6b869e', '#8aa2b8'],       // residential glass
     };
-    const place = (o: { tileI: number; sf: number; type: E.PType; quality?: number; age?: number; construction?: string; cells?: number[]; px?: number; py?: number; pw?: number; ph?: number }, col: string | undefined, listed: boolean, key: string, prog?: number, mine?: boolean) => {
+    const place = (o: { tileI: number; sf: number; type: E.PType; quality?: number; age?: number; construction?: string; cells?: number[]; px?: number; py?: number; pw?: number; ph?: number }, col: string | undefined, listed: boolean, key: string, prog?: number, mine?: boolean, works?: boolean) => {
       const cells = E.footprintCells(o);
       if (!cells.length) return;
       const t = state.tiles[o.tileI];
@@ -277,7 +279,11 @@ function useIsoBuildings(state: GameState): IsoBld[] {
       };
       const constr = o.construction ?? defaultConstr(o.type, o.sf);
       const wallPick = Math.abs((state.seed ^ (o.tileI * 53)) + ((o.sf | 0) >> 6)) % 3;
-      const wcol = col ?? (WALLS[constr] ?? WALLS.wood)[wallPick];
+      // the wear layer: fresh deliveries read conspicuously clean, old cheap
+      // product reads dingy — same wall, different decade
+      const age = (o as any).age ?? 10, qual = (o as any).quality ?? 80;
+      const wear = age < 3 ? 1.08 : age > 40 && qual < 60 ? 0.88 : age > 25 && qual < 75 ? 0.94 : 1;
+      const wcol = col ?? shade((WALLS[constr] ?? WALLS.wood)[wallPick], wear);
       const fab = fabricOf(t.zone, o.type);
       const m = massing(o.type, constr, o.sf, cells.length, fab);
       const ht = prog === undefined ? m.ht : Math.max(3, m.ht * prog);
@@ -286,6 +292,7 @@ function useIsoBuildings(state: GameState): IsoBld[] {
         const [w, h] = parcelSpan(r.pw, r.ph);
         out.push({ cx, cy, w: w * m.shrink, h: h * m.shrink, fw: w, fh: h, ht, col: wcol, listed, key: key + '_r' + ri, prog, mine, stories: m.stories, tight: fab === 'wall', roof: prog !== undefined ? undefined : ROOFS[o.type][Math.abs((state.seed ^ (o.tileI * 31)) + ri) % 3],
           type: o.type, construction: o.construction, quality: o.quality, age: o.age, sf: o.sf, occ: (o as any).occ,
+          hiCrime: t.crime > 60, works,
           seed: (state.seed ^ ((o.tileI + 1) * 0x9e3779b9) ^ ri) | 0 });
       }
     };
@@ -296,7 +303,8 @@ function useIsoBuildings(state: GameState): IsoBld[] {
     for (const a of state.assets) {
       const prog = a.mode === 'construction' && a.project
         ? 1 - a.project.monthsLeft / Math.max(1, a.project.monthsBuilt + a.project.monthsLeft) : undefined;
-      place(a, a.mode === 'construction' ? '#dcc07e' : '#f0c464', false, 'a' + a.id, prog, true);
+      place(a, a.mode === 'construction' ? '#dcc07e' : '#f0c464', false, 'a' + a.id, prog, true,
+        !!(a.renovMonthsLeft || a.repair || a.programActive));
     }
     for (const hd of state.land) {
       const t = state.tiles[hd.tileI];
@@ -343,6 +351,24 @@ const IsoCity = memo(function IsoCity({ blds, detail, snow = false, winterSun = 
             <polygon points={f.r} fill={shade(b.col, 0.98)} stroke={st} strokeWidth={sw} strokeDasharray={dash} />
             <polygon points={f.t} fill={b.roof ?? shade(b.col, 1.12)} stroke={st} strokeWidth={sw} strokeDasharray={dash} />
             {snow && b.prog === undefined && <polygon points={f.t} fill="#dde4ea" opacity={0.55} />}
+            {b.works && detail && (() => {
+              // scaffolding and netting on a building under renovation or repair
+              const bb2 = isoPt(b.cx + b.w / 2, b.cy + b.h / 2), br2 = isoPt(b.cx + b.w / 2, b.cy - b.h / 2);
+              const rows2 = Math.max(2, Math.min(5, Math.round(b.ht / 8)));
+              const out2: React.ReactNode[] = [
+                <polygon key="net" points={`${bb2[0]},${bb2[1]} ${br2[0]},${br2[1]} ${br2[0]},${br2[1] - b.ht} ${bb2[0]},${bb2[1] - b.ht}`}
+                  fill="#8a9a6a" opacity={0.14} />,
+              ];
+              for (let i2 = 0; i2 <= rows2; i2++) {
+                const y2 = (b.ht / rows2) * i2;
+                out2.push(<line key={'sh' + i2} x1={bb2[0] - 0.6} y1={bb2[1] - y2 + 0.3} x2={br2[0] + 0.6} y2={br2[1] - y2 + 0.3} stroke="#b0a890" strokeWidth={0.45} opacity={0.9} />);
+              }
+              for (const u2 of [0, 0.33, 0.66, 1]) {
+                const xx = bb2[0] + (br2[0] - bb2[0]) * u2, yy = bb2[1] + (br2[1] - bb2[1]) * u2;
+                out2.push(<line key={'sv' + u2} x1={xx} y1={yy + 0.5} x2={xx} y2={yy - b.ht - 0.3} stroke="#b0a890" strokeWidth={0.45} opacity={0.9} />);
+              }
+              return <g>{out2}</g>;
+            })()}
             {detail && <BldDetail b={b} />}
           </g>
         );
@@ -364,7 +390,7 @@ function BldDetail({ b }: { b: IsoBld }) {
   const els = b.prog !== undefined
     ? siteArt(geom, b.prog, b.seed ?? 1)
     : b.type
-      ? buildingArt({ type: b.type, construction: b.construction ?? 'concrete', quality: b.quality ?? 75, age: b.age ?? 10, sf: b.sf ?? 0, occ: b.occ ?? 0, seed: b.seed ?? 1, stories: b.stories, tight: b.tight }, geom)
+      ? buildingArt({ type: b.type, construction: b.construction ?? 'concrete', quality: b.quality ?? 75, age: b.age ?? 10, sf: b.sf ?? 0, occ: b.occ ?? 0, seed: b.seed ?? 1, stories: b.stories, tight: b.tight, hiCrime: b.hiCrime }, geom)
       : [];
   if (!els.length) return null;
   return (

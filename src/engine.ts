@@ -853,6 +853,8 @@ export function tileDemandFactor(state: GameState, t: Tile, type: PType): number
   if (type === 'retail' && e.ecomMonthsLeft > 0) f *= 0.85;
   if (type === 'office' && (e.wfhMonthsLeft ?? 0) > 0) f *= 0.85;
   if (type === 'office' && (e.rtoMonthsLeft ?? 0) > 0) f *= 1.12;   // the return-to-office year
+  // the era's secular wind: a headwind sector tours slower everywhere, all era long
+  f *= clamp(1 + (e.era?.sectorTilt?.[type] ?? 0) * 2.2, 0.86, 1.14);
   return clamp(f, 0.35, 1.8);
 }
 
@@ -1386,13 +1388,22 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
       rate: 4.0, rateSmooth: 4.2, inflation: 2.2, empIdx: 97, confidence: 52, popGrowth: 1.1, costIdx: 1,
       era: (() => {
         const r = mulberry32((s0 ^ 0x5EEDECA7) | 0);
-        const tilt = () => Math.round((r() - 0.5) * 0.056 * 1000) / 1000;   // ±0.028 on the sector's demand drift
+        // the era's secular story, rolled once: strong enough that ANY ordering can
+        // happen — retail can be this generation's loser, office its darling.
+        // Handicaps first center the sectors' structural biases (retail runs hot,
+        // office runs cold), then a sum-neutral shuffle decides who this era loves.
+        // measured so a NEUTRAL roll puts the four sectors at rough parity — the random
+        // part then genuinely decides who this era loves and who it starves
+        const HANDICAP: Record<string, number> = { office: 0.045, retail: -0.062, industrial: 0.030, multifamily: -0.013 };
+        const raw: Record<string, number> = { office: r(), retail: r(), industrial: r(), multifamily: r() };
+        const avg = (raw.office + raw.retail + raw.industrial + raw.multifamily) / 4;
+        const tiltOf = (ty: string) => Math.round((HANDICAP[ty] + (raw[ty] - avg) * 0.11) * 1000) / 1000;
         return {
           rateBias: Math.round((-1.0 + r() * 2.4) * 100) / 100,   // -1.0 .. +1.4 pts on every rate target
           inflBias: Math.round((-0.5 + r() * 1.5) * 100) / 100,   // -0.5 .. +1.0 on inflation targets
           vol: Math.round((0.75 + r() * 0.7) * 100) / 100,        // calm seas or whitewater
           tempo: Math.round((0.8 + r() * 0.5) * 100) / 100,       // fast-cycling or long, slow eras
-          sectorTilt: { office: tilt(), retail: tilt(), industrial: tilt(), multifamily: tilt() },
+          sectorTilt: { office: tiltOf('office'), retail: tiltOf('retail'), industrial: tiltOf('industrial'), multifamily: tiltOf('multifamily') },
         };
       })(),
       rentIdx: { office: 1, retail: 1, industrial: 1, mixed: 1, multifamily: 1 },
@@ -1459,6 +1470,17 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
   pushNews(state, 'info', opts?.sandbox
     ? 'SANDBOX MODE: $50,000,000 of equity, top tier unlocked, and a clean reputation. Nothing here counts — go break things.'
     : 'Welcome to New Amsterdam. You have $600K of equity, five lenders in town, and a young city with room to grow. Buy well.');
+  {
+    // every era has its conventional wisdom — right until it isn't
+    const st = state.econ.era.sectorTilt;
+    if (st) {
+      const NAME: Record<string, string> = { office: 'office towers', retail: 'retail', industrial: 'logistics', multifamily: 'apartments' };
+      const keys = Object.keys(st);
+      const best = keys.sort((a, b) => (st[b as PType] ?? 0) - (st[a as PType] ?? 0))[0];
+      const worst = keys[keys.length - 1];
+      pushNews(state, 'info', `The era's conventional wisdom, per every panel and podcast: the smart money is crowding into ${NAME[best]}, and nobody wants to underwrite ${NAME[worst]}. Conventional wisdom runs long cycles — and it is right until, suddenly, it isn't.`);
+    }
+  }
   for (let k = 0; k < 6; k++) spawnListing(state, k < 2);
   // every career starts somewhere: guarantee at least one building a $600K player can close
   let guard = 0;
@@ -4535,8 +4557,10 @@ function tickEconomy(s: GameState) {
     e.rentMom[ty] = e.rentMom[ty] * 0.78 + (gap * 0.0011) * 0.22;
     // rents carry the same inflation pass-through as construction costs (costIdx above),
     // so a development pro forma means the same thing in year 25 as in year 1 —
-    // the cycle moves rents around that line, not permanently below it
-    const growth = e.rentMom[ty] + (e.inflation / 100) * 0.5 / 12;
+    // the cycle moves rents around that line, not permanently below it.
+    // The era's secular wind also reprices the sector directly: capital crowds into
+    // this generation's darling and starves its castoff, beyond what vacancy explains.
+    const growth = e.rentMom[ty] + (e.inflation / 100) * 0.5 / 12 + (e.era?.sectorTilt?.[ty] ?? 0) * 0.018;
     e.rentIdx[ty] = clamp(e.rentIdx[ty] * (1 + growth), 0.5, 4.5);
   }
   // mixed reads as the blend of what it contains — kept for display and any legacy reader

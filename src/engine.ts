@@ -4693,7 +4693,7 @@ const PHASE_TARGET: Record<Phase, { rate: number; infl: number; emp: number; con
 
 // Which way the demographic tide pulls: population growth points, and a smaller
 // business-demand term (a metro that's filling up needs offices and warehouses too).
-const DEMO_POP: Record<string, number> = { boom: 0.9, steady: 0, stagnation: -0.5, decline: -1.05 };
+const DEMO_POP: Record<string, number> = { boom: 1.8, steady: 0, stagnation: -0.8, decline: -2.2 };
 const DEMO_BIZ: Record<string, number> = { boom: 0.010, steady: 0, stagnation: -0.007, decline: -0.014 };
 const DEMO_NEWS: Record<string, string> = {
   boom: 'THE BOOM DECADES BEGIN: the metro is drawing people faster than it can house them. Every unit leases, every corner retail pencils — until everyone builds at once.',
@@ -4784,7 +4784,7 @@ function tickEconomy(s: GameState) {
   e.inflation = clamp(e.inflation + (t.infl + era.inflBias + tariffHeat - e.inflation) * 0.10 + (rng(s) - 0.5) * 0.3 * era.vol, 0, 9);
   e.empIdx = clamp(e.empIdx + (t.emp - e.empIdx) * 0.07 + (rng(s) - 0.5) * 0.5, 80, 115);
   e.confidence = clamp(e.confidence + (t.conf - e.confidence) * 0.09 + (rng(s) - 0.5) * 2.5, 10, 95);
-  e.popGrowth = clamp(0.4 + (e.confidence / 100) * 1.4 + (DEMO_POP[e.demo?.regime ?? 'steady'] ?? 0) + (rng(s) - 0.5) * 0.2, -1.2, 2.8);
+  e.popGrowth = clamp(0.4 + (e.confidence / 100) * 1.4 + (DEMO_POP[e.demo?.regime ?? 'steady'] ?? 0) + (rng(s) - 0.5) * 0.3, -2.0, 4.0);
   e.costIdx *= 1 + (e.inflation * 0.5) / 100 / 12;
   // construction has its own weather: bid climate swings with the cycle and its own momentum
   if (e.constrCycle === undefined) e.constrCycle = 1;
@@ -5033,7 +5033,7 @@ function tickTiles(s: GameState) {
     t.dMom = Math.round(clamp((t.dMom ?? 0) * 0.72 + (t.D - prev) * 0.28, -2.2, 2.2) * 1000) / 1000;
     // the demographic tide moves the anchor itself: boom decades raise every block's
     // resting population, decline decades drain it — the city genuinely grows and shrinks
-    const dp = s.econ.demo?.regime === 'boom' ? 0.02 : s.econ.demo?.regime === 'decline' ? -0.015 : 0;
+    const dp = s.econ.demo?.regime === 'boom' ? 0.045 : s.econ.demo?.regime === 'decline' ? -0.04 : s.econ.demo?.regime === 'stagnation' ? -0.008 : 0;
     if (dp) t.popBase = clamp(t.popBase + dp, 0, 100);
     const popTarget = clamp(t.popBase + RES_K * resSrc[t.i], 5, 100);
     const empTarget = clamp((t.empBase + JOB_K * jobSrc[t.i]) * (s.econ.empIdx / 100), 3, 100);
@@ -5075,7 +5075,7 @@ function maybeBlackSwan(s: GameState) {
     e.wfhLastM = s.month; e.ecomLastM = s.month;
     e.confidence = clamp(e.confidence - 22, 10, 95);
     e.rate = clamp(e.rate - 2.0, 2.0, 13.0);
-    e.popGrowth = clamp(e.popGrowth - 0.8, -1.2, 2.8);
+    e.popGrowth = clamp(e.popGrowth - 0.8, -2.0, 4.0);
     pushNews(s, 'event', 'PANDEMIC. The city empties overnight: offices dark for years, retail on life support, logistics running triple shifts, and money nearly free while the world holds its breath. Every lease signed this decade will remember this month.');
   } else if (kind === 'quake') {
     s.swans.push({ m: s.month, kind, label: 'The Quake' });
@@ -5097,7 +5097,7 @@ function maybeBlackSwan(s: GameState) {
     e.empIdx = clamp(e.empIdx + 6, 80, 115);
     e.confidence = clamp(e.confidence + 20, 10, 95);
     e.capInflowMonthsLeft = 30;
-    e.popGrowth = clamp(e.popGrowth + 0.8, -1.2, 2.8);
+    e.popGrowth = clamp(e.popGrowth + 0.8, -2.0, 4.0);
     pushNews(s, 'event', 'THE BOOM: a national champion is moving its headquarters and half its supply chain here. Jobs, people, and institutional capital are all inbound at once — cap rates compress, rents run, and everyone who owns anything looks like a genius for a while. Booms end. Enjoy this one; underwrite like it will.');
   }
 }

@@ -724,6 +724,103 @@ const StreetLife = memo(function StreetLife({ runs, seed, detail, season = 'summ
 });
 const pick2 = <T,>(r: () => number, arr: readonly T[]): T => arr[Math.floor(r() * arr.length) % arr.length];
 
+// ---------- civic fabric ----------
+// The city stops being 100% product: a domed hall and a bandstand in the parks, a
+// fountain, a marina on the riverbank, water towers on the industrial band, a
+// couple of spires in the neighborhoods. All view-only, all on ground the player
+// can't buy (parks, water) or on vacant corners that yield if someone builds.
+const CivicLayer = memo(function CivicLayer({ tiles, grids, seed }: {
+  tiles: (TileGeom & { rz?: boolean })[]; grids: (number | null)[][]; seed: number;
+}) {
+  const els: React.ReactNode[] = [];
+  const parks = tiles.filter(t => t.park);
+  const cornerFree = (t: TileGeom, c: number) => grids[t.i] && grids[t.i][c] === null;
+
+  // City Hall: the first park block — limestone mass, portico, a green dome
+  if (parks.length > 0) {
+    const t = parks[0];
+    const [cx, cy] = isoPt(t.x - 0.14, t.y - 0.1);
+    els.push(<g key="hall">
+      <polygon points={`${cx - 7},${cy} ${cx},${cy + 3.5} ${cx + 7},${cy} ${cx},${cy - 3.5}`} fill="#b3a68c" stroke="#6b6154" strokeWidth={0.5} />
+      <polygon points={`${cx - 7},${cy} ${cx - 7},${cy - 5} ${cx},${cy - 1.5} ${cx},${cy + 3.5}`} fill="#9c8f74" stroke="#6b6154" strokeWidth={0.4} />
+      <polygon points={`${cx + 7},${cy} ${cx + 7},${cy - 5} ${cx},${cy - 1.5} ${cx},${cy + 3.5}`} fill="#a89a80" stroke="#6b6154" strokeWidth={0.4} />
+      <polygon points={`${cx - 7},${cy - 5} ${cx},${cy - 8.5} ${cx + 7},${cy - 5} ${cx},${cy - 1.5}`} fill="#b8ab8e" stroke="#6b6154" strokeWidth={0.4} />
+      {[-3.6, -1.8, 1.8, 3.6].map(o => <line key={'c' + o} x1={cx + o} y1={cy + 2 - Math.abs(o) * 0.22} x2={cx + o} y2={cy - 2.2 - Math.abs(o) * 0.22} stroke="#d5cab0" strokeWidth={0.7} />)}
+      <ellipse cx={cx} cy={cy - 8.6} rx={2.6} ry={1.5} fill="#5a7d68" stroke="#3d5a4a" strokeWidth={0.4} />
+      <path d={`M${cx - 2.6} ${cy - 8.6} Q${cx} ${cy - 12} ${cx + 2.6} ${cy - 8.6}`} fill="#6b8f78" stroke="#3d5a4a" strokeWidth={0.4} />
+      <line x1={cx} y1={cy - 11.4} x2={cx} y2={cy - 13.6} stroke="#54493c" strokeWidth={0.5} />
+      <polygon points={`${cx},${cy - 13.6} ${cx + 2.2},${cy - 13.1} ${cx},${cy - 12.6}`} fill="#c9a04f" />
+    </g>);
+  }
+  // Bandstand: a light hexagonal pavilion in another park
+  if (parks.length > 2) {
+    const t = parks[Math.floor(parks.length / 2)];
+    const [cx, cy] = isoPt(t.x + 0.18, t.y + 0.16);
+    els.push(<g key="band">
+      <ellipse cx={cx} cy={cy} rx={3.4} ry={1.7} fill="#cfc4a4" stroke="#8a7a5c" strokeWidth={0.4} />
+      {[-2.6, 0, 2.6].map(o => <line key={'p' + o} x1={cx + o} y1={cy + (o === 0 ? 1.5 : 0.4)} x2={cx + o} y2={cy - 2.6 + (o === 0 ? 0 : 0.4)} stroke="#8a7a5c" strokeWidth={0.5} />)}
+      <path d={`M${cx - 3.6} ${cy - 2.4} Q${cx} ${cy - 5.4} ${cx + 3.6} ${cy - 2.4} Z`} fill="#7d5a4a" stroke="#54493c" strokeWidth={0.4} />
+    </g>);
+  }
+  // Fountain: rings and spray in the last park
+  if (parks.length > 4) {
+    const t = parks[parks.length - 1];
+    const [cx, cy] = isoPt(t.x - 0.2, t.y + 0.22);
+    els.push(<g key="ftn">
+      <ellipse cx={cx} cy={cy} rx={3} ry={1.5} fill="#5b9ec9" stroke="#8a8f80" strokeWidth={0.6} />
+      <ellipse cx={cx} cy={cy} rx={1.2} ry={0.6} fill="#7ab4d8" />
+      <line x1={cx} y1={cy} x2={cx} y2={cy - 2} stroke="#cfe4f0" strokeWidth={0.5} opacity={0.9} />
+      <circle cx={cx} cy={cy - 2.2} r={0.5} fill="#cfe4f0" opacity={0.7} />
+    </g>);
+  }
+  // Marina: docks and moored hulls on the first riverbank tile with land behind it
+  const W = E.CONFIG.GRID_W;
+  const marina = tiles.find(t => t.water && !t.canal && t.y > 1 && t.y < E.CONFIG.GRID_H - 2
+    && tiles[t.i - 1] && !tiles[t.i - 1].water && ((seed ^ t.i) & 3) !== 0);
+  if (marina) {
+    const [cx, cy] = isoPt(marina.x - 0.28, marina.y);
+    els.push(<g key="marina">
+      {[0, 1].map(d => {
+        const oy = d * 3.2;
+        return <g key={d}>
+          <line x1={cx - 2} y1={cy + oy} x2={cx + 6} y2={cy + oy + 3} stroke="#8a7050" strokeWidth={1.1} />
+          {[0.3, 0.62].map(u => <polygon key={u} points={`${cx - 2 + 8 * u - 1.1},${cy + oy + 3 * u - 1.6} ${cx - 2 + 8 * u + 1.1},${cy + oy + 3 * u - 1.1} ${cx - 2 + 8 * u + 1.4},${cy + oy + 3 * u - 1.9} ${cx - 2 + 8 * u - 0.8},${cy + oy + 3 * u - 2.4}`}
+            fill={((seed >> d) & 1) ? '#e8e6dd' : '#6a8296'} stroke="#4a5560" strokeWidth={0.3} />)}
+        </g>;
+      })}
+    </g>);
+  }
+  // Water towers on the industrial band; spires in the neighborhoods — both sit
+  // on vacant corners and give way the day somebody builds there
+  let towers = 0, spires = 0;
+  for (const t of tiles) {
+    if (towers < 2 && t.dust && !t.water && cornerFree(t, 0) && ((seed ^ (t.i * 7)) & 7) === 0) {
+      const [cx, cy] = isoPt(t.x - 0.3, t.y - 0.3);
+      els.push(<g key={'wt' + t.i}>
+        {[-1.4, 1.4].map(o => <line key={o} x1={cx + o} y1={cy} x2={cx + o * 0.55} y2={cy - 4.5} stroke="#54493c" strokeWidth={0.6} />)}
+        <ellipse cx={cx} cy={cy - 5.6} rx={2.2} ry={1.1} fill="#7d8690" stroke="#3a4048" strokeWidth={0.4} />
+        <rect x={cx - 2.2} y={cy - 6.6} width={4.4} height={1.6} fill="#8a939c" stroke="#3a4048" strokeWidth={0.4} />
+        <path d={`M${cx - 2.2} ${cy - 6.6} Q${cx} ${cy - 8.4} ${cx + 2.2} ${cy - 6.6}`} fill="#6e7780" stroke="#3a4048" strokeWidth={0.4} />
+      </g>);
+      towers++;
+    }
+    if (spires < 2 && (t as any).rz && !t.water && cornerFree(t, 15) && ((seed ^ (t.i * 13)) & 7) === 0) {
+      const [cx, cy] = isoPt(t.x + 0.3, t.y + 0.3);
+      els.push(<g key={'sp' + t.i}>
+        <polygon points={`${cx - 2.4},${cy} ${cx},${cy + 1.2} ${cx + 2.4},${cy} ${cx},${cy - 1.2}`} fill="#cfc8b6" stroke="#8a8274" strokeWidth={0.4} />
+        <polygon points={`${cx - 2.4},${cy} ${cx - 2.4},${cy - 3} ${cx},${cy - 1.8} ${cx},${cy + 1.2}`} fill="#b8b0a0" stroke="#8a8274" strokeWidth={0.3} />
+        <polygon points={`${cx + 2.4},${cy} ${cx + 2.4},${cy - 3} ${cx},${cy - 1.8} ${cx},${cy + 1.2}`} fill="#c4bcac" stroke="#8a8274" strokeWidth={0.3} />
+        <polygon points={`${cx - 2.4},${cy - 3} ${cx},${cy - 5.6} ${cx + 2.4},${cy - 3} ${cx},${cy - 1.8}`} fill="#7d5a4a" stroke="#54493c" strokeWidth={0.3} />
+        <line x1={cx} y1={cy - 5.4} x2={cx} y2={cy - 8} stroke="#54493c" strokeWidth={0.7} />
+      </g>);
+      spires++;
+    }
+    if (towers >= 2 && spires >= 2) break;
+  }
+  void W;
+  return <g style={{ pointerEvents: 'none' }}>{els}</g>;
+});
+
 // ---------- bridges ----------
 // Where a road crosses water it stops being paint and becomes structure: a deck
 // wider than the roadway, railings, and a shadow on the river. Crossings are the
@@ -1347,7 +1444,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
     + ':' + state.rezonings.length + ':' + state.rezonings.reduce((s2, r) => s2 + r.tileI, 0);
   // Per-seed geometry + a live ref so the memoized layers never re-render on hover;
   // the dust flag encodes M-zoning, so a rezoning has to re-cut the ground too.
-  const tilesGeom = useMemo(() => state.tiles.map(t => ({ i: t.i, x: t.x, y: t.y, water: t.water, park: t.park, canal: t.canal, dust: !t.water && t.zone.use === 'M' })), [state.seed, zoneStamp]); // eslint-disable-line
+  const tilesGeom = useMemo(() => state.tiles.map(t => ({ i: t.i, x: t.x, y: t.y, water: t.water, park: t.park, canal: t.canal, dust: !t.water && t.zone.use === 'M', rz: !t.water && t.zone.use === 'R' })), [state.seed, zoneStamp]); // eslint-disable-line
   const vpIso = useViewport(0, 0, IW_TOT, IH_TOT);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const vpFlat = useViewport(-20, -18, W + 24, H + 22);
@@ -1600,6 +1697,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                 opacity={built ? 1 : 0.6} style={{ pointerEvents: 'none' }} />;
             });
           })()}
+          {ambient >= 1 && <CivicLayer tiles={tilesGeom} grids={grids} seed={state.seed} />}
           {ambient >= 2 && zb >= 2 && lens === 'city' && <VacantLots tiles={tilesGeom} grids={grids} seed={state.seed} season={season} />}
           {ambient >= 2 && zb >= 2 && <StreetFurniture runs={runs} seed={state.seed} level={ambient} loD={loD} />}
           {ambient >= 2 && zb >= 2 && showBldgs && <ParcelLots blds={isoBlds} seed={state.seed} level={ambient} />}

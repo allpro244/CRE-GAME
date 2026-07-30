@@ -746,6 +746,21 @@ function EconomyView({ state }: { state: GameState }) {
   })();
   return (
     <div>
+      <div className="panel" style={{ marginBottom: 14 }}>
+        <h3>The cost of money <Hint text="Prime is what your lenders actually price from: the central bank's base rate plus the banking system's spread. Every mortgage quote, refi, and floating-rate reset in the game keys off this line." /></h3>
+        <div className="metric-row">
+          <div className="metric"><div className="eyebrow">Prime rate</div><div className="v num" style={{ fontSize: 22 }}>{E.primeRate(state).toFixed(2)}%</div></div>
+          <div className="metric"><div className="eyebrow">Base rate</div><div className="v num">{state.econ.rate.toFixed(2)}%</div></div>
+          <div className="metric"><div className="eyebrow">12-mo change</div><div className={'v num ' + ((last?.rate ?? 0) - (back12?.rate ?? 0) <= 0 ? 'pos' : 'neg')}>{back12 ? (((last?.rate ?? 0) - back12.rate) >= 0 ? '+' : '') + ((last?.rate ?? 0) - back12.rate).toFixed(2) + ' pts' : '—'}</div></div>
+          <div className="metric"><div className="eyebrow">Inflation</div><div className="v num">{state.econ.inflation.toFixed(1)}%</div></div>
+          <div className="metric"><div className="eyebrow">Phase</div><div className={'v phase-chip phase-' + state.econ.phase} style={{ padding: '2px 8px' }}>{state.econ.phase}</div></div>
+        </div>
+        <LineChart labels={labels} bands={recBands} series={[
+          { name: 'prime', color: 'var(--amber)', data: h.map(x => x.rate + E.CONFIG.primeSpread) },
+          { name: 'base', color: 'var(--dim)', data: h.map(x => x.rate) },
+        ]} yFmt={v => v.toFixed(1) + '%'} />
+        <div className="faint" style={{ fontSize: 11, marginTop: 4 }}>Prime (amber) is base plus the banking spread — the line your debt is actually priced off. Borrow when it's low, fix before it rises, and never trust a peak.</div>
+      </div>
       <div className="grid2" style={{ marginBottom: 14 }}>
         <div className="panel">
           <h3>Meridian City — demographics</h3>

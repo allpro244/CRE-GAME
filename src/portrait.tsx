@@ -171,7 +171,7 @@ function key(c: Ctx) { return 'e' + (c.k++); }
 // a grid of punched windows on a wall rect; returns nothing below legible size
 function windows(c: Ctx, x: number, y: number, w: number, h: number, rows: number, cols: number,
   opts: { tall?: boolean; sillStreaks?: boolean; litBias?: number } = {}) {
-  if (rows < 1 || cols < 1) return;
+  if (rows < 1 || cols < 1 || w < 4 || h < 3) return;
   const cw = w / cols, ch = h / rows;
   const ww = cw * (opts.tall ? 0.42 : 0.52), wh = ch * (opts.tall ? 0.62 : 0.5);
   if (ww < 1.1 || wh < 1.1) {
@@ -290,7 +290,7 @@ function drawTower(c: Ctx, d: Draw) {
   const hasPodium = arch === 'podium-tower' || arch === 'flatiron-corner' || arch === 'point-tower';
   const podW = hasPodium ? w * 1.3 : w;
   const podX = x - (podW - w) / 2;
-  const podH = hasPodium ? clamp(floorPx * 2, 10, 30 * c.fpx) : 0;
+  const podH = hasPodium ? Math.min(clamp(floorPx * 2, 10, 30 * c.fpx), hPx * 0.42) : 0;
 
   if (hasPodium) {
     c.els.push(<rect key={key(c)} x={podX} y={gy - podH} width={podW} height={podH} fill={shade(tint, 0.8)} stroke={TRIM} strokeWidth={0.7} />);

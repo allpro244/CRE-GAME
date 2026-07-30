@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as E from './engine';
 import type { GameState, StockBuilding, Tile } from './engine';
-import { Modal, Hint, BuildingSketch, blockName, pct } from './views2';
+import { Modal, Hint, blockName, pct } from './views2';
+import { Portrait, mapSeed } from './portrait';
 import { buildingArt, siteArt, storiesFor } from './buildingArt';
 
 type Lens = 'city' | 'land' | 'zoning' | 'office' | 'retail' | 'industrial' | 'multifamily' | 'crime' | 'comps';
@@ -1676,7 +1677,9 @@ export function StockCard({ state, setState, stockId, close, openDeal, variant =
     <Modal close={close} variant={variant}>
       <h2>{E.PLABEL[b.type]} — Block {blockName(t)}</h2>
       <div className="sub">{spec.label} · built {Math.max(1950, Math.round(2026 - b.age))} · {ownerLabel}{b.blacklist ? ' (not speaking to you)' : ''}</div>
-      <BuildingSketch a={b} w={360} h={120} />
+      <Portrait b={{ type: b.type, construction: b.construction, sf: b.sf, units: b.units, quality: b.quality,
+        age: b.age, occ: b.occ, seed: mapSeed(state.seed, b.tileI), siteCells: E.footprintCells(b).length || 1,
+        progress: b.buildLeft ? 1 - b.buildLeft / Math.max(1, b.buildTotal ?? 1) : undefined }} w={380} h={185} />
       <div className="metric-row" style={{ marginTop: 10 }}>
         <div className="metric"><div className="eyebrow">Size</div><div className="v num">{(b.sf / 1000).toFixed(0)}K SF</div></div>
         <div className="metric"><div className="eyebrow">{b.type === 'multifamily' ? 'Apartments' : 'Units'}</div><div className="v num">{b.units}</div></div>

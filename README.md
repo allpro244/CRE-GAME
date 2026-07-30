@@ -33,7 +33,8 @@ environment used its own `bundle-artifact.sh` for this.
 | `src/engine.ts` | The entire simulation. Pure functions, no React. Every game rule lives here. |
 | `src/views2.tsx` | Deal board (+auctions, build-to-suit), deal drawer/modal, LOI negotiation, portfolio, refi, debt tab (lenders, hedging), Books tab |
 | `src/mapview.tsx` | Isometric + flat city map, street network rendering, memoized layers, parcel selection, block panel |
-| `src/buildingArt.ts` | Procedural facades & construction sites. Pure: params + prism geometry in, element descriptors out. No React, no engine imports. |
+| `src/buildingArt.ts` | Procedural facades & construction sites. Pure: params + prism geometry in, element descriptors out. No React, no engine imports. Also owns the shared massing truth (story caps, coverage). |
+| `src/portrait.tsx` | Building portraits: painted front elevations at dusk for the deal memo, asset cards, stock inspector, and the development desk (proposed + under-construction scenes). Same seed and archetype dice as the map, honest ft-per-px scale. |
 | `src/App.tsx` | Shell, dashboard, economy tab, modals, save/load |
 | `src/charts.tsx` | Minimal SVG line/bar charts |
 | `src/index.css` | Dark "surveyor terminal" theme (amber #d9a648 on #0e1216) |

@@ -1,6 +1,15 @@
 import { useMemo, useState } from 'react';
 import * as E from './engine';
 import type { GameState, Listing, Asset, DevChoice, PType, LOI } from './engine';
+import { Portrait, mapSeed } from './portrait';
+
+// signage feed: the biggest names on the rent roll, street-front uses first
+function signTenants(tenants: E.Tenant[] | undefined): { name: string; sf: number }[] | undefined {
+  if (!tenants?.length) return undefined;
+  return [...tenants]
+    .sort((a, b) => (a.use === 'retail' ? -1 : 0) - (b.use === 'retail' ? -1 : 0) || b.sf - a.sf)
+    .slice(0, 8).map(t => ({ name: t.name, sf: t.sf }));
+}
 
 export const pct = (v: number, d = 0) => (v * 100).toFixed(d) + '%';
 export const blockName = (t: { x: number; y: number }) => `${String.fromCharCode(65 + t.x)}-${t.y + 1}`;
@@ -18,109 +27,6 @@ export function Modal({ children, close, wide, variant = 'dialog' }: {
 }
 export function Hint({ text }: { text: string }) { return <span className="tooltip-hint" title={text}>ⓘ</span>; }
 
-// ---------- Procedural elevation sketch ----------
-export function BuildingSketch({ a, w = 300, h = 110 }: {
-  a: { type: PType; construction: string; sf: number; units: number; quality: number }; w?: number; h?: number;
-}) {
-  const g = E.qGrade(a.quality);
-  const stroke = 'var(--amber-dim)';
-  const fill = 'rgba(217,166,72,0.06)';
-  const el: any[] = [];
-  const gy = h - 16, gw = w - 36;
-  el.push(<line key="g" x1={6} y1={gy} x2={w - 6} y2={gy} stroke="var(--line)" strokeWidth={1.5} />);
-  const c = a.construction;
-  if (a.type === 'office') {
-    const floors = Math.max(2, Math.min(14, Math.round(a.sf / 9000) + (c === 'concrete' ? 3 : 0)));
-    const bw = Math.min(gw, 120 + Math.sqrt(a.sf) * 0.5);
-    const bh = Math.min(gy - 12, floors * 7 + 8);
-    const bx = (w - bw) / 2;
-    el.push(<rect key="b" x={bx} y={gy - bh} width={bw} height={bh} fill={fill} stroke={stroke} strokeWidth={1.2} />);
-    for (let f = 1; f < Math.min(floors, Math.floor(bh / 7)); f++) {
-      el.push(<line key={'f' + f} x1={bx} y1={gy - f * 7 - 4} x2={bx + bw} y2={gy - f * 7 - 4} stroke={stroke} strokeWidth={0.5} opacity={0.6} />);
-    }
-    if (c === 'concrete') el.push(<rect key="crown" x={bx + bw * 0.3} y={gy - bh - 6} width={bw * 0.4} height={6} fill="none" stroke={stroke} strokeWidth={1} />);
-    if (c === 'wood') el.push(<polygon key="roof" points={`${bx - 4},${gy - bh} ${bx + bw + 4},${gy - bh} ${bx + bw / 2},${gy - bh - 12}`} fill="none" stroke={stroke} strokeWidth={1} />);
-    for (let vx = 1; vx < 6; vx++) el.push(<line key={'v' + vx} x1={bx + (bw / 6) * vx} y1={gy - bh + 3} x2={bx + (bw / 6) * vx} y2={gy - 2} stroke={stroke} strokeWidth={0.4} opacity={0.45} />);
-  } else if (a.type === 'industrial') {
-    const bw = Math.min(gw, 140 + Math.sqrt(a.sf) * 0.6);
-    const bh = 42;
-    const bx = (w - bw) / 2;
-    el.push(<rect key="b" x={bx} y={gy - bh} width={bw} height={bh} fill={fill} stroke={stroke} strokeWidth={1.2} />);
-    if (c === 'tilt') {
-      const n = 6;
-      for (let i = 1; i < n; i++) el.push(<line key={'p' + i} x1={bx + (bw / n) * i} y1={gy - bh} x2={bx + (bw / n) * i} y2={gy} stroke={stroke} strokeWidth={0.8} opacity={0.7} />);
-      el.push(<rect key="cl" x={bx + bw * 0.06} y={gy - bh - 8} width={bw * 0.22} height={8} fill={fill} stroke={stroke} strokeWidth={1} />);
-    } else {
-      el.push(<polygon key="roof" points={`${bx},${gy - bh} ${bx + bw},${gy - bh} ${bx + bw / 2},${gy - bh - 10}`} fill="none" stroke={stroke} strokeWidth={1} />);
-      const n = c === 'tin' ? 22 : 12;
-      for (let i = 1; i < n; i++) el.push(<line key={'r' + i} x1={bx + (bw / n) * i} y1={gy - bh} x2={bx + (bw / n) * i} y2={gy} stroke={stroke} strokeWidth={0.35} opacity={0.5} />);
-    }
-    const doors = Math.min(5, Math.max(1, Math.round(a.sf / 12000)));
-    for (let d = 0; d < doors; d++) {
-      el.push(<rect key={'d' + d} x={bx + bw * 0.55 + d * 26} y={gy - 18} width={18} height={18} fill="none" stroke={stroke} strokeWidth={0.9} />);
-    }
-  } else if (a.type === 'retail') {
-    const bw = Math.min(gw, 130 + Math.sqrt(a.sf) * 0.7);
-    const bh = c === 'pad' ? 26 : 30;
-    const bx = (w - bw) / 2;
-    el.push(<rect key="b" x={bx} y={gy - bh} width={bw} height={bh} fill={fill} stroke={stroke} strokeWidth={1.2} />);
-    el.push(<rect key="par" x={bx} y={gy - bh - 7} width={bw} height={7} fill="none" stroke={stroke} strokeWidth={1} />);
-    const n = c === 'pad' ? 1 : Math.min(a.units, 10);
-    for (let i = 0; i < n; i++) {
-      const sx = bx + (bw / n) * i;
-      el.push(<rect key={'s' + i} x={sx + 3} y={gy - bh + 8} width={bw / n - 6} height={bh - 10} fill="none" stroke={stroke} strokeWidth={0.6} opacity={0.75} />);
-      if (i > 0) el.push(<line key={'dv' + i} x1={sx} y1={gy - bh} x2={sx} y2={gy} stroke={stroke} strokeWidth={0.5} opacity={0.5} />);
-    }
-    if (c === 'center') el.push(<rect key="anchor" x={bx - 14} y={gy - bh - 14} width={26} height={bh + 14} fill={fill} stroke={stroke} strokeWidth={1} />);
-    if (c === 'pad') el.push(<circle key="drv" cx={bx + bw + 16} cy={gy - 8} r={7} fill="none" stroke={stroke} strokeWidth={0.7} strokeDasharray="2 2" />);
-  } else if (a.type === 'multifamily') {
-    const c2 = a.construction;
-    if (c2 === 'garden') {
-      const n = Math.min(4, Math.max(2, Math.round(a.units / 12)));
-      const bw = Math.min(gw / n - 8, 92);
-      const totalW = n * (bw + 8) - 8;
-      const x0 = (w - totalW) / 2;
-      for (let i = 0; i < n; i++) {
-        const bx = x0 + i * (bw + 8), bh = 30;
-        el.push(<rect key={'g' + i} x={bx} y={gy - bh} width={bw} height={bh} fill={fill} stroke={stroke} strokeWidth={1.1} />);
-        el.push(<path key={'r' + i} d={`M${bx - 3} ${gy - bh} L${bx + bw / 2} ${gy - bh - 9} L${bx + bw + 3} ${gy - bh}`} fill="none" stroke={stroke} strokeWidth={1} />);
-        for (let wn = 0; wn < 3; wn++) el.push(<rect key={'w' + i + '-' + wn} x={bx + 6 + wn * (bw / 3)} y={gy - bh + 6} width={bw / 4.4} height={7} fill="none" stroke={stroke} strokeWidth={0.5} opacity={0.7} />);
-      }
-    } else {
-      const bw = Math.min(gw, 100 + Math.sqrt(a.sf) * 0.5);
-      const bx = (w - bw) / 2;
-      const bh = Math.min(gy - 12, c2 === 'tower' ? 30 + Math.round(a.sf / 4200) * 5 : 24 + Math.round(a.sf / 6500) * 5);
-      el.push(<rect key="b" x={bx} y={gy - bh} width={bw} height={bh} fill={fill} stroke={stroke} strokeWidth={1.2} />);
-      const floors = Math.max(2, Math.floor(bh / 9));
-      for (let f = 1; f < floors; f++) {
-        el.push(<line key={'f' + f} x1={bx} y1={gy - f * 9} x2={bx + bw} y2={gy - f * 9} stroke={stroke} strokeWidth={0.4} opacity={0.55} />);
-        el.push(<rect key={'bal' + f} x={bx - 4} y={gy - f * 9 - 4} width={4} height={4} fill="none" stroke={stroke} strokeWidth={0.5} opacity={0.7} />);
-        el.push(<rect key={'bal2' + f} x={bx + bw} y={gy - f * 9 - 4} width={4} height={4} fill="none" stroke={stroke} strokeWidth={0.5} opacity={0.7} />);
-      }
-      el.push(<rect key="lobby" x={bx + bw * 0.4} y={gy - 9} width={bw * 0.2} height={9} fill="none" stroke={stroke} strokeWidth={0.8} />);
-    }
-  } else {
-    const bw = Math.min(gw, 120 + Math.sqrt(a.sf) * 0.5);
-    const bx = (w - bw) / 2;
-    const podH = 20, twrH = Math.min(gy - podH - 14, 26 + Math.round(a.sf / 5000) * 5);
-    el.push(<rect key="pod" x={bx} y={gy - podH} width={bw} height={podH} fill={fill} stroke={stroke} strokeWidth={1.2} />);
-    const nSt = Math.min(6, Math.max(2, Math.round(a.units / 3)));
-    for (let i = 1; i < nSt; i++) el.push(<line key={'st' + i} x1={bx + (bw / nSt) * i} y1={gy - podH} x2={bx + (bw / nSt) * i} y2={gy} stroke={stroke} strokeWidth={0.5} opacity={0.6} />);
-    el.push(<rect key="twr" x={bx + bw * 0.18} y={gy - podH - twrH} width={bw * 0.64} height={twrH} fill={fill} stroke={stroke} strokeWidth={1.1} />);
-    for (let f = 1; f < Math.floor(twrH / 8); f++) el.push(<line key={'tf' + f} x1={bx + bw * 0.18} y1={gy - podH - f * 8} x2={bx + bw * 0.82} y2={gy - podH - f * 8} stroke={stroke} strokeWidth={0.4} opacity={0.55} />);
-  }
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', maxWidth: w, display: 'block' }}>
-      {el}
-      <text x={w - 8} y={12} textAnchor="end" fill="var(--faint)" fontSize={8} fontFamily="var(--mono)">
-        {E.constrSpec(a).label.toUpperCase()} · {QorDash(g)} · {(a.sf / 1000).toFixed(0)}K SF{a.units > 1 ? ` · ${a.units} ${a.type === 'multifamily' ? 'APTS' : 'UNITS'}` : ''}
-      </text>
-    </svg>
-  );
-}
-function QorDash(g: number) { return 'CLASS ' + E.QLABEL[g]; }
-
-// ---------- Rent roll table ----------
 export function RentRollTable({ state, tenants, sf, retailOf }: {
   state: GameState; tenants: E.Tenant[]; sf: number;
   retailOf?: { tileI: number; quality: number };
@@ -545,7 +451,8 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
           {((listing.sf ?? 0) / 1000).toFixed(0)}K SF on {listing.acres} acres · {listing.units} unit{(listing.units ?? 1) > 1 ? 's' : ''} · {E.QLABEL[E.qGrade(listing.quality ?? 75)]}-grade {E.constrSpec(sketch).label.toLowerCase()} · built {2026 - (listing.age ?? 10)}
           {listing.distressed && <span className="amber"> · distressed — priced to move</span>}
         </div>
-        <BuildingSketch a={sketch} w={460} h={110} />
+        <Portrait b={{ ...sketch, age: listing.age, occ: listing.occ, seed: mapSeed(state.seed, listing.tileI),
+          siteCells: Math.max(1, Math.round((listing.acres ?? E.PARCEL_AC) / E.PARCEL_AC)), tenants: signTenants(listing.tenants) }} w={460} h={200} />
         {listing.type === 'mixed' && (() => {
           const m = listing.mix ?? E.defaultMixSplit(state.seed, listing.stockId ?? listing.id);
           const sfOf = (f: number) => Math.round(listing.sf! * f / 100) * 100;
@@ -946,7 +853,9 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
             onChange={e => setDev({ ...dev, downPct: Number(e.target.value) / 100 })} />
         </label>
       </div>
-      <BuildingSketch a={{ type: dev.type, construction: dev.construction, sf: dev.sf, units: dev.units, quality: spec.q }} w={460} h={100} />
+      <Portrait b={{ type: dev.type, construction: dev.construction, sf: dev.sf, units: dev.units, quality: spec.q,
+        proposed: true, designTier: dev.designTier ?? 'std', seed: mapSeed(state.seed, listing.tileI),
+        siteCells: Math.max(1, listing.parcelCells?.length ?? Math.round((listing.acres ?? E.PARCEL_AC) / E.PARCEL_AC)) }} w={460} h={190} />
       <div className="memo">
         <div className="memo-row"><span className="lbl">Land ({listing.acres} ac{listing.fromLandId ? ', already owned — basis carried' : ''})</span><span className="num">{E.fmtMoney(listing.price)}</span></div>
         <div className="memo-row"><span className="lbl">Hard costs — {spec.label.toLowerCase()} @ ${spec.cost}/SF{state.econ.tariffMonthsLeft > 0 ? ' (tariffs +8% ⚠)' : ''}</span><span className="num">{E.fmtMoney(bd.hard)}</span></div>
@@ -1368,7 +1277,11 @@ export function AssetCard({ state, setState, asset: a, onSell, onRefi, onLOI, op
               <div className="metric"><div className="eyebrow">Target class</div><div className="v num">{E.QLABEL[E.qGrade(a.quality)]}</div></div>
             </div>
           </div>
-          <BuildingSketch a={a} w={300} h={100} />
+          {p.stage === 'building'
+            ? <Portrait b={{ type: a.type, construction: a.construction, sf: a.sf, units: a.units, quality: a.quality,
+                seed: mapSeed(state.seed, a.tileI), siteCells: E.footprintCells(a).length || 1, progress: Math.max(0.05, prog) }} w={300} h={170} />
+            : <Portrait b={{ type: a.type, construction: a.construction, sf: a.sf, units: a.units, quality: a.quality,
+                seed: mapSeed(state.seed, a.tileI), siteCells: E.footprintCells(a).length || 1, proposed: true, designTier: a.designTier }} w={300} h={170} />}
         </div>
       </div>
     );
@@ -1433,7 +1346,9 @@ export function AssetCard({ state, setState, asset: a, onSell, onRefi, onLOI, op
               <div className="v num">{avgRentPSF(state, a) === null ? '—' : '$' + avgRentPSF(state, a)!.toFixed(2)}</div></div>
           </div>
         </div>
-        <BuildingSketch a={a} w={260} h={96} />
+        <Portrait b={{ type: a.type, construction: a.construction, sf: a.sf, units: a.units, quality: a.quality,
+          age: a.age, occ: a.occ, seed: mapSeed(state.seed, a.tileI), siteCells: E.footprintCells(a).length || 1,
+          tenants: signTenants(a.tenants) }} w={260} h={160} />
       </div>
       {err && <div className="alert-strip red" style={{ marginTop: 10 }}><span>{err}</span><button className="btn btn-sm" onClick={() => setErr(null)}>✕</button></div>}
       <div style={{ display: 'flex', gap: 14, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>

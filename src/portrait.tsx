@@ -958,13 +958,15 @@ export function Portrait({ b, w = 460, h = 210, caption = true }: { b: PortraitS
       </defs>
       <rect x={0} y={0} width={W} height={skyH} fill={`url(#${gid})`} />
       {Array.from({ length: 7 }, (_, i) => {
-        const sx = (seed % 97 + i * 61.7) % W, sy = ((seed >> 3) % 53 + i * 23.3) % (skyH * 0.5);
+        const su = seed >>> 0;   // unsigned everywhere — a negative seed once fed % and produced negative rects
+        const sx = (su % 97 + i * 61.7) % W, sy = ((su >>> 3) % 53 + i * 23.3) % (skyH * 0.5);
         return <circle key={'st' + i} cx={sx} cy={sy} r={0.7} fill="#cdd6e2" opacity={0.35} />;
       })}
       {/* a far skyline behind everything — the city the building lives in */}
       {Array.from({ length: 9 }, (_, i) => {
-        const bw2 = 18 + ((seed >> i) % 23), bh2 = 12 + ((seed >> (i + 2)) % 44);
-        const bx2 = (i / 9) * W + ((seed >> i) % 11) - 8;
+        const su = seed >>> 0;
+        const bw2 = 18 + ((su >>> i) % 23), bh2 = 12 + ((su >>> (i + 2)) % 44);
+        const bx2 = (i / 9) * W + ((su >>> i) % 11) - 8;
         return <rect key={'bg' + i} x={bx2} y={gy - bh2} width={bw2} height={bh2} fill="#1b2431" opacity={0.75} />;
       })}
     </g>

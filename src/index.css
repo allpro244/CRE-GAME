@@ -311,4 +311,6 @@ button.link-name:hover { color: var(--amber); }
 @keyframes smk { 0% { transform: translateY(0); opacity: 0.3; } 100% { transform: translateY(-8px); opacity: 0; } }
 .smk { animation: smk 4.5s linear infinite; }
 @keyframes shim { to { stroke-dashoffset: -64; } }
+.rainfall { animation: rainfall 1.6s linear infinite; }
+@keyframes rainfall { to { stroke-dashoffset: -37; } }
 .shim { animation: shim 7s linear infinite; }

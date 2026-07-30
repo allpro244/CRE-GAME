@@ -645,6 +645,20 @@ const PHASE_TINT: Record<Exclude<DayPhase, 'day'>, { fill: string; op: number; v
   dawn: { fill: '#d9b9a0', op: 0.26 },
 };
 
+// ---------- weather ----------
+// A month is rainy or foggy or clear, seeded off the campaign — you can't schedule
+// around it, and it never touches the numbers. Roughly one month in five gets rain,
+// one in eight fog.
+type WeatherKind = 'clear' | 'rain' | 'fog';
+function weatherOf(seed: number, month: number): WeatherKind {
+  let a = (seed ^ Math.imul(month + 11, 0x85ebca6b)) | 0;
+  a = (a + 0x6D2B79F5) | 0;
+  let t = Math.imul(a ^ (a >>> 15), 1 | a);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  const r = ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  return r < 0.20 ? 'rain' : r < 0.32 ? 'fog' : 'clear';
+}
+
 // Streetlight positions are pure geometry (no rng), so the day layer and the
 // night glow layer can agree on them without sharing state.
 function lampPoints(runs: RoadRun[]): { hx: number; hy: number; gx: number; gy: number }[] {
@@ -738,7 +752,7 @@ const WaterLife = memo(function WaterLife({ tiles, seed }: { tiles: TileGeom[]; 
   return <g style={{ pointerEvents: 'none' }}>{els}</g>;
 });
 
-const RoadsIso = memo(function RoadsIso({ runs }: { runs: RoadRun[] }) {
+const RoadsIso = memo(function RoadsIso({ runs, wet = false }: { runs: RoadRun[]; wet?: boolean }) {
   return (
     <g style={{ pointerEvents: 'none' }}>
       {runs.map((r, i) => {
@@ -749,6 +763,7 @@ const RoadsIso = memo(function RoadsIso({ runs }: { runs: RoadRun[] }) {
             <polyline points={pts} fill="none" stroke={st.stroke} strokeWidth={st.w} strokeDasharray={st.dash} strokeLinecap="round" />
             {r.cls === 3 && <polyline points={pts} fill="none" stroke="#e8e4d0" strokeWidth={0.7} strokeDasharray="5 7" />}
             {r.cls === 4 && <polyline points={pts} fill="none" stroke="#f0ead6" strokeWidth={0.8} strokeDasharray="10 4" />}
+            {wet && r.cls >= 2 && <polyline points={pts} fill="none" stroke="#cfd8e2" strokeWidth={st.w * 0.45} opacity={0.12} strokeLinecap="round" />}
           </g>
         );
       })}
@@ -1071,6 +1086,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const phase: DayPhase = ambient >= 1 ? dayPhaseOf(state.month) : 'day';
   // and the season rides the same calendar — Off pins the city to summer
   const season: Season = ambient >= 1 ? seasonOf(state.month) : 'summer';
+  const weather: WeatherKind = ambient >= 2 ? weatherOf(state.seed, state.month) : 'clear';
 
   const sel = selTile !== null ? state.tiles[selTile] : null;
   const transitActive = state.effects.some(e => e.kind === 'transit');
@@ -1282,7 +1298,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             return <g><polyline points={pts} fill="none" stroke="#5b9ec9" strokeWidth={IH * 0.45} strokeLinecap="round" strokeLinejoin="round" />
               <polyline className="shim" points={pts} fill="none" stroke="#3c608a" strokeWidth={1.3} strokeDasharray="2 11" strokeLinecap="round" opacity={0.6} /></g>;
           })()}
-          <RoadsIso runs={runs} />
+          <RoadsIso runs={runs} wet={weather === 'rain'} />
           {ambient >= 1 && zb >= 1 && <WaterLife tiles={tilesGeom} seed={state.seed} />}
           {ambient >= 1 && zb >= 1 && <StreetLife runs={runs} seed={state.seed} detail={zb >= 2} season={season} />}
           {transitActive && (() => {
@@ -1308,8 +1324,27 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
               )}
             </g>
           )}
+          {/* weather: rain wets the ground and streams past; fog sits on the far view */}
+          {weather === 'rain' && (
+            <g style={{ pointerEvents: 'none' }}>
+              <rect x={0} y={0} width={IW_TOT} height={IH_TOT} rx={6} fill="#5a6470" opacity={0.22} style={{ mixBlendMode: 'multiply' }} />
+              {ambient >= 3 && Array.from({ length: 26 }, (_, i) => {
+                const rx0 = (i / 26) * IW_TOT + ((state.seed >> (i % 13)) % 37);
+                return <line key={'rn' + i} className={noMotion ? undefined : 'rainfall'} x1={rx0} y1={-20} x2={rx0 - IH_TOT * 0.22} y2={IH_TOT + 20}
+                  stroke="#c8d2dc" strokeWidth={0.7} strokeDasharray="7 30" opacity={0.16}
+                  style={noMotion ? undefined : { animationDelay: ((i * 0.23) % 2.2).toFixed(2) + 's' }} />;
+              })}
+            </g>
+          )}
           {phase === 'night' && ambient >= 2 && showBldgs && (
             <NightGlow blds={isoBlds} lamps={lamps} seed={state.seed} zb={zb} />
+          )}
+          {weather === 'fog' && zb === 0 && (
+            <g style={{ pointerEvents: 'none' }}>
+              <rect x={0} y={0} width={IW_TOT} height={IH_TOT} rx={6} fill="#c3cad2" opacity={0.15} />
+              <ellipse cx={IW_TOT * 0.35} cy={IH_TOT * 0.42} rx={IW_TOT * 0.4} ry={IH_TOT * 0.12} fill="#ccd3da" opacity={0.10} />
+              <ellipse cx={IW_TOT * 0.68} cy={IH_TOT * 0.6} rx={IW_TOT * 0.36} ry={IH_TOT * 0.1} fill="#ccd3da" opacity={0.09} />
+            </g>
           )}
           {/* banners: the map tells you what's happening without a legend */}
           {(() => {
@@ -1498,6 +1533,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           <span><span style={{ color: '#f0c464' }}>▪</span> yours</span>
           <span><span style={{ color: '#a05468' }}>▪</span> rival land banks</span>
           <span>walls follow the build — glass, brick, precast, EIFS</span>
+          {weather !== 'clear' && view === 'iso' && <span className="faint">{weather === 'rain' ? '∕∕ rain this month' : '≋ fog in the valley'}</span>}
           <span style={{ color: 'var(--green)' }}>▪ on the market</span>
           {transitActive && <span style={{ color: 'var(--blue)' }}>▦ new transit corridor</span>}
           {view === 'iso' && <span>massing is honest: towers stand tall, sheds sprawl</span>}

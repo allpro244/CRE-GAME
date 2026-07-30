@@ -219,7 +219,8 @@ function BtsPanel({ state, setState }: { state: GameState; setState: (s: GameSta
       </div>
       {state.btsRfps.map(r => {
         const elig = E.btsEligibleHoldings(state, r);
-        const sel = pick[r.id] ?? elig[0]?.h.id;
+        // a remembered pick can go stale (the holding sold or got built on) — fall back
+        const sel = elig.some(e2 => e2.h.id === pick[r.id]) ? pick[r.id] : elig[0]?.h.id;
         const leaseYr = Math.round(r.sf * r.rate);
         return (
           <div key={r.id} className="memo" style={{ borderLeftColor: 'var(--blue)' }}>
@@ -469,15 +470,20 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
     // the whole memo tracks the number you're actually offering, not the sticker
     const effPrice = listing.agreed ? listing.price : (offerAmt > 0 ? offerAmt : listing.price);
     const capEff = effPrice > 0 ? (pf.noiNow / effPrice) * 100 : 0;
-    const loan = effPrice * (1 - downPct);
-    const rate = state.econ.rate + E.CONFIG.acqSpread;
-    const pmt = E.monthlyPayment(loan, rate, E.CONFIG.acqAmortYears);
-    const dscr = loan > 0 ? pf.noiNow / (pmt * 12) : null;
-    const quotes = E.lenderQuotesFor(state, { price: effPrice, type: listing.type!, quality: listing.quality ?? 75 });
+    // the buy button transacts at the listing price (the ask, or the agreed number) —
+    // financing math runs on that, not on an offer the seller hasn't taken
+    const txPrice = listing.price;
+    const quotes = E.lenderQuotesFor(state, { price: txPrice, type: listing.type!, quality: listing.quality ?? 75 });
     const bestQuote = quotes.filter(q2 => q2.ok).sort((x, y) => x.ratePct - y.ratePct)[0] ?? null;
     const selQuote = quotes.find(q2 => q2.lenderId === lenderPick && q2.ok) ?? bestQuote;
     const ltvMax = Math.min(E.maxLTV(state, listing.type) + 0.1, selQuote ? selQuote.maxLTV : E.maxLTV(state, listing.type));
-    const cashNeeded = effPrice * downPct + 15000;
+    const dpEff = Math.max(downPct, 1 - ltvMax);   // the desk's minimum equity binds the math, not just the slider
+    const loan = txPrice * (1 - dpEff);
+    const rate = state.econ.rate + E.CONFIG.acqSpread;
+    const pmt = E.monthlyPayment(loan, rate, E.CONFIG.acqAmortYears);
+    const dscr = loan > 0 ? pf.noiNow / (pmt * 12) : null;
+    const cashNeeded = txPrice * dpEff + 15000;
+    const jvOk = E.canJV(state, txPrice * dpEff).ok;
     const sketch = { type: listing.type!, construction: listing.construction ?? E.CONSTR[listing.type!][0].id, sf: listing.sf!, units: listing.units ?? 1, quality: listing.quality ?? 75 };
     return (
       <Modal close={close} wide variant={variant}>
@@ -558,8 +564,8 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
           ) : <RentRollTable state={state} tenants={listing.tenants ?? []} sf={listing.sf!} retailOf={listing.type === 'retail' ? { tileI: listing.tileI, quality: listing.quality ?? 75 } : undefined} />}
         </>)}
         {canBuy && (<>
-          <label className="f" style={{ marginTop: 10 }}>Down payment — {pct(downPct)} ({E.fmtMoney(effPrice * downPct)}) <span className="faint">at your {E.fmtMoney(effPrice)} {listing.agreed ? 'agreed price' : 'offer'}</span>
-            <input type="range" min={Math.ceil((1 - ltvMax) * 100)} max={100} value={Math.round(downPct * 100)}
+          <label className="f" style={{ marginTop: 10 }}>Down payment — {pct(dpEff)} ({E.fmtMoney(txPrice * dpEff)}) <span className="faint">at the {E.fmtMoney(txPrice)} {listing.agreed ? 'agreed price' : 'ask — buying now pays the sticker, not your offer'}</span>
+            <input type="range" min={Math.ceil((1 - ltvMax) * 100)} max={100} value={Math.round(dpEff * 100)}
               onChange={e => setDownPct(Number(e.target.value) / 100)} />
           </label>
           <div className="memo" style={{ borderLeftColor: 'var(--blue)' }}>
@@ -589,12 +595,12 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
               );
             })}
             {!selQuote && <div className="alert-strip red" style={{ margin: '6px 0' }}>No desk will touch this one right now — smaller ask, better collateral, or wait out the market.</div>}
-            <div className="memo-row" style={{ marginTop: 4 }}><span className="lbl">Loan ({pct(1 - downPct)} LTV, max {pct(ltvMax)}) · 10-yr balloon</span><span className="num">{E.fmtMoney(loan)}</span></div>
+            <div className="memo-row" style={{ marginTop: 4 }}><span className="lbl">Loan ({pct(1 - dpEff)} LTV, max {pct(ltvMax)}) · 10-yr balloon</span><span className="num">{E.fmtMoney(loan)}</span></div>
             <div className="memo-row"><span className="lbl">Debt service</span><span className="num">{selQuote ? E.fmtMoney((selQuote.ioMonths > 0 ? loan * selQuote.ratePct / 100 / 12 : E.monthlyPayment(loan, selQuote.ratePct, selQuote.amortYears)) * 12) + '/yr' : '—'}</span></div>
             <div className="memo-row"><span className="lbl">DSCR on in-place income <Hint text="NOI ÷ annual debt service. The bank wants 1.25×+. Distressed and off-market deals can close on bridge terms as low as 0.9×." /></span>
               <span className={'num ' + (dscr === null ? '' : dscr >= 1.25 ? 'pos' : 'neg')}>{dscr === null ? '—' : dscr.toFixed(2) + '×'}</span></div>
             {(() => {
-              const eq = effPrice * downPct;
+              const eq = txPrice * dpEff;
               const jvc = E.canJV(state, eq);
               return (
                 <div className="memo-row"><span className="lbl">
@@ -606,17 +612,17 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
               );
             })()}
             <div className="memo-row total"><span className="lbl">Cash needed (incl. $15K closing)</span>
-              <span className={'num ' + (state.cash >= (useJV && E.canJV(state, effPrice * downPct).ok ? Math.round(effPrice * downPct * 0.3) + 15000 : cashNeeded) ? '' : 'neg')}>{E.fmtMoney(useJV && E.canJV(state, effPrice * downPct).ok ? Math.round(effPrice * downPct * 0.3) + 15000 : cashNeeded)}</span></div>
+              <span className={'num ' + (state.cash >= (useJV && jvOk ? Math.round(txPrice * dpEff * 0.3) + 15000 : cashNeeded) ? '' : 'neg')}>{E.fmtMoney(useJV && jvOk ? Math.round(txPrice * dpEff * 0.3) + 15000 : cashNeeded)}</span></div>
           </div>
           {(listing.type === 'retail' || listing.type === 'industrial') && <div className="faint" style={{ fontSize: 10.5, margin: '-4px 0 8px' }}>NNN leases: tenants reimburse taxes, insurance, and CAM on their occupied share. Vacancy eats those costs raw.</div>}
         </>)}
         {err && <div className="alert-strip red" style={{ marginBottom: 10 }}>{err}</div>}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button className="btn" onClick={close}>{canBuy ? 'Pass' : 'Step away'}</button>
-          {canBuy && <button className="btn btn-amber" onClick={() => {
-            const r = E.buyBuilding(state, listing.id, downPct, useJV, 'std', downPct < 1 ? selQuote?.lenderId : undefined);
+          {canBuy && <button className="btn btn-amber" disabled={dpEff < 1 && !selQuote} onClick={() => {
+            const r = E.buyBuilding(state, listing.id, dpEff, useJV && jvOk, 'std', dpEff < 1 ? selQuote?.lenderId : undefined);
             if (r.err) setErr(r.err); else { setState(r.s); close(); }
-          }}>Buy at {E.fmtMoney(listing.price)}{useJV ? ' (JV)' : ''}{!listing.agreed && effPrice !== listing.price ? ' (ask)' : ''}</button>}
+          }}>Buy at {E.fmtMoney(txPrice)}{useJV && jvOk ? ' (JV)' : ''}{!listing.agreed && effPrice !== txPrice ? ' (ask)' : ''}</button>}
         </div>
       </Modal>
     );
@@ -920,8 +926,8 @@ export function LOIModal({ state, setState, loi, close, variant = 'dialog' }: {
 }) {
   const a = state.assets.find(x => x.id === loi.assetId);
   const [msg, setMsg] = useState<string | null>(null);
-  if (!a) return null;
-  const mkt = E.assetRentPSF(state, a);
+  // hooks must run unconditionally — the asset can disappear (sale) while this is mounted
+  const mkt = a ? E.assetRentPSF(state, a) : 0;
   const isFinal = loi.stage === 'countered';
   const theirRate = isFinal ? loi.counterRate! : loi.rate;
   const theirTerm = isFinal ? loi.counterTermY! : loi.termY;
@@ -931,6 +937,7 @@ export function LOIModal({ state, setState, loi, close, variant = 'dialog' }: {
   const [grantOpt, setGrantOpt] = useState(false);
   const annual = (r: number) => loi.sf * r;
   const [walked, setWalked] = useState(false);
+  if (!a) return null;
   const act = (action: E.LOIAction) => {
     const r = E.respondLOI(state, loi.id, action);
     setState(r.s);
@@ -1500,11 +1507,14 @@ export function RefiModal({ state, setState, asset, close, variant = 'dialog' }:
   const rQuotes = E.lenderQuotesFor(state, { price: lim.val, type: asset.type, quality: asset.quality });
   const rBest = rQuotes.filter(q2 => q2.ok).sort((x, y) => x.ratePct - y.ratePct)[0] ?? null;
   const rSel = rQuotes.find(q2 => q2.lenderId === lenderPick && q2.ok) ?? rBest;
-  const q = E.refiQuote(state, asset, { amount, amortYears });
   const effRate = rSel ? rSel.ratePct : lim.rate;
-  const effPmt = E.monthlyPayment(amount, effRate, amortYears);
-  const effDscr = effPmt > 0 ? lim.noiYr / (effPmt * 12) : null;
   const effMax = rSel ? Math.round(lim.val * rSel.maxLTV) : lim.maxByLTV;
+  // switching desks can shrink the max below the slider's last position — every number
+  // and the actual refi run on the clamped amount, not the stale one
+  const effAmount = Math.min(amount, Math.max(minAmt, Math.floor(effMax / 10000) * 10000));
+  const effPmt = E.monthlyPayment(effAmount, effRate, amortYears);
+  const effDscr = effPmt > 0 ? lim.noiYr / (effPmt * 12) : null;
+  const netCash = effAmount - lim.payoff - lim.val * 0.01 - effAmount * E.REFI_FEE_PCT;
   return (
     <Modal close={close} variant={variant}>
       <h2>Refinance {asset.name}</h2>
@@ -1533,8 +1543,8 @@ export function RefiModal({ state, setState, asset, close, variant = 'dialog' }:
           );
         })}
       </div>
-      <label className="f">New loan amount — {E.fmtMoney(amount)} <span className="faint">({pct(amount / Math.max(1, lim.val))} LTV)</span>
-        <input type="range" min={minAmt} max={Math.max(minAmt, Math.floor(effMax / 10000) * 10000)} step={10000} value={Math.min(amount, Math.max(minAmt, effMax))}
+      <label className="f">New loan amount — {E.fmtMoney(effAmount)} <span className="faint">({pct(effAmount / Math.max(1, lim.val))} LTV)</span>
+        <input type="range" min={minAmt} max={Math.max(minAmt, Math.floor(effMax / 10000) * 10000)} step={10000} value={effAmount}
           onChange={e => setAmount(Number(e.target.value))} />
       </label>
       <label className="f">Amortization — {amortYears} years <Hint text="Longer amortization = lower payment = better DSCR and cash flow, but slower principal paydown and a bigger balloon in 10 years." />
@@ -1545,13 +1555,13 @@ export function RefiModal({ state, setState, asset, close, variant = 'dialog' }:
         <div className="memo-row"><span className="lbl">New debt service ({amortYears}-yr am, 10-yr balloon)</span><span className="num">{E.fmtMoney(effPmt)}/mo</span></div>
         <div className="memo-row"><span className="lbl">DSCR after refi (needs 1.20×)</span>
           <span className={'num ' + (effDscr !== null && effDscr >= 1.2 ? 'pos' : 'neg')}>{effDscr?.toFixed(2) ?? '—'}×</span></div>
-        <div className="memo-row total"><span className="lbl">Cash to you (net of costs & {Math.round(E.REFI_FEE_PCT * 100)}% points)</span><span className={'num ' + (q.proceeds > 0 ? 'pos' : 'neg')}>{E.fmtMoney(amount - lim.payoff - lim.val * 0.01 - amount * E.REFI_FEE_PCT)}</span></div>
+        <div className="memo-row total"><span className="lbl">Cash to you (net of costs & {Math.round(E.REFI_FEE_PCT * 100)}% points)</span><span className={'num ' + (netCash > 0 ? 'pos' : 'neg')}>{E.fmtMoney(netCash)}</span></div>
       </div>
       {err && <div className="alert-strip red" style={{ marginBottom: 10 }}>{err}</div>}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
         <button className="btn" onClick={close}>Not now</button>
         <button className="btn btn-amber" onClick={() => {
-          const r = E.doRefi(state, asset.id, { amount, amortYears }, rSel?.lenderId);
+          const r = E.doRefi(state, asset.id, { amount: effAmount, amortYears }, rSel?.lenderId);
           if (r.err) setErr(r.err); else { setState(r.s); close(); }
         }}>Refinance</button>
       </div>
@@ -1746,8 +1756,12 @@ export function DebtView({ state, setState }: { state: GameState; setState: (s: 
 // Every dollar in or out lands in the ledger with a category and a name. The month
 // you just lived is the default page; the mystery cash hit is now a line item.
 export function BooksView({ state, setState }: { state: GameState; setState: (s: GameState) => void }) {
-  const [mOff, setMOff] = useState(0);
-  const m = Math.max(0, state.month - mOff);
+  // remember the MONTH picked, not an offset — advancing time shouldn't silently
+  // slide a historical page to a different month
+  const [mSel, setMSel] = useState<number | null>(null);
+  const m = Math.max(0, mSel ?? state.month);
+  const mOff = state.month - m;
+  const setMOff = (off: number) => setMSel(off === 0 ? null : state.month - off);
   const log = state.cfLog ?? [];
   const entries = log.filter(e => e.m === m);
   const sum = (cats: E.CFCat[]) => entries.filter(e => cats.includes(e.cat)).reduce((s2, e) => s2 + e.amt, 0);

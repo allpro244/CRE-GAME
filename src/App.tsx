@@ -53,7 +53,9 @@ export default function App() {
       </div>
     );
   }
-  return <Game state={state} setState={setState} toMenu={() => setScreen('menu')} />;
+  // key by seed: a fresh campaign remounts the shell, resetting seen-LOI memory,
+  // open modals, and the selected tab — no ghosts from the last city
+  return <Game key={state.seed} state={state} setState={setState} toMenu={() => setScreen('menu')} />;
 }
 
 function Game({ state, setState, toMenu }: {
@@ -107,10 +109,17 @@ function Game({ state, setState, toMenu }: {
   // Only mark one seen when it actually gets surfaced, so a proposal blocked by another
   // modal pops the moment the desk is clear; closing one LOI surfaces the next.
   useEffect(() => {
-    if (loiId !== null || state.pending.length > 0 || state.gameOver) return;
+    // don't shove an LOI on top of a deal, refi, sale, or notice the player is mid-way through
+    if (loiId !== null || dealId !== null || refiId !== null || sellId !== null || notice !== null || state.pending.length > 0 || state.gameOver) return;
     const unseen = state.lois.find(l => !seenLOIs.current.has(l.id));
     if (unseen) { seenLOIs.current.add(unseen.id); setLoiId(unseen.id); }
-  }, [state.lois, loiId, state.pending.length, state.gameOver]); // eslint-disable-line
+  }, [state.lois, loiId, dealId, refiId, sellId, notice, state.pending.length, state.gameOver]); // eslint-disable-line
+
+  // an LOI can vanish out from under its open modal (expiry, asset sold) — release the
+  // slot or the next proposal never surfaces
+  useEffect(() => {
+    if (loiId !== null && !state.lois.some(l => l.id === loiId)) setLoiId(null);
+  }, [state.lois, loiId]);
 
   // the clock stops when a tenant shows interest — a 2-month LOI must never expire
   // unseen inside a +6mo skip

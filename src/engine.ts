@@ -421,8 +421,8 @@ export const CF_LABEL: Record<CFCat, string> = {
 export type StaffId = 'analyst' | 'pm' | 'leasing' | 'cm';
 export const STAFF: { id: StaffId; title: string; salary: number; desc: string }[] = [
   { id: 'analyst', title: 'Acquisitions analyst', salary: 12_000, desc: 'Two more owner calls a month, and the ones you make find the motivated sellers faster.' },
-  { id: 'pm', title: 'Property manager', salary: 18_000, desc: 'Portfolio opex −6%, buildings age slower. Past ~7 assets, self-managing costs you 5% extra — somebody has to answer the 2am calls.' },
-  { id: 'leasing', title: 'Leasing director', salary: 15_000, desc: 'Tours book faster: +12% leasing velocity, tenants come back to the table more often.' },
+  { id: 'pm', title: 'Property manager', salary: 15_000, desc: 'Portfolio opex −6%, buildings age slower. Past ~7 assets, self-managing costs you 5% extra — somebody has to answer the 2am calls. Pays for itself on real portfolios, not three small retail pads.' },
+  { id: 'leasing', title: 'Leasing director', salary: 9_000, desc: 'Tours book faster: +25% leasing velocity, tenants come back to the table more often. Worth most while you have empty floors.' },
   { id: 'cm', title: 'Construction manager', salary: 16_000, desc: 'Site problems caught early: construction surprises 30% rarer, schedules run a touch faster.' },
 ];
 
@@ -1028,7 +1028,17 @@ export function assetValue(state: GameState, a: Asset): number {
     return a.basis * 0.55 + p.spent * 0.85;
   }
   const t = state.tiles[a.tileI];
-  const noi = stabilizedNOI(state, a);
+  const stab = stabilizedNOI(state, a);
+  let noi = stab;
+  if (a.mode === 'operating') {
+    // buyers underwrite the rent roll in place, not the pro forma: the upside to
+    // stabilized gets partial credit — the next owner does that work, not you
+    const potM = (a.sf * assetRentPSF(state, a)) / 12;
+    const egiM = assetEGIMonthly(state, a) * (a.repair ? 1 - a.repair.frac : 1);
+    const ex = expenseBreakdown(state, { ...a, maint: 'std' } as any, potM, egiM);
+    const ip = (egiM - ex.total) * 12;
+    noi = Math.max(0.45 * stab + 0.55 * Math.min(stab, Math.max(ip, 0) * 1.25), stab * 0.35);
+  }
   let capPts = capRatePct(state, t, a.type, a.quality) + (isAggregate(a.type) ? 0 : creditCapAdjPts(a.tenants));
   // the design bet, marked to market: commodity product gets repriced hard in a downturn;
   // signature product holds its bid
@@ -1038,7 +1048,12 @@ export function assetValue(state: GameState, a: Asset): number {
   }
   const cap = capPts / 100;
   const stabDiscount = a.mode === 'leaseup' ? clamp(0.75 + 0.25 * (a.occ / 0.85), 0.75, 1) : 1;
-  return Math.max(0, (noi / cap) * stabDiscount);
+  let v = Math.max(0, (noi / cap) * stabDiscount);
+  // an appraisal anchors to your own closing statement for the first year — a building
+  // bought last quarter is worth what you paid plus what you can prove since
+  const held = state.month - a.acqMonth;
+  if (a.mode === 'operating' && held < 12 && a.basis > 0) v = Math.min(v, a.basis * (1.02 + 0.045 * held));
+  return v;
 }
 
 // ---------- Debt math ----------
@@ -1581,6 +1596,8 @@ function spawnListing(state: GameState, starter = false) {
 }
 
 function listStockBuilding(state: GameState, b: StockBuilding, opt: { id?: number; starter?: boolean; hot?: boolean; expiresMonth?: number; distressed?: boolean; priceMult?: number }) {
+  // a building on the courthouse steps can't also be on the open market
+  if (state.auctions?.some(au => au.stockId === b.id)) return null;
   const id = opt.id ?? state.nextId++;
   const distressed = opt.distressed ?? (b.occ < 0.62 || (b.quality < 57 && rng(state) < 0.5));
   const probe = { tileI: b.tileI, type: b.type, sf: b.sf, quality: b.quality, units: b.units, construction: b.construction };
@@ -1754,7 +1771,11 @@ export function makeOffer(state: GameState, listingId: number, amount: number): 
 }
 
 // ---------- Actions ----------
-export function clone(state: GameState): GameState { return JSON.parse(JSON.stringify(state)); }
+export function clone(state: GameState): GameState {
+  // structuredClone is ~25-40% faster than a JSON round-trip on a full late-game state;
+  // both drop functions/undefined the same way for this plain-data shape
+  return typeof structuredClone === 'function' ? structuredClone(state) : JSON.parse(JSON.stringify(state));
+}
 
 export function doFeasibility(state: GameState, listingId: number): GameState {
   const s = clone(state);
@@ -1805,7 +1826,7 @@ export function buyBuilding(state: GameState, listingId: number, downPct: number
   const down = l.price * downPct;
   const loanAmt = l.price - down;
   const ltv = loanAmt / l.price;
-  if (ltv > maxLTV(s, l.type) + 1e-6) return { s, err: 'Bank will not exceed ' + Math.round(maxLTV(s, l.type) * 100) + '% LTV.' };
+  if (!lenderId && ltv > maxLTV(s, l.type) + 1e-6) return { s, err: 'Bank will not exceed ' + Math.round(maxLTV(s, l.type) * 100) + '% LTV.' };
   const jvChk = useJV ? canJV(s, down) : null;
   if (useJV && jvChk && !jvChk.ok) return { s, err: jvChk.why };
   const yourEquity = useJV ? Math.round(down * 0.30) : down;
@@ -2891,6 +2912,9 @@ export function developLandCells(state: GameState, holdingId: number, cells: num
       h.cells = h.cells.filter(c => !picked.includes(c));
       h.basis -= share;
       basis += share;
+      // the parcel under offer just shrank — pull it off the market rather than
+      // let a stale buyer pay six-cell money for one cell
+      if (h.forSale) { h.forSale = undefined; s.saleOffers = s.saleOffers.filter(o => o.landId !== h.id); }
     }
   }
   const nh: LandHolding = { id: s.nextId++, tileI, cells: picked, basis, acquiredM };
@@ -2911,6 +2935,7 @@ export function developLand(state: GameState, holdingId: number): { s: GameState
   const existing = s.listings.find(l => l.fromLandId === h.id);
   if (existing) return { s, listingId: existing.id };
   const { cells, holdings } = developableFrom(s, holdingId);
+  if (s.listings.some(l => l.fromLandId !== undefined && holdings.includes(l.fromLandId))) return { s, err: 'Part of this site is already staged to build — close or cancel that first.' };
   if (!cells.length) return { s, err: 'Nothing to build on.' };
   const id = s.nextId++;
   s.listings.push({
@@ -2970,7 +2995,7 @@ export const REFI_FEE_PCT = 0.05;
 export function doRefi(state: GameState, assetId: number, c: RefiChoice, lenderId?: string): { s: GameState; err?: string } {
   const s = clone(state); const a = s.assets.find(x => x.id === assetId);
   if (!a) return { s };
-  if (s.econ.crunchMonthsLeft > 0) return { s, err: 'Credit markets are frozen — no refinancings until the crunch passes.' };
+  if (s.econ.crunchMonthsLeft > 0 && (!lenderId || lenderPosture(s, lenderId) !== 'open')) return { s, err: 'Credit markets are frozen — only a desk that stays open in a crunch (the debt fund) will quote a refi right now.' };
   if (a.mode !== 'operating' || a.occ < 0.80) return { s, err: 'Lenders want a stabilized asset (80%+ occupied) for permanent debt.' };
   if (s.facilities.some(f => f.assetIds.includes(a.id))) return { s, err: 'This asset is cross-collateralized in a credit facility. Unwind the facility first.' };
   if (c.amortYears < 10 || c.amortYears > CONFIG.refiAmortMax) return { s, err: 'Amortization must be 10–25 years.' };
@@ -3067,6 +3092,7 @@ export function createFacility(state: GameState, assetIds: number[], amount: num
   s.facilities.push(f);
   const fee = amount * 0.01;
   s.cash += amount - q.payoff - fee;
+  logCF(s, 'debt', 'Credit facility — net proceeds', amount - q.payoff - fee);
   pushNews(s, 'success', `Credit facility closed: ${fmtMoney(amount)} at ${q.rate.toFixed(1)}% against ${assets.length} cross-collateralized assets. Net ${fmtMoney(amount - q.payoff - fee)} to you. One default now touches everything pledged.`);
   return { s };
 }
@@ -3094,7 +3120,7 @@ function spawnLOIs(s: GameState) {
     const sizeDrag = clamp(1.2 - su / 30_000, 0.3, 1);
     // in a tight market every vacancy gets toured; in a soft one the phone is quiet
     const amen = (a.programs ?? []).includes('amenity') ? (PROGRAMS.find(p => p.id === 'amenity')?.velocity ?? 1) : 1;
-    const p = clamp(CONFIG.absorbBase[a.type] * 1.0 * (s.staff?.leasing ? 1.12 : 1) * df * qf * rentComp * boost * sizeDrag * amen * leasingClimate(s, a.type) * clamp(vacant / a.sf, 0.25, 1), 0.02, 0.34);
+    const p = clamp(CONFIG.absorbBase[a.type] * 1.0 * (s.staff?.leasing ? 1.25 : 1) * df * qf * rentComp * boost * sizeDrag * amen * leasingClimate(s, a.type) * clamp(vacant / a.sf, 0.25, 1), 0.02, 0.34);
     if (rng(s) > p) continue;
     // big-suite tenants come by LOI/RFP; require a meaningful chunk
     const chunkUnits = Math.max(1, Math.min(Math.round(vacant / su), 1 + Math.floor(rng(s) * Math.max(1, a.units / 2))));
@@ -3206,10 +3232,15 @@ export type LOIAction =
 
 export function respondLOI(state: GameState, loiId: number, action: LOIAction): { s: GameState; outcome: string } {
   const s = clone(state);
+  return { s, outcome: respondLOIIn(s, loiId, action) };
+}
+// in-place core: advanceMonth's auto-leasing already owns a private clone, so it calls
+// this directly — cloning a ~half-megabyte state per LOI was most of the month tick
+function respondLOIIn(s: GameState, loiId: number, action: LOIAction): string {
   const loi = s.lois.find(x => x.id === loiId);
-  if (!loi) return { s, outcome: 'gone' };
+  if (!loi) return 'gone';
   const a = s.assets.find(x => x.id === loi.assetId);
-  if (!a) { s.lois = s.lois.filter(x => x.id !== loiId); return { s, outcome: 'gone' }; }
+  if (!a) { s.lois = s.lois.filter(x => x.id !== loiId); return 'gone'; }
   const mkt = assetRentPSF(s, a);
   const t = s.tiles[a.tileI];
   const tight = clamp((tileDemandFactor(s, t, a.type) - 1) * 0.5 + (EQ_VAC[a.type] - s.econ.cityVac[a.type]) * 0.02, -0.3, 0.35);
@@ -3217,14 +3248,14 @@ export function respondLOI(state: GameState, loiId: number, action: LOIAction): 
   if (action.type === 'decline') {
     s.lois = s.lois.filter(x => x.id !== loiId);
     pushNews(s, 'info', `You passed on ${loi.tenant}.`);
-    return { s, outcome: 'declined' };
+    return 'declined';
   }
   if (action.type === 'accept') {
     const rate = loi.stage === 'countered' ? (loi.counterRate ?? loi.rate ?? mkt) : (loi.rate ?? mkt);
     const termY = loi.stage === 'countered' ? (loi.counterTermY ?? loi.termY ?? 5) : (loi.termY ?? 5);
-    if (loi.kind === 'renewal') { applyRenewal(s, a, loi, rate, termY); return { s, outcome: 'signed' }; }
+    if (loi.kind === 'renewal') { applyRenewal(s, a, loi, rate, termY); return 'signed'; }
     signLease(s, a, loi, rate, termY, true, loi.escPct, !!loi.optionAsk);   // their terms, their concessions
-    return { s, outcome: 'signed' };
+    return 'signed';
   }
   // counter / propose: tenant decides
   const asked = action.rate;
@@ -3239,9 +3270,9 @@ export function respondLOI(state: GameState, loiId: number, action: LOIAction): 
   const pAccept = clamp(1.62 - f * 1.4 + loi.credit * 0.03 + tight + stick + repEdge - concPenalty - escPush + optBoost + (action.termY >= 7 ? -0.03 : 0), 0.04, 0.95);
   const roll = rng(s);
   if (roll < pAccept) {
-    if (loi.kind === 'renewal') { applyRenewal(s, a, loi, asked, action.termY); return { s, outcome: 'signed' }; }
+    if (loi.kind === 'renewal') { applyRenewal(s, a, loi, asked, action.termY); return 'signed'; }
     signLease(s, a, loi, asked, action.termY, false, action.escPct, action.grantOption);
-    return { s, outcome: 'signed' };
+    return 'signed';
   }
   const pWalk = clamp(0.22 + (f - 1.0) * 2.4, 0.15, 0.92); // the further past market you push, the faster the door
   if (loi.stage === 'countered' || rng(s) < pWalk) {
@@ -3254,14 +3285,14 @@ export function respondLOI(state: GameState, loiId: number, action: LOIAction): 
     } else {
       pushNews(s, 'warn', `${loi.tenant} walked. $${asked.toFixed(2)}/SF was more than the space was worth to them (market is ~$${mkt.toFixed(2)}).`);
     }
-    return { s, outcome: 'walked' };
+    return 'walked';
   }
   // they counter back once — final
   loi.stage = 'countered';
   loi.counterRate = Math.round(clamp(mkt * rrange(s, 0.94, 1.0), (loi.rate ?? mkt * 0.9), asked) * 100) / 100;
   loi.counterTermY = action.termY;
   pushNews(s, 'info', `${loi.tenant} countered: $${loi.counterRate.toFixed(2)}/SF, ${loi.counterTermY}-yr term. Final answer — accept or lose them.`);
-  return { s, outcome: 'countered' };
+  return 'countered';
 }
 
 // ---------- Selling (takes time: list it, field offers, negotiate) ----------
@@ -3559,6 +3590,7 @@ function finalizeSale(s: GameState, a: Asset, gross: number, buyer: string): { s
     const lpResidual = residual * a.jv.lpPct * (1 - 0.20); // your 20% promote comes out of their profit share
     const lpTotal = Math.round(lpBase + lpResidual);
     s.cash -= lpTotal;
+    logCF(s, 'jv', `JV waterfall — ${a.name}`, -lpTotal);
     if (q.net < owed) {
       s.reputation = clamp(s.reputation - 8, 0, 100);
       s.jvLockedUntil = s.month + 36;
@@ -3573,6 +3605,7 @@ function finalizeSale(s: GameState, a: Asset, gross: number, buyer: string): { s
     pushNews(s, 'event', `1031 CLOCK STARTED: ${fmtMoney(tx.tax)} of tax on the ${a.name} sale is deferred IF you close on a replacement building for at least ${fmtMoney(s.exchange.mustSpend)} by ${monthName(s.month + 6)}. Miss the window and the bill lands.`);
   } else if (tx.tax > 0) {
     s.cash -= tx.tax;
+    logCF(s, 'tax', `Sale taxes — ${a.name}`, -tx.tax);
     pushNews(s, 'warn', `Sale taxes on ${a.name}: ${fmtMoney(tx.tax)} (depreciation recapture + capital gains). ${!a.jv && !s.prefer1031 ? 'A 1031 election (Debt tab) would have deferred this.' : ''}`);
   }
   s.stock.push({
@@ -3744,7 +3777,7 @@ export function placeAuctionBid(state: GameState, auctionId: number, amount: num
     age: b.age, mode: 'operating',
     tenants: genRentRoll(s, { tileI: b.tileI, type: b.type, sf: b.sf, units: b.units, quality: b.quality, construction: b.construction }, b.occ), occ: 0,
     rentStance: 0, maint: 'std',
-    loans: loanAmt > 0 ? [{ id: s.nextId++, kind: 'acq', balance: loanAmt, ratePct: rate, amortYears: 25, ioMonthsLeft: 24, monthlyPmt: monthlyPayment(loanAmt, rate, 25), maturityMonth: s.month + 24 }] : [],
+    loans: loanAmt > 0 ? [{ id: s.nextId++, kind: 'acq', balance: loanAmt, ratePct: rate, amortYears: 25, ioMonthsLeft: 24, monthlyPmt: monthlyPayment(loanAmt, rate, 25), maturityMonth: s.month + 24, lenderId: 'ibx' }] : [],
     ledger: [{ m: s.month, amt: -cashDue }], cumCF: 0,
     basis: price + costs, acqMonth: s.month,
     entryNOI: 0, entryCap: capRatePct(s, t, b.type, b.quality),
@@ -3755,6 +3788,7 @@ export function placeAuctionBid(state: GameState, auctionId: number, amount: num
   a.deprBasis = Math.round(price * 0.80); a.deprTaken = 0;
   s.assets.push(a);
   s.stock = s.stock.filter(x => x.id !== b.id);
+  s.listings = s.listings.filter(l => l.stockId !== b.id);
   s.auctions = s.auctions.filter(x => x.id !== au.id);
   s.dealsClosed++;
   logDeal(s, { m: s.month, action: 'buy', name: a.name, type: a.type, sf: a.sf, price, capPct: a.entryNOI > 0 ? Math.round(a.entryNOI / price * 10000) / 100 : null });
@@ -3775,6 +3809,7 @@ function tickAuctions(s: GameState) {
       const price = Math.max(au.reserve, Math.round(au.rivalMax * rrange(s, 0.9, 1.0)));
       f.cash -= price * 0.35; f.debt += price * 0.65;
       b.owner = f.short;
+      if (b.listedId !== undefined) { s.listings = s.listings.filter(l => l.id !== b.listedId); b.listedId = undefined; }
       logComp(s, { m: s.month, type: b.type, sf: b.sf, price, capPct: null, tileI: b.tileI, buyer: f.short });
       pushNews(s, 'deal', `The gavel fell at block ${blockLabel(s.tiles[b.tileI])}: ${f.name} took the ${(b.sf / 1000).toFixed(0)}K SF ${PLABEL[b.type]} for ${fmtMoney(price)}. You watched.`, b.tileI);
     } else {
@@ -3850,10 +3885,12 @@ function tickBts(s: GameState) {
 // which of your holdings could legally carry this RFP
 export function btsEligibleHoldings(s: GameState, r: BtsRfp): { h: LandHolding; cells: number }[] {
   const out: { h: LandHolding; cells: number }[] = [];
+  const spec = constrForQuality(r.type, 108);
   for (const h of s.land) {
     const t = s.tiles[h.tileI];
     if (!zoneAllows(t.zone, r.type)) continue;
     const dev = developableFrom(s, h.id);
+    if (dev.cells.length < (spec.minCells ?? 1)) continue;   // the spec the tenant expects needs this much dirt
     const maxSF = dev.cells.length * PARCEL_AC * 43_560 * FAR[r.type] * zoneTierMult(t.zone.tier) * upzoneBonus(dev.cells.length);
     if (maxSF < r.sf) continue;
     if (r.sf > CONFIG.tiers[s.tier].maxSF) continue;
@@ -3980,20 +4017,19 @@ function autoResolveLOIs(s: GameState) {
     if (!a) continue;
     const mkt = assetRentPSF(s, a);
     const their = loi.stage === 'countered' ? (loi.counterRate ?? loi.rate ?? mkt) : (loi.rate ?? 0);
-    let r: { s: GameState; outcome: string };
+    let outcome: string;
     if (loi.kind === 'renewal') {
-      r = respondLOI(s, loi.id, their >= mkt * 0.86 ? { type: 'accept' } : { type: 'counter', rate: Math.round(mkt * 0.94 * 100) / 100, termY: loi.termY ?? 5 });
+      outcome = respondLOIIn(s, loi.id, their >= mkt * 0.86 ? { type: 'accept' } : { type: 'counter', rate: Math.round(mkt * 0.94 * 100) / 100, termY: loi.termY ?? 5 });
     } else if (loi.kind === 'rfp') {
-      r = respondLOI(s, loi.id, { type: 'propose', rate: Math.round(mkt * 0.985 * 100) / 100, termY: 5 });
+      outcome = respondLOIIn(s, loi.id, { type: 'propose', rate: Math.round(mkt * 0.985 * 100) / 100, termY: 5 });
     } else if (loi.stage === 'countered' || their >= mkt * 0.94) {
-      r = respondLOI(s, loi.id, { type: 'accept' });
+      outcome = respondLOIIn(s, loi.id, { type: 'accept' });
     } else if (their >= mkt * 0.78) {
-      r = respondLOI(s, loi.id, { type: 'counter', rate: Math.round(mkt * 0.97 * 100) / 100, termY: loi.termY ?? 5 });
+      outcome = respondLOIIn(s, loi.id, { type: 'counter', rate: Math.round(mkt * 0.97 * 100) / 100, termY: loi.termY ?? 5 });
     } else {
-      r = respondLOI(s, loi.id, { type: 'decline' });
+      outcome = respondLOIIn(s, loi.id, { type: 'decline' });
     }
-    Object.assign(s, r.s); // respondLOI clones; fold the result back
-    if (r.outcome === 'signed') pushNews(s, 'info', `Your leasing agent closed ${loi.tenant} — standard terms, no drama, commission earned.`);
+    if (outcome === 'signed') pushNews(s, 'info', `Your leasing agent closed ${loi.tenant} — standard terms, no drama, commission earned.`);
   }
 }
 
@@ -4019,14 +4055,24 @@ function recordHistory(s: GameState) {
   const totSF = { office: 0, retail: 0, industrial: 0, mixed: 0, multifamily: 0 } as Record<PType, number>;
   for (const b of s.stock) { occSF[b.type] += b.sf * b.occ; totSF[b.type] += b.sf; }
   for (const a of s.assets) { if (a.mode !== 'construction') { occSF[a.type] += a.sf * a.occ; totSF[a.type] += a.sf; } }
+  // rounded to the thousand SF / two decimals: econHistory is the biggest line in every
+  // save and every clone, and the charts can't see the difference
+  for (const ty of PTYPES) { occSF[ty] = Math.round(occSF[ty] / 1000) * 1000; totSF[ty] = Math.round(totSF[ty] / 1000) * 1000; }
+  const ri = {} as Record<PType, number>;
+  for (const ty of PTYPES) ri[ty] = Math.round(s.econ.rentIdx[ty] * 1000) / 1000;
   s.econHistory.push({
-    m: s.month, rate: s.econ.rate, infl: s.econ.inflation, emp: s.econ.empIdx, conf: s.econ.confidence,
-    phase: s.econ.phase, ri: { ...s.econ.rentIdx },
-    ci: constrCostIdx(s), occSF, totSF, pop: cityPopulation(s),
+    m: s.month, rate: Math.round(s.econ.rate * 100) / 100, infl: Math.round(s.econ.inflation * 100) / 100,
+    emp: Math.round(s.econ.empIdx * 10) / 10, conf: Math.round(s.econ.confidence * 10) / 10,
+    phase: s.econ.phase, ri,
+    ci: Math.round(constrCostIdx(s) * 1000) / 1000, occSF, totSF, pop: cityPopulation(s),
     cap: (() => { let best = s.tiles[0]; for (const t of s.tiles) if (!t.water && t.D > best.D) best = t; return Math.round(capRatePct(s, best, 'office', 125) * 100) / 100; })(),
   });
   if (s.nwHistory.length > 520) s.nwHistory.shift();
   if (s.econHistory.length > 520) s.econHistory.shift();
+  // refusal memory runs 24 months; records past it are dead weight iterated by the map
+  if (s.month % 12 === 0) {
+    for (const k in s.parcelApproach) if (s.month - s.parcelApproach[k].m >= 25) delete s.parcelApproach[k];
+  }
 }
 
 const PHASE_DWELL: Record<Phase, number> = { recovery: 18, expansion: 36, peak: 12, recession: 14 };
@@ -4105,7 +4151,10 @@ function tickEconomy(s: GameState) {
     // growth over quarters and takes quarters to roll over, like a real one
     const gap = eqVac - e.cityVac[ty];
     e.rentMom[ty] = e.rentMom[ty] * 0.78 + (gap * 0.0011) * 0.22;
-    const growth = e.rentMom[ty] + (e.inflation / 100) * 0.25 / 12;
+    // rents carry the same inflation pass-through as construction costs (costIdx above),
+    // so a development pro forma means the same thing in year 25 as in year 1 —
+    // the cycle moves rents around that line, not permanently below it
+    const growth = e.rentMom[ty] + (e.inflation / 100) * 0.5 / 12;
     e.rentIdx[ty] = clamp(e.rentIdx[ty] * (1 + growth), 0.5, 4.5);
   }
 }
@@ -4271,7 +4320,10 @@ function maybeBlackSwan(s: GameState) {
     for (const b of s.stock) if (!b.buildLeft && rng(s) < 0.12) { b.occ = clamp(b.occ * rrange(s, 0.4, 0.75), 0.05, 0.97); b.quality = clamp(b.quality - rrange(s, 8, 20), 10, 150); hit++; }
     for (const a of s.assets) if (a.mode !== 'construction' && rng(s) < 0.25 && !a.repair) {
       a.repair = { frac: clamp(rrange(s, 0.15, 0.4), 0.05, 0.6), monthsLeft: 3 + Math.round(rng(s) * 4), what: 'quake' };
-      s.cash -= roundPrice(Math.max(25_000, assetValue(s, a) * 0.006));
+      const ded = roundPrice(Math.max(25_000, assetValue(s, a) * 0.006));
+      s.cash -= ded;
+      logCF(s, 'capex', `${a.name} — quake deductible`, -ded);
+      a.ledger.push({ m: s.month, amt: -ded });
     }
     pushNews(s, 'event', `THE QUAKE: a magnitude the city builds codes about, not for. ~${hit} buildings damaged, contractors booked solid for two years, costs up 14% overnight. The rebuilding boom starts as soon as the dust settles — for whoever still has cash and standing crews.`);
   } else {
@@ -4394,7 +4446,7 @@ function fireEvent(s: GameState, kind: string, payload?: number) {
     const a = s.assets.find(x => x.id === payload);
     if (a && a.age >= 20) {
       const bill = Math.round(a.sf * rrange(s, 4.5, 7) * s.econ.costIdx / 1000) * 1000;
-      s.cash -= bill; a.ledger.push({ m: s.month, amt: -bill });
+      s.cash -= bill; logCF(s, 'capex', `${a.name} — emergency roof replacement`, -bill); a.ledger.push({ m: s.month, amt: -bill });
       a.quality = clamp(a.quality - 6, 1, a.qCap);
       pushNews(s, 'warn', `${a.name}: the patched roof failed in a storm — emergency replacement, ${fmtMoney(bill)}. The cheap fix sends its regards.`);
     }
@@ -4847,17 +4899,17 @@ function tickAsset(s: GameState, a: Asset): number {
     if (p.haltMonthsLeft && p.haltMonthsLeft > 0) {
       p.haltMonthsLeft--;
       const loan0 = a.loans[0];
-      if (loan0.floating) loan0.ratePct = s.econ.rate + (loan0.spreadPct ?? CONFIG.constrSpread);
+      if (loan0.floating) loan0.ratePct = Math.min(s.econ.rate + (loan0.spreadPct ?? CONFIG.constrSpread), loan0.capStrike ?? 99);
       const int0 = loan0.balance * (loan0.ratePct / 100 / 12);
       if (loan0.reserveBalance !== undefined && loan0.reserveBalance > 0) {
         const fr = Math.min(loan0.reserveBalance, int0);
         loan0.reserveBalance = Math.round((loan0.reserveBalance - fr) * 100) / 100;
         loan0.balance += fr;
         const rem0 = int0 - fr;
-        if (rem0 > 0.5) { s.cash -= rem0; a.ledger.push({ m: s.month, amt: -rem0 }); }
+        if (rem0 > 0.5) { s.cash -= rem0; logCF(s, 'dev', `${a.name} — construction interest`, -rem0); a.ledger.push({ m: s.month, amt: -rem0 }); }
         if (loan0.reserveBalance <= 0) pushNews(s, 'warn', `${a.name}: the interest reserve is EMPTY on a dark site.`, a.tileI);
       } else if (loan0.reserveBalance !== undefined) {
-        s.cash -= int0; a.ledger.push({ m: s.month, amt: -int0 });
+        s.cash -= int0; logCF(s, 'dev', `${a.name} — construction interest`, -int0); a.ledger.push({ m: s.month, amt: -int0 });
       }
       if (p.haltMonthsLeft <= 0) pushNews(s, 'info', `${a.name}: the replacement GC has mobilized. Construction resumes.`, a.tileI);
       return 0;
@@ -4879,7 +4931,7 @@ function tickAsset(s: GameState, a: Asset): number {
           const fromCont = Math.min(p.contingencyLeft, delta);
           p.contingencyLeft -= fromCont;
           const over = delta - fromCont;
-          if (over > 0) { s.cash -= over; a.ledger.push({ m: s.month, amt: -over }); }
+          if (over > 0) { s.cash -= over; logCF(s, 'dev', `${a.name} — GC rebid overrun`, -over); a.ledger.push({ m: s.month, amt: -over }); }
           p.spent += delta;
           a.quality = clamp(a.quality - (2 + rng(s) * 2), 5, a.qCap);
           pushNews(s, 'warn', `${a.name}: YOUR CONTRACTOR IS BANKRUPT — and unbonded. The site goes dark ~${halt} months while you rebid at today's prices: ${fmtMoney(delta)} more${over > 0 ? ` (${fmtMoney(over)} straight from cash)` : ''}, the exposed shell weathers, and the interest clock does not care.`, a.tileI);
@@ -4896,7 +4948,7 @@ function tickAsset(s: GameState, a: Asset): number {
       else if (ev.kind === 'soils') {
         const amt = p.hardBudget * (0.05 + rng(s) * 0.05);
         const fromCont = Math.min(p.contingencyLeft, amt); p.contingencyLeft -= fromCont; const over = amt - fromCont;
-        if (over > 0) { s.cash -= over; a.ledger.push({ m: s.month, amt: -over }); }
+        if (over > 0) { s.cash -= over; logCF(s, 'dev', `${a.name} — structural surprise`, -over); a.ledger.push({ m: s.month, amt: -over }); }
         p.spent += amt;
         pushNews(s, over > 0 ? 'warn' : 'info', `${a.name}: structural surprise cost ${fmtMoney(amt)}${over > 0 ? ` — ${fmtMoney(over)} beyond contingency came from your cash` : ', covered by contingency'}.`);
       }
@@ -4906,7 +4958,7 @@ function tickAsset(s: GameState, a: Asset): number {
     p.spent += monthlyHard;
     const loan = a.loans[0];
     // floating construction debt reprices every month — a rate spike mid-build compounds
-    if (loan.floating) loan.ratePct = s.econ.rate + (loan.spreadPct ?? CONFIG.constrSpread);
+    if (loan.floating) loan.ratePct = Math.min(s.econ.rate + (loan.spreadPct ?? CONFIG.constrSpread), loan.capStrike ?? 99);
     const commitment = (a as any).loanCommitment ?? 0;
     const draw = Math.min(monthlyHard, Math.max(0, commitment - p.drawnSoFar));
     p.drawnSoFar += draw; loan.balance += draw;
@@ -4916,10 +4968,11 @@ function tickAsset(s: GameState, a: Asset): number {
       loan.reserveBalance = Math.round((loan.reserveBalance - fromReserve) * 100) / 100;
       loan.balance += fromReserve;                 // reserve draws are loan draws
       const rem = interest - fromReserve;
-      if (rem > 0.5) { s.cash -= rem; a.ledger.push({ m: s.month, amt: -rem }); }
+      if (rem > 0.5) { s.cash -= rem; logCF(s, 'dev', `${a.name} — construction interest`, -rem); a.ledger.push({ m: s.month, amt: -rem }); }
       if (loan.reserveBalance <= 0) pushNews(s, 'warn', `${a.name}: the interest reserve is EMPTY. Debt service now comes from your cash — on a building earning nothing.`, a.tileI);
     } else if (loan.reserveBalance !== undefined) {
       s.cash -= interest;                          // the expensive months
+      logCF(s, 'dev', `${a.name} — construction interest`, -interest);
       a.ledger.push({ m: s.month, amt: -interest });
     } else {
       loan.balance += interest;                    // legacy path (non-reserve loans)
@@ -4932,6 +4985,7 @@ function tickAsset(s: GameState, a: Asset): number {
       loan.monthlyPmt = monthlyPayment(loan.balance, loan.ratePct, loan.amortYears);
       if (p.contingencyLeft > 0) {
         s.cash += p.contingencyLeft * 0.5;
+        logCF(s, 'dev', `${a.name} — unused contingency returned`, p.contingencyLeft * 0.5);
         a.ledger.push({ m: s.month, amt: p.contingencyLeft * 0.5 });
         pushNews(s, 'success', `${a.name} delivered. Unused contingency returns ${fmtMoney(p.contingencyLeft * 0.5)} to you. Now: lease it up — LOIs will start arriving.`);
       } else {
@@ -5016,7 +5070,7 @@ function tickAsset(s: GameState, a: Asset): number {
     const boost = a.mode === 'leaseup' ? 1.7 : 1;
     const sizeDragMF = clamp(1.12 - a.sf / 300_000, 0.6, 1);
     const amenMF = (a.programs ?? []).includes('amenity') ? (PROGRAMS.find(p => p.id === 'amenity')?.velocity ?? 1) : 1;
-    const gain = CONFIG.absorbBase[a.type] * 0.45 * (s.staff?.leasing ? 1.08 : 1) * df * qf * clamp(rentComp, 0.4, 1.6) * boost * sizeDragMF * amenMF * leasingClimate(s, a.type) * Math.max(0, tOcc * 1.03 - a.occ);
+    const gain = CONFIG.absorbBase[a.type] * 0.45 * (s.staff?.leasing ? 1.18 : 1) * df * qf * clamp(rentComp, 0.4, 1.6) * boost * sizeDragMF * amenMF * leasingClimate(s, a.type) * Math.max(0, tOcc * 1.03 - a.occ);
     a.occ = clamp(a.occ - churn * a.occ + gain + (rng(s) - 0.5) * 0.006, 0.05, 0.98);
     if (a.mode === 'leaseup' && a.occ >= 0.85) {
       a.mode = 'operating';
@@ -5033,7 +5087,7 @@ function tickAsset(s: GameState, a: Asset): number {
       const qf = 0.78 + (apparentQuality(s, a) / 150) * 0.30;
       const boost = a.mode === 'leaseup' ? 1.6 : 1;
       const amenSm = (a.programs ?? []).includes('amenity') ? (PROGRAMS.find(x => x.id === 'amenity')?.velocity ?? 1) : 1;
-      const p = clamp(CONFIG.absorbBase[a.type] * 1.62 * (s.staff?.leasing ? 1.12 : 1) * df * qf * rentComp * boost * amenSm * leasingClimate(s, a.type) * clamp(vacant / a.sf, 0.2, 1), 0.02, 0.48);
+      const p = clamp(CONFIG.absorbBase[a.type] * 1.62 * (s.staff?.leasing ? 1.25 : 1) * df * qf * rentComp * boost * amenSm * leasingClimate(s, a.type) * clamp(vacant / a.sf, 0.2, 1), 0.02, 0.48);
       if (rng(s) < p) {
         let sf = Math.min(vacant, Math.round(su / 100) * 100);
         if (vacant - sf < Math.max(400, su * 0.5)) sf = vacant;   // tenants take whole suites — no orphan slivers
@@ -5177,6 +5231,7 @@ function tickAsset(s: GameState, a: Asset): number {
       l.amortYears = Math.min(l.amortYears, 25);
       l.monthlyPmt = monthlyPayment(l.balance, l.ratePct, l.amortYears);
       l.ioMonthsLeft = 0;
+      l.floating = undefined; l.spreadPct = undefined; l.capStrike = undefined;   // the roll writes fixed paper; old hedges die with the old note
       l.maturityMonth = s.month + CONFIG.loanTermMonths;
       pushNews(s, 'warn', `${a.name}: loan ballooned and rolled at today's ${l.ratePct.toFixed(1)}% — payment is now ${fmtMoney(l.monthlyPmt)}/mo.`);
     }

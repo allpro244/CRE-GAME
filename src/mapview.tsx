@@ -44,9 +44,17 @@ const LENS_HUE: Record<Lens, [number, number, number]> = {
   comps: [70, 170, 120],
 };
 
+// Lens inputs move on the quarterly tile tick plus slow composition changes — a heat
+// map doesn't need to repaint 4,480 parcels because an unrelated action cloned the state.
+function lensStamp(state: GameState, lens: Lens): string {
+  return lens + ':' + state.seed + ':' + Math.floor(state.month / 3) + ':' + state.stock.length
+    + ':' + state.assets.length + ':' + ((state.comps?.length ?? 0)) + ':' + state.land.length;
+}
+
 // The market isn't a checkerboard — value pools and drains across the city.
 // Bilinear interpolation over tile centers gives the field its continuous grain.
 function useTileValues(state: GameState, lens: Lens): number[] {
+  const stamp = lensStamp(state, lens);
   return useMemo(() => {
     const rawOf = (t: Tile) => lensRaw(state, t, lens);
     const landVals = state.tiles.filter(t => !t.water).map(rawOf).sort((a, b) => a - b);
@@ -56,10 +64,11 @@ function useTileValues(state: GameState, lens: Lens): number[] {
       const raw = rawOf(t);
       return hi > lo ? Math.max(0, Math.min(1, (raw - lo) / (hi - lo))) : 0.5;
     });
-  }, [state, lens]);
+  }, [stamp]); // eslint-disable-line
 }
 
 function useField(state: GameState, lens: Lens) {
+  const stamp = lensStamp(state, lens);
   return useMemo(() => {
     const W = E.CONFIG.GRID_W, H = E.CONFIG.GRID_H;
     const lensRaw2 = (st: GameState, t: Tile, ln: Lens) => lensRaw(st, t, ln);
@@ -98,7 +107,7 @@ function useField(state: GameState, lens: Lens) {
       cells.push({ x: x * step, y: y * step, v: sample((x + 0.5) * step, (y + 0.5) * step) });
     }
     return cells;
-  }, [state, lens]);
+  }, [stamp]); // eslint-disable-line
 }
 
 function riverGeometry(state: GameState) {
@@ -232,12 +241,16 @@ function cellRects(cells: number[]): { px: number; py: number; pw: number; ph: n
 function useIsoBuildings(state: GameState): IsoBld[] {
   // Geometry changes when counts change, something (de)lists, or construction advances —
   // not merely because the month ticked. Progress sums capture growing heights.
+  // appearance terms are quantized to visible bands (occ in fifths, quality in
+  // 5-point steps) so the random walk of 300 buildings doesn't rebuild the whole
+  // layer every quarter — only a band crossing does
   const stamp = state.stock.length + ':' + state.assets.length + ':' + state.land.length
+    + ':' + state.land.reduce((s2, h) => s2 + h.cells.length + (h.id % 97) * h.cells.length, 0)
     + ':' + state.stock.reduce((s2, b) => s2 + (b.listedId ? 1 : 0), 0)
     + ':' + state.stock.reduce((s2, b) => s2 + (b.buildLeft ?? 0), 0)
     + ':' + state.assets.reduce((s2, a) => s2 + (a.project?.monthsLeft ?? 0) + (a.mode === 'construction' ? 1000 : 0), 0)
-    + ':' + Math.round(state.stock.reduce((s2, b) => s2 + b.occ, 0) * 4)
-    + ':' + Math.round(state.assets.reduce((s2, a) => s2 + a.quality + a.occ * 4 + (a.repair ? 9 : 0), 0))
+    + ':' + state.stock.reduce((s2, b) => s2 + Math.round(b.occ * 5), 0)
+    + ':' + state.assets.reduce((s2, a) => s2 + Math.round(a.quality / 5) * 7 + Math.round(a.occ * 5) + (a.repair ? 9 : 0), 0)
     + ':' + state.tiles.reduce((s2, t) => s2 + (t.water ? 0 : ({ R: 1, C: 2, MU: 3, M: 4 } as const)[t.zone.use] * t.zone.tier * ((t.i % 13) + 1)), 0)
     + ':' + state.firmLand.length + ':' + state.firmLand.reduce((s2, e) => s2 + e.cells.length, 0);
   return useMemo(() => {
@@ -796,6 +809,9 @@ const FlatGround = memo(function FlatGround({ tiles }: { tiles: TileGeom[] }) {
 // The zoning map: categorical, not scalar — use class sets the color, tier sets how
 // loud it is. Blocks before the council get a dashed ring; nothing here predicts,
 // it just shows you the paper.
+// tiles/rezonings arrive as fresh identities after every engine clone — the stamp is
+// the real change signal, so the memo compares only it
+const zoneEq = (a: { zoneStamp: string }, b: { zoneStamp: string }) => a.zoneStamp === b.zoneStamp;
 const ZoningIso = memo(function ZoningIso({ tiles, rezonings, zoneStamp }: {
   tiles: Tile[]; rezonings: E.Rezoning[]; zoneStamp: string;
 }) {
@@ -812,7 +828,7 @@ const ZoningIso = memo(function ZoningIso({ tiles, rezonings, zoneStamp }: {
         fill="#2e3328" opacity={0.8}>{E.zoneCode(t.zone)}</text>
     </g>;
   })}</g>;
-});
+}, zoneEq);
 const ZoningFlat = memo(function ZoningFlat({ tiles, rezonings, zoneStamp }: {
   tiles: Tile[]; rezonings: E.Rezoning[]; zoneStamp: string;
 }) {
@@ -843,20 +859,18 @@ const FlatBuildings = memo(function FlatBuildings({ blds }: { blds: IsoBld[] }) 
 
 // Break ground on all of it — or open the parcel picker and stake out just the
 // corner you want. The rest of the dirt stays banked, basis pro-rata.
-function OwnLandDev({ state, setState, holding, openDeal, onErr }: {
+function OwnLandDev({ state, setState, holding, openDeal }: {
   state: GameState; setState: (s: GameState) => void; holding: E.LandHolding;
-  openDeal: (id: number) => void; onErr: (e: string) => void;
+  openDeal: (id: number) => void;
 }) {
   const d = E.developableFrom(state, holding.id);
   const dset = new Set(d.cells);
   const [open, setOpen] = useState(false);
   const [selCells, setSelCells] = useState<number[]>([]);
-  const picked = (open && selCells.length ? selCells : d.cells).filter(c => dset.has(c));
-  const toggle = (c: number) => setSelCells(prev => {
-    const has = (prev.length ? prev : d.cells).includes(c);
-    const base = prev.length ? prev : [...d.cells];
-    return has ? base.filter(x => x !== c) : [...base, c];
-  });
+  const [err, setErr] = useState<string | null>(null);
+  // picker open: exactly what's selected (deselect-all means nothing, not everything)
+  const picked = (open ? selCells : d.cells).filter(c => dset.has(c));
+  const toggle = (c: number) => setSelCells(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]);
   const acres = Math.round(picked.length * E.PARCEL_AC * 100) / 100;
   return (
     <>
@@ -865,16 +879,18 @@ function OwnLandDev({ state, setState, holding, openDeal, onErr }: {
         {holding.forSale
           ? <button className="btn btn-sm" onClick={() => setState(E.delistLand(state, holding.id))}>Delist</button>
           : <button className="btn btn-sm" title="Land sells slowly — list it and field the offers as they trickle in" onClick={() => setState(E.listLandForSale(state, holding.id).s)}>List for sale</button>}
-        <button className="btn btn-sm" onClick={() => { setOpen(!open); setSelCells([]); }}>{open ? 'Whole site' : 'Choose parcels ▾'}</button>
+        <button className="btn btn-sm" onClick={() => { setSelCells(open ? [] : [...d.cells]); setOpen(!open); setErr(null); }}>{open ? 'Whole site' : 'Choose parcels ▾'}</button>
         <button className="btn btn-sm btn-amber"
           title={d.holdings.length > 1 && !open ? `Builds together with ${d.holdings.length - 1} adjoining holding(s) — ${Math.round(d.cells.length * E.PARCEL_AC * 100) / 100} acres total` : undefined}
           disabled={picked.length === 0}
           onClick={() => {
             const r = picked.length === d.cells.length ? E.developLand(state, holding.id) : E.developLandCells(state, holding.id, picked);
-            if (r.err) { onErr(r.err); return; }
+            if (r.err) { setErr(r.err); return; }
+            setErr(null);
             setState(r.s); if (r.listingId) openDeal(r.listingId);
           }}>Break ground ▸ ({acres} ac)</button>
       </div>
+      {err && <div className="alert-strip red" style={{ marginTop: 6 }}>{err}</div>}
       {open && (
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center', marginTop: 8 }}>
           <span className="faint" style={{ fontSize: 10.5, maxWidth: 190, textAlign: 'right' }}>
@@ -923,18 +939,19 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   }, [focusTile]); // eslint-disable-line
   const gridStamp = state.stock.length + ':' + state.assets.length + ':' + state.listings.length
     + ':' + state.listings.reduce((s2, l) => s2 + (l.parcel || l.parcelCells ? l.id : 0), 0)
-    + ':' + state.land.length + ':' + state.land.reduce((s2, h) => s2 + h.cells.length, 0)
+    + ':' + state.land.length + ':' + state.land.reduce((s2, h) => s2 + h.cells.length + (h.id % 97) * h.cells.length, 0)
     + ':' + state.firmLand.map(e => e.short + e.tileI + '.' + e.cells.length).join('|');
   const grids = useMemo(() => state.tiles.map(t => E.parcelGrid(state, t.i)), [gridStamp, state.seed]); // eslint-disable-line
   const [selCells, setSelCells] = useState<{ tileI: number; cells: number[] } | null>(null);
-  // Stable per-seed geometry + a live ref so the memoized layers never re-render on hover.
-  const tilesGeom = useMemo(() => state.tiles.map(t => ({ i: t.i, x: t.x, y: t.y, water: t.water, park: t.park, canal: t.canal, dust: !t.water && t.zone.use === 'M' })), [state.seed]); // eslint-disable-line
+  const zoneStamp = state.tiles.map(t => t.water ? '' : t.zone.use + t.zone.tier).join('')
+    + ':' + state.rezonings.length + ':' + state.rezonings.reduce((s2, r) => s2 + r.tileI, 0);
+  // Per-seed geometry + a live ref so the memoized layers never re-render on hover;
+  // the dust flag encodes M-zoning, so a rezoning has to re-cut the ground too.
+  const tilesGeom = useMemo(() => state.tiles.map(t => ({ i: t.i, x: t.x, y: t.y, water: t.water, park: t.park, canal: t.canal, dust: !t.water && t.zone.use === 'M' })), [state.seed, zoneStamp]); // eslint-disable-line
   const vpIso = useViewport(0, 0, IW_TOT, IH_TOT);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const vpFlat = useViewport(-20, -18, W + 24, H + 22);
   const field = useField(state, lens);
-  const zoneStamp = useMemo(() => state.tiles.map(t => t.water ? '' : t.zone.use + t.zone.tier).join('') + ':' + state.rezonings.length,
-    [state.tiles, state.rezonings.length]);
   const river = useMemo(() => riverGeometry(state), [state.seed]);
   const runs = useMemo(() => roadRuns(state.roads), [state.seed]); // eslint-disable-line
   const hue = LENS_HUE[lens];
@@ -1417,7 +1434,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                   <span className="lbl"><b style={{ color: 'var(--ink)' }}>Your land</b> — {Math.round(h.cells.length * E.PARCEL_AC * 100) / 100} acres held since {E.monthName(h.acquiredM)}</span>
                   <span className="num">{E.fmtMoney(E.landValue(state, h))} <span className={'faint ' + (E.landValue(state, h) >= h.basis ? 'pos' : 'neg')}>vs {E.fmtMoney(h.basis)} basis</span></span>
                 </div>
-                <OwnLandDev state={state} setState={setState} holding={h} openDeal={openDeal} onErr={setRzErr} />
+                <OwnLandDev state={state} setState={setState} holding={h} openDeal={openDeal} />
               </div>
             ))}
             {state.firmLand.filter(e => e.tileI === sel.i).map((e, i) => {

@@ -449,6 +449,7 @@ export interface GameState {
   swans: { m: number; kind: string; label: string }[];   // the once-a-generation shocks this game has lived through
   gameOver: boolean; gameOverReason?: string; forcedSaleNotice?: string;
   transitCorridor: number[];
+  lastTransitM?: number;   // when the last transit line was approved (or forced onto the ballot)
   roads: RoadNet;
   totalRealizedProfit: number; dealsClosed: number;
   // the books: every dollar in or out, categorized — the income statement reads from here
@@ -5034,6 +5035,34 @@ function maybeBlackSwan(s: GameState) {
   }
 }
 
+// Each transit era draws a NEW line on the map: from wherever the city's live core
+// sits today out to a fresh edge, so every generation re-prices a different corridor.
+// Rolled when the previous line finishes building; announced when the next one lands.
+function rollNextCorridor(s: GameState) {
+  const W = CONFIG.GRID_W, H = CONFIG.GRID_H;
+  let core = s.tiles[0];
+  for (const t of s.tiles) if (!t.water && t.D > core.D) core = t;
+  const prev = new Set(s.transitCorridor);
+  for (let tries = 0; tries < 8; tries++) {
+    const side = Math.floor(rng(s) * 4);
+    const tx = side === 0 ? 1 : side === 1 ? W - 2 : 1 + Math.floor(rng(s) * (W - 2));
+    const ty2 = side <= 1 ? 1 + Math.floor(rng(s) * (H - 2)) : (side === 2 ? 1 : H - 2);
+    const steps = Math.max(1, Math.max(Math.abs(tx - core.x), Math.abs(ty2 - core.y)));
+    const path: number[] = [];
+    for (let s2 = 0; s2 <= steps; s2++) {
+      const cx = Math.round(core.x + (tx - core.x) * (s2 / steps));
+      const cy = Math.round(core.y + (ty2 - core.y) * (s2 / steps));
+      const idx = cy * W + cx;
+      if (!s.tiles[idx].water && !path.includes(idx)) path.push(idx);
+    }
+    // a new line should mostly serve blocks the last one didn't
+    if (path.length >= 5 && path.filter(i => prev.has(i)).length <= path.length * 0.4) {
+      s.transitCorridor = path;
+      return;
+    }
+  }
+}
+
 function tickEvents(s: GameState) {
   maybeBlackSwan(s);
   for (const ef of [...s.effects]) {
@@ -5043,7 +5072,20 @@ function tickEvents(s: GameState) {
       if (ef.dPerMonth) { t.baseD = clamp(t.baseD + ef.dPerMonth, 0, 98); t.D = clamp(t.D + ef.dPerMonth, 5, 98); }
       if (ef.empPerMonth) t.emp = clamp(t.emp + ef.empPerMonth, 3, 100);
     }
-    if (ef.monthsLeft <= 0) s.effects = s.effects.filter(x => x !== ef);
+    if (ef.monthsLeft <= 0) {
+      s.effects = s.effects.filter(x => x !== ef);
+      if (ef.kind === 'transit') {
+        rollNextCorridor(s);
+        pushNews(s, 'rumor', 'The transit authority\'s planners are already sketching the NEXT line — a fresh corridor study is circulating. Whoever owns along the eventual route owns the future.');
+      }
+    }
+  }
+  // infrastructure is generational policy, not luck: if no line has broken ground in
+  // ~25 years, the city forces one onto the ballot
+  if (s.month - (s.lastTransitM ?? 0) > 300 && !s.scheduledEvents.some(ev => ev.kind === 'transit') && !s.effects.some(e => e.kind === 'transit')) {
+    pushNews(s, 'rumor', 'RUMOR: A generation without a new transit line — the bond measure is polling well. The route map leaks within the quarter.');
+    s.scheduledEvents.push({ m: s.month + 3, kind: 'transit' });
+    s.lastTransitM = s.month;
   }
   for (const ev of [...s.scheduledEvents]) {
     if (ev.m !== s.month) continue;
@@ -5085,7 +5127,7 @@ function tickEvents(s: GameState) {
   if (rng(s) < 0.16) {
     const pool = ['transit', 'employer', 'employerExit', 'tariff', 'ecom', 'rateshock', 'insSpike', 'capInflow', 'wfh'];
     const kind = rpick(s, pool);
-    if (kind === 'transit' && s.effects.some(e => e.kind === 'transit')) return;
+    if (kind === 'transit' && (s.effects.some(e => e.kind === 'transit') || s.month - (s.lastTransitM ?? -999) < 120)) return;   // one line per decade, at most
     if (kind === 'employerExit' && (s.month < 60 || s.effects.some(e => e.kind === 'employerExit'))) return;
     if (kind === 'tariff' && s.econ.tariffMonthsLeft > 0) return;
     // structural waves are once-a-decade episodes, not recurring weather — a wave that
@@ -5123,7 +5165,8 @@ function tickEvents(s: GameState) {
 
 function fireEvent(s: GameState, kind: string, payload?: number) {
   if (kind === 'transit') {
-    s.effects.push({ kind: 'transit', monthsLeft: 14, tiles: s.transitCorridor, dPerMonth: 0.9 });
+    s.lastTransitM = s.month;
+    s.effects.push({ kind: 'transit', monthsLeft: 14, tiles: [...s.transitCorridor], dPerMonth: 0.9 });
     // the city upzones its own corridor — transit-oriented development is policy, not luck
     let upzoned = 0;
     for (const ti of s.transitCorridor) {

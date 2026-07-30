@@ -9,6 +9,21 @@ import { Portrait, mapSeed } from './portrait';
 
 // A money figure that rolls to its new value instead of teleporting — the eye catches
 // the direction of travel before the digits settle.
+// A 12-month trace the size of a word: the trend half of every headline number.
+function Spark({ data, color = 'var(--amber)' }: { data: number[]; color?: string }) {
+  if (data.length < 3) return null;
+  const w = 56, h = 14;
+  const min = Math.min(...data), max = Math.max(...data);
+  const span = max - min < 1e-9 ? 1 : max - min;
+  const pts = data.map((v, i) => `${(i / (data.length - 1)) * w},${h - 2 - ((v - min) / span) * (h - 4)}`).join(' ');
+  const up = data[data.length - 1] >= data[0];
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} style={{ display: 'block', opacity: 0.9 }}>
+      <polyline points={pts} fill="none" stroke={color === 'auto' ? (up ? 'var(--green)' : 'var(--red)') : color} strokeWidth={1.2} strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function RollNum({ value, fmt, className }: { value: number; fmt: (v: number) => string; className?: string }) {
   const [disp, setDisp] = useState(value);
   const dispRef = useRef(value);
@@ -306,8 +321,10 @@ function Game({ state, setState, toMenu }: {
         <div className="brand"><b>GROUNDWORK</b><span>{state.city === 'island' ? 'New Amsterdam' : 'Meridian City'}</span></div>
         <div className="tb-sep" />
         <div className="tb-stat"><span className="eyebrow">Date</span><span className="v num">{E.monthName(state.month)}</span></div>
-        <div className="tb-stat"><span className="eyebrow">Cash</span><RollNum value={state.cash} fmt={v => E.fmtMoney(Math.round(v))} className={'v num ' + (state.cash < 0 ? 'neg' : '')} /></div>
-        <div className="tb-stat"><span className="eyebrow">Net worth</span><RollNum value={nw} fmt={v => E.fmtMoney(Math.round(v))} className="v num" /></div>
+        <div className="tb-stat"><span className="eyebrow">Cash</span><RollNum value={state.cash} fmt={v => E.fmtMoney(Math.round(v))} className={'v num ' + (state.cash < 0 ? 'neg' : '')} />
+          <Spark data={state.nwHistory.slice(-12).map(x => x.cash)} color="auto" /></div>
+        <div className="tb-stat"><span className="eyebrow">Net worth</span><RollNum value={nw} fmt={v => E.fmtMoney(Math.round(v))} className="v num" />
+          <Spark data={state.nwHistory.slice(-12).map(x => x.nw)} color="auto" /></div>
         <div className="tb-stat"><span className="eyebrow">CF /mo</span><span className={'v num ' + (state.lastMonthCF >= 0 ? 'pos' : 'neg')}>{E.fmtMoney(state.lastMonthCF)}</span></div>
         <div className="tb-stat"><span className="eyebrow">Prime rate <Hint text="Base rate + 3.0%. Your actual loan spreads price off the base rate; prime is the pulse you watch." /></span><span className="v num">{E.primeRate(state).toFixed(2)}%</span></div>
         <div className="tb-stat"><span className="eyebrow">DSCR</span><span className={'v num ' + (dscr !== null && dscr < 1.2 ? 'neg' : '')}>{dscr === null ? '—' : dscr.toFixed(2) + '×'}</span></div>

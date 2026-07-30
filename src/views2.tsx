@@ -1593,6 +1593,8 @@ export function CityRegistryView({ state, openStock, openAsset }: {
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
   const [fType, setFType] = useState<string>('all');
   const [fOwner, setFOwner] = useState<string>('all');
+  // hover a row, see the building — the registry stops being a spreadsheet
+  const [peek, setPeek] = useState<{ r: RegRow; x: number; y: number } | null>(null);
   const rows = useMemo<RegRow[]>(() => {
     const out: RegRow[] = [];
     for (const b of state.stock) {
@@ -1664,6 +1666,8 @@ export function CityRegistryView({ state, openStock, openAsset }: {
             <tbody>
               {shown.map(r => (
                 <tr key={r.kind + r.id} onClick={() => r.kind === 'asset' ? openAsset(r.id) : openStock(r.id)}
+                  onMouseEnter={e => setPeek({ r, x: Math.min(e.clientX + 18, window.innerWidth - 260), y: Math.min(e.clientY - 40, window.innerHeight - 160) })}
+                  onMouseLeave={() => setPeek(null)}
                   style={{ cursor: 'pointer', color: r.owner === 'You' ? 'var(--amber)' : undefined }}>
                   {REG_COLS.map(c => (
                     <td key={c.k} className={c.num ? 'num' : undefined}
@@ -1680,6 +1684,14 @@ export function CityRegistryView({ state, openStock, openAsset }: {
           Values are appraisal-grade estimates at today's cap rates — what a building would fetch is a negotiation, not a lookup. Click any row to open the property.
         </div>
       </div>
+      {peek && (
+        <div style={{ position: 'fixed', left: peek.x, top: peek.y, zIndex: 40, pointerEvents: 'none', width: 240,
+          background: 'var(--panel2)', border: '1px solid var(--line)', borderRadius: 6, padding: 6, boxShadow: '0 6px 22px rgba(0,0,0,0.5)' }}>
+          <Portrait b={{ type: peek.r.type, construction: peek.r.constr, sf: peek.r.sf, units: 1, quality: peek.r.q,
+            age: 2026 - peek.r.built, occ: peek.r.occ, month: state.month, seed: mapSeed(state.seed, peek.r.tileI) }} w={228} h={120} caption={false} />
+          <div className="faint num" style={{ fontSize: 10, marginTop: 4 }}>{peek.r.name} · Block {peek.r.block}</div>
+        </div>
+      )}
     </div>
   );
 }

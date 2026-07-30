@@ -875,6 +875,12 @@ function OwnLandDev({ state, setState, holding, openDeal }: {
   return (
     <>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        {holding.loan && (
+          <span className="chip" style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
+            title={`Interest-only at ${holding.loan.ratePct.toFixed(2)}% — balloons ${E.monthName(holding.loan.maturityMonth)}. Repaid at sale or groundbreaking; repayable early from the Debt tab.`}>
+            Land loan {E.fmtMoney(holding.loan.balance)} · due {E.monthName(holding.loan.maturityMonth)}
+          </span>
+        )}
         {holding.forSale && <span className="chip chip-agreed">Listed · ask {E.fmtMoney(holding.forSale.ask)}</span>}
         {holding.forSale
           ? <button className="btn btn-sm" onClick={() => setState(E.delistLand(state, holding.id))}>Delist</button>
@@ -1049,7 +1055,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
     let text = `Unlisted · ${E.PARCEL_AC} ac`, sub2 = `Block ${blockName(t)} · owner not marketing`;
     {
       const rec = E.parcelApproachState(s, tileI, py * E.PGRID + px);
-      if (rec?.outcome === 'refused') { text = 'Not for sale'; sub2 = `owner refused ${E.monthName(rec.m)} — memory is long`; }
+      if (rec?.outcome === 'refused') { text = 'Not for sale'; sub2 = `owner refused ${E.monthName(rec.m)} — try again in a few months`; }
     }
     if (occ !== null) {
       if (occ >= 2_000_000) {
@@ -1188,8 +1194,8 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           })}
           {/* owners who said no — assembly planning has memory */}
           {Object.entries(state.parcelApproach ?? {}).map(([k, rec]) => {
-            if (rec.outcome !== 'refused' || state.month - rec.m >= 24) return null;
             const [ti, c] = k.split(':').map(Number);
+            if (rec.outcome !== 'refused' || state.month - rec.m >= E.parcelApproachFade(state, ti, c)) return null;
             const t = state.tiles[ti];
             if (!t) return null;
             const [cx, cy] = parcelCenter(t.x, t.y, c % E.PGRID, Math.floor(c / E.PGRID));

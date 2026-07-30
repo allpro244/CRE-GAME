@@ -117,6 +117,16 @@ manager — monthly payroll, real engine levers) · RATE HEDGING (swap fixed to 
 fix a floater, buy a rate cap priced off the era's volatility) · a PLAYER INCOME STATEMENT
 (every dollar in or out lands categorized in the Books tab — rent, opex, debt service,
 leasing costs, G&A, taxes, capital events; the mystery cash hit is now a line item) ·
+MIXED-USE AS A MIXTURE (a mixed building is ground-floor retail, office above, apartments over
+both — you pick the program at groundbreaking; each slice earns its own market's rent, retail
+and office suites tour separately, the homes fill monthly as one living block, and every square
+foot counts in its component sector's vacancy — there is no separate "mixed market" or tab) ·
+LAND LOANS (banks front ~55% on dirt, interest-only at a hot spread on a 36-month fuse —
+retired at sale or groundbreaking, extended at +150bps if you can't) · desirability with
+MOMENTUM and BLIGHT (rising blocks overshoot their fundamentals, high vacancy nearby drags a
+block down until somebody fills it) · construction SCALE ECONOMIES (a 70K SF building runs
+~25% cheaper per foot than a 5K one) · capital programs that AGE OUT (redoable after 5-8
+years, priced off the building they're swung at) · a land price tape in the Economy tab ·
 a REAL leasing market: citywide vacancy per asset class is measured from the actual standing
 stock building by building (overbuild industrial and those exact square feet sit empty), rents
 follow the vacancy gap with momentum and a price-elasticity stabilizer (cheap space fills, dear

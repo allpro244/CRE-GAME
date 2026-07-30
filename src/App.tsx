@@ -355,7 +355,7 @@ function Dashboard({ state, goDeals, openLOI, openFirm, flyTo }: { state: GameSt
         <div className="panel">
           <h3>Markets at a glance</h3>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 11.5, marginBottom: 12 }}>
-            {E.PTYPES.map(ty => {
+            {E.PTYPES.filter(ty => ty !== 'mixed').map(ty => {
               const v = state.econ.cityVac[ty], eq = E.EQ_VAC[ty];
               const soft = v > eq + 2, tight = v < eq - 1;
               return <span key={ty} className="num" style={{ color: soft ? 'var(--red)' : tight ? 'var(--green)' : 'var(--dim)' }}
@@ -571,6 +571,10 @@ function classStory(state: GameState, ty: import('./engine').PType, vac: number,
   return bits.slice(0, 3).join(' ');
 }
 
+// mixed-use is a mixture — its square feet live inside the office, retail, and
+// residential markets, so the dashboard reports the four real sectors
+const SECTORS = E.PTYPES.filter(ty => ty !== 'mixed');
+
 function EconomyView({ state }: { state: GameState }) {
   const h = state.econHistory;
   const labels = [E.monthName(h[0]?.m ?? 0), E.monthName(state.month)];
@@ -616,8 +620,8 @@ function EconomyView({ state }: { state: GameState }) {
         </div>
       </div>
       <div className="panel" style={{ marginBottom: 14 }}>
-        <h3>Market analytics by asset class <Hint text="Vacancy and absorption are measured from the actual standing stock of the city — every building, not a survey." /></h3>
-        {E.PTYPES.map(ty => {
+        <h3>Market analytics by asset class <Hint text="Vacancy and absorption are measured from the actual standing stock of the city — every building, not a survey. Mixed-use buildings are counted inside each sector they contain." /></h3>
+        {SECTORS.map(ty => {
           const tot = last?.totSF?.[ty] ?? 0, occ = last?.occSF?.[ty] ?? 0;
           const vac = tot > 0 ? (1 - occ / tot) * 100 : 0;
           const absQ = back3?.occSF ? occ - (back3.occSF[ty] ?? occ) : 0;
@@ -656,7 +660,7 @@ function EconomyView({ state }: { state: GameState }) {
           const rH = hi(rates), rL = lo(rates), iH = hi(infl);
           const cH = caps.length ? hi(caps) : null, cL = caps.length ? lo(caps) : null;
           // per-type rent: biggest run-up and drawdown over the whole history
-          const rentRec = E.PTYPES.map(ty => {
+          const rentRec = SECTORS.map(ty => {
             let peak = h[0].ri[ty], trough = h[0].ri[ty], maxUp = 0, maxDn = 0;
             for (const x of h) {
               const v = x.ri[ty];
@@ -693,6 +697,25 @@ function EconomyView({ state }: { state: GameState }) {
         })()}
       </div>
       <div className="panel" style={{ marginBottom: 14 }}>
+        <h3>The dirt market — median land price per acre <Hint text="The citywide median asking-grade price for an acre, recorded monthly. Land follows rents, zoning, and construction costs — with a lag and a temper." /></h3>
+        {(() => {
+          const pts = h.filter(x => x.land !== undefined && x.land > 0);
+          if (pts.length < 2) return <div className="dim" style={{ fontSize: 12 }}>Come back in a few months — the tape needs history.</div>;
+          const lastL = pts[pts.length - 1].land!, agoL = pts[Math.max(0, pts.length - 13)].land!;
+          return (<>
+            <div className="metric-row">
+              <div className="metric"><div className="eyebrow">Median $/acre today</div><div className="v num">{E.fmtMoney(lastL)}</div></div>
+              <div className="metric"><div className="eyebrow">12-mo change</div><div className={'v num ' + (lastL >= agoL ? 'pos' : 'neg')}>{agoL > 0 ? ((lastL / agoL - 1) * 100).toFixed(1) + '%' : '—'}</div></div>
+              <div className="metric"><div className="eyebrow">Since {E.monthName(pts[0].m)}</div><div className={'v num ' + (lastL >= pts[0].land! ? 'pos' : 'neg')}>{pts[0].land! > 0 ? ((lastL / pts[0].land! - 1) * 100).toFixed(0) + '%' : '—'}</div></div>
+            </div>
+            <LineChart labels={[E.monthName(pts[0].m), E.monthName(pts[pts.length - 1].m)]}
+              series={[{ name: 'land', color: '#c9a15a', data: pts.map(x => x.land! / 1000) }]}
+              yFmt={v => '$' + Math.round(v) + 'K'} />
+            <div className="faint" style={{ fontSize: 11, marginTop: 4 }}>Buy dirt when this line is hated; sell entitlements when it's loved. The median hides the blocks that doubled — the map knows which ones.</div>
+          </>);
+        })()}
+      </div>
+      <div className="panel" style={{ marginBottom: 14 }}>
         <h3>Recent sale comps <Hint text="Every closed trade in Meridian City — yours and everyone else's. This is how you know what a building is actually worth." /></h3>
         {state.comps.length === 0 ? <div className="dim" style={{ fontSize: 12 }}>No closed transactions yet. The first trades will set the tone.</div> : (
           <table className="sc">
@@ -718,7 +741,7 @@ function EconomyView({ state }: { state: GameState }) {
         <table className="sc">
           <thead><tr><th>Asset class</th><th>Prime / Class A</th><th>Average / Class B</th><th>Weak block / Class C</th></tr></thead>
           <tbody>
-            {E.PTYPES.map(ty => {
+            {SECTORS.map(ty => {
               const land = state.tiles.filter(t => !t.water);
               const prime = land.reduce((b2, t) => t.D > b2.D ? t : b2, land[0]);
               const avg = land.reduce((b2, t) => Math.abs(t.D - 50) < Math.abs(b2.D - 50) ? t : b2, land[0]);
@@ -758,17 +781,17 @@ function EconomyView({ state }: { state: GameState }) {
       <div className="grid2">
         <div className="panel">
           <h3>Citywide rent indices (1.00 = campaign start)</h3>
-          <LineChart labels={labels} series={E.PTYPES.map((ty, i) => ({
-            name: ty, color: ['var(--blue)', 'var(--amber)', 'var(--green)', '#b07fd9', '#e88bb8'][i],
+          <LineChart labels={labels} series={SECTORS.map((ty, i) => ({
+            name: ty, color: ['var(--blue)', 'var(--amber)', 'var(--green)', '#e88bb8'][i],
             data: h.map(x => x.ri?.[ty] ?? 1),
           }))} yFmt={v => v.toFixed(2)} />
           <div className="faint" style={{ fontSize: 10.5, marginBottom: 4 }}>
-            <span style={{ color: 'var(--blue)' }}>office</span> · <span className="amber">retail</span> · <span className="pos">industrial</span> · <span style={{ color: '#b07fd9' }}>mixed</span> · <span style={{ color: '#e88bb8' }}>multifamily</span>
+            <span style={{ color: 'var(--blue)' }}>office</span> · <span className="amber">retail</span> · <span className="pos">industrial</span> · <span style={{ color: '#e88bb8' }}>multifamily</span> — mixed-use buildings ride these three markets, weighted by their program
           </div>
           <table className="sc">
             <thead><tr><th>Use</th><th>Rent index</th><th>City vacancy</th><th>Read</th></tr></thead>
             <tbody>
-              {E.PTYPES.map(ty => {
+              {SECTORS.map(ty => {
                 const v = state.econ.cityVac[ty];
                 const eq = E.EQ_VAC[ty];
                 return (

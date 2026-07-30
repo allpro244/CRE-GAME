@@ -4082,7 +4082,10 @@ export function appraisalHalfPts(state: GameState, type: PType, quality: number,
 export function appraisalBand(state: GameState, a: Asset): { lo: number; mid: number; hi: number; capMid: number; halfPts: number } {
   const mid = assetValue(state, a);
   const t = state.tiles[a.tileI];
-  const capMid = Math.max(4, capRatePct(state, t, a.type, a.quality) + (isAggregate(a.type) ? 0 : creditCapAdjPts(a.tenants)));
+  // new vintage trades tight: institutional money pays a sharper cap for a stabilized
+  // building nobody has worn out yet — the merchant builder's actual exit market
+  const vintageAdj = a.age <= 8 && (a.occ ?? 0) >= 0.75 ? -0.2 : 0;
+  const capMid = Math.max(4, capRatePct(state, t, a.type, a.quality) + vintageAdj + (isAggregate(a.type) ? 0 : creditCapAdjPts(a.tenants)));
   const halfPts = appraisalHalfPts(state, a.type, a.quality, a.occ ?? 0);
   return {
     lo: Math.round(mid * capMid / (capMid + halfPts)),
@@ -4101,7 +4104,10 @@ export function sellQuote(state: GameState, a: Asset) {
   // is seeded per asset per quarter — the broker's current opinion, not a slot machine.
   const r = mulberry32((state.seed ^ Math.imul(a.id + 1, 0x9E3779B9) ^ Math.imul(Math.floor(state.month / 3) + 1, 0x85EBCA6B)) | 0)();
   const sentiment = state.econ.phase === 'peak' ? 1.04 : state.econ.phase === 'recession' ? 0.94 : 1;
-  const gross = (band.lo + (band.mid - band.lo) * r) * sentiment;
+  // new stabilized product draws from the UPPER half of the fast-money range —
+  // core funds compete for vintage they didn't have to build themselves
+  const r2 = a.age <= 8 && (a.occ ?? 0) >= 0.75 ? 0.55 + r * 0.45 : r;
+  const gross = (band.lo + (band.mid - band.lo) * r2) * sentiment;
   const costs = gross * CONFIG.saleCostPct;
   const payoff = assetDebt(a);
   const facRelease = facilityShare(state, a) * 1.05; // release price: allocated share + 5%

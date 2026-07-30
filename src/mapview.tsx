@@ -841,6 +841,66 @@ const FlatBuildings = memo(function FlatBuildings({ blds }: { blds: IsoBld[] }) 
   ))}</g>;
 });
 
+// Break ground on all of it — or open the parcel picker and stake out just the
+// corner you want. The rest of the dirt stays banked, basis pro-rata.
+function OwnLandDev({ state, setState, holding, openDeal, onErr }: {
+  state: GameState; setState: (s: GameState) => void; holding: E.LandHolding;
+  openDeal: (id: number) => void; onErr: (e: string) => void;
+}) {
+  const d = E.developableFrom(state, holding.id);
+  const dset = new Set(d.cells);
+  const [open, setOpen] = useState(false);
+  const [selCells, setSelCells] = useState<number[]>([]);
+  const picked = (open && selCells.length ? selCells : d.cells).filter(c => dset.has(c));
+  const toggle = (c: number) => setSelCells(prev => {
+    const has = (prev.length ? prev : d.cells).includes(c);
+    const base = prev.length ? prev : [...d.cells];
+    return has ? base.filter(x => x !== c) : [...base, c];
+  });
+  const acres = Math.round(picked.length * E.PARCEL_AC * 100) / 100;
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        {holding.forSale && <span className="chip chip-agreed">Listed · ask {E.fmtMoney(holding.forSale.ask)}</span>}
+        {holding.forSale
+          ? <button className="btn btn-sm" onClick={() => setState(E.delistLand(state, holding.id))}>Delist</button>
+          : <button className="btn btn-sm" title="Land sells slowly — list it and field the offers as they trickle in" onClick={() => setState(E.listLandForSale(state, holding.id).s)}>List for sale</button>}
+        <button className="btn btn-sm" onClick={() => { setOpen(!open); setSelCells([]); }}>{open ? 'Whole site' : 'Choose parcels ▾'}</button>
+        <button className="btn btn-sm btn-amber"
+          title={d.holdings.length > 1 && !open ? `Builds together with ${d.holdings.length - 1} adjoining holding(s) — ${Math.round(d.cells.length * E.PARCEL_AC * 100) / 100} acres total` : undefined}
+          disabled={picked.length === 0}
+          onClick={() => {
+            const r = picked.length === d.cells.length ? E.developLand(state, holding.id) : E.developLandCells(state, holding.id, picked);
+            if (r.err) { onErr(r.err); return; }
+            setState(r.s); if (r.listingId) openDeal(r.listingId);
+          }}>Break ground ▸ ({acres} ac)</button>
+      </div>
+      {open && (
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center', marginTop: 8 }}>
+          <span className="faint" style={{ fontSize: 10.5, maxWidth: 190, textAlign: 'right' }}>
+            Click parcels to stake the site — it must stay contiguous. The rest stays banked.
+          </span>
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${E.PGRID}, 17px)`, gap: 2 }}>
+            {Array.from({ length: E.PGRID * E.PGRID }, (_, c) => {
+              const owned = dset.has(c);
+              const on = owned && picked.includes(c);
+              return (
+                <button key={c} disabled={!owned} onClick={() => toggle(c)}
+                  title={owned ? (on ? 'In the site' : 'Left banked') : 'Not yours'}
+                  style={{
+                    width: 17, height: 17, borderRadius: 3, cursor: owned ? 'pointer' : 'default', padding: 0,
+                    border: '1px solid ' + (on ? 'var(--amber)' : owned ? 'var(--line)' : 'var(--line2)'),
+                    background: on ? 'rgba(217,166,72,0.45)' : owned ? 'var(--panel3)' : 'transparent',
+                  }} />
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function MapView({ state, setState, selTile, setSelTile, openDeal, openStock, openAsset, focusTile, advance, advanceUntil }: {
   state: GameState; setState: (s: GameState) => void; selTile: number | null; setSelTile: (i: number | null) => void;
   openDeal: (id: number) => void; openStock: (id: number) => void; openAsset: (id: number) => void;
@@ -1357,21 +1417,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                   <span className="lbl"><b style={{ color: 'var(--ink)' }}>Your land</b> — {Math.round(h.cells.length * E.PARCEL_AC * 100) / 100} acres held since {E.monthName(h.acquiredM)}</span>
                   <span className="num">{E.fmtMoney(E.landValue(state, h))} <span className={'faint ' + (E.landValue(state, h) >= h.basis ? 'pos' : 'neg')}>vs {E.fmtMoney(h.basis)} basis</span></span>
                 </div>
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 6, alignItems: 'center' }}>
-                  {h.forSale && <span className="chip chip-agreed">Listed · ask {E.fmtMoney(h.forSale.ask)}</span>}
-                  {h.forSale
-                    ? <button className="btn btn-sm" onClick={() => setState(E.delistLand(state, h.id))}>Delist</button>
-                    : <button className="btn btn-sm" title="Land sells slowly — list it and field the offers as they trickle in" onClick={() => setState(E.listLandForSale(state, h.id).s)}>List for sale</button>}
-                  <button className="btn btn-sm btn-amber" title={(() => {
-                    const d = E.developableFrom(state, h.id);
-                    return d.holdings.length > 1 ? `Builds together with ${d.holdings.length - 1} adjoining holding(s) — ${Math.round(d.cells.length * E.PARCEL_AC * 100) / 100} acres total` : undefined;
-                  })()}
-                    onClick={() => {
-                      const r = E.developLand(state, h.id);
-                      if (r.err) { setRzErr(r.err); return; }
-                      setState(r.s); if (r.listingId) openDeal(r.listingId);
-                    }}>Break ground ▸{(() => { const d = E.developableFrom(state, h.id); return d.holdings.length > 1 ? ` (${Math.round(d.cells.length * E.PARCEL_AC * 100) / 100} ac)` : ''; })()}</button>
-                </div>
+                <OwnLandDev state={state} setState={setState} holding={h} openDeal={openDeal} onErr={setRzErr} />
               </div>
             ))}
             {state.firmLand.filter(e => e.tileI === sel.i).map((e, i) => {

@@ -200,7 +200,7 @@ function Game({ state, setState, toMenu }: {
       <div className="nav">
         {(['dashboard', 'map', 'deals', 'portfolio', 'books', 'debt', 'economy'] as TabId[]).map(t => (
           <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
-            {t === 'dashboard' ? 'Dashboard' : t === 'map' ? 'City map' : t === 'deals' ? 'Deal board' : t === 'portfolio' ? 'Portfolio' : t === 'books' ? 'Books' : t === 'debt' ? 'Debt' : 'Economy'}
+            {t === 'dashboard' ? 'Dashboard' : t === 'map' ? 'City map' : t === 'deals' ? 'Marketplace' : t === 'portfolio' ? 'Portfolio' : t === 'books' ? 'Books' : t === 'debt' ? 'Debt' : 'Economy'}
             {t === 'deals' && state.listings.length > 0 && <span className="badge" style={{ background: 'var(--panel3)', color: 'var(--dim)' }}>{state.listings.length}</span>}
             {t === 'portfolio' && (projCount > 0 || state.lois.length > 0) && <span className="badge">{state.lois.length > 0 ? '✉' + state.lois.length : projCount}</span>}
           </button>
@@ -298,11 +298,11 @@ function Dashboard({ state, goDeals, openLOI, openFirm, flyTo }: { state: GameSt
         <div className="panel" style={{ marginBottom: 14, borderColor: 'var(--amber-dim)' }}>
           <h3>Getting started</h3>
           <div style={{ fontSize: 13, lineHeight: 1.65, color: 'var(--dim)' }}>
-            Open the <b style={{ color: 'var(--ink)' }}>Deal board</b> and hunt for a building whose going-in cap rate
+            Open the <b style={{ color: 'var(--ink)' }}>Marketplace</b> and hunt for a building whose going-in cap rate
             beats your borrowing cost — industrial is the forgiving place to learn, and distressed listings are cheap
             for reasons you can sometimes fix. Run the $8K feasibility to see the actual rent roll before committing.
             When you're feeling brave, canvass off-market: most sellers are delusional, but the motivated ones are gold.
-            <button className="btn btn-sm btn-amber" style={{ marginLeft: 10 }} onClick={goDeals}>Open deal board</button>
+            <button className="btn btn-sm btn-amber" style={{ marginLeft: 10 }} onClick={goDeals}>Open the marketplace</button>
           </div>
         </div>
       )}

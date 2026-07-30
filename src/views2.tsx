@@ -1040,7 +1040,7 @@ export function PortfolioView2({ state, setState, onSell, onRefi, onLOI, goDeals
 }) {
   if (state.assets.length === 0 && state.land.length === 0) {
     return <div className="panel dim" style={{ fontSize: 13.5, lineHeight: 1.6 }}>
-      No assets yet. An empty balance sheet is just potential energy — <button className="btn btn-sm btn-amber" onClick={goDeals}>open the deal board</button>
+      No assets yet. An empty balance sheet is just potential energy — <button className="btn btn-sm btn-amber" onClick={goDeals}>open the marketplace</button>
     </div>;
   }
   return (

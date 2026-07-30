@@ -47,7 +47,7 @@ export function constrForQuality(ty: PType, q: number): ConstrSpec {
 export const CONSTR: Record<PType, ConstrSpec[]> = {
   industrial: [
     { id: 'tilt', label: 'Tilt-wall concrete', cost: 115, q: 117, qCap: 142, minCells: 4 },
-    { id: 'metal', label: 'Pre-engineered metal', cost: 88, q: 87, qCap: 105, minCells: 4 },
+    { id: 'metal', label: 'Pre-engineered metal', cost: 88, q: 87, qCap: 105, minCells: 2 },
     { id: 'tin', label: 'Tin / light steel', cost: 62, q: 54, qCap: 68 },
   ],
   retail: [
@@ -70,7 +70,7 @@ export const CONSTR: Record<PType, ConstrSpec[]> = {
   ],
 };
 export const FAR: Record<PType, number> = { industrial: 0.45, retail: 0.45, office: 2.6, mixed: 1.8, multifamily: 1.6 };
-export const MIN_BUILD_SF = 4500;   // every product type is buildable on a single quarter-acre parcel
+export const MIN_BUILD_SF = 2500;   // a small shop is still a building — a quarter-acre carries one at any tier
 
 // ---------- Zoning ----------
 // Every block carries a use class and an intensity tier. The FAR table above is the
@@ -1678,7 +1678,7 @@ export function canApproach(state: GameState, stockId: number): { ok: boolean; w
   const b = state.stock.find(x => x.id === stockId);
   if (!b) return { ok: false, why: 'That building is gone.' };
   if (b.buildLeft) return { ok: false, why: 'Still under construction — nobody sells a half-built shell over the phone.' };
-  if (b.listedId) return { ok: false, why: 'It\'s already on the market — see the deal board.' };
+  if (b.listedId) return { ok: false, why: 'It\'s already on the market — see the marketplace.' };
   if (b.blacklist) return { ok: false, why: 'This owner stopped taking your calls after your last offer.' };
   if (b.owner !== 'private') return { ok: false, why: `${state.firms.find(f => f.short === b.owner)?.name ?? 'An institution'} owns this one — they don't sell over a phone call.` };
   if (b.approachedM !== undefined && state.month - b.approachedM < 24) return { ok: false, why: 'You asked recently. Owners remember; give it a couple of years.' };
@@ -2858,6 +2858,49 @@ export function developableFrom(state: GameState, holdingId: number): { cells: n
   const gset = new Set(group);
   return { cells: group.sort((a, b) => a - b), holdings: mine.filter(x => x.cells.some(c => gset.has(c))).map(x => x.id) };
 }
+// Build on PART of what you own: carve the chosen parcels into their own holding
+// (basis follows the dirt, pro-rata) and stage just that site. The rest stays banked.
+export function developLandCells(state: GameState, holdingId: number, cells: number[]): { s: GameState; listingId?: number; err?: string } {
+  const s = clone(state);
+  const h0 = s.land.find(x => x.id === holdingId);
+  if (!h0) return { s, err: 'Holding gone.' };
+  const d = developableFrom(s, holdingId);
+  const dset = new Set(d.cells);
+  const picked = [...new Set(cells)].sort((a, b) => a - b);
+  if (!picked.length) return { s, err: 'Pick at least one parcel.' };
+  if (!picked.every(c => dset.has(c))) return { s, err: 'You can only build on parcels you own here.' };
+  if (!isContiguous(picked)) return { s, err: 'The parcels must touch edge-to-edge — one site, not scattered lots.' };
+  if (picked.length === d.cells.length) return developLand(state, holdingId);   // the whole thing — the simple path
+  if (s.listings.some(l => l.fromLandId !== undefined && d.holdings.includes(l.fromLandId))) return { s, err: 'Part of this site is already staged to build — close or cancel that first.' };
+  const tileI = h0.tileI;
+  let basis = 0, acquiredM = h0.acquiredM;
+  for (const hid of d.holdings) {
+    const h = s.land.find(x => x.id === hid);
+    if (!h) continue;
+    const take = h.cells.filter(c => picked.includes(c));
+    if (!take.length) continue;
+    acquiredM = Math.min(acquiredM, h.acquiredM);
+    if (take.length === h.cells.length) {
+      basis += h.basis;
+      s.land = s.land.filter(x => x.id !== h.id);
+      s.saleOffers = s.saleOffers.filter(o => o.landId !== h.id);
+    } else {
+      const share = Math.round(h.basis * take.length / h.cells.length);
+      h.cells = h.cells.filter(c => !picked.includes(c));
+      h.basis -= share;
+      basis += share;
+    }
+  }
+  const nh: LandHolding = { id: s.nextId++, tileI, cells: picked, basis, acquiredM };
+  s.land.push(nh);
+  const id = s.nextId++;
+  s.listings.push({
+    id, tileI, kind: 'land', acres: Math.round(picked.length * PARCEL_AC * 100) / 100,
+    price: 0, parcelCells: [...picked],
+    expiresMonth: s.month + 6, hot: false, agreed: true, fromLandId: nh.id,
+  });
+  return { s, listingId: id };
+}
 export function developLand(state: GameState, holdingId: number): { s: GameState; listingId?: number; err?: string } {
   const s = clone(state);
   const h = s.land.find(x => x.id === holdingId);
@@ -3666,7 +3709,7 @@ function startAuction(s: GameState, b: StockBuilding, source: string) {
     rivalMax: roundPrice(val * rrange(s, 0.66, rich)),
     endsM: s.month + 1, source,
   });
-  pushNews(s, 'event', `FORECLOSURE AUCTION: the ${(b.sf / 1000).toFixed(0)}K SF ${PLABEL[b.type]} at block ${blockLabel(s.tiles[b.tileI])} goes to the courthouse steps (${source}). As-is, cash or hard money, gone by ${monthName(s.month + 1)}. Deal board has the details.`, b.tileI);
+  pushNews(s, 'event', `FORECLOSURE AUCTION: the ${(b.sf / 1000).toFixed(0)}K SF ${PLABEL[b.type]} at block ${blockLabel(s.tiles[b.tileI])} goes to the courthouse steps (${source}). As-is, cash or hard money, gone by ${monthName(s.month + 1)}. The marketplace has the details.`, b.tileI);
 }
 export function placeAuctionBid(state: GameState, auctionId: number, amount: number, hardMoney: boolean): { s: GameState; outcome: 'won' | 'outbid' | 'err'; err?: string } {
   const s = clone(state);
@@ -3799,7 +3842,7 @@ function tickBts(s: GameState) {
       penalty: Math.round(sf * rate / 12 * 3 / 1000) * 1000,
     };
     s.btsRfps.push(rfp);
-    pushNews(s, 'event', `BUILD-TO-SUIT RFP: ${rfp.tenant} (${CREDIT_LABEL[credit]} credit) wants ${(sf / 1000).toFixed(0)}K SF of purpose-built ${PLABEL[ty].toLowerCase()} — ${rfp.termY} years NNN at $${rate.toFixed(2)}/SF, delivered by ${monthName(rfp.deliverBy)}. Respond by ${monthName(rfp.respondBy)}; the deal board has the paper.`);
+    pushNews(s, 'event', `BUILD-TO-SUIT RFP: ${rfp.tenant} (${CREDIT_LABEL[credit]} credit) wants ${(sf / 1000).toFixed(0)}K SF of purpose-built ${PLABEL[ty].toLowerCase()} — ${rfp.termY} years NNN at $${rate.toFixed(2)}/SF, delivered by ${monthName(rfp.deliverBy)}. Respond by ${monthName(rfp.respondBy)}; the marketplace has the paper.`);
   }
 }
 // which of your holdings could legally carry this RFP

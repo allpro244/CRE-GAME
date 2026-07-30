@@ -5559,9 +5559,62 @@ export function acceptBulkDeal(state: GameState, hardMoney: boolean): { s: GameS
   return { s };
 }
 
+// The city eats itself: when the dirt under a tired building is worth clearly more
+// than the building standing on it, a developer scrapes it and builds to today's
+// density. This is how real cities replace their stock over a century — block by
+// block, one teardown at a time. Player assets are never touched.
+function tickRedevelopment(s: GameState) {
+  if (rng(s) > 0.6) return;   // roughly every other quarter, when a scrape actually pencils
+  // developer's residual: what the SITE supports at today's zoning and rents, minus
+  // all-in cost (buy the building, knock it down, build new) — scrape when the
+  // residual clears a real margin. Underbuilt vintage on prime dirt goes first.
+  let best: { b: StockBuilding; ty: PType; sf: number; quality: number; allIn: number; margin: number } | null = null;
+  for (const b of s.stock) {
+    if (b.buildLeft || b.listedId || b.owner !== 'private') continue;
+    if (b.age < 25 || b.quality > 68 || b.occ > 0.88) continue;   // good buildings don't get scraped
+    const t = s.tiles[b.tileI];
+    const opts = PTYPES.filter(ty => zoneAllows(t.zone, ty));
+    if (!opts.length) continue;
+    const ty = opts.reduce((x, y) => tileDemandFactor(s, t, y) > tileDemandFactor(s, t, x) ? y : x);
+    if (tileDemandFactor(s, t, ty) < 1.0 || oversupplyPenalty(t, ty) > 0.06) continue;
+    const acres = (b.cells ? b.cells.length : (b.pw ?? 1) * (b.ph ?? 1)) * PARCEL_AC;
+    const sf = Math.round(acres * 43_560 * FAR[ty] * zoneTierMult(t.zone.tier) * 0.85 / 1000) * 1000;
+    if (sf < 6000 || sf < b.sf * 1.6) continue;   // a scrape has to add real density, not shuffle it
+    const quality = clamp(rrange(s, 88, 132), 45, 138);
+    const buy = stockValue(s, b) * 1.05;          // the owner gets paid over the income value
+    const demo = b.sf * 8 * s.econ.costIdx;
+    const build = sf * constrForQuality(ty, quality).cost * constrCostIdx(s) * 1.3;
+    const allIn = buy + demo + build;
+    const newValue = stockNOIYr(s, { ...b, type: ty, sf, quality, occ: 0.9 }) / (capRatePct(s, t, ty, quality) / 100);
+    const margin = (newValue - allIn) / allIn;
+    if (margin > 0.15 && (!best || margin > best.margin)) best = { b, ty, sf, quality, allIn, margin };
+  }
+  if (!best) return;
+  const { b, ty, sf, quality, allIn } = best;
+  const t = s.tiles[b.tileI];
+  const rich = s.firms.filter(x => x.alive && x.cash > allIn * 0.35 + 2_000_000);
+  if (!rich.length) return;
+  const f = rpick(s, rich);
+  const cost = allIn;
+  f.cash -= cost * 0.35;
+  f.debt += cost * 0.65;
+  t.supply[b.type] = Math.max(0, t.supply[b.type] - b.sf);
+  s.stock = s.stock.filter(x => x.id !== b.id);
+  const months = Math.min(26, Math.max(6, Math.round(5 + sf / 7000)));
+  s.stock.push({
+    id: s.nextId++, tileI: b.tileI, type: ty, sf,
+    px: b.px, py: b.py, pw: b.pw, ph: b.ph, cells: b.cells ? [...b.cells] : undefined,
+    units: genUnitsFor(s, ty, sf), quality, age: 0,
+    construction: constrForQuality(ty, quality).id,
+    occ: 0, owner: f.short, buildLeft: months, buildTotal: months, builder: f.short,
+  });
+  pushNews(s, 'event', `THE WRECKERS ARE IN at block ${blockLabel(t)}: ${f.name} bought the ${Math.round(b.age)}-year-old ${PLABEL[b.type].toLowerCase()} for the dirt underneath. ${(sf / 1000).toFixed(0)}K SF of new ${PLABEL[ty].toLowerCase()} rises in its place — the city eats itself, one tired building at a time.`, t.i);
+}
+
 function tickFirms(s: GameState) {
   if (s.month % 3 !== 0) return;
   tickFirmLand(s);
+  tickRedevelopment(s);
   for (const f of s.firms) {
     if (!f.alive) continue;
     // ---- the quarter's actual books: rent in, debt service out, portfolio marked ----

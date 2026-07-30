@@ -4,9 +4,11 @@ A commercial real estate development simulator. You start with $600,000 in Merid
 
 Single-page React + TypeScript app, bundled to one self-contained HTML file.
 
-Two cities: **Meridian** (procedural: river, meandering street grid, superblocks, per-seed
-arterials) and **New Amsterdam** (an island between two rivers: twin cores, a central park,
-avenues, bridges, a shoreline expressway). Same economy, different geography.
+One city: **New Amsterdam** — an island between two rivers with a narrow canal wandering
+down its middle (waterfront premium included), twin cores, a central park, avenues, bridges,
+and a shoreline expressway. The city starts YOUNG: roughly half its eventual density stands
+at day one — the rest gets built during the campaign, by you and the rival firms. (The
+Meridian generator survives in the engine but is no longer reachable from the menu.)
 
 ---
 
@@ -59,7 +61,8 @@ make — you can simulate 30 years in milliseconds before touching the UI.
 - Each block is a **4x4 grid of quarter-acre parcels** (`PGRID`, `PARCEL_AC`). Footprints are cell-index
   sets (`cells: number[]`), so buildings can be L-shaped. Edge-sharing (not corner) defines one site —
   see `isContiguous()`.
-- `GameState.stock` — ~500 standing buildings, every one real and owned. Listings are drawn *from* stock.
+- `GameState.stock` — ~250 standing buildings at generation (the city is young and grows),
+  every one real and owned. Listings are drawn *from* stock.
 - `GameState.assets` — what you own. `GameState.land` — banked vacant parcels.
 - Save format is versioned (`version: 9`); `deserialize()` rejects mismatches rather than crashing.
 

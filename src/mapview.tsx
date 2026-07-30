@@ -623,7 +623,7 @@ const WaterLife = memo(function WaterLife({ tiles, seed }: { tiles: TileGeom[]; 
   const els: React.ReactNode[] = [];
   let boats = 0;
   for (const t of tiles) {
-    if (!t.water || boats >= 14) continue;
+    if (!t.water || t.canal || boats >= 14) continue;   // nothing bigger than a duck fits the canal
     let a = (seed ^ Math.imul(t.i + 1, 2654435761)) | 0;
     const r = () => { a = (a + 0x6D2B79F5) | 0; let v = Math.imul(a ^ (a >>> 15), 1 | a); v = (v + Math.imul(v ^ (v >>> 7), 61 | v)) ^ v; return ((v ^ (v >>> 14)) >>> 0) / 4294967296; };
     if (r() > 0.30) continue;
@@ -685,7 +685,7 @@ const RoadsFlat = memo(function RoadsFlat({ runs }: { runs: RoadRun[] }) {
 // ---------- memoized layers ----------
 // The map draws thousands of SVG nodes. Splitting it into layers memoized on stable
 // identities means hover, pan and zoom re-render a tooltip div — not the city.
-type TileGeom = { i: number; x: number; y: number; water: boolean; park?: boolean; dust?: boolean };
+type TileGeom = { i: number; x: number; y: number; water: boolean; park?: boolean; dust?: boolean; canal?: boolean };
 
 // Ground: grass, not pavement. Three seeded lawn tones so the field doesn't read
 // flat, dusty hardpan under the industrial zoning, and parks get real canopies.
@@ -694,7 +694,8 @@ const DUST = ['#b5ac8b', '#aea687', '#bab190'];
 const TileBaseIso = memo(function TileBaseIso({ tiles }: { tiles: TileGeom[] }) {
   return <g>{tiles.map(t => {
     const gi = ((t.x * 7 + t.y * 13) | 0) % 3;
-    const fill = t.park ? '#6f9e53' : t.water ? '#5b9ec9' : t.dust ? DUST[gi] : GRASS[gi];
+    // canal tiles paint as banks — the water itself is a narrow spine drawn on top
+    const fill = t.park ? '#6f9e53' : t.canal ? GRASS[gi] : t.water ? '#5b9ec9' : t.dust ? DUST[gi] : GRASS[gi];
     const trees: React.ReactNode[] = [];
     if (t.park) {
       let a = (t.i * 2654435761) | 0;
@@ -714,7 +715,7 @@ const TileBaseIso = memo(function TileBaseIso({ tiles }: { tiles: TileGeom[] }) 
       }
     }
     return <g key={'st' + t.i}>
-      <polygon points={diamond(t.x, t.y)} fill={fill} stroke={t.water ? '#5b9ec9' : '#c3c5b4'} strokeWidth={t.water ? 0.5 : 1.3} />
+      <polygon points={diamond(t.x, t.y)} fill={fill} stroke={t.water && !t.canal ? '#5b9ec9' : '#c3c5b4'} strokeWidth={t.water && !t.canal ? 0.5 : 1.3} />
       {trees}
     </g>;
   })}</g>;
@@ -788,7 +789,7 @@ const FieldFlat = memo(function FieldFlat({ field, hue }: { field: { x: number; 
 // Flat-view ground under the lens wash — same grass/dust/park read as the iso view.
 const FlatGround = memo(function FlatGround({ tiles }: { tiles: TileGeom[] }) {
   return <g>{tiles.map(t => {
-    if (t.water) return null;
+    if (t.water && !t.canal) return null;
     const gi = ((t.x * 7 + t.y * 13) | 0) % 3;
     return <rect key={'fg' + t.i} x={t.x * TS} y={t.y * TS} width={TS} height={TS}
       fill={t.park ? '#6f9e53' : t.dust ? DUST[gi] : GRASS[gi]} stroke="#c3c5b4" strokeWidth={0.8} />;
@@ -870,7 +871,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const grids = useMemo(() => state.tiles.map(t => E.parcelGrid(state, t.i)), [gridStamp, state.seed]); // eslint-disable-line
   const [selCells, setSelCells] = useState<{ tileI: number; cells: number[] } | null>(null);
   // Stable per-seed geometry + a live ref so the memoized layers never re-render on hover.
-  const tilesGeom = useMemo(() => state.tiles.map(t => ({ i: t.i, x: t.x, y: t.y, water: t.water, park: t.park, dust: !t.water && t.zone.use === 'M' })), [state.seed]); // eslint-disable-line
+  const tilesGeom = useMemo(() => state.tiles.map(t => ({ i: t.i, x: t.x, y: t.y, water: t.water, park: t.park, canal: t.canal, dust: !t.water && t.zone.use === 'M' })), [state.seed]); // eslint-disable-line
   const vpIso = useViewport(0, 0, IW_TOT, IH_TOT);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const vpFlat = useViewport(-20, -18, W + 24, H + 22);
@@ -1066,13 +1067,27 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             ? <ZoningIso tiles={state.tiles} rezonings={state.rezonings} zoneStamp={zoneStamp} />
             : <LensCellsIso tiles={tilesGeom} grids={grids} vals={tileVals} hue={hue} zb={zb} />}
           {(() => {
-            const water = state.tiles.filter(t => t.water && !t.park).sort((a, b) => (a.y - b.y) || (a.x - b.x));
+            const water = state.tiles.filter(t => t.water && !t.park && !t.canal).sort((a, b) => (a.y - b.y) || (a.x - b.x));
             if (!water.length || water.length > 20) return null;
             const seen = new Set<number>();
             const spine = water.filter(t => { if (seen.has(t.y)) return false; seen.add(t.y); return true; });
             const pts = spine.map(t => isoPt(t.x, t.y)).map(p => p[0].toFixed(0) + ',' + p[1].toFixed(0)).join(' ');
             return <g><polyline points={pts} fill="none" stroke="#4e93c4" strokeWidth={IH * 0.95} strokeLinecap="round" strokeLinejoin="round" />
               <polyline className="shim" points={pts} fill="none" stroke="#3c608a" strokeWidth={2} strokeDasharray="2 14" strokeLinecap="round" opacity={0.7} /></g>;
+          })()}
+          {(() => {
+            // the canal: half a river, drawn as a narrow spine over its grassy banks —
+            // extended a tile past each end so it visibly drains into both rivers
+            const canal = state.tiles.filter(t => t.canal).sort((a, b) => a.y - b.y);
+            if (!canal.length) return null;
+            const nodes = [
+              isoPt(canal[0].x, canal[0].y - 1),
+              ...canal.map(t => isoPt(t.x, t.y)),
+              isoPt(canal[canal.length - 1].x, canal[canal.length - 1].y + 1),
+            ];
+            const pts = nodes.map(p => p[0].toFixed(0) + ',' + p[1].toFixed(0)).join(' ');
+            return <g><polyline points={pts} fill="none" stroke="#5b9ec9" strokeWidth={IH * 0.45} strokeLinecap="round" strokeLinejoin="round" />
+              <polyline className="shim" points={pts} fill="none" stroke="#3c608a" strokeWidth={1.3} strokeDasharray="2 11" strokeLinecap="round" opacity={0.6} /></g>;
           })()}
           <RoadsIso runs={runs} />
           {zb >= 1 && <WaterLife tiles={tilesGeom} seed={state.seed} />}
@@ -1201,9 +1216,16 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           {state.tiles.filter(t => t.park).map(t => (
             <rect key={'pk' + t.i} x={t.x * TS} y={t.y * TS} width={TS} height={TS} fill="#79a865" />
           ))}
-          {state.tiles.filter(t => t.water && !t.park).length > 20 && state.tiles.filter(t => t.water && !t.park).map(t => (
+          {state.tiles.filter(t => t.water && !t.park && !t.canal).length > 20 && state.tiles.filter(t => t.water && !t.park && !t.canal).map(t => (
             <rect key={'wa' + t.i} x={t.x * TS} y={t.y * TS} width={TS} height={TS} fill="#5b9ec9" />
           ))}
+          {(() => {
+            const canal = state.tiles.filter(t => t.canal).sort((a, b) => a.y - b.y);
+            if (!canal.length) return null;
+            const xs = [[canal[0].x, canal[0].y - 1], ...canal.map(t => [t.x, t.y]), [canal[canal.length - 1].x, canal[canal.length - 1].y + 1]];
+            const d = xs.map(([x, y], i) => `${i === 0 ? 'M' : 'L'} ${(x + 0.5) * TS} ${(y + 0.5) * TS}`).join(' ');
+            return <path d={d} fill="none" stroke="#5b9ec9" strokeWidth={TS * 0.4} strokeLinecap="round" strokeLinejoin="round" />;
+          })()}
           {/* the street network — every city's is its own */}
           <RoadsFlat runs={runs} />
           {transitActive && state.transitCorridor.map(i => {

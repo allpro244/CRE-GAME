@@ -23,7 +23,7 @@ export default function App() {
   const [state, setState] = useState<GameState | null>(null);
   const [hasSave, setHasSave] = useState(false);
   useEffect(() => { storageGet('groundwork:auto').then(v => setHasSave(!!v && !!E.deserialize(v))); }, []);
-  const startNew = (sandbox = false, city: E.CityKind = 'meridian') => { setState(E.newGame(undefined, { sandbox, city })); setScreen('game'); };
+  const startNew = (sandbox = false) => { setState(E.newGame(undefined, { sandbox, city: 'island' })); setScreen('game'); };
   const continueGame = async () => {
     const v = await storageGet('groundwork:auto');
     const s = v ? E.deserialize(v) : null;
@@ -35,14 +35,14 @@ export default function App() {
         <h1>GROUNDWORK</h1>
         <div className="tag">Commercial real estate, from the ground up</div>
         <p>
-          Meridian City. $600,000 of equity, a bank that returns your calls, and a market that
-          doesn't care about your feelings. Buy buildings, chase off-market deals, negotiate every
-          lease, structure the debt — and be greedy and fearful at the right times.
+          New Amsterdam. A young island city between two rivers, a canal through its middle, and
+          half its blocks still dirt. $600,000 of equity, a bank that returns your calls, and a
+          market that doesn't care about your feelings. Buy buildings, chase off-market deals,
+          negotiate every lease, structure the debt — and watch the city grow around your thesis.
         </p>
         <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-          <button className="btn btn-amber" onClick={() => startNew(false)}>New campaign — Meridian</button>
-          <button className="btn btn-amber" title="A long island between two rivers: twin cores, a park in the middle, bridges, and a shoreline expressway"
-            onClick={() => startNew(false, 'island')}>New Amsterdam</button>
+          <button className="btn btn-amber" title="A long island between two rivers: twin cores, a central park, a canal, bridges, and a shoreline expressway"
+            onClick={() => startNew(false)}>New campaign</button>
           {hasSave && <button className="btn" onClick={continueGame}>Continue</button>}
           <button className="btn btn-ghost" title="$50,000,000, top tier, clean reputation — for testing"
             onClick={() => startNew(true)}>Sandbox — $50M</button>

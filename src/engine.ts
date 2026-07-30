@@ -134,6 +134,7 @@ export interface Tile {
   i: number; x: number; y: number;
   water: boolean;
   park?: boolean;   // unbuildable green — engine-wise it's water, render-wise it's trees
+  canal?: boolean;  // narrow waterway — water for the economy, half a river to the eye
   // D (desirability) = baseD + what the neighborhood has become. baseD is the anchor —
   // geography and street access, fixed at generation except for permanent infrastructure
   // (transit). The rest is emergent: the blend of jobs, residents and retail nearby.
@@ -654,6 +655,19 @@ export function generateCity(seed: number, city: CityKind = 'meridian'): { tiles
   const isWaterXY = city === 'island'
     ? (x: number, y: number) => y === 0 || y === H - 1 || (y === 1 && biteT.has(x)) || (y === H - 2 && biteB.has(x)) || parkSet.has(y * W + x)
     : (x: number, y: number) => x === riverCol[y];
+  // the canal: a narrow waterway wandering down the island's middle. Water for the
+  // economy (unbuildable, waterfront premium), but the roads bridge it freely —
+  // this city is named after the right place.
+  const canalCol: number[] = [];
+  if (city === 'island') {
+    let cc = Math.round(W * 0.55);
+    for (let y = 0; y < H; y++) {
+      canalCol.push(cc);
+      if (r() < 0.45) cc += r() < 0.5 ? -1 : 1;
+      cc = clamp(cc, Math.round(W * 0.5) - 2, Math.round(W * 0.55) + 2);
+    }
+  }
+  const isCanal = (x: number, y: number) => city === 'island' && y > 0 && y < H - 1 && x === canalCol[y] && !parkSet.has(y * W + x);
   const CBD = city === 'island' ? { x: Math.round(W * 0.22), y: Math.floor(H / 2) } : { x: Math.round(W * 0.5), y: Math.round(H * 0.4) };
   const UPT = city === 'island' ? { x: Math.round(W * 0.71), y: Math.floor(H / 2) - 1 } : { x: Math.round(W * 0.79), y: Math.round(H * 0.2) };
   const PORT = city === 'island' ? { x: 1, y: H - 3 } : { x: riverCol[H - 1], y: H - 1 };
@@ -661,9 +675,9 @@ export function generateCity(seed: number, city: CityKind = 'meridian'): { tiles
   const tiles: Tile[] = [];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = y * W + x;
-    const water = isWaterXY(x, y);
+    const water = isWaterXY(x, y) || isCanal(x, y);
     const dC = dist(x, y, CBD.x, CBD.y), dU = dist(x, y, UPT.x, UPT.y);
-    const riverAdj = !water && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => isWaterXY(x + dx, y + dy));
+    const riverAdj = !water && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => isWaterXY(x + dx, y + dy) || isCanal(x + dx, y + dy));
     const railBand = y >= H - 3 ? 1 : y === H - 4 ? 0.4 : 0;
     let D = 18 + 58 * gauss(dC, 5.9) + 34 * gauss(dU, 3.7) + (riverAdj ? 10 : 0) - 16 * railBand + (noise[i] - 0.5) * 26;
     D = clamp(D, 8, 96);
@@ -673,7 +687,7 @@ export function generateCity(seed: number, city: CityKind = 'meridian'): { tiles
     const dPort = dist(x, y, PORT.x, PORT.y);
     const indSuit = clamp(16 + 58 * railBand + 30 * gauss(dPort, 4.5) - D * 0.25 + (noise[i] - 0.5) * 20, 3, 100);
     const crime = clamp(68 - 0.58 * D + (noise2[i] - 0.5) * 24, 4, 85);
-    tiles.push({ i, x, y, water, park: parkSet.has(i) || undefined, D, baseD: D, income, emp, pop, indSuit, crime, popBase: pop, empBase: emp, supply: { office: 0, retail: 0, industrial: 0, mixed: 0, multifamily: 0 }, acc: { art: 0, hwy: 0, rail: 0, quiet: 0 }, zone: { use: 'MU', tier: 1 } });
+    tiles.push({ i, x, y, water, park: parkSet.has(i) || undefined, canal: isCanal(x, y) || undefined, D, baseD: D, income, emp, pop, indSuit, crime, popBase: pop, empBase: emp, supply: { office: 0, retail: 0, industrial: 0, mixed: 0, multifamily: 0 }, acc: { art: 0, hwy: 0, rail: 0, quiet: 0 }, zone: { use: 'MU', tier: 1 } });
   }
   computeAccess(tiles, roads);
   // Streets shape the terrain: frontage lifts a block, a highway next door drags on it
@@ -1142,7 +1156,7 @@ function genRentRoll(state: GameState, a: Pick<Asset, 'tileI' | 'type' | 'sf' | 
 // ---------- Initial state ----------
 export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKind }): GameState {
   const s0 = seed ?? Math.floor(Math.random() * 2 ** 31);
-  const { tiles, corridor, roads } = generateCity(s0, opts?.city ?? 'meridian');
+  const { tiles, corridor, roads } = generateCity(s0, opts?.city ?? 'island');
   const state: GameState = {
     seed: s0, rngCursor: s0 ^ 0x1234567,
     month: 0, tiles,
@@ -1165,7 +1179,7 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     },
     cash: opts?.sandbox ? 50_000_000 : CONFIG.START_CASH, reputation: opts?.sandbox ? 60 : 20, tier: opts?.sandbox ? CONFIG.tiers.length - 1 : 0,
     sandbox: opts?.sandbox || undefined,
-    city: opts?.city ?? 'meridian',
+    city: opts?.city ?? 'island',
     stock: [],
     assets: [], listings: [], lois: [], facilities: [], saleOffers: [],
     comps: [], autoLease: false, prefer1031: false,
@@ -1190,7 +1204,7 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     rezonings: [], rezoneDenied: {}, swans: [],
     gameOver: false, transitCorridor: corridor, roads,
     totalRealizedProfit: 0, dealsClosed: 0,
-    version: 25,
+    version: 26,
   };
   generateStock(state);
   // Firms open with real books: they already own the buildings generation assigned
@@ -1283,9 +1297,10 @@ function generateStock(state: GameState) {
   for (const t of state.tiles) {
     for (const ty of PTYPES) t.supply[ty] = 0;
     if (t.water) continue;
-    // Meridian City is mostly dirt. Development clusters near the core and thins to nothing at the edges.
+    // The city starts young: half of what it will become. Development clusters near
+    // the core and thins to nothing at the edges — the rest is the campaign's job.
     const dens = clamp(0.10 + Math.pow(t.D / 100, 1.9) * 0.62 + (t.indSuit > 62 ? 0.02 : 0), 0.06, t.zone.tier === 3 ? 0.85 : 0.62) * (t.indSuit > 62 ? 0.75 : 1);
-    const budget = Math.round(dens * PGRID * PGRID); // parcels to fill on this block
+    const budget = Math.round(dens * PGRID * PGRID * 0.5); // parcels to fill on this block — half density at day one
     // each use competes for land in proportion to the acreage its demand implies
     // zoning shapes what got built: nonconforming stock exists (it predates the paper) but it's the exception
     const weights: [PType, number][] = PTYPES.map(ty => [ty, tileCapacitySF(t, ty) / (FAR[ty] * 43_560 * PARCEL_AC) * (zoneAllows(t.zone, ty) ? 1 : 0.12)] as [PType, number]);
@@ -4792,7 +4807,7 @@ export function serialize(state: GameState): string { return JSON.stringify(stat
 export function deserialize(json: string): GameState | null {
   try {
     const s = JSON.parse(json);
-    if (s && s.version === 25 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
+    if (s && s.version === 26 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
     return null;
   } catch { return null; }
 }

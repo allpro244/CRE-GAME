@@ -775,32 +775,66 @@ function EconomyView({ state }: { state: GameState }) {
       </div>
       <div className="panel" style={{ marginBottom: 14 }}>
         <h3>Market analytics by asset class <Hint text="Vacancy and absorption are measured from the actual standing stock of the city — every building, not a survey. Mixed-use buildings are counted inside each sector they contain." /></h3>
-        {SECTORS.map(ty => {
-          const tot = last?.totSF?.[ty] ?? 0, occ = last?.occSF?.[ty] ?? 0;
-          const vac = tot > 0 ? (1 - occ / tot) * 100 : 0;
-          const absQ = back3?.occSF ? occ - (back3.occSF[ty] ?? occ) : 0;
-          const rg12 = back12?.ri ? ((last?.ri[ty] ?? 1) / (back12.ri[ty] ?? 1) - 1) * 100 : 0;
-          const df = land.reduce((s2, t) => s2 + E.tileDemandFactor(state, t, ty), 0) / land.length;
-          const eq = E.EQ_VAC[ty];
-          const clim = E.leasingClimate(state, ty);
-          return (
-            <div key={ty} style={{ borderBottom: '1px solid var(--line2)', padding: '10px 0' }}>
-              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'baseline' }}>
-                <b style={{ minWidth: 92 }}>{E.PLABEL[ty]}</b>
-                <span className="num" style={{ fontSize: 12 }}>Inventory <b>{(tot / 1e6).toFixed(2)}M SF</b></span>
-                <span className={'num ' + (vac > eq + 2 ? 'neg' : vac < eq - 1 ? 'pos' : 'dim')} style={{ fontSize: 12 }}>Vacancy <b>{vac.toFixed(1)}%</b></span>
-                <span className={'num ' + (absQ >= 0 ? 'pos' : 'neg')} style={{ fontSize: 12 }}>Absorption <b>{absQ >= 0 ? '+' : ''}{(absQ / 1000).toFixed(0)}K SF/qtr</b></span>
-                <span className="num dim" style={{ fontSize: 12 }}>Demand idx <b>{df.toFixed(2)}</b></span>
-                <span className={'num ' + (rg12 > 0 ? 'pos' : 'neg')} style={{ fontSize: 12 }}>Rent growth <b>{rg12 >= 0 ? '+' : ''}{rg12.toFixed(1)}%/yr</b></span>
-                <span className={'num ' + (clim > 1.06 ? 'pos' : clim < 0.94 ? 'neg' : 'dim')} style={{ fontSize: 12 }}
-                  title="How fast space moves right now: in a landlord's market every vacancy gets toured and concessions vanish; in a tenant's market the phone is quiet and free rent is table stakes.">
-                  {clim > 1.06 ? "Landlord's market" : clim < 0.94 ? "Tenant's market" : 'Balanced'} <b>({clim.toFixed(2)}× velocity)</b></span>
-                {E.pipelineSF(state, ty) > 0 && <span className="num" style={{ fontSize: 12, color: '#e08c3c' }}>Under construction <b>{(E.pipelineSF(state, ty) / 1000).toFixed(0)}K SF</b></span>}
+        {(() => {
+          // one shared scale so the bars compare ACROSS sectors — office's 8M SF
+          // should dwarf retail's 2M at a glance
+          const maxInv = Math.max(1, ...SECTORS.map(ty => (last?.totSF?.[ty] ?? 0) + E.pipelineSF(state, ty)));
+          return SECTORS.map(ty => {
+            const tot = last?.totSF?.[ty] ?? 0, occ = last?.occSF?.[ty] ?? 0;
+            const vac = tot > 0 ? (1 - occ / tot) * 100 : 0;
+            const absQ = back3?.occSF ? occ - (back3.occSF[ty] ?? occ) : 0;
+            const rg12 = back12?.ri ? ((last?.ri[ty] ?? 1) / (back12.ri[ty] ?? 1) - 1) * 100 : 0;
+            const df = land.reduce((s2, t) => s2 + E.tileDemandFactor(state, t, ty), 0) / land.length;
+            const eq = E.EQ_VAC[ty];
+            const clim = E.leasingClimate(state, ty);
+            const pipe = E.pipelineSF(state, ty);
+            // history series for the trend sparks (last 24 recorded months)
+            const vacSeries = h.slice(-24).map(x => x.totSF?.[ty] ? (1 - (x.occSF?.[ty] ?? 0) / x.totSF[ty]) * 100 : vac);
+            const rentSeries = h.slice(-24).map(x => x.ri?.[ty] ?? 1);
+            const verdict = clim > 1.06 ? "Landlord's market" : clim < 0.94 ? "Tenant's market" : 'Balanced';
+            const vColor = clim > 1.06 ? 'var(--green)' : clim < 0.94 ? 'var(--red)' : 'var(--dim)';
+            // the balance gauge: where vacancy sits against this sector's own equilibrium band
+            const gMax = Math.max(eq * 2.2, vac + 3, 18);
+            const gx = (v: number) => Math.max(0, Math.min(100, (v / gMax) * 100));
+            return (
+              <div key={ty} style={{ borderBottom: '1px solid var(--line2)', padding: '10px 0' }}>
+                <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <b style={{ minWidth: 92 }}>{E.PLABEL[ty]}</b>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: vColor, minWidth: 128 }}
+                    title={`Leasing velocity ${clim.toFixed(2)}× — how fast space moves right now. In a landlord's market every vacancy gets toured and concessions vanish; in a tenant's market the phone is quiet and free rent is table stakes.`}>
+                    {verdict} <span className="num" style={{ fontWeight: 400 }}>({clim.toFixed(2)}×)</span></span>
+                  {/* the balance gauge: green side = tight, band = healthy, red side = overbuilt */}
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    title={`Vacancy ${vac.toFixed(1)}% vs the ~${eq.toFixed(0)}% equilibrium this sector clears at. Left of the band: scarce space, rents push up. Right: oversupply, concessions and softness.`}>
+                    <span style={{ position: 'relative', width: 150, height: 10, background: 'linear-gradient(to right, rgba(97,175,120,0.35), rgba(120,130,120,0.18) 40%, rgba(120,130,120,0.18) 60%, rgba(222,95,95,0.35))', borderRadius: 3, border: '1px solid var(--line)' }}>
+                      <span style={{ position: 'absolute', left: `${gx(eq - 1.5)}%`, width: `${gx(eq + 1.5) - gx(eq - 1.5)}%`, top: 0, bottom: 0, background: 'rgba(200,205,196,0.30)', borderLeft: '1px solid var(--line)', borderRight: '1px solid var(--line)' }} />
+                      <span style={{ position: 'absolute', left: `calc(${gx(vac)}% - 1.5px)`, width: 3, top: -2, bottom: -2, background: vac > eq + 2 ? 'var(--red)' : vac < eq - 1 ? 'var(--green)' : 'var(--ink)', borderRadius: 1 }} />
+                    </span>
+                    <span className={'num ' + (vac > eq + 2 ? 'neg' : vac < eq - 1 ? 'pos' : 'dim')} style={{ fontSize: 12 }}><b>{vac.toFixed(1)}%</b> <span className="faint">vac / eq ~{eq.toFixed(0)}%</span></span>
+                  </span>
+                  <span style={{ display: 'inline-flex', gap: 10, alignItems: 'center', marginLeft: 'auto' }}>
+                    <span className="faint" style={{ fontSize: 9.5 }}>vac 24mo</span><Spark data={vacSeries} color={vacSeries[vacSeries.length - 1] <= vacSeries[0] ? 'var(--green)' : 'var(--red)'} />
+                    <span className="faint" style={{ fontSize: 9.5 }}>rent 24mo</span><Spark data={rentSeries} color="auto" />
+                  </span>
+                </div>
+                {/* supply structure on one shared scale: occupied | vacant | under construction */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 7 }}
+                  title={`Occupied ${(occ / 1e6).toFixed(2)}M SF · vacant ${((tot - occ) / 1e6).toFixed(2)}M · under construction ${(pipe / 1000).toFixed(0)}K. Bar length is comparable across sectors.`}>
+                  <div style={{ display: 'flex', height: 9, width: `${Math.max(3, ((tot + pipe) / maxInv) * 100 * 0.62)}%`, borderRadius: 2, overflow: 'hidden', border: '1px solid var(--line)' }}>
+                    <div style={{ width: `${tot > 0 ? (occ / (tot + pipe)) * 100 : 0}%`, background: 'var(--panel3)', borderRight: tot - occ > 0 ? '1px solid var(--line)' : 'none', backgroundImage: 'linear-gradient(to bottom, rgba(122,140,160,0.55), rgba(122,140,160,0.35))' }} />
+                    <div style={{ width: `${tot > 0 ? ((tot - occ) / (tot + pipe)) * 100 : 0}%`, background: 'repeating-linear-gradient(45deg, rgba(222,95,95,0.30), rgba(222,95,95,0.30) 3px, transparent 3px, transparent 6px)' }} />
+                    {pipe > 0 && <div style={{ width: `${(pipe / (tot + pipe)) * 100}%`, background: 'repeating-linear-gradient(45deg, rgba(224,163,92,0.55), rgba(224,163,92,0.55) 3px, transparent 3px, transparent 6px)' }} />}
+                  </div>
+                  <span className="num dim" style={{ fontSize: 11 }}>{(tot / 1e6).toFixed(2)}M SF{pipe > 0 && <span style={{ color: '#e08c3c' }}> +{(pipe / 1000).toFixed(0)}K u/c</span>}</span>
+                  <span className={'num ' + (absQ >= 0 ? 'pos' : 'neg')} style={{ fontSize: 11.5 }}>Absorption <b>{absQ >= 0 ? '+' : ''}{(absQ / 1000).toFixed(0)}K/qtr</b></span>
+                  <span className="num dim" style={{ fontSize: 11.5 }} title="Average tenant appetite for this product across every block, 1.00 = neutral.">Demand idx <b>{df.toFixed(2)}</b></span>
+                  <span className={'num ' + (rg12 > 0 ? 'pos' : 'neg')} style={{ fontSize: 11.5 }}>Rents <b>{rg12 >= 0 ? '+' : ''}{rg12.toFixed(1)}%/yr</b></span>
+                </div>
+                <div className="dim" style={{ fontSize: 12, marginTop: 5, lineHeight: 1.55 }}>{classStory(state, ty, vac, eq, absQ, rg12, df)}</div>
               </div>
-              <div className="dim" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.55 }}>{classStory(state, ty, vac, eq, absQ, rg12, df)}</div>
-            </div>
-          );
-        })}
+            );
+          });
+        })()}
       </div>
       <div className="panel" style={{ marginBottom: 14 }}>
         <h3>Cycle records — this game's economic history <Hint text="The extremes this economy has actually produced since you started. Every number was a month somebody lived through." /></h3>

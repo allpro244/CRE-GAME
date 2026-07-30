@@ -140,6 +140,7 @@ export interface Tile {
   water: boolean;
   park?: boolean;   // unbuildable green — engine-wise it's water, render-wise it's trees
   canal?: boolean;  // narrow waterway — water for the economy, half a river to the eye
+  marsh?: boolean;  // wetland: unbuildable like water, reads as reeds and mud
   // D (desirability) = baseD + what the neighborhood has become. baseD is the anchor —
   // geography and street access, fixed at generation except for permanent infrastructure
   // (transit). The rest is emergent: the blend of jobs, residents and retail nearby.
@@ -751,9 +752,71 @@ export function generateCity(seed: number, city: CityKind = 'meridian'): { tiles
     const px0 = Math.floor(W * 0.45) + Math.floor(r() * 2), py0 = Math.floor(H / 2) - 2;
     for (let dy = 0; dy < 3; dy++) for (let dx = 0; dx < 2; dx++) parkSet.add((py0 + dy) * W + px0 + dx);
   }
+  const CBD0 = city === 'island' ? { x: Math.round(W * 0.22), y: Math.floor(H / 2) } : { x: Math.round(W * 0.5), y: Math.round(H * 0.4) };
+  const UPT0 = city === 'island' ? { x: Math.round(W * 0.71), y: Math.floor(H / 2) - 1 } : { x: Math.round(W * 0.79), y: Math.round(H * 0.2) };
+  // ---- terrain forms: the rectangle dies here ----
+  // Each seed rolls a landform on top of the base city — a bay biting the shore, a
+  // wider sound, an inland lake — plus wetland fringes. Same blocks, different city.
+  const extraWater = new Set<number>(), marshSet = new Set<number>();
+  const nearCore = (x: number, y: number) => Math.max(Math.abs(x - CBD0.x), Math.abs(y - CBD0.y)) <= 2 || Math.max(Math.abs(x - UPT0.x), Math.abs(y - UPT0.y)) <= 2;
+  const carve = (x: number, y: number, asMarsh: boolean) => {
+    if (x < 1 || x >= W - 1 || y < 1 || y >= H - 1) return;
+    const i = y * W + x;
+    if (nearCore(x, y) || parkSet.has(i)) return;
+    extraWater.add(i);
+    if (asMarsh) marshSet.add(i); else marshSet.delete(i);
+  };
+  const formRoll = r();
+  const form = formRoll < 0.28 ? 'classic' : formRoll < 0.56 ? 'bay' : formRoll < 0.78 ? 'sound' : 'lake';
+  if (city === 'island') {
+    if (form === 'bay') {
+      // an elliptical bay bites one shore, marsh at its edges
+      const north = r() < 0.5;
+      const bx = clamp(Math.round(4 + r() * (W - 9)), 3, W - 4);
+      const rx = 2.5 + r() * 1.4, ry = 2.0 + r() * 1.1;
+      const shoreY = north ? 1 : H - 2;
+      for (let dy = 0; dy <= Math.ceil(ry); dy++) for (let dx = -Math.ceil(rx); dx <= Math.ceil(rx); dx++) {
+        const yy = north ? shoreY + dy : shoreY - dy;
+        const d2 = (dx / rx) * (dx / rx) + (dy / ry) * (dy / ry);
+        if (d2 < 1) carve(bx + dx, yy, false);
+        else if (d2 < 1.55 && r() < 0.5) carve(bx + dx, yy, true);
+      }
+    } else if (form === 'sound') {
+      // the north river widens into a sound — the island narrows, the shore goes ragged
+      for (let x = 0; x < W; x++) {
+        carve(x, 1, false);
+        if (r() < 0.45) carve(x, 2, r() < 0.5);
+      }
+    } else if (form === 'lake') {
+      // an inland lake with a wet fringe, out east where the land is cheap
+      const lx = clamp(Math.round(W * 0.5 + r() * (W * 0.4)), 5, W - 4);
+      const ly = clamp(Math.round(2 + r() * (H - 5)), 3, H - 4);
+      const lr = 1.4 + r() * 0.8;
+      for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+        const d2 = (dx * dx + dy * dy * 1.6) / (lr * lr);
+        if (d2 < 1) carve(lx + dx, ly + dy, false);
+        else if (d2 < 2.1 && r() < 0.45) carve(lx + dx, ly + dy, true);
+      }
+    }
+    // every form gets a little wetland near the freight shore — the land nobody drained
+    for (let k = 0; k < 3; k++) {
+      const mx = clamp(Math.round(2 + r() * (W - 5)), 2, W - 3);
+      if (Math.abs(mx - CBD0.x) < 4) continue;
+      carve(mx, H - 3, true);
+      if (r() < 0.5) carve(mx + 1, H - 3, true);
+      if (r() < 0.3) carve(mx, H - 4, true);
+    }
+  } else {
+    // meridian keeps its river but the banks can go wet
+    for (let k = 0; k < 4; k++) {
+      const my = clamp(Math.round(1 + r() * (H - 3)), 1, H - 2);
+      const mx = riverCol[my] + (r() < 0.5 ? -1 : 1);
+      if (r() < 0.6 && !nearCore(mx, my)) carve(mx, my, true);
+    }
+  }
   const isWaterXY = city === 'island'
-    ? (x: number, y: number) => y === 0 || y === H - 1 || (y === 1 && biteT.has(x)) || (y === H - 2 && biteB.has(x)) || parkSet.has(y * W + x)
-    : (x: number, y: number) => x === riverCol[y];
+    ? (x: number, y: number) => y === 0 || y === H - 1 || (y === 1 && biteT.has(x)) || (y === H - 2 && biteB.has(x)) || parkSet.has(y * W + x) || extraWater.has(y * W + x)
+    : (x: number, y: number) => x === riverCol[y] || extraWater.has(y * W + x);
   // the canal: a narrow waterway wandering down the island's middle. Water for the
   // economy (unbuildable, waterfront premium), but the roads bridge it freely —
   // this city is named after the right place.
@@ -786,7 +849,7 @@ export function generateCity(seed: number, city: CityKind = 'meridian'): { tiles
     const dPort = dist(x, y, PORT.x, PORT.y);
     const indSuit = clamp(16 + 58 * railBand + 30 * gauss(dPort, 4.5) - D * 0.25 + (noise[i] - 0.5) * 20, 3, 100);
     const crime = clamp(68 - 0.58 * D + (noise2[i] - 0.5) * 24, 4, 85);
-    tiles.push({ i, x, y, water, park: parkSet.has(i) || undefined, canal: isCanal(x, y) || undefined, D, baseD: D, income, emp, pop, indSuit, crime, popBase: pop, empBase: emp, supply: { office: 0, retail: 0, industrial: 0, mixed: 0, multifamily: 0 }, acc: { art: 0, hwy: 0, rail: 0, quiet: 0 }, zone: { use: 'MU', tier: 1 } });
+    tiles.push({ i, x, y, water, park: parkSet.has(i) || undefined, canal: isCanal(x, y) || undefined, marsh: marshSet.has(i) || undefined, D, baseD: D, income, emp, pop, indSuit, crime, popBase: pop, empBase: emp, supply: { office: 0, retail: 0, industrial: 0, mixed: 0, multifamily: 0 }, acc: { art: 0, hwy: 0, rail: 0, quiet: 0 }, zone: { use: 'MU', tier: 1 } });
   }
   computeAccess(tiles, roads);
   // Streets shape the terrain: frontage lifts a block, a highway next door drags on it
@@ -1445,7 +1508,7 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     staff: { analyst: false, pm: false, leasing: false, cm: false },
     lenderRel: { fnb: 30, hbv: 20, col: 12, ibx: 20, mst: 10 },   // the hometown bank starts warmest
     auctions: [], btsRfps: [], rivalry: {},
-    version: 30,
+    version: 31,
   };
   generateStock(state);
   // Firms open with real books: they already own the buildings generation assigned
@@ -6030,7 +6093,7 @@ export function serialize(state: GameState): string { return JSON.stringify(stat
 export function deserialize(json: string): GameState | null {
   try {
     const s = JSON.parse(json);
-    if (s && s.version === 30 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
+    if (s && s.version === 31 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
     return null;
   } catch { return null; }
 }

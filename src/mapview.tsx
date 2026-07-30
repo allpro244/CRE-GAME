@@ -918,7 +918,7 @@ const WaterLife = memo(function WaterLife({ tiles, seed }: { tiles: TileGeom[]; 
   const els: React.ReactNode[] = [];
   let boats = 0;
   for (const t of tiles) {
-    if (!t.water || t.canal || boats >= 14) continue;   // nothing bigger than a duck fits the canal
+    if (!t.water || t.canal || t.marsh || boats >= 14) continue;   // nothing bigger than a duck fits the canal
     let a = (seed ^ Math.imul(t.i + 1, 2654435761)) | 0;
     const r = () => { a = (a + 0x6D2B79F5) | 0; let v = Math.imul(a ^ (a >>> 15), 1 | a); v = (v + Math.imul(v ^ (v >>> 7), 61 | v)) ^ v; return ((v ^ (v >>> 14)) >>> 0) / 4294967296; };
     if (r() > 0.30) continue;
@@ -1193,7 +1193,7 @@ const RoadsFlat = memo(function RoadsFlat({ runs }: { runs: RoadRun[] }) {
 // ---------- memoized layers ----------
 // The map draws thousands of SVG nodes. Splitting it into layers memoized on stable
 // identities means hover, pan and zoom re-render a tooltip div — not the city.
-type TileGeom = { i: number; x: number; y: number; water: boolean; park?: boolean; dust?: boolean; canal?: boolean };
+type TileGeom = { i: number; x: number; y: number; water: boolean; park?: boolean; dust?: boolean; canal?: boolean; marsh?: boolean };
 
 // Ground: grass, not pavement. Three seeded lawn tones so the field doesn't read
 // flat, dusty hardpan under the industrial zoning, and parks get real canopies.
@@ -1220,8 +1220,19 @@ const TileBaseIso = memo(function TileBaseIso({ tiles, season = 'summer' }: { ti
   return <g>{tiles.map(t => {
     const gi = ((t.x * 7 + t.y * 13) | 0) % 3;
     // canal tiles paint as banks — the water itself is a narrow spine drawn on top
-    const fill = t.park ? PARK_BY[season] : t.canal ? GRASS[gi] : t.water ? '#5b9ec9' : t.dust ? DUST[gi] : GRASS[gi];
+    const fill = t.park ? PARK_BY[season] : t.canal ? GRASS[gi] : t.marsh ? (season === 'winter' ? '#8a9188' : '#7d8d6b') : t.water ? '#5b9ec9' : t.dust ? DUST[gi] : GRASS[gi];
     const trees: React.ReactNode[] = [];
+    if (t.marsh) {
+      // wetland: standing water glints and reed clumps — the land nobody drained
+      let a3 = (t.i * 0x85ebca6b) | 0;
+      const r3 = () => { a3 = (a3 + 0x6D2B79F5) | 0; let v = Math.imul(a3 ^ (a3 >>> 15), 1 | a3); v = (v + Math.imul(v ^ (v >>> 7), 61 | v)) ^ v; return ((v ^ (v >>> 14)) >>> 0) / 4294967296; };
+      for (let k = 0; k < 3; k++) {
+        const [mx, my] = isoPt(t.x + (r3() - 0.5) * 0.6, t.y + (r3() - 0.5) * 0.6);
+        trees.push(<ellipse key={'mw' + t.i + '_' + k} cx={mx} cy={my} rx={2.2 + r3() * 2} ry={1 + r3()} fill="#5b8aa4" opacity={0.5} />);
+        trees.push(<path key={'mr' + t.i + '_' + k} d={`M${mx - 2} ${my} l0.3 -2.2 M${mx - 1.2} ${my + 0.4} l0.2 -1.8 M${mx - 2.7} ${my + 0.3} l0.1 -1.7`}
+          stroke="#5e6a45" strokeWidth={0.45} fill="none" opacity={0.9} />);
+      }
+    }
     if (t.park) {
       let a = (t.i * 2654435761) | 0;
       const r = () => { a = (a + 0x6D2B79F5) | 0; let v = Math.imul(a ^ (a >>> 15), 1 | a); v = (v + Math.imul(v ^ (v >>> 7), 61 | v)) ^ v; return ((v ^ (v >>> 14)) >>> 0) / 4294967296; };
@@ -1250,7 +1261,7 @@ const TileBaseIso = memo(function TileBaseIso({ tiles, season = 'summer' }: { ti
       mottle.push(<ellipse key={'sn' + t.i} cx={mx} cy={my} rx={6 + r2() * 5} ry={3 + r2() * 2.4} fill="#e6ebee" opacity={0.28} />);
     }
     return <g key={'st' + t.i}>
-      <polygon points={diamond(t.x, t.y)} fill={fill} stroke={t.water && !t.canal ? '#5b9ec9' : '#c3c5b4'} strokeWidth={t.water && !t.canal ? 0.5 : 1.3} />
+      <polygon points={diamond(t.x, t.y)} fill={fill} stroke={t.marsh ? '#6d7a5e' : t.water && !t.canal ? '#5b9ec9' : '#c3c5b4'} strokeWidth={t.marsh ? 0.5 : t.water && !t.canal ? 0.5 : 1.3} />
       {mottle}
       {trees}
     </g>;
@@ -1486,7 +1497,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
     + ':' + state.rezonings.length + ':' + state.rezonings.reduce((s2, r) => s2 + r.tileI, 0);
   // Per-seed geometry + a live ref so the memoized layers never re-render on hover;
   // the dust flag encodes M-zoning, so a rezoning has to re-cut the ground too.
-  const tilesGeom = useMemo(() => state.tiles.map(t => ({ i: t.i, x: t.x, y: t.y, water: t.water, park: t.park, canal: t.canal, dust: !t.water && t.zone.use === 'M', rz: !t.water && t.zone.use === 'R' })), [state.seed, zoneStamp]); // eslint-disable-line
+  const tilesGeom = useMemo(() => state.tiles.map(t => ({ i: t.i, x: t.x, y: t.y, water: t.water, park: t.park, canal: t.canal, dust: !t.water && t.zone.use === 'M', rz: !t.water && t.zone.use === 'R', marsh: t.marsh })), [state.seed, zoneStamp]); // eslint-disable-line
   const vpIso = useViewport(0, 0, IW_TOT, IH_TOT);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const vpFlat = useViewport(-20, -18, W + 24, H + 22);
@@ -2026,7 +2037,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             <rect key={'pk' + t.i} x={t.x * TS} y={t.y * TS} width={TS} height={TS} fill="#79a865" />
           ))}
           {state.tiles.filter(t => t.water && !t.park && !t.canal).length > 20 && state.tiles.filter(t => t.water && !t.park && !t.canal).map(t => (
-            <rect key={'wa' + t.i} x={t.x * TS} y={t.y * TS} width={TS} height={TS} fill="#5b9ec9" />
+            <rect key={'wa' + t.i} x={t.x * TS} y={t.y * TS} width={TS} height={TS} fill={t.marsh ? '#7d8d6b' : '#5b9ec9'} />
           ))}
           {(() => {
             const canal = state.tiles.filter(t => t.canal).sort((a, b) => a.y - b.y);

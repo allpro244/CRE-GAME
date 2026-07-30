@@ -96,7 +96,7 @@ export interface Rezoning { id: number; tileI: number; toUse: ZoneUse; toTier: 1
 export function isAggregate(type: PType): boolean { return type === 'multifamily'; }
 
 export const CONFIG = {
-  GRID_W: 20, GRID_H: 14,
+  GRID_W: 22, GRID_H: 15,
   START_CASH: 600_000,
   baseRent: { office: 30.5, retail: 20.0, industrial: 8.2, mixed: 31, multifamily: 21.5 } as Record<PType, number>,
   hardCost: { office: 215, retail: 175, industrial: 92, mixed: 245, multifamily: 195 } as Record<PType, number>, // legacy: renovation basis
@@ -924,7 +924,9 @@ export function generateCity(seed: number, city: CityKind = 'meridian'): { tiles
     const water = isWaterXY(x, y) || isCanal(x, y);
     const dC = dist(x, y, CBD.x, CBD.y), dU = dist(x, y, UPT.x, UPT.y);
     const riverAdj = !water && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => isWaterXY(x + dx, y + dy) || isCanal(x + dx, y + dy));
-    const railBand = y >= H - 3 ? 1 : y === H - 4 ? 0.4 : 0;
+    // the working edge of the city: a four-row freight belt — rail, truck courts,
+    // and the dirt zoning actually lets industry use. The map's extra land lives here.
+    const railBand = y >= H - 4 ? 1 : y === H - 5 ? 0.45 : 0;
     let D = 18 + 58 * gauss(dC, 5.9) + 34 * gauss(dU, 3.7) + (riverAdj ? 10 : 0) - 16 * railBand + (noise[i] - 0.5) * 26;
     D = clamp(D, 8, 96);
     const income = clamp(0.55 + (D / 100) * 0.95 + (noise2[i] - 0.5) * 0.2, 0.5, 1.7);
@@ -1636,7 +1638,7 @@ export function newGame(seed?: number, opts?: { sandbox?: boolean; city?: CityKi
     staff: { analyst: false, pm: false, leasing: false, cm: false },
     lenderRel: { fnb: 30, hbv: 20, col: 12, ibx: 20, mst: 10 },   // the hometown bank starts warmest
     auctions: [], btsRfps: [], rivalry: {},
-    version: 32,
+    version: 33,
   };
   generateStock(state);
   // Firms open with real books: they already own the buildings generation assigned
@@ -4660,7 +4662,7 @@ function pushExpire(s: GameState, l: LOI) {
 
 export function cityPopulation(s: GameState): number {
   // ~300K at genesis: a real mid-size city with a century of growing (or shrinking) to do
-  return Math.round(s.tiles.reduce((t2, t) => t2 + (t.water ? 0 : t.pop), 0) * 26);
+  return Math.round(s.tiles.reduce((t2, t) => t2 + (t.water ? 0 : t.pop), 0) * 22);
 }
 function recordHistory(s: GameState) {
   s.nwHistory.push({ m: s.month, nw: netWorth(s), cash: s.cash, cf: s.lastMonthCF });
@@ -6553,7 +6555,7 @@ export function serialize(state: GameState): string { return JSON.stringify(stat
 export function deserialize(json: string): GameState | null {
   try {
     const s = JSON.parse(json);
-    if (s && s.version === 32 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
+    if (s && s.version === 33 && Array.isArray(s.tiles) && Array.isArray(s.stock)) return s as GameState;
     return null;
   } catch { return null; }
 }

@@ -5559,6 +5559,41 @@ export function acceptBulkDeal(state: GameState, hardMoney: boolean): { s: GameS
   return { s };
 }
 
+// New money keeps arriving: when the rival field thins out — collapses, crunches,
+// a bad decade — fresh capital eventually smells the vacuum and opens a local
+// office. A century of play should never end against three zombies and a monopoly.
+const ENTRANT_NAMES: [string, string][] = [
+  ['Meridian Yards Group', 'MYG'], ['Cobalt Ridge Partners', 'CRP'], ['Ashline Development', 'ASH'],
+  ['Quarry & Vane', 'QVN'], ['Redpoint Urban', 'RPU'], ['Halcyon Property Trust', 'HAL'],
+  ['Northgate Equities', 'NGE'], ['Summit & Bow', 'SMB'], ['Ferrous Capital', 'FER'],
+  ['Old Canal Holdings', 'OCH'], ['Lantern Hill Group', 'LHG'], ['Crosstown Ventures', 'CTV'],
+  ['Bellwether Properties', 'BWP'], ['Stonebridge Collective', 'SBC'], ['Axiom Real Estate', 'AXM'],
+  ['Palisade Partners', 'PAL'], ['Ironquill Development', 'IQD'], ['Harbor Gate Capital', 'HGC'],
+  ['Terracotta Group', 'TCG'], ['Vantage Point Holdings', 'VPH'], ['Kilnworth & Co', 'KLW'],
+  ['Bright Meridian Trust', 'BMT'], ['Southdock Partners', 'SDP'], ['Argent Row Capital', 'ARC'],
+];
+function tickFirmEntrants(s: GameState) {
+  if (s.month % 12 !== 0 || s.month === 0) return;
+  const alive = s.firms.filter(f => f.alive).length;
+  if (alive >= 10) return;
+  // the thinner the field, the stronger the pull — and booms make capital brave
+  const p = 0.12 + 0.07 * (10 - alive) + (s.econ.phase === 'expansion' || s.econ.phase === 'peak' ? 0.1 : 0);
+  if (rng(s) > p) return;
+  const used = new Set(s.firms.map(f => f.short));
+  const cand = ENTRANT_NAMES.filter(([, sh]) => !used.has(sh));
+  if (!cand.length) return;
+  const [name, short] = rpick(s, cand);
+  // entrants chase the era: this generation's darling sector is the likeliest thesis
+  const { best } = eraExtremes(s.econ.era);
+  const styles: Firm['style'][] = ['core', 'aggressive', 'value-add',
+    best === 'industrial' ? 'industrial' : best === 'multifamily' ? 'mf' : best === 'office' ? 'core' : 'aggressive'];
+  const style = rpick(s, styles);
+  // sized for the era it enters: a year-80 entrant carries year-80 money
+  const cash = Math.round(rrange(s, 3_000_000, 14_000_000) * Math.max(1, s.econ.costIdx * 0.8));
+  s.firms.push({ name, short, style, cash, debt: 0, netWorth: cash, alive: true });
+  pushNews(s, 'event', `NEW MONEY IN TOWN: ${name} opened a local office with ${fmtMoney(cash)} to deploy — a ${style === 'mf' ? 'multifamily' : style} shop chasing this era's story. The buyer pool just got deeper.`);
+}
+
 // The city eats itself: when the dirt under a tired building is worth clearly more
 // than the building standing on it, a developer scrapes it and builds to today's
 // density. This is how real cities replace their stock over a century — block by
@@ -5613,6 +5648,7 @@ function tickRedevelopment(s: GameState) {
 
 function tickFirms(s: GameState) {
   if (s.month % 3 !== 0) return;
+  tickFirmEntrants(s);
   tickFirmLand(s);
   tickRedevelopment(s);
   for (const f of s.firms) {

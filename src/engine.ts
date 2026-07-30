@@ -5095,7 +5095,10 @@ function firmDevelops(s: GameState, f: Firm) {
   const cands = s.tiles.filter(t => !t.water && zoneAllows(t.zone, want) && freeParcelCount(s, t.i) >= 3 && tileDemandFactor(s, t, want) > 1.02
     && oversupplyPenalty(t, want) < 0.06);
   if (!cands.length) return;
-  cands.sort((a, b) => tileDemandFactor(s, b, want) - tileDemandFactor(s, a, want));
+  // growth radiates: firms favor central dirt while it lasts, and only chase the
+  // frontier once demand out there actually clears the bar
+  const siteScore = (t2: Tile) => tileDemandFactor(s, t2, want) * (0.55 + 0.009 * t2.D);
+  cands.sort((a, b) => siteScore(b) - siteScore(a));
   const t = rpick(s, cands.slice(0, 8));
   const need = Math.max(constrForQuality(want, 100).minCells ?? 1, 3 + Math.floor(rng(s) * 5));
   const spot = findFreeRect(s, t.i, need, () => rng(s));

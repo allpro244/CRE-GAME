@@ -1240,7 +1240,9 @@ type TileGeom = { i: number; x: number; y: number; water: boolean; park?: boolea
 export type Season = 'winter' | 'spring' | 'summer' | 'fall';
 export const seasonOf = (month: number): Season => {
   const m = ((month % 12) + 12) % 12;   // month 0 = January
-  return m <= 1 || m === 11 ? 'winter' : m <= 4 ? 'spring' : m <= 7 ? 'summer' : 'fall';
+  // no winter by owner's order: the cold months read as late fall — bare trees and
+  // straw lawns, never snow. The map stays handsome year-round.
+  return m <= 1 || m === 11 ? 'fall' : m <= 4 ? 'spring' : m <= 7 ? 'summer' : 'fall';
 };
 const GRASS_BY: Record<Season, string[]> = {
   summer: ['#8fb168', '#96b76f', '#87aa60'],
@@ -1798,7 +1800,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
               <polyline className="shim" points={pts} fill="none" stroke="#3c608a" strokeWidth={1.3} strokeDasharray="2 11" strokeLinecap="round" opacity={0.6} /></g>;
           })()}
           {ambient >= 1 && zb >= 2 && <g className="lod-fade"><Sidewalks runs={runs} /></g>}
-          <RoadsIso runs={runs} wet={weather === 'rain'} plowed={ambient >= 2 && season === 'winter'} />
+          <RoadsIso runs={runs} wet={weather === 'rain'} />
           {ambient >= 1 && <Bridges runs={runs} tiles={tilesGeom} />}
           {ambient >= 2 && zb >= 2 && <g className="lod-fade"><StreetNames runs={runs} seed={state.seed} /></g>}
           {ambient >= 1 && zb >= 1 && <WaterLife tiles={tilesGeom} seed={state.seed} />}
@@ -1820,7 +1822,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           {ambient >= 2 && zb >= 2 && lens === 'city' && <g className="lod-fade"><VacantLots tiles={tilesGeom} grids={grids} seed={state.seed} season={season} /></g>}
           {ambient >= 2 && zb >= 2 && <g className="lod-fade"><StreetFurniture runs={runs} seed={state.seed} level={ambient} loD={loD} /></g>}
           {ambient >= 2 && zb >= 2 && showBldgs && <g className="lod-fade"><ParcelLots blds={isoBlds} seed={state.seed} level={ambient} /></g>}
-          {showBldgs && <IsoCity blds={isoBlds} detail={zb >= 2} snow={ambient >= 2 && season === 'winter'} winterSun={season === 'winter'} />}
+          {showBldgs && <IsoCity blds={isoBlds} detail={zb >= 2} />}
           {/* weather: rain wets the ground and streams past; fog sits on the far view */}
           {weather === 'rain' && (
             <g style={{ pointerEvents: 'none' }}>

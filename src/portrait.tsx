@@ -37,7 +37,7 @@ export interface PortraitSubject {
 type PSeason = 'winter' | 'spring' | 'summer' | 'fall';
 const seasonOfMonth = (m: number): PSeason => {
   const k = ((m % 12) + 12) % 12;
-  return k <= 1 || k === 11 ? 'winter' : k <= 4 ? 'spring' : k <= 7 ? 'summer' : 'fall';
+  return k <= 1 || k === 11 ? 'fall' : k <= 4 ? 'spring' : k <= 7 ? 'summer' : 'fall';   // no winter: cold months draw as late fall
 };
 const LEAF: Record<PSeason, [string, string]> = {
   summer: ['#3d5a41', '#39494a'], spring: ['#4a6a4c', '#456052'],

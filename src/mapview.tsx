@@ -724,6 +724,55 @@ const StreetLife = memo(function StreetLife({ runs, seed, detail, season = 'summ
 });
 const pick2 = <T,>(r: () => number, arr: readonly T[]): T => arr[Math.floor(r() * arr.length) % arr.length];
 
+// ---------- bridges ----------
+// Where a road crosses water it stops being paint and becomes structure: a deck
+// wider than the roadway, railings, and a shadow on the river. Crossings are the
+// whole reason the far bank prices the way it does — they should look the part.
+const Bridges = memo(function Bridges({ runs, tiles }: { runs: RoadRun[]; tiles: TileGeom[] }) {
+  const W = E.CONFIG.GRID_W, H = E.CONFIG.GRID_H;
+  const waterAt = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= W || y >= H) return false;
+    const t = tiles[y * W + x];
+    return !!t && !!t.water;
+  };
+  const els: React.ReactNode[] = [];
+  let n = 0;
+  for (const run of runs) {
+    if (run.cls === 5) continue;   // the rail line has its own trestle look via ballast
+    const [p0, p1] = run.pts;
+    const horiz = Math.abs(p1[0] - p0[0]) > Math.abs(p1[1] - p0[1]);
+    const len = Math.round(Math.abs(p1[0] - p0[0]) + Math.abs(p1[1] - p0[1]));
+    const st = ROAD_STYLE[run.cls];
+    for (let i = 0; i < len; i++) {
+      const u0 = i / len, u1 = (i + 1) / len;
+      const mx = p0[0] + (p1[0] - p0[0]) * (u0 + u1) / 2, my = p0[1] + (p1[1] - p0[1]) * (u0 + u1) / 2;
+      // a gutter segment is a crossing when the blocks on both sides are water
+      const wet = horiz
+        ? waterAt(Math.round(mx), Math.floor(my)) && waterAt(Math.round(mx), Math.ceil(my))
+        : waterAt(Math.floor(mx), Math.round(my)) && waterAt(Math.ceil(mx), Math.round(my));
+      if (!wet) continue;
+      const a0 = isoPt(p0[0] + (p1[0] - p0[0]) * u0, p0[1] + (p1[1] - p0[1]) * u0);
+      const a1 = isoPt(p0[0] + (p1[0] - p0[0]) * u1, p0[1] + (p1[1] - p0[1]) * u1);
+      const railOff = 0.055;
+      const r0 = isoPt(p0[0] + (p1[0] - p0[0]) * u0 + (horiz ? 0 : railOff), p0[1] + (p1[1] - p0[1]) * u0 + (horiz ? railOff : 0));
+      const r1 = isoPt(p0[0] + (p1[0] - p0[0]) * u1 + (horiz ? 0 : railOff), p0[1] + (p1[1] - p0[1]) * u1 + (horiz ? railOff : 0));
+      const q0 = isoPt(p0[0] + (p1[0] - p0[0]) * u0 - (horiz ? 0 : railOff), p0[1] + (p1[1] - p0[1]) * u0 - (horiz ? railOff : 0));
+      const q1 = isoPt(p0[0] + (p1[0] - p0[0]) * u1 - (horiz ? 0 : railOff), p0[1] + (p1[1] - p0[1]) * u1 - (horiz ? railOff : 0));
+      els.push(<g key={'br' + n++}>
+        {/* shadow on the water, then deck, then railings and piers */}
+        <line x1={a0[0] + 2} y1={a0[1] + 3.5} x2={a1[0] + 2} y2={a1[1] + 3.5} stroke="#2d4f6e" strokeWidth={st.w + 1.5} opacity={0.35} strokeLinecap="butt" />
+        <line x1={a0[0]} y1={a0[1]} x2={a1[0]} y2={a1[1]} stroke="#8a8378" strokeWidth={st.w + 2.4} strokeLinecap="butt" />
+        <line x1={a0[0]} y1={a0[1]} x2={a1[0]} y2={a1[1]} stroke={st.stroke} strokeWidth={st.w} strokeLinecap="butt" />
+        <line x1={r0[0]} y1={r0[1] - 1} x2={r1[0]} y2={r1[1] - 1} stroke="#4a4438" strokeWidth={0.6} />
+        <line x1={q0[0]} y1={q0[1] - 1} x2={q1[0]} y2={q1[1] - 1} stroke="#4a4438" strokeWidth={0.6} />
+        <line x1={(a0[0] + a1[0]) / 2 - 1.5} y1={(a0[1] + a1[1]) / 2 + 1} x2={(a0[0] + a1[0]) / 2 - 1.5} y2={(a0[1] + a1[1]) / 2 + 4} stroke="#5c564c" strokeWidth={1.2} />
+        <line x1={(a0[0] + a1[0]) / 2 + 1.5} y1={(a0[1] + a1[1]) / 2 + 1.6} x2={(a0[0] + a1[0]) / 2 + 1.5} y2={(a0[1] + a1[1]) / 2 + 4.6} stroke="#5c564c" strokeWidth={1.2} />
+      </g>);
+    }
+  }
+  return <g style={{ pointerEvents: 'none' }}>{els}</g>;
+});
+
 // ---------- weather ----------
 // A month is rainy or foggy or clear, seeded off the campaign — you can't schedule
 // around it, and it never touches the numbers. Roughly one month in five gets rain,
@@ -1535,6 +1584,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           })()}
           {ambient >= 1 && zb >= 2 && <Sidewalks runs={runs} />}
           <RoadsIso runs={runs} wet={weather === 'rain'} />
+          {ambient >= 1 && <Bridges runs={runs} tiles={tilesGeom} />}
           {ambient >= 1 && zb >= 1 && <WaterLife tiles={tilesGeom} seed={state.seed} />}
           {ambient >= 1 && zb >= 1 && <StreetLife runs={runs} seed={state.seed} detail={zb >= 2} season={season} loD={loD} hiD={hiD} busy={busy} retailish={retailish} />}
           {ambient >= 2 && zb >= 2 && <PoliceLayer tiles={copTiles} seed={state.seed} />}

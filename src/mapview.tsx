@@ -204,7 +204,7 @@ function defaultConstr(type: E.PType, sf: number): string {
   return 'podium';
 }
 
-interface IsoBld { tight?: boolean; roof?: string; cx: number; cy: number; w: number; h: number; ht: number; col: string; listed: boolean; key: string; prog?: number; mine?: boolean; type?: E.PType; construction?: string; quality?: number; age?: number; sf?: number; occ?: number; seed?: number; stories?: number }
+interface IsoBld { tight?: boolean; roof?: string; cx: number; cy: number; w: number; h: number; ht: number; col: string; listed: boolean; key: string; prog?: number; mine?: boolean; type?: E.PType; construction?: string; quality?: number; age?: number; sf?: number; occ?: number; seed?: number; stories?: number; fw?: number; fh?: number }
 
 // Greedy maximal-rectangle decomposition of a cell set: one prism per rectangle
 // instead of one per quarter-acre cell. An L-shaped assembly becomes two prisms.
@@ -284,7 +284,7 @@ function useIsoBuildings(state: GameState): IsoBld[] {
       for (const [ri, r] of cellRects(cells).entries()) {
         const [cx, cy] = parcelCenter(t.x, t.y, r.px, r.py, r.pw, r.ph);
         const [w, h] = parcelSpan(r.pw, r.ph);
-        out.push({ cx, cy, w: w * m.shrink, h: h * m.shrink, ht, col: wcol, listed, key: key + '_r' + ri, prog, mine, stories: m.stories, tight: fab === 'wall', roof: prog !== undefined ? undefined : ROOFS[o.type][Math.abs((state.seed ^ (o.tileI * 31)) + ri) % 3],
+        out.push({ cx, cy, w: w * m.shrink, h: h * m.shrink, fw: w, fh: h, ht, col: wcol, listed, key: key + '_r' + ri, prog, mine, stories: m.stories, tight: fab === 'wall', roof: prog !== undefined ? undefined : ROOFS[o.type][Math.abs((state.seed ^ (o.tileI * 31)) + ri) % 3],
           type: o.type, construction: o.construction, quality: o.quality, age: o.age, sf: o.sf, occ: (o as any).occ,
           seed: (state.seed ^ ((o.tileI + 1) * 0x9e3779b9) ^ ri) | 0 });
       }
@@ -748,6 +748,43 @@ const WaterLife = memo(function WaterLife({ tiles, seed }: { tiles: TileGeom[]; 
       )}
     </g>);
     boats++;
+  }
+  return <g style={{ pointerEvents: 'none' }}>{els}</g>;
+});
+
+// Surface parking on the unbuilt slack of occupied parcels: an asphalt pad with
+// painted stalls beside the building, cars in proportion to occupancy. A vacant
+// building's empty lot says more about it than any badge. Yard-fabric commercial
+// only — street-wall blocks have no forecourt and industrial keeps truck courts.
+const ParcelLots = memo(function ParcelLots({ blds, seed }: { blds: IsoBld[]; seed: number }) {
+  const els: React.ReactNode[] = [];
+  const CAR_COLS = ['#5a6570', '#6e5f52', '#4a5a6a', '#75706a', '#5f4a4a'];
+  let lots = 0;
+  for (const b of blds) {
+    if (!b.type || b.type === 'industrial' || b.tight || b.prog !== undefined || b.fw === undefined || b.fh === undefined) continue;
+    const slackW = b.fw - b.w;
+    if (slackW < 0.14 || lots >= 150) continue;
+    let a = ((b.seed ?? 1) ^ Math.imul(seed, 0x27d4eb2f)) | 0;
+    const r = () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    // the pad sits in the slack strip on the parcel's +x side (screen lower-right)
+    const padW = slackW * 0.42, padH = b.fh * 0.62;
+    const pcx = b.cx + b.w / 2 + padW / 2 + slackW * 0.04, pcy = b.cy;
+    els.push(<polygon key={'lp' + lots} points={rectPoly(pcx, pcy, padW, padH)} fill="#585d64" opacity={0.92} />);
+    // stall striping: short ticks off a center aisle
+    const stalls = Math.max(2, Math.min(5, Math.round(padH / 0.16)));
+    const occCars = Math.round((b.occ ?? 0) * stalls * (0.55 + r() * 0.45));
+    for (let i = 0; i < stalls; i++) {
+      const v = -padH / 2 + (i + 0.5) * (padH / stalls);
+      const s0 = isoPt(pcx - padW / 2 + padW * 0.12, pcy + v);
+      const s1 = isoPt(pcx + padW / 2 - padW * 0.12, pcy + v);
+      els.push(<line key={'ls' + lots + '_' + i} x1={s0[0]} y1={s0[1]} x2={s1[0]} y2={s1[1]} stroke="#9aa0a8" strokeWidth={0.4} opacity={0.7} />);
+      if (i < occCars) {
+        const [cx2, cy2] = isoPt(pcx + (r() - 0.5) * padW * 0.3, pcy + v + padH / stalls * 0.22);
+        els.push(<polygon key={'lc' + lots + '_' + i} points={`${(cx2 - 1.4).toFixed(1)},${(cy2 - 0.2).toFixed(1)} ${(cx2 + 0.3).toFixed(1)},${(cy2 + 0.65).toFixed(1)} ${(cx2 + 1.4).toFixed(1)},${(cy2 + 0.1).toFixed(1)} ${(cx2 - 0.3).toFixed(1)},${(cy2 - 0.75).toFixed(1)}`}
+          fill={CAR_COLS[Math.floor(r() * CAR_COLS.length)]} opacity={0.92} />);
+      }
+    }
+    lots++;
   }
   return <g style={{ pointerEvents: 'none' }}>{els}</g>;
 });
@@ -1336,6 +1373,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                 opacity={built ? 1 : 0.6} style={{ pointerEvents: 'none' }} />;
             });
           })()}
+          {ambient >= 2 && zb >= 2 && showBldgs && <ParcelLots blds={isoBlds} seed={state.seed} />}
           {showBldgs && <IsoCity blds={isoBlds} detail={zb >= 2} snow={ambient >= 2 && season === 'winter'} winterSun={season === 'winter'} />}
           {/* the hour: a tint over the built city; lights re-emerge above it after dark */}
           {phase !== 'day' && (

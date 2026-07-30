@@ -426,22 +426,43 @@ function useViewport(bx: number, by: number, bw: number, bh: number) {
     y: Math.max(0, Math.min(bh - bh / z, y)),
   });
 
+  // eased camera: one rAF loop drives button zooms and fly-tos; reduced-motion
+  // (and every wheel tick, which is already incremental) goes instant
+  const rafId = useRef<number | null>(null);
+  const stopAnim = useCallback(() => { if (rafId.current !== null) { cancelAnimationFrame(rafId.current); rafId.current = null; } }, []);
+  const animateTo = useCallback((target: { z: number; x: number; y: number }, ms = 260) => {
+    stopAnim();
+    if (prefersReducedMotion()) { setVp(target); return; }
+    const start = { ...vpRef.current };
+    const t0 = performance.now();
+    const step = (now: number) => {
+      const u = Math.min(1, (now - t0) / ms);
+      const e2 = 1 - Math.pow(1 - u, 3);
+      const z = start.z + (target.z - start.z) * e2;
+      const c = clamp2(start.x + (target.x - start.x) * e2, start.y + (target.y - start.y) * e2, z);
+      setVp({ z, x: c.x, y: c.y });
+      if (u < 1) rafId.current = requestAnimationFrame(step); else rafId.current = null;
+    };
+    rafId.current = requestAnimationFrame(step);
+  }, [bw, bh]); // eslint-disable-line
+
   // single atomic update: zoom and recentre together, pinning the point under the cursor
-  const zoomAt = useCallback((factor: number, cx?: number, cy?: number) => {
-    setVp(p => {
-      const nz = Math.max(1, Math.min(8, p.z * factor));
-      if (nz === p.z) return p;
-      const vwOld = bw / p.z, vhOld = bh / p.z;
-      const vwNew = bw / nz, vhNew = bh / nz;
-      const fx = cx === undefined ? 0.5 : (cx - p.x) / vwOld;
-      const fy = cy === undefined ? 0.5 : (cy - p.y) / vhOld;
-      const c = {
-        x: Math.max(0, Math.min(bw - vwNew, p.x + fx * (vwOld - vwNew))),
-        y: Math.max(0, Math.min(bh - vhNew, p.y + fy * (vhOld - vhNew))),
-      };
-      return { z: nz, x: c.x, y: c.y };
-    });
-  }, [bw, bh]);
+  const zoomAt = useCallback((factor: number, cx?: number, cy?: number, eased = false) => {
+    stopAnim();
+    const p = vpRef.current;
+    const nz = Math.max(1, Math.min(8, p.z * factor));
+    if (nz === p.z) return;
+    const vwOld = bw / p.z, vhOld = bh / p.z;
+    const vwNew = bw / nz, vhNew = bh / nz;
+    const fx = cx === undefined ? 0.5 : (cx - p.x) / vwOld;
+    const fy = cy === undefined ? 0.5 : (cy - p.y) / vhOld;
+    const c = {
+      x: Math.max(0, Math.min(bw - vwNew, p.x + fx * (vwOld - vwNew))),
+      y: Math.max(0, Math.min(bh - vhNew, p.y + fy * (vhOld - vhNew))),
+    };
+    if (eased) animateTo({ z: nz, x: c.x, y: c.y }, 240);
+    else setVp({ z: nz, x: c.x, y: c.y });
+  }, [bw, bh, animateTo, stopAnim]);
 
   useEffect(() => {
     if (!el) return;
@@ -457,8 +478,11 @@ function useViewport(bx: number, by: number, bw: number, bh: number) {
     return () => el.removeEventListener('wheel', onWheel);
   }, [el, bw, bh, zoomAt]);
 
+  const vel = useRef({ vx: 0, vy: 0 });
   const onPointerDown = (e: React.PointerEvent) => {
+    stopAnim();
     moved.current = false;
+    vel.current = { vx: 0, vy: 0 };
     drag.current = { sx: e.clientX, sy: e.clientY, ox: vpRef.current.x, oy: vpRef.current.y };
     (e.target as Element).setPointerCapture?.(e.pointerId);
   };
@@ -467,26 +491,47 @@ function useViewport(bx: number, by: number, bw: number, bh: number) {
     if (!d || !ref.current) return;
     const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
     if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved.current = true;
+    vel.current = { vx: e.movementX ?? 0, vy: e.movementY ?? 0 };
     const r = ref.current.getBoundingClientRect();
     setVp(p => {
       const c = clamp2(d.ox - (dx / r.width) * (bw / p.z), d.oy - (dy / r.height) * (bh / p.z), p.z);
       return { z: p.z, x: c.x, y: c.y };
     });
   };
-  const onPointerUp = () => { drag.current = null; };
-  const reset = () => setVp({ z: 1.25, x: (bw - bw / 1.25) / 2, y: (bh - bh / 1.25) / 2 });
-  // centre the viewport on a point in base coordinates, zooming in if we're wide
+  const onPointerUp = () => {
+    const wasDrag = drag.current !== null && moved.current;
+    drag.current = null;
+    // momentum: the throw carries, decaying — a released pan settles, never stops dead
+    const { vx, vy } = vel.current;
+    if (!wasDrag || Math.abs(vx) + Math.abs(vy) < 5 || prefersReducedMotion() || !ref.current) return;
+    let gx = vx, gy = vy;
+    const glide = () => {
+      if (!ref.current || drag.current) { rafId.current = null; return; }
+      const r = ref.current.getBoundingClientRect();
+      setVp(p => {
+        const c = clamp2(p.x - (gx / r.width) * (bw / p.z), p.y - (gy / r.height) * (bh / p.z), p.z);
+        return { z: p.z, x: c.x, y: c.y };
+      });
+      gx *= 0.9; gy *= 0.9;
+      if (Math.abs(gx) + Math.abs(gy) > 0.6) rafId.current = requestAnimationFrame(glide);
+      else rafId.current = null;
+    };
+    stopAnim();
+    rafId.current = requestAnimationFrame(glide);
+  };
+  const reset = () => animateTo({ z: 1.25, x: (bw - bw / 1.25) / 2, y: (bh - bh / 1.25) / 2 }, 300);
+  // centre the viewport on a point in base coordinates, zooming in if we're wide —
+  // a located news item now flies you there instead of teleporting
   const focusOn = useCallback((p: [number, number]) => {
-    setVp(prev => {
-      const z = Math.max(prev.z, 2.2);
-      const vw = bw / z, vh = bh / z;
-      return {
-        z,
-        x: Math.max(0, Math.min(bw - vw, p[0] - bx - vw / 2)),
-        y: Math.max(0, Math.min(bh - vh, p[1] - by - vh / 2)),
-      };
-    });
-  }, [bw, bh, bx, by]);
+    const prev = vpRef.current;
+    const z = Math.max(prev.z, 2.2);
+    const vw = bw / z, vh = bh / z;
+    animateTo({
+      z,
+      x: Math.max(0, Math.min(bw - vw, p[0] - bx - vw / 2)),
+      y: Math.max(0, Math.min(bh - vh, p[1] - by - vh / 2)),
+    }, 460);
+  }, [bw, bh, bx, by, animateTo]);
 
   return {
     ref: refCb, viewBox: `${bx + vp.x} ${by + vp.y} ${bw / vp.z} ${bh / vp.z}`, z: vp.z, zoomAt, reset, focusOn, moved,
@@ -1301,6 +1346,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   focusTile?: number | null; advance?: (n: number) => void; advanceUntil?: () => void;
 }) {
   const [hover, setHover] = useState<{ text: string; sub: string; x: number; y: number } | null>(null);
+  const [hoverCell, setHoverCell] = useState<{ tileI: number; px: number; py: number } | null>(null);
   const [lens, setLens] = useState<Lens>('city');
   const [view, setView] = useState<'iso' | 'flat'>('iso');
   const [showBldgs, setShowBldgs] = useState(true);
@@ -1441,10 +1487,11 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
 
   const live = useRef({ state, grids, openDeal, openStock, openAsset, setSelTile });
   live.current = { state, grids, openDeal, openStock, openAsset, setSelTile };
-  const hitLeave = useCallback(() => setHover(null), []);
+  const hitLeave = useCallback(() => { setHover(null); setHoverCell(null); }, []);
   const hitEnter = useCallback((tileI: number, px: number, py: number, e: React.PointerEvent) => {
     const { state: s, grids: g } = live.current;
     const t = s.tiles[tileI];
+    setHoverCell({ tileI, px, py });
     const occ = g[tileI][py * E.PGRID + px];
     const r = wrapRef.current?.getBoundingClientRect();
     let text = `Unlisted · ${E.PARCEL_AC} ac`, sub2 = `Block ${blockName(t)} · owner not marketing`;
@@ -1525,8 +1572,8 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             title="Ambient detail — streetscape, day/night, seasons, weather. Off silences all of it.">◦ {AMBIENT_LABELS[ambient]}</button>
           <button className={view === 'iso' ? 'active' : ''} onClick={() => setView('iso')} title="Isometric skyline view">◪ 2.5D</button>
           <button className={view === 'flat' ? 'active' : ''} onClick={() => setView('flat')} title="Flat plan view">▦ Plan</button>
-          <button onClick={() => (view === 'iso' ? vpIso : vpFlat).zoomAt(1 / 1.35)} title="Zoom out">−</button>
-          <button onClick={() => (view === 'iso' ? vpIso : vpFlat).zoomAt(1.35)} title="Zoom in">+</button>
+          <button onClick={() => (view === 'iso' ? vpIso : vpFlat).zoomAt(1 / 1.35, undefined, undefined, true)} title="Zoom out">−</button>
+          <button onClick={() => (view === 'iso' ? vpIso : vpFlat).zoomAt(1.35, undefined, undefined, true)} title="Zoom in">+</button>
           <button onClick={() => (view === 'iso' ? vpIso : vpFlat).reset()} title="Fit the whole city">⤢ {(view === 'iso' ? vpIso.z : vpFlat.z).toFixed(1)}×</button>
           {advance && <>
             <span style={{ width: 1, alignSelf: 'stretch', background: 'var(--line)', margin: '0 2px' }} />
@@ -1702,12 +1749,30 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             const p1 = isoPt(a.x, a.y), p2 = isoPt(b.x, b.y);
             return (
               <g key={'mg' + k} style={{ pointerEvents: 'none' }}>
-                <line x1={p1[0]} y1={p1[1] - 16} x2={p2[0]} y2={p2[1] - 16} stroke="#e08c8c" strokeWidth={1.6} strokeDasharray="5 4" opacity={0.85} />
+                <line className={ambient >= 1 ? 'mig-flow' : undefined} x1={p1[0]} y1={p1[1] - 16} x2={p2[0]} y2={p2[1] - 16} stroke="#e08c8c" strokeWidth={1.6} strokeDasharray="5 4" opacity={0.85} />
                 <circle cx={p2[0]} cy={p2[1] - 16} r={3.5} fill="#e08c8c" />
               </g>
             );
           })}
+          {/* a fresh listing announces itself for its first month */}
+          {ambient >= 1 && state.listings.filter(l => !l.parentAssetId && l.listMonth !== undefined && state.month - l.listMonth < 1).slice(0, 12).map(l => {
+            const t = state.tiles[l.tileI];
+            return <polygon key={'nl' + l.id} className="tile-pulse" points={diamond(t.x, t.y, 0.96)} fill="none"
+              stroke="#8fd08f" strokeWidth={1.6} style={{ pointerEvents: 'none', animationIterationCount: 'infinite', animationDuration: '2.8s' }} />;
+          })}
           <HitLayerIso tiles={tilesGeom} onEnter={hitEnter} onLeave={hitLeave} onClick={hitClick} />
+          {/* the parcel under the cursor lifts a hair off the ground */}
+          {ambient >= 1 && hoverCell && zb >= 1 && (() => {
+            const t = state.tiles[hoverCell.tileI];
+            if (!t || t.water) return null;
+            const [ccx, ccy] = parcelCenter(t.x, t.y, hoverCell.px, hoverCell.py);
+            const [w2, h2] = parcelSpan(1, 1);
+            return (
+              <g style={{ pointerEvents: 'none' }} transform="translate(0 -1.6)">
+                <polygon points={rectPoly(ccx, ccy, w2 * 0.96, h2 * 0.96)} fill="rgba(217,166,72,0.10)" stroke="var(--amber-dim)" strokeWidth={1.1} />
+              </g>
+            );
+          })()}
           {sel && <polygon points={diamond(sel.x, sel.y, 0.99)} fill="none" stroke="var(--amber-dim)" strokeWidth={1.4} style={{ pointerEvents: 'none' }} />}
           {selCells && selInfo && (() => {
             const t = state.tiles[selCells.tileI];

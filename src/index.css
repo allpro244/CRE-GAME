@@ -313,6 +313,9 @@ button.link-name:hover { color: var(--amber); }
 @keyframes shim { to { stroke-dashoffset: -64; } }
 .rainfall { animation: rainfall 1.6s linear infinite; }
 @keyframes rainfall { to { stroke-dashoffset: -37; } }
+/* tenant migrations stream along their arrow instead of sitting frozen */
+.mig-flow { animation: migflow 1.1s linear infinite; }
+@keyframes migflow { to { stroke-dashoffset: -18; } }
 /* the freight shuttle: two tile-lengths down the mainline and back, all day */
 .train-roll { animation: train-roll 26s ease-in-out infinite alternate; }
 @keyframes train-roll { from { transform: translate(-64px, -32px); } to { transform: translate(64px, 32px); } }

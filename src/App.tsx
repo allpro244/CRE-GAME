@@ -5,6 +5,7 @@ import { LineChart, Bars } from './charts';
 import { Modal, Hint, DealsView2, DealModal, PortfolioView2, RefiModal, DebtView, BooksView, LOIModal, AssetDrawer, CityRegistryView, pct } from './views2';
 import { MapView, StockCard, FirmPortfolioModal } from './mapview';
 import { SFX, isMuted, toggleMute } from './sound';
+import { Portrait, mapSeed } from './portrait';
 
 // A money figure that rolls to its new value instead of teleporting — the eye catches
 // the direction of travel before the digits settle.
@@ -900,7 +901,9 @@ function SellModal({ state, setState, asset, close, variant = 'dialog' }: {
     <Modal close={close} variant={variant}>
       <h2>List {asset.name} for sale</h2>
       <div className="sub">Selling takes time. Set an ask, then field offers as they come — anywhere from lowballs to full price, depending on the market, your ask, and your name.</div>
-      <div className="memo">
+      <Portrait b={{ type: asset.type, construction: asset.construction, sf: asset.sf, units: asset.units, quality: asset.quality,
+        age: asset.age, occ: asset.occ, seed: mapSeed(state.seed, asset.tileI), siteCells: E.footprintCells(asset).length || 1 }} w={460} h={170} />
+      <div className="memo" style={{ marginTop: 10 }}>
         <div className="memo-row"><span className="lbl">Defensible value <Hint text="Appraisal is an opinion, not a fact. This is the range a room of appraisers would sign — tight above 80% leased with fresh comps, wide when the building is empty or the market is frozen. Your mark is the midpoint; where it actually clears is the game." /></span>
           <span className="num">{E.fmtMoney(band.lo, false)} – {E.fmtMoney(band.hi, false)} <span className="faint">(±{band.halfPts.toFixed(2)} cap pts)</span></span></div>
         <div className="memo-row"><span className="lbl">Your mark (midpoint)</span><span className="num">{E.fmtMoney(val, false)}</span></div>

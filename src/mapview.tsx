@@ -571,11 +571,13 @@ function roadRuns(roads: E.RoadNet): RoadRun[] {
   }
   return runs;
 }
+// Street rhythm: locals are lanes, arterials are rooms — the hierarchy should be
+// legible from across the map, not a set of near-identical grey lines.
 const ROAD_STYLE: Record<number, { stroke: string; w: number; dash?: string }> = {
-  1: { stroke: '#8f959c', w: 2.0 },
-  2: { stroke: '#82888f', w: 3.0 },
-  3: { stroke: '#74797f', w: 4.6 },
-  4: { stroke: '#6a6f76', w: 6.4 },
+  1: { stroke: '#949aa1', w: 1.5 },
+  2: { stroke: '#82888f', w: 2.9 },
+  3: { stroke: '#71767c', w: 5.2 },
+  4: { stroke: '#666b72', w: 7.2 },
   5: { stroke: '#8a7a5c', w: 1.8, dash: '7 5' },
 };
 const StreetLife = memo(function StreetLife({ runs, seed, detail, season = 'summer', loD, hiD, busy, retailish }: {

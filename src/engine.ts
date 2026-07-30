@@ -676,19 +676,27 @@ function generateIslandRoads(r: () => number, isWater: (x: number, y: number) =>
     const ex = Math.round((UPT.x + W - 1) / 2);
     for (let y = 0; y < H; y++) vt[y][ex] = Math.max(vt[y][ex], 2);
   }
-  // Broadway: a staircase avenue from the west end toward uptown
-  let px = 1, py = 2, guard = 0;
-  while ((px !== UPT.x || py !== UPT.y) && guard++ < 50) {
-    if (Math.abs(UPT.x - px) >= Math.abs(UPT.y - py)) {
-      const d = UPT.x > px ? 1 : -1;
-      hz[Math.max(1, Math.min(H - 1, py))][Math.min(px, px + d)] = Math.max(hz[Math.max(1, Math.min(H - 1, py))][Math.min(px, px + d)], 2);
-      px += d;
-    } else {
-      const d = UPT.y > py ? 1 : -1;
-      vt[Math.min(py, py + d)][Math.max(1, Math.min(W - 1, px))] = Math.max(vt[Math.min(py, py + d)][Math.max(1, Math.min(W - 1, px))], 2);
-      py += d;
+  // Broadway: a staircase AVENUE from the west end toward uptown — upgraded to a
+  // real arterial so the diagonal reads at every zoom
+  const staircase = (fromX: number, fromY: number, to: { x: number; y: number }, cls: number) => {
+    let px = fromX, py = fromY, guard = 0;
+    while ((px !== to.x || py !== to.y) && guard++ < 60) {
+      if (Math.abs(to.x - px) >= Math.abs(to.y - py)) {
+        const d = to.x > px ? 1 : -1;
+        const yy = Math.max(1, Math.min(H - 1, py));
+        hz[yy][Math.min(px, px + d)] = Math.max(hz[yy][Math.min(px, px + d)], cls);
+        px += d;
+      } else {
+        const d = to.y > py ? 1 : -1;
+        const xx = Math.max(1, Math.min(W - 1, px));
+        vt[Math.min(py, py + d)][xx] = Math.max(vt[Math.min(py, py + d)][xx], cls);
+        py += d;
+      }
     }
-  }
+  };
+  staircase(1, 2, UPT, 3);
+  // some cities get a second diagonal: a southeast boulevard cutting toward the CBD
+  if (r() < 0.55) staircase(W - 2, H - 3, CBD, 2);
   // shoreline expressway along the north bank
   for (let x = 0; x < W; x++) hz[1][x] = 4;
   // freight rail on the south shore + port spur

@@ -252,6 +252,7 @@ label.f { display: flex; flex-direction: column; gap: 4px; font-size: 11px; colo
   padding: 24px; text-align: center;
 }
 .menu h1 { font-size: 42px; letter-spacing: 0.30em; margin: 0; font-weight: 800; }
+.menu-skyline { width: 100%; max-width: 680px; display: block; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 8px; }
 .menu .tag { color: var(--amber); letter-spacing: 0.26em; font-size: 11px; text-transform: uppercase; margin-bottom: 26px; }
 .menu p { color: var(--dim); max-width: 480px; font-size: 13.5px; line-height: 1.6; }
 

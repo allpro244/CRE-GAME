@@ -44,6 +44,67 @@ async function storageGet(key: string): Promise<string | null> {
 
 type TabId = 'dashboard' | 'map' | 'deals' | 'portfolio' | 'books' | 'debt' | 'economy' | 'registry';
 
+// The title card: a procedural dusk skyline in the game's own palette — towers,
+// a crane still working, the river in front. Deterministic; no assets.
+function TitleSkyline() {
+  let a = 0x9e3779b9 | 0;
+  const r = () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const rows: React.ReactNode[] = [];
+  // far row: haze
+  for (let i = 0; i < 16; i++) {
+    const w = 30 + r() * 40, h = 26 + r() * 58, x = i * 56 + r() * 14 - 10;
+    rows.push(<rect key={'f' + i} x={x} y={148 - h} width={w} height={h} fill="#1b2430" />);
+  }
+  // mid row: shapes with the odd crown
+  for (let i = 0; i < 11; i++) {
+    const w = 40 + r() * 44, h = 46 + r() * 88, x = i * 82 + r() * 20 - 12;
+    rows.push(<rect key={'m' + i} x={x} y={150 - h} width={w} height={h} fill="#242f3d" />);
+    if (r() < 0.35) rows.push(<rect key={'mc' + i} x={x + w * 0.3} y={150 - h - 7} width={w * 0.4} height={7} fill="#242f3d" />);
+    if (r() < 0.3) rows.push(<line key={'ma' + i} x1={x + w / 2} y1={150 - h} x2={x + w / 2} y2={150 - h - 16} stroke="#37414e" strokeWidth={1.2} />);
+    for (let k = 0; k < Math.round(h / 22); k++) {
+      if (r() < 0.5) rows.push(<rect key={'mw' + i + '_' + k} x={x + 4 + r() * (w - 10)} y={150 - h + 6 + k * 18} width={3} height={2.2} fill="#d9a648" opacity={0.5 + r() * 0.4} />);
+    }
+  }
+  // front row: the working city — dark masses, lit floors, one crane
+  for (let i = 0; i < 7; i++) {
+    const w = 62 + r() * 58, h = 62 + r() * 84, x = i * 128 + r() * 26 - 16;
+    rows.push(<rect key={'n' + i} x={x} y={152 - h} width={w} height={h} fill="#2d3947" stroke="#0b0f13" strokeWidth={0.6} />);
+    for (let k = 0; k < Math.round(h / 14); k++) {
+      const lit = r() < 0.3;
+      rows.push(<line key={'nw' + i + '_' + k} x1={x + 5} y1={152 - h + 8 + k * 13} x2={x + 5 + (lit ? (0.25 + r() * 0.5) : 0.9) * (w - 10)} y2={152 - h + 8 + k * 13}
+        stroke={lit ? '#e8b25c' : '#1d2631'} strokeWidth={lit ? 1.8 : 2.4} opacity={lit ? 0.8 : 1} />);
+    }
+  }
+  return (
+    <svg viewBox="0 0 900 196" className="menu-skyline" aria-hidden>
+      <defs>
+        <linearGradient id="tsky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#10161f" /><stop offset="70%" stopColor="#233248" /><stop offset="100%" stopColor="#54453c" />
+        </linearGradient>
+      </defs>
+      <rect x="0" y="0" width="900" height="196" fill="url(#tsky)" />
+      {Array.from({ length: 9 }, (_, i) => <circle key={'st' + i} cx={(i * 113 + 40) % 900} cy={(i * 37) % 70} r={0.8} fill="#cdd6e2" opacity={0.4} />)}
+      {rows}
+      {/* the crane over the front row — the city is not finished */}
+      <g stroke="#c9a04f" fill="none">
+        <line x1={700} y1={152} x2={700} y2={28} strokeWidth={2} />
+        <line x1={640} y1={28} x2={790} y2={28} strokeWidth={1.6} />
+        <line x1={700} y1={16} x2={640} y2={28} strokeWidth={0.8} />
+        <line x1={700} y1={16} x2={790} y2={28} strokeWidth={0.8} />
+        <line x1={700} y1={28} x2={700} y2={16} strokeWidth={1.2} />
+        <line x1={762} y1={28} x2={762} y2={64} strokeWidth={0.8} stroke="#8a8f96" />
+        <rect x={758} y={64} width={8} height={6} fill="#6a6f75" stroke="none" />
+      </g>
+      {/* the river, holding the lights */}
+      <rect x="0" y="152" width="900" height="44" fill="#131c28" />
+      {Array.from({ length: 26 }, (_, i) => {
+        const x = (i * 67 + 22) % 900;
+        return <line key={'rf' + i} x1={x} y1={156 + (i % 4) * 8} x2={x} y2={164 + (i % 4) * 8} stroke={i % 3 ? '#3a4a5e' : '#a97f3a'} strokeWidth={2} opacity={0.5} />;
+      })}
+    </svg>
+  );
+}
+
 export default function App() {
   const [screen, setScreen] = useState<'menu' | 'game'>('menu');
   const [state, setState] = useState<GameState | null>(null);
@@ -58,6 +119,7 @@ export default function App() {
   if (screen === 'menu' || !state) {
     return (
       <div className="menu">
+        <TitleSkyline />
         <h1>GROUNDWORK</h1>
         <div className="tag">Commercial real estate, from the ground up</div>
         <p>

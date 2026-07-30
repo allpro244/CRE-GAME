@@ -724,6 +724,35 @@ const StreetLife = memo(function StreetLife({ runs, seed, detail, season = 'summ
 });
 const pick2 = <T,>(r: () => number, arr: readonly T[]): T => arr[Math.floor(r() * arr.length) % arr.length];
 
+// ---------- street names ----------
+// Arterials and collectors get names at close zoom — dry surveyor stock, painted
+// faint on the asphalt. East-west runs take names, north-south runs take numbers,
+// so "corner of Meridian and 12th" actually means something.
+const AVE_NAMES = ['MERIDIAN AVE', 'UNION AVE', 'BEACON AVE', 'CASCADE AVE', 'HARBOR AVE', 'FOUNDERS AVE', 'COMMERCE AVE', 'GRANITE AVE', 'STERLING AVE', 'KEYSTONE AVE'];
+const ordSuffix = (n: number) => n % 10 === 1 && n % 100 !== 11 ? 'ST' : n % 10 === 2 && n % 100 !== 12 ? 'ND' : n % 10 === 3 && n % 100 !== 13 ? 'RD' : 'TH';
+const StreetNames = memo(function StreetNames({ runs, seed }: { runs: RoadRun[]; seed: number }) {
+  const els: React.ReactNode[] = [];
+  const ANG = Math.atan2(IH / 2, IW / 2) * 180 / Math.PI;   // the iso grade
+  let n = 0;
+  for (const run of runs) {
+    if (run.cls < 3 || run.cls === 5 || n >= 24) continue;
+    const [p0, p1] = run.pts;
+    const len = Math.abs(p1[0] - p0[0]) + Math.abs(p1[1] - p0[1]);
+    if (len < 3) continue;
+    const horiz = Math.abs(p1[0] - p0[0]) > Math.abs(p1[1] - p0[1]);
+    const name = horiz
+      ? AVE_NAMES[(Math.round(p0[1] + 0.5) * 3 + (seed & 7)) % AVE_NAMES.length]
+      : `${Math.round(p0[0] + 0.5)}${ordSuffix(Math.round(p0[0] + 0.5))} ST`;
+    const u = 0.38;
+    const [tx, ty] = isoPt(p0[0] + (p1[0] - p0[0]) * u, p0[1] + (p1[1] - p0[1]) * u);
+    els.push(<text key={'sn' + n} x={tx} y={ty + 1.4} textAnchor="middle" fontSize={5}
+      fontFamily="var(--mono)" fill="#4c5348" opacity={0.85} letterSpacing={1.2}
+      transform={`rotate(${horiz ? ANG : -ANG} ${tx} ${ty})`}>{name}</text>);
+    n++;
+  }
+  return <g style={{ pointerEvents: 'none' }}>{els}</g>;
+});
+
 // ---------- civic fabric ----------
 // The city stops being 100% product: a domed hall and a bandstand in the parks, a
 // fountain, a marina on the riverbank, water towers on the industrial band, a
@@ -1682,6 +1711,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           {ambient >= 1 && zb >= 2 && <Sidewalks runs={runs} />}
           <RoadsIso runs={runs} wet={weather === 'rain'} />
           {ambient >= 1 && <Bridges runs={runs} tiles={tilesGeom} />}
+          {ambient >= 2 && zb >= 2 && <StreetNames runs={runs} seed={state.seed} />}
           {ambient >= 1 && zb >= 1 && <WaterLife tiles={tilesGeom} seed={state.seed} />}
           {ambient >= 1 && zb >= 1 && <StreetLife runs={runs} seed={state.seed} detail={zb >= 2} season={season} loD={loD} hiD={hiD} busy={busy} retailish={retailish} />}
           {ambient >= 2 && zb >= 2 && <PoliceLayer tiles={copTiles} seed={state.seed} />}

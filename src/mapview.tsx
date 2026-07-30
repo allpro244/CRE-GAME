@@ -1260,8 +1260,11 @@ const TileBaseIso = memo(function TileBaseIso({ tiles, season = 'summer' }: { ti
       const [mx, my] = isoPt(t.x + (r2() - 0.5) * 0.4, t.y + (r2() - 0.5) * 0.4);
       mottle.push(<ellipse key={'sn' + t.i} cx={mx} cy={my} rx={6 + r2() * 5} ry={3 + r2() * 2.4} fill="#e6ebee" opacity={0.28} />);
     }
+    // land tiles draw unstroked: the streets themselves delineate the blocks now,
+    // so two blocks with no street between them read as one superblock
+    const strokeCol = t.marsh ? '#6d7a5e' : t.water && !t.canal ? '#5b9ec9' : undefined;
     return <g key={'st' + t.i}>
-      <polygon points={diamond(t.x, t.y)} fill={fill} stroke={t.marsh ? '#6d7a5e' : t.water && !t.canal ? '#5b9ec9' : '#c3c5b4'} strokeWidth={t.marsh ? 0.5 : t.water && !t.canal ? 0.5 : 1.3} />
+      <polygon points={diamond(t.x, t.y)} fill={fill} stroke={strokeCol} strokeWidth={strokeCol ? 0.5 : undefined} />
       {mottle}
       {trees}
     </g>;

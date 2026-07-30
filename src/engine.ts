@@ -651,9 +651,14 @@ function generateIslandRoads(r: () => number, isWater: (x: number, y: number) =>
   const W = CONFIG.GRID_W, H = CONFIG.GRID_H;
   const hz: number[][] = Array.from({ length: H + 1 }, () => new Array(W).fill(1));
   const vt: number[][] = Array.from({ length: H }, () => new Array(W + 1).fill(1));
-  // dense grid — prune only lightly, except the freight band on the south shore
-  for (let y = 1; y < H; y++) for (let x = 0; x < W; x++) if (r() < (y >= H - 4 ? 0.26 : 0.06)) hz[y][x] = 0;
-  for (let y = 0; y < H; y++) for (let x = 1; x < W; x++) if (r() < (y >= H - 4 ? 0.26 : 0.06)) vt[y][x] = 0;
+  // dense grid downtown, loosening with distance — the fringe runs on superblocks,
+  // and the freight band always did
+  const coreDist = (x: number, y: number) => Math.min(
+    Math.max(Math.abs(x - CBD.x), Math.abs(y - CBD.y)),
+    Math.max(Math.abs(x - UPT.x), Math.abs(y - UPT.y)));
+  const pruneP = (x: number, y: number) => y >= H - 4 ? 0.26 : coreDist(x, y) > 6 ? 0.22 : coreDist(x, y) > 4 ? 0.13 : 0.05;
+  for (let y = 1; y < H; y++) for (let x = 0; x < W; x++) if (r() < pruneP(x, y - 0.5 | 0)) hz[y][x] = 0;
+  for (let y = 0; y < H; y++) for (let x = 1; x < W; x++) if (r() < pruneP(x, y)) vt[y][x] = 0;
   // avenues: arterials through both cores, collectors between
   for (let y = 0; y < H; y++) {
     vt[y][CBD.x] = Math.max(vt[y][CBD.x], 3);

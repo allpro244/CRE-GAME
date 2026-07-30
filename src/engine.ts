@@ -4838,7 +4838,19 @@ function tickStock(s: GameState) {
     const tOcc = targetOcc(s, t, b.type) * (0.96 + (b.quality / 150) * 0.08);
     b.occ = clamp(b.occ + (tOcc - b.occ) * 0.18 + (rng(s) - 0.5) * 0.05, 0.15, 0.97);
     b.occ = Math.round(b.occ * 100) / 100;
-    b.quality = clamp(b.quality - 1.0 + (rng(s) < 0.04 ? 18 : 0), 18, 138); // net drift is DOWN (~-1.1/yr) like everyone else's buildings; occasional owner renovation
+    // owners renovate when the market pays them to: strong blocks and tight sectors
+    // keep their stock current, weak blocks let it rot — a real city's strata. A
+    // building that's fallen far on a block that still matters gets the gut reno:
+    // big quality jump, units offline for the duration.
+    const climate = leasingClimate(s, b.type);
+    let renoP = 0.025 + (t.D >= 60 ? 0.03 : 0) + (climate > 1.04 ? 0.025 : 0);
+    if (climate < 0.95) renoP *= 0.5;   // nobody renovates into a glut
+    let bump = 0;
+    if (rng(s) < renoP) {
+      if (b.quality < 50 && t.D >= 55 && climate >= 1.0) { bump = rrange(s, 28, 48); b.occ = clamp(b.occ - 0.12, 0.15, 0.97); }
+      else bump = 18;
+    }
+    b.quality = clamp(b.quality - 1.0 + bump, 18, 138); // decay still wins wherever renovation doesn't pencil
     b.age += 0.25;
   }
 }

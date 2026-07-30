@@ -372,6 +372,9 @@ export interface PostMortem {
   assetName: string; profit: number; irr: number | null;
   parts: { label: string; amt: number; note: string }[];
   lesson: string;
+  // enough of the building to draw its portrait one last time (transient — the
+  // post-mortem never touches the save file)
+  bldg?: { type: PType; construction: string; sf: number; units: number; quality: number; age: number; occ: number; tileI: number };
 }
 
 export const PARCEL_AC = 0.25;   // quarter-acre lots
@@ -3962,6 +3965,7 @@ function finalizeSale(s: GameState, a: Asset, gross: number, buyer: string): { s
       : profit < 0
         ? (s.econ.phase === 'recession' ? 'Selling into a recession locks in the market\'s worst price. If debt service is covered, holding is usually the better trade.' : 'The basis was too high for what the location could support. The profit is made on the buy.')
         : 'Income growth drove this one — the repeatable kind of profit.',
+    bldg: { type: a.type, construction: a.construction, sf: a.sf, units: a.units, quality: a.quality, age: a.age, occ: a.occ, tileI: a.tileI },
   };
   s.totalRealizedProfit += profit;
   s.reputation = clamp(s.reputation + (profit > 0 ? 3 : -2), 0, 100);

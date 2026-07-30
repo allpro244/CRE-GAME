@@ -375,7 +375,7 @@ function Game({ state, setState, toMenu }: {
       {sellAsset && <SellModal state={state} setState={setState} asset={sellAsset} close={() => setSellId(null)} variant={detailVariant} />}
       {firmShort && <FirmPortfolioModal state={state} short={firmShort} close={() => setFirmShort(null)} openStock={id => { setFirmShort(null); setStockCardId(id); }} />}
       {refiAsset && <RefiModal state={state} setState={setState} asset={refiAsset} close={() => setRefiId(null)} variant={detailVariant} />}
-      {pm && <PostMortemModal pm={pm} close={() => setPm(null)} />}
+      {pm && <PostMortemModal pm={pm} close={() => setPm(null)} state={state} />}
       {pendingEvt && pendAsset && pendingEvt.type === 'constrEvent' && <EventModal state={state} setState={setState} asset={pendAsset} kind={pendingEvt.eventKind} />}
       {pendingEvt && pendAsset && pendingEvt.type === 'assetEvent' && <AssetEventModal state={state} setState={setState} asset={pendAsset} kind={pendingEvt.eventKind} />}
       {saveOpen && <SaveLoadModal state={state} setState={setState} close={() => setSaveOpen(false)} />}
@@ -1023,7 +1023,9 @@ function SellModal({ state, setState, asset, close, variant = 'dialog' }: {
   );
 }
 
-function PostMortemModal({ pm, close }: { pm: PostMortem; close: () => void }) {
+function PostMortemModal({ pm, close, state }: { pm: PostMortem; close: () => void; state: GameState }) {
+  // the waterfall: each part as a signed bar off a common axis
+  const maxAbs = Math.max(1, ...pm.parts.map(p => Math.abs(p.amt)));
   return (
     <Modal close={close}>
       <h2>Deal post-mortem — {pm.assetName}</h2>
@@ -1031,12 +1033,23 @@ function PostMortemModal({ pm, close }: { pm: PostMortem; close: () => void }) {
         Realized {pm.profit >= 0 ? 'profit' : 'loss'} of <b className={'num ' + (pm.profit >= 0 ? 'pos' : 'neg')}>{E.fmtMoney(Math.abs(pm.profit))}</b>
         {pm.irr !== null && <> · <b className="num">{pm.irr.toFixed(1)}%</b> IRR on your equity</>}
       </div>
-      <div className="memo">
+      {pm.bldg && <Portrait b={{ ...pm.bldg, month: state.month, seed: mapSeed(state.seed, pm.bldg.tileI),
+        siteCells: Math.ceil(pm.bldg.sf / 12000) }} w={460} h={150} />}
+      <div className="memo" style={{ marginTop: 10 }}>
         {pm.parts.map((p, i) => (
           <div key={i} style={{ padding: '6px 0', borderBottom: i < pm.parts.length - 1 ? '1px solid var(--line2)' : 'none' }}>
             <div className="memo-row" style={{ padding: 0 }}>
               <span style={{ fontWeight: 650 }}>{p.label}</span>
               <span className={'num ' + (p.amt >= 0 ? 'pos' : 'neg')}>{p.amt >= 0 ? '+' : ''}{E.fmtMoney(p.amt)}</span>
+            </div>
+            {/* the waterfall bar: length is the magnitude, side is the sign */}
+            <div style={{ display: 'flex', height: 5, margin: '3px 0 2px', background: 'var(--panel3)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ width: '50%', display: 'flex', justifyContent: 'flex-end' }}>
+                {p.amt < 0 && <div style={{ width: `${Math.min(100, Math.abs(p.amt) / maxAbs * 100)}%`, background: 'var(--red)', opacity: 0.85 }} />}
+              </div>
+              <div style={{ width: '50%' }}>
+                {p.amt >= 0 && <div style={{ width: `${Math.min(100, Math.abs(p.amt) / maxAbs * 100)}%`, background: 'var(--green)', opacity: 0.85 }} />}
+              </div>
             </div>
             <div className="dim" style={{ fontSize: 11.5, marginTop: 2 }}>{p.note}</div>
           </div>

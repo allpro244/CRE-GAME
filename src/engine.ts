@@ -1528,7 +1528,7 @@ function genMixedRentRoll(state: GameState, a: Pick<Asset, 'tileI' | 'type' | 's
 // and re-rolled every generation (see tickEraRotation): no sector stays the darling
 // for a whole century.
 function rollEra(r: () => number): Economy['era'] {
-  const HANDICAP: Record<string, number> = { office: 0.087, retail: -0.094, industrial: 0.028, multifamily: -0.021 };
+  const HANDICAP: Record<string, number> = { office: 0.093, retail: -0.082, industrial: 0.016, multifamily: -0.027 };
   const raw: Record<string, number> = { office: r(), retail: r(), industrial: r(), multifamily: r() };
   const avg = (raw.office + raw.retail + raw.industrial + raw.multifamily) / 4;
   const tiltOf = (ty: string) => Math.round((HANDICAP[ty] + (raw[ty] - avg) * 0.15) * 1000) / 1000;
@@ -4739,8 +4739,10 @@ function tickEconomy(s: GameState) {
       // the most overbuilt sector takes the bust personally: an immediate markdown,
       // then a year of bleeding while the excess space gets absorbed or abandoned
       if (rng(s) < 0.4) {
+        // relative overbuild (vacancy vs the sector's own equilibrium), so the sector
+        // with the naturally widest vacancy range doesn't eat every bust
         const over = (['office', 'retail', 'industrial', 'multifamily'] as PType[])
-          .reduce((x, y) => (e.cityVac[y] - EQ_VAC[y]) > (e.cityVac[x] - EQ_VAC[x]) ? y : x);
+          .reduce((x, y) => (e.cityVac[y] / EQ_VAC[y]) > (e.cityVac[x] / EQ_VAC[x]) ? y : x);
         e.bustType = over;
         e.bustMonthsLeft = 10 + Math.floor(rng(s) * 9);
         e.rentIdx[over] *= 1 - (0.03 + rng(s) * 0.04);
@@ -4757,8 +4759,12 @@ function tickEconomy(s: GameState) {
   // severity deepens the trough: a 2.0 recession cuts employment and confidence
   // nearly twice as hard as an ordinary one, and the central bank cuts deeper
   const sev = e.phase === 'recession' ? (e.recSeverity ?? 1) : 1;
+  // severity spreads its damage: employment and confidence deepen moderately, and the
+  // rest lands as a sector-uniform demand drag below — office reads empIdx 3-5x harder
+  // than anyone else, and a severity channel routed mostly through employment quietly
+  // made every deep recession an office story
   const t = e.phase === 'recession'
-    ? { rate: t0.rate - (sev - 1) * 0.7, infl: t0.infl, emp: t0.emp - (sev - 1) * 7, conf: t0.conf - (sev - 1) * 16 }
+    ? { rate: t0.rate - (sev - 1) * 0.7, infl: t0.infl, emp: t0.emp - (sev - 1) * 4, conf: t0.conf - (sev - 1) * 16 }
     : t0;
   if ((e.bustMonthsLeft ?? 0) > 0) {
     e.bustMonthsLeft!--;
@@ -4825,7 +4831,7 @@ function tickEconomy(s: GameState) {
     if (ty === 'industrial') demandDrift = 0.045 + (e.ecomMonthsLeft > 0 ? 0.08 : 0) + (e.empIdx - 100) * 0.005 + biz;
     if (ty === 'multifamily') demandDrift = 0.05 + e.popGrowth * 0.05 + (e.confidence - 55) * 0.0012;
     demandDrift += e.era?.sectorTilt?.[ty] ?? 0;   // the era's secular story: this generation's winner isn't the last one's
-    if (e.phase === 'recession') demandDrift -= ((e.recSeverity ?? 1) - 1) * 0.018;   // a named recession cuts demand everywhere
+    if (e.phase === 'recession') demandDrift -= ((e.recSeverity ?? 1) - 1) * 0.028;   // a named recession cuts demand everywhere
     if (e.bustType === ty && (e.bustMonthsLeft ?? 0) > 0) demandDrift -= 0.055;       // the busted sector bleeds on top of it
     const eqVac = EQ_VAC[ty];
     // real vacancy in the modeled stock; the ambient metro beyond our blocks leans
@@ -4838,8 +4844,18 @@ function tickEconomy(s: GameState) {
     // growth over quarters and takes quarters to roll over, like a real one.
     // Asymmetric on purpose: markets crash faster than they recover — a landlord
     // chases a fleeing tenant with cuts overnight, but rebuilds pricing power slowly
-    const gap = eqVac - e.cityVac[ty];
-    const mk = gap < 0 ? 0.0016 : 0.0011, mb = gap < 0 ? 0.30 : 0.22;
+    // ...but only for genuine gluts (vacancy WELL above equilibrium), not for a
+    // sector's ordinary resting distance from its own eq — office idles a couple of
+    // points above eq by nature, and taxing that resting state 45% harder rewrote
+    // the era balance the first time this shipped
+    // rent momentum swings around each sector's own RESTING vacancy (measured p50
+    // over 10 seeds x 20y), not raw EQ_VAC — office idles a couple points above its
+    // equilibrium by nature and retail slightly below, and reading the raw gap taxed
+    // office's normal state as if it were a glut, every month, forever
+    const REST: Record<string, number> = { office: 2.3, retail: -0.6, industrial: 0.8, multifamily: 0.7, mixed: 0 };
+    const gap = eqVac + (REST[ty] ?? 0) - e.cityVac[ty];
+    const crisis = gap < -3;
+    const mk = crisis ? 0.0016 : 0.0011, mb = crisis ? 0.30 : 0.22;
     e.rentMom[ty] = e.rentMom[ty] * (1 - mb) + (gap * mk) * mb;
     // rents carry the same inflation pass-through as construction costs (costIdx above),
     // so a development pro forma means the same thing in year 25 as in year 1 —

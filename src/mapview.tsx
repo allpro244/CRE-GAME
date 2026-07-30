@@ -3,6 +3,8 @@ import * as E from './engine';
 import type { GameState, StockBuilding, Tile } from './engine';
 import { Modal, Hint, blockName, pct } from './views2';
 import { Portrait, mapSeed } from './portrait';
+import { AMBIENT_LABELS, loadAmbient, saveAmbient, prefersReducedMotion } from './ambient';
+import type { AmbientLevel } from './ambient';
 import { buildingArt, siteArt, storiesFor } from './buildingArt';
 
 type Lens = 'city' | 'land' | 'zoning' | 'office' | 'retail' | 'industrial' | 'multifamily' | 'crime' | 'comps';
@@ -923,6 +925,11 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const [lens, setLens] = useState<Lens>('city');
   const [view, setView] = useState<'iso' | 'flat'>('iso');
   const [showBldgs, setShowBldgs] = useState(true);
+  // one knob for everything atmospheric; every ambient layer below gates on this
+  const [ambient, setAmbient] = useState<AmbientLevel>(loadAmbient);
+  const cycleAmbient = () => setAmbient(a => { const n = ((a + 1) % 4) as AmbientLevel; saveAmbient(n); return n; });
+  const noMotion = prefersReducedMotion();
+  void noMotion; // consumed by the ambient layers as they land tonight
   const W = E.CONFIG.GRID_W * TS, H = E.CONFIG.GRID_H * TS;
   const IW_TOT = (E.CONFIG.GRID_W + E.CONFIG.GRID_H) * (IW / 2) + IOX * 2;
   const IH_TOT = (E.CONFIG.GRID_W + E.CONFIG.GRID_H) * (IH / 2) + IOY + 40;
@@ -1117,6 +1124,8 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           {LENSES.map(l => <button key={l.id} className={lens === l.id ? 'active' : ''} onClick={() => setLens(l.id)}>{l.label}</button>)}
           <span style={{ flex: 1 }} />
           <button className={showBldgs ? '' : 'active'} onClick={() => setShowBldgs(b => !b)} title="Hide the buildings to read the lens and the vacant dirt underneath">{showBldgs ? '◻ hide bldgs' : '◼ show bldgs'}</button>
+          <button onClick={cycleAmbient} className={ambient === 0 ? 'active' : ''}
+            title="Ambient detail — streetscape, day/night, seasons, weather. Off silences all of it.">◦ {AMBIENT_LABELS[ambient]}</button>
           <button className={view === 'iso' ? 'active' : ''} onClick={() => setView('iso')} title="Isometric skyline view">◪ 2.5D</button>
           <button className={view === 'flat' ? 'active' : ''} onClick={() => setView('flat')} title="Flat plan view">▦ Plan</button>
           <button onClick={() => (view === 'iso' ? vpIso : vpFlat).zoomAt(1 / 1.35)} title="Zoom out">−</button>
@@ -1162,8 +1171,8 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
               <polyline className="shim" points={pts} fill="none" stroke="#3c608a" strokeWidth={1.3} strokeDasharray="2 11" strokeLinecap="round" opacity={0.6} /></g>;
           })()}
           <RoadsIso runs={runs} />
-          {zb >= 1 && <WaterLife tiles={tilesGeom} seed={state.seed} />}
-          {zb >= 1 && <StreetLife runs={runs} seed={state.seed} detail={zb >= 2} />}
+          {ambient >= 1 && zb >= 1 && <WaterLife tiles={tilesGeom} seed={state.seed} />}
+          {ambient >= 1 && zb >= 1 && <StreetLife runs={runs} seed={state.seed} detail={zb >= 2} />}
           {transitActive && (() => {
             const ef = state.effects.find(e => e.kind === 'transit')!;
             const done = 1 - ef.monthsLeft / 14;

@@ -1151,7 +1151,7 @@ const Sidewalks = memo(function Sidewalks({ runs }: { runs: RoadRun[] }) {
   return <g style={{ pointerEvents: 'none' }}>{els}</g>;
 });
 
-const RoadsIso = memo(function RoadsIso({ runs, wet = false }: { runs: RoadRun[]; wet?: boolean }) {
+const RoadsIso = memo(function RoadsIso({ runs, wet = false, plowed = false }: { runs: RoadRun[]; wet?: boolean; plowed?: boolean }) {
   return (
     <g style={{ pointerEvents: 'none' }}>
       {runs.map((r, i) => {
@@ -1159,6 +1159,8 @@ const RoadsIso = memo(function RoadsIso({ runs, wet = false }: { runs: RoadRun[]
         const pts = r.pts.map(p => isoPt(p[0], p[1])).map(q => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' ');
         return (
           <g key={i}>
+            {/* winter: the plow berm sits just outside the travel lanes */}
+            {plowed && r.cls >= 2 && r.cls !== 5 && <polyline points={pts} fill="none" stroke="#dfe5e9" strokeWidth={st.w + 2.2} opacity={0.4} strokeLinecap="round" />}
             <polyline points={pts} fill="none" stroke={st.stroke} strokeWidth={st.w} strokeDasharray={st.dash} strokeLinecap="round" />
             {r.cls === 3 && <polyline points={pts} fill="none" stroke="#e8e4d0" strokeWidth={0.7} strokeDasharray="5 7" />}
             {r.cls === 4 && <polyline points={pts} fill="none" stroke="#f0ead6" strokeWidth={0.8} strokeDasharray="10 4" />}
@@ -1239,8 +1241,17 @@ const TileBaseIso = memo(function TileBaseIso({ tiles, season = 'summer' }: { ti
           fill={r() < 0.5 ? cA : cB} opacity={season === 'winter' ? 0.7 : 0.95} />);
       }
     }
+    // winter lays unplowed snow in the middle of every block — the lawns hold it
+    const mottle: React.ReactNode[] = [];
+    if (season === 'winter' && !t.water && !t.canal) {
+      let a2 = (t.i * 0x9e3779b9) | 0;
+      const r2 = () => { a2 = (a2 + 0x6D2B79F5) | 0; let v = Math.imul(a2 ^ (a2 >>> 15), 1 | a2); v = (v + Math.imul(v ^ (v >>> 7), 61 | v)) ^ v; return ((v ^ (v >>> 14)) >>> 0) / 4294967296; };
+      const [mx, my] = isoPt(t.x + (r2() - 0.5) * 0.4, t.y + (r2() - 0.5) * 0.4);
+      mottle.push(<ellipse key={'sn' + t.i} cx={mx} cy={my} rx={6 + r2() * 5} ry={3 + r2() * 2.4} fill="#e6ebee" opacity={0.28} />);
+    }
     return <g key={'st' + t.i}>
       <polygon points={diamond(t.x, t.y)} fill={fill} stroke={t.water && !t.canal ? '#5b9ec9' : '#c3c5b4'} strokeWidth={t.water && !t.canal ? 0.5 : 1.3} />
+      {mottle}
       {trees}
     </g>;
   })}</g>;
@@ -1710,7 +1721,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
               <polyline className="shim" points={pts} fill="none" stroke="#3c608a" strokeWidth={1.3} strokeDasharray="2 11" strokeLinecap="round" opacity={0.6} /></g>;
           })()}
           {ambient >= 1 && zb >= 2 && <Sidewalks runs={runs} />}
-          <RoadsIso runs={runs} wet={weather === 'rain'} />
+          <RoadsIso runs={runs} wet={weather === 'rain'} plowed={ambient >= 2 && season === 'winter'} />
           {ambient >= 1 && <Bridges runs={runs} tiles={tilesGeom} />}
           {ambient >= 2 && zb >= 2 && <StreetNames runs={runs} seed={state.seed} />}
           {ambient >= 1 && zb >= 1 && <WaterLife tiles={tilesGeom} seed={state.seed} />}

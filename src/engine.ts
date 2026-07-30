@@ -463,6 +463,7 @@ export interface GameState {
   rezoneDenied: Record<number, number>;   // tileI -> month the council last said no
   swans: { m: number; kind: string; label: string }[];   // the once-a-generation shocks this game has lived through
   gameOver: boolean; gameOverReason?: string; forcedSaleNotice?: string;
+  uwWarned?: boolean;   // the one-time underwater-on-paper warning has fired
   transitCorridor: number[];
   lastTransitM?: number;   // when the last transit line was approved (or forced onto the ballot)
   roads: RoadNet;
@@ -6519,9 +6520,22 @@ function tickSolvency(s: GameState) {
       pushNews(s, 'warn', s.forcedSaleNotice);
     }
   }
-  if (netWorth(s) < 0 || (s.cash < -200_000 && s.assets.length === 0)) {
+  // Being underwater on paper is NOT a default. A term loan has no mark-to-market
+  // margin call: as long as the payments clear, the bank cannot touch a performing
+  // building — negative equity is the lender's nightmare, not your eviction notice.
+  // Every survivor of 2009 knows this rule. The game ends only when you cannot pay
+  // and there is nothing left to sell.
+  const nwNow = netWorth(s);
+  if (nwNow < 0 && !s.uwWarned) {
+    s.uwWarned = true;
+    pushNews(s, 'warn', `You are UNDERWATER on paper: the marks say your debt exceeds your assets by ${fmtMoney(-nwNow)}. The banks can't touch a performing loan — keep the payments clearing and this is their nightmare, not yours. Miss them, and it becomes yours fast.`);
+  } else if (nwNow > 0 && s.uwWarned) {
+    s.uwWarned = undefined;
+    pushNews(s, 'success', 'Back above water: your equity is positive again. The months you spent underwater and paying anyway are the ones this business remembers.');
+  }
+  if (s.cash < -200_000 && s.assets.length === 0 && s.land.length === 0) {
     s.gameOver = true;
-    s.gameOverReason = 'Equity wiped out. Leverage cuts both ways — the debt outlived the values.';
+    s.gameOverReason = 'Out of cash, out of buildings, out of dirt — and still in debt. The banks worked with you while there was something to work with.';
   }
 }
 

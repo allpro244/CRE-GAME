@@ -1542,7 +1542,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                 <button key={b.id} className="inv-row inv-btn" onClick={() => openStock(b.id)}>
                   <span className="dim">{b.type === 'office' ? '▮' : b.type === 'retail' ? '▬' : b.type === 'industrial' ? '▭' : b.type === 'multifamily' ? '▤' : '▦'}</span>
                   <span style={{ flex: 1, textAlign: 'left' }}>
-                    {(b.sf / 1000).toFixed(0)}K SF {E.PLABEL[b.type]} · {E.QLABEL[E.qGrade(b.quality)]}
+                    {E.stockName(state, b)} · {(b.sf / 1000).toFixed(0)}K SF {E.PLABEL[b.type]} · {E.QLABEL[E.qGrade(b.quality)]}
                     {b.buildLeft ? <span style={{ color: '#e08c3c' }}> · building, {b.buildLeft} mo</span>
                       : b.listedId ? <span style={{ color: 'var(--green)' }}> · for sale</span>
                         : b.owner !== 'private' ? <span style={{ color: '#7d95bd' }}> · {b.owner}</span> : ''}
@@ -1675,8 +1675,8 @@ export function StockCard({ state, setState, stockId, close, openDeal, variant =
   const ownerLabel = b.owner === 'private' ? 'Private owner' : (state.firms.find(f => f.short === b.owner)?.name ?? b.owner);
   return (
     <Modal close={close} variant={variant}>
-      <h2>{E.PLABEL[b.type]} — Block {blockName(t)}</h2>
-      <div className="sub">{spec.label} · built {Math.max(1950, Math.round(2026 - b.age))} · {ownerLabel}{b.blacklist ? ' (not speaking to you)' : ''}</div>
+      <h2>{E.stockName(state, b)}</h2>
+      <div className="sub">{E.PLABEL[b.type]} · Block {blockName(t)} · {spec.label} · built {Math.max(1950, Math.round(2026 - b.age))} · {ownerLabel}{b.blacklist ? ' (not speaking to you)' : ''}</div>
       <Portrait b={{ type: b.type, construction: b.construction, sf: b.sf, units: b.units, quality: b.quality,
         age: b.age, occ: b.occ, seed: mapSeed(state.seed, b.tileI), siteCells: E.footprintCells(b).length || 1,
         progress: b.buildLeft ? 1 - b.buildLeft / Math.max(1, b.buildTotal ?? 1) : undefined }} w={380} h={185} />
@@ -1759,7 +1759,7 @@ export function FirmPortfolioModal({ state, short, close, openStock }: {
             <button key={b.id} className="inv-row inv-btn" onClick={() => openStock(b.id)}>
               <span className="dim">{b.type === 'office' ? '▮' : b.type === 'retail' ? '▬' : b.type === 'industrial' ? '▭' : b.type === 'multifamily' ? '▤' : '▦'}</span>
               <span style={{ flex: 1, textAlign: 'left' }}>
-                {(b.sf / 1000).toFixed(0)}K SF {E.PLABEL[b.type]} · Block {blockName(t)} · {E.QLABEL[E.qGrade(b.quality)]}-grade
+                {E.stockName(state, b)} · {(b.sf / 1000).toFixed(0)}K SF {E.PLABEL[b.type]} · Block {blockName(t)} · {E.QLABEL[E.qGrade(b.quality)]}-grade
                 {b.listedId ? <span style={{ color: 'var(--green)' }}> · listed for sale</span> : ''}
               </span>
               <span className="num dim">{pct(b.occ)} · ~{E.fmtMoney(est(b))}</span>

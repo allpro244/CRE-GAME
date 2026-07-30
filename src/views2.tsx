@@ -340,7 +340,7 @@ function DealIndex({ state, listings, openDeal }: {
     <div className="panel" style={{ padding: '6px 10px' }}>
       <table className="sc">
         <thead><tr>
-          <th style={{ textAlign: 'left' }}>Type</th><th style={{ textAlign: 'left' }}>Block</th>
+          <th style={{ textAlign: 'left' }}>Type</th><th style={{ textAlign: 'left' }}>Property</th><th style={{ textAlign: 'left' }}>Block</th>
           <th style={{ textAlign: 'left' }}>Zoned</th>
           <Th id="price" label="Price" /><Th id="sf" label="SF" /><Th id="psf" label="$/SF" />
           <th>Units · leased</th>
@@ -359,6 +359,11 @@ function DealIndex({ state, listings, openDeal }: {
                 {l.hot && <span className="chip chip-hot" style={{ marginLeft: 4 }}>Hot</span>}
                 {l.rivalEye && <span className="chip chip-distress" style={{ marginLeft: 4 }} title={`${state.firms.find(f => f.short === l.rivalEye)?.name ?? 'A rival'} is circling — they close within the month`}>⚔</span>}
               </td>
+              <td style={{ textAlign: 'left', fontSize: 11.5 }}>{(() => {
+                if (land) return <span className="dim">{(l as any).omLead ? 'Off-market dirt' : 'Listed land'}</span>;
+                const stk = l.stockId !== undefined ? state.stock.find(sb => sb.id === l.stockId) : undefined;
+                return stk ? E.stockName(state, stk) : <span className="dim">—</span>;
+              })()}</td>
               <td className="num dim">{blockName(t)} <span className="faint" style={{ fontSize: 9 }}>▸ map</span></td>
               <td className="num dim">{E.zoneCode(t.zone)}</td>
               <td className="num">{E.fmtMoney(l.price)}</td>
@@ -446,7 +451,10 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
     const sketch = { type: listing.type!, construction: listing.construction ?? E.CONSTR[listing.type!][0].id, sf: listing.sf!, units: listing.units ?? 1, quality: listing.quality ?? 75 };
     return (
       <Modal close={close} wide variant={variant}>
-        <h2>{E.PLABEL[listing.type!]} — Block {blockName(t)} {listing.kind === 'offmarket' && <span className="chip chip-om" style={{ verticalAlign: 'middle' }}>Off-market</span>}</h2>
+        <h2>{(() => {
+          const stk = listing.stockId !== undefined ? state.stock.find(sb => sb.id === listing.stockId) : undefined;
+          return stk ? E.stockName(state, stk) : `${E.PLABEL[listing.type!]} — Block ${blockName(t)}`;
+        })()} {listing.kind === 'offmarket' && <span className="chip chip-om" style={{ verticalAlign: 'middle' }}>Off-market</span>}</h2>
         <div className="sub">
           {((listing.sf ?? 0) / 1000).toFixed(0)}K SF on {listing.acres} acres · {listing.units} unit{(listing.units ?? 1) > 1 ? 's' : ''} · {E.QLABEL[E.qGrade(listing.quality ?? 75)]}-grade {E.constrSpec(sketch).label.toLowerCase()} · built {2026 - (listing.age ?? 10)}
           {listing.distressed && <span className="amber"> · distressed — priced to move</span>}
@@ -1552,10 +1560,11 @@ function SaleOfferRow({ state, setState, offer, asset, onSold }: {
 // metrics side by side — sort by anything, filter to a sector or an owner, click
 // through to the building itself.
 type RegRow = {
-  kind: 'stock' | 'asset'; id: number; tileI: number; block: string; type: PType; constr: string;
+  kind: 'stock' | 'asset'; id: number; tileI: number; block: string; type: PType; constr: string; name: string;
   sf: number; built: number; q: number; occ: number; owner: string; rent: number; value: number; cap: number; status: string;
 };
 const REG_COLS: { k: keyof RegRow; label: string; num?: boolean; fmt?: (r: RegRow) => any }[] = [
+  { k: 'name', label: 'Property' },
   { k: 'block', label: 'Block' },
   { k: 'owner', label: 'Owner' },
   { k: 'type', label: 'Type', fmt: r => E.PLABEL[r.type] },
@@ -1580,7 +1589,7 @@ export function CityRegistryView({ state, openStock, openAsset }: {
     for (const b of state.stock) {
       const t = state.tiles[b.tileI];
       out.push({
-        kind: 'stock', id: b.id, tileI: b.tileI, block: blockName(t), type: b.type, constr: b.construction,
+        kind: 'stock', id: b.id, tileI: b.tileI, block: blockName(t), type: b.type, constr: b.construction, name: E.stockName(state, b),
         sf: b.sf, built: 2026 - Math.round(b.age), q: Math.round(b.quality), occ: b.buildLeft ? 0 : b.occ,
         owner: b.owner === 'private' ? 'Private' : b.owner,
         rent: E.assetRentPSF(state, { tileI: b.tileI, type: b.type, quality: b.quality, units: b.units, construction: b.construction, mix: b.mix, id: b.id } as any),
@@ -1592,7 +1601,7 @@ export function CityRegistryView({ state, openStock, openAsset }: {
     for (const a of state.assets) {
       const t = state.tiles[a.tileI];
       out.push({
-        kind: 'asset', id: a.id, tileI: a.tileI, block: blockName(t), type: a.type, constr: a.construction,
+        kind: 'asset', id: a.id, tileI: a.tileI, block: blockName(t), type: a.type, constr: a.construction, name: a.name,
         sf: a.sf, built: 2026 - Math.round(a.age), q: Math.round(a.quality), occ: a.mode === 'construction' ? 0 : a.occ,
         owner: 'You',
         rent: E.assetRentPSF(state, a),

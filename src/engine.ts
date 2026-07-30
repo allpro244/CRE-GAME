@@ -2113,6 +2113,40 @@ function nameFor(state: GameState, type: PType): string {
   return `${base} ${suffix}`;
 }
 
+// Every standing building has a name — the one on the monument sign, the one the
+// brokers use on the phone. Derived, not stored: seeded off the campaign and the
+// building's id, so it never changes and costs the save file nothing. Two Larkspurs
+// in one city is not a bug; it's Tuesday.
+const NAMES2 = ['Aldrich', 'Bellamy', 'Corliss', 'Dunmore', 'Everett', 'Fairbank', 'Gresham', 'Hollis', 'Ivywood', 'Jasper', 'Kingsley', 'Linden', 'Marlowe', 'Norcross', 'Osgood', 'Pinehurst', 'Redwing', 'Saxon', 'Thornton', 'Vesper', 'Wexford', 'Yardley'];
+export function stockName(state: GameState, b: { id: number; type: PType; construction: string; quality: number; age: number }): string {
+  const r = mulberry32((state.seed ^ Math.imul(b.id + 7, 0x85ebca6b)) | 0);
+  const pool = r() < 0.5 ? NAMES : NAMES2;
+  const base = pool[Math.floor(r() * pool.length) % pool.length];
+  const p = (arr: string[]) => arr[Math.floor(r() * arr.length) % arr.length];
+  const old = b.age > 45;
+  if (b.type === 'office') {
+    if (b.construction === 'concrete') return b.quality >= 105 ? p([`${base} Tower`, `One ${base} Plaza`, `${base} Centre`]) : p([`${base} Tower`, `${base} Executive Center`, `The ${base} Building`]);
+    if (b.construction === 'masonry') return old ? `The ${base} Building` : p([`${base} Court`, `The ${base} Building`, `${base} Hall`]);
+    return p([`${base} House`, `${base} Professional Building`]);
+  }
+  if (b.type === 'retail') {
+    if (b.construction === 'center') return p([`${base} Crossing`, `${base} Commons`, `${base} Marketplace`, `Shops at ${base}`]);
+    if (b.construction === 'pad') return p([`${base} Corner`, `${base} Point`]);
+    return p([`${base} Plaza`, `${base} Square Shops`, `${base} Row`]);
+  }
+  if (b.type === 'industrial') {
+    if (b.construction === 'tilt') return p([`${base} Distribution Center`, `${base} Logistics Center`, `${base} Commerce Center`]);
+    if (b.construction === 'metal') return p([`${base} Industrial`, `${base} Commerce Park`, `${base} Supply Building`]);
+    return old ? p([`${base} Works`, `Old ${base} Yard`, `${base} Iron Works`]) : p([`${base} Works`, `${base} Yard`]);
+  }
+  if (b.type === 'multifamily') {
+    if (b.construction === 'garden') return p([`${base} Court`, `${base} Gardens`, `${base} Village Apartments`]);
+    if (b.construction === 'tower') return p([`The ${base}`, `${base} Residences`, `${base} House`]);
+    return p([`The ${base}`, `${base} Flats`, `${base} Lofts`]);
+  }
+  return p([`${base} Exchange`, `${base} Mercantile`, `${base} Market Block`, `${base} Row`]);
+}
+
 export interface DevChoice {
   type: PType; sf: number; units: number; construction: string;
   mix?: MixSplit;        // mixed-use: your program — how much retail, office, apartments

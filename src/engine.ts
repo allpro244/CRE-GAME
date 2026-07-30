@@ -196,6 +196,11 @@ export interface Economy {
   // mid-turn, blending the live era toward it over ~3 years
   eraMonthsLeft?: number;
   eraNext?: { rateBias: number; inflBias: number; vol: number; tempo: number; sectorTilt?: Partial<Record<PType, number>> };
+  // no two recessions are the same: severity is rolled at the turn (1 = ordinary,
+  // 2+ = the kind they name). A sector bust marks the cycle's most overbuilt asset
+  // class down hard and bleeds it for a year on top of the general downturn.
+  recSeverity?: number;
+  bustType?: PType; bustMonthsLeft?: number;
 }
 
 export interface Loan {
@@ -4727,12 +4732,41 @@ function tickEconomy(s: GameState) {
       recession: 'The cycle has turned: layoffs, falling confidence, and lenders remembering what risk is.',
     };
     pushNews(s, 'event', msg[e.phase]);
+    if (e.phase === 'recession') {
+      // roll this one's severity: most are ordinary; some get named
+      e.recSeverity = Math.round(clamp((0.65 + rng(s) * 1.5) * (0.7 + 0.3 * (e.era?.vol ?? 1)), 0.6, 2.3) * 100) / 100;
+      if (e.recSeverity > 1.6) pushNews(s, 'event', 'This one is different. The old-timers are using the word "depression" in private, and the young analysts are learning why basements have bars.');
+      // the most overbuilt sector takes the bust personally: an immediate markdown,
+      // then a year of bleeding while the excess space gets absorbed or abandoned
+      if (rng(s) < 0.4) {
+        const over = (['office', 'retail', 'industrial', 'multifamily'] as PType[])
+          .reduce((x, y) => (e.cityVac[y] - EQ_VAC[y]) > (e.cityVac[x] - EQ_VAC[x]) ? y : x);
+        e.bustType = over;
+        e.bustMonthsLeft = 10 + Math.floor(rng(s) * 9);
+        e.rentIdx[over] *= 1 - (0.03 + rng(s) * 0.04);
+        pushNews(s, 'event', `THE ${PLABEL[over].toUpperCase()} BUST: the cycle's favorite got overbuilt, and the music stopped. Asking rents marked down overnight; the bleeding runs until the excess space finds tenants — or the wreckers.`);
+      }
+    }
     if (e.phase === 'recession' && !e.hadCrunch && rng(s) < 0.5) {
       e.hadCrunch = true; e.crunchMonthsLeft = 12;
       pushNews(s, 'event', 'CREDIT CRUNCH: banks are pulling back. LTVs cut 10 points, refinancing frozen for ~12 months. Leverage is about to be graded.');
     }
+    if (e.phase === 'recovery') e.recSeverity = undefined;
   }
-  const t = PHASE_TARGET[e.phase];
+  const t0 = PHASE_TARGET[e.phase];
+  // severity deepens the trough: a 2.0 recession cuts employment and confidence
+  // nearly twice as hard as an ordinary one, and the central bank cuts deeper
+  const sev = e.phase === 'recession' ? (e.recSeverity ?? 1) : 1;
+  const t = e.phase === 'recession'
+    ? { rate: t0.rate - (sev - 1) * 0.7, infl: t0.infl, emp: t0.emp - (sev - 1) * 7, conf: t0.conf - (sev - 1) * 16 }
+    : t0;
+  if ((e.bustMonthsLeft ?? 0) > 0) {
+    e.bustMonthsLeft!--;
+    if (e.bustMonthsLeft === 0 && e.bustType) {
+      pushNews(s, 'info', `The ${PLABEL[e.bustType].toLowerCase()} bust has bled out — capitulation is complete, the weak hands are gone, and every basis in the sector just reset. Bottoms look like this.`);
+      e.bustType = undefined;
+    }
+  }
   // above ~3.2% inflation the central bank stops being polite: every extra point of
   // inflation pulls the rate target up 1.6 points. A 6% inflation episode means
   // double-digit prime — the bad times the old-timers still talk about.
@@ -4791,6 +4825,8 @@ function tickEconomy(s: GameState) {
     if (ty === 'industrial') demandDrift = 0.045 + (e.ecomMonthsLeft > 0 ? 0.08 : 0) + (e.empIdx - 100) * 0.005 + biz;
     if (ty === 'multifamily') demandDrift = 0.05 + e.popGrowth * 0.05 + (e.confidence - 55) * 0.0012;
     demandDrift += e.era?.sectorTilt?.[ty] ?? 0;   // the era's secular story: this generation's winner isn't the last one's
+    if (e.phase === 'recession') demandDrift -= ((e.recSeverity ?? 1) - 1) * 0.018;   // a named recession cuts demand everywhere
+    if (e.bustType === ty && (e.bustMonthsLeft ?? 0) > 0) demandDrift -= 0.055;       // the busted sector bleeds on top of it
     const eqVac = EQ_VAC[ty];
     // real vacancy in the modeled stock; the ambient metro beyond our blocks leans
     // toward equilibrium, shifted by where macro demand is pulling
@@ -4799,9 +4835,12 @@ function tickEconomy(s: GameState) {
     const target = realVac * 0.6 + (eqVac + macroShift) * 0.4;
     e.cityVac[ty] = clamp(e.cityVac[ty] + (target - e.cityVac[ty]) * 0.35 + (rng(s) - 0.5) * 0.12, 2, 32);
     // rents follow the vacancy gap with MOMENTUM — a tightening market builds rent
-    // growth over quarters and takes quarters to roll over, like a real one
+    // growth over quarters and takes quarters to roll over, like a real one.
+    // Asymmetric on purpose: markets crash faster than they recover — a landlord
+    // chases a fleeing tenant with cuts overnight, but rebuilds pricing power slowly
     const gap = eqVac - e.cityVac[ty];
-    e.rentMom[ty] = e.rentMom[ty] * 0.78 + (gap * 0.0011) * 0.22;
+    const mk = gap < 0 ? 0.0016 : 0.0011, mb = gap < 0 ? 0.30 : 0.22;
+    e.rentMom[ty] = e.rentMom[ty] * (1 - mb) + (gap * mk) * mb;
     // rents carry the same inflation pass-through as construction costs (costIdx above),
     // so a development pro forma means the same thing in year 25 as in year 1 —
     // the cycle moves rents around that line, not permanently below it.
@@ -4817,7 +4856,10 @@ function tickEconomy(s: GameState) {
     const K: Record<string, number> = { office: 1.12, retail: 1.05, industrial: 0.70, multifamily: 1.18, mixed: 1 };
     const kEff = 1 + ((K[ty] ?? 1) - 1) * Math.min(1, Math.max(0, (e.costIdx - 1) / 1.5));
     const feas = clamp(kEff * e.costIdx / e.rentIdx[ty] - 1, -0.8, 0.8) * 0.0045;
-    const growth = e.rentMom[ty] + (e.inflation / 100) * 0.5 / 12 + (e.era?.sectorTilt?.[ty] ?? 0) * 0.018 + feas;
+    // froth: a giddy peak pushes rents past what vacancy justifies — the overshoot
+    // the next recession takes back with interest
+    const froth = e.phase === 'peak' ? Math.max(0, e.confidence - 70) * 0.00012 : 0;
+    const growth = e.rentMom[ty] + (e.inflation / 100) * 0.5 / 12 + (e.era?.sectorTilt?.[ty] ?? 0) * 0.018 + feas + froth;
     // the bounds ride the cost index: year-80 rents measure against year-80
     // replacement cost, not against a ceiling written for year one
     const anchor = Math.max(1, e.costIdx * 0.8);
@@ -5757,8 +5799,13 @@ function tickFirms(s: GameState) {
         continue;
       }
     }
-    // appetite rides the demographic tide: boom decades build, decline decades don't
-    const devAppetite = 0.05 * (s.econ.demo?.regime === 'boom' ? 1.5 : s.econ.demo?.regime === 'decline' ? 0.5 : 1);
+    // appetite rides the demographic tide: boom decades build, decline decades don't.
+    // And it HERDS with the cycle — everyone breaks ground at the peak, when money is
+    // brave and rents look permanent, and that supply delivers straight into the bust.
+    // Nobody builds at the bottom, which is why the next recovery gets tight.
+    const herd = (s.econ.phase === 'peak' ? 1.8 : s.econ.phase === 'expansion' ? 1.3 : s.econ.phase === 'recession' ? 0.25 : 0.7)
+      * clamp(s.econ.confidence / 60, 0.6, 1.4);
+    const devAppetite = 0.05 * herd * (s.econ.demo?.regime === 'boom' ? 1.5 : s.econ.demo?.regime === 'decline' ? 0.5 : 1);
     if (rng(s) < devAppetite && f.netWorth > 8_000_000) firmDevelops(s, f);
     if (rng(s) > 0.35) continue; // ten firms can't all be buying every quarter
     const fit = (l: Listing): number => {

@@ -724,19 +724,6 @@ const StreetLife = memo(function StreetLife({ runs, seed, detail, season = 'summ
 });
 const pick2 = <T,>(r: () => number, arr: readonly T[]): T => arr[Math.floor(r() * arr.length) % arr.length];
 
-// ---------- day/night ----------
-// Time of day rides the calendar: an eight-month cycle (three day, dusk, three
-// night, dawn) so the city regularly earns its evenings — that's when the
-// occupancy-lit windows become the read. Derived from state.month; nothing stored.
-export type DayPhase = 'day' | 'dusk' | 'night' | 'dawn';
-const PHASE_CYCLE: DayPhase[] = ['day', 'day', 'day', 'dusk', 'night', 'night', 'night', 'dawn'];
-export const dayPhaseOf = (month: number): DayPhase => PHASE_CYCLE[((month % 8) + 8) % 8];
-const PHASE_TINT: Record<Exclude<DayPhase, 'day'>, { fill: string; op: number; veil?: number }> = {
-  dusk: { fill: '#b57a48', op: 0.34 },
-  night: { fill: '#2c3c58', op: 0.78, veil: 0.24 },
-  dawn: { fill: '#d9b9a0', op: 0.26 },
-};
-
 // ---------- weather ----------
 // A month is rainy or foggy or clear, seeded off the campaign — you can't schedule
 // around it, and it never touches the numbers. Roughly one month in five gets rain,
@@ -750,71 +737,6 @@ function weatherOf(seed: number, month: number): WeatherKind {
   const r = ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   return r < 0.20 ? 'rain' : r < 0.32 ? 'fog' : 'clear';
 }
-
-// Streetlight positions are pure geometry (no rng), so the day layer and the
-// night glow layer can agree on them without sharing state.
-function lampPoints(runs: RoadRun[]): { hx: number; hy: number; gx: number; gy: number }[] {
-  const out: { hx: number; hy: number; gx: number; gy: number }[] = [];
-  for (const run of runs) {
-    if (run.cls !== 3 && run.cls !== 4) continue;
-    const [p0, p1] = run.pts;
-    const horiz = Math.abs(p1[0] - p0[0]) > Math.abs(p1[1] - p0[1]);
-    const len = Math.abs(p1[0] - p0[0]) + Math.abs(p1[1] - p0[1]);
-    const nL = Math.min(4, Math.floor(len / 1.4));
-    for (let i = 0; i < nL && out.length < 120; i++) {
-      const u = (i + 0.5) / nL;
-      const side = i % 2 === 0 ? -0.085 : 0.085;
-      const gx0 = p0[0] + (p1[0] - p0[0]) * u, gy0 = p0[1] + (p1[1] - p0[1]) * u;
-      const [cx, cy] = isoPt(gx0 + (horiz ? 0 : side), gy0 + (horiz ? side : 0));
-      const arm = i % 2 === 0 ? 1.0 : -1.0;
-      out.push({ hx: cx + arm, hy: cy - 2.9, gx: cx + arm, gy: cy + 0.3 });
-    }
-  }
-  return out;
-}
-
-// After dark the city re-lights from above the tint layer: scattered warm windows
-// on occupied buildings (count follows occupancy — a vacant tower stays dark) and
-// pooled lamplight on the arterials at close zoom. Everything seeded, nothing new
-// per frame.
-const NightGlow = memo(function NightGlow({ blds, lamps, seed, zb }: {
-  blds: IsoBld[]; lamps: { hx: number; hy: number; gx: number; gy: number }[]; seed: number; zb: number;
-}) {
-  const els: React.ReactNode[] = [];
-  // window size follows the zoom bucket: from across the valley a lit office is a
-  // fat grain of light, up close it's a window
-  const ww = zb >= 2 ? 1.5 : zb === 1 ? 2.1 : 2.8, wh = ww * 0.7;
-  let n = 0;
-  for (const b of blds) {
-    if (!b.type || b.prog !== undefined || !b.occ || b.ht < 5 || n > 620) continue;
-    let a = ((b.seed ?? 1) ^ Math.imul(seed, 0x9e3779b9)) | 0;
-    const r = () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-    const tall = b.ht > 40;
-    const base = Math.max(1, Math.round(b.occ * (tall ? 5 : 2.4) * (0.55 + r() * 0.7)));
-    const count = Math.min(6, zb >= 2 ? Math.max(1, Math.round(base / 2)) : base);
-    const [bx, by] = isoPt(b.cx, b.cy);
-    const spread = (b.w + b.h) * IW * (zb >= 2 ? 0.10 : 0.15);
-    for (let i = 0; i < count; i++) {
-      const wx = bx + (r() - 0.5) * spread;
-      const wy = by + (b.w + b.h) * IH * 0.12 - 2.2 - r() * Math.max(1, b.ht * 0.82 - 3);
-      els.push(<rect key={'w' + n} x={wx.toFixed(1)} y={wy.toFixed(1)} width={ww} height={wh}
-        fill="#eab764" opacity={0.55 + r() * 0.4} className={r() < 0.16 ? 'twk' : undefined}
-        style={r() < 0.16 ? { animationDelay: (r() * 4).toFixed(1) + 's' } : undefined} />);
-      n++;
-    }
-  }
-  return (
-    <g style={{ pointerEvents: 'none' }}>
-      {els}
-      {zb >= 2 && lamps.map((l, i) => (
-        <g key={'lp' + i}>
-          <circle cx={l.gx} cy={l.gy} r={3.6} fill="#e8d9a0" opacity={0.13} />
-          <circle cx={l.hx} cy={l.hy} r={0.9} fill="#f4e4ae" opacity={0.9} />
-        </g>
-      ))}
-    </g>
-  );
-});
 
 // Boats on the water: hulls and wakes, seeded per tile — the river works too.
 const WaterLife = memo(function WaterLife({ tiles, seed }: { tiles: TileGeom[]; seed: number }) {
@@ -1383,7 +1305,6 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const field = useField(state, lens);
   const river = useMemo(() => riverGeometry(state), [state.seed]);
   const runs = useMemo(() => roadRuns(state.roads), [state.seed]); // eslint-disable-line
-  const lamps = useMemo(() => lampPoints(runs), [runs]);
   // the blocks the money forgot — recomputed only when the count shifts, so the
   // furniture layer doesn't churn on every desirability drift
   const loDStamp = state.tiles.reduce((s2, t) => s2 + (!t.water && t.D < 45 ? 1 : 0), 0);
@@ -1397,8 +1318,6 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
   const copStamp = state.tiles.reduce((s2, t) => s2 + (!t.water && t.crime > 65 ? 1 : 0), 0);
   const copTiles = useMemo(() => state.tiles.filter(t => !t.water && t.crime > 65).map(t => ({ i: t.i, x: t.x, y: t.y })), [copStamp, state.seed]); // eslint-disable-line
   const hue = LENS_HUE[lens];
-  // the hour of day rides the calendar; Off pins the map to noon
-  const phase: DayPhase = ambient >= 1 ? dayPhaseOf(state.month) : 'day';
   // and the season rides the same calendar — Off pins the city to summer
   const season: Season = ambient >= 1 ? seasonOf(state.month) : 'summer';
   const weather: WeatherKind = ambient >= 2 ? weatherOf(state.seed, state.month) : 'clear';
@@ -1569,7 +1488,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           <span style={{ flex: 1 }} />
           <button className={showBldgs ? '' : 'active'} onClick={() => setShowBldgs(b => !b)} title="Hide the buildings to read the lens and the vacant dirt underneath">{showBldgs ? '◻ hide bldgs' : '◼ show bldgs'}</button>
           <button onClick={cycleAmbient} className={ambient === 0 ? 'active' : ''}
-            title="Ambient detail — streetscape, day/night, seasons, weather. Off silences all of it.">◦ {AMBIENT_LABELS[ambient]}</button>
+            title="Ambient detail — streetscape, seasons, weather. Off silences all of it.">◦ {AMBIENT_LABELS[ambient]}</button>
           <button className={view === 'iso' ? 'active' : ''} onClick={() => setView('iso')} title="Isometric skyline view">◪ 2.5D</button>
           <button className={view === 'flat' ? 'active' : ''} onClick={() => setView('flat')} title="Flat plan view">▦ Plan</button>
           <button onClick={() => (view === 'iso' ? vpIso : vpFlat).zoomAt(1 / 1.35, undefined, undefined, true)} title="Zoom out">−</button>
@@ -1635,16 +1554,6 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           {ambient >= 2 && zb >= 2 && <StreetFurniture runs={runs} seed={state.seed} level={ambient} loD={loD} />}
           {ambient >= 2 && zb >= 2 && showBldgs && <ParcelLots blds={isoBlds} seed={state.seed} level={ambient} />}
           {showBldgs && <IsoCity blds={isoBlds} detail={zb >= 2} snow={ambient >= 2 && season === 'winter'} winterSun={season === 'winter'} />}
-          {/* the hour: a tint over the built city; lights re-emerge above it after dark */}
-          {phase !== 'day' && (
-            <g style={{ pointerEvents: 'none' }}>
-              <rect x={0} y={0} width={IW_TOT} height={IH_TOT} rx={6} fill={PHASE_TINT[phase].fill}
-                opacity={PHASE_TINT[phase].op} style={{ mixBlendMode: 'multiply' }} />
-              {PHASE_TINT[phase].veil && (
-                <rect x={0} y={0} width={IW_TOT} height={IH_TOT} rx={6} fill="#0d1526" opacity={PHASE_TINT[phase].veil} />
-              )}
-            </g>
-          )}
           {/* weather: rain wets the ground and streams past; fog sits on the far view */}
           {weather === 'rain' && (
             <g style={{ pointerEvents: 'none' }}>
@@ -1656,9 +1565,6 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
                   style={noMotion ? undefined : { animationDelay: ((i * 0.23) % 2.2).toFixed(2) + 's' }} />;
               })}
             </g>
-          )}
-          {phase === 'night' && ambient >= 2 && showBldgs && (
-            <NightGlow blds={isoBlds} lamps={lamps} seed={state.seed} zb={zb} />
           )}
           {weather === 'fog' && zb === 0 && (
             <g style={{ pointerEvents: 'none' }}>

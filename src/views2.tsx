@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import * as E from './engine';
 import type { GameState, Listing, Asset, DevChoice, PType, LOI } from './engine';
 import { Portrait, mapSeed } from './portrait';
@@ -386,10 +386,11 @@ function DealIndex({ state, listings, openDeal }: {
 }
 
 // ---------- Deal modal (building / off-market / land) ----------
-export function DealModal({ state, listing, setState, close, variant = 'dialog', onNotice }: {
+export function DealModal({ state, listing, setState, close, variant = 'dialog', onNotice, onDevGhost }: {
   state: GameState; listing: Listing; setState: (s: GameState) => void; close: () => void;
   variant?: 'dialog' | 'drawer';
   onNotice?: (msg: string) => void;
+  onDevGhost?: (g: { tileI: number; cells?: number[]; parcel?: { px: number; py: number; pw: number; ph: number }; type: PType; construction: string; sf: number } | null) => void;
 }) {
   const t = state.tiles[listing.tileI];
   const [err, setErr] = useState<string | null>(null);
@@ -409,6 +410,14 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
     contractor: 'standard', contingencyPct: 0.10, expedited: false, downPct: 0.35, fixedRate: false,
     contractType: 'costplus', bonded: false, designTier: 'std', recourse: false,
   }));
+  // ghost massing on the actual parcel while the design is configured: the map
+  // behind the drawer shows what this program would stand like, live
+  const isLandDeal = listing.kind === 'land';
+  useEffect(() => {
+    if (!onDevGhost || !isLandDeal) return;
+    onDevGhost({ tileI: listing.tileI, cells: listing.parcelCells, parcel: listing.parcel, type: dev.type, construction: dev.construction, sf: dev.sf });
+    return () => onDevGhost(null);
+  }, [onDevGhost, isLandDeal, listing.id, dev.type, dev.construction, dev.sf]); // eslint-disable-line
 
   const runFeas = () => {
     if (state.cash < E.CONFIG.feasCost) { setErr(`Feasibility costs ${E.fmtMoney(E.CONFIG.feasCost)} — you don't have it.`); return; }

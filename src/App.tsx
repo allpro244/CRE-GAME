@@ -102,6 +102,8 @@ function Game({ state, setState, toMenu }: {
   // first campaign, month zero: the primer opens itself once. Everyone else finds it in the top bar.
   const [howTo, setHowTo] = useState(() => state.month === 0 && !state.sandbox && state.assets.length === 0 && state.land.length === 0);
   const [focusTile, setFocusTile] = useState<number | null>(null);
+  // live ghost of the building being configured in the dev memo, shown on the map
+  const [devGhost, setDevGhost] = useState<{ tileI: number; cells?: number[]; parcel?: { px: number; py: number; pw: number; ph: number }; type: E.PType; construction: string; sf: number } | null>(null);
   const [assetId, setAssetId] = useState<number | null>(null);
   const flyTo = (tileI: number) => { setFocusTile(tileI); setTab('map'); setTimeout(() => setFocusTile(null), 60); };
   const seenLOIs = useRef<Set<number>>(new Set());
@@ -276,7 +278,7 @@ function Game({ state, setState, toMenu }: {
         {state.forcedSaleNotice && <div className="alert-strip red"><span>⚠ {state.forcedSaleNotice}</span></div>}
         {tab === 'dashboard' && <Dashboard state={state} goDeals={() => setTab('deals')} openLOI={id => setLoiId(id)} openFirm={s => setFirmShort(s)} flyTo={flyTo} />}
         {tab === 'map' && <MapView state={state} setState={setState} focusTile={focusTile} selTile={selTile} setSelTile={setSelTile}
-          advance={advance} advanceUntil={advanceUntil}
+          advance={advance} advanceUntil={advanceUntil} devGhost={devGhost}
           openDeal={id => { setStockCardId(null); setAssetId(null); setDealId(id); }}
           openStock={id => { setAssetId(null); setStockCardId(id); }}
           openAsset={id => { setStockCardId(null); setAssetId(id); }} />}
@@ -297,7 +299,7 @@ function Game({ state, setState, toMenu }: {
       {drawerAsset && <AssetDrawer state={state} setState={setState} asset={drawerAsset} close={() => setAssetId(null)}
         onSell={setSellId} onRefi={setRefiId} onLOI={setLoiId} openDeal={id => { setAssetId(null); setDealId(id); }} onSold={p => { setAssetId(null); setPm(p); }} />}
 
-      {listing && <DealModal state={state} listing={listing} setState={setState} close={() => setDealId(null)} variant={detailVariant} onNotice={setNotice} />}
+      {listing && <DealModal state={state} listing={listing} setState={setState} close={() => setDealId(null)} variant={detailVariant} onNotice={setNotice} onDevGhost={setDevGhost} />}
       {notice && (
         <Modal close={() => setNotice(null)}>
           <h2>They said no</h2>

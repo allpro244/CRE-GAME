@@ -1449,10 +1449,11 @@ function OwnLandDev({ state, setState, holding, openDeal }: {
   );
 }
 
-export function MapView({ state, setState, selTile, setSelTile, openDeal, openStock, openAsset, focusTile, advance, advanceUntil }: {
+export function MapView({ state, setState, selTile, setSelTile, openDeal, openStock, openAsset, focusTile, advance, advanceUntil, devGhost }: {
   state: GameState; setState: (s: GameState) => void; selTile: number | null; setSelTile: (i: number | null) => void;
   openDeal: (id: number) => void; openStock: (id: number) => void; openAsset: (id: number) => void;
   focusTile?: number | null; advance?: (n: number) => void; advanceUntil?: () => void;
+  devGhost?: { tileI: number; cells?: number[]; parcel?: { px: number; py: number; pw: number; ph: number }; type: E.PType; construction: string; sf: number } | null;
 }) {
   const [hover, setHover] = useState<{ text: string; sub: string; x: number; y: number } | null>(null);
   const [hoverCell, setHoverCell] = useState<{ tileI: number; px: number; py: number } | null>(null);
@@ -1938,6 +1939,27 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             return <polygon key={'pu' + i} className="tile-pulse" points={diamond(t.x, t.y, 0.98)} fill="none"
               stroke="var(--amber)" strokeWidth={2} style={{ pointerEvents: 'none' }} />;
           })}
+          {/* the dev memo's live ghost: what this program would stand like, right here */}
+          {devGhost && (() => {
+            const t = state.tiles[devGhost.tileI];
+            if (!t) return null;
+            const cells = devGhost.cells?.length ? devGhost.cells
+              : devGhost.parcel ? (() => { const out: number[] = []; for (let dy = 0; dy < devGhost.parcel!.ph; dy++) for (let dx = 0; dx < devGhost.parcel!.pw; dx++) out.push((devGhost.parcel!.py + dy) * E.PGRID + devGhost.parcel!.px + dx); return out; })()
+              : [5, 6, 9, 10];
+            const ht = massing(devGhost.type, devGhost.construction, devGhost.sf, cells.length, fabricOf(t.zone, devGhost.type)).ht;
+            return cellRects(cells).map((r2, i2) => {
+              const [ccx, ccy] = parcelCenter(t.x, t.y, r2.px, r2.py, r2.pw, r2.ph);
+              const [w2, h2] = parcelSpan(r2.pw, r2.ph);
+              const f2 = prismFaces(ccx, ccy, w2 * 0.88, h2 * 0.88, ht);
+              return (
+                <g key={'dg' + i2} style={{ pointerEvents: 'none' }}>
+                  <polygon points={f2.l} fill="rgba(93,143,232,0.08)" stroke="var(--blue)" strokeWidth={0.9} strokeDasharray="4 3" opacity={0.8} />
+                  <polygon points={f2.r} fill="rgba(93,143,232,0.13)" stroke="var(--blue)" strokeWidth={0.9} strokeDasharray="4 3" opacity={0.8} />
+                  <polygon points={f2.t} fill="rgba(93,143,232,0.22)" stroke="var(--blue)" strokeWidth={1.1} strokeDasharray="4 3" opacity={0.9} />
+                </g>
+              );
+            });
+          })()}
           {/* delivery: a gold double-ring settles on the finished building */}
           {ambient >= 1 && delivered.map((d2, k) => {
             const t = state.tiles[d2.tileI];

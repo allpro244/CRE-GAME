@@ -313,4 +313,7 @@ button.link-name:hover { color: var(--amber); }
 @keyframes shim { to { stroke-dashoffset: -64; } }
 .rainfall { animation: rainfall 1.6s linear infinite; }
 @keyframes rainfall { to { stroke-dashoffset: -37; } }
+/* the freight shuttle: two tile-lengths down the mainline and back, all day */
+.train-roll { animation: train-roll 26s ease-in-out infinite alternate; }
+@keyframes train-roll { from { transform: translate(-64px, -32px); } to { transform: translate(64px, 32px); } }
 .shim { animation: shim 7s linear infinite; }

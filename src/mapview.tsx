@@ -610,17 +610,20 @@ const StreetLife = memo(function StreetLife({ runs, seed, detail, season = 'summ
         trees++;
       }
     }
-    // one freight consist rolls the rail line — the spur is not decoration
+    // one freight consist WORKS the rail line — a slow shuttle move, back and
+    // forth along the mainline. Reduced-motion pins it in place.
     if (run.cls === 5 && !trainPlaced && len >= 4) {
       trainPlaced = true;
-      const u0 = 0.15 + r() * 0.3;
+      const u0 = 0.25 + r() * 0.2;
+      const cars2: React.ReactNode[] = [];
       for (let i = 0; i < 5; i++) {
         const u = u0 + i * (0.55 / len);
         const gx = p0[0] + (p1[0] - p0[0]) * u, gy = p0[1] + (p1[1] - p0[1]) * u;
         const [cx, cy] = isoPt(gx, gy);
-        els.push(<polygon key={'tr' + i} points={`${(cx - 1.9).toFixed(1)},${(cy - 0.3).toFixed(1)} ${(cx + 0.4).toFixed(1)},${(cy + 0.85).toFixed(1)} ${(cx + 1.9).toFixed(1)},${(cy + 0.1).toFixed(1)} ${(cx - 0.4).toFixed(1)},${(cy - 1.05).toFixed(1)}`}
+        cars2.push(<polygon key={'tr' + i} points={`${(cx - 1.9).toFixed(1)},${(cy - 0.3).toFixed(1)} ${(cx + 0.4).toFixed(1)},${(cy + 0.85).toFixed(1)} ${(cx + 1.9).toFixed(1)},${(cy + 0.1).toFixed(1)} ${(cx - 0.4).toFixed(1)},${(cy - 1.05).toFixed(1)}`}
           fill={i === 0 ? '#5a4a3a' : pick2(r, ['#6e4a34', '#4a5a52', '#54586a', '#6a5a44'])} opacity={0.95} />);
       }
+      els.push(<g key="train" className={horiz ? 'train-roll' : undefined}>{cars2}</g>);
     }
     if (!detail) continue;
     // ---------- close-zoom dressing ----------

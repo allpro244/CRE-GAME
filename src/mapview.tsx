@@ -1310,13 +1310,14 @@ const FieldFlat = memo(function FieldFlat({ field, hue }: { field: { x: number; 
   ))}</g>;
 });
 
-// Flat-view ground under the lens wash — same grass/dust/park read as the iso view.
-const FlatGround = memo(function FlatGround({ tiles }: { tiles: TileGeom[] }) {
+// Flat-view ground under the lens wash — same grass/dust/park read as the iso
+// view, and the same calendar: the plan sheet is no longer stuck in July.
+const FlatGround = memo(function FlatGround({ tiles, season = 'summer' }: { tiles: TileGeom[]; season?: Season }) {
   return <g>{tiles.map(t => {
     if (t.water && !t.canal) return null;
     const gi = ((t.x * 7 + t.y * 13) | 0) % 3;
     return <rect key={'fg' + t.i} x={t.x * TS} y={t.y * TS} width={TS} height={TS}
-      fill={t.park ? '#6f9e53' : t.dust ? DUST[gi] : GRASS_BY.summer[gi]} stroke="#c3c5b4" strokeWidth={0.8} />;
+      fill={t.park ? PARK_BY[season] : t.dust ? DUST[gi] : GRASS_BY[season][gi]} stroke="#c3c5b4" strokeWidth={0.8} />;
   })}</g>;
 });
 
@@ -1923,7 +1924,7 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
             <text key={'cy' + i} x={-10} y={(i + 0.5) * TS + 3.5} textAnchor="middle" fill="var(--dim)" fontSize={10} fontFamily="var(--mono)">{i + 1}</text>
           ))}
           {/* grass under everything, then the value field — or the zoning map, which is paper */}
-          <FlatGround tiles={tilesGeom} />
+          <FlatGround tiles={tilesGeom} season={season} />
           {lens === 'zoning'
             ? <ZoningFlat tiles={state.tiles} rezonings={state.rezonings} zoneStamp={zoneStamp} />
             : lens === 'city' ? null
@@ -1973,6 +1974,14 @@ export function MapView({ state, setState, selTile, setSelTile, openDeal, openSt
           {sel && (
             <rect x={sel.x * TS + 1} y={sel.y * TS + 1} width={TS - 2} height={TS - 2} rx={5}
               fill="none" stroke="var(--amber)" strokeWidth={2.2} style={{ pointerEvents: 'none' }} />
+          )}
+          {/* the same weather the iso view gets — the plan sheet is outdoors too */}
+          {weather === 'rain' && (
+            <rect x={-20} y={-18} width={W + 24} height={H + 22} rx={6} fill="#5a6470" opacity={0.20}
+              style={{ mixBlendMode: 'multiply', pointerEvents: 'none' }} />
+          )}
+          {weather === 'fog' && vpFlat.z < 1.7 && (
+            <rect x={-20} y={-18} width={W + 24} height={H + 22} rx={6} fill="#c3cad2" opacity={0.14} style={{ pointerEvents: 'none' }} />
           )}
         </svg>
         )}

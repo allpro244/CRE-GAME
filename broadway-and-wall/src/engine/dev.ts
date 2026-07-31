@@ -134,6 +134,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
         originQ: s.quarter,
       };
       delete s.developments[d.bbl];
+      bumpLand(s, d.bbl, 1.06);
       s.news.unshift({ q: s.quarter, kind: "deal", text: `Delivered: ${(d.sf / 1000).toFixed(0)}k sf of ${d.use} at ${rec.address}. Now fill it.` });
     }
   }
@@ -187,4 +188,72 @@ export function setStance(s: GameState, bbl: string, stance: -1 | 0 | 1): GameSt
   const next = clone(s);
   if (next.holdings[bbl]) next.holdings[bbl].stance = stance;
   return next;
+}
+
+// ---- the city builds itself ------------------------------------------------
+// Ashport is young. Over a century, the market fills in the vacant lots
+// around you — fastest in booms, near-stalled in recessions, always working
+// outward from the demand peaks. Every delivery lifts land values on its
+// block, so watching where the cranes go is a market signal.
+const GROWTH_RATE: Record<string, number> = {
+  expansion: 2.1, peak: 1.5, recovery: 1.0, recession: 0.2,
+};
+
+function useForZone(zone: string, demand: number, r: number): BuiltClass {
+  if (zone.startsWith("M")) return "industrial";
+  if (zone.startsWith("R")) return "multifamily";
+  if (demand > 70) return r < 0.55 ? "office" : r < 0.85 ? "mixed" : "retail";
+  if (demand > 45) return r < 0.4 ? "mixed" : r < 0.8 ? "multifamily" : "retail";
+  return r < 0.7 ? "multifamily" : "retail";
+}
+
+export function tickCityGrowth(
+  s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null,
+) {
+  const rate = GROWTH_RATE[s.econ.phase] ?? 1;
+  let n = Math.floor(rate) + (rng(s) < rate % 1 ? 1 : 0);
+  // the town matures: later buildings are bigger than the first ones
+  const maturity = Math.min(1, s.quarter / 260);
+
+  while (n-- > 0) {
+    // sample a handful of candidates, build on the most in-demand of them
+    let best: { bbl: string; rec: (typeof parcels)[string] } | null = null;
+    let bestScore = -1;
+    for (let i = 0; i < 36; i++) {
+      const bbl = bbls[Math.floor(rng(s) * bbls.length)];
+      if (s.holdings[bbl] || s.built[bbl] || s.developments[bbl]) continue;
+      const rec = parcels[bbl];
+      if (!rec || rec.class !== "land" || rec.lotArea < 1500) continue;
+      const score = rec.demandScore + rng(s) * 25;
+      if (score > bestScore) { bestScore = score; best = { bbl, rec }; }
+    }
+    if (!best) continue;
+    const { bbl, rec } = best;
+    const use = useForZone(rec.zoneDist, rec.demandScore, rng(s));
+    const farMax = use === "multifamily" ? (rec.farMaxRes || rec.farMaxComm) : (rec.farMaxComm || rec.farMaxRes);
+    if (!farMax) continue;
+    // young town builds small; a mature one builds to the envelope
+    const frac = Math.min(0.95, 0.22 + 0.45 * maturity + 0.3 * (rec.demandScore / 100) * maturity + rng(s) * 0.15);
+    const sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
+    const floors = Math.max(1, Math.round(sf / (rec.lotArea * 0.62)));
+    s.built[bbl] = { class: use, bldgArea: sf, floors, yearBuilt: 2026 + Math.floor(s.quarter / 4) };
+    s.cityBuilt.push(bbl);
+
+    // land appreciates on the block that just got built
+    bumpLand(s, bbl, 1.05);
+    for (const nb of adjacency?.[bbl] ?? []) bumpLand(s, nb, 1.03);
+
+    if (rng(s) < 0.28) {
+      s.news.unshift({
+        q: s.quarter, kind: "info",
+        text: floors >= 8
+          ? `A ${floors}-story ${use} building topped out at ${rec.address}.`
+          : `New ${use} construction delivered at ${rec.address}.`,
+      });
+    }
+  }
+}
+
+export function bumpLand(s: GameState, bbl: string, mult: number) {
+  s.landAdj[bbl] = Math.min(4, (s.landAdj[bbl] ?? 1) * mult);
 }

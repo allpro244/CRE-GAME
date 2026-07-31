@@ -613,10 +613,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       cx /= ring.length; cy /= ring.length;
       const fp = ring.map(([x, y]) => [cx + (x - cx) * 0.78, cy + (y - cy) * 0.78] as [number, number]);
       const h = Math.max(3, item.heightM);
-      const style = item.construction ? 5
-        : item.cls === "industrial" ? 3
-        : item.cls === "retail" ? 7
-        : 0;
+      const style = item.construction ? 5          // bare structure while it rises
+        : item.cls === "industrial" ? 3             // sash-window shed
+        : item.cls === "multifamily" ? 2            // modern brick
+        : item.cls === "retail" ? 7                 // ribbon storefront
+        : 0;                                        // office / mixed: curtain wall
       const fh2 = item.floors > 0 ? Math.max(2.6, item.heightM / item.floors) : 3.5;
       const meta = [style, 0.5, 0.4, h, fh2];
       const T = { pos: [] as number[], norm: [] as number[], u: [] as number[], style: [] as number[], rand: [] as number[], varr: [] as number[], top: [] as number[], fh: [] as number[] };

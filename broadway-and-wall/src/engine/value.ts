@@ -46,8 +46,12 @@ export function resolveRec(parcels: Record<string, ParcelRecord>, s: GameState, 
   const rec = parcels[bbl];
   if (!rec) return null;
   const b = s.built?.[bbl];
-  if (!b) return rec;
-  return { ...rec, class: b.class, bldgArea: b.bldgArea, floors: b.floors, yearBuilt: b.yearBuilt };
+  const adj = s.landAdj?.[bbl];
+  if (!b && !adj) return rec;
+  const out = { ...rec };
+  if (adj) out.landPsf = rec.landPsf * adj;
+  if (b) { out.class = b.class; out.bldgArea = b.bldgArea; out.floors = b.floors; out.yearBuilt = b.yearBuilt; }
+  return out;
 }
 
 // Achievable rent for NEW leases in a managed building: capital programs and

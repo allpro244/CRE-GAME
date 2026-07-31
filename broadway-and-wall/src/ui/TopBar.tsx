@@ -1,5 +1,5 @@
 import { useStore, derivedNetWorth, derivedQuarterCF } from "@/state/store";
-import { quarterLabel } from "@/engine/types";
+import { quarterLabel, CAMPAIGN_QUARTERS } from "@/engine/types";
 import { usd, pct } from "./format";
 
 export default function TopBar() {
@@ -28,12 +28,18 @@ export default function TopBar() {
 
       {game && (
         <div className="topbar-game">
-          <Stat label={quarterLabel(game.quarter)} value="" wide />
+          <Stat label={quarterLabel(game.quarter)} value={`Yr ${Math.floor(game.quarter / 4) + 1}/${CAMPAIGN_QUARTERS / 4}`} wide />
           <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} />
           <Stat label="Net worth" value={usd(nw)} />
           <Stat label="CF / qtr" value={usd(cf)} bad={cf < 0} />
           <Stat label="Index" value={pct(game.econ.indexRate)} />
           <Stat label="Market" value={game.econ.phase} />
+          <Stat
+            label="City built"
+            value={game.totalLots
+              ? Math.round((100 * (game.builtAtStart + Object.keys(game.built).length)) / game.totalLots) + "%"
+              : "—"}
+          />
           <button
             className={"lens-btn" + (lens === "land" ? " lens-on" : "")}
             onClick={() => setLens(lens === "land" ? "none" : "land")}

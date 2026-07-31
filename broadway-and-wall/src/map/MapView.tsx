@@ -247,7 +247,8 @@ export default function MapView() {
     layer.setTints(tints);
   }, [selectedBBL, hoveredBBL, adjacency, game, mapReady]);
 
-  // player construction and deliveries onto the skyline
+  // player construction and city growth onto the skyline
+  const dynSigRef = useRef("");
   useEffect(() => {
     const layer = threeRef.current;
     if (!layer || !mapReady || !game) return;
@@ -260,6 +261,10 @@ export default function MapView() {
     for (const [bbl, b] of Object.entries(game.built ?? {})) {
       items.push({ bbl, cls: b.class, heightM: b.floors * 3.4, floors: b.floors, construction: false });
     }
+    // meshes are rebuilt only when the skyline actually changed
+    const sig = items.map((i) => i.bbl + ":" + i.heightM.toFixed(1) + (i.construction ? "c" : "")).join("|");
+    if (sig === dynSigRef.current) return;
+    dynSigRef.current = sig;
     layer.setPlayerBuildings(items);
   }, [game, mapReady]);
 

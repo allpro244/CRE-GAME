@@ -2,12 +2,12 @@
 // (state, parcels) in, state out. The UI is a lens on this.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
-import { START_CASH, quarterLabel } from "./types";
+import { START_CASH, CAMPAIGN_QUARTERS, quarterLabel } from "./types";
 import { initEcon, rng, rrange, tickEcon } from "./market";
 import { assetValue, initialCondition, quarterlyNOI, resolveRec } from "./value";
 import { tickLeasing } from "./leasing";
 import { tickLoan } from "./debt";
-import { tickDevelopments, tickPrograms } from "./dev";
+import { tickDevelopments, tickPrograms, tickCityGrowth } from "./dev";
 
 const LISTING_LIFE_Q: [number, number] = [2, 4];
 
@@ -21,9 +21,9 @@ function targetListings(s: GameState, totalLots: number): number {
   return Math.max(6, Math.round(totalLots * pct));
 }
 
-export function newGame(seed: number): GameState {
+export function newGame(seed: number, parcels?: ParcelTable): GameState {
   const s: GameState = {
-    v: 3,
+    v: 4,
     seed,
     rng: seed,
     quarter: 0,
@@ -36,6 +36,10 @@ export function newGame(seed: number): GameState {
     approaches: {},
     developments: {},
     built: {},
+    cityBuilt: [],
+    landAdj: {},
+    totalLots: parcels ? Object.keys(parcels).length : 0,
+    builtAtStart: parcels ? Object.values(parcels).filter((p) => p.class !== "land").length : 0,
     news: [],
     gameOver: null,
     insolventQs: 0,
@@ -44,7 +48,7 @@ export function newGame(seed: number): GameState {
   s.news.push({
     q: 0,
     kind: "info",
-    text: `${quarterLabel(0)}. You arrive in Ashport with $6M and an appetite. This town is young — half of it hasn't been built yet, and everything has a price.`,
+    text: `${quarterLabel(0)}. You arrive in Ashport with $6M and a hundred years. Two-fifths of this town is still empty lots — the city will fill in around you, with or without your name on it.`,
   });
   return s;
 }
@@ -59,7 +63,7 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   while (s.listings.length < target && guard++ < 4000) {
     const bbl = bbls[Math.floor(rng(s) * bbls.length)];
     if (listed.has(bbl) || s.holdings[bbl]) continue;
-    const rec = parcels[bbl];
+    const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
     const value = assetValue(rec, s.econ, initialCondition(rec));
     if (value <= 0) continue;
@@ -75,12 +79,15 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   }
 }
 
-export function advanceQuarter(prev: GameState, parcels: ParcelTable, bbls: string[]): GameState {
+export function advanceQuarter(
+  prev: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null = null,
+): GameState {
   if (prev.gameOver) return prev;
   const s: GameState = JSON.parse(JSON.stringify(prev));
   s.quarter++;
 
   tickEcon(s);
+  tickCityGrowth(s, parcels, bbls, adjacency);
   tickDevelopments(s, parcels);
   tickPrograms(s, parcels);
   tickLeasing(s, parcels);
@@ -124,6 +131,15 @@ export function advanceQuarter(prev: GameState, parcels: ParcelTable, bbls: stri
     }
   } else {
     s.insolventQs = 0;
+  }
+
+  // the century ends
+  if (!s.gameOver && s.quarter >= CAMPAIGN_QUARTERS) {
+    s.gameOver = {
+      complete: true,
+      cause: `A hundred years in Ashport. The town you arrived in was two-fifths empty lots; ${Math.round((100 * (s.builtAtStart + Object.keys(s.built).length)) / Math.max(1, s.totalLots))}% of it stands built today, and ${Object.keys(s.holdings).length} of those buildings are yours.`,
+    };
+    s.news.unshift({ q: s.quarter, kind: "event", text: "A century of Ashport. The ledger closes." });
   }
 
   refreshListings(s, parcels, bbls);

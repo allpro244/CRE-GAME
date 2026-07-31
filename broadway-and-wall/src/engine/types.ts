@@ -143,7 +143,7 @@ export interface Econ {
 }
 
 export interface GameState {
-  v: 3;
+  v: 4;
   seed: number;
   rng: number;
   quarter: number;
@@ -155,14 +155,19 @@ export interface GameState {
   nextLoiId: number;
   approaches: Record<string, Approach>;
   developments: Record<string, Development>;
-  built: Record<string, BuiltOverride>;
+  built: Record<string, BuiltOverride>;      // delivered buildings, yours and the city's
+  cityBuilt: string[];                       // bbls the market built, not you
+  landAdj: Record<string, number>;           // per-parcel land value multiplier
+  totalLots: number;
+  builtAtStart: number;
   news: NewsItem[];
-  gameOver: { cause: string } | null;
+  gameOver: { cause: string; complete?: boolean } | null;
   insolventQs: number;
 }
 
 export const START_CASH = 6_000_000;
 export const START_YEAR = 2026;
+export const CAMPAIGN_QUARTERS = 400; // a hundred years of Ashport
 
 export function quarterLabel(q: number): string {
   return `${START_YEAR + Math.floor(q / 4)} Q${(q % 4) + 1}`;

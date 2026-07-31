@@ -118,9 +118,13 @@ export function tickEcon(s: GameState) {
     e.capRate[k] = clamp(e.capRate[k] + 0.3 * (target - e.capRate[k]) + rrange(s, -0.08, 0.08), 3.6, 9.5);
   }
 
-  // citywide land index follows rent power and cycle mood
-  const rentPulse = e.rentIdx.office / RENT_BASE.office - 1;
-  e.landIdx = Math.max(0.35, e.landIdx * (1 + 0.35 * c2.rentDrift + 0.006 * e.cycleDev + 0.25 * rentPulse * 0.02 + rrange(s, -0.006, 0.006)));
+  // Citywide land index TRACKS the rent level rather than compounding off it —
+  // over a 100-year campaign a feedback term would run away into absurdity.
+  // Land is levered to rents (exponent > 1) and moody with the cycle, but it
+  // is always pulled back toward what the income actually supports.
+  const rentLevel = e.rentIdx.office / RENT_BASE.office;
+  const target = Math.pow(rentLevel, 1.15) * (1 + 0.16 * e.cycleDev);
+  e.landIdx = clamp(e.landIdx + 0.07 * (target - e.landIdx) + e.landIdx * rrange(s, -0.005, 0.005), 0.3, 40);
 
   recordHistory(e, s.quarter);
 }

@@ -77,9 +77,9 @@ export const useStore = create<AppState>((set, get) => ({
   setLoadError: (loadError) => set({ loadError }),
 
   advance: () => {
-    const { game, parcels, bbls } = get();
+    const { game, parcels, bbls, adjacency } = get();
     if (!game || !parcels || game.gameOver) return;
-    const next = advanceQuarter(game, parcels, bbls);
+    const next = advanceQuarter(game, parcels, bbls, adjacency);
     set({ game: next });
     void persist(next);
   },
@@ -186,7 +186,7 @@ export const useStore = create<AppState>((set, get) => ({
     const { parcels, bbls } = get();
     if (!parcels) return;
     const seed = (Date.now() ^ (Math.random() * 0xffffffff)) >>> 0;
-    const g = firstListings(newGame(seed), parcels, bbls);
+    const g = firstListings(newGame(seed, parcels), parcels, bbls);
     set({ game: g, selectedBBL: null, tab: "market" });
     void persist(g);
   },
@@ -229,7 +229,7 @@ export async function loadData() {
     // resume the autosave — unless it references parcels that no longer
     // exist (a save from a different city/dataset), in which case start over
     const saved = await loadGame("auto");
-    const fitsCity = saved && saved.v === 3 &&
+    const fitsCity = saved && saved.v === 4 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (fitsCity) {

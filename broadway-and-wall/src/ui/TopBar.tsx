@@ -1,27 +1,66 @@
-import { useStore } from "@/state/store";
+import { useStore, derivedNetWorth, derivedQuarterCF } from "@/state/store";
+import { quarterLabel } from "@/engine/types";
+import { usd, pct } from "./format";
 
 export default function TopBar() {
   const fps = useStore((s) => s.fps);
   const manifest = useStore((s) => s.manifest);
+  const game = useStore((s) => s.game);
+  const lens = useStore((s) => s.lens);
+  const setLens = useStore((s) => s.setLens);
+  const advance = useStore((s) => s.advance);
+  const nw = derivedNetWorth();
+  const cf = derivedQuarterCF();
+
   return (
     <div className="topbar">
       <div className="brand">
         <span className="brand-name">Broadway &amp; Wall</span>
         <span className="brand-sub">
-          {manifest?.district === "MN" ? "Manhattan" : "Lower Manhattan · Community District 1"}
+          {manifest?.district === "MN" ? "Manhattan" : "Lower Manhattan · CD 1"}
         </span>
-      </div>
-      <div className="topbar-right">
         {manifest?.source === "synthetic" && (
           <span className="badge badge-warn" title="Generated stand-in data — run `pnpm pipeline` on an open network to fetch real PLUTO data.">
             SYNTHETIC DEV DATA
           </span>
         )}
-        {manifest && <span className="stat mono">{manifest.lots.toLocaleString()} lots</span>}
+      </div>
+
+      {game && (
+        <div className="topbar-game">
+          <Stat label={quarterLabel(game.quarter)} value="" wide />
+          <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} />
+          <Stat label="Net worth" value={usd(nw)} />
+          <Stat label="CF / qtr" value={usd(cf)} bad={cf < 0} />
+          <Stat label="Index" value={pct(game.econ.indexRate)} />
+          <Stat label="Market" value={game.econ.phase} />
+          <button
+            className={"lens-btn" + (lens === "land" ? " lens-on" : "")}
+            onClick={() => setLens(lens === "land" ? "none" : "land")}
+            title="Land value lens — shade every lot by current land $/sf"
+          >
+            ◧ Land
+          </button>
+          <button className="advance-btn" onClick={advance} disabled={!!game.gameOver}>
+            Advance ▸
+          </button>
+        </div>
+      )}
+
+      <div className="topbar-right">
         <span className={"stat mono " + (fps >= 55 ? "fps-good" : fps >= 30 ? "fps-ok" : "fps-bad")}>
           {fps} fps
         </span>
       </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, bad, wide }: { label: string; value: string; bad?: boolean; wide?: boolean }) {
+  return (
+    <div className={"tstat" + (wide ? " tstat-wide" : "")}>
+      <span className="tstat-label">{label}</span>
+      {value && <span className={"tstat-value mono" + (bad ? " neg" : "")}>{value}</span>}
     </div>
   );
 }

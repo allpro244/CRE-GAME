@@ -1,35 +1,129 @@
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
+import type { GameState } from "@/engine/types";
+import { newGame, advanceQuarter, firstListings, portfolioQuarterlyCF } from "@/engine/sim";
+import { buyListing, sellHolding, startRenovation } from "@/engine/actions";
+import { netWorth } from "@/engine/value";
+import { loadGame, saveGame } from "@/engine/save";
+
+export type Lens = "none" | "land";
+export type Tab = "parcel" | "portfolio" | "market";
 
 interface AppState {
   parcels: ParcelTable | null;
+  bbls: string[];
   adjacency: Adjacency | null;
   manifest: DataManifest | null;
+  game: GameState | null;
   selectedBBL: string | null;
   hoveredBBL: string | null;
+  lens: Lens;
+  tab: Tab;
+  toast: { text: string; kind: "ok" | "err"; at: number } | null;
   fps: number;
   loadError: string | null;
   setData: (d: { parcels: ParcelTable; adjacency: Adjacency; manifest: DataManifest }) => void;
   select: (bbl: string | null) => void;
   hover: (bbl: string | null) => void;
+  setLens: (l: Lens) => void;
+  setTab: (t: Tab) => void;
   setFps: (fps: number) => void;
   setLoadError: (e: string) => void;
+  advance: () => void;
+  buy: (bbl: string, financed: boolean) => void;
+  sell: (bbl: string) => void;
+  renovate: (bbl: string) => void;
+  newRun: () => void;
 }
 
-export const useStore = create<AppState>((set) => ({
+function toast(text: string, kind: "ok" | "err" = "ok") {
+  useStore.setState({ toast: { text, kind, at: Date.now() } });
+}
+
+async function persist(game: GameState) {
+  try { await saveGame("auto", game); } catch { /* private-mode browsers: play on without saves */ }
+}
+
+export const useStore = create<AppState>((set, get) => ({
   parcels: null,
+  bbls: [],
   adjacency: null,
   manifest: null,
+  game: null,
   selectedBBL: null,
   hoveredBBL: null,
+  lens: "none",
+  tab: "market",
+  toast: null,
   fps: 0,
   loadError: null,
-  setData: (d) => set(d),
-  select: (bbl) => set({ selectedBBL: bbl }),
+  setData: (d) => set({ ...d, bbls: Object.keys(d.parcels) }),
+  select: (bbl) => set({ selectedBBL: bbl, tab: bbl ? "parcel" : get().tab }),
   hover: (bbl) => set({ hoveredBBL: bbl }),
+  setLens: (lens) => set({ lens }),
+  setTab: (tab) => set({ tab }),
   setFps: (fps) => set({ fps }),
   setLoadError: (loadError) => set({ loadError }),
+
+  advance: () => {
+    const { game, parcels, bbls } = get();
+    if (!game || !parcels || game.gameOver) return;
+    const next = advanceQuarter(game, parcels, bbls);
+    set({ game: next });
+    void persist(next);
+  },
+
+  buy: (bbl, financed) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = buyListing(game, parcels, bbl, financed);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast("Deed recorded. The block knows your name now.");
+    void persist(r.s);
+  },
+
+  sell: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = sellHolding(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast("Sold. Cash is position.");
+    void persist(r.s);
+  },
+
+  renovate: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = startRenovation(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast("Crews mobilized.");
+    void persist(r.s);
+  },
+
+  newRun: () => {
+    const { parcels, bbls } = get();
+    if (!parcels) return;
+    const seed = (Date.now() ^ (Math.random() * 0xffffffff)) >>> 0;
+    const g = firstListings(newGame(seed), parcels, bbls);
+    set({ game: g, selectedBBL: null, tab: "market" });
+    void persist(g);
+  },
 }));
+
+export function derivedNetWorth(): number {
+  const { game, parcels } = useStore.getState();
+  if (!game || !parcels) return 0;
+  return netWorth(game, parcels);
+}
+
+export function derivedQuarterCF(): number {
+  const { game, parcels } = useStore.getState();
+  if (!game || !parcels) return 0;
+  return portfolioQuarterlyCF(game, parcels);
+}
 
 async function fetchGzJson(url: string) {
   const r = await fetch(url);
@@ -53,6 +147,13 @@ export async function loadData() {
       fetch(base + "manifest.json").then((r) => { if (!r.ok) throw new Error(`manifest.json ${r.status}`); return r.json(); }),
     ]);
     useStore.getState().setData({ parcels, adjacency, manifest });
+    // resume the autosave or open a fresh run
+    const saved = await loadGame("auto");
+    if (saved && saved.v === 1) {
+      useStore.setState({ game: saved });
+    } else {
+      useStore.getState().newRun();
+    }
   } catch (e) {
     useStore.getState().setLoadError(
       `Game data missing (${(e as Error).message}). Run: pnpm pipeline (real data) or pnpm pipeline:dev (offline dev data), then reload.`,

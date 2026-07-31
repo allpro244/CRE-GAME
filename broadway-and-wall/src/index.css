@@ -125,3 +125,84 @@ body {
 /* maplibre chrome, muted */
 .maplibregl-ctrl-attrib { background: rgba(246,241,226,0.7) !important; color: var(--ink-dim); font-size: 10px; }
 .maplibregl-ctrl-attrib a { color: var(--ink-dim); }
+
+/* ---- game top bar ---- */
+.topbar-game { display: flex; align-items: center; gap: 16px; pointer-events: auto; }
+.tstat { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15; }
+.tstat-wide .tstat-label { font-family: var(--serif); font-size: 16px; color: var(--ink); letter-spacing: 0.4px; }
+.tstat-label { font-size: 10px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 1px; }
+.tstat-value { font-size: 13px; color: var(--ink); }
+.tstat-value.neg { color: #a8402e; }
+.advance-btn {
+  font-family: var(--serif); font-size: 15px;
+  background: var(--ink); color: var(--paper);
+  border: none; border-radius: 4px; padding: 7px 16px; cursor: pointer;
+}
+.advance-btn:hover { background: #463d2c; }
+.advance-btn:disabled { opacity: 0.4; cursor: default; }
+.lens-btn {
+  font-size: 12px; background: rgba(43,37,26,0.06); color: var(--ink-dim);
+  border: 1px solid rgba(43,37,26,0.2); border-radius: 4px; padding: 6px 10px; cursor: pointer;
+}
+.lens-btn.lens-on { background: #cf9738; color: #fdfbf4; border-color: #a85f1d; }
+
+/* ---- tabs ---- */
+.tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid rgba(146,110,40,0.25); }
+.tab {
+  font-family: var(--serif); font-size: 14px; background: none; border: none;
+  color: var(--ink-dim); padding: 4px 10px 7px; cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.tab-on { color: var(--ink); border-bottom-color: var(--gold); }
+
+/* ---- deal section ---- */
+.deal { margin-top: 14px; border-top: 1px solid rgba(146,110,40,0.25); padding-top: 10px; }
+.deal-head { font-family: var(--serif); font-size: 14px; color: var(--ink); margin-bottom: 8px; }
+.btn-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.btn {
+  font-size: 12px; font-weight: 600; padding: 7px 12px; border-radius: 4px;
+  border: 1px solid rgba(43,37,26,0.25); background: rgba(43,37,26,0.05);
+  color: var(--ink); cursor: pointer;
+}
+.btn:hover { background: rgba(43,37,26,0.12); }
+.btn-buy { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.btn-buy:hover { background: #463d2c; }
+.btn-sell { border-color: #a8402e; color: #a8402e; background: rgba(168,64,46,0.06); }
+.btn-sell:hover { background: rgba(168,64,46,0.14); }
+.v-strong { font-weight: 700; }
+.chip-owned { background: var(--gold); color: #fdfbf4; }
+.chip-listed { background: var(--teal); color: #fdfbf4; }
+.chip-reno { background: #7a5f9e; color: #fdfbf4; }
+.hint { font-size: 13px; color: var(--ink-dim); font-style: italic; line-height: 1.5; padding: 6px 0; }
+
+/* ---- news ---- */
+.news { display: flex; flex-direction: column; gap: 6px; font-size: 12px; line-height: 1.45; }
+.news-item { color: var(--ink); }
+.news-q { color: var(--ink-dim); font-size: 10px; margin-right: 4px; }
+.news-rumor { font-style: italic; color: #6b5a35; }
+.news-warn { color: #a8402e; }
+.news-deal { color: #3a6b46; }
+
+/* ---- toast (the deed stamp) ---- */
+.toast {
+  position: absolute; top: 64px; left: 50%; transform: translateX(-50%);
+  font-family: var(--serif); font-size: 15px;
+  background: var(--card); color: var(--ink);
+  border: 2px solid var(--gold); border-radius: 4px;
+  padding: 10px 22px; z-index: 40;
+  box-shadow: 0 6px 24px rgba(40,32,12,0.3);
+  animation: stamp 0.25s ease-out;
+}
+.toast-err { border-color: #a8402e; color: #a8402e; font-family: system-ui, sans-serif; font-size: 13px; }
+@keyframes stamp {
+  from { transform: translateX(-50%) scale(1.25); opacity: 0; }
+  to { transform: translateX(-50%) scale(1); opacity: 1; }
+}
+
+/* ---- game over ---- */
+.gameover {
+  margin-top: 14px; border: 2px solid #a8402e; border-radius: 6px;
+  padding: 12px; font-size: 13px; line-height: 1.5; color: var(--ink);
+}
+.gameover-head { font-family: var(--serif); font-size: 18px; color: #a8402e; margin-bottom: 6px; }
+.gameover .btn { margin-top: 10px; }

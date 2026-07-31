@@ -1,9 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Protocol } from "pmtiles";
 import { useStore } from "@/state/store";
-import { composeStyle, resolveBaseStyle } from "./style";
+import { composeStyle, gameLayers, landLensColor, resolveBaseStyle } from "./style";
 
 // Fly-in: open over the harbor with the whole island in frame, then dive
 // to the Financial District at map-model pitch.
@@ -18,6 +18,9 @@ export default function MapView() {
   const hoveredRef = useRef<string | null>(null);
   const selectedRef = useRef<string | null>(null);
   const neighborsRef = useRef<string[]>([]);
+  const ownedRef = useRef<Set<string>>(new Set());
+  const listedRef = useRef<Set<string>>(new Set());
+  const [mapReady, setMapReady] = useState(false);
   const select = useStore((s) => s.select);
   const hover = useStore((s) => s.hover);
   const setFps = useStore((s) => s.setFps);
@@ -54,6 +57,7 @@ export default function MapView() {
       };
 
       map.on("load", () => {
+        setMapReady(true);
         // the cinematic fly-in
         map.flyTo({ ...FIDI, duration: 6000, essential: true });
 
@@ -141,6 +145,71 @@ export default function MapView() {
       }
     }
   }, [selectedBBL, adjacency, parcels]);
+
+  // ownership + listings → feature-state and rooftop markers
+  const game = useStore((s) => s.game);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !game || !parcels) return;
+    const setState = (bbl: string, state: Record<string, boolean>) => {
+      const id = Number(bbl);
+      map.setFeatureState({ source: "bw-parcels", sourceLayer: "parcels", id }, state);
+      map.setFeatureState({ source: "bw-buildings", sourceLayer: "buildings", id }, state);
+    };
+    const nowOwned = new Set(Object.keys(game.holdings));
+    for (const bbl of ownedRef.current) if (!nowOwned.has(bbl)) setState(bbl, { owned: false });
+    for (const bbl of nowOwned) if (!ownedRef.current.has(bbl)) setState(bbl, { owned: true });
+    ownedRef.current = nowOwned;
+
+    const nowListed = new Set(game.listings.map((l) => l.bbl));
+    for (const bbl of listedRef.current) if (!nowListed.has(bbl)) setState(bbl, { listed: false });
+    for (const bbl of nowListed) if (!listedRef.current.has(bbl)) setState(bbl, { listed: true });
+    listedRef.current = nowListed;
+
+    const src = map.getSource("bw-owned") as maplibregl.GeoJSONSource | undefined;
+    src?.setData({
+      type: "FeatureCollection",
+      features: [...nowOwned].map((bbl) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: parcels[bbl]?.centroid ?? [0, 0] },
+        properties: { bbl },
+      })),
+    });
+  }, [game, parcels, mapReady]);
+
+  // land-value lens — repaints when toggled and as the market moves
+  const lens = useStore((s) => s.lens);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    if (lens === "land" && game && parcels) {
+      // percentile stops over CURRENT land $/sf so the ramp stays contrasty
+      const vals: number[] = [];
+      const bbls = Object.keys(parcels);
+      const step = Math.max(1, Math.floor(bbls.length / 4000));
+      for (let i = 0; i < bbls.length; i += step) {
+        const r = parcels[bbls[i]];
+        vals.push(r.landPsf * game.econ.landIdx * (1 + 0.22 * (0.25 + 0.9 * (r.demandScore / 100)) * game.econ.cycleDev));
+      }
+      vals.sort((a, b) => a - b);
+      const q = (p: number) => vals[Math.min(vals.length - 1, Math.floor(vals.length * p))];
+      const stops = [q(0.05), q(0.35), q(0.6), q(0.82), q(0.97)];
+      map.setPaintProperty("bw-parcel-fill", "fill-color", landLensColor(game.econ.landIdx, game.econ.cycleDev, stops) as never);
+      map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.82 as never);
+      map.setPaintProperty("bw-bldg-3d", "fill-extrusion-opacity", 0.18 as never);
+    } else {
+      // restore the default paints straight from the style definition
+      const fill = gameLayers().find((l) => l.id === "bw-parcel-fill");
+      const bldg = gameLayers().find((l) => l.id === "bw-bldg-3d");
+      if (fill && "paint" in fill && fill.paint) {
+        map.setPaintProperty("bw-parcel-fill", "fill-color", (fill.paint as Record<string, unknown>)["fill-color"] as never);
+        map.setPaintProperty("bw-parcel-fill", "fill-opacity", (fill.paint as Record<string, unknown>)["fill-opacity"] as never);
+      }
+      if (bldg && "paint" in bldg && bldg.paint) {
+        map.setPaintProperty("bw-bldg-3d", "fill-extrusion-opacity", (bldg.paint as Record<string, unknown>)["fill-extrusion-opacity"] as never);
+      }
+    }
+  }, [lens, game, parcels, mapReady]);
 
   return <div ref={el} className="map-root" />;
 }

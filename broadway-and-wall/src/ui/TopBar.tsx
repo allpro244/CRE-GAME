@@ -41,6 +41,13 @@ export default function TopBar() {
           >
             ◧ Land
           </button>
+          <button
+            className={"lens-btn" + (lens === "demand" ? " lens-on lens-on-teal" : "")}
+            onClick={() => setLens(lens === "demand" ? "none" : "demand")}
+            title="Demand lens — transit + employment gravity, the why behind the rents"
+          >
+            ◨ Demand
+          </button>
           <button className="advance-btn" onClick={advance} disabled={!!game.gameOver}>
             Advance ▸
           </button>

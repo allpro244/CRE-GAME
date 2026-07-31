@@ -266,11 +266,12 @@ for (let i = 0; i < lots.length; i++) {
 }
 
 // buildings for the tiler: join heights (feet -> meters) by base BBL.
-// Tall pre-1961 towers get wedding-cake setback tiers (the 1916 zoning
-// silhouette) via stacked volumes with fill-extrusion-base; modern towers
-// stay single slabs, which is what they actually are.
+// Massing: tall pre-1961 towers get wedding-cake setback tiers; tall modern
+// towers get a podium (a low base filling the lot) with a slimmer shaft —
+// both via stacked volumes with fill-extrusion-base.
 const tileBuildings = { type: "FeatureCollection", features: [] };
-let missingH = 0, tiered = 0;
+let missingH = 0, tiered = 0, podiums = 0;
+const lotRingByBBL = new Map(lots.map((l) => [l.bbl, l.ring]));
 
 function setbackTiers(geom, hM) {
   // tiers only for a simple polygon with one meaningful outer ring
@@ -311,7 +312,19 @@ for (const f of rawBuildings.features) {
     tone: bbl ? Number(bbl) % 5 : 0,
   };
   const id = bbl && table[bbl] ? Number(bbl) : undefined;
-  const tiers = year < 1961 && hM >= 75 ? setbackTiers(f.geometry, hM) : null;
+  const tiers = year < 1961 && hM >= 60 ? setbackTiers(f.geometry, hM) : null;
+  let podium = null;
+  if (!tiers && year >= 1961 && hM >= 45) {
+    // modern tower: low podium on (nearly) the whole lot, shaft above
+    const lotRingM = lotRingByBBL.get(bbl);
+    if (lotRingM) {
+      const pod = insetRing(lotRingM, 1.4);
+      if (pod) {
+        const ll = pod.map(proj.toLL);
+        podium = { type: "Polygon", coordinates: [[...ll, ll[0]]] };
+      }
+    }
+  }
   if (tiers) {
     tiered++;
     for (const t of tiers) {
@@ -321,15 +334,28 @@ for (const f of rawBuildings.features) {
         properties: { ...props, heightM: t.top, baseM: t.base },
       });
     }
-  } else {
+  } else if (podium) {
+    podiums++;
+    tileBuildings.features.push({
+      type: "Feature", id,
+      geometry: podium,
+      properties: { ...props, heightM: 8, baseM: 0 },
+    });
     tileBuildings.features.push({
       type: "Feature", id,
       geometry: f.geometry,
-      properties: { ...props, heightM: hM, baseM: 0 },
+      properties: { ...props, heightM: hM, baseM: 8 },
+    });
+  } else {
+    const baseFt = num(f.properties.base_ft);
+    tileBuildings.features.push({
+      type: "Feature", id,
+      geometry: f.geometry,
+      properties: { ...props, heightM: hM, baseM: baseFt ? +(baseFt * 0.3048).toFixed(1) : 0 },
     });
   }
 }
-console.log(`${tiered} pre-war towers got setback massing.`);
+console.log(`${tiered} old towers got setback massing, ${podiums} modern towers got podiums.`);
 
 // the two big payloads ship gzipped; the app inflates via DecompressionStream
 writeFileSync(join(PUB, "parcels.json.gz"), gzipSync(JSON.stringify(table), { level: 9 }));

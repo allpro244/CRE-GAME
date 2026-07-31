@@ -167,6 +167,13 @@ export function fallbackBaseStyle(): StyleSpecification {
         paint: { "fill-color": "#f4f3ef" },
       },
       {
+        id: "esplanade",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "esplanade"],
+        paint: { "fill-color": "#e9ebe0" },
+      },
+      {
         id: "piers",
         type: "fill",
         source: "bw-context",
@@ -179,6 +186,56 @@ export function fallbackBaseStyle(): StyleSpecification {
         source: "bw-context",
         filter: ["==", ["get", "kind"], "park"],
         paint: { "fill-color": "#cde3c6" },
+      },
+      {
+        id: "park-outline",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "park"],
+        paint: { "line-color": "#b3cba6", "line-width": 1.2 },
+      },
+      {
+        // the street network — paved gray against bare land
+        id: "streets",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "street"],
+        paint: {
+          "line-color": ["match", ["get", "cls"], "shore", "#dcd9cf", "#e4e1d8"],
+          "line-width": [
+            "interpolate", ["linear"], ["zoom"],
+            12, ["match", ["get", "cls"], "shore", 1.6, 0.8],
+            16, ["match", ["get", "cls"], "shore", 9, 5],
+          ],
+        },
+        layout: { "line-join": "round", "line-cap": "round" },
+      },
+      {
+        // center dashes on the shore road at close zoom
+        id: "street-dash",
+        type: "line",
+        source: "bw-context",
+        filter: ["all", ["==", ["get", "kind"], "street"], ["==", ["get", "cls"], "shore"]],
+        minzoom: 14.5,
+        paint: {
+          "line-color": "#c8c4b6",
+          "line-width": 0.9,
+          "line-dasharray": [3, 3],
+        },
+      },
+      {
+        id: "trees",
+        type: "circle",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "tree"],
+        minzoom: 12.5,
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 1.2, 16.5, 3.6],
+          "circle-color": "#9dbd8e",
+          "circle-stroke-color": "#87a878",
+          "circle-stroke-width": 0.6,
+          "circle-pitch-alignment": "map",
+        },
       },
       {
         id: "shore",

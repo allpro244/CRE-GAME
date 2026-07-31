@@ -6,7 +6,7 @@ import { buyListing, sellHolding, startRenovation } from "@/engine/actions";
 import { netWorth } from "@/engine/value";
 import { loadGame, saveGame } from "@/engine/save";
 
-export type Lens = "none" | "land";
+export type Lens = "none" | "land" | "demand";
 export type Tab = "parcel" | "portfolio" | "market";
 
 interface AppState {

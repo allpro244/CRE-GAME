@@ -206,3 +206,36 @@ body {
 }
 .gameover-head { font-family: var(--serif); font-size: 18px; color: #a8402e; margin-bottom: 6px; }
 .gameover .btn { margin-top: 10px; }
+
+/* ---- map name labels (DOM markers) ---- */
+.map-label {
+  pointer-events: none;
+  transition: opacity 0.35s;
+  white-space: nowrap;
+  text-shadow: 0 0 4px rgba(244, 243, 239, 0.9), 0 0 8px rgba(244, 243, 239, 0.7);
+}
+.map-label-district {
+  font-family: var(--serif);
+  font-size: 13px; letter-spacing: 3px; font-weight: 600;
+  color: #8a8474;
+}
+.map-label-park {
+  font-family: var(--serif); font-style: italic;
+  font-size: 12px; color: #6d8a5f;
+}
+.map-label-water {
+  font-family: var(--serif); font-style: italic;
+  font-size: 13px; letter-spacing: 1.5px; color: #7d99ad;
+  text-shadow: none;
+}
+
+/* ---- hover tooltip ---- */
+.hover-tip {
+  position: absolute; z-index: 15; pointer-events: none;
+  background: var(--card); border: 1px solid var(--card-line);
+  border-radius: 4px; padding: 4px 9px;
+  font-size: 11.5px; color: var(--ink);
+  font-family: var(--mono);
+  box-shadow: 0 3px 12px rgba(40,32,12,0.2);
+}
+.lens-on-teal { background: var(--teal) !important; border-color: #23625b !important; }

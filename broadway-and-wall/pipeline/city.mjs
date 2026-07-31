@@ -27,9 +27,9 @@ const pick = (arr) => arr[Math.floor(rand() * arr.length) % arr.length];
 const CENTER = [-70.9, 41.1];
 const proj = makeProjection(CENTER[0], CENTER[1]);
 
-// Coastline in local meters (x east, y north): a harbor peninsula with a
-// south-facing bay. CCW.
-const COAST_M = [
+// Coastline control points in local meters (x east, y north): a harbor
+// peninsula with a south-facing bay.
+const COAST_RAW = [
   [-1250, 200], [-1290, 500], [-1120, 780],           // west shore
   [-650, 950], [0, 1010], [650, 930],                 // north shore
   [1050, 750], [1260, 400], [1310, 50],               // east shore
@@ -37,8 +37,42 @@ const COAST_M = [
   [600, -380], [455, -155], [250, -320],              // the harbor bay
   [-100, -480], [-620, -450], [-1010, -350],          // south shore
 ];
+
+// Chaikin corner-cutting: geography, not a polygon.
+function chaikin(ring, iterations) {
+  let r = ring;
+  for (let it = 0; it < iterations; it++) {
+    const out = [];
+    for (let i = 0; i < r.length; i++) {
+      const a = r[i], b = r[(i + 1) % r.length];
+      out.push([0.75 * a[0] + 0.25 * b[0], 0.75 * a[1] + 0.25 * b[1]]);
+      out.push([0.25 * a[0] + 0.75 * b[0], 0.25 * a[1] + 0.75 * b[1]]);
+    }
+    r = out;
+  }
+  return r;
+}
+const COAST_M = chaikin(COAST_RAW, 2);
 const landRing = COAST_M;
 const COAST = COAST_M.map(proj.toLL);
+
+// Inward offset of the coast — the buildable boundary. Everything between it
+// and the water is the shore esplanade, so the city meets the sea on purpose.
+function offsetInward(ring, d) {
+  const c = centroid(ring);
+  return ring.map((p, i) => {
+    const a = ring[(i - 1 + ring.length) % ring.length];
+    const b = ring[(i + 1) % ring.length];
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const len = Math.hypot(dx, dy) || 1;
+    let nx = -dy / len, ny = dx / len;
+    // orient the normal toward the interior
+    if ((c[0] - p[0]) * nx + (c[1] - p[1]) * ny < 0) { nx = -nx; ny = -ny; }
+    return [p[0] + nx * d, p[1] + ny * d];
+  });
+}
+const ESPLANADE_W = 26;
+const innerRing = offsetInward(COAST_M, ESPLANADE_W);
 
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 
@@ -64,7 +98,7 @@ function clipMany(ring, cuts) {
   }
   return r;
 }
-const oldHarborRing = clipMany(landRing, [
+const oldHarborRing = clipMany(innerRing, [
   [0, 1, 240],    // y <= 240
   [-1, 0, -60],   // x >= 60
   [1, 0, 800],    // x <= 800
@@ -175,7 +209,7 @@ function gridLayer({ bearingDeg, stPitch, avePitch, blockW, blockU, district, nu
       const ring = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([cu, cw]) => at(u + cu * blockU, w + cw * blockW));
       const center = at(u + blockU / 2, w + blockW / 2);
       if (districtOf(center) !== district) continue;
-      if (!ring.every((c) => inRing(c, landRing))) continue;
+      if (!ring.every((c) => inRing(c, innerRing))) continue;
       if (PARKS_M.some((p) => inRing(center, p))) continue;
       blocks.push({
         ring, district,
@@ -380,6 +414,94 @@ for (const block of blocks) {
   blockNo++;
 }
 
+// --- decorative waterfront (non-selectable extrusions, base_bbl empty) -----
+const rect = (cx, cy, w, h, deg = 0) => {
+  const t = (deg * Math.PI) / 180;
+  return [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]]
+    .map(([x, y]) => [x * Math.cos(t) - y * Math.sin(t) + cx, x * Math.sin(t) + y * Math.cos(t) + cy]);
+};
+let decoN = 1;
+function addDeco(ringM, topM, baseM = 0) {
+  buildings.features.push({
+    type: "Feature",
+    geometry: { type: "Polygon", coordinates: [[...ringM.map(proj.toLL), proj.toLL(ringM[0])]] },
+    properties: {
+      bin: "deco" + decoN++, base_bbl: "",
+      heightroof: +(topM * 3.28084).toFixed(1),
+      base_ft: baseM ? +(baseM * 3.28084).toFixed(1) : 0,
+      cnstrct_yr: 1990,
+    },
+  });
+}
+// pier sheds
+for (const pier of PIERS_M.slice(0, 4)) {
+  const shed = insetRing(pier, 4);
+  if (shed) addDeco(shed, rr(5, 7));
+}
+// Millside gantry cranes: mast + jib
+for (const [cx, cy, deg] of [[-1080, -180, 20], [-880, -370, -15], [-1180, 220, 80]]) {
+  addDeco(rect(cx, cy, 5, 5, deg), 26);
+  addDeco(rect(cx + 9 * Math.cos((deg * Math.PI) / 180), cy + 9 * Math.sin((deg * Math.PI) / 180), 24, 3, deg), 25, 22);
+}
+// moored ships: hull + superstructure
+for (const [cx, cy, deg] of [[380, -640, 75], [820, -700, 30], [-350, -700, 100], [1420, -150, -60]]) {
+  addDeco(rect(cx, cy, 34, 10, deg), 4);
+  addDeco(rect(cx - 9 * Math.cos((deg * Math.PI) / 180), cy - 9 * Math.sin((deg * Math.PI) / 180), 9, 8, deg), 9);
+}
+// harbor breakwater
+const BREAKWATER = rect(760, -560, 190, 14, 35);
+
+// --- streets, esplanade, labels, trees -------------------------------------
+const streetFeatures = blocks.map((b) => ({
+  type: "Feature",
+  geometry: { type: "LineString", coordinates: [...b.ring.map(proj.toLL), proj.toLL(b.ring[0])] },
+  properties: { kind: "street", cls: b.u !== undefined ? "grid" : "lane" },
+}));
+const shoreRoad = {
+  type: "Feature",
+  geometry: { type: "LineString", coordinates: [...innerRing.map(proj.toLL), proj.toLL(innerRing[0])] },
+  properties: { kind: "street", cls: "shore" },
+};
+const esplanade = {
+  type: "Feature",
+  geometry: {
+    type: "Polygon",
+    coordinates: [
+      [...COAST, COAST[0]],
+      [...innerRing.slice().reverse().map(proj.toLL), proj.toLL(innerRing[innerRing.length - 1])],
+    ],
+  },
+  properties: { kind: "esplanade" },
+};
+const LABELS = [
+  { name: "OLD HARBOR", labelKind: "district", xy: [430, -170] },
+  { name: "THE EXCHANGE", labelKind: "district", xy: [60, 320] },
+  { name: "NORTHSIDE", labelKind: "district", xy: [-80, 770] },
+  { name: "MILLSIDE", labelKind: "district", xy: [-800, -20] },
+  { name: "THE POINT", labelKind: "district", xy: [1010, 70] },
+  { name: "Founders Park", labelKind: "park", xy: [30, 520] },
+  { name: "Harbor Square", labelKind: "park", xy: [420, -40] },
+  { name: "Mill Common", labelKind: "park", xy: [-700, 150] },
+  { name: "Rowan Green", labelKind: "park", xy: [-250, 820] },
+  { name: "Ashport Harbor", labelKind: "water", xy: [430, -760] },
+  { name: "West River", labelKind: "water", xy: [-1520, 250] },
+];
+const treeFeatures = [];
+for (const park of PARKS_M) {
+  const [minX, minY, maxX, maxY] = bboxOfRing(park);
+  for (let x = minX; x < maxX; x += 17) {
+    for (let y = minY; y < maxY; y += 17) {
+      const p = [x + rr(-6, 6), y + rr(-6, 6)];
+      if (inRing(p, park) && rand() < 0.6) treeFeatures.push(p);
+    }
+  }
+}
+// esplanade trees, sparse
+for (let i = 0; i < innerRing.length; i += 3) {
+  const p = innerRing[i], q = COAST_M[i];
+  if (rand() < 0.5) treeFeatures.push([(p[0] + q[0]) / 2 + rr(-3, 3), (p[1] + q[1]) / 2 + rr(-3, 3)]);
+}
+
 // --- stations / employment / context ---------------------------------------
 const stations = {
   type: "FeatureCollection",
@@ -419,7 +541,8 @@ const context = {
   type: "FeatureCollection",
   features: [
     { type: "Feature", geometry: { type: "Polygon", coordinates: [[...COAST, COAST[0]]] }, properties: { kind: "land" } },
-    ...PIERS_M.map((ring) => ({
+    esplanade,
+    ...[...PIERS_M, BREAKWATER].map((ring) => ({
       type: "Feature",
       geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
       properties: { kind: "pier" },
@@ -429,10 +552,22 @@ const context = {
       geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
       properties: { kind: "park" },
     })),
+    ...streetFeatures,
+    shoreRoad,
+    ...treeFeatures.map((p) => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: proj.toLL(p) },
+      properties: { kind: "tree" },
+    })),
     ...STATIONS_M.map((s) => ({
       type: "Feature",
       geometry: { type: "Point", coordinates: proj.toLL(s.xy) },
       properties: { kind: "station", name: s.name },
+    })),
+    ...LABELS.map((l) => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: proj.toLL(l.xy) },
+      properties: { kind: "label", labelKind: l.labelKind, name: l.name },
     })),
   ],
 };

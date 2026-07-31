@@ -81,6 +81,7 @@ const ST = [Math.cos(TH), -Math.sin(TH)];   // along streets (west → east)
 const dotA = (p) => p[0] * AVE[0] + p[1] * AVE[1];
 const dotS = (p) => p[0] * ST[0] + p[1] * ST[1];
 const W_HOUSTON = dotA(proj.toXY([-73.9920, 40.7255]));
+const W_CHAMBERS = dotA(proj.toXY([-74.0050, 40.7145]));
 const U_FIFTH = dotS(proj.toXY([-73.9819, 40.7542])); // 5th Ave @ 42nd
 
 // Activity cores that shape height, class, and value distributions.
@@ -177,41 +178,86 @@ function subdivide(ring, targetArea, jitterDeg, out) {
 }
 
 // --- blocks ----------------------------------------------------------------
-// Downtown (south of Houston): irregular colonial-era subdivision.
-// North of Houston: the rotated grid — 80 m street pitch, 280 m avenue pitch.
-const blocks = []; // { ring, gridStreetNo | null }
+// Real Manhattan is grids stitched at different bearings, not noise:
+//   north of Houston — the main 29° grid (80 m street / 280 m avenue pitch);
+//   Houston→Chambers — neighborhood mini-grids at their own bearings
+//     (Tribeca/West Village, Soho, Lower East Side);
+//   below Chambers — genuinely irregular colonial fabric (FiDi).
+const blocks = []; // { ring, streetNo: number|null, u? }
 
-const downtownRing = clipRingHalfPlane(
-  landRing, AVE[0], AVE[1], W_HOUSTON, // keep dot(p, AVE) <= W_HOUSTON
+let wMin = Infinity, wMax = -Infinity, uMin = Infinity, uMax = -Infinity;
+for (const p of landRing) {
+  const w = dotA(p), u = dotS(p);
+  if (w < wMin) wMin = w; if (w > wMax) wMax = w;
+  if (u < uMin) uMin = u; if (u > uMax) uMax = u;
+}
+
+// FiDi below Chambers: irregular subdivision, modest jitter
+const fidiRing = clipRingHalfPlane(
+  landRing, AVE[0], AVE[1], W_CHAMBERS, // keep dot(p, AVE) <= W_CHAMBERS
 );
-if (downtownRing) {
+if (fidiRing) {
   const irregular = [];
-  subdivide(downtownRing, () => rr(4200, 11500), 16, irregular);
+  subdivide(fidiRing, () => rr(4200, 10000), 12, irregular);
   for (const r of irregular) blocks.push({ ring: r, streetNo: null });
 }
 
-{
-  const ST_PITCH = 80.5, AVE_PITCH = 280, BLOCK_W = 61, BLOCK_U = 248;
-  let wMin = Infinity, wMax = -Infinity, uMin = Infinity, uMax = -Infinity;
+// generic grid layer: lay blocks at bearing θ, keep those whose center
+// passes `accept`; the ragged shore fringe left behind reads as esplanade
+function gridLayer({ bearingDeg, stPitch, avePitch, blockW, blockU, accept, numbered }) {
+  const th = (bearingDeg * Math.PI) / 180;
+  const A = [Math.sin(th), Math.cos(th)], S = [Math.cos(th), -Math.sin(th)];
+  const at = (u, w) => [u * S[0] + w * A[0], u * S[1] + w * A[1]];
+  const corners4 = [[0, 0], [1, 0], [1, 1], [0, 1]];
+  // zone-frame extents from the island bbox corners (cheap and safe)
+  let zwMin = Infinity, zwMax = -Infinity, zuMin = Infinity, zuMax = -Infinity;
   for (const p of landRing) {
-    const w = dotA(p), u = dotS(p);
-    if (w < wMin) wMin = w; if (w > wMax) wMax = w;
-    if (u < uMin) uMin = u; if (u > uMax) uMax = u;
+    const zw = p[0] * A[0] + p[1] * A[1], zu = p[0] * S[0] + p[1] * S[1];
+    if (zw < zwMin) zwMin = zw; if (zw > zwMax) zwMax = zw;
+    if (zu < zuMin) zuMin = zu; if (zu > zuMax) zuMax = zu;
   }
-  const at = (u, w) => [u * ST[0] + w * AVE[0], u * ST[1] + w * AVE[1]];
-  for (let w = Math.max(W_HOUSTON, wMin); w < wMax; w += ST_PITCH) {
-    for (let u = uMin; u < uMax; u += AVE_PITCH) {
-      const corners = [at(u, w), at(u + BLOCK_U, w), at(u + BLOCK_U, w + BLOCK_W), at(u, w + BLOCK_W)];
-      const center = at(u + BLOCK_U / 2, w + BLOCK_W / 2);
-      // keep only blocks fully on land; the ragged fringe left behind reads
-      // as waterfront esplanade under the fallback basemap
-      if (![...corners, center].every((c) => inRing(c, landRing))) continue;
+  for (let w = zwMin; w < zwMax; w += stPitch) {
+    for (let u = zuMin; u < zuMax; u += avePitch) {
+      const ring = corners4.map(([cu, cw]) => at(u + cu * blockU, w + cw * blockW));
+      const center = at(u + blockU / 2, w + blockW / 2);
+      if (!accept(center)) continue;
+      if (!ring.every((c) => inRing(c, landRing))) continue;
       if (parksXY.some((p) => inRing(center, p))) continue;
-      const streetNo = Math.max(1, Math.round((w - W_HOUSTON) / ST_PITCH) + 1);
-      blocks.push({ ring: corners, streetNo, u: u + BLOCK_U / 2 });
+      blocks.push({
+        ring,
+        streetNo: numbered ? Math.max(1, Math.round((dotA(center) - W_HOUSTON) / 80.5) + 1) : null,
+        u: dotS(center),
+      });
     }
   }
 }
+
+// main grid, north of Houston
+gridLayer({
+  bearingDeg: 29, stPitch: 80.5, avePitch: 280, blockW: 61, blockU: 248,
+  numbered: true,
+  accept: (c) => dotA(c) >= W_HOUSTON && inRing(c, landRing),
+});
+
+// the Houston→Chambers band, three neighborhood grids split by longitude
+const X_WEST = proj.toXY([-74.0050, 40.72])[0];
+const X_EAST = proj.toXY([-73.9955, 40.72])[0];
+const inBand = (c) => dotA(c) > W_CHAMBERS && dotA(c) < W_HOUSTON && inRing(c, landRing);
+gridLayer({ // Tribeca / West Village: near true north
+  bearingDeg: 4, stPitch: 68, avePitch: 235, blockW: 52, blockU: 205,
+  numbered: false,
+  accept: (c) => inBand(c) && c[0] <= X_WEST,
+});
+gridLayer({ // Soho / Little Italy: follows the main bearing
+  bearingDeg: 26, stPitch: 74, avePitch: 195, blockW: 57, blockU: 168,
+  numbered: false,
+  accept: (c) => inBand(c) && c[0] > X_WEST && c[0] <= X_EAST,
+});
+gridLayer({ // Lower East Side: its own skew, tighter tenement blocks
+  bearingDeg: 14, stPitch: 64, avePitch: 172, blockW: 49, blockU: 148,
+  numbered: false,
+  accept: (c) => inBand(c) && c[0] > X_EAST,
+});
 
 const STREETS_DOWNTOWN = [
   "Wall St", "Broad St", "Broadway", "Water St", "Pearl St", "Beaver St",
@@ -280,7 +326,8 @@ const buildings = { type: "FeatureCollection", features: [] };
 let blockNo = 1, binNo = 1000001;
 
 for (const block of blocks) {
-  const street = insetRing(block.ring, block.streetNo ? 6 : 7);
+  const gridded = block.u !== undefined; // any grid layer, numbered or not
+  const street = insetRing(block.ring, gridded ? 6 : 7);
   if (!street || polygonArea([street]) < 700) continue;
   const bc = centroid(street);
   if (parksXY.some((p) => inRing(bc, p))) continue;
@@ -290,7 +337,7 @@ for (const block of blocks) {
 
   const lots = [];
   if (rand() < (heat > 0.5 ? 0.07 : 0.015)) lots.push(street); // full-block plate
-  else if (block.streetNo) subdivide(street, () => rr(220, 750), 6, lots);
+  else if (gridded) subdivide(street, () => rr(220, 750), 6, lots);
   else subdivide(street, () => rr(320, 1350), 10, lots);
 
   let lotNo = 1;

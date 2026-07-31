@@ -73,7 +73,8 @@ ABOUT THE DATA
 --------------
 The top bar says SYNTHETIC DEV DATA. The build machine had no network access
 to NYC Open Data, so this dataset is procedurally generated: the coastline,
-the 29°-rotated street grid north of Houston, Central Park and a dozen other
+the 29°-rotated street grid north of Houston, the stitched
+neighborhood grids downtown, Central Park and a dozen other
 parks, the subway stations, and the height cores at FiDi and Midtown are all
 real-ish, but the individual lots are invented — plausible, not factual.
 

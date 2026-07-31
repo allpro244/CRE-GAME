@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "package": "tsc -b && vite build && node package/build-zip.mjs",
     "pipeline:fetch": "node pipeline/fetch.mjs",
     "pipeline:synth": "node pipeline/synth.mjs",
     "pipeline:process": "node pipeline/process.mjs",

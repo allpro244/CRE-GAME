@@ -3,3 +3,4 @@ pipeline/raw/
 pipeline/out/
 
 *.tsbuildinfo
+dist-zip/

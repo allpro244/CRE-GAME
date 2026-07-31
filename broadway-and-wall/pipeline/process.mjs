@@ -7,7 +7,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "node
 import { gzipSync } from "node:zlib";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { makeProjection, polygonArea, centroid, bboxOfRing, sharedBoundaryLength } from "./lib/geom.mjs";
+import { makeProjection, polygonArea, centroid, bboxOfRing, sharedBoundaryLength, insetRing } from "./lib/geom.mjs";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const RAW = join(ROOT, "raw");
@@ -265,26 +265,71 @@ for (let i = 0; i < lots.length; i++) {
   });
 }
 
-// buildings for the tiler: join heights (feet -> meters) by base BBL
+// buildings for the tiler: join heights (feet -> meters) by base BBL.
+// Tall pre-1961 towers get wedding-cake setback tiers (the 1916 zoning
+// silhouette) via stacked volumes with fill-extrusion-base; modern towers
+// stay single slabs, which is what they actually are.
 const tileBuildings = { type: "FeatureCollection", features: [] };
-let missingH = 0;
+let missingH = 0, tiered = 0;
+
+function setbackTiers(geom, hM) {
+  // tiers only for a simple polygon with one meaningful outer ring
+  if (geom.type !== "Polygon") return null;
+  const ringLL = geom.coordinates[0];
+  const ringXY = ringLL.slice(0, -1).map(proj.toXY);
+  const areaM2 = Math.abs(polygonArea([ringXY]));
+  if (areaM2 < 250) return null;
+  const side = Math.sqrt(areaM2);
+  const inset = (frac) => {
+    const r = insetRing(ringXY, (side * (1 - Math.sqrt(frac))) / 2);
+    if (!r) return null;
+    const ll = r.map(proj.toLL);
+    return { type: "Polygon", coordinates: [[...ll, ll[0]]] };
+  };
+  const mid = inset(0.66), top = inset(0.38);
+  if (!mid || !top) return null;
+  return [
+    { geom, base: 0, top: +(hM * 0.52).toFixed(1) },
+    { geom: mid, base: +(hM * 0.52).toFixed(1), top: +(hM * 0.82).toFixed(1) },
+    { geom: top, base: +(hM * 0.82).toFixed(1), top: +hM.toFixed(1) },
+  ];
+}
+
 for (const f of rawBuildings.features) {
   if (!f.geometry) continue;
   const bbl = String(f.properties.base_bbl ?? f.properties.bbl ?? "").replace(/\.0+$/, "");
   const rec = table[bbl];
   let hft = num(f.properties.heightroof);
   if (!hft || hft < 8) { hft = rec && rec.floors ? rec.floors * 11.5 : 30; missingH++; }
-  tileBuildings.features.push({
-    type: "Feature",
-    id: bbl && table[bbl] ? Number(bbl) : undefined,
-    geometry: f.geometry,
-    properties: {
-      bbl: bbl || "",
-      heightM: +(hft * 0.3048).toFixed(1),
-      class: rec?.class ?? "office",
-    },
-  });
+  const hM = +(hft * 0.3048).toFixed(1);
+  const year = num(f.properties.cnstrct_yr) ?? rec?.yearBuilt ?? 1950;
+  const props = {
+    bbl: bbl || "",
+    class: rec?.class ?? "office",
+    year,
+    // stable per-building tone jitter for the facade palette
+    tone: bbl ? Number(bbl) % 5 : 0,
+  };
+  const id = bbl && table[bbl] ? Number(bbl) : undefined;
+  const tiers = year < 1961 && hM >= 75 ? setbackTiers(f.geometry, hM) : null;
+  if (tiers) {
+    tiered++;
+    for (const t of tiers) {
+      tileBuildings.features.push({
+        type: "Feature", id,
+        geometry: t.geom,
+        properties: { ...props, heightM: t.top, baseM: t.base },
+      });
+    }
+  } else {
+    tileBuildings.features.push({
+      type: "Feature", id,
+      geometry: f.geometry,
+      properties: { ...props, heightM: hM, baseM: 0 },
+    });
+  }
 }
+console.log(`${tiered} pre-war towers got setback massing.`);
 
 // the two big payloads ship gzipped; the app inflates via DecompressionStream
 writeFileSync(join(PUB, "parcels.json.gz"), gzipSync(JSON.stringify(table), { level: 9 }));

@@ -113,17 +113,20 @@ export function gameLayers(): LayerSpecification[] {
       "source-layer": "buildings",
       paint: {
         "fill-extrusion-height": ["get", "heightM"] as never,
-        "fill-extrusion-base": 0,
+        "fill-extrusion-base": ["get", "baseM"] as never,
+        // facade palette: pre-war masonry runs warm, post-war glass runs
+        // cool, and a stable per-building tone jitter breaks the uniformity
         "fill-extrusion-color": [
           "case",
           selected, "#e3b95c",
           owned, "#dcc389",
           hovered, "#ddd6c2",
-          ["interpolate", ["linear"], ["get", "heightM"],
-            10, "#eceae4",
-            80, "#e7e6e2",
-            180, "#e2e3e2",
-            260, "#dcdfe2",
+          ["match", ["%", ["coalesce", ["get", "tone"], 0], 5],
+            0, ["case", ["<", ["coalesce", ["get", "year"], 1950], 1961], "#efe9db", "#e9ebec"],
+            1, ["case", ["<", ["coalesce", ["get", "year"], 1950], 1961], "#eae4d4", "#e4e7ea"],
+            2, ["case", ["<", ["coalesce", ["get", "year"], 1950], 1961], "#ece7dc", "#e7e9e8"],
+            3, ["case", ["<", ["coalesce", ["get", "year"], 1950], 1961], "#e6e0d0", "#dfe3e8"],
+            ["case", ["<", ["coalesce", ["get", "year"], 1950], 1961], "#f1ece0", "#ecedec"],
           ],
         ] as never,
         "fill-extrusion-opacity": 1,

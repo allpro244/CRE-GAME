@@ -2,14 +2,15 @@
 // (state, parcels) in, state out. The UI is a lens on this.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
-import { START_CASH, CAMPAIGN_QUARTERS, quarterLabel } from "./types";
+import { START_CASH, CAMPAIGN_MONTHS, monthLabel } from "./types";
 import { initEcon, rng, rrange, tickEcon } from "./market";
-import { assetValue, initialCondition, quarterlyNOI, resolveRec } from "./value";
+import { assetValue, initialCondition, monthlyNOI, resolveRec } from "./value";
 import { tickLeasing } from "./leasing";
+import { tickSales } from "./actions";
 import { tickLoan } from "./debt";
 import { tickDevelopments, tickPrograms, tickCityGrowth } from "./dev";
 
-const LISTING_LIFE_Q: [number, number] = [2, 4];
+const LISTING_LIFE_M: [number, number] = [6, 12];
 
 // 0.5–1.5% of the city is on the market at any time: thin in expansions
 // (owners hold), heavier in recessions (distress shakes assets loose).
@@ -23,10 +24,10 @@ function targetListings(s: GameState, totalLots: number): number {
 
 export function newGame(seed: number, parcels?: ParcelTable): GameState {
   const s: GameState = {
-    v: 4,
+    v: 5,
     seed,
     rng: seed,
-    quarter: 0,
+    month: 0,
     cash: START_CASH,
     econ: null as never,
     holdings: {},
@@ -42,13 +43,13 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
     builtAtStart: parcels ? Object.values(parcels).filter((p) => p.class !== "land").length : 0,
     news: [],
     gameOver: null,
-    insolventQs: 0,
+    insolventMs: 0,
   };
   s.econ = initEcon(s);
   s.news.push({
     q: 0,
     kind: "info",
-    text: `${quarterLabel(0)}. You arrive in Ashport with $6M and a hundred years. Two-fifths of this town is still empty lots — the city will fill in around you, with or without your name on it.`,
+    text: `${monthLabel(0)}. You arrive in Ashport with $6M and a hundred years. Two-fifths of this town is still empty lots — the city will fill in around you, with or without your name on it.`,
   });
   return s;
 }
@@ -56,7 +57,7 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
 // Rotating for-sale stock: mostly assets a $6–50M buyer can reach, with the
 // occasional trophy so the skyline stays aspirational.
 export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string[]) {
-  s.listings = s.listings.filter((l) => l.expiresQ > s.quarter && !s.holdings[l.bbl]);
+  s.listings = s.listings.filter((l) => l.expiresM > s.month && !s.holdings[l.bbl]);
   const listed = new Set(s.listings.map((l) => l.bbl));
   const target = targetListings(s, bbls.length);
   let guard = 0;
@@ -72,8 +73,8 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     s.listings.push({
       bbl,
       ask,
-      listedQ: s.quarter,
-      expiresQ: s.quarter + Math.round(rrange(s, ...LISTING_LIFE_Q)),
+      listedM: s.month,
+      expiresM: s.month + Math.round(rrange(s, ...LISTING_LIFE_M)),
     } satisfies Listing);
     listed.add(bbl);
   }
@@ -84,62 +85,63 @@ export function advanceQuarter(
 ): GameState {
   if (prev.gameOver) return prev;
   const s: GameState = JSON.parse(JSON.stringify(prev));
-  s.quarter++;
+  s.month++;
 
   tickEcon(s);
   tickCityGrowth(s, parcels, bbls, adjacency);
   tickDevelopments(s, parcels);
   tickPrograms(s, parcels);
   tickLeasing(s, parcels);
+  tickSales(s, parcels);
 
   // holdings: collect NOI, run the debt stack, finish renovations
-  let quarterCF = 0;
+  let monthCF = 0;
   for (const h of Object.values(s.holdings)) {
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
-    if (h.renovatingUntilQ !== undefined && s.quarter >= h.renovatingUntilQ) {
+    if (h.renovatingUntilM !== undefined && s.month >= h.renovatingUntilM) {
       h.condition = "good";
-      delete h.renovatingUntilQ;
-      s.news.unshift({ q: s.quarter, kind: "deal", text: `Renovation complete at ${rec.address} — space re-opens at the new rent.` });
+      delete h.renovatingUntilM;
+      s.news.unshift({ q: s.month, kind: "deal", text: `Renovation complete at ${rec.address} — space re-opens at the new rent.` });
     }
-    const noiQ = quarterlyNOI(rec, s.econ, h, s.quarter);
+    const noiQ = monthlyNOI(rec, s.econ, h, s.month);
     const debtCash = tickLoan(s, rec, h, noiQ); // may refi, sweep, or force a sale
     if (!s.holdings[h.bbl]) continue; // forced sale removed it
     const cf = noiQ - debtCash;
     h.cfHistory.push(Math.round(cf));
     if (h.cfHistory.length > 40) h.cfHistory.shift();
-    quarterCF += cf;
+    monthCF += cf;
   }
-  s.cash += quarterCF;
+  s.cash += monthCF;
 
   // expire stale off-market asks
   for (const [bbl, a] of Object.entries(s.approaches)) {
-    if (s.quarter > a.q + 4) delete s.approaches[bbl];
+    if (s.month > a.q + 12) delete s.approaches[bbl];
   }
 
   // insolvency: four straight quarters underwater ends the run
   if (s.cash < 0) {
-    s.insolventQs++;
-    if (s.insolventQs === 2) {
-      s.news.unshift({ q: s.quarter, kind: "warn", text: "Your lenders have noticed the negative balance. Two more quarters of this and it's over." });
+    s.insolventMs++;
+    if (s.insolventMs === 6) {
+      s.news.unshift({ q: s.month, kind: "warn", text: "Your lenders have noticed the negative balance. Six more months of this and it's over." });
     }
-    if (s.insolventQs >= 4) {
+    if (s.insolventMs >= 12) {
       s.gameOver = {
-        cause: "Insolvency: cash stayed negative for four consecutive quarters. The portfolio was liquidated to satisfy creditors.",
+        cause: "Insolvency: cash stayed negative for a full year. The portfolio was liquidated to satisfy creditors.",
       };
-      s.news.unshift({ q: s.quarter, kind: "warn", text: "The run is over — the creditors own it now." });
+      s.news.unshift({ q: s.month, kind: "warn", text: "The run is over — the creditors own it now." });
     }
   } else {
-    s.insolventQs = 0;
+    s.insolventMs = 0;
   }
 
   // the century ends
-  if (!s.gameOver && s.quarter >= CAMPAIGN_QUARTERS) {
+  if (!s.gameOver && s.month >= CAMPAIGN_MONTHS) {
     s.gameOver = {
       complete: true,
       cause: `A hundred years in Ashport. The town you arrived in was two-fifths empty lots; ${Math.round((100 * (s.builtAtStart + Object.keys(s.built).length)) / Math.max(1, s.totalLots))}% of it stands built today, and ${Object.keys(s.holdings).length} of those buildings are yours.`,
     };
-    s.news.unshift({ q: s.quarter, kind: "event", text: "A century of Ashport. The ledger closes." });
+    s.news.unshift({ q: s.month, kind: "event", text: "A century of Ashport. The ledger closes." });
   }
 
   refreshListings(s, parcels, bbls);
@@ -153,10 +155,10 @@ export function portfolioQuarterlyCF(s: GameState, parcels: ParcelTable): number
   for (const h of Object.values(s.holdings)) {
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
-    cf += quarterlyNOI(rec, s.econ, h, s.quarter) - (h.loan?.quarterlyPmt ?? 0);
+    cf += monthlyNOI(rec, s.econ, h, s.month) - (h.loan?.monthlyPmt ?? 0);
   }
   for (const d of Object.values(s.developments ?? {})) {
-    cf -= (d.loanBalance * d.ratePct) / 100 / 4; // construction interest
+    cf -= (d.loanBalance * d.ratePct) / 100 / 12; // construction interest
   }
   return cf;
 }

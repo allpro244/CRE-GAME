@@ -4,7 +4,7 @@
 import type { Adjacency, ParcelTable } from "@/data/types";
 import type { GameState, Holding } from "./types";
 import { rng } from "./market";
-import { assetValue, initialCondition, holdingValue, renovationCost, RENO_QUARTERS, noiYr, resolveRec } from "./value";
+import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS, noiYr, resolveRec } from "./value";
 import { genRentRoll, isCommercial } from "./leasing";
 import { PRODUCTS, originate, quote } from "./debt";
 
@@ -40,7 +40,7 @@ function executePurchase(
   next.cash -= bq.equity;
   const holding: Holding = {
     bbl,
-    boughtQ: next.quarter,
+    boughtM: next.month,
     costBasis: price + Math.round(price * CLOSING_PCT),
     loan: null,
     condition: initialCondition(rec),
@@ -56,7 +56,7 @@ function executePurchase(
   next.listings = next.listings.filter((l) => l.bbl !== bbl);
   delete next.approaches[bbl];
   next.news.unshift({
-    q: next.quarter, kind: "deal",
+    q: next.month, kind: "deal",
     text: `Deed recorded: ${rec.address} for $${(price / 1e6).toFixed(2)}M${holding.loan ? ` ($${(holding.loan.principal / 1e6).toFixed(1)}M ${holding.loan.product} at ${holding.loan.ratePct}%)` : ", all cash"}${offMarket ? " — off-market" : ""}.`,
   });
   return { s: next };
@@ -85,7 +85,7 @@ export function approachOwner(
   if (s.holdings[bbl]) return { s, err: "You own it." };
   if (s.listings.some((l) => l.bbl === bbl)) return { s, err: "It's already listed — hit the Market tab." };
   const prior = s.approaches[bbl];
-  if (prior && s.quarter < prior.q + 4) {
+  if (prior && s.month < prior.q + 4) {
     return { s, err: prior.refused ? "You knocked recently — the owner hasn't changed their mind." : "You already have their number — it's good for a while." };
   }
   const next = clone(s);
@@ -97,45 +97,102 @@ export function approachOwner(
     + (rec.demandScore - 50) / 500,
   ));
   if (rng(next) < refuseP) {
-    next.approaches[bbl] = { q: next.quarter, refused: true };
-    next.news.unshift({ q: next.quarter, kind: "info", text: `${rec.address}: the owner isn't selling${pressure > 0.4 ? " — they know what you're assembling" : ""}.` });
+    next.approaches[bbl] = { q: next.month, refused: true };
+    next.news.unshift({ q: next.month, kind: "info", text: `${rec.address}: the owner isn't selling${pressure > 0.4 ? " — they know what you're assembling" : ""}.` });
     return { s: next, refused: true };
   }
   const premium = 1.06 + 0.5 * Math.pow(rng(next), 2) + 0.22 * pressure;
   const ask = Math.round(assetValue(rec, next.econ, initialCondition(rec)) * premium / 1000) * 1000;
-  next.approaches[bbl] = { q: next.quarter, refused: false, ask };
-  next.news.unshift({ q: next.quarter, kind: "info", text: `${rec.address}: the owner would take $${(ask / 1e6).toFixed(2)}M. The number holds for four quarters.` });
+  next.approaches[bbl] = { q: next.month, refused: false, ask };
+  next.news.unshift({ q: next.month, kind: "info", text: `${rec.address}: the owner would take $${(ask / 1e6).toFixed(2)}M. The number holds for four quarters.` });
   return { s: next, ask };
 }
 
 export function buyOffMarket(s: GameState, parcels: ParcelTable, bbl: string, product: BuyProduct): { s: GameState; err?: string } {
   const a = s.approaches[bbl];
   if (!a || a.refused || !a.ask) return { s, err: "No live ask — approach the owner first." };
-  if (s.quarter > a.q + 4) return { s, err: "That number expired." };
+  if (s.month > a.q + 4) return { s, err: "That number expired." };
   return executePurchase(s, parcels, bbl, a.ask, product, true);
 }
 
-export function sellHolding(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string } {
+// Selling is a process, not a button: list at an ask, wait for offers, and
+// decide. Overprice it and the phone stays quiet.
+export function listForSale(s: GameState, parcels: ParcelTable, bbl: string, ask: number): { s: GameState; err?: string } {
   const h = s.holdings[bbl];
   if (!h) return { s, err: "You don't own that parcel." };
-  if (h.renovatingUntilQ !== undefined && s.quarter < h.renovatingUntilQ) {
-    return { s, err: "Can't sell mid-renovation — finish the work first." };
+  if (h.renovatingUntilM !== undefined && s.month < h.renovatingUntilM) {
+    return { s, err: "Can't market it mid-renovation — finish the work first." };
   }
   if (s.developments[bbl]) return { s, err: "Can't sell with cranes on site — deliver the building first." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
-  const gross = holdingValue(rec, s.econ, h);
-  const proceeds = Math.round(gross * (1 - SALE_FRICTION)) - (h.loan?.balance ?? 0);
+  if (!Number.isFinite(ask) || ask <= 0) return { s, err: "Name a real number." };
   const next = clone(s);
+  next.holdings[bbl].sale = { ask: Math.round(ask), listedM: next.month };
+  next.news.unshift({ q: next.month, kind: "info", text: `${rec.address} goes to market at $${(ask / 1e6).toFixed(2)}M.` });
+  return { s: next };
+}
+
+export function delist(s: GameState, bbl: string): GameState {
+  const next = clone(s);
+  if (next.holdings[bbl]?.sale) delete next.holdings[bbl].sale;
+  return next;
+}
+
+export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string } {
+  const h = s.holdings[bbl];
+  const offer = h?.sale?.offer;
+  if (!h || !offer) return { s, err: "No live offer." };
+  if (s.month > offer.expiresM) return { s, err: "That offer lapsed." };
+  const rec = resolveRec(parcels, s, bbl);
+  if (!rec) return { s, err: "Unknown parcel." };
+  const next = clone(s);
+  const proceeds = Math.round(offer.price * (1 - SALE_FRICTION)) - (h.loan?.balance ?? 0);
   next.cash += proceeds;
   delete next.holdings[bbl];
   next.lois = next.lois.filter((l) => l.bbl !== bbl);
   const gain = proceeds + (h.loan?.balance ?? 0) - h.costBasis;
   next.news.unshift({
-    q: next.quarter, kind: "deal",
-    text: `Sold ${rec.address} for $${(gross / 1e6).toFixed(2)}M — ${gain >= 0 ? "a gain" : "a loss"} of $${(Math.abs(gain) / 1e6).toFixed(2)}M against basis.`,
+    q: next.month, kind: "deal",
+    text: `Closed: ${rec.address} at $${(offer.price / 1e6).toFixed(2)}M — ${gain >= 0 ? "a gain" : "a loss"} of $${(Math.abs(gain) / 1e6).toFixed(2)}M against basis.`,
   });
   return { s: next };
+}
+
+export function declineSaleOffer(s: GameState, bbl: string): GameState {
+  const next = clone(s);
+  const sale = next.holdings[bbl]?.sale;
+  if (sale?.offer) delete sale.offer;
+  return next;
+}
+
+// Monthly: buyers circle listed assets. Offer flow scales with how honest
+// the ask is, the market phase, and how long it has sat.
+export function tickSales(s: GameState, parcels: ParcelTable) {
+  for (const h of Object.values(s.holdings)) {
+    const sale = h.sale;
+    if (!sale) continue;
+    if (sale.offer && s.month > sale.offer.expiresM) {
+      delete sale.offer;
+      continue;
+    }
+    if (sale.offer) continue;
+    const rec = resolveRec(parcels, s, h.bbl);
+    if (!rec) continue;
+    const value = holdingValue(rec, s.econ, h);
+    const ratio = sale.ask / Math.max(1, value);
+    const phaseAdj = s.econ.phase === "expansion" ? 1.3 : s.econ.phase === "recession" ? 0.5 : 1;
+    const staleness = Math.min(0.06, (s.month - sale.listedM) * 0.004); // word gets around
+    const p = Math.max(0.01, Math.min(0.5, (0.55 - 0.42 * ratio) * phaseAdj + staleness));
+    if (rng(s) < p) {
+      const bid = Math.min(sale.ask, value * (0.9 + rng(s) * 0.13));
+      sale.offer = { price: Math.round(bid), expiresM: s.month + 2 };
+      s.news.unshift({
+        q: s.month, kind: "deal",
+        text: `Offer in: $${(sale.offer.price / 1e6).toFixed(2)}M for ${rec.address} (ask $${(sale.ask / 1e6).toFixed(2)}M). Good for two months.`,
+      });
+    }
+  }
 }
 
 export function startRenovation(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string } {
@@ -144,25 +201,25 @@ export function startRenovation(s: GameState, parcels: ParcelTable, bbl: string)
   const rec = resolveRec(parcels, s, bbl);
   if (!rec || rec.class === "land" || !rec.bldgArea) return { s, err: "Nothing to renovate on this lot." };
   if (h.condition === "good") return { s, err: "Already in top condition." };
-  if (h.renovatingUntilQ !== undefined) return { s, err: "Crews are already on site." };
+  if (h.renovatingUntilM !== undefined) return { s, err: "Crews are already on site." };
   if (isCommercial(rec)) {
     const leased = h.tenants.reduce((sum, t) => sum + t.sf, 0);
     if (leased / rec.bldgArea > 0.35) {
       return { s, err: "Too much of the building is under lease to gut it — let the roll burn down below 35% first." };
     }
   }
-  const cost = renovationCost(rec);
+  const cost = renovationCost(rec, s.econ);
   if (s.cash < cost) return { s, err: `Renovation costs $${(cost / 1e6).toFixed(2)}M cash — you're short.` };
   const next = clone(s);
   next.cash -= cost;
   const nh = next.holdings[bbl];
-  nh.renovatingUntilQ = next.quarter + RENO_QUARTERS;
+  nh.renovatingUntilM = next.month + RENO_MONTHS;
   nh.tenants = []; // remaining tenants are bought out as part of the job
   if (rec.class === "multifamily") nh.occ = 0;
   next.lois = next.lois.filter((l) => l.bbl !== bbl);
   next.news.unshift({
-    q: next.quarter, kind: "info",
-    text: `Scaffolding up at ${rec.address} — $${(cost / 1e6).toFixed(2)}M gut renovation, ${RENO_QUARTERS} quarters.`,
+    q: next.month, kind: "info",
+    text: `Scaffolding up at ${rec.address} — $${(cost / 1e6).toFixed(2)}M gut renovation, ${RENO_MONTHS} quarters.`,
   });
   return { s: next };
 }

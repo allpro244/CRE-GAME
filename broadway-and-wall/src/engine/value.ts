@@ -86,30 +86,32 @@ export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition): numb
   }
   const cls = rec.class as BuiltClass;
   const gross = rec.bldgArea * marketRentPsfYr(rec, econ, condition) * occupancy(rec, econ);
-  return gross * (1 - OPEX_RATIO[cls]);
+  // opex share drifts up as cost inflation outpaces the rent share it eats
+  const ratio = Math.min(0.6, OPEX_RATIO[cls] * Math.pow(econ.costIdx / (econ.rentIdx[cls] / (cls === "office" ? 62 : cls === "retail" ? 88 : cls === "mixed" ? 58 : cls === "multifamily" ? 46 : 16)), 0.5));
+  return gross * (1 - ratio);
 }
 
 // in-place NOI from the actual rent roll (owned assets, Phase 3 onward)
 export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ: number): number {
-  if (h.renovatingUntilQ !== undefined && currentQ < h.renovatingUntilQ) {
+  if (h.renovatingUntilM !== undefined && currentQ < h.renovatingUntilM) {
     return -Math.max(0, rec.bldgArea) * 1.2; // dark during the gut
   }
   if (rec.class === "land" || !rec.bldgArea) return -landValue(rec, econ) * 0.012;
   const cls = rec.class as BuiltClass;
   if (cls === "multifamily") {
     const occ = h.occ ?? occupancy(rec, econ);
-    return rec.bldgArea * (marketRentPsfYr(rec, econ, h.condition) * occ - OPEX_PSF[cls]);
+    return rec.bldgArea * (marketRentPsfYr(rec, econ, h.condition) * occ - OPEX_PSF[cls] * econ.costIdx);
   }
   let egi = 0, grossLeasedSf = 0, leasedSf = 0;
   for (const t of h.tenants) {
     leasedSf += t.sf;
-    if (t.freeUntilQ !== undefined && currentQ < t.freeUntilQ) continue; // free-rent burn-off
+    if (t.freeUntilM !== undefined && currentQ < t.freeUntilM) continue; // free-rent burn-off
     egi += t.rentPsf * t.sf;
     if (!t.net) grossLeasedSf += t.sf; // gross leases: landlord absorbs opex
   }
   const vacant = Math.max(0, rec.bldgArea - leasedSf);
   const systems = h.programsDone?.systems !== undefined ? 0.85 : 1; // HVAC/systems program cuts opex
-  const opex = OPEX_PSF[cls] * (vacant + grossLeasedSf) * systems + egi * 0.04;
+  const opex = OPEX_PSF[cls] * econ.costIdx * (vacant + grossLeasedSf) * systems + egi * 0.04;
   return egi - opex;
 }
 
@@ -128,21 +130,21 @@ export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding): number 
   if (rec.class === "land" || !rec.bldgArea) return landValue(rec, econ);
   const cls = rec.class as BuiltClass;
   const cap = econ.capRate[cls] / 100;
-  const inPlace = holdingNOIYr(rec, econ, h, h.renovatingUntilQ ?? -1) / cap;
+  const inPlace = holdingNOIYr(rec, econ, h, h.renovatingUntilM ?? -1) / cap;
   const stabilized = noiYr(rec, econ, h.condition) / cap;
   return Math.max(landValue(rec, econ) * 0.92, inPlace * 0.55 + stabilized * 0.45);
 }
 
-export function quarterlyNOI(rec: ParcelRecord, econ: Econ, h: Holding, currentQ: number): number {
-  return holdingNOIYr(rec, econ, h, currentQ) / 4;
+export function monthlyNOI(rec: ParcelRecord, econ: Econ, h: Holding, currentQ: number): number {
+  return holdingNOIYr(rec, econ, h, currentQ) / 12;
 }
 
 export const RENO_COST_PSF: Record<BuiltClass, number> = { office: 210, retail: 150, mixed: 190, multifamily: 165, industrial: 90 };
-export const RENO_QUARTERS = 2;
+export const RENO_MONTHS = 6;
 
-export function renovationCost(rec: ParcelRecord): number {
+export function renovationCost(rec: ParcelRecord, econ: Econ): number {
   if (rec.class === "land" || !rec.bldgArea) return 0;
-  return rec.bldgArea * RENO_COST_PSF[rec.class as BuiltClass];
+  return Math.round(rec.bldgArea * RENO_COST_PSF[rec.class as BuiltClass] * econ.costIdx);
 }
 
 export function netWorth(s: GameState, parcels: Record<string, ParcelRecord>): number {

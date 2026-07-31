@@ -12,22 +12,22 @@ export interface LoanProduct {
   label: string;
   ltv: number;
   spread: number;      // over the index
-  ioQ: number;
+  ioM: number;
   amortYears: number;
-  termQ: number;       // balloon
+  termM: number;       // balloon
 }
 
 export const PRODUCTS: LoanProduct[] = [
-  { id: "fixed", label: "Fixed 65%", ltv: 0.65, spread: 1.6, ioQ: 0, amortYears: 30, termQ: 40 },
-  { id: "float", label: "Floating IO 70%", ltv: 0.7, spread: 1.15, ioQ: 12, amortYears: 30, termQ: 28 },
+  { id: "fixed", label: "Fixed 65%", ltv: 0.65, spread: 1.6, ioM: 0, amortYears: 30, termM: 120 },
+  { id: "float", label: "Floating IO 70%", ltv: 0.7, spread: 1.15, ioM: 36, amortYears: 30, termM: 84 },
 ];
 
 const UW_DSCR = 1.25;
 const REFI_FEE = 0.01;
 
-function quarterlyPayment(principal: number, ratePct: number, years: number): number {
-  const i = ratePct / 100 / 4;
-  const n = years * 4;
+function monthlyPayment(principal: number, ratePct: number, years: number): number {
+  const i = ratePct / 100 / 12;
+  const n = years * 12;
   return (principal * i) / (1 - Math.pow(1 + i, -n));
 }
 
@@ -38,9 +38,9 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   const maxAnnualDS = Math.max(0, noiYr) / UW_DSCR;
   const i = ratePct / 100;
   const byDscrIO = maxAnnualDS / i;
-  const qp = quarterlyPayment(1, ratePct, product.amortYears) * 4; // annual DS per $1
+  const qp = monthlyPayment(1, ratePct, product.amortYears) * 12; // annual DS per $1
   const byDscrAmort = maxAnnualDS / qp;
-  const byDscr = product.ioQ > 0 ? Math.min(byDscrIO, byDscrAmort * 1.08) : byDscrAmort;
+  const byDscr = product.ioM > 0 ? Math.min(byDscrIO, byDscrAmort * 1.08) : byDscrAmort;
   const principal = Math.max(0, Math.round(Math.min(byLtv, byDscr)));
   return { principal, ratePct, dscrConstrained: byDscr < byLtv };
 }
@@ -48,32 +48,32 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
 export function originate(s: GameState, product: LoanProduct, price: number, noiYr: number): Loan | null {
   const qd = quote(s, product, price, noiYr);
   if (qd.principal < 100_000) return null;
-  const pmt = product.ioQ > 0
-    ? Math.round((qd.principal * qd.ratePct) / 100 / 4)
-    : Math.round(quarterlyPayment(qd.principal, qd.ratePct, product.amortYears));
+  const pmt = product.ioM > 0
+    ? Math.round((qd.principal * qd.ratePct) / 100 / 12)
+    : Math.round(monthlyPayment(qd.principal, qd.ratePct, product.amortYears));
   return {
     product: product.id,
     principal: qd.principal,
     balance: qd.principal,
     ratePct: qd.ratePct,
     spread: product.spread,
-    ioUntilQ: s.quarter + product.ioQ,
+    ioUntilM: s.month + product.ioM,
     amortYears: product.amortYears,
-    maturityQ: s.quarter + product.termQ,
-    quarterlyPmt: pmt,
+    maturityM: s.month + product.termM,
+    monthlyPmt: pmt,
     minDSCR: 1.2,
     maxLTV: 0.85,
     sweep: false,
     cleanQs: 0,
-    originQ: s.quarter,
+    originM: s.month,
   };
 }
 
 export function dscr(rec: ParcelRecord, s: GameState, h: Holding): number | null {
   if (!h.loan) return null;
-  const ds = h.loan.quarterlyPmt * 4;
+  const ds = h.loan.monthlyPmt * 12;
   if (ds <= 0) return null;
-  return holdingNOIYr(rec, s.econ, h, s.quarter) / ds;
+  return holdingNOIYr(rec, s.econ, h, s.month) / ds;
 }
 
 export function ltv(rec: ParcelRecord, s: GameState, h: Holding): number | null {
@@ -87,24 +87,24 @@ export function ltv(rec: ParcelRecord, s: GameState, h: Holding): number | null 
 export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, assetCF: number): number {
   const loan = h.loan;
   if (!loan || !rec) return 0;
-  const q = s.quarter;
+  const q = s.month;
 
   // floating: reprice off the live index
   if (loan.product === "float") {
     loan.ratePct = +(s.econ.indexRate + loan.spread).toFixed(2);
   }
-  const io = q < loan.ioUntilQ;
+  const io = q < loan.ioUntilM;
   if (io || loan.product === "float") {
-    const yearsLeft = Math.max(1, loan.amortYears - (q - loan.originQ) / 4);
-    loan.quarterlyPmt = io
-      ? Math.round((loan.balance * loan.ratePct) / 100 / 4)
-      : Math.round(quarterlyPayment(loan.balance, loan.ratePct, yearsLeft));
+    const yearsLeft = Math.max(1, loan.amortYears - (q - loan.originM) / 12);
+    loan.monthlyPmt = io
+      ? Math.round((loan.balance * loan.ratePct) / 100 / 12)
+      : Math.round(monthlyPayment(loan.balance, loan.ratePct, yearsLeft));
   }
 
-  const interest = (loan.balance * loan.ratePct) / 100 / 4;
-  const principalPay = io ? 0 : Math.min(loan.balance, loan.quarterlyPmt - interest);
+  const interest = (loan.balance * loan.ratePct) / 100 / 12;
+  const principalPay = io ? 0 : Math.min(loan.balance, loan.monthlyPmt - interest);
   loan.balance = Math.max(0, loan.balance - principalPay);
-  let cashOut = loan.quarterlyPmt;
+  let cashOut = loan.monthlyPmt;
 
   // covenants
   const d = dscr(rec, s, h);
@@ -128,7 +128,7 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
   }
   // sweep: surplus asset cash flow pays down principal instead of reaching you
   if (loan.sweep) {
-    const surplus = Math.max(0, assetCF - loan.quarterlyPmt);
+    const surplus = Math.max(0, assetCF - loan.monthlyPmt);
     if (surplus > 0) {
       loan.balance = Math.max(0, loan.balance - surplus);
       cashOut += surplus;
@@ -137,7 +137,7 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
   if (loan.balance === 0) { h.loan = null; return cashOut; }
 
   // the balloon
-  if (q >= loan.maturityQ) {
+  if (q >= loan.maturityM) {
     const value = holdingValue(rec, s.econ, h);
     const noi = holdingNOIYr(rec, s.econ, h, q);
     const product = PRODUCTS[0];
@@ -184,7 +184,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   if (!h || !rec) return { s, err: "You don't own that." };
   const product = PRODUCTS.find((p) => p.id === productId)!;
   const value = holdingValue(rec, next.econ, h);
-  const noi = holdingNOIYr(rec, next.econ, h, next.quarter);
+  const noi = holdingNOIYr(rec, next.econ, h, next.month);
   const qd = quote(next, product, value, noi);
   const oldBal = h.loan?.balance ?? 0;
   const fee = Math.round(Math.max(qd.principal, oldBal) * REFI_FEE);
@@ -195,7 +195,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   next.cash += qd.principal - oldBal - fee;
   h.loan = newLoan;
   next.news.unshift({
-    q: next.quarter, kind: "deal",
+    q: next.month, kind: "deal",
     text: `Refinanced ${rec.address}: $${(qd.principal / 1e6).toFixed(2)}M at ${qd.ratePct.toFixed(2)}% (${product.label}).`,
   });
   return { s: next };

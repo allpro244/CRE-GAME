@@ -1,87 +1,71 @@
-import { useState } from "react";
+// The game's chrome: a parcel card docked to the map, and full-page views
+// for Portfolio / Deals / Market — big rooms, not side-panel squints.
+import { useEffect, useState } from "react";
 import { useStore } from "@/state/store";
-import type { Tab } from "@/state/store";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
-import { quarterLabel, CREDIT_LABEL } from "@/engine/types";
-import { assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec } from "@/engine/value";
-import { planDevelopment, PROGRAMS } from "@/engine/dev";
+import { monthLabel, CREDIT_LABEL } from "@/engine/types";
+import {
+  assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr,
+  occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec,
+} from "@/engine/value";
+import { planDevelopment, PROGRAMS, programCost } from "@/engine/dev";
 import type { BuiltClass } from "@/engine/types";
 import { buyQuote, assemblagePressure } from "@/engine/actions";
 import { isCommercial, vacantSf, walt, loiSigningCost } from "@/engine/leasing";
 import { dscr, ltv } from "@/engine/debt";
 import { usd, sf, pct } from "./format";
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "parcel", label: "Parcel" },
-  { id: "portfolio", label: "Portfolio" },
-  { id: "deals", label: "Deals" },
-  { id: "market", label: "Market" },
-];
-
-export default function RightPanel() {
-  const tab = useStore((s) => s.tab);
-  const setTab = useStore((s) => s.setTab);
+export default function GamePanels() {
   const game = useStore((s) => s.game);
+  const page = useStore((s) => s.page);
+  const setPage = useStore((s) => s.setPage);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPage("none"); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setPage]);
   if (!game) return null;
-  const dealsCount = game.lois.length;
-
   return (
-    <div className="panel">
-      <div className="tabs">
-        {TABS.map((t) => (
-          <button key={t.id} className={"tab" + (tab === t.id ? " tab-on" : "")} onClick={() => setTab(t.id)}>
-            {t.label}{t.id === "deals" && dealsCount > 0 ? ` · ${dealsCount}` : ""}
-          </button>
-        ))}
-      </div>
-      {tab === "parcel" && <ParcelTab />}
-      {tab === "portfolio" && <PortfolioTab />}
-      {tab === "deals" && <DealsTab />}
-      {tab === "market" && <MarketTab />}
-      {game.gameOver && (
-        <div className="gameover">
-          <div className="gameover-head">The run is over.</div>
-          <div>{game.gameOver.cause}</div>
-          <button className="btn btn-buy" onClick={() => useStore.getState().newRun()}>Start a new run</button>
+    <>
+      <ParcelPanel />
+      {page !== "none" && (
+        <div className="page-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setPage("none"); }}>
+          <div className="page">
+            <div className="page-head">
+              <div className="page-title">
+                {page === "portfolio" ? "Portfolio" : page === "deals" ? "The Deals Desk" : "The Market"}
+              </div>
+              <button className="panel-close" onClick={() => setPage("none")}>×</button>
+            </div>
+            {page === "portfolio" && <PortfolioPage />}
+            {page === "deals" && <DealsPage />}
+            {page === "market" && <MarketPage />}
+          </div>
         </div>
       )}
-    </div>
+      {game.gameOver && (
+        <div className="page-backdrop">
+          <div className="page gameover-page">
+            <div className="page-title">{game.gameOver.complete ? "A Century of Ashport" : "The run is over."}</div>
+            <p>{game.gameOver.cause}</p>
+            <button className="btn btn-buy" onClick={() => useStore.getState().newRun()}>Start a new run</button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
-function BuyButtons({ bbl, price, off }: { bbl: string; price: number; off: boolean }) {
-  const game = useStore((s) => s.game)!;
-  const parcels = useStore((s) => s.parcels)!;
-  const { buy, buyOff } = useStore.getState();
-  const act = off ? buyOff : buy;
-  const fixed = buyQuote(game, parcels, bbl, price, "fixed");
-  const float = buyQuote(game, parcels, bbl, price, "float");
-  return (
-    <div className="btn-row">
-      <button className="btn btn-buy" onClick={() => act(bbl, "cash")}>All-cash · {usd(price * 1.02)}</button>
-      {fixed.principal > 0 && (
-        <button className="btn btn-buy" onClick={() => act(bbl, "fixed")} title={`$${(fixed.principal / 1e6).toFixed(1)}M at ${fixed.ratePct}% fixed, 10-yr balloon`}>
-          Fixed · eq {usd(fixed.equity)}
-        </button>
-      )}
-      {float.principal > 0 && (
-        <button className="btn btn-buy" onClick={() => act(bbl, "float")} title={`$${(float.principal / 1e6).toFixed(1)}M floating at ${float.ratePct}%, 3-yr IO, 7-yr balloon`}>
-          Float IO · eq {usd(float.equity)}
-        </button>
-      )}
-    </div>
-  );
-}
-
-function ParcelTab() {
+// ---------------------------------------------------------------- parcel card
+function ParcelPanel() {
   const parcels = useStore((s) => s.parcels);
   const adjacency = useStore((s) => s.adjacency);
   const selectedBBL = useStore((s) => s.selectedBBL);
   const select = useStore((s) => s.select);
   const game = useStore((s) => s.game)!;
-  const { sell, renovate, approach, refi } = useStore.getState();
+  const { renovate, approach, refi } = useStore.getState();
 
-  if (!selectedBBL || !parcels) return <div className="hint">Click a lot on the map — every parcel in Ashport has a record.</div>;
+  if (!selectedBBL || !parcels) return null;
   const rec = resolveRec(parcels, game, selectedBBL);
   if (!rec) return null;
   const dev = game.developments[selectedBBL];
@@ -94,14 +78,14 @@ function ParcelTab() {
   const builtFar = rec.lotArea > 0 ? rec.bldgArea / rec.lotArea : 0;
   const farMax = Math.max(rec.farMaxComm, rec.farMaxRes);
   const isBuilt = rec.class !== "land" && rec.bldgArea > 0;
-  const renovating = holding?.renovatingUntilQ !== undefined && game.quarter < (holding.renovatingUntilQ ?? 0);
+  const renovating = holding?.renovatingUntilM !== undefined && game.month < (holding.renovatingUntilM ?? 0);
   const commercial = isCommercial(rec);
   const leasedSf = holding && commercial ? holding.tenants.reduce((s2, t) => s2 + t.sf, 0) : 0;
   const d = holding ? dscr(rec, game, holding) : null;
   const l = holding ? ltv(rec, game, holding) : null;
 
   return (
-    <div>
+    <div className="panel">
       <div className="panel-head">
         <div>
           <div className="panel-address">{rec.address}</div>
@@ -116,6 +100,7 @@ function ParcelTab() {
         {holding && <span className="chip chip-owned">OWNED</span>}
         {dev && <span className="chip chip-reno">UNDER CONSTRUCTION</span>}
         {listing && !holding && <span className="chip chip-listed">FOR SALE</span>}
+        {holding?.sale && <span className="chip chip-listed">LISTED · {usd(holding.sale.ask)}</span>}
         {renovating && <span className="chip chip-reno">RENOVATING</span>}
         {holding?.loan?.sweep && <span className="chip chip-sweep">CASH SWEEP</span>}
       </div>
@@ -126,15 +111,14 @@ function ParcelTab() {
         {isBuilt && !holding && <Row k="Occupancy (mkt)" v={(occupancy(rec, game.econ) * 100).toFixed(0) + "%"} />}
         {holding && commercial && <Row k="Occupancy" v={rec.bldgArea ? ((leasedSf / rec.bldgArea) * 100).toFixed(0) + "%" : "—"} />}
         {holding && rec.class === "multifamily" && <Row k="Occupancy" v={((holding.occ ?? 0) * 100).toFixed(0) + "%"} />}
-        {holding && commercial && <Row k="WALT" v={walt(holding, game.quarter).toFixed(1) + " yrs"} />}
-        {isBuilt && <Row k="NOI / yr" v={usd(holding ? holdingNOIYr(rec, game.econ, holding, game.quarter) : noiYr(rec, game.econ, cond))} />}
+        {holding && commercial && <Row k="WALT" v={walt(holding, game.month).toFixed(1) + " yrs"} />}
+        {isBuilt && <Row k="NOI / yr" v={usd(holding ? holdingNOIYr(rec, game.econ, holding, game.month) : noiYr(rec, game.econ, cond))} />}
         <Row k="Lot area" v={sf(rec.lotArea)} />
         {isBuilt && <Row k="Building" v={sf(rec.bldgArea) + ` · ${rec.floors} fl · ${rec.yearBuilt}`} />}
         <Row k="FAR built / max" v={`${builtFar.toFixed(1)} / ${farMax.toFixed(1)}`} />
         <Row k="Demand" v={String(rec.demandScore) + " / 100"} />
       </div>
 
-      {/* rent roll */}
       {holding && commercial && holding.tenants.length > 0 && (
         <div className="deal">
           <div className="deal-head">Rent roll · {sf(leasedSf)} of {sf(rec.bldgArea)}</div>
@@ -143,7 +127,7 @@ function ParcelTab() {
               <div key={i} className="roll-row">
                 <span className="roll-name">{t.name} <span className="roll-credit mono">{CREDIT_LABEL[t.credit]}</span></span>
                 <span className="roll-meta mono">
-                  {(t.sf / 1000).toFixed(1)}k sf · ${t.rentPsf.toFixed(0)} {t.net ? "NNN" : "G"} · exp {quarterLabel(t.endQ)}
+                  {(t.sf / 1000).toFixed(1)}k sf · ${t.rentPsf.toFixed(0)} {t.net ? "NNN" : "G"} · exp {monthLabel(t.endM)}
                 </span>
               </div>
             ))}
@@ -157,16 +141,15 @@ function ParcelTab() {
         </div>
       )}
 
-      {/* debt desk */}
       {holding?.loan && (
         <div className="deal">
           <div className="deal-head">Debt</div>
           <div className="grid">
             <Row k="Balance" v={usd(holding.loan.balance)} strong />
             <Row k="Coupon" v={pct(holding.loan.ratePct) + (holding.loan.product === "float" ? " (floating)" : " (fixed)")} />
-            {game.quarter < holding.loan.ioUntilQ && <Row k="Interest-only" v={"until " + quarterLabel(holding.loan.ioUntilQ)} />}
-            <Row k="Payment / qtr" v={usd(holding.loan.quarterlyPmt)} />
-            <Row k="Balloon" v={quarterLabel(holding.loan.maturityQ)} />
+            {game.month < holding.loan.ioUntilM && <Row k="Interest-only" v={"until " + monthLabel(holding.loan.ioUntilM)} />}
+            <Row k="Payment / mo" v={usd(holding.loan.monthlyPmt)} />
+            <Row k="Balloon" v={monthLabel(holding.loan.maturityM)} />
             {d !== null && <Row k="DSCR" v={d.toFixed(2) + " (min " + holding.loan.minDSCR.toFixed(2) + ")"} bad={d < holding.loan.minDSCR} />}
             {l !== null && <Row k="LTV" v={(l * 100).toFixed(0) + "% (max " + (holding.loan.maxLTV * 100).toFixed(0) + "%)"} bad={l > holding.loan.maxLTV} />}
           </div>
@@ -177,7 +160,6 @@ function ParcelTab() {
         </div>
       )}
 
-      {/* the deal section */}
       {listing && !holding && (
         <div className="deal">
           <div className="deal-head">On the market</div>
@@ -197,12 +179,12 @@ function ParcelTab() {
               <div className="grid">
                 <Row k="Owner's ask" v={usd(appr.ask)} strong />
                 <Row k="vs. appraisal" v={((appr.ask / value - 1) * 100).toFixed(1) + "%"} />
-                <Row k="Good until" v={quarterLabel(appr.q + 4)} />
+                <Row k="Good until" v={monthLabel(appr.q + 12)} />
               </div>
               <BuyButtons bbl={selectedBBL} price={appr.ask} off />
             </>
           ) : appr && appr.refused ? (
-            <div className="hint">The owner turned you away in {quarterLabel(appr.q)}. Try again after {quarterLabel(appr.q + 4)}.</div>
+            <div className="hint">The owner turned you away in {monthLabel(appr.q)}. Try again after {monthLabel(appr.q + 12)}.</div>
           ) : (
             <>
               <div className="hint">
@@ -225,14 +207,12 @@ function ParcelTab() {
             <Row k="Program" v={`${(dev.sf / 1000).toFixed(0)}k sf ${dev.use} · ${dev.floors} fl`} />
             <Row k="Budget" v={usd(dev.costTotal)} />
             <Row k="Constr. loan" v={usd(dev.loanBalance) + " @ " + pct(dev.ratePct)} />
-            <Row k="Delivers" v={quarterLabel(dev.deliverQ)} strong />
+            <Row k="Delivers" v={monthLabel(dev.deliverM)} strong />
           </div>
         </div>
       )}
 
-      {holding && !dev && rec.class === "land" && (
-        <DevelopSection bbl={selectedBBL} />
-      )}
+      {holding && !dev && rec.class === "land" && <DevelopSection bbl={selectedBBL} />}
 
       {holding && isBuilt && !renovating && (
         <div className="deal">
@@ -256,36 +236,38 @@ function ParcelTab() {
             {PROGRAMS.map((p) => {
               const done = holding.programsDone?.[p.id] !== undefined;
               const running = holding.program?.id === p.id;
+              const cost = programCost(rec, game, p);
               return (
                 <button
                   key={p.id}
                   className="btn"
                   disabled={done || !!holding.program}
-                  title={p.blurb + ` · $${p.costPsf}/sf, ${p.quarters}q`}
+                  title={`${p.blurb} · ${p.months} months`}
                   onClick={() => useStore.getState().program(selectedBBL, p.id)}
                 >
-                  {done ? "✓ " : running ? "⏳ " : ""}{p.label}
+                  {done ? "✓ " : running ? "⏳ " : ""}{p.label} · {usd(cost)}
                 </button>
               );
             })}
           </div>
+          {isBuilt && cond !== "good" && (
+            <div className="btn-row">
+              <button className="btn" onClick={() => renovate(selectedBBL)}>
+                Gut renovation · {usd(renovationCost(rec, game.econ))} · {6} mo
+              </button>
+            </div>
+          )}
         </div>
       )}
 
+      {holding && <SaleSection bbl={selectedBBL} value={value} />}
+
       {holding && (
         <div className="deal">
-          <div className="deal-head">Your position · since {quarterLabel(holding.boughtQ)}</div>
+          <div className="deal-head">Your position · since {monthLabel(holding.boughtM)}</div>
           <div className="grid">
             <Row k="Basis" v={usd(holding.costBasis)} />
             <Row k="Equity" v={usd(value - (holding.loan?.balance ?? 0))} strong />
-          </div>
-          <div className="btn-row">
-            {isBuilt && cond !== "good" && !renovating && (
-              <button className="btn" onClick={() => renovate(selectedBBL)}>
-                Renovate · {usd(renovationCost(rec))}
-              </button>
-            )}
-            <button className="btn btn-sell" onClick={() => sell(selectedBBL)}>Sell · net {usd(value * 0.97 - (holding.loan?.balance ?? 0))}</button>
           </div>
         </div>
       )}
@@ -311,153 +293,80 @@ function ParcelTab() {
   );
 }
 
-function DealsTab() {
-  const parcels = useStore((s) => s.parcels)!;
+function SaleSection({ bbl, value }: { bbl: string; value: number }) {
   const game = useStore((s) => s.game)!;
-  const select = useStore((s) => s.select);
-  const { respondLoi } = useStore.getState();
-  const q = game.quarter;
-
-  const expiring: { bbl: string; name: string; sf: number; endQ: number }[] = [];
-  const maturities: { bbl: string; matQ: number; bal: number; sweep: boolean }[] = [];
-  for (const h of Object.values(game.holdings)) {
-    for (const t of h.tenants) if (t.endQ - q <= 4 && t.endQ > q) expiring.push({ bbl: h.bbl, name: t.name, sf: t.sf, endQ: t.endQ });
-    if (h.loan && (h.loan.maturityQ - q <= 8 || h.loan.sweep)) maturities.push({ bbl: h.bbl, matQ: h.loan.maturityQ, bal: h.loan.balance, sweep: h.loan.sweep });
-  }
-
-  return (
-    <div>
-      <div className="neighbors-head">Letters of intent · {game.lois.length}</div>
-      {game.lois.length === 0 && <div className="hint">No live negotiations. Vacant space in high-demand buildings draws LOIs each quarter.</div>}
-      {game.lois.map((loi) => {
-        const rec = parcels[loi.bbl];
-        return (
-          <div key={loi.id} className="loi">
-            <button className="loi-addr" onClick={() => select(loi.bbl)}>{rec?.address ?? loi.bbl}</button>
-            <div className="loi-line">
-              <b>{loi.name}</b> <span className="mono">{CREDIT_LABEL[loi.credit]}</span> · {loi.sector}
-              {loi.kind === "renewal" && <span className="chip chip-renewal">RENEWAL</span>}
-            </div>
-            <div className="loi-line mono">
-              {(loi.sf / 1000).toFixed(1)}k sf · ${loi.rentPsf.toFixed(0)}/sf {loi.net ? "NNN" : "gross"} · {(loi.termQ / 4).toFixed(0)} yrs
-              {loi.tiPsf > 0 && ` · TI $${loi.tiPsf}`}{loi.freeQ > 0 && ` · ${loi.freeQ}q free`}
-            </div>
-            <div className="loi-line mono dim">signing costs {usd(loiSigningCost(loi))} · answer by {quarterLabel(loi.expiresQ)}</div>
+  const { listSale, delistSale, acceptOffer, declineOffer } = useStore.getState();
+  const holding = game.holdings[bbl]!;
+  const [ask, setAsk] = useState<string>("");
+  const sale = holding.sale;
+  if (sale) {
+    return (
+      <div className="deal">
+        <div className="deal-head">For sale · listed {monthLabel(sale.listedM)}</div>
+        <div className="grid">
+          <Row k="Your ask" v={usd(sale.ask)} strong />
+          <Row k="vs. appraisal" v={((sale.ask / value - 1) * 100).toFixed(1) + "%"} />
+        </div>
+        {sale.offer ? (
+          <>
+            <div className="hint">Offer on the table: <b className="mono">{usd(sale.offer.price)}</b> — good until {monthLabel(sale.offer.expiresM)}.</div>
             <div className="btn-row">
-              <button className="btn btn-buy" onClick={() => respondLoi(loi.id, "accept")}>Accept</button>
-              {!loi.countered && <button className="btn" onClick={() => respondLoi(loi.id, "counter")} title="+6% rent, −30% TI — they may walk">Counter</button>}
-              <button className="btn" onClick={() => respondLoi(loi.id, "decline")}>Pass</button>
+              <button className="btn btn-buy" onClick={() => acceptOffer(bbl)}>Accept · net {usd(sale.offer.price * 0.97 - (holding.loan?.balance ?? 0))}</button>
+              <button className="btn" onClick={() => declineOffer(bbl)}>Decline</button>
             </div>
-          </div>
-        );
-      })}
-
-      <div className="neighbors">
-        <div className="neighbors-head">Rolling in the next year · {expiring.length}</div>
-        {expiring.length === 0 && <div className="hint">No near-term expirations.</div>}
-        <div className="neighbors-list">
-          {expiring.map((e, i) => (
-            <button key={i} className="neighbor" onClick={() => select(e.bbl)}>
-              <span className="neighbor-addr">{e.name}</span>
-              <span className="neighbor-meta mono">{parcels[e.bbl]?.address} · exp {quarterLabel(e.endQ)}</span>
-            </button>
-          ))}
+          </>
+        ) : (
+          <div className="hint">No offers yet. Overpriced listings sit; the market talks back slowly.</div>
+        )}
+        <div className="btn-row">
+          <button className="btn btn-sell" onClick={() => delistSale(bbl)}>Delist</button>
         </div>
       </div>
-
-      <div className="neighbors">
-        <div className="neighbors-head">Debt watch · {maturities.length}</div>
-        {maturities.length === 0 && <div className="hint">No balloons or breaches on the radar.</div>}
-        <div className="neighbors-list">
-          {maturities.map((m, i) => (
-            <button key={i} className="neighbor" onClick={() => select(m.bbl)}>
-              <span className="neighbor-addr">{m.sweep ? "⚠ " : ""}{parcels[m.bbl]?.address}</span>
-              <span className="neighbor-meta mono">{usd(m.bal)} · balloon {quarterLabel(m.matQ)}{m.sweep ? " · SWEEP" : ""}</span>
-            </button>
-          ))}
-        </div>
+    );
+  }
+  return (
+    <div className="deal">
+      <div className="deal-head">Sell</div>
+      <div className="hint">Name your ask and let the market answer. Appraisal: {usd(value)}.</div>
+      <div className="btn-row">
+        <input
+          className="ask-input mono"
+          placeholder={`${(value / 1e6).toFixed(2)}`}
+          value={ask}
+          onChange={(e) => setAsk(e.target.value)}
+        />
+        <span className="dim" style={{ alignSelf: "center", fontSize: 12 }}>$M</span>
+        <button
+          className="btn btn-buy"
+          onClick={() => listSale(bbl, (parseFloat(ask) || value / 1e6) * 1e6)}
+        >
+          List for sale
+        </button>
       </div>
     </div>
   );
 }
 
-function PortfolioTab() {
-  const parcels = useStore((s) => s.parcels)!;
+function BuyButtons({ bbl, price, off }: { bbl: string; price: number; off: boolean }) {
   const game = useStore((s) => s.game)!;
-  const select = useStore((s) => s.select);
-  const holdings = Object.values(game.holdings);
-  if (!holdings.length) return <div className="hint">You own nothing yet. The Market tab has the tape; the map has everything else.</div>;
-  let totV = 0, totD = 0, totCF = 0;
-  const rows = holdings.map((h) => {
-    const rec = resolveRec(parcels, game, h.bbl);
-    const v = rec ? holdingValue(rec, game.econ, h) : 0;
-    const cf = rec ? holdingNOIYr(rec, game.econ, h, game.quarter) / 4 - (h.loan?.quarterlyPmt ?? 0) : 0;
-    totV += v; totD += h.loan?.balance ?? 0; totCF += cf;
-    return { h, rec, v, cf };
-  });
-  return (
-    <div>
-      <div className="grid" style={{ marginBottom: 10 }}>
-        <Row k="Assets" v={usd(totV)} strong />
-        <Row k="Debt" v={usd(totD)} />
-        <Row k="Equity" v={usd(totV - totD)} strong />
-        <Row k="CF / qtr" v={usd(totCF)} />
-      </div>
-      <div className="neighbors-list" style={{ maxHeight: "none" }}>
-        {rows.map(({ h, rec, v, cf }) => (
-          <button key={h.bbl} className="neighbor" onClick={() => select(h.bbl)}>
-            <span className="neighbor-addr">{h.loan?.sweep ? "⚠ " : ""}{rec?.address ?? h.bbl}</span>
-            <span className="neighbor-meta mono">{usd(v)} · {usd(cf)}/q</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function MarketTab() {
   const parcels = useStore((s) => s.parcels)!;
-  const game = useStore((s) => s.game)!;
-  const select = useStore((s) => s.select);
-  const e = game.econ;
+  const { buy, buyOff } = useStore.getState();
+  const act = off ? buyOff : buy;
+  const fixed = buyQuote(game, parcels, bbl, price, "fixed");
+  const float = buyQuote(game, parcels, bbl, price, "float");
   return (
-    <div>
-      <div className="grid">
-        <Row k="Loan index" v={pct(e.indexRate)} strong />
-        <Row k="Phase" v={e.phase + (e.rumoredPhase ? ` (whispers of ${e.rumoredPhase})` : "")} />
-        <Row k="Cap · office" v={pct(e.capRate.office)} />
-        <Row k="Cap · retail" v={pct(e.capRate.retail)} />
-        <Row k="Cap · multifam" v={pct(e.capRate.multifamily)} />
-        <Row k="Rent idx · office" v={"$" + e.rentIdx.office.toFixed(0) + " /sf"} />
-        <Row k="Land index" v={e.landIdx.toFixed(3)} />
-      </div>
-
-      <div className="neighbors">
-        <div className="neighbors-head">On the market · {game.listings.length}</div>
-        <div className="neighbors-list" style={{ maxHeight: 260 }}>
-          {[...game.listings].sort((a, b) => a.ask - b.ask).map((li) => {
-            const rec = parcels[li.bbl];
-            if (!rec) return null;
-            return (
-              <button key={li.bbl} className="neighbor" onClick={() => select(li.bbl)}>
-                <span className="neighbor-addr">{rec.address}</span>
-                <span className="neighbor-meta mono">{usd(li.ask)} · {CLASS_LABEL[rec.class]}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="neighbors">
-        <div className="neighbors-head">The tape</div>
-        <div className="news">
-          {game.news.slice(0, 12).map((n, i) => (
-            <div key={i} className={"news-item news-" + n.kind}>
-              <span className="news-q mono">{quarterLabel(n.q)}</span> {n.text}
-            </div>
-          ))}
-        </div>
-      </div>
+    <div className="btn-row">
+      <button className="btn btn-buy" onClick={() => act(bbl, "cash")}>All-cash · {usd(price * 1.02)}</button>
+      {fixed.principal > 0 && (
+        <button className="btn btn-buy" onClick={() => act(bbl, "fixed")} title={`$${(fixed.principal / 1e6).toFixed(1)}M at ${fixed.ratePct}% fixed, 10-yr balloon`}>
+          Fixed · eq {usd(fixed.equity)}
+        </button>
+      )}
+      {float.principal > 0 && (
+        <button className="btn btn-buy" onClick={() => act(bbl, "float")} title={`$${(float.principal / 1e6).toFixed(1)}M floating at ${float.ratePct}%, 3-yr IO, 7-yr balloon`}>
+          Float IO · eq {usd(float.equity)}
+        </button>
+      )}
     </div>
   );
 }
@@ -491,7 +400,7 @@ function DevelopSection({ bbl }: { bbl: string }) {
             <Row k="All-in cost" v={usd(plan.costTotal)} />
             <Row k="Constr. loan (60%)" v={usd(plan.loanAmount) + " @ " + pct(plan.ratePct)} />
             <Row k="Your equity" v={usd(plan.equity)} strong />
-            <Row k="Schedule" v={plan.quarters + " quarters"} />
+            <Row k="Schedule" v={plan.months + " months"} />
           </div>
           <div className="btn-row">
             <button className="btn btn-buy" onClick={() => useStore.getState().develop(bbl, use, farFrac)}>
@@ -500,8 +409,242 @@ function DevelopSection({ bbl }: { bbl: string }) {
           </div>
         </>
       ) : (
-        <div className="hint">Zoning won't carry this use at that FAR here.</div>
+        <div className="hint">Zoning won't allow {CLASS_LABEL[use]} here{use === "multifamily" ? " (no residential FAR)" : ""}.</div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- full pages
+function PortfolioPage() {
+  const parcels = useStore((s) => s.parcels)!;
+  const game = useStore((s) => s.game)!;
+  const select = useStore((s) => s.select);
+  const setPage = useStore((s) => s.setPage);
+  const holdings = Object.values(game.holdings);
+  const go = (bbl: string) => { setPage("none"); select(bbl); };
+  if (!holdings.length && !Object.keys(game.developments).length) {
+    return <div className="hint">You own nothing yet. The Market page has the tape; the map has everything else.</div>;
+  }
+  let totV = 0, totD = 0, totCF = 0;
+  const rows = holdings.map((h) => {
+    const rec = resolveRec(parcels, game, h.bbl);
+    const v = rec ? holdingValue(rec, game.econ, h) : 0;
+    const cf = rec ? holdingNOIYr(rec, game.econ, h, game.month) / 12 - (h.loan?.monthlyPmt ?? 0) : 0;
+    const occ = rec
+      ? rec.class === "multifamily" ? (h.occ ?? 0)
+        : rec.bldgArea ? h.tenants.reduce((a, t) => a + t.sf, 0) / rec.bldgArea : 0
+      : 0;
+    totV += v; totD += h.loan?.balance ?? 0; totCF += cf;
+    return { h, rec, v, cf, occ };
+  }).sort((a, b) => b.v - a.v);
+  return (
+    <div>
+      <div className="stat-strip">
+        <Big label="Assets" value={usd(totV)} />
+        <Big label="Debt" value={usd(totD)} />
+        <Big label="Equity" value={usd(totV - totD)} />
+        <Big label="Cash flow / mo" value={usd(totCF)} bad={totCF < 0} />
+        <Big label="Buildings" value={String(holdings.length)} />
+      </div>
+      <table className="tbl">
+        <thead>
+          <tr><th>Property</th><th>Class</th><th>Occ</th><th>NOI / yr</th><th>Value</th><th>Debt</th><th>Equity</th><th>CF / mo</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          {rows.map(({ h, rec, v, cf, occ }) => (
+            <tr key={h.bbl} onClick={() => go(h.bbl)}>
+              <td>{rec?.address ?? h.bbl}</td>
+              <td>{rec ? CLASS_LABEL[rec.class] : "—"}</td>
+              <td className="mono">{rec?.class === "land" ? "—" : (occ * 100).toFixed(0) + "%"}</td>
+              <td className="mono">{rec ? usd(holdingNOIYr(rec, game.econ, h, game.month)) : "—"}</td>
+              <td className="mono">{usd(v)}</td>
+              <td className="mono">{usd(h.loan?.balance ?? 0)}</td>
+              <td className="mono">{usd(v - (h.loan?.balance ?? 0))}</td>
+              <td className={"mono" + (cf < 0 ? " v-bad" : "")}>{usd(cf)}</td>
+              <td className="dim">
+                {[h.loan?.sweep ? "SWEEP" : null, h.sale ? "LISTED" : null,
+                  h.renovatingUntilM !== undefined && game.month < h.renovatingUntilM ? "RENO" : null,
+                  h.program ? "CAPEX" : null].filter(Boolean).join(" · ")}
+              </td>
+            </tr>
+          ))}
+          {Object.values(game.developments).map((dv) => (
+            <tr key={dv.bbl} onClick={() => go(dv.bbl)}>
+              <td>{parcels[dv.bbl]?.address ?? dv.bbl}</td>
+              <td>{CLASS_LABEL[dv.use]}</td>
+              <td className="mono">—</td>
+              <td className="mono">—</td>
+              <td className="mono">{usd(dv.costTotal)}</td>
+              <td className="mono">{usd(dv.loanBalance)}</td>
+              <td className="mono">{usd(dv.costTotal - dv.loanBalance)}</td>
+              <td className="mono v-bad">{usd(-(dv.loanBalance * dv.ratePct) / 100 / 12)}</td>
+              <td className="dim">BUILDING · delivers {monthLabel(dv.deliverM)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DealsPage() {
+  const parcels = useStore((s) => s.parcels)!;
+  const game = useStore((s) => s.game)!;
+  const select = useStore((s) => s.select);
+  const setPage = useStore((s) => s.setPage);
+  const { respondLoi, acceptOffer, declineOffer } = useStore.getState();
+  const q = game.month;
+  const go = (bbl: string) => { setPage("none"); select(bbl); };
+
+  const expiring: { bbl: string; name: string; sf: number; endM: number }[] = [];
+  const maturities: { bbl: string; matM: number; bal: number; sweep: boolean }[] = [];
+  const sales: { bbl: string; ask: number; offer?: { price: number; expiresM: number } }[] = [];
+  for (const h of Object.values(game.holdings)) {
+    for (const t of h.tenants) if (t.endM - q <= 12 && t.endM > q) expiring.push({ bbl: h.bbl, name: t.name, sf: t.sf, endM: t.endM });
+    if (h.loan && (h.loan.maturityM - q <= 24 || h.loan.sweep)) maturities.push({ bbl: h.bbl, matM: h.loan.maturityM, bal: h.loan.balance, sweep: h.loan.sweep });
+    if (h.sale) sales.push({ bbl: h.bbl, ask: h.sale.ask, offer: h.sale.offer });
+  }
+
+  return (
+    <div className="deals-grid">
+      <section>
+        <div className="page-section">Letters of intent · {game.lois.length}</div>
+        {game.lois.length === 0 && <div className="hint">No live negotiations. Vacant space in high-demand buildings draws tenants.</div>}
+        <div className="loi-grid">
+          {game.lois.map((loi) => {
+            const rec = parcels[loi.bbl];
+            return (
+              <div key={loi.id} className="loi">
+                <button className="loi-addr" onClick={() => go(loi.bbl)}>{rec?.address ?? loi.bbl}</button>
+                <div className="loi-line">
+                  <b>{loi.name}</b> <span className="mono">{CREDIT_LABEL[loi.credit]}</span> · {loi.sector}
+                  {loi.kind === "renewal" && <span className="chip chip-renewal">RENEWAL</span>}
+                </div>
+                <div className="loi-line mono">
+                  {(loi.sf / 1000).toFixed(1)}k sf · ${loi.rentPsf.toFixed(0)}/sf {loi.net ? "NNN" : "gross"} · {(loi.termM / 12).toFixed(0)} yrs
+                  {loi.tiPsf > 0 && ` · TI $${loi.tiPsf}`}{loi.freeM > 0 && ` · ${loi.freeM}mo free`}
+                </div>
+                <div className="loi-line mono dim">signing costs {usd(loiSigningCost(loi))} · answer by {monthLabel(loi.expiresM)}</div>
+                <div className="btn-row">
+                  <button className="btn btn-buy" onClick={() => respondLoi(loi.id, "accept")}>Accept</button>
+                  {!loi.countered && <button className="btn" onClick={() => respondLoi(loi.id, "counter")} title="+6% rent, −30% TI — they may walk">Counter</button>}
+                  <button className="btn" onClick={() => respondLoi(loi.id, "decline")}>Pass</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section>
+        <div className="page-section">Sales in progress · {sales.length}</div>
+        {sales.length === 0 && <div className="hint">Nothing listed. Sell from any owned building's card.</div>}
+        {sales.map((sl) => (
+          <div key={sl.bbl} className="loi">
+            <button className="loi-addr" onClick={() => go(sl.bbl)}>{parcels[sl.bbl]?.address}</button>
+            <div className="loi-line mono">ask {usd(sl.ask)}</div>
+            {sl.offer ? (
+              <div className="btn-row">
+                <span className="loi-line mono"><b>{usd(sl.offer.price)}</b> offered · until {monthLabel(sl.offer.expiresM)}</span>
+                <button className="btn btn-buy" onClick={() => acceptOffer(sl.bbl)}>Accept</button>
+                <button className="btn" onClick={() => declineOffer(sl.bbl)}>Decline</button>
+              </div>
+            ) : (
+              <div className="loi-line dim">no offers yet</div>
+            )}
+          </div>
+        ))}
+
+        <div className="page-section" style={{ marginTop: 18 }}>Rolling within a year · {expiring.length}</div>
+        <div className="mini-list">
+          {expiring.map((e, i) => (
+            <button key={i} className="neighbor" onClick={() => go(e.bbl)}>
+              <span className="neighbor-addr">{e.name}</span>
+              <span className="neighbor-meta mono">{parcels[e.bbl]?.address} · exp {monthLabel(e.endM)}</span>
+            </button>
+          ))}
+          {expiring.length === 0 && <div className="hint">No near-term expirations.</div>}
+        </div>
+
+        <div className="page-section" style={{ marginTop: 18 }}>Debt watch · {maturities.length}</div>
+        <div className="mini-list">
+          {maturities.map((m, i) => (
+            <button key={i} className="neighbor" onClick={() => go(m.bbl)}>
+              <span className="neighbor-addr">{m.sweep ? "⚠ " : ""}{parcels[m.bbl]?.address}</span>
+              <span className="neighbor-meta mono">{usd(m.bal)} · balloon {monthLabel(m.matM)}{m.sweep ? " · SWEEP" : ""}</span>
+            </button>
+          ))}
+          {maturities.length === 0 && <div className="hint">No balloons or breaches on the radar.</div>}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function MarketPage() {
+  const parcels = useStore((s) => s.parcels)!;
+  const game = useStore((s) => s.game)!;
+  const select = useStore((s) => s.select);
+  const setPage = useStore((s) => s.setPage);
+  const e = game.econ;
+  const go = (bbl: string) => { setPage("none"); select(bbl); };
+  return (
+    <div>
+      <div className="stat-strip">
+        <Big label="Loan index" value={pct(e.indexRate)} />
+        <Big label="Phase" value={e.phase + (e.rumoredPhase ? " ⚠" : "")} />
+        <Big label="Cap · office" value={pct(e.capRate.office)} />
+        <Big label="Cap · multifam" value={pct(e.capRate.multifamily)} />
+        <Big label="Office rent" value={"$" + e.rentIdx.office.toFixed(0)} />
+        <Big label="Land index" value={e.landIdx.toFixed(2)} />
+        <Big label="Cost index" value={e.costIdx.toFixed(2)} />
+      </div>
+
+      <div className="deals-grid">
+        <section>
+          <div className="page-section">On the market · {game.listings.length}</div>
+          <table className="tbl">
+            <thead><tr><th>Property</th><th>Class</th><th>Building</th><th>Ask</th><th>vs. appraisal</th></tr></thead>
+            <tbody>
+              {[...game.listings].sort((a, b) => a.ask - b.ask).map((li) => {
+                const rec = resolveRec(parcels, game, li.bbl);
+                if (!rec) return null;
+                const v = assetValue(rec, game.econ, initialCondition(rec));
+                return (
+                  <tr key={li.bbl} onClick={() => go(li.bbl)}>
+                    <td>{rec.address}</td>
+                    <td>{CLASS_LABEL[rec.class]}</td>
+                    <td className="mono">{rec.bldgArea ? (rec.bldgArea / 1000).toFixed(0) + "k sf" : (rec.lotArea / 1000).toFixed(0) + "k sf lot"}</td>
+                    <td className="mono">{usd(li.ask)}</td>
+                    <td className={"mono" + (li.ask < v ? "" : " dim")}>{((li.ask / v - 1) * 100).toFixed(1)}%</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </section>
+
+        <section>
+          <div className="page-section">The tape</div>
+          <div className="news">
+            {game.news.slice(0, 24).map((n, i) => (
+              <div key={i} className={"news-item news-" + n.kind}>
+                <span className="news-q mono">{monthLabel(n.q)}</span> {n.text}
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function Big({ label, value, bad }: { label: string; value: string; bad?: boolean }) {
+  return (
+    <div className="big-stat">
+      <div className="big-label">{label}</div>
+      <div className={"big-value mono" + (bad ? " v-bad" : "")}>{value}</div>
     </div>
   );
 }

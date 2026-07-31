@@ -1,5 +1,5 @@
 import { useStore, derivedNetWorth, derivedQuarterCF } from "@/state/store";
-import { quarterLabel, CAMPAIGN_QUARTERS } from "@/engine/types";
+import { monthLabel, CAMPAIGN_MONTHS } from "@/engine/types";
 import { usd, pct } from "./format";
 
 export default function TopBar() {
@@ -9,8 +9,11 @@ export default function TopBar() {
   const lens = useStore((s) => s.lens);
   const setLens = useStore((s) => s.setLens);
   const advance = useStore((s) => s.advance);
+  const page = useStore((s) => s.page);
+  const setPage = useStore((s) => s.setPage);
   const nw = derivedNetWorth();
   const cf = derivedQuarterCF();
+  const dealsCount = game ? game.lois.length + Object.values(game.holdings).filter((h) => h.sale?.offer).length : 0;
 
   return (
     <div className="topbar">
@@ -28,10 +31,10 @@ export default function TopBar() {
 
       {game && (
         <div className="topbar-game">
-          <Stat label={quarterLabel(game.quarter)} value={`Yr ${Math.floor(game.quarter / 4) + 1}/${CAMPAIGN_QUARTERS / 4}`} wide />
+          <Stat label={monthLabel(game.month)} value={`Yr ${Math.floor(game.month / 12) + 1}/${CAMPAIGN_MONTHS / 12}`} wide />
           <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} />
           <Stat label="Net worth" value={usd(nw)} />
-          <Stat label="CF / qtr" value={usd(cf)} bad={cf < 0} />
+          <Stat label="CF / mo" value={usd(cf)} bad={cf < 0} />
           <Stat label="Index" value={pct(game.econ.indexRate)} />
           <Stat label="Market" value={game.econ.phase} />
           <Stat
@@ -40,6 +43,17 @@ export default function TopBar() {
               ? Math.round((100 * (game.builtAtStart + Object.keys(game.built).length)) / game.totalLots) + "%"
               : "—"}
           />
+          <span className="topbar-sep" />
+          <button className={"nav-btn" + (page === "portfolio" ? " nav-on" : "")} onClick={() => setPage(page === "portfolio" ? "none" : "portfolio")}>
+            Portfolio
+          </button>
+          <button className={"nav-btn" + (page === "deals" ? " nav-on" : "")} onClick={() => setPage(page === "deals" ? "none" : "deals")}>
+            Deals{dealsCount > 0 ? ` · ${dealsCount}` : ""}
+          </button>
+          <button className={"nav-btn" + (page === "market" ? " nav-on" : "")} onClick={() => setPage(page === "market" ? "none" : "market")}>
+            Market
+          </button>
+          <span className="topbar-sep" />
           <button
             className={"lens-btn" + (lens === "land" ? " lens-on" : "")}
             onClick={() => setLens(lens === "land" ? "none" : "land")}

@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState } from "@/engine/types";
 import { newGame, advanceQuarter, firstListings, portfolioQuarterlyCF } from "@/engine/sim";
-import { buyListing, buyOffMarket, approachOwner, sellHolding, startRenovation, type BuyProduct } from "@/engine/actions";
+import { buyListing, buyOffMarket, approachOwner, listForSale, delist, acceptSaleOffer, declineSaleOffer, startRenovation, type BuyProduct } from "@/engine/actions";
 import { respondLOI, type LOIAction } from "@/engine/leasing";
 import { refinance } from "@/engine/debt";
 import { startDevelopment, startProgram, setStance } from "@/engine/dev";
@@ -11,7 +11,7 @@ import { netWorth } from "@/engine/value";
 import { loadGame, saveGame } from "@/engine/save";
 
 export type Lens = "none" | "land" | "demand";
-export type Tab = "parcel" | "portfolio" | "market" | "deals";
+export type Page = "none" | "portfolio" | "deals" | "market";
 
 interface AppState {
   parcels: ParcelTable | null;
@@ -22,7 +22,7 @@ interface AppState {
   selectedBBL: string | null;
   hoveredBBL: string | null;
   lens: Lens;
-  tab: Tab;
+  page: Page;
   toast: { text: string; kind: "ok" | "err"; at: number } | null;
   fps: number;
   loadError: string | null;
@@ -30,7 +30,7 @@ interface AppState {
   select: (bbl: string | null) => void;
   hover: (bbl: string | null) => void;
   setLens: (l: Lens) => void;
-  setTab: (t: Tab) => void;
+  setPage: (p: Page) => void;
   setFps: (fps: number) => void;
   setLoadError: (e: string) => void;
   advance: () => void;
@@ -42,7 +42,10 @@ interface AppState {
   develop: (bbl: string, use: BuiltClass, farFrac: number) => void;
   program: (bbl: string, id: string) => void;
   stance: (bbl: string, v: -1 | 0 | 1) => void;
-  sell: (bbl: string) => void;
+  listSale: (bbl: string, ask: number) => void;
+  delistSale: (bbl: string) => void;
+  acceptOffer: (bbl: string) => void;
+  declineOffer: (bbl: string) => void;
   renovate: (bbl: string) => void;
   newRun: () => void;
 }
@@ -64,15 +67,15 @@ export const useStore = create<AppState>((set, get) => ({
   selectedBBL: null,
   hoveredBBL: null,
   lens: "none",
-  tab: "market",
+  page: "none",
   toast: null,
   fps: 0,
   loadError: null,
   setData: (d) => set({ ...d, bbls: Object.keys(d.parcels) }),
-  select: (bbl) => set({ selectedBBL: bbl, tab: bbl ? "parcel" : get().tab }),
+  select: (bbl) => set({ selectedBBL: bbl, page: bbl ? "none" : get().page }),
   hover: (bbl) => set({ hoveredBBL: bbl }),
   setLens: (lens) => set({ lens }),
-  setTab: (tab) => set({ tab }),
+  setPage: (page) => set({ page }),
   setFps: (fps) => set({ fps }),
   setLoadError: (loadError) => set({ loadError }),
 
@@ -162,14 +165,42 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(next);
   },
 
-  sell: (bbl) => {
+  listSale: (bbl, ask) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = sellHolding(game, parcels, bbl);
+    const r = listForSale(game, parcels, bbl, ask);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
-    toast("Sold. Cash is position.");
+    toast("On the market. Now we wait.");
     void persist(r.s);
+  },
+
+  delistSale: (bbl) => {
+    const { game } = get();
+    if (!game) return;
+    const next = delist(game, bbl);
+    set({ game: next });
+    toast("Pulled from the market.");
+    void persist(next);
+  },
+
+  acceptOffer: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = acceptSaleOffer(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast("Closed. Cash is position.");
+    void persist(r.s);
+  },
+
+  declineOffer: (bbl) => {
+    const { game } = get();
+    if (!game) return;
+    const next = declineSaleOffer(game, bbl);
+    set({ game: next });
+    toast("Passed. The ask stands.");
+    void persist(next);
   },
 
   renovate: (bbl) => {
@@ -187,7 +218,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (!parcels) return;
     const seed = (Date.now() ^ (Math.random() * 0xffffffff)) >>> 0;
     const g = firstListings(newGame(seed, parcels), parcels, bbls);
-    set({ game: g, selectedBBL: null, tab: "market" });
+    set({ game: g, selectedBBL: null, page: "none" });
     void persist(g);
   },
 }));
@@ -229,7 +260,7 @@ export async function loadData() {
     // resume the autosave — unless it references parcels that no longer
     // exist (a save from a different city/dataset), in which case start over
     const saved = await loadGame("auto");
-    const fitsCity = saved && saved.v === 4 &&
+    const fitsCity = saved && saved.v === 5 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (fitsCity) {

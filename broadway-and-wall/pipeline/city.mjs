@@ -272,11 +272,11 @@ function zoningFor(district, heat) {
 // player watches the city fill in from the middle out over a century.
 function vacancyP(district, heat) {
   const edge = Math.pow(1 - heat, 1.5);   // 0 at the core, ~1 at the fringe
-  const base = district === "point" ? 0.72
-    : district === "millside" ? 0.66
-    : district === "northside" ? 0.58
-    : 0.34;                                // the Exchange / Old Harbor core
-  return Math.min(0.9, base * (0.28 + 1.3 * edge));
+  const base = district === "point" ? 0.60
+    : district === "millside" ? 0.55
+    : district === "northside" ? 0.48
+    : 0.40;                                // the Exchange / Old Harbor core
+  return Math.min(0.85, base * (0.3 + 1.2 * edge));
 }
 
 // Class mix per district. A young city: Millside and the Point carry real
@@ -371,10 +371,10 @@ for (const block of blocks) {
       // a young skyline that PEAKS AT HARBOR SQUARE: tower odds are gated by
       // district so the tall stuff clusters at the core, not the back rows
       const towerGate = d === "millside" ? 0 : d === "northside" ? 0.06 : d === "point" ? 0.28 : 1;
-      const towerP = Math.min(0.3, (h * h * 0.55 + (areaM2 > 1500 ? 0.05 : 0)) * towerGate);
+      const towerP = Math.min(0.24, (h * h * 0.45 + (areaM2 > 1500 ? 0.04 : 0)) * towerGate);
       let coverage;
       if (areaM2 > 240 && rand() < towerP) {
-        floors = Math.round(rr(9, 17) + h * rr(3, 11)); // tallest only at the core
+        floors = Math.round(rr(8, 15) + h * rr(3, 9)); // tallest only at the core
         coverage = rr(0.46, 0.62);
       } else if (d !== "millside" && rand() < 0.22 + h * 0.35) {
         floors = Math.round(d === "northside" ? rr(3, 6) : rr(4, 9));

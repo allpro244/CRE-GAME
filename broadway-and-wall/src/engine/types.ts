@@ -23,9 +23,9 @@ export interface Tenant {
   sf: number;
   rentPsf: number;     // $/sf/yr
   net: boolean;        // NNN (tenant pays opex) vs gross
-  startQ: number;
-  endQ: number;        // lease expiration
-  freeUntilQ?: number; // free-rent concession
+  startM: number;
+  endM: number;        // lease expiration
+  freeUntilM?: number; // free-rent concession
 }
 
 export interface LOI {
@@ -37,11 +37,11 @@ export interface LOI {
   credit: Credit;
   sf: number;
   rentPsf: number;
-  termQ: number;
+  termM: number;
   tiPsf: number;       // tenant-improvement allowance, $/sf at signing
-  freeQ: number;       // free-rent quarters
+  freeM: number;       // free-rent quarters
   net: boolean;
-  expiresQ: number;
+  expiresM: number;
   countered?: boolean;
   tenantIdx?: number;  // renewals: index into holding.tenants
 }
@@ -52,28 +52,29 @@ export interface Loan {
   balance: number;
   ratePct: number;       // current coupon (floating reprices each quarter)
   spread: number;        // over the index, for floating
-  ioUntilQ: number;      // interest-only through this quarter
+  ioUntilM: number;      // interest-only through this quarter
   amortYears: number;
-  maturityQ: number;     // the balloon
-  quarterlyPmt: number;
+  maturityM: number;     // the balloon
+  monthlyPmt: number;
   minDSCR: number;       // covenants, tested quarterly
   maxLTV: number;
   sweep: boolean;        // breach: cash flow trapped to principal until cured
   cleanQs: number;
-  originQ: number;
+  originM: number;
 }
 
 export interface Holding {
   bbl: string;
-  boughtQ: number;
+  boughtM: number;
   costBasis: number;
   loan: Loan | null;
   condition: Condition;
-  renovatingUntilQ?: number;
+  renovatingUntilM?: number;
   tenants: Tenant[];   // commercial rent roll
   occ?: number;        // multifamily aggregate occupancy
   stance?: -1 | 0 | 1; // rent posture: push / market / fill
-  program?: { id: string; untilQ: number };  // capital program underway
+  sale?: { ask: number; listedM: number; offer?: { price: number; expiresM: number } }; // on the market
+  program?: { id: string; untilM: number };  // capital program underway
   programsDone?: Record<string, number>;     // id -> completed quarter
   cfHistory: number[];
 }
@@ -89,8 +90,8 @@ export interface Development {
   costTotal: number;
   loanBalance: number;   // 60% construction loan, interest-only
   ratePct: number;
-  startQ: number;
-  deliverQ: number;
+  startM: number;
+  deliverM: number;
   overrunRolled: boolean;
 }
 
@@ -105,8 +106,8 @@ export interface BuiltOverride {
 export interface Listing {
   bbl: string;
   ask: number;
-  listedQ: number;
-  expiresQ: number;
+  listedM: number;
+  expiresM: number;
 }
 
 export interface Approach {
@@ -133,20 +134,21 @@ export interface EconHistoryPoint {
 export interface Econ {
   indexRate: number;
   phase: MarketPhase;
-  phaseQLeft: number;
+  phaseMLeft: number;
   rumoredPhase: MarketPhase | null;
   cycleDev: number;
   landIdx: number;
   capRate: Record<BuiltClass, number>;
   rentIdx: Record<BuiltClass, number>;
+  costIdx: number; // construction & operating cost inflation
   history: EconHistoryPoint[];
 }
 
 export interface GameState {
-  v: 4;
+  v: 5;
   seed: number;
   rng: number;
-  quarter: number;
+  month: number;
   cash: number;
   econ: Econ;
   holdings: Record<string, Holding>;
@@ -162,13 +164,14 @@ export interface GameState {
   builtAtStart: number;
   news: NewsItem[];
   gameOver: { cause: string; complete?: boolean } | null;
-  insolventQs: number;
+  insolventMs: number;
 }
 
 export const START_CASH = 6_000_000;
 export const START_YEAR = 2026;
-export const CAMPAIGN_QUARTERS = 400; // a hundred years of Ashport
+export const CAMPAIGN_MONTHS = 1200; // a hundred years of Ashport
 
-export function quarterLabel(q: number): string {
-  return `${START_YEAR + Math.floor(q / 4)} Q${(q % 4) + 1}`;
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export function monthLabel(m: number): string {
+  return `${MONTH_NAMES[((m % 12) + 12) % 12]} ${START_YEAR + Math.floor(m / 12)}`;
 }

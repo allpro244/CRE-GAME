@@ -5,7 +5,7 @@ import type { GameState } from "./types";
 const DB = "broadway-and-wall";
 const STORE = "saves";
 
-export interface SaveMeta { slot: string; quarter: number; cash: number; savedAt: number }
+export interface SaveMeta { slot: string; month: number; cash: number; savedAt: number }
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -52,7 +52,7 @@ export async function listSaves(): Promise<SaveMeta[]> {
         const cur = req.result;
         if (!cur) { resolve(metas); db.close(); return; }
         const v = cur.value as { state: GameState; savedAt: number };
-        metas.push({ slot: String(cur.key), quarter: v.state.quarter, cash: v.state.cash, savedAt: v.savedAt });
+        metas.push({ slot: String(cur.key), month: v.state.month, cash: v.state.cash, savedAt: v.savedAt });
         cur.continue();
       };
       req.onerror = () => reject(req.error);

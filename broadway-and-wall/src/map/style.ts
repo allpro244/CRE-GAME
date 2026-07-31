@@ -1,10 +1,12 @@
 import type { StyleSpecification, SourceSpecification, LayerSpecification } from "maplibre-gl";
 
-// Basemap style URL — configurable, keyless default. If unreachable at runtime
-// we fall back to a self-contained dark style built from our own context.geojson.
+// Basemap style URL — configurable, keyless default. Positron is the clean
+// pale architectural-model base (white streets, soft parks/water). If it is
+// unreachable at runtime we fall back to a self-contained light style built
+// from our own context.geojson.
 export const BASEMAP_URL: string =
   (import.meta.env.VITE_BASEMAP_STYLE as string | undefined) ??
-  "https://tiles.openfreemap.org/styles/liberty";
+  "https://tiles.openfreemap.org/styles/positron";
 
 const data = (f: string) => import.meta.env.BASE_URL + "data/" + f;
 
@@ -13,7 +15,6 @@ export function gameSources(): Record<string, SourceSpecification> {
     "bw-parcels": {
       type: "vector",
       url: "pmtiles://" + new URL(data("parcels.pmtiles"), location.href).href,
-      promoteId: undefined,
     },
     "bw-buildings": {
       type: "vector",
@@ -22,8 +23,8 @@ export function gameSources(): Record<string, SourceSpecification> {
   };
 }
 
-// Architectural-model palette: warm parchment lines over a deep slate world,
-// limestone-to-slate extrusions ramped by height.
+// Architectural-model look: near-white massing whose sides darken via the
+// vertical gradient, faint gray lot lines on pale ground, gold selection.
 export function gameLayers(): LayerSpecification[] {
   const hovered = ["boolean", ["feature-state", "hover"], false];
   const selected = ["boolean", ["feature-state", "selected"], false];
@@ -38,16 +39,16 @@ export function gameLayers(): LayerSpecification[] {
         "fill-color": [
           "case",
           selected, "#d9a648",
-          neighbor, "#5fa8a0",
-          hovered, "#e8dcc0",
-          "#e8dcc0",
+          neighbor, "#3f8f87",
+          hovered, "#8a8577",
+          "#7d7a70",
         ] as never,
         "fill-opacity": [
           "case",
-          selected, 0.38,
-          neighbor, 0.28,
-          hovered, 0.22,
-          0.04,
+          selected, 0.45,
+          neighbor, 0.35,
+          hovered, 0.18,
+          0.06,
         ] as never,
       },
     },
@@ -59,10 +60,10 @@ export function gameLayers(): LayerSpecification[] {
       paint: {
         "line-color": [
           "case",
-          selected, "#f2c14e",
-          neighbor, "#6fc2b9",
-          hovered, "#f0e6cc",
-          "#c9bda0",
+          selected, "#b07f1e",
+          neighbor, "#2f7a72",
+          hovered, "#57534a",
+          "#9b968b",
         ] as never,
         "line-width": [
           "interpolate", ["linear"], ["zoom"],
@@ -71,9 +72,9 @@ export function gameLayers(): LayerSpecification[] {
         ] as never,
         "line-opacity": [
           "interpolate", ["linear"], ["zoom"],
-          13, ["case", selected, 1, neighbor, 0.95, hovered, 0.9, 0.25],
-          15, ["case", selected, 1, neighbor, 0.95, hovered, 0.9, 0.5],
-          16.5, ["case", selected, 1, neighbor, 0.95, hovered, 0.9, 0.75],
+          13, ["case", selected, 1, neighbor, 0.95, hovered, 0.9, 0.3],
+          15, ["case", selected, 1, neighbor, 0.95, hovered, 0.9, 0.55],
+          16.5, ["case", selected, 1, neighbor, 0.95, hovered, 0.9, 0.8],
         ] as never,
       },
     },
@@ -88,22 +89,23 @@ export function gameLayers(): LayerSpecification[] {
         "fill-extrusion-color": [
           "case",
           selected, "#e3b95c",
-          hovered, "#c8bfa8",
+          hovered, "#ddd6c2",
           ["interpolate", ["linear"], ["get", "heightM"],
-            10, "#b8b2a4",
-            60, "#a7a49e",
-            150, "#8e929c",
-            260, "#767e8f",
+            10, "#eceae4",
+            80, "#e7e6e2",
+            180, "#e2e3e2",
+            260, "#dcdfe2",
           ],
         ] as never,
-        "fill-extrusion-opacity": 0.96,
+        "fill-extrusion-opacity": 1,
         "fill-extrusion-vertical-gradient": true,
       },
     },
   ];
 }
 
-// Fully offline fallback: dark harbor, parchment-edged landmass from context.geojson.
+// Fully offline fallback: pale-blue harbor, white-paper landmass, soft parks
+// and piers from context.geojson — the architectural-model base, self-contained.
 export function fallbackBaseStyle(): StyleSpecification {
   return {
     version: 8,
@@ -112,18 +114,34 @@ export function fallbackBaseStyle(): StyleSpecification {
       "bw-context": { type: "geojson", data: data("context.geojson") },
     },
     layers: [
-      { id: "bg", type: "background", paint: { "background-color": "#0d1720" } },
+      { id: "bg", type: "background", paint: { "background-color": "#b8d3e6" } },
       {
         id: "land",
         type: "fill",
         source: "bw-context",
-        paint: { "fill-color": "#1a2129", "fill-outline-color": "#2c3947" },
+        filter: ["==", ["get", "kind"], "land"],
+        paint: { "fill-color": "#f4f3ef" },
+      },
+      {
+        id: "piers",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "pier"],
+        paint: { "fill-color": "#e9e7e1" },
+      },
+      {
+        id: "parks",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "park"],
+        paint: { "fill-color": "#cde3c6" },
       },
       {
         id: "shore",
         type: "line",
         source: "bw-context",
-        paint: { "line-color": "#3d4f61", "line-width": 1.2 },
+        filter: ["==", ["get", "kind"], "land"],
+        paint: { "line-color": "#a3b8c6", "line-width": 1 },
       },
     ],
   };

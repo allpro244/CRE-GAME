@@ -229,6 +229,42 @@ for (const blockRaw of blocks) {
   blockNo++;
 }
 
+// Parks (lots inside them are dropped) and decorative piers, roughly where
+// the real ones sit — they render in the offline fallback basemap.
+const PARKS = [
+  // The Battery
+  [[-74.0179, 40.7040], [-74.0170, 40.7011], [-74.0150, 40.7000], [-74.0128, 40.7003], [-74.0140, 40.7038], [-74.0160, 40.7046]],
+  // City Hall Park
+  [[-74.0083, 40.7133], [-74.0064, 40.7118], [-74.0052, 40.7128], [-74.0075, 40.7146]],
+  // Bowling Green
+  [[-74.0147, 40.7052], [-74.0139, 40.7043], [-74.0132, 40.7049], [-74.0141, 40.7056]],
+];
+const PIERS = [
+  [[-74.0032, 40.7027], [-74.0014, 40.7018], [-74.0010, 40.7024], [-74.0028, 40.7033]],
+  [[-73.9999, 40.7050], [-73.9981, 40.7043], [-73.9977, 40.7049], [-73.9995, 40.7056]],
+  [[-73.9983, 40.7075], [-73.9962, 40.7070], [-73.9959, 40.7076], [-73.9980, 40.7081]],
+  [[-74.0168, 40.7100], [-74.0186, 40.7096], [-74.0188, 40.7102], [-74.0170, 40.7106]],
+];
+function inRing(ll, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if (yi > ll[1] !== yj > ll[1] && ll[0] < ((xj - xi) * (ll[1] - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+const lotCentroid = (f) => {
+  const ring = f.geometry.coordinates[0];
+  return [ring.reduce((s, q) => s + q[0], 0) / ring.length, ring.reduce((s, q) => s + q[1], 0) / ring.length];
+};
+const dropped = new Set();
+parcels.features = parcels.features.filter((f) => {
+  const keep = !PARKS.some((p) => inRing(lotCentroid(f), p));
+  if (!keep) dropped.add(f.properties.bbl);
+  return keep;
+});
+buildings.features = buildings.features.filter((f) => !dropped.has(f.properties.base_bbl));
+
 // Subway stations in/near CD1 — approximate real locations; weight ~ relative ridership.
 const STATIONS = [
   { name: "Fulton St", lines: "2 3 4 5 A C J Z", ll: [-74.0080, 40.7098], weight: 100 },
@@ -285,11 +321,23 @@ const employment = {
 
 const context = {
   type: "FeatureCollection",
-  features: [{
-    type: "Feature",
-    geometry: { type: "Polygon", coordinates: [[...COAST, COAST[0]]] },
-    properties: { kind: "land" },
-  }],
+  features: [
+    {
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: [[...COAST, COAST[0]]] },
+      properties: { kind: "land" },
+    },
+    ...PIERS.map((ring) => ({
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: [[...ring, ring[0]]] },
+      properties: { kind: "pier" },
+    })),
+    ...PARKS.map((ring) => ({
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: [[...ring, ring[0]]] },
+      properties: { kind: "park" },
+    })),
+  ],
 };
 
 writeFileSync(join(RAW, "parcels.geojson"), JSON.stringify(parcels));

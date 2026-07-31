@@ -1,0 +1,9 @@
+{
+  "source": "synthetic",
+  "district": "101",
+  "seed": 10007,
+  "lodes": true,
+  "lots": 2284,
+  "adjacencyEdges": 3401,
+  "processed": true
+}

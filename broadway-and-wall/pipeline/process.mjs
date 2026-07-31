@@ -1,0 +1,277 @@
+// Normalize raw source data (real or synthetic) into the game's data files:
+//   public/data/parcels.json   — attribute table keyed by BBL (the sim substrate)
+//   public/data/adjacency.json — BBL -> neighboring BBLs (shared lot lines)
+//   public/data/stations.json, context.geojson, manifest.json
+//   pipeline/out/{parcels,buildings}.geojson — inputs for tiles.mjs
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { makeProjection, polygonArea, centroid, bboxOfRing, sharedBoundaryLength } from "./lib/geom.mjs";
+
+const ROOT = dirname(fileURLToPath(import.meta.url));
+const RAW = join(ROOT, "raw");
+const OUT = join(ROOT, "out");
+const PUB = join(ROOT, "..", "public", "data");
+mkdirSync(OUT, { recursive: true });
+mkdirSync(PUB, { recursive: true });
+
+const read = (f) => JSON.parse(readFileSync(join(RAW, f), "utf8"));
+if (!existsSync(join(RAW, "parcels.geojson"))) {
+  console.error("No raw data found. Run `node pipeline/fetch.mjs` (real data) or `node pipeline/synth.mjs` (dev data) first.");
+  process.exit(1);
+}
+const rawParcels = read("parcels.geojson");
+const rawBuildings = read("buildings.geojson");
+const rawStations = read("stations.geojson");
+const manifest = read("manifest.json");
+const employment = existsSync(join(RAW, "employment.geojson")) ? read("employment.geojson") : null;
+
+const num = (v) => {
+  const n = typeof v === "string" ? parseFloat(v) : v;
+  return Number.isFinite(n) ? n : null;
+};
+
+// Asset-class remap from PLUTO building class letter (spec: office, retail,
+// mixed, multifamily, land — odd classes get the closest fit).
+function assetClass(bldgclass, landuse, bldgarea) {
+  const c = (bldgclass ?? "").toUpperCase();
+  const L = c[0];
+  if (!bldgarea || L === "V" || landuse === "11") return "land";
+  if (L === "G" || L === "T" || L === "Z" || L === "Q") return "land"; // garages/transport/misc: teardown-class
+  if (L === "O" || L === "H" || L === "E" || L === "I" || L === "J" || L === "Y" || L === "W" || L === "P") return "office";
+  if (L === "K" || L === "L") return "retail";
+  if (L === "S" || c === "RM" || L === "M") return "mixed";
+  if (L === "A" || L === "B" || L === "C" || L === "D" || L === "N" || L === "R") return "multifamily";
+  return "mixed";
+}
+
+// --- pass 1: extract, project, measure -------------------------------------
+// centroid of all features -> local meter frame
+let cx = 0, cy = 0, cn = 0;
+for (const f of rawParcels.features) {
+  if (!f.geometry) continue;
+  const ring = f.geometry.type === "MultiPolygon" ? f.geometry.coordinates[0][0] : f.geometry.coordinates[0];
+  for (const [x, y] of ring) { cx += x; cy += y; cn++; }
+}
+const proj = makeProjection(cx / cn, cy / cn);
+
+const lots = [];
+for (const f of rawParcels.features) {
+  if (!f.geometry) continue;
+  const p = f.properties;
+  const bbl = String(p.bbl ?? p.BBL ?? "").replace(/\.0+$/, "");
+  if (!bbl) continue;
+  const polys = f.geometry.type === "MultiPolygon" ? f.geometry.coordinates : [f.geometry.coordinates];
+  // largest outer ring carries the lot for adjacency/centroid purposes
+  let best = null, bestA = 0;
+  for (const poly of polys) {
+    const xy = poly[0].map(proj.toXY);
+    const a = Math.abs(polygonArea([xy]));
+    if (a > bestA) { bestA = a; best = xy; }
+  }
+  if (!best || bestA < 5) continue;
+  lots.push({ bbl, p, ring: best, ringLL: f.geometry, areaM2: bestA, c: centroid(best) });
+}
+
+// medians by building class for imputation
+function median(arr) {
+  if (!arr.length) return null;
+  const s = [...arr].sort((a, b) => a - b);
+  return s[Math.floor(s.length / 2)];
+}
+const byClass = new Map();
+for (const l of lots) {
+  const k = (l.p.bldgclass ?? "??")[0];
+  if (!byClass.has(k)) byClass.set(k, { years: [], floors: [], psf: [] });
+  const g = byClass.get(k);
+  const yb = num(l.p.yearbuilt); if (yb && yb > 1800) g.years.push(yb);
+  const nf = num(l.p.numfloors); if (nf && nf > 0) g.floors.push(nf);
+  const at = num(l.p.assesstot), la = num(l.p.lotarea);
+  if (at && la) g.psf.push(at / la);
+}
+
+// --- demand kernels ---------------------------------------------------------
+const stationPts = rawStations.features
+  .filter((f) => f.geometry?.type === "Point")
+  .map((f) => ({
+    xy: proj.toXY(f.geometry.coordinates),
+    w: num(f.properties.weight) ?? 30,
+    name: f.properties.stop_name ?? f.properties.name ?? "station",
+    lines: f.properties.daytime_routes ?? f.properties.line ?? "",
+    ll: f.geometry.coordinates,
+  }))
+  // keep stations within 1.5 km of the district so a citywide dataset works
+  .filter((s) => Math.hypot(s.xy[0], s.xy[1]) < 4000);
+
+let jobPts;
+if (employment?.features?.length) {
+  jobPts = employment.features.map((f) => ({ xy: proj.toXY(f.geometry.coordinates), jobs: num(f.properties.jobs) ?? 0 }));
+} else {
+  // fallback proxy: jobs from commercial built area
+  jobPts = lots
+    .filter((l) => ["O", "K", "S", "R", "M"].includes((l.p.bldgclass ?? "")[0]))
+    .map((l) => ({ xy: l.c, jobs: (num(l.p.bldgarea) ?? 0) / 300 }));
+  console.warn("No LODES employment file — using built-area employment proxy for demandScore.");
+}
+
+const gauss = (d, r) => Math.exp(-(d * d) / (2 * r * r));
+function demandRaw(c) {
+  let transit = 0, emp = 0;
+  for (const s of stationPts) transit += s.w * gauss(Math.hypot(c[0] - s.xy[0], c[1] - s.xy[1]), 350);
+  for (const j of jobPts) emp += j.jobs * gauss(Math.hypot(c[0] - j.xy[0], c[1] - j.xy[1]), 300);
+  return { transit, emp };
+}
+const raws = lots.map((l) => demandRaw(l.c));
+const p95 = (arr) => { const s = [...arr].sort((a, b) => a - b); return s[Math.floor(s.length * 0.95)] || 1; };
+const t95 = p95(raws.map((r) => r.transit));
+const e95 = p95(raws.map((r) => r.emp));
+
+// --- adjacency: bbox grid index + shared boundary length --------------------
+const CELL = 60; // meters
+const grid = new Map();
+lots.forEach((l, i) => {
+  const [minX, minY, maxX, maxY] = bboxOfRing(l.ring);
+  l.bbox = [minX, minY, maxX, maxY];
+  for (let gx = Math.floor(minX / CELL); gx <= Math.floor(maxX / CELL); gx++)
+    for (let gy = Math.floor(minY / CELL); gy <= Math.floor(maxY / CELL); gy++) {
+      const k = gx + ":" + gy;
+      if (!grid.has(k)) grid.set(k, []);
+      grid.get(k).push(i);
+    }
+});
+const TOL = 1.5;   // meters — the "buffer" of buffer-and-intersect
+const MIN_SHARED = 3; // meters of shared lot line to count as adjacent
+const adjacency = {};
+let edgeCount = 0;
+lots.forEach((l, i) => {
+  const cand = new Set();
+  const [minX, minY, maxX, maxY] = l.bbox;
+  for (let gx = Math.floor(minX / CELL); gx <= Math.floor(maxX / CELL); gx++)
+    for (let gy = Math.floor(minY / CELL); gy <= Math.floor(maxY / CELL); gy++)
+      for (const j of grid.get(gx + ":" + gy) ?? []) if (j > i) cand.add(j);
+  for (const j of cand) {
+    const m = lots[j];
+    if (m.bbox[0] > maxX + TOL || m.bbox[2] < minX - TOL || m.bbox[1] > maxY + TOL || m.bbox[3] < minY - TOL) continue;
+    const shared = sharedBoundaryLength(l.ring, m.ring, TOL);
+    if (shared >= MIN_SHARED) {
+      (adjacency[l.bbl] ??= []).push(m.bbl);
+      (adjacency[m.bbl] ??= []).push(l.bbl);
+      edgeCount++;
+    }
+  }
+});
+
+// --- assemble records --------------------------------------------------------
+const table = {};
+const tileParcels = { type: "FeatureCollection", features: [] };
+for (let i = 0; i < lots.length; i++) {
+  const l = lots[i], p = l.p;
+  const imputed = [];
+  const cls = (p.bldgclass ?? "").toUpperCase() || "??";
+  const g = byClass.get(cls[0]) ?? { years: [], floors: [], psf: [] };
+
+  let lotArea = num(p.lotarea);
+  const geomSf = Math.round(l.areaM2 * 10.7639);
+  if (!lotArea || lotArea < 100 || Math.abs(lotArea - geomSf) / geomSf > 3) {
+    lotArea = geomSf; imputed.push("lotArea");
+  }
+  let floors = num(p.numfloors);
+  let bldgArea = num(p.bldgarea);
+  const vacant = assetClass(cls, p.landuse, bldgArea) === "land";
+  if (!vacant) {
+    if (!floors) { floors = median(g.floors) ?? 4; imputed.push("floors"); }
+    if (!bldgArea) { bldgArea = Math.round(lotArea * 0.7 * floors); imputed.push("bldgArea"); }
+  } else { floors = floors ?? 0; bldgArea = bldgArea ?? 0; }
+  let yearBuilt = num(p.yearbuilt);
+  if (!vacant && (!yearBuilt || yearBuilt < 1800)) { yearBuilt = median(g.years) ?? 1930; imputed.push("yearBuilt"); }
+  let assessLand = num(p.assessland);
+  let assessTot = num(p.assesstot);
+  if (!assessLand || assessLand <= 0) {
+    assessLand = Math.round(lotArea * (median(g.psf) ?? 120) * 0.35); imputed.push("assessedLand");
+  }
+  if (!assessTot || assessTot < assessLand) {
+    assessTot = assessLand + Math.round(bldgArea * (median(g.psf) ?? 120) * 0.4); imputed.push("assessedTotal");
+  }
+
+  const dem = raws[i];
+  const demandScore = Math.max(1, Math.min(100, Math.round(
+    45 * Math.min(1, dem.transit / t95) + 55 * Math.min(1, dem.emp / e95)
+  )));
+  const assessedPsf = assessLand / lotArea;
+  // assessed values run well below market; scale up, then blend with demand
+  const landPsf = Math.max(30, Math.round((assessedPsf / 0.45) * (0.6 + 0.9 * (demandScore / 100))));
+
+  const farMaxComm = num(p.commfar) ?? 0;
+  const farMaxRes = num(p.resfar) ?? 0;
+  const klass = assetClass(cls, p.landuse, bldgArea);
+
+  table[l.bbl] = {
+    bbl: l.bbl,
+    address: p.address ?? "(no address)",
+    borough: p.borough ?? "MN",
+    block: p.block ?? l.bbl.slice(1, 6),
+    lot: p.lot ?? l.bbl.slice(6),
+    zoneDist: p.zonedist1 ?? "—",
+    farMaxComm, farMaxRes,
+    bldgClass: cls,
+    class: klass,
+    lotArea, bldgArea, floors, yearBuilt,
+    unitsRes: num(p.unitsres) ?? 0,
+    assessedLand: assessLand,
+    assessedTotal: assessTot,
+    demandScore,
+    landPsf,
+    landPsfHistory: [landPsf],
+    imputed,
+    centroid: proj.toLL(l.c).map((v) => +v.toFixed(6)),
+  };
+
+  tileParcels.features.push({
+    type: "Feature",
+    id: Number(l.bbl),
+    geometry: l.ringLL,
+    properties: {
+      bbl: l.bbl, address: table[l.bbl].address, class: klass,
+      demand: demandScore, landpsf: landPsf, zone: table[l.bbl].zoneDist,
+    },
+  });
+}
+
+// buildings for the tiler: join heights (feet -> meters) by base BBL
+const tileBuildings = { type: "FeatureCollection", features: [] };
+let missingH = 0;
+for (const f of rawBuildings.features) {
+  if (!f.geometry) continue;
+  const bbl = String(f.properties.base_bbl ?? f.properties.bbl ?? "").replace(/\.0+$/, "");
+  const rec = table[bbl];
+  let hft = num(f.properties.heightroof);
+  if (!hft || hft < 8) { hft = rec && rec.floors ? rec.floors * 11.5 : 30; missingH++; }
+  tileBuildings.features.push({
+    type: "Feature",
+    id: bbl && table[bbl] ? Number(bbl) : undefined,
+    geometry: f.geometry,
+    properties: {
+      bbl: bbl || "",
+      heightM: +(hft * 0.3048).toFixed(1),
+      class: rec?.class ?? "office",
+    },
+  });
+}
+
+writeFileSync(join(PUB, "parcels.json"), JSON.stringify(table));
+writeFileSync(join(PUB, "adjacency.json"), JSON.stringify(adjacency));
+writeFileSync(join(PUB, "stations.json"), JSON.stringify(stationPts.map((s) => ({ name: s.name, lines: s.lines, ll: s.ll }))));
+if (existsSync(join(RAW, "context.geojson")))
+  writeFileSync(join(PUB, "context.geojson"), readFileSync(join(RAW, "context.geojson")));
+writeFileSync(join(PUB, "manifest.json"), JSON.stringify({
+  ...manifest,
+  lots: lots.length,
+  adjacencyEdges: edgeCount,
+  processed: true,
+}, null, 2));
+writeFileSync(join(OUT, "parcels.geojson"), JSON.stringify(tileParcels));
+writeFileSync(join(OUT, "buildings.geojson"), JSON.stringify(tileBuildings));
+
+const avgNbrs = lots.length ? (2 * edgeCount / lots.length).toFixed(1) : 0;
+console.log(`Processed ${lots.length} lots (${Object.keys(adjacency).length} with neighbors, ${edgeCount} edges, avg ${avgNbrs}/lot), ${tileBuildings.features.length} buildings (${missingH} heights imputed).`);
+console.log(`Wrote ${PUB}/{parcels,adjacency,stations,manifest}.json and ${OUT}/{parcels,buildings}.geojson`);

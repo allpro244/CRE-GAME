@@ -1,0 +1,5 @@
+# pipeline intermediates — regenerate with pnpm pipeline / pipeline:dev
+pipeline/raw/
+pipeline/out/
+
+*.tsbuildinfo

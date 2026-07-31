@@ -393,6 +393,16 @@ for (const f of tileBuildings.features) {
     r: ring,
   });
 }
+// vacant lots: emitted flat so the renderer can dress them (gravel + fence)
+for (const l of lots) {
+  const rec = table[l.bbl];
+  if (!rec || rec.class !== "land") continue;
+  b3d.push({
+    b: l.bbl, c: "land", y: 0, t: Number(l.bbl) % 5, f: 0,
+    z0: 0, z1: 0, d: 0, k: 1,
+    r: l.ring.map((p) => proj.toLL(p).map((v) => +v.toFixed(6))),
+  });
+}
 writeFileSync(join(PUB, "buildings3d.json.gz"), gzipSync(JSON.stringify(b3d), { level: 9 }));
 console.log(`buildings3d.json.gz: ${b3d.length} volumes for the mesh renderer`);
 

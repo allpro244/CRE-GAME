@@ -2,8 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Protocol } from "pmtiles";
-import { useStore } from "@/state/store";
+import { fetchGzJson, useStore } from "@/state/store";
 import { composeStyle, gameLayers, landLensColor, resolveBaseStyle } from "./style";
+import { ThreeBuildings, type BuildingVolume } from "./ThreeBuildings";
+
+const CITY_CENTER: [number, number] = [-70.9, 41.1];
 
 // Fly-in: open over the bay with all of Ashport in frame, then dive to the
 // blocks between Old Harbor and the Exchange at map-model pitch.
@@ -20,6 +23,7 @@ export default function MapView() {
   const neighborsRef = useRef<string[]>([]);
   const ownedRef = useRef<Set<string>>(new Set());
   const listedRef = useRef<Set<string>>(new Set());
+  const threeRef = useRef<ThreeBuildings | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const select = useStore((s) => s.select);
   const hover = useStore((s) => s.hover);
@@ -58,6 +62,18 @@ export default function MapView() {
 
       map.on("load", () => {
         setMapReady(true);
+        // the beautiful-buildings renderer: meshes with procedural facades
+        fetchGzJson(import.meta.env.BASE_URL + "data/buildings3d.json.gz")
+          .then((volumes: BuildingVolume[]) => {
+            if (disposed || !volumes?.length) return;
+            const layer = new ThreeBuildings(volumes, CITY_CENTER);
+            threeRef.current = layer;
+            map.addLayer(layer);
+          })
+          .catch(() => {
+            // no mesh feed — fall back to the flat extrusions
+            map.setLayoutProperty("bw-bldg-3d", "visibility", "visible");
+          });
         // the cinematic fly-in
         map.flyTo({ ...CORE, duration: 5500, essential: true });
 
@@ -216,12 +232,35 @@ export default function MapView() {
     };
   }, [mapReady]);
 
+  // mesh tints: gold selection/ownership, teal neighbors, warm hover
+  const hoveredBBL = useStore((s) => s.hoveredBBL);
+  useEffect(() => {
+    const layer = threeRef.current;
+    if (!layer || !mapReady) return;
+    const tints = new Map<string, [number, number, number]>();
+    if (game) for (const bbl of Object.keys(game.holdings)) tints.set(bbl, [1.28, 1.1, 0.72]);
+    if (selectedBBL) {
+      for (const n of adjacency?.[selectedBBL] ?? []) tints.set(n, [0.72, 1.12, 1.04]);
+      tints.set(selectedBBL, [1.5, 1.14, 0.5]);
+    }
+    if (hoveredBBL && hoveredBBL !== selectedBBL) tints.set(hoveredBBL, [1.14, 1.08, 0.92]);
+    layer.setTints(tints);
+  }, [selectedBBL, hoveredBBL, adjacency, game, mapReady]);
+
   // lenses — repaint when toggled and as the market moves
   const lens = useStore((s) => s.lens);
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
+    const ghostBuildings = (on: boolean) => {
+      if (threeRef.current) {
+        threeRef.current.visible = !on;
+        map.triggerRepaint();
+        map.setLayoutProperty("bw-bldg-3d", "visibility", on ? "visible" : "none");
+      }
+    };
     if (lens === "demand" && parcels) {
+      ghostBuildings(true);
       map.setPaintProperty("bw-parcel-fill", "fill-color", [
         "interpolate", ["linear"], ["get", "demand"],
         5, "#eef0e8", 30, "#cfe0d5", 50, "#93c4b1", 70, "#4f9887", 92, "#1e6a60",
@@ -231,6 +270,7 @@ export default function MapView() {
       return;
     }
     if (lens === "land" && game && parcels) {
+      ghostBuildings(true);
       // percentile stops over CURRENT land $/sf so the ramp stays contrasty
       const vals: number[] = [];
       const bbls = Object.keys(parcels);
@@ -246,6 +286,7 @@ export default function MapView() {
       map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.82 as never);
       map.setPaintProperty("bw-bldg-3d", "fill-extrusion-opacity", 0.18 as never);
     } else {
+      ghostBuildings(false);
       // restore the default paints straight from the style definition
       const fill = gameLayers().find((l) => l.id === "bw-parcel-fill");
       const bldg = gameLayers().find((l) => l.id === "bw-bldg-3d");

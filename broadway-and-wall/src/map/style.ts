@@ -105,10 +105,13 @@ export function gameLayers(): LayerSpecification[] {
       },
     },
     {
+      // flat extrusions — hidden by default (the Three.js mesh renderer draws
+      // the city); shown ghosted while a lens is active
       id: "bw-bldg-3d",
       type: "fill-extrusion",
       source: "bw-buildings",
       "source-layer": "buildings",
+      layout: { visibility: "none" },
       paint: {
         "fill-extrusion-height": ["get", "heightM"] as never,
         "fill-extrusion-base": ["get", "baseM"] as never,

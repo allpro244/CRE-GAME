@@ -373,6 +373,29 @@ writeFileSync(join(PUB, "manifest.json"), JSON.stringify({
 writeFileSync(join(OUT, "parcels.geojson"), JSON.stringify(tileParcels));
 writeFileSync(join(OUT, "buildings.geojson"), JSON.stringify(tileBuildings));
 
+// compact mesh feed for the 3D building renderer (same volumes as the tiles)
+const b3d = [];
+for (const f of tileBuildings.features) {
+  if (f.geometry.type !== "Polygon") continue;
+  const p = f.properties;
+  const ring = f.geometry.coordinates[0].slice(0, -1).map(([x, y]) => [+x.toFixed(6), +y.toFixed(6)]);
+  if (ring.length < 3) continue;
+  const rec = p.bbl ? table[p.bbl] : null;
+  b3d.push({
+    b: p.bbl,
+    c: p.class,
+    y: p.year,
+    t: p.tone,
+    f: rec?.floors ?? 0,
+    z0: p.baseM,
+    z1: p.heightM,
+    d: p.bbl ? 0 : 1, // decorative (ships, cranes, sheds)
+    r: ring,
+  });
+}
+writeFileSync(join(PUB, "buildings3d.json.gz"), gzipSync(JSON.stringify(b3d), { level: 9 }));
+console.log(`buildings3d.json.gz: ${b3d.length} volumes for the mesh renderer`);
+
 const avgNbrs = lots.length ? (2 * edgeCount / lots.length).toFixed(1) : 0;
 console.log(`Processed ${lots.length} lots (${Object.keys(adjacency).length} with neighbors, ${edgeCount} edges, avg ${avgNbrs}/lot), ${tileBuildings.features.length} buildings (${missingH} heights imputed).`);
 console.log(`Wrote ${PUB}/{parcels,adjacency,stations,manifest}.json and ${OUT}/{parcels,buildings}.geojson`);

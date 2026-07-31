@@ -125,7 +125,7 @@ export function derivedQuarterCF(): number {
   return portfolioQuarterlyCF(game, parcels);
 }
 
-async function fetchGzJson(url: string) {
+export async function fetchGzJson(url: string) {
   const r = await fetch(url);
   if (!r.ok || !r.body) throw new Error(`${url.split("/").pop()} ${r.status}`);
   const buf = await r.arrayBuffer();

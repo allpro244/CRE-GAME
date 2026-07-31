@@ -4,16 +4,26 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
 import { START_CASH, quarterLabel } from "./types";
 import { initEcon, rng, rrange, tickEcon } from "./market";
-import { assetValue, initialCondition, quarterlyNOI } from "./value";
+import { assetValue, initialCondition, quarterlyNOI, resolveRec } from "./value";
 import { tickLeasing } from "./leasing";
 import { tickLoan } from "./debt";
+import { tickDevelopments, tickPrograms } from "./dev";
 
-const TARGET_LISTINGS = 44;
 const LISTING_LIFE_Q: [number, number] = [2, 4];
+
+// 0.5–1.5% of the city is on the market at any time: thin in expansions
+// (owners hold), heavier in recessions (distress shakes assets loose).
+function targetListings(s: GameState, totalLots: number): number {
+  const pct = s.econ.phase === "recession" ? 0.014
+    : s.econ.phase === "peak" ? 0.011
+    : s.econ.phase === "recovery" ? 0.009
+    : 0.006;
+  return Math.max(6, Math.round(totalLots * pct));
+}
 
 export function newGame(seed: number): GameState {
   const s: GameState = {
-    v: 2,
+    v: 3,
     seed,
     rng: seed,
     quarter: 0,
@@ -24,6 +34,8 @@ export function newGame(seed: number): GameState {
     lois: [],
     nextLoiId: 1,
     approaches: {},
+    developments: {},
+    built: {},
     news: [],
     gameOver: null,
     insolventQs: 0,
@@ -42,8 +54,9 @@ export function newGame(seed: number): GameState {
 export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string[]) {
   s.listings = s.listings.filter((l) => l.expiresQ > s.quarter && !s.holdings[l.bbl]);
   const listed = new Set(s.listings.map((l) => l.bbl));
+  const target = targetListings(s, bbls.length);
   let guard = 0;
-  while (s.listings.length < TARGET_LISTINGS && guard++ < 4000) {
+  while (s.listings.length < target && guard++ < 4000) {
     const bbl = bbls[Math.floor(rng(s) * bbls.length)];
     if (listed.has(bbl) || s.holdings[bbl]) continue;
     const rec = parcels[bbl];
@@ -68,12 +81,14 @@ export function advanceQuarter(prev: GameState, parcels: ParcelTable, bbls: stri
   s.quarter++;
 
   tickEcon(s);
+  tickDevelopments(s, parcels);
+  tickPrograms(s, parcels);
   tickLeasing(s, parcels);
 
   // holdings: collect NOI, run the debt stack, finish renovations
   let quarterCF = 0;
   for (const h of Object.values(s.holdings)) {
-    const rec = parcels[h.bbl];
+    const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
     if (h.renovatingUntilQ !== undefined && s.quarter >= h.renovatingUntilQ) {
       h.condition = "good";
@@ -81,7 +96,7 @@ export function advanceQuarter(prev: GameState, parcels: ParcelTable, bbls: stri
       s.news.unshift({ q: s.quarter, kind: "deal", text: `Renovation complete at ${rec.address} — space re-opens at the new rent.` });
     }
     const noiQ = quarterlyNOI(rec, s.econ, h, s.quarter);
-    const debtCash = tickLoan(s, parcels, h, noiQ); // may refi, sweep, or force a sale
+    const debtCash = tickLoan(s, rec, h, noiQ); // may refi, sweep, or force a sale
     if (!s.holdings[h.bbl]) continue; // forced sale removed it
     const cf = noiQ - debtCash;
     h.cfHistory.push(Math.round(cf));
@@ -120,9 +135,12 @@ export function advanceQuarter(prev: GameState, parcels: ParcelTable, bbls: stri
 export function portfolioQuarterlyCF(s: GameState, parcels: ParcelTable): number {
   let cf = 0;
   for (const h of Object.values(s.holdings)) {
-    const rec = parcels[h.bbl];
+    const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
     cf += quarterlyNOI(rec, s.econ, h, s.quarter) - (h.loan?.quarterlyPmt ?? 0);
+  }
+  for (const d of Object.values(s.developments ?? {})) {
+    cf -= (d.loanBalance * d.ratePct) / 100 / 4; // construction interest
   }
   return cf;
 }

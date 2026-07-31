@@ -27,8 +27,8 @@ const PHASE_CFG: Record<MarketPhase, { rateMu: number; rentDrift: number; devDri
   recession: { rateMu: 6.2, rentDrift: -0.014, devDrift: -0.16, nextQ: [4, 8], next: "recovery" },
 };
 
-export const CAP_BASE = { office: 5.6, retail: 6.1, mixed: 5.7, multifamily: 4.9 } as const;
-export const RENT_BASE = { office: 62, retail: 88, mixed: 58, multifamily: 46 } as const; // $/sf/yr
+export const CAP_BASE = { office: 5.6, retail: 6.1, mixed: 5.7, multifamily: 4.9, industrial: 6.9 } as const;
+export const RENT_BASE = { office: 62, retail: 88, mixed: 58, multifamily: 46, industrial: 16 } as const; // $/sf/yr
 
 export function initEcon(s: GameState): Econ {
   const econ: Econ = {
@@ -38,8 +38,8 @@ export function initEcon(s: GameState): Econ {
     rumoredPhase: null,
     cycleDev: 0.1,
     landIdx: 1.0,
-    capRate: { office: CAP_BASE.office, retail: CAP_BASE.retail, mixed: CAP_BASE.mixed, multifamily: CAP_BASE.multifamily },
-    rentIdx: { office: RENT_BASE.office, retail: RENT_BASE.retail, mixed: RENT_BASE.mixed, multifamily: RENT_BASE.multifamily },
+    capRate: { office: CAP_BASE.office, retail: CAP_BASE.retail, mixed: CAP_BASE.mixed, multifamily: CAP_BASE.multifamily, industrial: CAP_BASE.industrial },
+    rentIdx: { office: RENT_BASE.office, retail: RENT_BASE.retail, mixed: RENT_BASE.mixed, multifamily: RENT_BASE.multifamily, industrial: RENT_BASE.industrial },
     history: [],
   };
   econ.phaseQLeft = Math.round(4 + 10 * rng(s));
@@ -108,7 +108,7 @@ export function tickEcon(s: GameState) {
 
   // rents per class: phase drift + noise, multifamily steadier than office
   for (const k of BUILT_CLASSES) {
-    const vol = k === "multifamily" ? 0.006 : k === "office" ? 0.012 : 0.009;
+    const vol = k === "multifamily" ? 0.006 : k === "office" ? 0.012 : k === "industrial" ? 0.007 : 0.009;
     e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.55, e.rentIdx[k] * (1 + c2.rentDrift + rrange(s, -vol, vol)));
   }
 

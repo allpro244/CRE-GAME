@@ -5,7 +5,7 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Credit, GameState, Holding, LOI, Sector } from "./types";
 import { rng, rrange } from "./market";
-import { marketRentPsfYr, occupancy } from "./value";
+import { marketRentPsfYr, managedRentPsfYr, occupancy, resolveRec } from "./value";
 
 const POOL: Record<Sector, string[]> = {
   finance: ["Meridian Capital", "Harborline Securities", "Crown & Weir", "Bellamy Fund Group", "Quayside Partners"],
@@ -23,6 +23,7 @@ const SECTORS_BY_CLASS: Record<string, Sector[]> = {
   office: ["finance", "law", "tech", "media", "insurance", "design"],
   retail: ["apparel", "food", "medical"],
   mixed: ["tech", "media", "design", "food", "medical", "apparel"],
+  industrial: ["logistics", "food", "apparel"],
 };
 
 function pickSector(s: GameState, cls: string): Sector {
@@ -39,7 +40,7 @@ function rollCredit(s: GameState, demand: number): Credit {
 }
 
 export function isCommercial(rec: ParcelRecord): boolean {
-  return rec.class === "office" || rec.class === "retail" || rec.class === "mixed";
+  return rec.class === "office" || rec.class === "retail" || rec.class === "mixed" || rec.class === "industrial";
 }
 
 // In-place rent roll at acquisition. Expirations cluster around a couple of
@@ -60,11 +61,12 @@ export function genRentRoll(s: GameState, rec: ParcelRecord, holding: Holding) {
   let leased = 0;
   let guard = 0;
   while (leased < rec.bldgArea * targetOcc && guard++ < 40) {
+    const suiteMax = rec.class === "industrial" ? rec.bldgArea : rec.bldgArea * 0.35;
     const sf = Math.min(
       rec.bldgArea * targetOcc - leased,
-      Math.round(rrange(s, 1800, Math.max(2600, rec.bldgArea * 0.35)) / 100) * 100,
+      Math.round(rrange(s, rec.class === "industrial" ? 6000 : 1800, Math.max(2600, suiteMax)) / 100) * 100,
     );
-    if (sf < 800) break;
+    if (sf < (rec.class === "industrial" ? 2500 : 800)) break;
     const sector = pickSector(s, rec.class);
     const endQ = rng(s) < 0.6
       ? anchors[Math.floor(rng(s) * anchors.length) % anchors.length] + Math.round(rrange(s, -1, 1))
@@ -94,7 +96,7 @@ export function walt(h: Holding, q: number): number {
 }
 
 export const TI_ASK: Record<string, [number, number]> = {
-  office: [15, 40], retail: [5, 20], mixed: [10, 30],
+  office: [15, 40], retail: [5, 20], mixed: [10, 30], industrial: [2, 8],
 };
 
 export function tickLeasing(s: GameState, parcels: ParcelTable) {
@@ -103,7 +105,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
   s.lois = s.lois.filter((l) => l.expiresQ > q && s.holdings[l.bbl]);
 
   for (const h of Object.values(s.holdings)) {
-    const rec = parcels[h.bbl];
+    const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
 
     if (rec.class === "multifamily") {
@@ -150,11 +152,13 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     if (!renovating && vac > 1500 && openLois < 2) {
       const phaseAdj = s.econ.phase === "expansion" ? 0.14 : s.econ.phase === "recession" ? -0.14 : 0;
       const condAdj = h.condition === "good" ? 0.1 : h.condition === "worn" ? -0.1 : 0;
-      const p = Math.min(0.75, Math.max(0.05, 0.2 + rec.demandScore / 250 + phaseAdj + condAdj));
+      const stanceAdj = -0.12 * (h.stance ?? 0);                       // pushing rents thins the funnel
+      const lobbyAdj = h.programsDone?.lobby !== undefined ? 0.08 : 0; // a lobby people remember
+      const p = Math.min(0.8, Math.max(0.05, 0.2 + rec.demandScore / 250 + phaseAdj + condAdj + stanceAdj + lobbyAdj));
       if (rng(s) < p) {
         const sector = pickSector(s, rec.class);
         const [tiLo, tiHi] = TI_ASK[rec.class] ?? TI_ASK.office;
-        const market = marketRentPsfYr(rec, s.econ, h.condition);
+        const market = managedRentPsfYr(rec, s.econ, h);
         s.lois.push({
           id: s.nextLoiId++,
           bbl: h.bbl,
@@ -196,7 +200,7 @@ export function respondLOI(
   const loi = next.lois.find((l) => l.id === id);
   if (!loi) return { s, msg: "", err: "That LOI is gone." };
   const h = next.holdings[loi.bbl];
-  const rec = parcels[loi.bbl];
+  const rec = resolveRec(parcels, next, loi.bbl);
   if (!h || !rec) return { s, msg: "", err: "You no longer control that building." };
 
   const sign = (l: LOI): string | null => {

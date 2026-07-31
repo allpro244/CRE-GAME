@@ -5,6 +5,8 @@ import { newGame, advanceQuarter, firstListings, portfolioQuarterlyCF } from "@/
 import { buyListing, buyOffMarket, approachOwner, sellHolding, startRenovation, type BuyProduct } from "@/engine/actions";
 import { respondLOI, type LOIAction } from "@/engine/leasing";
 import { refinance } from "@/engine/debt";
+import { startDevelopment, startProgram, setStance } from "@/engine/dev";
+import type { BuiltClass } from "@/engine/types";
 import { netWorth } from "@/engine/value";
 import { loadGame, saveGame } from "@/engine/save";
 
@@ -37,6 +39,9 @@ interface AppState {
   approach: (bbl: string) => void;
   respondLoi: (id: number, action: LOIAction) => void;
   refi: (bbl: string, product: "fixed" | "float") => void;
+  develop: (bbl: string, use: BuiltClass, farFrac: number) => void;
+  program: (bbl: string, id: string) => void;
+  stance: (bbl: string, v: -1 | 0 | 1) => void;
   sell: (bbl: string) => void;
   renovate: (bbl: string) => void;
   newRun: () => void;
@@ -129,6 +134,34 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
+  develop: (bbl, use, farFrac) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = startDevelopment(game, parcels, bbl, use, farFrac);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast("Ground broken. Watch it rise.");
+    void persist(r.s);
+  },
+
+  program: (bbl, id) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = startProgram(game, parcels, bbl, id);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast("Program funded.");
+    void persist(r.s);
+  },
+
+  stance: (bbl, v) => {
+    const { game } = get();
+    if (!game) return;
+    const next = setStance(game, bbl, v);
+    set({ game: next });
+    void persist(next);
+  },
+
   sell: (bbl) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
@@ -196,7 +229,7 @@ export async function loadData() {
     // resume the autosave — unless it references parcels that no longer
     // exist (a save from a different city/dataset), in which case start over
     const saved = await loadGame("auto");
-    const fitsCity = saved && saved.v === 2 &&
+    const fitsCity = saved && saved.v === 3 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (fitsCity) {

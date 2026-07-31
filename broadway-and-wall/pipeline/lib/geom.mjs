@@ -142,3 +142,29 @@ export function sharedBoundaryLength(ringA, ringB, tol) {
 }
 
 export { segSegDist, ptSegDist };
+
+// Perpendicular ring inset (edge-normal offset). Unlike centroid scaling,
+// this guarantees the requested setback on EVERY edge — centroid scaling on
+// an elongated lot barely moves the long walls, which made neighboring
+// buildings kiss. Falls back to null if the offset would invert the ring.
+export function insetRingPerp(ring, d) {
+  const n = ring.length;
+  const a0 = Math.abs(ringArea(ring));
+  const c = centroid(ring);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const prev = ring[(i - 1 + n) % n], cur = ring[i], next = ring[(i + 1) % n];
+    const d1x = cur[0] - prev[0], d1y = cur[1] - prev[1];
+    const d2x = next[0] - cur[0], d2y = next[1] - cur[1];
+    const l1 = Math.hypot(d1x, d1y) || 1, l2 = Math.hypot(d2x, d2y) || 1;
+    // averaged edge normals, oriented toward the interior
+    let nx = (-d1y / l1 - d2y / l2), ny = (d1x / l1 + d2x / l2);
+    const nl = Math.hypot(nx, ny) || 1;
+    nx /= nl; ny /= nl;
+    if ((c[0] - cur[0]) * nx + (c[1] - cur[1]) * ny < 0) { nx = -nx; ny = -ny; }
+    out.push([cur[0] + nx * d, cur[1] + ny * d]);
+  }
+  const a1 = ringArea(out);
+  if (Math.abs(a1) < a0 * 0.15 || Math.sign(a1) !== Math.sign(ringArea(ring))) return null;
+  return out;
+}

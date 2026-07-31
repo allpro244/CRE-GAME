@@ -55,6 +55,13 @@ export default function TopBar() {
       )}
 
       <div className="topbar-right">
+        <button
+          className="lens-btn"
+          title="Start over: fresh city, no holdings, $6M cash"
+          onClick={() => { if (window.confirm("Start a new run? Your current game will be erased.")) useStore.getState().newRun(); }}
+        >
+          ↺ New run
+        </button>
         <span className={"stat mono " + (fps >= 55 ? "fps-good" : fps >= 30 ? "fps-ok" : "fps-bad")}>
           {fps} fps
         </span>

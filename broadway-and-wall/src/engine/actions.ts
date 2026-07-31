@@ -4,7 +4,7 @@
 import type { Adjacency, ParcelTable } from "@/data/types";
 import type { GameState, Holding } from "./types";
 import { rng } from "./market";
-import { assetValue, initialCondition, holdingValue, renovationCost, RENO_QUARTERS, noiYr } from "./value";
+import { assetValue, initialCondition, holdingValue, renovationCost, RENO_QUARTERS, noiYr, resolveRec } from "./value";
 import { genRentRoll, isCommercial } from "./leasing";
 import { PRODUCTS, originate, quote } from "./debt";
 
@@ -121,7 +121,8 @@ export function sellHolding(s: GameState, parcels: ParcelTable, bbl: string): { 
   if (h.renovatingUntilQ !== undefined && s.quarter < h.renovatingUntilQ) {
     return { s, err: "Can't sell mid-renovation — finish the work first." };
   }
-  const rec = parcels[bbl];
+  if (s.developments[bbl]) return { s, err: "Can't sell with cranes on site — deliver the building first." };
+  const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const gross = holdingValue(rec, s.econ, h);
   const proceeds = Math.round(gross * (1 - SALE_FRICTION)) - (h.loan?.balance ?? 0);
@@ -140,7 +141,7 @@ export function sellHolding(s: GameState, parcels: ParcelTable, bbl: string): { 
 export function startRenovation(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string } {
   const h = s.holdings[bbl];
   if (!h) return { s, err: "You don't own that parcel." };
-  const rec = parcels[bbl];
+  const rec = resolveRec(parcels, s, bbl);
   if (!rec || rec.class === "land" || !rec.bldgArea) return { s, err: "Nothing to renovate on this lot." };
   if (h.condition === "good") return { s, err: "Already in top condition." };
   if (h.renovatingUntilQ !== undefined) return { s, err: "Crews are already on site." };

@@ -41,18 +41,38 @@ export function marketRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condit
   return econ.rentIdx[cls] * locationRentMult(rec) * CONDITION_RENT_MULT[condition];
 }
 
+// A delivered development overrides the static record — resolve before use.
+export function resolveRec(parcels: Record<string, ParcelRecord>, s: GameState, bbl: string): ParcelRecord | null {
+  const rec = parcels[bbl];
+  if (!rec) return null;
+  const b = s.built?.[bbl];
+  if (!b) return rec;
+  return { ...rec, class: b.class, bldgArea: b.bldgArea, floors: b.floors, yearBuilt: b.yearBuilt };
+}
+
+// Achievable rent for NEW leases in a managed building: capital programs and
+// the owner's rent stance move it off the pure market number.
+export function managedRentPsfYr(rec: ParcelRecord, econ: Econ, h: Holding): number {
+  let m = marketRentPsfYr(rec, econ, h.condition);
+  const done = h.programsDone ?? {};
+  if (done.lobby !== undefined) m *= 1.04;
+  if (done.facade !== undefined) m *= 1.08;
+  m *= 1 + 0.08 * (h.stance ?? 0);
+  return m;
+}
+
 // Phase 2 occupancy model: class norms breathing with the cycle and demand.
 // Named tenants, LOIs, and rollover arrive in Phase 3.
-const OCC_BASE: Record<BuiltClass, number> = { office: 0.87, retail: 0.91, mixed: 0.89, multifamily: 0.955 };
+const OCC_BASE: Record<BuiltClass, number> = { office: 0.87, retail: 0.91, mixed: 0.89, multifamily: 0.955, industrial: 0.9 };
 export function occupancy(rec: ParcelRecord, econ: Econ): number {
   const cls = rec.class as BuiltClass;
   const swing = cls === "multifamily" ? 0.02 : 0.05;
   return clamp(OCC_BASE[cls] + swing * econ.cycleDev + 0.03 * (rec.demandScore / 100 - 0.5), 0.6, 0.99);
 }
 
-const OPEX_RATIO: Record<BuiltClass, number> = { office: 0.38, retail: 0.30, mixed: 0.36, multifamily: 0.42 };
+const OPEX_RATIO: Record<BuiltClass, number> = { office: 0.38, retail: 0.30, mixed: 0.36, multifamily: 0.42, industrial: 0.24 };
 // landlord operating cost per sf/yr — paid on vacant space and gross leases
-export const OPEX_PSF: Record<BuiltClass, number> = { office: 13, retail: 8, mixed: 11, multifamily: 10 };
+export const OPEX_PSF: Record<BuiltClass, number> = { office: 13, retail: 8, mixed: 11, multifamily: 10, industrial: 3.5 };
 
 // market-implied NOI (unowned parcels; also the stabilized case for owned)
 export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition): number {
@@ -84,7 +104,8 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
     if (!t.net) grossLeasedSf += t.sf; // gross leases: landlord absorbs opex
   }
   const vacant = Math.max(0, rec.bldgArea - leasedSf);
-  const opex = OPEX_PSF[cls] * (vacant + grossLeasedSf) + egi * 0.04; // vacancy carry + management
+  const systems = h.programsDone?.systems !== undefined ? 0.85 : 1; // HVAC/systems program cuts opex
+  const opex = OPEX_PSF[cls] * (vacant + grossLeasedSf) * systems + egi * 0.04;
   return egi - opex;
 }
 
@@ -112,7 +133,7 @@ export function quarterlyNOI(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
   return holdingNOIYr(rec, econ, h, currentQ) / 4;
 }
 
-export const RENO_COST_PSF: Record<BuiltClass, number> = { office: 210, retail: 150, mixed: 190, multifamily: 165 };
+export const RENO_COST_PSF: Record<BuiltClass, number> = { office: 210, retail: 150, mixed: 190, multifamily: 165, industrial: 90 };
 export const RENO_QUARTERS = 2;
 
 export function renovationCost(rec: ParcelRecord): number {
@@ -123,9 +144,13 @@ export function renovationCost(rec: ParcelRecord): number {
 export function netWorth(s: GameState, parcels: Record<string, ParcelRecord>): number {
   let nw = s.cash;
   for (const h of Object.values(s.holdings)) {
-    const rec = parcels[h.bbl];
+    const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
     nw += holdingValue(rec, s.econ, h) - (h.loan?.balance ?? 0);
+  }
+  // construction in progress carries at cost minus construction debt
+  for (const d of Object.values(s.developments ?? {})) {
+    nw += d.costTotal - d.loanBalance;
   }
   return nw;
 }

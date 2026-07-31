@@ -1,4 +1,4 @@
-export type AssetClass = "office" | "retail" | "mixed" | "multifamily" | "land";
+export type AssetClass = "office" | "retail" | "mixed" | "multifamily" | "industrial" | "land";
 
 export interface ParcelRecord {
   bbl: string;
@@ -41,6 +41,7 @@ export const CLASS_LABEL: Record<AssetClass, string> = {
   retail: "Retail",
   mixed: "Mixed-Use",
   multifamily: "Multifamily",
+  industrial: "Industrial",
   land: "Vacant Land",
 };
 
@@ -49,5 +50,6 @@ export const CLASS_COLOR: Record<AssetClass, string> = {
   retail: "#c08552",
   mixed: "#9b8ab8",
   multifamily: "#8aab8a",
+  industrial: "#8f8f7a",
   land: "#b5a67f",
 };

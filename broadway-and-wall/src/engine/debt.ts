@@ -3,6 +3,7 @@
 // quarter, and cash sweeps on breach. Proceeds gate on DSCR at underwriting,
 // not just LTV — a lender lends against income, not hope.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
+import { resolveRec } from "./value";
 import type { GameState, Holding, Loan } from "./types";
 import { holdingNOIYr, holdingValue } from "./value";
 
@@ -83,9 +84,8 @@ export function ltv(rec: ParcelRecord, s: GameState, h: Holding): number | null 
 
 // One quarter of debt life for a holding. Returns the cash the loan takes
 // this quarter (debt service, plus any sweep of surplus cash flow).
-export function tickLoan(s: GameState, parcels: ParcelTable, h: Holding, assetCF: number): number {
+export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, assetCF: number): number {
   const loan = h.loan;
-  const rec = parcels[h.bbl];
   if (!loan || !rec) return 0;
   const q = s.quarter;
 
@@ -180,7 +180,7 @@ export function tickLoan(s: GameState, parcels: ParcelTable, h: Holding, assetCF
 export function refinance(s: GameState, parcels: ParcelTable, bbl: string, productId: "fixed" | "float"): { s: GameState; err?: string } {
   const next: GameState = JSON.parse(JSON.stringify(s));
   const h = next.holdings[bbl];
-  const rec = parcels[bbl];
+  const rec = resolveRec(parcels, next, bbl);
   if (!h || !rec) return { s, err: "You don't own that." };
   const product = PRODUCTS.find((p) => p.id === productId)!;
   const value = holdingValue(rec, next.econ, h);

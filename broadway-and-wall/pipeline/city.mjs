@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   mulberry32, makeProjection, polygonArea, centroid,
-  splitRing, insetRing, clipRingHalfPlane, bboxOfRing,
+  splitRing, insetRing, insetRingPerp, clipRingHalfPlane, bboxOfRing,
 } from "./lib/geom.mjs";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
@@ -382,9 +382,10 @@ for (const block of blocks) {
       if (yearbuilt >= 1961) {
         floors = Math.min(floors, Math.max(1, Math.round(Math.max(zone.commfar, zone.resfar) / coverage)));
       }
-      // a real side-yard: buildings never kiss their neighbors
+      // a real side-yard on EVERY wall: perpendicular inset, min 1.4 m
       const side = Math.sqrt(areaM2);
-      footprint = insetRing(lotRing, Math.max(1.1, (side * (1 - Math.sqrt(coverage))) / 2));
+      footprint = insetRingPerp(lotRing, Math.max(1.4, (side * (1 - Math.sqrt(coverage))) / 2))
+        ?? insetRingPerp(lotRing, 1.0);
       const realCov = footprint ? polygonArea([footprint]) / areaM2 : coverage;
       bldgArea = Math.round(lotArea * realCov * floors);
       heightM = floors * 3.55 + rr(1, 4);

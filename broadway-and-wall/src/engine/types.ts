@@ -5,7 +5,7 @@ import type { AssetClass } from "@/data/types";
 export type MarketPhase = "recovery" | "expansion" | "peak" | "recession";
 
 export type BuiltClass = Exclude<AssetClass, "land">;
-export const BUILT_CLASSES: BuiltClass[] = ["office", "retail", "mixed", "multifamily"];
+export const BUILT_CLASSES: BuiltClass[] = ["office", "retail", "mixed", "multifamily", "industrial"];
 
 export type Condition = "worn" | "standard" | "good";
 
@@ -72,7 +72,34 @@ export interface Holding {
   renovatingUntilQ?: number;
   tenants: Tenant[];   // commercial rent roll
   occ?: number;        // multifamily aggregate occupancy
+  stance?: -1 | 0 | 1; // rent posture: push / market / fill
+  program?: { id: string; untilQ: number };  // capital program underway
+  programsDone?: Record<string, number>;     // id -> completed quarter
   cfHistory: number[];
+}
+
+// Ground-up development on an owned vacant lot (Groundwork, simplified):
+// pick use and FAR up to zoning, 60% construction loan, the building rises
+// over 4-6 quarters, then leases up from empty.
+export interface Development {
+  bbl: string;
+  use: BuiltClass;
+  sf: number;
+  floors: number;
+  costTotal: number;
+  loanBalance: number;   // 60% construction loan, interest-only
+  ratePct: number;
+  startQ: number;
+  deliverQ: number;
+  overrunRolled: boolean;
+}
+
+// A delivered development overrides the static parcel record.
+export interface BuiltOverride {
+  class: BuiltClass;
+  bldgArea: number;
+  floors: number;
+  yearBuilt: number;
 }
 
 export interface Listing {
@@ -116,7 +143,7 @@ export interface Econ {
 }
 
 export interface GameState {
-  v: 2;
+  v: 3;
   seed: number;
   rng: number;
   quarter: number;
@@ -127,6 +154,8 @@ export interface GameState {
   lois: LOI[];
   nextLoiId: number;
   approaches: Record<string, Approach>;
+  developments: Record<string, Development>;
+  built: Record<string, BuiltOverride>;
   news: NewsItem[];
   gameOver: { cause: string } | null;
   insolventQs: number;

@@ -274,7 +274,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private wallMat!: THREE.ShaderMaterial;
   private roofMat!: THREE.ShaderMaterial;
   private tintAttrs: THREE.BufferAttribute[] = [];
+  private posAttrs: THREE.BufferAttribute[] = [];
   private rangesByBBL = new Map<string, { attr: number; r: Ranges }[]>();
+  private lotRings = new Map<string, [number, number][]>(); // vacant-lot footprints (meters)
+  private flattened = new Set<string>();
+  private dynGroup = new THREE.Group();
   visible = true;
 
   constructor(private volumes: BuildingVolume[], private center: [number, number]) {}
@@ -365,6 +369,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
       // ---- vacant lot: gravel pad + low fence ------------------------------
       if (v.k) {
+        if (v.b) this.lotRings.set(v.b, ring);
         capRoof(R, ring, 0.06, [S_LOT, rnd, varr, 1, fh]);
         const fence = insetRing(ring, 0.5);
         if (fence) extrudeWalls(W, fence, 0, 1.15, [S_LOT, rnd, varr, 1.15, fh]);
@@ -503,6 +508,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.scene.add(new THREE.Mesh(wallGeom, this.wallMat));
     this.scene.add(new THREE.Mesh(roofGeom, this.roofMat));
     this.tintAttrs = [wallGeom.getAttribute("aTint") as THREE.BufferAttribute, roofGeom.getAttribute("aTint") as THREE.BufferAttribute];
+    this.posAttrs = [wallGeom.getAttribute("position") as THREE.BufferAttribute, roofGeom.getAttribute("position") as THREE.BufferAttribute];
+    this.scene.add(this.dynGroup);
     for (const { bbl, r } of wallRanges) {
       if (!this.rangesByBBL.has(bbl)) this.rangesByBBL.set(bbl, []);
       this.rangesByBBL.get(bbl)!.push({ attr: 0, r });
@@ -591,6 +598,93 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     } catch {
       // shadows are enhancement, never a blocker — flat lighting still ships
     }
+  }
+
+  // Player construction and deliveries: a small dynamic mesh set rebuilt on
+  // change (a handful of buildings — cheap), sharing the facade materials.
+  setPlayerBuildings(items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean }[]) {
+    this.dynGroup.clear();
+    for (const item of items) {
+      const ring = this.lotRings.get(item.bbl);
+      if (!ring) continue;
+      if (!this.flattened.has(item.bbl)) this.flattenLot(item.bbl);
+      let cx = 0, cy = 0;
+      for (const [x, y] of ring) { cx += x; cy += y; }
+      cx /= ring.length; cy /= ring.length;
+      const fp = ring.map(([x, y]) => [cx + (x - cx) * 0.78, cy + (y - cy) * 0.78] as [number, number]);
+      const h = Math.max(3, item.heightM);
+      const style = item.construction ? 5
+        : item.cls === "industrial" ? 3
+        : item.cls === "retail" ? 7
+        : 0;
+      const fh2 = item.floors > 0 ? Math.max(2.6, item.heightM / item.floors) : 3.5;
+      const meta = [style, 0.5, 0.4, h, fh2];
+      const T = { pos: [] as number[], norm: [] as number[], u: [] as number[], style: [] as number[], rand: [] as number[], varr: [] as number[], top: [] as number[], fh: [] as number[] };
+      const R2 = { pos: [] as number[], norm: [] as number[], u: [] as number[], style: [] as number[], rand: [] as number[], varr: [] as number[], top: [] as number[], fh: [] as number[] };
+      let perim = 0;
+      for (let i = 0; i < fp.length; i++) {
+        const a = fp[i], b = fp[(i + 1) % fp.length];
+        const dx = b[0] - a[0], dy = b[1] - a[1];
+        const len = Math.hypot(dx, dy);
+        if (len < 0.05) continue;
+        const n = [dy / len, -dx / len, 0];
+        const u0 = perim, u1 = perim + len;
+        perim += len;
+        const quad = [
+          [a[0], a[1], 0, u0], [b[0], b[1], 0, u1], [b[0], b[1], h, u1],
+          [a[0], a[1], 0, u0], [b[0], b[1], h, u1], [a[0], a[1], h, u0],
+        ];
+        for (const [x, y, z, u] of quad) {
+          T.pos.push(x, y, z); T.norm.push(n[0], n[1], n[2]); T.u.push(u);
+          T.style.push(meta[0]); T.rand.push(meta[1]); T.varr.push(meta[2]); T.top.push(meta[3]); T.fh.push(meta[4]);
+        }
+      }
+      const pts = fp.map(([x, y]) => new THREE.Vector2(x, y));
+      let tris: number[][] = [];
+      try { tris = THREE.ShapeUtils.triangulateShape(pts, []); } catch { tris = []; }
+      for (const t of tris) {
+        for (const idx of t) {
+          R2.pos.push(fp[idx][0], fp[idx][1], h); R2.norm.push(0, 0, 1); R2.u.push(0);
+          R2.style.push(item.construction ? 5 : meta[0]); R2.rand.push(0.5); R2.varr.push(0.4); R2.top.push(h); R2.fh.push(fh2);
+        }
+      }
+      const mk = (D: typeof T) => {
+        const g = new THREE.BufferGeometry();
+        g.setAttribute("position", new THREE.Float32BufferAttribute(D.pos, 3));
+        g.setAttribute("normal", new THREE.Float32BufferAttribute(D.norm, 3));
+        g.setAttribute("aU", new THREE.Float32BufferAttribute(D.u, 1));
+        g.setAttribute("aStyle", new THREE.Float32BufferAttribute(D.style, 1));
+        g.setAttribute("aRand", new THREE.Float32BufferAttribute(D.rand, 1));
+        g.setAttribute("aVar", new THREE.Float32BufferAttribute(D.varr, 1));
+        g.setAttribute("aTop", new THREE.Float32BufferAttribute(D.top, 1));
+        g.setAttribute("aFh", new THREE.Float32BufferAttribute(D.fh, 1));
+        g.setAttribute("aTint", new THREE.Float32BufferAttribute(new Float32Array(D.pos.length).fill(1), 3));
+        return g;
+      };
+      this.dynGroup.add(new THREE.Mesh(mk(T), this.wallMat));
+      this.dynGroup.add(new THREE.Mesh(mk(R2), this.roofMat));
+      if (item.construction) {
+        const orange = new THREE.MeshLambertMaterial({ color: 0xc2803a, side: THREE.DoubleSide });
+        this.dynGroup.add(
+          new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, h + 16, 6).rotateX(Math.PI / 2).translate(cx + 6, cy + 6, (h + 16) / 2), orange),
+          new THREE.Mesh(new THREE.BoxGeometry(26, 1.4, 1.4).translate(cx + 14, cy + 6, h + 15), orange),
+        );
+      }
+    }
+    this.map.triggerRepaint();
+  }
+
+  // collapse a vacant lot's fence when construction starts (gravel stays)
+  private flattenLot(bbl: string) {
+    this.flattened.add(bbl);
+    const ranges = this.rangesByBBL.get(bbl);
+    if (!ranges) return;
+    for (const { attr, r } of ranges) {
+      if (attr !== 0) continue;
+      const arr = this.posAttrs[0].array as Float32Array;
+      for (let i = r.start; i < r.start + r.count; i++) arr[i * 3 + 2] = Math.min(arr[i * 3 + 2], 0.02);
+    }
+    this.posAttrs[0].needsUpdate = true;
   }
 
   setTints(tints: Map<string, [number, number, number]>) {

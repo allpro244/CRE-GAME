@@ -247,6 +247,22 @@ export default function MapView() {
     layer.setTints(tints);
   }, [selectedBBL, hoveredBBL, adjacency, game, mapReady]);
 
+  // player construction and deliveries onto the skyline
+  useEffect(() => {
+    const layer = threeRef.current;
+    if (!layer || !mapReady || !game) return;
+    const items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean }[] = [];
+    for (const d of Object.values(game.developments ?? {})) {
+      const total = Math.max(1, d.deliverQ - d.startQ);
+      const prog = Math.min(1, Math.max(0.15, (game.quarter - d.startQ + 1) / total));
+      items.push({ bbl: d.bbl, cls: d.use, heightM: d.floors * 3.4 * prog, floors: d.floors, construction: true });
+    }
+    for (const [bbl, b] of Object.entries(game.built ?? {})) {
+      items.push({ bbl, cls: b.class, heightM: b.floors * 3.4, floors: b.floors, construction: false });
+    }
+    layer.setPlayerBuildings(items);
+  }, [game, mapReady]);
+
   // lenses — repaint when toggled and as the market moves
   const lens = useStore((s) => s.lens);
   useEffect(() => {

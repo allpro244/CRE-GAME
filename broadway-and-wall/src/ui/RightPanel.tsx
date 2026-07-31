@@ -1,8 +1,11 @@
+import { useState } from "react";
 import { useStore } from "@/state/store";
 import type { Tab } from "@/state/store";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { quarterLabel, CREDIT_LABEL } from "@/engine/types";
-import { assetValue, initialCondition, holdingValue, marketRentPsfYr, occupancy, noiYr, holdingNOIYr, renovationCost } from "@/engine/value";
+import { assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec } from "@/engine/value";
+import { planDevelopment, PROGRAMS } from "@/engine/dev";
+import type { BuiltClass } from "@/engine/types";
 import { buyQuote, assemblagePressure } from "@/engine/actions";
 import { isCommercial, vacantSf, walt, loiSigningCost } from "@/engine/leasing";
 import { dscr, ltv } from "@/engine/debt";
@@ -79,8 +82,9 @@ function ParcelTab() {
   const { sell, renovate, approach, refi } = useStore.getState();
 
   if (!selectedBBL || !parcels) return <div className="hint">Click a lot on the map — every parcel in Ashport has a record.</div>;
-  const rec = parcels[selectedBBL];
+  const rec = resolveRec(parcels, game, selectedBBL);
   if (!rec) return null;
+  const dev = game.developments[selectedBBL];
   const neighbors = adjacency?.[selectedBBL] ?? [];
   const holding = game.holdings[selectedBBL];
   const listing = game.listings.find((l) => l.bbl === selectedBBL);
@@ -110,6 +114,7 @@ function ParcelTab() {
         <span className="chip" style={{ background: CLASS_COLOR[rec.class] }}>{CLASS_LABEL[rec.class]}</span>
         <span className="chip chip-zone mono">{rec.zoneDist}</span>
         {holding && <span className="chip chip-owned">OWNED</span>}
+        {dev && <span className="chip chip-reno">UNDER CONSTRUCTION</span>}
         {listing && !holding && <span className="chip chip-listed">FOR SALE</span>}
         {renovating && <span className="chip chip-reno">RENOVATING</span>}
         {holding?.loan?.sweep && <span className="chip chip-sweep">CASH SWEEP</span>}
@@ -210,6 +215,60 @@ function ParcelTab() {
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {holding && dev && (
+        <div className="deal">
+          <div className="deal-head">Construction</div>
+          <div className="grid">
+            <Row k="Program" v={`${(dev.sf / 1000).toFixed(0)}k sf ${dev.use} · ${dev.floors} fl`} />
+            <Row k="Budget" v={usd(dev.costTotal)} />
+            <Row k="Constr. loan" v={usd(dev.loanBalance) + " @ " + pct(dev.ratePct)} />
+            <Row k="Delivers" v={quarterLabel(dev.deliverQ)} strong />
+          </div>
+        </div>
+      )}
+
+      {holding && !dev && rec.class === "land" && (
+        <DevelopSection bbl={selectedBBL} />
+      )}
+
+      {holding && isBuilt && !renovating && (
+        <div className="deal">
+          <div className="deal-head">Management</div>
+          <div className="grid">
+            <Row k="Asking rent" v={"$" + managedRentPsfYr(rec, game.econ, holding).toFixed(0) + " /sf on new leases"} />
+          </div>
+          <div className="btn-row">
+            {([-1, 0, 1] as const).map((v) => (
+              <button
+                key={v}
+                className={"btn" + ((holding.stance ?? 0) === v ? " btn-buy" : "")}
+                title={v === 1 ? "+8% asking rents, fewer LOIs" : v === -1 ? "−8% rents, faster lease-up" : "market rents"}
+                onClick={() => useStore.getState().stance(selectedBBL, v)}
+              >
+                {v === 1 ? "Push rents" : v === -1 ? "Fill space" : "Market"}
+              </button>
+            ))}
+          </div>
+          <div className="btn-row">
+            {PROGRAMS.map((p) => {
+              const done = holding.programsDone?.[p.id] !== undefined;
+              const running = holding.program?.id === p.id;
+              return (
+                <button
+                  key={p.id}
+                  className="btn"
+                  disabled={done || !!holding.program}
+                  title={p.blurb + ` · $${p.costPsf}/sf, ${p.quarters}q`}
+                  onClick={() => useStore.getState().program(selectedBBL, p.id)}
+                >
+                  {done ? "✓ " : running ? "⏳ " : ""}{p.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -330,7 +389,7 @@ function PortfolioTab() {
   if (!holdings.length) return <div className="hint">You own nothing yet. The Market tab has the tape; the map has everything else.</div>;
   let totV = 0, totD = 0, totCF = 0;
   const rows = holdings.map((h) => {
-    const rec = parcels[h.bbl];
+    const rec = resolveRec(parcels, game, h.bbl);
     const v = rec ? holdingValue(rec, game.econ, h) : 0;
     const cf = rec ? holdingNOIYr(rec, game.econ, h, game.quarter) / 4 - (h.loan?.quarterlyPmt ?? 0) : 0;
     totV += v; totD += h.loan?.balance ?? 0; totCF += cf;
@@ -399,6 +458,50 @@ function MarketTab() {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function DevelopSection({ bbl }: { bbl: string }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const [use, setUse] = useState<BuiltClass>("multifamily");
+  const [farFrac, setFarFrac] = useState(0.75);
+  const plan = planDevelopment(game, parcels, bbl, use, farFrac);
+  const USES: BuiltClass[] = ["office", "multifamily", "mixed", "retail", "industrial"];
+  return (
+    <div className="deal">
+      <div className="deal-head">Develop this lot</div>
+      <div className="btn-row">
+        {USES.map((u) => (
+          <button key={u} className={"btn" + (use === u ? " btn-buy" : "")} onClick={() => setUse(u)}>{CLASS_LABEL[u]}</button>
+        ))}
+      </div>
+      <div className="btn-row">
+        {[0.5, 0.75, 1].map((f) => (
+          <button key={f} className={"btn" + (farFrac === f ? " btn-buy" : "")} onClick={() => setFarFrac(f)}>
+            {Math.round(f * 100)}% FAR
+          </button>
+        ))}
+      </div>
+      {plan ? (
+        <>
+          <div className="grid" style={{ marginTop: 8 }}>
+            <Row k="Building" v={`${(plan.sf / 1000).toFixed(0)}k sf · ${plan.floors} fl`} />
+            <Row k="All-in cost" v={usd(plan.costTotal)} />
+            <Row k="Constr. loan (60%)" v={usd(plan.loanAmount) + " @ " + pct(plan.ratePct)} />
+            <Row k="Your equity" v={usd(plan.equity)} strong />
+            <Row k="Schedule" v={plan.quarters + " quarters"} />
+          </div>
+          <div className="btn-row">
+            <button className="btn btn-buy" onClick={() => useStore.getState().develop(bbl, use, farFrac)}>
+              Break ground · {usd(plan.equity)}
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="hint">Zoning won't carry this use at that FAR here.</div>
+      )}
     </div>
   );
 }

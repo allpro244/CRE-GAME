@@ -7,7 +7,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "node
 import { gzipSync } from "node:zlib";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { makeProjection, polygonArea, centroid, bboxOfRing, sharedBoundaryLength, insetRing } from "./lib/geom.mjs";
+import { makeProjection, polygonArea, centroid, bboxOfRing, sharedBoundaryLength, insetRing, insetRingPerp } from "./lib/geom.mjs";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const RAW = join(ROOT, "raw");
@@ -39,7 +39,8 @@ function assetClass(bldgclass, landuse, bldgarea) {
   const L = c[0];
   if (!bldgarea || L === "V" || landuse === "11") return "land";
   if (L === "G" || L === "T" || L === "Z" || L === "Q") return "land"; // garages/transport/misc: teardown-class
-  if (L === "O" || L === "H" || L === "E" || L === "I" || L === "J" || L === "Y" || L === "W" || L === "P") return "office";
+  if (L === "E") return "industrial"; // lofts, sheds, warehouses
+  if (L === "O" || L === "H" || L === "I" || L === "J" || L === "Y" || L === "W" || L === "P") return "office";
   if (L === "K" || L === "L") return "retail";
   if (L === "S" || c === "RM" || L === "M") return "mixed";
   if (L === "A" || L === "B" || L === "C" || L === "D" || L === "N" || L === "R") return "multifamily";
@@ -282,7 +283,7 @@ function setbackTiers(geom, hM) {
   if (areaM2 < 250) return null;
   const side = Math.sqrt(areaM2);
   const inset = (frac) => {
-    const r = insetRing(ringXY, (side * (1 - Math.sqrt(frac))) / 2);
+    const r = insetRingPerp(ringXY, (side * (1 - Math.sqrt(frac))) / 2);
     if (!r) return null;
     const ll = r.map(proj.toLL);
     return { type: "Polygon", coordinates: [[...ll, ll[0]]] };
@@ -318,7 +319,7 @@ for (const f of rawBuildings.features) {
     // modern tower: low podium on (nearly) the whole lot, shaft above
     const lotRingM = lotRingByBBL.get(bbl);
     if (lotRingM) {
-      const pod = insetRing(lotRingM, 1.4);
+      const pod = insetRingPerp(lotRingM, 1.4) ?? insetRing(lotRingM, 1.4);
       if (pod) {
         const ll = pod.map(proj.toLL);
         podium = { type: "Polygon", coordinates: [[...ll, ll[0]]] };

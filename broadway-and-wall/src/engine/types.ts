@@ -9,22 +9,70 @@ export const BUILT_CLASSES: BuiltClass[] = ["office", "retail", "mixed", "multif
 
 export type Condition = "worn" | "standard" | "good";
 
+export type Sector =
+  | "finance" | "law" | "tech" | "media" | "insurance"
+  | "logistics" | "apparel" | "food" | "medical" | "design";
+
+export type Credit = 0 | 1 | 2; // C, B, A
+export const CREDIT_LABEL = ["C", "B", "A"];
+
+export interface Tenant {
+  name: string;
+  sector: Sector;
+  credit: Credit;
+  sf: number;
+  rentPsf: number;     // $/sf/yr
+  net: boolean;        // NNN (tenant pays opex) vs gross
+  startQ: number;
+  endQ: number;        // lease expiration
+  freeUntilQ?: number; // free-rent concession
+}
+
+export interface LOI {
+  id: number;
+  bbl: string;
+  kind: "new" | "renewal";
+  name: string;
+  sector: Sector;
+  credit: Credit;
+  sf: number;
+  rentPsf: number;
+  termQ: number;
+  tiPsf: number;       // tenant-improvement allowance, $/sf at signing
+  freeQ: number;       // free-rent quarters
+  net: boolean;
+  expiresQ: number;
+  countered?: boolean;
+  tenantIdx?: number;  // renewals: index into holding.tenants
+}
+
 export interface Loan {
+  product: "fixed" | "float";
   principal: number;
   balance: number;
-  ratePct: number;       // fixed at origination
-  quarterlyPmt: number;  // 30-year amortization, quarterly
+  ratePct: number;       // current coupon (floating reprices each quarter)
+  spread: number;        // over the index, for floating
+  ioUntilQ: number;      // interest-only through this quarter
+  amortYears: number;
+  maturityQ: number;     // the balloon
+  quarterlyPmt: number;
+  minDSCR: number;       // covenants, tested quarterly
+  maxLTV: number;
+  sweep: boolean;        // breach: cash flow trapped to principal until cured
+  cleanQs: number;
   originQ: number;
 }
 
 export interface Holding {
   bbl: string;
   boughtQ: number;
-  costBasis: number;      // price + closing costs
+  costBasis: number;
   loan: Loan | null;
   condition: Condition;
   renovatingUntilQ?: number;
-  cfHistory: number[];    // net cash flow per quarter, capped
+  tenants: Tenant[];   // commercial rent roll
+  occ?: number;        // multifamily aggregate occupancy
+  cfHistory: number[];
 }
 
 export interface Listing {
@@ -32,6 +80,12 @@ export interface Listing {
   ask: number;
   listedQ: number;
   expiresQ: number;
+}
+
+export interface Approach {
+  q: number;           // when the owner was approached
+  refused: boolean;
+  ask?: number;        // if willing: their number, good for 4 quarters
 }
 
 export interface NewsItem {
@@ -50,29 +104,32 @@ export interface EconHistoryPoint {
 }
 
 export interface Econ {
-  indexRate: number;                    // loan index, pct
+  indexRate: number;
   phase: MarketPhase;
   phaseQLeft: number;
-  rumoredPhase: MarketPhase | null;     // the ticker whispers before the turn
-  cycleDev: number;                     // -1 (trough) … +1 (froth)
-  landIdx: number;                      // citywide land value index, 1.0 at start
-  capRate: Record<BuiltClass, number>;  // pct
-  rentIdx: Record<BuiltClass, number>;  // $/sf/yr, citywide average for the class
+  rumoredPhase: MarketPhase | null;
+  cycleDev: number;
+  landIdx: number;
+  capRate: Record<BuiltClass, number>;
+  rentIdx: Record<BuiltClass, number>;
   history: EconHistoryPoint[];
 }
 
 export interface GameState {
-  v: 1;
+  v: 2;
   seed: number;
-  rng: number;            // mulberry32 state — save it, replay stays honest
-  quarter: number;        // 0 = 2026 Q1
+  rng: number;
+  quarter: number;
   cash: number;
   econ: Econ;
   holdings: Record<string, Holding>;
   listings: Listing[];
+  lois: LOI[];
+  nextLoiId: number;
+  approaches: Record<string, Approach>;
   news: NewsItem[];
   gameOver: { cause: string } | null;
-  insolventQs: number;    // consecutive quarters cash < 0
+  insolventQs: number;
 }
 
 export const START_CASH = 6_000_000;

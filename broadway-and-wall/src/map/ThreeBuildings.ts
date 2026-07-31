@@ -65,6 +65,28 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 
+const SHADOW_GLSL = /* glsl */ `
+uniform sampler2D uShadow;
+uniform mat4 uSunVP;
+uniform float uShadowOn;
+float unpackDepth(vec4 c) {
+  return dot(c, vec4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0));
+}
+// 1.0 = fully sunlit, 0.0 = fully shadowed (4-tap PCF)
+float sunVis(vec3 p) {
+  if (uShadowOn < 0.5) return 1.0;
+  vec4 sc = uSunVP * vec4(p, 1.0);
+  vec3 ndc = sc.xyz / sc.w * 0.5 + 0.5;
+  if (ndc.x < 0.0 || ndc.x > 1.0 || ndc.y < 0.0 || ndc.y > 1.0 || ndc.z > 1.0) return 1.0;
+  float sum = 0.0;
+  for (int i = 0; i < 4; i++) {
+    vec2 off = vec2(float(i - (i / 2) * 2) - 0.5, float(i / 2) - 0.5) * (1.4 / 2048.0);
+    float d = unpackDepth(texture2D(uShadow, ndc.xy + off));
+    sum += step(ndc.z - 0.0028, d);
+  }
+  return sum * 0.25;
+}`;
+
 const FRAG = /* glsl */ `
 precision highp float;
 varying vec3 vNormal;
@@ -73,6 +95,8 @@ varying vec3 vPos;
 varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh;
 uniform float uOpacity;
 uniform vec3 uCam;
+${"" /* shadow sampling */}
+` + SHADOW_GLSL + /* glsl */ `
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
@@ -80,7 +104,8 @@ void main() {
   int s = int(vStyle + 0.5);
   vec3 n = normalize(vNormal);
   vec3 sun = normalize(vec3(0.45, -0.32, 0.62));
-  float diff = max(dot(n, sun), 0.0);
+  float vis = sunVis(vPos + n * 0.7 + vec3(0.0, 0.0, 0.4));
+  float diff = max(dot(n, sun), 0.0) * vis;
   float up = clamp(n.z, 0.0, 1.0);
   float shade = 0.50 + 0.42 * diff + 0.14 * up;
 
@@ -188,6 +213,7 @@ varying vec3 vTint;
 varying vec3 vPos;
 varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh;
 uniform float uOpacity;
+` + SHADOW_GLSL + /* glsl */ `
 void main() {
   int s = int(vStyle + 0.5);
   vec3 roof;
@@ -210,8 +236,27 @@ void main() {
   roof *= 0.92 + 0.16 * vRand;
   vec3 n = normalize(vNormal);
   vec3 sun = normalize(vec3(0.45, -0.32, 0.62));
-  float lit = 0.62 + 0.38 * max(dot(n, sun), 0.0);
+  float vis = sunVis(vPos + vec3(0.0, 0.0, 0.5));
+  float lit = 0.62 + 0.38 * max(dot(n, sun), 0.0) * vis;
   gl_FragColor = vec4(roof * lit * vTint, uOpacity);
+}`;
+
+// transparent quad over the whole city: darkens the MapLibre ground where
+// buildings block the sun — streets get real cast shadows
+const CATCHER_FRAG = /* glsl */ `
+precision highp float;
+varying vec3 vPos;
+` + SHADOW_GLSL + /* glsl */ `
+void main() {
+  float vis = sunVis(vPos);
+  gl_FragColor = vec4(0.13, 0.15, 0.19, (1.0 - vis) * 0.22);
+}`;
+
+const CATCHER_VERT = /* glsl */ `
+varying vec3 vPos;
+void main() {
+  vPos = position;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 
 interface Ranges { start: number; count: number }
@@ -443,7 +488,13 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       return g;
     };
 
-    const uniforms = () => ({ uOpacity: { value: 1 }, uCam: { value: new THREE.Vector3(0, 0, 800) } });
+    const uniforms = () => ({
+      uOpacity: { value: 1 },
+      uCam: { value: new THREE.Vector3(0, 0, 800) },
+      uShadow: { value: null as THREE.Texture | null },
+      uSunVP: { value: new THREE.Matrix4() },
+      uShadowOn: { value: 0 },
+    });
     this.wallMat = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: FRAG, uniforms: uniforms(), side: THREE.DoubleSide });
     this.roofMat = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: ROOF_FRAG, uniforms: uniforms(), side: THREE.DoubleSide });
 
@@ -492,6 +543,54 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const sun = new THREE.DirectionalLight(0xffffff, 2.2);
     sun.position.set(0.45, -0.32, 0.62);
     this.scene.add(sun, new THREE.AmbientLight(0xf4efe4, 1.4));
+
+    this.bakeShadows();
+  }
+
+  // One-time sun depth pass — the city is static, so shadows are free at
+  // runtime: a single texture sample per fragment.
+  private bakeShadows() {
+    try {
+      const sunDir = new THREE.Vector3(0.45, -0.32, 0.62).normalize();
+      const look = new THREE.Vector3(0, 150, 0);
+      const cam = new THREE.OrthographicCamera(-1900, 1900, 1600, -1600, 1, 5000);
+      cam.position.copy(look.clone().add(sunDir.clone().multiplyScalar(2400)));
+      cam.up.set(0, 0, 1);
+      cam.lookAt(look);
+      cam.updateMatrixWorld(true);
+
+      const target = new THREE.WebGLRenderTarget(2048, 2048, {
+        minFilter: THREE.NearestFilter,
+        magFilter: THREE.NearestFilter,
+      });
+      const depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
+      this.scene.overrideMaterial = depthMat;
+      this.renderer.setRenderTarget(target);
+      this.renderer.setClearColor(0xffffff, 1);
+      this.renderer.clear();
+      this.renderer.render(this.scene, cam);
+      this.renderer.setRenderTarget(null);
+      this.scene.overrideMaterial = null;
+
+      const sunVP = new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+      const catcherMat = new THREE.ShaderMaterial({
+        vertexShader: CATCHER_VERT,
+        fragmentShader: CATCHER_FRAG,
+        uniforms: { uShadow: { value: target.texture }, uSunVP: { value: sunVP }, uShadowOn: { value: 1 } },
+        transparent: true,
+        depthWrite: false,
+      });
+      for (const mat of [this.wallMat, this.roofMat]) {
+        mat.uniforms.uShadow.value = target.texture;
+        mat.uniforms.uSunVP.value = sunVP;
+        mat.uniforms.uShadowOn.value = 1;
+      }
+      // ground shadow catcher — added AFTER the depth pass so it never self-shadows
+      const ground = new THREE.Mesh(new THREE.PlaneGeometry(3800, 3200).translate(0, 150, 0.07), catcherMat);
+      this.scene.add(ground);
+    } catch {
+      // shadows are enhancement, never a blocker — flat lighting still ships
+    }
   }
 
   setTints(tints: Map<string, [number, number, number]>) {

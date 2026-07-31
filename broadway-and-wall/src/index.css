@@ -239,3 +239,31 @@ body {
   box-shadow: 0 3px 12px rgba(40,32,12,0.2);
 }
 .lens-on-teal { background: var(--teal) !important; border-color: #23625b !important; }
+
+/* ---- phase 3: deals desk ---- */
+.loi {
+  border: 1px solid rgba(146,110,40,0.3); border-radius: 6px;
+  padding: 9px 11px; margin-bottom: 8px; font-size: 12px;
+  background: rgba(43,37,26,0.03);
+}
+.loi-addr {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-family: var(--serif); font-size: 14px; color: var(--ink);
+}
+.loi-addr:hover { color: var(--gold); }
+.loi-line { margin-top: 3px; line-height: 1.4; }
+.loi .btn-row { margin-top: 8px; }
+.dim { color: var(--ink-dim); }
+.chip-renewal { background: #7a5f9e; color: #fdfbf4; margin-left: 6px; font-size: 9px; padding: 2px 6px; }
+.chip-sweep { background: #a8402e; color: #fdfbf4; }
+.v-bad { color: #a8402e; font-weight: 700; }
+
+.roll { display: flex; flex-direction: column; gap: 3px; }
+.roll-row {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  font-size: 12px; padding: 3px 0; border-bottom: 1px dotted rgba(43,37,26,0.12);
+}
+.roll-name { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.roll-credit { color: var(--ink-dim); font-size: 10px; }
+.roll-meta { color: var(--ink-dim); font-size: 11px; white-space: nowrap; }
+.roll-vacant .roll-name { color: var(--ink-dim); font-style: italic; }

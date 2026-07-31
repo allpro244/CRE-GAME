@@ -2,12 +2,14 @@ import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState } from "@/engine/types";
 import { newGame, advanceQuarter, firstListings, portfolioQuarterlyCF } from "@/engine/sim";
-import { buyListing, sellHolding, startRenovation } from "@/engine/actions";
+import { buyListing, buyOffMarket, approachOwner, sellHolding, startRenovation, type BuyProduct } from "@/engine/actions";
+import { respondLOI, type LOIAction } from "@/engine/leasing";
+import { refinance } from "@/engine/debt";
 import { netWorth } from "@/engine/value";
 import { loadGame, saveGame } from "@/engine/save";
 
 export type Lens = "none" | "land" | "demand";
-export type Tab = "parcel" | "portfolio" | "market";
+export type Tab = "parcel" | "portfolio" | "market" | "deals";
 
 interface AppState {
   parcels: ParcelTable | null;
@@ -30,7 +32,11 @@ interface AppState {
   setFps: (fps: number) => void;
   setLoadError: (e: string) => void;
   advance: () => void;
-  buy: (bbl: string, financed: boolean) => void;
+  buy: (bbl: string, product: BuyProduct) => void;
+  buyOff: (bbl: string, product: BuyProduct) => void;
+  approach: (bbl: string) => void;
+  respondLoi: (id: number, action: LOIAction) => void;
+  refi: (bbl: string, product: "fixed" | "float") => void;
   sell: (bbl: string) => void;
   renovate: (bbl: string) => void;
   newRun: () => void;
@@ -73,13 +79,53 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(next);
   },
 
-  buy: (bbl, financed) => {
+  buy: (bbl, product) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = buyListing(game, parcels, bbl, financed);
+    const r = buyListing(game, parcels, bbl, product);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("Deed recorded. The block knows your name now.");
+    void persist(r.s);
+  },
+
+  buyOff: (bbl, product) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = buyOffMarket(game, parcels, bbl, product);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast("Off-market. Nobody saw it trade.");
+    void persist(r.s);
+  },
+
+  approach: (bbl) => {
+    const { game, parcels, adjacency } = get();
+    if (!game || !parcels || !adjacency) return;
+    const r = approachOwner(game, parcels, adjacency, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.refused ? "The owner isn't selling." : "They named a number.", r.refused ? "err" : "ok");
+    void persist(r.s);
+  },
+
+  respondLoi: (id, action) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = respondLOI(game, parcels, id, action);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    if (r.msg) toast(r.msg);
+    void persist(r.s);
+  },
+
+  refi: (bbl, product) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = refinance(game, parcels, bbl, product);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast("Repriced. New paper, new clock.");
     void persist(r.s);
   },
 
@@ -150,7 +196,7 @@ export async function loadData() {
     // resume the autosave — unless it references parcels that no longer
     // exist (a save from a different city/dataset), in which case start over
     const saved = await loadGame("auto");
-    const fitsCity = saved && saved.v === 1 &&
+    const fitsCity = saved && saved.v === 2 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (fitsCity) {

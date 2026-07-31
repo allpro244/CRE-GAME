@@ -51,7 +51,10 @@ export function occupancy(rec: ParcelRecord, econ: Econ): number {
 }
 
 const OPEX_RATIO: Record<BuiltClass, number> = { office: 0.38, retail: 0.30, mixed: 0.36, multifamily: 0.42 };
+// landlord operating cost per sf/yr — paid on vacant space and gross leases
+export const OPEX_PSF: Record<BuiltClass, number> = { office: 13, retail: 8, mixed: 11, multifamily: 10 };
 
+// market-implied NOI (unowned parcels; also the stabilized case for owned)
 export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition): number {
   if (rec.class === "land" || !rec.bldgArea) {
     // carry: taxes and insurance bleed on idle land
@@ -60,6 +63,29 @@ export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition): numb
   const cls = rec.class as BuiltClass;
   const gross = rec.bldgArea * marketRentPsfYr(rec, econ, condition) * occupancy(rec, econ);
   return gross * (1 - OPEX_RATIO[cls]);
+}
+
+// in-place NOI from the actual rent roll (owned assets, Phase 3 onward)
+export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ: number): number {
+  if (h.renovatingUntilQ !== undefined && currentQ < h.renovatingUntilQ) {
+    return -Math.max(0, rec.bldgArea) * 1.2; // dark during the gut
+  }
+  if (rec.class === "land" || !rec.bldgArea) return -landValue(rec, econ) * 0.012;
+  const cls = rec.class as BuiltClass;
+  if (cls === "multifamily") {
+    const occ = h.occ ?? occupancy(rec, econ);
+    return rec.bldgArea * (marketRentPsfYr(rec, econ, h.condition) * occ - OPEX_PSF[cls]);
+  }
+  let egi = 0, grossLeasedSf = 0, leasedSf = 0;
+  for (const t of h.tenants) {
+    leasedSf += t.sf;
+    if (t.freeUntilQ !== undefined && currentQ < t.freeUntilQ) continue; // free-rent burn-off
+    egi += t.rentPsf * t.sf;
+    if (!t.net) grossLeasedSf += t.sf; // gross leases: landlord absorbs opex
+  }
+  const vacant = Math.max(0, rec.bldgArea - leasedSf);
+  const opex = OPEX_PSF[cls] * (vacant + grossLeasedSf) + egi * 0.04; // vacancy carry + management
+  return egi - opex;
 }
 
 export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition): number {
@@ -71,16 +97,19 @@ export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition):
   return Math.max(income, land * 0.92);
 }
 
+// owned assets appraise on a blend of in-place income and stabilized market —
+// an empty building isn't worthless, but it isn't stabilized either
 export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding): number {
-  return assetValue(rec, econ, h.condition);
+  if (rec.class === "land" || !rec.bldgArea) return landValue(rec, econ);
+  const cls = rec.class as BuiltClass;
+  const cap = econ.capRate[cls] / 100;
+  const inPlace = holdingNOIYr(rec, econ, h, h.renovatingUntilQ ?? -1) / cap;
+  const stabilized = noiYr(rec, econ, h.condition) / cap;
+  return Math.max(landValue(rec, econ) * 0.92, inPlace * 0.55 + stabilized * 0.45);
 }
 
 export function quarterlyNOI(rec: ParcelRecord, econ: Econ, h: Holding, currentQ: number): number {
-  // a building under renovation runs dark
-  if (h.renovatingUntilQ !== undefined && currentQ < h.renovatingUntilQ) {
-    return -Math.max(0, rec.bldgArea) * 1.2 / 4; // carry costs while dark, $/sf/yr
-  }
-  return noiYr(rec, econ, h.condition) / 4;
+  return holdingNOIYr(rec, econ, h, currentQ) / 4;
 }
 
 export const RENO_COST_PSF: Record<BuiltClass, number> = { office: 210, retail: 150, mixed: 190, multifamily: 165 };

@@ -76,12 +76,13 @@ const innerRing = offsetInward(COAST_M, ESPLANADE_W);
 
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 
-// Activity cores: the Exchange, Old Harbor, and the Point.
+// Activity cores. Harbor Square is THE core — the skyline peaks there and
+// tapers away; the back of the map stays low so the drama reads from the bay.
 const CORES = [
-  { xy: [80, 330], w: 1.0, r: 420 },    // the Exchange
-  { xy: [420, -150], w: 0.85, r: 280 }, // Old Harbor
-  { xy: [980, -30], w: 0.5, r: 280 },   // the Point
-  { xy: [-80, 700], w: 0.3, r: 300 },   // North Plaza
+  { xy: [420, -60], w: 1.0, r: 340 },   // Harbor Square — the summit
+  { xy: [140, 180], w: 0.6, r: 380 },   // lower Exchange, shoulder of the peak
+  { xy: [980, -30], w: 0.38, r: 250 },  // the Point
+  { xy: [-80, 700], w: 0.14, r: 260 },  // North Plaza — background calm
 ];
 function coreHeat(p) {
   let h = 0;
@@ -193,7 +194,10 @@ if (oldHarborRing) {
   for (const r of irregular) blocks.push({ ring: r, district: "oldharbor" });
 }
 
-// grid layers per district, each at its own bearing
+// grid layers per district, each at its own bearing. NOT stamped rectangles:
+// row/column pitches wander, every corner carries a few meters of jitter,
+// and some corners get chamfered — the grid keeps its logic but reads as a
+// city that was surveyed by humans, easing the contrast with Old Harbor.
 function gridLayer({ bearingDeg, stPitch, avePitch, blockW, blockU, district, numbered }) {
   const th = (bearingDeg * Math.PI) / 180;
   const A = [Math.sin(th), Math.cos(th)], S = [Math.cos(th), -Math.sin(th)];
@@ -204,17 +208,40 @@ function gridLayer({ bearingDeg, stPitch, avePitch, blockW, blockU, district, nu
     if (zw < zwMin) zwMin = zw; if (zw > zwMax) zwMax = zw;
     if (zu < zuMin) zuMin = zu; if (zu > zuMax) zuMax = zu;
   }
-  for (let w = zwMin; w < zwMax; w += stPitch) {
-    for (let u = zuMin; u < zuMax; u += avePitch) {
-      const ring = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([cu, cw]) => at(u + cu * blockU, w + cw * blockW));
-      const center = at(u + blockU / 2, w + blockW / 2);
+  // wandering pitches: precompute row/column positions
+  const rows = [];
+  for (let w = zwMin; w < zwMax; w += stPitch * rr(0.86, 1.2)) rows.push(w);
+  const cols = [];
+  for (let u = zuMin; u < zuMax; u += avePitch * rr(0.8, 1.25)) cols.push(u);
+
+  for (let ri = 0; ri < rows.length - 1; ri++) {
+    const w = rows[ri];
+    const bw = Math.min(blockW, (rows[ri + 1] - w) - (stPitch - blockW));
+    if (bw < 30) continue;
+    for (let ci = 0; ci < cols.length - 1; ci++) {
+      const u = cols[ci];
+      const bu = Math.min(blockU * 1.35, (cols[ci + 1] - u) - (avePitch - blockU));
+      if (bu < 55) continue;
+      let ring = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([cu, cw]) => at(u + cu * bu, w + cw * bw));
+      // survey jitter on every corner
+      ring = ring.map(([x, y]) => [x + rr(-2.6, 2.6), y + rr(-2.6, 2.6)]);
+      // occasional chamfered corner breaks the rectangle silhouette
+      if (rand() < 0.16) {
+        const i = Math.floor(rand() * 4);
+        const prev = ring[(i + 3) % 4], cur = ring[i], nxt = ring[(i + 1) % 4];
+        const cut = rr(0.15, 0.4);
+        const p1 = [cur[0] + (prev[0] - cur[0]) * cut, cur[1] + (prev[1] - cur[1]) * cut];
+        const p2 = [cur[0] + (nxt[0] - cur[0]) * cut, cur[1] + (nxt[1] - cur[1]) * cut];
+        ring = ring.flatMap((pt, j) => (j === i ? [p1, p2] : [pt]));
+      }
+      const center = at(u + bu / 2, w + bw / 2);
       if (districtOf(center) !== district) continue;
       if (!ring.every((c) => inRing(c, innerRing))) continue;
       if (PARKS_M.some((p) => inRing(center, p))) continue;
       blocks.push({
         ring, district,
-        numbered: numbered ? Math.max(1, Math.round((w - zwMin) / stPitch)) : undefined,
-        u: u + blockU / 2,
+        numbered: numbered ? Math.max(1, ri + 1) : undefined,
+        u: u + bu / 2,
         uFifth: (zuMin + zuMax) / 2,
       });
     }
@@ -333,27 +360,31 @@ for (const block of blocks) {
     const yearbuilt = vacant ? 0 : yearFor(d);
     let floors = 0, bldgArea = 0, footprint = null, heightM = 0;
     if (!vacant) {
-      // a young skyline: towers are rarer and shorter than Manhattan's
-      const towerP = d === "millside" ? 0 : Math.min(0.6, h * h * 0.85 + (areaM2 > 1500 ? 0.12 : 0));
+      // a young skyline that PEAKS AT HARBOR SQUARE: tower odds are gated by
+      // district so the tall stuff clusters at the core, not the back rows
+      const towerGate = d === "millside" ? 0 : d === "northside" ? 0.10 : d === "point" ? 0.5 : 1;
+      const towerP = Math.min(0.6, (h * h * 0.9 + (areaM2 > 1500 ? 0.1 : 0)) * towerGate);
       let coverage;
       if (areaM2 > 240 && rand() < towerP) {
-        floors = Math.round(rr(13, 40));
-        coverage = rr(0.5, 0.72);
+        floors = Math.round(rr(13, 26) + h * rr(4, 16)); // tallest only where heat is highest
+        coverage = rr(0.46, 0.62);
       } else if (d !== "millside" && rand() < 0.35 + h * 0.4) {
-        floors = Math.round(rr(5, 13));
-        coverage = rr(0.72, 0.9);
+        floors = Math.round(d === "northside" ? rr(4, 8) : rr(5, 13));
+        coverage = rr(0.58, 0.74);
       } else {
         floors = Math.round(d === "millside" ? rr(1, 4) : rr(2, 6));
-        coverage = rr(0.75, 0.95);
+        coverage = rr(0.6, 0.78);
       }
+      if (d === "northside") floors = Math.min(floors, 10);
       if (cls === "G1") floors = Math.min(floors, 4);
       if (cls === "K2") floors = Math.min(floors, 3);
       if (cls === "E9") floors = Math.min(floors, 4);
       if (yearbuilt >= 1961) {
         floors = Math.min(floors, Math.max(1, Math.round(Math.max(zone.commfar, zone.resfar) / coverage)));
       }
+      // a real side-yard: buildings never kiss their neighbors
       const side = Math.sqrt(areaM2);
-      footprint = insetRing(lotRing, (side * (1 - Math.sqrt(coverage))) / 2);
+      footprint = insetRing(lotRing, Math.max(1.1, (side * (1 - Math.sqrt(coverage))) / 2));
       const realCov = footprint ? polygonArea([footprint]) / areaM2 : coverage;
       bldgArea = Math.round(lotArea * realCov * floors);
       heightM = floors * 3.55 + rr(1, 4);

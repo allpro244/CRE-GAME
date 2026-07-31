@@ -1,18 +1,18 @@
 # Broadway & Wall
 
-A commercial real estate tycoon game on a real 3D map of New York City. Spec: `broadway-and-wall-spec-v2.md`. This is the fresh build that inherits Groundwork's engine philosophy (pure-function simulation, honest economics) — Groundwork itself lives at the repo root and its `src/engine.ts` is the porting source for the leasing, debt, and rival systems in later phases.
+A commercial real estate tycoon game set in **Ashport** — a compact fictional harbor city (~1,800 lots) that starts young and gets built out over the campaign. Spec: `broadway-and-wall-spec-v2.md` (originally NYC-targeted; the map pivoted to a small fictional city for play density — the NYC pipeline below still works). Inherits Groundwork's engine philosophy (pure-function simulation, honest economics); Groundwork itself lives at the repo root.
 
-**Phase 1 (this branch): map foundation.** Data pipeline → PMTiles, MapLibre 3D map with building extrusions, parcel hover/select with the PLUTO record, and the lot-line adjacency graph that will power land assembly. The dev dataset now covers the **full island of Manhattan** (~49k lots); the real-data fetch is parameterized per community district (`101`, a comma list, or `MN` for all twelve).
+**Ashport's districts:** Old Harbor (irregular colonial core), the Exchange (office grid + height core), Northside (brownstones), Millside (industrial, ripe for redevelopment), the Point (waterfront tower pads), plus Founders Park, squares, piers, and a 13-station transit net that drives the demand map.
 
 ## Running
 
 ```bash
 pnpm install          # from repo root or this directory (workspace member)
-pnpm pipeline:dev     # offline synthetic dev dataset (see below)
+pnpm pipeline:dev     # generate Ashport (deterministic, offline)
 pnpm dev              # vite dev server
 ```
 
-Or with real NYC data (needs network access to NYC Open Data / data.ny.gov / census.gov):
+Alternative datasets — synthetic Manhattan (`pnpm pipeline:manhattan`) or real NYC data (needs network access to NYC Open Data / data.ny.gov / census.gov; set `VITE_BASEMAP_STYLE` for a street basemap):
 
 ```bash
 pnpm pipeline                              # fetch → process → tiles, defaults to --district 101

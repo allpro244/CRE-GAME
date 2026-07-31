@@ -29,8 +29,9 @@ export type ParcelTable = Record<string, ParcelRecord>;
 export type Adjacency = Record<string, string[]>;
 
 export interface DataManifest {
-  source: "nyc-open-data" | "synthetic";
+  source: "nyc-open-data" | "synthetic" | "fictional";
   district: string;
+  city?: string;
   lots: number;
   adjacencyEdges: number;
 }

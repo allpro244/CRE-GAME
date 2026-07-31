@@ -25,10 +25,16 @@ loading their own data files, so the game needs the small server to run.
 
 WHAT YOU'RE LOOKING AT
 ----------------------
-The whole island of Manhattan — about 49,000 individual tax lots, each one
-selectable, each with its own record: lot area, building area, floors, year
-built, zoning district, FAR built vs. allowed, assessed values, and a demand
-score computed from subway proximity and workplace employment.
+Ashport — a fictional harbor city of about 1,800 lots, every one selectable
+with its own record: lot area, building area, floors, year built, zoning,
+FAR built vs. allowed, assessed values, and a demand score computed from
+transit proximity and workplace employment.
+
+The districts: Old Harbor (the crooked colonial core), the Exchange (the
+office grid), Northside (brownstones), Millside (aging industrial — cheap
+land, big lots), and the Point (waterfront tower pads). The city is young:
+plenty of it is vacant or waiting to be torn down and built better. That's
+your opening.
 
 Click any building. Drag to pan, right-drag to rotate, scroll to zoom.
 
@@ -69,24 +75,12 @@ Your game autosaves to the browser every quarter — just reopen to continue.
 It saves per-browser, so play in the same one.
 
 
-ABOUT THE DATA
+ABOUT THE CITY
 --------------
-The top bar says SYNTHETIC DEV DATA. The build machine had no network access
-to NYC Open Data, so this dataset is procedurally generated: the coastline,
-the 29°-rotated street grid north of Houston, the stitched
-neighborhood grids downtown, Central Park and a dozen other
-parks, the subway stations, and the height cores at FiDi and Midtown are all
-real-ish, but the individual lots are invented — plausible, not factual.
-
-The pipeline for real data is built and ready. From the source repo:
-
-    node pipeline/fetch.mjs --district MN   # real MapPLUTO, all of Manhattan
-    node pipeline/process.mjs
-    node pipeline/tiles.mjs
-
-That pulls genuine tax lots, building footprints and roof heights, MTA
-stations, and Census employment. The badge disappears on its own when the
-data is real.
+Ashport is fictional and deterministic — same seed, same city, no downloads,
+no accounts. (The source repo also ships a full pipeline for playing on real
+NYC data — genuine tax lots, footprints, subway ridership — if you ever want
+the big-league version back.)
 
 
 SOURCE

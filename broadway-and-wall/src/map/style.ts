@@ -1,12 +1,10 @@
 import type { StyleSpecification, SourceSpecification, LayerSpecification } from "maplibre-gl";
 
-// Basemap style URL — configurable, keyless default. Positron is the clean
-// pale architectural-model base (white streets, soft parks/water). If it is
-// unreachable at runtime we fall back to a self-contained light style built
-// from our own context.geojson.
-export const BASEMAP_URL: string =
-  (import.meta.env.VITE_BASEMAP_STYLE as string | undefined) ??
-  "https://tiles.openfreemap.org/styles/positron";
+// Ashport is fictional — the self-contained style built from context.geojson
+// IS the basemap, so no network fetch by default. Set VITE_BASEMAP_STYLE to
+// a style URL (e.g. OpenFreeMap Positron) when running on real NYC data.
+export const BASEMAP_URL: string | undefined =
+  import.meta.env.VITE_BASEMAP_STYLE as string | undefined;
 
 const data = (f: string) => import.meta.env.BASE_URL + "data/" + f;
 
@@ -189,11 +187,27 @@ export function fallbackBaseStyle(): StyleSpecification {
         filter: ["==", ["get", "kind"], "land"],
         paint: { "line-color": "#a3b8c6", "line-width": 1 },
       },
+      {
+        // transit stations — the anchors of the demand map
+        id: "stations",
+        type: "circle",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "station"],
+        minzoom: 12.5,
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 2.5, 16, 4.5],
+          "circle-color": "#5b6b7a",
+          "circle-stroke-color": "#f4f3ef",
+          "circle-stroke-width": 1.2,
+          "circle-pitch-alignment": "map",
+        },
+      },
     ],
   };
 }
 
 export async function resolveBaseStyle(): Promise<StyleSpecification> {
+  if (!BASEMAP_URL) return fallbackBaseStyle();
   try {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), 3500);

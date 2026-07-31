@@ -17,7 +17,7 @@ export default function TopBar() {
       <div className="brand">
         <span className="brand-name">Broadway &amp; Wall</span>
         <span className="brand-sub">
-          {manifest?.district === "MN" ? "Manhattan" : "Lower Manhattan · CD 1"}
+          {manifest?.city ?? (manifest?.district === "MN" ? "Manhattan" : "Lower Manhattan · CD 1")}
         </span>
         {manifest?.source === "synthetic" && (
           <span className="badge badge-warn" title="Generated stand-in data — run `pnpm pipeline` on an open network to fetch real PLUTO data.">

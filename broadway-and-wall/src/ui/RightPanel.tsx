@@ -68,7 +68,7 @@ function ParcelTab() {
       <div className="panel-head">
         <div>
           <div className="panel-address">{rec.address}</div>
-          <div className="panel-bbl mono">BBL {rec.bbl}</div>
+          <div className="panel-bbl mono">Parcel {rec.bbl}</div>
         </div>
         <button className="panel-close" onClick={() => select(null)} aria-label="Close">×</button>
       </div>

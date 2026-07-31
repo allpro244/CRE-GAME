@@ -1,9 +1,10 @@
 {
-  "source": "synthetic",
-  "district": "MN",
-  "seed": 10007,
+  "source": "fictional",
+  "city": "Ashport",
+  "district": "ashport",
+  "seed": 20250,
   "lodes": true,
-  "lots": 47105,
-  "adjacencyEdges": 101653,
+  "lots": 1838,
+  "adjacencyEdges": 3182,
   "processed": true
 }

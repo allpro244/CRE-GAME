@@ -147,9 +147,13 @@ export async function loadData() {
       fetch(base + "manifest.json").then((r) => { if (!r.ok) throw new Error(`manifest.json ${r.status}`); return r.json(); }),
     ]);
     useStore.getState().setData({ parcels, adjacency, manifest });
-    // resume the autosave or open a fresh run
+    // resume the autosave — unless it references parcels that no longer
+    // exist (a save from a different city/dataset), in which case start over
     const saved = await loadGame("auto");
-    if (saved && saved.v === 1) {
+    const fitsCity = saved && saved.v === 1 &&
+      Object.keys(saved.holdings).every((b) => parcels[b]) &&
+      saved.listings.every((l) => parcels[l.bbl]);
+    if (fitsCity) {
       useStore.setState({ game: saved });
     } else {
       useStore.getState().newRun();

@@ -9,11 +9,13 @@
     "preview": "vite preview",
     "package": "tsc -b && vite build && node package/build-zip.mjs",
     "pipeline:fetch": "node pipeline/fetch.mjs",
+    "pipeline:city": "node pipeline/city.mjs",
     "pipeline:synth": "node pipeline/synth.mjs",
     "pipeline:process": "node pipeline/process.mjs",
     "pipeline:tiles": "node pipeline/tiles.mjs",
     "pipeline": "node pipeline/fetch.mjs && node pipeline/process.mjs && node pipeline/tiles.mjs",
-    "pipeline:dev": "node pipeline/synth.mjs && node pipeline/process.mjs && node pipeline/tiles.mjs"
+    "pipeline:dev": "node pipeline/city.mjs && node pipeline/process.mjs && node pipeline/tiles.mjs",
+    "pipeline:manhattan": "node pipeline/synth.mjs && node pipeline/process.mjs && node pipeline/tiles.mjs"
   },
   "dependencies": {
     "maplibre-gl": "^5.9.1",

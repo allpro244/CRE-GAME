@@ -27,7 +27,7 @@ export function newGame(seed: number): GameState {
   s.news.push({
     q: 0,
     kind: "info",
-    text: `${quarterLabel(0)}. You arrive in Manhattan with $6M and an appetite. Everything on this island has a price.`,
+    text: `${quarterLabel(0)}. You arrive in Ashport with $6M and an appetite. This town is young — half of it hasn't been built yet, and everything has a price.`,
   });
   return s;
 }

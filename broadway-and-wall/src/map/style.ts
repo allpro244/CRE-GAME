@@ -41,14 +41,16 @@ export function gameLayers(): LayerSpecification[] {
           selected, "#d9a648",
           neighbor, "#3f8f87",
           hovered, "#8a8577",
-          "#7d7a70",
+          "#8d8a82",
         ] as never,
+        // blocks sit a step darker than the white streets so the street
+        // network stays legible even where the basemap is hidden
         "fill-opacity": [
           "case",
           selected, 0.45,
           neighbor, 0.35,
-          hovered, 0.18,
-          0.06,
+          hovered, 0.2,
+          0.1,
         ] as never,
       },
     },
@@ -163,9 +165,16 @@ export async function resolveBaseStyle(): Promise<StyleSpecification> {
 }
 
 export function composeStyle(base: StyleSpecification): StyleSpecification {
+  // Model-city cleanliness: strip basemap labels/POIs unless asked to keep
+  // them (VITE_BASEMAP_LABELS=on). Roads, parks, and water stay.
+  const keepLabels = import.meta.env.VITE_BASEMAP_LABELS === "on";
+  const baseLayers = (base.layers ?? []).filter((l) => keepLabels || l.type !== "symbol");
   return {
     ...base,
+    // a low sun off the port side gives extrusion faces the model-photo
+    // contrast; anchored to the map so shading stays put as you orbit
+    light: { anchor: "map", color: "#ffffff", intensity: 0.42, position: [1.15, 135, 55] },
     sources: { ...base.sources, ...gameSources() },
-    layers: [...(base.layers ?? []), ...gameLayers()],
+    layers: [...baseLayers, ...gameLayers()],
   };
 }

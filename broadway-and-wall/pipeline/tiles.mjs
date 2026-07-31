@@ -11,7 +11,7 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
 const OUT = join(ROOT, "out");
 const PUB = join(ROOT, "..", "public", "data");
 
-const MINZ = 12, MAXZ = 16;
+const MINZ = 10, MAXZ = 15; // MapLibre overzooms past MAXZ; keeps archives lean
 
 function bboxOfFC(fc) {
   let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
@@ -36,8 +36,8 @@ function makeArchive(file, layerName, fields) {
   const bounds = bboxOfFC(fc);
   const index = geojsonvt(fc, {
     maxZoom: MAXZ,
-    indexMaxZoom: MAXZ,
-    indexMaxPoints: 0,     // index every tile up front — small district, exact geometry
+    indexMaxZoom: 10,       // deeper tiles generate lazily — island-scale safe
+    indexMaxPoints: 100000,
     tolerance: 1.5,
     buffer: 96,
     extent: 4096,

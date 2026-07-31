@@ -3,7 +3,8 @@
 //   public/data/adjacency.json — BBL -> neighboring BBLs (shared lot lines)
 //   public/data/stations.json, context.geojson, manifest.json
 //   pipeline/out/{parcels,buildings}.geojson — inputs for tiles.mjs
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { gzipSync } from "node:zlib";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeProjection, polygonArea, centroid, bboxOfRing, sharedBoundaryLength } from "./lib/geom.mjs";
@@ -91,6 +92,12 @@ for (const l of lots) {
 }
 
 // --- demand kernels ---------------------------------------------------------
+// keep stations within 1.5 km of the study area so a citywide dataset works
+let lotsMinX = Infinity, lotsMinY = Infinity, lotsMaxX = -Infinity, lotsMaxY = -Infinity;
+for (const l of lots) {
+  if (l.c[0] < lotsMinX) lotsMinX = l.c[0]; if (l.c[0] > lotsMaxX) lotsMaxX = l.c[0];
+  if (l.c[1] < lotsMinY) lotsMinY = l.c[1]; if (l.c[1] > lotsMaxY) lotsMaxY = l.c[1];
+}
 const stationPts = rawStations.features
   .filter((f) => f.geometry?.type === "Point")
   .map((f) => ({
@@ -100,8 +107,9 @@ const stationPts = rawStations.features
     lines: f.properties.daytime_routes ?? f.properties.line ?? "",
     ll: f.geometry.coordinates,
   }))
-  // keep stations within 1.5 km of the district so a citywide dataset works
-  .filter((s) => Math.hypot(s.xy[0], s.xy[1]) < 4000);
+  .filter((s) =>
+    s.xy[0] > lotsMinX - 1500 && s.xy[0] < lotsMaxX + 1500 &&
+    s.xy[1] > lotsMinY - 1500 && s.xy[1] < lotsMaxY + 1500);
 
 let jobPts;
 if (employment?.features?.length) {
@@ -114,14 +122,34 @@ if (employment?.features?.length) {
   console.warn("No LODES employment file — using built-area employment proxy for demandScore.");
 }
 
+// gaussian kernels with a 3σ cutoff via a bucket index — island-scale safe
 const gauss = (d, r) => Math.exp(-(d * d) / (2 * r * r));
-function demandRaw(c) {
-  let transit = 0, emp = 0;
-  for (const s of stationPts) transit += s.w * gauss(Math.hypot(c[0] - s.xy[0], c[1] - s.xy[1]), 350);
-  for (const j of jobPts) emp += j.jobs * gauss(Math.hypot(c[0] - j.xy[0], c[1] - j.xy[1]), 300);
-  return { transit, emp };
+function bucketIndex(pts, cell) {
+  const m = new Map();
+  for (const p of pts) {
+    const k = Math.floor(p.xy[0] / cell) + ":" + Math.floor(p.xy[1] / cell);
+    if (!m.has(k)) m.set(k, []);
+    m.get(k).push(p);
+  }
+  return (c, radius, fn) => {
+    const r = Math.ceil(radius / cell);
+    const gx = Math.floor(c[0] / cell), gy = Math.floor(c[1] / cell);
+    let acc = 0;
+    for (let dx = -r; dx <= r; dx++)
+      for (let dy = -r; dy <= r; dy++)
+        for (const p of m.get((gx + dx) + ":" + (gy + dy)) ?? []) {
+          const d = Math.hypot(c[0] - p.xy[0], c[1] - p.xy[1]);
+          if (d <= radius) acc += fn(p, d);
+        }
+    return acc;
+  };
 }
-const raws = lots.map((l) => demandRaw(l.c));
+const nearStations = bucketIndex(stationPts, 350);
+const nearJobs = bucketIndex(jobPts, 300);
+const raws = lots.map((l) => ({
+  transit: nearStations(l.c, 1050, (s, d) => s.w * gauss(d, 350)),
+  emp: nearJobs(l.c, 900, (j, d) => j.jobs * gauss(d, 300)),
+}));
 const p95 = (arr) => { const s = [...arr].sort((a, b) => a - b); return s[Math.floor(s.length * 0.95)] || 1; };
 const t95 = p95(raws.map((r) => r.transit));
 const e95 = p95(raws.map((r) => r.emp));
@@ -258,8 +286,10 @@ for (const f of rawBuildings.features) {
   });
 }
 
-writeFileSync(join(PUB, "parcels.json"), JSON.stringify(table));
-writeFileSync(join(PUB, "adjacency.json"), JSON.stringify(adjacency));
+// the two big payloads ship gzipped; the app inflates via DecompressionStream
+writeFileSync(join(PUB, "parcels.json.gz"), gzipSync(JSON.stringify(table), { level: 9 }));
+writeFileSync(join(PUB, "adjacency.json.gz"), gzipSync(JSON.stringify(adjacency), { level: 9 }));
+for (const f of ["parcels.json", "adjacency.json"]) rmSync(join(PUB, f), { force: true });
 writeFileSync(join(PUB, "stations.json"), JSON.stringify(stationPts.map((s) => ({ name: s.name, lines: s.lines, ll: s.ll }))));
 if (existsSync(join(RAW, "context.geojson")))
   writeFileSync(join(PUB, "context.geojson"), readFileSync(join(RAW, "context.geojson")));

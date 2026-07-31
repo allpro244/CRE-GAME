@@ -7,7 +7,9 @@ export default function TopBar() {
     <div className="topbar">
       <div className="brand">
         <span className="brand-name">Broadway &amp; Wall</span>
-        <span className="brand-sub">Lower Manhattan · Community District 1</span>
+        <span className="brand-sub">
+          {manifest?.district === "MN" ? "Manhattan" : "Lower Manhattan · Community District 1"}
+        </span>
       </div>
       <div className="topbar-right">
         {manifest?.source === "synthetic" && (

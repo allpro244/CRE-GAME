@@ -5,9 +5,10 @@ import { Protocol } from "pmtiles";
 import { useStore } from "@/state/store";
 import { composeStyle, resolveBaseStyle } from "./style";
 
-// Fly-in target: Financial District at map-model pitch.
-const FIDI = { center: [-74.0095, 40.7068] as [number, number], zoom: 15.4, pitch: 55, bearing: -14 };
-const HARBOR = { center: [-74.028, 40.685] as [number, number], zoom: 12.2, pitch: 20, bearing: -30 };
+// Fly-in: open over the harbor with the whole island in frame, then dive
+// to the Financial District at map-model pitch.
+const FIDI = { center: [-74.0095, 40.7068] as [number, number], zoom: 15.2, pitch: 55, bearing: -14 };
+const HARBOR = { center: [-73.985, 40.72] as [number, number], zoom: 11.2, pitch: 30, bearing: -25 };
 
 let protocolAdded = false;
 
@@ -37,6 +38,7 @@ export default function MapView() {
         container: el.current,
         style: composeStyle(base),
         ...HARBOR,
+        minZoom: 10.2, // game tiles start at z10 — never let the city vanish
         maxPitch: 70,
         attributionControl: { compact: true },
         canvasContextAttributes: { antialias: true },
@@ -53,7 +55,7 @@ export default function MapView() {
 
       map.on("load", () => {
         // the cinematic fly-in
-        map.flyTo({ ...FIDI, duration: 5000, essential: true });
+        map.flyTo({ ...FIDI, duration: 6000, essential: true });
 
         map.on("mousemove", "bw-parcel-fill", (e) => {
           const f = e.features?.[0];

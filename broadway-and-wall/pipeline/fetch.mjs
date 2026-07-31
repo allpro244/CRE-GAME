@@ -15,17 +15,24 @@ const RAW = join(ROOT, "raw");
 mkdirSync(RAW, { recursive: true });
 
 const argv = process.argv.slice(2);
-const district = argv.includes("--district") ? argv[argv.indexOf("--district") + 1] : "101";
+// --district accepts one CD ("101"), a comma list ("101,102"), or "MN"
+// (all twelve Manhattan community districts).
+const districtArg = argv.includes("--district") ? argv[argv.indexOf("--district") + 1] : "101";
+const districts = districtArg.toUpperCase() === "MN"
+  ? Array.from({ length: 12 }, (_, i) => String(101 + i))
+  : districtArg.split(",").map((s) => s.trim());
+const district = districtArg;
 
 const SOURCES = {
   // MapPLUTO — one record per tax lot, with lot polygon. Dataset id on data.cityofnewyork.us.
+  // NOTE: $limit must equal getPaged's PAGE size — paging stops on a short batch.
   mappluto: (cd) =>
-    `https://data.cityofnewyork.us/resource/64uk-42ks.geojson?$where=cd='${cd}'&$limit=20000`,
+    `https://data.cityofnewyork.us/resource/64uk-42ks.geojson?$where=cd='${cd}'&$limit=20000&$order=bbl`,
   mapplutoNumericCd: (cd) =>
-    `https://data.cityofnewyork.us/resource/64uk-42ks.geojson?$where=cd=${cd}&$limit=20000`,
+    `https://data.cityofnewyork.us/resource/64uk-42ks.geojson?$where=cd=${cd}&$limit=20000&$order=bbl`,
   // Building Footprints — polygon + roof height, joined by base BBL.
   footprints: (wkt) =>
-    `https://data.cityofnewyork.us/resource/qb5r-6dgf.geojson?$where=intersects(the_geom,'${wkt}')&$limit=40000`,
+    `https://data.cityofnewyork.us/resource/qb5r-6dgf.geojson?$where=intersects(the_geom,'${wkt}')&$limit=20000&$order=bin`,
   // MTA subway stations (data.ny.gov).
   stations: () =>
     `https://data.ny.gov/resource/39hk-dx4f.geojson?$limit=1000`,
@@ -55,21 +62,40 @@ function bboxWKT(fc, padDeg = 0.002) {
   return `POLYGON((${w} ${s},${e} ${s},${e} ${n},${w} ${n},${w} ${s}))`;
 }
 
-console.log(`Fetching MapPLUTO for community district ${district}…`);
-let parcels;
-try {
-  parcels = await get(SOURCES.mappluto(district));
-} catch {
-  parcels = await get(SOURCES.mapplutoNumericCd(district)); // cd typed numeric in some vintages
+async function getPaged(urlFor, label) {
+  // Socrata caps result sizes; page with $offset until a short batch returns
+  const PAGE = 20000;
+  const features = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const fc = await get(`${urlFor}&$offset=${offset}`);
+    features.push(...(fc.features ?? []));
+    if ((fc.features?.length ?? 0) < PAGE) break;
+    console.log(`  ${label}: ${features.length}…`);
+  }
+  return { type: "FeatureCollection", features };
 }
-if (!parcels.features?.length) throw new Error("MapPLUTO query returned no lots — check the district code.");
-console.log(`  ${parcels.features.length} tax lots`);
+
+console.log(`Fetching MapPLUTO for district(s) ${districts.join(", ")}…`);
+const parcels = { type: "FeatureCollection", features: [] };
+for (const cd of districts) {
+  let fc;
+  try {
+    fc = await getPaged(SOURCES.mappluto(cd), `cd ${cd}`);
+    if (!fc.features.length) throw new Error("empty");
+  } catch {
+    fc = await getPaged(SOURCES.mapplutoNumericCd(cd), `cd ${cd}`); // cd typed numeric in some vintages
+  }
+  console.log(`  cd ${cd}: ${fc.features.length} tax lots`);
+  parcels.features.push(...fc.features);
+}
+if (!parcels.features.length) throw new Error("MapPLUTO query returned no lots — check the district code.");
+console.log(`  ${parcels.features.length} tax lots total`);
 writeFileSync(join(RAW, "parcels.geojson"), JSON.stringify(parcels));
 
 const wkt = bboxWKT(parcels);
 
 console.log("Fetching building footprints…");
-const buildings = await get(SOURCES.footprints(wkt));
+const buildings = await getPaged(SOURCES.footprints(wkt), "footprints");
 console.log(`  ${buildings.features.length} footprints`);
 writeFileSync(join(RAW, "buildings.geojson"), JSON.stringify(buildings));
 

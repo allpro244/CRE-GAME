@@ -1,9 +1,9 @@
 {
   "source": "synthetic",
-  "district": "101",
+  "district": "MN",
   "seed": 10007,
   "lodes": true,
-  "lots": 2111,
-  "adjacencyEdges": 3116,
+  "lots": 49130,
+  "adjacencyEdges": 103356,
   "processed": true
 }

@@ -10,8 +10,11 @@ import { genRentRoll, isCommercial } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
 
 const CLOSING_PCT = 0.02;
-const SALE_FRICTION = 0.03;
-export const CAP_GAINS_RATE = 0.2;   // on gains over depreciated basis
+const SALE_FRICTION = 0.012;  // legal, title, diligence — the unavoidable rest
+export const CAP_GAINS_RATE = 0.2;    // long-term rate on true appreciation
+export const RECAPTURE_RATE = 0.25;   // §1250: depreciation comes back at 25%
+export const SALE_BROKERAGE = 0.015;  // the sell-side fee
+export const TRANSFER_TAX = 0.006;    // deed stamps, paid at the closing table
 export const EXCHANGE_WINDOW_M = 6;  // 1031: redeploy within six months or the tax comes due
 
 export type BuyProduct = string;   // "cash", or any id from debt.PRODUCTS
@@ -251,13 +254,21 @@ export function delist(s: GameState, bbl: string): GameState {
   return next;
 }
 
-// What a sale nets and owes: gain runs against depreciated basis (that's
-// recapture doing its work), taxed at 20% — unless it rides a 1031.
-export function saleTaxQuote(h: Holding, price: number): { net: number; gain: number; tax: number } {
-  const net = Math.round(price * (1 - SALE_FRICTION));
-  const adjBasis = h.costBasis - (h.deprTaken ?? 0);
+// What a sale nets and owes. Friction first — sell-side brokerage, transfer
+// tax, legal and title all come off the top before anyone computes a gain.
+export function saleTaxQuote(h: Holding, price: number): { net: number; gain: number; tax: number; recapture: number; appreciation: number } {
+  const net = Math.round(price * (1 - SALE_BROKERAGE - TRANSFER_TAX - SALE_FRICTION));
+  const depr = h.deprTaken ?? 0;
+  const adjBasis = h.costBasis - depr;
   const gain = net - adjBasis;
-  return { net, gain, tax: Math.round(Math.max(0, gain) * CAP_GAINS_RATE) };
+  // Depreciation is a loan from the government, not a gift. On the way out,
+  // every dollar of it comes back at 25% before a cent of the real
+  // appreciation is taxed at the long-term rate. A player who levers hard and
+  // depreciates fast has been borrowing against this the whole time.
+  const recapture = Math.max(0, Math.min(depr, gain));
+  const appreciation = Math.max(0, gain - recapture);
+  const tax = Math.round(recapture * RECAPTURE_RATE + appreciation * CAP_GAINS_RATE);
+  return { net, gain, tax, recapture, appreciation };
 }
 
 export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string, exchange = false): { s: GameState; err?: string } {
@@ -327,7 +338,7 @@ export function tickSales(s: GameState, parcels: ParcelTable) {
         const money = Math.max(0.4, s.econ.creditIdx ?? 1);
         const p = (hot ? 0.010 : 0.003) * money * (1 + rec0.demandScore / 140);
         if (rng(s) < p) {
-          const v = holdingValue(rec0, s.econ, h);
+          const v = holdingValue(rec0, s.econ, h, s.month);
           // over the top when money is loose, cheeky when it isn't
           const px = Math.round(v * (hot ? rrange(s, 1.02, 1.24) : rrange(s, 0.82, 0.98)));
           h.sale = { ask: px, listedM: s.month, unsolicited: true };
@@ -350,7 +361,7 @@ export function tickSales(s: GameState, parcels: ParcelTable) {
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
     if (sale.offer) {
-      const value = holdingValue(rec, s.econ, h);
+      const value = holdingValue(rec, s.econ, h, s.month);
       if (sale.offer.price < sale.ask && sale.ask / Math.max(1, value) < 1.1 && rng(s) < 0.12) {
         const bumped = Math.min(sale.ask, Math.round(sale.offer.price * rrange(s, 1.02, 1.06)));
         if (bumped > sale.offer.price) {
@@ -363,7 +374,7 @@ export function tickSales(s: GameState, parcels: ParcelTable) {
       }
       continue;
     }
-    const value = holdingValue(rec, s.econ, h);
+    const value = holdingValue(rec, s.econ, h, s.month);
     const ratio = sale.ask / Math.max(1, value);
     const phaseAdj = s.econ.phase === "expansion" ? 1.3 : s.econ.phase === "recession" ? 0.5 : 1;
     const staleness = Math.min(0.06, (s.month - sale.listedM) * 0.004); // word gets around

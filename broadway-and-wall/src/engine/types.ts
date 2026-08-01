@@ -22,10 +22,13 @@ export interface Tenant {
   credit: Credit;
   sf: number;
   rentPsf: number;     // $/sf/yr
-  net: boolean;        // NNN (tenant pays opex) vs gross
+  net: boolean;        // legacy flag; `recovery` is the real answer
+  recovery?: "nnn" | "base" | "gross";
+  baseStopPsf?: number;   // base-year expense stop, $/sf — frozen at signing
   startM: number;
   endM: number;        // lease expiration
   freeUntilM?: number; // free-rent concession
+  defaulted?: boolean;
 }
 
 export interface LOI {
@@ -41,6 +44,7 @@ export interface LOI {
   tiPsf: number;       // tenant-improvement allowance, $/sf at signing
   freeM: number;       // free-rent quarters
   net: boolean;
+  recovery?: "nnn" | "base" | "gross";
   expiresM: number;
   countered?: boolean;
   tenantIdx?: number;  // renewals: index into holding.tenants
@@ -78,6 +82,7 @@ export interface Holding {
   assessed?: number;   // property-tax assessed value; steps up on reassessment
   loan: Loan | null;
   condition: Condition;
+  lastCapM?: number;   // when this asset last had money spent on its bones
   renovatingUntilM?: number;
   tenants: Tenant[];   // commercial rent roll
   makeReady?: { sf: number; readyM: number }[]; // vacated space being turned; unleasable until ready
@@ -235,6 +240,7 @@ export interface GameState {
   news: NewsItem[];
   gameOver: { cause: string; complete?: boolean } | null;
   insolventMs: number;
+  locOverMs?: number;
 }
 
 // Write a cash flow into the current year's ledger bucket.

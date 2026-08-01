@@ -6,10 +6,33 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Credit, GameState, Holding, LOI, Sector } from "./types";
 import { logBooks } from "./types";
 import { rng, rrange } from "./market";
-import { marketRentPsfYr, managedRentPsfYr, occupancy, resolveRec } from "./value";
+import { marketRentPsfYr, managedRentPsfYr, occupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf } from "./value";
+import type { Recovery } from "./value";
 import { drawLoc, locAvailable } from "./credit";
 
 const CAP_KEYS = { office: 0, retail: 0, mixed: 0, multifamily: 0, industrial: 0 };
+
+/**
+ * What a lease of this class looks like when it is signed. Office in this
+ * market is mostly full-service with a base-year stop; retail and industrial
+ * are triple-net; a minority of everything is flat gross.
+ */
+function rollRecovery(s: GameState, cls: string): Recovery {
+  const r = rng(s);
+  switch (cls) {
+    case "retail":     return r < 0.86 ? "nnn" : r < 0.95 ? "base" : "gross";
+    case "industrial": return r < 0.92 ? "nnn" : "base";
+    case "office":     return r < 0.30 ? "nnn" : r < 0.88 ? "base" : "gross";
+    default:           return r < 0.45 ? "nnn" : r < 0.86 ? "base" : "gross";
+  }
+}
+
+/** The expense level frozen into a base-year lease on the day it is signed. */
+function stopPsfNow(rec: ParcelRecord, econ: GameState["econ"], h: Holding): number {
+  const cls = rec.class as "office" | "retail" | "mixed" | "multifamily" | "industrial";
+  const tax = (h.assessed ?? h.costBasis) * TAX_RATE / Math.max(1, rec.bldgArea);
+  return opexPsf(cls, econ, h.programsDone?.systems !== undefined) + tax;
+}
 
 const money = (n: number) =>
   n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M`
@@ -154,6 +177,10 @@ export function genRentRoll(s: GameState, rec: ParcelRecord, holding: Holding) {
       sf,
       rentPsf: +(market * rrange(s, 0.82, 1.04)).toFixed(2),
       net: rec.class === "office" ? rng(s) < 0.75 : rng(s) < 0.4,
+      recovery: rollRecovery(s, rec.class),
+      // Signed in the past, so the stop is frozen at the cheaper expense level
+      // of that year — the older the lease, the bigger the gap the owner eats.
+      baseStopPsf: +(stopPsfNow(rec, s.econ, holding) * rrange(s, 0.72, 0.98)).toFixed(2),
       startM: s.month - Math.round(rrange(s, 0, 48)),
       endM: Math.max(s.month + 1, endM),
     });
@@ -186,6 +213,7 @@ export function genAnchorTenant(s: GameState, rec: ParcelRecord, h: Holding, sfW
     sf: Math.round(sfWanted),
     rentPsf: +(market * rrange(s, 0.9, 0.97)).toFixed(2),
     net: true,
+    recovery: "nnn",
     startM: s.month,
     endM: s.month + Math.round(rrange(s, 120, 180)),
   });
@@ -219,6 +247,32 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
 
     const renovating = h.renovatingUntilM !== undefined && q < h.renovatingUntilM;
 
+    // --- obsolescence --------------------------------------------------------
+    // Buildings age. A floorplate that was fine in 1985 is a hard sell in 2015
+    // with the same bones, the same lifts and the same air handling. Left
+    // alone, an asset slides from good to standard to worn, and every step
+    // costs it rent, costs it a wider cap rate, and makes it harder to lease.
+    // This is what makes a capital programme a decision rather than a
+    // decoration — and it is the reason a portfolio cannot simply be bought
+    // once and held for a century.
+    if (!renovating) {
+      h.lastCapM = h.lastCapM ?? h.boughtM;
+      const since = q - h.lastCapM;
+      // roughly: a cycle of neglect every twenty-odd years, faster on offices
+      const clock = rec.class === "office" ? 240 : rec.class === "retail" ? 270 : 320;
+      if (since > clock && rng(s) < 0.02) {
+        const next = h.condition === "good" ? "standard" : h.condition === "standard" ? "worn" : null;
+        if (next) {
+          h.condition = next;
+          h.lastCapM = q;
+          s.news.unshift({
+            q, kind: "warn",
+            text: `${rec.address} has slipped to ${next} condition — the systems are dated and the brokers have noticed. Rents will follow.`,
+          });
+        }
+      }
+    }
+
     // move-outs: leases that reached expiry without a signed renewal.
     // The space goes into make-ready — a turn cost now, leasable in a few months.
     const movedOut = h.tenants.filter((t) => t.endM <= q);
@@ -228,10 +282,16 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const turnCost = Math.round(outSf * MAKE_READY_PSF * s.econ.costIdx);
       s.cash -= turnCost;
       logBooks(s, "capex", turnCost);
-      h.makeReady = [...(h.makeReady ?? []), { sf: outSf, readyM: q + Math.round(rrange(s, 2, 5)) }];
+      // Downtime is the expensive half of rollover and nobody underwrites it
+      // honestly. A suite handed back in a soft office market is dark for the
+      // better part of a year: demo, demise, permit, market, build out.
+      const soft = s.econ.phase === "recession" ? 1.7 : s.econ.phase === "recovery" ? 1.3 : s.econ.phase === "peak" ? 0.95 : 0.8;
+      const classLag = rec.class === "office" ? 5.5 : rec.class === "industrial" ? 2.5 : 3.5;
+      const down = Math.max(1, Math.round(classLag * soft * rrange(s, 0.7, 1.4)));
+      h.makeReady = [...(h.makeReady ?? []), { sf: outSf, readyM: q + down }];
       s.news.unshift({
         q, kind: "info",
-        text: `${(outSf / 1000).toFixed(1)}k sf back at ${rec.address} — $${(turnCost / 1000).toFixed(0)}K make-ready, showable in a few months.`,
+        text: `${(outSf / 1000).toFixed(1)}k sf back at ${rec.address} — $${(turnCost / 1000).toFixed(0)}K make-ready, ${down} months before it can be shown.`,
       });
     }
     // finished turns come off the books
@@ -249,6 +309,32 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       } else delete h.broker; // full building: the exclusive lapses
     }
 
+    // --- credit events ------------------------------------------------------
+    // Tenants fail. They fail far more often in a downturn, far more often
+    // when they were weak credit to begin with, and the space comes back
+    // mid-term with no notice and no termination fee worth collecting. This is
+    // the risk a rent roll of unrated startups is actually carrying, and the
+    // reason a boring insurance company at a lower rent underwrites better.
+    for (let i = h.tenants.length - 1; i >= 0; i--) {
+      const t = h.tenants[i];
+      if (q - t.startM < 6) continue;                       // give them a quarter to fail
+      const cycle = s.econ.phase === "recession" ? 3.4 : s.econ.phase === "recovery" ? 1.7 : s.econ.phase === "peak" ? 0.9 : 0.55;
+      const grade = t.credit === 2 ? 0.14 : t.credit === 1 ? 0.55 : 1.6;   // investment grade rarely goes dark
+      const sectorStress = Math.max(0, -(s.econ.sectorMom?.[rec.class as "office"] ?? 0)) * 40;
+      const pFail = 0.00035 * cycle * grade * (1 + sectorStress);
+      if (rng(s) >= pFail) continue;
+      h.tenants.splice(i, 1);
+      // you keep whatever security deposit there was — call it three months
+      const recovered = Math.round(t.rentPsf * t.sf * 0.25);
+      s.cash += recovered;
+      const down = Math.max(2, Math.round((rec.class === "office" ? 6 : 4) * rrange(s, 0.8, 1.5)));
+      h.makeReady = [...(h.makeReady ?? []), { sf: t.sf, readyM: q + down }];
+      s.news.unshift({
+        q, kind: "warn",
+        text: `${t.name} filed and went dark at ${rec.address} — ${(t.sf / 1000).toFixed(1)}k sf back with ${(t.endM - q) / 12 > 1 ? `${((t.endM - q) / 12).toFixed(1)} years` : `${t.endM - q} months`} left on the lease. You kept $${(recovered / 1000).toFixed(0)}K of deposit.`,
+      });
+    }
+
     // contractual escalations: rents step up ~2.5% on each lease anniversary
     for (const t of h.tenants) {
       const age = q - t.startM;
@@ -260,18 +346,31 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const t = h.tenants[i];
       if (t.endM !== q + 6) continue;
       if (s.lois.some((l) => l.bbl === h.bbl && l.tenantIdx === i)) continue;
-      const market = marketRentPsfYr(rec, s.econ, h.condition);
+      const market = managedRentPsfYr(rec, s.econ, h);
+      // A tenant sitting well below market knows what a move costs them and
+      // renews near market. A tenant ABOVE market knows the same thing in
+      // reverse and asks for a cut — and in a soft market they get it.
+      const overMarket = t.rentPsf / Math.max(1, market);
+      const leverage = overMarket > 1.05 ? 0.82 : overMarket < 0.9 ? 1.0 : 0.94;
+      const soft = s.econ.phase === "recession" ? 0.88 : s.econ.phase === "recovery" ? 0.95 : 1;
+      // Credit tenants are worth keeping and they know it.
+      const creditDisc = t.credit === 2 ? 0.97 : t.credit === 1 ? 1.0 : 1.02;
+      const ask = market * leverage * soft * creditDisc;
+      // Renewals are cheap to do: no downtime, a fraction of the TI, no free
+      // rent worth the name. That gap is why renewal economics beat a new
+      // lease at a higher face rent almost every time.
       s.lois.push({
         id: s.nextLoiId++,
         bbl: h.bbl,
         kind: "renewal",
         name: t.name, sector: t.sector, credit: t.credit,
         sf: t.sf,
-        rentPsf: +(t.rentPsf * 0.3 + market * 0.7).toFixed(2),
+        rentPsf: +Math.max(market * 0.6, ask).toFixed(2),
         termM: Math.round(rrange(s, 36, 84)),
-        tiPsf: Math.round(rrange(s, 4, 14)),
-        freeM: 0,
+        tiPsf: Math.round(rrange(s, 2, 9) * (s.econ.phase === "recession" ? 1.5 : 1)),
+        freeM: s.econ.phase === "recession" && rng(s) < 0.4 ? Math.round(rrange(s, 1, 3)) : 0,
         net: t.net,
+        recovery: recoveryOf(t),
         expiresM: t.endM,
         tenantIdx: i,
       });
@@ -306,6 +405,8 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       if (rng(s) < p) {
         const sector = pickSector(s, rec.class);
         const [tiLo, tiHi] = TI_ASK[rec.class] ?? TI_ASK.office;
+        const concession = s.econ.phase === "recession" ? 1.85 : s.econ.phase === "recovery" ? 1.35
+          : s.econ.phase === "peak" ? 0.9 : 0.7;
         const market = managedRentPsfYr(rec, s.econ, h);
         // Warehouses lease whole: one operator takes the building, or most of
         // it. Offices and shops carve into suites.
@@ -316,22 +417,36 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           : suiteSf(rec) * Math.max(1, Math.round(rrange(s, 1, 3.4)));
         const sf = toSuites(rec, want, vac);
         if (!sf) continue;
+        const credit = rollCredit(s, rec.demandScore);
         s.lois.push({
           id: s.nextLoiId++,
           bbl: h.bbl,
           kind: "new",
           name: pickName(s, sector),
           sector,
-          credit: rollCredit(s, rec.demandScore),
+          credit,
           sf,
           // A wide spread on purpose. If every prospect offers within a few
           // per cent of asking, the accept/counter/pass modal is a formality.
           // Some of these should be worth refusing, and refusing should hurt.
           rentPsf: +(market * (rng(s) < 0.3 ? rrange(s, 0.68, 0.86) : rrange(s, 0.9, 1.1))).toFixed(2),
-          termM: Math.round(rrange(s, 36, 120)),
-          tiPsf: Math.round(rrange(s, tiLo, tiHi)),
-          freeM: Math.round(rrange(s, 0, 6.5)),
+          // Term length is not random. A credit tenant taking a whole floor
+          // signs long paper and expects to be paid for it; a small unrated
+          // firm wants three years and an out. WALT is the thing a buyer
+          // actually underwrites, and it has to be earned tenant by tenant.
+          termM: Math.round(
+            (credit === 2 ? rrange(s, 96, 180) : credit === 1 ? rrange(s, 60, 120) : rrange(s, 36, 66))
+            * (sf > suiteSf(rec) * 2.5 ? 1.15 : 1)
+            * (s.econ.phase === "recession" ? 0.85 : 1),
+          ),
+          // Concessions are the first thing to move when a market turns, and
+          // they move long before face rents do. A landlord holding headline
+          // rent while giving away a year of free rent is the oldest tell in
+          // the business.
+          tiPsf: Math.round(rrange(s, tiLo, tiHi) * concession * (credit === 2 ? 1.35 : credit === 1 ? 1.05 : 0.85)),
+          freeM: Math.round(rrange(s, 0, 6.5) * concession),
           net: rec.class === "office" ? rng(s) < 0.8 : rng(s) < 0.4,
+          recovery: rollRecovery(s, rec.class),
           expiresM: q + 3,
         });
         s.news.unshift({ q, kind: "info", text: `LOI in at ${rec.address} — check the Deals desk.` });
@@ -386,10 +501,17 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     const t = h.tenants[l.tenantIdx];
     t.rentPsf = l.rentPsf;
     t.endM = s.month + l.termM;
+    // A renewal RESETS the base year. That is the quiet half of every renewal
+    // negotiation: the tenant gives up years of accumulated recovery, and the
+    // owner gives up the rent they could have pushed. Rolling the stop forward
+    // is often worth more than the spread on the rent.
+    if (recoveryOf(t) === "base") t.baseStopPsf = +stopPsfNow(rec, s.econ, h).toFixed(2);
   } else {
     h.tenants.push({
       name: l.name, sector: l.sector, credit: l.credit,
       sf: l.sf, rentPsf: l.rentPsf, net: l.net,
+      recovery: l.recovery ?? (l.net ? "nnn" : "gross"),
+      baseStopPsf: +stopPsfNow(rec, s.econ, h).toFixed(2),
       startM: s.month, endM: s.month + l.termM,
       freeUntilM: l.freeM ? s.month + l.freeM : undefined,
     });

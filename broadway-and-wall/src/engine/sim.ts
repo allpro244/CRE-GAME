@@ -15,12 +15,28 @@ const LISTING_LIFE_M: [number, number] = [6, 12];
 
 // 0.5–1.5% of the city is on the market at any time: thin in expansions
 // (owners hold), heavier in recessions (distress shakes assets loose).
+/**
+ * Standing inventory, as a share of the city.
+ *
+ * Transaction volume in this business is PROCYCLICAL and violently so. It
+ * peaks with confidence and collapses in a crunch — 2009 saw volume fall by
+ * four fifths — because the bid and the ask stop being in the same postcode
+ * and anyone who does not have to sell simply doesn't. Having the most
+ * inventory in a recession, as this did, turned every downturn into a
+ * shopping trip with no downside: exactly why a hundred playthroughs showed
+ * nobody able to lose.
+ *
+ * So: thin the tape in a crunch, and let what IS on it be distress. Waiting
+ * for the bottom should be a skill that costs you patience, not a free option.
+ */
 function targetListings(s: GameState, totalLots: number): number {
-  const pct = s.econ.phase === "recession" ? 0.014
-    : s.econ.phase === "peak" ? 0.011
-    : s.econ.phase === "recovery" ? 0.009
-    : 0.006;
-  return Math.max(6, Math.round(totalLots * pct));
+  const base = s.econ.phase === "peak" ? 0.013
+    : s.econ.phase === "expansion" ? 0.010
+    : s.econ.phase === "recovery" ? 0.006
+    : 0.004;                                  // recession: the market goes quiet
+  // and the credit window gates it further — no debt, no buyers, no listings
+  const ci = Math.max(0.4, Math.min(1.15, s.econ.creditIdx ?? 1));
+  return Math.max(4, Math.round(totalLots * base * (0.55 + 0.5 * ci)));
 }
 
 export function newGame(seed: number, parcels?: ParcelTable): GameState {
@@ -75,7 +91,7 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   s.listings = s.listings.filter((l) => l.expiresM > s.month && !s.holdings[l.bbl]);
   const listed = new Set(s.listings.map((l) => l.bbl));
   const target = targetListings(s, bbls.length);
-  const pDistress = s.econ.phase === "recession" ? 0.25 : s.econ.phase === "recovery" ? 0.1 : 0.04;
+  const pDistress = s.econ.phase === "recession" ? 0.42 : s.econ.phase === "recovery" ? 0.18 : 0.03;
   let guard = 0;
   while (s.listings.length < target && guard++ < 4000) {
     const bbl = bbls[Math.floor(rng(s) * bbls.length)];
@@ -86,7 +102,14 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     if (value <= 0) continue;
     if (value > 60_000_000 && rng(s) > 0.12) continue;
     const distress = rng(s) < pDistress;
-    const ask = Math.round(value * (distress ? rrange(s, 0.78, 0.92) : rrange(s, 0.94, 1.1)) / 1000) * 1000;
+    // THE BID-ASK GAP. A seller under no pressure does not mark their building
+    // to the new cap rate; they hold last year's number and wait. So in a
+    // downturn the honest asks vanish and the tape fills with either dreamers
+    // or people who have run out of road — and telling those apart is the job.
+    const denial = s.econ.phase === "recession" ? rrange(s, 1.10, 1.28)
+      : s.econ.phase === "recovery" ? rrange(s, 1.02, 1.14)
+      : rrange(s, 0.94, 1.10);
+    const ask = Math.round(value * (distress ? rrange(s, 0.72, 0.90) : denial) / 1000) * 1000;
     s.listings.push({
       bbl,
       ask,
@@ -135,6 +158,7 @@ export function advanceQuarter(
     if (!rec) continue;
     if (h.renovatingUntilM !== undefined && s.month >= h.renovatingUntilM) {
       h.condition = "good";
+      h.lastCapM = s.month;
       delete h.renovatingUntilM;
       s.news.unshift({ q: s.month, kind: "deal", text: `Renovation complete at ${rec.address} — space re-opens at the new rent.` });
     }
@@ -162,7 +186,7 @@ export function advanceQuarter(
       const rec = resolveRec(parcels, s, h.bbl);
       if (!rec) continue;
       // phased reassessment: assessed value closes a quarter of the gap to market
-      const v = holdingValue(rec, s.econ, h);
+      const v = holdingValue(rec, s.econ, h, s.month);
       const prior = h.assessed ?? h.costBasis;
       h.assessed = Math.round(prior + 0.25 * (v - prior));
       // taxable income: NOI less interest less straight-line depreciation
@@ -198,7 +222,7 @@ export function advanceQuarter(
         let pick = owned[0], pickV = -Infinity;
         for (const h of owned) {
           const rec = resolveRec(parcels, s, h.bbl);
-          const v = rec ? holdingValue(rec, s.econ, h) : 0;
+          const v = rec ? holdingValue(rec, s.econ, h, s.month) : 0;
           if (v > pickV) { pickV = v; pick = h; }
         }
         const rec = resolveRec(parcels, s, pick.bbl)!;

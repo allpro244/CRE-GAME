@@ -21,6 +21,7 @@ export interface LoanProduct {
   amortYears: number;
   termM: number;       // balloon
   uwDscr: number;      // the coverage the desk underwrites to
+  debtYield: number;   // minimum NOI ÷ loan proceeds — the post-2009 backstop
   points: number;      // origination fee, as a share of principal
   recourse: boolean;   // a personal guarantee, and a cheaper coupon for it
   prepay: PrepayKind;
@@ -39,37 +40,37 @@ export const PRODUCTS: LoanProduct[] = [
   {
     id: "agency", label: "Agency fixed · 10 yr", blurb: "The default. Long, quiet, expensive to leave early.",
     ltv: 0.65, spread: 1.60, floating: false, ioM: 0, amortYears: 30, termM: 120,
-    uwDscr: 1.25, points: 0.010, recourse: false, prepay: "yieldmaint", prepayM: 96,
+    uwDscr: 1.25, debtYield: 0.085, points: 0.010, recourse: false, prepay: "yieldmaint", prepayM: 96,
     minDSCR: 1.20, maxLTV: 0.85,
   },
   {
     id: "insurance", label: "Insurance co. fixed · 15 yr", blurb: "Longest money on the desk. Low leverage, no surprises.",
     ltv: 0.58, spread: 1.30, floating: false, ioM: 0, amortYears: 30, termM: 180,
-    uwDscr: 1.40, points: 0.008, recourse: false, prepay: "yieldmaint", prepayM: 144,
+    uwDscr: 1.40, debtYield: 0.095, points: 0.008, recourse: false, prepay: "yieldmaint", prepayM: 144,
     minDSCR: 1.30, maxLTV: 0.80,
   },
   {
     id: "float", label: "Floating IO · 7 yr", blurb: "Cheap today, repriced every quarter. Buy a cap or don't sleep.",
     ltv: 0.70, spread: 1.15, floating: true, ioM: 36, amortYears: 30, termM: 84,
-    uwDscr: 1.25, points: 0.010, recourse: false, prepay: "open", prepayM: 0,
+    uwDscr: 1.25, debtYield: 0.085, points: 0.010, recourse: false, prepay: "open", prepayM: 0,
     minDSCR: 1.20, maxLTV: 0.85,
   },
   {
     id: "bank", label: "Bank fixed · 5 yr, recourse", blurb: "Sharpest coupon on the board — because you signed for it.",
     ltv: 0.68, spread: 0.95, floating: false, ioM: 12, amortYears: 25, termM: 60,
-    uwDscr: 1.20, points: 0.006, recourse: true, prepay: "stepdown", prepayM: 36,
+    uwDscr: 1.20, debtYield: 0.090, points: 0.006, recourse: true, prepay: "stepdown", prepayM: 36,
     minDSCR: 1.25, maxLTV: 0.82,
   },
   {
     id: "bridge", label: "Bridge IO · 3 yr", blurb: "For a building that doesn't cover yet. Fast, dear, and it matures.",
     ltv: 0.75, spread: 4.00, floating: true, ioM: 36, amortYears: 30, termM: 36,
-    uwDscr: 1.00, points: 0.020, recourse: false, prepay: "open", prepayM: 0,
+    uwDscr: 1.00, debtYield: 0.060, points: 0.020, recourse: false, prepay: "open", prepayM: 0,
     minDSCR: 1.00, maxLTV: 0.92,
   },
   {
     id: "mezz", label: "Mezzanine · behind the senior", blurb: "Stacks to 85%. The coupon is why nobody does this twice.",
     ltv: 0.85, spread: 8.00, floating: false, ioM: 120, amortYears: 30, termM: 84,
-    uwDscr: 1.05, points: 0.025, recourse: false, prepay: "stepdown", prepayM: 48,
+    uwDscr: 1.05, debtYield: 0.055, points: 0.025, recourse: false, prepay: "stepdown", prepayM: 48,
     mezz: true, minDSCR: 1.00, maxLTV: 0.95,
   },
   {
@@ -80,13 +81,13 @@ export const PRODUCTS: LoanProduct[] = [
     // means a site can be assembled without eating the whole balance sheet.
     id: "land", label: "Land loan · 3 yr, recourse", blurb: "The only money that will look at dirt. Half the price, and you sign for it.",
     ltv: 0.50, spread: 3.60, floating: true, ioM: 36, amortYears: 30, termM: 36,
-    uwDscr: 0, points: 0.015, recourse: true, prepay: "open", prepayM: 0,
+    uwDscr: 0, debtYield: 0, points: 0.015, recourse: true, prepay: "open", prepayM: 0,
     minDSCR: 0, maxLTV: 0.70,
   },
   {
     id: "particip", label: "Participating · 25% of the gain", blurb: "Almost no coupon. The lender takes a quarter of your upside on sale.",
     ltv: 0.78, spread: 0.35, floating: false, ioM: 60, amortYears: 30, termM: 120,
-    uwDscr: 1.05, points: 0.010, recourse: false, prepay: "stepdown", prepayM: 60,
+    uwDscr: 1.05, debtYield: 0.065, points: 0.010, recourse: false, prepay: "stepdown", prepayM: 60,
     kicker: 0.25, minDSCR: 1.05, maxLTV: 0.90,
   },
 ];
@@ -144,8 +145,20 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   const qp = monthlyPayment(1, ratePct, product.amortYears) * 12; // annual DS per $1
   const byDscrAmort = maxAnnualDS / qp;
   const byDscr = product.ioM >= 12 ? Math.min(byDscrIO, byDscrAmort * 1.08) : byDscrAmort;
-  const principal = Math.max(0, Math.round(Math.min(byLtv, byDscr)));
-  return { principal, ratePct, dscrConstrained: byDscr < byLtv };
+  // DEBT YIELD. Coverage flatters a loan when rates are low and cap rates are
+  // lower — you can cover 1.25x on a building yielding four points, and the
+  // lender still has no equity underneath them. Since 2009 the desk also
+  // sizes on NOI ÷ proceeds, and in a cheap-money market this is the binding
+  // constraint far more often than LTV is.
+  const dyFloor = product.debtYield * (1 + 0.35 * tight);
+  const byDebtYield = dyFloor > 0 ? Math.max(0, noiYr) / dyFloor : Infinity;
+  const principal = Math.max(0, Math.round(Math.min(byLtv, byDscr, byDebtYield)));
+  return {
+    principal, ratePct,
+    dscrConstrained: byDscr < byLtv && byDscr <= byDebtYield,
+    dyConstrained: byDebtYield < byLtv && byDebtYield < byDscr,
+    debtYield: principal > 0 ? Math.max(0, noiYr) / principal : 0,
+  };
 }
 
 // `lev` scales the loan down from the lender's maximum — the player's dial.
@@ -189,7 +202,7 @@ export function dscr(rec: ParcelRecord, s: GameState, h: Holding): number | null
 
 export function ltv(rec: ParcelRecord, s: GameState, h: Holding): number | null {
   if (!h.loan) return null;
-  const v = holdingValue(rec, s.econ, h);
+  const v = holdingValue(rec, s.econ, h, s.month);
   return v > 0 ? h.loan.balance / v : null;
 }
 
@@ -258,7 +271,7 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
   // in the business of handing you equity unasked. Cash-out is a choice you
   // make with the Refi button.
   if (q >= loan.maturityM) {
-    const value = holdingValue(rec, s.econ, h);
+    const value = holdingValue(rec, s.econ, h, s.month);
     const noi = holdingNOIYr(rec, s.econ, h, q);
     const product = PRODUCTS[0];
     const qd = quote(s, product, value, noi);
@@ -350,6 +363,8 @@ export interface RefiQuote {
   maxProceeds: number;
   ltvAtMax: number;
   dscrAtMax: number;
+  debtYieldAtMax: number;
+  binding: string;      // which of the three tests actually capped the loan
   ioM: number;
   termM: number;
   amortYears: number;
@@ -367,7 +382,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
   const h = s.holdings[bbl];
   const rec = resolveRec(parcels, s, bbl);
   if (!h || !rec) return { quotes: [], value: 0, payoff: 0 };
-  const value = holdingValue(rec, s.econ, h);
+  const value = holdingValue(rec, s.econ, h, s.month);
   const noi = holdingNOIYr(rec, s.econ, h, s.month);
   const quotes = PRODUCTS.map((p) => {
     const q = quote(s, p, value, noi);
@@ -383,6 +398,8 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       maxProceeds: q.principal,
       ltvAtMax: value > 0 ? q.principal / value : 0,
       dscrAtMax: annualDs > 0 ? noi / annualDs : 0,
+      debtYieldAtMax: q.principal > 0 ? noi / q.principal : 0,
+      binding: q.dyConstrained ? "debt yield" : q.dscrConstrained ? "coverage" : "advance rate",
       ioM: p.ioM,
       termM: p.termM,
       amortYears: p.amortYears,
@@ -410,7 +427,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   const rec = resolveRec(parcels, next, bbl);
   if (!h || !rec) return { s, err: "You don't own that." };
   const product = productById(productId);
-  const value = holdingValue(rec, next.econ, h);
+  const value = holdingValue(rec, next.econ, h, next.month);
   const noi = holdingNOIYr(rec, next.econ, h, next.month);
   const full = quote(next, product, value, noi);
   const qd = { ...full, principal: Math.round(full.principal * Math.max(0, Math.min(1, lev))) };

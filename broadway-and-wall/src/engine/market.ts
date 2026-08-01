@@ -193,9 +193,24 @@ export function tickEcon(s: GameState) {
   const target = Math.pow(rentLevel, 1.15) * (1 + 0.16 * e.cycleDev);
   e.landIdx = clamp(e.landIdx + 0.024 * (target - e.landIdx) + e.landIdx * rrange(s, -0.003, 0.003), 0.3, 40);
 
-  // costs inflate with (most of) rent growth — a century of rent gains
-  // against frozen expenses would print fake money
-  e.costIdx = clamp(e.costIdx * (1 + c2.rentDrift * 0.85 + rrange(s, -0.0015, 0.0015)), 0.6, 30);
+  // COSTS INFLATE AT LEAST AS FAST AS RENTS.
+  //
+  // Letting expenses grow at 85% of rent growth looked conservative and was in
+  // fact a machine for printing margin: over a century it silently widened
+  // every operating margin in the city, which made asset appreciation a
+  // one-way escalator, which made maximum leverage the dominant strategy by a
+  // factor of two with an eight per cent failure rate. Real long-run rent
+  // growth is roughly inflation, and operating costs track it — labour,
+  // insurance and utilities do not politely lag.
+  //
+  // Setting them level is also what finally gives the recovery structures
+  // their teeth: an owner on triple-net paper passes the inflation through, an
+  // owner on base-year stops eats the first slice of it, and an owner on gross
+  // leases watches a decade of cost inflation walk straight out of their NOI.
+  // Now the lease you signed ten years ago decides whether you survive the
+  // next ten.
+  const costDrift = c2.rentDrift * 1.02 + (e.phase === "recession" ? 0.0006 : 0);
+  e.costIdx = clamp(e.costIdx * (1 + costDrift + rrange(s, -0.0015, 0.0015)), 0.6, 60);
 
   recordHistory(e, s.month);
 }

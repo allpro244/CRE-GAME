@@ -152,6 +152,7 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
   delete nh.makeReady;
   delete nh.deliveredM;
   nh.condition = "standard";
+  nh.lastCapM = s.month;
   next.lois = next.lois.filter((l) => l.bbl !== bbl);
   next.news.unshift({
     q: next.month, kind: "warn",
@@ -194,6 +195,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
       s.built[d.bbl] = { class: d.use, bldgArea: d.sf, floors: d.floors, yearBuilt: 2026 + Math.floor(s.month / 12) };
       const h = s.holdings[d.bbl];
       h.condition = "good";
+      h.lastCapM = s.month;
       h.tenants = [];
       h.deliveredM = s.month;   // new space leases with momentum
       if (d.use === "multifamily") h.occ = 0.1;

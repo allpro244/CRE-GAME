@@ -17,9 +17,22 @@ export function locRate(s: GameState): number {
 
 // The lender re-sizes the line off your net worth — which includes what you've
 // already drawn, so borrowing doesn't inflate your own borrowing base.
+/**
+ * The line is not a constant. Banks size a revolver against your equity AND
+ * against their own appetite, and their appetite disappears in exactly the
+ * quarter you need the money. Cutting the advance rate with the credit cycle
+ * is what turns a downturn from an inconvenience into a doom loop: values
+ * fall, so equity falls, so the line falls twice over, so the over-advance
+ * gets called, so you sell into the bid you least wanted to hit.
+ *
+ * This is the single most important thing a levered owner has to survive, and
+ * without it the whole game had no way to lose.
+ */
 export function locLimit(s: GameState, parcels: ParcelTable): number {
   const nw = netWorth(s, parcels);
-  return Math.max(0, Math.round(nw * LOC_LTV));
+  const ci = s.econ.creditIdx ?? 1;
+  const advance = LOC_LTV * Math.max(0.35, Math.min(1.15, ci));
+  return Math.max(0, Math.round(nw * advance));
 }
 
 export function locAvailable(s: GameState, parcels: ParcelTable): number {
@@ -97,11 +110,21 @@ export function tickLoc(s: GameState, parcels: ParcelTable) {
   if (over > 0) {
     const pay = Math.min(over, Math.max(0, s.cash));
     if (pay > 0) { s.loc.balance -= pay; s.cash -= pay; }
-    if (s.loc.balance > locLimit(s, parcels) + 1000) {
+    const stillOver = s.loc.balance - locLimit(s, parcels);
+    if (stillOver > 1000) {
+      // The bank does not accept "I'll pay you when a building sells." An
+      // over-advance the borrower cannot clear in cash is a default on the
+      // revolver, and it starts the insolvency clock like any other.
+      s.locOverMs = (s.locOverMs ?? 0) + 1;
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `The line is over-advanced — the bank wants $${((s.loc.balance - locLimit(s, parcels)) / 1e6).toFixed(2)}M back.`,
+        text: s.locOverMs >= 6
+          ? `The line has been over-advanced for ${s.locOverMs} months. The bank wants $${(stillOver / 1e6).toFixed(2)}M back and has stopped asking politely.`
+          : `The line is over-advanced — the bank wants $${(stillOver / 1e6).toFixed(2)}M back.`,
       });
-    }
+      // after half a year the shortfall is treated as cash owed, which is what
+      // pushes the run into the seizure path in sim.ts
+      if (s.locOverMs >= 6) s.cash -= Math.round(stillOver * 0.25);
+    } else s.locOverMs = 0;
   }
 }

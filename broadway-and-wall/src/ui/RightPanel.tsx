@@ -7,6 +7,7 @@ import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import {
   assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr,
   occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr,
+  rollQualitySpread, operatingStatement, recoveryOf,
 } from "@/engine/value";
 import { planDevelopment, PROGRAMS, programCost, farMaxFor, maxFloorsFor, demolitionCost } from "@/engine/dev";
 import type { BuiltClass } from "@/engine/types";
@@ -116,7 +117,14 @@ function DecisionModal() {
             {loi.sector} · credit {CREDIT_LABEL[loi.credit]} · wants {sf(loi.sf)} at {rec.address}
           </div>
           <div className="grid">
-            <Row k="Rent" v={`$${loi.rentPsf.toFixed(2)}/sf ${loi.net ? "NNN" : "gross"}`} strong />
+            <Row k="Rent" v={`$${loi.rentPsf.toFixed(2)}/sf`} strong />
+            <Row
+              k="Recovery"
+              v={(loi.recovery ?? (loi.net ? "nnn" : "gross")) === "nnn" ? "triple net — they pay opex and taxes"
+                : (loi.recovery ?? "gross") === "base" ? "base-year stop — you keep today's expense level"
+                : "full gross — every expense is yours"}
+              bad={(loi.recovery ?? (loi.net ? "nnn" : "gross")) === "gross"}
+            />
             <Row k="vs. your asking" v={`${((loi.rentPsf / market - 1) * 100).toFixed(1)}%`} bad={loi.rentPsf < market * 0.9} />
             <Row k="Term" v={`${(loi.termM / 12).toFixed(1)} yrs, to ${monthLabel(game.month + loi.termM)}`} />
             <Row k="Annual rent" v={usd(annual)} />
@@ -162,7 +170,7 @@ function DecisionModal() {
   const offer = h.sale!.offer!;
   if (!rec) return null;
   const tq = saleTaxQuote(h, offer.price);
-  const value = holdingValue(rec, game.econ, h);
+  const value = holdingValue(rec, game.econ, h, game.month);
   return (
     <div className="modal-backdrop">
       <div className="modal">
@@ -264,7 +272,7 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
   const listing = game.listings.find((l) => l.bbl === selectedBBL);
   const appr = game.approaches[selectedBBL];
   const cond = holding?.condition ?? initialCondition(rec);
-  const value = holding ? holdingValue(rec, game.econ, holding) : assetValue(rec, game.econ, cond);
+  const value = holding ? holdingValue(rec, game.econ, holding, game.month) : assetValue(rec, game.econ, cond);
   const builtFar = rec.lotArea > 0 ? rec.bldgArea / rec.lotArea : 0;
   const farMax = Math.max(rec.farMaxComm, rec.farMaxRes);
   const isBuilt = rec.class !== "land" && rec.bldgArea > 0;
@@ -759,7 +767,9 @@ function RefiSection({ bbl }: { bbl: string }) {
       </div>
       <div className="hint">{q.why ?? q.blurb}</div>
       <div className="grid">
-        <Row k="Lender's maximum" v={`${usd(q.maxProceeds)} · ${(q.ltvAtMax * 100).toFixed(0)}% LTV · DSCR ${q.dscrAtMax.toFixed(2)}`} />
+        <Row k="Lender's maximum" v={`${usd(q.maxProceeds)} · ${(q.ltvAtMax * 100).toFixed(0)}% LTV`} />
+        <Row k="Coverage / debt yield" v={`DSCR ${q.dscrAtMax.toFixed(2)} · DY ${(q.debtYieldAtMax * 100).toFixed(1)}%`} />
+        <Row k="What caps it" v={q.binding} bad={q.binding === "debt yield"} />
         <Row k="Structure" v={`${q.ioM ? `${Math.round(q.ioM / 12)}-yr IO, ` : ""}${q.amortYears}-yr amort, ${q.termM / 12}-yr term, ${q.floating ? "floating" : "fixed"}`} />
         <Row k="Origination" v={`${(q.points * 100).toFixed(1)} pts · ${usd(Math.round(proceeds * q.points))}`} />
         <Row
@@ -894,7 +904,7 @@ function PropertyPage() {
   if (!rec) return <div className="hint">Unknown parcel.</div>;
   const h = game.holdings[bbl];
   const cond = h?.condition ?? initialCondition(rec);
-  const value = h ? holdingValue(rec, game.econ, h) : assetValue(rec, game.econ, cond);
+  const value = h ? holdingValue(rec, game.econ, h, game.month) : assetValue(rec, game.econ, cond);
   const built = rec.class !== "land" && rec.bldgArea > 0;
   const commercial = isCommercial(rec);
   const leased = h && commercial ? h.tenants.reduce((a, t) => a + t.sf, 0) : 0;
@@ -914,6 +924,23 @@ function PropertyPage() {
           const u = unitStatus(rec, h, game.month);
           return <Big label="Spaces leased" value={`${u.leased} / ${u.total}`} bad={u.leased < u.total * 0.6} />;
         })()}
+        {built && h && h.tenants.length > 0 && (
+          <Big label="WALT" value={`${walt(h, game.month).toFixed(1)} yrs`} bad={walt(h, game.month) < 3} />
+        )}
+        {built && h && (
+          <Big
+            label="Expense leakage"
+            value={`${(operatingStatement(rec, game.econ, h, game.month).leakage * 100).toFixed(0)}%`}
+            bad={operatingStatement(rec, game.econ, h, game.month).leakage > 0.45}
+          />
+        )}
+        {built && h && (
+          <Big
+            label="Roll quality"
+            value={`${rollQualitySpread(rec, h, game.month) >= 0 ? "+" : ""}${(rollQualitySpread(rec, h, game.month) * 100).toFixed(0)} bps`}
+            bad={rollQualitySpread(rec, h, game.month) > 0.15}
+          />
+        )}
         <Big label="Equity" value={h ? usd(value - (h.loan?.balance ?? 0)) : "—"} />
       </div>
       <div className="prop-head">
@@ -961,7 +988,7 @@ function PortfolioPage() {
   let totV = 0, totD = 0, totCF = 0;
   const rows = holdings.map((h) => {
     const rec = resolveRec(parcels, game, h.bbl);
-    const v = rec ? holdingValue(rec, game.econ, h) : 0;
+    const v = rec ? holdingValue(rec, game.econ, h, game.month) : 0;
     const cf = rec ? holdingNOIYr(rec, game.econ, h, game.month) / 12 - (h.loan?.monthlyPmt ?? 0) : 0;
     const occ = rec
       ? rec.class === "multifamily" ? (h.occ ?? 0)
@@ -1439,7 +1466,7 @@ function LeasingPage() {
         <div style={{ overflowX: "auto", maxHeight: 420, overflowY: "auto" }}>
           <table className="tbl">
             <thead>
-              <tr><th>Tenant</th><th>Sector</th><th>Credit</th><th>Property</th><th className="num">Size</th><th className="num">Rent</th><th>Type</th><th className="num">Expires</th></tr>
+              <tr><th>Tenant</th><th>Sector</th><th>Credit</th><th>Property</th><th className="num">Size</th><th className="num">Rent</th><th>Recovery</th><th className="num">Stop $/sf</th><th className="num">vs mkt</th><th className="num">Expires</th></tr>
             </thead>
             <tbody>
               {rows.flatMap((r) => r.h.tenants.map((t, i) => ({ t, r, i })))
@@ -1452,12 +1479,18 @@ function LeasingPage() {
                     <td className="dim">{r.rec.address}</td>
                     <td className="num">{sf(t.sf)}</td>
                     <td className="num">${t.rentPsf.toFixed(2)}</td>
-                    <td className="dim">{t.net ? "NNN" : "gross"}</td>
+                    <td className="dim">{recoveryOf(t) === "nnn" ? "NNN" : recoveryOf(t) === "base" ? "base yr" : "gross"}</td>
+                    <td className="num dim">{recoveryOf(t) === "base" ? `$${(t.baseStopPsf ?? 0).toFixed(2)}` : "—"}</td>
+                    {(() => {
+                      const mkt = marketRentPsfYr(r.rec, game.econ, r.h.condition);
+                      const d = mkt > 0 ? t.rentPsf / mkt - 1 : 0;
+                      return <td className={"num" + (d < -0.12 ? " neg" : "")}>{(d * 100).toFixed(0)}%</td>;
+                    })()}
                     <td className={"num" + (t.endM - q <= 12 ? " neg" : "")}>{monthLabel(t.endM)}</td>
                   </tr>
                 ))}
               {!rows.some((r) => r.h.tenants.length) && (
-                <tr><td colSpan={8} className="dim">Nothing under lease yet.</td></tr>
+                <tr><td colSpan={10} className="dim">Nothing under lease yet.</td></tr>
               )}
             </tbody>
           </table>

@@ -5,6 +5,7 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import { resolveRec } from "./value";
 import type { GameState, Holding, Loan } from "./types";
+import { logBooks } from "./types";
 import { holdingNOIYr, holdingValue } from "./value";
 
 export interface LoanProduct {
@@ -111,10 +112,12 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
   loan.balance = Math.max(0, loan.balance - principalPay);
   let cashOut = loan.monthlyPmt;
 
-  // covenants
+  // covenants — after a 12-month stabilization holiday, so a building you
+  // just bought with honest vacancy isn't in default before the ink dries
+  const holiday = q < loan.originM + 12;
   const d = dscr(rec, s, h);
   const l = ltv(rec, s, h);
-  const breached = (d !== null && d < loan.minDSCR) || (l !== null && l > loan.maxLTV);
+  const breached = !holiday && ((d !== null && d < loan.minDSCR) || (l !== null && l > loan.maxLTV));
   if (breached) {
     if (!loan.sweep) {
       s.news.unshift({
@@ -141,7 +144,9 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
   }
   if (loan.balance === 0) { h.loan = null; return cashOut; }
 
-  // the balloon
+  // the balloon. An automatic refi rolls the SAME balance — the bank isn't
+  // in the business of handing you equity unasked. Cash-out is a choice you
+  // make with the Refi button.
   if (q >= loan.maturityM) {
     const value = holdingValue(rec, s.econ, h);
     const noi = holdingNOIYr(rec, s.econ, h, q);
@@ -149,13 +154,17 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
     const qd = quote(s, product, value, noi);
     const fee = Math.round(loan.balance * REFI_FEE);
     if (qd.principal >= loan.balance + fee) {
-      const cashOutRefi = qd.principal - loan.balance - fee;
+      const rolled = loan.balance;
       h.loan = originate(s, product, value, noi);
-      if (h.loan) h.loan.balance = h.loan.principal = qd.principal;
-      s.cash += cashOutRefi;
+      if (h.loan) {
+        h.loan.balance = h.loan.principal = rolled;
+        h.loan.monthlyPmt = Math.round(monthlyPayment(rolled, h.loan.ratePct, h.loan.amortYears));
+      }
+      s.cash -= fee;
+      logBooks(s, "debtSvc", fee);
       s.news.unshift({
         q, kind: "deal",
-        text: `Balloon at ${rec.address} refinanced at ${qd.ratePct.toFixed(2)}%${cashOutRefi > 100_000 ? ` — $${(cashOutRefi / 1e6).toFixed(2)}M cash-out` : ""}.`,
+        text: `Balloon at ${rec.address} rolled into new paper at ${qd.ratePct.toFixed(2)}% (fee $${(fee / 1000).toFixed(0)}K). Want equity out? That's a refi you choose.`,
       });
     } else {
       const shortfall = loan.balance + fee - qd.principal;
@@ -170,6 +179,9 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
         // forced sale
         const gross = Math.round(value * 0.92);
         s.cash += gross - loan.balance;
+        logBooks(s, "sold", gross - loan.balance);
+        s.exits = s.exits ?? [];
+        s.exits.push({ bbl: h.bbl, address: rec.address, boughtM: h.boughtM, soldM: q, price: gross, basis: h.costBasis, gain: gross - h.costBasis, forced: true });
         delete s.holdings[h.bbl];
         s.news.unshift({
           q, kind: "warn",
@@ -199,6 +211,7 @@ export function buyRateCap(s: GameState, parcels: ParcelTable, bbl: string): { s
   if (next.cash < cost) return { s, err: `The cap desk wants $${(cost / 1e6).toFixed(2)}M premium — you're short.` };
   const strike = +(next.econ.indexRate + 0.5).toFixed(2);
   next.cash -= cost;
+  logBooks(next, "debtSvc", cost);
   h.loan.cap = { strike, expiresM: next.month + CAP_TERM_M };
   next.news.unshift({
     q: next.month, kind: "deal",
@@ -224,6 +237,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   const newLoan = originate(next, product, value, noi);
   if (!newLoan) return { s, err: "No lender will size a loan against this income." };
   next.cash += qd.principal - oldBal - fee;
+  logBooks(next, "debtSvc", fee);
   h.loan = newLoan;
   next.news.unshift({
     q: next.month, kind: "deal",

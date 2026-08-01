@@ -7,16 +7,18 @@
 // from empty. A modest random cost/schedule overrun keeps it honest.
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Development, GameState } from "./types";
-import { monthLabel } from "./types";
+import { logBooks, monthLabel } from "./types";
 import { rng, rrange } from "./market";
 import { resolveRec } from "./value";
 import { genAnchorTenant } from "./leasing";
 
 const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
 
-// hard cost $/sf by use, before the height premium and soft costs
+// hard cost $/sf by use, before the height premium and soft costs.
+// Sized so stabilized yield-on-cost lands ~150-250bps over the exit cap —
+// a real development margin, not free money.
 export const HARD_COST_PSF: Record<BuiltClass, number> = {
-  office: 240, mixed: 225, multifamily: 205, retail: 185, industrial: 105,
+  office: 400, mixed: 375, multifamily: 330, retail: 300, industrial: 165,
 };
 const SOFT_COST = 0.18;        // design, legal, carry, contingency
 const CONSTR_SPREAD = 2.4;     // over the index, interest-only
@@ -90,6 +92,7 @@ export function startDevelopment(
   if (s.cash < plan.equity) return { s, err: `Ground-breaking needs $${(plan.equity / 1e6).toFixed(2)}M of equity — you're short.` };
   const next = clone(s);
   next.cash -= plan.equity;
+  logBooks(next, "dev", plan.equity);
   next.developments[bbl] = {
     bbl,
     use,
@@ -117,7 +120,9 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
     const rec = parcels[d.bbl];
     if (!rec || !s.holdings[d.bbl]) { delete s.developments[d.bbl]; continue; }
     // construction interest, out of pocket
-    s.cash -= Math.round((d.loanBalance * d.ratePct) / 100 / 12);
+    const ci = Math.round((d.loanBalance * d.ratePct) / 100 / 12);
+    s.cash -= ci;
+    logBooks(s, "dev", ci);
 
     const mid = Math.floor((d.startM + d.deliverM) / 2);
     if (!d.overrunRolled && s.month >= mid) {
@@ -127,6 +132,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
         const extra = Math.round(d.costTotal * bump);
         d.costTotal += extra;
         s.cash -= extra; // change orders are an equity check
+        logBooks(s, "dev", extra);
         s.news.unshift({ q: s.month, kind: "warn", text: `Change orders at ${rec.address}: the budget grew $${(extra / 1e6).toFixed(2)}M (${(bump * 100).toFixed(0)}%).` });
       }
       if (rng(s) < 0.3) {
@@ -202,6 +208,7 @@ export function startProgram(s: GameState, parcels: ParcelTable, bbl: string, pr
   if (s.cash < cost) return { s, err: `${p.label} costs $${(cost / 1e6).toFixed(2)}M — you're short.` };
   const next = clone(s);
   next.cash -= cost;
+  logBooks(next, "capex", cost);
   const nh = next.holdings[bbl];
   nh.program = { id: programId, untilM: next.month + p.months };
   next.news.unshift({ q: next.month, kind: "info", text: `${p.label} underway at ${rec.address} ($${(cost / 1e6).toFixed(2)}M).` });

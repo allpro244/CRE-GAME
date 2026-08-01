@@ -3,7 +3,7 @@
 // returns a new state or an error string, never mutates the input.
 import type { Adjacency, ParcelTable } from "@/data/types";
 import type { GameState, Holding } from "./types";
-import { monthLabel } from "./types";
+import { logBooks, monthLabel } from "./types";
 import { rng, rrange } from "./market";
 import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS, noiYr, resolveRec } from "./value";
 import { genRentRoll, isCommercial } from "./leasing";
@@ -41,6 +41,7 @@ function executePurchase(
   }
   const next = clone(s);
   next.cash -= bq.equity;
+  logBooks(next, "bought", bq.equity);
   const holding: Holding = {
     bbl,
     boughtM: next.month,
@@ -98,7 +99,7 @@ export function approachOwner(
   if (s.holdings[bbl]) return { s, err: "You own it." };
   if (s.listings.some((l) => l.bbl === bbl)) return { s, err: "It's already listed — hit the Market tab." };
   const prior = s.approaches[bbl];
-  if (prior && s.month < prior.q + 4) {
+  if (prior && s.month < prior.q + 6) {
     return { s, err: prior.refused ? "You knocked recently — the owner hasn't changed their mind." : "You already have their number — it's good for a while." };
   }
   const next = clone(s);
@@ -117,15 +118,51 @@ export function approachOwner(
   const premium = 1.06 + 0.5 * Math.pow(rng(next), 2) + 0.22 * pressure;
   const ask = Math.round(assetValue(rec, next.econ, initialCondition(rec)) * premium / 1000) * 1000;
   next.approaches[bbl] = { q: next.month, refused: false, ask };
-  next.news.unshift({ q: next.month, kind: "info", text: `${rec.address}: the owner would take $${(ask / 1e6).toFixed(2)}M. The number holds for four quarters.` });
+  next.news.unshift({ q: next.month, kind: "info", text: `${rec.address}: the owner would take $${(ask / 1e6).toFixed(2)}M. The number holds for six months.` });
   return { s: next, ask };
 }
 
 export function buyOffMarket(s: GameState, parcels: ParcelTable, bbl: string, product: BuyProduct): { s: GameState; err?: string } {
   const a = s.approaches[bbl];
   if (!a || a.refused || !a.ask) return { s, err: "No live ask — approach the owner first." };
-  if (s.month > a.q + 4) return { s, err: "That number expired." };
+  if (s.month > a.q + 6) return { s, err: "That number expired." };
   return executePurchase(s, parcels, bbl, a.ask, product, true);
+}
+
+// One counter per approach: come back 12% under their number. They take it,
+// hold firm, or hang up — pushing a holdout too hard loses the deal entirely.
+export function counterOffMarket(
+  s: GameState, parcels: ParcelTable, adjacency: Adjacency, bbl: string,
+): { s: GameState; err?: string; msg?: string } {
+  const a = s.approaches[bbl];
+  const rec = parcels[bbl];
+  if (!a || a.refused || !a.ask || !rec) return { s, err: "No live ask to counter." };
+  if (a.countered) return { s, err: "You already countered — the number on the table is the number." };
+  if (s.month > a.q + 6) return { s, err: "That number expired." };
+  const next = clone(s);
+  const na = next.approaches[bbl];
+  na.countered = true;
+  const pressure = assemblagePressure(next, adjacency, bbl);
+  const pTake = Math.max(0.08, Math.min(0.75,
+    0.48
+    - 0.35 * pressure                                          // holdouts don't blink
+    + (next.econ.phase === "recession" ? 0.18 : 0)             // fear is your friend
+    - (next.econ.phase === "expansion" ? 0.08 : 0),
+  ));
+  const roll = rng(next);
+  if (roll < pTake) {
+    na.ask = Math.round(a.ask * 0.88 / 1000) * 1000;
+    next.news.unshift({ q: next.month, kind: "deal", text: `${rec.address}: the owner grumbled and took your number — $${(na.ask / 1e6).toFixed(2)}M.` });
+    return { s: next, msg: "They took it." };
+  }
+  if (roll < pTake + 0.45) {
+    next.news.unshift({ q: next.month, kind: "info", text: `${rec.address}: the owner didn't move. $${(a.ask / 1e6).toFixed(2)}M stands.` });
+    return { s: next, msg: "They held firm." };
+  }
+  na.refused = true;
+  delete na.ask;
+  next.news.unshift({ q: next.month, kind: "info", text: `${rec.address}: the owner hung up. The door is closed for a while.` });
+  return { s: next, msg: "They walked." };
 }
 
 // Selling is a process, not a button: list at an ask, wait for offers, and
@@ -173,12 +210,17 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   if (exchange && tax <= 0) return { s, err: "No gain to shelter — just take the cash." };
   const next = clone(s);
   next.cash += net - (h.loan?.balance ?? 0);
+  logBooks(next, "sold", net - (h.loan?.balance ?? 0));
   if (exchange) {
     next.exchange = { deferredTax: tax, rolledGain: gain, minPrice: offer.price, deadlineM: next.month + EXCHANGE_WINDOW_M };
   } else if (tax > 0) {
     next.cash -= tax;
     next.taxesPaid = (next.taxesPaid ?? 0) + tax;
+    logBooks(next, "taxes", tax);
   }
+  next.exits = next.exits ?? [];
+  next.exits.push({ bbl, address: rec.address, boughtM: h.boughtM, soldM: next.month, price: offer.price, basis: h.costBasis, gain });
+  if (next.exits.length > 200) next.exits.shift();
   delete next.holdings[bbl];
   next.lois = next.lois.filter((l) => l.bbl !== bbl);
   next.news.unshift({
@@ -295,6 +337,7 @@ export function startRenovation(s: GameState, parcels: ParcelTable, bbl: string)
   if (s.cash < cost) return { s, err: `Renovation costs $${(cost / 1e6).toFixed(2)}M cash — you're short.` };
   const next = clone(s);
   next.cash -= cost;
+  logBooks(next, "capex", cost);
   const nh = next.holdings[bbl];
   nh.renovatingUntilM = next.month + RENO_MONTHS;
   nh.tenants = []; // remaining tenants are bought out as part of the job

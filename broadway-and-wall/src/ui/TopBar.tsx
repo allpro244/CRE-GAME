@@ -9,6 +9,8 @@ export default function TopBar() {
   const lens = useStore((s) => s.lens);
   const setLens = useStore((s) => s.setLens);
   const advance = useStore((s) => s.advance);
+  const advanceYear = useStore((s) => s.advanceYear);
+  const advanceUntil = useStore((s) => s.advanceUntil);
   const page = useStore((s) => s.page);
   const setPage = useStore((s) => s.setPage);
   const nw = derivedNetWorth();
@@ -53,6 +55,9 @@ export default function TopBar() {
           <button className={"nav-btn" + (page === "market" ? " nav-on" : "")} onClick={() => setPage(page === "market" ? "none" : "market")}>
             Market
           </button>
+          <button className={"nav-btn" + (page === "books" ? " nav-on" : "")} onClick={() => setPage(page === "books" ? "none" : "books")}>
+            Books
+          </button>
           <span className="topbar-sep" />
           <button
             className={"lens-btn" + (lens === "land" ? " lens-on" : "")}
@@ -68,8 +73,14 @@ export default function TopBar() {
           >
             ◨ Demand
           </button>
-          <button className="advance-btn" onClick={advance} disabled={!!game.gameOver}>
+          <button className="advance-btn" onClick={advance} disabled={!!game.gameOver} title="One month (Space)">
             Advance ▸
+          </button>
+          <button className="advance-btn advance-fast" onClick={advanceYear} disabled={!!game.gameOver} title="A year, stopping if something needs you (Y)">
+            Yr ▸▸
+          </button>
+          <button className="advance-btn advance-fast" onClick={advanceUntil} disabled={!!game.gameOver} title="Skip to the next thing that needs a decision, up to 3 years (N)">
+            ⏭
           </button>
         </div>
       )}

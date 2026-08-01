@@ -137,8 +137,11 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
   if (rec.class === "land" || !rec.bldgArea) return -landValue(rec, econ) * 0.012;
   const cls = rec.class as BuiltClass;
   if (cls === "multifamily") {
+    // units turn over and things break: a 7% reserve off collections for
+    // turns, appliances, roofs. Appraisers skip it; owners never get to.
     const occ = h.occ ?? occupancy(rec, econ);
-    return rec.bldgArea * (marketRentPsfYr(rec, econ, h.condition) * occ - OPEX_PSF[cls] * econ.costIdx) - propertyTaxYr(rec, h);
+    const egi = rec.bldgArea * marketRentPsfYr(rec, econ, h.condition) * occ;
+    return egi * 0.93 - rec.bldgArea * OPEX_PSF[cls] * econ.costIdx - propertyTaxYr(rec, h);
   }
   let egi = 0, grossLeasedSf = 0, leasedSf = 0;
   for (const t of h.tenants) {

@@ -363,3 +363,19 @@ body {
   border-radius: 5px; padding: 9px 12px; margin-bottom: 14px;
   font-size: 13px; color: var(--ink); font-style: normal;
 }
+
+/* distress listings run hot */
+.chip-distress { background: #a8402e; color: #fdfbf4; }
+
+/* the net-worth chart: one century, one stroke */
+.nw-chart { width: 100%; height: auto; display: block; margin: 10px 0 4px; }
+.nw-line { stroke: var(--gold); stroke-width: 2; }
+.nw-fill { fill: rgba(176, 127, 30, 0.12); stroke: none; }
+.nw-zero { stroke: rgba(168, 64, 46, 0.5); stroke-dasharray: 4 3; stroke-width: 1; }
+
+/* pending milestones sit quiet */
+.mini-row.mini-dim { opacity: 0.55; }
+
+/* the fast-forward buttons */
+.advance-btn.advance-fast { background: rgba(43, 37, 26, 0.78); padding: 6px 10px; }
+.advance-btn.advance-fast:hover { background: #463d2c; }

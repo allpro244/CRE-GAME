@@ -114,12 +114,14 @@ export interface Listing {
   ask: number;
   listedM: number;
   expiresM: number;
+  distress?: boolean;  // motivated seller — priced under appraisal, goes fast
 }
 
 export interface Approach {
   q: number;           // when the owner was approached
   refused: boolean;
   ask?: number;        // if willing: their number, good for 4 quarters
+  countered?: boolean; // you get one counter per approach
 }
 
 export interface NewsItem {
@@ -150,8 +152,33 @@ export interface Econ {
   history: EconHistoryPoint[];
 }
 
+// One year of the ledger: every dollar in or out, bucketed. The Books page
+// renders these; actions and the tick both write into the current year.
+export interface BooksYear {
+  yr: number;       // 0-based game year
+  noi: number;      // property NOI collected (pre-debt)
+  debtSvc: number;  // debt service + refi fees + cap premiums
+  leasing: number;  // TI, LC, broker retainers
+  capex: number;    // programs, renovations, make-ready turns
+  dev: number;      // development equity, construction interest, overruns
+  taxes: number;    // income + capital gains + property (property is inside NOI)
+  bought: number;   // equity out the door on acquisitions
+  sold: number;     // net proceeds in from dispositions
+}
+
+export interface Exit {
+  bbl: string;
+  address: string;
+  boughtM: number;
+  soldM: number;
+  price: number;
+  basis: number;
+  gain: number;
+  forced?: boolean;
+}
+
 export interface GameState {
-  v: 6;
+  v: 7;
   seed: number;
   rng: number;
   month: number;
@@ -171,9 +198,25 @@ export interface GameState {
   // a 1031 exchange in flight: sale gain rolled, tax deferred until the clock runs out
   exchange: { deferredTax: number; rolledGain: number; minPrice: number; deadlineM: number } | null;
   taxesPaid: number;
+  books: BooksYear[];                        // the ledger, one entry per year
+  nwHistory: number[];                       // net worth at each month, for the chart
+  exits: Exit[];                             // every disposition, forced or chosen
+  milestones: Record<string, number>;        // milestone id -> month achieved
   news: NewsItem[];
   gameOver: { cause: string; complete?: boolean } | null;
   insolventMs: number;
+}
+
+// Write a cash flow into the current year's ledger bucket.
+export function logBooks(s: GameState, key: keyof Omit<BooksYear, "yr">, amt: number) {
+  if (!s.books) s.books = [];
+  const yr = Math.floor(s.month / 12);
+  let e = s.books[s.books.length - 1];
+  if (!e || e.yr !== yr) {
+    e = { yr, noi: 0, debtSvc: 0, leasing: 0, capex: 0, dev: 0, taxes: 0, bought: 0, sold: 0 };
+    s.books.push(e);
+  }
+  e[key] += amt;
 }
 
 export const START_CASH = 6_000_000;

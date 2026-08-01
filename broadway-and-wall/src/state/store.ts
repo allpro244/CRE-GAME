@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState } from "@/engine/types";
-import { newGame, advanceQuarter, firstListings, portfolioQuarterlyCF } from "@/engine/sim";
-import { buyListing, buyOffMarket, approachOwner, listForSale, delist, acceptSaleOffer, declineSaleOffer, startRenovation, setBroker, type BuyProduct } from "@/engine/actions";
+import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfolioQuarterlyCF } from "@/engine/sim";
+import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, startRenovation, setBroker, type BuyProduct } from "@/engine/actions";
 import { respondLOI, type LOIAction } from "@/engine/leasing";
 import { refinance, buyRateCap } from "@/engine/debt";
 import { startDevelopment, startProgram, setStance } from "@/engine/dev";
@@ -11,7 +11,7 @@ import { netWorth } from "@/engine/value";
 import { loadGame, saveGame } from "@/engine/save";
 
 export type Lens = "none" | "land" | "demand";
-export type Page = "none" | "portfolio" | "deals" | "market";
+export type Page = "none" | "portfolio" | "deals" | "market" | "books";
 
 interface AppState {
   parcels: ParcelTable | null;
@@ -34,6 +34,9 @@ interface AppState {
   setFps: (fps: number) => void;
   setLoadError: (e: string) => void;
   advance: () => void;
+  advanceYear: () => void;
+  advanceUntil: () => void;
+  counterOff: (bbl: string) => void;
   buy: (bbl: string, product: BuyProduct) => void;
   buyOff: (bbl: string, product: BuyProduct) => void;
   approach: (bbl: string) => void;
@@ -87,6 +90,36 @@ export const useStore = create<AppState>((set, get) => ({
     const next = advanceQuarter(game, parcels, bbls, adjacency);
     set({ game: next });
     void persist(next);
+  },
+
+  // A year in one click — but stop early the moment something new needs you.
+  advanceYear: () => {
+    const { game, parcels, bbls, adjacency } = get();
+    if (!game || !parcels || game.gameOver) return;
+    const r = advanceUntilAttention(game, parcels, bbls, adjacency, 12);
+    set({ game: r.s });
+    toast(r.reason ? `Stopped after ${r.months} mo: ${r.reason}` : "A year passes.");
+    void persist(r.s);
+  },
+
+  // Skip ahead until the game needs a decision (up to 3 years).
+  advanceUntil: () => {
+    const { game, parcels, bbls, adjacency } = get();
+    if (!game || !parcels || game.gameOver) return;
+    const r = advanceUntilAttention(game, parcels, bbls, adjacency, 36);
+    set({ game: r.s });
+    toast(r.reason ? `${r.months} mo later: ${r.reason}` : "Three quiet years. Ashport hums along.");
+    void persist(r.s);
+  },
+
+  counterOff: (bbl) => {
+    const { game, parcels, adjacency } = get();
+    if (!game || !parcels || !adjacency) return;
+    const r = counterOffMarket(game, parcels, adjacency, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    if (r.msg) toast(r.msg);
+    void persist(r.s);
   },
 
   buy: (bbl, product) => {
@@ -282,7 +315,7 @@ export async function loadData() {
     // resume the autosave — unless it references parcels that no longer
     // exist (a save from a different city/dataset), in which case start over
     const saved = await loadGame("auto");
-    const fitsCity = saved && saved.v === 6 &&
+    const fitsCity = saved && saved.v === 7 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (fitsCity) {

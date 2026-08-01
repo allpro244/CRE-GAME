@@ -11,6 +11,7 @@ import {
 import { planDevelopment, PROGRAMS, programCost } from "@/engine/dev";
 import type { BuiltClass } from "@/engine/types";
 import { buyQuote, assemblagePressure, saleTaxQuote } from "@/engine/actions";
+import { MILESTONES } from "@/engine/sim";
 import { isCommercial, vacantSf, walt, loiSigningCost, notReadySf } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost } from "@/engine/debt";
 import { usd, sf, pct } from "./format";
@@ -29,7 +30,15 @@ export default function GamePanels() {
   const page = useStore((s) => s.page);
   const setPage = useStore((s) => s.setPage);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPage("none"); };
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "Escape") { setPage("none"); return; }
+      const st = useStore.getState();
+      if (e.code === "Space") { e.preventDefault(); st.advance(); }
+      else if (e.code === "KeyY") st.advanceYear();
+      else if (e.code === "KeyN") st.advanceUntil();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [setPage]);
@@ -42,26 +51,68 @@ export default function GamePanels() {
           <div className="page">
             <div className="page-head">
               <div className="page-title">
-                {page === "portfolio" ? "Portfolio" : page === "deals" ? "The Deals Desk" : "The Market"}
+                {page === "portfolio" ? "Portfolio" : page === "deals" ? "The Deals Desk" : page === "books" ? "The Books" : "The Market"}
               </div>
               <button className="panel-close" onClick={() => setPage("none")}>×</button>
             </div>
             {page === "portfolio" && <PortfolioPage />}
             {page === "deals" && <DealsPage />}
             {page === "market" && <MarketPage />}
+            {page === "books" && <BooksPage />}
           </div>
         </div>
       )}
-      {game.gameOver && (
-        <div className="page-backdrop">
-          <div className="page gameover-page">
-            <div className="page-title">{game.gameOver.complete ? "A Century of Ashport" : "The run is over."}</div>
-            <p>{game.gameOver.cause}</p>
-            <button className="btn btn-buy" onClick={() => useStore.getState().newRun()}>Start a new run</button>
-          </div>
-        </div>
-      )}
+      {game.gameOver && <GameOverPage />}
     </>
+  );
+}
+
+function GameOverPage() {
+  const game = useStore((s) => s.game)!;
+  const over = game.gameOver!;
+  const peak = Math.max(...game.nwHistory);
+  const finalNw = game.nwHistory[game.nwHistory.length - 1] ?? 0;
+  const realized = game.exits.reduce((a, e) => a + e.gain, 0);
+  const miles = Object.keys(game.milestones ?? {}).length;
+  return (
+    <div className="page-backdrop">
+      <div className="page gameover-page">
+        <div className="page-title">{over.complete ? "A Century of Ashport" : "The run is over."}</div>
+        <p style={{ maxWidth: 640, margin: "10px auto" }}>{over.cause}</p>
+        <NWChart data={game.nwHistory} height={140} />
+        <div className="stat-strip" style={{ justifyContent: "center", marginTop: 14 }}>
+          <Big label="Final net worth" value={usd(finalNw)} bad={finalNw < 0} />
+          <Big label="Peak" value={usd(peak)} />
+          <Big label="Realized gains" value={usd(realized)} bad={realized < 0} />
+          <Big label="Exits" value={String(game.exits.length)} />
+          <Big label="Taxes paid" value={usd(game.taxesPaid ?? 0)} />
+          <Big label="Milestones" value={`${miles} / ${MILESTONES.length}`} />
+        </div>
+        <button className="btn btn-buy" style={{ marginTop: 16 }} onClick={() => useStore.getState().newRun()}>Start a new run</button>
+      </div>
+    </div>
+  );
+}
+
+// The net-worth line, drawn plainly: a century in one stroke.
+function NWChart({ data, height = 120 }: { data: number[]; height?: number }) {
+  if (!data || data.length < 2) return null;
+  const W = 720, H = height, PAD = 6;
+  const step = Math.max(1, Math.floor(data.length / 360));
+  const pts: number[] = [];
+  for (let i = 0; i < data.length; i += step) pts.push(data[i]);
+  if (pts[pts.length - 1] !== data[data.length - 1]) pts.push(data[data.length - 1]);
+  const lo = Math.min(0, ...pts), hi = Math.max(1, ...pts);
+  const x = (i: number) => PAD + (i / (pts.length - 1)) * (W - 2 * PAD);
+  const y = (v: number) => H - PAD - ((v - lo) / (hi - lo)) * (H - 2 * PAD);
+  const line = pts.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const zero = y(0);
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="nw-chart" role="img" aria-label="Net worth over time">
+      <polygon points={`${x(0)},${zero} ${line} ${x(pts.length - 1)},${zero}`} className="nw-fill" />
+      {lo < 0 && <line x1={PAD} x2={W - PAD} y1={zero} y2={zero} className="nw-zero" />}
+      <polyline points={line} className="nw-line" fill="none" />
+    </svg>
   );
 }
 
@@ -109,6 +160,7 @@ function ParcelPanel() {
         {holding && <span className="chip chip-owned">OWNED</span>}
         {dev && <span className="chip chip-reno">UNDER CONSTRUCTION</span>}
         {listing && !holding && <span className="chip chip-listed">FOR SALE</span>}
+        {listing?.distress && !holding && <span className="chip chip-distress">MOTIVATED SELLER</span>}
         {holding?.sale && <span className="chip chip-listed">LISTED · {usd(holding.sale.ask)}</span>}
         {renovating && <span className="chip chip-reno">RENOVATING</span>}
         {holding?.loan?.sweep && <span className="chip chip-sweep">CASH SWEEP</span>}
@@ -207,12 +259,23 @@ function ParcelPanel() {
               <div className="grid">
                 <Row k="Owner's ask" v={usd(appr.ask)} strong />
                 <Row k="vs. appraisal" v={((appr.ask / apMid(selectedBBL, value) - 1) * 100).toFixed(1) + "%"} />
-                <Row k="Good until" v={monthLabel(appr.q + 12)} />
+                <Row k="Good until" v={monthLabel(appr.q + 6)} />
               </div>
               <BuyButtons bbl={selectedBBL} price={appr.ask} off />
+              {!appr.countered && (
+                <div className="btn-row">
+                  <button
+                    className="btn"
+                    title="Come back 12% under their number. They take it, hold firm, or hang up — one shot."
+                    onClick={() => useStore.getState().counterOff(selectedBBL)}
+                  >
+                    Counter · {usd(appr.ask * 0.88)}
+                  </button>
+                </div>
+              )}
             </>
           ) : appr && appr.refused ? (
-            <div className="hint">The owner turned you away in {monthLabel(appr.q)}. Try again after {monthLabel(appr.q + 12)}.</div>
+            <div className="hint">The owner turned you away in {monthLabel(appr.q)}. Try again after {monthLabel(appr.q + 6)}.</div>
           ) : (
             <>
               <div className="hint">
@@ -697,7 +760,7 @@ function MarketPage() {
                 const v = apMid(li.bbl, assetValue(rec, game.econ, initialCondition(rec)));
                 return (
                   <tr key={li.bbl} onClick={() => go(li.bbl)}>
-                    <td>{rec.address}</td>
+                    <td>{li.distress && <span className="chip chip-distress" style={{ marginRight: 6 }}>HOT</span>}{rec.address}</td>
                     <td>{CLASS_LABEL[rec.class]}</td>
                     <td className="mono">{rec.bldgArea ? (rec.bldgArea / 1000).toFixed(0) + "k sf" : (rec.lotArea / 1000).toFixed(0) + "k sf lot"}</td>
                     <td className="mono">{usd(li.ask)}</td>
@@ -715,6 +778,95 @@ function MarketPage() {
             {game.news.slice(0, 24).map((n, i) => (
               <div key={i} className={"news-item news-" + n.kind}>
                 <span className="news-q mono">{monthLabel(n.q)}</span> {n.text}
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function BooksPage() {
+  const game = useStore((s) => s.game)!;
+  const nw = game.nwHistory[game.nwHistory.length - 1] ?? 0;
+  const realized = game.exits.reduce((a, e) => a + e.gain, 0);
+  const years = [...(game.books ?? [])].reverse().slice(0, 15);
+  const exits = [...(game.exits ?? [])].reverse().slice(0, 12);
+  const achieved = MILESTONES.filter((m) => game.milestones?.[m.id] !== undefined);
+  const pending = MILESTONES.filter((m) => game.milestones?.[m.id] === undefined);
+  return (
+    <div>
+      <div className="stat-strip">
+        <Big label="Net worth" value={usd(nw)} bad={nw < 0} />
+        <Big label="Cash" value={usd(game.cash)} bad={game.cash < 0} />
+        <Big label="Realized gains" value={usd(realized)} bad={realized < 0} />
+        <Big label="Taxes paid, lifetime" value={usd(game.taxesPaid ?? 0)} />
+        <Big label="Exits" value={String(game.exits.length)} />
+      </div>
+      <NWChart data={game.nwHistory} />
+      <div className="page-section">
+        <div className="page-section-head">The ledger, by year</div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Year</th><th className="num">NOI</th><th className="num">Debt svc</th><th className="num">Leasing</th>
+                <th className="num">Capex</th><th className="num">Development</th><th className="num">Taxes</th>
+                <th className="num">Acquisitions</th><th className="num">Dispositions</th><th className="num">Net</th>
+              </tr>
+            </thead>
+            <tbody>
+              {years.map((b) => {
+                const net = b.noi - b.debtSvc - b.leasing - b.capex - b.dev - b.taxes - b.bought + b.sold;
+                return (
+                  <tr key={b.yr} style={{ cursor: "default" }}>
+                    <td className="mono">{2026 + b.yr}</td>
+                    <td className="num">{usd(b.noi)}</td>
+                    <td className="num">{b.debtSvc ? "−" + usd(b.debtSvc) : "—"}</td>
+                    <td className="num">{b.leasing ? "−" + usd(b.leasing) : "—"}</td>
+                    <td className="num">{b.capex ? "−" + usd(b.capex) : "—"}</td>
+                    <td className="num">{b.dev ? "−" + usd(b.dev) : "—"}</td>
+                    <td className="num">{b.taxes ? "−" + usd(b.taxes) : "—"}</td>
+                    <td className="num">{b.bought ? "−" + usd(b.bought) : "—"}</td>
+                    <td className="num">{b.sold ? usd(b.sold) : "—"}</td>
+                    <td className={"num" + (net < 0 ? " neg" : "")}>{usd(net)}</td>
+                  </tr>
+                );
+              })}
+              {!years.length && <tr><td colSpan={10} className="dim">Nothing on the books yet — advance a month.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div className="deals-grid">
+        <section className="page-section">
+          <div className="page-section-head">Dispositions</div>
+          <div className="mini-list">
+            {exits.map((e, i) => (
+              <div key={i} className="mini-row" style={{ cursor: "default" }}>
+                <span>{e.forced ? "⚠ " : ""}{e.address}</span>
+                <span className="mono">
+                  {usd(e.price)} · {e.gain >= 0 ? "+" : "−"}{usd(Math.abs(e.gain))} · held {((e.soldM - e.boughtM) / 12).toFixed(1)} yrs
+                </span>
+              </div>
+            ))}
+            {!exits.length && <div className="hint">No sales yet. The first exit is the education.</div>}
+          </div>
+        </section>
+        <section className="page-section">
+          <div className="page-section-head">Milestones · {achieved.length} of {MILESTONES.length}</div>
+          <div className="mini-list">
+            {achieved.map((m) => (
+              <div key={m.id} className="mini-row" style={{ cursor: "default" }}>
+                <span>◆ {m.label}</span>
+                <span className="mono">{monthLabel(game.milestones[m.id])}</span>
+              </div>
+            ))}
+            {pending.slice(0, 4).map((m) => (
+              <div key={m.id} className="mini-row mini-dim" style={{ cursor: "default" }}>
+                <span>◇ {m.label}</span>
+                <span className="mono dim">—</span>
               </div>
             ))}
           </div>

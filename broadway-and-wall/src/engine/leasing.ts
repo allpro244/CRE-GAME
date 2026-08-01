@@ -4,6 +4,7 @@
 // Multifamily skips all of this and runs aggregate occupancy.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Credit, GameState, Holding, LOI, Sector } from "./types";
+import { logBooks } from "./types";
 import { rng, rrange } from "./market";
 import { marketRentPsfYr, managedRentPsfYr, occupancy, resolveRec } from "./value";
 
@@ -151,6 +152,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const outSf = movedOut.reduce((sum, t) => sum + t.sf, 0);
       const turnCost = Math.round(outSf * MAKE_READY_PSF * s.econ.costIdx);
       s.cash -= turnCost;
+      logBooks(s, "capex", turnCost);
       h.makeReady = [...(h.makeReady ?? []), { sf: outSf, readyM: q + Math.round(rrange(s, 2, 5)) }];
       s.news.unshift({
         q, kind: "info",
@@ -165,8 +167,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     // leasing broker retainer: a live exclusive costs money every month it runs
     if (h.broker) {
       const vacNow = vacantSf(rec, h);
-      if (vacNow > 500) s.cash -= Math.max(400, Math.round(vacNow * 0.025));
-      else delete h.broker; // full building: the exclusive lapses
+      if (vacNow > 500) {
+        const fee = Math.max(400, Math.round(vacNow * 0.025));
+        s.cash -= fee;
+        logBooks(s, "leasing", fee);
+      } else delete h.broker; // full building: the exclusive lapses
     }
 
     // contractual escalations: rents step up ~2.5% on each lease anniversary
@@ -259,6 +264,7 @@ export function respondLOI(
     const cost = loiSigningCost(l);
     if (next.cash < cost) return `Signing costs $${(cost / 1e6).toFixed(2)}M (TI + commission) — you're short.`;
     next.cash -= cost;
+    logBooks(next, "leasing", cost);
     if (l.kind === "renewal" && l.tenantIdx !== undefined && h.tenants[l.tenantIdx]) {
       const t = h.tenants[l.tenantIdx];
       t.rentPsf = l.rentPsf;

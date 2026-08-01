@@ -777,21 +777,26 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       }
 
       // ---- rooftop furniture ----------------------------------------------
-      if (v.b && v.z1 >= 12 && !gable) {
+      // Everything up here keys off how tall the BUILDING is, not how high its
+      // roof happens to sit. A two-storey house on a hillside terrace is still
+      // a two-storey house; giving it a broadcast mast because the ground under
+      // it is 90 m up put an antenna forest on every hill.
+      const hgt = v.z1 - v.z0;
+      if (v.b && hgt >= 12 && !gable) {
         let cx = 0, cy = 0;
         for (const [x, y] of ring) { cx += x; cy += y; }
         cx /= ring.length; cy /= ring.length;
         const seed = Number(v.b) % 1000;
         const jit = (k: number, amp: number) => (((seed * (k + 3) * 2654435761) % 1000) / 1000 - 0.5) * amp;
-        if (v.z1 >= 20) props.push({ kind: 2, x: cx + jit(1, 6), y: cy + jit(2, 6), z: v.z1, s: 1 + (v.z1 > 60 ? 0.6 : 0), rot: jit(3, 3) });
-        if (v.y < 1968 && v.z1 >= 22) props.push({ kind: 0, x: cx + jit(4, 8), y: cy + jit(5, 8), z: v.z1, s: 1, rot: 0 });
-        const nAc = v.z1 > 40 ? 3 : 1;
+        if (hgt >= 20) props.push({ kind: 2, x: cx + jit(1, 6), y: cy + jit(2, 6), z: v.z1, s: 1 + (hgt > 60 ? 0.6 : 0), rot: jit(3, 3) });
+        if (v.y < 1968 && hgt >= 22) props.push({ kind: 0, x: cx + jit(4, 8), y: cy + jit(5, 8), z: v.z1, s: 1, rot: 0 });
+        const nAc = hgt > 40 ? 3 : 1;
         for (let k = 0; k < nAc; k++) props.push({ kind: 1, x: cx + jit(6 + k, 10), y: cy + jit(9 + k, 10), z: v.z1, s: 0.8 + 0.4 * ((seed >> k) % 2), rot: jit(12 + k, 3) });
-        if (v.z1 >= 105 && v.y >= 1975) props.push({ kind: 3, x: cx, y: cy, z: v.z1, s: 1, rot: 0 });
+        if (hgt >= 105 && v.y >= 1975) props.push({ kind: 3, x: cx, y: cy, z: v.z1, s: 1, rot: 0 });
         // antennas crown the tallest towers
-        if (v.z1 >= 95) props.push({ kind: 4, x: cx + jit(15, 5), y: cy + jit(16, 5), z: v.z1, s: 1 + (v.z1 - 95) / 60, rot: 0 });
+        if (hgt >= 95) props.push({ kind: 4, x: cx + jit(15, 5), y: cy + jit(16, 5), z: v.z1, s: 1 + (hgt - 95) / 60, rot: 0 });
         // skylight monitors on industrial sheds
-        if (style === S_MILL && v.z1 < 15) {
+        if (style === S_MILL && hgt < 15) {
           for (let k = 0; k < 2; k++) props.push({ kind: 6, x: cx + jit(20 + k, 12), y: cy + jit(23 + k, 12), z: v.z1, s: 1, rot: jit(26, 1) });
         }
       }

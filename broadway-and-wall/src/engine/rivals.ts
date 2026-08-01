@@ -137,9 +137,13 @@ export function marketAppetite(s: GameState): number {
   return Math.max(0.2, a / n / NEUTRAL_APPETITE);
 }
 
-// the average of STYLE.appetite across the six firms, at ci = 1 and full dry
-// powder: the reference the ratio above is quoted against
-const NEUTRAL_APPETITE = 0.79;
+// The reference a healthy street reads against, measured from play rather
+// than derived: six firms at a normal credit window with normal dry powder.
+// Getting this wrong is not cosmetic — appetite scales how fast listings are
+// absorbed, and a number that sits below one all century means every building
+// lingers on the tape and stale-reprices downward, which is a standing gift to
+// whoever buys the most. It cost the audit its entire risk frontier once.
+const NEUTRAL_APPETITE = 0.43;
 
 /** The firm that owns this parcel, if any. */
 export function ownerOf(s: GameState, bbl: string): Rival | null {
@@ -155,13 +159,78 @@ export function ownerOf(s: GameState, bbl: string): Rival | null {
  * neither because the bank is calling, you are a forced seller and the whole
  * market finds out.
  */
+// Money that comes back. A firm that fails is replaced, because the buildings
+// are still there and somebody always raises a fund to buy them — a city that
+// loses three shops over a century and never gains one is not a city, it is a
+// slow liquidation.
+const NEW_FIRMS: { name: string; style: RivalStyle }[] = [
+  { name: "Northgate Partners", style: "opportunistic" },
+  { name: "Sable & Hale", style: "core" },
+  { name: "Drydock Holdings", style: "developer" },
+  { name: "Ostrander Group", style: "opportunistic" },
+  { name: "Bellweather Estates", style: "family" },
+  { name: "Quarry Lane Capital", style: "core" },
+  { name: "Ashport Municipal Pension", style: "core" },
+  { name: "Fen & Marrow", style: "opportunistic" },
+];
+const MIN_FIRMS = 4;
+
+function maybeNewFirm(s: GameState, ci: number) {
+  const living = livingRivals(s);
+  if (living.length >= MIN_FIRMS) return;
+  // capital returns when the window is open, not while it is shut
+  if (ci < 0.88 || rng(s) > 0.045) return;
+  const used = new Set((s.rivals ?? []).map((r) => r.name));
+  const pool = NEW_FIRMS.filter((f) => !used.has(f.name));
+  if (!pool.length) return;
+  const f = pool[Math.floor(rng(s) * pool.length)];
+  // sized to the era, not to 2026 — a fund raised in year eighty is a year
+  // eighty fund
+  const scale = Math.max(1, living.reduce((a, r) => a + (r.aum ?? 0), 0) / 500_000_000);
+  const equity = Math.round(rrange(s, 24_000_000, 58_000_000) * scale);
+  const ltv = STYLE[f.style].maxLtv * rrange(s, 0.68, 0.88);
+  s.rivals.push({
+    id: `r${s.rivals.length}`, name: f.name, style: f.style,
+    cash: equity, debt: 0, bbls: [], targetLtv: +ltv.toFixed(2), bornM: s.month,
+  });
+  s.news.unshift({
+    q: s.month, kind: "event",
+    text: `${f.name} has raised $${(equity / 1e6).toFixed(0)}M and is looking for buildings. There is competition on the tape again.`,
+  });
+}
+
 export function tickRivals(s: GameState, parcels: ParcelTable) {
   if (!s.rivals?.length) return;
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
   const rate = s.econ.indexRate + RATE_SPREAD;
+  maybeNewFirm(s, ci);
 
   for (const r of s.rivals) {
-    if (r.failedM !== undefined) continue;
+    // THE WORKOUT. A failed firm does not evaporate — a receiver holds the
+    // book and sells it down over years, because dumping a hundred buildings
+    // into one month would clear at nothing and everybody knows it. Releasing
+    // them a couple at a time is both what happens and what keeps a failure
+    // from handing the whole market a year of free money: the first version of
+    // this listed the entire portfolio at once, and the resulting flood of
+    // sixty-cent buildings made the most reckless strategy in the audit the
+    // best one again.
+    if (r.failedM !== undefined) {
+      if (!r.bbls.length) continue;
+      let release = 1 + Math.floor(rng(s) * 2);
+      while (release-- > 0 && r.bbls.length) {
+        const bbl = r.bbls[Math.floor(rng(s) * r.bbls.length)];
+        r.bbls = r.bbls.filter((b) => b !== bbl);
+        if (s.holdings[bbl] || s.listings.some((l) => l.bbl === bbl)) continue;
+        const rec = resolveRec(parcels, s, bbl);
+        if (!rec) continue;
+        const v = assetValue(rec, s.econ, initialCondition(rec));
+        s.listings.push({
+          bbl, ask: Math.round(v * rrange(s, 0.66, 0.86) / 1000) * 1000,
+          listedM: s.month, expiresM: s.month + Math.round(rrange(s, 6, 12)), distress: true,
+        });
+      }
+      continue;
+    }
     const st = STYLE[r.style];
     const { aum, noiYr, ltv } = markRival(s, parcels, r);
     r.aum = Math.round(aum);
@@ -250,20 +319,8 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         r.failedM = s.month;
         s.news.unshift({
           q: s.month, kind: "warn",
-          text: `${r.name} is finished — ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"} go to the lenders. A firm that was buying everything two years ago could not roll a single loan this month.`,
+          text: `${r.name} is finished — ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"} go to the lenders. A firm that was buying everything two years ago could not roll a single loan this month. The receiver will be selling for years.`,
         });
-        // the receiver dumps the rest onto the market over the coming months
-        for (const bbl of r.bbls) {
-          if (s.holdings[bbl] || s.listings.some((l) => l.bbl === bbl)) continue;
-          const rec = resolveRec(parcels, s, bbl);
-          if (!rec) continue;
-          const v = assetValue(rec, s.econ, initialCondition(rec));
-          s.listings.push({
-            bbl, ask: Math.round(v * rrange(s, 0.58, 0.78)),
-            listedM: s.month, expiresM: s.month + Math.round(rrange(s, 8, 18)), distress: true,
-          });
-        }
-        r.bbls = [];
       }
     } else if (r.stressMs) {
       r.stressMs = 0;

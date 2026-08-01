@@ -1582,12 +1582,14 @@ function TheStreet() {
               <tr key={r.id} className={dead ? "dim" : ""}>
                 <td>{r.name}</td>
                 <td className="dim">{STYLE_WORD[r.style]}</td>
-                <td className="num">{dead ? "—" : r.bbls.length}</td>
+                <td className="num">{dead ? (r.bbls.length ? `${r.bbls.length} in workout` : "—") : r.bbls.length}</td>
                 <td className="num">{dead ? "—" : usd(m.aum)}</td>
                 <td className={"num" + (!dead && m.ltv > 0.8 ? " neg" : "")}>{dead ? "—" : `${(m.ltv * 100).toFixed(0)}%`}</td>
                 <td className="num">{dead ? "—" : usd(Math.max(0, r.cash))}</td>
                 <td className="dim">
-                  {dead ? `Gone, ${monthLabel(r.failedM!)}`
+                  {dead ? (r.bbls.length
+                    ? `Failed ${monthLabel(r.failedM!)} — the receiver is still selling`
+                    : `Gone, ${monthLabel(r.failedM!)}`)
                     : stress ? "Selling under pressure — their tape is your opportunity"
                     : m.ltv > 0.75 ? "Levered up. One bad cycle from being a seller"
                     : r.cash > m.aum * 0.06 ? "Sitting on cash. They will outbid you"

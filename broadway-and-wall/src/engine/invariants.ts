@@ -169,7 +169,9 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
     const at = `rival ${r.name}`;
     if (!fin(r.cash)) bad("nan", at, `cash is ${r.cash}`);
     if (!fin(r.debt) || r.debt < 0) bad("rival", at, `debt ${r.debt}`);
-    if (r.failedM !== undefined && r.bbls.length) bad("rival", at, `failed in month ${r.failedM} but still holds ${r.bbls.length} buildings`);
+    // a failed firm may still hold assets — a receiver sells the book down
+    // over years — but it cannot have failed in the future
+    if (r.failedM !== undefined && r.failedM > s.month) bad("rival", at, `failed in month ${r.failedM}, it is month ${s.month}`);
     for (const bbl of r.bbls) {
       if (!parcels[bbl]) { bad("rival", at, `owns ${bbl}, which is not a parcel`); continue; }
       if (s.holdings[bbl]) bad("rival", at, `owns ${bbl}, and so do you`);

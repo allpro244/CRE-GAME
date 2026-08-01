@@ -11,7 +11,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   mulberry32, makeProjection, polygonArea, centroid,
-  splitRing, insetRing, insetRingPerp, clipRingHalfPlane, bboxOfRing,
+  insetRing, insetRingPerp, clipRingHalfPlane, bboxOfRing,
+  isConvex, convexHull, cleanRing, insetConvex, splitConvex,
+  longestEdgeAngle, extentAlong, pointAt,
 } from "./lib/geom.mjs";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
@@ -169,89 +171,290 @@ const NORTH_STREETS = ["Elm St", "Ash St", "Rowan St", "Linden St", "Juniper St"
 const POINT_STREETS = ["Point Rd", "Breakwater Blvd", "Spindrift Way", "Lighthouse Ave", "Sound View Dr"];
 
 // --- blocks -----------------------------------------------------------------
-const blocks = []; // { ring, district, name, numbered? }
+// Every block in Ashport is a CONVEX cell, and every cell comes from either a
+// shared-node lattice (the gridded districts) or recursive splitting of a
+// convex seed (Old Harbor). Convexity is the whole trick: a half-plane cut
+// through a convex ring yields two convex rings that tile it exactly, so the
+// lot subdivision below is a true partition. Nothing overlaps because nothing
+// can — the geometry has no way to express an overlap.
+const blocks = []; // { ring, inset, district, numbered?, u?, uFifth? }
 
-function subdivide(ring, targetArea, jitterDeg, out) {
-  const area = polygonArea([ring]);
-  if (area <= targetArea() || area < 900) { out.push(ring); return; }
-  const [minX, minY, maxX, maxY] = bboxOfRing(ring);
-  const wide = maxX - minX >= maxY - minY;
-  const angle = (wide ? Math.PI / 2 : 0) + ((rr(-jitterDeg, jitterDeg) * Math.PI) / 180);
-  const t = rr(0.42, 0.58);
-  const p = wide
-    ? [minX + (maxX - minX) * t, (minY + maxY) / 2]
-    : [(minX + maxX) / 2, minY + (maxY - minY) * t];
-  const [a, b] = splitRing(ring, p, Math.cos(angle), Math.sin(angle));
-  if (!a || !b) { out.push(ring); return; }
-  subdivide(a, targetArea, jitterDeg, out);
-  subdivide(b, targetArea, jitterDeg, out);
+// A coherent low-frequency warp — the surveyor's hand, not a random shake.
+// Streets bend over hundreds of meters instead of zigzagging block to block.
+const WARP = (() => {
+  const f = Array.from({ length: 6 }, () => rr(0.0011, 0.0040));
+  const p = Array.from({ length: 6 }, () => rr(0, Math.PI * 2));
+  return (x, y, amp) => [
+    amp * (Math.sin(x * f[0] + y * f[1] + p[0]) + 0.55 * Math.sin(y * f[2] + p[1])),
+    amp * (Math.cos(y * f[3] - x * f[4] + p[2]) + 0.55 * Math.cos(x * f[5] + p[3])),
+  ];
+})();
+
+// Each district owns a convex region, and the regions are pulled apart from
+// one another so a boundary street falls between them. A cell is CLIPPED to
+// its district's half-planes rather than discarded — clipping a convex ring by
+// a half-plane keeps it convex, and because the regions are disjoint, two
+// lattices at different bearings can never both claim the same ground.
+const HARBOR_BOX = [240, 60, 800];  // y <= 240, x >= 60, x <= 800
+const SEAM = 10;                    // half the boundary street
+const REGION = {
+  millside:  [[1, 0, -450 - SEAM]],
+  point:     [[-1, 0, -(820 + SEAM)]],
+  northside: [[0, -1, -(560 + SEAM)], [-1, 0, 450 - SEAM], [1, 0, 820 - SEAM]],
+  exchange:  [[0, 1, 560 - SEAM], [-1, 0, 450 - SEAM], [1, 0, 820 - SEAM]],
+  oldharbor: [[0, 1, HARBOR_BOX[0] - SEAM], [-1, 0, -(HARBOR_BOX[1] + SEAM)], [1, 0, HARBOR_BOX[2] - SEAM]],
+};
+// Old Harbor's footprint, grown by the seam — no other district may touch it.
+function inHarborBox(p) {
+  return p[1] <= HARBOR_BOX[0] + SEAM && p[0] >= HARBOR_BOX[1] - SEAM && p[0] <= HARBOR_BOX[2] + SEAM;
 }
+// A neighbouring cell that runs into Old Harbor gets trimmed back to one side
+// of the offending face rather than thrown away — dropping a whole 220 m cell
+// tears a void in the fabric. A cell wrapping a corner of the box has no
+// convex answer, so that one does go.
+const HARBOR_ESCAPES = [
+  [0, -1, -(HARBOR_BOX[0] + SEAM)],  // north of it
+  [1, 0, HARBOR_BOX[1] - SEAM],      // west of it
+  [-1, 0, -(HARBOR_BOX[2] + SEAM)],  // east of it
+];
 
-// Old Harbor: irregular colonial fabric
-if (oldHarborRing) {
-  const irregular = [];
-  subdivide(oldHarborRing, () => rr(3200, 7500), 14, irregular);
-  for (const r of irregular) blocks.push({ ring: r, district: "oldharbor" });
-}
-
-// grid layers per district, each at its own bearing. NOT stamped rectangles:
-// row/column pitches wander, every corner carries a few meters of jitter,
-// and some corners get chamfered — the grid keeps its logic but reads as a
-// city that was surveyed by humans, easing the contrast with Old Harbor.
-function gridLayer({ bearingDeg, stPitch, avePitch, blockW, blockU, district, numbered }) {
-  const th = (bearingDeg * Math.PI) / 180;
-  const A = [Math.sin(th), Math.cos(th)], S = [Math.cos(th), -Math.sin(th)];
-  const at = (u, w) => [u * S[0] + w * A[0], u * S[1] + w * A[1]];
-  let zwMin = Infinity, zwMax = -Infinity, zuMin = Infinity, zuMax = -Infinity;
-  for (const p of landRing) {
-    const zw = p[0] * A[0] + p[1] * A[1], zu = p[0] * S[0] + p[1] * S[1];
-    if (zw < zwMin) zwMin = zw; if (zw > zwMax) zwMax = zw;
-    if (zu < zuMin) zuMin = zu; if (zu > zuMax) zuMax = zu;
+function probesOf(ring) {
+  const probes = [centroid(ring)];
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    for (let k = 0; k < 4; k++) probes.push([a[0] + ((b[0] - a[0]) * k) / 4, a[1] + ((b[1] - a[1]) * k) / 4]);
   }
-  // wandering pitches: precompute row/column positions
-  const rows = [];
-  for (let w = zwMin; w < zwMax; w += stPitch * rr(0.86, 1.2)) rows.push(w);
-  const cols = [];
-  for (let u = zuMin; u < zuMax; u += avePitch * rr(0.8, 1.25)) cols.push(u);
+  return probes;
+}
 
-  for (let ri = 0; ri < rows.length - 1; ri++) {
-    const w = rows[ri];
-    const bw = Math.min(blockW, (rows[ri + 1] - w) - (stPitch - blockW));
-    if (bw < 30) continue;
-    for (let ci = 0; ci < cols.length - 1; ci++) {
-      const u = cols[ci];
-      const bu = Math.min(blockU * 1.35, (cols[ci + 1] - u) - (avePitch - blockU));
-      if (bu < 55) continue;
-      let ring = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([cu, cw]) => at(u + cu * bu, w + cw * bw));
-      // survey jitter on every corner
-      ring = ring.map(([x, y]) => [x + rr(-2.6, 2.6), y + rr(-2.6, 2.6)]);
-      // occasional chamfered corner breaks the rectangle silhouette
-      if (rand() < 0.16) {
-        const i = Math.floor(rand() * 4);
-        const prev = ring[(i + 3) % 4], cur = ring[i], nxt = ring[(i + 1) % 4];
-        const cut = rr(0.15, 0.4);
-        const p1 = [cur[0] + (prev[0] - cur[0]) * cut, cur[1] + (prev[1] - cur[1]) * cut];
-        const p2 = [cur[0] + (nxt[0] - cur[0]) * cut, cur[1] + (nxt[1] - cur[1]) * cut];
-        ring = ring.flatMap((pt, j) => (j === i ? [p1, p2] : [pt]));
-      }
-      const center = at(u + bu / 2, w + bw / 2);
-      if (districtOf(center) !== district) continue;
-      if (!ring.every((c) => inRing(c, innerRing))) continue;
-      if (PARKS_M.some((p) => inRing(center, p))) continue;
+// The half-planes just OUTSIDE each edge of a convex ring, grown by `grow`.
+function outsideFaces(ring, grow = 0) {
+  const ccw = ringWinding(ring);
+  const faces = [];
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    const ex = b[0] - a[0], ey = b[1] - a[1];
+    const len = Math.hypot(ex, ey) || 1;
+    const ox = ccw ? ey / len : -ey / len;
+    const oy = ccw ? -ex / len : ex / len;
+    faces.push([-ox, -oy, -(a[0] * ox + a[1] * oy + grow)]);
+  }
+  return faces;
+}
+function ringWinding(ring) {
+  let s = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    s += a[0] * b[1] - b[0] * a[1];
+  }
+  return s > 0;
+}
+
+// Push a cell clear of a convex obstacle by trimming it to the outside of
+// whichever single face keeps the most land. A cell wrapping a corner of the
+// obstacle has no convex answer, so that one is dropped.
+function avoidRegion(ring, faces, hits, minArea) {
+  if (!probesOf(ring).some(hits)) return ring;
+  let best = null;
+  for (const [nx, ny, d] of faces) {
+    const t = cleanRing(clipRingHalfPlane(ring, nx, ny, d) ?? []);
+    if (!t || !isConvex(t) || polygonArea([t]) < minArea) continue;
+    if (probesOf(t).some(hits)) continue;
+    if (!best || polygonArea([t]) > polygonArea([best])) best = t;
+  }
+  return best;
+}
+
+// Trim a cell back to the shoreline rather than dropping it — the city should
+// meet the esplanade, not stop a whole block short of it. Only shore segments
+// near the cell are considered, so the far side of the bay can't reach across
+// and cut it.
+const SHORE_CCW = ringWinding(innerRing);
+function clipToShore(ring, minArea) {
+  let r = ring;
+  const c = centroid(ring);
+  let reach = 0;
+  for (const p of ring) reach = Math.max(reach, Math.hypot(p[0] - c[0], p[1] - c[1]));
+  for (let i = 0; i < innerRing.length && r; i++) {
+    const a = innerRing[i], b = innerRing[(i + 1) % innerRing.length];
+    const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    if (Math.hypot(mid[0] - c[0], mid[1] - c[1]) > reach + 90) continue;
+    const ex = b[0] - a[0], ey = b[1] - a[1];
+    const len = Math.hypot(ex, ey) || 1;
+    const ox = SHORE_CCW ? ey / len : -ey / len;   // outward (seaward)
+    const oy = SHORE_CCW ? -ex / len : ex / len;
+    const lim = a[0] * ox + a[1] * oy;
+    if (!ring.some(([x, y]) => x * ox + y * oy > lim)) continue; // wholly landward
+    r = cleanRing(clipRingHalfPlane(r, ox, oy, lim) ?? []);
+    if (!r || !isConvex(r) || polygonArea([r]) < minArea) return null;
+  }
+  return r;
+}
+
+// Parks hold their ground: a block may come up to the park edge but never
+// into it, so every park is ringed by street frontage.
+const PARK_FACES = PARKS_M.map((p) => outsideFaces(p, 9));
+const inAnyPark = (p) => PARKS_M.some((k) => inRing(p, k));
+
+// Trim a cell to its district, or reject it. Returns the usable ring or null.
+function claimCell(ring, district, minArea) {
+  let r = ring;
+  for (const [nx, ny, d] of REGION[district] ?? []) {
+    r = r && clipRingHalfPlane(r, nx, ny, d);
+  }
+  r = r && cleanRing(r);
+  if (!r || !isConvex(r) || polygonArea([r]) < minArea) return null;
+  if (!inRing(centroid(r), innerRing)) return null;   // out at sea entirely
+
+  r = clipToShore(r, minArea);
+  if (!r) return null;
+
+  if (district !== "oldharbor") {
+    r = avoidRegion(r, HARBOR_ESCAPES, inHarborBox, minArea);
+    if (!r) return null;
+  }
+  for (let i = 0; i < PARKS_M.length && r; i++) {
+    const park = PARKS_M[i];
+    r = avoidRegion(r, PARK_FACES[i], (p) => inRing(p, park), minArea);
+  }
+  if (!r) return null;
+
+  for (const p of probesOf(r)) {
+    if (!inRing(p, innerRing)) return null;
+    if (inAnyPark(p)) return null;
+  }
+  return r;
+}
+
+// Shave a corner off a convex ring. Only ever removes area, so a chamfered
+// cell still sits inside its lattice slot.
+function chamfer(ring, i, cut) {
+  const n = ring.length;
+  const prev = ring[(i - 1 + n) % n], cur = ring[i], nxt = ring[(i + 1) % n];
+  const p1 = [cur[0] + (prev[0] - cur[0]) * cut, cur[1] + (prev[1] - cur[1]) * cut];
+  const p2 = [cur[0] + (nxt[0] - cur[0]) * cut, cur[1] + (nxt[1] - cur[1]) * cut];
+  return cleanRing(ring.flatMap((pt, j) => (j === i ? [p1, p2] : [pt])));
+}
+
+// Recursive convex splitting: cut across the long axis, jitter the angle, stop
+// at target area. Used for Old Harbor's colonial cells and for lots.
+function splitCells(ring, targetArea, jitterDeg, minArea, out, depth = 0) {
+  const area = polygonArea([ring]);
+  if (depth > 18 || area < minArea * 2 || area <= targetArea()) { out.push(ring); return; }
+  const axis = longestEdgeAngle(ring);
+  const across = axis + Math.PI / 2;
+  const longDir = extentAlong(ring, axis).span >= extentAlong(ring, across).span ? axis : across;
+  const cutDir = longDir + Math.PI / 2 + (rr(-jitterDeg, jitterDeg) * Math.PI) / 180;
+  const [a, b] = splitConvex(ring, pointAt(ring, longDir, rr(0.4, 0.6)), cutDir);
+  if (!a || !b || polygonArea([a]) < minArea || polygonArea([b]) < minArea) { out.push(ring); return; }
+  splitCells(a, targetArea, jitterDeg, minArea, out, depth + 1);
+  splitCells(b, targetArea, jitterDeg, minArea, out, depth + 1);
+}
+
+// Lots front the street. Cut narrow parcels across the block's long axis, and
+// where the block is deep enough, slice the mid-block party line first so the
+// lots sit back-to-back the way a real block platted.
+function splitLots(ring, opt, out, depth = 0) {
+  const area = polygonArea([ring]);
+  if (depth > 16 || area < opt.min * 1.9 || area <= opt.target()) { out.push(ring); return; }
+  const axis = longestEdgeAngle(ring);
+  const across = axis + Math.PI / 2;
+  const spanAlong = extentAlong(ring, axis).span;
+  const spanAcross = extentAlong(ring, across).span;
+  let dir, p;
+  if (spanAcross > opt.maxDepth * 1.8 && spanAcross > spanAlong * 0.55) {
+    dir = axis + (rr(-3.5, 3.5) * Math.PI) / 180;          // the party line
+    p = pointAt(ring, across, rr(0.44, 0.56));
+  } else {
+    dir = across + (rr(-opt.jitter, opt.jitter) * Math.PI) / 180; // side lot lines
+    p = pointAt(ring, axis, rr(0.36, 0.64));
+  }
+  const [a, b] = splitConvex(ring, p, dir);
+  if (!a || !b || polygonArea([a]) < opt.min || polygonArea([b]) < opt.min) { out.push(ring); return; }
+  splitLots(a, opt, out, depth + 1);
+  splitLots(b, opt, out, depth + 1);
+}
+
+const LOT_OPT = {
+  exchange:  { target: () => rr(340, 1080), min: 150, maxDepth: 32, jitter: 7 },
+  oldharbor: { target: () => rr(300, 1150), min: 130, maxDepth: 27, jitter: 14 },
+  northside: { target: () => rr(390, 940),  min: 165, maxDepth: 26, jitter: 6 },
+  point:     { target: () => rr(400, 1350), min: 175, maxDepth: 36, jitter: 6 },
+  millside:  { target: () => rr(950, 3500), min: 330, maxDepth: 46, jitter: 5 },
+};
+
+// Old Harbor: the colonial fabric. Recursive splitting from a CONVEX seed —
+// the hull of the district — with wild cut angles, then anything that spills
+// past the shoreline or into a neighbouring district is dropped. The ragged
+// edge that leaves along the bay is the point: the town grew to the water.
+if (oldHarborRing) {
+  const cells = [];
+  splitCells(convexHull(oldHarborRing), () => rr(3400, 8200), 15, 1500, cells);
+  for (const cell of cells) {
+    let ring = claimCell(cell, "oldharbor", 1100);
+    if (!ring) continue;
+    if (rand() < 0.28) ring = chamfer(ring, Math.floor(rand() * ring.length), rr(0.15, 0.32)) ?? ring;
+    const inset = insetConvex(ring, rr(4, 6)); // narrow colonial lanes, half-width per side
+    if (!inset || polygonArea([inset]) < 700) continue;
+    blocks.push({ ring, inset, district: "oldharbor" });
+  }
+}
+
+// Gridded districts: a WARPED LATTICE. Neighbouring cells read the same corner
+// nodes, so however hard the lattice bends it still tiles the plane exactly —
+// no gaps, no overlaps. The blocks come out as skewed quadrilaterals with
+// non-parallel sides and gently curving streets, which is the irregularity the
+// grid was missing, without giving up the grid's logic.
+function latticeDistrict({ bearingDeg, stPitch, avePitch, streetW, aveW, warpAmp, district, numbered }) {
+  const th = (bearingDeg * Math.PI) / 180;
+  const A = [Math.sin(th), Math.cos(th)];   // across-street axis
+  const S = [Math.cos(th), -Math.sin(th)];  // along-street axis
+  const at = (u, w) => [u * S[0] + w * A[0], u * S[1] + w * A[1]];
+  let wMin = Infinity, wMax = -Infinity, uMin = Infinity, uMax = -Infinity;
+  for (const p of landRing) {
+    const w = p[0] * A[0] + p[1] * A[1], u = p[0] * S[0] + p[1] * S[1];
+    if (w < wMin) wMin = w; if (w > wMax) wMax = w;
+    if (u < uMin) uMin = u; if (u > uMax) uMax = u;
+  }
+  const W = [];
+  for (let w = wMin; w < wMax + stPitch; w += stPitch * rr(0.85, 1.18)) W.push(w);
+  const U = [];
+  for (let u = uMin; u < uMax + avePitch; u += avePitch * rr(0.82, 1.22)) U.push(u);
+
+  const node = U.map((u) => W.map((w) => {
+    const base = at(u, w);
+    const [dx, dy] = WARP(base[0], base[1], warpAmp);
+    return [base[0] + dx + rr(-1.8, 1.8), base[1] + dy + rr(-1.8, 1.8)];
+  }));
+
+  for (let i = 0; i < U.length - 1; i++) {
+    for (let j = 0; j < W.length - 1; j++) {
+      const quad = cleanRing([node[i][j], node[i + 1][j], node[i + 1][j + 1], node[i][j + 1]]);
+      if (!quad || quad.length !== 4 || !isConvex(quad)) continue;
+      const cell = claimCell(quad, district, 700);
+      if (!cell) continue;
+      // On a full cell, edges 0 and 2 run along the street and 1/3 face the
+      // avenue; a clipped cell has picked up a boundary edge, so fall back to
+      // the side-street width there.
+      const full = cell.length === 4 && cell.every((p, k) => p === quad[k]);
+      let inset = insetConvex(cell, (_a, e) => (full && e % 2 === 1 ? aveW / 2 : streetW / 2));
+      if (!inset) continue;
+      if (rand() < 0.18) inset = chamfer(inset, Math.floor(rand() * inset.length), rr(0.12, 0.3)) ?? inset;
+      if (polygonArea([inset]) < 420) continue;
       blocks.push({
-        ring, district,
-        numbered: numbered ? Math.max(1, ri + 1) : undefined,
-        u: u + bu / 2,
-        uFifth: (zuMin + zuMax) / 2,
+        ring: cell, inset, district,
+        numbered: numbered ? j + 1 : undefined,
+        u: (U[i] + U[i + 1]) / 2,
+        uFifth: (uMin + uMax) / 2,
       });
     }
   }
 }
 
-gridLayer({ bearingDeg: 12, stPitch: 74, avePitch: 215, blockW: 57, blockU: 182, district: "exchange", numbered: true });
-gridLayer({ bearingDeg: 12, stPitch: 62, avePitch: 155, blockW: 48, blockU: 132, district: "northside", numbered: true });
-gridLayer({ bearingDeg: 20, stPitch: 78, avePitch: 210, blockW: 60, blockU: 178, district: "point", numbered: false });
-gridLayer({ bearingDeg: -8, stPitch: 98, avePitch: 265, blockW: 80, blockU: 232, district: "millside", numbered: false });
+latticeDistrict({ bearingDeg: 12, stPitch: 76, avePitch: 218, streetW: 19, aveW: 34, warpAmp: 9, district: "exchange", numbered: true });
+latticeDistrict({ bearingDeg: 12, stPitch: 64, avePitch: 158, streetW: 16, aveW: 27, warpAmp: 7, district: "northside", numbered: true });
+latticeDistrict({ bearingDeg: 20, stPitch: 82, avePitch: 214, streetW: 20, aveW: 34, warpAmp: 11, district: "point", numbered: false });
+latticeDistrict({ bearingDeg: -8, stPitch: 102, avePitch: 268, streetW: 22, aveW: 38, warpAmp: 13, district: "millside", numbered: false });
 
 // --- attributes -------------------------------------------------------------
 // Fictional-but-plausible zoning, keyed by district and heat.
@@ -332,10 +535,9 @@ let blockNo = 1, binNo = 1000001;
 
 for (const block of blocks) {
   const gridded = block.u !== undefined;
-  const street = insetRing(block.ring, gridded ? 6 : 7);
-  if (!street || polygonArea([street]) < 600) continue;
+  const street = block.inset;   // the block behind the curb; lots partition it exactly
+  if (!street || polygonArea([street]) < 420) continue;
   const bc = centroid(street);
-  if (PARKS_M.some((p) => inRing(bc, p))) continue;
   const d = block.district;
   const heat = coreHeat(bc);
   let houseNo = Math.round(rr(1, 60));
@@ -348,17 +550,14 @@ for (const block of blocks) {
   const lots = [];
   const fullBlockP = d === "exchange" ? 0.10 : d === "point" ? 0.14 : d === "millside" ? 0.20 : 0.03;
   if (rand() < fullBlockP) lots.push(street);
-  else if (d === "millside") subdivide(street, () => rr(900, 3400), 6, lots);
-  else if (gridded) subdivide(street, () => rr(230, 780), 6, lots);
-  else subdivide(street, () => rr(280, 1100), 10, lots);
+  else splitLots(street, LOT_OPT[d] ?? LOT_OPT.exchange, lots);
 
   let lotNo = 1;
   for (const lotRing of lots) {
     const areaM2 = polygonArea([lotRing]);
-    if (areaM2 < 80) continue;
+    if (areaM2 < 70) continue;
     const lotArea = Math.round(areaM2 * 10.7639);
     const c = centroid(lotRing);
-    if (PARKS_M.some((p) => inRing(c, p))) continue;
     const h = coreHeat(c);
     const zone = zoningFor(d, h);
     const cls = classFor(d, h);
@@ -390,10 +589,14 @@ for (const block of blocks) {
       if (yearbuilt >= 1961) {
         floors = Math.min(floors, Math.max(1, Math.round(Math.max(zone.commfar, zone.resfar) / coverage)));
       }
-      // a real side-yard on EVERY wall: perpendicular inset, min 1.4 m
+      // a real side-yard on EVERY wall. Lots are convex now, so the exact
+      // edge-offset inset applies: every wall sits the same distance off its
+      // lot line, and neighbouring buildings can't kiss.
       const side = Math.sqrt(areaM2);
-      footprint = insetRingPerp(lotRing, Math.max(1.4, (side * (1 - Math.sqrt(coverage))) / 2))
-        ?? insetRingPerp(lotRing, 1.0);
+      const setback = Math.max(1.5, (side * (1 - Math.sqrt(coverage))) / 2);
+      footprint = insetConvex(lotRing, setback)
+        ?? insetConvex(lotRing, 1.5)
+        ?? insetRingPerp(lotRing, 1.2);
       const realCov = footprint ? polygonArea([footprint]) / areaM2 : coverage;
       bldgArea = Math.round(lotArea * realCov * floors);
       heightM = floors * 3.55 + rr(1, 4);
@@ -492,9 +695,12 @@ for (const [cx, cy, deg] of [[380, -640, 75], [820, -700, 30], [-350, -700, 100]
 const BREAKWATER = rect(760, -560, 190, 14, 35);
 
 // --- streets, esplanade, labels, trees -------------------------------------
+// The curb line: the block edge the lots front onto. Drawing this rather than
+// the lattice cell keeps the street reading as a paved corridor between two
+// curbs instead of a stripe down the middle of nothing.
 const streetFeatures = blocks.map((b) => ({
   type: "Feature",
-  geometry: { type: "LineString", coordinates: [...b.ring.map(proj.toLL), proj.toLL(b.ring[0])] },
+  geometry: { type: "LineString", coordinates: [...b.inset.map(proj.toLL), proj.toLL(b.inset[0])] },
   properties: { kind: "street", cls: b.u !== undefined ? "grid" : "lane" },
 }));
 const shoreRoad = {

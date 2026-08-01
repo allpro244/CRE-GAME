@@ -51,6 +51,8 @@ export default function MapView() {
         canvasContextAttributes: { antialias: true },
       });
       mapRef.current = map;
+      // handle for automated playtests and screenshots
+      (window as unknown as { __map?: maplibregl.Map }).__map = map;
       map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
 
       const featureIdsFor = (bbl: string) => Number(bbl);

@@ -77,10 +77,45 @@ function executePurchase(
   return { s: next };
 }
 
-export function buyListing(s: GameState, parcels: ParcelTable, bbl: string, product: BuyProduct, lev = 1): { s: GameState; err?: string } {
+// Nobody pays the ask without asking. `bid` is what you're offering against
+// the asking price; the seller weighs it against how motivated they are and
+// how hot the market is. Push too far and the deal dies rather than merely
+// being refused — a listing you blew up goes to somebody else.
+export function bidOdds(s: GameState, listing: { ask: number; distress?: boolean }, bid: number): number {
+  const disc = 1 - bid / Math.max(1, listing.ask);        // 0 at full ask
+  const phase = s.econ.phase === "recession" ? 0.16 : s.econ.phase === "expansion" ? -0.12 : 0;
+  const motivated = listing.distress ? 0.18 : 0;
+  return Math.max(0.02, Math.min(0.98, 1.02 - disc * 6.2 + phase + motivated));
+}
+
+export function buyListing(
+  s: GameState, parcels: ParcelTable, bbl: string, product: BuyProduct, lev = 1, bid?: number,
+): { s: GameState; err?: string; msg?: string } {
   const listing = s.listings.find((l) => l.bbl === bbl);
   if (!listing) return { s, err: "That property is no longer on the market." };
-  return executePurchase(s, parcels, bbl, listing.ask, product, false, lev);
+  const price = Math.round(bid ?? listing.ask);
+  if (price >= listing.ask) return executePurchase(s, parcels, bbl, listing.ask, product, false, lev);
+
+  // check the money is there before spending a negotiation on it
+  const q = buyQuote(s, parcels, bbl, price, product, lev);
+  if (s.cash < q.equity) return { s, err: `That bid still needs $${(q.equity / 1e6).toFixed(2)}M of equity — you're short.` };
+
+  const next = clone(s);
+  const p = bidOdds(next, listing, price);
+  const roll = rng(next);
+  if (roll < p) {
+    const done = executePurchase(next, parcels, bbl, price, product, false, lev);
+    if (done.err) return { s, err: done.err };
+    return { s: done.s, msg: `They took $${(price / 1e6).toFixed(2)}M.` };
+  }
+  if (roll < p + 0.45) {
+    next.news.unshift({ q: next.month, kind: "info", text: `Your $${(price / 1e6).toFixed(2)}M on ${parcels[bbl]?.address} was refused — the ask stands.` });
+    return { s: next, msg: "Refused. The ask stands." };
+  }
+  // insulted: the listing goes away
+  next.listings = next.listings.filter((l) => l.bbl !== bbl);
+  next.news.unshift({ q: next.month, kind: "warn", text: `The seller at ${parcels[bbl]?.address} took the listing elsewhere after your offer.` });
+  return { s: next, msg: "They walked, and pulled the listing." };
 }
 
 // ---- off-market: approach the owner ---------------------------------------
@@ -123,11 +158,37 @@ export function approachOwner(
   return { s: next, ask };
 }
 
-export function buyOffMarket(s: GameState, parcels: ParcelTable, bbl: string, product: BuyProduct, lev = 1): { s: GameState; err?: string } {
+export function buyOffMarket(
+  s: GameState, parcels: ParcelTable, bbl: string, product: BuyProduct, lev = 1, bid?: number,
+): { s: GameState; err?: string; msg?: string } {
   const a = s.approaches[bbl];
   if (!a || a.refused || !a.ask) return { s, err: "No live ask — approach the owner first." };
   if (s.month > a.q + 6) return { s, err: "That number expired." };
-  return executePurchase(s, parcels, bbl, a.ask, product, true, lev);
+  const price = Math.round(bid ?? a.ask);
+  if (price >= a.ask) return executePurchase(s, parcels, bbl, a.ask, product, true, lev);
+
+  const q = buyQuote(s, parcels, bbl, price, product, lev);
+  if (s.cash < q.equity) return { s, err: `That bid still needs $${(q.equity / 1e6).toFixed(2)}M of equity — you're short.` };
+  const next = clone(s);
+  // an owner who wasn't selling in the first place has no reason to bend:
+  // off-market discounts come much harder than they do on the open tape
+  const disc = 1 - price / Math.max(1, a.ask);
+  const p = Math.max(0.02, Math.min(0.9, 0.92 - disc * 11.0 + (next.econ.phase === "recession" ? 0.12 : 0)));
+  const roll = rng(next);
+  if (roll < p) {
+    const done = executePurchase(next, parcels, bbl, price, product, true, lev);
+    if (done.err) return { s, err: done.err };
+    return { s: done.s, msg: `Done at $${(price / 1e6).toFixed(2)}M, off-market.` };
+  }
+  if (roll < p + 0.4) {
+    next.news.unshift({ q: next.month, kind: "info", text: `${parcels[bbl]?.address}: the owner didn't move off $${(a.ask / 1e6).toFixed(2)}M.` });
+    return { s: next, msg: "They held their number." };
+  }
+  const na = next.approaches[bbl];
+  na.refused = true;
+  delete na.ask;
+  next.news.unshift({ q: next.month, kind: "warn", text: `${parcels[bbl]?.address}: the owner ended the conversation.` });
+  return { s: next, msg: "They ended the conversation." };
 }
 
 // One counter per approach: come back 12% under their number. They take it,

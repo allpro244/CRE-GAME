@@ -8,12 +8,12 @@ import {
   assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr,
   occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr,
 } from "@/engine/value";
-import { planDevelopment, PROGRAMS, programCost } from "@/engine/dev";
+import { planDevelopment, PROGRAMS, programCost, farMaxFor, maxFloorsFor, demolitionCost } from "@/engine/dev";
 import type { BuiltClass } from "@/engine/types";
-import { buyQuote, assemblagePressure, saleTaxQuote } from "@/engine/actions";
+import { buyQuote, assemblagePressure, saleTaxQuote, bidOdds } from "@/engine/actions";
 import { MILESTONES } from "@/engine/sim";
 import { isCommercial, vacantSf, walt, loiSigningCost, notReadySf } from "@/engine/leasing";
-import { dscr, ltv, rateCapCost } from "@/engine/debt";
+import { dscr, ltv, rateCapCost, refiQuotes } from "@/engine/debt";
 import { locLimit, locRate } from "@/engine/credit";
 import { usd, sf, pct } from "./format";
 import Slider from "./Slider";
@@ -49,6 +49,7 @@ export default function GamePanels() {
     : page === "deals" ? "The Deals Desk"
     : page === "books" ? "The Books"
     : page === "leasing" ? "Leasing & Occupancy"
+    : page === "property" ? "Property"
     : "The Market";
   return (
     <>
@@ -65,6 +66,7 @@ export default function GamePanels() {
             {page === "market" && <MarketPage />}
             {page === "books" && <BooksPage />}
             {page === "leasing" && <LeasingPage />}
+            {page === "property" && <PropertyPage />}
           </div>
         </div>
       )}
@@ -80,11 +82,14 @@ export default function GamePanels() {
 function DecisionModal() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels);
-  const { respondLoi, acceptOffer, declineOffer } = useStore.getState();
+  const { respondLoi, acceptOffer, declineOffer, drawCredit, setPage } = useStore.getState();
+  const [deferred, setDeferred] = useState<Set<number>>(new Set());
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setBusy(false); }, [game.lois.length, game.month]);
   if (!parcels || game.gameOver) return null;
 
-  const loi = game.agent ? undefined : game.lois[0];
-  const offerBbl = Object.keys(game.holdings).find((b) => game.holdings[b].sale?.offer);
+  const loi = game.agent ? undefined : game.lois.find((l) => !deferred.has(l.id));
+  const offerBbl = deferred.has(-1) ? undefined : Object.keys(game.holdings).find((b) => game.holdings[b].sale?.offer);
   if (!loi && !offerBbl) return null;
 
   if (loi) {
@@ -94,7 +99,10 @@ function DecisionModal() {
     const market = managedRentPsfYr(rec, game.econ, h);
     const cost = loiSigningCost(loi);
     const annual = loi.rentPsf * loi.sf;
-    const queued = game.lois.length - 1;
+    const live = game.lois.filter((l) => !deferred.has(l.id));
+    const idx = live.findIndex((l) => l.id === loi.id) + 1;
+    const short = cost - game.cash;
+    const act = (a: "accept" | "counter" | "decline") => { setBusy(true); respondLoi(loi.id, a); };
     return (
       <div className="modal-backdrop">
         <div className="modal">
@@ -114,18 +122,36 @@ function DecisionModal() {
             <Row k="Answer by" v={monthLabel(loi.expiresM)} />
           </div>
           <div className="modal-actions">
-            <button className="btn btn-buy" disabled={cost > game.cash} onClick={() => respondLoi(loi.id, "accept")}>
+            <button className="btn btn-buy" disabled={busy || cost > game.cash} onClick={() => act("accept")}>
               Sign the lease · {usd(cost)}
             </button>
             {!loi.countered && (
-              <button className="btn" title="+6% rent, −30% TI. They may walk." onClick={() => respondLoi(loi.id, "counter")}>
+              <button className="btn" disabled={busy} title="+6% rent, −30% TI. They may walk." onClick={() => act("counter")}>
                 Counter
               </button>
             )}
-            <button className="btn" onClick={() => respondLoi(loi.id, "decline")}>Pass</button>
+            <button className="btn" disabled={busy} onClick={() => act("decline")}>Pass</button>
+            <button
+              className="btn"
+              title="Leave it on the desk and get back to it — it stays on the Deals page until it expires."
+              onClick={() => setDeferred((d) => new Set(d).add(loi.id))}
+            >
+              Decide later
+            </button>
           </div>
-          {cost > game.cash && <div className="modal-queue">You can't fund the TI — draw on the line first (Books).</div>}
-          {queued > 0 && <div className="modal-queue">{queued} more waiting behind this one.</div>}
+          {short > 0 && (
+            <div className="modal-actions">
+              <button className="btn btn-buy" onClick={() => drawCredit(Math.ceil(short / 10_000) * 10_000)}>
+                Draw {usd(Math.ceil(short / 10_000) * 10_000)} on the line to fund it
+              </button>
+              <button className="btn" onClick={() => { setDeferred((d) => new Set(d).add(loi.id)); setPage("books"); }}>
+                Open the Books
+              </button>
+            </div>
+          )}
+          <div className="modal-queue">
+            {idx} of {live.length} on the desk{short > 0 ? " · the TI is more than your cash" : ""}
+          </div>
         </div>
       </div>
     );
@@ -162,6 +188,9 @@ function DecisionModal() {
             </button>
           )}
           <button className="btn" onClick={() => declineOffer(offerBbl!)}>Decline</button>
+          <button className="btn" title="Leave it — it stays live until it expires." onClick={() => setDeferred((d) => new Set(d).add(-1))}>
+            Decide later
+          </button>
         </div>
       </div>
     </div>
@@ -218,13 +247,13 @@ function NWChart({ data, height = 120 }: { data: number[]; height?: number }) {
 }
 
 // ---------------------------------------------------------------- parcel card
-function ParcelPanel() {
+function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
   const parcels = useStore((s) => s.parcels);
   const adjacency = useStore((s) => s.adjacency);
   const selectedBBL = useStore((s) => s.selectedBBL);
   const select = useStore((s) => s.select);
   const game = useStore((s) => s.game)!;
-  const { renovate, approach, refi } = useStore.getState();
+  const { renovate, approach } = useStore.getState();
 
   if (!selectedBBL || !parcels) return null;
   const rec = resolveRec(parcels, game, selectedBBL);
@@ -246,14 +275,19 @@ function ParcelPanel() {
   const l = holding ? ltv(rec, game, holding) : null;
 
   return (
-    <div className="panel">
-      <div className="panel-head">
-        <div>
-          <div className="panel-address">{rec.address}</div>
-          <div className="panel-bbl mono">Parcel {rec.bbl}</div>
+    <div className={embedded ? "panel-embed" : "panel"}>
+      {!embedded && (
+        <div className="panel-head">
+          <div>
+            <div className="panel-address">{rec.address}</div>
+            <div className="panel-bbl mono">Parcel {rec.bbl}</div>
+          </div>
+          <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+            <button className="btn-mini" title="Open the full property page" onClick={() => useStore.getState().setPage("property")}>full view</button>
+            <button className="panel-close" onClick={() => select(null)} aria-label="Close">×</button>
+          </div>
         </div>
-        <button className="panel-close" onClick={() => select(null)} aria-label="Close">×</button>
-      </div>
+      )}
 
       <div className="chip-row">
         <span className="chip" style={{ background: CLASS_COLOR[rec.class] }}>{CLASS_LABEL[rec.class]}</span>
@@ -319,25 +353,24 @@ function ParcelPanel() {
             <Row k="Balance" v={usd(holding.loan.balance)} strong />
             <Row k="Coupon" v={pct(holding.loan.ratePct) + (holding.loan.product === "float" ? " (floating)" : " (fixed)")} />
             {game.month < holding.loan.ioUntilM && <Row k="Interest-only" v={"until " + monthLabel(holding.loan.ioUntilM)} />}
-            <Row k="Payment / mo" v={usd(holding.loan.monthlyPmt)} />
+            <Row k="Debt service / yr" v={usd(holding.loan.monthlyPmt * 12)} strong />
             <Row k="Balloon" v={monthLabel(holding.loan.maturityM)} />
             {d !== null && <Row k="DSCR" v={d.toFixed(2) + " (min " + holding.loan.minDSCR.toFixed(2) + ")"} bad={d < holding.loan.minDSCR} />}
             {l !== null && <Row k="LTV" v={(l * 100).toFixed(0) + "% (max " + (holding.loan.maxLTV * 100).toFixed(0) + "%)"} bad={l > holding.loan.maxLTV} />}
             {holding.loan.cap && <Row k="Rate cap" v={`index ≤ ${holding.loan.cap.strike.toFixed(2)}% until ${monthLabel(holding.loan.cap.expiresM)}`} />}
           </div>
           <div className="btn-row">
-            <button className="btn" onClick={() => refi(selectedBBL, "fixed")}>Refi fixed</button>
-            <button className="btn" onClick={() => refi(selectedBBL, "float")}>Refi float</button>
             {holding.loan.product === "float" && !holding.loan.cap && (
               <button
                 className="btn"
-                title={`Index capped at ${(game.econ.indexRate + 0.5).toFixed(2)}% for 3 years — floating stops hurting past the strike`}
+                title={`Index capped at ${(game.econ.indexRate + 0.5).toFixed(2)}% for 3 years`}
                 onClick={() => useStore.getState().rateCap(selectedBBL)}
               >
                 Buy rate cap · {usd(rateCapCost(holding.loan))}
               </button>
             )}
           </div>
+          <RefiSection bbl={selectedBBL} />
         </div>
       )}
 
@@ -419,7 +452,7 @@ function ParcelPanel() {
             {([-1, 0, 1] as const).map((v) => (
               <button
                 key={v}
-                className={"btn" + ((holding.stance ?? 0) === v ? " btn-buy" : "")}
+                className={"btn" + ((holding.stance ?? 0) === v ? " btn-on" : "")}
                 title={v === 1 ? "+8% asking rents, fewer LOIs" : v === -1 ? "−8% rents, faster lease-up" : "market rents"}
                 onClick={() => useStore.getState().stance(selectedBBL, v)}
               >
@@ -448,7 +481,7 @@ function ParcelPanel() {
           {commercial && vacantSf(rec, holding) > 500 && (
             <div className="btn-row">
               <button
-                className={"btn" + (holding.broker ? " btn-buy" : "")}
+                className={"btn" + (holding.broker ? " btn-on" : "")}
                 title="A leasing exclusive: ~75% more tenant traffic while space is vacant, for a monthly retainer"
                 onClick={() => useStore.getState().broker(selectedBBL, !holding.broker)}
               >
@@ -462,6 +495,17 @@ function ParcelPanel() {
             <div className="btn-row">
               <button className="btn" onClick={() => renovate(selectedBBL)}>
                 Gut renovation · {usd(renovationCost(rec, game.econ))} · {6} mo
+              </button>
+            </div>
+          )}
+          {isBuilt && (
+            <div className="btn-row">
+              <button
+                className="btn btn-sell"
+                title="Clear the site back to dirt so you can rebuild to the full envelope. Needs the building under 20% leased."
+                onClick={() => { if (window.confirm(`Demolish ${rec.address}? The site goes back to vacant land.`)) useStore.getState().raze(selectedBBL); }}
+              >
+                Demolish · {usd(demolitionCost(rec, game))}
               </button>
             </div>
           )}
@@ -590,21 +634,42 @@ function BuyButtons({ bbl, price, off }: { bbl: string; price: number; off: bool
   const { buy, buyOff } = useStore.getState();
   const act = off ? buyOff : buy;
   const [product, setProduct] = useState<"fixed" | "float">("fixed");
-  const [lev, setLev] = useState(1);   // fraction of the lender's maximum
-  const max = buyQuote(game, parcels, bbl, price, product);
+  const [lev, setLev] = useState(1);
+  // The dial runs on a fraction of the ask, not on dollars: a dollar-valued
+  // range with a rounded step can leave the top end unreachable, which meant
+  // you could not simply pay the asking price.
+  const [bidFrac, setBidFrac] = useState(1);
+  const offerPrice = Math.round(price * Math.min(1, bidFrac));
+  const max = buyQuote(game, parcels, bbl, offerPrice, product, 1);
   const principal = Math.round(max.principal * lev);
-  const closing = Math.round(price * 0.02);
-  const equity = price - principal + closing;
+  const equity = offerPrice - principal + Math.round(offerPrice * 0.02);
   const rec = parcels[bbl];
   const noi = rec ? noiYr(rec, game.econ, initialCondition(rec)) : 0;
   const annualDs = principal > 0 ? principal * (max.ratePct / 100) : 0;
   const dscrNow = annualDs > 0 ? noi / annualDs : null;
-  const ltvNow = price > 0 ? principal / price : 0;
+  const listing = game.listings.find((l) => l.bbl === bbl);
+  // how likely the seller is to take it, quoted honestly before you spend the try
+  const odds = offerPrice >= price ? 1
+    : off ? Math.max(0.02, Math.min(0.9, 0.92 - (1 - offerPrice / price) * 11.0 + (game.econ.phase === "recession" ? 0.12 : 0)))
+    : bidOdds(game, { ask: price, distress: listing?.distress }, offerPrice);
   return (
     <>
+      <Slider
+        label="Your offer"
+        value={bidFrac}
+        min={0.6}
+        max={1}
+        step={0.005}
+        onChange={setBidFrac}
+        format={() => `${usd(offerPrice)}${bidFrac < 1 ? ` · ${((bidFrac - 1) * 100).toFixed(1)}%` : " · full ask"}`}
+        marks={[{ at: 0.85, label: "−15%" }, { at: 0.95, label: "−5%" }, { at: 1, label: "ask" }]}
+        hint={offerPrice >= price
+          ? "At the ask, it's yours."
+          : `${Math.round(odds * 100)}% they take it${off ? " — an owner who wasn't selling bends hard" : ""}. Push too far and they walk.`}
+      />
       <div className="btn-row" style={{ marginTop: 8 }}>
         {(["fixed", "float"] as const).map((p) => (
-          <button key={p} className={"btn" + (product === p ? " btn-buy" : "")} onClick={() => setProduct(p)}>
+          <button key={p} className={"btn" + (product === p ? " btn-on" : "")} onClick={() => setProduct(p)}>
             {p === "fixed" ? "Fixed 10-yr" : "Floating IO"}
           </button>
         ))}
@@ -617,7 +682,7 @@ function BuyButtons({ bbl, price, off }: { bbl: string; price: number; off: bool
           max={1}
           step={0.02}
           onChange={setLev}
-          format={() => (principal > 0 ? `${usd(principal)} · ${(ltvNow * 100).toFixed(0)}% LTV` : "all cash")}
+          format={() => (principal > 0 ? `${usd(principal)} · ${((principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% LTV` : "all cash")}
           marks={[{ at: 0, label: "cash" }, { at: 0.5, label: "half" }, { at: 1, label: "max" }]}
           hint={`${max.ratePct}% coupon${dscrNow ? ` · DSCR ${dscrNow.toFixed(2)}` : ""}`}
         />
@@ -631,9 +696,9 @@ function BuyButtons({ bbl, price, off }: { bbl: string; price: number; off: bool
         <button
           className="btn btn-buy"
           disabled={equity > game.cash}
-          onClick={() => act(bbl, principal <= 0 ? "cash" : product, principal <= 0 ? undefined : lev)}
+          onClick={() => act(bbl, principal <= 0 ? "cash" : product, principal <= 0 ? undefined : lev, offerPrice)}
         >
-          {principal <= 0 ? "Buy all-cash" : "Buy"} · {usd(equity)}
+          {offerPrice >= price ? "Buy at the ask" : `Offer ${usd(offerPrice)}`} · eq {usd(equity)}
         </button>
       </div>
       {equity > game.cash && <div className="hint">Short {usd(equity - game.cash)} — the line of credit is on the Books page.</div>}
@@ -641,38 +706,106 @@ function BuyButtons({ bbl, price, off }: { bbl: string; price: number; off: bool
   );
 }
 
+// Refinancing is a market, not a button: two products, what each will
+// actually advance today, and a dial for how much of it you take.
+function RefiSection({ bbl }: { bbl: string }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const { refi } = useStore.getState();
+  const [product, setProduct] = useState<"fixed" | "float">("fixed");
+  const [lev, setLev] = useState(1);
+  const { quotes, value, payoff } = refiQuotes(game, parcels, bbl);
+  if (!quotes.length) return null;
+  const q = quotes.find((x) => x.id === product) ?? quotes[0];
+  const proceeds = Math.round(q.maxProceeds * lev);
+  const fee = Math.round(Math.max(proceeds, payoff) * 0.01);
+  const toYou = proceeds - payoff - fee;
+  const annualDs = q.ioM > 0 ? (proceeds * q.ratePct) / 100 : proceeds * (q.ratePct / 100) * 1.28;
+  return (
+    <div className="refi">
+      <div className="deal-head">Refinance</div>
+      <div className="hint">Appraised at {usd(value)}; {usd(payoff)} to pay off.</div>
+      <div className="btn-row">
+        {quotes.map((x) => (
+          <button key={x.id} className={"btn" + (product === x.id ? " btn-on" : "")} onClick={() => setProduct(x.id)}>
+            {x.label} · {pct(x.ratePct)}
+          </button>
+        ))}
+      </div>
+      <div className="grid">
+        <Row k="Lender's maximum" v={`${usd(q.maxProceeds)} · ${(q.ltvAtMax * 100).toFixed(0)}% LTV · DSCR ${q.dscrAtMax.toFixed(2)}`} />
+        <Row k="Structure" v={`${q.ioM ? `${q.ioM / 12}-yr IO, ` : ""}${q.amortYears}-yr amort, ${q.termM / 12}-yr term`} />
+      </div>
+      <Slider
+        label="Take"
+        value={lev}
+        min={0}
+        max={1}
+        step={0.02}
+        onChange={setLev}
+        format={() => `${usd(proceeds)} · ${((proceeds / Math.max(1, value)) * 100).toFixed(0)}% LTV`}
+        marks={[{ at: 0.5, label: "half" }, { at: 0.8, label: "80%" }, { at: 1, label: "max" }]}
+        hint={`${usd(annualDs)} a year of debt service. ${toYou >= 0 ? `Cash out ${usd(toYou)} after the ${usd(fee)} fee.` : `You'd write a cheque for ${usd(-toYou)}.`}`}
+      />
+      <div className="btn-row">
+        <button className="btn btn-buy" disabled={proceeds < 100_000} onClick={() => refi(bbl, product, lev)}>
+          {toYou >= 0 ? `Refinance · take ${usd(toYou)}` : `Refinance · pay in ${usd(-toYou)}`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function DevelopSection({ bbl }: { bbl: string }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
-  const [use, setUse] = useState<BuiltClass>("multifamily");
-  const [farFrac, setFarFrac] = useState(0.75);
+  const rec = parcels[bbl];
+  const [use, setUse] = useState<BuiltClass>("office");
+  const [cov, setCov] = useState(0.6);
+  const [floors, setFloors] = useState(8);
   const [preLease, setPreLease] = useState(false);
   const canPreLease = use === "office" || use === "retail" || use === "mixed";
-  const plan = planDevelopment(game, parcels, bbl, use, farFrac, preLease && canPreLease);
+  const maxFl = maxFloorsFor(rec, cov);
+  const fl = Math.min(floors, maxFl);
+  const plan = planDevelopment(game, parcels, bbl, use, fl, cov, preLease && canPreLease);
   const USES: BuiltClass[] = ["office", "multifamily", "mixed", "retail", "industrial"];
   return (
     <div className="deal">
       <div className="deal-head">Develop this lot</div>
+      <div className="hint">
+        {sf(rec.lotArea)} of land · envelope {farMaxFor(rec).toFixed(1)} FAR · anything may be built here.
+      </div>
       <div className="btn-row">
         {USES.map((u) => (
-          <button key={u} className={"btn" + (use === u ? " btn-buy" : "")} onClick={() => setUse(u)}>{CLASS_LABEL[u]}</button>
+          <button key={u} className={"btn" + (use === u ? " btn-on" : "")} onClick={() => setUse(u)}>{CLASS_LABEL[u]}</button>
         ))}
       </div>
       <Slider
-        label="Density built"
-        value={farFrac}
+        label="Stories"
+        value={fl}
+        min={1}
+        max={maxFl}
+        step={1}
+        onChange={setFloors}
+        format={(v) => `${v} ${v === 1 ? "floor" : "floors"}`}
+        marks={[{ at: Math.max(1, Math.round(maxFl * 0.25)), label: "low" }, { at: Math.max(1, Math.round(maxFl * 0.6)), label: "mid" }, { at: maxFl, label: `max ${maxFl}` }]}
+        hint={plan ? `${sf(plan.sf)} of building at ${plan.far} FAR (envelope ${plan.farMax.toFixed(1)})` : undefined}
+      />
+      <Slider
+        label="Footprint"
+        value={cov}
         min={0.25}
-        max={1}
+        max={0.9}
         step={0.01}
-        onChange={setFarFrac}
-        format={(v) => `${Math.round(v * 100)}% of allowed FAR`}
-        marks={[{ at: 0.5, label: "half" }, { at: 0.75, label: "3/4" }, { at: 1, label: "max" }]}
-        hint={plan ? `${(plan.sf / 1000).toFixed(0)}k sf over ${plan.floors} floors` : undefined}
+        onChange={(v) => { setCov(v); setFloors((f) => Math.min(f, maxFloorsFor(rec, v))); }}
+        format={(v) => `${Math.round(v * 100)}% of the lot · ${sf(rec.lotArea * v)} plate`}
+        marks={[{ at: 0.35, label: "tower" }, { at: 0.6, label: "block" }, { at: 0.85, label: "podium" }]}
+        hint={`A slim tower goes higher on the same envelope; a fat podium runs out of FAR sooner (max ${maxFl} floors at this footprint).`}
       />
       {canPreLease && (
         <div className="btn-row">
           <button
-            className={"btn" + (preLease ? " btn-buy" : "")}
+            className={"btn" + (preLease ? " btn-on" : "")}
             title="Land a credit anchor for 35% of the building before ground-break: +3 months, but lenders fund 65% of cost instead of 45%"
             onClick={() => setPreLease(!preLease)}
           >
@@ -683,38 +816,105 @@ function DevelopSection({ bbl }: { bbl: string }) {
       {plan ? (
         <>
           <div className="grid" style={{ marginTop: 8 }}>
-            <Row k="Building" v={`${(plan.sf / 1000).toFixed(0)}k sf · ${plan.floors} fl`} />
+            <Row k="Building" v={`${sf(plan.sf)} · ${plan.floors} fl · ${(plan.floors * 3.4).toFixed(0)} m tall`} strong />
+            <Row k="FAR used" v={`${plan.far} of ${plan.farMax.toFixed(1)}`} />
             <Row k="All-in cost" v={usd(plan.costTotal)} />
+            <Row k="Cost / sf" v={"$" + (plan.costTotal / Math.max(1, plan.sf)).toFixed(0)} />
             <Row
               k={`Constr. loan (${Math.round((plan.loanAmount / Math.max(1, plan.costTotal)) * 100)}%)`}
               v={plan.loanAmount > 0 ? usd(plan.loanAmount) + " @ " + pct(plan.ratePct) : "none — all equity"}
             />
-            <Row k="Your equity" v={usd(plan.equity)} strong />
+            <Row k="Your equity" v={usd(plan.equity)} strong bad={plan.equity > game.cash} />
             <Row k="Schedule" v={plan.months + " months"} />
-            {plan.preLease && <Row k="Pre-leased" v={`${Math.round((plan.sf * 0.35) / 100) * 100 / 1000}k sf anchor at delivery`} />}
+            {plan.preLease && <Row k="Pre-leased" v={`${sf(plan.sf * 0.35)} anchor at delivery`} />}
           </div>
           {plan.lenderNote && <div className="hint">{plan.lenderNote}</div>}
           <div className="btn-row">
-            <button className="btn btn-buy" onClick={() => useStore.getState().develop(bbl, use, farFrac, preLease && canPreLease)}>
+            <button
+              className="btn btn-buy"
+              disabled={plan.equity > game.cash}
+              onClick={() => useStore.getState().develop(bbl, use, fl, cov, preLease && canPreLease)}
+            >
               Break ground · {usd(plan.equity)}
             </button>
           </div>
         </>
       ) : (
-        <div className="hint">Zoning won't allow {CLASS_LABEL[use]} here{use === "multifamily" ? " (no residential FAR)" : ""}.</div>
+        <div className="hint">Too small to build — add floors or cover more of the lot.</div>
       )}
     </div>
   );
 }
 
 // ---------------------------------------------------------------- full pages
+// A property deserves a room, not a column. Same content as the docked card,
+// laid out three-wide so the rent roll and the debt sit side by side.
+function PropertyPage() {
+  const parcels = useStore((s) => s.parcels)!;
+  const game = useStore((s) => s.game)!;
+  const bbl = useStore((s) => s.selectedBBL);
+  if (!bbl) return <div className="hint">Nothing selected.</div>;
+  const rec = resolveRec(parcels, game, bbl);
+  if (!rec) return <div className="hint">Unknown parcel.</div>;
+  const h = game.holdings[bbl];
+  const cond = h?.condition ?? initialCondition(rec);
+  const value = h ? holdingValue(rec, game.econ, h) : assetValue(rec, game.econ, cond);
+  const built = rec.class !== "land" && rec.bldgArea > 0;
+  const commercial = isCommercial(rec);
+  const leased = h && commercial ? h.tenants.reduce((a, t) => a + t.sf, 0) : 0;
+  const occ = h ? (rec.class === "multifamily" ? (h.occ ?? 0) : rec.bldgArea ? leased / rec.bldgArea : 0) : occupancy(rec, game.econ);
+  const noi = built ? (h ? holdingNOIYr(rec, game.econ, h, game.month) : noiYr(rec, game.econ, cond)) : 0;
+  const dsYr = (h?.loan?.monthlyPmt ?? 0) * 12;
+  const dev = game.developments[bbl];
+  return (
+    <div>
+      <div className="stat-strip">
+        <Big label="Appraisal" value={band(bbl, value)} />
+        <Big label="NOI / yr" value={built ? usd(noi) : "—"} bad={noi < 0} />
+        <Big label="Debt service / yr" value={dsYr ? "−" + usd(dsYr) : "—"} />
+        <Big label="Cash flow / yr" value={usd(noi - dsYr)} bad={noi - dsYr < 0} />
+        <Big label="Occupancy" value={built ? (occ * 100).toFixed(0) + "%" : "—"} bad={built && occ < 0.75} />
+        <Big label="Equity" value={h ? usd(value - (h.loan?.balance ?? 0)) : "—"} />
+      </div>
+      <div className="prop-head">
+        <div>
+          <div className="page-title" style={{ fontSize: 22 }}>{rec.address}</div>
+          <div className="panel-bbl mono">Parcel {rec.bbl} · {CLASS_LABEL[rec.class]} · {rec.zoneDist}</div>
+        </div>
+        <div className="grid" style={{ minWidth: 320 }}>
+          {built && <Row k="Building" v={`${sf(rec.bldgArea)} · ${rec.floors} floors`} strong />}
+          <Row k="Land" v={sf(rec.lotArea)} />
+          <Row k="FAR built / envelope" v={`${(rec.bldgArea / Math.max(1, rec.lotArea)).toFixed(1)} / ${farMaxFor(rec).toFixed(1)}`} />
+          <Row k="Buildable at max" v={`${sf(rec.lotArea * farMaxFor(rec))} · up to ${maxFloorsFor(rec, 0.6)} floors`} />
+          {built && <Row k="Built" v={String(rec.yearBuilt)} />}
+          <Row k="Demand" v={rec.demandScore + " / 100"} />
+        </div>
+      </div>
+      {dev && (
+        <div className="page-section">
+          <div className="page-section-head">Under construction</div>
+          <div className="grid">
+            <Row k="Program" v={`${sf(dev.sf)} of ${dev.use} · ${dev.floors} floors`} strong />
+            <Row k="Budget" v={usd(dev.costTotal)} />
+            <Row k="Delivers" v={monthLabel(dev.deliverM)} />
+          </div>
+        </div>
+      )}
+      <div className="prop-cols">
+        <ParcelPanel embedded />
+      </div>
+    </div>
+  );
+}
+
+
 function PortfolioPage() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
   const select = useStore((s) => s.select);
   const setPage = useStore((s) => s.setPage);
   const holdings = Object.values(game.holdings);
-  const go = (bbl: string) => { setPage("none"); select(bbl); };
+  const go = (bbl: string) => { select(bbl); setPage("property"); };
   if (!holdings.length && !Object.keys(game.developments).length) {
     return <div className="hint">You own nothing yet. The Market page has the tape; the map has everything else.</div>;
   }
@@ -741,19 +941,24 @@ function PortfolioPage() {
       </div>
       <table className="tbl">
         <thead>
-          <tr><th>Property</th><th>Class</th><th>Occ</th><th>NOI / yr</th><th>Value</th><th>Debt</th><th>Equity</th><th>CF / mo</th><th>Status</th></tr>
+          <tr>
+            <th>Property</th><th>Class</th><th className="num">Occ</th><th className="num">NOI / yr</th>
+            <th className="num">Value</th><th className="num">Debt</th><th className="num">Equity</th>
+            <th className="num">Debt svc / mo</th><th className="num">CF / mo</th><th>Status</th>
+          </tr>
         </thead>
         <tbody>
           {rows.map(({ h, rec, v, cf, occ }) => (
             <tr key={h.bbl} onClick={() => go(h.bbl)}>
               <td>{rec?.address ?? h.bbl}</td>
               <td>{rec ? CLASS_LABEL[rec.class] : "—"}</td>
-              <td className="mono">{rec?.class === "land" ? "—" : (occ * 100).toFixed(0) + "%"}</td>
-              <td className="mono">{rec ? usd(holdingNOIYr(rec, game.econ, h, game.month)) : "—"}</td>
-              <td className="mono">{usd(v)}</td>
-              <td className="mono">{usd(h.loan?.balance ?? 0)}</td>
-              <td className="mono">{usd(v - (h.loan?.balance ?? 0))}</td>
-              <td className={"mono" + (cf < 0 ? " v-bad" : "")}>{usd(cf)}</td>
+              <td className="num">{rec?.class === "land" ? "—" : (occ * 100).toFixed(0) + "%"}</td>
+              <td className="num">{rec ? usd(holdingNOIYr(rec, game.econ, h, game.month)) : "—"}</td>
+              <td className="num">{usd(v)}</td>
+              <td className="num">{usd(h.loan?.balance ?? 0)}</td>
+              <td className="num">{usd(v - (h.loan?.balance ?? 0))}</td>
+              <td className="num">{h.loan ? "−" + usd(h.loan.monthlyPmt) : "—"}</td>
+              <td className={"num" + (cf < 0 ? " neg" : "")}>{usd(cf)}</td>
               <td className="dim">
                 {[h.loan?.sweep ? "SWEEP" : null, h.sale ? "LISTED" : null,
                   h.renovatingUntilM !== undefined && game.month < h.renovatingUntilM ? "RENO" : null,
@@ -765,12 +970,13 @@ function PortfolioPage() {
             <tr key={dv.bbl} onClick={() => go(dv.bbl)}>
               <td>{parcels[dv.bbl]?.address ?? dv.bbl}</td>
               <td>{CLASS_LABEL[dv.use]}</td>
-              <td className="mono">—</td>
-              <td className="mono">—</td>
-              <td className="mono">{usd(dv.costTotal)}</td>
-              <td className="mono">{usd(dv.loanBalance)}</td>
-              <td className="mono">{usd(dv.costTotal - dv.loanBalance)}</td>
-              <td className="mono v-bad">{usd(-(dv.loanBalance * dv.ratePct) / 100 / 12)}</td>
+              <td className="num">—</td>
+              <td className="num">—</td>
+              <td className="num">{usd(dv.costTotal)}</td>
+              <td className="num">{usd(dv.loanBalance)}</td>
+              <td className="num">{usd(dv.costTotal - dv.loanBalance)}</td>
+              <td className="num">—</td>
+              <td className="num neg">{usd(-(dv.loanBalance * dv.ratePct) / 100 / 12)}</td>
               <td className="dim">BUILDING · delivers {monthLabel(dv.deliverM)}</td>
             </tr>
           ))}
@@ -901,7 +1107,7 @@ function MarketPage() {
       </div>
 
       <div className="deals-grid">
-        <section>
+        <section style={{ gridColumn: "1 / -1" }}>
           <div className="page-section">On the market · {game.listings.length}</div>
           <table className="tbl">
             <thead>
@@ -916,7 +1122,6 @@ function MarketPage() {
                 if (!rec) return null;
                 const cond = initialCondition(rec);
                 const built = rec.class !== "land" && rec.bldgArea > 0;
-                // what a buyer underwrites: in-place income over the price
                 const noi = built ? noiYr(rec, game.econ, cond) : 0;
                 const goingIn = built && li.ask > 0 ? (noi / li.ask) * 100 : 0;
                 return (
@@ -933,17 +1138,6 @@ function MarketPage() {
               })}
             </tbody>
           </table>
-        </section>
-
-        <section>
-          <div className="page-section">The tape</div>
-          <div className="news">
-            {game.news.slice(0, 24).map((n, i) => (
-              <div key={i} className={"news-item news-" + n.kind}>
-                <span className="news-q mono">{monthLabel(n.q)}</span> {n.text}
-              </div>
-            ))}
-          </div>
         </section>
       </div>
     </div>
@@ -1008,6 +1202,47 @@ function CreditLine() {
   );
 }
 
+// Named saves alongside the autosave, so a run can be branched or rolled back.
+function SaveSlots() {
+  const slots = useStore((s) => s.slots);
+  const { saveTo, loadFrom, dropSave, refreshSlots } = useStore.getState();
+  const [name, setName] = useState("");
+  useEffect(() => { void refreshSlots(); }, [refreshSlots]);
+  return (
+    <div className="page-section">
+      <div className="page-section-head">Saved games</div>
+      <div className="hint">The game autosaves every month. These are named copies you can come back to.</div>
+      <div className="btn-row" style={{ marginTop: 8 }}>
+        <input
+          className="ask-input mono"
+          style={{ width: 200 }}
+          placeholder="name this save"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <button className="btn btn-buy" disabled={!name.trim()} onClick={() => { void saveTo(name.trim()); setName(""); }}>
+          Save
+        </button>
+      </div>
+      <div style={{ marginTop: 10 }}>
+        {slots.map((m) => (
+          <div key={m.slot} className="slot-row">
+            <div>
+              <div className="slot-name">{m.slot}</div>
+              <div className="slot-meta mono">{monthLabel(m.month)} · {usd(m.cash)} cash · saved {new Date(m.savedAt).toLocaleDateString()}</div>
+            </div>
+            <div className="btn-row" style={{ margin: 0 }}>
+              <button className="btn btn-buy" onClick={() => void loadFrom(m.slot)}>Load</button>
+              <button className="btn btn-sell" onClick={() => { if (window.confirm(`Delete “${m.slot}”?`)) void dropSave(m.slot); }}>Delete</button>
+            </div>
+          </div>
+        ))}
+        {!slots.length && <div className="hint">No named saves yet.</div>}
+      </div>
+    </div>
+  );
+}
+
 // Everything about who is paying you rent, in one room: occupancy by
 // building, the whole rent roll, what rolls when, and the agent switch.
 function LeasingPage() {
@@ -1057,7 +1292,7 @@ function LeasingPage() {
               : "You'll be asked to sign, counter, or pass on every letter of intent. Hand it over and the decisions stop coming to you."}
           </div>
         </div>
-        <button className={"btn" + (game.agent ? "" : " btn-buy")} onClick={() => setAgent(!game.agent)}>
+        <button className={"btn" + (game.agent ? "" : " btn-on")} onClick={() => setAgent(!game.agent)}>
           {game.agent ? "Take leasing back" : "Hire the agent · 6%"}
         </button>
       </div>
@@ -1164,6 +1399,7 @@ function BooksPage() {
       </div>
       <NWChart data={game.nwHistory} />
       <CreditLine />
+      <SaveSlots />
       <div className="page-section">
         <div className="page-section-head">The ledger, by year</div>
         <div style={{ overflowX: "auto" }}>
@@ -1196,6 +1432,16 @@ function BooksPage() {
               {!years.length && <tr><td colSpan={10} className="dim">Nothing on the books yet — advance a month.</td></tr>}
             </tbody>
           </table>
+        </div>
+      </div>
+      <div className="page-section">
+        <div className="page-section-head">The tape</div>
+        <div className="news" style={{ maxHeight: 260, overflowY: "auto" }}>
+          {game.news.slice(0, 60).map((n, i) => (
+            <div key={i} className={"news-item news-" + n.kind}>
+              <span className="news-q mono">{monthLabel(n.q)}</span> {n.text}
+            </div>
+          ))}
         </div>
       </div>
       <div className="deals-grid">

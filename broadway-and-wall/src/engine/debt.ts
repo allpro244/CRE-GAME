@@ -222,8 +222,49 @@ export function buyRateCap(s: GameState, parcels: ParcelTable, bbl: string): { s
   return { s: next };
 }
 
-// Player-initiated refinance at current rates and value.
-export function refinance(s: GameState, parcels: ParcelTable, bbl: string, productId: "fixed" | "float"): { s: GameState; err?: string } {
+// What the desk will actually quote you today, per product, so the refinance
+// screen can show real choices instead of two buttons.
+export interface RefiQuote {
+  id: "fixed" | "float";
+  label: string;
+  ratePct: number;
+  maxProceeds: number;
+  ltvAtMax: number;
+  dscrAtMax: number;
+  ioM: number;
+  termM: number;
+  amortYears: number;
+}
+
+export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { quotes: RefiQuote[]; value: number; payoff: number } {
+  const h = s.holdings[bbl];
+  const rec = resolveRec(parcels, s, bbl);
+  if (!h || !rec) return { quotes: [], value: 0, payoff: 0 };
+  const value = holdingValue(rec, s.econ, h);
+  const noi = holdingNOIYr(rec, s.econ, h, s.month);
+  const quotes = PRODUCTS.map((p) => {
+    const q = quote(s, p, value, noi);
+    const annualDs = p.ioM > 0
+      ? (q.principal * q.ratePct) / 100
+      : monthlyPayment(Math.max(1, q.principal), q.ratePct, p.amortYears) * 12;
+    return {
+      id: p.id,
+      label: p.id === "fixed" ? "Fixed, 10-year term" : "Floating, 3-year IO",
+      ratePct: q.ratePct,
+      maxProceeds: q.principal,
+      ltvAtMax: value > 0 ? q.principal / value : 0,
+      dscrAtMax: annualDs > 0 ? noi / annualDs : 0,
+      ioM: p.ioM,
+      termM: p.termM,
+      amortYears: p.amortYears,
+    } satisfies RefiQuote;
+  });
+  return { quotes, value, payoff: h.loan?.balance ?? 0 };
+}
+
+// Player-initiated refinance at current rates and value. `lev` scales the new
+// loan down from the lender's maximum — the dial on the refinance screen.
+export function refinance(s: GameState, parcels: ParcelTable, bbl: string, productId: "fixed" | "float", lev = 1): { s: GameState; err?: string } {
   const next: GameState = JSON.parse(JSON.stringify(s));
   const h = next.holdings[bbl];
   const rec = resolveRec(parcels, next, bbl);
@@ -231,12 +272,13 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   const product = PRODUCTS.find((p) => p.id === productId)!;
   const value = holdingValue(rec, next.econ, h);
   const noi = holdingNOIYr(rec, next.econ, h, next.month);
-  const qd = quote(next, product, value, noi);
+  const full = quote(next, product, value, noi);
+  const qd = { ...full, principal: Math.round(full.principal * Math.max(0, Math.min(1, lev))) };
   const oldBal = h.loan?.balance ?? 0;
   const fee = Math.round(Math.max(qd.principal, oldBal) * REFI_FEE);
   if (qd.principal < 100_000) return { s, err: "No lender will size a loan against this income." };
   if (qd.principal + next.cash < oldBal + fee) return { s, err: "Proceeds don't cover the payoff — you're underwater on this refi." };
-  const newLoan = originate(next, product, value, noi);
+  const newLoan = originate(next, product, value, noi, lev);
   if (!newLoan) return { s, err: "No lender will size a loan against this income." };
   next.cash += qd.principal - oldBal - fee;
   logBooks(next, "debtSvc", fee);

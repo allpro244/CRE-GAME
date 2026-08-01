@@ -472,16 +472,21 @@ latticeDistrict({ bearingDeg: -8, stPitch: 102, avePitch: 268, streetW: 18, aveW
 
 // --- attributes -------------------------------------------------------------
 // Fictional-but-plausible zoning, keyed by district and heat.
+// The buildable envelope. There is no use restriction anywhere in Ashport —
+// any asset class can go on any lot — so a district only sets HOW MUCH you
+// may build, and it scales with the demand under your feet: a Harbor Square
+// site carries a real tower, an edge lot carries a walk-up. The same number
+// is written to both the commercial and residential fields so nothing
+// downstream can accidentally re-introduce a use test.
 function zoningFor(district, heat) {
-  if (district === "oldharbor") return heat > 0.6
-    ? { z: "C-5", commfar: 8, resfar: 6 }
-    : { z: "C-4", commfar: 5, resfar: 5 };
-  if (district === "exchange") return heat > 0.55
-    ? { z: "C-6", commfar: 12, resfar: 8 }
-    : { z: "C-4", commfar: 7, resfar: 6 };
-  if (district === "point") return { z: "C-5W", commfar: 10, resfar: 10 };
-  if (district === "northside") return { z: "R-4", commfar: 2, resfar: 4.5 };
-  return { z: "M-1", commfar: 3, resfar: 0 }; // millside — upzoning is a later-phase story
+  const base = district === "exchange" ? 15
+    : district === "oldharbor" ? 12
+    : district === "point" ? 13
+    : district === "northside" ? 7
+    : 6;                                    // millside
+  const far = Math.round((base + heat * heat * 22) * 10) / 10;
+  const z = far >= 24 ? "C-8" : far >= 18 ? "C-6" : far >= 12 ? "C-5" : far >= 8 ? "C-4" : "C-2";
+  return { z, commfar: far, resfar: far };
 }
 
 // A YOUNG town in 2026: the core is built, the edges are still fields and
@@ -587,7 +592,7 @@ for (const block of blocks) {
       const towerP = Math.min(0.24, (h * h * 0.45 + (areaM2 > 1500 ? 0.04 : 0)) * towerGate);
       let coverage;
       if (areaM2 > 240 && rand() < towerP) {
-        floors = Math.round(rr(8, 15) + h * rr(3, 9)); // tallest only at the core
+        floors = Math.round(rr(9, 17) + h * h * rr(14, 34)); // the core carries real towers
         coverage = rr(0.46, 0.62);
       } else if (d !== "millside" && rand() < 0.22 + h * 0.35) {
         floors = Math.round(d === "northside" ? rr(3, 6) : rr(4, 9));
@@ -600,9 +605,9 @@ for (const block of blocks) {
       if (cls === "G1") floors = Math.min(floors, 4);
       if (cls === "K2") floors = Math.min(floors, 3);
       if (cls === "E9") floors = Math.min(floors, 4);
-      if (yearbuilt >= 1961) {
-        floors = Math.min(floors, Math.max(1, Math.round(Math.max(zone.commfar, zone.resfar) / coverage)));
-      }
+      // every building respects its envelope, old or new: floors are capped so
+      // bldgArea / lotArea never exceeds the parcel's FAR
+      floors = Math.min(floors, Math.max(1, Math.floor(Math.max(zone.commfar, zone.resfar) / coverage)));
       // a real side-yard on EVERY wall. Lots are convex now, so the exact
       // edge-offset inset applies: every wall sits the same distance off its
       // lot line, and neighbouring buildings can't kiss.

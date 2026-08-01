@@ -38,10 +38,12 @@ export const PRE_LEASE_EXTRA_M = 3;  // months spent landing the anchor first
 
 export interface DevPlan {
   use: BuiltClass;
-  farFrac: number; // fraction of max allowed FAR
+  floors: number;
+  coverage: number;   // share of the lot the floorplate covers
   preLease: boolean;
   sf: number;
-  floors: number;
+  far: number;
+  farMax: number;
   costTotal: number;
   loanAmount: number;
   ratePct: number;
@@ -50,65 +52,107 @@ export interface DevPlan {
   lenderNote?: string;
 }
 
+// The buildable envelope, and nothing else. Ashport has no use districts —
+// any class on any lot — so the only limit is how much floor area the FAR
+// allows, and how much of the lot you choose to cover with it.
+export function farMaxFor(rec: { farMaxComm: number; farMaxRes: number }): number {
+  return Math.max(rec.farMaxComm, rec.farMaxRes, 2);
+}
+export function maxFloorsFor(rec: { farMaxComm: number; farMaxRes: number }, coverage: number): number {
+  return Math.max(1, Math.floor(farMaxFor(rec) / Math.max(0.2, coverage)));
+}
+
 export function planDevelopment(
-  s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass, farFrac: number, preLease = false,
+  s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass,
+  floors: number, coverage = 0.6, preLease = false,
 ): DevPlan | null {
   const rec = parcels[bbl];
-  if (!rec) return null;
-  // zoning is real: residential needs residential FAR, commercial needs commercial
-  const farMax = use === "multifamily" ? rec.farMaxRes : rec.farMaxComm;
-  if (!farMax) return null;
-  const sf = Math.round((rec.lotArea * farMax * farFrac) / 100) * 100;
-  if (sf < 4000) return null;
-  const coverage = 0.62;
-  const floors = Math.max(1, Math.round(sf / (rec.lotArea * coverage)));
-  const heightPrem = floors > 12 ? 1.15 : floors > 6 ? 1.06 : 1;
-  const demo = rec.bldgArea > 0 ? Math.round(rec.bldgArea * 12 * s.econ.costIdx) : 0; // teardown: clear it first
+  if (!rec || !rec.lotArea) return null;
+  const cov = Math.max(0.25, Math.min(0.9, coverage));
+  const farMax = farMaxFor(rec);
+  const fl = Math.max(1, Math.min(Math.round(floors), maxFloorsFor(rec, cov)));
+  const sf = Math.round((rec.lotArea * cov * fl) / 100) * 100;
+  if (sf < 2000) return null;
+  const heightPrem = fl > 30 ? 1.28 : fl > 18 ? 1.18 : fl > 8 ? 1.07 : 1;
+  const demo = rec.bldgArea > 0 ? Math.round(rec.bldgArea * 12 * s.econ.costIdx) : 0;
   const costTotal = Math.round(sf * HARD_COST_PSF[use] * s.econ.costIdx * heightPrem * (1 + SOFT_COST)) + demo;
   const canPreLease = use === "office" || use === "retail" || use === "mixed";
   const ltc = constructionLtc(use, preLease && canPreLease, s.econ.phase);
   const loanAmount = Math.round(costTotal * ltc);
   const ratePct = +(s.econ.indexRate + CONSTR_SPREAD).toFixed(2);
-  const months = Math.min(23, 12 + 3 * Math.floor(sf / 90_000)) + (preLease && canPreLease ? PRE_LEASE_EXTRA_M : 0);
+  const months = Math.min(30, 11 + Math.round(fl * 0.55)) + (preLease && canPreLease ? PRE_LEASE_EXTRA_M : 0);
   const lenderNote = ltc === 0
     ? "No construction lender will touch spec commercial in a recession — pre-lease it or build all-equity."
     : undefined;
   return {
-    use, farFrac, preLease: preLease && canPreLease, sf, floors, costTotal,
-    loanAmount, ratePct, equity: costTotal - loanAmount, months, lenderNote,
+    use, floors: fl, coverage: cov, preLease: preLease && canPreLease, sf,
+    far: +(sf / rec.lotArea).toFixed(1), farMax,
+    costTotal, loanAmount, ratePct, equity: costTotal - loanAmount, months, lenderNote,
   };
 }
 
 export function startDevelopment(
-  s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass, farFrac: number, preLease = false,
+  s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass,
+  floors: number, coverage = 0.6, preLease = false,
 ): { s: GameState; err?: string } {
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   if (!s.holdings[bbl]) return { s, err: "Buy the dirt first." };
-  if (rec.class !== "land") return { s, err: "There's already a real building here — only vacant and teardown-class lots are developable." };
+  if (rec.class !== "land") return { s, err: "Clear the site first — demolish what's standing before you build." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
-  const plan = planDevelopment(s, parcels, bbl, use, farFrac, preLease);
-  if (!plan) return { s, err: "Zoning won't carry a project that small — try more FAR or a different use." };
+  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, preLease);
+  if (!plan) return { s, err: "That's too small to be worth building — add floors or cover more of the lot." };
   if (s.cash < plan.equity) return { s, err: `Ground-breaking needs $${(plan.equity / 1e6).toFixed(2)}M of equity — you're short.` };
   const next = clone(s);
   next.cash -= plan.equity;
   logBooks(next, "dev", plan.equity);
   next.developments[bbl] = {
-    bbl,
-    use,
-    sf: plan.sf,
-    floors: plan.floors,
-    costTotal: plan.costTotal,
-    loanBalance: plan.loanAmount,
-    ratePct: plan.ratePct,
-    startM: next.month,
-    deliverM: next.month + plan.months,
-    overrunRolled: false,
+    bbl, use, sf: plan.sf, floors: plan.floors,
+    costTotal: plan.costTotal, loanBalance: plan.loanAmount, ratePct: plan.ratePct,
+    startM: next.month, deliverM: next.month + plan.months, overrunRolled: false,
     preLeasedSf: plan.preLease ? Math.round(plan.sf * PRE_LEASE_SHARE) : undefined,
   } satisfies Development;
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Ground broken at ${rec.address}: ${(plan.sf / 1000).toFixed(0)}k sf of ${use}, $${(plan.costTotal / 1e6).toFixed(1)}M budget${plan.preLease ? ", anchor pre-leased" : ""}, delivery ${monthLabel(next.month + plan.months)}.`,
+    text: `Ground broken at ${rec.address}: ${plan.floors} floors, ${(plan.sf / 1000).toFixed(0)}k sf of ${use} at ${plan.far} FAR, $${(plan.costTotal / 1e6).toFixed(1)}M budget${plan.preLease ? ", anchor pre-leased" : ""}, delivery ${monthLabel(next.month + plan.months)}.`,
+  });
+  return { s: next };
+}
+
+// Take a building down to clean dirt. The rubble costs real money, but a
+// three-storey walk-up on a site that carries thirty floors is worth more as
+// a hole in the ground.
+export function demolitionCost(rec: { bldgArea: number }, s: GameState): number {
+  return Math.round(Math.max(60_000, rec.bldgArea * 14 * s.econ.costIdx));
+}
+
+export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string } {
+  const h = s.holdings[bbl];
+  const rec = resolveRec(parcels, s, bbl);
+  if (!h || !rec) return { s, err: "You don't own that." };
+  if (rec.class === "land" || !rec.bldgArea) return { s, err: "There's nothing standing on it." };
+  if (s.developments[bbl]) return { s, err: "Construction is already underway." };
+  if (h.sale) return { s, err: "It's on the market — pull the listing first." };
+  const leased = h.tenants.reduce((sum, t) => sum + t.sf, 0);
+  if (leased / Math.max(1, rec.bldgArea) > 0.2) {
+    return { s, err: "You can't demolish over occupied space — let the leases roll below 20% first." };
+  }
+  const cost = demolitionCost(rec, s);
+  if (s.cash < cost) return { s, err: `Demolition runs $${(cost / 1e6).toFixed(2)}M — you're short.` };
+  const next = clone(s);
+  next.cash -= cost;
+  logBooks(next, "capex", cost);
+  next.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
+  const nh = next.holdings[bbl];
+  nh.tenants = [];
+  delete nh.occ;
+  delete nh.makeReady;
+  delete nh.deliveredM;
+  nh.condition = "standard";
+  next.lois = next.lois.filter((l) => l.bbl !== bbl);
+  next.news.unshift({
+    q: next.month, kind: "warn",
+    text: `${rec.address} came down — $${(cost / 1e6).toFixed(2)}M to clear it. The site is dirt again.`,
   });
   return { s: next };
 }
@@ -274,8 +318,7 @@ export function tickCityGrowth(
     if (!best) continue;
     const { bbl, rec } = best;
     const use = useForZone(rec.zoneDist, rec.demandScore, rng(s));
-    const farMax = use === "multifamily" ? (rec.farMaxRes || rec.farMaxComm) : (rec.farMaxComm || rec.farMaxRes);
-    if (!farMax) continue;
+    const farMax = farMaxFor(rec);
     // young town builds small; a mature one builds to the envelope
     const frac = Math.min(0.95, 0.22 + 0.45 * maturity + 0.3 * (rec.demandScore / 100) * maturity + rng(s) * 0.15);
     const sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);

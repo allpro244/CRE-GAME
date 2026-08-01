@@ -6,13 +6,13 @@ import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale,
 import { respondLOI, type LOIAction } from "@/engine/leasing";
 import { refinance, buyRateCap } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
-import { startDevelopment, startProgram, setStance } from "@/engine/dev";
+import { startDevelopment, startProgram, setStance, demolish } from "@/engine/dev";
 import type { BuiltClass } from "@/engine/types";
 import { netWorth } from "@/engine/value";
-import { loadGame, saveGame } from "@/engine/save";
+import { loadGame, saveGame, listSaves, deleteSave, type SaveMeta } from "@/engine/save";
 
 export type Lens = "none" | "land" | "demand";
-export type Page = "none" | "portfolio" | "deals" | "market" | "books" | "leasing";
+export type Page = "none" | "portfolio" | "deals" | "market" | "books" | "leasing" | "property";
 
 interface AppState {
   parcels: ParcelTable | null;
@@ -38,12 +38,13 @@ interface AppState {
   advanceYear: () => void;
   advanceUntil: () => void;
   counterOff: (bbl: string) => void;
-  buy: (bbl: string, product: BuyProduct, lev?: number) => void;
-  buyOff: (bbl: string, product: BuyProduct, lev?: number) => void;
+  buy: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
+  buyOff: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
   approach: (bbl: string) => void;
   respondLoi: (id: number, action: LOIAction) => void;
-  refi: (bbl: string, product: "fixed" | "float") => void;
-  develop: (bbl: string, use: BuiltClass, farFrac: number, preLease?: boolean) => void;
+  refi: (bbl: string, product: "fixed" | "float", lev?: number) => void;
+  develop: (bbl: string, use: BuiltClass, floors: number, coverage: number, preLease?: boolean) => void;
+  raze: (bbl: string) => void;
   program: (bbl: string, id: string) => void;
   stance: (bbl: string, v: -1 | 0 | 1) => void;
   listSale: (bbl: string, ask: number) => void;
@@ -57,6 +58,11 @@ interface AppState {
   drawCredit: (amt: number) => void;
   repayCredit: (amt: number) => void;
   newRun: () => void;
+  saveTo: (slot: string) => Promise<void>;
+  loadFrom: (slot: string) => Promise<void>;
+  dropSave: (slot: string) => Promise<void>;
+  slots: SaveMeta[];
+  refreshSlots: () => Promise<void>;
 }
 
 function toast(text: string, kind: "ok" | "err" = "ok") {
@@ -80,8 +86,9 @@ export const useStore = create<AppState>((set, get) => ({
   toast: null,
   fps: 0,
   loadError: null,
+  slots: [],
   setData: (d) => set({ ...d, bbls: Object.keys(d.parcels) }),
-  select: (bbl) => set({ selectedBBL: bbl, page: bbl ? "none" : get().page }),
+  select: (bbl) => set({ selectedBBL: bbl, page: bbl && get().page !== "property" ? "none" : get().page }),
   hover: (bbl) => set({ hoveredBBL: bbl }),
   setLens: (lens) => set({ lens }),
   setPage: (page) => set({ page }),
@@ -126,23 +133,23 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  buy: (bbl, product, lev) => {
+  buy: (bbl, product, lev, bid) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = buyListing(game, parcels, bbl, product, lev);
+    const r = buyListing(game, parcels, bbl, product, lev, bid);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
-    toast("Deed recorded. The block knows your name now.");
+    toast(r.msg ?? "Deed recorded. The block knows your name now.");
     void persist(r.s);
   },
 
-  buyOff: (bbl, product, lev) => {
+  buyOff: (bbl, product, lev, bid) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = buyOffMarket(game, parcels, bbl, product, lev);
+    const r = buyOffMarket(game, parcels, bbl, product, lev, bid);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
-    toast("Off-market. Nobody saw it trade.");
+    toast(r.msg ?? "Off-market. Nobody saw it trade.");
     void persist(r.s);
   },
 
@@ -166,23 +173,33 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  refi: (bbl, product) => {
+  refi: (bbl, product, lev) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = refinance(game, parcels, bbl, product);
+    const r = refinance(game, parcels, bbl, product, lev);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("Repriced. New paper, new clock.");
     void persist(r.s);
   },
 
-  develop: (bbl, use, farFrac, preLease) => {
+  develop: (bbl, use, floors, coverage, preLease) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = startDevelopment(game, parcels, bbl, use, farFrac, preLease);
+    const r = startDevelopment(game, parcels, bbl, use, floors, coverage, preLease);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("Ground broken. Watch it rise.");
+    void persist(r.s);
+  },
+
+  raze: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = demolish(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast("Down it comes.");
     void persist(r.s);
   },
 
@@ -299,6 +316,38 @@ export const useStore = create<AppState>((set, get) => ({
     set({ game: r.s });
     toast("Paid down.");
     void persist(r.s);
+  },
+
+  refreshSlots: async () => {
+    const all = await listSaves();
+    set({ slots: all.filter((m) => m.slot !== "auto").sort((a, b) => b.savedAt - a.savedAt) });
+  },
+
+  saveTo: async (slot) => {
+    const { game } = get();
+    if (!game) return;
+    await saveGame(slot, game);
+    await get().refreshSlots();
+    toast(`Saved to “${slot}”.`);
+  },
+
+  loadFrom: async (slot) => {
+    const { parcels } = get();
+    const saved = await loadGame(slot);
+    if (!saved || !parcels) { toast("That save wouldn't open.", "err"); return; }
+    const fits = saved.v === 8 &&
+      Object.keys(saved.holdings).every((b) => parcels[b]) &&
+      saved.listings.every((l) => parcels[l.bbl]);
+    if (!fits) { toast("That save was made on a different city — it can't be loaded here.", "err"); return; }
+    set({ game: saved, selectedBBL: null, page: "none" });
+    void persist(saved);
+    toast(`Loaded “${slot}”.`);
+  },
+
+  dropSave: async (slot) => {
+    await deleteSave(slot);
+    await get().refreshSlots();
+    toast("Save deleted.");
   },
 
   newRun: () => {

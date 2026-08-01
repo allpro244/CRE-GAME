@@ -65,10 +65,17 @@ export default function MapView() {
       map.on("load", () => {
         setMapReady(true);
         // the beautiful-buildings renderer: meshes with procedural facades
-        fetchGzJson(import.meta.env.BASE_URL + "data/buildings3d.json.gz")
-          .then((volumes: BuildingVolume[]) => {
+        Promise.all([
+          fetchGzJson(import.meta.env.BASE_URL + "data/buildings3d.json.gz"),
+          // the curb lines double as the planting plan for street trees
+          fetch(import.meta.env.BASE_URL + "data/context.geojson").then((r) => r.json()).catch(() => null),
+        ])
+          .then(([volumes, ctx]: [BuildingVolume[], GeoJSON.FeatureCollection | null]) => {
             if (disposed || !volumes?.length) return;
-            const layer = new ThreeBuildings(volumes, CITY_CENTER);
+            const curbs: [number, number][][] = (ctx?.features ?? [])
+              .filter((f) => f.properties?.kind === "street" && f.geometry.type === "LineString")
+              .map((f) => (f.geometry as GeoJSON.LineString).coordinates as [number, number][]);
+            const layer = new ThreeBuildings(volumes, CITY_CENTER, curbs);
             threeRef.current = layer;
             map.addLayer(layer);
           })

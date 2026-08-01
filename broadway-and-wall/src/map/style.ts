@@ -167,7 +167,7 @@ export function fallbackBaseStyle(): StyleSpecification {
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "land"],
-        paint: { "fill-color": "#f4f3ef" },
+        paint: { "fill-color": "#e6e3d9" },
       },
       {
         id: "esplanade",
@@ -204,7 +204,7 @@ export function fallbackBaseStyle(): StyleSpecification {
         source: "bw-context",
         filter: ["==", ["get", "kind"], "street"],
         paint: {
-          "line-color": ["match", ["get", "cls"], "shore", "#dcd9cf", "#e4e1d8"],
+          "line-color": ["match", ["get", "cls"], "shore", "#d3cfc2", "#dcd8cb"],
           "line-width": [
             "interpolate", ["linear"], ["zoom"],
             12, ["match", ["get", "cls"], "shore", 1.6, 0.8],

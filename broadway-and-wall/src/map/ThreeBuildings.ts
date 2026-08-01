@@ -52,16 +52,76 @@ attribute float aRand;
 attribute float aVar;
 attribute float aTop;
 attribute float aFh;
+attribute vec2 aSeg;   // wall segment span in perimeter units (u0, u1)
+attribute vec2 aCcv;   // corner sign at each end: +1 convex, -1 concave
 attribute vec3 aTint;
 varying vec3 vNormal;
 varying vec3 vTint;
 varying vec3 vPos;
+varying vec2 vSeg, vCcv;
 varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh;
 void main() {
   vNormal = normal;
   vTint = aTint;
   vPos = position;
+  vSeg = aSeg; vCcv = aCcv;
   vU = aU; vZ = position.z; vStyle = aStyle; vRand = aRand; vVar = aVar; vTop = aTop; vFh = aFh;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+
+// The light rig. One sun, a sky dome, and a warm bounce off the pavement —
+// which is what actually makes massing read: cool light from above, warm
+// light from below, and a real shadow between them. Everything lands in a
+// filmic curve so highlights roll off instead of clipping to paper white.
+const LIGHT_GLSL = /* glsl */ `
+const vec3 SUN_DIR = vec3(0.5735, -0.4077, 0.7899);
+const vec3 SUN_COL = vec3(1.14, 1.035, 0.87);
+const vec3 SKY_COL = vec3(0.50, 0.605, 0.78);
+const vec3 GND_COL = vec3(0.44, 0.385, 0.30);
+
+vec3 hemiLight(vec3 n, float ao) {
+  vec3 amb = mix(GND_COL, SKY_COL, clamp(n.z * 0.5 + 0.5, 0.0, 1.0));
+  return amb * ao;
+}
+
+vec3 aces(vec3 x) {
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
+
+// filmic roll-off plus a gentle split-tone: cool in the shadows, warm in the
+// light. Keeps the pale architectural-model palette but stops it going chalky.
+vec3 grade(vec3 c) {
+  vec3 t = aces(c * 1.06);
+  t = mix(c * 0.92, t, 0.9);
+  float lum = dot(t, vec3(0.2126, 0.7152, 0.0722));
+  t = mix(vec3(lum), t, 1.16);                 // ACES eats chroma; put it back
+  t = clamp(t, 0.0, 1.0);
+  lum = dot(t, vec3(0.2126, 0.7152, 0.0722));
+  t *= mix(vec3(0.935, 0.972, 1.082), vec3(1.062, 1.007, 0.926), smoothstep(0.16, 0.84, lum));
+  return t;
+}`;
+
+const PROP_VERT = /* glsl */ `
+// instanceColor is declared for us when the mesh carries one
+varying vec3 vN;
+varying vec3 vW;
+varying vec3 vC;
+void main() {
+  vN = normalize(mat3(instanceMatrix) * normal);
+  vW = (instanceMatrix * vec4(position, 1.0)).xyz;
+  vC = instanceColor;
+  gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+}`;
+
+// same rig, for props that aren't instanced (the construction crane)
+const PROP_VERT_PLAIN = /* glsl */ `
+varying vec3 vN;
+varying vec3 vW;
+varying vec3 vC;
+void main() {
+  vN = normalize(normal);
+  vW = position;
+  vC = vec3(1.0);
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 
@@ -92,22 +152,34 @@ precision highp float;
 varying vec3 vNormal;
 varying vec3 vTint;
 varying vec3 vPos;
+varying vec2 vSeg, vCcv;
 varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh;
 uniform float uOpacity;
 uniform vec3 uCam;
 ${"" /* shadow sampling */}
-` + SHADOW_GLSL + /* glsl */ `
+` + SHADOW_GLSL + LIGHT_GLSL + /* glsl */ `
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
 void main() {
   int s = int(vStyle + 0.5);
   vec3 n = normalize(vNormal);
-  vec3 sun = normalize(vec3(0.45, -0.32, 0.62));
   float vis = sunVis(vPos + n * 0.7 + vec3(0.0, 0.0, 0.4));
-  float diff = max(dot(n, sun), 0.0) * vis;
-  float up = clamp(n.z, 0.0, 1.0);
-  float shade = 0.50 + 0.42 * diff + 0.14 * up;
+
+  // ---- ambient occlusion --------------------------------------------------
+  // Light doesn't reach the bottom of a street wall, and it doesn't reach into
+  // an inside corner. Without these two terms a building looks pasted onto
+  // the ground instead of standing on it.
+  float aoGround = mix(0.64, 1.0, smoothstep(0.0, 7.5, vZ));
+  float dA = vU - vSeg.x, dB = vSeg.y - vU;
+  float wA = 1.0 - smoothstep(0.0, 1.7, dA);
+  float wB = 1.0 - smoothstep(0.0, 1.7, dB);
+  float edge = clamp(wA * vCcv.x + wB * vCcv.y, -1.0, 1.0);
+  float aoCorner = edge < 0.0 ? mix(1.0, 0.58, -edge) : 1.0;
+  float edgeLift = edge > 0.0 ? 1.0 + 0.055 * edge : 1.0;   // convex arris catches light
+  // the underside of a cornice or setback keeps its own shade
+  float aoEave = mix(0.80, 1.0, smoothstep(0.0, 1.6, vTop - vZ));
+  float ao = aoGround * aoCorner * aoEave;
 
   // ---- palette by style + variant -----------------------------------------
   vec3 wall; vec3 glassA; vec3 glassB; float colW; vec2 win;
@@ -147,8 +219,25 @@ void main() {
 
   // ---- window grid with analytic AA --------------------------------------
   float fh = max(vFh, 2.6);
+  // The wall's own tangent frame: T runs along the facade, Z is up. Everything
+  // that gives a window depth — parallax, jamb shading, the sun's angle across
+  // the opening — is computed in this frame.
+  vec3 T = normalize(cross(vec3(0.0, 0.0, 1.0), n));
+  vec3 Vw = normalize(uCam - vPos);
+  float facing = max(dot(n, Vw), 0.18);
+  // reveal depth: masonry punches deep openings, curtain wall is nearly flush
+  float revealM = (s == 0 || s == 7) ? 0.10 : (s == 4 ? 0.16 : 0.30);
+
   float u = vU / colW;
   float v = vZ / fh;
+  // how many pixels a floor spans: everything expensive below is skipped once
+  // the facade is too small on screen for it to read
+  float lod = clamp(max(fwidth(u), fwidth(v)) * 2.6 - 0.3, 0.0, 1.0);
+  float near = 1.0 - lod;
+  // parallax: shift the opening against the view so glass sits behind the wall
+  float par = revealM * near / facing;
+  u -= (dot(Vw, T) * par) / colW;
+  v -= (dot(Vw, vec3(0.0, 0.0, 1.0)) * par) / fh;
   vec2 f = vec2(fract(u), fract(v));
   vec2 m = (1.0 - win) * 0.5;
   float aaX = fwidth(f.x) * 0.9 + 1e-4;
@@ -157,10 +246,6 @@ void main() {
   float wy = smoothstep(m.y + 0.04 - aaY, m.y + 0.04 + aaY, f.y) * (1.0 - smoothstep(1.0 - m.y - aaY, 1.0 - m.y + aaY, f.y));
   float winMask = wx * wy;
 
-  // storefront glazing on commercial ground floors
-  if (vZ < fh * 1.15 && (s == 0 || s == 1 || s == 4 || s == 6)) {
-    winMask = (f.x > 0.08 && f.x < 0.92 && vZ > 0.8 && vZ < fh * 0.92) ? 1.0 : 0.0;
-  }
   if (vZ > vTop - 1.0) winMask = 0.0; // parapet
 
   // pre-war character: darker stone base and a cornice shadow line
@@ -177,10 +262,10 @@ void main() {
   glass = mix(glass, glass * 1.25, step(0.82, wid));
   glass = mix(glass, glass * 0.72, step(wid, 0.14));
 
-  vec3 V = normalize(uCam - vPos);
+  vec3 V = Vw;
   vec3 R = reflect(-V, n);
   float skyT = clamp(R.z * 0.9 + 0.35, 0.0, 1.0);
-  vec3 sky = mix(vec3(0.78, 0.76, 0.70), vec3(0.56, 0.72, 0.85), skyT);
+  vec3 sky = mix(vec3(0.80, 0.78, 0.72), vec3(0.56, 0.72, 0.86), skyT);
   float fres = pow(1.0 - abs(dot(n, V)), 2.0);
   float refl = glassy ? (0.30 + 0.38 * fres) : (0.10 + 0.18 * fres);
   glass = mix(glass, sky, refl);
@@ -190,20 +275,116 @@ void main() {
   float winV = clamp((f.y - m.y - 0.04) / max(1.0 - 2.0 * m.y - 0.02, 0.001), 0.0, 1.0);
   glass *= mix(1.06, 0.74, winV);
 
+  // ---- the reveal: a window is a hole with sides ---------------------------
+  if (near > 0.02) {
+  // Position within the opening, then shade the jamb the sun is behind and
+  // the head it hangs under. This is what sells masonry depth.
+  float wxr = clamp((f.x - m.x) / max(win.x, 0.001), 0.0, 1.0);
+  float wyr = clamp((f.y - m.y - 0.04) / max(win.y, 0.001), 0.0, 1.0);
+  float sunAlong = dot(SUN_DIR, T);
+  float jambSide = sunAlong > 0.0 ? wxr : 1.0 - wxr;
+  float jamb = 1.0 - smoothstep(0.0, 0.26, jambSide);
+  float head = smoothstep(0.62, 1.0, wyr);
+  float depthK = revealM / 0.30;                 // 1.0 for deep masonry
+  float reveal = 1.0 - (0.42 * jamb + 0.34 * head) * depthK * abs(sunAlong) - 0.10 * head * depthK;
+  glass *= mix(1.0, reveal, winMask);
+  // the sill catches light kicked back off the pavement
+  glass *= 1.0 + 0.16 * depthK * (1.0 - smoothstep(0.0, 0.16, wyr));
+
+  // curtain-wall mullions: vertical caps between the lites
+  if (glassy && winMask > 0.5) {
+    float mull = 1.0 - smoothstep(0.0, 0.055, min(wxr, 1.0 - wxr));
+    glass = mix(glass, glass * 0.66 + vec3(0.06), mull * 0.8);
+  }
+  // spandrel band reads as its own panel, not more wall
+  if (glassy && winMask < 0.5) {
+    float band = 1.0 - smoothstep(0.0, 0.10, min(f.y, 1.0 - f.y));
+    wall *= 1.0 - 0.14 * band;
+  }
+  }
+
   vec3 col = mix(wall, glass, winMask);
   // sill highlight just under the window row
   col *= 1.0 + 0.10 * (1.0 - winMask) * smoothstep(0.0, 0.04, f.y) * (1.0 - smoothstep(0.04, 0.09, f.y)) * step(0.5, float(s != 0));
   // mullion shadow line under each floor
   col *= 1.0 - 0.10 * (1.0 - winMask) * (1.0 - smoothstep(0.08, 0.12, f.y)) * (1.0 - step(7.5, vStyle));
 
+  // ---- the ground floor ---------------------------------------------------
+  // Where the building meets the street it stops being a facade and becomes
+  // shopfronts: a stone plinth, a bulkhead, deep glazing bay by bay, a signage
+  // band, awnings, and one bay given over to the entrance.
+  bool trade = (s <= 4 || s == 6 || s == 7);
+  float gfTop = fh * 1.04;
+  if (trade && near > 0.25 && vZ < gfTop && vTop > fh * 1.7) {
+    float bw = 4.7;                                   // one shopfront bay
+    float bu = vU / bw;
+    float bf = fract(bu);
+    float bayH = hash(vec2(floor(bu) + 0.5, floor(vRand * 53.0)));
+    float doorBay = step(0.90, hash(vec2(floor(bu) + 11.0, vRand * 17.0)));
+
+    vec3 base = wall * 0.86;                          // stone plinth
+    vec3 frame = wall * 0.66;                         // shopfront framing
+    vec3 shopGlass = mix(vec3(0.30, 0.33, 0.36), sky, 0.36 + 0.28 * fres);
+    // a lit interior behind the glass, warmer and brighter deeper in the bay
+    shopGlass = mix(shopGlass, vec3(0.80, 0.70, 0.52), 0.40 + 0.22 * bayH);
+
+    float pierW = 0.14;                               // masonry between bays
+    bool pier = bf < pierW || bf > 1.0 - pierW;
+    float sillZ = 0.62, headZ = fh * 0.80, signTop = gfTop;
+
+    vec3 gf;
+    if (vZ < sillZ)            gf = base;                       // plinth
+    else if (vZ > signTop)     gf = wall;                       // back to facade
+    else if (vZ > headZ) {
+      // signage band: each shop paints its own
+      vec3 signCol = vec3(0.34 + 0.20 * bayH, 0.31 + 0.16 * fract(bayH * 7.3), 0.28 + 0.16 * fract(bayH * 3.1));
+      gf = mix(wall * 0.86, signCol, 0.62);
+    }
+    else if (pier)             gf = frame;
+    else if (doorBay > 0.5 && bf > 0.38 && bf < 0.62) {
+      gf = vec3(0.13, 0.12, 0.12);                              // recessed doorway
+      gf *= 1.0 + 0.5 * smoothstep(0.0, 0.5, vZ / max(headZ, 1.0));
+    }
+    else {
+      gf = shopGlass;
+      // transom bar and the bulkhead below the display window
+      if (vZ < sillZ + 0.42) gf = frame * 1.06;
+      if (abs(vZ - headZ * 0.82) < 0.09) gf = frame;
+    }
+
+    // awnings: a canvas over roughly half the bays, with its shadow on the glass
+    float hasAwn = step(0.46, bayH);
+    float awnZ0 = headZ * 0.86, awnZ1 = headZ * 1.02;
+    if (hasAwn > 0.5 && !pier) {
+      if (vZ > awnZ0 && vZ < awnZ1) {
+        vec3 awn = vec3(0.44 + 0.22 * fract(bayH * 5.7), 0.34 + 0.16 * fract(bayH * 2.3), 0.30 + 0.14 * bayH);
+        // scalloped valance
+        float scallop = 0.5 + 0.5 * sin(bf * 34.0);
+        gf = mix(awn, awn * 0.78, scallop * smoothstep(awnZ1 - 0.22, awnZ1, vZ));
+      } else if (vZ < awnZ0) {
+        gf *= mix(0.62, 1.0, smoothstep(0.0, 1.5, awnZ0 - vZ));   // the awning's shade
+      }
+    }
+    col = gf;
+    winMask = (vZ > sillZ && vZ < headZ && !pier) ? 1.0 : 0.0;
+  }
+
   // distance dissolve
-  float lod = clamp(max(fwidth(u), fwidth(v)) * 2.6 - 0.3, 0.0, 1.0);
   vec3 facadeAvg = mix(wall, mix(glassA, glassB, 0.5), win.x * win.y * 0.8);
   col = mix(col, facadeAvg, lod);
 
-  col *= shade;
+  // ---- light --------------------------------------------------------------
+  float ndl = max(dot(n, SUN_DIR), 0.0);
+  vec3 light = SUN_COL * (ndl * vis * 0.92) + hemiLight(n, ao);
+  // glass throws a specular back at the sun; masonry doesn't
+  if (glassy) {
+    vec3 V = normalize(uCam - vPos);
+    vec3 H = normalize(SUN_DIR + V);
+    light += SUN_COL * pow(max(dot(n, H), 0.0), 48.0) * 0.55 * vis * winMask;
+  }
+  col *= light * edgeLift;
   col *= vTint;
-  gl_FragColor = vec4(col, uOpacity);
+  gl_FragColor = vec4(grade(col), uOpacity);
 }`;
 
 const ROOF_FRAG = /* glsl */ `
@@ -211,34 +392,73 @@ precision highp float;
 varying vec3 vNormal;
 varying vec3 vTint;
 varying vec3 vPos;
+varying vec2 vSeg, vCcv;
 varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh;
 uniform float uOpacity;
-` + SHADOW_GLSL + /* glsl */ `
+` + SHADOW_GLSL + LIGHT_GLSL + /* glsl */ `
+float rhash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float rnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(rhash(i), rhash(i + vec2(1.0, 0.0)), f.x),
+             mix(rhash(i + vec2(0.0, 1.0)), rhash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
 void main() {
   int s = int(vStyle + 0.5);
   vec3 roof;
-  if (s == 0)       roof = vec3(0.72, 0.74, 0.76);
-  else if (s == 1)  roof = vec3(0.66, 0.63, 0.57);
-  else if (s == 2)  roof = vec3(0.62, 0.55, 0.48);
-  else if (s == 3)  roof = vec3(0.60, 0.62, 0.63);
-  else if (s == 4)  roof = vec3(0.22, 0.24, 0.27);
-  else if (s == 6)  roof = vec3(0.60, 0.56, 0.47);
-  else if (s == 7)  roof = vec3(0.68, 0.70, 0.70);
-  else if (s == 8)  roof = vec3(0.58, 0.54, 0.46);   // cornice cap
-  else if (s == 9)  roof = vec3(0.55, 0.67, 0.42);   // green roof
-  else if (s == 10) roof = vec3(0.68, 0.65, 0.58);   // gravel lot
+  if (s == 0)       roof = vec3(0.70, 0.715, 0.735);
+  else if (s == 1)  roof = vec3(0.64, 0.605, 0.545);
+  else if (s == 2)  roof = vec3(0.60, 0.53, 0.46);
+  else if (s == 3)  roof = vec3(0.58, 0.60, 0.615);
+  else if (s == 4)  roof = vec3(0.21, 0.225, 0.255);
+  else if (s == 6)  roof = vec3(0.585, 0.545, 0.455);
+  else if (s == 7)  roof = vec3(0.66, 0.68, 0.68);
+  else if (s == 8)  roof = vec3(0.60, 0.56, 0.48);   // cornice cap
+  else if (s == 9)  roof = vec3(0.47, 0.62, 0.36);   // green roof
+  else if (s == 10) roof = vec3(0.66, 0.63, 0.56);   // gravel lot
   else if (s == 11) {                                 // shingles
-    if (vVar < 0.4)      roof = vec3(0.50, 0.31, 0.25);
-    else if (vVar < 0.7) roof = vec3(0.36, 0.39, 0.43);
-    else                 roof = vec3(0.42, 0.52, 0.44);
+    if (vVar < 0.4)      roof = vec3(0.48, 0.29, 0.235);
+    else if (vVar < 0.7) roof = vec3(0.34, 0.37, 0.415);
+    else                 roof = vec3(0.40, 0.50, 0.42);
   }
-  else              roof = vec3(0.78, 0.78, 0.76);
+  else              roof = vec3(0.76, 0.76, 0.74);
   roof *= 0.92 + 0.16 * vRand;
+
+  // ---- surface: membrane seams, gravel, patches, shingle courses ----------
+  vec2 wp = vPos.xy;
+  if (s == 9) {
+    // planting beds read as clumped growth, not a green sheet
+    float g = rnoise(wp * 0.55) * 0.6 + rnoise(wp * 1.7) * 0.4;
+    roof *= 0.82 + 0.36 * g;
+    roof = mix(roof, vec3(0.58, 0.55, 0.44), smoothstep(0.62, 0.78, rnoise(wp * 0.3)) * 0.35);
+  } else if (s == 11) {
+    // shingle courses run with the slope
+    float course = fract(vPos.z * 1.6);
+    roof *= 0.90 + 0.13 * step(0.5, course);
+    roof *= 0.94 + 0.12 * rnoise(wp * 3.1);
+  } else if (s == 10) {
+    roof *= 0.88 + 0.24 * rnoise(wp * 2.4);   // gravel
+  } else {
+    // the roof someone actually specified: dark EPDM, white TPO, silver
+    // coating or plain gravel — the roofscape should read as a patchwork
+    if (vVar < 0.26)       roof = mix(roof, vec3(0.255, 0.265, 0.285), 0.80);
+    else if (vVar < 0.48)  roof = mix(roof, vec3(0.760, 0.765, 0.750), 0.72);
+    else if (vVar < 0.68)  roof = mix(roof, vec3(0.545, 0.560, 0.575), 0.66);
+    else if (vVar < 0.85)  roof = mix(roof, vec3(0.520, 0.470, 0.395), 0.58);
+    // built-up membrane: rolled seams plus weathering blotches
+    float seam = min(fract(wp.x * 0.32), fract(wp.y * 0.32));
+    roof *= 1.0 - 0.07 * (1.0 - smoothstep(0.0, 0.06, seam));
+    roof *= 0.955 + 0.09 * rnoise(wp * 0.7);
+    roof = mix(roof, roof * 0.92, smoothstep(0.55, 0.85, rnoise(wp * 0.22 + 17.0)) * 0.45);
+  }
+
   vec3 n = normalize(vNormal);
-  vec3 sun = normalize(vec3(0.45, -0.32, 0.62));
   float vis = sunVis(vPos + vec3(0.0, 0.0, 0.5));
-  float lit = 0.62 + 0.38 * max(dot(n, sun), 0.0) * vis;
-  gl_FragColor = vec4(roof * lit * vTint, uOpacity);
+  // vU carries distance to the roof edge: the parapet shades its own deck
+  float aoEdge = mix(0.78, 1.0, smoothstep(0.0, 2.8, vU));
+  float ndl = max(dot(n, SUN_DIR), 0.0);
+  vec3 light = SUN_COL * (ndl * vis * 0.92) + hemiLight(n, aoEdge);
+  gl_FragColor = vec4(grade(roof * light * vTint), uOpacity);
 }`;
 
 // transparent quad over the whole city: darkens the MapLibre ground where
@@ -249,7 +469,7 @@ varying vec3 vPos;
 ` + SHADOW_GLSL + /* glsl */ `
 void main() {
   float vis = sunVis(vPos);
-  gl_FragColor = vec4(0.13, 0.15, 0.19, (1.0 - vis) * 0.22);
+  gl_FragColor = vec4(0.20, 0.23, 0.33, (1.0 - vis) * 0.34);
 }`;
 
 const CATCHER_VERT = /* glsl */ `
@@ -257,6 +477,22 @@ varying vec3 vPos;
 void main() {
   vPos = position;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+
+const PROP_FRAG = /* glsl */ `
+precision highp float;
+varying vec3 vN;
+varying vec3 vW;
+varying vec3 vC;
+uniform vec3 uColor;
+uniform float uOpacity;
+` + SHADOW_GLSL + LIGHT_GLSL + /* glsl */ `
+void main() {
+  vec3 n = normalize(vN);
+  float vis = sunVis(vW + n * 0.4 + vec3(0.0, 0.0, 0.3));
+  float ao = mix(0.62, 1.0, clamp(vW.z / 5.0, 0.0, 1.0));
+  vec3 light = SUN_COL * (max(dot(n, SUN_DIR), 0.0) * vis * 0.92) + hemiLight(n, ao);
+  gl_FragColor = vec4(grade(uColor * vC * light), uOpacity);
 }`;
 
 interface Ranges { start: number; count: number }
@@ -279,9 +515,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private lotRings = new Map<string, [number, number][]>(); // vacant-lot footprints (meters)
   private flattened = new Set<string>();
   private dynGroup = new THREE.Group();
+  private shadowTex: THREE.Texture | null = null;
+  private sunVP = new THREE.Matrix4();
   visible = true;
 
-  constructor(private volumes: BuildingVolume[], private center: [number, number]) {}
+  constructor(
+    private volumes: BuildingVolume[],
+    private center: [number, number],
+    private curbs: [number, number][][] = [],
+  ) {}
 
   onAdd(map: maplibregl.Map, gl: WebGLRenderingContext | WebGL2RenderingContext) {
     this.map = map;
@@ -299,22 +541,46 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   }
 
   private buildCity() {
-    const W = { pos: [] as number[], norm: [] as number[], u: [] as number[], style: [] as number[], rand: [] as number[], varr: [] as number[], top: [] as number[], fh: [] as number[] };
-    const R = { pos: [] as number[], norm: [] as number[], u: [] as number[], style: [] as number[], rand: [] as number[], varr: [] as number[], top: [] as number[], fh: [] as number[] };
+    const blank = () => ({
+      pos: [] as number[], norm: [] as number[], u: [] as number[], style: [] as number[],
+      rand: [] as number[], varr: [] as number[], top: [] as number[], fh: [] as number[],
+      seg: [] as number[], ccv: [] as number[],
+    });
+    const W = blank();
+    const R = blank();
     const wallRanges: { bbl: string; r: Ranges }[] = [], roofRanges: { bbl: string; r: Ranges }[] = [];
     const props: { kind: number; x: number; y: number; z: number; s: number; rot: number }[] = [];
 
     const volsPerBBL = new Map<string, number>();
     for (const v of this.volumes) if (v.b && !v.k) volsPerBBL.set(v.b, (volsPerBBL.get(v.b) ?? 0) + 1);
 
-    const pushWallTri = (T: typeof W, a: number[], b: number[], c: number[], n: number[], us: number[], meta: number[]) => {
+    const pushWallTri = (
+      T: typeof W, a: number[], b: number[], c: number[], n: number[], us: number[], meta: number[],
+      seg: [number, number] = [-1e6, 1e6], ccv: [number, number] = [0, 0],
+    ) => {
       T.pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
       for (let i = 0; i < 3; i++) T.norm.push(n[0], n[1], n[2]);
       T.u.push(us[0], us[1], us[2]);
-      for (let i = 0; i < 3; i++) { T.style.push(meta[0]); T.rand.push(meta[1]); T.varr.push(meta[2]); T.top.push(meta[3]); T.fh.push(meta[4]); }
+      for (let i = 0; i < 3; i++) {
+        T.style.push(meta[0]); T.rand.push(meta[1]); T.varr.push(meta[2]); T.top.push(meta[3]); T.fh.push(meta[4]);
+        T.seg.push(seg[0], seg[1]);
+        T.ccv.push(ccv[0], ccv[1]);
+      }
+    };
+
+    // +1 at a convex ring vertex, -1 at a reflex one. Inside corners collect
+    // shadow; outside corners catch light.
+    const cornerSigns = (ring: [number, number][]): number[] => {
+      const n = ring.length;
+      return ring.map((p, i) => {
+        const prev = ring[(i - 1 + n) % n], next = ring[(i + 1) % n];
+        const cross = (p[0] - prev[0]) * (next[1] - p[1]) - (p[1] - prev[1]) * (next[0] - p[0]);
+        return cross >= 0 ? 1 : -1;   // rings are wound CCW by this point
+      });
     };
 
     const extrudeWalls = (T: typeof W, ring: [number, number][], z0: number, z1: number, meta: number[]) => {
+      const signs = cornerSigns(ring);
       let perim = 0;
       for (let i = 0; i < ring.length; i++) {
         const a = ring[i], b = ring[(i + 1) % ring.length];
@@ -324,17 +590,51 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const n = [dy / len, -dx / len, 0];
         const u0 = perim, u1 = perim + len;
         perim += len;
-        pushWallTri(T, [a[0], a[1], z0], [b[0], b[1], z0], [b[0], b[1], z1], n, [u0, u1, u1], meta);
-        pushWallTri(T, [a[0], a[1], z0], [b[0], b[1], z1], [a[0], a[1], z1], n, [u0, u1, u0], meta);
+        const seg: [number, number] = [u0, u1];
+        const cc: [number, number] = [signs[i], signs[(i + 1) % ring.length]];
+        pushWallTri(T, [a[0], a[1], z0], [b[0], b[1], z0], [b[0], b[1], z1], n, [u0, u1, u1], meta, seg, cc);
+        pushWallTri(T, [a[0], a[1], z0], [b[0], b[1], z1], [a[0], a[1], z1], n, [u0, u1, u0], meta, seg, cc);
       }
+    };
+
+    // On a roof, aU carries distance to the nearest edge — the shader uses it
+    // to sink the deck into shade under its own parapet.
+    const edgeDist = (ring: [number, number][], p: [number, number]): number => {
+      let best = Infinity;
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        const dx = b[0] - a[0], dy = b[1] - a[1];
+        const l2 = dx * dx + dy * dy;
+        let t = l2 ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2 : 0;
+        t = Math.max(0, Math.min(1, t));
+        best = Math.min(best, Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy)));
+      }
+      return best;
     };
 
     const capRoof = (T: typeof R, ring: [number, number][], z: number, meta: number[]) => {
       const pts = ring.map(([x, y]) => new THREE.Vector2(x, y));
       let tris: number[][] = [];
       try { tris = THREE.ShapeUtils.triangulateShape(pts, []); } catch { tris = []; }
+      // subdivide big triangles so the edge-distance gradient is smooth
       for (const t of tris) {
-        pushWallTri(T, [ring[t[0]][0], ring[t[0]][1], z], [ring[t[1]][0], ring[t[1]][1], z], [ring[t[2]][0], ring[t[2]][1], z], [0, 0, 1], [0, 0, 0], meta);
+        const P = t.map((i) => ring[i]);
+        const mid = (a: [number, number], b: [number, number]): [number, number] => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+        const emit = (q: [number, number][]) => {
+          const d = q.map((p) => edgeDist(ring, p));
+          T.pos.push(q[0][0], q[0][1], z, q[1][0], q[1][1], z, q[2][0], q[2][1], z);
+          for (let i = 0; i < 3; i++) T.norm.push(0, 0, 1);
+          T.u.push(d[0], d[1], d[2]);
+          for (let i = 0; i < 3; i++) {
+            T.style.push(meta[0]); T.rand.push(meta[1]); T.varr.push(meta[2]); T.top.push(meta[3]); T.fh.push(meta[4]);
+            T.seg.push(-1e6, 1e6); T.ccv.push(0, 0);
+          }
+        };
+        const area = Math.abs((P[1][0] - P[0][0]) * (P[2][1] - P[0][1]) - (P[2][0] - P[0][0]) * (P[1][1] - P[0][1])) / 2;
+        if (area > 90) {
+          const m01 = mid(P[0], P[1]), m12 = mid(P[1], P[2]), m20 = mid(P[2], P[0]);
+          emit([P[0], m01, m20]); emit([m01, P[1], m12]); emit([m20, m12, P[2]]); emit([m01, m12, m20]);
+        } else emit(P as [number, number][]);
       }
     };
 
@@ -433,11 +733,41 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
             extrudeWalls(W, lip, v.z1 - 0.55, v.z1 + 0.15, cMeta);
             capRoof(R, lip, v.z1 + 0.15, cMeta);
           }
+        } else if (v.z1 >= 6) {
+          // everything else gets a real parapet, so the roof deck sits down
+          // inside a rim instead of ending at a bare edge
+          const ph = 0.75 + (rnd % 0.5) + (v.z1 > 45 ? 0.5 : 0);
+          extrudeWalls(W, ring, v.z1 - 0.1, v.z1 + ph, [style, rnd, varr, v.z1, fh]);
+          const inner = insetRing(ring, 0.28);
+          if (inner) capRoof(R, inner, v.z1 + ph, [style === S_GLASS || style === S_DARK ? S_CORNICE : style, rnd, varr, v.z1 + ph, fh]);
         }
         // some modern mid-rises grow a green roof
         if (style === S_GLASS && v.z1 >= 15 && v.z1 <= 60 && varr > 0.62) {
           const g = insetRing(ring, 1.6);
           if (g) capRoof(R, g, v.z1 + 0.08, [S_GREEN, rnd, varr, v.z1, fh]);
+        }
+        // a deco tower steps to its crown instead of stopping flat
+        if (style === S_ARTDECO && v.z1 >= 45) {
+          let step0 = ring, zc = v.z1 + 0.2;
+          for (let k = 0; k < 3; k++) {
+            const inset = insetRing(step0, 1.5 + k * 0.9);
+            if (!inset) break;
+            const hStep = 3.4 - k * 0.7;
+            const cm = [style, rnd, varr, zc + hStep, fh];
+            extrudeWalls(W, inset, zc, zc + hStep, cm);
+            capRoof(R, inset, zc + hStep, [S_CORNICE, rnd, varr, zc + hStep, fh]);
+            step0 = inset; zc += hStep;
+          }
+        }
+        // bulkheads: the stair and lift overrun every tall building carries
+        if (v.z1 >= 26 && !v.d) {
+          const pent = insetRing(ring, Math.min(6, Math.max(2.2, Math.sqrt(v.z1) * 0.55)));
+          if (pent) {
+            const ph2 = v.z1 > 70 ? 5.2 : 3.6;
+            const pm = [style === S_GLASS || style === S_DARK ? S_PLAIN : style, rnd, varr, v.z1 + ph2, fh];
+            extrudeWalls(W, pent, v.z1 + 0.4, v.z1 + ph2, pm);
+            capRoof(R, pent, v.z1 + ph2, [pm[0], rnd, varr, v.z1 + ph2, fh]);
+          }
         }
       }
 
@@ -486,6 +816,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       g.setAttribute("aVar", new THREE.Float32BufferAttribute(T.varr, 1));
       g.setAttribute("aTop", new THREE.Float32BufferAttribute(T.top, 1));
       g.setAttribute("aFh", new THREE.Float32BufferAttribute(T.fh, 1));
+      g.setAttribute("aSeg", new THREE.Float32BufferAttribute(T.seg, 2));
+      g.setAttribute("aCcv", new THREE.Float32BufferAttribute(T.ccv, 2));
       const tint = new Float32Array((T.pos.length / 3) * 3).fill(1);
       const tintAttr = new THREE.Float32BufferAttribute(tint, 3);
       tintAttr.setUsage(THREE.DynamicDrawUsage);
@@ -531,11 +863,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     for (let kind = 0; kind < propDefs.length; kind++) {
       const items = props.filter((p) => p.kind === kind);
       if (!items.length) continue;
-      const mesh = new THREE.InstancedMesh(
-        propDefs[kind].geom,
-        new THREE.MeshLambertMaterial({ color: propDefs[kind].color, side: THREE.DoubleSide }),
-        items.length,
-      );
+      const mesh = new THREE.InstancedMesh(propDefs[kind].geom, this.propMaterial(propDefs[kind].color), items.length);
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(items.length * 3).fill(1), 3);
       const m = new THREE.Matrix4();
       items.forEach((p, i) => {
         m.compose(
@@ -547,11 +876,95 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       });
       this.scene.add(mesh);
     }
-    const sun = new THREE.DirectionalLight(0xffffff, 2.2);
-    sun.position.set(0.45, -0.32, 0.62);
-    this.scene.add(sun, new THREE.AmbientLight(0xf4efe4, 1.4));
+    this.plantStreets();
 
     this.bakeShadows();
+  }
+
+  // Street trees and lamp standards along the curb. Nothing sells the scale of
+  // a building like something human-sized standing next to it, and an empty
+  // pavement is what made the city read as a model rather than a place.
+  private plantStreets() {
+    if (!this.curbs.length) return;
+    type Item = { x: number; y: number; s: number; rot: number };
+    const trees: Item[] = [], lamps: Item[] = [];
+    let seed = 1337;
+    const rnd = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 4294967296;
+    };
+
+    for (const curb of this.curbs) {
+      const ring = curb.map((p) => this.project(p));
+      if (ring.length < 3) continue;
+      let cx = 0, cy = 0;
+      for (const [x, y] of ring) { cx += x; cy += y; }
+      cx /= ring.length; cy /= ring.length;
+      let carry = rnd() * 14;
+      for (let i = 0; i < ring.length - 1; i++) {
+        const a = ring[i], b = ring[i + 1];
+        const dx = b[0] - a[0], dy = b[1] - a[1];
+        const len = Math.hypot(dx, dy);
+        if (len < 2) continue;
+        // step along the frontage, planting into the pavement side
+        for (let d = carry; d < len; d += 17 + rnd() * 9) {
+          const t = d / len;
+          const px = a[0] + dx * t, py = a[1] + dy * t;
+          let nx = -dy / len, ny = dx / len;
+          if ((px - cx) * nx + (py - cy) * ny < 0) { nx = -nx; ny = -ny; }  // point outward
+          const off = 2.1 + rnd() * 0.7;
+          const item = { x: px + nx * off, y: py + ny * off, s: 0.92 + rnd() * 0.55, rot: rnd() * 6.28 };
+          if (rnd() < 0.76) trees.push(item);
+          else lamps.push({ ...item, s: 0.9 + rnd() * 0.2 });
+        }
+        carry = Math.max(0, carry - len);
+        if (carry === 0) carry = rnd() * 6;
+      }
+    }
+
+    const add = (geom: THREE.BufferGeometry, color: number, items: Item[], vary = 0) => {
+      if (!items.length) return;
+      const mesh = new THREE.InstancedMesh(geom, this.propMaterial(color), items.length);
+      const m = new THREE.Matrix4();
+      const cols = new Float32Array(items.length * 3);
+      items.forEach((p, i) => {
+        m.compose(
+          new THREE.Vector3(p.x, p.y, 0),
+          new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, p.rot)),
+          new THREE.Vector3(p.s, p.s * (0.9 + rnd() * 0.3), p.s * (0.85 + rnd() * 0.4)),
+        );
+        mesh.setMatrixAt(i, m);
+        // no two street trees are the same green
+        const k = vary * (rnd() - 0.5);
+        cols[i * 3] = 1 + k * 1.5;
+        cols[i * 3 + 1] = 1 + k * 0.4;
+        cols[i * 3 + 2] = 1 - k * 0.9;
+      });
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(cols, 3);
+      mesh.frustumCulled = false;
+      this.scene.add(mesh);
+    };
+    add(treeTrunkGeom(), 0x6b5744, trees, 0.12);
+    add(treeCanopyGeom(), 0x71904f, trees, 0.34);
+    add(lampGeom(), 0x4e5459, lamps, 0.06);
+  }
+
+  // Props share the buildings' light rig so a water tower and the roof it
+  // stands on are lit by the same sun.
+  private propMaterial(color: number, instanced = true): THREE.ShaderMaterial {
+    const c = new THREE.Color(color);
+    return new THREE.ShaderMaterial({
+      vertexShader: instanced ? PROP_VERT : PROP_VERT_PLAIN,
+      fragmentShader: PROP_FRAG,
+      uniforms: {
+        uColor: { value: new THREE.Vector3(c.r, c.g, c.b) },
+        uOpacity: { value: 1 },
+        uShadow: { value: this.shadowTex },
+        uSunVP: { value: this.sunVP },
+        uShadowOn: { value: this.shadowTex ? 1 : 0 },
+      },
+      side: THREE.DoubleSide,
+    });
   }
 
   // One-time sun depth pass — the city is static, so shadows are free at
@@ -580,6 +993,17 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.scene.overrideMaterial = null;
 
       const sunVP = new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+      this.shadowTex = target.texture;
+      this.sunVP = sunVP;
+      // anything already instanced (roof furniture, trees) picks up the map
+      this.scene.traverse((o) => {
+        const mat = (o as THREE.Mesh).material as THREE.ShaderMaterial | undefined;
+        if (mat && mat.uniforms && mat.uniforms.uShadow && !mat.uniforms.uShadow.value) {
+          mat.uniforms.uShadow.value = target.texture;
+          mat.uniforms.uSunVP.value = sunVP;
+          mat.uniforms.uShadowOn.value = 1;
+        }
+      });
       const catcherMat = new THREE.ShaderMaterial({
         vertexShader: CATCHER_VERT,
         fragmentShader: CATCHER_FRAG,
@@ -620,8 +1044,13 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         : 0;                                        // office / mixed: curtain wall
       const fh2 = item.floors > 0 ? Math.max(2.6, item.heightM / item.floors) : 3.5;
       const meta = [style, 0.5, 0.4, h, fh2];
-      const T = { pos: [] as number[], norm: [] as number[], u: [] as number[], style: [] as number[], rand: [] as number[], varr: [] as number[], top: [] as number[], fh: [] as number[] };
-      const R2 = { pos: [] as number[], norm: [] as number[], u: [] as number[], style: [] as number[], rand: [] as number[], varr: [] as number[], top: [] as number[], fh: [] as number[] };
+      const mkBuf = () => ({
+        pos: [] as number[], norm: [] as number[], u: [] as number[], style: [] as number[],
+        rand: [] as number[], varr: [] as number[], top: [] as number[], fh: [] as number[],
+        seg: [] as number[], ccv: [] as number[],
+      });
+      const T = mkBuf();
+      const R2 = mkBuf();
       let perim = 0;
       for (let i = 0; i < fp.length; i++) {
         const a = fp[i], b = fp[(i + 1) % fp.length];
@@ -638,6 +1067,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         for (const [x, y, z, u] of quad) {
           T.pos.push(x, y, z); T.norm.push(n[0], n[1], n[2]); T.u.push(u);
           T.style.push(meta[0]); T.rand.push(meta[1]); T.varr.push(meta[2]); T.top.push(meta[3]); T.fh.push(meta[4]);
+          T.seg.push(u0, u1); T.ccv.push(1, 1);
         }
       }
       const pts = fp.map(([x, y]) => new THREE.Vector2(x, y));
@@ -645,8 +1075,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       try { tris = THREE.ShapeUtils.triangulateShape(pts, []); } catch { tris = []; }
       for (const t of tris) {
         for (const idx of t) {
-          R2.pos.push(fp[idx][0], fp[idx][1], h); R2.norm.push(0, 0, 1); R2.u.push(0);
+          R2.pos.push(fp[idx][0], fp[idx][1], h); R2.norm.push(0, 0, 1); R2.u.push(4);
           R2.style.push(item.construction ? 5 : meta[0]); R2.rand.push(0.5); R2.varr.push(0.4); R2.top.push(h); R2.fh.push(fh2);
+          R2.seg.push(-1e6, 1e6); R2.ccv.push(0, 0);
         }
       }
       const mk = (D: typeof T) => {
@@ -659,13 +1090,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         g.setAttribute("aVar", new THREE.Float32BufferAttribute(D.varr, 1));
         g.setAttribute("aTop", new THREE.Float32BufferAttribute(D.top, 1));
         g.setAttribute("aFh", new THREE.Float32BufferAttribute(D.fh, 1));
+        g.setAttribute("aSeg", new THREE.Float32BufferAttribute(D.seg, 2));
+        g.setAttribute("aCcv", new THREE.Float32BufferAttribute(D.ccv, 2));
         g.setAttribute("aTint", new THREE.Float32BufferAttribute(new Float32Array(D.pos.length).fill(1), 3));
         return g;
       };
       this.dynGroup.add(new THREE.Mesh(mk(T), this.wallMat));
       this.dynGroup.add(new THREE.Mesh(mk(R2), this.roofMat));
       if (item.construction) {
-        const orange = new THREE.MeshLambertMaterial({ color: 0xc2803a, side: THREE.DoubleSide });
+        const orange = this.propMaterial(0xc2803a, false);
         this.dynGroup.add(
           new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, h + 16, 6).rotateX(Math.PI / 2).translate(cx + 6, cy + 6, (h + 16) / 2), orange),
           new THREE.Mesh(new THREE.BoxGeometry(26, 1.4, 1.4).translate(cx + 14, cy + 6, h + 15), orange),
@@ -747,6 +1180,24 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   onRemove() {
     this.scene.clear();
   }
+}
+
+function treeTrunkGeom(): THREE.BufferGeometry {
+  return new THREE.CylinderGeometry(0.16, 0.26, 3.1, 5).rotateX(Math.PI / 2).translate(0, 0, 1.55);
+}
+
+// three overlapping lumps read as a canopy from any angle and cost 60 tris
+function treeCanopyGeom(): THREE.BufferGeometry {
+  const a = new THREE.IcosahedronGeometry(1.85, 0).translate(0, 0, 4.3);
+  const b = new THREE.IcosahedronGeometry(1.25, 0).translate(0.85, 0.3, 3.5);
+  return mergeGeoms([a, b]);
+}
+
+function lampGeom(): THREE.BufferGeometry {
+  const post = new THREE.CylinderGeometry(0.09, 0.13, 4.6, 5).rotateX(Math.PI / 2).translate(0, 0, 2.3);
+  const arm = new THREE.BoxGeometry(1.15, 0.12, 0.12).translate(0.5, 0, 4.55);
+  const head = new THREE.BoxGeometry(0.52, 0.3, 0.26).translate(1.0, 0, 4.42);
+  return mergeGeoms([post, arm, head]);
 }
 
 function waterTowerGeom(): THREE.BufferGeometry {

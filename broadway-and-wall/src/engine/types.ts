@@ -66,6 +66,7 @@ export interface Loan {
   amortYears: number;
   maturityM: number;     // the balloon
   monthlyPmt: number;
+  capPremium?: number;   // paid at closing on floating paper
   minDSCR: number;       // covenants, tested quarterly
   maxLTV: number;
   sweep: boolean;        // breach: cash flow trapped to principal until cured

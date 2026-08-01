@@ -26,11 +26,15 @@ function clone(s: GameState): GameState {
 export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price: number, product: BuyProduct, lev = 1) {
   const rec = parcels[bbl];
   const closing = Math.round(price * CLOSING_PCT);
-  if (product === "cash" || !rec) return { principal: 0, ratePct: 0, equity: price + closing };
+  if (product === "cash" || !rec) return { principal: 0, ratePct: 0, equity: price + closing, capPremium: 0 };
   const prod = productById(product);
   const q = quote(s, prod, price, noiYr(rec, s.econ, initialCondition(rec)));
   const principal = Math.round(q.principal * Math.max(0, Math.min(1, lev)));
-  return { principal, ratePct: q.ratePct, equity: price - principal + closing };
+  // Floating paper closes with a rate cap the lender insists on, and the
+  // premium is part of the equity cheque — the cheaper coupon is not free.
+  const prod2 = productById(product);
+  const capPremium = prod2.floating ? Math.round(principal * 0.0125) : 0;
+  return { principal, ratePct: q.ratePct, equity: price - principal + closing + capPremium, capPremium };
 }
 
 function executePurchase(

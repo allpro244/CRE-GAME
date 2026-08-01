@@ -707,7 +707,29 @@ function BuyButtons({ bbl, price, off }: { bbl: string; price: number; off: bool
       ) : (
         <div className="hint">{product === "cash" ? "Buying it outright." : "No lender will size a loan against this income — all cash or nothing."}</div>
       )}
+      {/* The underwriting, before you commit. Going-in cap is what you are
+          paying for the income; debt yield is what the lender thinks of it;
+          cash-on-cash is what actually lands in your account in year one. A
+          deal where the going-in cap sits below the coupon is negative
+          leverage — it can still be right, but only if you are buying the
+          upside, and you should have to see that you are. */}
       <div className="grid">
+        {rec && rec.class !== "land" && rec.bldgArea > 0 && (() => {
+          const goingIn = offerPrice > 0 ? (noi / offerPrice) * 100 : 0;
+          const dy = principal > 0 ? (noi / principal) * 100 : 0;
+          const cf = noi - annualDs;
+          const coc = equity > 0 ? (cf / equity) * 100 : 0;
+          const negLev = principal > 0 && goingIn < max.ratePct;
+          return (
+            <>
+              <Row k="Going-in cap" v={`${goingIn.toFixed(2)}%`} bad={negLev} />
+              <Row k="Coupon" v={`${max.ratePct.toFixed(2)}%${negLev ? " — negative leverage" : ""}`} bad={negLev} />
+              {principal > 0 && <Row k="Debt yield" v={`${dy.toFixed(1)}%`} bad={dy < 8} />}
+              <Row k="Year-1 cash flow" v={usd(cf)} bad={cf < 0} />
+              <Row k="Cash-on-cash" v={`${coc.toFixed(1)}%`} bad={coc < 0} />
+            </>
+          );
+        })()}
         <Row k="Equity to close" v={usd(equity)} strong bad={equity > game.cash} />
       </div>
       <div className="btn-row">
@@ -997,6 +1019,49 @@ function PortfolioPage() {
     totV += v; totD += h.loan?.balance ?? 0; totCF += cf;
     return { h, rec, v, cf, occ };
   }).sort((a, b) => b.v - a.v);
+
+  // ---- exposure ------------------------------------------------------------
+  // Concentration and the maturity wall are what actually end firms, and both
+  // were invisible. All of this is already in the state; none of it was ever
+  // added up. A portfolio where one tenant is a fifth of the income, or where
+  // half the debt matures inside three years, is a different business from one
+  // where neither is true — even if the cash flow statements look identical.
+  const exposure = (() => {
+    const byTenant = new Map<string, number>();
+    const bySector = new Map<string, number>();
+    let roll = 0, floatDebt = 0, wamNum = 0, debtTot = 0, rollNext24 = 0, leasedSf = 0;
+    let matWall = 0;   // debt maturing within 36 months
+    for (const { h, rec } of rows) {
+      if (!rec) continue;
+      for (const t of h.tenants) {
+        const annual = t.rentPsf * t.sf;
+        roll += annual;
+        leasedSf += t.sf;
+        byTenant.set(t.name, (byTenant.get(t.name) ?? 0) + annual);
+        bySector.set(t.sector, (bySector.get(t.sector) ?? 0) + annual);
+        if (t.endM - game.month <= 24) rollNext24 += annual;
+      }
+      const l = h.loan;
+      if (!l) continue;
+      debtTot += l.balance;
+      if (l.floating ?? l.product === "float") floatDebt += l.balance;
+      wamNum += l.balance * Math.max(0, (l.maturityM - game.month) / 12);
+      if (l.maturityM - game.month <= 36) matWall += l.balance;
+    }
+    const topTenant = [...byTenant.entries()].sort((a, b) => b[1] - a[1])[0];
+    const topSector = [...bySector.entries()].sort((a, b) => b[1] - a[1])[0];
+    return {
+      roll, leasedSf,
+      topTenant: topTenant ? { name: topTenant[0], share: roll > 0 ? topTenant[1] / roll : 0 } : null,
+      topSector: topSector ? { name: topSector[0], share: roll > 0 ? topSector[1] / roll : 0 } : null,
+      rollShare: roll > 0 ? rollNext24 / roll : 0,
+      floatShare: debtTot > 0 ? floatDebt / debtTot : 0,
+      wam: debtTot > 0 ? wamNum / debtTot : 0,
+      wallShare: debtTot > 0 ? matWall / debtTot : 0,
+      matWall,
+    };
+  })();
+
   return (
     <div>
       <div className="stat-strip">
@@ -1006,6 +1071,43 @@ function PortfolioPage() {
         <Big label="Cash flow / mo" value={usd(totCF)} bad={totCF < 0} />
         <Big label="Buildings" value={String(holdings.length)} />
       </div>
+      {exposure.roll > 0 && (
+        <>
+          <div className="page-section">Exposure</div>
+          <div className="grid">
+            {exposure.topTenant && (
+              <Row
+                k="Largest tenant"
+                v={`${exposure.topTenant.name} · ${(exposure.topTenant.share * 100).toFixed(0)}% of the roll`}
+                bad={exposure.topTenant.share > 0.2}
+              />
+            )}
+            {exposure.topSector && (
+              <Row
+                k="Largest sector"
+                v={`${exposure.topSector.name} · ${(exposure.topSector.share * 100).toFixed(0)}% of the roll`}
+                bad={exposure.topSector.share > 0.4}
+              />
+            )}
+            <Row
+              k="Rolling within 2 yrs"
+              v={`${(exposure.rollShare * 100).toFixed(0)}% of the roll`}
+              bad={exposure.rollShare > 0.3}
+            />
+            <Row
+              k="Floating-rate debt"
+              v={`${(exposure.floatShare * 100).toFixed(0)}% of the balance`}
+              bad={exposure.floatShare > 0.5}
+            />
+            <Row k="Weighted avg maturity" v={`${exposure.wam.toFixed(1)} yrs`} bad={exposure.wam < 3} />
+            <Row
+              k="Maturing within 3 yrs"
+              v={`${usd(exposure.matWall)} · ${(exposure.wallShare * 100).toFixed(0)}% of the debt`}
+              bad={exposure.wallShare > 0.4}
+            />
+          </div>
+        </>
+      )}
       <table className="tbl">
         <thead>
           <tr>
@@ -1227,7 +1329,8 @@ function MarketPage() {
             <thead>
               <tr>
                 <th>Property</th><th>Class</th><th className="num">Building</th><th className="num">Ask</th>
-                <th className="num">NOI / yr</th><th className="num">Cap rate</th><th className="num">Occupancy</th>
+                <th className="num">$/sf</th><th className="num">NOI / yr</th><th className="num">Cap rate</th>
+                <th className="num">Occupancy</th><th className="num">vs appraisal</th>
               </tr>
             </thead>
             <tbody>
@@ -1244,9 +1347,18 @@ function MarketPage() {
                     <td>{CLASS_LABEL[rec.class]}</td>
                     <td className="num">{built ? sf(rec.bldgArea) : sf(rec.lotArea) + " lot"}</td>
                     <td className="num">{usd(li.ask)}</td>
+                    <td className="num">{built ? "$" + Math.round(li.ask / Math.max(1, rec.bldgArea)) : "$" + Math.round(li.ask / Math.max(1, rec.lotArea))}</td>
                     <td className="num">{built ? usd(noi) : "—"}</td>
                     <td className="num">{built ? goingIn.toFixed(2) + "%" : "—"}</td>
                     <td className="num">{built ? (occupancy(rec, game.econ) * 100).toFixed(0) + "%" : "—"}</td>
+                    {(() => {
+                      // A seller under no pressure holds last year's number. The gap
+                      // between an ask and an honest appraisal is the whole read on
+                      // whether a tape is worth working.
+                      const v = assetValue(rec, game.econ, cond);
+                      const d = v > 0 ? li.ask / v - 1 : 0;
+                      return <td className={"num" + (d > 0.08 ? " neg" : "")}>{(d * 100).toFixed(0)}%</td>;
+                    })()}
                   </tr>
                 );
               })}

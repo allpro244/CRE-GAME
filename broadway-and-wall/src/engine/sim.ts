@@ -174,6 +174,16 @@ export function advanceQuarter(
   }
   s.cash += monthCF;
 
+  // Idle balances sit in the money market, not in a drawer. Short paper yields
+  // under the loan index; the gap between what cash earns and what buildings
+  // earn is the opportunity cost of being slow, and it should be visible
+  // rather than assumed.
+  if (s.cash > 0) {
+    const tbill = Math.max(0, s.econ.indexRate - 1.6);
+    const interest = Math.round((s.cash * tbill) / 100 / 12);
+    if (interest > 0) { s.cash += interest; logBooks(s, "noi", interest); }
+  }
+
   // expire stale off-market asks
   for (const [bbl, a] of Object.entries(s.approaches)) {
     if (s.month > a.q + 12) delete s.approaches[bbl];
@@ -193,8 +203,15 @@ export function advanceQuarter(
       // (2.6%/yr on the 80% of basis that's improvements, not land)
       const noi = rec.class === "land" ? 0 : holdingNOIYr(rec, s.econ, h, s.month);
       const interest = h.loan ? (h.loan.balance * h.loan.ratePct) / 100 : 0;
-      const deprCapacity = h.costBasis * 0.8 - (h.deprTaken ?? 0);
-      const depr = rec.class === "land" ? 0 : Math.max(0, Math.min(h.costBasis * 0.8 * 0.026, deprCapacity));
+      // Straight-line over the statutory life, on the IMPROVEMENTS only —
+      // land is never depreciable. Residential rental property runs 27.5
+      // years and everything else 39, which is why an apartment building
+      // shelters materially more income than an office block of the same
+      // price, and why the recapture bill on the way out is larger too.
+      const improvements = h.costBasis * 0.8;
+      const life = rec.class === "multifamily" ? 27.5 : 39;
+      const deprCapacity = improvements - (h.deprTaken ?? 0);
+      const depr = rec.class === "land" ? 0 : Math.max(0, Math.min(improvements / life, deprCapacity));
       h.deprTaken = (h.deprTaken ?? 0) + depr;
       taxable += noi - interest - depr; // losses net against gains across the portfolio
     }

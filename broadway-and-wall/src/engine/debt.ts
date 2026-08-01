@@ -169,9 +169,16 @@ export function originate(s: GameState, product: LoanProduct, price: number, noi
   const pmt = product.ioM > 0
     ? Math.round((qd.principal * qd.ratePct) / 100 / 12)
     : Math.round(monthlyPayment(qd.principal, qd.ratePct, product.amortYears));
+  // No lender writes floating paper without a cap in place at closing. The
+  // premium is a real cost of choosing the cheaper coupon, and it comes out of
+  // the same equity cheque — which is the honest way to compare a floater to a
+  // fixed loan rather than pretending the coupon is the whole story.
+  const capStrike = product.floating ? +(s.econ.indexRate + 1.0).toFixed(2) : undefined;
   return {
     product: product.id,
     floating: product.floating,
+    cap: capStrike !== undefined ? { strike: capStrike, expiresM: s.month + Math.min(product.termM, CAP_TERM_M) } : undefined,
+    capPremium: capStrike !== undefined ? Math.round(qd.principal * 0.0125) : undefined,
     points: product.points,
     recourse: product.recourse,
     prepay: product.prepay,
@@ -338,7 +345,7 @@ export function buyRateCap(s: GameState, parcels: ParcelTable, bbl: string): { s
   const h = next.holdings[bbl];
   const rec = resolveRec(parcels, next, bbl);
   if (!h || !rec) return { s, err: "You don't own that." };
-  if (!h.loan || h.loan.product !== "float") return { s, err: "Caps hedge floating debt — this loan is fixed." };
+  if (!h.loan || !(h.loan.floating ?? h.loan.product === "float")) return { s, err: "Caps hedge floating debt — this loan is fixed." };
   if (h.loan.cap) return { s, err: "This loan already carries a live cap." };
   const cost = rateCapCost(h.loan);
   if (next.cash < cost) return { s, err: `The cap desk wants $${(cost / 1e6).toFixed(2)}M premium — you're short.` };

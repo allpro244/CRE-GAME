@@ -89,6 +89,32 @@ export function vacantSf(rec: ParcelRecord, h: Holding): number {
   return Math.max(0, rec.bldgArea - h.tenants.reduce((sum, t) => sum + t.sf, 0));
 }
 
+// Space a departing tenant just left isn't leasable on day one — it's in
+// make-ready (demo, paint, systems, demising) for a few months.
+export function notReadySf(h: Holding, month: number): number {
+  return (h.makeReady ?? []).reduce((sum, m) => sum + (m.readyM > month ? m.sf : 0), 0);
+}
+
+export const MAKE_READY_PSF = 6; // turn cost, $/sf before cost inflation
+
+// Anchor pre-lease for a development: one large credit tenant signed before
+// delivery, long paper at a small discount to market for taking the risk.
+export function genAnchorTenant(s: GameState, rec: ParcelRecord, h: Holding, sfWanted: number) {
+  if (!isCommercial(rec) || sfWanted < 1000) return;
+  const sector = pickSector(s, rec.class);
+  const market = marketRentPsfYr(rec, s.econ, h.condition);
+  h.tenants.push({
+    name: pickName(s, sector),
+    sector,
+    credit: rng(s) > 0.4 ? 2 : 1, // anchors are credit tenants
+    sf: sfWanted,
+    rentPsf: +(market * rrange(s, 0.9, 0.97)).toFixed(2),
+    net: true,
+    startM: s.month,
+    endM: s.month + Math.round(rrange(s, 120, 180)),
+  });
+}
+
 export function walt(h: Holding, q: number): number {
   const tot = h.tenants.reduce((sum, t) => sum + t.sf, 0);
   if (!tot) return 0;
@@ -117,11 +143,30 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
 
     const renovating = h.renovatingUntilM !== undefined && q < h.renovatingUntilM;
 
-    // move-outs: leases that reached expiry without a signed renewal
-    const before = h.tenants.length;
+    // move-outs: leases that reached expiry without a signed renewal.
+    // The space goes into make-ready — a turn cost now, leasable in a few months.
+    const movedOut = h.tenants.filter((t) => t.endM <= q);
     h.tenants = h.tenants.filter((t) => t.endM > q);
-    if (h.tenants.length < before) {
-      s.news.unshift({ q, kind: "info", text: `Space back at ${rec.address} — a lease rolled and the tenant moved out.` });
+    if (movedOut.length) {
+      const outSf = movedOut.reduce((sum, t) => sum + t.sf, 0);
+      const turnCost = Math.round(outSf * MAKE_READY_PSF * s.econ.costIdx);
+      s.cash -= turnCost;
+      h.makeReady = [...(h.makeReady ?? []), { sf: outSf, readyM: q + Math.round(rrange(s, 2, 5)) }];
+      s.news.unshift({
+        q, kind: "info",
+        text: `${(outSf / 1000).toFixed(1)}k sf back at ${rec.address} — $${(turnCost / 1000).toFixed(0)}K make-ready, showable in a few months.`,
+      });
+    }
+    // finished turns come off the books
+    if (h.makeReady) {
+      h.makeReady = h.makeReady.filter((m) => m.readyM > q);
+      if (!h.makeReady.length) delete h.makeReady;
+    }
+    // leasing broker retainer: a live exclusive costs money every month it runs
+    if (h.broker) {
+      const vacNow = vacantSf(rec, h);
+      if (vacNow > 500) s.cash -= Math.max(400, Math.round(vacNow * 0.025));
+      else delete h.broker; // full building: the exclusive lapses
     }
 
     // contractual escalations: rents step up ~2.5% on each lease anniversary
@@ -152,15 +197,16 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       });
     }
 
-    // inbound demand for vacant space
-    const vac = vacantSf(rec, h);
+    // inbound demand for vacant, market-ready space
+    const vac = vacantSf(rec, h) - notReadySf(h, q);
     const openLois = s.lois.filter((l) => l.bbl === h.bbl && l.kind === "new").length;
     if (!renovating && vac > 1500 && openLois < 2) {
       const phaseAdj = s.econ.phase === "expansion" ? 0.14 : s.econ.phase === "recession" ? -0.14 : 0;
       const condAdj = h.condition === "good" ? 0.1 : h.condition === "worn" ? -0.1 : 0;
       const stanceAdj = -0.12 * (h.stance ?? 0);                       // pushing rents thins the funnel
       const lobbyAdj = h.programsDone?.lobby !== undefined ? 0.08 : 0; // a lobby people remember
-      const p = Math.min(0.8, Math.max(0.02, 0.2 + rec.demandScore / 250 + phaseAdj + condAdj + stanceAdj + lobbyAdj)) / 3;
+      const brokerMult = h.broker ? 1.75 : 1;                          // an exclusive works the phones
+      const p = Math.min(0.8, Math.max(0.02, 0.2 + rec.demandScore / 250 + phaseAdj + condAdj + stanceAdj + lobbyAdj)) / 3 * brokerMult;
       if (rng(s) < p) {
         const sector = pickSector(s, rec.class);
         const [tiLo, tiHi] = TI_ASK[rec.class] ?? TI_ASK.office;

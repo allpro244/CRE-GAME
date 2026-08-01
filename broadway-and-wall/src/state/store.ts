@@ -2,9 +2,9 @@ import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState } from "@/engine/types";
 import { newGame, advanceQuarter, firstListings, portfolioQuarterlyCF } from "@/engine/sim";
-import { buyListing, buyOffMarket, approachOwner, listForSale, delist, acceptSaleOffer, declineSaleOffer, startRenovation, type BuyProduct } from "@/engine/actions";
+import { buyListing, buyOffMarket, approachOwner, listForSale, delist, acceptSaleOffer, declineSaleOffer, startRenovation, setBroker, type BuyProduct } from "@/engine/actions";
 import { respondLOI, type LOIAction } from "@/engine/leasing";
-import { refinance } from "@/engine/debt";
+import { refinance, buyRateCap } from "@/engine/debt";
 import { startDevelopment, startProgram, setStance } from "@/engine/dev";
 import type { BuiltClass } from "@/engine/types";
 import { netWorth } from "@/engine/value";
@@ -39,14 +39,16 @@ interface AppState {
   approach: (bbl: string) => void;
   respondLoi: (id: number, action: LOIAction) => void;
   refi: (bbl: string, product: "fixed" | "float") => void;
-  develop: (bbl: string, use: BuiltClass, farFrac: number) => void;
+  develop: (bbl: string, use: BuiltClass, farFrac: number, preLease?: boolean) => void;
   program: (bbl: string, id: string) => void;
   stance: (bbl: string, v: -1 | 0 | 1) => void;
   listSale: (bbl: string, ask: number) => void;
   delistSale: (bbl: string) => void;
-  acceptOffer: (bbl: string) => void;
+  acceptOffer: (bbl: string, exchange?: boolean) => void;
   declineOffer: (bbl: string) => void;
   renovate: (bbl: string) => void;
+  broker: (bbl: string, on: boolean) => void;
+  rateCap: (bbl: string) => void;
   newRun: () => void;
 }
 
@@ -137,10 +139,10 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  develop: (bbl, use, farFrac) => {
+  develop: (bbl, use, farFrac, preLease) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = startDevelopment(game, parcels, bbl, use, farFrac);
+    const r = startDevelopment(game, parcels, bbl, use, farFrac, preLease);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("Ground broken. Watch it rise.");
@@ -184,13 +186,13 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(next);
   },
 
-  acceptOffer: (bbl) => {
+  acceptOffer: (bbl, exchange) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = acceptSaleOffer(game, parcels, bbl);
+    const r = acceptSaleOffer(game, parcels, bbl, exchange);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
-    toast("Closed. Cash is position.");
+    toast(exchange ? "Closed — the 1031 clock is running." : "Closed. Cash is position.");
     void persist(r.s);
   },
 
@@ -210,6 +212,26 @@ export const useStore = create<AppState>((set, get) => ({
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("Crews mobilized.");
+    void persist(r.s);
+  },
+
+  broker: (bbl, on) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = setBroker(game, parcels, bbl, on);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(on ? "Exclusive signed." : "Broker dismissed.");
+    void persist(r.s);
+  },
+
+  rateCap: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = buyRateCap(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast("Capped. Sleep better.");
     void persist(r.s);
   },
 
@@ -260,7 +282,7 @@ export async function loadData() {
     // resume the autosave — unless it references parcels that no longer
     // exist (a save from a different city/dataset), in which case start over
     const saved = await loadGame("auto");
-    const fitsCity = saved && saved.v === 5 &&
+    const fitsCity = saved && saved.v === 6 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (fitsCity) {

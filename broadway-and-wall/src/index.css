@@ -356,3 +356,10 @@ body {
 .brand { white-space: nowrap; }
 @media (max-width: 1560px) { .brand-sub { display: none; } .badge { display: none; } }
 @media (max-width: 1360px) { .brand-name { font-size: 18px; } .topbar-right .stat { display: none; } }
+
+/* 1031 exchange clock banner on the Deals desk */
+.exchange-clock {
+  background: rgba(176, 127, 30, 0.14); border: 1px solid rgba(176, 127, 30, 0.45);
+  border-radius: 5px; padding: 9px 12px; margin-bottom: 14px;
+  font-size: 13px; color: var(--ink); font-style: normal;
+}

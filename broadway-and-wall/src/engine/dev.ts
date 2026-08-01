@@ -10,6 +10,7 @@ import type { BuiltClass, Development, GameState } from "./types";
 import { monthLabel } from "./types";
 import { rng, rrange } from "./market";
 import { resolveRec } from "./value";
+import { genAnchorTenant } from "./leasing";
 
 const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
 
@@ -18,12 +19,25 @@ export const HARD_COST_PSF: Record<BuiltClass, number> = {
   office: 240, mixed: 225, multifamily: 205, retail: 185, industrial: 105,
 };
 const SOFT_COST = 0.18;        // design, legal, carry, contingency
-const CONSTR_LTC = 0.6;        // construction loan, 60% of cost
 const CONSTR_SPREAD = 2.4;     // over the index, interest-only
+
+// Construction lenders underwrite lease risk, not blueprints. Spec commercial
+// gets thin proceeds (nothing at all in a recession); an anchor pre-lease
+// unlocks real leverage. Residential and industrial carry less lease risk.
+function constructionLtc(use: BuiltClass, preLease: boolean, phase: string): number {
+  const specRisk = use === "office" || use === "retail" || use === "mixed";
+  if (!specRisk) return 0.6;
+  if (preLease) return 0.65;
+  return phase === "recession" ? 0 : 0.45;
+}
+
+export const PRE_LEASE_SHARE = 0.35; // anchor takes 35% of the building
+export const PRE_LEASE_EXTRA_M = 3;  // months spent landing the anchor first
 
 export interface DevPlan {
   use: BuiltClass;
   farFrac: number; // fraction of max allowed FAR
+  preLease: boolean;
   sf: number;
   floors: number;
   costTotal: number;
@@ -31,9 +45,12 @@ export interface DevPlan {
   ratePct: number;
   equity: number;
   months: number;
+  lenderNote?: string;
 }
 
-export function planDevelopment(s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass, farFrac: number): DevPlan | null {
+export function planDevelopment(
+  s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass, farFrac: number, preLease = false,
+): DevPlan | null {
   const rec = parcels[bbl];
   if (!rec) return null;
   // zoning is real: residential needs residential FAR, commercial needs commercial
@@ -46,21 +63,29 @@ export function planDevelopment(s: GameState, parcels: ParcelTable, bbl: string,
   const heightPrem = floors > 12 ? 1.15 : floors > 6 ? 1.06 : 1;
   const demo = rec.bldgArea > 0 ? Math.round(rec.bldgArea * 12 * s.econ.costIdx) : 0; // teardown: clear it first
   const costTotal = Math.round(sf * HARD_COST_PSF[use] * s.econ.costIdx * heightPrem * (1 + SOFT_COST)) + demo;
-  const loanAmount = Math.round(costTotal * CONSTR_LTC);
+  const canPreLease = use === "office" || use === "retail" || use === "mixed";
+  const ltc = constructionLtc(use, preLease && canPreLease, s.econ.phase);
+  const loanAmount = Math.round(costTotal * ltc);
   const ratePct = +(s.econ.indexRate + CONSTR_SPREAD).toFixed(2);
-  const months = Math.min(20, 12 + 3 * Math.floor(sf / 90_000));
-  return { use, farFrac, sf, floors, costTotal, loanAmount, ratePct, equity: costTotal - loanAmount, months };
+  const months = Math.min(23, 12 + 3 * Math.floor(sf / 90_000)) + (preLease && canPreLease ? PRE_LEASE_EXTRA_M : 0);
+  const lenderNote = ltc === 0
+    ? "No construction lender will touch spec commercial in a recession — pre-lease it or build all-equity."
+    : undefined;
+  return {
+    use, farFrac, preLease: preLease && canPreLease, sf, floors, costTotal,
+    loanAmount, ratePct, equity: costTotal - loanAmount, months, lenderNote,
+  };
 }
 
 export function startDevelopment(
-  s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass, farFrac: number,
+  s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass, farFrac: number, preLease = false,
 ): { s: GameState; err?: string } {
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   if (!s.holdings[bbl]) return { s, err: "Buy the dirt first." };
   if (rec.class !== "land") return { s, err: "There's already a real building here — only vacant and teardown-class lots are developable." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
-  const plan = planDevelopment(s, parcels, bbl, use, farFrac);
+  const plan = planDevelopment(s, parcels, bbl, use, farFrac, preLease);
   if (!plan) return { s, err: "Zoning won't carry a project that small — try more FAR or a different use." };
   if (s.cash < plan.equity) return { s, err: `Ground-breaking needs $${(plan.equity / 1e6).toFixed(2)}M of equity — you're short.` };
   const next = clone(s);
@@ -76,10 +101,11 @@ export function startDevelopment(
     startM: next.month,
     deliverM: next.month + plan.months,
     overrunRolled: false,
+    preLeasedSf: plan.preLease ? Math.round(plan.sf * PRE_LEASE_SHARE) : undefined,
   } satisfies Development;
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Ground broken at ${rec.address}: ${(plan.sf / 1000).toFixed(0)}k sf of ${use}, $${(plan.costTotal / 1e6).toFixed(1)}M budget, delivery ${monthLabel(next.month + plan.months)}.`,
+    text: `Ground broken at ${rec.address}: ${(plan.sf / 1000).toFixed(0)}k sf of ${use}, $${(plan.costTotal / 1e6).toFixed(1)}M budget${plan.preLease ? ", anchor pre-leased" : ""}, delivery ${monthLabel(next.month + plan.months)}.`,
   });
   return { s: next };
 }
@@ -111,13 +137,18 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
 
     if (s.month >= d.deliverM) {
       // delivery: the override becomes the building; the construction loan
-      // converts to a lease-up mini-perm (IO 4 quarters, 4-year balloon)
-      s.built[d.bbl] = { class: d.use, bldgArea: d.sf, floors: d.floors, yearBuilt: 2026 + Math.floor(s.month / 4) };
+      // converts to a lease-up mini-perm (IO 12 months, 4-year balloon)
+      s.built[d.bbl] = { class: d.use, bldgArea: d.sf, floors: d.floors, yearBuilt: 2026 + Math.floor(s.month / 12) };
       const h = s.holdings[d.bbl];
       h.condition = "good";
       h.tenants = [];
       if (d.use === "multifamily") h.occ = 0.1;
       h.costBasis += d.costTotal;
+      h.assessed = (h.assessed ?? h.costBasis - d.costTotal) + d.costTotal; // improvements hit the tax roll at cost
+      if (d.preLeasedSf) {
+        const built = resolveRec(parcels, s, d.bbl);
+        if (built) genAnchorTenant(s, built, h, d.preLeasedSf);
+      }
       h.loan = {
         product: "float",
         principal: d.loanBalance,
@@ -241,7 +272,7 @@ export function tickCityGrowth(
     const frac = Math.min(0.95, 0.22 + 0.45 * maturity + 0.3 * (rec.demandScore / 100) * maturity + rng(s) * 0.15);
     const sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
     const floors = Math.max(1, Math.round(sf / (rec.lotArea * 0.62)));
-    s.built[bbl] = { class: use, bldgArea: sf, floors, yearBuilt: 2026 + Math.floor(s.month / 4) };
+    s.built[bbl] = { class: use, bldgArea: sf, floors, yearBuilt: 2026 + Math.floor(s.month / 12) };
     s.cityBuilt.push(bbl);
 
     // land appreciates on the block that just got built

@@ -61,16 +61,21 @@ export interface Loan {
   sweep: boolean;        // breach: cash flow trapped to principal until cured
   cleanQs: number;
   originM: number;
+  cap?: { strike: number; expiresM: number }; // purchased rate cap: index capped at strike
 }
 
 export interface Holding {
   bbl: string;
   boughtM: number;
   costBasis: number;
+  deprTaken?: number;  // accumulated depreciation — reduces basis on sale
+  assessed?: number;   // property-tax assessed value; steps up on reassessment
   loan: Loan | null;
   condition: Condition;
   renovatingUntilM?: number;
   tenants: Tenant[];   // commercial rent roll
+  makeReady?: { sf: number; readyM: number }[]; // vacated space being turned; unleasable until ready
+  broker?: boolean;    // leasing broker on retainer: more LOIs, monthly fee
   occ?: number;        // multifamily aggregate occupancy
   stance?: -1 | 0 | 1; // rent posture: push / market / fill
   sale?: { ask: number; listedM: number; offer?: { price: number; expiresM: number } }; // on the market
@@ -88,11 +93,12 @@ export interface Development {
   sf: number;
   floors: number;
   costTotal: number;
-  loanBalance: number;   // 60% construction loan, interest-only
+  loanBalance: number;   // construction loan, interest-only
   ratePct: number;
   startM: number;
   deliverM: number;
   overrunRolled: boolean;
+  preLeasedSf?: number;  // anchor tenant secured before ground-break
 }
 
 // A delivered development overrides the static parcel record.
@@ -145,7 +151,7 @@ export interface Econ {
 }
 
 export interface GameState {
-  v: 5;
+  v: 6;
   seed: number;
   rng: number;
   month: number;
@@ -162,6 +168,9 @@ export interface GameState {
   landAdj: Record<string, number>;           // per-parcel land value multiplier
   totalLots: number;
   builtAtStart: number;
+  // a 1031 exchange in flight: sale gain rolled, tax deferred until the clock runs out
+  exchange: { deferredTax: number; rolledGain: number; minPrice: number; deadlineM: number } | null;
+  taxesPaid: number;
   news: NewsItem[];
   gameOver: { cause: string; complete?: boolean } | null;
   insolventMs: number;

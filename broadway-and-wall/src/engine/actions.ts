@@ -3,13 +3,16 @@
 // returns a new state or an error string, never mutates the input.
 import type { Adjacency, ParcelTable } from "@/data/types";
 import type { GameState, Holding } from "./types";
-import { rng } from "./market";
+import { monthLabel } from "./types";
+import { rng, rrange } from "./market";
 import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS, noiYr, resolveRec } from "./value";
 import { genRentRoll, isCommercial } from "./leasing";
 import { PRODUCTS, originate, quote } from "./debt";
 
 const CLOSING_PCT = 0.02;
 const SALE_FRICTION = 0.03;
+export const CAP_GAINS_RATE = 0.2;   // on gains over depreciated basis
+export const EXCHANGE_WINDOW_M = 6;  // 1031: redeploy within six months or the tax comes due
 
 export type BuyProduct = "cash" | "fixed" | "float";
 
@@ -42,6 +45,7 @@ function executePurchase(
     bbl,
     boughtM: next.month,
     costBasis: price + Math.round(price * CLOSING_PCT),
+    assessed: price, // the sale reassesses the property at the deal price
     loan: null,
     condition: initialCondition(rec),
     tenants: [],
@@ -50,6 +54,15 @@ function executePurchase(
   if (product !== "cash") {
     const prod = PRODUCTS.find((p) => p.id === product)!;
     holding.loan = originate(next, prod, price, noiYr(rec, next.econ, holding.condition));
+  }
+  // a live 1031: this purchase completes the exchange if it's big enough
+  if (next.exchange && price >= next.exchange.minPrice * 0.8) {
+    holding.costBasis -= next.exchange.rolledGain; // deferred gain carries into the new basis
+    next.news.unshift({
+      q: next.month, kind: "deal",
+      text: `1031 completed: $${(next.exchange.rolledGain / 1e6).toFixed(2)}M of gain rolled into ${rec.address} — $${(next.exchange.deferredTax / 1e6).toFixed(2)}M of tax deferred.`,
+    });
+    next.exchange = null;
   }
   genRentRoll(next, rec, holding); // walk into the in-place rent roll
   next.holdings[bbl] = holding;
@@ -139,22 +152,40 @@ export function delist(s: GameState, bbl: string): GameState {
   return next;
 }
 
-export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string } {
+// What a sale nets and owes: gain runs against depreciated basis (that's
+// recapture doing its work), taxed at 20% — unless it rides a 1031.
+export function saleTaxQuote(h: Holding, price: number): { net: number; gain: number; tax: number } {
+  const net = Math.round(price * (1 - SALE_FRICTION));
+  const adjBasis = h.costBasis - (h.deprTaken ?? 0);
+  const gain = net - adjBasis;
+  return { net, gain, tax: Math.round(Math.max(0, gain) * CAP_GAINS_RATE) };
+}
+
+export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string, exchange = false): { s: GameState; err?: string } {
   const h = s.holdings[bbl];
   const offer = h?.sale?.offer;
   if (!h || !offer) return { s, err: "No live offer." };
   if (s.month > offer.expiresM) return { s, err: "That offer lapsed." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
+  const { net, gain, tax } = saleTaxQuote(h, offer.price);
+  if (exchange && s.exchange) return { s, err: "One exchange at a time — close the live 1031 first." };
+  if (exchange && tax <= 0) return { s, err: "No gain to shelter — just take the cash." };
   const next = clone(s);
-  const proceeds = Math.round(offer.price * (1 - SALE_FRICTION)) - (h.loan?.balance ?? 0);
-  next.cash += proceeds;
+  next.cash += net - (h.loan?.balance ?? 0);
+  if (exchange) {
+    next.exchange = { deferredTax: tax, rolledGain: gain, minPrice: offer.price, deadlineM: next.month + EXCHANGE_WINDOW_M };
+  } else if (tax > 0) {
+    next.cash -= tax;
+    next.taxesPaid = (next.taxesPaid ?? 0) + tax;
+  }
   delete next.holdings[bbl];
   next.lois = next.lois.filter((l) => l.bbl !== bbl);
-  const gain = proceeds + (h.loan?.balance ?? 0) - h.costBasis;
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Closed: ${rec.address} at $${(offer.price / 1e6).toFixed(2)}M — ${gain >= 0 ? "a gain" : "a loss"} of $${(Math.abs(gain) / 1e6).toFixed(2)}M against basis.`,
+    text: `Closed: ${rec.address} at $${(offer.price / 1e6).toFixed(2)}M — ${gain >= 0 ? "a gain" : "a loss"} of $${(Math.abs(gain) / 1e6).toFixed(2)}M against basis`
+      + (exchange ? `. 1031 clock running: buy for ≥ $${(offer.price * 0.8 / 1e6).toFixed(1)}M by ${monthLabel(next.month + EXCHANGE_WINDOW_M)} or $${(tax / 1e6).toFixed(2)}M of tax comes due.`
+        : tax > 0 ? ` ($${(tax / 1e6).toFixed(2)}M capital-gains tax withheld).` : "."),
   });
   return { s: next };
 }
@@ -167,7 +198,8 @@ export function declineSaleOffer(s: GameState, bbl: string): GameState {
 }
 
 // Monthly: buyers circle listed assets. Offer flow scales with how honest
-// the ask is, the market phase, and how long it has sat.
+// the ask is, the market phase, and how long it has sat. A live offer on a
+// well-priced asset sometimes draws a second bidder who pushes the number.
 export function tickSales(s: GameState, parcels: ParcelTable) {
   for (const h of Object.values(s.holdings)) {
     const sale = h.sale;
@@ -176,9 +208,22 @@ export function tickSales(s: GameState, parcels: ParcelTable) {
       delete sale.offer;
       continue;
     }
-    if (sale.offer) continue;
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
+    if (sale.offer) {
+      const value = holdingValue(rec, s.econ, h);
+      if (sale.offer.price < sale.ask && sale.ask / Math.max(1, value) < 1.1 && rng(s) < 0.12) {
+        const bumped = Math.min(sale.ask, Math.round(sale.offer.price * rrange(s, 1.02, 1.06)));
+        if (bumped > sale.offer.price) {
+          sale.offer = { price: bumped, expiresM: s.month + 2 };
+          s.news.unshift({
+            q: s.month, kind: "deal",
+            text: `A second bidder surfaced at ${rec.address} — the offer moves to $${(bumped / 1e6).toFixed(2)}M.`,
+          });
+        }
+      }
+      continue;
+    }
     const value = holdingValue(rec, s.econ, h);
     const ratio = sale.ask / Math.max(1, value);
     const phaseAdj = s.econ.phase === "expansion" ? 1.3 : s.econ.phase === "recession" ? 0.5 : 1;
@@ -193,6 +238,44 @@ export function tickSales(s: GameState, parcels: ParcelTable) {
       });
     }
   }
+}
+
+// Monthly: other buyers work the same tape you do. Fairly-priced listings get
+// taken out from under you — dawdle and the deal is gone.
+export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
+  const base = s.econ.phase === "expansion" ? 0.10 : s.econ.phase === "peak" ? 0.07 : s.econ.phase === "recovery" ? 0.05 : 0.02;
+  const survivors: typeof s.listings = [];
+  for (const li of s.listings) {
+    const rec = resolveRec(parcels, s, li.bbl);
+    if (!rec) continue;
+    const value = assetValue(rec, s.econ, initialCondition(rec));
+    const ratio = li.ask / Math.max(1, value);
+    const priceFactor = Math.max(0.3, Math.min(1.8, 1.9 - ratio)); // bargains go first
+    if (rng(s) < base * priceFactor) {
+      if (rng(s) < 0.5) {
+        s.news.unshift({ q: s.month, kind: "info", text: `Sold: ${rec.address} went to another buyer at $${(li.ask / 1e6).toFixed(2)}M. You watched it happen.` });
+      }
+      continue; // absorbed — off the tape
+    }
+    survivors.push(li);
+  }
+  s.listings = survivors;
+}
+
+// Toggle a leasing broker exclusive on an owned commercial building.
+export function setBroker(s: GameState, parcels: ParcelTable, bbl: string, on: boolean): { s: GameState; err?: string } {
+  const h = s.holdings[bbl];
+  const rec = resolveRec(parcels, s, bbl);
+  if (!h || !rec) return { s, err: "You don't own that." };
+  if (on && !isCommercial(rec)) return { s, err: "Brokers work commercial space — multifamily leases itself." };
+  const next = clone(s);
+  const nh = next.holdings[bbl];
+  if (on) nh.broker = true; else delete nh.broker;
+  next.news.unshift({
+    q: next.month, kind: "info",
+    text: on ? `Leasing exclusive signed at ${rec.address} — the brokers start working the phones.` : `Broker dismissed at ${rec.address}.`,
+  });
+  return { s: next };
 }
 
 export function startRenovation(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string } {

@@ -6,14 +6,23 @@ import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import {
   assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr,
-  occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec,
+  occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr,
 } from "@/engine/value";
 import { planDevelopment, PROGRAMS, programCost } from "@/engine/dev";
 import type { BuiltClass } from "@/engine/types";
-import { buyQuote, assemblagePressure } from "@/engine/actions";
-import { isCommercial, vacantSf, walt, loiSigningCost } from "@/engine/leasing";
-import { dscr, ltv } from "@/engine/debt";
+import { buyQuote, assemblagePressure, saleTaxQuote } from "@/engine/actions";
+import { isCommercial, vacantSf, walt, loiSigningCost, notReadySf } from "@/engine/leasing";
+import { dscr, ltv, rateCapCost } from "@/engine/debt";
 import { usd, sf, pct } from "./format";
+
+// Appraisals are opinions with a range, not the true number.
+function band(bbl: string, value: number): string {
+  const a = appraise(bbl, value);
+  return `${usd(a.lo)} – ${usd(a.hi)}`;
+}
+function apMid(bbl: string, value: number): number {
+  return appraise(bbl, value).mid;
+}
 
 export default function GamePanels() {
   const game = useStore((s) => s.game);
@@ -106,13 +115,14 @@ function ParcelPanel() {
       </div>
 
       <div className="grid">
-        <Row k="Appraisal" v={usd(value)} strong />
+        <Row k="Appraisal" v={band(selectedBBL, value)} strong />
         {isBuilt && <Row k="Market rent" v={"$" + marketRentPsfYr(rec, game.econ, cond).toFixed(0) + " /sf/yr"} />}
         {isBuilt && !holding && <Row k="Occupancy (mkt)" v={(occupancy(rec, game.econ) * 100).toFixed(0) + "%"} />}
         {holding && commercial && <Row k="Occupancy" v={rec.bldgArea ? ((leasedSf / rec.bldgArea) * 100).toFixed(0) + "%" : "—"} />}
         {holding && rec.class === "multifamily" && <Row k="Occupancy" v={((holding.occ ?? 0) * 100).toFixed(0) + "%"} />}
         {holding && commercial && <Row k="WALT" v={walt(holding, game.month).toFixed(1) + " yrs"} />}
         {isBuilt && <Row k="NOI / yr" v={usd(holding ? holdingNOIYr(rec, game.econ, holding, game.month) : noiYr(rec, game.econ, cond))} />}
+        {holding && isBuilt && <Row k="Property tax / yr" v={usd(propertyTaxYr(rec, holding)) + (commercial ? " (your share)" : "")} />}
         <Row k="Lot area" v={sf(rec.lotArea)} />
         {isBuilt && <Row k="Building" v={sf(rec.bldgArea) + ` · ${rec.floors} fl · ${rec.yearBuilt}`} />}
         <Row k="FAR built / max" v={`${builtFar.toFixed(1)} / ${farMax.toFixed(1)}`} />
@@ -131,10 +141,18 @@ function ParcelPanel() {
                 </span>
               </div>
             ))}
-            {vacantSf(rec, holding) > 500 && (
+            {notReadySf(holding, game.month) > 0 && (
+              <div className="roll-row roll-vacant">
+                <span className="roll-name">In make-ready</span>
+                <span className="roll-meta mono">
+                  {(notReadySf(holding, game.month) / 1000).toFixed(1)}k sf · showable {monthLabel(Math.max(...(holding.makeReady ?? []).map((m) => m.readyM)))}
+                </span>
+              </div>
+            )}
+            {vacantSf(rec, holding) - notReadySf(holding, game.month) > 500 && (
               <div className="roll-row roll-vacant">
                 <span className="roll-name">Vacant</span>
-                <span className="roll-meta mono">{(vacantSf(rec, holding) / 1000).toFixed(1)}k sf</span>
+                <span className="roll-meta mono">{((vacantSf(rec, holding) - notReadySf(holding, game.month)) / 1000).toFixed(1)}k sf</span>
               </div>
             )}
           </div>
@@ -152,10 +170,20 @@ function ParcelPanel() {
             <Row k="Balloon" v={monthLabel(holding.loan.maturityM)} />
             {d !== null && <Row k="DSCR" v={d.toFixed(2) + " (min " + holding.loan.minDSCR.toFixed(2) + ")"} bad={d < holding.loan.minDSCR} />}
             {l !== null && <Row k="LTV" v={(l * 100).toFixed(0) + "% (max " + (holding.loan.maxLTV * 100).toFixed(0) + "%)"} bad={l > holding.loan.maxLTV} />}
+            {holding.loan.cap && <Row k="Rate cap" v={`index ≤ ${holding.loan.cap.strike.toFixed(2)}% until ${monthLabel(holding.loan.cap.expiresM)}`} />}
           </div>
           <div className="btn-row">
             <button className="btn" onClick={() => refi(selectedBBL, "fixed")}>Refi fixed</button>
             <button className="btn" onClick={() => refi(selectedBBL, "float")}>Refi float</button>
+            {holding.loan.product === "float" && !holding.loan.cap && (
+              <button
+                className="btn"
+                title={`Index capped at ${(game.econ.indexRate + 0.5).toFixed(2)}% for 3 years — floating stops hurting past the strike`}
+                onClick={() => useStore.getState().rateCap(selectedBBL)}
+              >
+                Buy rate cap · {usd(rateCapCost(holding.loan))}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -165,7 +193,7 @@ function ParcelPanel() {
           <div className="deal-head">On the market</div>
           <div className="grid">
             <Row k="Ask" v={usd(listing.ask)} strong />
-            <Row k="vs. appraisal" v={((listing.ask / value - 1) * 100).toFixed(1) + "%"} />
+            <Row k="vs. appraisal" v={((listing.ask / apMid(selectedBBL, value) - 1) * 100).toFixed(1) + "%"} />
           </div>
           <BuyButtons bbl={selectedBBL} price={listing.ask} off={false} />
         </div>
@@ -178,7 +206,7 @@ function ParcelPanel() {
             <>
               <div className="grid">
                 <Row k="Owner's ask" v={usd(appr.ask)} strong />
-                <Row k="vs. appraisal" v={((appr.ask / value - 1) * 100).toFixed(1) + "%"} />
+                <Row k="vs. appraisal" v={((appr.ask / apMid(selectedBBL, value) - 1) * 100).toFixed(1) + "%"} />
                 <Row k="Good until" v={monthLabel(appr.q + 12)} />
               </div>
               <BuyButtons bbl={selectedBBL} price={appr.ask} off />
@@ -250,6 +278,19 @@ function ParcelPanel() {
               );
             })}
           </div>
+          {commercial && vacantSf(rec, holding) > 500 && (
+            <div className="btn-row">
+              <button
+                className={"btn" + (holding.broker ? " btn-buy" : "")}
+                title="A leasing exclusive: ~75% more tenant traffic while space is vacant, for a monthly retainer"
+                onClick={() => useStore.getState().broker(selectedBBL, !holding.broker)}
+              >
+                {holding.broker
+                  ? "✓ Broker engaged — dismiss"
+                  : `Hire leasing broker · ${usd(Math.max(400, Math.round(vacantSf(rec, holding) * 0.025)))}/mo`}
+              </button>
+            </div>
+          )}
           {isBuilt && cond !== "good" && (
             <div className="btn-row">
               <button className="btn" onClick={() => renovate(selectedBBL)}>
@@ -267,6 +308,8 @@ function ParcelPanel() {
           <div className="deal-head">Your position · since {monthLabel(holding.boughtM)}</div>
           <div className="grid">
             <Row k="Basis" v={usd(holding.costBasis)} />
+            {(holding.deprTaken ?? 0) > 0 && <Row k="Depreciation taken" v={"−" + usd(holding.deprTaken!)} />}
+            <Row k="Assessed (tax)" v={usd(holding.assessed ?? holding.costBasis)} />
             <Row k="Equity" v={usd(value - (holding.loan?.balance ?? 0))} strong />
           </div>
         </div>
@@ -299,19 +342,35 @@ function SaleSection({ bbl, value }: { bbl: string; value: number }) {
   const holding = game.holdings[bbl]!;
   const [ask, setAsk] = useState<string>("");
   const sale = holding.sale;
+  const exchangeBusy = !!game.exchange;
   if (sale) {
+    const tq = sale.offer ? saleTaxQuote(holding, sale.offer.price) : null;
     return (
       <div className="deal">
         <div className="deal-head">For sale · listed {monthLabel(sale.listedM)}</div>
         <div className="grid">
           <Row k="Your ask" v={usd(sale.ask)} strong />
-          <Row k="vs. appraisal" v={((sale.ask / value - 1) * 100).toFixed(1) + "%"} />
+          <Row k="vs. appraisal" v={((sale.ask / apMid(bbl, value) - 1) * 100).toFixed(1) + "%"} />
         </div>
-        {sale.offer ? (
+        {sale.offer && tq ? (
           <>
-            <div className="hint">Offer on the table: <b className="mono">{usd(sale.offer.price)}</b> — good until {monthLabel(sale.offer.expiresM)}.</div>
+            <div className="hint">
+              Offer on the table: <b className="mono">{usd(sale.offer.price)}</b> — good until {monthLabel(sale.offer.expiresM)}.
+              {tq.tax > 0 && <> Gain of {usd(tq.gain)} over depreciated basis owes <b className="mono">{usd(tq.tax)}</b> in tax.</>}
+            </div>
             <div className="btn-row">
-              <button className="btn btn-buy" onClick={() => acceptOffer(bbl)}>Accept · net {usd(sale.offer.price * 0.97 - (holding.loan?.balance ?? 0))}</button>
+              <button className="btn btn-buy" onClick={() => acceptOffer(bbl)}>
+                Accept · net {usd(tq.net - (holding.loan?.balance ?? 0) - tq.tax)}
+              </button>
+              {tq.tax > 0 && !exchangeBusy && (
+                <button
+                  className="btn btn-buy"
+                  title={`Roll the gain into your next purchase: defer ${usd(tq.tax)} of tax, but you must buy for ≥ 80% of this price within 6 months`}
+                  onClick={() => acceptOffer(bbl, true)}
+                >
+                  1031 · defer {usd(tq.tax)}
+                </button>
+              )}
               <button className="btn" onClick={() => declineOffer(bbl)}>Decline</button>
             </div>
           </>
@@ -327,18 +386,18 @@ function SaleSection({ bbl, value }: { bbl: string; value: number }) {
   return (
     <div className="deal">
       <div className="deal-head">Sell</div>
-      <div className="hint">Name your ask and let the market answer. Appraisal: {usd(value)}.</div>
+      <div className="hint">Name your ask and let the market answer. Appraisal: {band(bbl, value)}.</div>
       <div className="btn-row">
         <input
           className="ask-input mono"
-          placeholder={`${(value / 1e6).toFixed(2)}`}
+          placeholder={`${(apMid(bbl, value) / 1e6).toFixed(2)}`}
           value={ask}
           onChange={(e) => setAsk(e.target.value)}
         />
         <span className="dim" style={{ alignSelf: "center", fontSize: 12 }}>$M</span>
         <button
           className="btn btn-buy"
-          onClick={() => listSale(bbl, (parseFloat(ask) || value / 1e6) * 1e6)}
+          onClick={() => listSale(bbl, (parseFloat(ask) || apMid(bbl, value) / 1e6) * 1e6)}
         >
           List for sale
         </button>
@@ -376,7 +435,9 @@ function DevelopSection({ bbl }: { bbl: string }) {
   const parcels = useStore((s) => s.parcels)!;
   const [use, setUse] = useState<BuiltClass>("multifamily");
   const [farFrac, setFarFrac] = useState(0.75);
-  const plan = planDevelopment(game, parcels, bbl, use, farFrac);
+  const [preLease, setPreLease] = useState(false);
+  const canPreLease = use === "office" || use === "retail" || use === "mixed";
+  const plan = planDevelopment(game, parcels, bbl, use, farFrac, preLease && canPreLease);
   const USES: BuiltClass[] = ["office", "multifamily", "mixed", "retail", "industrial"];
   return (
     <div className="deal">
@@ -393,17 +454,33 @@ function DevelopSection({ bbl }: { bbl: string }) {
           </button>
         ))}
       </div>
+      {canPreLease && (
+        <div className="btn-row">
+          <button
+            className={"btn" + (preLease ? " btn-buy" : "")}
+            title="Land a credit anchor for 35% of the building before ground-break: +3 months, but lenders fund 65% of cost instead of 45%"
+            onClick={() => setPreLease(!preLease)}
+          >
+            {preLease ? "✓ Anchor pre-lease" : "Secure anchor pre-lease first"}
+          </button>
+        </div>
+      )}
       {plan ? (
         <>
           <div className="grid" style={{ marginTop: 8 }}>
             <Row k="Building" v={`${(plan.sf / 1000).toFixed(0)}k sf · ${plan.floors} fl`} />
             <Row k="All-in cost" v={usd(plan.costTotal)} />
-            <Row k="Constr. loan (60%)" v={usd(plan.loanAmount) + " @ " + pct(plan.ratePct)} />
+            <Row
+              k={`Constr. loan (${Math.round((plan.loanAmount / Math.max(1, plan.costTotal)) * 100)}%)`}
+              v={plan.loanAmount > 0 ? usd(plan.loanAmount) + " @ " + pct(plan.ratePct) : "none — all equity"}
+            />
             <Row k="Your equity" v={usd(plan.equity)} strong />
             <Row k="Schedule" v={plan.months + " months"} />
+            {plan.preLease && <Row k="Pre-leased" v={`${Math.round((plan.sf * 0.35) / 100) * 100 / 1000}k sf anchor at delivery`} />}
           </div>
+          {plan.lenderNote && <div className="hint">{plan.lenderNote}</div>}
           <div className="btn-row">
-            <button className="btn btn-buy" onClick={() => useStore.getState().develop(bbl, use, farFrac)}>
+            <button className="btn btn-buy" onClick={() => useStore.getState().develop(bbl, use, farFrac, preLease && canPreLease)}>
               Break ground · {usd(plan.equity)}
             </button>
           </div>
@@ -507,7 +584,13 @@ function DealsPage() {
   }
 
   return (
-    <div className="deals-grid">
+    <div>
+      {game.exchange && (
+        <div className="hint exchange-clock">
+          ⏱ 1031 clock: buy for ≥ {usd(game.exchange.minPrice * 0.8)} by {monthLabel(game.exchange.deadlineM)} or {usd(game.exchange.deferredTax)} of deferred tax comes due.
+        </div>
+      )}
+      <div className="deals-grid">
       <section>
         <div className="page-section">Letters of intent · {game.lois.length}</div>
         {game.lois.length === 0 && <div className="hint">No live negotiations. Vacant space in high-demand buildings draws tenants.</div>}
@@ -578,6 +661,7 @@ function DealsPage() {
           {maturities.length === 0 && <div className="hint">No balloons or breaches on the radar.</div>}
         </div>
       </section>
+      </div>
     </div>
   );
 }
@@ -610,7 +694,7 @@ function MarketPage() {
               {[...game.listings].sort((a, b) => a.ask - b.ask).map((li) => {
                 const rec = resolveRec(parcels, game, li.bbl);
                 if (!rec) return null;
-                const v = assetValue(rec, game.econ, initialCondition(rec));
+                const v = apMid(li.bbl, assetValue(rec, game.econ, initialCondition(rec)));
                 return (
                   <tr key={li.bbl} onClick={() => go(li.bbl)}>
                     <td>{rec.address}</td>

@@ -89,9 +89,14 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
   if (!loan || !rec) return 0;
   const q = s.month;
 
-  // floating: reprice off the live index
+  // floating: reprice off the live index — through the cap, if one was bought
   if (loan.product === "float") {
-    loan.ratePct = +(s.econ.indexRate + loan.spread).toFixed(2);
+    if (loan.cap && q >= loan.cap.expiresM) {
+      delete loan.cap;
+      s.news.unshift({ q, kind: "info", text: `The rate cap at ${rec.address} expired — you're floating naked again.` });
+    }
+    const effIndex = loan.cap ? Math.min(s.econ.indexRate, loan.cap.strike) : s.econ.indexRate;
+    loan.ratePct = +(effIndex + loan.spread).toFixed(2);
   }
   const io = q < loan.ioUntilM;
   if (io || loan.product === "float") {
@@ -174,6 +179,32 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
     }
   }
   return cashOut;
+}
+
+// A 3-year rate cap on a floating loan: pay ~1.25% of balance today, and the
+// index leg can't reprice above (current index + 0.5) until it expires.
+export const CAP_TERM_M = 36;
+export function rateCapCost(loan: Loan): number {
+  return Math.round(loan.balance * 0.0125);
+}
+
+export function buyRateCap(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string } {
+  const next: GameState = JSON.parse(JSON.stringify(s));
+  const h = next.holdings[bbl];
+  const rec = resolveRec(parcels, next, bbl);
+  if (!h || !rec) return { s, err: "You don't own that." };
+  if (!h.loan || h.loan.product !== "float") return { s, err: "Caps hedge floating debt — this loan is fixed." };
+  if (h.loan.cap) return { s, err: "This loan already carries a live cap." };
+  const cost = rateCapCost(h.loan);
+  if (next.cash < cost) return { s, err: `The cap desk wants $${(cost / 1e6).toFixed(2)}M premium — you're short.` };
+  const strike = +(next.econ.indexRate + 0.5).toFixed(2);
+  next.cash -= cost;
+  h.loan.cap = { strike, expiresM: next.month + CAP_TERM_M };
+  next.news.unshift({
+    q: next.month, kind: "deal",
+    text: `Rate cap bought at ${rec.address}: index capped at ${strike.toFixed(2)}% for three years ($${(cost / 1e6).toFixed(2)}M premium).`,
+  });
+  return { s: next };
 }
 
 // Player-initiated refinance at current rates and value.

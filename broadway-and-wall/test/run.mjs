@@ -23,5 +23,6 @@ const build = spawnSync(
 );
 if (build.status !== 0) process.exit(build.status ?? 1);
 
-const run = spawnSync("node", [join(HERE, "invariants.mjs")], { stdio: "inherit", env: process.env });
+const which = process.argv.includes("--balance") ? "audit.mjs" : "invariants.mjs";
+const run = spawnSync("node", [join(HERE, which)], { stdio: "inherit", env: process.env });
 process.exit(run.status ?? 1);

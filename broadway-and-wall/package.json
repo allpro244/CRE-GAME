@@ -16,7 +16,8 @@
     "pipeline": "node pipeline/fetch.mjs && node pipeline/process.mjs && node pipeline/tiles.mjs",
     "pipeline:dev": "node pipeline/city.mjs && node pipeline/process.mjs && node pipeline/tiles.mjs",
     "pipeline:manhattan": "node pipeline/synth.mjs && node pipeline/process.mjs && node pipeline/tiles.mjs",
-    "test": "node test/run.mjs"
+    "test": "node test/run.mjs",
+    "balance": "node test/run.mjs --balance"
   },
   "dependencies": {
     "@types/three": "^0.185.3",

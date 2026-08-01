@@ -82,7 +82,7 @@ export function occupancy(rec: ParcelRecord, econ: Econ): number {
   return clamp(OCC_BASE[cls] + swing * econ.cycleDev + 0.03 * (rec.demandScore / 100 - 0.5), 0.6, 0.99);
 }
 
-const OPEX_RATIO: Record<BuiltClass, number> = { office: 0.38, retail: 0.30, mixed: 0.36, multifamily: 0.42, industrial: 0.24 };
+const OPEX_RATIO: Record<BuiltClass, number> = { office: 0.38, retail: 0.30, mixed: 0.36, multifamily: 0.44, industrial: 0.24 };
 
 // ---------------------------------------------------------------- the opex stack
 // A single blended $/sf hides the two things that actually matter: which line
@@ -94,8 +94,13 @@ const OPEX_RATIO: Record<BuiltClass, number> = { office: 0.38, retail: 0.30, mix
 //                  its own assessment and its own reimbursement treatment.
 //
 // $/sf/yr at costIdx 1.
-export const OPEX_CONTROLLABLE: Record<BuiltClass, number> = { office: 9.2, retail: 5.4, mixed: 7.6, multifamily: 7.1, industrial: 2.3 };
-export const OPEX_FIXED: Record<BuiltClass, number> = { office: 3.8, retail: 2.6, mixed: 3.4, multifamily: 2.9, industrial: 1.2 };
+// Apartments were carrying a 22% expense ratio, a number no operator has ever
+// seen. Residential is the most operationally intensive class there is —
+// payroll, turns, marketing, utilities the tenant does not pay — and it runs
+// 40-45% before the capex reserve. Understating it made multifamily pencil on
+// ninety-nine sites out of a hundred.
+export const OPEX_CONTROLLABLE: Record<BuiltClass, number> = { office: 9.2, retail: 5.4, mixed: 7.6, multifamily: 13.0, industrial: 2.3 };
+export const OPEX_FIXED: Record<BuiltClass, number> = { office: 3.8, retail: 2.6, mixed: 3.4, multifamily: 4.2, industrial: 1.2 };
 export const MGMT_FEE = 0.04;   // of effective gross income, industry standard
 
 /** Total operating cost per sf/yr before management fee and property tax. */
@@ -322,6 +327,17 @@ export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition):
  * one rolling forty per cent of its income next year is a leasing project. The
  * market prices that difference in basis points, and so should this.
  */
+/** The largest tenant's share of the rent roll. */
+export function concentration(h: Holding): number {
+  let top = 0, total = 0;
+  for (const t of h.tenants) {
+    const annual = t.rentPsf * t.sf;
+    total += annual;
+    if (annual > top) top = annual;
+  }
+  return total > 0 ? top / total : 0;
+}
+
 export function rollQualitySpread(rec: ParcelRecord, h: Holding, month: number): number {
   if (rec.class === "land" || !rec.bldgArea || !h.tenants.length) return 0.55;   // an empty building is a project
   let sfTot = 0, wCredit = 0, wYears = 0, nnnSf = 0;
@@ -340,7 +356,15 @@ export function rollQualitySpread(rec: ParcelRecord, h: Holding, month: number):
   const creditSpread = 0.18 - 0.20 * credit;            // +0.18 unrated, −0.22 investment grade
   const occSpread = clamp((0.9 - occ) * 1.4, -0.10, 0.75);
   const structSpread = -0.10 * (nnnSf / sfTot);         // net paper is easier to finance
-  return waltSpread + creditSpread + occSpread + structSpread;
+  // CONCENTRATION. A building where one name is most of the income is not an
+  // income stream, it is a bet on that name, and the market prices it as one.
+  // Single-tenant assets trade wide unless the covenant is bond-grade and the
+  // term is long — which is exactly the combination that makes them trade
+  // tight. Both halves of that live in `concSpread`.
+  const conc = concentration(h);
+  const covenantRelief = credit >= 1.6 && walt >= 8 ? 0.55 : credit >= 1.6 ? 0.25 : 0;
+  const concSpread = clamp((Math.max(0, conc - 0.35) / 0.65) * 0.75 * (1 - covenantRelief), 0, 0.75);
+  return waltSpread + creditSpread + occSpread + structSpread + concSpread;
 }
 
 export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: number): number {

@@ -171,7 +171,18 @@ export function tickEcon(s: GameState) {
   // rents per class: phase drift + sector momentum − supply, plus noise
   for (const k of BUILT_CLASSES) {
     const vol = k === "multifamily" ? 0.002 : k === "office" ? 0.004 : k === "industrial" ? 0.0024 : 0.003;
-    const supply = (e.supplyPress?.[k] ?? 0) * 26;      // deliveries bite on rent
+    // SUPPLY, CALIBRATED. A city delivering its long-run normal — call it a
+    // percent and a quarter of stock a year — is in balance, and rents do what
+    // the cycle says. Only the excess above that pushes rents down.
+    //
+    // The multiplier was 26 against the raw delivery rate, which meant a market
+    // building at its steady state carried a two-per-cent-a-month drag on rent
+    // forever. Over forty years that drove office rents down 29% in nominal
+    // terms while construction costs rose 74%, and quietly made development
+    // impossible on every site in the city by year forty. It is the EXCESS
+    // that hurts, and the multiplier is four.
+    const NORMAL_DELIVERY = 0.0125 / 12;
+    const supply = Math.max(-0.0008, ((e.supplyPress?.[k] ?? 0) - NORMAL_DELIVERY) * 4);
     const drift = c2.rentDrift + e.sectorMom[k] * 0.5 - supply + (jobDrift * 0.35);
     e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.5, e.rentIdx[k] * (1 + drift + rrange(s, -vol, vol)));
   }

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
-import type { GameState } from "@/engine/types";
+import type { GameState, Contract } from "@/engine/types";
 import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfolioQuarterlyCF } from "@/engine/sim";
 import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, startRenovation, setBroker, type BuyProduct } from "@/engine/actions";
 import { respondLOI, type LOIAction } from "@/engine/leasing";
@@ -43,7 +43,7 @@ interface AppState {
   approach: (bbl: string) => void;
   respondLoi: (id: number, action: LOIAction, fund?: boolean) => void;
   refi: (bbl: string, product: string, lev?: number) => void;
-  develop: (bbl: string, use: BuiltClass, floors: number, coverage: number, preLease?: boolean) => void;
+  develop: (bbl: string, use: BuiltClass, floors: number, coverage: number, preLeaseShare?: number, contract?: Contract) => void;
   raze: (bbl: string) => void;
   program: (bbl: string, id: string) => void;
   stance: (bbl: string, v: -1 | 0 | 1) => void;
@@ -185,10 +185,10 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  develop: (bbl, use, floors, coverage, preLease) => {
+  develop: (bbl, use, floors, coverage, preLeaseShare, contract) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = startDevelopment(game, parcels, bbl, use, floors, coverage, preLease);
+    const r = startDevelopment(game, parcels, bbl, use, floors, coverage, preLeaseShare, contract);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("Ground broken. Watch it rise.");
@@ -337,7 +337,7 @@ export const useStore = create<AppState>((set, get) => ({
     const { parcels } = get();
     const saved = await loadGame(slot);
     if (!saved || !parcels) { toast("That save wouldn't open.", "err"); return; }
-    const fits = saved.v === 9 &&
+    const fits = saved.v === 10 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (!fits) { toast("That save was made on a different city — it can't be loaded here.", "err"); return; }
@@ -399,7 +399,7 @@ export async function loadData() {
     // resume the autosave — unless it references parcels that no longer
     // exist (a save from a different city/dataset), in which case start over
     const saved = await loadGame("auto");
-    const fitsCity = saved && saved.v === 9 &&
+    const fitsCity = saved && saved.v === 10 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (fitsCity) {

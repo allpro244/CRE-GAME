@@ -6,10 +6,10 @@
 // loan, wait 4-6 quarters while the building rises on the map, then lease up
 // from empty. A modest random cost/schedule overrun keeps it honest.
 import type { ParcelTable } from "@/data/types";
-import type { BuiltClass, Development, GameState } from "./types";
+import type { BuiltClass, Contract, Development, GameState } from "./types";
 import { logBooks, monthLabel } from "./types";
 import { rng, rrange } from "./market";
-import { resolveRec } from "./value";
+import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor } from "./value";
 import { genAnchorTenant } from "./leasing";
 
 const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
@@ -17,38 +17,94 @@ const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
 // hard cost $/sf by use, before the height premium and soft costs.
 // Sized so stabilized yield-on-cost lands ~150-250bps over the exit cap —
 // a real development margin, not free money.
+/**
+ * Hard cost per square foot, before the height premium and the contract.
+ *
+ * These must be read against RENT_BASE, because the ratio between them decides
+ * whether a class is buildable at all — and it was wildly out. Retail cost 3.4
+ * times its annual rent to build and penciled on literally every site in the
+ * city; industrial cost 10.3 times its rent and penciled on none. Real
+ * construction runs roughly seven times stabilised rent across the board, and
+ * the differences between classes should come from cap rates and location, not
+ * from one class being free to build.
+ */
 export const HARD_COST_PSF: Record<BuiltClass, number> = {
-  office: 400, mixed: 375, multifamily: 330, retail: 300, industrial: 165,
+  office: 430,        // rent 62 → 6.9x
+  mixed: 400,         // rent 58 → 6.9x
+  multifamily: 320,   // rent 46 → 7.0x
+  retail: 570,        // rent 88 → 6.5x
+  industrial: 118,    // rent 16 → 7.4x
 };
-const SOFT_COST = 0.18;        // design, legal, carry, contingency
+const SOFT_COST = 0.16;        // design, legal, permits, insurance, financing fees
 const CONSTR_SPREAD = 2.4;     // over the index, interest-only
+export const CONTINGENCY = 0.06;  // held against change orders; unspent is yours
 
-// Construction lenders underwrite lease risk, not blueprints. Spec commercial
-// gets thin proceeds (nothing at all in a recession); an anchor pre-lease
-// unlocks real leverage. Residential and industrial carry less lease risk.
-function constructionLtc(use: BuiltClass, preLease: boolean, phase: string): number {
+/**
+ * THE CONTRACT.
+ *
+ * Cost-plus is cheaper on paper and leaves you holding the bag: the price
+ * moves with the market between groundbreak and topping out, and every change
+ * order is yours. A guaranteed maximum price costs four points more and buys
+ * the contractor's balance sheet — escalation stops being your problem and
+ * most overruns die at the GMP line.
+ *
+ * In a boom, when costs are running, the GMP premium is the cheapest money on
+ * the board. In a flat market it is four points of nothing. Reading which one
+ * you are in is the job.
+ */
+export const CONTRACT_PREMIUM: Record<Contract, number> = { gmp: 0.04, costplus: 0 };
+
+/**
+ * Construction lenders underwrite lease risk, not blueprints, and they
+ * underwrite it in a straight line: the more of the building that is already
+ * spoken for, the more of the cost they will fund. Spec commercial in a
+ * recession gets nothing at all. Residential and industrial carry less lease
+ * risk because the space is fungible.
+ */
+function constructionLtc(use: BuiltClass, preLeaseShare: number, phase: string): number {
   const specRisk = use === "office" || use === "retail" || use === "mixed";
-  if (!specRisk) return 0.6;
-  if (preLease) return 0.65;
-  return phase === "recession" ? 0 : 0.45;
+  if (!specRisk) return Math.min(0.68, 0.6 + 0.16 * preLeaseShare);
+  if (phase === "recession" && preLeaseShare < 0.3) return 0;
+  // 45% on pure spec, rising to 70% for a building that is half let already
+  return Math.min(0.70, 0.45 + 0.5 * preLeaseShare);
 }
 
-export const PRE_LEASE_SHARE = 0.35; // anchor takes 35% of the building
-export const PRE_LEASE_EXTRA_M = 3;  // months spent landing the anchor first
+export const MAX_PRE_LEASE = 0.6;    // nobody lets the whole thing before a slab
+export const PRE_LEASE_EXTRA_M = 8;  // months spent landing anchors, at the maximum
+
+/**
+ * What an anchor charges you for signing before there is a building. They are
+ * taking delivery risk and they price it — a discount to market that widens
+ * with how much of the building they are taking.
+ */
+export function preLeaseDiscount(share: number): number {
+  return 1 - 0.16 * (share / MAX_PRE_LEASE);
+}
 
 export interface DevPlan {
   use: BuiltClass;
   floors: number;
   coverage: number;   // share of the lot the floorplate covers
-  preLease: boolean;
+  contract: Contract;
+  preLeaseShare: number;
   sf: number;
   far: number;
   farMax: number;
+  hardCost: number;
+  softCost: number;
+  contingency: number;
+  demo: number;
+  leaseUp: number;    // fit-out, commissions and carry until it is full
   costTotal: number;
-  loanAmount: number;
+  ltc: number;
+  commitment: number;
+  interestReserve: number;
   ratePct: number;
-  equity: number;
+  equity: number;         // the whole equity budget
+  equityAtClose: number;  // what you actually write on day one
   months: number;
+  yieldOnCost: number;    // stabilised NOI ÷ total cost — the developer's number
+  exitCap: number;
   lenderNote?: string;
 }
 
@@ -65,59 +121,135 @@ export function maxFloorsFor(rec: { farMaxComm: number; farMaxRes: number }, cov
   return Math.max(1, Math.floor(farMaxFor(rec) / Math.max(0.08, coverage)));
 }
 
+// The parcel as it will exist once the building is up — what the rent, the
+// cap rate and the leasing costs all have to be read against.
+function asBuiltRec(rec: unknown, use: BuiltClass, sf: number, floors: number) {
+  return { ...(rec as object), class: use, bldgArea: sf, floors } as never;
+}
+
 export function planDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass,
-  floors: number, coverage = 0.6, preLease = false,
+  floors: number, coverage = 0.6, preLeaseShare: number | boolean = 0,
+  contract: Contract = "gmp",
 ): DevPlan | null {
   const rec = parcels[bbl];
   if (!rec || !rec.lotArea) return null;
-  const cov = Math.max(0.25, Math.min(0.9, coverage));
+  const cov = Math.max(0.08, Math.min(0.9, coverage));
   const farMax = farMaxFor(rec);
   const fl = Math.max(1, Math.min(Math.round(floors), maxFloorsFor(rec, cov)));
   const sf = Math.round((rec.lotArea * cov * fl) / 100) * 100;
   if (sf < 2000) return null;
-  const heightPrem = fl > 30 ? 1.28 : fl > 18 ? 1.18 : fl > 8 ? 1.07 : 1;
-  const demo = rec.bldgArea > 0 ? Math.round(rec.bldgArea * 12 * s.econ.costIdx) : 0;
-  const costTotal = Math.round(sf * HARD_COST_PSF[use] * s.econ.costIdx * heightPrem * (1 + SOFT_COST)) + demo;
+
   const canPreLease = use === "office" || use === "retail" || use === "mixed";
-  const ltc = constructionLtc(use, preLease && canPreLease, s.econ.phase);
-  const loanAmount = Math.round(costTotal * ltc);
+  // the old signature took a boolean; keep it working
+  const rawShare = typeof preLeaseShare === "boolean" ? (preLeaseShare ? 0.35 : 0) : preLeaseShare;
+  const pre = canPreLease ? Math.max(0, Math.min(MAX_PRE_LEASE, rawShare)) : 0;
+
+  const heightPrem = fl > 30 ? 1.28 : fl > 18 ? 1.18 : fl > 8 ? 1.07 : 1;
+  const hardCost = Math.round(sf * HARD_COST_PSF[use] * s.econ.costIdx * heightPrem * (1 + CONTRACT_PREMIUM[contract]));
+  const softCost = Math.round(hardCost * SOFT_COST);
+  const demo = rec.bldgArea > 0 ? Math.round(rec.bldgArea * 12 * s.econ.costIdx) : 0;
+  const contingency = Math.round((hardCost + softCost) * CONTINGENCY);
+
+  // THE LEASE-UP RESERVE.
+  //
+  // A building is not finished when the scaffolding comes down; it is finished
+  // when it is full, and getting there costs money that never appears in the
+  // headline budget: fit-out for every tenant, commissions to the brokers who
+  // found them, and the carry on an empty building for months. Leaving it out
+  // made every pro forma flatter itself — and it is exactly the cost that
+  // pre-leasing removes, which is the other half of why a developer signs an
+  // anchor at a discount to market.
+  const openSf = sf * (1 - pre);
+  // apartments have no fit-out, but they do have concessions and marketing
+  const tiPsf = use === "office" ? 32 : use === "retail" ? 22 : use === "mixed" ? 26 : use === "industrial" ? 5 : 7;
+  const lcPsf = use === "multifamily" ? 0 : marketRentPsfYr(asBuiltRec(rec, use, sf, fl), s.econ, "good") * 6 * 0.045;
+  const carryMonths = use === "multifamily" ? 6 : 10;
+  const carry = Math.round(openSf * opexPsf(use, s.econ, false) * (carryMonths / 12));
+  const leaseUp = Math.round(openSf * (tiPsf + lcPsf) * s.econ.costIdx) + carry;
+
+  const costTotal = hardCost + softCost + demo + contingency + leaseUp;
+
+  const ltc = constructionLtc(use, pre, s.econ.phase);
+  const commitment = Math.round(costTotal * ltc);
   const ratePct = +(s.econ.indexRate + CONSTR_SPREAD).toFixed(2);
-  const months = Math.min(30, 11 + Math.round(fl * 0.55)) + (preLease && canPreLease ? PRE_LEASE_EXTRA_M : 0);
+  const baseMonths = Math.min(30, 11 + Math.round(fl * 0.55));
+  const months = baseMonths + Math.round(PRE_LEASE_EXTRA_M * (pre / MAX_PRE_LEASE));
+
+  // The interest reserve: the lender sizes a pot inside the commitment to
+  // carry the loan through construction, because a building under way earns
+  // nothing. Roughly the average outstanding balance times the coupon times
+  // the schedule — an S-curve draw averages a bit over half the commitment.
+  const interestReserve = Math.round(commitment * 0.55 * (ratePct / 100) * (months / 12));
+
+  // Yield on cost against today's stabilised rents — the number a developer
+  // actually lives by, and the spread to the exit cap is the whole margin.
+  const asBuilt = asBuiltRec(rec, use, sf, fl);
+  const rentPsf = marketRentPsfYr(asBuilt, s.econ, "good");
+  const stabOcc = use === "multifamily" ? 0.95 : 0.9;
+  const opex = opexPsf(use, s.econ, false);
+  const stabNoi = sf * (rentPsf * stabOcc - opex) - costTotal * TAX_RATE;
+  // The exit is what THIS building will trade at — new, in good condition, on
+  // this corner — not the citywide class average. Using the average understated
+  // the spread by most of a point everywhere it mattered, which made every
+  // development on the map look like a losing trade.
+  const exitCap = capRateFor(asBuilt, s.econ, "good");
+  const yieldOnCost = costTotal > 0 ? (stabNoi / costTotal) * 100 : 0;
+
   const lenderNote = ltc === 0
-    ? "No construction lender will touch spec commercial in a recession — pre-lease it or build all-equity."
-    : undefined;
+    ? "No construction lender will touch spec commercial in a recession. Pre-lease it, or fund the whole thing yourself."
+    : yieldOnCost < exitCap + 0.75
+      ? `Yield on cost is ${yieldOnCost.toFixed(2)}% against a ${exitCap.toFixed(2)}% exit. That is not a development spread — it is a way to build a building for more than it is worth.`
+      : undefined;
+
   return {
-    use, floors: fl, coverage: cov, preLease: preLease && canPreLease, sf,
+    use, floors: fl, coverage: cov, contract, preLeaseShare: pre, sf,
     far: +(sf / rec.lotArea).toFixed(1), farMax,
-    costTotal, loanAmount, ratePct, equity: costTotal - loanAmount, months, lenderNote,
+    hardCost, softCost, contingency, demo, leaseUp, costTotal,
+    ltc, commitment, interestReserve, ratePct,
+    equity: costTotal - commitment,
+    // Equity funds FIRST. The bank does not release a dollar until yours are
+    // in the ground, which is why a development eats your balance sheet at the
+    // start rather than in even slices.
+    equityAtClose: Math.round((costTotal - commitment) * 0.55),
+    months, yieldOnCost, exitCap, lenderNote,
   };
 }
 
 export function startDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass,
-  floors: number, coverage = 0.6, preLease = false,
+  floors: number, coverage = 0.6, preLeaseShare: number | boolean = 0,
+  contract: Contract = "gmp",
 ): { s: GameState; err?: string } {
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   if (!s.holdings[bbl]) return { s, err: "Buy the dirt first." };
   if (rec.class !== "land") return { s, err: "Clear the site first — demolish what's standing before you build." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
-  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, preLease);
+  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, preLeaseShare, contract);
   if (!plan) return { s, err: "That's too small to be worth building — add floors or cover more of the lot." };
-  if (s.cash < plan.equity) return { s, err: `Ground-breaking needs $${(plan.equity / 1e6).toFixed(2)}M of equity — you're short.` };
+  if (s.cash < plan.equityAtClose) {
+    return { s, err: `The bank funds nothing until your equity is in the ground. That is $${(plan.equityAtClose / 1e6).toFixed(2)}M at close, of $${(plan.equity / 1e6).toFixed(2)}M total — you're short.` };
+  }
   const next = clone(s);
-  next.cash -= plan.equity;
-  logBooks(next, "dev", plan.equity);
+  next.cash -= plan.equityAtClose;
+  logBooks(next, "dev", plan.equityAtClose);
   next.developments[bbl] = {
     bbl, use, sf: plan.sf, floors: plan.floors,
-    costTotal: plan.costTotal, loanBalance: plan.loanAmount, ratePct: plan.ratePct,
-    startM: next.month, deliverM: next.month + plan.months, overrunRolled: false,
-    preLeasedSf: plan.preLease ? Math.round(plan.sf * PRE_LEASE_SHARE) : undefined,
+    costTotal: plan.costTotal, hardCost: plan.hardCost, contract,
+    contingency: plan.contingency, contingencyUsed: 0,
+    commitment: plan.commitment, drawn: 0, loanBalance: 0,
+    interestReserve: plan.interestReserve, reserveUsed: 0,
+    equityBudget: plan.equity, equitySpent: plan.equityAtClose,
+    ratePct: plan.ratePct,
+    startM: next.month, deliverM: next.month + plan.months, baseMonths: plan.months,
+    preLeaseShare: plan.preLeaseShare,
+    preLeasedSf: plan.preLeaseShare > 0 ? Math.round(plan.sf * plan.preLeaseShare) : undefined,
+    events: 0,
   } satisfies Development;
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Ground broken at ${rec.address}: ${plan.floors} floors, ${(plan.sf / 1000).toFixed(0)}k sf of ${use} at ${plan.far} FAR, $${(plan.costTotal / 1e6).toFixed(1)}M budget${plan.preLease ? ", anchor pre-leased" : ""}, delivery ${monthLabel(next.month + plan.months)}.`,
+    text: `Ground broken at ${rec.address}: ${plan.floors} floors, ${(plan.sf / 1000).toFixed(0)}k sf of ${use} at ${plan.far} FAR on a ${contract === "gmp" ? "guaranteed max price" : "cost-plus"} contract. $${(plan.costTotal / 1e6).toFixed(1)}M budget, ${(plan.ltc * 100).toFixed(0)}% funded${plan.preLeaseShare > 0 ? `, ${(plan.preLeaseShare * 100).toFixed(0)}% pre-let` : ", on spec"}. Delivery ${monthLabel(next.month + plan.months)}.`,
   });
   return { s: next };
 }
@@ -161,71 +293,181 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
   return { s: next };
 }
 
-// One quarter of construction across all projects: pay construction interest,
-// roll the overrun die at midpoint, deliver finished buildings.
+/**
+ * ONE MONTH OF CONSTRUCTION.
+ *
+ * A job is not a timer with a cheque at the end. Money goes out on an S-curve
+ * — slow while the hole is dug, fast through the structure, slow through
+ * fit-out — and the bank funds its share against work actually in place, after
+ * your equity is in. Interest runs on what has been drawn and is paid from a
+ * reserve inside the loan until the reserve is gone, and then it is your
+ * problem. Costs move under you unless you bought a guaranteed price. And
+ * things go wrong on their own schedule, not at a convenient midpoint.
+ */
 export function tickDevelopments(s: GameState, parcels: ParcelTable) {
   for (const d of Object.values(s.developments)) {
     const rec = parcels[d.bbl];
     if (!rec || !s.holdings[d.bbl]) { delete s.developments[d.bbl]; continue; }
-    // construction interest, out of pocket
-    const ci = Math.round((d.loanBalance * d.ratePct) / 100 / 12);
-    s.cash -= ci;
-    logBooks(s, "dev", ci);
+    const span = Math.max(1, d.deliverM - d.startM);
+    const t0 = Math.max(0, Math.min(1, (s.month - 1 - d.startM) / span));
+    const t1 = Math.max(0, Math.min(1, (s.month - d.startM) / span));
+    // the classic S-curve of spend against time
+    const curve = (t: number) => t * t * (3 - 2 * t);
+    const spendShare = Math.max(0, curve(t1) - curve(t0));
+    const spendNow = Math.round(d.costTotal * spendShare);
 
-    const mid = Math.floor((d.startM + d.deliverM) / 2);
-    if (!d.overrunRolled && s.month >= mid) {
-      d.overrunRolled = true;
-      if (rng(s) < 0.55) {
-        const bump = rrange(s, 0.03, 0.15);
+    if (spendNow > 0) {
+      // equity first, to the extent any is left; the bank funds the rest
+      const equityLeft = Math.max(0, d.equityBudget - d.equitySpent);
+      const fromEquity = Math.min(equityLeft, spendNow);
+      const fromLoan = Math.min(Math.max(0, d.commitment - d.drawn), spendNow - fromEquity);
+      const unfunded = spendNow - fromEquity - fromLoan;
+      d.equitySpent += fromEquity;
+      d.drawn += fromLoan;
+      d.loanBalance += fromLoan;
+      // anything neither side will fund is a capital call, today
+      s.cash -= fromEquity + unfunded;
+      logBooks(s, "dev", fromEquity + unfunded);
+      if (unfunded > 0) d.equitySpent += unfunded;
+    }
+
+    // interest on the drawn balance, out of the reserve while it lasts
+    if (d.loanBalance > 0) {
+      const interest = Math.round((d.loanBalance * d.ratePct) / 100 / 12);
+      const fromReserve = Math.min(Math.max(0, d.interestReserve - d.reserveUsed), interest);
+      d.reserveUsed += fromReserve;
+      d.loanBalance += fromReserve;              // capitalised into the loan
+      const outOfPocket = interest - fromReserve;
+      if (outOfPocket > 0) {
+        s.cash -= outOfPocket;
+        logBooks(s, "dev", outOfPocket);
+        if (d.reserveUsed >= d.interestReserve && d.reserveUsed - fromReserve < d.interestReserve) {
+          s.news.unshift({
+            q: s.month, kind: "warn",
+            text: `The interest reserve at ${rec.address} is spent. Carry comes out of your pocket from here.`,
+          });
+        }
+      }
+    }
+
+    // COST ESCALATION. Under cost-plus the unspent balance of the job moves
+    // with the market; under a guaranteed maximum price it does not, and that
+    // is what the four-point premium bought.
+    if (d.contract === "costplus" && s.month > d.startM) {
+      const remaining = Math.max(0, d.hardCost * (1 - curve(t1)));
+      const drift = s.econ.phase === "expansion" || s.econ.phase === "peak" ? rrange(s, 0.0012, 0.0038) : rrange(s, -0.001, 0.0016);
+      const escal = Math.round(remaining * drift);
+      if (escal > 0) { d.costTotal += escal; d.hardCost += escal; d.equityBudget += escal; }
+    }
+
+    // SITE RISK, month by month. Each is rare; a two-year job runs the gauntlet
+    // twenty-odd times, which is why schedules slip and budgets grow.
+    const progress = curve(t1);
+    if (progress > 0.04 && progress < 0.97) {
+      const roll = rng(s);
+      const gmpShield = d.contract === "gmp" ? 0.35 : 1;   // the GC eats most of it
+      if (roll < 0.028 * gmpShield) {
+        // change order
+        const bump = rrange(s, 0.015, 0.07);
         const extra = Math.round(d.costTotal * bump);
-        d.costTotal += extra;
-        s.cash -= extra; // change orders are an equity check
-        logBooks(s, "dev", extra);
-        s.news.unshift({ q: s.month, kind: "warn", text: `Change orders at ${rec.address}: the budget grew $${(extra / 1e6).toFixed(2)}M (${(bump * 100).toFixed(0)}%).` });
-      }
-      if (rng(s) < 0.3) {
-        d.deliverM += 1;
-        s.news.unshift({ q: s.month, kind: "warn", text: `Schedule slip at ${rec.address} — delivery moves to ${monthLabel(d.deliverM)}.` });
+        const fromContingency = Math.min(Math.max(0, d.contingency - d.contingencyUsed), extra);
+        d.contingencyUsed += fromContingency;
+        const overrun = extra - fromContingency;
+        d.costTotal += overrun;
+        d.hardCost += overrun;
+        d.equityBudget += overrun;
+        d.events++;
+        s.news.unshift({
+          q: s.month, kind: overrun > 0 ? "warn" : "info",
+          text: overrun > 0
+            ? `Change orders at ${rec.address}: $${(extra / 1e6).toFixed(2)}M, of which $${(overrun / 1e6).toFixed(2)}M is past the contingency and lands on you.`
+            : `Change orders at ${rec.address}: $${(extra / 1e6).toFixed(2)}M, absorbed by the contingency.`,
+        });
+      } else if (roll < 0.055) {
+        d.deliverM += 1 + Math.round(rng(s));
+        d.events++;
+        s.news.unshift({ q: s.month, kind: "warn", text: `Weather and inspections at ${rec.address} — delivery moves to ${monthLabel(d.deliverM)}.` });
+      } else if (roll < 0.062) {
+        // a sub goes under: time AND money, and the GMP does not help much
+        const extra = Math.round(d.costTotal * rrange(s, 0.03, 0.09));
+        const fromContingency = Math.min(Math.max(0, d.contingency - d.contingencyUsed), extra);
+        d.contingencyUsed += fromContingency;
+        const overrun = extra - fromContingency;
+        d.costTotal += overrun; d.hardCost += overrun; d.equityBudget += overrun;
+        d.deliverM += 2 + Math.round(rng(s) * 3);
+        d.events++;
+        s.news.unshift({
+          q: s.month, kind: "warn",
+          text: `A subcontractor at ${rec.address} defaulted. Re-tendering costs $${(extra / 1e6).toFixed(2)}M and pushes delivery to ${monthLabel(d.deliverM)}.`,
+        });
       }
     }
 
-    if (s.month >= d.deliverM) {
-      // delivery: the override becomes the building; the construction loan
-      // converts to a lease-up mini-perm (IO 12 months, 4-year balloon)
-      s.built[d.bbl] = { class: d.use, bldgArea: d.sf, floors: d.floors, yearBuilt: 2026 + Math.floor(s.month / 12) };
-      const h = s.holdings[d.bbl];
-      h.condition = "good";
-      h.lastCapM = s.month;
-      h.tenants = [];
-      h.deliveredM = s.month;   // new space leases with momentum
-      if (d.use === "multifamily") h.occ = 0.1;
-      h.costBasis += d.costTotal;
-      h.assessed = (h.assessed ?? h.costBasis - d.costTotal) + d.costTotal; // improvements hit the tax roll at cost
-      if (d.preLeasedSf) {
-        const built = resolveRec(parcels, s, d.bbl);
-        if (built) genAnchorTenant(s, built, h, d.preLeasedSf);
-      }
-      h.loan = {
-        product: "float",
-        principal: d.loanBalance,
-        balance: d.loanBalance,
-        ratePct: +(s.econ.indexRate + 1.9).toFixed(2),
-        spread: 1.9,
-        ioUntilM: s.month + 12,
-        amortYears: 30,
-        maturityM: s.month + 48,
-        monthlyPmt: Math.round((d.loanBalance * (s.econ.indexRate + 1.9)) / 100 / 12),
-        minDSCR: 1.05, // lease-up paper is forgiving, briefly
-        maxLTV: 0.9,
-        sweep: false,
-        cleanQs: 0,
-        originM: s.month,
-      };
-      delete s.developments[d.bbl];
-      bumpLand(s, d.bbl, 1.06);
-      s.news.unshift({ q: s.month, kind: "deal", text: `Delivered: ${(d.sf / 1000).toFixed(0)}k sf of ${d.use} at ${rec.address}. Now fill it.` });
-    }
+    if (s.month >= d.deliverM) deliver(s, parcels, d, rec);
   }
+}
+
+function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { address: string }) {
+  s.built[d.bbl] = { class: d.use, bldgArea: d.sf, floors: d.floors, yearBuilt: 2026 + Math.floor(s.month / 12) };
+  const h = s.holdings[d.bbl];
+  h.condition = "good";
+  h.lastCapM = s.month;
+  h.tenants = [];
+  h.deliveredM = s.month;
+  if (d.use === "multifamily") h.occ = 0.1;
+  h.costBasis += d.costTotal;
+  h.assessed = (h.assessed ?? h.costBasis - d.costTotal) + d.costTotal;
+
+  // unspent contingency is a rebate, not a rounding error
+  const saved = Math.max(0, d.contingency - d.contingencyUsed);
+  if (saved > 0) {
+    s.cash += saved;
+    logBooks(s, "dev", -saved);
+  }
+
+  if (d.preLeasedSf) {
+    const built = resolveRec(parcels, s, d.bbl);
+    if (built) genAnchorTenant(s, built, h, d.preLeasedSf, preLeaseDiscount(d.preLeaseShare));
+  }
+
+  // THE TAKEOUT. The construction loan does not evaporate — it rolls into a
+  // mini-perm that is interest-only for a year and matures in three, and the
+  // whole job now is to stabilise the building before that clock runs out.
+  // A developer's real risk is not building it. It is owning it empty.
+  h.loan = {
+    product: "float",
+    floating: true,
+    principal: d.loanBalance,
+    balance: d.loanBalance,
+    ratePct: +(s.econ.indexRate + 2.1).toFixed(2),
+    spread: 2.1,
+    ioUntilM: s.month + 12,
+    amortYears: 30,
+    maturityM: s.month + 36,
+    monthlyPmt: Math.round((d.loanBalance * (s.econ.indexRate + 2.1)) / 100 / 12),
+    minDSCR: 1.05,
+    maxLTV: 0.9,
+    sweep: false,
+    cleanQs: 0,
+    originM: s.month,
+    // A building that delivered empty cannot cover anything, and every lender
+    // who writes construction paper knows it. The lease-up holiday runs two
+    // years — long enough to fill it, short enough that failing to is fatal.
+    holidayUntilM: s.month + 24,
+    prepay: "open",
+    prepayUntilM: s.month,
+  };
+  delete s.developments[d.bbl];
+  bumpLand(s, d.bbl, 1.06);
+
+  const over = d.costTotal - (d.hardCost + Math.round(d.hardCost * SOFT_COST));
+  void over;
+  s.news.unshift({
+    q: s.month, kind: "deal",
+    text: `Delivered: ${(d.sf / 1000).toFixed(0)}k sf of ${d.use} at ${rec.address}, ${d.events === 0 ? "on programme" : `after ${d.events} problem${d.events > 1 ? "s" : ""}`}, $${(d.costTotal / 1e6).toFixed(1)}M all in`
+      + (saved > 0 ? `, with $${(saved / 1e6).toFixed(2)}M of contingency returned` : "")
+      + `. The mini-perm matures ${monthLabel(s.month + 36)} — stabilise it before then.`,
+  });
 }
 
 // ---- building management ---------------------------------------------------

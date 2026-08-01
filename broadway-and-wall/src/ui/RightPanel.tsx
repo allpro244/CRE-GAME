@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import { useStore } from "@/state/store";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
+import type { Contract } from "@/engine/types";
 import {
   assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr,
   occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr,
   rollQualitySpread, operatingStatement, recoveryOf, noiAfterTaxYr, netWorth,
 } from "@/engine/value";
-import { planDevelopment, PROGRAMS, programCost, farMaxFor, maxFloorsFor, demolitionCost } from "@/engine/dev";
+import { planDevelopment, PROGRAMS, programCost, farMaxFor, maxFloorsFor, demolitionCost, MAX_PRE_LEASE, PRE_LEASE_EXTRA_M, preLeaseDiscount } from "@/engine/dev";
 import type { BuiltClass } from "@/engine/types";
 import { buyQuote, assemblagePressure, saleTaxQuote, bidOdds } from "@/engine/actions";
 import { MILESTONES } from "@/engine/sim";
@@ -805,7 +806,8 @@ function RefiSection({ bbl }: { bbl: string }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const { refi } = useStore.getState();
-  const [product, setProduct] = useState<string>("agency");
+  const isLand = resolveRec(parcels, game, bbl)?.class === "land";
+  const [product, setProduct] = useState<string>(isLand ? "land" : "agency");
   const [lev, setLev] = useState(1);
   const { quotes, value, payoff } = refiQuotes(game, parcels, bbl);
   if (!quotes.length) return null;
@@ -843,8 +845,16 @@ function RefiSection({ bbl }: { bbl: string }) {
       <div className="hint">{q.why ?? q.blurb}</div>
       <div className="grid">
         <Row k="Lender's maximum" v={`${usd(q.maxProceeds)} · ${(q.ltvAtMax * 100).toFixed(0)}% LTV`} />
-        <Row k="Coverage / debt yield" v={`DSCR ${q.dscrAtMax.toFixed(2)} · DY ${(q.debtYieldAtMax * 100).toFixed(1)}%`} />
-        <Row k="What caps it" v={q.binding} bad={q.binding === "debt yield"} />
+        {/* A vacant site has no income, so a coverage ratio computed against it
+            is not a small number — it is nonsense, and it was being printed
+            six digits wide in front of the player. */}
+        <Row
+          k="Coverage / debt yield"
+          v={q.maxProceeds > 0 && Number.isFinite(q.dscrAtMax) && q.dscrAtMax > 0
+            ? `DSCR ${q.dscrAtMax.toFixed(2)} · DY ${(q.debtYieldAtMax * 100).toFixed(1)}%`
+            : "— no income to cover it"}
+        />
+        <Row k="What caps it" v={q.maxProceeds > 0 ? q.binding : "nothing to lend against"} bad={q.binding === "debt yield" && q.maxProceeds > 0} />
         <Row k="Structure" v={`${q.ioM ? `${Math.round(q.ioM / 12)}-yr IO, ` : ""}${q.amortYears}-yr amort, ${q.termM / 12}-yr term, ${q.floating ? "floating" : "fixed"}`} />
         <Row k="Origination" v={`${(q.points * 100).toFixed(1)} pts · ${usd(Math.round(proceeds * q.points))}`} />
         <Row
@@ -884,11 +894,12 @@ function DevelopSection({ bbl }: { bbl: string }) {
   const [use, setUse] = useState<BuiltClass>("office");
   const [cov, setCov] = useState(0.6);
   const [floors, setFloors] = useState(8);
-  const [preLease, setPreLease] = useState(false);
+  const [preShare, setPreShare] = useState(0);
+  const [contract, setContract] = useState<Contract>("gmp");
   const canPreLease = use === "office" || use === "retail" || use === "mixed";
   const maxFl = maxFloorsFor(rec, cov);
   const fl = Math.min(floors, maxFl);
-  const plan = planDevelopment(game, parcels, bbl, use, fl, cov, preLease && canPreLease);
+  const plan = planDevelopment(game, parcels, bbl, use, fl, cov, canPreLease ? preShare : 0, contract);
   const USES: BuiltClass[] = ["office", "multifamily", "mixed", "retail", "industrial"];
   return (
     <div className="deal">
@@ -924,39 +935,78 @@ function DevelopSection({ bbl }: { bbl: string }) {
         hint={`A slim tower goes higher on the same envelope; a fat podium runs out of FAR sooner (max ${maxFl} floors at this footprint). On a big site you can put up something small and keep the rest of the land.`}
       />
       {canPreLease && (
-        <div className="btn-row">
-          <button
-            className={"btn" + (preLease ? " btn-on" : "")}
-            title="Land a credit anchor for 35% of the building before ground-break: +3 months, but lenders fund 65% of cost instead of 45%"
-            onClick={() => setPreLease(!preLease)}
-          >
-            {preLease ? "✓ Anchor pre-lease" : "Secure anchor pre-lease first"}
-          </button>
-        </div>
+        <Slider
+          label="Pre-let before ground-break"
+          value={preShare}
+          min={0}
+          max={MAX_PRE_LEASE}
+          step={0.05}
+          onChange={setPreShare}
+          format={(v) => (v <= 0.001 ? "on spec" : `${Math.round(v * 100)}% · ${sf(rec.lotArea * cov * fl * v)}`)}
+          marks={[{ at: 0, label: "spec" }, { at: 0.3, label: "30%" }, { at: MAX_PRE_LEASE, label: "60%" }]}
+          hint={`Anchors take delivery risk and charge for it — ${((1 - preLeaseDiscount(preShare)) * 100).toFixed(0)}% under market at this level, locked for fifteen years. In exchange the lender funds ${Math.round(plan ? plan.ltc * 100 : 45)}% of cost instead of 45%, and you wait ${Math.round(PRE_LEASE_EXTRA_M * (preShare / MAX_PRE_LEASE))} extra months to start.`}
+        />
       )}
+      <div className="btn-row">
+        {/* The contract is the developer's real hedge and nobody ever shows it
+            to you. In a boom the guaranteed price is the cheapest money on the
+            board; in a flat market it is four points of nothing. */}
+        <button
+          className={"btn" + (contract === "gmp" ? " btn-on" : "")}
+          title="Guaranteed maximum price: +4% on hard cost, and the contractor carries escalation and most change orders."
+          onClick={() => setContract("gmp")}
+        >
+          Guaranteed max price
+        </button>
+        <button
+          className={"btn" + (contract === "costplus" ? " btn-on" : "")}
+          title="Cost-plus: cheaper today, but the unspent budget moves with the market and every change order is yours."
+          onClick={() => setContract("costplus")}
+        >
+          Cost-plus
+        </button>
+      </div>
       {plan ? (
         <>
           <div className="grid" style={{ marginTop: 8 }}>
             <Row k="Building" v={`${sf(plan.sf)} · ${plan.floors} fl · ${(plan.floors * 3.4).toFixed(0)} m tall`} strong />
             <Row k="FAR used" v={`${plan.far} of ${plan.farMax.toFixed(1)}`} />
-            <Row k="All-in cost" v={usd(plan.costTotal)} />
-            <Row k="Cost / sf" v={"$" + (plan.costTotal / Math.max(1, plan.sf)).toFixed(0)} />
+            <Row k="Hard cost" v={`${usd(plan.hardCost)} · $${(plan.hardCost / Math.max(1, plan.sf)).toFixed(0)}/sf`} />
+            <Row k="Soft cost" v={usd(plan.softCost)} />
+            {plan.demo > 0 && <Row k="Demolition" v={usd(plan.demo)} />}
+            <Row k="Contingency" v={`${usd(plan.contingency)} · yours if unspent`} />
+            <Row k="Lease-up reserve" v={`${usd(plan.leaseUp)} · fit-out, commissions and carry until it is full`} />
+            <Row k="All in" v={`${usd(plan.costTotal)} · $${(plan.costTotal / Math.max(1, plan.sf)).toFixed(0)}/sf`} strong />
             <Row
-              k={`Constr. loan (${Math.round((plan.loanAmount / Math.max(1, plan.costTotal)) * 100)}%)`}
-              v={plan.loanAmount > 0 ? usd(plan.loanAmount) + " @ " + pct(plan.ratePct) : "none — all equity"}
+              k={`Construction loan (${Math.round(plan.ltc * 100)}% of cost)`}
+              v={plan.commitment > 0 ? `${usd(plan.commitment)} @ ${pct(plan.ratePct)}` : "none — nobody will fund it"}
+              bad={plan.commitment === 0}
             />
-            <Row k="Your equity" v={usd(plan.equity)} strong bad={plan.equity > game.cash} />
+            <Row k="Interest reserve" v={plan.interestReserve > 0 ? `${usd(plan.interestReserve)} inside the loan` : "—"} />
+            {/* The two numbers that decide whether this is a development or a
+                donation: what it yields on what it costs, against what the
+                market will pay for it when it is finished. */}
+            <Row
+              k="Yield on cost"
+              v={`${plan.yieldOnCost.toFixed(2)}% vs ${plan.exitCap.toFixed(2)}% exit · ${(plan.yieldOnCost - plan.exitCap) >= 0 ? "+" : ""}${((plan.yieldOnCost - plan.exitCap) * 100).toFixed(0)} bps`}
+              strong
+              bad={plan.yieldOnCost - plan.exitCap < 0.75}
+            />
+            <Row k="Total equity" v={usd(plan.equity)} />
+            <Row k="Equity at close" v={`${usd(plan.equityAtClose)} — the bank funds nothing until yours is in`} strong bad={plan.equityAtClose > game.cash} />
             <Row k="Schedule" v={plan.months + " months"} />
-            {plan.preLease && <Row k="Pre-leased" v={`${sf(plan.sf * 0.35)} anchor at delivery`} />}
+            {plan.preLeaseShare > 0 && (
+              <Row k="Pre-let" v={`${sf(plan.sf * plan.preLeaseShare)} at ${((1 - preLeaseDiscount(plan.preLeaseShare)) * 100).toFixed(0)}% under market`} />
+            )}
           </div>
           {plan.lenderNote && <div className="hint">{plan.lenderNote}</div>}
           <div className="btn-row">
             <button
               className="btn btn-buy"
-              disabled={plan.equity > game.cash}
-              onClick={() => useStore.getState().develop(bbl, use, fl, cov, preLease && canPreLease)}
+              disabled={plan.equityAtClose > game.cash || plan.commitment === 0 && plan.equity > game.cash}
+              onClick={() => useStore.getState().develop(bbl, use, fl, cov, preShare, contract)}
             >
-              Break ground · {usd(plan.equity)}
+              Break ground · {usd(plan.equityAtClose)}
             </button>
           </div>
         </>

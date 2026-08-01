@@ -72,6 +72,7 @@ export interface Loan {
   sweep: boolean;        // breach: cash flow trapped to principal until cured
   cleanQs: number;
   originM: number;
+  holidayUntilM?: number;  // covenants do not bite until this month
   cap?: { strike: number; expiresM: number }; // purchased rate cap: index capped at strike
 }
 
@@ -100,18 +101,37 @@ export interface Holding {
 // Ground-up development on an owned vacant lot (Groundwork, simplified):
 // pick use and FAR up to zoning, 60% construction loan, the building rises
 // over 4-6 quarters, then leases up from empty.
+export type Contract = "gmp" | "costplus";
+
 export interface Development {
   bbl: string;
   use: BuiltClass;
   sf: number;
   floors: number;
-  costTotal: number;
-  loanBalance: number;   // construction loan, interest-only
+  costTotal: number;      // the budget as it stands today, escalation included
+  hardCost: number;       // the part exposed to escalation under cost-plus
+  contract: Contract;
+  contingency: number;    // held back against change orders; unspent is yours
+  contingencyUsed: number;
+
+  // The loan does not land in your account on day one. Equity goes in first,
+  // then the bank funds draws against work in place, and the interest on what
+  // has been drawn is paid out of a reserve inside the loan until it runs dry.
+  commitment: number;     // the lender's total commitment
+  drawn: number;          // funded to date
+  loanBalance: number;    // drawn + capitalised interest
+  interestReserve: number;
+  reserveUsed: number;
+  equityBudget: number;   // your share of the budget
+  equitySpent: number;
   ratePct: number;
+
   startM: number;
   deliverM: number;
-  overrunRolled: boolean;
-  preLeasedSf?: number;  // anchor tenant secured before ground-break
+  baseMonths: number;     // schedule at groundbreak, before slips
+  preLeaseShare: number;  // 0 if built on spec
+  preLeasedSf?: number;
+  events: number;         // how many things have gone wrong
 }
 
 // A delivered development overrides the static parcel record.
@@ -211,7 +231,7 @@ export interface Exit {
 }
 
 export interface GameState {
-  v: 9;
+  v: 10;
   seed: number;
   rng: number;
   month: number;

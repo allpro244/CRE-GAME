@@ -3,10 +3,11 @@
 // quarter, and cash sweeps on breach. Proceeds gate on DSCR at underwriting,
 // not just LTV — a lender lends against income, not hope.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import { resolveRec } from "./value";
+import { resolveRec, concentration } from "./value";
 import type { GameState, Holding, Loan } from "./types";
 import { logBooks } from "./types";
 import { holdingNOIYr, holdingValue } from "./value";
+import { walt } from "./leasing";
 
 export type PrepayKind = "open" | "stepdown" | "yieldmaint";
 
@@ -249,7 +250,7 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
 
   // covenants — after a 12-month stabilization holiday, so a building you
   // just bought with honest vacancy isn't in default before the ink dries
-  const holiday = q < loan.originM + 12;
+  const holiday = q < (loan.holidayUntilM ?? loan.originM + 12);
   const d = dscr(rec, s, h);
   const l = ltv(rec, s, h);
   const breached = !holiday && ((d !== null && d < loan.minDSCR) || (l !== null && l > loan.maxLTV));
@@ -286,11 +287,17 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
     const value = holdingValue(rec, s.econ, h, s.month);
     const noi = holdingNOIYr(rec, s.econ, h, q);
     const product = PRODUCTS[0];
-    const qd = quote(s, product, value, noi);
+    // A takeout is underwritten on the roll you actually have on the day the
+    // balloon lands — which for a building that delivered empty and never
+    // stabilised is exactly the moment the concentration and rollover
+    // haircuts hurt most.
+    const hair = collateralHaircut(h, q);
+    const raw = quote(s, product, value, noi);
+    const qd = { ...raw, principal: Math.round(raw.principal * hair.mult) };
     const fee = Math.round(loan.balance * REFI_FEE);
     if (qd.principal >= loan.balance + fee) {
       const rolled = loan.balance;
-      h.loan = originate(s, product, value, noi);
+      h.loan = originate(s, product, value, noi, hair.mult);
       if (h.loan) {
         h.loan.balance = h.loan.principal = rolled;
         h.loan.monthlyPmt = Math.round(monthlyPayment(rolled, h.loan.ratePct, h.loan.amortYears));
@@ -390,14 +397,51 @@ export interface RefiQuote {
   why?: string;            // ...and says so when it isn't
 }
 
+/**
+ * The haircut a lender takes for concentration and rollover.
+ *
+ * A credit committee does not lend against a rent roll — it lends against the
+ * covenants in it. One tenant at eighty per cent of the income with three
+ * years to run is a bullet loan against that tenant's credit, and it gets
+ * sized like one. Long paper from a strong name earns most of it back, which
+ * is why single-tenant net-lease deals can be financed to the eyebrows and
+ * multi-tenant buildings with the same NOI cannot.
+ */
+export function collateralHaircut(h: Holding, month: number): { mult: number; why?: string } {
+  if (!h.tenants.length) return { mult: 1 };
+  const conc = concentration(h);
+  const w = walt(h, month);
+  let sfTot = 0, wCredit = 0, rollSf = 0;
+  for (const t of h.tenants) {
+    sfTot += t.sf;
+    wCredit += t.credit * t.sf;
+    if (t.endM - month <= 24) rollSf += t.sf;
+  }
+  const credit = sfTot ? wCredit / sfTot : 0;
+  const rollShare = sfTot ? rollSf / sfTot : 0;
+  // concentration bites past a third of the roll, and long strong paper undoes it
+  const concHit = Math.max(0, conc - 0.35) / 0.65 * (credit >= 1.6 && w >= 8 ? 0.10 : credit >= 1.6 ? 0.20 : 0.32);
+  // and the desk discounts income that walks out the door inside the term
+  const rollHit = Math.max(0, rollShare - 0.3) / 0.7 * 0.18;
+  const mult = Math.max(0.55, 1 - concHit - rollHit);
+  const why = concHit > 0.08 && rollHit > 0.05
+    ? `the biggest tenant is ${(conc * 100).toFixed(0)}% of the roll and ${(rollShare * 100).toFixed(0)}% of it rolls inside two years`
+    : concHit > 0.08 ? `the biggest tenant is ${(conc * 100).toFixed(0)}% of the roll`
+    : rollHit > 0.05 ? `${(rollShare * 100).toFixed(0)}% of the roll expires inside two years`
+    : undefined;
+  return { mult, why };
+}
+
 export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { quotes: RefiQuote[]; value: number; payoff: number } {
   const h = s.holdings[bbl];
   const rec = resolveRec(parcels, s, bbl);
   if (!h || !rec) return { quotes: [], value: 0, payoff: 0 };
   const value = holdingValue(rec, s.econ, h, s.month);
   const noi = holdingNOIYr(rec, s.econ, h, s.month);
+  const hair = collateralHaircut(h, s.month);
   const quotes = PRODUCTS.map((p) => {
-    const q = quote(s, p, value, noi);
+    const raw = quote(s, p, value, noi);
+    const q = { ...raw, principal: Math.round(raw.principal * hair.mult) };
     const annualDs = p.ioM > 0
       ? (q.principal * q.ratePct) / 100
       : monthlyPayment(Math.max(1, q.principal), q.ratePct, p.amortYears) * 12;
@@ -422,7 +466,9 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       kicker: p.kicker,
       floating: p.floating,
       available: p.mezz ? !!senior : p.uwDscr <= 0 ? rec.class === "land" : rec.class !== "land",
-      why: p.mezz && !senior ? "Mezzanine sits behind a senior loan — put one on first."
+      why: hair.why && hair.mult < 0.95 && !p.mezz
+        ? `Proceeds cut ${((1 - hair.mult) * 100).toFixed(0)}% — ${hair.why}.`
+        : p.mezz && !senior ? "Mezzanine sits behind a senior loan — put one on first."
         : p.uwDscr <= 0 && rec.class !== "land" ? "Land money is for dirt. This one has a building on it."
         : p.uwDscr > 0 && rec.class === "land" ? "No income to underwrite — a vacant site only gets a land loan."
         : undefined,
@@ -441,8 +487,11 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   const product = productById(productId);
   const value = holdingValue(rec, next.econ, h, next.month);
   const noi = holdingNOIYr(rec, next.econ, h, next.month);
+  // The quote screen already told you the desk was cutting proceeds for a
+  // concentrated or fast-rolling rent roll. The close has to agree with it.
+  const hair = collateralHaircut(h, next.month);
   const full = quote(next, product, value, noi);
-  const qd = { ...full, principal: Math.round(full.principal * Math.max(0, Math.min(1, lev))) };
+  const qd = { ...full, principal: Math.round(full.principal * hair.mult * Math.max(0, Math.min(1, lev))) };
   if (product.mezz && !h.loan) return { s, err: "Mezzanine sits behind a senior loan — put one on first." };
   const oldBal = h.loan?.balance ?? 0;
   const penalty = h.loan ? prepayPenalty(h.loan, next.month) : 0;
@@ -457,7 +506,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
         : "Proceeds don't cover the payoff — you're underwater on this refi.",
     };
   }
-  const newLoan = originate(next, product, value, noi, lev);
+  const newLoan = originate(next, product, value, noi, lev * hair.mult);
   if (!newLoan) return { s, err: "No lender will size a loan against this income." };
   next.cash += qd.principal - oldBal - fee;
   logBooks(next, "debtSvc", fee);

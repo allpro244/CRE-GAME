@@ -202,10 +202,15 @@ export const MAKE_READY_PSF = 6; // turn cost, $/sf before cost inflation
 
 // Anchor pre-lease for a development: one large credit tenant signed before
 // delivery, long paper at a small discount to market for taking the risk.
-export function genAnchorTenant(s: GameState, rec: ParcelRecord, h: Holding, sfWanted: number) {
+/**
+ * The anchor who signed before there was a building. They took delivery risk
+ * and they priced it — `discount` is what that cost you, and it is locked in
+ * for a decade and a half.
+ */
+export function genAnchorTenant(s: GameState, rec: ParcelRecord, h: Holding, sfWanted: number, discount = 1) {
   if (!isCommercial(rec) || sfWanted < 1000) return;
   const sector = pickSector(s, rec.class);
-  const market = marketRentPsfYr(rec, s.econ, h.condition);
+  const market = marketRentPsfYr(rec, s.econ, h.condition) * discount;
   h.tenants.push({
     name: pickName(s, sector),
     sector,

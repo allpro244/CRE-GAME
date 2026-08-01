@@ -195,6 +195,48 @@ export function carveCorridor(cells, p, angleRad, halfWidth) {
   return out;
 }
 
+// Trim cells back to the edge of a curving water body.
+//
+// The obvious move — treat the river as an obstacle and clip to the outside of
+// its convex hull — is wrong, and badly so: the hull of an S-curve is a blob
+// the size of the whole map, so every block gets shoved hundreds of metres off
+// the bank. That is the most valuable ground in a river city, left as mud.
+//
+// Instead each cell is cut against the ONE spine segment nearest to it, using
+// that segment's local half-width. A half-plane cut on a convex ring is exact
+// and keeps it convex, and because a block only ever spans a segment or two,
+// the straight-line approximation is invisible.
+export function trimToWater(cells, spine, halfWidthAt, minArea = 300) {
+  const out = [];
+  for (const cell of cells) {
+    let ring = cell.ring ?? cell;
+    const c = centroid(ring);
+    let reach = 0;
+    for (const p of ring) reach = Math.max(reach, dist(p, c));
+
+    for (let i = 0; i < spine.length - 1 && ring; i++) {
+      const a = spine[i], b = spine[i + 1];
+      const ex = b[0] - a[0], ey = b[1] - a[1];
+      const L2 = ex * ex + ey * ey || 1;
+      const t = Math.max(0, Math.min(1, ((c[0] - a[0]) * ex + (c[1] - a[1]) * ey) / L2));
+      const q = [a[0] + ex * t, a[1] + ey * t];
+      const w = halfWidthAt((i + t) / (spine.length - 1));
+      const d = dist(c, q);
+      if (d > w + reach) continue;                    // this segment cannot reach the cell
+      const len = Math.sqrt(L2);
+      let nx = -ey / len, ny = ex / len;              // unit normal to the run
+      const sgn = (c[0] - q[0]) * nx + (c[1] - q[1]) * ny >= 0 ? 1 : -1;
+      nx *= sgn; ny *= sgn;                           // point at the cell's own bank
+      const lim = q[0] * nx + q[1] * ny + w;          // the waterline on that side
+      ring = cleanRing(clipRingHalfPlane(ring, -nx, -ny, -lim) ?? []);
+      if (!ring || ring.length < 3 || !isConvex(ring) || polygonArea([ring]) < minArea) { ring = null; break; }
+    }
+    if (!ring) continue;
+    out.push(cell.ring ? { ...cell, ring } : ring);
+  }
+  return out;
+}
+
 export function chamfer(ring, i, cut) {
   const n = ring.length;
   const prev = ring[(i - 1 + n) % n], cur = ring[i], nxt = ring[(i + 1) % n];
@@ -303,6 +345,7 @@ export function emitCity(cfg) {
     name, slug, seed, proj, rand, blocks,
     landRings,            // [{ outer, holes: [] }] — holes read as water
     parks = [], piers = [], deco = [], stations = [], labels = [], trees = [],
+    extraPavement = [],   // boulevards and plazas carved OUT of the cells still need a surface
     esplanade = null,     // { coast, inner }
     shoreLines = [],      // extra polylines drawn as streets (quays, embankments)
     heat, farFor, vacancyP, classTable, yearFor, skylineFor, lotOpt,
@@ -411,6 +454,26 @@ export function emitCity(cfg) {
   }
 
   // --- context --------------------------------------------------------------
+  // The cell is the block PLUS its half of the surrounding street, and the
+  // cells tile the land exactly — so painting the cells as pavement and the
+  // insets back over them as blocks yields the street network for free, with
+  // two real curbs instead of a hairline. The cell ring is shared by
+  // neighbouring cells, which makes it the centre of the street as well.
+  const pavementFeatures = [...blocks.map((b) => b.ring), ...extraPavement].map((ring) => ({
+    type: "Feature",
+    geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
+    properties: { kind: "pavement" },
+  }));
+  const blockFeatures = blocks.map((b) => ({
+    type: "Feature",
+    geometry: { type: "Polygon", coordinates: [[...b.inset.map(proj.toLL), proj.toLL(b.inset[0])]] },
+    properties: { kind: "block" },
+  }));
+  const centerFeatures = blocks.map((b) => ({
+    type: "Feature",
+    geometry: { type: "LineString", coordinates: [...b.ring.map(proj.toLL), proj.toLL(b.ring[0])] },
+    properties: { kind: "centerline", cls: b.lane ? "lane" : "grid" },
+  }));
   const streetFeatures = blocks.map((b) => ({
     type: "Feature",
     geometry: { type: "LineString", coordinates: [...b.inset.map(proj.toLL), proj.toLL(b.inset[0])] },
@@ -465,7 +528,7 @@ export function emitCity(cfg) {
       properties: { kind: "park" },
     });
   }
-  contextFeatures.push(...streetFeatures);
+  contextFeatures.push(...pavementFeatures, ...blockFeatures, ...centerFeatures, ...streetFeatures);
   for (const p of trees) {
     contextFeatures.push({ type: "Feature", geometry: { type: "Point", coordinates: proj.toLL(p) }, properties: { kind: "tree" } });
   }

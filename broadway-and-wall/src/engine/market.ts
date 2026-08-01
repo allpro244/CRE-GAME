@@ -30,6 +30,10 @@ const PHASE_CFG: Record<MarketPhase, { rateMu: number; rentDrift: number; devDri
 };
 
 export const CAP_BASE = { office: 5.6, retail: 6.1, mixed: 5.7, multifamily: 4.9, industrial: 6.9 } as const;
+// Rough citywide inventory by class, in sf — the denominator that turns other
+// people's construction into a rent effect you can feel.
+export const CITY_STOCK = { office: 26e6, retail: 11e6, mixed: 9e6, multifamily: 31e6, industrial: 14e6 } as const;
+export const SECTOR_LABEL = { office: "Office", retail: "Retail", mixed: "Mixed-use", multifamily: "Apartments", industrial: "Industrial" } as const;
 export const RENT_BASE = { office: 62, retail: 88, mixed: 58, multifamily: 46, industrial: 16 } as const; // $/sf/yr
 
 export function initEcon(s: GameState): Econ {
@@ -43,6 +47,11 @@ export function initEcon(s: GameState): Econ {
     capRate: { office: CAP_BASE.office, retail: CAP_BASE.retail, mixed: CAP_BASE.mixed, multifamily: CAP_BASE.multifamily, industrial: CAP_BASE.industrial },
     rentIdx: { office: RENT_BASE.office, retail: RENT_BASE.retail, mixed: RENT_BASE.mixed, multifamily: RENT_BASE.multifamily, industrial: RENT_BASE.industrial },
     costIdx: 1,
+    sectorMom: { office: 0, retail: 0, mixed: 0, multifamily: 0, industrial: 0 },
+    pipeline: { office: 0, retail: 0, mixed: 0, multifamily: 0, industrial: 0 },
+    starts: { office: 0, retail: 0, mixed: 0, multifamily: 0, industrial: 0 },
+    creditIdx: 1,
+    employIdx: 1,
     history: [],
   };
   econ.phaseMLeft = Math.round(12 + 30 * rng(s));
@@ -109,16 +118,71 @@ export function tickEcon(s: GameState) {
   // cycle deviation drifts with phase, spring-loaded toward its bounds
   e.cycleDev = clamp(e.cycleDev + c2.devDrift + rrange(s, -0.03, 0.03), -1, 1);
 
-  // rents per class: phase drift + noise, multifamily steadier than office
-  for (const k of BUILT_CLASSES) {
-    const vol = k === "multifamily" ? 0.002 : k === "office" ? 0.004 : k === "industrial" ? 0.0024 : 0.003;
-    e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.55, e.rentIdx[k] * (1 + c2.rentDrift + rrange(s, -vol, vol)));
+  // --- capital availability -------------------------------------------------
+  // Money is not a smooth function of the policy rate. It leaves the room in a
+  // downturn and comes back late, and that lag is where the bargains are.
+  const creditTarget = e.phase === "expansion" ? 1.12 : e.phase === "peak" ? 1.0
+    : e.phase === "recession" ? 0.54 : 0.88;
+  const creditSpeed = creditTarget < e.creditIdx ? 0.16 : 0.055;   // slams shut, reopens slowly
+  e.creditIdx = clamp(e.creditIdx + creditSpeed * (creditTarget - e.creditIdx) + rrange(s, -0.012, 0.012), 0.4, 1.25);
+  if (e.creditIdx < 0.66 && rng(s) < 0.02) {
+    pushNews(s, "warn", "The debt markets have effectively closed. Term sheets are being pulled mid-deal.");
   }
 
-  // cap rates: anchored to class base, dragged by the loan index, walked
+  // --- employment: the demand behind every lease -----------------------------
+  const jobDrift = e.phase === "expansion" ? 0.0026 : e.phase === "peak" ? 0.0008
+    : e.phase === "recession" ? -0.0031 : 0.0015;
+  e.employIdx = clamp(e.employIdx * (1 + jobDrift + rrange(s, -0.0012, 0.0012)), 0.55, 12);
+
+  // --- sector momentum ------------------------------------------------------
+  // Slow independent walks, mean-reverting to zero. Occasionally one class gets
+  // a shock of its own — a sector rotation the rest of the market doesn't feel.
   for (const k of BUILT_CLASSES) {
-    const target = CAP_BASE[k] + 0.38 * (e.indexRate - 5.4) - 0.25 * e.cycleDev;
-    e.capRate[k] = clamp(e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045), 3.6, 9.5);
+    const persist = k === "multifamily" ? 0.985 : 0.975;
+    e.sectorMom[k] = clamp(e.sectorMom[k] * persist + rrange(s, -0.0009, 0.0009), -0.02, 0.02);
+  }
+  if (rng(s) < 0.012) {
+    const k = BUILT_CLASSES[Math.floor(rng(s) * BUILT_CLASSES.length) % BUILT_CLASSES.length];
+    const up = rng(s) < 0.5;
+    e.sectorMom[k] = clamp(e.sectorMom[k] + (up ? 0.009 : -0.009), -0.02, 0.02);
+    pushNews(s, up ? "event" : "warn", up
+      ? `${SECTOR_LABEL[k]} is having a moment — tenants in that sector are expanding hard.`
+      : `${SECTOR_LABEL[k]} demand is rolling over. Brokers are quietly cutting asking rents.`);
+  }
+
+  // --- the construction pipeline --------------------------------------------
+  // Everyone else builds when it pays, and delivers three years later into a
+  // market that has usually turned. Starts scale with the spread between what
+  // rent supports and what construction costs, and with whether anyone will
+  // lend. Deliveries land as supply, and supply is what ends a boom.
+  for (const k of BUILT_CLASSES) {
+    const margin = (e.rentIdx[k] / RENT_BASE[k]) / e.costIdx - 1;         // profit signal
+    const appetite = Math.max(0, margin + 0.06 * e.cycleDev) * e.creditIdx;
+    const start = CITY_STOCK[k] * 0.0016 * Math.min(2.4, appetite * 5) * (0.7 + 0.6 * rng(s));
+    e.starts[k] = Math.round(start);
+    e.pipeline[k] += start;
+    const delivered = e.pipeline[k] / 30;                                  // ~30-month build
+    e.pipeline[k] = Math.max(0, e.pipeline[k] - delivered);
+    // supply pressure: new stock as a share of the class's inventory
+    e.supplyPress = e.supplyPress ?? {};
+    e.supplyPress[k] = delivered / CITY_STOCK[k];
+  }
+
+  // rents per class: phase drift + sector momentum − supply, plus noise
+  for (const k of BUILT_CLASSES) {
+    const vol = k === "multifamily" ? 0.002 : k === "office" ? 0.004 : k === "industrial" ? 0.0024 : 0.003;
+    const supply = (e.supplyPress?.[k] ?? 0) * 26;      // deliveries bite on rent
+    const drift = c2.rentDrift + e.sectorMom[k] * 0.5 - supply + (jobDrift * 0.35);
+    e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.5, e.rentIdx[k] * (1 + drift + rrange(s, -vol, vol)));
+  }
+
+  // cap rates: class base, dragged by the loan index and the cycle, and gapped
+  // out when nobody will lend — a credit crunch reprices everything at once
+  for (const k of BUILT_CLASSES) {
+    const crunch = 1.6 * Math.max(0, 1 - e.creditIdx);
+    const sector = -14 * e.sectorMom[k];
+    const target = CAP_BASE[k] + 0.38 * (e.indexRate - 5.4) - 0.25 * e.cycleDev + crunch + sector;
+    e.capRate[k] = clamp(e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045), 3.4, 11);
   }
 
   // Citywide land index TRACKS the rent level rather than compounding off it —
@@ -144,6 +208,8 @@ function recordHistory(e: Econ, q: number) {
     cycleDev: +e.cycleDev.toFixed(3),
     capOffice: +e.capRate.office.toFixed(2),
     rentOffice: +e.rentIdx.office.toFixed(2),
+    creditIdx: +e.creditIdx.toFixed(3),
+    employIdx: +e.employIdx.toFixed(3),
   });
   if (e.history.length > 240) e.history.shift();
 }

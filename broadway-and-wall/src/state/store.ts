@@ -41,8 +41,8 @@ interface AppState {
   buy: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
   buyOff: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
   approach: (bbl: string) => void;
-  respondLoi: (id: number, action: LOIAction) => void;
-  refi: (bbl: string, product: "fixed" | "float", lev?: number) => void;
+  respondLoi: (id: number, action: LOIAction, fund?: boolean) => void;
+  refi: (bbl: string, product: string, lev?: number) => void;
   develop: (bbl: string, use: BuiltClass, floors: number, coverage: number, preLease?: boolean) => void;
   raze: (bbl: string) => void;
   program: (bbl: string, id: string) => void;
@@ -163,11 +163,13 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  respondLoi: (id, action) => {
+  respondLoi: (id, action, fund) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = respondLOI(game, parcels, id, action);
-    if (r.err) { toast(r.err, "err"); return; }
+    const r = respondLOI(game, parcels, id, action, fund);
+    // An error can still carry a new state — a counter the tenant took but you
+    // could not fund kills the deal, and that has to stick.
+    if (r.err) { toast(r.err, "err"); if (r.s !== game) { set({ game: r.s }); void persist(r.s); } return; }
     set({ game: r.s });
     if (r.msg) toast(r.msg);
     void persist(r.s);
@@ -335,7 +337,7 @@ export const useStore = create<AppState>((set, get) => ({
     const { parcels } = get();
     const saved = await loadGame(slot);
     if (!saved || !parcels) { toast("That save wouldn't open.", "err"); return; }
-    const fits = saved.v === 8 &&
+    const fits = saved.v === 9 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (!fits) { toast("That save was made on a different city — it can't be loaded here.", "err"); return; }
@@ -397,7 +399,7 @@ export async function loadData() {
     // resume the autosave — unless it references parcels that no longer
     // exist (a save from a different city/dataset), in which case start over
     const saved = await loadGame("auto");
-    const fitsCity = saved && saved.v === 8 &&
+    const fitsCity = saved && saved.v === 9 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (fitsCity) {

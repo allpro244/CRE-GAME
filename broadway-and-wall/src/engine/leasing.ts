@@ -7,6 +7,14 @@ import type { Credit, GameState, Holding, LOI, Sector } from "./types";
 import { logBooks } from "./types";
 import { rng, rrange } from "./market";
 import { marketRentPsfYr, managedRentPsfYr, occupancy, resolveRec } from "./value";
+import { drawLoc, locAvailable } from "./credit";
+
+const CAP_KEYS = { office: 0, retail: 0, mixed: 0, multifamily: 0, industrial: 0 };
+
+const money = (n: number) =>
+  n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M`
+  : n >= 10_000 ? `$${Math.round(n / 1000)}K`
+  : `$${Math.round(n).toLocaleString()}`;
 
 const POOL: Record<Sector, string[]> = {
   finance: ["Meridian Capital", "Harborline Securities", "Crown & Weir", "Bellamy Fund Group", "Quayside Partners"],
@@ -44,6 +52,74 @@ export function isCommercial(rec: ParcelRecord): boolean {
   return rec.class === "office" || rec.class === "retail" || rec.class === "mixed" || rec.class === "industrial";
 }
 
+// ---------------------------------------------------------------- the stack
+// A building is not an undivided pile of square feet — it is a fixed number of
+// leasable spaces, and that number is the thing a landlord actually manages.
+// Everything downstream (the rent roll, inbound LOIs, occupancy on the
+// portfolio) is expressed in whole suites, so "3 of 4 leased" is the truth
+// rather than a rounding of some square-foot ratio.
+//
+// Typical suite by class, in sf. Bigger buildings get bigger suites — a
+// 400,000 sf tower does not lease in 2,000 ft bites — but never so big that a
+// tower becomes a single unit.
+export function suiteSf(rec: ParcelRecord): number {
+  const a = Math.max(1, rec.bldgArea);
+  switch (rec.class) {
+    case "multifamily": return 900;                                    // an apartment
+    case "industrial":  return Math.max(12_000, Math.min(90_000, a / 2.2));
+    case "retail":      return Math.max(1_400, Math.min(14_000, a / 6));
+    case "mixed":       return Math.max(2_000, Math.min(18_000, a / 9));
+    default:            return Math.max(2_500, Math.min(28_000, a / 12));  // office
+  }
+}
+
+// How many leasable spaces the building holds.
+export function unitCount(rec: ParcelRecord): number {
+  if (!rec.bldgArea) return 0;
+  return Math.max(1, Math.round(rec.bldgArea / suiteSf(rec)));
+}
+
+// How many of them a given lease occupies.
+export function unitsOf(rec: ParcelRecord, sf: number): number {
+  return Math.max(1, Math.round(sf / suiteSf(rec)));
+}
+
+/** Leased / total spaces, and the sf behind each — the tenancy at a glance. */
+export function unitStatus(rec: ParcelRecord, h: Holding, month: number): {
+  total: number; leased: number; vacant: number; notReady: number; sfPer: number;
+} {
+  const total = unitCount(rec);
+  const sfPer = suiteSf(rec);
+  if (rec.class === "multifamily") {
+    const leased = Math.min(total, Math.round((h.occ ?? 0) * total));
+    return { total, leased, vacant: total - leased, notReady: 0, sfPer };
+  }
+  const leasedSf = h.tenants.reduce((n, t) => n + t.sf, 0);
+  const leased = Math.min(total, Math.max(h.tenants.length ? 1 : 0, Math.round(leasedSf / sfPer)));
+  const notReady = Math.min(Math.max(0, total - leased), Math.round(notReadySf(h, month) / sfPer));
+  return { total, leased, vacant: Math.max(0, total - leased - notReady), notReady, sfPer };
+}
+
+/**
+ * Round a requested area to whole suites, bounded by what is actually free.
+ *
+ * The remainder matters. A building with one and a half suites empty must
+ * still be able to let the half — demising a suite is ordinary, and refusing
+ * to means a building can never lease its last ten per cent and sits at 91%
+ * occupancy for a century.
+ */
+const PART_SUITE_MIN = 700;   // below this it isn't space, it's a closet
+function toSuites(rec: ParcelRecord, want: number, cap: number): number {
+  const sfPer = suiteSf(rec);
+  const maxUnits = Math.floor(cap / sfPer + 0.02);
+  if (maxUnits < 1) return cap >= Math.min(PART_SUITE_MIN, sfPer * 0.35) ? Math.round(cap) : 0;
+  const n = Math.max(1, Math.min(maxUnits, Math.round(want / sfPer)));
+  const taken = n * sfPer;
+  // if letting whole suites would strand an unlettable sliver, take it too
+  const left = cap - taken;
+  return Math.round(left > 0 && left < Math.min(PART_SUITE_MIN, sfPer * 0.35) ? cap : taken);
+}
+
 // In-place rent roll at acquisition. Expirations cluster around a couple of
 // anchor years — a building with everything rolling at once is a visibly
 // riskier asset, and that's the point.
@@ -62,12 +138,11 @@ export function genRentRoll(s: GameState, rec: ParcelRecord, holding: Holding) {
   let leased = 0;
   let guard = 0;
   while (leased < rec.bldgArea * targetOcc && guard++ < 40) {
-    const suiteMax = rec.class === "industrial" ? rec.bldgArea : rec.bldgArea * 0.35;
-    const sf = Math.round(Math.min(
-      rec.bldgArea * targetOcc - leased,
-      Math.round(rrange(s, rec.class === "industrial" ? 6000 : 1800, Math.max(2600, suiteMax)) / 100) * 100,
-    ));
-    if (sf < (rec.class === "industrial" ? 2500 : 800)) break;
+    // whole suites only: a tenant takes one space, or knocks a few together
+    const free = rec.bldgArea * targetOcc - leased;
+    const want = suiteSf(rec) * Math.max(1, Math.round(rrange(s, 1, rec.class === "industrial" ? 1.6 : 2.8)));
+    const sf = toSuites(rec, want, free);
+    if (!sf) break;
     const sector = pickSector(s, rec.class);
     const endM = rng(s) < 0.6
       ? anchors[Math.floor(rng(s) * anchors.length) % anchors.length] + Math.round(rrange(s, -3, 3))
@@ -207,7 +282,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     const openLois = s.lois.filter((l) => l.bbl === h.bbl && l.kind === "new").length;
     // a big empty floorplate draws more than one prospect at a time
     const loiCap = vac > rec.bldgArea * 0.5 ? 3 : 2;
-    if (!renovating && vac > 1200 && openLois < loiCap) {
+    if (!renovating && vac >= Math.min(PART_SUITE_MIN, suiteSf(rec) * 0.35) && openLois < loiCap) {
       const phaseAdj = s.econ.phase === "expansion" ? 0.14 : s.econ.phase === "recession" ? -0.14 : 0;
       const condAdj = h.condition === "good" ? 0.1 : h.condition === "worn" ? -0.1 : 0;
       const stanceAdj = -0.12 * (h.stance ?? 0);                       // pushing rents thins the funnel
@@ -219,17 +294,28 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const leaseUp = h.deliveredM !== undefined && q - h.deliveredM <= 30 ? 1.9 : 1;
       // Space that's mostly empty gets worked harder than one odd suite.
       const emptyPush = 1 + 0.7 * (vac / Math.max(1, rec.bldgArea));
-      const p = Math.min(0.9, Math.max(0.03, 0.24 + rec.demandScore / 200 + phaseAdj + condAdj + stanceAdj + lobbyAdj)
-        / 2.1 * brokerMult * leaseUp * emptyPush);
+      // What the sector is doing, and whether the city is hiring, decide how
+      // many prospects walk through the door — not just the phase of the cycle.
+      const mom = s.econ.sectorMom?.[rec.class as keyof typeof s.econ.sectorMom] ?? 0;
+      const sectorAdj = mom * 9;
+      const jobsMult = Math.max(0.55, Math.min(1.6, 0.65 + 0.35 * (s.econ.employIdx ?? 1)));
+      // Everyone else's deliveries are competing for the same tenant.
+      const supplyMult = Math.max(0.5, 1 - 34 * (s.econ.supplyPress?.[rec.class as keyof typeof CAP_KEYS] ?? 0));
+      const p = Math.min(0.9, Math.max(0.02, 0.24 + rec.demandScore / 200 + phaseAdj + condAdj + stanceAdj + lobbyAdj + sectorAdj)
+        / 2.1 * brokerMult * leaseUp * emptyPush * jobsMult * supplyMult);
       if (rng(s) < p) {
         const sector = pickSector(s, rec.class);
         const [tiLo, tiHi] = TI_ASK[rec.class] ?? TI_ASK.office;
         const market = managedRentPsfYr(rec, s.econ, h);
         // Warehouses lease whole: one operator takes the building, or most of
         // it. Offices and shops carve into suites.
-        const sf = rec.class === "industrial"
-          ? (rng(s) < 0.6 ? vac : Math.round(rrange(s, 0.45, 0.85) * vac / 100) * 100)
-          : Math.min(vac, Math.round(rrange(s, 1800, Math.min(24000, Math.max(2600, vac * 0.7))) / 100) * 100);
+        // Prospects ask for spaces, not square feet. Warehouses tend to want
+        // the whole shed; offices and shops take one suite or a few.
+        const want = rec.class === "industrial"
+          ? (rng(s) < 0.6 ? vac : vac * rrange(s, 0.5, 0.9))
+          : suiteSf(rec) * Math.max(1, Math.round(rrange(s, 1, 3.4)));
+        const sf = toSuites(rec, want, vac);
+        if (!sf) continue;
         s.lois.push({
           id: s.nextLoiId++,
           bbl: h.bbl,
@@ -237,8 +323,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           name: pickName(s, sector),
           sector,
           credit: rollCredit(s, rec.demandScore),
-          sf: Math.round(Math.max(500, Math.min(vac, sf))),
-          rentPsf: +(market * rrange(s, 0.88, 1.04)).toFixed(2),
+          sf,
+          // A wide spread on purpose. If every prospect offers within a few
+          // per cent of asking, the accept/counter/pass modal is a formality.
+          // Some of these should be worth refusing, and refusing should hurt.
+          rentPsf: +(market * (rng(s) < 0.3 ? rrange(s, 0.68, 0.86) : rrange(s, 0.9, 1.1))).toFixed(2),
           termM: Math.round(rrange(s, 36, 120)),
           tiPsf: Math.round(rrange(s, tiLo, tiHi)),
           freeM: Math.round(rrange(s, 0, 6.5)),
@@ -313,8 +402,16 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
 
 export type LOIAction = "accept" | "counter" | "decline";
 
+/**
+ * Answer a letter of intent.
+ *
+ * `fund` draws the shortfall on the line of credit as part of the same action.
+ * It has to happen in here rather than as two calls from the UI: signing a
+ * lease you cannot fund is the one path where the player has no move left, and
+ * a draw that lands without the signature following it is worse than either.
+ */
 export function respondLOI(
-  s: GameState, parcels: ParcelTable, id: number, action: LOIAction,
+  s: GameState, parcels: ParcelTable, id: number, action: LOIAction, fund = false,
 ): { s: GameState; msg: string; err?: string } {
   const next: GameState = JSON.parse(JSON.stringify(s));
   const loi = next.lois.find((l) => l.id === id);
@@ -323,18 +420,31 @@ export function respondLOI(
   const rec = resolveRec(parcels, next, loi.bbl);
   if (!h || !rec) return { s, msg: "", err: "You no longer control that building." };
 
+  let drawn = 0;
   const sign = (l: LOI): string | null => {
     const cost = loiSigningCost(l);
-    if (next.cash < cost) return `Signing costs $${(cost / 1e6).toFixed(2)}M (TI + commission) — you're short.`;
+    if (next.cash < cost) {
+      const short = Math.ceil((cost - next.cash) / 1000) * 1000;
+      if (!fund) return `Signing costs ${money(cost)} (TI + commission) — you're short ${money(short)}.`;
+      const avail = locAvailable(next, parcels);
+      if (short > avail) {
+        return `Signing costs ${money(cost)}. You're short ${money(short)} and the line only has ${money(avail)} left.`;
+      }
+      const d = drawLoc(next, parcels, short);
+      if (d.err) return d.err;
+      Object.assign(next, d.s);
+      drawn = short;
+    }
     signLoi(next, rec, h, l);
     return null;
   };
+  const drawNote = () => (drawn ? ` Drew ${money(drawn)} on the line to fund it.` : "");
 
   if (action === "accept") {
     const err = sign(loi);
     if (err) return { s, msg: "", err };
     next.lois = next.lois.filter((l) => l.id !== id);
-    return { s: next, msg: "Lease signed." };
+    return { s: next, msg: "Lease signed." + drawNote() };
   }
 
   if (action === "counter") {
@@ -346,9 +456,13 @@ export function respondLOI(
     const p = 0.38 + loi.credit * 0.12 + phaseAdj + (rec.demandScore - 50) / 400 + (loi.kind === "renewal" ? 0.18 : 0);
     if (rng(next) < p) {
       const err = sign(loi);
-      if (err) return { s, msg: "", err };
+      if (err) {
+        next.lois = next.lois.filter((l) => l.id !== id);
+        next.news.unshift({ q: next.month, kind: "warn", text: `${loi.name} took your counter at ${rec.address} and you could not fund the fit-out. The deal died.` });
+        return { s: next, msg: "", err };
+      }
       next.lois = next.lois.filter((l) => l.id !== id);
-      return { s: next, msg: `${loi.name} took your counter.` };
+      return { s: next, msg: `${loi.name} took your counter.` + drawNote() };
     }
     next.lois = next.lois.filter((l) => l.id !== id);
     next.news.unshift({ q: next.month, kind: "info", text: `${loi.name} walked on the counter at ${rec.address}.` });

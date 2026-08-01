@@ -382,12 +382,16 @@ function splitLots(ring, opt, out, depth = 0) {
   splitLots(b, opt, out, depth + 1);
 }
 
+// Targets are in SQUARE METRES. They matter more than they look: the cost of
+// the smallest building you can put on a lot scales with the lot, so an
+// oversized parcel quietly locks a beginner out of development entirely. A
+// 4,000 m² site could not carry anything under $24M.
 const LOT_OPT = {
-  exchange:  { target: () => rr(420, 1300), min: 180, maxDepth: 32, jitter: 7 },
-  oldharbor: { target: () => rr(360, 1350), min: 155, maxDepth: 27, jitter: 14 },
-  northside: { target: () => rr(470, 1120), min: 195, maxDepth: 26, jitter: 6 },
-  point:     { target: () => rr(480, 1600), min: 205, maxDepth: 36, jitter: 6 },
-  millside:  { target: () => rr(1150, 4100), min: 400, maxDepth: 46, jitter: 5 },
+  exchange:  { target: () => rr(380, 1050), min: 170, maxDepth: 32, jitter: 7 },
+  oldharbor: { target: () => rr(320, 1050), min: 150, maxDepth: 27, jitter: 14 },
+  northside: { target: () => rr(400, 900), min: 180, maxDepth: 26, jitter: 6 },
+  point:     { target: () => rr(430, 1250), min: 195, maxDepth: 36, jitter: 6 },
+  millside:  { target: () => rr(800, 2300), min: 340, maxDepth: 46, jitter: 5 },
 };
 
 // Old Harbor: the colonial fabric. Recursive splitting from a CONVEX seed —
@@ -494,11 +498,14 @@ function zoningFor(district, heat) {
 // player watches the city fill in from the middle out over a century.
 function vacancyP(district, heat) {
   const edge = Math.pow(1 - heat, 1.5);   // 0 at the core, ~1 at the fringe
-  const base = district === "point" ? 0.60
-    : district === "millside" ? 0.55
-    : district === "northside" ? 0.48
-    : 0.40;                                // the Exchange / Old Harbor core
-  return Math.min(0.85, base * (0.3 + 1.2 * edge));
+  const base = district === "point" ? 0.74
+    : district === "millside" ? 0.66
+    : district === "northside" ? 0.60
+    : 0.52;                                // the Exchange / Old Harbor core
+  // The floor matters as much as the slope: even at the centre of town about a
+  // fifth of the frontage is a yard, a lot, or a two-storey building waiting to
+  // be replaced. That is the inventory the whole game runs on.
+  return Math.min(0.88, Math.max(0.2, base * (0.42 + 1.05 * edge)));
 }
 
 // Class mix per district. A young city: Millside and the Point carry real
@@ -567,7 +574,7 @@ for (const block of blocks) {
     : pick(NORTH_STREETS);
 
   const lots = [];
-  const fullBlockP = d === "exchange" ? 0.10 : d === "point" ? 0.14 : d === "millside" ? 0.20 : 0.03;
+  const fullBlockP = d === "exchange" ? 0.05 : d === "point" ? 0.07 : d === "millside" ? 0.11 : 0.02;
   if (rand() < fullBlockP) lots.push(street);
   else splitLots(street, LOT_OPT[d] ?? LOT_OPT.exchange, lots);
 
@@ -588,17 +595,22 @@ for (const block of blocks) {
     if (!vacant) {
       // a young skyline that PEAKS AT HARBOR SQUARE: tower odds are gated by
       // district so the tall stuff clusters at the core, not the back rows
-      const towerGate = d === "millside" ? 0 : d === "northside" ? 0.06 : d === "point" ? 0.28 : 1;
-      const towerP = Math.min(0.24, (h * h * 0.45 + (areaM2 > 1500 ? 0.04 : 0)) * towerGate);
+      // Ashport in 2026 is a TOWN, not a metropolis. The tall stuff standing on
+      // day one should be the exception — a handful of pre-war office blocks
+      // around Harbor Square — because the hundred-year skyline is meant to be
+      // the thing the player builds, not the thing they inherit. Anything
+      // already at forty storeys is ground taken off the board for good.
+      const towerGate = d === "millside" ? 0 : d === "northside" ? 0.03 : d === "point" ? 0.12 : 1;
+      const towerP = Math.min(0.085, (h * h * 0.17 + (areaM2 > 1500 ? 0.012 : 0)) * towerGate);
       let coverage;
       if (areaM2 > 240 && rand() < towerP) {
-        floors = Math.round(rr(9, 17) + h * h * rr(14, 34)); // the core carries real towers
+        floors = Math.round(rr(7, 12) + h * h * rr(6, 16));   // the tallest thing in town, and it shows
         coverage = rr(0.46, 0.62);
-      } else if (d !== "millside" && rand() < 0.22 + h * 0.35) {
-        floors = Math.round(d === "northside" ? rr(3, 6) : rr(4, 9));
+      } else if (d !== "millside" && rand() < 0.18 + h * 0.22) {
+        floors = Math.round(d === "northside" ? rr(3, 5) : rr(3, 6));
         coverage = rr(0.58, 0.74);
       } else {
-        floors = Math.round(d === "millside" ? rr(1, 3) : rr(2, 5));
+        floors = Math.round(d === "millside" ? rr(1, 3) : rr(2, 4));
         coverage = rr(0.6, 0.78);
       }
       if (d === "northside") floors = Math.min(floors, 7);
@@ -717,6 +729,29 @@ const BREAKWATER = rect(760, -560, 190, 14, 35);
 // The curb line: the block edge the lots front onto. Drawing this rather than
 // the lattice cell keeps the street reading as a paved corridor between two
 // curbs instead of a stripe down the middle of nothing.
+// The blocks tile the land exactly, so the street network is simply
+// everything a block does NOT cover. Draw the CELL (the block plus its half of
+// the surrounding street) as pavement, then the inset ring back over it as the
+// block itself, and the difference between them is a real paved corridor with
+// two curbs — not a hairline drawn down the middle of nothing.
+//
+// The cell ring is also, exactly, the centre of the street: two neighbouring
+// cells share that edge. So it doubles as the lane divider.
+const pavementFeatures = blocks.map((b) => ({
+  type: "Feature",
+  geometry: { type: "Polygon", coordinates: [[...b.ring.map(proj.toLL), proj.toLL(b.ring[0])]] },
+  properties: { kind: "pavement" },
+}));
+const blockFeatures = blocks.map((b) => ({
+  type: "Feature",
+  geometry: { type: "Polygon", coordinates: [[...b.inset.map(proj.toLL), proj.toLL(b.inset[0])]] },
+  properties: { kind: "block" },
+}));
+const centerFeatures = blocks.map((b) => ({
+  type: "Feature",
+  geometry: { type: "LineString", coordinates: [...b.ring.map(proj.toLL), proj.toLL(b.ring[0])] },
+  properties: { kind: "centerline", cls: b.u !== undefined ? "grid" : "lane" },
+}));
 const streetFeatures = blocks.map((b) => ({
   type: "Feature",
   geometry: { type: "LineString", coordinates: [...b.inset.map(proj.toLL), proj.toLL(b.inset[0])] },
@@ -817,6 +852,9 @@ const context = {
       geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
       properties: { kind: "park" },
     })),
+    ...pavementFeatures,
+    ...blockFeatures,
+    ...centerFeatures,
     ...streetFeatures,
     shoreRoad,
     ...treeFeatures.map((p) => ({

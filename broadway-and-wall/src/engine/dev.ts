@@ -59,7 +59,10 @@ export function farMaxFor(rec: { farMaxComm: number; farMaxRes: number }): numbe
   return Math.max(rec.farMaxComm, rec.farMaxRes, 2);
 }
 export function maxFloorsFor(rec: { farMaxComm: number; farMaxRes: number }, coverage: number): number {
-  return Math.max(1, Math.floor(farMaxFor(rec) / Math.max(0.2, coverage)));
+  // The floor here is what a small building on a big site costs you: it must
+  // be low enough that a beginner can afford SOMETHING on an acre lot, or the
+  // whole development half of the game is locked until you are already rich.
+  return Math.max(1, Math.floor(farMaxFor(rec) / Math.max(0.08, coverage)));
 }
 
 export function planDevelopment(

@@ -7,14 +7,14 @@ import { logBooks, monthLabel } from "./types";
 import { rng, rrange } from "./market";
 import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS, noiYr, resolveRec } from "./value";
 import { genRentRoll, isCommercial } from "./leasing";
-import { PRODUCTS, originate, quote } from "./debt";
+import { originate, quote, productById, prepayPenalty } from "./debt";
 
 const CLOSING_PCT = 0.02;
 const SALE_FRICTION = 0.03;
 export const CAP_GAINS_RATE = 0.2;   // on gains over depreciated basis
 export const EXCHANGE_WINDOW_M = 6;  // 1031: redeploy within six months or the tax comes due
 
-export type BuyProduct = "cash" | "fixed" | "float";
+export type BuyProduct = string;   // "cash", or any id from debt.PRODUCTS
 
 function clone(s: GameState): GameState {
   return JSON.parse(JSON.stringify(s));
@@ -24,7 +24,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   const rec = parcels[bbl];
   const closing = Math.round(price * CLOSING_PCT);
   if (product === "cash" || !rec) return { principal: 0, ratePct: 0, equity: price + closing };
-  const prod = PRODUCTS.find((p) => p.id === product)!;
+  const prod = productById(product);
   const q = quote(s, prod, price, noiYr(rec, s.econ, initialCondition(rec)));
   const principal = Math.round(q.principal * Math.max(0, Math.min(1, lev)));
   return { principal, ratePct: q.ratePct, equity: price - principal + closing };
@@ -54,7 +54,7 @@ function executePurchase(
     cfHistory: [],
   };
   if (product !== "cash") {
-    const prod = PRODUCTS.find((p) => p.id === product)!;
+    const prod = productById(product);
     holding.loan = originate(next, prod, price, noiYr(rec, next.econ, holding.condition), lev);
   }
   // a live 1031: this purchase completes the exchange if it's big enough
@@ -271,8 +271,16 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   if (exchange && s.exchange) return { s, err: "One exchange at a time — close the live 1031 first." };
   if (exchange && tax <= 0) return { s, err: "No gain to shelter — just take the cash." };
   const next = clone(s);
-  next.cash += net - (h.loan?.balance ?? 0);
-  logBooks(next, "sold", net - (h.loan?.balance ?? 0));
+  // Participating paper takes its cut here, and only here. That is the whole
+  // trade: you borrowed at a third of a point over the index for years, and
+  // the lender collects on the way out.
+  const kick = h.loan?.kicker && gain > 0 ? Math.round(gain * h.loan.kicker) : 0;
+  // Leaving a loan inside its lockout costs the same on a sale as on a refi.
+  const breakFee = h.loan ? prepayPenalty(h.loan, next.month) : 0;
+  const toSeller = net - (h.loan?.balance ?? 0) - kick - breakFee;
+  next.cash += toSeller;
+  logBooks(next, "sold", toSeller);
+  if (kick + breakFee > 0) logBooks(next, "debtSvc", kick + breakFee);
   if (exchange) {
     next.exchange = { deferredTax: tax, rolledGain: gain, minPrice: offer.price, deadlineM: next.month + EXCHANGE_WINDOW_M };
   } else if (tax > 0) {
@@ -288,6 +296,8 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `Closed: ${rec.address} at $${(offer.price / 1e6).toFixed(2)}M — ${gain >= 0 ? "a gain" : "a loss"} of $${(Math.abs(gain) / 1e6).toFixed(2)}M against basis`
+      + (kick > 0 ? `. Your lender took $${(kick / 1e6).toFixed(2)}M of the gain` : "")
+      + (breakFee > 0 ? `, and $${(breakFee / 1e6).toFixed(2)}M to break the loan early` : "")
       + (exchange ? `. 1031 clock running: buy for ≥ $${(offer.price * 0.8 / 1e6).toFixed(1)}M by ${monthLabel(next.month + EXCHANGE_WINDOW_M)} or $${(tax / 1e6).toFixed(2)}M of tax comes due.`
         : tax > 0 ? ` ($${(tax / 1e6).toFixed(2)}M capital-gains tax withheld).` : "."),
   });
@@ -306,12 +316,37 @@ export function declineSaleOffer(s: GameState, bbl: string): GameState {
 // well-priced asset sometimes draws a second bidder who pushes the number.
 export function tickSales(s: GameState, parcels: ParcelTable) {
   for (const h of Object.values(s.holdings)) {
+    // UNSOLICITED APPROACHES. Nobody in this business only sells when they
+    // decide to — the phone rings on the building you were not thinking about,
+    // usually at a number that is almost enough. Holding becomes a decision
+    // rather than the absence of one.
+    if (!h.sale && !s.developments[h.bbl]) {
+      const rec0 = resolveRec(parcels, s, h.bbl);
+      if (rec0 && s.month - h.boughtM > 18) {
+        const hot = s.econ.phase === "expansion" || s.econ.phase === "peak";
+        const money = Math.max(0.4, s.econ.creditIdx ?? 1);
+        const p = (hot ? 0.010 : 0.003) * money * (1 + rec0.demandScore / 140);
+        if (rng(s) < p) {
+          const v = holdingValue(rec0, s.econ, h);
+          // over the top when money is loose, cheeky when it isn't
+          const px = Math.round(v * (hot ? rrange(s, 1.02, 1.24) : rrange(s, 0.82, 0.98)));
+          h.sale = { ask: px, listedM: s.month, unsolicited: true };
+          h.sale.offer = { price: px, expiresM: s.month + 2 };
+          s.news.unshift({
+            q: s.month, kind: "deal",
+            text: `An unsolicited offer for ${rec0.address}: $${(px / 1e6).toFixed(2)}M, ${px >= v ? `${Math.round((px / Math.max(1, v) - 1) * 100)}% over` : `${Math.round((1 - px / Math.max(1, v)) * 100)}% under`} appraisal. It's good for two months.`,
+          });
+        }
+      }
+    }
     const sale = h.sale;
     if (!sale) continue;
     if (sale.offer && s.month > sale.offer.expiresM) {
       delete sale.offer;
+      if (sale.unsolicited) delete h.sale;      // they were never on the market
       continue;
     }
+    if (sale.unsolicited && !sale.offer) { delete h.sale; continue; }
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
     if (sale.offer) {

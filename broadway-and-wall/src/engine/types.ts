@@ -47,7 +47,13 @@ export interface LOI {
 }
 
 export interface Loan {
-  product: "fixed" | "float";
+  product: string;
+  floating?: boolean;
+  points?: number;
+  recourse?: boolean;         // a personal guarantee: a deficiency follows you
+  prepay?: "open" | "stepdown" | "yieldmaint";
+  prepayUntilM?: number;
+  kicker?: number;            // participating paper: the lender's cut of the gain
   principal: number;
   balance: number;
   ratePct: number;       // current coupon (floating reprices each quarter)
@@ -79,7 +85,7 @@ export interface Holding {
   occ?: number;        // multifamily aggregate occupancy
   stance?: -1 | 0 | 1; // rent posture: push / market / fill
   deliveredM?: number; // ground-up completion: new space leases with momentum
-  sale?: { ask: number; listedM: number; offer?: { price: number; expiresM: number } }; // on the market
+  sale?: { ask: number; listedM: number; unsolicited?: boolean; offer?: { price: number; expiresM: number } }; // on the market
   program?: { id: string; untilM: number };  // capital program underway
   programsDone?: Record<string, number>;     // id -> completed quarter
   cfHistory: number[];
@@ -138,6 +144,8 @@ export interface EconHistoryPoint {
   cycleDev: number;
   capOffice: number;
   rentOffice: number;
+  creditIdx?: number;
+  employIdx?: number;
 }
 
 export interface Econ {
@@ -150,6 +158,22 @@ export interface Econ {
   capRate: Record<BuiltClass, number>;
   rentIdx: Record<BuiltClass, number>;
   costIdx: number; // construction & operating cost inflation
+  // Sectors do not move together. Each class carries its own momentum, so
+  // office can be in a bear market while sheds are the best trade in town —
+  // which is the whole reason to hold more than one kind of building.
+  sectorMom: Record<BuiltClass, number>;
+  // Everything the rest of the market is building, by class, in square feet.
+  // Starts respond to profit; deliveries land ~30 months later and take the
+  // rent with them. This is the supply half of the cycle, and without it a
+  // boom never ends of its own accord.
+  pipeline: Record<BuiltClass, number>;
+  starts: Record<BuiltClass, number>;
+  supplyPress?: Partial<Record<BuiltClass, number>>;
+  // Capital availability, 1 = normal. In a crunch this falls, spreads widen,
+  // lenders size smaller, and cap rates gap out — independent of the index.
+  creditIdx: number;
+  // The demand driver behind leasing velocity.
+  employIdx: number;
   history: EconHistoryPoint[];
 }
 
@@ -179,7 +203,7 @@ export interface Exit {
 }
 
 export interface GameState {
-  v: 8;
+  v: 9;
   seed: number;
   rng: number;
   month: number;

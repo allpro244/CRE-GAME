@@ -18,6 +18,7 @@ export function gameSources(): Record<string, SourceSpecification> {
       type: "vector",
       url: "pmtiles://" + new URL(data("buildings.pmtiles"), location.href).href,
     },
+    "bw-forsale": { type: "geojson", data: { type: "FeatureCollection", features: [] } } as never,
     "bw-owned": {
       type: "geojson",
       data: { type: "FeatureCollection", features: [] },
@@ -148,6 +149,37 @@ export function gameLayers(): LayerSpecification[] {
         "circle-pitch-alignment": "map",
       },
     },
+    {
+      // FOR SALE. Anything on the market gets a pin standing over the roof, so
+      // you can read the availability of a whole district without opening a
+      // single record. Two rings so it survives against both pale stone and
+      // dark glass.
+      id: "bw-forsale-halo",
+      type: "circle",
+      source: "bw-forsale",
+      minzoom: 11.5,
+      paint: {
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 12, 3.4, 14, 5.6, 17, 11] as never,
+        "circle-color": "rgba(0,0,0,0)",
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 12, 1.2, 17, 2.6] as never,
+        "circle-stroke-opacity": 0.9,
+        "circle-pitch-alignment": "map",
+      },
+    },
+    {
+      id: "bw-forsale-pts",
+      type: "circle",
+      source: "bw-forsale",
+      minzoom: 11.5,
+      paint: {
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 12, 2.2, 14, 3.8, 17, 7.5] as never,
+        "circle-color": ["match", ["get", "kind"], "land", "#3f7f4c", "offmkt", "#7d6a9c", "#c8452f"] as never,
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": 0.8,
+        "circle-pitch-alignment": "map",
+      },
+    },
   ];
 }
 
@@ -198,18 +230,74 @@ export function fallbackBaseStyle(): StyleSpecification {
         paint: { "line-color": "#b3cba6", "line-width": 1.2 },
       },
       {
-        // the street network — paved gray against bare land
-        id: "streets",
+        // ROADWAY. The cells tile the land, so painting them asphalt and then
+        // painting the blocks back on top leaves exactly the street corridor
+        // between two curbs. This is the surface; the layers below it are the
+        // markings on it.
+        id: "pavement",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "pavement"],
+        paint: { "fill-color": "#b9b6ae" },
+      },
+      {
+        // the block itself — warm paper, a clear step off the asphalt
+        id: "blocks",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "block"],
+        paint: { "fill-color": "#e9e6dc" },
+      },
+      {
+        // SIDEWALK: a pale band hugging the block, inside the curb line
+        id: "sidewalk",
         type: "line",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "street"],
         paint: {
-          "line-color": ["match", ["get", "cls"], "shore", "#d3cfc2", "#dcd8cb"],
-          "line-width": [
-            "interpolate", ["linear"], ["zoom"],
-            12, ["match", ["get", "cls"], "shore", 1.6, 0.8],
-            16, ["match", ["get", "cls"], "shore", 9, 5],
-          ],
+          "line-color": "#d8d5cb",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.8, 15, 2.4, 18, 11] as never,
+        },
+        layout: { "line-join": "round" },
+      },
+      {
+        // CURB: the hard edge where pavement meets block
+        id: "curb",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "street"],
+        minzoom: 14,
+        paint: {
+          "line-color": "#a9a69d",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 14, 0.4, 18, 1.4] as never,
+          "line-offset": ["interpolate", ["linear"], ["zoom"], 14, -0.5, 18, -5.5] as never,
+        },
+      },
+      {
+        // LANE DIVIDER. Two neighbouring cells share their boundary, so the
+        // cell ring runs exactly down the middle of the street — no separate
+        // centreline geometry needed.
+        id: "lane-divider",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "centerline"],
+        minzoom: 15,
+        paint: {
+          "line-color": "#e8dfae",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 15, 0.35, 18, 1.1] as never,
+          "line-opacity": ["interpolate", ["linear"], ["zoom"], 15, 0.35, 17, 0.8] as never,
+          "line-dasharray": [5, 7],
+        },
+      },
+      {
+        // the shore road still gets its own stroke
+        id: "streets",
+        type: "line",
+        source: "bw-context",
+        filter: ["all", ["==", ["get", "kind"], "street"], ["==", ["get", "cls"], "shore"]],
+        paint: {
+          "line-color": "#c6c2b6",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 12, 1.6, 16, 9] as never,
         },
         layout: { "line-join": "round", "line-cap": "round" },
       },

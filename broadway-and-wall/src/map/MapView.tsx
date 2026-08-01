@@ -200,6 +200,26 @@ export default function MapView() {
         properties: { bbl },
       })),
     });
+
+    // Everything that can be bought right now, pinned over its roof: red for a
+    // building on the tape, green for vacant land, violet for a motivated
+    // seller priced under appraisal. Reading availability off the map is most of the
+    // early game, and a 16%-opacity ground tint under a tower was invisible.
+    const forSale = map.getSource("bw-forsale") as maplibregl.GeoJSONSource | undefined;
+    forSale?.setData({
+      type: "FeatureCollection",
+      features: game.listings.map((l) => {
+        const rec = parcels[l.bbl];
+        return {
+          type: "Feature" as const,
+          geometry: { type: "Point" as const, coordinates: rec?.centroid ?? [0, 0] },
+          properties: {
+            bbl: l.bbl,
+            kind: l.distress ? "offmkt" : rec?.class === "land" ? "land" : "built",
+          },
+        };
+      }),
+    });
   }, [game, parcels, mapReady]);
 
   // name labels: districts, parks, water — DOM markers, no glyph server needed
@@ -247,6 +267,7 @@ export default function MapView() {
     const layer = threeRef.current;
     if (!layer || !mapReady) return;
     const tints = new Map<string, [number, number, number]>();
+    if (game) for (const l of game.listings) tints.set(l.bbl, [1.24, 0.9, 0.84]);   // on the market
     if (game) for (const bbl of Object.keys(game.holdings)) tints.set(bbl, [1.28, 1.1, 0.72]);
     if (selectedBBL) {
       for (const n of adjacency?.[selectedBBL] ?? []) tints.set(n, [0.72, 1.12, 1.04]);

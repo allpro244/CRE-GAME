@@ -10,7 +10,7 @@ import type { BuiltClass, Contract, DevUse, Development, GameState, UseMix } fro
 import { logBooks, monthLabel } from "./types";
 import { demandNow } from "./demand";
 import { rng, rrange } from "./market";
-import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor } from "./value";
+import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, RECOVERY_RATE } from "./value";
 import { genAnchorTenant } from "./leasing";
 
 const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
@@ -29,11 +29,29 @@ const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
  * the differences between classes should come from cap rates and location, not
  * from one class being free to build.
  */
+/**
+ * Calibrated against NET stabilised rent, not gross.
+ *
+ * The old table was set at roughly seven times each class's headline rent,
+ * which sounds disciplined and is not: the classes do not carry remotely the
+ * same expense load, and they do not recover it the same way. Triple-net
+ * retail keeps almost every dollar it bills; an apartment building keeps
+ * fifty-five cents on the dollar after payroll, turns and utilities. Pricing
+ * both at seven times the number on the sign made retail free money to build
+ * — a sixteen per cent yield on cost against a six per cent exit — while
+ * apartments barely cleared.
+ *
+ * These are solved instead: the cost at which a NEW building on a MEDIAN site
+ * yields about 150bp over its own exit cap, after operating cost, after what
+ * a typical lease bills back, and after the property tax the owner carries.
+ * A better corner still beats the hurdle comfortably; a poor one does not
+ * pencil, which is why most land in a real city stays empty.
+ */
 export const HARD_COST_PSF: Record<BuiltClass, number> = {
-  office: 430,        // rent 62 → 6.9x
-  multifamily: 320,   // rent 46 → 7.0x
-  retail: 570,        // rent 88 → 6.5x
-  industrial: 118,    // rent 16 → 7.4x
+  office: 560,        // net $62/sf against a 5.3% exit
+  multifamily: 345,   // net $37/sf against a 4.6% exit — the thinnest margin in the book
+  retail: 865,        // net $97/sf; podium retail is expensive and earns it
+  industrial: 140,    // net $17/sf against a 6.6% exit
 };
 
 /**
@@ -124,6 +142,8 @@ export interface DevPlan {
   softCost: number;
   contingency: number;
   demo: number;
+  landBasis: number;    // what the site cost you — sunk, but in the yield
+  basisTotal: number;   // construction plus land: the denominator of yield on cost
   leaseUp: number;    // fit-out, commissions and carry until it is full
   costTotal: number;
   ltc: number;
@@ -202,8 +222,25 @@ export function planDevelopment(
   const carry = Math.round(openSf * overMix(mix, (u) => opexPsf(u, s.econ, false)) * (carryMonths / 12));
   const leaseUp = Math.round(openSf * (tiPsf + lcPsf) * s.econ.costIdx) + carry;
 
-  const costTotal = hardCost + softCost + demo + contingency + leaseUp;
+  // THE DIRT IS PART OF THE DEAL.
+  //
+  // Yield on cost was computed against construction cost alone, as if the site
+  // had been free. It is not: it is the first and least recoverable dollar in
+  // any development, and it is the whole reason a corner that rents for twice
+  // as much does not automatically build for twice the profit. Leaving it out
+  // made nearly four sites in five clear a hundred-basis-point hurdle — in a
+  // business where most land sits vacant precisely because it does not pencil.
+  //
+  // It is NOT charged as cash — you already paid for it, and charging twice
+  // would be its own lie — but it belongs in the denominator, because that is
+  // what yield on cost means.
+  const landBasis = Math.round(s.holdings[bbl]?.costBasis ?? landValue(rec, s.econ));
+  const buildCost = hardCost + softCost + demo + contingency + leaseUp;
+  const costTotal = buildCost;
+  const basisTotal = buildCost + landBasis;
 
+  // The construction lender funds construction. It does not refinance the
+  // equity you already sank into the ground.
   const ltc = constructionLtc(mix, pre, s.econ.phase);
   const commitment = Math.round(costTotal * ltc);
   const ratePct = +(s.econ.indexRate + CONSTR_SPREAD).toFixed(2);
@@ -222,13 +259,15 @@ export function planDevelopment(
   const rentPsf = marketRentPsfYr(asBuilt, s.econ, "good");
   const stabOcc = overMix(mix, (u) => (u === "multifamily" ? 0.95 : 0.9));
   const opex = overMix(mix, (u) => opexPsf(u, s.econ, false));
-  const stabNoi = sf * (rentPsf * stabOcc - opex) - costTotal * TAX_RATE;
+  const recovery = overMix(mix, (u) => RECOVERY_RATE[u]);
+  const taxLoad = basisTotal * TAX_RATE * (1 - recovery);
+  const stabNoi = sf * (rentPsf * stabOcc - opex * (1 - recovery * stabOcc)) - taxLoad;
   // The exit is what THIS building will trade at — new, in good condition, on
   // this corner — not the citywide class average. Using the average understated
   // the spread by most of a point everywhere it mattered, which made every
   // development on the map look like a losing trade.
   const exitCap = capRateFor(asBuilt, s.econ, "good");
-  const yieldOnCost = costTotal > 0 ? (stabNoi / costTotal) * 100 : 0;
+  const yieldOnCost = basisTotal > 0 ? (stabNoi / basisTotal) * 100 : 0;
 
   const lenderNote = ltc === 0
     ? "No construction lender will touch spec commercial in a recession. Pre-lease it, or fund the whole thing yourself."
@@ -239,7 +278,7 @@ export function planDevelopment(
   return {
     use, mix, floors: fl, coverage: cov, contract, preLeaseShare: pre, sf,
     far: +(sf / rec.lotArea).toFixed(1), farMax,
-    hardCost, softCost, contingency, demo, leaseUp, costTotal,
+    hardCost, softCost, contingency, demo, leaseUp, costTotal, landBasis, basisTotal,
     ltc, commitment, interestReserve, ratePct,
     equity: costTotal - commitment,
     // Equity funds FIRST. The bank does not release a dollar until yours are

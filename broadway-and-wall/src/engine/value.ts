@@ -5,7 +5,6 @@ import type { ParcelRecord } from "@/data/types";
 import type { Condition, Econ, GameState, Holding } from "./types";
 import type { BuiltClass } from "./types";
 import { blend, blendBy, uses, useSf } from "./mix";
-import { RENT_BASE } from "./market";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -107,8 +106,6 @@ export function occupancy(rec: ParcelRecord, econ: Econ): number {
   return blendBy(rec, (u) => useOccupancy(rec, econ, u));
 }
 
-const OPEX_RATIO: Record<BuiltClass, number> = { office: 0.38, retail: 0.30, multifamily: 0.44, industrial: 0.24 };
-
 // ---------------------------------------------------------------- the opex stack
 // A single blended $/sf hides the two things that actually matter: which line
 // items a tenant reimburses, and which ones the owner can do anything about.
@@ -135,6 +132,32 @@ export function opexPsf(cls: BuiltClass, econ: Econ, systemsDone: boolean): numb
 
 // Kept for compatibility with anything still asking the old question.
 export const OPEX_PSF: Record<BuiltClass, number> = { office: 13, retail: 8, multifamily: 10, industrial: 3.5 };
+
+/**
+ * What share of the expense stack a TYPICAL roll of each class bills back.
+ *
+ * These are not free parameters — they fall out of the lease structures
+ * `rollRecovery` actually writes. Retail and industrial are overwhelmingly
+ * triple-net, so the owner is close to flat on expenses. Office is mostly
+ * base-year, which recovers only the growth above the stop and therefore
+ * recovers about a third of the stack across a roll of mixed vintages.
+ * Apartments recover nothing: a residential lease is gross, always.
+ *
+ * This exists so that the income quoted on the tape is the income the
+ * building earns. Ignore recoveries and a triple-net retail building looks a
+ * third poorer than it is; assume full recovery and a gross office building
+ * looks richer. Either way the number on the screen is a lie, and the loan
+ * sized against it is a lie too.
+ */
+export const RECOVERY_RATE: Record<BuiltClass, number> = {
+  retail: 0.88, industrial: 0.92, office: 0.50, multifamily: 0,
+};
+
+/** The share of the property-tax bill this building's owner actually eats. */
+export function taxBorneShare(rec: ParcelRecord): number {
+  if (rec.class === "land") return 1;
+  return 1 - blendBy(rec, (u) => RECOVERY_RATE[u] * (u === "multifamily" ? 0 : 1));
+}
 
 /**
  * How a lease reimburses operating cost. This is the difference between an
@@ -186,9 +209,22 @@ export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition):
   // A buyer underwrites each part against its own comps and adds them up; the
   // blended cap rate is what falls out, not something quoted anywhere.
   const base = rec.class === "land" ? 6 : blend(rec, econ.capRate) || 6;
-  const locSpread = -((rec.demandScore - 50) / 100) * 0.8;
-  const qualSpread = condition === "good" ? -0.22 : condition === "worn" ? 0.35 : 0;
-  return clamp(base + locSpread + qualSpread, 2.8, 12);
+  // LOCATION IS PRICED, AND IT IS PRICED HARD.
+  //
+  // This band used to be eight tenths of a point wide across the entire demand
+  // scale, which meant a fringe walk-up on a dead street traded within sixty
+  // basis points of a corner on the best block in Ashport. That is not a
+  // market; it is a spreadsheet with a location column nobody reads. Real
+  // prime-to-fringe spreads run two and a half to four points, and that gap is
+  // the central trade of the business: the fringe asset pays you more today
+  // and asks you to believe the street will change, while the prime one costs
+  // a fortune and lets you sleep. Without the spread there was no such choice
+  // and no reason ever to buy anything but the highest yield on the tape.
+  const locSpread = -((rec.demandScore - 50) / 50) * 1.1;
+  // and so is the state of the building — a tired asset needs a discount to
+  // move, because the buyer is pricing the capital they are about to spend
+  const qualSpread = condition === "good" ? -0.40 : condition === "worn" ? 0.70 : 0;
+  return clamp(base + locSpread + qualSpread, 3.2, 13);
 }
 
 // Appraisals are opinions. Each parcel's appraisal carries a stable bias off
@@ -209,20 +245,36 @@ export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition): numb
     // carry: taxes and insurance bleed on idle land
     return -landValue(rec, econ) * 0.012;
   }
-  // Each component earns its own rent at its own occupancy and carries its own
-  // expense ratio. A shop under flats is a 30%-expense-ratio business sitting
-  // on top of a 44% one, and blending them before the fact hid both.
-  let gross = 0, net = 0;
+  // ONE OPERATING-COST MODEL.
+  //
+  // This used to apply a flat expense RATIO per class while an owned building
+  // was run through the line-item stack — two different numbers for the same
+  // building. Worse, those ratios were all-in figures that already carried
+  // property tax, so `noiAfterTaxYr` then took the tax off a second time. The
+  // effect was that a building's NOI rose by a median of 31% the moment you
+  // bought it: the tape, the acquisition panel and the loan desk were all
+  // quoting income a third below what the asset actually earned.
+  //
+  // So it is the line-item stack here too — rent, less operating cost per
+  // square foot, less the management fee — and property tax is subtracted
+  // exactly once, in `noiAfterTaxYr`, where it says it is. A useful property
+  // falls out for free: because operating cost is per square foot and rent is
+  // not, an expensive corner runs a LOWER expense ratio than a cheap one,
+  // which is how the business actually works and which no flat ratio can say.
+  let rent = 0, recovered = 0, opex = 0;
   for (const use of uses(rec)) {
     const sf = useSf(rec, use);
     if (sf <= 0) continue;
-    const g = sf * useRentPsfYr(rec, econ, condition, use) * useOccupancy(rec, econ, use);
-    // opex share drifts up as cost inflation outpaces the rent share it eats
-    const ratio = Math.min(0.6, OPEX_RATIO[use] * Math.pow(econ.costIdx / (econ.rentIdx[use] / RENT_BASE[use]), 0.5));
-    gross += g;
-    net += g * (1 - ratio);
+    const occ = useOccupancy(rec, econ, use);
+    const op = sf * opexPsf(use, econ, false);
+    rent += sf * useRentPsfYr(rec, econ, condition, use) * occ;
+    opex += op;
+    // ...and what a typical roll of that class bills back. Recovery is
+    // pro-rata on LET space, so an empty building eats its own expenses.
+    recovered += op * occ * RECOVERY_RATE[use];
   }
-  return net;
+  const egi = rent + recovered;
+  return egi - opex - egi * MGMT_FEE;
 }
 
 /**
@@ -241,7 +293,7 @@ export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition): numb
  */
 export function noiAfterTaxYr(rec: ParcelRecord, econ: Econ, condition: Condition, price: number): number {
   if (rec.class === "land" || !rec.bldgArea) return noiYr(rec, econ, condition);
-  return noiYr(rec, econ, condition) - price * TAX_RATE;
+  return noiYr(rec, econ, condition) - price * TAX_RATE * taxBorneShare(rec);
 }
 
 // The landlord's share of the property-tax bill: net leases reimburse it,
@@ -347,8 +399,10 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
 export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition): number {
   const land = landValue(rec, econ);
   if (rec.class === "land" || !rec.bldgArea) return land;
-  // pre-tax NOI capitalized at cap + tax rate — the buyer prices in the bill
-  const income = noiYr(rec, econ, condition) / (capRateFor(rec, econ, condition) / 100 + TAX_RATE);
+  // Pre-tax NOI capitalised at the cap plus the tax the OWNER carries. A
+  // triple-net building bills its tax bill to its tenants, so loading the full
+  // rate onto every class priced net-leased retail as if it paid its own taxes.
+  const income = noiYr(rec, econ, condition) / (capRateFor(rec, econ, condition) / 100 + TAX_RATE * taxBorneShare(rec));
   // an underbuilt lot is worth the greater of its income or its dirt
   return Math.max(income, land * 0.92);
 }

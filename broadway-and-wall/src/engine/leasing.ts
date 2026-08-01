@@ -553,8 +553,13 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // signs long paper and expects to be paid for it; a small unrated
           // firm wants three years and an out. WALT is the thing a buyer
           // actually underwrites, and it has to be earned tenant by tenant.
+          // Real terms: an investment-grade covenant signs seven to twelve
+          // years, a solid mid-market firm five to nine, a small unrated one
+          // three to five with a break. The old band ran to fifteen years as a
+          // matter of course, which handed the player bond-like income on
+          // ordinary space and made WALT a number nobody had to work for.
           termM: Math.round(
-            (credit === 2 ? rrange(s, 96, 180) : credit === 1 ? rrange(s, 60, 120) : rrange(s, 36, 66))
+            (credit === 2 ? rrange(s, 84, 144) : credit === 1 ? rrange(s, 60, 108) : rrange(s, 36, 60))
             * (sf > useSuiteSf(rec, use) * 2.5 ? 1.15 : 1)
             * (s.econ.phase === "recession" ? 0.85 : 1),
           ),

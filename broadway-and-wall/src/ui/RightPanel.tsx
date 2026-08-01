@@ -13,7 +13,7 @@ import {
 import { planDevelopment, PROGRAMS, programCost, farMaxFor, maxFloorsFor, demolitionCost, MAX_PRE_LEASE, PRE_LEASE_EXTRA_M, preLeaseDiscount } from "@/engine/dev";
 import { buyQuote, assemblagePressure, saleTaxQuote, bidOdds } from "@/engine/actions";
 import { MILESTONES } from "@/engine/sim";
-import { isCommercial, vacantSf, walt, loiSigningCost, notReadySf, unitStatus, unitCount, suiteSf } from "@/engine/leasing";
+import { isCommercial, vacantSf, walt, loiSigningCost, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
 import { locLimit, locRate, locAvailable } from "@/engine/credit";
 import { blockReport } from "@/engine/demand";
@@ -390,7 +390,11 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         <Row k="Appraisal" v={band(selectedBBL, value)} strong />
         {isBuilt && <Row k="Market rent" v={"$" + marketRentPsfYr(rec, game.econ, cond).toFixed(0) + " /sf/yr"} />}
         {isBuilt && !holding && <Row k="Occupancy (mkt)" v={(occupancy(rec, game.econ) * 100).toFixed(0) + "%"} />}
-        {isBuilt && !holding && <Row k="Leasable spaces" v={`${unitCount(rec)} · ${sf(Math.round(suiteSf(rec)))} each`} />}
+        {isBuilt && !holding && (
+          isMixedUse(rec)
+            ? <Row k="Leasable spaces" v={usesOf(rec).map((u) => `${Math.max(1, Math.round(useSf(rec, u) / useSuiteSf(rec, u)))} ${USE_WORD[u]}`).join(" · ")} />
+            : <Row k="Leasable spaces" v={`${unitCount(rec)} · ${sf(Math.round(suiteSf(rec)))} each`} />
+        )}
         {holding && rec.bldgArea > 0 && <Row k="Occupancy" v={(physicalOcc(rec as never, holding) * 100).toFixed(0) + "%"} />}
         {holding && rec.bldgArea > 0 && unitStatus(rec, holding, game.month).byUse.map((u) => (
           <Row
@@ -430,7 +434,11 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
               return [
                 <div key={`h-${u}`} className="roll-row roll-group">
                   <span className="roll-name">{USE_WORD[u]} · {sf(Math.round(useSf(rec, u)))}</span>
-                  <span className="roll-meta mono">${(game.econ.rentIdx[u] ?? 0).toFixed(0)}/sf market</span>
+                  {/* The market for THIS corner, not the citywide index — a shop
+                      on a prime block does not rent at the city average, and
+                      quoting one beside the other made every in-place rent look
+                      like a windfall. */}
+                  <span className="roll-meta mono">${useRentPsfYr(rec, game.econ, holding.condition, u).toFixed(0)}/sf market here</span>
                 </div>,
                 ...inUse.map(({ t, i }) => (
                   <div key={i} className="roll-row">
@@ -445,7 +453,9 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
             {(mixOf(rec).multifamily ?? 0) > 0 && (
               <div className="roll-row roll-group">
                 <span className="roll-name">apartments · {sf(Math.round(useSf(rec, "multifamily")))}</span>
-                <span className="roll-meta mono">{((holding.occ ?? 0) * 100).toFixed(0)}% let · ${(game.econ.rentIdx.multifamily ?? 0).toFixed(0)}/sf market</span>
+                <span className="roll-meta mono">
+                  {((holding.occ ?? 0) * 100).toFixed(0)}% let · ${useRentPsfYr(rec, game.econ, holding.condition, "multifamily").toFixed(0)}/sf market here
+                </span>
               </div>
             )}
             {notReadySf(holding, game.month) > 0 && (

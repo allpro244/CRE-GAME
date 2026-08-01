@@ -7,7 +7,7 @@ import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import {
   assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr,
   occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr,
-  rollQualitySpread, operatingStatement, recoveryOf, noiAfterTaxYr,
+  rollQualitySpread, operatingStatement, recoveryOf, noiAfterTaxYr, netWorth,
 } from "@/engine/value";
 import { planDevelopment, PROGRAMS, programCost, farMaxFor, maxFloorsFor, demolitionCost } from "@/engine/dev";
 import type { BuiltClass } from "@/engine/types";
@@ -1456,13 +1456,16 @@ function MarketPage() {
   );
 }
 
-// The revolving line: 35% of net worth at prime + 400bps. It draws itself
+// The revolving line: up to 35% of net worth at prime + 400bps, and the
+// advance rate moves with the credit cycle — the label used to promise a
+// fixed 35% while the engine was quietly cutting it in a crunch. It draws
 // before a shortfall becomes insolvency, and idle cash sweeps against it.
 function CreditLine() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const { drawCredit, repayCredit } = useStore.getState();
   const limit = locLimit(game, parcels);
+  const nw = netWorth(game, parcels);
   const balance = game.loc?.balance ?? 0;
   const avail = Math.max(0, limit - balance);
   const rate = locRate(game);
@@ -1472,7 +1475,16 @@ function CreditLine() {
     <div className="page-section">
       <div className="page-section-head">Line of credit</div>
       <div className="stat-strip">
-        <Big label="Limit · 35% of net worth" value={usd(limit)} />
+        {(() => {
+          const adv = nw > 0 ? limit / nw : 0.35;
+          return (
+            <Big
+              label={`Limit · ${(adv * 100).toFixed(0)}% of net worth`}
+              value={usd(limit)}
+              bad={adv < 0.3}
+            />
+          );
+        })()}
         <Big label="Drawn" value={usd(balance)} bad={balance > limit * 0.8} />
         <Big label="Available" value={usd(avail)} />
         <Big label="Rate · index + 400" value={pct(rate)} />

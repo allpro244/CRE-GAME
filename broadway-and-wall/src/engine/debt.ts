@@ -50,8 +50,13 @@ export const PRODUCTS: LoanProduct[] = [
     minDSCR: 1.30, maxLTV: 0.80,
   },
   {
-    id: "float", label: "Floating IO · 7 yr", blurb: "Cheap today, repriced every quarter. Buy a cap or don't sleep.",
-    ltv: 0.70, spread: 1.15, floating: true, ioM: 36, amortYears: 30, termM: 84,
+    // The pickup over fixed is small on purpose. You are not taking duration
+    // risk for forty-five basis points of yield — you take it for the
+    // interest-only period and the freedom to leave, and the required cap
+    // eats most of the coupon saving anyway. Pricing it as a free lunch made
+    // maximum-leverage floating paper strictly dominant.
+    id: "float", label: "Floating IO · 7 yr", blurb: "Cheap today, repriced every quarter. The cap is not optional.",
+    ltv: 0.70, spread: 1.45, floating: true, ioM: 36, amortYears: 30, termM: 84,
     uwDscr: 1.25, debtYield: 0.085, points: 0.010, recourse: false, prepay: "open", prepayM: 0,
     minDSCR: 1.20, maxLTV: 0.85,
   },

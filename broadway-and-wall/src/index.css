@@ -158,6 +158,7 @@ body {
 /* ---- deal section ---- */
 .deal { margin-top: 14px; border-top: 1px solid rgba(146,110,40,0.25); padding-top: 10px; }
 .deal-head { font-family: var(--serif); font-size: 14px; color: var(--ink); margin-bottom: 8px; }
+.deal-note { margin-top: 8px; font-size: 11.5px; line-height: 1.45; color: var(--ink-dim); font-style: italic; }
 .btn-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .btn {
   font-size: 12px; font-weight: 600; padding: 7px 12px; border-radius: 4px;

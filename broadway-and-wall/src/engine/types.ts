@@ -231,7 +231,7 @@ export interface Exit {
 }
 
 export interface GameState {
-  v: 10;
+  v: 11;
   seed: number;
   rng: number;
   month: number;
@@ -246,6 +246,7 @@ export interface GameState {
   built: Record<string, BuiltOverride>;      // delivered buildings, yours and the city's
   cityBuilt: string[];                       // bbls the market built, not you
   landAdj: Record<string, number>;           // per-parcel land value multiplier
+  blockD: Record<string, number>;            // per-block demand DRIFT, in points off the generated score
   totalLots: number;
   builtAtStart: number;
   // a 1031 exchange in flight: sale gain rolled, tax deferred until the clock runs out

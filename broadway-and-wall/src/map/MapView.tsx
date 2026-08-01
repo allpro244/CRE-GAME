@@ -3,7 +3,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Protocol } from "pmtiles";
 import { fetchGzJson, useStore } from "@/state/store";
-import { composeStyle, gameLayers, landLensColor, resolveBaseStyle } from "./style";
+import { composeStyle, gameLayers, landLensColor, LIVE_DEMAND, resolveBaseStyle } from "./style";
 import { ThreeBuildings, type BuildingVolume } from "./ThreeBuildings";
 
 const CITY_CENTER: [number, number] = [-70.9, 41.1];
@@ -222,6 +222,35 @@ export default function MapView() {
     });
   }, [game, parcels, mapReady]);
 
+  const lens = useStore((s) => s.lens);
+
+  // Live demand into feature-state, so the demand and land lenses paint what
+  // the engine is actually pricing off. Only blocks that have MOVED are pushed
+  // — on day one that is none of them, and after a century it is a few hundred
+  // parcels, written once per month and only while a lens is open.
+  const dmdRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !game || !parcels) return;
+    if (lens !== "demand" && lens !== "land") return;
+    const drift = game.blockD ?? {};
+    const next = new Map<string, number>();
+    for (const bbl of Object.keys(parcels)) {
+      const r = parcels[bbl];
+      const d = drift[r.block];
+      if (!d) continue;
+      next.set(bbl, Math.max(2, Math.min(100, r.demandScore + d)));
+    }
+    for (const [bbl, v] of next) {
+      if (dmdRef.current.get(bbl) === v) continue;
+      map.setFeatureState({ source: "bw-parcels", sourceLayer: "parcels", id: Number(bbl) }, { dmd: v });
+    }
+    for (const bbl of dmdRef.current.keys()) {
+      if (!next.has(bbl)) map.removeFeatureState({ source: "bw-parcels", sourceLayer: "parcels", id: Number(bbl) }, "dmd");
+    }
+    dmdRef.current = next;
+  }, [game, parcels, mapReady, lens]);
+
   // name labels: districts, parks, water — DOM markers, no glyph server needed
   useEffect(() => {
     const map = mapRef.current;
@@ -299,7 +328,6 @@ export default function MapView() {
   }, [game, mapReady]);
 
   // lenses — repaint when toggled and as the market moves
-  const lens = useStore((s) => s.lens);
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
@@ -313,7 +341,7 @@ export default function MapView() {
     if (lens === "demand" && parcels) {
       ghostBuildings(true);
       map.setPaintProperty("bw-parcel-fill", "fill-color", [
-        "interpolate", ["linear"], ["get", "demand"],
+        "interpolate", ["linear"], LIVE_DEMAND,
         5, "#eef0e8", 30, "#cfe0d5", 50, "#93c4b1", 70, "#4f9887", 92, "#1e6a60",
       ] as never);
       map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.82 as never);
@@ -328,7 +356,8 @@ export default function MapView() {
       const step = Math.max(1, Math.floor(bbls.length / 4000));
       for (let i = 0; i < bbls.length; i += step) {
         const r = parcels[bbls[i]];
-        vals.push(r.landPsf * game.econ.landIdx * (1 + 0.22 * (0.25 + 0.9 * (r.demandScore / 100)) * game.econ.cycleDev));
+        const d = Math.max(2, Math.min(100, r.demandScore + (game.blockD?.[r.block] ?? 0)));
+        vals.push(r.landPsf * game.econ.landIdx * (1 + 0.22 * (0.25 + 0.9 * (d / 100)) * game.econ.cycleDev));
       }
       vals.sort((a, b) => a - b);
       const q = (p: number) => vals[Math.min(vals.length - 1, Math.floor(vals.length * p))];
@@ -359,10 +388,11 @@ export default function MapView() {
     if (!map || !mapReady || !tip) return;
     const container = map.getContainer();
     const onMove = (e: MouseEvent) => {
-      const { hoveredBBL, parcels: table, selectedBBL } = useStore.getState();
+      const { hoveredBBL, parcels: table, selectedBBL, game: g } = useStore.getState();
       const rec = hoveredBBL && hoveredBBL !== selectedBBL ? table?.[hoveredBBL] : null;
       if (!rec) { tip.style.display = "none"; return; }
-      tip.textContent = `${rec.address} · ${rec.class === "land" ? "vacant" : rec.floors + " fl"} · demand ${rec.demandScore}`;
+      const dmd = Math.round(Math.max(2, Math.min(100, rec.demandScore + (g?.blockD?.[rec.block] ?? 0))));
+      tip.textContent = `${rec.address} · ${rec.class === "land" ? "vacant" : rec.floors + " fl"} · demand ${dmd}`;
       tip.style.display = "block";
       const r = container.getBoundingClientRect();
       tip.style.left = e.clientX - r.left + 14 + "px";

@@ -50,14 +50,19 @@ export function marketRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condit
 }
 
 // A delivered development overrides the static record — resolve before use.
+// So does the neighbourhood: a block's demand drifts with what gets built and
+// occupied around it (see engine/demand.ts), and every reader of demandScore
+// below this line gets the live number without knowing the model exists.
 export function resolveRec(parcels: Record<string, ParcelRecord>, s: GameState, bbl: string): ParcelRecord | null {
   const rec = parcels[bbl];
   if (!rec) return null;
   const b = s.built?.[bbl];
   const adj = s.landAdj?.[bbl];
-  if (!b && !adj) return rec;
+  const dd = s.blockD?.[rec.block];
+  if (!b && !adj && !dd) return rec;
   const out = { ...rec };
   if (adj) out.landPsf = rec.landPsf * adj;
+  if (dd) out.demandScore = clamp(rec.demandScore + dd, 2, 100);
   if (b) { out.class = b.class; out.bldgArea = b.bldgArea; out.floors = b.floors; out.yearBuilt = b.yearBuilt; }
   return out;
 }

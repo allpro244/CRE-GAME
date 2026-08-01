@@ -10,6 +10,7 @@ import { tickSales, tickListingAbsorption, tickBrokerCalls } from "./actions";
 import { tickLoan } from "./debt";
 import { tickLoc } from "./credit";
 import { tickDevelopments, tickPrograms, tickCityGrowth } from "./dev";
+import { tickDemand } from "./demand";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
 
@@ -41,7 +42,7 @@ function targetListings(s: GameState, totalLots: number): number {
 
 export function newGame(seed: number, parcels?: ParcelTable): GameState {
   const s: GameState = {
-    v: 10,
+    v: 11,
     seed,
     rng: seed,
     month: 0,
@@ -56,6 +57,7 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
     built: {},
     cityBuilt: [],
     landAdj: {},
+    blockD: {},
     totalLots: parcels ? Object.keys(parcels).length : 0,
     builtAtStart: parcels ? Object.values(parcels).filter((p) => p.class !== "land").length : 0,
     exchange: null,
@@ -132,6 +134,10 @@ export function advanceQuarter(
   s.month++;
 
   tickEcon(s);
+  // The neighbourhood settles before anyone acts on it: last month's
+  // deliveries and lettings are now standing, so the city, the tenants and
+  // the appraisers all read the same block this month.
+  tickDemand(s, parcels);
   tickCityGrowth(s, parcels, bbls, adjacency);
   tickDevelopments(s, parcels);
   tickPrograms(s, parcels);

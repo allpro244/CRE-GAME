@@ -8,6 +8,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Contract, Development, GameState } from "./types";
 import { logBooks, monthLabel } from "./types";
+import { demandNow } from "./demand";
 import { rng, rrange } from "./market";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor } from "./value";
 import { genAnchorTenant } from "./leasing";
@@ -559,15 +560,18 @@ export function tickCityGrowth(
       if (s.holdings[bbl] || s.built[bbl] || s.developments[bbl]) continue;
       const rec = parcels[bbl];
       if (!rec || rec.class !== "land" || rec.lotArea < 1500) continue;
-      const score = rec.demandScore + rng(s) * 25;
+      // the city builds where the neighbourhood has BECOME good, not where it
+      // started good — which is how your first tower pulls the market to you
+      const score = demandNow(s, rec) + rng(s) * 25;
       if (score > bestScore) { bestScore = score; best = { bbl, rec }; }
     }
     if (!best) continue;
     const { bbl, rec } = best;
-    const use = useForZone(rec.zoneDist, rec.demandScore, rng(s));
+    const dNow = demandNow(s, rec);
+    const use = useForZone(rec.zoneDist, dNow, rng(s));
     const farMax = farMaxFor(rec);
     // young town builds small; a mature one builds to the envelope
-    const frac = Math.min(0.95, 0.22 + 0.45 * maturity + 0.3 * (rec.demandScore / 100) * maturity + rng(s) * 0.15);
+    const frac = Math.min(0.95, 0.22 + 0.45 * maturity + 0.3 * (dNow / 100) * maturity + rng(s) * 0.15);
     const sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
     const floors = Math.max(1, Math.round(sf / (rec.lotArea * 0.62)));
     s.built[bbl] = { class: use, bldgArea: sf, floors, yearBuilt: 2026 + Math.floor(s.month / 12) };

@@ -26,11 +26,17 @@ export function gameSources(): Record<string, SourceSpecification> {
   };
 }
 
+// The tiles carry the demand the generator baked in; a block's drift since
+// then lives in game state and is pushed into feature-state by MapView. Both
+// lenses read through this so they paint the number the engine is pricing off,
+// falling back to the tile attribute wherever nothing has moved yet.
+export const LIVE_DEMAND: unknown = ["coalesce", ["feature-state", "dmd"], ["get", "demand"]];
+
 // Land-value lens: shade every lot by its CURRENT land $/sf. The expression
 // mirrors engine/value.ts landPsfNow() exactly, computed from tile props.
 export function landLensColor(landIdx: number, cycleDev: number, stops: number[]): unknown {
   const now = ["*", ["get", "landpsf"], landIdx,
-    ["+", 1, ["*", 0.22 * cycleDev, ["+", 0.25, ["*", 0.009, ["get", "demand"]]]]]];
+    ["+", 1, ["*", 0.22 * cycleDev, ["+", 0.25, ["*", 0.009, LIVE_DEMAND]]]]];
   return ["interpolate", ["linear"], now,
     stops[0], "#f0ead8",
     stops[1], "#e3c876",

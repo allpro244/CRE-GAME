@@ -17,6 +17,7 @@ import { MILESTONES } from "@/engine/sim";
 import { isCommercial, vacantSf, walt, loiSigningCost, notReadySf, unitStatus, unitCount, suiteSf } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
 import { locLimit, locRate, locAvailable } from "@/engine/credit";
+import { blockReport } from "@/engine/demand";
 import { usd, sf, pct } from "./format";
 import Slider from "./Slider";
 
@@ -380,8 +381,10 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         <Row k="Lot area" v={sf(rec.lotArea)} />
         {isBuilt && <Row k="Building" v={sf(rec.bldgArea) + ` · ${rec.floors} fl · ${rec.yearBuilt}`} />}
         <Row k="FAR built / max" v={`${builtFar.toFixed(1)} / ${farMax.toFixed(1)}`} />
-        <Row k="Demand" v={String(rec.demandScore) + " / 100"} />
+        <Row k="Demand" v={String(Math.round(rec.demandScore)) + " / 100"} />
       </div>
+
+      <Neighbourhood bbl={rec.bbl} block={rec.block} />
 
       {holding && commercial && holding.tenants.length > 0 && (
         <div className="deal">
@@ -1867,6 +1870,51 @@ function Big({ label, value, bad }: { label: string; value: string; bad?: boolea
     <div className="big-stat">
       <div className="big-label">{label}</div>
       <div className={"big-value mono" + (bad ? " v-bad" : "")}>{value}</div>
+    </div>
+  );
+}
+
+// Why a corner is getting better, in the terms a principal actually thinks in:
+// how many people work here, how many live here, how much of it is open to the
+// street — and which of the three is missing. The demand number on the card is
+// downstream of exactly these; nothing here is decoration.
+// The engine probes the block with a test floorplate of each use and reports
+// which one moves it most, so the copy says exactly that — a marginal claim,
+// not an assertion about what the block does or doesn't have.
+const WANTS_LABEL: Record<string, string> = {
+  office: "Per square foot, offices would lift this block further than any other use.",
+  industrial: "Per square foot, industrial would lift this block further than any other use.",
+  multifamily: "Per square foot, housing would lift this block further than any other use.",
+  retail: "Per square foot, retail would lift this block further than any other use.",
+  mixed: "Per square foot, mixed use would lift this block further than any other use.",
+};
+function Neighbourhood({ bbl, block }: { bbl: string; block: string }) {
+  const game = useStore((s) => s.game);
+  const parcels = useStore((s) => s.parcels);
+  if (!game || !parcels) return null;
+  const r = blockReport(game, parcels, block);
+  if (!r) return null;
+  const n = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v));
+  const moved = Math.abs(r.drift) >= 0.5;
+  return (
+    <div className="deal" key={bbl}>
+      <div className="deal-head">The neighbourhood · within a five-minute walk</div>
+      <div className="grid">
+        <Row k="Jobs" v={n(r.jobs)} />
+        <Row k="Residents" v={n(r.residents)} />
+        <Row k="Storefront" v={sf(r.amenitySf)} />
+        <Row
+          k="Since 2026"
+          v={moved ? `${r.drift > 0 ? "+" : ""}${r.drift.toFixed(0)} demand` : "unchanged"}
+          strong={r.drift > 0.5}
+          bad={r.drift < -0.5}
+        />
+      </div>
+      <div className="deal-note">
+        {r.balanced
+          ? "Jobs, housing and street life are in balance here — every added foot compounds."
+          : WANTS_LABEL[r.wants]}
+      </div>
     </div>
   );
 }

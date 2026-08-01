@@ -85,13 +85,16 @@ function DecisionModal() {
   const parcels = useStore((s) => s.parcels);
   const { respondLoi, acceptOffer, declineOffer, select: goTo, setPage: openPage } = useStore.getState();
   const [deferred, setDeferred] = useState<Set<number>>(new Set());
+  // parcel ids are strings and do not fit in the numeric defer set; squeezing
+  // them in by hashing the last four digits would collide silently
+  const [dismissedCalls, setDismissedCalls] = useState<Set<string>>(new Set());
   if (!parcels || game.gameOver) return null;
 
   const loi = game.agent ? undefined : game.lois.find((l) => !deferred.has(l.id));
   const offerBbl = deferred.has(-1) ? undefined : Object.keys(game.holdings).find((b) => game.holdings[b].sale?.offer);
   // an unsolicited call from a broker is a decision like any other
   const callBbl = Object.entries(game.approaches).find(
-    ([b, a]) => a.inbound && !a.refused && a.ask && !deferred.has(-2 - Number(b.slice(-4))) && !game.holdings[b],
+    ([b, a]) => a.inbound && !a.refused && a.ask && !dismissedCalls.has(b) && !game.holdings[b],
   )?.[0];
   if (!loi && !offerBbl && !callBbl) return null;
 
@@ -121,10 +124,10 @@ function DecisionModal() {
               <Row k="Demand" v={`${rec.demandScore} / 100`} />
             </div>
             <div className="modal-actions">
-              <button className="btn btn-buy" onClick={() => { openPage("none"); goTo(callBbl); setDeferred((d) => new Set(d).add(-2 - Number(callBbl.slice(-4)))); }}>
+              <button className="btn btn-buy" onClick={() => { openPage("none"); goTo(callBbl); setDismissedCalls((d) => new Set(d).add(callBbl)); }}>
                 Open the file
               </button>
-              <button className="btn" onClick={() => setDeferred((d) => new Set(d).add(-2 - Number(callBbl.slice(-4))))}>
+              <button className="btn" onClick={() => setDismissedCalls((d) => new Set(d).add(callBbl))}>
                 Not now
               </button>
             </div>
@@ -367,7 +370,11 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         })()}
         {holding && rec.class === "multifamily" && <Row k="Occupancy" v={((holding.occ ?? 0) * 100).toFixed(0) + "%"} />}
         {holding && commercial && <Row k="WALT" v={walt(holding, game.month).toFixed(1) + " yrs"} />}
-        {isBuilt && <Row k="NOI / yr" v={usd(holding ? holdingNOIYr(rec, game.econ, holding, game.month) : noiYr(rec, game.econ, cond))} />}
+        {/* One building must not quote two different NOIs on one panel. Owned
+            assets already net out the tax bill; an unowned one is estimated
+            against its own appraisal, which is the only price on offer until
+            somebody names one. */}
+        {isBuilt && <Row k="NOI / yr" v={usd(holding ? holdingNOIYr(rec, game.econ, holding, game.month) : noiAfterTaxYr(rec, game.econ, cond, value))} />}
         {holding && isBuilt && <Row k="Property tax / yr" v={usd(propertyTaxYr(rec, holding)) + (commercial ? " (your share)" : "")} />}
         <Row k="Lot area" v={sf(rec.lotArea)} />
         {isBuilt && <Row k="Building" v={sf(rec.bldgArea) + ` · ${rec.floors} fl · ${rec.yearBuilt}`} />}

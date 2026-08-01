@@ -487,3 +487,5 @@ body {
   background: rgba(43, 37, 26, 0.82); color: var(--paper);
   border-color: rgba(43, 37, 26, 0.82);
 }
+.roll-group { border-top: 1px solid rgba(146,110,40,0.18); margin-top: 6px; padding-top: 6px; }
+.roll-group .roll-name { font-variant: small-caps; letter-spacing: 0.04em; color: var(--ink-dim); }

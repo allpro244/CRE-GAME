@@ -1,4 +1,8 @@
-export type AssetClass = "office" | "retail" | "mixed" | "multifamily" | "industrial" | "land";
+// Mixed-use is NOT here on purpose. It is not a market — there is no
+// mixed-use cap rate and no mixed-use tenant. A building that is part shops,
+// part offices and part apartments carries a `mix` and is described by it.
+// See engine/mix.ts.
+export type AssetClass = "office" | "retail" | "multifamily" | "industrial" | "land";
 
 export interface ParcelRecord {
   bbl: string;
@@ -10,7 +14,8 @@ export interface ParcelRecord {
   farMaxComm: number;
   farMaxRes: number;
   bldgClass: string;
-  class: AssetClass;
+  class: AssetClass;              // the dominant use; the mix has the rest
+  mix?: Partial<Record<Exclude<AssetClass, "land">, number>>;  // shares of floor area by use
   lotArea: number;      // sf
   bldgArea: number;     // sf
   floors: number;
@@ -39,7 +44,6 @@ export interface DataManifest {
 export const CLASS_LABEL: Record<AssetClass, string> = {
   office: "Office",
   retail: "Retail",
-  mixed: "Mixed-Use",
   multifamily: "Multifamily",
   industrial: "Industrial",
   land: "Vacant Land",
@@ -48,7 +52,6 @@ export const CLASS_LABEL: Record<AssetClass, string> = {
 export const CLASS_COLOR: Record<AssetClass, string> = {
   office: "#7f95ad",
   retail: "#c08552",
-  mixed: "#9b8ab8",
   multifamily: "#8aab8a",
   industrial: "#8f8f7a",
   land: "#b5a67f",

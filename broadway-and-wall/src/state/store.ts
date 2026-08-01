@@ -1,13 +1,13 @@
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
-import type { GameState, Contract } from "@/engine/types";
+import type { GameState, Contract, DevUse } from "@/engine/types";
 import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfolioQuarterlyCF } from "@/engine/sim";
 import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, startRenovation, setBroker, type BuyProduct } from "@/engine/actions";
 import { respondLOI, type LOIAction } from "@/engine/leasing";
 import { refinance, buyRateCap } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
 import { startDevelopment, startProgram, setStance, demolish } from "@/engine/dev";
-import type { BuiltClass } from "@/engine/types";
+import { normalizeParcels } from "@/engine/mix";
 import { netWorth } from "@/engine/value";
 import { loadGame, saveGame, listSaves, deleteSave, type SaveMeta } from "@/engine/save";
 
@@ -43,7 +43,7 @@ interface AppState {
   approach: (bbl: string) => void;
   respondLoi: (id: number, action: LOIAction, fund?: boolean) => void;
   refi: (bbl: string, product: string, lev?: number) => void;
-  develop: (bbl: string, use: BuiltClass, floors: number, coverage: number, preLeaseShare?: number, contract?: Contract) => void;
+  develop: (bbl: string, use: DevUse, floors: number, coverage: number, preLeaseShare?: number, contract?: Contract) => void;
   raze: (bbl: string) => void;
   program: (bbl: string, id: string) => void;
   stance: (bbl: string, v: -1 | 0 | 1) => void;
@@ -337,7 +337,7 @@ export const useStore = create<AppState>((set, get) => ({
     const { parcels } = get();
     const saved = await loadGame(slot);
     if (!saved || !parcels) { toast("That save wouldn't open.", "err"); return; }
-    const fits = saved.v === 13 &&
+    const fits = saved.v === 14 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (!fits) { toast("That save was made on a different city — it can't be loaded here.", "err"); return; }
@@ -399,11 +399,14 @@ export async function loadData() {
       fetchGzJson(base + "adjacency.json.gz"),
       fetch(base + "manifest.json").then((r) => { if (!r.ok) throw new Error(`manifest.json ${r.status}`); return r.json(); }),
     ]);
-    useStore.getState().setData({ parcels, adjacency, manifest });
+    // Any record the pipeline still files as "mixed" becomes its dominant use
+    // plus an explicit mix, once, at the door — so no downstream table lookup
+    // has to know that legacy class ever existed.
+    useStore.getState().setData({ parcels: normalizeParcels(parcels), adjacency, manifest });
     // resume the autosave — unless it references parcels that no longer
     // exist (a save from a different city/dataset), in which case start over
     const saved = await loadGame("auto");
-    const fitsCity = saved && saved.v === 13 &&
+    const fitsCity = saved && saved.v === 14 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (fitsCity) {

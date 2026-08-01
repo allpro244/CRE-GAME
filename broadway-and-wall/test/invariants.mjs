@@ -12,6 +12,7 @@ const parcels = JSON.parse(gunzipSync(readFileSync(P + "parcels.json.gz")).toStr
 const adjacency = JSON.parse(gunzipSync(readFileSync(P + "adjacency.json.gz")).toString());
 const bbls = Object.keys(parcels);
 const E = await import(process.env.ENGINE ?? join(HERE, ".engine.mjs"));
+E.normalizeParcels(parcels);   // legacy "mixed" records become a class + a mix
 
 const HORIZON = Number(process.env.HORIZON ?? 1200);
 const SEEDS = Number(process.env.SEEDS ?? 8);

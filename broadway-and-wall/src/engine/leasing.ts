@@ -3,14 +3,15 @@
 // market against moving costs, and rollover risk that clusters.
 // Multifamily skips all of this and runs aggregate occupancy.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { Credit, GameState, Holding, LOI, Sector } from "./types";
+import type { BuiltClass, Credit, GameState, Holding, LOI, Sector } from "./types";
 import { logBooks } from "./types";
 import { rng, rrange } from "./market";
-import { marketRentPsfYr, managedRentPsfYr, occupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf } from "./value";
+import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf } from "./value";
+import { blendBy, commercialShare, dominantUse, mixOf, uses, useSf } from "./mix";
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable } from "./credit";
 
-const CAP_KEYS = { office: 0, retail: 0, mixed: 0, multifamily: 0, industrial: 0 };
+const CAP_KEYS = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
 
 /**
  * What a lease of this class looks like when it is signed. Office in this
@@ -28,10 +29,13 @@ function rollRecovery(s: GameState, cls: string): Recovery {
 }
 
 /** The expense level frozen into a base-year lease on the day it is signed. */
-function stopPsfNow(rec: ParcelRecord, econ: GameState["econ"], h: Holding): number {
-  const cls = rec.class as "office" | "retail" | "mixed" | "multifamily" | "industrial";
+function stopPsfNow(rec: ParcelRecord, econ: GameState["econ"], h: Holding, use?: BuiltClass): number {
   const tax = (h.assessed ?? h.costBasis) * TAX_RATE / Math.max(1, rec.bldgArea);
-  return opexPsf(cls, econ, h.programsDone?.systems !== undefined) + tax;
+  const sys = h.programsDone?.systems !== undefined;
+  // A shop and an office in the same building do not have the same expense
+  // stop — their expense loads are not the same and never were.
+  const op = use ? opexPsf(use, econ, sys) : blendBy(rec, (u) => opexPsf(u, econ, sys));
+  return op + tax;
 }
 
 const money = (n: number) =>
@@ -54,7 +58,6 @@ const POOL: Record<Sector, string[]> = {
 const SECTORS_BY_CLASS: Record<string, Sector[]> = {
   office: ["finance", "law", "tech", "media", "insurance", "design"],
   retail: ["apparel", "food", "medical"],
-  mixed: ["tech", "media", "design", "food", "medical", "apparel"],
   industrial: ["logistics", "food", "apparel"],
 };
 
@@ -72,7 +75,19 @@ function rollCredit(s: GameState, demand: number): Credit {
 }
 
 export function isCommercial(rec: ParcelRecord): boolean {
-  return rec.class === "office" || rec.class === "retail" || rec.class === "mixed" || rec.class === "industrial";
+  // A block of flats with shops underneath has a commercial rent roll. It also
+  // has apartments. Both are true, and the building is managed as both.
+  return rec.class !== "land" && commercialShare(rec) > 0.02;
+}
+
+/** The commercial part of a building: the square feet with named tenants. */
+export function commercialSf(rec: ParcelRecord): number {
+  return (rec.bldgArea || 0) * commercialShare(rec);
+}
+
+/** Which uses in this building lease to named tenants. */
+export function leasableUses(rec: ParcelRecord): BuiltClass[] {
+  return uses(rec).filter((u) => u !== "multifamily");
 }
 
 // ---------------------------------------------------------------- the stack
@@ -85,21 +100,35 @@ export function isCommercial(rec: ParcelRecord): boolean {
 // Typical suite by class, in sf. Bigger buildings get bigger suites — a
 // 400,000 sf tower does not lease in 2,000 ft bites — but never so big that a
 // tower becomes a single unit.
-export function suiteSf(rec: ParcelRecord): number {
-  const a = Math.max(1, rec.bldgArea);
-  switch (rec.class) {
+export function useSuiteSf(rec: ParcelRecord, use: BuiltClass): number {
+  // Sized off the COMPONENT, not the building. Ground-floor retail under a
+  // tower demises into shops, not into floors — sizing it off the tower gave
+  // a 400,000 sf building 30,000 sf "shops", which is a department store.
+  const a = Math.max(1, useSf(rec, use) || rec.bldgArea);
+  switch (use) {
     case "multifamily": return 900;                                    // an apartment
     case "industrial":  return Math.max(12_000, Math.min(90_000, a / 2.2));
     case "retail":      return Math.max(1_400, Math.min(14_000, a / 6));
-    case "mixed":       return Math.max(2_000, Math.min(18_000, a / 9));
     default:            return Math.max(2_500, Math.min(28_000, a / 12));  // office
   }
+}
+/** The building's headline suite size — its dominant leasable use. */
+export function suiteSf(rec: ParcelRecord): number {
+  return useSuiteSf(rec, leasableUses(rec)[0] ?? dominantUse(rec));
 }
 
 // How many leasable spaces the building holds.
 export function unitCount(rec: ParcelRecord): number {
   if (!rec.bldgArea) return 0;
-  return Math.max(1, Math.round(rec.bldgArea / suiteSf(rec)));
+  // The sum of the parts. A block of flats over shops has apartments AND
+  // shops, and dividing the whole building by one suite size counted neither.
+  let n = 0;
+  for (const u of uses(rec)) {
+    const sf = useSf(rec, u);
+    if (sf <= 0) continue;
+    n += Math.max(1, Math.round(sf / useSuiteSf(rec, u)));
+  }
+  return Math.max(1, n);
 }
 
 // How many of them a given lease occupies.
@@ -108,19 +137,41 @@ export function unitsOf(rec: ParcelRecord, sf: number): number {
 }
 
 /** Leased / total spaces, and the sf behind each — the tenancy at a glance. */
-export function unitStatus(rec: ParcelRecord, h: Holding, month: number): {
-  total: number; leased: number; vacant: number; notReady: number; sfPer: number;
-} {
-  const total = unitCount(rec);
-  const sfPer = suiteSf(rec);
-  if (rec.class === "multifamily") {
-    const leased = Math.min(total, Math.round((h.occ ?? 0) * total));
-    return { total, leased, vacant: total - leased, notReady: 0, sfPer };
+export interface UnitRow { use: BuiltClass; total: number; leased: number; vacant: number; notReady: number; sfPer: number }
+
+/** Leased / total spaces per use — a mixed building has more than one answer. */
+export function unitStatusByUse(rec: ParcelRecord, h: Holding, month: number): UnitRow[] {
+  const out: UnitRow[] = [];
+  const notReadyTotal = notReadySf(h, month);
+  for (const use of uses(rec)) {
+    const sf = useSf(rec, use);
+    if (sf <= 0) continue;
+    const sfPer = useSuiteSf(rec, use);
+    const total = Math.max(1, Math.round(sf / sfPer));
+    if (use === "multifamily") {
+      const leased = Math.min(total, Math.round((h.occ ?? 0) * total));
+      out.push({ use, total, leased, vacant: total - leased, notReady: 0, sfPer });
+      continue;
+    }
+    const leasedSf = h.tenants.filter((t) => (t.use ?? dominantUse(rec)) === use).reduce((n, t) => n + t.sf, 0);
+    const leased = Math.min(total, Math.max(leasedSf > 0 ? 1 : 0, Math.round(leasedSf / sfPer)));
+    // make-ready is tracked for the building; apportion it to the commercial legs
+    const nr = Math.min(Math.max(0, total - leased), Math.round((notReadyTotal * (sf / Math.max(1, commercialSf(rec)))) / sfPer));
+    out.push({ use, total, leased, vacant: Math.max(0, total - leased - nr), notReady: nr, sfPer });
   }
-  const leasedSf = h.tenants.reduce((n, t) => n + t.sf, 0);
-  const leased = Math.min(total, Math.max(h.tenants.length ? 1 : 0, Math.round(leasedSf / sfPer)));
-  const notReady = Math.min(Math.max(0, total - leased), Math.round(notReadySf(h, month) / sfPer));
-  return { total, leased, vacant: Math.max(0, total - leased - notReady), notReady, sfPer };
+  return out;
+}
+
+export function unitStatus(rec: ParcelRecord, h: Holding, month: number): {
+  total: number; leased: number; vacant: number; notReady: number; sfPer: number; byUse: UnitRow[];
+} {
+  const byUse = unitStatusByUse(rec, h, month);
+  const sum = (f: (r: UnitRow) => number) => byUse.reduce((a, r) => a + f(r), 0);
+  const total = sum((r) => r.total);
+  return {
+    total, leased: sum((r) => r.leased), vacant: sum((r) => r.vacant),
+    notReady: sum((r) => r.notReady), sfPer: suiteSf(rec), byUse,
+  };
 }
 
 /**
@@ -132,8 +183,8 @@ export function unitStatus(rec: ParcelRecord, h: Holding, month: number): {
  * occupancy for a century.
  */
 const PART_SUITE_MIN = 700;   // below this it isn't space, it's a closet
-function toSuites(rec: ParcelRecord, want: number, cap: number): number {
-  const sfPer = suiteSf(rec);
+function toSuites(rec: ParcelRecord, want: number, cap: number, use?: BuiltClass): number {
+  const sfPer = use ? useSuiteSf(rec, use) : suiteSf(rec);
   const maxUnits = Math.floor(cap / sfPer + 0.02);
   if (maxUnits < 1) return cap >= Math.min(PART_SUITE_MIN, sfPer * 0.35) ? Math.round(cap) : 0;
   const n = Math.max(1, Math.min(maxUnits, Math.round(want / sfPer)));
@@ -151,55 +202,81 @@ function toSuites(rec: ParcelRecord, want: number, cap: number): number {
 // anchor years — a building with everything rolling at once is a visibly
 // riskier asset, and that's the point.
 export function genRentRoll(s: GameState, rec: ParcelRecord, holding: Holding) {
-  if (rec.class === "multifamily") {
-    holding.occ = Math.min(0.99, Math.max(0.5, occupancy(rec, s.econ) + rrange(s, -0.05, 0.04)));
-    return;
+  if (!rec.bldgArea) return;
+  const m = mixOf(rec);
+  if ((m.multifamily ?? 0) > 0) {
+    holding.occ = Math.min(0.99, Math.max(0.5, useOccupancy(rec, s.econ, "multifamily") + rrange(s, -0.05, 0.04)));
   }
-  if (!isCommercial(rec) || !rec.bldgArea) return;
-  const targetOcc = Math.min(0.98, occupancy(rec, s.econ) + rrange(s, -0.08, 0.05));
-  const market = marketRentPsfYr(rec, s.econ, holding.condition);
+  if (!isCommercial(rec)) return;
+  // A building in place has a rent roll per component: the shops at grade were
+  // let to shopkeepers at retail rents on retail terms, and the floors above
+  // to firms at office rents. One blended roll described neither.
   const anchors = [
     s.month + Math.round(rrange(s, 9, 36)),
     s.month + Math.round(rrange(s, 39, 90)),
   ];
+  for (const use of leasableUses(rec)) {
+  const legSf = useSf(rec, use);
+  if (legSf < 400) continue;
+  const targetOcc = Math.min(0.98, useOccupancy(rec, s.econ, use) + rrange(s, -0.08, 0.05));
+  const market = useRentPsfYr(rec, s.econ, holding.condition, use);
   let leased = 0;
   let guard = 0;
-  while (leased < rec.bldgArea * targetOcc && guard++ < 40) {
+  while (leased < legSf * targetOcc && guard++ < 40) {
     // whole suites only: a tenant takes one space, or knocks a few together
-    const free = rec.bldgArea * targetOcc - leased;
-    const want = suiteSf(rec) * Math.max(1, Math.round(rrange(s, 1, rec.class === "industrial" ? 1.6 : 2.8)));
-    const sf = toSuites(rec, want, free);
+    const free = legSf * targetOcc - leased;
+    const want = useSuiteSf(rec, use) * Math.max(1, Math.round(rrange(s, 1, use === "industrial" ? 1.6 : 2.8)));
+    const sf = toSuites(rec, want, free, use);
     if (!sf) break;
-    const sector = pickSector(s, rec.class);
+    const sector = pickSector(s, use);
     const endM = rng(s) < 0.6
       ? anchors[Math.floor(rng(s) * anchors.length) % anchors.length] + Math.round(rrange(s, -3, 3))
       : s.month + Math.round(rrange(s, 6, 96));
     holding.tenants.push({
       name: pickName(s, sector),
+      use,
       sector,
       credit: rollCredit(s, rec.demandScore),
       sf,
       rentPsf: +(market * rrange(s, 0.82, 1.04)).toFixed(2),
-      net: rec.class === "office" ? rng(s) < 0.75 : rng(s) < 0.4,
-      recovery: rollRecovery(s, rec.class),
+      net: use === "office" ? rng(s) < 0.75 : rng(s) < 0.4,
+      recovery: rollRecovery(s, use),
       // Signed in the past, so the stop is frozen at the cheaper expense level
       // of that year — the older the lease, the bigger the gap the owner eats.
-      baseStopPsf: +(stopPsfNow(rec, s.econ, holding) * rrange(s, 0.72, 0.98)).toFixed(2),
+      baseStopPsf: +(stopPsfNow(rec, s.econ, holding, use) * rrange(s, 0.72, 0.98)).toFixed(2),
       startM: s.month - Math.round(rrange(s, 0, 48)),
       endM: Math.max(s.month + 1, endM),
     });
     leased += sf;
   }
+  }
 }
 
 export function vacantSf(rec: ParcelRecord, h: Holding): number {
-  return Math.max(0, rec.bldgArea - h.tenants.reduce((sum, t) => sum + t.sf, 0));
+  // Only the commercial part. The flats upstairs are not vacant office space,
+  // and counting them as such let a mixed building lease its own apartments to
+  // a law firm.
+  return Math.max(0, commercialSf(rec) - h.tenants.reduce((sum, t) => sum + t.sf, 0));
+}
+
+/**
+ * Vacant square feet in one component of a building. Space a departing tenant
+ * left is NOT available until it has been turned — letting it twice was how a
+ * building came to have more square feet under lease than it had floors.
+ */
+export function useVacantSf(rec: ParcelRecord, h: Holding, use: BuiltClass, month?: number): number {
+  const taken = h.tenants.filter((t) => (t.use ?? dominantUse(rec)) === use).reduce((n, t) => n + t.sf, 0);
+  const turning = month === undefined ? 0 : notReadySf(h, month, use);
+  return Math.max(0, useSf(rec, use) - taken - turning);
 }
 
 // Space a departing tenant just left isn't leasable on day one — it's in
 // make-ready (demo, paint, systems, demising) for a few months.
-export function notReadySf(h: Holding, month: number): number {
-  return (h.makeReady ?? []).reduce((sum, m) => sum + (m.readyM > month ? m.sf : 0), 0);
+export function notReadySf(h: Holding, month: number, use?: BuiltClass): number {
+  return (h.makeReady ?? []).reduce(
+    (sum, m) => sum + (m.readyM > month && (use === undefined || (m.use ?? use) === use) ? m.sf : 0),
+    0,
+  );
 }
 
 export const MAKE_READY_PSF = 6; // turn cost, $/sf before cost inflation
@@ -212,14 +289,21 @@ export const MAKE_READY_PSF = 6; // turn cost, $/sf before cost inflation
  * for a decade and a half.
  */
 export function genAnchorTenant(s: GameState, rec: ParcelRecord, h: Holding, sfWanted: number, discount = 1) {
-  if (!isCommercial(rec) || sfWanted < 1000) return;
-  const sector = pickSector(s, rec.class);
-  const market = marketRentPsfYr(rec, s.econ, h.condition) * discount;
+  if (!isCommercial(rec)) return;
+  // An anchor pre-lets COMMERCIAL space. In a stacked building the flats above
+  // are not part of the deal, and letting the anchor take the whole building
+  // put more square feet under lease than the building had.
+  const use = leasableUses(rec)[0] ?? "office";
+  const sfAnchor = Math.min(sfWanted, useVacantSf(rec, h, use, s.month));
+  if (sfAnchor < 1000) return;
+  const sector = pickSector(s, use);
+  const market = useRentPsfYr(rec, s.econ, h.condition, use) * discount;
   h.tenants.push({
     name: pickName(s, sector),
+    use,
     sector,
     credit: rng(s) > 0.4 ? 2 : 1, // anchors are credit tenants
-    sf: Math.round(sfWanted),
+    sf: Math.round(sfAnchor),
     rentPsf: +(market * rrange(s, 0.9, 0.97)).toFixed(2),
     net: true,
     recovery: "nnn",
@@ -235,7 +319,7 @@ export function walt(h: Holding, q: number): number {
 }
 
 export const TI_ASK: Record<string, [number, number]> = {
-  office: [15, 40], retail: [5, 20], mixed: [10, 30], industrial: [2, 8],
+  office: [15, 40], retail: [5, 20], industrial: [2, 8], multifamily: [0, 3],
 };
 
 export function tickLeasing(s: GameState, parcels: ParcelTable) {
@@ -247,10 +331,12 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
 
-    if (rec.class === "multifamily") {
-      const target = occupancy(rec, s.econ);
+    // The flats in this building — whether it is a block of flats or a block
+    // of flats with shops underneath — run on aggregate occupancy.
+    const resShare = mixOf(rec).multifamily ?? 0;
+    if (resShare > 0) {
+      const target = useOccupancy(rec, s.econ, "multifamily");
       h.occ = Math.min(0.99, Math.max(0.4, (h.occ ?? target) + (target - (h.occ ?? target)) * 0.1 + rrange(s, -0.006, 0.006)));
-      continue;
     }
     if (!isCommercial(rec)) continue;
 
@@ -295,9 +381,17 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // honestly. A suite handed back in a soft office market is dark for the
       // better part of a year: demo, demise, permit, market, build out.
       const soft = s.econ.phase === "recession" ? 1.7 : s.econ.phase === "recovery" ? 1.3 : s.econ.phase === "peak" ? 0.95 : 0.8;
-      const classLag = rec.class === "office" ? 5.5 : rec.class === "industrial" ? 2.5 : 3.5;
-      const down = Math.max(1, Math.round(classLag * soft * rrange(s, 0.7, 1.4)));
-      h.makeReady = [...(h.makeReady ?? []), { sf: outSf, readyM: q + down }];
+      // Downtime is a property of the SPACE, not the building: a shop relets
+      // faster than a floor, and each turns on its own clock.
+      const lagFor = (u: BuiltClass | undefined) =>
+        u === "office" ? 5.5 : u === "industrial" ? 2.5 : 3.5;
+      const entries = movedOut.map((mo) => ({
+        sf: mo.sf,
+        use: mo.use,
+        readyM: q + Math.max(1, Math.round(lagFor(mo.use ?? dominantUse(rec)) * soft * rrange(s, 0.7, 1.4))),
+      }));
+      const down = Math.max(...entries.map((e) => e.readyM - q));
+      h.makeReady = [...(h.makeReady ?? []), ...entries];
       s.news.unshift({
         q, kind: "info",
         text: `${(outSf / 1000).toFixed(1)}k sf back at ${rec.address} — $${(turnCost / 1000).toFixed(0)}K make-ready, ${down} months before it can be shown.`,
@@ -337,7 +431,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const recovered = Math.round(t.rentPsf * t.sf * 0.25);
       s.cash += recovered;
       const down = Math.max(2, Math.round((rec.class === "office" ? 6 : 4) * rrange(s, 0.8, 1.5)));
-      h.makeReady = [...(h.makeReady ?? []), { sf: t.sf, readyM: q + down }];
+      h.makeReady = [...(h.makeReady ?? []), { sf: t.sf, readyM: q + down, use: t.use }];
       s.news.unshift({
         q, kind: "warn",
         text: `${t.name} filed and went dark at ${rec.address} — ${(t.sf / 1000).toFixed(1)}k sf back with ${(t.endM - q) / 12 > 1 ? `${((t.endM - q) / 12).toFixed(1)} years` : `${t.endM - q} months`} left on the lease. You kept $${(recovered / 1000).toFixed(0)}K of deposit.`,
@@ -404,32 +498,48 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const emptyPush = 1 + 0.7 * (vac / Math.max(1, rec.bldgArea));
       // What the sector is doing, and whether the city is hiring, decide how
       // many prospects walk through the door — not just the phase of the cycle.
-      const mom = s.econ.sectorMom?.[rec.class as keyof typeof s.econ.sectorMom] ?? 0;
+      // WHICH PART of the building is empty decides who walks through the
+      // door. A tower with one empty shop at grade and full floors above is
+      // being toured by shopkeepers, not law firms — and the shop competes in
+      // the retail market, on retail momentum, against retail supply.
+      const openLegs = leasableUses(rec)
+        .map((u) => ({ u, free: useVacantSf(rec, h, u, q) }))
+        .filter((x) => x.free > 400);
+      if (!openLegs.length) continue;
+      let pickWeight = rng(s) * openLegs.reduce((a, x) => a + x.free, 0);
+      let leg = openLegs[0];
+      for (const x of openLegs) { pickWeight -= x.free; if (pickWeight <= 0) { leg = x; break; } }
+      const use = leg.u;
+      const legVac = leg.free;
+      const mom = s.econ.sectorMom?.[use] ?? 0;
       const sectorAdj = mom * 9;
       const jobsMult = Math.max(0.55, Math.min(1.6, 0.65 + 0.35 * (s.econ.employIdx ?? 1)));
       // Everyone else's deliveries are competing for the same tenant.
-      const supplyMult = Math.max(0.5, 1 - 34 * (s.econ.supplyPress?.[rec.class as keyof typeof CAP_KEYS] ?? 0));
+      const supplyMult = Math.max(0.5, 1 - 34 * (s.econ.supplyPress?.[use as keyof typeof CAP_KEYS] ?? 0));
       const p = Math.min(0.9, Math.max(0.02, 0.24 + rec.demandScore / 200 + phaseAdj + condAdj + stanceAdj + lobbyAdj + sectorAdj)
         / 2.1 * brokerMult * leaseUp * emptyPush * jobsMult * supplyMult);
       if (rng(s) < p) {
-        const sector = pickSector(s, rec.class);
-        const [tiLo, tiHi] = TI_ASK[rec.class] ?? TI_ASK.office;
+        const sector = pickSector(s, use);
+        const [tiLo, tiHi] = TI_ASK[use] ?? TI_ASK.office;
         const concession = s.econ.phase === "recession" ? 1.85 : s.econ.phase === "recovery" ? 1.35
           : s.econ.phase === "peak" ? 0.9 : 0.7;
-        const market = managedRentPsfYr(rec, s.econ, h);
+        // ...and at the rent THAT market pays, not a blend of markets the
+        // tenant is not in.
+        const market = managedRentPsfYr(rec, s.econ, h, use);
         // Warehouses lease whole: one operator takes the building, or most of
         // it. Offices and shops carve into suites.
         // Prospects ask for spaces, not square feet. Warehouses tend to want
         // the whole shed; offices and shops take one suite or a few.
-        const want = rec.class === "industrial"
-          ? (rng(s) < 0.6 ? vac : vac * rrange(s, 0.5, 0.9))
-          : suiteSf(rec) * Math.max(1, Math.round(rrange(s, 1, 3.4)));
-        const sf = toSuites(rec, want, vac);
+        const want = use === "industrial"
+          ? (rng(s) < 0.6 ? legVac : legVac * rrange(s, 0.5, 0.9))
+          : useSuiteSf(rec, use) * Math.max(1, Math.round(rrange(s, 1, 3.4)));
+        const sf = toSuites(rec, want, legVac, use);
         if (!sf) continue;
         const credit = rollCredit(s, rec.demandScore);
         s.lois.push({
           id: s.nextLoiId++,
           bbl: h.bbl,
+          use,
           kind: "new",
           name: pickName(s, sector),
           sector,
@@ -445,7 +555,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // actually underwrites, and it has to be earned tenant by tenant.
           termM: Math.round(
             (credit === 2 ? rrange(s, 96, 180) : credit === 1 ? rrange(s, 60, 120) : rrange(s, 36, 66))
-            * (sf > suiteSf(rec) * 2.5 ? 1.15 : 1)
+            * (sf > useSuiteSf(rec, use) * 2.5 ? 1.15 : 1)
             * (s.econ.phase === "recession" ? 0.85 : 1),
           ),
           // Concessions are the first thing to move when a market turns, and
@@ -454,8 +564,8 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // the business.
           tiPsf: Math.round(rrange(s, tiLo, tiHi) * concession * (credit === 2 ? 1.35 : credit === 1 ? 1.05 : 0.85)),
           freeM: Math.round(rrange(s, 0, 6.5) * concession),
-          net: rec.class === "office" ? rng(s) < 0.8 : rng(s) < 0.4,
-          recovery: rollRecovery(s, rec.class),
+          net: use === "office" ? rng(s) < 0.8 : rng(s) < 0.4,
+          recovery: rollRecovery(s, use),
           expiresM: q + 3,
         });
         s.news.unshift({ q, kind: "info", text: `LOI in at ${rec.address} — check the Deals desk.` });
@@ -514,18 +624,19 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     // negotiation: the tenant gives up years of accumulated recovery, and the
     // owner gives up the rent they could have pushed. Rolling the stop forward
     // is often worth more than the spread on the rent.
-    if (recoveryOf(t) === "base") t.baseStopPsf = +stopPsfNow(rec, s.econ, h).toFixed(2);
+    if (recoveryOf(t) === "base") t.baseStopPsf = +stopPsfNow(rec, s.econ, h, t.use).toFixed(2);
   } else {
     // An LOI was sized against the vacancy on the day it was written. Two of
     // them can be live at once, so the second one signs against whatever is
     // left — you cannot lease the same floor twice.
-    const sf = Math.min(l.sf, Math.max(0, vacantSf(rec, h)));
+    const use = l.use ?? dominantUse(rec);
+    const sf = Math.min(l.sf, Math.max(0, useVacantSf(rec, h, use, s.month)));
     if (sf < 1) return;
     h.tenants.push({
-      name: l.name, sector: l.sector, credit: l.credit,
+      name: l.name, use, sector: l.sector, credit: l.credit,
       sf, rentPsf: l.rentPsf, net: l.net,
       recovery: l.recovery ?? (l.net ? "nnn" : "gross"),
-      baseStopPsf: +stopPsfNow(rec, s.econ, h).toFixed(2),
+      baseStopPsf: +stopPsfNow(rec, s.econ, h, use).toFixed(2),
       startM: s.month, endM: s.month + l.termM,
       freeUntilM: l.freeM ? s.month + l.freeM : undefined,
     });

@@ -46,7 +46,7 @@ const STYLE: Record<RivalStyle, {
   // sold their soul to nobody; buys quality, holds forever, sleeps at night
   family:        { appetite: 0.30, procyclical: 0.5, maxLtv: 0.50, cashOut: 0.00, classes: null, patience: 1.02 },
   // institutional money: steady, disciplined, buys stabilised income
-  core:          { appetite: 0.75, procyclical: 1.0, maxLtv: 0.65, cashOut: 0.20, classes: ["office", "multifamily", "mixed"], patience: 1.06 },
+  core:          { appetite: 0.75, procyclical: 1.0, maxLtv: 0.65, cashOut: 0.20, classes: ["office", "multifamily"], patience: 1.06 },
   // the ones who win the last three years of every cycle and lose the next one
   opportunistic: { appetite: 1.25, procyclical: 1.9, maxLtv: 0.88, cashOut: 0.85, classes: null, patience: 1.16 },
   // buys dirt and puts buildings on it; the city's growth is partly theirs

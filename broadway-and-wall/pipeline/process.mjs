@@ -32,8 +32,9 @@ const num = (v) => {
   return Number.isFinite(n) ? n : null;
 };
 
-// Asset-class remap from PLUTO building class letter (spec: office, retail,
-// mixed, multifamily, land — odd classes get the closest fit).
+// Asset-class remap from PLUTO building class letter. There is no "mixed"
+// class: a building that is shops at grade with flats above gets a MIX, and
+// its `class` is whichever leg is largest. See src/engine/mix.ts for why.
 function assetClass(bldgclass, landuse, bldgarea) {
   const c = (bldgclass ?? "").toUpperCase();
   const L = c[0];
@@ -42,9 +43,34 @@ function assetClass(bldgclass, landuse, bldgarea) {
   if (L === "E") return "industrial"; // lofts, sheds, warehouses
   if (L === "O" || L === "H" || L === "I" || L === "J" || L === "Y" || L === "W" || L === "P") return "office";
   if (L === "K" || L === "L") return "retail";
-  if (L === "S" || c === "RM" || L === "M") return "mixed";
+  if (L === "S" || c === "RM" || L === "M") return "stacked";
   if (L === "A" || L === "B" || L === "C" || L === "D" || L === "N" || L === "R") return "multifamily";
-  return "mixed";
+  return "stacked";
+}
+
+/**
+ * A stacked building, resolved into what it is actually made of: retail on the
+ * ground floor and the rest above, leaning residential where PLUTO says there
+ * are units. Returns { class, mix } — the mix is the truth and the class is
+ * just the biggest leg, kept so everything that files buildings by type still
+ * has an answer.
+ */
+function resolveMix(kind, floors, unitsRes, bbl) {
+  if (kind !== "stacked") return { klass: kind, mix: kind === "land" ? undefined : { [kind]: 1 } };
+  let h = 2166136261;
+  for (let i = 0; i < bbl.length; i++) { h ^= bbl.charCodeAt(i); h = Math.imul(h, 16777619); }
+  const j = ((h >>> 0) % 10000) / 10000;
+  const fl = Math.max(1, floors || 1);
+  const retail = Math.max(0.06, Math.min(0.42, (1 / fl) * (1.05 + 0.3 * j)));
+  const rest = 1 - retail;
+  const resLean = unitsRes > 0 ? 0.58 + 0.3 * j : 0.18 + 0.34 * j;
+  const raw = { retail, multifamily: rest * resLean, office: rest * (1 - resLean) };
+  const mix = {};
+  let tot = 0;
+  for (const k of Object.keys(raw)) if (raw[k] > 0.04) { mix[k] = raw[k]; tot += raw[k]; }
+  for (const k of Object.keys(mix)) mix[k] = +(mix[k] / tot).toFixed(4);
+  const klass = Object.keys(mix).sort((a, b) => mix[b] - mix[a])[0];
+  return { klass, mix };
 }
 
 // --- pass 1: extract, project, measure -------------------------------------
@@ -232,7 +258,8 @@ for (let i = 0; i < lots.length; i++) {
 
   const farMaxComm = num(p.commfar) ?? 0;
   const farMaxRes = num(p.resfar) ?? 0;
-  const klass = assetClass(cls, p.landuse, bldgArea);
+  const kind = assetClass(cls, p.landuse, bldgArea);
+  const { klass, mix } = resolveMix(kind, floors, num(p.unitsres) ?? 0, l.bbl);
 
   table[l.bbl] = {
     bbl: l.bbl,
@@ -244,6 +271,7 @@ for (let i = 0; i < lots.length; i++) {
     farMaxComm, farMaxRes,
     bldgClass: cls,
     class: klass,
+    ...(mix && Object.keys(mix).length > 1 ? { mix } : {}),
     lotArea, bldgArea, floors, yearBuilt,
     unitsRes: num(p.unitsres) ?? 0,
     assessedLand: assessLand,

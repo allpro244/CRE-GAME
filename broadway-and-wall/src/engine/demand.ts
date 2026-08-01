@@ -33,7 +33,11 @@
 // order. On day one every drift is zero and the game is bit-for-bit unchanged.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState } from "./types";
-import { occupancy } from "./value";
+import { useOccupancy } from "./value";
+import { mixOf, type UseMix } from "./mix";
+
+/** What the neighbourhood panel can recommend: a use, or a mixed-use stack. */
+export type WantsKey = BuiltClass | "mixed";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -82,11 +86,19 @@ function contribution(cls: BuiltClass, sf: number): { j: number; r: number; a: n
     case "industrial":  return { j: sf / 550, r: 0, a: 0 };
     case "retail":      return { j: sf / 420, r: 0, a: sf };
     case "multifamily": return { j: 0, r: sf / 900, a: 0 };
-    // mixed use is all three at once, which is precisely why it lifts a
-    // neighbourhood more per foot than anything else in the book
-    case "mixed":       return { j: (sf * 0.45) / 230, r: (sf * 0.4) / 900, a: sf * 0.15 };
   }
 }
+
+// Mixed use used to be a case in that switch, hand-tuned to contribute all
+// three at once. It no longer needs to be: a building that is part shops, part
+// offices and part flats contributes its retail feet as retail and its
+// residential feet as residential, and the geometric mean below does the rest.
+// The reason a mixed-use building lifts a neighbourhood more per square foot
+// than a tower is now EMERGENT rather than asserted, which is the only kind of
+// answer worth having.
+
+/** A canonical mixed-use stack, for the "what should I build here" probe. */
+const MIXED_PROBE: UseMix = { retail: 0.15, office: 0.45, multifamily: 0.40 };
 
 export function demandModel(parcels: ParcelTable): DemandModel {
   const hit = CACHE.get(parcels);
@@ -123,8 +135,10 @@ export function demandModel(parcels: ParcelTable): DemandModel {
     acc.set(id, a);
     if (r.class !== "land" && r.bldgArea > 0) {
       const st = baseStock.get(id) ?? {};
-      const k = r.class as BuiltClass;
-      st[k] = (st[k] ?? 0) + r.bldgArea;
+      // by component: the shops under a block of flats are retail feet, and
+      // the block only has street life because of them
+      const m = mixOf(r);
+      for (const k of Object.keys(m) as BuiltClass[]) st[k] = (st[k] ?? 0) + r.bldgArea * (m[k] ?? 0);
       baseStock.set(id, st);
     }
   }
@@ -229,21 +243,36 @@ function occupiedStock(s: GameState, parcels: ParcelTable, model: DemandModel): 
     const base = parcels[bbl];
     const id = model.ofBbl.get(bbl);
     if (!base || !id) continue;
-    if (base.class !== "land" && base.bldgArea > 0) bump(id, base.class as BuiltClass, -base.bldgArea * occFor(base.class as BuiltClass));
-    if (b.bldgArea > 0 && (b.class as string) !== "land") bump(id, b.class, b.bldgArea * occFor(b.class));
+    if (base.class !== "land" && base.bldgArea > 0) {
+      const bm = mixOf(base);
+      for (const k of Object.keys(bm) as BuiltClass[]) bump(id, k, -base.bldgArea * (bm[k] ?? 0) * occFor(k));
+    }
+    if (b.bldgArea > 0 && (b.class as string) !== "land") {
+      const nm = b.mix ?? { [b.class]: 1 };
+      for (const k of Object.keys(nm) as BuiltClass[]) bump(id, k, b.bldgArea * (nm[k] ?? 0) * occFor(k));
+    }
   }
 
   // and your own buildings report their REAL occupancy, not the market's
   for (const h of Object.values(s.holdings)) {
     const base = s.built?.[h.bbl];
     const rec = parcels[h.bbl];
-    const cls = (base?.class ?? rec?.class) as BuiltClass | "land" | undefined;
-    const sf = base?.bldgArea ?? rec?.bldgArea ?? 0;
-    if (!cls || cls === "land" || !sf) continue;
-    const real = cls === "multifamily"
-      ? (h.occ ?? occFor(cls))
-      : Math.min(1, h.tenants.reduce((n, t) => n + t.sf, 0) / sf);
-    bump(model.ofBbl.get(h.bbl), cls, (real - occFor(cls)) * sf);
+    if (!rec) continue;
+    const sf = base?.bldgArea ?? rec.bldgArea ?? 0;
+    if (!sf) continue;
+    const m = base?.mix ?? mixOf({ ...rec, class: base?.class ?? rec.class, mix: base?.mix });
+    for (const cls of Object.keys(m) as BuiltClass[]) {
+      const share = m[cls] ?? 0;
+      const compSf = sf * share;
+      if (compSf <= 0) continue;
+      // your empty floors are empty for the neighbourhood too — and each part
+      // of a mixed building reports its own occupancy, because the shops can
+      // be full while the offices above them are not
+      const real = cls === "multifamily"
+        ? (h.occ ?? occFor(cls))
+        : Math.min(1, h.tenants.filter((tn) => (tn.use ?? cls) === cls).reduce((n, tn) => n + tn.sf, 0) / compSf);
+      bump(model.ofBbl.get(h.bbl), cls, (real - occFor(cls)) * compSf);
+    }
   }
   return out;
 }
@@ -253,7 +282,7 @@ function occupiedStock(s: GameState, parcels: ParcelTable, model: DemandModel): 
 // model chase its own tail — a block that got better would get better because
 // it got better. The cycle is the only thing this term is allowed to see.
 function marketOcc(cls: BuiltClass, econ: Econ): number {
-  return occupancy({ class: cls, demandScore: 55 } as unknown as ParcelRecord, econ);
+  return useOccupancy({ class: cls, demandScore: 55 } as unknown as ParcelRecord, econ, cls);
 }
 /** Occupancy at mid-cycle: the baseline the drift is measured against. */
 function refOcc(cls: BuiltClass): number {
@@ -329,8 +358,8 @@ export function blockReport(s: GameState, parcels: ParcelTable, block: string): 
   jobs: number; residents: number; amenitySf: number; baseD: number; drift: number;
   /** each leg against what counts as a full measure of it in this city, 0..1+ */
   mix: { jobs: number; residents: number; amenity: number };
-  /** the use that would lift this block most per square foot */
-  wants: BuiltClass;
+  /** the programme that would lift this block most per square foot */
+  wants: WantsKey;
   /** true when no use is meaningfully better than the next — the block is balanced */
   balanced: boolean;
 } | null {
@@ -356,18 +385,28 @@ export function blockReport(s: GameState, parcels: ParcelTable, block: string): 
     amenity: (a / acres) / model.refAmen,
   };
   // Which use would help most is NOT simply "whichever index reads lowest".
-  // Retail brings jobs and a shopfront; mixed use brings all three at once. So
-  // ask the model instead of guessing at it: add the same test floorplate in
-  // each use and see which one moves the block. Cheap — the totals are already
-  // in hand, this is five evaluations of one formula.
+  // Retail brings jobs and a shopfront; a mixed stack brings all three at once.
+  // So ask the model instead of guessing at it: add the same test floorplate as
+  // each single use AND as a mixed-use building, and see which moves the block.
   const PROBE_SF = 60_000;
   const here = norm(j, r, a);
-  let wants: BuiltClass = "mixed";
+  const candidates: { key: WantsKey; mix: UseMix }[] = [
+    { key: "office", mix: { office: 1 } },
+    { key: "retail", mix: { retail: 1 } },
+    { key: "multifamily", mix: { multifamily: 1 } },
+    { key: "industrial", mix: { industrial: 1 } },
+    { key: "mixed", mix: MIXED_PROBE },
+  ];
+  let wants: WantsKey = "mixed";
   let bestGain = -Infinity, secondGain = -Infinity;
-  for (const cls of ["office", "retail", "multifamily", "industrial", "mixed"] as BuiltClass[]) {
-    const c = contribution(cls, PROBE_SF);
-    const gain = norm(j + c.j, r + c.r, a + c.a) - here;
-    if (gain > bestGain) { secondGain = bestGain; bestGain = gain; wants = cls; }
+  for (const cand of candidates) {
+    let cj = 0, cr = 0, ca = 0;
+    for (const u of Object.keys(cand.mix) as BuiltClass[]) {
+      const c = contribution(u, PROBE_SF * (cand.mix[u] ?? 0));
+      cj += c.j; cr += c.r; ca += c.a;
+    }
+    const gain = norm(j + cj, r + cr, a + ca) - here;
+    if (gain > bestGain) { secondGain = bestGain; bestGain = gain; wants = cand.key; }
     else if (gain > secondGain) secondGain = gain;
   }
   return {

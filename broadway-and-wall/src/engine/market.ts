@@ -29,12 +29,12 @@ const PHASE_CFG: Record<MarketPhase, { rateMu: number; rentDrift: number; devDri
   recession: { rateMu: 6.2, rentDrift: -0.0047, devDrift: -0.054, nextM: [12, 24], next: "recovery" },
 };
 
-export const CAP_BASE = { office: 5.6, retail: 6.1, mixed: 5.7, multifamily: 4.9, industrial: 6.9 } as const;
+export const CAP_BASE = { office: 5.6, retail: 6.1, multifamily: 4.9, industrial: 6.9 } as const;
 // Rough citywide inventory by class, in sf — the denominator that turns other
 // people's construction into a rent effect you can feel.
-export const CITY_STOCK = { office: 26e6, retail: 11e6, mixed: 9e6, multifamily: 31e6, industrial: 14e6 } as const;
-export const SECTOR_LABEL = { office: "Office", retail: "Retail", mixed: "Mixed-use", multifamily: "Apartments", industrial: "Industrial" } as const;
-export const RENT_BASE = { office: 62, retail: 88, mixed: 58, multifamily: 46, industrial: 16 } as const; // $/sf/yr
+export const CITY_STOCK = { office: 30e6, retail: 15e6, multifamily: 35e6, industrial: 14e6 } as const;
+export const SECTOR_LABEL = { office: "Office", retail: "Retail", multifamily: "Apartments", industrial: "Industrial" } as const;
+export const RENT_BASE = { office: 62, retail: 88, multifamily: 46, industrial: 16 } as const; // $/sf/yr
 
 export function initEcon(s: GameState): Econ {
   const econ: Econ = {
@@ -44,12 +44,12 @@ export function initEcon(s: GameState): Econ {
     rumoredPhase: null,
     cycleDev: 0.1,
     landIdx: 1.0,
-    capRate: { office: CAP_BASE.office, retail: CAP_BASE.retail, mixed: CAP_BASE.mixed, multifamily: CAP_BASE.multifamily, industrial: CAP_BASE.industrial },
-    rentIdx: { office: RENT_BASE.office, retail: RENT_BASE.retail, mixed: RENT_BASE.mixed, multifamily: RENT_BASE.multifamily, industrial: RENT_BASE.industrial },
+    capRate: { office: CAP_BASE.office, retail: CAP_BASE.retail, multifamily: CAP_BASE.multifamily, industrial: CAP_BASE.industrial },
+    rentIdx: { office: RENT_BASE.office, retail: RENT_BASE.retail, multifamily: RENT_BASE.multifamily, industrial: RENT_BASE.industrial },
     costIdx: 1,
-    sectorMom: { office: 0, retail: 0, mixed: 0, multifamily: 0, industrial: 0 },
-    pipeline: { office: 0, retail: 0, mixed: 0, multifamily: 0, industrial: 0 },
-    starts: { office: 0, retail: 0, mixed: 0, multifamily: 0, industrial: 0 },
+    sectorMom: { office: 0, retail: 0, multifamily: 0, industrial: 0 },
+    pipeline: { office: 0, retail: 0, multifamily: 0, industrial: 0 },
+    starts: { office: 0, retail: 0, multifamily: 0, industrial: 0 },
     creditIdx: 1,
     employIdx: 1,
     history: [],

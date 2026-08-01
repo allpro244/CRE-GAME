@@ -20,6 +20,7 @@ const parcels = JSON.parse(gunzipSync(readFileSync(P + "parcels.json.gz")).toStr
 const adjacency = JSON.parse(gunzipSync(readFileSync(P + "adjacency.json.gz")).toString());
 const bbls = Object.keys(parcels);
 const E = await import(process.env.ENGINE ?? join(HERE, ".engine.mjs"));
+E.normalizeParcels(parcels);   // legacy "mixed" records become a class + a mix
 const M = (n) => (Math.abs(n) >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : `${(n / 1e6).toFixed(0)}M`);
 
 // --- the four archetypes ----------------------------------------------------
@@ -138,10 +139,14 @@ function run(stratName, seed) {
   }
   void lastNews;
   const nw = E.netWorth(g, parcels);
+  // Physical occupancy of the whole book: commercial space under lease PLUS
+  // residential space occupied. Counting only named tenants read a full block
+  // of flats over shops as 45% empty.
   const occ = Object.entries(g.holdings).reduce((a, [b, h]) => {
     const rec = E.resolveRec(parcels, g, b);
     if (!rec || !rec.bldgArea) return a;
-    const leased = h.tenants.reduce((n, t) => n + t.sf, 0);
+    const leased = h.tenants.reduce((n, t) => n + t.sf, 0)
+      + E.useSf(rec, "multifamily") * (h.occ ?? 0);
     return { l: a.l + leased, t: a.t + rec.bldgArea };
   }, { l: 0, t: 0 });
   const walts = Object.entries(g.holdings).map(([b, h]) => E.walt(h, g.month)).filter((w) => w > 0);

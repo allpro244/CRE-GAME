@@ -17,8 +17,9 @@
 // identity, a definitional bound, or a rule the engine states elsewhere in
 // prose. If a check is arguable, it does not belong in this file.
 import type { ParcelTable } from "@/data/types";
-import type { GameState } from "./types";
+import type { BuiltClass, GameState } from "./types";
 import { resolveRec, holdingValue, holdingNOIYr, netWorth } from "./value";
+import { mixOf, useSf } from "./mix";
 
 export interface Violation {
   code: string;
@@ -83,6 +84,31 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
       bad("overleased", at, `${Math.round(leased).toLocaleString()} sf leased in a ${rec.bldgArea.toLocaleString()} sf building`);
     }
     if (rec.class === "land" && leased > 0) bad("roll", at, "a vacant site has tenants on it");
+
+    // THE MIX. Shares must be a real partition of the building, and no tenant
+    // may occupy a use the building does not have — you cannot lease office
+    // space in a building that is entirely flats.
+    const m = mixOf(rec);
+    const shares = Object.values(m);
+    if (rec.class !== "land") {
+      const tot = shares.reduce((x, y) => x + y, 0);
+      if (!fin(tot) || Math.abs(tot - 1) > 0.005) bad("mix", at, `use shares sum to ${tot.toFixed(3)}, not 1`);
+      for (const [u, sh] of Object.entries(m)) {
+        if (!fin(sh) || sh <= 0 || sh > 1.0001) bad("mix", at, `${u} share is ${sh}`);
+      }
+      // each component holds only what fits in it
+      for (const u of Object.keys(m) as BuiltClass[]) {
+        const cap = useSf(rec, u);
+        const inUse = h.tenants.filter((tn) => (tn.use ?? rec.class) === u).reduce((n, tn) => n + tn.sf, 0);
+        if (inUse > cap + 1) {
+          bad("overleased", at, `${Math.round(inUse).toLocaleString()} sf let in the ${u} part, which is ${Math.round(cap).toLocaleString()} sf`);
+        }
+      }
+      for (const tn of h.tenants) {
+        if (tn.use && !(tn.use in m)) bad("mix", at, `${tn.name} occupies ${tn.use} space in a building with none`);
+        if (tn.use === "multifamily") bad("mix", at, `${tn.name} is a named tenant in the residential part`);
+      }
+    }
     for (const t of h.tenants) {
       if (!fin(t.sf) || t.sf <= 0) bad("tenant", at, `${t.name} occupies ${t.sf} sf`);
       if (!fin(t.rentPsf) || t.rentPsf < 0) bad("tenant", at, `${t.name} pays ${t.rentPsf}/sf`);
@@ -157,6 +183,11 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
     if (!fin(b.bldgArea) || b.bldgArea <= 0) bad("built", at, `${b.bldgArea} sf`);
     if (!fin(b.floors) || b.floors < 1) bad("built", at, `${b.floors} floors`);
     if (b.yearBuilt < 1800 || b.yearBuilt > 2200) bad("built", at, `built in ${b.yearBuilt}`);
+    if (b.mix) {
+      const tot = Object.values(b.mix).reduce((x, y) => x + y, 0);
+      if (!fin(tot) || Math.abs(tot - 1) > 0.005) bad("mix", at, `delivered mix sums to ${tot}`);
+      if (!(b.class in b.mix)) bad("mix", at, `filed as ${b.class}, which is not in its own mix`);
+    }
   }
   for (const [id, d] of Object.entries(s.blockD ?? {})) {
     if (!fin(d)) bad("nan", `block ${id}`, `demand drift is ${d}`);

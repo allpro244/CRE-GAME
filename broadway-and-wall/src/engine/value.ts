@@ -4,6 +4,8 @@
 import type { ParcelRecord } from "@/data/types";
 import type { Condition, Econ, GameState, Holding } from "./types";
 import type { BuiltClass } from "./types";
+import { blend, blendBy, uses, useSf } from "./mix";
+import { RENT_BASE } from "./market";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -45,8 +47,15 @@ export function locationRentMult(rec: ParcelRecord): number {
 
 export function marketRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition): number {
   if (rec.class === "land") return 0;
-  const cls = rec.class as BuiltClass;
-  return econ.rentIdx[cls] * locationRentMult(rec) * condMult(condition);
+  // The blended rent of a building that is shops below and flats above is the
+  // area-weighted average of the shop market and the flat market. There is no
+  // third market it belongs to.
+  return blend(rec, econ.rentIdx) * locationRentMult(rec) * condMult(condition);
+}
+
+/** What one component of a building rents for, in its own market. */
+export function useRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition, use: BuiltClass): number {
+  return (econ.rentIdx[use] ?? 0) * locationRentMult(rec) * condMult(condition);
 }
 
 // A delivered development overrides the static record — resolve before use.
@@ -63,14 +72,22 @@ export function resolveRec(parcels: Record<string, ParcelRecord>, s: GameState, 
   const out = { ...rec };
   if (adj) out.landPsf = rec.landPsf * adj;
   if (dd) out.demandScore = clamp(rec.demandScore + dd, 2, 100);
-  if (b) { out.class = b.class; out.bldgArea = b.bldgArea; out.floors = b.floors; out.yearBuilt = b.yearBuilt; }
+  if (b) {
+    out.class = b.class; out.bldgArea = b.bldgArea; out.floors = b.floors; out.yearBuilt = b.yearBuilt;
+    // and its composition — a delivered mixed-use building that reported as
+    // single-use was the whole point of the change, undone at the last step
+    out.mix = b.mix;
+  }
   return out;
 }
 
 // Achievable rent for NEW leases in a managed building: capital programs and
 // the owner's rent stance move it off the pure market number.
-export function managedRentPsfYr(rec: ParcelRecord, econ: Econ, h: Holding): number {
-  let m = marketRentPsfYr(rec, econ, h.condition);
+export function managedRentPsfYr(rec: ParcelRecord, econ: Econ, h: Holding, use?: BuiltClass): number {
+  // With a use, the rent of that component in its own market. Without one, the
+  // blended number the whole building is worth — which is the right answer for
+  // an appraisal and the wrong one for a lease.
+  let m = use ? useRentPsfYr(rec, econ, h.condition, use) : marketRentPsfYr(rec, econ, h.condition);
   const done = h.programsDone ?? {};
   if (done.lobby !== undefined) m *= 1.04;
   if (done.facade !== undefined) m *= 1.08;
@@ -80,14 +97,17 @@ export function managedRentPsfYr(rec: ParcelRecord, econ: Econ, h: Holding): num
 
 // Phase 2 occupancy model: class norms breathing with the cycle and demand.
 // Named tenants, LOIs, and rollover arrive in Phase 3.
-const OCC_BASE: Record<BuiltClass, number> = { office: 0.87, retail: 0.91, mixed: 0.89, multifamily: 0.955, industrial: 0.9 };
+const OCC_BASE: Record<BuiltClass, number> = { office: 0.87, retail: 0.91, multifamily: 0.955, industrial: 0.9 };
+export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass): number {
+  const swing = use === "multifamily" ? 0.02 : 0.05;
+  return clamp(OCC_BASE[use] + swing * econ.cycleDev + 0.03 * (rec.demandScore / 100 - 0.5), 0.6, 0.99);
+}
 export function occupancy(rec: ParcelRecord, econ: Econ): number {
-  const cls = rec.class as BuiltClass;
-  const swing = cls === "multifamily" ? 0.02 : 0.05;
-  return clamp(OCC_BASE[cls] + swing * econ.cycleDev + 0.03 * (rec.demandScore / 100 - 0.5), 0.6, 0.99);
+  if (rec.class === "land") return 0;
+  return blendBy(rec, (u) => useOccupancy(rec, econ, u));
 }
 
-const OPEX_RATIO: Record<BuiltClass, number> = { office: 0.38, retail: 0.30, mixed: 0.36, multifamily: 0.44, industrial: 0.24 };
+const OPEX_RATIO: Record<BuiltClass, number> = { office: 0.38, retail: 0.30, multifamily: 0.44, industrial: 0.24 };
 
 // ---------------------------------------------------------------- the opex stack
 // A single blended $/sf hides the two things that actually matter: which line
@@ -104,8 +124,8 @@ const OPEX_RATIO: Record<BuiltClass, number> = { office: 0.38, retail: 0.30, mix
 // payroll, turns, marketing, utilities the tenant does not pay — and it runs
 // 40-45% before the capex reserve. Understating it made multifamily pencil on
 // ninety-nine sites out of a hundred.
-export const OPEX_CONTROLLABLE: Record<BuiltClass, number> = { office: 9.2, retail: 5.4, mixed: 7.6, multifamily: 13.0, industrial: 2.3 };
-export const OPEX_FIXED: Record<BuiltClass, number> = { office: 3.8, retail: 2.6, mixed: 3.4, multifamily: 4.2, industrial: 1.2 };
+export const OPEX_CONTROLLABLE: Record<BuiltClass, number> = { office: 9.2, retail: 5.4, multifamily: 13.0, industrial: 2.3 };
+export const OPEX_FIXED: Record<BuiltClass, number> = { office: 3.8, retail: 2.6, multifamily: 4.2, industrial: 1.2 };
 export const MGMT_FEE = 0.04;   // of effective gross income, industry standard
 
 /** Total operating cost per sf/yr before management fee and property tax. */
@@ -114,7 +134,7 @@ export function opexPsf(cls: BuiltClass, econ: Econ, systemsDone: boolean): numb
 }
 
 // Kept for compatibility with anything still asking the old question.
-export const OPEX_PSF: Record<BuiltClass, number> = { office: 13, retail: 8, mixed: 11, multifamily: 10, industrial: 3.5 };
+export const OPEX_PSF: Record<BuiltClass, number> = { office: 13, retail: 8, multifamily: 10, industrial: 3.5 };
 
 /**
  * How a lease reimburses operating cost. This is the difference between an
@@ -163,8 +183,9 @@ export const TAX_RATE = 0.011;
 // than a tired walk-up on the edge of town. Demand is location; condition is
 // quality. Spread runs roughly ±0.6 points around the citywide class cap.
 export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition): number {
-  const cls = rec.class as BuiltClass;
-  const base = econ.capRate[cls] ?? 6;
+  // A buyer underwrites each part against its own comps and adds them up; the
+  // blended cap rate is what falls out, not something quoted anywhere.
+  const base = rec.class === "land" ? 6 : blend(rec, econ.capRate) || 6;
   const locSpread = -((rec.demandScore - 50) / 100) * 0.8;
   const qualSpread = condition === "good" ? -0.22 : condition === "worn" ? 0.35 : 0;
   return clamp(base + locSpread + qualSpread, 2.8, 12);
@@ -188,11 +209,20 @@ export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition): numb
     // carry: taxes and insurance bleed on idle land
     return -landValue(rec, econ) * 0.012;
   }
-  const cls = rec.class as BuiltClass;
-  const gross = rec.bldgArea * marketRentPsfYr(rec, econ, condition) * occupancy(rec, econ);
-  // opex share drifts up as cost inflation outpaces the rent share it eats
-  const ratio = Math.min(0.6, OPEX_RATIO[cls] * Math.pow(econ.costIdx / (econ.rentIdx[cls] / (cls === "office" ? 62 : cls === "retail" ? 88 : cls === "mixed" ? 58 : cls === "multifamily" ? 46 : 16)), 0.5));
-  return gross * (1 - ratio);
+  // Each component earns its own rent at its own occupancy and carries its own
+  // expense ratio. A shop under flats is a 30%-expense-ratio business sitting
+  // on top of a 44% one, and blending them before the fact hid both.
+  let gross = 0, net = 0;
+  for (const use of uses(rec)) {
+    const sf = useSf(rec, use);
+    if (sf <= 0) continue;
+    const g = sf * useRentPsfYr(rec, econ, condition, use) * useOccupancy(rec, econ, use);
+    // opex share drifts up as cost inflation outpaces the rent share it eats
+    const ratio = Math.min(0.6, OPEX_RATIO[use] * Math.pow(econ.costIdx / (econ.rentIdx[use] / RENT_BASE[use]), 0.5));
+    gross += g;
+    net += g * (1 - ratio);
+  }
+  return net;
 }
 
 /**
@@ -385,7 +415,7 @@ export function monthlyNOI(rec: ParcelRecord, econ: Econ, h: Holding, currentQ: 
   return holdingNOIYr(rec, econ, h, currentQ) / 12;
 }
 
-export const RENO_COST_PSF: Record<BuiltClass, number> = { office: 210, retail: 150, mixed: 190, multifamily: 165, industrial: 90 };
+export const RENO_COST_PSF: Record<BuiltClass, number> = { office: 210, retail: 150, multifamily: 165, industrial: 90 };
 export const RENO_MONTHS = 6;
 
 export function renovationCost(rec: ParcelRecord, econ: Econ): number {

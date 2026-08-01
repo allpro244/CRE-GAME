@@ -6,7 +6,7 @@
 // loan, wait 4-6 quarters while the building rises on the map, then lease up
 // from empty. A modest random cost/schedule overrun keeps it honest.
 import type { ParcelTable } from "@/data/types";
-import type { BuiltClass, Contract, Development, GameState } from "./types";
+import type { BuiltClass, Contract, DevUse, Development, GameState, UseMix } from "./types";
 import { logBooks, monthLabel } from "./types";
 import { demandNow } from "./demand";
 import { rng, rrange } from "./market";
@@ -31,11 +31,35 @@ const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
  */
 export const HARD_COST_PSF: Record<BuiltClass, number> = {
   office: 430,        // rent 62 → 6.9x
-  mixed: 400,         // rent 58 → 6.9x
   multifamily: 320,   // rent 46 → 7.0x
   retail: 570,        // rent 88 → 6.5x
   industrial: 118,    // rent 16 → 7.4x
 };
+
+/**
+ * A PROGRAMME, not a class. You do not build "mixed use" — you build shops at
+ * grade with offices and flats above, and the budget is the sum of those three
+ * jobs. "mixed" here is shorthand for a canonical stack, and the whole of what
+ * it means is the mix below: cost, rent, lease-up, lender appetite and
+ * neighbourhood effect all follow from the components.
+ */
+export const MIXED_STACK: UseMix = { retail: 0.15, office: 0.45, multifamily: 0.40 };
+export function devMix(use: DevUse): UseMix {
+  return use === "mixed" ? MIXED_STACK : { [use]: 1 };
+}
+export function dominantOf(mix: UseMix): BuiltClass {
+  return (Object.keys(mix) as BuiltClass[]).sort((a, b) => (mix[b] ?? 0) - (mix[a] ?? 0))[0] ?? "office";
+}
+/** Weighted average of a per-use number across a programme. */
+function overMix(mix: UseMix, f: (u: BuiltClass) => number): number {
+  let sum = 0, w = 0;
+  for (const u of Object.keys(mix) as BuiltClass[]) { const s = mix[u] ?? 0; sum += f(u) * s; w += s; }
+  return w > 0 ? sum / w : 0;
+}
+/** How much of a programme carries genuine leasing risk before it is built. */
+function specShare(mix: UseMix): number {
+  return (mix.office ?? 0) + (mix.retail ?? 0);
+}
 const SOFT_COST = 0.16;        // design, legal, permits, insurance, financing fees
 const CONSTR_SPREAD = 2.4;     // over the index, interest-only
 export const CONTINGENCY = 0.06;  // held against change orders; unspent is yours
@@ -62,12 +86,16 @@ export const CONTRACT_PREMIUM: Record<Contract, number> = { gmp: 0.04, costplus:
  * recession gets nothing at all. Residential and industrial carry less lease
  * risk because the space is fungible.
  */
-function constructionLtc(use: BuiltClass, preLeaseShare: number, phase: string): number {
-  const specRisk = use === "office" || use === "retail" || use === "mixed";
-  if (!specRisk) return Math.min(0.68, 0.6 + 0.16 * preLeaseShare);
-  if (phase === "recession" && preLeaseShare < 0.3) return 0;
+function constructionLtc(mix: UseMix, preLeaseShare: number, phase: string): number {
+  // A stack that is mostly flats over a little retail is nearly as financeable
+  // as flats, which is a real and underappreciated reason developers build it.
+  const spec = specShare(mix);
+  const safeLtc = Math.min(0.68, 0.6 + 0.16 * preLeaseShare);
+  if (spec < 0.05) return safeLtc;
+  if (phase === "recession" && preLeaseShare < 0.3) return spec > 0.7 ? 0 : safeLtc * (1 - spec);
   // 45% on pure spec, rising to 70% for a building that is half let already
-  return Math.min(0.70, 0.45 + 0.5 * preLeaseShare);
+  const specLtc = Math.min(0.70, 0.45 + 0.5 * preLeaseShare);
+  return specLtc * spec + safeLtc * (1 - spec);
 }
 
 export const MAX_PRE_LEASE = 0.6;    // nobody lets the whole thing before a slab
@@ -83,7 +111,8 @@ export function preLeaseDiscount(share: number): number {
 }
 
 export interface DevPlan {
-  use: BuiltClass;
+  use: DevUse;
+  mix: UseMix;
   floors: number;
   coverage: number;   // share of the lot the floorplate covers
   contract: Contract;
@@ -124,12 +153,13 @@ export function maxFloorsFor(rec: { farMaxComm: number; farMaxRes: number }, cov
 
 // The parcel as it will exist once the building is up — what the rent, the
 // cap rate and the leasing costs all have to be read against.
-function asBuiltRec(rec: unknown, use: BuiltClass, sf: number, floors: number) {
-  return { ...(rec as object), class: use, bldgArea: sf, floors } as never;
+function asBuiltRec(rec: unknown, use: DevUse, sf: number, floors: number) {
+  const mix = devMix(use);
+  return { ...(rec as object), class: dominantOf(mix), mix, bldgArea: sf, floors } as never;
 }
 
 export function planDevelopment(
-  s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass,
+  s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.6, preLeaseShare: number | boolean = 0,
   contract: Contract = "gmp",
 ): DevPlan | null {
@@ -141,13 +171,15 @@ export function planDevelopment(
   const sf = Math.round((rec.lotArea * cov * fl) / 100) * 100;
   if (sf < 2000) return null;
 
-  const canPreLease = use === "office" || use === "retail" || use === "mixed";
+  const mix = devMix(use);
+  const canPreLease = specShare(mix) > 0.2;
   // the old signature took a boolean; keep it working
   const rawShare = typeof preLeaseShare === "boolean" ? (preLeaseShare ? 0.35 : 0) : preLeaseShare;
   const pre = canPreLease ? Math.max(0, Math.min(MAX_PRE_LEASE, rawShare)) : 0;
 
   const heightPrem = fl > 30 ? 1.28 : fl > 18 ? 1.18 : fl > 8 ? 1.07 : 1;
-  const hardCost = Math.round(sf * HARD_COST_PSF[use] * s.econ.costIdx * heightPrem * (1 + CONTRACT_PREMIUM[contract]));
+  // the budget is the sum of the jobs, not a number attached to a label
+  const hardCost = Math.round(sf * overMix(mix, (u) => HARD_COST_PSF[u]) * s.econ.costIdx * heightPrem * (1 + CONTRACT_PREMIUM[contract]));
   const softCost = Math.round(hardCost * SOFT_COST);
   const demo = rec.bldgArea > 0 ? Math.round(rec.bldgArea * 12 * s.econ.costIdx) : 0;
   const contingency = Math.round((hardCost + softCost) * CONTINGENCY);
@@ -163,15 +195,16 @@ export function planDevelopment(
   // anchor at a discount to market.
   const openSf = sf * (1 - pre);
   // apartments have no fit-out, but they do have concessions and marketing
-  const tiPsf = use === "office" ? 32 : use === "retail" ? 22 : use === "mixed" ? 26 : use === "industrial" ? 5 : 7;
-  const lcPsf = use === "multifamily" ? 0 : marketRentPsfYr(asBuiltRec(rec, use, sf, fl), s.econ, "good") * 6 * 0.045;
-  const carryMonths = use === "multifamily" ? 6 : 10;
-  const carry = Math.round(openSf * opexPsf(use, s.econ, false) * (carryMonths / 12));
+  const tiPsf = overMix(mix, (u) => (u === "office" ? 32 : u === "retail" ? 22 : u === "industrial" ? 5 : 7));
+  const lcPsf = overMix(mix, (u) => (u === "multifamily" ? 0 : 1))
+    * marketRentPsfYr(asBuiltRec(rec, use, sf, fl), s.econ, "good") * 6 * 0.045;
+  const carryMonths = overMix(mix, (u) => (u === "multifamily" ? 6 : 10));
+  const carry = Math.round(openSf * overMix(mix, (u) => opexPsf(u, s.econ, false)) * (carryMonths / 12));
   const leaseUp = Math.round(openSf * (tiPsf + lcPsf) * s.econ.costIdx) + carry;
 
   const costTotal = hardCost + softCost + demo + contingency + leaseUp;
 
-  const ltc = constructionLtc(use, pre, s.econ.phase);
+  const ltc = constructionLtc(mix, pre, s.econ.phase);
   const commitment = Math.round(costTotal * ltc);
   const ratePct = +(s.econ.indexRate + CONSTR_SPREAD).toFixed(2);
   const baseMonths = Math.min(30, 11 + Math.round(fl * 0.55));
@@ -187,8 +220,8 @@ export function planDevelopment(
   // actually lives by, and the spread to the exit cap is the whole margin.
   const asBuilt = asBuiltRec(rec, use, sf, fl);
   const rentPsf = marketRentPsfYr(asBuilt, s.econ, "good");
-  const stabOcc = use === "multifamily" ? 0.95 : 0.9;
-  const opex = opexPsf(use, s.econ, false);
+  const stabOcc = overMix(mix, (u) => (u === "multifamily" ? 0.95 : 0.9));
+  const opex = overMix(mix, (u) => opexPsf(u, s.econ, false));
   const stabNoi = sf * (rentPsf * stabOcc - opex) - costTotal * TAX_RATE;
   // The exit is what THIS building will trade at — new, in good condition, on
   // this corner — not the citywide class average. Using the average understated
@@ -204,7 +237,7 @@ export function planDevelopment(
       : undefined;
 
   return {
-    use, floors: fl, coverage: cov, contract, preLeaseShare: pre, sf,
+    use, mix, floors: fl, coverage: cov, contract, preLeaseShare: pre, sf,
     far: +(sf / rec.lotArea).toFixed(1), farMax,
     hardCost, softCost, contingency, demo, leaseUp, costTotal,
     ltc, commitment, interestReserve, ratePct,
@@ -218,7 +251,7 @@ export function planDevelopment(
 }
 
 export function startDevelopment(
-  s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass,
+  s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.6, preLeaseShare: number | boolean = 0,
   contract: Contract = "gmp",
 ): { s: GameState; err?: string } {
@@ -236,7 +269,7 @@ export function startDevelopment(
   next.cash -= plan.equityAtClose;
   logBooks(next, "dev", plan.equityAtClose);
   next.developments[bbl] = {
-    bbl, use, sf: plan.sf, floors: plan.floors,
+    bbl, use, mix: plan.mix, sf: plan.sf, floors: plan.floors,
     costTotal: plan.costTotal, hardCost: plan.hardCost, contract,
     contingency: plan.contingency, contingencyUsed: 0,
     commitment: plan.commitment, drawn: 0, loanBalance: 0,
@@ -250,7 +283,7 @@ export function startDevelopment(
   } satisfies Development;
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Ground broken at ${rec.address}: ${plan.floors} floors, ${(plan.sf / 1000).toFixed(0)}k sf of ${use} at ${plan.far} FAR on a ${contract === "gmp" ? "guaranteed max price" : "cost-plus"} contract. $${(plan.costTotal / 1e6).toFixed(1)}M budget, ${(plan.ltc * 100).toFixed(0)}% funded${plan.preLeaseShare > 0 ? `, ${(plan.preLeaseShare * 100).toFixed(0)}% pre-let` : ", on spec"}. Delivery ${monthLabel(next.month + plan.months)}.`,
+    text: `Ground broken at ${rec.address}: ${plan.floors} floors, ${(plan.sf / 1000).toFixed(0)}k sf of ${use === "mixed" ? "mixed-use" : use} at ${plan.far} FAR on a ${contract === "gmp" ? "guaranteed max price" : "cost-plus"} contract. $${(plan.costTotal / 1e6).toFixed(1)}M budget, ${(plan.ltc * 100).toFixed(0)}% funded${plan.preLeaseShare > 0 ? `, ${(plan.preLeaseShare * 100).toFixed(0)}% pre-let` : ", on spec"}. Delivery ${monthLabel(next.month + plan.months)}.`,
   });
   return { s: next };
 }
@@ -409,13 +442,14 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
 }
 
 function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { address: string }) {
-  s.built[d.bbl] = { class: d.use, bldgArea: d.sf, floors: d.floors, yearBuilt: 2026 + Math.floor(s.month / 12) };
+  const dmix = d.mix ?? devMix(d.use);
+  s.built[d.bbl] = { class: dominantOf(dmix), mix: dmix, bldgArea: d.sf, floors: d.floors, yearBuilt: 2026 + Math.floor(s.month / 12) };
   const h = s.holdings[d.bbl];
   h.condition = "good";
   h.lastCapM = s.month;
   h.tenants = [];
   h.deliveredM = s.month;
-  if (d.use === "multifamily") h.occ = 0.1;
+  if ((dmix.multifamily ?? 0) > 0) h.occ = 0.1;
   h.costBasis += d.costTotal;
   h.assessed = (h.assessed ?? h.costBasis - d.costTotal) + d.costTotal;
 
@@ -535,7 +569,7 @@ const GROWTH_RATE: Record<string, number> = {
   expansion: 0.88, peak: 0.62, recovery: 0.42, recession: 0.09,
 };
 
-function useForZone(zone: string, demand: number, r: number): BuiltClass {
+function useForZone(zone: string, demand: number, r: number): DevUse {
   if (zone.startsWith("M")) return "industrial";
   if (zone.startsWith("R")) return "multifamily";
   if (demand > 70) return r < 0.55 ? "office" : r < 0.85 ? "mixed" : "retail";
@@ -574,7 +608,8 @@ export function tickCityGrowth(
     const frac = Math.min(0.95, 0.22 + 0.45 * maturity + 0.3 * (dNow / 100) * maturity + rng(s) * 0.15);
     const sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
     const floors = Math.max(1, Math.round(sf / (rec.lotArea * 0.62)));
-    s.built[bbl] = { class: use, bldgArea: sf, floors, yearBuilt: 2026 + Math.floor(s.month / 12) };
+    const cmix = devMix(use);
+    s.built[bbl] = { class: dominantOf(cmix), mix: cmix, bldgArea: sf, floors, yearBuilt: 2026 + Math.floor(s.month / 12) };
     s.cityBuilt.push(bbl);
 
     // land appreciates on the block that just got built

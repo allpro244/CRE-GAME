@@ -5,9 +5,14 @@ import type { AssetClass } from "@/data/types";
 export type MarketPhase = "recovery" | "expansion" | "peak" | "recession";
 
 export type BuiltClass = Exclude<AssetClass, "land">;
-export const BUILT_CLASSES: BuiltClass[] = ["office", "retail", "mixed", "multifamily", "industrial"];
+export const BUILT_CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
 
 export type Condition = "worn" | "standard" | "good";
+
+/** Shares of a building's floor area by use. Sums to 1. See engine/mix.ts. */
+export type UseMix = Partial<Record<BuiltClass, number>>;
+/** What you can choose to build: a single use, or a mixed-use stack. */
+export type DevUse = BuiltClass | "mixed";
 
 export type Sector =
   | "finance" | "law" | "tech" | "media" | "insurance"
@@ -18,6 +23,9 @@ export const CREDIT_LABEL = ["C", "B", "A"];
 
 export interface Tenant {
   name: string;
+  // Which part of the building they are in. A shop under a block of flats is
+  // a retail lease in a retail market, not a "mixed-use" lease.
+  use?: BuiltClass;
   sector: Sector;
   credit: Credit;
   sf: number;
@@ -34,6 +42,7 @@ export interface Tenant {
 export interface LOI {
   id: number;
   bbl: string;
+  use?: BuiltClass;    // the component of the building they want
   kind: "new" | "renewal";
   name: string;
   sector: Sector;
@@ -87,7 +96,7 @@ export interface Holding {
   lastCapM?: number;   // when this asset last had money spent on its bones
   renovatingUntilM?: number;
   tenants: Tenant[];   // commercial rent roll
-  makeReady?: { sf: number; readyM: number }[]; // vacated space being turned; unleasable until ready
+  makeReady?: { sf: number; readyM: number; use?: BuiltClass }[]; // vacated space being turned; unleasable until ready
   broker?: boolean;    // leasing broker on retainer: more LOIs, monthly fee
   occ?: number;        // multifamily aggregate occupancy
   stance?: -1 | 0 | 1; // rent posture: push / market / fill
@@ -105,7 +114,8 @@ export type Contract = "gmp" | "costplus";
 
 export interface Development {
   bbl: string;
-  use: BuiltClass;
+  use: DevUse;
+  mix: UseMix;
   sf: number;
   floors: number;
   costTotal: number;      // the budget as it stands today, escalation included
@@ -137,6 +147,7 @@ export interface Development {
 // A delivered development overrides the static parcel record.
 export interface BuiltOverride {
   class: BuiltClass;
+  mix?: UseMix;
   bldgArea: number;
   floors: number;
   yearBuilt: number;
@@ -267,7 +278,7 @@ export interface Rival {
 }
 
 export interface GameState {
-  v: 13;
+  v: 14;
   seed: number;
   rng: number;
   month: number;

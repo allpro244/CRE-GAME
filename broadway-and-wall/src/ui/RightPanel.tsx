@@ -4,20 +4,44 @@ import { useEffect, useState } from "react";
 import { useStore } from "@/state/store";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
-import type { Contract } from "@/engine/types";
+import type { Contract, DevUse } from "@/engine/types";
 import {
   assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr,
-  occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr,
+  occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr, useRentPsfYr,
   rollQualitySpread, operatingStatement, recoveryOf, noiAfterTaxYr, netWorth,
 } from "@/engine/value";
 import { planDevelopment, PROGRAMS, programCost, farMaxFor, maxFloorsFor, demolitionCost, MAX_PRE_LEASE, PRE_LEASE_EXTRA_M, preLeaseDiscount } from "@/engine/dev";
-import type { BuiltClass } from "@/engine/types";
 import { buyQuote, assemblagePressure, saleTaxQuote, bidOdds } from "@/engine/actions";
 import { MILESTONES } from "@/engine/sim";
 import { isCommercial, vacantSf, walt, loiSigningCost, notReadySf, unitStatus, unitCount, suiteSf } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
 import { locLimit, locRate, locAvailable } from "@/engine/credit";
 import { blockReport } from "@/engine/demand";
+import { isMixedUse, mixLabel, mixOf, uses as usesOf, useSf, USE_WORD } from "@/engine/mix";
+
+/** What to call a building: its dominant use, or "Mixed-Use" when it has none. */
+function useLabel(rec: { class: string; bbl: string; floors: number; unitsRes: number; bldgArea: number; mix?: Record<string, number> }): string {
+  if (rec.class === "land") return CLASS_LABEL.land;
+  return isMixedUse(rec as never) ? "Mixed-Use" : CLASS_LABEL[dominantOf(rec as never)];
+}
+function dominantOf(rec: never): "office" | "retail" | "multifamily" | "industrial" {
+  return usesOf(rec)[0] ?? "office";
+}
+const devUseLabel = (u: string) => (u === "mixed" ? "Mixed-Use" : CLASS_LABEL[u as "office"]);
+
+/**
+ * Physical occupancy of the WHOLE building: commercial square feet under
+ * lease plus residential square feet occupied, over the building. Dividing
+ * commercial leases by the whole floor area reported a full mixed-use block
+ * as 47% let because it counted the flats as empty offices.
+ */
+function physicalOcc(rec: never, h: { tenants: { sf: number }[]; occ?: number }): number {
+  const area = (rec as unknown as { bldgArea: number }).bldgArea;
+  if (!area) return 0;
+  const comm = h.tenants.reduce((a, t) => a + t.sf, 0);
+  const res = useSf(rec, "multifamily") * (h.occ ?? 0);
+  return Math.min(1, (comm + res) / area);
+}
 import { sponsorStanding } from "@/engine/sponsor";
 import { marketAppetite, markRival } from "@/engine/rivals";
 import { usd, sf, pct } from "./format";
@@ -117,7 +141,7 @@ function DecisionModal() {
             <div className="modal-kicker">A broker is on the phone</div>
             <div className="modal-title">{rec.address}</div>
             <div className="modal-sub">
-              {CLASS_LABEL[rec.class]} · {sf(rec.bldgArea)} · {rec.floors} fl · built {rec.yearBuilt}. Not on the market.
+              {useLabel(rec)} · {sf(rec.bldgArea)} · {rec.floors} fl · built {rec.yearBuilt}. Not on the market.
             </div>
             <div className="grid">
               <Row k="Their number" v={usd(a.ask)} strong />
@@ -351,7 +375,7 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
       )}
 
       <div className="chip-row">
-        <span className="chip" style={{ background: CLASS_COLOR[rec.class] }}>{CLASS_LABEL[rec.class]}</span>
+        <span className="chip" style={{ background: CLASS_COLOR[rec.class] }}>{useLabel(rec)}</span>
         <span className="chip chip-zone mono">{rec.zoneDist}</span>
         {holding && <span className="chip chip-owned">OWNED</span>}
         {dev && <span className="chip chip-reno">UNDER CONSTRUCTION</span>}
@@ -367,12 +391,15 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         {isBuilt && <Row k="Market rent" v={"$" + marketRentPsfYr(rec, game.econ, cond).toFixed(0) + " /sf/yr"} />}
         {isBuilt && !holding && <Row k="Occupancy (mkt)" v={(occupancy(rec, game.econ) * 100).toFixed(0) + "%"} />}
         {isBuilt && !holding && <Row k="Leasable spaces" v={`${unitCount(rec)} · ${sf(Math.round(suiteSf(rec)))} each`} />}
-        {holding && commercial && <Row k="Occupancy" v={rec.bldgArea ? ((leasedSf / rec.bldgArea) * 100).toFixed(0) + "%" : "—"} />}
-        {holding && rec.bldgArea > 0 && (() => {
-          const u = unitStatus(rec, holding, game.month);
-          return <Row k="Spaces leased" v={`${u.leased} of ${u.total} · ${sf(Math.round(u.sfPer))} each`} bad={u.leased < u.total * 0.6} />;
-        })()}
-        {holding && rec.class === "multifamily" && <Row k="Occupancy" v={((holding.occ ?? 0) * 100).toFixed(0) + "%"} />}
+        {holding && rec.bldgArea > 0 && <Row k="Occupancy" v={(physicalOcc(rec as never, holding) * 100).toFixed(0) + "%"} />}
+        {holding && rec.bldgArea > 0 && unitStatus(rec, holding, game.month).byUse.map((u) => (
+          <Row
+            key={u.use}
+            k={u.use === "multifamily" ? "Apartments let" : `${USE_WORD[u.use][0].toUpperCase()}${USE_WORD[u.use].slice(1)} spaces let`}
+            v={`${u.leased} of ${u.total} · ${sf(Math.round(u.sfPer))} each`}
+            bad={u.leased < u.total * 0.6}
+          />
+        ))}
         {holding && commercial && <Row k="WALT" v={walt(holding, game.month).toFixed(1) + " yrs"} />}
         {/* One building must not quote two different NOIs on one panel. Owned
             assets already net out the tax bill; an unowned one is estimated
@@ -382,6 +409,7 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         {holding && isBuilt && <Row k="Property tax / yr" v={usd(propertyTaxYr(rec, holding)) + (commercial ? " (your share)" : "")} />}
         <Row k="Lot area" v={sf(rec.lotArea)} />
         {isBuilt && <Row k="Building" v={sf(rec.bldgArea) + ` · ${rec.floors} fl · ${rec.yearBuilt}`} />}
+        {isBuilt && isMixedUse(rec) && <Row k="The stack" v={mixLabel(rec)} />}
         <Row k="FAR built / max" v={`${builtFar.toFixed(1)} / ${farMax.toFixed(1)}`} />
         <Row k="Demand" v={String(Math.round(rec.demandScore)) + " / 100"} />
       </div>
@@ -390,16 +418,36 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
 
       {holding && commercial && holding.tenants.length > 0 && (
         <div className="deal">
-          <div className="deal-head">Rent roll · {sf(leasedSf)} of {sf(rec.bldgArea)}</div>
+          <div className="deal-head">Rent roll · {sf(leasedSf)} of {sf(Math.round(rec.bldgArea * (1 - (mixOf(rec).multifamily ?? 0))))} commercial</div>
           <div className="roll">
-            {holding.tenants.map((t, i) => (
-              <div key={i} className="roll-row">
-                <span className="roll-name">{t.name} <span className="roll-credit mono">{CREDIT_LABEL[t.credit]}</span></span>
-                <span className="roll-meta mono">
-                  {(t.sf / 1000).toFixed(1)}k sf · ${t.rentPsf.toFixed(0)} {t.net ? "NNN" : "G"} · exp {monthLabel(t.endM)}
-                </span>
+            {/* Grouped by market, because that is how it is managed. The shops
+                at grade renew against retail comps and the floors above against
+                office comps; one undifferentiated list hid which half of the
+                building was in trouble. */}
+            {usesOf(rec).filter((u) => u !== "multifamily").flatMap((u) => {
+              const inUse = holding.tenants.map((t, i) => ({ t, i })).filter((x) => (x.t.use ?? rec.class) === u);
+              if (!inUse.length && useSf(rec, u) < 400) return [];
+              return [
+                <div key={`h-${u}`} className="roll-row roll-group">
+                  <span className="roll-name">{USE_WORD[u]} · {sf(Math.round(useSf(rec, u)))}</span>
+                  <span className="roll-meta mono">${(game.econ.rentIdx[u] ?? 0).toFixed(0)}/sf market</span>
+                </div>,
+                ...inUse.map(({ t, i }) => (
+                  <div key={i} className="roll-row">
+                    <span className="roll-name">{t.name} <span className="roll-credit mono">{CREDIT_LABEL[t.credit]}</span></span>
+                    <span className="roll-meta mono">
+                      {(t.sf / 1000).toFixed(1)}k sf · ${t.rentPsf.toFixed(0)} {t.net ? "NNN" : "G"} · exp {monthLabel(t.endM)}
+                    </span>
+                  </div>
+                )),
+              ];
+            })}
+            {(mixOf(rec).multifamily ?? 0) > 0 && (
+              <div className="roll-row roll-group">
+                <span className="roll-name">apartments · {sf(Math.round(useSf(rec, "multifamily")))}</span>
+                <span className="roll-meta mono">{((holding.occ ?? 0) * 100).toFixed(0)}% let · ${(game.econ.rentIdx.multifamily ?? 0).toFixed(0)}/sf market</span>
               </div>
-            ))}
+            )}
             {notReadySf(holding, game.month) > 0 && (
               <div className="roll-row roll-vacant">
                 <span className="roll-name">In make-ready</span>
@@ -607,7 +655,7 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
               <button key={n} className="neighbor" onClick={() => select(n)}>
                 <span className="neighbor-addr">{game.holdings[n] ? "◆ " : ""}{nr?.address ?? n}</span>
                 <span className="neighbor-meta mono">
-                  {nr ? `${nr.lotArea.toLocaleString()} sf · ${CLASS_LABEL[nr.class]}` : ""}
+                  {nr ? `${nr.lotArea.toLocaleString()} sf · ${useLabel(nr)}` : ""}
                 </span>
               </button>
             );
@@ -896,16 +944,19 @@ function DevelopSection({ bbl }: { bbl: string }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const rec = parcels[bbl];
-  const [use, setUse] = useState<BuiltClass>("office");
+  const [use, setUse] = useState<DevUse>("office");
   const [cov, setCov] = useState(0.6);
   const [floors, setFloors] = useState(8);
   const [preShare, setPreShare] = useState(0);
   const [contract, setContract] = useState<Contract>("gmp");
   const canPreLease = use === "office" || use === "retail" || use === "mixed";
+  // "Mixed-use" is a programme here, not a class: shops at grade with offices
+  // and flats above. What it costs, what it rents for and what the lender will
+  // fund all come out of that stack.
   const maxFl = maxFloorsFor(rec, cov);
   const fl = Math.min(floors, maxFl);
   const plan = planDevelopment(game, parcels, bbl, use, fl, cov, canPreLease ? preShare : 0, contract);
-  const USES: BuiltClass[] = ["office", "multifamily", "mixed", "retail", "industrial"];
+  const USES: DevUse[] = ["office", "multifamily", "mixed", "retail", "industrial"];
   return (
     <div className="deal">
       <div className="deal-head">Develop this lot</div>
@@ -914,7 +965,7 @@ function DevelopSection({ bbl }: { bbl: string }) {
       </div>
       <div className="btn-row">
         {USES.map((u) => (
-          <button key={u} className={"btn" + (use === u ? " btn-on" : "")} onClick={() => setUse(u)}>{CLASS_LABEL[u]}</button>
+          <button key={u} className={"btn" + (use === u ? " btn-on" : "")} onClick={() => setUse(u)}>{devUseLabel(u)}</button>
         ))}
       </div>
       <Slider
@@ -1036,9 +1087,7 @@ function PropertyPage() {
   const cond = h?.condition ?? initialCondition(rec);
   const value = h ? holdingValue(rec, game.econ, h, game.month) : assetValue(rec, game.econ, cond);
   const built = rec.class !== "land" && rec.bldgArea > 0;
-  const commercial = isCommercial(rec);
-  const leased = h && commercial ? h.tenants.reduce((a, t) => a + t.sf, 0) : 0;
-  const occ = h ? (rec.class === "multifamily" ? (h.occ ?? 0) : rec.bldgArea ? leased / rec.bldgArea : 0) : occupancy(rec, game.econ);
+  const occ = h ? physicalOcc(rec as never, h) : occupancy(rec, game.econ);
   const noi = built ? (h ? holdingNOIYr(rec, game.econ, h, game.month) : noiYr(rec, game.econ, cond)) : 0;
   const dsYr = (h?.loan?.monthlyPmt ?? 0) * 12;
   const dev = game.developments[bbl];
@@ -1076,7 +1125,7 @@ function PropertyPage() {
       <div className="prop-head">
         <div>
           <div className="page-title" style={{ fontSize: 22 }}>{rec.address}</div>
-          <div className="panel-bbl mono">Parcel {rec.bbl} · {CLASS_LABEL[rec.class]} · {rec.zoneDist}</div>
+          <div className="panel-bbl mono">Parcel {rec.bbl} · {useLabel(rec)} · {rec.zoneDist}</div>
         </div>
         <div className="grid" style={{ minWidth: 320 }}>
           {built && <Row k="Building" v={`${sf(rec.bldgArea)} · ${rec.floors} floors`} strong />}
@@ -1120,10 +1169,7 @@ function PortfolioPage() {
     const rec = resolveRec(parcels, game, h.bbl);
     const v = rec ? holdingValue(rec, game.econ, h, game.month) : 0;
     const cf = rec ? holdingNOIYr(rec, game.econ, h, game.month) / 12 - (h.loan?.monthlyPmt ?? 0) : 0;
-    const occ = rec
-      ? rec.class === "multifamily" ? (h.occ ?? 0)
-        : rec.bldgArea ? h.tenants.reduce((a, t) => a + t.sf, 0) / rec.bldgArea : 0
-      : 0;
+    const occ = rec ? physicalOcc(rec as never, h) : 0;
     totV += v; totD += h.loan?.balance ?? 0; totCF += cf;
     return { h, rec, v, cf, occ };
   }).sort((a, b) => b.v - a.v);
@@ -1228,7 +1274,7 @@ function PortfolioPage() {
           {rows.map(({ h, rec, v, cf, occ }) => (
             <tr key={h.bbl} onClick={() => go(h.bbl)}>
               <td>{rec?.address ?? h.bbl}</td>
-              <td>{rec ? CLASS_LABEL[rec.class] : "—"}</td>
+              <td>{rec ? useLabel(rec) : "—"}</td>
               <td className="num">{rec && rec.bldgArea ? (() => { const u = unitStatus(rec, h, game.month); return `${u.leased} / ${u.total}`; })() : "—"}</td>
               <td className="num">{rec?.class === "land" ? "—" : (occ * 100).toFixed(0) + "%"}</td>
               <td className="num">{rec ? usd(holdingNOIYr(rec, game.econ, h, game.month)) : "—"}</td>
@@ -1247,7 +1293,7 @@ function PortfolioPage() {
           {Object.values(game.developments).map((dv) => (
             <tr key={dv.bbl} onClick={() => go(dv.bbl)}>
               <td>{parcels[dv.bbl]?.address ?? dv.bbl}</td>
-              <td>{CLASS_LABEL[dv.use]}</td>
+              <td>{devUseLabel(dv.use)}</td>
               <td className="num">—</td>
               <td className="num">—</td>
               <td className="num">—</td>
@@ -1428,7 +1474,7 @@ function MarketPage() {
               </tr>
             </thead>
             <tbody>
-              {(["office", "retail", "mixed", "multifamily", "industrial"] as const).map((k) => {
+              {(["office", "retail", "multifamily", "industrial"] as const).map((k) => {
                 const mom = e.sectorMom?.[k] ?? 0;
                 const pipe = e.pipeline?.[k] ?? 0;
                 const press = e.supplyPress?.[k] ?? 0;
@@ -1488,7 +1534,7 @@ function MarketPage() {
                 return (
                   <tr key={li.bbl} onClick={() => go(li.bbl)}>
                     <td>{li.distress && <span className="chip chip-distress" style={{ marginRight: 6 }}>HOT</span>}{rec.address}</td>
-                    <td>{CLASS_LABEL[rec.class]}</td>
+                    <td>{useLabel(rec)}</td>
                     <td className="num">{built ? sf(rec.bldgArea) : sf(rec.lotArea) + " lot"}</td>
                     <td className="num">{usd(li.ask)}</td>
                     <td className="num">{built ? "$" + Math.round(li.ask / Math.max(1, rec.bldgArea)) : "$" + Math.round(li.ask / Math.max(1, rec.lotArea))}</td>
@@ -1738,12 +1784,14 @@ function LeasingPage() {
     const rec = resolveRec(parcels, game, h.bbl);
     if (!rec || rec.class === "land" || !rec.bldgArea) return [];
     const commercial = isCommercial(rec);
-    const leased = commercial ? h.tenants.reduce((a, t) => a + t.sf, 0) : Math.round((h.occ ?? 0) * rec.bldgArea);
+    // Both halves of a stacked building count: the shops under lease and the
+    // flats above that are occupied.
+    const resSf = useSf(rec, "multifamily");
+    const leased = h.tenants.reduce((a, t) => a + t.sf, 0) + Math.round((h.occ ?? 0) * resSf);
     const notReady = notReadySf(h, q);
-    const occ = rec.bldgArea ? leased / rec.bldgArea : 0;
-    const rentRoll = commercial
-      ? h.tenants.reduce((a, t) => a + t.rentPsf * t.sf, 0)
-      : rec.bldgArea * marketRentPsfYr(rec, game.econ, h.condition) * (h.occ ?? 0);
+    const occ = physicalOcc(rec as never, h);
+    const rentRoll = h.tenants.reduce((a, t) => a + t.rentPsf * t.sf, 0)
+      + resSf * useRentPsfYr(rec, game.econ, h.condition, "multifamily") * (h.occ ?? 0);
     const rolling = commercial ? h.tenants.filter((t) => t.endM - q <= 12).reduce((a, t) => a + t.sf, 0) : 0;
     return [{ h, rec, commercial, leased, notReady, occ, rentRoll, rolling }];
   });
@@ -1805,7 +1853,7 @@ function LeasingPage() {
               {rows.sort((a, b) => a.occ - b.occ).map((r) => (
                 <tr key={r.h.bbl} onClick={() => go(r.h.bbl)}>
                   <td>{r.rec.address}</td>
-                  <td>{CLASS_LABEL[r.rec.class]}</td>
+                  <td>{useLabel(r.rec)}</td>
                   <td className="num">{sf(r.rec.bldgArea)}</td>
                   <td className={"num" + (r.occ < 0.75 ? " neg" : "")}>{(r.occ * 100).toFixed(0)}%</td>
                   <td className="num">{usd(r.rentRoll)}</td>

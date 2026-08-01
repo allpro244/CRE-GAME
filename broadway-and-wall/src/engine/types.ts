@@ -244,8 +244,30 @@ export interface SponsorEvent {
   amount: number;      // the hole left behind, if any
 }
 
+export type RivalStyle = "core" | "opportunistic" | "developer" | "family";
+
+/**
+ * A competing firm. Aggregate balance sheet, real portfolio — enough to bid
+ * against you, to overreach, and to fail, without carrying a rent roll and a
+ * loan stack for every building in town.
+ */
+export interface Rival {
+  id: string;
+  name: string;
+  style: RivalStyle;
+  cash: number;
+  debt: number;
+  bbls: string[];        // what they own
+  targetLtv: number;
+  bornM: number;
+  aum?: number;          // marked each month, for display
+  stressMs?: number;     // consecutive months in trouble
+  distributed?: number;  // lifetime cash sent out to their partners
+  failedM?: number;      // the month they stopped existing
+}
+
 export interface GameState {
-  v: 12;
+  v: 13;
   seed: number;
   rng: number;
   month: number;
@@ -264,6 +286,7 @@ export interface GameState {
   // What the lending market remembers about you. A sponsor who hands back keys
   // does not get to walk into the next credit committee unrecognised.
   sponsor: { events: SponsorEvent[] };
+  rivals: Rival[];                           // the other firms on the street
   totalLots: number;
   builtAtStart: number;
   // a 1031 exchange in flight: sale gain rolled, tax deferred until the clock runs out

@@ -6,6 +6,7 @@ import type { GameState, Holding } from "./types";
 import { logBooks, monthLabel } from "./types";
 import { rng, rrange } from "./market";
 import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr } from "./value";
+import { marketAppetite, ownerOf, rivalAsk, rivalBuys } from "./rivals";
 import { genRentRoll, isCommercial } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
 
@@ -50,6 +51,17 @@ function executePurchase(
   const next = clone(s);
   next.cash -= bq.equity;
   logBooks(next, "bought", bq.equity);
+  // If a named firm owned it, they are the seller — the money and the deed
+  // both move, and their balance sheet is one building lighter.
+  {
+    const seller = ownerOf(next, bbl);
+    if (seller) {
+      seller.bbls = seller.bbls.filter((b) => b !== bbl);
+      const relief = Math.min(seller.debt, Math.round(price * seller.targetLtv));
+      seller.debt -= relief;
+      seller.cash += price - relief;
+    }
+  }
   const holding: Holding = {
     bbl,
     boughtM: next.month,
@@ -92,7 +104,11 @@ export function bidOdds(s: GameState, listing: { ask: number; distress?: boolean
   const disc = 1 - bid / Math.max(1, listing.ask);        // 0 at full ask
   const phase = s.econ.phase === "recession" ? 0.16 : s.econ.phase === "expansion" ? -0.12 : 0;
   const motivated = listing.distress ? 0.18 : 0;
-  return Math.max(0.02, Math.min(0.98, 1.02 - disc * 6.2 + phase + motivated));
+  // A seller refuses a lowball because somebody else will pay more. How much
+  // that is true depends on who else has money today — which is the whole
+  // reason to know what the other firms on the street are doing.
+  const room = (marketAppetite(s) - 1) * 0.22;
+  return Math.max(0.02, Math.min(0.98, 1.02 - disc * 6.2 + phase + motivated - room));
 }
 
 export function buyListing(
@@ -370,16 +386,29 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
   if (!best) return;
 
   // An unsolicited pitch is rarely cheap — you are paying for not competing.
-  // In a soft market the whisper number gets a good deal more reasonable.
+  // In a soft market the whisper number gets a good deal more reasonable. And
+  // if the building belongs to a firm you can name, the number is THEIR
+  // number: a family trust that owns it outright quotes a silly price, and a
+  // shop that is three months from a margin call quotes inside appraisal.
+  const owner = ownerOf(s, best.bbl);
   const value = assetValue(best, s.econ, initialCondition(best));
-  const premium = s.econ.phase === "recession" ? rrange(s, 0.92, 1.06)
-    : s.econ.phase === "recovery" ? rrange(s, 0.98, 1.12)
-    : rrange(s, 1.04, 1.22);
-  const ask = Math.round(value * premium / 1000) * 1000;
+  let ask: number;
+  let who: string;
+  if (owner) {
+    const q = rivalAsk(s, parcels, owner, best.bbl);
+    ask = Math.round(q.ask / 1000) * 1000;
+    who = q.note;
+  } else {
+    const premium = s.econ.phase === "recession" ? rrange(s, 0.92, 1.06)
+      : s.econ.phase === "recovery" ? rrange(s, 0.98, 1.12)
+      : rrange(s, 1.04, 1.22);
+    ask = Math.round(value * premium / 1000) * 1000;
+    who = "Their client will listen for a few months.";
+  }
   s.approaches[best.bbl] = { q: s.month, refused: false, ask, inbound: true };
   s.news.unshift({
     q: s.month, kind: "deal",
-    text: `A broker called about ${best.address} — ${best.bldgArea.toLocaleString()} sf, not on the market, whisper number $${(ask / 1e6).toFixed(2)}M. Their client will listen for a few months.`,
+    text: `A broker called about ${best.address} — ${best.bldgArea.toLocaleString()} sf, not on the market, whisper number $${(ask / 1e6).toFixed(2)}M. ${who}`,
   });
 }
 
@@ -466,9 +495,17 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
     const value = assetValue(rec, s.econ, initialCondition(rec));
     const ratio = li.ask / Math.max(1, value);
     const priceFactor = Math.max(0.3, Math.min(1.8, 1.9 - ratio)); // bargains go first
-    if (rng(s) < base * priceFactor) {
-      if (rng(s) < 0.5) {
-        s.news.unshift({ q: s.month, kind: "info", text: `Sold: ${rec.address} went to another buyer at $${(li.ask / 1e6).toFixed(2)}M. You watched it happen.` });
+    if (rng(s) < base * priceFactor * Math.max(0.25, marketAppetite(s))) {
+      // Somebody takes it, and somebody has a name. Losing the same corner to
+      // the same firm twice in a year is information; "another buyer" was not.
+      const buyer = rivalBuys(s, rec, li.ask);
+      if (buyer) {
+        s.news.unshift({
+          q: s.month, kind: "info",
+          text: `${buyer.name} took ${rec.address} at $${(li.ask / 1e6).toFixed(2)}M. You watched it happen.`,
+        });
+      } else if (rng(s) < 0.5) {
+        s.news.unshift({ q: s.month, kind: "info", text: `Sold: ${rec.address} went to a buyer from out of town at $${(li.ask / 1e6).toFixed(2)}M.` });
       }
       continue; // absorbed — off the tape
     }

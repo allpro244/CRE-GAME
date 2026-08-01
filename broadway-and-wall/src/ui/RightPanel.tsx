@@ -19,6 +19,7 @@ import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/e
 import { locLimit, locRate, locAvailable } from "@/engine/credit";
 import { blockReport } from "@/engine/demand";
 import { sponsorStanding } from "@/engine/sponsor";
+import { marketAppetite, markRival } from "@/engine/rivals";
 import { usd, sf, pct } from "./format";
 import Slider from "./Slider";
 
@@ -1451,6 +1452,9 @@ function MarketPage() {
           </table>
         </section>
         <section style={{ gridColumn: "1 / -1" }}>
+          <TheStreet />
+        </section>
+        <section style={{ gridColumn: "1 / -1" }}>
           <div className="page-section">On the market · {game.listings.length}</div>
           <table className="tbl">
             <thead>
@@ -1541,6 +1545,69 @@ function SponsorRecord() {
     </div>
   );
 }
+
+// THE STREET. Who else is buying, what they own, and how much rope they have
+// left. This is not decoration: the appetite number at the top is the same one
+// that decides whether your lowball gets refused, and a firm sliding toward
+// its covenants is a firm whose buildings are about to be cheap.
+function TheStreet() {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const rivals = game.rivals ?? [];
+  if (!rivals.length) return null;
+  const appetite = marketAppetite(game);
+  const marked = rivals.map((r) => ({ r, m: markRival(game, parcels, r) }))
+    .sort((a, b) => (a.r.failedM !== undefined ? 1 : 0) - (b.r.failedM !== undefined ? 1 : 0) || b.m.aum - a.m.aum);
+  return (
+    <>
+      <div className="page-section">
+        The street · competing money {appetite < 0.6 ? "has left the room" : appetite < 0.9 ? "is thin" : appetite > 1.15 ? "is everywhere" : "is normal"}
+      </div>
+      <div className="hint">
+        These firms bid on the same tape you do. When their dry powder is high your lowballs get refused;
+        when their leverage runs past their covenants they sell into whatever bid exists, and that bid is you.
+      </div>
+      <table className="tbl">
+        <thead>
+          <tr>
+            <th>Firm</th><th>Style</th><th className="num">Buildings</th><th className="num">Gross assets</th>
+            <th className="num">Leverage</th><th className="num">Dry powder</th><th>Read</th>
+          </tr>
+        </thead>
+        <tbody>
+          {marked.map(({ r, m }) => {
+            const dead = r.failedM !== undefined;
+            const stress = (r.stressMs ?? 0) > 0;
+            return (
+              <tr key={r.id} className={dead ? "dim" : ""}>
+                <td>{r.name}</td>
+                <td className="dim">{STYLE_WORD[r.style]}</td>
+                <td className="num">{dead ? "—" : r.bbls.length}</td>
+                <td className="num">{dead ? "—" : usd(m.aum)}</td>
+                <td className={"num" + (!dead && m.ltv > 0.8 ? " neg" : "")}>{dead ? "—" : `${(m.ltv * 100).toFixed(0)}%`}</td>
+                <td className="num">{dead ? "—" : usd(Math.max(0, r.cash))}</td>
+                <td className="dim">
+                  {dead ? `Gone, ${monthLabel(r.failedM!)}`
+                    : stress ? "Selling under pressure — their tape is your opportunity"
+                    : m.ltv > 0.75 ? "Levered up. One bad cycle from being a seller"
+                    : r.cash > m.aum * 0.06 ? "Sitting on cash. They will outbid you"
+                    : "Fully invested"}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
+const STYLE_WORD: Record<string, string> = {
+  family: "old money",
+  core: "institutional",
+  opportunistic: "opportunistic",
+  developer: "developer",
+};
 
 // The revolving line: up to 35% of net worth at prime + 400bps, and the
 // advance rate moves with the credit cycle — the label used to promise a

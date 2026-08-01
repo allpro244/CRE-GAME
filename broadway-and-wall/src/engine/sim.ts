@@ -12,6 +12,7 @@ import { distressPrice, markSponsor } from "./sponsor";
 import { tickLoc } from "./credit";
 import { tickDevelopments, tickPrograms, tickCityGrowth } from "./dev";
 import { tickDemand } from "./demand";
+import { initRivals, tickRivals } from "./rivals";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
 
@@ -43,7 +44,7 @@ function targetListings(s: GameState, totalLots: number): number {
 
 export function newGame(seed: number, parcels?: ParcelTable): GameState {
   const s: GameState = {
-    v: 12,
+    v: 13,
     seed,
     rng: seed,
     month: 0,
@@ -60,6 +61,7 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
     landAdj: {},
     blockD: {},
     sponsor: { events: [] },
+    rivals: [],
     totalLots: parcels ? Object.keys(parcels).length : 0,
     builtAtStart: parcels ? Object.values(parcels).filter((p) => p.class !== "land").length : 0,
     exchange: null,
@@ -75,6 +77,7 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
     insolventMs: 0,
   };
   s.econ = initEcon(s);
+  if (parcels) s.rivals = initRivals(s, parcels, Object.keys(parcels));
   s.news.push({
     q: 0,
     kind: "info",
@@ -140,6 +143,7 @@ export function advanceQuarter(
   // deliveries and lettings are now standing, so the city, the tenants and
   // the appraisers all read the same block this month.
   tickDemand(s, parcels);
+  tickRivals(s, parcels);
   tickCityGrowth(s, parcels, bbls, adjacency);
   tickDevelopments(s, parcels);
   tickPrograms(s, parcels);

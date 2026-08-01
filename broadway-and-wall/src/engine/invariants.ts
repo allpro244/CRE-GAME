@@ -163,6 +163,22 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
     else if (Math.abs(d) > 40) bad("demand", `block ${id}`, `demand drift ${d.toFixed(1)} beyond the cap`);
   }
 
+  // -------------------------------------------------------------- the street
+  const claimed = new Map<string, string>();
+  for (const r of s.rivals ?? []) {
+    const at = `rival ${r.name}`;
+    if (!fin(r.cash)) bad("nan", at, `cash is ${r.cash}`);
+    if (!fin(r.debt) || r.debt < 0) bad("rival", at, `debt ${r.debt}`);
+    if (r.failedM !== undefined && r.bbls.length) bad("rival", at, `failed in month ${r.failedM} but still holds ${r.bbls.length} buildings`);
+    for (const bbl of r.bbls) {
+      if (!parcels[bbl]) { bad("rival", at, `owns ${bbl}, which is not a parcel`); continue; }
+      if (s.holdings[bbl]) bad("rival", at, `owns ${bbl}, and so do you`);
+      const other = claimed.get(bbl);
+      if (other) bad("rival", at, `owns ${bbl}, and so does ${other}`);
+      claimed.set(bbl, r.name);
+    }
+  }
+
   return v;
 }
 

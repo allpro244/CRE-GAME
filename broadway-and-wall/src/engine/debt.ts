@@ -8,6 +8,7 @@ import type { GameState, Holding, Loan } from "./types";
 import { logBooks } from "./types";
 import { holdingNOIYr, holdingValue } from "./value";
 import { walt } from "./leasing";
+import { sponsorStanding, markSponsor, distressPrice } from "./sponsor";
 
 export type PrepayKind = "open" | "stepdown" | "yieldmaint";
 
@@ -102,6 +103,13 @@ export const productById = (id: string): LoanProduct => PRODUCTS.find((p) => p.i
 
 const REFI_FEE = 0.01;
 
+/** Whether this desk will look at you at all today. */
+export function productOpen(s: GameState, p: LoanProduct): boolean {
+  if (sponsorStanding(s).institutional) return true;
+  // hard money does not care about your history; it prices it
+  return p.id === "bridge" || p.id === "mezz" || p.id === "land";
+}
+
 /**
  * What it costs to get out of a loan early.
  *  open        — nothing, walk away
@@ -136,8 +144,11 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   // crunch a crunch rather than a slightly worse quote.
   const ci = s.econ.creditIdx ?? 1;
   const tight = Math.max(0, 1 - ci);
-  const ratePct = +(s.econ.indexRate + product.spread * (1 + 1.1 * tight) + 0.9 * tight).toFixed(2);
-  const byLtv = product.ltv * (1 - 0.30 * tight) * price;
+  // ...and so does your name. A sponsor with a foreclosure behind them pays
+  // for it on every deal they do for the next decade.
+  const st = sponsorStanding(s);
+  const ratePct = +(s.econ.indexRate + product.spread * (1 + 1.1 * tight) + 0.9 * tight + st.spreadAdd).toFixed(2);
+  const byLtv = product.ltv * (1 - 0.30 * tight) * (1 - st.advanceCut) * price;
   // A site produces no income, so a coverage test would size every land loan
   // at zero. This one is underwritten on the dirt alone, which is why it is
   // half-leverage, short, and comes with a guarantee.
@@ -169,6 +180,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
 
 // `lev` scales the loan down from the lender's maximum — the player's dial.
 export function originate(s: GameState, product: LoanProduct, price: number, noiYr: number, lev = 1): Loan | null {
+  if (!productOpen(s, product)) return null;
   const full = quote(s, product, price, noiYr);
   const qd = { ...full, principal: Math.round(full.principal * Math.max(0, Math.min(1, lev))) };
   if (qd.principal < 100_000) return null;
@@ -295,15 +307,27 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
   if (q >= loan.maturityM) {
     const value = holdingValue(rec, s.econ, h, s.month);
     const noi = holdingNOIYr(rec, s.econ, h, q);
-    const product = PRODUCTS[0];
     // A takeout is underwritten on the roll you actually have on the day the
     // balloon lands — which for a building that delivered empty and never
     // stabilised is exactly the moment the concentration and rollover
     // haircuts hurt most.
     const hair = collateralHaircut(h, q);
-    const raw = quote(s, product, value, noi);
-    const qd = { ...raw, principal: Math.round(raw.principal * hair.mult) };
+    // Walk DOWN the desk, not off a cliff. A maturing loan is refinanced by
+    // whoever will write it: the agency first, then the bank, and if neither
+    // will, hard money at hard-money prices. That last one is not a rescue —
+    // it is a coupon that eats the building's cash flow — but it is what
+    // actually happens, and it turns "you got unlucky at the balloon" into
+    // "you are now paying for how you financed this".
+    const ladder = ["agency", "bank", "bridge"].map(productById).filter((p) => productOpen(s, p));
+    let product = ladder[ladder.length - 1] ?? PRODUCTS[0];
+    let qd = { ...quote(s, product, value, noi), principal: 0 };
     const fee = Math.round(loan.balance * REFI_FEE);
+    for (const cand of ladder) {
+      const raw = quote(s, cand, value, noi);
+      const sized = { ...raw, principal: Math.round(raw.principal * hair.mult) };
+      product = cand; qd = sized;
+      if (sized.principal >= loan.balance + fee) break;
+    }
     if (qd.principal >= loan.balance + fee) {
       const rolled = loan.balance;
       h.loan = originate(s, product, value, noi, hair.mult);
@@ -327,8 +351,8 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
           text: `Balloon at ${rec.address}: today's market only refinances $${(qd.principal / 1e6).toFixed(1)}M — you wrote a $${(shortfall / 1e6).toFixed(2)}M check to close the gap.`,
         });
       } else {
-        // forced sale
-        const gross = Math.round(value * 0.92);
+        // forced sale, at the price a forced sale actually gets
+        const gross = Math.round(value * distressPrice(s));
         const net = gross - loan.balance;
         // Non-recourse means the keys are the whole answer: a sale that does
         // not cover the loan is the lender's problem. Recourse means it is
@@ -339,9 +363,12 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
         s.exits = s.exits ?? [];
         s.exits.push({ bbl: h.bbl, address: rec.address, boughtM: h.boughtM, soldM: q, price: gross, basis: h.costBasis, gain: gross - h.costBasis, forced: true });
         delete s.holdings[h.bbl];
+        // the tenants who were mid-negotiation are now somebody else's problem
+        s.lois = s.lois.filter((l) => l.bbl !== h.bbl);
+        markSponsor(s, deficiency > 0 && loan.recourse ? "deficiency" : "forced", rec.address, deficiency);
         s.news.unshift({
           q, kind: "warn",
-          text: `The balloon came due at ${rec.address} with no refi and no cash — sold under pressure at $${(gross / 1e6).toFixed(2)}M.`
+          text: `The balloon came due at ${rec.address} with no refi and no cash — sold under pressure at $${(gross / 1e6).toFixed(2)}M, ${(100 * (1 - distressPrice(s))).toFixed(0)}% under the mark. It goes on your record.`
             + (deficiency > 0
               ? loan.recourse
                 ? ` You signed for this one: the $${(deficiency / 1e6).toFixed(2)}M deficiency came out of your account.`
@@ -474,8 +501,11 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       prepayM: p.prepayM,
       kicker: p.kicker,
       floating: p.floating,
-      available: p.mezz ? !!senior : p.uwDscr <= 0 ? rec.class === "land" : rec.class !== "land",
-      why: hair.why && hair.mult < 0.95 && !p.mezz
+      available: !productOpen(s, p) ? false
+        : p.mezz ? !!senior : p.uwDscr <= 0 ? rec.class === "land" : rec.class !== "land",
+      why: !productOpen(s, p)
+        ? `This desk won't look at you — ${sponsorStanding(s).label}.`
+        : hair.why && hair.mult < 0.95 && !p.mezz
         ? `Proceeds cut ${((1 - hair.mult) * 100).toFixed(0)}% — ${hair.why}.`
         : p.mezz && !senior ? "Mezzanine sits behind a senior loan — put one on first."
         : p.uwDscr <= 0 && rec.class !== "land" ? "Land money is for dirt. This one has a building on it."
@@ -494,6 +524,9 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   const rec = resolveRec(parcels, next, bbl);
   if (!h || !rec) return { s, err: "You don't own that." };
   const product = productById(productId);
+  if (!productOpen(next, product)) {
+    return { s, err: `${product.label} won't quote you — ${sponsorStanding(next).label}. Bridge and mezzanine money will still talk.` };
+  }
   const value = holdingValue(rec, next.econ, h, next.month);
   const noi = holdingNOIYr(rec, next.econ, h, next.month);
   // The quote screen already told you the desk was cutting proceeds for a

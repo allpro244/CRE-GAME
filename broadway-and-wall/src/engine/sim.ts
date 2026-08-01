@@ -8,6 +8,7 @@ import { assetValue, holdingNOIYr, holdingValue, initialCondition, monthlyNOI, n
 import { tickLeasing } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls } from "./actions";
 import { tickLoan } from "./debt";
+import { distressPrice, markSponsor } from "./sponsor";
 import { tickLoc } from "./credit";
 import { tickDevelopments, tickPrograms, tickCityGrowth } from "./dev";
 import { tickDemand } from "./demand";
@@ -42,7 +43,7 @@ function targetListings(s: GameState, totalLots: number): number {
 
 export function newGame(seed: number, parcels?: ParcelTable): GameState {
   const s: GameState = {
-    v: 11,
+    v: 12,
     seed,
     rng: seed,
     month: 0,
@@ -58,6 +59,7 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
     cityBuilt: [],
     landAdj: {},
     blockD: {},
+    sponsor: { events: [] },
     totalLots: parcels ? Object.keys(parcels).length : 0,
     builtAtStart: parcels ? Object.values(parcels).filter((p) => p.class !== "land").length : 0,
     exchange: null,
@@ -288,16 +290,19 @@ export function advanceQuarter(
           if (v > pickV) { pickV = v; pick = h; }
         }
         const rec = resolveRec(parcels, s, pick.bbl)!;
-        const gross = Math.round(pickV * 0.85);
+        // Creditors liquidating a distressed borrower get the distressed bid,
+        // not a polite 15% off — and every seizure goes on the sponsor's record.
+        const gross = Math.round(pickV * Math.min(0.85, distressPrice(s)));
         const proceeds = Math.max(0, gross - (pick.loan?.balance ?? 0));
         s.cash += proceeds;
         logBooks(s, "sold", proceeds);
         s.exits.push({ bbl: pick.bbl, address: rec.address, boughtM: pick.boughtM, soldM: s.month, price: gross, basis: pick.costBasis, gain: gross - pick.costBasis, forced: true });
         delete s.holdings[pick.bbl];
+        markSponsor(s, "seized", rec.address, Math.max(0, (pick.loan?.balance ?? 0) - gross));
         s.lois = s.lois.filter((l) => l.bbl !== pick.bbl);
         s.news.unshift({
           q: s.month, kind: "warn",
-          text: `The creditors took ${rec.address} — sold at $${(gross / 1e6).toFixed(2)}M, a 15% haircut. ${s.cash < 0 ? "They're not done." : "The balance is square, barely."}`,
+          text: `The creditors took ${rec.address} — sold at $${(gross / 1e6).toFixed(2)}M, ${(100 * (1 - gross / Math.max(1, pickV))).toFixed(0)}% under the mark. ${s.cash < 0 ? "They're not done." : "The balance is square, barely."}`,
         });
         s.insolventMs = 8; // still on the hook until cash goes positive
       } else {

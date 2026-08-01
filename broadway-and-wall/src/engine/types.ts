@@ -230,8 +230,22 @@ export interface Exit {
   forced?: boolean;
 }
 
+/**
+ * A black mark on the sponsor's record. Real estate is a small business at the
+ * top: the same twenty lenders see every deal, and a foreclosure follows a
+ * name around for a decade. This is how leverage acquires a memory — without
+ * it, maximum leverage was a free option, because handing back a non-recourse
+ * asset cost you the asset and nothing else.
+ */
+export interface SponsorEvent {
+  m: number;
+  kind: "forced" | "deficiency" | "seized";
+  address: string;
+  amount: number;      // the hole left behind, if any
+}
+
 export interface GameState {
-  v: 11;
+  v: 12;
   seed: number;
   rng: number;
   month: number;
@@ -247,6 +261,9 @@ export interface GameState {
   cityBuilt: string[];                       // bbls the market built, not you
   landAdj: Record<string, number>;           // per-parcel land value multiplier
   blockD: Record<string, number>;            // per-block demand DRIFT, in points off the generated score
+  // What the lending market remembers about you. A sponsor who hands back keys
+  // does not get to walk into the next credit committee unrecognised.
+  sponsor: { events: SponsorEvent[] };
   totalLots: number;
   builtAtStart: number;
   // a 1031 exchange in flight: sale gain rolled, tax deferred until the clock runs out

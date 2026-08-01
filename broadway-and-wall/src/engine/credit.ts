@@ -7,6 +7,7 @@ import type { ParcelTable } from "@/data/types";
 import type { GameState } from "./types";
 import { logBooks } from "./types";
 import { netWorth } from "./value";
+import { sponsorStanding } from "./sponsor";
 
 export const LOC_LTV = 0.35;      // against net worth
 export const LOC_SPREAD = 4.0;    // prime + 400bps
@@ -31,7 +32,11 @@ export function locRate(s: GameState): number {
 export function locLimit(s: GameState, parcels: ParcelTable): number {
   const nw = netWorth(s, parcels);
   const ci = s.econ.creditIdx ?? 1;
-  const advance = LOC_LTV * Math.max(0.35, Math.min(1.15, ci));
+  // The revolver is the most relationship-dependent money on the balance
+  // sheet, so it is the first thing a bank pulls when your name goes bad —
+  // and it is pulled at exactly the moment the rest of the stack needs it.
+  const st = sponsorStanding(s);
+  const advance = LOC_LTV * Math.max(0.35, Math.min(1.15, ci)) * (1 - Math.min(0.6, 1.6 * st.advanceCut));
   return Math.max(0, Math.round(nw * advance));
 }
 
@@ -46,7 +51,12 @@ export function drawLoc(s: GameState, parcels: ParcelTable, amount: number): { s
   const amt = Math.round(amount);
   if (!Number.isFinite(amt) || amt <= 0) return { s, err: "Name an amount." };
   if (amt > avail) {
-    return { s, err: `The line only has $${(avail / 1e6).toFixed(2)}M left against 35% of your net worth.` };
+    const st = sponsorStanding(next);
+    return {
+      s,
+      err: `The line only has $${(avail / 1e6).toFixed(2)}M left.`
+        + (st.mark > 0.3 ? ` The bank cut your advance rate — ${st.label}.` : " That's the bank's advance rate against your net worth."),
+    };
   }
   next.loc.balance += amt;
   next.loc.drawnTotal += amt;

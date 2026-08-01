@@ -135,6 +135,7 @@ export interface Approach {
   refused: boolean;
   ask?: number;        // if willing: their number, good for 4 quarters
   countered?: boolean; // you get one counter per approach
+  inbound?: boolean;   // they called you, not the other way round
 }
 
 export interface NewsItem {

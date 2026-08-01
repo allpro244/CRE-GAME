@@ -6,7 +6,7 @@ import { START_CASH, CAMPAIGN_MONTHS, logBooks, monthLabel } from "./types";
 import { initEcon, rng, rrange, tickEcon } from "./market";
 import { assetValue, holdingNOIYr, holdingValue, initialCondition, monthlyNOI, netWorth, resolveRec } from "./value";
 import { tickLeasing } from "./leasing";
-import { tickSales, tickListingAbsorption } from "./actions";
+import { tickSales, tickListingAbsorption, tickBrokerCalls } from "./actions";
 import { tickLoan } from "./debt";
 import { tickLoc } from "./credit";
 import { tickDevelopments, tickPrograms, tickCityGrowth } from "./dev";
@@ -137,6 +137,7 @@ export function advanceQuarter(
   tickPrograms(s, parcels);
   tickLeasing(s, parcels);
   tickSales(s, parcels);
+  tickBrokerCalls(s, parcels, bbls);
   tickListingAbsorption(s, parcels); // other buyers work the tape too
 
   // the 1031 clock: redeploy in time or the deferred tax comes due
@@ -179,7 +180,12 @@ export function advanceQuarter(
   // earn is the opportunity cost of being slow, and it should be visible
   // rather than assumed.
   if (s.cash > 0) {
-    const tbill = Math.max(0, s.econ.indexRate - 1.6);
+    // The short rate, not the mortgage index. Twenty years of doing nothing was
+    // turning $6M into $15M — a 4.9% compounded return for holding cash, which
+    // is within a few points of what taking every risk in the business paid.
+    // Short paper roughly matches inflation and no more; the whole point of
+    // owning buildings is that cash does not keep up.
+    const tbill = Math.max(0, s.econ.indexRate - 2.4);
     const interest = Math.round((s.cash * tbill) / 100 / 12);
     if (interest > 0) { s.cash += interest; logBooks(s, "noi", interest); }
   }
@@ -316,6 +322,9 @@ function checkMilestones(s: GameState, nw: number) {
 export function attentionItems(s: GameState): { key: string; label: string }[] {
   const out: { key: string; label: string }[] = [];
   for (const l of s.lois) out.push({ key: `loi:${l.id}`, label: `LOI from ${l.name} — answer by ${monthLabel(l.expiresM)}` });
+  for (const [bbl, a] of Object.entries(s.approaches)) {
+    if (a.inbound && !a.refused && a.ask) out.push({ key: `broker:${bbl}`, label: "A broker has something off-market for you" });
+  }
   for (const h of Object.values(s.holdings)) {
     if (h.sale?.offer) out.push({ key: `offer:${h.bbl}:${h.sale.offer.price}`, label: `Offer in hand — good until ${monthLabel(h.sale.offer.expiresM)}` });
     if (h.loan && h.loan.maturityM - s.month <= 3 && h.loan.maturityM > s.month) {

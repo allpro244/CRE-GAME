@@ -1,11 +1,11 @@
 // Player actions: buy listed or off-market (cash / fixed / floating IO),
 // approach owners with assemblage pressure, sell, renovate. Pure — each
 // returns a new state or an error string, never mutates the input.
-import type { Adjacency, ParcelTable } from "@/data/types";
+import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Holding } from "./types";
 import { logBooks, monthLabel } from "./types";
 import { rng, rrange } from "./market";
-import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS, noiYr, resolveRec } from "./value";
+import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr } from "./value";
 import { genRentRoll, isCommercial } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
 
@@ -28,7 +28,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   const closing = Math.round(price * CLOSING_PCT);
   if (product === "cash" || !rec) return { principal: 0, ratePct: 0, equity: price + closing, capPremium: 0 };
   const prod = productById(product);
-  const q = quote(s, prod, price, noiYr(rec, s.econ, initialCondition(rec)));
+  const q = quote(s, prod, price, noiAfterTaxYr(rec, s.econ, initialCondition(rec), price));
   const principal = Math.round(q.principal * Math.max(0, Math.min(1, lev)));
   // Floating paper closes with a rate cap the lender insists on, and the
   // premium is part of the equity cheque — the cheaper coupon is not free.
@@ -62,7 +62,7 @@ function executePurchase(
   };
   if (product !== "cash") {
     const prod = productById(product);
-    holding.loan = originate(next, prod, price, noiYr(rec, next.econ, holding.condition), lev);
+    holding.loan = originate(next, prod, price, noiAfterTaxYr(rec, next.econ, holding.condition, price), lev);
   }
   // a live 1031: this purchase completes the exchange if it's big enough
   if (next.exchange && price >= next.exchange.minPrice * 0.8) {
@@ -329,6 +329,67 @@ export function declineSaleOffer(s: GameState, bbl: string): GameState {
 // Monthly: buyers circle listed assets. Offer flow scales with how honest
 // the ask is, the market phase, and how long it has sat. A live offer on a
 // well-priced asset sometimes draws a second bidder who pushes the number.
+/**
+ * INBOUND BROKERAGE.
+ *
+ * Twenty years of play produced five decisions. Not because the simulation was
+ * wrong — a two-tenant building genuinely does not generate much — but because
+ * the only deal flow that reached the player was a public tape they had to go
+ * and read. That is not how this business works. Brokers call you, unprompted,
+ * about a building that is not for sale, because they know what you own and
+ * they want the fee.
+ *
+ * This is the existing off-market channel run in the other direction: it
+ * writes an Approach exactly as walking up to an owner would, so the same
+ * counter-and-close path applies. Nothing new to learn, and something to
+ * think about most quarters instead of most decades.
+ */
+export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string[]) {
+  // A broker's interest in you scales with what you already own — the first
+  // deal is the hard one, and after that the phone does not stop.
+  const owned = Object.keys(s.holdings).length;
+  const hot = s.econ.phase === "expansion" || s.econ.phase === "peak";
+  const p = Math.min(0.30, (0.055 + 0.02 * Math.min(8, owned)) * (hot ? 1.25 : 0.7) * Math.max(0.5, s.econ.creditIdx ?? 1));
+  if (rng(s) >= p) return;
+
+  // they pitch near what you already buy: same class, similar size, better corner
+  const ref = Object.values(s.holdings).map((h) => resolveRec(parcels, s, h.bbl)).filter(Boolean) as ParcelRecord[];
+  const wantClass = ref.length && rng(s) < 0.65 ? ref[Math.floor(rng(s) * ref.length) % ref.length].class : null;
+  let best: ParcelRecord | null = null;
+  for (let i = 0; i < 90; i++) {
+    const bbl = bbls[Math.floor(rng(s) * bbls.length)];
+    if (s.holdings[bbl] || s.approaches[bbl] || s.listings.some((l) => l.bbl === bbl)) continue;
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+    if (wantClass && rec.class !== wantClass && rng(s) < 0.7) continue;
+    const v = assetValue(rec, s.econ, initialCondition(rec));
+    if (v <= 0 || v > Math.max(6_000_000, netWorthLike(s) * 1.6)) continue;
+    best = rec;
+    break;
+  }
+  if (!best) return;
+
+  // An unsolicited pitch is rarely cheap — you are paying for not competing.
+  // In a soft market the whisper number gets a good deal more reasonable.
+  const value = assetValue(best, s.econ, initialCondition(best));
+  const premium = s.econ.phase === "recession" ? rrange(s, 0.92, 1.06)
+    : s.econ.phase === "recovery" ? rrange(s, 0.98, 1.12)
+    : rrange(s, 1.04, 1.22);
+  const ask = Math.round(value * premium / 1000) * 1000;
+  s.approaches[best.bbl] = { q: s.month, refused: false, ask, inbound: true };
+  s.news.unshift({
+    q: s.month, kind: "deal",
+    text: `A broker called about ${best.address} — ${best.bldgArea.toLocaleString()} sf, not on the market, whisper number $${(ask / 1e6).toFixed(2)}M. Their client will listen for a few months.`,
+  });
+}
+
+// net worth without importing the whole valuation graph — cash plus equity
+function netWorthLike(s: GameState): number {
+  let n = s.cash;
+  for (const h of Object.values(s.holdings)) n += Math.max(0, h.costBasis - (h.loan?.balance ?? 0));
+  return n;
+}
+
 export function tickSales(s: GameState, parcels: ParcelTable) {
   for (const h of Object.values(s.holdings)) {
     // UNSOLICITED APPROACHES. Nobody in this business only sells when they

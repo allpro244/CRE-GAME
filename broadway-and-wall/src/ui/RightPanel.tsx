@@ -7,7 +7,7 @@ import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import {
   assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr,
   occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr,
-  rollQualitySpread, operatingStatement, recoveryOf,
+  rollQualitySpread, operatingStatement, recoveryOf, noiAfterTaxYr,
 } from "@/engine/value";
 import { planDevelopment, PROGRAMS, programCost, farMaxFor, maxFloorsFor, demolitionCost } from "@/engine/dev";
 import type { BuiltClass } from "@/engine/types";
@@ -83,13 +83,59 @@ export default function GamePanels() {
 function DecisionModal() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels);
-  const { respondLoi, acceptOffer, declineOffer } = useStore.getState();
+  const { respondLoi, acceptOffer, declineOffer, select: goTo, setPage: openPage } = useStore.getState();
   const [deferred, setDeferred] = useState<Set<number>>(new Set());
   if (!parcels || game.gameOver) return null;
 
   const loi = game.agent ? undefined : game.lois.find((l) => !deferred.has(l.id));
   const offerBbl = deferred.has(-1) ? undefined : Object.keys(game.holdings).find((b) => game.holdings[b].sale?.offer);
-  if (!loi && !offerBbl) return null;
+  // an unsolicited call from a broker is a decision like any other
+  const callBbl = Object.entries(game.approaches).find(
+    ([b, a]) => a.inbound && !a.refused && a.ask && !deferred.has(-2 - Number(b.slice(-4))) && !game.holdings[b],
+  )?.[0];
+  if (!loi && !offerBbl && !callBbl) return null;
+
+  if (!loi && callBbl) {
+    const rec = resolveRec(parcels, game, callBbl);
+    const a = game.approaches[callBbl];
+    if (rec && a?.ask) {
+      const cond = initialCondition(rec);
+      const v = assetValue(rec, game.econ, cond);
+      const noi = noiAfterTaxYr(rec, game.econ, cond, a.ask);
+      const goingIn = a.ask > 0 ? (noi / a.ask) * 100 : 0;
+      const over = v > 0 ? (a.ask / v - 1) * 100 : 0;
+      return (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <div className="modal-kicker">A broker is on the phone</div>
+            <div className="modal-title">{rec.address}</div>
+            <div className="modal-sub">
+              {CLASS_LABEL[rec.class]} · {sf(rec.bldgArea)} · {rec.floors} fl · built {rec.yearBuilt}. Not on the market.
+            </div>
+            <div className="grid">
+              <Row k="Their number" v={usd(a.ask)} strong />
+              <Row k="vs appraisal" v={`${over >= 0 ? "+" : ""}${over.toFixed(0)}%`} bad={over > 8} />
+              <Row k="NOI / yr" v={usd(noi)} />
+              <Row k="Going-in cap" v={`${goingIn.toFixed(2)}%`} bad={goingIn < game.econ.indexRate + 1.6} />
+              <Row k="Occupancy (mkt)" v={`${(occupancy(rec, game.econ) * 100).toFixed(0)}%`} />
+              <Row k="Demand" v={`${rec.demandScore} / 100`} />
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-buy" onClick={() => { openPage("none"); goTo(callBbl); setDeferred((d) => new Set(d).add(-2 - Number(callBbl.slice(-4)))); }}>
+                Open the file
+              </button>
+              <button className="btn" onClick={() => setDeferred((d) => new Set(d).add(-2 - Number(callBbl.slice(-4))))}>
+                Not now
+              </button>
+            </div>
+            <div className="modal-queue">
+              Their client will listen for a few months. It stays on your desk until it lapses.
+            </div>
+          </div>
+        </div>
+      );
+    }
+  }
 
   if (loi) {
     const rec = resolveRec(parcels, game, loi.bbl);
@@ -392,8 +438,8 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
           <div className="deal-head">On the market</div>
           <div className="grid">
             <Row k="Ask" v={usd(listing.ask)} strong />
-            {isBuilt && <Row k="NOI / yr" v={usd(noiYr(rec, game.econ, cond))} />}
-            {isBuilt && <Row k="Cap rate at ask" v={((noiYr(rec, game.econ, cond) / listing.ask) * 100).toFixed(2) + "%"} strong />}
+            {isBuilt && <Row k="NOI / yr" v={usd(noiAfterTaxYr(rec, game.econ, cond, listing.ask))} />}
+            {isBuilt && <Row k="Cap rate at ask" v={((noiAfterTaxYr(rec, game.econ, cond, listing.ask) / listing.ask) * 100).toFixed(2) + "%"} strong />}
             {isBuilt && <Row k="Occupancy" v={(occupancy(rec, game.econ) * 100).toFixed(0) + "%"} />}
             {!isBuilt && <Row k="Land" v={"$" + (listing.ask / rec.lotArea).toFixed(0) + " /sf of lot"} />}
           </div>
@@ -658,7 +704,7 @@ function BuyButtons({ bbl, price, off }: { bbl: string; price: number; off: bool
   const principal = Math.round(max.principal * lev);
   const equity = offerPrice - principal + Math.round(offerPrice * 0.02);
   const rec = parcels[bbl];
-  const noi = rec ? noiYr(rec, game.econ, initialCondition(rec)) : 0;
+  const noi = rec ? noiAfterTaxYr(rec, game.econ, initialCondition(rec), offerPrice) : 0;
   const annualDs = principal > 0 ? principal * (max.ratePct / 100) : 0;
   const dscrNow = annualDs > 0 ? noi / annualDs : null;
   const listing = game.listings.find((l) => l.bbl === bbl);
@@ -1339,7 +1385,7 @@ function MarketPage() {
                 if (!rec) return null;
                 const cond = initialCondition(rec);
                 const built = rec.class !== "land" && rec.bldgArea > 0;
-                const noi = built ? noiYr(rec, game.econ, cond) : 0;
+                const noi = built ? noiAfterTaxYr(rec, game.econ, cond, li.ask) : 0;
                 const goingIn = built && li.ask > 0 ? (noi / li.ask) * 100 : 0;
                 return (
                   <tr key={li.bbl} onClick={() => go(li.bbl)}>

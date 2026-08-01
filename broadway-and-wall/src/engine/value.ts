@@ -185,6 +185,25 @@ export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition): numb
   return gross * (1 - ratio);
 }
 
+/**
+ * NET OPERATING INCOME, the way the industry defines it: after real estate
+ * taxes. `noiYr` above deliberately stops short of them, because valuation
+ * capitalises pre-tax income at a tax-loaded cap rate — algebraically the same
+ * answer, and it avoids the circularity of taxing a value you have not
+ * computed yet. But that number must never reach a player or a lender.
+ *
+ * It was reaching both. The tape, the acquisition panel and the loan desk were
+ * all quoting income that ignored a bill running about 1.1% of value a year,
+ * so every building looked roughly 110 basis points better than it was, every
+ * loan was sized against income the building would never earn, and NOI fell
+ * the moment you closed — because owned assets were computed correctly and
+ * unowned ones were not.
+ */
+export function noiAfterTaxYr(rec: ParcelRecord, econ: Econ, condition: Condition, price: number): number {
+  if (rec.class === "land" || !rec.bldgArea) return noiYr(rec, econ, condition);
+  return noiYr(rec, econ, condition) - price * TAX_RATE;
+}
+
 // The landlord's share of the property-tax bill: net leases reimburse it,
 // so you pay on the vacant + gross-leased fraction of the building.
 /** The gross property-tax bill, before anyone reimburses anything. */

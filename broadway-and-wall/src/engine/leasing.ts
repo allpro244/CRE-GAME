@@ -140,7 +140,11 @@ function toSuites(rec: ParcelRecord, want: number, cap: number): number {
   const taken = n * sfPer;
   // if letting whole suites would strand an unlettable sliver, take it too
   const left = cap - taken;
-  return Math.round(left > 0 && left < Math.min(PART_SUITE_MIN, sfPer * 0.35) ? cap : taken);
+  // ...and never more than there is. The 0.02 slop above absorbs float error
+  // when the space divides evenly, but it can also round a whole suite up past
+  // what is actually vacant — which let buildings sign leases for a few dozen
+  // square feet they did not have.
+  return Math.min(Math.floor(cap), Math.round(left > 0 && left < Math.min(PART_SUITE_MIN, sfPer * 0.35) ? cap : taken));
 }
 
 // In-place rent roll at acquisition. Expirations cluster around a couple of
@@ -512,9 +516,14 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     // is often worth more than the spread on the rent.
     if (recoveryOf(t) === "base") t.baseStopPsf = +stopPsfNow(rec, s.econ, h).toFixed(2);
   } else {
+    // An LOI was sized against the vacancy on the day it was written. Two of
+    // them can be live at once, so the second one signs against whatever is
+    // left — you cannot lease the same floor twice.
+    const sf = Math.min(l.sf, Math.max(0, vacantSf(rec, h)));
+    if (sf < 1) return;
     h.tenants.push({
       name: l.name, sector: l.sector, credit: l.credit,
-      sf: l.sf, rentPsf: l.rentPsf, net: l.net,
+      sf, rentPsf: l.rentPsf, net: l.net,
       recovery: l.recovery ?? (l.net ? "nnn" : "gross"),
       baseStopPsf: +stopPsfNow(rec, s.econ, h).toFixed(2),
       startM: s.month, endM: s.month + l.termM,

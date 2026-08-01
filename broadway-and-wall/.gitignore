@@ -4,3 +4,5 @@ pipeline/out/
 
 *.tsbuildinfo
 dist-zip/
+test/.entry.ts
+test/.engine.mjs

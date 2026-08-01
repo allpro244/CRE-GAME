@@ -235,16 +235,25 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
     const effIndex = loan.cap ? Math.min(s.econ.indexRate, loan.cap.strike) : s.econ.indexRate;
     loan.ratePct = +(effIndex + loan.spread).toFixed(2);
   }
+  // The payment is re-cut every month, and it has to be: a loan that leaves
+  // its interest-only period must start amortising. This used to recompute
+  // only for floating paper, so every FIXED loan with an IO period — the bank
+  // five-year, the participating paper, the mezzanine — quietly stayed
+  // interest-only for its whole term, understating debt service for years.
+  // Worse, the IO payment was rounded down, so the balance crept UPWARD a few
+  // cents a month forever. Recomputing over the remaining amortisation term
+  // reproduces the same schedule a level-payment loan would follow, and it
+  // cannot drift below the interest.
   const io = q < loan.ioUntilM;
-  if (io || (loan.floating ?? loan.product === "float")) {
+  {
     const yearsLeft = Math.max(1, loan.amortYears - (q - loan.originM) / 12);
     loan.monthlyPmt = io
-      ? Math.round((loan.balance * loan.ratePct) / 100 / 12)
+      ? Math.ceil((loan.balance * loan.ratePct) / 100 / 12)
       : Math.round(monthlyPayment(loan.balance, loan.ratePct, yearsLeft));
   }
 
   const interest = (loan.balance * loan.ratePct) / 100 / 12;
-  const principalPay = io ? 0 : Math.min(loan.balance, loan.monthlyPmt - interest);
+  const principalPay = io ? 0 : Math.max(0, Math.min(loan.balance, loan.monthlyPmt - interest));
   loan.balance = Math.max(0, loan.balance - principalPay);
   let cashOut = loan.monthlyPmt;
 

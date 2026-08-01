@@ -196,6 +196,7 @@ export interface BooksYear {
   taxes: number;    // income + capital gains + property (property is inside NOI)
   bought: number;   // equity out the door on acquisitions
   sold: number;     // net proceeds in from dispositions
+  ga: number;       // firm overhead — asset management, accounting, legal
 }
 
 export interface Exit {
@@ -251,10 +252,10 @@ export function logBooks(s: GameState, key: keyof Omit<BooksYear, "yr">, amt: nu
   const yr = Math.floor(s.month / 12);
   let e = s.books[s.books.length - 1];
   if (!e || e.yr !== yr) {
-    e = { yr, noi: 0, debtSvc: 0, leasing: 0, capex: 0, dev: 0, taxes: 0, bought: 0, sold: 0 };
+    e = { yr, noi: 0, debtSvc: 0, leasing: 0, capex: 0, dev: 0, taxes: 0, bought: 0, sold: 0, ga: 0 };
     s.books.push(e);
   }
-  e[key] += amt;
+  e[key] = (e[key] ?? 0) + amt;
 }
 
 export const START_CASH = 6_000_000;

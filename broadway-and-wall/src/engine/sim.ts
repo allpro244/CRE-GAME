@@ -175,6 +175,39 @@ export function advanceQuarter(
   }
   s.cash += monthCF;
 
+  // --- the firm's own overhead ----------------------------------------------
+  // Every cost in this game so far has been charged to a building. Real
+  // operators also carry themselves: asset management, accounting, audit,
+  // legal, the insurance programme, someone to answer the phone. It is not
+  // billable to a property and it does not scale one-for-one with the
+  // portfolio — the tenth building is cheaper to run than the first — but it
+  // never goes away, and it is why an owner of two hundred assets does not
+  // simply earn a hundred times the owner of two.
+  //
+  // Without it a century of accumulation was a free escalator; the sub-linear
+  // exponent is what keeps scale worth having while still costing something.
+  {
+    // Charged against what you are RESPONSIBLE for, not how many doors you
+    // have: a firm running fifty million needs one analyst, a firm running
+    // five billion needs a department, and the second is cheaper per dollar.
+    // A per-asset charge looked reasonable and was not — it billed a small
+    // operator more overhead than their building earned in NOI.
+    const n = Object.keys(s.holdings).length + Object.keys(s.developments ?? {}).length;
+    if (n > 0) {
+      let gav = 0;
+      for (const h of Object.values(s.holdings)) {
+        const rec = resolveRec(parcels, s, h.bbl);
+        if (rec) gav += holdingValue(rec, s.econ, h, s.month);
+      }
+      for (const d of Object.values(s.developments ?? {})) gav += d.costTotal;
+      // ~30bps of gross asset value a year at scale, over a small fixed base
+      const annual = 60_000 * s.econ.costIdx + 0.0028 * gav;
+      const ga = Math.round(annual / 12);
+      s.cash -= ga;
+      logBooks(s, "ga", ga);
+    }
+  }
+
   // Idle balances sit in the money market, not in a drawer. Short paper yields
   // under the loan index; the gap between what cash earns and what buildings
   // earn is the opportunity cost of being slow, and it should be visible

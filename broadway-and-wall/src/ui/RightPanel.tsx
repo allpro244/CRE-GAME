@@ -1215,6 +1215,10 @@ function DealsPage() {
   const expiring: { bbl: string; name: string; sf: number; endM: number }[] = [];
   const maturities: { bbl: string; matM: number; bal: number; sweep: boolean }[] = [];
   const sales: { bbl: string; ask: number; offer?: { price: number; expiresM: number } }[] = [];
+  const calls = Object.entries(game.approaches)
+    .filter(([bbl, a]) => !a.refused && a.ask && !game.holdings[bbl])
+    .map(([bbl, a]) => ({ bbl, ask: a.ask!, inbound: !!a.inbound, lapseM: a.q + 12 }))
+    .sort((a, b) => a.lapseM - b.lapseM);
   for (const h of Object.values(game.holdings)) {
     for (const t of h.tenants) if (t.endM - q <= 12 && t.endM > q) expiring.push({ bbl: h.bbl, name: t.name, sf: t.sf, endM: t.endM });
     if (h.loan && (h.loan.maturityM - q <= 24 || h.loan.sweep)) maturities.push({ bbl: h.bbl, matM: h.loan.maturityM, bal: h.loan.balance, sweep: h.loan.sweep });
@@ -1259,7 +1263,23 @@ function DealsPage() {
       </section>
 
       <section>
-        <div className="page-section">Sales in progress · {sales.length}</div>
+        {/* An off-market approach that you set aside has to be findable, or
+            "Not now" is the same as "never" — and a call the broker made on
+            your behalf is a live deal whether or not you looked at it today. */}
+        <div className="page-section">Off-market · {calls.length}</div>
+        {calls.length === 0 && <div className="hint">No live approaches. Brokers call when you own enough for them to care.</div>}
+        <div className="mini-list">
+          {calls.map((c) => (
+            <button key={c.bbl} className="neighbor" onClick={() => go(c.bbl)}>
+              <span className="neighbor-addr">{c.inbound ? "☎ " : ""}{parcels[c.bbl]?.address ?? c.bbl}</span>
+              <span className="neighbor-meta">
+                {usd(c.ask)} · lapses {monthLabel(c.lapseM)}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <div className="page-section" style={{ marginTop: 18 }}>Sales in progress · {sales.length}</div>
         {sales.length === 0 && <div className="hint">Nothing listed. Sell from any owned building's card.</div>}
         {sales.map((sl) => (
           <div key={sl.bbl} className="loi">
@@ -1380,7 +1400,20 @@ function MarketPage() {
               </tr>
             </thead>
             <tbody>
-              {[...game.listings].sort((a, b) => a.ask - b.ask).map((li) => {
+              {/* Sorted the way a buyer reads a tape: income first, best going-in
+                  yield at the top, then the dirt by price per foot. Sorting the
+                  whole thing by asking price buried every building that made
+                  money under fourteen rows of vacant lots. */}
+              {[...game.listings].map((li) => {
+                const rec = resolveRec(parcels, game, li.bbl);
+                const built = !!rec && rec.class !== "land" && rec.bldgArea > 0;
+                const cap = built && li.ask > 0
+                  ? noiAfterTaxYr(rec!, game.econ, initialCondition(rec!), li.ask) / li.ask : -1;
+                const psf = rec ? li.ask / Math.max(1, built ? rec.bldgArea : rec.lotArea) : Infinity;
+                return { li, built, cap, psf };
+              }).sort((a, b) => (a.built === b.built
+                ? (a.built ? b.cap - a.cap : a.psf - b.psf)
+                : (a.built ? -1 : 1))).map(({ li }) => {
                 const rec = resolveRec(parcels, game, li.bbl);
                 if (!rec) return null;
                 const cond = initialCondition(rec);
@@ -1685,13 +1718,13 @@ function BooksPage() {
             <thead>
               <tr>
                 <th>Year</th><th className="num">NOI</th><th className="num">Debt svc</th><th className="num">Leasing</th>
-                <th className="num">Capex</th><th className="num">Development</th><th className="num">Taxes</th>
+                <th className="num">Capex</th><th className="num">G&amp;A</th><th className="num">Development</th><th className="num">Taxes</th>
                 <th className="num">Acquisitions</th><th className="num">Dispositions</th><th className="num">Net</th>
               </tr>
             </thead>
             <tbody>
               {years.map((b) => {
-                const net = b.noi - b.debtSvc - b.leasing - b.capex - b.dev - b.taxes - b.bought + b.sold;
+                const net = b.noi - b.debtSvc - b.leasing - b.capex - (b.ga ?? 0) - b.dev - b.taxes - b.bought + b.sold;
                 return (
                   <tr key={b.yr} style={{ cursor: "default" }}>
                     <td className="mono">{2026 + b.yr}</td>
@@ -1699,6 +1732,7 @@ function BooksPage() {
                     <td className="num">{b.debtSvc ? "−" + usd(b.debtSvc) : "—"}</td>
                     <td className="num">{b.leasing ? "−" + usd(b.leasing) : "—"}</td>
                     <td className="num">{b.capex ? "−" + usd(b.capex) : "—"}</td>
+                    <td className="num">{b.ga ? "−" + usd(b.ga) : "—"}</td>
                     <td className="num">{b.dev ? "−" + usd(b.dev) : "—"}</td>
                     <td className="num">{b.taxes ? "−" + usd(b.taxes) : "—"}</td>
                     <td className="num">{b.bought ? "−" + usd(b.bought) : "—"}</td>

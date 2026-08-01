@@ -8,6 +8,7 @@ import { assetValue, holdingNOIYr, holdingValue, initialCondition, monthlyNOI, n
 import { tickLeasing } from "./leasing";
 import { tickSales, tickListingAbsorption } from "./actions";
 import { tickLoan } from "./debt";
+import { tickLoc } from "./credit";
 import { tickDevelopments, tickPrograms, tickCityGrowth } from "./dev";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
@@ -24,7 +25,7 @@ function targetListings(s: GameState, totalLots: number): number {
 
 export function newGame(seed: number, parcels?: ParcelTable): GameState {
   const s: GameState = {
-    v: 7,
+    v: 8,
     seed,
     rng: seed,
     month: 0,
@@ -43,6 +44,8 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
     builtAtStart: parcels ? Object.values(parcels).filter((p) => p.class !== "land").length : 0,
     exchange: null,
     taxesPaid: 0,
+    agent: false,
+    loc: { balance: 0, drawnTotal: 0, interestPaid: 0 },
     books: [],
     nwHistory: [START_CASH],
     exits: [],
@@ -221,6 +224,8 @@ export function advanceQuarter(
   } else {
     s.insolventMs = 0;
   }
+
+  tickLoc(s, parcels);   // interest, sweeps, and the safety draw
 
   // the record book
   const nw = netWorth(s, parcels);

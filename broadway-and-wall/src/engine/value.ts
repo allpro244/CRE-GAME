@@ -198,5 +198,6 @@ export function netWorth(s: GameState, parcels: Record<string, ParcelRecord>): n
   for (const d of Object.values(s.developments ?? {})) {
     nw += d.costTotal - d.loanBalance;
   }
+  nw -= s.loc?.balance ?? 0;   // the line is real money owed
   return nw;
 }

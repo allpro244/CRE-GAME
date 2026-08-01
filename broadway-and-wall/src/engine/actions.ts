@@ -20,22 +20,23 @@ function clone(s: GameState): GameState {
   return JSON.parse(JSON.stringify(s));
 }
 
-export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price: number, product: BuyProduct) {
+export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price: number, product: BuyProduct, lev = 1) {
   const rec = parcels[bbl];
   const closing = Math.round(price * CLOSING_PCT);
   if (product === "cash" || !rec) return { principal: 0, ratePct: 0, equity: price + closing };
   const prod = PRODUCTS.find((p) => p.id === product)!;
   const q = quote(s, prod, price, noiYr(rec, s.econ, initialCondition(rec)));
-  return { principal: q.principal, ratePct: q.ratePct, equity: price - q.principal + closing };
+  const principal = Math.round(q.principal * Math.max(0, Math.min(1, lev)));
+  return { principal, ratePct: q.ratePct, equity: price - principal + closing };
 }
 
 function executePurchase(
-  s: GameState, parcels: ParcelTable, bbl: string, price: number, product: BuyProduct, offMarket: boolean,
+  s: GameState, parcels: ParcelTable, bbl: string, price: number, product: BuyProduct, offMarket: boolean, lev = 1,
 ): { s: GameState; err?: string } {
   const rec = parcels[bbl];
   if (!rec) return { s, err: "Unknown parcel." };
   if (s.holdings[bbl]) return { s, err: "You already own it." };
-  const bq = buyQuote(s, parcels, bbl, price, product);
+  const bq = buyQuote(s, parcels, bbl, price, product, lev);
   if (s.cash < bq.equity) {
     return { s, err: `This deal needs $${(bq.equity / 1e6).toFixed(2)}M ${product === "cash" ? "all-cash" : "of equity"} — you're short.` };
   }
@@ -54,7 +55,7 @@ function executePurchase(
   };
   if (product !== "cash") {
     const prod = PRODUCTS.find((p) => p.id === product)!;
-    holding.loan = originate(next, prod, price, noiYr(rec, next.econ, holding.condition));
+    holding.loan = originate(next, prod, price, noiYr(rec, next.econ, holding.condition), lev);
   }
   // a live 1031: this purchase completes the exchange if it's big enough
   if (next.exchange && price >= next.exchange.minPrice * 0.8) {
@@ -76,10 +77,10 @@ function executePurchase(
   return { s: next };
 }
 
-export function buyListing(s: GameState, parcels: ParcelTable, bbl: string, product: BuyProduct): { s: GameState; err?: string } {
+export function buyListing(s: GameState, parcels: ParcelTable, bbl: string, product: BuyProduct, lev = 1): { s: GameState; err?: string } {
   const listing = s.listings.find((l) => l.bbl === bbl);
   if (!listing) return { s, err: "That property is no longer on the market." };
-  return executePurchase(s, parcels, bbl, listing.ask, product, false);
+  return executePurchase(s, parcels, bbl, listing.ask, product, false, lev);
 }
 
 // ---- off-market: approach the owner ---------------------------------------
@@ -122,11 +123,11 @@ export function approachOwner(
   return { s: next, ask };
 }
 
-export function buyOffMarket(s: GameState, parcels: ParcelTable, bbl: string, product: BuyProduct): { s: GameState; err?: string } {
+export function buyOffMarket(s: GameState, parcels: ParcelTable, bbl: string, product: BuyProduct, lev = 1): { s: GameState; err?: string } {
   const a = s.approaches[bbl];
   if (!a || a.refused || !a.ask) return { s, err: "No live ask — approach the owner first." };
   if (s.month > a.q + 6) return { s, err: "That number expired." };
-  return executePurchase(s, parcels, bbl, a.ask, product, true);
+  return executePurchase(s, parcels, bbl, a.ask, product, true, lev);
 }
 
 // One counter per approach: come back 12% under their number. They take it,

@@ -5,13 +5,14 @@ import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfoli
 import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, startRenovation, setBroker, type BuyProduct } from "@/engine/actions";
 import { respondLOI, type LOIAction } from "@/engine/leasing";
 import { refinance, buyRateCap } from "@/engine/debt";
+import { drawLoc, repayLoc } from "@/engine/credit";
 import { startDevelopment, startProgram, setStance } from "@/engine/dev";
 import type { BuiltClass } from "@/engine/types";
 import { netWorth } from "@/engine/value";
 import { loadGame, saveGame } from "@/engine/save";
 
 export type Lens = "none" | "land" | "demand";
-export type Page = "none" | "portfolio" | "deals" | "market" | "books";
+export type Page = "none" | "portfolio" | "deals" | "market" | "books" | "leasing";
 
 interface AppState {
   parcels: ParcelTable | null;
@@ -37,8 +38,8 @@ interface AppState {
   advanceYear: () => void;
   advanceUntil: () => void;
   counterOff: (bbl: string) => void;
-  buy: (bbl: string, product: BuyProduct) => void;
-  buyOff: (bbl: string, product: BuyProduct) => void;
+  buy: (bbl: string, product: BuyProduct, lev?: number) => void;
+  buyOff: (bbl: string, product: BuyProduct, lev?: number) => void;
   approach: (bbl: string) => void;
   respondLoi: (id: number, action: LOIAction) => void;
   refi: (bbl: string, product: "fixed" | "float") => void;
@@ -52,6 +53,9 @@ interface AppState {
   renovate: (bbl: string) => void;
   broker: (bbl: string, on: boolean) => void;
   rateCap: (bbl: string) => void;
+  setAgent: (on: boolean) => void;
+  drawCredit: (amt: number) => void;
+  repayCredit: (amt: number) => void;
   newRun: () => void;
 }
 
@@ -122,20 +126,20 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  buy: (bbl, product) => {
+  buy: (bbl, product, lev) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = buyListing(game, parcels, bbl, product);
+    const r = buyListing(game, parcels, bbl, product, lev);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("Deed recorded. The block knows your name now.");
     void persist(r.s);
   },
 
-  buyOff: (bbl, product) => {
+  buyOff: (bbl, product, lev) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = buyOffMarket(game, parcels, bbl, product);
+    const r = buyOffMarket(game, parcels, bbl, product, lev);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("Off-market. Nobody saw it trade.");
@@ -268,6 +272,35 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
+  setAgent: (on) => {
+    const { game } = get();
+    if (!game) return;
+    const next = { ...game, agent: on };
+    set({ game: next });
+    toast(on ? "Your agent has the book. 6% on everything they sign." : "You're handling leasing yourself again.");
+    void persist(next);
+  },
+
+  drawCredit: (amt) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = drawLoc(game, parcels, amt);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast("Drawn. The meter is running.");
+    void persist(r.s);
+  },
+
+  repayCredit: (amt) => {
+    const { game } = get();
+    if (!game) return;
+    const r = repayLoc(game, amt);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast("Paid down.");
+    void persist(r.s);
+  },
+
   newRun: () => {
     const { parcels, bbls } = get();
     if (!parcels) return;
@@ -315,7 +348,7 @@ export async function loadData() {
     // resume the autosave — unless it references parcels that no longer
     // exist (a save from a different city/dataset), in which case start over
     const saved = await loadGame("auto");
-    const fitsCity = saved && saved.v === 7 &&
+    const fitsCity = saved && saved.v === 8 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (fitsCity) {

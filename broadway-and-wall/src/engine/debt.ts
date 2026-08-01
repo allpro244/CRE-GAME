@@ -46,8 +46,10 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   return { principal, ratePct, dscrConstrained: byDscr < byLtv };
 }
 
-export function originate(s: GameState, product: LoanProduct, price: number, noiYr: number): Loan | null {
-  const qd = quote(s, product, price, noiYr);
+// `lev` scales the loan down from the lender's maximum — the player's dial.
+export function originate(s: GameState, product: LoanProduct, price: number, noiYr: number, lev = 1): Loan | null {
+  const full = quote(s, product, price, noiYr);
+  const qd = { ...full, principal: Math.round(full.principal * Math.max(0, Math.min(1, lev))) };
   if (qd.principal < 100_000) return null;
   const pmt = product.ioM > 0
     ? Math.round((qd.principal * qd.ratePct) / 100 / 12)

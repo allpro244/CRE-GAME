@@ -38,12 +38,12 @@ export default function TopBar() {
           <Stat label="Net worth" value={usd(nw)} />
           <Stat label="CF / mo" value={usd(cf)} bad={cf < 0} />
           <Stat label="Index" value={pct(game.econ.indexRate)} />
+          {(game.loc?.balance ?? 0) > 0 && <Stat label="Line drawn" value={usd(game.loc.balance)} bad />}
           <Stat label="Market" value={game.econ.phase} />
           <Stat
-            label="City built"
-            value={game.totalLots
-              ? Math.round((100 * (game.builtAtStart + Object.keys(game.built).length)) / game.totalLots) + "%"
-              : "—"}
+            label="Vacant lots"
+            value={String(Math.max(0, game.totalLots - game.builtAtStart - Object.keys(game.built).length))}
+            title={`Empty lots left in Ashport. Every one is a site someone can build on — as they run out, land gets scarce and prices climb. ${game.totalLots ? Math.round((100 * (game.builtAtStart + Object.keys(game.built).length)) / game.totalLots) : 0}% of the city is built.`}
           />
           <span className="topbar-sep" />
           <button className={"nav-btn" + (page === "portfolio" ? " nav-on" : "")} onClick={() => setPage(page === "portfolio" ? "none" : "portfolio")}>
@@ -54,6 +54,9 @@ export default function TopBar() {
           </button>
           <button className={"nav-btn" + (page === "market" ? " nav-on" : "")} onClick={() => setPage(page === "market" ? "none" : "market")}>
             Market
+          </button>
+          <button className={"nav-btn" + (page === "leasing" ? " nav-on" : "")} onClick={() => setPage(page === "leasing" ? "none" : "leasing")}>
+            Leasing
           </button>
           <button className={"nav-btn" + (page === "books" ? " nav-on" : "")} onClick={() => setPage(page === "books" ? "none" : "books")}>
             Books
@@ -101,9 +104,9 @@ export default function TopBar() {
   );
 }
 
-function Stat({ label, value, bad, wide }: { label: string; value: string; bad?: boolean; wide?: boolean }) {
+function Stat({ label, value, bad, wide, title }: { label: string; value: string; bad?: boolean; wide?: boolean; title?: string }) {
   return (
-    <div className={"tstat" + (wide ? " tstat-wide" : "")}>
+    <div className={"tstat" + (wide ? " tstat-wide" : "")} title={title}>
       <span className="tstat-label">{label}</span>
       {value && <span className={"tstat-value mono" + (bad ? " neg" : "")}>{value}</span>}
     </div>

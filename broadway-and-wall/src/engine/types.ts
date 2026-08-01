@@ -78,6 +78,7 @@ export interface Holding {
   broker?: boolean;    // leasing broker on retainer: more LOIs, monthly fee
   occ?: number;        // multifamily aggregate occupancy
   stance?: -1 | 0 | 1; // rent posture: push / market / fill
+  deliveredM?: number; // ground-up completion: new space leases with momentum
   sale?: { ask: number; listedM: number; offer?: { price: number; expiresM: number } }; // on the market
   program?: { id: string; untilM: number };  // capital program underway
   programsDone?: Record<string, number>;     // id -> completed quarter
@@ -178,7 +179,7 @@ export interface Exit {
 }
 
 export interface GameState {
-  v: 7;
+  v: 8;
   seed: number;
   rng: number;
   month: number;
@@ -198,6 +199,11 @@ export interface GameState {
   // a 1031 exchange in flight: sale gain rolled, tax deferred until the clock runs out
   exchange: { deferredTax: number; rolledGain: number; minPrice: number; deadlineM: number } | null;
   taxesPaid: number;
+  // Leasing agent on retainer: signs every LOI for you at a 6% commission
+  // instead of the 4%/2% you'd pay doing it yourself.
+  agent: boolean;
+  // Revolving line against the portfolio: 35% of net worth at index + 400bps.
+  loc: { balance: number; drawnTotal: number; interestPaid: number };
   books: BooksYear[];                        // the ledger, one entry per year
   nwHistory: number[];                       // net worth at each month, for the chart
   exits: Exit[];                             // every disposition, forced or chosen

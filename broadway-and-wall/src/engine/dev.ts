@@ -148,6 +148,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
       const h = s.holdings[d.bbl];
       h.condition = "good";
       h.tenants = [];
+      h.deliveredM = s.month;   // new space leases with momentum
       if (d.use === "multifamily") h.occ = 0.1;
       h.costBasis += d.costTotal;
       h.assessed = (h.assessed ?? h.costBasis - d.costTotal) + d.costTotal; // improvements hit the tax roll at cost

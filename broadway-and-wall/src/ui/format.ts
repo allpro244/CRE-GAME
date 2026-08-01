@@ -7,5 +7,5 @@ export const usd = (n: number): string => {
   return sign + Math.round(a).toLocaleString();
 };
 
-export const sf = (n: number) => n.toLocaleString() + " sf";
+export const sf = (n: number) => Math.round(n).toLocaleString() + " sf";
 export const pct = (n: number) => n.toFixed(2) + "%";

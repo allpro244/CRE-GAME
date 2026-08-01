@@ -63,10 +63,10 @@ export function genRentRoll(s: GameState, rec: ParcelRecord, holding: Holding) {
   let guard = 0;
   while (leased < rec.bldgArea * targetOcc && guard++ < 40) {
     const suiteMax = rec.class === "industrial" ? rec.bldgArea : rec.bldgArea * 0.35;
-    const sf = Math.min(
+    const sf = Math.round(Math.min(
       rec.bldgArea * targetOcc - leased,
       Math.round(rrange(s, rec.class === "industrial" ? 6000 : 1800, Math.max(2600, suiteMax)) / 100) * 100,
-    );
+    ));
     if (sf < (rec.class === "industrial" ? 2500 : 800)) break;
     const sector = pickSector(s, rec.class);
     const endM = rng(s) < 0.6
@@ -108,7 +108,7 @@ export function genAnchorTenant(s: GameState, rec: ParcelRecord, h: Holding, sfW
     name: pickName(s, sector),
     sector,
     credit: rng(s) > 0.4 ? 2 : 1, // anchors are credit tenants
-    sf: sfWanted,
+    sf: Math.round(sfWanted),
     rentPsf: +(market * rrange(s, 0.9, 0.97)).toFixed(2),
     net: true,
     startM: s.month,
@@ -205,17 +205,31 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     // inbound demand for vacant, market-ready space
     const vac = vacantSf(rec, h) - notReadySf(h, q);
     const openLois = s.lois.filter((l) => l.bbl === h.bbl && l.kind === "new").length;
-    if (!renovating && vac > 1500 && openLois < 2) {
+    // a big empty floorplate draws more than one prospect at a time
+    const loiCap = vac > rec.bldgArea * 0.5 ? 3 : 2;
+    if (!renovating && vac > 1200 && openLois < loiCap) {
       const phaseAdj = s.econ.phase === "expansion" ? 0.14 : s.econ.phase === "recession" ? -0.14 : 0;
       const condAdj = h.condition === "good" ? 0.1 : h.condition === "worn" ? -0.1 : 0;
       const stanceAdj = -0.12 * (h.stance ?? 0);                       // pushing rents thins the funnel
       const lobbyAdj = h.programsDone?.lobby !== undefined ? 0.08 : 0; // a lobby people remember
       const brokerMult = h.broker ? 1.75 : 1;                          // an exclusive works the phones
-      const p = Math.min(0.8, Math.max(0.02, 0.2 + rec.demandScore / 250 + phaseAdj + condAdj + stanceAdj + lobbyAdj)) / 3 * brokerMult;
+      // A building you just finished is being actively marketed — brokers
+      // have been touring it since before the ribbon was cut. Without this,
+      // a new tower sat empty for years while you paid the debt service.
+      const leaseUp = h.deliveredM !== undefined && q - h.deliveredM <= 30 ? 1.9 : 1;
+      // Space that's mostly empty gets worked harder than one odd suite.
+      const emptyPush = 1 + 0.7 * (vac / Math.max(1, rec.bldgArea));
+      const p = Math.min(0.9, Math.max(0.03, 0.24 + rec.demandScore / 200 + phaseAdj + condAdj + stanceAdj + lobbyAdj)
+        / 2.1 * brokerMult * leaseUp * emptyPush);
       if (rng(s) < p) {
         const sector = pickSector(s, rec.class);
         const [tiLo, tiHi] = TI_ASK[rec.class] ?? TI_ASK.office;
         const market = managedRentPsfYr(rec, s.econ, h);
+        // Warehouses lease whole: one operator takes the building, or most of
+        // it. Offices and shops carve into suites.
+        const sf = rec.class === "industrial"
+          ? (rng(s) < 0.6 ? vac : Math.round(rrange(s, 0.45, 0.85) * vac / 100) * 100)
+          : Math.min(vac, Math.round(rrange(s, 1800, Math.min(24000, Math.max(2600, vac * 0.7))) / 100) * 100);
         s.lois.push({
           id: s.nextLoiId++,
           bbl: h.bbl,
@@ -223,7 +237,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           name: pickName(s, sector),
           sector,
           credit: rollCredit(s, rec.demandScore),
-          sf: Math.min(vac, Math.round(rrange(s, 1800, Math.min(14000, Math.max(2600, vac))) / 100) * 100),
+          sf: Math.round(Math.max(500, Math.min(vac, sf))),
           rentPsf: +(market * rrange(s, 0.88, 1.04)).toFixed(2),
           termM: Math.round(rrange(s, 36, 120)),
           tiPsf: Math.round(rrange(s, tiLo, tiHi)),
@@ -235,17 +249,66 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       }
     }
   }
+
+  if (s.agent) runAgent(s, parcels);
 }
 
-function leaseCosts(loi: LOI): { ti: number; lc: number } {
+// The leasing agent works the whole book for you: every LOI that clears a
+// sane rent bar gets signed, at a 6% commission instead of the 4%/2% you'd
+// pay negotiating it yourself. Lowballs still get passed on.
+export const AGENT_FEE = 0.06;
+function runAgent(s: GameState, parcels: ParcelTable) {
+  for (const loi of [...s.lois]) {
+    const h = s.holdings[loi.bbl];
+    const rec = resolveRec(parcels, s, loi.bbl);
+    if (!h || !rec) continue;
+    const market = managedRentPsfYr(rec, s.econ, h);
+    if (loi.rentPsf < market * 0.82) {
+      s.lois = s.lois.filter((l) => l.id !== loi.id);
+      s.news.unshift({ q: s.month, kind: "info", text: `Your agent passed on ${loi.name} at ${rec.address} — the rent was under the market.` });
+      continue;
+    }
+    const cost = loiSigningCost(loi, AGENT_FEE);
+    if (s.cash < cost) continue;   // can't fund the TI; the LOI keeps sitting
+    signLoi(s, rec, h, loi, AGENT_FEE);
+    s.lois = s.lois.filter((l) => l.id !== loi.id);
+  }
+}
+
+function leaseCosts(loi: LOI, feeRate?: number): { ti: number; lc: number } {
   const ti = loi.tiPsf * loi.sf;
-  const lc = loi.rentPsf * loi.sf * (loi.termM / 12) * (loi.kind === "new" ? 0.04 : 0.02);
+  const rate = feeRate ?? (loi.kind === "new" ? 0.04 : 0.02);
+  const lc = loi.rentPsf * loi.sf * (loi.termM / 12) * rate;
   return { ti: Math.round(ti), lc: Math.round(lc) };
 }
 
-export function loiSigningCost(loi: LOI): number {
-  const { ti, lc } = leaseCosts(loi);
+export function loiSigningCost(loi: LOI, feeRate?: number): number {
+  const { ti, lc } = leaseCosts(loi, feeRate);
   return ti + lc;
+}
+
+// Put a signed lease on the rent roll. Mutates — both the player's own
+// response and the agent's automatic signing come through here.
+export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, feeRate?: number) {
+  const cost = loiSigningCost(l, feeRate);
+  s.cash -= cost;
+  logBooks(s, "leasing", cost);
+  if (l.kind === "renewal" && l.tenantIdx !== undefined && h.tenants[l.tenantIdx]) {
+    const t = h.tenants[l.tenantIdx];
+    t.rentPsf = l.rentPsf;
+    t.endM = s.month + l.termM;
+  } else {
+    h.tenants.push({
+      name: l.name, sector: l.sector, credit: l.credit,
+      sf: l.sf, rentPsf: l.rentPsf, net: l.net,
+      startM: s.month, endM: s.month + l.termM,
+      freeUntilM: l.freeM ? s.month + l.freeM : undefined,
+    });
+  }
+  s.news.unshift({
+    q: s.month, kind: "deal",
+    text: `Signed${feeRate === AGENT_FEE ? " by your agent" : ""}: ${l.name} — ${l.sf.toLocaleString()} sf at ${rec.address}, $${l.rentPsf.toFixed(0)}/sf, ${(l.termM / 12).toFixed(0)} yrs${l.kind === "renewal" ? " (renewal)" : ""}.`,
+  });
 }
 
 export type LOIAction = "accept" | "counter" | "decline";
@@ -263,24 +326,7 @@ export function respondLOI(
   const sign = (l: LOI): string | null => {
     const cost = loiSigningCost(l);
     if (next.cash < cost) return `Signing costs $${(cost / 1e6).toFixed(2)}M (TI + commission) — you're short.`;
-    next.cash -= cost;
-    logBooks(next, "leasing", cost);
-    if (l.kind === "renewal" && l.tenantIdx !== undefined && h.tenants[l.tenantIdx]) {
-      const t = h.tenants[l.tenantIdx];
-      t.rentPsf = l.rentPsf;
-      t.endM = next.month + l.termM;
-    } else {
-      h.tenants.push({
-        name: l.name, sector: l.sector, credit: l.credit,
-        sf: l.sf, rentPsf: l.rentPsf, net: l.net,
-        startM: next.month, endM: next.month + l.termM,
-        freeUntilM: l.freeM ? next.month + l.freeM : undefined,
-      });
-    }
-    next.news.unshift({
-      q: next.month, kind: "deal",
-      text: `Signed: ${l.name} — ${l.sf.toLocaleString()} sf at ${rec.address}, $${l.rentPsf.toFixed(0)}/sf, ${(l.termM / 12).toFixed(0)} yrs${l.kind === "renewal" ? " (renewal)" : ""}.`,
-    });
+    signLoi(next, rec, h, l);
     return null;
   };
 

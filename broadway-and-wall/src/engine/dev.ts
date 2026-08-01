@@ -239,7 +239,7 @@ export function setStance(s: GameState, bbl: string, stance: -1 | 0 | 1): GameSt
 // outward from the demand peaks. Every delivery lifts land values on its
 // block, so watching where the cranes go is a market signal.
 const GROWTH_RATE: Record<string, number> = {
-  expansion: 0.7, peak: 0.5, recovery: 0.33, recession: 0.07,
+  expansion: 0.88, peak: 0.62, recovery: 0.42, recession: 0.09,
 };
 
 function useForZone(zone: string, demand: number, r: number): BuiltClass {

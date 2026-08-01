@@ -115,13 +115,8 @@ function inRing(p, ring) {
   return inside;
 }
 
-function districtOf(p) {
-  if (oldHarborRing && inRing(p, oldHarborRing)) return "oldharbor";
-  if (p[0] < -450) return "millside";
-  if (p[0] > 820 || (p[0] > 520 && p[1] < -250)) return "point";
-  if (p[1] > 560) return "northside";
-  return "exchange";
-}
+// (districts are now defined as the convex REGION half-planes below, so a
+// cell can be clipped to its district instead of merely tested against it)
 
 // Parks: Founders Park (grid-aligned), Harbor Square, Mill Common.
 const TH12 = (12 * Math.PI) / 180;
@@ -179,6 +174,11 @@ const POINT_STREETS = ["Point Rd", "Breakwater Blvd", "Spindrift Way", "Lighthou
 // can — the geometry has no way to express an overlap.
 const blocks = []; // { ring, inset, district, numbered?, u?, uFifth? }
 
+// Why cells get turned away — printed at the end so the fabric stays tunable.
+const REJECT = {};
+let lastReject = "?";
+const rej = (k) => { REJECT[k] = (REJECT[k] ?? 0) + 1; };
+
 // A coherent low-frequency warp — the surveyor's hand, not a random shake.
 // Streets bend over hundreds of meters instead of zigzagging block to block.
 const WARP = (() => {
@@ -196,7 +196,8 @@ const WARP = (() => {
 // a half-plane keeps it convex, and because the regions are disjoint, two
 // lattices at different bearings can never both claim the same ground.
 const HARBOR_BOX = [240, 60, 800];  // y <= 240, x >= 60, x <= 800
-const SEAM = 10;                    // half the boundary street
+const SEAM = 4;   // districts pull apart by this much; each side then adds
+                  // its own street inset, so the seam reads as one avenue
 const REGION = {
   millside:  [[1, 0, -450 - SEAM]],
   point:     [[-1, 0, -(820 + SEAM)]],
@@ -293,7 +294,7 @@ function clipToShore(ring, minArea) {
 
 // Parks hold their ground: a block may come up to the park edge but never
 // into it, so every park is ringed by street frontage.
-const PARK_FACES = PARKS_M.map((p) => outsideFaces(p, 9));
+const PARK_FACES = PARKS_M.map((p) => outsideFaces(p, 6));
 const inAnyPark = (p) => PARKS_M.some((k) => inRing(p, k));
 
 // Trim a cell to its district, or reject it. Returns the usable ring or null.
@@ -303,25 +304,31 @@ function claimCell(ring, district, minArea) {
     r = r && clipRingHalfPlane(r, nx, ny, d);
   }
   r = r && cleanRing(r);
-  if (!r || !isConvex(r) || polygonArea([r]) < minArea) return null;
-  if (!inRing(centroid(r), innerRing)) return null;   // out at sea entirely
+  if (!r || !isConvex(r) || polygonArea([r]) < minArea) { lastReject = "region-clip"; return null; }
+  // Does the cell touch land at all? A cell that merely straddles the shore
+  // keeps the landward part — testing the centroid alone threw away the whole
+  // waterfront band, which is exactly where a harbor town's blocks belong.
+  if (!probesOf(r).some((p) => inRing(p, innerRing))) { lastReject = "at-sea"; return null; }
 
   r = clipToShore(r, minArea);
-  if (!r) return null;
+  if (!r) { lastReject = "shore"; return null; }
 
   if (district !== "oldharbor") {
     r = avoidRegion(r, HARBOR_ESCAPES, inHarborBox, minArea);
-    if (!r) return null;
+    if (!r) { lastReject = "harbor"; return null; }
   }
   for (let i = 0; i < PARKS_M.length && r; i++) {
     const park = PARKS_M[i];
     r = avoidRegion(r, PARK_FACES[i], (p) => inRing(p, park), minArea);
   }
-  if (!r) return null;
+  if (!r) { lastReject = "park"; return null; }
 
+  // clipToShore already trimmed to the waterline; a few metres of overhang
+  // into the esplanade between sample edges is invisible, so only the
+  // centroid has to be honestly on land.
+  if (!inRing(centroid(r), innerRing)) { lastReject = "final-sea"; return null; }
   for (const p of probesOf(r)) {
-    if (!inRing(p, innerRing)) return null;
-    if (inAnyPark(p)) return null;
+    if (inAnyPark(p)) { lastReject = "final-park"; return null; }
   }
   return r;
 }
@@ -376,11 +383,11 @@ function splitLots(ring, opt, out, depth = 0) {
 }
 
 const LOT_OPT = {
-  exchange:  { target: () => rr(340, 1080), min: 150, maxDepth: 32, jitter: 7 },
-  oldharbor: { target: () => rr(300, 1150), min: 130, maxDepth: 27, jitter: 14 },
-  northside: { target: () => rr(390, 940),  min: 165, maxDepth: 26, jitter: 6 },
-  point:     { target: () => rr(400, 1350), min: 175, maxDepth: 36, jitter: 6 },
-  millside:  { target: () => rr(950, 3500), min: 330, maxDepth: 46, jitter: 5 },
+  exchange:  { target: () => rr(420, 1300), min: 180, maxDepth: 32, jitter: 7 },
+  oldharbor: { target: () => rr(360, 1350), min: 155, maxDepth: 27, jitter: 14 },
+  northside: { target: () => rr(470, 1120), min: 195, maxDepth: 26, jitter: 6 },
+  point:     { target: () => rr(480, 1600), min: 205, maxDepth: 36, jitter: 6 },
+  millside:  { target: () => rr(1150, 4100), min: 400, maxDepth: 46, jitter: 5 },
 };
 
 // Old Harbor: the colonial fabric. Recursive splitting from a CONVEX seed —
@@ -391,11 +398,11 @@ if (oldHarborRing) {
   const cells = [];
   splitCells(convexHull(oldHarborRing), () => rr(3400, 8200), 15, 1500, cells);
   for (const cell of cells) {
-    let ring = claimCell(cell, "oldharbor", 1100);
+    let ring = claimCell(cell, "oldharbor", 800);
     if (!ring) continue;
     if (rand() < 0.28) ring = chamfer(ring, Math.floor(rand() * ring.length), rr(0.15, 0.32)) ?? ring;
-    const inset = insetConvex(ring, rr(4, 6)); // narrow colonial lanes, half-width per side
-    if (!inset || polygonArea([inset]) < 700) continue;
+    const inset = insetConvex(ring, rr(3.4, 5)) ?? insetConvex(ring, 2.5); // narrow colonial lanes
+    if (!inset || polygonArea([inset]) < 450) continue;
     blocks.push({ ring, inset, district: "oldharbor" });
   }
 }
@@ -430,17 +437,24 @@ function latticeDistrict({ bearingDeg, stPitch, avePitch, streetW, aveW, warpAmp
   for (let i = 0; i < U.length - 1; i++) {
     for (let j = 0; j < W.length - 1; j++) {
       const quad = cleanRing([node[i][j], node[i + 1][j], node[i + 1][j + 1], node[i][j + 1]]);
-      if (!quad || quad.length !== 4 || !isConvex(quad)) continue;
-      const cell = claimCell(quad, district, 700);
-      if (!cell) continue;
+      if (!quad || quad.length !== 4) { rej("degenerate"); continue; }
+      if (!isConvex(quad)) { rej("nonconvex-quad"); continue; }
+      const cell = claimCell(quad, district, 300);
+      if (!cell) { rej("claim:" + lastReject); continue; }
       // On a full cell, edges 0 and 2 run along the street and 1/3 face the
       // avenue; a clipped cell has picked up a boundary edge, so fall back to
       // the side-street width there.
       const full = cell.length === 4 && cell.every((p, k) => p === quad[k]);
-      let inset = insetConvex(cell, (_a, e) => (full && e % 2 === 1 ? aveW / 2 : streetW / 2));
-      if (!inset) continue;
+      // A cell trimmed at a district edge or the shore can be too thin to
+      // carry a full setback; give it a narrower frontage rather than leaving
+      // a block-sized hole in the fabric.
+      let inset = insetConvex(cell, (_a, e) => (full && e % 2 === 1 ? aveW / 2 : streetW / 2))
+        ?? insetConvex(cell, streetW / 2)
+        ?? insetConvex(cell, streetW / 3)
+        ?? insetConvex(cell, 2.5);
+      if (!inset) { rej("inset-null"); continue; }
       if (rand() < 0.18) inset = chamfer(inset, Math.floor(rand() * inset.length), rr(0.12, 0.3)) ?? inset;
-      if (polygonArea([inset]) < 420) continue;
+      if (polygonArea([inset]) < 150) { rej("inset-small"); continue; }
       blocks.push({
         ring: cell, inset, district,
         numbered: numbered ? j + 1 : undefined,
@@ -451,10 +465,10 @@ function latticeDistrict({ bearingDeg, stPitch, avePitch, streetW, aveW, warpAmp
   }
 }
 
-latticeDistrict({ bearingDeg: 12, stPitch: 76, avePitch: 218, streetW: 19, aveW: 34, warpAmp: 9, district: "exchange", numbered: true });
-latticeDistrict({ bearingDeg: 12, stPitch: 64, avePitch: 158, streetW: 16, aveW: 27, warpAmp: 7, district: "northside", numbered: true });
-latticeDistrict({ bearingDeg: 20, stPitch: 82, avePitch: 214, streetW: 20, aveW: 34, warpAmp: 11, district: "point", numbered: false });
-latticeDistrict({ bearingDeg: -8, stPitch: 102, avePitch: 268, streetW: 22, aveW: 38, warpAmp: 13, district: "millside", numbered: false });
+latticeDistrict({ bearingDeg: 12, stPitch: 76, avePitch: 218, streetW: 15, aveW: 26, warpAmp: 9, district: "exchange", numbered: true });
+latticeDistrict({ bearingDeg: 12, stPitch: 64, avePitch: 158, streetW: 13, aveW: 21, warpAmp: 7, district: "northside", numbered: true });
+latticeDistrict({ bearingDeg: 20, stPitch: 82, avePitch: 214, streetW: 16, aveW: 26, warpAmp: 11, district: "point", numbered: false });
+latticeDistrict({ bearingDeg: -8, stPitch: 102, avePitch: 268, streetW: 18, aveW: 30, warpAmp: 13, district: "millside", numbered: false });
 
 // --- attributes -------------------------------------------------------------
 // Fictional-but-plausible zoning, keyed by district and heat.
@@ -832,3 +846,22 @@ for (const f of parcels.features) byD[f.properties.district] = (byD[f.properties
 const vac = parcels.features.filter((f) => !f.properties.bldgarea).length;
 console.log(`Ashport: ${parcels.features.length} lots on ${blockNo - 1} blocks (${Math.round(100 * vac / parcels.features.length)}% unbuilt), ${buildings.features.length} buildings.`);
 console.log("  districts:", Object.entries(byD).map(([k, v]) => `${k} ${v}`).join(", "));
+console.log("  cell rejections:", JSON.stringify(REJECT));
+{
+  const per = {};
+  for (const b of blocks) {
+    const d = b.district;
+    per[d] = per[d] ?? { cell: 0, inset: 0, n: 0 };
+    per[d].cell += polygonArea([b.ring]);
+    per[d].inset += polygonArea([b.inset]);
+    per[d].n++;
+  }
+  let tc = 0, ti = 0;
+  console.log("  street share WITHIN tiled cells:");
+  for (const [d, v] of Object.entries(per)) {
+    tc += v.cell; ti += v.inset;
+    console.log(`    ${d.padEnd(10)} ${v.n} cells, ${Math.round(v.cell).toLocaleString()} m2 tiled, block ${(100*v.inset/v.cell).toFixed(1)}% / street ${(100*(1-v.inset/v.cell)).toFixed(1)}%`);
+  }
+  console.log(`    TOTAL      ${Math.round(tc).toLocaleString()} m2 tiled of ~2,925,000 m2 buildable = ${(100*tc/2925216).toFixed(1)}% tiled; untiled void = ${(100-100*tc/2925216).toFixed(1)}%`);
+  console.log(`    blocks are ${(100*ti/tc).toFixed(1)}% of tiled area`);
+}

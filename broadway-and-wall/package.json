@@ -15,6 +15,9 @@
     "pipeline:tiles": "node pipeline/tiles.mjs",
     "pipeline": "node pipeline/fetch.mjs && node pipeline/process.mjs && node pipeline/tiles.mjs",
     "pipeline:dev": "node pipeline/city.mjs && node pipeline/process.mjs && node pipeline/tiles.mjs",
+    "city": "node pipeline/build-city.mjs",
+    "city:plan": "node pipeline/plan.mjs --all",
+    "city:coverage": "node pipeline/build-city.mjs --all --dry",
     "pipeline:manhattan": "node pipeline/synth.mjs && node pipeline/process.mjs && node pipeline/tiles.mjs",
     "test": "node test/run.mjs",
     "balance": "node test/run.mjs --balance"

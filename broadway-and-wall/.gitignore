@@ -1,6 +1,7 @@
 # pipeline intermediates — regenerate with pnpm pipeline / pipeline:dev
 pipeline/raw/
 pipeline/out/
+pipeline/plan/
 
 *.tsbuildinfo
 dist-zip/

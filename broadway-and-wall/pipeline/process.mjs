@@ -393,10 +393,31 @@ for (const f of ["parcels.json", "adjacency.json"]) rmSync(join(PUB, f), { force
 writeFileSync(join(PUB, "stations.json"), JSON.stringify(stationPts.map((s) => ({ name: s.name, lines: s.lines, ll: s.ll }))));
 if (existsSync(join(RAW, "context.geojson")))
   writeFileSync(join(PUB, "context.geojson"), readFileSync(join(RAW, "context.geojson")));
+// Where the city IS, and where its centre of gravity is — written into the
+// manifest so the map can frame any city without a hand-tuned camera per map.
+// The core is the demand-weighted centroid with demand cubed, which lands on
+// the central business district rather than on the geometric middle of the
+// land (those are rarely the same place, and the geometric middle is usually
+// somebody's back yard).
+const bounds = (() => {
+  let w = Infinity, so = Infinity, e = -Infinity, n = -Infinity;
+  let cx = 0, cy = 0, cw = 0;
+  for (const l of lots) {
+    const [lon, lat] = proj.toLL(centroid(l.ring));
+    if (lon < w) w = lon; if (lon > e) e = lon;
+    if (lat < so) so = lat; if (lat > n) n = lat;
+    const d = (table[l.bbl]?.demandScore ?? 1) / 100;
+    const wt = d * d * d;
+    cx += lon * wt; cy += lat * wt; cw += wt;
+  }
+  return { bbox: [w, so, e, n], core: cw ? [cx / cw, cy / cw] : [(w + e) / 2, (so + n) / 2] };
+})();
 writeFileSync(join(PUB, "manifest.json"), JSON.stringify({
   ...manifest,
   lots: lots.length,
   adjacencyEdges: edgeCount,
+  bbox: bounds.bbox.map((v) => +v.toFixed(6)),
+  core: bounds.core.map((v) => +v.toFixed(6)),
   processed: true,
 }, null, 2));
 writeFileSync(join(OUT, "parcels.geojson"), JSON.stringify(tileParcels));

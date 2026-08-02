@@ -1,10 +1,20 @@
 {
   "source": "fictional",
-  "city": "New Alden",
-  "district": "newalden",
-  "seed": 20261,
+  "city": "Kestrel Point",
+  "district": "kestrel",
+  "seed": 30411,
   "lodes": true,
-  "lots": 1469,
-  "adjacencyEdges": 2720,
+  "lots": 1468,
+  "adjacencyEdges": 2408,
+  "bbox": [
+    -70.905379,
+    41.093197,
+    -70.895064,
+    41.107997
+  ],
+  "core": [
+    -70.899523,
+    41.098527
+  ],
   "processed": true
 }

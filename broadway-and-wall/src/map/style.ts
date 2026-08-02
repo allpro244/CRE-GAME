@@ -215,6 +215,27 @@ export function fallbackBaseStyle(): StyleSpecification {
         paint: { "fill-color": "#e9ebe0" },
       },
       {
+        // THE PAVED CITY. Everything inside the shoreline, laid down before a
+        // single block goes on top of it. The block fabric covers ~98% of it;
+        // the rest is the strip between the last block and the waterline, and
+        // this layer is what makes that strip read as a promenade instead of as
+        // a hole in the map. It is deliberately a shade off the roadway so the
+        // public realm and the carriageway aren't the same surface.
+        id: "paveland",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "paveland"],
+        paint: { "fill-color": "#d7d4ca" },
+      },
+      {
+        // the carriageway that rings a park — under the green, not over it
+        id: "apron",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "apron"],
+        paint: { "fill-color": "#b9b6ae" },
+      },
+      {
         id: "piers",
         type: "fill",
         source: "bw-context",

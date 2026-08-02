@@ -8,13 +8,32 @@ import { ThreeBuildings, type BuildingVolume } from "./ThreeBuildings";
 
 const CITY_CENTER: [number, number] = [-70.9, 41.1];
 
-// Fly-in: open over the bay with all of Ashport in frame, then dive to the
-// blocks between Old Harbor and the Exchange at map-model pitch.
-// New Alden is half Ashport's size, so the cameras sit closer in: open over
-// the harbor with the whole town in frame, then dive to where the Landing
-// meets the grid.
-const CORE = { center: [-70.8966, 41.0997] as [number, number], zoom: 15.3, pitch: 55, bearing: -12 };
-const HARBOR = { center: [-70.8995, 41.1015] as [number, number], zoom: 13.7, pitch: 30, bearing: -8 };
+// The two cameras are READ FROM THE DATA, not written down here. The pipeline
+// puts the city's bounding box and its demand-weighted core into the manifest,
+// so the opening shot frames whatever city was built and the dive lands on its
+// business district. Hand-tuned constants meant every new map opened looking at
+// the wrong piece of water.
+type CityFrame = { bbox: [number, number, number, number]; core: [number, number] };
+const FALLBACK: CityFrame = { bbox: [-70.912, 41.092, -70.888, 41.109], core: [-70.8966, 41.0997] };
+
+// zoom that fits a span of `deg` longitude into `px` of viewport
+function fitZoom(frame: CityFrame, px: number, fill: number) {
+  const [w, s, e, n] = frame.bbox;
+  const lonSpan = Math.max(1e-4, e - w);
+  const latSpan = Math.max(1e-4, n - s) / Math.cos((((s + n) / 2) * Math.PI) / 180);
+  const span = Math.max(lonSpan, latSpan);
+  return Math.log2((px * 360) / (512 * span * fill));
+}
+const framesOf = (f: CityFrame, px: number) => {
+  const [w, s, e, n] = f.bbox;
+  const mid: [number, number] = [(w + e) / 2, (s + n) / 2];
+  return {
+    // the establishing shot: the whole city in frame, low pitch
+    wide: { center: mid, zoom: Math.min(14.6, fitZoom(f, px, 1.25)), pitch: 30, bearing: -8 },
+    // the dive: down onto the central business district
+    core: { center: f.core as [number, number], zoom: 15.3, pitch: 55, bearing: -12 },
+  };
+};
 
 let protocolAdded = false;
 
@@ -42,13 +61,20 @@ export default function MapView() {
     let disposed = false;
 
     (async () => {
-      const base = await resolveBaseStyle();
+      const [base, frame] = await Promise.all([
+        resolveBaseStyle(),
+        fetch(import.meta.env.BASE_URL + "data/manifest.json")
+          .then((r) => r.json())
+          .then((m) => (Array.isArray(m?.bbox) && Array.isArray(m?.core) ? (m as CityFrame) : FALLBACK))
+          .catch(() => FALLBACK),
+      ]);
       if (disposed || !el.current) return;
+      const shot = framesOf(frame, el.current.clientWidth || 1280);
       const map = new maplibregl.Map({
         container: el.current,
         style: composeStyle(base),
-        ...HARBOR,
-        minZoom: 12.9, // whole city stays in frame; tiles never vanish
+        ...shot.wide,
+        minZoom: shot.wide.zoom - 0.9, // whole city stays in frame; tiles never vanish
         maxPitch: 70,
         attributionControl: { compact: true },
         canvasContextAttributes: { antialias: true },
@@ -87,7 +113,7 @@ export default function MapView() {
             map.setLayoutProperty("bw-bldg-3d", "visibility", "visible");
           });
         // the cinematic fly-in
-        map.flyTo({ ...CORE, duration: 5500, essential: true });
+        map.flyTo({ ...shot.core, duration: 5500, essential: true });
 
         map.on("mousemove", "bw-parcel-fill", (e) => {
           const f = e.features?.[0];

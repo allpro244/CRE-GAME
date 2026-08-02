@@ -51,6 +51,7 @@ function physicalOcc(rec: never, h: { tenants: { sf: number }[]; occ?: number })
 }
 import { sponsorStanding } from "@/engine/sponsor";
 import { marketAppetite, markRival, rivalCondition } from "@/engine/rivals";
+import { gpEquity, jvSummary, lpMood, lpTerms, recapQuote } from "@/engine/equity";
 import { usd, sf, pct } from "./format";
 import Slider from "./Slider";
 
@@ -1392,6 +1393,7 @@ function PropertyPage() {
           <Row k="Demand" v={rec.demandScore + " / 100"} />
         </div>
       </div>
+      <EquityDesk bbl={bbl} />
       {dev && (
         <div className="page-section">
           <div className="page-section-head">Under construction</div>
@@ -1414,6 +1416,95 @@ function PropertyPage() {
   );
 }
 
+
+/**
+ * THE EQUITY DESK.
+ *
+ * Either there is a partner in this building or there could be. If there is,
+ * this is the only place the sponsor can see what they are actually owed —
+ * unreturned capital, pref accruing whether the building performs or not, and
+ * what the promote is worth if it sold today. If there is not, this is where
+ * you find out what the market will give you for a stake, and on what terms,
+ * which depends entirely on how the last ones went.
+ */
+function EquityDesk({ bbl }: { bbl: string }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const { raiseEquity } = useStore.getState();
+  const h = game.holdings[bbl];
+  const [share, setShare] = useState(0.6);
+  if (!h) return null;
+  const jv = game.jvs?.[bbl];
+  const terms = lpTerms(game);
+
+  if (jv) {
+    const rec = resolveRec(parcels, game, bbl);
+    const equity = rec ? holdingValue(rec, game.econ, h, game.month) - (h.loan?.balance ?? 0) : 0;
+    const unreturned = Math.max(0, jv.lpCapital - jv.lpDistributed);
+    const mine = gpEquity(game, bbl, equity);
+    return (
+      <div className="deal">
+        <div className="deal-head">Partner in this deal</div>
+        <div className="grid">
+          <Row k="Their share of the equity" v={`${(jv.lpShare * 100).toFixed(0)}%`} />
+          <Row k="Capital in / returned" v={`${usd(jv.lpCapital)} / ${usd(jv.lpDistributed)}`} />
+          <Row k="Unreturned capital" v={usd(unreturned)} bad={unreturned > 0} />
+          {/* The number that decides whether the promote is worth anything.
+              It accrues in a bad year exactly as fast as in a good one. */}
+          <Row k={`Preferred owed · ${jv.prefPct.toFixed(1)}%/yr`} v={usd(jv.accruedPref)} bad={jv.accruedPref > jv.lpCapital * 0.15} />
+          <Row k="Promote paid to date" v={usd(jv.promoteEarned)} />
+          <Row k="Equity in the building" v={usd(equity)} />
+          <Row k="Yours if it sold today" v={usd(Math.max(0, mine))} strong bad={mine <= 0} />
+        </div>
+        <div className="hint">
+          {mine <= 0
+            ? "There is nothing here for you. Their capital and their pref come off the top and the building is not worth that yet — running it longer is the only way back."
+            : `Partnered since ${monthLabel(jv.openedM)}. They are paid before you are, every month, and the pref compounds against the promote until the building clears it.`}
+        </div>
+      </div>
+    );
+  }
+
+  const q = recapQuote(game, parcels, bbl, share);
+  if (!q) return null;
+  return (
+    <div className="deal">
+      <div className="deal-head">Raise outside equity</div>
+      <div className="grid">
+        <Row k="Equity in the building" v={usd(q.equity)} />
+        <Row k="What the market thinks of you" v={`${terms.rep.toFixed(0)} / 100 · ${lpMood(game)}`} bad={terms.rep < 35} />
+        <Row k="Their terms" v={`${q.prefPct.toFixed(1)}% preferred · ${(q.promotePct * 100).toFixed(0)}% promote to you · up to ${(q.maxShare * 100).toFixed(0)}%`} />
+      </div>
+      {!terms.open ? (
+        <div className="hint">Nobody will look at you right now. Return some capital on the deals you have.</div>
+      ) : (
+        <>
+          <div className="slider">
+            <div className="slider-head">
+              <span className="slider-label">Stake to sell</span>
+              <span className="slider-value">{(q.share * 100).toFixed(0)}%</span>
+            </div>
+            <input type="range" min={5} max={Math.round(q.maxShare * 100)} step={1}
+              style={{ ["--fill" as string]: `${((q.share * 100 - 5) / Math.max(1, q.maxShare * 100 - 5)) * 100}%` }}
+              value={Math.round(share * 100)} onChange={(e) => setShare(Number(e.target.value) / 100)} />
+          </div>
+          <div className="grid">
+            <Row k="Cheque today" v={usd(q.cheque)} strong />
+            <Row k="Pref they accrue in year one" v={usd(Math.round(q.cheque * q.prefPct / 100))} />
+          </div>
+          <div className="hint">
+            You keep control and {((1 - q.share) * 100).toFixed(0)}% of the equity, plus {(q.promotePct * 100).toFixed(0)}% of
+            their profit once they have their capital and their preferred return back. If the building does not clear the
+            pref, the promote is worth nothing — and the pref accrues either way.
+          </div>
+          <button className="btn" onClick={() => raiseEquity(bbl, share)}>
+            Take {usd(q.cheque)} for {(q.share * 100).toFixed(0)}%
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
 
 function PortfolioPage() {
   const parcels = useStore((s) => s.parcels)!;
@@ -2736,6 +2827,30 @@ function BooksPage() {
         <Big label="Exits" value={String(game.exits.length)} />
       </div>
       <NWChart data={game.nwHistory} />
+      {/* THE OTHER SIDE OF THE CAPITAL STACK. Debt has had a page since the
+          beginning; the equity you raise from other people is the larger and
+          more consequential half of it, and it needs the same accounting. */}
+      {(() => {
+        const j = jvSummary(game);
+        const t = lpTerms(game);
+        if (!j.count && (game.lpRep ?? 50) === 50) return null;
+        return (
+          <div className="page-section">
+            <div className="page-section-head">Partner capital</div>
+            <div className="grid">
+              <Row k="Standing with the equity market" v={`${t.rep.toFixed(0)} / 100 · ${lpMood(game)}`} bad={t.rep < 35} />
+              <Row k="What you can raise today" v={t.open
+                ? `${t.prefPct.toFixed(1)}% pref · ${(t.promotePct * 100).toFixed(0)}% promote · up to ${(t.maxShare * 100).toFixed(0)}% of a deal`
+                : "Nothing. Return capital first."} bad={!t.open} />
+              <Row k="Partnered deals" v={String(j.count)} />
+              <Row k="Capital raised, live" v={usd(j.raised)} />
+              <Row k="Unreturned capital" v={usd(j.unreturned)} bad={j.unreturned > 0} />
+              <Row k="Preferred accrued and unpaid" v={usd(j.pref)} bad={j.pref > j.raised * 0.12} />
+              <Row k="Promote earned, lifetime" v={usd(j.promote)} strong />
+            </div>
+          </div>
+        );
+      })()}
       <CreditLine />
       <div className="page-section">
         <div className="page-section-head">The ledger, by year</div>

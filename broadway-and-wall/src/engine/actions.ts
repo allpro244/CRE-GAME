@@ -10,6 +10,7 @@ import { marketAppetite, ownerOf, rivalAsk, rivalBuys } from "./rivals";
 import { genRentRoll, isCommercial } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
 import { takeoverDevelopment } from "./dev";
+import { settleJV } from "./equity";
 
 const CLOSING_PCT = 0.02;
 const SALE_FRICTION = 0.012;  // legal, title, diligence — the unavoidable rest
@@ -330,6 +331,16 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   const toSeller = net - (h.loan?.balance ?? 0) - kick - breakFee;
   next.cash += toSeller;
   logBooks(next, "sold", toSeller);
+  // THE WATERFALL. If a partner is in this deal they are made whole out of
+  // these proceeds before a dollar of profit is split, and the promote — the
+  // thing the whole structure exists to pay you — is settled here or not at
+  // all. A deal that sold for less than the partner put in pays you nothing,
+  // however long you ran it.
+  const jvOut = settleJV(next, bbl, toSeller);
+  if (jvOut.lpCash > 0) {
+    next.cash -= jvOut.lpCash;
+    logBooks(next, "sold", -jvOut.lpCash);
+  }
   if (kick + breakFee > 0) logBooks(next, "debtSvc", kick + breakFee);
   if (exchange) {
     next.exchange = { deferredTax: tax, rolledGain: gain, minPrice: offer.price, deadlineM: next.month + EXCHANGE_WINDOW_M };
@@ -351,6 +362,14 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
       + (exchange ? `. 1031 clock running: buy for ≥ $${(offer.price * 0.8 / 1e6).toFixed(1)}M by ${monthLabel(next.month + EXCHANGE_WINDOW_M)} or $${(tax / 1e6).toFixed(2)}M of tax comes due.`
         : tax > 0 ? ` ($${(tax / 1e6).toFixed(2)}M capital-gains tax withheld).` : "."),
   });
+  if (jvOut.lpCash > 0 || jvOut.promote > 0) {
+    next.news.unshift({
+      q: next.month, kind: "deal",
+      text: `Partnership settled at ${rec.address}: $${(jvOut.lpCash / 1e6).toFixed(2)}M out to the partner`
+        + (jvOut.promote > 0 ? `, $${(jvOut.promote / 1e6).toFixed(2)}M of promote to you` : ", and no promote — the deal never cleared the pref")
+        + `. ${jvOut.note}`,
+    });
+  }
   return { s: next };
 }
 

@@ -29,6 +29,11 @@ const BOTS = {
   builder: { buy: () => true, lev: 0.9, prod: (c) => (c.built ? "savings" : "land"), dev: true, sell: (g) => g > 0.5, every: 7 },
   // churns: exercises sale, tax, 1031, exits
   churner: { buy: (c) => c.built, lev: 0.7, prod: () => "savings", sell: (g) => g > 0.15, every: 3 },
+  // SYNDICATOR. Buys with debt AND somebody else's equity, recapitalising
+  // everything it can and trading out — which is the only bot that drives the
+  // preferred return, the capital calls, the promote and the waterfall on the
+  // way out. Without it the whole equity stack went unswept.
+  syndicator: { buy: (c) => c.built, lev: 0.75, prod: () => "savings", sell: (g) => g > 0.25, jv: true, every: 4 },
   // mezz + participating + caps: the exotic end of the desk
   exotic: { buy: (c) => c.built, lev: 1, prod: (c) => (c.yield > 0.06 ? "pelican" : "cordage"), refi: true, mezz: true, sell: () => false, every: 6 },
 };
@@ -91,6 +96,18 @@ function run(botName, seed) {
           if (!r.err) { g = r.s; break; }
         }
         break;
+      }
+    }
+
+    // raise outside equity on anything that has some, and keep raising as the
+    // book grows — the pref accrues from the day the money lands
+    if (B.jv && m % 6 === 3) {
+      for (const bbl of Object.keys(g.holdings)) {
+        if (g.jvs?.[bbl] || g.holdings[bbl].sale) continue;
+        const q = E.recapQuote(g, parcels, bbl, 0.5 + (m % 4) * 0.08);
+        if (!q || q.cheque < 250_000) continue;
+        const r = E.recapitalise(g, parcels, bbl, q.share);
+        if (!r.err) { g = r.s; break; }
       }
     }
 

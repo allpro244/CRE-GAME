@@ -5,6 +5,7 @@ import type { ParcelRecord } from "@/data/types";
 import type { Condition, Econ, GameState, Holding } from "./types";
 import type { BuiltClass } from "./types";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
+import { gpEquity } from "./equity";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -572,7 +573,10 @@ export function netWorth(s: GameState, parcels: Record<string, ParcelRecord>): n
   for (const h of Object.values(s.holdings)) {
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
-    nw += holdingValue(rec, s.econ, h, s.month) - (h.loan?.balance ?? 0);
+    // A partnered building is not all yours. Marking the whole equity as net
+    // worth on a deal where somebody else wrote seventy per cent of the cheque
+    // is the most flattering lie a sponsor can tell themselves.
+    nw += gpEquity(s, h.bbl, holdingValue(rec, s.econ, h, s.month) - (h.loan?.balance ?? 0));
   }
   // construction in progress carries at cost minus construction debt
   for (const d of Object.values(s.developments ?? {})) {

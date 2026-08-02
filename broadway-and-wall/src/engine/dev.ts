@@ -917,7 +917,28 @@ export function tickCityGrowth(
 
   // ---- starts --------------------------------------------------------------
   const rate = START_RATE[s.econ.phase] ?? 0.1;
+  // THE STREET'S JOBS COME OUT OF THIS QUOTA, NOT ON TOP OF IT.
+  //
+  // A firm that broke ground on its own land this month has already added that
+  // building to the city. Counting it and then building the full anonymous
+  // quota as well put roughly half again as much construction into a town
+  // whose start rate was calibrated against its vacancy — every extra delivery
+  // bumped its own land and its neighbours', the whole map inflated, and both
+  // the player and the street ended a century four times richer for no reason
+  // anyone earned. The city grows at the rate the market supports; who owns
+  // the cranes is a different question.
+  // Named starts are banked against the quota rather than merely netted off
+  // the month they happen: the rate is a third of a building a month, so a
+  // month in which two firms broke ground cannot absorb them, and clamping at
+  // zero silently let the overflow through. The debt is worked off over the
+  // following months, which is also how a real pipeline behaves — a burst of
+  // starts is followed by a quiet stretch.
+  const named = (s.cityJobs ?? []).filter((j) => j.startM === s.month && j.firmId).length;
+  s.startDebt = Math.min(24, (s.startDebt ?? 0) + named);
   let n = Math.floor(rate) + (rng(s) < rate % 1 ? 1 : 0);
+  const paid = Math.min(n, s.startDebt ?? 0);
+  s.startDebt = (s.startDebt ?? 0) - paid;
+  n -= paid;
   // the town matures: later buildings are bigger than the first ones
   const maturity = Math.min(1, s.month / 780);
 

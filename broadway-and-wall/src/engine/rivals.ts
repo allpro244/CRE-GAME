@@ -337,10 +337,31 @@ export function initRivals(s: GameState, parcels: ParcelTable, bbls: string[]): 
   return out;
 }
 
-/** How a firm's neglect reads on a building: the same three grades you get. */
+/** How a firm's stewardship reads, in words, for the balance sheet. */
 export function rivalCondition(r: Rival): Condition {
-  const c = r.condIdx ?? 1;
+  const c = r.condIdx ?? 0.8;
   return c > 0.78 ? "good" : c > 0.52 ? "standard" : "worn";
+}
+
+const GRADES: Condition[] = ["worn", "standard", "good"];
+
+/**
+ * WHAT A FIRM'S CARE DOES TO A BUILDING IT OWNS — which is move it a notch,
+ * not replace its history.
+ *
+ * Reading a firm's stewardship as the building's condition outright meant a
+ * disciplined core fund's 1904 warehouse appraised as new construction: twenty
+ * per cent more rent and twenty per cent more value on every asset the moment
+ * the firm bought it, which made well-run money unbeatable at the bid. A good
+ * operator lifts a tired building one grade. A bad one runs a good building
+ * down one. Neither of them changes when it was built.
+ */
+function assetGrade(r: Rival, rec: ParcelRecord): Condition {
+  const base = initialCondition(rec);
+  const c = r.condIdx ?? 0.8;
+  const notch = c > 0.82 ? 1 : c > 0.5 ? 0 : -1;
+  const i = Math.max(0, Math.min(2, GRADES.indexOf(base) + notch));
+  return GRADES[i];
 }
 
 /**
@@ -355,14 +376,18 @@ export function rivalCondition(r: Rival): Condition {
  */
 export function markRival(s: GameState, parcels: ParcelTable, r: Rival): { aum: number; noiYr: number; ltv: number } {
   let aum = 0, noi = 0;
-  const cond = rivalCondition(r);
+  const bookMkt = Math.max(0.35, r.mktOcc ?? 0.88);
   for (const bbl of r.bbls) {
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
+    const cond = assetGrade(r, rec);
     const v = assetValue(rec, s.econ, cond);
     if (rec.class === "land" || !rec.bldgArea) { aum += v; noi += noiAfterTaxYr(rec, s.econ, cond, v); continue; }
-    const mkt = Math.max(0.35, occupancy(rec, s.econ));
-    const ratio = Math.max(0, Math.min(1.35, (r.occ ?? mkt) / mkt));
+    // Against the book's OWN market occupancy, not this building's. `r.occ`
+    // is a portfolio average; dividing it by an individual building's
+    // occupancy handed a firm a 35% uplift on every troubled asset it owned —
+    // exactly the assets that should be dragging the mark down.
+    const ratio = Math.max(0.35, Math.min(1.2, (r.occ ?? bookMkt) / bookMkt));
     aum += v * (0.42 + 0.58 * ratio);
     noi += noiAfterTaxYr(rec, s.econ, cond, v) * ratio;
   }
@@ -399,7 +424,8 @@ function tickAssetManagement(s: GameState, parcels: ParcelTable, r: Rival) {
     target += occupancy(rec, s.econ); n++;
   }
   if (!n) { r.occ = undefined; return; }
-  target = (target / n) * (0.965 + 0.05 * care.lease);
+  r.mktOcc = target / n;
+  target = r.mktOcc * (0.965 + 0.05 * care.lease);
   if (r.occ === undefined) r.occ = target;
   r.occ += (target - r.occ) * 0.055 + rrange(s, -0.004, 0.004);
   // AN ANCHOR WALKS. Rare, expensive, and the reason a portfolio occupancy is
@@ -416,7 +442,7 @@ function tickAssetManagement(s: GameState, parcels: ParcelTable, r: Rival) {
   r.occ = Math.max(0.2, Math.min(0.99, r.occ));
 
   // the bricks
-  if (r.condIdx === undefined) r.condIdx = 0.86;
+  if (r.condIdx === undefined) r.condIdx = 0.72;
   // Buildings age faster than anyone budgets for, which is why 'well kept'
   // tops out just short of new rather than at it.
   r.condIdx -= 0.0024 * (s.econ.phase === "recession" ? 1.25 : 1);
@@ -611,7 +637,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   if (live >= (r.style === "developer" ? 2 : 1)) return;
   const phaseMult = s.econ.phase === "peak" ? 1.4 : s.econ.phase === "expansion" ? 1.2
     : s.econ.phase === "recovery" ? 0.6 : 0.12;
-  if (rng(s) >= 0.05 * BUILD_APPETITE[r.style] * phaseMult * ci) return;
+  if (rng(s) >= 0.022 * BUILD_APPETITE[r.style] * phaseMult * ci) return;
 
   // the best lot they own, by what the neighbourhood has become
   let best: { bbl: string; rec: ParcelRecord } | null = null, bestScore = -1;

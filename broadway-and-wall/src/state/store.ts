@@ -5,6 +5,7 @@ import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfoli
 import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, startRenovation,  setBroker, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway } from "@/engine/acquire";
 import { respondLOI, type LOIAction } from "@/engine/leasing";
+import { recapitalise } from "@/engine/equity";
 import { refinance, buyRateCap } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
 import { startDevelopment, startProgram, setStance, demolish } from "@/engine/dev";
@@ -53,6 +54,7 @@ interface AppState {
   program: (bbl: string, id: string) => void;
   stance: (bbl: string, v: -1 | 0 | 1) => void;
   listSale: (bbl: string, ask: number) => void;
+  raiseEquity: (bbl: string, share: number) => void;
   delistSale: (bbl: string) => void;
   acceptOffer: (bbl: string, exchange?: boolean) => void;
   declineOffer: (bbl: string) => void;
@@ -267,6 +269,16 @@ export const useStore = create<AppState>((set, get) => ({
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("On the market. Now we wait.");
+    void persist(r.s);
+  },
+
+  raiseEquity: (bbl, share) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = recapitalise(game, parcels, bbl, share);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Partner in.");
     void persist(r.s);
   },
 

@@ -8,6 +8,7 @@ import type { GameState, Holding, Loan } from "./types";
 import { logBooks } from "./types";
 import { holdingNOIYr, holdingValue, assetValue, noiAfterTaxYr } from "./value";
 import { walt } from "./leasing";
+import { settleJV } from "./equity";
 import { sponsorStanding, markSponsor, distressPrice } from "./sponsor";
 
 export type PrepayKind = "open" | "stepdown" | "yieldmaint";
@@ -442,6 +443,12 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
         logBooks(s, "sold", loan.recourse ? net : Math.max(0, net));
         s.exits = s.exits ?? [];
         s.exits.push({ bbl: h.bbl, address: rec.address, boughtM: h.boughtM, soldM: q, price: gross, basis: h.costBasis, gain: gross - h.costBasis, forced: true });
+        // The partnership is wound up out of whatever the lender left, which
+        // on a distressed sale is usually nothing. Losing somebody else's
+        // money this way is the single most expensive thing you can do to a
+        // reputation, and it is settled here rather than quietly forgotten.
+        const wind = settleJV(s, h.bbl, Math.max(0, net));
+        if (wind.lpCash > 0) { s.cash -= wind.lpCash; logBooks(s, "sold", -wind.lpCash); }
         delete s.holdings[h.bbl];
         // the tenants who were mid-negotiation are now somebody else's problem
         s.lois = s.lois.filter((l) => l.bbl !== h.bbl);

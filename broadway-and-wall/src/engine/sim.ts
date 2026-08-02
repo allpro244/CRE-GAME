@@ -5,6 +5,7 @@ import type { GameState, Listing } from "./types";
 import { START_CASH, CENTURY_MONTHS, logBooks, monthLabel } from "./types";
 import { initEcon, rng, rrange, tickEcon } from "./market";
 import { assetValue, holdingNOIYr, holdingValue, initialCondition, monthlyNOI, netWorth, resolveRec } from "./value";
+import { capitalCall, LP_REP_START, settleJV, tickJV } from "./equity";
 import { tickLeasing } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls } from "./actions";
 import { tickTalks } from "./acquire";
@@ -77,6 +78,8 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
     news: [],
     gameOver: null,
     insolventMs: 0,
+    jvs: {},
+    lpRep: LP_REP_START,
   };
   s.econ = initEcon(s, parcels);
   if (parcels) s.rivals = initRivals(s, parcels, Object.keys(parcels));
@@ -169,7 +172,7 @@ export function advanceQuarter(
   }
 
   // holdings: collect NOI, run the debt stack, finish renovations
-  let monthCF = 0;
+  let monthCF = 0, lpOut = 0;
   for (const h of Object.values(s.holdings)) {
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
@@ -187,9 +190,22 @@ export function advanceQuarter(
     const cf = noiQ - debtCash;
     h.cfHistory.push(Math.round(cf));
     if (h.cfHistory.length > 40) h.cfHistory.shift();
+    // THE PARTNER IS PAID BEFORE YOU ARE. On a partnered building the pref
+    // accrues every month regardless, and whatever the building distributes
+    // goes to that pref before a dollar of it is yours. In a bad year your
+    // distribution is zero and theirs is not — that is the deal you signed.
+    const toLp = tickJV(s, h.bbl, cf);
+    if (toLp > 0) { lpOut += toLp; logBooks(s, "sold", toLp); }
+    // …and when it bleeds, the partnership is called on for it. A partner who
+    // still believes in you funds their share; one who does not leaves the
+    // whole shortfall with the sponsor, and asking at all costs you standing.
+    if (cf < 0 && s.jvs?.[h.bbl]) {
+      const put = capitalCall(s, h.bbl, -cf);
+      if (put > 0) lpOut -= put;
+    }
     monthCF += cf;
   }
-  s.cash += monthCF;
+  s.cash += monthCF - lpOut;
 
   // --- the firm's own overhead ----------------------------------------------
   // Every cost in this game so far has been charged to a building. Real
@@ -304,6 +320,11 @@ export function advanceQuarter(
         const proceeds = Math.max(0, gross - (pick.loan?.balance ?? 0));
         s.cash += proceeds;
         logBooks(s, "sold", proceeds);
+        // A partner in a seized building is preferred over you in exactly the
+        // way that matters here: whatever the creditors leave behind is theirs
+        // before it is yours, and usually there is nothing.
+        const wind = settleJV(s, pick.bbl, proceeds);
+        if (wind.lpCash > 0) { s.cash -= wind.lpCash; logBooks(s, "sold", -wind.lpCash); }
         s.exits.push({ bbl: pick.bbl, address: rec.address, boughtM: pick.boughtM, soldM: s.month, price: gross, basis: pick.costBasis, gain: gross - pick.costBasis, forced: true });
         delete s.holdings[pick.bbl];
         markSponsor(s, "seized", rec.address, Math.max(0, (pick.loan?.balance ?? 0) - gross));
@@ -344,6 +365,18 @@ export function advanceQuarter(
 
   refreshListings(s, parcels, bbls);
   if (s.news.length > 120) s.news.length = 120;
+
+  // BACKSTOP. Every disposition settles its own partnership; if one ever gets
+  // past all of them, the partner is wiped and it costs what wiping a partner
+  // costs. A dangling partnership on a building you do not own is a bug, and
+  // the invariant sweep says so — this is here so it is never also a silent
+  // hole in the balance sheet.
+  for (const bbl of Object.keys(s.jvs ?? {})) {
+    if (s.holdings[bbl]) continue;
+    delete s.jvs![bbl];
+    s.lpRep = Math.max(0, (s.lpRep ?? LP_REP_START) - 16);
+  }
+
   return s;
 }
 

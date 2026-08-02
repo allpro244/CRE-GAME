@@ -186,6 +186,27 @@ export interface Listing {
   halfBuilt?: { use: string; sf: number; floors: number; progress: number; costToComplete: number };
 }
 
+/**
+ * SOMEBODY ELSE'S MONEY IN ONE OF YOUR BUILDINGS.
+ *
+ * A limited partner owns `lpShare` of the equity, is owed `prefPct` a year on
+ * whatever of their capital has not come back, and gets everything before you
+ * do. Your compensation for running it is the `promotePct` you take out of
+ * their profit once they are whole — which is worth nothing at all on a deal
+ * that does not clear the pref, and is most of a career on the ones that do.
+ */
+export interface JointVenture {
+  bbl: string;
+  lpShare: number;        // their share of the equity, 0-1
+  prefPct: number;        // annual preferred return on unreturned capital
+  promotePct: number;     // your cut of their profit above the hurdle
+  lpCapital: number;      // what they have put in, cumulative
+  lpDistributed: number;  // capital returned to date
+  accruedPref: number;    // pref owed and unpaid — it compounds against you
+  promoteEarned: number;  // what the structure has paid you so far
+  openedM: number;
+}
+
 export interface Approach {
   q: number;           // when the owner was approached
   refused: boolean;
@@ -354,6 +375,7 @@ export interface Rival {
   // One occupancy and one condition index across the book is enough to make
   // them mortal without giving twelve firms a rent roll each.
   occ?: number;          // portfolio occupancy, 0-1
+  mktOcc?: number;       // what the market says their book should run at
   condIdx?: number;      // how well they look after the bricks, 0-1
   capexYr?: number;      // what they spent on the buildings this year
   taxPaid?: number;      // lifetime income + gains tax
@@ -410,11 +432,20 @@ export interface GameState {
     orphaned?: boolean;   // the sponsor died and the frame is standing there
     listedM?: number;     // when the receiver put the frame on the tape
   }[];
+  // Named starts owed back against the city's calibrated build rate — see
+  // tickCityGrowth. A month with two rival groundbreakings is followed by
+  // quiet ones, so the town grows at the pace its vacancy supports.
+  startDebt?: number;
   landAdj: Record<string, number>;           // per-parcel land value multiplier
   blockD: Record<string, number>;            // per-block demand DRIFT, in points off the generated score
   // What the lending market remembers about you. A sponsor who hands back keys
   // does not get to walk into the next credit committee unrecognised.
   sponsor: { events: SponsorEvent[] };
+  // Partnered deals, by parcel, and what the equity market thinks of you.
+  // Reputation is settled on realised deals only — a wire is money, a
+  // spreadsheet is not.
+  jvs?: Record<string, JointVenture>;
+  lpRep?: number;                            // 0-100; gates pref, promote and size
   rivals: Rival[];                           // the other firms on the street
   lenderRel: Record<string, number>;         // lender name -> relationship 0-100; a trusted name is worth basis points
   totalLots: number;

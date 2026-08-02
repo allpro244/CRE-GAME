@@ -48,6 +48,37 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
   const nw = netWorth(s, parcels);
   if (!fin(nw)) bad("nan", "firm", "net worth is not a number");
 
+  // ---------------------------------------------------------- partner equity
+  // A waterfall is arithmetic with a sign convention, and a sign convention is
+  // the easiest thing in this codebase to get backwards without anything
+  // visibly breaking — the money simply ends up on the wrong side of a table
+  // nobody reconciles. So reconcile it.
+  if (s.lpRep !== undefined && (!fin(s.lpRep) || s.lpRep < 0 || s.lpRep > 100)) {
+    bad("lp", "firm", `equity-market standing ${s.lpRep} is outside 0-100`);
+  }
+  for (const [bbl, jv] of Object.entries(s.jvs ?? {})) {
+    const at = `partnership ${bbl}`;
+    if (!s.holdings[bbl]) { bad("lp", at, "a partnership on a building you do not own"); continue; }
+    if (jv.bbl !== bbl) bad("key", at, `keyed ${bbl} but says it is ${jv.bbl}`);
+    for (const [k, x] of Object.entries({
+      lpShare: jv.lpShare, prefPct: jv.prefPct, promotePct: jv.promotePct,
+      lpCapital: jv.lpCapital, lpDistributed: jv.lpDistributed,
+      accruedPref: jv.accruedPref, promoteEarned: jv.promoteEarned,
+    })) {
+      if (!fin(x)) bad("nan", at, `${k} is ${x}`);
+    }
+    if (jv.lpShare <= 0 || jv.lpShare > 1) bad("lp", at, `partner holds ${(jv.lpShare * 100).toFixed(0)}% of the equity`);
+    if (jv.promotePct < 0 || jv.promotePct > 0.5) bad("lp", at, `promote ${(jv.promotePct * 100).toFixed(0)}%`);
+    if (jv.lpCapital < 0) bad("lp", at, `partner has contributed ${jv.lpCapital}`);
+    if (jv.accruedPref < -1) bad("lp", at, `accrued preferred ${jv.accruedPref} is negative`);
+    // Capital cannot come back twice. This is the one that catches a waterfall
+    // that credits return-of-capital in two places at once.
+    if (jv.lpDistributed > jv.lpCapital + 1) {
+      bad("lp", at, `returned ${Math.round(jv.lpDistributed)} of ${Math.round(jv.lpCapital)} contributed`);
+    }
+    if (jv.openedM > s.month) bad("time", at, `opened in month ${jv.openedM}, it is month ${s.month}`);
+  }
+
   // ------------------------------------------------------------- the economy
   const e = s.econ;
   for (const [k, x] of Object.entries({ indexRate: e.indexRate, landIdx: e.landIdx, costIdx: e.costIdx, cycleDev: e.cycleDev, creditIdx: e.creditIdx })) {

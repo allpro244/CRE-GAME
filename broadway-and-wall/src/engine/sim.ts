@@ -2,7 +2,7 @@
 // (state, parcels) in, state out. The UI is a lens on this.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
-import { START_CASH, CAMPAIGN_MONTHS, logBooks, monthLabel } from "./types";
+import { START_CASH, CENTURY_MONTHS, logBooks, monthLabel } from "./types";
 import { initEcon, rng, rrange, tickEcon } from "./market";
 import { assetValue, holdingNOIYr, holdingValue, initialCondition, monthlyNOI, netWorth, resolveRec } from "./value";
 import { tickLeasing } from "./leasing";
@@ -11,7 +11,7 @@ import { tickEscrow } from "./acquire";
 import { tickLoan } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
 import { tickLoc } from "./credit";
-import { tickDevelopments, tickPrograms, tickCityGrowth } from "./dev";
+import { tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing } from "./dev";
 import { tickDemand } from "./demand";
 import { initRivals, tickRivals } from "./rivals";
 
@@ -45,7 +45,7 @@ function targetListings(s: GameState, totalLots: number): number {
 
 export function newGame(seed: number, parcels?: ParcelTable): GameState {
   const s: GameState = {
-    v: 18,
+    v: 19,
     seed,
     rng: seed,
     month: 0,
@@ -149,6 +149,7 @@ export function advanceQuarter(
   tickRivals(s, parcels);
   tickCityGrowth(s, parcels, bbls, adjacency);
   tickDevelopments(s, parcels);
+  tickConstructionLeasing(s, parcels);
   tickPrograms(s, parcels);
   tickLeasing(s, parcels);
   tickSales(s, parcels);
@@ -332,13 +333,15 @@ export function advanceQuarter(
   s.nwHistory.push(Math.round(nw));
   checkMilestones(s, nw);
 
-  // the century ends
-  if (!s.gameOver && s.month >= CAMPAIGN_MONTHS) {
-    s.gameOver = {
-      complete: true,
-      cause: `A hundred years in this town. The place you arrived in was two-fifths empty lots; ${Math.round((100 * (s.builtAtStart + Object.keys(s.built).length)) / Math.max(1, s.totalLots))}% of it stands built today, and ${Object.keys(s.holdings).length} of those buildings are yours.`,
-    };
-    s.news.unshift({ q: s.month, kind: "event", text: "A century in this town. The ledger closes." });
+  // The century is a marker you pass, not the end of the game. It used to set
+  // gameOver and stop the run cold.
+  if (!s.milestones.century && s.month >= CENTURY_MONTHS) {
+    s.milestones.century = s.month;
+    const built = Math.round((100 * (s.builtAtStart + Object.keys(s.built).length)) / Math.max(1, s.totalLots));
+    s.news.unshift({
+      q: s.month, kind: "event",
+      text: `◆ A hundred years. The place you arrived in was two-fifths empty lots; ${built}% of it stands built today, and ${Object.keys(s.holdings).length} of those buildings are yours. The clock keeps running.`,
+    });
   }
 
   refreshListings(s, parcels, bbls);
@@ -384,6 +387,13 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
       out.push({ key: `balloon:${h.bbl}`, label: `Balloon due ${monthLabel(h.loan.maturityM)}` });
     }
     if (h.loan?.sweep) out.push({ key: `sweep:${h.bbl}`, label: "Covenant breach — cash flow swept" });
+  }
+  // A counter on the table is the definition of something needing you.
+  if (s.talks) {
+    out.push({
+      key: `talks:${s.talks.bbl}:${s.talks.theirPrice}`,
+      label: `${s.talks.sellerName} is at $${(s.talks.theirPrice / 1e6).toFixed(2)}M${s.talks.final ? " — their final word" : ""}`,
+    });
   }
   if (s.exchange && s.exchange.deadlineM - s.month <= 2) {
     out.push({ key: "exchange", label: `1031 clock: ${monthLabel(s.exchange.deadlineM)} deadline` });

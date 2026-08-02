@@ -2,8 +2,8 @@ import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse } from "@/engine/types";
 import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfolioQuarterlyCF } from "@/engine/sim";
-import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, startRenovation, setBroker, makeOffer, closeDeal, type BuyProduct } from "@/engine/actions";
-import { retrade, abandonEscrow } from "@/engine/acquire";
+import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, startRenovation, setBroker, closeDeal, type BuyProduct } from "@/engine/actions";
+import { retrade, abandonEscrow, negotiate, acceptCounter, walkAway } from "@/engine/acquire";
 import { respondLOI, type LOIAction } from "@/engine/leasing";
 import { refinance, buyRateCap } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
@@ -45,8 +45,10 @@ interface AppState {
   approach: (bbl: string) => void;
   respondLoi: (id: number, action: LOIAction, fund?: boolean, counter?: { rentPsf?: number; tiPsf?: number }) => void;
   refi: (bbl: string, product: string, lev?: number) => void;
-  develop: (bbl: string, use: DevUse, floors: number, coverage: number, preLeaseShare?: number, contract?: Contract, ltcWanted?: number) => void;
+  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number) => void;
   offer: (bbl: string, price: number, product: string, lev: number, diligenceM: number) => void;
+  acceptCounter: () => void;
+  walkAway: () => void;
   closeUnderContract: () => void;
   retradeContract: (ask: number) => void;
   walkContract: () => void;
@@ -57,6 +59,7 @@ interface AppState {
   delistSale: (bbl: string) => void;
   acceptOffer: (bbl: string, exchange?: boolean) => void;
   declineOffer: (bbl: string) => void;
+  counterSale: (bbl: string, price: number) => void;
   renovate: (bbl: string) => void;
   broker: (bbl: string, on: boolean) => void;
   rateCap: (bbl: string) => void;
@@ -195,21 +198,40 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  develop: (bbl, use, floors, coverage, preLeaseShare, contract, ltcWanted) => {
+  develop: (bbl, use, floors, coverage, contract, ltcWanted) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = startDevelopment(game, parcels, bbl, use, floors, coverage, preLeaseShare, contract, ltcWanted);
+    const r = startDevelopment(game, parcels, bbl, use, floors, coverage, contract, ltcWanted);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("Ground broken. Watch it rise.");
     void persist(r.s);
   },
 
+  // Buying is a conversation now: the same call opens it and answers their
+  // counter, which is why there is one action and not three.
   offer: (bbl, price, product, lev, diligenceM) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = makeOffer(game, parcels, bbl, price, product, lev, diligenceM);
-    if (r.err) { toast(r.err); return; }
+    const r = negotiate(game, parcels, bbl, price, product, lev, diligenceM);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); void persist(r.s);
+    if (r.msg) toast(r.msg);
+  },
+
+  acceptCounter: () => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = acceptCounter(game, parcels);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); void persist(r.s);
+    if (r.msg) toast(r.msg);
+  },
+
+  walkAway: () => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = walkAway(game, parcels);
     set({ game: r.s }); void persist(r.s);
     if (r.msg) toast(r.msg);
   },
@@ -292,6 +314,15 @@ export const useStore = create<AppState>((set, get) => ({
     set({ game: r.s });
     toast(exchange ? "Closed — the 1031 clock is running." : "Closed. Cash is position.");
     void persist(r.s);
+  },
+
+  counterSale: (bbl, price) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = counterSale(game, parcels, bbl, price);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); void persist(r.s);
+    if (r.msg) toast(r.msg);
   },
 
   declineOffer: (bbl) => {
@@ -379,7 +410,7 @@ export const useStore = create<AppState>((set, get) => ({
     const { parcels } = get();
     const saved = await loadGame(slot);
     if (!saved || !parcels) { toast("That save wouldn't open.", "err"); return; }
-    const fits = saved.v === 18 &&
+    const fits = saved.v === 19 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (!fits) { toast("That save was made on a different city — it can't be loaded here.", "err"); return; }
@@ -460,7 +491,7 @@ export async function loadData() {
     // exist (a save from a different city/dataset), in which case start over
     // migration: pre-city saves lived in a flat "auto" slot
     const saved = (await loadGame(AUTO())) ?? (await loadGame("auto"));
-    const fitsCity = saved && saved.v === 18 &&
+    const fitsCity = saved && saved.v === 19 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (fitsCity) {

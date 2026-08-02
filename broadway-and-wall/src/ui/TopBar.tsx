@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore, derivedNetWorth, derivedQuarterCF } from "@/state/store";
-import { monthLabel, CAMPAIGN_MONTHS } from "@/engine/types";
+import { monthLabel } from "@/engine/types";
 import { currentCity, listCities, switchCity, type CityInfo } from "@/state/city";
 import { usd, pct } from "./format";
 
@@ -77,7 +77,7 @@ export default function TopBar() {
 
       {game && (
         <div className="topbar-game">
-          <Stat label={monthLabel(game.month)} value={`Yr ${Math.floor(game.month / 12) + 1}/${CAMPAIGN_MONTHS / 12}`} wide />
+          <Stat label={monthLabel(game.month)} value={`Yr ${Math.floor(game.month / 12) + 1}`} wide />
           <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} />
           <Stat label="Net worth" value={usd(nw)} drop={2} />
           <Stat label="CF / mo" value={usd(cf)} bad={cf < 0} drop={2} />

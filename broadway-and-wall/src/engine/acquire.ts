@@ -42,6 +42,8 @@ import { uses, useSf } from "./mix";
 /** Deposit, as a share of price. Standard for a deal this size. */
 const DEPOSIT_PCT = 0.02;
 
+const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
+
 /**
  * Who is on the other side, and what they actually want.
  *
@@ -196,39 +198,30 @@ export function discoveryRate(months: number): number {
   return months <= 0 ? 0 : months === 1 ? 0.62 : 0.92;
 }
 
-// -------------------------------------------------------------------- the bid
-/**
- * What the seller thinks of an offer.
- *
- * Price against their floor, plus the value of certainty: a short diligence
- * period and hard money are worth real basis points to somebody who has been
- * retraded before, and every seller has been retraded before.
- */
-export function offerOdds(
-  s: GameState, parcels: ParcelTable, bbl: string,
-  price: number, diligenceM: number,
-): { p: number; effective: number; certaintyBonus: number; seller: { kind: SellerKind; name: string } } {
-  const seller = sellerOf(s, parcels, bbl);
-  const prof = SELLERS[seller.kind];
-  const rec = resolveRec(parcels, s, bbl);
-  const li = s.listings.find((l) => l.bbl === bbl);
-  const ask = li?.ask ?? (rec ? assetValue(rec, s.econ, initialCondition(rec)) : price);
-  // Certainty, in dollars. As-is is the whole package — no contingency, hard
-  // money, close in thirty days — and an estate or a receiver will pay real
-  // points for it. Sixty days of free look is worth almost nothing to them.
-  const certainty = prof.certainty * (diligenceM <= 0 ? 1.55 : 0.12);
-  const effective = price * (1 + certainty);
-  const disc = 1 - effective / Math.max(1, ask);
-  const floorHit = effective < ask * prof.floor ? 0.6 : 0;
-  const phase = s.econ.phase === "recession" ? 0.14 : s.econ.phase === "expansion" ? -0.10 : 0;
-  const motivated = li?.distress ? 0.16 : 0;
-  const p = Math.max(0.02, Math.min(0.97, 1.0 - disc * 5.8 + phase + motivated - floorHit));
-  return { p, effective, certaintyBonus: certainty, seller };
-}
-
 // ------------------------------------------------------------------ the ticks
 /** One month of a deal under contract. */
 export function tickEscrow(s: GameState, parcels: ParcelTable) {
+  // A NEGOTIATION GOES STALE. Nobody holds a number open indefinitely while
+  // you think about it, and a building somebody else buys is not yours to keep
+  // talking about.
+  const t = s.talks;
+  if (t) {
+    const gone = !s.listings.some((l) => l.bbl === t.bbl);
+    if (gone) {
+      delete s.talks;
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `${parcels[t.bbl]?.address ?? t.bbl} went to somebody else while you were still talking about it.`,
+      });
+    } else if (s.month - t.openedM >= 3) {
+      delete s.talks;
+      s.news.unshift({
+        q: s.month, kind: "info",
+        text: `${t.sellerName} has stopped waiting on ${parcels[t.bbl]?.address ?? t.bbl}. The building is still for sale if you want to start again.`,
+      });
+    }
+  }
+
   const e = s.escrow;
   if (!e) return;
   const rec = resolveRec(parcels, s, e.bbl);
@@ -364,3 +357,187 @@ export function escrowSummary(e: Escrow, month: number): string {
 }
 
 export { DEPOSIT_PCT };
+
+// ------------------------------------------------------------- the negotiation
+/**
+ * BUYING, AS A CONVERSATION.
+ *
+ * The old model was a single roll. You named a price, an unseen seller rolled
+ * against it, and a refusal printed a line of news and left you exactly where
+ * you started — no counter, no number to read, no way to tell whether you were
+ * two per cent away or forty. The most skill-intensive thing in this business
+ * was a slot machine with a percentage on it.
+ *
+ * This is the same trade with the counterparty put back in the room. Every
+ * seller has a RESERVATION: what they will actually take today, which is their
+ * floor against appraisal, moved by who they are, what the market is doing,
+ * and whether they are distressed. You cannot see it. What you can see is
+ * their number, your number, how far apart they are, and how much patience is
+ * left — which is precisely what you can see across a real table.
+ *
+ * Offer inside the reservation and it is done. Offer close and they come back
+ * with a number of their own, and the gap narrows each round because both
+ * sides are converging on a deal they both want. Offer far below it and they
+ * tell you where they are and stop moving. Run out of rounds and the next word
+ * is final.
+ */
+const OPEN_ROUNDS: Record<SellerKind, number> = {
+  estate: 4, institution: 2, partnership: 3, developer: 3, local: 4, lender: 4,
+};
+
+/** What this seller will actually take today. Never shown to the player. */
+function reservationOf(
+  s: GameState, parcels: ParcelTable, bbl: string, sellerKind: SellerKind, diligenceM: number,
+): { reservation: number; ask: number; certainty: number } {
+  const prof = SELLERS[sellerKind];
+  const rec = resolveRec(parcels, s, bbl);
+  const li = s.listings.find((l) => l.bbl === bbl);
+  const ask = li?.ask ?? (rec ? assetValue(rec, s.econ, initialCondition(rec)) : 0);
+  // Certainty is worth real money to somebody who has been retraded before,
+  // and every seller has been retraded before. As-is is the whole package: no
+  // contingency, hard money, close in thirty days.
+  const certainty = prof.certainty * (diligenceM <= 0 ? 1.55 : 0.12);
+  // A soft market drags the floor down; a hot one lets them hold out. Distress
+  // is the seller's problem and your opportunity.
+  const phase = s.econ.phase === "recession" ? -0.055 : s.econ.phase === "expansion" ? 0.03 : 0;
+  const distress = li?.distress ? -0.06 : 0;
+  const floor = Math.max(0.6, prof.floor + phase + distress);
+  // The reservation moves against your OFFER's certainty: an as-is buyer needs
+  // to clear a lower number to win.
+  const reservation = Math.round((ask * floor) / (1 + certainty));
+  return { reservation, ask, certainty };
+}
+
+/** Open a negotiation, or answer their counter with one of your own. */
+export function negotiate(
+  s: GameState, parcels: ParcelTable, bbl: string, price: number,
+  product: string, lev: number, diligenceM: number,
+): { s: GameState; err?: string; msg?: string } {
+  if (s.escrow) return { s, err: `You are already under contract at ${parcels[s.escrow.bbl]?.address ?? s.escrow.bbl}. One deal at a time.` };
+  const existing = s.talks;
+  if (existing && existing.bbl !== bbl) {
+    return { s, err: `You are mid-negotiation at ${parcels[existing.bbl]?.address ?? existing.bbl}. Finish it or walk away first.` };
+  }
+  const rec = resolveRec(parcels, s, bbl);
+  if (!rec) return { s, err: "Unknown parcel." };
+  if (!s.listings.some((l) => l.bbl === bbl)) return { s, err: "That property is no longer on the market." };
+  const px = Math.round(price);
+  if (!Number.isFinite(px) || px <= 0) return { s, err: "Name a real number." };
+
+  const next = clone(s);
+  const seller = existing
+    ? { kind: existing.sellerKind, name: existing.sellerName }
+    : sellerOf(next, parcels, bbl);
+  const dm = diligenceM <= 0 ? 0 : 2;
+  const { reservation, ask } = reservationOf(next, parcels, bbl, seller.kind, dm);
+  const round = (existing?.round ?? 0) + 1;
+  const maxRounds = existing?.maxRounds ?? OPEN_ROUNDS[seller.kind];
+  const prof = SELLERS[seller.kind];
+
+  // --- they take it ---------------------------------------------------------
+  if (px >= reservation) {
+    delete next.talks;
+    return openEscrow(next, parcels, bbl, px, product, lev, dm, seller, rec.address);
+  }
+
+  // --- too far below to be worth an answer ---------------------------------
+  // A seller who is a long way from you does not counter, they tell you where
+  // they are. That IS the information — and it is far more use than a refusal.
+  const gap = px / Math.max(1, reservation);
+  if (gap < 0.80 || round > maxRounds) {
+    const theirs = Math.round(round > maxRounds ? reservation * 1.005 : ask * 0.985);
+    next.talks = {
+      bbl, sellerKind: seller.kind, sellerName: seller.name, diligenceM: dm,
+      product, lev, yourPrice: px, theirPrice: theirs, round, maxRounds,
+      openedM: existing?.openedM ?? next.month, final: true,
+      note: round > maxRounds
+        ? `${seller.name} is done moving. ${fmtM(theirs)} is the number; take it or leave it.`
+        : `${seller.name} did not counter — ${fmtM(px)} is not in the conversation. They are at ${fmtM(theirs)}.`,
+    };
+    return { s: next, msg: round > maxRounds ? "Their final number." : "They didn't move." };
+  }
+
+  // --- they counter ---------------------------------------------------------
+  // Converging: each round the seller gives up a share of the remaining gap,
+  // and the impatient ones give up more to be finished.
+  const prev = existing?.theirPrice ?? ask;
+  const give = 0.28 + prof.patience * 0.22 + round * 0.06;
+  const theirs = Math.max(reservation, Math.round(prev - (prev - Math.max(px, reservation)) * Math.min(0.85, give)));
+  const roundsLeft = maxRounds - round;
+  next.talks = {
+    bbl, sellerKind: seller.kind, sellerName: seller.name, diligenceM: dm,
+    product, lev, yourPrice: px, theirPrice: theirs, round, maxRounds,
+    openedM: existing?.openedM ?? next.month,
+    final: roundsLeft <= 0,
+    note: roundsLeft <= 0
+      ? `${seller.name} counters at ${fmtM(theirs)} and says it is the last of it.`
+      : `${seller.name} counters at ${fmtM(theirs)}. You are ${fmtM(theirs - px)} apart.`,
+  };
+  next.news.unshift({
+    q: next.month, kind: "info",
+    text: `${rec.address}: you offered ${fmtM(px)}, ${seller.name} came back at ${fmtM(theirs)}.`,
+  });
+  return { s: next, msg: `They countered at ${fmtM(theirs)}.` };
+}
+
+/** Take the number on the table. */
+export function acceptCounter(s: GameState, parcels: ParcelTable): { s: GameState; err?: string; msg?: string } {
+  const t = s.talks;
+  if (!t) return { s, err: "There is nothing on the table." };
+  const rec = resolveRec(parcels, s, t.bbl);
+  if (!rec) return { s, err: "Unknown parcel." };
+  const next = clone(s);
+  delete next.talks;
+  return openEscrow(next, parcels, t.bbl, t.theirPrice, t.product, t.lev, t.diligenceM,
+    { kind: t.sellerKind, name: t.sellerName }, rec.address);
+}
+
+/** Leave the table. */
+export function walkAway(s: GameState, parcels: ParcelTable): { s: GameState; msg?: string } {
+  const t = s.talks;
+  if (!t) return { s };
+  const next = clone(s);
+  delete next.talks;
+  next.news.unshift({
+    q: next.month, kind: "info",
+    text: `You walked away from ${parcels[t.bbl]?.address ?? t.bbl}. ${t.sellerName} will remember, but the building will still be there.`,
+  });
+  return { s: next, msg: "Walked away." };
+}
+
+// A $610,000 lot quoted as "$0.61M" reads like a rounding error. Money in
+// this game spans four orders of magnitude and the unit has to follow it.
+const fmtM = (n: number) => {
+  const a = Math.abs(n);
+  if (a >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
+  if (a >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+  if (a >= 1e3) return `$${Math.round(n / 1e3)}K`;
+  return `$${Math.round(n)}`;
+};
+
+/** Shared close: a deal that is agreed becomes a deal under contract. */
+function openEscrow(
+  next: GameState, parcels: ParcelTable, bbl: string, px: number,
+  product: string, lev: number, dm: number,
+  seller: { kind: SellerKind; name: string }, address: string,
+): { s: GameState; err?: string; msg?: string } {
+  const deposit = Math.round(px * DEPOSIT_PCT);
+  if (next.cash < deposit) return { s: next, err: `The deposit alone is ${fmtM(deposit)}.` };
+  next.cash -= deposit;
+  const findings = latentIssues(next, parcels[bbl], (Number(bbl) ^ (next.month * 2654435761)) >>> 0);
+  next.escrow = {
+    bbl, price: px, product: product as never, lev,
+    sellerKind: seller.kind, sellerName: seller.name,
+    openedM: next.month, diligenceM: dm, closesM: next.month + Math.max(1, dm),
+    deposit, hardDeposit: dm === 0, findings,
+  } satisfies Escrow;
+  next.listings = next.listings.filter((l) => l.bbl !== bbl);
+  next.news.unshift({
+    q: next.month, kind: "deal",
+    text: `Agreed at ${address}: ${fmtM(px)} with ${seller.name}. `
+      + (dm > 0
+        ? `Sixty days to look; the ${fmtM(deposit)} deposit stays refundable until diligence ends.`
+        : `As-is: no diligence, ${fmtM(deposit)} hard from day one. You are buying what is there.`),
+  });
+  return { s: next, msg: "Under contract." };
+}

@@ -106,7 +106,14 @@ export interface Holding {
   occ?: number;        // multifamily aggregate occupancy
   stance?: -1 | 0 | 1; // rent posture: push / market / fill
   deliveredM?: number; // ground-up completion: new space leases with momentum
-  sale?: { ask: number; listedM: number; unsolicited?: boolean; offer?: { price: number; expiresM: number } }; // on the market
+  // On the market. `countered` records that you have already been back to this
+  // buyer once — a counter is a real move with a real cost, not a slider you
+  // can grind, and one round per offer is what the etiquette actually allows
+  // before you are wasting their afternoon.
+  sale?: {
+    ask: number; listedM: number; unsolicited?: boolean;
+    offer?: { price: number; expiresM: number; countered?: boolean };
+  };
   program?: { id: string; untilM: number };  // capital program underway
   programsDone?: Record<string, number>;     // id -> completed quarter
   cfHistory: number[];
@@ -146,8 +153,11 @@ export interface Development {
   startM: number;
   deliverM: number;
   baseMonths: number;     // schedule at groundbreak, before slips
-  preLeaseShare: number;  // 0 if built on spec
-  preLeasedSf?: number;
+  // Tenants who signed while it was going up. Everything is built on spec now,
+  // so this is earned during construction rather than bought before it — the
+  // building that lets well on the way up opens covering its mini-perm, and
+  // the one that lets nothing opens empty.
+  signed?: { sf: number; use: string; discount: number; name: string }[];
   events: number;         // how many things have gone wrong
 }
 
@@ -226,6 +236,16 @@ export interface Econ {
   // legible: you can see the wave before it lands on you.
   cohorts?: Record<BuiltClass, { m: number; sf: number }[]>;
   completions12?: Record<BuiltClass, number>;   // trailing 12-month deliveries
+  // THE MONETARY ERA. The loan index used to mean-revert at 0.03/month toward
+  // a phase target between 5.0 and 7.0, clamped to 4.2-9.2 — so over a whole
+  // century it never left a two-point band and rates were, in practice, a
+  // constant. Real money does not behave like that: there are decades of cheap
+  // money and decades of dear money, and the cycle rides ON TOP of whichever
+  // era you happen to be in. rateRegime is that era; the phase supplies only a
+  // deviation from it.
+  rateRegime?: number;    // the secular level of money
+  rateAimTo?: number;     // where the era is heading
+  rateAimM?: number;      // month the era next re-rolls
   // Capital availability, 1 = normal. In a crunch this falls, spreads widen,
   // lenders size smaller, and cap rates gap out — independent of the index.
   creditIdx: number;
@@ -241,6 +261,14 @@ export interface Econ {
   occupied: Record<BuiltClass, number>;
   cityVac: Record<BuiltClass, number>;
   absorb12: Record<BuiltClass, number>;   // trailing 12-month net absorption, sf
+  // EACH CLASS HAS ITS OWN CYCLE. sectorMom was an AR walk with a +/-0.02 cap
+  // and noise so small it sat at a tenth of that forever — the classes moved
+  // together, as one market wearing four labels. Now every class runs an
+  // explicit boom / steady / bust clock of its own, so office can be three
+  // years into a bust while apartments are booming, which is the ordinary
+  // condition of a real property market.
+  sectorPhase?: Record<BuiltClass, "boom" | "steady" | "bust">;
+  sectorPhaseM?: Record<BuiltClass, number>;   // months left in it
   history: EconHistoryPoint[];
 }
 
@@ -340,7 +368,7 @@ export interface Escrow {
 }
 
 export interface GameState {
-  v: 18;
+  v: 19;
   seed: number;
   rng: number;
   month: number;
@@ -354,6 +382,18 @@ export interface GameState {
   developments: Record<string, Development>;
   built: Record<string, BuiltOverride>;      // delivered buildings, yours and the city's
   cityBuilt: string[];                       // bbls the market built, not you
+  lastUnsolicitedM?: number;                 // when somebody last rang unbidden
+  // A LIVE NEGOTIATION TO BUY. One at a time, like escrow, because that is how
+  // many deals a principal is actually working at this size.
+  talks?: Talks;
+  // THE CITY'S OWN SITES. Other people's buildings used to appear finished,
+  // the month they were decided, adding their square feet to the market on the
+  // spot. Nothing in a city works that way: the decision to build is taken in
+  // one market and the building arrives in a different one, and that lag is
+  // the entire reason property cycles overshoot. A city job is a hole in the
+  // ground with a delivery date, and its space is in the pipeline from the day
+  // it starts — visible on the Economy page long before it competes with you.
+  cityJobs?: { bbl: string; use: string; sf: number; floors: number; startM: number; deliverM: number }[];
   landAdj: Record<string, number>;           // per-parcel land value multiplier
   blockD: Record<string, number>;            // per-block demand DRIFT, in points off the generated score
   // What the lending market remembers about you. A sponsor who hands back keys
@@ -394,9 +434,42 @@ export function logBooks(s: GameState, key: keyof Omit<BooksYear, "yr">, amt: nu
   e[key] = (e[key] ?? 0) + amt;
 }
 
+/**
+ * A NEGOTIATION IN PROGRESS.
+ *
+ * Buying used to be one roll of a die: you named a number, an invisible seller
+ * rolled against it, and a refusal told you nothing and left you nothing to do
+ * except name another number and roll again. There was no counterparty in the
+ * room and no way to read one.
+ *
+ * A negotiation is a conversation with a state: their number, your number, how
+ * many times you have been round, and how much patience is left. You can see
+ * the gap closing or not closing, which is the whole skill.
+ */
+export interface Talks {
+  bbl: string;
+  sellerKind: SellerKind;
+  sellerName: string;
+  diligenceM: number;      // the structure you are offering: 0 as-is, 2 with a look
+  product: string;         // how you would fund it, carried through to escrow
+  lev: number;
+  yourPrice: number;       // your last offer
+  theirPrice: number;      // their last counter — their ask, until they move
+  round: number;           // how many times you have been back
+  maxRounds: number;       // what this seller will tolerate
+  openedM: number;
+  final?: boolean;         // they have said take it or leave it
+  note: string;            // what they said, in words
+}
+
 export const START_CASH = 6_000_000;
 export const START_YEAR = 2000;
-export const CAMPAIGN_MONTHS = 1200; // a hundred years, Jan 2000 to Jan 2100
+// The century is a MILESTONE, not a wall. A hundred years used to end the run
+// on the spot, which turned the back half of a good campaign into a countdown
+// and threw away the most interesting book in the game the moment it was
+// finished being built. The clock keeps running; the century is something you
+// pass, and the ledger closes when you lose it or choose to stop.
+export const CENTURY_MONTHS = 1200; // Jan 2000 to Jan 2100
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 export function monthLabel(m: number): string {

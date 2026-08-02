@@ -22,12 +22,20 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 // Rate target and rent drift per phase — the cycle is the game's weather.
 // monthly cadence: drifts are a third of the old quarterly values, phase
 // durations three times as long in ticks — same weather, finer grain
-const PHASE_CFG: Record<MarketPhase, { rateMu: number; rentDrift: number; devDrift: number; nextM: [number, number]; next: MarketPhase }> = {
-  recovery: { rateMu: 5.0, rentDrift: 0.0014, devDrift: +0.034, nextM: [12, 24], next: "expansion" },
-  expansion: { rateMu: 5.8, rentDrift: 0.0037, devDrift: +0.027, nextM: [24, 54], next: "peak" },
-  peak: { rateMu: 7.0, rentDrift: 0.0014, devDrift: +0.014, nextM: [6, 15], next: "recession" },
-  recession: { rateMu: 6.2, rentDrift: -0.0047, devDrift: -0.054, nextM: [12, 24], next: "recovery" },
+// rateGap is the cycle's DEVIATION from the monetary era, not an absolute
+// level: policy tightens into a peak and is cut in a recession, but whether
+// that means 3% or 13% is a question about the era, not about the cycle.
+const PHASE_CFG: Record<MarketPhase, { rateGap: number; rentDrift: number; devDrift: number; nextM: [number, number]; next: MarketPhase }> = {
+  recovery: { rateGap: -0.75, rentDrift: 0.0014, devDrift: +0.034, nextM: [12, 24], next: "expansion" },
+  expansion: { rateGap: +0.35, rentDrift: 0.0037, devDrift: +0.027, nextM: [24, 54], next: "peak" },
+  peak: { rateGap: +1.95, rentDrift: 0.0014, devDrift: +0.014, nextM: [6, 15], next: "recession" },
+  recession: { rateGap: -1.05, rentDrift: -0.0047, devDrift: -0.054, nextM: [12, 24], next: "recovery" },
 };
+
+// How far the loan index may travel. A century of property covers eras that
+// look nothing like each other, and the point of the wider band is that the
+// deal you underwrote at 4% has to survive being refinanced at 12%.
+const RATE_FLOOR = 1.9, RATE_CEIL = 15.5;
 
 export const CAP_BASE = { office: 5.6, retail: 6.1, multifamily: 4.9, industrial: 6.9 } as const;
 // Rough citywide inventory by class, in sf — the denominator that turns other
@@ -129,10 +137,39 @@ export function tickEcon(s: GameState) {
 
   const c2 = PHASE_CFG[e.phase];
 
-  // loan index: mean-reverting walk toward the phase's rate regime
+  // --- the monetary era ------------------------------------------------------
+  // A slow walk between long regimes, re-aimed roughly every twelve to
+  // twenty-five years. This is the layer that makes a mortgage struck in one
+  // decade a different animal by the time it matures in the next.
+  if (e.rateRegime === undefined) { e.rateRegime = 5.4; e.rateAimTo = 5.4; e.rateAimM = s.month + 180; }
+  if (s.month >= (e.rateAimM ?? 0)) {
+    const was = e.rateAimTo ?? 5.4;
+    e.rateAimTo = rrange(s, 2.4, 11.0);
+    e.rateAimM = s.month + Math.round(rrange(s, 150, 320));
+    if (Math.abs(e.rateAimTo - was) > 1.6) {
+      pushNews(s, e.rateAimTo > was ? "warn" : "event", e.rateAimTo > was
+        ? "The cost of money is turning. Economists are talking about a decade of dearer credit."
+        : "A new monetary era: money is getting cheaper, and everything with a yield is about to be repriced.");
+    }
+  }
+  // half-life around five years — an era arrives slowly and then it is simply
+  // the world you underwrite in
+  e.rateRegime = clamp(e.rateRegime + 0.012 * ((e.rateAimTo ?? 5.4) - e.rateRegime), RATE_FLOOR, RATE_CEIL);
+  // and once in a long while it moves all at once
+  if (rng(s) < 0.0035) {
+    const jump = rrange(s, 1.1, 3.2) * (rng(s) < 0.55 ? 1 : -1);
+    e.rateRegime = clamp(e.rateRegime + jump, RATE_FLOOR, RATE_CEIL);
+    pushNews(s, jump > 0 ? "warn" : "event", jump > 0
+      ? "An inflation scare. The index jumped this month and every floating coupon in the city went with it."
+      : "The central bank cut hard and unexpectedly. Refinancing windows are open that were shut last month.");
+  }
+
+  // loan index: the era, plus where the cycle sits against it. Reversion is
+  // fast enough (half-life about nine months) that the cycle is legible in the
+  // rate, which at 0.03 it never was.
   e.indexRate = clamp(
-    e.indexRate + 0.03 * (c2.rateMu - e.indexRate) + rrange(s, -0.16, 0.16),
-    4.2, 9.2,
+    e.indexRate + 0.075 * (e.rateRegime + c2.rateGap - e.indexRate) + rrange(s, -0.13, 0.13),
+    RATE_FLOOR, RATE_CEIL,
   );
 
   // cycle deviation drifts with phase, spring-loaded toward its bounds
@@ -154,20 +191,48 @@ export function tickEcon(s: GameState) {
     : e.phase === "recession" ? -0.0031 : 0.0015;
   e.employIdx = clamp(e.employIdx * (1 + jobDrift + rrange(s, -0.0012, 0.0012)), 0.55, 12);
 
-  // --- sector momentum ------------------------------------------------------
-  // Slow independent walks, mean-reverting to zero. Occasionally one class gets
-  // a shock of its own — a sector rotation the rest of the market doesn't feel.
-  for (const k of BUILT_CLASSES) {
-    const persist = k === "multifamily" ? 0.985 : 0.975;
-    e.sectorMom[k] = clamp(e.sectorMom[k] * persist + rrange(s, -0.0009, 0.0009), -0.02, 0.02);
+  // --- each class runs its own cycle -----------------------------------------
+  // This used to be an AR(1) walk with a +/-0.02 cap and noise so small that
+  // its stationary spread was about a tenth of that: sectorMom sat near zero
+  // for a century and the four classes moved as one market wearing four
+  // labels. Now every class carries an explicit boom / steady / bust clock,
+  // long enough to live through and independent of its neighbours, so office
+  // can be three years into a bust while apartments are booming — which is the
+  // ordinary condition of a real property market, not an exotic one.
+  if (!e.sectorPhase) {
+    e.sectorPhase = { office: "steady", retail: "steady", multifamily: "steady", industrial: "steady" };
+    e.sectorPhaseM = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+    for (const k of BUILT_CLASSES) e.sectorPhaseM[k] = Math.round(rrange(s, 8, 60));
   }
-  if (rng(s) < 0.012) {
-    const k = BUILT_CLASSES[Math.floor(rng(s) * BUILT_CLASSES.length) % BUILT_CLASSES.length];
-    const up = rng(s) < 0.5;
-    e.sectorMom[k] = clamp(e.sectorMom[k] + (up ? 0.009 : -0.009), -0.02, 0.02);
-    pushNews(s, up ? "event" : "warn", up
-      ? `${SECTOR_LABEL[k]} is having a moment — tenants in that sector are expanding hard.`
-      : `${SECTOR_LABEL[k]} demand is rolling over. Brokers are quietly cutting asking rents.`);
+  const SECTOR_AIM = { boom: 0.0125, steady: 0, bust: -0.0115 };
+  for (const k of BUILT_CLASSES) {
+    if ((e.sectorPhaseM![k] -= 1) <= 0) {
+      const cur = e.sectorPhase![k];
+      // A tight market is what tempts capital into a sector, and a sector that
+      // has just boomed is the one carrying the new supply that ends it. The
+      // transition is not a coin toss — it leans on where vacancy actually is.
+      const gap = (e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
+      const tight = clamp(0.5 - gap * 6, 0.1, 0.9);
+      let nextPhase: "boom" | "steady" | "bust";
+      if (cur === "steady") nextPhase = rng(s) < tight ? "boom" : "bust";
+      else if (cur === "boom") nextPhase = rng(s) < 0.45 ? "bust" : "steady";
+      else nextPhase = rng(s) < 0.72 ? "steady" : "boom";
+      e.sectorPhase![k] = nextPhase;
+      e.sectorPhaseM![k] = Math.round(
+        nextPhase === "boom" ? rrange(s, 20, 56)
+          : nextPhase === "bust" ? rrange(s, 16, 42)
+            : rrange(s, 26, 74),
+      );
+      if (nextPhase !== "steady" && cur !== nextPhase) {
+        pushNews(s, nextPhase === "boom" ? "event" : "warn", nextPhase === "boom"
+          ? `${SECTOR_LABEL[k]} is turning. Tenants in that sector are expanding hard and every landlord in it knows.`
+          : `${SECTOR_LABEL[k]} demand is rolling over. Brokers are quietly cutting asking rents.`);
+      }
+    }
+    // ease toward the phase's level rather than jumping: a sector turn is
+    // something you notice over a year, not in a month
+    const aim = SECTOR_AIM[e.sectorPhase![k]];
+    e.sectorMom[k] = clamp(e.sectorMom[k] + 0.055 * (aim - e.sectorMom[k]) + rrange(s, -0.0006, 0.0006), -0.02, 0.02);
   }
 
   // --- the construction pipeline --------------------------------------------
@@ -250,7 +315,13 @@ export function tickEcon(s: GameState) {
     );
     const target = CITY_STOCK[k] * (1 - NATURAL_VAC[k])
       * Math.pow(e.employIdx, elastic)
-      * (1 + e.sectorMom[k] * 26)
+      // Sector coupling was calibrated against a sectorMom that never left
+      // +/-0.002; now that the class cycles actually reach their level, 26x
+      // turned every boom into a demand shock that ran occupancy into the
+      // frictional floor and held it there. 11x is still a big sector cycle —
+      // a boom moves the space a class wants by about a seventh — but supply
+      // and price get a chance to answer it.
+      * (1 + e.sectorMom[k] * 11)
       * affordability;
     const absorb = clamp(0.05 * (target - e.occupied[k]), -0.005 * e.stock[k], 0.007 * e.stock[k])
       + e.stock[k] * rrange(s, -0.0006, 0.0006);
@@ -282,7 +353,7 @@ export function tickEcon(s: GameState) {
     // real oversupply does.
     const vacTerm = clamp(-gap * 0.090, -0.009, 0.009);
     const scarcity = clamp((unmet[k] ?? 0) * 0.078, 0, 0.013);
-    const drift = c2.rentDrift * 0.55 + e.sectorMom[k] * 0.5 + vacTerm + scarcity + (jobDrift * 0.35);
+    const drift = c2.rentDrift * 0.55 + e.sectorMom[k] * 0.42 + vacTerm + scarcity + (jobDrift * 0.35);
     e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.5, e.rentIdx[k] * (1 + drift + rrange(s, -vol, vol)));
   }
 
@@ -290,7 +361,10 @@ export function tickEcon(s: GameState) {
   // out when nobody will lend — a credit crunch reprices everything at once
   for (const k of BUILT_CLASSES) {
     const crunch = 1.6 * Math.max(0, 1 - e.creditIdx);
-    const sector = -14 * e.sectorMom[k];
+    // A sector in favour reprices harder than it used to: capital rotating
+    // into a class is most of what moves its cap rate, and at 14x a full
+    // sector cycle was worth under two-tenths of a point.
+    const sector = -30 * e.sectorMom[k];
     const target = CAP_BASE[k] + 0.38 * (e.indexRate - 5.4) - 0.25 * e.cycleDev + crunch + sector;
     e.capRate[k] = clamp(e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045), 3.4, 11);
   }

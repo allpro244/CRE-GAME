@@ -85,9 +85,9 @@ function run(botName, seed) {
         const rec = E.resolveRec(parcels, g, bbl);
         if (!rec || rec.class !== "land" || g.developments[bbl]) continue;
         for (let fl = Math.min(E.maxFloorsFor(rec, 0.6), 20); fl >= 2; fl--) {
-          const plan = E.planDevelopment(g, parcels, bbl, m % 3 === 0 ? "multifamily" : "office", fl, 0.6, 0.3, m % 2 ? "gmp" : "costplus");
+          const plan = E.planDevelopment(g, parcels, bbl, m % 3 === 0 ? "multifamily" : "office", fl, 0.6, m % 2 ? "gmp" : "costplus");
           if (!plan || plan.commitment === 0 || plan.equityAtClose > g.cash * 0.5) continue;
-          const r = E.startDevelopment(g, parcels, bbl, m % 3 === 0 ? "multifamily" : "office", fl, 0.6, 0.3, m % 2 ? "gmp" : "costplus");
+          const r = E.startDevelopment(g, parcels, bbl, m % 3 === 0 ? "multifamily" : "office", fl, 0.6, m % 2 ? "gmp" : "costplus");
           if (!r.err) { g = r.s; break; }
         }
         break;

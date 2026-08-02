@@ -5,7 +5,7 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Credit, GameState, Holding, LOI, Sector } from "./types";
 import { logBooks } from "./types";
-import { rng, rrange , vacancyPull } from "./market";
+import { rng, rrange , vacancyPull, NATURAL_VAC} from "./market";
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses, useSf } from "./mix";
 import type { Recovery } from "./value";
@@ -290,12 +290,12 @@ export const MAKE_READY_PSF = 6; // turn cost, $/sf before cost inflation
  * and they priced it — `discount` is what that cost you, and it is locked in
  * for a decade and a half.
  */
-export function genAnchorTenant(s: GameState, rec: ParcelRecord, h: Holding, sfWanted: number, discount = 1) {
+export function genAnchorTenant(s: GameState, rec: ParcelRecord, h: Holding, sfWanted: number, discount = 1, forUse?: BuiltClass) {
   if (!isCommercial(rec)) return;
   // An anchor pre-lets COMMERCIAL space. In a stacked building the flats above
   // are not part of the deal, and letting the anchor take the whole building
   // put more square feet under lease than the building had.
-  const use = leasableUses(rec)[0] ?? "office";
+  const use = (forUse && leasableUses(rec).includes(forUse) ? forUse : leasableUses(rec)[0]) ?? "office";
   const sfAnchor = Math.min(sfWanted, useVacantSf(rec, h, use, s.month));
   if (sfAnchor < 1000) return;
   const sector = pickSector(s, use);
@@ -323,6 +323,31 @@ export function walt(h: Holding, q: number): number {
 export const TI_ASK: Record<string, [number, number]> = {
   office: [15, 40], retail: [5, 20], industrial: [2, 8], multifamily: [0, 3],
 };
+
+/**
+ * HOW HARD A TENANT CAN PUSH, from the state of the market they are in.
+ *
+ * Concessions used to key off the phase LABEL alone — 0.7 in an expansion,
+ * 1.85 in a recession — which meant a class sitting at four per cent vacancy
+ * in the middle of a boom still asked for half a year of free rent, because
+ * the label said "expansion" and the label knew nothing about that class.
+ *
+ * Free rent and fit-out are the first things to move when a market turns and
+ * they move long before face rents do, so they belong on the vacancy gap for
+ * the tenant's OWN class. Below natural, a tenant takes what is offered and is
+ * glad of it; a few points above, the landlord is buying the deal.
+ *
+ * Returns a multiplier on the asking concession: ~0.25 in a genuine squeeze,
+ * 1 at natural, ~2.1 in a glut.
+ */
+export function concessionPressure(e: GameState["econ"], use: string): number {
+  const k = (use === "office" || use === "retail" || use === "multifamily" || use === "industrial" ? use : "office") as keyof typeof NATURAL_VAC;
+  const gap = (e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
+  // ten points of excess vacancy roughly doubles what a tenant can extract;
+  // four points of shortage cuts it to a quarter
+  const phase = e.phase === "recession" ? 0.22 : e.phase === "recovery" ? 0.08 : e.phase === "peak" ? -0.04 : -0.10;
+  return Math.max(0.22, Math.min(2.1, 1 + gap * 11 + phase));
+}
 
 export function tickLeasing(s: GameState, parcels: ParcelTable) {
   const q = s.month;
@@ -472,8 +497,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         sf: t.sf,
         rentPsf: +Math.max(market * 0.6, ask).toFixed(2),
         termM: Math.round(rrange(s, 36, 84)),
-        tiPsf: Math.round(rrange(s, 2, 9) * (s.econ.phase === "recession" ? 1.5 : 1)),
-        freeM: s.econ.phase === "recession" && rng(s) < 0.4 ? Math.round(rrange(s, 1, 3)) : 0,
+        // A sitting tenant asks for less than a new one — no fit-out, no
+        // moving costs to cover — but the same market decides how far they get.
+        tiPsf: Math.round(rrange(s, 2, 9) * concessionPressure(s.econ, t.use ?? "office")),
+        freeM: rng(s) < 0.25 * concessionPressure(s.econ, t.use ?? "office")
+          ? Math.round(rrange(s, 1, 3) * concessionPressure(s.econ, t.use ?? "office")) : 0,
         net: t.net,
         recovery: recoveryOf(t),
         expiresM: t.endM,
@@ -528,8 +556,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       if (rng(s) < p) {
         const sector = pickSector(s, use);
         const [tiLo, tiHi] = TI_ASK[use] ?? TI_ASK.office;
-        const concession = s.econ.phase === "recession" ? 1.85 : s.econ.phase === "recovery" ? 1.35
-          : s.econ.phase === "peak" ? 0.9 : 0.7;
+        const concession = concessionPressure(s.econ, use);
         // ...and at the rent THAT market pays, not a blend of markets the
         // tenant is not in.
         const market = managedRentPsfYr(rec, s.econ, h, use);
@@ -543,6 +570,12 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         const sf = toSuites(rec, want, legVac, use);
         if (!sf) continue;
         const credit = rollCredit(s, rec.demandScore);
+        // term first: the free-rent ask is a function of how long they sign for
+        const termM = Math.round(
+          (credit === 2 ? rrange(s, 84, 144) : credit === 1 ? rrange(s, 60, 108) : rrange(s, 36, 60))
+          * (sf > useSuiteSf(rec, use) * 2.5 ? 1.15 : 1)
+          * (s.econ.phase === "recession" ? 0.85 : 1),
+        );
         s.lois.push({
           id: s.nextLoiId++,
           bbl: h.bbl,
@@ -565,17 +598,19 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // three to five with a break. The old band ran to fifteen years as a
           // matter of course, which handed the player bond-like income on
           // ordinary space and made WALT a number nobody had to work for.
-          termM: Math.round(
-            (credit === 2 ? rrange(s, 84, 144) : credit === 1 ? rrange(s, 60, 108) : rrange(s, 36, 60))
-            * (sf > useSuiteSf(rec, use) * 2.5 ? 1.15 : 1)
-            * (s.econ.phase === "recession" ? 0.85 : 1),
-          ),
+          termM,
           // Concessions are the first thing to move when a market turns, and
           // they move long before face rents do. A landlord holding headline
           // rent while giving away a year of free rent is the oldest tell in
           // the business.
           tiPsf: Math.round(rrange(s, tiLo, tiHi) * concession * (credit === 2 ? 1.35 : credit === 1 ? 1.05 : 0.85)),
-          freeM: Math.round(rrange(s, 0, 6.5) * concession),
+          // Free rent scales with the LENGTH of the deal, the way it does in
+          // life — the rule of thumb is about a month a year, and it is the
+          // concession a landlord gives before cutting the face rent. A flat
+          // nought-to-six-and-a-half band handed a three-year tenant the same
+          // holiday as a twelve-year one, and handed both of them one in a
+          // market where nobody had to give anything away.
+          freeM: Math.max(0, Math.round((termM / 12) * rrange(s, 0.25, 0.85) * concession)),
           net: use === "office" ? rng(s) < 0.8 : rng(s) < 0.4,
           recovery: rollRecovery(s, use),
           expiresM: q + 3,

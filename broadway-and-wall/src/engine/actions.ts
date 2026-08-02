@@ -2,14 +2,14 @@
 // approach owners with assemblage pressure, sell, renovate. Pure — each
 // returns a new state or an error string, never mutates the input.
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
-import type { DiligenceItem, Escrow, GameState, Holding } from "./types";
+import type { DiligenceItem, GameState, Holding } from "./types";
 import { logBooks, monthLabel } from "./types";
 import { rng, rrange } from "./market";
 import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr } from "./value";
 import { marketAppetite, ownerOf, rivalAsk, rivalBuys } from "./rivals";
 import { genRentRoll, isCommercial } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
-import { DEPOSIT_PCT, latentIssues, offerOdds } from "./acquire";
+import { latentIssues } from "./acquire";
 
 const CLOSING_PCT = 0.02;
 const SALE_FRICTION = 0.012;  // legal, title, diligence — the unavoidable rest
@@ -452,6 +452,79 @@ function netWorthLike(s: GameState): number {
   return n;
 }
 
+/**
+ * COUNTER A BID ON YOUR OWN BUILDING.
+ *
+ * Selling was accept-or-decline, which is not selling — declining a bid you
+ * would have taken five per cent higher just throws the buyer away, and every
+ * seller in the world picks up the phone instead.
+ *
+ * The buyer has a reservation price: what the building is worth to them, which
+ * is what it appraises at, adjusted for how badly the market wants product
+ * right now and for who they turned out to be. Counter inside it and they take
+ * it. Counter a little over and they split the difference, because a deal in
+ * hand is worth the last two per cent. Counter well over and they are gone —
+ * and if they came to you unbidden, so is the whole approach.
+ *
+ * One round per offer. Grinding is not a mechanic.
+ */
+export function counterSale(
+  s: GameState, parcels: ParcelTable, bbl: string, price: number,
+): { s: GameState; err?: string; msg?: string } {
+  const h0 = s.holdings[bbl];
+  if (!h0?.sale?.offer) return { s, err: "There is no offer to counter." };
+  if (h0.sale.offer.countered) return { s, err: "You have already been back to them once on this offer." };
+  const rec = resolveRec(parcels, s, bbl);
+  if (!rec) return { s, err: "Unknown parcel." };
+  const px = Math.round(price);
+  const next = clone(s);
+  const h = next.holdings[bbl]!;
+  const sale = h.sale!;
+  const offer = sale.offer!;
+  if (px <= offer.price) return { s, err: "That is not a counter — it is an acceptance at a worse price." };
+
+  const value = holdingValue(rec, next.econ, h, next.month);
+  // how far a buyer will stretch past appraisal: a boom with open credit buys
+  // aggressively, a downturn with shut credit does not buy at all
+  const hot = next.econ.phase === "expansion" || next.econ.phase === "peak";
+  const money = Math.max(0.4, next.econ.creditIdx ?? 1);
+  const stretch = (hot ? 1.10 : 0.99) * (0.94 + 0.12 * money);
+  const reservation = Math.max(offer.price, Math.round(value * stretch * rrange(next, 0.97, 1.05)));
+
+  if (px <= reservation) {
+    const was = offer.price;
+    offer.price = px;
+    offer.countered = true;
+    offer.expiresM = next.month + 2;
+    next.news.unshift({
+      q: next.month, kind: "deal",
+      text: `They took your counter at ${rec.address}: $${(px / 1e6).toFixed(2)}M, up from $${(was / 1e6).toFixed(2)}M.`,
+    });
+    return { s: next, msg: `Countered and taken — $${(px / 1e6).toFixed(2)}M.` };
+  }
+  if (px <= reservation * 1.06) {
+    const split = Math.round((px + reservation) / 2);
+    offer.price = split;
+    offer.countered = true;
+    offer.expiresM = next.month + 2;
+    next.news.unshift({
+      q: next.month, kind: "deal",
+      text: `They came back at ${rec.address}: $${(split / 1e6).toFixed(2)}M and no further. Good until ${monthLabel(offer.expiresM)}.`,
+    });
+    return { s: next, msg: `They split it — $${(split / 1e6).toFixed(2)}M.` };
+  }
+  // too far. They are gone.
+  const wasUnsolicited = sale.unsolicited;
+  delete sale.offer;
+  if (wasUnsolicited) delete h.sale;
+  next.news.unshift({
+    q: next.month, kind: "warn",
+    text: `Your counter at ${rec.address} ended it — they walked.`
+      + (wasUnsolicited ? " They were never on the market for it; they just wanted the building." : ""),
+  });
+  return { s: next, msg: "They walked." };
+}
+
 export function tickSales(s: GameState, parcels: ParcelTable) {
   for (const h of Object.values(s.holdings)) {
     // UNSOLICITED APPROACHES. Nobody in this business only sells when they
@@ -460,11 +533,24 @@ export function tickSales(s: GameState, parcels: ParcelTable) {
     // rather than the absence of one.
     if (!h.sale && !s.developments[h.bbl]) {
       const rec0 = resolveRec(parcels, s, h.bbl);
-      if (rec0 && s.month - h.boughtM > 18) {
+      // RARE, AND RARE ACROSS THE WHOLE BOOK. The per-building odds were 1% a
+      // month in a boom, which sounds small until you own twenty buildings and
+      // it becomes a call every three months, then every six weeks as the book
+      // grows — the phone ringing constantly is not the feeling. It should be
+      // the unusual event it is in life: a handful of times in a career, on the
+      // building you were not thinking about.
+      //
+      // So: a fifth of the old per-building rate, only one live approach at a
+      // time across the portfolio, and a cooling-off period afterwards. The
+      // odds no longer scale with how much you own.
+      const anyLive = Object.values(s.holdings).some((x) => x.sale?.unsolicited);
+      const quiet = s.month - (s.lastUnsolicitedM ?? -60) > 30;
+      if (rec0 && s.month - h.boughtM > 18 && !anyLive && quiet) {
         const hot = s.econ.phase === "expansion" || s.econ.phase === "peak";
         const money = Math.max(0.4, s.econ.creditIdx ?? 1);
-        const p = (hot ? 0.010 : 0.003) * money * (1 + rec0.demandScore / 140);
+        const p = (hot ? 0.0020 : 0.0006) * money * (1 + rec0.demandScore / 140);
         if (rng(s) < p) {
+          s.lastUnsolicitedM = s.month;
           const v = holdingValue(rec0, s.econ, h, s.month);
           // over the top when money is loose, cheeky when it isn't
           const px = Math.round(v * (hot ? rrange(s, 1.02, 1.24) : rrange(s, 0.82, 0.98)));
@@ -596,81 +682,6 @@ export function startRenovation(s: GameState, parcels: ParcelTable, bbl: string)
 export { assetValue };
 
 // ---------------------------------------------------------------- acquisition
-/**
- * PUT IT UNDER CONTRACT.
- *
- * The offer is three decisions, not one. Price is the obvious lever. The other
- * two are what a seller is actually weighing when two bids come in a hundred
- * grand apart:
- *
- *   diligence — a month or two to look, or none at all. Looking is free money
- *               if you find something and free time for the seller if you do
- *               not, which is why they charge you for it in price.
- *   deposit   — soft money comes back, hard money does not. Putting up hard
- *               money says you will close, and it is the cheapest credibility
- *               available to a buyer with no track record.
- *
- * `buyListing` still exists and still works: it is this function with zero
- * diligence and a soft deposit, closing on the spot. That is a real way to buy
- * a building — as-is, no contingencies — and it has a real cost, which is that
- * everything diligence would have found is now yours.
- */
-export function makeOffer(
-  s: GameState, parcels: ParcelTable, bbl: string, price: number,
-  product: BuyProduct, lev = 1, diligenceM = 2,
-): { s: GameState; err?: string; msg?: string } {
-  if (s.escrow) return { s, err: `You are already under contract at ${parcels[s.escrow.bbl]?.address ?? s.escrow.bbl}. One deal at a time.` };
-  const listing = s.listings.find((l) => l.bbl === bbl);
-  if (!listing) return { s, err: "That property is no longer on the market." };
-  const rec = resolveRec(parcels, s, bbl);
-  if (!rec) return { s, err: "Unknown parcel." };
-  const px = Math.round(price);
-  if (!Number.isFinite(px) || px <= 0) return { s, err: "Name a real number." };
-
-  // the money has to be there, or you are wasting everybody's afternoon
-  const q = buyQuote(s, parcels, bbl, px, product, lev);
-  if (s.cash < q.equity) return { s, err: `This deal needs $${(q.equity / 1e6).toFixed(2)}M of equity — you're short.` };
-  const deposit = Math.round(px * DEPOSIT_PCT);
-  if (s.cash < deposit) return { s, err: `The deposit alone is $${(deposit / 1e6).toFixed(2)}M.` };
-
-  // Two shapes of deal, nothing in between: 60 days of diligence, or as-is.
-  const dm = diligenceM <= 0 ? 0 : 2;
-  // As-is means the deposit is hard the moment the contract signs — that IS
-  // the certainty the seller is paying for.
-  const hardDeposit = dm === 0;
-  const odds = offerOdds(s, parcels, bbl, px, dm);
-  const next = clone(s);
-  if (rng(next) >= odds.p) {
-    // a refusal is information: they tell you roughly what would have worked
-    const want = Math.round((odds.effective / Math.max(0.001, odds.p > 0.5 ? 1 : 1)) * 0);
-    void want;
-    next.news.unshift({
-      q: next.month, kind: "info",
-      text: `${odds.seller.name} refused $${(px / 1e6).toFixed(2)}M for ${rec.address}.`
-        + (dm >= 2 ? " An as-is offer at the same number might have landed — certainty is currency." : ""),
-    });
-    return { s: next, msg: `Refused. ${odds.seller.name} was not moved.` };
-  }
-
-  next.cash -= deposit;
-  const findings = latentIssues(next, rec, (Number(bbl) ^ (next.month * 2654435761)) >>> 0);
-  next.escrow = {
-    bbl, price: px, product, lev,
-    sellerKind: odds.seller.kind, sellerName: odds.seller.name,
-    openedM: next.month, diligenceM: dm, closesM: next.month + Math.max(1, dm),
-    deposit, hardDeposit, findings,
-  } satisfies Escrow;
-  // it comes off the market the moment it goes under contract
-  next.listings = next.listings.filter((l) => l.bbl !== bbl);
-  next.news.unshift({
-    q: next.month, kind: "deal",
-    text: `Under contract: ${rec.address} at $${(px / 1e6).toFixed(2)}M with ${odds.seller.name}. `
-      + (dm > 0
-        ? `Sixty days to look; the $${(deposit / 1e6).toFixed(2)}M deposit stays refundable until diligence ends.`
-        : `As-is: no diligence, $${(deposit / 1e6).toFixed(2)}M hard from day one. You are buying what is there.`),
-  });
-  return { s: next, msg: "Under contract." };
-}
 
 /** Sign the closing statement and take the keys. */
 export function closeDeal(s: GameState, parcels: ParcelTable): { s: GameState; err?: string; msg?: string } {

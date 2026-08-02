@@ -110,11 +110,11 @@ function run(stratName, seed) {
         const hot = g.econ.phase === "expansion" || g.econ.phase === "peak";
         const contract = hot ? "gmp" : "costplus";
         for (let fl = Math.min(E.maxFloorsFor(rec, 0.6), 26); fl >= 2 && !done; fl--) {
-          const plan = E.planDevelopment(g, parcels, bbl, "office", fl, 0.6, 0.3, contract);
+          const plan = E.planDevelopment(g, parcels, bbl, "office", fl, 0.6, contract);
           if (!plan || plan.commitment === 0) continue;
           if (plan.yieldOnCost - plan.exitCap < 1.0) continue;      // no spread, no shovel
           if (plan.equityAtClose > g.cash * 0.45) continue;
-          const r = E.startDevelopment(g, parcels, bbl, "office", fl, 0.6, 0.3, contract);
+          const r = E.startDevelopment(g, parcels, bbl, "office", fl, 0.6, contract);
           if (!r.err) { g = r.s; st.built++; done = true; }
         }
         if (done) break;

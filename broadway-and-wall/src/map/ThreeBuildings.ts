@@ -91,10 +91,17 @@ void main() {
 // light from below, and a real shadow between them. Everything lands in a
 // filmic curve so highlights roll off instead of clipping to paper white.
 const LIGHT_GLSL = /* glsl */ `
-const vec3 SUN_DIR = vec3(0.5735, -0.4077, 0.7899);
-const vec3 SUN_COL = vec3(1.14, 1.035, 0.87);
-const vec3 SKY_COL = vec3(0.50, 0.605, 0.78);
-const vec3 GND_COL = vec3(0.44, 0.385, 0.30);
+// THE SUN SITS LOW. It used to stand at forty-eight degrees — near noon, the
+// one hour no architectural photographer would ever shoot in. Twenty-eight
+// degrees is late afternoon: shadows run nearly twice the height of what casts
+// them, every west face lights up, every east face falls into shade, and the
+// massing of the city finally has something to read against. The sun is warmer
+// to match, and the sky fill is lifted so the long shadows stay blue and
+// legible instead of going black.
+const vec3 SUN_DIR = vec3(0.762, -0.541, 0.496);
+const vec3 SUN_COL = vec3(1.26, 1.09, 0.82);
+const vec3 SKY_COL = vec3(0.53, 0.635, 0.83);
+const vec3 GND_COL = vec3(0.48, 0.405, 0.31);
 
 vec3 hemiLight(vec3 n, float ao) {
   vec3 amb = mix(GND_COL, SKY_COL, clamp(n.z * 0.5 + 0.5, 0.0, 1.0));
@@ -172,7 +179,7 @@ float sunVis(vec3 p) {
   if (ndc.x < 0.0 || ndc.x > 1.0 || ndc.y < 0.0 || ndc.y > 1.0 || ndc.z > 1.0) return 1.0;
   float sum = 0.0;
   for (int i = 0; i < 4; i++) {
-    vec2 off = vec2(float(i - (i / 2) * 2) - 0.5, float(i / 2) - 0.5) * (1.4 / 2048.0);
+    vec2 off = vec2(float(i - (i / 2) * 2) - 0.5, float(i / 2) - 0.5) * (1.4 / 3072.0);
     float d = unpackDepth(texture2D(uShadow, ndc.xy + off));
     sum += step(ndc.z - 0.0028, d);
   }
@@ -345,7 +352,44 @@ void main() {
   // Where the building meets the street it stops being a facade and becomes
   // shopfronts: a stone plinth, a bulkhead, deep glazing bay by bay, a signage
   // band, awnings, and one bay given over to the entrance.
-  bool trade = (s <= 4 || s == 6 || s == 7);
+  // THE BROWNSTONE STOOP. A residential row is not a shopping street, and
+  // giving it shopfronts was the last wrong thing about the old fabric. What
+  // it has instead is a rusticated basement at grade with an areaway, a
+  // PARLOUR floor lifted a metre and a half above the pavement, and a door
+  // with a stone surround at the top of a stoop. Getting the front door off
+  // the ground is the whole silhouette of the type.
+  bool row = (s == 2 && vTop < 26.0 && vTop > fh * 1.6);
+  if (row && near > 0.25 && vZ < fh * 1.9) {
+    float dw = 7.4;                                  // one house wide
+    float du = vU / dw, df = fract(du);
+    float hh = hash(vec2(floor(du) + 3.0, floor(vRand * 29.0)));
+    vec3 stone = wall * (0.80 + 0.14 * hh);          // brownstone base course
+    float areaTop = 1.45;                            // top of the basement
+    float parlour = areaTop + fh * 0.16;             // parlour floor level
+    bool doorBay = df > 0.63 && df < 0.86;
+
+    if (vZ < areaTop) {
+      // rusticated basement, with coursing and the areaway well in front
+      col = stone * (0.86 + 0.09 * step(0.5, fract(vZ * 2.2)));
+      if (df > 0.16 && df < 0.44 && vZ > 0.55 && vZ < areaTop - 0.15) {
+        col = vec3(0.20, 0.21, 0.22);                // areaway window
+      }
+      if (doorBay) col = vec3(0.15, 0.145, 0.14);    // the well under the stoop
+      winMask = 0.0;
+    } else if (doorBay && vZ < parlour + fh * 0.62) {
+      // the doorway: stone surround, dark leaf, fanlight over
+      float dEdge = min(df - 0.63, 0.86 - df);
+      if (dEdge < 0.035 || vZ < parlour) col = stone * 1.06;      // surround / step
+      else if (vZ > parlour + fh * 0.52) col = vec3(0.34, 0.38, 0.42);  // fanlight
+      else col = vec3(0.16, 0.13, 0.11) * (1.0 + 0.5 * (vZ - parlour));
+      winMask = 0.0;
+    } else if (vZ < parlour) {
+      col = stone;                                    // plinth under the parlour
+      winMask = 0.0;
+    }
+  }
+
+  bool trade = (s <= 4 || s == 6 || s == 7) && !row;
   float gfTop = fh * 1.04;
   if (trade && near > 0.25 && vZ < gfTop && vTop > fh * 1.7) {
     float bw = 4.7;                                   // one shopfront bay
@@ -506,7 +550,7 @@ varying vec3 vPos;
 ` + SHADOW_GLSL + /* glsl */ `
 void main() {
   float vis = sunVis(vPos);
-  gl_FragColor = vec4(0.20, 0.23, 0.33, (1.0 - vis) * 0.34);
+  gl_FragColor = vec4(0.19, 0.22, 0.34, (1.0 - vis) * 0.40);
 }`;
 
 const CATCHER_VERT = /* glsl */ `
@@ -846,6 +890,27 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         if (hgt >= 105 && v.y >= 1975) props.push({ kind: 3, x: cx, y: cy, z: v.z1, s: 1, rot: 0 });
         // antennas crown the tallest towers
         if (hgt >= 95) props.push({ kind: 4, x: cx + jit(15, 5), y: cy + jit(16, 5), z: v.z1, s: 1 + (hgt - 95) / 60, rot: 0 });
+        // ROOFTOP SIGNAGE. The painted sign on the parapet is what a
+        // commercial building did with its roof before anyone thought to put
+        // plant up there — and it sits on the LONGEST edge, facing the street,
+        // because that is the whole point of it.
+        if ((v.c === "retail" || v.c === "office") && hgt >= 14 && hgt <= 48 && seed % 5 < 2) {
+          let bi = 0, bl = -1;
+          for (let i = 0; i < ring.length; i++) {
+            const a2 = ring[i], b2 = ring[(i + 1) % ring.length];
+            const L = Math.hypot(b2[0] - a2[0], b2[1] - a2[1]);
+            if (L > bl) { bl = L; bi = i; }
+          }
+          if (bl > 11) {
+            const a2 = ring[bi], b2 = ring[(bi + 1) % ring.length];
+            props.push({
+              kind: 7,
+              x: (a2[0] + b2[0]) / 2, y: (a2[1] + b2[1]) / 2, z: v.z1 + 0.6,
+              s: Math.min(1.5, bl / 13),
+              rot: Math.atan2(b2[1] - a2[1], b2[0] - a2[0]),
+            });
+          }
+        }
         // skylight monitors on industrial sheds
         if (style === S_MILL && hgt < 15) {
           for (let k = 0; k < 2; k++) props.push({ kind: 6, x: cx + jit(20 + k, 12), y: cy + jit(23 + k, 12), z: v.z1, s: 1, rot: jit(26, 1) });
@@ -930,12 +995,25 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       { geom: antennaGeom(), color: 0x6d7276 },
       { geom: new THREE.BoxGeometry(0.9, 0.9, 2.4).translate(0, 0, 1.2), color: 0x8a5c48 },
       { geom: new THREE.BoxGeometry(6.5, 1.8, 1.3).translate(0, 0, 0.65), color: 0xaab4b8 },
+      { geom: billboardGeom(), color: 0xffffff },
+    ];
+    // painted signs come in painted-sign colours
+    const SIGN_COLORS: [number, number, number][] = [
+      [0.72, 0.24, 0.20], [0.20, 0.32, 0.50], [0.92, 0.88, 0.80],
+      [0.24, 0.40, 0.32], [0.82, 0.66, 0.28], [0.32, 0.30, 0.34],
     ];
     for (let kind = 0; kind < propDefs.length; kind++) {
       const items = props.filter((p) => p.kind === kind);
       if (!items.length) continue;
       const mesh = new THREE.InstancedMesh(propDefs[kind].geom, this.propMaterial(propDefs[kind].color), items.length);
-      mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(items.length * 3).fill(1), 3);
+      const icol = new Float32Array(items.length * 3).fill(1);
+      if (kind === 7) {
+        for (let i = 0; i < items.length; i++) {
+          const c = SIGN_COLORS[(Math.round(items[i].x * 7 + items[i].y * 13) % SIGN_COLORS.length + SIGN_COLORS.length) % SIGN_COLORS.length];
+          icol[i * 3] = c[0]; icol[i * 3 + 1] = c[1]; icol[i * 3 + 2] = c[2];
+        }
+      }
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(icol, 3);
       const m = new THREE.Matrix4();
       items.forEach((p, i) => {
         m.compose(
@@ -1101,15 +1179,19 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   // runtime: a single texture sample per fragment.
   private bakeShadows() {
     try {
-      const sunDir = new THREE.Vector3(0.45, -0.32, 0.62).normalize();
+      // must be the SAME direction the shader lights with, or the shadows
+      // detach from the shading that produced them
+      const sunDir = new THREE.Vector3(0.762, -0.541, 0.496).normalize();
       const look = new THREE.Vector3(0, 150, 0);
-      const cam = new THREE.OrthographicCamera(-1900, 1900, 1600, -1600, 1, 5000);
-      cam.position.copy(look.clone().add(sunDir.clone().multiplyScalar(2400)));
+      // a low sun throws long shadows: the frustum has to be wide enough to
+      // hold them, or buildings at the edge cast into nothing
+      const cam = new THREE.OrthographicCamera(-2200, 2200, 1900, -1900, 1, 6000);
+      cam.position.copy(look.clone().add(sunDir.clone().multiplyScalar(3000)));
       cam.up.set(0, 0, 1);
       cam.lookAt(look);
       cam.updateMatrixWorld(true);
 
-      const target = new THREE.WebGLRenderTarget(2048, 2048, {
+      const target = new THREE.WebGLRenderTarget(3072, 3072, {
         minFilter: THREE.NearestFilter,
         magFilter: THREE.NearestFilter,
       });
@@ -1314,6 +1396,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
 // A car in eleven boxes' worth of triangles: bonnet, cabin, boot. Length runs
 // along +x so it can be dropped straight onto a kerb bearing.
+// A painted parapet sign: the panel, and the two legs holding it up.
+function billboardGeom(): THREE.BufferGeometry {
+  const panel = new THREE.BoxGeometry(11, 0.35, 3.1).translate(0, 0, 3.4);
+  const legA = new THREE.BoxGeometry(0.3, 0.3, 2.0).translate(-3.6, 0, 0.95);
+  const legB = new THREE.BoxGeometry(0.3, 0.3, 2.0).translate(3.6, 0, 0.95);
+  return mergeGeoms([panel, legA, legB]);
+}
+
 function carGeom(): THREE.BufferGeometry {
   const body = new THREE.BoxGeometry(4.35, 1.78, 0.82).translate(0, 0, 0.62);
   const cabin = new THREE.BoxGeometry(2.15, 1.62, 0.62).translate(-0.15, 0, 1.32);

@@ -333,6 +333,18 @@ export function fallbackBaseStyle(): StyleSpecification {
         paint: { "fill-color": ["match", ["get", "org"], 1, "#b3a894", "#b9b6ae"] as never },
       },
       {
+        // painted crossings at the gridded corners
+        id: "crosswalk",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "crosswalk"],
+        minzoom: 14,
+        paint: {
+          "fill-color": "#e6e2d2",
+          "fill-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0.35, 16, 0.8] as never,
+        },
+      },
+      {
         // the block itself — warm paper, a clear step off the asphalt; the
         // old town runs a shade warmer still
         id: "blocks",

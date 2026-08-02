@@ -789,6 +789,40 @@ export function generateCity(cfg) {
     geometry: { type: "Polygon", coordinates: [[...b.inset.map(proj.toLL), proj.toLL(b.inset[0])]] },
     properties: { kind: "block", org: b.u === undefined ? 1 : 0 },
   }));
+  // CROSSWALKS. A striped bar across the roadway at every corner of the
+  // gridded blocks — laid out from the block's own kerb, spanning the full
+  // street width, so the two blocks either side of a road each paint their
+  // half and the crossing meets in the middle. The colonial quarter gets
+  // none: nobody ever painted those lanes.
+  const crosswalkFeatures = [];
+  for (const b of blocks) {
+    if (b.u === undefined || !b.inset) continue;      // lattice blocks only
+    const r = b.inset;
+    for (let i = 0; i < r.length; i++) {
+      const a = r[i], bb = r[(i + 1) % r.length];
+      const dx = bb[0] - a[0], dy = bb[1] - a[1];
+      const len = Math.hypot(dx, dy);
+      if (len < 26) continue;                          // too short to be a street
+      const ux = dx / len, uy = dy / len;
+      // outward normal: away from the block's middle
+      const c = centroid(r);
+      let nx = -uy, ny = ux;
+      if ((a[0] - c[0]) * nx + (a[1] - c[1]) * ny < 0) { nx = -nx; ny = -ny; }
+      const road = 9;                                  // reach across the carriageway
+      for (const end of [0, 1]) {
+        const t = end === 0 ? 4.2 : len - 4.2;
+        const px = a[0] + ux * t, py = a[1] + uy * t;
+        const halfW = 1.9;                             // half the stripe band
+        crosswalkFeatures.push([
+          [px - ux * halfW, py - uy * halfW],
+          [px + ux * halfW, py + uy * halfW],
+          [px + ux * halfW + nx * road, py + uy * halfW + ny * road],
+          [px - ux * halfW + nx * road, py - uy * halfW + ny * road],
+        ]);
+      }
+    }
+  }
+
   const centerFeatures = blocks.map((b) => ({
     type: "Feature",
     geometry: { type: "LineString", coordinates: [...b.ring.map(proj.toLL), proj.toLL(b.ring[0])] },
@@ -899,14 +933,20 @@ export function generateCity(cfg) {
   // name, and they belong on the squares, where they cannot collide with a
   // tax lot. They also give the skyline of a low town something to be about:
   // a white spire above the roofs is worth more than another six-storey block.
+  // THE TOWN HALL GOES WHERE THE LAND IS DEAREST. A city puts its seat of
+  // government on its most valuable corner — that is what makes it the seat.
+  // `coreHeat` IS the land-value surface the whole generator prices off, so
+  // ranking the squares by the heat under them puts the hall at the centre of
+  // the town's gravity and the meeting house on the next square along.
   const civicSquares = PARKS_M
-    .map((ring, i) => ({ ring, i, a: polygonArea([ring]) }))
-    .sort((x, y2) => x.a - y2.a)
-    .slice(0, 2);                       // the two SMALLEST greens: the squares
+    .map((ring, i) => ({ ring, i, a: polygonArea([ring]), heat: coreHeat(centroid(ring)) }))
+    .filter((x) => x.a < biggestA * 0.92)   // not the principal green — that is the Common
+    .sort((x, y2) => y2.heat - x.heat)      // dearest ground first
+    .slice(0, 2);
   civicSquares.forEach((sq, k) => {
     const c = centroid(sq.ring);
     const ang = cfg.districts[Object.keys(cfg.districts)[0]]?.bearingDeg ?? 0;
-    if (k === 0) {
+    if (k === 1) {
       // THE MEETING HOUSE. Nave, west tower, and a stepped spire — three
       // shrinking prisms, which is exactly how a New England steeple is built.
       addDeco(rect(c[0], c[1], 24, 12, ang), 11.5, 0, "civic");
@@ -1060,6 +1100,11 @@ export function generateCity(cfg) {
         properties: { kind: "street", cls: "shore" },
       })),
       ...pavementFeatures,
+      ...crosswalkFeatures.map((ring) => ({
+        type: "Feature",
+        geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
+        properties: { kind: "crosswalk" },
+      })),
       ...blockFeatures,
       ...centerFeatures,
       ...streetFeatures,

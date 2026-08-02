@@ -260,7 +260,7 @@ export function fallbackBaseStyle(): StyleSpecification {
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "apron"],
-        paint: { "fill-color": "#b9b6ae" },
+        paint: { "fill-color": "#918e88" },
       },
       {
         // timber decking, with a shadowed edge so the pier stands proud of
@@ -332,8 +332,15 @@ export function fallbackBaseStyle(): StyleSpecification {
         source: "bw-context",
         filter: ["==", ["get", "kind"], "pavement"],
         // the colonial quarter is paved in setts, not fresh asphalt — a
-        // warmer, browner surface that marks the old town at a glance
-        paint: { "fill-color": ["match", ["get", "org"], 1, "#b3a894", "#b9b6ae"] as never },
+        // warmer, browner surface that marks the old town at a glance.
+        //
+        // Both are a good deal darker than they were. The whole ground plane
+        // sat within about fifteen points of value — asphalt, sidewalk, block
+        // and vacant lot all pale — so from the air the city was one sheet
+        // with buildings on it and no street grid at all. A carriageway is the
+        // darkest thing on the ground in any real city, and once it is, the
+        // grid draws itself and the crossings and centrelines finally read.
+        paint: { "fill-color": ["match", ["get", "org"], 1, "#8e8375", "#918e88"] as never },
       },
       {
         // painted crossings at the gridded corners
@@ -376,7 +383,7 @@ export function fallbackBaseStyle(): StyleSpecification {
         filter: ["==", ["get", "kind"], "street"],
         minzoom: 14,
         paint: {
-          "line-color": "#a9a69d",
+          "line-color": "#7d7a73",
           "line-width": ["interpolate", ["linear"], ["zoom"], 14, 0.4, 18, 1.4] as never,
           "line-offset": ["interpolate", ["linear"], ["zoom"], 14, -0.5, 18, -5.5] as never,
         },
@@ -406,7 +413,7 @@ export function fallbackBaseStyle(): StyleSpecification {
         source: "bw-context",
         filter: ["all", ["==", ["get", "kind"], "street"], ["==", ["get", "cls"], "shore"]],
         paint: {
-          "line-color": "#c6c2b6",
+          "line-color": "#9b978f",
           "line-width": ["interpolate", ["linear"], ["zoom"], 12, 1.6, 16, 9] as never,
         },
         layout: { "line-join": "round", "line-cap": "round" },

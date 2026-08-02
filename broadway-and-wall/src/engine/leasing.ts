@@ -916,6 +916,7 @@ export function respondLOI(
     if (loi.stage === "countered") return { s, msg: "", err: "Their counter was final. Take it or pass." };
     if (loi.countered) return { s, msg: "", err: "You already countered — they're deciding." };
     loi.countered = true;
+    if (loi.openRentPsf === undefined) loi.openRentPsf = loi.rentPsf;
     // The counter is YOUR terms, off the sliders — a rent and a TI number —
     // not a fixed +6%/−30% nobody chose. Backward-compatible default keeps
     // the old shape for the harness and the agent.
@@ -931,8 +932,22 @@ export function respondLOI(
     const pAccept = Math.max(0.04, Math.min(0.95,
       1.58 - f * 1.4 + loi.credit * 0.04 + tight + stick - tiCut
       + (next.econ.phase === "expansion" ? 0.06 : next.econ.phase === "recession" ? -0.08 : 0)));
+    const openedAt = loi.openRentPsf ?? loi.rentPsf;
+    const openTi = loi.tiPsf;
+    loi.askedRentPsf = askRent;
+    loi.askedTiPsf = askTi;
     loi.rentPsf = askRent;
     loi.tiPsf = askTi;
+    // WHAT THEY SAID BACK, kept where you can read it after the card is gone.
+    const reply = (outcome: "took" | "walked" | "countered", theirRent: number, theirTi: number) => {
+      if (!next.leaseReplies) next.leaseReplies = [];
+      next.leaseReplies.unshift({
+        m: next.month, bbl: loi.bbl, address: rec.address, name: loi.name, outcome,
+        askedRentPsf: askRent, theirRentPsf: +theirRent.toFixed(2),
+        askedTiPsf: askTi, theirTiPsf: theirTi, sf: loi.sf, marketPsf: +market.toFixed(2),
+      });
+      next.leaseReplies = next.leaseReplies.slice(0, 8);
+    };
     if (rng(next) < pAccept) {
       const err = sign(loi);
       if (err) {
@@ -941,14 +956,22 @@ export function respondLOI(
         return { s: next, msg: "", err };
       }
       next.lois = next.lois.filter((l) => l.id !== id);
-      return { s: next, msg: `${loi.name} took your counter.` + drawNote() };
+      reply("took", askRent, askTi);
+      next.news.unshift({
+        q: next.month, kind: "deal",
+        text: `${loi.name} took your counter at ${rec.address}: $${askRent.toFixed(2)}/sf against the `
+          + `$${openedAt.toFixed(2)} they opened at — ${money((askRent - openedAt) * loi.sf)} a year more rent`
+          + (openTi !== askTi ? ` and ${money((openTi - askTi) * loi.sf)} less fit-out.` : "."),
+      });
+      return { s: next, msg: `${loi.name} took your counter — $${askRent.toFixed(2)}/sf.` + drawNote() };
     }
     // the further past market you pushed, the faster the door
     const pWalk = Math.max(0.15, Math.min(0.92, 0.24 + (f - 1.0) * 2.2));
     if (rng(next) < pWalk) {
       next.lois = next.lois.filter((l) => l.id !== id);
-      next.news.unshift({ q: next.month, kind: "info", text: `${loi.name} walked on the counter at ${rec.address} — $${askRent.toFixed(2)}/sf was more than the space was worth to them (market ~$${market.toFixed(2)}).` });
-      return { s: next, msg: `${loi.name} walked.` };
+      reply("walked", openedAt, openTi);
+      next.news.unshift({ q: next.month, kind: "warn", text: `${loi.name} walked on the counter at ${rec.address} — $${askRent.toFixed(2)}/sf was more than the space was worth to them (market ~$${market.toFixed(2)}). You had $${openedAt.toFixed(2)} on the table.` });
+      return { s: next, msg: `${loi.name} walked. You asked $${askRent.toFixed(2)} against a $${market.toFixed(2)} market.` };
     }
     // they counter back once — final
     loi.stage = "countered";
@@ -956,8 +979,9 @@ export function respondLOI(
     loi.counterTiPsf = Math.round((askTi + loi.tiPsf) / 2);
     loi.rentPsf = loi.counterRentPsf;
     loi.tiPsf = loi.counterTiPsf;
-    next.news.unshift({ q: next.month, kind: "info", text: `${loi.name} countered at ${rec.address}: $${loi.counterRentPsf.toFixed(2)}/sf, $${loi.counterTiPsf}/sf TI. Final answer — take it or lose them.` });
-    return { s: next, msg: `${loi.name} countered — final.` };
+    reply("countered", loi.counterRentPsf, loi.counterTiPsf);
+    next.news.unshift({ q: next.month, kind: "info", text: `${loi.name} countered at ${rec.address}: you asked $${askRent.toFixed(2)}/sf, they came back at $${loi.counterRentPsf.toFixed(2)}/sf with $${loi.counterTiPsf}/sf of TI. Final answer — take it or lose them.` });
+    return { s: next, msg: `${loi.name} came back at $${loi.counterRentPsf.toFixed(2)}/sf — final.` };
   }
 
   next.lois = next.lois.filter((l) => l.id !== id);

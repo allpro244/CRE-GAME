@@ -31,6 +31,7 @@
 // the end of it or hands a frame to a receiver.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from "./types";
+import { CASH_APY } from "./types";
 import { BUILD_MONTHS, rng, rrange } from "./market";
 import { assetValue, initialCondition, landValue, noiAfterTaxYr, occupancy, resolveRec } from "./value";
 import { devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retailWantsMixed, SOFT_COST, useForZone } from "./dev";
@@ -744,7 +745,12 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // thirty-year schedule; nobody gets pure interest-only forever.
     const interest = (r.debt * rate) / 100 / 12;
     const amort = r.debt > 0 ? r.debt / (30 * 12) : 0;
-    r.cash += Math.round(noiYr / 12 - interest - amort);
+    // Their dry powder sits in the same bank yours does, at the same dull one
+    // per cent. It was earning nothing at all before, which meant every month a
+    // firm spent waiting for a cycle cost it something the player was not
+    // paying — and dry powder is a real position on this street.
+    const onDeposit = r.cash > 0 ? (r.cash * CASH_APY) / 12 : 0;
+    r.cash += Math.round(noiYr / 12 - interest - amort + onDeposit);
     r.debt = Math.max(0, Math.round(r.debt - amort));
 
     // THE SAME OVERHEAD THE PLAYER CARRIES. Asset management, accounting,

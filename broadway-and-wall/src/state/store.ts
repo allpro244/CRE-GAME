@@ -3,7 +3,7 @@ import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse } from "@/engine/types";
 import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfolioQuarterlyCF } from "@/engine/sim";
 import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, startRenovation,  setBroker, assembleLots, grantGroundLease, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
-import { negotiate, acceptCounter, walkAway } from "@/engine/acquire";
+import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import { respondLOI, buildSpecSuites, blendExtend, type LOIAction } from "@/engine/leasing";
 import { recapitalise } from "@/engine/equity";
 import { setInsurance } from "@/engine/peril";
@@ -16,7 +16,7 @@ import { netWorth } from "@/engine/value";
 import { loadGame, saveGame, listSaves, deleteSave, type SaveMeta } from "@/engine/save";
 import { currentCity, dataBase } from "@/state/city";
 
-export type Lens = "none" | "land" | "demand";
+export type Lens = "none" | "land" | "demand" | "owners";
 export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "leasing" | "property" | "saves";
 
 interface AppState {
@@ -27,6 +27,10 @@ interface AppState {
   game: GameState | null;
   selectedBBL: string | null;
   hoveredBBL: string | null;
+  // A standing request to put the camera on a parcel. The counter is what makes
+  // it fire — asking twice for the same building has to move the map twice, and
+  // a bare bbl compares equal to itself.
+  flyTo: { bbl: string; n: number } | null;
   lens: Lens;
   page: Page;
   toast: { text: string; kind: "ok" | "err"; at: number } | null;
@@ -35,6 +39,8 @@ interface AppState {
   setData: (d: { parcels: ParcelTable; adjacency: Adjacency; manifest: DataManifest }) => void;
   select: (bbl: string | null) => void;
   hover: (bbl: string | null) => void;
+  /** Select it AND take the camera there. */
+  focus: (bbl: string, closePanel?: boolean) => void;
   setLens: (l: Lens) => void;
   setPage: (p: Page) => void;
   setFps: (fps: number) => void;
@@ -49,7 +55,8 @@ interface AppState {
   respondLoi: (id: number, action: LOIAction, fund?: boolean, counter?: { rentPsf?: number; tiPsf?: number }) => void;
   refi: (bbl: string, product: string, lev?: number) => void;
   develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number) => void;
-  offer: (bbl: string, price: number, product: string, lev: number) => void;
+  offer: (bbl: string, price: number) => void;
+  closeDeal: (product: string, lev: number) => void;
   acceptCounter: () => void;
   walkAway: () => void;
   raze: (bbl: string) => void;
@@ -103,6 +110,7 @@ export const useStore = create<AppState>((set, get) => ({
   game: null,
   selectedBBL: null,
   hoveredBBL: null,
+  flyTo: null,
   lens: "none",
   page: "none",
   toast: null,
@@ -112,6 +120,14 @@ export const useStore = create<AppState>((set, get) => ({
   setData: (d) => set({ ...d, bbls: Object.keys(d.parcels) }),
   select: (bbl) => set({ selectedBBL: bbl, page: bbl && get().page !== "property" ? "none" : get().page }),
   hover: (bbl) => set({ hoveredBBL: bbl }),
+  // Reading about a building and finding it are two different things, and a
+  // list of addresses in a panel is not a place. Every row that names a
+  // property can put the camera on it.
+  focus: (bbl, closePanel = false) => set((st) => ({
+    selectedBBL: bbl,
+    flyTo: { bbl, n: (st.flyTo?.n ?? 0) + 1 },
+    ...(closePanel ? { page: "none" as Page } : {}),
+  })),
   setLens: (lens) => set({ lens }),
   setPage: (page) => set({ page }),
   setFps: (fps) => set({ fps }),
@@ -218,14 +234,24 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   // Buying is a conversation now: the same call opens it and answers their
-  // counter, which is why there is one action and not three.
-  offer: (bbl, price, product, lev) => {
+  // counter, which is why there is one action and not three. It never asks for
+  // a lender — agreeing a price and funding the purchase are separate acts.
+  offer: (bbl, price) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = negotiate(game, parcels, bbl, price, product, lev);
+    const r = negotiate(game, parcels, bbl, price);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s }); void persist(r.s);
     if (r.msg) toast(r.msg);
+  },
+
+  closeDeal: (product, lev) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = closeDeal(game, parcels, product, lev);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); void persist(r.s);
+    toast(r.msg ?? "Closed. The deed is yours.");
   },
 
   acceptCounter: () => {

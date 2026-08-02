@@ -127,6 +127,13 @@ export default function TopBar() {
           >
             ◨ Demand
           </button>
+          <button
+            className={"lens-btn" + (lens === "owners" ? " lens-on lens-on-teal" : "")}
+            onClick={() => setLens(lens === "owners" ? "none" : "owners")}
+            title="Owners lens — every building the other firms hold, one colour per firm. Yours stay gold."
+          >
+            ◫ Owners
+          </button>
           <button className="advance-btn" onClick={advance} disabled={!!game.gameOver} title="One month (Space)">
             Advance ▸
           </button>

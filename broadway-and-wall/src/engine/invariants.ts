@@ -318,8 +318,10 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
   }
 
   // ------------------------------------------------------------ negotiations
-  // Buying closes the month it is agreed, so there is no escrow to check. What
-  // must hold is that a live negotiation is a coherent one.
+  // A price agreed puts you under contract, and the contract is a state that
+  // can go wrong in ways a negotiation cannot: a stale closing date, a deed
+  // reserved on a building somebody else already took, a contract with no
+  // price on it.
   if (s.talks) {
     const t = s.talks;
     const at = `talks ${t.bbl}`;
@@ -329,6 +331,12 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
     if (!fin(t.theirPrice) || t.theirPrice <= 0) bad("talks", at, `their price ${t.theirPrice}`);
     if (t.openedM > s.month) bad("talks", at, `opened in month ${t.openedM}, it is month ${s.month}`);
     if (t.round < 1) bad("talks", at, `round ${t.round}`);
+    if (t.agreed) {
+      if (!fin(t.agreedPrice ?? NaN) || (t.agreedPrice ?? 0) <= 0) bad("talks", at, `under contract at ${t.agreedPrice}`);
+      if (t.closeByM === undefined) bad("talks", at, "under contract with no closing date");
+      else if (t.closeByM <= s.month) bad("talks", at, `closing date ${t.closeByM} has passed and the contract is still live`);
+      if (!s.listings.some((l) => l.bbl === t.bbl)) bad("talks", at, "under contract on something that is no longer for sale");
+    }
   }
 
 

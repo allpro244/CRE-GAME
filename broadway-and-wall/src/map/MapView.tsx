@@ -9,6 +9,20 @@ import { ThreeBuildings, type BuildingVolume } from "./ThreeBuildings";
 
 const CITY_CENTER: [number, number] = [-70.9, 41.1];
 
+// One colour per firm, in the order the street was founded, so a rival's book
+// reads as a shape on the map under the Owners lens. Muted on purpose — these
+// sit under the gold of your own holdings, which always wins.
+export const FIRM_TINT: [number, number, number][] = [
+  [0.72, 0.92, 1.24],   // slate blue
+  [1.18, 0.78, 0.86],   // rose
+  [0.80, 1.16, 0.86],   // sage
+  [1.16, 1.02, 0.72],   // ochre
+  [0.94, 0.82, 1.20],   // violet
+  [0.74, 1.12, 1.16],   // teal
+  [1.20, 0.92, 0.70],   // clay
+  [0.86, 0.86, 0.86],   // grey
+];
+
 // The two cameras are READ FROM THE DATA, not written down here. The pipeline
 // puts the city's bounding box and its demand-weighted core into the manifest,
 // so the opening shot frames whatever city was built and the dive lands on its
@@ -234,6 +248,24 @@ export default function MapView() {
     }
   }, [selectedBBL, adjacency, parcels]);
 
+  // GO TO PROPERTY. An explicit request from a list somewhere in the panel —
+  // unlike the gentle ease above, this one always moves and always zooms in
+  // far enough to actually see the building.
+  const flyTo = useStore((s) => s.flyTo);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !flyTo || !parcels) return;
+    const rec = parcels[flyTo.bbl];
+    if (!rec) return;
+    map.flyTo({
+      center: rec.centroid,
+      zoom: Math.max(map.getZoom(), 16.1),
+      pitch: Math.max(map.getPitch(), 52),
+      duration: 1400,
+      essential: true,
+    });
+  }, [flyTo, parcels]);
+
   // ownership + listings → feature-state and rooftop markers
   const game = useStore((s) => s.game);
   useEffect(() => {
@@ -360,6 +392,15 @@ export default function MapView() {
     if (!layer || !mapReady) return;
     const tints = new Map<string, [number, number, number]>();
     if (game) for (const l of game.listings) tints.set(l.bbl, [1.24, 0.9, 0.84]);   // on the market
+    // THE OWNERS LENS. Who holds what, across the whole town, in one look —
+    // a firm's book is a shape on a map, and reading that shape is how you
+    // work out what somebody is assembling and where they will not sell.
+    if (game && lens === "owners") {
+      for (const r of game.rivals ?? []) {
+        const c = FIRM_TINT[(game.rivals ?? []).indexOf(r) % FIRM_TINT.length];
+        for (const b of r.bbls) tints.set(b, c);
+      }
+    }
     if (game) for (const bbl of Object.keys(game.holdings)) tints.set(bbl, [1.28, 1.1, 0.72]);
     if (selectedBBL) {
       for (const n of adjacency?.[selectedBBL] ?? []) tints.set(n, [0.72, 1.12, 1.04]);
@@ -367,7 +408,7 @@ export default function MapView() {
     }
     if (hoveredBBL && hoveredBBL !== selectedBBL) tints.set(hoveredBBL, [1.14, 1.08, 0.92]);
     layer.setTints(tints);
-  }, [selectedBBL, hoveredBBL, adjacency, game, mapReady]);
+  }, [selectedBBL, hoveredBBL, adjacency, game, mapReady, lens]);
 
   // player construction and city growth onto the skyline
   const dynSigRef = useRef("");

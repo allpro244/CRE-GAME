@@ -11,7 +11,7 @@ import {
   rollQualitySpread, operatingStatement, recoveryOf, noiAfterTaxYr, netWorth, remainingAbatement,
 } from "@/engine/value";
 import { planDevelopment, PROGRAMS, programCost, farMaxFor, maxFloorsFor, retailWantsMixed, demolitionCost } from "@/engine/dev";
-import { buyQuote, assemblagePressure, saleTaxQuote, bidOdds } from "@/engine/actions";
+import { buyQuote, assemblagePressure, saleTaxQuote } from "@/engine/actions";
 import { sellerOf, sellerProfile } from "@/engine/acquire";
 import { MILESTONES } from "@/engine/sim";
 import { isCommercial, vacantSf, walt, loiSigningCost, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf } from "@/engine/leasing";
@@ -50,7 +50,7 @@ function physicalOcc(rec: never, h: { tenants: { sf: number }[]; occ?: number })
   return Math.min(1, (comm + res) / area);
 }
 import { sponsorStanding } from "@/engine/sponsor";
-import { marketAppetite, markRival, rivalCondition } from "@/engine/rivals";
+import { marketAppetite, markRival, ownerOf, rivalCondition } from "@/engine/rivals";
 import { gpEquity, jvSummary, lpMood, lpTerms, recapQuote } from "@/engine/equity";
 import { compFlows, compStats, portfolioIndustries } from "@/engine/comps";
 import { insuranceQuote, insuredValue, DEDUCTIBLES } from "@/engine/peril";
@@ -461,6 +461,28 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         {game.landmarks?.[selectedBBL] !== undefined && <span className="chip chip-reno">LANDMARKED</span>}
       </div>
 
+      {/* WHO OWNS IT. Every building in this city has an owner and for most of
+          them that owner is a named firm with a balance sheet you can read —
+          and there was nowhere on the record that said so. Knowing that the
+          corner you want belongs to the shop that is three points over its
+          covenant is the difference between a cold call and a bid. */}
+      {(() => {
+        if (holding) return null;
+        const own = ownerOf(game, selectedBBL);
+        if (!own) return null;
+        return (
+          <div className="hint" style={{ cursor: "pointer" }}
+            onClick={() => { useStore.getState().setPage("research"); }}>
+            Owned by <strong>{own.name}</strong>
+            {own.failedM !== undefined
+              ? " — in receivership. The book is being sold down."
+              : (own.stressMs ?? 0) > 0
+                ? " — and they are selling under pressure."
+                : `. ${own.bbls.length} building${own.bbls.length === 1 ? "" : "s"} in town.`}
+          </div>
+        );
+      })()}
+
       <div className="grid">
         <Row k="Appraisal" v={band(selectedBBL, value)} strong />
         {isBuilt && <Row k="Market rent" v={"$" + marketRentPsfYr(rec, game.econ, cond).toFixed(0) + " /sf/yr"} />}
@@ -610,19 +632,34 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         </div>
       )}
 
-      {listing && !holding && (
-        <div className="deal">
-          <div className="deal-head">On the market</div>
-          <div className="grid">
-            <Row k="Ask" v={usd(listing.ask)} strong />
-            {isBuilt && <Row k="NOI / yr" v={usd(noiAfterTaxYr(rec, game.econ, cond, listing.ask))} />}
-            {isBuilt && <Row k="Cap rate at ask" v={((noiAfterTaxYr(rec, game.econ, cond, listing.ask) / listing.ask) * 100).toFixed(2) + "%"} strong />}
-            {isBuilt && <Row k="Occupancy" v={(occupancy(rec, game.econ) * 100).toFixed(0) + "%"} />}
-            {!isBuilt && <Row k="Land" v={"$" + (listing.ask / rec.lotArea).toFixed(0) + " /sf of lot"} />}
+      {listing && !holding && (() => {
+        const contract = game.talks?.bbl === selectedBBL && game.talks.agreed ? game.talks : null;
+        return (
+          <div className="deal">
+            <div className="deal-head">{contract ? "Under contract" : "On the market"}</div>
+            <div className="grid">
+              {contract
+                ? <Row k="Agreed price" v={usd(contract.agreedPrice ?? contract.theirPrice)} strong />
+                : <Row k="Ask" v={usd(listing.ask)} strong />}
+              {contract && <Row k="Must fund by" v={monthLabel(contract.closeByM ?? game.month + 3)} bad />}
+              {isBuilt && <Row k="NOI / yr" v={usd(noiAfterTaxYr(rec, game.econ, cond, contract?.agreedPrice ?? listing.ask))} />}
+              {isBuilt && <Row k="Cap rate" v={((noiAfterTaxYr(rec, game.econ, cond, contract?.agreedPrice ?? listing.ask) / (contract?.agreedPrice ?? listing.ask)) * 100).toFixed(2) + "%"} strong />}
+              {isBuilt && <Row k="Occupancy" v={(occupancy(rec, game.econ) * 100).toFixed(0) + "%"} />}
+              {!isBuilt && <Row k="Land" v={"$" + ((contract?.agreedPrice ?? listing.ask) / rec.lotArea).toFixed(0) + " /sf of lot"} />}
+            </div>
+            {/* TWO ACTS, and never both at once. Before a handshake there is
+                only a price; after one there is only the money. */}
+            {contract ? (
+              <>
+                <div className="hint">{contract.note}</div>
+                <BuyButtons bbl={selectedBBL} price={contract.agreedPrice ?? contract.theirPrice} off={false} />
+              </>
+            ) : (
+              <OfferDesk bbl={selectedBBL} price={listing.ask} />
+            )}
           </div>
-          <BuyButtons bbl={selectedBBL} price={listing.ask} off={false} />
-        </div>
-      )}
+        );
+      })()}
 
       {!listing && !holding && (
         <div className="deal">
@@ -634,8 +671,17 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
                 <Row k="vs. appraisal" v={((appr.ask / apMid(selectedBBL, value) - 1) * 100).toFixed(1) + "%"} />
                 <Row k="Good until" v={monthLabel(appr.q + 6)} />
               </div>
-              <BuyButtons bbl={selectedBBL} price={appr.ask} off />
+              {/* Off-market has always been two acts: they name a number, you
+                  counter it once, and only then is there a price to fund. The
+                  finance block goes underneath the price conversation, not
+                  above it. */}
               {!appr.countered && <OffMarketCounter bbl={selectedBBL} ask={appr.ask} />}
+              <div className="hint" style={{ marginTop: 6 }}>
+                {appr.countered
+                  ? `Their number is ${usd(appr.ask)} and that is where it stays. Fund it or leave it.`
+                  : "Counter once if you want to, then place the debt against whatever number you end up with."}
+              </div>
+              <BuyButtons bbl={selectedBBL} price={appr.ask} off closeLabel={`Buy at ${usd(appr.ask)}`} />
             </>
           ) : appr && appr.refused ? (
             <div className="hint">The owner turned you away in {monthLabel(appr.q)}. Try again after {monthLabel(appr.q + 6)}.</div>
@@ -1009,19 +1055,122 @@ function OffMarketCounter({ bbl, ask }: { bbl: string; ask: number }) {
   );
 }
 
-function BuyButtons({ bbl, price, off }: { bbl: string; price: number; off: boolean }) {
+/**
+ * THE OFFER. A price, and nothing else on the screen.
+ *
+ * This used to be one component with a lender selector, a leverage dial, three
+ * coverage tests and a going-in cap table sitting above the button that said
+ * "Offer" — so before the player was allowed to name a number they had to make
+ * four financing decisions about a building they did not have. Nobody buys
+ * anything that way. You agree a price with a person, and then you go and find
+ * the money against a deal you actually have.
+ *
+ * So this is the conversation, whole: their number, your number, how far apart
+ * you are, how many rounds are left, and what kind of seller you are reading.
+ * The capital stack does not appear until there is something to fund.
+ */
+function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
-  const { buy, buyOff } = useStore.getState();
-  const act = off ? buyOff : buy;
-  const isLand = parcels[bbl]?.class === "land";
-  const [product, setProduct] = useState<string>(isLand ? "land" : "savings");
-  const [lev, setLev] = useState(1);
   // The dial runs on a fraction of the ask, not on dollars: a dollar-valued
   // range with a rounded step can leave the top end unreachable, which meant
   // you could not simply pay the asking price.
-  const [bidFrac, setBidFrac] = useState(1);
+  const [bidFrac, setBidFrac] = useState(0.94);
   const offerPrice = Math.round(price * Math.min(1, bidFrac));
+  const seller = sellerOf(game, parcels, bbl);
+  const talks = game.talks?.bbl === bbl ? game.talks : null;
+  const otherTalk = game.talks && game.talks.bbl !== bbl ? game.talks : null;
+  const rec = parcels[bbl];
+  const noi = rec ? noiAfterTaxYr(rec, game.econ, initialCondition(rec), offerPrice) : 0;
+  const goingIn = offerPrice > 0 && noi > 0 ? (noi / offerPrice) * 100 : null;
+  return (
+    <>
+      <Slider
+        label="Your offer"
+        value={bidFrac}
+        min={0.6}
+        max={1}
+        step={0.005}
+        onChange={setBidFrac}
+        format={() => `${usd(offerPrice)}${bidFrac < 1 ? ` · ${((bidFrac - 1) * 100).toFixed(1)}%` : " · full ask"}`}
+        marks={[{ at: 0.85, label: "−15%" }, { at: 0.95, label: "−5%" }, { at: 1, label: "ask" }]}
+        hint={talks
+          ? (offerPrice >= talks.theirPrice
+            ? `You are at or above their ${usd(talks.theirPrice)} — send it and you are under contract.`
+            : `They are at ${usd(talks.theirPrice)}, ${usd(talks.theirPrice - offerPrice)} above you${talks.final ? ". This is their last word." : `. Round ${talks.round} of ${talks.maxRounds}.`}`)
+          : "Open with a number. They will take it, come back with one of their own, or tell you where they are."}
+      />
+      {/* What the number MEANS, before anybody talks about debt. A going-in cap
+          is the only thing you need to know to decide whether a price is a
+          price — the capital stack changes what you earn on it, not whether it
+          is worth owning. */}
+      {goingIn !== null && (
+        <div className="grid">
+          <Row k="NOI / yr, after taxes" v={usd(noi)} />
+          <Row k="Going-in cap at your number" v={`${goingIn.toFixed(2)}%`} strong />
+          <Row k="What the market pays" v={`${game.econ.capRate[(rec!.class !== "land" ? rec!.class : "office") as BuiltClass].toFixed(2)}% for this class`} />
+        </div>
+      )}
+      <div className="hint" style={{ marginTop: 6 }}>
+        Across the table: <strong>{seller.name}</strong>. {sellerProfile(seller.kind).blurb}
+      </div>
+      {talks && (
+        <>
+          <div className="grid" style={{ marginTop: 6 }}>
+            <Row k="They want" v={usd(talks.theirPrice)} strong />
+            <Row k="You offered" v={usd(talks.yourPrice)} />
+            <Row k="Apart" v={usd(Math.max(0, talks.theirPrice - talks.yourPrice))}
+              bad={talks.theirPrice - talks.yourPrice > talks.yourPrice * 0.08} />
+            <Row k="Rounds" v={talks.final ? "their final word" : `${talks.round} of ${talks.maxRounds}`} bad={talks.final} />
+          </div>
+          <div className="hint">{talks.note}</div>
+        </>
+      )}
+      {otherTalk && (
+        <div className="hint">
+          You are mid-negotiation at {parcels[otherTalk.bbl]?.address ?? otherTalk.bbl}. One at a time — finish it or walk away.
+        </div>
+      )}
+      <div className="btn-row">
+        <button
+          className="btn btn-buy"
+          disabled={!!otherTalk || (!!talks && talks.final && offerPrice < talks.theirPrice)}
+          onClick={() => useStore.getState().offer(bbl, offerPrice)}
+        >
+          {talks ? `Counter at ${usd(offerPrice)}` : `Offer ${usd(offerPrice)}`}
+        </button>
+        {talks && (
+          <>
+            <button className="btn btn-buy" onClick={() => useStore.getState().acceptCounter()}
+              title="Take their number and go under contract. You still have to fund it.">
+              Take {usd(talks.theirPrice)}
+            </button>
+            <button className="btn" onClick={() => useStore.getState().walkAway()}>Walk away</button>
+          </>
+        )}
+      </div>
+      {talks?.final && offerPrice < talks.theirPrice && (
+        <div className="hint">They have stopped moving. Take {usd(talks.theirPrice)} or walk.</div>
+      )}
+      <div className="hint dim">
+        Agreeing a price puts you under contract. The lender, the leverage and the cheque come after that,
+        and you get three months to arrange them.
+      </div>
+    </>
+  );
+}
+
+/**
+ * THE MONEY. Only ever shown against a price that is already agreed.
+ */
+function BuyButtons({ bbl, price, off, closeLabel }: { bbl: string; price: number; off: boolean; closeLabel?: string }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const { buyOff } = useStore.getState();
+  const isLand = parcels[bbl]?.class === "land";
+  const [product, setProduct] = useState<string>(isLand ? "land" : "savings");
+  const [lev, setLev] = useState(1);
+  const offerPrice = Math.round(price);
   const max = buyQuote(game, parcels, bbl, offerPrice, product, 1);
   const principal = Math.round(max.principal * lev);
   const equity = offerPrice - principal + Math.round(offerPrice * 0.02);
@@ -1036,60 +1185,8 @@ function BuyButtons({ bbl, price, off }: { bbl: string; price: number; off: bool
       : annualPayment(principal, max.ratePct, prodDef?.amortYears ?? 30))
     : 0;
   const dscrNow = annualDs > 0 ? noi / annualDs : null;
-  const listing = game.listings.find((l) => l.bbl === bbl);
-  // how likely the seller is to take it, quoted honestly before you spend the try
-  // On a LISTED deal the terms are part of the bid, so the odds have to come
-  // from the same function the engine will roll against — quoting anything
-  // else would be lying to the player about the trade they are making.
-  const termed = !off && !!listing;
-  // The seller is a person with a number, not a probability. On a listed deal
-  // this is a negotiation; the odds line only survives for off-market
-  // approaches, where you are cold-calling somebody who was not selling.
-  const seller = termed ? sellerOf(game, parcels, bbl) : null;
-  const talks = game.talks?.bbl === bbl ? game.talks : null;
-  const odds = offerPrice >= price && !termed ? 1
-    : off ? Math.max(0.02, Math.min(0.9, 0.92 - (1 - offerPrice / price) * 11.0 + (game.econ.phase === "recession" ? 0.12 : 0)))
-    : bidOdds(game, { ask: price, distress: listing?.distress }, offerPrice);
   return (
     <>
-      <Slider
-        label="Your offer"
-        value={bidFrac}
-        min={0.6}
-        max={1}
-        step={0.005}
-        onChange={setBidFrac}
-        format={() => `${usd(offerPrice)}${bidFrac < 1 ? ` · ${((bidFrac - 1) * 100).toFixed(1)}%` : " · full ask"}`}
-        marks={[{ at: 0.85, label: "−15%" }, { at: 0.95, label: "−5%" }, { at: 1, label: "ask" }]}
-        hint={termed
-          ? (talks
-            ? (offerPrice >= talks.theirPrice
-              ? `You are at or above their ${usd(talks.theirPrice)} — send it and it is done.`
-              : `They are at ${usd(talks.theirPrice)}, ${usd(talks.theirPrice - offerPrice)} above you${talks.final ? ". This is their last word." : `. Round ${talks.round} of ${talks.maxRounds}.`}`)
-            : "Open with a number. They will take it, come back with one of their own, or tell you where they are.")
-          : offerPrice >= price
-            ? "At the ask, it's yours."
-            : `${Math.round(odds * 100)}% they take it${off ? " — an owner who wasn't selling bends hard" : ""}. Push too far and they walk.`}
-      />
-      {termed && seller && (
-        <>
-          <div className="hint" style={{ marginTop: 6 }}>
-            Across the table: <strong>{seller.name}</strong>. {sellerProfile(seller.kind).blurb}
-          </div>
-          {/* THE TABLE. Their number, your number, and how far apart they are.
-              Nothing here is a probability — it is a conversation you can read. */}
-          {talks && (
-            <div className="grid" style={{ marginTop: 6 }}>
-              <Row k="They want" v={usd(talks.theirPrice)} strong />
-              <Row k="You offered" v={usd(talks.yourPrice)} />
-              <Row k="Apart" v={usd(Math.max(0, talks.theirPrice - talks.yourPrice))}
-                bad={talks.theirPrice - talks.yourPrice > talks.yourPrice * 0.08} />
-              <Row k="Rounds" v={talks.final ? "their final word" : `${talks.round} of ${talks.maxRounds}`} bad={talks.final} />
-            </div>
-          )}
-          {talks && <div className="hint">{talks.note}</div>}
-        </>
-      )}
       <div className="btn-row" style={{ marginTop: 8 }}>
         {/* dirt has its own desk; income paper won't look at a vacant lot.
             Every card quotes its rate LIVE — the coupon belongs on the term
@@ -1172,28 +1269,23 @@ function BuyButtons({ bbl, price, off }: { bbl: string; price: number; off: bool
       <div className="btn-row">
         <button
           className="btn btn-buy"
-          disabled={equity > game.cash || (!!talks && talks.final && offerPrice < talks.theirPrice)}
-          onClick={() => termed
-            ? useStore.getState().offer(bbl, offerPrice, principal <= 0 ? "cash" : product, principal <= 0 ? 1 : lev)
-            : act(bbl, principal <= 0 ? "cash" : product, principal <= 0 ? undefined : lev, offerPrice)}
+          disabled={equity > game.cash}
+          onClick={() => {
+            const prod = principal <= 0 ? "cash" : product;
+            const l = principal <= 0 ? 1 : lev;
+            if (off) buyOff(bbl, prod as never, l);
+            else useStore.getState().closeDeal(prod, l);
+          }}
         >
-          {termed
-            ? (talks ? `Counter at ${usd(offerPrice)}` : `Offer ${usd(offerPrice)}`)
-            : offerPrice >= price ? "Buy at the ask" : `Offer ${usd(offerPrice)}`} · eq {usd(equity)}
+          {closeLabel ?? `Close at ${usd(offerPrice)}`} · eq {usd(equity)}
         </button>
-        {talks && (
-          <>
-            <button className="btn btn-buy" onClick={() => useStore.getState().acceptCounter()}
-              title="Take their number and go under contract">
-              Take {usd(talks.theirPrice)}
-            </button>
-            <button className="btn" onClick={() => useStore.getState().walkAway()}>Walk away</button>
-          </>
+        {!off && (
+          <button className="btn" onClick={() => useStore.getState().walkAway()}
+            title="Tear up the contract. You lose the building; nothing else has moved.">
+            Tear it up
+          </button>
         )}
       </div>
-      {talks?.final && offerPrice < talks.theirPrice && (
-        <div className="hint">They have stopped moving. Take {usd(talks.theirPrice)} or walk.</div>
-      )}
       {equity > game.cash && <div className="hint">Short {usd(equity - game.cash)} — the line of credit is on the Books page.</div>}
     </>
   );
@@ -1209,7 +1301,17 @@ function RefiSection({ bbl }: { bbl: string }) {
   const [product, setProduct] = useState<string>(isLand ? "land" : "savings");
   const [lev, setLev] = useState(1);
   const { quotes, value, payoff } = refiQuotes(game, parcels, bbl);
-  if (!quotes.length) return null;
+  if (!quotes.length) {
+    return (
+      <div className="refi">
+        <div className="deal-head">Refinance</div>
+        <div className="hint">
+          No desk will quote against this today. Appraised at {usd(value)}{payoff > 0 ? `, ${usd(payoff)} outstanding` : ""} —
+          the income is not there, or the credit window is shut.
+        </div>
+      </div>
+    );
+  }
   const q = quotes.find((x) => x.id === product) ?? quotes[0];
   const cur = game.holdings[bbl]?.loan;
   const existing = cur ? prepayPenalty(cur, game.month) : 0;
@@ -1487,6 +1589,14 @@ function PropertyPage() {
         <div>
           <div className="page-title" style={{ fontSize: 22 }}>{rec.address}</div>
           <div className="panel-bbl mono">Parcel {rec.bbl} · {useLabel(rec)} · {rec.zoneDist}</div>
+          {/* Every building in this game is somewhere. Closing the page and
+              putting the camera on it is one click, not a hunt. */}
+          <div className="btn-row" style={{ marginTop: 6 }}>
+            <button className="btn" onClick={() => useStore.getState().focus(bbl, true)}
+              title="Close this page and fly the map to the building">
+              ⌖ Go to property
+            </button>
+          </div>
         </div>
         <div className="grid" style={{ minWidth: 320 }}>
           {built && <Row k="Building" v={`${sf(rec.bldgArea)} · ${rec.floors} floors`} strong />}
@@ -1918,8 +2028,15 @@ function PortfolioPage() {
   const select = useStore((s) => s.select);
   const setPage = useStore((s) => s.setPage);
   const holdings = Object.values(game.holdings);
-  const { listSale, delistSale } = useStore.getState();
-  const go = (bbl: string) => { select(bbl); setPage("property"); };
+  const { listSale, delistSale, focus } = useStore.getState();
+  // Opening the record and finding the building are the same action now: the
+  // panel changes AND the camera moves, so the thing you are reading about is
+  // behind the page you are reading. A book of addresses was not a place.
+  const go = (bbl: string) => { select(bbl); focus(bbl); setPage("property"); };
+  // Which row has its refinancing panel open. Repricing a loan is a portfolio
+  // decision — you do it while looking at the maturity wall, not after opening
+  // one building's record and scrolling past its rent roll.
+  const [refiRow, setRefiRow] = useState<string | null>(null);
   // Sort the book by value or by income. "By income" is the top-earners view:
   // the fifty best income producers, ranked — the question every owner asks
   // of a big book is "what is actually carrying this firm."
@@ -2046,7 +2163,8 @@ function PortfolioPage() {
         </thead>
         <tbody>
           {shown.map(({ h, rec, v, noi, cf, occ }, i) => (
-            <tr key={h.bbl} onClick={() => go(h.bbl)}>
+            <Fragment key={h.bbl}>
+            <tr onClick={() => go(h.bbl)}>
               {sortBy === "income" && <td className="num dim">{i + 1}</td>}
               <td>{rec?.address ?? h.bbl}</td>
               <td>{rec ? useLabel(rec) : "—"}</td>
@@ -2068,19 +2186,38 @@ function PortfolioPage() {
               </td>
               <td>
                 {/* list it from the row — no need to open the record */}
-                {h.sale ? (
-                  <button className="btn btn-sm" onClick={(ev) => { ev.stopPropagation(); delistSale(h.bbl); }}
-                    title={`Listed at ${usd(h.sale.ask)} — pull it off the market`}>
-                    Delist
+                <div className="btn-row" style={{ gap: 4, margin: 0 }}>
+                  {h.sale ? (
+                    <button className="btn btn-sm" onClick={(ev) => { ev.stopPropagation(); delistSale(h.bbl); }}
+                      title={`Listed at ${usd(h.sale.ask)} — pull it off the market`}>
+                      Delist
+                    </button>
+                  ) : (
+                    <button className="btn btn-sm" onClick={(ev) => { ev.stopPropagation(); listSale(h.bbl, Math.round(v * 1.02)); }}
+                      title={`List at ${usd(Math.round(v * 1.02))} — appraisal plus a touch. Open the record to name your own number.`}>
+                      List
+                    </button>
+                  )}
+                  <button
+                    className={"btn btn-sm" + (refiRow === h.bbl ? " btn-on" : "")}
+                    onClick={(ev) => { ev.stopPropagation(); setRefiRow(refiRow === h.bbl ? null : h.bbl); }}
+                    title={h.loan
+                      ? `${usd(h.loan.balance)} at ${h.loan.ratePct.toFixed(2)}%, balloons ${monthLabel(h.loan.maturityM)} — see what the desks will do today`
+                      : "Unlevered. See what a lender will advance against it."}
+                  >
+                    Refi
                   </button>
-                ) : (
-                  <button className="btn btn-sm" onClick={(ev) => { ev.stopPropagation(); listSale(h.bbl, Math.round(v * 1.02)); }}
-                    title={`List at ${usd(Math.round(v * 1.02))} — appraisal plus a touch. Open the record to name your own number.`}>
-                    List
-                  </button>
-                )}
+                </div>
               </td>
             </tr>
+            {refiRow === h.bbl && (
+              <tr>
+                <td colSpan={sortBy === "income" ? 14 : 13} style={{ background: "rgba(43,37,26,0.035)" }}>
+                  <RefiSection bbl={h.bbl} />
+                </td>
+              </tr>
+            )}
+            </Fragment>
           ))}
           {Object.values(game.developments).map((dv) => (
             <tr key={dv.bbl} onClick={() => go(dv.bbl)}>
@@ -2145,6 +2282,17 @@ function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (bbl: str
           {" "}({loi.rentPsf >= prevRent ? "+" : ""}{(((loi.rentPsf / prevRent) - 1) * 100).toFixed(1)}%)
         </div>
       )}
+      {/* THE CONVERSATION, on the card. When they come back at you the card
+          used to silently overwrite the terms with the new ones, so there was
+          no way to see what your counter had actually achieved. */}
+      {final && loi.askedRentPsf !== undefined && (
+        <div className="loi-line mono" style={{ color: "#7a5c1e" }}>
+          you asked ${loi.askedRentPsf.toFixed(2)}
+          {loi.askedTiPsf !== undefined && loi.openRentPsf !== undefined ? ` (they opened at $${loi.openRentPsf.toFixed(2)})` : ""}
+          {" "}→ their final ${(loi.counterRentPsf ?? loi.rentPsf).toFixed(2)}/sf
+          {loi.counterTiPsf !== undefined ? ` · TI $${loi.counterTiPsf}` : ""}
+        </div>
+      )}
       <div className="loi-line mono dim">
         market ~${market.toFixed(2)}/sf · signing costs {usd(loiSigningCost(loi))} · answer by {monthLabel(loi.expiresM)}
       </div>
@@ -2194,14 +2342,79 @@ function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (bbl: str
   );
 }
 
+/**
+ * AN OFFER ON ONE OF YOURS, answerable in full from the deals screen.
+ *
+ * Accept and Decline were the only two moves here, which meant a bid you would
+ * have taken five per cent higher had to be thrown away or chased down into
+ * the building's own record. Every seller alive picks up the phone instead —
+ * once. That third button is the whole of selling well.
+ */
+function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: (bbl: string) => void }) {
+  const game = useStore((s) => s.game)!;
+  const { acceptOffer, declineOffer, counterSale } = useStore.getState();
+  const [counter, setCounter] = useState(0);
+  const h = game.holdings[bbl];
+  const offer = h?.sale?.offer;
+  const suggested = offer ? Math.round(offer.price * 1.06) : 0;
+  return (
+    <div className="loi">
+      <button className="loi-addr" onClick={() => go(bbl)}>{useStore.getState().parcels?.[bbl]?.address ?? bbl}</button>
+      <div className="loi-line mono">ask {usd(ask)}{h?.sale?.mode === "marketed" ? " · marketed campaign" : ""}</div>
+      {offer ? (
+        <>
+          <div className="loi-line mono">
+            {offer.retrade ? <b className="neg">retraded — </b> : null}
+            <b>{usd(offer.price)}</b> offered{offer.from ? ` by ${offer.from}` : ""} · good until {monthLabel(offer.expiresM)}
+            {" "}· {((offer.price / Math.max(1, ask) - 1) * 100).toFixed(1)}% against your ask
+          </div>
+          <div className="btn-row">
+            <button className="btn btn-buy" onClick={() => acceptOffer(bbl)}>Accept {usd(offer.price)}</button>
+            <button className="btn" onClick={() => declineOffer(bbl)}>Decline</button>
+          </div>
+          {!offer.countered && (
+            <>
+              <Slider
+                label="Counter"
+                value={counter || suggested}
+                min={offer.price + 1000}
+                max={Math.round(Math.max(ask, offer.price * 1.3))}
+                step={Math.max(1000, Math.round(offer.price / 400))}
+                onChange={setCounter}
+                format={(v) => `${usd(v)} · +${(((v / offer.price) - 1) * 100).toFixed(1)}% on their bid`}
+                marks={[
+                  { at: Math.round(offer.price * 1.03), label: "+3%" },
+                  { at: Math.round(offer.price * 1.08), label: "+8%" },
+                  { at: ask, label: "ask" },
+                ]}
+                hint="Inside what the building is worth to them and they take it. A little over and they split it. Well over and they walk — and an unsolicited buyer takes the whole approach with them."
+              />
+              <div className="btn-row">
+                <button className="btn" onClick={() => counterSale(bbl, counter || suggested)}>
+                  Counter at {usd(counter || suggested)}
+                </button>
+              </div>
+            </>
+          )}
+          {offer.countered && <div className="loi-line dim">You have been back to them once. This number is the number.</div>}
+        </>
+      ) : (
+        <div className="loi-line dim">
+          {h?.sale?.callM !== undefined
+            ? `Book is out — offers due ${monthLabel(h.sale.callM)}.`
+            : "no offers yet"}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DealsPage() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
-  const select = useStore((s) => s.select);
-  const setPage = useStore((s) => s.setPage);
-  const { acceptOffer, declineOffer } = useStore.getState();
+  const focus = useStore((s) => s.focus);
   const q = game.month;
-  const go = (bbl: string) => { setPage("none"); select(bbl); };
+  const go = (bbl: string) => focus(bbl, true);
 
   const expiring: { bbl: string; name: string; sf: number; endM: number }[] = [];
   const maturities: { bbl: string; matM: number; bal: number; sweep: boolean }[] = [];
@@ -2228,8 +2441,14 @@ function DealsPage() {
       <section>
         {/* A live negotiation is the one deal on this page you are actively
             in the middle of, so it goes first. */}
-        <div className="page-section">In negotiation · {game.talks ? 1 : 0}</div>
-        {game.talks ? (
+        <div className="page-section">{game.talks?.agreed ? "Under contract" : "In negotiation"} · {game.talks ? 1 : 0}</div>
+        {game.talks?.agreed ? (
+          <div className="hint" style={{ cursor: "pointer" }} onClick={() => go(game.talks!.bbl)}>
+            <strong>{parcels[game.talks.bbl]?.address ?? game.talks.bbl}</strong> — agreed at{" "}
+            <b className="mono">{usd(game.talks.agreedPrice ?? game.talks.theirPrice)}</b> with {game.talks.sellerName}.{" "}
+            Nothing has moved yet: place the debt and fund it by <b>{monthLabel(game.talks.closeByM ?? game.month)}</b> or you lose it.
+          </div>
+        ) : game.talks ? (
           <div className="hint" style={{ cursor: "pointer" }} onClick={() => go(game.talks!.bbl)}>
             <strong>{parcels[game.talks.bbl]?.address ?? game.talks.bbl}</strong> — {game.talks.sellerName} is at{" "}
             <b className="mono">{usd(game.talks.theirPrice)}</b>, you are at {usd(game.talks.yourPrice)}.{" "}
@@ -2243,6 +2462,37 @@ function DealsPage() {
         <div className="loi-grid">
           {game.lois.map((loi) => <LoiCard key={loi.id} loi={loi} go={go} />)}
         </div>
+        {/* HOW THEY ANSWERED. A counter used to resolve into a toast that was
+            gone in three seconds and a card that vanished off the grid — so the
+            most consequential leasing decision in the game left no account of
+            itself. What you asked, what they did, and what it was worth. */}
+        {!!game.leaseReplies?.length && (
+          <>
+            <div className="page-section" style={{ marginTop: 18 }}>Their answer · last {game.leaseReplies.length}</div>
+            <div className="mini-list">
+              {game.leaseReplies.map((r, i) => {
+                const delta = (r.theirRentPsf - r.askedRentPsf) * r.sf;
+                return (
+                  <button key={i} className="neighbor" onClick={() => go(r.bbl)}>
+                    <span className="neighbor-addr">
+                      {r.outcome === "took" ? "✓ " : r.outcome === "walked" ? "✕ " : "↩ "}
+                      {r.name}
+                      <span className="dim"> · {r.address}</span>
+                    </span>
+                    <span className="neighbor-meta mono">
+                      {r.outcome === "took"
+                        ? `took your $${r.askedRentPsf.toFixed(2)}/sf — ${usd(r.askedRentPsf * r.sf)} a year on ${sf(r.sf)}`
+                        : r.outcome === "walked"
+                          ? `walked. You asked $${r.askedRentPsf.toFixed(2)} into a $${r.marketPsf.toFixed(2)} market — ${sf(r.sf)} still empty`
+                          : `came back at $${r.theirRentPsf.toFixed(2)} against your $${r.askedRentPsf.toFixed(2)} · ${delta >= 0 ? "+" : "−"}${usd(Math.abs(delta))} a year`}
+                      {" · "}{monthLabel(r.m)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
       </section>
 
       <section>
@@ -2264,21 +2514,7 @@ function DealsPage() {
 
         <div className="page-section" style={{ marginTop: 18 }}>Sales in progress · {sales.length}</div>
         {sales.length === 0 && <div className="hint">Nothing listed. Sell from any owned building's card.</div>}
-        {sales.map((sl) => (
-          <div key={sl.bbl} className="loi">
-            <button className="loi-addr" onClick={() => go(sl.bbl)}>{parcels[sl.bbl]?.address}</button>
-            <div className="loi-line mono">ask {usd(sl.ask)}</div>
-            {sl.offer ? (
-              <div className="btn-row">
-                <span className="loi-line mono"><b>{usd(sl.offer.price)}</b> offered · until {monthLabel(sl.offer.expiresM)}</span>
-                <button className="btn btn-buy" onClick={() => acceptOffer(sl.bbl)}>Accept</button>
-                <button className="btn" onClick={() => declineOffer(sl.bbl)}>Decline</button>
-              </div>
-            ) : (
-              <div className="loi-line dim">no offers yet</div>
-            )}
-          </div>
-        ))}
+        {sales.map((sl) => <SaleOfferCard key={sl.bbl} bbl={sl.bbl} ask={sl.ask} go={go} />)}
 
         <div className="page-section" style={{ marginTop: 18 }}>Rolling within a year · {expiring.length}</div>
         <div className="mini-list">
@@ -2594,10 +2830,16 @@ function EconomyPage() {
 function MarketPage() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
-  const select = useStore((s) => s.select);
-  const setPage = useStore((s) => s.setPage);
-  const go = (bbl: string) => { setPage("none"); select(bbl); };
-  const live = game.listings.length;
+  const focus = useStore((s) => s.focus);
+  const go = (bbl: string) => focus(bbl, true);
+  // YOUR OWN SIGN IN THE WINDOW. A building you have listed is for sale in the
+  // same town, on the same tape, and leaving it off meant the one screen that
+  // answers "what is on the market" was answering it incompletely — and you
+  // could not see your own ask sitting next to the competition's.
+  const mine = Object.values(game.holdings)
+    .filter((h) => h.sale)
+    .map((h) => ({ bbl: h.bbl, ask: h.sale!.ask, mine: true as const, distress: false, sale: h.sale! }));
+  const live = game.listings.length + mine.length;
   const distress = game.listings.filter((l) => l.distress).length;
   const frames = game.listings.filter((l) => l.halfBuilt).length;
   return (
@@ -2617,7 +2859,7 @@ function MarketPage() {
       </div>
       <div className="deals-grid">
         <section style={{ gridColumn: "1 / -1" }}>
-          <div className="page-section">On the market · {game.listings.length}</div>
+          <div className="page-section">On the market · {live}{mine.length ? ` · ${mine.length} of them yours` : ""}</div>
           <table className="tbl">
             <thead>
               <tr>
@@ -2631,7 +2873,7 @@ function MarketPage() {
                   yield at the top, then the dirt by price per foot. Sorting the
                   whole thing by asking price buried every building that made
                   money under fourteen rows of vacant lots. */}
-              {[...game.listings].map((li) => {
+              {[...game.listings, ...mine].map((li) => {
                 const rec = resolveRec(parcels, game, li.bbl);
                 const built = !!rec && rec.class !== "land" && rec.bldgArea > 0;
                 const cap = built && li.ask > 0
@@ -2647,9 +2889,19 @@ function MarketPage() {
                 const built = rec.class !== "land" && rec.bldgArea > 0;
                 const noi = built ? noiAfterTaxYr(rec, game.econ, cond, li.ask) : 0;
                 const goingIn = built && li.ask > 0 ? (noi / li.ask) * 100 : 0;
+                const yours = "mine" in li;
+                const h = yours ? game.holdings[li.bbl] : null;
                 return (
-                  <tr key={li.bbl} onClick={() => go(li.bbl)}>
-                    <td>{li.distress && <span className="chip chip-distress" style={{ marginRight: 6 }}>HOT</span>}{rec.address}</td>
+                  <tr key={li.bbl} onClick={() => go(li.bbl)} className={yours ? "row-mine" : undefined}>
+                    <td>
+                      {li.distress && <span className="chip chip-distress" style={{ marginRight: 6 }}>HOT</span>}
+                      {yours && <span className="chip" style={{ marginRight: 6 }}>YOURS</span>}
+                      {rec.address}
+                      {yours && h?.sale?.offer && (
+                        <span className="dim mono"> · {usd(h.sale.offer.price)} offered</span>
+                      )}
+                      {yours && h?.sale && !h.sale.offer && <span className="dim"> · no offers yet</span>}
+                    </td>
                     <td>{useLabel(rec)}</td>
                     <td className="num">{built ? sf(rec.bldgArea) : sf(rec.lotArea) + " lot"}</td>
                     <td className="num">{usd(li.ask)}</td>
@@ -2783,8 +3035,115 @@ function ResearchPage() {
         <section style={{ gridColumn: "1 / -1" }}>
           <TheStreet />
         </section>
+        <section style={{ gridColumn: "1 / -1" }}>
+          <OwnershipRegister />
+        </section>
       </div>
     </div>
+  );
+}
+
+/**
+ * THE REGISTER — every deed in town that belongs to a named firm.
+ *
+ * A firm's holdings were readable one firm at a time, folded inside a row you
+ * had to know to click, and truncated at sixty. That is not how anybody looks
+ * at ownership. The question is usually the other way round — who has this
+ * block, who has been buying industrial, which of them owns the six lots
+ * around the one I want — and that question needs the whole city in one list
+ * you can sort and filter.
+ */
+function OwnershipRegister() {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const focus = useStore((s) => s.focus);
+  const setLens = useStore((s) => s.setLens);
+  const lens = useStore((s) => s.lens);
+  const [firm, setFirm] = useState<string>("all");
+  const [sort, setSort] = useState<"value" | "firm" | "district">("value");
+  const rivals = game.rivals ?? [];
+  if (!rivals.length) return null;
+
+  const rows = rivals.flatMap((r) =>
+    r.bbls.map((b) => {
+      const rec = resolveRec(parcels, game, b);
+      if (!rec) return null;
+      return {
+        bbl: b, firm: r.name, firmId: r.id, dead: r.failedM !== undefined,
+        stressed: (r.stressMs ?? 0) > 0, rec,
+        v: assetValue(rec, game.econ, initialCondition(rec)),
+      };
+    }).filter(Boolean) as {
+      bbl: string; firm: string; firmId: string; dead: boolean; stressed: boolean;
+      rec: ReturnType<typeof resolveRec> & object; v: number;
+    }[],
+  );
+  const shown = rows
+    .filter((x) => firm === "all" || x.firmId === firm)
+    .sort((a, b) =>
+      sort === "firm" ? a.firm.localeCompare(b.firm) || b.v - a.v
+      : sort === "district" ? (a.rec!.district ?? "").localeCompare(b.rec!.district ?? "") || b.v - a.v
+      : b.v - a.v);
+  const total = shown.reduce((a, x) => a + x.v, 0);
+
+  return (
+    <>
+      <div className="page-section">
+        Who owns what · {rows.length} buildings across {rivals.filter((r) => r.bbls.length).length} firms
+      </div>
+      <div className="hint">
+        Every deed on this street that is not yours. What somebody owns tells you more about them than their
+        balance sheet does: a firm with six lots on one block is assembling, and a firm holding nothing but
+        industrial in a soft industrial market is about to be a seller.
+      </div>
+      <div className="btn-row">
+        <button className={"btn btn-sm" + (firm === "all" ? " btn-on" : "")} onClick={() => setFirm("all")}>All firms</button>
+        {rivals.filter((r) => r.bbls.length).map((r) => (
+          <button key={r.id} className={"btn btn-sm" + (firm === r.id ? " btn-on" : "")} onClick={() => setFirm(r.id)}>
+            {r.name} · {r.bbls.length}
+          </button>
+        ))}
+      </div>
+      <div className="btn-row">
+        <button className={"btn btn-sm" + (sort === "value" ? " btn-on" : "")} onClick={() => setSort("value")}>By value</button>
+        <button className={"btn btn-sm" + (sort === "firm" ? " btn-on" : "")} onClick={() => setSort("firm")}>By firm</button>
+        <button className={"btn btn-sm" + (sort === "district" ? " btn-on" : "")} onClick={() => setSort("district")}>By district</button>
+        <button className={"btn btn-sm" + (lens === "owners" ? " btn-on" : "")}
+          onClick={() => setLens(lens === "owners" ? "none" : "owners")}
+          title="Paint the map by owner — one colour per firm, your own buildings stay gold">
+          {lens === "owners" ? "Owners lens on" : "Show on the map"}
+        </button>
+      </div>
+      <table className="tbl">
+        <thead>
+          <tr>
+            <th>Property</th><th>Owner</th><th>District</th><th>Class</th>
+            <th className="num">Building sf</th><th className="num">Value</th><th className="num">$/sf</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {shown.map((x) => {
+            const built = x.rec!.class !== "land" && x.rec!.bldgArea > 0;
+            return (
+              <tr key={x.bbl} onClick={() => focus(x.bbl, true)}>
+                <td>{x.rec!.address}</td>
+                <td className={x.dead ? "dim" : ""}>
+                  {x.firm}{x.dead ? " · receiver" : x.stressed ? " ⚠" : ""}
+                </td>
+                <td className="dim">{x.rec!.district}</td>
+                <td>{useLabel(x.rec as never)}</td>
+                <td className="num">{built ? sf(x.rec!.bldgArea) : sf(x.rec!.lotArea) + " lot"}</td>
+                <td className="num">{usd(x.v)}</td>
+                <td className="num">${Math.round(x.v / Math.max(1, built ? x.rec!.bldgArea : x.rec!.lotArea))}</td>
+                <td><button className="btn-mini" onClick={(ev) => { ev.stopPropagation(); focus(x.bbl, true); }}>go to</button></td>
+              </tr>
+            );
+          })}
+          {!shown.length && <tr><td colSpan={8} className="dim">Nothing held.</td></tr>}
+        </tbody>
+      </table>
+      <div className="hint">{shown.length} buildings · {usd(total)} of gross value{firm !== "all" ? " in this firm's book" : " held by the street"}.</div>
+    </>
   );
 }
 
@@ -2957,8 +3316,7 @@ function CompsSheet() {
 function TheStreet() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
-  const select = useStore((s) => s.select);
-  const setPage = useStore((s) => s.setPage);
+  const focus = useStore((s) => s.focus);
   const [open, setOpen] = useState<string | null>(null);
   const rivals = game.rivals ?? [];
   if (!rivals.length) return null;
@@ -3092,7 +3450,7 @@ function TheStreet() {
                               const pct = Math.min(100, Math.max(0, ((game.month - j.startM) / Math.max(1, j.deliverM - j.startM)) * 100));
                               return (
                                 <button key={j.bbl} className="neighbor"
-                                  onClick={(ev) => { ev.stopPropagation(); setPage("none"); select(j.bbl); }}>
+                                  onClick={(ev) => { ev.stopPropagation(); focus(j.bbl, true); }}>
                                   <span className="neighbor-addr">{rec?.address ?? j.bbl}</span>
                                   <span className="neighbor-meta">
                                     {sf(j.sf)} {j.use} · {j.floors} fl · {pct.toFixed(0)}% ·{" "}
@@ -3110,23 +3468,26 @@ function TheStreet() {
                       What they own · {r.bbls.length}
                     </div>
                     {r.bbls.length === 0 && <div className="hint">Nothing. All cash, looking.</div>}
+                    {/* EVERY DEED, not the first sixty. A truncated list of a
+                        competitor's holdings is worse than none: it looks
+                        complete and it is not, and you cannot see what somebody
+                        is quietly assembling from a page that stops early.
+                        Sorted by value, because that is how a book is read. */}
                     <div className="mini-list">
-                      {r.bbls.slice(0, 60).map((b) => {
+                      {r.bbls.map((b) => {
                         const rec = resolveRec(parcels, game, b);
                         if (!rec) return null;
-                        const v = assetValue(rec, game.econ, initialCondition(rec));
-                        return (
-                          <button key={b} className="neighbor"
-                            onClick={(ev) => { ev.stopPropagation(); setPage("none"); select(b); }}>
-                            <span className="neighbor-addr">{rec.address}</span>
-                            <span className="neighbor-meta">
-                              {rec.class === "land" ? "vacant land" : `${useLabel(rec)} · ${sf(rec.bldgArea)}`} · {usd(v)}
-                            </span>
-                          </button>
-                        );
-                      })}
+                        return { b, rec, v: assetValue(rec, game.econ, initialCondition(rec)) };
+                      }).filter(Boolean).sort((a, b2) => b2!.v - a!.v).map((row) => (
+                        <button key={row!.b} className="neighbor"
+                          onClick={(ev) => { ev.stopPropagation(); focus(row!.b, true); }}>
+                          <span className="neighbor-addr">{row!.rec.address}</span>
+                          <span className="neighbor-meta">
+                            {row!.rec.class === "land" ? "vacant land" : `${useLabel(row!.rec)} · ${sf(row!.rec.bldgArea)}`} · {usd(row!.v)}
+                          </span>
+                        </button>
+                      ))}
                     </div>
-                    {r.bbls.length > 60 && <div className="hint">…and {r.bbls.length - 60} more.</div>}
                   </td>
                 </tr>
               )}
@@ -3595,18 +3956,22 @@ function BooksPage() {
           <table className="tbl">
             <thead>
               <tr>
-                <th>Year</th><th className="num">NOI</th><th className="num">Debt svc</th><th className="num">Leasing</th>
+                <th>Year</th><th className="num">NOI</th><th className="num">Bank interest</th><th className="num">Debt svc</th><th className="num">Leasing</th>
                 <th className="num">Capex</th><th className="num">G&amp;A</th><th className="num">Development</th><th className="num">Taxes</th>
                 <th className="num">Acquisitions</th><th className="num">Dispositions</th><th className="num">Net</th>
               </tr>
             </thead>
             <tbody>
               {years.map((b) => {
-                const net = b.noi - b.debtSvc - b.leasing - b.capex - (b.ga ?? 0) - b.dev - b.taxes - b.bought + b.sold;
+                const net = b.noi + (b.interest ?? 0) - b.debtSvc - b.leasing - b.capex - (b.ga ?? 0) - b.dev - b.taxes - b.bought + b.sold;
                 return (
                   <tr key={b.yr} style={{ cursor: "default" }}>
                     <td className="mono">{2000 + b.yr}</td>
                     <td className="num">{usd(b.noi)}</td>
+                    {/* Booked apart from NOI on purpose: 1% on a bank balance is
+                        not property income, and folding it in overstated the
+                        yield on every building you own. */}
+                    <td className="num dim" title="1.0% a year on positive cash balances">{b.interest ? usd(b.interest) : "—"}</td>
                     <td className="num">{b.debtSvc ? "−" + usd(b.debtSvc) : "—"}</td>
                     <td className="num">{b.leasing ? "−" + usd(b.leasing) : "—"}</td>
                     <td className="num">{b.capex ? "−" + usd(b.capex) : "—"}</td>
@@ -3619,7 +3984,7 @@ function BooksPage() {
                   </tr>
                 );
               })}
-              {!years.length && <tr><td colSpan={10} className="dim">Nothing on the books yet — advance a month.</td></tr>}
+              {!years.length && <tr><td colSpan={12} className="dim">Nothing on the books yet — advance a month.</td></tr>}
             </tbody>
           </table>
         </div>

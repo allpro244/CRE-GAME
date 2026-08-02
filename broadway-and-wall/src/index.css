@@ -443,8 +443,12 @@ body {
    Now the expendable readouts go first, in ranked order, and the controls
    always fit. Every number dropped here is still on a page. */
 .topbar-game { min-width: 0; }
-@media (max-width: 1500px) { .tstat-d3 { display: none; } }
-@media (max-width: 1330px) { .tstat-d2 { display: none; } }
+/* The Owners lens added a third control to this row and the bar ran the
+   Advance button off the edge at 1600. The thresholds move with the contents:
+   the expendable readouts go earlier now, and every one of them is still on a
+   page. */
+@media (max-width: 1700px) { .tstat-d3 { display: none; } }
+@media (max-width: 1480px) { .tstat-d2 { display: none; } }
 @media (max-width: 1360px) {
   .brand-name { font-size: 18px; }
   .topbar-right .stat { display: none; }
@@ -603,3 +607,5 @@ body {
 /* ---- comps sheet: the window toggle, and your own prints picked out ---- */
 .btn-mini.on { background: var(--gold); border-color: var(--gold); color: var(--paper); }
 .tbl tr.row-me td { background: rgba(176,141,63,0.10); font-weight: 600; }
+/* Your own sign in the window, on the same tape as everybody else's. */
+.tbl tr.row-mine td { background: rgba(176,141,63,0.07); }

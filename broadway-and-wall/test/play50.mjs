@@ -112,22 +112,30 @@ function play(seed, verbose) {
       if (best) {
         const q = E.buyQuote(g, parcels, best.l.bbl, Math.round(best.l.ask * 0.92), best.isLand ? "land" : "savings", 0.72);
         if (q.equity < cash - reserve * 0.5) {
-          const r = E.negotiate(g, parcels, best.l.bbl, Math.round(best.l.ask * 0.92), best.isLand ? "land" : "savings", 0.72);
-          if (!r.err) { g = r.s; if (g.holdings[best.l.bbl]) stat.bought++; }
+          const r = E.negotiate(g, parcels, best.l.bbl, Math.round(best.l.ask * 0.92));
+          if (!r.err) g = r.s;
         }
       }
     }
-    // take their counter if it is still a good deal
-    if (g.talks) {
+    // A price agreed is not a building bought — go and place the debt.
+    if (g.talks?.agreed) {
+      const t = g.talks;
+      const rec = E.resolveRec(parcels, g, t.bbl);
+      const prod = rec && rec.class === "land" ? "land" : "savings";
+      let r = E.closeDeal(g, parcels, prod, 0.72);
+      if (r.err) r = E.closeDeal(g, parcels, "cash", 1);
+      if (!r.err) { g = r.s; stat.bought++; }
+    } else if (g.talks) {
+      // take their counter if it is still a good deal
       const t = g.talks;
       const rec = E.resolveRec(parcels, g, t.bbl);
       const noi = rec && rec.class !== "land" ? E.noiAfterTaxYr(rec, e, E.initialCondition(rec), t.theirPrice) : 0;
       const ok = rec && (rec.class === "land" ? t.theirPrice < E.landValue(rec, e) * 1.06 : noi / t.theirPrice > (e.indexRate + 1.1) / 100);
-      if (ok) { const r = E.acceptCounter(g, parcels); if (!r.err) { g = r.s; stat.bought++; } }
+      if (ok) { const r = E.acceptCounter(g, parcels); if (!r.err) g = r.s; }
       else if (t.final) { const r = E.walkAway(g, parcels); g = r.s; }
       else {
-        const r = E.negotiate(g, parcels, t.bbl, Math.round((t.yourPrice + t.theirPrice) / 2), t.product, t.lev);
-        if (!r.err) { g = r.s; if (g.holdings[t.bbl]) stat.bought++; }
+        const r = E.negotiate(g, parcels, t.bbl, Math.round((t.yourPrice + t.theirPrice) / 2));
+        if (!r.err) g = r.s;
       }
     }
 

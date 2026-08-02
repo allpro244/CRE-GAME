@@ -192,19 +192,24 @@ function play(seed, verbose) {
         const q = E.buyQuote(g, parcels, best.l.bbl, px, "land", 0.5);
         // and leave enough behind to actually build on it
         if (q.equity < Math.max(0, g.cash - reserve) * 0.45) {
-          const r = E.negotiate(g, parcels, best.l.bbl, px, "land", 0.5);
-          if (!r.err) { g = r.s; if (g.holdings[best.l.bbl]) trace.push(`  m${g.month} BOUGHT SITE ${M(px)} · cash ${M(g.cash)}`), st.land++; }
+          const r = E.negotiate(g, parcels, best.l.bbl, px);
+          if (!r.err) g = r.s;
         }
       } else st.noSite++;
     }
-    if (g.talks) {
+    if (g.talks?.agreed) {
+      const t = g.talks;
+      let r = E.closeDeal(g, parcels, "land", 0.5);
+      if (r.err) r = E.closeDeal(g, parcels, "cash", 1);
+      if (!r.err) { g = r.s; trace.push(`  m${g.month} BOUGHT SITE ${M(t.agreedPrice)} · cash ${M(g.cash)}`); st.land++; }
+    } else if (g.talks) {
       const t = g.talks;
       const rec = E.resolveRec(parcels, g, t.bbl);
       const ok = rec && rec.class === "land" && t.theirPrice < E.landValue(rec, e) * 1.12;
-      if (ok) { const r = E.acceptCounter(g, parcels); if (!r.err) { g = r.s; st.land++; } }
+      if (ok) { const r = E.acceptCounter(g, parcels); if (!r.err) g = r.s; }
       else if (t.final) { g = E.walkAway(g, parcels).s; }
       else {
-        const r = E.negotiate(g, parcels, t.bbl, Math.round((t.yourPrice + t.theirPrice) / 2), t.product, t.lev);
+        const r = E.negotiate(g, parcels, t.bbl, Math.round((t.yourPrice + t.theirPrice) / 2));
         if (!r.err) g = r.s;
       }
     }

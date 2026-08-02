@@ -62,6 +62,34 @@ export interface LOI {
   counterRentPsf?: number;
   counterTiPsf?: number;
   tenantIdx?: number;  // renewals: index into holding.tenants
+  // What YOU asked for, kept so the card can show the conversation rather than
+  // silently overwriting the opening terms with the answer.
+  askedRentPsf?: number;
+  askedTiPsf?: number;
+  openRentPsf?: number;   // their original number, before any of this
+}
+
+/**
+ * HOW THE TENANT ANSWERED.
+ *
+ * A counter used to resolve into a three-second toast and a card that vanished
+ * off the grid, so the single most consequential leasing decision in the game
+ * gave no account of itself. The reply is a record now: what you asked, what
+ * they did about it, and what it cost or saved — and it sits on the deals
+ * screen until you have read a few more of them.
+ */
+export interface LeaseReply {
+  m: number;
+  bbl: string;
+  address: string;
+  name: string;
+  outcome: "took" | "walked" | "countered";
+  askedRentPsf: number;
+  theirRentPsf: number;   // what they had offered, or came back with
+  askedTiPsf: number;
+  theirTiPsf: number;
+  sf: number;
+  marketPsf: number;
 }
 
 export interface Loan {
@@ -419,6 +447,7 @@ export interface BooksYear {
   bought: number;   // equity out the door on acquisitions
   sold: number;     // net proceeds in from dispositions
   ga: number;       // firm overhead — asset management, accounting, legal
+  interest: number; // what the bank paid you on idle cash — never property income
 }
 
 export interface Exit {
@@ -500,6 +529,7 @@ export interface GameState {
   holdings: Record<string, Holding>;
   listings: Listing[];
   lois: LOI[];
+  leaseReplies?: LeaseReply[];               // the last few answers to your counters
   nextLoiId: number;
   approaches: Record<string, Approach>;
   developments: Record<string, Development>;
@@ -595,7 +625,7 @@ export function logBooks(s: GameState, key: keyof Omit<BooksYear, "yr">, amt: nu
   const yr = Math.floor(s.month / 12);
   let e = s.books[s.books.length - 1];
   if (!e || e.yr !== yr) {
-    e = { yr, noi: 0, debtSvc: 0, leasing: 0, capex: 0, dev: 0, taxes: 0, bought: 0, sold: 0, ga: 0 };
+    e = { yr, noi: 0, debtSvc: 0, leasing: 0, capex: 0, dev: 0, taxes: 0, bought: 0, sold: 0, ga: 0, interest: 0 };
     s.books.push(e);
   }
   e[key] = (e[key] ?? 0) + amt;
@@ -617,8 +647,6 @@ export interface Talks {
   bbl: string;
   sellerKind: SellerKind;
   sellerName: string;
-  product: string;         // how you would fund it, carried through to escrow
-  lev: number;
   yourPrice: number;       // your last offer
   theirPrice: number;      // their last counter — their ask, until they move
   round: number;           // how many times you have been back
@@ -626,10 +654,31 @@ export interface Talks {
   openedM: number;
   final?: boolean;         // they have said take it or leave it
   note: string;            // what they said, in words
+  // UNDER CONTRACT. A price is agreed and nothing has moved yet: the deed is
+  // reserved, the property is off everybody else's tape, and you have until
+  // `closeByM` to place the debt and fund the equity. This is the whole reason
+  // the negotiation no longer asks for a lender — you do not arrange financing
+  // to make an offer, you arrange it because you have a deal.
+  agreed?: boolean;
+  agreedPrice?: number;
+  closeByM?: number;
 }
 
 export const START_CASH = 6_000_000;
 export const START_YEAR = 2000;
+/**
+ * WHAT A BANK BALANCE EARNS. One per cent a year, on positive balances, for
+ * everybody in this city — you and every firm on the street.
+ *
+ * It used to float with the loan index, two and a half points under it, which
+ * was defensible and wrong for what this game is about: in a high-rate decade
+ * the safest position in the model quietly became one of the best, and the
+ * player who did nothing compounded against the player who underwrote. A flat,
+ * unexciting deposit rate is the point. Cash is a place to stand between
+ * decisions, not a position — and the whole thesis of owning buildings is that
+ * a bank account does not keep up.
+ */
+export const CASH_APY = 0.01;
 // The century is a MILESTONE, not a wall. A hundred years used to end the run
 // on the spot, which turned the back half of a good campaign into a countdown
 // and threw away the most interesting book in the game the moment it was

@@ -2,7 +2,7 @@
 // (state, parcels) in, state out. The UI is a lens on this.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
-import { START_CASH, CENTURY_MONTHS, logBooks, monthLabel } from "./types";
+import { START_CASH, CENTURY_MONTHS, CASH_APY, logBooks, monthLabel } from "./types";
 import { initEcon, rng, rrange, tickEcon } from "./market";
 import { assetValue, holdingNOIYr, holdingValue, initialCondition, monthlyNOI, netWorth, resolveRec } from "./value";
 import { capitalCall, LP_REP_START, settleJV, tickJV } from "./equity";
@@ -108,7 +108,10 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   for (const li of s.listings) {
     if (s.month - li.listedM >= 4) li.ask = Math.round(li.ask * 0.985 / 1000) * 1000;
   }
-  s.listings = s.listings.filter((l) => l.expiresM > s.month && !s.holdings[l.bbl]);
+  // A listing you are under contract on does not lapse out from under you. The
+  // contract has its own clock; this one stops while it runs.
+  s.listings = s.listings.filter((l) =>
+    (l.expiresM > s.month || (s.talks?.agreed && s.talks.bbl === l.bbl)) && !s.holdings[l.bbl]);
   const listed = new Set(s.listings.map((l) => l.bbl));
   const target = targetListings(s, bbls.length);
   const pDistress = s.econ.phase === "recession" ? 0.42 : s.econ.phase === "recovery" ? 0.18 : 0.03;
@@ -251,19 +254,18 @@ export function advanceQuarter(
     }
   }
 
-  // Idle balances sit in the money market, not in a drawer. Short paper yields
-  // under the loan index; the gap between what cash earns and what buildings
-  // earn is the opportunity cost of being slow, and it should be visible
-  // rather than assumed.
+  // Idle balances sit in a bank account and earn what a bank account earns.
+  //
+  // This used to float two and a half points under the loan index, which made
+  // the deposit rate a macro position: in a high-rate decade doing nothing
+  // compounded at five per cent and competed with underwriting buildings. It is
+  // a flat one per cent now and it is deliberately dull — cash is where you
+  // stand between decisions, not a strategy. It is also booked to its own line
+  // rather than into NOI, because bank interest is not property income and
+  // dressing it as such flattered every yield on the Books page.
   if (s.cash > 0) {
-    // The short rate, not the mortgage index. Twenty years of doing nothing was
-    // turning $6M into $15M — a 4.9% compounded return for holding cash, which
-    // is within a few points of what taking every risk in the business paid.
-    // Short paper roughly matches inflation and no more; the whole point of
-    // owning buildings is that cash does not keep up.
-    const tbill = Math.max(0, s.econ.indexRate - 2.4);
-    const interest = Math.round((s.cash * tbill) / 100 / 12);
-    if (interest > 0) { s.cash += interest; logBooks(s, "noi", interest); }
+    const interest = Math.round((s.cash * CASH_APY) / 12);
+    if (interest > 0) { s.cash += interest; logBooks(s, "interest", interest); }
   }
 
   // expire stale off-market asks
@@ -443,12 +445,18 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
     }
     if (h.loan?.sweep) out.push({ key: `sweep:${h.bbl}`, label: "Covenant breach — cash flow swept" });
   }
-  // A counter on the table is the definition of something needing you.
+  // A counter on the table is the definition of something needing you — and an
+  // unfunded contract is the same thing with a deadline attached.
   if (s.talks) {
-    out.push({
-      key: `talks:${s.talks.bbl}:${s.talks.theirPrice}`,
-      label: `${s.talks.sellerName} is at $${(s.talks.theirPrice / 1e6).toFixed(2)}M${s.talks.final ? " — their final word" : ""}`,
-    });
+    out.push(s.talks.agreed
+      ? {
+        key: `contract:${s.talks.bbl}`,
+        label: `Under contract at $${((s.talks.agreedPrice ?? s.talks.theirPrice) / 1e6).toFixed(2)}M — fund it by ${monthLabel(s.talks.closeByM ?? s.month)}`,
+      }
+      : {
+        key: `talks:${s.talks.bbl}:${s.talks.theirPrice}`,
+        label: `${s.talks.sellerName} is at $${(s.talks.theirPrice / 1e6).toFixed(2)}M${s.talks.final ? " — their final word" : ""}`,
+      });
   }
   if (s.exchange && s.exchange.deadlineM - s.month <= 2) {
     out.push({ key: "exchange", label: `1031 clock: ${monthLabel(s.exchange.deadlineM)} deadline` });

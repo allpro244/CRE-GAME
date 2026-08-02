@@ -18,6 +18,7 @@
 // slowest. An offer is a price now, and agreeing one is buying the building.
 import type { ParcelTable } from "@/data/types";
 import type { GameState, SellerKind } from "./types";
+import { monthLabel } from "./types";
 import { assetValue, initialCondition, resolveRec } from "./value";
 import { ownerOf } from "./rivals";
 import { executePurchase } from "./actions";
@@ -97,6 +98,25 @@ export function tickTalks(s: GameState, parcels: ParcelTable) {
   // talking about.
   const t = s.talks;
   if (!t) return;
+  // UNDER CONTRACT. Nobody takes it out from under you while the paper is
+  // signed — but the closing date is real, and a buyer who cannot fund by it is
+  // a buyer who loses the building and looks like an amateur doing it.
+  if (t.agreed) {
+    if (s.month >= (t.closeByM ?? t.openedM + CLOSE_WINDOW_M)) {
+      delete s.talks;
+      // It genuinely goes back on the market — the listing's own clock stopped
+      // while the contract ran, so give it a fresh one rather than letting it
+      // vanish the same month and make a liar of the news line.
+      const li = s.listings.find((l) => l.bbl === t.bbl);
+      if (li && li.expiresM <= s.month) li.expiresM = s.month + 4;
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `The contract on ${parcels[t.bbl]?.address ?? t.bbl} expired unfunded. `
+          + `${t.sellerName} kept the deposit's worth of goodwill and put it back on the market.`,
+      });
+    }
+    return;
+  }
   const gone = !s.listings.some((l) => l.bbl === t.bbl);
   if (gone) {
     delete s.talks;
@@ -161,10 +181,18 @@ function reservationOf(
   return { reservation, ask };
 }
 
-/** Open a negotiation, or answer their counter with one of your own. */
+/**
+ * Open a negotiation, or answer their counter with one of your own.
+ *
+ * THERE IS NO LENDER IN THIS FUNCTION. It used to take a product and a
+ * leverage dial, because agreeing a price and funding the purchase were one
+ * button — which meant the player had to pick a lender, read three coverage
+ * tests and set a leverage slider before they were allowed to say a number out
+ * loud. That is backwards from how anybody buys a building. You agree a price
+ * first, and then you go and find the money against a deal you actually have.
+ */
 export function negotiate(
   s: GameState, parcels: ParcelTable, bbl: string, price: number,
-  product: string, lev: number,
 ): { s: GameState; err?: string; msg?: string } {
   const existing = s.talks;
   if (existing && existing.bbl !== bbl) {
@@ -186,9 +214,10 @@ export function negotiate(
   const prof = SELLERS[seller.kind];
 
   // --- they take it ---------------------------------------------------------
+  // And that is a handshake, not a closing. The deed is reserved and the clock
+  // starts; the money is the next conversation.
   if (px >= reservation) {
-    delete next.talks;
-    return closeAgreed(next, parcels, bbl, px, product, lev, seller, rec.address);
+    return { s: strikeDeal(next, bbl, px, seller, rec.address), msg: `Agreed at ${fmtM(px)}. Now fund it.` };
   }
 
   // --- too far below to be worth an answer ---------------------------------
@@ -199,7 +228,7 @@ export function negotiate(
     const theirs = Math.round(round > maxRounds ? reservation * 1.005 : ask * 0.985);
     next.talks = {
       bbl, sellerKind: seller.kind, sellerName: seller.name,
-      product, lev, yourPrice: px, theirPrice: theirs, round, maxRounds,
+      yourPrice: px, theirPrice: theirs, round, maxRounds,
       openedM: existing?.openedM ?? next.month, final: true,
       note: round > maxRounds
         ? `${seller.name} is done moving. ${fmtM(theirs)} is the number; take it or leave it.`
@@ -217,7 +246,7 @@ export function negotiate(
   const roundsLeft = maxRounds - round;
   next.talks = {
     bbl, sellerKind: seller.kind, sellerName: seller.name,
-    product, lev, yourPrice: px, theirPrice: theirs, round, maxRounds,
+    yourPrice: px, theirPrice: theirs, round, maxRounds,
     openedM: existing?.openedM ?? next.month,
     final: roundsLeft <= 0,
     note: roundsLeft <= 0
@@ -231,15 +260,63 @@ export function negotiate(
   return { s: next, msg: `They countered at ${fmtM(theirs)}.` };
 }
 
-/** Take the number on the table. */
+/** Take the number on the table. Also a handshake, not a closing. */
 export function acceptCounter(s: GameState, parcels: ParcelTable): { s: GameState; err?: string; msg?: string } {
   const t = s.talks;
   if (!t) return { s, err: "There is nothing on the table." };
+  if (t.agreed) return { s, err: "The price is already agreed. What is left is funding it." };
   const rec = resolveRec(parcels, s, t.bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const next = clone(s);
-  delete next.talks;
-  return closeAgreed(next, parcels, t.bbl, t.theirPrice, t.product, t.lev,
+  return {
+    s: strikeDeal(next, t.bbl, t.theirPrice, { kind: t.sellerKind, name: t.sellerName }, rec.address),
+    msg: `Agreed at ${fmtM(t.theirPrice)}. Now fund it.`,
+  };
+}
+
+/** How long a contract holds while you go and find the money. */
+export const CLOSE_WINDOW_M = 3;
+
+/**
+ * The handshake. A price is a price and the building comes off everybody
+ * else's tape, but nothing has moved: no deed, no cash, no loan. What you have
+ * is three months and an obligation.
+ */
+function strikeDeal(
+  next: GameState, bbl: string, px: number,
+  seller: { kind: SellerKind; name: string }, address: string,
+): GameState {
+  next.talks = {
+    bbl, sellerKind: seller.kind, sellerName: seller.name,
+    yourPrice: px, theirPrice: px, round: next.talks?.round ?? 1,
+    maxRounds: next.talks?.maxRounds ?? OPEN_ROUNDS[seller.kind],
+    openedM: next.talks?.openedM ?? next.month,
+    agreed: true, agreedPrice: px, closeByM: next.month + CLOSE_WINDOW_M,
+    note: `Agreed at ${fmtM(px)} with ${seller.name}. You are under contract — place the debt and fund it by `
+      + `${monthLabel(next.month + CLOSE_WINDOW_M)} or the deal is off and somebody else gets it.`,
+  };
+  next.news.unshift({
+    q: next.month, kind: "deal",
+    text: `Under contract at ${address}: ${fmtM(px)} agreed with ${seller.name}. `
+      + `Nothing has moved yet — the money is due by ${monthLabel(next.month + CLOSE_WINDOW_M)}.`,
+  });
+  return next;
+}
+
+/**
+ * FUND IT. The second half of buying a building, and now a decision of its
+ * own: which desk, how much leverage, and what that does to the coverage and
+ * the cheque you write. The price is already settled and cannot move here.
+ */
+export function closeDeal(
+  s: GameState, parcels: ParcelTable, product: string, lev: number,
+): { s: GameState; err?: string; msg?: string } {
+  const t = s.talks;
+  if (!t?.agreed || t.agreedPrice === undefined) return { s, err: "Nothing is under contract." };
+  const rec = resolveRec(parcels, s, t.bbl);
+  if (!rec) return { s, err: "Unknown parcel." };
+  const next = clone(s);
+  return closeAgreed(next, parcels, t.bbl, t.agreedPrice, product, lev,
     { kind: t.sellerKind, name: t.sellerName }, rec.address);
 }
 
@@ -249,11 +326,15 @@ export function walkAway(s: GameState, parcels: ParcelTable): { s: GameState; ms
   if (!t) return { s };
   const next = clone(s);
   delete next.talks;
+  const li = next.listings.find((l) => l.bbl === t.bbl);
+  if (li && li.expiresM <= next.month) li.expiresM = next.month + 4;
   next.news.unshift({
     q: next.month, kind: "info",
-    text: `You walked away from ${parcels[t.bbl]?.address ?? t.bbl}. ${t.sellerName} will remember, but the building will still be there.`,
+    text: t.agreed
+      ? `You tore up the contract on ${parcels[t.bbl]?.address ?? t.bbl}. ${t.sellerName} will remember that you could not fund it.`
+      : `You walked away from ${parcels[t.bbl]?.address ?? t.bbl}. ${t.sellerName} will remember, but the building will still be there.`,
   });
-  return { s: next, msg: "Walked away." };
+  return { s: next, msg: t.agreed ? "Contract torn up." : "Walked away." };
 }
 
 // A $610,000 lot quoted as "$0.61M" reads like a rounding error. Money in

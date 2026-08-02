@@ -28,6 +28,12 @@ import { assetValue, initialCondition, noiAfterTaxYr, resolveRec } from "./value
 // of equity, a couple of buildings, and a hundred years to compound it. The
 // firms that end up owning the skyline EARNED it inside the sim, which is the
 // only way their success means anything.
+// A DOZEN FIRMS, NOT SIX. Six was enough to have somebody to lose a deal to;
+// it was not enough for the street to have a texture — for there to be two old
+// families who never sell and three levered shops racing each other into the
+// same peak. Every one of these starts the century the same size you do, five
+// to eighteen million of equity, and compounds it inside the sim. The ones who
+// end up owning the skyline earned it here.
 const FIRMS: { name: string; style: RivalStyle; equity: number; ltv: number }[] = [
   { name: "Calloway & Reed", style: "family", equity: 11_000_000, ltv: 0.32 },
   { name: "Harbor Point Partners", style: "core", equity: 14_000_000, ltv: 0.52 },
@@ -35,6 +41,12 @@ const FIRMS: { name: string; style: RivalStyle; equity: number; ltv: number }[] 
   { name: "Alden Development Co.", style: "developer", equity: 12_000_000, ltv: 0.66 },
   { name: "Wentworth Trust", style: "core", equity: 15_000_000, ltv: 0.41 },
   { name: "Kestrel Capital", style: "opportunistic", equity: 5_000_000, ltv: 0.78 },
+  { name: "Thorne & Boyle", style: "family", equity: 9_000_000, ltv: 0.28 },
+  { name: "Longwharf Realty", style: "developer", equity: 10_000_000, ltv: 0.69 },
+  { name: "Pell Street Holdings", style: "opportunistic", equity: 6_500_000, ltv: 0.82 },
+  { name: "Granite Mutual", style: "core", equity: 18_000_000, ltv: 0.44 },
+  { name: "Wrenfield Brothers", style: "family", equity: 7_500_000, ltv: 0.35 },
+  { name: "Tidewater Development", style: "developer", equity: 8_500_000, ltv: 0.72 },
 ];
 
 // What each kind of firm is FOR. These are the only behavioural differences,
@@ -72,11 +84,15 @@ export function initRivals(s: GameState, parcels: ParcelTable, bbls: string[]): 
   FIRMS.forEach((f, i) => {
     const r: Rival = {
       id: `r${i}`, name: f.name, style: f.style,
-      cash: Math.round(f.equity * rrange(s, 0.06, 0.16)),
-      bbls: [], debt: 0, targetLtv: f.ltv, bornM: 0,
+      // The reserve comes OUT of what they raised, it is not conjured on top
+      // of it. A firm holding back a tenth of its fund has a tenth less to buy
+      // with, exactly like you do.
+      cash: 0, bbls: [], debt: 0, targetLtv: f.ltv, bornM: 0, basis: 0,
     };
-    // buy until the equity is spent
-    let spend = f.equity;
+    const reserveShare = rrange(s, 0.06, 0.16);
+    r.cash = Math.round(f.equity * reserveShare);
+    // buy until the deployable equity is spent
+    let spend = f.equity - r.cash;
     let guard = 0;
     while (spend > 0 && guard++ < 3000) {
       const bbl = built[Math.floor(rng(s) * built.length)];
@@ -91,6 +107,7 @@ export function initRivals(s: GameState, parcels: ParcelTable, bbls: string[]): 
       taken.add(bbl);
       r.bbls.push(bbl);
       r.debt += Math.round(v * f.ltv);
+      r.basis = Math.round((r.basis ?? 0) + v);
       spend -= equityIn;
     }
     out.push(r);
@@ -176,8 +193,18 @@ const NEW_FIRMS: { name: string; style: RivalStyle }[] = [
   { name: "Quarry Lane Capital", style: "core" },
   { name: "Alden Municipal Pension", style: "core" },
   { name: "Fen & Marrow", style: "opportunistic" },
+  { name: "Corbin Whitlock", style: "opportunistic" },
+  { name: "Saltmarsh Trust", style: "family" },
+  { name: "Ironbound Development", style: "developer" },
+  { name: "Halyard Investors", style: "core" },
+  { name: "Verity Street Capital", style: "opportunistic" },
+  { name: "Merrow & Sons", style: "family" },
+  { name: "Pilotage Partners", style: "developer" },
+  { name: "Consolidated Wharf Co.", style: "core" },
 ];
-const MIN_FIRMS = 4;
+// The street refills toward a dozen, not toward four. A market with four firms
+// left in it is a market where nothing is contested.
+const MIN_FIRMS = 9;
 
 function maybeNewFirm(s: GameState, ci: number) {
   const living = livingRivals(s);
@@ -201,6 +228,26 @@ function maybeNewFirm(s: GameState, ci: number) {
     q: s.month, kind: "event",
     text: `${f.name} has raised $${(equity / 1e6).toFixed(0)}M and is looking for buildings. There is competition on the tape again.`,
   });
+}
+
+/**
+ * TAX ON A GAIN, the way the player pays it.
+ *
+ * A rival's basis is aggregate, so the gain on any one sale is estimated by
+ * the share of the book that building represents. That is coarse, and it is
+ * far better than the alternative, which was that the street compounded
+ * capital gains tax-free for a hundred years while the player paid on every
+ * disposal. Charged at the same rate the player pays.
+ */
+function gainsTax(r: Rival, price: number): number {
+  const basis = r.basis ?? 0;
+  const n = Math.max(1, r.bbls.length);
+  const share = Math.min(basis, basis / n);
+  const gain = Math.max(0, price - share);
+  r.basis = Math.max(0, Math.round(basis - share));
+  const tax = Math.round(gain * 0.25);
+  r.taxPaid = (r.taxPaid ?? 0) + tax;
+  return tax;
 }
 
 export function tickRivals(s: GameState, parcels: ParcelTable) {
@@ -246,6 +293,31 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     const amort = r.debt > 0 ? r.debt / (30 * 12) : 0;
     r.cash += Math.round(noiYr / 12 - interest - amort);
     r.debt = Math.max(0, Math.round(r.debt - amort));
+
+    // THE SAME OVERHEAD THE PLAYER CARRIES. Asset management, accounting,
+    // audit, legal, somebody to answer the phone. It is not billable to a
+    // building and it never goes away, and the street was not paying it —
+    // which over a century is most of the reason their books outran yours.
+    // Identical formula to the player's: a small fixed base plus ~28bps of
+    // gross asset value a year, sub-linear because the tenth building is
+    // cheaper to run than the first.
+    if (r.bbls.length > 0) {
+      r.cash -= Math.round((60_000 * s.econ.costIdx + 0.0028 * aum) / 12);
+    }
+
+    // AND THE SAME TAX. Once a year, on income after interest and
+    // depreciation, at the rate the player pays. Depreciation is estimated off
+    // the book rather than tracked per building — improvements are roughly
+    // seven tenths of value over a blended life.
+    if (s.month > 0 && s.month % 12 === 0) {
+      const depr = (r.basis ?? aum) * 0.7 / 33;
+      const taxable = noiYr - interest * 12 - depr;
+      if (taxable > 0) {
+        const tax = Math.round(taxable * 0.25);
+        r.cash -= tax;
+        r.taxPaid = (r.taxPaid ?? 0) + tax;
+      }
+    }
 
     // DISTRIBUTIONS. Every firm here answers to somebody — partners, a family,
     // a pension board — and none of them let a hundred years of free cash flow
@@ -297,6 +369,21 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // fell through the debt, or the cash ran out. Neither is instant — a firm
     // sells into it first, which is what puts the tape full of good buildings
     // at bad prices exactly when nobody can finance them.
+    // A FIRM WITH NOTHING LEFT TO SELL AND MONEY STILL OWED IS FINISHED.
+    //
+    // The stress path only ran while there were buildings to sell, and the
+    // `else` reset the counter — so a firm that had sold its way down to zero
+    // assets and residual debt escaped the failure test forever. It sat on the
+    // street table at 900% leverage with no buildings, permanently one bad
+    // cycle from being a seller it could never be.
+    if (!r.bbls.length && r.debt > Math.max(0, r.cash)) {
+      r.failedM = s.month;
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `${r.name} is done. They sold the last building months ago and the debt outlived the portfolio — there is nothing for the receiver to take.`,
+      });
+      continue;
+    }
     const stressed = ltv > st.maxLtv + 0.05 || r.cash < 0;
     if (stressed && r.bbls.length) {
       r.stressMs = (r.stressMs ?? 0) + 1;
@@ -308,7 +395,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
           const v = assetValue(rec, s.econ, initialCondition(rec));
           const px = Math.round(v * rrange(s, 0.68, 0.88));
           r.bbls = r.bbls.filter((b) => b !== bbl);
-          r.cash += px;
+          r.cash += px - gainsTax(r, px);
           r.debt = Math.max(0, r.debt - Math.round(px * 0.92));
           if (!s.listings.some((l) => l.bbl === bbl) && !s.holdings[bbl]) {
             s.listings.push({ bbl, ask: px, listedM: s.month, expiresM: s.month + 8, distress: true });
@@ -345,12 +432,31 @@ export function rivalBuys(s: GameState, rec: ParcelRecord, price: number): Rival
   // position, or a receiver clearing a failed one. Whoever holds the deed is
   // the seller, and they are obviously not also the buyer.
   const seller = ownerOf(s, rec.bbl);
+  // THEY BUY WITH THEIR OWN MONEY, AND ONLY WHAT A LENDER WOULD FUND.
+  //
+  // The cash test was already here — a firm without the equity does not close.
+  // What was missing is the other half of every real acquisition: the debt has
+  // to be lendable. A firm already at its covenant cannot put another loan on
+  // top just because it happens to have cash in the account, and no firm gets
+  // a construction-era loan out of a shut credit market. Both are checks the
+  // player has to pass on every deal; the street passes them now too.
+  const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
   const candidates = livingRivals(s).filter((r) => {
     if (r === seller) return false;
     const st = STYLE[r.style];
     if (st.classes && !st.classes.includes(rec.class)) return false;
-    const equity = price * (1 - r.targetLtv);
-    return r.cash >= equity;
+    // In a shut credit market the loan is smaller, so the cheque is bigger —
+    // which is exactly why a downturn is when a disciplined buyer with cash
+    // gets to name their price.
+    const ltvNow = Math.min(r.targetLtv, st.maxLtv) * (ci < 0.8 ? 0.82 : 1);
+    const equity = price * (1 - ltvNow);
+    // a working reserve is not dry powder: nobody spends their last dollar
+    if (r.cash < equity + Math.max(500_000, r.cash * 0.05)) return false;
+    // and the debt has to be lendable against the book they already carry
+    const aumAfter = (r.aum ?? 0) + price;
+    const debtAfter = r.debt + (price - equity);
+    if (aumAfter > 0 && debtAfter / aumAfter > st.maxLtv) return false;
+    return true;
   });
   if (!candidates.length) return null;
   // the hungriest firm with the money wins
@@ -364,11 +470,18 @@ export function rivalBuys(s: GameState, rec: ParcelRecord, price: number): Rival
     seller.bbls = seller.bbls.filter((b) => b !== rec.bbl);
     const relief = Math.min(seller.debt, Math.round(price * seller.targetLtv));
     seller.debt -= relief;
-    seller.cash += price - relief;
+    seller.cash += price - relief - gainsTax(seller, price);
   }
-  const equity = Math.round(price * (1 - best.targetLtv));
-  best.cash -= equity;
+  const bestLtv = Math.min(best.targetLtv, STYLE[best.style].maxLtv) * (ci < 0.8 ? 0.82 : 1);
+  const equity = Math.round(price * (1 - bestLtv));
+  // Closing costs. The player has always paid two points to get a deed across
+  // a table; the street was getting them free, which over a century is most of
+  // a firm.
+  const closing = Math.round(price * 0.02);
+  best.cash -= equity + closing;
   best.debt += price - equity;
+  best.basis = Math.round((best.basis ?? 0) + price + closing);
+  best.aum = Math.round((best.aum ?? 0) + price);
   if (!best.bbls.includes(rec.bbl)) best.bbls.push(rec.bbl);
   return best;
 }

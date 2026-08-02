@@ -331,6 +331,12 @@ export interface Rival {
   bornM: number;
   aum?: number;          // marked each month, for display
   stressMs?: number;     // consecutive months in trouble
+  // Cost basis of the book, in aggregate. Not per building — that is the one
+  // thing about a rival's accounts nobody needs to see — but enough to tax a
+  // gain honestly when they sell, which is a cost the player has always paid
+  // and the street never did.
+  basis?: number;
+  taxPaid?: number;      // lifetime income + gains tax
   distributed?: number;  // lifetime cash sent out to their partners
   failedM?: number;      // the month they stopped existing
 }

@@ -157,7 +157,18 @@ function play(seed, verbose) {
     }
     if (g.gameOver) break;
   }
-  return { g, stat, nw: E.netWorth(g, parcels), peakNW, drawdown: troughFrom, log };
+  // where the player finished against the firms who started alongside them
+  const board = (g.rivals ?? []).filter((r) => r.failedM === undefined).map((r) => {
+    const m = E.markRival(g, parcels, r);
+    return { name: r.name, eq: m.aum - r.debt + r.cash };
+  });
+  const nwFinal = E.netWorth(g, parcels);
+  board.push({ name: "You", eq: nwFinal });
+  board.sort((a, b) => b.eq - a.eq);
+  const rank = board.findIndex((b) => b.name === "You") + 1;
+  const dead = (g.rivals ?? []).filter((r) => r.failedM !== undefined).length;
+  return { g, stat, nw: nwFinal, peakNW, drawdown: troughFrom, log,
+    rank, field: board.length, top: board[0], dead };
 }
 
 const results = [];
@@ -170,7 +181,8 @@ for (let i = 1; i <= SEEDS; i++) {
   }
   console.log(`\nseed ${i}: net worth ${M(r.nw)}  (peak ${M(r.peakNW)}, worst drawdown ${(r.drawdown * 100).toFixed(0)}%)` +
     `  ${r.stat.bought} bought · ${r.stat.built} built · ${r.stat.sold} sold · ${r.stat.leases} leases` +
-    (r.g.gameOver ? `  — RUN ENDED: ${r.g.gameOver.cause.slice(0, 60)}` : ""));
+    (r.g.gameOver ? `  — RUN ENDED: ${r.g.gameOver.cause.slice(0, 60)}` : "") +
+    `\n         street: ${r.rank} of ${r.field} by net worth · biggest ${r.top.name} ${M(r.top.eq)} · ${r.dead} firms failed`);
 }
 if (SEEDS > 1) {
   const nws = results.map((r) => r.nw).sort((a, b) => a - b);

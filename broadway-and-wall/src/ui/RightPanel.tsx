@@ -1,6 +1,6 @@
 // The game's chrome: a parcel card docked to the map, and full-page views
 // for Portfolio / Deals / Market — big rooms, not side-panel squints.
-import { useEffect, useState } from "react";
+import { useEffect, useState, Fragment} from "react";
 import { useStore } from "@/state/store";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
@@ -2194,9 +2194,20 @@ function SponsorRecord() {
 function TheStreet() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
+  const select = useStore((s) => s.select);
+  const setPage = useStore((s) => s.setPage);
+  const [open, setOpen] = useState<string | null>(null);
   const rivals = game.rivals ?? [];
   if (!rivals.length) return null;
   const appetite = marketAppetite(game);
+  const playerEquity = (() => {
+    let v = game.cash;
+    for (const h of Object.values(game.holdings)) {
+      const rec = resolveRec(parcels, game, h.bbl);
+      if (rec) v += holdingValue(rec, game.econ, h, game.month) - (h.loan?.balance ?? 0);
+    }
+    return v;
+  })();
   const marked = rivals.map((r) => ({ r, m: markRival(game, parcels, r) }))
     .sort((a, b) => (a.r.failedM !== undefined ? 1 : 0) - (b.r.failedM !== undefined ? 1 : 0) || b.m.aum - a.m.aum);
   return (
@@ -2205,8 +2216,29 @@ function TheStreet() {
         The street · competing money {appetite < 0.6 ? "has left the room" : appetite < 0.9 ? "is thin" : appetite > 1.15 ? "is everywhere" : "is normal"}
       </div>
       <div className="hint">
-        These firms bid on the same tape you do. When their dry powder is high your lowballs get refused;
-        when their leverage runs past their covenants they sell into whatever bid exists, and that bid is you.
+        These firms bid on the same tape you do, with their own money — a firm without the equity does not
+        close, and one already at its covenant cannot borrow to. When their dry powder is high your lowballs
+        get refused; when their leverage runs past their covenants they sell into whatever bid exists, and
+        that bid is you. Click any firm for its balance sheet and what it owns.
+      </div>
+      {/* THE LEAGUE TABLE. They started where you started — five to eighteen
+          million and a hundred years — so the only honest way to read your own
+          number is against theirs. */}
+      <div className="grid" style={{ marginBottom: 10 }}>
+        {(() => {
+          const board = [
+            { name: "You", eq: playerEquity, me: true },
+            ...marked.filter((x) => x.r.failedM === undefined)
+              .map((x) => ({ name: x.r.name, eq: x.m.aum - x.r.debt + x.r.cash, me: false })),
+          ].sort((a, b) => b.eq - a.eq);
+          const rank = board.findIndex((b) => b.me) + 1;
+          return (
+            <>
+              <Row k="Your place on the street" v={`${rank} of ${board.length} by equity`} strong bad={rank > board.length / 2} />
+              <Row k="The biggest book in town" v={`${board[0].name} · ${usd(board[0].eq)}`} />
+            </>
+          );
+        })()}
       </div>
       <table className="tbl">
         <thead>
@@ -2219,24 +2251,81 @@ function TheStreet() {
           {marked.map(({ r, m }) => {
             const dead = r.failedM !== undefined;
             const stress = (r.stressMs ?? 0) > 0;
+            const isOpen = open === r.id;
             return (
-              <tr key={r.id} className={dead ? "dim" : ""}>
-                <td>{r.name}</td>
+              <Fragment key={r.id}>
+              <tr className={dead ? "dim" : ""} style={{ cursor: "pointer" }}
+                onClick={() => setOpen(isOpen ? null : r.id)}>
+                <td>{isOpen ? "▾ " : "▸ "}{r.name}</td>
                 <td className="dim">{STYLE_WORD[r.style]}</td>
                 <td className="num">{dead ? (r.bbls.length ? `${r.bbls.length} in workout` : "—") : r.bbls.length}</td>
                 <td className="num">{dead ? "—" : usd(m.aum)}</td>
-                <td className={"num" + (!dead && m.ltv > 0.8 ? " neg" : "")}>{dead ? "—" : `${(m.ltv * 100).toFixed(0)}%`}</td>
+                {/* debt against no assets is not a ratio, it is a hole */}
+                <td className={"num" + (!dead && m.ltv > 0.8 ? " neg" : "")}>
+                  {dead ? "—" : m.aum <= 0 ? (r.debt > 0 ? "no assets" : "—") : `${(m.ltv * 100).toFixed(0)}%`}
+                </td>
                 <td className="num">{dead ? "—" : usd(Math.max(0, r.cash))}</td>
                 <td className="dim">
                   {dead ? (r.bbls.length
                     ? `Failed ${monthLabel(r.failedM!)} — the receiver is still selling`
                     : `Gone, ${monthLabel(r.failedM!)}`)
+                    : m.aum <= 0 && r.debt > 0 ? "Sold everything and still owes money — they are finished"
                     : stress ? "Selling under pressure — their tape is your opportunity"
                     : m.ltv > 0.75 ? "Levered up. One bad cycle from being a seller"
                     : r.cash > m.aum * 0.06 ? "Sitting on cash. They will outbid you"
                     : "Fully invested"}
                 </td>
               </tr>
+              {isOpen && (
+                <tr>
+                  <td colSpan={7} style={{ background: "rgba(43,37,26,0.035)" }}>
+                    {/* THE BALANCE SHEET, the same one you are judged on. Gross
+                        assets less debt is their equity; NOI over assets is what
+                        the book yields; distributions are what they have already
+                        taken off the table, which is why a firm with modest
+                        equity is not necessarily a firm that did badly. */}
+                    <div className="grid" style={{ margin: "8px 0" }}>
+                      <Row k="Gross assets" v={usd(m.aum)} />
+                      <Row k="Debt" v={usd(r.debt)} bad={m.ltv > 0.8} />
+                      <Row k="Equity in property" v={usd(m.aum - r.debt)} bad={m.aum - r.debt < 0} />
+                      <Row k="Cash" v={usd(r.cash)} bad={r.cash < 0} />
+                      {/* the number the league table ranks on, and the same one
+                          your own Books page calls net worth */}
+                      <Row k="Net worth" v={usd(m.aum - r.debt + r.cash)} strong bad={m.aum - r.debt + r.cash < 0} />
+                      <Row k="Leverage" v={`${(m.ltv * 100).toFixed(0)}% LTV · they stop at ${(STYLE_MAX[r.style] * 100).toFixed(0)}%`} bad={m.ltv > STYLE_MAX[r.style]} />
+                      <Row k="NOI / yr" v={usd(m.noiYr)} />
+                      <Row k="Yield on assets" v={m.aum > 0 ? `${((m.noiYr / m.aum) * 100).toFixed(2)}%` : "—"} />
+                      <Row k="Debt service / yr" v={`−${usd((r.debt * (game.econ.indexRate + 1.9)) / 100 + r.debt / 30)}`} />
+                      {/* realised, and no longer on this balance sheet — which
+                          is why modest equity is not the same as a bad century */}
+                      <Row k="Taken out to date" v={usd(r.distributed ?? 0)} />
+                      <Row k="Founded" v={r.bornM > 0 ? monthLabel(r.bornM) : "before you arrived"} />
+                    </div>
+                    <div className="page-section" style={{ marginTop: 4 }}>
+                      What they own · {r.bbls.length}
+                    </div>
+                    {r.bbls.length === 0 && <div className="hint">Nothing. All cash, looking.</div>}
+                    <div className="mini-list">
+                      {r.bbls.slice(0, 60).map((b) => {
+                        const rec = resolveRec(parcels, game, b);
+                        if (!rec) return null;
+                        const v = assetValue(rec, game.econ, initialCondition(rec));
+                        return (
+                          <button key={b} className="neighbor"
+                            onClick={(ev) => { ev.stopPropagation(); setPage("none"); select(b); }}>
+                            <span className="neighbor-addr">{rec.address}</span>
+                            <span className="neighbor-meta">
+                              {rec.class === "land" ? "vacant land" : `${useLabel(rec)} · ${sf(rec.bldgArea)}`} · {usd(v)}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {r.bbls.length > 60 && <div className="hint">…and {r.bbls.length - 60} more.</div>}
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             );
           })}
         </tbody>
@@ -2244,6 +2333,12 @@ function TheStreet() {
     </>
   );
 }
+
+// where each style stops borrowing — mirrored from the engine so the sheet can
+// say what their own covenant is, not just where they are against it
+const STYLE_MAX: Record<string, number> = {
+  family: 0.50, core: 0.65, opportunistic: 0.88, developer: 0.78,
+};
 
 const STYLE_WORD: Record<string, string> = {
   family: "old money",

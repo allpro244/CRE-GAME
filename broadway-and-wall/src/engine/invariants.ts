@@ -215,6 +215,12 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
     const at = `rival ${r.name}`;
     if (!fin(r.cash)) bad("nan", at, `cash is ${r.cash}`);
     if (!fin(r.debt) || r.debt < 0) bad("rival", at, `debt ${r.debt}`);
+    // The street keeps books now — a cost basis, tax paid, distributions — so
+    // those have to stay coherent too. A negative basis means a sale relieved
+    // more basis than was ever put in, which would be a firm printing losses.
+    if (r.basis !== undefined && (!fin(r.basis) || r.basis < 0)) bad("rival", at, `cost basis ${r.basis}`);
+    if (r.taxPaid !== undefined && (!fin(r.taxPaid) || r.taxPaid < 0)) bad("rival", at, `lifetime tax ${r.taxPaid}`);
+    if (r.distributed !== undefined && (!fin(r.distributed) || r.distributed < 0)) bad("rival", at, `distributions ${r.distributed}`);
     // a failed firm may still hold assets — a receiver sells the book down
     // over years — but it cannot have failed in the future
     if (r.failedM !== undefined && r.failedM > s.month) bad("rival", at, `failed in month ${r.failedM}, it is month ${s.month}`);

@@ -200,11 +200,52 @@ export function physicalMaxFloors(plateSf: number): number {
   if (plateSf < 4000) return 6;
   return Math.min(90, Math.floor(1.2 * Math.sqrt(plateSf)));
 }
-export function maxFloorsFor(rec: { farMaxComm: number; farMaxRes: number; lotArea?: number }, coverage: number): number {
+/**
+ * SHOPS DO NOT STACK.
+ *
+ * Zoning and structure were the only two things limiting height, and neither
+ * of them knows what the building is FOR. Retail does: a shop needs the street
+ * to walk into it, the second floor already trades at a discount to the first,
+ * and above that nobody goes. There is no such thing as a sixty-storey shop —
+ * and the planner was happily approving one, at a 6.89% yield on cost, on the
+ * best corner in the city. The city's own growth loop was building them at
+ * fifty and forty-eight floors, and every retail job it started in a fifty
+ * year run came out over two storeys.
+ *
+ * What DOES stack is retail underneath something else, and the game already
+ * models that as the mixed-use programme: shops at grade, offices and flats
+ * above. So the cap belongs on the pure-retail programme only, and a site that
+ * can carry more than two floors should be getting a mixed building rather
+ * than a squashed one — see `useForZone` and `retailWantsMixed`.
+ */
+export const MAX_FLOORS_BY_USE: Partial<Record<DevUse, number>> = { retail: 2 };
+
+export function maxFloorsFor(
+  rec: { farMaxComm: number; farMaxRes: number; lotArea?: number }, coverage: number, use?: DevUse,
+): number {
   const zoning = Math.max(1, Math.floor(farMaxFor(rec) / Math.max(0.08, coverage)));
   const plate = (rec.lotArea ?? 0) * Math.max(0.08, coverage);
-  return rec.lotArea ? Math.max(1, Math.min(zoning, physicalMaxFloors(plate))) : zoning;
+  const physical = rec.lotArea ? Math.max(1, Math.min(zoning, physicalMaxFloors(plate))) : zoning;
+  const byUse = use ? MAX_FLOORS_BY_USE[use] : undefined;
+  return byUse === undefined ? physical : Math.min(physical, byUse);
 }
+
+/**
+ * A site that wants to be taller than a shop can be. Anything the market would
+ * put more than two floors on is a mixed building with retail at grade, not a
+ * two-storey shop wasting a fifteen-FAR corner.
+ */
+export function retailWantsMixed(rec: { farMaxComm: number; farMaxRes: number; lotArea?: number }, coverage = 0.6): boolean {
+  return maxFloorsFor(rec, coverage) > RETAIL_YIELDS_ABOVE;
+}
+// Where standalone shops stop making sense. The median vacant lot in this
+// city carries six floors — a small plate tops out there on slenderness — so
+// a threshold any lower converted literally every site to mixed and the town
+// stopped building standalone retail at all. Above six the envelope is worth
+// too much to spend on a two-storey shop; at or below it, a shop building is
+// what actually gets built, and giving up the unused FAR is the price of the
+// use, which is exactly the trade a real developer weighs.
+const RETAIL_YIELDS_ABOVE = 6;
 
 // The parcel as it will exist once the building is up — what the rent, the
 // cap rate and the leasing costs all have to be read against.
@@ -222,7 +263,7 @@ export function planDevelopment(
   if (!rec || !rec.lotArea) return null;
   const cov = Math.max(0.08, Math.min(0.9, coverage));
   const farMax = farMaxFor(rec);
-  const fl = Math.max(1, Math.min(Math.round(floors), maxFloorsFor(rec, cov)));
+  const fl = Math.max(1, Math.min(Math.round(floors), maxFloorsFor(rec, cov, use)));
   const sf = Math.round((rec.lotArea * cov * fl) / 100) * 100;
   if (sf < 2000) return null;
 
@@ -971,7 +1012,10 @@ export function tickCityGrowth(
     if (!best) continue;
     const { bbl, rec } = best;
     const dNow = demandNow(s, rec);
-    const use = useForZone(rec.zoneDist, dNow, rng(s));
+    let use = useForZone(rec.zoneDist, dNow, rng(s));
+    // A corner that carries twenty floors does not get a two-storey shop on
+    // it: it gets shops at grade with something above them.
+    if (use === "retail" && retailWantsMixed(rec)) use = "mixed";
     const cmix = devMix(use);
     // Nobody builds into a glut. The class this site would be has to want the
     // space before a shovel moves, which is the single link that turns the
@@ -982,8 +1026,16 @@ export function tickCityGrowth(
     const farMax = farMaxFor(rec);
     // young town builds small; a mature one builds to the envelope
     const frac = Math.min(0.95, 0.22 + 0.45 * maturity + 0.3 * (dNow / 100) * maturity + rng(s) * 0.15);
-    const sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
-    const floors = Math.max(1, Math.round(sf / (rec.lotArea * 0.62)));
+    let sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
+    let floors = Math.max(1, Math.round(sf / (rec.lotArea * 0.62)));
+    // …and where it IS a shop, it is two storeys, with the area cut to match
+    // rather than the same square footage squeezed into a taller-than-legal
+    // plate. Capping floors alone would have kept the absurd density.
+    const cap = MAX_FLOORS_BY_USE[use];
+    if (cap !== undefined && floors > cap) {
+      floors = cap;
+      sf = Math.max(3000, Math.round((rec.lotArea * 0.62 * floors) / 100) * 100);
+    }
     const [bLo, bHi] = BUILD_MONTHS[lead];
     const months = Math.round(bLo + rng(s) * (bHi - bLo));
     const deliverM = s.month + months;

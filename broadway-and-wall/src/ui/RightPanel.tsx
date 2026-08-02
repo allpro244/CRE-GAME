@@ -10,7 +10,7 @@ import {
   occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr, useRentPsfYr,
   rollQualitySpread, operatingStatement, recoveryOf, noiAfterTaxYr, netWorth, remainingAbatement,
 } from "@/engine/value";
-import { planDevelopment, PROGRAMS, programCost, farMaxFor, maxFloorsFor, demolitionCost } from "@/engine/dev";
+import { planDevelopment, PROGRAMS, programCost, farMaxFor, maxFloorsFor, retailWantsMixed, demolitionCost } from "@/engine/dev";
 import { buyQuote, assemblagePressure, saleTaxQuote, bidOdds } from "@/engine/actions";
 import { sellerOf, sellerProfile } from "@/engine/acquire";
 import { MILESTONES } from "@/engine/sim";
@@ -1271,7 +1271,7 @@ function DevelopSection({ bbl }: { bbl: string }) {
   // "Mixed-use" is a programme here, not a class: shops at grade with offices
   // and flats above. What it costs, what it rents for and what the lender will
   // fund all come out of that stack.
-  const maxFl = maxFloorsFor(rec, cov);
+  const maxFl = maxFloorsFor(rec, cov, use);
   const fl = Math.min(floors, maxFl);
   const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract);
   const plan = planDevelopment(game, parcels, bbl, use, fl, cov, contract,
@@ -1297,9 +1297,14 @@ function DevelopSection({ bbl }: { bbl: string }) {
         onChange={setFloors}
         format={(v) => `${v} ${v === 1 ? "floor" : "floors"}`}
         marks={[{ at: Math.max(1, Math.round(maxFl * 0.25)), label: "low" }, { at: Math.max(1, Math.round(maxFl * 0.6)), label: "mid" }, { at: maxFl, label: `max ${maxFl}` }]}
-        hint={plan
-          ? `${sf(plan.sf)} of building at ${plan.far} FAR (envelope ${plan.farMax.toFixed(1)}). The cap is zoning AND engineering — a tower needs a real floor plate (4,000+ sf for a core, ~15:1 slenderness at the limit), so a small plate tops out low no matter what the FAR allows.`
-          : undefined}
+        hint={use === "retail"
+          // Shops do not stack: the second floor already trades at a discount
+          // to the first and above that nobody goes. The tall version of this
+          // building is a mixed one with the shops at grade.
+          ? `Shops are two storeys. The second floor already rents at a discount to the first and there is no third — what you want on a site this size is ${retailWantsMixed(rec, cov) ? "the mixed-use programme, which puts shops at grade under offices and flats" : "exactly this"}.`
+          : plan
+            ? `${sf(plan.sf)} of building at ${plan.far} FAR (envelope ${plan.farMax.toFixed(1)}). The cap is zoning AND engineering — a tower needs a real floor plate (4,000+ sf for a core, ~15:1 slenderness at the limit), so a small plate tops out low no matter what the FAR allows.`
+            : undefined}
       />
       <Slider
         label="Footprint"
@@ -1307,7 +1312,7 @@ function DevelopSection({ bbl }: { bbl: string }) {
         min={0.08}
         max={0.9}
         step={0.01}
-        onChange={(v) => { setCov(v); setFloors((f) => Math.min(f, maxFloorsFor(rec, v))); }}
+        onChange={(v) => { setCov(v); setFloors((f) => Math.min(f, maxFloorsFor(rec, v, use))); }}
         format={(v) => `${Math.round(v * 100)}% of the lot · ${sf(rec.lotArea * v)} plate`}
         marks={[{ at: 0.15, label: "corner" }, { at: 0.35, label: "tower" }, { at: 0.6, label: "block" }, { at: 0.85, label: "podium" }]}
         hint={`A slim tower goes higher on the same envelope; a fat podium runs out of FAR sooner (max ${maxFl} floors at this footprint). On a big site you can put up something small and keep the rest of the land.`}

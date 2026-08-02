@@ -33,7 +33,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from "./types";
 import { BUILD_MONTHS, rng, rrange } from "./market";
 import { assetValue, initialCondition, landValue, noiAfterTaxYr, occupancy, resolveRec } from "./value";
-import { devMix, dominantOf, farMaxFor, HARD_COST_PSF, SOFT_COST, useForZone } from "./dev";
+import { devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retailWantsMixed, SOFT_COST, useForZone } from "./dev";
 import { recordComp } from "./comps";
 
 // Ashport is an old port town; its money has old-port-town names.
@@ -651,12 +651,20 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   }
   if (!best) return;
   const { bbl, rec } = best;
-  const use = useForZone(rec.zoneDist, rec.demandScore, rng(s));
+  let use = useForZone(rec.zoneDist, rec.demandScore, rng(s));
+  // Shops do not stack, and a corner that carries twenty floors does not get a
+  // two-storey shop on it — it gets shops at grade with something above.
+  if (use === "retail" && retailWantsMixed(rec)) use = "mixed";
   const lead = dominantOf(devMix(use));
   const farMax = farMaxFor(rec);
   const frac = Math.min(0.95, 0.4 + rng(s) * 0.45);
-  const sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
-  const floors = Math.max(1, Math.round(sf / (rec.lotArea * 0.62)));
+  let sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
+  let floors = Math.max(1, Math.round(sf / (rec.lotArea * 0.62)));
+  const cap = MAX_FLOORS_BY_USE[use];
+  if (cap !== undefined && floors > cap) {
+    floors = cap;
+    sf = Math.max(3000, Math.round((rec.lotArea * 0.62 * floors) / 100) * 100);
+  }
   const cost = jobBudget(s, use, sf, floors);
   if (cost > (r.aum ?? 0) * 0.75 + r.cash * 4) return;
   const ltc = Math.max(0.4, Math.min(0.7, 0.7 * ci));

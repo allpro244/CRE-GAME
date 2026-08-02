@@ -17,9 +17,10 @@
 // identity, a definitional bound, or a rule the engine states elsewhere in
 // prose. If a check is arguable, it does not belong in this file.
 import type { ParcelTable } from "@/data/types";
-import type { BuiltClass, GameState } from "./types";
+import type { BuiltClass, DevUse, GameState } from "./types";
 import { resolveRec, holdingValue, holdingNOIYr, netWorth } from "./value";
 import { mixOf, useSf } from "./mix";
+import { MAX_FLOORS_BY_USE } from "./dev";
 
 export interface Violation {
   code: string;
@@ -47,6 +48,31 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
   }
   const nw = netWorth(s, parcels);
   if (!fin(nw)) bad("nan", "firm", "net worth is not a number");
+
+  // ------------------------------------------------------------ what got built
+  // SHOPS DO NOT STACK. This applies to buildings created during play only —
+  // the shipped cities carry some three-storey retail as history, and that is
+  // theirs to have. Anything the game itself puts up has to obey the rule, and
+  // it did not: the city's growth loop was starting fifty-storey shops and the
+  // planner would approve a sixty-one-storey one.
+  for (const [bbl, b] of Object.entries(s.built ?? {})) {
+    const cap = MAX_FLOORS_BY_USE[b.class as DevUse];
+    if (cap !== undefined && b.floors > cap) {
+      bad("massing", `built ${bbl}`, `${b.floors}-storey ${b.class} — the cap is ${cap}`);
+    }
+  }
+  for (const j of s.cityJobs ?? []) {
+    const cap = MAX_FLOORS_BY_USE[j.use as DevUse];
+    if (cap !== undefined && j.floors > cap) {
+      bad("massing", `job ${j.bbl}`, `${j.floors}-storey ${j.use} under construction — the cap is ${cap}`);
+    }
+  }
+  for (const d of Object.values(s.developments ?? {})) {
+    const cap = MAX_FLOORS_BY_USE[d.use];
+    if (cap !== undefined && d.floors > cap) {
+      bad("massing", `development ${d.bbl}`, `${d.floors}-storey ${d.use} — the cap is ${cap}`);
+    }
+  }
 
   // ------------------------------------------------------------- assemblage
   // A merged deed's land has moved somewhere. If the parent is gone, or the

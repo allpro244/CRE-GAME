@@ -363,8 +363,8 @@ export function fallbackBaseStyle(): StyleSpecification {
         source: "bw-context",
         filter: ["==", ["get", "kind"], "street"],
         paint: {
-          "line-color": "#d8d5cb",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.8, 15, 2.4, 18, 11] as never,
+          "line-color": "#dedbd1",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 1.1, 15, 3.4, 18, 15] as never,
         },
         layout: { "line-join": "round" },
       },
@@ -385,15 +385,17 @@ export function fallbackBaseStyle(): StyleSpecification {
         // LANE DIVIDER. Two neighbouring cells share their boundary, so the
         // cell ring runs exactly down the middle of the street — no separate
         // centreline geometry needed.
+        // A road without a centreline is a paved corridor, not a road. These
+        // come in a full zoom earlier and read brighter than they did.
         id: "lane-divider",
         type: "line",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "centerline"],
-        minzoom: 15,
+        minzoom: 14,
         paint: {
-          "line-color": "#e8dfae",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 15, 0.35, 18, 1.1] as never,
-          "line-opacity": ["interpolate", ["linear"], ["zoom"], 15, 0.35, 17, 0.8] as never,
+          "line-color": "#e6d99b",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 14, 0.4, 16, 0.9, 18, 1.8] as never,
+          "line-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0.3, 16, 0.75, 18, 0.9] as never,
           "line-dasharray": [5, 7],
         },
       },

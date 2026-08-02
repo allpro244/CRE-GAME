@@ -109,12 +109,21 @@ export default function MapView() {
             const pointsOf = (kind: string): [number, number][] => (ctx?.features ?? [])
               .filter((f) => f.properties?.kind === kind && f.geometry.type === "Point")
               .map((f) => (f.geometry as GeoJSON.Point).coordinates as [number, number]);
+            // furniture carries a bearing, so it comes across as point + rot
+            const orientedOf = (kind: string) => (ctx?.features ?? [])
+              .filter((f) => f.properties?.kind === kind && f.geometry.type === "Point")
+              .map((f) => ({
+                p: (f.geometry as GeoJSON.Point).coordinates as [number, number],
+                r: Number(f.properties?.rot ?? 0),
+              }));
             // the land ring becomes the hole in the water plane
             const landRing = (ctx?.features ?? [])
               .find((f) => f.properties?.kind === "land" && f.geometry.type === "Polygon");
             const layer = new ThreeBuildings(volumes, CITY_CENTER, curbs, {
               trees: pointsOf("tree"),
               piles: pointsOf("pile"),
+              benches: orientedOf("bench"),
+              rails: orientedOf("rail"),
               land: landRing
                 ? ((landRing.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][]).slice(0, -1)
                 : undefined,

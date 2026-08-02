@@ -969,17 +969,63 @@ export function generateCity(cfg) {
     }
   });
 
+  // STREET FURNITURE. A rail runs the whole waterfront; the benches are
+  // placed further down, once the promenade has been added to the walks.
+  // Both are the kind of thing you only notice when it is missing — an
+  // esplanade with nothing to lean on is a drawing of an esplanade.
+  const benchFeatures = [];
+  const railFeatures = [];
+  for (let i = 0; i < innerRing.length; i++) {
+    const a = innerRing[i], b = innerRing[(i + 1) % innerRing.length];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const ang = (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI;
+    // innerRing came out of offsetInward, which is one output vertex per input
+    // vertex, so COAST_M[i] is this vertex's own point on the shoreline. Walk
+    // BOTH edges together — holding q at the segment's start vertex made the
+    // rail wander back toward that corner across a long run of seawall.
+    const qa = COAST_M[i % COAST_M.length], qb = COAST_M[(i + 1) % COAST_M.length];
+    for (let d = 0; d < len; d += 3.2) {
+      const t = d / len;
+      const px = a[0] + (b[0] - a[0]) * t, py = a[1] + (b[1] - a[1]) * t;
+      const qx = qa[0] + (qb[0] - qa[0]) * t, qy = qa[1] + (qb[1] - qa[1]) * t;
+      railFeatures.push({ p: [px * 0.45 + qx * 0.55, py * 0.45 + qy * 0.55], r: ang });
+    }
+  }
+
+  // Nothing planted may end up standing in open water. The scatter pass
+  // checked, the willow pass pushed outward and trusted the arithmetic, and
+  // the wobble on the pond ring meant a few of them waded in anyway.
+  for (let i = treeFeatures.length - 1; i >= 0; i--) {
+    const t2 = treeFeatures[i];
+    const near = pondFeatures.some((pd) => {
+      const pc = centroid(pd);
+      // test against the pond grown by three metres — a tree on the very lip
+      // of the water is a tree in the water once it has a canopy
+      return inRing([pc[0] + (t2[0] - pc[0]) * 0.93, pc[1] + (t2[1] - pc[1]) * 0.93], pd);
+    });
+    if (near) treeFeatures.splice(i, 1);
+  }
+
   // the bandstand on the town's principal green
   if (biggestPark) {
     const c = centroid(biggestPark);
-    const oct = [];
-    for (let k = 0; k < 8; k++) {
-      const a2 = (k / 8) * Math.PI * 2;
-      oct.push([c[0] + 15 + 4.4 * Math.cos(a2), c[1] + 4.4 * Math.sin(a2)]);
-    }
-    addDeco(oct, 1.1, 0, "banddeck");
-    const roof = oct.map(([x2, y2]) => [c[0] + 15 + (x2 - c[0] - 15) * 0.86, y2 + (y2 - c[1]) * -0.0]);
-    addDeco(roof, 4.6, 3.4, "bandroof");
+    // deck, a ring of posts read as a narrow drum, then a roof that oversails
+    // it — the silhouette everybody recognises. The old version put a cap the
+    // same width as the base and it read as an oil tank.
+    const ring8 = (r2, sc = 1) => {
+      const out = [];
+      for (let k = 0; k < 8; k++) {
+        const a2 = (k / 8) * Math.PI * 2 + 0.39;
+        out.push([bx + r2 * sc * Math.cos(a2), by + r2 * sc * Math.sin(a2)]);
+      }
+      return out;
+    };
+    const bx = c[0] + 15, by = c[1];
+    addDeco(ring8(5.4), 0.9, 0, "banddeck");        // the deck, a step up
+    addDeco(ring8(4.1), 3.6, 0.9, "bandpost");      // the open bay between posts
+    addDeco(ring8(6.2), 4.6, 3.6, "bandroof");      // the oversailing roof
+    addDeco(ring8(3.0), 5.6, 4.6, "bandroof");      // and its little cupola
+    addDeco(ring8(0.9), 6.6, 5.6, "bandroof");
   }
   // THE PROMENADE. The esplanade was a blank cream band; now a walk runs the
   // whole waterfront halfway between the shore road and the sea, with trees
@@ -1011,6 +1057,43 @@ export function generateCity(cfg) {
         if (inRing([px, py], innerRing)) treeFeatures.push([px + rr(-1, 1), py + rr(-1, 1)]);
       }
     }
+  }
+
+  // BENCHES, last, so the promenade counts as a walk. A bench model faces its
+  // own local +Y, which is the LEFT of the direction the walk runs, so a bench
+  // set down on the left-hand verge has to be spun to look back at the path —
+  // otherwise half the seats in every park stare into a hedge.
+  for (const line of pathFeatures) {
+    for (let i = 0; i < line.length - 1; i++) {
+      const a = line[i], b = line[i + 1];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (len < 9) continue;
+      const ang = (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI;
+      const nx = -(b[1] - a[1]) / len, ny = (b[0] - a[0]) / len;
+      for (let d = rr(5, 12); d < len - 4; d += rr(22, 38)) {
+        const t = d / len;
+        const px = a[0] + (b[0] - a[0]) * t, py = a[1] + (b[1] - a[1]) * t;
+        const side = rand() < 0.5 ? 1 : -1;
+        benchFeatures.push({
+          p: [px + nx * side * 2.6, py + ny * side * 2.6],
+          r: ang + (side > 0 ? 180 : 0),
+        });
+      }
+    }
+  }
+  // And the ones that matter most: the harbour seats. These do not face the
+  // walk, they face the water, because nobody sits on a waterfront bench to
+  // look at the pavement behind them.
+  for (let i = 0; i < innerRing.length; i += 2) {
+    const p = innerRing[i], q = COAST_M[i % COAST_M.length];
+    if (rand() > 0.34) continue;
+    const sx = q[0] - p[0], sy = q[1] - p[1];
+    const sl = Math.hypot(sx, sy) || 1;
+    // local +Y must point out to sea, so the bearing is the seaward one less 90°
+    benchFeatures.push({
+      p: [p[0] + sx * 0.34, p[1] + sy * 0.34],
+      r: (Math.atan2(sy / sl, sx / sl) * 180) / Math.PI - 90,
+    });
   }
 
   // --- the water itself ------------------------------------------------------
@@ -1124,6 +1207,12 @@ export function generateCity(cfg) {
       })),
       ...bollardFeatures.map((p) => ({
         type: "Feature", geometry: { type: "Point", coordinates: proj.toLL(p) }, properties: { kind: "bollard" },
+      })),
+      ...benchFeatures.map((b) => ({
+        type: "Feature", geometry: { type: "Point", coordinates: proj.toLL(b.p) }, properties: { kind: "bench", rot: +b.r.toFixed(1) },
+      })),
+      ...railFeatures.map((b) => ({
+        type: "Feature", geometry: { type: "Point", coordinates: proj.toLL(b.p) }, properties: { kind: "rail", rot: +b.r.toFixed(1) },
       })),
       ...buoyFeatures.map((b) => ({
         type: "Feature", geometry: { type: "Point", coordinates: proj.toLL(b.p) }, properties: { kind: "buoy", side: b.side },

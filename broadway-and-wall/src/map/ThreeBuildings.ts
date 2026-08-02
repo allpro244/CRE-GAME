@@ -7,6 +7,9 @@
 import * as THREE from "three";
 import maplibregl from "maplibre-gl";
 
+/** A context point that knows which way it is pointing. Bearing in degrees. */
+export interface Oriented { p: [number, number]; r: number }
+
 export interface BuildingVolume {
   b: string;   // bbl ("" for decorative props like ships and cranes)
   c: string;   // asset class
@@ -32,7 +35,10 @@ const DECO_TINT: Record<string, [number, number, number]> = {
   crane: [0.95, 0.72, 0.25], shed: [0.86, 0.83, 0.74],
   light: [1.14, 1.12, 1.06], lightcap: [0.55, 0.20, 0.16],
   boat: [1.06, 1.03, 0.96], mast: [0.90, 0.90, 0.88],
-  banddeck: [0.92, 0.88, 0.78], bandroof: [0.42, 0.55, 0.44],
+  // the bandstand's posts are one octagonal ring, not eight separate columns,
+  // so painting them white made a drum. Dark, they read as the shadow you
+  // actually see under a bandstand roof from any distance worth drawing at.
+  banddeck: [0.92, 0.88, 0.78], bandroof: [0.40, 0.52, 0.43], bandpost: [0.30, 0.28, 0.26],
   // whitewashed clapboard and slate — the meeting house and the town hall
   civic: [1.16, 1.15, 1.10], civicroof: [0.44, 0.46, 0.50],
 };
@@ -681,7 +687,16 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     private volumes: BuildingVolume[],
     private center: [number, number],
     private curbs: [number, number][][] = [],
-    private ctxPoints: { trees?: [number, number][]; piles?: [number, number][]; land?: [number, number][] } = {},
+    private ctxPoints: {
+      trees?: [number, number][];
+      piles?: [number, number][];
+      land?: [number, number][];
+      // street furniture arrives with a baked bearing: a bench that does not
+      // face its walk, or a railing post turned across the seawall, is worse
+      // than no bench and no railing at all
+      benches?: Oriented[];
+      rails?: Oriented[];
+    } = {},
   ) {}
 
   onAdd(map: maplibregl.Map, gl: WebGLRenderingContext | WebGL2RenderingContext) {
@@ -962,11 +977,40 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         if (hgt >= 105 && v.y >= 1975) props.push({ kind: 3, x: cx, y: cy, z: v.z1, s: 1, rot: 0 });
         // antennas crown the tallest towers
         if (hgt >= 95) props.push({ kind: 4, x: cx + jit(15, 5), y: cy + jit(16, 5), z: v.z1, s: 1 + (hgt - 95) / 60, rot: 0 });
+        // FIRE ESCAPES. The single most characteristic thing on a brick
+        // walk-up street and the game had none. One stack per building, on
+        // the longest wall — which is the street wall — projecting off the
+        // facade so it catches the low sun and throws a real shadow down the
+        // brick. A tenement block without them looks like a rendering of a
+        // tenement block.
+        if (style === S_BRICK && v.f >= 3 && hgt >= 9) {
+          let bi = 0, bl = -1;
+          for (let i = 0; i < ring.length; i++) {
+            const a2 = ring[i], b2 = ring[(i + 1) % ring.length];
+            const L = Math.hypot(b2[0] - a2[0], b2[1] - a2[1]);
+            if (L > bl) { bl = L; bi = i; }
+          }
+          if (bl > 9) {
+            const a2 = ring[bi], b2 = ring[(bi + 1) % ring.length];
+            const dx = b2[0] - a2[0], dy = b2[1] - a2[1];
+            const L = Math.hypot(dx, dy) || 1;
+            const ox = dy / L, oy = -dx / L;          // outward from a CCW ring
+            const levels = Math.max(2, Math.min(5, v.f - 1));
+            props.push({
+              kind: 7 + levels,                        // 9..12
+              x: (a2[0] + b2[0]) / 2 + ox * 0.55,
+              y: (a2[1] + b2[1]) / 2 + oy * 0.55,
+              z: v.z0,
+              s: Math.min(1.25, fh / 3.4),
+              rot: Math.atan2(dy, dx),
+            });
+          }
+        }
         // ROOFTOP SIGNAGE. The painted sign on the parapet is what a
         // commercial building did with its roof before anyone thought to put
         // plant up there — and it sits on the LONGEST edge, facing the street,
         // because that is the whole point of it.
-        if ((v.c === "retail" || v.c === "office") && hgt >= 14 && hgt <= 48 && seed % 5 < 2) {
+        if ((v.c === "retail" || v.c === "office") && hgt >= 19 && hgt <= 52 && seed % 7 < 2) {
           let bi = 0, bl = -1;
           for (let i = 0; i < ring.length; i++) {
             const a2 = ring[i], b2 = ring[(i + 1) % ring.length];
@@ -978,7 +1022,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
             props.push({
               kind: 7,
               x: (a2[0] + b2[0]) / 2, y: (a2[1] + b2[1]) / 2, z: v.z1 + 0.6,
-              s: Math.min(1.5, bl / 13),
+              s: Math.min(0.95, bl / 22),
               rot: Math.atan2(b2[1] - a2[1], b2[0] - a2[0]),
             });
           }
@@ -1068,6 +1112,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       { geom: new THREE.BoxGeometry(0.9, 0.9, 2.4).translate(0, 0, 1.2), color: 0x8a5c48 },
       { geom: new THREE.BoxGeometry(6.5, 1.8, 1.3).translate(0, 0, 0.65), color: 0xaab4b8 },
       { geom: billboardGeom(), color: 0xffffff },
+      { geom: new THREE.BufferGeometry(), color: 0x000000 },  // 8: unused slot
+      { geom: fireEscapeGeom(2), color: 0x4a4238 },
+      { geom: fireEscapeGeom(3), color: 0x4a4238 },
+      { geom: fireEscapeGeom(4), color: 0x4a4238 },
+      { geom: fireEscapeGeom(5), color: 0x4a4238 },
     ];
     // painted signs come in painted-sign colours
     const SIGN_COLORS: [number, number, number][] = [
@@ -1107,9 +1156,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   // a building like something human-sized standing next to it, and an empty
   // pavement is what made the city read as a model rather than a place.
   private plantStreets() {
-    if (!this.curbs.length && !this.ctxPoints.trees?.length) return;
+    const c = this.ctxPoints;
+    if (!this.curbs.length && !c.trees?.length && !c.benches?.length && !c.rails?.length) return;
     type Item = { x: number; y: number; s: number; rot: number };
-    const trees: Item[] = [], lamps: Item[] = [], cars: Item[] = [];
+    const trees: Item[] = [], lamps: Item[] = [], cars: Item[] = [], people: Item[] = [];
     let seed = 1337;
     const rnd = () => {
       seed = (seed * 1664525 + 1013904223) >>> 0;
@@ -1138,6 +1188,20 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           const item = { x: px + nx * off, y: py + ny * off, s: 0.92 + rnd() * 0.55, rot: rnd() * 6.28 };
           if (rnd() < 0.76) trees.push(item);
           else lamps.push({ ...item, s: 0.9 + rnd() * 0.2 });
+        }
+        // PEOPLE. A city with cars but nobody in it reads as an evacuation.
+        // These are two boxes and a dot each, but at street level they are the
+        // difference between a model and a place — and they are the only thing
+        // in the scene at human scale, which is what everything else gets
+        // measured against.
+        for (let d = rnd() * 5; d < len - 2; d += 3.1 + rnd() * 6.5) {
+          if (rnd() > 0.42) continue;
+          const t = d / len;
+          const px = a[0] + dx * t, py = a[1] + dy * t;
+          let nx = -dy / len, ny = dx / len;
+          if ((px - cx) * nx + (py - cy) * ny < 0) { nx = -nx; ny = -ny; }
+          const off = 0.9 + rnd() * 1.1;             // on the pavement, not the road
+          people.push({ x: px + nx * off, y: py + ny * off, s: 0.92 + rnd() * 0.2, rot: rnd() * 6.28 });
         }
         // CARS AT THE KERB. Nothing gives a street its scale like the row of
         // parked cars along it — a building is abstract until there is
@@ -1188,6 +1252,63 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.scene.add(mesh);
     };
 
+    // Clothes, in the muted range a crowd actually averages to.
+    const COAT: [number, number, number][] = [
+      [0.30, 0.32, 0.38], [0.62, 0.58, 0.52], [0.20, 0.24, 0.30], [0.52, 0.28, 0.24],
+      [0.86, 0.84, 0.80], [0.28, 0.36, 0.32], [0.44, 0.40, 0.46], [0.70, 0.62, 0.44],
+    ];
+    const addPeople = (items: Item[]) => {
+      if (!items.length) return;
+      const mesh = new THREE.InstancedMesh(personGeom(), this.propMaterial(0xffffff), items.length);
+      const m = new THREE.Matrix4();
+      const cols = new Float32Array(items.length * 3);
+      items.forEach((p, i) => {
+        m.compose(
+          new THREE.Vector3(p.x, p.y, 0),
+          new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, p.rot)),
+          new THREE.Vector3(p.s, p.s, p.s * (0.93 + rnd() * 0.14)),
+        );
+        mesh.setMatrixAt(i, m);
+        const c = COAT[Math.floor(rnd() * COAT.length) % COAT.length];
+        cols[i * 3] = c[0]; cols[i * 3 + 1] = c[1]; cols[i * 3 + 2] = c[2];
+      });
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(cols, 3);
+      mesh.frustumCulled = false;
+      this.scene.add(mesh);
+    };
+
+    // context points that carry their own bearing, put into world space. The
+    // generator works in metres and Mercator scales uniformly, so a bearing in
+    // its frame is the same bearing here — degrees to radians and nothing else.
+    const oriented = (pts?: Oriented[]): Item[] =>
+      (pts ?? []).map((o) => {
+        const [x, y] = this.project(o.p);
+        return { x, y, s: 1, rot: (o.r * Math.PI) / 180 };
+      });
+
+    const addRigid = (geom: THREE.BufferGeometry, color: number, items: Item[]) => {
+      if (!items.length) return;
+      const mesh = new THREE.InstancedMesh(geom, this.propMaterial(color), items.length);
+      const m = new THREE.Matrix4();
+      const one = new THREE.Vector3(1, 1, 1);
+      items.forEach((p, i) => {
+        m.compose(
+          new THREE.Vector3(p.x, p.y, 0),
+          new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, p.rot)),
+          one,
+        );
+        mesh.setMatrixAt(i, m);
+      });
+      // PROP_VERT reads instanceColor unconditionally, so every instanced prop
+      // has to carry one even when it has nothing to say: a flat 1 leaves the
+      // material's own colour alone.
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(
+        new Float32Array(items.length * 3).fill(1), 3,
+      );
+      mesh.frustumCulled = false;
+      this.scene.add(mesh);
+    };
+
     const add = (geom: THREE.BufferGeometry, color: number, items: Item[], vary = 0) => {
       if (!items.length) return;
       const mesh = new THREE.InstancedMesh(geom, this.propMaterial(color), items.length);
@@ -1222,11 +1343,32 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const [x, y] = this.project(p);
       return { x, y, s: 0.9 + rnd() * 0.3, rot: 0 };
     });
+    // THREE SPECIES, not one. Every tree in the city was the same two lumps
+    // at a different size, which reads as wallpaper from the air. A spreading
+    // shade tree, a narrow columnar one for tight frontages, and a conifer —
+    // split deterministically so a street keeps its planting between reloads.
+    // Weighted, not thirds. A third of the city in conifers turned a New
+    // England common into a Christmas tree farm: streets and parks are mostly
+    // spreading shade trees, with columnar ones where the frontage is tight
+    // and a few evergreens for winter structure.
+    const sp: Item[][] = [[], [], []];
+    for (let i = 0; i < trees.length; i++) {
+      const h = (Math.abs(Math.round(trees[i].x * 3 + trees[i].y * 7)) + i * 11) % 100;
+      sp[h < 63 ? 0 : h < 88 ? 1 : 2].push(trees[i]);
+    }
     add(treeTrunkGeom(), 0x6b5744, trees, 0.12);
-    add(treeCanopyGeom(), 0x71904f, trees, 0.34);
+    add(treeCanopyGeom(), 0x71904f, sp[0], 0.34);
+    add(columnarCanopyGeom(), 0x6d8a4c, sp[1], 0.30);
+    add(coniferCanopyGeom(), 0x4e6f4a, sp[2], 0.26);
     add(lampGeom(), 0x4e5459, lamps, 0.06);
     add(pileGeom(), 0x5c4a34, piles, 0.08);
+    // Manufactured things do not come in random proportions. Benches and
+    // railings go in rigid — uniform scale, exact bearing — because a rail
+    // whose posts are each a different height is a fence, not an esplanade.
+    addRigid(benchGeom(), 0x6d5a45, oriented(this.ctxPoints.benches));
+    addRigid(railGeom(), 0x3f464b, oriented(this.ctxPoints.rails));
     addCars(cars);
+    addPeople(people);
   }
 
   /**
@@ -1548,10 +1690,41 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 // A car in eleven boxes' worth of triangles: bonnet, cabin, boot. Length runs
 // along +x so it can be dropped straight onto a kerb bearing.
 // A painted parapet sign: the panel, and the two legs holding it up.
+/**
+ * A fire escape: two rails, a platform per floor, and a stair slanting between
+ * them. Built projecting along -Y so it can be dropped on a wall with the
+ * edge's own bearing and nothing else.
+ */
+function fireEscapeGeom(levels: number): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const H = 3.4;
+  const top = H * levels + 1.2;
+  parts.push(new THREE.BoxGeometry(0.11, 0.11, top).translate(-1.35, -1.5, top / 2 + H * 0.55));
+  parts.push(new THREE.BoxGeometry(0.11, 0.11, top).translate(1.35, -1.5, top / 2 + H * 0.55));
+  for (let i = 0; i < levels; i++) {
+    const z = H * (i + 1.55);
+    parts.push(new THREE.BoxGeometry(2.9, 1.5, 0.09).translate(0, -0.9, z));        // platform
+    parts.push(new THREE.BoxGeometry(2.9, 0.07, 0.07).translate(0, -1.62, z + 0.95)); // handrail
+    if (i < levels - 1) {
+      // the stair, leaning back against the wall on alternate sides
+      const side = i % 2 === 0 ? 0.85 : -0.85;
+      // ROTATE, THEN TRANSLATE. BufferGeometry.rotateX turns the geometry about
+      // the ORIGIN, so tilting an already-translated stair swung it out on a
+      // radius equal to its height — every brick walk-up in the city had a
+      // black spar the length of a ship's mast lancing off the fourth floor.
+      const stair = new THREE.BoxGeometry(0.95, 0.1, H * 1.22)
+        .rotateX(0.52)
+        .translate(side, -1.1, z + H / 2);
+      parts.push(stair);
+    }
+  }
+  return mergeGeoms(parts);
+}
+
 function billboardGeom(): THREE.BufferGeometry {
-  const panel = new THREE.BoxGeometry(11, 0.35, 3.1).translate(0, 0, 3.4);
-  const legA = new THREE.BoxGeometry(0.3, 0.3, 2.0).translate(-3.6, 0, 0.95);
-  const legB = new THREE.BoxGeometry(0.3, 0.3, 2.0).translate(3.6, 0, 0.95);
+  const panel = new THREE.BoxGeometry(9, 0.3, 2.4).translate(0, 0, 2.6);
+  const legA = new THREE.BoxGeometry(0.24, 0.24, 1.5).translate(-2.9, 0, 0.75);
+  const legB = new THREE.BoxGeometry(0.24, 0.24, 1.5).translate(2.9, 0, 0.75);
   return mergeGeoms([panel, legA, legB]);
 }
 
@@ -1566,6 +1739,29 @@ function pileGeom(): THREE.BufferGeometry {
   return new THREE.CylinderGeometry(0.22, 0.26, 1.7, 5).rotateX(Math.PI / 2).translate(0, 0, 0.85);
 }
 
+// A park bench, lying along +X so the baked bearing turns it to face its walk.
+// Slat seat, low back, two cast ends — 1.85 m, which is the length a bench has
+// been since before anybody was measuring them.
+function benchGeom(): THREE.BufferGeometry {
+  const seat = new THREE.BoxGeometry(1.85, 0.50, 0.07).translate(0, 0.02, 0.45);
+  const back = new THREE.BoxGeometry(1.85, 0.06, 0.32).translate(0, -0.21, 0.67);
+  const rail = new THREE.BoxGeometry(1.85, 0.05, 0.05).translate(0, -0.19, 0.86);
+  const endA = new THREE.BoxGeometry(0.08, 0.46, 0.45).translate(-0.80, 0, 0.225);
+  const endB = new THREE.BoxGeometry(0.08, 0.46, 0.45).translate(0.80, 0, 0.225);
+  return mergeGeoms([seat, back, rail, endA, endB]);
+}
+
+// One bay of waterfront railing: a post, and the run of top and middle rail
+// that reaches forward to the next one. Posts are dropped every 3.2 m and the
+// rail is 3.3 m, so the bays overlap slightly and the line never breaks.
+function railGeom(): THREE.BufferGeometry {
+  const post = new THREE.BoxGeometry(0.10, 0.10, 1.02).translate(0, 0, 0.51);
+  const cap = new THREE.BoxGeometry(0.16, 0.16, 0.08).translate(0, 0, 1.05);
+  const top = new THREE.BoxGeometry(3.30, 0.08, 0.08).translate(1.6, 0, 0.99);
+  const mid = new THREE.BoxGeometry(3.30, 0.05, 0.05).translate(1.6, 0, 0.62);
+  return mergeGeoms([post, cap, top, mid]);
+}
+
 function treeTrunkGeom(): THREE.BufferGeometry {
   return new THREE.CylinderGeometry(0.16, 0.26, 3.1, 5).rotateX(Math.PI / 2).translate(0, 0, 1.55);
 }
@@ -1575,6 +1771,28 @@ function treeCanopyGeom(): THREE.BufferGeometry {
   const a = new THREE.IcosahedronGeometry(1.85, 0).translate(0, 0, 4.3);
   const b = new THREE.IcosahedronGeometry(1.25, 0).translate(0.85, 0.3, 3.5);
   return mergeGeoms([a, b]);
+}
+
+// the narrow street tree that fits where a spreading one would not
+function columnarCanopyGeom(): THREE.BufferGeometry {
+  const a = new THREE.IcosahedronGeometry(1.1, 0).scale(1, 1, 2.1).translate(0, 0, 5.0);
+  const b = new THREE.IcosahedronGeometry(0.85, 0).scale(1, 1, 1.5).translate(0.2, -0.15, 3.4);
+  return mergeGeoms([a, b]);
+}
+
+function coniferCanopyGeom(): THREE.BufferGeometry {
+  const a = new THREE.ConeGeometry(1.55, 4.2, 6).rotateX(Math.PI / 2).translate(0, 0, 4.6);
+  const b = new THREE.ConeGeometry(1.05, 2.4, 6).rotateX(Math.PI / 2).translate(0, 0, 6.6);
+  return mergeGeoms([a, b]);
+}
+
+// A person: legs, coat, head. Twenty-two triangles, and the only thing in the
+// city at a scale everybody already knows.
+function personGeom(): THREE.BufferGeometry {
+  const legs = new THREE.BoxGeometry(0.34, 0.24, 0.82).translate(0, 0, 0.41);
+  const coat = new THREE.BoxGeometry(0.46, 0.30, 0.62).translate(0, 0, 1.13);
+  const head = new THREE.BoxGeometry(0.22, 0.22, 0.24).translate(0, 0, 1.56);
+  return mergeGeoms([legs, coat, head]);
 }
 
 function lampGeom(): THREE.BufferGeometry {

@@ -905,9 +905,36 @@ export function generateCity(cfg) {
     const roof = oct.map(([x2, y2]) => [c[0] + 15 + (x2 - c[0] - 15) * 0.86, y2 + (y2 - c[1]) * -0.0]);
     addDeco(roof, 4.6, 3.4, "bandroof");
   }
-  for (let i = 0; i < innerRing.length; i += 3) {
-    const p = innerRing[i], q = COAST_M[i];
-    if (rand() < 0.5) treeFeatures.push([(p[0] + q[0]) / 2 + rr(-3, 3), (p[1] + q[1]) / 2 + rr(-3, 3)]);
+  // THE PROMENADE. The esplanade was a blank cream band; now a walk runs the
+  // whole waterfront halfway between the shore road and the sea, with trees
+  // on its landward side — the harbor-front everybody actually strolls.
+  const promenade = innerRing.map((p, i) => {
+    const q = COAST_M[i % COAST_M.length];
+    return [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+  });
+  pathFeatures.push([...promenade, promenade[0]]);
+  for (let i = 0; i < innerRing.length; i += 2) {
+    const p = innerRing[i], q = COAST_M[i % COAST_M.length];
+    if (rand() < 0.62) treeFeatures.push([
+      p[0] * 0.7 + q[0] * 0.3 + rr(-2, 2),
+      p[1] * 0.7 + q[1] * 0.3 + rr(-2, 2),
+    ]);
+  }
+
+  // AN ALLÉE DOWN THE BOULEVARD. The diagonal was the widest, barest strip in
+  // town. Paired street trees down both edges make it read as the grand
+  // avenue it is supposed to be.
+  for (const d of cfg.diagonals ?? []) {
+    const t2 = (d.deg * Math.PI) / 180;
+    const ux = Math.cos(t2), uy = Math.sin(t2);
+    const nx2 = -uy, ny2 = ux;
+    for (let u = -d.w / 2 + 8; u < d.w / 2 - 8; u += rr(13, 18)) {
+      for (const side of [-1, 1]) {
+        const px = d.cx + ux * u + nx2 * side * (d.h / 2 - 2.2);
+        const py = d.cy + uy * u + ny2 * side * (d.h / 2 - 2.2);
+        if (inRing([px, py], innerRing)) treeFeatures.push([px + rr(-1, 1), py + rr(-1, 1)]);
+      }
+    }
   }
 
   // --- the water itself ------------------------------------------------------

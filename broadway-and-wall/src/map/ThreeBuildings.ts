@@ -452,7 +452,11 @@ void main() {
     roof *= 0.90 + 0.13 * step(0.5, course);
     roof *= 0.94 + 0.12 * rnoise(wp * 3.1);
   } else if (s == 10) {
-    roof *= 0.88 + 0.24 * rnoise(wp * 2.4);   // gravel
+    // not every empty lot is gravel: some have gone to grass and weeds, and a
+    // few are packed dirt — the patchwork a real city's vacant land actually is
+    if (vVar > 0.62)      roof = mix(vec3(0.52, 0.60, 0.38), vec3(0.60, 0.64, 0.42), rnoise(wp * 1.1));
+    else if (vVar < 0.18) roof = vec3(0.62, 0.54, 0.42);
+    roof *= 0.88 + 0.24 * rnoise(wp * 2.4);   // gravel / scrub texture
   } else {
     // the roof someone actually specified: dark EPDM, white TPO, silver
     // coating or plain gravel — the roofscape should read as a patchwork

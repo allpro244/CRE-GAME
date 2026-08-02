@@ -25,6 +25,8 @@ if (build.status !== 0) process.exit(build.status ?? 1);
 
 const which = process.argv.includes("--balance") ? "audit.mjs"
   : process.argv.includes("--econ") ? "econ.mjs"
+  : process.argv.includes("--stats") ? "stats.mjs"
+  : process.argv.includes("--play") ? "play50.mjs"
   : "invariants.mjs";
 const run = spawnSync("node", [join(HERE, which)], { stdio: "inherit", env: process.env });
 process.exit(run.status ?? 1);

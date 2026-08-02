@@ -4,17 +4,17 @@
   "district": "kestrel",
   "seed": 30411,
   "lodes": true,
-  "lots": 1468,
-  "adjacencyEdges": 2408,
+  "lots": 1500,
+  "adjacencyEdges": 2489,
   "bbox": [
     -70.905379,
-    41.093197,
+    41.093172,
     -70.895064,
-    41.107997
+    41.10799
   ],
   "core": [
-    -70.899523,
-    41.098527
+    -70.899393,
+    41.098856
   ],
   "processed": true
 }

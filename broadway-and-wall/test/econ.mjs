@@ -21,6 +21,15 @@ E.normalizeParcels(parcels);
 
 const CLASSES = ["office", "retail", "multifamily", "industrial"];
 const NAT = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07 };
+// The engine's frictional floor is per-class — a shed is let whole and stays,
+// an office floor churns — so "sitting on the floor" has to be measured
+// against the floor that class actually has. This used to be a flat 0.34 of
+// natural, which is the engine's OLD single ratio hard-coded into the test:
+// the moment the engine learned that classes differ, the test started failing
+// the market for behaving correctly.
+const FRICTION = { office: 0.32, retail: 0.32, multifamily: 0.30, industrial: 0.22 };
+const FLOOR = {};
+for (const k of Object.keys(NAT)) FLOOR[k] = NAT[k] * FRICTION[k];
 const SEEDS = Number(process.env.SEEDS ?? 6);
 const MONTHS = Number(process.env.HORIZON ?? 1200);
 
@@ -41,7 +50,7 @@ for (let seed = 1; seed <= SEEDS; seed++) {
       const t = track[k];
       if (v < t.min) t.min = v;
       if (v > t.max) t.max = v;
-      if (v <= NAT[k] * 0.34) t.pegLo++;   // sitting on the frictional floor
+      if (v <= FLOOR[k] * 1.06) t.pegLo++;   // sitting on ITS frictional floor
       if (v >= 0.445) t.pegHi++;
       if (v > NAT[k]) t.above++; else t.below++;
       if ((e.starts?.[k] ?? 0) > 0) t.starts++;

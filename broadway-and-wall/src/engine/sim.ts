@@ -6,8 +6,8 @@ import { START_CASH, CENTURY_MONTHS, logBooks, monthLabel } from "./types";
 import { initEcon, rng, rrange, tickEcon } from "./market";
 import { assetValue, holdingNOIYr, holdingValue, initialCondition, monthlyNOI, netWorth, resolveRec } from "./value";
 import { tickLeasing } from "./leasing";
-import { tickSales, tickListingAbsorption, tickBrokerCalls, tickLatent } from "./actions";
-import { tickEscrow } from "./acquire";
+import { tickSales, tickListingAbsorption, tickBrokerCalls } from "./actions";
+import { tickTalks } from "./acquire";
 import { tickLoan } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
 import { tickLoc } from "./credit";
@@ -45,7 +45,7 @@ function targetListings(s: GameState, totalLots: number): number {
 
 export function newGame(seed: number, parcels?: ParcelTable): GameState {
   const s: GameState = {
-    v: 19,
+    v: 20,
     seed,
     rng: seed,
     month: 0,
@@ -63,7 +63,6 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
     blockD: {},
     sponsor: { events: [] },
     rivals: [],
-    escrow: null,
     lenderRel: {},
     totalLots: parcels ? Object.keys(parcels).length : 0,
     builtAtStart: parcels ? Object.values(parcels).filter((p) => p.class !== "land").length : 0,
@@ -79,7 +78,7 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
     gameOver: null,
     insolventMs: 0,
   };
-  s.econ = initEcon(s);
+  s.econ = initEcon(s, parcels);
   if (parcels) s.rivals = initRivals(s, parcels, Object.keys(parcels));
   s.news.push({
     q: 0,
@@ -155,8 +154,7 @@ export function advanceQuarter(
   tickSales(s, parcels);
   tickBrokerCalls(s, parcels, bbls);
   tickListingAbsorption(s, parcels); // other buyers work the tape too
-  tickEscrow(s, parcels);            // diligence reports back
-  tickLatent(s, parcels);            // and what nobody looked for arrives
+  tickTalks(s, parcels);             // a negotiation left open goes stale
 
   // the 1031 clock: redeploy in time or the deferred tax comes due
   if (s.exchange && s.month > s.exchange.deadlineM) {

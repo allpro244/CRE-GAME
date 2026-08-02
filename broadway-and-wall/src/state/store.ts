@@ -2,8 +2,8 @@ import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse } from "@/engine/types";
 import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfolioQuarterlyCF } from "@/engine/sim";
-import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, startRenovation, setBroker, closeDeal, type BuyProduct } from "@/engine/actions";
-import { retrade, abandonEscrow, negotiate, acceptCounter, walkAway } from "@/engine/acquire";
+import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, startRenovation,  setBroker, type BuyProduct } from "@/engine/actions";
+import { negotiate, acceptCounter, walkAway } from "@/engine/acquire";
 import { respondLOI, type LOIAction } from "@/engine/leasing";
 import { refinance, buyRateCap } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
@@ -14,7 +14,7 @@ import { loadGame, saveGame, listSaves, deleteSave, type SaveMeta } from "@/engi
 import { currentCity, dataBase } from "@/state/city";
 
 export type Lens = "none" | "land" | "demand";
-export type Page = "none" | "portfolio" | "deals" | "market" | "economy" | "books" | "leasing" | "property";
+export type Page = "none" | "portfolio" | "deals" | "market" | "economy" | "books" | "leasing" | "property" | "saves";
 
 interface AppState {
   parcels: ParcelTable | null;
@@ -46,12 +46,9 @@ interface AppState {
   respondLoi: (id: number, action: LOIAction, fund?: boolean, counter?: { rentPsf?: number; tiPsf?: number }) => void;
   refi: (bbl: string, product: string, lev?: number) => void;
   develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number) => void;
-  offer: (bbl: string, price: number, product: string, lev: number, diligenceM: number) => void;
+  offer: (bbl: string, price: number, product: string, lev: number) => void;
   acceptCounter: () => void;
   walkAway: () => void;
-  closeUnderContract: () => void;
-  retradeContract: (ask: number) => void;
-  walkContract: () => void;
   raze: (bbl: string) => void;
   program: (bbl: string, id: string) => void;
   stance: (bbl: string, v: -1 | 0 | 1) => void;
@@ -210,10 +207,10 @@ export const useStore = create<AppState>((set, get) => ({
 
   // Buying is a conversation now: the same call opens it and answers their
   // counter, which is why there is one action and not three.
-  offer: (bbl, price, product, lev, diligenceM) => {
+  offer: (bbl, price, product, lev) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = negotiate(game, parcels, bbl, price, product, lev, diligenceM);
+    const r = negotiate(game, parcels, bbl, price, product, lev);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s }); void persist(r.s);
     if (r.msg) toast(r.msg);
@@ -232,30 +229,6 @@ export const useStore = create<AppState>((set, get) => ({
     const { game, parcels } = get();
     if (!game || !parcels) return;
     const r = walkAway(game, parcels);
-    set({ game: r.s }); void persist(r.s);
-    if (r.msg) toast(r.msg);
-  },
-  closeUnderContract: () => {
-    const { game, parcels } = get();
-    if (!game || !parcels) return;
-    const r = closeDeal(game, parcels);
-    if (r.err) { toast(r.err); return; }
-    set({ game: r.s }); void persist(r.s);
-    toast(r.msg ?? "Closed.");
-  },
-  retradeContract: (ask) => {
-    const { game, parcels } = get();
-    if (!game || !parcels) return;
-    const r = retrade(game, parcels, ask);
-    if (r.err) { toast(r.err); return; }
-    set({ game: r.s }); void persist(r.s);
-    if (r.msg) toast(r.msg);
-  },
-  walkContract: () => {
-    const { game, parcels } = get();
-    if (!game || !parcels) return;
-    const r = abandonEscrow(game, parcels);
-    if (r.err) { toast(r.err); return; }
     set({ game: r.s }); void persist(r.s);
     if (r.msg) toast(r.msg);
   },
@@ -410,7 +383,7 @@ export const useStore = create<AppState>((set, get) => ({
     const { parcels } = get();
     const saved = await loadGame(slot);
     if (!saved || !parcels) { toast("That save wouldn't open.", "err"); return; }
-    const fits = saved.v === 19 &&
+    const fits = saved.v === 20 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (!fits) { toast("That save was made on a different city — it can't be loaded here.", "err"); return; }
@@ -491,7 +464,7 @@ export async function loadData() {
     // exist (a save from a different city/dataset), in which case start over
     // migration: pre-city saves lived in a flat "auto" slot
     const saved = (await loadGame(AUTO())) ?? (await loadGame("auto"));
-    const fitsCity = saved && saved.v === 19 &&
+    const fitsCity = saved && saved.v === 20 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (fitsCity) {

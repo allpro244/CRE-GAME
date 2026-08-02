@@ -3,36 +3,36 @@
     "id": "newalden",
     "name": "New Alden",
     "tagline": "The original. A colonial landing, a numbered grid, and Broadway cutting both.",
-    "lots": 1629
+    "lots": 1662
   },
   {
     "id": "kestrel",
     "name": "Kestrel Point",
     "tagline": "A narrow peninsula — frontage is scarce and the only cheap land is at the tip.",
-    "lots": 1468
+    "lots": 1500
   },
   {
     "id": "marrow",
     "name": "Marrow Bay",
     "tagline": "A crescent around a deep bay; three grids that refuse to agree.",
-    "lots": 1284
+    "lots": 1329
   },
   {
     "id": "thorne",
     "name": "Thorne Island",
     "tagline": "An island. No hinterland, no cheap edge — build up or buy somebody out.",
-    "lots": 1541
+    "lots": 1500
   },
   {
     "id": "calder",
     "name": "Calder Falls",
     "tagline": "A mill town. Value runs uphill, away from the working river.",
-    "lots": 1490
+    "lots": 1514
   },
   {
     "id": "sable",
     "name": "Sable Harbor",
     "tagline": "A hooked harbor — more waterfront than land behind it.",
-    "lots": 1328
+    "lots": 1342
   }
 ]

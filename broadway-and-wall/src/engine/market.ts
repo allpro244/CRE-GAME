@@ -1,7 +1,8 @@
 // The market: mean-reverting rate walk, rate-linked cap rates, cyclical
 // rents, and a phase machine whose turns are rumored before they land.
 // Randomness creates situations, never verdicts.
-import type { Econ, GameState, MarketPhase, NewsItem } from "./types";
+import type { ParcelTable } from "@/data/types";
+import type { BuiltClass, Econ, GameState, MarketPhase, NewsItem } from "./types";
 import { BUILT_CLASSES } from "./types";
 
 export function mulberry32Step(a: number): { state: number; value: number } {
@@ -40,7 +41,44 @@ const RATE_FLOOR = 1.9, RATE_CEIL = 15.5;
 export const CAP_BASE = { office: 5.6, retail: 6.1, multifamily: 4.9, industrial: 6.9 } as const;
 // Rough citywide inventory by class, in sf — the denominator that turns other
 // people's construction into a rent effect you can feel.
-export const CITY_STOCK = { office: 30e6, retail: 15e6, multifamily: 35e6, industrial: 14e6 } as const;
+// Fallback only. The real inventory is COUNTED off the parcels at newGame —
+// see stockFromParcels. These numbers described a city seven times the size of
+// the one that exists, which meant a 200,000 sf tower you delivered moved
+// citywide office vacancy by seven hundredths of a point: "your building is
+// supply too" was true in the code and invisible in the game.
+export const CITY_STOCK = { office: 5e6, retail: 2e6, multifamily: 7e6, industrial: 1.5e6 } as const;
+
+/**
+ * THE MARKET'S INVENTORY IS THE CITY'S INVENTORY.
+ *
+ * Walk the parcels and add up what is actually standing, class by class. Every
+ * city ships its own building stock, so this also stops all six of them
+ * sharing one set of hard-coded totals — Sable Harbor has a working port and
+ * Kestrel Point does not, and their industrial markets should not be identical.
+ *
+ * A FLOOR, and an honest reason for it. The parcels are the buildings you can
+ * BUY — one island — but the market for the space is regional: industrial
+ * tenants in a harbour town take sheds on the mainland too. New Alden maps
+ * only 0.58M sf of industrial, which is about ten warehouses, and without a
+ * floor a single delivery moved citywide industrial vacancy seventeen points
+ * and pinned it on the frictional clamp. The floor is what stops a class that
+ * is thin ON THIS MAP from behaving like a market with ten buildings in it.
+ */
+export function stockFromParcels(parcels: ParcelTable): Record<BuiltClass, number> {
+  const out: Record<BuiltClass, number> = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+  for (const bbl in parcels) {
+    const r = parcels[bbl];
+    if (!r || r.class === "land" || !r.bldgArea) continue;
+    const m = r.mix;
+    if (m) {
+      for (const k of BUILT_CLASSES) out[k] += r.bldgArea * (m[k] ?? 0);
+    } else if (r.class in out) {
+      out[r.class as BuiltClass] += r.bldgArea;
+    }
+  }
+  for (const k of BUILT_CLASSES) out[k] = Math.max(1_200_000, Math.round(out[k]));
+  return out;
+}
 export const SECTOR_LABEL = { office: "Office", retail: "Retail", multifamily: "Apartments", industrial: "Industrial" } as const;
 export const RENT_BASE = { office: 62, retail: 88, multifamily: 46, industrial: 16 } as const; // $/sf/yr
 // The natural (frictional) vacancy per class — the rate at which neither side
@@ -53,7 +91,8 @@ export const NATURAL_VAC = { office: 0.115, retail: 0.085, multifamily: 0.045, i
 // a start once the hole is dug.
 export const BUILD_MONTHS = { office: [30, 44], retail: [18, 28], multifamily: [22, 34], industrial: [12, 20] } as const;
 
-export function initEcon(s: GameState): Econ {
+export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
+  const CITY = parcels ? stockFromParcels(parcels) : { ...CITY_STOCK };
   const econ: Econ = {
     indexRate: 5.4,
     phase: "expansion",
@@ -69,12 +108,13 @@ export function initEcon(s: GameState): Econ {
     starts: { office: 0, retail: 0, multifamily: 0, industrial: 0 },
     creditIdx: 1,
     employIdx: 1,
-    stock: { ...CITY_STOCK },
+    stock: { ...CITY },
+    baseStock: { ...CITY },
     occupied: {
-      office: CITY_STOCK.office * (1 - NATURAL_VAC.office),
-      retail: CITY_STOCK.retail * (1 - NATURAL_VAC.retail),
-      multifamily: CITY_STOCK.multifamily * (1 - NATURAL_VAC.multifamily),
-      industrial: CITY_STOCK.industrial * (1 - NATURAL_VAC.industrial),
+      office: CITY.office * (1 - NATURAL_VAC.office),
+      retail: CITY.retail * (1 - NATURAL_VAC.retail),
+      multifamily: CITY.multifamily * (1 - NATURAL_VAC.multifamily),
+      industrial: CITY.industrial * (1 - NATURAL_VAC.industrial),
     },
     cityVac: { ...NATURAL_VAC },
     absorb12: { office: 0, retail: 0, multifamily: 0, industrial: 0 },
@@ -259,10 +299,27 @@ export function tickEcon(s: GameState) {
     // through. Housing gets the sharpest response of the four, because a
     // housing shortage is the most profitable thing that can happen to a
     // builder and the model should behave like builders notice.
-    const gain = k === "multifamily" ? 11 : 7;
+    // HOW HARD OVERSUPPLY SHUTS THE CRANES DOWN.
+    //
+    // At gain 7, a class sitting two and a half points over its natural rate
+    // still broke ground at 83% of full pace, and six points over — a real
+    // glut — still ran at 58%. So the market kept feeding a market that was
+    // already full, and the statistics showed it: every class spent a MEDIAN
+    // of eight to ten years at a stretch above natural, which is not a cycle,
+    // it is a permanent condition with a wobble.
+    //
+    // Lenders and boards are far less patient than that. Two points over and
+    // the pace halves; five points over and almost nothing starts, which lets
+    // absorption actually catch up and turns the glut back into a phase.
+    const gain = k === "multifamily" ? 22 : 17;
     const ceiling = k === "multifamily" ? 2.3 : 1.7;
     const vacGate = clamp(1 - gain * (vacNow - NATURAL_VAC[k]), 0.08, ceiling);
     const appetite = Math.max(0, margin + 0.06 * e.cycleDev) * e.creditIdx * vacGate;
+    // This coefficient is not the knob it looks like. Starts are gated on
+    // vacancy, so the loop is self-correcting: halve this and vacancy falls,
+    // which opens the gate, and supply comes back to the same fixed point.
+    // Measured over many centuries, moving it 6% moved long-run overbuild by
+    // nothing at all. The gate's SLOPE is the real control, not this.
     const start = stk * 0.0016 * Math.min(2.4, appetite * 5) * (0.7 + 0.6 * rng(s));
     e.starts[k] = Math.round(start);
 
@@ -313,7 +370,7 @@ export function tickEcon(s: GameState) {
       (e.rentIdx[k] / RENT_BASE[k]) / Math.max(0.35, e.employIdx),
       k === "multifamily" ? -0.62 : -0.58,
     );
-    const target = CITY_STOCK[k] * (1 - NATURAL_VAC[k])
+    const target = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - NATURAL_VAC[k])
       * Math.pow(e.employIdx, elastic)
       // Sector coupling was calibrated against a sectorMom that never left
       // +/-0.002; now that the class cycles actually reach their level, 26x
@@ -323,7 +380,7 @@ export function tickEcon(s: GameState) {
       // and price get a chance to answer it.
       * (1 + e.sectorMom[k] * 11)
       * affordability;
-    const absorb = clamp(0.05 * (target - e.occupied[k]), -0.005 * e.stock[k], 0.007 * e.stock[k])
+    const absorb = clamp(0.055 * (target - e.occupied[k]), -0.005 * e.stock[k], 0.009 * e.stock[k])
       + e.stock[k] * rrange(s, -0.0006, 0.0006);
     unmet[k] = Math.max(0, (target - e.occupied[k]) / Math.max(1, e.stock[k]));
     // FRICTIONAL VACANCY IS A FLOOR, and it is not zero. Some share of every
@@ -331,7 +388,15 @@ export function tickEcon(s: GameState) {
     // roughly a third of the natural rate. A flat half-a-percent clamp was a
     // numerical guard pretending to be economics; this is the real thing, and
     // it differs by class because moving costs differ by class.
-    const friction = NATURAL_VAC[k] * 0.32;
+    // Frictional vacancy is space empty purely because tenants are moving in
+    // and out, so it scales with how often that happens — and it does not
+    // happen at the same rate in every class. A shed is let whole to one
+    // operator who stays for a decade; an office floor is carved into suites
+    // that churn constantly. Running one ratio across all four put the
+    // industrial clamp above where that market actually clears, and it sat on
+    // it a tenth of the century.
+    const frictionRatio = k === "industrial" ? 0.22 : k === "multifamily" ? 0.30 : 0.32;
+    const friction = NATURAL_VAC[k] * frictionRatio;
     e.occupied[k] = clamp(e.occupied[k] + absorb, e.stock[k] * 0.55, e.stock[k] * (1 - friction));
     e.cityVac[k] = clamp(1 - e.occupied[k] / e.stock[k], friction, 0.45);
     e.absorb12[k] = e.absorb12[k] * (11 / 12) + absorb;

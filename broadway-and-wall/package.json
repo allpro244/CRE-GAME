@@ -22,7 +22,9 @@
     "pipeline:manhattan": "node pipeline/synth.mjs && node pipeline/process.mjs && node pipeline/tiles.mjs",
     "test": "node test/run.mjs",
     "balance": "node test/run.mjs --balance",
-    "econ": "node test/run.mjs --econ"
+    "econ": "node test/run.mjs --econ",
+    "stats": "node test/run.mjs --stats",
+    "play50": "node test/run.mjs --play"
   },
   "dependencies": {
     "@types/three": "^0.185.3",

@@ -277,15 +277,27 @@ void main() {
     else if (vVar < 0.7)  { glassA = vec3(0.55, 0.60, 0.66); glassB = vec3(0.78, 0.83, 0.88); wall = vec3(0.32, 0.35, 0.39); } // silver
     else                  { glassA = vec3(0.52, 0.44, 0.34); glassB = vec3(0.76, 0.66, 0.52); wall = vec3(0.30, 0.24, 0.18); } // bronze
   } else if (s == 1) { colW = 3.0; win = vec2(0.46, 0.52);
-    if (vVar < 0.4)       { wall = vec3(0.86, 0.81, 0.70); } // limestone
-    else if (vVar < 0.7)  { wall = vec3(0.55, 0.40, 0.33); } // brownstone
-    else                  { wall = vec3(0.78, 0.79, 0.72); } // painted
+    // SEVEN STONES, NOT THREE. A street of pre-war masonry is never three
+    // colours repeated — it is limestone next to brownstone next to granite
+    // next to something somebody painted in 1954, and the eye reads the
+    // variety long before it reads any single building.
+    if (vVar < 0.16)      { wall = vec3(0.86, 0.81, 0.70); } // limestone
+    else if (vVar < 0.29) { wall = vec3(0.79, 0.75, 0.66); } // pale ashlar
+    else if (vVar < 0.44) { wall = vec3(0.55, 0.40, 0.33); } // brownstone
+    else if (vVar < 0.56) { wall = vec3(0.46, 0.35, 0.31); } // dark brownstone
+    else if (vVar < 0.68) { wall = vec3(0.63, 0.60, 0.57); } // grey granite
+    else if (vVar < 0.84) { wall = vec3(0.78, 0.79, 0.72); } // painted
+    else                  { wall = vec3(0.70, 0.66, 0.61); } // soot-washed
     glassA = vec3(0.30, 0.36, 0.42); glassB = vec3(0.44, 0.52, 0.58);
   } else if (s == 2) { colW = 2.9; win = vec2(0.42, 0.50);
-    if (vVar < 0.3)       { wall = vec3(0.72, 0.46, 0.36); } // red brick
-    else if (vVar < 0.55) { wall = vec3(0.58, 0.42, 0.34); } // brown
-    else if (vVar < 0.8)  { wall = vec3(0.76, 0.62, 0.46); } // tan
-    else                  { wall = vec3(0.83, 0.80, 0.74); } // whitewash
+    if (vVar < 0.18)      { wall = vec3(0.72, 0.46, 0.36); } // red brick
+    else if (vVar < 0.30) { wall = vec3(0.63, 0.34, 0.28); } // deep red
+    else if (vVar < 0.44) { wall = vec3(0.58, 0.42, 0.34); } // brown
+    else if (vVar < 0.56) { wall = vec3(0.49, 0.38, 0.34); } // dark brown
+    else if (vVar < 0.70) { wall = vec3(0.76, 0.62, 0.46); } // tan
+    else if (vVar < 0.80) { wall = vec3(0.80, 0.71, 0.55); } // buff
+    else if (vVar < 0.90) { wall = vec3(0.83, 0.80, 0.74); } // whitewash
+    else                  { wall = vec3(0.60, 0.55, 0.53); } // grey-painted
     glassA = vec3(0.32, 0.38, 0.44); glassB = vec3(0.50, 0.57, 0.62);
   } else if (s == 3) { colW = 4.4; win = vec2(0.58, 0.50);
     wall = mix(vec3(0.72, 0.63, 0.52), vec3(0.62, 0.58, 0.55), step(0.5, vVar));
@@ -339,6 +351,57 @@ void main() {
   if (s == 1 || s == 6) {
     if (vZ < fh * 2.0 && vZ > fh * 1.15) wall *= 0.88;
     if (vZ > vTop - 2.3 && vZ < vTop - 1.0) wall *= 0.82;
+  }
+
+  // ---- ARCHITECTURE, not just colour --------------------------------------
+  // Three details that carry almost all of the character of nineteenth and
+  // early twentieth century masonry, and that the fabric had none of: a
+  // string course banding the facade at a floor line, arched window heads on
+  // the older stock, and quoins running up the corners of the good addresses.
+  // They cost nothing — the shader already knows where the floors and the
+  // window openings are — and they are what stops a brick wall reading as a
+  // grid of holes.
+  bool masonry = (s == 1 || s == 2 || s == 3);
+  if (masonry && near > 0.15) {
+    // STRING COURSE. A projecting band of stone at one floor line, on maybe
+    // half the buildings, at a height that varies with the building.
+    if (vRand > 0.46) {
+      float bandFl = floor(2.0 + vRand * 3.0);          // 2nd to 4th floor
+      float bz = vZ - bandFl * fh;
+      if (bz > -0.34 && bz < 0.14) {
+        // lit on top, shadowed underneath, the way a projecting course reads
+        wall *= bz > -0.12 ? 1.12 : 0.80;
+        winMask *= smoothstep(0.0, 0.10, abs(bz + 0.10));
+      }
+    }
+    // ARCHED HEADS. Round-topped openings on the older stock: cut the top
+    // corners off the window by pushing the mask in as it nears the head.
+    if (vVar > 0.55 && s != 3) {
+      float wyA = clamp((f.y - m.y - 0.04) / max(win.y, 0.001), 0.0, 1.0);
+      float wxA = abs(f.x - 0.5) / max(win.x * 0.5, 0.001);
+      // the arch springs at 70% of the opening height
+      float spring = smoothstep(0.70, 1.0, wyA);
+      float rad = sqrt(max(0.0, 1.0 - spring * spring));
+      winMask *= 1.0 - smoothstep(rad - 0.16, rad + 0.02, wxA * spring);
+      // a keystone-and-voussoir band follows the arch
+      if (wyA > 0.86 && wyA < 1.06) wall *= 1.07;
+    }
+    // QUOINS. Alternating blocks up the corner, on the better buildings. vSeg
+    // carries where this fragment sits along the wall, so "near the end" is
+    // known exactly.
+    if (vRand > 0.62 && vTop > fh * 2.2) {
+      // A quoin is a corner, so it has to be measured as a FRACTION of the
+      // wall it is on. At a flat 0.9 m from each end, a short return wall was
+      // entirely quoin — which is why whole facades came out banded like a
+      // deckchair and lost their windows to it.
+      float segLen = max(1.0, vSeg.y - vSeg.x);
+      float dEnd = min(vU - vSeg.x, vSeg.y - vU);
+      if (segLen > 8.0 && dEnd < min(0.85, segLen * 0.09)) {
+        float course = step(0.5, fract(vZ / (fh * 0.34)));
+        wall *= mix(0.94, 1.09, course);
+        winMask = 0.0;
+      }
+    }
   }
   // art deco: recessed spandrels keep the vertical piers running
   if (s == 6 && f.y < 0.18) wall *= 0.84;

@@ -177,43 +177,72 @@ function chamfer(ring, i, cut) {
 // A config names a flavor instead of restating twenty numbers. The flavor is
 // the economics of the neighbourhood: how finely it plats, how much you may
 // build, how much of it is still empty, and whether a tower is thinkable.
+// HOW MUCH OF THE CITY IS STILL A HOLE IN THE GROUND.
+//
+// These were 0.52 to 0.74, which after the edge multiplier left HALF the city
+// as vacant lots and the industrial fringe about three-quarters empty. That is
+// not a settled harbour town in the year 2000, it is a frontier survey — and
+// it is why whole districts read as a paved grid with a few buildings dropped
+// on it however carefully the ground was shaded.
+//
+// A real city of this age and size runs maybe a tenth vacant, concentrated on
+// the industrial edge. These sit deliberately above that, because unbuilt land
+// is the game's entire surface and a player needs sites to buy — but at
+// roughly a third rather than a half, which is the difference between a city
+// with gaps in it and a gap with a city in it.
 export const FLAVOR = {
-  core:       { lot: [380, 1050, 170, 32, 7],  far: 15, vac: 0.52, towerGate: 1.0,  maxFloors: 99, yr: [1925, 1960, 0.30, 1960, 2018] },
-  old:        { lot: [320, 1050, 150, 27, 14], far: 12, vac: 0.52, towerGate: 0.5,  maxFloors: 14, yr: [1885, 1945, 0.70, 1950, 1990] },
-  resi:       { lot: [400, 900, 180, 26, 6],   far: 7,  vac: 0.60, towerGate: 0.03, maxFloors: 7,  yr: [1900, 1950, 0.60, 1955, 1995] },
-  industrial: { lot: [800, 2300, 340, 46, 5],  far: 6,  vac: 0.66, towerGate: 0.0,  maxFloors: 5,  yr: [1915, 1978, 1.00, 1915, 1978] },
-  modern:     { lot: [430, 1250, 195, 36, 6],  far: 13, vac: 0.74, towerGate: 0.12, maxFloors: 40, yr: [1972, 2024, 1.00, 1972, 2024] },
+  core:       { lot: [380, 1050, 170, 32, 7],  far: 15, vac: 0.26, towerGate: 1.0,  maxFloors: 99, yr: [1925, 1960, 0.30, 1960, 2018] },
+  old:        { lot: [320, 1050, 150, 27, 14], far: 12, vac: 0.26, towerGate: 0.5,  maxFloors: 14, yr: [1885, 1945, 0.70, 1950, 1990] },
+  resi:       { lot: [400, 900, 180, 26, 6],   far: 7,  vac: 0.32, towerGate: 0.03, maxFloors: 7,  yr: [1900, 1950, 0.60, 1955, 1995] },
+  industrial: { lot: [800, 2300, 340, 46, 5],  far: 6,  vac: 0.40, towerGate: 0.0,  maxFloors: 5,  yr: [1915, 1978, 1.00, 1915, 1978] },
+  modern:     { lot: [430, 1250, 195, 36, 6],  far: 13, vac: 0.42, towerGate: 0.12, maxFloors: 40, yr: [1972, 2024, 1.00, 1972, 2024] },
 };
 
+// WHAT GETS BUILT WHERE.
+//
+// The old weights put 39% of every building in the city into offices and left
+// FOURTEEN industrial buildings standing in a working port. Both are wrong in
+// the same direction: this is a harbour town, not a central business district
+// with a marina. A city like this is mostly places to live, with shops at the
+// bottom of them, a compact office core, and a real working waterfront.
+//
+// Roughly where these land now: housing around three-fifths, retail a sixth,
+// offices an eighth, industry a tenth. The office core is still a core — it is
+// concentrated in the districts whose flavour is `core` and `modern` rather
+// than smeared across the whole map.
 function classFor(flavor, heat, rand) {
   const r = rand();
   switch (flavor) {
     case "industrial":
-      if (r < 0.12) return "G1";
-      if (r < 0.68) return "E9";
-      if (r < 0.76) return "K2";
-      if (r < 0.90) return "D0";
+      // A port district is sheds and yards. It was 56% sheds and then mostly
+      // vacant, so almost none of them ever got built.
+      if (r < 0.06) return "G1";
+      if (r < 0.80) return "E9";
+      if (r < 0.88) return "K2";
+      if (r < 0.96) return "D0";
       return "S1";
     case "modern":
-      if (r < 0.06) return "G1";
-      if (r < 0.58) return "O4";
-      if (r < 0.78) return "D0";
+      if (r < 0.05) return "G1";
+      if (r < 0.34) return "O4";
+      if (r < 0.46) return "K2";
+      if (r < 0.74) return "D0";
       return "RM";
     case "old":
-      if (r < 0.34) return "O3";
-      if (r < 0.56) return "K2";
-      if (r < 0.80) return "S1";
+      if (r < 0.22) return "O3";
+      if (r < 0.48) return "K2";
+      if (r < 0.76) return "S1";
       return "D0";
     case "resi":
-      if (r < 0.62) return "D0";
-      if (r < 0.80) return "S1";
-      if (r < 0.90) return "K2";
+      if (r < 0.64) return "D0";
+      if (r < 0.82) return "S1";
+      if (r < 0.92) return "K2";
       return "RM";
     default:
+      // the Exchange: this is where the offices actually are
       if (r < 0.04) return "G1";
-      if (r < 0.60) return heat > 0.5 ? "O4" : "O3";
-      if (r < 0.74) return "RM";
-      if (r < 0.84) return "K2";
+      if (r < 0.52) return heat > 0.5 ? "O4" : "O3";
+      if (r < 0.70) return "RM";
+      if (r < 0.86) return "K2";
       return "D0";
   }
 }

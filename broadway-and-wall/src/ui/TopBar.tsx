@@ -137,6 +137,17 @@ export default function TopBar() {
       )}
 
       <div className="topbar-right">
+        {/* SAVES, WHERE SOMEBODY CAN FIND THEM. The whole save/load panel was
+            built and then rendered only at the bottom of the Books page, under
+            the ledger — which is the same as not having one. It is a top-level
+            control now, because loading a game is not an accounting task. */}
+        <button
+          className={"lens-btn" + (page === "saves" ? " lens-on" : "")}
+          title="Save this run under a name, or load one back"
+          onClick={() => setPage(page === "saves" ? "none" : "saves")}
+        >
+          ⛁ Saves
+        </button>
         {/* No window.confirm here. Browsers that suppress dialogs (an iframe,
             or "prevent this page from creating dialogs" ticked once) make
             confirm() return false silently and forever — the button reads as

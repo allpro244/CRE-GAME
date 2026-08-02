@@ -9,7 +9,7 @@ import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Contract, DevUse, Development, GameState, UseMix } from "./types";
 import { logBooks, monthLabel } from "./types";
 import { demandNow } from "./demand";
-import { rng, rrange } from "./market";
+import { rng, rrange , addStock } from "./market";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, RECOVERY_RATE } from "./value";
 import { genAnchorTenant } from "./leasing";
 
@@ -513,6 +513,10 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
 function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { address: string }) {
   const dmix = d.mix ?? devMix(d.use);
   s.built[d.bbl] = { class: dominantOf(dmix), mix: dmix, bldgArea: d.sf, floors: d.floors, yearBuilt: 2000 + Math.floor(s.month / 12) };
+  // YOUR BUILDING IS SUPPLY TOO. A tower you deliver competes with everybody
+  // else's space, including your own — and if you build enough of one class
+  // you will move its vacancy against yourself, which is the correct lesson.
+  for (const [u, share] of Object.entries(dmix)) addStock(s.econ, u as BuiltClass, d.sf * (share as number));
   const h = s.holdings[d.bbl];
   h.condition = "good";
   h.lastCapM = s.month;
@@ -679,6 +683,7 @@ export function tickCityGrowth(
     const floors = Math.max(1, Math.round(sf / (rec.lotArea * 0.62)));
     const cmix = devMix(use);
     s.built[bbl] = { class: dominantOf(cmix), mix: cmix, bldgArea: sf, floors, yearBuilt: 2000 + Math.floor(s.month / 12) };
+    for (const [u, share] of Object.entries(cmix)) addStock(s.econ, u as BuiltClass, sf * (share as number));
     s.cityBuilt.push(bbl);
 
     // land appreciates on the block that just got built

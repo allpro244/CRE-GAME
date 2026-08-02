@@ -379,7 +379,7 @@ export const useStore = create<AppState>((set, get) => ({
     const { parcels } = get();
     const saved = await loadGame(slot);
     if (!saved || !parcels) { toast("That save wouldn't open.", "err"); return; }
-    const fits = saved.v === 17 &&
+    const fits = saved.v === 18 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (!fits) { toast("That save was made on a different city — it can't be loaded here.", "err"); return; }
@@ -460,7 +460,7 @@ export async function loadData() {
     // exist (a save from a different city/dataset), in which case start over
     // migration: pre-city saves lived in a flat "auto" slot
     const saved = (await loadGame(AUTO())) ?? (await loadGame("auto"));
-    const fitsCity = saved && saved.v === 17 &&
+    const fitsCity = saved && saved.v === 18 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (fitsCity) {

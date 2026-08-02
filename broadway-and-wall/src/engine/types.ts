@@ -192,6 +192,10 @@ export interface EconHistoryPoint {
   creditIdx?: number;
   employIdx?: number;
   vac?: Record<BuiltClass, number>;
+  rent?: Record<BuiltClass, number>;
+  cap?: Record<BuiltClass, number>;
+  abs?: Record<BuiltClass, number>;    // net absorption that month, sf
+  comp?: Record<BuiltClass, number>;   // completions that month, sf
 }
 
 export interface Econ {
@@ -215,6 +219,13 @@ export interface Econ {
   pipeline: Record<BuiltClass, number>;
   starts: Record<BuiltClass, number>;
   supplyPress?: Partial<Record<BuiltClass, number>>;
+  // THE PIPELINE AS A QUEUE, not a number. Every start is a cohort with a
+  // month it will deliver in, so the game can answer the question every
+  // developer actually asks — "what is coming, and when" — instead of only
+  // "how much is out there somewhere". This is what makes the supply side
+  // legible: you can see the wave before it lands on you.
+  cohorts?: Record<BuiltClass, { m: number; sf: number }[]>;
+  completions12?: Record<BuiltClass, number>;   // trailing 12-month deliveries
   // Capital availability, 1 = normal. In a crunch this falls, spreads widen,
   // lenders size smaller, and cap rates gap out — independent of the index.
   creditIdx: number;
@@ -329,7 +340,7 @@ export interface Escrow {
 }
 
 export interface GameState {
-  v: 17;
+  v: 18;
   seed: number;
   rng: number;
   month: number;

@@ -14,6 +14,7 @@ export interface ParcelRecord {
   farMaxComm: number;
   farMaxRes: number;
   bldgClass: string;
+  district: string;     // the neighbourhood — the unit of a submarket
   class: AssetClass;              // the dominant use; the mix has the rest
   mix?: Partial<Record<Exclude<AssetClass, "land">, number>>;  // shares of floor area by use
   lotArea: number;      // sf

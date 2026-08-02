@@ -81,6 +81,47 @@ body {
 
 .btn-sm { padding: 2px 8px; font-size: 11px; }
 
+/* ---- the economy page: gauges, market cards, charts ---- */
+.gauge { margin: 5px 0 3px; }
+.gauge-track {
+  position: relative; height: 7px; border-radius: 4px;
+  background: rgba(43, 37, 26, 0.12); overflow: visible;
+}
+.gauge-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
+.gauge-natural {
+  position: absolute; top: -3px; bottom: -3px; width: 2px;
+  background: #2b251a; opacity: 0.65; transform: translateX(-1px);
+}
+.gauge-legend {
+  display: flex; justify-content: space-between; font-size: 10.5px;
+  color: var(--ink-dim); margin-top: 3px;
+}
+
+.mkt-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.mkt-card {
+  text-align: left; background: rgba(43, 37, 26, 0.045);
+  border: 1px solid rgba(146, 110, 40, 0.22); border-radius: 5px;
+  padding: 8px 10px 9px; cursor: pointer; font: inherit; color: var(--ink);
+}
+.mkt-card:hover { border-color: var(--gold); }
+.mkt-card-on { background: rgba(176, 127, 30, 0.13); border-color: var(--gold); }
+.mkt-card-head { display: flex; justify-content: space-between; align-items: baseline; }
+.mkt-card-name { font-family: var(--serif); font-size: 14px; }
+.mkt-card-state { font-size: 11px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.8px; margin-top: 2px; }
+.mkt-card-sub { font-size: 10.5px; color: var(--ink-dim); margin-top: 3px; }
+
+.chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; margin-top: 14px; }
+.chart-cell { min-width: 0; }
+.chart-title {
+  font-family: var(--serif); font-size: 13px; color: var(--ink);
+  margin-bottom: 4px; letter-spacing: 0.2px;
+}
+.chart-note { font-size: 11px; color: var(--ink-dim); line-height: 1.45; margin-top: 5px; }
+@media (max-width: 1100px) {
+  .chart-grid { grid-template-columns: minmax(0, 1fr); }
+  .mkt-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 /* ---- parcel panel ---- */
 .panel {
   position: absolute; top: 60px; right: 14px; width: 330px;

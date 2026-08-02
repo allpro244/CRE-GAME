@@ -271,6 +271,8 @@ for (let i = 0; i < lots.length; i++) {
     block: p.block ?? l.bbl.slice(1, 6),
     lot: p.lot ?? l.bbl.slice(6),
     zoneDist: p.zonedist1 ?? "—",
+    // the neighbourhood this lot sits in — the submarket view is built on it
+    district: p.district ?? p.cd ?? "—",
     farMaxComm, farMaxRes,
     bldgClass: cls,
     class: klass,

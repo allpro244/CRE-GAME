@@ -21,7 +21,8 @@
     "city:coverage": "node pipeline/build-city.mjs --all --dry",
     "pipeline:manhattan": "node pipeline/synth.mjs && node pipeline/process.mjs && node pipeline/tiles.mjs",
     "test": "node test/run.mjs",
-    "balance": "node test/run.mjs --balance"
+    "balance": "node test/run.mjs --balance",
+    "econ": "node test/run.mjs --econ"
   },
   "dependencies": {
     "@types/three": "^0.185.3",

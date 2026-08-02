@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useStore } from "@/state/store";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
-import type { Contract, DevUse } from "@/engine/types";
+import type { BuiltClass, Contract, DevUse } from "@/engine/types";
 import {
   assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr,
   occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr, useRentPsfYr,
@@ -19,6 +19,11 @@ import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/e
 import { locLimit, locRate, locAvailable } from "@/engine/credit";
 import { blockReport } from "@/engine/demand";
 import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK } from "@/engine/market";
+import {
+  submarkets, legVacancy, legRent, legDemand, deliverySchedule,
+  projectVacancy, marketBalance, monthsOfSupply,
+} from "@/engine/space";
+import { LineChart, BarChart, Gauge, type BarGroup } from "./Chart";
 import { isMixedUse, mixLabel, mixOf, uses as usesOf, useSf, USE_WORD } from "@/engine/mix";
 
 /** What to call a building: its dominant use, or "Mixed-Use" when it has none. */
@@ -1792,83 +1797,223 @@ function creditWord(ci: number): string {
   return ci >= 1.08 ? "loose" : ci >= 0.92 ? "open" : ci >= 0.78 ? "selective" : ci >= 0.62 ? "tight" : "shut";
 }
 
-// One thin sparkline from the econ history — no chart library, just a polyline.
-function Spark({ pts, w = 180, h = 36, color = "#7a6a45" }: { pts: number[]; w?: number; h?: number; color?: string }) {
-  if (pts.length < 2) return <span className="dim">—</span>;
-  let lo = Infinity, hi = -Infinity;
-  for (const v of pts) { if (v < lo) lo = v; if (v > hi) hi = v; }
-  const span = hi - lo || 1;
-  const line = pts.map((v, i) => `${((i / (pts.length - 1)) * w).toFixed(1)},${(h - ((v - lo) / span) * (h - 4) - 2).toFixed(1)}`).join(" ");
-  return (
-    <svg width={w} height={h} style={{ display: "block" }}>
-      <polyline points={line} fill="none" stroke={color} strokeWidth="1.4" />
-    </svg>
-  );
-}
-
 /**
- * THE ECONOMY. Everything the simulation knows about the world outside your
- * buildings, on one page: the cycle, the price of money, the labour market,
- * and — the part that decides every lease you will ever sign — the space
- * market per asset class: stock, vacancy against its natural rate, what is
- * under construction, and which way rents are being pushed.
+ * THE ECONOMY, WHOLE.
+ *
+ * Everything outside your buildings, on one page, arranged the way a market
+ * report is: the cycle at the top, then — for each asset class — the four
+ * questions that decide whether to buy, hold, or build.
+ *
+ *   How tight is it?      vacancy against its natural rate
+ *   Which way is it going? rents and vacancy over the last twenty years
+ *   What is coming?        the construction pipeline, by the year it lands
+ *   Where does it end up?  vacancy projected forward if nobody else starts
+ *
+ * And below that, the same question asked of each NEIGHBOURHOOD, because
+ * "office vacancy is 12%" is not a decision and "the Exchange is at 6% and
+ * Millside is at 21%" is.
  */
 function EconomyPage() {
   const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const bbls = useStore((s) => s.bbls);
   const e = game.econ;
   const hist = e.history ?? [];
-  const CLASSES = ["office", "retail", "multifamily", "industrial"] as const;
+  const [focus, setFocus] = useState<BuiltClass>("office");
+  const CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
+  const COLOR: Record<BuiltClass, string> = {
+    office: "#3d6f9e", retail: "#a8562e", multifamily: "#4a7d5a", industrial: "#7a6a45",
+  };
+
+  const bal = marketBalance(e, focus);
+  const vacNow = e.cityVac?.[focus] ?? NATURAL_VAC[focus];
+  const stock = e.stock?.[focus] ?? CITY_STOCK[focus];
+  const mos = monthsOfSupply(e, focus);
+  const sched = deliverySchedule(e, game.month, 4)[focus];
+  const proj = projectVacancy(e, focus, game.month, 36);
+  const subs = submarkets(game, parcels, bbls);
+
+  // history, monthly, trimmed to the last twenty years
+  const tail = hist.slice(-240);
+  const vacSeries = tail.map((h) => (h.vac?.[focus] ?? NATURAL_VAC[focus]) * 100);
+  const rentSeries = tail.map((h) => h.rent?.[focus] ?? e.rentIdx[focus]);
+  const capSeries = tail.map((h) => h.cap?.[focus] ?? e.capRate[focus]);
+  // the past twenty years of vacancy, then the next three of projection, on
+  // one axis — the join is where the pipeline takes over from the record
+  const vacWithProj = [...vacSeries, ...proj.map((v) => v * 100)];
+
+  // annual flows: completions against net absorption, last eight years
+  const flowYears: BarGroup[] = (() => {
+    const byYear = new Map<number, { abs: number; comp: number }>();
+    for (const h of hist) {
+      const yr = Math.floor(h.q / 12);
+      const cur = byYear.get(yr) ?? { abs: 0, comp: 0 };
+      cur.abs += h.abs?.[focus] ?? 0;
+      cur.comp += h.comp?.[focus] ?? 0;
+      byYear.set(yr, cur);
+    }
+    return [...byYear.entries()].slice(-8).map(([yr, v]) => ({
+      label: String((2000 + yr) % 100).padStart(2, "0"),
+      bars: [{ v: v.abs, color: "#4a7d5a" }, { v: -v.comp, color: "#a8562e" }],
+    }));
+  })();
+
+  const pipeGroups: BarGroup[] = sched.map((sf, i) => ({
+    label: i === 0 ? "next 12m" : `yr ${i + 1}`,
+    bars: [{ v: sf, color: COLOR[focus] }],
+  }));
+
   const phaseBlurb = {
     expansion: "Tenants expand, capital chases, rents push. Enjoy it — peaks are born here.",
-    peak: "Priced to perfection. Every deal works on paper and none of them have margin for the turn.",
+    peak: "Priced to perfection. Every deal works on paper and none has margin for the turn.",
     recession: "Tenants retrench and lenders retreat. Cheap buildings and expensive money.",
     recovery: "The bleeding has stopped. Concessions burn off before face rents move.",
   }[e.phase];
+
+  const pctFmt = (v: number) => `${v.toFixed(1)}%`;
+  // square feet at whatever magnitude the data actually is — a 40,000 sf
+  // pipeline printed as "0.0M" four times is not a chart, it is a blank
+  const sfFmt = (v: number) => {
+    const a = Math.abs(v);
+    return a >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : a >= 1e4 ? `${Math.round(v / 1e3)}k` : a >= 1 ? `${Math.round(v / 100) / 10}k` : "0";
+  };
+
   return (
     <div>
       <div className="stat-strip">
         <Big label="Cycle" value={e.phase} />
         <Big label="Loan index" value={pct(e.indexRate)} />
         <Big label="Credit window" value={`${Math.round(e.creditIdx * 100)}%`} bad={e.creditIdx < 0.7} />
-        <Big label="Employment" value={`${(e.employIdx * 100).toFixed(0)}`} />
-        <Big label="Construction costs" value={`${(e.costIdx * 100).toFixed(0)}`} />
-        <Big label="Land index" value={`${(e.landIdx * 100).toFixed(0)}`} />
+        <Big label="Employment" value={(e.employIdx * 100).toFixed(0)} />
+        <Big label="Build costs" value={(e.costIdx * 100).toFixed(0)} />
+        <Big label="Land index" value={(e.landIdx * 100).toFixed(0)} />
       </div>
       <div className="hint">{phaseBlurb}{e.rumoredPhase ? ` Word on the street: ${e.rumoredPhase} is coming.` : ""}</div>
 
+      {/* ---- the four markets, at a glance ---- */}
       <div className="page-section">The space market</div>
+      <div className="mkt-cards">
+        {CLASSES.map((k) => {
+          const b = marketBalance(e, k);
+          const v = e.cityVac?.[k] ?? NATURAL_VAC[k];
+          const pipe = (e.pipeline?.[k] ?? 0) / (e.stock?.[k] ?? CITY_STOCK[k]);
+          return (
+            <button
+              key={k}
+              className={"mkt-card" + (focus === k ? " mkt-card-on" : "")}
+              onClick={() => setFocus(k)}
+            >
+              <div className="mkt-card-head">
+                <span className="mkt-card-name">{SECTOR_LABEL[k]}</span>
+                <span className="mono">{(v * 100).toFixed(1)}%</span>
+              </div>
+              <Gauge value={v} natural={NATURAL_VAC[k]} lo={0} hi={0.28} fmt={(x) => `${(x * 100).toFixed(1)}%`} />
+              <div className="mkt-card-state">{b.state}</div>
+              <div className="mkt-card-sub mono">
+                ${e.rentIdx[k].toFixed(0)}/sf · {e.capRate[k].toFixed(2)}% cap · pipeline {(pipe * 100).toFixed(1)}%
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ---- the focused class, in depth ---- */}
+      <div className="page-section">{SECTOR_LABEL[focus]} — {bal.state}</div>
+      <div className="hint">{bal.note}</div>
+      <div className="grid" style={{ marginTop: 6 }}>
+        <Row k="Inventory" v={`${(stock / 1e6).toFixed(1)}M sf standing`} />
+        <Row k="Vacant space" v={`${((stock * vacNow) / 1e6).toFixed(2)}M sf · ${(vacNow * 100).toFixed(1)}% against a ${(NATURAL_VAC[focus] * 100).toFixed(1)}% natural rate`} bad={bal.gap > 0.025} strong />
+        <Row k="Under construction" v={`${((e.pipeline?.[focus] ?? 0) / 1e6).toFixed(2)}M sf · ${(((e.pipeline?.[focus] ?? 0) / stock) * 100).toFixed(1)}% of stock`} bad={(e.pipeline?.[focus] ?? 0) / stock > 0.05} />
+        <Row k="Net absorption (12m)" v={`${(e.absorb12?.[focus] ?? 0) >= 0 ? "+" : ""}${((e.absorb12?.[focus] ?? 0) / 1e6).toFixed(2)}M sf`} bad={(e.absorb12?.[focus] ?? 0) < 0} />
+        <Row k="Completions (12m)" v={`${((e.completions12?.[focus] ?? 0) / 1e6).toFixed(2)}M sf`} />
+        <Row
+          k="Months of supply"
+          v={mos === null
+            ? "— tenants are handing space back; the vacancy is still growing"
+            : `${mos.toFixed(0)} months to clear the vacancy and the pipeline`}
+          bad={mos === null || mos > 60}
+        />
+        <Row k="Rent" v={`$${e.rentIdx[focus].toFixed(2)}/sf · ${(((e.rentIdx[focus] / RENT_BASE[focus]) - 1) * 100).toFixed(0)}% off its long-run base`} />
+      </div>
+
+      <div className="chart-grid">
+        <div className="chart-cell">
+          <div className="chart-title">Vacancy — twenty years back, three forward</div>
+          <LineChart
+            series={[{ label: "vacancy", color: COLOR[focus], pts: vacWithProj }]}
+            bands={[{ at: NATURAL_VAC[focus] * 100, label: "natural rate" }]}
+            yFmt={pctFmt}
+            split={vacSeries.length}
+            xLabels={[`${Math.max(2000, 2000 + Math.floor((game.month - 240) / 12))}`, `${2000 + Math.floor((game.month + 36) / 12)}`]}
+          />
+          <div className="chart-note">
+            Left of the dotted line is what happened. Right of it is where vacancy goes if NOBODY starts another
+            building — pipeline delivering into today's pace of absorption. Anything above the natural rate is
+            space the market has to eat before rents move.
+          </div>
+        </div>
+        <div className="chart-cell">
+          <div className="chart-title">What is coming, and when</div>
+          {sched.some((v) => v > 0)
+            ? <BarChart groups={pipeGroups} yFmt={sfFmt} />
+            : <div className="hint" style={{ padding: "26px 0" }}>Nothing is under construction. At these rents against these build costs, no {SECTOR_LABEL[focus].toLowerCase()} scheme pencils — which is how the next shortage begins.</div>}
+          <div className="chart-note">
+            Square feet already under construction, by the year they deliver. Nothing here can be cancelled — the
+            decision to start was taken in a market that no longer exists.
+          </div>
+        </div>
+        <div className="chart-cell">
+          <div className="chart-title">Absorption vs completions, per year</div>
+          <BarChart groups={flowYears} yFmt={sfFmt} />
+          <div className="chart-note">
+            Green up is space tenants took. Orange down is space the market delivered. When orange outruns green,
+            vacancy rises no matter what anybody says about demand.
+          </div>
+        </div>
+        <div className="chart-cell">
+          <div className="chart-title">Rent and cap rate</div>
+          <LineChart series={[{ label: "rent", color: COLOR[focus], pts: rentSeries }]} yFmt={(v) => `$${v.toFixed(0)}`} height={92} />
+          <LineChart series={[{ label: "cap", color: "#8a5620", pts: capSeries, dashed: true }]} yFmt={pctFmt} height={92} />
+          <div className="chart-note">
+            Rent is what the space earns; the cap rate is what the market will pay for that earning. They do not
+            move together, and the gap between them is most of what makes or loses money here.
+          </div>
+        </div>
+      </div>
+
+      {/* ---- submarkets ---- */}
+      <div className="page-section">Submarkets — {SECTOR_LABEL[focus]} by neighbourhood</div>
       <div className="hint">
-        Rents move on the gap between each class's vacancy and its natural rate. Below natural, landlords push;
-        above it, tenants take their pick and your phone rings less. Deliveries land ~30 months after starts —
-        into whatever market exists by then.
+        Computed from the actual standing stock, lot by lot, with the same occupancy and rent model the engine
+        prices off — so this table and your rent roll can never disagree.
       </div>
       <table className="tbl">
         <thead>
           <tr>
-            <th>Class</th><th className="num">Rent $/sf</th><th className="num">Vacancy</th><th className="num">Natural</th>
-            <th className="num">Stock</th><th className="num">Pipeline</th><th className="num">12-mo absorption</th><th className="num">Cap rate</th><th>Pressure</th>
+            <th>Neighbourhood</th><th className="num">Inventory</th><th className="num">Vacancy</th>
+            <th className="num">vs city</th><th className="num">Avg rent</th><th className="num">Demand</th>
+            <th className="num">Vacant lots</th><th>Read</th>
           </tr>
         </thead>
         <tbody>
-          {CLASSES.map((k) => {
-            const vac = e.cityVac?.[k] ?? NATURAL_VAC[k];
-            const gap = vac - NATURAL_VAC[k];
-            const stock = e.stock?.[k] ?? CITY_STOCK[k];
-            const pipePct = (e.pipeline?.[k] ?? 0) / stock;
-            const ab = e.absorb12?.[k] ?? 0;
+          {subs.map((m) => {
+            const leg = m.legs[focus];
+            if (leg.sf < 20000) return null;
+            const v = legVacancy(leg);
+            const d = v - vacNow;
             return (
-              <tr key={k}>
-                <td>{SECTOR_LABEL[k]}</td>
-                <td className="num">${e.rentIdx[k].toFixed(2)} <span className="dim">(base ${RENT_BASE[k]})</span></td>
-                <td className={"num" + (gap > 0.03 ? " neg" : "")}>{(vac * 100).toFixed(1)}%</td>
-                <td className="num dim">{(NATURAL_VAC[k] * 100).toFixed(1)}%</td>
-                <td className="num">{(stock / 1e6).toFixed(1)}M sf</td>
-                <td className={"num" + (pipePct > 0.05 ? " neg" : "")}>{(pipePct * 100).toFixed(1)}% of stock</td>
-                <td className={"num" + (ab < 0 ? " neg" : "")}>{ab >= 0 ? "+" : ""}{(ab / 1e6).toFixed(2)}M sf</td>
-                <td className="num">{e.capRate[k].toFixed(2)}%</td>
+              <tr key={m.district} style={{ cursor: "default" }}>
+                <td>{m.district}</td>
+                <td className="num">{(leg.sf / 1e6).toFixed(2)}M sf</td>
+                <td className={"num" + (v > NATURAL_VAC[focus] + 0.03 ? " neg" : "")}>{(v * 100).toFixed(1)}%</td>
+                <td className="num dim">{d >= 0 ? "+" : ""}{(d * 100).toFixed(1)} pts</td>
+                <td className="num">${legRent(leg).toFixed(2)}</td>
+                <td className="num">{legDemand(leg).toFixed(0)}</td>
+                <td className="num">{m.vacantLots}</td>
                 <td className="dim">
-                  {gap < -0.015 ? "landlord's market" : gap > 0.025 ? "tenant's market" : "balanced"}
-                  {(e.sectorMom[k] ?? 0) > 0.004 ? " · sector hot" : (e.sectorMom[k] ?? 0) < -0.004 ? " · sector rolling over" : ""}
+                  {v < NATURAL_VAC[focus] - 0.02 ? "tight — push rents here"
+                    : v > NATURAL_VAC[focus] + 0.04 ? "soft — buy cheap, do not build"
+                    : "balanced"}
                 </td>
               </tr>
             );
@@ -1876,37 +2021,14 @@ function EconomyPage() {
         </tbody>
       </table>
 
-      <div className="page-section">The last twenty years</div>
-      <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-        <div>
-          <div className="dim" style={{ fontSize: 11, marginBottom: 2 }}>Loan index</div>
-          <Spark pts={hist.map((x) => x.indexRate)} />
-        </div>
-        <div>
-          <div className="dim" style={{ fontSize: 11, marginBottom: 2 }}>Office rent $/sf</div>
-          <Spark pts={hist.map((x) => x.rentOffice)} />
-        </div>
-        <div>
-          <div className="dim" style={{ fontSize: 11, marginBottom: 2 }}>Credit window</div>
-          <Spark pts={hist.map((x) => x.creditIdx ?? 1)} color="#9a5a2e" />
-        </div>
-        <div>
-          <div className="dim" style={{ fontSize: 11, marginBottom: 2 }}>Office vacancy</div>
-          <Spark pts={hist.map((x) => (x.vac?.office ?? NATURAL_VAC.office) * 100)} color="#5a7a9a" />
-        </div>
-        <div>
-          <div className="dim" style={{ fontSize: 11, marginBottom: 2 }}>Employment</div>
-          <Spark pts={hist.map((x) => x.employIdx ?? 1)} color="#4a7a4a" />
-        </div>
-        <div>
-          <div className="dim" style={{ fontSize: 11, marginBottom: 2 }}>Land index</div>
-          <Spark pts={hist.map((x) => x.landIdx)} color="#8a6a9a" />
-        </div>
-      </div>
-      <div className="hint" style={{ marginTop: 10 }}>
-        How to read it: employment drives how much space the city's tenants want; starts respond to the spread
-        between rents and construction cost — and to vacancy, because nobody builds into a glut; deliveries land
-        years later and take rents with them. The cycle turns when supply catches demand, not when a timer runs out.
+      <div className="page-section">How this works</div>
+      <div className="hint">
+        Employment decides how much space the city's tenants want; occupancy chases that target slowly, because
+        firms sign leases slowly on the way up and shed space slowly on the way down. Deliveries add stock.
+        Rents move on the GAP between vacancy and its natural rate, not on the calendar — so a boom ends when
+        supply catches demand and not a month before. Starts respond to the spread between rents and construction
+        cost, and to vacancy, because nobody breaks ground into a glut. Your own deliveries count as supply: build
+        enough of one class and you will move its vacancy against yourself.
       </div>
     </div>
   );

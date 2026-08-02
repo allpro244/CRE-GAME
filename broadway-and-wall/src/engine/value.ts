@@ -383,6 +383,15 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
   if (h.renovatingUntilM !== undefined && currentQ < h.renovatingUntilM) {
     return -Math.max(0, rec.bldgArea) * 1.2; // dark during the gut
   }
+  // A BURNED OR FLOODED FLOOR EARNS NOTHING and still costs money to hold.
+  // The undamaged part of the building carries on; the rest is a hole with a
+  // roof over it until the contractors are finished.
+  if (h.damage && currentQ < h.damage.untilM) {
+    const live = Math.max(0, 1 - h.damage.share);
+    const rest = { ...h, damage: undefined };
+    const running = holdingNOIYr(rec, econ, rest, currentQ);
+    return running * live - Math.max(0, rec.bldgArea) * h.damage.share * 0.55;
+  }
   // A ground-leased lot does not carry: the lessee pays the taxes and the
   // insurance, which is what "absolutely net" means. Its income arrives
   // separately as ground rent, so charging carry here would bill it twice.

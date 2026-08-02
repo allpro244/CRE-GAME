@@ -64,6 +64,15 @@ function run(botName, seed) {
     // PUT SOMETHING ON THE MARKET, both ways. The bots only ever responded to
     // unsolicited approaches, so the whole sell side — campaigns, bid lists,
     // best and final, retrades — was never once swept.
+    // Perils are automatic, but the COVERAGE is a choice and each bot should
+    // make a different one — a high deductible with no flood cover is the
+    // path where damage actually lands on the balance sheet.
+    if (m === 24) {
+      const ded = [0.01, 0.025, 0.05, 0.10][seed % 4];
+      const r = E.setInsurance(g, parcels, ded, seed % 3 !== 0);
+      if (!r.err) g = r.s;
+    }
+
     if (m % 13 === 6) {
       for (const bbl of Object.keys(g.holdings)) {
         const h0 = g.holdings[bbl];

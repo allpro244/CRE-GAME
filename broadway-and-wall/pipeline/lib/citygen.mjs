@@ -259,6 +259,32 @@ export function generateCity(cfg) {
   const COAST = COAST_M.map(proj.toLL);
   const ESPLANADE_W = cfg.esplanade ?? 26;
   const innerRing = offsetInward(COAST_M, ESPLANADE_W);
+
+  /**
+   * HOW EXPOSED THIS GROUND IS TO THE WATER.
+   *
+   * A port town on a shoreline had no notion of flood risk at all, so a
+   * warehouse on the quay and an office six blocks inland carried identical
+   * peril. Distance to the actual coast polyline, bucketed the way an insurer
+   * buckets it: everything within a couple of hundred metres of the water is
+   * in the flood zone and prices like it; past a kilometre it is dry ground.
+   * 0 is dry, 1 is on the quay.
+   */
+  function floodRiskAt(pt) {
+    let best = Infinity;
+    for (const c of COAST_M) {
+      const dx = c[0] - pt[0], dy = c[1] - pt[1];
+      const d2 = dx * dx + dy * dy;
+      if (d2 < best) best = d2;
+    }
+    const d = Math.sqrt(best);
+    // These are small harbour towns — a square kilometre and a bit — so a
+    // generous falloff put literally every parcel in the flood zone, which is
+    // the same as putting none of them in it. The exposed ground is the first
+    // two or three blocks off the water and nothing else.
+    if (d > 340) return 0;
+    return +Math.min(1, Math.pow(1 - d / 340, 2.6)).toFixed(3);
+  }
   const landBox = bboxOfRing(COAST_M);
 
   const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -596,7 +622,11 @@ export function generateCity(cfg) {
         }
         floors = Math.min(floors, fl.maxFloors);
         if (cls === "G1") floors = Math.min(floors, 4);
-        if (cls === "K2") floors = Math.min(floors, 3);
+        // SHOPS DO NOT STACK. Pure retail is one or two storeys — the second
+        // floor already trades at a discount to the first and there is no
+        // third. Anything taller with shops in it is a stacked building, and
+        // that is a different building class entirely.
+        if (cls === "K2") floors = Math.min(floors, 2);
         if (cls === "E9") floors = Math.min(floors, 4);
         floors = Math.min(floors, Math.max(1, Math.floor(Math.max(zone.commfar, zone.resfar) / coverage)));
         const side = Math.sqrt(areaM2);
@@ -638,6 +668,7 @@ export function generateCity(cfg) {
           lotarea: lotArea, bldgarea: bldgArea, numfloors: floors,
           yearbuilt, assessland, assesstot, unitsres,
           cd: cfg.district, district: d,
+          floodrisk: floodRiskAt(centroid(lotRing)),
         },
       });
 

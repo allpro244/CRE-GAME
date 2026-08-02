@@ -53,6 +53,7 @@ import { sponsorStanding } from "@/engine/sponsor";
 import { marketAppetite, markRival, rivalCondition } from "@/engine/rivals";
 import { gpEquity, jvSummary, lpMood, lpTerms, recapQuote } from "@/engine/equity";
 import { compFlows, compStats, portfolioIndustries } from "@/engine/comps";
+import { insuranceQuote, insuredValue, DEDUCTIBLES } from "@/engine/peril";
 import { INDUSTRY_LABEL, SECTORS } from "@/engine/market";
 import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses } from "@/engine/leasing";
 import { groundLeaseQuote, mergeCost } from "@/engine/actions";
@@ -453,6 +454,7 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         {holding?.sale && <span className="chip chip-listed">LISTED · {usd(holding.sale.ask)}</span>}
         {renovating && <span className="chip chip-reno">RENOVATING</span>}
         {holding?.loan?.sweep && <span className="chip chip-sweep">CASH SWEEP</span>}
+        {holding?.damage && <span className="chip chip-distress">{holding.damage.peril.toUpperCase()} DAMAGE</span>}
       </div>
 
       <div className="grid">
@@ -1469,6 +1471,19 @@ function PropertyPage() {
           <Row k="Demand" v={rec.demandScore + " / 100"} />
         </div>
       </div>
+      {/* OUT OF SERVICE. The damaged share earns nothing and still costs money
+          to hold, and what it actually cost you after the policy is the only
+          number that matters afterwards. */}
+      {h?.damage && (
+        <div className="deal">
+          <div className="deal-head">Damage · {h.damage.peril}</div>
+          <div className="grid">
+            <Row k="Out of service" v={`${(h.damage.share * 100).toFixed(0)}% of the building`} strong bad />
+            <Row k="Back in service" v={monthLabel(h.damage.untilM)} />
+            <Row k="What it cost you" v={usd(h.damage.uninsured)} bad />
+          </div>
+        </div>
+      )}
       <EquityDesk bbl={bbl} />
       <LandDesk bbl={bbl} />
       {dev && (
@@ -3021,6 +3036,69 @@ const STYLE_WORD: Record<string, string> = {
   developer: "developer",
 };
 
+/**
+ * THE INSURANCE DESK.
+ *
+ * The only decision in the game that costs you money every single month and
+ * pays nothing back for years at a time — and then pays for the whole century
+ * in one morning. A low deductible is expensive and quiet; a high one is cheap
+ * and occasionally ruinous; declining flood cover on a waterfront book is free
+ * money right up until the water comes over the quay.
+ */
+function InsuranceDesk() {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const { bindInsurance } = useStore.getState();
+  const pol = game.insurance;
+  const [ded, setDed] = useState(pol?.deductiblePct ?? 0.025);
+  const [flood, setFlood] = useState(pol?.flood ?? true);
+  const iv = insuredValue(game, parcels);
+  if (iv <= 0) return null;
+  const q = insuranceQuote(game, parcels, ded, flood);
+  const changed = !pol || pol.deductiblePct !== ded || pol.flood !== flood;
+  const net = pol ? (pol.recoveredTotal ?? 0) - (pol.paidTotal ?? 0) : 0;
+  return (
+    <div className="page-section">
+      <div className="page-section-head">Insurance</div>
+      <div className="grid">
+        <Row k="Insured value" v={usd(q.insuredValue)} />
+        <Row k="On the water" v={`${(q.floodExposure * 100).toFixed(0)}% of the book`} bad={q.floodExposure > 0.3} />
+        <Row k="Premium" v={`${usd(q.premiumYr)} / yr`} strong />
+        <Row k="Deductible, per building per event" v={usd(Math.round(q.insuredValue * ded))} />
+        {q.experience > 1.02 && (
+          <Row k="Experience rating" v={`+${((q.experience - 1) * 100).toFixed(0)}% — underwriters remember your claims`} bad />
+        )}
+        {pol && <Row k="Paid in / recovered" v={`${usd(pol.paidTotal ?? 0)} / ${usd(pol.recoveredTotal ?? 0)}`} />}
+        {pol && <Row k="Net, lifetime" v={(net >= 0 ? "+" : "−") + usd(Math.abs(net))} bad={net < 0} />}
+      </div>
+      <div className="btn-row">
+        {DEDUCTIBLES.map((d) => (
+          <button key={d} className={"btn" + (ded === d ? " btn-on" : "")} onClick={() => setDed(d)}>
+            {(d * 100).toFixed(d < 0.02 ? 1 : 0)}% deductible
+          </button>
+        ))}
+      </div>
+      <div className="btn-row">
+        <button className={"btn" + (flood ? " btn-on" : "")} onClick={() => setFlood(!flood)}>
+          {flood ? "Flood cover: carried" : "Flood cover: declined"}
+        </button>
+        {changed && (
+          <button className="btn btn-buy" onClick={() => bindInsurance(ded, flood)}>
+            {pol ? "Rebind" : "Bind"} at {usd(q.premiumYr)} / yr
+          </button>
+        )}
+      </div>
+      <div className="hint">
+        {!pol
+          ? "You are carrying no insurance at all. Every fire, every storm and every flood is yours in full."
+          : !flood && q.floodExposure > 0.15
+            ? `You have declined flood cover with ${(q.floodExposure * 100).toFixed(0)}% of the book on the water. That saves real money every year and costs all of it in one morning.`
+            : "A storm charges the deductible on every building it touches, not once. That is the number that matters, not the premium."}
+      </div>
+    </div>
+  );
+}
+
 // The revolving line: up to 35% of net worth at prime + 400bps, and the
 // advance rate moves with the credit cycle — the label used to promise a
 // fixed 35% while the engine was quietly cutting it in a crunch. It draws
@@ -3389,6 +3467,7 @@ function BooksPage() {
           </div>
         );
       })()}
+      <InsuranceDesk />
       <CreditLine />
       <div className="page-section">
         <div className="page-section-head">The ledger, by year</div>

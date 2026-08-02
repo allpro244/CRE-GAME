@@ -50,6 +50,22 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
   const nw = netWorth(s, parcels);
   if (!fin(nw)) bad("nan", "firm", "net worth is not a number");
 
+  // ------------------------------------------------------------------ perils
+  if (s.insurance) {
+    const p = s.insurance;
+    for (const [k, x] of Object.entries({ ded: p.deductiblePct, prem: p.premiumYr, paid: p.paidTotal, rec: p.recoveredTotal })) {
+      if (!fin(x) || x < 0) bad("insurance", "firm", `${k} is ${x}`);
+    }
+    if (p.deductiblePct > 0.5) bad("insurance", "firm", `deductible ${(p.deductiblePct * 100).toFixed(0)}%`);
+  }
+  for (const [bbl, h] of Object.entries(s.holdings)) {
+    if (!h.damage) continue;
+    const at = `damage ${bbl}`;
+    if (!fin(h.damage.share) || h.damage.share <= 0 || h.damage.share > 1) bad("peril", at, `${h.damage.share} of the building damaged`);
+    if (h.damage.untilM < s.month) bad("peril", at, "a repair that finished in the past and is still on the books");
+    if (!fin(h.damage.uninsured) || h.damage.uninsured < 0) bad("peril", at, `uninsured loss ${h.damage.uninsured}`);
+  }
+
   // --------------------------------------------------------------- the trades
   for (const k of SECTORS) {
     const mom = s.econ.industryMom?.[k];

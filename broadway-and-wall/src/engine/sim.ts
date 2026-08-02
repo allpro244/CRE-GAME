@@ -7,6 +7,7 @@ import { initEcon, rng, rrange, tickEcon } from "./market";
 import { assetValue, holdingNOIYr, holdingValue, initialCondition, monthlyNOI, netWorth, resolveRec } from "./value";
 import { capitalCall, LP_REP_START, settleJV, tickJV } from "./equity";
 import { recordComp } from "./comps";
+import { tickPerils } from "./peril";
 import { tickLeasing } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases } from "./actions";
 import { tickTalks } from "./acquire";
@@ -81,6 +82,11 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
     insolventMs: 0,
     jvs: {},
     lpRep: LP_REP_START,
+    // Bound on day one, on ordinary terms, because every operator who has ever
+    // bought a building bound cover at the closing. What you do with it after
+    // that — how much risk you keep, whether you carry flood on a waterfront
+    // book — is the decision. Starting uninsured would be a trap, not a choice.
+    insurance: { deductiblePct: 0.025, flood: true, claims: 0, sinceM: 0, premiumYr: 0, paidTotal: 0, recoveredTotal: 0 },
   };
   s.econ = initEcon(s, parcels);
   if (parcels) s.rivals = initRivals(s, parcels, Object.keys(parcels));
@@ -155,6 +161,7 @@ export function advanceQuarter(
   tickConstructionLeasing(s, parcels);
   tickPrograms(s, parcels);
   tickLeasing(s, parcels);
+  tickPerils(s, parcels);
   tickGroundLeases(s, parcels);
   tickSales(s, parcels);
   tickBrokerCalls(s, parcels, bbls);

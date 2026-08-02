@@ -105,6 +105,8 @@ export interface Holding {
   program?: { id: string; untilM: number };  // capital program underway
   programsDone?: Record<string, number>;     // id -> completed quarter
   cfHistory: number[];
+  // What diligence never found. It surfaces later, at your expense.
+  latent?: DiligenceItem[];
 }
 
 // Ground-up development on an owned vacant lot (Groundwork, simplified):
@@ -277,8 +279,41 @@ export interface Rival {
   failedM?: number;      // the month they stopped existing
 }
 
+/** Who is on the other side of the table, and therefore what they want. */
+export type SellerKind = "estate" | "institution" | "partnership" | "developer" | "local" | "lender";
+
+/** Something diligence can find. Derived from the building, not rolled at you. */
+export interface DiligenceItem {
+  kind: "roof" | "systems" | "environmental" | "structure" | "estoppel" | "title";
+  label: string;
+  detail: string;
+  cost: number;      // what it costs to cure, or the value it takes off
+  found: boolean;
+}
+
+/**
+ * A deal under contract. One at a time — your attention is the constraint, and
+ * a principal chasing four deals at once is a principal doing none of them
+ * properly.
+ */
+export interface Escrow {
+  bbl: string;
+  price: number;
+  product: string;        // BuyProduct
+  lev: number;
+  sellerKind: SellerKind;
+  sellerName: string;
+  openedM: number;
+  diligenceM: number;     // 0, 1 or 2 months of looking
+  closesM: number;
+  deposit: number;
+  hardDeposit: boolean;   // non-refundable: buys price, costs you if you walk
+  findings: DiligenceItem[];
+  retraded?: boolean;
+}
+
 export interface GameState {
-  v: 14;
+  v: 15;
   seed: number;
   rng: number;
   month: number;
@@ -298,6 +333,7 @@ export interface GameState {
   // does not get to walk into the next credit committee unrecognised.
   sponsor: { events: SponsorEvent[] };
   rivals: Rival[];                           // the other firms on the street
+  escrow: Escrow | null;                     // the deal you are under contract on
   totalLots: number;
   builtAtStart: number;
   // a 1031 exchange in flight: sale gain rolled, tax deferred until the clock runs out

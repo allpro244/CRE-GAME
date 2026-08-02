@@ -2,13 +2,14 @@
 // approach owners with assemblage pressure, sell, renovate. Pure — each
 // returns a new state or an error string, never mutates the input.
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
-import type { GameState, Holding } from "./types";
+import type { DiligenceItem, Escrow, GameState, Holding } from "./types";
 import { logBooks, monthLabel } from "./types";
 import { rng, rrange } from "./market";
 import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr } from "./value";
 import { marketAppetite, ownerOf, rivalAsk, rivalBuys } from "./rivals";
 import { genRentRoll, isCommercial } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
+import { DEPOSIT_PCT, latentIssues, offerOdds } from "./acquire";
 
 const CLOSING_PCT = 0.02;
 const SALE_FRICTION = 0.012;  // legal, title, diligence — the unavoidable rest
@@ -40,6 +41,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
 
 function executePurchase(
   s: GameState, parcels: ParcelTable, bbl: string, price: number, product: BuyProduct, offMarket: boolean, lev = 1,
+  latent?: DiligenceItem[],
 ): { s: GameState; err?: string } {
   const rec = parcels[bbl];
   if (!rec) return { s, err: "Unknown parcel." };
@@ -72,6 +74,9 @@ function executePurchase(
     tenants: [],
     cfHistory: [],
   };
+  // Whatever diligence did not find, you now own. It does not appear on the
+  // closing statement; it appears eighteen months later as a roof.
+  if (latent?.length) holding.latent = latent;
   if (product !== "cash") {
     const prod = productById(product);
     holding.loan = originate(next, prod, price, noiAfterTaxYr(rec, next.econ, holding.condition, price), lev);
@@ -117,7 +122,17 @@ export function buyListing(
   const listing = s.listings.find((l) => l.bbl === bbl);
   if (!listing) return { s, err: "That property is no longer on the market." };
   const price = Math.round(bid ?? listing.ask);
-  if (price >= listing.ask) return executePurchase(s, parcels, bbl, listing.ask, product, false, lev);
+  // THE AS-IS PATH. This is a real offer — full price, no contingencies, close
+  // on the spot — and it wins deals. What it costs is that you never looked,
+  // so everything diligence would have found comes with the building.
+  const asIs = (st: GameState) => {
+    const r0 = resolveRec(parcels, st, bbl);
+    return r0 ? latentIssues(st, r0, (Number(bbl) ^ (st.month * 2654435761)) >>> 0) : [];
+  };
+  if (price >= listing.ask) {
+    const st = clone(s);
+    return executePurchase(st, parcels, bbl, listing.ask, product, false, lev, asIs(st));
+  }
 
   // check the money is there before spending a negotiation on it
   const q = buyQuote(s, parcels, bbl, price, product, lev);
@@ -127,7 +142,7 @@ export function buyListing(
   const p = bidOdds(next, listing, price);
   const roll = rng(next);
   if (roll < p) {
-    const done = executePurchase(next, parcels, bbl, price, product, false, lev);
+    const done = executePurchase(next, parcels, bbl, price, product, false, lev, asIs(next));
     if (done.err) return { s, err: done.err };
     return { s: done.s, msg: `They took $${(price / 1e6).toFixed(2)}M.` };
   }
@@ -561,3 +576,129 @@ export function startRenovation(s: GameState, parcels: ParcelTable, bbl: string)
 }
 
 export { assetValue };
+
+// ---------------------------------------------------------------- acquisition
+/**
+ * PUT IT UNDER CONTRACT.
+ *
+ * The offer is three decisions, not one. Price is the obvious lever. The other
+ * two are what a seller is actually weighing when two bids come in a hundred
+ * grand apart:
+ *
+ *   diligence — a month or two to look, or none at all. Looking is free money
+ *               if you find something and free time for the seller if you do
+ *               not, which is why they charge you for it in price.
+ *   deposit   — soft money comes back, hard money does not. Putting up hard
+ *               money says you will close, and it is the cheapest credibility
+ *               available to a buyer with no track record.
+ *
+ * `buyListing` still exists and still works: it is this function with zero
+ * diligence and a soft deposit, closing on the spot. That is a real way to buy
+ * a building — as-is, no contingencies — and it has a real cost, which is that
+ * everything diligence would have found is now yours.
+ */
+export function makeOffer(
+  s: GameState, parcels: ParcelTable, bbl: string, price: number,
+  product: BuyProduct, lev = 1, diligenceM = 1, hardDeposit = false,
+): { s: GameState; err?: string; msg?: string } {
+  if (s.escrow) return { s, err: `You are already under contract at ${parcels[s.escrow.bbl]?.address ?? s.escrow.bbl}. One deal at a time.` };
+  const listing = s.listings.find((l) => l.bbl === bbl);
+  if (!listing) return { s, err: "That property is no longer on the market." };
+  const rec = resolveRec(parcels, s, bbl);
+  if (!rec) return { s, err: "Unknown parcel." };
+  const px = Math.round(price);
+  if (!Number.isFinite(px) || px <= 0) return { s, err: "Name a real number." };
+
+  // the money has to be there, or you are wasting everybody's afternoon
+  const q = buyQuote(s, parcels, bbl, px, product, lev);
+  if (s.cash < q.equity) return { s, err: `This deal needs $${(q.equity / 1e6).toFixed(2)}M of equity — you're short.` };
+  const deposit = Math.round(px * DEPOSIT_PCT);
+  if (s.cash < deposit) return { s, err: `The deposit alone is $${(deposit / 1e6).toFixed(2)}M.` };
+
+  const dm = Math.max(0, Math.min(3, Math.round(diligenceM)));
+  const odds = offerOdds(s, parcels, bbl, px, dm, hardDeposit);
+  const next = clone(s);
+  if (rng(next) >= odds.p) {
+    // a refusal is information: they tell you roughly what would have worked
+    const want = Math.round((odds.effective / Math.max(0.001, odds.p > 0.5 ? 1 : 1)) * 0);
+    void want;
+    next.news.unshift({
+      q: next.month, kind: "info",
+      text: `${odds.seller.name} refused $${(px / 1e6).toFixed(2)}M for ${rec.address}.`
+        + (dm >= 2 ? " They said the sixty-day diligence period was the problem, not the price." : ""),
+    });
+    return { s: next, msg: `Refused. ${odds.seller.name} was not moved.` };
+  }
+
+  next.cash -= deposit;
+  const findings = latentIssues(next, rec, (Number(bbl) ^ (next.month * 2654435761)) >>> 0);
+  next.escrow = {
+    bbl, price: px, product, lev,
+    sellerKind: odds.seller.kind, sellerName: odds.seller.name,
+    openedM: next.month, diligenceM: dm, closesM: next.month + Math.max(1, dm),
+    deposit, hardDeposit, findings,
+  } satisfies Escrow;
+  // it comes off the market the moment it goes under contract
+  next.listings = next.listings.filter((l) => l.bbl !== bbl);
+  next.news.unshift({
+    q: next.month, kind: "deal",
+    text: `Under contract: ${rec.address} at $${(px / 1e6).toFixed(2)}M with ${odds.seller.name}. `
+      + (dm > 0
+        ? `${dm === 1 ? "Thirty" : dm === 2 ? "Sixty" : "Ninety"} days to look, $${(deposit / 1e6).toFixed(2)}M ${hardDeposit ? "hard" : "refundable"}.`
+        : `No diligence, as-is, $${(deposit / 1e6).toFixed(2)}M ${hardDeposit ? "hard" : "refundable"}. You are buying what is there.`),
+  });
+  return { s: next, msg: "Under contract." };
+}
+
+/** Sign the closing statement and take the keys. */
+export function closeDeal(s: GameState, parcels: ParcelTable): { s: GameState; err?: string; msg?: string } {
+  const e = s.escrow;
+  if (!e) return { s, err: "Nothing under contract." };
+  const next = clone(s);
+  next.escrow = null;
+  // the deposit is credited against the price at the table
+  next.cash += e.deposit;
+  const unfound = e.findings.filter((f) => !f.found);
+  const done = executePurchase(next, parcels, e.bbl, e.price, e.product, false, e.lev, unfound);
+  if (done.err) return { s, err: done.err };
+  const out = done.s;
+  const rec = parcels[e.bbl];
+  // cure what you DID find — you knew about it, so you budgeted for it
+  const found = e.findings.filter((f) => f.found);
+  if (found.length && out.holdings[e.bbl]) {
+    const cure = found.reduce((a, f) => a + f.cost, 0);
+    out.holdings[e.bbl].costBasis += cure;
+    out.cash -= cure;
+    logBooks(out, "capex", cure);
+    out.news.unshift({
+      q: out.month, kind: "info",
+      text: `Closed ${rec?.address ?? e.bbl}. You went in knowing about ${found.length} item${found.length === 1 ? "" : "s"} and spent $${(cure / 1e6).toFixed(2)}M putting ${found.length === 1 ? "it" : "them"} right.`,
+    });
+  }
+  return { s: out, msg: "Closed." };
+}
+
+/**
+ * The bill for not looking. An issue nobody found surfaces on its own
+ * schedule, and it costs what it always cost.
+ */
+export function tickLatent(s: GameState, parcels: ParcelTable) {
+  for (const h of Object.values(s.holdings)) {
+    if (!h.latent?.length) continue;
+    // roughly one in thirty months, so a typical miss lands within a few years
+    if (rng(s) > 0.033) continue;
+    const item = h.latent.shift()!;
+    if (!h.latent.length) delete h.latent;
+    const rec = resolveRec(parcels, s, h.bbl);
+    s.cash -= item.cost;
+    logBooks(s, "capex", item.cost);
+    // You pay for the cure, so the building is not ALSO worse for having had
+    // the problem — charging the money and marking the asset down was double
+    // punishment, and compounding it across a hundred acquisitions destroyed
+    // fourteen runs in twenty on its own.
+    s.news.unshift({
+      q: s.month, kind: "warn",
+      text: `${rec?.address ?? h.bbl}: ${item.label.toLowerCase()}. ${item.detail} $${(item.cost / 1e6).toFixed(2)}M, and it was there when you bought it — you just did not look.`,
+    });
+  }
+}

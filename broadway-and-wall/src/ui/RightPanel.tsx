@@ -12,6 +12,7 @@ import {
 } from "@/engine/value";
 import { planDevelopment, PROGRAMS, programCost, farMaxFor, maxFloorsFor, demolitionCost, MAX_PRE_LEASE, PRE_LEASE_EXTRA_M, preLeaseDiscount } from "@/engine/dev";
 import { buyQuote, assemblagePressure, saleTaxQuote, bidOdds } from "@/engine/actions";
+import { offerOdds, sellerProfile, foundCost, escrowSummary } from "@/engine/acquire";
 import { MILESTONES } from "@/engine/sim";
 import { isCommercial, vacantSf, walt, loiSigningCost, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
@@ -504,6 +505,8 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         </div>
       )}
 
+      {game.escrow?.bbl === selectedBBL && <UnderContract />}
+
       {listing && !holding && (
         <div className="deal">
           <div className="deal-head">On the market</div>
@@ -758,6 +761,83 @@ function SaleSection({ bbl, value }: { bbl: string; value: number }) {
 // Leverage is a dial, not three buttons: slide from all-cash to whatever the
 // lender will actually fund, and watch the equity cheque and the coverage
 // move together.
+/**
+ * A DEAL UNDER CONTRACT. What the consultants have come back with, what it
+ * would cost to put right, and the three things you can do about it: close and
+ * eat it, go back to the seller for a credit, or walk and find out what your
+ * deposit was really for.
+ */
+function UnderContract() {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const e = game.escrow!;
+  const { closeUnderContract, retradeContract, walkContract } = useStore.getState();
+  const found = foundCost(e);
+  const foundItems = e.findings.filter((f) => f.found);
+  const inDiligence = game.month < e.closesM;
+  const [ask, setAsk] = useState(0);
+  const wanted = Math.round(found * (ask || 0.8));
+  const q = buyQuote(game, parcels, e.bbl, e.price, e.product, e.lev);
+  return (
+    <div className="deal">
+      <div className="deal-head">Under contract · {usd(e.price)}</div>
+      <div className="grid">
+        <Row k="Seller" v={e.sellerName} />
+        <Row k="Deposit" v={`${usd(e.deposit)} · ${e.hardDeposit ? "hard" : "refundable"}`} bad={e.hardDeposit} />
+        <Row k="Equity to close" v={usd(Math.max(0, q.equity - e.deposit))} bad={q.equity - e.deposit > game.cash} />
+        <Row k="Diligence" v={escrowSummary(e, game.month)} />
+      </div>
+      {foundItems.length > 0 ? (
+        <div className="roll" style={{ marginTop: 8 }}>
+          {foundItems.map((f, i) => (
+            <div key={i} className="roll-row">
+              <span className="roll-name">{f.label}</span>
+              <span className="roll-meta mono">{usd(f.cost)}</span>
+            </div>
+          ))}
+          <div className="roll-row roll-group">
+            <span className="roll-name">what it costs to put right</span>
+            <span className="roll-meta mono">{usd(found)}</span>
+          </div>
+        </div>
+      ) : (
+        <div className="deal-note">
+          {inDiligence
+            ? "The consultants are still out. Nothing has come back yet."
+            : e.diligenceM === 0
+              ? "You bought this as-is. Nobody looked, so nobody found anything — which is not the same as there being nothing."
+              : "Diligence came back clean."}
+        </div>
+      )}
+      {found > 0 && !e.retraded && (
+        <>
+          <Slider
+            label="Go back to them for a credit"
+            value={ask || 0.8}
+            min={0.1}
+            max={1}
+            step={0.05}
+            onChange={setAsk}
+            format={() => `${usd(wanted)} · ${Math.round((ask || 0.8) * 100)}% of what you found`}
+            hint="Ask for all of it and a proud seller ends the deal. Ask for less and most of them take it. One shot."
+          />
+          <div className="btn-row">
+            <button className="btn" onClick={() => retradeContract(wanted)}>Retrade · {usd(wanted)}</button>
+          </div>
+        </>
+      )}
+      <div className="btn-row">
+        <button className="btn btn-buy" disabled={q.equity - e.deposit > game.cash} onClick={closeUnderContract}>
+          Close at {usd(e.price)}
+        </button>
+        <button className="btn" title={e.hardDeposit ? "The deposit is hard. Walking costs you all of it." : "The deposit is refundable."} onClick={walkContract}>
+          Walk{e.hardDeposit ? ` · lose ${usd(e.deposit)}` : ""}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function BuyButtons({ bbl, price, off }: { bbl: string; price: number; off: boolean }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
@@ -770,6 +850,9 @@ function BuyButtons({ bbl, price, off }: { bbl: string; price: number; off: bool
   // range with a rounded step can leave the top end unreachable, which meant
   // you could not simply pay the asking price.
   const [bidFrac, setBidFrac] = useState(1);
+  // the other two thirds of an offer
+  const [dili, setDili] = useState(1);
+  const [hard, setHard] = useState(false);
   const offerPrice = Math.round(price * Math.min(1, bidFrac));
   const max = buyQuote(game, parcels, bbl, offerPrice, product, 1);
   const principal = Math.round(max.principal * lev);
@@ -780,8 +863,14 @@ function BuyButtons({ bbl, price, off }: { bbl: string; price: number; off: bool
   const dscrNow = annualDs > 0 ? noi / annualDs : null;
   const listing = game.listings.find((l) => l.bbl === bbl);
   // how likely the seller is to take it, quoted honestly before you spend the try
-  const odds = offerPrice >= price ? 1
+  // On a LISTED deal the terms are part of the bid, so the odds have to come
+  // from the same function the engine will roll against — quoting anything
+  // else would be lying to the player about the trade they are making.
+  const termed = !off && !!listing;
+  const oo = termed ? offerOdds(game, parcels, bbl, offerPrice, dili, hard) : null;
+  const odds = offerPrice >= price && !termed ? 1
     : off ? Math.max(0.02, Math.min(0.9, 0.92 - (1 - offerPrice / price) * 11.0 + (game.econ.phase === "recession" ? 0.12 : 0)))
+    : oo ? oo.p
     : bidOdds(game, { ask: price, distress: listing?.distress }, offerPrice);
   return (
     <>
@@ -794,10 +883,46 @@ function BuyButtons({ bbl, price, off }: { bbl: string; price: number; off: bool
         onChange={setBidFrac}
         format={() => `${usd(offerPrice)}${bidFrac < 1 ? ` · ${((bidFrac - 1) * 100).toFixed(1)}%` : " · full ask"}`}
         marks={[{ at: 0.85, label: "−15%" }, { at: 0.95, label: "−5%" }, { at: 1, label: "ask" }]}
-        hint={offerPrice >= price
-          ? "At the ask, it's yours."
-          : `${Math.round(odds * 100)}% they take it${off ? " — an owner who wasn't selling bends hard" : ""}. Push too far and they walk.`}
+        hint={termed
+          ? `${Math.round(odds * 100)}% they take it on these terms. Price is only a third of an offer.`
+          : offerPrice >= price
+            ? "At the ask, it's yours."
+            : `${Math.round(odds * 100)}% they take it${off ? " — an owner who wasn't selling bends hard" : ""}. Push too far and they walk.`}
       />
+      {termed && oo && (
+        <>
+          <div className="hint" style={{ marginTop: 6 }}>
+            Across the table: <strong>{oo.seller.name}</strong>. {sellerProfile(oo.seller.kind).blurb}
+          </div>
+          <div className="btn-row" style={{ marginTop: 8 }}>
+            {[0, 1, 2].map((d) => (
+              <button key={d} className={"btn" + (dili === d ? " btn-on" : "")}
+                title={d === 0
+                  ? "No contingency. You buy what is there, including whatever you did not look for."
+                  : d === 1 ? "Thirty days. You will find most of it."
+                  : "Sixty days. You will find almost all of it — and they will charge you for the option."}
+                onClick={() => setDili(d)}>
+                {d === 0 ? "As-is, no diligence" : d === 1 ? "30-day diligence" : "60-day diligence"}
+              </button>
+            ))}
+          </div>
+          <div className="btn-row">
+            <button className={"btn" + (!hard ? " btn-on" : "")} onClick={() => setHard(false)}
+              title="Refundable. You can walk for any reason and the money comes back.">
+              Soft deposit
+            </button>
+            <button className={"btn" + (hard ? " btn-on" : "")} onClick={() => setHard(true)}
+              title="Non-refundable from day one. It buys you the deal and it costs you if you are wrong.">
+              Hard money · {usd(offerPrice * 0.02)}
+            </button>
+          </div>
+          <div className="hint">
+            Your terms are worth {(oo.certaintyBonus * 100).toFixed(1)}% to them — they read a{" "}
+            ${(offerPrice / 1e6).toFixed(2)}M offer on these terms as ${(oo.effective / 1e6).toFixed(2)}M.
+            {dili === 0 && " Nobody will look at this building before you own it."}
+          </div>
+        </>
+      )}
       <div className="btn-row" style={{ marginTop: 8 }}>
         {/* dirt has its own desk; income paper won't look at a vacant lot */}
         {PRODUCTS.filter((p) => !p.mezz && (isLand ? p.id === "land" : p.id !== "land")).map((p) => (
@@ -852,10 +977,14 @@ function BuyButtons({ bbl, price, off }: { bbl: string; price: number; off: bool
       <div className="btn-row">
         <button
           className="btn btn-buy"
-          disabled={equity > game.cash}
-          onClick={() => act(bbl, principal <= 0 ? "cash" : product, principal <= 0 ? undefined : lev, offerPrice)}
+          disabled={equity > game.cash || (termed && !!game.escrow)}
+          onClick={() => termed
+            ? useStore.getState().offer(bbl, offerPrice, principal <= 0 ? "cash" : product, principal <= 0 ? 1 : lev, dili, hard)
+            : act(bbl, principal <= 0 ? "cash" : product, principal <= 0 ? undefined : lev, offerPrice)}
         >
-          {offerPrice >= price ? "Buy at the ask" : `Offer ${usd(offerPrice)}`} · eq {usd(equity)}
+          {termed
+            ? `${dili === 0 ? "Buy as-is" : "Tie it up"} · ${usd(offerPrice)}`
+            : offerPrice >= price ? "Buy at the ask" : `Offer ${usd(offerPrice)}`} · eq {usd(equity)}
         </button>
       </div>
       {equity > game.cash && <div className="hint">Short {usd(equity - game.cash)} — the line of credit is on the Books page.</div>}
@@ -1352,6 +1481,15 @@ function DealsPage() {
       )}
       <div className="deals-grid">
       <section>
+        <div className="page-section">Under contract · {game.escrow ? 1 : 0}</div>
+        {game.escrow ? (
+          <div className="hint" style={{ cursor: "pointer" }} onClick={() => { setPage("none"); select(game.escrow!.bbl); }}>
+            <strong>{parcels[game.escrow.bbl]?.address ?? game.escrow.bbl}</strong> at {usd(game.escrow.price)} with {game.escrow.sellerName} — {escrowSummary(game.escrow, game.month)}
+            {foundCost(game.escrow) > 0 ? ` · ${usd(foundCost(game.escrow))} of problems found so far` : ""}
+          </div>
+        ) : (
+          <div className="hint">Nothing under contract. One deal at a time — tie one up from any listing.</div>
+        )}
         <div className="page-section">Letters of intent · {game.lois.length}</div>
         {game.lois.length === 0 && <div className="hint">No live negotiations. Vacant space in high-demand buildings draws tenants.</div>}
         <div className="loi-grid">

@@ -120,6 +120,10 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
       bad("overleased", at, `${Math.round(leased + turning).toLocaleString()} sf leased-or-turning in a ${rec.bldgArea.toLocaleString()} sf building`);
     }
     if (h.occ !== undefined && (!fin(h.occ) || h.occ < 0 || h.occ > 1)) bad("occ", at, `occupancy ${h.occ}`);
+    for (const f of h.latent ?? []) {
+      if (!fin(f.cost) || f.cost < 0) bad("latent", at, `an unfound ${f.kind} issue costs ${f.cost}`);
+      if (f.found) bad("latent", at, `a FOUND issue was carried into ownership as latent`);
+    }
 
     // the loan
     const l = h.loan;
@@ -192,6 +196,25 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
   for (const [id, d] of Object.entries(s.blockD ?? {})) {
     if (!fin(d)) bad("nan", `block ${id}`, `demand drift is ${d}`);
     else if (Math.abs(d) > 40) bad("demand", `block ${id}`, `demand drift ${d.toFixed(1)} beyond the cap`);
+  }
+
+  // ----------------------------------------------------------- under contract
+  if (s.escrow) {
+    const e = s.escrow;
+    const at = `escrow ${e.bbl}`;
+    if (!parcels[e.bbl]) bad("escrow", at, "under contract on a parcel that does not exist");
+    if (s.holdings[e.bbl]) bad("escrow", at, "under contract on a building you already own");
+    if (!fin(e.price) || e.price <= 0) bad("escrow", at, `price ${e.price}`);
+    if (!fin(e.deposit) || e.deposit < 0) bad("escrow", at, `deposit ${e.deposit}`);
+    if (e.deposit > e.price) bad("escrow", at, "the deposit is larger than the price");
+    if (e.openedM > s.month) bad("escrow", at, `opened in month ${e.openedM}, it is month ${s.month}`);
+    if (e.closesM < e.openedM) bad("escrow", at, "closes before it opened");
+    if (e.diligenceM > 0 && s.listings.some((l) => l.bbl === e.bbl)) {
+      bad("escrow", at, "under contract and still on the market");
+    }
+    for (const f of e.findings) {
+      if (!fin(f.cost) || f.cost < 0) bad("escrow", at, `${f.kind} finding costs ${f.cost}`);
+    }
   }
 
   // -------------------------------------------------------------- the street

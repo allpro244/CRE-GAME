@@ -25,11 +25,12 @@
 // whether to eat them, retrade them or walk from your deposit is the decision
 // the job is for.
 //
-// So: an offer carries a price, a diligence period and a deposit. Short
-// diligence and hard money buy you a better price and a better chance of
-// winning, and they buy it by transferring the risk of what you have not found
-// onto you. Long diligence and a soft deposit are free options, and sellers
-// price free options exactly the way lenders do.
+// So: an offer is a price and ONE structural choice — sixty days of diligence,
+// or as-is. Diligence gives you the look and the walk: the deposit stays
+// refundable until the period ends, and everything the consultants find is
+// yours to retrade or flee. As-is closes fast with the deposit hard from day
+// one — that certainty is worth real basis points to the seller, and it buys
+// you the building including whatever nobody looked for.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { DiligenceItem, Escrow, GameState, SellerKind } from "./types";
 import { logBooks, monthLabel } from "./types";
@@ -114,7 +115,7 @@ export function sellerOf(s: GameState, parcels: ParcelTable, bbl: string): { kin
  */
 export function latentIssues(s: GameState, rec: ParcelRecord, seed: number): DiligenceItem[] {
   const out: DiligenceItem[] = [];
-  const year = 2026 + Math.floor(s.month / 12);
+  const year = 2000 + Math.floor(s.month / 12);
   const age = Math.max(0, year - rec.yearBuilt);
   const cond = initialCondition(rec);
   const sf = Math.max(1, rec.bldgArea);
@@ -191,7 +192,8 @@ function mixShare(rec: ParcelRecord, use: "industrial"): number {
 
 /** How thoroughly a given diligence period actually looks. */
 export function discoveryRate(months: number): number {
-  return months <= 0 ? 0 : months === 1 ? 0.62 : months === 2 ? 0.90 : 0.97;
+  // sixty days with real consultants finds nearly everything findable
+  return months <= 0 ? 0 : months === 1 ? 0.62 : 0.92;
 }
 
 // -------------------------------------------------------------------- the bid
@@ -204,15 +206,17 @@ export function discoveryRate(months: number): number {
  */
 export function offerOdds(
   s: GameState, parcels: ParcelTable, bbl: string,
-  price: number, diligenceM: number, hardDeposit: boolean,
+  price: number, diligenceM: number,
 ): { p: number; effective: number; certaintyBonus: number; seller: { kind: SellerKind; name: string } } {
   const seller = sellerOf(s, parcels, bbl);
   const prof = SELLERS[seller.kind];
   const rec = resolveRec(parcels, s, bbl);
   const li = s.listings.find((l) => l.bbl === bbl);
   const ask = li?.ask ?? (rec ? assetValue(rec, s.econ, initialCondition(rec)) : price);
-  // certainty, in dollars: waiving diligence is worth the most, hard money next
-  const certainty = prof.certainty * ((diligenceM <= 0 ? 1 : diligenceM === 1 ? 0.45 : 0.1) + (hardDeposit ? 0.55 : 0));
+  // Certainty, in dollars. As-is is the whole package — no contingency, hard
+  // money, close in thirty days — and an estate or a receiver will pay real
+  // points for it. Sixty days of free look is worth almost nothing to them.
+  const certainty = prof.certainty * (diligenceM <= 0 ? 1.55 : 0.12);
   const effective = price * (1 + certainty);
   const disc = 1 - effective / Math.max(1, ask);
   const floorHit = effective < ask * prof.floor ? 0.6 : 0;

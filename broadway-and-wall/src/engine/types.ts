@@ -56,6 +56,11 @@ export interface LOI {
   recovery?: "nnn" | "base" | "gross";
   expiresM: number;
   countered?: boolean;
+  // The negotiation, Groundwork-style: you counter with a rent and a TI
+  // number; they take it, walk, or counter back ONCE — and that one is final.
+  stage?: "open" | "countered";
+  counterRentPsf?: number;
+  counterTiPsf?: number;
   tenantIdx?: number;  // renewals: index into holding.tenants
 }
 
@@ -186,6 +191,7 @@ export interface EconHistoryPoint {
   rentOffice: number;
   creditIdx?: number;
   employIdx?: number;
+  vac?: Record<BuiltClass, number>;
 }
 
 export interface Econ {
@@ -214,6 +220,16 @@ export interface Econ {
   creditIdx: number;
   // The demand driver behind leasing velocity.
   employIdx: number;
+  // THE SPACE MARKET, class by class. Stock is every square foot standing;
+  // occupied is every square foot with a tenant in it; their ratio is the
+  // citywide vacancy that decides which side of the table has the leverage.
+  // Employment pulls occupancy up, deliveries push vacancy up, and rents move
+  // on the GAP between vacancy and its natural rate — the classic four-
+  // quadrant model, run monthly.
+  stock: Record<BuiltClass, number>;
+  occupied: Record<BuiltClass, number>;
+  cityVac: Record<BuiltClass, number>;
+  absorb12: Record<BuiltClass, number>;   // trailing 12-month net absorption, sf
   history: EconHistoryPoint[];
 }
 
@@ -313,7 +329,7 @@ export interface Escrow {
 }
 
 export interface GameState {
-  v: 16;
+  v: 17;
   seed: number;
   rng: number;
   month: number;
@@ -368,8 +384,8 @@ export function logBooks(s: GameState, key: keyof Omit<BooksYear, "yr">, amt: nu
 }
 
 export const START_CASH = 6_000_000;
-export const START_YEAR = 2026;
-export const CAMPAIGN_MONTHS = 1200; // a hundred years of Ashport
+export const START_YEAR = 2000;
+export const CAMPAIGN_MONTHS = 1200; // a hundred years, Jan 2000 to Jan 2100
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 export function monthLabel(m: number): string {

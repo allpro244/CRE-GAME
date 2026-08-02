@@ -44,6 +44,30 @@ body {
   margin-left: 12px; font-size: 12px; color: var(--ink-dim);
   letter-spacing: 1.2px; text-transform: uppercase;
 }
+/* the city menu — six towns, one campaign each */
+.city-pick { position: relative; display: inline-block; }
+.city-pick-btn {
+  background: none; border: none; cursor: pointer; padding: 2px 4px;
+  font: inherit;
+}
+.city-pick-btn:hover { color: var(--ink); }
+.city-menu {
+  position: absolute; top: 24px; left: 8px; z-index: 60;
+  min-width: 340px; padding: 6px;
+  background: var(--paper, #f7f3e8); border: 1px solid #c9c2ae; border-radius: 6px;
+  box-shadow: 0 8px 28px rgba(40, 34, 20, 0.25);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.city-item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  padding: 7px 10px; border: none; border-radius: 4px; background: none;
+  cursor: pointer; text-align: left; font: inherit;
+}
+.city-item:hover { background: rgba(176, 127, 30, 0.12); }
+.city-item-on { background: rgba(176, 127, 30, 0.18); }
+.city-item-name { font-size: 13px; font-weight: 600; color: var(--ink); letter-spacing: 0.3px; }
+.city-item-tag { font-size: 11px; color: var(--ink-dim); letter-spacing: 0.2px; text-transform: none; }
+
 .topbar-right { display: flex; align-items: center; gap: 14px; pointer-events: auto; }
 .stat { font-size: 13px; color: var(--ink-dim); }
 .fps-good { color: #3a7d46; }
@@ -54,6 +78,8 @@ body {
   font-weight: 700;
 }
 .badge-warn { background: #8a5620; color: #f6e7c8; border: 1px solid #6e4419; }
+
+.btn-sm { padding: 2px 8px; font-size: 11px; }
 
 /* ---- parcel panel ---- */
 .panel {

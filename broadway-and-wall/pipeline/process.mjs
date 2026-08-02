@@ -12,7 +12,10 @@ import { makeProjection, polygonArea, centroid, bboxOfRing, sharedBoundaryLength
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const RAW = join(ROOT, "raw");
 const OUT = join(ROOT, "out");
-const PUB = join(ROOT, "..", "public", "data");
+// Per-city output: the app serves several cities side by side, each in its own
+// directory under public/data/. BW_CITY_DIR names it; unset writes flat (the
+// legacy single-city layout, kept for the Manhattan/Ashport pipelines).
+const PUB = join(ROOT, "..", "public", "data", process.env.BW_CITY_DIR ?? "");
 mkdirSync(OUT, { recursive: true });
 mkdirSync(PUB, { recursive: true });
 

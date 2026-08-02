@@ -1,0 +1,20 @@
+{
+  "source": "fictional",
+  "city": "New Alden",
+  "district": "newalden",
+  "seed": 20261,
+  "lodes": true,
+  "lots": 1629,
+  "adjacencyEdges": 3007,
+  "bbox": [
+    -70.910327,
+    41.097193,
+    -70.890015,
+    41.105712
+  ],
+  "core": [
+    -70.897795,
+    41.10102
+  ],
+  "processed": true
+}

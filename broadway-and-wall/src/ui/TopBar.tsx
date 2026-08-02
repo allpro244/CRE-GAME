@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore, derivedNetWorth, derivedQuarterCF } from "@/state/store";
 import { monthLabel, CAMPAIGN_MONTHS } from "@/engine/types";
+import { currentCity, listCities, switchCity, type CityInfo } from "@/state/city";
 import { usd, pct } from "./format";
 
 export default function TopBar() {
@@ -19,13 +20,54 @@ export default function TopBar() {
   const cf = derivedQuarterCF();
   const dealsCount = game ? game.lois.length + Object.values(game.holdings).filter((h) => h.sale?.offer).length : 0;
 
+  // The city menu. Six towns ship side by side; each keeps its own autosave,
+  // so this is a switch between campaigns, not a reset of one.
+  const [cities, setCities] = useState<CityInfo[]>([]);
+  const [cityOpen, setCityOpen] = useState(false);
+  const cityRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { void listCities().then(setCities); }, []);
+  useEffect(() => {
+    if (!cityOpen) return;
+    const close = (e: MouseEvent) => {
+      if (cityRef.current && !cityRef.current.contains(e.target as Node)) setCityOpen(false);
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [cityOpen]);
+
   return (
     <div className="topbar">
       <div className="brand">
         <span className="brand-name">Broadway &amp; Wall</span>
-        <span className="brand-sub">
-          {manifest?.city ?? (manifest?.district === "MN" ? "Manhattan" : "Lower Manhattan · CD 1")}
-        </span>
+        {cities.length > 1 ? (
+          <div className="city-pick" ref={cityRef}>
+            <button
+              className="brand-sub city-pick-btn"
+              title="Switch city — each city keeps its own campaign and autosave"
+              onClick={() => setCityOpen((v) => !v)}
+            >
+              {manifest?.city ?? currentCity()} ▾
+            </button>
+            {cityOpen && (
+              <div className="city-menu">
+                {cities.map((c) => (
+                  <button
+                    key={c.id}
+                    className={"city-item" + (c.id === currentCity() ? " city-item-on" : "")}
+                    onClick={() => { if (c.id !== currentCity()) switchCity(c.id); else setCityOpen(false); }}
+                  >
+                    <span className="city-item-name">{c.name}</span>
+                    <span className="city-item-tag">{c.tagline}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <span className="brand-sub">
+            {manifest?.city ?? (manifest?.district === "MN" ? "Manhattan" : "Lower Manhattan · CD 1")}
+          </span>
+        )}
         {manifest?.source === "synthetic" && (
           <span className="badge badge-warn" title="Generated stand-in data — run `pnpm pipeline` on an open network to fetch real PLUTO data.">
             SYNTHETIC DEV DATA
@@ -55,7 +97,10 @@ export default function TopBar() {
             Deals{dealsCount > 0 ? ` · ${dealsCount}` : ""}
           </button>
           <button className={"nav-btn" + (page === "market" ? " nav-on" : "")} onClick={() => setPage(page === "market" ? "none" : "market")}>
-            Market
+            Marketplace
+          </button>
+          <button className={"nav-btn" + (page === "economy" ? " nav-on" : "")} onClick={() => setPage(page === "economy" ? "none" : "economy")}>
+            Economy
           </button>
           <button className={"nav-btn" + (page === "leasing" ? " nav-on" : "")} onClick={() => setPage(page === "leasing" ? "none" : "leasing")}>
             Leasing

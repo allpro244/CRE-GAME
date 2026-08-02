@@ -1,0 +1,20 @@
+{
+  "source": "fictional",
+  "city": "Sable Harbor",
+  "district": "sable",
+  "seed": 30815,
+  "lodes": true,
+  "lots": 1328,
+  "adjacencyEdges": 2210,
+  "bbox": [
+    -70.910017,
+    41.096839,
+    -70.890372,
+    41.105472
+  ],
+  "core": [
+    -70.898337,
+    41.101326
+  ],
+  "processed": true
+}

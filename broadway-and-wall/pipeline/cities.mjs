@@ -412,4 +412,107 @@ const sable = {
   },
 };
 
-export const CITIES = { kestrel, marrow, thorne, calder, sable };
+// --- 6. NEW ALDEN -----------------------------------------------------------
+// The original — the city the game shipped with, ported onto this generator so
+// it keeps its geography (the Landing at the harbor, the numbered midtown grid,
+// Broadway cutting it at thirty-eight degrees, the brownstones arguing with
+// downtown the way Back Bay does) but gains the no-holes guarantee the old
+// hand-written region boxes never had. Same seed, same bones.
+const newalden = {
+  name: "New Alden", district: "newalden", abbr: "AP", seed: 20261,
+  center: [-70.9, 41.1],
+  coast: [
+    [-880, -60], [-920, 200], [-810, 430],
+    [-460, 610], [40, 680], [470, 600],
+    [750, 420], [890, 150],
+    [860, -110], [660, -290],
+    [420, -350], [250, -215], [90, -330],
+    [-190, -370], [-540, -310], [-780, -210],
+  ],
+  coastAmp: 18, esplanade: 26,
+  cores: [
+    { xy: [300, -40], w: 1.0, r: 260 },   // where the Landing meets the grid
+    { xy: [30, 190], w: 0.55, r: 300 },   // midtown
+    { xy: [-360, 470], w: 0.16, r: 220 }, // the brownstones
+    { xy: [-700, 60], w: 0.10, r: 200 },  // the wharves
+  ],
+  // The old REGION boxes, restated as a BSP so they tile. Exchange shows up as
+  // three leaves (west of, east of, and north of the Landing) — same district,
+  // same lattice, so its streets stay in register across all three.
+  partition: {
+    cut: cut(-560, 0, 90), neg: "millside",
+    pos: {
+      cut: cut(0, 330, 0), neg: "northside",
+      pos: {
+        cut: cut(110, 0, 90), neg: "exchange",
+        pos: {
+          cut: cut(680, 0, 90), pos: "exchange",
+          neg: { cut: cut(0, 30, 0), neg: "exchange", pos: "oldharbor" },
+        },
+      },
+    },
+  },
+  districts: {
+    oldharbor: { kind: "organic", flavor: "old", cell: [3400, 8200], jitterDeg: 15, streetW: 9, fullBlockP: 0.02 },
+    exchange:  { kind: "lattice", flavor: "core", bearingDeg: 4, stPitch: 72, avePitch: 205, streetW: 15, aveW: 27, warpAmp: 2, numbered: true, fullBlockP: 0.05 },
+    northside: { kind: "lattice", flavor: "resi", bearingDeg: -18, stPitch: 58, avePitch: 148, streetW: 13, aveW: 20, warpAmp: 4, fullBlockP: 0.02 },
+    millside:  { kind: "lattice", flavor: "industrial", bearingDeg: -34, stPitch: 96, avePitch: 255, streetW: 17, aveW: 28, warpAmp: 9, fullBlockP: 0.11 },
+  },
+  parks: [
+    { cx: -50, cy: 130, w: 330, h: 230, deg: 4, name: "Alden Common" },
+    { cx: 300, cy: -30, w: 85, h: 85, deg: 4, name: "Landing Square" },
+    { cx: -340, cy: 500, w: 150, h: 85, deg: 4, name: "Calvert Green" },
+  ],
+  diagonals: [{ cx: -125, cy: 255, w: 900, h: 27, deg: 134.5 }],
+  piers: [
+    [[180, -300], [150, -420], [185, -428], [215, -308]],
+    [[340, -300], [320, -430], [355, -438], [375, -308]],
+    [[520, -290], [545, -400], [578, -390], [553, -280]],
+    [[-350, -340], [-360, -450], [-322, -455], [-312, -345]],
+    [[-830, 60], [-950, 40], [-953, 75], [-833, 95]],
+    [[-800, 280], [-915, 300], [-910, 335], [-795, 315]],
+  ],
+  cranes: [[-860, -140, 25], [-880, 180, 85]],
+  ships: [[300, -520, 75], [640, -480, 30], [-500, -520, 100]],
+  breakwaters: [[560, -450, 160, 13, 35]],
+  stations: [
+    { name: "Landing Square", lines: "1 A", xy: [300, -40], weight: 100 },
+    { name: "Alden Common", lines: "1 2", xy: [70, 130], weight: 85 },
+    { name: "Custom House", lines: "A", xy: [520, -150], weight: 45 },
+    { name: "Midtown", lines: "1 2", xy: [-30, 340], weight: 60 },
+    { name: "Uptown", lines: "1", xy: [130, 520], weight: 40 },
+    { name: "Calvert Green", lines: "2", xy: [-330, 470], weight: 40 },
+    { name: "Wharf Gate", lines: "W 2", xy: [-560, 190], weight: 30 },
+    { name: "Drydock", lines: "W", xy: [-760, -60], weight: 22 },
+  ],
+  labels: [
+    { name: "THE LANDING", labelKind: "district", xy: [400, -160] },
+    { name: "MIDTOWN", labelKind: "district", xy: [-60, 300] },
+    { name: "THE BROWNSTONES", labelKind: "district", xy: [-120, 520] },
+    { name: "THE WHARVES", labelKind: "district", xy: [-720, 130] },
+    { name: "Alden Common", labelKind: "park", xy: [-50, 130] },
+    { name: "Landing Square", labelKind: "park", xy: [300, -30] },
+    { name: "Calvert Green", labelKind: "park", xy: [-340, 500] },
+    { name: "New Alden Harbor", labelKind: "water", xy: [250, -560] },
+    { name: "Alden River", labelKind: "water", xy: [-1120, 180] },
+  ],
+  avenues: ["Broadway", "Alden Ave", "Commonwealth Ave", "Tremont Ave", "Lexington Ave", "Bowery Ave", "Park Ave"],
+  streets: {
+    oldharbor: ["Union St", "Milk St", "State St", "Dock Sq", "Batterymarch", "India Row", "Pearl St", "Broad St", "Sloop Alley", "Oliver Ln", "Custom House St", "Salem Row"],
+    millside: ["Drydock Ave", "Gantry St", "Cooperage Rd", "Chandlery Row", "Packet St", "Fulton Wharf", "Caulkers Ln"],
+    northside: ["Ashby St", "Bancroft St", "Calvert St", "Denholm St", "Everett St", "Fenwick St", "Granby St", "Hartwell St"],
+    default: ["Market St", "Church St", "Mill St"],
+  },
+};
+
+// A one-line blurb per city, shown in the picker. What kind of game each is.
+export const TAGLINES = {
+  newalden: "The original. A colonial landing, a numbered grid, and Broadway cutting both.",
+  kestrel: "A narrow peninsula — frontage is scarce and the only cheap land is at the tip.",
+  marrow: "A crescent around a deep bay; three grids that refuse to agree.",
+  thorne: "An island. No hinterland, no cheap edge — build up or buy somebody out.",
+  calder: "A mill town. Value runs uphill, away from the working river.",
+  sable: "A hooked harbor — more waterfront than land behind it.",
+};
+
+export const CITIES = { newalden, kestrel, marrow, thorne, calder, sable };

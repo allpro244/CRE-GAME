@@ -234,10 +234,10 @@ export function buyOffMarket(
   return { s: next, msg: "They ended the conversation." };
 }
 
-// One counter per approach: come back 12% under their number. They take it,
-// hold firm, or hang up — pushing a holdout too hard loses the deal entirely.
+// One counter per approach, at YOUR number off the slider. The deeper you
+// cut, the worse the odds — they take it, hold firm, or hang up entirely.
 export function counterOffMarket(
-  s: GameState, parcels: ParcelTable, adjacency: Adjacency, bbl: string,
+  s: GameState, parcels: ParcelTable, adjacency: Adjacency, bbl: string, offerPx?: number,
 ): { s: GameState; err?: string; msg?: string } {
   const a = s.approaches[bbl];
   const rec = parcels[bbl];
@@ -247,16 +247,19 @@ export function counterOffMarket(
   const next = clone(s);
   const na = next.approaches[bbl];
   na.countered = true;
+  const px = Math.round(offerPx ?? a.ask * 0.88);
+  const cut = Math.max(0, 1 - px / a.ask);                     // how deep you went
   const pressure = assemblagePressure(next, adjacency, bbl);
-  const pTake = Math.max(0.08, Math.min(0.75,
+  const pTake = Math.max(0.05, Math.min(0.8,
     0.48
+    - (cut - 0.12) * 2.6                                       // 12% under is the reference cut
     - 0.35 * pressure                                          // holdouts don't blink
     + (next.econ.phase === "recession" ? 0.18 : 0)             // fear is your friend
     - (next.econ.phase === "expansion" ? 0.08 : 0),
   ));
   const roll = rng(next);
   if (roll < pTake) {
-    na.ask = Math.round(a.ask * 0.88 / 1000) * 1000;
+    na.ask = Math.round(px / 1000) * 1000;
     next.news.unshift({ q: next.month, kind: "deal", text: `${rec.address}: the owner grumbled and took your number — $${(na.ask / 1e6).toFixed(2)}M.` });
     return { s: next, msg: "They took it." };
   }
@@ -414,6 +417,13 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
   // if the building belongs to a firm you can name, the number is THEIR
   // number: a family trust that owns it outright quotes a silly price, and a
   // shop that is three months from a margin call quotes inside appraisal.
+  // A BROKER'S CALL IS A FILTER, NOT A FIREHOSE. The reason to pick up the
+  // phone for an off-market pitch is that it is priced to move — an owner who
+  // wants retail-plus for their building lists it like everybody else. So the
+  // broker only rings when the whisper number is a real discount to value:
+  // an estate that wants out, a fund past its hold period, a rival that needs
+  // the cash. If today's file has nothing under 92 cents on the dollar, the
+  // phone stays quiet.
   const owner = ownerOf(s, best.bbl);
   const value = assetValue(best, s.econ, initialCondition(best));
   let ask: number;
@@ -423,16 +433,15 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
     ask = Math.round(q.ask / 1000) * 1000;
     who = q.note;
   } else {
-    const premium = s.econ.phase === "recession" ? rrange(s, 0.92, 1.06)
-      : s.econ.phase === "recovery" ? rrange(s, 0.98, 1.12)
-      : rrange(s, 1.04, 1.22);
-    ask = Math.round(value * premium / 1000) * 1000;
-    who = "Their client will listen for a few months.";
+    const motivated = s.econ.phase === "recession" ? rrange(s, 0.78, 0.90) : rrange(s, 0.84, 0.92);
+    ask = Math.round(value * motivated / 1000) * 1000;
+    who = "Their client needs it done this quarter — that is why you are hearing about it.";
   }
+  if (ask > value * 0.92) return;   // not good enough to bother you with
   s.approaches[best.bbl] = { q: s.month, refused: false, ask, inbound: true };
   s.news.unshift({
     q: s.month, kind: "deal",
-    text: `A broker called about ${best.address} — ${best.bldgArea.toLocaleString()} sf, not on the market, whisper number $${(ask / 1e6).toFixed(2)}M. ${who}`,
+    text: `A broker called about ${best.address} — ${best.bldgArea.toLocaleString()} sf, off market, whisper number $${(ask / 1e6).toFixed(2)}M against roughly $${(value / 1e6).toFixed(2)}M of value. ${who}`,
   });
 }
 
@@ -608,7 +617,7 @@ export { assetValue };
  */
 export function makeOffer(
   s: GameState, parcels: ParcelTable, bbl: string, price: number,
-  product: BuyProduct, lev = 1, diligenceM = 1, hardDeposit = false,
+  product: BuyProduct, lev = 1, diligenceM = 2,
 ): { s: GameState; err?: string; msg?: string } {
   if (s.escrow) return { s, err: `You are already under contract at ${parcels[s.escrow.bbl]?.address ?? s.escrow.bbl}. One deal at a time.` };
   const listing = s.listings.find((l) => l.bbl === bbl);
@@ -624,8 +633,12 @@ export function makeOffer(
   const deposit = Math.round(px * DEPOSIT_PCT);
   if (s.cash < deposit) return { s, err: `The deposit alone is $${(deposit / 1e6).toFixed(2)}M.` };
 
-  const dm = Math.max(0, Math.min(3, Math.round(diligenceM)));
-  const odds = offerOdds(s, parcels, bbl, px, dm, hardDeposit);
+  // Two shapes of deal, nothing in between: 60 days of diligence, or as-is.
+  const dm = diligenceM <= 0 ? 0 : 2;
+  // As-is means the deposit is hard the moment the contract signs — that IS
+  // the certainty the seller is paying for.
+  const hardDeposit = dm === 0;
+  const odds = offerOdds(s, parcels, bbl, px, dm);
   const next = clone(s);
   if (rng(next) >= odds.p) {
     // a refusal is information: they tell you roughly what would have worked
@@ -634,7 +647,7 @@ export function makeOffer(
     next.news.unshift({
       q: next.month, kind: "info",
       text: `${odds.seller.name} refused $${(px / 1e6).toFixed(2)}M for ${rec.address}.`
-        + (dm >= 2 ? " They said the sixty-day diligence period was the problem, not the price." : ""),
+        + (dm >= 2 ? " An as-is offer at the same number might have landed — certainty is currency." : ""),
     });
     return { s: next, msg: `Refused. ${odds.seller.name} was not moved.` };
   }
@@ -653,8 +666,8 @@ export function makeOffer(
     q: next.month, kind: "deal",
     text: `Under contract: ${rec.address} at $${(px / 1e6).toFixed(2)}M with ${odds.seller.name}. `
       + (dm > 0
-        ? `${dm === 1 ? "Thirty" : dm === 2 ? "Sixty" : "Ninety"} days to look, $${(deposit / 1e6).toFixed(2)}M ${hardDeposit ? "hard" : "refundable"}.`
-        : `No diligence, as-is, $${(deposit / 1e6).toFixed(2)}M ${hardDeposit ? "hard" : "refundable"}. You are buying what is there.`),
+        ? `Sixty days to look; the $${(deposit / 1e6).toFixed(2)}M deposit stays refundable until diligence ends.`
+        : `As-is: no diligence, $${(deposit / 1e6).toFixed(2)}M hard from day one. You are buying what is there.`),
   });
   return { s: next, msg: "Under contract." };
 }

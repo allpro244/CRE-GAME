@@ -1,0 +1,20 @@
+{
+  "source": "fictional",
+  "city": "Thorne Island",
+  "district": "thorne",
+  "seed": 30613,
+  "lodes": true,
+  "lots": 1541,
+  "adjacencyEdges": 2637,
+  "bbox": [
+    -70.908494,
+    41.095472,
+    -70.891624,
+    41.105874
+  ],
+  "core": [
+    -70.89802,
+    41.100264
+  ],
+  "processed": true
+}

@@ -24,13 +24,17 @@ import { rng, rrange } from "./market";
 import { assetValue, initialCondition, noiAfterTaxYr, resolveRec } from "./value";
 
 // Ashport is an old port town; its money has old-port-town names.
+// Everyone starts the century the same size you do — five to fifteen million
+// of equity, a couple of buildings, and a hundred years to compound it. The
+// firms that end up owning the skyline EARNED it inside the sim, which is the
+// only way their success means anything.
 const FIRMS: { name: string; style: RivalStyle; equity: number; ltv: number }[] = [
-  { name: "Calloway & Reed", style: "family", equity: 34_000_000, ltv: 0.32 },
-  { name: "Harbor Point Partners", style: "core", equity: 62_000_000, ltv: 0.52 },
-  { name: "Meridian Yield Group", style: "opportunistic", equity: 28_000_000, ltv: 0.71 },
-  { name: "Alden Development Co.", style: "developer", equity: 41_000_000, ltv: 0.66 },
-  { name: "Wentworth Trust", style: "core", equity: 88_000_000, ltv: 0.41 },
-  { name: "Kestrel Capital", style: "opportunistic", equity: 19_000_000, ltv: 0.78 },
+  { name: "Calloway & Reed", style: "family", equity: 11_000_000, ltv: 0.32 },
+  { name: "Harbor Point Partners", style: "core", equity: 14_000_000, ltv: 0.52 },
+  { name: "Meridian Yield Group", style: "opportunistic", equity: 8_000_000, ltv: 0.71 },
+  { name: "Alden Development Co.", style: "developer", equity: 12_000_000, ltv: 0.66 },
+  { name: "Wentworth Trust", style: "core", equity: 15_000_000, ltv: 0.41 },
+  { name: "Kestrel Capital", style: "opportunistic", equity: 5_000_000, ltv: 0.78 },
 ];
 
 // What each kind of firm is FOR. These are the only behavioural differences,
@@ -187,7 +191,7 @@ function maybeNewFirm(s: GameState, ci: number) {
   // sized to the era, not to 2026 — a fund raised in year eighty is a year
   // eighty fund
   const scale = Math.max(1, living.reduce((a, r) => a + (r.aum ?? 0), 0) / 500_000_000);
-  const equity = Math.round(rrange(s, 24_000_000, 58_000_000) * scale);
+  const equity = Math.round(rrange(s, 5_000_000, 15_000_000) * scale);
   const ltv = STYLE[f.style].maxLtv * rrange(s, 0.68, 0.88);
   s.rivals.push({
     id: `r${s.rivals.length}`, name: f.name, style: f.style,

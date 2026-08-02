@@ -11,9 +11,10 @@ import { startDevelopment, startProgram, setStance, demolish } from "@/engine/de
 import { normalizeParcels } from "@/engine/mix";
 import { netWorth } from "@/engine/value";
 import { loadGame, saveGame, listSaves, deleteSave, type SaveMeta } from "@/engine/save";
+import { currentCity, dataBase } from "@/state/city";
 
 export type Lens = "none" | "land" | "demand";
-export type Page = "none" | "portfolio" | "deals" | "market" | "books" | "leasing" | "property";
+export type Page = "none" | "portfolio" | "deals" | "market" | "economy" | "books" | "leasing" | "property";
 
 interface AppState {
   parcels: ParcelTable | null;
@@ -38,14 +39,14 @@ interface AppState {
   advance: () => void;
   advanceYear: () => void;
   advanceUntil: () => void;
-  counterOff: (bbl: string) => void;
+  counterOff: (bbl: string, px?: number) => void;
   buy: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
   buyOff: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
   approach: (bbl: string) => void;
-  respondLoi: (id: number, action: LOIAction, fund?: boolean) => void;
+  respondLoi: (id: number, action: LOIAction, fund?: boolean, counter?: { rentPsf?: number; tiPsf?: number }) => void;
   refi: (bbl: string, product: string, lev?: number) => void;
-  develop: (bbl: string, use: DevUse, floors: number, coverage: number, preLeaseShare?: number, contract?: Contract) => void;
-  offer: (bbl: string, price: number, product: string, lev: number, diligenceM: number, hard: boolean) => void;
+  develop: (bbl: string, use: DevUse, floors: number, coverage: number, preLeaseShare?: number, contract?: Contract, ltcWanted?: number) => void;
+  offer: (bbl: string, price: number, product: string, lev: number, diligenceM: number) => void;
   closeUnderContract: () => void;
   retradeContract: (ask: number) => void;
   walkContract: () => void;
@@ -63,6 +64,7 @@ interface AppState {
   drawCredit: (amt: number) => void;
   repayCredit: (amt: number) => void;
   newRun: () => void;
+  devGrant: () => void;
   saveTo: (slot: string) => Promise<void>;
   loadFrom: (slot: string) => Promise<void>;
   dropSave: (slot: string) => Promise<void>;
@@ -74,8 +76,11 @@ function toast(text: string, kind: "ok" | "err" = "ok") {
   useStore.setState({ toast: { text, kind, at: Date.now() } });
 }
 
+// Every city keeps its own autosave, so switching cities never clobbers the
+// campaign you were running in the other one.
+const AUTO = () => "auto@" + currentCity();
 async function persist(game: GameState) {
-  try { await saveGame("auto", game); } catch { /* private-mode browsers: play on without saves */ }
+  try { await saveGame(AUTO(), game); } catch { /* private-mode browsers: play on without saves */ }
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -128,10 +133,10 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  counterOff: (bbl) => {
+  counterOff: (bbl, px) => {
     const { game, parcels, adjacency } = get();
     if (!game || !parcels || !adjacency) return;
-    const r = counterOffMarket(game, parcels, adjacency, bbl);
+    const r = counterOffMarket(game, parcels, adjacency, bbl, px);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     if (r.msg) toast(r.msg);
@@ -168,10 +173,10 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  respondLoi: (id, action, fund) => {
+  respondLoi: (id, action, fund, counter) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = respondLOI(game, parcels, id, action, fund);
+    const r = respondLOI(game, parcels, id, action, fund, counter);
     // An error can still carry a new state — a counter the tenant took but you
     // could not fund kills the deal, and that has to stick.
     if (r.err) { toast(r.err, "err"); if (r.s !== game) { set({ game: r.s }); void persist(r.s); } return; }
@@ -190,20 +195,20 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  develop: (bbl, use, floors, coverage, preLeaseShare, contract) => {
+  develop: (bbl, use, floors, coverage, preLeaseShare, contract, ltcWanted) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = startDevelopment(game, parcels, bbl, use, floors, coverage, preLeaseShare, contract);
+    const r = startDevelopment(game, parcels, bbl, use, floors, coverage, preLeaseShare, contract, ltcWanted);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("Ground broken. Watch it rise.");
     void persist(r.s);
   },
 
-  offer: (bbl, price, product, lev, diligenceM, hard) => {
+  offer: (bbl, price, product, lev, diligenceM) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = makeOffer(game, parcels, bbl, price, product, lev, diligenceM, hard);
+    const r = makeOffer(game, parcels, bbl, price, product, lev, diligenceM);
     if (r.err) { toast(r.err); return; }
     set({ game: r.s }); void persist(r.s);
     if (r.msg) toast(r.msg);
@@ -359,7 +364,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   refreshSlots: async () => {
     const all = await listSaves();
-    set({ slots: all.filter((m) => m.slot !== "auto").sort((a, b) => b.savedAt - a.savedAt) });
+    set({ slots: all.filter((m) => m.slot !== "auto" && !m.slot.startsWith("auto@")).sort((a, b) => b.savedAt - a.savedAt) });
   },
 
   saveTo: async (slot) => {
@@ -374,7 +379,7 @@ export const useStore = create<AppState>((set, get) => ({
     const { parcels } = get();
     const saved = await loadGame(slot);
     if (!saved || !parcels) { toast("That save wouldn't open.", "err"); return; }
-    const fits = saved.v === 16 &&
+    const fits = saved.v === 17 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (!fits) { toast("That save was made on a different city — it can't be loaded here.", "err"); return; }
@@ -387,6 +392,17 @@ export const useStore = create<AppState>((set, get) => ({
     await deleteSave(slot);
     await get().refreshSlots();
     toast("Save deleted.");
+  },
+
+  // Testing money. Not a game mechanic — a debug lever, and it says so.
+  devGrant: () => {
+    const { game } = get();
+    if (!game) return;
+    const g: GameState = { ...game, cash: game.cash + 100_000_000 };
+    g.news = [{ q: g.month, kind: "info", text: "DEV: $100.0M of testing capital wired in. This never happens in the real game." }, ...g.news];
+    set({ game: g });
+    void persist(g);
+    toast("+$100M (testing).");
   },
 
   newRun: () => {
@@ -429,7 +445,7 @@ export async function fetchGzJson(url: string) {
 }
 
 export async function loadData() {
-  const base = import.meta.env.BASE_URL + "data/";
+  const base = dataBase();
   try {
     const [parcels, adjacency, manifest] = await Promise.all([
       fetchGzJson(base + "parcels.json.gz"),
@@ -442,8 +458,9 @@ export async function loadData() {
     useStore.getState().setData({ parcels: normalizeParcels(parcels), adjacency, manifest });
     // resume the autosave — unless it references parcels that no longer
     // exist (a save from a different city/dataset), in which case start over
-    const saved = await loadGame("auto");
-    const fitsCity = saved && saved.v === 16 &&
+    // migration: pre-city saves lived in a flat "auto" slot
+    const saved = (await loadGame(AUTO())) ?? (await loadGame("auto"));
+    const fitsCity = saved && saved.v === 17 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (fitsCity) {

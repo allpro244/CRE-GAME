@@ -1,0 +1,20 @@
+{
+  "source": "fictional",
+  "city": "Marrow Bay",
+  "district": "marrow",
+  "seed": 30512,
+  "lodes": true,
+  "lots": 1284,
+  "adjacencyEdges": 2113,
+  "bbox": [
+    -70.910211,
+    41.097583,
+    -70.890779,
+    41.106399
+  ],
+  "core": [
+    -70.899293,
+    41.103076
+  ],
+  "processed": true
+}

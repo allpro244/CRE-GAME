@@ -6,7 +6,8 @@ import type { StyleSpecification, SourceSpecification, LayerSpecification } from
 export const BASEMAP_URL: string | undefined =
   import.meta.env.VITE_BASEMAP_STYLE as string | undefined;
 
-const data = (f: string) => import.meta.env.BASE_URL + "data/" + f;
+import { dataBase } from "@/state/city";
+const data = (f: string) => dataBase() + f;
 
 export function gameSources(): Record<string, SourceSpecification> {
   return {

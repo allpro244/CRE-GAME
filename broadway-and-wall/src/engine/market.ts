@@ -35,6 +35,10 @@ export const CAP_BASE = { office: 5.6, retail: 6.1, multifamily: 4.9, industrial
 export const CITY_STOCK = { office: 30e6, retail: 15e6, multifamily: 35e6, industrial: 14e6 } as const;
 export const SECTOR_LABEL = { office: "Office", retail: "Retail", multifamily: "Apartments", industrial: "Industrial" } as const;
 export const RENT_BASE = { office: 62, retail: 88, multifamily: 46, industrial: 16 } as const; // $/sf/yr
+// The natural (frictional) vacancy per class — the rate at which neither side
+// of the table has the upper hand. Below it landlords push rents; above it
+// tenants extract concessions. Office runs structurally looser than housing.
+export const NATURAL_VAC = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07 } as const;
 
 export function initEcon(s: GameState): Econ {
   const econ: Econ = {
@@ -52,6 +56,15 @@ export function initEcon(s: GameState): Econ {
     starts: { office: 0, retail: 0, multifamily: 0, industrial: 0 },
     creditIdx: 1,
     employIdx: 1,
+    stock: { ...CITY_STOCK },
+    occupied: {
+      office: CITY_STOCK.office * (1 - NATURAL_VAC.office),
+      retail: CITY_STOCK.retail * (1 - NATURAL_VAC.retail),
+      multifamily: CITY_STOCK.multifamily * (1 - NATURAL_VAC.multifamily),
+      industrial: CITY_STOCK.industrial * (1 - NATURAL_VAC.industrial),
+    },
+    cityVac: { ...NATURAL_VAC },
+    absorb12: { office: 0, retail: 0, multifamily: 0, industrial: 0 },
     history: [],
   };
   econ.phaseMLeft = Math.round(12 + 30 * rng(s));
@@ -156,34 +169,62 @@ export function tickEcon(s: GameState) {
   // rent supports and what construction costs, and with whether anyone will
   // lend. Deliveries land as supply, and supply is what ends a boom.
   for (const k of BUILT_CLASSES) {
+    const stk = e.stock?.[k] ?? CITY_STOCK[k];
+    const vacNow = e.cityVac?.[k] ?? NATURAL_VAC[k];
     const margin = (e.rentIdx[k] / RENT_BASE[k]) / e.costIdx - 1;         // profit signal
-    const appetite = Math.max(0, margin + 0.06 * e.cycleDev) * e.creditIdx;
-    const start = CITY_STOCK[k] * 0.0016 * Math.min(2.4, appetite * 5) * (0.7 + 0.6 * rng(s));
+    // Nobody starts a building into a glut, whatever the pro forma says —
+    // vacancy above natural chokes starts long before the margin math does.
+    const vacGate = clamp(1 - 7 * (vacNow - NATURAL_VAC[k]), 0.08, 1.7);
+    const appetite = Math.max(0, margin + 0.06 * e.cycleDev) * e.creditIdx * vacGate;
+    const start = stk * 0.0016 * Math.min(2.4, appetite * 5) * (0.7 + 0.6 * rng(s));
     e.starts[k] = Math.round(start);
     e.pipeline[k] += start;
     const delivered = e.pipeline[k] / 30;                                  // ~30-month build
     e.pipeline[k] = Math.max(0, e.pipeline[k] - delivered);
-    // supply pressure: new stock as a share of the class's inventory
     e.supplyPress = e.supplyPress ?? {};
-    e.supplyPress[k] = delivered / CITY_STOCK[k];
+    e.supplyPress[k] = delivered / stk;
+
+    // --- the space market itself -------------------------------------------
+    // Deliveries add stock. Employment decides how much space the city's
+    // tenants WANT; occupancy chases that target a few per cent a month —
+    // firms sign leases slowly on the way up and shed space slowly on the way
+    // down, which is why vacancy is a lagging, cycle-length variable and not
+    // a monthly jitter. Rent level pushes back: space priced over its long-run
+    // relation to incomes gets used more sparingly.
+    if (!e.stock) e.stock = { ...CITY_STOCK };
+    if (!e.occupied) e.occupied = {
+      office: CITY_STOCK.office * (1 - NATURAL_VAC.office),
+      retail: CITY_STOCK.retail * (1 - NATURAL_VAC.retail),
+      multifamily: CITY_STOCK.multifamily * (1 - NATURAL_VAC.multifamily),
+      industrial: CITY_STOCK.industrial * (1 - NATURAL_VAC.industrial),
+    };
+    if (!e.cityVac) e.cityVac = { ...NATURAL_VAC };
+    if (!e.absorb12) e.absorb12 = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+    e.stock[k] = stk + delivered;
+    const elastic = k === "office" ? 1.0 : k === "industrial" ? 0.9 : k === "retail" ? 0.7 : 0.75;
+    const affordability = Math.pow((e.rentIdx[k] / RENT_BASE[k]) / Math.max(0.2, e.employIdx * e.costIdx / 1), 
+      k === "multifamily" ? -0.10 : -0.22);
+    const target = CITY_STOCK[k] * (1 - NATURAL_VAC[k])
+      * Math.pow(e.employIdx, elastic)
+      * (1 + e.sectorMom[k] * 26)
+      * affordability;
+    const absorb = clamp(0.05 * (target - e.occupied[k]), -0.005 * e.stock[k], 0.007 * e.stock[k])
+      + e.stock[k] * rrange(s, -0.0006, 0.0006);
+    e.occupied[k] = clamp(e.occupied[k] + absorb, e.stock[k] * 0.55, e.stock[k] * 0.995);
+    e.cityVac[k] = clamp(1 - e.occupied[k] / e.stock[k], 0.005, 0.45);
+    e.absorb12[k] = e.absorb12[k] * (11 / 12) + absorb;
   }
 
-  // rents per class: phase drift + sector momentum − supply, plus noise
+  // RENTS MOVE ON VACANCY. The gap between where vacancy sits and its natural
+  // rate is the whole of the landlord-tenant power balance: five points of
+  // excess vacancy grinds rents down about three per cent a year until either
+  // demand absorbs it or nothing new gets built; five points of shortage does
+  // the opposite. Phase drift and sector momentum ride on top as sentiment.
   for (const k of BUILT_CLASSES) {
     const vol = k === "multifamily" ? 0.002 : k === "office" ? 0.004 : k === "industrial" ? 0.0024 : 0.003;
-    // SUPPLY, CALIBRATED. A city delivering its long-run normal — call it a
-    // percent and a quarter of stock a year — is in balance, and rents do what
-    // the cycle says. Only the excess above that pushes rents down.
-    //
-    // The multiplier was 26 against the raw delivery rate, which meant a market
-    // building at its steady state carried a two-per-cent-a-month drag on rent
-    // forever. Over forty years that drove office rents down 29% in nominal
-    // terms while construction costs rose 74%, and quietly made development
-    // impossible on every site in the city by year forty. It is the EXCESS
-    // that hurts, and the multiplier is four.
-    const NORMAL_DELIVERY = 0.0125 / 12;
-    const supply = Math.max(-0.0008, ((e.supplyPress?.[k] ?? 0) - NORMAL_DELIVERY) * 4);
-    const drift = c2.rentDrift + e.sectorMom[k] * 0.5 - supply + (jobDrift * 0.35);
+    const gap = (e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
+    const vacTerm = clamp(-gap * 0.055, -0.006, 0.006);
+    const drift = c2.rentDrift * 0.7 + e.sectorMom[k] * 0.5 + vacTerm + (jobDrift * 0.35);
     e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.5, e.rentIdx[k] * (1 + drift + rrange(s, -vol, vol)));
   }
 
@@ -226,6 +267,17 @@ export function tickEcon(s: GameState) {
   recordHistory(e, s.month);
 }
 
+/**
+ * How hard the citywide space market pushes prospects at YOUR door for a
+ * given class. Tight market: everyone else is full, so the tenant that would
+ * rather be elsewhere ends up touring your building. Glutted market: three
+ * other landlords with empty floors return every call first.
+ */
+export function vacancyPull(e: Econ, use: keyof typeof NATURAL_VAC): number {
+  const vac = e.cityVac?.[use] ?? NATURAL_VAC[use];
+  return Math.max(0.4, Math.min(1.7, Math.pow(NATURAL_VAC[use] / Math.max(0.005, vac), 0.9)));
+}
+
 function recordHistory(e: Econ, q: number) {
   e.history.push({
     q,
@@ -236,6 +288,10 @@ function recordHistory(e: Econ, q: number) {
     rentOffice: +e.rentIdx.office.toFixed(2),
     creditIdx: +e.creditIdx.toFixed(3),
     employIdx: +e.employIdx.toFixed(3),
+    vac: e.cityVac ? {
+      office: +e.cityVac.office.toFixed(4), retail: +e.cityVac.retail.toFixed(4),
+      multifamily: +e.cityVac.multifamily.toFixed(4), industrial: +e.cityVac.industrial.toFixed(4),
+    } : undefined,
   });
   if (e.history.length > 240) e.history.shift();
 }

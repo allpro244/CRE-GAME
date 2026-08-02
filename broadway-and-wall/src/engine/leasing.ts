@@ -5,7 +5,7 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Credit, GameState, Holding, LOI, Sector } from "./types";
 import { logBooks } from "./types";
-import { rng, rrange } from "./market";
+import { rng, rrange , vacancyPull } from "./market";
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses, useSf } from "./mix";
 import type { Recovery } from "./value";
@@ -518,8 +518,13 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const jobsMult = Math.max(0.55, Math.min(1.6, 0.65 + 0.35 * (s.econ.employIdx ?? 1)));
       // Everyone else's deliveries are competing for the same tenant.
       const supplyMult = Math.max(0.5, 1 - 34 * (s.econ.supplyPress?.[use as keyof typeof CAP_KEYS] ?? 0));
-      const p = Math.min(0.9, Math.max(0.02, 0.24 + rec.demandScore / 200 + phaseAdj + condAdj + stanceAdj + lobbyAdj + sectorAdj)
-        / 2.1 * brokerMult * leaseUp * emptyPush * jobsMult * supplyMult);
+      // The citywide vacancy for THIS class decides how many tenants are even
+      // in the market. When the city runs a glut, your phone is one of many
+      // that ring less — and leases stop falling into your lap, which they
+      // were doing regardless of conditions.
+      const marketPull = vacancyPull(s.econ, use);
+      const p = Math.min(0.75, Math.max(0.015, 0.24 + rec.demandScore / 200 + phaseAdj + condAdj + stanceAdj + lobbyAdj + sectorAdj)
+        / 2.7 * brokerMult * leaseUp * emptyPush * jobsMult * supplyMult * marketPull);
       if (rng(s) < p) {
         const sector = pickSector(s, use);
         const [tiLo, tiHi] = TI_ASK[use] ?? TI_ASK.office;
@@ -666,6 +671,7 @@ export type LOIAction = "accept" | "counter" | "decline";
  */
 export function respondLOI(
   s: GameState, parcels: ParcelTable, id: number, action: LOIAction, fund = false,
+  counter?: { rentPsf?: number; tiPsf?: number },
 ): { s: GameState; msg: string; err?: string } {
   const next: GameState = JSON.parse(JSON.stringify(s));
   const loi = next.lois.find((l) => l.id === id);
@@ -702,13 +708,29 @@ export function respondLOI(
   }
 
   if (action === "counter") {
+    // Once they have countered back, the number on the table is final —
+    // accept it or lose them. No third round; nobody negotiates forever.
+    if (loi.stage === "countered") return { s, msg: "", err: "Their counter was final. Take it or pass." };
     if (loi.countered) return { s, msg: "", err: "You already countered — they're deciding." };
     loi.countered = true;
-    loi.rentPsf = +(loi.rentPsf * 1.06).toFixed(2);
-    loi.tiPsf = Math.round(loi.tiPsf * 0.7);
-    const phaseAdj = next.econ.phase === "expansion" ? 0.15 : next.econ.phase === "recession" ? -0.15 : 0;
-    const p = 0.38 + loi.credit * 0.12 + phaseAdj + (rec.demandScore - 50) / 400 + (loi.kind === "renewal" ? 0.18 : 0);
-    if (rng(next) < p) {
+    // The counter is YOUR terms, off the sliders — a rent and a TI number —
+    // not a fixed +6%/−30% nobody chose. Backward-compatible default keeps
+    // the old shape for the harness and the agent.
+    const askRent = counter?.rentPsf !== undefined ? +counter.rentPsf.toFixed(2) : +(loi.rentPsf * 1.06).toFixed(2);
+    const askTi = counter?.tiPsf !== undefined ? Math.round(counter.tiPsf) : Math.round(loi.tiPsf * 0.7);
+    const market = managedRentPsfYr(rec, next.econ, h, loi.use);
+    const f = askRent / Math.max(1, market);                 // aggression vs the market, not vs their offer
+    const vacHere = (next.econ.cityVac?.[loi.use ?? "office"] ?? 0.1);
+    const natHere = loi.use === "multifamily" ? 0.045 : loi.use === "retail" ? 0.085 : loi.use === "industrial" ? 0.07 : 0.115;
+    const tight = Math.max(-0.3, Math.min(0.35, (natHere - vacHere) * 3));
+    const stick = loi.kind === "renewal" ? 0.14 : 0;         // moving is expensive; incumbents bend
+    const tiCut = loi.tiPsf > 0 ? Math.max(0, (loi.tiPsf - askTi) / Math.max(1, loi.tiPsf)) * 0.14 : 0;
+    const pAccept = Math.max(0.04, Math.min(0.95,
+      1.58 - f * 1.4 + loi.credit * 0.04 + tight + stick - tiCut
+      + (next.econ.phase === "expansion" ? 0.06 : next.econ.phase === "recession" ? -0.08 : 0)));
+    loi.rentPsf = askRent;
+    loi.tiPsf = askTi;
+    if (rng(next) < pAccept) {
       const err = sign(loi);
       if (err) {
         next.lois = next.lois.filter((l) => l.id !== id);
@@ -718,9 +740,21 @@ export function respondLOI(
       next.lois = next.lois.filter((l) => l.id !== id);
       return { s: next, msg: `${loi.name} took your counter.` + drawNote() };
     }
-    next.lois = next.lois.filter((l) => l.id !== id);
-    next.news.unshift({ q: next.month, kind: "info", text: `${loi.name} walked on the counter at ${rec.address}.` });
-    return { s: next, msg: `${loi.name} walked.` };
+    // the further past market you pushed, the faster the door
+    const pWalk = Math.max(0.15, Math.min(0.92, 0.24 + (f - 1.0) * 2.2));
+    if (rng(next) < pWalk) {
+      next.lois = next.lois.filter((l) => l.id !== id);
+      next.news.unshift({ q: next.month, kind: "info", text: `${loi.name} walked on the counter at ${rec.address} — $${askRent.toFixed(2)}/sf was more than the space was worth to them (market ~$${market.toFixed(2)}).` });
+      return { s: next, msg: `${loi.name} walked.` };
+    }
+    // they counter back once — final
+    loi.stage = "countered";
+    loi.counterRentPsf = +Math.min(askRent, Math.max(loi.rentPsf * 0.94, market * (0.95 + 0.04 * rng(next)))).toFixed(2);
+    loi.counterTiPsf = Math.round((askTi + loi.tiPsf) / 2);
+    loi.rentPsf = loi.counterRentPsf;
+    loi.tiPsf = loi.counterTiPsf;
+    next.news.unshift({ q: next.month, kind: "info", text: `${loi.name} countered at ${rec.address}: $${loi.counterRentPsf.toFixed(2)}/sf, $${loi.counterTiPsf}/sf TI. Final answer — take it or lose them.` });
+    return { s: next, msg: `${loi.name} countered — final.` };
   }
 
   next.lois = next.lois.filter((l) => l.id !== id);

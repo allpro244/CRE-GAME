@@ -147,6 +147,7 @@ export interface DevPlan {
   leaseUp: number;    // fit-out, commissions and carry until it is full
   costTotal: number;
   ltc: number;
+  ltcMax: number;
   commitment: number;
   interestReserve: number;
   ratePct: number;
@@ -164,11 +165,33 @@ export interface DevPlan {
 export function farMaxFor(rec: { farMaxComm: number; farMaxRes: number }): number {
   return Math.max(rec.farMaxComm, rec.farMaxRes, 2);
 }
-export function maxFloorsFor(rec: { farMaxComm: number; farMaxRes: number }, coverage: number): number {
-  // The floor here is what a small building on a big site costs you: it must
-  // be low enough that a beginner can afford SOMETHING on an acre lot, or the
-  // whole development half of the game is locked until you are already rich.
-  return Math.max(1, Math.floor(farMaxFor(rec) / Math.max(0.08, coverage)));
+/**
+ * How high a building can PHYSICALLY go on this floor plate — zoning is one
+ * limit, engineering is the other, and the old code only knew about zoning,
+ * which is how a 216-storey needle ended up permitted on a 414 sf lot.
+ *
+ * Real New York numbers: an ordinary residential tower runs a 7-12k sf plate;
+ * an office tower 20-40k; the pencil towers on 57th Street stand on ~6k sf
+ * plates at about 1:15 slenderness with hundred-million-dollar damping
+ * systems, and they are the outer limit of what money can do. So:
+ *
+ *   - anything needs ~600 sf of plate to be a building at all
+ *   - a walk-up (≤6 floors) needs 1,200 sf — a Manhattan townhouse plate
+ *   - going past 6 floors takes a 4,000 sf plate — you need a core
+ *   - past that, slenderness governs: height ≈ 12.5 ft/floor against a plate
+ *     ~sqrt(plate) wide at ~15:1 gives floors ≤ 1.2·√plate
+ *   - and 90 floors is the ceiling money has actually reached
+ */
+export function physicalMaxFloors(plateSf: number): number {
+  if (plateSf < 600) return 1;
+  if (plateSf < 1200) return 3;
+  if (plateSf < 4000) return 6;
+  return Math.min(90, Math.floor(1.2 * Math.sqrt(plateSf)));
+}
+export function maxFloorsFor(rec: { farMaxComm: number; farMaxRes: number; lotArea?: number }, coverage: number): number {
+  const zoning = Math.max(1, Math.floor(farMaxFor(rec) / Math.max(0.08, coverage)));
+  const plate = (rec.lotArea ?? 0) * Math.max(0.08, coverage);
+  return rec.lotArea ? Math.max(1, Math.min(zoning, physicalMaxFloors(plate))) : zoning;
 }
 
 // The parcel as it will exist once the building is up — what the rent, the
@@ -181,7 +204,7 @@ function asBuiltRec(rec: unknown, use: DevUse, sf: number, floors: number) {
 export function planDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.6, preLeaseShare: number | boolean = 0,
-  contract: Contract = "gmp",
+  contract: Contract = "gmp", ltcWanted?: number,
 ): DevPlan | null {
   const rec = parcels[bbl];
   if (!rec || !rec.lotArea) return null;
@@ -241,10 +264,17 @@ export function planDevelopment(
 
   // The construction lender funds construction. It does not refinance the
   // equity you already sank into the ground.
-  const ltc = constructionLtc(mix, pre, s.econ.phase);
+  // The lender's max is the ceiling; how much of it you TAKE is your call.
+  // Less debt is a slower clock and a smaller reserve; more is more building
+  // per dollar of equity and a harder landing if lease-up runs long.
+  const ltcMax = constructionLtc(mix, pre, s.econ.phase);
+  const ltc = ltcWanted === undefined ? ltcMax : Math.max(0, Math.min(ltcMax, ltcWanted));
   const commitment = Math.round(costTotal * ltc);
   const ratePct = +(s.econ.indexRate + CONSTR_SPREAD).toFixed(2);
-  const baseMonths = Math.min(30, 11 + Math.round(fl * 0.55));
+  // Foundations, core, a floor every couple of weeks, then facade and fit-out:
+  // a mid-rise is a two-year job and a real tower is three to four. Nothing
+  // was taking longer than 30 months, which made towers feel like sheds.
+  const baseMonths = Math.min(54, 10 + Math.round(fl * 0.85));
   const months = baseMonths + Math.round(PRE_LEASE_EXTRA_M * (pre / MAX_PRE_LEASE));
 
   // The interest reserve: the lender sizes a pot inside the commitment to
@@ -279,7 +309,7 @@ export function planDevelopment(
     use, mix, floors: fl, coverage: cov, contract, preLeaseShare: pre, sf,
     far: +(sf / rec.lotArea).toFixed(1), farMax,
     hardCost, softCost, contingency, demo, leaseUp, costTotal, landBasis, basisTotal,
-    ltc, commitment, interestReserve, ratePct,
+    ltc, ltcMax, commitment, interestReserve, ratePct,
     equity: costTotal - commitment,
     // Equity funds FIRST. The bank does not release a dollar until yours are
     // in the ground, which is why a development eats your balance sheet at the
@@ -292,14 +322,14 @@ export function planDevelopment(
 export function startDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.6, preLeaseShare: number | boolean = 0,
-  contract: Contract = "gmp",
+  contract: Contract = "gmp", ltcWanted?: number,
 ): { s: GameState; err?: string } {
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   if (!s.holdings[bbl]) return { s, err: "Buy the dirt first." };
   if (rec.class !== "land") return { s, err: "Clear the site first — demolish what's standing before you build." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
-  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, preLeaseShare, contract);
+  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, preLeaseShare, contract, ltcWanted);
   if (!plan) return { s, err: "That's too small to be worth building — add floors or cover more of the lot." };
   if (s.cash < plan.equityAtClose) {
     return { s, err: `The bank funds nothing until your equity is in the ground. That is $${(plan.equityAtClose / 1e6).toFixed(2)}M at close, of $${(plan.equity / 1e6).toFixed(2)}M total — you're short.` };
@@ -482,7 +512,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
 
 function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { address: string }) {
   const dmix = d.mix ?? devMix(d.use);
-  s.built[d.bbl] = { class: dominantOf(dmix), mix: dmix, bldgArea: d.sf, floors: d.floors, yearBuilt: 2026 + Math.floor(s.month / 12) };
+  s.built[d.bbl] = { class: dominantOf(dmix), mix: dmix, bldgArea: d.sf, floors: d.floors, yearBuilt: 2000 + Math.floor(s.month / 12) };
   const h = s.holdings[d.bbl];
   h.condition = "good";
   h.lastCapM = s.month;
@@ -648,7 +678,7 @@ export function tickCityGrowth(
     const sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
     const floors = Math.max(1, Math.round(sf / (rec.lotArea * 0.62)));
     const cmix = devMix(use);
-    s.built[bbl] = { class: dominantOf(cmix), mix: cmix, bldgArea: sf, floors, yearBuilt: 2026 + Math.floor(s.month / 12) };
+    s.built[bbl] = { class: dominantOf(cmix), mix: cmix, bldgArea: sf, floors, yearBuilt: 2000 + Math.floor(s.month / 12) };
     s.cityBuilt.push(bbl);
 
     // land appreciates on the block that just got built

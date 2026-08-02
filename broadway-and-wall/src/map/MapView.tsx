@@ -3,6 +3,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Protocol } from "pmtiles";
 import { fetchGzJson, useStore } from "@/state/store";
+import { dataBase } from "@/state/city";
 import { composeStyle, gameLayers, landLensColor, LIVE_DEMAND, resolveBaseStyle } from "./style";
 import { ThreeBuildings, type BuildingVolume } from "./ThreeBuildings";
 
@@ -63,7 +64,7 @@ export default function MapView() {
     (async () => {
       const [base, frame] = await Promise.all([
         resolveBaseStyle(),
-        fetch(import.meta.env.BASE_URL + "data/manifest.json")
+        fetch(dataBase() + "manifest.json")
           .then((r) => r.json())
           .then((m) => (Array.isArray(m?.bbox) && Array.isArray(m?.core) ? (m as CityFrame) : FALLBACK))
           .catch(() => FALLBACK),
@@ -95,9 +96,9 @@ export default function MapView() {
         setMapReady(true);
         // the beautiful-buildings renderer: meshes with procedural facades
         Promise.all([
-          fetchGzJson(import.meta.env.BASE_URL + "data/buildings3d.json.gz"),
+          fetchGzJson(dataBase() + "buildings3d.json.gz"),
           // the curb lines double as the planting plan for street trees
-          fetch(import.meta.env.BASE_URL + "data/context.geojson").then((r) => r.json()).catch(() => null),
+          fetch(dataBase() + "context.geojson").then((r) => r.json()).catch(() => null),
         ])
           .then(([volumes, ctx]: [BuildingVolume[], GeoJSON.FeatureCollection | null]) => {
             if (disposed || !volumes?.length) return;
@@ -286,7 +287,7 @@ export default function MapView() {
     if (!map || !mapReady) return;
     const markers: maplibregl.Marker[] = [];
     let disposed = false;
-    fetch(import.meta.env.BASE_URL + "data/context.geojson")
+    fetch(dataBase() + "context.geojson")
       .then((r) => r.json())
       .then((fc: { features: { geometry: { type: string; coordinates: [number, number] }; properties: Record<string, string> }[] }) => {
         if (disposed) return;

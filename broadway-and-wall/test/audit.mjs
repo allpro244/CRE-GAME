@@ -15,7 +15,9 @@ import { gunzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 const HERE = dirname(fileURLToPath(import.meta.url));
-const P = join(HERE, "..", "public", "data") + "/";
+// Cities live in per-city dirs now; the harness runs against one of them.
+// BW_CITY picks which (default newalden — the original balance target).
+const P = join(HERE, "..", "public", "data", process.env.BW_CITY ?? "newalden") + "/";
 const parcels = JSON.parse(gunzipSync(readFileSync(P + "parcels.json.gz")).toString());
 const adjacency = JSON.parse(gunzipSync(readFileSync(P + "adjacency.json.gz")).toString());
 const bbls = Object.keys(parcels);

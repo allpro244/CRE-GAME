@@ -95,6 +95,7 @@ export default function GamePanels() {
     : page === "property" ? "Property"
     : page === "saves" ? "Saved Games"
     : page === "economy" ? "The Economy"
+    : page === "research" ? "Research"
     : "The Marketplace";
   return (
     <>
@@ -109,6 +110,7 @@ export default function GamePanels() {
             {page === "portfolio" && <PortfolioPage />}
             {page === "deals" && <DealsPage />}
             {page === "market" && <MarketPage />}
+            {page === "research" && <ResearchPage />}
             {page === "economy" && <EconomyPage />}
             {page === "books" && <BooksPage />}
             {page === "saves" && <SavesPage />}
@@ -1116,6 +1118,28 @@ function BuyButtons({ bbl, price, off }: { bbl: string; price: number; off: bool
           marks={[{ at: 0, label: "cash" }, { at: 0.5, label: "half" }, { at: 1, label: "max" }]}
           hint={`${max.ratePct}% coupon${dscrNow ? ` · DSCR ${dscrNow.toFixed(2)}` : ""}`}
         />
+      ) : null}
+      {/* WHY THE LOAN IS THE SIZE IT IS.
+          A desk sizes on three tests and takes the smallest: the advance rate,
+          the coverage ratio, and the debt yield. Which one bound was computed
+          and never shown, so a lender with a 72% advance rate quoting 47%
+          looked arbitrary instead of arithmetical — and the answer changes
+          with the index, which is exactly the thing worth understanding. */}
+      {max.principal > 0 && (
+        <div className="hint">
+          {max.bind === "ltv"
+            ? `Sized at this lender's ${(max.ltvCap * 100).toFixed(0)}% advance rate — the ceiling, and the income clears it comfortably.`
+            : max.bind === "dscr"
+              ? `Their advance rate is ${(max.ltvCap * 100).toFixed(0)}%, but you are getting ${((max.principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% — COVERAGE is binding, not leverage. `
+                + `At a ${max.ratePct}% coupon the income only services ${(max.principal / Math.max(1, offerPrice) * 100).toFixed(0)}% of the price at ${max.uwDscr.toFixed(2)}x. `
+                + `That is what a high index does: the cap rate you buy at has to carry the coupon you borrow at, and when it cannot, the loan shrinks.`
+              : max.bind === "dy"
+                ? `Their advance rate is ${(max.ltvCap * 100).toFixed(0)}%, but the DEBT YIELD test is binding — the income is too thin against the loan for this desk, regardless of what the building is worth.`
+                : `Their advance rate is ${(max.ltvCap * 100).toFixed(0)}%, cut back by the credit window and your own record. Leverage comes back when money does.`}
+        </div>
+      )}
+      {max.principal > 0 ? (
+        <div style={{ display: "none" }} />
       ) : (
         <div className="hint">{product === "cash" ? "Buying it outright." : "No lender will size a loan against this income — all cash or nothing."}</div>
       )}
@@ -2547,13 +2571,116 @@ function EconomyPage() {
   );
 }
 
+/**
+ * RESEARCH — what the market is doing, as opposed to what is for sale.
+ *
+ * These two things were one page and they are not one job. Deciding whether to
+ * buy a specific building is a different activity from forming a view on where
+ * office cap rates are going, which trades are hiring, what has actually
+ * traded, and which of the other firms is levering into the top. Every real
+ * shop separates them and so does this now: the tape lives on Marketplace,
+ * and everything you would read BEFORE looking at the tape lives here.
+ */
+
+/**
+ * THE MARKETPLACE — the tape, and only the tape.
+ *
+ * What is actually for sale, priced against what it earns and what it is
+ * worth. Everything you would read to form a view BEFORE working this list —
+ * where cap rates are, which trades are hiring, what has traded, who is
+ * buying — is on Research, because reading the market and shopping it are two
+ * different jobs and squeezing both onto one page made neither of them good.
+ */
 function MarketPage() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
   const select = useStore((s) => s.select);
   const setPage = useStore((s) => s.setPage);
-  const e = game.econ;
   const go = (bbl: string) => { setPage("none"); select(bbl); };
+  const live = game.listings.length;
+  const distress = game.listings.filter((l) => l.distress).length;
+  const frames = game.listings.filter((l) => l.halfBuilt).length;
+  return (
+    <div>
+      <div className="stat-strip">
+        <Big label="On the market" value={String(live)} />
+        <Big label="Motivated sellers" value={String(distress)} bad={distress > 0} />
+        <Big label="Half-built frames" value={String(frames)} />
+        <Big label="Money in the room" value={
+          marketAppetite(game) < 0.6 ? "gone" : marketAppetite(game) < 0.9 ? "thin"
+            : marketAppetite(game) > 1.15 ? "everywhere" : "normal"} />
+      </div>
+      <div className="hint">
+        Everything for sale in town. A motivated seller is priced under appraisal and will not last; a half-built
+        frame comes with somebody else's job attached, and you finish it. What the market is DOING — cap rates,
+        the trades, comparable sales, who has been buying — is on Research.
+      </div>
+      <div className="deals-grid">
+        <section style={{ gridColumn: "1 / -1" }}>
+          <div className="page-section">On the market · {game.listings.length}</div>
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Property</th><th>Class</th><th className="num">Building</th><th className="num">Ask</th>
+                <th className="num">$/sf</th><th className="num">NOI / yr</th><th className="num">Cap rate</th>
+                <th className="num">Occupancy</th><th className="num">vs appraisal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* Sorted the way a buyer reads a tape: income first, best going-in
+                  yield at the top, then the dirt by price per foot. Sorting the
+                  whole thing by asking price buried every building that made
+                  money under fourteen rows of vacant lots. */}
+              {[...game.listings].map((li) => {
+                const rec = resolveRec(parcels, game, li.bbl);
+                const built = !!rec && rec.class !== "land" && rec.bldgArea > 0;
+                const cap = built && li.ask > 0
+                  ? noiAfterTaxYr(rec!, game.econ, initialCondition(rec!), li.ask) / li.ask : -1;
+                const psf = rec ? li.ask / Math.max(1, built ? rec.bldgArea : rec.lotArea) : Infinity;
+                return { li, built, cap, psf };
+              }).sort((a, b) => (a.built === b.built
+                ? (a.built ? b.cap - a.cap : a.psf - b.psf)
+                : (a.built ? -1 : 1))).map(({ li }) => {
+                const rec = resolveRec(parcels, game, li.bbl);
+                if (!rec) return null;
+                const cond = initialCondition(rec);
+                const built = rec.class !== "land" && rec.bldgArea > 0;
+                const noi = built ? noiAfterTaxYr(rec, game.econ, cond, li.ask) : 0;
+                const goingIn = built && li.ask > 0 ? (noi / li.ask) * 100 : 0;
+                return (
+                  <tr key={li.bbl} onClick={() => go(li.bbl)}>
+                    <td>{li.distress && <span className="chip chip-distress" style={{ marginRight: 6 }}>HOT</span>}{rec.address}</td>
+                    <td>{useLabel(rec)}</td>
+                    <td className="num">{built ? sf(rec.bldgArea) : sf(rec.lotArea) + " lot"}</td>
+                    <td className="num">{usd(li.ask)}</td>
+                    <td className="num">{built ? "$" + Math.round(li.ask / Math.max(1, rec.bldgArea)) : "$" + Math.round(li.ask / Math.max(1, rec.lotArea))}</td>
+                    <td className="num">{built ? usd(noi) : "—"}</td>
+                    <td className="num">{built ? goingIn.toFixed(2) + "%" : "—"}</td>
+                    <td className="num">{built ? (occupancy(rec, game.econ) * 100).toFixed(0) + "%" : "—"}</td>
+                    {(() => {
+                      // A seller under no pressure holds last year's number. The gap
+                      // between an ask and an honest appraisal is the whole read on
+                      // whether a tape is worth working.
+                      const v = assetValue(rec, game.econ, cond);
+                      const d = v > 0 ? li.ask / v - 1 : 0;
+                      return <td className={"num" + (d > 0.08 ? " neg" : "")}>{(d * 100).toFixed(0)}%</td>;
+                    })()}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function ResearchPage() {
+  const parcels = useStore((s) => s.parcels)!;
+  const game = useStore((s) => s.game)!;
+  const e = game.econ;
+  void parcels;
   return (
     <div>
       <div className="stat-strip">
@@ -2655,61 +2782,6 @@ function MarketPage() {
         </section>
         <section style={{ gridColumn: "1 / -1" }}>
           <TheStreet />
-        </section>
-        <section style={{ gridColumn: "1 / -1" }}>
-          <div className="page-section">On the market · {game.listings.length}</div>
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Property</th><th>Class</th><th className="num">Building</th><th className="num">Ask</th>
-                <th className="num">$/sf</th><th className="num">NOI / yr</th><th className="num">Cap rate</th>
-                <th className="num">Occupancy</th><th className="num">vs appraisal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* Sorted the way a buyer reads a tape: income first, best going-in
-                  yield at the top, then the dirt by price per foot. Sorting the
-                  whole thing by asking price buried every building that made
-                  money under fourteen rows of vacant lots. */}
-              {[...game.listings].map((li) => {
-                const rec = resolveRec(parcels, game, li.bbl);
-                const built = !!rec && rec.class !== "land" && rec.bldgArea > 0;
-                const cap = built && li.ask > 0
-                  ? noiAfterTaxYr(rec!, game.econ, initialCondition(rec!), li.ask) / li.ask : -1;
-                const psf = rec ? li.ask / Math.max(1, built ? rec.bldgArea : rec.lotArea) : Infinity;
-                return { li, built, cap, psf };
-              }).sort((a, b) => (a.built === b.built
-                ? (a.built ? b.cap - a.cap : a.psf - b.psf)
-                : (a.built ? -1 : 1))).map(({ li }) => {
-                const rec = resolveRec(parcels, game, li.bbl);
-                if (!rec) return null;
-                const cond = initialCondition(rec);
-                const built = rec.class !== "land" && rec.bldgArea > 0;
-                const noi = built ? noiAfterTaxYr(rec, game.econ, cond, li.ask) : 0;
-                const goingIn = built && li.ask > 0 ? (noi / li.ask) * 100 : 0;
-                return (
-                  <tr key={li.bbl} onClick={() => go(li.bbl)}>
-                    <td>{li.distress && <span className="chip chip-distress" style={{ marginRight: 6 }}>HOT</span>}{rec.address}</td>
-                    <td>{useLabel(rec)}</td>
-                    <td className="num">{built ? sf(rec.bldgArea) : sf(rec.lotArea) + " lot"}</td>
-                    <td className="num">{usd(li.ask)}</td>
-                    <td className="num">{built ? "$" + Math.round(li.ask / Math.max(1, rec.bldgArea)) : "$" + Math.round(li.ask / Math.max(1, rec.lotArea))}</td>
-                    <td className="num">{built ? usd(noi) : "—"}</td>
-                    <td className="num">{built ? goingIn.toFixed(2) + "%" : "—"}</td>
-                    <td className="num">{built ? (occupancy(rec, game.econ) * 100).toFixed(0) + "%" : "—"}</td>
-                    {(() => {
-                      // A seller under no pressure holds last year's number. The gap
-                      // between an ask and an honest appraisal is the whole read on
-                      // whether a tape is worth working.
-                      const v = assetValue(rec, game.econ, cond);
-                      const d = v > 0 ? li.ask / v - 1 : 0;
-                      return <td className={"num" + (d > 0.08 ? " neg" : "")}>{(d * 100).toFixed(0)}%</td>;
-                    })()}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
         </section>
       </div>
     </div>

@@ -893,8 +893,15 @@ export function setStance(s: GameState, bbl: string, stance: -1 | 0 | 1): GameSt
 // bottom. Now a city start is a hole in the ground with a delivery date, its
 // space enters the pipeline the day it starts, and it competes with you only
 // when it opens.
+// HOW OFTEN ANYBODY BREAKS GROUND, by phase.
+//
+// Cut to a quarter of what it was. The old rate put 3.7 cranes up across the
+// town at any given moment and peaked at ten, in a city of 1,600 lots — a
+// skyline permanently under scaffolding, which is not what a real town looks
+// like even in a boom. A building is a three-year commitment somebody makes a
+// handful of times a decade, and it should read that way on the map.
 const START_RATE: Record<string, number> = {
-  expansion: 0.34, peak: 0.22, recovery: 0.16, recession: 0.03,
+  expansion: 0.055, peak: 0.036, recovery: 0.026, recession: 0.005,
 };
 
 export function useForZone(zone: string, demand: number, r: number): DevUse {

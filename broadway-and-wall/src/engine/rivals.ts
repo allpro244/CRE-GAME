@@ -638,7 +638,10 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   if (live >= (r.style === "developer" ? 2 : 1)) return;
   const phaseMult = s.econ.phase === "peak" ? 1.4 : s.econ.phase === "expansion" ? 1.2
     : s.econ.phase === "recovery" ? 0.6 : 0.12;
-  if (rng(s) >= 0.022 * BUILD_APPETITE[r.style] * phaseMult * ci) return;
+  // Trimmed with the city's own rate: once the anonymous quota came down by
+  // three quarters the street's own groundbreakings were most of the cranes
+  // in town, and the point was fewer cranes, not different ones.
+  if (rng(s) >= 0.011 * BUILD_APPETITE[r.style] * phaseMult * ci) return;
 
   // the best lot they own, by what the neighbourhood has become
   let best: { bbl: string; rec: ParcelRecord } | null = null, bestScore = -1;

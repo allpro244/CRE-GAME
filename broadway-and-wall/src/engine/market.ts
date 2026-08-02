@@ -191,6 +191,9 @@ const RUMORS: Record<MarketPhase, string[]> = {
 };
 
 export function tickEcon(s: GameState) {
+  // The space market needs the calendar: a building that opened last year is
+  // not the same asset as one that opened in 1928, and occupancy has to know.
+  s.econ.m = s.month;
   const e = s.econ;
   const cfg = PHASE_CFG[e.phase];
 

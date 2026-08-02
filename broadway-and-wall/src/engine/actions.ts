@@ -30,20 +30,29 @@ function clone(s: GameState): GameState {
 export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price: number, product: BuyProduct, lev = 1) {
   const rec = parcels[bbl];
   const closing = Math.round(price * CLOSING_PCT);
-  if (product === "cash" || !rec) return { principal: 0, ratePct: 0, equity: price + closing, capPremium: 0 };
+  if (product === "cash" || !rec) return { principal: 0, ratePct: 0, equity: price + closing, capPremium: 0, bind: "none" as const, ltvCap: 0, uwDscr: 0 };
   const prod = productById(product);
   // the life company will not finance a tired building, and the quote screen
   // has to say so before the closing table does
   if (prod.minCondition === "good" && initialCondition(rec) !== "good") {
-    return { principal: 0, ratePct: 0, equity: price + closing, capPremium: 0 };
+    return { principal: 0, ratePct: 0, equity: price + closing, capPremium: 0, bind: "condition" as const, ltvCap: prod.ltv, uwDscr: prod.uwDscr };
   }
   const q = quote(s, prod, price, noiAfterTaxYr(rec, s.econ, initialCondition(rec), price));
   const principal = Math.round(q.principal * Math.max(0, Math.min(1, lev)));
+  // WHAT ACTUALLY LIMITED THE LOAN. The desk sizes on three tests and takes
+  // the smallest: the advance rate, the coverage ratio, and the debt yield.
+  // The engine has always known which one bound and never told anybody, which
+  // is why a 72% lender quoting 47% looked arbitrary rather than arithmetical.
+  const capped = prod.ltv * price;
   // Floating paper closes with a rate cap the lender insists on, and the
   // premium is part of the equity cheque — the cheaper coupon is not free.
   const prod2 = productById(product);
   const capPremium = prod2.floating ? Math.round(principal * 0.0125) : 0;
-  return { principal, ratePct: q.ratePct, equity: price - principal + closing + capPremium, capPremium };
+  return {
+    principal, ratePct: q.ratePct, equity: price - principal + closing + capPremium, capPremium,
+    bind: q.dscrConstrained ? "dscr" : q.dyConstrained ? "dy" : q.principal < capped * 0.995 ? "credit" : "ltv",
+    ltvCap: prod.ltv, uwDscr: prod.uwDscr,
+  };
 }
 
 export function executePurchase(

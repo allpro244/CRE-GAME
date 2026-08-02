@@ -171,6 +171,32 @@ function occHash(key: string): number {
   for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
   return ((h >>> 0) % 10000) / 10000;
 }
+/**
+ * A BUILDING THAT OPENED THIS MONTH IS EMPTY.
+ *
+ * Occupancy was a pure function of class, location and a per-building hash,
+ * with no notion of age at all — so the day the city finished a tower it was
+ * already 93% let, and every new building in town arrived stabilised. Nobody
+ * has ever opened a building full. It takes two to three years of touring,
+ * concessions and fit-out to fill one, and that lease-up is the single largest
+ * risk in development — which the player carries in full on their own jobs and
+ * everyone else was being handed for free.
+ *
+ * Apartments fill faster than offices because the space is fungible and the
+ * leases are twelve months, which is why residential lease-up risk is priced
+ * so much lower than commercial.
+ */
+function leaseUpFactor(rec: ParcelRecord, econ: Econ, apt: boolean): number {
+  if (!rec.yearBuilt || econ.m === undefined) return 1;
+  const nowYr = 2000 + econ.m / 12;
+  const age = nowYr - rec.yearBuilt;
+  if (age < 0 || age > 4) return 1;
+  const span = apt ? 1.6 : 3.2;               // years to stabilised
+  if (age >= span) return 1;
+  // opens at a fifth let and climbs — the shape of a real lease-up curve
+  return clamp(0.2 + 0.8 * Math.pow(age / span, 0.75), 0.2, 1);
+}
+
 export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass): number {
   const apt = use === "multifamily";
   const swing = apt ? 0.04 : 0.09;
@@ -186,7 +212,8 @@ export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass): nu
   // entire value-add trade — the discount is real and so is the reason.
   const u2 = occHash("trouble:" + rec.bbl + use);
   const trouble = u2 < 0.12 ? (apt ? 0.14 : 0.28) * (1 - u2 / 0.12) : 0;
-  return clamp(OCC_BASE[use] + swing * econ.cycleDev + loc + idio - trouble, 0.35, 0.99);
+  const base = clamp(OCC_BASE[use] + swing * econ.cycleDev + loc + idio - trouble, 0.35, 0.99);
+  return base * leaseUpFactor(rec, econ, apt);
 }
 export function occupancy(rec: ParcelRecord, econ: Econ): number {
   if (rec.class === "land") return 0;

@@ -376,6 +376,9 @@ export interface Econ {
   rateAimM?: number;      // month the era next re-rolls
   // Capital availability, 1 = normal. In a crunch this falls, spreads widen,
   // lenders size smaller, and cap rates gap out — independent of the index.
+  // What month it is. The space market needs the calendar to tell a building
+  // that opened last year from one that opened in 1928.
+  m?: number;
   creditIdx: number;
   // The demand driver behind leasing velocity.
   employIdx: number;

@@ -17,7 +17,7 @@ import { loadGame, saveGame, listSaves, deleteSave, type SaveMeta } from "@/engi
 import { currentCity, dataBase } from "@/state/city";
 
 export type Lens = "none" | "land" | "demand";
-export type Page = "none" | "portfolio" | "deals" | "market" | "economy" | "books" | "leasing" | "property" | "saves";
+export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "leasing" | "property" | "saves";
 
 interface AppState {
   parcels: ParcelTable | null;

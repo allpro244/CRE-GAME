@@ -97,6 +97,9 @@ export default function TopBar() {
           <button className={"nav-btn" + (page === "deals" ? " nav-on" : "")} onClick={() => setPage(page === "deals" ? "none" : "deals")}>
             Deals{dealsCount > 0 ? ` · ${dealsCount}` : ""}
           </button>
+          <button className={"nav-btn" + (page === "research" ? " nav-on" : "")} onClick={() => setPage(page === "research" ? "none" : "research")}>
+            Research
+          </button>
           <button className={"nav-btn" + (page === "market" ? " nav-on" : "")} onClick={() => setPage(page === "market" ? "none" : "market")}>
             Marketplace
           </button>

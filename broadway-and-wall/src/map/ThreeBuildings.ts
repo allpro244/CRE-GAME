@@ -10,6 +10,45 @@ import maplibregl from "maplibre-gl";
 /** A context point that knows which way it is pointing. Bearing in degrees. */
 export interface Oriented { p: [number, number]; r: number }
 
+/**
+ * Points scattered inside a ring, deterministically.
+ *
+ * A jittered lattice over the ring's bounding box, rejecting anything outside
+ * the polygon. Lattice-then-reject rather than uniform random because a lot
+ * wants its cars and its trees SPREAD — pure random clumps, and a clump of
+ * cars in the corner of an acre of gravel reads as a wreck yard.
+ */
+function scatterInRing(ring: [number, number][], n: number, seed: number): [number, number][] {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [x, y] of ring) {
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  }
+  const inside = (px: number, py: number) => {
+    let hit = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) hit = !hit;
+    }
+    return hit;
+  };
+  const cols = Math.max(1, Math.ceil(Math.sqrt(n * ((maxX - minX) / Math.max(1, maxY - minY)))));
+  const rows = Math.max(1, Math.ceil(n / cols));
+  let s = Math.floor(seed * 1e6) >>> 0;
+  const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  const out: [number, number][] = [];
+  for (let r = 0; r < rows && out.length < n; r++) {
+    for (let c = 0; c < cols && out.length < n; c++) {
+      const px = minX + ((c + 0.5 + (rnd() - 0.5) * 0.7) / cols) * (maxX - minX);
+      const py = minY + ((r + 0.5 + (rnd() - 0.5) * 0.7) / rows) * (maxY - minY);
+      // 1.6 m in from the fence, so nothing straddles it
+      if (inside(px, py) && inside(px + 1.6, py) && inside(px - 1.6, py) &&
+          inside(px, py + 1.6) && inside(px, py - 1.6)) out.push([px, py]);
+    }
+  }
+  return out;
+}
+
 export interface BuildingVolume {
   b: string;   // bbl ("" for decorative props like ships and cranes)
   c: string;   // asset class
@@ -680,6 +719,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private dynGroup = new THREE.Group();
   private shadowTex: THREE.Texture | null = null;
   private water: THREE.Mesh | null = null;
+  // dressing for the unbuilt half of the city, collected while the volumes are
+  // walked and instanced along with the street planting
+  private lotTrees: { x: number; y: number; s: number; rot: number }[] = [];
+  private lotCars: { x: number; y: number; s: number; rot: number }[] = [];
   private sunVP = new THREE.Matrix4();
   visible = true;
 
@@ -892,6 +935,39 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         capRoof(R, ring, 0.06, [S_LOT, rnd, varr, 1, fh]);
         const fence = insetRing(ring, 0.5);
         if (fence) extrudeWalls(W, fence, 0, 1.15, [S_LOT, rnd, varr, 1.15, fh]);
+        // WHAT VACANT LAND ACTUALLY DOES. Nearly half this city is unbuilt —
+        // that is the game's whole surface — and all of it read as blank plate
+        // from the air, which is what turned whole districts into pale voids.
+        // Empty ground in a real city is never empty: downtown lots get paved
+        // and parked on, and the ones nobody bothers with go to weeds and
+        // volunteer trees inside five years. The shader already splits gravel
+        // / grass / dirt on vVar; this dresses each to match.
+        const m2 = Math.abs(area) / 2;
+        if (varr > 0.62) {
+          // gone to scrub: small self-seeded trees, thicker toward the middle
+          const n = Math.min(26, Math.max(2, Math.round(m2 / 170)));
+          for (const p of scatterInRing(ring, n, rnd)) {
+            this.lotTrees.push({ x: p[0], y: p[1], s: 0.55 + ((p[0] * 7.3 + p[1] * 3.1) % 1) * 0.45, rot: (p[1] * 2.1) % 6.28 });
+          }
+        } else if (varr > 0.18 && m2 > 380) {
+          // surface parking, which is what a downtown hole in the ground earns
+          // until somebody builds on it. Rows share one bearing — scattered
+          // cars read as a junkyard, aligned ones read as a lot.
+          let bi = 0, bl = -1;
+          for (let i = 0; i < ring.length; i++) {
+            const a2 = ring[i], b2 = ring[(i + 1) % ring.length];
+            const L = Math.hypot(b2[0] - a2[0], b2[1] - a2[1]);
+            if (L > bl) { bl = L; bi = i; }
+          }
+          const a2 = ring[bi], b2 = ring[(bi + 1) % ring.length];
+          const rot = Math.atan2(b2[1] - a2[1], b2[0] - a2[0]) + Math.PI / 2;
+          // a stall plus its share of aisle is about 85 m2; the cap only
+          // bites on the full-block lots, which really do hold that many
+          const n = Math.min(46, Math.max(3, Math.round(m2 / 85)));
+          for (const p of scatterInRing(ring, n, rnd + 0.37)) {
+            this.lotCars.push({ x: p[0], y: p[1], s: 1, rot });
+          }
+        }
         if (v.b) {
           wallRanges.push({ bbl: v.b, r: { start: wallStart, count: W.pos.length / 3 - wallStart } });
           roofRanges.push({ bbl: v.b, r: { start: roofStart, count: R.pos.length / 3 - roofStart } });
@@ -1432,6 +1508,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const [x, y] = this.project(p);
       trees.push({ x, y, s: 1.02 + rnd() * 0.75, rot: rnd() * 6.28 });
     }
+    // the scrub that has taken the abandoned lots, planted a size down from
+    // street trees because nobody chose these and nobody prunes them
+    for (const t of this.lotTrees) trees.push(t);
+    for (const c2 of this.lotCars) cars.push(c2);
     // pier piles: short dark timbers standing at the deck edge over the water
     const piles: Item[] = (this.ctxPoints.piles ?? []).map((p) => {
       const [x, y] = this.project(p);

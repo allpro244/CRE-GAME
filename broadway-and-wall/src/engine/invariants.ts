@@ -48,6 +48,24 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
   const nw = netWorth(s, parcels);
   if (!fin(nw)) bad("nan", "firm", "net worth is not a number");
 
+  // ------------------------------------------------------------- assemblage
+  // A merged deed's land has moved somewhere. If the parent is gone, or the
+  // child is itself a parent, the land has either vanished or been counted in
+  // two places — and land that is counted twice is net worth that is wrong.
+  for (const [child, parent] of Object.entries(s.merged ?? {})) {
+    const at = `assemblage ${child}`;
+    if (child === parent) bad("merge", at, "a lot merged into itself");
+    if (!s.holdings[child]) bad("merge", at, "a merged deed you do not own");
+    if (!s.holdings[parent]) bad("merge", at, `merged into ${parent}, which you do not own`);
+    if (s.merged![parent]) bad("merge", at, `merged into ${parent}, which is itself merged into something else`);
+  }
+  for (const [bbl, gl] of Object.entries(s.groundLeases ?? {})) {
+    const at = `ground lease ${bbl}`;
+    if (!s.holdings[bbl]) bad("ground", at, "a ground lease on land you do not own");
+    if (!fin(gl.rentYr) || gl.rentYr < 0) bad("ground", at, `ground rent ${gl.rentYr}`);
+    if (gl.endM <= gl.startM) bad("ground", at, "a lease that ends before it starts");
+  }
+
   // ---------------------------------------------------------- partner equity
   // A waterfall is arithmetic with a sign convention, and a sign convention is
   // the easiest thing in this codebase to get backwards without anything

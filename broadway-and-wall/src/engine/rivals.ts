@@ -34,6 +34,7 @@ import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from
 import { BUILD_MONTHS, rng, rrange } from "./market";
 import { assetValue, initialCondition, landValue, noiAfterTaxYr, occupancy, resolveRec } from "./value";
 import { devMix, dominantOf, farMaxFor, HARD_COST_PSF, SOFT_COST, useForZone } from "./dev";
+import { recordComp } from "./comps";
 
 // Ashport is an old port town; its money has old-port-town names.
 // Everyone starts the century the same size you do — five to fifteen million
@@ -936,6 +937,8 @@ export function rivalBuys(s: GameState, rec: ParcelRecord, price: number): Rival
   best.basis = Math.round((best.basis ?? 0) + price + closing);
   best.aum = Math.round((best.aum ?? 0) + price);
   transferDeed(s, rec.bbl, best, 0);   // the seller was already paid above
+  recordComp(s, rec, price, best.name, seller?.name ?? "a private owner",
+    s.listings.find((l) => l.bbl === rec.bbl)?.distress, seller ? assetGrade(seller, rec) : undefined);
   return best;
 }
 

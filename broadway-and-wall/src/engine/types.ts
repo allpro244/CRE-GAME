@@ -103,6 +103,9 @@ export interface Holding {
   tenants: Tenant[];   // commercial rent roll
   makeReady?: { sf: number; readyM: number; use?: BuiltClass }[]; // vacated space being turned; unleasable until ready
   broker?: boolean;    // leasing broker on retainer: more LOIs, monthly fee
+  // Somebody else's building stands on this dirt. It earns ground rent instead
+  // of costing carry, and it is not yours to build on until the term is up.
+  groundLeased?: boolean;
   occ?: number;        // multifamily aggregate occupancy
   stance?: -1 | 0 | 1; // rent posture: push / market / fill
   deliveredM?: number; // ground-up completion: new space leases with momentum
@@ -205,6 +208,29 @@ export interface JointVenture {
   accruedPref: number;    // pref owed and unpaid — it compounds against you
   promoteEarned: number;  // what the structure has paid you so far
   openedM: number;
+}
+
+import type { Comp } from "./comps";
+
+/**
+ * A GROUND LEASE YOU HAVE GRANTED.
+ *
+ * Somebody else's building on your land, for a very long time. You take a
+ * coupon on the land value with fixed step-ups and no operating risk at all —
+ * no tenants, no roof, no vacancy — and in exchange the site is not yours to
+ * build on or to sell unencumbered until the term runs out. It is the one way
+ * to make a land bank earn its carry, and the one way to be certain you will
+ * miss the cycle that would have made it worth building on.
+ */
+export interface GroundLease {
+  bbl: string;
+  startM: number;
+  endM: number;
+  rentYr: number;       // today's ground rent, before the next step
+  stepPct: number;      // the review, every `stepEveryM` months
+  stepEveryM: number;
+  lastStepM: number;
+  tenant: string;
 }
 
 export interface Approach {
@@ -436,6 +462,13 @@ export interface GameState {
   // tickCityGrowth. A month with two rival groundbreakings is followed by
   // quiet ones, so the town grows at the pace its vacancy supports.
   startDebt?: number;
+  // ASSEMBLAGE. Child parcel -> the lot it has been merged into. The child
+  // keeps its deed and its shape on the map; its land area, its value and its
+  // buildable envelope have all moved to the parent, which is what assembling
+  // a site actually does. See actions.assembleLots.
+  merged?: Record<string, string>;
+  // GROUND LEASES you have granted on your own dirt, by parcel.
+  groundLeases?: Record<string, GroundLease>;
   landAdj: Record<string, number>;           // per-parcel land value multiplier
   blockD: Record<string, number>;            // per-block demand DRIFT, in points off the generated score
   // What the lending market remembers about you. A sponsor who hands back keys
@@ -462,6 +495,9 @@ export interface GameState {
   nwHistory: number[];                       // net worth at each month, for the chart
   exits: Exit[];                             // every disposition, forced or chosen
   milestones: Record<string, number>;        // milestone id -> month achieved
+  // Every deed that has moved in this city, with the price. See comps.ts —
+  // an appraisal is an opinion and a closed sale is a fact.
+  comps?: Comp[];
   news: NewsItem[];
   gameOver: { cause: string; complete?: boolean } | null;
   insolventMs: number;

@@ -52,6 +52,8 @@ function physicalOcc(rec: never, h: { tenants: { sf: number }[]; occ?: number })
 import { sponsorStanding } from "@/engine/sponsor";
 import { marketAppetite, markRival, rivalCondition } from "@/engine/rivals";
 import { gpEquity, jvSummary, lpMood, lpTerms, recapQuote } from "@/engine/equity";
+import { compFlows, compStats } from "@/engine/comps";
+import { groundLeaseQuote, mergeCost } from "@/engine/actions";
 import { usd, sf, pct } from "./format";
 import Slider from "./Slider";
 
@@ -1394,6 +1396,7 @@ function PropertyPage() {
         </div>
       </div>
       <EquityDesk bbl={bbl} />
+      <LandDesk bbl={bbl} />
       {dev && (
         <div className="page-section">
           <div className="page-section-head">Under construction</div>
@@ -1500,6 +1503,146 @@ function EquityDesk({ bbl }: { bbl: string }) {
           <button className="btn" onClick={() => raiseEquity(bbl, share)}>
             Take {usd(q.cheque)} for {(q.share * 100).toFixed(0)}%
           </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * THE LAND DESK.
+ *
+ * Dirt used to cost 1.2% a year and do nothing else, which makes a land bank a
+ * parking meter rather than a position. Two things you can do with a lot you
+ * are not building on yet, and both of them are decisions:
+ *
+ *   • Fold the neighbours in. Assemblage pressure has been making every
+ *     approach on this block dearer since the first one; this is what those
+ *     premiums were for — one site, one envelope, one building.
+ *   • Ground-lease it. A coupon on the land with no operating risk at all, and
+ *     the certain knowledge that you will sit out every cycle in between.
+ */
+function LandDesk({ bbl }: { bbl: string }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const adjacency = useStore((s) => s.adjacency);
+  const { assemble, groundLease } = useStore.getState();
+  const [picked, setPicked] = useState<string[]>([]);
+  const [years, setYears] = useState(60);
+  const h = game.holdings[bbl];
+  const rec = h ? resolveRec(parcels, game, bbl) : null;
+  if (!h || !rec) return null;
+
+  const gl = game.groundLeases?.[bbl];
+  if (gl) {
+    const yrsLeft = Math.max(0, (gl.endM - game.month) / 12);
+    return (
+      <div className="deal">
+        <div className="deal-head">Ground-leased</div>
+        <div className="grid">
+          <Row k="Lessee" v={gl.tenant} />
+          <Row k="Ground rent" v={`${usd(gl.rentYr)} / yr`} strong />
+          <Row k="Next review" v={`${monthLabel(gl.lastStepM + gl.stepEveryM)} · +${gl.stepPct}%`} />
+          <Row k="Reverts" v={`${monthLabel(gl.endM)} · ${yrsLeft.toFixed(0)} years to run`} />
+        </div>
+        <div className="hint">
+          No tenants, no roof, no vacancy — and no building on it until the term is up. Whatever they put up
+          reverts to you with the land.
+        </div>
+      </div>
+    );
+  }
+
+  // an assembled parent: say what it now is
+  const children = Object.entries(game.merged ?? {}).filter(([, p]) => p === bbl).map(([c]) => c);
+  const isChild = game.merged?.[bbl];
+  if (isChild) {
+    const parent = resolveRec(parcels, game, isChild);
+    return (
+      <div className="deal">
+        <div className="deal-head">Part of an assemblage</div>
+        <div className="hint">
+          This deed has been folded into {parent?.address ?? isChild}. Its land, its envelope and its value all sit
+          with the site now — build there, not here.
+        </div>
+      </div>
+    );
+  }
+
+  const vacant = rec.class === "land" && rec.bldgArea === 0;
+  if (!vacant) return null;
+
+  // neighbours you already own that could be folded in
+  const nbrs = (adjacency?.[bbl] ?? []).filter((n) => {
+    if (!game.holdings[n] || game.merged?.[n] || game.developments[n] || game.groundLeases?.[n]) return false;
+    const r = resolveRec(parcels, game, n);
+    return !!r && r.class === "land" && r.bldgArea === 0;
+  });
+  const q = groundLeaseQuote(game, parcels, bbl, years);
+  const cost = mergeCost(game, picked.length + 1);
+  const addedArea = picked.reduce((a, b) => a + (parcels[b]?.lotArea ?? 0), 0);
+  const farMax = Math.max(rec.farMaxComm, rec.farMaxRes);
+
+  return (
+    <div className="deal">
+      <div className="deal-head">The land desk</div>
+      {children.length > 0 && (
+        <div className="hint">
+          Assembled site — {children.length + 1} deeds, {sf(rec.lotArea)} of land, {sf(Math.round(rec.lotArea * farMax))} buildable.
+        </div>
+      )}
+      {nbrs.length > 0 && (
+        <>
+          <div className="page-section" style={{ marginTop: 2 }}>Fold in the neighbours</div>
+          <div className="mini-list">
+            {nbrs.map((n) => {
+              const r = resolveRec(parcels, game, n);
+              const on = picked.includes(n);
+              return (
+                <button key={n} className={"neighbor" + (on ? " neighbor-on" : "")}
+                  onClick={() => setPicked(on ? picked.filter((x) => x !== n) : [...picked, n])}>
+                  <span className="neighbor-addr">{on ? "✓ " : ""}{r?.address ?? n}</span>
+                  <span className="neighbor-meta">{sf(r?.lotArea ?? 0)} of land</span>
+                </button>
+              );
+            })}
+          </div>
+          {picked.length > 0 && (
+            <>
+              <div className="grid">
+                <Row k="Site after merger" v={`${sf(rec.lotArea + addedArea)} · ${sf(Math.round((rec.lotArea + addedArea) * farMax))} buildable`} strong />
+                <Row k="Was" v={`${sf(rec.lotArea)} · ${sf(Math.round(rec.lotArea * farMax))} buildable`} />
+                <Row k="Survey, title and lawyers" v={usd(cost)} />
+              </div>
+              <button className="btn" onClick={() => { assemble([bbl, ...picked]); setPicked([]); }}>
+                Assemble {picked.length + 1} lots
+              </button>
+            </>
+          )}
+        </>
+      )}
+      {q && (
+        <>
+          <div className="page-section" style={{ marginTop: 10 }}>Or ground-lease it</div>
+          <div className="slider">
+            <div className="slider-head">
+              <span className="slider-label">Term</span>
+              <span className="slider-value">{years} years</span>
+            </div>
+            <input type="range" min={30} max={99} step={1} value={years}
+              style={{ ["--fill" as string]: `${((years - 30) / 69) * 100}%` }}
+              onChange={(e) => setYears(Number(e.target.value))} />
+          </div>
+          <div className="grid">
+            <Row k="Ground rent" v={`${usd(q.rentYr)} / yr · ${q.capPct}% of land value`} strong />
+            <Row k="Reviews" v={`+${q.stepPct}% every ten years`} />
+            <Row k="Land back" v={monthLabel(game.month + years * 12)} />
+          </div>
+          <div className="hint">
+            No tenants and no operating risk, and you do not build on this corner again for {years} years — including
+            the one cycle where you would have wanted to.
+          </div>
+          <button className="btn" onClick={() => groundLease(bbl, years)}>Grant a {years}-year ground lease</button>
         </>
       )}
     </div>
@@ -2226,6 +2369,9 @@ function MarketPage() {
           </table>
         </section>
         <section style={{ gridColumn: "1 / -1" }}>
+          <CompsSheet />
+        </section>
+        <section style={{ gridColumn: "1 / -1" }}>
           <TheStreet />
         </section>
         <section style={{ gridColumn: "1 / -1" }}>
@@ -2324,6 +2470,136 @@ function SponsorRecord() {
 // left. This is not decoration: the appetite number at the top is the same one
 // that decides whether your lowball gets refused, and a firm sliding toward
 // its covenants is a firm whose buildings are about to be cheap.
+/**
+ * WHAT HAS ACTUALLY TRADED.
+ *
+ * Everything else on this page is the engine telling you what it thinks. This
+ * is the only panel in the game built entirely out of things that happened:
+ * closed sales, the price paid, the cap rate that price implies, and the names
+ * on both sides. Forming a view out of prints rather than out of a stat block
+ * is most of the job, and there was no way to do it.
+ */
+function CompsSheet() {
+  const game = useStore((s) => s.game)!;
+  const select = useStore((s) => s.select);
+  const setPage = useStore((s) => s.setPage);
+  const [win, setWin] = useState(60);
+  const comps = game.comps ?? [];
+  if (comps.length < 3) {
+    return (
+      <>
+        <div className="page-section">Comparable sales</div>
+        <div className="hint">Nothing has changed hands yet that is worth calling a comp. Come back once the market has printed a few.</div>
+      </>
+    );
+  }
+  const recent = [...comps].reverse().filter((c) => c.m >= game.month - win).slice(0, 40);
+  const flows = compFlows(game, win).slice(0, 8);
+  return (
+    <>
+      <div className="page-section">
+        Comparable sales · {recent.length} in the last {win / 12} years
+      </div>
+      <div className="hint">
+        Closed prices, not appraisals. The cap rate is the going-in yield on what the buyer actually paid — when it
+        drifts down across a class, the market is repricing and your own book is worth more than the tape says.
+      </div>
+      <div className="btn-row" style={{ marginBottom: 8 }}>
+        {[36, 60, 120, 300].map((w) => (
+          <button key={w} className={"btn-mini" + (win === w ? " on" : "")} onClick={() => setWin(w)}>
+            {w / 12} yr
+          </button>
+        ))}
+      </div>
+      <table className="tbl">
+        <thead>
+          <tr>
+            <th>Class</th><th className="num">Trades</th><th className="num">Median cap</th>
+            <th className="num">Median $/sf</th><th className="num">Volume</th><th className="num">Distressed</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(["office", "retail", "multifamily", "industrial", "land"] as const).map((k) => {
+            const st = compStats(game, k, win);
+            return (
+              <tr key={k}>
+                <td>{k === "land" ? "Land" : CLASS_LABEL[k]}</td>
+                {st ? (
+                  <>
+                    <td className="num">{st.n}</td>
+                    <td className="num">{k === "land" ? "—" : `${st.medCap.toFixed(2)}%`}</td>
+                    <td className="num">${st.medPsf.toFixed(0)}{k === "land" ? " lot" : ""}</td>
+                    <td className="num">{usd(st.volume)}</td>
+                    <td className={"num" + (st.distressShare > 0.3 ? " neg" : "")}>{(st.distressShare * 100).toFixed(0)}%</td>
+                  </>
+                ) : (
+                  <td colSpan={5} className="dim">too few prints to call it a market</td>
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      {/* WHO IS DOING WHAT. A shop that has bought nine buildings in eighteen
+          months is levering into the top, and you can watch them do it. */}
+      {flows.length > 0 && (
+        <>
+          <div className="page-section" style={{ marginTop: 14 }}>Who has been active</div>
+          <table className="tbl">
+            <thead>
+              <tr><th>Firm</th><th className="num">Bought</th><th className="num">Sold</th><th className="num">Net</th><th>Read</th></tr>
+            </thead>
+            <tbody>
+              {flows.map((f) => (
+                <tr key={f.name} className={f.name === "You" ? "row-me" : ""}>
+                  <td>{f.name}</td>
+                  <td className="num">{f.boughtN ? `${f.boughtN} · ${usd(f.bought)}` : "—"}</td>
+                  <td className="num">{f.soldN ? `${f.soldN} · ${usd(f.sold)}` : "—"}</td>
+                  <td className={"num" + (f.net < 0 ? " neg" : "")}>{f.net >= 0 ? "+" : "−"}{usd(Math.abs(f.net))}</td>
+                  <td className="dim">
+                    {f.boughtN >= 4 && f.net > 0 ? "Buying hard. They are the bid you are up against."
+                      : f.soldN >= 3 && f.net < 0 ? "Getting out. Ask why before you buy what they are selling."
+                      : f.net > 0 ? "Net buyer" : f.net < 0 ? "Net seller" : "Even"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      <div className="page-section" style={{ marginTop: 14 }}>Recent prints</div>
+      <div style={{ overflowX: "auto" }}>
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>Closed</th><th>Property</th><th>Class</th><th className="num">Price</th>
+              <th className="num">$/sf</th><th className="num">Cap</th><th>Buyer</th><th>Seller</th>
+            </tr>
+          </thead>
+          <tbody>
+            {recent.map((c, i) => (
+              <tr key={c.bbl + c.m + i} className={c.distress ? "dim" : ""}
+                style={{ cursor: "pointer" }}
+                onClick={() => { setPage("none"); select(c.bbl); }}>
+                <td className="mono">{monthLabel(c.m)}</td>
+                <td>{c.address}{c.distress ? " · distressed" : ""}</td>
+                <td className="dim">{CLASS_LABEL[c.cls as keyof typeof CLASS_LABEL] ?? c.cls}</td>
+                <td className="num">{usd(c.price)}</td>
+                <td className="num">{c.sf > 0 ? `$${c.psf.toFixed(0)}` : `$${c.psf.toFixed(0)} land`}</td>
+                <td className="num">{c.capRate > 0 ? `${c.capRate.toFixed(2)}%` : "—"}</td>
+                <td className={c.buyer === "You" ? "" : "dim"}>{c.buyer}</td>
+                <td className={c.seller === "You" ? "" : "dim"}>{c.seller}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 function TheStreet() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;

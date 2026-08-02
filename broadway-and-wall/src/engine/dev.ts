@@ -370,6 +370,8 @@ export function startDevelopment(
   if (!s.holdings[bbl]) return { s, err: "Buy the dirt first." };
   if (rec.class !== "land") return { s, err: "Clear the site first — demolish what's standing before you build." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
+  if (s.groundLeases?.[bbl]) return { s, err: "That site is ground-leased. Somebody else builds on it until the term runs out." };
+  if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage — build on the site, not the piece." };
   const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, contract, ltcWanted);
   if (!plan) return { s, err: "That's too small to be worth building — add floors or cover more of the lot." };
   if (s.cash < plan.equityAtClose) {

@@ -65,6 +65,27 @@ export function useRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition
 export function resolveRec(parcels: Record<string, ParcelRecord>, s: GameState, bbl: string): ParcelRecord | null {
   const rec = parcels[bbl];
   if (!rec) return null;
+  // ASSEMBLED SITES. A merged lot's land has moved into its parent: the parent
+  // is as big as the sum of the deeds, and the child is a deed with no
+  // buildable area left in it. Everything downstream — the envelope, the land
+  // value, what a lender will lend on — reads this without knowing it exists.
+  const m = s.merged;
+  if (m) {
+    if (m[bbl]) return { ...rec, lotArea: 0, farMaxComm: 0, farMaxRes: 0 };
+    let extra = 0;
+    for (const [child, parent] of Object.entries(m)) {
+      if (parent === bbl) extra += parcels[child]?.lotArea ?? 0;
+    }
+    if (extra > 0) {
+      const grown = resolveBase(s, { ...rec, lotArea: rec.lotArea + extra });
+      return grown;
+    }
+  }
+  return resolveBase(s, rec);
+}
+
+function resolveBase(s: GameState, rec: ParcelRecord): ParcelRecord | null {
+  const bbl = rec.bbl;
   const b = s.built?.[bbl];
   const adj = s.landAdj?.[bbl];
   const dd = s.blockD?.[rec.block];
@@ -361,7 +382,10 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
   if (h.renovatingUntilM !== undefined && currentQ < h.renovatingUntilM) {
     return -Math.max(0, rec.bldgArea) * 1.2; // dark during the gut
   }
-  if (rec.class === "land" || !rec.bldgArea) return -landValue(rec, econ) * 0.012;
+  // A ground-leased lot does not carry: the lessee pays the taxes and the
+  // insurance, which is what "absolutely net" means. Its income arrives
+  // separately as ground rent, so charging carry here would bill it twice.
+  if (rec.class === "land" || !rec.bldgArea) return h.groundLeased ? 0 : -landValue(rec, econ) * 0.012;
   const cls = rec.class as BuiltClass;
   if (cls === "multifamily") {
     // units turn over and things break: a 7% reserve off collections for

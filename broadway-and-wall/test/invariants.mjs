@@ -26,7 +26,7 @@ const BOTS = {
     buy: (c) => c.built, lev: 1, prod: () => "cordage", refi: true, sell: () => false, every: 5,
   },
   // builds constantly: exercises draws, reserves, contingency, delivery
-  builder: { buy: () => true, lev: 0.9, prod: (c) => (c.built ? "savings" : "land"), dev: true, sell: (g) => g > 0.5, every: 7 },
+  builder: { buy: () => true, lev: 0.9, prod: (c) => (c.built ? "savings" : "land"), dev: true, land: true, sell: (g) => g > 0.5, every: 7 },
   // churns: exercises sale, tax, 1031, exits
   churner: { buy: (c) => c.built, lev: 0.7, prod: () => "savings", sell: (g) => g > 0.15, every: 3 },
   // SYNDICATOR. Buys with debt AND somebody else's equity, recapitalising
@@ -82,6 +82,29 @@ function run(botName, seed) {
       for (const c of cands.slice(0, 6)) {
         const r = E.buyListing(g, parcels, c.l.bbl, B.prod(c), B.lev, Math.round(c.l.ask * 0.97));
         if (!r.err) { g = r.s; break; }
+      }
+    }
+
+    // LAND PLAYS. Merge contiguous dirt into one site, and ground-lease what
+    // is left over — both of them move land area and land value around, which
+    // is exactly the kind of bookkeeping that quietly counts a lot twice.
+    if (B.land && m % 9 === 5) {
+      for (const bbl of Object.keys(g.holdings)) {
+        if (g.merged?.[bbl] || g.groundLeases?.[bbl]) continue;
+        const rec = E.resolveRec(parcels, g, bbl);
+        if (!rec || rec.class !== "land" || rec.bldgArea > 0) continue;
+        const nbrs = (adjacency[bbl] ?? []).filter((n) => {
+          if (!g.holdings[n] || g.merged?.[n] || g.groundLeases?.[n] || g.developments[n]) return false;
+          const r = E.resolveRec(parcels, g, n);
+          return r && r.class === "land" && r.bldgArea === 0;
+        });
+        if (nbrs.length) {
+          const r = E.assembleLots(g, parcels, adjacency, [bbl, ...nbrs.slice(0, 2)]);
+          if (!r.err) { g = r.s; break; }
+        } else if (m % 27 === 5) {
+          const r = E.grantGroundLease(g, parcels, bbl, 30 + (m % 4) * 20);
+          if (!r.err) { g = r.s; break; }
+        }
       }
     }
 

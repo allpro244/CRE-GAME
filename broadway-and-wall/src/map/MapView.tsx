@@ -395,6 +395,18 @@ export default function MapView() {
     for (const [bbl, b] of Object.entries(game.built ?? {})) {
       items.push({ bbl, cls: b.class, heightM: b.floors * 3.4, floors: b.floors, construction: false });
     }
+    // AN ASSEMBLED SITE IS ONE BUILDING ON SEVERAL DEEDS. The massing lives on
+    // the parent lot; without this a tower built on three merged lots rose out
+    // of one of them while the other two stayed conspicuously empty, which is
+    // the opposite of what assembling them was for.
+    const merged = game.merged ?? {};
+    if (Object.keys(merged).length) {
+      const byParent = new Map(items.map((i) => [i.bbl, i]));
+      for (const [child, parent] of Object.entries(merged)) {
+        const p = byParent.get(parent);
+        if (p) items.push({ ...p, bbl: child });
+      }
+    }
     // meshes are rebuilt only when the skyline actually changed
     const sig = items.map((i) => i.bbl + ":" + i.heightM.toFixed(1) + (i.construction ? "c" : "")).join("|");
     if (sig === dynSigRef.current) return;

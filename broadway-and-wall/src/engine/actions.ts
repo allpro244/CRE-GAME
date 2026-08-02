@@ -11,6 +11,7 @@ import { genRentRoll, isCommercial } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
 import { takeoverDevelopment } from "./dev";
 import { settleJV } from "./equity";
+import { recordComp } from "./comps";
 
 const CLOSING_PCT = 0.02;
 const SALE_FRICTION = 0.012;  // legal, title, diligence — the unavoidable rest
@@ -106,6 +107,8 @@ export function executePurchase(
     text: `Deed recorded: ${rec.address} for $${(price / 1e6).toFixed(2)}M${holding.loan ? ` ($${(holding.loan.principal / 1e6).toFixed(1)}M ${holding.loan.product} at ${holding.loan.ratePct}%)` : ", all cash"}${offMarket ? " — off-market" : ""}.`,
   });
   if (halfBuilt) takeoverDevelopment(next, parcels, bbl, halfBuilt);
+  recordComp(next, rec, price, "You", ownerOf(s, bbl)?.name ?? (offMarket ? "a private owner" : "a listed seller"),
+    s.listings.find((l) => l.bbl === bbl)?.distress, holding.condition);
   return { s: next };
 }
 
@@ -165,6 +168,172 @@ export function assemblagePressure(s: GameState, adjacency: Adjacency, bbl: stri
   const nbrs = adjacency[bbl] ?? [];
   if (!nbrs.length) return 0;
   return nbrs.filter((n) => s.holdings[n]).length / nbrs.length;
+}
+
+/**
+ * MERGE THE LOTS YOU HAVE BEEN BUYING.
+ *
+ * Assemblage pressure has been in this file since the beginning: the more of a
+ * block you own, the harder the last holdout squeezes, and every approach you
+ * make gets dearer. That was a tax with no payoff — you could pay the premium
+ * and still only ever build on one lot at a time.
+ *
+ * This is the payoff, and it is the whole reason anyone assembles: three lots
+ * that carry six floors each carry one building of eighteen, on a plate three
+ * times the size, with one core and one lobby instead of three. The envelope
+ * is the sum of the deeds; the address is the biggest of them.
+ *
+ * Cost is real but small — survey, title, the lawyers who write it — because
+ * the expensive part already happened at the closing table.
+ */
+export function mergeCost(s: GameState, lots: number): number {
+  return Math.round((45_000 + 30_000 * lots) * s.econ.costIdx);
+}
+
+export function assembleLots(
+  s: GameState, parcels: ParcelTable, adjacency: Adjacency, bbls: string[],
+): { s: GameState; err?: string; msg?: string } {
+  const list = [...new Set(bbls)];
+  if (list.length < 2) return { s, err: "Assemblage takes at least two lots." };
+  for (const b of list) {
+    if (!s.holdings[b]) return { s, err: "You have to own every lot in the assemblage." };
+    if (s.merged?.[b]) return { s, err: "One of those is already part of an assemblage." };
+    const rec = resolveRec(parcels, s, b);
+    if (!rec) return { s, err: "Unknown parcel." };
+    if (rec.class !== "land" || rec.bldgArea > 0) return { s, err: "Clear the site first — you cannot merge a lot with a building on it." };
+    if (s.developments[b]) return { s, err: "Construction is already underway on one of those." };
+    if (s.holdings[b].sale) return { s, err: "One of those is on the market — pull the listing first." };
+    if (s.jvs?.[b]) return { s, err: "A partner is in one of those deals. Buy them out before you fold it into anything." };
+    if (s.groundLeases?.[b]) return { s, err: "One of those is under a ground lease. It is not yours to build on." };
+  }
+  // CONTIGUOUS, or it is not a site — it is two sites. Walk the adjacency
+  // graph from the first lot and every lot has to be reachable through the
+  // set, which is exactly what "one site" means to a surveyor.
+  const set = new Set(list);
+  const seen = new Set([list[0]]);
+  const queue = [list[0]];
+  while (queue.length) {
+    const cur = queue.shift()!;
+    for (const n of adjacency[cur] ?? []) {
+      if (set.has(n) && !seen.has(n)) { seen.add(n); queue.push(n); }
+    }
+  }
+  if (seen.size !== list.length) return { s, err: "Those lots do not touch. An assemblage has to be one contiguous site." };
+
+  const cost = mergeCost(s, list.length);
+  if (s.cash < cost) return { s, err: `The survey, the title work and the lawyers run $${(cost / 1e3).toFixed(0)}k — you're short.` };
+
+  // the parent is the biggest lot; it keeps the address
+  const sorted = [...list].sort((a, b) => (parcels[b]?.lotArea ?? 0) - (parcels[a]?.lotArea ?? 0));
+  const parent = sorted[0];
+  const next = clone(s);
+  next.cash -= cost;
+  logBooks(next, "dev", cost);
+  if (!next.merged) next.merged = {};
+  let area = parcels[parent]?.lotArea ?? 0;
+  for (const b of sorted.slice(1)) {
+    next.merged[b] = parent;
+    area += parcels[b]?.lotArea ?? 0;
+    // the child's basis folds into the site it is now part of
+    next.holdings[parent].costBasis += next.holdings[b].costBasis;
+    next.holdings[b].costBasis = 0;
+  }
+  const rec = resolveRec(parcels, next, parent)!;
+  next.news.unshift({
+    q: next.month, kind: "deal",
+    text: `Assembled: ${list.length} lots at ${rec.address} are now one site of ${Math.round(area).toLocaleString()} sf, `
+      + `${(rec.lotArea * Math.max(rec.farMaxComm, rec.farMaxRes) / 1000).toFixed(0)}k sf buildable. `
+      + `That is what all those premiums were for.`,
+  });
+  return { s: next, msg: `${list.length} lots merged into one site.` };
+}
+
+/**
+ * GRANT A GROUND LEASE ON A LOT YOU ARE NOT GOING TO BUILD ON.
+ *
+ * Land in this game cost 1.2% a year to hold and did nothing else, which makes
+ * a land bank a parking meter rather than a position. A ground lease is the
+ * real answer: somebody else puts a building on your dirt, you take a coupon
+ * with fixed reviews and no operating risk whatsoever, and you do not get the
+ * site back for a very long time. The trade is income now against every cycle
+ * you will sit through unable to build on it.
+ */
+export function groundLeaseQuote(s: GameState, parcels: ParcelTable, bbl: string, years: number) {
+  const rec = resolveRec(parcels, s, bbl);
+  if (!rec || rec.class !== "land" || !rec.lotArea) return null;
+  const land = assetValue(rec, s.econ, "standard");
+  // A ground lessee prices against the risk-free plus a spread, and pays less
+  // for a longer term because a longer term is worth more to them.
+  const capPct = Math.max(3.4, s.econ.indexRate * 0.62 + 2.5) * (years >= 75 ? 0.9 : years >= 50 ? 0.96 : 1.04);
+  const rentYr = Math.round(land * (capPct / 100));
+  return {
+    land, rentYr, capPct: +capPct.toFixed(2), years,
+    stepPct: +(years >= 75 ? 12 : 10).toFixed(0),
+    stepEveryM: 120,
+  };
+}
+
+export function grantGroundLease(
+  s: GameState, parcels: ParcelTable, bbl: string, years: number,
+): { s: GameState; err?: string; msg?: string } {
+  if (!s.holdings[bbl]) return { s, err: "You don't own that." };
+  if (s.groundLeases?.[bbl]) return { s, err: "It is already ground-leased." };
+  if (s.holdings[bbl].sale) return { s, err: "It's on the market — pull the listing before you encumber it." };
+  if (s.developments[bbl]) return { s, err: "Construction is already underway." };
+  if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage — lease the whole site or none of it." };
+  const q = groundLeaseQuote(s, parcels, bbl, years);
+  if (!q || q.rentYr <= 0) return { s, err: "Nobody will ground-lease that." };
+  const next = clone(s);
+  if (!next.groundLeases) next.groundLeases = {};
+  next.holdings[bbl].groundLeased = true;
+  next.groundLeases[bbl] = {
+    bbl, startM: next.month, endM: next.month + years * 12,
+    rentYr: q.rentYr, stepPct: q.stepPct, stepEveryM: q.stepEveryM, lastStepM: next.month,
+    tenant: groundTenant(next),
+  };
+  const rec = resolveRec(parcels, next, bbl)!;
+  next.news.unshift({
+    q: next.month, kind: "deal",
+    text: `Ground lease signed at ${rec.address}: $${(q.rentYr / 1e6).toFixed(2)}M a year for ${years} years, `
+      + `${q.stepPct}% every ten. You keep the dirt and you do not touch it again until ${monthLabel(next.month + years * 12)}.`,
+  });
+  return { s: next, msg: `Ground-leased for ${years} years.` };
+}
+
+const GROUND_TENANTS = [
+  "a hotel operator", "a grocery chain", "a self-storage operator", "a hospital system",
+  "a car dealership group", "a data-centre developer", "a church", "a university",
+];
+function groundTenant(s: GameState): string {
+  return GROUND_TENANTS[Math.floor(rng(s) * GROUND_TENANTS.length)];
+}
+
+/** Ground rent in, and the ten-year reviews. Called once a month. */
+export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
+  for (const [bbl, gl] of Object.entries(s.groundLeases ?? {})) {
+    if (!s.holdings[bbl]) { delete s.groundLeases![bbl]; continue; }
+    if (s.month >= gl.endM) {
+      const rec = resolveRec(parcels, s, bbl);
+      delete s.groundLeases![bbl];
+      delete s.holdings[bbl].groundLeased;
+      s.news.unshift({
+        q: s.month, kind: "event",
+        text: `The ground lease at ${rec?.address ?? bbl} has run out. The land is yours again, and whatever they built on it is yours too.`,
+      });
+      continue;
+    }
+    if (s.month - gl.lastStepM >= gl.stepEveryM) {
+      gl.rentYr = Math.round(gl.rentYr * (1 + gl.stepPct / 100));
+      gl.lastStepM = s.month;
+      const rec = resolveRec(parcels, s, bbl);
+      s.news.unshift({
+        q: s.month, kind: "info",
+        text: `Rent review at ${rec?.address ?? bbl}: the ground rent steps to $${(gl.rentYr / 1e6).toFixed(2)}M.`,
+      });
+    }
+    s.cash += gl.rentYr / 12;
+    logBooks(s, "noi", gl.rentYr / 12);
+  }
 }
 
 export function approachOwner(
@@ -273,6 +442,12 @@ export function counterOffMarket(
 // Selling is a process, not a button: list at an ask, wait for offers, and
 // decide. Overprice it and the phone stays quiet.
 export function listForSale(s: GameState, parcels: ParcelTable, bbl: string, ask: number): { s: GameState; err?: string } {
+  // A merged deed has no land left in it — selling it alone would hand over a
+  // piece of paper and keep the dirt. The site sells as a site.
+  if (s.merged?.[bbl]) return { s, err: "That deed is part of an assemblage. Sell the site, not the piece." };
+  // The leased fee is a bond with a deed attached and this desk does not trade
+  // it. Granting the lease was the decision; living with it is the rest of it.
+  if (s.groundLeases?.[bbl]) return { s, err: "It is ground-leased. You do not get that corner back until the term runs out." };
   const h = s.holdings[bbl];
   if (!h) return { s, err: "You don't own that parcel." };
   if (h.renovatingUntilM !== undefined && s.month < h.renovatingUntilM) {
@@ -351,7 +526,21 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   }
   next.exits = next.exits ?? [];
   next.exits.push({ bbl, address: rec.address, boughtM: h.boughtM, soldM: next.month, price: offer.price, basis: h.costBasis, gain });
+  recordComp(next, rec, offer.price, "a buyer", "You", undefined, h.condition);
   if (next.exits.length > 200) next.exits.shift();
+  // AN ASSEMBLED SITE SELLS AS ONE SITE. The child deeds go with it — their
+  // land, their basis and their value were folded into this one the day it was
+  // assembled, and the buyer is paying for all of it.
+  for (const [child, parent] of Object.entries(next.merged ?? {})) {
+    if (parent !== bbl) continue;
+    delete next.merged![child];
+    delete next.holdings[child];
+  }
+  // The encumbrances leave with the deed, HERE, not on the next tick. The
+  // invariant sweep reads the state the moment the sale returns, and a lease
+  // that outlives its land for even one call is a lease on somebody else's
+  // property.
+  if (next.groundLeases?.[bbl]) delete next.groundLeases[bbl];
   delete next.holdings[bbl];
   next.lois = next.lois.filter((l) => l.bbl !== bbl);
   next.news.unshift({

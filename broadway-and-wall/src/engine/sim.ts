@@ -6,8 +6,9 @@ import { START_CASH, CENTURY_MONTHS, logBooks, monthLabel } from "./types";
 import { initEcon, rng, rrange, tickEcon } from "./market";
 import { assetValue, holdingNOIYr, holdingValue, initialCondition, monthlyNOI, netWorth, resolveRec } from "./value";
 import { capitalCall, LP_REP_START, settleJV, tickJV } from "./equity";
+import { recordComp } from "./comps";
 import { tickLeasing } from "./leasing";
-import { tickSales, tickListingAbsorption, tickBrokerCalls } from "./actions";
+import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases } from "./actions";
 import { tickTalks } from "./acquire";
 import { tickLoan } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
@@ -154,6 +155,7 @@ export function advanceQuarter(
   tickConstructionLeasing(s, parcels);
   tickPrograms(s, parcels);
   tickLeasing(s, parcels);
+  tickGroundLeases(s, parcels);
   tickSales(s, parcels);
   tickBrokerCalls(s, parcels, bbls);
   tickListingAbsorption(s, parcels); // other buyers work the tape too
@@ -323,9 +325,11 @@ export function advanceQuarter(
         // A partner in a seized building is preferred over you in exactly the
         // way that matters here: whatever the creditors leave behind is theirs
         // before it is yours, and usually there is nothing.
+        recordComp(s, rec, gross, "a distressed buyer", "You", true, pick.condition);
         const wind = settleJV(s, pick.bbl, proceeds);
         if (wind.lpCash > 0) { s.cash -= wind.lpCash; logBooks(s, "sold", -wind.lpCash); }
         s.exits.push({ bbl: pick.bbl, address: rec.address, boughtM: pick.boughtM, soldM: s.month, price: gross, basis: pick.costBasis, gain: gross - pick.costBasis, forced: true });
+        if (s.groundLeases?.[pick.bbl]) delete s.groundLeases[pick.bbl];
         delete s.holdings[pick.bbl];
         markSponsor(s, "seized", rec.address, Math.max(0, (pick.loan?.balance ?? 0) - gross));
         s.lois = s.lois.filter((l) => l.bbl !== pick.bbl);
@@ -375,6 +379,17 @@ export function advanceQuarter(
     if (s.holdings[bbl]) continue;
     delete s.jvs![bbl];
     s.lpRep = Math.max(0, (s.lpRep ?? LP_REP_START) - 16);
+  }
+  // Same for a ground lease and an assemblage: a deed that left the book takes
+  // its encumbrances with it. A creditor can seize land out from under a lease
+  // at any point in the month, and the ledger has to agree by the end of it.
+  for (const bbl of Object.keys(s.groundLeases ?? {})) {
+    if (!s.holdings[bbl]) delete s.groundLeases![bbl];
+  }
+  for (const [child, parent] of Object.entries(s.merged ?? {})) {
+    if (s.holdings[child] && s.holdings[parent]) continue;
+    delete s.merged![child];
+    delete s.holdings[child];
   }
 
   return s;

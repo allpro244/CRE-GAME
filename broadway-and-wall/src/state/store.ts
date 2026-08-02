@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse } from "@/engine/types";
 import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfolioQuarterlyCF } from "@/engine/sim";
-import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, startRenovation,  setBroker, type BuyProduct } from "@/engine/actions";
+import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, startRenovation,  setBroker, assembleLots, grantGroundLease, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway } from "@/engine/acquire";
 import { respondLOI, type LOIAction } from "@/engine/leasing";
 import { recapitalise } from "@/engine/equity";
@@ -55,6 +55,8 @@ interface AppState {
   stance: (bbl: string, v: -1 | 0 | 1) => void;
   listSale: (bbl: string, ask: number) => void;
   raiseEquity: (bbl: string, share: number) => void;
+  assemble: (bbls: string[]) => void;
+  groundLease: (bbl: string, years: number) => void;
   delistSale: (bbl: string) => void;
   acceptOffer: (bbl: string, exchange?: boolean) => void;
   declineOffer: (bbl: string) => void;
@@ -279,6 +281,26 @@ export const useStore = create<AppState>((set, get) => ({
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Partner in.");
+    void persist(r.s);
+  },
+
+  assemble: (bbls) => {
+    const { game, parcels, adjacency } = get();
+    if (!game || !parcels || !adjacency) return;
+    const r = assembleLots(game, parcels, adjacency, bbls);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Assembled.");
+    void persist(r.s);
+  },
+
+  groundLease: (bbl, years) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = grantGroundLease(game, parcels, bbl, years);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Ground-leased.");
     void persist(r.s);
   },
 

@@ -9,6 +9,7 @@ import { logBooks } from "./types";
 import { holdingNOIYr, holdingValue, assetValue, noiAfterTaxYr } from "./value";
 import { walt } from "./leasing";
 import { settleJV } from "./equity";
+import { recordComp } from "./comps";
 import { sponsorStanding, markSponsor, distressPrice } from "./sponsor";
 
 export type PrepayKind = "open" | "stepdown" | "yieldmaint";
@@ -447,8 +448,12 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
         // on a distressed sale is usually nothing. Losing somebody else's
         // money this way is the single most expensive thing you can do to a
         // reputation, and it is settled here rather than quietly forgotten.
+        // A distressed sale is still a print, and the most informative kind:
+        // it is the only number in the city that nobody chose.
+        recordComp(s, rec, gross, "a distressed buyer", "You", true, h.condition);
         const wind = settleJV(s, h.bbl, Math.max(0, net));
         if (wind.lpCash > 0) { s.cash -= wind.lpCash; logBooks(s, "sold", -wind.lpCash); }
+        if (s.groundLeases?.[h.bbl]) delete s.groundLeases[h.bbl];
         delete s.holdings[h.bbl];
         // the tenants who were mid-negotiation are now somebody else's problem
         s.lois = s.lois.filter((l) => l.bbl !== h.bbl);

@@ -45,7 +45,14 @@ body {
   letter-spacing: 1.2px; text-transform: uppercase;
 }
 /* the city menu — six towns, one campaign each */
-.city-pick { position: relative; display: inline-block; }
+/* THE PICKER HAS TO TAKE CLICKS. `.topbar` is pointer-events:none so the map
+   can be dragged through the empty space either side of the header, and every
+   interactive island in the bar re-enables it — .topbar-right and .topbar-game
+   both do. The city picker sits inside .brand, which never did, so the button
+   rendered, showed its caret, and did precisely nothing when clicked, at every
+   width. Scoped to the picker rather than the whole brand block: the title
+   next to it spans a lot of otherwise draggable map. */
+.city-pick { position: relative; display: inline-block; pointer-events: auto; }
 .city-pick-btn {
   background: none; border: none; cursor: pointer; padding: 2px 4px;
   font: inherit;

@@ -825,6 +825,50 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       return out;
     };
 
+    /**
+     * A PITCHED CAP: loft the footprint up and inward to a smaller ring, then
+     * lay a deck across the top.
+     *
+     * One construction covers both roofs the old city is actually made of.
+     * Pull the top ring in hard and the slopes nearly meet — a hip. Leave it
+     * wide and make the rise steep and you get a mansard, its flat deck hidden
+     * behind the slope, which is exactly what a Second Empire roof is. It
+     * works on any convex footprint, unlike the four-sided gable path, so it
+     * reaches most of the fabric instead of a handful of cottages.
+     *
+     * Returns false when the inset ate the whole footprint, so the caller can
+     * fall back to a flat roof rather than emit a cone of slivers.
+     */
+    const pitchCap = (ring: [number, number][], z: number, rise: number, inset: number, meta: number[]) => {
+      const top = insetRing(ring, inset);
+      if (!top) return false;
+      let span = 0;
+      for (let i = 0; i < top.length; i++) {
+        const a = top[i], b = top[(i + 1) % top.length];
+        span = Math.max(span, Math.hypot(b[0] - a[0], b[1] - a[1]));
+      }
+      if (span < 1.0) return false;   // insetRing clamps at the centroid
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        const c = top[(i + 1) % top.length], d = top[i];
+        const A = [a[0], a[1], z], B = [b[0], b[1], z];
+        const C = [c[0], c[1], z + rise], D = [d[0], d[1], z + rise];
+        const ux = B[0] - A[0], uy = B[1] - A[1];
+        const wx = D[0] - A[0], wy = D[1] - A[1];
+        // cross of the eave run (ux, uy, 0) with the rake (wx, wy, rise)
+        let n = [uy * rise, -ux * rise, ux * wy - uy * wx];
+        const L = Math.hypot(n[0], n[1], n[2]) || 1;
+        n = n.map((q) => q / L);
+        if (n[2] < 0) n = n.map((q) => -q);
+        // u = 3 keeps the slope out of the parapet's edge-shading term, which
+        // only means anything on a flat deck
+        pushWallTri(R, A, B, C, n, [3, 3, 3], meta);
+        pushWallTri(R, A, C, D, n, [3, 3, 3], meta);
+      }
+      capRoof(R, top, z + rise, meta);
+      return true;
+    };
+
     const decoTintRanges: { attr: number; r: Ranges; c: [number, number, number] }[] = [];
     for (const v of this.volumes) {
       const style = styleFor(v);
@@ -862,6 +906,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // ---- gabled colonial roofs in the old fabric -------------------------
       const gable = ring.length === 4 && v.z1 > 0 && v.z1 <= 15 && v.y > 0 && v.y < 1945 &&
         (style === S_PREWAR || style === S_BRICK) && volsPerBBL.get(v.b) === 1;
+      // the rest of the old stock, which the gable path could never reach
+      const oldStock = !v.d && !v.k && !gable && v.y > 0 &&
+        (style === S_PREWAR || style === S_BRICK) && ring.length >= 3;
+      const mansard = oldStock && v.y < 1935 && v.z1 >= 11 && v.z1 <= 28 && varr > 0.66;
+      const hip = oldStock && !mansard && v.y < 1945 && v.z1 > 3 && v.z1 <= 14 && varr > 0.34;
       if (gable) {
         const [v0, v1, v2, v3] = ring;
         const len = (a: [number, number], b: [number, number]) => Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -899,6 +948,38 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         };
         pushWallTri(W, A1, B0, m1, gnorm(A1, B0), [0, 0, 0], gMeta);
         pushWallTri(W, B1, A0, m3, gnorm(B1, A0), [0, 0, 0], gMeta);
+      } else if (mansard || hip) {
+        // THE ROOFSCAPE OF THE OLD CITY. From the angle this game is played
+        // at you look at roofs far more than facades, and every one of them
+        // was the same flat grey plate. The four-sided gable path above only
+        // ever reached detached quadrilaterals — a fraction of the fabric.
+        //
+        // A mansard is steep and shallow-inset, so the deck hides behind it;
+        // that is the 1870s commercial block and the Second Empire townhouse.
+        // A hip pulls in hard and reads as a cottage roof. Both are gated to
+        // a minority of the pre-war stock on purpose: brownstones and
+        // tenements really did have flat roofs, and a city where every
+        // building is pitched is a village, not a downtown.
+        // Decorrelate the slate colour from the roof-type gate. S_GABLE picks
+        // its shingle out of vVar, and both gates below are vVar thresholds —
+        // so every mansard in the city came out the same copper green and no
+        // hip was ever brown. Re-hash it and the three slates spread evenly
+        // across both.
+        const slate = (varr * 3.71 + rnd * 1.93) % 1;
+        const rMeta = [S_GABLE, rnd, slate, v.z1 + 4, fh];
+        const span = Math.sqrt(Math.abs(area) / 2);
+        const rise = mansard ? Math.min(4.2, Math.max(2.6, span * 0.30)) : Math.min(3.4, Math.max(1.9, span * 0.34));
+        const inset = mansard ? Math.min(2.4, span * 0.16) : Math.max(1.6, span * 0.34);
+        if (!pitchCap(ring, v.z1, rise, inset, rMeta)) capRoof(R, ring, v.z1, meta);
+        else if (mansard) {
+          // the cornice a mansard sits on — the eave line is the whole point
+          const lip = insetRing(ring, -0.32);
+          if (lip) {
+            const cMeta = [S_CORNICE, rnd, varr, v.z1 + 0.3, fh];
+            extrudeWalls(W, lip, v.z1 - 0.6, v.z1 + 0.1, cMeta);
+            capRoof(R, lip, v.z1 + 0.1, cMeta);
+          }
+        }
       } else {
         capRoof(R, ring, v.z1, meta);
         // pre-war and deco volumes wear a projecting stone cornice
@@ -964,19 +1045,25 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // a two-storey house; giving it a broadcast mast because the ground under
       // it is 90 m up put an antenna forest on every hill.
       const hgt = v.z1 - v.z0;
-      if (v.b && hgt >= 12 && !gable) {
+      if (v.b && hgt >= 12 && !gable && !hip) {
         let cx = 0, cy = 0;
         for (const [x, y] of ring) { cx += x; cy += y; }
         cx /= ring.length; cy /= ring.length;
         const seed = Number(v.b) % 1000;
         const jit = (k: number, amp: number) => (((seed * (k + 3) * 2654435761) % 1000) / 1000 - 0.5) * amp;
-        if (hgt >= 20) props.push({ kind: 2, x: cx + jit(1, 6), y: cy + jit(2, 6), z: v.z1, s: 1 + (hgt > 60 ? 0.6 : 0), rot: jit(3, 3) });
-        if (v.y < 1968 && hgt >= 22) props.push({ kind: 0, x: cx + jit(4, 8), y: cy + jit(5, 8), z: v.z1, s: 1, rot: 0 });
-        const nAc = hgt > 40 ? 3 : 1;
-        for (let k = 0; k < nAc; k++) props.push({ kind: 1, x: cx + jit(6 + k, 10), y: cy + jit(9 + k, 10), z: v.z1, s: 0.8 + 0.4 * ((seed >> k) % 2), rot: jit(12 + k, 3) });
-        if (hgt >= 105 && v.y >= 1975) props.push({ kind: 3, x: cx, y: cy, z: v.z1, s: 1, rot: 0 });
-        // antennas crown the tallest towers
-        if (hgt >= 95) props.push({ kind: 4, x: cx + jit(15, 5), y: cy + jit(16, 5), z: v.z1, s: 1 + (hgt - 95) / 60, rot: 0 });
+        // Deck-mounted plant needs a deck. A mansard's roof is a slope with a
+        // small terrace hidden behind it, so a cooling tower dropped at the
+        // parapet line ends up buried inside the slate — its fire escape and
+        // its chimneys are what it gets.
+        if (!mansard) {
+          if (hgt >= 20) props.push({ kind: 2, x: cx + jit(1, 6), y: cy + jit(2, 6), z: v.z1, s: 1 + (hgt > 60 ? 0.6 : 0), rot: jit(3, 3) });
+          if (v.y < 1968 && hgt >= 22) props.push({ kind: 0, x: cx + jit(4, 8), y: cy + jit(5, 8), z: v.z1, s: 1, rot: 0 });
+          const nAc = hgt > 40 ? 3 : 1;
+          for (let k = 0; k < nAc; k++) props.push({ kind: 1, x: cx + jit(6 + k, 10), y: cy + jit(9 + k, 10), z: v.z1, s: 0.8 + 0.4 * ((seed >> k) % 2), rot: jit(12 + k, 3) });
+          if (hgt >= 105 && v.y >= 1975) props.push({ kind: 3, x: cx, y: cy, z: v.z1, s: 1, rot: 0 });
+          // antennas crown the tallest towers
+          if (hgt >= 95) props.push({ kind: 4, x: cx + jit(15, 5), y: cy + jit(16, 5), z: v.z1, s: 1 + (hgt - 95) / 60, rot: 0 });
+        }
         // FIRE ESCAPES. The single most characteristic thing on a brick
         // walk-up street and the game had none. One stack per building, on
         // the longest wall — which is the street wall — projecting off the
@@ -1010,7 +1097,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         // commercial building did with its roof before anyone thought to put
         // plant up there — and it sits on the LONGEST edge, facing the street,
         // because that is the whole point of it.
-        if ((v.c === "retail" || v.c === "office") && hgt >= 19 && hgt <= 52 && seed % 7 < 2) {
+        if (!mansard && (v.c === "retail" || v.c === "office") && hgt >= 19 && hgt <= 52 && seed % 7 < 2) {
           let bi = 0, bl = -1;
           for (let i = 0; i < ring.length; i++) {
             const a2 = ring[i], b2 = ring[(i + 1) % ring.length];
@@ -1032,14 +1119,20 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           for (let k = 0; k < 2; k++) props.push({ kind: 6, x: cx + jit(20 + k, 12), y: cy + jit(23 + k, 12), z: v.z1, s: 1, rot: jit(26, 1) });
         }
       }
-      // chimneys on the gabled colonial stock
-      if (v.b && gable) {
+      // Chimneys on everything with a pitched roof. A stack is the one thing
+      // that tells you a roof is a roof over rooms rather than a lid, and a
+      // mansard block carries several — it is a building full of fireplaces.
+      if (v.b && (gable || hip || mansard)) {
         let cx = 0, cy = 0;
         for (const [x, y] of ring) { cx += x; cy += y; }
         cx /= ring.length; cy /= ring.length;
         const seed = Number(v.b) % 1000;
         const jit = (k: number, amp: number) => (((seed * (k + 3) * 2654435761) % 1000) / 1000 - 0.5) * amp;
-        props.push({ kind: 5, x: cx + jit(1, 5), y: cy + jit(2, 4), z: v.z1 + 0.8, s: 1, rot: 0 });
+        const stacks = mansard ? 3 : gable ? 1 : 2;
+        const zc = mansard ? v.z1 + 3.4 : hip ? v.z1 + 1.4 : v.z1 + 0.8;
+        for (let k = 0; k < stacks; k++) {
+          props.push({ kind: 5, x: cx + jit(1 + k * 2, 7), y: cy + jit(2 + k * 2, 6), z: zc, s: 1, rot: 0 });
+        }
       }
     }
 
@@ -1148,6 +1241,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     }
     this.plantStreets();
     this.buildWater();
+    this.buildSeawall();
 
     this.bakeShadows();
   }
@@ -1380,6 +1474,66 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
    * everything else at z = 0.01. Added before the shadow bake would matter,
    * and excluded from casting, because a flat sheet casts nothing.
    */
+  /**
+   * THE SEAWALL.
+   *
+   * The city and the sea are the two biggest surfaces on screen and until now
+   * the join between them was a paper cut — the land plate simply stopped and
+   * the water started. A harbour town's edge is BUILT: coursed granite with a
+   * coping, standing a metre or so proud of the promenade behind it.
+   *
+   * One extruded band around the land ring — a couple of hundred segments, so
+   * it is free — and because it goes in before the sun bake it lays a thin
+   * hard shadow onto the water, which is most of what sells it.
+   */
+  private buildSeawall() {
+    const land = this.ctxPoints.land;
+    if (!land || land.length < 4) return;
+    const ring = land.map((p) => this.project(p));
+    // which way is out to sea? The land ring's winding decides it, and getting
+    // it backwards leaves the sunlit face of the wall shaded and the coping
+    // hanging over the water instead of the walk.
+    let signed = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const p = ring[i], q = ring[(i + 1) % ring.length];
+      signed += p[0] * q[1] - q[0] * p[1];
+    }
+    const out = signed > 0 ? 1 : -1;
+    const pos: number[] = [], norm: number[] = [];
+    // LOW. A first attempt stood 1 m proud and dropped 1.6 m below the water,
+    // and because the sun sits in the south-east most of the island's seaward
+    // face is in shade — the whole coast ringed itself in a black band that
+    // read as a city wall. What was wanted is a stone EDGE: a course you can
+    // see, catching light where the shore turns toward the sun.
+    const TOP = 0.62, BOT = -0.3;
+    const push = (a: number[], b: number[], c: number[], n: number[]) => {
+      pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+      for (let i = 0; i < 3; i++) norm.push(n[0], n[1], n[2]);
+    };
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      const dx = b[0] - a[0], dy = b[1] - a[1];
+      const L = Math.hypot(dx, dy);
+      if (L < 0.4) continue;
+      const n = [(dy / L) * out, (-dx / L) * out, 0];
+      push([a[0], a[1], BOT], [b[0], b[1], BOT], [b[0], b[1], TOP], n);
+      push([a[0], a[1], BOT], [b[0], b[1], TOP], [a[0], a[1], TOP], n);
+      // the coping: a narrow flat course along the top, laid landward over the
+      // walk, so the wall reads as stone somebody set rather than an outline
+      const ox = -n[0] * 0.42, oy = -n[1] * 0.42;
+      const up = [0, 0, 1];
+      push([a[0], a[1], TOP], [b[0], b[1], TOP], [b[0] + ox, b[1] + oy, TOP], up);
+      push([a[0], a[1], TOP], [b[0] + ox, b[1] + oy, TOP], [a[0] + ox, a[1] + oy, TOP], up);
+    }
+    if (!pos.length) return;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("normal", new THREE.Float32BufferAttribute(norm, 3));
+    const mesh = new THREE.Mesh(g, this.propMaterial(0xb0aa99, false));
+    mesh.frustumCulled = false;
+    this.scene.add(mesh);
+  }
+
   private buildWater() {
     const land = this.ctxPoints.land;
     if (!land || land.length < 4) return;

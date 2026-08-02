@@ -50,7 +50,7 @@ function physicalOcc(rec: never, h: { tenants: { sf: number }[]; occ?: number })
   return Math.min(1, (comm + res) / area);
 }
 import { sponsorStanding } from "@/engine/sponsor";
-import { marketAppetite, markRival } from "@/engine/rivals";
+import { marketAppetite, markRival, rivalCondition } from "@/engine/rivals";
 import { usd, sf, pct } from "./format";
 import Slider from "./Slider";
 
@@ -481,6 +481,37 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         <Row k="FAR built / max" v={`${builtFar.toFixed(1)} / ${farMax.toFixed(1)}`} />
         <Row k="Demand" v={String(Math.round(rec.demandScore)) + " / 100"} />
       </div>
+
+      {/* SOMEBODY ELSE'S CRANE. A job on this site that is not yours — named or
+          anonymous — is the most important thing on the parcel, because it is
+          the space that will be competing with yours the year it opens. */}
+      {!dev && (() => {
+        const j = (game.cityJobs ?? []).find((x) => x.bbl === selectedBBL);
+        if (!j) return null;
+        const firm = game.rivals?.find((r) => r.id === j.firmId);
+        const pct = Math.min(100, Math.max(0, ((game.month - j.startM) / Math.max(1, j.deliverM - j.startM)) * 100));
+        return (
+          <div className="deal">
+            <div className="deal-head">
+              {j.orphaned ? "A stalled building" : firm ? `${firm.name} is building here` : "Under construction"}
+            </div>
+            <div className="grid">
+              <Row k="Programme" v={`${sf(j.sf)} of ${j.use} · ${j.floors} floors`} strong />
+              <Row k="Progress" v={`${pct.toFixed(0)}%`} />
+              <Row k={j.orphaned ? "Status" : "Delivers"}
+                v={j.orphaned ? "The sponsor is gone — the receiver holds it" : monthLabel(j.deliverM)}
+                bad={j.orphaned} />
+              {j.firmId && !j.orphaned && j.cost !== undefined && <Row k="Their budget" v={usd(j.cost)} />}
+            </div>
+            {j.orphaned && (
+              <div className="hint">
+                Buy the site and the frame comes with it — you take over the job where they left it,
+                and you pay only for what is left to build.
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       <Neighbourhood bbl={rec.bbl} block={rec.block} />
 
@@ -2306,12 +2337,54 @@ function TheStreet() {
                       <Row k="Leverage" v={`${(m.ltv * 100).toFixed(0)}% LTV · they stop at ${(STYLE_MAX[r.style] * 100).toFixed(0)}%`} bad={m.ltv > STYLE_MAX[r.style]} />
                       <Row k="NOI / yr" v={usd(m.noiYr)} />
                       <Row k="Yield on assets" v={m.aum > 0 ? `${((m.noiYr / m.aum) * 100).toFixed(2)}%` : "—"} />
+                      {/* THE PART OF A COMPETITOR YOU COULD NEVER SEE. Their
+                          buildings fill and empty and wear out like yours do,
+                          and a firm running 74% full with a deferred capital
+                          plan is a seller waiting for a reason. */}
+                      {r.occ !== undefined && (
+                        <Row k="Portfolio occupancy" v={`${(r.occ * 100).toFixed(0)}%`} bad={r.occ < 0.8} />
+                      )}
+                      <Row k="Condition of the book"
+                        v={`${CONDITION_WORD[rivalCondition(r)]} · ${usd(r.capexYr ?? 0)} of capital spent this year`}
+                        bad={(r.condIdx ?? 1) < 0.55} />
                       <Row k="Debt service / yr" v={`−${usd((r.debt * (game.econ.indexRate + 1.9)) / 100 + r.debt / 30)}`} />
                       {/* realised, and no longer on this balance sheet — which
                           is why modest equity is not the same as a bad century */}
                       <Row k="Taken out to date" v={usd(r.distributed ?? 0)} />
                       <Row k="Founded" v={r.bornM > 0 ? monthLabel(r.bornM) : "before you arrived"} />
                     </div>
+                    {/* WHAT THEY HAVE IN THE GROUND. A firm's live jobs are the
+                        part of its balance sheet that is pure risk: money spent,
+                        debt drawn, nothing earning. It is also the space that is
+                        coming for your tenants in two years. */}
+                    {(() => {
+                      const jobs = (game.cityJobs ?? []).filter((j) => j.firmId === r.id);
+                      if (!jobs.length) return null;
+                      return (
+                        <>
+                          <div className="page-section" style={{ marginTop: 4 }}>
+                            Under construction · {jobs.length}
+                          </div>
+                          <div className="mini-list">
+                            {jobs.map((j) => {
+                              const rec = resolveRec(parcels, game, j.bbl);
+                              const pct = Math.min(100, Math.max(0, ((game.month - j.startM) / Math.max(1, j.deliverM - j.startM)) * 100));
+                              return (
+                                <button key={j.bbl} className="neighbor"
+                                  onClick={(ev) => { ev.stopPropagation(); setPage("none"); select(j.bbl); }}>
+                                  <span className="neighbor-addr">{rec?.address ?? j.bbl}</span>
+                                  <span className="neighbor-meta">
+                                    {sf(j.sf)} {j.use} · {j.floors} fl · {pct.toFixed(0)}% ·{" "}
+                                    {j.orphaned ? "stalled — the sponsor is gone" : `due ${monthLabel(j.deliverM)}`}
+                                    {j.debt ? ` · ${usd(j.debt)} drawn` : ""}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </>
+                      );
+                    })()}
                     <div className="page-section" style={{ marginTop: 4 }}>
                       What they own · {r.bbls.length}
                     </div>
@@ -2349,6 +2422,10 @@ function TheStreet() {
 // say what their own covenant is, not just where they are against it
 const STYLE_MAX: Record<string, number> = {
   family: 0.50, core: 0.65, opportunistic: 0.88, developer: 0.78,
+};
+
+const CONDITION_WORD: Record<string, string> = {
+  good: "well kept", standard: "adequate", worn: "run down",
 };
 
 const STYLE_WORD: Record<string, string> = {

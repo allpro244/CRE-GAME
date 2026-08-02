@@ -179,6 +179,11 @@ export interface Listing {
   listedM: number;
   expiresM: number;
   distress?: boolean;  // motivated seller — priced under appraisal, goes fast
+  // A SITE WITH A FRAME ON IT. The sponsor could not finish, the receiver is
+  // clearing it, and whoever buys inherits the steel that is already up and
+  // the bill for the rest. Buying one starts a development at that progress
+  // rather than at a hole in the ground.
+  halfBuilt?: { use: string; sf: number; floors: number; progress: number; costToComplete: number };
 }
 
 export interface Approach {
@@ -341,6 +346,16 @@ export interface Rival {
   // gain honestly when they sell, which is a cost the player has always paid
   // and the street never did.
   basis?: number;
+  // WHAT THEIR BUILDINGS ARE ACTUALLY DOING. A rival's assets used to be
+  // marked at market occupancy in birth condition forever, which meant the
+  // street could only ever be hurt by the macro cycle — no rival ever lost a
+  // tenant, ran a building into the ground, or had a bad leasing year, and the
+  // player was the only participant in the city exposed to asset management.
+  // One occupancy and one condition index across the book is enough to make
+  // them mortal without giving twelve firms a rent roll each.
+  occ?: number;          // portfolio occupancy, 0-1
+  condIdx?: number;      // how well they look after the bricks, 0-1
+  capexYr?: number;      // what they spent on the buildings this year
   taxPaid?: number;      // lifetime income + gains tax
   distributed?: number;  // lifetime cash sent out to their partners
   failedM?: number;      // the month they stopped existing
@@ -377,7 +392,24 @@ export interface GameState {
   // the entire reason property cycles overshoot. A city job is a hole in the
   // ground with a delivery date, and its space is in the pipeline from the day
   // it starts — visible on the Economy page long before it competes with you.
-  cityJobs?: { bbl: string; use: string; sf: number; floors: number; startM: number; deliverM: number }[];
+  // EVERY CRANE IN THE CITY, INCLUDING THE ONES WITH A NAME ON THEM.
+  //
+  // This was the anonymous city's pipeline. It still is — most jobs belong to
+  // nobody in particular — but a developer on the street can now claim one:
+  // they buy the dirt, write the equity, carry the construction loan, and own
+  // the building on the day it opens. `firmId` is the difference between "a
+  // building went up" and "Alden Development Co. got to that corner first".
+  cityJobs?: {
+    bbl: string; use: string; sf: number; floors: number; startM: number; deliverM: number;
+    firmId?: string;      // whose job it is; absent means the anonymous city
+    cost?: number;        // the budget, for a firm's job
+    spent?: number;       // work in place to date
+    equityLeft?: number;  // their equity still to go in
+    debt?: number;        // construction balance, drawn plus capitalised interest
+    ratePct?: number;
+    orphaned?: boolean;   // the sponsor died and the frame is standing there
+    listedM?: number;     // when the receiver put the frame on the tape
+  }[];
   landAdj: Record<string, number>;           // per-parcel land value multiplier
   blockD: Record<string, number>;            // per-block demand DRIFT, in points off the generated score
   // What the lending market remembers about you. A sponsor who hands back keys

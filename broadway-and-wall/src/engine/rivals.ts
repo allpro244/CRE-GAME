@@ -14,14 +14,26 @@
 // ones who levered hardest are the ones whose portfolios hit the tape at
 // sixty cents when the window shuts.
 //
-// What is deliberately NOT modelled: rent rolls, per-asset loans, developments
-// and tenants for each firm. A rival carries an aggregate balance sheet and a
-// list of what it owns. That is enough to compete, to fail, and to be read —
-// and it keeps the save file the size of a save file.
+// What is deliberately NOT modelled: rent rolls, per-asset loans and tenants
+// for each firm. A rival carries an aggregate balance sheet and a list of what
+// it owns. That is enough to compete, to fail, and to be read — and it keeps
+// the save file the size of a save file.
+//
+// DEVELOPMENT IS MODELLED, because leaving it out made a liar of this file.
+// Three of these firms are called developers and the style table said "buys
+// dirt and puts buildings on it; the city's growth is partly theirs" — and
+// then they only ever bought. Nobody could beat you to a site, no competitor's
+// tower ever rose across the street and emptied your building, and no
+// half-finished job ever came to market because its sponsor could not roll the
+// construction loan, which is the best deal in the business. A developer here
+// now claims jobs out of the city's own pipeline: buys the dirt, writes the
+// equity, carries the loan through the cycle, and either owns a building at
+// the end of it or hands a frame to a receiver.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { GameState, Rival, RivalStyle } from "./types";
-import { rng, rrange } from "./market";
-import { assetValue, initialCondition, noiAfterTaxYr, resolveRec } from "./value";
+import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from "./types";
+import { BUILD_MONTHS, rng, rrange } from "./market";
+import { assetValue, initialCondition, landValue, noiAfterTaxYr, occupancy, resolveRec } from "./value";
+import { devMix, dominantOf, farMaxFor, HARD_COST_PSF, SOFT_COST, useForZone } from "./dev";
 
 // Ashport is an old port town; its money has old-port-town names.
 // Everyone starts the century the same size you do — five to fifteen million
@@ -71,6 +83,216 @@ const STYLE: Record<RivalStyle, {
 
 const RATE_SPREAD = 1.9;   // what a firm of this size pays over the index
 
+// ---------------------------------------------------------------- building
+//
+// How much of the city's own pipeline each kind of firm is willing to own.
+// A developer is in the business; an opportunistic shop builds when the money
+// is free and regrets it; core and family capital does not take construction
+// risk, because that is the entire point of core and family capital.
+const BUILD_APPETITE: Record<RivalStyle, number> = {
+  developer: 1, opportunistic: 0.3, core: 0.06, family: 0,
+};
+const CONSTR_SPREAD_R = 2.6;   // construction paper is dearer than term paper
+
+/**
+ * ONE DEED, ONE OWNER.
+ *
+ * Every path that hands a parcel to a firm goes through here, because the ones
+ * that did not each grew their own way of putting the same building on two
+ * balance sheets — a receiver still listing a site the buyer had already
+ * taken, a rescued frame added to the taker while the dead sponsor kept it.
+ * Strip it from whoever has it, pay them if there is a price, then record it.
+ */
+function transferDeed(s: GameState, bbl: string, to: Rival, price: number) {
+  for (const r of s.rivals ?? []) {
+    if (r === to || !r.bbls.includes(bbl)) continue;
+    r.bbls = r.bbls.filter((b) => b !== bbl);
+    if (price > 0) {
+      const relief = Math.min(r.debt, Math.round(price * r.targetLtv));
+      r.debt -= relief;
+      r.cash += price - relief;
+    }
+  }
+  if (!to.bbls.includes(bbl)) to.bbls.push(bbl);
+}
+
+/** The all-in budget a firm underwrites for a job, on the same basis the player does. */
+function jobBudget(s: GameState, use: DevUse, sf: number, floors: number): number {
+  const mix = devMix(use);
+  let psf = 0, w = 0;
+  for (const u of Object.keys(mix) as BuiltClass[]) { const sh = mix[u] ?? 0; psf += HARD_COST_PSF[u] * sh; w += sh; }
+  psf = w > 0 ? psf / w : HARD_COST_PSF.office;
+  const heightPrem = floors > 30 ? 1.28 : floors > 18 ? 1.18 : floors > 8 ? 1.07 : 1;
+  const hard = sf * psf * s.econ.costIdx * heightPrem * 1.04;
+  return Math.round(hard * (1 + SOFT_COST) * 1.06);
+}
+
+/**
+ * SOMEBODY ON THE STREET TAKES THE SITE.
+ *
+ * Called from the city's growth loop the moment a job is conceived. A firm
+ * with the appetite, the dry powder and a reason to like the corner buys the
+ * dirt and puts its name on the job; if nobody bites, the anonymous city
+ * builds it exactly as before. That is the honest split — most construction in
+ * any city is done by people you have never heard of, and the rest is done by
+ * the four names you compete with every month.
+ *
+ * Returns the claiming firm, or null.
+ */
+export function claimJob(
+  s: GameState, parcels: ParcelTable, bbl: string,
+  use: DevUse, sf: number, floors: number, deliverM: number,
+): Rival | null {
+  const rec = resolveRec(parcels, s, bbl);
+  if (!rec) return null;
+  const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
+  // Construction debt is the first thing to disappear when the window shuts.
+  const phaseMult = s.econ.phase === "peak" ? 1.5 : s.econ.phase === "expansion" ? 1.2
+    : s.econ.phase === "recovery" ? 0.6 : 0.15;
+  const cost = jobBudget(s, use, sf, floors);
+  const land = Math.round(landValue(rec, s.econ) * rrange(s, 1.02, 1.18));
+  const ltc = Math.max(0.4, Math.min(0.7, 0.7 * ci));
+  const equity = Math.round(cost * (1 - ltc)) + land;
+
+  const runners = livingRivals(s).filter((r) => {
+    const want = BUILD_APPETITE[r.style];
+    if (want <= 0) return false;
+    // one job at a time for most, two for a firm that does nothing else
+    const live = (s.cityJobs ?? []).filter((j) => j.firmId === r.id).length;
+    if (live >= (r.style === "developer" ? 2 : 1)) return false;
+    // A JOB HAS TO FIT THE FIRM. Nobody with twelve million of equity starts a
+    // sixty-million-dollar tower, and a shop that does it anyway is not a
+    // developer, it is a casualty.
+    if (cost > (r.aum ?? 0) * 0.75 + r.cash * 4) return false;
+    // The equity goes in over the build, not on day one — the site and the
+    // first year of it is what has to be in the bank to break ground. That is
+    // the actual test a developer applies, and requiring the whole cheque up
+    // front meant one job got started in fifty years.
+    const dayOne = land + Math.round(cost * (1 - ltc) * 0.45);
+    if (r.cash < dayOne + Math.max(1_000_000, r.cash * 0.06)) return false;
+    return rng(s) < 0.5 * want * phaseMult * ci;
+  });
+  if (!runners.length) return null;
+
+  // the hungriest of the firms that can actually fund it
+  let best = runners[0], bestW = -Infinity;
+  for (const r of runners) {
+    const w = BUILD_APPETITE[r.style] * (r.cash / Math.max(1, equity)) * (0.6 + rng(s) * 0.8);
+    if (w > bestW) { bestW = w; best = r; }
+  }
+
+  best.cash -= land;
+  best.basis = Math.round((best.basis ?? 0) + land);
+  transferDeed(s, bbl, best, land);
+  const job = (s.cityJobs ?? []).find((j) => j.bbl === bbl);
+  if (job) {
+    job.firmId = best.id;
+    job.cost = cost;
+    job.spent = 0;
+    job.equityLeft = Math.round(cost * (1 - ltc));
+    job.debt = 0;
+    job.ratePct = +(s.econ.indexRate + CONSTR_SPREAD_R).toFixed(2);
+  }
+  s.news.unshift({
+    q: s.month, kind: "event",
+    text: `${best.name} has broken ground at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, `
+      + `$${(cost / 1e6).toFixed(1)}M, due ${2000 + Math.floor(deliverM / 12)}. That space is coming whether you want it or not.`,
+  });
+  return best;
+}
+
+/**
+ * The money going into every job the street has under way: equity first, then
+ * the bank, interest capitalised into the balance. It is on their balance
+ * sheet from the day the hole is dug, which is why a firm that started three
+ * towers at the peak is carrying three towers' worth of debt against three
+ * pieces of dirt when the market turns.
+ */
+function fundJobs(s: GameState) {
+  for (const j of s.cityJobs ?? []) {
+    if (!j.firmId || j.orphaned) continue;
+    const r = s.rivals.find((x) => x.id === j.firmId);
+    if (!r || r.failedM !== undefined) { j.orphaned = true; continue; }
+    const span = Math.max(1, j.deliverM - j.startM);
+    const t1 = Math.min(1, (s.month - j.startM + 1) / span);
+    const t0 = Math.min(1, (s.month - j.startM) / span);
+    const curve = (t: number) => t * t * (3 - 2 * t);
+    const spend = Math.round((j.cost ?? 0) * Math.max(0, curve(t1) - curve(t0)));
+    if (spend > 0) {
+      const fromEquity = Math.min(spend, Math.max(0, j.equityLeft ?? 0));
+      r.cash -= fromEquity;
+      j.equityLeft = Math.max(0, (j.equityLeft ?? 0) - fromEquity);
+      const fromDebt = spend - fromEquity;
+      j.debt = (j.debt ?? 0) + fromDebt;
+      r.debt += fromDebt;
+      j.spent = (j.spent ?? 0) + spend;
+    }
+    // capitalised, the way construction interest actually works
+    const cap = Math.round(((j.debt ?? 0) * (j.ratePct ?? 8)) / 100 / 12);
+    if (cap > 0) { j.debt = (j.debt ?? 0) + cap; r.debt += cap; }
+  }
+}
+
+/**
+ * The building opens and it is theirs. Called from the city's delivery loop so
+ * there is exactly one place in the codebase where a building comes into
+ * existence and exactly one place where its square feet enter the market.
+ */
+export function jobDelivered(s: GameState, parcels: ParcelTable, bbl: string, firmId: string, cost: number) {
+  const r = s.rivals.find((x) => x.id === firmId);
+  if (!r) return;
+  transferDeed(s, bbl, r, 0);
+  r.basis = Math.round((r.basis ?? 0) + cost);
+  const rec = resolveRec(parcels, s, bbl);
+  if (rec && rng(s) < 0.7) {
+    s.news.unshift({
+      q: s.month, kind: "event",
+      text: `${r.name} has opened ${rec.address}. It is empty today and it is competing with you tomorrow.`,
+    });
+  }
+}
+
+/**
+ * THE FRAME NOBODY OWNS.
+ *
+ * A sponsor that dies mid-job leaves a part-built building standing on a site
+ * the receiver has to clear. It goes to the tape at the land value plus a
+ * fraction of what has been sunk — never all of it, because a stranger's
+ * half-finished building is worth less than the money that went into it, and
+ * because whoever buys it inherits a design they did not draw. This is the
+ * best deal in development and the game could not previously produce one.
+ */
+function orphanToTape(s: GameState, parcels: ParcelTable) {
+  for (const j of s.cityJobs ?? []) {
+    if (!j.orphaned) continue;
+    // A frame that did not sell goes back on the tape, cheaper. Standing steel
+    // rusts and a stalled site is a story everybody in town knows — leaving it
+    // listed once and then forever invisible meant an unsold frame simply
+    // haunted the map for the rest of the century.
+    if (j.listedM !== undefined && s.month - j.listedM < 24) continue;
+    const rec = resolveRec(parcels, s, j.bbl);
+    if (!rec || s.holdings[j.bbl] || s.listings.some((l) => l.bbl === j.bbl)) continue;
+    const sunk = j.spent ?? 0;
+    const progress = Math.min(0.95, sunk / Math.max(1, j.cost ?? 1));
+    const stale = Math.max(0.45, 1 - (j.listedM === undefined ? 0 : (s.month - j.listedM) / 90));
+    const ask = Math.round((landValue(rec, s.econ) + sunk * rrange(s, 0.45, 0.7) * stale) / 1000) * 1000;
+    if (ask <= 0) continue;
+    const relist = j.listedM !== undefined;
+    j.listedM = s.month;
+    s.listings.push({
+      bbl: j.bbl, ask, listedM: s.month, expiresM: s.month + Math.round(rrange(s, 8, 16)), distress: true,
+      halfBuilt: { use: j.use, sf: j.sf, floors: j.floors, progress, costToComplete: Math.max(0, (j.cost ?? 0) - sunk) },
+    });
+    s.news.unshift({
+      q: s.month, kind: "event",
+      text: relist
+        ? `The stalled frame at ${rec.address} is back on the tape at $${(ask / 1e6).toFixed(2)}M. Nobody wanted it last time and the steel has not got any newer.`
+        : `The receiver is clearing a half-finished building at ${rec.address} — ${(progress * 100).toFixed(0)}% complete, `
+          + `$${(ask / 1e6).toFixed(2)}M for the site and the frame. Somebody else's problem is on the market.`,
+    });
+  }
+}
+
 export function initRivals(s: GameState, parcels: ParcelTable, bbls: string[]): Rival[] {
   const out: Rival[] = [];
   // The built stock that isn't yours has to belong to SOMEBODY. Handing a
@@ -115,18 +337,100 @@ export function initRivals(s: GameState, parcels: ParcelTable, bbls: string[]): 
   return out;
 }
 
-/** Gross asset value, annual NOI and leverage, marked today. */
+/** How a firm's neglect reads on a building: the same three grades you get. */
+export function rivalCondition(r: Rival): Condition {
+  const c = r.condIdx ?? 1;
+  return c > 0.78 ? "good" : c > 0.52 ? "standard" : "worn";
+}
+
+/**
+ * Gross asset value, annual NOI and leverage, marked today — through the
+ * firm's own occupancy and the state of its buildings.
+ *
+ * Occupancy scales income one-for-one and value rather less, because a buyer
+ * pays for the stabilised story as well as the rent that is arriving. That
+ * split is the whole reason a half-empty building is worth more than half a
+ * full one, and why a firm can be losing money and still look solvent for a
+ * while — right up until the lender marks it.
+ */
 export function markRival(s: GameState, parcels: ParcelTable, r: Rival): { aum: number; noiYr: number; ltv: number } {
   let aum = 0, noi = 0;
+  const cond = rivalCondition(r);
   for (const bbl of r.bbls) {
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
-    const cond = initialCondition(rec);
     const v = assetValue(rec, s.econ, cond);
-    aum += v;
-    noi += noiAfterTaxYr(rec, s.econ, cond, v);
+    if (rec.class === "land" || !rec.bldgArea) { aum += v; noi += noiAfterTaxYr(rec, s.econ, cond, v); continue; }
+    const mkt = Math.max(0.35, occupancy(rec, s.econ));
+    const ratio = Math.max(0, Math.min(1.35, (r.occ ?? mkt) / mkt));
+    aum += v * (0.42 + 0.58 * ratio);
+    noi += noiAfterTaxYr(rec, s.econ, cond, v) * ratio;
   }
   return { aum, noiYr: noi, ltv: aum > 0 ? r.debt / aum : r.debt > 0 ? 9 : 0 };
+}
+
+// How hard each kind of firm works its buildings. An institution runs a
+// leasing team and a capital plan; a levered opportunistic shop defers the
+// roof because the roof is not in this year's model.
+const CARE: Record<RivalStyle, { lease: number; capex: number }> = {
+  family:        { lease: 0.9,  capex: 1.15 },
+  core:          { lease: 1.15, capex: 1.2 },
+  opportunistic: { lease: 0.85, capex: 0.45 },
+  developer:     { lease: 1.0,  capex: 0.8 },
+};
+
+/**
+ * A YEAR IN THE LIFE OF A PORTFOLIO.
+ *
+ * Occupancy walks toward what the market is doing, but never arrives cleanly:
+ * a firm can lose an anchor in a good year or fill a building in a bad one.
+ * Condition decays every month and only stops decaying if somebody writes a
+ * cheque — which is a real decision with a real cost, and the firms that skip
+ * it are marked down for it exactly the way the player is.
+ */
+function tickAssetManagement(s: GameState, parcels: ParcelTable, r: Rival) {
+  if (!r.bbls.length) { r.occ = undefined; return; }
+  const care = CARE[r.style];
+  // where the market says their book should sit
+  let target = 0, n = 0;
+  for (const bbl of r.bbls) {
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+    target += occupancy(rec, s.econ); n++;
+  }
+  if (!n) { r.occ = undefined; return; }
+  target = (target / n) * (0.965 + 0.05 * care.lease);
+  if (r.occ === undefined) r.occ = target;
+  r.occ += (target - r.occ) * 0.055 + rrange(s, -0.004, 0.004);
+  // AN ANCHOR WALKS. Rare, expensive, and the reason a portfolio occupancy is
+  // a story rather than a number that tracks the index.
+  if (rng(s) < 0.006 / Math.max(1, Math.sqrt(r.bbls.length) / 2)) {
+    r.occ -= rrange(s, 0.05, 0.14);
+    if (rng(s) < 0.35) {
+      s.news.unshift({
+        q: s.month, kind: "event",
+        text: `${r.name} has lost a major tenant. Their book is running at ${(Math.max(0, r.occ) * 100).toFixed(0)}% — somebody in this town is about to have space to fill.`,
+      });
+    }
+  }
+  r.occ = Math.max(0.2, Math.min(0.99, r.occ));
+
+  // the bricks
+  if (r.condIdx === undefined) r.condIdx = 0.86;
+  // Buildings age faster than anyone budgets for, which is why 'well kept'
+  // tops out just short of new rather than at it.
+  r.condIdx -= 0.0024 * (s.econ.phase === "recession" ? 1.25 : 1);
+  const aum = r.aum ?? 0;
+  // a capital plan is roughly 30bps of gross assets a year, and it is the
+  // first line cut when a firm is short
+  const want = Math.round((0.003 * aum * care.capex) / 12);
+  if (want > 0 && r.cash > want * 6 && !r.stressMs) {
+    r.cash -= want;
+    r.capexYr = (r.capexYr ?? 0) + want;
+    r.condIdx += 0.0026 * care.capex;
+  }
+  r.condIdx = Math.max(0.3, Math.min(0.97, r.condIdx));
+  if (s.month % 12 === 0) r.capexYr = 0;
 }
 
 /** Firms still standing. */
@@ -250,11 +554,120 @@ function gainsTax(r: Rival, price: number): number {
   return tax;
 }
 
+/**
+ * A DEVELOPER PICKS UP SOMEBODY ELSE'S FRAME.
+ *
+ * You are not the only person in town who reads the receiver's list. A stalled
+ * building that sits long enough gets taken out by a firm with the balance
+ * sheet to finish it — which is what stops the map filling with permanent
+ * monuments to dead sponsors, and what makes the good ones worth moving on.
+ * They pay for the site and the steel and inherit the bill for the rest.
+ */
+function rescueOrphan(s: GameState, parcels: ParcelTable, ci: number) {
+  const stalled = (s.cityJobs ?? []).filter((j) => j.orphaned && j.listedM !== undefined && s.month - j.listedM >= 6);
+  if (!stalled.length) return;
+  const j = stalled[Math.floor(rng(s) * stalled.length)];
+  if (s.holdings[j.bbl]) return;
+  const listing = s.listings.find((l) => l.bbl === j.bbl);
+  const price = listing?.ask ?? 0;
+  if (price <= 0) return;
+  const toFinish = Math.max(0, (j.cost ?? 0) - (j.spent ?? 0));
+  const taker = livingRivals(s).find((r) =>
+    BUILD_APPETITE[r.style] >= 0.3
+    && r.cash > price + toFinish * 0.4 + 2_000_000
+    && rng(s) < 0.10 * BUILD_APPETITE[r.style] * ci);
+  if (!taker) return;
+  taker.cash -= price;
+  taker.basis = Math.round((taker.basis ?? 0) + price);
+  transferDeed(s, j.bbl, taker, price);
+  j.orphaned = false;
+  j.firmId = taker.id;
+  j.equityLeft = Math.round(toFinish * 0.45);
+  j.cost = (j.spent ?? 0) + toFinish;
+  j.ratePct = +(s.econ.indexRate + CONSTR_SPREAD_R + 0.6).toFixed(2);
+  // a restart is slow: new drawings, new contractor, a site that has weathered
+  j.deliverM = s.month + Math.max(6, Math.round((j.deliverM - j.startM) * 0.5));
+  s.listings = s.listings.filter((l) => l.bbl !== j.bbl);
+  const rec = resolveRec(parcels, s, j.bbl);
+  s.news.unshift({
+    q: s.month, kind: "event",
+    text: `${taker.name} has taken out the stalled building at ${rec?.address ?? j.bbl} for $${(price / 1e6).toFixed(2)}M. `
+      + `The cranes are back and that space is coming after all.`,
+  });
+}
+
+/**
+ * A LAND BANK IS SUPPOSED TO BECOME BUILDINGS.
+ *
+ * Developer-style firms buy dirt off the tape — that is in their style config
+ * and always was. What they never did was build on it, so a developer's land
+ * bank was a vacant lot that bled 1.2% of its value a year forever, which is
+ * not a strategy, it is a slow death. Once a month a firm looks at what it is
+ * sitting on and puts up the best of it.
+ */
+function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
+  if (BUILD_APPETITE[r.style] <= 0) return;
+  const live = (s.cityJobs ?? []).filter((j) => j.firmId === r.id).length;
+  if (live >= (r.style === "developer" ? 2 : 1)) return;
+  const phaseMult = s.econ.phase === "peak" ? 1.4 : s.econ.phase === "expansion" ? 1.2
+    : s.econ.phase === "recovery" ? 0.6 : 0.12;
+  if (rng(s) >= 0.05 * BUILD_APPETITE[r.style] * phaseMult * ci) return;
+
+  // the best lot they own, by what the neighbourhood has become
+  let best: { bbl: string; rec: ParcelRecord } | null = null, bestScore = -1;
+  for (const bbl of r.bbls) {
+    if ((s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec || rec.class !== "land" || rec.lotArea < 2500) continue;
+    const score = rec.demandScore + rng(s) * 20;
+    if (score > bestScore) { bestScore = score; best = { bbl, rec }; }
+  }
+  if (!best) return;
+  const { bbl, rec } = best;
+  const use = useForZone(rec.zoneDist, rec.demandScore, rng(s));
+  const lead = dominantOf(devMix(use));
+  const farMax = farMaxFor(rec);
+  const frac = Math.min(0.95, 0.4 + rng(s) * 0.45);
+  const sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
+  const floors = Math.max(1, Math.round(sf / (rec.lotArea * 0.62)));
+  const cost = jobBudget(s, use, sf, floors);
+  if (cost > (r.aum ?? 0) * 0.75 + r.cash * 4) return;
+  const ltc = Math.max(0.4, Math.min(0.7, 0.7 * ci));
+  // the dirt is already theirs, so only the build equity has to be in the bank
+  if (r.cash < Math.round(cost * (1 - ltc) * 0.45) + Math.max(1_000_000, r.cash * 0.06)) return;
+  const [bLo, bHi] = BUILD_MONTHS[lead];
+  const months = Math.round(bLo + rng(s) * (bHi - bLo));
+  const deliverM = s.month + months;
+  if (!s.cityJobs) s.cityJobs = [];
+  s.cityJobs.push({
+    bbl, use, sf, floors, startM: s.month, deliverM,
+    firmId: r.id, cost, spent: 0,
+    equityLeft: Math.round(cost * (1 - ltc)), debt: 0,
+    ratePct: +(s.econ.indexRate + CONSTR_SPREAD_R).toFixed(2),
+  });
+  // into the delivery pipeline the day the hole is dug, exactly like the city's
+  if (!s.econ.cohorts) s.econ.cohorts = { office: [], retail: [], multifamily: [], industrial: [] };
+  for (const [u, share] of Object.entries(devMix(use))) {
+    const usf = Math.round(sf * (share as number));
+    if (usf > 0) s.econ.cohorts[u as BuiltClass].push({ m: deliverM, sf: usf });
+  }
+  s.news.unshift({
+    q: s.month, kind: "event",
+    text: `${r.name} is building on their own land at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, `
+      + `$${(cost / 1e6).toFixed(1)}M. They have been sitting on that corner waiting for this market.`,
+  });
+}
+
 export function tickRivals(s: GameState, parcels: ParcelTable) {
   if (!s.rivals?.length) return;
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
   const rate = s.econ.indexRate + RATE_SPREAD;
   maybeNewFirm(s, ci);
+  // The jobs come first: a firm's construction draw is a call on this month's
+  // cash, and it has to land before the solvency test reads that cash.
+  fundJobs(s);
+  orphanToTape(s, parcels);
+  rescueOrphan(s, parcels, ci);
 
   for (const r of s.rivals) {
     // THE WORKOUT. A failed firm does not evaporate — a receiver holds the
@@ -283,6 +696,8 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       continue;
     }
     const st = STYLE[r.style];
+    tickAssetManagement(s, parcels, r);
+    startOwnJob(s, parcels, r, ci);
     const { aum, noiYr, ltv } = markRival(s, parcels, r);
     r.aum = Math.round(aum);
 
@@ -326,8 +741,20 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // firm rather than an ever-growing number. Without it these balance sheets
     // compounded into tens of billions of idle cash, which made every firm
     // unkillable and every bidding war a foregone conclusion.
-    const reserve = Math.max(2_000_000, aum * (r.style === "family" ? 0.09 : r.style === "core" ? 0.06 : 0.045));
-    if (r.cash > reserve && !r.stressMs) {
+    // A DEVELOPER HOLDS POWDER, because a developer's product is a hole in the
+    // ground that eats money for three years. Distributing down to a core
+    // fund's working reserve is how a builder ends up unable to break ground
+    // on anything — which is exactly what the street was doing.
+    // Powder is held for the next job or two, not as a share of a book that
+    // compounds forever — an unbounded ratio on a billion-dollar balance sheet
+    // is a war chest nobody can outbid, which is not dry powder, it is a bug.
+    const reserve = Math.min(
+      r.style === "developer" ? 45_000_000 : 30_000_000,
+      Math.max(2_000_000, aum * (
+        r.style === "developer" ? 0.16 : r.style === "family" ? 0.09 : r.style === "core" ? 0.06 : 0.045)),
+    );
+    const building = (s.cityJobs ?? []).some((j) => j.firmId === r.id && !j.orphaned);
+    if (r.cash > reserve && !r.stressMs && !building) {
       const out = Math.round((r.cash - reserve) * 0.35);
       r.cash -= out;
       r.distributed = (r.distributed ?? 0) + out;
@@ -482,7 +909,7 @@ export function rivalBuys(s: GameState, rec: ParcelRecord, price: number): Rival
   best.debt += price - equity;
   best.basis = Math.round((best.basis ?? 0) + price + closing);
   best.aum = Math.round((best.aum ?? 0) + price);
-  if (!best.bbls.includes(rec.bbl)) best.bbls.push(rec.bbl);
+  transferDeed(s, rec.bbl, best, 0);   // the seller was already paid above
   return best;
 }
 

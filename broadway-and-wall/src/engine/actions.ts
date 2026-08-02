@@ -9,6 +9,7 @@ import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS
 import { marketAppetite, ownerOf, rivalAsk, rivalBuys } from "./rivals";
 import { genRentRoll, isCommercial } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
+import { takeoverDevelopment } from "./dev";
 
 const CLOSING_PCT = 0.02;
 const SALE_FRICTION = 0.012;  // legal, title, diligence — the unavoidable rest
@@ -94,12 +95,16 @@ export function executePurchase(
   }
   genRentRoll(next, rec, holding); // walk into the in-place rent roll
   next.holdings[bbl] = holding;
+  // A RECEIVER'S SITE MAY HAVE A BUILDING HALF ON IT. If it does, what you
+  // just bought is a job, not a lot, and you take it on at the closing.
+  const halfBuilt = next.listings.find((l) => l.bbl === bbl)?.halfBuilt;
   next.listings = next.listings.filter((l) => l.bbl !== bbl);
   delete next.approaches[bbl];
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `Deed recorded: ${rec.address} for $${(price / 1e6).toFixed(2)}M${holding.loan ? ` ($${(holding.loan.principal / 1e6).toFixed(1)}M ${holding.loan.product} at ${holding.loan.ratePct}%)` : ", all cash"}${offMarket ? " — off-market" : ""}.`,
   });
+  if (halfBuilt) takeoverDevelopment(next, parcels, bbl, halfBuilt);
   return { s: next };
 }
 

@@ -380,6 +380,18 @@ export default function MapView() {
       const prog = Math.min(1, Math.max(0.15, (game.month - d.startM + 1) / total));
       items.push({ bbl: d.bbl, cls: d.use, heightM: d.floors * 3.4 * prog, floors: d.floors, construction: true });
     }
+    // EVERYBODY ELSE'S CRANES. The city's pipeline was invisible until the day
+    // it opened, so the supply you were reading about on the Economy page had
+    // no presence on the map at all — and a rival's tower going up across the
+    // street from your lease-up is the single most legible thing in this
+    // business. An orphaned frame stops rising and stands there.
+    for (const j of game.cityJobs ?? []) {
+      if (game.built?.[j.bbl] || game.developments?.[j.bbl]) continue;
+      const total = Math.max(1, j.deliverM - j.startM);
+      const raw = (game.month - j.startM + 1) / total;
+      const prog = Math.min(1, Math.max(0.12, j.orphaned ? Math.min(raw, 0.75) : raw));
+      items.push({ bbl: j.bbl, cls: j.use, heightM: j.floors * 3.4 * prog, floors: j.floors, construction: true });
+    }
     for (const [bbl, b] of Object.entries(game.built ?? {})) {
       items.push({ bbl, cls: b.class, heightM: b.floors * 3.4, floors: b.floors, construction: false });
     }

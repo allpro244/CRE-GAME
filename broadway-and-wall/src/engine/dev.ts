@@ -12,6 +12,7 @@ import { demandNow } from "./demand";
 import { rng, rrange, addStock, NATURAL_VAC, CITY_STOCK, BUILD_MONTHS } from "./market";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, RECOVERY_RATE } from "./value";
 import { genAnchorTenant } from "./leasing";
+import { claimJob, jobDelivered, ownerOf } from "./rivals";
 
 const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
 
@@ -78,7 +79,7 @@ function overMix(mix: UseMix, f: (u: BuiltClass) => number): number {
 function specShare(mix: UseMix): number {
   return (mix.office ?? 0) + (mix.retail ?? 0);
 }
-const SOFT_COST = 0.16;        // design, legal, permits, insurance, financing fees
+export const SOFT_COST = 0.16;        // design, legal, permits, insurance, financing fees
 const CONSTR_SPREAD = 2.4;     // over the index, interest-only
 export const CONTINGENCY = 0.06;  // held against change orders; unspent is yours
 
@@ -395,6 +396,60 @@ export function startDevelopment(
     text: `Ground broken at ${rec.address}: ${plan.floors} floors, ${(plan.sf / 1000).toFixed(0)}k sf of ${use === "mixed" ? "mixed-use" : use} at ${plan.far} FAR on a ${contract === "gmp" ? "guaranteed max price" : "cost-plus"} contract. $${(plan.costTotal / 1e6).toFixed(1)}M budget, ${(plan.ltc * 100).toFixed(0)}% funded, on spec. Delivery ${monthLabel(next.month + plan.months)}.`,
   });
   return { s: next };
+}
+
+/**
+ * YOU BOUGHT SOMEBODY ELSE'S HALF-FINISHED BUILDING.
+ *
+ * The frame is up, the sponsor is gone, and the receiver has taken your money
+ * for the site and the steel on it. What you inherit is a job in progress: the
+ * schedule that is left, the cost that is left, and a design you did not draw.
+ * This is the cheapest way to own a new building and the reason a developer
+ * watches the obituaries — and until the street could actually fail mid-job,
+ * the game had no way to put one in front of you.
+ *
+ * Called from the closing, not by the player: buying the site IS taking the
+ * job on. Mutates in place; the caller already cloned.
+ */
+export function takeoverDevelopment(
+  s: GameState, parcels: ParcelTable, bbl: string,
+  half: { use: string; sf: number; floors: number; progress: number; costToComplete: number },
+) {
+  const rec = parcels[bbl];
+  if (!rec || !rec.lotArea || s.developments[bbl]) return;
+  const use = half.use as DevUse;
+  const floors = Math.max(1, Math.round(half.floors));
+  const coverage = Math.max(0.08, Math.min(0.9, half.sf / Math.max(1, rec.lotArea * floors)));
+  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, "gmp");
+  if (!plan) return;
+  const done = Math.max(0, Math.min(0.95, half.progress));
+  // What is left to build, plus the lease-up money — which the dead sponsor's
+  // budget no longer contains, because they spent it staying alive.
+  const remaining = Math.max(0, Math.round(half.costToComplete)) + plan.leaseUp;
+  const months = Math.max(3, Math.round(plan.months * (1 - done)) + 2);   // a stalled job restarts slowly
+  // A takeover is financed, but not on construction-loan terms: the lender is
+  // pricing a job somebody already failed at, so less of it and dearer.
+  const commitment = Math.round(remaining * Math.max(0.35, plan.ltc - 0.12));
+  s.developments[bbl] = {
+    bbl, use, mix: plan.mix, sf: half.sf, floors,
+    costTotal: remaining, hardCost: Math.round(remaining * 0.8), contract: "gmp",
+    contingency: Math.round(remaining * CONTINGENCY), contingencyUsed: 0,
+    commitment, drawn: 0, loanBalance: 0,
+    interestReserve: Math.round(commitment * 0.05), reserveUsed: 0,
+    leaseUpReserve: plan.leaseUp,
+    equityBudget: Math.max(0, remaining - commitment), equitySpent: 0,
+    ratePct: +(s.econ.indexRate + 3.2).toFixed(2),
+    startM: s.month, deliverM: s.month + months, baseMonths: months,
+    signed: [],
+    events: 0,
+  } satisfies Development;
+  s.cityJobs = (s.cityJobs ?? []).filter((j) => j.bbl !== bbl);
+  s.news.unshift({
+    q: s.month, kind: "deal",
+    text: `You have taken over the job at ${rec.address} — ${(done * 100).toFixed(0)}% built, `
+      + `$${(remaining / 1e6).toFixed(1)}M to finish and open, delivery ${monthLabel(s.month + months)}. `
+      + `Somebody else paid for the hole in the ground.`,
+  });
 }
 
 // Take a building down to clean dirt. The rubble costs real money, but a
@@ -794,7 +849,7 @@ const START_RATE: Record<string, number> = {
   expansion: 0.34, peak: 0.22, recovery: 0.16, recession: 0.03,
 };
 
-function useForZone(zone: string, demand: number, r: number): DevUse {
+export function useForZone(zone: string, demand: number, r: number): DevUse {
   if (zone.startsWith("M")) return "industrial";
   if (zone.startsWith("R")) return "multifamily";
   if (demand > 70) return r < 0.55 ? "office" : r < 0.85 ? "mixed" : "retail";
@@ -830,6 +885,9 @@ export function tickCityGrowth(
   // ---- deliveries first: today's opening was somebody's decision years ago --
   const still: NonNullable<GameState["cityJobs"]> = [];
   for (const j of s.cityJobs) {
+    // An orphaned frame does not finish itself. It stands there until the
+    // receiver sells it, and the buyer decides whether it ever opens.
+    if (j.orphaned) { if (!s.built[j.bbl] && !s.holdings[j.bbl]) still.push(j); continue; }
     if (s.month < j.deliverM) { still.push(j); continue; }
     const rec = parcels[j.bbl];
     if (!rec || s.holdings[j.bbl] || s.built[j.bbl]) continue;   // you bought the site out from under them
@@ -839,12 +897,14 @@ export function tickCityGrowth(
       yearBuilt: 2000 + Math.floor(s.month / 12),
     };
     s.cityBuilt.push(j.bbl);
+    // If it had a name on it, the name now owns a building.
+    if (j.firmId) jobDelivered(s, parcels, j.bbl, j.firmId, j.cost ?? 0);
     // NOTE: no addStock here. The square feet went into the econ pipeline the
     // month the job STARTED and land in the citywide stock when its cohort
     // matures — counting them again on delivery would double the building.
     bumpLand(s, j.bbl, 1.05);
     for (const nb of adjacency?.[j.bbl] ?? []) bumpLand(s, nb, 1.03);
-    if (rng(s) < 0.55) {
+    if (!j.firmId && rng(s) < 0.55) {
       s.news.unshift({
         q: s.month, kind: "info",
         text: j.floors >= 8
@@ -869,6 +929,12 @@ export function tickCityGrowth(
       const bbl = bbls[Math.floor(rng(s) * bbls.length)];
       if (s.holdings[bbl] || s.built[bbl] || s.developments[bbl]) continue;
       if (s.cityJobs.some((j) => j.bbl === bbl)) continue;
+      // A NAMED FIRM'S DIRT IS NOT THE CITY'S TO BUILD ON. Two owners on one
+      // parcel is the invariant this broke: the anonymous picker took any
+      // vacant lot, a developer then claimed the job on it, and the deed was
+      // suddenly on two balance sheets. Their own land is built on by them,
+      // in `startOwnJob`, which is where a land bank is supposed to go.
+      if (ownerOf(s, bbl)) continue;
       const rec = parcels[bbl];
       if (!rec || rec.class !== "land" || rec.lotArea < 1500) continue;
       // the city builds where the neighbourhood has BECOME good, not where it
@@ -906,7 +972,11 @@ export function tickCityGrowth(
       if (usf > 0) s.econ.cohorts[u as BuiltClass].push({ m: deliverM, sf: usf });
     }
 
-    if (rng(s) < 0.4) {
+    // Before it is anonymous, it is offered to the street. A developer with
+    // the dry powder buys the dirt and puts their name on the crane; if
+    // nobody takes it, the city builds it the way it always did.
+    const claimed = claimJob(s, parcels, bbl, use, sf, floors, deliverM);
+    if (!claimed && rng(s) < 0.4) {
       s.news.unshift({
         q: s.month, kind: "info",
         text: `Ground broken at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, due ${monthLabel(deliverM)}.`,

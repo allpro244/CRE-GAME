@@ -144,6 +144,11 @@ export interface Development {
   loanBalance: number;    // drawn + capitalised interest
   interestReserve: number;
   reserveUsed: number;
+  // THE LEASE-UP RESERVE, held back rather than poured into the slab. It is
+  // financed with the rest of the job but it is not spent building anything —
+  // it is the fit-out, the commissions and the carry that fill the building
+  // after it opens, and it is released as cash on the day it does.
+  leaseUpReserve?: number;
   equityBudget: number;   // your share of the budget
   equitySpent: number;
   ratePct: number;

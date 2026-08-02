@@ -4,7 +4,7 @@
 import type { ParcelRecord } from "@/data/types";
 import type { Condition, Econ, GameState, Holding } from "./types";
 import type { BuiltClass } from "./types";
-import { blend, blendBy, uses, useSf } from "./mix";
+import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -461,8 +461,29 @@ export function concentration(h: Holding): number {
   return total > 0 ? top / total : 0;
 }
 
+/**
+ * Residential does not have a rent roll to grade — it has an occupancy, and
+ * every lease on it is a twelve-month lease to an unrated household. Grading
+ * it through the commercial machinery gave the same answer every time: no
+ * named tenants, therefore "an empty building is a project", therefore a flat
+ * 55bp penalty on the cap, forever, on a building running at 96% full. Price
+ * it on the only thing that actually varies.
+ */
+function residentialSpread(h: Holding): number {
+  const occ = h.occ ?? 0.95;
+  return clamp((0.94 - occ) * 2.2, -0.12, 0.85);
+}
+
 export function rollQualitySpread(rec: ParcelRecord, h: Holding, month: number): number {
-  if (rec.class === "land" || !rec.bldgArea || !h.tenants.length) return 0.55;   // an empty building is a project
+  if (rec.class === "land" || !rec.bldgArea) return 0.55;
+  // The commercial part is what the tenants lease. Measuring a rent roll
+  // against the WHOLE building marked a full block of flats with shops at
+  // grade as 12% occupied and priced it as a shell.
+  const commSf = rec.bldgArea * clamp(commercialShare(rec), 0, 1);
+  const resShare = clamp(1 - commSf / rec.bldgArea, 0, 1);
+  if (!h.tenants.length) {
+    return resShare > 0.5 ? residentialSpread(h) : 0.55;   // an empty commercial building really is a project
+  }
   let sfTot = 0, wCredit = 0, wYears = 0, nnnSf = 0;
   for (const t of h.tenants) {
     sfTot += t.sf;
@@ -470,8 +491,8 @@ export function rollQualitySpread(rec: ParcelRecord, h: Holding, month: number):
     wYears += Math.max(0, (t.endM - month) / 12) * t.sf;
     if (recoveryOf(t) === "nnn") nnnSf += t.sf;
   }
-  if (!sfTot) return 0.55;
-  const occ = sfTot / rec.bldgArea;
+  if (!sfTot) return resShare > 0.5 ? residentialSpread(h) : 0.55;
+  const occ = sfTot / Math.max(1, commSf);
   const walt = wYears / sfTot;
   const credit = wCredit / sfTot;                       // 0..2
   // long paper and good covenants compress the cap; short paper widens it
@@ -487,16 +508,51 @@ export function rollQualitySpread(rec: ParcelRecord, h: Holding, month: number):
   const conc = concentration(h);
   const covenantRelief = credit >= 1.6 && walt >= 8 ? 0.55 : credit >= 1.6 ? 0.25 : 0;
   const concSpread = clamp((Math.max(0, conc - 0.35) / 0.65) * 0.75 * (1 - covenantRelief), 0, 0.75);
-  return waltSpread + creditSpread + occSpread + structSpread + concSpread;
+  const comm = waltSpread + creditSpread + occSpread + structSpread + concSpread;
+  // A mixed building is graded as what it is: part rent roll, part occupancy.
+  return resShare > 0.02 ? comm * (1 - resShare) + residentialSpread(h) * resShare : comm;
+}
+
+/**
+ * The abatement a buyer still has to fund: months of free rent already granted
+ * to the sitting roll that have not yet burned off, at contract rent.
+ *
+ * This is a line BELOW the net operating income, not a hole in it. Nobody
+ * capitalises a free-rent period — the building is not worth ten times less
+ * because six months of concession are running. The buyer takes the contract
+ * rent roll, capitalises it, and knocks the remaining abatement off the price
+ * as a dollar-for-dollar credit at closing, because that is what it costs.
+ */
+export function remainingAbatement(h: Holding, month: number): number {
+  let owed = 0;
+  for (const t of h.tenants) {
+    if (t.freeUntilM === undefined || t.freeUntilM <= month) continue;
+    owed += t.rentPsf * t.sf * ((t.freeUntilM - month) / 12);
+  }
+  return owed;
 }
 
 export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: number): number {
   if (rec.class === "land" || !rec.bldgArea) return landValue(rec, econ);
   const quality = month === undefined ? 0 : rollQualitySpread(rec, h, month);
   const cap = clamp(capRateFor(rec, econ, h.condition) + quality, 2.8, 13) / 100;
-  const inPlace = holdingNOIYr(rec, econ, h, h.renovatingUntilM ?? -1) / cap; // after-tax NOI, plain cap
-  const stabilized = noiYr(rec, econ, h.condition) / (cap + TAX_RATE);       // pre-tax NOI, tax-loaded cap
-  return Math.max(landValue(rec, econ) * 0.92, inPlace * 0.55 + stabilized * 0.45);
+  // CONTRACT rent, not the rent that happens to be arriving this month.
+  //
+  // This line used to read `h.renovatingUntilM ?? -1`, and month −1 is inside
+  // every free-rent period ever granted — so an appraisal ran the rent roll
+  // with the base rent of every tenant the player had ever signed switched
+  // off, permanently, while their expense recoveries kept billing. In-place
+  // NOI came out at or below zero on a full building, the value collapsed to
+  // 45% of the stabilised mark, and it never came back: the concession never
+  // "expired", because the clock never moved. Ground-up development wore it
+  // worst, because a developer's whole roll is leases they signed themselves.
+  const inGut = month !== undefined && h.renovatingUntilM !== undefined && month < h.renovatingUntilM;
+  const contractNoi = holdingNOIYr(rec, econ, h, inGut ? month : Number.POSITIVE_INFINITY);
+  const inPlace = contractNoi / cap;                                    // after-tax NOI, plain cap
+  const stabilized = noiYr(rec, econ, h.condition) / (cap + TAX_RATE);  // pre-tax NOI, tax-loaded cap
+  const blended = inPlace * 0.55 + stabilized * 0.45;
+  const abate = month === undefined ? 0 : remainingAbatement(h, month);
+  return Math.max(landValue(rec, econ) * 0.92, blended - abate);
 }
 
 export function monthlyNOI(rec: ParcelRecord, econ: Econ, h: Holding, currentQ: number): number {

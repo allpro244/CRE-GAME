@@ -6,7 +6,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import { resolveRec, concentration } from "./value";
 import type { GameState, Holding, Loan } from "./types";
 import { logBooks } from "./types";
-import { holdingNOIYr, holdingValue } from "./value";
+import { holdingNOIYr, holdingValue, assetValue, noiAfterTaxYr } from "./value";
 import { walt } from "./leasing";
 import { sponsorStanding, markSponsor, distressPrice } from "./sponsor";
 
@@ -552,8 +552,34 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
   const h = s.holdings[bbl];
   const rec = resolveRec(parcels, s, bbl);
   if (!h || !rec) return { quotes: [], value: 0, payoff: 0 };
-  const value = holdingValue(rec, s.econ, h, s.month);
-  const noi = holdingNOIYr(rec, s.econ, h, s.month);
+  // UNDERWRITING A BUILDING THAT IS STILL FILLING UP.
+  //
+  // A newly delivered building is empty, so its actual NOI is nothing and its
+  // value marked off that NOI is a fraction of what it cost. Underwritten on
+  // today's income, no lender quotes a penny — which is exactly what was
+  // happening: a job would finish carrying a $15M construction balance against
+  // a building marked at $9M, every income lender would quote zero, the
+  // mini-perm would balloon, and the developer would lose a building that was
+  // worth nearly twice its cost the moment it was full.
+  //
+  // That is not how a construction takeout is underwritten. The lender knows
+  // it is buying a lease-up: they underwrite to STABILISED income and hold
+  // back a chunk against the risk that it does not get there. So during the
+  // lease-up window that is what they do here, at a 25% holdback.
+  const leaseUpM = h.deliveredM !== undefined ? s.month - h.deliveredM : Infinity;
+  const inLeaseUp = leaseUpM <= 48;
+  const actualNoi = holdingNOIYr(rec, s.econ, h, s.month);
+  const actualValue = holdingValue(rec, s.econ, h, s.month);
+  let value = actualValue, noi = actualNoi;
+  if (inLeaseUp && rec.class !== "land" && rec.bldgArea > 0) {
+    const stabValue = assetValue(rec, s.econ, "good");
+    const stabNoi = noiAfterTaxYr(rec, s.econ, "good", stabValue);
+    // the holdback tightens as the window runs out — a building still empty
+    // after four years is not a lease-up, it is a problem
+    const trust = 0.75 * Math.max(0.3, 1 - leaseUpM / 60);
+    value = Math.max(actualValue, stabValue * trust);
+    noi = Math.max(actualNoi, stabNoi * trust);
+  }
   const hair = collateralHaircut(h, s.month);
   const quotes = PRODUCTS.map((p) => {
     const raw = quote(s, p, value, noi);

@@ -383,6 +383,7 @@ export function startDevelopment(
     contingency: plan.contingency, contingencyUsed: 0,
     commitment: plan.commitment, drawn: 0, loanBalance: 0,
     interestReserve: plan.interestReserve, reserveUsed: 0,
+    leaseUpReserve: plan.leaseUp,
     equityBudget: plan.equity, equitySpent: plan.equityAtClose,
     ratePct: plan.ratePct,
     startM: next.month, deliverM: next.month + plan.months, baseMonths: plan.months,
@@ -456,7 +457,14 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
     // the classic S-curve of spend against time
     const curve = (t: number) => t * t * (3 - 2 * t);
     const spendShare = Math.max(0, curve(t1) - curve(t0));
-    const spendNow = Math.round(d.costTotal * spendShare);
+    // The lease-up reserve is in the budget and financed with everything else,
+    // but it is NOT construction spend — it does not buy steel, it buys
+    // tenants, and it is released at delivery. Pouring it into the S-curve is
+    // why a developer arrived at handover with an empty building and no money
+    // to fit anybody out: the reserve existed on the pro forma and had already
+    // been spent on the building it was supposed to fill.
+    const buildSpend = Math.max(0, d.costTotal - (d.leaseUpReserve ?? 0));
+    const spendNow = Math.round(buildSpend * spendShare);
 
     if (spendNow > 0) {
       // equity first, to the extent any is left; the bank funds the rest
@@ -636,6 +644,22 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
     logBooks(s, "dev", -saved);
   }
 
+  // THE LEASE-UP RESERVE IS RELEASED. This is the money that fills the
+  // building — fit-out, commissions and the carry until it is full. It was
+  // financed on day one along with everything else, and now that there is a
+  // building to lease it comes across as cash. Without this a developer who
+  // had spent correctly to plan still could not afford the TI on the first
+  // tenant through the door.
+  const lease = d.leaseUpReserve ?? 0;
+  if (lease > 0) {
+    s.cash += lease;
+    logBooks(s, "dev", -lease);
+    s.news.unshift({
+      q: s.month, kind: "info",
+      text: `The lease-up reserve at ${rec.address} — $${(lease / 1e6).toFixed(2)}M — is released. That is what fits out the first tenants.`,
+    });
+  }
+
   // TENANTS WHO SIGNED WHILE IT WAS GOING UP. They took delivery risk on a
   // hole in the ground and were paid for it in rent; now the building exists
   // and they move in. A job that let well during construction opens part-full
@@ -657,9 +681,13 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
     balance: d.loanBalance,
     ratePct: +(s.econ.indexRate + 2.1).toFixed(2),
     spread: 2.1,
-    ioUntilM: s.month + 12,
+    // A THREE-YEAR CLOCK WAS TOO SHORT. Filling a building at this market's
+    // pace takes longer than that, so every job arrived at its balloon still
+    // half empty and un-refinanceable. A construction takeout is a three-plus
+    // -two or a five-year in practice, and interest-only while it fills.
+    ioUntilM: s.month + 24,
     amortYears: 30,
-    maturityM: s.month + 36,
+    maturityM: s.month + 60,
     monthlyPmt: Math.round((d.loanBalance * (s.econ.indexRate + 2.1)) / 100 / 12),
     minDSCR: 1.05,
     maxLTV: 0.9,
@@ -667,9 +695,9 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
     cleanQs: 0,
     originM: s.month,
     // A building that delivered empty cannot cover anything, and every lender
-    // who writes construction paper knows it. The lease-up holiday runs two
-    // years — long enough to fill it, short enough that failing to is fatal.
-    holidayUntilM: s.month + 24,
+    // who writes construction paper knows it. The holiday runs three years —
+    // long enough to fill it, short enough that failing to is fatal.
+    holidayUntilM: s.month + 36,
     prepay: "open",
     prepayUntilM: s.month,
   };
@@ -682,7 +710,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
     q: s.month, kind: "deal",
     text: `Delivered: ${(d.sf / 1000).toFixed(0)}k sf of ${d.use} at ${rec.address}, ${d.events === 0 ? "on programme" : `after ${d.events} problem${d.events > 1 ? "s" : ""}`}, $${(d.costTotal / 1e6).toFixed(1)}M all in`
       + (saved > 0 ? `, with $${(saved / 1e6).toFixed(2)}M of contingency returned` : "")
-      + `. The mini-perm matures ${monthLabel(s.month + 36)} — stabilise it before then.`,
+      + `. The mini-perm matures ${monthLabel(s.month + 60)} — stabilise it before then.`,
   });
 }
 

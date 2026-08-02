@@ -24,7 +24,9 @@
     "balance": "node test/run.mjs --balance",
     "econ": "node test/run.mjs --econ",
     "stats": "node test/run.mjs --stats",
-    "play50": "node test/run.mjs --play"
+    "play50": "node test/run.mjs --play",
+    "playdev": "node test/run.mjs --playdev",
+    "devyield": "node test/run.mjs --devyield"
   },
   "dependencies": {
     "@types/three": "^0.185.3",

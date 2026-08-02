@@ -8,7 +8,7 @@ import type { BuiltClass, Contract, DevUse } from "@/engine/types";
 import {
   assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr,
   occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr, useRentPsfYr,
-  rollQualitySpread, operatingStatement, recoveryOf, noiAfterTaxYr, netWorth,
+  rollQualitySpread, operatingStatement, recoveryOf, noiAfterTaxYr, netWorth, remainingAbatement,
 } from "@/engine/value";
 import { planDevelopment, PROGRAMS, programCost, farMaxFor, maxFloorsFor, demolitionCost } from "@/engine/dev";
 import { buyQuote, assemblagePressure, saleTaxQuote, bidOdds } from "@/engine/actions";
@@ -1339,6 +1339,12 @@ function PropertyPage() {
             bad={rollQualitySpread(rec, h, game.month) > 0.15}
           />
         )}
+        {/* Concessions already granted and not yet burned off. A buyer credits
+            this off the price at closing, so it moves the appraisal directly —
+            and there was nowhere to see it. */}
+        {built && h && remainingAbatement(h, game.month) > 0 && (
+          <Big label="Free rent owed" value={"−" + usd(remainingAbatement(h, game.month))} bad />
+        )}
         <Big label="Equity" value={h ? usd(value - (h.loan?.balance ?? 0)) : "—"} />
       </div>
       <div className="prop-head">
@@ -1361,6 +1367,11 @@ function PropertyPage() {
           <div className="grid">
             <Row k="Program" v={`${sf(dev.sf)} of ${dev.use} · ${dev.floors} floors`} strong />
             <Row k="Budget" v={usd(dev.costTotal)} />
+            {/* Financed with the job, spent on tenants rather than steel, and
+                paid across as cash the day the building opens. */}
+            {(dev.leaseUpReserve ?? 0) > 0 && (
+              <Row k="Lease-up reserve" v={`${usd(dev.leaseUpReserve!)} — released at delivery`} />
+            )}
             <Row k="Delivers" v={monthLabel(dev.deliverM)} />
           </div>
         </div>

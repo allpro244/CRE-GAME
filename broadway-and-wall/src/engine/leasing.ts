@@ -493,6 +493,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         id: s.nextLoiId++,
         bbl: h.bbl,
         kind: "renewal",
+        // A renewal is for the space the tenant is ALREADY in. This carried no
+        // use at all, so signing one fell through to the building's dominant
+        // use — and in a residential-leaning mixed building that is the flats,
+        // which put a named commercial tenant in the housing.
+        use: t.use ?? leasableUses(rec)[0] ?? "office",
         name: t.name, sector: t.sector, credit: t.credit,
         sf: t.sf,
         rentPsf: +Math.max(market * 0.6, ask).toFixed(2),
@@ -676,7 +681,10 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     // An LOI was sized against the vacancy on the day it was written. Two of
     // them can be live at once, so the second one signs against whatever is
     // left — you cannot lease the same floor twice.
-    const use = l.use ?? dominantUse(rec);
+    // Residential is modelled as OCCUPANCY, never as named tenants, so the
+    // fallback has to come off the leasable (commercial) uses. dominantUse can
+    // return multifamily, and did.
+    const use = l.use ?? leasableUses(rec)[0] ?? "office";
     const sf = Math.min(l.sf, Math.max(0, useVacantSf(rec, h, use, s.month)));
     if (sf < 1) return;
     h.tenants.push({

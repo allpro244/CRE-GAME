@@ -345,6 +345,7 @@ function DecisionModal() {
 
 function GameOverPage() {
   const game = useStore((s) => s.game)!;
+  const manifest = useStore((s) => s.manifest);
   const over = game.gameOver!;
   const peak = Math.max(...game.nwHistory);
   const finalNw = game.nwHistory[game.nwHistory.length - 1] ?? 0;
@@ -353,7 +354,7 @@ function GameOverPage() {
   return (
     <div className="page-backdrop">
       <div className="page gameover-page">
-        <div className="page-title">{over.complete ? "A Century of New Alden" : "The run is over."}</div>
+        <div className="page-title">{over.complete ? `A Century of ${manifest?.city ?? "the Town"}` : "The run is over."}</div>
         <p style={{ maxWidth: 640, margin: "10px auto" }}>{over.cause}</p>
         <NWChart data={game.nwHistory} height={140} />
         <div className="stat-strip" style={{ justifyContent: "center", marginTop: 14 }}>

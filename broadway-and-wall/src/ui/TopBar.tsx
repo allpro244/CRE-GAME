@@ -87,7 +87,7 @@ export default function TopBar() {
           <Stat
             label="Vacant lots"
             value={String(Math.max(0, game.totalLots - game.builtAtStart - Object.keys(game.built).length))}
-            title={`Empty lots left in New Alden. Every one is a site someone can build on — as they run out, land gets scarce and prices climb. ${game.totalLots ? Math.round((100 * (game.builtAtStart + Object.keys(game.built).length)) / game.totalLots) : 0}% of the city is built.`}
+            title={`Empty lots left in ${manifest?.city ?? "town"}. Every one is a site someone can build on — as they run out, land gets scarce and prices climb. ${game.totalLots ? Math.round((100 * (game.builtAtStart + Object.keys(game.built).length)) / game.totalLots) : 0}% of the city is built.`}
           />
           <span className="topbar-sep" />
           <button className={"nav-btn" + (page === "portfolio" ? " nav-on" : "")} onClick={() => setPage(page === "portfolio" ? "none" : "portfolio")}>

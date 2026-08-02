@@ -893,6 +893,42 @@ export function generateCity(cfg) {
       }
     }
   }
+  // --- the civic buildings ---------------------------------------------------
+  // A town is not only its commerce. The meeting house, the town hall and the
+  // market hall are the three buildings everybody in a colonial port could
+  // name, and they belong on the squares, where they cannot collide with a
+  // tax lot. They also give the skyline of a low town something to be about:
+  // a white spire above the roofs is worth more than another six-storey block.
+  const civicSquares = PARKS_M
+    .map((ring, i) => ({ ring, i, a: polygonArea([ring]) }))
+    .sort((x, y2) => x.a - y2.a)
+    .slice(0, 2);                       // the two SMALLEST greens: the squares
+  civicSquares.forEach((sq, k) => {
+    const c = centroid(sq.ring);
+    const ang = cfg.districts[Object.keys(cfg.districts)[0]]?.bearingDeg ?? 0;
+    if (k === 0) {
+      // THE MEETING HOUSE. Nave, west tower, and a stepped spire — three
+      // shrinking prisms, which is exactly how a New England steeple is built.
+      addDeco(rect(c[0], c[1], 24, 12, ang), 11.5, 0, "civic");
+      addDeco(rect(c[0], c[1], 25.4, 13.2, ang), 13.2, 11.5, "civicroof");
+      const t2 = (ang * Math.PI) / 180;
+      const tx = c[0] - 13 * Math.cos(t2), ty = c[1] - 13 * Math.sin(t2);
+      addDeco(rect(tx, ty, 7.4, 7.4, ang), 26, 0, "civic");         // tower
+      addDeco(rect(tx, ty, 6.4, 6.4, ang), 31.5, 26, "civic");      // belfry
+      addDeco(rect(tx, ty, 4.6, 4.6, ang + 45), 37, 31.5, "civicroof");
+      addDeco(rect(tx, ty, 2.9, 2.9, ang + 45), 42, 37, "civicroof");
+      addDeco(rect(tx, ty, 1.3, 1.3, ang + 45), 46.5, 42, "civicroof");
+    } else {
+      // THE TOWN HALL. A long block with a clock tower and a cupola on top.
+      addDeco(rect(c[0], c[1], 32, 16, ang), 14, 0, "civic");
+      addDeco(rect(c[0], c[1], 33.4, 17.4, ang), 15.8, 14, "civicroof");
+      addDeco(rect(c[0], c[1], 9.5, 9.5, ang), 29, 0, "civic");      // clock tower
+      addDeco(rect(c[0], c[1], 7.8, 7.8, ang + 45), 34, 29, "civic"); // cupola
+      addDeco(rect(c[0], c[1], 5.4, 5.4, ang + 45), 37.5, 34, "civicroof");
+      addDeco(rect(c[0], c[1], 1.6, 1.6, ang), 41, 37.5, "civicroof");
+    }
+  });
+
   // the bandstand on the town's principal green
   if (biggestPark) {
     const c = centroid(biggestPark);

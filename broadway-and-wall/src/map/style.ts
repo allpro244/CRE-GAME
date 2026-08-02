@@ -514,6 +514,20 @@ export function composeStyle(base: StyleSpecification): StyleSpecification {
     // a low sun off the port side gives extrusion faces the model-photo
     // contrast; anchored to the map so shading stays put as you orbit
     light: { anchor: "map", color: "#ffffff", intensity: 0.42, position: [1.15, 135, 55] },
+    // THE HORIZON. Without one the world ends at a hard blue edge and the city
+    // sits in a void. A graded sky, a pale band where it meets the sea, and a
+    // whisper of ground fog in the last of the distance — which is the same
+    // aerial perspective the building shader applies, so the 3D and the map
+    // agree about how far away far is.
+    sky: {
+      "sky-color": "#7fb6e0",
+      "sky-horizon-blend": 0.76,
+      "horizon-color": "#e2ecf1",
+      "horizon-fog-blend": 0.62,
+      "fog-color": "#cfe0ea",
+      "fog-ground-blend": 0.88,
+      "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 12, 0.9, 15.5, 0.7, 18, 0.45],
+    },
     sources: { ...base.sources, ...gameSources() },
     layers: [...baseLayers, ...gameLayers()],
   };

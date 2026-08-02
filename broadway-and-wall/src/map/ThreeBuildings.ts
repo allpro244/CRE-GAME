@@ -33,6 +33,8 @@ const DECO_TINT: Record<string, [number, number, number]> = {
   light: [1.14, 1.12, 1.06], lightcap: [0.55, 0.20, 0.16],
   boat: [1.06, 1.03, 0.96], mast: [0.90, 0.90, 0.88],
   banddeck: [0.92, 0.88, 0.78], bandroof: [0.42, 0.55, 0.44],
+  // whitewashed clapboard and slate — the meeting house and the town hall
+  civic: [1.16, 1.15, 1.10], civicroof: [0.44, 0.46, 0.50],
 };
 
 // facade / surface styles
@@ -116,6 +118,21 @@ vec3 grade(vec3 c) {
   return t;
 }`;
 
+// AERIAL PERSPECTIVE. Air is not transparent. Over a mile of it, contrast
+// drains out of everything and the color creeps toward the sky — which is the
+// single strongest depth cue human vision has, and the one thing separating a
+// city from a diorama. Every fragment shader below ends with it. The falloff
+// is scaled by how high the camera sits, so the effect reads the same whether
+// you are looking down a street or across the whole harbor.
+const HAZE_GLSL = /* glsl */ `
+const vec3 HAZE_COL = vec3(0.772, 0.836, 0.902);
+vec3 aerial(vec3 c, vec3 p, vec3 cam) {
+  float d = length(p - cam);
+  float k = max(cam.z, 140.0);
+  float f = 1.0 - exp(-(d / k) * 0.070);
+  return mix(c, HAZE_COL, clamp(f, 0.0, 1.0) * 0.47);
+}`;
+
 const PROP_VERT = /* glsl */ `
 // instanceColor is declared for us when the mesh carries one
 varying vec3 vN;
@@ -172,7 +189,7 @@ varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh;
 uniform float uOpacity;
 uniform vec3 uCam;
 ${"" /* shadow sampling */}
-` + SHADOW_GLSL + LIGHT_GLSL + /* glsl */ `
+` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + /* glsl */ `
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
@@ -399,7 +416,7 @@ void main() {
   }
   col *= light * edgeLift;
   col *= vTint;
-  gl_FragColor = vec4(grade(col), uOpacity);
+  gl_FragColor = vec4(aerial(grade(col), vPos, uCam), uOpacity);
 }`;
 
 const ROOF_FRAG = /* glsl */ `
@@ -410,7 +427,8 @@ varying vec3 vPos;
 varying vec2 vSeg, vCcv;
 varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh;
 uniform float uOpacity;
-` + SHADOW_GLSL + LIGHT_GLSL + /* glsl */ `
+uniform vec3 uCam;
+` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + /* glsl */ `
 float rhash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float rnoise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
@@ -477,7 +495,7 @@ void main() {
   float aoEdge = mix(0.78, 1.0, smoothstep(0.0, 2.8, vU));
   float ndl = max(dot(n, SUN_DIR), 0.0);
   vec3 light = SUN_COL * (ndl * vis * 0.92) + hemiLight(n, aoEdge);
-  gl_FragColor = vec4(grade(roof * light * vTint), uOpacity);
+  gl_FragColor = vec4(aerial(grade(roof * light * vTint), vPos, uCam), uOpacity);
 }`;
 
 // transparent quad over the whole city: darkens the MapLibre ground where
@@ -505,13 +523,14 @@ varying vec3 vW;
 varying vec3 vC;
 uniform vec3 uColor;
 uniform float uOpacity;
-` + SHADOW_GLSL + LIGHT_GLSL + /* glsl */ `
+uniform vec3 uCam;
+` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + /* glsl */ `
 void main() {
   vec3 n = normalize(vN);
   float vis = sunVis(vW + n * 0.4 + vec3(0.0, 0.0, 0.3));
   float ao = mix(0.62, 1.0, clamp(vW.z / 5.0, 0.0, 1.0));
   vec3 light = SUN_COL * (max(dot(n, SUN_DIR), 0.0) * vis * 0.92) + hemiLight(n, ao);
-  gl_FragColor = vec4(grade(uColor * vC * light), uOpacity);
+  gl_FragColor = vec4(aerial(grade(uColor * vC * light), vW, uCam), uOpacity);
 }`;
 
 interface Ranges { start: number; count: number }
@@ -530,6 +549,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private roofMat!: THREE.ShaderMaterial;
   private tintAttrs: THREE.BufferAttribute[] = [];
   private baseTints: Float32Array[] = [];
+  // ONE camera uniform, shared by every material — walls, roofs and props all
+  // have to haze against the same eye point or the city separates into layers.
+  private camUni = { value: new THREE.Vector3(0, 0, 800) };
   private posAttrs: THREE.BufferAttribute[] = [];
   private rangesByBBL = new Map<string, { attr: number; r: Ranges }[]>();
   private lotRings = new Map<string, [number, number][]>(); // vacant-lot footprints (meters)
@@ -861,7 +883,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
     const uniforms = () => ({
       uOpacity: { value: 1 },
-      uCam: { value: new THREE.Vector3(0, 0, 800) },
+      uCam: this.camUni,
       uShadow: { value: null as THREE.Texture | null },
       uSunVP: { value: new THREE.Matrix4() },
       uShadowOn: { value: 0 },
@@ -936,7 +958,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private plantStreets() {
     if (!this.curbs.length && !this.ctxPoints.trees?.length) return;
     type Item = { x: number; y: number; s: number; rot: number };
-    const trees: Item[] = [], lamps: Item[] = [];
+    const trees: Item[] = [], lamps: Item[] = [], cars: Item[] = [];
     let seed = 1337;
     const rnd = () => {
       seed = (seed * 1664525 + 1013904223) >>> 0;
@@ -966,10 +988,54 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           if (rnd() < 0.76) trees.push(item);
           else lamps.push({ ...item, s: 0.9 + rnd() * 0.2 });
         }
+        // CARS AT THE KERB. Nothing gives a street its scale like the row of
+        // parked cars along it — a building is abstract until there is
+        // something four metres long standing next to it. They sit in the
+        // parking lane, nose-to-tail, aligned with the frontage.
+        for (let d = rnd() * 6; d < len - 5; d += 5.4 + rnd() * 3.4) {
+          if (rnd() > 0.62) continue;              // gaps: hydrants, drives, luck
+          const t = d / len;
+          const px = a[0] + dx * t, py = a[1] + dy * t;
+          let nx = -dy / len, ny = dx / len;
+          if ((px - cx) * nx + (py - cy) * ny < 0) { nx = -nx; ny = -ny; }
+          cars.push({
+            x: px + nx * (4.4 + rnd() * 0.4),
+            y: py + ny * (4.4 + rnd() * 0.4),
+            s: 0.94 + rnd() * 0.16,
+            rot: Math.atan2(dy, dx) + (rnd() - 0.5) * 0.06,
+          });
+        }
         carry = Math.max(0, carry - len);
         if (carry === 0) carry = rnd() * 6;
       }
     }
+
+    // Cars carry a real per-instance colour rather than a jitter around one
+    // hue: a kerb of identical grey boxes reads as packaging, not traffic.
+    const CAR_COLORS: [number, number, number][] = [
+      [0.88, 0.88, 0.87], [0.72, 0.73, 0.75], [0.22, 0.24, 0.28], [0.17, 0.27, 0.42],
+      [0.55, 0.19, 0.17], [0.40, 0.42, 0.38], [0.78, 0.72, 0.58], [0.20, 0.34, 0.29],
+      [0.62, 0.62, 0.64], [0.35, 0.20, 0.16],
+    ];
+    const addCars = (items: Item[]) => {
+      if (!items.length) return;
+      const mesh = new THREE.InstancedMesh(carGeom(), this.propMaterial(0xffffff), items.length);
+      const m = new THREE.Matrix4();
+      const cols = new Float32Array(items.length * 3);
+      items.forEach((p, i) => {
+        m.compose(
+          new THREE.Vector3(p.x, p.y, 0),
+          new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, p.rot)),
+          new THREE.Vector3(p.s, p.s, p.s * (0.94 + rnd() * 0.16)),
+        );
+        mesh.setMatrixAt(i, m);
+        const c = CAR_COLORS[Math.floor(rnd() * CAR_COLORS.length) % CAR_COLORS.length];
+        cols[i * 3] = c[0]; cols[i * 3 + 1] = c[1]; cols[i * 3 + 2] = c[2];
+      });
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(cols, 3);
+      mesh.frustumCulled = false;
+      this.scene.add(mesh);
+    };
 
     const add = (geom: THREE.BufferGeometry, color: number, items: Item[], vary = 0) => {
       if (!items.length) return;
@@ -1009,6 +1075,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     add(treeCanopyGeom(), 0x71904f, trees, 0.34);
     add(lampGeom(), 0x4e5459, lamps, 0.06);
     add(pileGeom(), 0x5c4a34, piles, 0.08);
+    addCars(cars);
   }
 
   // Props share the buildings' light rig so a water tower and the roof it
@@ -1021,6 +1088,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       uniforms: {
         uColor: { value: new THREE.Vector3(c.r, c.g, c.b) },
         uOpacity: { value: 1 },
+        uCam: this.camUni,
         uShadow: { value: this.shadowTex },
         uSunVP: { value: this.sunVP },
         uShadowOn: { value: this.shadowTex ? 1 : 0 },
@@ -1224,7 +1292,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const distM = (0.5 * h) / Math.tan(0.32175) * mpp; // default fov ≈ 36.87°
       const [cx0, cy0] = this.project([c.lng, c.lat]);
       const back = distM * Math.sin(pitch);
-      this.wallMat.uniforms.uCam.value.set(
+      this.camUni.value.set(
         cx0 - Math.sin(bearing) * back,
         cy0 - Math.cos(bearing) * back,
         distM * Math.cos(pitch),
@@ -1242,6 +1310,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   onRemove() {
     this.scene.clear();
   }
+}
+
+// A car in eleven boxes' worth of triangles: bonnet, cabin, boot. Length runs
+// along +x so it can be dropped straight onto a kerb bearing.
+function carGeom(): THREE.BufferGeometry {
+  const body = new THREE.BoxGeometry(4.35, 1.78, 0.82).translate(0, 0, 0.62);
+  const cabin = new THREE.BoxGeometry(2.15, 1.62, 0.62).translate(-0.15, 0, 1.32);
+  const bonnet = new THREE.BoxGeometry(1.15, 1.66, 0.22).translate(1.5, 0, 1.05);
+  return mergeGeoms([body, cabin, bonnet]);
 }
 
 function pileGeom(): THREE.BufferGeometry {

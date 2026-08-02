@@ -422,8 +422,44 @@ body {
 .lens-btn { padding: 5px 8px; font-size: 11px; }
 .advance-btn { padding: 6px 12px; font-size: 14px; }
 .brand { white-space: nowrap; }
-@media (max-width: 1560px) { .brand-sub { display: none; } .badge { display: none; } }
-@media (max-width: 1360px) { .brand-name { font-size: 18px; } .topbar-right .stat { display: none; } }
+/* Drop the static caption when the bar gets tight, but NEVER the city picker.
+   It carries .brand-sub for its typography, and this rule used to hide it —
+   which meant that on any window under 1560px wide, which is most laptops,
+   the only control that switches city simply was not there. A label is fair
+   to drop for space. A control is not. */
+@media (max-width: 1560px) { .brand-sub:not(.city-pick-btn) { display: none; } .badge { display: none; } }
+/* THE BAR SHEDS READOUTS, NEVER CONTROLS.
+   .topbar-game is nowrap with eight readouts, six nav buttons, two lenses and
+   three advance buttons in it. At 1280 — a MacBook, a 1366x768 laptop, any
+   half-screen window — that overflowed the viewport and took Advance with it
+   off the right edge: the single button the game cannot be played without.
+   Now the expendable readouts go first, in ranked order, and the controls
+   always fit. Every number dropped here is still on a page. */
+.topbar-game { min-width: 0; }
+@media (max-width: 1500px) { .tstat-d3 { display: none; } }
+@media (max-width: 1330px) { .tstat-d2 { display: none; } }
+@media (max-width: 1360px) {
+  .brand-name { font-size: 18px; }
+  .topbar-right .stat { display: none; }
+  .city-pick-btn { margin-left: 8px; font-size: 11px; letter-spacing: 0.8px; }
+}
+@media (max-width: 1200px) {
+  /* once the readouts are gone there is nothing left to drop, so the controls
+     get tighter rather than colliding: the skip button was running under
+     "New run" at 1152 */
+  .topbar { padding: 8px 10px; gap: 8px; }
+  .topbar-game { gap: 7px; }
+  .topbar-right { gap: 8px; }
+  .nav-btn { padding: 4px 7px; font-size: 12px; }
+  .lens-btn { padding: 4px 6px; font-size: 10px; }
+  .advance-btn { padding: 5px 9px; font-size: 13px; }
+}
+@media (max-width: 1100px) {
+  /* last resort: the wordmark goes before the picker does */
+  .brand-name { font-size: 15px; }
+  .city-pick-btn { margin-left: 6px; }
+  .city-menu { min-width: 260px; }
+}
 
 /* 1031 exchange clock banner on the Deals desk */
 .exchange-clock {

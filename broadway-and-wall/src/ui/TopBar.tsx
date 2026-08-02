@@ -79,12 +79,13 @@ export default function TopBar() {
         <div className="topbar-game">
           <Stat label={monthLabel(game.month)} value={`Yr ${Math.floor(game.month / 12) + 1}/${CAMPAIGN_MONTHS / 12}`} wide />
           <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} />
-          <Stat label="Net worth" value={usd(nw)} />
-          <Stat label="CF / mo" value={usd(cf)} bad={cf < 0} />
-          <Stat label="Index" value={pct(game.econ.indexRate)} />
+          <Stat label="Net worth" value={usd(nw)} drop={2} />
+          <Stat label="CF / mo" value={usd(cf)} bad={cf < 0} drop={2} />
+          <Stat label="Index" value={pct(game.econ.indexRate)} drop={3} />
           {(game.loc?.balance ?? 0) > 0 && <Stat label="Line drawn" value={usd(game.loc.balance)} bad />}
-          <Stat label="Market" value={game.econ.phase} />
+          <Stat label="Market" value={game.econ.phase} drop={3} />
           <Stat
+            drop={3}
             label="Vacant lots"
             value={String(Math.max(0, game.totalLots - game.builtAtStart - Object.keys(game.built).length))}
             title={`Empty lots left in ${manifest?.city ?? "town"}. Every one is a site someone can build on — as they run out, land gets scarce and prices climb. ${game.totalLots ? Math.round((100 * (game.builtAtStart + Object.keys(game.built).length)) / game.totalLots) : 0}% of the city is built.`}
@@ -159,9 +160,13 @@ export default function TopBar() {
   );
 }
 
-function Stat({ label, value, bad, wide, title }: { label: string; value: string; bad?: boolean; wide?: boolean; title?: string }) {
+// `drop` ranks a readout's expendability when the bar runs out of width: 3
+// goes first, then 2, and anything unranked never goes. Every one of these
+// numbers is also on a page — Books, the Economy — so losing one costs a
+// glance, not information. The controls are not rankable: they stay.
+function Stat({ label, value, bad, wide, title, drop }: { label: string; value: string; bad?: boolean; wide?: boolean; title?: string; drop?: 2 | 3 }) {
   return (
-    <div className={"tstat" + (wide ? " tstat-wide" : "")} title={title}>
+    <div className={"tstat" + (wide ? " tstat-wide" : "") + (drop ? ` tstat-d${drop}` : "")} title={title}>
       <span className="tstat-label">{label}</span>
       {value && <span className={"tstat-value mono" + (bad ? " neg" : "")}>{value}</span>}
     </div>

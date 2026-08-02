@@ -109,9 +109,15 @@ export default function MapView() {
             const pointsOf = (kind: string): [number, number][] => (ctx?.features ?? [])
               .filter((f) => f.properties?.kind === kind && f.geometry.type === "Point")
               .map((f) => (f.geometry as GeoJSON.Point).coordinates as [number, number]);
+            // the land ring becomes the hole in the water plane
+            const landRing = (ctx?.features ?? [])
+              .find((f) => f.properties?.kind === "land" && f.geometry.type === "Polygon");
             const layer = new ThreeBuildings(volumes, CITY_CENTER, curbs, {
               trees: pointsOf("tree"),
               piles: pointsOf("pile"),
+              land: landRing
+                ? ((landRing.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][]).slice(0, -1)
+                : undefined,
             });
             threeRef.current = layer;
             map.addLayer(layer);

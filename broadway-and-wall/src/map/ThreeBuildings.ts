@@ -560,6 +560,74 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 
+// LIVING WATER. Two crossed wave trains give a normal that actually moves,
+// and everything else falls out of it: a Fresnel mix between deep water and
+// sky, a sun glitter that breaks into sparkles on the wave faces, and a band
+// of paler shallows near the shore. It is a few dozen instructions on one
+// mesh, and it is the difference between a harbour and a blue rectangle.
+const WATER_VERT = /* glsl */ `
+attribute float aDepth;
+varying vec2 vXY;
+varying float vDepth;
+void main() {
+  vXY = position.xy;
+  vDepth = aDepth;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+
+const WATER_FRAG = /* glsl */ `
+precision highp float;
+varying vec2 vXY;
+varying float vDepth;
+uniform float uTime;
+uniform vec3 uCam;
+` + LIGHT_GLSL + HAZE_GLSL + /* glsl */ `
+float wave(vec2 p, vec2 dir, float len, float spd, float t) {
+  return sin(dot(p, dir) / len + t * spd);
+}
+void main() {
+  vec2 p = vXY;
+  float t = uTime;
+  // three trains at different bearings and scales: one swell, two chop
+  float h = wave(p, vec2(0.92, 0.39), 26.0, 1.05, t) * 0.55
+          + wave(p, vec2(-0.44, 0.90), 13.0, 1.55, t) * 0.30
+          + wave(p, vec2(0.68, -0.73), 6.2, 2.35, t) * 0.15;
+  float dx = (wave(p + vec2(0.9, 0.0), vec2(0.92, 0.39), 26.0, 1.05, t) * 0.55
+            + wave(p + vec2(0.9, 0.0), vec2(-0.44, 0.90), 13.0, 1.55, t) * 0.30
+            + wave(p + vec2(0.9, 0.0), vec2(0.68, -0.73), 6.2, 2.35, t) * 0.15) - h;
+  float dy = (wave(p + vec2(0.0, 0.9), vec2(0.92, 0.39), 26.0, 1.05, t) * 0.55
+            + wave(p + vec2(0.0, 0.9), vec2(-0.44, 0.90), 13.0, 1.55, t) * 0.30
+            + wave(p + vec2(0.0, 0.9), vec2(0.68, -0.73), 6.2, 2.35, t) * 0.15) - h;
+  vec3 n = normalize(vec3(-dx * 0.66, -dy * 0.66, 1.0));
+
+  vec3 V = normalize(uCam - vec3(p, 0.0));
+  float fres = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 3.0);
+
+  // SHALLOWS FOLLOW THE COAST. vDepth carries distance to the land edge, baked
+  // per vertex, so the water genuinely pales where it runs up on the shore
+  // instead of being one flat sheet with a painted band around it.
+  float shoal = 1.0 - smoothstep(0.0, 190.0, vDepth);
+  vec3 deep    = vec3(0.243, 0.418, 0.553);
+  vec3 shallow = vec3(0.451, 0.639, 0.729);
+  vec3 sky     = vec3(0.741, 0.843, 0.918);
+  vec3 body = mix(deep, shallow, shoal * 0.85);
+  vec3 col = mix(body, sky, 0.16 + 0.58 * fres);
+
+  // the sun's road across the water — broad sheen, then hard sparkles on the
+  // faces that happen to be pointing at it
+  vec3 H = normalize(normalize(SUN_DIR) + V);
+  float spec = pow(max(dot(n, H), 0.0), 220.0);
+  float sheen = pow(max(dot(n, H), 0.0), 24.0);
+  col += SUN_COL * (spec * 1.9 + sheen * 0.20);
+
+  // foam: only on the real crests, and heavier in the shallows where the
+  // swell actually breaks
+  col += vec3(0.085) * smoothstep(0.86, 1.02, h) * (0.5 + 0.9 * shoal);
+  // the far sea has to dissolve into the horizon or the plane's own edge
+  // shows up as a hard line across the sky
+  gl_FragColor = vec4(aerial(grade(col), vec3(vXY, 0.0), uCam), 1.0);
+}`;
+
 const PROP_FRAG = /* glsl */ `
 precision highp float;
 varying vec3 vN;
@@ -596,12 +664,16 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   // ONE camera uniform, shared by every material — walls, roofs and props all
   // have to haze against the same eye point or the city separates into layers.
   private camUni = { value: new THREE.Vector3(0, 0, 800) };
+  private timeUni = { value: 0 };
+  private waterMat: THREE.ShaderMaterial | null = null;
+  private lastFrame = 0;
   private posAttrs: THREE.BufferAttribute[] = [];
   private rangesByBBL = new Map<string, { attr: number; r: Ranges }[]>();
   private lotRings = new Map<string, [number, number][]>(); // vacant-lot footprints (meters)
   private flattened = new Set<string>();
   private dynGroup = new THREE.Group();
   private shadowTex: THREE.Texture | null = null;
+  private water: THREE.Mesh | null = null;
   private sunVP = new THREE.Matrix4();
   visible = true;
 
@@ -609,7 +681,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     private volumes: BuildingVolume[],
     private center: [number, number],
     private curbs: [number, number][][] = [],
-    private ctxPoints: { trees?: [number, number][]; piles?: [number, number][] } = {},
+    private ctxPoints: { trees?: [number, number][]; piles?: [number, number][]; land?: [number, number][] } = {},
   ) {}
 
   onAdd(map: maplibregl.Map, gl: WebGLRenderingContext | WebGL2RenderingContext) {
@@ -1026,6 +1098,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.scene.add(mesh);
     }
     this.plantStreets();
+    this.buildWater();
 
     this.bakeShadows();
   }
@@ -1156,6 +1229,70 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     addCars(cars);
   }
 
+  /**
+   * The sea, as one mesh with the land punched out of it.
+   *
+   * MapLibre draws its fills and then this layer draws on top, so a water
+   * plane laid over everything would bury the city. The land ring becomes a
+   * HOLE in the water polygon instead — triangulated once, drawn under
+   * everything else at z = 0.01. Added before the shadow bake would matter,
+   * and excluded from casting, because a flat sheet casts nothing.
+   */
+  private buildWater() {
+    const land = this.ctxPoints.land;
+    if (!land || land.length < 4) return;
+    const ring = land.map((p) => this.project(p));
+    // wind the hole opposite to the outer boundary or the triangulator fills it
+    let a2 = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const p = ring[i], q = ring[(i + 1) % ring.length];
+      a2 += p[0] * q[1] - q[0] * p[1];
+    }
+    const hole = (a2 > 0 ? ring.slice().reverse() : ring).map(([x, y]) => new THREE.Vector2(x, y));
+    const R = 6000;
+    const outer = [
+      new THREE.Vector2(-R, -R), new THREE.Vector2(R, -R),
+      new THREE.Vector2(R, R), new THREE.Vector2(-R, R),
+    ];
+    let tris: number[][] = [];
+    try { tris = THREE.ShapeUtils.triangulateShape(outer, [hole]); } catch { return; }
+    if (!tris.length) return;
+    const pts = [...outer, ...hole];
+    // distance from each vertex to the shoreline — the shallows gradient
+    const depthOf = (v: THREE.Vector2) => {
+      let best = Infinity;
+      for (let i = 0; i < hole.length; i++) {
+        const a = hole[i], b = hole[(i + 1) % hole.length];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const l2 = dx * dx + dy * dy;
+        let t = l2 ? ((v.x - a.x) * dx + (v.y - a.y) * dy) / l2 : 0;
+        t = Math.max(0, Math.min(1, t));
+        best = Math.min(best, Math.hypot(v.x - (a.x + t * dx), v.y - (a.y + t * dy)));
+      }
+      return best;
+    };
+    const depths = pts.map(depthOf);
+    const pos: number[] = [];
+    const dep: number[] = [];
+    for (const t of tris) for (const i of t) { pos.push(pts[i].x, pts[i].y, 0.01); dep.push(depths[i]); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("aDepth", new THREE.Float32BufferAttribute(dep, 1));
+    this.waterMat = new THREE.ShaderMaterial({
+      vertexShader: WATER_VERT,
+      fragmentShader: WATER_FRAG,
+      uniforms: { uTime: this.timeUni, uCam: this.camUni },
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(g, this.waterMat);
+    mesh.frustumCulled = false;
+    mesh.renderOrder = -1;
+    // a flat sheet has no business in the shadow map
+    mesh.userData.noShadow = true;
+    this.scene.add(mesh);
+    this.water = mesh;
+  }
+
   // Props share the buildings' light rig so a water tower and the roof it
   // stands on are lit by the same sun.
   private propMaterial(color: number, instanced = true): THREE.ShaderMaterial {
@@ -1196,6 +1333,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         magFilter: THREE.NearestFilter,
       });
       const depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
+      if (this.water) this.water.visible = false;   // a flat sea casts nothing
       this.scene.overrideMaterial = depthMat;
       this.renderer.setRenderTarget(target);
       this.renderer.setClearColor(0xffffff, 1);
@@ -1203,6 +1341,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.renderer.render(this.scene, cam);
       this.renderer.setRenderTarget(null);
       this.scene.overrideMaterial = null;
+      if (this.water) this.water.visible = true;
 
       const sunVP = new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
       this.shadowTex = target.texture;
@@ -1379,6 +1518,18 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         cy0 - Math.cos(bearing) * back,
         distM * Math.cos(pitch),
       );
+    }
+    // THE ONLY ANIMATED THING IN THE GAME, and it pays its way: ~30fps, and
+    // only while the layer is actually visible. MapLibre repaints on demand,
+    // so without this call the city would be a still photograph — and with it
+    // uncapped, it would burn a core to redraw water nobody is looking at.
+    if (this.waterMat) {
+      const now = performance.now();
+      this.timeUni.value = now / 1000;
+      if (now - this.lastFrame > 33) {
+        this.lastFrame = now;
+        this.map.triggerRepaint();
+      }
     }
     const m = new THREE.Matrix4().fromArray(Array.from(options.defaultProjectionData.mainMatrix));
     const l = new THREE.Matrix4()

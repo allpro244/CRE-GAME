@@ -203,13 +203,16 @@ export function fallbackBaseStyle(): StyleSpecification {
       // open water is deeper than the harbor: the shallows band along the
       // coast is what makes the sea read as water with a bottom instead of a
       // sheet of blue paint
-      { id: "bg", type: "background", paint: { "background-color": "#a4c4dd" } },
+      // The Three.js layer paints the living sea over the top of this; the
+      // background and the shallows band remain as the still-water fallback
+      // for anyone whose WebGL context never comes up.
+      { id: "bg", type: "background", paint: { "background-color": "#7fa3bd" } },
       {
         id: "shallows",
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "shallows"],
-        paint: { "fill-color": "#b8d5e7" },
+        paint: { "fill-color": "#9dc0d6" },
       },
       {
         id: "land",

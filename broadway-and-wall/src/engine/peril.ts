@@ -45,11 +45,16 @@ export const DEDUCTIBLES = [0.01, 0.025, 0.05, 0.10] as const;
 // nobody's idea of a market. Real commercial property runs 50-70%, so the
 // premium is a genuine transfer of risk rather than a tax on owning things.
 const BASE_RATE = 0.0013;
-// Flood is priced separately and dearly, because it is rare and total. This is
-// the number that makes declining cover genuinely tempting — which is the
-// whole decision, and it was not tempting at all when the load was small
-// enough to be rounding on the main premium.
-const FLOOD_LOAD = 0.0115;
+// Flood is priced separately, but modestly. It covers a narrow band of
+// quayside ground against an event that is rare and survivable, so the load is
+// a real line on the policy rather than the dominant one — carrying it should
+// be an easy yes for anyone actually on the water and irrelevant to everyone
+// else, which is what a peril of this size is worth.
+// Priced against what the peril now actually costs. At 0.0038 a quayside book
+// paid three million over fifty years for six hundred thousand of cover —
+// most flood losses now sit inside an ordinary deductible, so the policy was
+// charging for a risk it largely did not carry.
+const FLOOD_LOAD = 0.0022;
 
 export interface InsuranceQuote {
   insuredValue: number;
@@ -252,9 +257,10 @@ export function tickPerils(s: GameState, parcels: ParcelTable) {
   }
 
   // ---- flood: the water comes over the quay ---------------------------------
-  // Rarer than a storm and far worse when it comes: roughly once in fifty
-  // years, and the buildings it reaches are not damaged, they are under water.
-  if (rng(s) < 0.0016) {
+  // Roughly once in seventy years, on a narrow band of quayside ground. It is
+  // a bad morning for the people on the water and a headline for everybody
+  // else — not a thing that reshapes a portfolio.
+  if (rng(s) < 0.0012) {
     const exposed = owned.filter((h) => (resolveRec(parcels, s, h.bbl)?.floodRisk ?? 0) > 0.2);
     if (exposed.length) {
       s.news.unshift({
@@ -264,10 +270,10 @@ export function tickPerils(s: GameState, parcels: ParcelTable) {
       for (const h of exposed) {
         const rec = resolveRec(parcels, s, h.bbl)!;
         if (rng(s) < (rec.floodRisk ?? 0) * 0.8) {
-          // A flooded ground floor is the whole building's problem: the plant
-          // is in the basement, the lifts are out, and nobody is trading out
-          // of the upper floors either.
-          damage(s, parcels, h, "flood", rrange(s, 0.45, 1) * (0.55 + 0.45 * (rec.floodRisk ?? 0)));
+          // A flooded ground floor is more than the ground floor — the plant
+          // is in the basement and the lifts are out — but it is a repair and
+          // a bad quarter, not the end of the building.
+          damage(s, parcels, h, "flood", rrange(s, 0.18, 0.55) * (0.6 + 0.4 * (rec.floodRisk ?? 0)));
         }
       }
     }

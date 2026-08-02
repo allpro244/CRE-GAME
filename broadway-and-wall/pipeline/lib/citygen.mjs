@@ -280,10 +280,15 @@ export function generateCity(cfg) {
     const d = Math.sqrt(best);
     // These are small harbour towns — a square kilometre and a bit — so a
     // generous falloff put literally every parcel in the flood zone, which is
-    // the same as putting none of them in it. The exposed ground is the first
-    // two or three blocks off the water and nothing else.
-    if (d > 340) return 0;
-    return +Math.min(1, Math.pow(1 - d / 340, 2.6)).toFixed(3);
+    // the same as putting none of them in it.
+    //
+    // Deliberately narrow: the flood zone is the quay and the street behind
+    // it, not a third of the town. This is meant to be waterfront texture —
+    // a reason the cheap warehouses on the water are cheap — rather than a
+    // pillar of the game, and at 340m with a soft falloff it was well on its
+    // way to being the latter.
+    if (d > 130) return 0;
+    return +Math.min(1, Math.pow(1 - d / 130, 3.0)).toFixed(3);
   }
   const landBox = bboxOfRing(COAST_M);
 

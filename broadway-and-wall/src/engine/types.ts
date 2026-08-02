@@ -315,6 +315,22 @@ export interface Econ {
   // office can be in a bear market while sheds are the best trade in town —
   // which is the whole reason to hold more than one kind of building.
   sectorMom: Record<BuiltClass, number>;
+  // WHAT THE TENANTS DO FOR A LIVING.
+  //
+  // The classes have had their own cycles for a while. The INDUSTRIES inside
+  // them did not — ten sectors existed and the engine read them exactly twice,
+  // both times to copy a name onto a lease. So a rent roll seventy per cent
+  // let to finance was not a bet on finance, a tech bust took nobody with it,
+  // and concentration was a word with no mechanism behind it.
+  //
+  // Each industry now runs its own boom / steady / bust clock on its own
+  // volatility — tech and media swing hard, insurance and medical barely move
+  // — independent of the asset class that houses them. An office building let
+  // to five law firms and one let to five startups are different assets, and
+  // this is the difference.
+  industryMom?: Record<Sector, number>;
+  industryPhase?: Record<Sector, "boom" | "steady" | "bust">;
+  industryPhaseM?: Record<Sector, number>;
   // Everything the rest of the market is building, by class, in square feet.
   // Starts respond to profit; deliveries land ~30 months later and take the
   // rent with them. This is the supply half of the cycle, and without it a

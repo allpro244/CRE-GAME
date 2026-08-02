@@ -16,8 +16,9 @@
 //     eighteen months is levering into the top and you can watch them do it;
 //     one that has printed four sales in a row is getting out.
 import type { ParcelRecord } from "@/data/types";
-import type { Condition, GameState } from "./types";
+import type { Condition, GameState, Sector } from "./types";
 import { initialCondition, noiAfterTaxYr } from "./value";
+import { industryStress } from "./market";
 
 export interface Comp {
   m: number;            // month it closed
@@ -118,4 +119,40 @@ export function compFlows(s: GameState, months = 36) {
   return [...by.entries()]
     .map(([name, v]) => ({ name, ...v, net: v.bought - v.sold }))
     .sort((a, b) => (b.bought + b.sold) - (a.bought + a.sold));
+}
+
+/**
+ * WHAT YOUR RENT ROLL DOES FOR A LIVING, across the whole book.
+ *
+ * The single most important number a landlord can know about themselves and
+ * the game had no way to compute it. Concentration is not a per-building
+ * property: you can own twelve diversified buildings and still be sixty per
+ * cent finance, and when finance turns you find that out all at once.
+ */
+export function portfolioIndustries(s: GameState) {
+  const by = new Map<Sector, { income: number; sf: number; tenants: number }>();
+  let total = 0;
+  for (const h of Object.values(s.holdings)) {
+    for (const t of h.tenants) {
+      const annual = t.rentPsf * t.sf;
+      total += annual;
+      const e = by.get(t.sector) ?? { income: 0, sf: 0, tenants: 0 };
+      e.income += annual; e.sf += t.sf; e.tenants++;
+      by.set(t.sector, e);
+    }
+  }
+  const rows = [...by.entries()]
+    .map(([sector, v]) => ({
+      sector,
+      ...v,
+      share: total > 0 ? v.income / total : 0,
+      stress: industryStress(s.econ, sector),
+      mom: s.econ.industryMom?.[sector] ?? 0,
+      phase: s.econ.industryPhase?.[sector] ?? "steady",
+    }))
+    .sort((a, b) => b.income - a.income);
+  // The share of your income sitting in trades that are currently contracting
+  // — the number that says how bad the next two years are going to be.
+  const atRisk = rows.reduce((a, r) => a + r.share * r.stress, 0);
+  return { rows, total, top: rows[0] ?? null, atRisk };
 }

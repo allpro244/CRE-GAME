@@ -2,7 +2,7 @@
 // rents, and a phase machine whose turns are rumored before they land.
 // Randomness creates situations, never verdicts.
 import type { ParcelTable } from "@/data/types";
-import type { BuiltClass, Econ, GameState, MarketPhase, NewsItem } from "./types";
+import type { BuiltClass, Econ, GameState, MarketPhase, NewsItem, Sector } from "./types";
 import { BUILT_CLASSES } from "./types";
 
 export function mulberry32Step(a: number): { state: number; value: number } {
@@ -19,6 +19,45 @@ export function rng(s: GameState): number {
 }
 export const rrange = (s: GameState, a: number, b: number) => a + (b - a) * rng(s);
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+
+/**
+ * HOW HARD EACH TRADE SWINGS.
+ *
+ * Not every industry has the same cycle. Technology and media boom and bust on
+ * a five-year clock and take their landlords with them; insurance and medical
+ * barely notice a recession. This single number scales both the depth of an
+ * industry's cycle and how often it turns — which is what makes a rent roll of
+ * law firms a bond and a rent roll of startups a bet.
+ */
+export const SECTORS: Sector[] = [
+  "finance", "law", "tech", "media", "insurance",
+  "logistics", "apparel", "food", "medical", "design",
+];
+export const INDUSTRY_VOL: Record<Sector, number> = {
+  tech: 2.0, media: 1.6, finance: 1.4, apparel: 1.3, design: 1.2,
+  logistics: 1.05, food: 0.8, law: 0.7, medical: 0.6, insurance: 0.5,
+};
+export const INDUSTRY_LABEL: Record<Sector, string> = {
+  finance: "Finance", law: "The law firms", tech: "Technology", media: "Media",
+  insurance: "Insurance", logistics: "Shipping and logistics", apparel: "Apparel and retail trade",
+  food: "Food and hospitality", medical: "Medical", design: "Architecture and design",
+};
+
+/**
+ * How much trouble an industry is in, 0 (fine) to 1 (falling apart). Read by
+ * tenant default, by renewal, and by what a lender will lend against a rent
+ * roll that depends on it.
+ */
+export function industryStress(e: Econ, k: Sector): number {
+  const mom = e.industryMom?.[k] ?? 0;
+  return clamp(-mom / 0.03, 0, 1);
+}
+
+/** …and how hard it is hiring, which is who walks through the door. */
+export function industryPull(e: Econ, k: Sector): number {
+  const mom = e.industryMom?.[k] ?? 0;
+  return clamp(1 + mom * 22, 0.35, 1.9);
+}
 
 // Rate target and rent drift per phase — the cycle is the game's weather.
 // monthly cadence: drifts are a third of the old quarterly values, phase
@@ -273,6 +312,56 @@ export function tickEcon(s: GameState) {
     // something you notice over a year, not in a month
     const aim = SECTOR_AIM[e.sectorPhase![k]];
     e.sectorMom[k] = clamp(e.sectorMom[k] + 0.055 * (aim - e.sectorMom[k]) + rrange(s, -0.0006, 0.0006), -0.02, 0.02);
+  }
+
+  // --- what the tenants do for a living -------------------------------------
+  //
+  // Ten industries, each on its own clock, at its own volatility. This is a
+  // DIFFERENT cycle from the asset-class one above: office can be a landlord's
+  // market while finance is shedding staff, and the building let to five
+  // startups empties while the one across the street let to insurers does not.
+  // That distinction did not exist — sector was a name on a lease and nothing
+  // else — and it is the difference between a rent roll and a list.
+  if (!e.industryPhase) {
+    e.industryPhase = {} as Record<Sector, "boom" | "steady" | "bust">;
+    e.industryPhaseM = {} as Record<Sector, number>;
+    e.industryMom = {} as Record<Sector, number>;
+    for (const k of SECTORS) {
+      e.industryPhase[k] = "steady";
+      e.industryPhaseM[k] = Math.round(rrange(s, 6, 70));
+      e.industryMom[k] = 0;
+    }
+  }
+  for (const k of SECTORS) {
+    const vol = INDUSTRY_VOL[k];
+    if ((e.industryPhaseM![k] -= 1) <= 0) {
+      const cur = e.industryPhase![k];
+      // Industries lean on the macro cycle without being it: a recession makes
+      // a bust likelier everywhere, and an expansion makes a boom likelier,
+      // but each one still turns on its own schedule.
+      const macro = e.phase === "recession" ? -0.22 : e.phase === "recovery" ? 0.06
+        : e.phase === "expansion" ? 0.14 : -0.06;
+      const up = clamp(0.45 + macro, 0.12, 0.85);
+      let next: "boom" | "steady" | "bust";
+      if (cur === "steady") next = rng(s) < up ? "boom" : "bust";
+      else if (cur === "boom") next = rng(s) < 0.5 ? "bust" : "steady";
+      else next = rng(s) < 0.7 ? "steady" : "boom";
+      e.industryPhase![k] = next;
+      // Volatile industries run shorter, sharper cycles; a stable one can sit
+      // steady for the better part of a decade.
+      const len = next === "boom" ? rrange(s, 18, 48) : next === "bust" ? rrange(s, 12, 36) : rrange(s, 30, 96);
+      e.industryPhaseM![k] = Math.round(len / Math.max(0.6, vol));
+      if (next !== "steady" && cur !== next) {
+        pushNews(s, next === "boom" ? "event" : "warn", next === "boom"
+          ? `${INDUSTRY_LABEL[k]} is hiring hard. Anyone with space let to that trade is about to have a good few years.`
+          : `${INDUSTRY_LABEL[k]} is in trouble. Look at how much of your rent roll depends on it before somebody hands you the keys.`);
+      }
+    }
+    const aim = (e.industryPhase![k] === "boom" ? 0.016 : e.industryPhase![k] === "bust" ? -0.015 : 0) * vol;
+    e.industryMom![k] = clamp(
+      e.industryMom![k] + 0.05 * (aim - e.industryMom![k]) + rrange(s, -0.0008, 0.0008) * vol,
+      -0.05, 0.05,
+    );
   }
 
   // --- the construction pipeline --------------------------------------------

@@ -5,7 +5,9 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Credit, GameState, Holding, LOI, Sector } from "./types";
 import { logBooks, monthLabel } from "./types";
-import { rng, rrange , vacancyPull, NATURAL_VAC} from "./market";
+import { rng, rrange , vacancyPull, NATURAL_VAC, industryStress, industryPull, INDUSTRY_LABEL } from "./market";
+
+const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses, useSf } from "./mix";
 import type { Recovery } from "./value";
@@ -61,9 +63,21 @@ const SECTORS_BY_CLASS: Record<string, Sector[]> = {
   industrial: ["logistics", "food", "apparel"],
 };
 
+/**
+ * WHO IS ACTUALLY LOOKING FOR SPACE.
+ *
+ * Not a uniform draw across the trades that can use this class. A booming
+ * industry is expanding and touring; one in a bust is handing space back, not
+ * taking it. So the mix of prospects at your door tilts toward whoever is
+ * hiring — which is also how a landlord ends up concentrated without ever
+ * deciding to be.
+ */
 function pickSector(s: GameState, cls: string): Sector {
   const arr = SECTORS_BY_CLASS[cls] ?? SECTORS_BY_CLASS.office;
-  return arr[Math.floor(rng(s) * arr.length) % arr.length];
+  const w = arr.map((k) => industryPull(s.econ, k));
+  let roll = rng(s) * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < arr.length; i++) { roll -= w[i]; if (roll <= 0) return arr[i]; }
+  return arr[arr.length - 1];
 }
 function pickName(s: GameState, sector: Sector): string {
   const arr = POOL[sector];
@@ -451,7 +465,13 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const cycle = s.econ.phase === "recession" ? 3.4 : s.econ.phase === "recovery" ? 1.7 : s.econ.phase === "peak" ? 0.9 : 0.55;
       const grade = t.credit === 2 ? 0.14 : t.credit === 1 ? 0.55 : 1.6;   // investment grade rarely goes dark
       const sectorStress = Math.max(0, -(s.econ.sectorMom?.[rec.class as "office"] ?? 0)) * 40;
-      const pFail = 0.00035 * cycle * grade * (1 + sectorStress);
+      // AND THE TENANT'S OWN TRADE. This is the whole point of modelling
+      // industries: a technology bust does not take out one startup, it takes
+      // out every startup you have, in every building, in the same eighteen
+      // months. Concentration stops being a word and becomes a thing that
+      // happens to you.
+      const trade = industryStress(s.econ, t.sector) * 2.6;
+      const pFail = 0.00035 * cycle * grade * (1 + sectorStress + trade);
       if (rng(s) >= pFail) continue;
       h.tenants.splice(i, 1);
       // you keep whatever security deposit there was — call it three months
@@ -476,6 +496,16 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const t = h.tenants[i];
       if (t.endM !== q + 6) continue;
       if (s.lois.some((l) => l.bbl === h.bbl && l.tenantIdx === i)) continue;
+      // A trade in a deep bust is shedding space, not renewing it. No letter
+      // arrives at all and the suite comes back on the expiry date.
+      if (rng(s) < industryStress(s.econ, t.sector) * 0.55) {
+        s.news.unshift({
+          q, kind: "warn",
+          text: `${t.name} is not renewing at ${rec.address} — ${INDUSTRY_LABEL[t.sector].toLowerCase()} is contracting and they are giving the space back. `
+            + `${(t.sf / 1000).toFixed(1)}k sf comes available ${monthLabel(t.endM)}.`,
+        });
+        continue;
+      }
       const market = managedRentPsfYr(rec, s.econ, h);
       // A tenant sitting well below market knows what a move costs them and
       // renews near market. A tenant ABOVE market knows the same thing in
@@ -485,7 +515,14 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const soft = s.econ.phase === "recession" ? 0.88 : s.econ.phase === "recovery" ? 0.95 : 1;
       // Credit tenants are worth keeping and they know it.
       const creditDisc = t.credit === 2 ? 0.97 : t.credit === 1 ? 1.0 : 1.02;
-      const ask = market * leverage * soft * creditDisc;
+      // AND WHAT THEIR OWN TRADE IS DOING. A firm in a booming industry is
+      // growing into its lease and will pay to stay; one in a bust is cutting
+      // headcount and either wants a discount or wants out. The building's
+      // market is only half of a renewal — the other half is the tenant's.
+      const stress = industryStress(s.econ, t.sector);
+      const boom = Math.max(0, (s.econ.industryMom?.[t.sector] ?? 0)) * 6;
+      const trade = 1 - stress * 0.14 + boom;
+      const ask = market * leverage * soft * creditDisc * clampL(trade, 0.78, 1.18);
       // Renewals are cheap to do: no downtime, a fraction of the TI, no free
       // rent worth the name. That gap is why renewal economics beat a new
       // lease at a higher face rent almost every time.

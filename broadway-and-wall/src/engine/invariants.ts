@@ -21,6 +21,7 @@ import type { BuiltClass, DevUse, GameState } from "./types";
 import { resolveRec, holdingValue, holdingNOIYr, netWorth } from "./value";
 import { mixOf, useSf } from "./mix";
 import { MAX_FLOORS_BY_USE } from "./dev";
+import { SECTORS } from "./market";
 
 export interface Violation {
   code: string;
@@ -48,6 +49,18 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
   }
   const nw = netWorth(s, parcels);
   if (!fin(nw)) bad("nan", "firm", "net worth is not a number");
+
+  // --------------------------------------------------------------- the trades
+  for (const k of SECTORS) {
+    const mom = s.econ.industryMom?.[k];
+    if (mom !== undefined && (!fin(mom) || Math.abs(mom) > 0.06)) {
+      bad("industry", "econ", `${k} momentum ${mom}`);
+    }
+    const ph = s.econ.industryPhase?.[k];
+    if (ph !== undefined && ph !== "boom" && ph !== "steady" && ph !== "bust") {
+      bad("industry", "econ", `${k} is in phase "${ph}"`);
+    }
+  }
 
   // ------------------------------------------------------------ what got built
   // SHOPS DO NOT STACK. This applies to buildings created during play only —

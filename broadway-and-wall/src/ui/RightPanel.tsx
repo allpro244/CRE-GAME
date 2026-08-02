@@ -52,7 +52,8 @@ function physicalOcc(rec: never, h: { tenants: { sf: number }[]; occ?: number })
 import { sponsorStanding } from "@/engine/sponsor";
 import { marketAppetite, markRival, rivalCondition } from "@/engine/rivals";
 import { gpEquity, jvSummary, lpMood, lpTerms, recapQuote } from "@/engine/equity";
-import { compFlows, compStats } from "@/engine/comps";
+import { compFlows, compStats, portfolioIndustries } from "@/engine/comps";
+import { INDUSTRY_LABEL, SECTORS } from "@/engine/market";
 import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses } from "@/engine/leasing";
 import { groundLeaseQuote, mergeCost } from "@/engine/actions";
 import { usd, sf, pct } from "./format";
@@ -1442,8 +1443,8 @@ function PropertyPage() {
         {built && h && (
           <Big
             label="Roll quality"
-            value={`${rollQualitySpread(rec, h, game.month) >= 0 ? "+" : ""}${(rollQualitySpread(rec, h, game.month) * 100).toFixed(0)} bps`}
-            bad={rollQualitySpread(rec, h, game.month) > 0.15}
+            value={`${rollQualitySpread(rec, h, game.month, game.econ) >= 0 ? "+" : ""}${(rollQualitySpread(rec, h, game.month, game.econ) * 100).toFixed(0)} bps`}
+            bad={rollQualitySpread(rec, h, game.month, game.econ) > 0.15}
           />
         )}
         {/* Concessions already granted and not yet burned off. A buyer credits
@@ -2543,6 +2544,49 @@ function MarketPage() {
             </tbody>
           </table>
         </section>
+        {/* THE TRADES. A separate cycle from the four asset classes above and
+            the reason two identical office buildings are different assets: one
+            let to insurers, one let to startups. */}
+        <section style={{ gridColumn: "1 / -1" }}>
+          <div className="page-section">The trades</div>
+          <div className="hint">
+            Industries run their own cycles, on their own volatility, independent of the property market that houses
+            them. Office can be a landlord's market while finance is shedding staff — and the building let to five
+            startups empties while the one across the street let to insurers does not.
+          </div>
+          <table className="tbl">
+            <thead>
+              <tr><th>Trade</th><th>Cycle</th><th className="num">Momentum</th><th className="num">Your exposure</th><th>Read</th></tr>
+            </thead>
+            <tbody>
+              {(() => {
+                const mine = portfolioIndustries(game);
+                const byMe = new Map(mine.rows.map((r) => [r.sector, r.share]));
+                return SECTORS.map((k) => {
+                  const mom = game.econ.industryMom?.[k] ?? 0;
+                  const ph = game.econ.industryPhase?.[k] ?? "steady";
+                  const mySh = byMe.get(k) ?? 0;
+                  return (
+                    <tr key={k}>
+                      <td>{INDUSTRY_LABEL[k]}</td>
+                      <td className={ph === "bust" ? "neg" : "dim"}>
+                        {ph === "boom" ? "hiring hard" : ph === "bust" ? "contracting" : "steady"}
+                      </td>
+                      <td className={"num" + (mom < -0.004 ? " neg" : "")}>{(mom * 100).toFixed(2)}</td>
+                      <td className={"num" + (mySh > 0.4 ? " neg" : "")}>{mySh > 0 ? `${(mySh * 100).toFixed(0)}%` : "—"}</td>
+                      <td className="dim">
+                        {ph === "bust" && mySh > 0.25 ? "You are heavily exposed to a trade that is contracting."
+                          : ph === "bust" ? "Anyone let to them is about to have a bad two years."
+                          : ph === "boom" ? "They are expanding and they will pay to stay."
+                          : "Nothing happening either way."}
+                      </td>
+                    </tr>
+                  );
+                });
+              })()}
+            </tbody>
+          </table>
+        </section>
         <section style={{ gridColumn: "1 / -1" }}>
           <CompsSheet />
         </section>
@@ -3142,6 +3186,8 @@ function LeasingPage() {
     return [{ h, rec, commercial, leased, notReady, occ, rentRoll, rolling }];
   });
 
+  const ind = portfolioIndustries(game);
+
   if (!rows.length) {
     return (
       <div>
@@ -3183,6 +3229,47 @@ function LeasingPage() {
         <Big label="Rolling in 12 mo" value={sf(totRolling)} bad={totRolling > totLeased * 0.25} />
         <Big label="Open LOIs" value={String(game.lois.length)} />
       </div>
+
+      {/* WHAT YOUR RENT ROLL DOES FOR A LIVING.
+          You can own twelve diversified buildings and still be sixty per cent
+          finance — and when finance turns you find that out all at once, in
+          every building, in the same eighteen months. It is the single most
+          important thing a landlord can know about themselves and there was no
+          way to see it. */}
+      {ind.rows.length > 0 && (
+        <div className="page-section">
+          <div className="page-section-head">
+            Exposure by trade{ind.atRisk > 0.18 ? ` · ${(ind.atRisk * 100).toFixed(0)}% of income in trades that are contracting` : ""}
+          </div>
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Trade</th><th className="num">Share of income</th><th className="num">Income / yr</th>
+                <th className="num">Space</th><th className="num">Tenants</th><th>Cycle</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ind.rows.map((r) => (
+                <tr key={r.sector} className={r.stress > 0.4 ? "dim" : ""}>
+                  <td>{INDUSTRY_LABEL[r.sector]}</td>
+                  <td className={"num" + (r.share > 0.45 ? " neg" : "")}>{(r.share * 100).toFixed(0)}%</td>
+                  <td className="num">{usd(r.income)}</td>
+                  <td className="num">{sf(r.sf)}</td>
+                  <td className="num">{r.tenants}</td>
+                  <td className={r.phase === "bust" ? "neg" : "dim"}>
+                    {r.phase === "boom" ? "hiring hard" : r.phase === "bust" ? "contracting" : "steady"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="hint">
+            {ind.top && ind.top.share > 0.45
+              ? `${(ind.top.share * 100).toFixed(0)}% of your rent comes from ${INDUSTRY_LABEL[ind.top.sector].toLowerCase()}. That is not a rent roll, it is a position in one trade — and both the buyers and the lenders price it that way.`
+              : "A rent roll spread across trades survives a bad decade in any one of them. Lenders discount income concentrated in a single industry, and so does anyone buying the building off you."}
+          </div>
+        </div>
+      )}
 
       <div className="page-section">
         <div className="page-section-head">By building</div>

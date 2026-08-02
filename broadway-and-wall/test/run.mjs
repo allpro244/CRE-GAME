@@ -12,7 +12,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ENTRY = join(HERE, ".entry.ts");
 const OUT = join(HERE, ".engine.mjs");
 
-const MODULES = ["sim", "leasing", "actions", "credit", "value", "dev", "debt", "demand", "invariants", "rivals", "sponsor", "mix", "acquire", "equity", "comps"];
+const MODULES = ["sim", "leasing", "actions", "credit", "value", "dev", "debt", "demand", "invariants", "rivals", "sponsor", "mix", "acquire", "equity", "comps", "market"];
 const { writeFileSync } = await import("node:fs");
 writeFileSync(ENTRY, MODULES.map((m) => `export * from "../src/engine/${m}";`).join("\n") + "\n");
 

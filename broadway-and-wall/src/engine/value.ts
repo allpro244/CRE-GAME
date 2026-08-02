@@ -2,10 +2,11 @@
 // land = lot area × evolved land $/sf. Every number here is traceable from
 // the parcel record and the market state — no hidden multipliers.
 import type { ParcelRecord } from "@/data/types";
-import type { Condition, Econ, GameState, Holding } from "./types";
+import type { Condition, Econ, GameState, Holding, Sector } from "./types";
 import type { BuiltClass } from "./types";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 import { gpEquity } from "./equity";
+import { industryStress } from "./market";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -475,6 +476,32 @@ export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition):
  * one rolling forty per cent of its income next year is a leasing project. The
  * market prices that difference in basis points, and so should this.
  */
+/**
+ * THE LARGEST *TRADE'S* SHARE OF THE RENT ROLL, and how much trouble it is in.
+ *
+ * A building let to five different law firms is concentrated in exactly one
+ * way that matters and the single-tenant measure below cannot see it: five
+ * names, one industry, one cycle. When that cycle turns they do not fail one
+ * at a time. This is what a buyer is actually asking when they ask who the
+ * tenants are.
+ */
+export function industryConcentration(h: Holding, econ?: Econ): { share: number; sector: Sector | null; stressed: number } {
+  let total = 0;
+  const by = new Map<Sector, number>();
+  for (const t of h.tenants) {
+    const annual = t.rentPsf * t.sf;
+    total += annual;
+    by.set(t.sector, (by.get(t.sector) ?? 0) + annual);
+  }
+  if (total <= 0) return { share: 0, sector: null, stressed: 0 };
+  let top: Sector | null = null, topV = 0, stressed = 0;
+  for (const [k, v] of by) {
+    if (v > topV) { topV = v; top = k; }
+    if (econ) stressed += v * industryStress(econ, k);
+  }
+  return { share: topV / total, sector: top, stressed: stressed / total };
+}
+
 /** The largest tenant's share of the rent roll. */
 export function concentration(h: Holding): number {
   let top = 0, total = 0;
@@ -499,7 +526,7 @@ function residentialSpread(h: Holding): number {
   return clamp((0.94 - occ) * 2.2, -0.12, 0.85);
 }
 
-export function rollQualitySpread(rec: ParcelRecord, h: Holding, month: number): number {
+export function rollQualitySpread(rec: ParcelRecord, h: Holding, month: number, econ?: Econ): number {
   if (rec.class === "land" || !rec.bldgArea) return 0.55;
   // The commercial part is what the tenants lease. Measuring a rent roll
   // against the WHOLE building marked a full block of flats with shops at
@@ -533,7 +560,13 @@ export function rollQualitySpread(rec: ParcelRecord, h: Holding, month: number):
   const conc = concentration(h);
   const covenantRelief = credit >= 1.6 && walt >= 8 ? 0.55 : credit >= 1.6 ? 0.25 : 0;
   const concSpread = clamp((Math.max(0, conc - 0.35) / 0.65) * 0.75 * (1 - covenantRelief), 0, 0.75);
-  const comm = waltSpread + creditSpread + occSpread + structSpread + concSpread;
+  // INDUSTRY CONCENTRATION, which the single-name measure above cannot see.
+  // Five law firms is five names and one cycle, and a building whose one trade
+  // is currently in a bust is a leasing project wearing a rent roll — the
+  // market prices both, and it prices the second one harder.
+  const ind = industryConcentration(h, econ);
+  const indSpread = clamp((Math.max(0, ind.share - 0.45) / 0.55) * 0.40 + ind.stressed * 0.55, 0, 0.85);
+  const comm = waltSpread + creditSpread + occSpread + structSpread + concSpread + indSpread;
   // A mixed building is graded as what it is: part rent roll, part occupancy.
   return resShare > 0.02 ? comm * (1 - resShare) + residentialSpread(h) * resShare : comm;
 }
@@ -559,7 +592,7 @@ export function remainingAbatement(h: Holding, month: number): number {
 
 export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: number): number {
   if (rec.class === "land" || !rec.bldgArea) return landValue(rec, econ);
-  const quality = month === undefined ? 0 : rollQualitySpread(rec, h, month);
+  const quality = month === undefined ? 0 : rollQualitySpread(rec, h, month, econ);
   const cap = clamp(capRateFor(rec, econ, h.condition) + quality, 2.8, 13) / 100;
   // CONTRACT rent, not the rent that happens to be arriving this month.
   //

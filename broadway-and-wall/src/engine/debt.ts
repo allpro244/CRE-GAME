@@ -3,11 +3,12 @@
 // quarter, and cash sweeps on breach. Proceeds gate on DSCR at underwriting,
 // not just LTV — a lender lends against income, not hope.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import { resolveRec, concentration } from "./value";
-import type { GameState, Holding, Loan } from "./types";
+import { resolveRec, concentration, industryConcentration } from "./value";
+import type { Econ, GameState, Holding, Loan } from "./types";
 import { logBooks } from "./types";
 import { holdingNOIYr, holdingValue, assetValue, noiAfterTaxYr } from "./value";
 import { walt } from "./leasing";
+import { INDUSTRY_LABEL } from "./market";
 import { settleJV } from "./equity";
 import { recordComp } from "./comps";
 import { sponsorStanding, markSponsor, distressPrice } from "./sponsor";
@@ -392,7 +393,7 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
     // balloon lands — which for a building that delivered empty and never
     // stabilised is exactly the moment the concentration and rollover
     // haircuts hurt most.
-    const hair = collateralHaircut(h, q);
+    const hair = collateralHaircut(h, q, s.econ);
     // Walk DOWN the desk, not off a cliff. A maturing loan is refinanced by
     // whoever will write it: the agency first, then the bank, and if neither
     // will, hard money at hard-money prices. That last one is not a rescue —
@@ -535,7 +536,7 @@ export interface RefiQuote {
  * is why single-tenant net-lease deals can be financed to the eyebrows and
  * multi-tenant buildings with the same NOI cannot.
  */
-export function collateralHaircut(h: Holding, month: number): { mult: number; why?: string } {
+export function collateralHaircut(h: Holding, month: number, econ?: Econ): { mult: number; why?: string } {
   if (!h.tenants.length) return { mult: 1 };
   const conc = concentration(h);
   const w = walt(h, month);
@@ -551,8 +552,17 @@ export function collateralHaircut(h: Holding, month: number): { mult: number; wh
   const concHit = Math.max(0, conc - 0.35) / 0.65 * (credit >= 1.6 && w >= 8 ? 0.10 : credit >= 1.6 ? 0.20 : 0.32);
   // and the desk discounts income that walks out the door inside the term
   const rollHit = Math.max(0, rollShare - 0.3) / 0.7 * 0.18;
-  const mult = Math.max(0.55, 1 - concHit - rollHit);
-  const why = concHit > 0.08 && rollHit > 0.05
+  // AND WHAT THE TENANTS DO FOR A LIVING. Five names in one trade is one
+  // cycle, and a credit committee has seen what happens to a building let
+  // entirely to an industry that is contracting. This is the same question the
+  // single-name test asks, one level up, and it is the one that catches the
+  // rent roll that looks diversified and is not.
+  const ind = econ ? industryConcentration(h, econ) : { share: 0, sector: null, stressed: 0 };
+  const indHit = Math.max(0, ind.share - 0.5) / 0.5 * 0.16 + ind.stressed * 0.26;
+  const mult = Math.max(0.5, 1 - concHit - rollHit - indHit);
+  const why = indHit > 0.08 && ind.sector
+    ? `${(ind.share * 100).toFixed(0)}% of the income is ${INDUSTRY_LABEL[ind.sector].toLowerCase()}${ind.stressed > 0.25 ? ", and that trade is contracting" : ""}`
+    : concHit > 0.08 && rollHit > 0.05
     ? `the biggest tenant is ${(conc * 100).toFixed(0)}% of the roll and ${(rollShare * 100).toFixed(0)}% of it rolls inside two years`
     : concHit > 0.08 ? `the biggest tenant is ${(conc * 100).toFixed(0)}% of the roll`
     : rollHit > 0.05 ? `${(rollShare * 100).toFixed(0)}% of the roll expires inside two years`
@@ -592,7 +602,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
     value = Math.max(actualValue, stabValue * trust);
     noi = Math.max(actualNoi, stabNoi * trust);
   }
-  const hair = collateralHaircut(h, s.month);
+  const hair = collateralHaircut(h, s.month, s.econ);
   const quotes = PRODUCTS.map((p) => {
     const raw = quote(s, p, value, noi);
     const q = { ...raw, principal: Math.round(raw.principal * hair.mult) };
@@ -656,7 +666,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   const noi = holdingNOIYr(rec, next.econ, h, next.month);
   // The quote screen already told you the desk was cutting proceeds for a
   // concentrated or fast-rolling rent roll. The close has to agree with it.
-  const hair = collateralHaircut(h, next.month);
+  const hair = collateralHaircut(h, next.month, next.econ);
   const full = quote(next, product, value, noi);
   const qd = { ...full, principal: Math.round(full.principal * hair.mult * Math.max(0, Math.min(1, lev))) };
   if (product.mezz && !h.loan) return { s, err: "Mezzanine sits behind a senior loan — put one on first." };

@@ -45,7 +45,7 @@ function targetListings(s: GameState, totalLots: number): number {
 
 export function newGame(seed: number, parcels?: ParcelTable): GameState {
   const s: GameState = {
-    v: 15,
+    v: 16,
     seed,
     rng: seed,
     month: 0,
@@ -64,6 +64,7 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
     sponsor: { events: [] },
     rivals: [],
     escrow: null,
+    lenderRel: {},
     totalLots: parcels ? Object.keys(parcels).length : 0,
     builtAtStart: parcels ? Object.values(parcels).filter((p) => p.class !== "land").length : 0,
     exchange: null,
@@ -83,7 +84,7 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
   s.news.push({
     q: 0,
     kind: "info",
-    text: `${monthLabel(0)}. You arrive in Ashport with $6M and a hundred years. Two-fifths of this town is still empty lots — the city will fill in around you, with or without your name on it.`,
+    text: `${monthLabel(0)}. You arrive in New Alden with $6M and a hundred years. Half this town is still empty lots — the city will fill in around you, with or without your name on it.`,
   });
   return s;
 }
@@ -337,7 +338,7 @@ export function advanceQuarter(
       complete: true,
       cause: `A hundred years in Ashport. The town you arrived in was two-fifths empty lots; ${Math.round((100 * (s.builtAtStart + Object.keys(s.built).length)) / Math.max(1, s.totalLots))}% of it stands built today, and ${Object.keys(s.holdings).length} of those buildings are yours.`,
     };
-    s.news.unshift({ q: s.month, kind: "event", text: "A century of Ashport. The ledger closes." });
+    s.news.unshift({ q: s.month, kind: "event", text: "A century of New Alden. The ledger closes." });
   }
 
   refreshListings(s, parcels, bbls);
@@ -357,7 +358,7 @@ export const MILESTONES: { id: string; label: string; test: (s: GameState, nw: n
   { id: "nw1b", label: "The billion-dollar book", test: (_s, nw) => nw >= 1e9 },
   { id: "ten", label: "Ten buildings under management", test: (s) => Object.keys(s.holdings).length >= 10 },
   { id: "twentyfive", label: "A quarter-hundred holdings", test: (s) => Object.keys(s.holdings).length >= 25 },
-  { id: "half", label: "Fifty years in Ashport", test: (s) => s.month >= 600 },
+  { id: "half", label: "Fifty years in New Alden", test: (s) => s.month >= 600 },
 ];
 
 function checkMilestones(s: GameState, nw: number) {

@@ -313,7 +313,7 @@ export interface Escrow {
 }
 
 export interface GameState {
-  v: 15;
+  v: 16;
   seed: number;
   rng: number;
   month: number;
@@ -334,6 +334,7 @@ export interface GameState {
   sponsor: { events: SponsorEvent[] };
   rivals: Rival[];                           // the other firms on the street
   escrow: Escrow | null;                     // the deal you are under contract on
+  lenderRel: Record<string, number>;         // lender name -> relationship 0-100; a trusted name is worth basis points
   totalLots: number;
   builtAtStart: number;
   // a 1031 exchange in flight: sale gain rolled, tax deferred until the clock runs out

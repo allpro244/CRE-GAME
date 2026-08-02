@@ -509,7 +509,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // whole job now is to stabilise the building before that clock runs out.
   // A developer's real risk is not building it. It is owning it empty.
   h.loan = {
-    product: "float",
+    product: "cordage",
     floating: true,
     principal: d.loanBalance,
     balance: d.loanBalance,

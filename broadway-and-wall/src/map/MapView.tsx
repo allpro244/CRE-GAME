@@ -10,8 +10,11 @@ const CITY_CENTER: [number, number] = [-70.9, 41.1];
 
 // Fly-in: open over the bay with all of Ashport in frame, then dive to the
 // blocks between Old Harbor and the Exchange at map-model pitch.
-const CORE = { center: [-70.897, 41.1005] as [number, number], zoom: 15.1, pitch: 55, bearing: -15 };
-const HARBOR = { center: [-70.897, 41.089] as [number, number], zoom: 12.7, pitch: 30, bearing: -10 };
+// New Alden is half Ashport's size, so the cameras sit closer in: open over
+// the harbor with the whole town in frame, then dive to where the Landing
+// meets the grid.
+const CORE = { center: [-70.8966, 41.0997] as [number, number], zoom: 15.3, pitch: 55, bearing: -12 };
+const HARBOR = { center: [-70.8995, 41.1015] as [number, number], zoom: 13.7, pitch: 30, bearing: -8 };
 
 let protocolAdded = false;
 
@@ -45,7 +48,7 @@ export default function MapView() {
         container: el.current,
         style: composeStyle(base),
         ...HARBOR,
-        minZoom: 11.8, // whole city stays in frame; tiles never vanish
+        minZoom: 12.9, // whole city stays in frame; tiles never vanish
         maxPitch: 70,
         attributionControl: { compact: true },
         canvasContextAttributes: { antialias: true },

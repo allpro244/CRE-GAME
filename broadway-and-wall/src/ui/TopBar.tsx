@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { useStore, derivedNetWorth, derivedQuarterCF } from "@/state/store";
 import { monthLabel, CAMPAIGN_MONTHS } from "@/engine/types";
 import { usd, pct } from "./format";
 
 export default function TopBar() {
+  const [armNewRun, setArmNewRun] = useState(false);
   const fps = useStore((s) => s.fps);
   const manifest = useStore((s) => s.manifest);
   const game = useStore((s) => s.game);
@@ -43,7 +45,7 @@ export default function TopBar() {
           <Stat
             label="Vacant lots"
             value={String(Math.max(0, game.totalLots - game.builtAtStart - Object.keys(game.built).length))}
-            title={`Empty lots left in Ashport. Every one is a site someone can build on — as they run out, land gets scarce and prices climb. ${game.totalLots ? Math.round((100 * (game.builtAtStart + Object.keys(game.built).length)) / game.totalLots) : 0}% of the city is built.`}
+            title={`Empty lots left in New Alden. Every one is a site someone can build on — as they run out, land gets scarce and prices climb. ${game.totalLots ? Math.round((100 * (game.builtAtStart + Object.keys(game.built).length)) / game.totalLots) : 0}% of the city is built.`}
           />
           <span className="topbar-sep" />
           <button className={"nav-btn" + (page === "portfolio" ? " nav-on" : "")} onClick={() => setPage(page === "portfolio" ? "none" : "portfolio")}>
@@ -89,12 +91,20 @@ export default function TopBar() {
       )}
 
       <div className="topbar-right">
+        {/* No window.confirm here. Browsers that suppress dialogs (an iframe,
+            or "prevent this page from creating dialogs" ticked once) make
+            confirm() return false silently and forever — the button reads as
+            dead. A two-click arm-then-fire needs nothing from the browser. */}
         <button
-          className="lens-btn"
+          className={"lens-btn" + (armNewRun ? " lens-on" : "")}
           title="Start over: fresh city, no holdings, $6M cash"
-          onClick={() => { if (window.confirm("Start a new run? Your current game will be erased.")) useStore.getState().newRun(); }}
+          onClick={() => {
+            if (!armNewRun) { setArmNewRun(true); setTimeout(() => setArmNewRun(false), 4000); return; }
+            setArmNewRun(false);
+            useStore.getState().newRun();
+          }}
         >
-          ↺ New run
+          {armNewRun ? "Erase this game?" : "↺ New run"}
         </button>
         <span className={"stat mono " + (fps >= 55 ? "fps-good" : fps >= 30 ? "fps-ok" : "fps-bad")}>
           {fps} fps

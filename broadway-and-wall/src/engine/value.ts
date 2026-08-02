@@ -94,12 +94,46 @@ export function managedRentPsfYr(rec: ParcelRecord, econ: Econ, h: Holding, use?
   return m;
 }
 
-// Phase 2 occupancy model: class norms breathing with the cycle and demand.
-// Named tenants, LOIs, and rollover arrive in Phase 3.
-const OCC_BASE: Record<BuiltClass, number> = { office: 0.87, retail: 0.91, multifamily: 0.955, industrial: 0.9 };
+// OCCUPANCY IS A DISTRIBUTION, NOT A NUMBER.
+//
+// Every building in the city used to sit within a few points of its class
+// norm — the only variation was a small cycle swing and a smaller demand
+// nudge, so the whole tape read 90%+ and a "weak" building meant 87%. Real
+// stock is nothing like that. Citywide office vacancy of twelve per cent is
+// not every building at 88: it is most buildings nearly full and a long tail
+// at 70, 55, 40 — the wrong corner, the dark lobby, the floor plates nobody
+// wants — and that tail is where every value-add deal in history has lived.
+//
+// Three terms produce the spread:
+//   cycle    — the whole market breathes together, harder than before
+//   location — vacancy concentrates at the bottom of the market; a fringe
+//              building loses tenants FIRST and re-lets LAST
+//   character— a stable per-building idiosyncrasy. Some buildings simply do
+//              not lease well and never have; the hash keeps each one's
+//              trouble consistent across the whole game, so a 68% building
+//              is a 68% building every time you look at it.
+const OCC_BASE: Record<BuiltClass, number> = { office: 0.84, retail: 0.89, multifamily: 0.94, industrial: 0.87 };
+function occHash(key: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return ((h >>> 0) % 10000) / 10000;
+}
 export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass): number {
-  const swing = use === "multifamily" ? 0.02 : 0.05;
-  return clamp(OCC_BASE[use] + swing * econ.cycleDev + 0.03 * (rec.demandScore / 100 - 0.5), 0.6, 0.99);
+  const apt = use === "multifamily";
+  const swing = apt ? 0.04 : 0.09;
+  // fringe empties first: −10pp at demand 5, +6pp at demand 95
+  const loc = 0.16 * (rec.demandScore / 100 - 0.6);
+  // the building's own character, ±11pp commercial, ±6pp residential — and
+  // skewed downward, because the tail of this distribution is a tail of pain
+  const u = occHash(rec.bbl + use);
+  const idio = (apt ? 0.12 : 0.22) * (u - 0.62);
+  // ...and one building in eight is simply TROUBLED: the dark lobby, the
+  // unleasable plates, the entrance on the wrong street. These are the 50-65%
+  // buildings every market carries, they are persistent, and they are the
+  // entire value-add trade — the discount is real and so is the reason.
+  const u2 = occHash("trouble:" + rec.bbl + use);
+  const trouble = u2 < 0.12 ? (apt ? 0.14 : 0.28) * (1 - u2 / 0.12) : 0;
+  return clamp(OCC_BASE[use] + swing * econ.cycleDev + loc + idio - trouble, 0.35, 0.99);
 }
 export function occupancy(rec: ParcelRecord, econ: Econ): number {
   if (rec.class === "land") return 0;

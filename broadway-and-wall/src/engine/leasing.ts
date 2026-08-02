@@ -47,12 +47,12 @@ const POOL: Record<Sector, string[]> = {
   finance: ["Meridian Capital", "Harborline Securities", "Crown & Weir", "Bellamy Fund Group", "Quayside Partners"],
   law: ["Ashe & Porter LLP", "Calder Marsh", "Winslow Legal", "Tern & Rigging", "Foundry Law Group"],
   tech: ["Brightwater Systems", "Ledgerworks", "Spindrift Labs", "Cordage Software", "Beacon Analytics"],
-  media: ["The Ashport Ledger", "Harborcast Studios", "Gullwing Press", "Northside Signal"],
+  media: ["The Alden Ledger", "Harborcast Studios", "Gullwing Press", "Northside Signal"],
   insurance: ["Maritime Mutual", "Anchor Assurance", "Seawall Underwriters", "Garland Indemnity"],
   logistics: ["Freightline Co.", "Slipway Cargo", "Gantry Freight", "Blue Hull Shipping"],
   apparel: ["Tidewater Trading Co.", "Rowan Thread Works", "Salt & Selvedge", "Customs House Outfitters"],
   food: ["The Chandler Room", "Bell Slip Provisions", "Kiln Street Roasters", "Founders Market Hall"],
-  medical: ["Harbor Medical Group", "Northside Clinic", "Beacon Dental", "Ashport Diagnostics"],
+  medical: ["Harbor Medical Group", "Northside Clinic", "Beacon Dental", "Alden Diagnostics"],
   design: ["Marsh & Vane Architects", "Cooper Lane Studio", "Pier Four Design", "Whitlow Drafting"],
 };
 const SECTORS_BY_CLASS: Record<string, Sector[]> = {
@@ -218,7 +218,9 @@ export function genRentRoll(s: GameState, rec: ParcelRecord, holding: Holding) {
   for (const use of leasableUses(rec)) {
   const legSf = useSf(rec, use);
   if (legSf < 400) continue;
-  const targetOcc = Math.min(0.98, useOccupancy(rec, s.econ, use) + rrange(s, -0.08, 0.05));
+  // wider than the market model on the downside: a building coming to market
+  // is disproportionately one with a leasing problem
+  const targetOcc = Math.min(0.98, useOccupancy(rec, s.econ, use) + rrange(s, -0.14, 0.05));
   const market = useRentPsfYr(rec, s.econ, holding.condition, use);
   let leased = 0;
   let guard = 0;

@@ -1,10 +1,10 @@
 {
   "source": "fictional",
-  "city": "Ashport",
-  "district": "ashport",
-  "seed": 20250,
+  "city": "New Alden",
+  "district": "newalden",
+  "seed": 20261,
   "lodes": true,
-  "lots": 2976,
-  "adjacencyEdges": 5824,
+  "lots": 1469,
+  "adjacencyEdges": 2720,
   "processed": true
 }

@@ -28,7 +28,7 @@ const FIRMS: { name: string; style: RivalStyle; equity: number; ltv: number }[] 
   { name: "Calloway & Reed", style: "family", equity: 34_000_000, ltv: 0.32 },
   { name: "Harbor Point Partners", style: "core", equity: 62_000_000, ltv: 0.52 },
   { name: "Meridian Yield Group", style: "opportunistic", equity: 28_000_000, ltv: 0.71 },
-  { name: "Ashport Development Co.", style: "developer", equity: 41_000_000, ltv: 0.66 },
+  { name: "Alden Development Co.", style: "developer", equity: 41_000_000, ltv: 0.66 },
   { name: "Wentworth Trust", style: "core", equity: 88_000_000, ltv: 0.41 },
   { name: "Kestrel Capital", style: "opportunistic", equity: 19_000_000, ltv: 0.78 },
 ];
@@ -170,7 +170,7 @@ const NEW_FIRMS: { name: string; style: RivalStyle }[] = [
   { name: "Ostrander Group", style: "opportunistic" },
   { name: "Bellweather Estates", style: "family" },
   { name: "Quarry Lane Capital", style: "core" },
-  { name: "Ashport Municipal Pension", style: "core" },
+  { name: "Alden Municipal Pension", style: "core" },
   { name: "Fen & Marrow", style: "opportunistic" },
 ];
 const MIN_FIRMS = 4;

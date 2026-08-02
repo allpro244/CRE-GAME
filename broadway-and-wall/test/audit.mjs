@@ -26,16 +26,16 @@ const M = (n) => (Math.abs(n) >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : `${(n / 1e6)
 // --- the four archetypes ----------------------------------------------------
 const STRATS = {
   // buys stabilised income, low leverage, holds forever
-  core: { lev: 0.55, prod: (c, g) => "insurance", buyIf: (c) => c.built && c.yield > 0.055, dev: false, sell: (gainPct) => false },
+  core: { lev: 0.55, prod: (c, g) => "pelican", buyIf: (c) => c.built && c.yield > 0.055, dev: false, sell: (gainPct) => false },
   // levers up, buys anything with a story, refinances constantly
-  yieldHog: { lev: 1.0, prod: (c, g) => (c.yield < 0.05 ? "bridge" : "float"), buyIf: (c) => c.built, dev: false, refi: true, sell: () => false },
+  yieldHog: { lev: 1.0, prod: (c, g) => (c.yield < 0.05 ? "cordage" : "cordage"), buyIf: (c) => c.built, dev: false, refi: true, sell: () => false },
   // builds
-  developer: { lev: 0.9, prod: (c) => (c.built ? "agency" : "land"), buyIf: () => true, dev: true, sell: (gp) => gp > 0.6 },
+  developer: { lev: 0.9, prod: (c) => (c.built ? "savings" : "land"), buyIf: () => true, dev: true, sell: (gp) => gp > 0.6 },
   // maximum leverage, no reserve, buys every quarter it can — the archetype
   // that SHOULD be able to lose everything, and the test of whether it can
-  reckless: { lev: 1.0, prod: () => "bridge", buyIf: (c) => c.built, dev: false, refi: true, sell: () => false, hungry: true },
+  reckless: { lev: 1.0, prod: () => "cordage", buyIf: (c) => c.built, dev: false, refi: true, sell: () => false, hungry: true },
   // trades: buy, stabilise, sell into strength
-  trader: { lev: 0.85, prod: (c) => (c.built ? "agency" : "land"), buyIf: (c) => c.built, dev: false, sell: (gp) => gp > 0.35 },
+  trader: { lev: 0.85, prod: (c) => (c.built ? "savings" : "land"), buyIf: (c) => c.built, dev: false, sell: (gp) => gp > 0.35 },
 };
 
 function run(stratName, seed) {

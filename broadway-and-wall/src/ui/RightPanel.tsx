@@ -293,7 +293,7 @@ function GameOverPage() {
   return (
     <div className="page-backdrop">
       <div className="page gameover-page">
-        <div className="page-title">{over.complete ? "A Century of Ashport" : "The run is over."}</div>
+        <div className="page-title">{over.complete ? "A Century of New Alden" : "The run is over."}</div>
         <p style={{ maxWidth: 640, margin: "10px auto" }}>{over.cause}</p>
         <NWChart data={game.nwHistory} height={140} />
         <div className="stat-strip" style={{ justifyContent: "center", marginTop: 14 }}>
@@ -844,7 +844,7 @@ function BuyButtons({ bbl, price, off }: { bbl: string; price: number; off: bool
   const { buy, buyOff } = useStore.getState();
   const act = off ? buyOff : buy;
   const isLand = parcels[bbl]?.class === "land";
-  const [product, setProduct] = useState<string>(isLand ? "land" : "agency");
+  const [product, setProduct] = useState<string>(isLand ? "land" : "savings");
   const [lev, setLev] = useState(1);
   // The dial runs on a fraction of the ask, not on dollars: a dollar-valued
   // range with a rounded step can leave the top end unreachable, which meant
@@ -999,7 +999,7 @@ function RefiSection({ bbl }: { bbl: string }) {
   const parcels = useStore((s) => s.parcels)!;
   const { refi } = useStore.getState();
   const isLand = resolveRec(parcels, game, bbl)?.class === "land";
-  const [product, setProduct] = useState<string>(isLand ? "land" : "agency");
+  const [product, setProduct] = useState<string>(isLand ? "land" : "savings");
   const [lev, setLev] = useState(1);
   const { quotes, value, payoff } = refiQuotes(game, parcels, bbl);
   if (!quotes.length) return null;

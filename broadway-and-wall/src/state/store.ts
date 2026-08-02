@@ -124,7 +124,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (!game || !parcels || game.gameOver) return;
     const r = advanceUntilAttention(game, parcels, bbls, adjacency, 36);
     set({ game: r.s });
-    toast(r.reason ? `${r.months} mo later: ${r.reason}` : "Three quiet years. Ashport hums along.");
+    toast(r.reason ? `${r.months} mo later: ${r.reason}` : "Three quiet years. New Alden hums along.");
     void persist(r.s);
   },
 
@@ -374,7 +374,7 @@ export const useStore = create<AppState>((set, get) => ({
     const { parcels } = get();
     const saved = await loadGame(slot);
     if (!saved || !parcels) { toast("That save wouldn't open.", "err"); return; }
-    const fits = saved.v === 15 &&
+    const fits = saved.v === 16 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (!fits) { toast("That save was made on a different city — it can't be loaded here.", "err"); return; }
@@ -443,7 +443,7 @@ export async function loadData() {
     // resume the autosave — unless it references parcels that no longer
     // exist (a save from a different city/dataset), in which case start over
     const saved = await loadGame("auto");
-    const fitsCity = saved && saved.v === 15 &&
+    const fitsCity = saved && saved.v === 16 &&
       Object.keys(saved.holdings).every((b) => parcels[b]) &&
       saved.listings.every((l) => parcels[l.bbl]);
     if (fitsCity) {

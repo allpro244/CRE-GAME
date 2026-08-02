@@ -30,6 +30,11 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   const closing = Math.round(price * CLOSING_PCT);
   if (product === "cash" || !rec) return { principal: 0, ratePct: 0, equity: price + closing, capPremium: 0 };
   const prod = productById(product);
+  // the life company will not finance a tired building, and the quote screen
+  // has to say so before the closing table does
+  if (prod.minCondition === "good" && initialCondition(rec) !== "good") {
+    return { principal: 0, ratePct: 0, equity: price + closing, capPremium: 0 };
+  }
   const q = quote(s, prod, price, noiAfterTaxYr(rec, s.econ, initialCondition(rec), price));
   const principal = Math.round(q.principal * Math.max(0, Math.min(1, lev)));
   // Floating paper closes with a rate cap the lender insists on, and the
@@ -79,7 +84,7 @@ function executePurchase(
   if (latent?.length) holding.latent = latent;
   if (product !== "cash") {
     const prod = productById(product);
-    holding.loan = originate(next, prod, price, noiAfterTaxYr(rec, next.econ, holding.condition, price), lev);
+    holding.loan = originate(next, prod, price, noiAfterTaxYr(rec, next.econ, holding.condition, price), lev, holding.condition);
   }
   // a live 1031: this purchase completes the exchange if it's big enough
   if (next.exchange && price >= next.exchange.minPrice * 0.8) {
@@ -380,7 +385,11 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
   // deal is the hard one, and after that the phone does not stop.
   const owned = Object.keys(s.holdings).length;
   const hot = s.econ.phase === "expansion" || s.econ.phase === "peak";
-  const p = Math.min(0.30, (0.055 + 0.02 * Math.min(8, owned)) * (hot ? 1.25 : 0.7) * Math.max(0.5, s.econ.creditIdx ?? 1));
+  // A real broker with a real off-market file calls a few times a YEAR, not
+  // most months. The old rate — up to 30% a month — meant the phone rang
+  // thirty-odd times a decade and the calls stopped being events. A fifth of
+  // that: an occasional knock, worth picking up.
+  const p = Math.min(0.06, (0.011 + 0.004 * Math.min(8, owned)) * (hot ? 1.25 : 0.7) * Math.max(0.5, s.econ.creditIdx ?? 1));
   if (rng(s) >= p) return;
 
   // they pitch near what you already buy: same class, similar size, better corner

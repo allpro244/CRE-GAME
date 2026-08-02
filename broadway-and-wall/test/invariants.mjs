@@ -21,14 +21,14 @@ const SEEDS = Number(process.env.SEEDS ?? 8);
 const BOTS = {
   // maximum leverage, never sells: drives loans to breach, sweep and balloon
   levered: {
-    buy: (c) => c.built, lev: 1, prod: () => "bridge", refi: true, sell: () => false, every: 5,
+    buy: (c) => c.built, lev: 1, prod: () => "cordage", refi: true, sell: () => false, every: 5,
   },
   // builds constantly: exercises draws, reserves, contingency, delivery
-  builder: { buy: () => true, lev: 0.9, prod: (c) => (c.built ? "agency" : "land"), dev: true, sell: (g) => g > 0.5, every: 7 },
+  builder: { buy: () => true, lev: 0.9, prod: (c) => (c.built ? "savings" : "land"), dev: true, sell: (g) => g > 0.5, every: 7 },
   // churns: exercises sale, tax, 1031, exits
-  churner: { buy: (c) => c.built, lev: 0.7, prod: () => "agency", sell: (g) => g > 0.15, every: 3 },
+  churner: { buy: (c) => c.built, lev: 0.7, prod: () => "savings", sell: (g) => g > 0.15, every: 3 },
   // mezz + participating + caps: the exotic end of the desk
-  exotic: { buy: (c) => c.built, lev: 1, prod: (c) => (c.yield > 0.06 ? "particip" : "float"), refi: true, mezz: true, sell: () => false, every: 6 },
+  exotic: { buy: (c) => c.built, lev: 1, prod: (c) => (c.yield > 0.06 ? "pelican" : "cordage"), refi: true, mezz: true, sell: () => false, every: 6 },
 };
 
 const firstSeen = new Map();   // code|where-kind -> {month, seed, bot, detail}

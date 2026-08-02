@@ -537,7 +537,7 @@ void main() {
   else if (s == 7)  roof = vec3(0.66, 0.68, 0.68);
   else if (s == 8)  roof = vec3(0.60, 0.56, 0.48);   // cornice cap
   else if (s == 9)  roof = vec3(0.47, 0.62, 0.36);   // green roof
-  else if (s == 10) roof = vec3(0.66, 0.63, 0.56);   // gravel lot
+  else if (s == 10) roof = vec3(0.575, 0.545, 0.475); // gravel lot
   else if (s == 11) {                                 // shingles
     if (vVar < 0.4)      roof = vec3(0.48, 0.29, 0.235);
     else if (vVar < 0.7) roof = vec3(0.34, 0.37, 0.415);
@@ -561,8 +561,13 @@ void main() {
   } else if (s == 10) {
     // not every empty lot is gravel: some have gone to grass and weeds, and a
     // few are packed dirt — the patchwork a real city's vacant land actually is
-    if (vVar > 0.62)      roof = mix(vec3(0.52, 0.60, 0.38), vec3(0.60, 0.64, 0.42), rnoise(wp * 1.1));
-    else if (vVar < 0.18) roof = vec3(0.62, 0.54, 0.42);
+    // Value separation matters more than hue here. Vacant ground was pitched
+    // within a few percent of the sidewalk, so lots and streets merged into
+    // one pale field and whole districts read as a blank apron. Ground is
+    // DARKER than paving — it always is — and the city snaps into blocks the
+    // moment it is.
+    if (vVar > 0.62)      roof = mix(vec3(0.435, 0.520, 0.305), vec3(0.505, 0.560, 0.350), rnoise(wp * 1.1));
+    else if (vVar < 0.18) roof = vec3(0.515, 0.435, 0.335);
     roof *= 0.88 + 0.24 * rnoise(wp * 2.4);   // gravel / scrub texture
   } else {
     // the roof someone actually specified: dark EPDM, white TPO, silver
@@ -945,7 +950,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const m2 = Math.abs(area) / 2;
         if (varr > 0.62) {
           // gone to scrub: small self-seeded trees, thicker toward the middle
-          const n = Math.min(26, Math.max(2, Math.round(m2 / 170)));
+          const n = Math.min(48, Math.max(3, Math.round(m2 / 85)));
           for (const p of scatterInRing(ring, n, rnd)) {
             this.lotTrees.push({ x: p[0], y: p[1], s: 0.55 + ((p[0] * 7.3 + p[1] * 3.1) % 1) * 0.45, rot: (p[1] * 2.1) % 6.28 });
           }
@@ -963,7 +968,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           const rot = Math.atan2(b2[1] - a2[1], b2[0] - a2[0]) + Math.PI / 2;
           // a stall plus its share of aisle is about 85 m2; the cap only
           // bites on the full-block lots, which really do hold that many
-          const n = Math.min(46, Math.max(3, Math.round(m2 / 85)));
+          const n = Math.min(90, Math.max(3, Math.round(m2 / 85)));
           for (const p of scatterInRing(ring, n, rnd + 0.37)) {
             this.lotCars.push({ x: p[0], y: p[1], s: 1, rot });
           }

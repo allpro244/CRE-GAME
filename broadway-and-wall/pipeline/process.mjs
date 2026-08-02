@@ -342,6 +342,8 @@ for (const f of rawBuildings.features) {
     year,
     // stable per-building tone jitter for the facade palette
     tone: bbl ? Number(bbl) % 5 : 0,
+    // decorative kind (hull, crane, light...) — the renderer paints by it
+    ...(f.properties.deco ? { deco: f.properties.deco } : {}),
   };
   const id = bbl && table[bbl] ? Number(bbl) : undefined;
   const tiers = year < 1961 && hM >= 60 ? setbackTiers(f.geometry, hM) : null;
@@ -443,6 +445,7 @@ for (const f of tileBuildings.features) {
     z0: p.baseM,
     z1: p.heightM,
     d: p.bbl ? 0 : 1, // decorative (ships, cranes, sheds)
+    ...(p.deco ? { dk: p.deco } : {}),
     r: ring,
   });
 }

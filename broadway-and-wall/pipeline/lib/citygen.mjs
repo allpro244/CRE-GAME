@@ -633,9 +633,12 @@ export function generateCity(cfg) {
   }
 
   // --- decorative waterfront ------------------------------------------------
+  // Everything here carries a `deco` kind so the renderer can COLOR it — a
+  // navy hull, a white wheelhouse, an ochre crane — instead of the fleet of
+  // uniform grey boxes the harbor used to be.
   const PIERS_M = cfg.piers ?? [];
   let decoN = 1;
-  function addDeco(ringM, topM, baseM = 0) {
+  function addDeco(ringM, topM, baseM = 0, kind = "shed") {
     buildings.features.push({
       type: "Feature",
       geometry: { type: "Polygon", coordinates: [[...ringM.map(proj.toLL), proj.toLL(ringM[0])]] },
@@ -644,34 +647,147 @@ export function generateCity(cfg) {
         heightroof: +(topM * 3.28084).toFixed(1),
         base_ft: baseM ? +(baseM * 3.28084).toFixed(1) : 0,
         cnstrct_yr: 1990,
+        deco: kind,
       },
     });
   }
+  // A SHIP IS A SHAPE, not a box: a hull that narrows to a bow, a white
+  // superstructure aft, a funnel — and on the cargo variant a spine of
+  // containers. `hue` picks the hull paint so the fleet isn't uniform.
+  function addShip(cx, cy, deg, len = 40, hue = 0, cargo = true) {
+    const t = (deg * Math.PI) / 180;
+    const R = ([x, y]) => [x * Math.cos(t) - y * Math.sin(t) + cx, x * Math.sin(t) + y * Math.cos(t) + cy];
+    const beam = len * 0.24;
+    const hull = [
+      [-len / 2, -beam / 2], [len * 0.24, -beam / 2], [len / 2, 0],
+      [len * 0.24, beam / 2], [-len / 2, beam / 2],
+    ].map(R);
+    addDeco(hull, 3.6, 0, "hull" + hue);
+    addDeco(rect(cx - (len * 0.34) * Math.cos(t), cy - (len * 0.34) * Math.sin(t), len * 0.17, beam * 0.8, deg), 8.6, 3.4, "super");
+    addDeco(rect(cx - (len * 0.40) * Math.cos(t), cy - (len * 0.40) * Math.sin(t), len * 0.05, beam * 0.3, deg), 11, 8.4, "funnel");
+    if (cargo) {
+      for (let k = 0; k < 3; k++) {
+        const u = (-0.12 + k * 0.16) * len;
+        addDeco(rect(cx + u * Math.cos(t), cy + u * Math.sin(t), len * 0.13, beam * 0.62, deg), 5.6, 3.4, "box" + ((hue + k) % 3));
+      }
+    }
+  }
+  // a small moored workboat or sloop — the clutter a real harbor floats on
+  function addBoat(cx, cy, deg, len = 9) {
+    const t = (deg * Math.PI) / 180;
+    const R = ([x, y]) => [x * Math.cos(t) - y * Math.sin(t) + cx, x * Math.sin(t) + y * Math.cos(t) + cy];
+    const beam = len * 0.34;
+    const hull = [
+      [-len / 2, -beam / 2], [len * 0.2, -beam / 2], [len / 2, 0], [len * 0.2, beam / 2], [-len / 2, beam / 2],
+    ].map(R);
+    addDeco(hull, 1.1, 0, "boat");
+    if (rand() < 0.6) addDeco(rect(cx, cy, 0.5, 0.5, deg), 7 + rand() * 3, 1, "mast");
+  }
   for (const pier of PIERS_M.slice(0, 4)) {
     const shed = insetRing(pier, 4);
-    if (shed) addDeco(shed, rr(5, 7));
+    if (shed) addDeco(shed, rr(5, 7), 0, "shed");
   }
   for (const [cx, cy, deg] of cfg.cranes ?? []) {
-    addDeco(rect(cx, cy, 5, 5, deg), 26);
-    addDeco(rect(cx + 9 * Math.cos((deg * Math.PI) / 180), cy + 9 * Math.sin((deg * Math.PI) / 180), 24, 3, deg), 25, 22);
+    addDeco(rect(cx, cy, 5, 5, deg), 26, 0, "crane");
+    addDeco(rect(cx + 9 * Math.cos((deg * Math.PI) / 180), cy + 9 * Math.sin((deg * Math.PI) / 180), 24, 3, deg), 25, 22, "crane");
   }
-  for (const [cx, cy, deg] of cfg.ships ?? []) {
-    addDeco(rect(cx, cy, 34, 10, deg), 4);
-    addDeco(rect(cx - 9 * Math.cos((deg * Math.PI) / 180), cy - 9 * Math.sin((deg * Math.PI) / 180), 9, 8, deg), 9);
-  }
+  (cfg.ships ?? []).forEach(([cx, cy, deg], i) => {
+    addShip(cx, cy, deg, 38 + (i % 3) * 9, i % 3, i % 2 === 0);
+  });
   const BREAKWATERS = (cfg.breakwaters ?? []).map(([cx, cy, w, h, deg]) => rect(cx, cy, w, h, deg));
+
+  // --- piers dressed as piers ----------------------------------------------
+  // Piles marching down both edges, bollards on the deck, and a boat or two
+  // moored alongside. These are what made the old piers read as "weird docks":
+  // a bare rectangle floating on the water with nothing holding it up.
+  const pileFeatures = [];
+  const bollardFeatures = [];
+  for (const pier of PIERS_M) {
+    // the two LONG edges carry the piles
+    const edges = pier.map((a, i) => {
+      const b = pier[(i + 1) % pier.length];
+      return { a, b, len: Math.hypot(b[0] - a[0], b[1] - a[1]) };
+    }).sort((x, y2) => y2.len - x.len).slice(0, 2);
+    for (const e of edges) {
+      const n = Math.max(2, Math.floor(e.len / 6.5));
+      for (let k = 0; k <= n; k++) {
+        const t2 = k / n;
+        pileFeatures.push([e.a[0] + (e.b[0] - e.a[0]) * t2, e.a[1] + (e.b[1] - e.a[1]) * t2]);
+      }
+      const nb = Math.max(1, Math.floor(e.len / 22));
+      for (let k = 0; k < nb; k++) {
+        const t2 = (k + 0.5) / nb;
+        // bollards sit a step in from the edge
+        const cx2 = e.a[0] + (e.b[0] - e.a[0]) * t2, cy2 = e.a[1] + (e.b[1] - e.a[1]) * t2;
+        const c = centroid(pier);
+        const vx = c[0] - cx2, vy = c[1] - cy2;
+        const vl = Math.hypot(vx, vy) || 1;
+        bollardFeatures.push([cx2 + (vx / vl) * 1.1, cy2 + (vy / vl) * 1.1]);
+      }
+    }
+    // a boat moored on one side, most of the time
+    if (rand() < 0.75) {
+      const e = edges[0];
+      const t2 = rr(0.3, 0.7);
+      const mx = e.a[0] + (e.b[0] - e.a[0]) * t2, my = e.a[1] + (e.b[1] - e.a[1]) * t2;
+      const c = centroid(pier);
+      let nx2 = -(e.b[1] - e.a[1]) / e.len, ny2 = (e.b[0] - e.a[0]) / e.len;
+      if ((c[0] - mx) * nx2 + (c[1] - my) * ny2 > 0) { nx2 = -nx2; ny2 = -ny2; }   // seaward
+      const ang = (Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]) * 180) / Math.PI;
+      addBoat(mx + nx2 * 3.4, my + ny2 * 3.4, ang + rr(-6, 6), rr(7, 12));
+    }
+  }
+
+  // channel buoys: red-green pairs seaward of the pier tips, plus a few along
+  // the breakwater — the marks a real harbor steers by
+  const buoyFeatures = [];
+  for (const pier of PIERS_M) {
+    const c = centroid(pier);
+    const away = Math.hypot(c[0], c[1]) || 1;
+    const dx2 = c[0] / away, dy2 = c[1] / away;
+    if (rand() < 0.7) buoyFeatures.push({ p: [c[0] + dx2 * rr(35, 70), c[1] + dy2 * rr(35, 70)], side: buoyFeatures.length % 2 });
+  }
+  for (const bw of BREAKWATERS) {
+    const c = centroid(bw);
+    for (let k = 0; k < 3; k++) buoyFeatures.push({ p: [c[0] + rr(-90, 90), c[1] + rr(-60, -20)], side: k % 2 });
+  }
+
+  // --- the lighthouse --------------------------------------------------------
+  // Every harbor town has one, on the headland the chart says it should be on:
+  // the seaward point of the coast furthest from the middle of town.
+  const headland = (() => {
+    if (cfg.lighthouse) return cfg.lighthouse;
+    let best = COAST_M[0], bd = 0;
+    for (const p2 of COAST_M) {
+      const d2 = Math.hypot(p2[0], p2[1]);
+      if (d2 > bd) { bd = d2; best = p2; }
+    }
+    return best;
+  })();
+  {
+    const [lx, ly] = headland;
+    const oct = [];
+    for (let k = 0; k < 8; k++) {
+      const a2 = (k / 8) * Math.PI * 2;
+      oct.push([lx + 3.1 * Math.cos(a2), ly + 3.1 * Math.sin(a2)]);
+    }
+    addDeco(oct, 15, 0, "light");
+    const cap = oct.map(([x2, y2]) => [lx + (x2 - lx) * 1.25, ly + (y2 - ly) * 1.25]);
+    addDeco(cap, 16.6, 14.2, "lightcap");
+    addDeco(rect(lx + 9, ly + 2, 7, 5, rr(0, 30)), 3.6, 0, "shed");
+  }
 
   // --- context --------------------------------------------------------------
   const drawn = blocks.filter((b) => b.inset);
   const pavementFeatures = blocks.map((b) => ({
     type: "Feature",
     geometry: { type: "Polygon", coordinates: [[...b.ring.map(proj.toLL), proj.toLL(b.ring[0])]] },
-    properties: { kind: "pavement", solo: b.inset ? 0 : 1, d: b.district },
+    properties: { kind: "pavement", solo: b.inset ? 0 : 1, d: b.district, org: b.u === undefined ? 1 : 0 },
   }));
   const blockFeatures = drawn.map((b) => ({
     type: "Feature",
     geometry: { type: "Polygon", coordinates: [[...b.inset.map(proj.toLL), proj.toLL(b.inset[0])]] },
-    properties: { kind: "block" },
+    properties: { kind: "block", org: b.u === undefined ? 1 : 0 },
   }));
   const centerFeatures = blocks.map((b) => ({
     type: "Feature",
@@ -709,20 +825,96 @@ export function generateCity(cfg) {
     properties: { kind: "paveland" },
   };
 
+  // --- parks designed like parks --------------------------------------------
+  // A park is not a green rectangle with confetti on it. It has a perimeter
+  // promenade with an allée of trees, cross paths that meet in the middle, a
+  // lawn kept open at the centre, and — in the big ones — a pond. The trees
+  // cluster in the corners and along the walks, the way planting plans
+  // actually read.
   const treeFeatures = [];
+  const pathFeatures = [];
+  const pondFeatures = [];
+  let biggestPark = null, biggestA = 0;
   for (const park of PARKS_M) {
-    const [minX, minY, maxX, maxY] = bboxOfRing(park);
-    for (let x = minX; x < maxX; x += 17) {
-      for (let y = minY; y < maxY; y += 17) {
-        const p = [x + rr(-6, 6), y + rr(-6, 6)];
-        if (inRing(p, park) && rand() < 0.6) treeFeatures.push(p);
+    const c = centroid(park);
+    const areaP = polygonArea([park]);
+    if (areaP > biggestA) { biggestA = areaP; biggestPark = park; }
+    // the perimeter promenade, a walk in from the edge
+    const walk = erode(park, 7);
+    if (walk) {
+      pathFeatures.push([...walk, walk[0]]);
+      // cross paths corner-to-corner through the middle
+      for (let k = 0; k < Math.min(4, walk.length); k += 1) {
+        const a = walk[k % walk.length];
+        pathFeatures.push([a, c]);
+      }
+      // the allée: paired trees marching along the promenade
+      for (let i = 0; i < walk.length; i++) {
+        const a = walk[i], b = walk[(i + 1) % walk.length];
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        for (let d = 4; d < len; d += rr(8, 12)) {
+          const t = d / len;
+          const px = a[0] + (b[0] - a[0]) * t, py = a[1] + (b[1] - a[1]) * t;
+          const nx = -(b[1] - a[1]) / len, ny = (b[0] - a[0]) / len;
+          treeFeatures.push([px + nx * 2.5, py + ny * 2.5]);
+          if (rand() < 0.6) treeFeatures.push([px - nx * 2.5, py - ny * 2.5]);
+        }
       }
     }
+    // a pond in anything big enough to hold one, offset from centre
+    const [bx0, by0, bx1, by1] = bboxOfRing(park);
+    const pw = bx1 - bx0, ph = by1 - by0;
+    if (Math.min(pw, ph) > 130) {
+      const pcx = c[0] + pw * 0.14, pcy = c[1] - ph * 0.1;
+      const pond = [];
+      const rA = Math.min(pw, ph) * rr(0.16, 0.2), rB = rA * rr(0.6, 0.78), tilt = rr(0, Math.PI);
+      for (let k = 0; k < 18; k++) {
+        const a2 = (k / 18) * Math.PI * 2;
+        const wob = 1 + 0.14 * Math.sin(a2 * 3 + tilt * 5);
+        const ex = rA * Math.cos(a2) * wob, ey = rB * Math.sin(a2) * wob;
+        pond.push([pcx + ex * Math.cos(tilt) - ey * Math.sin(tilt), pcy + ex * Math.sin(tilt) + ey * Math.cos(tilt)]);
+      }
+      pondFeatures.push(pond);
+      // willows at the water's edge
+      for (let k = 0; k < 18; k += 3) treeFeatures.push([pond[k][0] * 1.0 + rr(-2, 2) + (pond[k][0] - pcx) * 0.14, pond[k][1] + rr(-2, 2) + (pond[k][1] - pcy) * 0.14]);
+    }
+    // corner groves, an open lawn in the middle
+    const [minX, minY, maxX, maxY] = bboxOfRing(park);
+    for (let x = minX; x < maxX; x += 12) {
+      for (let y = minY; y < maxY; y += 12) {
+        const p = [x + rr(-4, 4), y + rr(-4, 4)];
+        if (!inRing(p, park)) continue;
+        if (pondFeatures.some((pd) => inRing(p, pd))) continue;
+        const dc = Math.hypot(p[0] - c[0], p[1] - c[1]);
+        const edge = Math.min(maxX - minX, maxY - minY) / 2;
+        // dense near the corners and edges, sparse across the lawn
+        const pTree = dc > edge * 0.62 ? 0.62 : dc > edge * 0.38 ? 0.26 : 0.05;
+        if (rand() < pTree) treeFeatures.push(p);
+      }
+    }
+  }
+  // the bandstand on the town's principal green
+  if (biggestPark) {
+    const c = centroid(biggestPark);
+    const oct = [];
+    for (let k = 0; k < 8; k++) {
+      const a2 = (k / 8) * Math.PI * 2;
+      oct.push([c[0] + 15 + 4.4 * Math.cos(a2), c[1] + 4.4 * Math.sin(a2)]);
+    }
+    addDeco(oct, 1.1, 0, "banddeck");
+    const roof = oct.map(([x2, y2]) => [c[0] + 15 + (x2 - c[0] - 15) * 0.86, y2 + (y2 - c[1]) * -0.0]);
+    addDeco(roof, 4.6, 3.4, "bandroof");
   }
   for (let i = 0; i < innerRing.length; i += 3) {
     const p = innerRing[i], q = COAST_M[i];
     if (rand() < 0.5) treeFeatures.push([(p[0] + q[0]) / 2 + rr(-3, 3), (p[1] + q[1]) / 2 + rr(-3, 3)]);
   }
+
+  // --- the water itself ------------------------------------------------------
+  // A band of shallows follows the coast, and the waterline gets a foam
+  // stroke — the two cheapest things that stop the sea reading as one flat
+  // sheet of blue paint.
+  const shallowsRing = offsetInward(COAST_M, -34);
 
   const stations = {
     type: "FeatureCollection",
@@ -761,7 +953,17 @@ export function generateCity(cfg) {
   const context = {
     type: "FeatureCollection",
     features: [
+      {
+        type: "Feature",
+        geometry: { type: "Polygon", coordinates: [[...shallowsRing.map(proj.toLL), proj.toLL(shallowsRing[0])]] },
+        properties: { kind: "shallows" },
+      },
       { type: "Feature", geometry: { type: "Polygon", coordinates: [[...COAST, COAST[0]]] }, properties: { kind: "land" } },
+      {
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: [...COAST, COAST[0]] },
+        properties: { kind: "coastline" },
+      },
       esplanade,
       paveland,
       ...[...PIERS_M, ...BREAKWATERS].map((ring) => ({
@@ -799,6 +1001,25 @@ export function generateCity(cfg) {
       ...centerFeatures,
       ...streetFeatures,
       shoreRoad,
+      ...pondFeatures.map((ring) => ({
+        type: "Feature",
+        geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
+        properties: { kind: "pond" },
+      })),
+      ...pathFeatures.map((line) => ({
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: line.map(proj.toLL) },
+        properties: { kind: "parkpath" },
+      })),
+      ...pileFeatures.map((p) => ({
+        type: "Feature", geometry: { type: "Point", coordinates: proj.toLL(p) }, properties: { kind: "pile" },
+      })),
+      ...bollardFeatures.map((p) => ({
+        type: "Feature", geometry: { type: "Point", coordinates: proj.toLL(p) }, properties: { kind: "bollard" },
+      })),
+      ...buoyFeatures.map((b) => ({
+        type: "Feature", geometry: { type: "Point", coordinates: proj.toLL(b.p) }, properties: { kind: "buoy", side: b.side },
+      })),
       ...treeFeatures.map((p) => ({
         type: "Feature", geometry: { type: "Point", coordinates: proj.toLL(p) }, properties: { kind: "tree" },
       })),

@@ -17,8 +17,23 @@ export interface BuildingVolume {
   z1: number;  // top meters
   d: number;   // 1 = decorative
   k?: number;  // 1 = vacant lot (dress with gravel + fence)
+  dk?: string; // decorative kind: hull0-2, super, funnel, box0-2, crane, shed, light, boat, mast...
   r: [number, number][]; // footprint ring, lon/lat
 }
+
+// What each decorative kind is painted. The harbor used to be a fleet of
+// uniform grey boxes; a hull is navy or rust, a wheelhouse is white, a crane
+// is safety-ochre, containers come in shipping-line colors, the lighthouse
+// is whitewashed. Small flat colors, same light rig as everything else.
+const DECO_TINT: Record<string, [number, number, number]> = {
+  hull0: [0.20, 0.24, 0.33], hull1: [0.48, 0.22, 0.17], hull2: [0.16, 0.17, 0.19],
+  super: [1.12, 1.10, 1.05], funnel: [0.55, 0.20, 0.16],
+  box0: [0.75, 0.38, 0.16], box1: [0.24, 0.38, 0.58], box2: [0.30, 0.52, 0.34],
+  crane: [0.95, 0.72, 0.25], shed: [0.86, 0.83, 0.74],
+  light: [1.14, 1.12, 1.06], lightcap: [0.55, 0.20, 0.16],
+  boat: [1.06, 1.03, 0.96], mast: [0.90, 0.90, 0.88],
+  banddeck: [0.92, 0.88, 0.78], bandroof: [0.42, 0.55, 0.44],
+};
 
 // facade / surface styles
 const S_GLASS = 0;   // modern curtain wall (sky-reflecting)
@@ -510,6 +525,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private wallMat!: THREE.ShaderMaterial;
   private roofMat!: THREE.ShaderMaterial;
   private tintAttrs: THREE.BufferAttribute[] = [];
+  private baseTints: Float32Array[] = [];
   private posAttrs: THREE.BufferAttribute[] = [];
   private rangesByBBL = new Map<string, { attr: number; r: Ranges }[]>();
   private lotRings = new Map<string, [number, number][]>(); // vacant-lot footprints (meters)
@@ -523,6 +539,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     private volumes: BuildingVolume[],
     private center: [number, number],
     private curbs: [number, number][][] = [],
+    private ctxPoints: { trees?: [number, number][]; piles?: [number, number][] } = {},
   ) {}
 
   onAdd(map: maplibregl.Map, gl: WebGLRenderingContext | WebGL2RenderingContext) {
@@ -651,6 +668,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       return out;
     };
 
+    const decoTintRanges: { attr: number; r: Ranges; c: [number, number, number] }[] = [];
     for (const v of this.volumes) {
       const style = styleFor(v);
       const rnd = ((v.t + 1) * 0.19 + (Number(v.b) % 97) / 97) % 1;
@@ -681,6 +699,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       }
 
       const meta = [style, rnd, varr, v.z1, fh];
+      const dWall0 = W.pos.length / 3, dRoof0 = R.pos.length / 3;
       extrudeWalls(W, ring, v.z0, v.z1, meta);
 
       // ---- gabled colonial roofs in the old fabric -------------------------
@@ -775,6 +794,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         wallRanges.push({ bbl: v.b, r: { start: wallStart, count: W.pos.length / 3 - wallStart } });
         roofRanges.push({ bbl: v.b, r: { start: roofStart, count: R.pos.length / 3 - roofStart } });
       }
+      // paint the decoratives: the color is baked into the base tint so
+      // ownership highlights (setTints) never wash it away
+      if (v.dk && DECO_TINT[v.dk]) {
+        decoTintRanges.push({ attr: 0, r: { start: dWall0, count: W.pos.length / 3 - dWall0 }, c: DECO_TINT[v.dk] });
+        decoTintRanges.push({ attr: 1, r: { start: dRoof0, count: R.pos.length / 3 - dRoof0 }, c: DECO_TINT[v.dk] });
+      }
 
       // ---- rooftop furniture ----------------------------------------------
       // Everything up here keys off how tall the BUILDING is, not how high its
@@ -845,6 +870,21 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.scene.add(new THREE.Mesh(wallGeom, this.wallMat));
     this.scene.add(new THREE.Mesh(roofGeom, this.roofMat));
     this.tintAttrs = [wallGeom.getAttribute("aTint") as THREE.BufferAttribute, roofGeom.getAttribute("aTint") as THREE.BufferAttribute];
+    this.baseTints = this.tintAttrs.map((a) => {
+      const arr = new Float32Array(a.array.length);
+      arr.fill(1);
+      return arr;
+    });
+    for (const { attr, r, c } of decoTintRanges) {
+      const arr = this.baseTints[attr];
+      for (let i = r.start; i < r.start + r.count; i++) {
+        arr[i * 3] = c[0]; arr[i * 3 + 1] = c[1]; arr[i * 3 + 2] = c[2];
+      }
+    }
+    for (let i = 0; i < this.tintAttrs.length; i++) {
+      (this.tintAttrs[i].array as Float32Array).set(this.baseTints[i]);
+      this.tintAttrs[i].needsUpdate = true;
+    }
     this.posAttrs = [wallGeom.getAttribute("position") as THREE.BufferAttribute, roofGeom.getAttribute("position") as THREE.BufferAttribute];
     this.scene.add(this.dynGroup);
     for (const { bbl, r } of wallRanges) {
@@ -890,7 +930,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   // a building like something human-sized standing next to it, and an empty
   // pavement is what made the city read as a model rather than a place.
   private plantStreets() {
-    if (!this.curbs.length) return;
+    if (!this.curbs.length && !this.ctxPoints.trees?.length) return;
     type Item = { x: number; y: number; s: number; rot: number };
     const trees: Item[] = [], lamps: Item[] = [];
     let seed = 1337;
@@ -949,9 +989,22 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       mesh.frustumCulled = false;
       this.scene.add(mesh);
     };
+    // the parks and the esplanade get REAL trees, not map dots: same instanced
+    // canopies as the street planting, denser and a touch bigger. This is most
+    // of what makes a park read as a place from the game camera.
+    for (const p of this.ctxPoints.trees ?? []) {
+      const [x, y] = this.project(p);
+      trees.push({ x, y, s: 1.02 + rnd() * 0.75, rot: rnd() * 6.28 });
+    }
+    // pier piles: short dark timbers standing at the deck edge over the water
+    const piles: Item[] = (this.ctxPoints.piles ?? []).map((p) => {
+      const [x, y] = this.project(p);
+      return { x, y, s: 0.9 + rnd() * 0.3, rot: 0 };
+    });
     add(treeTrunkGeom(), 0x6b5744, trees, 0.12);
     add(treeCanopyGeom(), 0x71904f, trees, 0.34);
     add(lampGeom(), 0x4e5459, lamps, 0.06);
+    add(pileGeom(), 0x5c4a34, piles, 0.08);
   }
 
   // Props share the buildings' light rig so a water tower and the roof it
@@ -1127,8 +1180,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   }
 
   setTints(tints: Map<string, [number, number, number]>) {
-    for (const attr of this.tintAttrs) {
-      (attr.array as Float32Array).fill(1);
+    for (let i = 0; i < this.tintAttrs.length; i++) {
+      (this.tintAttrs[i].array as Float32Array).set(this.baseTints[i]);
     }
     for (const [bbl, [r, g, b]] of tints) {
       const ranges = this.rangesByBBL.get(bbl);
@@ -1185,6 +1238,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   onRemove() {
     this.scene.clear();
   }
+}
+
+function pileGeom(): THREE.BufferGeometry {
+  return new THREE.CylinderGeometry(0.22, 0.26, 1.7, 5).rotateX(Math.PI / 2).translate(0, 0, 0.85);
 }
 
 function treeTrunkGeom(): THREE.BufferGeometry {

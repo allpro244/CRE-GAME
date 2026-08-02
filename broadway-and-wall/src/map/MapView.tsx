@@ -105,7 +105,14 @@ export default function MapView() {
             const curbs: [number, number][][] = (ctx?.features ?? [])
               .filter((f) => f.properties?.kind === "street" && f.geometry.type === "LineString")
               .map((f) => (f.geometry as GeoJSON.LineString).coordinates as [number, number][]);
-            const layer = new ThreeBuildings(volumes, CITY_CENTER, curbs);
+            // park & esplanade trees and pier piles come along as 3D dressing
+            const pointsOf = (kind: string): [number, number][] => (ctx?.features ?? [])
+              .filter((f) => f.properties?.kind === kind && f.geometry.type === "Point")
+              .map((f) => (f.geometry as GeoJSON.Point).coordinates as [number, number]);
+            const layer = new ThreeBuildings(volumes, CITY_CENTER, curbs, {
+              trees: pointsOf("tree"),
+              piles: pointsOf("pile"),
+            });
             threeRef.current = layer;
             map.addLayer(layer);
           })

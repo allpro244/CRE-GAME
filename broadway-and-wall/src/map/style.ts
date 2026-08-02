@@ -200,13 +200,36 @@ export function fallbackBaseStyle(): StyleSpecification {
       "bw-context": { type: "geojson", data: data("context.geojson") },
     },
     layers: [
-      { id: "bg", type: "background", paint: { "background-color": "#b8d3e6" } },
+      // open water is deeper than the harbor: the shallows band along the
+      // coast is what makes the sea read as water with a bottom instead of a
+      // sheet of blue paint
+      { id: "bg", type: "background", paint: { "background-color": "#a4c4dd" } },
+      {
+        id: "shallows",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "shallows"],
+        paint: { "fill-color": "#b8d5e7" },
+      },
       {
         id: "land",
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "land"],
         paint: { "fill-color": "#e6e3d9" },
+      },
+      {
+        // the waterline itself: a pale foam stroke where the sea meets land
+        id: "coast-foam",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "coastline"],
+        paint: {
+          "line-color": "#e8f1f4",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 12, 0.8, 16, 2.6] as never,
+          "line-opacity": 0.7,
+          "line-blur": 1.2,
+        },
       },
       {
         id: "esplanade",
@@ -237,11 +260,23 @@ export function fallbackBaseStyle(): StyleSpecification {
         paint: { "fill-color": "#b9b6ae" },
       },
       {
+        // timber decking, with a shadowed edge so the pier stands proud of
+        // the water instead of floating on it
         id: "piers",
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "pier"],
-        paint: { "fill-color": "#e9e7e1" },
+        paint: { "fill-color": "#cfb995" },
+      },
+      {
+        id: "pier-edge",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "pier"],
+        paint: {
+          "line-color": "#8f7a58",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.6, 16.5, 2.2] as never,
+        },
       },
       {
         id: "parks",
@@ -258,6 +293,33 @@ export function fallbackBaseStyle(): StyleSpecification {
         paint: { "line-color": "#b3cba6", "line-width": 1.2 },
       },
       {
+        // the walks: crushed-gravel paths through the green
+        id: "park-paths",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "parkpath"],
+        minzoom: 13,
+        paint: {
+          "line-color": "#e3dbbe",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13.5, 1, 16.5, 4.5] as never,
+        },
+        layout: { "line-join": "round", "line-cap": "round" },
+      },
+      {
+        id: "park-pond",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "pond"],
+        paint: { "fill-color": "#a9cadf" },
+      },
+      {
+        id: "park-pond-edge",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "pond"],
+        paint: { "line-color": "#8fb3c9", "line-width": 1.4 },
+      },
+      {
         // ROADWAY. The cells tile the land, so painting them asphalt and then
         // painting the blocks back on top leaves exactly the street corridor
         // between two curbs. This is the surface; the layers below it are the
@@ -266,15 +328,18 @@ export function fallbackBaseStyle(): StyleSpecification {
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "pavement"],
-        paint: { "fill-color": "#b9b6ae" },
+        // the colonial quarter is paved in setts, not fresh asphalt — a
+        // warmer, browner surface that marks the old town at a glance
+        paint: { "fill-color": ["match", ["get", "org"], 1, "#b3a894", "#b9b6ae"] as never },
       },
       {
-        // the block itself — warm paper, a clear step off the asphalt
+        // the block itself — warm paper, a clear step off the asphalt; the
+        // old town runs a shade warmer still
         id: "blocks",
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "block"],
-        paint: { "fill-color": "#e9e6dc" },
+        paint: { "fill-color": ["match", ["get", "org"], 1, "#eae5d3", "#e9e6dc"] as never },
       },
       {
         // SIDEWALK: a pale band hugging the block, inside the curb line
@@ -343,11 +408,52 @@ export function fallbackBaseStyle(): StyleSpecification {
         },
       },
       {
+        // timber piles along the pier edges — what holds a dock up
+        id: "piles",
+        type: "circle",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "pile"],
+        minzoom: 14,
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 14, 0.8, 17, 2.4] as never,
+          "circle-color": "#6e5a40",
+          "circle-stroke-color": "#4c3e2c",
+          "circle-stroke-width": 0.5,
+        },
+      },
+      {
+        id: "bollards",
+        type: "circle",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "bollard"],
+        minzoom: 15.5,
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 15.5, 1, 18, 2.6] as never,
+          "circle-color": "#3a3a3c",
+        },
+      },
+      {
+        // channel buoys: red to port, green to starboard, like the chart says
+        id: "buoys",
+        type: "circle",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "buoy"],
+        minzoom: 12.5,
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 2, 16, 4.5] as never,
+          "circle-color": ["match", ["get", "side"], 0, "#b8402e", "#2e7d43"] as never,
+          "circle-stroke-color": "#f4f1e6",
+          "circle-stroke-width": 1,
+        },
+      },
+      {
+        // far-out canopy dots; the 3D trees take over as you come down
         id: "trees",
         type: "circle",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "tree"],
         minzoom: 12.5,
+        maxzoom: 14.4,
         paint: {
           "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 1.2, 16.5, 3.6],
           "circle-color": "#9dbd8e",

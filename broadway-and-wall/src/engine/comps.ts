@@ -91,8 +91,18 @@ export function compStats(s: GameState, cls: string, months = 36) {
   };
 }
 
-/** Who has been buying and who has been selling, over a window. */
+/**
+ * Who has been buying and who has been selling, over a window.
+ *
+ * NAMED PARTICIPANTS ONLY. Half the counterparties in the ledger are
+ * placeholders — "a private owner", "a listed seller", "a distressed buyer" —
+ * and aggregating them produced a row for the anonymous public reading
+ * "getting out, ask why before you buy what they are selling", which is
+ * nonsense dressed as insight. A read on a firm is only worth having when
+ * there is a firm to read.
+ */
 export function compFlows(s: GameState, months = 36) {
+  const named = new Set<string>(["You", ...(s.rivals ?? []).map((r) => r.name)]);
   const since = s.month - months;
   const by = new Map<string, { bought: number; sold: number; boughtN: number; soldN: number }>();
   const at = (k: string) => {
@@ -102,8 +112,8 @@ export function compFlows(s: GameState, months = 36) {
   };
   for (const c of s.comps ?? []) {
     if (c.m < since) continue;
-    if (c.buyer) { const e = at(c.buyer); e.bought += c.price; e.boughtN++; }
-    if (c.seller) { const e = at(c.seller); e.sold += c.price; e.soldN++; }
+    if (named.has(c.buyer)) { const e = at(c.buyer); e.bought += c.price; e.boughtN++; }
+    if (named.has(c.seller)) { const e = at(c.seller); e.sold += c.price; e.soldN++; }
   }
   return [...by.entries()]
     .map(([name, v]) => ({ name, ...v, net: v.bought - v.sold }))

@@ -106,6 +106,11 @@ export interface Holding {
   // Somebody else's building stands on this dirt. It earns ground rent instead
   // of costing carry, and it is not yours to build on until the term is up.
   groundLeased?: boolean;
+  // PRE-BUILT SPACE. Suites fitted out speculatively, before anyone has signed
+  // for them: the fastest-leasing product in the market, because a tenant who
+  // can move in next month does not need six months of drawings and a fit-out
+  // allowance. It costs the fit-out up front on space that may sit.
+  specSuites?: { sf: number; readyM: number; use: BuiltClass };
   occ?: number;        // multifamily aggregate occupancy
   stance?: -1 | 0 | 1; // rent posture: push / market / fill
   deliveredM?: number; // ground-up completion: new space leases with momentum
@@ -113,9 +118,28 @@ export interface Holding {
   // buyer once — a counter is a real move with a real cost, not a slider you
   // can grind, and one round per offer is what the etiquette actually allows
   // before you are wasting their afternoon.
+  /**
+   * ON THE MARKET — and how.
+   *
+   * `quiet` is what this used to be and all it used to be: put a number on the
+   * building and wait for somebody to ring. It is cheap, it is slow, and one
+   * bidder at a time means you never find out what the best buyer in the city
+   * would actually have paid.
+   *
+   * `marketed` is a process. You appoint a broker, publish a whisper price,
+   * run a campaign for a few months, and set a date for offers. On that date
+   * you get a BID LIST — names and numbers, all at once — and you can take the
+   * best of it or go back to the top of it for best and final, which usually
+   * lifts the number and sometimes loses you a bidder. It costs a point more
+   * in fees and it is the only way to find the top of the market.
+   */
   sale?: {
     ask: number; listedM: number; unsolicited?: boolean;
-    offer?: { price: number; expiresM: number; countered?: boolean };
+    mode?: "quiet" | "marketed";
+    callM?: number;                    // when offers are due
+    bids?: Bid[];                      // the list, once they are in
+    round?: number;                    // 0 first round, 1 best and final
+    offer?: { price: number; expiresM: number; countered?: boolean; from?: string; retrade?: string };
   };
   program?: { id: string; untilM: number };  // capital program underway
   programsDone?: Record<string, number>;     // id -> completed quarter
@@ -231,6 +255,20 @@ export interface GroundLease {
   stepEveryM: number;
   lastStepM: number;
   tenant: string;
+}
+
+/**
+ * One name on a bid list. `credibility` is the thing a seller is actually
+ * judging: an aggressive number from a buyer who cannot fund it, or who reads
+ * the building harder after they win, is worth less than a slightly lower one
+ * that closes. It is what decides whether they retrade you.
+ */
+export interface Bid {
+  name: string;
+  price: number;
+  credibility: number;   // 0-1
+  note: string;
+  dropped?: boolean;     // walked at best and final
 }
 
 export interface Approach {

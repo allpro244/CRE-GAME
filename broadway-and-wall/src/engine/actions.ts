@@ -2,7 +2,7 @@
 // approach owners with assemblage pressure, sell, renovate. Pure — each
 // returns a new state or an error string, never mutates the input.
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
-import type { GameState, Holding } from "./types";
+import type { Bid, GameState, Holding } from "./types";
 import { logBooks, monthLabel } from "./types";
 import { rng, rrange } from "./market";
 import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr } from "./value";
@@ -441,7 +441,9 @@ export function counterOffMarket(
 
 // Selling is a process, not a button: list at an ask, wait for offers, and
 // decide. Overprice it and the phone stays quiet.
-export function listForSale(s: GameState, parcels: ParcelTable, bbl: string, ask: number): { s: GameState; err?: string } {
+export function listForSale(
+  s: GameState, parcels: ParcelTable, bbl: string, ask: number, mode: "quiet" | "marketed" = "quiet",
+): { s: GameState; err?: string } {
   // A merged deed has no land left in it — selling it alone would hand over a
   // piece of paper and keep the dirt. The site sells as a site.
   if (s.merged?.[bbl]) return { s, err: "That deed is part of an assemblage. Sell the site, not the piece." };
@@ -458,9 +460,200 @@ export function listForSale(s: GameState, parcels: ParcelTable, bbl: string, ask
   if (!rec) return { s, err: "Unknown parcel." };
   if (!Number.isFinite(ask) || ask <= 0) return { s, err: "Name a real number." };
   const next = clone(s);
-  next.holdings[bbl].sale = { ask: Math.round(ask), listedM: next.month };
-  next.news.unshift({ q: next.month, kind: "info", text: `${rec.address} goes to market at $${(ask / 1e6).toFixed(2)}M.` });
+  if (mode === "marketed") {
+    // A campaign takes as long as it takes to get the book in front of
+    // everybody who might buy it. Two to four months, then offers are due on a
+    // date everyone knows, which is the entire mechanism by which a marketed
+    // sale finds a price a quiet one never will.
+    const weeks = Math.round(rrange(next, 2, 4));
+    next.holdings[bbl].sale = {
+      ask: Math.round(ask), listedM: next.month, mode: "marketed",
+      callM: next.month + weeks, round: 0,
+    };
+    next.news.unshift({
+      q: next.month, kind: "info",
+      text: `${rec.address} is on the market properly: a whisper of $${(ask / 1e6).toFixed(2)}M, `
+        + `offers due ${monthLabel(next.month + weeks)}. The broker takes 2.5% and earns it if the book is any good.`,
+    });
+    return { s: next };
+  }
+  next.holdings[bbl].sale = { ask: Math.round(ask), listedM: next.month, mode: "quiet" };
+  next.news.unshift({ q: next.month, kind: "info", text: `${rec.address} goes to market at $${(ask / 1e6).toFixed(2)}M. No broker, no campaign — you wait for the phone.` });
   return { s: next };
+}
+
+// The sell-side fee. A quiet listing costs a point and a half and gets you a
+// sign on the door; a run process costs a point more and gets you every buyer
+// in the city in the same room on the same day.
+export function saleFeeRate(h: Holding): number {
+  return h.sale?.mode === "marketed" ? 0.025 : SALE_BROKERAGE;
+}
+
+const BIDDER_NAMES = [
+  "a pension fund adviser", "a family office", "a listed REIT", "an overseas buyer",
+  "a local operator", "a debt fund taking equity risk", "a 1031 buyer on a clock",
+  "an insurance company", "a private syndicate",
+];
+
+/**
+ * OFFERS ARE DUE TODAY.
+ *
+ * Every buyer who was going to bid, bidding at once. The depth of the list is
+ * the market: in a hot cycle with money everywhere you get five names and the
+ * top one is well over the whisper; in a crunch you get one, or none, and the
+ * whisper was a work of fiction.
+ *
+ * The spread across the list is the information. A tight list means the market
+ * agrees with your number and there is nothing more to get. A wide one means
+ * the top bidder wants it much more than the rest — which is exactly when best
+ * and final is worth the risk of losing them.
+ */
+function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
+  const rec = resolveRec(parcels, s, h.bbl);
+  const sale = h.sale;
+  if (!rec || !sale) return;
+  const value = holdingValue(rec, s.econ, h, s.month);
+  const ratio = sale.ask / Math.max(1, value);
+  const appetite = marketAppetite(s);
+  const phase = s.econ.phase === "peak" ? 1.5 : s.econ.phase === "expansion" ? 1.25
+    : s.econ.phase === "recovery" ? 0.8 : 0.35;
+  // how many people actually turned up
+  const expected = Math.max(0, 3.4 * phase * Math.max(0.3, appetite) * Math.max(0.25, 2.1 - ratio));
+  let n = Math.floor(expected) + (rng(s) < expected % 1 ? 1 : 0);
+  n = Math.min(6, n);
+  const bids: Bid[] = [];
+  const used = new Set<string>();
+  for (let i = 0; i < n; i++) {
+    let name = BIDDER_NAMES[Math.floor(rng(s) * BIDDER_NAMES.length)];
+    let guard = 0;
+    while (used.has(name) && guard++ < 12) name = BIDDER_NAMES[Math.floor(rng(s) * BIDDER_NAMES.length)];
+    used.add(name);
+    // Bids cluster around value with a real tail. The outlier at the top of a
+    // good list is the whole reason to run a process.
+    // The point of a process is the TOP of the list, not its middle. A single
+    // buyer who happens to ring bids around the mark; the best of five bids in
+    // a live market bids over it, and that gap — not the fee, not the speed —
+    // is the entire reason anyone runs a campaign. Calibrated so a normal
+    // three-bid list clears a per cent or two above appraisal and a thin
+    // one-bid market clears just under it, which is the honest trade.
+    const enthusiasm = rng(s);
+    const price = Math.round(value * (0.90 + 0.26 * enthusiasm * Math.max(0.55, Math.min(1.35, phase))));
+    // A buyer stretching past the pack is the one most likely to find a reason
+    // to come back to you about it later.
+    const credibility = Math.max(0.2, Math.min(0.97, 1.0 - 0.55 * enthusiasm + (rng(s) - 0.5) * 0.3));
+    bids.push({
+      name, price, credibility,
+      note: credibility > 0.75 ? "Cash to close, no financing condition."
+        : credibility > 0.5 ? "Financed, but the lender is known."
+        : "Aggressive number. Read the covenant before you count on it.",
+    });
+  }
+  bids.sort((a, b) => b.price - a.price);
+  sale.bids = bids;
+  delete sale.callM;
+  if (!bids.length) {
+    s.news.unshift({
+      q: s.month, kind: "warn",
+      text: `Offers were due at ${rec.address} and nobody bid. The book went out to the whole market and the whole market passed — that is information about your number, or about the building.`,
+    });
+    return;
+  }
+  const top = bids[0].price;
+  s.news.unshift({
+    q: s.month, kind: "deal",
+    text: `${bids.length} bid${bids.length === 1 ? "" : "s"} in at ${rec.address}. `
+      + `Best is $${(top / 1e6).toFixed(2)}M from ${bids[0].name}`
+      + (bids.length > 1 ? `, against $${(bids[1].price / 1e6).toFixed(2)}M second` : "")
+      + `. ${top >= sale.ask ? "Over the whisper." : `${Math.round((1 - top / Math.max(1, sale.ask)) * 100)}% under the whisper.`}`,
+  });
+}
+
+/**
+ * BEST AND FINAL.
+ *
+ * Go back to the top of the list and tell them there is another number they
+ * have to beat. Most of them sharpen. Some of them, correctly, tell you they
+ * were at their best the first time and walk — and if the one who walks was
+ * your top bid, you have just talked yourself down the list. One round only,
+ * because a second is how a seller becomes a story.
+ */
+export function bestAndFinal(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string; msg?: string } {
+  const h = s.holdings[bbl];
+  const sale = h?.sale;
+  if (!sale?.bids?.length) return { s, err: "There is no bid list to go back to." };
+  if ((sale.round ?? 0) > 0) return { s, err: "You have already been back to them once. Twice and you are the story, not the building." };
+  const next = clone(s);
+  const ns = next.holdings[bbl].sale!;
+  const live = (ns.bids ?? []).filter((b) => !b.dropped).slice(0, 3);
+  const rec = resolveRec(parcels, next, bbl);
+  let walked = 0, lifted = 0;
+  for (const b of live) {
+    // The ones who can afford to be patient are the ones who walk.
+    const pWalk = 0.30 * (1 - b.credibility) + (next.econ.phase === "recession" ? 0.18 : 0);
+    if (rng(next) < pWalk) { b.dropped = true; walked++; continue; }
+    const bump = 1 + rrange(next, 0.005, 0.055) * b.credibility;
+    const before = b.price;
+    b.price = Math.round(b.price * bump);
+    if (b.price > before) lifted++;
+  }
+  ns.round = 1;
+  ns.bids = (ns.bids ?? []).sort((a, b) => (a.dropped ? 1 : 0) - (b.dropped ? 1 : 0) || b.price - a.price);
+  const best = ns.bids.find((b) => !b.dropped);
+  next.news.unshift({
+    q: next.month, kind: best ? "deal" : "warn",
+    text: `Best and final at ${rec?.address ?? bbl}: ${lifted} sharpened, ${walked} walked. `
+      + (best ? `The number to beat is $${(best.price / 1e6).toFixed(2)}M from ${best.name}.`
+        : `Everybody left the table. That was the risk and it came in.`),
+  });
+  return { s: next, msg: best ? "Bids refreshed." : "They all walked." };
+}
+
+/**
+ * TAKE A BID — and find out whether they meant it.
+ *
+ * A number on a bid list is not a closing. The weaker the covenant behind it,
+ * the likelier the buyer comes back after they have been through the building
+ * with a reason the price should be lower. A retrade is not a refusal; it is a
+ * new offer at a worse number, and you already have the machinery to accept it,
+ * counter it, or tell them to go away.
+ */
+export function acceptBid(s: GameState, parcels: ParcelTable, bbl: string, index: number): { s: GameState; err?: string; msg?: string } {
+  const h = s.holdings[bbl];
+  const sale = h?.sale;
+  const bid = sale?.bids?.[index];
+  if (!bid || bid.dropped) return { s, err: "That bid is not on the table." };
+  const next = clone(s);
+  const ns = next.holdings[bbl].sale!;
+  const b = ns.bids![index];
+  const rec = resolveRec(parcels, next, bbl);
+  const pRetrade = 0.42 * (1 - b.credibility);
+  if (rng(next) < pRetrade) {
+    const cut = rrange(next, 0.02, 0.08);
+    const price = Math.round(b.price * (1 - cut));
+    const reasons = [
+      "their engineer found the roof",
+      "their lender resized the loan",
+      "they read the rent roll properly and did not like the rollover",
+      "their committee would not approve the number",
+      "the environmental report came back with a question",
+    ];
+    const reason = reasons[Math.floor(rng(next) * reasons.length)];
+    ns.offer = { price, expiresM: next.month + 2, from: b.name, retrade: reason };
+    delete ns.bids;
+    next.news.unshift({
+      q: next.month, kind: "warn",
+      text: `${b.name} has retraded ${rec?.address ?? bbl} — ${reason}. `
+        + `They are at $${(price / 1e6).toFixed(2)}M now, down from $${(b.price / 1e6).toFixed(2)}M. Take it, counter it, or tell them no.`,
+    });
+    return { s: next, msg: "They retraded you." };
+  }
+  ns.offer = { price: b.price, expiresM: next.month + 2, from: b.name };
+  delete ns.bids;
+  next.news.unshift({
+    q: next.month, kind: "deal",
+    text: `${b.name} is under contract at ${rec?.address ?? bbl} for $${(b.price / 1e6).toFixed(2)}M, clean. Close it.`,
+  });
+  return { s: next, msg: "Under contract." };
 }
 
 export function delist(s: GameState, bbl: string): GameState {
@@ -472,7 +665,9 @@ export function delist(s: GameState, bbl: string): GameState {
 // What a sale nets and owes. Friction first — sell-side brokerage, transfer
 // tax, legal and title all come off the top before anyone computes a gain.
 export function saleTaxQuote(h: Holding, price: number): { net: number; gain: number; tax: number; recapture: number; appreciation: number } {
-  const net = Math.round(price * (1 - SALE_BROKERAGE - TRANSFER_TAX - SALE_FRICTION));
+  // A run process costs a point more in fees than a sign on the door, and that
+  // point is the price of finding out what the market would actually pay.
+  const net = Math.round(price * (1 - saleFeeRate(h) - TRANSFER_TAX - SALE_FRICTION));
   const depr = h.deprTaken ?? 0;
   const adjBasis = h.costBasis - depr;
   const gain = net - adjBasis;
@@ -769,6 +964,30 @@ export function tickSales(s: GameState, parcels: ParcelTable) {
     }
     const sale = h.sale;
     if (!sale) continue;
+    // The date everybody was told about arrives and the bids land at once.
+    if (sale.callM !== undefined && s.month >= sale.callM) runCallForOffers(s, parcels, h);
+    // A bid list is a decision sitting on your desk, not a queue to be topped
+    // up: while it is live nothing else happens to this building.
+    if (sale.bids && !sale.bids.length) {
+      // Nobody bid. The campaign is over; the building stays on the market the
+      // quiet way, because a late call from somebody who missed the date is a
+      // real thing and the alternative is a listing that can never sell.
+      delete sale.bids;
+      sale.mode = "quiet";
+    }
+    if (sale.bids?.length) {
+      // …but it goes stale. Nobody holds a number open forever.
+      if (s.month - sale.listedM > 14) {
+        const rec0 = resolveRec(parcels, s, h.bbl);
+        delete sale.bids;
+        delete h.sale;
+        s.news.unshift({
+          q: s.month, kind: "warn",
+          text: `The bids on ${rec0?.address ?? h.bbl} have expired. You sat on the list too long and the buyers moved on.`,
+        });
+      }
+      continue;
+    }
     if (sale.offer && s.month > sale.offer.expiresM) {
       delete sale.offer;
       if (sale.unsolicited) delete h.sale;      // they were never on the market

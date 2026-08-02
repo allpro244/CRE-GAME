@@ -61,8 +61,38 @@ function run(botName, seed) {
     }
     for (const v of E.checkInvariants(g, parcels)) record(botName, seed, g.month, v);
 
+    // PUT SOMETHING ON THE MARKET, both ways. The bots only ever responded to
+    // unsolicited approaches, so the whole sell side — campaigns, bid lists,
+    // best and final, retrades — was never once swept.
+    if (m % 13 === 6) {
+      for (const bbl of Object.keys(g.holdings)) {
+        const h0 = g.holdings[bbl];
+        if (h0.sale || g.developments[bbl] || g.merged?.[bbl] || g.groundLeases?.[bbl]) continue;
+        const rec0 = E.resolveRec(parcels, g, bbl);
+        if (!rec0) continue;
+        const v = E.holdingValue(rec0, g.econ, h0, g.month);
+        if (v <= 0) continue;
+        const r = E.listForSale(g, parcels, bbl, Math.round(v * 1.05), m % 2 ? "marketed" : "quiet");
+        if (!r.err) { g = r.s; break; }
+      }
+    }
+
     for (const bbl of Object.keys(g.holdings)) {
       const h = g.holdings[bbl];
+      // A MARKETED SALE is a process with state: a campaign, a bid list, best
+      // and final, a retrade. None of it was swept until a bot ran one.
+      if (h.sale?.bids?.length) {
+        if ((h.sale.round ?? 0) === 0 && h.sale.bids.filter((b) => !b.dropped).length > 1 && m % 3 === 0) {
+          const bf = E.bestAndFinal(g, parcels, bbl);
+          if (!bf.err) g = bf.s;
+        }
+        const live = (g.holdings[bbl]?.sale?.bids ?? []).findIndex((b) => !b.dropped);
+        if (live >= 0) {
+          const ab = E.acceptBid(g, parcels, bbl, live);
+          if (!ab.err) g = ab.s;
+        }
+        continue;
+      }
       if (!h.sale?.offer) continue;
       const q = E.saleTaxQuote(h, h.sale.offer.price);
       const gp = h.costBasis > 0 ? q.gain / h.costBasis : 0;
@@ -131,6 +161,31 @@ function run(botName, seed) {
         if (!q || q.cheque < 250_000) continue;
         const r = E.recapitalise(g, parcels, bbl, q.share);
         if (!r.err) { g = r.s; break; }
+      }
+    }
+
+    // PRE-BUILD and BLEND-AND-EXTEND. Both move money and both rewrite the
+    // rent roll in place, which is exactly where a bad index quietly corrupts
+    // a building.
+    if (m % 8 === 2) {
+      for (const bbl of Object.keys(g.holdings)) {
+        const h0 = g.holdings[bbl];
+        const rec0 = E.resolveRec(parcels, g, bbl);
+        if (!rec0 || rec0.class === "land" || h0.specSuites || g.developments[bbl]) continue;
+        const r = E.buildSpecSuites(g, parcels, bbl, rec0.class, 5000);
+        if (!r.err) { g = r.s; break; }
+      }
+    }
+    if (m % 10 === 6) {
+      for (const bbl of Object.keys(g.holdings)) {
+        const h0 = g.holdings[bbl];
+        if (!h0.tenants?.length) continue;
+        let done = false;
+        for (let i = 0; i < h0.tenants.length && !done; i++) {
+          const r = E.blendExtend(g, parcels, bbl, i);
+          if (!r.err) { g = r.s; done = true; }
+        }
+        if (done) break;
       }
     }
 

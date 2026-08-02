@@ -2,9 +2,9 @@ import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse } from "@/engine/types";
 import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfolioQuarterlyCF } from "@/engine/sim";
-import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, startRenovation,  setBroker, assembleLots, grantGroundLease, type BuyProduct } from "@/engine/actions";
+import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, startRenovation,  setBroker, assembleLots, grantGroundLease, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway } from "@/engine/acquire";
-import { respondLOI, type LOIAction } from "@/engine/leasing";
+import { respondLOI, buildSpecSuites, blendExtend, type LOIAction } from "@/engine/leasing";
 import { recapitalise } from "@/engine/equity";
 import { refinance, buyRateCap } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
@@ -53,8 +53,12 @@ interface AppState {
   raze: (bbl: string) => void;
   program: (bbl: string, id: string) => void;
   stance: (bbl: string, v: -1 | 0 | 1) => void;
-  listSale: (bbl: string, ask: number) => void;
+  listSale: (bbl: string, ask: number, mode?: "quiet" | "marketed") => void;
+  runBestAndFinal: (bbl: string) => void;
+  takeBid: (bbl: string, index: number) => void;
   raiseEquity: (bbl: string, share: number) => void;
+  prebuild: (bbl: string, use: string, sf: number) => void;
+  extendLease: (bbl: string, idx: number) => void;
   assemble: (bbls: string[]) => void;
   groundLease: (bbl: string, years: number) => void;
   delistSale: (bbl: string) => void;
@@ -264,13 +268,33 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(next);
   },
 
-  listSale: (bbl, ask) => {
+  listSale: (bbl, ask, mode = "quiet") => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = listForSale(game, parcels, bbl, ask);
+    const r = listForSale(game, parcels, bbl, ask, mode);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
-    toast("On the market. Now we wait.");
+    toast(mode === "marketed" ? "Campaign under way. Offers are due on the date." : "On the market. Now we wait.");
+    void persist(r.s);
+  },
+
+  runBestAndFinal: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = bestAndFinal(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Bids refreshed.");
+    void persist(r.s);
+  },
+
+  takeBid: (bbl, index) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = acceptBid(game, parcels, bbl, index);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Under contract.", r.msg === "They retraded you." ? "err" : undefined);
     void persist(r.s);
   },
 
@@ -281,6 +305,26 @@ export const useStore = create<AppState>((set, get) => ({
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Partner in.");
+    void persist(r.s);
+  },
+
+  prebuild: (bbl, use, sf) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = buildSpecSuites(game, parcels, bbl, use as never, sf);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Pre-build under way.");
+    void persist(r.s);
+  },
+
+  extendLease: (bbl, idx) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = blendExtend(game, parcels, bbl, idx);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Extended.");
     void persist(r.s);
   },
 

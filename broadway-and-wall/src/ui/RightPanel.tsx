@@ -53,6 +53,7 @@ import { sponsorStanding } from "@/engine/sponsor";
 import { marketAppetite, markRival, rivalCondition } from "@/engine/rivals";
 import { gpEquity, jvSummary, lpMood, lpTerms, recapQuote } from "@/engine/equity";
 import { compFlows, compStats } from "@/engine/comps";
+import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses } from "@/engine/leasing";
 import { groundLeaseQuote, mergeCost } from "@/engine/actions";
 import { usd, sf, pct } from "./format";
 import Slider from "./Slider";
@@ -660,6 +661,8 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
 
       {holding && !dev && rec.class === "land" && <DevelopSection bbl={selectedBBL} />}
 
+      {holding && isBuilt && !renovating && <LeasingDesk bbl={selectedBBL} />}
+
       {holding && isBuilt && !renovating && (
         <div className="deal">
           <div className="deal-head">Management</div>
@@ -768,7 +771,7 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
 function SaleSection({ bbl, value }: { bbl: string; value: number }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
-  const { listSale, delistSale, acceptOffer, declineOffer, counterSale } = useStore.getState();
+  const { listSale, delistSale, acceptOffer, declineOffer, counterSale, runBestAndFinal, takeBid } = useStore.getState();
   const holding = game.holdings[bbl]!;
   const [ask, setAsk] = useState<string>("");
   const [counter, setCounter] = useState(0);
@@ -780,13 +783,60 @@ function SaleSection({ bbl, value }: { bbl: string; value: number }) {
       <div className="deal">
         <div className="deal-head">For sale · listed {monthLabel(sale.listedM)}</div>
         <div className="grid">
-          <Row k="Your ask" v={usd(sale.ask)} strong />
+          <Row k={sale.mode === "marketed" ? "Whisper price" : "Your ask"} v={usd(sale.ask)} strong />
           <Row k="vs. appraisal" v={((sale.ask / apMid(bbl, value) - 1) * 100).toFixed(1) + "%"} />
+          <Row k="Process" v={sale.mode === "marketed" ? "Marketed campaign · 2.5% fee" : "Quiet listing · 1.5% fee"} />
+          {sale.callM !== undefined && <Row k="Offers due" v={monthLabel(sale.callM)} strong />}
         </div>
+        {/* THE BID LIST. Everybody who turned up, at once. The spread across
+            it is the information: tight means the market agrees with you and
+            there is nothing more to get; wide means the top bidder wants it
+            much more than the rest, which is exactly when going back to them
+            is worth the risk of losing them. */}
+        {sale.bids?.length ? (
+          <>
+            <div className="page-section" style={{ marginTop: 2 }}>
+              Bids · {sale.bids.filter((b) => !b.dropped).length} live{(sale.round ?? 0) > 0 ? " · best and final done" : ""}
+            </div>
+            <table className="tbl">
+              <thead>
+                <tr><th>Bidder</th><th className="num">Price</th><th className="num">vs appraisal</th><th>Read</th><th /></tr>
+              </thead>
+              <tbody>
+                {sale.bids.map((b, i) => (
+                  <tr key={b.name + i} className={b.dropped ? "dim" : ""}>
+                    <td>{b.name}</td>
+                    <td className="num">{usd(b.price)}</td>
+                    <td className="num">{((b.price / apMid(bbl, value) - 1) * 100).toFixed(0)}%</td>
+                    <td className="dim">{b.dropped ? "Walked at best and final." : b.note}</td>
+                    <td>
+                      {!b.dropped && (
+                        <button className="btn-mini" onClick={() => takeBid(bbl, i)}>take it</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="hint">
+              Taking a bid is not a closing. The weaker the covenant behind a number, the likelier they come back
+              with a reason it should be lower once they have been through the building.
+            </div>
+            {(sale.round ?? 0) === 0 && sale.bids.filter((b) => !b.dropped).length > 1 && (
+              <div className="btn-row">
+                <button className="btn" onClick={() => runBestAndFinal(bbl)}>
+                  Best and final to the top {Math.min(3, sale.bids.filter((b) => !b.dropped).length)}
+                </button>
+              </div>
+            )}
+          </>
+        ) : null}
         {sale.offer && tq ? (
           <>
             <div className="hint">
-              Offer on the table: <b className="mono">{usd(sale.offer.price)}</b> — good until {monthLabel(sale.offer.expiresM)}.
+              {sale.offer.retrade
+                ? <>{sale.offer.from ?? "The buyer"} has <b>retraded</b> you — {sale.offer.retrade}. They are at <b className="mono">{usd(sale.offer.price)}</b> now, good until {monthLabel(sale.offer.expiresM)}.</>
+                : <>Offer on the table{sale.offer.from ? ` from ${sale.offer.from}` : ""}: <b className="mono">{usd(sale.offer.price)}</b> — good until {monthLabel(sale.offer.expiresM)}.</>}
               {tq.tax > 0 && <> Gain of {usd(tq.gain)} over depreciated basis owes <b className="mono">{usd(tq.tax)}</b> in tax.</>}
             </div>
             <div className="btn-row">
@@ -833,7 +883,11 @@ function SaleSection({ bbl, value }: { bbl: string; value: number }) {
             )}
           </>
         ) : (
-          <div className="hint">No offers yet. Overpriced listings sit; the market talks back slowly.</div>
+          <div className="hint">
+            {sale.callM !== undefined
+              ? `The book is out. Nothing happens until offers are due in ${monthLabel(sale.callM)} — that is the point of a date.`
+              : "No offers yet. Overpriced listings sit; the market talks back slowly."}
+          </div>
         )}
         <div className="btn-row">
           <button className="btn btn-sell" onClick={() => delistSale(bbl)}>Delist</button>
@@ -886,8 +940,22 @@ function SaleSection({ bbl, value }: { bbl: string; value: number }) {
               : " That is where the market is."}
         </div>
       )}
+      {/* TWO WAYS TO SELL, and they are genuinely different trades. A sign on
+          the door is cheap and finds you one buyer at a time, so you never
+          learn what the best buyer in the city would have paid. A run process
+          costs a point more and three months, and puts every one of them in
+          the same room on the same day. In a thin market the campaign finds
+          nobody and you have paid for the privilege. */}
       <div className="btn-row">
-        <button className="btn btn-buy" onClick={() => listSale(bbl, price)}>List at {usd(price)}</button>
+        <button className="btn btn-buy" onClick={() => listSale(bbl, price, "marketed")}>
+          Run a process at {usd(price)}
+        </button>
+        <button className="btn" onClick={() => listSale(bbl, price)}>Quiet listing</button>
+      </div>
+      <div className="hint">
+        A campaign takes two to four months, costs 2.5% instead of 1.5%, and ends with every bid on your desk at
+        once — with the option to go back to the top of the list once. A quiet listing costs less and finds you one
+        buyer at a time, whoever happens to ring.
       </div>
     </div>
   );
@@ -1522,6 +1590,108 @@ function EquityDesk({ bbl }: { bbl: string }) {
  *   • Ground-lease it. A coupon on the land with no operating risk at all, and
  *     the certain knowledge that you will sit out every cycle in between.
  */
+/**
+ * THE LEASING DESK.
+ *
+ * Leasing was the shallowest thing on the screen: one letter of intent a month
+ * with accept, counter or pass, and no way to do anything about it in between.
+ * These are the two decisions a landlord actually makes about empty space and
+ * about space that is about to be empty.
+ */
+function LeasingDesk({ bbl }: { bbl: string }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const { prebuild, extendLease } = useStore.getState();
+  const [size, setSize] = useState(0);
+  const h = game.holdings[bbl];
+  const rec = h ? resolveRec(parcels, game, bbl) : null;
+  if (!h || !rec) return null;
+
+  const spec = h.specSuites;
+  // the use with the most open space is the one worth pre-building
+  const legs = leasableUses(rec)
+    .map((u) => ({ u, free: useVacantSf(rec, h, u, game.month) }))
+    .filter((x) => x.free > 900)
+    .sort((a, b) => b.free - a.free);
+  const leg = legs[0];
+  const want = size || (leg ? Math.round(Math.min(leg.free, leg.free * 0.5)) : 0);
+  const q = leg ? specSuiteQuote(game, rec, h, leg.u, want) : null;
+
+  // sitting tenants worth going to early
+  const extends_ = h.tenants
+    .map((_, i) => blendExtendQuote(game, rec, h, i))
+    .filter((x): x is NonNullable<typeof x> => !!x)
+    .sort((a, b) => (b.current - b.market) - (a.current - a.market));
+
+  if (!spec && !q && !extends_.length) return null;
+  return (
+    <div className="deal">
+      <div className="deal-head">Leasing desk</div>
+
+      {spec && (
+        <div className="grid">
+          <Row k="Pre-built space" v={`${sf(spec.sf)} of ${USE_WORD[spec.use]}`} strong />
+          <Row k={game.month >= spec.readyM ? "Status" : "Ready"}
+            v={game.month >= spec.readyM ? "Turnkey and being toured" : monthLabel(spec.readyM)} />
+        </div>
+      )}
+
+      {!spec && q && leg && (
+        <>
+          <div className="page-section" style={{ marginTop: 2 }}>Pre-build the space</div>
+          <div className="slider">
+            <div className="slider-head">
+              <span className="slider-label">{USE_WORD[leg.u]} to fit out · of {sf(Math.round(leg.free))} open</span>
+              <span className="slider-value">{sf(q.sf)}</span>
+            </div>
+            <input type="range" min={800} max={Math.round(leg.free)} step={100} value={want}
+              style={{ ["--fill" as string]: `${((want - 800) / Math.max(1, leg.free - 800)) * 100}%` }}
+              onChange={(e) => setSize(Number(e.target.value))} />
+          </div>
+          <div className="grid">
+            <Row k="Cost now" v={usd(q.cost)} strong />
+            <Row k="Ready" v={monthLabel(q.readyM)} />
+          </div>
+          <div className="hint">
+            Turnkey suites tour nearly twice as often, ask about 5% more rent, and need almost no fit-out allowance —
+            because you have already paid it. If the space sits anyway, so does the money.
+          </div>
+          <button className="btn" onClick={() => prebuild(bbl, leg.u, q.sf)}>
+            Pre-build {sf(q.sf)} for {usd(q.cost)}
+          </button>
+        </>
+      )}
+
+      {extends_.length > 0 && (
+        <>
+          <div className="page-section" style={{ marginTop: 10 }}>Go to a tenant early</div>
+          <table className="tbl">
+            <thead>
+              <tr><th>Tenant</th><th className="num">Rent now</th><th className="num">Market</th><th className="num">They&apos;ll take</th><th className="num">Adds</th><th /></tr>
+            </thead>
+            <tbody>
+              {extends_.slice(0, 5).map((e) => (
+                <tr key={e.idx}>
+                  <td>{e.name}</td>
+                  <td className="num">${e.current.toFixed(0)}</td>
+                  <td className="num">${e.market.toFixed(0)}</td>
+                  <td className={"num" + (e.newRent < e.current ? " neg" : "")}>${e.newRent.toFixed(0)}</td>
+                  <td className="num">{(e.addM / 12).toFixed(0)} yrs</td>
+                  <td><button className="btn-mini" onClick={() => extendLease(bbl, e.idx)}>extend</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="hint">
+            Blend and extend: give up rent today, take term for it. Cheap WALT if the market is about to soften,
+            and a discount you did not need to give if it is not.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function LandDesk({ bbl }: { bbl: string }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;

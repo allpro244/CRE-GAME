@@ -370,6 +370,9 @@ export function startDevelopment(
   if (!s.holdings[bbl]) return { s, err: "Buy the dirt first." };
   if (rec.class !== "land") return { s, err: "Clear the site first — demolish what's standing before you build." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
+  // You cannot break ground on a site you are trying to sell. Somebody is
+  // marketing this lot to buyers right now.
+  if (s.holdings[bbl].sale) return { s, err: "It's on the market — pull the listing before you put a crane on it." };
   if (s.groundLeases?.[bbl]) return { s, err: "That site is ground-leased. Somebody else builds on it until the term runs out." };
   if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage — build on the site, not the piece." };
   const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, contract, ltcWanted);

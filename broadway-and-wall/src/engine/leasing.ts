@@ -4,7 +4,7 @@
 // Multifamily skips all of this and runs aggregate occupancy.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Credit, GameState, Holding, LOI, Sector } from "./types";
-import { logBooks } from "./types";
+import { logBooks, monthLabel } from "./types";
 import { rng, rrange , vacancyPull, NATURAL_VAC} from "./market";
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses, useSf } from "./mix";
@@ -546,6 +546,12 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       for (const x of openLegs) { pickWeight -= x.free; if (pickWeight <= 0) { leg = x; break; } }
       const use = leg.u;
       const legVac = leg.free;
+      // TURNKEY SPACE LEASES. A tenant who can move in next month does not
+      // tour the shell down the road, and the funnel widens for the use the
+      // suites were built in — and only that one.
+      const spec = h.specSuites;
+      const specLive = spec !== undefined && spec.use === use && s.month >= spec.readyM;
+      const specMult = specLive ? 1.9 : 1;
       const mom = s.econ.sectorMom?.[use] ?? 0;
       const sectorAdj = mom * 9;
       const jobsMult = Math.max(0.55, Math.min(1.6, 0.65 + 0.35 * (s.econ.employIdx ?? 1)));
@@ -557,7 +563,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // were doing regardless of conditions.
       const marketPull = vacancyPull(s.econ, use);
       const p = Math.min(0.75, Math.max(0.015, 0.24 + rec.demandScore / 200 + phaseAdj + condAdj + stanceAdj + lobbyAdj + sectorAdj)
-        / 2.7 * brokerMult * leaseUp * emptyPush * jobsMult * supplyMult * marketPull);
+        / 2.7 * brokerMult * specMult * leaseUp * emptyPush * jobsMult * supplyMult * marketPull);
       if (rng(s) < p) {
         const sector = pickSector(s, use);
         const [tiLo, tiHi] = TI_ASK[use] ?? TI_ASK.office;
@@ -593,7 +599,10 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // A wide spread on purpose. If every prospect offers within a few
           // per cent of asking, the accept/counter/pass modal is a formality.
           // Some of these should be worth refusing, and refusing should hurt.
-          rentPsf: +(market * (rng(s) < 0.3 ? rrange(s, 0.68, 0.86) : rrange(s, 0.9, 1.1))).toFixed(2),
+          // Turnkey space is worth a premium and asks for no allowance —
+          // the fit-out is already standing there, paid for, in the suite the
+          // tenant just walked through.
+          rentPsf: +(market * (specLive ? 1.05 : 1) * (rng(s) < 0.3 ? rrange(s, 0.68, 0.86) : rrange(s, 0.9, 1.1))).toFixed(2),
           // Term length is not random. A credit tenant taking a whole floor
           // signs long paper and expects to be paid for it; a small unrated
           // firm wants three years and an out. WALT is the thing a buyer
@@ -608,7 +617,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // they move long before face rents do. A landlord holding headline
           // rent while giving away a year of free rent is the oldest tell in
           // the business.
-          tiPsf: Math.round(rrange(s, tiLo, tiHi) * concession * (credit === 2 ? 1.35 : credit === 1 ? 1.05 : 0.85)),
+          tiPsf: Math.round(rrange(s, tiLo, tiHi) * concession * (credit === 2 ? 1.35 : credit === 1 ? 1.05 : 0.85) * (specLive ? 0.12 : 1)),
           // Free rent scales with the LENGTH of the deal, the way it does in
           // life — the rule of thumb is about a month a year, and it is the
           // concession a landlord gives before cutting the face rent. A flat
@@ -632,6 +641,114 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
 // sane rent bar gets signed, at a 6% commission instead of the 4%/2% you'd
 // pay negotiating it yourself. Lowballs still get passed on.
 export const AGENT_FEE = 0.06;
+
+// ------------------------------------------------------------- pre-built space
+//
+// The single biggest change in how office space has actually been leased in
+// the last decade, and the game had no version of it: instead of handing a
+// tenant an allowance and six months of drawings, you fit the space out first
+// and rent it turnkey. It leases faster, it leases at a premium, and it
+// carries the risk that you have just spent eighty dollars a foot on space
+// nobody wants.
+// Priced against TI_ASK, not against nothing. A tenant's allowance runs
+// $15-40/sf on an office suite; pre-building the same space costs rather more
+// per foot, because you are doing the whole job to a generic spec rather than
+// contributing to theirs — and because you are doing it before anyone has
+// signed. The premium over the allowance is what you pay for speed.
+export const SPEC_COST_PSF: Record<string, number> = { office: 48, retail: 26, industrial: 9, multifamily: 0 };
+export const SPEC_MONTHS = 4;
+
+export function specSuiteQuote(s: GameState, rec: ParcelRecord, h: Holding, use: BuiltClass, sf: number) {
+  const psf = SPEC_COST_PSF[use] ?? SPEC_COST_PSF.office;
+  if (!psf) return null;
+  const open = useVacantSf(rec, h, use, s.month);
+  const take = Math.max(0, Math.min(Math.round(sf), Math.round(open)));
+  if (take < 800) return null;
+  return { sf: take, cost: Math.round(take * psf * s.econ.costIdx), readyM: s.month + SPEC_MONTHS, use };
+}
+
+export function buildSpecSuites(
+  s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass, sf: number,
+): { s: GameState; err?: string; msg?: string } {
+  const h = s.holdings[bbl];
+  const rec = h ? resolveRec(parcels, s, bbl) : null;
+  if (!h || !rec) return { s, err: "You don't own that." };
+  if (h.specSuites) return { s, err: "There is already pre-built space going in here." };
+  if (s.developments[bbl]) return { s, err: "Construction is already underway." };
+  const q = specSuiteQuote(s, rec, h, use, sf);
+  if (!q) return { s, err: "There is not enough open space to pre-build, or this class does not fit out." };
+  if (s.cash < q.cost) return { s, err: `Pre-building that runs $${(q.cost / 1e6).toFixed(2)}M — you're short.` };
+  const next: GameState = JSON.parse(JSON.stringify(s));
+  next.cash -= q.cost;
+  logBooks(next, "leasing", q.cost);
+  next.holdings[bbl].specSuites = { sf: q.sf, readyM: q.readyM, use };
+  next.news.unshift({
+    q: next.month, kind: "deal",
+    text: `Pre-building ${(q.sf / 1000).toFixed(0)}k sf of ${use} at ${rec.address} — $${(q.cost / 1e6).toFixed(2)}M, ready ${monthLabel(q.readyM)}. `
+      + `Turnkey space leases faster and dearer, and it is your money sitting in an empty suite until it does.`,
+  });
+  return { s: next, msg: "Pre-build under way." };
+}
+
+/**
+ * BLEND AND EXTEND.
+ *
+ * A sitting tenant with three years left is a lease expiry you can do
+ * something about today. You go to them early, give up rent now, and take term
+ * in exchange — which is either the cheapest WALT you will ever buy or a
+ * discount you did not need to give, depending entirely on where their rent
+ * sits against the market and what you think the market does next.
+ *
+ * They will only talk if there is something in it for them, which means a
+ * tenant paying under market has no reason to pick up the phone.
+ */
+export function blendExtendQuote(s: GameState, rec: ParcelRecord, h: Holding, idx: number) {
+  const t = h.tenants[idx];
+  if (!t) return null;
+  const left = (t.endM - s.month) / 12;
+  if (left <= 0.75 || left > 6) return null;   // too late to be early, too early to be relevant
+  const market = managedRentPsfYr(rec, s.econ, h, t.use ?? (rec.class as BuiltClass));
+  // What they will accept: a cut off today's rent, deeper the further over
+  // market they are, and they want real term for it.
+  const over = t.rentPsf / Math.max(1, market);
+  if (over < 0.92) return null;                // already a bargain — they will not reopen it
+  const newRent = +(Math.max(market * 0.94, t.rentPsf * (over > 1.15 ? 0.88 : over > 1.02 ? 0.94 : 0.975))).toFixed(2);
+  const addM = Math.round(clampN(36 + 48 * (over - 0.95), 24, 96));
+  const annualGive = Math.round((t.rentPsf - newRent) * t.sf * left);
+  return {
+    idx, name: t.name, sf: t.sf, current: t.rentPsf, market, newRent,
+    addM, newEndM: t.endM + addM,
+    giveUp: Math.max(0, annualGive),                       // rent forgone over the remaining term
+    // no fit-out on a renewal in place, but the broker still gets paid
+    cost: Math.round(newRent * t.sf * ((left * 12 + addM) / 12) * 0.02),
+  };
+}
+
+const clampN = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+
+export function blendExtend(
+  s: GameState, parcels: ParcelTable, bbl: string, idx: number,
+): { s: GameState; err?: string; msg?: string } {
+  const h = s.holdings[bbl];
+  const rec = h ? resolveRec(parcels, s, bbl) : null;
+  if (!h || !rec) return { s, err: "You don't own that." };
+  const q = blendExtendQuote(s, rec, h, idx);
+  if (!q) return { s, err: "There is no deal to do with that tenant right now." };
+  if (s.cash < q.cost) return { s, err: "You cannot cover the commission on that." };
+  const next: GameState = JSON.parse(JSON.stringify(s));
+  const t = next.holdings[bbl].tenants[idx];
+  next.cash -= q.cost;
+  logBooks(next, "leasing", q.cost);
+  t.rentPsf = q.newRent;
+  t.endM = q.newEndM;
+  next.news.unshift({
+    q: next.month, kind: "deal",
+    text: `Blend and extend at ${rec.address}: ${t.name} goes to $${q.newRent.toFixed(0)}/sf from $${q.current.toFixed(0)} `
+      + `and adds ${(q.addM / 12).toFixed(0)} years, out to ${monthLabel(q.newEndM)}. `
+      + `You bought term with rent — whether that was clever depends on what the market does next.`,
+  });
+  return { s: next, msg: "Extended." };
+}
 function runAgent(s: GameState, parcels: ParcelTable) {
   for (const loi of [...s.lois]) {
     const h = s.holdings[loi.bbl];
@@ -665,6 +782,12 @@ export function loiSigningCost(loi: LOI, feeRate?: number): number {
 // Put a signed lease on the rent roll. Mutates — both the player's own
 // response and the agent's automatic signing come through here.
 export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, feeRate?: number) {
+  // A tenant moving into pre-built space USES IT UP. The suite is theirs now;
+  // the next prospect tours a shell again unless you build more.
+  if (l.kind === "new" && h.specSuites && h.specSuites.use === (l.use ?? rec.class) && s.month >= h.specSuites.readyM) {
+    h.specSuites.sf -= l.sf;
+    if (h.specSuites.sf < 800) delete h.specSuites;
+  }
   const cost = loiSigningCost(l, feeRate);
   s.cash -= cost;
   logBooks(s, "leasing", cost);

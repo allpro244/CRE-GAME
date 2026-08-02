@@ -57,6 +57,7 @@ import { insuranceQuote, insuredValue, DEDUCTIBLES } from "@/engine/peril";
 import { INDUSTRY_LABEL, SECTORS } from "@/engine/market";
 import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses } from "@/engine/leasing";
 import { groundLeaseQuote, mergeCost } from "@/engine/actions";
+import { varianceQuote } from "@/engine/zoning";
 import { usd, sf, pct } from "./format";
 import Slider from "./Slider";
 
@@ -455,6 +456,7 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         {renovating && <span className="chip chip-reno">RENOVATING</span>}
         {holding?.loan?.sweep && <span className="chip chip-sweep">CASH SWEEP</span>}
         {holding?.damage && <span className="chip chip-distress">{holding.damage.peril.toUpperCase()} DAMAGE</span>}
+        {game.landmarks?.[selectedBBL] !== undefined && <span className="chip chip-reno">LANDMARKED</span>}
       </div>
 
       <div className="grid">
@@ -1717,7 +1719,7 @@ function LandDesk({ bbl }: { bbl: string }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const adjacency = useStore((s) => s.adjacency);
-  const { assemble, groundLease } = useStore.getState();
+  const { assemble, groundLease, applyVariance } = useStore.getState();
   const [picked, setPicked] = useState<string[]>([]);
   const [years, setYears] = useState(60);
   const h = game.holdings[bbl];
@@ -1761,7 +1763,52 @@ function LandDesk({ bbl }: { bbl: string }) {
   }
 
   const vacant = rec.class === "land" && rec.bldgArea === 0;
-  if (!vacant) return null;
+  const landmarked = game.landmarks?.[bbl] !== undefined;
+  const vq = landmarked ? null : varianceQuote(game, parcels, bbl);
+  const app = game.varianceApp?.bbl === bbl ? game.varianceApp : null;
+
+  // THE PLANNING BOARD. Available on anything you own, built or not — the
+  // envelope is worth asking about whether or not there is already something
+  // standing on it, and on an assembled site it is the entire point.
+  const planning = (
+    <>
+      {landmarked && (
+        <div className="hint">
+          Landmarked. The envelope is frozen at what is already standing, nobody knocks it down, and it lets about
+          7% over the market for the rest of its life. That premium is the whole of what you get for the site.
+        </div>
+      )}
+      {app && (
+        <div className="grid">
+          <Row k="Before the board" v={`${app.grant.toFixed(1)} FAR · they sit ${monthLabel(app.decideM)}`} strong />
+          <Row k="Odds as filed" v={`${(app.odds * 100).toFixed(0)}%`} />
+        </div>
+      )}
+      {!app && vq && (
+        <>
+          <div className="grid">
+            <Row k="District envelope" v={`${Math.max(rec.farMaxComm, rec.farMaxRes).toFixed(1)} FAR${game.zoneAdj?.[rec.district] ? ` · rezoned to ${((game.zoneAdj[rec.district]) * 100).toFixed(0)}%` : ""}`} />
+            {(game.variance?.[bbl] ?? 0) > 0 && <Row k="Variance already won" v={`+${game.variance![bbl].toFixed(1)} FAR`} />}
+            <Row k="Ask the board for" v={`+${vq.grant.toFixed(1)} FAR`} strong />
+            <Row k="Fees" v={usd(vq.cost)} />
+            <Row k="They decide in" v={`${vq.months} months · ${(vq.odds * 100).toFixed(0)}% say yes`} bad={vq.odds < 0.3} />
+          </div>
+          <button className="btn" onClick={() => applyVariance(bbl)}>File for a variance · {usd(vq.cost)}</button>
+          <div className="hint">
+            Lawyers, an architect and a year of hearings, spent whether they say yes or not. On a site you have just
+            assembled this is the other half of the trade — the lots are worth putting together because of what you
+            are allowed to build on them.
+          </div>
+        </>
+      )}
+    </>
+  );
+
+  if (!vacant) {
+    return app || vq || landmarked
+      ? <div className="deal"><div className="deal-head">The planning board</div>{planning}</div>
+      : null;
+  }
 
   // neighbours you already own that could be folded in
   const nbrs = (adjacency?.[bbl] ?? []).filter((n) => {
@@ -1777,6 +1824,7 @@ function LandDesk({ bbl }: { bbl: string }) {
   return (
     <div className="deal">
       <div className="deal-head">The land desk</div>
+      {planning}
       {children.length > 0 && (
         <div className="hint">
           Assembled site — {children.length + 1} deeds, {sf(rec.lotArea)} of land, {sf(Math.round(rec.lotArea * farMax))} buildable.

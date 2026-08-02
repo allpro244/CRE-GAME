@@ -7,6 +7,7 @@ import { negotiate, acceptCounter, walkAway } from "@/engine/acquire";
 import { respondLOI, buildSpecSuites, blendExtend, type LOIAction } from "@/engine/leasing";
 import { recapitalise } from "@/engine/equity";
 import { setInsurance } from "@/engine/peril";
+import { fileVariance } from "@/engine/zoning";
 import { refinance, buyRateCap } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
 import { startDevelopment, startProgram, setStance, demolish } from "@/engine/dev";
@@ -58,6 +59,7 @@ interface AppState {
   runBestAndFinal: (bbl: string) => void;
   takeBid: (bbl: string, index: number) => void;
   raiseEquity: (bbl: string, share: number) => void;
+  applyVariance: (bbl: string) => void;
   bindInsurance: (deductiblePct: number, flood: boolean) => void;
   prebuild: (bbl: string, use: string, sf: number) => void;
   extendLease: (bbl: string, idx: number) => void;
@@ -337,6 +339,16 @@ export const useStore = create<AppState>((set, get) => ({
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Bound.");
+    void persist(r.s);
+  },
+
+  applyVariance: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = fileVariance(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Filed.");
     void persist(r.s);
   },
 

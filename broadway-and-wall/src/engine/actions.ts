@@ -79,6 +79,8 @@ export function executePurchase(
     condition: initialCondition(rec),
     tenants: [],
     cfHistory: [],
+    // A landmark stays a landmark when the deed moves.
+    ...(s.landmarks?.[bbl] !== undefined ? { landmarked: true } : {}),
   };
   // Whatever diligence did not find, you now own. It does not appear on the
   // closing statement; it appears eighteen months later as a roof.

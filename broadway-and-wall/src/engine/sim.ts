@@ -8,6 +8,7 @@ import { assetValue, holdingNOIYr, holdingValue, initialCondition, monthlyNOI, n
 import { capitalCall, LP_REP_START, settleJV, tickJV } from "./equity";
 import { recordComp } from "./comps";
 import { tickPerils } from "./peril";
+import { tickPlanning } from "./zoning";
 import { tickLeasing } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases } from "./actions";
 import { tickTalks } from "./acquire";
@@ -156,6 +157,7 @@ export function advanceQuarter(
   // the appraisers all read the same block this month.
   tickDemand(s, parcels);
   tickRivals(s, parcels);
+  tickPlanning(s, parcels, bbls);
   tickCityGrowth(s, parcels, bbls, adjacency);
   tickDevelopments(s, parcels);
   tickConstructionLeasing(s, parcels);

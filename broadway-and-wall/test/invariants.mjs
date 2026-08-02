@@ -73,6 +73,15 @@ function run(botName, seed) {
       if (!r.err) g = r.s;
     }
 
+    // Go to the planning board now and then — the variance path moves the
+    // envelope, which moves land value, which moves net worth.
+    if (m % 31 === 11 && !g.varianceApp) {
+      for (const bbl of Object.keys(g.holdings)) {
+        const r = E.fileVariance(g, parcels, bbl);
+        if (!r.err) { g = r.s; break; }
+      }
+    }
+
     if (m % 13 === 6) {
       for (const bbl of Object.keys(g.holdings)) {
         const h0 = g.holdings[bbl];

@@ -10,6 +10,10 @@ import { industryStress } from "./market";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
+/** The most envelope any ground in this city will ever carry, however it is
+ *  rezoned and whatever the board grants. The generator's own maximum is 37. */
+export const FAR_CEILING = 40;
+
 // How hard a parcel's land value rides the cycle: prime demand swings harder.
 export function demandBeta(demandScore: number): number {
   return 0.25 + 0.9 * (demandScore / 100);
@@ -90,8 +94,30 @@ function resolveBase(s: GameState, rec: ParcelRecord): ParcelRecord | null {
   const b = s.built?.[bbl];
   const adj = s.landAdj?.[bbl];
   const dd = s.blockD?.[rec.block];
-  if (!b && !adj && !dd) return rec;
+  // ZONING. The district's multiplier, plus anything you won at a hearing on
+  // this specific site — and nothing at all if it has been landmarked, which
+  // freezes the envelope at what is already standing.
+  const zx = s.zoneAdj?.[rec.district] ?? 1;
+  const vr = s.variance?.[bbl] ?? 0;
+  const marked = s.landmarks?.[bbl] !== undefined;
+  if (!b && !adj && !dd && zx === 1 && !vr && !marked) return rec;
   const out = { ...rec };
+  if (marked) {
+    // A landmark's envelope is what is standing on it. The redevelopment
+    // option is gone and every reader of FAR below this line sees that.
+    const builtFar = rec.lotArea > 0 ? rec.bldgArea / rec.lotArea : 0;
+    out.farMaxComm = Math.min(rec.farMaxComm, builtFar);
+    out.farMaxRes = Math.min(rec.farMaxRes, builtFar);
+  } else if (zx !== 1 || vr) {
+    // AN ABSOLUTE CEILING ON THE ENVELOPE. The generator's densest ground is
+    // already 37 FAR; multiplying an upzoning on top of that produced 96, and
+    // then a variance on top of THAT. No city has ever been 96 FAR. Capping
+    // the resolved envelope means upzoning is worth a great deal where there
+    // is room for it and nothing at all downtown — which is exactly how a real
+    // rezoning works, and why the fights are always about the fringe.
+    out.farMaxComm = +Math.min(FAR_CEILING, rec.farMaxComm * zx + vr).toFixed(2);
+    out.farMaxRes = +Math.min(FAR_CEILING, rec.farMaxRes * zx + vr).toFixed(2);
+  }
   if (adj) out.landPsf = rec.landPsf * adj;
   if (dd) out.demandScore = clamp(rec.demandScore + dd, 2, 100);
   if (b) {
@@ -106,6 +132,9 @@ function resolveBase(s: GameState, rec: ParcelRecord): ParcelRecord | null {
 // Achievable rent for NEW leases in a managed building: capital programs and
 // the owner's rent stance move it off the pure market number.
 export function managedRentPsfYr(rec: ParcelRecord, econ: Econ, h: Holding, use?: BuiltClass): number {
+  // A landmarked building is one people care about, and it lets a little
+  // better than the market for the rest of its life. That premium is the
+  // entire compensation for never being allowed to knock it down.
   // With a use, the rent of that component in its own market. Without one, the
   // blended number the whole building is worth — which is the right answer for
   // an appraisal and the wrong one for a lease.
@@ -114,6 +143,7 @@ export function managedRentPsfYr(rec: ParcelRecord, econ: Econ, h: Holding, use?
   if (done.lobby !== undefined) m *= 1.04;
   if (done.facade !== undefined) m *= 1.08;
   m *= 1 + 0.08 * (h.stance ?? 0);
+  if (h.landmarked) m *= 1.07;
   return m;
 }
 

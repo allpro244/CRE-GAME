@@ -414,6 +414,7 @@ export function startDevelopment(
   // You cannot break ground on a site you are trying to sell. Somebody is
   // marketing this lot to buyers right now.
   if (s.holdings[bbl].sale) return { s, err: "It's on the market — pull the listing before you put a crane on it." };
+  if (s.landmarks?.[bbl] !== undefined) return { s, err: "It is landmarked — the envelope is what is already standing." };
   if (s.groundLeases?.[bbl]) return { s, err: "That site is ground-leased. Somebody else builds on it until the term runs out." };
   if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage — build on the site, not the piece." };
   const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, contract, ltcWanted);
@@ -510,6 +511,7 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
   const rec = resolveRec(parcels, s, bbl);
   if (!h || !rec) return { s, err: "You don't own that." };
   if (rec.class === "land" || !rec.bldgArea) return { s, err: "There's nothing standing on it." };
+  if (s.landmarks?.[bbl] !== undefined) return { s, err: "It is landmarked. Nobody knocks that down, including you." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
   if (h.sale) return { s, err: "It's on the market — pull the listing first." };
   const leased = h.tenants.reduce((sum, t) => sum + t.sf, 0);

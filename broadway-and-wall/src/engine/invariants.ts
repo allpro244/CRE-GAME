@@ -18,7 +18,7 @@
 // prose. If a check is arguable, it does not belong in this file.
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, DevUse, GameState } from "./types";
-import { resolveRec, holdingValue, holdingNOIYr, netWorth } from "./value";
+import { resolveRec, holdingValue, holdingNOIYr, netWorth, FAR_CEILING } from "./value";
 import { mixOf, useSf } from "./mix";
 import { MAX_FLOORS_BY_USE } from "./dev";
 import { SECTORS } from "./market";
@@ -49,6 +49,25 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
   }
   const nw = netWorth(s, parcels);
   if (!fin(nw)) bad("nan", "firm", "net worth is not a number");
+
+  // ----------------------------------------------------------------- planning
+  // The envelope is the land value. A multiplier that runs away, or a variance
+  // on a lot you do not own, is net worth invented out of nothing.
+  for (const [d, x] of Object.entries(s.zoneAdj ?? {})) {
+    if (!fin(x) || x < 0.4 || x > 3) bad("zoning", `district ${d}`, `envelope multiplier ${x}`);
+  }
+  for (const [bbl, x] of Object.entries(s.variance ?? {})) {
+    if (!fin(x) || x < 0 || x > FAR_CEILING * 0.4) bad("zoning", `variance ${bbl}`, `granted ${x} FAR`);
+  }
+  if (s.varianceApp) {
+    const a = s.varianceApp;
+    if (a.decideM < a.filedM) bad("zoning", "variance", "a hearing that decided before it was filed");
+    if (!fin(a.odds) || a.odds < 0 || a.odds > 1) bad("zoning", "variance", `odds ${a.odds}`);
+  }
+  // A landmark cannot also be under construction — nobody builds on one.
+  for (const bbl of Object.keys(s.landmarks ?? {})) {
+    if (s.developments[bbl]) bad("zoning", `landmark ${bbl}`, "landmarked and under construction at once");
+  }
 
   // ------------------------------------------------------------------ perils
   if (s.insurance) {

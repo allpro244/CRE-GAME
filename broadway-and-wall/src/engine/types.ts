@@ -106,6 +106,8 @@ export interface Holding {
   // Somebody else's building stands on this dirt. It earns ground rent instead
   // of costing carry, and it is not yours to build on until the term is up.
   groundLeased?: boolean;
+  // Designated. No demolition, no bigger building, a rent premium forever.
+  landmarked?: boolean;
   // PRE-BUILT SPACE. Suites fitted out speculatively, before anyone has signed
   // for them: the fastest-leasing product in the market, because a tenant who
   // can move in next month does not need six months of drawings and a fit-out
@@ -540,6 +542,13 @@ export interface GameState {
   merged?: Record<string, string>;
   // GROUND LEASES you have granted on your own dirt, by parcel.
   groundLeases?: Record<string, GroundLease>;
+  // ZONING MOVES. A district's envelope multiplier, an extra FAR you won at a
+  // hearing on one site, an application waiting on the board, and the
+  // buildings nobody is allowed to knock down. See engine/zoning.ts.
+  zoneAdj?: Record<string, number>;          // district -> FAR multiplier
+  variance?: Record<string, number>;         // bbl -> extra FAR granted
+  varianceApp?: { bbl: string; filedM: number; decideM: number; cost: number; grant: number; odds: number };
+  landmarks?: Record<string, number>;        // bbl -> month designated
   landAdj: Record<string, number>;           // per-parcel land value multiplier
   blockD: Record<string, number>;            // per-block demand DRIFT, in points off the generated score
   // What the lending market remembers about you. A sponsor who hands back keys

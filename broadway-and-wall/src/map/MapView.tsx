@@ -116,6 +116,9 @@ export default function MapView() {
                 p: (f.geometry as GeoJSON.Point).coordinates as [number, number],
                 r: Number(f.properties?.rot ?? 0),
               }));
+            const ringsOf = (kind: string): [number, number][][] => (ctx?.features ?? [])
+              .filter((f) => f.properties?.kind === kind && f.geometry.type === "Polygon")
+              .map((f) => ((f.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][]).slice(0, -1));
             // the land ring becomes the hole in the water plane
             const landRing = (ctx?.features ?? [])
               .find((f) => f.properties?.kind === "land" && f.geometry.type === "Polygon");
@@ -124,6 +127,14 @@ export default function MapView() {
               piles: pointsOf("pile"),
               benches: orientedOf("bench"),
               rails: orientedOf("rail"),
+              // the lawns get a real turf surface laid over the flat park fill,
+              // and the pond and walks come up with it — otherwise the turf
+              // buries the MapLibre layers that were drawing them
+              parks: ringsOf("park"),
+              ponds: ringsOf("pond"),
+              paths: (ctx?.features ?? [])
+                .filter((f) => f.properties?.kind === "parkpath" && f.geometry.type === "LineString")
+                .map((f) => (f.geometry as GeoJSON.LineString).coordinates as [number, number][]),
               land: landRing
                 ? ((landRing.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][]).slice(0, -1)
                 : undefined,

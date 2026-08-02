@@ -95,6 +95,9 @@ const S_CORNICE = 8; // cornice stonework
 const S_GREEN = 9;   // green roof
 const S_LOT = 10;    // vacant lot: gravel + fence
 const S_GABLE = 11;  // pitched shingle roof
+const S_LAWN = 12;   // park turf
+const S_PATH = 13;   // park walk: compacted buff gravel
+const S_POND = 14;   // park water
 
 function styleFor(v: BuildingVolume): number {
   if (v.d) return S_PLAIN;
@@ -538,6 +541,9 @@ void main() {
   else if (s == 8)  roof = vec3(0.60, 0.56, 0.48);   // cornice cap
   else if (s == 9)  roof = vec3(0.47, 0.62, 0.36);   // green roof
   else if (s == 10) roof = vec3(0.575, 0.545, 0.475); // gravel lot
+  else if (s == 12) roof = vec3(0.455, 0.585, 0.335); // park turf
+  else if (s == 13) roof = vec3(0.760, 0.720, 0.630); // park walk
+  else if (s == 14) roof = vec3(0.272, 0.400, 0.436); // park water
   else if (s == 11) {                                 // shingles
     if (vVar < 0.4)      roof = vec3(0.48, 0.29, 0.235);
     else if (vVar < 0.7) roof = vec3(0.34, 0.37, 0.415);
@@ -558,6 +564,25 @@ void main() {
     float course = fract(vPos.z * 1.6);
     roof *= 0.90 + 0.13 * step(0.5, course);
     roof *= 0.94 + 0.12 * rnoise(wp * 3.1);
+  } else if (s == 12) {
+    // TURF. Mown in bands, blond where it bakes, damper and darker under the
+    // trees, worn through to dirt on the desire lines. A lawn is the largest
+    // uniform surface in the city and the one the eye rests on longest, so it
+    // is the last place a flat fill survives contact with a low sun.
+    float band = sin(wp.x * 0.115 + wp.y * 0.052);
+    roof *= 0.955 + 0.075 * step(0.0, band);
+    float clump = rnoise(wp * 0.09) * 0.55 + rnoise(wp * 0.42) * 0.45;
+    roof = mix(roof, vec3(0.545, 0.578, 0.375), smoothstep(0.52, 0.86, clump) * 0.55);
+    roof = mix(roof, vec3(0.330, 0.455, 0.290), smoothstep(0.46, 0.14, clump) * 0.50);
+    roof *= 0.94 + 0.12 * rnoise(wp * 1.9);
+    roof = mix(roof, vec3(0.560, 0.515, 0.415), smoothstep(0.80, 0.96, rnoise(wp * 0.6 + 41.0)) * 0.45);
+  } else if (s == 13) {
+    roof *= 0.94 + 0.13 * rnoise(wp * 2.6);              // raked gravel
+    roof *= 0.97 + 0.06 * rnoise(wp * 0.5);
+  } else if (s == 14) {
+    float rip = rnoise(wp * 0.9) * 0.6 + rnoise(wp * 3.3) * 0.4;
+    roof *= 0.90 + 0.20 * rip;                            // ripple and depth
+    roof = mix(roof, vec3(0.44, 0.55, 0.47), smoothstep(0.62, 0.88, rnoise(wp * 1.4)) * 0.30);
   } else if (s == 10) {
     // not every empty lot is gravel: some have gone to grass and weeds, and a
     // few are packed dirt — the patchwork a real city's vacant land actually is
@@ -744,6 +769,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // than no bench and no railing at all
       benches?: Oriented[];
       rails?: Oriented[];
+      parks?: [number, number][][];
+      ponds?: [number, number][][];
+      paths?: [number, number][][];
     } = {},
   ) {}
 
@@ -1323,6 +1351,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.plantStreets();
     this.buildWater();
     this.buildSeawall();
+    this.buildLawns();
 
     this.bakeShadows();
   }
@@ -1616,6 +1645,98 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     g.setAttribute("normal", new THREE.Float32BufferAttribute(norm, 3));
     const mesh = new THREE.Mesh(g, this.propMaterial(0xb0aa99, false));
     mesh.frustumCulled = false;
+    this.scene.add(mesh);
+  }
+
+  /**
+   * THE LAWNS.
+   *
+   * A park was a flat mint plate — the single largest uniform surface on land,
+   * and the one place the eye rests longest. Real turf under a low sun is
+   * never one value: it is mown in bands, worn to dirt on the desire lines,
+   * greener where it is shaded and blonder where it bakes.
+   *
+   * The green-roof shader already knows how to make growth read as growth, so
+   * the lawn borrows it — laid a few centimetres over the MapLibre fill so
+   * the flat colour underneath only ever shows through the gaps.
+   */
+  private buildLawns() {
+    const parks = this.ctxPoints.parks;
+    if (!parks?.length) return;
+    const T = { pos: [] as number[], norm: [] as number[], u: [] as number[], style: [] as number[] };
+    const emit = (q: [number, number][], z: number, style: number) => {
+      for (const v of q) { T.pos.push(v[0], v[1], z); T.norm.push(0, 0, 1); T.u.push(6); T.style.push(style); }
+    };
+    // subdivide: the shader varies with world position, so a park drawn as
+    // four huge triangles still shades smoothly, but the mown bands want
+    // enough vertices that nothing interpolates across a whole lawn
+    const split = (q: [number, number][], z: number, style: number, depth: number) => {
+      const a = Math.abs((q[1][0] - q[0][0]) * (q[2][1] - q[0][1]) - (q[2][0] - q[0][0]) * (q[1][1] - q[0][1])) / 2;
+      if (a < 400 || depth > 5) { emit(q, z, style); return; }
+      const m = (u: [number, number], v: [number, number]): [number, number] => [(u[0] + v[0]) / 2, (u[1] + v[1]) / 2];
+      const m01 = m(q[0], q[1]), m12 = m(q[1], q[2]), m20 = m(q[2], q[0]);
+      split([q[0], m01, m20], z, style, depth + 1); split([m01, q[1], m12], z, style, depth + 1);
+      split([m20, m12, q[2]], z, style, depth + 1); split([m01, m12, m20], z, style, depth + 1);
+    };
+    const fillRing = (ll: [number, number][], z: number, style: number, sub: boolean) => {
+      const ring = ll.map((q) => this.project(q));
+      if (ring.length < 3) return;
+      const pts = ring.map(([x, y]) => new THREE.Vector2(x, y));
+      let tris: number[][] = [];
+      try { tris = THREE.ShapeUtils.triangulateShape(pts, []); } catch { return; }
+      for (const t of tris) {
+        const q = t.map((i) => ring[i]) as [number, number][];
+        if (sub) split(q, z, style, 0); else emit(q, z, style);
+      }
+    };
+
+    for (const p of parks) fillRing(p, 0.07, S_LAWN, true);
+
+    // The lawn is a real surface now, so it BURIES whatever MapLibre was
+    // drawing on the ground beneath it — which was the pond and every path
+    // through the park. They come up with it. Laid in metres rather than
+    // screen pixels, they also hold their width properly at any pitch, which
+    // the line layers never did.
+    for (const p of this.ctxPoints.ponds ?? []) fillRing(p, 0.09, S_POND, false);
+    for (const line of this.ctxPoints.paths ?? []) {
+      const pts = line.map((q) => this.project(q));
+      const HW = 1.35;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1];
+        const dx = b[0] - a[0], dy = b[1] - a[1];
+        const L = Math.hypot(dx, dy);
+        if (L < 0.2) continue;
+        // run each segment a half-width long at both ends so the corners of a
+        // dog-leg close instead of showing a wedge of grass
+        const ex = (dx / L) * HW, ey = (dy / L) * HW;
+        const nx = (-dy / L) * HW, ny = (dx / L) * HW;
+        const a0: [number, number] = [a[0] - ex + nx, a[1] - ey + ny];
+        const a1: [number, number] = [a[0] - ex - nx, a[1] - ey - ny];
+        const b0: [number, number] = [b[0] + ex + nx, b[1] + ey + ny];
+        const b1: [number, number] = [b[0] + ex - nx, b[1] + ey - ny];
+        emit([a0, a1, b1], 0.11, S_PATH);
+        emit([a0, b1, b0], 0.11, S_PATH);
+      }
+    }
+
+    if (!T.pos.length) return;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(T.pos, 3));
+    g.setAttribute("normal", new THREE.Float32BufferAttribute(T.norm, 3));
+    g.setAttribute("aU", new THREE.Float32BufferAttribute(T.u, 1));
+    g.setAttribute("aStyle", new THREE.Float32BufferAttribute(T.style, 1));
+    const n = T.pos.length / 3;
+    const fill = (v: number, k: number) => new THREE.Float32BufferAttribute(new Float32Array(n * k).fill(v), k);
+    g.setAttribute("aRand", fill(0.5, 1));
+    g.setAttribute("aVar", fill(0.5, 1));
+    g.setAttribute("aTop", fill(1, 1));
+    g.setAttribute("aFh", fill(3.5, 1));
+    g.setAttribute("aTint", fill(1, 3));
+    g.setAttribute("aSeg", fill(0, 2));
+    g.setAttribute("aCcv", fill(0, 2));
+    const mesh = new THREE.Mesh(g, this.roofMat!);
+    mesh.frustumCulled = false;
+    mesh.userData.noShadow = true;
     this.scene.add(mesh);
   }
 

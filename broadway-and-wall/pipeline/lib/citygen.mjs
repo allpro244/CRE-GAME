@@ -992,18 +992,45 @@ export function generateCity(cfg) {
     }
   }
 
-  // Nothing planted may end up standing in open water. The scatter pass
-  // checked, the willow pass pushed outward and trusted the arithmetic, and
-  // the wobble on the pond ring meant a few of them waded in anyway.
-  for (let i = treeFeatures.length - 1; i >= 0; i--) {
-    const t2 = treeFeatures[i];
-    const near = pondFeatures.some((pd) => {
-      const pc = centroid(pd);
-      // test against the pond grown by three metres — a tree on the very lip
-      // of the water is a tree in the water once it has a canopy
-      return inRing([pc[0] + (t2[0] - pc[0]) * 0.93, pc[1] + (t2[1] - pc[1]) * 0.93], pd);
-    });
-    if (near) treeFeatures.splice(i, 1);
+  // NO WALK CROSSES OPEN WATER. The cross paths run corner-to-centre and the
+  // pond is deliberately offset from centre, so one of the four always cut
+  // straight through it — and now that the walks are laid as real surfaces
+  // above the pond rather than as a thin line under it, the result was a
+  // gravel causeway across the middle of the lake.
+  //
+  // Split each polyline into the runs that stay on dry land, keeping the
+  // original vertices so long straight walks stay long: the bench pass
+  // downstream measures segment length, and a path chopped into two-metre
+  // samples would never get a bench again.
+  if (pondFeatures.length) {
+    const dry = (p) => !pondFeatures.some((pd) => inRing(p, pd));
+    const out = [];
+    for (const line of pathFeatures) {
+      let run = [];
+      for (let i = 0; i < line.length - 1; i++) {
+        const a = line[i], b = line[i + 1];
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const steps = Math.max(1, Math.ceil(len / 1.5));
+        let prev = a, prevDry = dry(a);
+        if (prevDry && !run.length) run.push(a);
+        for (let k = 1; k <= steps; k++) {
+          const t = k / steps;
+          const p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+          const pDry = dry(p);
+          if (pDry !== prevDry) {
+            // the shoreline crossing, to within the sample step
+            const edge = [(prev[0] + p[0]) / 2, (prev[1] + p[1]) / 2];
+            if (prevDry) { run.push(edge); if (run.length > 1) out.push(run); run = []; }
+            else run = [edge];
+          }
+          prev = p; prevDry = pDry;
+        }
+        if (prevDry) run.push(b);
+      }
+      if (run.length > 1) out.push(run);
+    }
+    pathFeatures.length = 0;
+    pathFeatures.push(...out);
   }
 
   // the bandstand on the town's principal green
@@ -1057,6 +1084,26 @@ export function generateCity(cfg) {
         if (inRing([px, py], innerRing)) treeFeatures.push([px + rr(-1, 1), py + rr(-1, 1)]);
       }
     }
+  }
+
+  // Nothing planted may end up standing in open water. The scatter pass
+  // checked, the willow pass pushed outward and trusted the arithmetic, and
+  // the wobble on the pond ring meant a few of them waded in anyway.
+  //
+  // This runs LAST, after the promenade and the boulevard allee have had
+  // their say. It used to sit up with the park scatter, which meant it
+  // never saw the allee — and the diagonal cuts straight across the Common,
+  // so the grandest avenue in town planted two trees in the middle of the
+  // pond and left them standing there.
+  for (let i = treeFeatures.length - 1; i >= 0; i--) {
+    const t2 = treeFeatures[i];
+    const near = pondFeatures.some((pd) => {
+      const pc = centroid(pd);
+      // test against the pond grown by three metres — a tree on the very lip
+      // of the water is a tree in the water once it has a canopy
+      return inRing([pc[0] + (t2[0] - pc[0]) * 0.93, pc[1] + (t2[1] - pc[1]) * 0.93], pd);
+    });
+    if (near) treeFeatures.splice(i, 1);
   }
 
   // BENCHES, last, so the promenade counts as a walk. A bench model faces its

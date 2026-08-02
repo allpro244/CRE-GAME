@@ -8,7 +8,7 @@ import { logBooks, monthLabel } from "./types";
 import { rng, rrange , vacancyPull, NATURAL_VAC, industryStress, industryPull, INDUSTRY_LABEL } from "./market";
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
-import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf } from "./value";
+import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf, demandLinear } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses, useSf } from "./mix";
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable } from "./credit";
@@ -252,7 +252,7 @@ export function genRentRoll(s: GameState, rec: ParcelRecord, holding: Holding) {
       name: pickName(s, sector),
       use,
       sector,
-      credit: rollCredit(s, rec.demandScore),
+      credit: rollCredit(s, demandLinear(rec.demandScore)),
       sf,
       rentPsf: +(market * rrange(s, 0.82, 1.04)).toFixed(2),
       net: use === "office" ? rng(s) < 0.75 : rng(s) < 0.4,
@@ -567,7 +567,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // a new tower sat empty for years while you paid the debt service.
       const leaseUp = h.deliveredM !== undefined && q - h.deliveredM <= 30 ? 1.9 : 1;
       // Space that's mostly empty gets worked harder than one odd suite.
-      const emptyPush = 1 + 0.7 * (vac / Math.max(1, rec.bldgArea));
+      const emptyPush = 1 + 0.45 * (vac / Math.max(1, rec.bldgArea));
       // What the sector is doing, and whether the city is hiring, decide how
       // many prospects walk through the door — not just the phase of the cycle.
       // WHICH PART of the building is empty decides who walks through the
@@ -599,8 +599,23 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // that ring less — and leases stop falling into your lap, which they
       // were doing regardless of conditions.
       const marketPull = vacancyPull(s.econ, use);
-      const p = Math.min(0.75, Math.max(0.015, 0.24 + rec.demandScore / 200 + phaseAdj + condAdj + stanceAdj + lobbyAdj + sectorAdj)
-        / 2.7 * brokerMult * specMult * leaseUp * emptyPush * jobsMult * supplyMult * marketPull);
+      // HOW MANY PEOPLE ACTUALLY WALK THROUGH THE DOOR.
+      //
+      // Too many. A vacant floor in an ordinary building was drawing a signable
+      // prospect most quarters, which made vacancy a formality: you bought
+      // something empty, waited two or three turns, and it was full. Leasing is
+      // the hardest, slowest, most expensive thing an owner does, and it should
+      // be the reason a cheap building was cheap.
+      //
+      // The base is cut from 0.24 to 0.155 and the divisor widened from 2.7 to
+      // 3.1 — together about forty per cent fewer prospects — and the empty
+      // building bonus is trimmed from 1.7x to 1.45x, because a whole floor
+      // sitting dark attracts brokers, not tenants. Everything else in this
+      // expression stays: a good corner, a good building, a hot sector and a
+      // tight market still fill much faster than a poor one in a glut. It is
+      // the FLOOR that moved, so a mediocre asset in a soft market can now sit.
+      const p = Math.min(0.75, Math.max(0.010, 0.155 + demandLinear(rec.demandScore) / 200 + phaseAdj + condAdj + stanceAdj + lobbyAdj + sectorAdj)
+        / 3.1 * brokerMult * specMult * leaseUp * emptyPush * jobsMult * supplyMult * marketPull);
       if (rng(s) < p) {
         const sector = pickSector(s, use);
         const [tiLo, tiHi] = TI_ASK[use] ?? TI_ASK.office;
@@ -617,7 +632,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           : useSuiteSf(rec, use) * Math.max(1, Math.round(rrange(s, 1, 3.4)));
         const sf = toSuites(rec, want, legVac, use);
         if (!sf) continue;
-        const credit = rollCredit(s, rec.demandScore);
+        const credit = rollCredit(s, demandLinear(rec.demandScore));
         // term first: the free-rent ask is a function of how long they sign for
         const termM = Math.round(
           (credit === 2 ? rrange(s, 84, 144) : credit === 1 ? rrange(s, 60, 108) : rrange(s, 36, 60))

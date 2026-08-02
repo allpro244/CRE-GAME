@@ -728,7 +728,10 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         if (!rec) continue;
         const v = assetValue(rec, s.econ, initialCondition(rec));
         s.listings.push({
-          bbl, ask: Math.round(v * rrange(s, 0.66, 0.86) / 1000) * 1000,
+          // A receiver takes a haircut; a receiver does not give buildings
+          // away. The bottom of this band is the bottom of the whole game's
+          // discount range — see ASK_FLOOR in sim.ts.
+          bbl, ask: Math.round(v * rrange(s, 0.72, 0.88) / 1000) * 1000,
           listedM: s.month, expiresM: s.month + Math.round(rrange(s, 6, 12)), distress: true,
         });
       }

@@ -26,7 +26,7 @@ import type { ParcelTable } from "@/data/types";
 import type { GameState } from "./types";
 import { logBooks, monthLabel } from "./types";
 import { rng, rrange } from "./market";
-import { resolveRec, landValue } from "./value";
+import { resolveRec, landValue, demandLinear } from "./value";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -128,7 +128,7 @@ export function varianceQuote(s: GameState, parcels: ParcelTable, bbl: string) {
   const grant = +(Math.max(rec.farMaxComm, rec.farMaxRes, 2) * 0.34).toFixed(2);
   // A site the neighbourhood already accepts as dense is an easier hearing
   // than one on a quiet street.
-  const dense = clamp(rec.demandScore / 130, 0.1, 0.75);
+  const dense = clamp(demandLinear(rec.demandScore) / 130, 0.1, 0.75);
   const odds = clamp(0.30 + dense - (s.econ.phase === "recession" ? 0.08 : 0), 0.08, 0.82);
   return { cost, months, grant, odds };
 }
@@ -197,7 +197,7 @@ function tickLandmarks(s: GameState, parcels: ParcelTable, bbls: string[]) {
     if (s.landmarks?.[b] !== undefined || s.developments[b]) return false;
     const rec = resolveRec(parcels, s, b);
     return !!rec && rec.class !== "land" && rec.bldgArea > 0
-      && rec.yearBuilt > 0 && rec.yearBuilt < 1940 && rec.demandScore > 45;
+      && rec.yearBuilt > 0 && rec.yearBuilt < 1940 && demandLinear(rec.demandScore) > 45;
   });
   if (!cands.length) return;
   const bbl = cands[Math.floor(rng(s) * cands.length)];

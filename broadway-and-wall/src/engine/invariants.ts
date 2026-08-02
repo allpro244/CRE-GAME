@@ -18,7 +18,7 @@
 // prose. If a check is arguable, it does not belong in this file.
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, DevUse, GameState } from "./types";
-import { resolveRec, holdingValue, holdingNOIYr, netWorth, FAR_CEILING } from "./value";
+import { resolveRec, holdingValue, holdingNOIYr, netWorth, assetValue, initialCondition, FAR_CEILING } from "./value";
 import { mixOf, useSf } from "./mix";
 import { MAX_FLOORS_BY_USE } from "./dev";
 import { SECTORS } from "./market";
@@ -287,6 +287,29 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
     if (s.holdings[li.bbl]) bad("listing", `listing ${li.bbl}`, "the market is selling you a building you already own");
     if (seen.has(li.bbl)) bad("listing", `listing ${li.bbl}`, "listed twice at once");
     seen.add(li.bbl);
+    // NOBODY GIVES A BUILDING AWAY. The deepest honest discount in this game is
+    // a motivated seller or a receiver at about thirty per cent under; anything
+    // beneath that is an arithmetic fault somewhere upstream, and it used to be
+    // one — static records priced as dirt, and a compounding stale-listing
+    // markdown with no floor under it. A little slack below the 70% floor for
+    // a market that moved inside the month.
+    {
+      const lr = resolveRec(parcels, s, li.bbl);
+      const v = lr ? assetValue(lr, s.econ, initialCondition(lr)) : 0;
+      if (v > 0 && li.ask < v * 0.60) {
+        bad("listing", `listing ${li.bbl}`, `asking ${(li.ask / 1e6).toFixed(2)}M against a ${(v / 1e6).toFixed(2)}M appraisal — ${((1 - li.ask / v) * 100).toFixed(0)}% under`);
+      }
+    }
+  }
+  // The same rule for an owner who was never selling: their number is a premium
+  // to appraisal, and a fraction of it means something upstream mispriced them.
+  for (const [bbl, a] of Object.entries(s.approaches)) {
+    if (a.refused || !a.ask) continue;
+    const ar = resolveRec(parcels, s, bbl);
+    const v = ar ? assetValue(ar, s.econ, initialCondition(ar)) : 0;
+    if (v > 0 && a.ask < v * 0.60) {
+      bad("listing", `approach ${bbl}`, `owner asking ${(a.ask / 1e6).toFixed(2)}M against a ${(v / 1e6).toFixed(2)}M appraisal`);
+    }
   }
   const loiIds = new Set<number>();
   for (const loi of s.lois) {

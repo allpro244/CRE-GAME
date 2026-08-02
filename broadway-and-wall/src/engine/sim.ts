@@ -104,9 +104,23 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
 // MOTIVATED — estates, margin calls, partnership blowups — and price to move.
 // That's where a sharp buyer makes their money.
 export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string[]) {
-  // stale listings reprice down until the market clears them
+  // STALE LISTINGS REPRICE DOWN — TO A FLOOR, NOT TO ZERO.
+  //
+  // A monthly 1.5% cut compounded for the life of a listing, and the market
+  // underneath it kept moving, so an ask set at 72% of appraisal in a soft year
+  // could be a fraction of appraisal by the time anybody looked at it. Nobody
+  // sells a building at a tenth of what it is worth because it has been on the
+  // market a while — they take it off the market, or they hold.
+  //
+  // The floor is 70% of TODAY'S appraisal, which is the bottom of what a real
+  // discount looks like: a motivated seller, a receiver clearing a book, an
+  // estate that wants it done. Below that is not a bargain, it is a bug.
+  const ASK_FLOOR = 0.70;
   for (const li of s.listings) {
+    const rec = resolveRec(parcels, s, li.bbl);
+    const floor = rec ? assetValue(rec, s.econ, initialCondition(rec)) * ASK_FLOOR : 0;
     if (s.month - li.listedM >= 4) li.ask = Math.round(li.ask * 0.985 / 1000) * 1000;
+    if (floor > 0 && li.ask < floor) li.ask = Math.round(floor / 1000) * 1000;
   }
   // A listing you are under contract on does not lapse out from under you. The
   // contract has its own clock; this one stops while it runs.
@@ -268,9 +282,27 @@ export function advanceQuarter(
     if (interest > 0) { s.cash += interest; logBooks(s, "interest", interest); }
   }
 
-  // expire stale off-market asks
+  // EXPIRE STALE OFF-MARKET ASKS — on time, and on price.
+  //
+  // A number holds for six months and the record for twelve. What it does not
+  // do is survive the ground underneath it being repriced: an owner who quoted
+  // you a figure and then watched their district get upzoned reads the news
+  // like everybody else, and the old number is gone. Without this the quote was
+  // a free option on a rezoning, and the ask could drift to a fraction of the
+  // appraisal beside it — which is exactly what it looked like from the panel.
   for (const [bbl, a] of Object.entries(s.approaches)) {
-    if (s.month > a.q + 12) delete s.approaches[bbl];
+    if (s.month > a.q + 12) { delete s.approaches[bbl]; continue; }
+    if (a.refused || !a.ask) continue;
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec) continue;
+    const v = assetValue(rec, s.econ, initialCondition(rec));
+    if (v > 0 && a.ask < v * 0.85) {
+      delete s.approaches[bbl];
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `${rec.address}: the owner has withdrawn their number. The ground has moved since they gave it to you.`,
+      });
+    }
   }
 
   // January: the assessor and the taxman make their rounds

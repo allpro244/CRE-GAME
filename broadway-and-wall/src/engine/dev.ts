@@ -10,7 +10,7 @@ import type { BuiltClass, Contract, DevUse, Development, GameState, UseMix } fro
 import { logBooks, monthLabel } from "./types";
 import { demandNow } from "./demand";
 import { rng, rrange, addStock, NATURAL_VAC, CITY_STOCK, BUILD_MONTHS } from "./market";
-import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, RECOVERY_RATE } from "./value";
+import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, RECOVERY_RATE, demandLinear } from "./value";
 import { genAnchorTenant } from "./leasing";
 import { claimJob, jobDelivered, ownerOf } from "./rivals";
 
@@ -259,7 +259,11 @@ export function planDevelopment(
   floors: number, coverage = 0.6,
   contract: Contract = "gmp", ltcWanted?: number,
 ): DevPlan | null {
-  const rec = parcels[bbl];
+  // THE ENVELOPE YOU ACTUALLY HAVE. Zoning moves, variances are won and lots
+  // are assembled — all of which live on the resolved record. Planning against
+  // the static one meant the upzoning you read about on the news, and the
+  // variance you paid a year of hearings for, bought you nothing at the desk.
+  const rec = resolveRec(parcels, s, bbl);
   if (!rec || !rec.lotArea) return null;
   const cov = Math.max(0.08, Math.min(0.9, coverage));
   const farMax = farMaxFor(rec);
@@ -462,7 +466,7 @@ export function takeoverDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string,
   half: { use: string; sf: number; floors: number; progress: number; costToComplete: number },
 ) {
-  const rec = parcels[bbl];
+  const rec = resolveRec(parcels, s, bbl);
   if (!rec || !rec.lotArea || s.developments[bbl]) return;
   const use = half.use as DevUse;
   const floors = Math.max(1, Math.round(half.floors));
@@ -707,7 +711,7 @@ export function tickConstructionLeasing(s: GameState, parcels: ParcelTable) {
     // interest builds as the date approaches — the risk a tenant is taking
     // shrinks, and so does what they will hold out for
     const near = clamp(1.35 - months / 18, 0.35, 1.35);
-    const p = clamp(0.055 * appetite * near * (0.55 + rec.demandScore / 130), 0, 0.42);
+    const p = clamp(0.055 * appetite * near * (0.55 + demandLinear(rec.demandScore) / 130), 0, 0.42);
     if (rng(s) >= p) continue;
 
     const want = Math.round(openSf * rrange(s, 0.16, 0.5));
@@ -1011,7 +1015,9 @@ export function tickCityGrowth(
       // suddenly on two balance sheets. Their own land is built on by them,
       // in `startOwnJob`, which is where a land bank is supposed to go.
       if (ownerOf(s, bbl)) continue;
-      const rec = parcels[bbl];
+      // Resolved, not static: a lot that has had a building DELIVERED on it is
+      // no longer vacant, and the static table still says it is.
+      const rec = resolveRec(parcels, s, bbl);
       if (!rec || rec.class !== "land" || rec.lotArea < 1500) continue;
       // the city builds where the neighbourhood has BECOME good, not where it
       // started good — which is how your first tower pulls the market to you

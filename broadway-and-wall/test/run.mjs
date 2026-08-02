@@ -29,6 +29,7 @@ const which = process.argv.includes("--balance") ? "audit.mjs"
   : process.argv.includes("--play") ? "play50.mjs"
   : process.argv.includes("--playdev") ? "playdev.mjs"
   : process.argv.includes("--devyield") ? "devyield.mjs"
+  : process.argv.includes("--leaseup") ? "leaseup.mjs"
   : "invariants.mjs";
 const run = spawnSync("node", [join(HERE, which)], { stdio: "inherit", env: process.env });
 process.exit(run.status ?? 1);

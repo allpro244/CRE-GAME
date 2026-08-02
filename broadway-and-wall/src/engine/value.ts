@@ -14,9 +14,38 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
  *  rezoned and whatever the board grants. The generator's own maximum is 37. */
 export const FAR_CEILING = 40;
 
+/**
+ * THE DEMAND SCORE IS A SCALE, NOT A PRICE.
+ *
+ * The pipeline reshapes raw location gravity with a gamma before it writes
+ * `demandScore`, because the linear blend it used to write was a plateau: the
+ * median lot in New Alden read 63 out of 100 and a third of the city read over
+ * 70, so every block looked like a good block. The reshaped score has a median
+ * of 41 and a top decile that starts at 85, which is what land actually looks
+ * like — and it is the number on the panel and under the demand lens.
+ *
+ * What it is NOT is a repricing. Everything economic below this line reads the
+ * gravity back out through `demandIdx`, so rents, land betas, cap-rate spreads
+ * and expense loads are bit-for-bit what they were. Measured both ways over
+ * fifty years: leaving the consumers reading the raw reshaped score moved the
+ * competent player's median from $92.8M to $1.09B, because a steeper gradient
+ * on prime ground is an enormous silent buff to anybody who buys prime ground.
+ * A change about how a map READS has no business rebalancing the game, and if
+ * the gradient should be steeper that is its own decision, made deliberately
+ * with the harnesses and not smuggled in behind this one.
+ */
+const DEMAND_GAMMA = 1.9;   // must match DEMAND_GAMMA in pipeline/process.mjs
+export function demandIdx(demandScore: number): number {
+  return Math.pow(Math.max(0, demandScore) / 100, 1 / DEMAND_GAMMA);
+}
+/** The reshaped score expressed back on the old 0-100 economic scale. */
+export function demandLinear(demandScore: number): number {
+  return 100 * demandIdx(demandScore);
+}
+
 // How hard a parcel's land value rides the cycle: prime demand swings harder.
 export function demandBeta(demandScore: number): number {
-  return 0.25 + 0.9 * (demandScore / 100);
+  return 0.25 + 0.9 * demandIdx(demandScore);
 }
 
 export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
@@ -45,9 +74,10 @@ export function initialCondition(rec: ParcelRecord): Condition {
   return "worn";
 }
 
-// Location multiplier on citywide class rent: demand is the location.
+// Location multiplier on citywide class rent: demand is the location. Reads
+// the gravity, not the display scale — see demandIdx above.
 export function locationRentMult(rec: ParcelRecord): number {
-  return 0.62 + 0.76 * (rec.demandScore / 100);
+  return 0.62 + 0.76 * demandIdx(rec.demandScore);
 }
 
 export function marketRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition): number {
@@ -201,7 +231,7 @@ export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass): nu
   const apt = use === "multifamily";
   const swing = apt ? 0.04 : 0.09;
   // fringe empties first: −10pp at demand 5, +6pp at demand 95
-  const loc = 0.16 * (rec.demandScore / 100 - 0.6);
+  const loc = 0.16 * (demandIdx(rec.demandScore) - 0.6);
   // the building's own character, ±11pp commercial, ±6pp residential — and
   // skewed downward, because the tail of this distribution is a tail of pain
   const u = occHash(rec.bbl + use);
@@ -334,7 +364,7 @@ export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition):
   // and asks you to believe the street will change, while the prime one costs
   // a fortune and lets you sleep. Without the spread there was no such choice
   // and no reason ever to buy anything but the highest yield on the tape.
-  const locSpread = -((rec.demandScore - 50) / 50) * 1.1;
+  const locSpread = -((demandLinear(rec.demandScore) - 50) / 50) * 1.1;
   // and so is the state of the building — a tired asset needs a discount to
   // move, because the buyer is pricing the capital they are about to spend
   const qualSpread = condition === "good" ? -0.40 : condition === "worn" ? 0.70 : 0;

@@ -9,7 +9,18 @@ import { logBooks } from "./types";
 import { netWorth } from "./value";
 import { sponsorStanding } from "./sponsor";
 
-export const LOC_LTV = 0.35;      // against net worth
+/**
+ * THE ADVANCE RATE, against net worth.
+ *
+ * 35% was conservative to the point of being decorative: the line existed to
+ * stop a bad month killing a good book, and at a third of equity it could not
+ * do the other thing a revolver is for — bridging an acquisition or a fit-out
+ * while a sale closes. Sixty per cent of net worth is a real corporate
+ * facility, and it is a genuine two-sided change: it is also sixty per cent of
+ * net worth that the bank can call when values fall and your equity with them.
+ * The over-advance path below is what makes that a decision rather than a gift.
+ */
+export const LOC_LTV = 0.60;      // against net worth
 export const LOC_SPREAD = 4.0;    // prime + 400bps
 
 export function locRate(s: GameState): number {

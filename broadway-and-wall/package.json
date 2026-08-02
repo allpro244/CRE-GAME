@@ -26,7 +26,8 @@
     "stats": "node test/run.mjs --stats",
     "play50": "node test/run.mjs --play",
     "playdev": "node test/run.mjs --playdev",
-    "devyield": "node test/run.mjs --devyield"
+    "devyield": "node test/run.mjs --devyield",
+    "leaseup": "node test/run.mjs --leaseup"
   },
   "dependencies": {
     "@types/three": "^0.185.3",

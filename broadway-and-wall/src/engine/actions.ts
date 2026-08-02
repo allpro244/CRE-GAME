@@ -5,7 +5,7 @@ import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import type { Bid, GameState, Holding } from "./types";
 import { logBooks, monthLabel } from "./types";
 import { rng, rrange } from "./market";
-import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr } from "./value";
+import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr, demandLinear } from "./value";
 import { marketAppetite, ownerOf, rivalAsk, rivalBuys } from "./rivals";
 import { genRentRoll, isCommercial } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
@@ -28,7 +28,11 @@ function clone(s: GameState): GameState {
 }
 
 export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price: number, product: BuyProduct, lev = 1) {
-  const rec = parcels[bbl];
+  // THE RESOLVED RECORD, ALWAYS. The static table is what the lot looked like
+  // at generation; `resolveRec` is what is standing on it today, after
+  // deliveries, rezonings, variances and assemblage. Sizing a loan against the
+  // static one underwrote a delivered tower as the vacant lot it used to be.
+  const rec = resolveRec(parcels, s, bbl);
   const closing = Math.round(price * CLOSING_PCT);
   if (product === "cash" || !rec) return { principal: 0, ratePct: 0, equity: price + closing, capPremium: 0, bind: "none" as const, ltvCap: 0, uwDscr: 0 };
   const prod = productById(product);
@@ -58,7 +62,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
 export function executePurchase(
   s: GameState, parcels: ParcelTable, bbl: string, price: number, product: BuyProduct, offMarket: boolean, lev = 1,
 ): { s: GameState; err?: string } {
-  const rec = parcels[bbl];
+  const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   if (s.holdings[bbl]) return { s, err: "You already own it." };
   const bq = buyQuote(s, parcels, bbl, price, product, lev);
@@ -350,7 +354,11 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
 export function approachOwner(
   s: GameState, parcels: ParcelTable, adjacency: Adjacency, bbl: string,
 ): { s: GameState; err?: string; refused?: boolean; ask?: number } {
-  const rec = parcels[bbl];
+  // THE LIVE RECORD. Pricing an owner's ask off the STATIC table is what
+  // produced asks at a fraction of the appraisal on this panel: a lot that has
+  // had a building delivered on it, or that was reclassified, was quoted as
+  // the dirt it used to be while the card beside it appraised the building.
+  const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   if (s.holdings[bbl]) return { s, err: "You own it." };
   if (s.listings.some((l) => l.bbl === bbl)) return { s, err: "It's already listed — hit the Market tab." };
@@ -364,7 +372,7 @@ export function approachOwner(
     0.34 + 0.35 * pressure
     - (rec.class === "land" ? 0.12 : 0)
     - (next.econ.phase === "recession" ? 0.10 : 0)
-    + (rec.demandScore - 50) / 500,
+    + (demandLinear(rec.demandScore) - 50) / 500,
   ));
   if (rng(next) < refuseP) {
     next.approaches[bbl] = { q: next.month, refused: true };
@@ -417,7 +425,7 @@ export function counterOffMarket(
   s: GameState, parcels: ParcelTable, adjacency: Adjacency, bbl: string, offerPx?: number,
 ): { s: GameState; err?: string; msg?: string } {
   const a = s.approaches[bbl];
-  const rec = parcels[bbl];
+  const rec = resolveRec(parcels, s, bbl);
   if (!a || a.refused || !a.ask || !rec) return { s, err: "No live ask to counter." };
   if (a.countered) return { s, err: "You already countered — the number on the table is the number." };
   if (s.month > a.q + 6) return { s, err: "That number expired." };
@@ -816,7 +824,18 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
     if (!rec || rec.class === "land" || !rec.bldgArea) continue;
     if (wantClass && rec.class !== wantClass && rng(s) < 0.7) continue;
     const v = assetValue(rec, s.econ, initialCondition(rec));
-    if (v <= 0 || v > Math.max(6_000_000, netWorthLike(s) * 1.6)) continue;
+    // THE FLOOR MOVES WITH YOUR BOOK.
+    //
+    // There was a ceiling here and no floor, so a firm running a hundred
+    // million kept getting rung about three-million-dollar walk-ups. No broker
+    // does that twice: the file you get shown is the file that matches the
+    // cheque you can write, and pitching a principal a deal that would move
+    // their net worth by three per cent is how you stop being called back.
+    // Roughly a twentieth of net worth at the bottom, capped so it never
+    // filters out the whole city early on.
+    const nw = netWorthLike(s);
+    const floor = Math.min(20_000_000, Math.max(0, nw * 0.05));
+    if (v <= 0 || v < floor || v > Math.max(6_000_000, nw * 1.6)) continue;
     best = rec;
     break;
   }

@@ -684,7 +684,33 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
               <BuyButtons bbl={selectedBBL} price={appr.ask} off closeLabel={`Buy at ${usd(appr.ask)}`} />
             </>
           ) : appr && appr.refused ? (
-            <div className="hint">The owner turned you away in {monthLabel(appr.q)}. Try again after {monthLabel(appr.q + 6)}.</div>
+            /* THE DATE PASSES AND THE PHONE STILL WORKS.
+               This branch printed "try again after March" and then rendered no
+               button at all — the only Approach button lived in the else-arm,
+               which needs the approach record GONE, and the record does not
+               expire for a year. So the six-month cooling-off period was, in
+               practice, twelve months of a dead screen. The engine was right
+               the whole time; the panel simply never offered the call. */
+            <>
+              <div className="hint">
+                The owner turned you away in {monthLabel(appr.q)}.
+                {game.month < appr.q + 6
+                  ? ` They will not take another call until ${monthLabel(appr.q + 6)}.`
+                  : " Enough time has passed that it is worth another call."}
+              </div>
+              <div className="btn-row">
+                <button
+                  className="btn"
+                  disabled={game.month < appr.q + 6}
+                  title={game.month < appr.q + 6
+                    ? `Too soon — ${appr.q + 6 - game.month} month${appr.q + 6 - game.month === 1 ? "" : "s"} to go`
+                    : "Ring them again. They may have changed their mind; they may not."}
+                  onClick={() => approach(selectedBBL)}
+                >
+                  Approach the owner again
+                </button>
+              </div>
+            </>
           ) : (
             <>
               <div className="hint">

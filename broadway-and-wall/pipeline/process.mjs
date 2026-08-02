@@ -41,8 +41,23 @@ const num = (v) => {
 function assetClass(bldgclass, landuse, bldgarea) {
   const c = (bldgclass ?? "").toUpperCase();
   const L = c[0];
-  if (!bldgarea || L === "V" || landuse === "11") return "land";
-  if (L === "G" || L === "T" || L === "Z" || L === "Q") return "land"; // garages/transport/misc: teardown-class
+  // "Land" means NOTHING IS STANDING ON IT. Every other route to that answer
+  // has to go through this test first, because a record that says vacant with
+  // a floor count on it is a lie the whole engine then prices off.
+  if (!bldgarea) return "land";
+  if (L === "V" || landuse === "11") return "land";
+  // A GARAGE IS A BUILDING. These letters — garages, transport, utility and
+  // misc structures — used to come back "land" while KEEPING their floor count
+  // and their building area, which produced 32 lots in New Alden alone that
+  // said "vacant land" on the record with a four-storey structure drawn on
+  // them. Worse, everything that prices dirt read them as dirt: an off-market
+  // approach on a 2011 garage quoted land value against a built appraisal and
+  // looked like a 95% discount.
+  //
+  // They are still the cheapest thing standing and the easiest to knock down —
+  // that is what `industrial` means in this model. Teardown economics come out
+  // of a low rent and an old frame, not out of pretending the frame is absent.
+  if (L === "G" || L === "T" || L === "Z" || L === "Q") return "industrial";
   if (L === "E") return "industrial"; // lofts, sheds, warehouses
   if (L === "O" || L === "H" || L === "I" || L === "J" || L === "Y" || L === "W" || L === "P") return "office";
   if (L === "K" || L === "L") return "retail";
@@ -252,9 +267,24 @@ for (let i = 0; i < lots.length; i++) {
   }
 
   const dem = raws[i];
-  const demandScore = Math.max(1, Math.min(100, Math.round(
-    45 * Math.min(1, dem.transit / t95) + 55 * Math.min(1, dem.emp / e95)
-  )));
+  // GOOD GROUND IS SCARCE.
+  //
+  // The raw blend of transit gravity and employment gravity is two ratios that
+  // each saturate at the 95th percentile, and a linear mix of two saturating
+  // terms piles mass at the top: the median lot in New Alden scored 63, more
+  // than a third of the city scored over 70, and better than a fifth scored
+  // over 80. That is not a city, it is a plateau with a harbour on it — and it
+  // is why every block felt like a good block.
+  //
+  // The gamma bends it back into the shape land actually takes. Value falls
+  // away from a core steeply, not linearly: at 1.9 the median lot is a 42, the
+  // top decile starts at 85, and about one lot in eight is genuinely prime.
+  // The ORDER is untouched — the same ground is still the best ground — so
+  // every district reads the same, it just stops flattering the fringe.
+  const DEMAND_GAMMA = 1.9;
+  const rawDemand = Math.min(1,
+    (45 * Math.min(1, dem.transit / t95) + 55 * Math.min(1, dem.emp / e95)) / 100);
+  const demandScore = Math.max(4, Math.min(100, Math.round(100 * Math.pow(rawDemand, DEMAND_GAMMA))));
   const assessedPsf = assessLand / lotArea;
   // assessed values run well below market; scale up, then blend with demand
   const landPsf = Math.max(30, Math.round((assessedPsf / 0.45) * (0.6 + 0.9 * (demandScore / 100))));
@@ -262,7 +292,14 @@ for (let i = 0; i < lots.length; i++) {
   const farMaxComm = num(p.commfar) ?? 0;
   const farMaxRes = num(p.resfar) ?? 0;
   const kind = assetClass(cls, p.landuse, bldgArea);
-  const { klass, mix } = resolveMix(kind, floors, num(p.unitsres) ?? 0, l.bbl);
+  let { klass, mix } = resolveMix(kind, floors, num(p.unitsres) ?? 0, l.bbl);
+  // THE INVARIANT, ENFORCED AT THE DOOR. Whatever the source letters say, a
+  // lot with floor area on it is not vacant and a lot without any is. Every
+  // downstream reader — the appraisal, the off-market ask, the 3D layer, the
+  // development desk — assumes these two agree, and for a couple of per cent
+  // of every city they did not.
+  if (klass === "land" && bldgArea > 0) { klass = "industrial"; mix = undefined; }
+  if (klass !== "land" && bldgArea <= 0) { klass = "land"; mix = undefined; floors = 0; yearBuilt = 0; }
 
   table[l.bbl] = {
     bbl: l.bbl,

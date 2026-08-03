@@ -797,7 +797,10 @@ export async function loadData() {
     const seed = (saved?.citySeed ?? currentSeed(island)) >>> 0;
     setSeed(seed, island);
 
-    const built = makeCity(island, seed);
+    // The density preset is a browser-local choice, not part of the save: the
+    // same seed renders the same town at whatever scale is set. Default is the
+    // shipped calibration until one is chosen.
+    const built = makeCity(island, seed, { density: localStorage.getItem("bw:density") ?? undefined });
     // Any record the pipeline still files as "mixed" becomes its dominant use
     // plus an explicit mix, once, at the door.
     const parcels = normalizeParcels(built.parcels as ParcelTable);

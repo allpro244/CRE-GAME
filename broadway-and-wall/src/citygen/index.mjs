@@ -48,10 +48,10 @@ export function randomSeed() {
  * Build a whole city. Deterministic: the same id and seed give byte-identical
  * output, which is what lets a save store six digits instead of two megabytes.
  */
-export function makeCity(cityId, seed) {
+export function makeCity(cityId, seed, opts) {
   const cfg = CITIES[cityId];
   if (!cfg) throw new Error(`unknown city: ${cityId}`);
-  const city = generateCity({ ...cfg, seed: seed >>> 0 });
+  const city = generateCity({ ...cfg, seed: seed >>> 0, density: opts?.density });
   const data = buildCityData({
     rawParcels: city.parcels,
     rawBuildings: city.buildings,

@@ -271,7 +271,29 @@ function classFor(flavor, heat, rand) {
 
 // ---------------------------------------------------------------------------
 
+// ------------------------------------------------------------ DENSITY PRESETS
+//
+// How big a town this is, as one dial. The same island, the same seed and the
+// same streets read as a fishing village or a metropolis depending on four
+// numbers: how hard dear ground raises the ORDINARY building (mat), how tall a
+// tower roll comes out (tower), how often one fires (towerP), and where the
+// landmark peak is capped (peakCap, in floors). Everything downstream — stock,
+// the space market, land value — self-normalises off the parcels, so any
+// preset is a playable economy, not just a picture.
+export const DENSITY = {
+  village:    { mat: 0.25, tower: 0.45, towerP: 0.50, peakCap: 14 },
+  town1900:   { mat: 0.45, tower: 0.60, towerP: 0.70, peakCap: 22 },
+  provincial: { mat: 0.62, tower: 0.75, towerP: 0.85, peakCap: 30 },
+  harbour:    { mat: 0.80, tower: 0.88, towerP: 0.90, peakCap: 40 },
+  shipped:    { mat: 1.00, tower: 1.00, towerP: 1.00, peakCap: 52 },
+  capital:    { mat: 1.20, tower: 1.12, towerP: 1.10, peakCap: 62 },
+  metropolis: { mat: 1.45, tower: 1.28, towerP: 1.25, peakCap: 75 },
+  // low fabric with dramatic towers — the skyline of a town that boomed once
+  spiky:      { mat: 0.50, tower: 1.10, towerP: 1.15, peakCap: 48 },
+};
+
 export function generateCity(cfg) {
+  const DZ = DENSITY[cfg.density] ?? DENSITY.shipped;
   const rand = mulberry32(cfg.seed);
   const rr = (a, b) => a + (b - a) * rand();
   const pick = (arr) => arr[Math.floor(rand() * arr.length) % arr.length];
@@ -655,7 +677,7 @@ export function generateCity(cfg) {
     const ambition = rr(0.58, 1.62);
     const blockDatum = Math.max(1, Math.round(
       ((blkFl.maxFloors <= 5 ? rr(1, 3) : rr(2, 4.6))
-       + heat * heat * 7.5 * (blkFl.matGain ?? 1) * rr(0.45, 1.05)) * ambition,
+       + heat * heat * 7.5 * (blkFl.matGain ?? 1) * DZ.mat * rr(0.45, 1.05)) * ambition,
     ));
 
     const lots = [];
@@ -691,7 +713,7 @@ export function generateCity(cfg) {
         // anyone assembles land in the first place.
         const plate = areaM2 / 620;                    // 1.0 = an ordinary site
         const big = Math.max(0, Math.min(3.2, plate - 1));
-        const towerP = Math.min(0.40, (h * h * 0.16 + 0.055 * big) * fl.towerGate);
+        const towerP = Math.min(0.40, (h * h * 0.16 + 0.055 * big) * fl.towerGate * DZ.towerP);
         // ------------------------------------------------------- THE MAT
         //
         // THE CITY WAS A PLATEAU. Measured across the whole heat surface, in
@@ -711,10 +733,10 @@ export function generateCity(cfg) {
         // It is squared in heat because land value is, and it is scaled per
         // district because a dear block in a row-house neighbourhood gets
         // brownstones, not a mid-rise.
-        const mat = h * h * 7.5 * (fl.matGain ?? 1);
+        const mat = h * h * 7.5 * (fl.matGain ?? 1) * DZ.mat;
         let coverage;
         if (areaM2 > 240 && rand() < towerP) {
-          floors = Math.round((rr(7, 12) + h * h * rr(10, 23)) * (0.86 + 0.20 * Math.min(2.4, plate)));
+          floors = Math.round((rr(7, 12) + h * h * rr(10, 23)) * DZ.tower * (0.86 + 0.20 * Math.min(2.4, plate)));
           coverage = rr(0.42, 0.58);
         } else if (fl.maxFloors > 5 && rand() < 0.18 + h * 0.34) {
           floors = Math.round(rr(3, 6) + mat * rr(0.55, 1.25));
@@ -1223,7 +1245,7 @@ export function generateCity(cfg) {
       // Hartford or Tulsa — a building the whole state knows — and it is the
       // right ceiling for a city this size. Above that it stops being the
       // landmark and starts being a different city.
-      const want = Math.min(52, Math.max(site.floors + 8, Math.round(tallest * rr(1.26, 1.46))));
+      const want = Math.min(DZ.peakCap, Math.max(site.floors + 8, Math.round(tallest * rr(1.26, 1.46))));
       const pp = site.pf.properties;
       pp.numfloors = want;
       pp.bldgarea = Math.round((pp.bldgarea / Math.max(1, site.floors)) * want);

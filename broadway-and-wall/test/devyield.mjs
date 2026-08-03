@@ -18,18 +18,13 @@
 //   USE=office pnpm devyield      one class
 //   DEEP=1 pnpm devyield          the value decomposition, line by line
 //   SEED=7 HOLDY=30 pnpm devyield
-import { readFileSync } from "node:fs";
-import { gunzipSync } from "node:zlib";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const E = await import(join(HERE, ".engine.mjs"));
-const P = join(HERE, "..", "public", "data", "newalden") + "/";
-const parcels = JSON.parse(gunzipSync(readFileSync(P + "parcels.json.gz")).toString());
-const adjacency = JSON.parse(gunzipSync(readFileSync(P + "adjacency.json.gz")).toString());
-const bbls = Object.keys(parcels);
-E.normalizeParcels(parcels);
+const { loadCity } = await import(join(HERE, "city.mjs"));
+const { parcels, adjacency, bbls, seed: CITY_SEED } = loadCity(0, E.normalizeParcels);
 const M = (n) => `$${(n / 1e6).toFixed(1)}M`;
 
 const USES = (process.env.USE ?? "office,multifamily,retail,industrial").split(",");

@@ -7,19 +7,14 @@
 //
 //   pnpm leaseup            four seeds
 //   SEEDS=8 pnpm leaseup
-import { readFileSync } from "node:fs";
-import { gunzipSync } from "node:zlib";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const E = await import(join(HERE, ".engine.mjs"));
+const { loadCity } = await import(join(HERE, "city.mjs"));
+const { parcels, adjacency, bbls, seed: CITY_SEED } = loadCity(0, E.normalizeParcels);
 const CITY = process.env.BW_CITY ?? "newalden";
-const P = join(HERE, "..", "public", "data", CITY) + "/";
-const parcels = JSON.parse(gunzipSync(readFileSync(P + "parcels.json.gz")).toString());
-const adjacency = JSON.parse(gunzipSync(readFileSync(P + "adjacency.json.gz")).toString());
-const bbls = Object.keys(parcels);
-E.normalizeParcels(parcels);
 
 const SEEDS = Number(process.env.SEEDS ?? 4);
 const HORIZON = Number(process.env.HORIZON ?? 240);

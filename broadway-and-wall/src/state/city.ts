@@ -1,12 +1,23 @@
-// Which city this browser is playing. Six datasets ship side by side under
-// data/<id>/; the choice lives in localStorage and switching reloads the page,
-// because the map sources, the parcel table, and the autosave slot all key off
-// it — a clean reload is honest where hot-swapping five data feeds is not.
-// Each city keeps its own autosave, so switching back resumes that campaign.
+// WHICH CITY, AND WHICH ONE OF IT.
+//
+// Two islands ship — New Alden and Kestrel Point — and each one is a different
+// game: an open grid with a hinterland behind it, and a peninsula where
+// frontage is the scarce thing. That choice lives in localStorage and switching
+// reloads the page, because the map sources, the parcel table and the autosave
+// slot all key off it, and a clean reload is honest where hot-swapping five
+// data feeds is not.
+//
+// THE SEED IS THE SECOND HALF OF THE ADDRESS. The island is fixed; the town on
+// it is generated from a number, and that number decides every block, every
+// lot line, every building. So a city is `(island, seed)` and both halves have
+// to be remembered — a browser refresh must land you back in YOUR city with
+// your campaign, and only starting a new run should roll a new one.
+import { randomSeed } from "@/citygen/index.mjs";
 
 export interface CityInfo { id: string; name: string; tagline: string; lots: number }
 
 const KEY = "bw:city";
+const SEED_KEY = "bw:seed:";
 const DEFAULT_CITY = "newalden";
 
 export function currentCity(): string {
@@ -15,6 +26,31 @@ export function currentCity(): string {
   } catch {
     return DEFAULT_CITY;
   }
+}
+
+/** The seed this browser is playing on this island, minting one if there is none. */
+export function currentSeed(city = currentCity()): number {
+  try {
+    const raw = localStorage.getItem(SEED_KEY + city);
+    const n = raw ? Number(raw) >>> 0 : 0;
+    if (n) return n;
+  } catch { /* private mode: a fresh city every session, which is survivable */ }
+  const fresh = randomSeed();
+  setSeed(fresh, city);
+  return fresh;
+}
+
+export function setSeed(seed: number, city = currentCity()): void {
+  try {
+    localStorage.setItem(SEED_KEY + city, String(seed >>> 0));
+  } catch { /* nothing to do; the seed lives in the save as well */ }
+}
+
+/** Roll a brand new town on the same island and reload into it. */
+export function rerollCity(): number {
+  const seed = randomSeed();
+  setSeed(seed);
+  return seed;
 }
 
 export function switchCity(id: string): void {
@@ -30,12 +66,8 @@ export function dataBase(): string {
 }
 
 export async function listCities(): Promise<CityInfo[]> {
-  try {
-    const r = await fetch(import.meta.env.BASE_URL + "data/cities.json");
-    if (!r.ok) throw new Error(String(r.status));
-    return (await r.json()) as CityInfo[];
-  } catch {
-    // single-city build (legacy flat layout): no picker, just the one town
-    return [];
-  }
+  // No fetch: the island list is the generator's own config, so the picker
+  // cannot disagree with what the game can actually build.
+  const { cityList } = await import("@/citygen/index.mjs");
+  return cityList().map((c) => ({ ...c, lots: 0 }));
 }

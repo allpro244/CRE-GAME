@@ -10,19 +10,14 @@
 // leverage is priced, whether a downturn can hurt you, whether any strategy is
 // strictly dominant. Read the tails, not the medians: a strategy whose p10 is
 // close to its median is not taking risk, whatever it looks like it is doing.
-import { readFileSync } from "node:fs";
-import { gunzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Cities live in per-city dirs now; the harness runs against one of them.
 // BW_CITY picks which (default newalden — the original balance target).
-const P = join(HERE, "..", "public", "data", process.env.BW_CITY ?? "newalden") + "/";
-const parcels = JSON.parse(gunzipSync(readFileSync(P + "parcels.json.gz")).toString());
-const adjacency = JSON.parse(gunzipSync(readFileSync(P + "adjacency.json.gz")).toString());
-const bbls = Object.keys(parcels);
 const E = await import(process.env.ENGINE ?? join(HERE, ".engine.mjs"));
-E.normalizeParcels(parcels);   // legacy "mixed" records become a class + a mix
+const { loadCity } = await import(join(HERE, "city.mjs"));
+const { parcels, adjacency, bbls, seed: CITY_SEED } = loadCity(0, E.normalizeParcels);
 const M = (n) => (Math.abs(n) >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : `${(n / 1e6).toFixed(0)}M`);
 
 // --- the four archetypes ----------------------------------------------------

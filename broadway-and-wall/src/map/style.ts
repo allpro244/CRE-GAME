@@ -6,24 +6,31 @@ import type { StyleSpecification, SourceSpecification, LayerSpecification } from
 export const BASEMAP_URL: string | undefined =
   import.meta.env.VITE_BASEMAP_STYLE as string | undefined;
 
-import { dataBase } from "@/state/city";
-const data = (f: string) => dataBase() + f;
+const EMPTY = { type: "FeatureCollection" as const, features: [] };
 
-export function gameSources(): Record<string, SourceSpecification> {
+/**
+ * THE CITY IS MADE, NOT FETCHED — so its layers are GeoJSON, not tiles.
+ *
+ * These two were PMTiles archives cut by the pipeline, which is the right
+ * answer for forty thousand Manhattan lots and the wrong one here: a generated
+ * city is sixteen hundred parcels and twelve hundred footprints, which MapLibre
+ * eats without noticing, and an archive is a FILE — it has to be built by Node
+ * and served over HTTP with byte-range support. That was the single thing
+ * standing between this game and a new city on every run.
+ *
+ * Everything the tiles carried is still here. The parcel features keep their
+ * `bbl`, `demand` and `landpsf` properties, which the lenses read; each has a
+ * numeric feature id, which is what feature-state needs; the only difference
+ * downstream is that nothing says `source-layer` any more.
+ */
+export function gameSources(city: {
+  parcelFeatures?: unknown; buildingFeatures?: unknown;
+} = {}): Record<string, SourceSpecification> {
   return {
-    "bw-parcels": {
-      type: "vector",
-      url: "pmtiles://" + new URL(data("parcels.pmtiles"), location.href).href,
-    },
-    "bw-buildings": {
-      type: "vector",
-      url: "pmtiles://" + new URL(data("buildings.pmtiles"), location.href).href,
-    },
-    "bw-forsale": { type: "geojson", data: { type: "FeatureCollection", features: [] } } as never,
-    "bw-owned": {
-      type: "geojson",
-      data: { type: "FeatureCollection", features: [] },
-    },
+    "bw-parcels": { type: "geojson", data: (city.parcelFeatures ?? EMPTY) as never },
+    "bw-buildings": { type: "geojson", data: (city.buildingFeatures ?? EMPTY) as never },
+    "bw-forsale": { type: "geojson", data: EMPTY } as never,
+    "bw-owned": { type: "geojson", data: EMPTY },
   };
 }
 
@@ -60,7 +67,6 @@ export function gameLayers(): LayerSpecification[] {
       id: "bw-parcel-fill",
       type: "fill",
       source: "bw-parcels",
-      "source-layer": "parcels",
       paint: {
         "fill-color": [
           "case",
@@ -88,7 +94,6 @@ export function gameLayers(): LayerSpecification[] {
       id: "bw-parcel-line",
       type: "line",
       source: "bw-parcels",
-      "source-layer": "parcels",
       paint: {
         "line-color": [
           "case",
@@ -118,7 +123,6 @@ export function gameLayers(): LayerSpecification[] {
       id: "bw-bldg-3d",
       type: "fill-extrusion",
       source: "bw-buildings",
-      "source-layer": "buildings",
       layout: { visibility: "none" },
       paint: {
         "fill-extrusion-height": ["get", "heightM"] as never,
@@ -192,12 +196,14 @@ export function gameLayers(): LayerSpecification[] {
 
 // Fully offline fallback: pale-blue harbor, white-paper landmass, soft parks
 // and piers from context.geojson — the architectural-model base, self-contained.
-export function fallbackBaseStyle(): StyleSpecification {
+export function fallbackBaseStyle(context?: unknown): StyleSpecification {
   return {
     version: 8,
     name: "bw-fallback",
     sources: {
-      "bw-context": { type: "geojson", data: data("context.geojson") },
+      // The water, the parks, the piers and the street surfaces — generated
+      // with the rest of the city rather than fetched beside it.
+      "bw-context": { type: "geojson", data: (context ?? EMPTY) as never },
     },
     layers: [
       // open water is deeper than the harbor: the shallows band along the
@@ -512,8 +518,8 @@ export function fallbackBaseStyle(): StyleSpecification {
   };
 }
 
-export async function resolveBaseStyle(): Promise<StyleSpecification> {
-  if (!BASEMAP_URL) return fallbackBaseStyle();
+export async function resolveBaseStyle(context?: unknown): Promise<StyleSpecification> {
+  if (!BASEMAP_URL) return fallbackBaseStyle(context);
   try {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), 3500);
@@ -524,11 +530,13 @@ export async function resolveBaseStyle(): Promise<StyleSpecification> {
     return style;
   } catch {
     console.warn(`Basemap unreachable (${BASEMAP_URL}) — using self-contained fallback style.`);
-    return fallbackBaseStyle();
+    return fallbackBaseStyle(context);
   }
 }
 
-export function composeStyle(base: StyleSpecification): StyleSpecification {
+export function composeStyle(base: StyleSpecification, city?: {
+  parcelFeatures?: unknown; buildingFeatures?: unknown;
+}): StyleSpecification {
   // Model-city cleanliness: strip basemap labels/POIs unless asked to keep
   // them (VITE_BASEMAP_LABELS=on). Roads, parks, and water stay.
   const keepLabels = import.meta.env.VITE_BASEMAP_LABELS === "on";
@@ -552,7 +560,7 @@ export function composeStyle(base: StyleSpecification): StyleSpecification {
       "fog-ground-blend": 0.88,
       "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 12, 0.9, 15.5, 0.7, 18, 0.45],
     },
-    sources: { ...base.sources, ...gameSources() },
+    sources: { ...base.sources, ...gameSources(city) },
     layers: [...baseLayers, ...gameLayers()],
   };
 }

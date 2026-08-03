@@ -1,6 +1,6 @@
 BROADWAY & WALL
-A commercial real estate tycoon game. Six harbor cities, one hundred years,
-one principal — you.
+A commercial real estate tycoon game. Two harbor cities, a new town on each
+one every time you start over, one hundred years, one principal — you.
 
 
 HOW TO PLAY
@@ -26,27 +26,41 @@ loading their own data files, so the game needs the small server to run.
 
 THE CITIES
 ----------
-Six of them, picked from the dropdown beside the title. Each is a complete,
-deterministic city of roughly 1,300-1,650 lots, and each keeps its own
-campaign and its own autosave — switch away and switch back and you resume
-where you left off.
+Two islands, picked from the dropdown beside the title.
 
   New Alden       The original. A colonial landing, a numbered grid, and a
                   Broadway cutting across both.
   Kestrel Point   A narrow peninsula. Frontage is scarce and the only cheap
                   land is out at the tip.
-  Marrow Bay      A crescent around a deep bay; three grids that refuse to
-                  agree with each other.
-  Thorne Island   An island. No hinterland, no cheap edge — build up or buy
-                  somebody out.
-  Calder Falls    A mill town. Value runs uphill, away from the working river.
-  Sable Harbor    A hooked harbor — more waterfront than land behind it.
 
-Every lot is selectable and carries a real record: lot area, building area,
-floors, year built, zoning, FAR built against FAR allowed, assessed value,
-and a demand score computed from transit proximity and workplace employment.
+They play differently on purpose: New Alden has a hinterland behind its
+harbour, so there is always somewhere cheaper to go. Kestrel Point does not —
+the whole town is within four blocks of water, and the only way to get more
+building is to buy somebody out or go up.
 
-Drag to pan, right-drag to rotate, scroll to zoom, click any building.
+Each island keeps its own campaign and its own autosave, so switching away and
+back resumes where you left off.
+
+
+A NEW TOWN EVERY TIME
+---------------------
+The island is fixed. The town on it is not.
+
+Every time you press "New city", the whole place is rebuilt from scratch: the
+block grid is re-cut, every block is subdivided into different lots, so parcel
+sizes and shapes are new; what is already built and what is left as vacant
+ground is new; heights, ages, uses and the mix inside each building are new. A
+reroll of New Alden might go from 1,697 lots on 170 blocks to 1,631 on 156.
+
+Same harbour, same parks, same street names — a completely different town on
+top of them. The corner you learned last game belongs to somebody else now,
+and the good ground is somewhere you have not looked yet.
+
+It takes about a third of a second, and none of it is downloaded: the city is
+generated in your browser from a single number, which is why this whole game
+is a two-megabyte folder. That number is written into your save, so refreshing
+the page puts you back in YOUR town with your campaign — only starting over
+rolls a new one.
 
 
 THE GAME

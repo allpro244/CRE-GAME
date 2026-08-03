@@ -11,10 +11,10 @@ import { spawnSync } from "node:child_process";
 import { writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CITIES, TAGLINES } from "./cities.mjs";
+import { CITIES, TAGLINES } from "../src/citygen/cities.mjs";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
-const PUB = join(ROOT, "..", "public", "data");
+const PUB = join(ROOT, "out", "data");
 mkdirSync(PUB, { recursive: true });
 
 const names = process.argv.slice(2).filter((a) => !a.startsWith("--"));

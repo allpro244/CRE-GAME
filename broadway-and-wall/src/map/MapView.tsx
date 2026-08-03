@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { Protocol } from "pmtiles";
-import { fetchGzJson, useStore } from "@/state/store";
-import { dataBase } from "@/state/city";
+import { useStore } from "@/state/store";
 import { composeStyle, gameLayers, landLensColor, LIVE_DEMAND, resolveBaseStyle } from "./style";
 import { ThreeBuildings, type BuildingVolume } from "./ThreeBuildings";
 
@@ -50,8 +48,6 @@ const framesOf = (f: CityFrame, px: number) => {
   };
 };
 
-let protocolAdded = false;
-
 export default function MapView() {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -66,28 +62,23 @@ export default function MapView() {
   const hover = useStore((s) => s.hover);
   const setFps = useStore((s) => s.setFps);
 
+  // THE MAP WAITS FOR THE CITY. Nothing is fetched any more — the parcel
+  // polygons, the footprints, the water and the parks are all generated in
+  // `loadData` and handed over here, so the map cannot mount until they exist.
+  const city = useStore((s) => s.city);
   useEffect(() => {
-    if (!el.current || mapRef.current) return;
-    if (!protocolAdded) {
-      const protocol = new Protocol();
-      maplibregl.addProtocol("pmtiles", protocol.tile);
-      protocolAdded = true;
-    }
+    if (!el.current || mapRef.current || !city) return;
     let disposed = false;
 
     (async () => {
-      const [base, frame] = await Promise.all([
-        resolveBaseStyle(),
-        fetch(dataBase() + "manifest.json")
-          .then((r) => r.json())
-          .then((m) => (Array.isArray(m?.bbox) && Array.isArray(m?.core) ? (m as CityFrame) : FALLBACK))
-          .catch(() => FALLBACK),
-      ]);
+      const m = city.manifest as unknown as CityFrame;
+      const frame = Array.isArray(m?.bbox) && Array.isArray(m?.core) ? m : FALLBACK;
+      const base = await resolveBaseStyle(city.context);
       if (disposed || !el.current) return;
       const shot = framesOf(frame, el.current.clientWidth || 1280);
       const map = new maplibregl.Map({
         container: el.current,
-        style: composeStyle(base),
+        style: composeStyle(base, city),
         ...shot.wide,
         minZoom: shot.wide.zoom - 0.9, // whole city stays in frame; tiles never vanish
         maxPitch: 70,
@@ -100,21 +91,20 @@ export default function MapView() {
       map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
 
       const featureIdsFor = (bbl: string) => Number(bbl);
+      // GeoJSON sources have no source-layer. Everything else about feature
+      // state is unchanged — the features carry the same numeric ids they
+      // carried as tiles, because the ids come from the BBL either way.
       const setState = (bbl: string, state: Record<string, boolean>) => {
         const id = featureIdsFor(bbl);
-        map.setFeatureState({ source: "bw-parcels", sourceLayer: "parcels", id }, state);
-        map.setFeatureState({ source: "bw-buildings", sourceLayer: "buildings", id }, state);
+        map.setFeatureState({ source: "bw-parcels", id }, state);
+        map.setFeatureState({ source: "bw-buildings", id }, state);
       };
 
       map.on("load", () => {
         setMapReady(true);
         // the beautiful-buildings renderer: meshes with procedural facades
-        Promise.all([
-          fetchGzJson(dataBase() + "buildings3d.json.gz"),
-          // the curb lines double as the planting plan for street trees
-          fetch(dataBase() + "context.geojson").then((r) => r.json()).catch(() => null),
-        ])
-          .then(([volumes, ctx]: [BuildingVolume[], GeoJSON.FeatureCollection | null]) => {
+        Promise.resolve([city.buildings3d as BuildingVolume[], city.context as GeoJSON.FeatureCollection | null] as const)
+          .then(([volumes, ctx]: readonly [BuildingVolume[], GeoJSON.FeatureCollection | null]) => {
             if (disposed || !volumes?.length) return;
             const curbs: [number, number][][] = (ctx?.features ?? [])
               .filter((f) => f.properties?.kind === "street" && f.geometry.type === "LineString")
@@ -209,7 +199,7 @@ export default function MapView() {
       mapRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [city]);
 
   // reflect selection + neighbor highlight into feature-state
   const selectedBBL = useStore((s) => s.selectedBBL);
@@ -226,8 +216,8 @@ export default function MapView() {
     if (!map) return;
     const setState = (bbl: string, state: Record<string, boolean>) => {
       const id = Number(bbl);
-      map.setFeatureState({ source: "bw-parcels", sourceLayer: "parcels", id }, state);
-      map.setFeatureState({ source: "bw-buildings", sourceLayer: "buildings", id }, state);
+      map.setFeatureState({ source: "bw-parcels", id }, state);
+      map.setFeatureState({ source: "bw-buildings", id }, state);
     };
     if (selectedRef.current) setState(selectedRef.current, { selected: false });
     for (const n of neighborsRef.current) setState(n, { neighbor: false });
@@ -273,8 +263,8 @@ export default function MapView() {
     if (!map || !mapReady || !game || !parcels) return;
     const setState = (bbl: string, state: Record<string, boolean>) => {
       const id = Number(bbl);
-      map.setFeatureState({ source: "bw-parcels", sourceLayer: "parcels", id }, state);
-      map.setFeatureState({ source: "bw-buildings", sourceLayer: "buildings", id }, state);
+      map.setFeatureState({ source: "bw-parcels", id }, state);
+      map.setFeatureState({ source: "bw-buildings", id }, state);
     };
     const nowOwned = new Set(Object.keys(game.holdings));
     for (const bbl of ownedRef.current) if (!nowOwned.has(bbl)) setState(bbl, { owned: false });
@@ -338,10 +328,10 @@ export default function MapView() {
     }
     for (const [bbl, v] of next) {
       if (dmdRef.current.get(bbl) === v) continue;
-      map.setFeatureState({ source: "bw-parcels", sourceLayer: "parcels", id: Number(bbl) }, { dmd: v });
+      map.setFeatureState({ source: "bw-parcels", id: Number(bbl) }, { dmd: v });
     }
     for (const bbl of dmdRef.current.keys()) {
-      if (!next.has(bbl)) map.removeFeatureState({ source: "bw-parcels", sourceLayer: "parcels", id: Number(bbl) }, "dmd");
+      if (!next.has(bbl)) map.removeFeatureState({ source: "bw-parcels", id: Number(bbl) }, "dmd");
     }
     dmdRef.current = next;
   }, [game, parcels, mapReady, lens]);
@@ -352,10 +342,9 @@ export default function MapView() {
     if (!map || !mapReady) return;
     const markers: maplibregl.Marker[] = [];
     let disposed = false;
-    fetch(dataBase() + "context.geojson")
-      .then((r) => r.json())
-      .then((fc: { features: { geometry: { type: string; coordinates: [number, number] }; properties: Record<string, string> }[] }) => {
-        if (disposed) return;
+    Promise.resolve(city?.context as { features: { geometry: { type: string; coordinates: [number, number] }; properties: Record<string, string> }[] } | null)
+      .then((fc) => {
+        if (disposed || !fc) return;
         for (const f of fc.features) {
           if (f.properties.kind !== "label") continue;
           const el = document.createElement("div");
@@ -383,7 +372,7 @@ export default function MapView() {
       disposed = true;
       markers.forEach((m) => m.remove());
     };
-  }, [mapReady]);
+  }, [mapReady, city]);
 
   // mesh tints: gold selection/ownership, teal neighbors, warm hover
   const hoveredBBL = useStore((s) => s.hoveredBBL);

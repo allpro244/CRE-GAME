@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore, derivedNetWorth, derivedQuarterCF } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { currentCity, listCities, switchCity, type CityInfo } from "@/state/city";
+import { currentCity, currentSeed, listCities, switchCity, type CityInfo } from "@/state/city";
 import { usd, pct } from "./format";
 
 export default function TopBar() {
@@ -43,7 +43,7 @@ export default function TopBar() {
           <div className="city-pick" ref={cityRef}>
             <button
               className="brand-sub city-pick-btn"
-              title="Switch city — each city keeps its own campaign and autosave"
+              title={`Switch island — each keeps its own campaign and autosave.\nThis town was built from seed ${game?.citySeed ?? currentSeed()}; "New city" rolls another one on the same island.`}
               onClick={() => setCityOpen((v) => !v)}
             >
               {manifest?.city ?? currentCity()} ▾
@@ -164,14 +164,14 @@ export default function TopBar() {
             dead. A two-click arm-then-fire needs nothing from the browser. */}
         <button
           className={"lens-btn" + (armNewRun ? " lens-on" : "")}
-          title="Start over: fresh city, no holdings, $6M cash"
+          title="Start over — and a brand new town on the same island: every block re-cut, every lot line new, every building somewhere else. No holdings, $6M cash."
           onClick={() => {
             if (!armNewRun) { setArmNewRun(true); setTimeout(() => setArmNewRun(false), 4000); return; }
             setArmNewRun(false);
             useStore.getState().newRun();
           }}
         >
-          {armNewRun ? "Erase this game?" : "↺ New run"}
+          {armNewRun ? "Erase this game?" : "↺ New city"}
         </button>
         <span className={"stat mono " + (fps >= 55 ? "fps-good" : fps >= 30 ? "fps-ok" : "fps-bad")}>
           {fps} fps

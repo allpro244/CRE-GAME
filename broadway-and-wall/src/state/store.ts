@@ -14,7 +14,8 @@ import { startDevelopment, startProgram, setStance, demolish } from "@/engine/de
 import { normalizeParcels } from "@/engine/mix";
 import { netWorth } from "@/engine/value";
 import { loadGame, saveGame, listSaves, deleteSave, type SaveMeta } from "@/engine/save";
-import { currentCity, dataBase } from "@/state/city";
+import { currentCity, currentSeed, setSeed, rerollCity } from "@/state/city";
+import { makeCity, type GeneratedCity } from "@/citygen/index.mjs";
 
 export type Lens = "none" | "land" | "demand" | "owners";
 export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "leasing" | "property" | "saves";
@@ -24,6 +25,8 @@ interface AppState {
   bbls: string[];
   adjacency: Adjacency | null;
   manifest: DataManifest | null;
+  /** The town this run is played on, generated from (island, seed). */
+  city: GeneratedCity | null;
   game: GameState | null;
   selectedBBL: string | null;
   hoveredBBL: string | null;
@@ -36,7 +39,7 @@ interface AppState {
   toast: { text: string; kind: "ok" | "err"; at: number } | null;
   fps: number;
   loadError: string | null;
-  setData: (d: { parcels: ParcelTable; adjacency: Adjacency; manifest: DataManifest }) => void;
+  setData: (d: { parcels: ParcelTable; adjacency: Adjacency; manifest: DataManifest; city?: GeneratedCity }) => void;
   select: (bbl: string | null) => void;
   hover: (bbl: string | null) => void;
   /** Select it AND take the camera there. */
@@ -109,6 +112,7 @@ export const useStore = create<AppState>((set, get) => ({
   bbls: [],
   adjacency: null,
   manifest: null,
+  city: null,
   game: null,
   selectedBBL: null,
   hoveredBBL: null,
@@ -560,13 +564,29 @@ export const useStore = create<AppState>((set, get) => ({
     toast("+$100M (testing).");
   },
 
+  /**
+   * A NEW RUN IS A NEW TOWN.
+   *
+   * It used to reroll the market on the same fixed map: the same blocks, the
+   * same lot lines, the same buildings in the same places, so by the third
+   * campaign you knew which corner was the good corner before you had bought
+   * anything. Now the island stays and everything on it is re-cut — new
+   * blocks, new parcels, new building stock, new vacant ground. Roughly
+   * 300ms, which is why it happens on a page load rather than as a download.
+   *
+   * The whole thing rebuilds, so this reloads rather than hot-swapping the
+   * parcel table, the adjacency graph, four map sources and the skyline
+   * underneath a live game.
+   */
   newRun: () => {
-    const { parcels, bbls } = get();
-    if (!parcels) return;
-    const seed = (Date.now() ^ (Math.random() * 0xffffffff)) >>> 0;
-    const g = firstListings(newGame(seed, parcels), parcels, bbls);
-    set({ game: g, selectedBBL: null, page: "none" });
-    void persist(g);
+    // The autosave is the authority on which town you are in — it was played
+    // there — so rolling a new seed without clearing it means the reload puts
+    // you straight back in the old city. Erasing the game and rolling the town
+    // are the same act, and the button already says so.
+    rerollCity();
+    void deleteSave(AUTO())
+      .catch(() => { /* nothing saved: nothing to clear */ })
+      .then(() => location.reload());
   },
 }));
 
@@ -599,33 +619,53 @@ export async function fetchGzJson(url: string) {
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 
+/**
+ * BUILD THE CITY, THEN THE GAME.
+ *
+ * Nothing is fetched. `makeCity` runs the same generator the build pipeline
+ * runs — one copy of the code, so a city made here and a city made by
+ * `pnpm cities` are byte-identical — and hands back the parcel table, the
+ * adjacency graph, the map's own layers and the skyline in about a third of a
+ * second. The seed is remembered per island, and a save carries its own, so a
+ * refresh puts you back in YOUR town rather than a stranger's.
+ */
 export async function loadData() {
-  const base = dataBase();
+  const island = currentCity();
   try {
-    const [parcels, adjacency, manifest] = await Promise.all([
-      fetchGzJson(base + "parcels.json.gz"),
-      fetchGzJson(base + "adjacency.json.gz"),
-      fetch(base + "manifest.json").then((r) => { if (!r.ok) throw new Error(`manifest.json ${r.status}`); return r.json(); }),
-    ]);
-    // Any record the pipeline still files as "mixed" becomes its dominant use
-    // plus an explicit mix, once, at the door — so no downstream table lookup
-    // has to know that legacy class ever existed.
-    useStore.getState().setData({ parcels: normalizeParcels(parcels), adjacency, manifest });
-    // resume the autosave — unless it references parcels that no longer
-    // exist (a save from a different city/dataset), in which case start over
-    // migration: pre-city saves lived in a flat "auto" slot
+    // The save is the authority on which town this is: it was played there.
     const saved = (await loadGame(AUTO())) ?? (await loadGame("auto"));
-    const fitsCity = saved && saved.v === 20 &&
-      Object.keys(saved.holdings).every((b) => parcels[b]) &&
-      saved.listings.every((l) => parcels[l.bbl]);
-    if (fitsCity) {
+    const seed = (saved?.citySeed ?? currentSeed(island)) >>> 0;
+    setSeed(seed, island);
+
+    const built = makeCity(island, seed);
+    // Any record the pipeline still files as "mixed" becomes its dominant use
+    // plus an explicit mix, once, at the door.
+    const parcels = normalizeParcels(built.parcels as ParcelTable);
+    useStore.getState().setData({
+      parcels,
+      adjacency: built.adjacency as Adjacency,
+      manifest: built.manifest as DataManifest,
+      city: built,
+    });
+
+    // A save only fits if every deed in it exists in THIS town. Across seeds
+    // it will not, and that is not a corrupt save — it is a save from a city
+    // that no longer exists, which is exactly what a reroll means.
+    const fits = saved && saved.v === 20 && saved.citySeed === seed
+      && Object.keys(saved.holdings).every((b) => parcels[b])
+      && saved.listings.every((l) => parcels[l.bbl]);
+    if (fits) {
       useStore.setState({ game: saved });
     } else {
-      useStore.getState().newRun();
+      const bbls = Object.keys(parcels);
+      const g = firstListings(newGame(seed, parcels), parcels, bbls);
+      g.citySeed = seed;
+      useStore.setState({ game: g });
+      void saveGame(AUTO(), g).catch(() => { /* private mode: play on unsaved */ });
     }
   } catch (e) {
     useStore.getState().setLoadError(
-      `Game data missing (${(e as Error).message}). Run: pnpm pipeline (real data) or pnpm pipeline:dev (offline dev data), then reload.`,
+      `The city would not build (${(e as Error).message}). This is a bug — please report the seed above.`,
     );
   }
 }

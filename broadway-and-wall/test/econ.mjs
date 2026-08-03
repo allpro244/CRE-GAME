@@ -6,18 +6,13 @@
 // nothing can ever be built, and that every class spends real time on both
 // sides of its natural rate. Those are balance properties, and balance
 // properties need their own harness or they rot unnoticed.
-import { readFileSync } from "node:fs";
-import { gunzipSync } from "node:zlib";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const E = await import(join(HERE, ".engine.mjs"));
-const P = join(HERE, "..", "public", "data", process.env.BW_CITY ?? "newalden") + "/";
-const parcels = JSON.parse(gunzipSync(readFileSync(P + "parcels.json.gz")).toString());
-const adjacency = JSON.parse(gunzipSync(readFileSync(P + "adjacency.json.gz")).toString());
-const bbls = Object.keys(parcels);
-E.normalizeParcels(parcels);
+const { loadCity } = await import(join(HERE, "city.mjs"));
+const { parcels, adjacency, bbls, seed: CITY_SEED } = loadCity(0, E.normalizeParcels);
 
 const CLASSES = ["office", "retail", "multifamily", "industrial"];
 const NAT = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07 };

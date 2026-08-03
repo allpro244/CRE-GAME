@@ -9,7 +9,7 @@ import { buildPMTiles } from "./lib/pmtiles-writer.mjs";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const OUT = join(ROOT, "out");
-const PUB = join(ROOT, "..", "public", "data", process.env.BW_CITY_DIR ?? "");
+const PUB = join(ROOT, "out", "data", process.env.BW_CITY_DIR ?? "");
 
 const MINZ = 10, MAXZ = 15; // MapLibre overzooms past MAXZ; keeps archives lean
 

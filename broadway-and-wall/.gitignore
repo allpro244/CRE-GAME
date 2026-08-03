@@ -1,4 +1,6 @@
-# pipeline intermediates — regenerate with pnpm pipeline / pipeline:dev
+# Pipeline output. The app GENERATES its city now — see src/citygen — so this
+# is only the pipeline's own audit material: coverage numbers, the plan SVGs
+# and the tile archives. Nothing here ships.
 pipeline/raw/
 pipeline/out/
 pipeline/plan/

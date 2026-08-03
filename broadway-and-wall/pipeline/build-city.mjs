@@ -14,8 +14,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CITIES } from "./cities.mjs";
-import { generateCity } from "./lib/citygen.mjs";
+import { CITIES } from "../src/citygen/cities.mjs";
+import { generateCity } from "../src/citygen/citygen.mjs";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const RAW = join(ROOT, "raw");

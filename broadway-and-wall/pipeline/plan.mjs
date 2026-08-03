@@ -14,8 +14,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CITIES } from "./cities.mjs";
-import { generateCity } from "./lib/citygen.mjs";
+import { CITIES } from "../src/citygen/cities.mjs";
+import { generateCity } from "../src/citygen/citygen.mjs";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const OUT = join(ROOT, "plan");
@@ -80,7 +80,7 @@ for (const name of names) {
   // BARE GROUND — the thing this render exists to expose
   const cov = city.stats.coverage;
   // voids come back in the config's metre frame; re-project through the city's
-  const { makeProjection } = await import("./lib/geom.mjs");
+  const { makeProjection } = await import("../src/citygen/geom.mjs");
   const pr = makeProjection(cfg.center[0], cfg.center[1]);
   for (const v of cov.voids) {
     const [lx, ly] = pr.toLL(v);

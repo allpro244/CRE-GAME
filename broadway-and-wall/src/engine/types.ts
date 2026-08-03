@@ -548,6 +548,16 @@ export type SellerKind = "estate" | "institution" | "partnership" | "developer" 
 export interface GameState {
   v: 20;
   seed: number;
+  /**
+   * WHICH TOWN THIS WAS PLAYED IN.
+   *
+   * The island is fixed and the town on it is generated from this number:
+   * every block, every lot line, every building. A save without it refers to
+   * deeds in a city that no longer exists, so it travels with the game and
+   * the city is rebuilt from it on load — six digits instead of two megabytes
+   * of parcel table.
+   */
+  citySeed?: number;
   rng: number;
   month: number;
   cash: number;

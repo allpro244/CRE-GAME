@@ -2,19 +2,14 @@
 // strategies chosen to stress different parts of the engine. Reports the FIRST
 // month each distinct violation appears, because that is the month with the
 // bug in it.
-import { readFileSync } from "node:fs";
-import { gunzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Cities live in per-city dirs now; the harness runs against one of them.
 // BW_CITY picks which (default newalden — the original balance target).
-const P = join(HERE, "..", "public", "data", process.env.BW_CITY ?? "newalden") + "/";
-const parcels = JSON.parse(gunzipSync(readFileSync(P + "parcels.json.gz")).toString());
-const adjacency = JSON.parse(gunzipSync(readFileSync(P + "adjacency.json.gz")).toString());
-const bbls = Object.keys(parcels);
 const E = await import(process.env.ENGINE ?? join(HERE, ".engine.mjs"));
-E.normalizeParcels(parcels);   // legacy "mixed" records become a class + a mix
+const { loadCity } = await import(join(HERE, "city.mjs"));
+const { parcels, adjacency, bbls, seed: CITY_SEED } = loadCity(0, E.normalizeParcels);
 
 const HORIZON = Number(process.env.HORIZON ?? 1200);
 const SEEDS = Number(process.env.SEEDS ?? 8);

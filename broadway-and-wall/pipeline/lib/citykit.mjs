@@ -14,7 +14,7 @@ import {
   polygonArea, centroid, bboxOfRing, clipRingHalfPlane,
   isConvex, cleanRing, insetConvex, splitConvex,
   longestEdgeAngle, extentAlong, pointAt, insetRingPerp,
-} from "./geom.mjs";
+} from "../../src/citygen/geom.mjs";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 export const RAW = join(ROOT, "raw");

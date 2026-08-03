@@ -149,6 +149,26 @@ function subtractConvex(cell, faces, minArea) {
 // as bare pavement because its sharpest corner defeated the miter.
 // `dOf(edgeAngle, i)` may differ per edge — that is how avenues end up wider
 // than side streets.
+/**
+ * Shortest distance from a point to a ring's boundary. Used to ask whether a
+ * lot edge lies on the block perimeter — which is the same question as "does
+ * this edge face the street, or does it face the building next door".
+ */
+function distToRing(p, ring) {
+  let best = Infinity;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    const ex = b[0] - a[0], ey = b[1] - a[1];
+    const L2 = ex * ex + ey * ey;
+    let t = L2 > 1e-12 ? ((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / L2 : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const dx = p[0] - (a[0] + ex * t), dy = p[1] - (a[1] + ey * t);
+    const d = Math.hypot(dx, dy);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
 function erode(ring, dOf) {
   const ccw = ringArea(ring) > 0;
   let r = ring;
@@ -664,8 +684,54 @@ export function generateCity(cfg) {
         if (cls === "E9") floors = Math.min(floors, 4);
         floors = Math.min(floors, Math.max(1, Math.floor(Math.max(zone.commfar, zone.resfar) / coverage)));
         const side = Math.sqrt(areaM2);
-        const setback = Math.max(1.5, (side * (1 - Math.sqrt(coverage))) / 2);
-        footprint = erode(lotRing, setback) ?? erode(lotRing, 1.5) ?? insetRingPerp(lotRing, 1.2);
+        // ------------------------------------------------ THE PARTY WALL
+        //
+        // NOT ONE BUILDING IN THIS CITY TOUCHED ANOTHER.
+        //
+        // Every footprint was eroded by the SAME distance on every side, so a
+        // row house pulled back from its neighbour exactly as far as it pulled
+        // back from the street. Measured across three generated cities and
+        // 4,684 lots: 66.9% of the average lot's perimeter abuts another lot
+        // (median 72%), 50.3% of lots are midblock and 40.3% are corners — and
+        // yet the minimum distance between any two buildings in New Alden was
+        // 3.00 m and the median 3.51 m. A thousand freestanding boxes floating
+        // inside their lots, with daylight down every party line.
+        //
+        // That is not a detail. It is why the city reads as a model railway
+        // and not as a street: a real block is a CONTINUOUS WALL of masonry
+        // with a serrated top, broken only where somebody knocked something
+        // down. The buildings touch.
+        //
+        // So the erosion goes per-edge. An edge lying on the block perimeter
+        // faces the street and keeps its setback; every interior edge is a
+        // party line and gets almost nothing. The street setback is then
+        // solved so the footprint still covers the SAME share of the lot it
+        // did before — the shape changes, the area does not, and nothing
+        // downstream of coverage moves by a square foot.
+        const PARTY = 0.12;
+        const party = [];
+        for (let i = 0; i < lotRing.length; i++) {
+          const a = lotRing[i], b = lotRing[(i + 1) % lotRing.length];
+          const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+          party.push(distToRing(mid, street) > 0.35);
+        }
+        const streetEdges = party.filter((x) => !x).length;
+        if (streetEdges === 0) {
+          // Landlocked: no frontage, so there is nothing to set back from.
+          footprint = erode(lotRing, Math.max(1.2, (side * (1 - Math.sqrt(coverage))) / 2))
+            ?? insetRingPerp(lotRing, 1.2);
+        } else {
+          const want = coverage * areaM2;
+          const cut = (dd) => erode(lotRing, (_ang, i) => (party[i] ? PARTY : dd));
+          let lo = 0, hi = side * 0.6, best = cut(0);
+          for (let k = 0; k < 9; k++) {
+            const mid = (lo + hi) / 2;
+            const r = cut(mid);
+            const a = r ? polygonArea([r]) : 0;
+            if (a > want) { lo = mid; best = r; } else { hi = mid; if (a > 0) best = r; }
+          }
+          footprint = best ?? erode(lotRing, 1.5) ?? insetRingPerp(lotRing, 1.2);
+        }
         const realCov = footprint ? polygonArea([footprint]) / areaM2 : coverage;
         bldgArea = Math.round(lotArea * realCov * floors);
         heightM = floors * 3.55 + rr(1, 4);

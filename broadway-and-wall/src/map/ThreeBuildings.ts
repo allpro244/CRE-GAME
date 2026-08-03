@@ -334,6 +334,12 @@ void main() {
   // an inside corner. Without these two terms a building looks pasted onto
   // the ground instead of standing on it.
   float aoGround = mix(0.64, 1.0, smoothstep(0.0, 7.5, vZ));
+  // A TIGHT CONTACT LINE, which is a different thing from the soft gradient
+  // above it. The 7.5 m falloff is the street canyon losing sky; what makes a
+  // wall look like it is STANDING on the pavement rather than hovering a
+  // centimetre above it is a hard dark band in the bottom metre and a half,
+  // and it has to survive into the direct term or a sunlit facade floats.
+  float contact = mix(0.55, 1.0, smoothstep(0.0, 1.6, vZ));
   float dA = vU - vSeg.x, dB = vSeg.y - vU;
   float wA = 1.0 - smoothstep(0.0, 1.7, dA);
   float wB = 1.0 - smoothstep(0.0, 1.7, dB);
@@ -342,7 +348,7 @@ void main() {
   float edgeLift = edge > 0.0 ? 1.0 + 0.055 * edge : 1.0;   // convex arris catches light
   // the underside of a cornice or setback keeps its own shade
   float aoEave = mix(0.80, 1.0, smoothstep(0.0, 1.6, vTop - vZ));
-  float ao = aoGround * aoCorner * aoEave;
+  float ao = aoGround * aoCorner * aoEave * contact;
 
   // ---- palette by style + variant -----------------------------------------
   vec3 wall; vec3 glassA; vec3 glassB; float colW; vec2 win;
@@ -672,7 +678,7 @@ void main() {
 
   // ---- light --------------------------------------------------------------
   float ndl = max(dot(n, SUN_DIR), 0.0);
-  vec3 light = SUN_COL * (ndl * vis * 0.92) + hemiLight(n, ao);
+  vec3 light = SUN_COL * (ndl * vis * 0.92 * mix(0.72, 1.0, smoothstep(0.0, 1.9, vZ))) + hemiLight(n, ao);
   // glass throws a specular back at the sun; masonry doesn't
   if (glassy) {
     vec3 V = normalize(uCam - vPos);
@@ -799,7 +805,13 @@ varying vec3 vPos;
 void main() {
   // The ground is flat and faces straight up; its own normal is the offset.
   float vis = sunVis(vPos, vec3(0.0, 0.0, 1.0));
-  gl_FragColor = vec4(0.19, 0.22, 0.34, (1.0 - vis) * 0.40);
+  // A SHADOW YOU CAN SEE. This was 40% of a pale blue-grey, which was the
+  // right call while the depth bias was erasing two thirds of every shadow
+  // anyway — a faint smudge is less wrong than a faint smudge in the wrong
+  // place. The bias is metres now and the shadows land where the buildings
+  // are, so they are allowed to read: deeper, and cooler, because a shadow
+  // outdoors is lit by the sky and the sky is blue.
+  gl_FragColor = vec4(0.155, 0.185, 0.30, (1.0 - vis) * 0.60);
 }`;
 
 const CATCHER_VERT = /* glsl */ `

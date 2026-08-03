@@ -1879,6 +1879,74 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           if (hgt >= 105 && v.y >= 1975) props.push({ kind: 3, x: cx, y: cy, z: v.z1, s: 1, rot: 0 });
           // antennas crown the tallest towers
           if (hgt >= 95) props.push({ kind: 4, x: cx + jit(15, 5), y: cy + jit(16, 5), z: v.z1, s: 1 + (hgt - 95) / 60, rot: 0 });
+
+          // ---- THE MACHINE DECK ------------------------------------------
+          //
+          // Each of these is placed by the rule the real one obeys, so what is
+          // standing on a roof tells you what KIND of building it is and
+          // roughly when anybody last spent money on it.
+          const R = (k: number) => hash01(keyOf(v.b ?? "x") ^ Math.imul(k + 1, 0x9e3779b1), this.citySeed);
+          const bear = R(41) * Math.PI * 2;
+          const floors = Math.max(1, Math.round(hgt / Math.max(2.6, fh)));
+
+          // Somebody has to be able to get out here. Every flat roof has a way
+          // up, and it is the most characteristic silhouette on the deck.
+          if (hgt >= 9) {
+            props.push({ kind: 13, x: cx + jit(31, 9), y: cy + jit(32, 9), z: v.z1, s: 0.9 + 0.3 * R(3), rot: bear });
+          }
+          // A lift overrun exists where there is a lift, which is six floors
+          // and up before the war and four floors and up after it.
+          if (floors >= (v.y >= 1955 ? 4 : 6) && hgt >= 16) {
+            props.push({ kind: 14, x: cx + jit(33, 11), y: cy + jit(34, 11), z: v.z1, s: 0.9 + 0.25 * R(5), rot: bear + 0.4 });
+          }
+          // Chilled water needs somewhere to reject the heat. Post-war, and
+          // only on a building big enough to have a central plant.
+          if (v.y >= 1948 && hgt >= 34 && R(7) < 0.72) {
+            props.push({ kind: 15, x: cx + jit(35, 13), y: cy + jit(36, 13), z: v.z1, s: 0.85 + 0.55 * R(9), rot: bear + 1.1 });
+          }
+          // The steel pressure tank replaced the timber one after the war —
+          // the two do not share a roof.
+          if (v.y >= 1962 && hgt >= 26 && R(11) < 0.45) {
+            props.push({ kind: 16, x: cx + jit(37, 10), y: cy + jit(38, 10), z: v.z1, s: 0.85 + 0.3 * R(13), rot: 0 });
+          }
+          // Standby power: hospitals, exchanges, anything with a computer
+          // room in it, so tall and late.
+          if (v.y >= 1972 && hgt >= 48 && R(15) < 0.5) {
+            props.push({ kind: 17, x: cx + jit(39, 12), y: cy + jit(40, 12), z: v.z1, s: 1, rot: bear + 2.3 });
+          }
+          // Daylight into the top floor: a loft conversion or a studio.
+          if (hgt >= 12 && hgt <= 34 && R(17) < 0.30) {
+            props.push({ kind: 18, x: cx + jit(41, 8), y: cy + jit(42, 8), z: v.z1, s: 0.8 + 0.5 * R(19), rot: bear + 1.57 });
+          }
+          // Nobody put panels on a roof before somebody was selling them.
+          if (v.y >= 1996 && hgt >= 10 && R(21) < 0.34) {
+            props.push({ kind: 19, x: cx + jit(43, 9), y: cy + jit(44, 9), z: v.z1, s: 0.9 + 0.4 * R(23), rot: bear });
+          }
+          // And a rail round the edge, which is nearly all EDGE and therefore
+          // the one roof part that reads at a distance no box does.
+          if (hgt >= 14) {
+            const rl = Math.min(1.8, Math.max(0.55, Math.sqrt(Math.abs(area)) / 26));
+            for (let e = 0; e < ring.length; e++) {
+              const p0 = ring[e], p1 = ring[(e + 1) % ring.length];
+              const ex = p1[0] - p0[0], ey = p1[1] - p0[1];
+              const L = Math.hypot(ex, ey);
+              if (L < 9) continue;
+              const nx = -ey / L, ny = ex / L;      // inward is whichever way the ring winds
+              const sgn = area > 0 ? 1 : -1;
+              const n = Math.min(4, Math.floor(L / 7.2));
+              for (let i = 0; i < n; i++) {
+                const t = (i + 0.5) / n;
+                props.push({
+                  kind: 20,
+                  x: p0[0] + ex * t + nx * sgn * 1.5,
+                  y: p0[1] + ey * t + ny * sgn * 1.5,
+                  z: v.z1,
+                  s: rl,
+                  rot: Math.atan2(ey, ex),
+                });
+              }
+            }
+          }
         }
         // FIRE ESCAPES. The single most characteristic thing on a brick
         // walk-up street and the game had none. One stack per building, on
@@ -2037,6 +2105,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       { geom: fireEscapeGeom(3), color: 0x4a4238 },
       { geom: fireEscapeGeom(4), color: 0x4a4238 },
       { geom: fireEscapeGeom(5), color: 0x4a4238 },
+      { geom: bulkheadGeom(), color: 0x9d9382 },        // 13
+      { geom: overrunGeom(), color: 0x93897a },         // 14
+      { geom: coolingTowerGeom(), color: 0xa8ada9 },    // 15
+      { geom: pressureTankGeom(), color: 0x7f868a },    // 16
+      { geom: generatorGeom(), color: 0x8b8f86 },       // 17
+      { geom: skylightGeom(), color: 0xbfd0d6 },        // 18
+      { geom: pvRowGeom(), color: 0x2b3550 },           // 19
+      { geom: guardrailGeom(), color: 0x6f7377 },       // 20
     ];
     // painted signs come in painted-sign colours
     const SIGN_COLORS: [number, number, number][] = [
@@ -3094,6 +3170,101 @@ function antennaGeom(): THREE.BufferGeometry {
   const mast = new THREE.CylinderGeometry(0.28, 0.42, 11, 6).rotateX(Math.PI / 2).translate(0, 0, 5.5);
   const tip = new THREE.CylinderGeometry(0.1, 0.16, 4, 5).rotateX(Math.PI / 2).translate(0, 0, 13);
   return mergeGeoms([mast, tip]);
+}
+
+// ---------------------------------------------------------------- roof parts
+//
+// SEVEN THINGS EVER REACHED A ROOF, and roofs are 9.5% of the frame — a bigger
+// surface than the walls. A real roof is a machine deck: the thing that gets
+// you onto it, the thing that lifts you to it, the plant that keeps the
+// building alive, and a rail round the edge so nobody falls off. None of that
+// was there, so every roof in the city was a bare plane with a tank and two
+// boxes on it.
+//
+// Each one is placed by the rule the real one obeys — a lift overrun only
+// exists where there is a lift, a cooling tower only where there is a chiller,
+// PV only after somebody was selling it — so the parts on a roof tell you what
+// KIND of building you are looking at and roughly when it was last touched.
+
+/** The stair bulkhead: the door out onto the roof, with a hood over it. */
+function bulkheadGeom(): THREE.BufferGeometry {
+  const box = new THREE.BoxGeometry(3.2, 2.6, 2.7).translate(0, 0, 1.35);
+  const hood = new THREE.BoxGeometry(3.7, 3.1, 0.26).translate(0, 0, 2.82);
+  const door = new THREE.BoxGeometry(0.12, 1.0, 2.0).translate(1.62, 0, 1.0);
+  return mergeGeoms([box, hood, door]);
+}
+
+/** The lift overrun: taller than the bulkhead, and it always has a vent. */
+function overrunGeom(): THREE.BufferGeometry {
+  const shaft = new THREE.BoxGeometry(3.6, 3.0, 4.4).translate(0, 0, 2.2);
+  const cap = new THREE.BoxGeometry(4.0, 3.4, 0.3).translate(0, 0, 4.55);
+  const vent = new THREE.BoxGeometry(0.9, 0.9, 0.7).translate(0.9, 0, 5.05);
+  return mergeGeoms([shaft, cap, vent]);
+}
+
+/** Open-cell cooling tower: louvred body, fan deck, and the stack over it. */
+function coolingTowerGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  parts.push(new THREE.BoxGeometry(4.4, 3.2, 2.5).translate(0, 0, 1.25));
+  for (let i = 0; i < 4; i++) parts.push(new THREE.BoxGeometry(4.6, 0.14, 0.26).translate(0, -1.6, 0.5 + i * 0.5));
+  parts.push(new THREE.CylinderGeometry(1.5, 1.7, 1.5, 12).rotateX(Math.PI / 2).translate(0, 0, 3.25));
+  parts.push(new THREE.CylinderGeometry(1.55, 1.55, 0.18, 12).rotateX(Math.PI / 2).translate(0, 0, 4.09));
+  for (const l of [[-1.9, -1.3], [1.9, -1.3], [-1.9, 1.3], [1.9, 1.3]])
+    parts.push(new THREE.BoxGeometry(0.22, 0.22, 0.55).translate(l[0], l[1], 0.27));
+  return mergeGeoms(parts);
+}
+
+/** The steel pressure tank — the timber tank's post-war replacement, on legs. */
+function pressureTankGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  parts.push(new THREE.CylinderGeometry(1.5, 1.5, 4.2, 14).rotateX(Math.PI / 2).translate(0, 0, 4.4));
+  parts.push(new THREE.SphereGeometry(1.5, 12, 6).scale(1, 1, 0.55).translate(0, 0, 6.5));
+  for (const a of [0, 1, 2, 3]) {
+    const th = (a / 4) * Math.PI * 2 + 0.4;
+    parts.push(new THREE.BoxGeometry(0.2, 0.2, 2.4).translate(Math.cos(th) * 1.2, Math.sin(th) * 1.2, 1.2));
+  }
+  return mergeGeoms(parts);
+}
+
+/** Standby generator in its weather housing, with the exhaust stack beside it. */
+function generatorGeom(): THREE.BufferGeometry {
+  const body = new THREE.BoxGeometry(3.8, 1.9, 1.9).translate(0, 0, 0.95);
+  const stack = new THREE.CylinderGeometry(0.24, 0.28, 3.4, 8).rotateX(Math.PI / 2).translate(1.6, 0, 2.6);
+  const cap = new THREE.CylinderGeometry(0.34, 0.34, 0.14, 8).rotateX(Math.PI / 2).translate(1.6, 0, 4.35);
+  return mergeGeoms([body, stack, cap]);
+}
+
+/** A ribbon skylight — a low glazed hump running the length of a bay. */
+function skylightGeom(): THREE.BufferGeometry {
+  const kerb = new THREE.BoxGeometry(6.4, 1.9, 0.34).translate(0, 0, 0.17);
+  const glass = new THREE.CylinderGeometry(1.05, 1.05, 6.2, 8, 1, false, Math.PI, Math.PI)
+    .rotateZ(Math.PI / 2).translate(0, 0, 0.34);
+  return mergeGeoms([kerb, glass]);
+}
+
+/** A rank of photovoltaic panels on tilted rails. Modern roofs only. */
+function pvRowGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  for (let i = 0; i < 4; i++) {
+    parts.push(new THREE.BoxGeometry(3.0, 1.5, 0.09).rotateX(-0.42).translate(0, i * 2.1 - 3.15, 0.62));
+    parts.push(new THREE.BoxGeometry(0.09, 0.09, 0.62).translate(-1.3, i * 2.1 - 3.15, 0.31));
+    parts.push(new THREE.BoxGeometry(0.09, 0.09, 0.62).translate(1.3, i * 2.1 - 3.15, 0.31));
+  }
+  return mergeGeoms(parts);
+}
+
+/**
+ * The guardrail. Set back from the parapet the way the code says, and the one
+ * roof part that is nearly all EDGE — which is why it reads at a distance no
+ * box does: a long horizontal line floating above the deck is unmistakably a
+ * roof even when the roof itself is nine pixels of flat colour.
+ */
+function guardrailGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  parts.push(new THREE.BoxGeometry(7.0, 0.07, 0.07).translate(0, 0, 1.05));
+  parts.push(new THREE.BoxGeometry(7.0, 0.06, 0.06).translate(0, 0, 0.55));
+  for (let i = 0; i < 5; i++) parts.push(new THREE.BoxGeometry(0.07, 0.07, 1.05).translate(i * 1.75 - 3.5, 0, 0.52));
+  return mergeGeoms(parts);
 }
 
 function mergeGeoms(geoms: THREE.BufferGeometry[]): THREE.BufferGeometry {

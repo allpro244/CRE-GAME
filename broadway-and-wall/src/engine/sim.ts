@@ -18,6 +18,7 @@ import { tickDemand } from "./demand";
 import { initRivals, tickRivals } from "./rivals";
 import { initLenders, tickLenders } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
+import { reconcileDemand } from "./demand";
 import { tickWorkouts } from "./workout";
 import { tickPortfolio } from "./portfolio";
 
@@ -92,6 +93,10 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
   };
   s.econ = initEcon(s, parcels);
   if (parcels) s.rivals = initRivals(s, parcels, Object.keys(parcels));
+  // Make the map agree with itself before anybody looks at it: what is BUILT
+  // on a block is part of what makes that block valuable, and the generator's
+  // gravity score did not know that. See reconcileDemand.
+  if (parcels) reconcileDemand(s, parcels);
   s.news.push({
     q: 0,
     kind: "info",

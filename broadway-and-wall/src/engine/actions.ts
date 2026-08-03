@@ -565,8 +565,25 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
   n = Math.min(6, n);
   const bids: Bid[] = [];
   const used = new Set<string>();
+  // THE PEOPLE YOU COMPETE WITH ALL CENTURY SHOULD TURN UP WHEN YOU SELL.
+  //
+  // Measured over six fifty-year runs: rival bids in the player's own sale
+  // process, zero. Not rare — zero. The pool was nine anonymous strings and
+  // the twelve named firms were not in it, so you could run a best-and-final
+  // every year for fifty years and never once see a name you recognised.
+  // Losing to "a family office" is a dice roll; losing to Kestrel Capital,
+  // who outbid you on the Drydock block in 2009, is a story.
+  //
+  // Who actually turns up is filtered by who can pay: a firm bids on your
+  // building only if it has the cash and is not already in trouble.
+  const live = livingRivals(s).filter((r) => !r.stressMs && r.cash > value * 0.22);
   for (let i = 0; i < n; i++) {
-    let name = BIDDER_NAMES[Math.floor(rng(s) * BIDDER_NAMES.length)];
+    // roughly half the room is the street, by name, when the street is liquid
+    const firm = live.length && rng(s) < 0.55
+      ? live[Math.floor(rng(s) * live.length)] : null;
+    let name = firm && !used.has(firm.name)
+      ? firm.name
+      : BIDDER_NAMES[Math.floor(rng(s) * BIDDER_NAMES.length)];
     let guard = 0;
     while (used.has(name) && guard++ < 12) name = BIDDER_NAMES[Math.floor(rng(s) * BIDDER_NAMES.length)];
     used.add(name);
@@ -950,7 +967,20 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
     ask = Math.round(value * motivated / 1000) * 1000;
     who = "Their client needs it done this quarter — that is why you are hearing about it.";
   }
-  if (ask > value * 0.92) return;   // not good enough to bother you with
+  // A GATE THAT REJECTED EVERYTHING. This asked for a price under 92% of
+  // appraisal, and measured across 150 live rival-owned buildings the asks
+  // came in at 1.10x to 1.29x — so it passed ZERO of them, ever. rivalAsk is
+  // the only function in the codebase that gives a firm a personality at a
+  // negotiating table, and it was unreachable.
+  //
+  // A broker calling about somebody's building is not necessarily calling
+  // with a bargain — they are calling because it is AVAILABLE, which is worth
+  // hearing on a building that never comes to market. An owner's number is
+  // where the conversation starts, not where it ends. Only a genuinely silly
+  // ask gets filtered, and a stressed seller still has to be a real discount
+  // to be worth the call.
+  const cap = owner ? (owner.stressMs ? 0.97 : 1.34) : 0.92;
+  if (ask > value * cap) return;
   s.approaches[best.bbl] = { q: s.month, refused: false, ask, inbound: true };
   s.news.unshift({
     q: s.month, kind: "deal",

@@ -294,6 +294,77 @@ function refOcc(cls: BuiltClass): number {
  * its surroundings now justify, with enough momentum that a district turns over
  * years rather than overnight.
  */
+/**
+ * DENSITY AND DEMAND HAVE TO AGREE, AND AT GENERATION THEY DID NOT.
+ *
+ * The player noticed this before the model did: "in some parts of the city
+ * there are large buildings and heavy density where it feels weird to have it,
+ * and others there's very high density and very low demand."
+ *
+ * They were right, and it is a reconciliation bug rather than a taste one.
+ * demandScore is computed in the generator from two Gaussian distance
+ * functions — transit gravity and employment gravity — and NOTHING ELSE. The
+ * buildings are placed by a separate process keyed off zoning and era. The two
+ * were never reconciled, so a block can carry six hundred thousand feet of
+ * offices and score 30 for demand, or sit nearly empty at 80. In a real city
+ * that cannot happen for long, because density IS demand made physical: the
+ * jobs, residents and shopfronts in those buildings are what make the corner
+ * worth something.
+ *
+ * And nothing corrected it afterwards, because the runtime model only measures
+ * CHANGE against the generated baseline — so the original mismatch was frozen
+ * in for the whole run.
+ *
+ * This runs once, at newGame, and pins that gap. Every block is scored on what
+ * is actually standing on and around it, compared against what its gravity
+ * score implied, and the difference is written into blockD as a permanent
+ * offset. A dense block in a low-gravity corner gets the lift its own buildings
+ * earned; an empty block riding on a station it does not use gets the haircut.
+ * Drift from that day forward still works exactly as before, on top of it.
+ */
+export function reconcileDemand(s: GameState, parcels: ParcelTable) {
+  const model = demandModel(parcels);
+  if (!model.blocks.size) return;
+  s.blockD = s.blockD ?? {};
+
+  // What the built environment says each block is worth, and what its gravity
+  // score said. Both as percentile ranks, so we are comparing shapes rather
+  // than units.
+  const rows: { id: string; e: number; g: number }[] = [];
+  for (const b of model.blocks.values()) {
+    const e = model.e0.get(b.id);
+    if (e === undefined) continue;
+    // the gravity score the generator gave this block, averaged over its lots
+    let g = 0, n = 0;
+    for (const bbl of b.bbls ?? []) {
+      const rec = parcels[bbl];
+      if (rec) { g += rec.demandScore; n++; }
+    }
+    if (!n) continue;
+    rows.push({ id: b.id, e, g: g / n });
+  }
+  if (rows.length < 8) return;
+
+  const rank = (vals: number[]) => {
+    const sorted = [...vals].map((v, i) => ({ v, i })).sort((a, b) => a.v - b.v);
+    const out = new Array<number>(vals.length);
+    sorted.forEach((x, k) => { out[x.i] = k / Math.max(1, sorted.length - 1); });
+    return out;
+  };
+  const er = rank(rows.map((r) => r.e));
+  const gr = rank(rows.map((r) => r.g));
+
+  // The correction is deliberately PARTIAL. Gravity is real — a station and a
+  // job centre make a corner valuable whether or not anyone has built on it
+  // yet — so this does not overwrite it, it argues with it. Two thirds gravity,
+  // one third what is actually there.
+  const WEIGHT = 34;
+  for (let i = 0; i < rows.length; i++) {
+    const delta = +((er[i] - gr[i]) * WEIGHT).toFixed(2);
+    if (Math.abs(delta) >= 0.5) s.blockD[rows[i].id] = delta;
+  }
+}
+
 export function tickDemand(s: GameState, parcels: ParcelTable) {
   const model = demandModel(parcels);
   if (!model.blocks.size) return;

@@ -1139,8 +1139,22 @@ export function setStance(s: GameState, bbl: string, stance: -1 | 0 | 1): GameSt
 // skyline permanently under scaffolding, which is not what a real town looks
 // like even in a boom. A building is a three-year commitment somebody makes a
 // handful of times a decade, and it should read that way on the map.
+// THE CITY HAS TO BUILD, OR NOTHING EVER CHANGES.
+//
+// These were cut hard once, correctly, because the town was a forest of
+// cranes. They were cut too far: measured over fifty years the city started
+// THIRTEEN buildings, and forty of those fifty years had zero starts, on a map
+// with 476 vacant lots. That is not a quiet market, it is a stopped one — and
+// it starved the demand model, which can only move when the built environment
+// moves. Median parcel demand drifted 0.5 points in fifty years and not one
+// parcel of 1,662 moved more than five. The scenic backdrop the player
+// complained about was this, not the model behind it.
+//
+// Roughly 2.5x, still well under where it started, and now with the
+// replacement-cost brake underneath it so the rate is high in a boom and near
+// zero in a glut rather than flat.
 const START_RATE: Record<string, number> = {
-  expansion: 0.055, peak: 0.036, recovery: 0.026, recession: 0.005,
+  expansion: 0.14, peak: 0.09, recovery: 0.065, recession: 0.012,
 };
 
 export function useForZone(zone: string, demand: number, r: number): DevUse {
@@ -1224,7 +1238,13 @@ export function tickCityGrowth(
   // its normal rate, at 0.85x it has nearly stopped, and above 1.15x it is a
   // boom, which is exactly the overshoot that creates the NEXT glut.
   const vtr = cityValueToReplacement(s);
-  const brake = Math.max(0.05, Math.min(1.45, (vtr - 0.80) / 0.25));
+  // RECENTRED. The first cut of this braked on (vtr - 0.80) / 0.25, which
+  // reads fine until you measure where the ratio actually sits: median 0.71
+  // across real runs, so the brake pinned at its 0.05 floor and shut the
+  // pipeline for good. A brake that is always fully on is not a brake, it is
+  // a wall — and it made the demand model's starvation worse. Same mechanism,
+  // same thirteen-fold swing across the cycle, centred where the game lives.
+  const brake = Math.max(0.12, Math.min(1.5, (vtr - 0.55) / 0.45));
   const rate = (START_RATE[s.econ.phase] ?? 0.1) * brake;
   // THE STREET'S JOBS COME OUT OF THIS QUOTA, NOT ON TOP OF IT.
   //

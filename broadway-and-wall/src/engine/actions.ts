@@ -3,7 +3,7 @@
 // returns a new state or an error string, never mutates the input.
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import type { Bid, GameState, Holding } from "./types";
-import { logBooks, monthLabel } from "./types";
+import { logBooks, monthLabel, SVC_START } from "./types";
 import { recentLowballs } from "./acquire";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange } from "./market";
@@ -116,6 +116,11 @@ export function executePurchase(
     // The bricks, as a number, from the day the deed moves — the age of the
     // building plus what the last owner did about it. From here it is on you.
     condIdx: initialCondIdx(rec, next.month, gradeOf(s, rec)),
+    // IT CLOSES ON THE HOUSE POLICY. A principal decides how they run buildings
+    // once; a building that needs different treatment gets it on the panel.
+    service: s.opsPolicy?.service ?? 0,
+    plan: s.opsPolicy?.plan ?? 1,
+    svcIdx: SVC_START,
     tenants: [],
     cfHistory: [],
     // A landmark stays a landmark when the deed moves.

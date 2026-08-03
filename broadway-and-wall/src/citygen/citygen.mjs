@@ -293,7 +293,12 @@ export const DENSITY = {
 };
 
 export function generateCity(cfg) {
-  const DZ = DENSITY[cfg.density] ?? DENSITY.shipped;
+  // DEFAULT IS `village`, chosen by eye from the eight-preset sweep. A low
+  // fabric with almost nothing over sixty metres, so the town you are handed
+  // in month 0 has somewhere to go — the skyline is something the campaign
+  // BUILDS rather than something it inherits. Override per browser with
+  // localStorage "bw:density".
+  const DZ = DENSITY[cfg.density] ?? DENSITY.village;
   const rand = mulberry32(cfg.seed);
   const rr = (a, b) => a + (b - a) * rand();
   const pick = (arr) => arr[Math.floor(rand() * arr.length) % arr.length];

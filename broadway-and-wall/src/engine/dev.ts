@@ -8,7 +8,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Contract, DevUse, Development, GameState, UseMix } from "./types";
 import { BUILT_CLASSES } from "./types";
-import { logBooks, monthLabel } from "./types";
+import { logBooks, monthLabel, serviceSpec, planSpec } from "./types";
 import { demandNow } from "./demand";
 import { rng, rrange, addStock, NATURAL_VAC, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL } from "./market";
 import { firmShort } from "./firm";
@@ -977,6 +977,9 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // see condCeiling: no amount of capital gets an old building here. That is a
   // real part of what a developer is buying and it was not modelled at all.
   h.condIdx = 0.96;
+  h.service = s.opsPolicy?.service ?? 0;
+  h.plan = s.opsPolicy?.plan ?? 1;
+  h.svcIdx = 0.70;   // a building that opens this year opens well run
   h.lastCapM = s.month;
   h.tenants = [];
   h.deliveredM = s.month;
@@ -1157,6 +1160,46 @@ export function tickPrograms(s: GameState, parcels: ParcelTable) {
 export function setStance(s: GameState, bbl: string, stance: -1 | 0 | 1): GameState {
   const next = clone(s);
   if (next.holdings[bbl]) next.holdings[bbl].stance = stance;
+  return next;
+}
+
+/**
+ * HOW THIS BUILDING IS RUN. Free to change and slow to matter, which is the
+ * honest shape: you can switch the service level this afternoon and the
+ * tenants will not have noticed for three years.
+ */
+export function setOps(
+  s: GameState, bbl: string, ops: { service?: -1 | 0 | 1; plan?: 0 | 1 | 2 },
+): GameState {
+  const next = clone(s);
+  const h = next.holdings[bbl];
+  if (!h) return next;
+  if (ops.service !== undefined) h.service = ops.service;
+  if (ops.plan !== undefined) h.plan = ops.plan;
+  return next;
+}
+
+/**
+ * THE HOUSE POLICY, and it applies to the book you already own.
+ *
+ * This is the one control that keeps the whole system out of chore territory.
+ * Set it once and every deed you close after it arrives configured; set it
+ * again and the existing book follows, because a firm that decides to start
+ * running its buildings properly does not do it one address at a time.
+ */
+export function setOpsPolicy(
+  s: GameState, ops: { service: -1 | 0 | 1; plan: 0 | 1 | 2 }, applyToBook = true,
+): GameState {
+  const next = clone(s);
+  next.opsPolicy = ops;
+  if (applyToBook) {
+    for (const h of Object.values(next.holdings)) { h.service = ops.service; h.plan = ops.plan; }
+    next.news.unshift({
+      q: next.month, kind: "info",
+      text: `House policy: buildings run ${serviceSpec(ops.service).label.toLowerCase()}, capital plan ${planSpec(ops.plan).label.toLowerCase()}. `
+        + `It applies to everything on the book from this month.`,
+    });
+  }
   return next;
 }
 

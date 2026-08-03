@@ -11,7 +11,7 @@ import { listPortfolio, repricePortfolio, counterPortfolio, acceptPortfolioBid, 
 import { fileVariance } from "@/engine/zoning";
 import { refinance, buyRateCap } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
-import { startDevelopment, startProgram, setStance, demolish } from "@/engine/dev";
+import { startDevelopment, startProgram, setStance, setOps, setOpsPolicy, demolish } from "@/engine/dev";
 import { normalizeParcels } from "@/engine/mix";
 import { netWorth } from "@/engine/value";
 import { loadGame, saveGame, listSaves, deleteSave, type SaveMeta } from "@/engine/save";
@@ -66,6 +66,8 @@ interface AppState {
   raze: (bbl: string) => void;
   program: (bbl: string, id: string) => void;
   stance: (bbl: string, v: -1 | 0 | 1) => void;
+  ops: (bbl: string, v: { service?: -1 | 0 | 1; plan?: 0 | 1 | 2 }) => void;
+  opsPolicy: (v: { service: -1 | 0 | 1; plan: 0 | 1 | 2 }) => void;
   listSale: (bbl: string, ask: number, mode?: "quiet" | "marketed") => void;
   runBestAndFinal: (bbl: string) => void;
   takeBid: (bbl: string, index: number) => void;
@@ -315,6 +317,23 @@ export const useStore = create<AppState>((set, get) => ({
     if (!game) return;
     const next = setStance(game, bbl, v);
     set({ game: next });
+    void persist(next);
+  },
+
+  ops: (bbl, v) => {
+    const { game } = get();
+    if (!game) return;
+    const next = setOps(game, bbl, v);
+    set({ game: next });
+    void persist(next);
+  },
+
+  opsPolicy: (v) => {
+    const { game } = get();
+    if (!game) return;
+    const next = setOpsPolicy(game, v);
+    set({ game: next });
+    toast("House policy set.");
     void persist(next);
   },
 
@@ -672,7 +691,7 @@ export const useStore = create<AppState>((set, get) => ({
     const { parcels } = get();
     const saved = await loadGame(slot);
     if (!saved || !parcels) { toast("That save wouldn't open.", "err"); return; }
-    if (saved.v !== 26) { toast("That save is from an older build and can't be opened.", "err"); return; }
+    if (saved.v !== 27) { toast("That save is from an older build and can't be opened.", "err"); return; }
 
     // A SAVE CARRIES ITS OWN TOWN.
     //
@@ -814,7 +833,7 @@ export async function loadData() {
     // A save only fits if every deed in it exists in THIS town. Across seeds
     // it will not, and that is not a corrupt save — it is a save from a city
     // that no longer exists, which is exactly what a reroll means.
-    const fits = saved && saved.v === 26 && saved.citySeed === seed
+    const fits = saved && saved.v === 27 && saved.citySeed === seed
       && Object.keys(saved.holdings).every((b) => parcels[b])
       && saved.listings.every((l) => parcels[l.bbl]);
     if (fits) {

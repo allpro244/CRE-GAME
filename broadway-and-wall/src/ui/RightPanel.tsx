@@ -3,7 +3,7 @@
 import { useEffect, useState, Fragment} from "react";
 import { useStore } from "@/state/store";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
-import { monthLabel, CREDIT_LABEL } from "@/engine/types";
+import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec } from "@/engine/types";
 import type { BuiltClass, Contract, DevUse, GameState } from "@/engine/types";
 import {
   assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr,
@@ -60,7 +60,7 @@ import { sponsorStanding } from "@/engine/sponsor";
 import { marketAppetite, markRival, ownerOf, rivalCondition } from "@/engine/rivals";
 import { compFlows, compStats, portfolioIndustries } from "@/engine/comps";
 import { INDUSTRY_LABEL, SECTORS } from "@/engine/market";
-import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses } from "@/engine/leasing";
+import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses, renewalIntent } from "@/engine/leasing";
 import { leasingOdds } from "@/engine/absorption";
 import { groundLeaseQuote, mergeCost } from "@/engine/actions";
 import { plateEfficiency } from "@/engine/value";
@@ -595,14 +595,21 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
                       like a windfall. */}
                   <span className="roll-meta mono">${useRentPsfYr(rec, game.econ, holding.condition, u).toFixed(0)}/sf market here</span>
                 </div>,
-                ...inUse.map(({ t, i }) => (
+                ...inUse.map(({ t, i }) => {
+                  const near = t.endM - game.month <= 24;
+                  const ri = near ? renewalIntent(game, rec, holding, t) : null;
+                  const fit = (t.staff ?? 1) > 1.30 ? "growing" : (t.staff ?? 1) < 0.78 ? "shrinking" : null;
+                  return (
                   <div key={i} className="roll-row">
                     <span className="roll-name">{t.name} <span className="roll-credit mono">{CREDIT_LABEL[t.credit]}</span></span>
                     <span className="roll-meta mono">
                       {(t.sf / 1000).toFixed(1)}k sf · ${t.rentPsf.toFixed(0)} {t.net ? "NNN" : "G"} · exp {monthLabel(t.endM)}
+                      {fit && <> · {fit}</>}
+                      {ri && <> · <span className={ri.p < 0.5 ? "warn" : ""}>{Math.round(ri.p * 100)}% renews</span> — {ri.why[0]}</>}
                     </span>
                   </div>
-                )),
+                  );
+                }),
               ];
             })}
             {(mixOf(rec).multifamily ?? 0) > 0 && (
@@ -789,6 +796,30 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
               >
                 {v === 1 ? "Push rents" : v === -1 ? "Fill space" : "Market"}
               </button>
+            ))}
+          </div>
+          <div className="grid">
+            <Row k="Service" v={`${serviceSpec(holding.service).label} · tenants read it as ${Math.round(100 * (holding.svcIdx ?? 0.55))} of 100`} />
+            <Row k="Capital plan" v={`${planSpec(holding.plan).label} · condition ${Math.round(100 * (holding.condIdx ?? 0.6))} of 100`} />
+          </div>
+          <div className="btn-row">
+            {OPS_SERVICE.map((o) => (
+              <button
+                key={o.key}
+                className={"btn" + ((holding.service ?? 0) === o.key ? " btn-on" : "")}
+                title={o.blurb + " — three years to matter, three years to undo"}
+                onClick={() => useStore.getState().ops(selectedBBL, { service: o.key })}
+              >{o.label}</button>
+            ))}
+          </div>
+          <div className="btn-row">
+            {OPS_PLAN.map((o) => (
+              <button
+                key={o.key}
+                className={"btn" + ((holding.plan ?? 1) === o.key ? " btn-on" : "")}
+                title={o.blurb}
+                onClick={() => useStore.getState().ops(selectedBBL, { plan: o.key })}
+              >{o.label}</button>
             ))}
           </div>
           <div className="btn-row">

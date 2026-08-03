@@ -4,12 +4,13 @@
 // Multifamily skips all of this and runs aggregate occupancy.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Credit, GameState, Holding, LOI, Sector } from "./types";
-import { logBooks, monthLabel, CAP_PLAN_RATE } from "./types";
+import { logBooks, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START } from "./types";
+import type { Tenant } from "./types";
 import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL } from "./market";
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf, demandLinear,
-  condGrade, initialCondIdx, condCeiling, COND_DECAY, CONDITION_RENT_MULT, holdingValue } from "./value";
+  condGrade, initialCondIdx, condCeiling, COND_DECAY, COND_WEAR_REF, CONDITION_RENT_MULT, holdingValue } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses, useSf } from "./mix";
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable } from "./credit";
@@ -37,7 +38,7 @@ function stopPsfNow(rec: ParcelRecord, econ: GameState["econ"], h: Holding, use?
   const sys = h.programsDone?.systems !== undefined;
   // A shop and an office in the same building do not have the same expense
   // stop — their expense loads are not the same and never were.
-  const op = use ? opexPsf(use, econ, sys) : blendBy(rec, (u) => opexPsf(u, econ, sys));
+  const op = use ? opexPsf(use, econ, sys, h.service) : blendBy(rec, (u) => opexPsf(u, econ, sys, h.service));
   return op + tax;
 }
 
@@ -423,6 +424,57 @@ export function tiPressure(concession: number): number {
   return Math.pow(Math.max(0.01, concession), 0.6);
 }
 
+/**
+ * WHETHER THEY STAY, AND WHY.
+ *
+ * The renewal gate was one line — `rng(s) < industryStress * 0.55` — and
+ * industryStress is zero most of the time, so measured over four fifty-year
+ * runs a renewal letter arrived essentially every time a lease rolled. 71% of
+ * tenants renewed and the other 29% were the player declining. Nothing the
+ * owner did to the building had any bearing on whether its tenants stayed,
+ * which is the single largest thing an operator actually controls.
+ *
+ * Every term here is something the player has decided or can read: how the
+ * building is run, what state it is in, whether they are over market, what
+ * their own trade is doing, whether the space still fits them, their covenant,
+ * and how long they have been sitting there. `why` is sorted by how much each
+ * one hurt, so the news line and the rent roll can both name the real reason.
+ *
+ * Neutral settings on an ordinary building land at the 0.96 ceiling, which is
+ * where this engine already was — the whole spread is downside, and it is
+ * earned.
+ */
+export interface RenewalRead { p: number; why: string[] }
+export function renewalIntent(s: GameState, rec: ParcelRecord, h: Holding, t: Tenant): RenewalRead {
+  const svc = h.svcIdx ?? SVC_START;
+  const cond = h.condIdx ?? 0.6;
+  const use = t.use ?? (rec.class as BuiltClass);
+  const market = Math.max(1, managedRentPsfYr(rec, s.econ, h, use));
+  const over = t.rentPsf / market;
+  const stress = industryStress(s.econ, t.sector);
+  const boom = Math.max(0, s.econ.industryMom?.[t.sector] ?? 0);
+  const need = t.sf * (t.staff ?? 1);
+  const free = useVacantSf(rec, h, use, s.month);
+  const fSvc = 0.74 + 0.48 * svc;
+  const fCond = 0.84 + 0.30 * cond;
+  const fRent = over > 1.12 ? 0.74 : over > 1.04 ? 0.88 : over < 0.88 ? 1.10 : 1;
+  const fInd = clampL(1 - stress * 0.55 + boom * 5, 0.45, 1.15);
+  const fFit = need > t.sf * 1.30 ? (free > COMMERCIAL_SUITE_MIN ? 0.86 : 0.55)
+    : need < t.sf * 0.78 ? 0.88 : 1;
+  const fCred = t.credit === 2 ? 1.06 : t.credit === 0 ? 0.94 : 1;
+  const fTen = 1 + 0.05 * Math.min(2, (s.month - t.startM) / 120);
+  const why: { s: string; w: number }[] = [];
+  if (fSvc < 0.95) why.push({ s: "the building is not being run to their standard", w: 1 - fSvc });
+  if (fSvc > 1.10) why.push({ s: "they like the way the building is run", w: fSvc - 1 });
+  if (fCond < 0.98) why.push({ s: `the plant is ${h.condition}`, w: 1 - fCond });
+  if (fRent < 1) why.push({ s: `they are ${Math.round((over - 1) * 100)}% over market`, w: 1 - fRent });
+  if (fInd < 0.95) why.push({ s: `${INDUSTRY_LABEL[t.sector].toLowerCase()} is contracting`, w: 1 - fInd });
+  if (fFit < 0.95) why.push({ s: need > t.sf ? "they have outgrown the space and there is nothing to give them" : "they are paying for space they no longer use", w: 1 - fFit });
+  why.sort((a, b) => b.w - a.w);
+  const p = clampL(0.94 * fSvc * fCond * fRent * fInd * fFit * fCred * fTen, 0.10, 0.96);
+  return { p, why: why.length ? why.map((x) => x.s) : ["they simply moved"] };
+}
+
 export function tickLeasing(s: GameState, parcels: ParcelTable) {
   const q = s.month;
   // expire stale LOIs and LOIs on parcels no longer owned
@@ -477,20 +529,38 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // dollar of plan buys less on a 1928 building than on a 2015 one, which
       // is the whole reason a city has to keep rebuilding itself.
       const age = 2000 + Math.floor(q / 12) - rec.yearBuilt;
-      const wear = COND_DECAY[rec.class as BuiltClass] ?? 0.0024;
-      h.condIdx -= wear
+      const wear = (COND_DECAY[rec.class as BuiltClass] ?? 0.0024)
         * (1 + Math.min(0.50, age / 220))
         * (s.econ.phase === "recession" ? 1.2 : 1);
+      h.condIdx -= wear;
 
       // THE CAPITAL PLAN. 34bps of gross asset value a year, spent without being
       // asked. It is the first thing that goes when the money is short, and a
       // building whose cash flow the lender has swept does not get it at all.
+      // HOW THE BUILDING IS RUN, as the tenants experience it — which is not
+      // the switch, it is the average of the switch over about three years. A
+      // service cut shows up in NOI next month and in the rent roll in 2007.
+      const svc = serviceSpec(h.service);
+      h.svcIdx = (h.svcIdx ?? SVC_START) + (svc.aim - (h.svcIdx ?? SVC_START)) * SVC_SPEED;
+
+      // THE CAPITAL PLAN, AND IT IS A DECISION NOW. It was a constant charged
+      // on every building unconditionally, and this file said so: "the plan is
+      // automatic and has no control anywhere". Measured over 1,046 building-
+      // years, condition improved 44 times and slipped 9 — the automatic plan
+      // out-ran decay on 83% of all movement, so there was no way to run a
+      // building well and no way to run one badly except by going broke.
+      //
+      // Priced against what THIS building consumes, so an old office eats more
+      // reserve than a new shed. Defer sets no planCutM: choosing not to spend
+      // is not the same as being unable to, and the annual warning in sim.ts
+      // is about the second thing.
+      const plan = planSpec(h.plan);
       const gav = holdingValue(rec, s.econ, h, q);
-      const want = Math.round((CAP_PLAN_RATE * gav) / 12);
+      const want = Math.round((CAP_PLAN_RATE * plan.mult * gav * (wear / COND_WEAR_REF)) / 12);
       if (want > 0 && s.cash > want * 4 && !h.loan?.sweep) {
         s.cash -= want;
         logBooks(s, "capex", want);
-        h.condIdx += 0.0033;
+        h.condIdx += wear * plan.lift;
         h.lastCapM = q;
       } else if (want > 0) {
         h.planCutM = q;
@@ -603,7 +673,59 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     // contractual escalations: rents step up ~2.5% on each lease anniversary
     for (const t of h.tenants) {
       const age = q - t.startM;
-      if (age > 0 && age % 12 === 0) t.rentPsf = +(t.rentPsf * 1.025).toFixed(2);
+      if (age > 0 && age % 12 === 0) {
+        t.rentPsf = +(t.rentPsf * 1.025).toFixed(2);
+        // AND THE COVENANT MIGRATES. Credit was frozen at signing, so a decade
+        // of technology boom never improved a roll and a five-year bust never
+        // degraded one — measured at zero credit changes across 163 tenancies.
+        // It already drives default odds, deposit size, the renewal discount
+        // and the quality spread a buyer pays. This is the only wire missing.
+        const ph = s.econ.industryPhase?.[t.sector];
+        if (ph === "boom" && t.credit < 2 && rng(s) < 0.055) t.credit = (t.credit + 1) as Credit;
+        else if (ph === "bust" && t.credit > 0 && rng(s) < 0.075) t.credit = (t.credit - 1) as Credit;
+      }
+      // HEADCOUNT. Measured, a p95 boom compounds this to 1.65x over two years
+      // and a bust runs it back down. Everything else in this block reads it.
+      t.staff = clampL((t.staff ?? 1) * (1 + (s.econ.industryMom?.[t.sector] ?? 0) * 1.6 + rrange(s, -0.004, 0.004)), 0.40, 2.6);
+    }
+
+    // --- the roll grows -----------------------------------------------------
+    //
+    // A tenant who has outgrown their suite has exactly two futures and you
+    // choose which: they take the space next door, or they tour. If there is
+    // room, a letter arrives and it is a real decision — the certain covenant
+    // coterminous with a lease you already hold, against holding the suite for
+    // a full-term tenant at a better number. If there is no room, nothing
+    // arrives and renewalIntent quietly halves, which is why keeping a floor of
+    // slack in a building with a growing anchor is asset management and not
+    // sloppiness.
+    for (let i = 0; i < h.tenants.length && !h.leasingHold && !renovating; i++) {
+      const t = h.tenants[i];
+      const need = t.sf * (t.staff ?? 1);
+      if (need < t.sf * 1.30) continue;
+      if (t.endM - q < 12) continue;              // inside a year it is a renewal question
+      if (t.askedM !== undefined && q - t.askedM < 24) continue;
+      if (s.lois.some((l) => l.bbl === h.bbl && l.tenantIdx === i)) continue;
+      const use = t.use ?? leasableUses(rec)[0] ?? "office";
+      const free = useVacantSf(rec, h, use, q);
+      const wantSf = toSuites(rec, Math.min(free, need - t.sf), free, use);
+      if (!wantSf) continue;
+      if (rng(s) > 0.16) continue;                // they get round to it
+      t.askedM = q;
+      const market = managedRentPsfYr(rec, s.econ, h, use);
+      s.lois.push({
+        id: s.nextLoiId++, arrivedM: q, bbl: h.bbl, kind: "expansion", use,
+        name: t.name, sector: t.sector, credit: t.credit, sf: wantSf,
+        rentPsf: +(market * rrange(s, 0.96, 1.06)).toFixed(2),
+        termM: Math.max(24, t.endM - q),          // coterminous with what they hold
+        tiPsf: Math.round(rrange(s, 1, 5) * concessionPressure(s.econ, use)),
+        freeM: 0, net: t.net, recovery: recoveryOf(t),
+        expiresM: q + 3, tenantIdx: i,
+      });
+      s.news.unshift({
+        q, kind: "deal",
+        text: `${t.name} has grown into their space at ${rec.address} and wants the ${(wantSf / 1000).toFixed(1)}k sf next door, coterminous with the lease they are on.`,
+      });
     }
 
     // renewal talks open six months ahead of expiry — unless you have stopped
@@ -614,12 +736,17 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const t = h.tenants[i];
       if (t.endM !== q + 6) continue;
       if (s.lois.some((l) => l.bbl === h.bbl && l.tenantIdx === i)) continue;
-      // A trade in a deep bust is shedding space, not renewing it. No letter
-      // arrives at all and the suite comes back on the expiry date.
-      if (rng(s) < industryStress(s.econ, t.sector) * 0.55) {
+      // WHETHER THEY EVEN WRITE. This was `rng(s) < industryStress * 0.55` and
+      // industryStress is zero most months, so a renewal letter arrived every
+      // time a lease rolled and nothing the owner did to the building had any
+      // bearing on it. See renewalIntent: how it is run, what state it is in,
+      // what you are charging, what their trade is doing, whether it still
+      // fits them. And the notice says which of those it was.
+      const ri = renewalIntent(s, rec, h, t);
+      if (rng(s) > ri.p) {
         s.news.unshift({
           q, kind: "warn",
-          text: `${t.name} is not renewing at ${rec.address} — ${INDUSTRY_LABEL[t.sector].toLowerCase()} is contracting and they are giving the space back. `
+          text: `${t.name} is not renewing at ${rec.address} — ${ri.why[0]}. `
             + `${(t.sf / 1000).toFixed(1)}k sf comes available ${monthLabel(t.endM)}.`,
         });
         continue;
@@ -655,7 +782,16 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // which put a named commercial tenant in the housing.
         use: t.use ?? leasableUses(rec)[0] ?? "office",
         name: t.name, sector: t.sector, credit: t.credit,
-        sf: t.sf,
+        // A TENANT WHO HAS SHRUNK RENEWS FOR WHAT THEY NEED. Every renewal in
+        // this engine was for exactly the space that was signed, however many
+        // people had left in the meantime, so a recession could only ever take
+        // whole tenants and never a floor off one. It gives back a suite at a
+        // time, and the giveback lands in make-ready like any other vacancy.
+        sf: (() => {
+          const need = t.sf * (t.staff ?? 1);
+          if (need >= t.sf * 0.78) return t.sf;
+          return Math.max(COMMERCIAL_SUITE_MIN, toSuites(rec, need, t.sf, t.use ?? "office") || t.sf);
+        })(),
         rentPsf: +Math.max(market * 0.6, ask).toFixed(2),
         termM: Math.round(rrange(s, 36, 84)),
         // A sitting tenant asks for less than a new one — no fit-out, no
@@ -1033,8 +1169,36 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
   const cost = loiSigningCost(l, feeRate);
   s.cash -= cost;
   logBooks(s, "leasing", cost);
-  if (l.kind === "renewal" && l.tenantIdx !== undefined && h.tenants[l.tenantIdx]) {
+  if (l.kind === "expansion" && l.tenantIdx !== undefined && h.tenants[l.tenantIdx]) {
+    // THE SPACE NEXT DOOR. The old floor keeps its rent and the new floor takes
+    // today's, so what the row shows afterwards is the blend — which is what a
+    // rent roll actually shows after an expansion. Same clamp as a new lease:
+    // if the other live letter took the suite first, this one lost it.
     const t = h.tenants[l.tenantIdx];
+    const use = l.use ?? t.use ?? (rec.class as BuiltClass);
+    const add = Math.min(l.sf, Math.max(0, useVacantSf(rec, h, use, s.month)));
+    if (add < COMMERCIAL_SUITE_MIN) {
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `${l.name} lost the expansion space at ${rec.address} — the other letter signed first, and what is left will not demise.`,
+      });
+      return;
+    }
+    t.rentPsf = +(((t.rentPsf * t.sf) + (l.rentPsf * add)) / (t.sf + add)).toFixed(2);
+    t.sf += add;
+    t.staff = Math.min(t.staff ?? 1, 1.05);
+    const top = depositFor(s, t.rentPsf, t.sf, t.credit) - (t.deposit ?? 0);
+    s.cash += top;
+    t.deposit = (t.deposit ?? 0) + top;
+  } else if (l.kind === "renewal" && l.tenantIdx !== undefined && h.tenants[l.tenantIdx]) {
+    const t = h.tenants[l.tenantIdx];
+    // THEY ARE RENEWING FOR LESS. The space they hand back is space, and it
+    // turns like any other giveback before anybody can be shown it.
+    if (l.sf < t.sf) {
+      h.makeReady = [...(h.makeReady ?? []), { sf: t.sf - l.sf, readyM: s.month + 3, use: t.use }];
+      t.sf = l.sf;
+      t.staff = Math.min(t.staff ?? 1, 1);
+    }
     t.rentPsf = l.rentPsf;
     t.endM = s.month + l.termM;
     // A renewal RESETS the base year. That is the quiet half of every renewal

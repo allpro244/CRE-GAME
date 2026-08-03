@@ -3,6 +3,7 @@
 // the parcel record and the market state — no hidden multipliers.
 import type { ParcelRecord } from "@/data/types";
 import type { Condition, Econ, GameState, Holding, Sector } from "./types";
+import { serviceSpec } from "./types";
 import type { BuiltClass } from "./types";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 import { industryStress, NATURAL_VAC } from "./market";
@@ -186,6 +187,14 @@ export const CONDITION_RENT_MULT: Record<Condition, number> = {
  * they are deliberately close to the 0.0024 the street already pays in
  * tickAssetManagement — the player and the firms are running the same model.
  */
+/**
+ * THE WEAR A `Fund` PLAN IS PRICED AGAINST — an ordinary building of no
+ * particular age. The plan cheque scales with wear / COND_WEAR_REF, so a 1928
+ * office eats more reserve than a 2015 shed and the bill says so. Calibrated
+ * against the actual owned book so that Fund costs, to within a few basis
+ * points, what the automatic plan cost before there was a choice.
+ */
+export const COND_WEAR_REF = 0.0038;
 export const COND_DECAY: Record<BuiltClass, number> = {
   office: 0.0029, retail: 0.0026, multifamily: 0.0023, industrial: 0.0016,
 };
@@ -493,8 +502,8 @@ export const OPEX_FIXED: Record<BuiltClass, number> = { office: 3.8, retail: 2.6
 export const MGMT_FEE = 0.04;   // of effective gross income, industry standard
 
 /** Total operating cost per sf/yr before management fee and property tax. */
-export function opexPsf(cls: BuiltClass, econ: Econ, systemsDone: boolean): number {
-  return (OPEX_CONTROLLABLE[cls] * (systemsDone ? 0.82 : 1) + OPEX_FIXED[cls]) * econ.costIdx;
+export function opexPsf(cls: BuiltClass, econ: Econ, systemsDone: boolean, service?: -1 | 0 | 1): number {
+  return (OPEX_CONTROLLABLE[cls] * (systemsDone ? 0.82 : 1) * serviceSpec(service).opex + OPEX_FIXED[cls]) * econ.costIdx;
 }
 
 // Kept for compatibility with anything still asking the old question.
@@ -685,7 +694,7 @@ export function propertyTaxYr(rec: ParcelRecord, h: Holding, econ?: Econ): numbe
   if (!bill) return 0;
   if (rec.class === "multifamily") return bill;   // residential leases are gross
   const taxPsf = bill / Math.max(1, rec.bldgArea);
-  const opexNowPsf = econ ? opexPsf(rec.class as BuiltClass, econ, h.programsDone?.systems !== undefined) : taxPsf;
+  const opexNowPsf = econ ? opexPsf(rec.class as BuiltClass, econ, h.programsDone?.systems !== undefined, h.service) : taxPsf;
   let recovered = 0;
   for (const t of h.tenants) recovered += recoveryFor(t, opexNowPsf, taxPsf).tax;
   return Math.max(0, bill - recovered);
@@ -706,13 +715,13 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
     // turns, appliances, roofs. Appraisers skip it; owners never get to.
     const occ = h.occ ?? occupancy(rec, econ);
     const egi = rec.bldgArea * marketRentPsfYr(rec, econ, h.condition) * occ;
-    return egi * 0.93 - rec.bldgArea * OPEX_PSF[cls] * econ.costIdx - propertyTaxYr(rec, h);
+    return egi * 0.93 - rec.bldgArea * OPEX_PSF[cls] * serviceSpec(h.service).opex * econ.costIdx - propertyTaxYr(rec, h);
   }
   // Rent first, then the expense stack, then what comes back through the
   // recovery clauses. Vacant space reimburses nothing and still costs money —
   // that gap is the whole reason occupancy matters more than headline rent.
   const systemsDone = h.programsDone?.systems !== undefined;
-  const opexNowPsf = opexPsf(cls, econ, systemsDone);
+  const opexNowPsf = opexPsf(cls, econ, systemsDone, h.service);
   const taxBill = grossTaxYr(rec, h);
   const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
 
@@ -743,7 +752,7 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
 export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, month: number) {
   const cls = rec.class as BuiltClass;
   const systemsDone = h.programsDone?.systems !== undefined;
-  const opexNowPsf = opexPsf(cls, econ, systemsDone);
+  const opexNowPsf = opexPsf(cls, econ, systemsDone, h.service);
   const taxBill = grossTaxYr(rec, h);
   const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
   let baseRent = 0, leasedSf = 0, recOpex = 0, recTax = 0, free = 0;

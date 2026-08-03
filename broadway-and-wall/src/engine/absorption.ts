@@ -285,6 +285,17 @@ export function leaseFactors(s: GameState, rec: ParcelRecord, h: Holding, use: B
       mult: +Math.pow(1 + 0.08 * st, -1.9).toFixed(3),
     });
   }
+  // HOW THE BUILDING IS RUN. Not the switch — the three-year average of it, so
+  // this row moves slowly and honestly and a player who cut the cleaning
+  // contract in 2004 can see it here in 2007.
+  const svc = h.svcIdx ?? 0.55;
+  if (Math.abs(svc - 0.55) > 0.04) {
+    out.push({
+      label: "Building services",
+      detail: svc > 0.55 ? "run to an institutional standard" : "run lean",
+      mult: +(0.88 + 0.24 * svc).toFixed(3),
+    });
+  }
   if (h.broker) out.push({ label: "Leasing exclusive", detail: "a house working the phones", mult: 1.45 });
   const spec = h.specSuites;
   if (spec && spec.use === use && s.month >= spec.readyM) {

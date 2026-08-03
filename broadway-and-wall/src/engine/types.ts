@@ -67,13 +67,36 @@ export interface Tenant {
    * buyer when the building trades.
    */
   deposit?: number;
+  /**
+   * HEADCOUNT, INDEXED TO THE DAY THEY SIGNED, and it drifts with their trade.
+   *
+   * A tenant was a row: the same square feet at the same desk until the lease
+   * ran out. Measured over 163 distinct tenancies and 15,448 tenant-months
+   * across four fifty-year runs, not one tenant ever changed size, and not one
+   * ever changed credit — so a ten-industry cycle reached the rent roll twice,
+   * both times to decide whether somebody went bust.
+   *
+   * Above about 1.30 of their space they have outgrown the suite and either
+   * take the floor next door or start touring; below 0.78 they are paying for
+   * space they do not use and hand it back at the renewal.
+   */
+  staff?: number;
+  /** When they last asked for more room, so nobody asks twice in two years. */
+  askedM?: number;
 }
 
 export interface LOI {
   id: number;
   bbl: string;
   use?: BuiltClass;    // the component of the building they want
-  kind: "new" | "renewal";
+  /**
+   * `expansion` is the sitting tenant asking for the space next door. It is a
+   * major leasing decision and it deliberately arrives in the channel that
+   * already exists: take the certain covenant coterminously, or hold the suite
+   * back for a full-term tenant at a better number and risk the incumbent
+   * outgrowing you and leaving at the roll.
+   */
+  kind: "new" | "renewal" | "expansion";
   name: string;
   sector: Sector;
   credit: Credit;
@@ -221,6 +244,37 @@ export interface Holding {
   condIdx?: number;
   /** Last month the capital plan went unfunded, because the money was short. */
   planCutM?: number;
+  /**
+   * HOW YOU HAVE DECIDED TO RUN IT — the two standing decisions, taken once
+   * and lived with for years, which is how an operator actually sets a policy.
+   *
+   * `service` is what you spend on the people: cleaning, security, the front
+   * desk, how fast anybody answers when a tenant rings. It moves the
+   * controllable half of the operating bill by about a tenth either way —
+   * measured at 1.2% of NOI down and 2.1% of NOI up, which is a rounding
+   * error — and it decides who renews.
+   *
+   * `plan` is what you put back into the bones. Defer is free and the building
+   * goes off; Fund holds the line; Reposition turns it round over a decade at
+   * nearly twice the money.
+   *
+   * Both default to the middle, so a player who never opens the panel is
+   * running exactly the building this game shipped with. See OPS_SERVICE and
+   * OPS_PLAN below, and GameState.opsPolicy for the house default applied on
+   * the day a deed closes.
+   */
+  service?: -1 | 0 | 1;
+  plan?: 0 | 1 | 2;
+  /**
+   * HOW THE BUILDING IS RUN, AS THE TENANTS EXPERIENCE IT — a 31-month
+   * exponential average of the service level rather than the switch itself.
+   *
+   * This is the whole reason cutting service is a trap and not a lever. The
+   * saving lands on the first of next month; the consequence takes three years
+   * to arrive, and by then it takes another three to undo. An operator who
+   * under-spends looks fine for three years and then loses an anchor.
+   */
+  svcIdx?: number;
   lastCapM?: number;   // when this asset last had money spent on its bones
   renovatingUntilM?: number;
   tenants: Tenant[];   // commercial rent roll
@@ -760,7 +814,7 @@ export type SellerKind = "estate" | "institution" | "partnership" | "developer" 
 
 
 export interface GameState {
-  v: 26;
+  v: 27;
   seed: number;
   /**
    * WHICH TOWN THIS WAS PLAYED IN.
@@ -797,6 +851,13 @@ export interface GameState {
    */
   quietMs?: number;
   approaches: Record<string, Approach>;
+  /**
+   * THE HOUSE POLICY. Applied to every building on the day you close, so a
+   * principal with thirty deeds decides how they run buildings ONCE rather
+   * than thirty times. Per-building overrides live on the Holding, and are
+   * what you reach for when one asset needs different treatment.
+   */
+  opsPolicy?: { service: -1 | 0 | 1; plan: 0 | 1 | 2 };
   /**
    * WHEN EACH BUILDING LAST CHANGED HANDS.
    *
@@ -1056,6 +1117,60 @@ export const CASH_APY = 0.01;
  * shape of the decision — the plan is the floor, the programme is the choice.
  */
 export const CAP_PLAN_RATE = 0.0034;
+
+/**
+ * THE SERVICE LEVEL, and why it is a decision rather than a chore.
+ *
+ * One choice per building, never asked about again. `opex` multiplies the
+ * CONTROLLABLE half of the operating bill only — the fixed half (insurance,
+ * the rates, the lift contract) does not care how well you run the place.
+ * Measured against the actual owned book that is -1.2% of NOI at Lean and
+ * +2.1% at Institutional: almost nothing.
+ *
+ * `aim` is where svcIdx settles, and svcIdx is where the money actually goes —
+ * into whether tenants renew. A landlord who takes a point of NOI back off the
+ * cleaning contract and loses a floor to it has made the oldest mistake in
+ * this business, and until now the game could not represent it.
+ */
+export const OPS_SERVICE = [
+  { key: -1 as const, label: "Lean", opex: 0.90, aim: 0.22,
+    blurb: "the lease minimum and no more — a point of NOI back, and the tenants notice within three years" },
+  { key: 0 as const, label: "Market", opex: 1.00, aim: 0.55,
+    blurb: "what a competent third-party manager delivers" },
+  { key: 1 as const, label: "Institutional", opex: 1.12, aim: 0.90,
+    blurb: "staffed, answered and immaculate — two points of NOI, and it keeps the covenants you want" },
+];
+export function serviceSpec(v?: -1 | 0 | 1) { return OPS_SERVICE[(v ?? 0) + 1]; }
+
+/**
+ * THE CAPITAL PLAN, ON A DIAL.
+ *
+ * `mult` is what you spend against CAP_PLAN_RATE; `lift` is what it buys,
+ * in multiples of the month's wear. Fund at 1.15 is a shade ahead of decay,
+ * which is what a properly funded reserve does and what this engine already
+ * did before there was a choice — so the default changes nothing. Reposition
+ * costs 1.8x and lifts 1.75x, deliberately sub-linear: the first dollar of
+ * capital buys the most, and turning a building round through the reserve is
+ * the slow, expensive way to do it. The sharp instrument is a programme.
+ *
+ * Deferring is free and it is sometimes right — for a three-year flip, for a
+ * building you are emptying for demolition, for a month when the bank is on
+ * you. It is ruinous over a twenty-year hold. That is the entire decision, and
+ * it is the first time hold period has been a strategic variable.
+ */
+export const OPS_PLAN = [
+  { key: 0 as const, label: "Defer", mult: 0, lift: 0,
+    blurb: "nothing goes back in — free today, and the building goes off" },
+  { key: 1 as const, label: "Fund", mult: 1, lift: 1.15,
+    blurb: "roofs, lifts and plant on schedule — holds the line" },
+  { key: 2 as const, label: "Reposition", mult: 1.8, lift: 1.75,
+    blurb: "ahead of the wear — a grade back over a decade, at nearly twice the money" },
+];
+export function planSpec(v?: 0 | 1 | 2) { return OPS_PLAN[v ?? 1]; }
+
+/** How fast tenants notice a change of service. 0.022/month is a 31-month half-life. */
+export const SVC_SPEED = 0.022;
+export const SVC_START = 0.55;
 // The century is a MILESTONE, not a wall. A hundred years used to end the run
 // on the spot, which turned the back half of a good campaign into a countdown
 // and threw away the most interesting book in the game the moment it was

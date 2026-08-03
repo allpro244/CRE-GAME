@@ -7,6 +7,7 @@
 // from empty. A modest random cost/schedule overrun keeps it honest.
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Contract, DevUse, Development, GameState, UseMix } from "./types";
+import { BUILT_CLASSES } from "./types";
 import { logBooks, monthLabel } from "./types";
 import { demandNow } from "./demand";
 import { rng, rrange, addStock, NATURAL_VAC, CITY_STOCK, BUILD_MONTHS } from "./market";
@@ -321,6 +322,77 @@ export function capRetail(mix: UseMix, floors: number): UseMix {
   const scale = (1 - maxShare) / rest;
   for (const [k, v] of others) out[k] = +(v * scale).toFixed(4);
   return out;
+}
+
+/**
+ * WHAT IT WOULD COST TO BUILD THIS BUILDING AGAIN, TODAY.
+ *
+ * The single most important number in development economics, and the game did
+ * not have it anywhere. It is the hinge of the whole cycle:
+ *
+ *   When buildings trade ABOVE what it costs to replace them, you build —
+ *   because you can create a dollar of value for less than a dollar. Everybody
+ *   works that out at once, which is what produces a glut.
+ *
+ *   When they trade BELOW replacement cost, nobody builds, at any interest
+ *   rate, because you would be manufacturing a loss. That is what ENDS a glut,
+ *   and it is the only thing that does. Not sentiment, not the cycle turning —
+ *   arithmetic.
+ *
+ * Without it the development cycle had no self-correcting mechanism: a class
+ * could sit at 25% vacancy and construction was still governed only by yield
+ * on cost against an exit cap. Now the floor is real, and it is readable — a
+ * player who can see value at 0.75x replacement knows two things at once: do
+ * not build, and every building you buy is worth less than the bricks in it,
+ * which is the best moment in the cycle to be an owner.
+ *
+ * Excludes land, deliberately. Replacement cost is about the BUILDING; land is
+ * what you argue about separately, and mixing them is how people talk
+ * themselves into bad sites.
+ */
+export function replacementCostPsf(rec: { class: string; mix?: UseMix; floors: number }, econ: GameState["econ"]): number {
+  const mix = rec.mix && Object.keys(rec.mix).length ? rec.mix : ({ [rec.class]: 1 } as UseMix);
+  const base = overMix(mix, (u) => HARD_COST_PSF[u]);
+  // Height costs money: the same square foot on floor forty needs more
+  // structure, more lift and more time than it does on floor two.
+  const fl = Math.max(1, rec.floors || 1);
+  const heightPrem = fl > 30 ? 1.28 : fl > 18 ? 1.18 : fl > 8 ? 1.07 : 1;
+  const hard = base * econ.costIdx * heightPrem;
+  return Math.round(hard * (1 + SOFT_COST) * (1 + CONTINGENCY));
+}
+
+/** The whole building, to build again from a cleared site. */
+export function replacementCost(rec: { class: string; mix?: UseMix; floors: number; bldgArea: number }, econ: GameState["econ"]): number {
+  if (!rec.bldgArea || rec.class === "land") return 0;
+  return Math.round(replacementCostPsf(rec, econ) * rec.bldgArea);
+}
+
+/**
+ * WHAT THE WHOLE CITY'S FINISHED PRODUCT TRADES AT, against what it would cost
+ * to build it. Above 1.0 the town builds; below it, the town stops.
+ *
+ * Value per foot is derived the way a developer would: stabilised rent at
+ * natural vacancy, capitalised at the class's current cap rate. Weighted by
+ * how much of the pipeline each class represents, because a glut in offices
+ * does not stop anyone building sheds.
+ */
+export function cityValueToReplacement(s: GameState): number {
+  const e = s.econ;
+  let vsum = 0, csum = 0;
+  for (const k of BUILT_CLASSES) {
+    // stabilised NOI per foot: face rent less operating cost, at natural vacancy
+    const occ = 1 - NATURAL_VAC[k];
+    const noiPsf = e.rentIdx[k] * occ * 0.62;
+    const cap = Math.max(3, e.capRate[k]) / 100;
+    const valuePsf = noiPsf / cap;
+    const costPsf = HARD_COST_PSF[k] * e.costIdx * (1 + SOFT_COST) * (1 + CONTINGENCY);
+    // weight by the class's share of citywide stock, so the blend reflects
+    // what this town is actually made of
+    const w = Math.max(1, (e.stock?.[k] ?? 1));
+    vsum += valuePsf * w;
+    csum += costPsf * w;
+  }
+  return csum > 0 ? vsum / csum : 1;
 }
 
 export function maxFloorsFor(
@@ -1138,7 +1210,22 @@ export function tickCityGrowth(
   s.cityJobs = still;
 
   // ---- starts --------------------------------------------------------------
-  const rate = START_RATE[s.econ.phase] ?? 0.1;
+  // NOBODY BUILDS BELOW REPLACEMENT COST.
+  //
+  // The pipeline was governed by the phase of the cycle and nothing else, so a
+  // class could sit at twenty-five per cent vacancy with buildings trading at
+  // two thirds of what it costs to put them up, and the cranes kept turning.
+  // That is not a thing that happens. When finished product trades under
+  // replacement cost, development stops — at any interest rate, in any phase —
+  // because you would be manufacturing a loss, and that is the only mechanism
+  // that has ever ended a glut.
+  //
+  // It is a smooth brake rather than a cliff: at parity the market builds at
+  // its normal rate, at 0.85x it has nearly stopped, and above 1.15x it is a
+  // boom, which is exactly the overshoot that creates the NEXT glut.
+  const vtr = cityValueToReplacement(s);
+  const brake = Math.max(0.05, Math.min(1.45, (vtr - 0.80) / 0.25));
+  const rate = (START_RATE[s.econ.phase] ?? 0.1) * brake;
   // THE STREET'S JOBS COME OUT OF THIS QUOTA, NOT ON TOP OF IT.
   //
   // A firm that broke ground on its own land this month has already added that

@@ -18,6 +18,7 @@ import { isCommercial, vacantSf, walt, loiSigningCost, notReadySf, unitStatus, u
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
 import { lenderHealth, capitalRatio, lenderBlurb } from "@/engine/lenders";
 import { firmName, firmShort } from "@/engine/firm";
+import { replacementCost, cityValueToReplacement } from "@/engine/dev";
 import { workoutMood } from "@/engine/workout";
 import { portfolioQuote } from "@/engine/portfolio";
 import { locLimit, locRate, locAvailable } from "@/engine/credit";
@@ -1849,6 +1850,22 @@ function PropertyPage() {
         {built && h && remainingAbatement(h, game.month) > 0 && (
           <Big label="Free rent owed" value={"−" + usd(remainingAbatement(h, game.month))} bad />
         )}
+        {/* THE SANITY CHECK EVERY DEVELOPER RUNS AND THIS GAME COULD NOT.
+            Above replacement cost, somebody will build a competitor across the
+            street. Below it, nobody can — and you are buying bricks for less
+            than the bricks cost. */}
+        {built && (() => {
+          const rc = replacementCost(rec as never, game.econ);
+          if (!rc) return null;
+          const x = value / rc;
+          return (
+            <Big
+              label="Value vs cost to build"
+              value={`${x.toFixed(2)}×`}
+              bad={x > 1.25}
+            />
+          );
+        })()}
         <Big label="Equity" value={h ? usd(value - (h.loan?.balance ?? 0)) : "—"} />
       </div>
       <div className="prop-head">
@@ -3725,7 +3742,28 @@ function ResearchPage() {
         <Big label="Cost index" value={e.costIdx.toFixed(2)} />
         <Big label="Credit" value={creditWord(e.creditIdx ?? 1)} bad={(e.creditIdx ?? 1) < 0.72} />
         <Big label="Employment" value={((e.employIdx ?? 1) * 100).toFixed(0)} />
+        <Big
+          label="Value vs replacement"
+          value={`${cityValueToReplacement(game).toFixed(2)}×`}
+          bad={cityValueToReplacement(game) < 0.95}
+        />
       </div>
+      {/* THE HINGE OF THE WHOLE DEVELOPMENT CYCLE, and it was nowhere. */}
+      {(() => {
+        const x = cityValueToReplacement(game);
+        return (
+          <div className="hint" style={{ marginTop: 6 }}>
+            Finished buildings trade at <strong>{x.toFixed(2)}×</strong> what it costs to put them up.{" "}
+            {x > 1.15
+              ? "Above replacement cost, and comfortably — every developer in this city can see it, which is exactly how the next glut gets started. Build now and you will be delivering into their supply."
+              : x > 1.0
+                ? "Just above replacement cost. Building pencils, barely, and it does not pencil for anyone careless."
+                : x > 0.85
+                  ? "Below replacement cost. Nobody is starting anything, and the pipeline is emptying out — which is what eventually fixes a soft market. Buying is cheaper than building."
+                  : "Far below replacement cost. Construction has stopped. Every building in this town is worth less than the bricks in it, and that is the best moment there is to be a buyer rather than a builder."}
+          </div>
+        );
+      })()}
 
       <div className="deals-grid">
         <section style={{ gridColumn: "1 / -1" }}>

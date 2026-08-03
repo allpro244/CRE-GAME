@@ -10,7 +10,8 @@ import type { BuiltClass, Contract, DevUse, Development, GameState, UseMix } fro
 import { BUILT_CLASSES } from "./types";
 import { logBooks, monthLabel } from "./types";
 import { demandNow } from "./demand";
-import { rng, rrange, addStock, NATURAL_VAC, CITY_STOCK, BUILD_MONTHS } from "./market";
+import { rng, rrange, addStock, NATURAL_VAC, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL } from "./market";
+import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
 // a lot can physically carry and value.ts cannot import this file. Re-exported
@@ -639,6 +640,7 @@ export function startDevelopment(
   const next = clone(s);
   next.cash -= plan.equityAtClose;
   logBooks(next, "dev", plan.equityAtClose);
+  noteRecordPlan(next, parcels, bbl, dominantOf(plan.mix), plan.sf, plan.floors, firmShort(next));
   next.developments[bbl] = {
     bbl, use, mix: plan.mix, sf: plan.sf, floors: plan.floors,
     suites: custom?.suites,
@@ -1232,6 +1234,40 @@ function classAppetite(s: GameState, k: BuiltClass): number {
   return tight * clamp(e.creditIdx ?? 1, 0.25, 1.25);
 }
 
+/**
+ * A RECORD GOES ON THE TAPE, AND THE TAPE TAKES YOU THERE.
+ *
+ * A city notices when somebody plans the biggest office building it has ever
+ * seen — that is front-page news in any real town, and it is exactly the event
+ * a principal wants to fly to and stare at, because the supply it represents is
+ * pointed at their rent roll. The record is seeded LAZILY from the standing
+ * stock, so the first two-storey shop of a young campaign does not make the
+ * tape: a plan is only news when it beats everything built as well as
+ * everything planned.
+ */
+export function noteRecordPlan(
+  s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass, sf: number, floors: number, who: string,
+) {
+  if (!s.recordPlan) {
+    s.recordPlan = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+    for (const b in parcels) {
+      const r = parcels[b];
+      if (!r || r.class === "land" || !r.bldgArea) continue;
+      const k = r.class as BuiltClass;
+      if (k in s.recordPlan && r.bldgArea > s.recordPlan[k]) s.recordPlan[k] = r.bldgArea;
+    }
+  }
+  if (sf <= (s.recordPlan[use] ?? 0)) return;
+  s.recordPlan[use] = sf;
+  const rec = resolveRec(parcels, s, bbl);
+  s.news.unshift({
+    q: s.month, kind: "event", bbl,
+    text: `${who} filed plans for the largest ${SECTOR_LABEL[use].toLowerCase()} building this city has ever ` +
+      `seen: ${Math.round(sf).toLocaleString()} sf, ${floors} floors, at ${rec?.address ?? bbl}. ` +
+      `Every landlord in the class just read the same paragraph you did.`,
+  });
+}
+
 export function tickCityGrowth(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null,
 ) {
@@ -1413,6 +1449,7 @@ export function tickCityGrowth(
     const months = Math.round(bLo + rng(s) * (bHi - bLo));
     const deliverM = s.month + months;
     s.cityJobs.push({ bbl, use, sf, floors, startM: s.month, deliverM });
+    noteRecordPlan(s, parcels, bbl, lead, sf, floors, "The city");
 
     // Into the pipeline the day the hole is dug: the Economy page's delivery
     // schedule and forward vacancy are reading this queue, so what is coming

@@ -34,7 +34,7 @@ import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from
 import { CASH_APY, monthLabel } from "./types";
 import { BUILD_MONTHS, rng, rrange } from "./market";
 import { assetValue, initialCondition, landValue, noiAfterTaxYr, occupancy, resolveRec } from "./value";
-import { devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retailWantsMixed, SOFT_COST, useForZone } from "./dev";
+import { devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retailWantsMixed, SOFT_COST, useForZone, noteRecordPlan } from "./dev";
 import { recordComp } from "./comps";
 
 // Ashport is an old port town; its money has old-port-town names.
@@ -758,6 +758,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
     equityLeft: Math.round(cost * (1 - ltc)), debt: 0,
     ratePct: +(s.econ.indexRate + CONSTR_SPREAD_R).toFixed(2),
   });
+  noteRecordPlan(s, parcels, bbl, lead, sf, floors, r.name);
   // into the delivery pipeline the day the hole is dug, exactly like the city's
   if (!s.econ.cohorts) s.econ.cohorts = { office: [], retail: [], multifamily: [], industrial: [] };
   for (const [u, share] of Object.entries(devMix(use))) {

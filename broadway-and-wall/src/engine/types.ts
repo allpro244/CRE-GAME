@@ -486,6 +486,8 @@ export interface NewsItem {
   q: number;
   kind: "rumor" | "event" | "deal" | "info" | "warn";
   text: string;
+  /** A story about a place can put the camera on the place. */
+  bbl?: string;
 }
 
 export interface EconHistoryPoint {
@@ -810,6 +812,13 @@ export interface GameState {
    * plausibly have owned it and moved on.
    */
   lastTradeM?: Record<string, number>;
+  /**
+   * The largest building PLANNED in each class so far this campaign — seeded
+   * from the standing stock, so the first two-storey shop of the run does not
+   * make the tape. When a groundbreaking beats it, that is a record and the
+   * city says so.
+   */
+  recordPlan?: Record<string, number>;
   developments: Record<string, Development>;
   built: Record<string, BuiltOverride>;      // delivered buildings, yours and the city's
   cityBuilt: string[];                       // bbls the market built, not you

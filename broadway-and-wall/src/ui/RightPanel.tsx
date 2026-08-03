@@ -5202,6 +5202,7 @@ function LeasingPage() {
 
 function BooksPage() {
   const game = useStore((s) => s.game)!;
+  const focus = useStore((s) => s.focus);
   const nw = game.nwHistory[game.nwHistory.length - 1] ?? 0;
   const realized = game.exits.reduce((a, e) => a + e.gain, 0);
   const years = [...(game.books ?? [])].reverse().slice(0, 15);
@@ -5269,8 +5270,16 @@ function BooksPage() {
         <div className="page-section-head">The tape</div>
         <div className="news" style={{ maxHeight: 260, overflowY: "auto" }}>
           {game.news.slice(0, 60).map((n, i) => (
-            <div key={i} className={"news-item news-" + n.kind}>
-              <span className="news-q mono">{monthLabel(n.q)}</span> {n.text}
+            // A story about a place can put the camera on the place: a record
+            // groundbreaking is only worth reading if you can go look at it.
+            <div
+              key={i}
+              className={"news-item news-" + n.kind}
+              style={n.bbl ? { cursor: "pointer" } : undefined}
+              title={n.bbl ? "Fly to it" : undefined}
+              onClick={n.bbl ? () => focus(n.bbl!, true) : undefined}
+            >
+              <span className="news-q mono">{monthLabel(n.q)}</span> {n.text}{n.bbl ? " ✈" : ""}
             </div>
           ))}
         </div>

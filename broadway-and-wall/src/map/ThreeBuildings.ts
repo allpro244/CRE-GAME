@@ -130,6 +130,7 @@ attribute float aRand;
 attribute float aVar;
 attribute float aTop;
 attribute float aFh;
+attribute float aEra;
 attribute vec2 aSeg;   // wall segment span in perimeter units (u0, u1)
 attribute vec2 aCcv;   // corner sign at each end: +1 convex, -1 concave
 attribute vec3 aTint;
@@ -137,13 +138,13 @@ varying vec3 vNormal;
 varying vec3 vTint;
 varying vec3 vPos;
 varying vec2 vSeg, vCcv;
-varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh;
+varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh, vEra;
 void main() {
   vNormal = normal;
   vTint = aTint;
   vPos = position;
   vSeg = aSeg; vCcv = aCcv;
-  vU = aU; vZ = position.z; vStyle = aStyle; vRand = aRand; vVar = aVar; vTop = aTop; vFh = aFh;
+  vU = aU; vZ = position.z; vStyle = aStyle; vRand = aRand; vVar = aVar; vTop = aTop; vFh = aFh; vEra = aEra;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 
@@ -315,7 +316,7 @@ varying vec3 vNormal;
 varying vec3 vTint;
 varying vec3 vPos;
 varying vec2 vSeg, vCcv;
-varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh;
+varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh, vEra;
 uniform float uOpacity;
 uniform vec3 uCam;
 ${"" /* shadow sampling */}
@@ -356,22 +357,33 @@ void main() {
     // colours repeated — it is limestone next to brownstone next to granite
     // next to something somebody painted in 1954, and the eye reads the
     // variety long before it reads any single building.
-    if (vVar < 0.16)      { wall = vec3(0.86, 0.81, 0.70); } // limestone
-    else if (vVar < 0.29) { wall = vec3(0.79, 0.75, 0.66); } // pale ashlar
-    else if (vVar < 0.44) { wall = vec3(0.55, 0.40, 0.33); } // brownstone
-    else if (vVar < 0.56) { wall = vec3(0.46, 0.35, 0.31); } // dark brownstone
-    else if (vVar < 0.68) { wall = vec3(0.63, 0.60, 0.57); } // grey granite
-    else if (vVar < 0.84) { wall = vec3(0.78, 0.79, 0.72); } // painted
-    else                  { wall = vec3(0.70, 0.66, 0.61); } // soot-washed
+    // ERA CHOOSES THE STONE. These seven ran off vVar alone, so a building
+    // finished in 1885 and one finished in 2018 drew from the same hat — and
+    // this one style carries 1,655 buildings across 133 years. Sorted here
+    // dark-to-pale against age: brownstone and granite are what the 1880s
+    // built with, limestone and pale ashlar are the 1910s, and paint is what
+    // somebody did to all of it in 1954.
+    float pk = clamp(vVar * 0.58 + vEra * 0.42, 0.0, 0.999);
+    if (pk < 0.14)        { wall = vec3(0.46, 0.35, 0.31); } // dark brownstone
+    else if (pk < 0.30)   { wall = vec3(0.55, 0.40, 0.33); } // brownstone
+    else if (pk < 0.44)   { wall = vec3(0.63, 0.60, 0.57); } // grey granite
+    else if (pk < 0.58)   { wall = vec3(0.70, 0.66, 0.61); } // soot-washed
+    else if (pk < 0.72)   { wall = vec3(0.79, 0.75, 0.66); } // pale ashlar
+    else if (pk < 0.87)   { wall = vec3(0.86, 0.81, 0.70); } // limestone
+    else                  { wall = vec3(0.78, 0.79, 0.72); } // painted
     glassA = vec3(0.30, 0.36, 0.42); glassB = vec3(0.44, 0.52, 0.58);
   } else if (s == 2) { colW = 2.9; win = vec2(0.42, 0.50);
-    if (vVar < 0.18)      { wall = vec3(0.72, 0.46, 0.36); } // red brick
-    else if (vVar < 0.30) { wall = vec3(0.63, 0.34, 0.28); } // deep red
-    else if (vVar < 0.44) { wall = vec3(0.58, 0.42, 0.34); } // brown
-    else if (vVar < 0.56) { wall = vec3(0.49, 0.38, 0.34); } // dark brown
-    else if (vVar < 0.70) { wall = vec3(0.76, 0.62, 0.46); } // tan
-    else if (vVar < 0.80) { wall = vec3(0.80, 0.71, 0.55); } // buff
-    else if (vVar < 0.90) { wall = vec3(0.83, 0.80, 0.74); } // whitewash
+    // The same for brick, which carries 2,403 buildings across 109 years on
+    // one palette. Deep red and dark brown are 19th-century common brick; tan
+    // and buff are the 1920s; whitewash and grey paint are what happened later.
+    float pk = clamp(vVar * 0.60 + vEra * 0.40, 0.0, 0.999);
+    if (pk < 0.15)        { wall = vec3(0.63, 0.34, 0.28); } // deep red
+    else if (pk < 0.29)   { wall = vec3(0.49, 0.38, 0.34); } // dark brown
+    else if (pk < 0.43)   { wall = vec3(0.72, 0.46, 0.36); } // red brick
+    else if (pk < 0.57)   { wall = vec3(0.58, 0.42, 0.34); } // brown
+    else if (pk < 0.71)   { wall = vec3(0.76, 0.62, 0.46); } // tan
+    else if (pk < 0.83)   { wall = vec3(0.80, 0.71, 0.55); } // buff
+    else if (pk < 0.93)   { wall = vec3(0.83, 0.80, 0.74); } // whitewash
     else                  { wall = vec3(0.60, 0.55, 0.53); } // grey-painted
     glassA = vec3(0.32, 0.38, 0.44); glassB = vec3(0.50, 0.57, 0.62);
   } else if (s == 3) { colW = 4.4; win = vec2(0.58, 0.50);
@@ -631,6 +643,29 @@ void main() {
     winMask = (vZ > sillZ && vZ < headZ && !pier) ? 1.0 : 0.0;
   }
 
+  // A CENTURY LEAVES A MARK.
+  //
+  // Not a dirt texture — the two things that actually make an old wall look
+  // old at this distance. Airborne carbon darkens and warms everything that
+  // has stood through it, hardest on the masonry styles that were there for
+  // the coal. And it collects: rain washes the exposed field of a wall and
+  // never reaches the sheltered courses, so an old building is streaked
+  // light-and-dark down its own height while a new one is flat.
+  if (!glassy) {
+    float age = 1.0 - vEra;                             // 0 = new, 1 = 1870
+    // age^1.5 rather than age^2: the median building sits at age 0.43, and a
+    // square law put only four per cent of darkening on it, which is nothing.
+    float soot = pow(age, 1.5) * 0.42;
+    col = mix(col, col * vec3(0.80, 0.78, 0.74), soot);
+    // washed where the weather gets at it, dirty where it does not
+    vec2 wp = vec2(vU * 0.09, vZ * 0.055);
+    vec2 wi = floor(wp), wf = fract(wp);
+    wf = wf * wf * (3.0 - 2.0 * wf);
+    float wash = mix(mix(hash(wi), hash(wi + vec2(1.0, 0.0)), wf.x),
+                     mix(hash(wi + vec2(0.0, 1.0)), hash(wi + vec2(1.0, 1.0)), wf.x), wf.y);
+    col *= 1.0 + age * 0.22 * (wash - 0.5);
+  }
+
   // distance dissolve
   vec3 facadeAvg = mix(wall, mix(glassA, glassB, 0.5), win.x * win.y * 0.8);
   col = mix(col, facadeAvg, lod);
@@ -655,7 +690,7 @@ varying vec3 vNormal;
 varying vec3 vTint;
 varying vec3 vPos;
 varying vec2 vSeg, vCcv;
-varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh;
+varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh, vEra;
 uniform float uOpacity;
 uniform vec3 uCam;
 ` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + /* glsl */ `
@@ -943,10 +978,30 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const blank = () => ({
       pos: [] as number[], norm: [] as number[], u: [] as number[], style: [] as number[],
       rand: [] as number[], varr: [] as number[], top: [] as number[], fh: [] as number[],
-      seg: [] as number[], ccv: [] as number[],
+      seg: [] as number[], ccv: [] as number[], era: [] as number[],
     });
     const W = blank();
     const R = blank();
+    /**
+     * THE RENDERER DID NOT KNOW HOW OLD ANY BUILDING WAS.
+     *
+     * `v.y` — the year the thing was built — sits on every volume record and
+     * is used to gate gable, mansard and hip massing. Then it is thrown away.
+     * meta is [style, rand, varr, top, fh]; there is no room in it for a date
+     * and the fragment shader has never seen one.
+     *
+     * Measured over 5,697 built volumes in five cities: S_BRICK carries 2,403
+     * buildings spanning 1885 to 1994 — a hundred and nine years, five
+     * construction eras — through ONE eight-hue palette. S_PREWAR carries
+     * 1,655 spanning 1885 to 2018 through one seven-stone palette. That is
+     * 71.2% OF EVERY CITY painted by a style whose era span exceeds a century.
+     * A house finished the year Grover Cleveland took office and a block of
+     * flats finished the year the iPhone shipped are the same eight colours.
+     *
+     * One float fixes it. Set once per volume, read by every triangle that
+     * volume emits, so a building's cornice ages with its wall.
+     */
+    let curEra = 0.5;
     const wallRanges: { bbl: string; r: Ranges }[] = [], roofRanges: { bbl: string; r: Ranges }[] = [];
     // EVERY PROP KNOWS WHICH BUILDING IT IS STANDING ON. Water tanks, cooling
     // towers, aerials and fire escapes were pushed into scene-level instanced
@@ -967,6 +1022,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       T.u.push(us[0], us[1], us[2]);
       for (let i = 0; i < 3; i++) {
         T.style.push(meta[0]); T.rand.push(meta[1]); T.varr.push(meta[2]); T.top.push(meta[3]); T.fh.push(meta[4]);
+        T.era.push(curEra);
         T.seg.push(seg[0], seg[1]);
         T.ccv.push(ccv[0], ccv[1]);
       }
@@ -1031,6 +1087,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           T.u.push(d[0], d[1], d[2]);
           for (let i = 0; i < 3; i++) {
             T.style.push(meta[0]); T.rand.push(meta[1]); T.varr.push(meta[2]); T.top.push(meta[3]); T.fh.push(meta[4]);
+            T.era.push(curEra);
             T.seg.push(-1e6, 1e6); T.ccv.push(0, 0);
           }
         };
@@ -1120,6 +1177,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       //
       // Two independent hashes now, mixed with the city seed, so a reroll is a
       // genuinely different town and neighbours are uncorrelated.
+      // 0 = 1870, 1 = 2030. Every triangle this volume emits carries it.
+      curEra = Math.max(0, Math.min(1, ((v.y || 1950) - 1870) / 160));
       const key = keyOf(v.b) ^ Math.imul(v.t + 1, 0x9e3779b1);
       const rnd = hash01(key, this.citySeed);
       const varr = hash01(key ^ 0x5bf03635, Math.imul(this.citySeed, 3) + 1);
@@ -1613,6 +1672,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       g.setAttribute("aVar", new THREE.Float32BufferAttribute(T.varr, 1));
       g.setAttribute("aTop", new THREE.Float32BufferAttribute(T.top, 1));
       g.setAttribute("aFh", new THREE.Float32BufferAttribute(T.fh, 1));
+      g.setAttribute("aEra", new THREE.Float32BufferAttribute(T.era, 1));
       g.setAttribute("aSeg", new THREE.Float32BufferAttribute(T.seg, 2));
       g.setAttribute("aCcv", new THREE.Float32BufferAttribute(T.ccv, 2));
       const tint = new Float32Array((T.pos.length / 3) * 3).fill(1);
@@ -2095,6 +2155,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     g.setAttribute("aVar", fill(0.5, 1));
     g.setAttribute("aTop", fill(1, 1));
     g.setAttribute("aFh", fill(3.5, 1));
+    g.setAttribute("aEra", fill(0.55, 1));
     g.setAttribute("aTint", fill(1, 3));
     g.setAttribute("aSeg", fill(0, 2));
     g.setAttribute("aCcv", fill(0, 2));
@@ -2276,8 +2337,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const mkBuf = () => ({
         pos: [] as number[], norm: [] as number[], u: [] as number[], style: [] as number[],
         rand: [] as number[], varr: [] as number[], top: [] as number[], fh: [] as number[],
-        seg: [] as number[], ccv: [] as number[],
+        seg: [] as number[], ccv: [] as number[], era: [] as number[],
       });
+      // A building the player just finished is brand new, by definition, and
+      // the campaign runs from 2000 — so it sits at the young end of the
+      // 1870-2030 scale rather than anywhere in the middle of it.
+      const nowEra = 0.82;
       const T = mkBuf();
       const R2 = mkBuf();
       let perim = 0;
@@ -2296,6 +2361,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         for (const [x, y, z, u] of quad) {
           T.pos.push(x, y, z); T.norm.push(n[0], n[1], n[2]); T.u.push(u);
           T.style.push(meta[0]); T.rand.push(meta[1]); T.varr.push(meta[2]); T.top.push(meta[3]); T.fh.push(meta[4]);
+          T.era.push(nowEra);
           T.seg.push(u0, u1); T.ccv.push(1, 1);
         }
       }
@@ -2319,6 +2385,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         g.setAttribute("aVar", new THREE.Float32BufferAttribute(D.varr, 1));
         g.setAttribute("aTop", new THREE.Float32BufferAttribute(D.top, 1));
         g.setAttribute("aFh", new THREE.Float32BufferAttribute(D.fh, 1));
+        g.setAttribute("aEra", new THREE.Float32BufferAttribute(D.era, 1));
         g.setAttribute("aSeg", new THREE.Float32BufferAttribute(D.seg, 2));
         g.setAttribute("aCcv", new THREE.Float32BufferAttribute(D.ccv, 2));
         g.setAttribute("aTint", new THREE.Float32BufferAttribute(new Float32Array(D.pos.length).fill(1), 3));

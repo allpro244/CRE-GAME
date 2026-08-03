@@ -5,7 +5,7 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Credit, GameState, Holding, LOI, Sector } from "./types";
 import { logBooks, monthLabel } from "./types";
-import { rng, rrange, NATURAL_VAC, industryStress, industryPull, INDUSTRY_LABEL } from "./market";
+import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL } from "./market";
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf, demandLinear } from "./value";
@@ -601,6 +601,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // lease at a higher face rent almost every time.
       s.lois.push({
         id: s.nextLoiId++,
+        arrivedM: s.month,
         bbl: h.bbl,
         kind: "renewal",
         // A renewal is for the space the tenant is ALREADY in. This carried no
@@ -626,12 +627,17 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
 
     // inbound demand for vacant, market-ready space
     const vac = vacantSf(rec, h) - notReadySf(h, q);
-    const openLois = s.lois.filter((l) => l.bbl === h.bbl && l.kind === "new").length;
+    // TOURS, NOT LETTERS. Two parties chasing the same suite is ONE decision,
+    // not two, so the cap counts conversations rather than envelopes — which
+    // keeps the number of live decisions per building exactly where it was.
+    const openTours = new Set(
+      s.lois.filter((l) => l.bbl === h.bbl && l.kind === "new").map((l) => l.tourId ?? -l.id),
+    ).size;
     // a big empty floorplate draws more than one prospect at a time
     const loiCap = vac > rec.bldgArea * 0.5 ? 3 : 2;
     // Same floor on the way in: a building does not go to market with 700 ft
     // of leftover, so nobody turns up asking for it.
-    if (!renovating && !h.leasingHold && vac >= PART_SUITE_MIN && openLois < loiCap) {
+    if (!renovating && !h.leasingHold && vac >= PART_SUITE_MIN && openTours < loiCap) {
       // WHERE A LETTER COMES FROM — see absorption.ts. Not a coin flip per
       // building any more: the city has a finite quantity of requirement in the
       // market this month, every vacant foot in town is competing for it, and
@@ -662,7 +668,6 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       if (!odds) continue;
       const p = odds.loiOdds;
       if (rng(s) < p) {
-        const sector = pickSector(s, use);
         const [tiLo, tiHi] = TI_ASK[use] ?? TI_ASK.office;
         const concession = concessionPressure(s.econ, use);
         // ...and at the rent THAT market pays, not a blend of markets the
@@ -679,15 +684,60 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         const want = Math.min(legVac, drawRequirementSf(s, use));
         const sf = toSuites(rec, want, legVac, use);
         if (!sf) continue;
-        const credit = rollCredit(s, demandLinear(rec.demandScore));
+        // A TOUR, NOT A LETTER.
+        //
+        // Measured over 945 arriving letters across four fifty-year runs:
+        // 94.4% of them, if signed, IMPROVED the building's cap-rate grade,
+        // 99.8% were fundable from cash, and the expected wait for a
+        // replacement prospect was 25.3 months. Against a two-year void even a
+        // bad lease wins, so Accept was not a decision — it was the only move
+        // on the board, and it was 52% of everything the player did.
+        //
+        // The answer is not to make signing worse. Filling space SHOULD be
+        // good. It is to stop offering the space to one person at a time. A
+        // vacant suite is being shown to two or three parties, they are not the
+        // same shape, and you can have exactly one of them — which turns a
+        // button into a choice without adding a single click.
+        //
+        // How deep the tour goes is the market's answer, not a constant. In a
+        // squeeze you get to be picky; in a glut one party turns up and you had
+        // better sign them.
+        // Written against the old per-building coin flip, this read `vacancyPull`
+        // directly. That helper still exists and still means the same thing —
+        // how tight this class's market is, natural vacancy over actual — so it
+        // is the right input here even though the arrival above no longer uses
+        // it. Depth of tour is a question about the MARKET, not about the odds
+        // this particular building drew.
+        const marketPull = vacancyPull(s.econ, use);
+        const pTwo = Math.max(0.05, Math.min(0.72, (marketPull - 0.55) * 0.62));
+        const nTour = 1 + (rng(s) < pTwo ? 1 : 0) + (rng(s) < pTwo * 0.45 ? 1 : 0);
+        const tourId = s.nextTourId ?? 1;
+        s.nextTourId = tourId + 1;
+        for (let k = 0; k < nTour; k++) {
+        // THREE SHAPES, and the whole trade-off lives in the difference between
+        // them. k=0 is what the market sent. k=1 is THE COVENANT: better
+        // credit, long paper, a rent under the others, and it wants a fit-out —
+        // it tightens waltSpread and creditSpread and it is 11x less likely to
+        // go dark (see pFail: grade 0.14 against 1.6). k=2 is THE GROWTH STORY:
+        // unrated, short, and it will pay over the odds — income today against
+        // a mark on the building tomorrow. Both of those are already priced by
+        // rollQualitySpread. The choice was simply never offered.
+        const sector = pickSector(s, use);
+        const drawnCredit = rollCredit(s, demandLinear(rec.demandScore));
+        const credit: Credit = k === 1 ? (Math.min(2, drawnCredit + 1) as Credit)
+          : k === 2 ? 0 : drawnCredit;
+        const rentBias = k === 1 ? rrange(s, 0.86, 0.95) : k === 2 ? rrange(s, 1.04, 1.16) : 1;
+        const termBias = k === 1 ? 1.35 : k === 2 ? 0.6 : 1;
         // term first: the free-rent ask is a function of how long they sign for
         const termM = Math.round(
           (credit === 2 ? rrange(s, 84, 144) : credit === 1 ? rrange(s, 60, 108) : rrange(s, 36, 60))
           * (sf > useSuiteSf(rec, use) * 2.5 ? 1.15 : 1)
-          * (s.econ.phase === "recession" ? 0.85 : 1),
+          * (s.econ.phase === "recession" ? 0.85 : 1) * termBias,
         );
         s.lois.push({
           id: s.nextLoiId++,
+          arrivedM: s.month,
+          tourId,
           bbl: h.bbl,
           use,
           kind: "new",
@@ -701,7 +751,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // Turnkey space is worth a premium and asks for no allowance —
           // the fit-out is already standing there, paid for, in the suite the
           // tenant just walked through.
-          rentPsf: +(market * (specLive ? 1.05 : 1) * (rng(s) < 0.3 ? rrange(s, 0.68, 0.86) : rrange(s, 0.9, 1.1))).toFixed(2),
+          rentPsf: +(market * (specLive ? 1.05 : 1) * rentBias * (rng(s) < 0.3 ? rrange(s, 0.68, 0.86) : rrange(s, 0.9, 1.1))).toFixed(2),
           // Term length is not random. A credit tenant taking a whole floor
           // signs long paper and expects to be paid for it; a small unrated
           // firm wants three years and an out. WALT is the thing a buyer
@@ -732,7 +782,13 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           recovery: rollRecovery(s, use),
           expiresM: q + 3,
         });
-        s.news.unshift({ q, kind: "info", text: `LOI in at ${rec.address} — check the Deals desk.` });
+        }
+        s.news.unshift({
+          q, kind: "info",
+          text: nTour > 1
+            ? `${nTour} parties are chasing the same ${(sf / 1000).toFixed(1)}k sf at ${rec.address} — you can only have one of them.`
+            : `LOI in at ${rec.address} — check the Deals desk.`,
+        });
       }
     }
   }
@@ -1033,9 +1089,26 @@ export function respondLOI(
   };
   const drawNote = () => (drawn ? ` Drew ${money(drawn)} on the line to fund it.` : "");
 
+  // TAKING ONE PARTY MEANS LOSING THE OTHERS. Everybody on this tour was
+  // chasing the same square feet; the moment it is spoken for, the rest go and
+  // look at somebody else's building. This is the cost that Accept never had —
+  // not that signing is bad, but that you cannot sign all of them.
+  const sweepTour = (l: LOI) => {
+    if (l.tourId === undefined) return;
+    const lost = next.lois.filter((o) => o.tourId === l.tourId && o.id !== l.id);
+    if (!lost.length) return;
+    next.lois = next.lois.filter((o) => o.tourId !== l.tourId || o.id === l.id);
+    next.news.unshift({
+      q: next.month, kind: "info",
+      text: `${lost.map((o) => o.name).join(" and ")} ${lost.length > 1 ? "were" : "was"} chasing the same space at `
+        + `${rec.address}. You gave it to ${l.name}; they have gone elsewhere.`,
+    });
+  };
+
   if (action === "accept") {
     const err = sign(loi);
     if (err) return { s, msg: "", err };
+    sweepTour(loi);
     next.lois = next.lois.filter((l) => l.id !== id);
     return { s: next, msg: "Lease signed." + drawNote() };
   }
@@ -1046,6 +1119,18 @@ export function respondLOI(
     if (loi.stage === "countered") return { s, msg: "", err: "Their counter was final. Take it or pass." };
     if (loi.countered) return { s, msg: "", err: "You already countered — they're deciding." };
     loi.countered = true;
+    // GOING BACK TO ONE PARTY COSTS YOU THE PATIENCE OF THE OTHERS.
+    //
+    // Everybody on this tour knows they are being shopped. Push the one you
+    // want and the fallbacks give you a month, not three — so pushing the
+    // covenant for rent can leave you with the covenant gone AND the start-up
+    // gone, and a 25-month wait for the next prospect. That wait used to be the
+    // only outcome of being fussy; now it is the punishment for being greedy.
+    for (const o of next.lois) {
+      if (o.tourId !== undefined && o.tourId === loi.tourId && o.id !== loi.id) {
+        o.expiresM = Math.min(o.expiresM, next.month + 1);
+      }
+    }
     if (loi.openRentPsf === undefined) loi.openRentPsf = loi.rentPsf;
     // The counter is YOUR terms, off the sliders — a rent and a TI number —
     // not a fixed +6%/−30% nobody chose. Backward-compatible default keeps
@@ -1086,6 +1171,7 @@ export function respondLOI(
         return { s: next, msg: "", err };
       }
       next.lois = next.lois.filter((l) => l.id !== id);
+      sweepTour(loi);
       reply("took", askRent, askTi);
       next.news.unshift({
         q: next.month, kind: "deal",

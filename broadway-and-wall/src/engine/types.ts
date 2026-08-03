@@ -68,6 +68,11 @@ export interface LOI {
   net: boolean;
   recovery?: "nnn" | "base" | "gross";
   expiresM: number;
+  // WHEN IT LANDED, which is not the same question as when it dies. A letter
+  // you have had on the desk since spring is not somebody at the door — it is
+  // your own unfinished business — and the broker who decides whose afternoon
+  // is free does not count it as one.
+  arrivedM?: number;
   countered?: boolean;
   // The negotiation, Groundwork-style: you counter with a rent and a TI
   // number; they take it, walk, or counter back ONCE — and that one is final.
@@ -80,6 +85,17 @@ export interface LOI {
   askedRentPsf?: number;
   askedTiPsf?: number;
   openRentPsf?: number;   // their original number, before any of this
+  /**
+   * WHICH TOUR THIS PARTY IS ON.
+   *
+   * A vacant suite in a tight market is being shown to two or three people at
+   * once, and you can only have one of them. Letters sharing a tourId are
+   * chasing the SAME square feet: signing one sends the others elsewhere, and
+   * going back to one with a counter makes the others impatient. Undefined on
+   * renewals (the incumbent is not competing with anybody) and on anything
+   * written before this existed.
+   */
+  tourId?: number;
 }
 
 /**
@@ -659,7 +675,7 @@ export type SellerKind = "estate" | "institution" | "partnership" | "developer" 
 
 
 export interface GameState {
-  v: 21;
+  v: 22;
   seed: number;
   /**
    * WHICH TOWN THIS WAS PLAYED IN.
@@ -680,6 +696,21 @@ export interface GameState {
   lois: LOI[];
   leaseReplies?: LeaseReply[];               // the last few answers to your counters
   nextLoiId: number;
+  /** Source of tour ids — see LOI.tourId. Letters on one tour share a number. */
+  nextTourId?: number;
+  /**
+   * HOW MANY MONTHS RUNNING NOBODY HAS BEEN AT THE DOOR.
+   *
+   * Measured over six fifty-year runs of competent play, 69.8% of months had
+   * nothing new arrive, the first decade ran at 87%, and the longest silence
+   * was 41 consecutive months — because every inbound channel in this engine
+   * is gated on the SIZE of your book. This is the counter that lets one
+   * channel be gated on the opposite: a broker rings the principal who has
+   * money and an empty afternoon. Reset by a letter, an offer, a bid list, an
+   * off-market call or a live negotiation — not by a balloon you have known
+   * about since spring, which is your own book, not somebody at the door.
+   */
+  quietMs?: number;
   approaches: Record<string, Approach>;
   /**
    * WHEN EACH BUILDING LAST CHANGED HANDS.

@@ -52,7 +52,7 @@ function targetListings(s: GameState, totalLots: number): number {
 
 export function newGame(seed: number, parcels?: ParcelTable): GameState {
   const s: GameState = {
-    v: 21,
+    v: 22,
     seed,
     rng: seed,
     month: 0,
@@ -421,6 +421,37 @@ export function advanceQuarter(
   s.nwHistory.push(Math.round(nw));
   checkMilestones(s, nw);
 
+  // THE QUIET DESK — how long since anybody was at the door.
+  //
+  // Measured over six fifty-year runs of competent play: 69.8% of months had
+  // NOTHING new arrive, the first decade ran at 87%, and the longest silence
+  // was 41 consecutive months. The cause is structural and it is one sentence:
+  // every inbound channel in this engine is gated on the SIZE of your book.
+  // LOIs need vacancy you own, offers need buildings you own, balloons need
+  // loans you took. A player with two buildings gets two buildings' worth of
+  // post, forever, and the front of the game is a solitaire played against a
+  // listings tape that never talks back.
+  //
+  // So one channel gets gated on the opposite — see tickBrokerCalls. This is
+  // what it reads. It counts a letter, an offer, a bid list, an off-market
+  // call and a live negotiation, and nothing else: a covenant breach is a
+  // condition of your own balance sheet, not a person with a file waiting for
+  // an answer, and a broker deciding whose afternoon is free does not consult
+  // your loan documents.
+  {
+    // A LETTER GOES STALE. The tour puts one to three letters on the desk at
+    // once and they sit there until they expire, so counting every standing
+    // letter made the desk read as busy for the whole time a single unanswered
+    // choice was open — and the floor below, which exists precisely to break a
+    // drought, switched itself off for the duration. Somebody at the door is
+    // somebody who arrived recently. After that they are furniture.
+    const atDoor = s.lois.filter((l) => s.month - (l.arrivedM ?? s.month) <= 1).length
+      + Object.values(s.holdings).filter((h) => h.sale?.offer || h.sale?.bids?.length).length
+      + Object.values(s.approaches).filter((a) => a.inbound && !a.refused && a.ask).length
+      + Object.keys(s.talks ?? {}).length;
+    s.quietMs = atDoor ? 0 : (s.quietMs ?? 0) + 1;
+  }
+
   // The century is a marker you pass, not the end of the game. It used to set
   // gameOver and stop the run cold.
   if (!s.milestones.century && s.month >= CENTURY_MONTHS) {
@@ -469,6 +500,27 @@ export const MILESTONES: { id: string; label: string; test: (s: GameState, nw: n
   { id: "ten", label: "Ten buildings under management", test: (s) => Object.keys(s.holdings).length >= 10 },
   { id: "twentyfive", label: "A quarter-hundred holdings", test: (s) => Object.keys(s.holdings).length >= 25 },
   { id: "half", label: "Fifty years in town", test: (s) => s.month >= 600 },
+  // PAST THE HALF CENTURY.
+  //
+  // The ladder used to stop here: eleven rungs, the last of them at month 600,
+  // in a campaign that starts in January 2000 and has no end date. Everything
+  // after year fifty was unmarked — which is a strange thing to do to the back
+  // half of a hundred-year game and a stranger one when the game does not stop
+  // at a hundred either.
+  //
+  // These are deliberately not all about the number at the bottom of the page.
+  // A big book is one way to matter; owning a recognisable share of the city,
+  // or having built a quarter-hundred of the buildings standing in it, is
+  // another, and it is the one a hundred-year town would actually remember.
+  { id: "nw5b", label: "Five billion under management", test: (_s, nw) => nw >= 5e9 },
+  { id: "fifty", label: "Fifty buildings under management", test: (s) => Object.keys(s.holdings).length >= 50 },
+  { id: "hundred", label: "A hundred deeds recorded", test: (s) => Object.keys(s.holdings).length + s.exits.length >= 100 },
+  { id: "builder", label: "Twenty-five buildings of your own making", test: (s) => (s.delivered ?? 0) >= 25 },
+  { id: "share", label: "A twentieth of the city's built stock", test: (s) =>
+      Object.keys(s.holdings).length >= Math.max(12, 0.05 * (s.builtAtStart + Object.keys(s.built).length)) },
+  { id: "diamond", label: "Seventy-five years in town", test: (s) => s.month >= 900 },
+  { id: "sesqui", label: "A hundred and fifty years in town", test: (s) => s.month >= 1800 },
+  { id: "bicent", label: "Two centuries in town", test: (s) => s.month >= 2400 },
 ];
 
 function checkMilestones(s: GameState, nw: number) {

@@ -3035,12 +3035,17 @@ function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (bbl: str
   const market = liveRec && h ? managedRentPsfYr(liveRec, game.econ, h, loi.use) : loi.rentPsf;
   const prevRent = loi.kind === "renewal" && loi.tenantIdx !== undefined ? h?.tenants[loi.tenantIdx]?.rentPsf : undefined;
   const final = loi.stage === "countered";
+  // WHO ELSE IS CHASING THIS SPACE. The entire point of a tour is that you can
+  // only have one of them, so the card has to say so before you press Accept.
+  const rivalsOnTour = loi.tourId === undefined ? 0
+    : game.lois.filter((l) => l.tourId === loi.tourId && l.id !== loi.id).length;
   return (
     <div className="loi">
       <button className="loi-addr" onClick={() => go(loi.bbl)}>{rec?.address ?? loi.bbl}</button>
       <div className="loi-line">
         <b>{loi.name}</b> <span className="mono">{CREDIT_LABEL[loi.credit]}</span> · {loi.sector}
         {loi.kind === "renewal" && <span className="chip chip-renewal">RENEWAL</span>}
+        {rivalsOnTour > 0 && <span className="chip" title="Competing for the same square feet — you can take only one, and countering one makes the others impatient.">{rivalsOnTour + 1} FOR THE SAME SPACE</span>}
         {final && <span className="chip">FINAL</span>}
       </div>
       <div className="loi-line mono">
@@ -3266,7 +3271,9 @@ function DealsPage() {
         <div className="page-section">Letters of intent · {game.lois.length}</div>
         {game.lois.length === 0 && <div className="hint">No live negotiations. Vacant space in high-demand buildings draws tenants.</div>}
         <div className="loi-grid">
-          {game.lois.map((loi) => <LoiCard key={loi.id} loi={loi} go={go} />)}
+          {[...game.lois]
+            .sort((a, b) => (a.tourId ?? -a.id) - (b.tourId ?? -b.id) || a.id - b.id)
+            .map((loi) => <LoiCard key={loi.id} loi={loi} go={go} />)}
         </div>
         {/* HOW THEY ANSWERED. A counter used to resolve into a toast that was
             gone in three seconds and a card that vanished off the grid — so the

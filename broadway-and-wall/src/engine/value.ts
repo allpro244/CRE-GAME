@@ -757,12 +757,38 @@ export function rollQualitySpread(rec: ParcelRecord, h: Holding, month: number, 
   if (!h.tenants.length) {
     return resShare > 0.5 ? residentialSpread(h) : 0.55;   // an empty commercial building really is a project
   }
-  let sfTot = 0, wCredit = 0, wYears = 0, nnnSf = 0;
+  let sfTot = 0, wCredit = 0, wYears = 0, nnnSf = 0, wRev = 0;
   for (const t of h.tenants) {
     sfTot += t.sf;
     wCredit += t.credit * t.sf;
     wYears += Math.max(0, (t.endM - month) / 12) * t.sf;
     if (recoveryOf(t) === "nnn") nnnSf += t.sf;
+    // THE REVERSION MARK.
+    //
+    // A rent roll is not only how long and how good — it is where the contract
+    // sits against the market, and for how long you are stuck with the answer.
+    // Paper twenty per cent UNDER market with nine years to run is a building
+    // whose income cannot grow: the reversion a buyer is paying for is a decade
+    // away, so they cap it wider. Paper twenty per cent OVER market is worse,
+    // and asymmetrically so — the income is going to FALL on a date everybody
+    // underwriting it can read. Only paper near market, or short paper
+    // anywhere, earns the tight number.
+    //
+    // Without this the spread was blind to rent level, so a seven-year lease at
+    // three quarters of market graded as good covenant. Measured over 945
+    // arriving letters: 94.4% of them, if signed, IMPROVED the building's grade
+    // (median 31bps tighter) and only 4.1% worsened it. Signing was a free
+    // upgrade on every axis the engine priced, which is most of why "Accept"
+    // was the right answer to 52% of the decisions in the game.
+    if (econ) {
+      const mkt = managedRentPsfYr(rec, econ, h, t.use);
+      if (mkt > 0.5) {
+        const off = Math.abs(1 - t.rentPsf / mkt);       // how far from market, either way
+        const yrs = Math.max(0, (t.endM - month) / 12);  // how long you are stuck with it
+        const over = t.rentPsf > mkt ? 1.4 : 1;          // over-rented is the harder problem
+        wRev += clamp((off - 0.05) * 3.0 * Math.min(1, yrs / 6) * over, -0.25, 0.70) * t.sf;
+      }
+    }
   }
   if (!sfTot) return resShare > 0.5 ? residentialSpread(h) : 0.55;
   const occ = sfTot / Math.max(1, commSf);
@@ -787,7 +813,8 @@ export function rollQualitySpread(rec: ParcelRecord, h: Holding, month: number, 
   // market prices both, and it prices the second one harder.
   const ind = industryConcentration(h, econ);
   const indSpread = clamp((Math.max(0, ind.share - 0.45) / 0.55) * 0.40 + ind.stressed * 0.55, 0, 0.85);
-  const comm = waltSpread + creditSpread + occSpread + structSpread + concSpread + indSpread;
+  const revSpread = wRev / sfTot;
+  const comm = waltSpread + creditSpread + occSpread + structSpread + concSpread + indSpread + revSpread;
   // A mixed building is graded as what it is: part rent roll, part occupancy.
   return resShare > 0.02 ? comm * (1 - resShare) + residentialSpread(h) * resShare : comm;
 }

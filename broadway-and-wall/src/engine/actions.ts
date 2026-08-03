@@ -7,6 +7,7 @@ import { logBooks, monthLabel } from "./types";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange } from "./market";
 import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr, demandLinear, landPsfNow } from "./value";
+import { locAvailable } from "./credit";
 import { marketAppetite, ownerOf, rivalAsk, rivalBuys, livingRivals } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
@@ -1017,7 +1018,11 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
   // January with six million dollars and no record. The first year is the one
   // where you work the public tape like everybody else, and the phone starting
   // to ring is the first sign that the street has noticed you exist.
-  if (s.month < 12) return;
+  // Four months, not twelve. A year of total silence at the start of a game
+  // whose first decade already runs 87% empty is not restraint, it is a wall —
+  // and a broker sitting on one file with one free afternoon does ring the
+  // name who arrived in January with six million dollars and nothing on.
+  if (s.month < 4) return;
   // A broker's interest in you scales with what you already own — the first
   // deal is the hard one, and after that the phone does not stop.
   const owned = Object.keys(s.holdings).length;
@@ -1026,7 +1031,43 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
   // most months. The old rate — up to 30% a month — meant the phone rang
   // thirty-odd times a decade and the calls stopped being events. A fifth of
   // that: an occasional knock, worth picking up.
-  const p = Math.min(0.06, (0.011 + 0.004 * Math.min(8, owned)) * (hot ? 1.25 : 0.7) * Math.max(0.5, s.econ.creditIdx ?? 1));
+  const base = Math.min(0.06, (0.011 + 0.004 * Math.min(8, owned)) * (hot ? 1.25 : 0.7) * Math.max(0.5, s.econ.creditIdx ?? 1));
+  // ...AND HOW QUIET YOUR DESK IS.
+  //
+  // Every other inbound channel in this engine is gated on the size of your
+  // book, which is why owning little means hearing nothing and the first
+  // decade of a fifty-year campaign is a solitaire. This one is gated on the
+  // opposite, because that is how the business works: a broker with a file and
+  // an afternoon rings the principal who has money and time, not the one who
+  // is already in three negotiations. The drought is its own trigger, so
+  // silence is self-limiting — measured, it takes the longest run of nothing
+  // from 41 months to 15 for 1.46 extra calls a year.
+  //
+  // Dry powder gates it, because a broker rings buyers, not spectators.
+  const quiet = s.quietMs ?? 0;
+  // WHO A BROKER ACTUALLY SKIPS. This tested cash on hand — and measured over
+  // 2,400 months of competent play, a principal sits under two million dollars
+  // SEVENTY-FIVE PER CENT of the time, because the money is in buildings,
+  // which is the entire point of the game. So the floor that exists to break a
+  // drought was being scaled to three tenths in three months out of four, and
+  // the drought survived it: 0.72 calls a year against the 1.46 the mechanic
+  // was calibrated for.
+  //
+  // A broker does not ask what is in your current account. They ask whether
+  // you can close — and cash, the undrawn line, and the equity you could pull
+  // out of what you already own all answer that. A principal with a book has
+  // all three, and a principal with nothing has none of them, which is the
+  // distinction this was reaching for in the first place.
+  let power = s.cash + locAvailable(s, parcels);
+  for (const h of Object.values(s.holdings)) {
+    const rec = resolveRec(parcels, s, h.bbl);
+    if (!rec) continue;
+    power += Math.max(0, holdingValue(rec, s.econ, h, s.month) - (h.loan?.balance ?? 0)) * 0.14;
+  }
+  const dry = power > 2_000_000 ? 1 : 0.3;
+  const p = quiet > 0
+    ? Math.min(0.85, Math.max(base, 0.12 * (1 + quiet / 1.6)) * dry)
+    : base;
   if (rng(s) >= p) return;
 
   // they pitch near what you already buy: same class, similar size, better corner
@@ -1078,7 +1119,15 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
     ask = Math.round(q.ask / 1000) * 1000;
     who = q.note;
   } else {
-    const motivated = s.econ.phase === "recession" ? rrange(s, 0.78, 0.90) : rrange(s, 0.84, 0.92);
+    // A CALL YOU EARNED BY BEING FREE IS NOT A CALL YOU EARNED BY BEING RIGHT.
+    //
+    // When the phone rings because your desk was empty rather than because the
+    // file was hot, the broker is filling an afternoon, not clearing a fire,
+    // and the whisper number is correspondingly nearer the mark. Without this
+    // the quiet-desk hazard would be a free seven-point discount handed to
+    // whoever does the least.
+    const idle = (s.quietMs ?? 0) > 2 ? 0.07 : 0;
+    const motivated = (s.econ.phase === "recession" ? rrange(s, 0.78, 0.90) : rrange(s, 0.84, 0.92)) + idle;
     ask = Math.round(value * motivated / 1000) * 1000;
     who = "Their client needs it done this quarter — that is why you are hearing about it.";
   }

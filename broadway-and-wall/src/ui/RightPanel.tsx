@@ -2513,6 +2513,13 @@ function PortfolioPage() {
   return (
     <div>
       <div className="stat-strip">
+        {/* FIRST, NOT LAST. This sat rightmost, after "Buildings", in the same
+            20px mono as every other stat — the only number in the game that can
+            end the run, weighted identically to a count of how many things you
+            own. */}
+        {Object.keys(game.workouts ?? {}).length > 0 && (
+          <Big label="In default" value={String(Object.keys(game.workouts ?? {}).length)} bad />
+        )}
         <Big label="Assets" value={usd(totV)} />
         <Big label="Debt" value={usd(totD)} />
         <Big label="Equity" value={usd(totV - totD)} />
@@ -2524,12 +2531,10 @@ function PortfolioPage() {
         })()}
         <Big label="Buildings" value={String(holdings.length)} />
         {/* THE ONE THING YOU CANNOT AFFORD TO MISS. */}
-        {Object.keys(game.workouts ?? {}).length > 0 && (
-          <Big label="In default" value={String(Object.keys(game.workouts ?? {}).length)} bad />
-        )}
+
       </div>
       {Object.values(game.workouts ?? {}).length > 0 && (
-        <div className="hint" style={{ marginTop: 8 }}>
+        <div className="alarm" style={{ marginTop: 10 }}>
           {Object.values(game.workouts!).map((w) => {
             const r = resolveRec(parcels, game, w.bbl);
             return (
@@ -2679,7 +2684,12 @@ function PortfolioPage() {
               })()}
               <td className="num">{usd(h.loan?.balance ?? 0)}</td>
               <td className="num">{usd(v - (h.loan?.balance ?? 0))}</td>
-              <td className="num">{h.loan ? "−" + usd(h.loan.monthlyPmt) : "—"}</td>
+              {/* A LEADING MINUS THAT WRAPS IS A BARE DASH. In a 62px column
+                  `"−" + usd(...)` breaks after the sign, so a real payment
+                  rendered as a dash over a number — visually identical to the
+                  "—" that means no debt at all. Parenthesised the way an
+                  accountant writes a negative, which cannot wrap apart. */}
+              <td className="num nowrap">{h.loan ? `(${usd(h.loan.monthlyPmt)})` : "—"}</td>
               <td className={"num" + (cf < 0 ? " neg" : "")}>{usd(cf)}</td>
               {/* A BUILDING IN DEFAULT WAS INVISIBLE FROM HERE. The workout desk
                   lives on the property record, so the only way to find out a
@@ -3601,7 +3611,20 @@ function MarketPage() {
                     <td className="num">{built ? "$" + Math.round(li.ask / Math.max(1, rec.bldgArea)) : "$" + Math.round(li.ask / Math.max(1, rec.lotArea))}</td>
                     <td className="num">{built ? usd(noi) : "—"}</td>
                     <td className="num">{built ? goingIn.toFixed(2) + "%" : "—"}</td>
-                    <td className="num">{built ? (occupancy(rec, game.econ) * 100).toFixed(0) + "%" : "—"}</td>
+                    {/* NOT THE BUILDING'S OCCUPANCY — THE CITY'S.
+                        occupancy(rec, econ) is the citywide model for this class,
+                        so every office on the tape read 83-99% let on the same
+                        afternoon the Economy page said office vacancy was 19.2%.
+                        And it sat in a column that LOOKS exactly like the
+                        Portfolio's Occ, which is the real thing. A number that
+                        cannot be true, styled as though it were measured, is
+                        worse than no number.
+                        You have not seen inside a building you do not own. What
+                        the tape can honestly tell you is what the class is
+                        running at, and it says so. */}
+                    <td className="num dim" title="The class average — you have not seen this building's rent roll. Buy it and you will.">
+                      {built ? "~" + (occupancy(rec, game.econ) * 100).toFixed(0) + "%" : "—"}
+                    </td>
                     {(() => {
                       // A seller under no pressure holds last year's number. The gap
                       // between an ask and an honest appraisal is the whole read on

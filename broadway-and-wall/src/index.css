@@ -652,3 +652,14 @@ body {
 /* a shut section should read as a closed drawer, not a missing one */
 .fold:not(.fold-open) .fold-head { border-bottom-color: rgba(146,110,40,0.14); }
 .fold:not(.fold-open) .fold-title { color: var(--ink-dim); }
+
+/* ---- the most urgent sentence in the run should not be a footnote ---- */
+.alarm {
+  border-left: 3px solid #8e2c20;
+  background: rgba(150, 46, 34, 0.07);
+  padding: 9px 12px;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.alarm .neg { color: #8e2c20; font-weight: 600; }
+.tbl td.nowrap, .tbl th.nowrap { white-space: nowrap; }

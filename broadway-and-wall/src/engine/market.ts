@@ -77,7 +77,33 @@ const PHASE_CFG: Record<MarketPhase, { rateGap: number; rentDrift: number; devDr
 // deal you underwrote at 4% has to survive being refinanced at 12%.
 const RATE_FLOOR = 1.9, RATE_CEIL = 15.5;
 
-export const CAP_BASE = { office: 5.6, retail: 6.1, multifamily: 4.9, industrial: 6.9 } as const;
+// Each rebased DOWN by the average value of the new vacancy term below, so
+// CAP_BASE keeps meaning "the class's long-run average cap" rather than "its
+// cap at natural vacancy, which this city rarely sits at". Without the rebase
+// an uncentred risk term silently widens every cap by 15-30bp forever.
+export const CAP_BASE = { office: 5.30, retail: 5.91, multifamily: 4.76, industrial: 6.74 } as const;
+
+/**
+ * VACANCY IS THE RISK, AND THE RISK IS PRICED.
+ *
+ * Cap rates were driven by the loan index, the cycle, a credit-crunch term and
+ * sector momentum — and not at all by how empty the class was. An office
+ * market at 25% vacancy capitalised the same as one at 8%. Measured over
+ * 4,800 observations per class, corr(vacancy, cap rate) was 0.10 for office
+ * and 0.07 for multifamily, and even that vanished once the rate was
+ * regressed out: the residual correlation was 0.09 for office and NEGATIVE
+ * for industrial. Vacancy was noise. The rate was the whole model.
+ *
+ * A class sitting six points over its natural rate is a class whose next roll
+ * gets re-let at a concession, and a buyer capitalises exactly that. Office
+ * carries the most because its income is the least defensible; flats the
+ * least, because people always need somewhere to live.
+ *
+ * Points of cap rate added per 100bp of vacancy above natural.
+ */
+export const CAP_VAC_BETA: Record<BuiltClass, number> = {
+  office: 0.12, retail: 0.09, multifamily: 0.06, industrial: 0.08,
+};
 // Rough citywide inventory by class, in sf — the denominator that turns other
 // people's construction into a rent effect you can feel.
 // Fallback only. The real inventory is COUNTED off the parcels at newGame —
@@ -571,7 +597,13 @@ export function tickEcon(s: GameState) {
     // into a class is most of what moves its cap rate, and at 14x a full
     // sector cycle was worth under two-tenths of a point.
     const sector = -30 * e.sectorMom[k];
-    const target = CAP_BASE[k] + 0.38 * (e.indexRate - 5.4) - 0.25 * e.cycleDev + crunch + sector;
+    // Asymmetric on purpose. Compression floors out at 60bp — nobody
+    // underwrites a shortage lasting forever — while a glut has much further
+    // to run, because a buyer staring at empty floors is pricing the years it
+    // takes to fill them.
+    const vacGap = (e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
+    const vacRisk = clamp(CAP_VAC_BETA[k] * vacGap * 100, -0.6, 2.0);
+    const target = CAP_BASE[k] + 0.38 * (e.indexRate - 5.4) - 0.25 * e.cycleDev + crunch + sector + vacRisk;
     e.capRate[k] = clamp(e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045), 3.4, 11);
   }
 

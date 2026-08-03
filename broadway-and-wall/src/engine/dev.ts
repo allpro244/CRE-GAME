@@ -226,11 +226,48 @@ export function farMaxFor(rec: { farMaxComm: number; farMaxRes: number }): numbe
  *     ~sqrt(plate) wide at ~15:1 gives floors ≤ 1.2·√plate
  *   - and 90 floors is the ceiling money has actually reached
  */
+/** Floor to floor, feet. */
+export const FLOOR_HEIGHT_FT = 12.5;
+/** Height : plate width. The 57th Street limit, and about where money stops. */
+export const MAX_SLENDERNESS = 15;
+export const ABS_MAX_FLOORS = 90;
+
+/**
+ * HOW TALL THE STRUCTURE WILL GO, and why it was a cliff.
+ *
+ * This was a staircase — under 600 ft², one floor; under 1,200, three; under
+ * 4,000, six; and then, at 4,000 exactly, `1.2·√plate`. On a 6,170 ft² lot the
+ * footprint dial crosses 4,000 ft² of plate at 65% coverage, and one
+ * percentage point of the slider took the building from six floors to
+ * forty-five: 7.5x the floors, 7.6x the area, an $18.6M job becoming a $177.7M
+ * one. The player noticed, and they were right.
+ *
+ * Two real constraints, both smooth, both INCREASING in plate size:
+ *
+ *   SLENDERNESS. A square-equivalent plate is √plate feet wide, and a tower
+ *   stops being buildable past a height-to-width ratio of about fifteen. That
+ *   is 15·√plate feet of height, or 1.2·√plate floors — the old formula was
+ *   right, it was just fenced off behind a step.
+ *
+ *   THE CORE. Lifts, stairs, risers and a second means of egress take a fixed
+ *   bite out of every floor. A very small plate cannot carry enough of them to
+ *   serve height at all, which is what the staircase was standing in for. It
+ *   belongs as a ramp, not a step.
+ *
+ * Zoning (farMax/coverage) is the third constraint and it DECREASES in
+ * footprint. The minimum of one falling curve and two rising ones is
+ * continuous and unimodal: floors climb while the plate is still too small to
+ * build tall on, peak where the curves cross, then fall away as the envelope
+ * spreads out. No cliffs anywhere on the dial.
+ */
 export function physicalMaxFloors(plateSf: number): number {
-  if (plateSf < 600) return 1;
-  if (plateSf < 1200) return 3;
-  if (plateSf < 4000) return 6;
-  return Math.min(90, Math.floor(1.2 * Math.sqrt(plateSf)));
+  if (plateSf < 400) return 1;                       // below this it is not a building
+  const slender = 1.2 * Math.sqrt(plateSf);          // MAX_SLENDERNESS / FLOOR_HEIGHT_FT
+  // The core ramp: a 1,200 ft² plate carries about six floors, and the ability
+  // to serve height grows roughly linearly with the area left over after the
+  // core takes its fixed bite.
+  const core = 1 + (plateSf - 400) / 135;
+  return Math.max(1, Math.min(ABS_MAX_FLOORS, Math.floor(Math.min(slender, core))));
 }
 /**
  * SHOPS DO NOT STACK.
@@ -250,7 +287,41 @@ export function physicalMaxFloors(plateSf: number): number {
  * can carry more than two floors should be getting a mixed building rather
  * than a squashed one — see `useForZone` and `retailWantsMixed`.
  */
-export const MAX_FLOORS_BY_USE: Partial<Record<DevUse, number>> = { retail: 2 };
+export const RETAIL_FLOORS_MAX = 2;
+export const MAX_FLOORS_BY_USE: Partial<Record<DevUse, number>> = { retail: RETAIL_FLOORS_MAX };
+
+/**
+ * AND THEY DO NOT STACK INSIDE A MIXED BUILDING EITHER.
+ *
+ * The two-storey cap was enforced on the pure-retail PROGRAMME — a label —
+ * and never on the retail floor AREA. So a mixed-use building dialled to a
+ * high retail share sailed straight past it. Measured across 400 vacant lots:
+ * at the default 15/45/40 stack, untouched by the player, 55 plans breached
+ * the cap and the worst carried nine floors of shops; at a 50% dial every
+ * single plan breached; at 100% the worst was a sixty-one storey shop, thirty
+ * times over, which delivered as class "retail", 61 floors, and tripped the
+ * massing invariant in a live save.
+ *
+ * The cap belongs on the area: retail floor area may not exceed two floor
+ * plates. Anything over that is redistributed to the other uses, because a
+ * developer who cannot put shops on the ninth floor puts offices there — they
+ * do not shrink the building.
+ */
+export function capRetail(mix: UseMix, floors: number): UseMix {
+  const share = mix.retail ?? 0;
+  if (share <= 0 || floors <= 0) return mix;
+  const maxShare = RETAIL_FLOORS_MAX / floors;
+  if (share <= maxShare) return mix;
+  const others = Object.entries(mix).filter(([k]) => k !== "retail") as [BuiltClass, number][];
+  const rest = others.reduce((a, [, v]) => a + v, 0);
+  // A programme that is nothing BUT shops has nowhere to put the overflow —
+  // that is a two-storey shop building, and the caller caps the floors.
+  if (rest <= 0) return { retail: 1 };
+  const out: UseMix = { retail: +maxShare.toFixed(4) };
+  const scale = (1 - maxShare) / rest;
+  for (const [k, v] of others) out[k] = +(v * scale).toFixed(4);
+  return out;
+}
 
 export function maxFloorsFor(
   rec: { farMaxComm: number; farMaxRes: number; lotArea?: number }, coverage: number, use?: DevUse,
@@ -300,11 +371,15 @@ export function planDevelopment(
   if (!rec || !rec.lotArea) return null;
   const cov = Math.max(0.08, Math.min(0.9, coverage));
   const farMax = farMaxFor(rec);
-  const fl = Math.max(1, Math.min(Math.round(floors), maxFloorsFor(rec, cov, use)));
+  // The mix has to be known before the height, because a programme that is
+  // all shops is a two-storey building whatever the envelope allows.
+  const raw = devMix(use, custom?.mix);
+  const retailOnly = Object.entries(raw).every(([k, v]) => k === "retail" || !v);
+  const fl = Math.max(1, Math.min(Math.round(floors), maxFloorsFor(rec, cov, retailOnly ? "retail" : use)));
   const sf = Math.round((rec.lotArea * cov * fl) / 100) * 100;
   if (sf < 2000) return null;
 
-  const mix = devMix(use, custom?.mix);
+  const mix = capRetail(raw, fl);
 
   const heightPrem = fl > 30 ? 1.28 : fl > 18 ? 1.18 : fl > 8 ? 1.07 : 1;
   // the budget is the sum of the jobs, not a number attached to a label

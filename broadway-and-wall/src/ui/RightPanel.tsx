@@ -63,6 +63,7 @@ import { INDUSTRY_LABEL, SECTORS } from "@/engine/market";
 import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses } from "@/engine/leasing";
 import { leasingOdds } from "@/engine/absorption";
 import { groundLeaseQuote, mergeCost } from "@/engine/actions";
+import { plateEfficiency } from "@/engine/value";
 import { varianceQuote } from "@/engine/zoning";
 import { usd, sf, pct } from "./format";
 import Slider from "./Slider";
@@ -2484,6 +2485,28 @@ function LandDesk({ bbl }: { bbl: string }) {
               <div className="grid">
                 <Row k="Site after merger" v={`${sf(rec.lotArea + addedArea)} · ${sf(Math.round((rec.lotArea + addedArea) * farMax))} buildable`} strong />
                 <Row k="Was" v={`${sf(rec.lotArea)} · ${sf(Math.round(rec.lotArea * farMax))} buildable`} />
+                {/* THE REASON TO MERGE, IN TWO NUMBERS. A site is not just the
+                    sum of its deeds any more: one core serving a bigger plate
+                    returns rentable feet the small lots were losing, and the
+                    dirt itself reprices as a development site. Show both, so
+                    the button is a decision and not an act of faith. */}
+                {(() => {
+                  const before = plateEfficiency(rec.lotArea * 0.62);
+                  const after = plateEfficiency((rec.lotArea + addedArea) * 0.62);
+                  const gain = (after / before - 1) * 100;
+                  return gain > 0.5
+                    ? <Row k="Plate efficiency" v={`+${gain.toFixed(1)}% rentable on the same gross — one core, bigger floors`} />
+                    : null;
+                })()}
+                {(() => {
+                  const mergedRec = { ...rec, lotArea: rec.lotArea + addedArea };
+                  const now = landPsfNow(rec, game.econ);
+                  const then = landPsfNow(mergedRec, game.econ);
+                  const d = (then / Math.max(1, now) - 1) * 100;
+                  return Math.abs(d) > 0.5
+                    ? <Row k="The dirt reprices" v={`${d > 0 ? "+" : ""}${d.toFixed(1)}% $/sf across the whole site`} />
+                    : null;
+                })()}
                 <Row k="Survey, title and lawyers" v={usd(cost)} />
               </div>
               <button className="btn" onClick={() => { assemble([bbl, ...picked]); setPicked([]); }}>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { headlineEpithet } from "@/engine/firm";
 import { useStore, derivedNetWorth, derivedQuarterCF } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { currentCity, currentSeed, listCities, switchCity, type CityInfo } from "@/state/city";
@@ -39,6 +40,22 @@ export default function TopBar() {
     <div className="topbar">
       <div className="brand">
         <span className="brand-name">Broadway &amp; Wall</span>
+        {/* WHO THE CITY THINKS YOU ARE. Every rival firm has a name and a
+            characterisation; the player was the string "You". This is the
+            headline epithet — the most quotable true thing about the firm,
+            recomputed every quarter from state the player could have looked
+            up themselves. It costs nothing to read and nothing to maintain. */}
+        {game?.firm && (
+          <span className="firm-id" title={(game.firm.epithets ?? []).map((e) => e.text).join(" · ") || "The town has not formed a view yet."}>
+            <span className="firm-name">{game.firm.name}</span>
+            {(() => {
+              const e = headlineEpithet(game);
+              if (!e) return null;
+              const yrs = Math.floor((game.month - e.sinceM) / 12);
+              return <span className="firm-epithet">{e.text}{yrs >= 8 ? ` — ${yrs} years now` : ""}</span>;
+            })()}
+          </span>
+        )}
         {cities.length > 1 ? (
           <div className="city-pick" ref={cityRef}>
             <button

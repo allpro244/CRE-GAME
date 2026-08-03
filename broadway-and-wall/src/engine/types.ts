@@ -373,6 +373,29 @@ export interface Approach {
   soured?: number;
 }
 
+/** A claim the city makes about you, computed from state, with a date on it. */
+export interface Epithet {
+  id: string;
+  text: string;
+  sinceM: number;   // the month it first became true
+  weight: number;   // 0-1, how quotable
+}
+
+/**
+ * WHO YOU ARE, AND HOW WELL THE TOWN KNOWS IT.
+ *
+ * The player was the string "You" — in the comps sheet, on the league table,
+ * in every news item. Twelve rival firms had names and a paper trail; the
+ * protagonist had a pronoun, which is why thirty years in the game still
+ * sounded like year one.
+ */
+export interface FirmIdentity {
+  name: string;       // "Corbin & Co."
+  short: string;      // "Corbin" — for tables and comps
+  foundedM: number;
+  epithets: Epithet[];
+}
+
 export interface NewsItem {
   q: number;
   kind: "rumor" | "event" | "deal" | "info" | "warn";
@@ -688,6 +711,10 @@ export interface GameState {
   workouts?: Record<string, Workout>;
   /** A bundle of buildings in the market as one trade. See engine/portfolio.ts. */
   portfolioSale?: PortfolioSale;
+  /** Your firm's name, and what the city has worked out about it. See engine/firm.ts. */
+  firm?: FirmIdentity;
+  /** Buildings you have put up. Drives the "builder" epithet. */
+  delivered?: number;
   lenderRel: Record<string, number>;         // lender name -> relationship 0-100; a trusted name is worth basis points
   totalLots: number;
   builtAtStart: number;

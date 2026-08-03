@@ -28,6 +28,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { GameState, Workout } from "./types";
 import { logBooks, monthLabel } from "./types";
+import { firmShort } from "./firm";
 import { rrange } from "./market";
 import { holdingValue, resolveRec } from "./value";
 import { productById, bumpLenderRel } from "./debt";
@@ -186,7 +187,7 @@ export function deedInLieu(
     bbl, address: rec.address, boughtM: h.boughtM, soldM: next.month,
     price: Math.round(bal), basis: h.costBasis, gain: Math.round(bal - h.costBasis), forced: true,
   });
-  recordComp(next, rec, Math.round(bal), w.lender, "You", true, h.condition);
+  recordComp(next, rec, Math.round(bal), w.lender, firmShort(next), true, h.condition);
   if (next.groundLeases?.[bbl]) delete next.groundLeases[bbl];
   next.cash -= depositsOn(next.holdings[bbl]!);
   delete next.holdings[bbl];
@@ -250,7 +251,7 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
       bbl: w.bbl, address: rec.address, boughtM: h.boughtM, soldM: s.month,
       price: gross, basis: h.costBasis, gain: gross - h.costBasis, forced: true,
     });
-    recordComp(s, rec, gross, "the auction", "You", true, h.condition);
+    recordComp(s, rec, gross, "the auction", firmShort(s), true, h.condition);
     if (s.groundLeases?.[w.bbl]) delete s.groundLeases[w.bbl];
     s.cash -= depositsOn(s.holdings[w.bbl]!);
     delete s.holdings[w.bbl];

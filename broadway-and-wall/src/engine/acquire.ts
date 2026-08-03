@@ -21,6 +21,7 @@ import type { GameState, SellerKind } from "./types";
 import { monthLabel } from "./types";
 import { assetValue, initialCondition, resolveRec } from "./value";
 import { ownerOf } from "./rivals";
+import { describeFirm } from "./firm";
 import { rrange } from "./market";
 import { executePurchase } from "./actions";
 
@@ -442,7 +443,7 @@ function closeAgreed(
   delete out.talks;
   out.news.unshift({
     q: out.month, kind: "deal",
-    text: `Bought ${address} from ${seller.name} at ${fmtM(px)}.`,
+    text: `${describeFirm(next)} has bought ${address} from ${seller.name} at ${fmtM(px)}.`,
   });
   return { s: out, msg: `Bought at ${fmtM(px)}.` };
 }

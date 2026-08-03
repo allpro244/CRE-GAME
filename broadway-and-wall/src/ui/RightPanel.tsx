@@ -17,6 +17,7 @@ import { MILESTONES } from "@/engine/sim";
 import { isCommercial, vacantSf, walt, loiSigningCost, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, buyoutQuote, depositsHeld, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
 import { lenderHealth, capitalRatio, lenderBlurb } from "@/engine/lenders";
+import { firmName, firmShort } from "@/engine/firm";
 import { workoutMood } from "@/engine/workout";
 import { portfolioQuote } from "@/engine/portfolio";
 import { locLimit, locRate, locAvailable } from "@/engine/credit";
@@ -4148,7 +4149,7 @@ function CompsSheet() {
             </thead>
             <tbody>
               {flows.map((f) => (
-                <tr key={f.name} className={f.name === "You" ? "row-me" : ""}>
+                <tr key={f.name} className={f.name === firmShort(game) ? "row-me" : ""}>
                   <td>{f.name}</td>
                   <td className="num">{f.boughtN ? `${f.boughtN} · ${usd(f.bought)}` : "—"}</td>
                   <td className="num">{f.soldN ? `${f.soldN} · ${usd(f.sold)}` : "—"}</td>
@@ -4185,8 +4186,8 @@ function CompsSheet() {
                 <td className="num">{usd(c.price)}</td>
                 <td className="num">{c.sf > 0 ? `$${c.psf.toFixed(0)}` : `$${c.psf.toFixed(0)} land`}</td>
                 <td className="num">{c.capRate > 0 ? `${c.capRate.toFixed(2)}%` : "—"}</td>
-                <td className={c.buyer === "You" ? "" : "dim"}>{c.buyer}</td>
-                <td className={c.seller === "You" ? "" : "dim"}>{c.seller}</td>
+                <td className={c.buyer === firmShort(game) ? "" : "dim"}>{c.buyer}</td>
+                <td className={c.seller === firmShort(game) ? "" : "dim"}>{c.seller}</td>
               </tr>
             ))}
           </tbody>
@@ -4231,7 +4232,7 @@ function TheStreet() {
       <div className="grid" style={{ marginBottom: 10 }}>
         {(() => {
           const board = [
-            { name: "You", eq: playerEquity, me: true },
+            { name: firmName(game), eq: playerEquity, me: true },
             ...marked.filter((x) => x.r.failedM === undefined)
               .map((x) => ({ name: x.r.name, eq: x.m.aum - x.r.debt + x.r.cash, me: false })),
           ].sort((a, b) => b.eq - a.eq);

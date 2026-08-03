@@ -17,6 +17,7 @@ import { tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing
 import { tickDemand } from "./demand";
 import { initRivals, tickRivals } from "./rivals";
 import { initLenders, tickLenders } from "./lenders";
+import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { tickWorkouts } from "./workout";
 import { tickPortfolio } from "./portfolio";
 
@@ -70,6 +71,10 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
     rivals: [],
     lenderRel: {},
     lenders: initLenders(),
+    // A NAME, NOT A PRONOUN. Generated from the seed so it is stable across
+    // reloads of the same run, and editable from the Books page.
+    firm: { ...generateFirmName(seed), foundedM: 0, epithets: [] },
+    delivered: 0,
     workouts: {},
     totalLots: parcels ? Object.keys(parcels).length : 0,
     builtAtStart: parcels ? Object.values(parcels).filter((p) => p.class !== "land").length : 0,
@@ -172,6 +177,7 @@ export function advanceQuarter(
   tickLenders(s);
   tickWorkouts(s, parcels);
   tickPortfolio(s, parcels);
+  tickFirm(s, parcels);
   tickRivals(s, parcels);
   tickPlanning(s, parcels, bbls);
   tickCityGrowth(s, parcels, bbls, adjacency);
@@ -359,7 +365,7 @@ export function advanceQuarter(
         const proceeds = Math.max(0, gross - (pick.loan?.balance ?? 0));
         s.cash += proceeds;
         logBooks(s, "sold", proceeds);
-        recordComp(s, rec, gross, "a distressed buyer", "You", true, pick.condition);
+        recordComp(s, rec, gross, "a distressed buyer", firmShort(s), true, pick.condition);
         s.exits.push({ bbl: pick.bbl, address: rec.address, boughtM: pick.boughtM, soldM: s.month, price: gross, basis: pick.costBasis, gain: gross - pick.costBasis, forced: true });
         if (s.groundLeases?.[pick.bbl]) delete s.groundLeases[pick.bbl];
         s.cash -= depositsOn(s.holdings[pick.bbl]);   // the deposits go with the deed

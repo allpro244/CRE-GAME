@@ -103,7 +103,7 @@ export function compStats(s: GameState, cls: string, months = 36) {
  * there is a firm to read.
  */
 export function compFlows(s: GameState, months = 36) {
-  const named = new Set<string>(["You", ...(s.rivals ?? []).map((r) => r.name)]);
+  const named = new Set<string>([s.firm?.short ?? "You", ...(s.rivals ?? []).map((r) => r.name)]);
   const since = s.month - months;
   const by = new Map<string, { bought: number; sold: number; boughtN: number; soldN: number }>();
   const at = (k: string) => {

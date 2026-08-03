@@ -26,6 +26,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { GameState, Holding } from "./types";
 import { logBooks, monthLabel } from "./types";
+import { firmShort } from "./firm";
 import { rng, rrange } from "./market";
 import { holdingValue, resolveRec } from "./value";
 import { depositsOn } from "./leasing";
@@ -320,7 +321,7 @@ export function acceptPortfolioBid(
       bbl, address: rec.address, boughtM: h.boughtM, soldM: next.month,
       price, basis: h.costBasis, gain,
     });
-    recordComp(next, rec, price, bid.name, "You", undefined, h.condition);
+    recordComp(next, rec, price, bid.name, firmShort(next), undefined, h.condition);
     if (next.groundLeases?.[bbl]) delete next.groundLeases[bbl];
     next.cash -= depositsOn(h);
     for (const [child, parent] of Object.entries(next.merged ?? {})) {

@@ -624,3 +624,11 @@ body {
 .tbl-stmt td, .tbl-stmt th { padding-top: 3px; padding-bottom: 3px; }
 .tbl-stmt tr.is-rule td { border-top: 1px solid rgba(146,110,40,0.35); padding-top: 5px; }
 .tbl-stmt td.is-strong { font-weight: 600; }
+
+/* ---- the firm's name and what the town calls it, in the brand block ---- */
+.firm-id { display: flex; flex-direction: column; line-height: 1.15; margin-left: 14px; max-width: 320px; }
+.firm-name { font-family: var(--serif); font-size: 15px; color: var(--ink); }
+.firm-epithet {
+  font-size: 10.5px; color: var(--ink-dim); font-style: italic;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}

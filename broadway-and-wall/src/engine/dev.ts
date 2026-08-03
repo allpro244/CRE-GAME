@@ -882,6 +882,8 @@ export function tickConstructionLeasing(s: GameState, parcels: ParcelTable) {
 }
 
 function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { address: string }) {
+  // Buildings you have put up. The city notices a developer.
+  s.delivered = (s.delivered ?? 0) + 1;
   const dmix = d.mix ?? devMix(d.use);
   s.built[d.bbl] = { class: dominantOf(dmix), mix: dmix, bldgArea: d.sf, floors: d.floors, yearBuilt: 2000 + Math.floor(s.month / 12), suites: d.suites };
   // YOUR BUILDING IS SUPPLY TOO. A tower you deliver competes with everybody

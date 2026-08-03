@@ -4,6 +4,7 @@
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import type { Bid, GameState, Holding } from "./types";
 import { logBooks, monthLabel } from "./types";
+import { firmShort, describeFirm } from "./firm";
 import { rng, rrange } from "./market";
 import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr, demandLinear } from "./value";
 import { marketAppetite, ownerOf, rivalAsk, rivalBuys, livingRivals } from "./rivals";
@@ -118,10 +119,17 @@ export function executePurchase(
   delete next.approaches[bbl];
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Deed recorded: ${rec.address} for $${(price / 1e6).toFixed(2)}M${holding.loan ? ` ($${(holding.loan.principal / 1e6).toFixed(1)}M ${holding.loan.product} at ${holding.loan.ratePct}%)` : ", all cash"}${offMarket ? " — off-market" : ""}.`,
+    // REPORTED, NOT NARRATED. This said "Deed recorded" in the passive voice of
+    // a clerk. The same trade by a rival reads like a newspaper — name, an
+    // appositive clause about who they are, and the number. The player got a
+    // filing receipt. Now the paper covers them too, and the clause is earned:
+    // every epithet behind it is a fact the player could have looked up.
+    text: `${describeFirm(s)} has taken ${rec.address} at $${(price / 1e6).toFixed(2)}M`
+      + `${holding.loan ? ` on $${(holding.loan.principal / 1e6).toFixed(1)}M of ${productById(holding.loan.product).lender} paper at ${holding.loan.ratePct}%` : ", all cash"}`
+      + `${offMarket ? ", off-market" : ""}.`,
   });
   if (halfBuilt) takeoverDevelopment(next, parcels, bbl, halfBuilt);
-  recordComp(next, rec, price, "You", ownerOf(s, bbl)?.name ?? (offMarket ? "a private owner" : "a listed seller"),
+  recordComp(next, rec, price, firmShort(s), ownerOf(s, bbl)?.name ?? (offMarket ? "a private owner" : "a listed seller"),
     s.listings.find((l) => l.bbl === bbl)?.distress, holding.condition);
   return { s: next };
 }
@@ -806,7 +814,7 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   }
   next.exits = next.exits ?? [];
   next.exits.push({ bbl, address: rec.address, boughtM: h.boughtM, soldM: next.month, price: offer.price, basis: h.costBasis, gain });
-  recordComp(next, rec, offer.price, "a buyer", "You", undefined, h.condition);
+  recordComp(next, rec, offer.price, "a buyer", firmShort(next), undefined, h.condition);
   if (next.exits.length > 200) next.exits.shift();
   // AN ASSEMBLED SITE SELLS AS ONE SITE. The child deeds go with it — their
   // land, their basis and their value were folded into this one the day it was

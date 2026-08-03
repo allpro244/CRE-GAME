@@ -191,11 +191,13 @@ function chamfer(ring, i, cut) {
 // roughly a third rather than a half, which is the difference between a city
 // with gaps in it and a gap with a city in it.
 export const FLAVOR = {
-  core:       { lot: [380, 1050, 170, 32, 7],  far: 15, vac: 0.26, towerGate: 1.0,  maxFloors: 99, yr: [1925, 1960, 0.30, 1960, 2018] },
-  old:        { lot: [320, 1050, 150, 27, 14], far: 12, vac: 0.26, towerGate: 0.5,  maxFloors: 14, yr: [1885, 1945, 0.70, 1950, 1990] },
-  resi:       { lot: [400, 900, 180, 26, 6],   far: 7,  vac: 0.32, towerGate: 0.03, maxFloors: 7,  yr: [1900, 1950, 0.60, 1955, 1995] },
-  industrial: { lot: [800, 2300, 340, 46, 5],  far: 6,  vac: 0.40, towerGate: 0.0,  maxFloors: 5,  yr: [1915, 1978, 1.00, 1915, 1978] },
-  modern:     { lot: [430, 1250, 195, 36, 6],  far: 13, vac: 0.42, towerGate: 0.12, maxFloors: 40, yr: [1972, 2024, 1.00, 1972, 2024] },
+  // `assemble` is how hard the twentieth century bought this district up and
+  // threw the lots together. Downtown hardest, row housing barely at all.
+  core:       { lot: [380, 1050, 170, 32, 7],  far: 15, vac: 0.26, towerGate: 1.0,  maxFloors: 99, assemble: 1.30, yr: [1925, 1960, 0.30, 1960, 2018] },
+  old:        { lot: [320, 1050, 150, 27, 14], far: 12, vac: 0.26, towerGate: 0.5,  maxFloors: 14, assemble: 0.85, yr: [1885, 1945, 0.70, 1950, 1990] },
+  resi:       { lot: [400, 900, 180, 26, 6],   far: 7,  vac: 0.32, towerGate: 0.03, maxFloors: 7,  assemble: 0.40, yr: [1900, 1950, 0.60, 1955, 1995] },
+  industrial: { lot: [800, 2300, 340, 46, 5],  far: 6,  vac: 0.40, towerGate: 0.0,  maxFloors: 5,  assemble: 1.05, yr: [1915, 1978, 1.00, 1915, 1978] },
+  modern:     { lot: [430, 1250, 195, 36, 6],  far: 13, vac: 0.42, towerGate: 0.12, maxFloors: 40, assemble: 1.00, yr: [1972, 2024, 1.00, 1972, 2024] },
 };
 
 // WHAT GETS BUILT WHERE.
@@ -530,9 +532,54 @@ export function generateCity(cfg) {
   }
 
   const flavorOf = (name) => FLAVOR[cfg.districts[name].flavor] ?? FLAVOR.core;
-  const lotOptOf = (name) => {
-    const [t0, t1, min, maxDepth, jitter] = flavorOf(name).lot;
-    return { target: () => rr(t0, t1), min, maxDepth, jitter };
+  /**
+   * NO LOT IN THIS CITY WAS EVER BOUGHT BY ANYBODY.
+   *
+   * The subdivider cut every block down until each piece fell under a target
+   * drawn flat from a narrow band, so the whole city came out one size. Median
+   * lot 4,672 sf, ninetieth percentile 8,352 sf, and above that essentially
+   * nothing — the largest ordinary lot in New Alden was smaller than the
+   * FOOTPRINT of a single real office building.
+   *
+   * Three things followed from that, all of which the player can feel:
+   *
+   * The skyline could not exist. physicalMaxFloors() reads the plate, and a
+   * 3,000 sf plate caps out around twenty storeys no matter what the zoning
+   * says. Every tower in the game was slender because every plate was small.
+   *
+   * The silhouettes could not exist either. A setback gives away width, and a
+   * 16 m wide building has none to give: four steps off a 256 m2 plate leave a
+   * top floor eight metres across. Wedding cakes were geometrically impossible
+   * in this city, which is why none were ever drawn.
+   *
+   * And assemblage had nothing to point at. The player is asked to buy two
+   * lots and fold them together — in a city where every big building already
+   * sits on a single lot, so the mechanic has no precedent anywhere on the map
+   * and reads as a rule rather than as how this place got built.
+   *
+   * Real cities are heavy-tailed because the twentieth century ASSEMBLED them:
+   * fine nineteenth-century lots bought up in twos and fours and eights for a
+   * department store, a bank, a full-block tower — hardest downtown, where the
+   * land was worth the assembly cost, and barely at all on the edge, where it
+   * never was. So the stop-target gets a fat right tail scaled by heat, and
+   * the 25-footer survives next door to the assembled site, which is exactly
+   * what a real downtown block looks like.
+   */
+  const lotOptOf = (name, heat = 0) => {
+    const fl = flavorOf(name);
+    const [t0, t1, min, maxDepth, jitter] = fl.lot;
+    const k = (fl.assemble ?? 1) * (0.45 + 0.75 * Math.max(0, Math.min(1, heat)));
+    return {
+      target: () => {
+        const u = rand();
+        const mult =
+          u > 1 - 0.045 * k ? rr(5.0, 13) :      // a full block, or most of one
+          u > 1 - 0.115 * k ? rr(2.4, 4.8) :     // four or six lots thrown together
+          1;                                      // never sold, never merged
+        return rr(t0, t1) * mult;
+      },
+      min, maxDepth, jitter,
+    };
   };
 
   function zoningFor(name, heat) {
@@ -565,7 +612,7 @@ export function generateCity(cfg) {
     const lots = [];
     const fullBlockP = cfg.districts[d].fullBlockP ?? 0.05;
     if (rand() < fullBlockP) lots.push(street);
-    else splitLots(street, lotOptOf(d), lots);
+    else splitLots(street, lotOptOf(d, heat), lots);
 
     let lotNo = 1;
     for (const lotRing of lots) {
@@ -583,10 +630,22 @@ export function generateCity(cfg) {
       let floors = 0, bldgArea = 0, footprint = null, heightM = 0;
       if (!vacant) {
         const fl = flavorOf(d);
-        const towerP = Math.min(0.085, (h * h * 0.17 + (areaM2 > 1500 ? 0.012 : 0)) * fl.towerGate);
+        // A TOWER GOES WHERE THE SITE IS.
+        //
+        // Height used to be rolled off heat alone, with a 1.2-point bonus if
+        // the lot cleared 1,500 m2 — so a twenty-five-foot lot was very nearly
+        // as likely to carry twenty storeys as the assembled site next door.
+        // That is the density that reads as wrong: towers scattered through
+        // row housing and four-storey walk-ups holding down the best corner in
+        // the city. Nobody puts a tower on a site that cannot take one, and
+        // everybody puts one on a site that can — which is the whole reason
+        // anyone assembles land in the first place.
+        const plate = areaM2 / 620;                    // 1.0 = an ordinary site
+        const big = Math.max(0, Math.min(3.2, plate - 1));
+        const towerP = Math.min(0.34, (h * h * 0.13 + 0.055 * big) * fl.towerGate);
         let coverage;
         if (areaM2 > 240 && rand() < towerP) {
-          floors = Math.round(rr(7, 12) + h * h * rr(6, 16));
+          floors = Math.round((rr(7, 12) + h * h * rr(6, 16)) * (0.86 + 0.20 * Math.min(2.4, plate)));
           coverage = rr(0.46, 0.62);
         } else if (fl.maxFloors > 5 && rand() < 0.18 + h * 0.22) {
           floors = Math.round(rr(3, 6));

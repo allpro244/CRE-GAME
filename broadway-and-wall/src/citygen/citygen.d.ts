@@ -14,7 +14,7 @@ declare module "@/citygen/index.mjs" {
     manifest: DataManifest;
     /** Parcel polygons for the map, with bbl / demand / landpsf properties. */
     parcelFeatures: unknown;
-    /** Building footprints, already massed with setbacks and podiums. */
+    /** Building footprints, already massed into setback silhouettes. */
     buildingFeatures: unknown;
     /** Water, parks, piers, street surfaces and labels — the basemap. */
     context: unknown;
@@ -23,6 +23,10 @@ declare module "@/citygen/index.mjs" {
     stats: {
       lots: number; blocks: number; coverage: number; edges: number;
       buildings: number; withNeighbours: number; heightsImputed: number;
+      /** Buildings that stand as more than one volume, and how many volumes. */
+      stacked?: number; tiersTotal?: number;
+      /** How many buildings took each silhouette family. */
+      shapes?: Record<string, number>;
     };
   }
 

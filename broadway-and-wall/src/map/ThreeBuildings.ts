@@ -59,6 +59,9 @@ export interface BuildingVolume {
   z1: number;  // top meters
   d: number;   // 1 = decorative
   k?: number;  // 1 = vacant lot (dress with gravel + fence)
+  x?: number;  // 1 = this volume is the ROOF of its building, not a setback
+               //     terrace under it. Bulkheads, masts and stepped crowns
+               //     go here and nowhere else.
   dk?: string; // decorative kind: hull0-2, super, funnel, box0-2, crane, shed, light, boat, mast...
   r: [number, number][]; // footprint ring, lon/lat
 }
@@ -101,7 +104,17 @@ const S_POND = 14;   // park water
 
 function styleFor(v: BuildingVolume): number {
   if (v.d) return S_PLAIN;
-  if (v.z1 >= 110 && v.y >= 1975) return S_DARK;
+  // THE DARK PREMIUM TOWER NOBODY HAS EVER SEEN.
+  //
+  // S_DARK — bronze glass, gold-tinted glazing, the best modern building on
+  // the block — was gated on a volume clearing 110 m. No modern volume in any
+  // generated city clears 110 m: measured over three towns, the tallest were
+  // 96, 98 and 126 m and every one of those was prewar. The style existed in
+  // the shader, in the palette, in the tint table, and it had never once been
+  // drawn. Gate it on the BUILDING's floor count instead — which every volume
+  // of a stacked building shares, so a tower does not change material halfway
+  // up the way a height test on each volume would make it.
+  if (v.f >= 15 && v.y >= 1975) return S_DARK;
   const office = v.c === "office" || v.c === "mixed";
   if (office && v.y >= 1920 && v.y < 1958 && v.z1 >= 40) return S_ARTDECO;
   if (office) return v.y >= 1980 ? S_GLASS : v.y >= 1958 ? S_RIBBON : S_PREWAR;
@@ -189,16 +202,32 @@ vec3 aerial(vec3 c, vec3 p, vec3 cam) {
 }`;
 
 /**
- * A well-mixed [0,1) from an integer. Two calls with different constants give
+ * A 32-bit key from a BBL, in EXACT integer arithmetic.
+ *
+ * The obvious `Number(bbl) * 2654435761` is 2.7e18 for a ten-digit BBL, which
+ * is three hundred times past the 2^53 where doubles stop counting by ones —
+ * so the bottom nine bits of the product are always zero and anything mixed in
+ * below that granularity is silently discarded before the hash ever sees it.
+ * It happens to survive here because every term is large, which is a bad
+ * reason for a hash to work. FNV over the digits costs ten iterations and is
+ * correct for any BBL anyone ever invents.
+ */
+function keyOf(bbl: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < bbl.length; i++) { h ^= bbl.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
+/**
+ * A well-mixed [0,1) from two integers. Two calls with different constants give
  * two INDEPENDENT streams, which is the whole point — the old scheme derived
  * its second scalar from its first, so colour and detail moved together.
  */
-function hash01(n: number): number {
-  let x = n >>> 0;
+function hash01(a: number, b: number): number {
+  let x = (Math.imul(a, 2654435761) ^ Math.imul(b, 2246822519)) >>> 0;
   x = Math.imul(x ^ (x >>> 16), 2246822507) >>> 0;
   x = Math.imul(x ^ (x >>> 13), 3266489909) >>> 0;
-  x = (x ^ (x >>> 16)) >>> 0;
-  return x / 4294967296;
+  return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
 }
 
 /** Twice the signed area of a ring — enough to compare two footprints. */
@@ -1067,8 +1096,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       //
       // Two independent hashes now, mixed with the city seed, so a reroll is a
       // genuinely different town and neighbours are uncorrelated.
-      const rnd = hash01(Number(v.b) * 2654435761 + this.citySeed * 40503 + (v.t + 1) * 7919);
-      const varr = hash01(Number(v.b) * 1597334677 + this.citySeed * 2246822519 + (v.t + 1) * 104729 + 0x9e37);
+      const key = keyOf(v.b) ^ Math.imul(v.t + 1, 0x9e3779b1);
+      const rnd = hash01(key, this.citySeed);
+      const varr = hash01(key ^ 0x5bf03635, Math.imul(this.citySeed, 3) + 1);
       const fh = v.f > 0 && v.z1 > 0 ? Math.max(2.6, v.z1 / Math.max(v.f, 1)) : 3.55;
       let ring = v.r.map((p) => this.project(p));
       let area = 0;
@@ -1241,8 +1271,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           const g = insetRing(ring, 1.6);
           if (g) capRoof(R, g, v.z1 + 0.08, [S_GREEN, rnd, varr, v.z1, fh]);
         }
-        // a deco tower steps to its crown instead of stopping flat
-        if (style === S_ARTDECO && v.z1 >= 45) {
+        // a deco tower steps to its crown instead of stopping flat. Only on
+        // the actual roof — a setback terrace two hundred feet below the top
+        // is not where a crown goes.
+        if (style === S_ARTDECO && v.z1 >= 45 && v.x) {
           let step0 = ring, zc = v.z1 + 0.2;
           for (let k = 0; k < 3; k++) {
             const inset = insetRing(step0, 1.5 + k * 0.9);
@@ -1254,8 +1286,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
             step0 = inset; zc += hStep;
           }
         }
-        // bulkheads: the stair and lift overrun every tall building carries
-        if (v.z1 >= 26 && !v.d) {
+        // bulkheads: the stair and lift overrun every tall building carries.
+        // v.x gates it to the roof: dropped on the base tier of a wedding cake
+        // it is a box drawn inside the tower standing on that tier.
+        if (v.z1 >= 26 && !v.d && v.x) {
           const pent = insetRing(ring, Math.min(6, Math.max(2.2, Math.sqrt(v.z1) * 0.55)));
           if (pent) {
             const ph2 = v.z1 > 70 ? 5.2 : 3.6;

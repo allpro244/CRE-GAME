@@ -54,7 +54,7 @@ writeFileSync(join(OUT, "buildings.geojson"), JSON.stringify(out.tileBuildings))
 writeFileSync(join(PUB, "buildings3d.json.gz"), gzipSync(JSON.stringify(out.buildings3d), { level: 9 }));
 
 const s = out.stats;
-console.log(`  ${s.tiered} old towers got setback massing, ${s.podiums} modern towers got podiums.`);
+console.log(`  ${s.stacked} buildings got stacked massing over ${s.tiersTotal} volumes: ${JSON.stringify(s.shapes)}`);
 console.log(`  buildings3d.json.gz: ${out.buildings3d.length} volumes for the mesh renderer`);
 console.log(`  Processed ${s.lots} lots (${s.withNeighbours} with neighbors, ${s.edges} edges, `
   + `avg ${(s.lots ? (2 * s.edges) / s.lots : 0).toFixed(1)}/lot), ${s.buildings} buildings (${s.heightsImputed} heights imputed).`);

@@ -15,7 +15,7 @@
 // calls this, and writes files.
 //
 // Pure: same inputs, same outputs, no I/O, no clock, no globals.
-import { makeProjection, polygonArea, centroid, bboxOfRing, sharedBoundaryLength, insetRing, insetRingPerp } from "./geom.mjs";
+import { makeProjection, polygonArea, centroid, bboxOfRing, sharedBoundaryLength, insetRingPerp } from "./geom.mjs";
 
 /**
  * @param {{rawParcels:object, rawBuildings:object, rawStations:object,
@@ -331,34 +331,247 @@ export function buildCityData(src) {
   }
 
   // buildings for the tiler: join heights (feet -> meters) by base BBL.
-  // Massing: tall pre-1961 towers get wedding-cake setback tiers; tall modern
-  // towers get a podium (a low base filling the lot) with a slimmer shaft —
-  // both via stacked volumes with fill-extrusion-base.
+  //
+  // ------------------------------------------------------------------ MASSING
+  //
+  // TWO SHAPES WERE 61% OF EVERY TOWER IN THIS CITY.
+  //
+  // A pre-1961 tower got a wedding cake with its setbacks nailed to 52% and
+  // 82% of its height and its insets nailed to 66% and 38% of its area: the
+  // same three-step ziggurat at every scale, on every lot, in every city,
+  // forever. A modern tower got a podium of exactly 8.0 m under an unaltered
+  // footprint. Above 45 m nothing else existed. From the water the skyline
+  // read as one building photocopied at eleven sizes, which is most of why a
+  // generated city looks generated.
+  //
+  // Real silhouettes come from the rule that was in force when the money was
+  // spent, and from how much lot there was to spend it on. The 1916 zoning
+  // resolution pushed a building back from the street on a sky-exposure plane
+  // as it rose — but exempted a tower standing on a QUARTER of the lot, which
+  // let it go up as far as it liked. That exemption is the reason a prewar
+  // downtown is ziggurats WITH SPIKES IN THEM rather than ziggurats. The 1961
+  // rewrite priced height in floor-area ratio and paid a bonus for handing the
+  // pavement a plaza, which is why a postwar downtown is slabs and shafts
+  // standing off the street behind an apron of granite.
+  //
+  // Seven families now, with their proportions read off the lot: wedding cake
+  // (2-4 setbacks), tower-on-a-base, single high setback, terraced prewar
+  // mid-rise, podium-and-shaft, mechanical setback, taper. Plus the slab,
+  // because a box is a real answer and a city with no boxes in it is as
+  // obviously fake as a city with nothing but.
   const tileBuildings = { type: "FeatureCollection", features: [] };
-  let missingH = 0, tiered = 0, podiums = 0;
+  let missingH = 0, stacked = 0, tiersTotal = 0;
+  // Which silhouette each building ended up as, so the histogram is a thing
+  // you can look at rather than a thing you have to trust.
+  const shapes = {};
+  const shape = (k) => { shapes[k] = (shapes[k] ?? 0) + 1; };
   const lotRingByBBL = new Map(lots.map((l) => [l.bbl, l.ring]));
 
-  function setbackTiers(geom, hM) {
-    // tiers only for a simple polygon with one meaningful outer ring
-    if (geom.type !== "Polygon") return null;
-    const ringLL = geom.coordinates[0];
-    const ringXY = ringLL.slice(0, -1).map(proj.toXY);
+  const citySeed = (manifest?.seed ?? 1) >>> 0;
+  /**
+   * A 32-bit key from a BBL, in EXACT integer arithmetic. `Number(bbl) * P` is
+   * 2.7e18 for a ten-digit BBL — three hundred times past the 2^53 where
+   * doubles stop counting by ones, so the bottom nine bits of the product are
+   * always zero and anything mixed in below that granularity is discarded
+   * before the hash sees it. FNV over the digits is ten iterations and correct.
+   */
+  const keyCache = new Map();
+  const keyOf = (bbl) => {
+    let k = keyCache.get(bbl);
+    if (k !== undefined) return k;
+    const t = String(bbl);
+    let h = 2166136261;
+    for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); }
+    k = h >>> 0; keyCache.set(bbl, k); return k;
+  };
+  /** A stable [0,1) per building per question, and different in a new town. */
+  const bh = (bbl, salt) => {
+    let x = (Math.imul(keyOf(bbl) ^ Math.imul(salt, 0x9e3779b1), 2654435761) ^
+             Math.imul(citySeed, 2246822519)) >>> 0;
+    x = Math.imul(x ^ (x >>> 16), 2246822507) >>> 0;
+    x = Math.imul(x ^ (x >>> 13), 3266489909) >>> 0;
+    return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
+  };
+
+  /**
+   * Shrink a ring toward a target fraction of its area, backing off toward the
+   * original if the geometry will not take it. A long thin loft footprint
+   * cannot lose seventy per cent of its area without the short dimension going
+   * through itself; rather than drop the setback entirely, take the deepest one
+   * that survives. Returns null only if even a gentle inset collapses.
+   */
+  function shrink(ringXY, side, frac) {
+    for (let f = Math.max(0.16, frac); f < 0.97; f += (1 - f) * 0.45) {
+      const r = insetRingPerp(ringXY, (side * (1 - Math.sqrt(f))) / 2);
+      if (r && r.length >= 3) return r;
+    }
+    return null;
+  }
+  const toGeom = (ringXY) => {
+    const ll = ringXY.map(proj.toLL);
+    return { type: "Polygon", coordinates: [[...ll, ll[0]]] };
+  };
+
+  /**
+   * The stack of volumes a building actually stands as, base first.
+   * null means "a plain extrusion is the right answer" — which for most of the
+   * city it is, because most of a city is five storeys of brick.
+   */
+  function massing(geom, hM, year, klass, bbl, lotRingM) {
+    if (geom.type !== "Polygon" || geom.coordinates.length !== 1) return null;
+    const ringXY = geom.coordinates[0].slice(0, -1).map(proj.toXY);
+    if (ringXY.length < 3) return null;
     const areaM2 = Math.abs(polygonArea([ringXY]));
-    if (areaM2 < 250) return null;
+    if (areaM2 < 180) return null;
     const side = Math.sqrt(areaM2);
-    const inset = (frac) => {
-      const r = insetRingPerp(ringXY, (side * (1 - Math.sqrt(frac))) / 2);
-      if (!r) return null;
-      const ll = r.map(proj.toLL);
-      return { type: "Polygon", coordinates: [[...ll, ll[0]]] };
+    const W = side;                 // the plate's width, near enough, in metres
+    const u = (k) => bh(bbl, k);
+    const out = [];
+    const push = (r, base, top) => {
+      if (!r || top - base < 0.6) return false;
+      out.push({ geom: Array.isArray(r) ? toGeom(r) : r, base: +base.toFixed(1), top: +top.toFixed(1) });
+      return true;
     };
-    const mid = inset(0.66), top = inset(0.38);
-    if (!mid || !top) return null;
-    return [
-      { geom, base: 0, top: +(hM * 0.52).toFixed(1) },
-      { geom: mid, base: +(hM * 0.52).toFixed(1), top: +(hM * 0.82).toFixed(1) },
-      { geom: top, base: +(hM * 0.82).toFixed(1), top: +hM.toFixed(1) },
-    ];
+    /** File the silhouette and hand it back, or fall through to a slab. */
+    const done = (name) => { if (out.length < 2) return null; shape(name); return out; };
+
+    // ---- pre-1961: the sky-exposure plane, and the tower that dodged it ----
+    if (year < 1961) {
+      // WHAT A PLATE WILL TAKE.
+      //
+      // A setback gives away WIDTH, and a building that has none cannot give
+      // any: four steps off a sixteen-metre plate leave a top floor eight
+      // metres across, which is a chimney. So each family is offered only to
+      // plates wide enough to survive it, and the choice is made among the
+      // families that are actually available rather than by one roll that
+      // ignores the site. Repeats in the list are weights.
+      if (hM < 22 || areaM2 < 200) return null;         // a walk-up stands straight
+      const fams = [];
+      if (hM >= 30) {
+        if (W >= 22) fams.push("cake", "cake", "cake");
+        if (W >= 19) fams.push("base", "base");
+        if (W >= 15) fams.push("step", "step");
+        fams.push("loft");
+      }
+      if (hM >= 24) fams.push("terrace");
+      // A box is a real answer, and a city with no boxes in it is as obviously
+      // fake as a city with nothing else. Fewer of them once a building is
+      // tall enough that somebody had to think about its top.
+      for (let k = hM >= 30 ? 2 : 3; k > 0; k--) fams.push("slab");
+      switch (fams[Math.min(fams.length - 1, Math.floor(u(4) * fams.length))]) {
+        case "cake": {
+          // WEDDING CAKE — two to four setbacks above a street wall whose
+          // height comes off the lot rather than off a constant.
+          const n = 2 + Math.floor(u(7) * 3);
+          const baseTop = hM * (0.24 + 0.24 * u(8));
+          let z = baseTop, frac = 1, lastR = ringXY;
+          push(geom, 0, baseTop);
+          for (let k = 0; k < n; k++) {
+            frac *= 0.62 + 0.16 * bh(bbl, 20 + k);
+            const r = shrink(ringXY, side, frac);
+            if (!r) break;
+            const top = k === n - 1 ? hM : z + (hM - z) * (0.34 + 0.26 * bh(bbl, 30 + k));
+            if (!push(r, z, top)) break;
+            z = top; lastR = r;
+          }
+          if (z < hM - 0.6) push(lastR, z, hM);
+          return done("wedding cake");
+        }
+        case "base": {
+          // TOWER ON A BASE — the 1916 exemption let a tower on a quarter of
+          // the lot rise without limit, and that is the reason a prewar
+          // skyline has spikes in it rather than only ziggurats.
+          const shaftFrac = 0.30 + 0.20 * u(10);
+          const shaft = shrink(ringXY, side, shaftFrac);
+          if (!shaft) return null;
+          const baseTop = Math.min(hM * 0.44, 11 + 13 * u(9));
+          const crownAt = hM * (0.90 + 0.05 * u(11));
+          push(geom, 0, baseTop);
+          push(shaft, baseTop, crownAt);
+          const crown = shrink(shaft, side * Math.sqrt(shaftFrac), 0.54 + 0.20 * u(12));
+          if (!push(crown, crownAt, hM)) push(shaft, crownAt, hM);
+          return done("tower on a base");
+        }
+        case "step": {
+          // One high setback — the cheapest way to satisfy the sky plane.
+          const zc = hM * (0.58 + 0.24 * u(13));
+          push(geom, 0, zc);
+          push(shrink(ringXY, side, 0.50 + 0.26 * u(14)), zc, hM);
+          return done("high setback");
+        }
+        case "loft": {
+          // A tall thin loft goes straight up and stops, with at most a small
+          // step under the cornice.
+          const zc = hM * (0.86 + 0.08 * u(5));
+          push(geom, 0, zc);
+          push(shrink(ringXY, side, 0.62 + 0.16 * u(6)), zc, hM);
+          return done("loft step");
+        }
+        case "terrace": {
+          // A prewar apartment house often gives its top floor a terrace.
+          const zc = hM * (0.74 + 0.12 * u(2));
+          push(geom, 0, zc);
+          push(shrink(ringXY, side, 0.58 + 0.22 * u(3)), zc, hM);
+          return done("prewar terrace");
+        }
+        default: return null;
+      }
+    }
+
+    // ---- 1961 and after: floor-area ratio, and a bonus for a plaza ---------
+    if (hM < 20) return null;
+    const post = [];
+    if (lotRingM && klass !== "industrial") post.push("retail base");
+    if (hM >= 32) {
+      if (lotRingM && klass !== "industrial") post.push("podium", "podium");
+      post.push("mech", "mech");
+      if (W >= 18) post.push("taper", "taper");
+    }
+    for (let k = hM >= 32 ? 2 : 4; k > 0; k--) post.push("slab");
+    switch (post[Math.min(post.length - 1, Math.floor(u(19) * post.length))]) {
+      case "retail base": {
+        // Shops at grade run out to the lot line under a set-back upper floor.
+        const pod = insetRingPerp(lotRingM, 1.2 + 1.8 * u(20));
+        if (!pod) return null;
+        push(pod, 0, 4.5 + 4 * u(21));
+        push(geom, 0, hM);
+        return done("retail base");
+      }
+      case "podium": {
+        // PODIUM AND SHAFT. One to four storeys of base, not 8.0 m of it.
+        const pod = insetRingPerp(lotRingM, 1.0 + 1.8 * u(22));
+        if (!pod) return null;
+        push(pod, 0, 5 + 10 * u(23));
+        push(geom, 0, hM);
+        return done("podium and shaft");
+      }
+      case "mech": {
+        // The plant floor steps in — the commonest thing a 1970s tower does
+        // to its own profile.
+        const zc = hM * (0.42 + 0.26 * u(24));
+        push(geom, 0, zc);
+        push(shrink(ringXY, side, 0.74 + 0.16 * u(25)), zc, hM);
+        return done("mechanical setback");
+      }
+      case "taper": {
+        // Two or three steps through the top third.
+        const n = 2 + (u(26) > 0.55 ? 1 : 0);
+        let z = hM * (0.58 + 0.14 * u(27)), frac = 1, lastR = ringXY;
+        push(geom, 0, z);
+        for (let k = 0; k < n; k++) {
+          frac *= 0.76 + 0.12 * bh(bbl, 40 + k);
+          const r = shrink(ringXY, side, frac);
+          if (!r) break;
+          const top = k === n - 1 ? hM : z + (hM - z) * (0.42 + 0.20 * bh(bbl, 50 + k));
+          if (!push(r, z, top)) break;
+          z = top; lastR = r;
+        }
+        if (z < hM - 0.6) push(lastR, z, hM);
+        return done("taper");
+      }
+      default: return null;
+    }
+    return null;   // a slab is a real shape, and a city needs some
   }
 
   for (const f of rawBuildings.features) {
@@ -379,46 +592,30 @@ export function buildCityData(src) {
       ...(f.properties.deco ? { deco: f.properties.deco } : {}),
     };
     const id = bbl && table[bbl] ? Number(bbl) : undefined;
-    const tiers = year < 1961 && hM >= 60 ? setbackTiers(f.geometry, hM) : null;
-    let podium = null;
-    if (!tiers && year >= 1961 && hM >= 45) {
-      // modern tower: low podium on (nearly) the whole lot, shaft above
-      const lotRingM = lotRingByBBL.get(bbl);
-      if (lotRingM) {
-        const pod = insetRingPerp(lotRingM, 1.4) ?? insetRing(lotRingM, 1.4);
-        if (pod) {
-          const ll = pod.map(proj.toLL);
-          podium = { type: "Polygon", coordinates: [[...ll, ll[0]]] };
-        }
-      }
-    }
-    if (tiers) {
-      tiered++;
-      for (const t of tiers) {
+    const stack = bbl
+      ? massing(f.geometry, hM, year, rec?.class ?? "office", bbl, lotRingByBBL.get(bbl))
+      : null;
+    if (stack && stack.length > 1) {
+      // Which volume is the ROOF matters: the stair and lift overrun, the
+      // antenna and the stepped deco crown belong on the top of the building
+      // and not on every setback terrace under it. A bulkhead dropped on the
+      // base tier of a wedding cake is a box drawn inside the tower above it.
+      let ti = 0;
+      for (let i = 1; i < stack.length; i++) if (stack[i].top > stack[ti].top) ti = i;
+      stacked++; tiersTotal += stack.length;
+      stack.forEach((t, i) => {
         tileBuildings.features.push({
           type: "Feature", id,
           geometry: t.geom,
-          properties: { ...props, heightM: t.top, baseM: t.base },
+          properties: { ...props, heightM: t.top, baseM: t.base, ...(i === ti ? { crown: 1 } : {}) },
         });
-      }
-    } else if (podium) {
-      podiums++;
-      tileBuildings.features.push({
-        type: "Feature", id,
-        geometry: podium,
-        properties: { ...props, heightM: 8, baseM: 0 },
-      });
-      tileBuildings.features.push({
-        type: "Feature", id,
-        geometry: f.geometry,
-        properties: { ...props, heightM: hM, baseM: 8 },
       });
     } else {
       const baseFt = num(f.properties.base_ft);
       tileBuildings.features.push({
         type: "Feature", id,
         geometry: f.geometry,
-        properties: { ...props, heightM: hM, baseM: baseFt ? +(baseFt * 0.3048).toFixed(1) : 0 },
+        properties: { ...props, heightM: hM, baseM: baseFt ? +(baseFt * 0.3048).toFixed(1) : 0, crown: 1 },
       });
     }
   }
@@ -462,6 +659,7 @@ export function buildCityData(src) {
       b: p.bbl, c: p.class, y: p.year, t: p.tone,
       f: rec?.floors ?? 0, z0: p.baseM, z1: p.heightM,
       d: p.bbl ? 0 : 1,               // decorative: ships, cranes, sheds
+      ...(p.crown ? { x: 1 } : {}),   // this volume is the roof of the building
       ...(p.deco ? { dk: p.deco } : {}),
       r: ring,
     });
@@ -491,7 +689,7 @@ export function buildCityData(src) {
       edges: edgeCount,
       buildings: tileBuildings.features.length,
       heightsImputed: missingH,
-      tiered, podiums,
+      stacked, tiersTotal, shapes,
     },
   };
 }

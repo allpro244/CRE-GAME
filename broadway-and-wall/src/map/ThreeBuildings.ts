@@ -1933,7 +1933,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private plantStreets() {
     const c = this.ctxPoints;
     if (!this.curbs.length && !c.trees?.length && !c.benches?.length && !c.rails?.length) return;
-    type Item = { x: number; y: number; s: number; rot: number };
+    // ctx: where this thing stands — 0 street, 1 park, 2 a lot nobody tends.
+    // Only the trees read it, and only to choose a species.
+    type Item = { x: number; y: number; s: number; rot: number; ctx?: number };
     const trees: Item[] = [], lamps: Item[] = [], cars: Item[] = [], people: Item[] = [];
     let seed = 1337;
     const rnd = () => {
@@ -1960,7 +1962,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           let nx = -dy / len, ny = dx / len;
           if ((px - cx) * nx + (py - cy) * ny < 0) { nx = -nx; ny = -ny; }  // point outward
           const off = 2.1 + rnd() * 0.7;
-          const item = { x: px + nx * off, y: py + ny * off, s: 0.92 + rnd() * 0.55, rot: rnd() * 6.28 };
+          const item = { x: px + nx * off, y: py + ny * off, s: 0.92 + rnd() * 0.55, rot: rnd() * 6.28, ctx: 0 };
           if (rnd() < 0.76) trees.push(item);
           else lamps.push({ ...item, s: 0.9 + rnd() * 0.2 });
         }
@@ -2111,11 +2113,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // of what makes a park read as a place from the game camera.
     for (const p of this.ctxPoints.trees ?? []) {
       const [x, y] = this.project(p);
-      trees.push({ x, y, s: 1.02 + rnd() * 0.75, rot: rnd() * 6.28 });
+      trees.push({ x, y, s: 1.02 + rnd() * 0.75, rot: rnd() * 6.28, ctx: 1 });
     }
     // the scrub that has taken the abandoned lots, planted a size down from
     // street trees because nobody chose these and nobody prunes them
-    for (const t of this.lotTrees) trees.push(t);
+    for (const t of this.lotTrees) trees.push({ ...t, ctx: 2 });
     for (const c2 of this.lotCars) cars.push(c2);
     // pier piles: short dark timbers standing at the deck edge over the water
     const piles: Item[] = (this.ctxPoints.piles ?? []).map((p) => {
@@ -2130,10 +2132,29 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // England common into a Christmas tree farm: streets and parks are mostly
     // spreading shade trees, with columnar ones where the frontage is tight
     // and a few evergreens for winter structure.
+    // A STREET IS NOT A PARK IS NOT A VACANT LOT.
+    //
+    // The three species already vary, and every tree already gets its own
+    // green out of `add`'s vary term — that part was never the problem. What
+    // WAS the problem is that the split was a hash of position and nothing
+    // else, so all three populations drew from one 63/25/12 mix: the same
+    // planting on a tight commercial frontage, in the middle of the Common,
+    // and on a lot nobody has touched in thirty years.
+    //
+    // Nobody plants a spreading shade tree on a twenty-foot frontage — it goes
+    // columnar or it goes in a tub. A park is mostly canopy with a few
+    // evergreens for winter structure. And scrub on an abandoned lot is
+    // whatever seeded itself, which in New England is a lot of white pine.
+    const MIX: Record<number, [number, number]> = {
+      0: [46, 90],   // street: columnar over half of it, a few conifers
+      1: [78, 92],   // park: canopy, some columnar, evergreen structure
+      2: [40, 62],   // scrub: scrappy, and heavily self-seeded pine
+    };
     const sp: Item[][] = [[], [], []];
     for (let i = 0; i < trees.length; i++) {
       const h = (Math.abs(Math.round(trees[i].x * 3 + trees[i].y * 7)) + i * 11) % 100;
-      sp[h < 63 ? 0 : h < 88 ? 1 : 2].push(trees[i]);
+      const [a, b] = MIX[trees[i].ctx ?? 1];
+      sp[h < a ? 0 : h < b ? 1 : 2].push(trees[i]);
     }
     add(treeTrunkGeom(), 0x6b5744, trees, 0.12, 0);
     add(treeCanopyGeom(), 0x71904f, sp[0], 0.34, 1);

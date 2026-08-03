@@ -385,21 +385,65 @@ export function approachOwner(
   }
   const next = clone(s);
   const pressure = assemblagePressure(next, adjacency, bbl);
-  const refuseP = Math.min(0.9, Math.max(0.1,
-    0.34 + 0.35 * pressure
+  // WHO OWNS IT DECIDES THE ANSWER, and this function never asked.
+  //
+  // Refusal was a flat 0.34 and the premium a flat 1.06-1.78x whether the lot
+  // belonged to a family trust at 12% leverage that has held it for two
+  // generations, to an opportunistic shop three months from a margin call, or
+  // to nobody at all. The four styles behave measurably differently — family
+  // firms sit at 0.12 LTV and never fail, opportunistic shops at 0.71 and fail
+  // 70% of the time — and none of that reached the one table where the player
+  // meets them.
+  //
+  // Now it does, and the holdout is real: a family firm that knows what you
+  // are assembling will not sell at any sane price, for years. That is the
+  // single most interesting thing a competitor can do, and it is only fair
+  // because there are three ways out of it that already exist — build the
+  // L-shaped site, wait for their cycle to break, or buy their whole position
+  // as a bundle.
+  const owner = ownerOf(next, bbl);
+  const stressed = (owner?.stressMs ?? 0) > 4;
+  const styleHold = owner
+    ? (owner.style === "family" ? 0.30 : owner.style === "core" ? 0.14 : owner.style === "developer" ? 0.05 : -0.04)
+    : 0;
+  const refuseP = Math.min(0.94, Math.max(0.05,
+    0.34 + 0.35 * pressure + styleHold
+    // A firm that needs money answers the phone. A firm that does not, does not.
+    - (stressed ? 0.42 : 0)
+    - (owner && owner.cash < 0 ? 0.15 : 0)
     - (rec.class === "land" ? 0.12 : 0)
     - (next.econ.phase === "recession" ? 0.10 : 0)
     + (demandLinear(rec.demandScore) - 50) / 500,
   ));
   if (rng(next) < refuseP) {
     next.approaches[bbl] = { q: next.month, refused: true };
-    next.news.unshift({ q: next.month, kind: "info", text: `${rec.address}: the owner isn't selling${pressure > 0.4 ? " — they know what you're assembling" : ""}.` });
+    next.news.unshift({
+      q: next.month, kind: "info",
+      text: owner
+        ? `${rec.address}: ${owner.name} is not selling`
+          + (pressure > 0.4 ? " — and they know exactly what you are assembling." : ".")
+          + (owner.style === "family" ? " They have owned it for two generations and do not need the money." : "")
+        : `${rec.address}: the owner isn't selling${pressure > 0.4 ? " — they know what you're assembling" : ""}.`,
+    });
     return { s: next, refused: true };
   }
-  const premium = 1.06 + 0.5 * Math.pow(rng(next), 2) + 0.22 * pressure;
+  // What they want for it, and who they are is most of it. A family firm that
+  // has finally decided to sell names a number that reflects two generations
+  // of not needing to; a stressed shop takes what clears the loan.
+  const styleAsk = owner
+    ? (owner.style === "family" ? 0.20 : owner.style === "core" ? 0.06 : owner.style === "opportunistic" ? 0.10 : 0.04)
+    : 0;
+  const premium = Math.max(0.80,
+    1.06 + 0.5 * Math.pow(rng(next), 2) + 0.22 * pressure + styleAsk
+    - (stressed ? rrange(next, 0.16, 0.30) : 0));
   const ask = Math.round(assetValue(rec, next.econ, initialCondition(rec)) * premium / 1000) * 1000;
   next.approaches[bbl] = { q: next.month, refused: false, ask };
-  next.news.unshift({ q: next.month, kind: "info", text: `${rec.address}: the owner would take $${(ask / 1e6).toFixed(2)}M. The number holds for six months.` });
+  next.news.unshift({
+    q: next.month, kind: "info",
+    text: `${rec.address}: ${owner ? owner.name + " would take" : "the owner would take"} $${(ask / 1e6).toFixed(2)}M`
+      + (stressed ? " — they are under pressure and it shows in the number." : ".")
+      + " The number holds for six months.",
+  });
   return { s: next, ask };
 }
 

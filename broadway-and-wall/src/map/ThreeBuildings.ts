@@ -160,8 +160,10 @@ const LIGHT_GLSL = /* glsl */ `
 // massing of the city finally has something to read against. The sun is warmer
 // to match, and the sky fill is lifted so the long shadows stay blue and
 // legible instead of going black.
-const vec3 SUN_DIR = vec3(0.762, -0.541, 0.496);
-const vec3 SUN_COL = vec3(1.26, 1.09, 0.82);
+uniform vec3 uSunDir;
+uniform vec3 uSunCol;
+#define SUN_DIR uSunDir
+#define SUN_COL uSunCol
 const vec3 SKY_COL = vec3(0.53, 0.635, 0.83);
 const vec3 GND_COL = vec3(0.48, 0.405, 0.31);
 
@@ -186,6 +188,27 @@ vec3 grade(vec3 c) {
   t *= mix(vec3(0.935, 0.972, 1.082), vec3(1.062, 1.007, 0.926), smoothstep(0.16, 0.84, lum));
   return t;
 }`;
+
+const SEASON_GLSL = /* glsl */ `
+uniform vec4 uSeason;
+#define SNOW   uSeason.x
+#define AUTUMN uSeason.y
+#define BARE   uSeason.z
+#define VIGOUR uSeason.w
+
+vec3 seasonGreen(vec3 c) {
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  vec3 gold = l * vec3(1.62, 1.16, 0.42);
+  vec3 dorm = l * vec3(1.32, 1.20, 0.86);
+  c = mix(c, gold, AUTUMN * 0.72);
+  c = mix(c, dorm, (1.0 - VIGOUR) * 0.42);
+  return c;
+}
+
+vec3 snowOn(vec3 c, float up, float k) {
+  return mix(c, vec3(0.905, 0.925, 0.975), clamp(SNOW * up * k, 0.0, 1.0));
+}
+`;
 
 // AERIAL PERSPECTIVE. Air is not transparent. Over a mile of it, contrast
 // drains out of everything and the color creeps toward the sky — which is the
@@ -243,14 +266,20 @@ function ringArea(r: [number, number][]): number {
 
 const PROP_VERT = /* glsl */ `
 // instanceColor is declared for us when the mesh carries one
+uniform vec4 uSeason;
+uniform float uFoliage;   // 0 = not a leaf, 1 = deciduous canopy, 2 = conifer
 varying vec3 vN;
 varying vec3 vW;
 varying vec3 vC;
 void main() {
+  float bare = uSeason.z * step(0.5, uFoliage) * step(uFoliage, 1.5);
+  vec3 p = position;
+  p.xy *= mix(1.0, 0.32, bare);
+  p.z  *= mix(1.0, 0.94, bare);
   vN = normalize(mat3(instanceMatrix) * normal);
-  vW = (instanceMatrix * vec4(position, 1.0)).xyz;
+  vW = (instanceMatrix * vec4(p, 1.0)).xyz;
   vC = instanceColor;
-  gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(p, 1.0);
 }`;
 
 // same rig, for props that aren't instanced (the construction crane)
@@ -320,7 +349,7 @@ varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh, vEra;
 uniform float uOpacity;
 uniform vec3 uCam;
 ${"" /* shadow sampling */}
-` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + /* glsl */ `
+` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + SEASON_GLSL + /* glsl */ `
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
@@ -699,7 +728,7 @@ varying vec2 vSeg, vCcv;
 varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh, vEra;
 uniform float uOpacity;
 uniform vec3 uCam;
-` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + /* glsl */ `
+` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + SEASON_GLSL + /* glsl */ `
 float rhash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float rnoise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
@@ -724,9 +753,10 @@ void main() {
   else if (s == 13) roof = vec3(0.760, 0.720, 0.630); // park walk
   else if (s == 14) roof = vec3(0.272, 0.400, 0.436); // park water
   else if (s == 11) {                                 // shingles
-    if (vVar < 0.4)      roof = vec3(0.48, 0.29, 0.235);
-    else if (vVar < 0.7) roof = vec3(0.34, 0.37, 0.415);
-    else                 roof = vec3(0.40, 0.50, 0.42);
+    if (vVar < 0.34)      roof = vec3(0.205, 0.135, 0.108);  // weathered red asphalt
+    else if (vVar < 0.62) roof = vec3(0.150, 0.162, 0.185);  // slate
+    else if (vVar < 0.84) roof = vec3(0.245, 0.340, 0.295);  // oxidised copper
+    else                  roof = vec3(0.330, 0.306, 0.268);  // grey weathered wood
   }
   else              roof = vec3(0.76, 0.76, 0.74);
   roof *= 0.92 + 0.16 * vRand;
@@ -774,20 +804,49 @@ void main() {
     else if (vVar < 0.18) roof = vec3(0.515, 0.435, 0.335);
     roof *= 0.88 + 0.24 * rnoise(wp * 2.4);   // gravel / scrub texture
   } else {
-    // the roof someone actually specified: dark EPDM, white TPO, silver
-    // coating or plain gravel — the roofscape should read as a patchwork
-    if (vVar < 0.26)       roof = mix(roof, vec3(0.255, 0.265, 0.285), 0.80);
-    else if (vVar < 0.48)  roof = mix(roof, vec3(0.760, 0.765, 0.750), 0.72);
-    else if (vVar < 0.68)  roof = mix(roof, vec3(0.545, 0.560, 0.575), 0.66);
-    else if (vVar < 0.85)  roof = mix(roof, vec3(0.520, 0.470, 0.395), 0.58);
-    // built-up membrane: rolled seams plus weathering blotches
-    float seam = min(fract(wp.x * 0.32), fract(wp.y * 0.32));
-    roof *= 1.0 - 0.07 * (1.0 - smoothstep(0.0, 0.06, seam));
+    int dk = int(max(vSeg.x, 0.0) + 0.5);
+    vec3 deck;
+    if (dk == 1)      deck = vec3(0.095, 0.091, 0.086);  // hot-mopped tar, weathered BUR
+    else if (dk == 2) deck = vec3(0.118, 0.124, 0.134);  // black EPDM sheet
+    else if (dk == 3) deck = vec3(0.190, 0.183, 0.172);  // dark slag ballast
+    else if (dk == 4) deck = vec3(0.352, 0.362, 0.375);  // weathered galvanised / terne
+    else if (dk == 5) deck = vec3(0.550, 0.553, 0.542);  // aluminised asphalt coating
+    else if (dk == 6) deck = vec3(0.445, 0.458, 0.474);  // grey PVC
+    else if (dk == 7) deck = vec3(0.780, 0.785, 0.768);  // white TPO cool roof
+    else if (dk == 8) deck = vec3(0.470, 0.418, 0.340);  // tan mineral-cap mod-bit
+    else              deck = vec3(0.300, 0.283, 0.250);  // gravel-ballasted built-up
+    deck += (1.0 - deck) * (0.10 * (0.30 + 0.55 * vRand) * (1.0 - vEra));
+    roof = deck * (0.90 + 0.20 * vRand);
+
+    vec2 dir = vCcv;
+    float dl = length(dir);
+    dir = dl > 0.5 ? dir / dl : vec2(1.0, 0.0);
+    vec2 rp = vec2(dot(wp, dir), dot(wp, vec2(-dir.y, dir.x)));
+    roof *= 1.0 + 0.034 * cos(rp.x * 0.6866);
+    roof *= 1.0 + 0.015 * cos(rp.y * 0.5150);
+    float fine = 1.0 - smoothstep(0.30, 0.85, fwidth(rp.x));
+    float sf = fract(rp.x * 0.3279);
+    roof *= 1.0 - 0.13 * fine * (1.0 - smoothstep(0.0, 0.075, min(sf, 1.0 - sf)));
+
+    float ws = fract(abs(vSeg.y) * 0.61803399) * 40.0;
+    float p1 = rnoise(wp * 0.115 + ws);
+    float p2 = rnoise(wp * 0.27 + ws * 1.7);
+    float pond = p1 * 0.62 + p2 * 0.38;
+    float stain = 0.12 + 0.34 * dot(deck, vec3(0.2126, 0.7152, 0.0722));
+    roof = mix(roof, roof * (0.52 + 0.12 * vRand), smoothstep(0.58, 0.80, pond) * stain);
+    if (dk == 0 || dk == 3) roof = mix(roof, vec3(0.120, 0.113, 0.105), smoothstep(0.60, 0.82, p2) * 0.55);
     roof *= 0.955 + 0.09 * rnoise(wp * 0.7);
-    roof = mix(roof, roof * 0.92, smoothstep(0.55, 0.85, rnoise(wp * 0.22 + 17.0)) * 0.45);
+    roof = mix(roof, roof * 0.92, smoothstep(0.52, 0.86, rnoise(wp * 0.22 + 17.0)) * 0.42);
   }
 
+  if (s == 9 || s == 12 || (s == 10 && vVar > 0.62)) roof = seasonGreen(roof);
   vec3 n = normalize(vNormal);
+  if (SNOW > 0.001) {
+    float up = smoothstep(0.28, 0.80, n.z);
+    float drift = 0.62 + 0.55 * rnoise(wp * 0.22) + 0.20 * rnoise(wp * 1.3);
+    if (s == 14) roof = mix(roof, vec3(0.63, 0.70, 0.76), clamp(SNOW * 1.15, 0.0, 1.0));
+    roof = snowOn(roof, up, drift);
+  }
   float vis = sunVis(vPos, n);
   // vU carries distance to the roof edge: the parapet shades its own deck
   float aoEdge = mix(0.78, 1.0, smoothstep(0.0, 2.8, vU));
@@ -801,6 +860,7 @@ void main() {
 const CATCHER_FRAG = /* glsl */ `
 precision highp float;
 varying vec3 vPos;
+uniform vec4 uSeason;
 ` + SHADOW_GLSL + /* glsl */ `
 void main() {
   // The ground is flat and faces straight up; its own normal is the offset.
@@ -811,7 +871,13 @@ void main() {
   // place. The bias is metres now and the shadows land where the buildings
   // are, so they are allowed to read: deeper, and cooler, because a shadow
   // outdoors is lit by the sky and the sky is blue.
-  gl_FragColor = vec4(0.155, 0.185, 0.30, (1.0 - vis) * 0.60);
+  float sa = uSeason.x * 0.42;
+  float a  = (1.0 - vis) * 0.60;
+  vec3  sc = vec3(0.800, 0.828, 0.880);
+  vec3  hc = mix(vec3(0.155, 0.185, 0.30), vec3(0.42, 0.49, 0.66), uSeason.x);
+  float outA = sa + a * (1.0 - sa);
+  vec3  outC = outA > 0.0001 ? (sc * sa * (1.0 - a) + hc * a) / outA : sc;
+  gl_FragColor = vec4(outC, outA);
 }`;
 
 const CATCHER_VERT = /* glsl */ `
@@ -897,14 +963,45 @@ varying vec3 vC;
 uniform vec3 uColor;
 uniform float uOpacity;
 uniform vec3 uCam;
-` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + /* glsl */ `
+uniform float uFoliage;   // 0 = not a leaf, 1 = deciduous canopy, 2 = conifer
+` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + SEASON_GLSL + /* glsl */ `
 void main() {
   vec3 n = normalize(vN);
+  vec3 base = uColor * vC;
+  if (uFoliage > 0.5 && uFoliage < 1.5) {
+    base = seasonGreen(base);
+    base = mix(base, vec3(0.068, 0.045, 0.030), BARE * 0.80);
+  } else if (uFoliage > 1.5) {
+    base = mix(base, base * vec3(0.82, 0.90, 0.94), (1.0 - VIGOUR) * 0.45);
+  }
+  if (SNOW > 0.001) base = snowOn(base, smoothstep(0.30, 0.85, n.z), 0.85);
   float vis = sunVis(vW, n);
   float ao = mix(0.62, 1.0, clamp(vW.z / 5.0, 0.0, 1.0));
   vec3 light = SUN_COL * (max(dot(n, SUN_DIR), 0.0) * vis * 0.92) + hemiLight(n, ao);
-  gl_FragColor = vec4(aerial(grade(uColor * vC * light), vW, uCam), uOpacity);
+  gl_FragColor = vec4(aerial(grade(base * light), vW, uCam), uOpacity);
 }`;
+
+const SUN_LEN = 1.05799;
+const SUN_EL_MID = 27.96, SUN_EL_AMP = 6.0;
+const SUN_AZ_MID = 125.38, SUN_AZ_AMP = 12;
+const SUN_COL_SUMMER: readonly [number, number, number] = [1.260, 1.090, 0.820];
+const SUN_COL_WINTER: readonly [number, number, number] = [1.470, 0.772, 0.236];
+const SUN_WARMTH = 0.55;
+
+const SEASON_TABLE: readonly (readonly [number, number, number, number])[] = [
+  [0.95, 0.00, 1.00, 0.00],  // Jan
+  [1.00, 0.00, 1.00, 0.00],  // Feb
+  [0.50, 0.00, 0.90, 0.12],  // Mar
+  [0.08, 0.00, 0.42, 0.55],  // Apr
+  [0.00, 0.00, 0.04, 0.90],  // May
+  [0.00, 0.00, 0.00, 1.00],  // Jun
+  [0.00, 0.00, 0.00, 1.00],  // Jul
+  [0.00, 0.05, 0.00, 0.96],  // Aug
+  [0.00, 0.28, 0.00, 0.82],  // Sep
+  [0.00, 0.80, 0.12, 0.52],  // Oct
+  [0.10, 0.95, 0.68, 0.16],  // Nov
+  [0.62, 0.55, 0.96, 0.02],  // Dec
+];
 
 interface Ranges { start: number; count: number }
 
@@ -944,6 +1041,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private lotTrees: { x: number; y: number; s: number; rot: number }[] = [];
   private lotCars: { x: number; y: number; s: number; rot: number }[] = [];
   private sunVP = new THREE.Matrix4();
+  private sunDirUni = { value: new THREE.Vector3(0.762, -0.541, 0.496) };
+  private sunColUni = { value: new THREE.Vector3(1.26, 1.09, 0.82) };
+  private seasonUni = { value: new THREE.Vector4(0, 0, 0, 1) };
+  private simMonth = -1;
+  private sunDirty = false;
+  private shadowTarget: THREE.WebGLRenderTarget | null = null;
+  private depthMat: THREE.MeshDepthMaterial | null = null;
+  private groundCatcher: THREE.Mesh | null = null;
   visible = true;
 
   constructor(
@@ -1014,6 +1119,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
      * volume emits, so a building's cornice ages with its wall.
      */
     let curEra = 0.5;
+    let curDeck = 0, curWear = 0.5, curBearX = 1, curBearY = 0;
     const wallRanges: { bbl: string; r: Ranges }[] = [], roofRanges: { bbl: string; r: Ranges }[] = [];
     // EVERY PROP KNOWS WHICH BUILDING IT IS STANDING ON. Water tanks, cooling
     // towers, aerials and fire escapes were pushed into scene-level instanced
@@ -1100,7 +1206,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           for (let i = 0; i < 3; i++) {
             T.style.push(meta[0]); T.rand.push(meta[1]); T.varr.push(meta[2]); T.top.push(meta[3]); T.fh.push(meta[4]);
             T.era.push(curEra);
-            T.seg.push(-1e6, 1e6); T.ccv.push(0, 0);
+            T.seg.push(curDeck, curWear); T.ccv.push(curBearX, curBearY);
           }
         };
         const area = Math.abs((P[1][0] - P[0][0]) * (P[2][1] - P[0][1]) - (P[2][0] - P[0][0]) * (P[1][1] - P[0][1])) / 2;
@@ -1202,6 +1308,32 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         area += x1 * y2 - x2 * y1;
       }
       if (area < 0) ring = ring.slice().reverse();
+
+      {
+        const yr = v.y || 1950;
+        const modernCls = style === S_GLASS || style === S_DARK || style === S_RIBBON;
+        const bigPlate = v.f >= 6 || v.z1 >= 24;
+        const pool: number[] = [];
+        if (yr < 1930)      pool.push(1, 1, 1, 0, 0, 0, 0, 3, 3, 4, 4, 5);
+        else if (yr < 1960) pool.push(1, 1, 1, 0, 0, 0, 3, 3, 5, 5, 4, 8);
+        else if (yr < 1982) pool.push(1, 1, 0, 0, 0, 3, 3, 5, 5, 8, 8, 4);
+        else if (yr < 2003) pool.push(2, 2, 2, 2, 0, 3, 5, 5, 8, 8, 6, 6);
+        else                pool.push(7, 7, 7, 6, 6, 6, 8, 8, 2, 5, 4);
+        if (modernCls && bigPlate && yr >= 1982) pool.push(6, 6, 7, 7, 2, 2);
+        if (style === S_MILL && yr < 1975) pool.push(0, 0, 4, 1, 1);
+        curDeck = pool[Math.min(pool.length - 1, Math.floor(hash01(key ^ 0x2f7d3a11, this.citySeed ^ 0x5eed100f) * pool.length))];
+        if (v.d) curDeck = 8;
+        curWear = hash01(key ^ 0x7a1c9d3f, this.citySeed ^ 0x0badf00d);
+        let bi = 0, bl = -1;
+        for (let i = 0; i < ring.length; i++) {
+          const p0 = ring[i], p1 = ring[(i + 1) % ring.length];
+          const L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+          if (L > bl) { bl = L; bi = i; }
+        }
+        const p0 = ring[bi], p1 = ring[(bi + 1) % ring.length];
+        const L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1;
+        curBearX = (p1[0] - p0[0]) / L; curBearY = (p1[1] - p0[1]) / L;
+      }
 
       const wallStart = W.pos.length / 3;
       const roofStart = R.pos.length / 3;
@@ -1697,6 +1829,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const uniforms = () => ({
       uOpacity: { value: 1 },
       uCam: this.camUni,
+      uSunDir: this.sunDirUni,
+      uSunCol: this.sunColUni,
+      uSeason: this.seasonUni,
       uShadow: { value: null as THREE.Texture | null },
       uSunVP: { value: new THREE.Matrix4() },
       uShadowOn: { value: 0 },
@@ -1949,9 +2084,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.scene.add(mesh);
     };
 
-    const add = (geom: THREE.BufferGeometry, color: number, items: Item[], vary = 0) => {
+    const add = (geom: THREE.BufferGeometry, color: number, items: Item[], vary = 0, foliage = 0) => {
       if (!items.length) return;
-      const mesh = new THREE.InstancedMesh(geom, this.propMaterial(color), items.length);
+      const mesh = new THREE.InstancedMesh(geom, this.propMaterial(color, true, foliage), items.length);
       const m = new THREE.Matrix4();
       const cols = new Float32Array(items.length * 3);
       items.forEach((p, i) => {
@@ -2000,10 +2135,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const h = (Math.abs(Math.round(trees[i].x * 3 + trees[i].y * 7)) + i * 11) % 100;
       sp[h < 63 ? 0 : h < 88 ? 1 : 2].push(trees[i]);
     }
-    add(treeTrunkGeom(), 0x6b5744, trees, 0.12);
-    add(treeCanopyGeom(), 0x71904f, sp[0], 0.34);
-    add(columnarCanopyGeom(), 0x6d8a4c, sp[1], 0.30);
-    add(coniferCanopyGeom(), 0x4e6f4a, sp[2], 0.26);
+    add(treeTrunkGeom(), 0x6b5744, trees, 0.12, 0);
+    add(treeCanopyGeom(), 0x71904f, sp[0], 0.34, 1);
+    add(columnarCanopyGeom(), 0x6d8a4c, sp[1], 0.30, 1);
+    add(coniferCanopyGeom(), 0x4e6f4a, sp[2], 0.26, 2);
     add(lampGeom(), 0x4e5459, lamps, 0.06);
     add(pileGeom(), 0x5c4a34, piles, 0.08);
     // Manufactured things do not come in random proportions. Benches and
@@ -2220,7 +2355,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.waterMat = new THREE.ShaderMaterial({
       vertexShader: WATER_VERT,
       fragmentShader: WATER_FRAG,
-      uniforms: { uTime: this.timeUni, uCam: this.camUni },
+      uniforms: { uTime: this.timeUni, uCam: this.camUni, uSunDir: this.sunDirUni, uSunCol: this.sunColUni },
       side: THREE.DoubleSide,
     });
     const mesh = new THREE.Mesh(g, this.waterMat);
@@ -2234,7 +2369,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
   // Props share the buildings' light rig so a water tower and the roof it
   // stands on are lit by the same sun.
-  private propMaterial(color: number, instanced = true): THREE.ShaderMaterial {
+  private propMaterial(color: number, instanced = true, foliage = 0): THREE.ShaderMaterial {
     const c = new THREE.Color(color);
     return new THREE.ShaderMaterial({
       vertexShader: instanced ? PROP_VERT : PROP_VERT_PLAIN,
@@ -2243,6 +2378,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         uColor: { value: new THREE.Vector3(c.r, c.g, c.b) },
         uOpacity: { value: 1 },
         uCam: this.camUni,
+        uSunDir: this.sunDirUni,
+        uSunCol: this.sunColUni,
+        uSeason: this.seasonUni,
+        uFoliage: { value: foliage },
         uShadow: { value: this.shadowTex },
         uSunVP: { value: this.sunVP },
         uShadowOn: { value: this.shadowTex ? 1 : 0 },
@@ -2254,10 +2393,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   // One-time sun depth pass — the city is static, so shadows are free at
   // runtime: a single texture sample per fragment.
   private bakeShadows() {
+    this.sunDirty = false;
     try {
       // must be the SAME direction the shader lights with, or the shadows
       // detach from the shading that produced them
-      const sunDir = new THREE.Vector3(0.762, -0.541, 0.496).normalize();
+      const sunDir = this.sunDirUni.value.clone().normalize();
       const look = new THREE.Vector3(0, 150, 0);
       // a low sun throws long shadows: the frustum has to be wide enough to
       // hold them, or buildings at the edge cast into nothing
@@ -2267,24 +2407,35 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       cam.lookAt(look);
       cam.updateMatrixWorld(true);
 
-      const target = new THREE.WebGLRenderTarget(3072, 3072, {
-        minFilter: THREE.NearestFilter,
-        magFilter: THREE.NearestFilter,
-      });
-      const depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
+      if (!this.shadowTarget) {
+        this.shadowTarget = new THREE.WebGLRenderTarget(3072, 3072, {
+          minFilter: THREE.NearestFilter,
+          magFilter: THREE.NearestFilter,
+        });
+      }
+      if (!this.depthMat) {
+        this.depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
+      }
+      const target = this.shadowTarget;
       if (this.water) this.water.visible = false;   // a flat sea casts nothing
-      this.scene.overrideMaterial = depthMat;
+      if (this.groundCatcher) this.groundCatcher.visible = false;
+      const prevClear = new THREE.Color();
+      this.renderer.getClearColor(prevClear);
+      const prevAlpha = this.renderer.getClearAlpha();
+      this.scene.overrideMaterial = this.depthMat;
       this.renderer.setRenderTarget(target);
       this.renderer.setClearColor(0xffffff, 1);
       this.renderer.clear();
       this.renderer.render(this.scene, cam);
       this.renderer.setRenderTarget(null);
+      this.renderer.setClearColor(prevClear, prevAlpha);
       this.scene.overrideMaterial = null;
       if (this.water) this.water.visible = true;
+      if (this.groundCatcher) this.groundCatcher.visible = true;
 
-      const sunVP = new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+      this.sunVP.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
       this.shadowTex = target.texture;
-      this.sunVP = sunVP;
+      const sunVP = this.sunVP;
       // anything already instanced (roof furniture, trees) picks up the map
       this.scene.traverse((o) => {
         const mat = (o as THREE.Mesh).material as THREE.ShaderMaterial | undefined;
@@ -2294,21 +2445,26 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           mat.uniforms.uShadowOn.value = 1;
         }
       });
-      const catcherMat = new THREE.ShaderMaterial({
-        vertexShader: CATCHER_VERT,
-        fragmentShader: CATCHER_FRAG,
-        uniforms: { uShadow: { value: target.texture }, uSunVP: { value: sunVP }, uShadowOn: { value: 1 } },
-        transparent: true,
-        depthWrite: false,
-      });
       for (const mat of [this.wallMat, this.roofMat]) {
         mat.uniforms.uShadow.value = target.texture;
         mat.uniforms.uSunVP.value = sunVP;
         mat.uniforms.uShadowOn.value = 1;
       }
       // ground shadow catcher — added AFTER the depth pass so it never self-shadows
-      const ground = new THREE.Mesh(new THREE.PlaneGeometry(3800, 3200).translate(0, 150, 0.07), catcherMat);
-      this.scene.add(ground);
+      if (!this.groundCatcher) {
+        const catcherMat = new THREE.ShaderMaterial({
+          vertexShader: CATCHER_VERT,
+          fragmentShader: CATCHER_FRAG,
+          uniforms: {
+            uShadow: { value: target.texture }, uSunVP: { value: sunVP },
+            uShadowOn: { value: 1 }, uSeason: this.seasonUni,
+          },
+          transparent: true,
+          depthWrite: false,
+        });
+        this.groundCatcher = new THREE.Mesh(new THREE.PlaneGeometry(3800, 3200).translate(0, 150, 0.07), catcherMat);
+        this.scene.add(this.groundCatcher);
+      }
     } catch {
       // shadows are enhancement, never a blocker — flat lighting still ships
     }
@@ -2377,6 +2533,19 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           T.seg.push(u0, u1); T.ccv.push(1, 1);
         }
       }
+      let hb = 2166136261;
+      for (let i = 0; i < item.bbl.length; i++) { hb ^= item.bbl.charCodeAt(i); hb = Math.imul(hb, 16777619); }
+      hb = hb >>> 0;
+      const deck2 = item.construction ? 0 : [7, 7, 6, 6, 8, 5][hb % 6];
+      const wear2 = ((hb >>> 8) % 1024) / 1024;
+      let bi2 = 0, bl2 = -1;
+      for (let i = 0; i < fp.length; i++) {
+        const q0 = fp[i], q1 = fp[(i + 1) % fp.length];
+        const L2 = Math.hypot(q1[0] - q0[0], q1[1] - q0[1]);
+        if (L2 > bl2) { bl2 = L2; bi2 = i; }
+      }
+      const bx2 = bl2 > 0 ? (fp[(bi2 + 1) % fp.length][0] - fp[bi2][0]) / bl2 : 1;
+      const by2 = bl2 > 0 ? (fp[(bi2 + 1) % fp.length][1] - fp[bi2][1]) / bl2 : 0;
       const pts = fp.map(([x, y]) => new THREE.Vector2(x, y));
       let tris: number[][] = [];
       try { tris = THREE.ShapeUtils.triangulateShape(pts, []); } catch { tris = []; }
@@ -2384,7 +2553,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         for (const idx of t) {
           R2.pos.push(fp[idx][0], fp[idx][1], h); R2.norm.push(0, 0, 1); R2.u.push(4);
           R2.style.push(item.construction ? 5 : meta[0]); R2.rand.push(0.5); R2.varr.push(0.4); R2.top.push(h); R2.fh.push(fh2);
-          R2.seg.push(-1e6, 1e6); R2.ccv.push(0, 0);
+          R2.era.push(nowEra);
+          R2.seg.push(deck2, wear2); R2.ccv.push(bx2, by2);
         }
       }
       const mk = (D: typeof T) => {
@@ -2413,6 +2583,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         );
       }
     }
+    this.sunDirty = true;
     this.map.triggerRepaint();
   }
 
@@ -2471,6 +2642,29 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.map.triggerRepaint();
   }
 
+  setMonth(m: number) {
+    if (!Number.isFinite(m) || m === this.simMonth) return;
+    this.simMonth = m;
+    const mo = ((Math.floor(m) % 12) + 12) % 12;
+    const w2 = Math.cos((2 * Math.PI * (mo - 6)) / 12);
+    const w = 0.5 + 0.5 * w2;
+    const el = ((SUN_EL_MID + SUN_EL_AMP * w2) * Math.PI) / 180;
+    const az = ((SUN_AZ_MID + SUN_AZ_AMP * w2) * Math.PI) / 180;
+    this.sunDirUni.value.set(
+      Math.sin(az) * Math.cos(el) * SUN_LEN,
+      Math.cos(az) * Math.cos(el) * SUN_LEN,
+      Math.sin(el) * SUN_LEN,
+    );
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+    const sc = (i: 0 | 1 | 2) =>
+      lerp(SUN_COL_SUMMER[i], lerp(SUN_COL_WINTER[i], SUN_COL_SUMMER[i], w), SUN_WARMTH);
+    this.sunColUni.value.set(sc(0), sc(1), sc(2));
+    const [snow, turn, bare, vigour] = SEASON_TABLE[mo];
+    this.seasonUni.value.set(snow, turn, bare, vigour);
+    this.sunDirty = true;
+    if (this.map) this.map.triggerRepaint();
+  }
+
   setOpacity(o: number) {
     this.wallMat.uniforms.uOpacity.value = o;
     this.roofMat.uniforms.uOpacity.value = o;
@@ -2482,6 +2676,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
   render(_gl: WebGLRenderingContext | WebGL2RenderingContext, options: maplibregl.CustomRenderMethodInput) {
     if (!this.visible) return;
+    if (this.sunDirty) this.bakeShadows();
     // approximate camera position in city meters (for glass reflections):
     // derived from center/zoom/bearing/pitch — MapLibre has no free-camera getter
     {

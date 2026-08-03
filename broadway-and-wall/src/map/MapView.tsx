@@ -143,6 +143,7 @@ export default function MapView() {
                 ? ((landRing.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][]).slice(0, -1)
                 : undefined,
             }, (useStore.getState().game?.citySeed ?? 1) >>> 0);
+            layer.setMonth(useStore.getState().game?.month ?? 0);
             threeRef.current = layer;
             // A handle for automated playtests, same as window.__map. The 3D
             // layer is the one part of this game whose correctness cannot be
@@ -448,6 +449,12 @@ export default function MapView() {
     dynSigRef.current = sig;
     layer.setPlayerBuildings(items);
   }, [game, mapReady]);
+
+  const gameMonth = useStore((s) => s.game?.month ?? 0);
+  useEffect(() => {
+    if (!mapReady) return;
+    threeRef.current?.setMonth(gameMonth);
+  }, [gameMonth, mapReady]);
 
   // lenses — repaint when toggled and as the market moves
   useEffect(() => {

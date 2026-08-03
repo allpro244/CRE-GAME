@@ -365,8 +365,22 @@ export function walt(h: Holding, q: number): number {
   return h.tenants.reduce((sum, t) => sum + ((t.endM - q) / 12) * t.sf, 0) / tot;
 }
 
+/**
+ * TENANT IMPROVEMENT, IN DOLLARS PER SQUARE FOOT PER YEAR OF TERM.
+ *
+ * This was a flat total-dollar band, and the level it produced was broadly
+ * right — office asks averaged $37.50/sf against a real US range of $25-90.
+ * The SHAPE was backwards. A fit-out is amortised across the lease, so a
+ * three-year tenant gets paint and carpet and a twelve-year one gets a real
+ * build-out; handing both the same total meant the short deal cost 10.5% of
+ * its own lease value and the long one 5.3%. The landlord was paying most for
+ * the tenants who were worth least.
+ *
+ * Per year of term, the arithmetic comes out at roughly 6-7% of lease value
+ * across every term length, which is what a leasing agent would recognise.
+ */
 export const TI_ASK: Record<string, [number, number]> = {
-  office: [15, 40], retail: [5, 20], industrial: [2, 8], multifamily: [0, 3],
+  office: [2.6, 6.0], retail: [1.0, 2.9], industrial: [0.30, 0.95], multifamily: [0, 0.4],
 };
 
 /**
@@ -392,6 +406,20 @@ export function concessionPressure(e: GameState["econ"], use: string): number {
   // four points of shortage cuts it to a quarter
   const phase = e.phase === "recession" ? 0.22 : e.phase === "recovery" ? 0.08 : e.phase === "peak" ? -0.04 : -0.10;
   return Math.max(0.22, Math.min(2.1, 1 + gap * 11 + phase));
+}
+
+/**
+ * HOW FAR THE FIT-OUT MONEY MOVES WITH THE MARKET, which is not as far as
+ * free rent does.
+ *
+ * Free rent doubles in a glut because it costs the landlord nothing today. A
+ * fit-out is a construction cost, and the contractor has not heard about the
+ * vacancy rate. What actually moves is how much of it the landlord funds
+ * rather than the tenant — a much flatter curve. 2.10 becomes 1.55, 0.22
+ * becomes 0.40, and 1.00 stays 1.00.
+ */
+export function tiPressure(concession: number): number {
+  return Math.pow(Math.max(0.01, concession), 0.6);
 }
 
 export function tickLeasing(s: GameState, parcels: ParcelTable) {
@@ -716,7 +744,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // they move long before face rents do. A landlord holding headline
           // rent while giving away a year of free rent is the oldest tell in
           // the business.
-          tiPsf: Math.round(rrange(s, tiLo, tiHi) * concession * (credit === 2 ? 1.35 : credit === 1 ? 1.05 : 0.85) * (specLive ? 0.12 : 1)),
+          // Per year of term, softened against the market, and with a narrower
+          // credit spread now that term carries the work the credit multiplier
+          // was doing badly.
+          tiPsf: Math.round(rrange(s, tiLo, tiHi) * (termM / 12) * tiPressure(concession)
+            * (credit === 2 ? 1.18 : credit === 1 ? 1.02 : 0.90) * (specLive ? 0.12 : 1)),
           // Free rent scales with the LENGTH of the deal, the way it does in
           // life — the rule of thumb is about a month a year, and it is the
           // concession a landlord gives before cutting the face rent. A flat

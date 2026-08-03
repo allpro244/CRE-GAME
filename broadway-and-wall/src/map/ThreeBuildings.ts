@@ -271,17 +271,40 @@ uniform float uShadowOn;
 float unpackDepth(vec4 c) {
   return dot(c, vec4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0));
 }
+// THE SHADOWS DID NOT TOUCH THE GROUND.
+//
+// The depth bias was 0.0028 in NDC. The sun camera runs near 1 to far 6000,
+// so NDC depth is linear over 5,999 metres and that constant was
+// 0.0028 x 5999 = SIXTEEN POINT EIGHT METRES of depth pushed along the light
+// ray. At the shader's own sun elevation (asin(0.496) = 29.7 degrees) that is
+// 14.6 m of it horizontal.
+//
+// The median building in this city is 13.0 m tall and throws a 22.8 m shadow.
+// So 64% of the median building's shadow was erased before it was drawn, and
+// anything under about 8.3 m cast NO SHADOW AT ALL — which is most of the
+// city. Every building floated a car's length above its own footprint.
+//
+// A bias belongs in metres, where it can be reasoned about. 1.6 m is a little
+// over one shadow texel (the sun camera covers 4,400 m across a 3,072 map, so
+// a texel is 1.43 m) and that is what a constant bias is for. The rest of the
+// acne is handled where acne actually comes from — surfaces seen edge-on to
+// the light — by offsetting the sample along the surface normal instead of
+// burying the whole scene deeper into the light.
+const float SHADOW_SPAN_M = 5999.0;   // the sun camera's far minus its near
+const float SHADOW_BIAS_M = 1.6;      // was 0.0028 NDC == 16.80 m
+const float SHADOW_NORMAL_M = 1.15;   // ~one texel, along the surface normal
+
 // 1.0 = fully sunlit, 0.0 = fully shadowed (4-tap PCF)
-float sunVis(vec3 p) {
+float sunVis(vec3 p, vec3 n) {
   if (uShadowOn < 0.5) return 1.0;
-  vec4 sc = uSunVP * vec4(p, 1.0);
+  vec4 sc = uSunVP * vec4(p + n * SHADOW_NORMAL_M, 1.0);
   vec3 ndc = sc.xyz / sc.w * 0.5 + 0.5;
   if (ndc.x < 0.0 || ndc.x > 1.0 || ndc.y < 0.0 || ndc.y > 1.0 || ndc.z > 1.0) return 1.0;
   float sum = 0.0;
   for (int i = 0; i < 4; i++) {
     vec2 off = vec2(float(i - (i / 2) * 2) - 0.5, float(i / 2) - 0.5) * (1.4 / 3072.0);
     float d = unpackDepth(texture2D(uShadow, ndc.xy + off));
-    sum += step(ndc.z - 0.0028, d);
+    sum += step(ndc.z - SHADOW_BIAS_M / SHADOW_SPAN_M, d);
   }
   return sum * 0.25;
 }`;
@@ -303,7 +326,7 @@ float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 void main() {
   int s = int(vStyle + 0.5);
   vec3 n = normalize(vNormal);
-  float vis = sunVis(vPos + n * 0.7 + vec3(0.0, 0.0, 0.4));
+  float vis = sunVis(vPos, n);
 
   // ---- ambient occlusion --------------------------------------------------
   // Light doesn't reach the bottom of a street wall, and it doesn't reach into
@@ -724,7 +747,7 @@ void main() {
   }
 
   vec3 n = normalize(vNormal);
-  float vis = sunVis(vPos + vec3(0.0, 0.0, 0.5));
+  float vis = sunVis(vPos, n);
   // vU carries distance to the roof edge: the parapet shades its own deck
   float aoEdge = mix(0.78, 1.0, smoothstep(0.0, 2.8, vU));
   float ndl = max(dot(n, SUN_DIR), 0.0);
@@ -739,7 +762,8 @@ precision highp float;
 varying vec3 vPos;
 ` + SHADOW_GLSL + /* glsl */ `
 void main() {
-  float vis = sunVis(vPos);
+  // The ground is flat and faces straight up; its own normal is the offset.
+  float vis = sunVis(vPos, vec3(0.0, 0.0, 1.0));
   gl_FragColor = vec4(0.19, 0.22, 0.34, (1.0 - vis) * 0.40);
 }`;
 
@@ -829,7 +853,7 @@ uniform vec3 uCam;
 ` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + /* glsl */ `
 void main() {
   vec3 n = normalize(vN);
-  float vis = sunVis(vW + n * 0.4 + vec3(0.0, 0.0, 0.3));
+  float vis = sunVis(vW, n);
   float ao = mix(0.62, 1.0, clamp(vW.z / 5.0, 0.0, 1.0));
   vec3 light = SUN_COL * (max(dot(n, SUN_DIR), 0.0) * vis * 0.92) + hemiLight(n, ao);
   gl_FragColor = vec4(aerial(grade(uColor * vC * light), vW, uCam), uOpacity);

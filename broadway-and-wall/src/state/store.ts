@@ -59,9 +59,9 @@ interface AppState {
   refi: (bbl: string, product: string, lev?: number) => void;
   develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>> }) => void;
   offer: (bbl: string, price: number) => void;
-  closeDeal: (product: string, lev: number) => void;
-  acceptCounter: () => void;
-  walkAway: () => void;
+  closeDeal: (bbl: string, product: string, lev: number) => void;
+  acceptCounter: (bbl: string) => void;
+  walkAway: (bbl: string) => void;
   raze: (bbl: string) => void;
   program: (bbl: string, id: string) => void;
   stance: (bbl: string, v: -1 | 0 | 1) => void;
@@ -259,28 +259,28 @@ export const useStore = create<AppState>((set, get) => ({
     if (r.msg) toast(r.msg);
   },
 
-  closeDeal: (product, lev) => {
+  closeDeal: (bbl, product, lev) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = closeDeal(game, parcels, product, lev);
+    const r = closeDeal(game, parcels, bbl, product, lev);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s }); void persist(r.s);
     toast(r.msg ?? "Closed. The deed is yours.");
   },
 
-  acceptCounter: () => {
+  acceptCounter: (bbl) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = acceptCounter(game, parcels);
+    const r = acceptCounter(game, parcels, bbl);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s }); void persist(r.s);
     if (r.msg) toast(r.msg);
   },
 
-  walkAway: () => {
+  walkAway: (bbl) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = walkAway(game, parcels);
+    const r = walkAway(game, parcels, bbl);
     set({ game: r.s }); void persist(r.s);
     if (r.msg) toast(r.msg);
   },
@@ -628,7 +628,7 @@ export const useStore = create<AppState>((set, get) => ({
     const { parcels } = get();
     const saved = await loadGame(slot);
     if (!saved || !parcels) { toast("That save wouldn't open.", "err"); return; }
-    if (saved.v !== 20) { toast("That save is from an older build and can't be opened.", "err"); return; }
+    if (saved.v !== 21) { toast("That save is from an older build and can't be opened.", "err"); return; }
 
     // A SAVE CARRIES ITS OWN TOWN.
     //
@@ -767,7 +767,7 @@ export async function loadData() {
     // A save only fits if every deed in it exists in THIS town. Across seeds
     // it will not, and that is not a corrupt save — it is a save from a city
     // that no longer exists, which is exactly what a reroll means.
-    const fits = saved && saved.v === 20 && saved.citySeed === seed
+    const fits = saved && saved.v === 21 && saved.citySeed === seed
       && Object.keys(saved.holdings).every((b) => parcels[b])
       && saved.listings.every((l) => parcels[l.bbl]);
     if (fits) {

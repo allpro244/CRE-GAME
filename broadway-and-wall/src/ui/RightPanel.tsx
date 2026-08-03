@@ -12,7 +12,7 @@ import {
 } from "@/engine/value";
 import { planDevelopment, PROGRAMS, programCost, farMaxFor, maxFloorsFor, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
 import { buyQuote, assemblagePressure, saleTaxQuote } from "@/engine/actions";
-import { sellerOf, sellerProfile } from "@/engine/acquire";
+import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { MILESTONES } from "@/engine/sim";
 import { isCommercial, vacantSf, walt, loiSigningCost, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, buyoutQuote, depositsHeld, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
@@ -654,7 +654,8 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
       )}
 
       {listing && !holding && (() => {
-        const contract = game.talks?.bbl === selectedBBL && game.talks.agreed ? game.talks : null;
+        const t0 = game.talks?.[selectedBBL];
+        const contract = t0?.agreed ? t0 : null;
         return (
           <div className="deal">
             <div className="deal-head">{contract ? "Under contract" : "On the market"}</div>
@@ -663,6 +664,7 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
                 ? <Row k="Agreed price" v={usd(contract.agreedPrice ?? contract.theirPrice)} strong />
                 : <Row k="Ask" v={usd(listing.ask)} strong />}
               {contract && <Row k="Must fund by" v={monthLabel(contract.closeByM ?? game.month + 3)} bad />}
+              {contract && <Row k="Deposit posted" v={usd(contract.deposit ?? 0)} />}
               {isBuilt && <Row k="NOI / yr" v={usd(noiAfterTaxYr(rec, game.econ, cond, contract?.agreedPrice ?? listing.ask))} />}
               {isBuilt && <Row k="Cap rate" v={((noiAfterTaxYr(rec, game.econ, cond, contract?.agreedPrice ?? listing.ask) / (contract?.agreedPrice ?? listing.ask)) * 100).toFixed(2) + "%"} strong />}
               {isBuilt && <Row k="Occupancy" v={(occupancy(rec, game.econ) * 100).toFixed(0) + "%"} />}
@@ -1228,8 +1230,12 @@ function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
   const [bidFrac, setBidFrac] = useState(0.94);
   const offerPrice = Math.round(price * Math.min(1, bidFrac));
   const seller = sellerOf(game, parcels, bbl);
-  const talks = game.talks?.bbl === bbl ? game.talks : null;
-  const otherTalk = game.talks && game.talks.bbl !== bbl ? game.talks : null;
+  const talks = game.talks?.[bbl] ?? null;
+  // Everything else you have on the table. Not a blocker any more — a list,
+  // because knowing what else you are committed to is exactly what you need
+  // when you decide how hard to push on this one.
+  const others = Object.values(game.talks ?? {}).filter((t) => t.bbl !== bbl);
+  const atLimit = !talks && others.length >= MAX_TALKS;
   const rec = parcels[bbl];
   const noi = rec ? noiAfterTaxYr(rec, game.econ, initialCondition(rec), offerPrice) : 0;
   const goingIn = offerPrice > 0 && noi > 0 ? (noi / offerPrice) * 100 : null;
@@ -1276,26 +1282,27 @@ function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
           <div className="hint">{talks.note}</div>
         </>
       )}
-      {otherTalk && (
+      {others.length > 0 && (
         <div className="hint">
-          You are mid-negotiation at {parcels[otherTalk.bbl]?.address ?? otherTalk.bbl}. One at a time — finish it or walk away.
+          Also on the table: {others.map((t) => `${parcels[t.bbl]?.address ?? t.bbl} at ${usd(t.agreedPrice ?? t.theirPrice)}${t.agreed ? " (under contract)" : ""}`).join(" · ")}.
+          {atLimit && " That is as many as you can hold — close one or walk away before opening another."}
         </div>
       )}
       <div className="btn-row">
         <button
           className="btn btn-buy"
-          disabled={!!otherTalk || (!!talks && talks.final && offerPrice < talks.theirPrice)}
+          disabled={atLimit || (!!talks && talks.final && offerPrice < talks.theirPrice)}
           onClick={() => useStore.getState().offer(bbl, offerPrice)}
         >
           {talks ? `Counter at ${usd(offerPrice)}` : `Offer ${usd(offerPrice)}`}
         </button>
         {talks && (
           <>
-            <button className="btn btn-buy" onClick={() => useStore.getState().acceptCounter()}
-              title="Take their number and go under contract. You still have to fund it.">
+            <button className="btn btn-buy" onClick={() => useStore.getState().acceptCounter(bbl)}
+              title={`Take their number and go under contract. ${usd(Math.round(talks.theirPrice * DEPOSIT_PCT))} of earnest money goes hard today; the rest is due in three months.`}>
               Take {usd(talks.theirPrice)}
             </button>
-            <button className="btn" onClick={() => useStore.getState().walkAway()}>Walk away</button>
+            <button className="btn" onClick={() => useStore.getState().walkAway(bbl)}>Walk away</button>
           </>
         )}
       </div>
@@ -1303,8 +1310,9 @@ function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
         <div className="hint">They have stopped moving. Take {usd(talks.theirPrice)} or walk.</div>
       )}
       <div className="hint dim">
-        Agreeing a price puts you under contract. The lender, the leverage and the cheque come after that,
-        and you get three months to arrange them.
+        Agreeing a price puts you under contract and {usd(Math.round(offerPrice * DEPOSIT_PCT))} of earnest money
+        goes hard the same day. The lender, the leverage and the cheque come after that, and you get three months
+        to arrange them — miss it and the deposit is theirs.
       </div>
     </>
   );
@@ -1424,14 +1432,14 @@ function BuyButtons({ bbl, price, off, closeLabel }: { bbl: string; price: numbe
             const prod = principal <= 0 ? "cash" : product;
             const l = principal <= 0 ? 1 : lev;
             if (off) buyOff(bbl, prod as never, l);
-            else useStore.getState().closeDeal(prod, l);
+            else useStore.getState().closeDeal(bbl, prod, l);
           }}
         >
           {closeLabel ?? `Close at ${usd(offerPrice)}`} · eq {usd(equity)}
         </button>
         {!off && (
-          <button className="btn" onClick={() => useStore.getState().walkAway()}
-            title="Tear up the contract. You lose the building; nothing else has moved.">
+          <button className="btn" onClick={() => useStore.getState().walkAway(bbl)}
+            title="Tear up the contract. The building goes back on the market and the seller keeps the deposit.">
             Tear it up
           </button>
         )}
@@ -3142,24 +3150,40 @@ function DealsPage() {
       <div className="deals-grid">
 
       <section>
-        {/* A live negotiation is the one deal on this page you are actively
-            in the middle of, so it goes first. */}
-        <div className="page-section">{game.talks?.agreed ? "Under contract" : "In negotiation"} · {game.talks ? 1 : 0}</div>
-        {game.talks?.agreed ? (
-          <div className="hint" style={{ cursor: "pointer" }} onClick={() => go(game.talks!.bbl)}>
-            <strong>{parcels[game.talks.bbl]?.address ?? game.talks.bbl}</strong> — agreed at{" "}
-            <b className="mono">{usd(game.talks.agreedPrice ?? game.talks.theirPrice)}</b> with {game.talks.sellerName}.{" "}
-            Nothing has moved yet: place the debt and fund it by <b>{monthLabel(game.talks.closeByM ?? game.month)}</b> or you lose it.
-          </div>
-        ) : game.talks ? (
-          <div className="hint" style={{ cursor: "pointer" }} onClick={() => go(game.talks!.bbl)}>
-            <strong>{parcels[game.talks.bbl]?.address ?? game.talks.bbl}</strong> — {game.talks.sellerName} is at{" "}
-            <b className="mono">{usd(game.talks.theirPrice)}</b>, you are at {usd(game.talks.yourPrice)}.{" "}
-            {game.talks.final ? "Their final word." : `Round ${game.talks.round} of ${game.talks.maxRounds}.`}
-          </div>
-        ) : (
-          <div className="hint">Nothing on the table. Open a negotiation from any listing — one at a time.</div>
-        )}
+        {/* EVERYTHING ON THE TABLE, contracts first — because a contract has
+            a clock on it and a conversation does not. This used to be able to
+            show exactly one row, since the game could only hold one. */}
+        {(() => {
+          const live = Object.values(game.talks ?? {})
+            .sort((a, b) => (b.agreed ? 1 : 0) - (a.agreed ? 1 : 0) || (a.closeByM ?? 1e9) - (b.closeByM ?? 1e9));
+          const committed = live.reduce((a, t) => a + (t.agreed ? (t.agreedPrice ?? t.theirPrice) : 0), 0);
+          return (
+            <>
+              <div className="page-section">On the table · {live.length} of {MAX_TALKS}</div>
+              {live.length === 0 && (
+                <div className="hint">Nothing on the table. Open a negotiation from any listing — you can run {MAX_TALKS} at once.</div>
+              )}
+              {live.map((t) => (
+                <div key={t.bbl} className="hint" style={{ cursor: "pointer" }} onClick={() => go(t.bbl)}>
+                  <strong>{parcels[t.bbl]?.address ?? t.bbl}</strong>
+                  {t.agreed ? (
+                    <> — agreed at <b className="mono">{usd(t.agreedPrice ?? t.theirPrice)}</b> with {t.sellerName},{" "}
+                      {usd(t.deposit ?? 0)} down. Fund it by <b>{monthLabel(t.closeByM ?? game.month)}</b> or the deposit is theirs.</>
+                  ) : (
+                    <> — {t.sellerName} is at <b className="mono">{usd(t.theirPrice)}</b>, you are at {usd(t.yourPrice)}.{" "}
+                      {t.final ? "Their final word." : `Round ${t.round} of ${t.maxRounds}.`}</>
+                  )}
+                </div>
+              ))}
+              {committed > 0 && (
+                <div className={"hint" + (committed > game.cash * 4 ? " alarm" : "")}>
+                  {usd(committed)} of price agreed and not yet funded, against {usd(game.cash)} of cash.
+                  {committed > game.cash * 4 && " You have signed more than you can plausibly fund. One of these is going to cost you its deposit."}
+                </div>
+              )}
+            </>
+          );
+        })()}
         <div className="page-section">Letters of intent · {game.lois.length}</div>
         {game.lois.length === 0 && <div className="hint">No live negotiations. Vacant space in high-demand buildings draws tenants.</div>}
         <div className="loi-grid">

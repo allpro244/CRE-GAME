@@ -323,9 +323,12 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
   // can go wrong in ways a negotiation cannot: a stale closing date, a deed
   // reserved on a building somebody else already took, a contract with no
   // price on it.
-  if (s.talks) {
-    const t = s.talks;
+  for (const [key, t] of Object.entries(s.talks ?? {})) {
     const at = `talks ${t.bbl}`;
+    if (key !== t.bbl) bad("talks", at, `filed under ${key} but the deal is on ${t.bbl}`);
+    // Earnest money is real cash and it left the account. A contract carrying
+    // no deposit is a contract nobody paid for.
+    if (t.agreed && !((t.deposit ?? 0) > 0)) bad("talks", at, "under contract with no deposit posted");
     if (!parcels[t.bbl]) bad("talks", at, "negotiating over a parcel that does not exist");
     if (s.holdings[t.bbl]) bad("talks", at, "negotiating over a building you already own");
     if (!fin(t.yourPrice) || t.yourPrice <= 0) bad("talks", at, `your price ${t.yourPrice}`);

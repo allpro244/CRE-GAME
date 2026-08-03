@@ -52,7 +52,7 @@ function targetListings(s: GameState, totalLots: number): number {
 
 export function newGame(seed: number, parcels?: ParcelTable): GameState {
   const s: GameState = {
-    v: 20,
+    v: 21,
     seed,
     rng: seed,
     month: 0,
@@ -131,7 +131,7 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   // A listing you are under contract on does not lapse out from under you. The
   // contract has its own clock; this one stops while it runs.
   s.listings = s.listings.filter((l) =>
-    (l.expiresM > s.month || (s.talks?.agreed && s.talks.bbl === l.bbl)) && !s.holdings[l.bbl]);
+    (l.expiresM > s.month || s.talks?.[l.bbl]?.agreed) && !s.holdings[l.bbl]);
   const listed = new Set(s.listings.map((l) => l.bbl));
   const target = targetListings(s, bbls.length);
   const pDistress = s.econ.phase === "recession" ? 0.42 : s.econ.phase === "recovery" ? 0.18 : 0.03;
@@ -477,15 +477,18 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
   }
   // A counter on the table is the definition of something needing you — and an
   // unfunded contract is the same thing with a deadline attached.
-  if (s.talks) {
-    out.push(s.talks.agreed
+  // Every conversation gets its own line. Four deals on the table is four
+  // things needing you, and rolling them into one would hide the whole point
+  // of being allowed to run four.
+  for (const t of Object.values(s.talks ?? {})) {
+    out.push(t.agreed
       ? {
-        key: `contract:${s.talks.bbl}`,
-        label: `Under contract at $${((s.talks.agreedPrice ?? s.talks.theirPrice) / 1e6).toFixed(2)}M — fund it by ${monthLabel(s.talks.closeByM ?? s.month)}`,
+        key: `contract:${t.bbl}`,
+        label: `Under contract at $${((t.agreedPrice ?? t.theirPrice) / 1e6).toFixed(2)}M — fund it by ${monthLabel(t.closeByM ?? s.month)}`,
       }
       : {
-        key: `talks:${s.talks.bbl}:${s.talks.theirPrice}`,
-        label: `${s.talks.sellerName} is at $${(s.talks.theirPrice / 1e6).toFixed(2)}M${s.talks.final ? " — their final word" : ""}`,
+        key: `talks:${t.bbl}:${t.theirPrice}`,
+        label: `${t.sellerName} is at $${(t.theirPrice / 1e6).toFixed(2)}M${t.final ? " — their final word" : ""}`,
       });
   }
   if (s.exchange && s.exchange.deadlineM - s.month <= 2) {

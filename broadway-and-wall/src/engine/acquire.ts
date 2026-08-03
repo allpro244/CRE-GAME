@@ -17,7 +17,7 @@
 // building and owning it, which made the most frequent action in the game its
 // slowest. An offer is a price now, and agreeing one is buying the building.
 import type { ParcelTable } from "@/data/types";
-import type { GameState, SellerKind } from "./types";
+import type { GameState, SellerKind, Talks } from "./types";
 import { monthLabel } from "./types";
 import { assetValue, initialCondition, resolveRec } from "./value";
 import { ownerOf } from "./rivals";
@@ -112,17 +112,21 @@ export function sellerOf(s: GameState, parcels: ParcelTable, bbl: string): { kin
 // ------------------------------------------------------------------ the ticks
 /** One month of a live negotiation. */
 export function tickTalks(s: GameState, parcels: ParcelTable) {
+  for (const t of Object.values(s.talks ?? {})) tickOne(s, parcels, t);
+  if (s.talks && !Object.keys(s.talks).length) delete s.talks;
+}
+
+function tickOne(s: GameState, parcels: ParcelTable, t: Talks) {
   // A NEGOTIATION GOES STALE. Nobody holds a number open indefinitely while
   // you think about it, and a building somebody else buys is not yours to keep
   // talking about.
-  const t = s.talks;
-  if (!t) return;
+  const drop = () => { if (s.talks) delete s.talks[t.bbl]; };
   // UNDER CONTRACT. Nobody takes it out from under you while the paper is
   // signed — but the closing date is real, and a buyer who cannot fund by it is
   // a buyer who loses the building and looks like an amateur doing it.
   if (t.agreed) {
     if (s.month >= (t.closeByM ?? t.openedM + CLOSE_WINDOW_M)) {
-      delete s.talks;
+      drop();
       // It genuinely goes back on the market — the listing's own clock stopped
       // while the contract ran, so give it a fresh one rather than letting it
       // vanish the same month and make a liar of the news line.
@@ -131,23 +135,24 @@ export function tickTalks(s: GameState, parcels: ParcelTable) {
       s.news.unshift({
         q: s.month, kind: "warn",
         text: `The contract on ${parcels[t.bbl]?.address ?? t.bbl} expired unfunded. `
-          + `${t.sellerName} kept the deposit's worth of goodwill and put it back on the market.`,
+          + `${Cap(t.sellerName)} keeps the ${fmtM(t.deposit ?? 0)} deposit and puts it back on the market. `
+          + `Signing what you cannot fund is the most expensive way there is to look serious.`,
       });
     }
     return;
   }
   const gone = !s.listings.some((l) => l.bbl === t.bbl);
   if (gone) {
-    delete s.talks;
+    drop();
     s.news.unshift({
       q: s.month, kind: "warn",
       text: `${parcels[t.bbl]?.address ?? t.bbl} went to somebody else while you were still talking about it.`,
     });
   } else if (s.month - t.openedM >= 3) {
-    delete s.talks;
+    drop();
     s.news.unshift({
       q: s.month, kind: "info",
-      text: `${t.sellerName} has stopped waiting on ${parcels[t.bbl]?.address ?? t.bbl}. The building is still for sale if you want to start again.`,
+      text: `${Cap(t.sellerName)} has stopped waiting on ${parcels[t.bbl]?.address ?? t.bbl}. The building is still for sale if you want to start again.`,
     });
   }
 }
@@ -218,9 +223,17 @@ function reservationOf(
 export function negotiate(
   s: GameState, parcels: ParcelTable, bbl: string, price: number,
 ): { s: GameState; err?: string; msg?: string } {
-  const existing = s.talks;
-  if (existing && existing.bbl !== bbl) {
-    return { s, err: `You are mid-negotiation at ${parcels[existing.bbl]?.address ?? existing.bbl}. Finish it or walk away first.` };
+  const existing = s.talks?.[bbl];
+  // HOW MANY CONVERSATIONS A SHOP THIS SIZE CAN HOLD. Not one — that was the
+  // old rule and it is not how anybody buys buildings. Four, because past that
+  // you are not negotiating, you are answering the phone.
+  const live = Object.keys(s.talks ?? {}).length;
+  if (!existing && live >= MAX_TALKS) {
+    return {
+      s,
+      err: `You have ${live} deals on the table already. Close one, or walk away from one, `
+        + `before you open another — past four you stop being able to hold the numbers in your head.`,
+    };
   }
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
@@ -238,6 +251,7 @@ export function negotiate(
   if (!Number.isFinite(px) || px <= 0) return { s, err: "Name a real number." };
 
   const next = clone(s);
+  next.talks = next.talks ?? {};
   const seller = existing
     ? { kind: existing.sellerKind, name: existing.sellerName }
     : sellerOf(next, parcels, bbl);
@@ -250,7 +264,8 @@ export function negotiate(
   // And that is a handshake, not a closing. The deed is reserved and the clock
   // starts; the money is the next conversation.
   if (px >= reservation) {
-    return { s: strikeDeal(next, bbl, px, seller, rec.address), msg: `Agreed at ${fmtM(px)}. Now fund it.` };
+    const struck = strikeDeal(next, bbl, px, seller, rec.address);
+    return struck.err ? { s, err: struck.err } : { s: struck.s, msg: `Agreed at ${fmtM(px)}. Now fund it.` };
   }
 
   // --- too far below to be worth an answer ---------------------------------
@@ -276,7 +291,7 @@ export function negotiate(
   // sooner than a distressed one, because their number is nearer their floor.
   const insultAt = Math.max(ask * 0.68, reservation * 0.80);
   if (px < insultAt) {
-    delete next.talks;
+    delete next.talks[bbl];
     // The door shuts for a year or so, and their floor for YOU goes up for
     // good. A named firm remembers harder — you will be dealing with them
     // again on other buildings.
@@ -291,7 +306,7 @@ export function negotiate(
     next.news.unshift({
       q: next.month, kind: "warn",
       text: `${fmtM(px)} at ${rec.address} ended it — ${((1 - px / Math.max(1, ask)) * 100).toFixed(0)}% under the ask. `
-        + `${seller.name} is not interested in a conversation that starts there. They will not take your call on this `
+        + `${Cap(seller.name)} is not interested in a conversation that starts there. They will not take your call on this `
         + `building until ${monthLabel(shutM)}, and when they do their number will be higher than it is today. `
         + `It is still for sale — just not to you.`,
     });
@@ -303,13 +318,13 @@ export function negotiate(
 
   if (gap < 0.80 || round > maxRounds) {
     const theirs = Math.round(round > maxRounds ? reservation * 1.005 : ask * 0.985);
-    next.talks = {
+    next.talks[bbl] = {
       bbl, sellerKind: seller.kind, sellerName: seller.name,
       yourPrice: px, theirPrice: theirs, round, maxRounds,
       openedM: existing?.openedM ?? next.month, final: true,
       note: round > maxRounds
-        ? `${seller.name} is done moving. ${fmtM(theirs)} is the number; take it or leave it.`
-        : `${seller.name} did not counter — ${fmtM(px)} is not in the conversation. They are at ${fmtM(theirs)}.`,
+        ? `${Cap(seller.name)} is done moving. ${fmtM(theirs)} is the number; take it or leave it.`
+        : `${Cap(seller.name)} did not counter — ${fmtM(px)} is not in the conversation. They are at ${fmtM(theirs)}.`,
     };
     return { s: next, msg: round > maxRounds ? "Their final number." : "They didn't move." };
   }
@@ -321,14 +336,14 @@ export function negotiate(
   const give = 0.28 + prof.patience * 0.22 + round * 0.06;
   const theirs = Math.max(reservation, Math.round(prev - (prev - Math.max(px, reservation)) * Math.min(0.85, give)));
   const roundsLeft = maxRounds - round;
-  next.talks = {
+  next.talks[bbl] = {
     bbl, sellerKind: seller.kind, sellerName: seller.name,
     yourPrice: px, theirPrice: theirs, round, maxRounds,
     openedM: existing?.openedM ?? next.month,
     final: roundsLeft <= 0,
     note: roundsLeft <= 0
-      ? `${seller.name} counters at ${fmtM(theirs)} and says it is the last of it.`
-      : `${seller.name} counters at ${fmtM(theirs)}. You are ${fmtM(theirs - px)} apart.`,
+      ? `${Cap(seller.name)} counters at ${fmtM(theirs)} and says it is the last of it.`
+      : `${Cap(seller.name)} counters at ${fmtM(theirs)}. You are ${fmtM(theirs - px)} apart.`,
   };
   next.news.unshift({
     q: next.month, kind: "info",
@@ -338,21 +353,27 @@ export function negotiate(
 }
 
 /** Take the number on the table. Also a handshake, not a closing. */
-export function acceptCounter(s: GameState, parcels: ParcelTable): { s: GameState; err?: string; msg?: string } {
-  const t = s.talks;
+export function acceptCounter(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string; msg?: string } {
+  const t = s.talks?.[bbl];
   if (!t) return { s, err: "There is nothing on the table." };
   if (t.agreed) return { s, err: "The price is already agreed. What is left is funding it." };
   const rec = resolveRec(parcels, s, t.bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const next = clone(s);
-  return {
-    s: strikeDeal(next, t.bbl, t.theirPrice, { kind: t.sellerKind, name: t.sellerName }, rec.address),
-    msg: `Agreed at ${fmtM(t.theirPrice)}. Now fund it.`,
-  };
+  const struck = strikeDeal(next, t.bbl, t.theirPrice, { kind: t.sellerKind, name: t.sellerName }, rec.address);
+  return struck.err ? { s, err: struck.err } : { s: struck.s, msg: `Agreed at ${fmtM(t.theirPrice)}. Now fund it.` };
 }
 
 /** How long a contract holds while you go and find the money. */
 export const CLOSE_WINDOW_M = 3;
+/** Conversations a firm this size can genuinely hold at once. */
+export const MAX_TALKS = 4;
+/**
+ * EARNEST MONEY, HARD ON SIGNATURE. One and a half per cent, which is what a
+ * deposit on a building of this size actually is. Credited at closing; kept by
+ * the seller if the clock runs out.
+ */
+export const DEPOSIT_PCT = 0.015;
 
 /**
  * The handshake. A price is a price and the building comes off everybody
@@ -362,22 +383,38 @@ export const CLOSE_WINDOW_M = 3;
 function strikeDeal(
   next: GameState, bbl: string, px: number,
   seller: { kind: SellerKind; name: string }, address: string,
-): GameState {
-  next.talks = {
+): { s: GameState; err?: string } {
+  // YOU CANNOT SIGN WHAT YOU CANNOT PUT MONEY BEHIND. This is the constraint
+  // that replaces the old one-negotiation-at-a-time rule: chase as many as you
+  // like, but every handshake costs real cash the day you make it, so the
+  // number of contracts you can carry is set by your balance sheet rather than
+  // by an arbitrary limit in the rules.
+  const dep = Math.round(px * DEPOSIT_PCT);
+  if (next.cash < dep) {
+    return {
+      s: next,
+      err: `A deposit on ${fmtM(px)} is ${fmtM(dep)} and you have ${fmtM(next.cash)}. `
+        + `You cannot sign a contract you cannot put earnest money behind.`,
+    };
+  }
+  next.cash -= dep;
+  const prev = next.talks?.[bbl];
+  next.talks = next.talks ?? {};
+  next.talks[bbl] = {
     bbl, sellerKind: seller.kind, sellerName: seller.name,
-    yourPrice: px, theirPrice: px, round: next.talks?.round ?? 1,
-    maxRounds: next.talks?.maxRounds ?? OPEN_ROUNDS[seller.kind],
-    openedM: next.talks?.openedM ?? next.month,
-    agreed: true, agreedPrice: px, closeByM: next.month + CLOSE_WINDOW_M,
-    note: `Agreed at ${fmtM(px)} with ${seller.name}. You are under contract — place the debt and fund it by `
-      + `${monthLabel(next.month + CLOSE_WINDOW_M)} or the deal is off and somebody else gets it.`,
+    yourPrice: px, theirPrice: px, round: prev?.round ?? 1,
+    maxRounds: prev?.maxRounds ?? OPEN_ROUNDS[seller.kind],
+    openedM: prev?.openedM ?? next.month,
+    agreed: true, agreedPrice: px, closeByM: next.month + CLOSE_WINDOW_M, deposit: dep,
+    note: `Agreed at ${fmtM(px)} with ${seller.name}. ${fmtM(dep)} of earnest money is posted and hard. `
+      + `Place the debt and fund it by ${monthLabel(next.month + CLOSE_WINDOW_M)} or the deposit is theirs.`,
   };
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Under contract at ${address}: ${fmtM(px)} agreed with ${seller.name}. `
-      + `Nothing has moved yet — the money is due by ${monthLabel(next.month + CLOSE_WINDOW_M)}.`,
+    text: `Under contract at ${address}: ${fmtM(px)} agreed with ${seller.name}, ${fmtM(dep)} down. `
+      + `The rest is due by ${monthLabel(next.month + CLOSE_WINDOW_M)}.`,
   });
-  return next;
+  return { s: next };
 }
 
 /**
@@ -386,9 +423,9 @@ function strikeDeal(
  * the cheque you write. The price is already settled and cannot move here.
  */
 export function closeDeal(
-  s: GameState, parcels: ParcelTable, product: string, lev: number,
+  s: GameState, parcels: ParcelTable, bbl: string, product: string, lev: number,
 ): { s: GameState; err?: string; msg?: string } {
-  const t = s.talks;
+  const t = s.talks?.[bbl];
   if (!t?.agreed || t.agreedPrice === undefined) return { s, err: "Nothing is under contract." };
   const rec = resolveRec(parcels, s, t.bbl);
   if (!rec) return { s, err: "Unknown parcel." };
@@ -398,21 +435,31 @@ export function closeDeal(
 }
 
 /** Leave the table. */
-export function walkAway(s: GameState, parcels: ParcelTable): { s: GameState; msg?: string } {
-  const t = s.talks;
+export function walkAway(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; msg?: string } {
+  const t = s.talks?.[bbl];
   if (!t) return { s };
   const next = clone(s);
-  delete next.talks;
+  delete next.talks![t.bbl];
   const li = next.listings.find((l) => l.bbl === t.bbl);
   if (li && li.expiresM <= next.month) li.expiresM = next.month + 4;
+  if (!Object.keys(next.talks ?? {}).length) delete next.talks;
   next.news.unshift({
-    q: next.month, kind: "info",
+    q: next.month, kind: t.agreed ? "warn" : "info",
     text: t.agreed
-      ? `You tore up the contract on ${parcels[t.bbl]?.address ?? t.bbl}. ${t.sellerName} will remember that you could not fund it.`
-      : `You walked away from ${parcels[t.bbl]?.address ?? t.bbl}. ${t.sellerName} will remember, but the building will still be there.`,
+      ? `You tore up the contract on ${parcels[t.bbl]?.address ?? t.bbl}. ${Cap(t.sellerName)} keeps the `
+        + `${fmtM(t.deposit ?? 0)} deposit and will remember that you could not fund it.`
+      : `You walked away from ${parcels[t.bbl]?.address ?? t.bbl}. ${Cap(t.sellerName)} will remember, but the building will still be there.`,
   });
-  return { s: next, msg: t.agreed ? "Contract torn up." : "Walked away." };
+  return { s: next, msg: t.agreed ? `Contract torn up. ${fmtM(t.deposit ?? 0)} gone.` : "Walked away." };
 }
+
+/**
+ * Seller labels are common nouns — "an estate", "a local partnership" — which
+ * is right in the middle of a sentence and wrong at the start of one. The news
+ * tape has been printing "The contract expired unfunded. an estate keeps the
+ * deposit" for as long as sellers have had labels.
+ */
+const Cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 // A $610,000 lot quoted as "$0.61M" reads like a rounding error. Money in
 // this game spans four orders of magnitude and the unit has to follow it.
@@ -443,11 +490,17 @@ function closeAgreed(
   product: string, lev: number,
   seller: { kind: SellerKind; name: string }, address: string,
 ): { s: GameState; err?: string; msg?: string } {
+  // THE DEPOSIT COMES BACK AT THE TABLE. It was posted at handshake and it is
+  // part of the price, not on top of it — so credit it before the funding test
+  // runs, or a buyer who put money down would be asked for the whole price
+  // again and told they were short by exactly what they had already paid.
+  const dep = next.talks?.[bbl]?.deposit ?? 0;
+  if (dep > 0) next.cash += dep;
   const done = executePurchase(next, parcels, bbl, px, product as never, false, lev);
-  if (done.err) return { s: next, err: done.err };
+  if (done.err) { if (dep > 0) next.cash -= dep; return { s: next, err: done.err }; }
   const out = done.s;
   out.listings = out.listings.filter((l: { bbl: string }) => l.bbl !== bbl);
-  delete out.talks;
+  if (out.talks) { delete out.talks[bbl]; if (!Object.keys(out.talks).length) delete out.talks; }
   out.news.unshift({
     q: out.month, kind: "deal",
     text: `${describeFirm(next)} has bought ${address} from ${seller.name} at ${fmtM(px)}.`,

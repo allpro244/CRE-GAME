@@ -87,7 +87,7 @@ function play(seed, verbose) {
     // ---- negotiate for something worth owning -------------------------------
     // one deal at a time; keep a year of reserve back
     const reserve = 2.5e6 + Object.keys(g.holdings).length * 4e5;
-    if (!g.talks && cash > reserve) {
+    if (!Object.keys(g.talks ?? {}).length && cash > reserve) {
       let best = null;
       for (const l of g.listings) {
         if (g.holdings[l.bbl]) continue;
@@ -112,22 +112,22 @@ function play(seed, verbose) {
         }
       }
     }
-    // A price agreed is not a building bought — go and place the debt.
-    if (g.talks?.agreed) {
-      const t = g.talks;
+    // Every deal on the table gets worked, not just the one. A price agreed is
+    // not a building bought — go and place the debt.
+    for (const t of Object.values(g.talks ?? {})) {
       const rec = E.resolveRec(parcels, g, t.bbl);
-      const prod = rec && rec.class === "land" ? "land" : "savings";
-      let r = E.closeDeal(g, parcels, prod, 0.72);
-      if (r.err) r = E.closeDeal(g, parcels, "cash", 1);
-      if (!r.err) { g = r.s; stat.bought++; }
-    } else if (g.talks) {
+      if (t.agreed) {
+        const prod = rec && rec.class === "land" ? "land" : "savings";
+        let r = E.closeDeal(g, parcels, t.bbl, prod, 0.72);
+        if (r.err) r = E.closeDeal(g, parcels, t.bbl, "cash", 1);
+        if (!r.err) { g = r.s; stat.bought++; }
+        continue;
+      }
       // take their counter if it is still a good deal
-      const t = g.talks;
-      const rec = E.resolveRec(parcels, g, t.bbl);
       const noi = rec && rec.class !== "land" ? E.noiAfterTaxYr(rec, e, E.initialCondition(rec), t.theirPrice) : 0;
       const ok = rec && (rec.class === "land" ? t.theirPrice < E.landValue(rec, e) * 1.06 : noi / t.theirPrice > (e.indexRate + 1.1) / 100);
-      if (ok) { const r = E.acceptCounter(g, parcels); if (!r.err) g = r.s; }
-      else if (t.final) { const r = E.walkAway(g, parcels); g = r.s; }
+      if (ok) { const r = E.acceptCounter(g, parcels, t.bbl); if (!r.err) g = r.s; }
+      else if (t.final) { g = E.walkAway(g, parcels, t.bbl).s; }
       else {
         const r = E.negotiate(g, parcels, t.bbl, Math.round((t.yourPrice + t.theirPrice) / 2));
         if (!r.err) g = r.s;

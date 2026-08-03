@@ -162,7 +162,7 @@ function play(seed, verbose) {
       committed += Math.max(0, d.equityBudget - d.equitySpent);
     }
     const reserve = 2.5e6 + committed;
-    if (!g.talks && g.cash > reserve) {
+    if (!Object.keys(g.talks ?? {}).length && g.cash > reserve) {
       let best = null;
       for (const l of g.listings) {
         if (g.holdings[l.bbl]) continue;
@@ -192,17 +192,17 @@ function play(seed, verbose) {
         }
       } else st.noSite++;
     }
-    if (g.talks?.agreed) {
-      const t = g.talks;
-      let r = E.closeDeal(g, parcels, "land", 0.5);
-      if (r.err) r = E.closeDeal(g, parcels, "cash", 1);
-      if (!r.err) { g = r.s; trace.push(`  m${g.month} BOUGHT SITE ${M(t.agreedPrice)} · cash ${M(g.cash)}`); st.land++; }
-    } else if (g.talks) {
-      const t = g.talks;
+    for (const t of Object.values(g.talks ?? {})) {
+      if (t.agreed) {
+        let r = E.closeDeal(g, parcels, t.bbl, "land", 0.5);
+        if (r.err) r = E.closeDeal(g, parcels, t.bbl, "cash", 1);
+        if (!r.err) { g = r.s; trace.push(`  m${g.month} BOUGHT SITE ${M(t.agreedPrice)} · cash ${M(g.cash)}`); st.land++; }
+        continue;
+      }
       const rec = E.resolveRec(parcels, g, t.bbl);
       const ok = rec && rec.class === "land" && t.theirPrice < E.landValue(rec, e) * 1.12;
-      if (ok) { const r = E.acceptCounter(g, parcels); if (!r.err) g = r.s; }
-      else if (t.final) { g = E.walkAway(g, parcels).s; }
+      if (ok) { const r = E.acceptCounter(g, parcels, t.bbl); if (!r.err) g = r.s; }
+      else if (t.final) { g = E.walkAway(g, parcels, t.bbl).s; }
       else {
         const r = E.negotiate(g, parcels, t.bbl, Math.round((t.yourPrice + t.theirPrice) / 2));
         if (!r.err) g = r.s;

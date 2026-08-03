@@ -1280,7 +1280,7 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
     // buying it out from under a signed contract is not competition, it is a
     // bug — and it was the one thing that could make the funding window
     // unwinnable through no fault of the player.
-    if (s.talks?.agreed && s.talks.bbl === li.bbl) { survivors.push(li); continue; }
+    if (s.talks?.[li.bbl]?.agreed) { survivors.push(li); continue; }
     const value = assetValue(rec, s.econ, initialCondition(rec));
     const ratio = li.ask / Math.max(1, value);
     const priceFactor = Math.max(0.3, Math.min(1.8, 1.9 - ratio)); // bargains go first

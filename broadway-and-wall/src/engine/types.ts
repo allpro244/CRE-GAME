@@ -645,7 +645,7 @@ export type SellerKind = "estate" | "institution" | "partnership" | "developer" 
 
 
 export interface GameState {
-  v: 20;
+  v: 21;
   seed: number;
   /**
    * WHICH TOWN THIS WAS PLAYED IN.
@@ -673,7 +673,17 @@ export interface GameState {
   lastUnsolicitedM?: number;                 // when somebody last rang unbidden
   // A LIVE NEGOTIATION TO BUY. One at a time, like escrow, because that is how
   // many deals a principal is actually working at this size.
-  talks?: Talks;
+  /**
+   * EVERY CONVERSATION YOU ARE IN, keyed by BBL.
+   *
+   * This was one Talks, singular, and negotiate() opened with a hard refusal:
+   * "You are mid-negotiation at 42 Pearl St. Finish it or walk away first."
+   * Nobody buys buildings that way. A principal is in four conversations at
+   * once, drops the two that will not move, and takes whichever of the rest
+   * comes back at a number worth funding — the CHOOSING is the job, and the
+   * old model deleted it by only ever offering one option.
+   */
+  talks?: Record<string, Talks>;
   // THE CITY'S OWN SITES. Other people's buildings used to appear finished,
   // the month they were decided, adding their square feet to the market on the
   // spot. Nothing in a city works that way: the decision to build is taken in
@@ -810,6 +820,22 @@ export interface Talks {
   agreed?: boolean;
   agreedPrice?: number;
   closeByM?: number;
+  /**
+   * EARNEST MONEY, AND IT IS HARD.
+   *
+   * The expiry notice already said the seller "kept the deposit's worth of
+   * goodwill" — describing a deposit that did not exist. Nothing was ever
+   * posted, so signing a contract cost nothing and failing to fund one cost
+   * nothing either, which is the whole reason you could not be trusted with
+   * more than one at a time: the game had to stop you at the door because it
+   * had no way to make the consequence real once you were through it.
+   *
+   * Post it and both problems go away. You can chase four buildings at once,
+   * as anybody in this business does — and you can only sign what you can put
+   * money behind, and only fund what you can actually fund. It is credited at
+   * closing and gone if the clock runs out.
+   */
+  deposit?: number;
 }
 
 export const START_CASH = 6_000_000;

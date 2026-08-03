@@ -37,7 +37,7 @@ for (let seed = 0; seed < SEEDS; seed++) {
 
     // BUY LEVERED. Maximum-leverage floating paper on a three-year balloon is
     // exactly the diet that produces defaults, which is what this is measuring.
-    if (!g.talks && m % 4 === 0 && g.cash > 1_000_000) {
+    if (!Object.keys(g.talks ?? {}).length && m % 4 === 0 && g.cash > 1_000_000) {
       for (const l of g.listings) {
         if (g.holdings[l.bbl]) continue;
         const rec = E.resolveRec(parcels, g, l.bbl);
@@ -46,13 +46,15 @@ for (let seed = 0; seed < SEEDS; seed++) {
         if (!r.err) { g = r.s; break; }
       }
     }
-    if (g.talks?.agreed) {
-      let r = E.closeDeal(g, parcels, "cordage", 1);
-      if (r.err) r = E.closeDeal(g, parcels, "savings", 1);
-      if (!r.err) g = r.s;
-    } else if (g.talks) {
-      const r = E.acceptCounter(g, parcels);
-      if (!r.err) g = r.s; else g = E.walkAway(g, parcels).s;
+    for (const t of Object.values(g.talks ?? {})) {
+      if (t.agreed) {
+        let r = E.closeDeal(g, parcels, t.bbl, "cordage", 1);
+        if (r.err) r = E.closeDeal(g, parcels, t.bbl, "savings", 1);
+        if (!r.err) g = r.s;
+      } else {
+        const r = E.acceptCounter(g, parcels, t.bbl);
+        if (!r.err) g = r.s; else g = E.walkAway(g, parcels, t.bbl).s;
+      }
     }
 
     // the workout table: cure if cheap, otherwise ask, otherwise hand it back

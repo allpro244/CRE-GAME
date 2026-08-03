@@ -7,8 +7,11 @@ pipeline/plan/
 
 *.tsbuildinfo
 dist-zip/
-test/.entry.ts
-test/.engine.mjs
+# Generated engine bundles. The harness builds test/.engine.mjs; concurrent
+# investigations build their own suffixed copies so they do not race each
+# other over one shared file.
+test/.entry*.ts
+test/.engine*.mjs
 *.png
 
 # Throwaway diagnostic probes. These are scratch: written to answer one

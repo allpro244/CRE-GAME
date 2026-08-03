@@ -123,7 +123,17 @@ def main():
         print("! index.html not found next to serve.py — run this from the unzipped game folder.")
         sys.exit(1)
 
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
+    # A PORT, OR A FLAG, OR NEITHER. This did int(sys.argv[1]) unconditionally,
+    # so `serve.py --no-browser` died with a ValueError about base 10 instead of
+    # doing the obvious thing. The documented path never passes a flag; someone
+    # trying one should not get a stack trace.
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    no_browser = any(a in ("--no-browser", "-n") for a in sys.argv[1:])
+    try:
+        port = int(args[0]) if args else 8080
+    except ValueError:
+        print("Usage: serve.py [port] [--no-browser]")
+        sys.exit(2)
     for attempt in range(20):
         try:
             httpd = Server(("127.0.0.1", port), Handler)
@@ -138,7 +148,8 @@ def main():
     print("\n  Broadway & Wall")
     print(f"  Serving at {url}")
     print("  Press Ctrl+C to stop.\n")
-    threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+    if not no_browser:
+        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

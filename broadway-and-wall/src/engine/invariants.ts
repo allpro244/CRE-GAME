@@ -337,6 +337,21 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
     if (!fin(d)) bad("nan", `block ${id}`, `demand drift is ${d}`);
     else if (Math.abs(d) > 40) bad("demand", `block ${id}`, `demand drift ${d.toFixed(1)} beyond the cap`);
   }
+  for (const [id, d] of Object.entries(s.blockE ?? {})) {
+    if (!fin(d)) bad("nan", `block ${id}`, `demand drift is ${d}`);
+    else if (Math.abs(d) > 36) bad("demand", `block ${id}`, `emergent drift ${d.toFixed(1)} beyond the cap`);
+  }
+  for (const [id, d] of Object.entries(s.blockJ ?? {})) {
+    if (!fin(d)) bad("nan", `block ${id}`, `employment advantage is ${d}`);
+    else if (Math.abs(d) > 17) bad("demand", `block ${id}`, `employment advantage ${d.toFixed(1)} beyond the cap`);
+  }
+  // The surface REDISTRIBUTES. If the whole city is drifting one way the
+  // centring has broken, and every price in the game is riding on it.
+  const em = Object.values(s.blockE ?? {});
+  if (em.length > 20) {
+    const mean = em.reduce((a, b) => a + b, 0) / em.length;
+    if (Math.abs(mean) > 12) bad("demand", "the surface", `mean emergent drift is ${mean.toFixed(1)} — demand is no longer zero-sum`);
+  }
 
   // ------------------------------------------------------------ negotiations
   // A price agreed puts you under contract, and the contract is a state that

@@ -281,7 +281,26 @@ function resolveBase(s: GameState, rec: ParcelRecord): ParcelRecord | null {
     out.farMaxRes = +Math.min(FAR_CEILING, rec.farMaxRes * zx + vr).toFixed(2);
   }
   if (adj) out.landPsf = rec.landPsf * adj;
-  if (dd) out.demandScore = clamp(rec.demandScore + dd, 2, 100);
+  // THE WIRE FROM DEMAND TO DIRT, WHICH WAS CUT.
+  //
+  // The generator prices land as `assessedPsf / 0.45 * (0.6 + 0.9 * demand/100)`
+  // — see citygen/build.mjs. Cross-sectionally, therefore, the same dirt at
+  // demand 79 is worth 1.26x the same dirt at demand 49. At runtime it was
+  // worth 1.033x, because `landPsfNow` read the frozen `landPsf` and demand
+  // entered only through `demandBeta`, which modulates the CYCLE and not the
+  // level. So a block could gain thirty points of desirability, put 13% on its
+  // rents, and its ground would not move: the one asset whose entire value IS
+  // location was the one asset location did not price.
+  //
+  // This is not a new number. It is the generator's own curve, applied as a
+  // RATIO so day one is bit-for-bit unchanged and only movement reprices. Every
+  // reader of landPsfNow, landValue, the appraisal, the lender's sizing and the
+  // rivals' land bids gets it without knowing it exists.
+  if (dd) {
+    const d1 = clamp(rec.demandScore + dd, 2, 100);
+    out.demandScore = d1;
+    out.landPsf *= (0.6 + 0.9 * d1 / 100) / (0.6 + 0.9 * rec.demandScore / 100);
+  }
   if (b) {
     out.class = b.class; out.bldgArea = b.bldgArea; out.floors = b.floors; out.yearBuilt = b.yearBuilt;
     // and its composition — a delivered mixed-use building that reported as

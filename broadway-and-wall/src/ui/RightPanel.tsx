@@ -5308,6 +5308,22 @@ function Neighbourhood({ bbl, block }: { bbl: string; block: string }) {
           strong={r.drift > 0.5}
           bad={r.drift < -0.5}
         />
+        <Row
+          k="Hiring"
+          v={Math.abs(r.hiring) < 0.5 ? "in line with the city" : `${r.hiring > 0 ? "+" : ""}${r.hiring.toFixed(0)} demand`}
+          strong={r.hiring > 0.5}
+          bad={r.hiring < -0.5}
+        />
+        <Row k="The work here" v={r.trades.map((t) => `${Math.round(t.share * 100)}% ${t.label.toLowerCase()}`).join(", ")} />
+        {r.line ? (
+          <Row
+            k="Transit"
+            v={r.line.monthsOut > 0
+              ? `${r.line.name} station, ${Math.max(1, Math.round(r.line.monthsOut / 12))} yrs out`
+              : `${r.line.name} station, open`}
+            strong
+          />
+        ) : null}
       </div>
       <div className="deal-note">
         {r.balanced

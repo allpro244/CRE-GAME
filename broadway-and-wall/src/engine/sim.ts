@@ -52,7 +52,7 @@ function targetListings(s: GameState, totalLots: number): number {
 
 export function newGame(seed: number, parcels?: ParcelTable): GameState {
   const s: GameState = {
-    v: 23,
+    v: 24,
     seed,
     rng: seed,
     month: 0,
@@ -68,6 +68,10 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
     cityBuilt: [],
     landAdj: {},
     blockD: {},
+    blockA: {},
+    blockE: {},
+    blockJ: {},
+    lines: [],
     sponsor: { events: [] },
     rivals: [],
     lenderRel: {},

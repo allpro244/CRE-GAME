@@ -716,7 +716,7 @@ export type SellerKind = "estate" | "institution" | "partnership" | "developer" 
 
 
 export interface GameState {
-  v: 23;
+  v: 24;
   seed: number;
   /**
    * WHICH TOWN THIS WAS PLAYED IN.
@@ -839,7 +839,18 @@ export interface GameState {
   varianceApp?: { bbl: string; filedM: number; decideM: number; cost: number; grant: number; odds: number };
   landmarks?: Record<string, number>;        // bbl -> month designated
   landAdj: Record<string, number>;           // per-parcel land value multiplier
-  blockD: Record<string, number>;            // per-block demand DRIFT, in points off the generated score
+  // THE DEMAND SURFACE. `blockD` is the live offset every economic reader uses;
+  // it is the SUM of the two things below and is the only one anybody outside
+  // engine/demand.ts should touch.
+  blockD: Record<string, number>;            // per-block demand offset, in points off the generated score
+  /** the day-one reconciliation between what is standing and what gravity said. PERMANENT. */
+  blockA?: Record<string, number>;
+  /** the emergent drift since 2000: what has been built, who is hiring, what opened. */
+  blockE?: Record<string, number>;
+  /** a block's employment advantage in demand points — its trades against the city's */
+  blockJ?: Record<string, number>;
+  /** funded transit. Announced, dug, opened; the ground reprices at each step. */
+  lines?: { id: string; cx: number; cy: number; name: string; annM: number; openM: number; pts: number }[];
   // What the lending market remembers about you. A sponsor who hands back keys
   // does not get to walk into the next credit committee unrecognised.
   sponsor: { events: SponsorEvent[] };

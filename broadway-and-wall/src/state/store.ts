@@ -628,10 +628,36 @@ export const useStore = create<AppState>((set, get) => ({
     const { parcels } = get();
     const saved = await loadGame(slot);
     if (!saved || !parcels) { toast("That save wouldn't open.", "err"); return; }
-    const fits = saved.v === 20 &&
-      Object.keys(saved.holdings).every((b) => parcels[b]) &&
-      saved.listings.every((l) => parcels[l.bbl]);
-    if (!fits) { toast("That save was made on a different city — it can't be loaded here.", "err"); return; }
+    if (saved.v !== 20) { toast("That save is from an older build and can't be opened.", "err"); return; }
+
+    // A SAVE CARRIES ITS OWN TOWN.
+    //
+    // Every save has written a citySeed since the city started being generated
+    // at runtime, and exactly one code path ever read it — the autosave, at
+    // boot. Loading a NAMED slot tested it against whatever town happened to
+    // be in memory and refused when they differed, which meant that after a
+    // bankruptcy (the one moment you actually want an earlier save) the button
+    // said "that save was made on a different city" about YOUR OWN save of
+    // YOUR OWN city. The seed was sitting in the object the whole time.
+    //
+    // Rebuild the town it was played in, the same choreography newRun uses.
+    const savedSeed = saved.citySeed;
+    const here = get().game?.citySeed ?? currentSeed();
+    if (savedSeed !== undefined && savedSeed !== here) {
+      toast(`Loading "${slot}" — rebuilding the town it was played in.`);
+      setSeed(savedSeed >>> 0);
+      try { await saveGame(AUTO(), saved); } catch { /* private mode: the reload will start fresh */ }
+      location.reload();
+      return;
+    }
+    // Legacy saves with no seed fall back to the old fit test. BBL ids repeat
+    // across seeds, so this is a weak check and only a fallback — a foreign
+    // save with two holdings can pass it.
+    if (savedSeed === undefined) {
+      const fits = Object.keys(saved.holdings).every((b) => parcels[b])
+        && saved.listings.every((l) => parcels[l.bbl]);
+      if (!fits) { toast("That save was made on a different city — it can't be loaded here.", "err"); return; }
+    }
     set({ game: saved, selectedBBL: null, page: "none" });
     void persist(saved);
     toast(`Loaded “${slot}”.`);

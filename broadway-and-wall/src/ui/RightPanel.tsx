@@ -121,7 +121,9 @@ export default function GamePanels() {
         </div>
       )}
       <DecisionModal />
-      {game.gameOver && <GameOverPage />}
+      {/* yield to the saves page — this used to paint over it at the same
+          z-index, leaving every control on it visible and dead */}
+      {game.gameOver && page !== "saves" && <GameOverPage />}
     </>
   );
 }
@@ -377,7 +379,24 @@ function GameOverPage() {
           <Big label="Taxes paid" value={usd(game.taxesPaid ?? 0)} />
           <Big label="Milestones" value={`${miles} / ${MILESTONES.length}`} />
         </div>
-        <button className="btn btn-buy" style={{ marginTop: 16 }} onClick={() => useStore.getState().newRun()}>Start a new run</button>
+        {/* THE RUN IS OVER IS NOT THE SAME AS THE CITY IS OVER.
+            The only way out of this screen was "Start a new run", which rerolls
+            the seed and deletes the autosave — so the town you had just spent
+            forty years in stopped existing at the exact moment you wanted to go
+            back three years and do it differently. Worse, the Saves page opened
+            correctly UNDERNEATH this card and every button on it was
+            unclickable, so it looked like the game had simply eaten your
+            saves. */}
+        <div className="btn-row" style={{ marginTop: 16, justifyContent: "center" }}>
+          <button className="btn" onClick={() => useStore.getState().setPage("saves")}
+            title="Go back to an earlier save of this same town">
+            ⛁ Load an earlier save
+          </button>
+          <button className="btn btn-buy" onClick={() => useStore.getState().newRun()}>Start a new run</button>
+        </div>
+        <div className="hint" style={{ textAlign: "center", marginTop: 10 }}>
+          Starting a new run rolls a new town. An earlier save of THIS town rebuilds it exactly as it was.
+        </div>
       </div>
     </div>
   );

@@ -819,6 +819,14 @@ export interface GameState {
    * city says so.
    */
   recordPlan?: Record<string, number>;
+  /**
+   * THE STREET KEEPS ONE SCORE, NOT ONE PER BUILDING. Every broker in a town
+   * this size drinks at the same two bars, and a buyer who opens at sixty per
+   * cent three times in two years is a story everybody has heard. Insults are
+   * stamped with the month they happened and roll off after three years —
+   * reputations heal, slowly, the way they do.
+   */
+  lowballMs?: number[];
   developments: Record<string, Development>;
   built: Record<string, BuiltOverride>;      // delivered buildings, yours and the city's
   cityBuilt: string[];                       // bbls the market built, not you

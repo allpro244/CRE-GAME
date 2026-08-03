@@ -4,6 +4,7 @@
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import type { Bid, GameState, Holding } from "./types";
 import { logBooks, monthLabel } from "./types";
+import { recentLowballs } from "./acquire";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange } from "./market";
 import { assetValue, initialCondition, initialCondIdx, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr, demandLinear, landPsfNow } from "./value";
@@ -1071,9 +1072,13 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
     power += Math.max(0, holdingValue(rec, s.econ, h, s.month) - (h.loan?.balance ?? 0)) * 0.14;
   }
   const dry = power > 2_000_000 ? 1 : 0.3;
-  const p = quiet > 0
+  // A BROKER RINGS THE BUYER WHO CLOSES. Serial lowballing is the one story
+  // that travels faster than money in this business, and the first person to
+  // act on it is the broker deciding whose afternoon gets the call.
+  const rep = 1 - 0.18 * Math.min(4, Math.max(0, recentLowballs(s) - 1));
+  const p = (quiet > 0
     ? Math.min(0.85, Math.max(base, 0.12 * (1 + quiet / 1.6)) * dry)
-    : base;
+    : base) * rep;
   if (rng(s) >= p) return;
 
   // they pitch near what you already buy: same class, similar size, better corner

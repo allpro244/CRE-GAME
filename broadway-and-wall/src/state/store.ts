@@ -59,7 +59,7 @@ interface AppState {
   respondLoi: (id: number, action: LOIAction, fund?: boolean, counter?: { rentPsf?: number; tiPsf?: number }) => void;
   refi: (bbl: string, product: string, lev?: number) => void;
   develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>> }) => void;
-  offer: (bbl: string, price: number) => void;
+  offer: (bbl: string, price: number, finalOffer?: boolean) => void;
   closeDeal: (bbl: string, product: string, lev: number) => void;
   acceptCounter: (bbl: string) => void;
   walkAway: (bbl: string) => void;
@@ -256,10 +256,10 @@ export const useStore = create<AppState>((set, get) => ({
   // Buying is a conversation now: the same call opens it and answers their
   // counter, which is why there is one action and not three. It never asks for
   // a lender — agreeing a price and funding the purchase are separate acts.
-  offer: (bbl, price) => {
+  offer: (bbl, price, finalOffer) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = negotiate(game, parcels, bbl, price);
+    const r = negotiate(game, parcels, bbl, price, finalOffer);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s }); void persist(r.s);
     if (r.msg) toast(r.msg);

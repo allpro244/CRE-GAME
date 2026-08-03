@@ -1236,6 +1236,12 @@ function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
   // range with a rounded step can leave the top end unreachable, which meant
   // you could not simply pay the asking price.
   const [bidFrac, setBidFrac] = useState(0.94);
+  // BEST AND FINAL is an instrument, not a bluff. Certainty of a done deal is
+  // worth about three and a half per cent to a seller who has been retraded
+  // before — and every seller has been — so a credible final closes under
+  // their floor. The price of the instrument: a no ends it, for both sides,
+  // and it is only credible while the street still believes your finals.
+  const [isFinal, setIsFinal] = useState(false);
   const offerPrice = Math.round(price * Math.min(1, bidFrac));
   const seller = sellerOf(game, parcels, bbl);
   const talks = game.talks?.[bbl] ?? null;
@@ -1296,13 +1302,17 @@ function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
           {atLimit && " That is as many as you can hold — close one or walk away before opening another."}
         </div>
       )}
+      <label className="hint" style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+        <input type="checkbox" checked={isFinal} onChange={(e) => setIsFinal(e.target.checked)} />
+        Best and final — they answer once, and a no ends it for both sides
+      </label>
       <div className="btn-row">
         <button
           className="btn btn-buy"
           disabled={atLimit || (!!talks && talks.final && offerPrice < talks.theirPrice)}
-          onClick={() => useStore.getState().offer(bbl, offerPrice)}
+          onClick={() => { useStore.getState().offer(bbl, offerPrice, isFinal); setIsFinal(false); }}
         >
-          {talks ? `Counter at ${usd(offerPrice)}` : `Offer ${usd(offerPrice)}`}
+          {talks ? `Counter at ${usd(offerPrice)}` : `Offer ${usd(offerPrice)}`}{isFinal ? " — final" : ""}
         </button>
         {talks && (
           <>

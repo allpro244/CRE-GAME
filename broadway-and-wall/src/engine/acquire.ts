@@ -206,7 +206,9 @@ function reservationOf(
   // retraded before, and every seller has been. With no diligence to offer,
   // every deal here IS that close — so the discount they will take for it is
   // simply part of the floor, priced by who they are.
-  const reservation = Math.round((ask * floor) / (1 + prof.certainty));
+  // ...and what you did to EVERYBODY ELSE. The per-building memory above is
+  // one seller pricing one story; this is the whole street pricing the pattern.
+  const reservation = Math.round((ask * floor * repFloorMult(s)) / (1 + prof.certainty));
   return { reservation, ask };
 }
 
@@ -220,8 +222,27 @@ function reservationOf(
  * loud. That is backwards from how anybody buys a building. You agree a price
  * first, and then you go and find the money against a deal you actually have.
  */
+/**
+ * How many insults the street still remembers. Three years' memory, because a
+ * reputation heals the way it was earned — slowly.
+ */
+export function recentLowballs(s: GameState): number {
+  return (s.lowballMs ?? []).filter((m) => s.month - m < 36).length;
+}
+
+/**
+ * WHAT SERIAL LOWBALLING COSTS, everywhere at once. Per-building the insult
+ * already shuts one door; this is the market-wide bill. One story is noise.
+ * Two is a pattern. Three or more and you are "the sixty-per-cent guy", every
+ * seller's floor moves up for you specifically, and the brokers ring somebody
+ * else first — a price nobody quotes you and everybody charges.
+ */
+export function repFloorMult(s: GameState): number {
+  return 1 + 0.025 * Math.min(4, Math.max(0, recentLowballs(s) - 1));
+}
+
 export function negotiate(
-  s: GameState, parcels: ParcelTable, bbl: string, price: number,
+  s: GameState, parcels: ParcelTable, bbl: string, price: number, finalOffer = false,
 ): { s: GameState; err?: string; msg?: string } {
   const existing = s.talks?.[bbl];
   // HOW MANY CONVERSATIONS A SHOP THIS SIZE CAN HOLD. Not one — that was the
@@ -250,6 +271,21 @@ export function negotiate(
   const px = Math.round(price);
   if (!Number.isFinite(px) || px <= 0) return { s, err: "Name a real number." };
 
+  // TAKE IT OR LEAVE IT MEANS EXACTLY THAT. They named a last number; coming
+  // back underneath it is leaving it. The talks end — theirs was the one
+  // final in this conversation that was always credible, because they can
+  // just sell it to somebody else.
+  if (existing?.final && px < existing.theirPrice) {
+    const next0 = clone(s);
+    delete next0.talks![bbl];
+    next0.news.unshift({
+      q: next0.month, kind: "warn",
+      text: `${Cap(existing.sellerName)} said ${fmtM(existing.theirPrice)} was final at ${rec.address}, and you `
+        + `came back at ${fmtM(px)}. That is an answer. The conversation is over.`,
+    });
+    return { s: next0, msg: "They meant final. It's over." };
+  }
+
   const next = clone(s);
   next.talks = next.talks ?? {};
   const seller = existing
@@ -266,6 +302,43 @@ export function negotiate(
   if (px >= reservation) {
     const struck = strikeDeal(next, bbl, px, seller, rec.address);
     return struck.err ? { s, err: struck.err } : { s: struck.s, msg: `Agreed at ${fmtM(px)}. Now fund it.` };
+  }
+
+  // --- your own take-it-or-leave-it ----------------------------------------
+  //
+  // Only worth saying if the street still believes you. A buyer with a
+  // lowballing reputation who says "final" is telling a joke the seller has
+  // heard before — they ignore the word and counter as usual. With a clean
+  // name it is a real instrument: certainty of a done deal is worth about
+  // three and a half per cent to a seller who has been retraded before, and
+  // every seller has been. The price of the instrument is that a no ends it —
+  // for both sides.
+  if (finalOffer && px < reservation) {
+    if (recentLowballs(next) >= 2) {
+      next.news.unshift({
+        q: next.month, kind: "info",
+        text: `You said best and final at ${rec.address}. ${Cap(seller.name)} has heard what your "final" means `
+          + `around town, and countered anyway.`,
+      });
+      // fall through to the ordinary machinery below — the flag bought nothing
+    } else if (px >= Math.round(reservation * 0.965)) {
+      const struck = strikeDeal(next, bbl, px, seller, rec.address);
+      if (struck.err) return { s, err: struck.err };
+      struck.s.news.unshift({
+        q: struck.s.month, kind: "deal",
+        text: `Best and final at ${rec.address}: ${fmtM(px)}, and ${seller.name} took it. A number they can `
+          + `close on today beat the better number they might chase for a quarter.`,
+      });
+      return { s: struck.s, msg: `They took your final at ${fmtM(px)}.` };
+    } else {
+      delete next.talks[bbl];
+      next.news.unshift({
+        q: next.month, kind: "warn",
+        text: `Best and final at ${rec.address}: ${fmtM(px)}. ${Cap(seller.name)} said no, and a final refused is `
+          + `finished — you cannot say "final" and then keep talking. The building is still on the tape.`,
+      });
+      return { s: next, msg: "They said no. Final means it's over." };
+    }
   }
 
   // --- too far below to be worth an answer ---------------------------------
@@ -300,6 +373,15 @@ export function negotiate(
     // firm remembers harder; until now the memory lived on the parcel and died
     // with the listing. A principal remembers the person, not the building.
     if (rival) tie(next, rival.id).insults++;
+    next.lowballMs = [...(next.lowballMs ?? []).filter((m) => next.month - m < 36), next.month];
+    if (recentLowballs(next) === 3) {
+      next.news.unshift({
+        q: next.month, kind: "warn",
+        text: "Word is out. Three sellers in three years have hung up on your opening number, and the story " +
+          "travels: floors are higher for you now, all over town, and the brokers ring somebody else first. " +
+          "It rolls off — in about three years, if you stop.",
+      });
+    }
     const shutM = next.month + Math.round(rrange(next, rival ? 18 : 10, rival ? 30 : 18));
     const prior = next.approaches[bbl];
     next.approaches[bbl] = {

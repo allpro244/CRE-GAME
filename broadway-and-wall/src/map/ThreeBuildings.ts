@@ -908,9 +908,26 @@ void main() {
     vec2 rp = vec2(dot(wp, dir), dot(wp, vec2(-dir.y, dir.x)));
     roof *= 1.0 + 0.034 * cos(rp.x * 0.6866);
     roof *= 1.0 + 0.015 * cos(rp.y * 0.5150);
+    // SEAM PITCH IS A PROPERTY OF THE MATERIAL, and it was one number for the
+    // whole city: 0.3279, which is a seam every 3.05 m on every roof in town
+    // whatever it is made of. A roll of modified bitumen is a metre wide. A
+    // standing-seam metal pan is four hundred millimetres. A ballasted
+    // built-up roof has no seams you can see at all, because there is four
+    // inches of gravel on top of them. Getting this wrong makes every roof in
+    // the city the same roof seen from different angles.
+    float pitch =
+        dk == 4 ? 2.42                    // standing-seam metal: narrow pans
+      : dk == 7 ? 0.98                    // TPO sheet, welded laps
+      : dk == 6 ? 0.86                    // PVC, wider sheet
+      : dk == 2 ? 0.62                    // EPDM comes in big sheets
+      : dk == 8 ? 1.06                    // mod-bit roll
+      : dk == 1 ? 0.44                    // hot-mopped BUR: felt laps, coarse
+      :           0.0;                    // ballast and slag: nothing shows
     float fine = 1.0 - smoothstep(0.30, 0.85, fwidth(rp.x));
-    float sf = fract(rp.x * 0.3279);
-    roof *= 1.0 - 0.13 * fine * (1.0 - smoothstep(0.0, 0.075, min(sf, 1.0 - sf)));
+    if (pitch > 0.0) {
+      float sf = fract(rp.x * pitch);
+      roof *= 1.0 - 0.13 * fine * (1.0 - smoothstep(0.0, 0.075, min(sf, 1.0 - sf)));
+    }
 
     float ws = fract(abs(vSeg.y) * 0.61803399) * 40.0;
     float p1 = rnoise(wp * 0.115 + ws);
@@ -921,6 +938,51 @@ void main() {
     if (dk == 0 || dk == 3) roof = mix(roof, vec3(0.120, 0.113, 0.105), smoothstep(0.60, 0.82, p2) * 0.55);
     roof *= 0.955 + 0.09 * rnoise(wp * 0.7);
     roof = mix(roof, roof * 0.92, smoothstep(0.52, 0.86, rnoise(wp * 0.22 + 17.0)) * 0.42);
+
+    // ---- what forty years on a roof actually looks like ------------------
+    //
+    // A roof is not resurfaced, it is PATCHED, over and over, by different
+    // contractors in different decades with whatever was on the truck. That is
+    // the single thing that separates an old roof from a new one from the air
+    // — not dirt, but the map of black rectangles where somebody chased a leak
+    // — and it is worth more than any amount of noise, because it has EDGES
+    // and edges are what the eye reads as history.
+    //
+    // vSeg.y is the building's own wear roll, so a new building has a clean
+    // deck and a hundred-year-old one is a quilt, and neither is random per
+    // frame.
+    float wear = clamp(abs(vSeg.y), 0.0, 1.0) * (0.35 + 0.65 * (1.0 - vEra));
+    float pk = rnoise(wp * 0.32 + ws * 3.3);
+    float pk2 = rnoise(wp * 0.61 + ws * 7.1);
+    float pat = smoothstep(0.74 - wear * 0.30, 0.80 - wear * 0.30, pk);
+    // the flashing round a pat is the darkest line on the roof
+    float edge = pat * (1.0 - smoothstep(0.78 - wear * 0.30, 0.90 - wear * 0.30, pk));
+    roof = mix(roof, vec3(0.108, 0.101, 0.094) * (0.75 + 0.5 * pk2), pat * 0.72);
+    roof *= 1.0 - edge * 0.34;
+    // a second, older generation of repair underneath the first
+    float old2p = smoothstep(0.80 - wear * 0.24, 0.88 - wear * 0.24, pk2) * (1.0 - pat);
+    roof = mix(roof, roof * vec3(0.74, 0.72, 0.70), old2p * 0.6);
+
+    // ALGAE AND BALD GRAVEL. A white roof does not stay white — it grows
+    // gloeocapsa in streaks running down to the drains — and a ballasted roof
+    // loses its stones wherever anybody walks or the wind scours, showing the
+    // black felt underneath. Both are the deck telling you which deck it is.
+    float lum = dot(deck, vec3(0.2126, 0.7152, 0.0722));
+    if (lum > 0.45) {
+      float alg = rnoise(vec2(rp.x * 0.5, rp.y * 0.09) + ws);
+      roof = mix(roof, vec3(0.318, 0.352, 0.300), smoothstep(0.56, 0.86, alg) * wear * 0.62);
+    }
+    if (dk == 0 || dk == 3) {
+      float bald = rnoise(wp * 0.44 + ws * 2.1);
+      roof = mix(roof, vec3(0.135, 0.128, 0.120), smoothstep(0.68, 0.88, bald) * (0.25 + 0.5 * wear));
+    }
+    // THE SUMP. Every flat roof drains somewhere, and the somewhere is a dish
+    // of standing water with a ring of silt round it that never dries out.
+    float dsx = rnoise(vec2(ws, ws * 1.7)) - 0.5, dsy = rnoise(vec2(ws * 2.3, ws)) - 0.5;
+    float dd = length(rp - vec2(dsx, dsy) * 22.0 - floor(rp / 46.0 + 0.5) * 46.0);
+    float sump = 1.0 - smoothstep(0.9, 3.4, dd);
+    roof = mix(roof, roof * vec3(0.56, 0.60, 0.62), sump * 0.55);
+    roof = mix(roof, roof * 1.10, (1.0 - smoothstep(3.4, 4.6, dd)) * sump * 0.0 + smoothstep(3.2, 3.9, dd) * (1.0 - smoothstep(3.9, 5.0, dd)) * 0.22);
   }
 
   if (s == 9 || s == 12 || (s == 10 && vVar > 0.62)) roof = seasonGreen(roof);

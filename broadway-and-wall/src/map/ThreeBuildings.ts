@@ -933,35 +933,51 @@ void main() {
     float p1 = rnoise(wp * 0.115 + ws);
     float p2 = rnoise(wp * 0.27 + ws * 1.7);
     float pond = p1 * 0.62 + p2 * 0.38;
-    float stain = 0.12 + 0.34 * dot(deck, vec3(0.2126, 0.7152, 0.0722));
-    roof = mix(roof, roof * (0.52 + 0.12 * vRand), smoothstep(0.58, 0.80, pond) * stain);
-    if (dk == 0 || dk == 3) roof = mix(roof, vec3(0.120, 0.113, 0.105), smoothstep(0.60, 0.82, p2) * 0.55);
+    // PONDING IS A SHEEN, NOT A HOLE. This mixed 45% toward half-brightness
+    // inside a soft noise blob, and stacked with the repairs below it turned
+    // every roof in the city into a field of dark amoebas — the single ugliest
+    // thing in the render. Standing water on a roof is DAMP: a few per cent
+    // darker, a little cooler, with no edge you could point at. That is all it
+    // has ever looked like from the air.
+    float stain = 0.10 + 0.20 * dot(deck, vec3(0.2126, 0.7152, 0.0722));
+    roof = mix(roof, roof * vec3(0.90, 0.93, 0.96), smoothstep(0.50, 0.86, pond) * stain);
+    if (dk == 0 || dk == 3) roof = mix(roof, roof * vec3(0.86, 0.85, 0.83), smoothstep(0.58, 0.86, p2) * 0.30);
     roof *= 0.955 + 0.09 * rnoise(wp * 0.7);
     roof = mix(roof, roof * 0.92, smoothstep(0.52, 0.86, rnoise(wp * 0.22 + 17.0)) * 0.42);
 
     // ---- what forty years on a roof actually looks like ------------------
     //
     // A roof is not resurfaced, it is PATCHED, over and over, by different
-    // contractors in different decades with whatever was on the truck. That is
-    // the single thing that separates an old roof from a new one from the air
-    // — not dirt, but the map of black rectangles where somebody chased a leak
-    // — and it is worth more than any amount of noise, because it has EDGES
-    // and edges are what the eye reads as history.
+    // contractors in different decades with whatever was on the truck. That
+    // map of repairs is the one thing that separates an old roof from a new
+    // one at this distance — but only if it has the right SHAPE.
     //
-    // vSeg.y is the building's own wear roll, so a new building has a clean
-    // deck and a hundred-year-old one is a quilt, and neither is random per
-    // frame.
+    // I built it first as a threshold on smooth noise mixed 72% toward black,
+    // and it read as holes: round dark amoebas sitting on every roof in town,
+    // which is nothing like a roof and was the worst-looking thing in the
+    // game. Two mistakes. A repair is not round — somebody rolls a STRIP of
+    // membrane along the run and cuts it square, so a patched roof is a
+    // patchwork of rectangles aligned to the same direction the seams are.
+    // And a repair is not dark — it is the same material as the roof, laid at
+    // a different time, so it differs from its neighbour by about a tenth of
+    // its value, not by three quarters. Newer bitumen is darker; anything that
+    // has been coated is lighter. Both happen.
     float wear = clamp(abs(vSeg.y), 0.0, 1.0) * (0.35 + 0.65 * (1.0 - vEra));
-    float pk = rnoise(wp * 0.32 + ws * 3.3);
-    float pk2 = rnoise(wp * 0.61 + ws * 7.1);
-    float pat = smoothstep(0.74 - wear * 0.30, 0.80 - wear * 0.30, pk);
-    // the flashing round a pat is the darkest line on the roof
-    float edge = pat * (1.0 - smoothstep(0.78 - wear * 0.30, 0.90 - wear * 0.30, pk));
-    roof = mix(roof, vec3(0.108, 0.101, 0.094) * (0.75 + 0.5 * pk2), pat * 0.72);
-    roof *= 1.0 - edge * 0.34;
-    // a second, older generation of repair underneath the first
-    float old2p = smoothstep(0.80 - wear * 0.24, 0.88 - wear * 0.24, pk2) * (1.0 - pat);
-    roof = mix(roof, roof * vec3(0.74, 0.72, 0.70), old2p * 0.6);
+    vec2 pc = vec2(rp.x / 3.6, rp.y / 6.2);          // the roll grid, seam-aligned
+    vec2 pcell = floor(pc), pf = fract(pc);
+    float ph = rhash(pcell + ws);
+    float patched = step(1.0 - (0.06 + 0.30 * wear), ph);
+    // the strip does not fill its cell, and it is cut square
+    float pw = 0.34 + 0.46 * rhash(pcell + 7.3);
+    float phh = 0.40 + 0.44 * rhash(pcell + 13.1);
+    float inPat = patched
+      * step(abs(pf.x - 0.5), pw * 0.5)
+      * step(abs(pf.y - 0.5), phh * 0.5);
+    // a hard edge at three pixels is aliasing, not detail — fade the whole
+    // thing out as the cell shrinks on screen, the same way the window grid does
+    float pFine = 1.0 - smoothstep(0.22, 0.70, max(fwidth(pc.x), fwidth(pc.y)));
+    float tone = rhash(pcell + 21.7) < 0.60 ? -1.0 : 1.0;
+    roof *= 1.0 + tone * inPat * pFine * (0.055 + 0.075 * rhash(pcell + 31.0));
 
     // ALGAE AND BALD GRAVEL. A white roof does not stay white — it grows
     // gloeocapsa in streaks running down to the drains — and a ballasted roof
@@ -976,13 +992,10 @@ void main() {
       float bald = rnoise(wp * 0.44 + ws * 2.1);
       roof = mix(roof, vec3(0.135, 0.128, 0.120), smoothstep(0.68, 0.88, bald) * (0.25 + 0.5 * wear));
     }
-    // THE SUMP. Every flat roof drains somewhere, and the somewhere is a dish
-    // of standing water with a ring of silt round it that never dries out.
-    float dsx = rnoise(vec2(ws, ws * 1.7)) - 0.5, dsy = rnoise(vec2(ws * 2.3, ws)) - 0.5;
-    float dd = length(rp - vec2(dsx, dsy) * 22.0 - floor(rp / 46.0 + 0.5) * 46.0);
-    float sump = 1.0 - smoothstep(0.9, 3.4, dd);
-    roof = mix(roof, roof * vec3(0.56, 0.60, 0.62), sump * 0.55);
-    roof = mix(roof, roof * 1.10, (1.0 - smoothstep(3.4, 4.6, dd)) * sump * 0.0 + smoothstep(3.2, 3.9, dd) * (1.0 - smoothstep(3.9, 5.0, dd)) * 0.22);
+    // (The drain sump used to be here — a darkened disc at every low point. At
+    // the distance this game is played from it was a two-pixel dark dot, which
+    // is a speck on a roof and not a roof detail, and it was a third of the
+    // spotting problem. A roof drains; you cannot see it from an aeroplane.)
   }
 
   if (s == 9 || s == 12 || (s == 10 && vVar > 0.62)) roof = seasonGreen(roof);

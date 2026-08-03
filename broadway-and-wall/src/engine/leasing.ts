@@ -480,6 +480,46 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
   // expire stale LOIs and LOIs on parcels no longer owned
   s.lois = s.lois.filter((l) => l.expiresM > q && s.holdings[l.bbl]);
 
+  // A LETTER FOR SPACE THAT IS GONE DOES NOT SIT ON YOUR DESK.
+  //
+  // Every letter is sized against the vacancy on the day it was written, and
+  // more than one can be live on the same building at once — the tour sweeps
+  // its own members when one signs, but two letters from DIFFERENT tours were
+  // never each other's business. So you could sign the first, take the floor
+  // down to a sliver, and be left holding a second letter for space that no
+  // longer existed. Accepting it ran the clamp in signLoi, found less than a
+  // demisable suite left, and returned without signing anything: the letter
+  // vanished off the desk and no lease appeared. From the player's chair that
+  // is the game quietly eating an input, which is the worst thing software can
+  // do, and it is exactly what a playtester hit on a building they had just
+  // finished developing.
+  //
+  // The fix is at the source. A prospect whose space got let while they were
+  // deciding does not wait around — they go and look at somebody else's
+  // building, and they say so on the way out.
+  {
+    const gone: LOI[] = [];
+    s.lois = s.lois.filter((l) => {
+      if (l.kind !== "new" && l.kind !== "expansion") return true;
+      const rec = resolveRec(parcels, s, l.bbl);
+      const h = s.holdings[l.bbl];
+      if (!rec || !h) return true;
+      const use = l.use ?? leasableUses(rec)[0] ?? "office";
+      const floor = use === "multifamily" ? 450 : COMMERCIAL_SUITE_MIN;
+      if (useVacantSf(rec, h, use, q) >= floor) return true;
+      gone.push(l);
+      return false;
+    });
+    for (const l of gone) {
+      const rec = resolveRec(parcels, s, l.bbl);
+      s.news.unshift({
+        q, kind: "info",
+        text: `${l.name} have withdrawn from ${rec?.address ?? "your building"} — the space they were looking at `
+          + `let while they were deciding, and what is left will not demise.`,
+      });
+    }
+  }
+
   for (const h of Object.values(s.holdings)) {
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
@@ -1182,6 +1222,11 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
         q: s.month, kind: "warn",
         text: `${l.name} lost the expansion space at ${rec.address} — the other letter signed first, and what is left will not demise.`,
       });
+      // Same flag as the new-lease branch. An expansion that signs nothing has
+      // to come back to the player as an error rather than as silence.
+      (s as GameState & { _signFailed?: string })._signFailed =
+        `${l.name} lost the expansion space — the other letter signed first, and `
+        + `the ${Math.round(add).toLocaleString()} sf left will not demise.`;
       return;
     }
     t.rentPsf = +(((t.rentPsf * t.sf) + (l.rentPsf * add)) / (t.sf + add)).toFixed(2);
@@ -1231,12 +1276,19 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     // the same floor twice" costs.
     const floorSf = use === "multifamily" ? 450 : COMMERCIAL_SUITE_MIN;
     if (sf < floorSf) {
+      // AND IT IS SAID OUT LOUD. A news line scrolls past; what the player
+      // needs is the thing they just clicked telling them why it did nothing.
+      // signLoi cannot return an error, so it raises a flag the caller turns
+      // into one — see respondLOI.
       s.news.unshift({
         q: s.month, kind: "warn",
         text: `${l.name} lost the space at ${rec.address} — the other letter signed first and what is left `
           + `(${Math.round(sf).toLocaleString()} sf) is under the ${floorSf.toLocaleString()} sf minimum. `
           + `Two live letters on one floor is a race, and somebody always loses it.`,
       });
+      (s as GameState & { _signFailed?: string })._signFailed =
+        `${l.name} lost the space — the other letter signed first, and the `
+        + `${Math.round(sf).toLocaleString()} sf left will not demise.`;
       return;
     }
     const deposit = depositFor(s, l.rentPsf, sf, l.credit);
@@ -1293,7 +1345,17 @@ export function respondLOI(
       Object.assign(next, d.s);
       drawn = short;
     }
+    const flagged = next as GameState & { _signFailed?: string };
+    delete flagged._signFailed;
     signLoi(next, rec, h, l);
+    // signLoi has one path that legitimately signs nothing — the space it was
+    // written against went while the letter sat on the desk. That has to come
+    // back as an ERROR the player sees, not as silence.
+    if (flagged._signFailed) {
+      const why = flagged._signFailed;
+      delete flagged._signFailed;
+      return why;
+    }
     return null;
   };
   const drawNote = () => (drawn ? ` Drew ${money(drawn)} on the line to fund it.` : "");

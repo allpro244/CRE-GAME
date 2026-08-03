@@ -25,6 +25,7 @@ import { resolveRec, holdingValue, holdingNOIYr, netWorth, assetValue, FAR_CEILI
 // building from the one being sold, and flags a correctly-cheap worn asset as a
 // mispriced one.
 import { gradeOf } from "./rivals";
+import { leasableUses, COMMERCIAL_SUITE_MIN, useVacantSf } from "./leasing";
 import { mixOf, useSf } from "./mix";
 import { MAX_FLOORS_BY_USE } from "./dev";
 import { SECTORS } from "./market";
@@ -284,6 +285,28 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
       }
     }
   }
+  // A LETTER YOU CANNOT SIGN MUST NOT BE ON THE DESK.
+  //
+  // This is the invariant for a real bug a playtester hit: a second letter for
+  // space the first letter had already taken stayed on the desk, and accepting
+  // it ran the demising clamp, found less than a suite left, and returned
+  // having signed nothing. The letter disappeared and no lease appeared —
+  // software quietly eating an input. Letters are now withdrawn at the source
+  // the month their space goes, and this is what stops that regressing.
+  for (const l of s.lois) {
+    if (l.kind !== "new" && l.kind !== "expansion") continue;
+    const rec = resolveRec(parcels, s, l.bbl);
+    const h = s.holdings[l.bbl];
+    if (!rec || !h) continue;
+    const use = l.use ?? leasableUses(rec)[0] ?? "office";
+    const floor = use === "multifamily" ? 450 : COMMERCIAL_SUITE_MIN;
+    const vac = useVacantSf(rec, h, use, s.month);
+    if (vac < floor) {
+      bad("loi", `${l.bbl} ${l.name}`, `letter for ${Math.round(l.sf)} sf of ${use} is live, but only `
+        + `${Math.round(vac)} sf is lettable — under the ${floor} sf floor, so accepting it would sign nothing`);
+    }
+  }
+
   // SECURITY DEPOSITS. One to two months of rent, never more, never negative,
   // and never sitting on a lease that has already ended.
   for (const h of Object.values(s.holdings)) {

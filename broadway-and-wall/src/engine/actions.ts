@@ -484,6 +484,12 @@ export function listForSale(
     return { s, err: "Can't market it mid-renovation — finish the work first." };
   }
   if (s.developments[bbl]) return { s, err: "Can't sell with cranes on site — deliver the building first." };
+  // It cannot be in two processes at once. A building shown to the market both
+  // on its own and inside a bundle is a building whose seller does not know
+  // what he is selling, and every buyer works that out in an afternoon.
+  if (s.portfolioSale?.bbls.includes(bbl)) {
+    return { s, err: "That one is inside the portfolio you have in the market. Pull it out of the bundle first." };
+  }
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   if (!Number.isFinite(ask) || ask <= 0) return { s, err: "Name a real number." };
@@ -749,6 +755,7 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
     if (parent !== bbl) continue;
     delete next.merged![child];
     delete next.holdings[child];
+    if (next.workouts?.[child]) delete next.workouts[child];
   }
   // The encumbrances leave with the deed, HERE, not on the next tick. The
   // invariant sweep reads the state the moment the sale returns, and a lease
@@ -759,6 +766,11 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   // they are the buyer's obligation now.
   next.cash -= depositsOn(next.holdings[bbl]);
   delete next.holdings[bbl];
+  // A SALE OUT OF DEFAULT CLOSES THE FILE. It is the best outcome available in
+  // a workout — the lender is repaid at closing and nobody takes a loss — and
+  // the file has to die with the deed, not linger and foreclose on a building
+  // somebody else owns.
+  if (next.workouts?.[bbl]) delete next.workouts[bbl];
   next.lois = next.lois.filter((l) => l.bbl !== bbl);
   next.news.unshift({
     q: next.month, kind: "deal",
@@ -976,7 +988,8 @@ export function tickSales(s: GameState, parcels: ParcelTable) {
       // So: a fifth of the old per-building rate, only one live approach at a
       // time across the portfolio, and a cooling-off period afterwards. The
       // odds no longer scale with how much you own.
-      const anyLive = Object.values(s.holdings).some((x) => x.sale?.unsolicited);
+      const anyLive = Object.values(s.holdings).some((x) => x.sale?.unsolicited)
+        || (s.portfolioSale?.bbls.includes(h.bbl) ?? false);
       const quiet = s.month - (s.lastUnsolicitedM ?? -60) > 30;
       if (rec0 && s.month - h.boughtM > 18 && !anyLive && quiet) {
         const hot = s.econ.phase === "expansion" || s.econ.phase === "peak";

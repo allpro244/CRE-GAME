@@ -5,6 +5,8 @@ import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfoli
 import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, assembleLots, grantGroundLease, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import { respondLOI, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, type LOIAction } from "@/engine/leasing";
+import { cureWorkout, requestForbearance, deedInLieu } from "@/engine/workout";
+import { listPortfolio, repricePortfolio, counterPortfolio, acceptPortfolioBid, delistPortfolio } from "@/engine/portfolio";
 import { fileVariance } from "@/engine/zoning";
 import { refinance, buyRateCap } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
@@ -69,6 +71,14 @@ interface AppState {
   applyVariance: (bbl: string) => void;
   prebuild: (bbl: string, use: string, sf: number) => void;
   extendLease: (bbl: string, idx: number) => void;
+  cureDefault: (bbl: string) => void;
+  sellPortfolio: (bbls: string[], ask: number) => void;
+  repricePortfolioSale: (ask: number) => void;
+  counterPortfolioBid: (price: number) => void;
+  acceptPortfolio: (exchange?: boolean) => void;
+  pullPortfolio: () => void;
+  askForbearance: (bbl: string) => void;
+  handBackKeys: (bbl: string) => void;
   buyOutLeases: (bbl: string) => void;
   holdLeasing: (bbl: string, on: boolean) => void;
   assemble: (bbls: string[]) => void;
@@ -350,6 +360,88 @@ export const useStore = create<AppState>((set, get) => ({
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Extended.");
+    void persist(r.s);
+  },
+
+  // The workout desk. Three ways off the table that you choose; the fourth
+  // happens to you if you choose none of them.
+  // THE BUNDLE. One process, many deeds — see engine/portfolio.ts.
+  sellPortfolio: (bbls, ask) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = listPortfolio(game, parcels, bbls, ask);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "In the market.");
+    void persist(r.s);
+  },
+
+  repricePortfolioSale: (ask) => {
+    const { game } = get();
+    if (!game) return;
+    const r = repricePortfolio(game, ask);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Repriced.");
+    void persist(r.s);
+  },
+
+  counterPortfolioBid: (price) => {
+    const { game } = get();
+    if (!game) return;
+    const r = counterPortfolio(game, price);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Answered.");
+    void persist(r.s);
+  },
+
+  acceptPortfolio: (exchange) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = acceptPortfolioBid(game, parcels, exchange);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Closed.");
+    void persist(r.s);
+  },
+
+  pullPortfolio: () => {
+    const { game } = get();
+    if (!game) return;
+    const next = delistPortfolio(game);
+    set({ game: next });
+    toast("Pulled from the market.");
+    void persist(next);
+  },
+
+  cureDefault: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = cureWorkout(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Cured.");
+    void persist(r.s);
+  },
+
+  askForbearance: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = requestForbearance(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Asked.");
+    void persist(r.s);
+  },
+
+  handBackKeys: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = deedInLieu(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Keys handed over.", "err");
     void persist(r.s);
   },
 

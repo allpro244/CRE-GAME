@@ -16,6 +16,9 @@ import { tickLoc } from "./credit";
 import { tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing } from "./dev";
 import { tickDemand } from "./demand";
 import { initRivals, tickRivals } from "./rivals";
+import { initLenders, tickLenders } from "./lenders";
+import { tickWorkouts } from "./workout";
+import { tickPortfolio } from "./portfolio";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
 
@@ -66,6 +69,8 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
     sponsor: { events: [] },
     rivals: [],
     lenderRel: {},
+    lenders: initLenders(),
+    workouts: {},
     totalLots: parcels ? Object.keys(parcels).length : 0,
     builtAtStart: parcels ? Object.values(parcels).filter((p) => p.class !== "land").length : 0,
     exchange: null,
@@ -164,6 +169,9 @@ export function advanceQuarter(
   // deliveries and lettings are now standing, so the city, the tenants and
   // the appraisers all read the same block this month.
   tickDemand(s, parcels);
+  tickLenders(s);
+  tickWorkouts(s, parcels);
+  tickPortfolio(s, parcels);
   tickRivals(s, parcels);
   tickPlanning(s, parcels, bbls);
   tickCityGrowth(s, parcels, bbls, adjacency);
@@ -348,6 +356,7 @@ export function advanceQuarter(
         if (s.groundLeases?.[pick.bbl]) delete s.groundLeases[pick.bbl];
         s.cash -= depositsOn(s.holdings[pick.bbl]);   // the deposits go with the deed
         delete s.holdings[pick.bbl];
+        if (s.workouts?.[pick.bbl]) delete s.workouts[pick.bbl];
         markSponsor(s, "seized", rec.address, Math.max(0, (pick.loan?.balance ?? 0) - gross));
         s.lois = s.lois.filter((l) => l.bbl !== pick.bbl);
         s.news.unshift({
@@ -399,6 +408,12 @@ export function advanceQuarter(
     if (s.holdings[child] && s.holdings[parent]) continue;
     delete s.merged![child];
     delete s.holdings[child];
+  }
+  // The same for a workout file. A deed that left the book by any route takes
+  // its default with it — a file on a building you no longer own would
+  // otherwise sit there and eventually foreclose on somebody else's property.
+  for (const bbl of Object.keys(s.workouts ?? {})) {
+    if (!s.holdings[bbl]?.loan) delete s.workouts![bbl];
   }
 
   return s;

@@ -15,6 +15,7 @@ import { genAnchorTenant } from "./leasing";
 import { claimJob, jobDelivered, ownerOf } from "./rivals";
 import { locAvailable } from "./credit";
 import { useSf } from "./mix";
+import { lenderAppetite, CONSTRUCTION_LENDER } from "./lenders";
 
 const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
 
@@ -144,14 +145,20 @@ export const CONTRACT_PREMIUM: Record<Contract, number> = { gmp: 0.04, costplus:
 //
 // Credit tightens the ceiling in a downturn, and industrial and housing carry
 // more than offices and shops, because they always have.
-function constructionLtc(mix: UseMix, phase: string, creditIdx: number): number {
+function constructionLtc(mix: UseMix, phase: string, creditIdx: number, appetite = 1): number {
   const spec = specShare(mix);
   // flats and sheds are the financeable end of the market
   const safeLtc = 0.70;
   const specLtc = 0.70;
   const base = specLtc * spec + safeLtc * (1 - spec);
   const tight = phase === "recession" ? 0.72 : phase === "peak" ? 0.94 : 1;
-  return Math.max(0, Math.min(0.70, base * tight * Math.min(1.12, Math.max(0.55, creditIdx))));
+  // Construction paper in this town is written by the regional bank, and the
+  // regional bank has a balance sheet you can read on Research. When it is
+  // eating losses it does not tighten the market's terms — it tightens YOURS,
+  // and a bank that has stopped lending stops financing buildings first,
+  // because a half-built tower is the worst collateral there is.
+  const app = Math.min(1.05, 0.5 + 0.5 * appetite);
+  return Math.max(0, Math.min(0.70, base * tight * app * Math.min(1.12, Math.max(0.55, creditIdx))));
 }
 
 /**
@@ -345,7 +352,7 @@ export function planDevelopment(
   // The lender's max is the ceiling; how much of it you TAKE is your call.
   // Less debt is a slower clock and a smaller reserve; more is more building
   // per dollar of equity and a harder landing if lease-up runs long.
-  const ltcMax = constructionLtc(mix, s.econ.phase, s.econ.creditIdx ?? 1);
+  const ltcMax = constructionLtc(mix, s.econ.phase, s.econ.creditIdx ?? 1, lenderAppetite(s, CONSTRUCTION_LENDER));
   // Math.min(x, undefined) is NaN, and a NaN here does not throw — it becomes
   // the commitment, then the equity, then the firm's cash, and the first thing
   // anyone sees is a balance sheet reading NaN twenty months later. Anything

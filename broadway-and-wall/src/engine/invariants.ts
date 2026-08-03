@@ -356,6 +356,62 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
     }
   }
 
+  // ---------------------------------------------------------------- the banks
+  // A lender is a firm with a balance sheet, so it gets the same treatment as
+  // any other balance sheet in here: no NaN, no negative book, no failing in
+  // the future, and a capital ratio that is a number.
+  for (const l of s.lenders ?? []) {
+    const at = `lender ${l.name}`;
+    if (!fin(l.book) || l.book < 0) bad("lender", at, `book ${l.book}`);
+    if (!fin(l.capital)) bad("nan", at, `capital is ${l.capital}`);
+    if (!fin(l.delinquent) || l.delinquent < 0 || l.delinquent > 1) bad("lender", at, `delinquency ${l.delinquent}`);
+    if (!fin(l.appetite) || l.appetite < 0) bad("lender", at, `appetite ${l.appetite}`);
+    if (!fin(l.yours) || l.yours < 0) bad("lender", at, `your balance ${l.yours}`);
+    if (!fin(l.chargeOffsTotal) || l.chargeOffsTotal < 0) bad("lender", at, `lifetime charge-offs ${l.chargeOffsTotal}`);
+    if (l.failedM !== undefined && l.failedM > s.month) bad("lender", at, `failed in month ${l.failedM}, it is month ${s.month}`);
+    // A failed desk that is somehow quoting again is the one bug that would
+    // quietly undo the whole point of giving them books.
+    if (l.failedM !== undefined && l.appetite > 0) bad("lender", at, `in receivership and still quoting at ${l.appetite}`);
+  }
+
+  // ------------------------------------------------------------- the workouts
+  // A file has to be about a building you own, with a loan on it, opened in
+  // the past, and pointing at a decision date that has not already passed
+  // unstuck. An orphaned workout is how you end up foreclosing on air.
+  for (const w of Object.values(s.workouts ?? {})) {
+    const at = `workout ${w.bbl}`;
+    const h = s.holdings[w.bbl];
+    if (!h) { bad("workout", at, "a file on a building you do not own"); continue; }
+    if (!h.loan) bad("workout", at, "a file on a building with no loan on it");
+    if (w.startM > s.month) bad("workout", at, `opened in month ${w.startM}, it is month ${s.month}`);
+    if (!fin(w.cure) || w.cure < 0) bad("workout", at, `cure amount ${w.cure}`);
+    if (w.asks < 0 || w.asks > 4) bad("workout", at, `${w.asks} forbearance requests`);
+    if (!["notice", "forbearance", "foreclosure"].includes(w.stage)) bad("workout", at, `stage ${w.stage}`);
+    // The clock has to run. A decide date more than a decade out means
+    // something extended it and never came back.
+    if (w.decideM > s.month + 180) bad("workout", at, `decision date is month ${w.decideM}, ${w.decideM - s.month} months away`);
+  }
+
+  // ------------------------------------------------------- the portfolio trade
+  // One process, many deeds, and every deed in it has to be one you still own.
+  // A stale bbl here would allocate part of a sale price to a building
+  // somebody else has — which is how you sell the same asset twice.
+  if (s.portfolioSale) {
+    const ps = s.portfolioSale;
+    const at = "portfolio sale";
+    if (!fin(ps.ask) || ps.ask <= 0) bad("portfolio", at, `ask ${ps.ask}`);
+    if (ps.listedM > s.month) bad("portfolio", at, `listed in month ${ps.listedM}, it is month ${s.month}`);
+    if (ps.bbls.length < 2) bad("portfolio", at, `${ps.bbls.length} building(s) in a portfolio`);
+    if (new Set(ps.bbls).size !== ps.bbls.length) bad("portfolio", at, "the same deed appears twice");
+    for (const b of ps.bbls) {
+      if (!s.holdings[b]) bad("portfolio", at, `includes ${b}, which you do not own`);
+      if (s.holdings[b]?.sale) bad("portfolio", at, `${b} is in the bundle AND listed on its own`);
+    }
+    for (const bid of ps.bids ?? []) {
+      if (!fin(bid.price) || bid.price <= 0) bad("portfolio", at, `${bid.name} bid ${bid.price}`);
+    }
+  }
+
   return v;
 }
 

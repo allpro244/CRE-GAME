@@ -1,6 +1,7 @@
 // The simulation state. Everything the game knows that isn't static parcel
 // data lives here, and it must stay JSON-serializable — saves are snapshots.
 import type { AssetClass } from "@/data/types";
+import type { Lender } from "./lenders";
 
 export type MarketPhase = "recovery" | "expansion" | "peak" | "recession";
 
@@ -308,6 +309,25 @@ export interface GroundLease {
  * the building harder after they win, is worth less than a slightly lower one
  * that closes. It is what decides whether they retrade you.
  */
+/**
+ * A PORTFOLIO IN THE MARKET.
+ *
+ * One process, many deeds. The ask is for the bundle; the indications are for
+ * the bundle; and at the closing table the number is allocated across the
+ * deeds pro rata to value, because that is what the schedule to a purchase and
+ * sale agreement actually looks like.
+ */
+export interface PortfolioSale {
+  bbls: string[];
+  ask: number;
+  listedM: number;
+  /** What the buildings were worth one at a time on the day it was listed. */
+  sumOfParts: number;
+  bids: { name: string; price: number; expiresM: number; countered?: boolean }[];
+  /** They came to you. Those bids carry a premium and a short fuse. */
+  unsolicited?: boolean;
+}
+
 export interface Bid {
   name: string;
   price: number;
@@ -634,6 +654,12 @@ export interface GameState {
   // does not get to walk into the next credit committee unrecognised.
   sponsor: { events: SponsorEvent[] };
   rivals: Rival[];                           // the other firms on the street
+  /** The desks, with books you can open. See engine/lenders.ts. */
+  lenders?: Lender[];
+  /** Loans in default and what is being done about them. See engine/workout.ts. */
+  workouts?: Record<string, Workout>;
+  /** A bundle of buildings in the market as one trade. See engine/portfolio.ts. */
+  portfolioSale?: PortfolioSale;
   lenderRel: Record<string, number>;         // lender name -> relationship 0-100; a trusted name is worth basis points
   totalLots: number;
   builtAtStart: number;
@@ -728,4 +754,29 @@ export const CENTURY_MONTHS = 1200; // Jan 2000 to Jan 2100
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 export function monthLabel(m: number): string {
   return `${MONTH_NAMES[((m % 12) + 12) % 12]} ${START_YEAR + Math.floor(m / 12)}`;
+}
+
+/**
+ * A LOAN THAT HAS STOPPED WORKING, and the conversation that follows.
+ *
+ * A default used to be an event: the balloon came due, you could not pay, the
+ * building was sold at a distress price in the same tick and it went on your
+ * record. That is the ENDING of a foreclosure, not a foreclosure — everything
+ * interesting about being in trouble happens in the eighteen months before it,
+ * across a table, with a lender who has their own problems.
+ */
+export interface Workout {
+  bbl: string;
+  lender: string;
+  startM: number;
+  /** notice -> the clock is running; forbearance -> you bought time; foreclosure -> they have filed. */
+  stage: "notice" | "forbearance" | "foreclosure";
+  cause: "balloon" | "covenant" | "arrears";
+  /** What has to be paid, or the loan balance if it is the whole thing. */
+  cure: number;
+  /** The month it is decided one way or the other. */
+  decideM: number;
+  /** How many times you have been to them about this building. */
+  asks: number;
+  missedMs: number;
 }

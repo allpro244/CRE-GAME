@@ -609,3 +609,18 @@ body {
 .tbl tr.row-me td { background: rgba(176,141,63,0.10); font-weight: 600; }
 /* Your own sign in the window, on the same tape as everybody else's. */
 .tbl tr.row-mine td { background: rgba(176,141,63,0.07); }
+
+/* ---- the workout desk: the one button on this street that gives a building away ---- */
+.btn.btn-danger {
+  border-color: rgba(150, 46, 34, 0.55);
+  color: #8e2c20;
+}
+.btn.btn-danger:hover:not(:disabled) {
+  background: rgba(150, 46, 34, 0.88); border-color: rgba(150, 46, 34, 0.88); color: var(--paper);
+}
+.page-section-head.neg { color: #8e2c20; }
+
+/* ---- the income statement reads DOWN, with rules under the subtotals ---- */
+.tbl-stmt td, .tbl-stmt th { padding-top: 3px; padding-bottom: 3px; }
+.tbl-stmt tr.is-rule td { border-top: 1px solid rgba(146,110,40,0.35); padding-top: 5px; }
+.tbl-stmt td.is-strong { font-weight: 600; }

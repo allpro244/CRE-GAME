@@ -5,12 +5,13 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import { resolveRec, concentration, industryConcentration } from "./value";
 import type { Econ, GameState, Holding, Loan } from "./types";
-import { logBooks } from "./types";
+import { logBooks, monthLabel } from "./types";
+import { openWorkout } from "./workout";
+import { lenderAppetite } from "./lenders";
 import { holdingNOIYr, holdingValue, assetValue, noiAfterTaxYr } from "./value";
-import { walt, depositsOn } from "./leasing";
+import { walt } from "./leasing";
 import { INDUSTRY_LABEL } from "./market";
-import { recordComp } from "./comps";
-import { sponsorStanding, markSponsor, distressPrice } from "./sponsor";
+import { sponsorStanding } from "./sponsor";
 
 export type PrepayKind = "open" | "stepdown" | "yieldmaint";
 
@@ -129,6 +130,11 @@ export const PRODUCTS: LoanProduct[] = [
  * the existing credit-cycle machinery already cuts their advance rates.
  */
 export function windowOpen(s: GameState, p: LoanProduct): boolean {
+  // A desk with no capital behind it is not "tightening" — it is shut, and a
+  // failed one is a receiver with a phone that nobody answers. This is the
+  // difference between a credit crunch that happens TO the city and one that
+  // happens AT a named institution you could have watched coming.
+  if (lenderAppetite(s, p.lender) < 0.12) return false;
   if (!p.window) return true;
   return (s.econ.creditIdx ?? 1) >= 0.78 && s.econ.phase !== "recession";
 }
@@ -206,8 +212,16 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   const rel = relDiscount(s, product);
   // the hometown bank cuts its friends slack in a crunch instead of cutting them off
   const crunchEase = product.id === "harbor" && lenderRelOf(s, product.lender) >= 55 ? 0.5 : 1;
-  const ratePct = +(s.econ.indexRate + product.spread * (1 + 1.1 * tight * crunchEase) + 0.9 * tight * crunchEase + st.spreadAdd - rel).toFixed(2);
-  const byLtv = product.ltv * (1 - 0.30 * tight * crunchEase) * (1 - st.advanceCut) * price;
+  // THIS DESK'S OWN BALANCE SHEET, not the city's. A lender that has just
+  // charged off a year of bad property loans rations everybody — including
+  // the borrower who did nothing wrong — and a flush one stretches. Read it
+  // on Research: the appetite number here is the same number shown there, a
+  // quarter before it shows up in a quote.
+  const app = lenderAppetite(s, product.lender);
+  const appMult = Math.min(1.02, 0.55 + 0.45 * app);
+  const ratePct = +(s.econ.indexRate + product.spread * (1 + 1.1 * tight * crunchEase) + 0.9 * tight * crunchEase
+    + Math.max(0, 1 - app) * 0.8 + st.spreadAdd - rel).toFixed(2);
+  const byLtv = product.ltv * (1 - 0.30 * tight * crunchEase) * (1 - st.advanceCut) * appMult * price;
   // a desk that is not in the market for this deal quotes nothing at all
   if (!windowOpen(s, product)) return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0 };
   if (product.maxLoan && byLtv > product.maxLoan) {
@@ -385,7 +399,10 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
   // the balloon. An automatic refi rolls the SAME balance — the bank isn't
   // in the business of handing you equity unasked. Cash-out is a choice you
   // make with the Refi button.
-  if (q >= loan.maturityM) {
+  // A loan already in workout is past its maturity by definition. The file is
+  // the process now; the refinancing ladder does not get to run again every
+  // month underneath it.
+  if (q >= loan.maturityM && !s.workouts?.[h.bbl]) {
     const value = holdingValue(rec, s.econ, h, s.month);
     const noi = holdingNOIYr(rec, s.econ, h, q);
     // A takeout is underwritten on the roll you actually have on the day the
@@ -433,38 +450,23 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
           text: `Balloon at ${rec.address}: today's market only refinances $${(qd.principal / 1e6).toFixed(1)}M — you wrote a $${(shortfall / 1e6).toFixed(2)}M check to close the gap.`,
         });
       } else {
-        // forced sale, at the price a forced sale actually gets
-        const gross = Math.round(value * distressPrice(s));
-        const net = gross - loan.balance;
-        // Non-recourse means the keys are the whole answer: a sale that does
-        // not cover the loan is the lender's problem. Recourse means it is
-        // yours, and that is exactly what the cheaper coupon bought.
-        const deficiency = net < 0 ? -net : 0;
-        s.cash += loan.recourse ? net : Math.max(0, net);
-        logBooks(s, "sold", loan.recourse ? net : Math.max(0, net));
-        s.exits = s.exits ?? [];
-        s.exits.push({ bbl: h.bbl, address: rec.address, boughtM: h.boughtM, soldM: q, price: gross, basis: h.costBasis, gain: gross - h.costBasis, forced: true });
-        // The partnership is wound up out of whatever the lender left, which
-        // on a distressed sale is usually nothing. Losing somebody else's
-        // money this way is the single most expensive thing you can do to a
-        // reputation, and it is settled here rather than quietly forgotten.
-        // A distressed sale is still a print, and the most informative kind:
-        // it is the only number in the city that nobody chose.
-        recordComp(s, rec, gross, "a distressed buyer", "You", true, h.condition);
-        if (s.groundLeases?.[h.bbl]) delete s.groundLeases[h.bbl];
-        s.cash -= depositsOn(s.holdings[h.bbl]);   // the deposits go with the deed
-        delete s.holdings[h.bbl];
-        // the tenants who were mid-negotiation are now somebody else's problem
-        s.lois = s.lois.filter((l) => l.bbl !== h.bbl);
-        markSponsor(s, deficiency > 0 && loan.recourse ? "deficiency" : "forced", rec.address, deficiency);
+        // NOT A SALE — A DEFAULT, WHICH IS A CONVERSATION.
+        //
+        // This used to liquidate the building inside the same tick: balloon
+        // due, no refi, no cash, sold at a distress price, black mark, done.
+        // That is what the END of a foreclosure looks like. What actually
+        // happens on the day a balloon is missed is that somebody at the
+        // lender opens a file, and for the next fourteen-odd months you and
+        // they have options — cure it, buy time at their price, hand back the
+        // keys, or let them take it at auction. Which of those is on the table
+        // is decided by THEIR balance sheet, not yours.
+        openWorkout(s, h.bbl, "balloon", loan.balance + fee);
         s.news.unshift({
           q, kind: "warn",
-          text: `The balloon came due at ${rec.address} with no refi and no cash — sold under pressure at $${(gross / 1e6).toFixed(2)}M, ${(100 * (1 - distressPrice(s))).toFixed(0)}% under the mark. It goes on your record.`
-            + (deficiency > 0
-              ? loan.recourse
-                ? ` You signed for this one: the $${(deficiency / 1e6).toFixed(2)}M deficiency came out of your account.`
-                : ` The loan was non-recourse, so the $${(deficiency / 1e6).toFixed(2)}M shortfall stayed with the lender.`
-              : ""),
+          text: `The balloon came due at ${rec.address} and there is no refinancing — today's market writes `
+            + `$${(qd.principal / 1e6).toFixed(1)}M against a $${(loan.balance / 1e6).toFixed(2)}M balance and you cannot cover the gap. `
+            + `${productById(loan.product).lender} has put it in workout: you have until ${monthLabel(s.month + 6)} to cure it, `
+            + `ask them to extend, or hand back the deed before they file.`,
         });
       }
     }

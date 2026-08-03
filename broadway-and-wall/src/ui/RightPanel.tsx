@@ -16,6 +16,9 @@ import { sellerOf, sellerProfile } from "@/engine/acquire";
 import { MILESTONES } from "@/engine/sim";
 import { isCommercial, vacantSf, walt, loiSigningCost, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, buyoutQuote, depositsHeld, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
+import { lenderHealth, capitalRatio, lenderBlurb } from "@/engine/lenders";
+import { workoutMood } from "@/engine/workout";
+import { portfolioQuote } from "@/engine/portfolio";
 import { locLimit, locRate, locAvailable } from "@/engine/credit";
 import { blockReport } from "@/engine/demand";
 import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK } from "@/engine/market";
@@ -1819,6 +1822,7 @@ function PropertyPage() {
       {/* OUT OF SERVICE. The damaged share earns nothing and still costs money
           to hold, and what it actually cost you after the policy is the only
           number that matters afterwards. */}
+      <WorkoutDesk bbl={bbl} />
       <LandDesk bbl={bbl} />
       {dev && (
         <div className="page-section">
@@ -1880,6 +1884,93 @@ function PropertyPage() {
  * These are the two decisions a landlord actually makes about empty space and
  * about space that is about to be empty.
  */
+/**
+ * THE WORKOUT DESK.
+ *
+ * A default used to be a single line of news: the balloon came due, you had no
+ * cash, the building was sold at a distress price in the same tick, and a
+ * black mark went on the record. That is the last page of a foreclosure. What
+ * actually happens is fourteen months of decisions with a lender who has
+ * problems of their own — and this is that table.
+ *
+ * Nothing here is advice with a right answer. Curing is expensive and always
+ * available if you have the money. Forbearance is buying time at their price,
+ * and whether it is even offered depends on THEIR capital ratio, which you can
+ * read on Research. A deed in lieu settles the debt in full and is usually the
+ * right move, and it still costs you a building and a piece of your record.
+ * Doing nothing is also a choice, and it is the most expensive one.
+ */
+function WorkoutDesk({ bbl }: { bbl: string }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const { cureDefault, askForbearance, handBackKeys } = useStore.getState();
+  const w = game.workouts?.[bbl];
+  const h = game.holdings[bbl];
+  if (!w || !h?.loan) return null;
+  const rec = resolveRec(parcels, game, bbl);
+  if (!rec) return null;
+  const mood = workoutMood(game, w.lender);
+  const value = holdingValue(rec, game.econ, h, game.month);
+  const bal = h.loan.balance;
+  const monthsLeft = Math.max(0, w.decideM - game.month);
+  const fee = Math.round(bal * mood.feePct);
+  const paydown = Math.round(bal * mood.paydownPct);
+  const equity = value - bal;
+  const filed = w.stage === "foreclosure";
+  return (
+    <div className="page-section">
+      <div className="page-section-head neg">
+        {filed ? "Foreclosure filed" : w.stage === "forbearance" ? "Forbearance — extended paper" : "In default"}
+        {" · "}{w.lender}
+      </div>
+      <div className="hint">
+        {w.cause === "balloon"
+          ? "The loan matured and there was no refinancing and no cash to close the gap."
+          : w.cause === "covenant"
+            ? "The covenant is broken and the cure period has not fixed it."
+            : "The payments stopped."}{" "}
+        {filed
+          ? `They have filed. The auction is set for ${monthLabel(w.decideM)} — ${monthsLeft} month${monthsLeft === 1 ? "" : "s"} from now — and an auction fetches less than a distress sale does, because everybody bidding knows the seller has no choice at all.`
+          : `You have until ${monthLabel(w.decideM)}, ${monthsLeft} month${monthsLeft === 1 ? "" : "s"}, before they file.`}
+      </div>
+      <div className="grid" style={{ marginBottom: 10 }}>
+        <Row k="Balance owed" v={usd(bal)} strong />
+        <Row k="What the building is worth" v={usd(value)} />
+        <Row k="Equity behind it" v={usd(equity)} bad={equity < 0} strong={equity > 0} />
+        <Row k="Paper" v={h.loan.recourse ? "recourse — a shortfall follows you" : "non-recourse — the keys are the answer"}
+          bad={h.loan.recourse} />
+        <Row k="To cure it outright" v={usd(w.cure)} bad={game.cash < w.cure} />
+      </div>
+      <div className="hint" style={{ marginBottom: 8 }}>{mood.why}</div>
+      <div className="btn-row">
+        <button className="btn" disabled={game.cash < w.cure} onClick={() => cureDefault(bbl)}
+          title={game.cash < w.cure ? `You are ${usd(w.cure - game.cash)} short` : "Pay it and the file closes"}>
+          Cure — {usd(w.cure)}
+        </button>
+        {!filed && w.asks < 1 && (
+          <button className="btn" onClick={() => askForbearance(bbl)}
+            title={mood.willExtend
+              ? `${(mood.feePct * 100).toFixed(0)}% fee and a ${(mood.paydownPct * 100).toFixed(0)}% paydown — ${usd(fee + paydown)} — for 18 to 30 months, at ${(h.loan.ratePct + mood.bumpPct).toFixed(2)}% with cash flow swept`
+              : "They can be asked. On this balance sheet they will almost certainly say no."}>
+            Ask them to extend{mood.willExtend ? ` — ${usd(fee + paydown)}` : ""}
+          </button>
+        )}
+        <button className="btn btn-danger" onClick={() => handBackKeys(bbl)}
+          title="Deed in lieu: the debt is settled in full, there is no deficiency even on recourse paper, and it is a smaller mark than an auction">
+          Hand back the deed
+        </button>
+      </div>
+      <div className="hint" style={{ marginTop: 8 }}>
+        {equity > bal * 0.12
+          ? "There is real equity here. Curing it or selling it into the open market beats handing it over — a deed in lieu gives away everything above the debt."
+          : h.loan.recourse
+            ? "You signed for this one. At auction the shortfall comes out of your account; a deed in lieu settles the debt in full and there is no deficiency. That difference is the whole reason to walk into their office rather than wait."
+            : "The paper is non-recourse and the debt is above the value. Handing it back costs you the building and nothing else, and it is a smaller mark than letting them take it."}
+      </div>
+    </div>
+  );
+}
+
 function LeasingDesk({ bbl }: { bbl: string }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
@@ -2290,6 +2381,10 @@ function PortfolioPage() {
   // the fifty best income producers, ranked — the question every owner asks
   // of a big book is "what is actually carrying this firm."
   const [sortBy, setSortBy] = useState<"value" | "income">("value");
+  // THE BUNDLE. Ticking buildings here is how you assemble a portfolio trade;
+  // see engine/portfolio.ts for why the sum of the parts is not the price.
+  const [bundling, setBundling] = useState(false);
+  const [bundle, setBundle] = useState<string[]>([]);
   if (!holdings.length && !Object.keys(game.developments).length) {
     return <div className="hint">You own nothing yet. The Marketplace page has the tape; the map has everything else.</div>;
   }
@@ -2398,14 +2493,31 @@ function PortfolioPage() {
           </div>
         </>
       )}
+      <PortfolioSaleDesk bundle={bundle} clear={() => { setBundle([]); setBundling(false); }} />
       <div className="btn-row" style={{ marginTop: 10 }}>
         <button className={"btn" + (sortBy === "value" ? " btn-on" : "")} onClick={() => setSortBy("value")}>By value</button>
         <button className={"btn" + (sortBy === "income" ? " btn-on" : "")} onClick={() => setSortBy("income")}
           title="The top 50 income producers, ranked by NOI.">Top earners</button>
+        {!game.portfolioSale && holdings.length >= 2 && (
+          <button className={"btn" + (bundling ? " btn-on" : "")}
+            onClick={() => { setBundling(!bundling); if (bundling) setBundle([]); }}
+            title="Tick two or more buildings and take them to market as one trade">
+            {bundling ? `Bundling · ${bundle.length} picked` : "Sell several at once"}
+          </button>
+        )}
+        {bundling && bundle.length > 0 && (
+          <button className="btn" onClick={() => setBundle([])}>Clear picks</button>
+        )}
+        {bundling && (
+          <button className="btn" onClick={() => setBundle(rows.filter((r) => !r.h.sale).map((r) => r.h.bbl))}>
+            Pick everything
+          </button>
+        )}
       </div>
       <table className="tbl">
         <thead>
           <tr>
+            {bundling && <th></th>}
             {sortBy === "income" && <th className="num">#</th>}
             {/* Square feet is the denominator of every number to the right of
                 it — NOI, value and debt are all quoted per foot in this
@@ -2421,6 +2533,15 @@ function PortfolioPage() {
           {shown.map(({ h, rec, v, noi, cf, occ }, i) => (
             <Fragment key={h.bbl}>
             <tr onClick={() => go(h.bbl)}>
+              {bundling && (
+                <td onClick={(ev) => {
+                  ev.stopPropagation();
+                  setBundle(bundle.includes(h.bbl) ? bundle.filter((x) => x !== h.bbl) : [...bundle, h.bbl]);
+                }} style={{ cursor: "pointer", userSelect: "none" }}
+                  title={h.sale ? "Already listed on its own — delist it first" : "Add to the bundle"}>
+                  {bundle.includes(h.bbl) ? "☑" : h.sale ? "·" : "☐"}
+                </td>
+              )}
               {sortBy === "income" && <td className="num dim">{i + 1}</td>}
               <td>{rec?.address ?? h.bbl}</td>
               <td>{rec ? useLabel(rec) : "—"}</td>
@@ -2545,6 +2666,157 @@ function PortfolioPage() {
  * number against the market, not against their own opener, and they answer
  * once — take it, walk, or one final counter-back.
  */
+/**
+ * THE PORTFOLIO DESK.
+ *
+ * Two questions, and the whole feature is the gap between their answers: what
+ * are these buildings worth, and what will somebody pay for all of them at
+ * once? The breakdown below is not decoration — every line in it is a term the
+ * engine actually applied, so a seventeen-point discount is legible before you
+ * commit to it rather than a surprise at the closing table.
+ *
+ * The reason to do this anyway is the thing the numbers cannot show you: a
+ * half-empty office in a soft market has no bid AT ALL on its own. Bundled
+ * with three stabilised apartment blocks it trades on the same day they do.
+ * You are paying the spread to make an unsellable building sellable, and
+ * whether that is worth it depends entirely on what else you want to do with
+ * the next three years.
+ */
+function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: () => void }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const { sellPortfolio, repricePortfolioSale, counterPortfolioBid, acceptPortfolio, pullPortfolio } =
+    useStore.getState();
+  const live = game.portfolioSale;
+  const [askPct, setAskPct] = useState(100);
+  const [counter, setCounter] = useState(0);
+
+  // ---- a process already running -------------------------------------------
+  if (live) {
+    const q = portfolioQuote(game, parcels, live.bbls);
+    const bid = live.bids?.[0];
+    const age = game.month - live.listedM;
+    return (
+      <div className="page-section">
+        <div className="page-section-head">
+          {live.unsolicited ? "An unsolicited approach" : "Portfolio in the market"} · {live.bbls.length} buildings
+        </div>
+        <div className="grid">
+          <Row k="Asking" v={usd(live.ask)} strong />
+          <Row k="Sum of the individual marks" v={usd(q.sumOfParts)} />
+          <Row k="What a bundle is indicated at" v={`${usd(q.indicative)} · ${(q.spreadPct * 100).toFixed(1)}%`}
+            bad={q.spreadPct < -0.06} />
+          <Row k="On the market" v={`${age} month${age === 1 ? "" : "s"}`} bad={age > 6} />
+          <Row k="Indications in hand" v={String(live.bids?.length ?? 0)} />
+        </div>
+        <div className="mini-list" style={{ marginTop: 8 }}>
+          {live.bbls.map((b) => {
+            const rec = resolveRec(parcels, game, b);
+            return (
+              <div key={b} className="mini-row" style={{ cursor: "pointer" }}
+                onClick={() => useStore.getState().focus(b, true)}>
+                <span>{rec?.address ?? b}</span>
+                <span className="mono dim">{rec ? useLabel(rec) : ""}</span>
+              </div>
+            );
+          })}
+        </div>
+        {bid ? (
+          <>
+            <div className="hint" style={{ marginTop: 10 }}>
+              <strong>{bid.name}</strong> is at {usd(bid.price)} — {((1 - bid.price / Math.max(1, q.sumOfParts)) * 100).toFixed(1)}%
+              inside the sum of the parts, good until {monthLabel(bid.expiresM)}.
+              {bid.countered && " You have already been back to them once."}
+            </div>
+            <div className="btn-row">
+              <button className="btn btn-buy" onClick={() => acceptPortfolio(false)}>
+                Close it — {usd(bid.price)}
+              </button>
+              <button className="btn" onClick={() => acceptPortfolio(true)}
+                title="Roll the whole gain into a 1031 and redeploy inside six months, or the tax comes due">
+                Close into a 1031
+              </button>
+              {!bid.countered && (
+                <>
+                  <Slider min={bid.price} max={Math.round(bid.price * 1.18)} step={100_000}
+                    value={counter || Math.round(bid.price * 1.05)} onChange={setCounter}
+                    label="Counter at" format={(v: number) => usd(v)} />
+                  <button className="btn" onClick={() => counterPortfolioBid(counter || Math.round(bid.price * 1.05))}>
+                    Counter
+                  </button>
+                </>
+              )}
+              <button className="btn" onClick={() => { pullPortfolio(); clear(); }}>Pull it</button>
+            </div>
+            <div className="hint">
+              An institution has a committee number. You can push them a few points and no further, and pushing
+              hard on a bundle is how the whole thing goes away — there is another portfolio next quarter and
+              they know it.
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="hint" style={{ marginTop: 10 }}>
+              No indications yet. {age > 5
+                ? "Six months of silence on a portfolio is the market pricing the weakest building in it. Cut the number or take them out and sell them one at a time."
+                : "Institutional buyers underwrite a bundle for a quarter before they call."}
+            </div>
+            <div className="btn-row">
+              <Slider min={Math.round(q.indicative * 0.8)} max={Math.round(q.sumOfParts * 1.05)} step={250_000}
+                value={live.ask} onChange={(v: number) => repricePortfolioSale(v)} label="Ask" format={(v: number) => usd(v)} />
+              <button className="btn" onClick={() => { pullPortfolio(); clear(); }}>Pull it</button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // ---- assembling one ------------------------------------------------------
+  if (bundle.length < 1) return null;
+  const q = portfolioQuote(game, parcels, bundle);
+  const ask = Math.round(q.indicative * (askPct / 100));
+  return (
+    <div className="page-section">
+      <div className="page-section-head">Sell {bundle.length} buildings as one trade</div>
+      {bundle.length < 2 ? (
+        <div className="hint">Tick one more. A portfolio is two buildings or more — one building is a listing.</div>
+      ) : (
+        <>
+          <div className="grid">
+            <Row k="Sum of the individual marks" v={usd(q.sumOfParts)} strong />
+            {q.why.map((w, i) => (
+              <Row key={i} k={w.label} v={`${w.pct >= 0 ? "+" : ""}${(w.pct * 100).toFixed(1)}%`} bad={w.pct < 0} />
+            ))}
+            <Row k="What a bundle is worth" v={`${usd(q.indicative)} · ${(q.spreadPct * 100).toFixed(1)}% against the parts`}
+              strong bad={q.spreadPct < 0} />
+            <Row k="Buyers who can fund it" v={String(q.depth)} bad={q.depth <= 1} />
+          </div>
+          <div className="hint">
+            {q.spreadPct < -0.10
+              ? "That is a serious discount, and it is being driven by the buildings at the bottom of this list. Take them out and the blend improves — but those are the ones with no bid of their own, which is the entire reason to bundle."
+              : q.spreadPct < -0.03
+                ? "A few points inside the parts, which is what a clean portfolio costs. You are buying a single closing and a clean exit with it."
+                : "A tight, coherent bundle. Institutions pay up for exactly this and there is very little discount in it."}
+          </div>
+          <Slider min={80} max={112} step={1} value={askPct} onChange={setAskPct}
+            label="Ask, against the indicative" format={(v: number) => `${v}% · ${usd(Math.round(q.indicative * (v / 100)))}`} />
+          <div className="hint">
+            Ask over the indicative and you may get nothing for nine months; ask under it and you will have
+            indications inside a quarter. Nine months is the whole run — after that every buyer in town has seen
+            it and passed, and that is a fact about your portfolio that does not go away.
+          </div>
+          <div className="btn-row">
+            <button className="btn btn-buy" onClick={() => { sellPortfolio(bundle, ask); clear(); }}>
+              Take it to market at {usd(ask)}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (bbl: string) => void }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
@@ -3447,6 +3719,9 @@ function ResearchPage() {
           </table>
         </section>
         <section style={{ gridColumn: "1 / -1" }}>
+          <TheBanks />
+        </section>
+        <section style={{ gridColumn: "1 / -1" }}>
           <LandValueChart />
         </section>
         <section style={{ gridColumn: "1 / -1" }}>
@@ -3476,6 +3751,101 @@ function ResearchPage() {
  * around the one I want — and that question needs the whole city in one list
  * you can sort and filter.
  */
+/**
+ * THE BANKS — a balance sheet for every desk that quotes you.
+ *
+ * "Credit: tight" was a word derived from an index, and an index is weather:
+ * it happens to you, you cannot see inside it, and there is nothing to do
+ * about it but wait. The five lenders now carry real books — capital, loans
+ * outstanding, what has stopped paying — and the appetite column below is
+ * literally the multiplier applied to your next advance rate. A regional
+ * whose delinquency has doubled and whose capital ratio is drifting toward its
+ * floor will be rationing next quarter and shut the one after. That is a
+ * decision you can act on a year early: refinance out of them while they will
+ * still write it, or be the last borrower they say no to.
+ */
+function TheBanks() {
+  const game = useStore((s) => s.game)!;
+  const lenders = game.lenders ?? [];
+  const [open, setOpen] = useState<string | null>(null);
+  if (!lenders.length) return null;
+  const yoursTotal = lenders.reduce((a, l) => a + l.yours, 0);
+  return (
+    <>
+      <div className="page-section">The banks</div>
+      <div className="hint">
+        Every desk on this street has its own balance sheet, and when it goes wrong it goes wrong at a name, not
+        at the market. Capital ratio is what they have behind the book; appetite is what is left of their advance
+        rate. Below about 0.12 they stop quoting entirely — and unlike the cycle, you can watch this coming.
+      </div>
+      <table className="tbl">
+        <thead>
+          <tr>
+            <th>Lender</th><th>Funded by</th><th className="num">Book</th><th className="num">Capital</th>
+            <th className="num">Cap ratio</th><th className="num">Delinquent</th><th className="num">Charge-offs yr</th>
+            <th className="num">Appetite</th><th className="num">Your debt</th><th>Standing</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lenders.map((l) => {
+            const h = lenderHealth(l);
+            const cr = capitalRatio(l);
+            const conc = l.book > 0 ? l.yours / l.book : 0;
+            return (
+              <Fragment key={l.id}>
+                <tr onClick={() => setOpen(open === l.id ? null : l.id)} style={{ cursor: "pointer" }}>
+                  <td>{l.name}</td>
+                  <td className="dim">
+                    {l.kind === "bank" ? "deposits" : l.kind === "life" ? "insurance float"
+                      : l.kind === "conduit" ? "selling the paper on" : "committed capital"}
+                  </td>
+                  <td className="num">{usd(l.book)}</td>
+                  <td className={"num" + (l.capital <= 0 ? " neg" : "")}>{usd(l.capital)}</td>
+                  <td className={"num" + (h.bad ? " neg" : "")}>{(cr * 100).toFixed(1)}%</td>
+                  <td className={"num" + (l.delinquent > 0.045 ? " neg" : "")}>{(l.delinquent * 100).toFixed(2)}%</td>
+                  <td className="num">{l.chargeOffsYr > 0 ? usd(l.chargeOffsYr) : "—"}</td>
+                  <td className={"num" + (l.appetite < 0.5 ? " neg" : "")}>
+                    {l.failedM !== undefined ? "—" : l.appetite.toFixed(2)}
+                  </td>
+                  <td className="num">{l.yours > 0 ? usd(l.yours) : "—"}</td>
+                  <td className={h.bad ? "neg" : "dim"}>{h.word}</td>
+                </tr>
+                {open === l.id && (
+                  <tr>
+                    <td colSpan={10} className="dim" style={{ paddingBottom: 12 }}>
+                      <div style={{ marginBottom: 6 }}>{lenderBlurb(l.name)}</div>
+                      <div>
+                        Net income this year {usd(l.netIncomeYr)} · losses since inception {usd(l.chargeOffsTotal)}
+                        {l.yours > 0 && <> · you are {(conc * 100).toFixed(2)}% of their book</>}
+                        {conc > 0.06 && <span className="neg"> — big enough that your problems are theirs</span>}
+                      </div>
+                      <div style={{ marginTop: 6 }}>
+                        {l.failedM !== undefined
+                          ? "In receivership. Loans they wrote still have to be repaid; nothing new is being written, ever."
+                          : l.appetite < 0.12
+                            ? "Not quoting. Nothing you bring them gets underwritten until the capital comes back."
+                            : l.appetite < 0.6
+                              ? `Rationing — the advance rate on anything they write is about ${(100 * Math.min(1.02, 0.55 + 0.45 * l.appetite)).toFixed(0)}% of their stated sheet, and the coupon carries about ${(Math.max(0, 1 - l.appetite) * 80).toFixed(0)}bps of extra spread.`
+                              : "Writing at their stated terms."}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+      {yoursTotal > 0 && (
+        <div className="hint">
+          You owe {usd(yoursTotal)} across these desks. Where it sits matters as much as what it costs: a
+          maturity at an impaired lender is a maturity that does not get refinanced.
+        </div>
+      )}
+    </>
+  );
+}
+
 function OwnershipRegister() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
@@ -4292,8 +4662,9 @@ function BooksPage() {
       </div>
       <NWChart data={game.nwHistory} />
       <CreditLine />
+      <IncomeStatement />
       <div className="page-section">
-        <div className="page-section-head">The ledger, by year</div>
+        <div className="page-section-head">The ledger, by year — every line, side by side</div>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl">
             <thead>
@@ -4373,6 +4744,121 @@ function BooksPage() {
             ))}
           </div>
         </section>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * THE INCOME STATEMENT.
+ *
+ * The ledger below this is a fine spreadsheet and a bad statement: twelve
+ * columns wide, operating flows sitting next to investing flows, no subtotals,
+ * and no way to answer the two questions anybody actually asks — did the
+ * BUILDINGS make money this year, and did the FIRM?
+ *
+ * Those are different questions and the difference is the entire craft. A
+ * portfolio can throw off eleven million of property cash flow and still burn
+ * cash, because development ate fourteen. A year that looks catastrophic on
+ * the bottom line can be the best year you have had, because the money went
+ * into the ground and comes back as a building. So this reads down, the way a
+ * statement reads, with the subtotals that separate the two.
+ */
+function IncomeStatement() {
+  const game = useStore((s) => s.game)!;
+  const books = game.books ?? [];
+  const [yr, setYr] = useState<number | null>(null);
+  if (!books.length) return null;
+  const cur = books.find((b) => b.yr === yr) ?? books[books.length - 1];
+  const prior = books.find((b) => b.yr === cur.yr - 1);
+  const partial = cur.yr === Math.floor(game.month / 12) && game.month % 12 !== 0;
+  const monthsIn = partial ? game.month % 12 : 12;
+
+  const opCf = (b: typeof cur) => b.noi - b.leasing - b.capex - b.ga;
+  const afterDebt = (b: typeof cur) => opCf(b) - b.debtSvc + (b.interest ?? 0);
+  const investing = (b: typeof cur) => b.sold - b.bought - b.dev;
+  const bottom = (b: typeof cur) => afterDebt(b) + investing(b) - b.taxes;
+
+  const L = ({ k, v, sub, strong, rule, note }: {
+    k: string; v: number; sub?: boolean; strong?: boolean; rule?: boolean; note?: string;
+  }) => (
+    <tr className={rule ? "is-rule" : undefined}>
+      <td style={{ paddingLeft: sub ? 22 : 0, fontWeight: strong ? 600 : undefined }}>
+        {k}{note && <span className="dim" style={{ fontWeight: 400 }}> · {note}</span>}
+      </td>
+      <td className={"num" + (v < 0 ? " neg" : "") + (strong ? " is-strong" : "")}>
+        {v === 0 ? "—" : (v < 0 ? "(" : "") + usd(Math.abs(v)) + (v < 0 ? ")" : "")}
+      </td>
+      <td className="num dim">
+        {prior ? (() => {
+          const pv = ({
+            "Net operating income": prior.noi, "Leasing costs": -prior.leasing,
+            "Capital expenditure": -prior.capex, "Firm overhead": -prior.ga,
+            "Property cash flow": opCf(prior), "Debt service": -prior.debtSvc,
+            "Interest on cash": prior.interest ?? 0, "Cash flow after debt": afterDebt(prior),
+            "Development": -prior.dev, "Acquisitions": -prior.bought,
+            "Disposition proceeds": prior.sold, "Taxes": -prior.taxes,
+            "Change in cash": bottom(prior),
+          } as Record<string, number>)[k];
+          if (pv === undefined) return "";
+          if (pv === 0) return v === 0 ? "" : "new";
+          const d = (v - pv) / Math.abs(pv);
+          return (d >= 0 ? "+" : "") + (d * 100).toFixed(0) + "%";
+        })() : ""}
+      </td>
+    </tr>
+  );
+
+  return (
+    <div className="page-section">
+      <div className="page-section-head">
+        Income statement · {2000 + cur.yr}{partial && ` · ${monthsIn} month${monthsIn === 1 ? "" : "s"} in, not a full year`}
+      </div>
+      <div className="hint">
+        The buildings and the firm are two different businesses. Everything above <em>property cash flow</em> is
+        what the portfolio produced; everything below it is what you did with the money. A year with a terrible
+        bottom line and a strong property line is a year you spent building — which is the good kind of terrible.
+      </div>
+      <div className="btn-row">
+        {books.slice(-8).map((b) => (
+          <button key={b.yr} className={"btn btn-sm" + (b.yr === cur.yr ? " btn-on" : "")} onClick={() => setYr(b.yr)}>
+            {2000 + b.yr}
+          </button>
+        ))}
+      </div>
+      <table className="tbl tbl-stmt">
+        <thead>
+          <tr><th>{2000 + cur.yr}</th><th className="num">Amount</th><th className="num">vs {prior ? 1999 + cur.yr : "—"}</th></tr>
+        </thead>
+        <tbody>
+          <L k="Net operating income" v={cur.noi} note="rent collected, less operating costs and property tax" />
+          <L k="Leasing costs" v={-cur.leasing} sub note="fit-out and commissions" />
+          <L k="Capital expenditure" v={-cur.capex} sub note="roofs, systems, make-ready" />
+          <L k="Firm overhead" v={-cur.ga} sub note="asset management, accounting, legal" />
+          <L k="Property cash flow" v={opCf(cur)} strong rule />
+          <L k="Debt service" v={-cur.debtSvc} sub note="interest, amortisation, fees" />
+          <L k="Interest on cash" v={cur.interest ?? 0} sub note="1.0% on idle balances" />
+          <L k="Cash flow after debt" v={afterDebt(cur)} strong rule />
+          <L k="Development" v={-cur.dev} sub note="equity into the ground, construction carry, overruns" />
+          <L k="Acquisitions" v={-cur.bought} sub note="equity out the door at closing" />
+          <L k="Disposition proceeds" v={cur.sold} sub note="net of loan payoff and penalties" />
+          <L k="Taxes" v={-cur.taxes} sub note="income and capital gains" />
+          <L k="Change in cash" v={bottom(cur)} strong rule />
+        </tbody>
+      </table>
+      <div className="hint">
+        {(() => {
+          const p = opCf(cur), a = afterDebt(cur), b = bottom(cur);
+          const cover = cur.debtSvc > 0 ? (cur.noi / cur.debtSvc) : null;
+          const parts: string[] = [];
+          if (p <= 0) parts.push("The portfolio did not cover its own operating costs this year — before a dollar of debt service. That is an occupancy problem or an expense problem, and neither is fixed by borrowing.");
+          else if (a < 0 && p > 0) parts.push("The buildings made money and the debt took more than they made. Every month of this comes out of cash or out of the line.");
+          else if (a > 0) parts.push(`The portfolio covered its debt with ${usd(a)} to spare.`);
+          if (cover !== null) parts.push(`Portfolio coverage ran ${cover.toFixed(2)}× — NOI over debt service, across everything you own.`);
+          if (cur.dev > 0 && b < 0 && a > 0) parts.push(`Cash fell because ${usd(cur.dev)} went into construction. That is not a loss; it is a building that is not finished.`);
+          if (cur.taxes > 0 && cur.sold > 0) parts.push(`${usd(cur.taxes)} of tax against ${usd(cur.sold)} of disposals — the price of selling rather than exchanging.`);
+          return parts.join(" ");
+        })()}
       </div>
     </div>
   );

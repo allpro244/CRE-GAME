@@ -12,7 +12,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ENTRY = join(HERE, ".entry.ts");
 const OUT = join(HERE, ".engine.mjs");
 
-const MODULES = ["sim", "leasing", "actions", "credit", "value", "dev", "debt", "demand", "invariants", "rivals", "sponsor", "mix", "acquire", "comps", "market", "zoning"];
+const MODULES = ["sim", "leasing", "actions", "credit", "value", "dev", "debt", "demand", "invariants", "rivals", "sponsor", "mix", "acquire", "comps", "market", "zoning", "lenders", "workout", "portfolio"];
 const { writeFileSync } = await import("node:fs");
 writeFileSync(ENTRY, MODULES.map((m) => `export * from "../src/engine/${m}";`).join("\n") + "\n");
 
@@ -30,6 +30,7 @@ const which = process.argv.includes("--balance") ? "audit.mjs"
   : process.argv.includes("--playdev") ? "playdev.mjs"
   : process.argv.includes("--devyield") ? "devyield.mjs"
   : process.argv.includes("--leaseup") ? "leaseup.mjs"
+  : process.argv.includes("--banks") ? "banks.mjs"
   : "invariants.mjs";
 const run = spawnSync("node", [join(HERE, which)], { stdio: "inherit", env: process.env });
 process.exit(run.status ?? 1);

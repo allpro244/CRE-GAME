@@ -80,6 +80,13 @@ export const sellerProfile = (k: SellerKind) => SELLERS[k];
 /** Who owns this listing, decided once and stable for the life of the listing. */
 export function sellerOf(s: GameState, parcels: ParcelTable, bbl: string): { kind: SellerKind; name: string } {
   const rival = ownerOf(s, bbl);
+  // A RECEIVER WINDING UP A NAMED FIRM IS STILL A NAMED FIRM'S BUILDING.
+  // Losing a bidding war to a receiver is nothing; buying Kestrel Capital's
+  // last tower out of their receivership eleven years after they outbid you
+  // on it is the whole reason to have rivals.
+  if (rival?.failedM !== undefined) {
+    return { kind: "lender", name: `the receiver for ${rival.name}` };
+  }
   if (rival) {
     return {
       kind: rival.stressMs && rival.stressMs > 4 ? "lender" : rival.style === "family" ? "local" : rival.style === "developer" ? "developer" : "institution",

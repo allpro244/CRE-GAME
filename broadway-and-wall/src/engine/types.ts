@@ -293,6 +293,18 @@ export interface Listing {
   // the bill for the rest. Buying one starts a development at that progress
   // rather than at a hole in the ground.
   halfBuilt?: { use: string; sf: number; floors: number; progress: number; costToComplete: number };
+  /**
+   * WHOSE BUILDING THIS IS, while it is on the market.
+   *
+   * The distress paths used to strip the deed out of a firm's book before
+   * pushing the listing, so the most interesting sellers in the game — the
+   * ones under pressure, and the dead ones being wound up — arrived at the
+   * table as "a special servicer clearing a book". The news would say Kestrel
+   * Capital was selling and then you negotiated with nobody.
+   */
+  sellerId?: string;
+  /** Set when a receiver is clearing a failed firm's book, so it still reads. */
+  receiverFor?: string;
 }
 
 

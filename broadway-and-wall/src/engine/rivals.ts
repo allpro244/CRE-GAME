@@ -727,7 +727,12 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       let release = 1 + Math.floor(rng(s) * 2);
       while (release-- > 0 && r.bbls.length) {
         const bbl = r.bbls[Math.floor(rng(s) * r.bbls.length)];
-        r.bbls = r.bbls.filter((b) => b !== bbl);
+        // KEEP THE DEED UNTIL IT CLOSES. This stripped the building out of the
+        // firm's book one line BEFORE pushing the listing, so ownerOf returned
+        // null and the negotiation fell through to an anonymous hash. Measured:
+        // of 348 distress listings a run, five carried a name. The two moments
+        // a rival is most interesting — under duress, and dead — were the exact
+        // two where the game took their name off the ticket.
         if (s.holdings[bbl] || s.listings.some((l) => l.bbl === bbl)) continue;
         const rec = resolveRec(parcels, s, bbl);
         if (!rec) continue;
@@ -738,6 +743,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
           // discount range — see ASK_FLOOR in sim.ts.
           bbl, ask: Math.round(v * rrange(s, 0.72, 0.88) / 1000) * 1000,
           listedM: s.month, expiresM: s.month + Math.round(rrange(s, 6, 12)), distress: true,
+          sellerId: r.id, receiverFor: r.name,
         });
       }
       continue;
@@ -873,11 +879,12 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         if (rec) {
           const v = assetValue(rec, s.econ, initialCondition(rec));
           const px = Math.round(v * rrange(s, 0.68, 0.88));
-          r.bbls = r.bbls.filter((b) => b !== bbl);
-          r.cash += px - gainsTax(r, px);
-          r.debt = Math.max(0, r.debt - Math.round(px * 0.92));
+          // The deed stays with them until somebody buys it — a firm selling
+          // under pressure is still the owner, and that is the whole point of
+          // the trade. It is transferred at the closing table, not at the
+          // moment they decide to sell.
           if (!s.listings.some((l) => l.bbl === bbl) && !s.holdings[bbl]) {
-            s.listings.push({ bbl, ask: px, listedM: s.month, expiresM: s.month + 8, distress: true });
+            s.listings.push({ bbl, ask: px, listedM: s.month, expiresM: s.month + 8, distress: true, sellerId: r.id });
             s.news.unshift({
               q: s.month, kind: "event",
               text: `${r.name} is selling. ${rec.address} hits the tape at $${(px / 1e6).toFixed(2)}M — ${Math.round((1 - px / Math.max(1, v)) * 100)}% under appraisal. They have more where that came from.`,

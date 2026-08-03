@@ -1321,7 +1321,7 @@ export type LOIAction = "accept" | "counter" | "decline";
  */
 export function respondLOI(
   s: GameState, parcels: ParcelTable, id: number, action: LOIAction, fund = false,
-  counter?: { rentPsf?: number; tiPsf?: number },
+  counter?: { rentPsf?: number; tiPsf?: number; bestFinal?: boolean },
 ): { s: GameState; msg: string; err?: string } {
   const next: GameState = JSON.parse(JSON.stringify(s));
   const loi = next.lois.find((l) => l.id === id);
@@ -1415,8 +1415,15 @@ export function respondLOI(
     const tight = Math.max(-0.3, Math.min(0.35, (natHere - vacHere) * 3));
     const stick = loi.kind === "renewal" ? 0.14 : 0;         // moving is expensive; incumbents bend
     const tiCut = loi.tiPsf > 0 ? Math.max(0, (loi.tiPsf - askTi) / Math.max(1, loi.tiPsf)) * 0.14 : 0;
+    // BEST AND FINAL. Saying the number is firm is itself information: it
+    // converts some hagglers, because a credible take-it-or-leave-it within
+    // reach is easier to sign than to shop — and it hardens the rest, because
+    // you have taken away their move. There is no counter-back branch at all:
+    // one letter goes out, and the answer is a signature or an empty hallway.
+    const bestFinal = counter?.bestFinal === true;
     const pAccept = Math.max(0.04, Math.min(0.95,
       1.58 - f * 1.4 + loi.credit * 0.04 + tight + stick - tiCut
+      + (bestFinal ? 0.05 : 0)
       + (next.econ.phase === "expansion" ? 0.06 : next.econ.phase === "recession" ? -0.08 : 0)));
     const openedAt = loi.openRentPsf ?? loi.rentPsf;
     const openTi = loi.tiPsf;
@@ -1452,8 +1459,10 @@ export function respondLOI(
       });
       return { s: next, msg: `${loi.name} took your counter — $${askRent.toFixed(2)}/sf.` + drawNote() };
     }
-    // the further past market you pushed, the faster the door
-    const pWalk = Math.max(0.15, Math.min(0.92, 0.24 + (f - 1.0) * 2.2));
+    // the further past market you pushed, the faster the door — and a firm
+    // number leaves nowhere else for a refusal to go, so on best-and-final
+    // everyone who does not take it walks.
+    const pWalk = bestFinal ? 1 : Math.max(0.15, Math.min(0.92, 0.24 + (f - 1.0) * 2.2));
     if (rng(next) < pWalk) {
       next.lois = next.lois.filter((l) => l.id !== id);
       reply("walked", openedAt, openTi);

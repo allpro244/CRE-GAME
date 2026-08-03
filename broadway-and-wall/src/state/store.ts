@@ -56,7 +56,7 @@ interface AppState {
   buy: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
   buyOff: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
   approach: (bbl: string) => void;
-  respondLoi: (id: number, action: LOIAction, fund?: boolean, counter?: { rentPsf?: number; tiPsf?: number }) => void;
+  respondLoi: (id: number, action: LOIAction, fund?: boolean, counter?: { rentPsf?: number; tiPsf?: number; bestFinal?: boolean }) => void;
   refi: (bbl: string, product: string, lev?: number) => void;
   develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>> }) => void;
   offer: (bbl: string, price: number, finalOffer?: boolean) => void;

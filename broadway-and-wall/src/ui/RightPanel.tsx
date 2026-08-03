@@ -1,6 +1,6 @@
 // The game's chrome: a parcel card docked to the map, and full-page views
 // for Portfolio / Deals / Market — big rooms, not side-panel squints.
-import { useEffect, useState, Fragment} from "react";
+import { useEffect, useMemo, useState, Fragment} from "react";
 import { useStore } from "@/state/store";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec } from "@/engine/types";
@@ -57,7 +57,7 @@ function physicalOcc(rec: never, h: { tenants: { sf: number }[]; occ?: number })
   return Math.min(1, (comm + res) / area);
 }
 import { sponsorStanding } from "@/engine/sponsor";
-import { marketAppetite, markRival, ownerOf, rivalCondition } from "@/engine/rivals";
+import { marketAppetite, markRival, ownerOf, rivalCondition, gradeOf } from "@/engine/rivals";
 import { compFlows, compStats, portfolioIndustries } from "@/engine/comps";
 import { INDUSTRY_LABEL, SECTORS } from "@/engine/market";
 import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses, renewalIntent } from "@/engine/leasing";
@@ -193,6 +193,18 @@ function DecisionModal() {
               <button className="btn" onClick={() => setDismissedCalls((d) => new Set(d).add(callBbl))}>
                 Not now
               </button>
+              <button
+                className="btn"
+                title="Brokers stop ringing you entirely. Turn it back on from the Marketplace page."
+                onClick={() => {
+                  const st = useStore.getState();
+                  const g = { ...st.game!, brokersOff: true };
+                  useStore.setState({ game: g });
+                  setDismissedCalls((d) => new Set(d).add(callBbl));
+                }}
+              >
+                Stop calling me
+              </button>
             </div>
             <div className="modal-queue">
               Their client will listen for a few months. It stays on your desk until it lapses.
@@ -310,6 +322,13 @@ function DecisionModal() {
               <div className="modal-actions">
                 <button className="btn btn-buy" onClick={() => { respondLoi(loi.id, "counter", short > 0, { rentPsf: mcRent || loi.rentPsf, tiPsf: mcTi }); setModalCounter(false); }}>
                   Send the counter · ${(mcRent || loi.rentPsf).toFixed(2)}/sf{loi.tiPsf > 0 ? ` · TI $${mcTi}` : ""}
+                </button>
+                <button
+                  className="btn"
+                  title="The number is firm and they know it. Firmer terms convert some hagglers — but nobody counters back a best and final: they sign it or they walk."
+                  onClick={() => { respondLoi(loi.id, "counter", short > 0, { rentPsf: mcRent || loi.rentPsf, tiPsf: mcTi, bestFinal: true }); setModalCounter(false); }}
+                >
+                  Best &amp; final
                 </button>
               </div>
             </>
@@ -1648,6 +1667,20 @@ function DevelopSection({ bbl }: { bbl: string }) {
           <button key={u} className={"btn" + (use === u ? " btn-on" : "")} onClick={() => setUse(u)}>{devUseLabel(u)}</button>
         ))}
       </div>
+      {/* THE CHEQUE, WHERE THE DIALS ARE. The all-in equity lived at the bottom
+          of the card, under the cost stack — so you moved the storeys slider
+          blind and scrolled down to learn what the design you just made costs.
+          The number a designer is actually trading against belongs on the dial. */}
+      {plan && (
+        <div className="grid" style={{ margin: "4px 0 2px" }}>
+          <Row
+            k="Your equity, all in"
+            v={`${usd(plan.equity)} · all-in ${usd(plan.costTotal)}`}
+            strong
+            bad={plan.equity > game.cash + locAvailable(game, parcels)}
+          />
+        </div>
+      )}
       <Slider
         label="Stories"
         value={fl}
@@ -3189,9 +3222,14 @@ function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (bbl: str
           <button className="btn" onClick={() => setCountering(true)}>Counter…</button>
         )}
         {countering && !final && !loi.countered && (
-          <button className="btn" onClick={() => { respondLoi(loi.id, "counter", true, { rentPsf: cRent, tiPsf: cTi }); setCountering(false); }}>
-            Send · ${cRent.toFixed(2)}/sf{loi.tiPsf > 0 ? ` · TI $${cTi}` : ""}
-          </button>
+          <>
+            <button className="btn" onClick={() => { respondLoi(loi.id, "counter", true, { rentPsf: cRent, tiPsf: cTi }); setCountering(false); }}>
+              Send · ${cRent.toFixed(2)}/sf{loi.tiPsf > 0 ? ` · TI $${cTi}` : ""}
+            </button>
+            <button className="btn" title="Sign it or walk — nobody counters back a best and final." onClick={() => { respondLoi(loi.id, "counter", true, { rentPsf: cRent, tiPsf: cTi, bestFinal: true }); setCountering(false); }}>
+              Best &amp; final
+            </button>
+          </>
         )}
         <button className="btn" onClick={() => respondLoi(loi.id, "decline")}>Pass</button>
       </div>
@@ -3639,8 +3677,10 @@ function EconomyPage() {
         </div>
         <div className="chart-cell">
           <div className="chart-title">Rent and cap rate</div>
-          <LineChart series={[{ label: "rent", color: COLOR[focus], pts: rentSeries }]} yFmt={(v) => `$${v.toFixed(0)}`} height={92} />
-          <LineChart series={[{ label: "cap", color: "#8a5620", pts: capSeries, dashed: true }]} yFmt={pctFmt} height={92} />
+          <LineChart series={[{ label: "rent", color: COLOR[focus], pts: rentSeries }]} yFmt={(v) => `$${v.toFixed(0)}`} height={92}
+            xLabels={[`${2000 + Math.max(0, Math.floor((game.month - rentSeries.length) / 12))}`, `${2000 + Math.floor(game.month / 12)}`]} />
+          <LineChart series={[{ label: "cap", color: "#8a5620", pts: capSeries, dashed: true }]} yFmt={pctFmt} height={92}
+            xLabels={[`${2000 + Math.max(0, Math.floor((game.month - capSeries.length) / 12))}`, `${2000 + Math.floor(game.month / 12)}`]} />
           <div className="chart-note">
             Rent is what the space earns; the cap rate is what the market will pay for that earning. They do not
             move together, and the gap between them is most of what makes or loses money here.
@@ -3721,6 +3761,113 @@ function EconomyPage() {
  * buying — is on Research, because reading the market and shopping it are two
  * different jobs and squeezing both onto one page made neither of them good.
  */
+/**
+ * EVERY BUILDING IN TOWN, AS A TABLE YOU CAN WORK.
+ *
+ * The register answers "who owns what"; this answers "what exists" — the whole
+ * standing stock, sortable on any column, filterable by class, searchable by
+ * address. It is the screen a buyer's analyst actually keeps open: sort by
+ * $/sf of value against demand and the mispriced corners fall out the bottom.
+ * Occupancy and value here are the same models the engine prices with, so
+ * this table cannot disagree with a deal card.
+ */
+function BuildingDatabase() {
+  const parcels = useStore((s) => s.parcels)!;
+  const game = useStore((s) => s.game)!;
+  const focus = useStore((s) => s.focus);
+  const [sortK, setSortK] = useState<string>("sf");
+  const [dir, setDir] = useState<-1 | 1>(-1);
+  const [cls, setCls] = useState<string>("all");
+  const [q, setQ] = useState("");
+  const rows = useMemo(() => {
+    const out: { bbl: string; addr: string; cls: string; sf: number; fl: number; yr: number;
+                 owner: string; occ: number; dmd: number; val: number; psf: number }[] = [];
+    for (const bbl in parcels) {
+      const rec = resolveRec(parcels, game, bbl);
+      if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+      const own = game.holdings[bbl] ? "You" : (ownerOf(game, bbl)?.name ?? "private");
+      const val = assetValue(rec, game.econ, gradeOf(game, rec));
+      out.push({
+        bbl, addr: rec.address, cls: rec.class, sf: rec.bldgArea, fl: rec.floors,
+        yr: rec.yearBuilt, owner: own, occ: occupancy(rec, game.econ),
+        dmd: Math.round(rec.demandScore + (game.blockD?.[rec.block] ?? 0)),
+        val, psf: val / Math.max(1, rec.bldgArea),
+      });
+    }
+    return out;
+  }, [parcels, game]);
+  const shown = useMemo(() => {
+    let r = rows;
+    if (cls !== "all") r = r.filter((x: (typeof rows)[number]) => x.cls === cls);
+    if (q.trim()) { const t = q.trim().toLowerCase(); r = r.filter((x: (typeof rows)[number]) => x.addr.toLowerCase().includes(t) || x.owner.toLowerCase().includes(t)); }
+    const k = sortK as keyof (typeof rows)[number];
+    return [...r].sort((a, b) => {
+      const av = a[k], bv = b[k];
+      return (typeof av === "string" ? (av as string).localeCompare(bv as string) : (av as number) - (bv as number)) * dir;
+    });
+  }, [rows, sortK, dir, cls, q]);
+  const H = ({ k, label, num }: { k: string; label: string; num?: boolean }) => (
+    <th className={num ? "num" : undefined} style={{ cursor: "pointer", whiteSpace: "nowrap" }}
+        onClick={() => { if (sortK === k) setDir((d) => (d === 1 ? -1 : 1)); else { setSortK(k); setDir(-1); } }}>
+      {label}{sortK === k ? (dir === -1 ? " ▾" : " ▴") : ""}
+    </th>
+  );
+  const CAP = 250;
+  return (
+    <div>
+      <div className="btn-row" style={{ marginBottom: 6 }}>
+        {["all", "office", "retail", "multifamily", "industrial"].map((c) => (
+          <button key={c} className={"btn" + (cls === c ? " btn-on" : "")} onClick={() => setCls(c)}>
+            {c === "all" ? `All · ${rows.length}` : c}
+          </button>
+        ))}
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="address or owner…"
+          style={{ flex: 1, minWidth: 120, background: "transparent", border: "1px solid rgba(120,100,70,0.35)",
+                   borderRadius: 4, padding: "4px 8px", font: "inherit", color: "inherit" }}
+        />
+      </div>
+      <table className="tbl">
+        <thead>
+          <tr>
+            <H k="addr" label="Address" />
+            <H k="cls" label="Class" />
+            <H k="sf" label="SF" num />
+            <H k="fl" label="Fl" num />
+            <H k="yr" label="Built" num />
+            <H k="occ" label="Occ" num />
+            <H k="dmd" label="Demand" num />
+            <H k="val" label="Value" num />
+            <H k="psf" label="$/sf" num />
+            <H k="owner" label="Owner" />
+          </tr>
+        </thead>
+        <tbody>
+          {shown.slice(0, CAP).map((r: (typeof rows)[number]) => (
+            <tr key={r.bbl} onClick={() => focus(r.bbl, true)} style={{ cursor: "pointer" }}>
+              <td>{r.addr}</td>
+              <td className="dim">{r.cls}</td>
+              <td className="num">{Math.round(r.sf).toLocaleString()}</td>
+              <td className="num">{r.fl}</td>
+              <td className="num">{r.yr || "—"}</td>
+              <td className="num">{(r.occ * 100).toFixed(0)}%</td>
+              <td className="num">{r.dmd}</td>
+              <td className="num">{usd(r.val)}</td>
+              <td className="num">${r.psf.toFixed(0)}</td>
+              <td className={r.owner === "You" ? undefined : "dim"}>{r.owner}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {shown.length > CAP && (
+        <div className="hint">Showing {CAP} of {shown.length.toLocaleString()} — narrow it with the class buttons or the search box.</div>
+      )}
+    </div>
+  );
+}
+
 function MarketPage() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
@@ -3745,6 +3892,19 @@ function MarketPage() {
         <Big label="Money in the room" value={
           marketAppetite(game) < 0.6 ? "gone" : marketAppetite(game) < 0.9 ? "thin"
             : marketAppetite(game) > 1.15 ? "everywhere" : "normal"} />
+        <button
+          className={"btn" + (game.brokersOff ? "" : " btn-on")}
+          style={{ alignSelf: "center" }}
+          title={game.brokersOff
+            ? "Brokers are not calling you. Click to let them ring again."
+            : "Brokers ring you with off-market deals now and then. Click to stop the calls entirely."}
+          onClick={() => {
+            const st = useStore.getState();
+            useStore.setState({ game: { ...st.game!, brokersOff: !st.game!.brokersOff } });
+          }}
+        >
+          {game.brokersOff ? "Brokers: off" : "Brokers: on"}
+        </button>
       </div>
       <div className="hint">
         Everything for sale in town. A motivated seller is priced under appraisal and will not last; a half-built
@@ -3939,55 +4099,20 @@ function LandValueChart() {
   );
 }
 
-/**
- * A SECTION YOU CAN SHUT.
- *
- * Research is nine sections deep and every one of them is always open, so the
- * page a principal opens with one question in mind answers it somewhere around
- * the fourth scroll. The fix is not to remove anything — the density is the
- * point, and the player has been explicit that detail must not be sacrificed —
- * it is to let them put away what they are not looking at today.
- *
- * The open set persists in localStorage, so the shape you leave the page in is
- * the shape you find it in next time, across reloads and across runs. That is
- * the whole feature: the page becomes YOURS rather than a fixed document.
- */
-function Fold({
-  id, title, sub, defaultOpen = true, right, children,
-}: {
-  id: string; title: string; sub?: string; defaultOpen?: boolean;
-  right?: React.ReactNode; children: React.ReactNode;
-}) {
-  const key = "bw:fold:" + id;
-  const [open, setOpen] = useState<boolean>(() => {
-    try { const v = localStorage.getItem(key); return v === null ? defaultOpen : v === "1"; }
-    catch { return defaultOpen; }
-  });
-  const toggle = () => {
-    setOpen((v) => {
-      try { localStorage.setItem(key, v ? "0" : "1"); } catch { /* private mode: it just will not persist */ }
-      return !v;
-    });
-  };
-  return (
-    <section className={"fold" + (open ? " fold-open" : "")}>
-      <div className="fold-head" onClick={toggle} role="button" tabIndex={0}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}>
-        <span className="fold-caret">{open ? "▾" : "▸"}</span>
-        <span className="fold-title">{title}</span>
-        {sub && <span className="fold-sub">{sub}</span>}
-        {right && <span className="fold-right" onClick={(e) => e.stopPropagation()}>{right}</span>}
-      </div>
-      {open && <div className="fold-body">{children}</div>}
-    </section>
-  );
-}
-
+// (The collapsible Fold component lived here. Research moved to sub-tabs —
+// one section on screen at a time instead of a scroll of drawers — and no
+// other page used it.)
 function ResearchPage() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
   const e = game.econ;
   void parcels;
+  // SUB-TABS, NOT A SCROLL. Research had eight collapsible sections stacked in
+  // one column, and finding the banks meant scrolling past everything above
+  // them. Each section is a tab now; one is on screen at a time.
+  const [rtab, setRtab] = useState<string>("sectors");
+  const RTABS: [string, string][] = [["sectors", "Sectors"], ["trades", "Trades"], ["banks", "Banks"],
+    ["land", "Land"], ["street", "The street"], ["register", "Owners"], ["stock", "Stock"], ["comps", "Prints"]];
   return (
     <div>
       <div className="stat-strip">
@@ -4023,9 +4148,14 @@ function ResearchPage() {
         );
       })()}
 
+      <div className="btn-row" style={{ margin: "10px 0 6px", flexWrap: "wrap" }}>
+        {RTABS.map(([id, label]) => (
+          <button key={id} className={"btn" + (rtab === id ? " btn-on" : "")} onClick={() => setRtab(id)}>{label}</button>
+        ))}
+      </div>
       <div className="deals-grid">
         <div style={{ gridColumn: "1 / -1" }}>
-        <Fold id="sectors" title="The sectors" sub="rents, caps, momentum and what is coming" defaultOpen>
+        {rtab === "sectors" && (<div>
           <div className="hint">
             Classes do not move together. Momentum is where the sector is heading; the pipeline is what
             everyone <em>else</em> is building, and it lands on the rent about three years from now.
@@ -4061,11 +4191,11 @@ function ResearchPage() {
               })}
             </tbody>
           </table>
-        </Fold>
+        </div>)}
         {/* THE TRADES. A separate cycle from the four asset classes above and
             the reason two identical office buildings are different assets: one
             let to insurers, one let to startups. */}
-        <Fold id="trades" title="The trades" sub="industry cycles, and your exposure to them" defaultOpen>
+        {rtab === "trades" && (<div>
           <div className="hint">
             Industries run their own cycles, on their own volatility, independent of the property market that houses
             them. Office can be a landlord's market while finance is shedding staff — and the building let to five
@@ -4103,25 +4233,28 @@ function ResearchPage() {
               })()}
             </tbody>
           </table>
-        </Fold>
-        <Fold id="banks" title="The banks" sub="whose capital decides what anyone can borrow" defaultOpen>
+        </div>)}
+        {rtab === "banks" && (<div>
           <TheBanks />
-        </Fold>
-        <Fold id="land" title="Land values, and the city itself" sub="the long series" defaultOpen={false}>
+        </div>)}
+        {rtab === "land" && (<div>
           <LandValueChart />
-        </Fold>
-        <Fold id="street" title="The street" sub="every firm's balance sheet" defaultOpen={false}>
+        </div>)}
+        {rtab === "street" && (<div>
           <TheStreet />
-        </Fold>
-        <Fold id="register" title="Who owns what" sub="every deed in town that is not yours" defaultOpen={false}>
+        </div>)}
+        {rtab === "register" && (<div>
           <OwnershipRegister />
-        </Fold>
+        </div>)}
+        {rtab === "stock" && (<div>
+          <BuildingDatabase />
+        </div>)}
         {/* THE PRINTS GO LAST. They are the reference you scroll to, not the
             thing you open the page for — sectors and land first, the record of
             what has actually traded underneath it. */}
-        <Fold id="comps" title="Recent prints" sub="every trade in the city" defaultOpen={false}>
+        {rtab === "comps" && (<div>
           <CompsSheet />
-        </Fold>
+        </div>)}
         </div>
       </div>
     </div>
@@ -4349,6 +4482,8 @@ function TheBanks() {
         Every desk on this street has its own balance sheet, and when it goes wrong it goes wrong at a name, not
         at the market. Capital ratio is what they have behind the book; appetite is what is left of their advance
         rate. Below about 0.12 they stop quoting entirely — and unlike the cycle, you can watch this coming.
+        {" "}<b>Click a bank to open its book</b> — their standing, and every loan of yours on that desk,
+        property by property.
       </div>
       <table className="tbl">
         <thead>
@@ -4366,7 +4501,7 @@ function TheBanks() {
             return (
               <Fragment key={l.id}>
                 <tr onClick={() => setOpen(open === l.id ? null : l.id)} style={{ cursor: "pointer" }}>
-                  <td>{l.name}</td>
+                  <td>{open === l.id ? "▾ " : "▸ "}{l.name}</td>
                   <td className="dim">
                     {l.kind === "bank" ? "deposits" : l.kind === "life" ? "insurance float"
                       : l.kind === "conduit" ? "selling the paper on" : "committed capital"}

@@ -555,7 +555,9 @@ export default function MapView() {
       const rec = hoveredBBL && hoveredBBL !== selectedBBL ? table?.[hoveredBBL] : null;
       if (!rec) { tip.style.display = "none"; return; }
       const dmd = Math.round(Math.max(2, Math.min(100, rec.demandScore + (g?.blockD?.[rec.block] ?? 0))));
-      tip.textContent = `${rec.address} · ${rec.class === "land" ? "vacant" : rec.floors + " fl"} · demand ${dmd}`;
+      tip.textContent = rec.class === "land"
+        ? `${rec.address} · vacant · ${rec.lotArea.toLocaleString()} sf lot · demand ${dmd}`
+        : `${rec.address} · ${rec.floors} fl · ${Math.round(rec.bldgArea).toLocaleString()} sf · demand ${dmd}`;
       tip.style.display = "block";
       const r = container.getBoundingClientRect();
       tip.style.left = e.clientX - r.left + 14 + "px";

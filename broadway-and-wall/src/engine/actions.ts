@@ -1081,10 +1081,19 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
   // that travels faster than money in this business, and the first person to
   // act on it is the broker deciding whose afternoon gets the call.
   const rep = 1 - 0.18 * Math.min(4, Math.max(0, recentLowballs(s) - 1));
+  // FOUR TIMES QUIETER, BY REQUEST. The playtest verdict was that the phone
+  // rings too often — and the player can also simply tell the brokers to stop
+  // calling, which is a real thing a principal does. The hazard keeps its
+  // shape (the drought floor still ramps, reputation still gates); only the
+  // level drops. One consistent RNG draw either way, so a save replays the
+  // same whether or not the phone is switched on.
+  const QUIETER = 0.25;
   const p = (quiet > 0
     ? Math.min(0.85, Math.max(base, 0.12 * (1 + quiet / 1.6)) * dry)
-    : base) * rep;
-  if (rng(s) >= p) return;
+    : base) * rep * QUIETER;
+  const roll = rng(s);
+  if (s.brokersOff) return;
+  if (roll >= p) return;
 
   // they pitch near what you already buy: same class, similar size, better corner
   const ref = Object.values(s.holdings).map((h) => resolveRec(parcels, s, h.bbl)).filter(Boolean) as ParcelRecord[];

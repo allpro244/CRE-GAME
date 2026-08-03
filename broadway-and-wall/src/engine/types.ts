@@ -1029,6 +1029,8 @@ export interface GameState {
   // Leasing agent on retainer: signs every LOI for you at a 6% commission
   // instead of the 4%/2% you'd pay doing it yourself.
   agent: boolean;
+  /** The player told the brokers to stop ringing. Nothing else changes. */
+  brokersOff?: boolean;
   // Revolving line against the portfolio: 35% of net worth at index + 400bps.
   loc: { balance: number; drawnTotal: number; interestPaid: number };
   books: BooksYear[];                        // the ledger, one entry per year

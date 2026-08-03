@@ -47,8 +47,126 @@ export function demandBeta(demandScore: number): number {
   return 0.25 + 0.9 * demandIdx(demandScore);
 }
 
+// ------------------------------------------------- THE PLATE IS THE BUILDING
+//
+// A site is not just an area. Three lots of five thousand feet are three
+// buildings, each carrying its own core, its own lift bank, its own lobby and
+// its own two means of egress out of a floor plate too small to absorb any of
+// them. One lot of fifteen thousand is ONE building: one core serving three
+// times the area, a floor a tenant with a covenant will actually take, light
+// on more than one side, and a lobby somebody can put an address on.
+//
+// That is the whole of why anybody assembles, and none of it was in the model.
+// Measured before this block existed: three lots folded into one produced a
+// building with 1.056x the floor area, 1.070x the basis and SEVEN BASIS POINTS
+// LESS yield on cost than building on the three lots separately — and on a
+// retail site, 1.001x of everything. `sf = lotArea x coverage x floors` is
+// exactly additive in lot area, and the zoning envelope binds on 94.9% of
+// merged sites against 46.2% of single lots, so merging moves the constraint
+// off the plate curve (which rewards size) and onto the FAR curve (which is
+// blind to it). Assembling bought you nothing but a legal fee.
+//
+// Three consequences of plate size, and they are all physical:
+//
+//   EFFICIENCY  A core is mostly fixed per floor. The share of a plate it eats
+//               falls as the plate grows, so a big plate delivers more
+//               rentable feet per gross foot you pay to build.
+//   RENT        A big regular plate lets better, and lets to better names.
+//               Offices and sheds care enormously; flats do not, because a
+//               flat wants a window and a deep plate does not have one.
+//   LAND        Dirt is worth what can be built on it. A lot too narrow to
+//               reach the envelope it is zoned for is not worth its zoning,
+//               and that discount is exactly what an assembler is buying up.
+const ABS_MAX_FLOORS_V = 90;
+/** The tallest structure a plate this size can carry: slenderness, and core. */
+export function physicalMaxFloors(plateSf: number): number {
+  if (plateSf < 400) return 1;                       // below this it is not a building
+  const slender = 1.2 * Math.sqrt(plateSf);          // MAX_SLENDERNESS / FLOOR_HEIGHT_FT
+  // The core ramp: a 1,200 ft² plate carries about six floors, and the ability
+  // to serve height grows roughly linearly with the area left over after the
+  // core takes its fixed bite.
+  const core = 1 + (plateSf - 400) / 135;
+  return Math.max(1, Math.min(ABS_MAX_FLOORS_V, Math.floor(Math.min(slender, core))));
+}
+
+/**
+ * The plate a median NEW building in this city actually carries — measured at
+ * 4,325 ft² over 390 vacant lots, each planned at the coverage and height that
+ * maximises its profit. Everything below is expressed RELATIVE to it, so the
+ * median job's cost, the median building's rent and the median lot's land are
+ * all unchanged and only the spread around them is new. This constant is the
+ * difficulty dial for the whole of development: raising it makes every
+ * building slightly worse and every big site relatively better.
+ */
+export const REF_PLATE_SF = 4300;
+/** The median lot, for the same reason. */
+export const REF_LOT_SF = 4950;
+/** How much of a floor the core, the risers and the corridor take. */
+function coreLoss(plateSf: number): number { return 0.07 + 420 / Math.max(400, plateSf); }
+const REF_CORE_LOSS = coreLoss(REF_PLATE_SF);
+/** Rentable feet per gross foot built, against the median plate. */
+export function plateEfficiency(plateSf: number): number {
+  return clamp((1 - coreLoss(plateSf)) / (1 - REF_CORE_LOSS), 0.78, 1.14);
+}
+
+// Who cares about a big floor. A shed cares most — a clear-span box IS the
+// product. An office cares nearly as much. A shop cares about frontage, which
+// a wide site also buys. A flat does not care at all: past about eighty feet
+// of depth there is no window, and the extra area is corridor. So assembling
+// gets you an office or an industrial site, and not necessarily a residential
+// one, which is a decision rather than a bonus.
+const PLATE_RENT_BETA: Partial<Record<BuiltClass, number>> = {
+  office: 0.07, retail: 0.05, industrial: 0.08, multifamily: 0,
+};
+export function plateOf(rec: { bldgArea: number; floors: number }): number {
+  if (!rec.bldgArea || !rec.floors) return REF_PLATE_SF;
+  return rec.bldgArea / Math.max(1, rec.floors);
+}
+/** What a bigger floor is worth in rent, per doubling, against the median. */
+export function plateRentMult(rec: { bldgArea: number; floors: number }, use: BuiltClass): number {
+  const beta = PLATE_RENT_BETA[use] ?? 0;
+  if (!beta) return 1;
+  const p = plateOf(rec);
+  if (p <= 0) return 1;
+  return clamp(1 + beta * (Math.log(p / REF_PLATE_SF) / Math.LN2), 0.85, 1.10);
+}
+
+const COVERAGE_LADDER = [0.35, 0.45, 0.55, 0.65, 0.75, 0.85];
+/**
+ * How much of its own zoning envelope this dirt can physically carry, at the
+ * best coverage available to it. A 2,500 ft lot zoned for ten FAR cannot build
+ * ten FAR — the plate will not carry the floors — so it is not worth ten FAR.
+ */
+export function envelopeRealisation(rec: { lotArea: number; farMaxComm: number; farMaxRes: number }): number {
+  const far = Math.max(rec.farMaxComm, rec.farMaxRes);
+  if (!rec.lotArea || far <= 0) return 1;
+  let best = 0;
+  for (const cov of COVERAGE_LADDER) {
+    const fl = Math.min(Math.floor(far / cov), physicalMaxFloors(rec.lotArea * cov));
+    best = Math.max(best, cov * Math.max(1, fl));
+  }
+  return clamp(best / far, 0.30, 1);
+}
+/** The median lot reaches 98.5% of its envelope. Measured over three cities. */
+const REF_REALISATION = 0.985;
+const siteQ = (plateSf: number) => plateEfficiency(plateSf) * plateRentMult({ bldgArea: plateSf, floors: 1 }, "office");
+const REF_SITE_Q = siteQ(REF_LOT_SF * 0.70);
+/**
+ * What a foot of THIS dirt is worth against a foot of median dirt, before the
+ * cycle and before location. A site that can reach its envelope and carry a
+ * good building is worth more per foot than one that cannot — which is the
+ * entire economics of assemblage, stated once, in the one place land is priced.
+ * Three narrow lots stuck at 70% of their envelope are each discounted; folded
+ * into one site that reaches 100%, all three lots' worth of dirt reprices.
+ */
+export function siteQualityMult(rec: { lotArea: number; farMaxComm: number; farMaxRes: number }): number {
+  if (!rec.lotArea) return 1;
+  const useable = envelopeRealisation(rec) / REF_REALISATION;
+  return clamp(useable * (siteQ(Math.max(400, rec.lotArea * 0.70)) / REF_SITE_Q), 0.82, 1.22);
+}
+
 export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
-  return rec.landPsf * econ.landIdx * (1 + 0.22 * demandBeta(rec.demandScore) * econ.cycleDev);
+  return rec.landPsf * siteQualityMult(rec) * econ.landIdx * (1 + 0.22 * demandBeta(rec.demandScore) * econ.cycleDev);
 }
 
 export function landValue(rec: ParcelRecord, econ: Econ): number {
@@ -84,12 +202,15 @@ export function marketRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condit
   // The blended rent of a building that is shops below and flats above is the
   // area-weighted average of the shop market and the flat market. There is no
   // third market it belongs to.
-  return blend(rec, econ.rentIdx) * locationRentMult(rec) * condMult(condition);
+  // ...and each of those markets pays for the floor plate it is getting. See
+  // plateRentMult: an office or a shed cares enormously about a big regular
+  // floor, a flat does not care at all.
+  return blendBy(rec, (u) => (econ.rentIdx[u] ?? 0) * plateRentMult(rec, u)) * locationRentMult(rec) * condMult(condition);
 }
 
 /** What one component of a building rents for, in its own market. */
 export function useRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition, use: BuiltClass): number {
-  return (econ.rentIdx[use] ?? 0) * locationRentMult(rec) * condMult(condition);
+  return (econ.rentIdx[use] ?? 0) * plateRentMult(rec, use) * locationRentMult(rec) * condMult(condition);
 }
 
 // A delivered development overrides the static record — resolve before use.
@@ -106,12 +227,24 @@ export function resolveRec(parcels: Record<string, ParcelRecord>, s: GameState, 
   const m = s.merged;
   if (m) {
     if (m[bbl]) return { ...rec, lotArea: 0, farMaxComm: 0, farMaxRes: 0 };
+    // A MERGED SITE'S DIRT IS THE DIRT THAT WENT INTO IT. This used to take
+    // the sum of the areas and keep the PARENT'S landPsf — and the parent is
+    // the biggest lot, which this generator prices cheapest per foot. So
+    // merging silently repriced the whole site down to the worst psf in the
+    // set: measured over 120 merges, 55% of them DESTROYED land value and the
+    // worst lost 16% of the dirt at the moment the deeds were folded together.
     let extra = 0;
+    let psfSum = rec.lotArea * rec.landPsf;
     for (const [child, parent] of Object.entries(m)) {
-      if (parent === bbl) extra += parcels[child]?.lotArea ?? 0;
+      if (parent !== bbl) continue;
+      const c = parcels[child];
+      if (!c) continue;
+      extra += c.lotArea ?? 0;
+      psfSum += (c.lotArea ?? 0) * c.landPsf;
     }
     if (extra > 0) {
-      const grown = resolveBase(s, { ...rec, lotArea: rec.lotArea + extra });
+      const area = rec.lotArea + extra;
+      const grown = resolveBase(s, { ...rec, lotArea: area, landPsf: psfSum / Math.max(1, area) });
       return grown;
     }
   }

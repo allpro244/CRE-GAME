@@ -11,7 +11,11 @@ import { BUILT_CLASSES } from "./types";
 import { logBooks, monthLabel } from "./types";
 import { demandNow } from "./demand";
 import { rng, rrange, addStock, NATURAL_VAC, CITY_STOCK, BUILD_MONTHS } from "./market";
-import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, RECOVERY_RATE, demandLinear } from "./value";
+import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors } from "./value";
+// The massing curve moved to value.ts, because land pricing needs to ask what
+// a lot can physically carry and value.ts cannot import this file. Re-exported
+// so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
+export { physicalMaxFloors, plateEfficiency } from "./value";
 import { genAnchorTenant } from "./leasing";
 import { claimJob, jobDelivered, ownerOf } from "./rivals";
 import { locAvailable } from "./credit";
@@ -261,15 +265,9 @@ export const ABS_MAX_FLOORS = 90;
  * build tall on, peak where the curves cross, then fall away as the envelope
  * spreads out. No cliffs anywhere on the dial.
  */
-export function physicalMaxFloors(plateSf: number): number {
-  if (plateSf < 400) return 1;                       // below this it is not a building
-  const slender = 1.2 * Math.sqrt(plateSf);          // MAX_SLENDERNESS / FLOOR_HEIGHT_FT
-  // The core ramp: a 1,200 ft² plate carries about six floors, and the ability
-  // to serve height grows roughly linearly with the area left over after the
-  // core takes its fixed bite.
-  const core = 1 + (plateSf - 400) / 135;
-  return Math.max(1, Math.min(ABS_MAX_FLOORS, Math.floor(Math.min(slender, core))));
-}
+// (the function itself now lives in value.ts and is re-exported at the top of
+// this file — see the import block. It had to move so that land pricing could
+// ask the same question about a lot that the massing dial asks about a plate.)
 /**
  * SHOPS DO NOT STACK.
  *
@@ -448,14 +446,23 @@ export function planDevelopment(
   const raw = devMix(use, custom?.mix);
   const retailOnly = Object.entries(raw).every(([k, v]) => k === "retail" || !v);
   const fl = Math.max(1, Math.min(Math.round(floors), maxFloorsFor(rec, cov, retailOnly ? "retail" : use)));
-  const sf = Math.round((rec.lotArea * cov * fl) / 100) * 100;
+  // GROSS AND RENTABLE ARE NOT THE SAME NUMBER, and treating them as one was
+  // why assembling paid nothing. Zoning counts gross and the contractor bills
+  // gross; you let rentable. The core, the two stairs, the risers and the
+  // corridor take a bite out of every floor that is mostly FIXED — so a big
+  // plate gives up a tenth of itself and a narrow one gives up a third.
+  const plate = rec.lotArea * cov;
+  const eff = plateEfficiency(plate);
+  const gsf = Math.round((rec.lotArea * cov * fl) / 100) * 100;
+  const sf = Math.round((gsf * eff) / 100) * 100;
   if (sf < 2000) return null;
 
   const mix = capRetail(raw, fl);
 
   const heightPrem = fl > 30 ? 1.28 : fl > 18 ? 1.18 : fl > 8 ? 1.07 : 1;
   // the budget is the sum of the jobs, not a number attached to a label
-  const hardCost = Math.round(sf * overMix(mix, (u) => HARD_COST_PSF[u]) * s.econ.costIdx * heightPrem * (1 + CONTRACT_PREMIUM[contract]));
+  // ...priced on GROSS. You pay for the core; you do not let it.
+  const hardCost = Math.round(gsf * overMix(mix, (u) => HARD_COST_PSF[u]) * s.econ.costIdx * heightPrem * (1 + CONTRACT_PREMIUM[contract]));
   const softCost = Math.round(hardCost * SOFT_COST);
   const demo = rec.bldgArea > 0 ? Math.round(rec.bldgArea * 12 * s.econ.costIdx) : 0;
   const contingency = Math.round((hardCost + softCost) * CONTINGENCY);
@@ -573,7 +580,7 @@ export function planDevelopment(
 
   return {
     use, mix, floors: fl, coverage: cov, contract, sf,
-    far: +(sf / rec.lotArea).toFixed(1), farMax,
+    far: +(gsf / rec.lotArea).toFixed(1), farMax,
     hardCost, softCost, contingency, demo, leaseUp, costTotal, landBasis, basisTotal,
     ltc, ltcMax, commitment, interestReserve, ratePct,
     equity: projectCost - commitment,

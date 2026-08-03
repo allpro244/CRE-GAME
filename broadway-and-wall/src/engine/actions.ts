@@ -6,7 +6,7 @@ import type { Bid, GameState, Holding } from "./types";
 import { logBooks, monthLabel } from "./types";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange } from "./market";
-import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr, demandLinear } from "./value";
+import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr, demandLinear, landPsfNow } from "./value";
 import { marketAppetite, ownerOf, rivalAsk, rivalBuys, livingRivals } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
@@ -292,7 +292,9 @@ export function assembleLots(
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `Assembled: ${list.length} lots at ${rec.address} are now one site of ${Math.round(area).toLocaleString()} sf, `
-      + `${(rec.lotArea * Math.max(rec.farMaxComm, rec.farMaxRes) / 1000).toFixed(0)}k sf buildable. `
+      + `${(rec.lotArea * Math.max(rec.farMaxComm, rec.farMaxRes) / 1000).toFixed(0)}k sf buildable on a `
+      + `${Math.round(rec.lotArea * 0.7).toLocaleString()} sf plate. One core, one lobby, and a floor somebody will take `
+      + `a whole of. The dirt underneath reprices this morning at ${landPsfNow(rec, next.econ).toFixed(0)}/sf. `
       + `That is what all those premiums were for.`,
   });
   return { s: next, msg: `${list.length} lots merged into one site.` };
@@ -452,7 +454,12 @@ export function approachOwner(
     ? (owner.style === "family" ? 0.20 : owner.style === "core" ? 0.06 : owner.style === "opportunistic" ? 0.10 : 0.04)
     : 0;
   const premium = Math.max(0.80,
-    1.06 + 0.5 * Math.pow(rng(next), 2) + 0.22 * pressure + styleAsk
+    // The LAST deed is the expensive one. A linear premium is a toll; a holdout
+    // is a wall, and the difference is entirely in the tail. Cubed, this is
+    // negligible while you are buying the first neighbours on a block and
+    // ruinous on the one that completes the site — which is the only thing
+    // stopping assemblage from being free money now that it pays.
+    1.06 + 0.5 * Math.pow(rng(next), 2) + 0.22 * pressure + 0.55 * Math.pow(pressure, 3) + styleAsk
     - (stressed ? rrange(next, 0.16, 0.30) : 0));
   const ask = Math.round(assetValue(rec, next.econ, initialCondition(rec)) * premium / 1000) * 1000;
   next.approaches[bbl] = { q: next.month, refused: false, ask };

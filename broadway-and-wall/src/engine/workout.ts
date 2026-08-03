@@ -190,6 +190,8 @@ export function deedInLieu(
   recordComp(next, rec, Math.round(bal), w.lender, firmShort(next), true, h.condition);
   if (next.groundLeases?.[bbl]) delete next.groundLeases[bbl];
   next.cash -= depositsOn(next.holdings[bbl]!);
+  next.lastTradeM = next.lastTradeM ?? {};
+  next.lastTradeM[bbl] = next.month;
   delete next.holdings[bbl];
   delete next.workouts![bbl];
   next.lois = next.lois.filter((l) => l.bbl !== bbl);
@@ -254,6 +256,8 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
     recordComp(s, rec, gross, "the auction", firmShort(s), true, h.condition);
     if (s.groundLeases?.[w.bbl]) delete s.groundLeases[w.bbl];
     s.cash -= depositsOn(s.holdings[w.bbl]!);
+    s.lastTradeM = s.lastTradeM ?? {};
+    s.lastTradeM[w.bbl] = s.month;
     delete s.holdings[w.bbl];
     delete s.workouts[w.bbl];
     s.lois = s.lois.filter((l) => l.bbl !== w.bbl);

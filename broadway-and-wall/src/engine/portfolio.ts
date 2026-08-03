@@ -329,6 +329,8 @@ export function acceptPortfolioBid(
       delete next.merged![child];
       delete next.holdings[child];
     }
+    next.lastTradeM = next.lastTradeM ?? {};
+    next.lastTradeM[bbl] = next.month;
     delete next.holdings[bbl];
     if (next.workouts?.[bbl]) delete next.workouts[bbl];
     next.lois = next.lois.filter((l) => l.bbl !== bbl);

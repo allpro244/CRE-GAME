@@ -136,6 +136,20 @@ export interface Loan {
    * previously had no way to reach.
    */
   breachMs?: number;
+  /**
+   * MONTHS THE PAYMENT DID NOT ACTUALLY GET MADE.
+   *
+   * `arrears` was declared as a workout cause in this file and could never
+   * happen: nothing anywhere detected a missed payment, because debt service
+   * is taken centrally and the player's cash simply goes negative. So the
+   * workout desk's own copy about arrears was dead text, and the only route to
+   * a foreclosure file was a blown balloon.
+   *
+   * A lender does not see your other buildings. What they see is a payment
+   * that did not arrive — which is this building failing to cover its own debt
+   * service while the borrower has no cash to make up the difference.
+   */
+  arrearsMs?: number;
   originM: number;
   holidayUntilM?: number;  // covenants do not bite until this month
   cap?: { strike: number; expiresM: number }; // purchased rate cap: index capped at strike
@@ -667,6 +681,21 @@ export interface GameState {
   leaseReplies?: LeaseReply[];               // the last few answers to your counters
   nextLoiId: number;
   approaches: Record<string, Approach>;
+  /**
+   * WHEN EACH BUILDING LAST CHANGED HANDS.
+   *
+   * refreshListings picked a random parcel with no memory of what had just
+   * traded, so a building absorbed by the market came straight back onto the
+   * tape. Instrumented over fifty years: 68 E 10th St was "sold to a buyer
+   * from out of town" THIRTY-ONE TIMES, 116 W 4th St twenty-nine — the same
+   * addresses, sold by nobody to nobody, forever. That is the single loudest
+   * reason the news tape reads as a generator rather than as a city.
+   *
+   * Buildings are held for years. This is the month one last traded, and
+   * refreshListings will not put it back on the market until somebody could
+   * plausibly have owned it and moved on.
+   */
+  lastTradeM?: Record<string, number>;
   developments: Record<string, Development>;
   built: Record<string, BuiltOverride>;      // delivered buildings, yours and the city's
   cityBuilt: string[];                       // bbls the market built, not you

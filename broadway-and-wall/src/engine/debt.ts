@@ -413,6 +413,21 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
       cashOut += surplus;
     }
   }
+  // ARREARS. The building does not cover its own debt service and there is no
+  // cash behind it to make up the difference — so the payment did not arrive.
+  // One bad month is a timing problem; a quarter of them is a file.
+  const short = assetCF < loan.monthlyPmt && s.cash < 0;
+  loan.arrearsMs = short ? (loan.arrearsMs ?? 0) + 1 : 0;
+  if ((loan.arrearsMs ?? 0) >= 3 && !s.workouts?.[h.bbl]) {
+    openWorkout(s, h.bbl, "arrears", Math.round(loan.monthlyPmt * (loan.arrearsMs ?? 3)));
+    s.news.unshift({
+      q, kind: "warn",
+      text: `Three months of missed payments at ${rec.address}. ${productById(loan.product).lender} has `
+        + `opened a file — the arrears are ${Math.round(loan.monthlyPmt * (loan.arrearsMs ?? 3) / 1000)}K and they `
+        + `want them, or they want the building.`,
+    });
+  }
+
   if (loan.balance === 0) { h.loan = null; return cashOut; }
 
   // the balloon. An automatic refi rolls the SAME balance — the bank isn't

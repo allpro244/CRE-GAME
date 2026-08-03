@@ -13,6 +13,24 @@ import { originate, quote, productById, prepayPenalty } from "./debt";
 import { takeoverDevelopment } from "./dev";
 import { recordComp } from "./comps";
 
+/**
+ * WHO BUYS THE BUILDINGS THE PLAYER DOES NOT.
+ *
+ * The tape had exactly one anonymous buyer — "a buyer from out of town" — and
+ * printed it for 86% of every closed sale in the city. A market in which one
+ * unnamed party buys everything is not a market, it is a placeholder. These
+ * are the kind of counterparty that actually clears a small city's product:
+ * out-of-state capital, a family office, a 1031 buyer chasing a deadline.
+ */
+const OUT_OF_TOWN = [
+  "a pension fund out of Hartford", "a family office from Providence",
+  "an insurance company out of Springfield", "a 1031 buyer on a deadline",
+  "a syndicator from the city", "an out-of-state REIT",
+  "a private buyer, name withheld", "a doctors' partnership",
+  "a foreign buyer through a nominee", "a local family trust",
+  "a bank's own real estate arm", "an owner-occupier buying their own premises",
+];
+
 const CLOSING_PCT = 0.02;
 const SALE_FRICTION = 0.012;  // legal, title, diligence — the unavoidable rest
 export const CAP_GAINS_RATE = 0.2;    // long-term rate on true appreciation
@@ -936,6 +954,10 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   // The security deposits go with the deed — they were the tenants' money and
   // they are the buyer's obligation now.
   next.cash -= depositsOn(next.holdings[bbl]);
+  // Somebody owns it now, and they will hold it for years — the tape does
+  // not get it back next quarter.
+  next.lastTradeM = next.lastTradeM ?? {};
+  next.lastTradeM[bbl] = next.month;
   delete next.holdings[bbl];
   // A SALE OUT OF DEFAULT CLOSES THE FILE. It is the best outcome available in
   // a workout — the lender is repaid at closing and nobody takes a loss — and
@@ -1288,13 +1310,33 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
       // Somebody takes it, and somebody has a name. Losing the same corner to
       // the same firm twice in a year is information; "another buyer" was not.
       const buyer = rivalBuys(s, rec, li.ask);
+      // A BUILDING THAT SELLS STAYS SOLD. Absorption used to take the listing
+      // off the tape and record nothing, so refreshListings could pick the
+      // same parcel again next quarter — 68 E 10th St sold "to a buyer from
+      // out of town" thirty-one times in fifty years, and 116 W 4th St
+      // twenty-nine. Stamp the trade and it is somebody's building now.
+      s.lastTradeM = s.lastTradeM ?? {};
+      s.lastTradeM[li.bbl] = s.month;
       if (buyer) {
         s.news.unshift({
           q: s.month, kind: "info",
           text: `${buyer.name} took ${rec.address} at $${(li.ask / 1e6).toFixed(2)}M. You watched it happen.`,
         });
-      } else if (rng(s) < 0.5) {
-        s.news.unshift({ q: s.month, kind: "info", text: `Sold: ${rec.address} went to a buyer from out of town at $${(li.ask / 1e6).toFixed(2)}M.` });
+      } else {
+        // AND THE BUYER HAS A NAME. "A buyer from out of town" is what a
+        // newspaper writes when it has not made the call; it is not what a
+        // newspaper writes eight times a year. These are real counterparties
+        // with an address, and the trade goes on the comps sheet like any
+        // other, which is what makes an anonymous market legible instead of
+        // just noisy.
+        const b = OUT_OF_TOWN[Math.floor(rng(s) * OUT_OF_TOWN.length)];
+        recordComp(s, rec, li.ask, b, "a listed seller", li.distress, initialCondition(rec));
+        if (rng(s) < 0.5) {
+          s.news.unshift({
+            q: s.month, kind: "info",
+            text: `Sold: ${rec.address} went to ${b} at $${(li.ask / 1e6).toFixed(2)}M.`,
+          });
+        }
       }
       continue; // absorbed — off the tape
     }

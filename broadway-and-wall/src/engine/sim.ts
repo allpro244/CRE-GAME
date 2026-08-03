@@ -139,6 +139,24 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   while (s.listings.length < target && guard++ < 4000) {
     const bbl = bbls[Math.floor(rng(s) * bbls.length)];
     if (listed.has(bbl) || s.holdings[bbl]) continue;
+    // A BUILDING THAT SOLD LAST YEAR IS NOT FOR SALE THIS YEAR.
+    //
+    // This picked a parcel at random with no memory of what had just traded,
+    // so a building the market absorbed came straight back onto the tape.
+    // Measured over fifty years: 68 E 10th St was sold thirty-one times and
+    // 116 W 4th St twenty-nine — the same addresses, over and over, which is
+    // most of why the news read as a generator rather than as a city.
+    //
+    // Real holds run years, and they vary: a trader is out in three, an estate
+    // sits for twenty. Hash the parcel so each building keeps its own tempo
+    // instead of every building sharing one cooldown.
+    const traded = s.lastTradeM?.[bbl];
+    if (traded !== undefined) {
+      let h = 2166136261;
+      for (let i = 0; i < bbl.length; i++) { h ^= bbl.charCodeAt(i); h = Math.imul(h, 16777619); }
+      const hold = 34 + ((h >>> 0) % 122);          // 34 to 155 months
+      if (s.month - traded < hold) continue;
+    }
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
     const value = assetValue(rec, s.econ, initialCondition(rec));
@@ -374,6 +392,8 @@ export function advanceQuarter(
         s.exits.push({ bbl: pick.bbl, address: rec.address, boughtM: pick.boughtM, soldM: s.month, price: gross, basis: pick.costBasis, gain: gross - pick.costBasis, forced: true });
         if (s.groundLeases?.[pick.bbl]) delete s.groundLeases[pick.bbl];
         s.cash -= depositsOn(s.holdings[pick.bbl]);   // the deposits go with the deed
+        s.lastTradeM = s.lastTradeM ?? {};
+        s.lastTradeM[pick.bbl] = s.month;
         delete s.holdings[pick.bbl];
         if (s.workouts?.[pick.bbl]) delete s.workouts[pick.bbl];
         markSponsor(s, "seized", rec.address, Math.max(0, (pick.loan?.balance ?? 0) - gross));

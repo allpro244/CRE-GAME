@@ -264,6 +264,20 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
       bad("listing", `approach ${bbl}`, `owner asking ${(a.ask / 1e6).toFixed(2)}M against a ${(v / 1e6).toFixed(2)}M appraisal`);
     }
   }
+  // NOBODY LEASES A CLOSET.
+  //
+  // The 2,000 sf commercial floor was enforced in four separate places in
+  // leasing.ts and leaked through three of them, and no invariant ever looked
+  // — so 30.5% of an inherited rent roll could sit under the floor and nothing
+  // said a word. A rule worth having in four places is worth checking once.
+  for (const h of Object.values(s.holdings)) {
+    for (const t of h.tenants) {
+      const floor = t.use === "multifamily" ? 400 : 1_900;   // a little slack for rounding
+      if (t.sf > 0 && t.sf < floor) {
+        bad("tenancy", `${h.bbl} ${t.name}`, `${Math.round(t.sf)} sf tenancy, under the ${floor} sf floor for ${t.use ?? "commercial"}`);
+      }
+    }
+  }
   // SECURITY DEPOSITS. One to two months of rent, never more, never negative,
   // and never sitting on a lease that has already ended.
   for (const h of Object.values(s.holdings)) {

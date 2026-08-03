@@ -19,8 +19,8 @@
 import type { ParcelTable } from "@/data/types";
 import type { GameState, SellerKind, Talks } from "./types";
 import { monthLabel } from "./types";
-import { assetValue, initialCondition, resolveRec } from "./value";
-import { ownerOf } from "./rivals";
+import { assetValue, resolveRec } from "./value";
+import { ownerOf, gradeOf, tie } from "./rivals";
 import { describeFirm } from "./firm";
 import { rrange } from "./market";
 import { executePurchase } from "./actions";
@@ -191,7 +191,7 @@ function reservationOf(
   const prof = SELLERS[sellerKind];
   const rec = resolveRec(parcels, s, bbl);
   const li = s.listings.find((l) => l.bbl === bbl);
-  const ask = li?.ask ?? (rec ? assetValue(rec, s.econ, initialCondition(rec)) : 0);
+  const ask = li?.ask ?? (rec ? assetValue(rec, s.econ, gradeOf(s, rec)) : 0);
   // A soft market drags the floor down; a hot one lets them hold out. Distress
   // is the seller's problem and your opportunity.
   const phase = s.econ.phase === "recession" ? -0.055 : s.econ.phase === "expansion" ? 0.03 : 0;
@@ -296,6 +296,10 @@ export function negotiate(
     // good. A named firm remembers harder — you will be dealing with them
     // again on other buildings.
     const rival = ownerOf(next, bbl);
+    // AND THE STREET KEEPS SCORE. The comment above has been claiming a named
+    // firm remembers harder; until now the memory lived on the parcel and died
+    // with the listing. A principal remembers the person, not the building.
+    if (rival) tie(next, rival.id).insults++;
     const shutM = next.month + Math.round(rrange(next, rival ? 18 : 10, rival ? 30 : 18));
     const prior = next.approaches[bbl];
     next.approaches[bbl] = {

@@ -664,9 +664,50 @@ export interface Rival {
   mktOcc?: number;       // what the market says their book should run at
   condIdx?: number;      // how well they look after the bricks, 0-1
   capexYr?: number;      // what they spent on the buildings this year
+  dumped?: number;       // buildings hit the tape in the CURRENT stress episode
   taxPaid?: number;      // lifetime income + gains tax
   distributed?: number;  // lifetime cash sent out to their partners
   failedM?: number;      // the month they stopped existing
+  // A CASH SHORTFALL IS NOT A FAILURE WHILE THERE IS ROOM ON THE BOOK.
+  // Lifetime draw on their own credit, for the street table — a firm running
+  // on its revolver is a firm you should be watching.
+  revolver?: number;
+}
+
+/**
+ * WHAT YOU AND A FIRM HAVE ACTUALLY DONE TO EACH OTHER.
+ *
+ * Measured: in a fifty-year run the player closes with nine distinct named
+ * firms and deals with five of them more than once — and none of it was
+ * written down anywhere, so every conversation started from nothing and the
+ * street stayed a set of strangers who happened to keep appearing.
+ *
+ * This is the ledger. It moves on actions the player already takes, it is
+ * never asked about, and it changes their number and whose buildings the
+ * broker rings about.
+ */
+export interface StreetTie {
+  deals: number;      // buildings traded between you, in either direction
+  beats: number;      // times they came over the top of you on a live deal
+  insults: number;    // times you opened a conversation with a number they refused
+  lastM: number;
+}
+
+/**
+ * A SPECIFIC CORNER A SPECIFIC FIRM TOOK OFF YOU.
+ *
+ * Kept so that when they finally let it go — ten years later, into strength or
+ * out of a receivership — the game can put it in front of you before the tape
+ * and say whose it was and what they paid. That is the difference between a
+ * rival and a name in a news line.
+ */
+export interface Beat {
+  bbl: string;
+  firmId: string;
+  firm: string;
+  m: number;
+  yours: number;      // your last offer
+  theirs: number;     // what they paid to end the conversation
 }
 
 /** Who is on the other side of the table, and therefore what they want. */
@@ -675,7 +716,7 @@ export type SellerKind = "estate" | "institution" | "partnership" | "developer" 
 
 
 export interface GameState {
-  v: 22;
+  v: 23;
   seed: number;
   /**
    * WHICH TOWN THIS WAS PLAYED IN.
@@ -803,6 +844,10 @@ export interface GameState {
   // does not get to walk into the next credit committee unrecognised.
   sponsor: { events: SponsorEvent[] };
   rivals: Rival[];                           // the other firms on the street
+  /** What has passed between you and each firm. See StreetTie. */
+  street?: Record<string, StreetTie>;
+  /** Corners the street took off you, newest first, capped at 24. */
+  beaten?: Beat[];
   /** The desks, with books you can open. See engine/lenders.ts. */
   lenders?: Lender[];
   /** Loans in default and what is being done about them. See engine/workout.ts. */

@@ -8,7 +8,7 @@ import { firmShort, describeFirm } from "./firm";
 import { rng, rrange } from "./market";
 import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr, demandLinear, landPsfNow } from "./value";
 import { locAvailable } from "./credit";
-import { marketAppetite, ownerOf, rivalAsk, rivalBuys, livingRivals } from "./rivals";
+import { marketAppetite, ownerOf, rivalAsk, rivalBuys, livingRivals, gradeOf, tie } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
 import { takeoverDevelopment } from "./dev";
@@ -57,10 +57,10 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   const prod = productById(product);
   // the life company will not finance a tired building, and the quote screen
   // has to say so before the closing table does
-  if (prod.minCondition === "good" && initialCondition(rec) !== "good") {
+  if (prod.minCondition === "good" && gradeOf(s, rec) !== "good") {
     return { principal: 0, ratePct: 0, equity: price + closing, capPremium: 0, bind: "condition" as const, ltvCap: prod.ltv, uwDscr: prod.uwDscr };
   }
-  const q = quote(s, prod, price, noiAfterTaxYr(rec, s.econ, initialCondition(rec), price));
+  const q = quote(s, prod, price, noiAfterTaxYr(rec, s.econ, gradeOf(s, rec), price));
   const principal = Math.round(q.principal * Math.max(0, Math.min(1, lev)));
   // WHAT ACTUALLY LIMITED THE LOAN. The desk sizes on three tests and takes
   // the smallest: the advance rate, the coverage ratio, and the debt yield.
@@ -102,13 +102,16 @@ export function executePurchase(
       seller.cash += price - relief;
     }
   }
+  // A DEAL IS A RELATIONSHIP. You closed with a name, they got paid, and both
+  // of you will remember it the next time either of you picks up the phone.
+  { const seller = ownerOf(s, bbl); if (seller) tie(next, seller.id).deals++; }
   const holding: Holding = {
     bbl,
     boughtM: next.month,
     costBasis: price + Math.round(price * CLOSING_PCT),
     assessed: price, // the sale reassesses the property at the deal price
     loan: null,
-    condition: initialCondition(rec),
+    condition: gradeOf(s, rec),
     tenants: [],
     cfHistory: [],
     // A landmark stays a landmark when the deed moves.
@@ -1073,14 +1076,33 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
   // they pitch near what you already buy: same class, similar size, better corner
   const ref = Object.values(s.holdings).map((h) => resolveRec(parcels, s, h.bbl)).filter(Boolean) as ParcelRecord[];
   const wantClass = ref.length && rng(s) < 0.65 ? ref[Math.floor(rng(s) * ref.length) % ref.length].class : null;
+  // WHOSE BUILDINGS THE PHONE RINGS ABOUT.
+  //
+  // Measured: sixteen off-market calls a fifty-year run and 2% of them on a
+  // building anybody could name, because this drew uniformly from sixteen
+  // hundred lots and the named firms own about three per cent of them. That is
+  // not how an off-market call works. A broker with a file he can show to one
+  // buyer shows it to the buyer who has closed with that seller before — so
+  // most of the time the pool is the stock of the firms you actually know, and
+  // the rest of the time it is the whole town.
+  const known = Object.keys(s.street ?? {});
+  const insidePool: string[] = [];
+  if (known.length) {
+    for (const r of s.rivals ?? []) {
+      if (r.failedM !== undefined || !s.street?.[r.id]) continue;
+      for (const b of r.bbls) insidePool.push(b);
+    }
+  }
+  const inside = insidePool.length > 0 && rng(s) < 0.55;
+  const pool = inside ? insidePool : bbls;
   let best: ParcelRecord | null = null;
   for (let i = 0; i < 90; i++) {
-    const bbl = bbls[Math.floor(rng(s) * bbls.length)];
+    const bbl = pool[Math.floor(rng(s) * pool.length)];
     if (s.holdings[bbl] || s.approaches[bbl] || s.listings.some((l) => l.bbl === bbl)) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class === "land" || !rec.bldgArea) continue;
     if (wantClass && rec.class !== wantClass && rng(s) < 0.7) continue;
-    const v = assetValue(rec, s.econ, initialCondition(rec));
+    const v = assetValue(rec, s.econ, gradeOf(s, rec));
     // THE FLOOR MOVES WITH YOUR BOOK.
     //
     // There was a ceiling here and no floor, so a firm running a hundred
@@ -1111,7 +1133,7 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
   // the cash. If today's file has nothing under 92 cents on the dollar, the
   // phone stays quiet.
   const owner = ownerOf(s, best.bbl);
-  const value = assetValue(best, s.econ, initialCondition(best));
+  const value = assetValue(best, s.econ, gradeOf(s, best));
   let ask: number;
   let who: string;
   if (owner) {
@@ -1358,14 +1380,42 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
     // buying it out from under a signed contract is not competition, it is a
     // bug — and it was the one thing that could make the funding window
     // unwinnable through no fault of the player.
-    if (s.talks?.[li.bbl]?.agreed) { survivors.push(li); continue; }
-    const value = assetValue(rec, s.econ, initialCondition(rec));
+    const talk = s.talks?.[li.bbl];
+    if (talk?.agreed) { survivors.push(li); continue; }
+    const value = assetValue(rec, s.econ, gradeOf(s, rec));
     const ratio = li.ask / Math.max(1, value);
     const priceFactor = Math.max(0.3, Math.min(1.8, 1.9 - ratio)); // bargains go first
-    if (rng(s) < base * priceFactor * Math.max(0.25, marketAppetite(s))) {
+    // A LIVE CONVERSATION IS NOT A CLAIM ON THE BUILDING.
+    //
+    // Measured over three fifty-year runs with three deals on the table at
+    // once: a listing was taken out from under an unagreed negotiation ZERO
+    // times. Nobody ever competed for a specific building the player was
+    // chasing, so the dominant play was to grind the counter loop for free.
+    // Your number is on the street the day you make it, and a broker with a
+    // live bid in hand rings everybody else in town — which is why an open
+    // negotiation makes a building MORE likely to go, not less.
+    if (rng(s) < base * priceFactor * Math.max(0.25, marketAppetite(s)) * (talk ? 1.7 : 1)) {
+      // And whoever comes over the top pays for the privilege of ending it.
+      const px = talk ? Math.max(li.ask, Math.round(talk.yourPrice * rrange(s, 1.04, 1.12))) : li.ask;
       // Somebody takes it, and somebody has a name. Losing the same corner to
       // the same firm twice in a year is information; "another buyer" was not.
-      const buyer = rivalBuys(s, rec, li.ask);
+      const buyer = rivalBuys(s, rec, px);
+      if (talk && buyer) {
+        delete s.talks![li.bbl];
+        if (!Object.keys(s.talks!).length) delete s.talks;
+        s.beaten = s.beaten ?? [];
+        s.beaten.unshift({ bbl: li.bbl, firmId: buyer.id, firm: buyer.name, m: s.month, yours: talk.yourPrice, theirs: px });
+        if (s.beaten.length > 24) s.beaten.length = 24;
+        tie(s, buyer.id).beats++;
+        s.lastTradeM = s.lastTradeM ?? {};
+        s.lastTradeM[li.bbl] = s.month;
+        s.news.unshift({
+          q: s.month, kind: "warn",
+          text: `${buyer.name} came over the top of you at ${rec.address} — ${(px / 1e6).toFixed(2)}M against your ${(talk.yourPrice / 1e6).toFixed(2)}M. `
+            + `Your number was on the street the day you made it. It is their corner now.`,
+        });
+        continue;
+      }
       // A BUILDING THAT SELLS STAYS SOLD. Absorption used to take the listing
       // off the tape and record nothing, so refreshListings could pick the
       // same parcel again next quarter — 68 E 10th St sold "to a buyer from
@@ -1374,10 +1424,25 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
       s.lastTradeM = s.lastTradeM ?? {};
       s.lastTradeM[li.bbl] = s.month;
       if (buyer) {
-        s.news.unshift({
-          q: s.month, kind: "info",
-          text: `${buyer.name} took ${rec.address} at $${(li.ask / 1e6).toFixed(2)}M. You watched it happen.`,
-        });
+        // YOU DID NOT WATCH IT HAPPEN.
+        //
+        // This printed on every trade a named firm made anywhere in the city:
+        // 162 lines a fifty-year run, of which 89% concerned a building the
+        // player had never looked at, on a block they owned nothing on, bought
+        // by a firm they had never dealt with. That is the precise definition
+        // of wallpaper. The trade still goes on the comps sheet — recordComp
+        // runs inside rivalBuys — which is where "a building traded somewhere"
+        // belongs. The news feed is for things that are about you.
+        const yours = new Set(Object.values(s.holdings).map((h) => resolveRec(parcels, s, h.bbl)?.block));
+        const stake = yours.has(rec.block) || !!s.street?.[buyer.id];
+        if (stake) {
+          s.news.unshift({
+            q: s.month, kind: "info",
+            text: yours.has(rec.block)
+              ? `${buyer.name} took ${rec.address} at ${(px / 1e6).toFixed(2)}M — that is your block.`
+              : `${buyer.name} took ${rec.address} at ${(px / 1e6).toFixed(2)}M. You have dealt with them before.`,
+          });
+        }
       } else {
         // AND THE BUYER HAS A NAME. "A buyer from out of town" is what a
         // newspaper writes when it has not made the call; it is not what a

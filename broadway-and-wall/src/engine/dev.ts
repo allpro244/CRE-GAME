@@ -1392,7 +1392,8 @@ export function tickCityGrowth(
     // Before it is anonymous, it is offered to the street. A developer with
     // the dry powder buys the dirt and puts their name on the crane; if
     // nobody takes it, the city builds it the way it always did.
-    const claimed = claimJob(s, parcels, bbl, use, sf, floors, deliverM);
+    const nearPlayer = (adjacency?.[bbl] ?? []).some((a) => !!s.holdings[a]);
+    const claimed = claimJob(s, parcels, bbl, use, sf, floors, deliverM, nearPlayer);
     if (!claimed && rng(s) < 0.4) {
       s.news.unshift({
         q: s.month, kind: "info",

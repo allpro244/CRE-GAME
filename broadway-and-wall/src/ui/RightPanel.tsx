@@ -4610,6 +4610,15 @@ function TheStreet() {
                       <Row k="Condition of the book"
                         v={`${CONDITION_WORD[rivalCondition(r)]} · ${usd(r.capexYr ?? 0)} of capital spent this year`}
                         bad={(r.condIdx ?? 1) < 0.55} />
+                      {game.street?.[r.id] && (
+                        <Row k="Between you"
+                          v={[
+                            game.street[r.id].deals ? `${game.street[r.id].deals} deal${game.street[r.id].deals === 1 ? "" : "s"}` : null,
+                            game.street[r.id].beats ? `outbid you ${game.street[r.id].beats}×` : null,
+                            game.street[r.id].insults ? `${game.street[r.id].insults} conversation${game.street[r.id].insults === 1 ? "" : "s"} you ended badly` : null,
+                          ].filter(Boolean).join(" · ") || "nothing yet"}
+                          bad={(game.street[r.id].insults ?? 0) > 0} />
+                      )}
                       <Row k="Debt service / yr" v={`−${usd((r.debt * (game.econ.indexRate + 1.9)) / 100 + r.debt / 30)}`} />
                       {/* realised, and no longer on this balance sheet — which
                           is why modest equity is not the same as a bad century */}

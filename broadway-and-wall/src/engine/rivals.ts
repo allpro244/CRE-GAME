@@ -31,7 +31,7 @@
 // the end of it or hands a frame to a receiver.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from "./types";
-import { CASH_APY } from "./types";
+import { CASH_APY, monthLabel } from "./types";
 import { BUILD_MONTHS, rng, rrange } from "./market";
 import { assetValue, initialCondition, landValue, noiAfterTaxYr, occupancy, resolveRec } from "./value";
 import { devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retailWantsMixed, SOFT_COST, useForZone } from "./dev";
@@ -85,6 +85,24 @@ const STYLE: Record<RivalStyle, {
 };
 
 const RATE_SPREAD = 1.9;   // what a firm of this size pays over the index
+
+// HOW MUCH OF THE BOOK IS ACTUALLY AMORTISING.
+//
+// Every firm used to pay down a thirtieth of its entire book every year, which
+// at eighty per cent leverage is 2.7% of gross asset value a year on top of
+// interest — enough on its own to make a levered shop structurally cash-flow
+// negative. Measured consequence: opportunistic firms lived 5.3 years and
+// developers 8.0, the street ran 0.61 living opportunistic shops and 0.77
+// developers against three of each at the start, and the entire rival news
+// feed became a rolling obituary.
+//
+// Family capital pays its buildings off, because that is what family capital
+// is for. A core fund amortises most of its book. An opportunistic shop and a
+// developer buy on interest-only paper, because the business plan is an exit
+// in five years and nobody amortises through a hold they intend to sell out of.
+const AMORT_SHARE: Record<RivalStyle, number> = {
+  family: 1, core: 0.85, opportunistic: 0.25, developer: 0.35,
+};
 
 // ---------------------------------------------------------------- building
 //
@@ -145,6 +163,9 @@ function jobBudget(s: GameState, use: DevUse, sf: number, floors: number): numbe
 export function claimJob(
   s: GameState, parcels: ParcelTable, bbl: string,
   use: DevUse, sf: number, floors: number, deliverM: number,
+  // WHETHER THIS CORNER IS NEXT DOOR TO SOMETHING YOU OWN. Computed at the
+  // call site, where the adjacency table is already in scope.
+  nearPlayer = false,
 ): Rival | null {
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return null;
@@ -173,7 +194,10 @@ export function claimJob(
     // front meant one job got started in fifty years.
     const dayOne = land + Math.round(cost * (1 - ltc) * 0.45);
     if (r.cash < dayOne + Math.max(1_000_000, r.cash * 0.06)) return false;
-    return rng(s) < 0.5 * want * phaseMult * ci;
+    // A DEVELOPER GOES WHERE SOMEBODY HAS ALREADY PROVED THE BLOCK. Your
+    // building is the comp that makes their pro forma work, which is exactly
+    // why the crane goes up across the street from the last one that worked.
+    return rng(s) < 0.5 * want * phaseMult * ci * (nearPlayer ? 3 : 1);
   });
   if (!runners.length) return null;
 
@@ -198,8 +222,11 @@ export function claimJob(
   }
   s.news.unshift({
     q: s.month, kind: "event",
-    text: `${best.name} has broken ground at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, `
-      + `$${(cost / 1e6).toFixed(1)}M, due ${2000 + Math.floor(deliverM / 12)}. That space is coming whether you want it or not.`,
+    text: nearPlayer
+      ? `${best.name} has broken ground at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, ${(cost / 1e6).toFixed(1)}M, `
+        + `due ${2000 + Math.floor(deliverM / 12)}. That is next door to yours. Your corner is worth more the day it tops out and your tenants have somewhere else to go the day it opens.`
+      : `${best.name} has broken ground at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, `
+        + `${(cost / 1e6).toFixed(1)}M, due ${2000 + Math.floor(deliverM / 12)}. That space is coming whether you want it or not.`,
   });
   return best;
 }
@@ -359,12 +386,54 @@ const GRADES: Condition[] = ["worn", "standard", "good"];
  * operator lifts a tired building one grade. A bad one runs a good building
  * down one. Neither of them changes when it was built.
  */
-function assetGrade(r: Rival, rec: ParcelRecord): Condition {
+export function assetGrade(r: Rival, rec: ParcelRecord): Condition {
   const base = initialCondition(rec);
   const c = r.condIdx ?? 0.8;
-  const notch = c > 0.82 ? 1 : c > 0.5 ? 0 : -1;
+  // RECENTRED ON WHAT THE INDEX ACTUALLY DOES. Measured over a hundred and
+  // fifty firm-years: condIdx runs p25 0.73, p50 0.80, p75 0.89. Against the
+  // old cuts a good operator's notch fired on 39% of the street's stock and a
+  // bad one's on 0.2% — so "they let their buildings go" was a grade nobody
+  // could reach, and the street was marked up on average. On the quartiles it
+  // is a real spread: about a quarter of the city's firm-owned stock run down,
+  // about a quarter kept properly, the rest exactly its age.
+  const notch = c > 0.88 ? 1 : c > 0.70 ? 0 : -1;
   const i = Math.max(0, Math.min(2, GRADES.indexOf(base) + notch));
   return GRADES[i];
+}
+
+/**
+ * WHAT GRADE THIS BUILDING IS ACTUALLY IN TODAY.
+ *
+ * Its year, moved one notch by whoever has been running it. This is the only
+ * honest answer to "what condition is it in", and until now the game asked a
+ * different question — `initialCondition(rec)`, which is a pure function of
+ * yearBuilt — at every price it quoted: the tape's ask, the broker's whisper,
+ * the lender's underwriting, and the deed itself. So a levered shop could
+ * defer the roof for twenty years, the street table could print "worn · $0 of
+ * capital spent this year" beside its name, and the building still sold at,
+ * and arrived as, exactly what its birth year said. One grade is worth about a
+ * third of the value of a building. That is not a detail to leave on the floor.
+ *
+ * A dead firm's book is the receiver's problem and reverts to the building's
+ * own age — nobody has been running it at all.
+ */
+export function gradeOf(s: GameState, rec: ParcelRecord): Condition {
+  const r = ownerOf(s, rec.bbl);
+  return r && r.failedM === undefined ? assetGrade(r, rec) : initialCondition(rec);
+}
+
+/**
+ * THE LEDGER BETWEEN YOU AND ONE FIRM, created on first contact.
+ *
+ * Every path that changes what a firm thinks of you goes through here, because
+ * there are only three things that ever happen between two principals: you
+ * traded, they beat you, or you insulted them.
+ */
+export function tie(s: GameState, firmId: string) {
+  s.street = s.street ?? {};
+  s.street[firmId] = s.street[firmId] ?? { deals: 0, beats: 0, insults: 0, lastM: s.month };
+  s.street[firmId].lastM = s.month;
+  return s.street[firmId];
 }
 
 /**
@@ -758,7 +827,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // NOI in, interest and amortisation out. A firm this size amortises on a
     // thirty-year schedule; nobody gets pure interest-only forever.
     const interest = (r.debt * rate) / 100 / 12;
-    const amort = r.debt > 0 ? r.debt / (30 * 12) : 0;
+    const amort = r.debt > 0 ? (r.debt * AMORT_SHARE[r.style]) / (30 * 12) : 0;
     // Their dry powder sits in the same bank yours does, at the same dull one
     // per cent. It was earning nothing at all before, which meant every month a
     // firm spent waiting for a cycle cost it something the player was not
@@ -840,7 +909,23 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       const bbl = r.bbls[Math.floor(rng(s) * r.bbls.length)];
       const rec = resolveRec(parcels, s, bbl);
       if (rec && !s.holdings[bbl] && !s.listings.some((l) => l.bbl === bbl)) {
-        const v = assetValue(rec, s.econ, initialCondition(rec));
+        const v = assetValue(rec, s.econ, assetGrade(r, rec));
+        // THE CORNER COMES BACK. If this is a building they took out from
+        // under a live negotiation of yours, it does not hit the tape — they
+        // ring you first, because a firm that knows you wanted it once knows
+        // you are the shortest route to a clean close. This is the whole payoff
+        // of losing a deal to somebody with a name.
+        const beat = (s.beaten ?? []).find((b) => b.bbl === bbl && b.firmId === r.id);
+        if (beat && !s.approaches[bbl]) {
+          const ask = Math.round(v * rrange(s, 1.02, 1.16) / 1000) * 1000;
+          s.approaches[bbl] = { q: s.month, refused: false, ask, inbound: true };
+          s.news.unshift({
+            q: s.month, kind: "deal",
+            text: `${r.name} is letting go of ${rec.address} — the corner they came over the top of you for in ${monthLabel(beat.m)}. `
+              + `They paid ${(beat.theirs / 1e6).toFixed(2)}M; they will take ${(ask / 1e6).toFixed(2)}M, and they are showing it to you before the tape.`,
+          });
+          continue;
+        }
         // a willing seller asks a willing seller's price
         s.listings.push({
           bbl, ask: Math.round(v * rrange(s, 1.00, 1.14) / 1000) * 1000,
@@ -869,7 +954,27 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       });
       continue;
     }
-    const stressed = ltv > st.maxLtv + 0.05 || r.cash < 0;
+    // THE REVOLVER.
+    //
+    // A cash shortfall is not a failure while there is room on the book, and
+    // no firm in this business has ever sold a building at sixty-eight cents
+    // because it was forty thousand dollars short in March. It draws on its
+    // line, up to its own covenant, and it deals with the problem when the
+    // problem is a real one.
+    //
+    // Without this the stress path fired on `cash < 0` while a firm's LTV was
+    // FALLING — a shop amortising itself into a squeeze was marked distressed,
+    // fire-sold for thirty months and died solvent. Measured: twelve firms
+    // failed per fifty-year run and the two styles that actually compete with
+    // the player were extinct nine years in ten.
+    if (r.cash < 0 && r.bbls.length) {
+      const room = Math.round((st.maxLtv - 0.02) * aum) - r.debt;
+      const draw = Math.min(Math.max(0, room), Math.round(-r.cash + aum * 0.004));
+      if (draw > 0) { r.debt += draw; r.cash += draw; r.revolver = (r.revolver ?? 0) + draw; }
+    }
+    // and the test reads the book as it stands after the month, not before it
+    const ltvNow = aum > 0 ? r.debt / aum : r.debt > 0 ? 9 : 0;
+    const stressed = ltvNow > st.maxLtv + 0.05 || r.cash < 0;
     if (stressed && r.bbls.length) {
       r.stressMs = (r.stressMs ?? 0) + 1;
       // sell something, at whatever the room will pay
@@ -877,8 +982,15 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         const bbl = r.bbls[Math.floor(rng(s) * r.bbls.length)];
         const rec = resolveRec(parcels, s, bbl);
         if (rec) {
-          const v = assetValue(rec, s.econ, initialCondition(rec));
+          const v = assetValue(rec, s.econ, assetGrade(r, rec));
           const px = Math.round(v * rrange(s, 0.68, 0.88));
+          // A FIRM SELLING ITS NINTH BUILDING IS NOT NINE PIECES OF NEWS.
+          //
+          // Measured: 161 identical "X is selling" paragraphs a run against
+          // seventeen purchases. The first one is the story — a name you know
+          // is in trouble and there is product coming. After that the number
+          // is the story, and it belongs on the end of the first line.
+          r.dumped = (r.dumped ?? 0) + 1;
           // The deed stays with them until somebody buys it — a firm selling
           // under pressure is still the owner, and that is the whole point of
           // the trade. It is transferred at the closing table, not at the
@@ -887,12 +999,14 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
             s.listings.push({ bbl, ask: px, listedM: s.month, expiresM: s.month + 8, distress: true, sellerId: r.id });
             s.news.unshift({
               q: s.month, kind: "event",
-              text: `${r.name} is selling. ${rec.address} hits the tape at $${(px / 1e6).toFixed(2)}M — ${Math.round((1 - px / Math.max(1, v)) * 100)}% under appraisal. They have more where that came from.`,
+              text: (r.dumped ?? 1) <= 1
+                ? `${r.name} is selling. ${rec.address} hits the tape at ${(px / 1e6).toFixed(2)}M — ${Math.round((1 - px / Math.max(1, v)) * 100)}% under appraisal. They have more where that came from.`
+                : `${r.name}, again: ${rec.address} at ${(px / 1e6).toFixed(2)}M. That is their ${r.dumped === 2 ? "second" : r.dumped === 3 ? "third" : `${r.dumped}th`} building on the tape this stretch.`,
             });
           }
         }
       }
-      if (r.stressMs > 30 && (r.cash < 0 || ltv > st.maxLtv + 0.2)) {
+      if (r.stressMs > 30 && (r.cash < 0 || ltvNow > st.maxLtv + 0.2)) {
         r.failedM = s.month;
         s.news.unshift({
           q: s.month, kind: "warn",
@@ -901,6 +1015,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       }
     } else if (r.stressMs) {
       r.stressMs = 0;
+      r.dumped = 0;
     }
   }
 }
@@ -977,14 +1092,27 @@ export function rivalBuys(s: GameState, rec: ParcelRecord, price: number): Rival
 /** What a rival will take for a building of theirs, and why. */
 export function rivalAsk(s: GameState, parcels: ParcelTable, r: Rival, bbl: string): { ask: number; note: string } {
   const rec = resolveRec(parcels, s, bbl);
-  const v = rec ? assetValue(rec, s.econ, initialCondition(rec)) : 0;
+  const v = rec ? assetValue(rec, s.econ, assetGrade(r, rec)) : 0;
   const { ltv } = markRival(s, parcels, r);
+  // AND THEY QUOTE YOU, NOT A STRANGER. A principal who has closed with you
+  // twice prices the certainty of closing with you a third time; one you have
+  // insulted prices the memory of it; and one who took a corner out from under
+  // you knows exactly how badly you wanted that block.
+  const t = s.street?.[r.id];
+  const known = t ? Math.min(0.05, 0.018 * t.deals) - Math.min(0.06, 0.03 * t.insults) : 0;
   const st = STYLE[r.style];
   if (r.stressMs && r.stressMs > 4) {
-    return { ask: Math.round(v * rrange(s, 0.80, 0.95)), note: `${r.name} needs the money — they are inside appraisal and they know you know.` };
+    return { ask: Math.round(v * rrange(s, 0.80, 0.95) * (1 - known)), note: `${r.name} needs the money — they are inside appraisal and they know you know.` };
   }
   if (ltv < st.maxLtv * 0.6 && r.style === "family") {
     return { ask: Math.round(v * rrange(s, 1.18, 1.45)), note: `${r.name} has owned it for two generations and does not need to sell. That is the number.` };
   }
-  return { ask: Math.round(v * rrange(s, st.patience - 0.04, st.patience + 0.12)), note: `${r.name} will trade at the right price.` };
+  return {
+    ask: Math.round(v * rrange(s, st.patience - 0.04, st.patience + 0.12) * (1 - known)),
+    note: (t?.deals ?? 0) >= 2
+      ? `${r.name} have made money with you ${t!.deals === 2 ? "twice" : `${t!.deals} times`}. The number is friendlier than it needs to be, and they know it.`
+      : (t?.insults ?? 0) > 0
+        ? `${r.name} have not forgotten the last number you put to them. It is priced in.`
+        : `${r.name} will trade at the right price.`,
+  };
 }

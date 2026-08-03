@@ -4,7 +4,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
 import { START_CASH, CENTURY_MONTHS, CASH_APY, logBooks, monthLabel } from "./types";
 import { initEcon, rng, rrange, tickEcon } from "./market";
-import { assetValue, holdingNOIYr, holdingValue, initialCondition, monthlyNOI, netWorth, resolveRec } from "./value";
+import { assetValue, holdingNOIYr, holdingValue, monthlyNOI, netWorth, resolveRec } from "./value";
 import { recordComp } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLeasing, depositsOn } from "./leasing";
@@ -15,7 +15,7 @@ import { distressPrice, markSponsor } from "./sponsor";
 import { tickLoc } from "./credit";
 import { tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing } from "./dev";
 import { tickDemand } from "./demand";
-import { initRivals, tickRivals } from "./rivals";
+import { initRivals, tickRivals, gradeOf } from "./rivals";
 import { initLenders, tickLenders } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
@@ -52,7 +52,7 @@ function targetListings(s: GameState, totalLots: number): number {
 
 export function newGame(seed: number, parcels?: ParcelTable): GameState {
   const s: GameState = {
-    v: 22,
+    v: 23,
     seed,
     rng: seed,
     month: 0,
@@ -124,7 +124,7 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   const ASK_FLOOR = 0.70;
   for (const li of s.listings) {
     const rec = resolveRec(parcels, s, li.bbl);
-    const floor = rec ? assetValue(rec, s.econ, initialCondition(rec)) * ASK_FLOOR : 0;
+    const floor = rec ? assetValue(rec, s.econ, gradeOf(s, rec)) * ASK_FLOOR : 0;
     if (s.month - li.listedM >= 4) li.ask = Math.round(li.ask * 0.985 / 1000) * 1000;
     if (floor > 0 && li.ask < floor) li.ask = Math.round(floor / 1000) * 1000;
   }
@@ -159,7 +159,7 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     }
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
-    const value = assetValue(rec, s.econ, initialCondition(rec));
+    const value = assetValue(rec, s.econ, gradeOf(s, rec));
     if (value <= 0) continue;
     if (value > 60_000_000 && rng(s) > 0.12) continue;
     const distress = rng(s) < pDistress;
@@ -309,7 +309,7 @@ export function advanceQuarter(
     if (a.refused || !a.ask) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
-    const v = assetValue(rec, s.econ, initialCondition(rec));
+    const v = assetValue(rec, s.econ, gradeOf(s, rec));
     if (v > 0 && a.ask < v * 0.85) {
       delete s.approaches[bbl];
       s.news.unshift({

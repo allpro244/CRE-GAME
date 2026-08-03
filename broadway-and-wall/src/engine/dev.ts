@@ -1249,6 +1249,48 @@ const START_RATE: Record<string, number> = {
   expansion: 0.14, peak: 0.09, recovery: 0.065, recession: 0.012,
 };
 
+/**
+ * THE BLOCK'S CORNICE DATUM, ENGINE SIDE.
+ *
+ * The citygen has a cornice-datum machine that makes the GENERATED town read
+ * as a town; the engine had nothing, so infill was sized off the ZONING
+ * envelope. Under the default "village" preset the standing city is p50 3
+ * floors, p99 8, max 14 — while vacant-lot farMax is p50 15.6, p90 30.5.
+ * Measured over 20 years x 2 seeds: 51 city/rival groundbreaks per run at
+ * MEDIAN 15-17 floors, max 32, with 26-35 of them more than twice the tallest
+ * standing neighbour. A village sprouted a forest of towers in a decade.
+ *
+ * No speculative builder does that. Infill is priced off the block's comps,
+ * and the comp set is what is standing: a developer builds one increment above
+ * the cornice line, because the increment is what the lenders and the tenants
+ * have already underwritten. Tall arrives the way it arrives in life — block
+ * by block, each cycle ratcheting the datum a few floors, over decades.
+ *
+ * The PLAYER is deliberately not capped: zoning is their envelope and
+ * overbuilding their own market is their risk to take.
+ */
+export function blockDatumFloors(s: GameState, parcels: ParcelTable, block: string): number {
+  let datum = 0;
+  for (const bbl in parcels) {
+    const p = parcels[bbl];
+    if (!p || p.block !== block) continue;
+    const r = resolveRec(parcels, s, bbl);
+    if (r && r.class !== "land" && r.floors > datum) datum = r.floors;
+  }
+  return datum;
+}
+
+/** How high the market will speculatively build on this lot TODAY. */
+export function cityInfillCap(
+  s: GameState, parcels: ParcelTable, rec: { block: string; lotArea: number }, maturity: number,
+): number {
+  const datum = blockDatumFloors(s, parcels, rec.block);
+  // one increment above the datum; the increment itself grows as the town
+  // matures and its comps deepen — 2 floors in year one, 6 by year 65
+  const step = 2 + Math.round(maturity * 4);
+  return Math.max(2, Math.min(Math.max(1, datum) + step, physicalMaxFloors(rec.lotArea * 0.62)));
+}
+
 export function useForZone(zone: string, demand: number, r: number): DevUse {
   if (zone.startsWith("M")) return "industrial";
   if (zone.startsWith("R")) return "multifamily";
@@ -1406,8 +1448,13 @@ export function tickCityGrowth(
   // cranes appear, then a quiet stretch while it is absorbed.
   const owed = s.econ.startOwed
     ? Object.values(s.econ.startOwed).reduce((a, v) => a + Math.max(0, v), 0) : 0;
-  // a typical city building here, so the budget converts to a crane count
-  const TYPICAL_SF = 42_000;
+  // a typical city building here, so the budget converts to a crane count.
+  // 42,000 sf was right when infill was sized off the zoning envelope; under
+  // the cornice-datum cap the measured median city building is ~26,000 sf, and
+  // leaving the old figure in place silently halved the square footage the
+  // space market ordered. The market's demand arrives as more, smaller
+  // buildings now — which is what a low town growing visibly looks like.
+  const TYPICAL_SF = 26_000;
   const wanted = owed / TYPICAL_SF;
   // The phase rate now only shapes URGENCY — capacity and the replacement-cost
   // brake are the real constraints, because in reality the space market's
@@ -1480,6 +1527,14 @@ export function tickCityGrowth(
     const frac = Math.min(0.95, 0.22 + 0.45 * maturity + 0.3 * (dNow / 100) * maturity + rng(s) * 0.15);
     let sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
     let floors = Math.max(1, Math.round(sf / (rec.lotArea * 0.62)));
+    // THE CITY BUILDS TO ITS OWN CORNICE LINE. Sized off the envelope alone, a
+    // three-storey town broke ground at a median of fifteen floors. The datum
+    // cap is what makes twenty years of growth read like twenty years.
+    const infill = cityInfillCap(s, parcels, rec, maturity);
+    if (floors > infill) {
+      floors = infill;
+      sf = Math.max(3000, Math.round((rec.lotArea * 0.62 * floors) / 100) * 100);
+    }
     // …and where it IS a shop, it is two storeys, with the area cut to match
     // rather than the same square footage squeezed into a taller-than-legal
     // plate. Capping floors alone would have kept the absurd density.

@@ -242,11 +242,29 @@ function toSuites(rec: ParcelRecord, want: number, cap: number, use?: BuiltClass
 // In-place rent roll at acquisition. Expirations cluster around a couple of
 // anchor years — a building with everything rolling at once is a visibly
 // riskier asset, and that's the point.
-export function genRentRoll(s: GameState, rec: ParcelRecord, holding: Holding) {
+/**
+ * THE DISCOUNT HAS TO BUY SOMETHING BROKEN.
+ *
+ * A distressed listing hit the tape at 72-90% of appraisal and then handed the
+ * buyer a rent roll at market occupancy: the discount priced the seller's
+ * urgency and the asset carried no corresponding impairment. Measured with a
+ * flipper bot over 30 years x 3 seeds: 272 completed flips, median entry at
+ * 0.76x appraisal, exit at 1.01x, and 117% of gross flip profit was entry
+ * discount alone. That is an ATM, not a strategy.
+ *
+ * A receiver's building is cheap because the sponsor stopped leasing it a year
+ * before he stopped paying, and stopped fixing it a year before that. So a
+ * distressed deed now walks into the building that earned the discount: a
+ * hole in the rent roll you must lease through this market's absorption
+ * (4-166 months), on plant the last owner deferred. The discount is
+ * compensation for work, and the 2-5x is earned over the years the work takes.
+ */
+export function genRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distressed = false) {
   if (!rec.bldgArea) return;
   const m = mixOf(rec);
   if ((m.multifamily ?? 0) > 0) {
-    holding.occ = Math.min(0.99, Math.max(0.5, useOccupancy(rec, s.econ, "multifamily") + rrange(s, -0.05, 0.04)));
+    holding.occ = Math.min(0.99, Math.max(0.35,
+      useOccupancy(rec, s.econ, "multifamily") + (distressed ? rrange(s, -0.38, -0.16) : rrange(s, -0.05, 0.04))));
   }
   if (!isCommercial(rec)) return;
   // A building in place has a rent roll per component: the shops at grade were
@@ -261,7 +279,8 @@ export function genRentRoll(s: GameState, rec: ParcelRecord, holding: Holding) {
   if (legSf < 400) continue;
   // wider than the market model on the downside: a building coming to market
   // is disproportionately one with a leasing problem
-  const targetOcc = Math.min(0.98, useOccupancy(rec, s.econ, use) + rrange(s, -0.14, 0.05));
+  const targetOcc = Math.max(0, Math.min(0.98,
+    useOccupancy(rec, s.econ, use) + (distressed ? rrange(s, -0.52, -0.24) : rrange(s, -0.14, 0.05))));
   const market = useRentPsfYr(rec, s.econ, holding.condition, use);
   let leased = 0;
   let guard = 0;

@@ -7,7 +7,7 @@ import { logBooks, monthLabel, SVC_START } from "./types";
 import { recentLowballs } from "./acquire";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange } from "./market";
-import { assetValue, initialCondition, initialCondIdx, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr, demandLinear, landPsfNow } from "./value";
+import { assetValue, condGrade, initialCondition, initialCondIdx, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr, demandLinear, landPsfNow } from "./value";
 import { locAvailable } from "./credit";
 import { marketAppetite, ownerOf, rivalAsk, rivalBuys, livingRivals, gradeOf, tie } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn } from "./leasing";
@@ -141,7 +141,15 @@ export function executePurchase(
     });
     next.exchange = null;
   }
-  genRentRoll(next, rec, holding); // walk into the in-place rent roll
+  // A DISTRESSED DEED ARRIVES DISTRESSED. The seller's urgency was priced in
+  // the ask; what the buyer takes over is the reason for it — empty floors and
+  // deferred plant. See genRentRoll for the measurement that forced this.
+  const wasDistress = !!s.listings.find((l) => l.bbl === bbl)?.distress;
+  if (wasDistress && rec.class !== "land" && rec.bldgArea > 0) {
+    holding.condIdx = Math.max(0.30, (holding.condIdx ?? 0.7) - 0.10);
+    holding.condition = condGrade(holding.condIdx);
+  }
+  genRentRoll(next, rec, holding, wasDistress); // walk into the in-place rent roll
   next.holdings[bbl] = holding;
   // A RECEIVER'S SITE MAY HAVE A BUILDING HALF ON IT. If it does, what you
   // just bought is a job, not a lot, and you take it on at the closing.

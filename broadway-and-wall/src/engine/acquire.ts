@@ -195,7 +195,12 @@ function reservationOf(
   // A soft market drags the floor down; a hot one lets them hold out. Distress
   // is the seller's problem and your opportunity.
   const phase = s.econ.phase === "recession" ? -0.055 : s.econ.phase === "expansion" ? 0.03 : 0;
-  const distress = li?.distress ? -0.06 : 0;
+  // THE MOTIVATION IS ALREADY IN THE ASK. A distress listing hits the tape at
+  // 72-90% of appraisal (refreshListings) and this term then cut another six
+  // points off the floor UNDER that ask — the same urgency priced twice, which
+  // is how receivers were routinely negotiated to half of appraisal on assets
+  // that (before the distress-impairment fix) were not even impaired.
+  const distress = 0;
   // AND WHAT YOU DID LAST TIME. A seller who has already had one insult out of
   // you prices you specifically — the floor for THIS buyer goes up and stays
   // up. It is the difference between finding out where the floor is and paying
@@ -208,7 +213,18 @@ function reservationOf(
   // simply part of the floor, priced by who they are.
   // ...and what you did to EVERYBODY ELSE. The per-building memory above is
   // one seller pricing one story; this is the whole street pricing the pattern.
-  const reservation = Math.round((ask * floor * repFloorMult(s)) / (1 + prof.certainty));
+  let reservation = Math.round((ask * floor * repFloorMult(s)) / (1 + prof.certainty));
+  // THE SELLER'S OUTSIDE OPTION IS THE TAPE ITSELF. A fairly-priced listing is
+  // absorbed by the rest of the market at the ASK within a few months
+  // (tickListingAbsorption) — so nobody holding a healthy building takes
+  // materially less from you than the street is already offering them. The
+  // floor binds hardest on stale, repriced listings, which a flipper bot was
+  // grinding to 0.5-0.65x appraisal. Distress is exempt: a receiver's building
+  // is impaired now, and the impairment is the discount.
+  if (!li?.distress && rec && rec.class !== "land") {
+    const value = assetValue(rec, s.econ, gradeOf(s, rec));
+    reservation = Math.max(reservation, Math.min(Math.round(ask * 0.96), Math.round(value * 0.84)));
+  }
   return { reservation, ask };
 }
 

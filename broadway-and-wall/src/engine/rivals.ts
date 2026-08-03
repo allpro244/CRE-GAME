@@ -34,7 +34,7 @@ import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from
 import { CASH_APY, monthLabel } from "./types";
 import { BUILD_MONTHS, rng, rrange } from "./market";
 import { assetValue, initialCondition, landValue, noiAfterTaxYr, occupancy, resolveRec } from "./value";
-import { devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retailWantsMixed, SOFT_COST, useForZone, noteRecordPlan } from "./dev";
+import { cityInfillCap, devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retailWantsMixed, SOFT_COST, useForZone, noteRecordPlan } from "./dev";
 import { recordComp } from "./comps";
 
 // Ashport is an old port town; its money has old-port-town names.
@@ -738,6 +738,13 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   const frac = Math.min(0.95, 0.4 + rng(s) * 0.45);
   let sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
   let floors = Math.max(1, Math.round(sf / (rec.lotArea * 0.62)));
+  // A named developer reads the same comps the anonymous city does: one
+  // increment above the block's cornice datum, not the zoning envelope.
+  const infill = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780));
+  if (floors > infill) {
+    floors = infill;
+    sf = Math.max(3000, Math.round((rec.lotArea * 0.62 * floors) / 100) * 100);
+  }
   const cap = MAX_FLOORS_BY_USE[use];
   if (cap !== undefined && floors > cap) {
     floors = cap;

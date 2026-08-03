@@ -3725,6 +3725,50 @@ function LandValueChart() {
   );
 }
 
+/**
+ * A SECTION YOU CAN SHUT.
+ *
+ * Research is nine sections deep and every one of them is always open, so the
+ * page a principal opens with one question in mind answers it somewhere around
+ * the fourth scroll. The fix is not to remove anything — the density is the
+ * point, and the player has been explicit that detail must not be sacrificed —
+ * it is to let them put away what they are not looking at today.
+ *
+ * The open set persists in localStorage, so the shape you leave the page in is
+ * the shape you find it in next time, across reloads and across runs. That is
+ * the whole feature: the page becomes YOURS rather than a fixed document.
+ */
+function Fold({
+  id, title, sub, defaultOpen = true, right, children,
+}: {
+  id: string; title: string; sub?: string; defaultOpen?: boolean;
+  right?: React.ReactNode; children: React.ReactNode;
+}) {
+  const key = "bw:fold:" + id;
+  const [open, setOpen] = useState<boolean>(() => {
+    try { const v = localStorage.getItem(key); return v === null ? defaultOpen : v === "1"; }
+    catch { return defaultOpen; }
+  });
+  const toggle = () => {
+    setOpen((v) => {
+      try { localStorage.setItem(key, v ? "0" : "1"); } catch { /* private mode: it just will not persist */ }
+      return !v;
+    });
+  };
+  return (
+    <section className={"fold" + (open ? " fold-open" : "")}>
+      <div className="fold-head" onClick={toggle} role="button" tabIndex={0}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}>
+        <span className="fold-caret">{open ? "▾" : "▸"}</span>
+        <span className="fold-title">{title}</span>
+        {sub && <span className="fold-sub">{sub}</span>}
+        {right && <span className="fold-right" onClick={(e) => e.stopPropagation()}>{right}</span>}
+      </div>
+      {open && <div className="fold-body">{children}</div>}
+    </section>
+  );
+}
+
 function ResearchPage() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
@@ -3766,8 +3810,8 @@ function ResearchPage() {
       })()}
 
       <div className="deals-grid">
-        <section style={{ gridColumn: "1 / -1" }}>
-          <div className="page-section">The sectors</div>
+        <div style={{ gridColumn: "1 / -1" }}>
+        <Fold id="sectors" title="The sectors" sub="rents, caps, momentum and what is coming" defaultOpen>
           <div className="hint">
             Classes do not move together. Momentum is where the sector is heading; the pipeline is what
             everyone <em>else</em> is building, and it lands on the rent about three years from now.
@@ -3803,12 +3847,11 @@ function ResearchPage() {
               })}
             </tbody>
           </table>
-        </section>
+        </Fold>
         {/* THE TRADES. A separate cycle from the four asset classes above and
             the reason two identical office buildings are different assets: one
             let to insurers, one let to startups. */}
-        <section style={{ gridColumn: "1 / -1" }}>
-          <div className="page-section">The trades</div>
+        <Fold id="trades" title="The trades" sub="industry cycles, and your exposure to them" defaultOpen>
           <div className="hint">
             Industries run their own cycles, on their own volatility, independent of the property market that houses
             them. Office can be a landlord's market while finance is shedding staff — and the building let to five
@@ -3846,25 +3889,26 @@ function ResearchPage() {
               })()}
             </tbody>
           </table>
-        </section>
-        <section style={{ gridColumn: "1 / -1" }}>
+        </Fold>
+        <Fold id="banks" title="The banks" sub="whose capital decides what anyone can borrow" defaultOpen>
           <TheBanks />
-        </section>
-        <section style={{ gridColumn: "1 / -1" }}>
+        </Fold>
+        <Fold id="land" title="Land values, and the city itself" sub="the long series" defaultOpen={false}>
           <LandValueChart />
-        </section>
-        <section style={{ gridColumn: "1 / -1" }}>
+        </Fold>
+        <Fold id="street" title="The street" sub="every firm's balance sheet" defaultOpen={false}>
           <TheStreet />
-        </section>
-        <section style={{ gridColumn: "1 / -1" }}>
+        </Fold>
+        <Fold id="register" title="Who owns what" sub="every deed in town that is not yours" defaultOpen={false}>
           <OwnershipRegister />
-        </section>
+        </Fold>
         {/* THE PRINTS GO LAST. They are the reference you scroll to, not the
             thing you open the page for — sectors and land first, the record of
             what has actually traded underneath it. */}
-        <section style={{ gridColumn: "1 / -1" }}>
+        <Fold id="comps" title="Recent prints" sub="every trade in the city" defaultOpen={false}>
           <CompsSheet />
-        </section>
+        </Fold>
+        </div>
       </div>
     </div>
   );

@@ -632,3 +632,23 @@ body {
   font-size: 10.5px; color: var(--ink-dim); font-style: italic;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+
+/* ---- foldable sections: the density stays, you choose what to look at ---- */
+.fold { margin-top: 20px; }
+.fold-head {
+  display: flex; align-items: baseline; gap: 8px; cursor: pointer;
+  border-bottom: 1px solid rgba(146,110,40,0.28); padding-bottom: 5px;
+  user-select: none;
+}
+.fold-head:hover { border-bottom-color: rgba(146,110,40,0.6); }
+.fold-caret { color: var(--gold); font-size: 11px; width: 10px; flex: none; }
+.fold-title {
+  font-family: var(--serif); font-size: 16px; color: var(--ink);
+  font-variant: small-caps; letter-spacing: 0.03em;
+}
+.fold-sub { font-size: 11.5px; color: var(--ink-dim); font-style: italic; }
+.fold-right { margin-left: auto; }
+.fold-body { padding-top: 4px; }
+/* a shut section should read as a closed drawer, not a missing one */
+.fold:not(.fold-open) .fold-head { border-bottom-color: rgba(146,110,40,0.14); }
+.fold:not(.fold-open) .fold-title { color: var(--ink-dim); }

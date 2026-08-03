@@ -624,6 +624,7 @@ void main() {
 
   bool trade = (s <= 4 || s == 6 || s == 7) && !row;
   float gfTop = fh * 1.04;
+
   if (trade && near > 0.25 && vZ < gfTop && vTop > fh * 1.7) {
     float bw = 4.7;                                   // one shopfront bay
     float bu = vU / bw;
@@ -678,6 +679,45 @@ void main() {
     winMask = (vZ > sillZ && vZ < headZ && !pier) ? 1.0 : 0.0;
   }
 
+  // THE DISSOLVE, AND WHAT HAS TO SURVIVE IT.
+  //
+  // A floor is roughly two pixels tall at the camera this game actually sits
+  // at, so the window grid has to go before it aliases into noise. Measured
+  // there: mean lod 0.959, and 85.4% of every wall pixel in the frame above
+  // 0.9. That is the dissolve doing its job.
+  //
+  // It was also doing it to everything else. Every line above this one —
+  // the reveals, the shopfronts, the stoops, a century of soot — was being
+  // averaged out to within four per cent of a flat colour before it reached
+  // the screen, and only came back when you put your nose on a single block.
+  // A magenta test band on the ground floor rendered THIRTY-SEVEN PIXELS out
+  // of a million at the default camera. It was not the ground-floor gate. It
+  // was this line, eating the whole facade.
+  //
+  // So the shader is now in two halves. Above: PATTERN — window grids, bay
+  // hashing, transom bars, things made of edges, which genuinely cannot be
+  // drawn at two pixels a floor and are correctly dissolved. Below: VALUE —
+  // tone, not edges, which is exactly what a facade still has at two pixels a
+  // floor, and which now runs after the dissolve so distance cannot erase it.
+  vec3 facadeAvg = mix(wall, mix(glassA, glassB, 0.5), win.x * win.y * 0.8);
+  col = mix(col, facadeAvg, lod);
+
+  // ---- value: the half of the facade that reads from the air --------------
+
+  // A GROUND FLOOR. Eighty-five lines of shopfront sit above, behind a
+  // near > 0.25 gate that only 7.1% of wall pixels clear at the default
+  // camera. What a shopfront is at that distance is not a transom bar, it is
+  // a band of dark at the bottom of the wall, because glazing is a hole in a
+  // building. So: one smoothstep, and a plinth line where the base stops —
+  // crossfaded against lod so it carries the ground floor when the detailed
+  // version cannot be drawn, and steps aside when it can.
+  if (trade && vZ < gfTop && vTop > fh * 1.7) {
+    float gfk = 1.0 - smoothstep(gfTop * 0.72, gfTop, vZ);
+    col = mix(col, mix(col * 0.70, mix(glassA, glassB, 0.35), 0.42), gfk * 0.66 * lod);
+    float plinth = smoothstep(0.55, 0.75, vZ / gfTop) * (1.0 - smoothstep(0.75, 0.95, vZ / gfTop));
+    col *= 1.0 - plinth * 0.22 * lod;
+  }
+
   // A CENTURY LEAVES A MARK.
   //
   // Not a dirt texture — the two things that actually make an old wall look
@@ -701,9 +741,6 @@ void main() {
     col *= 1.0 + age * 0.22 * (wash - 0.5);
   }
 
-  // distance dissolve
-  vec3 facadeAvg = mix(wall, mix(glassA, glassB, 0.5), win.x * win.y * 0.8);
-  col = mix(col, facadeAvg, lod);
 
   // ---- light --------------------------------------------------------------
   float ndl = max(dot(n, SUN_DIR), 0.0);

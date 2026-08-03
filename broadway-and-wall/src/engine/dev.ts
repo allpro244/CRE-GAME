@@ -1284,8 +1284,21 @@ export function tickCityGrowth(
   const TYPICAL_SF = 42_000;
   const wanted = owed / TYPICAL_SF;
   // the rate is now a CEILING on how fast the backlog clears, not the target
-  const ceiling = Math.max(0.35, rate * 6);
-  let n = Math.min(wanted, ceiling);
+  const ceiling = Math.max(0.22, rate * 2.4);
+  // AND THE TOWN ONLY HAS SO MANY CONTRACTORS.
+  //
+  // A backlog cleared at full speed put twenty-nine cranes up at once, which
+  // is a boomtown, not a harbour city of sixteen hundred lots. The real
+  // constraint is not demand, it is capacity: there are only so many general
+  // contractors, tower cranes and steel crews in a town this size, and when
+  // they are all working the next job waits its turn. That is why real
+  // construction booms show up as cost escalation and schedule slippage rather
+  // than as unlimited simultaneous starts.
+  //
+  // Scaled to the size of the place, so a bigger city carries more of them.
+  const capacity = Math.max(4, Math.round(bbls.length / 165));
+  const live = (s.cityJobs ?? []).filter((j) => !j.orphaned).length;
+  let n = Math.min(wanted, ceiling, Math.max(0, capacity - live));
   n = Math.floor(n) + (rng(s) < n % 1 ? 1 : 0);
   const paid = Math.min(n, s.startDebt ?? 0);
   s.startDebt = (s.startDebt ?? 0) - paid;

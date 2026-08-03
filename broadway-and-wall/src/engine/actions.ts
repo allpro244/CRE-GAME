@@ -797,6 +797,15 @@ export function declineSaleOffer(s: GameState, bbl: string): GameState {
  * think about most quarters instead of most decades.
  */
 export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string[]) {
+  // NOBODY RINGS A STRANGER.
+  //
+  // An off-market call is a favour, and a favour is something you are owed.
+  // A broker sitting on a file they can only show to one buyer shows it to a
+  // name they have closed with — not to somebody who arrived in town in
+  // January with six million dollars and no record. The first year is the one
+  // where you work the public tape like everybody else, and the phone starting
+  // to ring is the first sign that the street has noticed you exist.
+  if (s.month < 12) return;
   // A broker's interest in you scales with what you already own — the first
   // deal is the hard one, and after that the phone does not stop.
   const owned = Object.keys(s.holdings).length;

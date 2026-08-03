@@ -138,16 +138,19 @@ attribute float aEra;
 attribute vec2 aSeg;   // wall segment span in perimeter units (u0, u1)
 attribute vec2 aCcv;   // corner sign at each end: +1 convex, -1 concave
 attribute vec3 aTint;
+attribute float aLit;
 varying vec3 vNormal;
 varying vec3 vTint;
 varying vec3 vPos;
 varying vec2 vSeg, vCcv;
 varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh, vEra;
+varying float vLit;
 void main() {
   vNormal = normal;
   vTint = aTint;
   vPos = position;
   vSeg = aSeg; vCcv = aCcv;
+  vLit = aLit;
   vU = aU; vZ = position.z; vStyle = aStyle; vRand = aRand; vVar = aVar; vTop = aTop; vFh = aFh; vEra = aEra;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
@@ -350,6 +353,7 @@ varying vec3 vTint;
 varying vec3 vPos;
 varying vec2 vSeg, vCcv;
 varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh, vEra;
+varying float vLit;
 uniform float uOpacity;
 uniform vec3 uCam;
 ${"" /* shadow sampling */}
@@ -722,6 +726,44 @@ void main() {
     col *= 1.0 - plinth * 0.22 * lod;
   }
 
+  // OCCUPANCY YOU CAN SEE FROM THE AIR.
+  //
+  // Nothing about the economy reached this renderer. You could own half the
+  // waterfront and be bleeding on every foot of it, and the map that fills the
+  // screen would look exactly the same as the map of a full building — so the
+  // simulation and the picture were two things sharing a window rather than
+  // one object. A principal does not read a spreadsheet to know which of his
+  // towers is empty. He looks at it.
+  //
+  // What a vacant floor actually is, from the air and in daylight, is a floor
+  // with no fit-out in it: no ceiling, no blinds, no furniture, nothing behind
+  // the glass to catch the light. It reads flat, cool and a little dark, and
+  // it is the flatness that gives it away rather than the darkness. Let floors
+  // read normal. In the low winter sun the let ones pick up a warm interior,
+  // because at four o'clock in December the lights are already on.
+  //
+  // The bands are about three floors deep and their split is per building, so
+  // a half-let tower reads as half dark and fills up over the quarters you
+  // spend leasing it. They are deliberately NOT the window grid, which is two
+  // pixels tall at the camera this game sits at and correctly dissolved a few
+  // lines above — this has to survive the distance, so it is built out of
+  // value at a frequency that can.
+  if (vLit >= 0.0) {
+    float bandH = fh * 3.0;
+    float band = floor(vZ / bandH + hash(vec2(vRand * 91.0, 7.0)) * 5.0);
+    float roll = hash(vec2(band, vRand * 47.0 + 3.0));
+    // the bottom of a building lets first and stays let longest — ground-floor
+    // retail and the anchor above it are the last space to go dark
+    float low = 1.0 - smoothstep(0.0, vTop * 0.55, vZ);
+    float let_ = smoothstep(roll - 0.14, roll + 0.14, clamp(vLit + low * 0.22, 0.0, 1.0));
+    float dark = 1.0 - let_;
+    // flatter, cooler, dimmer where nobody is
+    col = mix(col, vec3(dot(col, vec3(0.34, 0.38, 0.28))) * vec3(0.92, 0.97, 1.08) * 0.78, dark * 0.80);
+    // and warm behind the glass where somebody is, hardest when the sun is low
+    float dusk = 1.0 - smoothstep(0.10, 0.42, SUN_DIR.z);
+    col += vec3(0.085, 0.058, 0.022) * let_ * dusk * (0.35 + 0.65 * winMask);
+  }
+
   // A CENTURY LEAVES A MARK.
   //
   // Not a dirt texture — the two things that actually make an old wall look
@@ -767,6 +809,7 @@ varying vec3 vTint;
 varying vec3 vPos;
 varying vec2 vSeg, vCcv;
 varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh, vEra;
+varying float vLit;
 uniform float uOpacity;
 uniform vec3 uCam;
 ` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + SEASON_GLSL + /* glsl */ `
@@ -1059,6 +1102,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private wallMat!: THREE.ShaderMaterial;
   private roofMat!: THREE.ShaderMaterial;
   private tintAttrs: THREE.BufferAttribute[] = [];
+  private litAttrs: THREE.BufferAttribute[] = [];
   private baseTints: Float32Array[] = [];
   // ONE camera uniform, shared by every material — walls, roofs and props all
   // have to haze against the same eye point or the city separates into layers.
@@ -1860,6 +1904,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       g.setAttribute("aEra", new THREE.Float32BufferAttribute(T.era, 1));
       g.setAttribute("aSeg", new THREE.Float32BufferAttribute(T.seg, 2));
       g.setAttribute("aCcv", new THREE.Float32BufferAttribute(T.ccv, 2));
+      g.setAttribute("aLit", (() => {
+        const a = new THREE.Float32BufferAttribute(new Float32Array(T.pos.length / 3).fill(-1), 1);
+        a.setUsage(THREE.DynamicDrawUsage);
+        return a;
+      })());
       const tint = new Float32Array((T.pos.length / 3) * 3).fill(1);
       const tintAttr = new THREE.Float32BufferAttribute(tint, 3);
       tintAttr.setUsage(THREE.DynamicDrawUsage);
@@ -1885,6 +1934,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.scene.add(new THREE.Mesh(wallGeom, this.wallMat));
     this.scene.add(new THREE.Mesh(roofGeom, this.roofMat));
     this.tintAttrs = [wallGeom.getAttribute("aTint") as THREE.BufferAttribute, roofGeom.getAttribute("aTint") as THREE.BufferAttribute];
+    this.litAttrs = [wallGeom.getAttribute("aLit") as THREE.BufferAttribute, roofGeom.getAttribute("aLit") as THREE.BufferAttribute];
     this.baseTints = this.tintAttrs.map((a) => {
       const arr = new Float32Array(a.array.length);
       arr.fill(1);
@@ -2633,6 +2683,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         g.setAttribute("aSeg", new THREE.Float32BufferAttribute(D.seg, 2));
         g.setAttribute("aCcv", new THREE.Float32BufferAttribute(D.ccv, 2));
         g.setAttribute("aTint", new THREE.Float32BufferAttribute(new Float32Array(D.pos.length).fill(1), 3));
+        g.setAttribute("aLit", new THREE.Float32BufferAttribute(new Float32Array(D.pos.length / 3).fill(-1), 1));
         return g;
       };
       this.dynGroup.add(new THREE.Mesh(mk(T), this.wallMat));
@@ -2751,6 +2802,28 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       }
     }
     for (const attr of this.tintAttrs) attr.needsUpdate = true;
+    this.map.triggerRepaint();
+  }
+
+  /**
+   * WHICH FLOORS ARE LET. -1 means "not yours to know" and switches the whole
+   * treatment off for that building; 0..1 is the leased share. Uses the same
+   * per-BBL vertex ranges the ownership tints already walk, so it costs one
+   * pass over the buildings you actually have a number for.
+   */
+  setOccupancy(occ: Map<string, number>) {
+    if (!this.litAttrs.length) return;
+    for (const a of this.litAttrs) (a.array as Float32Array).fill(-1);
+    for (const [bbl, v] of occ) {
+      const ranges = this.rangesByBBL.get(bbl);
+      if (!ranges) continue;
+      const f = Math.max(0, Math.min(1, v));
+      for (const { attr, r } of ranges) {
+        const arr = this.litAttrs[attr].array as Float32Array;
+        arr.fill(f, r.start, r.start + r.count);
+      }
+    }
+    for (const a of this.litAttrs) a.needsUpdate = true;
     this.map.triggerRepaint();
   }
 

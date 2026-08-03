@@ -4,6 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useStore } from "@/state/store";
 import { composeStyle, gameLayers, landLensColor, LIVE_DEMAND, resolveBaseStyle } from "./style";
 import { ThreeBuildings, type BuildingVolume } from "./ThreeBuildings";
+import { occupancy, resolveRec } from "@/engine/value";
 
 const CITY_CENTER: [number, number] = [-70.9, 41.1];
 
@@ -404,6 +405,39 @@ export default function MapView() {
     if (hoveredBBL && hoveredBBL !== selectedBBL) tints.set(hoveredBBL, [1.14, 1.08, 0.92]);
     layer.setTints(tints);
   }, [selectedBBL, hoveredBBL, adjacency, game, mapReady, lens]);
+
+  // THE CITY'S VACANCY, ON THE CITY.
+  //
+  // Nothing about the economy reached the map. You could own half the
+  // waterfront and be bleeding on every foot of it and the picture would be
+  // identical to the picture of a full book, so the simulation and the thing
+  // filling the screen were two objects sharing a window. A principal does not
+  // open a spreadsheet to find out which of his towers is empty — he looks at
+  // it, and then he looks at everybody else's.
+  //
+  // Your own buildings report the truth off the rent roll, to the square foot.
+  // Everything else reports what the model says a building of that class, on
+  // that corner, in that condition is running at — which is not cheating,
+  // because a half-dark building is the most public fact in real estate. It
+  // moves with the cycle, so a glut arrives on the map as the city going dark
+  // a district at a time, and you can watch it happen from the air.
+  useEffect(() => {
+    const layer = threeRef.current;
+    if (!layer || !mapReady || !game || !parcels) return;
+    const occ = new Map<string, number>();
+    for (const bbl of layer.rangesByBBL.keys()) {
+      const h = game.holdings[bbl];
+      const rec = resolveRec(parcels, game, bbl);
+      if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+      if (h) {
+        const leased = h.tenants.reduce((n, t) => n + t.sf, 0);
+        occ.set(bbl, Math.max(0, Math.min(1, leased / Math.max(1, rec.bldgArea))));
+      } else {
+        occ.set(bbl, occupancy(rec, game.econ));
+      }
+    }
+    layer.setOccupancy(occ);
+  }, [game?.month, game?.holdings, mapReady, parcels, game, city]);
 
   // player construction and city growth onto the skyline
   const dynSigRef = useRef("");

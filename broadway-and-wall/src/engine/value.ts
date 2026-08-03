@@ -5,7 +5,7 @@ import type { ParcelRecord } from "@/data/types";
 import type { Condition, Econ, GameState, Holding, Sector } from "./types";
 import type { BuiltClass } from "./types";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { industryStress } from "./market";
+import { industryStress, NATURAL_VAC } from "./market";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -376,7 +376,28 @@ export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass): nu
   // entire value-add trade — the discount is real and so is the reason.
   const u2 = occHash("trouble:" + rec.bbl + use);
   const trouble = u2 < 0.12 ? (apt ? 0.14 : 0.28) * (1 - u2 / 0.12) : 0;
-  const base = clamp(OCC_BASE[use] + swing * econ.cycleDev + loc + idio - trouble, 0.35, 0.99);
+  // THE SPACE MARKET WAS NOT WIRED TO A SINGLE BUILDING.
+  //
+  // econ.cityVac[use] is recomputed every month out of stock, deliveries,
+  // employment, absorption and price — the whole four-quadrant model the
+  // Economy page draws graphs of — and NOTHING downstream ever read it. A
+  // building's occupancy was a constant plus a nine-point swing on cycleDev,
+  // so citywide office vacancy could go from 4.5% to 30% and every building in
+  // town would sit at exactly the occupancy it had before. Measured on the
+  // renderer, which is where it finally showed: pushing office vacancy from
+  // 4.5% to 30% moved 0.34% of the pixels in the frame, against a noise floor
+  // of 0.23%. The market was a set of numbers on a page about a city it could
+  // not touch.
+  //
+  // The wire is a DIFFERENCE from natural vacancy, not a level, so that at the
+  // frictional rate this term is exactly zero and the whole existing
+  // calibration is untouched — what is new is only the response. It is damped
+  // to 0.85 because a building does not reprice the instant the market does:
+  // the paper in it has years to run, and that is what stops citywide vacancy
+  // from arriving as a step change on every roll in the city.
+  const vacNow = econ.cityVac?.[use];
+  const mktDelta = Number.isFinite(vacNow) ? (NATURAL_VAC[use] - (vacNow as number)) * 0.85 : 0;
+  const base = clamp(OCC_BASE[use] + swing * econ.cycleDev + mktDelta + loc + idio - trouble, 0.28, 0.99);
   return base * leaseUpFactor(rec, econ, apt);
 }
 export function occupancy(rec: ParcelRecord, econ: Econ): number {

@@ -243,6 +243,21 @@ export interface Development {
   leaseUpReserve?: number;
   equityBudget: number;   // your share of the budget
   equitySpent: number;
+  /**
+   * THE DAY-ONE CHEQUE, STILL SITTING IN THE JOB.
+   *
+   * startDevelopment takes equityAtClose out of your account and marked it as
+   * equity SPENT — which retired budget without paying for a single hour of
+   * work. The S-curve then went on to spend the whole build cost on top of it,
+   * so uses exceeded sources by exactly (equityAtClose − leaseUpReserve) and
+   * that difference fell through as an unannounced capital call in the last
+   * months before delivery. Measured at 1.33x to 1.51x the equity the panel
+   * promised, and 2.43x to 2.75x the day-one figure.
+   *
+   * The cheque is money ON DEPOSIT against the budget. This is how much of it
+   * the job has not yet drawn down.
+   */
+  equityPrefunded?: number;
   ratePct: number;
 
   startM: number;

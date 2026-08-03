@@ -494,6 +494,8 @@ export function startDevelopment(
     interestReserve: plan.interestReserve, reserveUsed: 0,
     leaseUpReserve: plan.leaseUp,
     equityBudget: plan.equity, equitySpent: plan.equityAtClose,
+    // paid on day one, not yet applied against any work
+    equityPrefunded: plan.equityAtClose,
     ratePct: plan.ratePct,
     startM: next.month, deliverM: next.month + plan.months, baseMonths: plan.months,
     signed: [],
@@ -546,6 +548,7 @@ export function takeoverDevelopment(
     interestReserve: Math.round(commitment * 0.05), reserveUsed: 0,
     leaseUpReserve: plan.leaseUp,
     equityBudget: Math.max(0, remaining - commitment), equitySpent: 0,
+    equityPrefunded: 0,   // a takeover writes no cheque at close
     ratePct: +(s.econ.indexRate + 3.2).toFixed(2),
     startM: s.month, deliverM: s.month + months, baseMonths: months,
     signed: [],
@@ -638,19 +641,30 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
     const spendNow = Math.round(buildSpend * spendShare);
 
     if (spendNow > 0) {
-      // equity first, to the extent any is left; the bank funds the rest
+      // THE CHEQUE YOU ALREADY WROTE PAYS FIRST, and it costs nothing further.
+      // Without this the S-curve spent the full build cost ON TOP of the
+      // day-one equity, and the gap surfaced as a silent capital call at 90%
+      // complete — the single worst bug in the game, because it emptied your
+      // account in the three months before a building you were about to have
+      // to fit out.
+      const fromPre = Math.min(d.equityPrefunded ?? 0, spendNow);
+      d.equityPrefunded = (d.equityPrefunded ?? 0) - fromPre;
+      const rest = spendNow - fromPre;
+      // equity next, to the extent any is left; the bank funds the remainder
       const equityLeft = Math.max(0, d.equityBudget - d.equitySpent);
-      const fromEquity = Math.min(equityLeft, spendNow);
+      const fromEquity = Math.min(equityLeft, rest);
       // the loan's construction bucket is the commitment LESS the reserve it
       // is holding back for its own interest; interest draws are tracked in
       // reserveUsed, so construction-to-date is drawn minus that
       const hardRoom = Math.max(0, (d.commitment - d.interestReserve) - (d.drawn - d.reserveUsed));
-      const fromLoan = Math.min(hardRoom, spendNow - fromEquity);
-      const unfunded = spendNow - fromEquity - fromLoan;
+      const fromLoan = Math.min(hardRoom, rest - fromEquity);
+      const unfunded = rest - fromEquity - fromLoan;
       d.equitySpent += fromEquity;
       d.drawn += fromLoan;
       d.loanBalance += fromLoan;
-      // anything neither side will fund is a capital call, today
+      // anything neither side will fund is a capital call, today. On a job that
+      // runs to plan this is now zero; it fires for overruns, which is what a
+      // capital call is actually for.
       s.cash -= fromEquity + unfunded;
       logBooks(s, "dev", fromEquity + unfunded);
       if (unfunded > 0) d.equitySpent += unfunded;
@@ -821,8 +835,16 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // building to lease it comes across as cash. Without this a developer who
   // had spent correctly to plan still could not afford the TI on the first
   // tenant through the door.
+  // AND IT IS FINANCED, NOT MINTED. The reserve was handed over as free cash,
+  // which quietly conjured money into the game. It is part of the loan
+  // commitment — the bank is advancing it now that there is a building to
+  // lease — so it draws like any other advance and the balance goes up.
   const lease = d.leaseUpReserve ?? 0;
   if (lease > 0) {
+    const room = Math.max(0, d.commitment - d.drawn);
+    const advance = Math.min(lease, room);
+    d.drawn += advance;
+    d.loanBalance += advance;
     s.cash += lease;
     logBooks(s, "dev", -lease);
     s.news.unshift({

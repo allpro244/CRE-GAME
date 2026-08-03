@@ -365,6 +365,24 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
     }
   }
 
+  // --------------------------------------------------- the development ledger
+  // The funding identity that broke silently for months: the day-one cheque is
+  // money ON DEPOSIT, not budget consumed, and the S-curve must not be able to
+  // spend it twice. A prefunded pot that goes negative, or exceeds the cheque
+  // that created it, means the waterfall is drawing from somewhere it should
+  // not — which is exactly how a job came to take 2.75x its day-one equity.
+  for (const d of Object.values(s.developments ?? {})) {
+    const at = `development ${d.bbl}`;
+    if (!fin(d.equityBudget) || d.equityBudget < 0) bad("dev", at, `equity budget ${d.equityBudget}`);
+    if (!fin(d.equitySpent) || d.equitySpent < 0) bad("dev", at, `equity spent ${d.equitySpent}`);
+    const pre = d.equityPrefunded ?? 0;
+    if (!fin(pre) || pre < 0) bad("dev", at, `prefunded equity ${pre}`);
+    if (pre > d.equityBudget + 1) bad("dev", at, `prefunded ${Math.round(pre)} exceeds the whole equity budget ${Math.round(d.equityBudget)}`);
+    if (!fin(d.drawn) || d.drawn < 0) bad("dev", at, `drawn ${d.drawn}`);
+    if (d.drawn > d.commitment + 1) bad("dev", at, `drawn ${Math.round(d.drawn)} past a ${Math.round(d.commitment)} commitment`);
+    if (!fin(d.loanBalance) || d.loanBalance < 0) bad("dev", at, `loan balance ${d.loanBalance}`);
+  }
+
   // ---------------------------------------------------------------- the banks
   // A lender is a firm with a balance sheet, so it gets the same treatment as
   // any other balance sheet in here: no NaN, no negative book, no failing in

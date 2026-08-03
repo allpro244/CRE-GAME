@@ -8,7 +8,24 @@ export type MarketPhase = "recovery" | "expansion" | "peak" | "recession";
 export type BuiltClass = Exclude<AssetClass, "land">;
 export const BUILT_CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
 
-export type Condition = "worn" | "standard" | "good";
+/**
+ * FOUR GRADES, NOT THREE, because three had a floor and a floor is a free lunch.
+ *
+ * `worn` was the terminal state of neglect — the decay ladder in leasing.ts
+ * returned null there — so a building that reached it could never get worse.
+ * Measured on New Alden: 571 of 1,042 built parcels, 55% of the stock, START
+ * worn, because initialCondition calls anything built before 1965 worn and the
+ * campaign opens in 2000. Worn also carries a +70bp cap spread, so it is the
+ * highest-YIELDING stock in the city. Buy the best yield on the tape and never
+ * spend a dollar was, quite literally, the strategy of buying the assets the
+ * engine had promised never to punish.
+ *
+ * `obsolete` is what actually happens to a building nobody puts money into: the
+ * plant is finished, the market has stopped calling, and what is left is worth
+ * the dirt. Nothing STARTS obsolete — initialCondition never returns it and
+ * initialCondIdx floors above it. You have to earn it.
+ */
+export type Condition = "obsolete" | "worn" | "standard" | "good";
 
 /** Shares of a building's floor area by use. Sums to 1. See engine/mix.ts. */
 export type UseMix = Partial<Record<BuiltClass, number>>;
@@ -178,7 +195,23 @@ export interface Holding {
   deprTaken?: number;  // accumulated depreciation — reduces basis on sale
   assessed?: number;   // property-tax assessed value; steps up on reassessment
   loan: Loan | null;
+  /**
+   * The label. It is a READING of condIdx below, recomputed every month — see
+   * condGrade in value.ts. Kept as a string because every consumer in the
+   * engine (rent multiplier, cap spread, lender minimums, leasing odds, bundle
+   * discount) reads a grade, and a grade is what a broker actually says.
+   */
   condition: Condition;
+  /**
+   * THE BRICKS, 0.20 to 0.97. Falls every month; a capital plan and a capital
+   * programme push it back up. This is the player's half of the model the
+   * street has always had — see tickAssetManagement in rivals.ts, whose own
+   * comment claims the firms that skip the plan are "marked down for it exactly
+   * the way the player is". They were not. Now they are.
+   */
+  condIdx?: number;
+  /** Last month the capital plan went unfunded, because the money was short. */
+  planCutM?: number;
   lastCapM?: number;   // when this asset last had money spent on its bones
   renovatingUntilM?: number;
   tenants: Tenant[];   // commercial rent roll
@@ -716,7 +749,7 @@ export type SellerKind = "estate" | "institution" | "partnership" | "developer" 
 
 
 export interface GameState {
-  v: 24;
+  v: 25;
   seed: number;
   /**
    * WHICH TOWN THIS WAS PLAYED IN.
@@ -969,6 +1002,21 @@ export const START_YEAR = 2000;
  * a bank account does not keep up.
  */
 export const CASH_APY = 0.01;
+
+/**
+ * THE CAPITAL PLAN, as a share of gross asset value a year.
+ *
+ * Roofs, lifts, plant, the things that do not appear in an operating statement
+ * and do not stop needing doing. It is charged automatically, every month, on
+ * every building, because no owner writes this cheque one line item at a time
+ * and asking the player to would be a chore rather than a decision. It lands on
+ * the existing `capex` line in the Books.
+ *
+ * It is deliberately NOT enough on its own to hold an old building level. It
+ * buys you time; the programmes in dev.ts buy you a grade. That is the whole
+ * shape of the decision — the plan is the floor, the programme is the choice.
+ */
+export const CAP_PLAN_RATE = 0.0034;
 // The century is a MILESTONE, not a wall. A hundred years used to end the run
 // on the spot, which turned the back half of a good campaign into a countdown
 // and threw away the most interesting book in the game the moment it was

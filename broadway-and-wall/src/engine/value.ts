@@ -174,8 +174,57 @@ export function landValue(rec: ParcelRecord, econ: Econ): number {
 }
 
 export const CONDITION_RENT_MULT: Record<Condition, number> = {
-  worn: 0.82, standard: 1.0, good: 1.2,
+  obsolete: 0.62, worn: 0.82, standard: 1.0, good: 1.2,
 };
+
+/**
+ * HOW FAST THE PLANT GOES OFF, per month, on a building of no particular age.
+ *
+ * Offices are the worst of it: lifts, air handling, risers, and a floorplate
+ * that dates faster than the structure it sits in. Industrial is a shed and
+ * barely moves. These are the numbers the decay in tickLeasing runs on, and
+ * they are deliberately close to the 0.0024 the street already pays in
+ * tickAssetManagement — the player and the firms are running the same model.
+ */
+export const COND_DECAY: Record<BuiltClass, number> = {
+  office: 0.0029, retail: 0.0026, multifamily: 0.0023, industrial: 0.0016,
+};
+
+/** Where each grade begins. Condition is a READING of condIdx, not a state. */
+export const COND_BANDS: [Condition, number][] = [["good", 0.78], ["standard", 0.52], ["worn", 0.34], ["obsolete", 0]];
+export function condGrade(condIdx: number): Condition {
+  for (const [g, lo] of COND_BANDS) if (condIdx >= lo) return g;
+  return "obsolete";
+}
+
+/**
+ * HOW GOOD THIS BUILDING CAN EVER BE MADE, which is not "new".
+ *
+ * A repositioned 1920s walk-up with a new skin and new plant is a good old
+ * building. It is not a 2015 tower and no amount of money makes it one — the
+ * floorplate, the slab-to-slab and the core are what they are. Without this
+ * ceiling the oldest, cheapest stock in the city would also be the highest
+ * -return capital project in the city, which is not a decision, it is an
+ * arbitrage. It is also why ground-up development is worth doing: new bones
+ * are the only bones that start at the top of the scale.
+ */
+export function condCeiling(rec: { yearBuilt: number }, month = 0): number {
+  const age = 2000 + Math.floor(month / 12) - rec.yearBuilt;
+  return clamp(0.97 - age * 0.0022, 0.66, 0.97);
+}
+
+/**
+ * What the bricks are worth on the day the deed moves: the age of the building,
+ * adjusted by what the last owner did about it. `grade` is the seller's
+ * stewardship as rivals.gradeOf reads it, so a corner bought out of a well-run
+ * core fund arrives in better order than the same corner bought out of a
+ * levered shop that deferred the roof. Nothing starts obsolete.
+ */
+export function initialCondIdx(rec: ParcelRecord, month = 0, grade?: Condition): number {
+  const age = 2000 + Math.floor(month / 12) - rec.yearBuilt;
+  const notch = grade === "good" ? 0.10 : grade === "worn" ? -0.08 : 0;
+  return clamp(0.95 - age * 0.0072 + notch, 0.42, condCeiling(rec, month));
+}
 
 // A condition that isn't one of the three silently produced NaN rent, which
 // then propagated through NOI, value, DSCR and the lender's sizing without a
@@ -541,7 +590,10 @@ export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition):
   const locSpread = -((demandLinear(rec.demandScore) - 50) / 50) * 1.1;
   // and so is the state of the building — a tired asset needs a discount to
   // move, because the buyer is pricing the capital they are about to spend
-  const qualSpread = condition === "good" ? -0.40 : condition === "worn" ? 0.70 : 0;
+  // and so is the state of the building — a tired asset needs a discount to
+  // move, because the buyer is pricing the capital they are about to spend, and
+  // an obsolete one is priced as the capital plus a demolition risk
+  const qualSpread = condition === "good" ? -0.40 : condition === "worn" ? 0.70 : condition === "obsolete" ? 1.85 : 0;
   return clamp(base + locSpread + qualSpread, 3.2, 13);
 }
 

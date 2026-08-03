@@ -4,11 +4,12 @@
 // Multifamily skips all of this and runs aggregate occupancy.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Credit, GameState, Holding, LOI, Sector } from "./types";
-import { logBooks, monthLabel } from "./types";
+import { logBooks, monthLabel, CAP_PLAN_RATE } from "./types";
 import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL } from "./market";
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
-import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf, demandLinear } from "./value";
+import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf, demandLinear,
+  condGrade, initialCondIdx, condCeiling, COND_DECAY, CONDITION_RENT_MULT, holdingValue } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses, useSf } from "./mix";
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable } from "./credit";
@@ -438,35 +439,79 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const target = useOccupancy(rec, s.econ, "multifamily");
       h.occ = Math.min(0.99, Math.max(0.4, (h.occ ?? target) + (target - (h.occ ?? target)) * 0.1 + rrange(s, -0.006, 0.006)));
     }
-    if (!isCommercial(rec)) continue;
-
     const renovating = h.renovatingUntilM !== undefined && q < h.renovatingUntilM;
 
     // --- obsolescence --------------------------------------------------------
-    // Buildings age. A floorplate that was fine in 1985 is a hard sell in 2015
-    // with the same bones, the same lifts and the same air handling. Left
-    // alone, an asset slides from good to standard to worn, and every step
-    // costs it rent, costs it a wider cap rate, and makes it harder to lease.
-    // This is what makes a capital programme a decision rather than a
-    // decoration — and it is the reason a portfolio cannot simply be bought
-    // once and held for a century.
-    if (!renovating) {
+    //
+    // THIS USED TO BE A COIN FLIP WITH A FLOOR, AND IT SAT BELOW THE COMMERCIAL
+    // GUARD, WHICH MEANT APARTMENTS NEVER AGED AT ALL.
+    //
+    // The old rule: wait 240-320 months since the last capital, then roll a 2%
+    // monthly chance of dropping one named grade, and reset the clock. Measured
+    // over a 600-month hold that is two steps from `good`, one from `standard`
+    // and — because the ladder returned null at the bottom — NONE from `worn`.
+    // 55% of this city's built stock starts worn. Half the map was immune to
+    // age, and because worn carries a +70bp cap spread it was also the cheapest,
+    // highest-yielding half. Buy the best yield on the tape, hold it forever,
+    // spend nothing: measured at a $158.9M median over twenty seeds against a
+    // $218.4M median for a policy that did everything.
+    //
+    // The street has always had the right model — tickAssetManagement in
+    // rivals.ts decays condIdx every month and arrests it with a capital plan of
+    // about 30bps of gross assets a year, and its comment says the firms that
+    // skip it "are marked down for it exactly the way the player is". They were
+    // not. This is the player's half of that sentence.
+    //
+    // The plan is automatic and has no control anywhere, because a monthly
+    // maintenance prompt is a chore and this is not one: it is debited like tax
+    // and overhead, it lands on the `capex` line in the Books, and the only
+    // thing that stops it is running out of money — which is exactly the doom
+    // loop that should follow being over-levered into a downturn. The DECISION
+    // is the capital programme in dev.ts, which the plan cannot substitute for.
+    if (!renovating && rec.class !== "land" && rec.bldgArea > 0) {
       h.lastCapM = h.lastCapM ?? h.boughtM;
-      const since = q - h.lastCapM;
-      // roughly: a cycle of neglect every twenty-odd years, faster on offices
-      const clock = rec.class === "office" ? 240 : rec.class === "retail" ? 270 : 320;
-      if (since > clock && rng(s) < 0.02) {
-        const next = h.condition === "good" ? "standard" : h.condition === "standard" ? "worn" : null;
-        if (next) {
-          h.condition = next;
-          h.lastCapM = q;
-          s.news.unshift({
-            q, kind: "warn",
-            text: `${rec.address} has slipped to ${next} condition — the systems are dated and the brokers have noticed. Rents will follow.`,
-          });
-        }
+      if (h.condIdx === undefined) h.condIdx = initialCondIdx(rec, h.boughtM, h.condition);
+      const was = h.condition;
+
+      // The bricks go down every month. Old bones go down faster: the same
+      // dollar of plan buys less on a 1928 building than on a 2015 one, which
+      // is the whole reason a city has to keep rebuilding itself.
+      const age = 2000 + Math.floor(q / 12) - rec.yearBuilt;
+      const wear = COND_DECAY[rec.class as BuiltClass] ?? 0.0024;
+      h.condIdx -= wear
+        * (1 + Math.min(0.50, age / 220))
+        * (s.econ.phase === "recession" ? 1.2 : 1);
+
+      // THE CAPITAL PLAN. 34bps of gross asset value a year, spent without being
+      // asked. It is the first thing that goes when the money is short, and a
+      // building whose cash flow the lender has swept does not get it at all.
+      const gav = holdingValue(rec, s.econ, h, q);
+      const want = Math.round((CAP_PLAN_RATE * gav) / 12);
+      if (want > 0 && s.cash > want * 4 && !h.loan?.sweep) {
+        s.cash -= want;
+        logBooks(s, "capex", want);
+        h.condIdx += 0.0033;
+        h.lastCapM = q;
+      } else if (want > 0) {
+        h.planCutM = q;
+      }
+      // A building can never be made better than its bones allow — see
+      // condCeiling. New construction is the only way to own the top of the
+      // scale, which is most of what a developer is buying.
+      h.condIdx = Math.max(0.20, Math.min(condCeiling(rec, q), h.condIdx));
+      h.condition = condGrade(h.condIdx);
+      if (h.condition !== was && CONDITION_RENT_MULT[h.condition] < CONDITION_RENT_MULT[was]) {
+        s.news.unshift({
+          q, kind: "warn",
+          text: h.condition === "obsolete"
+            ? `${rec.address} has aged out of the market. The plant is finished, the plan is not enough to bring it back, and until somebody spends real money on it nobody will lease it and no institution will lend on it.`
+            : `${rec.address} has slipped to ${h.condition} condition — the systems are dated and the brokers have noticed. Rents will follow.`
+              + (h.planCutM !== undefined && q - h.planCutM < 24 ? " The capital plan there has been going unfunded." : ""),
+        });
       }
     }
+
+    if (!isCommercial(rec)) continue;
 
     // move-outs: leases that reached expiry without a signed renewal.
     // The space goes into make-ready — a turn cost now, leasable in a few months.

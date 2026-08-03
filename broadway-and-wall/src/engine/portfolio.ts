@@ -139,6 +139,7 @@ export function portfolioQuote(s: GameState, parcels: ParcelTable, bbls: string[
     if (built && occ < 0.82) d += (0.82 - occ) * 0.42;
     if (r.h.condition === "standard") d += 0.03;
     if (r.h.condition === "worn") d += 0.09;
+    if (r.h.condition === "obsolete") d += 0.20;   // they are pricing a rebuild, not a building
     if (!built) d += 0.06;                       // dirt in an income portfolio is a rounding error nobody wants
     weak += share * d;
   });

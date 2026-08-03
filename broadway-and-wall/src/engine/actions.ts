@@ -6,7 +6,7 @@ import type { Bid, GameState, Holding } from "./types";
 import { logBooks, monthLabel } from "./types";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange } from "./market";
-import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr, demandLinear, landPsfNow } from "./value";
+import { assetValue, initialCondition, initialCondIdx, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr, demandLinear, landPsfNow } from "./value";
 import { locAvailable } from "./credit";
 import { marketAppetite, ownerOf, rivalAsk, rivalBuys, livingRivals, gradeOf, tie } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn } from "./leasing";
@@ -112,6 +112,9 @@ export function executePurchase(
     assessed: price, // the sale reassesses the property at the deal price
     loan: null,
     condition: gradeOf(s, rec),
+    // The bricks, as a number, from the day the deed moves — the age of the
+    // building plus what the last owner did about it. From here it is on you.
+    condIdx: initialCondIdx(rec, next.month, gradeOf(s, rec)),
     tenants: [],
     cfHistory: [],
     // A landmark stays a landmark when the deed moves.

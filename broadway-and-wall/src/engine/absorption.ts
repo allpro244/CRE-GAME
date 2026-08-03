@@ -276,7 +276,7 @@ export function leaseFactors(s: GameState, rec: ParcelRecord, h: Holding, use: B
   });
   out.push({
     label: "Condition", detail: h.condition,
-    mult: h.condition === "good" ? 1.22 : h.condition === "worn" ? 0.76 : 1,
+    mult: h.condition === "good" ? 1.22 : h.condition === "worn" ? 0.76 : h.condition === "obsolete" ? 0.48 : 1,
   });
   const st = h.stance ?? 0;
   if (st !== 0) {

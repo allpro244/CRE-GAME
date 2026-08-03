@@ -11,7 +11,7 @@ import { BUILT_CLASSES } from "./types";
 import { logBooks, monthLabel } from "./types";
 import { demandNow } from "./demand";
 import { rng, rrange, addStock, NATURAL_VAC, CITY_STOCK, BUILD_MONTHS } from "./market";
-import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors } from "./value";
+import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
@@ -971,6 +971,10 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   for (const [u, share] of Object.entries(dmix)) addStock(s.econ, u as BuiltClass, d.sf * (share as number));
   const h = s.holdings[d.bbl];
   h.condition = "good";
+  // NEW BONES. Ground-up is the only way to own the top of the condition scale —
+  // see condCeiling: no amount of capital gets an old building here. That is a
+  // real part of what a developer is buying and it was not modelled at all.
+  h.condIdx = 0.96;
   h.lastCapM = s.month;
   h.tenants = [];
   h.deliveredM = s.month;
@@ -1077,6 +1081,26 @@ export const PROGRAMS: CapProgram[] = [
   { id: "facade", label: "Facade program", costPsf: 30, months: 6, blurb: "+8% new-lease rents" },
 ];
 
+/**
+ * WHAT A PROGRAMME IS WORTH TO THE BRICKS.
+ *
+ * These were three permanent stat buffs that did nothing whatever to condition
+ * and did not even reset the neglect clock, which meant there was no way to
+ * improve a building you actually operate: the only route back up was a gut,
+ * and startRenovation refuses one until the roll burns below 35% leased. On a
+ * stabilised 98k sf office that is a $20.5M job you are not allowed to do.
+ *
+ * A facade or a plant replacement moves a grade on its own — and at $30 and $22
+ * a foot against a $210/sf gut, that is the correct real-world arithmetic: a
+ * repositioning is a fraction of a rebuild. A lobby is a first impression and
+ * buys a third of a grade. This is now the whole answer to age, and it is a
+ * decision taken once a decade per building, not once a month.
+ */
+export const PROGRAM_LIFT: Record<string, number> = { lobby: 0.08, systems: 0.17, facade: 0.21 };
+
+/** How long each job holds before the same one is due again. */
+export const PROGRAM_CYCLE_M: Record<string, number> = { lobby: 180, systems: 300, facade: 420 };
+
 export function programCost(rec: { bldgArea: number }, s: GameState, p: CapProgram): number {
   return Math.round(rec.bldgArea * p.costPsf * s.econ.costIdx);
 }
@@ -1088,7 +1112,14 @@ export function startProgram(s: GameState, parcels: ParcelTable, bbl: string, pr
   if (!h || !rec || !p) return { s, err: "No such program." };
   if (rec.class === "land" || !rec.bldgArea) return { s, err: "Nothing to improve on a vacant lot." };
   if (h.program) return { s, err: "A capital program is already running." };
-  if (h.programsDone?.[programId] !== undefined) return { s, err: "Already done here." };
+  // A PROGRAMME COMES ROUND AGAIN. These were once-per-building-forever, which
+  // over a century is three capital decisions and then nothing — no answer to
+  // age, and a building whose menu was spent had only a gut left, which a full
+  // rent roll forbids. Real capital is a cycle, and this is its period.
+  const last = h.programsDone?.[programId];
+  if (last !== undefined && s.month - last < (PROGRAM_CYCLE_M[programId] ?? 240)) {
+    return { s, err: `${p.label} was done here in ${monthLabel(last)}. It does not need doing again yet.` };
+  }
   const cost = programCost(rec, s, p);
   if (s.cash < cost) return { s, err: `${p.label} costs $${(cost / 1e6).toFixed(2)}M — you're short.` };
   const next = clone(s);
@@ -1106,7 +1137,16 @@ export function tickPrograms(s: GameState, parcels: ParcelTable) {
       h.programsDone = { ...(h.programsDone ?? {}), [h.program.id]: s.month };
       const rec = resolveRec(parcels, s, h.bbl);
       const p = PROGRAMS.find((x) => x.id === h.program!.id);
-      if (rec && p) s.news.unshift({ q: s.month, kind: "info", text: `${p.label} complete at ${rec.address}.` });
+      // THE MONEY BUYS THE BRICKS BACK. New plant, a new skin or a new front
+      // door is the difference between a building the market still rings about
+      // and one it has stopped calling — capped by what the bones will carry,
+      // because you cannot make a 1928 walk-up read as new construction.
+      if (rec) {
+        h.condIdx = Math.min(condCeiling(rec, s.month), (h.condIdx ?? 0.7) + (PROGRAM_LIFT[h.program!.id] ?? 0));
+        h.condition = condGrade(h.condIdx);
+        h.lastCapM = s.month;
+      }
+      if (rec && p) s.news.unshift({ q: s.month, kind: "info", text: `${p.label} complete at ${rec.address} — the building reads as ${h.condition} now.` });
       delete h.program;
     }
   }

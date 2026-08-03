@@ -52,7 +52,7 @@ function targetListings(s: GameState, totalLots: number): number {
 
 export function newGame(seed: number, parcels?: ParcelTable): GameState {
   const s: GameState = {
-    v: 24,
+    v: 25,
     seed,
     rng: seed,
     month: 0,
@@ -270,8 +270,13 @@ export function advanceQuarter(
     // five billion needs a department, and the second is cheaper per dollar.
     // A per-asset charge looked reasonable and was not — it billed a small
     // operator more overhead than their building earned in NOI.
-    const n = Object.keys(s.holdings).length + Object.keys(s.developments ?? {}).length;
-    if (n > 0) {
+    // AND IT IS CHARGED WHETHER OR NOT YOU OWN ANYTHING. This was gated on
+    // holding something, so a firm that sold its book and sat on the cash paid
+    // no overhead at all and compounded at the deposit rate for as long as it
+    // liked — measured at $6M to $9.9M over fifty years with nothing deducted.
+    // The fixed base is small and it never goes away, which is the point: an
+    // office with no buildings in it is a cost, not a strategy.
+    {
       let gav = 0;
       for (const h of Object.values(s.holdings)) {
         const rec = resolveRec(parcels, s, h.bbl);
@@ -283,6 +288,20 @@ export function advanceQuarter(
       const ga = Math.round(annual / 12);
       s.cash -= ga;
       logBooks(s, "ga", ga);
+    }
+  }
+
+  // THE PLAN THAT IS NOT BEING FUNDED. The capital plan stops on its own when
+  // the money is short, which is correct and is also the least visible thing in
+  // the game: buildings quietly start sliding and nothing says why. Once a year,
+  // and only when it is really happening.
+  if (s.month % 12 === 6) {
+    const cut = Object.values(s.holdings).filter((h) => h.planCutM !== undefined && s.month - h.planCutM <= 12).length;
+    if (cut > 0) {
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `The capital plan went unfunded on ${cut} building${cut > 1 ? "s" : ""} this year. Deferred maintenance is the cheapest money you will ever borrow and the dearest you will ever repay — those assets are ageing faster than the rest of the book.`,
+      });
     }
   }
 
@@ -330,9 +349,16 @@ export function advanceQuarter(
       const rec = resolveRec(parcels, s, h.bbl);
       if (!rec) continue;
       // phased reassessment: assessed value closes a quarter of the gap to market
+      // THE ASSESSOR RATCHETS. This closed a quarter of the gap in both
+      // directions, which is not how a tax roll behaves anywhere on earth: an
+      // assessment chases a rising market almost at once and comes down
+      // grudgingly, over years, and only if somebody files and wins. That
+      // asymmetry is most of what makes a downturn expensive for an owner with
+      // no debt — the mortgage is the levered owner's problem, and a 1.1% bill
+      // on a value that no longer exists is everybody's.
       const v = holdingValue(rec, s.econ, h, s.month);
       const prior = h.assessed ?? h.costBasis;
-      h.assessed = Math.round(prior + 0.25 * (v - prior));
+      h.assessed = Math.round(prior + (v > prior ? 0.32 : 0.09) * (v - prior));
       // taxable income: NOI less interest less straight-line depreciation
       // (2.6%/yr on the 80% of basis that's improvements, not land)
       const noi = rec.class === "land" ? 0 : holdingNOIYr(rec, s.econ, h, s.month);

@@ -4700,7 +4700,7 @@ const STYLE_MAX: Record<string, number> = {
 };
 
 const CONDITION_WORD: Record<string, string> = {
-  good: "well kept", standard: "adequate", worn: "run down",
+  good: "well kept", standard: "adequate", worn: "run down", obsolete: "finished",
 };
 
 const STYLE_WORD: Record<string, string> = {

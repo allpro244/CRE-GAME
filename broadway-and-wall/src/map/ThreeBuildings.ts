@@ -2900,6 +2900,28 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       };
       this.dynGroup.add(new THREE.Mesh(mk(T), this.wallMat));
       this.dynGroup.add(new THREE.Mesh(mk(R2), this.roofMat));
+      // A NEW TOWER'S DECK IS NOT BARE. The static stock grew a machine deck
+      // this week — bulkheads, overruns, plant — and a building delivered in
+      // 2014 with an empty roof next to a 1920s walk-up with a full one reads
+      // as unfinished. Same rules as the static pass: the way out, the lift,
+      // and the plant a modern central system actually has.
+      if (!item.construction && h >= 9) {
+        const topTier = tiers[tiers.length - 1];
+        let tcx = 0, tcy = 0;
+        for (const [x, y] of topTier.fp) { tcx += x; tcy += y; }
+        tcx /= topTier.fp.length; tcy /= topTier.fp.length;
+        const dj = (kk: number, amp: number) => (hash01(k ^ Math.imul(kk + 1, 0x9e37), this.citySeed) - 0.5) * amp;
+        const bear2 = hash01(k ^ 0x41, this.citySeed) * Math.PI * 2;
+        const put = (g: THREE.BufferGeometry, col: number, x: number, y: number, z: number, rot: number, sc = 1) => {
+          const m = new THREE.Mesh(g, this.propMaterial(col, false));
+          m.rotation.z = rot; m.scale.setScalar(sc); m.position.set(x, y, z);
+          this.dynGroup.add(m);
+        };
+        put(bulkheadGeom(), 0x9d9382, tcx + dj(1, 6), tcy + dj(2, 6), topTier.z1, bear2, 0.9 + 0.3 * hash01(k ^ 0x43, this.citySeed));
+        if (item.floors >= 4 && h >= 16) put(overrunGeom(), 0x93897a, tcx + dj(3, 7), tcy + dj(4, 7), topTier.z1, bear2 + 0.4);
+        if (h >= 34 && hash01(k ^ 0x45, this.citySeed) < 0.72) put(coolingTowerGeom(), 0xa8ada9, tcx + dj(5, 8), tcy + dj(6, 8), topTier.z1, bear2 + 1.1, 0.85 + 0.5 * hash01(k ^ 0x47, this.citySeed));
+        if (h >= 10 && hash01(k ^ 0x49, this.citySeed) < 0.5) put(pvRowGeom(), 0x2b3550, tcx + dj(7, 6), tcy + dj(8, 6), topTier.z1, bear2);
+      }
       if (item.construction) {
         // A TOWER CRANE, AND NOT THE SAME ONE TWICE.
         //

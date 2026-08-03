@@ -185,6 +185,15 @@ export interface Loan {
   arrearsMs?: number;
   originM: number;
   holidayUntilM?: number;  // covenants do not bite until this month
+  /**
+   * WHO IS ACTUALLY HOLDING IT.
+   *
+   * The product says who wrote the loan. This says who owns it today, and they
+   * are not always the same institution: a desk under capital pressure sells
+   * paper, and the buyer of a discounted loan is not in the business of being
+   * patient. Absent means the originator still has it. See engine/notes.ts.
+   */
+  holder?: string;
   cap?: { strike: number; expiresM: number }; // purchased rate cap: index capped at strike
 }
 
@@ -658,7 +667,7 @@ export interface Exit {
  */
 export interface SponsorEvent {
   m: number;
-  kind: "forced" | "deficiency" | "seized";
+  kind: "forced" | "deficiency" | "seized" | "dpo";
   address: string;
   amount: number;      // the hole left behind, if any
 }
@@ -749,7 +758,7 @@ export type SellerKind = "estate" | "institution" | "partnership" | "developer" 
 
 
 export interface GameState {
-  v: 25;
+  v: 26;
   seed: number;
   /**
    * WHICH TOWN THIS WAS PLAYED IN.
@@ -896,6 +905,19 @@ export interface GameState {
   lenders?: Lender[];
   /** Loans in default and what is being done about them. See engine/workout.ts. */
   workouts?: Record<string, Workout>;
+  /** Loans you have bought. Servicing is automatic. See engine/notes.ts. */
+  notes?: Note[];
+  /** Paper on the market this month. Three at most, and they expire. */
+  noteOffers?: NoteOffer[];
+  nextNoteId?: number;
+  /**
+   * PAPER YOU PASSED ON.
+   *
+   * An offer that expires unbought is taken by somebody with money, and
+   * fourteen months later the deed moves. Three fields, one line of news at
+   * each end, and the expiry window on an offer suddenly means something.
+   */
+  rivalNotes?: { bbl: string; firmId: string; firm: string; takeM: number; face: number }[];
   /** A bundle of buildings in the market as one trade. See engine/portfolio.ts. */
   portfolioSale?: PortfolioSale;
   /** Your firm's name, and what the city has worked out about it. See engine/firm.ts. */
@@ -1038,6 +1060,61 @@ export function monthLabel(m: number): string {
  * interesting about being in trouble happens in the eighteen months before it,
  * across a table, with a lender who has their own problems.
  */
+/**
+ * A LOAN SOMEBODY IS SELLING, and the reason they are selling it.
+ *
+ * Nothing here is generated for the player's benefit. A desk brings paper to
+ * market because it has stopped paying, or because the desk needs the capital
+ * more than it needs the asset — and both of those are numbers you could have
+ * read on the Research page a year earlier. See engine/notes.ts.
+ */
+export interface NoteOffer {
+  id: string;
+  bbl: string;
+  address: string;
+  lender: string;          // the desk selling it, and whose problem this is
+  obligorId: string;       // whose loan it is
+  obligor: string;
+  face: number;            // unpaid principal
+  ratePct: number;
+  maturityM: number;
+  perf: "performing" | "nonperforming";
+  askPct: number;          // of face — the whole trade is in this number
+  cure: number;            // the desk's own read on whether it gets repaid, 0-1
+  offeredM: number;
+  expiresM: number;
+  why: string;             // why this desk is selling, in words
+}
+
+/**
+ * PAPER YOU OWN.
+ *
+ * A claim on somebody else's rent, secured by a building you do not own and
+ * cannot manage. It pays a coupon into your cash every month with no screen
+ * and no button; it speaks to you exactly twice, when it stops paying and when
+ * it resolves.
+ */
+export interface Note {
+  id: string;
+  bbl: string;
+  address: string;
+  originator: string;      // whose book it came off
+  obligorId: string;
+  obligor: string;
+  face: number;
+  ratePct: number;
+  maturityM: number;
+  perf: "performing" | "nonperforming";
+  boughtM: number;
+  basis: number;           // what you paid, which is what it carries at
+  collected: number;       // coupon received to date
+  mods: number;            // times you have modified it; one is the limit
+  filedM?: number;         // you have filed to foreclose
+  saleM?: number;          // when the hammer falls
+  /** The month it last told you something, so it cannot tell you twice. */
+  toldM?: number;
+}
+
 export interface Workout {
   bbl: string;
   lender: string;

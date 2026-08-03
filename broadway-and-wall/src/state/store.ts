@@ -6,6 +6,7 @@ import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale,
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import { respondLOI, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, type LOIAction } from "@/engine/leasing";
 import { cureWorkout, requestForbearance, deedInLieu } from "@/engine/workout";
+import { buyNote, modifyNote, fileOnNote, sellNote, discountedPayoff } from "@/engine/notes";
 import { listPortfolio, repricePortfolio, counterPortfolio, acceptPortfolioBid, delistPortfolio } from "@/engine/portfolio";
 import { fileVariance } from "@/engine/zoning";
 import { refinance, buyRateCap } from "@/engine/debt";
@@ -18,7 +19,7 @@ import { currentCity, currentSeed, setSeed, rerollCity } from "@/state/city";
 import { makeCity, type GeneratedCity } from "@/citygen/index.mjs";
 
 export type Lens = "none" | "land" | "demand" | "owners";
-export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "leasing" | "property" | "saves";
+export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "leasing" | "property" | "saves" | "notes";
 
 interface AppState {
   parcels: ParcelTable | null;
@@ -78,6 +79,11 @@ interface AppState {
   acceptPortfolio: (exchange?: boolean) => void;
   pullPortfolio: () => void;
   askForbearance: (bbl: string) => void;
+  takeNote: (id: string) => void;
+  restructureNote: (id: string) => void;
+  fileNote: (id: string) => void;
+  offloadNote: (id: string) => void;
+  payOffAtDiscount: (bbl: string) => void;
   handBackKeys: (bbl: string) => void;
   buyOutLeases: (bbl: string) => void;
   holdLeasing: (bbl: string, on: boolean) => void;
@@ -435,6 +441,44 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
+  // THE NOTE DESK. Buying is a decision; servicing is not, and there is
+  // deliberately no action here for it — the coupon arrives in tickNotes.
+  takeNote: (id) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = buyNote(game, parcels, id);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); toast(r.msg ?? "Bought."); void persist(r.s);
+  },
+  restructureNote: (id) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = modifyNote(game, parcels, id);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); toast(r.msg ?? "Restructured."); void persist(r.s);
+  },
+  fileNote: (id) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = fileOnNote(game, parcels, id);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); toast(r.msg ?? "Filed."); void persist(r.s);
+  },
+  offloadNote: (id) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = sellNote(game, parcels, id);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); toast(r.msg ?? "Sold."); void persist(r.s);
+  },
+  payOffAtDiscount: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = discountedPayoff(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); toast(r.msg ?? "Paid off."); void persist(r.s);
+  },
+
   handBackKeys: (bbl) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
@@ -628,7 +672,7 @@ export const useStore = create<AppState>((set, get) => ({
     const { parcels } = get();
     const saved = await loadGame(slot);
     if (!saved || !parcels) { toast("That save wouldn't open.", "err"); return; }
-    if (saved.v !== 25) { toast("That save is from an older build and can't be opened.", "err"); return; }
+    if (saved.v !== 26) { toast("That save is from an older build and can't be opened.", "err"); return; }
 
     // A SAVE CARRIES ITS OWN TOWN.
     //
@@ -767,7 +811,7 @@ export async function loadData() {
     // A save only fits if every deed in it exists in THIS town. Across seeds
     // it will not, and that is not a corrupt save — it is a save from a city
     // that no longer exists, which is exactly what a reroll means.
-    const fits = saved && saved.v === 25 && saved.citySeed === seed
+    const fits = saved && saved.v === 26 && saved.citySeed === seed
       && Object.keys(saved.holdings).every((b) => parcels[b])
       && saved.listings.every((l) => parcels[l.bbl]);
     if (fits) {

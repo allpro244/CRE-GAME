@@ -49,6 +49,21 @@ export function workoutMood(s: GameState, lenderName: string): {
 } {
   const l = lenderByName(s, lenderName);
   const rel = s.lenderRel?.[lenderName] ?? 20;
+  // THE MAN ACROSS THE TABLE BOUGHT YOUR LOAN ON PURPOSE.
+  //
+  // A bank would rather have a performing loan than your building — that is the
+  // whole reason forbearance exists. A fund that bought the paper at a discount
+  // underwrote to OWNING the building, and every month it waits is a month off
+  // its return. There is no conversation to have.
+  const bought = (s.lenders ?? []).some((x) => x.name === lenderName && x.kind === "fund")
+    && Object.values(s.holdings).some((h) => h.loan?.holder === lenderName);
+  if (bought) {
+    return {
+      willExtend: false, feePct: 0, bumpPct: 0, paydownPct: 0,
+      why: `${lenderName} bought this loan; they did not write it. They paid a discount for the right to own the `
+        + `building and an extension is the one thing that costs them money. They are not going to help you.`,
+    };
+  }
   if (!l || l.failedM !== undefined) {
     return {
       willExtend: false, feePct: 0, bumpPct: 0, paydownPct: 0,
@@ -84,7 +99,9 @@ export function openWorkout(
   const h = s.holdings[bbl];
   if (!h?.loan) return;
   if (!s.workouts) s.workouts = {};
-  const lender = productById(h.loan.product).lender;
+  // WHOEVER IS HOLDING IT TODAY. A loan can be sold, and the firm that bought
+  // your mortgage at a discount is not the bank you signed with. See notes.ts.
+  const lender = h.loan.holder ?? productById(h.loan.product).lender;
   s.workouts[bbl] = {
     bbl, lender, startM: s.month, stage: "notice", cause,
     cure: Math.round(cure), decideM: s.month + NOTICE_M, asks: 0, missedMs: 0,

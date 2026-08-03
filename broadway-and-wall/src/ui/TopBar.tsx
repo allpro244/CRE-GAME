@@ -117,6 +117,19 @@ export default function TopBar() {
           <button className={"nav-btn" + (page === "research" ? " nav-on" : "")} onClick={() => setPage(page === "research" ? "none" : "research")}>
             Research
           </button>
+          {(() => {
+            // The badge counts what wants an answer, not what you own — a book
+            // of performing notes is not a to-do list and must not look like one.
+            const live = (game.noteOffers?.length ?? 0)
+              + (game.notes ?? []).filter((n) => n.perf === "nonperforming" && n.filedM === undefined).length;
+            const held = game.notes?.length ?? 0;
+            if (!live && !held) return null;
+            return (
+              <button className={"nav-btn" + (page === "notes" ? " nav-on" : "")} onClick={() => setPage(page === "notes" ? "none" : "notes")}>
+                Notes{live > 0 ? ` · ${live}` : ""}
+              </button>
+            );
+          })()}
           <button className={"nav-btn" + (page === "market" ? " nav-on" : "")} onClick={() => setPage(page === "market" ? "none" : "market")}>
             Marketplace
           </button>

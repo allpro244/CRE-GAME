@@ -965,6 +965,25 @@ export function renovationCost(rec: ParcelRecord, econ: Econ): number {
   return Math.round(rec.bldgArea * RENO_COST_PSF[rec.class as BuiltClass] * econ.costIdx);
 }
 
+/**
+ * WHAT A BUILDING IS WORTH THE DAY YOU TAKE IT OFF A RECEIVER.
+ *
+ * Not assetValue. assetValue prices a building at MARKET occupancy in a stated
+ * condition, and a building whose owner stopped paying the mortgage is neither
+ * at market occupancy nor in stated condition — he stopped leasing a year
+ * before he stopped paying, and he stopped fixing the roof a year before that.
+ *
+ * Measured (n=400 commercial parcels, month 120): assetValue(worn) is 0.69x
+ * assetValue(standard); a worn building holding half its roll marks at 0.49x
+ * assetValue(worn), a full one at 0.70x and an empty one at 0.18x. So a half-
+ * let worn building is worth 0.43x a clean comparable, and that number is the
+ * entire reason buying notes is a business rather than an arbitrage.
+ */
+export function collateralAsIs(rec: ParcelRecord, econ: Econ, occ: number): number {
+  const o = Math.max(0.15, Math.min(0.95, occ));
+  return assetValue(rec, econ, "worn") * Math.max(0.18, Math.min(0.72, 0.18 + 0.74 * o));
+}
+
 export function netWorth(s: GameState, parcels: Record<string, ParcelRecord>): number {
   let nw = s.cash;
   for (const h of Object.values(s.holdings)) {
@@ -988,6 +1007,20 @@ export function netWorth(s: GameState, parcels: Record<string, ParcelRecord>): n
   for (const d of Object.values(s.developments ?? {})) {
     const sunk = (d.equitySpent ?? 0) + (d.drawn ?? 0) - (d.reserveUsed ?? 0);
     nw += Math.max(0, sunk - d.loanBalance);
+  }
+  // PAPER YOU OWN, AT THE LOWER OF COST AND COLLATERAL.
+  //
+  // A performing note carries at what you paid. A defaulted one carries at the
+  // lesser of that and what the building behind it is actually worth today —
+  // so a note whose collateral has fallen through it writes itself down, and a
+  // note bought at a discount never writes itself UP. The gain shows up when
+  // you collect or when you take the deed, which is where it belongs.
+  for (const n of s.notes ?? []) {
+    if (n.perf === "performing") { nw += n.basis; continue; }
+    const rec = resolveRec(parcels, s, n.bbl);
+    if (!rec) continue;
+    const r = s.rivals?.find((x) => x.id === n.obligorId);
+    nw += Math.min(n.basis, Math.round(collateralAsIs(rec, s.econ, r?.occ ?? 0.5)));
   }
   nw -= s.loc?.balance ?? 0;   // the line is real money owed
   // SECURITY DEPOSITS ARE NOT YOUR MONEY. They arrive as cash at signing and

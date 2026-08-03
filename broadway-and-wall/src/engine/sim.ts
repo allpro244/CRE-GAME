@@ -20,6 +20,7 @@ import { initLenders, tickLenders } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
 import { tickWorkouts } from "./workout";
+import { tickNotes, maybeSellYourLoan } from "./notes";
 import { tickPortfolio } from "./portfolio";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
@@ -52,7 +53,7 @@ function targetListings(s: GameState, totalLots: number): number {
 
 export function newGame(seed: number, parcels?: ParcelTable): GameState {
   const s: GameState = {
-    v: 25,
+    v: 26,
     seed,
     rng: seed,
     month: 0,
@@ -81,6 +82,10 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
     firm: { ...generateFirmName(seed), foundedM: 0, epithets: [] },
     delivered: 0,
     workouts: {},
+    notes: [],
+    noteOffers: [],
+    nextNoteId: 1,
+    rivalNotes: [],
     totalLots: parcels ? Object.keys(parcels).length : 0,
     builtAtStart: parcels ? Object.values(parcels).filter((p) => p.class !== "land").length : 0,
     exchange: null,
@@ -206,6 +211,11 @@ export function advanceQuarter(
   tickPortfolio(s, parcels);
   tickFirm(s, parcels);
   tickRivals(s, parcels);
+  // The paper desk reads the month the banks and the street have just had:
+  // whose capital ratio broke, who stopped leasing, whose building sold out
+  // from under whose mortgage. It cannot run before either of them.
+  tickNotes(s, parcels);
+  maybeSellYourLoan(s, parcels);
   tickPlanning(s, parcels, bbls);
   tickCityGrowth(s, parcels, bbls, adjacency);
   tickDevelopments(s, parcels);
@@ -595,6 +605,16 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
   }
   if (s.exchange && s.exchange.deadlineM - s.month <= 2) {
     out.push({ key: "exchange", label: `1031 clock: ${monthLabel(s.exchange.deadlineM)} deadline` });
+  }
+  for (const o of s.noteOffers ?? []) {
+    out.push({ key: `note:${o.id}`, label: `${o.lender} is selling the ${o.address} loan — ${(100 * o.askPct).toFixed(0)} cents` });
+  }
+  // A note tells you it has stopped paying ONCE. The key carries the month it
+  // told you, so it can never stop the clock a second time.
+  for (const n of s.notes ?? []) {
+    if (n.perf === "nonperforming" && n.filedM === undefined && n.toldM !== undefined) {
+      out.push({ key: `npl:${n.id}:${n.toldM}`, label: `${n.obligor} has stopped paying on ${n.address}` });
+    }
   }
   if (s.cash < 0) out.push({ key: "cash", label: "Cash is negative" });
   for (const [id] of Object.entries(s.milestones)) {

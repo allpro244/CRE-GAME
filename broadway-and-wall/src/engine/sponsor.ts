@@ -40,7 +40,7 @@ export function sponsorStanding(s: GameState): {
     const age = s.month - e.m;
     if (age < 0 || age >= MEMORY_M) continue;
     const w = 1 - age / MEMORY_M;
-    mark += w * (e.kind === "deficiency" ? 1.3 : e.kind === "seized" ? 1.15 : 0.75);
+    mark += w * (e.kind === "deficiency" ? 1.3 : e.kind === "seized" ? 1.15 : e.kind === "dpo" ? 0.5 : 0.75);
   }
   return {
     mark,
@@ -77,7 +77,10 @@ export function distressPrice(s: GameState): number {
 }
 
 /** Record a black mark, and say so out loud. */
-export function markSponsor(s: GameState, kind: "forced" | "deficiency" | "seized", address: string, amount = 0) {
+// "dpo" is a discounted payoff: you bought your own debt back for less than
+// you owed. types.ts already listed it as an exit kind; this signature had not
+// caught up, so the one path that can produce it would not compile.
+export function markSponsor(s: GameState, kind: "forced" | "deficiency" | "seized" | "dpo", address: string, amount = 0) {
   if (!s.sponsor) s.sponsor = { events: [] };
   const before = sponsorStanding(s);
   s.sponsor.events.push({ m: s.month, kind, address, amount: Math.round(amount) });

@@ -106,6 +106,31 @@ export function initLenders(): Lender[] {
   });
 }
 
+/**
+ * The capital ratio this kind of institution is supposed to run at. A life
+ * company at 12% is in trouble and a conduit at 12% is having its best year —
+ * so "is this desk impaired" is only answerable against its own target.
+ */
+export function targetCapital(name: string): number {
+  return KIND[name]?.capitalRatio ?? 0.1;
+}
+
+/**
+ * HOW BADLY THIS DESK NEEDS THE MONEY, 0 to 1.
+ *
+ * Zero at 1.15x their target — comfortable, and they will sell you nothing at
+ * a price worth paying. One at 0.30x — the regulator is in the building and
+ * they are shrinking the book by any means available, which is where the note
+ * desk gets its inventory. Measured over 24,000 lender-months: below target
+ * 25.4% of the time, below 0.7x target 5.5%, in receivership 3.1%.
+ */
+export function lenderPressure(l: Lender | undefined): number {
+  if (!l) return 0;
+  if (l.failedM !== undefined) return 1;   // a receiver is a forced seller by definition
+  const t = targetCapital(l.name);
+  return Math.max(0, Math.min(1, (t * 1.15 - capitalRatio(l)) / (t * 0.85)));
+}
+
 export function lenderByName(s: GameState, name: string): Lender | undefined {
   return s.lenders?.find((l) => l.name === name);
 }

@@ -17,6 +17,8 @@ import { MILESTONES } from "@/engine/sim";
 import { isCommercial, vacantSf, walt, loiSigningCost, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, buyoutQuote, depositsHeld, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
 import { lenderHealth, capitalRatio, lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
+import { noteBid, payoffQuote } from "@/engine/notes";
+import { collateralAsIs } from "@/engine/value";
 import { firmName, firmShort } from "@/engine/firm";
 import { replacementCost, cityValueToReplacement } from "@/engine/dev";
 import { workoutMood } from "@/engine/workout";
@@ -100,6 +102,7 @@ export default function GamePanels() {
     : page === "saves" ? "Saved Games"
     : page === "economy" ? "The Economy"
     : page === "research" ? "Research"
+    : page === "notes" ? "The Note Desk"
     : "The Marketplace";
   return (
     <>
@@ -115,6 +118,7 @@ export default function GamePanels() {
             {page === "deals" && <DealsPage />}
             {page === "market" && <MarketPage />}
             {page === "research" && <ResearchPage />}
+            {page === "notes" && <NotesPage />}
             {page === "economy" && <EconomyPage />}
             {page === "books" && <BooksPage />}
             {page === "saves" && <SavesPage />}
@@ -2626,6 +2630,19 @@ function PortfolioPage() {
             const r = resolveRec(parcels, game, w.bbl);
             return (
               <div key={w.bbl} className="neg" style={{ cursor: "pointer" }} onClick={() => go(w.bbl)}>
+                {(() => {
+                  const q = payoffQuote(game, parcels, w.bbl);
+                  if (!q?.open) return null;
+                  return (
+                    <div style={{ marginBottom: 4 }}>
+                      <button className="btn-mini" disabled={game.cash < q.px}
+                        title={q.why}
+                        onClick={(e) => { e.stopPropagation(); useStore.getState().payOffAtDiscount(w.bbl); }}>
+                        pay it off at {usd(q.px)} of {usd(q.bal)}
+                      </button>
+                    </div>
+                  );
+                })()}
                 ⚠ {r?.address ?? w.bbl} — {w.lender} {w.stage === "foreclosure"
                   ? `has filed. Auction ${monthLabel(w.decideM)}.`
                   : w.stage === "forbearance"
@@ -4105,6 +4122,152 @@ function loanBook(game: GameState, lenderName: string) {
     }
   }
   return rows.sort((a, b) => a.matM - b.matM);
+}
+
+/**
+ * THE NOTE DESK.
+ *
+ * Everything that decides the price is on this screen: whose loan it is, how
+ * levered they are, how much cash they have against the face, how long they
+ * have been in trouble, and which desk is selling and why. The player is not
+ * being asked to trust a percentage — they are being asked to disagree with
+ * one, which is the only way a price can be a decision.
+ */
+function NotesPage() {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const focus = useStore((s) => s.focus);
+  const { takeNote, restructureNote, fileNote, offloadNote } = useStore.getState();
+  const offers = game.noteOffers ?? [];
+  const notes = game.notes ?? [];
+
+  return (
+    <div>
+      <div className="hint">
+        A note is a claim on somebody else's rent, secured by a building you do not own and cannot manage. What
+        you are underwriting is not the collateral — it is whether the borrower can make you go away. A performing
+        loan on a solvent firm is a bond. A defaulted loan on a half-empty block is a building you have bid on
+        privately, in an auction with one bidder, at a price the owner never agreed to. Nothing here is serviced
+        by hand: the coupon arrives on its own, every month, and a note asks you for something exactly twice.
+      </div>
+
+      <div className="page-section">On the block</div>
+      {offers.length === 0 && (
+        <div className="hint">
+          Nobody is selling paper this month. Desks sell loans when they have stopped paying or when the desk needs
+          the capital more than the asset — watch the capital ratios on Research and you will see it coming.
+        </div>
+      )}
+      {offers.map((o) => {
+        const r = game.rivals?.find((x) => x.id === o.obligorId);
+        const px = Math.round(o.face * o.askPct);
+        const rec = resolveRec(parcels, game, o.bbl);
+        const ltv = r && (r.aum ?? 0) > 0 ? r.debt / r.aum! : 0;
+        return (
+          <div key={o.id} className="hint" style={{ marginBottom: 10 }}>
+            <div style={{ cursor: "pointer" }} onClick={() => focus(o.bbl, true)}>
+              <strong>{o.address}</strong> · {o.perf === "nonperforming"
+                ? <span className="neg">not paying</span> : "current"} · {usd(o.face)} of face at{" "}
+              <b className="mono">{(100 * o.askPct).toFixed(0)} cents</b> = <b className="mono">{usd(px)}</b>
+            </div>
+            <div className="dim" style={{ marginTop: 4 }}>{o.why}</div>
+            <div style={{ marginTop: 4 }}>
+              The borrower is <strong>{o.obligor}</strong>
+              {r && <> — {(100 * ltv).toFixed(0)}% levered, {usd(Math.max(0, r.cash))} of cash against {usd(o.face)} owed here
+                {(r.stressMs ?? 0) > 0 && <span className="neg">, and {r.stressMs} months into a squeeze</span>}
+                {r.occ !== undefined && <>, running their book at {(r.occ * 100).toFixed(0)}% let</>}.</>}
+            </div>
+            <div style={{ marginTop: 4 }} className={o.cure > 0.4 ? "" : "dim"}>
+              The desk puts about <b className="mono">{(100 * o.cure).toFixed(0)}%</b> odds on being repaid.{" "}
+              {o.cure > 0.45
+                ? "That is a bond with a discount on it — you are underwriting the borrower, not the bricks."
+                : o.cure < 0.15
+                  ? "They do not expect to see this money. You are buying the building, and the only question is what it is worth when you get it."
+                  : "Neither one thing nor the other, which is why it is cheap."}
+            </div>
+            {rec && (
+              <div className="dim" style={{ marginTop: 4 }}>
+                Clean, the building appraises at {usd(assetValue(rec, game.econ, "standard"))}. Off a receiver, worn
+                and at their occupancy, it marks nearer {usd(collateralAsIs(rec, game.econ, r?.occ ?? 0.5))} — and
+                a foreclosure takes nine to seventeen months during which you collect nothing.
+              </div>
+            )}
+            <div className="btn-row" style={{ marginTop: 6 }}>
+              <button className="btn" disabled={game.cash < px} onClick={() => takeNote(o.id)}>
+                Buy the paper · {usd(px)}
+              </button>
+              <span className="dim">Offer lapses {monthLabel(o.expiresM)}. Somebody else is looking at it.</span>
+            </div>
+          </div>
+        );
+      })}
+
+      <div className="page-section">Your book</div>
+      {notes.length === 0 && <div className="hint">You hold no paper.</div>}
+      {notes.length > 0 && (
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>Collateral</th><th>Borrower</th><th className="num">Face</th><th className="num">Basis</th>
+              <th className="num">Coupon</th><th className="num">Collected</th><th>Standing</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {notes.map((n) => {
+              const bid = noteBid(game, parcels, n);
+              return (
+                <tr key={n.id}>
+                  <td style={{ cursor: "pointer" }} onClick={() => focus(n.bbl, true)}>{n.address}</td>
+                  <td>{n.obligor}</td>
+                  <td className="num">{usd(n.face)}</td>
+                  <td className="num">{usd(n.basis)}</td>
+                  <td className="num">{n.ratePct.toFixed(2)}%</td>
+                  <td className="num">{n.collected > 0 ? usd(n.collected) : "—"}</td>
+                  <td className={n.perf === "nonperforming" ? "neg" : "dim"}>
+                    {n.filedM !== undefined
+                      ? `filed — the sale is around ${monthLabel(n.saleM ?? game.month)}`
+                      : n.perf === "nonperforming"
+                        ? "not paying"
+                        : `paying, matures ${monthLabel(n.maturityM)}`}
+                  </td>
+                  <td>
+                    {n.filedM === undefined && (
+                      <span className="btn-row">
+                        {n.perf === "nonperforming" && n.mods < 1 && (
+                          <button className="btn-mini" title="Extend them, cut the coupon, take a five per cent paydown today. Once only."
+                            onClick={() => restructureNote(n.id)}>restructure</button>
+                        )}
+                        {n.perf === "nonperforming" && (
+                          <button className="btn-mini" title="Two per cent of face in legal, then nine to seventeen months of nothing, then you own it."
+                            onClick={() => fileNote(n.id)}>foreclose</button>
+                        )}
+                        <button className="btn-mini" disabled={!bid.buyer}
+                          title={bid.buyer ? `${bid.buyer} would pay ${usd(bid.px)}` : "No bid this month."}
+                          onClick={() => offloadNote(n.id)}>
+                          {bid.buyer ? `sell · ${usd(bid.px)}` : "no bid"}
+                        </button>
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+      {(game.rivalNotes?.length ?? 0) > 0 && (
+        <>
+          <div className="page-section">Paper you passed on</div>
+          {game.rivalNotes!.map((rn) => (
+            <div key={rn.bbl} className="hint" style={{ cursor: "pointer" }} onClick={() => focus(rn.bbl, true)}>
+              {resolveRec(parcels, game, rn.bbl)?.address ?? rn.bbl} — {rn.firm} holds the mortgage. They take the
+              deed around {monthLabel(rn.takeM)} unless the owner finds {usd(rn.face)}.
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
 }
 
 function TheBanks() {

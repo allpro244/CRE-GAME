@@ -457,6 +457,34 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
     if (w.decideM > s.month + 180) bad("workout", at, `decision date is month ${w.decideM}, ${w.decideM - s.month} months away`);
   }
 
+  // ------------------------------------------------------------------- paper
+  // A note is money and it can turn into a deed, which means every one of these
+  // is a way to invent a building or a dollar out of nothing.
+  for (const n of s.notes ?? []) {
+    const at = `note ${n.id} on ${n.bbl}`;
+    if (!fin(n.face) || n.face <= 0) bad("note", at, `face ${n.face}`);
+    if (!fin(n.basis) || n.basis <= 0) bad("note", at, `basis ${n.basis}`);
+    if (n.basis > n.face * 1.05) bad("note", at, `paid ${Math.round(n.basis)} for ${Math.round(n.face)} of face`);
+    if (n.boughtM > s.month) bad("note", at, `bought in month ${n.boughtM}, it is month ${s.month}`);
+    if (n.mods > 1) bad("note", at, `restructured ${n.mods} times; the limit is one`);
+    if (n.filedM !== undefined && n.saleM === undefined) bad("note", at, "filed with no sale date");
+    if (n.saleM !== undefined && n.saleM > s.month + 24) bad("note", at, `sale set ${n.saleM - s.month} months out`);
+    if (s.holdings[n.bbl]) bad("note", at, "you hold a mortgage on a building you already own");
+    if (n.perf === "performing" && n.filedM !== undefined) bad("note", at, "foreclosing on a performing loan");
+  }
+  {
+    const seen = new Set<string>();
+    for (const n of s.notes ?? []) {
+      if (seen.has(n.bbl)) bad("note", `note ${n.id}`, `two notes secured by ${n.bbl}`);
+      seen.add(n.bbl);
+    }
+  }
+  for (const o of s.noteOffers ?? []) {
+    if (!fin(o.askPct) || o.askPct <= 0 || o.askPct > 1.05) bad("note", `offer ${o.id}`, `ask ${o.askPct} of face`);
+    if (o.expiresM <= o.offeredM) bad("note", `offer ${o.id}`, "expires before it was offered");
+  }
+  if ((s.noteOffers?.length ?? 0) > 3) bad("note", "offer sheet", `${s.noteOffers!.length} live offers; the cap is 3`);
+
   // ------------------------------------------------------- the portfolio trade
   // One process, many deeds, and every deed in it has to be one you still own.
   // A stale bbl here would allocate part of a sale price to a building

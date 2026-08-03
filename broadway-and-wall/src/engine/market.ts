@@ -524,6 +524,13 @@ export function tickEcon(s: GameState) {
     // address now.
     e.startOwed = e.startOwed ?? { office: 0, retail: 0, multifamily: 0, industrial: 0 };
     if (start > 1) e.startOwed[k] += Math.round(start);
+    // A BACKLOG IS A BUFFER, NOT A LEDGER. Demand that has gone unmet for two
+    // years has not been sitting there waiting — the tenants found space
+    // somewhere else, or did not expand, and the market moved on. Left
+    // uncapped it accumulated forever: 8.1M square feet of permanently
+    // demanded, permanently unbuilt city by year fifty. Eighteen months of
+    // orders is a real order book; anything older has expired.
+    e.startOwed[k] = Math.min(e.startOwed[k], Math.round(start * 18) || 0);
     void bLo; void bHi;
     let delivered = 0;
     e.cohorts[k] = e.cohorts[k].filter((c) => {

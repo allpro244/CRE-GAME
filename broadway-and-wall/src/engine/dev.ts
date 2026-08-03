@@ -1283,8 +1283,14 @@ export function tickCityGrowth(
   // a typical city building here, so the budget converts to a crane count
   const TYPICAL_SF = 42_000;
   const wanted = owed / TYPICAL_SF;
-  // the rate is now a CEILING on how fast the backlog clears, not the target
-  const ceiling = Math.max(0.22, rate * 2.4);
+  // The phase rate now only shapes URGENCY — capacity and the replacement-cost
+  // brake are the real constraints, because in reality the space market's
+  // appetite is what drives construction and there is no separate metronome
+  // sitting above it. Left as a hard ceiling it throttled the pipeline below
+  // what the economics justified and the unbuilt backlog grew in 87% of
+  // months, reaching 8.1M sf — sixty per cent of the entire city, permanently
+  // demanded and never built.
+  const ceiling = Math.max(0.6, rate * 8);
   // AND THE TOWN ONLY HAS SO MANY CONTRACTORS.
   //
   // A backlog cleared at full speed put twenty-nine cranes up at once, which

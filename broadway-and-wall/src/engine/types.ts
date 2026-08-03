@@ -971,6 +971,24 @@ export interface GameState {
   blockJ?: Record<string, number>;
   /** funded transit. Announced, dug, opened; the ground reprices at each step. */
   lines?: { id: string; cx: number; cy: number; name: string; annM: number; openM: number; pts: number }[];
+  /**
+   * THE FORTUNES OF THE NEIGHBOURHOODS.
+   *
+   * A polycentric town starts with three or four centres of roughly equal
+   * standing and does not end that way. One of them becomes the address and
+   * the others become somewhere you used to be able to buy — and which one it
+   * is was not knowable at the start, only guessable, and then only by
+   * somebody paying attention early.
+   *
+   * `drift` is that centre's hidden long-run trajectory, drawn once at the
+   * start of the campaign and never shown. `level` is where it has actually
+   * got to, which is drift plus everything that has happened since. Early on
+   * the noise is larger than the drift, so a centre that is up in year five
+   * tells you very little; by year twenty-five the drift has accumulated and
+   * the noise has not, and the answer is obvious to everybody — which is far
+   * too late to buy it.
+   */
+  poles?: { cx: number; cy: number; r: number; drift: number; level: number; name: string }[];
   // What the lending market remembers about you. A sponsor who hands back keys
   // does not get to walk into the next credit committee unrecognised.
   sponsor: { events: SponsorEvent[] };

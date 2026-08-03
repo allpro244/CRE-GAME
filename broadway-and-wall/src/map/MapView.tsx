@@ -142,7 +142,7 @@ export default function MapView() {
               land: landRing
                 ? ((landRing.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][]).slice(0, -1)
                 : undefined,
-            });
+            }, (useStore.getState().game?.citySeed ?? 1) >>> 0);
             threeRef.current = layer;
             // A handle for automated playtests, same as window.__map. The 3D
             // layer is the one part of this game whose correctness cannot be

@@ -188,6 +188,19 @@ vec3 aerial(vec3 c, vec3 p, vec3 cam) {
   return mix(c, HAZE_COL, clamp(f, 0.0, 1.0) * 0.47);
 }`;
 
+/**
+ * A well-mixed [0,1) from an integer. Two calls with different constants give
+ * two INDEPENDENT streams, which is the whole point — the old scheme derived
+ * its second scalar from its first, so colour and detail moved together.
+ */
+function hash01(n: number): number {
+  let x = n >>> 0;
+  x = Math.imul(x ^ (x >>> 16), 2246822507) >>> 0;
+  x = Math.imul(x ^ (x >>> 13), 3266489909) >>> 0;
+  x = (x ^ (x >>> 16)) >>> 0;
+  return x / 4294967296;
+}
+
 /** Twice the signed area of a ring — enough to compare two footprints. */
 function ringArea(r: [number, number][]): number {
   let a = 0;
@@ -850,6 +863,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       ponds?: [number, number][][];
       paths?: [number, number][][];
     } = {},
+    /**
+     * The town's seed, mixed into every per-building hash. Without it a reroll
+     * gave block 40 lot 3 the identical facade it had in the last city — the
+     * geometry changed and the skin did not.
+     */
+    private citySeed = 1,
   ) {}
 
   onAdd(map: maplibregl.Map, gl: WebGLRenderingContext | WebGL2RenderingContext) {
@@ -1030,8 +1049,26 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const decoTintRanges: { attr: number; r: Ranges; c: [number, number, number] }[] = [];
     for (const v of this.volumes) {
       const style = styleFor(v);
-      const rnd = ((v.t + 1) * 0.19 + (Number(v.b) % 97) / 97) % 1;
-      const varr = (rnd * 7.13) % 1;
+      // EVERY FACADE CHOICE IN THE CITY CAME OUT OF 485 NUMBERS.
+      //
+      // This was `((v.t + 1) * 0.19 + (bbl % 97) / 97) % 1`, with varr a pure
+      // function of rnd — so the entire per-building random state was ONE
+      // scalar with period lcm(5, 97) = 485. Four hundred and eighty-five
+      // values existed, ever, in any city. And it never read the city seed, so
+      // rerolling the town gave block 40 lot 3 the identical tone, banding,
+      // quoins and parapet height it had before.
+      //
+      // Worse, it was periodic ON THE GROUND. bbl encodes block*10000 + lot,
+      // so lot -> lot+5 moved rnd by 5/97 = 0.0515. Measured across every
+      // parcel, mean |delta rnd| at lag 5 was 0.0515 against 0.333 for uniform
+      // random — a row of houses ran light, mid, dark, light, mid and started
+      // over every fifth lot. That stripe is what a street actually looks
+      // like from above, and it is why the city read as wallpaper.
+      //
+      // Two independent hashes now, mixed with the city seed, so a reroll is a
+      // genuinely different town and neighbours are uncorrelated.
+      const rnd = hash01(Number(v.b) * 2654435761 + this.citySeed * 40503 + (v.t + 1) * 7919);
+      const varr = hash01(Number(v.b) * 1597334677 + this.citySeed * 2246822519 + (v.t + 1) * 104729 + 0x9e37);
       const fh = v.f > 0 && v.z1 > 0 ? Math.max(2.6, v.z1 / Math.max(v.f, 1)) : 3.55;
       let ring = v.r.map((p) => this.project(p));
       let area = 0;

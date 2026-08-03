@@ -40,7 +40,7 @@ for (const [tab, needles] of Object.entries({
   // the stylesheet small-caps half these labels, so compare case-insensitively
   const flat = text.toLowerCase();
   report[tab] = needles.map((n) => `${flat.includes(n.toLowerCase()) ? "ok" : "MISSING"} ${n}`).join(" · ");
-  await page.screenshot({ path: `/tmp/claude-0/-home-user-CRE-GAME/7b00530e-1e2c-5e54-8640-e3b0230e4191/scratchpad/${tab}.png`, animations: "disabled", timeout: 20000 }).catch((e) => report[tab + "-shot"] = String(e.message).slice(0, 60));
+  await page.screenshot({ path: `${process.env.SHOTDIR ?? "."}/${tab}.png`, animations: "disabled", timeout: 20000 }).catch((e) => report[tab + "-shot"] = String(e.message).slice(0, 60));
 }
 
 // the bundle control only exists with two buildings; report whether it showed

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Static server for Broadway & Wall.
 
-Why not `python3 -m http.server`? The map's tile archives (.pmtiles) are read
-with HTTP Range requests — the browser asks for a few KB out of a 9 MB file.
-Python's stock handler ignores Range and returns the whole archive with a 200,
-which the tile reader rejects, so the city renders with no buildings. This
-handler answers Range properly (206 + Content-Range) and is otherwise a plain
-static server. Python 3.8+, no pip installs, no network.
+The game cannot be opened from a file:// URL — browsers block local pages from
+loading their own ES modules — so it needs to be served over HTTP. This is
+that, and nothing more: a plain static server that also answers HTTP Range
+requests properly (206 + Content-Range) rather than returning whole files with
+a 200, which the stock `python3 -m http.server` handler does.
+
+Python 3.8+, no pip installs, no network, no configuration.
 """
 import http.server
 import os

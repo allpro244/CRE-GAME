@@ -1947,7 +1947,16 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     for (const item of items) {
       const ring = this.lotRings.get(item.bbl);
       if (!ring) continue;
+      // FLATTEN FIRST, ALWAYS. Whatever the generator put on this lot comes
+      // off the moment the game says something else is there — including when
+      // what is there is nothing.
       if (!this.flattened.has(item.bbl)) this.flattenLot(item.bbl);
+      // A DEMOLISHED LOT IS A LOT. `Math.max(3, heightM)` below meant a cleared
+      // site drew a three-metre glass box where the building had been, so
+      // knocking something down appeared to do nothing at all. Nought height
+      // means nought: the original mesh is already flattened by the line above,
+      // and now nothing replaces it.
+      if (!(item.heightM > 0) || item.cls === "land") continue;
       let cx = 0, cy = 0;
       for (const [x, y] of ring) { cx += x; cy += y; }
       cx /= ring.length; cy /= ring.length;

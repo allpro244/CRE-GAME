@@ -38,28 +38,29 @@ import { devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retail
 import { recordComp } from "./comps";
 
 // Ashport is an old port town; its money has old-port-town names.
-// Everyone starts the century the same size you do — five to fifteen million
-// of equity, a couple of buildings, and a hundred years to compound it. The
-// firms that end up owning the skyline EARNED it inside the sim, which is the
-// only way their success means anything.
 // A DOZEN FIRMS, NOT SIX. Six was enough to have somebody to lose a deal to;
 // it was not enough for the street to have a texture — for there to be two old
 // families who never sell and three levered shops racing each other into the
-// same peak. Every one of these starts the century the same size you do, five
-// to eighteen million of equity, and compounds it inside the sim. The ones who
-// end up owning the skyline earned it here.
+// same peak.
+//
+// NOBODY STARTS BIGGER THAN YOU BY MUCH. These ran to eighteen million against
+// your six, which meant the largest firms opened the century with three times
+// your buying power and never gave it back — you were not competing with them
+// so much as watching them. Four to ten million now: some start behind you,
+// the biggest starts at ten, and what they end up owning they earned inside
+// the sim rather than at character creation.
 const FIRMS: { name: string; style: RivalStyle; equity: number; ltv: number }[] = [
-  { name: "Calloway & Reed", style: "family", equity: 11_000_000, ltv: 0.32 },
-  { name: "Harbor Point Partners", style: "core", equity: 14_000_000, ltv: 0.52 },
-  { name: "Meridian Yield Group", style: "opportunistic", equity: 8_000_000, ltv: 0.71 },
-  { name: "Alden Development Co.", style: "developer", equity: 12_000_000, ltv: 0.66 },
-  { name: "Wentworth Trust", style: "core", equity: 15_000_000, ltv: 0.41 },
-  { name: "Kestrel Capital", style: "opportunistic", equity: 5_000_000, ltv: 0.78 },
-  { name: "Thorne & Boyle", style: "family", equity: 9_000_000, ltv: 0.28 },
-  { name: "Longwharf Realty", style: "developer", equity: 10_000_000, ltv: 0.69 },
-  { name: "Pell Street Holdings", style: "opportunistic", equity: 6_500_000, ltv: 0.82 },
-  { name: "Granite Mutual", style: "core", equity: 18_000_000, ltv: 0.44 },
-  { name: "Wrenfield Brothers", style: "family", equity: 7_500_000, ltv: 0.35 },
+  { name: "Calloway & Reed", style: "family", equity: 7_000_000, ltv: 0.32 },
+  { name: "Harbor Point Partners", style: "core", equity: 9_000_000, ltv: 0.52 },
+  { name: "Meridian Yield Group", style: "opportunistic", equity: 5_500_000, ltv: 0.71 },
+  { name: "Alden Development Co.", style: "developer", equity: 8_000_000, ltv: 0.66 },
+  { name: "Wentworth Trust", style: "core", equity: 10_000_000, ltv: 0.41 },
+  { name: "Kestrel Capital", style: "opportunistic", equity: 4_000_000, ltv: 0.78 },
+  { name: "Thorne & Boyle", style: "family", equity: 6_000_000, ltv: 0.28 },
+  { name: "Longwharf Realty", style: "developer", equity: 6_500_000, ltv: 0.69 },
+  { name: "Pell Street Holdings", style: "opportunistic", equity: 4_500_000, ltv: 0.82 },
+  { name: "Granite Mutual", style: "core", equity: 10_000_000, ltv: 0.44 },
+  { name: "Wrenfield Brothers", style: "family", equity: 5_000_000, ltv: 0.35 },
   { name: "Tidewater Development", style: "developer", equity: 8_500_000, ltv: 0.72 },
 ];
 
@@ -550,7 +551,7 @@ function maybeNewFirm(s: GameState, ci: number) {
   // sized to the era, not to 2026 — a fund raised in year eighty is a year
   // eighty fund
   const scale = Math.max(1, living.reduce((a, r) => a + (r.aum ?? 0), 0) / 500_000_000);
-  const equity = Math.round(rrange(s, 5_000_000, 15_000_000) * scale);
+  const equity = Math.round(rrange(s, 4_000_000, 10_000_000) * scale);
   const ltv = STYLE[f.style].maxLtv * rrange(s, 0.68, 0.88);
   s.rivals.push({
     id: `r${s.rivals.length}`, name: f.name, style: f.style,

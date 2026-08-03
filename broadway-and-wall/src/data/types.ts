@@ -37,9 +37,6 @@ export interface ParcelRecord {
   assessedLand: number;
   assessedTotal: number;
   demandScore: number;  // 0–100
-  // Exposure to the water, 0 (dry) to 1 (on the quay), from the generator's
-  // real shoreline. A port town had no flood risk at all before this.
-  floodRisk?: number;
   landPsf: number;      // $/sf of land, engine-evolved in later phases
   landPsfHistory: number[];
   imputed: string[];

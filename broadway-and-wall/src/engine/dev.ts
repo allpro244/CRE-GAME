@@ -13,6 +13,7 @@ import { rng, rrange, addStock, NATURAL_VAC, CITY_STOCK, BUILD_MONTHS } from "./
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, RECOVERY_RATE, demandLinear } from "./value";
 import { genAnchorTenant } from "./leasing";
 import { claimJob, jobDelivered, ownerOf } from "./rivals";
+import { locAvailable } from "./credit";
 import { useSf } from "./mix";
 
 const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
@@ -449,6 +450,28 @@ export function startDevelopment(
   if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage — build on the site, not the piece." };
   const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, contract, ltcWanted, custom);
   if (!plan) return { s, err: "That's too small to be worth building — add floors or cover more of the lot." };
+  // YOU HAVE TO BE ABLE TO FUND THE WHOLE THING.
+  //
+  // This used to test only the day-one cheque, which is 55% of the equity —
+  // so a player with exactly that much could break ground on a job whose
+  // remaining 45% was going to be drawn out of an account that did not have
+  // it, month after month, while the building went up. That is not a hard
+  // decision, it is a trap: the number on the button was not the number, and
+  // the rest arrived without warning.
+  //
+  // No construction lender on earth closes without evidence the sponsor can
+  // fund its whole share — that is the first thing they ask for. The line of
+  // credit counts, because it is committed money and that is what it is for.
+  const commitCap = plan.equity + Math.round(plan.costTotal * 0.06);   // and a margin for change orders
+  const fundable = s.cash + locAvailable(s, parcels);
+  if (fundable < commitCap) {
+    return {
+      s,
+      err: `This job needs $${(plan.equity / 1e6).toFixed(2)}M of equity in total — $${(plan.equityAtClose / 1e6).toFixed(2)}M at close `
+        + `and the rest drawn as it goes up, plus a margin for change orders. You can fund $${(fundable / 1e6).toFixed(2)}M `
+        + `including the line. No lender closes without evidence you can finish it.`,
+    };
+  }
   if (s.cash < plan.equityAtClose) {
     return { s, err: `The bank funds nothing until your equity is in the ground. That is $${(plan.equityAtClose / 1e6).toFixed(2)}M at close, of $${(plan.equity / 1e6).toFixed(2)}M total — you're short.` };
   }
@@ -1122,7 +1145,7 @@ export function bumpLand(s: GameState, bbl: string, mult: number) {
  * Setting the unit count is a real programming decision and it has physical
  * bounds. You cannot put ten shops in three thousand square feet — a shop
  * needs frontage, a lavatory, a back of house and a door onto the street, and
- * eight hundred feet is about the floor of that. Nor can you sell a single
+ * two thousand feet is the floor for any commercial tenancy. Nor can you sell a single
  * "unit" that is an entire two-hundred-thousand-foot tower and call it a
  * building of one: at the top end you are describing a single-tenant
  * headquarters, which is a real product and a rare one.
@@ -1132,8 +1155,10 @@ export function bumpLand(s: GameState, bbl: string, mult: number) {
  * penthouse, not a unit type you programme a whole building around.
  */
 export const SUITE_BOUNDS: Record<BuiltClass, { min: number; max: number; typical: number }> = {
-  office:      { min: 1_200, max: 60_000,  typical: 4_500 },
-  retail:      { min: 800,   max: 30_000,  typical: 3_000 },
+  // 2,000 sf is the floor for any commercial tenancy — see COMMERCIAL_SUITE_MIN
+  // in leasing.ts. Below it you are describing a kiosk or a serviced desk.
+  office:      { min: 2_000, max: 60_000,  typical: 4_500 },
+  retail:      { min: 2_000, max: 30_000,  typical: 3_200 },
   industrial:  { min: 5_000, max: 200_000, typical: 25_000 },
   multifamily: { min: 450,   max: 2_200,   typical: 850 },
 };

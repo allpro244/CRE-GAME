@@ -153,10 +153,6 @@ export interface Holding {
   // can move in next month does not need six months of drawings and a fit-out
   // allowance. It costs the fit-out up front on space that may sit.
   specSuites?: { sf: number; readyM: number; use: BuiltClass };
-  // OUT OF SERVICE. Part of the building has burned, flooded or lost its roof;
-  // that share earns nothing until the repair is done. `uninsured` is what the
-  // event actually cost you after the policy — the deductible, or all of it.
-  damage?: { peril: Peril; share: number; untilM: number; uninsured: number };
   occ?: number;        // multifamily aggregate occupancy
   stance?: -1 | 0 | 1; // rent posture: push / market / fill
   /**
@@ -282,17 +278,6 @@ export interface Listing {
  * their profit once they are whole — which is worth nothing at all on a deal
  * that does not clear the pref, and is most of a career on the ones that do.
  */
-export interface JointVenture {
-  bbl: string;
-  lpShare: number;        // their share of the equity, 0-1
-  prefPct: number;        // annual preferred return on unreturned capital
-  promotePct: number;     // your cut of their profit above the hurdle
-  lpCapital: number;      // what they have put in, cumulative
-  lpDistributed: number;  // capital returned to date
-  accruedPref: number;    // pref owed and unpaid — it compounds against you
-  promoteEarned: number;  // what the structure has paid you so far
-  openedM: number;
-}
 
 import type { Comp } from "./comps";
 
@@ -329,19 +314,7 @@ export interface Bid {
   credibility: number;   // 0-1
   note: string;
   dropped?: boolean;     // walked at best and final
-}
-
-export type Peril = "fire" | "storm" | "flood";
-
-/** What a policy costs you, what it has paid, and what you kept. */
-export interface InsurancePolicy {
-  deductiblePct: number;
-  flood: boolean;          // named-peril flood cover on the exposed part
-  claims: number;          // experience rating: underwriters remember
-  sinceM: number;
-  premiumYr: number;
-  paidTotal: number;
-  recoveredTotal: number;
+  countered?: boolean;   // you have already been back to this one privately
 }
 
 export interface Approach {
@@ -361,6 +334,12 @@ export interface NewsItem {
 export interface EconHistoryPoint {
   q: number;
   indexRate: number;
+  population?: number;
+  jobs?: number;
+  unemployment?: number;
+  wageIdx?: number;
+  outputIdx?: number;
+  cpi?: number;
   landIdx: number;
   cycleDev: number;
   capOffice: number;
@@ -376,6 +355,27 @@ export interface EconHistoryPoint {
 
 export interface Econ {
   indexRate: number;
+  /**
+   * THE CITY, NOT THE ASSET CLASSES.
+   *
+   * The sector breakdowns were good and the thing underneath them was a single
+   * `employIdx` nobody could see. A property market is downstream of a real
+   * economy — how many people live here, how many of them work, what they earn
+   * in real terms, and what the place produces. Those four numbers explain
+   * every rent in the game and none of them were on a screen.
+   *
+   * All of it is derived from the cycle rather than simulated separately: jobs
+   * follow the phase, wages follow jobs with a lag and a productivity drift,
+   * population follows jobs slowly because people move for work and move back
+   * reluctantly, and output is the product of the two. They are honest
+   * consequences, not decoration — the demand behind every lease you sign.
+   */
+  population?: number;        // souls in the city
+  jobs?: number;              // filled positions
+  unemployment?: number;      // 0-1, of the labour force
+  wageIdx?: number;           // real wage, 1.0 at the start of the century
+  outputIdx?: number;         // real output; jobs x productivity
+  cpi?: number;               // the price level, for turning nominal into real
   phase: MarketPhase;
   phaseMLeft: number;
   rumoredPhase: MarketPhase | null;
@@ -633,13 +633,6 @@ export interface GameState {
   // What the lending market remembers about you. A sponsor who hands back keys
   // does not get to walk into the next credit committee unrecognised.
   sponsor: { events: SponsorEvent[] };
-  // Partnered deals, by parcel, and what the equity market thinks of you.
-  // Reputation is settled on realised deals only — a wire is money, a
-  // spreadsheet is not.
-  jvs?: Record<string, JointVenture>;
-  lpRep?: number;                            // 0-100; gates pref, promote and size
-  // The insurance programme, or its absence. See engine/peril.ts.
-  insurance?: InsurancePolicy;
   rivals: Rival[];                           // the other firms on the street
   lenderRel: Record<string, number>;         // lender name -> relationship 0-100; a trusted name is worth basis points
   totalLots: number;

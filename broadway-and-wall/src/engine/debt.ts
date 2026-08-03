@@ -9,7 +9,6 @@ import { logBooks } from "./types";
 import { holdingNOIYr, holdingValue, assetValue, noiAfterTaxYr } from "./value";
 import { walt, depositsOn } from "./leasing";
 import { INDUSTRY_LABEL } from "./market";
-import { settleJV } from "./equity";
 import { recordComp } from "./comps";
 import { sponsorStanding, markSponsor, distressPrice } from "./sponsor";
 
@@ -452,8 +451,6 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
         // A distressed sale is still a print, and the most informative kind:
         // it is the only number in the city that nobody chose.
         recordComp(s, rec, gross, "a distressed buyer", "You", true, h.condition);
-        const wind = settleJV(s, h.bbl, Math.max(0, net));
-        if (wind.lpCash > 0) { s.cash -= wind.lpCash; logBooks(s, "sold", -wind.lpCash); }
         if (s.groundLeases?.[h.bbl]) delete s.groundLeases[h.bbl];
         s.cash -= depositsOn(s.holdings[h.bbl]);   // the deposits go with the deed
         delete s.holdings[h.bbl];

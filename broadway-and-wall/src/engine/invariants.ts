@@ -69,22 +69,6 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
     if (s.developments[bbl]) bad("zoning", `landmark ${bbl}`, "landmarked and under construction at once");
   }
 
-  // ------------------------------------------------------------------ perils
-  if (s.insurance) {
-    const p = s.insurance;
-    for (const [k, x] of Object.entries({ ded: p.deductiblePct, prem: p.premiumYr, paid: p.paidTotal, rec: p.recoveredTotal })) {
-      if (!fin(x) || x < 0) bad("insurance", "firm", `${k} is ${x}`);
-    }
-    if (p.deductiblePct > 0.5) bad("insurance", "firm", `deductible ${(p.deductiblePct * 100).toFixed(0)}%`);
-  }
-  for (const [bbl, h] of Object.entries(s.holdings)) {
-    if (!h.damage) continue;
-    const at = `damage ${bbl}`;
-    if (!fin(h.damage.share) || h.damage.share <= 0 || h.damage.share > 1) bad("peril", at, `${h.damage.share} of the building damaged`);
-    if (h.damage.untilM < s.month) bad("peril", at, "a repair that finished in the past and is still on the books");
-    if (!fin(h.damage.uninsured) || h.damage.uninsured < 0) bad("peril", at, `uninsured loss ${h.damage.uninsured}`);
-  }
-
   // --------------------------------------------------------------- the trades
   for (const k of SECTORS) {
     const mom = s.econ.industryMom?.[k];
@@ -138,37 +122,6 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
     if (!s.holdings[bbl]) bad("ground", at, "a ground lease on land you do not own");
     if (!fin(gl.rentYr) || gl.rentYr < 0) bad("ground", at, `ground rent ${gl.rentYr}`);
     if (gl.endM <= gl.startM) bad("ground", at, "a lease that ends before it starts");
-  }
-
-  // ---------------------------------------------------------- partner equity
-  // A waterfall is arithmetic with a sign convention, and a sign convention is
-  // the easiest thing in this codebase to get backwards without anything
-  // visibly breaking — the money simply ends up on the wrong side of a table
-  // nobody reconciles. So reconcile it.
-  if (s.lpRep !== undefined && (!fin(s.lpRep) || s.lpRep < 0 || s.lpRep > 100)) {
-    bad("lp", "firm", `equity-market standing ${s.lpRep} is outside 0-100`);
-  }
-  for (const [bbl, jv] of Object.entries(s.jvs ?? {})) {
-    const at = `partnership ${bbl}`;
-    if (!s.holdings[bbl]) { bad("lp", at, "a partnership on a building you do not own"); continue; }
-    if (jv.bbl !== bbl) bad("key", at, `keyed ${bbl} but says it is ${jv.bbl}`);
-    for (const [k, x] of Object.entries({
-      lpShare: jv.lpShare, prefPct: jv.prefPct, promotePct: jv.promotePct,
-      lpCapital: jv.lpCapital, lpDistributed: jv.lpDistributed,
-      accruedPref: jv.accruedPref, promoteEarned: jv.promoteEarned,
-    })) {
-      if (!fin(x)) bad("nan", at, `${k} is ${x}`);
-    }
-    if (jv.lpShare <= 0 || jv.lpShare > 1) bad("lp", at, `partner holds ${(jv.lpShare * 100).toFixed(0)}% of the equity`);
-    if (jv.promotePct < 0 || jv.promotePct > 0.5) bad("lp", at, `promote ${(jv.promotePct * 100).toFixed(0)}%`);
-    if (jv.lpCapital < 0) bad("lp", at, `partner has contributed ${jv.lpCapital}`);
-    if (jv.accruedPref < -1) bad("lp", at, `accrued preferred ${jv.accruedPref} is negative`);
-    // Capital cannot come back twice. This is the one that catches a waterfall
-    // that credits return-of-capital in two places at once.
-    if (jv.lpDistributed > jv.lpCapital + 1) {
-      bad("lp", at, `returned ${Math.round(jv.lpDistributed)} of ${Math.round(jv.lpCapital)} contributed`);
-    }
-    if (jv.openedM > s.month) bad("time", at, `opened in month ${jv.openedM}, it is month ${s.month}`);
   }
 
   // ------------------------------------------------------------- the economy

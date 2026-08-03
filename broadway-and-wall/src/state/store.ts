@@ -2,11 +2,9 @@ import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass } from "@/engine/types";
 import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfolioQuarterlyCF } from "@/engine/sim";
-import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, startRenovation,  setBroker, assembleLots, grantGroundLease, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
+import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, assembleLots, grantGroundLease, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import { respondLOI, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, type LOIAction } from "@/engine/leasing";
-import { recapitalise } from "@/engine/equity";
-import { setInsurance } from "@/engine/peril";
 import { fileVariance } from "@/engine/zoning";
 import { refinance, buyRateCap } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
@@ -68,9 +66,7 @@ interface AppState {
   listSale: (bbl: string, ask: number, mode?: "quiet" | "marketed") => void;
   runBestAndFinal: (bbl: string) => void;
   takeBid: (bbl: string, index: number) => void;
-  raiseEquity: (bbl: string, share: number) => void;
   applyVariance: (bbl: string) => void;
-  bindInsurance: (deductiblePct: number, flood: boolean) => void;
   prebuild: (bbl: string, use: string, sf: number) => void;
   extendLease: (bbl: string, idx: number) => void;
   buyOutLeases: (bbl: string) => void;
@@ -81,6 +77,8 @@ interface AppState {
   acceptOffer: (bbl: string, exchange?: boolean) => void;
   declineOffer: (bbl: string) => void;
   counterSale: (bbl: string, price: number) => void;
+  counterBid: (bbl: string, index: number, price: number) => void;
+  reprice: (bbl: string, ask: number) => void;
   renovate: (bbl: string) => void;
   broker: (bbl: string, on: boolean) => void;
   rateCap: (bbl: string) => void;
@@ -334,15 +332,6 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  raiseEquity: (bbl, share) => {
-    const { game, parcels } = get();
-    if (!game || !parcels) return;
-    const r = recapitalise(game, parcels, bbl, share);
-    if (r.err) { toast(r.err, "err"); return; }
-    set({ game: r.s });
-    toast(r.msg ?? "Partner in.");
-    void persist(r.s);
-  },
 
   prebuild: (bbl, use, sf) => {
     const { game, parcels } = get();
@@ -385,15 +374,6 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(next);
   },
 
-  bindInsurance: (deductiblePct, flood) => {
-    const { game, parcels } = get();
-    if (!game || !parcels) return;
-    const r = setInsurance(game, parcels, deductiblePct, flood);
-    if (r.err) { toast(r.err, "err"); return; }
-    set({ game: r.s });
-    toast(r.msg ?? "Bound.");
-    void persist(r.s);
-  },
 
   applyVariance: (bbl) => {
     const { game, parcels } = get();
@@ -442,6 +422,24 @@ export const useStore = create<AppState>((set, get) => ({
     set({ game: r.s });
     toast(exchange ? "Closed — the 1031 clock is running." : "Closed. Cash is position.");
     void persist(r.s);
+  },
+
+  counterBid: (bbl, index, price) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = counterBid(game, parcels, bbl, index, price);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); void persist(r.s);
+    if (r.msg) toast(r.msg);
+  },
+
+  reprice: (bbl, ask) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = repriceListing(game, parcels, bbl, ask);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); void persist(r.s);
+    if (r.msg) toast(r.msg);
   },
 
   counterSale: (bbl, price) => {

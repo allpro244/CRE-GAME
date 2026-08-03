@@ -8,7 +8,7 @@ import type { BuiltClass, Contract, DevUse } from "@/engine/types";
 import {
   assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr,
   occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr, useRentPsfYr,
-  rollQualitySpread, operatingStatement, recoveryOf, noiAfterTaxYr, netWorth, remainingAbatement,
+  rollQualitySpread, operatingStatement, recoveryOf, noiAfterTaxYr, netWorth, remainingAbatement, landPsfNow,
 } from "@/engine/value";
 import { planDevelopment, PROGRAMS, programCost, farMaxFor, maxFloorsFor, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
 import { buyQuote, assemblagePressure, saleTaxQuote } from "@/engine/actions";
@@ -51,9 +51,7 @@ function physicalOcc(rec: never, h: { tenants: { sf: number }[]; occ?: number })
 }
 import { sponsorStanding } from "@/engine/sponsor";
 import { marketAppetite, markRival, ownerOf, rivalCondition } from "@/engine/rivals";
-import { gpEquity, jvSummary, lpMood, lpTerms, recapQuote } from "@/engine/equity";
 import { compFlows, compStats, portfolioIndustries } from "@/engine/comps";
-import { insuranceQuote, insuredValue, DEDUCTIBLES } from "@/engine/peril";
 import { INDUSTRY_LABEL, SECTORS } from "@/engine/market";
 import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses } from "@/engine/leasing";
 import { groundLeaseQuote, mergeCost } from "@/engine/actions";
@@ -457,7 +455,6 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         {holding?.sale && <span className="chip chip-listed">LISTED · {usd(holding.sale.ask)}</span>}
         {renovating && <span className="chip chip-reno">RENOVATING</span>}
         {holding?.loan?.sweep && <span className="chip chip-sweep">CASH SWEEP</span>}
-        {holding?.damage && <span className="chip chip-distress">{holding.damage.peril.toUpperCase()} DAMAGE</span>}
         {game.landmarks?.[selectedBBL] !== undefined && <span className="chip chip-reno">LANDMARKED</span>}
       </div>
 
@@ -890,7 +887,19 @@ function SaleSection({ bbl, value }: { bbl: string; value: number }) {
                     <td className="dim">{b.dropped ? "Walked at best and final." : b.note}</td>
                     <td>
                       {!b.dropped && (
-                        <button className="btn-mini" onClick={() => takeBid(bbl, i)}>take it</button>
+                        <div className="btn-row" style={{ gap: 4, margin: 0 }}>
+                          <button className="btn-mini" onClick={() => takeBid(bbl, i)}>take it</button>
+                          {/* GOING BACK TO ONE BIDDER. Best-and-final puts the
+                              whole list back in the room; this is the other
+                              move — the private call to the one number you
+                              would take five per cent more of. One per bid. */}
+                          {!b.countered && (
+                            <button className="btn-mini" title={`Go back to ${b.name} alone and ask ${usd(Math.round(b.price * 1.06))}`}
+                              onClick={() => useStore.getState().counterBid(bbl, i, Math.round(b.price * 1.06))}>
+                              counter +6%
+                            </button>
+                          )}
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -918,6 +927,31 @@ function SaleSection({ bbl, value }: { bbl: string; value: number }) {
                 : <>Offer on the table{sale.offer.from ? ` from ${sale.offer.from}` : ""}: <b className="mono">{usd(sale.offer.price)}</b> — good until {monthLabel(sale.offer.expiresM)}.</>}
               {tq.tax > 0 && <> Gain of {usd(tq.gain)} over depreciated basis owes <b className="mono">{usd(tq.tax)}</b> in tax.</>}
             </div>
+            {/* WHAT THEY ARE ACTUALLY BUYING. A price is a price; the cap rate
+                they are getting and the occupancy they are getting it on are
+                the two numbers that say whether the offer is generous or
+                whether they have spotted something you have not. */}
+            {(() => {
+              const orec = resolveRec(parcels, game, bbl);
+              if (!orec || orec.class === "land" || !orec.bldgArea) return null;
+              const noi = holdingNOIYr(orec, game.econ, holding, game.month);
+              const cap = sale.offer!.price > 0 ? (noi / sale.offer!.price) * 100 : 0;
+              const mkt = game.econ.capRate[orec.class as BuiltClass] ?? cap;
+              const occ = physicalOcc(orec as never, holding);
+              const u = unitStatus(orec, holding, game.month);
+              return (
+                <div className="grid">
+                  <Row k="Cap rate they are buying at" v={`${cap.toFixed(2)}%`} strong bad={cap > mkt + 0.4} />
+                  <Row
+                    k="Against the market"
+                    v={`${mkt.toFixed(2)}% for ${useLabel(orec)} — ${cap < mkt - 0.25 ? "they are paying up" : cap > mkt + 0.25 ? "that is a discount to the market" : "about where the market is"}`}
+                  />
+                  <Row k="NOI they are underwriting" v={usd(noi)} />
+                  <Row k="Occupancy today" v={`${(occ * 100).toFixed(0)}% · ${u.leased} of ${u.total} spaces`} bad={occ < 0.75} />
+                  <Row k="Against your ask" v={`${((sale.offer!.price / sale.ask - 1) * 100).toFixed(1)}%`} bad={sale.offer!.price < sale.ask * 0.92} />
+                </div>
+              );
+            })()}
             <div className="btn-row">
               <button className="btn btn-buy" onClick={() => acceptOffer(bbl)}>
                 Accept · net {usd(tq.net - (holding.loan?.balance ?? 0) - tq.tax)}
@@ -968,7 +1002,39 @@ function SaleSection({ bbl, value }: { bbl: string; value: number }) {
               : "No offers yet. Overpriced listings sit; the market talks back slowly."}
           </div>
         )}
+        {/* MOVE THE PRICE WITHOUT PULLING THE SIGN DOWN.
+            Changing an ask used to mean delisting and relisting, which throws
+            away the campaign, the bid list and the time the building has been
+            on the market. Every seller alive just tells the broker a new
+            number. Cutting it is free; raising it past where you started reads
+            as a seller who does not know what they have, and the market
+            treats a repriced listing as a fresher one either way. */}
+        <Slider
+          label="Reprice"
+          value={ask ? Number(ask) : sale.ask}
+          min={Math.round(apMid(bbl, value) * 0.65)}
+          max={Math.round(apMid(bbl, value) * 1.45)}
+          step={Math.max(1000, Math.round(apMid(bbl, value) / 400))}
+          onChange={(v) => setAsk(String(v))}
+          format={(v) => `${usd(v)} · ${((v / apMid(bbl, value) - 1) * 100).toFixed(0)}% vs appraisal`}
+          marks={[{ at: sale.ask, label: "now" }, { at: Math.round(apMid(bbl, value)), label: "fair" }]}
+          hint={(() => {
+            const want = ask ? Number(ask) : sale.ask;
+            return want < sale.ask
+              ? `Cutting ${usd(sale.ask - want)} off. A price cut brings the phone back — it also tells every bidder you are motivated.`
+              : want > sale.ask
+                ? `Asking ${usd(want - sale.ask)} more than you were. Raising an ask mid-campaign loses the buyers who were nearly there.`
+                : "The number you are asking today.";
+          })()}
+        />
         <div className="btn-row">
+          <button
+            className="btn"
+            disabled={!ask || Number(ask) === sale.ask}
+            onClick={() => useStore.getState().reprice(bbl, Number(ask))}
+          >
+            Reprice to {usd(ask ? Number(ask) : sale.ask)}
+          </button>
           <button className="btn btn-sell" onClick={() => delistSale(bbl)}>Delist</button>
         </div>
       </div>
@@ -1629,18 +1695,40 @@ function DevelopSection({ bbl }: { bbl: string }) {
               strong
               bad={plan.yieldOnCost - plan.exitCap < 0.75}
             />
-            <Row k="Total equity" v={usd(plan.equity)} />
-            <Row k="Equity at close" v={`${usd(plan.equityAtClose)} — the bank funds nothing until yours is in`} strong bad={plan.equityAtClose > game.cash} />
+            {/* WHAT THIS ACTUALLY COSTS YOU, in the order it leaves your
+                account. The total led with "equity at close" and buried the
+                total above it, so a job that wanted $9M of equity looked like
+                a $5M decision and then quietly drew the other $4M over two
+                years. The whole cheque goes first now. */}
+            <Row k="YOUR EQUITY, ALL IN" v={usd(plan.equity)} strong bad={plan.equity > game.cash + locAvailable(game, parcels)} />
+            <Row k="— of that, at close" v={`${usd(plan.equityAtClose)} — the bank funds nothing until yours is in`} />
+            <Row
+              k="— of that, drawn as it rises"
+              v={`${usd(plan.equity - plan.equityAtClose)} over about ${plan.months} months, before the loan funds a dollar`}
+              bad={plan.equity - plan.equityAtClose > game.cash - plan.equityAtClose}
+            />
+            <Row
+              k="Change-order margin"
+              v={`${usd(plan.contingency)} of contingency${plan.contract === "gmp" ? ", and the GC carries most of what is past it" : " — past it, every dollar is yours under cost-plus"}`}
+              bad={plan.contract === "costplus"}
+            />
             <Row k="Schedule" v={plan.months + " months, built on spec"} />
           </div>
           {plan.lenderNote && <div className="hint">{plan.lenderNote}</div>}
+          <div className="hint">
+            <b>{usd(plan.equityAtClose)}</b> leaves your account the day you break ground and{" "}
+            <b>{usd(plan.equity - plan.equityAtClose)}</b> more is drawn out of it as the building rises — equity funds
+            first and in full, and the construction loan does not advance a dollar until it is spent. Budget for the
+            whole {usd(plan.equity)}, not the first cheque.
+          </div>
           <div className="btn-row">
             <button
               className="btn btn-buy"
-              disabled={plan.equityAtClose > game.cash || plan.commitment === 0 && plan.equity > game.cash}
+              disabled={plan.equityAtClose > game.cash || plan.equity > game.cash + locAvailable(game, parcels)}
               onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, suites: suiteChoice })}
+              title={`${usd(plan.equityAtClose)} leaves your account today and ${usd(plan.equity - plan.equityAtClose)} more is drawn as the building rises.`}
             >
-              Break ground · {usd(plan.equityAtClose)}
+              Break ground · {usd(plan.equity)} of equity
             </button>
           </div>
         </>
@@ -1731,17 +1819,6 @@ function PropertyPage() {
       {/* OUT OF SERVICE. The damaged share earns nothing and still costs money
           to hold, and what it actually cost you after the policy is the only
           number that matters afterwards. */}
-      {h?.damage && (
-        <div className="deal">
-          <div className="deal-head">Damage · {h.damage.peril}</div>
-          <div className="grid">
-            <Row k="Out of service" v={`${(h.damage.share * 100).toFixed(0)}% of the building`} strong bad />
-            <Row k="Back in service" v={monthLabel(h.damage.untilM)} />
-            <Row k="What it cost you" v={usd(h.damage.uninsured)} bad />
-          </div>
-        </div>
-      )}
-      <EquityDesk bbl={bbl} />
       <LandDesk bbl={bbl} />
       {dev && (
         <div className="page-section">
@@ -1755,6 +1832,21 @@ function PropertyPage() {
               <Row k="Lease-up reserve" v={`${usd(dev.leaseUpReserve!)} — released at delivery`} />
             )}
             <Row k="Delivers" v={monthLabel(dev.deliverM)} />
+            {/* STILL TO FUND. The one number a developer mid-build checks every
+                month, and it was nowhere on this screen. */}
+            <Row
+              k="Equity you have put in"
+              v={`${usd(dev.equitySpent)} of ${usd(dev.equityBudget)}`}
+            />
+            <Row
+              k="Still to come out of your account"
+              v={usd(Math.max(0, dev.equityBudget - dev.equitySpent))}
+              strong
+              bad={dev.equityBudget - dev.equitySpent > game.cash}
+            />
+            {dev.costTotal > 0 && dev.contingencyUsed > 0 && (
+              <Row k="Contingency used" v={`${usd(dev.contingencyUsed)} of ${usd(dev.contingency)}`} bad={dev.contingencyUsed > dev.contingency * 0.7} />
+            )}
           </div>
         </div>
       )}
@@ -1766,94 +1858,6 @@ function PropertyPage() {
 }
 
 
-/**
- * THE EQUITY DESK.
- *
- * Either there is a partner in this building or there could be. If there is,
- * this is the only place the sponsor can see what they are actually owed —
- * unreturned capital, pref accruing whether the building performs or not, and
- * what the promote is worth if it sold today. If there is not, this is where
- * you find out what the market will give you for a stake, and on what terms,
- * which depends entirely on how the last ones went.
- */
-function EquityDesk({ bbl }: { bbl: string }) {
-  const game = useStore((s) => s.game)!;
-  const parcels = useStore((s) => s.parcels)!;
-  const { raiseEquity } = useStore.getState();
-  const h = game.holdings[bbl];
-  const [share, setShare] = useState(0.6);
-  if (!h) return null;
-  const jv = game.jvs?.[bbl];
-  const terms = lpTerms(game);
-
-  if (jv) {
-    const rec = resolveRec(parcels, game, bbl);
-    const equity = rec ? holdingValue(rec, game.econ, h, game.month) - (h.loan?.balance ?? 0) : 0;
-    const unreturned = Math.max(0, jv.lpCapital - jv.lpDistributed);
-    const mine = gpEquity(game, bbl, equity);
-    return (
-      <div className="deal">
-        <div className="deal-head">Partner in this deal</div>
-        <div className="grid">
-          <Row k="Their share of the equity" v={`${(jv.lpShare * 100).toFixed(0)}%`} />
-          <Row k="Capital in / returned" v={`${usd(jv.lpCapital)} / ${usd(jv.lpDistributed)}`} />
-          <Row k="Unreturned capital" v={usd(unreturned)} bad={unreturned > 0} />
-          {/* The number that decides whether the promote is worth anything.
-              It accrues in a bad year exactly as fast as in a good one. */}
-          <Row k={`Preferred owed · ${jv.prefPct.toFixed(1)}%/yr`} v={usd(jv.accruedPref)} bad={jv.accruedPref > jv.lpCapital * 0.15} />
-          <Row k="Promote paid to date" v={usd(jv.promoteEarned)} />
-          <Row k="Equity in the building" v={usd(equity)} />
-          <Row k="Yours if it sold today" v={usd(Math.max(0, mine))} strong bad={mine <= 0} />
-        </div>
-        <div className="hint">
-          {mine <= 0
-            ? "There is nothing here for you. Their capital and their pref come off the top and the building is not worth that yet — running it longer is the only way back."
-            : `Partnered since ${monthLabel(jv.openedM)}. They are paid before you are, every month, and the pref compounds against the promote until the building clears it.`}
-        </div>
-      </div>
-    );
-  }
-
-  const q = recapQuote(game, parcels, bbl, share);
-  if (!q) return null;
-  return (
-    <div className="deal">
-      <div className="deal-head">Raise outside equity</div>
-      <div className="grid">
-        <Row k="Equity in the building" v={usd(q.equity)} />
-        <Row k="What the market thinks of you" v={`${terms.rep.toFixed(0)} / 100 · ${lpMood(game)}`} bad={terms.rep < 35} />
-        <Row k="Their terms" v={`${q.prefPct.toFixed(1)}% preferred · ${(q.promotePct * 100).toFixed(0)}% promote to you · up to ${(q.maxShare * 100).toFixed(0)}%`} />
-      </div>
-      {!terms.open ? (
-        <div className="hint">Nobody will look at you right now. Return some capital on the deals you have.</div>
-      ) : (
-        <>
-          <div className="slider">
-            <div className="slider-head">
-              <span className="slider-label">Stake to sell</span>
-              <span className="slider-value">{(q.share * 100).toFixed(0)}%</span>
-            </div>
-            <input type="range" min={5} max={Math.round(q.maxShare * 100)} step={1}
-              style={{ ["--fill" as string]: `${((q.share * 100 - 5) / Math.max(1, q.maxShare * 100 - 5)) * 100}%` }}
-              value={Math.round(share * 100)} onChange={(e) => setShare(Number(e.target.value) / 100)} />
-          </div>
-          <div className="grid">
-            <Row k="Cheque today" v={usd(q.cheque)} strong />
-            <Row k="Pref they accrue in year one" v={usd(Math.round(q.cheque * q.prefPct / 100))} />
-          </div>
-          <div className="hint">
-            You keep control and {((1 - q.share) * 100).toFixed(0)}% of the equity, plus {(q.promotePct * 100).toFixed(0)}% of
-            their profit once they have their capital and their preferred return back. If the building does not clear the
-            pref, the promote is worth nothing — and the pref accrues either way.
-          </div>
-          <button className="btn" onClick={() => raiseEquity(bbl, share)}>
-            Take {usd(q.cheque)} for {(q.share * 100).toFixed(0)}%
-          </button>
-        </>
-      )}
-    </div>
-  );
-}
 
 /**
  * THE LAND DESK.
@@ -2350,6 +2354,11 @@ function PortfolioPage() {
         <Big label="Debt" value={usd(totD)} />
         <Big label="Equity" value={usd(totV - totD)} />
         <Big label="Cash flow / mo" value={usd(totCF)} bad={totCF < 0} />
+        {(() => {
+          const cost = rows.reduce((a, r) => a + r.h.costBasis, 0);
+          const g = totV - cost;
+          return <Big label="Unrealised gain" value={`${g >= 0 ? "+" : "−"}${usd(Math.abs(g))} · ${cost > 0 ? ((g / cost) * 100).toFixed(0) : "0"}%`} bad={g < 0} />;
+        })()}
         <Big label="Buildings" value={String(holdings.length)} />
       </div>
       {exposure.roll > 0 && (
@@ -2401,8 +2410,10 @@ function PortfolioPage() {
             {/* Square feet is the denominator of every number to the right of
                 it — NOI, value and debt are all quoted per foot in this
                 business, and the book listed none of them against an area. */}
-            <th>Property</th><th>Class</th><th className="num">Building sf</th><th className="num">Spaces</th><th className="num">Occ</th><th className="num">NOI / yr</th>
-            <th className="num">Value</th><th className="num">Debt</th><th className="num">Equity</th>
+            <th>Property</th><th>Class</th><th className="num">Building sf</th><th className="num">Spaces</th><th className="num">Occ</th><th className="num" title="Average contract rent across the rent roll, per square foot per year">Rent $/sf</th><th className="num">NOI / yr</th>
+            <th className="num">Value</th><th className="num" title="What you paid, including closing costs">Cost</th>
+            <th className="num" title="Appraisal against cost basis — unrealised, before tax and before the cost of selling">Gain</th>
+            <th className="num">Debt</th><th className="num">Equity</th>
             <th className="num">Debt svc / mo</th><th className="num">CF / mo</th><th>Status</th><th></th>
           </tr>
         </thead>
@@ -2418,8 +2429,43 @@ function PortfolioPage() {
               </td>
               <td className="num">{rec && rec.bldgArea ? (() => { const u = unitStatus(rec, h, game.month); return `${u.leased} / ${u.total}`; })() : "—"}</td>
               <td className="num">{rec?.class === "land" ? "—" : (occ * 100).toFixed(0) + "%"}</td>
+              {/* WHAT THE ROLL ACTUALLY COLLECTS, per foot. The rent every
+                  decision in the game is denominated in, and the book quoted
+                  NOI and value per foot but never the rent underneath them. */}
+              {(() => {
+                const leased = h.tenants.reduce((a, t) => a + t.sf, 0);
+                const roll = h.tenants.reduce((a, t) => a + t.rentPsf * t.sf, 0);
+                if (!rec || rec.class === "land") return <td className="num">—</td>;
+                if (leased > 0) {
+                  const mkt = managedRentPsfYr(rec, game.econ, h);
+                  return (
+                    <td className="num" title={`Market is about $${mkt.toFixed(2)}/sf for this building today`}>
+                      ${(roll / leased).toFixed(2)}
+                      <span className={"dim" + ((roll / leased) < mkt * 0.92 ? " neg" : "")}>
+                        {" "}({(roll / leased) >= mkt ? "+" : ""}{(((roll / leased) / Math.max(1, mkt) - 1) * 100).toFixed(0)}%)
+                      </span>
+                    </td>
+                  );
+                }
+                // flats have no named roll: quote what the building achieves
+                return <td className="num dim">${managedRentPsfYr(rec, game.econ, h).toFixed(2)}</td>;
+              })()}
               <td className="num">{usd(noi)}</td>
               <td className="num">{usd(v)}</td>
+              {/* WHAT IT HAS DONE FOR YOU. Appraisal against what you actually
+                  paid — the number every owner carries in their head and the
+                  one this book never showed. Unrealised, before tax and before
+                  the cost of getting out, which is why it is not net worth. */}
+              <td className="num dim">{usd(h.costBasis)}</td>
+              {(() => {
+                const g = v - h.costBasis;
+                const pctG = h.costBasis > 0 ? (g / h.costBasis) * 100 : 0;
+                return (
+                  <td className={"num" + (g < 0 ? " neg" : "")} title={`${(g / Math.max(1, (game.month - h.boughtM) / 12) / Math.max(1, h.costBasis) * 100).toFixed(1)}% a year over ${((game.month - h.boughtM) / 12).toFixed(1)} years`}>
+                    {g >= 0 ? "+" : "−"}{usd(Math.abs(g))} · {g >= 0 ? "+" : ""}{pctG.toFixed(0)}%
+                  </td>
+                );
+              })()}
               <td className="num">{usd(h.loan?.balance ?? 0)}</td>
               <td className="num">{usd(v - (h.loan?.balance ?? 0))}</td>
               <td className="num">{h.loan ? "−" + usd(h.loan.monthlyPmt) : "—"}</td>
@@ -2457,7 +2503,7 @@ function PortfolioPage() {
             </tr>
             {refiRow === h.bbl && (
               <tr>
-                <td colSpan={sortBy === "income" ? 14 : 13} style={{ background: "rgba(43,37,26,0.035)" }}>
+                <td colSpan={sortBy === "income" ? 17 : 16} style={{ background: "rgba(43,37,26,0.035)" }}>
                   <RefiSection bbl={h.bbl} />
                 </td>
               </tr>
@@ -2472,7 +2518,10 @@ function PortfolioPage() {
               <td className="num">—</td>
               <td className="num">—</td>
               <td className="num">—</td>
+              <td className="num">—</td>
               <td className="num">{usd(dv.costTotal)}</td>
+              <td className="num dim">—</td>
+              <td className="num dim">—</td>
               <td className="num">{usd(dv.loanBalance)}</td>
               <td className="num">{usd(dv.costTotal - dv.loanBalance)}</td>
               <td className="num">—</td>
@@ -2605,7 +2654,26 @@ function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: (bbl: s
   return (
     <div className="loi">
       <button className="loi-addr" onClick={() => go(bbl)}>{useStore.getState().parcels?.[bbl]?.address ?? bbl}</button>
-      <div className="loi-line mono">ask {usd(ask)}{h?.sale?.mode === "marketed" ? " · marketed campaign" : ""}</div>
+      <div className="loi-line mono">
+        ask {usd(ask)}{h?.sale?.mode === "marketed" ? " · marketed campaign" : ""}
+        {/* THE NUMBER EVERY BUYER CONVERTS YOUR ASK INTO before they answer the
+            phone. It was on the property card and not here, which is the one
+            screen you actually work your sales from. */}
+        {(() => {
+          const st = useStore.getState();
+          const rec = st.parcels ? resolveRec(st.parcels, game, bbl) : null;
+          if (!rec || !h || rec.class === "land" || !rec.bldgArea || ask <= 0) return null;
+          const noi = holdingNOIYr(rec, game.econ, h, game.month);
+          if (noi <= 0) return null;
+          const cap = (noi / ask) * 100;
+          const mkt = game.econ.capRate[(rec.class as BuiltClass)] ?? cap;
+          return (
+            <> · asking a <b>{cap.toFixed(2)}%</b> cap
+              <span className={cap < mkt - 0.4 ? " neg" : ""}> (market {mkt.toFixed(2)}%)</span>
+            </>
+          );
+        })()}
+      </div>
       {offer ? (
         <>
           <div className="loi-line mono">
@@ -3173,6 +3241,110 @@ function MarketPage() {
   );
 }
 
+/**
+ * WHAT THE DIRT HAS DONE, and what the city underneath it has done.
+ *
+ * Land is the only asset in this game you can hold without operating, and it
+ * was the one thing with no chart: the index moved every month, it drove every
+ * appraisal and every development pro forma, and the only way to read it was
+ * to click a lot and squint at a number. A land cycle is slower and larger
+ * than a rent cycle — it is the one that makes and unmakes fortunes — and it
+ * deserves the same graph the sectors get.
+ *
+ * Beneath it, the economy the property market sits on. Rents are downstream of
+ * jobs and jobs are downstream of whether anybody wants to live here, and none
+ * of that was visible either.
+ */
+function LandValueChart() {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const h = game.econ.history ?? [];
+  if (h.length < 4) return <div className="hint">Not enough history yet — advance a few years.</div>;
+  const e = game.econ;
+
+  // Today's land price per foot across the city, and at the best ground in it —
+  // the spread between them is what "location" is worth in dollars.
+  const psf = Object.keys(parcels).map((b) => {
+    const rec = resolveRec(parcels, game, b);
+    return rec && rec.lotArea > 0 ? { psf: landPsfNow(rec, e), d: rec.demandScore } : null;
+  }).filter(Boolean) as { psf: number; d: number }[];
+  psf.sort((a, b) => a.psf - b.psf);
+  const q = (f: number) => psf.length ? psf[Math.min(psf.length - 1, Math.floor(psf.length * f))].psf : 0;
+  const prime = psf.filter((x) => x.d >= 80);
+  const primeAvg = prime.length ? prime.reduce((a, x) => a + x.psf, 0) / prime.length : 0;
+  const fringe = psf.filter((x) => x.d <= 25);
+  const fringeAvg = fringe.length ? fringe.reduce((a, x) => a + x.psf, 0) / fringe.length : 0;
+
+  const yrs = (n: number) => h.length > n ? h[h.length - 1].landIdx / h[h.length - 1 - n].landIdx - 1 : 0;
+
+  return (
+    <>
+      <div className="page-section">Land</div>
+      <div className="hint">
+        The only thing here you can own without operating it, and the slowest, largest cycle in the game.
+        Every appraisal and every development budget is a function of this line.
+      </div>
+      <LineChart
+        height={150}
+        series={[{ label: "Land index", color: "#b08d3f", pts: h.map((p) => p.landIdx) }]}
+        yFmt={(v) => v.toFixed(2)}
+        xLabels={[monthLabel(h[0].q), monthLabel(h[h.length - 1].q)]}
+      />
+      <div className="grid">
+        <Row k="Land index" v={e.landIdx.toFixed(2)} strong />
+        <Row k="Over the last year" v={`${yrs(12) >= 0 ? "+" : ""}${(yrs(12) * 100).toFixed(1)}%`} bad={yrs(12) < 0} />
+        <Row k="Over the last five" v={`${yrs(60) >= 0 ? "+" : ""}${(yrs(60) * 100).toFixed(1)}%`} bad={yrs(60) < 0} />
+        <Row k="Over the last twenty" v={`${yrs(240) >= 0 ? "+" : ""}${(yrs(240) * 100).toFixed(1)}%`} bad={yrs(240) < 0} />
+        <Row k="Cheapest quarter of the city" v={`$${q(0.25).toFixed(0)} /sf of lot`} />
+        <Row k="Median lot" v={`$${q(0.5).toFixed(0)} /sf of lot`} strong />
+        <Row k="Dearest tenth" v={`$${q(0.9).toFixed(0)} /sf of lot`} />
+        <Row
+          k="Prime against fringe"
+          v={fringeAvg > 0 ? `${(primeAvg / fringeAvg).toFixed(1)}x — $${primeAvg.toFixed(0)} against $${fringeAvg.toFixed(0)}` : "—"}
+        />
+      </div>
+
+      <div className="page-section" style={{ marginTop: 14 }}>The city</div>
+      <div className="hint">
+        Rents are downstream of jobs, and jobs are downstream of whether anybody wants to be here.
+        Unemployment lags the property cycle by a year or more — by the time it reads badly the rents
+        already have.
+      </div>
+      <LineChart
+        height={140}
+        series={[
+          { label: "Jobs (000s)", color: "#2f6f7a", pts: h.map((p) => (p.jobs ?? 0) / 1000) },
+          { label: "Population (000s)", color: "#7a5c1e", pts: h.map((p) => (p.population ?? 0) / 1000) },
+        ]}
+        yFmt={(v) => v.toFixed(0) + "k"}
+        xLabels={[monthLabel(h[0].q), monthLabel(h[h.length - 1].q)]}
+      />
+      <LineChart
+        height={130}
+        series={[
+          { label: "Unemployment %", color: "#a8402e", pts: h.map((p) => (p.unemployment ?? 0) * 100) },
+          { label: "Real wage (index x10)", color: "#3a7d46", pts: h.map((p) => (p.wageIdx ?? 1) * 10) },
+        ]}
+        yFmt={(v) => v.toFixed(1)}
+        xLabels={[monthLabel(h[0].q), monthLabel(h[h.length - 1].q)]}
+      />
+      <div className="grid">
+        <Row k="Population" v={(e.population ?? 0).toLocaleString()} strong />
+        <Row k="Jobs" v={(e.jobs ?? 0).toLocaleString()} />
+        <Row k="Unemployment" v={`${((e.unemployment ?? 0) * 100).toFixed(1)}%`} bad={(e.unemployment ?? 0) > 0.085} />
+        <Row k="Real wage" v={`${(((e.wageIdx ?? 1) - 1) * 100).toFixed(0)}% against the year 2000`} />
+        <Row k="Real output" v={`${(((e.outputIdx ?? 1) - 1) * 100).toFixed(0)}% against the year 2000`} />
+        <Row k="Price level" v={`${(((e.cpi ?? 1) - 1) * 100).toFixed(0)}% of cumulative inflation`} />
+        {(() => {
+          const n = h.length;
+          const jobsYr = n > 12 && h[n - 13].jobs ? (h[n - 1].jobs! / h[n - 13].jobs! - 1) * 100 : 0;
+          return <Row k="Jobs added this year" v={`${jobsYr >= 0 ? "+" : ""}${jobsYr.toFixed(1)}%`} bad={jobsYr < 0} strong />;
+        })()}
+      </div>
+    </>
+  );
+}
+
 function ResearchPage() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
@@ -3275,13 +3447,19 @@ function ResearchPage() {
           </table>
         </section>
         <section style={{ gridColumn: "1 / -1" }}>
-          <CompsSheet />
+          <LandValueChart />
         </section>
         <section style={{ gridColumn: "1 / -1" }}>
           <TheStreet />
         </section>
         <section style={{ gridColumn: "1 / -1" }}>
           <OwnershipRegister />
+        </section>
+        {/* THE PRINTS GO LAST. They are the reference you scroll to, not the
+            thing you open the page for — sectors and land first, the record of
+            what has actually traded underneath it. */}
+        <section style={{ gridColumn: "1 / -1" }}>
+          <CompsSheet />
         </section>
       </div>
     </div>
@@ -3762,68 +3940,6 @@ const STYLE_WORD: Record<string, string> = {
   developer: "developer",
 };
 
-/**
- * THE INSURANCE DESK.
- *
- * The only decision in the game that costs you money every single month and
- * pays nothing back for years at a time — and then pays for the whole century
- * in one morning. A low deductible is expensive and quiet; a high one is cheap
- * and occasionally ruinous; declining flood cover on a waterfront book is free
- * money right up until the water comes over the quay.
- */
-function InsuranceDesk() {
-  const game = useStore((s) => s.game)!;
-  const parcels = useStore((s) => s.parcels)!;
-  const { bindInsurance } = useStore.getState();
-  const pol = game.insurance;
-  const [ded, setDed] = useState(pol?.deductiblePct ?? 0.025);
-  const [flood, setFlood] = useState(pol?.flood ?? true);
-  const iv = insuredValue(game, parcels);
-  if (iv <= 0) return null;
-  const q = insuranceQuote(game, parcels, ded, flood);
-  const changed = !pol || pol.deductiblePct !== ded || pol.flood !== flood;
-  const net = pol ? (pol.recoveredTotal ?? 0) - (pol.paidTotal ?? 0) : 0;
-  return (
-    <div className="page-section">
-      <div className="page-section-head">Insurance</div>
-      <div className="grid">
-        <Row k="Insured value" v={usd(q.insuredValue)} />
-        <Row k="On the water" v={`${(q.floodExposure * 100).toFixed(0)}% of the book`} bad={q.floodExposure > 0.3} />
-        <Row k="Premium" v={`${usd(q.premiumYr)} / yr`} strong />
-        <Row k="Deductible, per building per event" v={usd(Math.round(q.insuredValue * ded))} />
-        {q.experience > 1.02 && (
-          <Row k="Experience rating" v={`+${((q.experience - 1) * 100).toFixed(0)}% — underwriters remember your claims`} bad />
-        )}
-        {pol && <Row k="Paid in / recovered" v={`${usd(pol.paidTotal ?? 0)} / ${usd(pol.recoveredTotal ?? 0)}`} />}
-        {pol && <Row k="Net, lifetime" v={(net >= 0 ? "+" : "−") + usd(Math.abs(net))} bad={net < 0} />}
-      </div>
-      <div className="btn-row">
-        {DEDUCTIBLES.map((d) => (
-          <button key={d} className={"btn" + (ded === d ? " btn-on" : "")} onClick={() => setDed(d)}>
-            {(d * 100).toFixed(d < 0.02 ? 1 : 0)}% deductible
-          </button>
-        ))}
-      </div>
-      <div className="btn-row">
-        <button className={"btn" + (flood ? " btn-on" : "")} onClick={() => setFlood(!flood)}>
-          {flood ? "Flood cover: carried" : "Flood cover: declined"}
-        </button>
-        {changed && (
-          <button className="btn btn-buy" onClick={() => bindInsurance(ded, flood)}>
-            {pol ? "Rebind" : "Bind"} at {usd(q.premiumYr)} / yr
-          </button>
-        )}
-      </div>
-      <div className="hint">
-        {!pol
-          ? "You are carrying no insurance at all. Every fire, every storm and every flood is yours in full."
-          : !flood && q.floodExposure > 0.15
-            ? `You have declined flood cover with ${(q.floodExposure * 100).toFixed(0)}% of the book on the water. That saves real money every year and costs all of it in one morning.`
-            : "A storm charges the deductible on every building it touches, not once. That is the number that matters, not the premium."}
-      </div>
-    </div>
-  );
-}
 
 // The revolving line: up to 35% of net worth at prime + 400bps, and the
 // advance rate moves with the credit cycle — the label used to promise a
@@ -4175,31 +4291,6 @@ function BooksPage() {
         <Big label="Exits" value={String(game.exits.length)} />
       </div>
       <NWChart data={game.nwHistory} />
-      {/* THE OTHER SIDE OF THE CAPITAL STACK. Debt has had a page since the
-          beginning; the equity you raise from other people is the larger and
-          more consequential half of it, and it needs the same accounting. */}
-      {(() => {
-        const j = jvSummary(game);
-        const t = lpTerms(game);
-        if (!j.count && (game.lpRep ?? 50) === 50) return null;
-        return (
-          <div className="page-section">
-            <div className="page-section-head">Partner capital</div>
-            <div className="grid">
-              <Row k="Standing with the equity market" v={`${t.rep.toFixed(0)} / 100 · ${lpMood(game)}`} bad={t.rep < 35} />
-              <Row k="What you can raise today" v={t.open
-                ? `${t.prefPct.toFixed(1)}% pref · ${(t.promotePct * 100).toFixed(0)}% promote · up to ${(t.maxShare * 100).toFixed(0)}% of a deal`
-                : "Nothing. Return capital first."} bad={!t.open} />
-              <Row k="Partnered deals" v={String(j.count)} />
-              <Row k="Capital raised, live" v={usd(j.raised)} />
-              <Row k="Unreturned capital" v={usd(j.unreturned)} bad={j.unreturned > 0} />
-              <Row k="Preferred accrued and unpaid" v={usd(j.pref)} bad={j.pref > j.raised * 0.12} />
-              <Row k="Promote earned, lifetime" v={usd(j.promote)} strong />
-            </div>
-          </div>
-        );
-      })()}
-      <InsuranceDesk />
       <CreditLine />
       <div className="page-section">
         <div className="page-section-head">The ledger, by year</div>

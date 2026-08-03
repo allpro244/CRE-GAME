@@ -34,31 +34,41 @@ const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
  *   patience  — how far they will let a retrade go before telling you to leave.
  *   dawdle    — the chance in any month that they hold everything up.
  */
+// WHAT THEY WILL ACTUALLY TAKE, as a share of the ask.
+//
+// These floors were four to twenty per cent under the asking price, which made
+// the negotiation a formality: open at ninety-two and almost everybody said
+// yes, on almost every building, in almost every market. A real seller with a
+// building anybody else wants does not take eight per cent off because you
+// asked once. Every floor moved up between five and ten points, and the
+// institution — a committee with a number and no reason to like you — now
+// barely moves at all. The receiver is still the cheapest money in town at
+// eighty cents, because that is what a receiver is for.
 const SELLERS: Record<SellerKind, {
   label: string; blurb: string; certainty: number; floor: number; patience: number; dawdle: number;
 }> = {
   estate: {
-    label: "an estate", certainty: 0.055, floor: 0.80, patience: 0.75, dawdle: 0.06,
+    label: "an estate", certainty: 0.055, floor: 0.87, patience: 0.75, dawdle: 0.06,
     blurb: "Executors, three heirs and a deadline. They want it done more than they want the last dollar.",
   },
   institution: {
-    label: "an institutional owner", certainty: 0.012, floor: 0.94, patience: 0.25, dawdle: 0.02,
+    label: "an institutional owner", certainty: 0.012, floor: 0.98, patience: 0.25, dawdle: 0.02,
     blurb: "A fund rebalancing out of the sector. They have a committee, a number, and no reason to like you.",
   },
   partnership: {
-    label: "a partnership in dispute", certainty: 0.04, floor: 0.84, patience: 0.55, dawdle: 0.16,
+    label: "a partnership in dispute", certainty: 0.04, floor: 0.90, patience: 0.55, dawdle: 0.16,
     blurb: "Two partners who no longer speak. Everything takes twice as long and nobody can say yes quickly.",
   },
   developer: {
-    label: "a developer taking profits", certainty: 0.03, floor: 0.88, patience: 0.4, dawdle: 0.04,
+    label: "a developer taking profits", certainty: 0.03, floor: 0.93, patience: 0.4, dawdle: 0.04,
     blurb: "They built it, they leased it, and they are recycling the equity into the next one.",
   },
   local: {
-    label: "a local family owner", certainty: 0.035, floor: 0.86, patience: 0.6, dawdle: 0.08,
+    label: "a local family owner", certainty: 0.035, floor: 0.92, patience: 0.6, dawdle: 0.08,
     blurb: "They have owned it since before you were born and they are in no hurry, but they are reasonable.",
   },
   lender: {
-    label: "a lender's receiver", certainty: 0.07, floor: 0.70, patience: 0.85, dawdle: 0.05,
+    label: "a lender's receiver", certainty: 0.07, floor: 0.80, patience: 0.85, dawdle: 0.05,
     blurb: "A special servicer clearing a book. They will take a haircut to be rid of it and they will not warrant a thing.",
   },
 };
@@ -224,6 +234,33 @@ export function negotiate(
   // A seller who is a long way from you does not counter, they tell you where
   // they are. That IS the information — and it is far more use than a refusal.
   const gap = px / Math.max(1, reservation);
+
+  // AN INSULT ENDS THE CONVERSATION.
+  //
+  // A lowball used to be free: they told you where they were and waited while
+  // you tried again, so the optimal play was always to open at sixty per cent
+  // and walk it up. Nobody sells that way. Come in far enough under and the
+  // seller stops taking your calls on this building — the listing stays, the
+  // number stays, and you are not the one who gets it. That is the entire cost
+  // of finding out where the floor is by kicking it.
+  if (gap < 0.62) {
+    delete next.talks;
+    const rival = ownerOf(next, bbl);
+    if (rival) {
+      // A named firm remembers. They will not deal with you here again.
+      next.approaches[bbl] = { q: next.month, refused: true };
+    }
+    next.news.unshift({
+      q: next.month, kind: "warn",
+      text: `${fmtM(px)} at ${rec.address} ended it. ${seller.name} is not interested in a conversation `
+        + `that starts there and the building is off the table for you — it is still for sale to somebody else.`,
+    });
+    // and the tape absorbs it faster now that a serious buyer has been rebuffed
+    const li2 = next.listings.find((l) => l.bbl === bbl);
+    if (li2) li2.expiresM = Math.min(li2.expiresM, next.month + 2);
+    return { s: next, msg: "They ended it. That was an insult, not an offer." };
+  }
+
   if (gap < 0.80 || round > maxRounds) {
     const theirs = Math.round(round > maxRounds ? reservation * 1.005 : ask * 0.985);
     next.talks = {

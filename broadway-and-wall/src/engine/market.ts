@@ -273,6 +273,55 @@ export function tickEcon(s: GameState) {
     : e.phase === "recession" ? -0.0031 : 0.0015;
   e.employIdx = clamp(e.employIdx * (1 + jobDrift + rrange(s, -0.0012, 0.0012)), 0.55, 12);
 
+  // --- THE CITY UNDERNEATH THE PROPERTY MARKET -------------------------------
+  //
+  // Everything above this line is a property cycle. This is the economy it sits
+  // on, and every number here is a consequence of the employment index rather
+  // than a second simulation running beside it: the point is legibility, not
+  // more dice. What it buys is the question every real investor asks first and
+  // this game could not answer — is this town growing?
+  {
+    if (e.population === undefined) {
+      e.population = 240_000; e.jobs = 132_000; e.unemployment = 0.052;
+      e.wageIdx = 1; e.outputIdx = 1; e.cpi = 1;
+    }
+    const prevJobs = e.jobs!;
+    // Jobs track the employment index directly — that IS the employment index,
+    // expressed as people rather than as a number between nought and twelve.
+    e.jobs = Math.round(132_000 * e.employIdx);
+    const jobGrowth = prevJobs > 0 ? e.jobs / prevJobs - 1 : 0;
+
+    // UNEMPLOYMENT IS A LAGGING NUMBER and a sticky one. The labour force does
+    // not shrink the month the jobs go; people look for work for a year before
+    // they leave town, which is why a bust shows up in the unemployment rate
+    // long after it has shown up in the rents.
+    const labourForce = e.population! * 0.62;
+    const slackTarget = clamp(1 - e.jobs / Math.max(1, labourForce), 0.018, 0.24);
+    e.unemployment = clamp(e.unemployment! + 0.18 * (slackTarget - e.unemployment!), 0.015, 0.26);
+
+    // POPULATION FOLLOWS WORK, slowly and asymmetrically. People move to a
+    // boom within a couple of years; they leave a bust over a decade, because
+    // leaving means selling a house and telling your family. That asymmetry is
+    // why cities hollow out rather than empty.
+    const pull = jobGrowth > 0 ? 0.35 : 0.09;
+    e.population = Math.round(clamp(e.population! * (1 + jobGrowth * pull + 0.00035), 60_000, 4_000_000));
+
+    // REAL WAGES follow the labour market with a lag: tight labour bids pay up,
+    // slack labour does not cut it in nominal terms, so a downturn shows as
+    // stagnation rather than as a fall. On top of that a slow productivity
+    // drift, which is where a century of compounding actually comes from.
+    const tight = 0.055 - e.unemployment!;
+    e.wageIdx = clamp(e.wageIdx! * (1 + 0.00035 + tight * 0.014 + rrange(s, -0.0004, 0.0004)), 0.7, 6);
+
+    // The price level, so a nominal number can be turned into a real one. It
+    // runs with construction cost because in a city they are the same story.
+    e.cpi = clamp(e.cpi! * (1 + 0.0016 + (e.phase === "peak" ? 0.0011 : e.phase === "recession" ? -0.0007 : 0)), 0.8, 40);
+
+    // Output is what the place makes: people working, times what each of them
+    // produces. It is the broadest number in the game and the slowest to move.
+    e.outputIdx = +((e.jobs / 132_000) * e.wageIdx!).toFixed(4);
+  }
+
   // --- each class runs its own cycle -----------------------------------------
   // This used to be an AR(1) walk with a +/-0.02 cap and noise so small that
   // its stationary spread was about a tenth of that: sectorMom sat near zero
@@ -595,6 +644,12 @@ function recordHistory(e: Econ, q: number, abs?: Record<string, number>, comp?: 
     rentOffice: +e.rentIdx.office.toFixed(2),
     creditIdx: +e.creditIdx.toFixed(3),
     employIdx: +e.employIdx.toFixed(3),
+    population: e.population,
+    jobs: e.jobs,
+    unemployment: e.unemployment !== undefined ? +e.unemployment.toFixed(4) : undefined,
+    wageIdx: e.wageIdx !== undefined ? +e.wageIdx.toFixed(4) : undefined,
+    outputIdx: e.outputIdx,
+    cpi: e.cpi !== undefined ? +e.cpi.toFixed(4) : undefined,
     vac: e.cityVac ? {
       office: +e.cityVac.office.toFixed(4), retail: +e.cityVac.retail.toFixed(4),
       multifamily: +e.cityVac.multifamily.toFixed(4), industrial: +e.cityVac.industrial.toFixed(4),

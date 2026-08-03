@@ -5,7 +5,6 @@ import type { ParcelRecord } from "@/data/types";
 import type { Condition, Econ, GameState, Holding, Sector } from "./types";
 import type { BuiltClass } from "./types";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { gpEquity } from "./equity";
 import { industryStress } from "./market";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -472,15 +471,6 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
   if (h.renovatingUntilM !== undefined && currentQ < h.renovatingUntilM) {
     return -Math.max(0, rec.bldgArea) * 1.2; // dark during the gut
   }
-  // A BURNED OR FLOODED FLOOR EARNS NOTHING and still costs money to hold.
-  // The undamaged part of the building carries on; the rest is a hole with a
-  // roof over it until the contractors are finished.
-  if (h.damage && currentQ < h.damage.untilM) {
-    const live = Math.max(0, 1 - h.damage.share);
-    const rest = { ...h, damage: undefined };
-    const running = holdingNOIYr(rec, econ, rest, currentQ);
-    return running * live - Math.max(0, rec.bldgArea) * h.damage.share * 0.55;
-  }
   // A ground-leased lot does not carry: the lessee pays the taxes and the
   // insurance, which is what "absolutely net" means. Its income arrives
   // separately as ground rent, so charging carry here would bill it twice.
@@ -728,10 +718,7 @@ export function netWorth(s: GameState, parcels: Record<string, ParcelRecord>): n
   for (const h of Object.values(s.holdings)) {
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
-    // A partnered building is not all yours. Marking the whole equity as net
-    // worth on a deal where somebody else wrote seventy per cent of the cheque
-    // is the most flattering lie a sponsor can tell themselves.
-    nw += gpEquity(s, h.bbl, holdingValue(rec, s.econ, h, s.month) - (h.loan?.balance ?? 0));
+    nw += holdingValue(rec, s.econ, h, s.month) - (h.loan?.balance ?? 0);
   }
   // construction in progress carries at cost minus construction debt
   for (const d of Object.values(s.developments ?? {})) {

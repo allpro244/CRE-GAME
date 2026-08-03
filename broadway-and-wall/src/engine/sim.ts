@@ -5,9 +5,7 @@ import type { GameState, Listing } from "./types";
 import { START_CASH, CENTURY_MONTHS, CASH_APY, logBooks, monthLabel } from "./types";
 import { initEcon, rng, rrange, tickEcon } from "./market";
 import { assetValue, holdingNOIYr, holdingValue, initialCondition, monthlyNOI, netWorth, resolveRec } from "./value";
-import { capitalCall, LP_REP_START, settleJV, tickJV } from "./equity";
 import { recordComp } from "./comps";
-import { tickPerils } from "./peril";
 import { tickPlanning } from "./zoning";
 import { tickLeasing, depositsOn } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases } from "./actions";
@@ -81,13 +79,6 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
     news: [],
     gameOver: null,
     insolventMs: 0,
-    jvs: {},
-    lpRep: LP_REP_START,
-    // Bound on day one, on ordinary terms, because every operator who has ever
-    // bought a building bound cover at the closing. What you do with it after
-    // that — how much risk you keep, whether you carry flood on a waterfront
-    // book — is the decision. Starting uninsured would be a trap, not a choice.
-    insurance: { deductiblePct: 0.025, flood: true, claims: 0, sinceM: 0, premiumYr: 0, paidTotal: 0, recoveredTotal: 0 },
   };
   s.econ = initEcon(s, parcels);
   if (parcels) s.rivals = initRivals(s, parcels, Object.keys(parcels));
@@ -180,7 +171,6 @@ export function advanceQuarter(
   tickConstructionLeasing(s, parcels);
   tickPrograms(s, parcels);
   tickLeasing(s, parcels);
-  tickPerils(s, parcels);
   tickGroundLeases(s, parcels);
   tickSales(s, parcels);
   tickBrokerCalls(s, parcels, bbls);
@@ -219,18 +209,6 @@ export function advanceQuarter(
     h.cfHistory.push(Math.round(cf));
     if (h.cfHistory.length > 40) h.cfHistory.shift();
     // THE PARTNER IS PAID BEFORE YOU ARE. On a partnered building the pref
-    // accrues every month regardless, and whatever the building distributes
-    // goes to that pref before a dollar of it is yours. In a bad year your
-    // distribution is zero and theirs is not — that is the deal you signed.
-    const toLp = tickJV(s, h.bbl, cf);
-    if (toLp > 0) { lpOut += toLp; logBooks(s, "sold", toLp); }
-    // …and when it bleeds, the partnership is called on for it. A partner who
-    // still believes in you funds their share; one who does not leaves the
-    // whole shortfall with the sponsor, and asking at all costs you standing.
-    if (cf < 0 && s.jvs?.[h.bbl]) {
-      const put = capitalCall(s, h.bbl, -cf);
-      if (put > 0) lpOut -= put;
-    }
     monthCF += cf;
   }
   s.cash += monthCF - lpOut;
@@ -365,12 +343,7 @@ export function advanceQuarter(
         const proceeds = Math.max(0, gross - (pick.loan?.balance ?? 0));
         s.cash += proceeds;
         logBooks(s, "sold", proceeds);
-        // A partner in a seized building is preferred over you in exactly the
-        // way that matters here: whatever the creditors leave behind is theirs
-        // before it is yours, and usually there is nothing.
         recordComp(s, rec, gross, "a distressed buyer", "You", true, pick.condition);
-        const wind = settleJV(s, pick.bbl, proceeds);
-        if (wind.lpCash > 0) { s.cash -= wind.lpCash; logBooks(s, "sold", -wind.lpCash); }
         s.exits.push({ bbl: pick.bbl, address: rec.address, boughtM: pick.boughtM, soldM: s.month, price: gross, basis: pick.costBasis, gain: gross - pick.costBasis, forced: true });
         if (s.groundLeases?.[pick.bbl]) delete s.groundLeases[pick.bbl];
         s.cash -= depositsOn(s.holdings[pick.bbl]);   // the deposits go with the deed
@@ -416,14 +389,6 @@ export function advanceQuarter(
 
   // BACKSTOP. Every disposition settles its own partnership; if one ever gets
   // past all of them, the partner is wiped and it costs what wiping a partner
-  // costs. A dangling partnership on a building you do not own is a bug, and
-  // the invariant sweep says so — this is here so it is never also a silent
-  // hole in the balance sheet.
-  for (const bbl of Object.keys(s.jvs ?? {})) {
-    if (s.holdings[bbl]) continue;
-    delete s.jvs![bbl];
-    s.lpRep = Math.max(0, (s.lpRep ?? LP_REP_START) - 16);
-  }
   // Same for a ground lease and an assemblage: a deed that left the book takes
   // its encumbrances with it. A creditor can seize land out from under a lease
   // at any point in the month, and the ledger has to agree by the end of it.

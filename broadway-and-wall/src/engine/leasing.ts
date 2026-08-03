@@ -114,6 +114,9 @@ export function leasableUses(rec: ParcelRecord): BuiltClass[] {
 // Typical suite by class, in sf. Bigger buildings get bigger suites — a
 // 400,000 sf tower does not lease in 2,000 ft bites — but never so big that a
 // tower becomes a single unit.
+/** The smallest space anybody will take on a commercial lease here. */
+export const COMMERCIAL_SUITE_MIN = 2_000;
+
 export function useSuiteSf(rec: ParcelRecord, use: BuiltClass): number {
   // A building you programmed yourself is cut the way you cut it.
   const chosen = rec.suites?.[use as Exclude<BuiltClass, "land">];
@@ -125,8 +128,15 @@ export function useSuiteSf(rec: ParcelRecord, use: BuiltClass): number {
   switch (use) {
     case "multifamily": return 900;                                    // an apartment
     case "industrial":  return Math.max(12_000, Math.min(90_000, a / 2.2));
-    case "retail":      return Math.max(1_400, Math.min(14_000, a / 6));
-    default:            return Math.max(2_500, Math.min(28_000, a / 12));  // office
+    // TWO THOUSAND FEET IS THE FLOOR FOR A COMMERCIAL TENANCY.
+    //
+    // Shops were demising to 1,400 and offices to 2,500, which produced towers
+    // cut into forty tiny suites and a rent roll that read like a market stall.
+    // Below about two thousand feet a commercial tenancy is not an asset —
+    // it is a serviced office or a kiosk, and neither is what this game is
+    // about. Flats keep their own floor, because a flat is a flat.
+    case "retail":      return Math.max(COMMERCIAL_SUITE_MIN, Math.min(14_000, a / 6));
+    default:            return Math.max(COMMERCIAL_SUITE_MIN, Math.min(28_000, a / 12));  // office
   }
 }
 /** The building's headline suite size — its dominant leasable use. */
@@ -199,7 +209,7 @@ export function unitStatus(rec: ParcelRecord, h: Holding, month: number): {
  * to means a building can never lease its last ten per cent and sits at 91%
  * occupancy for a century.
  */
-const PART_SUITE_MIN = 700;   // below this it isn't space, it's a closet
+const PART_SUITE_MIN = COMMERCIAL_SUITE_MIN;   // below this it isn't space, it's a closet
 function toSuites(rec: ParcelRecord, want: number, cap: number, use?: BuiltClass): number {
   const sfPer = use ? useSuiteSf(rec, use) : suiteSf(rec);
   const maxUnits = Math.floor(cap / sfPer + 0.02);

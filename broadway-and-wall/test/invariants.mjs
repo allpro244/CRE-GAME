@@ -28,7 +28,9 @@ const BOTS = {
   // everything it can and trading out — which is the only bot that drives the
   // preferred return, the capital calls, the promote and the waterfall on the
   // way out. Without it the whole equity stack went unswept.
-  syndicator: { buy: (c) => c.built, lev: 0.75, prod: () => "savings", sell: (g) => g > 0.25, jv: true, every: 4 },
+  // was the JV bot; outside equity is gone, so it is now the one that trades
+  // hardest — buys everything built, levers it, and sells on any real gain
+  syndicator: { buy: (c) => c.built, lev: 0.75, prod: () => "savings", sell: (g) => g > 0.25, every: 4 },
   // mezz + participating + caps: the exotic end of the desk
   exotic: { buy: (c) => c.built, lev: 1, prod: (c) => (c.yield > 0.06 ? "pelican" : "cordage"), refi: true, mezz: true, sell: () => false, every: 6 },
 };
@@ -59,14 +61,6 @@ function run(botName, seed) {
     // PUT SOMETHING ON THE MARKET, both ways. The bots only ever responded to
     // unsolicited approaches, so the whole sell side — campaigns, bid lists,
     // best and final, retrades — was never once swept.
-    // Perils are automatic, but the COVERAGE is a choice and each bot should
-    // make a different one — a high deductible with no flood cover is the
-    // path where damage actually lands on the balance sheet.
-    if (m === 24) {
-      const ded = [0.01, 0.025, 0.05, 0.10][seed % 4];
-      const r = E.setInsurance(g, parcels, ded, seed % 3 !== 0);
-      if (!r.err) g = r.s;
-    }
 
     // EMPTYING A BUILDING, both ways. Stopping the letting and buying the
     // leases out are the two paths to a demolition, and both leave the state in
@@ -194,17 +188,6 @@ function run(botName, seed) {
       }
     }
 
-    // raise outside equity on anything that has some, and keep raising as the
-    // book grows — the pref accrues from the day the money lands
-    if (B.jv && m % 6 === 3) {
-      for (const bbl of Object.keys(g.holdings)) {
-        if (g.jvs?.[bbl] || g.holdings[bbl].sale) continue;
-        const q = E.recapQuote(g, parcels, bbl, 0.5 + (m % 4) * 0.08);
-        if (!q || q.cheque < 250_000) continue;
-        const r = E.recapitalise(g, parcels, bbl, q.share);
-        if (!r.err) { g = r.s; break; }
-      }
-    }
 
     // PRE-BUILD and BLEND-AND-EXTEND. Both move money and both rewrite the
     // rent roll in place, which is exactly where a bad index quietly corrupts

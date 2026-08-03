@@ -10,7 +10,6 @@ import { marketAppetite, ownerOf, rivalAsk, rivalBuys } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
 import { takeoverDevelopment } from "./dev";
-import { settleJV } from "./equity";
 import { recordComp } from "./comps";
 
 const CLOSING_PCT = 0.02;
@@ -229,7 +228,6 @@ export function assembleLots(
     if (s.landmarks?.[b] !== undefined) return { s, err: "One of those is landmarked. Its envelope is frozen and it cannot be folded into a bigger site." };
     if (s.developments[b]) return { s, err: "Construction is already underway on one of those." };
     if (s.holdings[b].sale) return { s, err: "One of those is on the market — pull the listing first." };
-    if (s.jvs?.[b]) return { s, err: "A partner is in one of those deals. Buy them out before you fold it into anything." };
     if (s.groundLeases?.[b]) return { s, err: "One of those is under a ground lease. It is not yours to build on." };
   }
   // CONTIGUOUS, or it is not a site — it is two sites. Walk the adjacency
@@ -732,15 +730,6 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   next.cash += toSeller;
   logBooks(next, "sold", toSeller);
   // THE WATERFALL. If a partner is in this deal they are made whole out of
-  // these proceeds before a dollar of profit is split, and the promote — the
-  // thing the whole structure exists to pay you — is settled here or not at
-  // all. A deal that sold for less than the partner put in pays you nothing,
-  // however long you ran it.
-  const jvOut = settleJV(next, bbl, toSeller);
-  if (jvOut.lpCash > 0) {
-    next.cash -= jvOut.lpCash;
-    logBooks(next, "sold", -jvOut.lpCash);
-  }
   if (kick + breakFee > 0) logBooks(next, "debtSvc", kick + breakFee);
   if (exchange) {
     next.exchange = { deferredTax: tax, rolledGain: gain, minPrice: offer.price, deadlineM: next.month + EXCHANGE_WINDOW_M };
@@ -779,14 +768,6 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
       + (exchange ? `. 1031 clock running: buy for ≥ $${(offer.price * 0.8 / 1e6).toFixed(1)}M by ${monthLabel(next.month + EXCHANGE_WINDOW_M)} or $${(tax / 1e6).toFixed(2)}M of tax comes due.`
         : tax > 0 ? ` ($${(tax / 1e6).toFixed(2)}M capital-gains tax withheld).` : "."),
   });
-  if (jvOut.lpCash > 0 || jvOut.promote > 0) {
-    next.news.unshift({
-      q: next.month, kind: "deal",
-      text: `Partnership settled at ${rec.address}: $${(jvOut.lpCash / 1e6).toFixed(2)}M out to the partner`
-        + (jvOut.promote > 0 ? `, $${(jvOut.promote / 1e6).toFixed(2)}M of promote to you` : ", and no promote — the deal never cleared the pref")
-        + `. ${jvOut.note}`,
-    });
-  }
   return { s: next };
 }
 
@@ -1155,3 +1136,114 @@ export { assetValue };
 
 // ---------------------------------------------------------------- acquisition
 
+
+/**
+ * GOING BACK TO ONE BIDDER.
+ *
+ * Best-and-final puts the whole list in the room on the same day and is the
+ * blunt instrument. This is the other move every seller makes: the private
+ * call to the one number you would take five per cent more of. It risks
+ * exactly that bidder — the rest of the list never hears about it — and a
+ * credible buyer who is already at their limit simply leaves.
+ *
+ * One per bid. Grinding the same buyer is not negotiating.
+ */
+export function counterBid(
+  s: GameState, parcels: ParcelTable, bbl: string, index: number, price: number,
+): { s: GameState; err?: string; msg?: string } {
+  const h0 = s.holdings[bbl];
+  const b0 = h0?.sale?.bids?.[index];
+  if (!h0?.sale || !b0) return { s, err: "There is no bid there." };
+  if (b0.dropped) return { s, err: "They already walked." };
+  if (b0.countered) return { s, err: "You have been back to them once. That is what the etiquette allows." };
+  const rec = resolveRec(parcels, s, bbl);
+  if (!rec) return { s, err: "Unknown parcel." };
+  const px = Math.round(price);
+  if (px <= b0.price) return { s, err: "That is not a counter — it is an acceptance at a worse price." };
+
+  const next = clone(s);
+  const bid = next.holdings[bbl]!.sale!.bids![index];
+  bid.countered = true;
+
+  // How far this buyer will actually stretch. Credibility is the whole read:
+  // the institution that bid with a committee behind it has room, and the
+  // syndicate that bid to be in the running does not.
+  const value = holdingValue(rec, next.econ, next.holdings[bbl]!, next.month);
+  const hot = next.econ.phase === "expansion" || next.econ.phase === "peak";
+  const headroom = (0.02 + b0.credibility * 0.09) * (hot ? 1.25 : 0.85);
+  const limit = Math.round(Math.max(b0.price, Math.min(value * 1.18, b0.price * (1 + headroom))));
+
+  if (px <= limit) {
+    bid.price = px;
+    bid.note = "Came up on a private call.";
+    next.news.unshift({
+      q: next.month, kind: "deal",
+      text: `${b0.name} came up to $${(px / 1e6).toFixed(2)}M at ${rec.address}, from $${(b0.price / 1e6).toFixed(2)}M.`,
+    });
+    return { s: next, msg: `They came up — $${(px / 1e6).toFixed(2)}M.` };
+  }
+  if (px <= limit * 1.05) {
+    const split = Math.round((px + limit) / 2);
+    bid.price = split;
+    bid.note = "Split the difference and stopped.";
+    next.news.unshift({
+      q: next.month, kind: "info",
+      text: `${b0.name} split it at ${rec.address}: $${(split / 1e6).toFixed(2)}M and no further.`,
+    });
+    return { s: next, msg: `They split it — $${(split / 1e6).toFixed(2)}M.` };
+  }
+  bid.dropped = true;
+  bid.note = "Walked when you went back to them.";
+  next.news.unshift({
+    q: next.month, kind: "warn",
+    text: `${b0.name} walked at ${rec.address}. You went back to them for $${(px / 1e6).toFixed(2)}M and they were done.`,
+  });
+  return { s: next, msg: `${b0.name} walked.` };
+}
+
+/**
+ * A NEW NUMBER ON THE SAME SIGN.
+ *
+ * Repricing used to mean delisting and relisting, which throws away the
+ * campaign, the bid list and every month the building has been on the market.
+ * No seller does that; they ring the broker. What it costs is what it costs in
+ * life: a cut tells every bidder you are motivated, and a raise mid-campaign
+ * loses the buyers who were nearly there.
+ */
+export function repriceListing(
+  s: GameState, parcels: ParcelTable, bbl: string, ask: number,
+): { s: GameState; err?: string; msg?: string } {
+  const h0 = s.holdings[bbl];
+  if (!h0?.sale) return { s, err: "That is not on the market." };
+  const rec = resolveRec(parcels, s, bbl);
+  if (!rec) return { s, err: "Unknown parcel." };
+  const px = Math.round(ask);
+  if (!Number.isFinite(px) || px <= 0) return { s, err: "Name a real number." };
+  if (px === h0.sale.ask) return { s, err: "That is the number you are already asking." };
+
+  const next = clone(s);
+  const sale = next.holdings[bbl]!.sale!;
+  const was = sale.ask;
+  const cut = px < was;
+  sale.ask = px;
+  // A cut restarts the clock the market judges you on — a repriced listing is
+  // a fresher listing, and that is most of why sellers cut.
+  if (cut) sale.listedM = next.month;
+  // Raising mid-campaign costs you the bidders who were close to the old ask.
+  if (!cut && sale.bids?.length) {
+    for (const b of sale.bids) {
+      if (b.dropped) continue;
+      if (b.price < px * 0.9 && rng(next) < 0.5) { b.dropped = true; b.note = "Left when the ask went up."; }
+    }
+  }
+  if (!cut && sale.offer && sale.offer.price < px * 0.92 && rng(next) < 0.45) {
+    delete sale.offer;
+  }
+  next.news.unshift({
+    q: next.month, kind: cut ? "info" : "warn",
+    text: cut
+      ? `Cut the ask at ${rec.address} to $${(px / 1e6).toFixed(2)}M from $${(was / 1e6).toFixed(2)}M. The phone starts again — and everybody now knows you want out.`
+      : `Raised the ask at ${rec.address} to $${(px / 1e6).toFixed(2)}M from $${(was / 1e6).toFixed(2)}M. Anyone who was close to the old number has other buildings to look at.`,
+  });
+  return { s: next, msg: cut ? "Repriced down." : "Repriced up." };
+}

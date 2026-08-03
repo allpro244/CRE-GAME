@@ -1264,7 +1264,29 @@ export function tickCityGrowth(
   // starts is followed by a quiet stretch.
   const named = (s.cityJobs ?? []).filter((j) => j.startM === s.month && j.firmId).length;
   s.startDebt = Math.min(24, (s.startDebt ?? 0) + named);
-  let n = Math.floor(rate) + (rng(s) < rate % 1 ? 1 : 0);
+
+  // WHAT THE MARKET ASKED FOR, SPENT ON ACTUAL LOTS.
+  //
+  // The rate above used to be the whole story, and it had nothing to do with
+  // the square footage the space market was simultaneously adding to rents in
+  // an anonymous queue. Now that queue is a debt (econ.startOwed) and this is
+  // where it gets worked off: enough cranes to cover the floor area the market
+  // has demanded, at whatever size the sites around here actually carry.
+  //
+  // The phase rate and the replacement-cost brake still matter — they cap how
+  // fast the debt can be worked off, so a boom cannot break ground on five
+  // years of demand in one month, and a market below replacement cost stops
+  // building even with a backlog. That is the whole cycle: demand accumulates,
+  // cranes appear, then a quiet stretch while it is absorbed.
+  const owed = s.econ.startOwed
+    ? Object.values(s.econ.startOwed).reduce((a, v) => a + Math.max(0, v), 0) : 0;
+  // a typical city building here, so the budget converts to a crane count
+  const TYPICAL_SF = 42_000;
+  const wanted = owed / TYPICAL_SF;
+  // the rate is now a CEILING on how fast the backlog clears, not the target
+  const ceiling = Math.max(0.35, rate * 6);
+  let n = Math.min(wanted, ceiling);
+  n = Math.floor(n) + (rng(s) < n % 1 ? 1 : 0);
   const paid = Math.min(n, s.startDebt ?? 0);
   s.startDebt = (s.startDebt ?? 0) - paid;
   n -= paid;
@@ -1332,7 +1354,13 @@ export function tickCityGrowth(
     if (!s.econ.cohorts) s.econ.cohorts = { office: [], retail: [], multifamily: [], industrial: [] };
     for (const [u, share] of Object.entries(cmix)) {
       const usf = Math.round(sf * (share as number));
-      if (usf > 0) s.econ.cohorts[u as BuiltClass].push({ m: deliverM, sf: usf });
+      if (usf > 0) {
+        s.econ.cohorts[u as BuiltClass].push({ m: deliverM, sf: usf });
+        // and the market's order is that much closer to filled
+        if (s.econ.startOwed) {
+          s.econ.startOwed[u as BuiltClass] = Math.max(0, (s.econ.startOwed[u as BuiltClass] ?? 0) - usf);
+        }
+      }
     }
 
     // Before it is anonymous, it is offered to the street. A developer with

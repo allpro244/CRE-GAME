@@ -500,6 +500,20 @@ export interface Econ {
   // "how much is out there somewhere". This is what makes the supply side
   // legible: you can see the wave before it lands on you.
   cohorts?: Record<BuiltClass, { m: number; sf: number }[]>;
+  /**
+   * SQUARE FEET THE SPACE MARKET HAS ASKED FOR AND THE MAP HAS NOT YET BUILT.
+   *
+   * The economy used to decide how much the city should build and drop it
+   * straight into an anonymous cohort queue, while the map placed buildings by
+   * a completely separate rule. Over fifty years the market grew the city 60%
+   * and the map gained four buildings — twenty-eight times more floor area
+   * existed in the rents than on the ground.
+   *
+   * Now it is a debt the map owes, worked off lot by lot. A burst of demand is
+   * followed by a burst of cranes and then a quiet stretch, which is also how
+   * a real pipeline behaves.
+   */
+  startOwed?: Record<BuiltClass, number>;
   completions12?: Record<BuiltClass, number>;   // trailing 12-month deliveries
   // THE MONETARY ERA. The loan index used to mean-revert at 0.03/month toward
   // a phase target between 5.0 and 7.0, clamped to 4.2-9.2 — so over a whole

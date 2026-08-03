@@ -498,7 +498,33 @@ export function tickEcon(s: GameState) {
     if (!e.cohorts) e.cohorts = { office: [], retail: [], multifamily: [], industrial: [] };
     if (!e.completions12) e.completions12 = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
     const [bLo, bHi] = BUILD_MONTHS[k];
-    if (start > 1) e.cohorts[k].push({ m: s.month + bLo + Math.round(rng(s) * (bHi - bLo)), sf: Math.round(start) });
+
+    // TWO SUPPLY UNIVERSES THAT NEVER MET, and this was the seam.
+    //
+    // This line pushed the month's construction into an anonymous cohort
+    // queue. That queue is what moves vacancy, rents and cap rates — and it is
+    // the ONLY thing that did. Meanwhile tickCityGrowth separately placed real
+    // buildings on real parcels, and the two numbers had nothing to do with
+    // each other.
+    //
+    // Measured over fifty years: the space market grew the city from 13.34M to
+    // 21.32M square feet, SIXTY PER CENT, while the map gained four buildings.
+    // The economy built twenty-eight times more floor area than the city ever
+    // showed — seven hundred buildings' worth of supply that moved the
+    // player's rents and appeared nowhere. You watched a chart climb sixty per
+    // cent while looking at a skyline that was pixel-identical to the one you
+    // started with. It is also why the demand model never moved: it is fed by
+    // changes in occupied stock per block, and the map placed four buildings
+    // in half a century.
+    //
+    // So the number stops being a cohort and becomes a BUDGET. tickCityGrowth
+    // spends it on actual lots, and pushes the cohort when a crane actually
+    // goes up. The total square footage the city builds does not change by one
+    // foot — every calibration downstream is untouched. The supply just has an
+    // address now.
+    e.startOwed = e.startOwed ?? { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+    if (start > 1) e.startOwed[k] += Math.round(start);
+    void bLo; void bHi;
     let delivered = 0;
     e.cohorts[k] = e.cohorts[k].filter((c) => {
       if (c.m <= s.month) { delivered += c.sf; return false; }

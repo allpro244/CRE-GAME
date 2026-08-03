@@ -10,3 +10,10 @@ dist-zip/
 test/.entry.ts
 test/.engine.mjs
 *.png
+
+# Throwaway diagnostic probes. These are scratch: written to answer one
+# question, read once, deleted. Anything worth keeping graduates to test/ with
+# a pnpm script behind it, the way test/banks.mjs did.
+probe*.mjs
+dbg*.mjs
+check*.mjs

@@ -2597,11 +2597,61 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.dynGroup.add(new THREE.Mesh(mk(T), this.wallMat));
       this.dynGroup.add(new THREE.Mesh(mk(R2), this.roofMat));
       if (item.construction) {
+        // A TOWER CRANE, AND NOT THE SAME ONE TWICE.
+        //
+        // There was a crane here already — a smooth cylinder and a 26 m box —
+        // but it stood at cx+6, cy+6 with its jib pointing down +x on EVERY
+        // site in the city, forever. Identical and identically oriented, which
+        // is the same wallpaper problem the facades had: the eye reads the
+        // repetition long before it reads any single object.
+        //
+        // A real one slews. It has a counter-jib with a concrete block on it
+        // to balance the load, a trolley somewhere out along the jib, and a
+        // hook on a line hanging from the trolley — and the hook is the part
+        // that tells you the thing is working rather than parked.
         const orange = this.propMaterial(0xc2803a, false);
+        const grey = this.propMaterial(0x8d9096, false);
+        const k = keyOf(item.bbl);
+        const bear = hash01(k, this.citySeed ^ 0x517) * Math.PI * 2;
+        const ca = Math.cos(bear), sa = Math.sin(bear);
+        // stand it off a corner of the site rather than in the middle of it
+        const off = 4.5 + hash01(k ^ 0x31, this.citySeed) * 3.5;
+        const mx = cx + ca * off, my = cy + sa * off;
+        const mastH = h + 12 + hash01(k ^ 0x77, this.citySeed) * 10;
+        const jib = 22 + hash01(k ^ 0x99, this.citySeed) * 16;
+        const back = jib * 0.34;
+        // the trolley runs out along the jib, and the hook hangs off it
+        const tro = 0.35 + hash01(k ^ 0xab, this.citySeed) * 0.5;
+        const tx = mx + ca * jib * tro, ty = my + sa * jib * tro;
+        const hook = mastH - 4 - hash01(k ^ 0xcd, this.citySeed) * (mastH - h * 0.4 - 6);
+        const at = (g: THREE.BufferGeometry, x: number, y: number, z: number) =>
+          g.rotateZ(bear).translate(x, y, z);
         this.dynGroup.add(
-          new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, h + 16, 6).rotateX(Math.PI / 2).translate(cx + 6, cy + 6, (h + 16) / 2), orange),
-          new THREE.Mesh(new THREE.BoxGeometry(26, 1.4, 1.4).translate(cx + 14, cy + 6, h + 15), orange),
+          // mast, on a wider foot so it does not look balanced on a pin
+          new THREE.Mesh(at(new THREE.CylinderGeometry(0.42, 0.55, mastH, 6).rotateX(Math.PI / 2), mx, my, mastH / 2), orange),
+          new THREE.Mesh(at(new THREE.BoxGeometry(3.2, 3.2, 1.0), mx, my, 0.5), grey),
+          // jib forward, counter-jib back, and the counterweight that pays for it
+          new THREE.Mesh(at(new THREE.BoxGeometry(jib, 1.1, 1.3), mx + ca * jib / 2, my + sa * jib / 2, mastH - 1.4), orange),
+          new THREE.Mesh(at(new THREE.BoxGeometry(back, 1.3, 1.5), mx - ca * back / 2, my - sa * back / 2, mastH - 1.4), orange),
+          new THREE.Mesh(at(new THREE.BoxGeometry(3.0, 2.2, 2.0), mx - ca * back, my - sa * back, mastH - 1.6), grey),
+          // operator's cab, at the slewing ring
+          new THREE.Mesh(at(new THREE.BoxGeometry(1.8, 1.8, 1.9), mx + ca * 1.6, my + sa * 1.6, mastH - 3.4), grey),
+          // the hoist line and the hook block — the part that says it is working
+          new THREE.Mesh(at(new THREE.CylinderGeometry(0.09, 0.09, mastH - 1.4 - hook, 4).rotateX(Math.PI / 2), tx, ty, (mastH - 1.4 + hook) / 2), grey),
+          new THREE.Mesh(at(new THREE.BoxGeometry(1.0, 0.8, 1.0), tx, ty, hook), grey),
         );
+        // SITE HOARDING. A job with no fence around it is a building that grew.
+        for (let i = 0; i < ring.length; i++) {
+          const a2 = ring[i], b2 = ring[(i + 1) % ring.length];
+          const dx = b2[0] - a2[0], dy = b2[1] - a2[1];
+          const L = Math.hypot(dx, dy);
+          if (L < 3) continue;
+          this.dynGroup.add(new THREE.Mesh(
+            new THREE.BoxGeometry(L, 0.22, 2.2)
+              .rotateZ(Math.atan2(dy, dx))
+              .translate((a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2, 1.1),
+            orange));
+        }
       }
     }
     this.sunDirty = true;

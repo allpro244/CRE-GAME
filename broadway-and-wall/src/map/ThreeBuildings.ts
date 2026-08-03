@@ -83,6 +83,10 @@ const DECO_TINT: Record<string, [number, number, number]> = {
   banddeck: [0.92, 0.88, 0.78], bandroof: [0.40, 0.52, 0.43], bandpost: [0.30, 0.28, 0.26],
   // whitewashed clapboard and slate — the meeting house and the town hall
   civic: [1.16, 1.15, 1.10], civicroof: [0.44, 0.46, 0.50],
+  // raw concrete and the galvanised headhouse on top of it — grain elevators
+  // are the one industrial building taller than the district around them, and
+  // they are not painted, they are poured
+  silo: [0.80, 0.79, 0.75], siloroof: [0.52, 0.54, 0.55],
 };
 
 // facade / surface styles

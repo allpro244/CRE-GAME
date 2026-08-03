@@ -618,6 +618,7 @@ export function generateCity(cfg) {
 
   const parcels = { type: "FeatureCollection", features: [] };
   const buildings = { type: "FeatureCollection", features: [] };
+  const builtLots = [];   // the landmark pass picks its sites out of this
   let blockNo = 1, binNo = 1000001;
 
   for (const block of blocks) {
@@ -713,7 +714,7 @@ export function generateCity(cfg) {
         const mat = h * h * 7.5 * (fl.matGain ?? 1);
         let coverage;
         if (areaM2 > 240 && rand() < towerP) {
-          floors = Math.round((rr(7, 12) + h * h * rr(10, 26)) * (0.86 + 0.20 * Math.min(2.4, plate)));
+          floors = Math.round((rr(7, 12) + h * h * rr(10, 23)) * (0.86 + 0.20 * Math.min(2.4, plate)));
           coverage = rr(0.42, 0.58);
         } else if (fl.maxFloors > 5 && rand() < 0.18 + h * 0.34) {
           floors = Math.round(rr(3, 6) + mat * rr(0.55, 1.25));
@@ -825,6 +826,9 @@ export function generateCity(cfg) {
       });
 
       if (!vacant && footprint) {
+        builtLots.push({ h, areaM2, floors, cls, lotArea,
+                         pf: parcels.features[parcels.features.length - 1],
+                         bi: buildings.features.length, c, bbl });
         buildings.features.push({
           type: "Feature",
           id: binNo,
@@ -983,10 +987,21 @@ export function generateCity(cfg) {
       const a2 = (k / 8) * Math.PI * 2;
       oct.push([lx + 3.1 * Math.cos(a2), ly + 3.1 * Math.sin(a2)]);
     }
-    addDeco(oct, 15, 0, "light");
-    const cap = oct.map(([x2, y2]) => [lx + (x2 - lx) * 1.25, ly + (y2 - ly) * 1.25]);
-    addDeco(cap, 16.6, 14.2, "lightcap");
-    addDeco(rect(lx + 9, ly + 2, 7, 5, rr(0, 30)), 3.6, 0, "shed");
+    // A TOWER TAPERS. Fifteen metres of straight octagon with a shed beside it
+    // is a navigation mark; what a harbour town actually has on its headland
+    // is a stone cone you can see from every deck in the roads. Six courses,
+    // each a little narrower and each with its own step, then the gallery and
+    // the lantern — and the keeper gets a house, because somebody lived there.
+    const ring = (f) => oct.map(([x2, y2]) => [lx + (x2 - lx) * f, ly + (y2 - ly) * f]);
+    const hK = rr(4.6, 5.4);
+    for (let k = 0; k < 6; k++) addDeco(ring(1.34 - k * 0.13), hK * (k + 1), hK * k, "light");
+    addDeco(ring(1.62), hK * 6 + 1.5, hK * 6, "lightcap");            // gallery
+    addDeco(ring(0.92), hK * 6 + 4.6, hK * 6 + 1.5, "light");         // lantern room
+    addDeco(ring(1.06), hK * 6 + 6.0, hK * 6 + 4.6, "lightcap");      // the roof over the lamp
+    const ka = rr(0, 30);
+    addDeco(rect(lx + 11, ly + 3, 11, 7, ka), 4.4, 0, "civic");       // keeper's house
+    addDeco(rect(lx + 11, ly + 3, 12.2, 8.2, ka), 6.2, 4.4, "civicroof");
+    addDeco(rect(lx + 3.5, ly + 3, 5.5, 4, ka), 3.0, 0, "shed");      // the oil store
   }
 
   // --- context --------------------------------------------------------------
@@ -1180,6 +1195,92 @@ export function generateCity(cfg) {
       addDeco(rect(c[0], c[1], 1.6, 1.6, ang), 41, 37.5, "civicroof");
     }
   });
+
+  // --- THE LANDMARKS ---------------------------------------------------------
+  //
+  // Measured on the generated city: the tallest building beat the second
+  // tallest by three per cent, and there were seven local maxima above sixty
+  // per cent of the peak. That is not a skyline, it is a comb. Every real
+  // town has a handful of buildings that are the answer to "which one is
+  // that" from the water, and none of them are the tallest by a nose.
+  //
+  // The rule for each of them is the rule the real one was built by — the
+  // tower goes on the most land under the dearest ground, the light goes at
+  // the harbour mouth, the elevators go where the deep water meets the rail.
+  // Nothing here is placed by hand, so every seed gets its own.
+  {
+    // THE PEAK. A real tax lot, not scenery: it has a BBL, an owner and a
+    // price, and you can buy it. It is the site with the most land under the
+    // dearest ground, which is how the tallest building in a city actually
+    // gets chosen — and it is tallest by a third, not by three per cent,
+    // because that is the difference between a landmark and a tall building.
+    const site = builtLots.filter((x) => x.areaM2 > 400)
+      .sort((a, b) => (b.h ** 2 * Math.sqrt(b.areaM2)) - (a.h ** 2 * Math.sqrt(a.areaM2)))[0];
+    if (site) {
+      const tallest = builtLots.reduce((m, x) => Math.max(m, x.floors), 0);
+      // Tallest by a third, and capped: this is a harbour town with a
+      // sixteen-metre median, not a financial capital. Fifty-two floors is
+      // Hartford or Tulsa — a building the whole state knows — and it is the
+      // right ceiling for a city this size. Above that it stops being the
+      // landmark and starts being a different city.
+      const want = Math.min(52, Math.max(site.floors + 8, Math.round(tallest * rr(1.26, 1.46))));
+      const pp = site.pf.properties;
+      pp.numfloors = want;
+      pp.bldgarea = Math.round((pp.bldgarea / Math.max(1, site.floors)) * want);
+      pp.assesstot = pp.assessland + Math.round(pp.bldgarea * rr(200, 340) * 0.45);
+      pp.landmark = "peak";
+      const bf = buildings.features[site.bi];
+      if (bf) {
+        bf.properties.heightroof = +((want * 3.55 + rr(2, 6)) * 3.28084).toFixed(1);
+        // A TOWER IS SLENDER. Left on its own plate the peak came out as a
+        // fifty-storey slab the width of the block, which is a car park with
+        // windows. Nobody builds that: above about thirty floors the lift
+        // core, the daylight and the wind all argue for a small plate, and
+        // slenderness is most of why a tall building looks tall. So the
+        // footprint is pulled in toward its own centre and the lot keeps the
+        // rest as its plaza — which is exactly the trade the zoning bonus
+        // that produced these towers was written to buy.
+        const ring = bf.geometry.coordinates[0];
+        let cx = 0, cy = 0;
+        for (let k = 0; k < ring.length - 1; k++) { cx += ring[k][0]; cy += ring[k][1]; }
+        cx /= ring.length - 1; cy /= ring.length - 1;
+        const f = want > 40 ? 0.52 : want > 28 ? 0.62 : 0.74;
+        bf.geometry.coordinates[0] = ring.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f]);
+        pp.bldgarea = Math.round(pp.bldgarea * f * f);
+        pp.assesstot = pp.assessland + Math.round(pp.bldgarea * rr(220, 360) * 0.45);
+      }
+    }
+
+    const gc = cfg.cores[0]?.xy ?? [0, 0];
+
+    // THE ELEVATORS. Where the deep water meets the rail: a head house and a
+    // rank of cylinders, which the renderer draws as many-sided prisms. Grain
+    // silos are the one industrial building that is taller than the district
+    // around it, and a working harbour without them is a marina.
+    const ind = builtLots.filter((x) => x.cls === "F1" || x.cls === "F9" || x.cls === "E9");
+    const quay = ind.length
+      ? ind.sort((a, b) => Math.hypot(b.c[0] - gc[0], b.c[1] - gc[1]) - Math.hypot(a.c[0] - gc[0], a.c[1] - gc[1]))[0].c
+      : null;
+    if (quay) {
+      const qa = rr(0, 180), t = (qa * Math.PI) / 180;
+      const along = [Math.cos(t), Math.sin(t)];
+      const poly = (cx, cy, r, n) => {
+        const out = [];
+        for (let k = 0; k < n; k++) out.push([cx + r * Math.cos((k / n) * Math.PI * 2), cy + r * Math.sin((k / n) * Math.PI * 2)]);
+        return out;
+      };
+      const nSilo = Math.round(rr(6, 9));
+      for (let k = 0; k < nSilo; k++) {
+        const cx = quay[0] + along[0] * (k - nSilo / 2) * 9.4;
+        const cy = quay[1] + along[1] * (k - nSilo / 2) * 9.4;
+        addDeco(poly(cx, cy, 4.5, 10), rr(30, 34), 0, "silo");
+        addDeco(poly(cx, cy, 4.5, 10), rr(35, 37.5), rr(30, 34), "siloroof");
+      }
+      addDeco(rect(quay[0] - along[1] * 11, quay[1] + along[0] * 11, nSilo * 9.4, 11, qa), 14, 0, "shed");
+      addDeco(rect(quay[0] + along[0] * (nSilo / 2) * 9.4, quay[1] + along[1] * (nSilo / 2) * 9.4, 12, 12, qa), 46, 0, "silo");
+    }
+  }
+
 
   // STREET FURNITURE. A rail runs the whole waterfront; the benches are
   // placed further down, once the promenade has been added to the walks.

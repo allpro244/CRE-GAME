@@ -188,6 +188,16 @@ vec3 aerial(vec3 c, vec3 p, vec3 cam) {
   return mix(c, HAZE_COL, clamp(f, 0.0, 1.0) * 0.47);
 }`;
 
+/** Twice the signed area of a ring — enough to compare two footprints. */
+function ringArea(r: [number, number][]): number {
+  let a = 0;
+  for (let i = 0; i < r.length; i++) {
+    const [x1, y1] = r[i], [x2, y2] = r[(i + 1) % r.length];
+    a += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(a);
+}
+
 const PROP_VERT = /* glsl */ `
 // instanceColor is declared for us when the mesh carries one
 varying vec3 vN;
@@ -805,9 +815,13 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private timeUni = { value: 0 };
   private waterMat: THREE.ShaderMaterial | null = null;
   private lastFrame = 0;
-  private posAttrs: THREE.BufferAttribute[] = [];
-  private rangesByBBL = new Map<string, { attr: number; r: Ranges }[]>();
+  /** Exposed for playtests: the only way to assert a demolition really happened. */
+  posAttrs: THREE.BufferAttribute[] = [];
+  rangesByBBL = new Map<string, { attr: number; r: Ranges }[]>();
   private lotRings = new Map<string, [number, number][]>(); // vacant-lot footprints (meters)
+  private ringByBBL = new Map<string, [number, number][]>(); // EVERY lot's footprint, built or not
+  /** Exposed (not private) so a playtest can assert a demolition actually happened. */
+  propsByBBL = new Map<string, { mesh: THREE.InstancedMesh; i: number }[]>();
   private flattened = new Set<string>();
   private dynGroup = new THREE.Group();
   private shadowTex: THREE.Texture | null = null;
@@ -862,7 +876,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const W = blank();
     const R = blank();
     const wallRanges: { bbl: string; r: Ranges }[] = [], roofRanges: { bbl: string; r: Ranges }[] = [];
-    const props: { kind: number; x: number; y: number; z: number; s: number; rot: number }[] = [];
+    // EVERY PROP KNOWS WHICH BUILDING IT IS STANDING ON. Water tanks, cooling
+    // towers, aerials and fire escapes were pushed into scene-level instanced
+    // meshes with no reference back to a deed, so when a building came down
+    // its roof furniture stayed hanging in the air over the empty lot. One
+    // field fixes that.
+    const props: { kind: number; x: number; y: number; z: number; s: number; rot: number; b?: string }[] = [];
 
     const volsPerBBL = new Map<string, number>();
     for (const v of this.volumes) if (v.b && !v.k) volsPerBBL.set(v.b, (volsPerBBL.get(v.b) ?? 0) + 1);
@@ -1024,6 +1043,16 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
       const wallStart = W.pos.length / 3;
       const roofStart = R.pos.length / 3;
+
+      // A FOOTPRINT FOR EVERY DEED. lotRings only ever recorded VACANT lots,
+      // which is why demolishing a building you bought did nothing: the code
+      // that clears a lot looked the ring up first and gave up when it was
+      // missing. Keep the largest volume's ring for buildings made of several.
+      if (v.b) {
+        const prev = this.ringByBBL.get(v.b);
+        if (!prev || Math.abs(area) > ringArea(prev)) this.ringByBBL.set(v.b, ring);
+      }
+      const propStart = props.length;
 
       // ---- vacant lot: gravel pad + low fence ------------------------------
       if (v.k) {
@@ -1306,6 +1335,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           props.push({ kind: 5, x: cx + jit(1 + k * 2, 7), y: cy + jit(2 + k * 2, 6), z: zc, s: 1, rot: 0 });
         }
       }
+      if (v.b) for (let i = propStart; i < props.length; i++) props[i].b = v.b;
     }
 
     const mkGeom = (T: typeof W) => {
@@ -1408,6 +1438,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           new THREE.Vector3(p.s, p.s, p.s),
         );
         mesh.setMatrixAt(i, m);
+        // so a demolition can find this instance again
+        if (p.b) {
+          const list = this.propsByBBL.get(p.b);
+          if (list) list.push({ mesh, i });
+          else this.propsByBBL.set(p.b, [{ mesh, i }]);
+        }
       });
       this.scene.add(mesh);
     }
@@ -1945,12 +1981,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   setPlayerBuildings(items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean }[]) {
     this.dynGroup.clear();
     for (const item of items) {
-      const ring = this.lotRings.get(item.bbl);
-      if (!ring) continue;
-      // FLATTEN FIRST, ALWAYS. Whatever the generator put on this lot comes
-      // off the moment the game says something else is there — including when
-      // what is there is nothing.
+      // FLATTEN FIRST, ALWAYS — and BEFORE the ring lookup, which is the whole
+      // bug. Whatever the generator put on this lot comes off the moment the
+      // game says something else is there, including when what is there is
+      // nothing. This line used to sit below a `continue` that fired for every
+      // building the player had BOUGHT rather than built, so demolishing a
+      // purchased building flattened precisely nothing.
       if (!this.flattened.has(item.bbl)) this.flattenLot(item.bbl);
+      const ring = this.lotRings.get(item.bbl) ?? this.ringByBBL.get(item.bbl);
+      if (!ring) continue;
       // A DEMOLISHED LOT IS A LOT. `Math.max(3, heightM)` below meant a cleared
       // site drew a three-metre glass box where the building had been, so
       // knocking something down appeared to do nothing at all. Nought height
@@ -2033,17 +2072,41 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.map.triggerRepaint();
   }
 
-  // collapse a vacant lot's fence when construction starts (gravel stays)
+  /**
+   * TAKE THE WHOLE BUILDING DOWN.
+   *
+   * This flattened attribute 0 only — the walls — and left the roof cap
+   * floating at forty metres with its water tower still on it. A demolition
+   * that leaves the roof in the sky is not a demolition. Walls, roof and every
+   * piece of rooftop furniture go together, which is what a wrecking crew does.
+   */
   private flattenLot(bbl: string) {
     this.flattened.add(bbl);
     const ranges = this.rangesByBBL.get(bbl);
-    if (!ranges) return;
-    for (const { attr, r } of ranges) {
-      if (attr !== 0) continue;
-      const arr = this.posAttrs[0].array as Float32Array;
-      for (let i = r.start; i < r.start + r.count; i++) arr[i * 3 + 2] = Math.min(arr[i * 3 + 2], 0.02);
+    if (ranges) {
+      for (const { attr, r } of ranges) {
+        const pa = this.posAttrs[attr];
+        if (!pa) continue;
+        const arr = pa.array as Float32Array;
+        for (let i = r.start; i < r.start + r.count; i++) arr[i * 3 + 2] = Math.min(arr[i * 3 + 2], 0.02);
+        pa.needsUpdate = true;
+      }
     }
-    this.posAttrs[0].needsUpdate = true;
+    this.hideProps(bbl);
+    this.map.triggerRepaint();
+  }
+
+  /** Scale a building's rooftop and facade props to nothing. */
+  private hideProps(bbl: string) {
+    const list = this.propsByBBL.get(bbl);
+    if (!list) return;
+    const m = new THREE.Matrix4();
+    for (const { mesh, i } of list) {
+      mesh.getMatrixAt(i, m);
+      m.scale(new THREE.Vector3(0, 0, 0));
+      mesh.setMatrixAt(i, m);
+      mesh.instanceMatrix.needsUpdate = true;
+    }
   }
 
   setTints(tints: Map<string, [number, number, number]>) {

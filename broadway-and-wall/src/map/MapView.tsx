@@ -144,6 +144,11 @@ export default function MapView() {
                 : undefined,
             });
             threeRef.current = layer;
+            // A handle for automated playtests, same as window.__map. The 3D
+            // layer is the one part of this game whose correctness cannot be
+            // asserted from state alone — you have to be able to ask the
+            // geometry how tall it still is.
+            (window as unknown as { __three?: unknown }).__three = layer;
             map.addLayer(layer);
           })
           .catch(() => {

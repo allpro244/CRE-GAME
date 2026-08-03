@@ -213,11 +213,11 @@ function chamfer(ring, i, cut) {
 export const FLAVOR = {
   // `assemble` is how hard the twentieth century bought this district up and
   // threw the lots together. Downtown hardest, row housing barely at all.
-  core:       { lot: [380, 1050, 170, 32, 7],  far: 15, vac: 0.26, towerGate: 1.0,  maxFloors: 99, assemble: 1.30, yr: [1925, 1960, 0.30, 1960, 2018] },
-  old:        { lot: [320, 1050, 150, 27, 14], far: 12, vac: 0.26, towerGate: 0.5,  maxFloors: 14, assemble: 0.85, yr: [1885, 1945, 0.70, 1950, 1990] },
-  resi:       { lot: [400, 900, 180, 26, 6],   far: 7,  vac: 0.32, towerGate: 0.03, maxFloors: 7,  assemble: 0.40, yr: [1900, 1950, 0.60, 1955, 1995] },
-  industrial: { lot: [800, 2300, 340, 46, 5],  far: 6,  vac: 0.40, towerGate: 0.0,  maxFloors: 5,  assemble: 1.05, yr: [1915, 1978, 1.00, 1915, 1978] },
-  modern:     { lot: [430, 1250, 195, 36, 6],  far: 13, vac: 0.42, towerGate: 0.12, maxFloors: 40, assemble: 1.00, yr: [1972, 2024, 1.00, 1972, 2024] },
+  core:       { lot: [380, 1050, 170, 32, 7],  far: 15, vac: 0.26, towerGate: 1.0,  maxFloors: 99, assemble: 1.30, matGain: 1.00, yr: [1925, 1960, 0.30, 1960, 2018] },
+  old:        { lot: [320, 1050, 150, 27, 14], far: 12, vac: 0.26, towerGate: 0.5,  maxFloors: 14, assemble: 0.85, matGain: 0.72, yr: [1885, 1945, 0.70, 1950, 1990] },
+  resi:       { lot: [400, 900, 180, 26, 6],   far: 7,  vac: 0.32, towerGate: 0.03, maxFloors: 7,  assemble: 0.40, matGain: 0.26, yr: [1900, 1950, 0.60, 1955, 1995] },
+  industrial: { lot: [800, 2300, 340, 46, 5],  far: 6,  vac: 0.40, towerGate: 0.0,  maxFloors: 5,  assemble: 1.05, matGain: 0.10, yr: [1915, 1978, 1.00, 1915, 1978] },
+  modern:     { lot: [430, 1250, 195, 36, 6],  far: 13, vac: 0.42, towerGate: 0.12, maxFloors: 40, assemble: 1.00, matGain: 0.88, yr: [1972, 2024, 1.00, 1972, 2024] },
 };
 
 // WHAT GETS BUILT WHERE.
@@ -628,6 +628,34 @@ export function generateCity(cfg) {
     const heat = coreHeat(bc);
     let houseNo = Math.round(rr(1, 60));
     const namedStreet = pick(cfg.streets[d] ?? cfg.streets.default);
+    // ------------------------------------------------------ THE CORNICE LINE
+    //
+    // Measured on the generated city: the mean spread of building heights
+    // WITHIN a block was 7.1m against 7.9m BETWEEN blocks — a ratio of 0.90,
+    // which says a block was very nearly as jumbled inside itself as the whole
+    // city was across all of it. Streets do not look like that. The buildings
+    // on one block went up in the same decade, under the same code, for the
+    // same rents and the same tenants, and they meet the sky along a shared
+    // line. That line is why a street wall reads as a WALL and not as a bar
+    // chart, and it is the reason a tower is legible when one does break it.
+    //
+    // So height is rolled ONCE here, for the block, and each building is
+    // mostly that with a little of its own on top. Towers ignore it entirely —
+    // a tower that respected the cornice would not be a tower.
+    //
+    // The datum is not read off the value surface alone. Blocks differ because
+    // they were built at different moments, for different money, by people with
+    // different nerve — a block that went up in one go for a syndicate is taller
+    // than the block behind it that filled in lot by lot over forty years, and
+    // they can be the same distance from the same corner. `ambition` is that,
+    // and it is what makes the fabric read as having a HISTORY rather than as a
+    // smooth function of distance from downtown.
+    const blkFl = flavorOf(d);
+    const ambition = rr(0.58, 1.62);
+    const blockDatum = Math.max(1, Math.round(
+      ((blkFl.maxFloors <= 5 ? rr(1, 3) : rr(2, 4.6))
+       + heat * heat * 7.5 * (blkFl.matGain ?? 1) * rr(0.45, 1.05)) * ambition,
+    ));
 
     const lots = [];
     const fullBlockP = cfg.districts[d].fullBlockP ?? 0.05;
@@ -662,18 +690,43 @@ export function generateCity(cfg) {
         // anyone assembles land in the first place.
         const plate = areaM2 / 620;                    // 1.0 = an ordinary site
         const big = Math.max(0, Math.min(3.2, plate - 1));
-        const towerP = Math.min(0.34, (h * h * 0.13 + 0.055 * big) * fl.towerGate);
+        const towerP = Math.min(0.40, (h * h * 0.16 + 0.055 * big) * fl.towerGate);
+        // ------------------------------------------------------- THE MAT
+        //
+        // THE CITY WAS A PLATEAU. Measured across the whole heat surface, in
+        // five equal bands from the coldest ground to the dearest: the median
+        // building was THREE STOREYS at heat 0.07, and THREE STOREYS at heat
+        // 1.00. p90 crawled from four floors to six. Only the 99th percentile
+        // moved at all. So the skyline was a flat carpet of walk-ups with a
+        // handful of towers standing in it like flagpoles, and the towers were
+        // never the problem — the carpet was.
+        //
+        // What makes a downtown look like a downtown is not its tallest
+        // building, it is that its ORDINARY building is eight storeys while
+        // the ordinary building four blocks out is three. That gradient is
+        // the whole read of a city from the air, and it is the one thing the
+        // generator did not have. `mat` is it: the floor count that dear
+        // ground adds to everything standing on it, before any tower rolls.
+        // It is squared in heat because land value is, and it is scaled per
+        // district because a dear block in a row-house neighbourhood gets
+        // brownstones, not a mid-rise.
+        const mat = h * h * 7.5 * (fl.matGain ?? 1);
         let coverage;
         if (areaM2 > 240 && rand() < towerP) {
-          floors = Math.round((rr(7, 12) + h * h * rr(6, 16)) * (0.86 + 0.20 * Math.min(2.4, plate)));
-          coverage = rr(0.46, 0.62);
-        } else if (fl.maxFloors > 5 && rand() < 0.18 + h * 0.22) {
-          floors = Math.round(rr(3, 6));
-          coverage = rr(0.58, 0.74);
+          floors = Math.round((rr(7, 12) + h * h * rr(10, 26)) * (0.86 + 0.20 * Math.min(2.4, plate)));
+          coverage = rr(0.42, 0.58);
+        } else if (fl.maxFloors > 5 && rand() < 0.18 + h * 0.34) {
+          floors = Math.round(rr(3, 6) + mat * rr(0.55, 1.25));
+          floors = Math.max(1, Math.round(floors * 0.22 + blockDatum * 1.20 * 0.78 + rr(-0.7, 0.7)));
+          coverage = rr(0.55, 0.72);
         } else {
-          floors = Math.round(fl.maxFloors <= 5 ? rr(1, 3) : rr(2, 4));
+          floors = Math.round((fl.maxFloors <= 5 ? rr(1, 3) : rr(2, 4)) + mat * rr(0.22, 0.78));
+          floors = Math.max(1, Math.round(floors * 0.20 + blockDatum * 0.80 + rr(-0.6, 0.6)));
           coverage = rr(0.6, 0.78);
         }
+        // A tall building does not cover its lot the way a walk-up does: the
+        // core, the light and the setback all take plate off it as it climbs.
+        if (floors > 6) coverage *= Math.max(0.72, 1.0 - (floors - 6) * 0.012);
         floors = Math.min(floors, fl.maxFloors);
         if (cls === "G1") floors = Math.min(floors, 4);
         // SHOPS DO NOT STACK. Pure retail is one or two storeys — the second

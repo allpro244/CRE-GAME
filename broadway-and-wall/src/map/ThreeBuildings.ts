@@ -1274,41 +1274,211 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         }
       } else {
         capRoof(R, ring, v.z1, meta);
-        // pre-war and deco volumes wear a projecting stone cornice
-        if ((style === S_PREWAR || style === S_ARTDECO) && v.z1 >= 10) {
-          const lip = insetRing(ring, -0.35);
-          if (lip) {
-            const cMeta = [S_CORNICE, rnd, varr, v.z1 + 0.35, fh];
-            extrudeWalls(W, lip, v.z1 - 0.55, v.z1 + 0.15, cMeta);
-            capRoof(R, lip, v.z1 + 0.15, cMeta);
+        // ------------------------------------------------- THE FIFTH FACADE
+        //
+        // FOUR CROWNS FOR A WHOLE CITY.
+        //
+        // A flat-roofed building could end in exactly four ways: a stone
+        // cornice if it was prewar or deco, a plain parapet otherwise, plus an
+        // optional green roof and — on deco towers over 45 m only — a three
+        // step cap. Everything else in the city stopped at the same rim, at
+        // the same 0.35 m projection, at the same height.
+        //
+        // That is why the skyline reads as one building. Project the game's
+        // own camera at pitch 55 over the measured stock: for the median LOW
+        // building — 279 m2 plate, three floors, 11 m, which is 92% of this
+        // city — the roof is 160 m2 of projected area against 219 m2 of wall.
+        // FORTY-TWO PER CENT OF THAT BUILDING'S PIXELS ARE ITS ROOF. For a
+        // tower the flat deck is only 12%, but the top three floors of wall
+        // are another 191 m2, so the CROWN ZONE IS 29% OF A TOWER'S PIXELS —
+        // and it is the 29% that sits against the sky, where silhouette reads.
+        //
+        // "They all look similar" is a complaint about crowns, not facades.
+        //
+        // Twelve families now, offered by era, style and height, each built
+        // out of the primitives already here. Independent hash streams, so a
+        // building's crown does not move when its wall colour does.
+        const cs = (n: number) => hash01(key ^ Math.imul(n + 1, 0x9e3779b1), this.citySeed ^ 0x00c0ffee);
+        const tall = v.z1 >= 26 && !!v.x;
+        const deco = style === S_ARTDECO;
+        const modern = style === S_GLASS || style === S_DARK || style === S_RIBBON;
+        const stone = style === S_PREWAR || deco || style === S_CORNICE;
+        // WHAT THIS BUILDING'S TOP COULD PLAUSIBLY BE. Repeats are weights.
+        const crowns: string[] = [];
+        if (v.z1 >= 12) {
+          if (stone) crowns.push("cornice", "cornice", "corbel", "decapitated");
+          if (stone && tall) crowns.push("temple", "pyramid", "lantern");
+          if (deco && tall) crowns.push("ziggurat", "ziggurat", "fin", "fin");
+          if (modern) crowns.push("mech", "mech", "slope");
+          if (modern && tall) crowns.push("amenity", "mech");
+          if (!stone && !modern) crowns.push("coping", "corbel");
+        }
+        crowns.push("coping");                       // a plain parapet is a real answer
+        const crown = crowns[Math.min(crowns.length - 1, Math.floor(cs(1) * crowns.length))];
+
+        // The material a crown is made of is rarely the material of the wall
+        // under it — that is most of what makes a top read as a top.
+        const CROWN_MAT = [S_CORNICE, S_CORNICE, S_PLAIN, S_GABLE, S_BRICK, S_MILL];
+        const cmat = deco || stone
+          ? (cs(2) > 0.72 ? S_GABLE : S_CORNICE)     // copper and slate among the stone
+          : CROWN_MAT[Math.floor(cs(2) * CROWN_MAT.length)];
+        // Beta-ish: most crowns are shallow, a few are enormous.
+        const ch = Math.max(1.2, Math.min(14, v.z1 * (0.028 + 0.087 * cs(3) * cs(4))));
+        const M = (z: number, st = cmat) => [st, rnd, varr, z, fh];
+
+        if (crown === "cornice") {
+          // A PROJECTING CORNICE, in one to three courses. The projection was
+          // hard-coded at 0.35 m on every cornice in the game; a real one runs
+          // to two metres and throws a shadow you can see from the street.
+          const courses = 1 + Math.floor(cs(5) * 3);
+          let z = v.z1 - 0.55, proj = 0.35 + 1.75 * cs(6);
+          for (let k = 0; k < courses; k++) {
+            const lip = insetRing(ring, -proj);
+            if (!lip) break;
+            const zt = z + 0.5 + 0.35 * cs(7 + k);
+            extrudeWalls(W, lip, z, zt, M(zt));
+            capRoof(R, lip, zt, M(zt));
+            z = zt; proj *= 0.55;
           }
-        } else if (v.z1 >= 6) {
-          // everything else gets a real parapet, so the roof deck sits down
-          // inside a rim instead of ending at a bare edge
-          const ph = 0.75 + (rnd % 0.5) + (v.z1 > 45 ? 0.5 : 0);
+        } else if (crown === "corbel") {
+          // CORBELLED BRICK — courses stepping OUT as they rise, under a
+          // coping. The commonest top in any nineteenth-century city and the
+          // game had no way to draw it.
+          let z = v.z1 - 0.3;
+          for (let k = 0; k < 3; k++) {
+            const lip = insetRing(ring, -(0.12 + k * 0.14));
+            if (!lip) break;
+            const zt = z + 0.42;
+            extrudeWalls(W, lip, z, zt, [style, rnd, varr, zt, fh]);
+            z = zt;
+          }
+          const cap = insetRing(ring, -(0.54 + 0.3 * cs(8)));
+          if (cap) { extrudeWalls(W, cap, z, z + 0.3, M(z + 0.3)); capRoof(R, cap, z + 0.3, M(z + 0.3)); }
+        } else if (crown === "decapitated") {
+          // THE CORNICE CAME OFF. Half the prewar stock in every American city
+          // lost its cornice to a leak, a fire code or a bill, and what is
+          // left is a raw parapet with a crude concrete cap and a scar of
+          // clean brick where the brackets were.
+          const ph = 0.9 + 0.7 * cs(9);
           extrudeWalls(W, ring, v.z1 - 0.1, v.z1 + ph, [style, rnd, varr, v.z1, fh]);
+          const cap = insetRing(ring, -0.10);
+          if (cap) { extrudeWalls(W, cap, v.z1 + ph, v.z1 + ph + 0.22, M(v.z1 + ph + 0.22, S_PLAIN)); capRoof(R, cap, v.z1 + ph + 0.22, M(v.z1 + ph + 0.22, S_PLAIN)); }
+          const inner = insetRing(ring, 0.28);
+          if (inner) capRoof(R, inner, v.z1 + ph, M(v.z1 + ph, S_PLAIN));
+        } else if (crown === "ziggurat") {
+          // Two to four stepped setbacks with usable terraces. This existed
+          // for deco towers over 45 m at a fixed three steps of fixed height;
+          // now the count, the depth and the taper all move.
+          const n = 2 + Math.floor(cs(10) * 3);
+          let step0 = ring, zc = v.z1 + 0.2, depth = 0.9 + 3.6 * cs(11);
+          for (let k = 0; k < n; k++) {
+            const inset = insetRing(step0, depth);
+            if (!inset) break;
+            const hStep = Math.max(1.4, ch * (0.55 - k * 0.09));
+            extrudeWalls(W, inset, zc, zc + hStep, [style, rnd, varr, zc + hStep, fh]);
+            capRoof(R, inset, zc + hStep, M(zc + hStep));
+            step0 = inset; zc += hStep; depth *= 0.75;
+          }
+        } else if (crown === "fin") {
+          // VERTICAL PIERS OVERRUN THE ROOFLINE. The deco move: the shaft's
+          // own mullions keep going past the last floor and the wall between
+          // them stops, so the building ends in teeth rather than a line.
+          const back = insetRing(ring, 0.55);
+          if (back) { extrudeWalls(W, back, v.z1, v.z1 + ch * 0.55, [style, rnd, varr, v.z1 + ch, fh]); capRoof(R, back, v.z1 + ch * 0.55, M(v.z1 + ch * 0.55)); }
+          const nF = ring.length;
+          for (let i = 0; i < nF; i++) {
+            const a2 = ring[i], b2 = ring[(i + 1) % nF];
+            const L = Math.hypot(b2[0] - a2[0], b2[1] - a2[1]);
+            const steps = Math.max(1, Math.floor(L / 4.2));
+            for (let k = 0; k < steps; k++) {
+              const t = (k + 0.5) / steps;
+              const px = a2[0] + (b2[0] - a2[0]) * t, py = a2[1] + (b2[1] - a2[1]) * t;
+              const w = 0.62;
+              const pier: [number, number][] = [[px - w, py - w], [px + w, py - w], [px + w, py + w], [px - w, py + w]];
+              const hP = ch * (0.7 + 0.5 * hash01(key ^ Math.imul(i * 31 + k, 2654435761), this.citySeed));
+              extrudeWalls(W, pier, v.z1 - 1.0, v.z1 + hP, M(v.z1 + hP));
+              capRoof(R, pier, v.z1 + hP, M(v.z1 + hP));
+            }
+          }
+        } else if (crown === "temple") {
+          // A COLONNADED BELVEDERE — the open loggia on top of a 1920s bank.
+          const base = insetRing(ring, 1.1 + 1.6 * cs(12));
+          if (base) {
+            extrudeWalls(W, base, v.z1, v.z1 + 0.5, M(v.z1 + 0.5));
+            const colH = Math.max(2.6, ch * 1.1);
+            const nT = base.length;
+            for (let i = 0; i < nT; i++) {
+              const a2 = base[i], b2 = base[(i + 1) % nT];
+              const L = Math.hypot(b2[0] - a2[0], b2[1] - a2[1]);
+              const steps = Math.max(1, Math.floor(L / 3.4));
+              for (let k = 0; k < steps; k++) {
+                const t = (k + 0.5) / steps;
+                const px = a2[0] + (b2[0] - a2[0]) * t, py = a2[1] + (b2[1] - a2[1]) * t, w = 0.44;
+                const col: [number, number][] = [[px - w, py - w], [px + w, py - w], [px + w, py + w], [px - w, py + w]];
+                extrudeWalls(W, col, v.z1 + 0.5, v.z1 + 0.5 + colH, M(v.z1 + 0.5 + colH));
+              }
+            }
+            const roofR = insetRing(base, -0.45) ?? base;
+            extrudeWalls(W, roofR, v.z1 + 0.5 + colH, v.z1 + 0.5 + colH + 0.55, M(v.z1 + colH + 1.05));
+            capRoof(R, roofR, v.z1 + 0.5 + colH + 0.55, M(v.z1 + colH + 1.05));
+          }
+        } else if (crown === "pyramid") {
+          const cap = insetRing(ring, 0.35);
+          const span = Math.sqrt(Math.abs(area) / 2);
+          if (cap) pitchCap(cap, v.z1, Math.max(2.4, Math.min(13, ch * 1.5)), Math.max(0.8, span * 0.42), [S_GABLE, rnd, (varr * 3.71 + rnd * 1.93) % 1, v.z1 + ch, fh]);
+        } else if (crown === "lantern") {
+          // A TIERED TOWER: two shrinking stages and a cupola. What a spire
+          // actually is, close up.
+          let r0 = ring, z = v.z1;
+          for (let k = 0; k < 3; k++) {
+            const inset = insetRing(r0, k === 0 ? 1.6 + 1.4 * cs(13) : 0.9);
+            if (!inset) break;
+            const hS = Math.max(1.6, ch * (0.9 - k * 0.22));
+            extrudeWalls(W, inset, z, z + hS, M(z + hS));
+            capRoof(R, inset, z + hS, M(z + hS));
+            r0 = inset; z += hS;
+          }
+        } else if (crown === "mech") {
+          // A LOUVRED MECHANICAL SCREEN wrapping the plate — what the top of
+          // every postwar tower in the world actually is.
+          const ph = Math.max(2.2, ch * 0.9);
+          extrudeWalls(W, ring, v.z1 - 0.1, v.z1 + ph, M(v.z1 + ph, S_MILL));
+          const inner = insetRing(ring, 0.3);
+          if (inner) capRoof(R, inner, v.z1 + ph, M(v.z1 + ph, S_PLAIN));
+        } else if (crown === "slope") {
+          // A CHAMFERED TOP. The last floor pulls in on every side and the
+          // building ends on a slope instead of a plane.
+          const cap = insetRing(ring, Math.max(0.9, Math.min(4.5, ch * 0.8)));
+          if (cap) {
+            extrudeWalls(W, ring, v.z1 - 0.1, v.z1 + 0.2, [style, rnd, varr, v.z1, fh]);
+            capRoof(R, cap, v.z1 + ch * 0.8, M(v.z1 + ch, style));
+            extrudeWalls(W, cap, v.z1 + 0.2, v.z1 + ch * 0.8, M(v.z1 + ch, style));
+          }
+        } else if (crown === "amenity") {
+          // A GLASS PENTHOUSE SET BACK BEHIND A TERRACE.
+          const deck = insetRing(ring, 0.8);
+          const box = insetRing(ring, 3.2 + 2.4 * cs(14));
+          if (deck) capRoof(R, deck, v.z1 + 0.1, M(v.z1, S_GREEN));
+          if (box) {
+            const hB = Math.max(3.0, ch * 1.1);
+            extrudeWalls(W, box, v.z1 + 0.1, v.z1 + hB, [S_GLASS, rnd, varr, v.z1 + hB, fh]);
+            capRoof(R, box, v.z1 + hB, M(v.z1 + hB, S_PLAIN));
+          }
+          extrudeWalls(W, ring, v.z1 - 0.1, v.z1 + 1.05, M(v.z1, S_CORNICE));
+        } else {
+          // FLAT COPING — a parapet with a cap on it, and the cap is not the
+          // same stuff as the wall.
+          const ph = 0.75 + 0.9 * cs(15) + (v.z1 > 45 ? 0.5 : 0);
+          extrudeWalls(W, ring, v.z1 - 0.1, v.z1 + ph, [style, rnd, varr, v.z1, fh]);
+          const cop = insetRing(ring, -0.09);
+          if (cop) { extrudeWalls(W, cop, v.z1 + ph, v.z1 + ph + 0.18, M(v.z1 + ph + 0.18)); capRoof(R, cop, v.z1 + ph + 0.18, M(v.z1 + ph + 0.18)); }
           const inner = insetRing(ring, 0.28);
           if (inner) capRoof(R, inner, v.z1 + ph, [style === S_GLASS || style === S_DARK ? S_CORNICE : style, rnd, varr, v.z1 + ph, fh]);
         }
         // some modern mid-rises grow a green roof
-        if (style === S_GLASS && v.z1 >= 15 && v.z1 <= 60 && varr > 0.62) {
+        if (style === S_GLASS && crown !== "amenity" && v.z1 >= 15 && v.z1 <= 60 && varr > 0.62) {
           const g = insetRing(ring, 1.6);
           if (g) capRoof(R, g, v.z1 + 0.08, [S_GREEN, rnd, varr, v.z1, fh]);
-        }
-        // a deco tower steps to its crown instead of stopping flat. Only on
-        // the actual roof — a setback terrace two hundred feet below the top
-        // is not where a crown goes.
-        if (style === S_ARTDECO && v.z1 >= 45 && v.x) {
-          let step0 = ring, zc = v.z1 + 0.2;
-          for (let k = 0; k < 3; k++) {
-            const inset = insetRing(step0, 1.5 + k * 0.9);
-            if (!inset) break;
-            const hStep = 3.4 - k * 0.7;
-            const cm = [style, rnd, varr, zc + hStep, fh];
-            extrudeWalls(W, inset, zc, zc + hStep, cm);
-            capRoof(R, inset, zc + hStep, [S_CORNICE, rnd, varr, zc + hStep, fh]);
-            step0 = inset; zc += hStep;
-          }
         }
         // bulkheads: the stair and lift overrun every tall building carries.
         // v.x gates it to the roof: dropped on the base tier of a wedding cake

@@ -2756,15 +2756,68 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       let cx = 0, cy = 0;
       for (const [x, y] of ring) { cx += x; cy += y; }
       cx /= ring.length; cy /= ring.length;
-      const fp = ring.map(([x, y]) => [cx + (x - cx) * 0.78, cy + (y - cy) * 0.78] as [number, number]);
       const h = Math.max(3, item.heightM);
-      const style = item.construction ? 5          // bare structure while it rises
-        : item.cls === "industrial" ? 3             // sash-window shed
-        : item.cls === "multifamily" ? 2            // modern brick
-        : item.cls === "retail" ? 7                 // ribbon storefront
-        : 0;                                        // office / mixed: curtain wall
+      // EVERY TOWER THE GAME BUILT WAS THE SAME TOWER. Style by class, and then
+      // rand 0.5, varr 0.4 — two constants — so every developed office in the
+      // city was byte-identical: same glass, same palette, one flat prism, no
+      // crown. Twenty years in, downtown was one white slab photocopied.
+      //
+      // A building's identity is now hashed off its deed, exactly like the
+      // generator's stock: WHICH facade family it wears, WHERE in that
+      // family's palette it sits, and WHAT SHAPE it is.
+      const k = keyOf(item.bbl);
+      const rnd = hash01(k, this.citySeed);
+      const varr = hash01(k ^ 0x5bf03635, Math.imul(this.citySeed, 3) + 1);
+      const sroll = hash01(k ^ 0x2c9e17, this.citySeed ^ 0xbeef);
+      // Not every modern office is curtain wall. About half are; the rest are
+      // dark glass, white precast with ribbon glazing, or stone-clad piers —
+      // the actual spread of what has gone up since 2000.
+      const style = item.construction ? 5
+        : item.cls === "industrial" ? 3
+        : item.cls === "multifamily" ? (item.floors >= 12 && sroll < 0.3 ? 0 : 2)
+        : item.cls === "retail" ? 7
+        : sroll < 0.45 ? 0 : sroll < 0.70 ? 4 : sroll < 0.85 ? 7 : 6;
       const fh2 = item.floors > 0 ? Math.max(2.6, item.heightM / item.floors) : 3.5;
-      const meta = [style, 0.5, 0.4, h, fh2];
+      const meta = [style, rnd, varr, h, fh2];
+      // THE SHAPE. One flat prism is one of five silhouettes now, picked by
+      // hash and gated by height the way the real decisions are: podium and
+      // tower is a zoning trade, the setback is a light-plane trade, and the
+      // slender point only exists where the floors justify the core.
+      const mroll = hash01(k ^ 0x77aa11, this.citySeed ^ 0x1234);
+      const inset = (f: number) => ring.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as [number, number]);
+      const B = 0.78;                                // the base plate the prism used
+      let tiers: { fp: [number, number][]; z0: number; z1: number }[];
+      const fl = Math.max(1, item.floors);
+      if (item.construction || fl < 7 || h < 22) {
+        tiers = [{ fp: inset(B), z0: 0, z1: h }];
+      } else if (mroll < 0.30) {
+        const podTop = Math.min(h * 0.28, fh2 * 3.2);
+        tiers = [
+          { fp: inset(B), z0: 0, z1: podTop },
+          { fp: inset(B * (0.60 + 0.12 * hash01(k ^ 0x51, this.citySeed))), z0: podTop, z1: h },
+        ];
+      } else if (mroll < 0.50) {
+        const cut = h * (0.62 + 0.13 * hash01(k ^ 0x52, this.citySeed));
+        tiers = [
+          { fp: inset(B), z0: 0, z1: cut },
+          { fp: inset(B * 0.74), z0: cut, z1: h },
+        ];
+      } else if (mroll < 0.65) {
+        const c1 = h * 0.45, c2 = h * 0.75;
+        tiers = [
+          { fp: inset(B), z0: 0, z1: c1 },
+          { fp: inset(B * 0.80), z0: c1, z1: c2 },
+          { fp: inset(B * 0.62), z0: c2, z1: h },
+        ];
+      } else if (mroll < 0.75 && fl >= 14) {
+        const podTop = fh2 * 2.2;
+        tiers = [
+          { fp: inset(B), z0: 0, z1: podTop },
+          { fp: inset(B * 0.52), z0: podTop, z1: h },
+        ];
+      } else {
+        tiers = [{ fp: inset(B), z0: 0, z1: h }];
+      }
       const mkBuf = () => ({
         pos: [] as number[], norm: [] as number[], u: [] as number[], style: [] as number[],
         rand: [] as number[], varr: [] as number[], top: [] as number[], fh: [] as number[],
@@ -2773,27 +2826,30 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // A building the player just finished is brand new, by definition, and
       // the campaign runs from 2000 — so it sits at the young end of the
       // 1870-2030 scale rather than anywhere in the middle of it.
-      const nowEra = 0.82;
+      const nowEra = 0.76 + 0.16 * hash01(k ^ 0xe7a, this.citySeed);
       const T = mkBuf();
       const R2 = mkBuf();
-      let perim = 0;
-      for (let i = 0; i < fp.length; i++) {
-        const a = fp[i], b = fp[(i + 1) % fp.length];
-        const dx = b[0] - a[0], dy = b[1] - a[1];
-        const len = Math.hypot(dx, dy);
-        if (len < 0.05) continue;
-        const n = [dy / len, -dx / len, 0];
-        const u0 = perim, u1 = perim + len;
-        perim += len;
-        const quad = [
-          [a[0], a[1], 0, u0], [b[0], b[1], 0, u1], [b[0], b[1], h, u1],
-          [a[0], a[1], 0, u0], [b[0], b[1], h, u1], [a[0], a[1], h, u0],
-        ];
-        for (const [x, y, z, u] of quad) {
-          T.pos.push(x, y, z); T.norm.push(n[0], n[1], n[2]); T.u.push(u);
-          T.style.push(meta[0]); T.rand.push(meta[1]); T.varr.push(meta[2]); T.top.push(meta[3]); T.fh.push(meta[4]);
-          T.era.push(nowEra);
-          T.seg.push(u0, u1); T.ccv.push(1, 1);
+      for (const tier of tiers) {
+        const tfp = tier.fp;
+        let perim = 0;
+        for (let i = 0; i < tfp.length; i++) {
+          const a = tfp[i], b = tfp[(i + 1) % tfp.length];
+          const dx = b[0] - a[0], dy = b[1] - a[1];
+          const len = Math.hypot(dx, dy);
+          if (len < 0.05) continue;
+          const n = [dy / len, -dx / len, 0];
+          const u0 = perim, u1 = perim + len;
+          perim += len;
+          const quad = [
+            [a[0], a[1], tier.z0, u0], [b[0], b[1], tier.z0, u1], [b[0], b[1], tier.z1, u1],
+            [a[0], a[1], tier.z0, u0], [b[0], b[1], tier.z1, u1], [a[0], a[1], tier.z1, u0],
+          ];
+          for (const [x, y, z, u] of quad) {
+            T.pos.push(x, y, z); T.norm.push(n[0], n[1], n[2]); T.u.push(u);
+            T.style.push(meta[0]); T.rand.push(meta[1]); T.varr.push(meta[2]); T.top.push(tier.z1); T.fh.push(meta[4]);
+            T.era.push(nowEra);
+            T.seg.push(u0, u1); T.ccv.push(1, 1);
+          }
         }
       }
       let hb = 2166136261;
@@ -2801,23 +2857,28 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       hb = hb >>> 0;
       const deck2 = item.construction ? 0 : [7, 7, 6, 6, 8, 5][hb % 6];
       const wear2 = ((hb >>> 8) % 1024) / 1024;
+      // seam bearing comes off the base plate's longest wall, whichever tier
+      const fp0 = tiers[0].fp;
       let bi2 = 0, bl2 = -1;
-      for (let i = 0; i < fp.length; i++) {
-        const q0 = fp[i], q1 = fp[(i + 1) % fp.length];
+      for (let i = 0; i < fp0.length; i++) {
+        const q0 = fp0[i], q1 = fp0[(i + 1) % fp0.length];
         const L2 = Math.hypot(q1[0] - q0[0], q1[1] - q0[1]);
         if (L2 > bl2) { bl2 = L2; bi2 = i; }
       }
-      const bx2 = bl2 > 0 ? (fp[(bi2 + 1) % fp.length][0] - fp[bi2][0]) / bl2 : 1;
-      const by2 = bl2 > 0 ? (fp[(bi2 + 1) % fp.length][1] - fp[bi2][1]) / bl2 : 0;
-      const pts = fp.map(([x, y]) => new THREE.Vector2(x, y));
-      let tris: number[][] = [];
-      try { tris = THREE.ShapeUtils.triangulateShape(pts, []); } catch { tris = []; }
-      for (const t of tris) {
-        for (const idx of t) {
-          R2.pos.push(fp[idx][0], fp[idx][1], h); R2.norm.push(0, 0, 1); R2.u.push(4);
-          R2.style.push(item.construction ? 5 : meta[0]); R2.rand.push(0.5); R2.varr.push(0.4); R2.top.push(h); R2.fh.push(fh2);
-          R2.era.push(nowEra);
-          R2.seg.push(deck2, wear2); R2.ccv.push(bx2, by2);
+      for (const tier of tiers) {
+        const tfp = tier.fp;
+        const bx2 = bl2 > 0 ? (fp0[(bi2 + 1) % fp0.length][0] - fp0[bi2][0]) / bl2 : 1;
+        const by2 = bl2 > 0 ? (fp0[(bi2 + 1) % fp0.length][1] - fp0[bi2][1]) / bl2 : 0;
+        const pts = tfp.map(([x, y]) => new THREE.Vector2(x, y));
+        let tris: number[][] = [];
+        try { tris = THREE.ShapeUtils.triangulateShape(pts, []); } catch { tris = []; }
+        for (const t of tris) {
+          for (const idx of t) {
+            R2.pos.push(tfp[idx][0], tfp[idx][1], tier.z1); R2.norm.push(0, 0, 1); R2.u.push(4);
+            R2.style.push(item.construction ? 5 : meta[0]); R2.rand.push(rnd); R2.varr.push(varr); R2.top.push(tier.z1); R2.fh.push(fh2);
+            R2.era.push(nowEra);
+            R2.seg.push(deck2, wear2); R2.ccv.push(bx2, by2);
+          }
         }
       }
       const mk = (D: typeof T) => {

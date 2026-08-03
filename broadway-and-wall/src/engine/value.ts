@@ -720,9 +720,22 @@ export function netWorth(s: GameState, parcels: Record<string, ParcelRecord>): n
     if (!rec) continue;
     nw += holdingValue(rec, s.econ, h, s.month) - (h.loan?.balance ?? 0);
   }
-  // construction in progress carries at cost minus construction debt
+  // CONSTRUCTION IN PROGRESS CARRIES AT MONEY SUNK, NOT AT THE BUDGET.
+  //
+  // This booked `costTotal` — the WHOLE build budget — the instant a shovel
+  // moved, against a loan balance that starts at zero. Measured on one
+  // groundbreaking: a $16.78M cheque lifted reported net worth $62.25M and the
+  // line of credit $41.16M. Over a run that develops continuously the worst
+  // overstatement was $1.35 BILLION, forty-five per cent of reported net
+  // worth — and because locLimit sizes the revolver off net worth and
+  // startDevelopment counts locAvailable toward its funding test, the phantom
+  // equity partly authorised the NEXT job.
+  //
+  // A half-built building is worth what has been put into it. That is what an
+  // accountant carries and it is what a lender lends against.
   for (const d of Object.values(s.developments ?? {})) {
-    nw += d.costTotal - d.loanBalance;
+    const sunk = (d.equitySpent ?? 0) + (d.drawn ?? 0) - (d.reserveUsed ?? 0);
+    nw += Math.max(0, sunk - d.loanBalance);
   }
   nw -= s.loc?.balance ?? 0;   // the line is real money owed
   // SECURITY DEPOSITS ARE NOT YOUR MONEY. They arrive as cash at signing and

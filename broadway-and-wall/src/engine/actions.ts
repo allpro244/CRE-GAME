@@ -551,6 +551,29 @@ export function listForSale(
     // everybody who might buy it. Two to four months, then offers are due on a
     // date everyone knows, which is the entire mechanism by which a marketed
     // sale finds a price a quiet one never will.
+    // A CAMPAIGN IS NOT A FREE OPTION ON SIX DRAWS.
+    //
+    // Listing cost nothing and delisting cost nothing — the fee only bit on a
+    // close. So the optimal play was to run a process, read up to six bids,
+    // walk away unless one landed in the tail, and rerun it next year.
+    // Measured: 557 campaigns, 427 walked away from at zero cost, 98 sales at
+    // a realised median 1.21x appraisal. You sold at the ceiling of the
+    // distribution every single time and paid nothing for the misses.
+    //
+    // In life you pay the broker's marketing budget up front — the book, the
+    // photography, the mailing — and you pay it whether or not it trades. And
+    // a building the market has already been shown twice is a building
+    // everyone has already passed on.
+    const since = next.month - (next.holdings[bbl].lastCampaignM ?? -999);
+    if (since < 24) {
+      return { s, err: `You ran a process on this one ${since} months ago and pulled it. `
+        + `Every buyer in town has seen the book — going back out now tells them only that nobody bid. `
+        + `Wait until ${monthLabel((next.holdings[bbl].lastCampaignM ?? 0) + 24)}, or sell it quietly.` };
+    }
+    const marketing = Math.round(ask * 0.0035);
+    if (next.cash < marketing) return { s, err: `A campaign costs $${(marketing / 1000).toFixed(0)}K in marketing up front. You do not have it.` };
+    next.cash -= marketing;
+    logBooks(next, "ga", marketing);
     const weeks = Math.round(rrange(next, 2, 4));
     next.holdings[bbl].sale = {
       ask: Math.round(ask), listedM: next.month, mode: "marketed",
@@ -640,7 +663,21 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
     // three-bid list clears a per cent or two above appraisal and a thin
     // one-bid market clears just under it, which is the honest trade.
     const enthusiasm = rng(s);
-    const price = Math.round(value * (0.90 + 0.26 * enthusiasm * Math.max(0.55, Math.min(1.35, phase))));
+    // CENTRED ON APPRAISAL, NOT ABOVE IT.
+    //
+    // This ran [0.90, 1.251] at the top of the cycle: the mean single bid was
+    // 1.076x appraisal and the expected MAX OF SIX was 1.201x. The comment two
+    // lines up claims a normal three-bid list clears "a per cent or two above
+    // appraisal" — it was clearing sixteen. Since the tape sells to you at a
+    // median 0.951x, that is a structural eighteen-point round trip against
+    // appraisal, repeatable, on 29% equity.
+    //
+    // Measured: bolted onto an ordinary bot it took the 50-year median from
+    // $73M to $619M, and with the 1031 to $706M with ZERO failures — the tenth
+    // percentile of the exploit beat the disciplined reference median by 40%.
+    // Now [0.86, 1.09] at peak: E[max of 3] ~1.03, E[max of 6] ~1.06, which is
+    // what the calibration always claimed.
+    const price = Math.round(value * (0.86 + 0.20 * enthusiasm * Math.max(0.55, Math.min(1.15, phase))));
     // A buyer stretching past the pack is the one most likely to find a reason
     // to come back to you about it later.
     const credibility = Math.max(0.2, Math.min(0.97, 1.0 - 0.55 * enthusiasm + (rng(s) - 0.5) * 0.3));
@@ -822,7 +859,12 @@ function unsolicitedBidder(
 
 export function delist(s: GameState, bbl: string): GameState {
   const next = clone(s);
-  if (next.holdings[bbl]?.sale) delete next.holdings[bbl].sale;
+  const h = next.holdings[bbl];
+  if (h?.sale) {
+    // A pulled campaign is remembered. The market saw the book.
+    if (h.sale.mode === "marketed") h.lastCampaignM = next.month;
+    delete h.sale;
+  }
   return next;
 }
 

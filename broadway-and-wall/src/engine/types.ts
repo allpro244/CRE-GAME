@@ -176,6 +176,8 @@ export interface Holding {
    * years before it is worth anything as a site.
    */
   leasingHold?: boolean;
+  /** When a marketed campaign on this deed was last pulled. The market remembers. */
+  lastCampaignM?: number;
   deliveredM?: number; // ground-up completion: new space leases with momentum
   // On the market. `countered` records that you have already been back to this
   // buyer once — a counter is a real move with a real cost, not a slider you

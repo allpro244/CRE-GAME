@@ -1,10 +1,10 @@
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
-import type { GameState, Contract, DevUse } from "@/engine/types";
+import type { GameState, Contract, DevUse, UseMix, BuiltClass } from "@/engine/types";
 import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfolioQuarterlyCF } from "@/engine/sim";
 import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, startRenovation,  setBroker, assembleLots, grantGroundLease, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
-import { respondLOI, buildSpecSuites, blendExtend, type LOIAction } from "@/engine/leasing";
+import { respondLOI, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, type LOIAction } from "@/engine/leasing";
 import { recapitalise } from "@/engine/equity";
 import { setInsurance } from "@/engine/peril";
 import { fileVariance } from "@/engine/zoning";
@@ -54,7 +54,7 @@ interface AppState {
   approach: (bbl: string) => void;
   respondLoi: (id: number, action: LOIAction, fund?: boolean, counter?: { rentPsf?: number; tiPsf?: number }) => void;
   refi: (bbl: string, product: string, lev?: number) => void;
-  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number) => void;
+  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>> }) => void;
   offer: (bbl: string, price: number) => void;
   closeDeal: (product: string, lev: number) => void;
   acceptCounter: () => void;
@@ -70,6 +70,8 @@ interface AppState {
   bindInsurance: (deductiblePct: number, flood: boolean) => void;
   prebuild: (bbl: string, use: string, sf: number) => void;
   extendLease: (bbl: string, idx: number) => void;
+  buyOutLeases: (bbl: string) => void;
+  holdLeasing: (bbl: string, on: boolean) => void;
   assemble: (bbls: string[]) => void;
   groundLease: (bbl: string, years: number) => void;
   delistSale: (bbl: string) => void;
@@ -223,10 +225,10 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  develop: (bbl, use, floors, coverage, contract, ltcWanted) => {
+  develop: (bbl, use, floors, coverage, contract, ltcWanted, custom) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = startDevelopment(game, parcels, bbl, use, floors, coverage, contract, ltcWanted);
+    const r = startDevelopment(game, parcels, bbl, use, floors, coverage, contract, ltcWanted, custom);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("Ground broken. Watch it rise.");
@@ -356,6 +358,27 @@ export const useStore = create<AppState>((set, get) => ({
     set({ game: r.s });
     toast(r.msg ?? "Extended.");
     void persist(r.s);
+  },
+
+  // Clear a building of its tenants, at a price. The only way to a demolition
+  // that does not take a decade.
+  buyOutLeases: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = buyOutTenants(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Empty.");
+    void persist(r.s);
+  },
+
+  holdLeasing: (bbl, on) => {
+    const { game } = get();
+    if (!game) return;
+    const next = setLeasingHold(game, bbl, on);
+    set({ game: next });
+    toast(on ? "Letting stopped. The roll runs off from here." : "Letting resumed.");
+    void persist(next);
   },
 
   bindInsurance: (deductiblePct, flood) => {

@@ -10,11 +10,11 @@ import {
   occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr, useRentPsfYr,
   rollQualitySpread, operatingStatement, recoveryOf, noiAfterTaxYr, netWorth, remainingAbatement,
 } from "@/engine/value";
-import { planDevelopment, PROGRAMS, programCost, farMaxFor, maxFloorsFor, retailWantsMixed, demolitionCost } from "@/engine/dev";
+import { planDevelopment, PROGRAMS, programCost, farMaxFor, maxFloorsFor, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
 import { buyQuote, assemblagePressure, saleTaxQuote } from "@/engine/actions";
 import { sellerOf, sellerProfile } from "@/engine/acquire";
 import { MILESTONES } from "@/engine/sim";
-import { isCommercial, vacantSf, walt, loiSigningCost, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf } from "@/engine/leasing";
+import { isCommercial, vacantSf, walt, loiSigningCost, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, buyoutQuote, depositsHeld, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
 import { locLimit, locRate, locAvailable } from "@/engine/credit";
 import { blockReport } from "@/engine/demand";
@@ -1419,20 +1419,42 @@ function RefiSection({ bbl }: { bbl: string }) {
 function DevelopSection({ bbl }: { bbl: string }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
-  const rec = parcels[bbl];
+  // The LIVE record: an upzoning, a variance you won, or lots you folded
+  // together all change the envelope, and planning against the static table
+  // meant none of them bought you anything at this desk.
+  const rec = resolveRec(parcels, game, bbl) ?? parcels[bbl];
   const [use, setUse] = useState<DevUse>("office");
   const [cov, setCov] = useState(0.6);
   const [floors, setFloors] = useState(8);
   const [contract, setContract] = useState<Contract>("gmp");
   const [ltcWant, setLtcWant] = useState(1);   // share of the lender's max you take
-  // "Mixed-use" is a programme here, not a class: shops at grade with offices
-  // and flats above. What it costs, what it rents for and what the lender will
-  // fund all come out of that stack.
+  // THE STACK IS YOURS TO CHOOSE. "Mixed-use" was one canonical 15/45/40
+  // building, which is a preset rather than a programme — how much retail the
+  // frontage carries and whether the middle is offices or flats is the biggest
+  // decision on the site, and it drives cost, exit cap and lender appetite.
+  const [split, setSplit] = useState<{ retail: number; office: number; multifamily: number }>(
+    { retail: 15, office: 45, multifamily: 40 },
+  );
+  // ...and so is how it is cut up. `null` means the class default.
+  const [units, setUnits] = useState<Partial<Record<BuiltClass, number>>>({});
   const maxFl = maxFloorsFor(rec, cov, use);
   const fl = Math.min(floors, maxFl);
-  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract);
+  const customMix = use === "mixed"
+    ? { retail: split.retail / 100, office: split.office / 100, multifamily: split.multifamily / 100 }
+    : undefined;
+  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix });
+  // Turn the chosen unit counts into sf-per-space, against the programme that
+  // is actually going to be built.
+  const suiteChoice: Partial<Record<BuiltClass, number>> = {};
+  if (planMax) {
+    for (const u of Object.keys(planMax.mix) as BuiltClass[]) {
+      const n = units[u];
+      if (!n) continue;
+      suiteChoice[u] = suiteSfForUnits(planMax.sf * (planMax.mix[u] ?? 0), u, n);
+    }
+  }
   const plan = planDevelopment(game, parcels, bbl, use, fl, cov, contract,
-    planMax ? planMax.ltcMax * ltcWant : undefined);
+    planMax ? planMax.ltcMax * ltcWant : undefined, { mix: customMix, suites: suiteChoice });
   const USES: DevUse[] = ["office", "multifamily", "mixed", "retail", "industrial"];
   return (
     <div className="deal">
@@ -1474,6 +1496,79 @@ function DevelopSection({ bbl }: { bbl: string }) {
         marks={[{ at: 0.15, label: "corner" }, { at: 0.35, label: "tower" }, { at: 0.6, label: "block" }, { at: 0.85, label: "podium" }]}
         hint={`A slim tower goes higher on the same envelope; a fat podium runs out of FAR sooner (max ${maxFl} floors at this footprint). On a big site you can put up something small and keep the rest of the land.`}
       />
+      {/* THE STACK. Three dials that always add to a hundred, because a
+          building is all of itself. Shops want the frontage and cost the most
+          per foot; flats are cheapest to build and hardest to make pencil;
+          offices are the swing. */}
+      {use === "mixed" && (
+        <>
+          <div className="page-section" style={{ marginTop: 6 }}>What goes where</div>
+          {(["retail", "office", "multifamily"] as const).map((u) => (
+            <Slider
+              key={u}
+              label={USE_WORD[u]}
+              value={split[u]}
+              min={0}
+              max={100}
+              step={5}
+              onChange={(v) => setSplit((prev) => {
+                // The other two absorb the difference in the ratio they already
+                // sit in, so moving one dial never silently rewrites both.
+                const others = (["retail", "office", "multifamily"] as const).filter((k) => k !== u);
+                const restNow = others.reduce((a, k) => a + prev[k], 0);
+                const rest = 100 - v;
+                const next = { ...prev, [u]: v } as typeof prev;
+                for (const k of others) next[k] = restNow > 0 ? Math.round((prev[k] / restNow) * rest) : Math.round(rest / 2);
+                next[others[1]] = Math.max(0, 100 - v - next[others[0]]);
+                return next;
+              })}
+              format={(v) => `${v}%${planMax ? ` · ${sf(Math.round(planMax.sf * v / 100))}` : ""}`}
+              marks={[{ at: 15, label: "" }, { at: 50, label: "half" }]}
+              hint={u === "retail"
+                ? "Shops at grade only — past the second floor nobody comes, and retail is the dearest thing per foot in the book."
+                : u === "office" ? "The swing leg: the highest rent of the three and the one that empties first in a downturn."
+                : "Flats are the cheapest to build and the thinnest margin. They also let in every market, which is the point of putting them in the stack."}
+            />
+          ))}
+          <div className="hint">
+            {split.retail + split.office + split.multifamily !== 100
+              ? "The stack has to add to 100%."
+              : `Shops ${split.retail}% · offices ${split.office}% · flats ${split.multifamily}%. Anything under 3% is dropped — that is a lobby, not a use.`}
+          </div>
+        </>
+      )}
+      {/* HOW MANY SPACES. A programming decision with physical bounds: you
+          cannot put ten shops in three thousand feet, and a single "unit" the
+          size of a tower is a headquarters, not a building. */}
+      {planMax && (
+        <>
+          <div className="page-section" style={{ marginTop: 6 }}>How it is cut up</div>
+          {(Object.keys(planMax.mix) as BuiltClass[]).filter((u) => (planMax.mix[u] ?? 0) > 0.02).map((u) => {
+            const legSf = planMax.sf * (planMax.mix[u] ?? 0);
+            const r = unitRange(legSf, u);
+            const n = units[u] ?? r.typical;
+            const per = suiteSfForUnits(legSf, u, n);
+            return (
+              <Slider
+                key={u}
+                label={`${USE_WORD[u]} spaces · ${sf(Math.round(legSf))}`}
+                value={Math.max(r.min, Math.min(r.max, n))}
+                min={r.min}
+                max={r.max}
+                step={1}
+                onChange={(v) => setUnits((p) => ({ ...p, [u]: v }))}
+                format={(v) => `${v} ${v === 1 ? "space" : "spaces"} · ${sf(per)} each`}
+                marks={[{ at: r.typical, label: "typical" }, { at: r.max, label: `max ${r.max}` }]}
+                hint={per <= SUITE_BOUNDS[u].min * 1.15
+                  ? `${sf(SUITE_BOUNDS[u].min)} is the floor for ${USE_WORD[u].toLowerCase()} — below that it is not a space, it is a cupboard.`
+                  : per >= SUITE_BOUNDS[u].max * 0.85
+                    ? "Spaces this big mean one tenant, or none. Single-tenant buildings are a real product and a slow let."
+                    : "Small spaces lease faster and cost far more to fit out and to run. Big ones sit empty longer and almost never turn."}
+              />
+            );
+          })}
+        </>
+      )}
       <div className="btn-row">
         {/* The contract is the developer's real hedge and nobody ever shows it
             to you. In a boom the guaranteed price is the cheapest money on the
@@ -1543,7 +1638,7 @@ function DevelopSection({ bbl }: { bbl: string }) {
             <button
               className="btn btn-buy"
               disabled={plan.equityAtClose > game.cash || plan.commitment === 0 && plan.equity > game.cash}
-              onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant)}
+              onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, suites: suiteChoice })}
             >
               Break ground · {usd(plan.equityAtClose)}
             </button>
@@ -1806,10 +1901,71 @@ function LeasingDesk({ bbl }: { bbl: string }) {
     .filter((x): x is NonNullable<typeof x> => !!x)
     .sort((a, b) => (b.current - b.market) - (a.current - a.market));
 
-  if (!spec && !q && !extends_.length) return null;
+  // Emptying a building is a leasing decision before it is a demolition one.
+  const bq = buyoutQuote(game, bbl);
+  const occupied = (bq?.tenants ?? 0) > 0 || (h.occ ?? 0) > 0.02;
+  const resSf = useSf(rec, "multifamily") * (h.occ ?? 0);
+  const resCost = Math.round(resSf * useRentPsfYr(rec, game.econ, h.condition, "multifamily") * BUYOUT_PREMIUM);
+  const clearCost = (bq?.cost ?? 0) + resCost;
+
+  if (!spec && !q && !extends_.length && !occupied && !h.leasingHold) return null;
   return (
     <div className="deal">
       <div className="deal-head">Leasing desk</div>
+
+      {/* VACANT POSSESSION. You cannot knock down an occupied building, and you
+          cannot wait out a rent roll inside a human lifetime — so there are two
+          ways to empty one, and they cost very different things. Stopping the
+          letting is free and takes as long as the longest lease. Buying the
+          leases out is instant and costs the whole remaining contract plus a
+          quarter, which is why the site under a well-let building is worth less
+          than the site under a half-empty one. */}
+      <div className="page-section" style={{ marginTop: 2 }}>Emptying the building</div>
+      <div className="grid">
+        <Row k="Letting" v={h.leasingHold ? "STOPPED — nobody new, nobody renewed" : "Open — new tenants and renewals"} bad={h.leasingHold} />
+        {occupied && <Row k="In place" v={`${bq?.tenants ?? 0} lease${(bq?.tenants ?? 0) === 1 ? "" : "s"}${resSf > 900 ? ` · ${sf(Math.round(resSf))} of let flats` : ""}`} />}
+        {occupied && (
+          <Row
+            k="Longest lease runs to"
+            v={h.tenants.length ? monthLabel(Math.max(...h.tenants.map((t) => t.endM))) : "—"}
+          />
+        )}
+        {occupied && <Row k="Cost to buy them all out" v={usd(clearCost)} strong />}
+      </div>
+      <div className="btn-row">
+        <button className={"btn" + (h.leasingHold ? " btn-on" : "")}
+          onClick={() => useStore.getState().holdLeasing(bbl, !h.leasingHold)}
+          title={h.leasingHold
+            ? "Start letting again — new prospects and renewals resume next month"
+            : "Sign nobody new and renew nobody. The roll runs off and the income with it."}>
+          {h.leasingHold ? "Resume letting" : "Stop letting"}
+        </button>
+        {occupied && clearCost > 0 && (
+          <button className="btn btn-sell" disabled={clearCost > game.cash}
+            onClick={() => useStore.getState().buyOutLeases(bbl)}
+            title={`Every remaining month of every contract, plus ${((BUYOUT_PREMIUM - 1) * 100).toFixed(0)}% for making them move`}>
+            Buy out every lease · {usd(clearCost)}
+          </button>
+        )}
+      </div>
+      {occupied && bq && bq.rows.length > 0 && (
+        <table className="tbl">
+          <thead><tr><th>Tenant</th><th className="num">Left</th><th className="num">Rent / yr</th><th className="num">Buyout</th></tr></thead>
+          <tbody>
+            {bq.rows.slice(0, 8).map((r, i) => (
+              <tr key={i} style={{ cursor: "default" }}>
+                <td>{r.name}</td>
+                <td className="num">{(r.monthsLeft / 12).toFixed(1)} yrs</td>
+                <td className="num">{usd(r.annual)}</td>
+                <td className="num">{usd(r.cost)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {clearCost > game.cash && occupied && (
+        <div className="hint">Short {usd(clearCost - game.cash)} of what it takes to clear it.</div>
+      )}
 
       {spec && (
         <div className="grid">
@@ -1944,6 +2100,29 @@ function LandDesk({ bbl }: { bbl: string }) {
           <Row k="Odds as filed" v={`${(app.odds * 100).toFixed(0)}%`} />
         </div>
       )}
+      {/* WHAT THE BOARD SAID. A hearing is a year and several hundred thousand
+          dollars, and the answer used to be one line of news that scrolled
+          away in a quarter. It sits on the site for a decade now — which is
+          also how long a refusal really hangs over a property. */}
+      {(() => {
+        const v = game.varianceLog?.[bbl];
+        if (!v || game.month - v.m > 120) return null;
+        const yrs = (game.month - v.m) / 12;
+        return (
+          <div className="grid">
+            <Row
+              k={v.granted ? "◆ Variance GRANTED" : "◇ Variance REFUSED"}
+              v={`${v.far.toFixed(1)} FAR asked · ${monthLabel(v.m)}${yrs >= 1 ? ` · ${yrs.toFixed(0)} yr${yrs >= 2 ? "s" : ""} ago` : ""}`}
+              strong
+              bad={!v.granted}
+            />
+            <Row
+              k="What it cost to find out"
+              v={`${usd(v.cost)} in fees${v.granted ? "" : " — spent either way"}`}
+            />
+          </div>
+        );
+      })()}
       {!app && vq && (
         <>
           <div className="grid">
@@ -1964,19 +2143,42 @@ function LandDesk({ bbl }: { bbl: string }) {
     </>
   );
 
-  if (!vacant) {
+  // NEIGHBOURS YOU ALREADY OWN.
+  //
+  // This used to require the lot AND every neighbour to be vacant, and the
+  // whole desk only rendered on vacant ground — so two adjacent lots you had
+  // spent years buying could not be put together if either one had so much as
+  // a shed on it, and you were never told why. Assembling is a deed exercise,
+  // not a demolition one: fold them together first, knock down what is standing
+  // when you are ready to build. What you cannot fold in is a lot that is
+  // mid-construction, ground-leased to somebody else, already part of another
+  // assemblage, or listed for sale.
+  // Every adjacent deed you own, with the reason it cannot be folded in yet —
+  // an empty panel taught nobody anything.
+  const adjacentMine = (adjacency?.[bbl] ?? [])
+    .filter((n) => game.holdings[n])
+    .map((n) => {
+      const r = resolveRec(parcels, game, n);
+      const why = !r ? "unknown parcel"
+        : game.merged?.[n] ? "already part of another assemblage"
+        : game.developments[n] ? "under construction"
+        : game.groundLeases?.[n] ? "ground-leased to somebody else"
+        : game.holdings[n].sale ? "on the market — pull the listing"
+        : game.landmarks?.[n] !== undefined ? "landmarked"
+        : r.class !== "land" || r.bldgArea > 0 ? `${useLabel(r)} standing — clear it first`
+        : null;
+      return { bbl: n, rec: r, why };
+    });
+  const nbrs = adjacentMine.filter((x) => !x.why).map((x) => x.bbl);
+  const blocked = adjacentMine.filter((x) => x.why);
+
+  if (!vacant && !adjacentMine.length) {
     return app || vq || landmarked
       ? <div className="deal"><div className="deal-head">The planning board</div>{planning}</div>
       : null;
   }
 
-  // neighbours you already own that could be folded in
-  const nbrs = (adjacency?.[bbl] ?? []).filter((n) => {
-    if (!game.holdings[n] || game.merged?.[n] || game.developments[n] || game.groundLeases?.[n]) return false;
-    const r = resolveRec(parcels, game, n);
-    return !!r && r.class === "land" && r.bldgArea === 0;
-  });
-  const q = groundLeaseQuote(game, parcels, bbl, years);
+  const q = vacant ? groundLeaseQuote(game, parcels, bbl, years) : null;
   const cost = mergeCost(game, picked.length + 1);
   const addedArea = picked.reduce((a, b) => a + (parcels[b]?.lotArea ?? 0), 0);
   const farMax = Math.max(rec.farMaxComm, rec.farMaxRes);
@@ -1985,12 +2187,19 @@ function LandDesk({ bbl }: { bbl: string }) {
     <div className="deal">
       <div className="deal-head">The land desk</div>
       {planning}
+      {!vacant && adjacentMine.length > 0 && (
+        <div className="hint">
+          You own {adjacentMine.length} deed{adjacentMine.length === 1 ? "" : "s"} next to this one. A site has to be
+          clear before the deeds can be folded together — the land moves into one parcel and there is nowhere left
+          for a building to stand on the others.
+        </div>
+      )}
       {children.length > 0 && (
         <div className="hint">
           Assembled site — {children.length + 1} deeds, {sf(rec.lotArea)} of land, {sf(Math.round(rec.lotArea * farMax))} buildable.
         </div>
       )}
-      {nbrs.length > 0 && (
+      {adjacentMine.length > 0 && (
         <>
           <div className="page-section" style={{ marginTop: 2 }}>Fold in the neighbours</div>
           <div className="mini-list">
@@ -2001,10 +2210,20 @@ function LandDesk({ bbl }: { bbl: string }) {
                 <button key={n} className={"neighbor" + (on ? " neighbor-on" : "")}
                   onClick={() => setPicked(on ? picked.filter((x) => x !== n) : [...picked, n])}>
                   <span className="neighbor-addr">{on ? "✓ " : ""}{r?.address ?? n}</span>
-                  <span className="neighbor-meta">{sf(r?.lotArea ?? 0)} of land</span>
+                  <span className="neighbor-meta">
+                    {sf(r?.lotArea ?? 0)} of land
+                    {r && r.class !== "land" && r.bldgArea > 0 ? ` · ${useLabel(r)} standing` : " · vacant"}
+                  </span>
                 </button>
               );
             })}
+            {/* WHY THE OTHERS ARE NOT ON THE LIST. */}
+            {blocked.map((x) => (
+              <div key={x.bbl} className="neighbor" style={{ opacity: 0.55, cursor: "default" }}>
+                <span className="neighbor-addr">{x.rec?.address ?? x.bbl}</span>
+                <span className="neighbor-meta">{x.why}</span>
+              </div>
+            ))}
           </div>
           {picked.length > 0 && (
             <>
@@ -2014,7 +2233,7 @@ function LandDesk({ bbl }: { bbl: string }) {
                 <Row k="Survey, title and lawyers" v={usd(cost)} />
               </div>
               <button className="btn" onClick={() => { assemble([bbl, ...picked]); setPicked([]); }}>
-                Assemble {picked.length + 1} lots
+                Assemble {picked.length + 1} lots · {sf(rec.lotArea + addedArea)}
               </button>
             </>
           )}
@@ -3945,6 +4164,12 @@ function BooksPage() {
       <div className="stat-strip">
         <Big label="Net worth" value={usd(nw)} bad={nw < 0} />
         <Big label="Cash" value={usd(game.cash)} bad={game.cash < 0} />
+        {/* NOT YOURS. Deposits arrive as cash at signing and look exactly like
+            equity until the tenant leaves and takes them back. Net worth above
+            is quoted net of this; the cash figure beside it is not. */}
+        {depositsHeld(game) > 0 && (
+          <Big label="Deposits held" value={"−" + usd(depositsHeld(game))} />
+        )}
         <Big label="Realized gains" value={usd(realized)} bad={realized < 0} />
         <Big label="Taxes paid, lifetime" value={usd(game.taxesPaid ?? 0)} />
         <Big label="Exits" value={String(game.exits.length)} />

@@ -37,6 +37,18 @@ export interface Tenant {
   endM: number;        // lease expiration
   freeUntilM?: number; // free-rent concession
   defaulted?: boolean;
+  /**
+   * SECURITY. One to two months of rent, taken at signing and held against the
+   * space coming back damaged or the tenant walking. It arrives as cash and it
+   * is NOT income — it is a liability that sits on your balance sheet until
+   * the lease ends, and net worth is quoted net of it. A landlord with a
+   * hundred tenants is holding a real number here, and it flatters the bank
+   * balance of anybody who forgets that.
+   *
+   * Forfeited on a default, returned on an ordinary expiry, and handed to the
+   * buyer when the building trades.
+   */
+  deposit?: number;
 }
 
 export interface LOI {
@@ -147,6 +159,16 @@ export interface Holding {
   damage?: { peril: Peril; share: number; untilM: number; uninsured: number };
   occ?: number;        // multifamily aggregate occupancy
   stance?: -1 | 0 | 1; // rent posture: push / market / fill
+  /**
+   * STOP LETTING IT.
+   *
+   * You cannot knock a building down with people in it, and you cannot empty
+   * it by accident — an owner heading for a demolition or a gut stops signing
+   * anybody new and stops renewing anybody rolling, and then waits out the
+   * roll. It is a real and painful decision: the building bleeds income for
+   * years before it is worth anything as a site.
+   */
+  leasingHold?: boolean;
   deliveredM?: number; // ground-up completion: new space leases with momentum
   // On the market. `countered` records that you have already been back to this
   // buyer once — a counter is a real move with a real cost, not a slider you
@@ -191,6 +213,8 @@ export interface Development {
   mix: UseMix;
   sf: number;
   floors: number;
+  /** How you chose to demise it, sf per space per use. Carried to delivery. */
+  suites?: Partial<Record<BuiltClass, number>>;
   costTotal: number;      // the budget as it stands today, escalation included
   hardCost: number;       // the part exposed to escalation under cost-plus
   contract: Contract;
@@ -232,6 +256,8 @@ export interface BuiltOverride {
   bldgArea: number;
   floors: number;
   yearBuilt: number;
+  /** sf per leasable space, per use — the programming decision you made. */
+  suites?: Partial<Record<BuiltClass, number>>;
 }
 
 export interface Listing {
@@ -580,6 +606,16 @@ export interface GameState {
   // buildings nobody is allowed to knock down. See engine/zoning.ts.
   zoneAdj?: Record<string, number>;          // district -> FAR multiplier
   variance?: Record<string, number>;         // bbl -> extra FAR granted
+  /**
+   * WHAT THE BOARD SAID, and when.
+   *
+   * A hearing is a year of your life and several hundred thousand dollars, and
+   * the answer used to arrive as one line of news that scrolled away in a
+   * quarter. It is a fact about the site now: recorded on the parcel and shown
+   * on the land panel for years afterwards, the way a refusal actually sits
+   * over a property while everybody waits for the board to change its mind.
+   */
+  varianceLog?: Record<string, { m: number; granted: boolean; far: number; cost: number }>;
   varianceApp?: { bbl: string; filedM: number; decideM: number; cost: number; grant: number; odds: number };
   landmarks?: Record<string, number>;        // bbl -> month designated
   landAdj: Record<string, number>;           // per-parcel land value multiplier

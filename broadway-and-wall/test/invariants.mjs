@@ -73,6 +73,35 @@ function run(botName, seed) {
       if (!r.err) g = r.s;
     }
 
+    // EMPTYING A BUILDING, both ways. Stopping the letting and buying the
+    // leases out are the two paths to a demolition, and both leave the state in
+    // shapes nothing else in this harness produces: a holding with a hold on
+    // it, a roll cleared mid-term, deposits returned in bulk.
+    if (m % 47 === 19) {
+      for (const bbl of Object.keys(g.holdings)) {
+        const h0 = g.holdings[bbl];
+        if (h0.sale || g.developments[bbl] || h0.leasingHold) continue;
+        g = E.setLeasingHold(g, bbl, true);
+        break;
+      }
+    }
+    if (m % 53 === 31) {
+      for (const bbl of Object.keys(g.holdings)) {
+        const h0 = g.holdings[bbl];
+        if (h0.sale || g.developments[bbl] || !h0.tenants.length) continue;
+        const r = E.buyOutTenants(g, parcels, bbl);
+        if (!r.err) { g = r.s; break; }
+      }
+    }
+    // ...and let it again, so a hold is not a one-way door in the sweep.
+    if (m % 61 === 44) {
+      for (const bbl of Object.keys(g.holdings)) {
+        if (!g.holdings[bbl].leasingHold) continue;
+        g = E.setLeasingHold(g, bbl, false);
+        break;
+      }
+    }
+
     // Go to the planning board now and then — the variance path moves the
     // envelope, which moves land value, which moves net worth.
     if (m % 31 === 11 && !g.varianceApp) {

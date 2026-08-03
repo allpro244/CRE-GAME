@@ -17,6 +17,18 @@ export interface ParcelRecord {
   district: string;     // the neighbourhood — the unit of a submarket
   class: AssetClass;              // the dominant use; the mix has the rest
   mix?: Partial<Record<Exclude<AssetClass, "land">, number>>;  // shares of floor area by use
+  /**
+   * HOW THE BUILDING IS CUT UP, in square feet per leasable space.
+   *
+   * Absent for everything the generator produced — those fall back to the
+   * class defaults in leasing.useSuiteSf, which is what a building of that
+   * size and use is normally demised into. It is present on buildings YOU
+   * developed, because deciding whether a 200,000 sf tower is eight big floors
+   * or ninety small suites is a real programming decision with real
+   * consequences: small suites lease faster and cost far more to fit out and
+   * to manage, big ones sit empty longer and never turn.
+   */
+  suites?: Partial<Record<Exclude<AssetClass, "land">, number>>;
   lotArea: number;      // sf
   bldgArea: number;     // sf
   floors: number;

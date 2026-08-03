@@ -162,7 +162,13 @@ function decideVariance(s: GameState, parcels: ParcelTable) {
   const rec = resolveRec(parcels, s, app.bbl);
   delete s.varianceApp;
   if (!s.holdings[app.bbl]) return;      // sold it while they deliberated
-  if (rng(s) < app.odds) {
+  const granted = rng(s) < app.odds;
+  // THE DECISION IS A FACT ABOUT THE SITE. Recorded on the parcel, not just
+  // announced once and scrolled away — a refusal sits over a property for
+  // years and everybody in the neighbourhood knows about it.
+  if (!s.varianceLog) s.varianceLog = {};
+  s.varianceLog[app.bbl] = { m: s.month, granted, far: app.grant, cost: app.cost };
+  if (granted) {
     if (!s.variance) s.variance = {};
     s.variance[app.bbl] = +((s.variance[app.bbl] ?? 0) + app.grant).toFixed(2);
     s.landAdj[app.bbl] = Math.min(4, (s.landAdj[app.bbl] ?? 1) * 1.22);

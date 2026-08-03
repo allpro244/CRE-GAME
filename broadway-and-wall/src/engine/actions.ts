@@ -7,7 +7,7 @@ import { logBooks, monthLabel } from "./types";
 import { rng, rrange } from "./market";
 import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr, demandLinear } from "./value";
 import { marketAppetite, ownerOf, rivalAsk, rivalBuys } from "./rivals";
-import { genRentRoll, isCommercial } from "./leasing";
+import { genRentRoll, isCommercial, depositsOn } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
 import { takeoverDevelopment } from "./dev";
 import { settleJV } from "./equity";
@@ -215,7 +215,18 @@ export function assembleLots(
     if (s.merged?.[b]) return { s, err: "One of those is already part of an assemblage." };
     const rec = resolveRec(parcels, s, b);
     if (!rec) return { s, err: "Unknown parcel." };
-    if (rec.class !== "land" || rec.bldgArea > 0) return { s, err: "Clear the site first — you cannot merge a lot with a building on it." };
+    // THE SITE HAS TO BE CLEAR.
+    //
+    // A merged lot's land moves into the parent and the child becomes a deed
+    // with no area left in it — which is coherent for dirt and incoherent for
+    // a building, because the building would then be standing on nothing. So
+    // this stays a rule, and what changed is that the panel now SAYS so: it
+    // lists every adjacent deed you own and names what is stopping each one,
+    // instead of rendering nothing at all and leaving you to guess.
+    if (rec.class !== "land" || rec.bldgArea > 0) {
+      return { s, err: `${rec.address} still has a building on it. Clear the site before folding the deeds together.` };
+    }
+    if (s.landmarks?.[b] !== undefined) return { s, err: "One of those is landmarked. Its envelope is frozen and it cannot be folded into a bigger site." };
     if (s.developments[b]) return { s, err: "Construction is already underway on one of those." };
     if (s.holdings[b].sale) return { s, err: "One of those is on the market — pull the listing first." };
     if (s.jvs?.[b]) return { s, err: "A partner is in one of those deals. Buy them out before you fold it into anything." };
@@ -755,6 +766,9 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   // that outlives its land for even one call is a lease on somebody else's
   // property.
   if (next.groundLeases?.[bbl]) delete next.groundLeases[bbl];
+  // The security deposits go with the deed — they were the tenants' money and
+  // they are the buyer's obligation now.
+  next.cash -= depositsOn(next.holdings[bbl]);
   delete next.holdings[bbl];
   next.lois = next.lois.filter((l) => l.bbl !== bbl);
   next.news.unshift({

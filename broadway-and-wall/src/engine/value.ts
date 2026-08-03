@@ -155,6 +155,8 @@ function resolveBase(s: GameState, rec: ParcelRecord): ParcelRecord | null {
     // and its composition — a delivered mixed-use building that reported as
     // single-use was the whole point of the change, undone at the last step
     out.mix = b.mix;
+    // ...and how you chose to cut it up, which decides the whole leasing story
+    out.suites = b.suites;
   }
   return out;
 }
@@ -736,5 +738,13 @@ export function netWorth(s: GameState, parcels: Record<string, ParcelRecord>): n
     nw += d.costTotal - d.loanBalance;
   }
   nw -= s.loc?.balance ?? 0;   // the line is real money owed
+  // SECURITY DEPOSITS ARE NOT YOUR MONEY. They arrive as cash at signing and
+  // sit in the bank looking exactly like equity until the day the tenant leaves
+  // and takes them back. A landlord with a large roll is holding a real
+  // liability here, and counting it as net worth is the oldest flattering
+  // mistake in the business.
+  for (const h of Object.values(s.holdings)) {
+    for (const t of h.tenants) nw -= t.deposit ?? 0;
+  }
   return nw;
 }

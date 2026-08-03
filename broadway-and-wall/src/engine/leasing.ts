@@ -115,6 +115,9 @@ export function leasableUses(rec: ParcelRecord): BuiltClass[] {
 // 400,000 sf tower does not lease in 2,000 ft bites — but never so big that a
 // tower becomes a single unit.
 export function useSuiteSf(rec: ParcelRecord, use: BuiltClass): number {
+  // A building you programmed yourself is cut the way you cut it.
+  const chosen = rec.suites?.[use as Exclude<BuiltClass, "land">];
+  if (chosen && chosen > 0) return chosen;
   // Sized off the COMPONENT, not the building. Ground-floor retail under a
   // tower demises into shops, not into floors — sizing it off the tower gave
   // a 400,000 sf building 30,000 sf "shops", which is a department store.
@@ -262,7 +265,13 @@ export function genRentRoll(s: GameState, rec: ParcelRecord, holding: Holding) {
       baseStopPsf: +(stopPsfNow(rec, s.econ, holding, use) * rrange(s, 0.72, 0.98)).toFixed(2),
       startM: s.month - Math.round(rrange(s, 0, 48)),
       endM: Math.max(s.month + 1, endM),
+      // The in-place deposits come across on the settlement statement — cash
+      // in, liability up, no effect on net worth. What it does mean is that
+      // buying a fully let building hands you real money you will have to
+      // give back, which is exactly how the closing works.
+      deposit: depositFor(s, market, sf, rollCredit(s, demandLinear(rec.demandScore))),
     });
+    s.cash += holding.tenants[holding.tenants.length - 1].deposit ?? 0;
     leased += sf;
   }
   }
@@ -418,6 +427,12 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const turnCost = Math.round(outSf * MAKE_READY_PSF * s.econ.costIdx);
       s.cash -= turnCost;
       logBooks(s, "capex", turnCost);
+      // THE DEPOSIT GOES BACK. It was never yours: it arrived as cash at
+      // signing and sat as a liability against your net worth for the whole
+      // term. A tenant who left owing you nothing takes it with them; one who
+      // defaulted forfeited it when they went, and is not in this list.
+      const returned = movedOut.reduce((sum, t) => sum + (t.deposit ?? 0), 0);
+      if (returned > 0) s.cash -= returned;
       // Downtime is the expensive half of rollover and nobody underwrites it
       // honestly. A suite handed back in a soft office market is dark for the
       // better part of a year: demo, demise, permit, market, build out.
@@ -491,8 +506,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       if (age > 0 && age % 12 === 0) t.rentPsf = +(t.rentPsf * 1.025).toFixed(2);
     }
 
-    // renewal talks open six months ahead of expiry
-    for (let i = 0; i < h.tenants.length; i++) {
+    // renewal talks open six months ahead of expiry — unless you have stopped
+    // letting the building, in which case nobody is offered a renewal and the
+    // roll simply runs off. That is how a building gets emptied for a
+    // demolition, and it is slow and expensive on purpose.
+    for (let i = 0; i < h.tenants.length && !h.leasingHold; i++) {
       const t = h.tenants[i];
       if (t.endM !== q + 6) continue;
       if (s.lois.some((l) => l.bbl === h.bbl && l.tenantIdx === i)) continue;
@@ -556,7 +574,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     const openLois = s.lois.filter((l) => l.bbl === h.bbl && l.kind === "new").length;
     // a big empty floorplate draws more than one prospect at a time
     const loiCap = vac > rec.bldgArea * 0.5 ? 3 : 2;
-    if (!renovating && vac >= Math.min(PART_SUITE_MIN, suiteSf(rec) * 0.35) && openLois < loiCap) {
+    if (!renovating && !h.leasingHold && vac >= Math.min(PART_SUITE_MIN, suiteSf(rec) * 0.35) && openLois < loiCap) {
       const phaseAdj = s.econ.phase === "expansion" ? 0.14 : s.econ.phase === "recession" ? -0.14 : 0;
       const condAdj = h.condition === "good" ? 0.1 : h.condition === "worn" ? -0.1 : 0;
       const stanceAdj = -0.12 * (h.stance ?? 0);                       // pushing rents thins the funnel
@@ -833,6 +851,42 @@ export function loiSigningCost(loi: LOI, feeRate?: number): number {
 
 // Put a signed lease on the rent roll. Mutates — both the player's own
 // response and the agent's automatic signing come through here.
+/**
+ * WHAT A LANDLORD HOLDS AGAINST THE SPACE.
+ *
+ * One to two months of rent, and which end of that you get is a credit
+ * question: a covenant everybody has heard of writes one month and argues
+ * about it, a start-up with no history writes two and is glad to. It is cash
+ * in and a liability on the balance sheet, never income — see Tenant.deposit.
+ */
+export function depositFor(s: GameState, rentPsf: number, sf: number, credit: Credit): number {
+  const monthly = (rentPsf * sf) / 12;
+  const months = credit === 2 ? 1.0 : credit === 1 ? rrange(s, 1.2, 1.6) : rrange(s, 1.6, 2.0);
+  return Math.round(monthly * months);
+}
+
+/**
+ * THE DEPOSITS ON ONE BUILDING, handed to the buyer at the closing table.
+ *
+ * Deposits arrive as cash and leave as cash, and the one path that had neither
+ * was a DISPOSAL: the holding disappeared, the liability with it, and the
+ * money stayed in your account. Over fifty years of trading that is a slow,
+ * invisible subsidy — and it was worth about three times the competent
+ * player's median result before the invariant caught it.
+ */
+export function depositsOn(h: Holding): number {
+  return h.tenants.reduce((a, t) => a + (t.deposit ?? 0), 0);
+}
+
+/** Every deposit you are sitting on. Cash you hold and do not own. */
+export function depositsHeld(s: GameState): number {
+  let n = 0;
+  for (const h of Object.values(s.holdings)) {
+    for (const t of h.tenants) n += t.deposit ?? 0;
+  }
+  return n;
+}
+
 export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, feeRate?: number) {
   // A tenant moving into pre-built space USES IT UP. The suite is theirs now;
   // the next prospect tours a shell again unless you build more.
@@ -852,6 +906,14 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     // owner gives up the rent they could have pushed. Rolling the stop forward
     // is often worth more than the spread on the rent.
     if (recoveryOf(t) === "base") t.baseStopPsf = +stopPsfNow(rec, s.econ, h, t.use).toFixed(2);
+    // AND THE DEPOSIT IS TRUED UP. It was struck against the rent of the day it
+    // was signed and then sat there while the rent escalated for twenty years
+    // or got cut in a blend-and-extend — which is how a deposit ends up worth
+    // four months of a reduced rent. Every renewal restates it, and the
+    // difference moves in cash the way it does at a real renewal.
+    const wanted = depositFor(s, t.rentPsf, t.sf, t.credit);
+    s.cash += wanted - (t.deposit ?? 0);
+    t.deposit = wanted;
   } else {
     // An LOI was sized against the vacancy on the day it was written. Two of
     // them can be live at once, so the second one signs against whatever is
@@ -862,6 +924,8 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     const use = l.use ?? leasableUses(rec)[0] ?? "office";
     const sf = Math.min(l.sf, Math.max(0, useVacantSf(rec, h, use, s.month)));
     if (sf < 1) return;
+    const deposit = depositFor(s, l.rentPsf, sf, l.credit);
+    s.cash += deposit;
     h.tenants.push({
       name: l.name, use, sector: l.sector, credit: l.credit,
       sf, rentPsf: l.rentPsf, net: l.net,
@@ -869,6 +933,7 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
       baseStopPsf: +stopPsfNow(rec, s.econ, h, use).toFixed(2),
       startM: s.month, endM: s.month + l.termM,
       freeUntilM: l.freeM ? s.month + l.freeM : undefined,
+      deposit,
     });
   }
   s.news.unshift({
@@ -1001,4 +1066,92 @@ export function respondLOI(
 
   next.lois = next.lois.filter((l) => l.id !== id);
   return { s: next, msg: "Passed." };
+}
+
+// --------------------------------------------------------------- vacant possession
+/**
+ * BUYING A BUILDING EMPTY.
+ *
+ * There is no legal way to knock down an occupied building, and waiting out a
+ * rent roll takes a decade. So you buy the leases: every sitting tenant is
+ * offered the whole remaining value of their contract, plus a quarter again on
+ * top for the inconvenience of moving a business they did not want to move.
+ *
+ * The premium is what makes this a decision rather than a button. A building
+ * full of leases with eight years to run costs a fortune to empty, which is
+ * precisely why the site under a well-let building is worth less than the site
+ * under a half-empty one — and why the buildings that get redeveloped in real
+ * cities are the ones whose leases were about to roll anyway.
+ */
+export const BUYOUT_PREMIUM = 1.25;
+
+export function buyoutQuote(s: GameState, bbl: string): {
+  cost: number; tenants: number; sf: number; deposits: number;
+  rows: { name: string; monthsLeft: number; annual: number; cost: number }[];
+} | null {
+  const h = s.holdings[bbl];
+  if (!h) return null;
+  const rows = h.tenants.map((t) => {
+    const monthsLeft = Math.max(0, t.endM - s.month);
+    const annual = t.rentPsf * t.sf;
+    return { name: t.name, monthsLeft, annual, cost: Math.round((annual / 12) * monthsLeft * BUYOUT_PREMIUM) };
+  });
+  return {
+    cost: rows.reduce((a, r) => a + r.cost, 0),
+    tenants: h.tenants.length,
+    sf: h.tenants.reduce((a, t) => a + t.sf, 0),
+    deposits: h.tenants.reduce((a, t) => a + (t.deposit ?? 0), 0),
+    rows,
+  };
+}
+
+export function buyOutTenants(
+  s: GameState, parcels: ParcelTable, bbl: string,
+): { s: GameState; err?: string; msg?: string } {
+  const h0 = s.holdings[bbl];
+  if (!h0) return { s, err: "You don't own that." };
+  const rec = resolveRec(parcels, s, bbl);
+  if (!rec) return { s, err: "Unknown parcel." };
+  const q = buyoutQuote(s, bbl);
+  if (!q || (!q.tenants && !(h0.occ ?? 0))) return { s, err: "Nobody to buy out — it is already empty." };
+  // Flats run on aggregate occupancy rather than named leases, so the cost of
+  // clearing them is a year of the residential income at the same premium.
+  const resSf = useSf(rec, "multifamily") * (h0.occ ?? 0);
+  const resCost = Math.round(resSf * useRentPsfYr(rec, s.econ, h0.condition, "multifamily") * BUYOUT_PREMIUM);
+  const total = q.cost + resCost;
+  if (total <= 0) return { s, err: "Nobody to buy out — it is already empty." };
+  if (s.cash < total) {
+    return { s, err: `Clearing the building costs ${money(total)} — you're short ${money(total - s.cash)}.` };
+  }
+  const next: GameState = JSON.parse(JSON.stringify(s));
+  const h = next.holdings[bbl]!;
+  next.cash -= total;
+  // The deposits go back with them; they were never yours.
+  next.cash -= q.deposits;
+  logBooks(next, "leasing", total);
+  const n = h.tenants.length;
+  const sf = q.sf + Math.round(resSf);
+  h.tenants = [];
+  h.occ = 0;
+  h.makeReady = [];
+  // Nobody is being let in behind them, or the whole exercise is pointless.
+  h.leasingHold = true;
+  next.lois = next.lois.filter((l) => l.bbl !== bbl);
+  next.news.unshift({
+    q: next.month, kind: "deal",
+    text: `Bought out every lease at ${rec.address}: ${n} tenant${n === 1 ? "" : "s"} and `
+      + `${(sf / 1000).toFixed(1)}k sf for ${money(total)}, at ${((BUYOUT_PREMIUM - 1) * 100).toFixed(0)}% over the remaining contracts. `
+      + `The building is empty and letting is stopped — it is a site now.`,
+  });
+  return { s: next, msg: `Empty. ${money(total)} to clear it.` };
+}
+
+/** Stop or restart letting a building — the switch you throw before a demolition. */
+export function setLeasingHold(s: GameState, bbl: string, on: boolean): GameState {
+  const h = s.holdings[bbl];
+  if (!h) return s;
+  const next: GameState = JSON.parse(JSON.stringify(s));
+  next.holdings[bbl].leasingHold = on || undefined;
+  if (on) next.lois = next.lois.filter((l) => l.bbl !== bbl);
+  return next;
 }

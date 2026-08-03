@@ -311,6 +311,22 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
       bad("listing", `approach ${bbl}`, `owner asking ${(a.ask / 1e6).toFixed(2)}M against a ${(v / 1e6).toFixed(2)}M appraisal`);
     }
   }
+  // SECURITY DEPOSITS. One to two months of rent, never more, never negative,
+  // and never sitting on a lease that has already ended.
+  for (const h of Object.values(s.holdings)) {
+    for (const t of h.tenants) {
+      const d = t.deposit ?? 0;
+      if (d < 0 || !fin(d)) bad("deposit", `${h.bbl} ${t.name}`, `deposit ${d}`);
+      const monthly = (t.rentPsf * t.sf) / 12;
+      if (monthly > 0 && d > monthly * 3.2) {
+        bad("deposit", `${h.bbl} ${t.name}`, `deposit is ${(d / monthly).toFixed(1)} months of rent`);
+      }
+    }
+    // A building you have stopped letting must not be signing anybody.
+    if (h.leasingHold && s.lois.some((l) => l.bbl === h.bbl)) {
+      bad("leasing", `hold ${h.bbl}`, "letting is stopped and there is a live letter of intent on it");
+    }
+  }
   const loiIds = new Set<number>();
   for (const loi of s.lois) {
     const at = `LOI ${loi.id}`;

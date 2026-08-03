@@ -9,7 +9,7 @@ import { capitalCall, LP_REP_START, settleJV, tickJV } from "./equity";
 import { recordComp } from "./comps";
 import { tickPerils } from "./peril";
 import { tickPlanning } from "./zoning";
-import { tickLeasing } from "./leasing";
+import { tickLeasing, depositsOn } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases } from "./actions";
 import { tickTalks } from "./acquire";
 import { tickLoan } from "./debt";
@@ -373,6 +373,7 @@ export function advanceQuarter(
         if (wind.lpCash > 0) { s.cash -= wind.lpCash; logBooks(s, "sold", -wind.lpCash); }
         s.exits.push({ bbl: pick.bbl, address: rec.address, boughtM: pick.boughtM, soldM: s.month, price: gross, basis: pick.costBasis, gain: gross - pick.costBasis, forced: true });
         if (s.groundLeases?.[pick.bbl]) delete s.groundLeases[pick.bbl];
+        s.cash -= depositsOn(s.holdings[pick.bbl]);   // the deposits go with the deed
         delete s.holdings[pick.bbl];
         markSponsor(s, "seized", rec.address, Math.max(0, (pick.loan?.balance ?? 0) - gross));
         s.lois = s.lois.filter((l) => l.bbl !== pick.bbl);

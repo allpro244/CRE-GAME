@@ -7,7 +7,7 @@ import { resolveRec, concentration, industryConcentration } from "./value";
 import type { Econ, GameState, Holding, Loan } from "./types";
 import { logBooks } from "./types";
 import { holdingNOIYr, holdingValue, assetValue, noiAfterTaxYr } from "./value";
-import { walt } from "./leasing";
+import { walt, depositsOn } from "./leasing";
 import { INDUSTRY_LABEL } from "./market";
 import { settleJV } from "./equity";
 import { recordComp } from "./comps";
@@ -455,6 +455,7 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
         const wind = settleJV(s, h.bbl, Math.max(0, net));
         if (wind.lpCash > 0) { s.cash -= wind.lpCash; logBooks(s, "sold", -wind.lpCash); }
         if (s.groundLeases?.[h.bbl]) delete s.groundLeases[h.bbl];
+        s.cash -= depositsOn(s.holdings[h.bbl]);   // the deposits go with the deed
         delete s.holdings[h.bbl];
         // the tenants who were mid-negotiation are now somebody else's problem
         s.lois = s.lois.filter((l) => l.bbl !== h.bbl);

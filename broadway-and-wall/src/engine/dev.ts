@@ -13,6 +13,7 @@ import { rng, rrange, addStock, NATURAL_VAC, CITY_STOCK, BUILD_MONTHS } from "./
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, RECOVERY_RATE, demandLinear } from "./value";
 import { genAnchorTenant } from "./leasing";
 import { claimJob, jobDelivered, ownerOf } from "./rivals";
+import { useSf } from "./mix";
 
 const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
 
@@ -63,8 +64,31 @@ export const HARD_COST_PSF: Record<BuiltClass, number> = {
  * neighbourhood effect all follow from the components.
  */
 export const MIXED_STACK: UseMix = { retail: 0.15, office: 0.45, multifamily: 0.40 };
-export function devMix(use: DevUse): UseMix {
-  return use === "mixed" ? MIXED_STACK : { [use]: 1 };
+/**
+ * YOU DECIDE THE STACK.
+ *
+ * "Mixed use" used to mean one canonical 15/45/40 building and nothing else,
+ * which is not a programme — it is a preset. A developer picking mixed use is
+ * making the most consequential decision on the site: how much retail the
+ * frontage will actually carry, whether the middle is offices or flats, and
+ * what that does to the cost, the exit cap and the lender's appetite. All of
+ * which already fall out of the mix; there was simply no way to choose it.
+ *
+ * The custom split is normalised and floored — a leg under three per cent is
+ * not a use, it is a lobby — and the canonical stack remains the default so
+ * the decision is opt-in rather than homework.
+ */
+export function normalizeMix(m: UseMix): UseMix {
+  const keys = (Object.keys(m) as BuiltClass[]).filter((k) => (m[k] ?? 0) >= 0.03);
+  const tot = keys.reduce((a, k) => a + (m[k] ?? 0), 0);
+  if (!keys.length || tot <= 0) return { ...MIXED_STACK };
+  const out: UseMix = {};
+  for (const k of keys) out[k] = +((m[k] ?? 0) / tot).toFixed(4);
+  return out;
+}
+export function devMix(use: DevUse, custom?: UseMix): UseMix {
+  if (use !== "mixed") return { [use]: 1 };
+  return custom ? normalizeMix(custom) : { ...MIXED_STACK };
 }
 export function dominantOf(mix: UseMix): BuiltClass {
   return (Object.keys(mix) as BuiltClass[]).sort((a, b) => (mix[b] ?? 0) - (mix[a] ?? 0))[0] ?? "office";
@@ -258,6 +282,7 @@ export function planDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.6,
   contract: Contract = "gmp", ltcWanted?: number,
+  custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>> },
 ): DevPlan | null {
   // THE ENVELOPE YOU ACTUALLY HAVE. Zoning moves, variances are won and lots
   // are assembled — all of which live on the resolved record. Planning against
@@ -271,7 +296,7 @@ export function planDevelopment(
   const sf = Math.round((rec.lotArea * cov * fl) / 100) * 100;
   if (sf < 2000) return null;
 
-  const mix = devMix(use);
+  const mix = devMix(use, custom?.mix);
 
   const heightPrem = fl > 30 ? 1.28 : fl > 18 ? 1.18 : fl > 8 ? 1.07 : 1;
   // the budget is the sum of the jobs, not a number attached to a label
@@ -409,6 +434,7 @@ export function startDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.6,
   contract: Contract = "gmp", ltcWanted?: number,
+  custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>> },
 ): { s: GameState; err?: string } {
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
@@ -421,7 +447,7 @@ export function startDevelopment(
   if (s.landmarks?.[bbl] !== undefined) return { s, err: "It is landmarked — the envelope is what is already standing." };
   if (s.groundLeases?.[bbl]) return { s, err: "That site is ground-leased. Somebody else builds on it until the term runs out." };
   if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage — build on the site, not the piece." };
-  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, contract, ltcWanted);
+  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, contract, ltcWanted, custom);
   if (!plan) return { s, err: "That's too small to be worth building — add floors or cover more of the lot." };
   if (s.cash < plan.equityAtClose) {
     return { s, err: `The bank funds nothing until your equity is in the ground. That is $${(plan.equityAtClose / 1e6).toFixed(2)}M at close, of $${(plan.equity / 1e6).toFixed(2)}M total — you're short.` };
@@ -431,6 +457,7 @@ export function startDevelopment(
   logBooks(next, "dev", plan.equityAtClose);
   next.developments[bbl] = {
     bbl, use, mix: plan.mix, sf: plan.sf, floors: plan.floors,
+    suites: custom?.suites,
     costTotal: plan.costTotal, hardCost: plan.hardCost, contract,
     contingency: plan.contingency, contingencyUsed: 0,
     commitment: plan.commitment, drawn: 0, loanBalance: 0,
@@ -518,9 +545,16 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
   if (s.landmarks?.[bbl] !== undefined) return { s, err: "It is landmarked. Nobody knocks that down, including you." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
   if (h.sale) return { s, err: "It's on the market — pull the listing first." };
-  const leased = h.tenants.reduce((sum, t) => sum + t.sf, 0);
+  // OCCUPIED SPACE IS OCCUPIED SPACE — including the flats, which this used to
+  // ignore entirely, so a full apartment block with no commercial roll could be
+  // knocked down with people living in it.
+  const leased = h.tenants.reduce((sum, t) => sum + t.sf, 0)
+    + useSf(rec, "multifamily") * (h.occ ?? 0);
   if (leased / Math.max(1, rec.bldgArea) > 0.2) {
-    return { s, err: "You can't demolish over occupied space — let the leases roll below 20% first." };
+    return {
+      s,
+      err: "You can't demolish over occupied space. Stop letting it and wait the roll out, or buy the leases out — both are on the leasing desk.",
+    };
   }
   const cost = demolitionCost(rec, s);
   if (s.cash < cost) return { s, err: `Demolition runs $${(cost / 1e6).toFixed(2)}M — you're short.` };
@@ -730,7 +764,7 @@ export function tickConstructionLeasing(s: GameState, parcels: ParcelTable) {
 
 function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { address: string }) {
   const dmix = d.mix ?? devMix(d.use);
-  s.built[d.bbl] = { class: dominantOf(dmix), mix: dmix, bldgArea: d.sf, floors: d.floors, yearBuilt: 2000 + Math.floor(s.month / 12) };
+  s.built[d.bbl] = { class: dominantOf(dmix), mix: dmix, bldgArea: d.sf, floors: d.floors, yearBuilt: 2000 + Math.floor(s.month / 12), suites: d.suites };
   // YOUR BUILDING IS SUPPLY TOO. A tower you deliver competes with everybody
   // else's space, including your own — and if you build enough of one class
   // you will move its vacancy against yourself, which is the correct lesson.
@@ -1080,4 +1114,48 @@ export function tickCityGrowth(
 
 export function bumpLand(s: GameState, bbl: string, mult: number) {
   s.landAdj[bbl] = Math.min(4, (s.landAdj[bbl] ?? 1) * mult);
+}
+
+/**
+ * HOW SMALL AND HOW LARGE A SPACE CAN BE.
+ *
+ * Setting the unit count is a real programming decision and it has physical
+ * bounds. You cannot put ten shops in three thousand square feet — a shop
+ * needs frontage, a lavatory, a back of house and a door onto the street, and
+ * eight hundred feet is about the floor of that. Nor can you sell a single
+ * "unit" that is an entire two-hundred-thousand-foot tower and call it a
+ * building of one: at the top end you are describing a single-tenant
+ * headquarters, which is a real product and a rare one.
+ *
+ * Flats are the tightest band in the book, because a flat is a flat: a studio
+ * is about four hundred and fifty feet and anything past two thousand is a
+ * penthouse, not a unit type you programme a whole building around.
+ */
+export const SUITE_BOUNDS: Record<BuiltClass, { min: number; max: number; typical: number }> = {
+  office:      { min: 1_200, max: 60_000,  typical: 4_500 },
+  retail:      { min: 800,   max: 30_000,  typical: 3_000 },
+  industrial:  { min: 5_000, max: 200_000, typical: 25_000 },
+  multifamily: { min: 450,   max: 2_200,   typical: 850 },
+};
+
+/** The legal range of unit counts for a given amount of floor area in a use. */
+export function unitRange(useSfArea: number, use: BuiltClass): { min: number; max: number; typical: number } {
+  const b = SUITE_BOUNDS[use];
+  const sfArea = Math.max(0, useSfArea);
+  return {
+    min: Math.max(1, Math.floor(sfArea / b.max)),
+    max: Math.max(1, Math.floor(sfArea / b.min)),
+    typical: Math.max(1, Math.round(sfArea / b.typical)),
+  };
+}
+
+/**
+ * A unit count, turned back into the sf-per-space the engine actually uses,
+ * clamped to what is physically possible.
+ */
+export function suiteSfForUnits(useSfArea: number, use: BuiltClass, units: number): number {
+  const b = SUITE_BOUNDS[use];
+  const r = unitRange(useSfArea, use);
+  const n = Math.max(r.min, Math.min(r.max, Math.round(units)));
+  return Math.max(b.min, Math.min(b.max, Math.round(useSfArea / Math.max(1, n))));
 }

@@ -5,7 +5,7 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Credit, GameState, Holding, LOI, Sector } from "./types";
 import { logBooks, monthLabel } from "./types";
-import { rng, rrange , vacancyPull, NATURAL_VAC, industryStress, industryPull, INDUSTRY_LABEL } from "./market";
+import { rng, rrange, NATURAL_VAC, industryStress, industryPull, INDUSTRY_LABEL } from "./market";
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf, demandLinear } from "./value";
@@ -13,7 +13,7 @@ import { blendBy, commercialShare, dominantUse, mixOf, uses, useSf } from "./mix
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable } from "./credit";
 
-const CAP_KEYS = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+import { leasingOdds, drawRequirementSf } from "./absorption";
 
 /**
  * What a lease of this class looks like when it is signed. Office in this
@@ -632,19 +632,14 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     // Same floor on the way in: a building does not go to market with 700 ft
     // of leftover, so nobody turns up asking for it.
     if (!renovating && !h.leasingHold && vac >= PART_SUITE_MIN && openLois < loiCap) {
-      const phaseAdj = s.econ.phase === "expansion" ? 0.14 : s.econ.phase === "recession" ? -0.14 : 0;
-      const condAdj = h.condition === "good" ? 0.1 : h.condition === "worn" ? -0.1 : 0;
-      const stanceAdj = -0.12 * (h.stance ?? 0);                       // pushing rents thins the funnel
-      const lobbyAdj = h.programsDone?.lobby !== undefined ? 0.08 : 0; // a lobby people remember
-      const brokerMult = h.broker ? 1.75 : 1;                          // an exclusive works the phones
-      // A building you just finished is being actively marketed — brokers
-      // have been touring it since before the ribbon was cut. Without this,
-      // a new tower sat empty for years while you paid the debt service.
-      const leaseUp = h.deliveredM !== undefined && q - h.deliveredM <= 30 ? 1.9 : 1;
-      // Space that's mostly empty gets worked harder than one odd suite.
-      const emptyPush = 1 + 0.45 * (vac / Math.max(1, rec.bldgArea));
-      // What the sector is doing, and whether the city is hiring, decide how
-      // many prospects walk through the door — not just the phase of the cycle.
+      // WHERE A LETTER COMES FROM — see absorption.ts. Not a coin flip per
+      // building any more: the city has a finite quantity of requirement in the
+      // market this month, every vacant foot in town is competing for it, and
+      // this building takes its share. Everything that used to be a hand-tuned
+      // adjustment on a probability — the phase, the condition, your rent
+      // stance, the lobby, the broker, the sector, the jobs number, everyone
+      // else's deliveries — is now either a named multiplier the player can
+      // read on the panel or a term in the space market itself.
       // WHICH PART of the building is empty decides who walks through the
       // door. A tower with one empty shop at grade and full floors above is
       // being toured by shopkeepers, not law firms — and the shop competes in
@@ -663,34 +658,9 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // suites were built in — and only that one.
       const spec = h.specSuites;
       const specLive = spec !== undefined && spec.use === use && s.month >= spec.readyM;
-      const specMult = specLive ? 1.9 : 1;
-      const mom = s.econ.sectorMom?.[use] ?? 0;
-      const sectorAdj = mom * 9;
-      const jobsMult = Math.max(0.55, Math.min(1.6, 0.65 + 0.35 * (s.econ.employIdx ?? 1)));
-      // Everyone else's deliveries are competing for the same tenant.
-      const supplyMult = Math.max(0.5, 1 - 34 * (s.econ.supplyPress?.[use as keyof typeof CAP_KEYS] ?? 0));
-      // The citywide vacancy for THIS class decides how many tenants are even
-      // in the market. When the city runs a glut, your phone is one of many
-      // that ring less — and leases stop falling into your lap, which they
-      // were doing regardless of conditions.
-      const marketPull = vacancyPull(s.econ, use);
-      // HOW MANY PEOPLE ACTUALLY WALK THROUGH THE DOOR.
-      //
-      // Too many. A vacant floor in an ordinary building was drawing a signable
-      // prospect most quarters, which made vacancy a formality: you bought
-      // something empty, waited two or three turns, and it was full. Leasing is
-      // the hardest, slowest, most expensive thing an owner does, and it should
-      // be the reason a cheap building was cheap.
-      //
-      // The base is cut from 0.24 to 0.155 and the divisor widened from 2.7 to
-      // 3.1 — together about forty per cent fewer prospects — and the empty
-      // building bonus is trimmed from 1.7x to 1.45x, because a whole floor
-      // sitting dark attracts brokers, not tenants. Everything else in this
-      // expression stays: a good corner, a good building, a hot sector and a
-      // tight market still fill much faster than a poor one in a glut. It is
-      // the FLOOR that moved, so a mediocre asset in a soft market can now sit.
-      const p = Math.min(0.75, Math.max(0.010, 0.155 + demandLinear(rec.demandScore) / 200 + phaseAdj + condAdj + stanceAdj + lobbyAdj + sectorAdj)
-        / 3.1 * brokerMult * specMult * leaseUp * emptyPush * jobsMult * supplyMult * marketPull);
+      const odds = leasingOdds(s, parcels, rec, h, use);
+      if (!odds) continue;
+      const p = odds.loiOdds;
       if (rng(s) < p) {
         const sector = pickSector(s, use);
         const [tiLo, tiHi] = TI_ASK[use] ?? TI_ASK.office;
@@ -702,9 +672,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // it. Offices and shops carve into suites.
         // Prospects ask for spaces, not square feet. Warehouses tend to want
         // the whole shed; offices and shops take one suite or a few.
-        const want = use === "industrial"
-          ? (rng(s) < 0.6 ? legVac : legVac * rrange(s, 0.5, 0.9))
-          : useSuiteSf(rec, use) * Math.max(1, Math.round(rrange(s, 1, 3.4)));
+        // HOW BIG THE REQUIREMENT IS, drawn from the city's own distribution
+        // of requirements rather than from the size of your building. A firm
+        // looking for eight thousand feet is looking for eight thousand feet
+        // whoever owns the floor.
+        const want = Math.min(legVac, drawRequirementSf(s, use));
         const sf = toSuites(rec, want, legVac, use);
         if (!sf) continue;
         const credit = rollCredit(s, demandLinear(rec.demandScore));

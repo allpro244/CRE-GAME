@@ -59,6 +59,7 @@ import { marketAppetite, markRival, ownerOf, rivalCondition } from "@/engine/riv
 import { compFlows, compStats, portfolioIndustries } from "@/engine/comps";
 import { INDUSTRY_LABEL, SECTORS } from "@/engine/market";
 import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses } from "@/engine/leasing";
+import { leasingOdds } from "@/engine/absorption";
 import { groundLeaseQuote, mergeCost } from "@/engine/actions";
 import { varianceQuote } from "@/engine/zoning";
 import { usd, sf, pct } from "./format";
@@ -624,6 +625,8 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
           </div>
         </div>
       )}
+
+      {holding && isBuilt && !renovating && <LettingOdds bbl={selectedBBL} />}
 
       {holding?.loan && (
         <div className="deal">
@@ -2043,6 +2046,82 @@ function WorkoutDesk({ bbl }: { bbl: string }) {
             ? "You signed for this one. At auction the shortfall comes out of your account; a deed in lieu settles the debt in full and there is no deficiency. That difference is the whole reason to walk into their office rather than wait."
             : "The paper is non-recourse and the debt is above the value. Handing it back costs you the building and nothing else, and it is a smaller mark than letting them take it."}
       </div>
+    </div>
+  );
+}
+
+/**
+ * WHY THIS BUILDING IS OR IS NOT LETTING.
+ *
+ * A building that will not lease for reasons the owner cannot read is not
+ * difficulty, it is a bug nobody can report. So the arithmetic that decides a
+ * letter of intent is put on the screen in the terms a leasing agent would use
+ * it in: how much space you are marketing, how much else the tenant could take
+ * instead, what the city is actually looking for this month, and what share of
+ * that your building can expect to win. Underneath it, every reason this
+ * building beats or loses to the one across the street, named and multiplied
+ * out.
+ *
+ * It is a readout, not a chore. There is nothing to press here — the moves it
+ * argues for are the ones already on the Management block above: an exclusive,
+ * a capital programme, pre-built suites, or coming off your asking rent.
+ */
+function LettingOdds({ bbl }: { bbl: string }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const h = game.holdings[bbl];
+  const rec = h ? resolveRec(parcels, game, bbl) : null;
+  if (!h || !rec || h.leasingHold) return null;
+  const legs = leasableUses(rec)
+    .map((u) => leasingOdds(game, parcels, rec, h, u))
+    .filter((o): o is NonNullable<typeof o> => !!o && o.availSf > 1500);
+  if (!legs.length) return null;
+  return (
+    <div className="deal">
+      <div className="deal-head">Letting — where you stand in the market</div>
+      {legs.map((o) => (
+        <div key={o.use}>
+          {legs.length > 1 && (
+            <div className="page-section" style={{ marginTop: 2 }}>{SECTOR_LABEL[o.use]}</div>
+          )}
+          <div className="grid">
+            <Row k="You are marketing" v={`${sf(Math.round(o.availSf))} · reads as ${sf(Math.round(o.marketedSf))} of usable space`} />
+            <Row
+              k="Vacancy · city / your corner"
+              v={`${(o.cityVac * 100).toFixed(1)}% / ${(o.localVac * 100).toFixed(1)}%`}
+              bad={o.localVac > o.cityVac * 1.12}
+            />
+            <Row k="Competing supply" v={`${sf(Math.round(o.competingSf))} available or coming back`} />
+            <Row k="The city is looking for" v={`${sf(Math.round(o.requirementSf))} this month`} />
+            <Row k="Your share of it" v={`${(o.shareOfMarket * 100).toFixed(2)}% · about ${sf(Math.round(o.captureSf))} a month`} />
+            <Row
+              k="Your ask vs the market"
+              v={`${o.askPsf.toFixed(2)} vs ${o.marketPsf.toFixed(2)}`}
+              bad={o.askPsf > o.marketPsf * 1.04}
+            />
+            <Row
+              k="To 85% let at this pace"
+              v={o.monthsToLet === null ? "it does not get there" : o.monthsToLet <= 0 ? "already there" : `${o.monthsToLet} months`}
+              strong
+              bad={o.monthsToLet === null || o.monthsToLet > 48}
+            />
+          </div>
+          <div className="roll">
+            {o.factors.map((f) => (
+              <div className="roll-row" key={f.label}>
+                <span className="roll-name">
+                  {f.label} · <span className="dim">{f.detail}</span>
+                </span>
+                <span className="roll-meta mono">×{f.mult.toFixed(2)}</span>
+              </div>
+            ))}
+            <div className="roll-row roll-group">
+              <span className="roll-name">This building against an ordinary one</span>
+              <span className="roll-meta mono">×{o.weight.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

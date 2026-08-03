@@ -180,7 +180,7 @@ export function advanceQuarter(
   tickPrograms(s, parcels);
   tickLeasing(s, parcels);
   tickGroundLeases(s, parcels);
-  tickSales(s, parcels);
+  tickSales(s, parcels, adjacency);
   tickBrokerCalls(s, parcels, bbls);
   tickListingAbsorption(s, parcels); // other buyers work the tape too
   tickTalks(s, parcels);             // a negotiation left open goes stale

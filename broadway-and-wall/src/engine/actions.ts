@@ -6,7 +6,7 @@ import type { Bid, GameState, Holding } from "./types";
 import { logBooks, monthLabel } from "./types";
 import { rng, rrange } from "./market";
 import { assetValue, initialCondition, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr, demandLinear } from "./value";
-import { marketAppetite, ownerOf, rivalAsk, rivalBuys } from "./rivals";
+import { marketAppetite, ownerOf, rivalAsk, rivalBuys, livingRivals } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
 import { takeoverDevelopment } from "./dev";
@@ -690,6 +690,67 @@ export function acceptBid(s: GameState, parcels: ParcelTable, bbl: string, index
   return { s: next, msg: "Under contract." };
 }
 
+/**
+ * WHO WANTS IT, AND WHAT THAT IS WORTH.
+ *
+ * An unsolicited approach is not a random number — it is a specific firm with
+ * a specific reason, and the reason is the price. A neighbour assembling a
+ * site will pay well over the mark because the lot is worth more to them than
+ * it is to the market; a fund adding to a position pays a modest premium for
+ * not having to compete for it; an opportunist who noticed your building is
+ * half empty is not paying a premium at all.
+ *
+ * This is the same assemblage logic that has been making YOUR approaches
+ * dearer since the first one, pointed back at you — which is exactly how it
+ * works from the other side of the table.
+ */
+function unsolicitedBidder(
+  s: GameState, parcels: ParcelTable, adjacency: Adjacency | null, rec: ParcelRecord, h: Holding,
+): { name: string; why: string; mult: number } {
+  const firms = livingRivals(s).filter((r) => !r.stressMs);
+  // Does anybody own the lots around this one?
+  const nbrs = new Set(adjacency?.[rec.bbl] ?? []);
+  const neighbour = nbrs.size ? firms.find((r) => r.bbls.filter((b) => nbrs.has(b)).length >= 2) : undefined;
+  if (neighbour && rec.class === "land") {
+    return {
+      name: neighbour.name,
+      why: `They own ${neighbour.bbls.filter((b) => nbrs.has(b)).length} of the lots around it and they are assembling a site. `
+        + `This is the number somebody pays when your dirt is the last piece.`,
+      mult: rrange(s, 1.22, 1.55),
+    };
+  }
+  if (neighbour) {
+    return {
+      name: neighbour.name,
+      why: `They have the deeds either side. A building on the corner of somebody else's assemblage is worth more to `
+        + `them than it is to the market, and they have just told you how much more.`,
+      mult: rrange(s, 1.12, 1.34),
+    };
+  }
+  // Somebody accumulating this asset class, who would rather not bid against
+  // the whole city for the next one.
+  const collector = firms
+    .map((r) => ({
+      r, n: r.bbls.filter((b) => (resolveRec(parcels, s, b)?.class ?? "") === rec.class).length,
+    }))
+    .filter((x) => x.n >= 3)
+    .sort((a, b) => b.n - a.n)[0];
+  if (collector && rng(s) < 0.7) {
+    return {
+      name: collector.r.name,
+      why: `They already own ${collector.n} like it and would rather buy yours quietly than bid against the city for the next one.`,
+      mult: rrange(s, 1.04, 1.16),
+    };
+  }
+  // The opportunist. Reads the rent roll, notices the vacancy, and prices it.
+  const occ = rec.bldgArea > 0
+    ? Math.min(1, h.tenants.reduce((a, t) => a + t.sf, 0) / rec.bldgArea + (h.occ ?? 0) * 0.5) : 1;
+  const who = firms.length ? firms[Math.floor(rng(s) * firms.length)].name : "An out-of-town buyer";
+  return occ < 0.7
+    ? { name: who, why: "They have read the rent roll and they are pricing the empty floors, not the building.", mult: rrange(s, 0.84, 0.96) }
+    : { name: who, why: "No particular reason beyond wanting it. Those are the ones worth listening to.", mult: rrange(s, 0.98, 1.14) };
+}
+
 export function delist(s: GameState, bbl: string): GameState {
   const next = clone(s);
   if (next.holdings[bbl]?.sale) delete next.holdings[bbl].sale;
@@ -970,7 +1031,7 @@ export function counterSale(
   return { s: next, msg: "They walked." };
 }
 
-export function tickSales(s: GameState, parcels: ParcelTable) {
+export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacency | null = null) {
   for (const h of Object.values(s.holdings)) {
     // UNSOLICITED APPROACHES. Nobody in this business only sells when they
     // decide to — the phone rings on the building you were not thinking about,
@@ -998,13 +1059,24 @@ export function tickSales(s: GameState, parcels: ParcelTable) {
         if (rng(s) < p) {
           s.lastUnsolicitedM = s.month;
           const v = holdingValue(rec0, s.econ, h, s.month);
-          // over the top when money is loose, cheeky when it isn't
-          const px = Math.round(v * (hot ? rrange(s, 1.02, 1.24) : rrange(s, 0.82, 0.98)));
+          // WHO IS CALLING, AND WHY.
+          //
+          // "An unsolicited offer" arrived from nobody, for no reason, at a
+          // number drawn out of the phase. That is a dice roll wearing a
+          // sentence. Every real approach has a name attached and a motive
+          // behind it, and the motive is the whole content of the call: the
+          // firm that owns the two lots either side of you is not paying the
+          // same number as a fund rebalancing into your asset class, because
+          // they are not buying the same thing. They are buying the block.
+          const bidder = unsolicitedBidder(s, parcels, adjacency, rec0, h);
+          const px = Math.round(v * bidder.mult * (hot ? rrange(s, 1.00, 1.10) : rrange(s, 0.86, 0.98)));
           h.sale = { ask: px, listedM: s.month, unsolicited: true };
-          h.sale.offer = { price: px, expiresM: s.month + 2 };
+          h.sale.offer = { price: px, expiresM: s.month + 2, from: bidder.name };
           s.news.unshift({
             q: s.month, kind: "deal",
-            text: `An unsolicited offer for ${rec0.address}: $${(px / 1e6).toFixed(2)}M, ${px >= v ? `${Math.round((px / Math.max(1, v) - 1) * 100)}% over` : `${Math.round((1 - px / Math.max(1, v)) * 100)}% under`} appraisal. It's good for two months.`,
+            text: `${bidder.name} rang about ${rec0.address}: $${(px / 1e6).toFixed(2)}M, `
+              + `${px >= v ? `${Math.round((px / Math.max(1, v) - 1) * 100)}% over` : `${Math.round((1 - px / Math.max(1, v)) * 100)}% under`} appraisal. `
+              + `${bidder.why} It's good for two months.`,
           });
         }
       }

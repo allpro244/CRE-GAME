@@ -157,7 +157,7 @@ export function portfolioQuote(s: GameState, parcels: ParcelTable, bbls: string[
   // largest term in a real downturn and the reason distressed sellers sell one
   // building at a time.
   const ci = s.econ.creditIdx ?? 1;
-  const credit = -Math.max(0, 1 - ci) * 0.34 - (s.econ.phase === "recession" ? 0.035 : 0);
+  const credit = -Math.max(0, 1 - ci) * 0.18 - (s.econ.phase === "recession" ? 0.035 : 0);
   if (credit < -0.004) {
     why.push({ label: ci < 0.8 ? "Credit is tight — nobody is funding a portfolio right now" : "Financing markets are soft", pct: credit });
   }
@@ -179,7 +179,15 @@ export function portfolioQuote(s: GameState, parcels: ParcelTable, bbls: string[
     why.push({ label: "This is essentially your whole book — everybody knows why you are selling", pct: -0.02 });
   }
 
-  const total = why.reduce((a, x) => a + x.pct, 0);
+  // A FLOOR UNDER THE BLEND. Every term above is defensible on its own and
+  // they compound: an empty mixed bag, in a crunch, from a sponsor with a
+  // record, too big for the room, arrives at eighty points of discount, and
+  // there is no such trade. Past about forty points a real seller stops
+  // bundling and sells them one at a time, because that is strictly better —
+  // so the model has to stop there too. In a genuine crunch the bundle does
+  // not get cheaper; it simply gets no bid at all, which is what the arrival
+  // rate in tickPortfolio already does.
+  const total = Math.max(-0.40, why.reduce((a, x) => a + x.pct, 0));
   const indicative = Math.round(sumOfParts * (1 + total));
   return { sumOfParts, indicative, spreadPct: total, why, depth: Math.max(1, depth), count: rows.length };
 }

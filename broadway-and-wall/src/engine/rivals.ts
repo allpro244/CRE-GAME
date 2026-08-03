@@ -548,10 +548,14 @@ function maybeNewFirm(s: GameState, ci: number) {
   const pool = NEW_FIRMS.filter((f) => !used.has(f.name));
   if (!pool.length) return;
   const f = pool[Math.floor(rng(s) * pool.length)];
-  // sized to the era, not to 2026 — a fund raised in year eighty is a year
-  // eighty fund
-  const scale = Math.max(1, living.reduce((a, r) => a + (r.aum ?? 0), 0) / 500_000_000);
-  const equity = Math.round(rrange(s, 4_000_000, 10_000_000) * scale);
+  // A NEW FUND IS A NEW FUND. This used to scale the raise by aggregate street
+  // AUM — "sized to the era" — which sounds right and is not: once the twelve
+  // incumbents crossed half a billion between them, every firm founded after
+  // that came out of the gate at up to $15M, above the cap the whole roster is
+  // built to. A firm's first close is set by what a first-time sponsor can
+  // raise, not by how rich the people who started forty years earlier have
+  // become. They compound their way up like everybody else.
+  const equity = Math.round(rrange(s, 4_000_000, 10_000_000));
   const ltv = STYLE[f.style].maxLtv * rrange(s, 0.68, 0.88);
   s.rivals.push({
     id: `r${s.rivals.length}`, name: f.name, style: f.style,

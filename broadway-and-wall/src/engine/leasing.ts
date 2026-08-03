@@ -212,8 +212,16 @@ export function unitStatus(rec: ParcelRecord, h: Holding, month: number): {
 const PART_SUITE_MIN = COMMERCIAL_SUITE_MIN;   // below this it isn't space, it's a closet
 function toSuites(rec: ParcelRecord, want: number, cap: number, use?: BuiltClass): number {
   const sfPer = use ? useSuiteSf(rec, use) : suiteSf(rec);
+  // Flats have their own floor — 450 ft is a studio, not a closet.
+  const floor = use === "multifamily" ? 450 : PART_SUITE_MIN;
   const maxUnits = Math.floor(cap / sfPer + 0.02);
-  if (maxUnits < 1) return cap >= Math.min(PART_SUITE_MIN, sfPer * 0.35) ? Math.round(cap) : 0;
+  // A REMNANT UNDER THE FLOOR IS NOT SPACE. This read
+  // `Math.min(PART_SUITE_MIN, sfPer * 0.35)`, and the Math.min quietly
+  // collapsed the 2,000 ft floor to 700 the moment the demise was already at
+  // the floor — which is most small commercial buildings. Thirty per cent of
+  // every inherited rent roll came out below the minimum because of it. A
+  // sliver nobody will lease stays vacant; that is what a floor means.
+  if (maxUnits < 1) return cap >= floor ? Math.round(cap) : 0;
   const n = Math.max(1, Math.min(maxUnits, Math.round(want / sfPer)));
   const taken = n * sfPer;
   // if letting whole suites would strand an unlettable sliver, take it too
@@ -222,7 +230,11 @@ function toSuites(rec: ParcelRecord, want: number, cap: number, use?: BuiltClass
   // when the space divides evenly, but it can also round a whole suite up past
   // what is actually vacant — which let buildings sign leases for a few dozen
   // square feet they did not have.
-  return Math.min(Math.floor(cap), Math.round(left > 0 && left < Math.min(PART_SUITE_MIN, sfPer * 0.35) ? cap : taken));
+  const out = Math.min(Math.floor(cap), Math.round(left > 0 && left < Math.min(floor, sfPer * 0.35) ? cap : taken));
+  // The 0.02 slop can allow a whole suite when the vacancy is a couple of per
+  // cent short of one, and the clamp above then trims it back BELOW the floor.
+  // That is where the last handful of 1,960 ft offices were coming from.
+  return out >= floor ? out : 0;
 }
 
 // In-place rent roll at acquisition. Expirations cluster around a couple of
@@ -498,15 +510,20 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const trade = industryStress(s.econ, t.sector) * 2.6;
       const pFail = 0.00035 * cycle * grade * (1 + sectorStress + trade);
       if (rng(s) >= pFail) continue;
+      // FORFEITING A DEPOSIT IS NOT A CASH RECEIPT. It was collected at
+      // signing and has been sitting in your account ever since as somebody
+      // else's money; what changes on a default is that you stop owing it
+      // back. This used to splice the tenant — correctly releasing the
+      // liability, which is the whole forfeiture — and then ALSO credit three
+      // months of contract rent as if the deposit were arriving now. You were
+      // paid twice, and the news reported the phantom number as the deposit.
+      const kept = Math.round(t.deposit ?? 0);
       h.tenants.splice(i, 1);
-      // you keep whatever security deposit there was — call it three months
-      const recovered = Math.round(t.rentPsf * t.sf * 0.25);
-      s.cash += recovered;
       const down = Math.max(2, Math.round((rec.class === "office" ? 6 : 4) * rrange(s, 0.8, 1.5)));
       h.makeReady = [...(h.makeReady ?? []), { sf: t.sf, readyM: q + down, use: t.use }];
       s.news.unshift({
         q, kind: "warn",
-        text: `${t.name} filed and went dark at ${rec.address} — ${(t.sf / 1000).toFixed(1)}k sf back with ${(t.endM - q) / 12 > 1 ? `${((t.endM - q) / 12).toFixed(1)} years` : `${t.endM - q} months`} left on the lease. You kept $${(recovered / 1000).toFixed(0)}K of deposit.`,
+        text: `${t.name} filed and went dark at ${rec.address} — ${(t.sf / 1000).toFixed(1)}k sf back with ${(t.endM - q) / 12 > 1 ? `${((t.endM - q) / 12).toFixed(1)} years` : `${t.endM - q} months`} left on the lease. You kept their $${(kept / 1000).toFixed(0)}K deposit — which is a month of the hole, not a year of it.`,
       });
     }
 
@@ -584,7 +601,9 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     const openLois = s.lois.filter((l) => l.bbl === h.bbl && l.kind === "new").length;
     // a big empty floorplate draws more than one prospect at a time
     const loiCap = vac > rec.bldgArea * 0.5 ? 3 : 2;
-    if (!renovating && !h.leasingHold && vac >= Math.min(PART_SUITE_MIN, suiteSf(rec) * 0.35) && openLois < loiCap) {
+    // Same floor on the way in: a building does not go to market with 700 ft
+    // of leftover, so nobody turns up asking for it.
+    if (!renovating && !h.leasingHold && vac >= PART_SUITE_MIN && openLois < loiCap) {
       const phaseAdj = s.econ.phase === "expansion" ? 0.14 : s.econ.phase === "recession" ? -0.14 : 0;
       const condAdj = h.condition === "good" ? 0.1 : h.condition === "worn" ? -0.1 : 0;
       const stanceAdj = -0.12 * (h.stance ?? 0);                       // pushing rents thins the funnel
@@ -743,7 +762,9 @@ export function specSuiteQuote(s: GameState, rec: ParcelRecord, h: Holding, use:
   if (!psf) return null;
   const open = useVacantSf(rec, h, use, s.month);
   const take = Math.max(0, Math.min(Math.round(sf), Math.round(open)));
-  if (take < 800) return null;
+  // You cannot pre-build a closet either. 800 was a number from before the
+  // floor existed.
+  if (take < (use === "multifamily" ? 450 : COMMERCIAL_SUITE_MIN)) return null;
   return { sf: take, cost: Math.round(take * psf * s.econ.costIdx), readyM: s.month + SPEC_MONTHS, use };
 }
 
@@ -933,7 +954,22 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     // return multifamily, and did.
     const use = l.use ?? leasableUses(rec)[0] ?? "office";
     const sf = Math.min(l.sf, Math.max(0, useVacantSf(rec, h, use, s.month)));
-    if (sf < 1) return;
+    // AND THE FLOOR HOLDS HERE TOO. The clamp above shrinks a signed letter to
+    // whatever is actually left after the other live one signed, and it only
+    // guarded against zero — so a 4,000 ft letter could quietly become a 900 ft
+    // lease against a floor that says 2,000. If what is left is not a suite,
+    // the deal died when the other one signed; that is what "you cannot lease
+    // the same floor twice" costs.
+    const floorSf = use === "multifamily" ? 450 : COMMERCIAL_SUITE_MIN;
+    if (sf < floorSf) {
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `${l.name} lost the space at ${rec.address} — the other letter signed first and what is left `
+          + `(${Math.round(sf).toLocaleString()} sf) is under the ${floorSf.toLocaleString()} sf minimum. `
+          + `Two live letters on one floor is a race, and somebody always loses it.`,
+      });
+      return;
+    }
     const deposit = depositFor(s, l.rentPsf, sf, l.credit);
     s.cash += deposit;
     h.tenants.push({

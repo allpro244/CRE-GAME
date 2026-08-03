@@ -274,6 +274,15 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
       if (monthly > 0 && d > monthly * 3.2) {
         bad("deposit", `${h.bbl} ${t.name}`, `deposit is ${(d / monthly).toFixed(1)} months of rent`);
       }
+      // NOBODY DEMISES A CLOSET. The 2,000 ft commercial floor was enforced in
+      // the development planner and in the UI slider and leaked in three
+      // separate places in the leasing code, so a third of every inherited
+      // rent roll sat below it and nothing noticed for weeks. A rule with no
+      // invariant behind it is a suggestion.
+      const cls = t.use ?? (parcels[h.bbl]?.class as never);
+      if (cls && cls !== "multifamily" && t.sf > 0 && t.sf < 2_000 - 1) {
+        bad("suite", `${h.bbl} ${t.name}`, `${Math.round(t.sf)} sf commercial tenancy, below the 2,000 sf floor`);
+      }
     }
     // A building you have stopped letting must not be signing anybody.
     if (h.leasingHold && s.lois.some((l) => l.bbl === h.bbl)) {

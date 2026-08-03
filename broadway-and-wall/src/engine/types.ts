@@ -126,6 +126,16 @@ export interface Loan {
   maxLTV: number;
   sweep: boolean;        // breach: cash flow trapped to principal until cured
   cleanQs: number;
+  /**
+   * MONTHS IN BREACH, CONSECUTIVELY.
+   *
+   * A swept loan used to be able to sit broken forever — the counter reset
+   * every month it was still broken, so nothing downstream of a covenant
+   * breach ever happened. Two years of this and the lender stops waiting and
+   * opens a file, which is the covenant cause the workout desk declares and
+   * previously had no way to reach.
+   */
+  breachMs?: number;
   originM: number;
   holidayUntilM?: number;  // covenants do not bite until this month
   cap?: { strike: number; expiresM: number }; // purchased rate cap: index capped at strike
@@ -270,15 +280,6 @@ export interface Listing {
   halfBuilt?: { use: string; sf: number; floors: number; progress: number; costToComplete: number };
 }
 
-/**
- * SOMEBODY ELSE'S MONEY IN ONE OF YOUR BUILDINGS.
- *
- * A limited partner owns `lpShare` of the equity, is owed `prefPct` a year on
- * whatever of their capital has not come back, and gets everything before you
- * do. Your compensation for running it is the `promotePct` you take out of
- * their profit once they are whole — which is worth nothing at all on a deal
- * that does not clear the pref, and is most of a career on the ones that do.
- */
 
 import type { Comp } from "./comps";
 
@@ -343,6 +344,18 @@ export interface Approach {
   ask?: number;        // if willing: their number, good for 4 quarters
   countered?: boolean; // you get one counter per approach
   inbound?: boolean;   // they called you, not the other way round
+  /**
+   * YOU INSULTED THEM, AND WHEN THEY WILL TAKE YOUR CALL AGAIN.
+   *
+   * The lowball penalty used to be a news item and nothing else: talks were
+   * deleted, the seller "ended it", and the player pressed Offer again in the
+   * same month and went under contract at 94. A cost you can undo in one click
+   * is not a cost. This is the month the door reopens, and until it does no
+   * offer on this building is answered by anybody.
+   */
+  insultedUntilM?: number;
+  /** How much their floor moved because of it, and it does not move back. */
+  soured?: number;
 }
 
 export interface NewsItem {

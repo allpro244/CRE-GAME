@@ -854,6 +854,9 @@ function SaleSection({ bbl, value }: { bbl: string; value: number }) {
   const holding = game.holdings[bbl]!;
   const [ask, setAsk] = useState<string>("");
   const [counter, setCounter] = useState(0);
+  // which bidder you are going back to privately, and at what number
+  const [counterOn, setCounterOn] = useState<number | null>(null);
+  const [counterPx, setCounterPx] = useState(0);
   const sale = holding.sale;
   const exchangeBusy = !!game.exchange;
   if (sale) {
@@ -897,9 +900,10 @@ function SaleSection({ bbl, value }: { bbl: string; value: number }) {
                               move — the private call to the one number you
                               would take five per cent more of. One per bid. */}
                           {!b.countered && (
-                            <button className="btn-mini" title={`Go back to ${b.name} alone and ask ${usd(Math.round(b.price * 1.06))}`}
-                              onClick={() => useStore.getState().counterBid(bbl, i, Math.round(b.price * 1.06))}>
-                              counter +6%
+                            <button className={"btn-mini" + (counterOn === i ? " on" : "")}
+                              title={`Go back to ${b.name} alone with a number of your own`}
+                              onClick={() => { setCounterOn(counterOn === i ? null : i); setCounterPx(Math.round(b.price * 1.06)); }}>
+                              counter
                             </button>
                           )}
                         </div>
@@ -909,6 +913,36 @@ function SaleSection({ bbl, value }: { bbl: string; value: number }) {
                 ))}
               </tbody>
             </table>
+            {/* NAME YOUR OWN NUMBER. This was a hardcoded "counter +6%" button,
+                which is not a negotiation — it is a single scripted move. The
+                engine has always taken an arbitrary price; only the UI was
+                deciding for you. How hard you push is the entire decision:
+                every point you ask for is a point of risk that the one bidder
+                who was there walks and the process is over. */}
+            {counterOn !== null && sale.bids?.[counterOn] && !sale.bids[counterOn].dropped && (
+              <div className="page-section" style={{ marginTop: 6 }}>
+                <Slider
+                  label={`Back to ${sale.bids![counterOn].name} at`}
+                  value={counterPx}
+                  min={sale.bids![counterOn].price}
+                  max={Math.round(sale.bids![counterOn].price * 1.25)}
+                  step={25_000}
+                  onChange={setCounterPx}
+                  format={(v: number) => `${usd(v)} · +${((v / sale.bids![counterOn!].price - 1) * 100).toFixed(1)}%`}
+                  hint={counterPx > sale.bids![counterOn].price * 1.12
+                    ? "That is a long way past their number. A bidder who has already shown you their best walks at this."
+                    : counterPx > sale.bids![counterOn].price * 1.05
+                      ? "A real ask. They will think about it, and some of them will not come back."
+                      : "Close enough to their number that they will probably just pay it."}
+                />
+                <div className="btn-row">
+                  <button className="btn" onClick={() => { useStore.getState().counterBid(bbl, counterOn!, counterPx); setCounterOn(null); }}>
+                    Send it — {usd(counterPx)}
+                  </button>
+                  <button className="btn" onClick={() => setCounterOn(null)}>Leave it</button>
+                </div>
+              </div>
+            )}
             <div className="hint">
               Taking a bid is not a closing. The weaker the covenant behind a number, the likelier they come back
               with a reason it should be lower once they have been through the building.
@@ -1819,9 +1853,6 @@ function PropertyPage() {
           <Row k="Demand" v={rec.demandScore + " / 100"} />
         </div>
       </div>
-      {/* OUT OF SERVICE. The damaged share earns nothing and still costs money
-          to hold, and what it actually cost you after the policy is the only
-          number that matters afterwards. */}
       <WorkoutDesk bbl={bbl} />
       <LandDesk bbl={bbl} />
       {dev && (
@@ -2455,7 +2486,27 @@ function PortfolioPage() {
           return <Big label="Unrealised gain" value={`${g >= 0 ? "+" : "−"}${usd(Math.abs(g))} · ${cost > 0 ? ((g / cost) * 100).toFixed(0) : "0"}%`} bad={g < 0} />;
         })()}
         <Big label="Buildings" value={String(holdings.length)} />
+        {/* THE ONE THING YOU CANNOT AFFORD TO MISS. */}
+        {Object.keys(game.workouts ?? {}).length > 0 && (
+          <Big label="In default" value={String(Object.keys(game.workouts ?? {}).length)} bad />
+        )}
       </div>
+      {Object.values(game.workouts ?? {}).length > 0 && (
+        <div className="hint" style={{ marginTop: 8 }}>
+          {Object.values(game.workouts!).map((w) => {
+            const r = resolveRec(parcels, game, w.bbl);
+            return (
+              <div key={w.bbl} className="neg" style={{ cursor: "pointer" }} onClick={() => go(w.bbl)}>
+                ⚠ {r?.address ?? w.bbl} — {w.lender} {w.stage === "foreclosure"
+                  ? `has filed. Auction ${monthLabel(w.decideM)}.`
+                  : w.stage === "forbearance"
+                    ? `extended it to ${monthLabel(w.decideM)}.`
+                    : `opened a file. They can file from ${monthLabel(w.decideM)}.`} Curing it takes {usd(w.cure)}.
+              </div>
+            );
+          })}
+        </div>
+      )}
       {exposure.roll > 0 && (
         <>
           <div className="page-section">Exposure</div>
@@ -2530,7 +2581,9 @@ function PortfolioPage() {
           </tr>
         </thead>
         <tbody>
-          {shown.map(({ h, rec, v, noi, cf, occ }, i) => (
+          {shown.map(({ h, rec, v, noi, cf, occ }, i) => {
+            const wk = game.workouts?.[h.bbl];
+            return (
             <Fragment key={h.bbl}>
             <tr onClick={() => go(h.bbl)}>
               {bundling && (
@@ -2591,10 +2644,19 @@ function PortfolioPage() {
               <td className="num">{usd(v - (h.loan?.balance ?? 0))}</td>
               <td className="num">{h.loan ? "−" + usd(h.loan.monthlyPmt) : "—"}</td>
               <td className={"num" + (cf < 0 ? " neg" : "")}>{usd(cf)}</td>
-              <td className="dim">
-                {[h.loan?.sweep ? "SWEEP" : null, h.sale ? "LISTED" : null,
+              {/* A BUILDING IN DEFAULT WAS INVISIBLE FROM HERE. The workout desk
+                  lives on the property record, so the only way to find out a
+                  lender had filed was to open that one building. On a
+                  thirty-building book that is not a warning, it is a scavenger
+                  hunt with a foreclosure at the end of it. */}
+              <td className={wk ? "neg" : "dim"}>
+                {[wk ? (wk.stage === "foreclosure" ? "⚠ FORECLOSURE" : wk.stage === "forbearance" ? "⚠ EXTENDED" : "⚠ DEFAULT") : null,
+                  h.loan?.sweep ? "SWEEP" : null, h.sale ? "LISTED" : null,
                   h.renovatingUntilM !== undefined && game.month < h.renovatingUntilM ? "RENO" : null,
                   h.program ? "CAPEX" : null].filter(Boolean).join(" · ")}
+                {wk && <div className="mono" style={{ fontSize: 11 }}>
+                  {wk.stage === "foreclosure" ? "auction" : "they file"} {monthLabel(wk.decideM)}
+                </div>}
               </td>
               <td>
                 {/* list it from the row — no need to open the record */}
@@ -2630,23 +2692,32 @@ function PortfolioPage() {
               </tr>
             )}
             </Fragment>
-          ))}
+            );
+          })}
           {Object.values(game.developments).map((dv) => (
+            /* SIXTEEN CELLS, NOT FIFTEEN. This row was one short of the header
+               and every value from the seventh column rightwards sat under the
+               wrong heading — a job's construction loan balance was printing
+               under "Gain". A misaligned number is worse than a missing one. */
             <tr key={dv.bbl} onClick={() => go(dv.bbl)}>
+              {bundling && <td className="dim">·</td>}
               {sortBy === "income" && <td className="num dim">—</td>}
               <td>{parcels[dv.bbl]?.address ?? dv.bbl}</td>
               <td>{devUseLabel(dv.use)}</td>
-              <td className="num">—</td>
-              <td className="num">—</td>
-              <td className="num">—</td>
-              <td className="num">—</td>
-              <td className="num">{usd(dv.costTotal)}</td>
+              <td className="num dim">{sf(dv.sf)}</td>
               <td className="num dim">—</td>
+              <td className="num dim">—</td>
+              <td className="num dim">—</td>
+              <td className="num dim">—</td>
+              <td className="num dim">—</td>
+              <td className="num" title="The budget as it stands, escalation included">{usd(dv.costTotal)}</td>
               <td className="num dim">—</td>
               <td className="num">{usd(dv.loanBalance)}</td>
-              <td className="num">{usd(dv.costTotal - dv.loanBalance)}</td>
-              <td className="num">—</td>
-              <td className="num neg">{usd(-(dv.loanBalance * dv.ratePct) / 100 / 12)}</td>
+              <td className="num" title="What you have actually put in so far">{usd(dv.equitySpent)}</td>
+              <td className="num neg" title="Construction interest accruing into the loan, not paid in cash">
+                {usd(-(dv.loanBalance * dv.ratePct) / 100 / 12)}
+              </td>
+              <td className="num dim">—</td>
               <td className="dim">BUILDING · delivers {monthLabel(dv.deliverM)}</td>
               <td></td>
             </tr>

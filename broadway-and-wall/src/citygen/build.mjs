@@ -313,8 +313,6 @@ export function buildCityData(src) {
       assessedTotal: assessTot,
       demandScore,
       // How exposed this ground is to the water: 0 dry, 1 on the quay. Computed
-      // in the generator against the real shoreline — see floodRiskAt.
-      floodRisk: num(p.floodrisk) ?? 0,
       landPsf,
       landPsfHistory: [landPsf],
       imputed,

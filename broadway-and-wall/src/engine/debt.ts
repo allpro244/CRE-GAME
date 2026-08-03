@@ -378,11 +378,30 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
     if (!loan.sweep) bumpLenderRel(s, productById(loan.product).lender, -3);  // a tripped covenant sours the coffee
     loan.sweep = true;
     loan.cleanQs = 0;
+    loan.breachMs = (loan.breachMs ?? 0) + 1;
+    // A SWEEP THAT NEVER CURES IS A DEFAULT.
+    //
+    // The breach counter reset to zero every month it was still broken, so a
+    // building could sit in permanent breach for forty years, cash trapped,
+    // and nothing further ever happened to it. That is not what a lender does.
+    // Two clean quarters lifts the sweep; two straight YEARS of breach and the
+    // file goes to the workout desk, which is where the covenant cause
+    // declared in types.ts was always supposed to come from.
+    if ((loan.breachMs ?? 0) >= 24 && !s.workouts?.[h.bbl]) {
+      openWorkout(s, h.bbl, "covenant", Math.round(loan.balance * 0.12));
+      s.news.unshift({
+        q, kind: "warn",
+        text: `Two years of broken covenants at ${rec.address} and no sign of a cure. `
+          + `${productById(loan.product).lender} has moved it to their workout desk — pay down the loan, ask them `
+          + `to restructure, or hand back the deed before they file.`,
+      });
+    }
   } else if (loan.sweep) {
     loan.cleanQs++;
     bumpLenderRel(s, productById(loan.product).lender, 0.1);
     if (loan.cleanQs >= 2) {
       loan.sweep = false;
+      loan.breachMs = 0;
       s.news.unshift({ q, kind: "info", text: `Covenants cured at ${rec.address} — the sweep is off.` });
     }
   }

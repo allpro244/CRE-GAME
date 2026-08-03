@@ -796,7 +796,6 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   const toSeller = net - (h.loan?.balance ?? 0) - kick - breakFee;
   next.cash += toSeller;
   logBooks(next, "sold", toSeller);
-  // THE WATERFALL. If a partner is in this deal they are made whole out of
   if (kick + breakFee > 0) logBooks(next, "debtSvc", kick + breakFee);
   if (exchange) {
     next.exchange = { deferredTax: tax, rolledGain: gain, minPrice: offer.price, deadlineM: next.month + EXCHANGE_WINDOW_M };

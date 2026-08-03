@@ -198,7 +198,7 @@ export function advanceQuarter(
   }
 
   // holdings: collect NOI, run the debt stack, finish renovations
-  let monthCF = 0, lpOut = 0;
+  let monthCF = 0;
   for (const h of Object.values(s.holdings)) {
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
@@ -216,10 +216,9 @@ export function advanceQuarter(
     const cf = noiQ - debtCash;
     h.cfHistory.push(Math.round(cf));
     if (h.cfHistory.length > 40) h.cfHistory.shift();
-    // THE PARTNER IS PAID BEFORE YOU ARE. On a partnered building the pref
     monthCF += cf;
   }
-  s.cash += monthCF - lpOut;
+  s.cash += monthCF;
 
   // --- the firm's own overhead ----------------------------------------------
   // Every cost in this game so far has been charged to a building. Real
@@ -335,7 +334,16 @@ export function advanceQuarter(
       s.news.unshift({ q: s.month, kind: "warn", text: "Your lenders have noticed the negative balance. Six more months of this and they start seizing assets." });
     }
     if (s.insolventMs >= 12) {
-      const owned = Object.values(s.holdings).filter((h) => !s.developments[h.bbl]);
+      // A FILE ON THE DESK OUTRANKS THE BAILIFF.
+      //
+      // This seizure path predates the workout desk and ran alongside it: a
+      // building could be three months into a foreclosure you were actively
+      // negotiating and get taken by the general creditors instead, deleting
+      // the file mid-conversation. Anything already in workout is spoken for —
+      // that lender has a lien and a process, and the unsecured creditors
+      // queue behind both.
+      const owned = Object.values(s.holdings)
+        .filter((h) => !s.developments[h.bbl] && !s.workouts?.[h.bbl]);
       if (owned.length) {
         // creditors take the most valuable thing you own
         let pick = owned[0], pickV = -Infinity;
@@ -396,9 +404,7 @@ export function advanceQuarter(
   refreshListings(s, parcels, bbls);
   if (s.news.length > 120) s.news.length = 120;
 
-  // BACKSTOP. Every disposition settles its own partnership; if one ever gets
-  // past all of them, the partner is wiped and it costs what wiping a partner
-  // Same for a ground lease and an assemblage: a deed that left the book takes
+  // A deed that left the book takes
   // its encumbrances with it. A creditor can seize land out from under a lease
   // at any point in the month, and the ledger has to agree by the end of it.
   for (const bbl of Object.keys(s.groundLeases ?? {})) {

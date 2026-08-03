@@ -21,6 +21,7 @@ import type { GameState, SellerKind } from "./types";
 import { monthLabel } from "./types";
 import { assetValue, initialCondition, resolveRec } from "./value";
 import { ownerOf } from "./rivals";
+import { rrange } from "./market";
 import { executePurchase } from "./actions";
 
 const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
@@ -182,7 +183,12 @@ function reservationOf(
   // is the seller's problem and your opportunity.
   const phase = s.econ.phase === "recession" ? -0.055 : s.econ.phase === "expansion" ? 0.03 : 0;
   const distress = li?.distress ? -0.06 : 0;
-  const floor = Math.max(0.6, prof.floor + phase + distress);
+  // AND WHAT YOU DID LAST TIME. A seller who has already had one insult out of
+  // you prices you specifically — the floor for THIS buyer goes up and stays
+  // up. It is the difference between finding out where the floor is and paying
+  // for having kicked it.
+  const soured = s.approaches[bbl]?.soured ?? 0;
+  const floor = Math.max(0.6, prof.floor + phase + distress + soured);
   // A clean, unconditional close is worth real money to somebody who has been
   // retraded before, and every seller has been. With no diligence to offer,
   // every deal here IS that close — so the discount they will take for it is
@@ -211,6 +217,15 @@ export function negotiate(
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   if (!s.listings.some((l) => l.bbl === bbl)) return { s, err: "That property is no longer on the market." };
+  // THE DOOR YOU SHUT. An insult is not undone by clicking Offer again.
+  const shut = s.approaches[bbl]?.insultedUntilM;
+  if (shut !== undefined && s.month < shut) {
+    return {
+      s,
+      err: `They are not taking your calls on this one until ${monthLabel(shut)}. `
+        + `It is still for sale — just not to you.`,
+    };
+  }
   const px = Math.round(price);
   if (!Number.isFinite(px) || px <= 0) return { s, err: "Name a real number." };
 
@@ -243,17 +258,34 @@ export function negotiate(
   // seller stops taking your calls on this building — the listing stays, the
   // number stays, and you are not the one who gets it. That is the entire cost
   // of finding out where the floor is by kicking it.
-  if (gap < 0.62) {
+  // WHAT COUNTS AS AN INSULT, measured against the number the player can
+  // actually see. This was `gap < 0.62`, a share of the seller's HIDDEN
+  // reservation — and since the reservation is never below about three
+  // quarters of ask, and the offer slider bottoms out at 60% OF ASK, the
+  // condition was arithmetically unreachable for five of the six seller types.
+  // The penalty existed and had never once fired. Anchoring it on the ask
+  // makes it reachable, legible and graduated: a proud seller takes offence
+  // sooner than a distressed one, because their number is nearer their floor.
+  const insultAt = Math.max(ask * 0.68, reservation * 0.80);
+  if (px < insultAt) {
     delete next.talks;
+    // The door shuts for a year or so, and their floor for YOU goes up for
+    // good. A named firm remembers harder — you will be dealing with them
+    // again on other buildings.
     const rival = ownerOf(next, bbl);
-    if (rival) {
-      // A named firm remembers. They will not deal with you here again.
-      next.approaches[bbl] = { q: next.month, refused: true };
-    }
+    const shutM = next.month + Math.round(rrange(next, rival ? 18 : 10, rival ? 30 : 18));
+    const prior = next.approaches[bbl];
+    next.approaches[bbl] = {
+      ...(prior ?? {}), q: next.month, refused: true,
+      insultedUntilM: shutM,
+      soured: Math.min(0.10, (prior?.soured ?? 0) + (rival ? 0.05 : 0.03)),
+    };
     next.news.unshift({
       q: next.month, kind: "warn",
-      text: `${fmtM(px)} at ${rec.address} ended it. ${seller.name} is not interested in a conversation `
-        + `that starts there and the building is off the table for you — it is still for sale to somebody else.`,
+      text: `${fmtM(px)} at ${rec.address} ended it — ${((1 - px / Math.max(1, ask)) * 100).toFixed(0)}% under the ask. `
+        + `${seller.name} is not interested in a conversation that starts there. They will not take your call on this `
+        + `building until ${monthLabel(shutM)}, and when they do their number will be higher than it is today. `
+        + `It is still for sale — just not to you.`,
     });
     // and the tape absorbs it faster now that a serious buyer has been rebuffed
     const li2 = next.listings.find((l) => l.bbl === bbl);

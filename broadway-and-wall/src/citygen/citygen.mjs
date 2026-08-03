@@ -260,36 +260,6 @@ export function generateCity(cfg) {
   const ESPLANADE_W = cfg.esplanade ?? 26;
   const innerRing = offsetInward(COAST_M, ESPLANADE_W);
 
-  /**
-   * HOW EXPOSED THIS GROUND IS TO THE WATER.
-   *
-   * A port town on a shoreline had no notion of flood risk at all, so a
-   * warehouse on the quay and an office six blocks inland carried identical
-   * peril. Distance to the actual coast polyline, bucketed the way an insurer
-   * buckets it: everything within a couple of hundred metres of the water is
-   * in the flood zone and prices like it; past a kilometre it is dry ground.
-   * 0 is dry, 1 is on the quay.
-   */
-  function floodRiskAt(pt) {
-    let best = Infinity;
-    for (const c of COAST_M) {
-      const dx = c[0] - pt[0], dy = c[1] - pt[1];
-      const d2 = dx * dx + dy * dy;
-      if (d2 < best) best = d2;
-    }
-    const d = Math.sqrt(best);
-    // These are small harbour towns — a square kilometre and a bit — so a
-    // generous falloff put literally every parcel in the flood zone, which is
-    // the same as putting none of them in it.
-    //
-    // Deliberately narrow: the flood zone is the quay and the street behind
-    // it, not a third of the town. This is meant to be waterfront texture —
-    // a reason the cheap warehouses on the water are cheap — rather than a
-    // pillar of the game, and at 340m with a soft falloff it was well on its
-    // way to being the latter.
-    if (d > 130) return 0;
-    return +Math.min(1, Math.pow(1 - d / 130, 3.0)).toFixed(3);
-  }
   const landBox = bboxOfRing(COAST_M);
 
   const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -673,7 +643,6 @@ export function generateCity(cfg) {
           lotarea: lotArea, bldgarea: bldgArea, numfloors: floors,
           yearbuilt, assessland, assesstot, unitsres,
           cd: cfg.district, district: d,
-          floodrisk: floodRiskAt(centroid(lotRing)),
         },
       });
 

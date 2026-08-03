@@ -2,8 +2,9 @@
 // No test framework: the engine is pure functions and JSON state, so the
 // harness is a program that plays the game and asserts the state is sane.
 //
-//   pnpm test            a century, 4 bots x 4 seeds  (~2 min)
+//   pnpm test            a century, 5 bots x 8 seeds  (~21 min, 44k months)
 //   HORIZON=240 pnpm test   twenty years, for a quick pass
+//   SEEDS=2 pnpm test       fewer towns, when you only need a smoke test
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";

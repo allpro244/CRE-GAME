@@ -4,7 +4,7 @@ import { useEffect, useState, Fragment} from "react";
 import { useStore } from "@/state/store";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
-import type { BuiltClass, Contract, DevUse } from "@/engine/types";
+import type { BuiltClass, Contract, DevUse, GameState } from "@/engine/types";
 import {
   assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr,
   occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr, useRentPsfYr,
@@ -16,7 +16,7 @@ import { sellerOf, sellerProfile } from "@/engine/acquire";
 import { MILESTONES } from "@/engine/sim";
 import { isCommercial, vacantSf, walt, loiSigningCost, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, buyoutQuote, depositsHeld, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
-import { lenderHealth, capitalRatio, lenderBlurb } from "@/engine/lenders";
+import { lenderHealth, capitalRatio, lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { firmName, firmShort } from "@/engine/firm";
 import { replacementCost, cityValueToReplacement } from "@/engine/dev";
 import { workoutMood } from "@/engine/workout";
@@ -3960,8 +3960,47 @@ function ResearchPage() {
  * decision you can act on a year early: refinance out of them while they will
  * still write it, or be the last borrower they say no to.
  */
+/**
+ * WHICH BUILDINGS SIT ON WHICH DESK.
+ *
+ * The banks page could tell you that you owed First Harbor $18.4M and that
+ * First Harbor was in trouble, and those are two facts you could not join up.
+ * The thing you actually need to know when a lender goes bad is WHICH of your
+ * maturities is stranded there — because a balloon at an impaired desk is a
+ * balloon that does not get refinanced, and the fix is to move it BEFORE the
+ * capital ratio goes, not after.
+ *
+ * Nothing new is stored for this. Loans carry a product id, products carry a
+ * lender, and construction paper is written by the regional bank — the same
+ * three facts recountYours() already uses to compute the number that was on
+ * screen with no way to open it.
+ */
+function loanBook(game: GameState, lenderName: string) {
+  const rows: { bbl: string; label: string; balance: number; rate: number; matM: number; sweep: boolean; dev: boolean }[] = [];
+  for (const h of Object.values(game.holdings)) {
+    if (!h.loan) continue;
+    if (PRODUCTS.find((p) => p.id === h.loan!.product)?.lender !== lenderName) continue;
+    rows.push({
+      bbl: h.bbl, label: h.loan.product, balance: h.loan.balance, rate: h.loan.ratePct,
+      matM: h.loan.maturityM, sweep: !!h.loan.sweep, dev: false,
+    });
+  }
+  if (lenderName === CONSTRUCTION_LENDER) {
+    for (const d of Object.values(game.developments ?? {})) {
+      if (d.loanBalance <= 0) continue;
+      rows.push({
+        bbl: d.bbl, label: "construction", balance: d.loanBalance, rate: d.ratePct ?? 0,
+        matM: d.deliverM ?? game.month, sweep: false, dev: true,
+      });
+    }
+  }
+  return rows.sort((a, b) => a.matM - b.matM);
+}
+
 function TheBanks() {
   const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const focus = useStore((s) => s.focus);
   const lenders = game.lenders ?? [];
   const [open, setOpen] = useState<string | null>(null);
   if (!lenders.length) return null;
@@ -4024,6 +4063,52 @@ function TheBanks() {
                               ? `Rationing — the advance rate on anything they write is about ${(100 * Math.min(1.02, 0.55 + 0.45 * l.appetite)).toFixed(0)}% of their stated sheet, and the coupon carries about ${(Math.max(0, 1 - l.appetite) * 80).toFixed(0)}bps of extra spread.`
                               : "Writing at their stated terms."}
                       </div>
+                      {(() => {
+                        const book = loanBook(game, l.name);
+                        if (!book.length) return null;
+                        const stranded = book.filter((r) => h.bad && r.matM - game.month <= 60);
+                        return (
+                          <div style={{ marginTop: 10, paddingLeft: 12, borderLeft: "2px solid rgba(120,100,70,0.28)" }}>
+                            <div style={{ marginBottom: 4, letterSpacing: "0.04em", textTransform: "uppercase", fontSize: "0.82em" }}>
+                              Your paper on this desk
+                            </div>
+                            <table className="tbl">
+                              <thead>
+                                <tr>
+                                  <th>Property</th><th className="num">Balance</th><th className="num">Rate</th>
+                                  <th className="num">Balloon</th><th>Standing</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {book.map((r) => {
+                                  const yrs = (r.matM - game.month) / 12;
+                                  return (
+                                    <tr key={r.bbl + r.label} onClick={(e) => { e.stopPropagation(); focus(r.bbl, true); }} style={{ cursor: "pointer" }}>
+                                      <td>{resolveRec(parcels, game, r.bbl)?.address ?? r.bbl}{r.dev && <span className="dim"> · under construction</span>}</td>
+                                      <td className="num">{usd(r.balance)}</td>
+                                      <td className="num">{r.rate > 0 ? r.rate.toFixed(2) + "%" : "—"}</td>
+                                      <td className={"num" + (yrs <= 2 && !r.dev ? " neg" : "")}>{monthLabel(r.matM)}</td>
+                                      <td className={r.sweep ? "neg" : "dim"}>
+                                        {r.dev ? "takeout at delivery"
+                                          : r.sweep ? "swept"
+                                            : yrs <= 0 ? "due"
+                                              : yrs <= 2 ? `${yrs.toFixed(1)} yrs` : "current"}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                            {stranded.length > 0 && (
+                              <div className="alarm" style={{ marginTop: 6 }}>
+                                {stranded.length === 1 ? "One balloon" : `${stranded.length} balloons`} inside five years
+                                at a desk that is {h.word}. A maturity here is a maturity that may not get refinanced —
+                                move it while somebody else is still quoting.
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                   </tr>
                 )}

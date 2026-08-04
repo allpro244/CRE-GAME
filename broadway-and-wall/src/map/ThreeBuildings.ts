@@ -105,6 +105,30 @@ const S_GABLE = 11;  // pitched shingle roof
 const S_LAWN = 12;   // park turf
 const S_PATH = 13;   // park walk: compacted buff gravel
 const S_POND = 14;   // park water
+// THE MODERN TOWERS THIS CITY HAD NEVER BUILT.
+//
+// Every tower after 1975 came out of the same two hats — S_GLASS, a 1980s
+// curtain wall with a spandrel band at every floor, or S_DARK, its bronze
+// cousin. Both are punched-and-banded buildings wearing glass; neither is what
+// anyone means by a modern glass tower, and a skyline of nothing else is why
+// the new stock reads as one building repeated. These three are the families
+// New York actually put up, and they differ in ARCHITECTURE rather than in
+// colour: how the glass meets the floor plate, whether the structure is inside
+// or outside, and what the wall is made of when it is not glass.
+const S_CRYSTAL = 15; // frameless floor-to-ceiling vision glass — 7 WTC, One WTC, Manhattan West
+const S_DIAGRID = 16; // structure worn on the outside — Hearst Tower, the Bow
+const S_PMOD = 17;    // postmodern polished granite and punched glass — 550 Madison, Worldwide Plaza
+
+/**
+ * What a PARAPET or a bulkhead on top of this building is made of. A glass
+ * tower's parapet is not more glass — it is a metal coping or a stone cap, and
+ * drawing it in the wall style put a window grid on a two-foot-high object.
+ */
+function modernCap(style: number): number {
+  if (style === S_GLASS || style === S_DARK) return S_CORNICE;
+  if (style === S_CRYSTAL || style === S_DIAGRID) return S_PLAIN;
+  return style;
+}
 
 function styleFor(v: BuildingVolume): number {
   if (v.d) return S_PLAIN;
@@ -118,11 +142,29 @@ function styleFor(v: BuildingVolume): number {
   // drawn. Gate it on the BUILDING's floor count instead — which every volume
   // of a stacked building shares, so a tower does not change material halfway
   // up the way a height test on each volume would make it.
-  if (v.f >= 15 && v.y >= 1975) return S_DARK;
   const office = v.c === "office" || v.c === "mixed";
+  // TALL AND MODERN IS NOT ONE BUILDING. A fifteen-storey 1978 office block and
+  // a sixty-storey 2015 tower were the same style, which is the single biggest
+  // reason the modern skyline read as wallpaper. Era and height between them
+  // pick the family, and `vary` spreads the rest so two towers finished the
+  // same year on the same block are not twins.
+  const vary = ((v.y * 2654435761) ^ (v.f * 40503)) >>> 0;
+  if (v.f >= 15 && v.y >= 1975) {
+    const r = (vary % 1000) / 1000;
+    // 1975-1995 is the postmodern era: granite, a heavy top, punched glass.
+    if (v.y < 1996) return r < 0.42 ? S_PMOD : r < 0.72 ? S_DARK : S_GLASS;
+    // After that the wall gets thinner and thinner until it is only glass.
+    // The diagrid is rare on purpose — it is a landmark, not a background
+    // building, and a city with six of them has none.
+    if (v.f >= 34 && r < 0.10) return S_DIAGRID;
+    return r < 0.52 ? S_CRYSTAL : r < 0.74 ? S_DARK : S_GLASS;
+  }
   if (office && v.y >= 1920 && v.y < 1958 && v.z1 >= 40) return S_ARTDECO;
   if (office) return v.y >= 1980 ? S_GLASS : v.y >= 1958 ? S_RIBBON : S_PREWAR;
-  if (v.c === "multifamily") return v.y >= 1995 ? S_GLASS : S_BRICK;
+  if (v.c === "multifamily") {
+    if (v.y >= 2004 && v.f >= 9 && (vary % 100) < 34) return S_CRYSTAL;
+    return v.y >= 1995 ? S_GLASS : S_BRICK;
+  }
   if (v.c === "retail") return S_PREWAR;
   return S_MILL;
 }
@@ -482,6 +524,39 @@ void main() {
   } else if (s == 7) { glassy = true; colW = 6.5; win = vec2(0.94, 0.46);
     wall = mix(vec3(0.80, 0.80, 0.77), vec3(0.72, 0.74, 0.72), step(0.5, vVar));
     glassA = vec3(0.36, 0.48, 0.52); glassB = vec3(0.55, 0.68, 0.70);
+  } else if (s == 15) {
+    // CRYSTAL — floor-to-ceiling vision glass with no spandrel band at all.
+    // What makes a modern tower read as ALL glass is not the colour, it is that
+    // the floor plate is hidden behind the glass instead of expressed as a band
+    // of stone or metal across it. So the opening runs to 98% of the bay and
+    // 92% of the floor: what is left is a shadow gap, not a wall. Low-iron
+    // glass is nearly colourless face-on and goes deep blue-green at a grazing
+    // angle, which is the whole optical signature of the thing.
+    glassy = true; colW = 1.55; win = vec2(0.980, 0.920);
+    if (vVar < 0.30)      { glassA = vec3(0.60, 0.74, 0.80); glassB = vec3(0.80, 0.90, 0.94); wall = vec3(0.42, 0.54, 0.60); } // water-white
+    else if (vVar < 0.58) { glassA = vec3(0.44, 0.62, 0.70); glassB = vec3(0.66, 0.82, 0.88); wall = vec3(0.30, 0.44, 0.50); } // low-iron blue
+    else if (vVar < 0.82) { glassA = vec3(0.52, 0.68, 0.64); glassB = vec3(0.72, 0.86, 0.82); wall = vec3(0.34, 0.48, 0.46); } // sea green
+    else                  { glassA = vec3(0.34, 0.38, 0.46); glassB = vec3(0.58, 0.66, 0.76); wall = vec3(0.22, 0.26, 0.33); } // smoke
+  } else if (s == 16) {
+    // DIAGRID — the structure is on the OUTSIDE. Hearst Tower and 30 St Mary
+    // Axe are glass buildings whose bracing you can read from the street, and
+    // the diagonal is drawn below over the whole facade rather than being
+    // faked with a colour. The glass behind it is ordinary and pale on purpose:
+    // the lattice is the building.
+    glassy = true; colW = 1.7; win = vec2(0.96, 0.90);
+    glassA = vec3(0.48, 0.62, 0.68); glassB = vec3(0.70, 0.82, 0.86); wall = vec3(0.70, 0.71, 0.73);
+  } else if (s == 17) {
+    // POSTMODERN — polished granite piers with punched vertical glass between
+    // them, and the pier is the point: a 1984 tower is a masonry building with
+    // big windows, not a glass one. Four stones, because these were quarried
+    // and every developer picked a different one.
+    colW = 3.4; win = vec2(0.52, 0.78);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.28)        { wall = vec3(0.46, 0.36, 0.36); } // polished rose granite
+    else if (pk < 0.54)   { wall = vec3(0.34, 0.34, 0.37); } // charcoal granite
+    else if (pk < 0.80)   { wall = vec3(0.74, 0.70, 0.64); } // buff travertine
+    else                  { wall = vec3(0.58, 0.60, 0.58); } // green serpentine
+    glassA = vec3(0.24, 0.30, 0.36); glassB = vec3(0.40, 0.50, 0.58);
   } else if (s == 8) { wall = vec3(0.60, 0.56, 0.48); glassA = wall; glassB = wall; colW = 100.0; win = vec2(0.0); }
   else if (s == 10) { wall = vec3(0.58, 0.55, 0.50); glassA = wall; glassB = wall; colW = 100.0; win = vec2(0.0); }
   else              { wall = vec3(0.82, 0.82, 0.80); glassA = wall; glassB = wall; colW = 100.0; win = vec2(0.0); }
@@ -497,7 +572,13 @@ void main() {
   vec3 Vw = normalize(uCam - vPos);
   float facing = max(dot(n, Vw), 0.18);
   // reveal depth: masonry punches deep openings, curtain wall is nearly flush
-  float revealM = (s == 0 || s == 7) ? 0.10 : (s == 4 ? 0.16 : 0.30);
+  // A frameless curtain wall is a sheet of glass hung in front of the slab —
+  // there is barely a reveal at all — while a granite postmodern tower punches
+  // its openings almost as deep as pre-war masonry does.
+  float revealM = (s == 15 || s == 16) ? 0.045
+                : (s == 0 || s == 7) ? 0.10
+                : (s == 4) ? 0.16
+                : (s == 17) ? 0.26 : 0.30;
 
   float u = vU / colW;
   float v = vZ / fh;
@@ -578,9 +659,60 @@ void main() {
   // art deco: recessed spandrels keep the vertical piers running
   if (s == 6 && f.y < 0.18) wall *= 0.84;
 
+  // ---- CRYSTAL: the slab edge is a shadow gap, not a band -------------------
+  // On a 1980s curtain wall the floor plate is expressed: a metre of spandrel
+  // panel across the whole facade at every level, which is what makes those
+  // buildings read as striped. On a frameless wall the slab hides behind the
+  // glass and all that is left at the floor line is a dark seam a few
+  // centimetres deep. That one difference is most of why one looks like 1985
+  // and the other looks like now.
+  if (s == 15) {
+    float gapK = 1.0 - smoothstep(0.0, 0.030, min(f.y, 1.0 - f.y));
+    wall *= 1.0 - 0.45 * gapK;
+  }
+
+  // ---- DIAGRID: the structure worn on the outside --------------------------
+  // Hearst Tower and 30 St Mary Axe are glass buildings whose bracing you read
+  // from the pavement. The lattice is drawn, not implied: two families of
+  // diagonals crossing at a node every four floors, in brushed aluminium, and
+  // the glass simply is not there where a member is.
+  if (s == 16) {
+    float dH = fh * 4.0, dW = 7.2;
+    float dA = abs(fract(vU / dW + vZ / dH + 0.5) - 0.5) * 2.0;
+    float dB = abs(fract(vU / dW - vZ / dH + 0.5) - 0.5) * 2.0;
+    float dD = min(dA, dB);
+    float dHalf = 0.17;
+    float dAA = fwidth(dD) + 1e-4;
+    float member = 1.0 - smoothstep(dHalf - dAA, dHalf + dAA, dD);
+    if (member > 0.001) {
+      float round_ = smoothstep(dHalf, 0.0, dD);          // a section, not a stripe
+      wall = mix(wall, vec3(0.78, 0.79, 0.81) * (0.80 + 0.36 * round_), member);
+      winMask *= 1.0 - member;
+    }
+  }
+
+  // ---- POSTMODERN: the pier is the point -----------------------------------
+  // A 1984 granite tower is a masonry building with large windows, and the
+  // thing the eye reads is the polished pier between the glass strips catching
+  // the light on its return.
+  if (s == 17) {
+    float pier = 1.0 - smoothstep(0.0, 0.17, min(f.x, 1.0 - f.x));
+    wall *= mix(1.0, 1.15, pier);
+    if (vZ < fh * 3.0) wall *= 0.93;                      // a darker stone base
+  }
+
   // ---- glass: per-window life + sky reflection ----------------------------
   float wid = hash(vec2(floor(u) + vRand * 61.0, floor(v)));
   vec3 glass = mix(glassA, glassB, clamp(vZ / max(vTop, 1.0), 0.0, 1.0));
+  if (s == 15) {
+    // LOW-IRON GLASS IS NEARLY COLOURLESS FACE-ON AND SATURATES HARD AT A
+    // GRAZING ANGLE. It is the whole optical signature of an all-glass tower —
+    // the face you are looking at is pale and the returns running away from you
+    // go deep blue-green — and it is why one building can look like several
+    // from a single viewpoint. One dot product.
+    float graze = 1.0 - abs(dot(n, Vw));
+    glass = mix(glass, glass * vec3(0.60, 0.86, 0.97), graze * graze * 0.85);
+  }
   glass = mix(glass, glass * 1.25, step(0.82, wid));
   glass = mix(glass, glass * 0.72, step(wid, 0.14));
 
@@ -629,7 +761,8 @@ void main() {
   // sill highlight just under the window row
   col *= 1.0 + 0.10 * (1.0 - winMask) * smoothstep(0.0, 0.04, f.y) * (1.0 - smoothstep(0.04, 0.09, f.y)) * step(0.5, float(s != 0));
   // mullion shadow line under each floor
-  col *= 1.0 - 0.10 * (1.0 - winMask) * (1.0 - smoothstep(0.08, 0.12, f.y)) * (1.0 - step(7.5, vStyle));
+  col *= 1.0 - 0.10 * (1.0 - winMask) * (1.0 - smoothstep(0.08, 0.12, f.y))
+       * ((s < 8 || s == 17) ? 1.0 : 0.0);
 
   // ---- the ground floor ---------------------------------------------------
   // Where the building meets the street it stops being a facade and becomes
@@ -896,6 +1029,9 @@ void main() {
   else if (s == 4)  roof = vec3(0.21, 0.225, 0.255);
   else if (s == 6)  roof = vec3(0.585, 0.545, 0.455);
   else if (s == 7)  roof = vec3(0.66, 0.68, 0.68);
+  else if (s == 15) roof = vec3(0.74, 0.755, 0.775); // crystal: pale membrane and a glass parapet
+  else if (s == 16) roof = vec3(0.72, 0.73, 0.74);   // diagrid: aluminium deck
+  else if (s == 17) roof = vec3(0.42, 0.41, 0.42);   // postmodern: dark granite coping
   else if (s == 8)  roof = vec3(0.60, 0.56, 0.48);   // cornice cap
   else if (s == 9)  roof = vec3(0.47, 0.62, 0.36);   // green roof
   else if (s == 10) roof = vec3(0.575, 0.545, 0.475); // gravel lot
@@ -1548,7 +1684,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
       {
         const yr = v.y || 1950;
-        const modernCls = style === S_GLASS || style === S_DARK || style === S_RIBBON;
+        const modernCls = style === S_GLASS || style === S_DARK || style === S_RIBBON
+          || style === S_CRYSTAL || style === S_DIAGRID || style === S_PMOD;
         const bigPlate = v.f >= 6 || v.z1 >= 24;
         const pool: number[] = [];
         if (yr < 1930)      pool.push(1, 1, 1, 0, 0, 0, 0, 3, 3, 4, 4, 5);
@@ -1750,8 +1887,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const cs = (n: number) => hash01(key ^ Math.imul(n + 1, 0x9e3779b1), this.citySeed ^ 0x00c0ffee);
         const tall = v.z1 >= 26 && !!v.x;
         const deco = style === S_ARTDECO;
-        const modern = style === S_GLASS || style === S_DARK || style === S_RIBBON;
-        const stone = style === S_PREWAR || deco || style === S_CORNICE;
+        const modern = style === S_GLASS || style === S_DARK || style === S_RIBBON
+          || style === S_CRYSTAL || style === S_DIAGRID;
+        const stone = style === S_PREWAR || deco || style === S_CORNICE || style === S_PMOD;
         // WHAT THIS BUILDING'S TOP COULD PLAUSIBLY BE. Repeats are weights.
         const crowns: string[] = [];
         if (v.z1 >= 12) {
@@ -1922,7 +2060,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           const cop = insetRing(ring, -0.09);
           if (cop) { extrudeWalls(W, cop, v.z1 + ph, v.z1 + ph + 0.18, M(v.z1 + ph + 0.18)); capRoof(R, cop, v.z1 + ph + 0.18, M(v.z1 + ph + 0.18)); }
           const inner = insetRing(ring, 0.28);
-          if (inner) capRoof(R, inner, v.z1 + ph, [style === S_GLASS || style === S_DARK ? S_CORNICE : style, rnd, varr, v.z1 + ph, fh]);
+          if (inner) capRoof(R, inner, v.z1 + ph, [modernCap(style), rnd, varr, v.z1 + ph, fh]);
         }
         // some modern mid-rises grow a green roof
         if (style === S_GLASS && crown !== "amenity" && v.z1 >= 15 && v.z1 <= 60 && varr > 0.62) {
@@ -1936,7 +2074,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           const pent = insetRing(ring, Math.min(6, Math.max(2.2, Math.sqrt(v.z1) * 0.55)));
           if (pent) {
             const ph2 = v.z1 > 70 ? 5.2 : 3.6;
-            const pm = [style === S_GLASS || style === S_DARK ? S_PLAIN : style, rnd, varr, v.z1 + ph2, fh];
+            const pm = [style === S_GLASS || style === S_DARK || style === S_CRYSTAL || style === S_DIAGRID ? S_PLAIN : style, rnd, varr, v.z1 + ph2, fh];
             extrudeWalls(W, pent, v.z1 + 0.4, v.z1 + ph2, pm);
             capRoof(R, pent, v.z1 + ph2, [pm[0], rnd, varr, v.z1 + ph2, fh]);
             mechDeck = { ring: pent, z: v.z1 + ph2 };

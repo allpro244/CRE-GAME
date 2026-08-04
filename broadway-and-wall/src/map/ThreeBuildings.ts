@@ -139,18 +139,21 @@ attribute vec2 aSeg;   // wall segment span in perimeter units (u0, u1)
 attribute vec2 aCcv;   // corner sign at each end: +1 convex, -1 concave
 attribute vec3 aTint;
 attribute float aLit;
+attribute float aRet;
 varying vec3 vNormal;
 varying vec3 vTint;
 varying vec3 vPos;
 varying vec2 vSeg, vCcv;
 varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh, vEra;
 varying float vLit;
+varying float vRet;
 void main() {
   vNormal = normal;
   vTint = aTint;
   vPos = position;
   vSeg = aSeg; vCcv = aCcv;
   vLit = aLit;
+  vRet = aRet;
   vU = aU; vZ = position.z; vStyle = aStyle; vRand = aRand; vVar = aVar; vTop = aTop; vFh = aFh; vEra = aEra;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
@@ -289,6 +292,44 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(p, 1.0);
 }`;
 
+// THE WALKERS' RIG. Pedestrians and traffic move in the VERTEX SHADER — the
+// instance matrix parks each figure at the middle of its stretch of pavement
+// and the shader slides it back and forth along the street direction off the
+// shared clock, so five thousand moving people cost the CPU exactly nothing
+// per frame. Two more ideas ride in the same attributes:
+//
+//   BREATH  the city swells and empties on a slow cycle (~six minutes of
+//           real time reads as a day). Each figure carries a threshold; when
+//           the breath drops below it they are simply not out — collapsed to
+//           a point, invisible, free. Midday everyone is on the street; in
+//           the quiet hours a third are.
+//   WRAP    a walker patrols its own block face and wraps. At this art scale
+//           a figure winking between the ends of a block is invisible; what
+//           the eye reads is a pavement that MOVES.
+const WALKER_VERT = /* glsl */ `
+uniform vec4 uSeason;
+uniform float uFoliage;
+uniform float uTime;
+attribute vec4 aWalk;    // street dir x, y · patrol length m · speed m/s
+attribute vec2 aWalk2;   // phase 0..1 · breath threshold 0..1
+varying vec3 vN;
+varying vec3 vW;
+varying vec3 vC;
+void main() {
+  float breath = 0.62 + 0.38 * sin(uTime * 0.018 + 1.7);
+  float alive = step(aWalk2.y, breath);
+  vec3 p = position * alive;
+  float travel = mod(aWalk2.x * aWalk.z + uTime * aWalk.w, aWalk.z) - aWalk.z * 0.5;
+  vec4 wp = instanceMatrix * vec4(p, 1.0);
+  wp.xy += aWalk.xy * travel;
+  // the gait: a two-centimetre bob nobody consciously sees and everybody reads
+  wp.z += alive * 0.03 * abs(sin(uTime * 5.2 + aWalk2.x * 47.0)) * step(aWalk.w, 3.0);
+  vN = normalize(mat3(instanceMatrix) * normal);
+  vW = wp.xyz;
+  vC = instanceColor;
+  gl_Position = projectionMatrix * modelViewMatrix * wp;
+}`;
+
 // same rig, for props that aren't instanced (the construction crane)
 const PROP_VERT_PLAIN = /* glsl */ `
 varying vec3 vN;
@@ -354,6 +395,7 @@ varying vec3 vPos;
 varying vec2 vSeg, vCcv;
 varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh, vEra;
 varying float vLit;
+varying float vRet;
 uniform float uOpacity;
 uniform vec3 uCam;
 ${"" /* shadow sampling */}
@@ -646,6 +688,21 @@ void main() {
     // a lit interior behind the glass, warmer and brighter deeper in the bay
     shopGlass = mix(shopGlass, vec3(0.80, 0.70, 0.52), 0.40 + 0.22 * bayH);
 
+    // THE SHOP THAT ISN'T THERE. vRet carries this building's retail
+    // occupancy, straight off the simulation, monthly. Each bay's hash sits
+    // uniformly in 0..1, so bayH > vRet papers EXACTLY the vacant share of
+    // the strip — a 60%-let frontage has two dead shops in five, the same
+    // two every month until a lease signs, and the street tells the truth
+    // the rent roll knows. A dead bay is papered kraft over the glass, its
+    // sign comes down to a faded board, its awning is gone, and an agent's
+    // white card sits at eye level.
+    bool deadBay = vRet >= 0.0 && bayH > vRet + 0.02;
+    if (deadBay) {
+      shopGlass = vec3(0.60, 0.54, 0.44) * (0.92 + 0.16 * fract(bayH * 9.7));
+      // seams between the paper sheets
+      shopGlass *= 1.0 - 0.08 * step(0.82, fract(vU * 1.35 + bayH));
+    }
+
     float pierW = 0.14;                               // masonry between bays
     bool pier = bf < pierW || bf > 1.0 - pierW;
     float sillZ = 0.62, headZ = fh * 0.80, signTop = gfTop;
@@ -654,12 +711,12 @@ void main() {
     if (vZ < sillZ)            gf = base;                       // plinth
     else if (vZ > signTop)     gf = wall;                       // back to facade
     else if (vZ > headZ) {
-      // signage band: each shop paints its own
+      // signage band: each shop paints its own — a dead one's came down
       vec3 signCol = vec3(0.34 + 0.20 * bayH, 0.31 + 0.16 * fract(bayH * 7.3), 0.28 + 0.16 * fract(bayH * 3.1));
-      gf = mix(wall * 0.86, signCol, 0.62);
+      gf = deadBay ? wall * 0.80 : mix(wall * 0.86, signCol, 0.62);
     }
     else if (pier)             gf = frame;
-    else if (doorBay > 0.5 && bf > 0.38 && bf < 0.62) {
+    else if (doorBay > 0.5 && bf > 0.38 && bf < 0.62 && !deadBay) {
       gf = vec3(0.13, 0.12, 0.12);                              // recessed doorway
       gf *= 1.0 + 0.5 * smoothstep(0.0, 0.5, vZ / max(headZ, 1.0));
     }
@@ -668,10 +725,13 @@ void main() {
       // transom bar and the bulkhead below the display window
       if (vZ < sillZ + 0.42) gf = frame * 1.06;
       if (abs(vZ - headZ * 0.82) < 0.09) gf = frame;
+      // the letting agent's card, white and small, at eye level
+      if (deadBay && abs(bf - 0.5) < 0.055 && vZ > 1.25 && vZ < 1.62) gf = vec3(0.90, 0.89, 0.84);
     }
 
-    // awnings: a canvas over roughly half the bays, with its shadow on the glass
-    float hasAwn = step(0.46, bayH);
+    // awnings: a canvas over roughly half the bays, with its shadow on the
+    // glass — and a dead shop's canvas is gone with its sign
+    float hasAwn = step(0.46, bayH) * (deadBay ? 0.0 : 1.0);
     float awnZ0 = headZ * 0.86, awnZ1 = headZ * 1.02;
     if (hasAwn > 0.5 && !pier) {
       if (vZ > awnZ0 && vZ < awnZ1) {
@@ -721,7 +781,12 @@ void main() {
   // version cannot be drawn, and steps aside when it can.
   if (trade && vZ < gfTop && vTop > fh * 1.7) {
     float gfk = 1.0 - smoothstep(gfTop * 0.72, gfTop, vZ);
-    col = mix(col, mix(col * 0.70, mix(glassA, glassB, 0.35), 0.42), gfk * 0.66 * lod);
+    // ...and at distance the truth survives as TONE: a let frontage is a dark
+    // glass band, a dead one is a pale papered one. The two-pixel version of
+    // the same fact the shopfront bays draw up close.
+    float deadK = vRet >= 0.0 ? 1.0 - clamp(vRet, 0.0, 1.0) : 0.0;
+    vec3 bandCol = mix(mix(col * 0.70, mix(glassA, glassB, 0.35), 0.42), vec3(0.58, 0.53, 0.44), deadK * 0.8);
+    col = mix(col, bandCol, gfk * 0.66 * lod);
     float plinth = smoothstep(0.55, 0.75, vZ / gfTop) * (1.0 - smoothstep(0.75, 0.95, vZ / gfTop));
     col *= 1.0 - plinth * 0.22 * lod;
   }
@@ -810,6 +875,7 @@ varying vec3 vPos;
 varying vec2 vSeg, vCcv;
 varying float vU, vZ, vStyle, vRand, vVar, vTop, vFh, vEra;
 varying float vLit;
+varying float vRet;
 uniform float uOpacity;
 uniform vec3 uCam;
 ` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + SEASON_GLSL + /* glsl */ `
@@ -1178,6 +1244,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private roofMat!: THREE.ShaderMaterial;
   private tintAttrs: THREE.BufferAttribute[] = [];
   private litAttrs: THREE.BufferAttribute[] = [];
+  private retAttrs: THREE.BufferAttribute[] = [];
   private baseTints: Float32Array[] = [];
   // ONE camera uniform, shared by every material — walls, roofs and props all
   // have to haze against the same eye point or the city separates into layers.
@@ -1211,6 +1278,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private seasonUni = { value: new THREE.Vector4(0, 0, 0, 1) };
   private simMonth = -1;
   private sunDirty = false;
+  /** demandScore by bbl, pushed by MapView before the layer is added — the
+   *  foot-traffic gradient reads it so a dying block LOOKS empty. */
+  private demandByBbl: Record<string, number> = {};
+  /** true once any walker mesh exists — gates the animation clock. */
+  private hasWalkers = false;
   private shadowTarget: THREE.WebGLRenderTarget | null = null;
   private depthMat: THREE.MeshDepthMaterial | null = null;
   private groundCatcher: THREE.Mesh | null = null;
@@ -2080,6 +2152,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         a.setUsage(THREE.DynamicDrawUsage);
         return a;
       })());
+      g.setAttribute("aRet", (() => {
+        const a = new THREE.Float32BufferAttribute(new Float32Array(T.pos.length / 3).fill(-1), 1);
+        a.setUsage(THREE.DynamicDrawUsage);
+        return a;
+      })());
       const tint = new Float32Array((T.pos.length / 3) * 3).fill(1);
       const tintAttr = new THREE.Float32BufferAttribute(tint, 3);
       tintAttr.setUsage(THREE.DynamicDrawUsage);
@@ -2106,6 +2183,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.scene.add(new THREE.Mesh(roofGeom, this.roofMat));
     this.tintAttrs = [wallGeom.getAttribute("aTint") as THREE.BufferAttribute, roofGeom.getAttribute("aTint") as THREE.BufferAttribute];
     this.litAttrs = [wallGeom.getAttribute("aLit") as THREE.BufferAttribute, roofGeom.getAttribute("aLit") as THREE.BufferAttribute];
+    this.retAttrs = [wallGeom.getAttribute("aRet") as THREE.BufferAttribute, roofGeom.getAttribute("aRet") as THREE.BufferAttribute];
     this.baseTints = this.tintAttrs.map((a) => {
       const arr = new Float32Array(a.array.length);
       arr.fill(1);
@@ -2206,11 +2284,44 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // ctx: where this thing stands — 0 street, 1 park, 2 a lot nobody tends.
     // Only the trees read it, and only to choose a species.
     type Item = { x: number; y: number; s: number; rot: number; ctx?: number };
+    type Walker = Item & { dx: number; dy: number; len: number; spd: number; ph: number; den: number };
     const trees: Item[] = [], lamps: Item[] = [], cars: Item[] = [], people: Item[] = [];
+    const walkers: Walker[] = [], movers: Walker[] = [];
     let seed = 1337;
     const rnd = () => {
       seed = (seed * 1664525 + 1013904223) >>> 0;
       return seed / 4294967296;
+    };
+
+    // THE FOOT-TRAFFIC GRADIENT. Demand is the location — and the pavement is
+    // where it should be legible first. Every building's demand score lands in
+    // a coarse grid; a stretch of kerb asks the grid what kind of street it
+    // is, and the answer decides how many people walk it. A prime block gets
+    // a crowd, the fringe gets a dog-walker — so a dying block LOOKS like a
+    // dying block from the first frame, before the player reads a single
+    // number.
+    const CELL = 60;
+    const dGrid = new Map<string, { sum: number; n: number }>();
+    for (const v of this.volumes) {
+      if (!v.b || v.d) continue;
+      const d = this.demandByBbl[v.b];
+      if (d === undefined) continue;
+      let vx = 0, vy = 0;
+      for (const p of v.r) { const q = this.project(p); vx += q[0]; vy += q[1]; }
+      vx /= v.r.length; vy /= v.r.length;
+      const key = `${Math.round(vx / CELL)},${Math.round(vy / CELL)}`;
+      const cell = dGrid.get(key) ?? { sum: 0, n: 0 };
+      cell.sum += d; cell.n++;
+      dGrid.set(key, cell);
+    }
+    const demandAt = (x: number, y: number): number => {
+      const cx = Math.round(x / CELL), cy = Math.round(y / CELL);
+      let sum = 0, n = 0;
+      for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+        const c = dGrid.get(`${cx + i},${cy + j}`);
+        if (c) { sum += c.sum; n += c.n; }
+      }
+      return n ? sum / n : 32;
     };
 
     for (const curb of this.curbs) {
@@ -2241,8 +2352,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         // difference between a model and a place — and they are the only thing
         // in the scene at human scale, which is what everything else gets
         // measured against.
+        // ...and how MANY of them stand here is the demand gradient too. The
+        // walkers already thin toward the fringe; if the standing figures
+        // plant uniformly they drown the signal, and a dead industrial
+        // waterfront reads as busy as the high street. A quarter of the crowd
+        // on the worst corner, half again on the best.
+        const edgeDn = Math.max(0.04, Math.min(1, demandAt((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) / 90));
         for (let d = rnd() * 5; d < len - 2; d += 3.1 + rnd() * 6.5) {
-          if (rnd() > 0.42) continue;
+          if (rnd() > 0.42 * (0.25 + 1.35 * edgeDn)) continue;
           const t = d / len;
           const px = a[0] + dx * t, py = a[1] + dy * t;
           let nx = -dy / len, ny = dx / len;
@@ -2266,6 +2383,44 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
             s: 0.94 + rnd() * 0.16,
             rot: Math.atan2(dy, dx) + (rnd() - 0.5) * 0.06,
           });
+        }
+
+        // THE STREET THAT MOVES. Walking figures on the pavement and running
+        // traffic in the lane, both patrolling this block face in the shader.
+        // How many is the demand grid's answer: a prime frontage seeds a
+        // figure every ~5 metres, the fringe every ~28 — and each carries a
+        // breath threshold so the crowd swells and thins on the slow clock.
+        if (len > 14) {
+          const dn = edgeDn;
+          const rot = Math.atan2(dy, dx);
+          const ux = dx / len, uy = dy / len;
+          let nx = -dy / len, ny = dx / len;
+          if (((a[0] + b[0]) / 2 - cx) * nx + ((a[1] + b[1]) / 2 - cy) * ny < 0) { nx = -nx; ny = -ny; }
+          const walkStep = 5 + (1 - dn) * 23;
+          for (let d = rnd() * walkStep; d < len; d += walkStep * (0.7 + rnd() * 0.6)) {
+            const off = 0.8 + rnd() * 1.3;
+            const flip = rnd() < 0.5 ? 1 : -1;   // both directions on a pavement
+            walkers.push({
+              x: a[0] + ux * len * 0.5 + nx * off, y: a[1] + uy * len * 0.5 + ny * off,
+              s: 0.9 + rnd() * 0.22, rot,
+              dx: ux * flip, dy: uy * flip, len: Math.max(10, len - 3),
+              spd: 0.8 + rnd() * 0.9, ph: rnd(),
+              den: Math.pow(rnd(), 0.7),         // most figures are fair-weather
+            });
+          }
+          // running traffic: one-way per block face (the facing kerb runs the
+          // other way), thicker downtown, always sparser than the parked lane
+          const laneStep = 26 + (1 - dn) * 60;
+          for (let d = rnd() * laneStep; d < len; d += laneStep * (0.7 + rnd() * 0.7)) {
+            movers.push({
+              x: a[0] + ux * len * 0.5 + nx * (7.2 + rnd() * 0.5),
+              y: a[1] + uy * len * 0.5 + ny * (7.2 + rnd() * 0.5),
+              s: 0.94 + rnd() * 0.14, rot,
+              dx: ux, dy: uy, len: Math.max(16, len - 2),
+              spd: 4.5 + rnd() * 3.5, ph: rnd(),
+              den: Math.pow(rnd(), 0.85),
+            });
+          }
         }
         carry = Math.max(0, carry - len);
         if (carry === 0) carry = rnd() * 6;
@@ -2322,6 +2477,43 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       mesh.instanceColor = new THREE.InstancedBufferAttribute(cols, 3);
       mesh.frustumCulled = false;
       this.scene.add(mesh);
+    };
+
+    // THE MOVING CROWD, and the running lane. Same instancing as the static
+    // props, plus the aWalk attributes WALKER_VERT patrols on — the geometry
+    // is CLONED per mesh because instanced attributes live on the geometry
+    // and the walkers' must not leak onto the parked cars' shared copy.
+    const addWalkers = (
+      geom: THREE.BufferGeometry, items: Walker[], palette: [number, number, number][],
+    ) => {
+      if (!items.length) return;
+      const g = geom.clone();
+      const walk = new Float32Array(items.length * 4);
+      const walk2 = new Float32Array(items.length * 2);
+      const cols = new Float32Array(items.length * 3);
+      const mat = this.propMaterial(0xffffff);
+      mat.vertexShader = WALKER_VERT;
+      mat.uniforms.uTime = this.timeUni;
+      const mesh = new THREE.InstancedMesh(g, mat, items.length);
+      const m = new THREE.Matrix4();
+      items.forEach((p, i) => {
+        m.compose(
+          new THREE.Vector3(p.x, p.y, 0),
+          new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, p.rot)),
+          new THREE.Vector3(p.s, p.s, p.s),
+        );
+        mesh.setMatrixAt(i, m);
+        walk[i * 4] = p.dx; walk[i * 4 + 1] = p.dy; walk[i * 4 + 2] = p.len; walk[i * 4 + 3] = p.spd;
+        walk2[i * 2] = p.ph; walk2[i * 2 + 1] = p.den;
+        const c = palette[Math.floor(rnd() * palette.length) % palette.length];
+        cols[i * 3] = c[0]; cols[i * 3 + 1] = c[1]; cols[i * 3 + 2] = c[2];
+      });
+      g.setAttribute("aWalk", new THREE.InstancedBufferAttribute(walk, 4));
+      g.setAttribute("aWalk2", new THREE.InstancedBufferAttribute(walk2, 2));
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(cols, 3);
+      mesh.frustumCulled = false;
+      this.scene.add(mesh);
+      this.hasWalkers = true;
     };
 
     // context points that carry their own bearing, put into world space. The
@@ -2439,6 +2631,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     addRigid(railGeom(), 0x3f464b, oriented(this.ctxPoints.rails));
     addCars(cars);
     addPeople(people);
+    addWalkers(personGeom(), walkers, COAT);
+    addWalkers(carGeom(), movers, CAR_COLORS);
   }
 
   /**
@@ -2763,7 +2957,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
   // Player construction and deliveries: a small dynamic mesh set rebuilt on
   // change (a handful of buildings — cheap), sharing the facade materials.
-  setPlayerBuildings(items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean }[]) {
+  setPlayerBuildings(items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean }[]) {
     this.dynGroup.clear();
     this.cranes.length = 0;
     for (const item of items) {
@@ -2925,6 +3119,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         g.setAttribute("aCcv", new THREE.Float32BufferAttribute(D.ccv, 2));
         g.setAttribute("aTint", new THREE.Float32BufferAttribute(new Float32Array(D.pos.length).fill(1), 3));
         g.setAttribute("aLit", new THREE.Float32BufferAttribute(new Float32Array(D.pos.length / 3).fill(-1), 1));
+        g.setAttribute("aRet", new THREE.Float32BufferAttribute(new Float32Array(D.pos.length / 3).fill(-1), 1));
         return g;
       };
       this.dynGroup.add(new THREE.Mesh(mk(T), this.wallMat));
@@ -2934,6 +3129,39 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // 2014 with an empty roof next to a 1920s walk-up with a full one reads
       // as unfinished. Same rules as the static pass: the way out, the lift,
       // and the plant a modern central system actually has.
+      // THE GRAND OPENING. For the first three months after delivery the
+      // frontage carries bunting — a sagging string of bright pennants over
+      // the door. When the news says a building opened, the street agrees.
+      if (!item.construction && item.fresh) {
+        const fp = tiers[0].fp;
+        let bi = 0, bl = -1;
+        for (let i = 0; i < fp.length; i++) {
+          const a2 = fp[i], b2 = fp[(i + 1) % fp.length];
+          const L = Math.hypot(b2[0] - a2[0], b2[1] - a2[1]);
+          if (L > bl) { bl = L; bi = i; }
+        }
+        if (bl > 5) {
+          const a2 = fp[bi], b2 = fp[(bi + 1) % fp.length];
+          const ex = b2[0] - a2[0], ey = b2[1] - a2[1];
+          const L = Math.hypot(ex, ey);
+          let nx = -ey / L, ny = ex / L;
+          if (((a2[0] + b2[0]) / 2 - cx) * nx + ((a2[1] + b2[1]) / 2 - cy) * ny < 0) { nx = -nx; ny = -ny; }
+          const FLAG: number[] = [0xc0392b, 0xf1e6c8, 0x2e6b9e, 0xd9a441];
+          const pens: THREE.BufferGeometry[] = [];
+          const n = Math.min(22, Math.floor(L / 0.9));
+          for (let i2 = 1; i2 < n; i2++) {
+            const t = i2 / n;
+            const sag = 0.55 * Math.sin(Math.PI * t);
+            pens.push(new THREE.BoxGeometry(0.34, 0.05, 0.5)
+              .translate(a2[0] + ex * t + nx * 0.55, a2[1] + ey * t + ny * 0.55, 4.6 - sag));
+          }
+          // one mesh per colour keeps it to four draws for the whole party
+          FLAG.forEach((col, ci) => {
+            const mine = pens.filter((_, i2) => i2 % FLAG.length === ci);
+            if (mine.length) this.dynGroup.add(new THREE.Mesh(mergeGeoms(mine), this.propMaterial(col, false)));
+          });
+        }
+      }
       if (!item.construction && h >= 9) {
         const topTier = tiers[tiers.length - 1];
         const bear2 = hash01(k ^ 0x41, this.citySeed) * Math.PI * 2;
@@ -2959,6 +3187,47 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         }
       }
       if (item.construction) {
+        // THE HOARDING. A construction site is fenced before it is anything
+        // else — painted plywood around the footprint, and a project board at
+        // the street telling the town what is coming. The news says somebody
+        // broke ground; this is the street corroborating it.
+        {
+          const fp = tiers[0].fp;
+          const FH = 2.6;
+          const panels: THREE.BufferGeometry[] = [];
+          let bestLen = 0, bx = 0, by = 0, bnx = 0, bny = 0;
+          for (let i = 0; i < fp.length; i++) {
+            const a2 = fp[i], b2 = fp[(i + 1) % fp.length];
+            const ex = b2[0] - a2[0], ey = b2[1] - a2[1];
+            const L = Math.hypot(ex, ey);
+            if (L < 1.5) continue;
+            panels.push(new THREE.BoxGeometry(L + 0.18, 0.14, FH)
+              .translate(L / 2, 0, FH / 2)
+              .rotateZ(Math.atan2(ey, ex))
+              .translate(a2[0], a2[1], 0));
+            if (L > bestLen) {
+              bestLen = L;
+              bx = (a2[0] + b2[0]) / 2; by = (a2[1] + b2[1]) / 2;
+              let nx = -ey / L, ny = ex / L;
+              if ((bx - cx) * nx + (by - cy) * ny < 0) { nx = -nx; ny = -ny; }
+              bnx = nx; bny = ny;
+            }
+          }
+          if (panels.length) {
+            const HOARD = [0x2e6b5e, 0x35547a, 0x6b4a2e];
+            const hc = HOARD[keyOf(item.bbl) % 3];
+            this.dynGroup.add(new THREE.Mesh(mergeGeoms(panels), this.propMaterial(hc, false)));
+          }
+          if (bestLen > 6) {
+            const bAng = Math.atan2(bny, bnx) + Math.PI / 2;
+            const board = mergeGeoms([
+              new THREE.BoxGeometry(3.6, 0.10, 1.9).translate(0, 0, 2.6),
+              new THREE.BoxGeometry(0.14, 0.14, 2.0).translate(-1.5, 0, 1.0),
+              new THREE.BoxGeometry(0.14, 0.14, 2.0).translate(1.5, 0, 1.0),
+            ]).rotateZ(bAng).translate(bx + bnx * 0.9, by + bny * 0.9, 0);
+            this.dynGroup.add(new THREE.Mesh(board, this.propMaterial(0xe6e1d4, false)));
+          }
+        }
         // A TOWER CRANE, AND NOT THE SAME ONE TWICE.
         //
         // There was a crane here already — a smooth cylinder and a 26 m box —
@@ -3116,6 +3385,74 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.map.triggerRepaint();
   }
 
+  /** Call BEFORE map.addLayer — planting reads it once, at build. */
+  setDemandMap(m: Record<string, number>) {
+    this.demandByBbl = m;
+  }
+
+  /**
+   * LEGAL NOTICES ON DOORS. The July docket and the banks' foreclosure files
+   * are news items until you drive past the building — a white board with a
+   * red rule at the frontage is the street corroborating the courthouse.
+   * Rebuilt monthly from whatever list the game sends; empty list clears.
+   */
+  private noticeGroup = new THREE.Group();
+  setNotices(bbls: string[]) {
+    if (!this.noticeGroup.parent) this.scene.add(this.noticeGroup);
+    this.noticeGroup.clear();
+    for (const bbl of bbls) {
+      const v = this.volumes.find((x) => x.b === bbl && !x.d && x.r.length >= 3);
+      if (!v) continue;
+      const ring = v.r.map((p) => this.project(p));
+      let cx = 0, cy = 0;
+      for (const [x, y] of ring) { cx += x; cy += y; }
+      cx /= ring.length; cy /= ring.length;
+      let bi = 0, bl = -1;
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L > bl) { bl = L; bi = i; }
+      }
+      if (bl < 3) continue;
+      const a = ring[bi], b = ring[(bi + 1) % ring.length];
+      const ex = b[0] - a[0], ey = b[1] - a[1];
+      const L = Math.hypot(ex, ey);
+      let nx = -ey / L, ny = ex / L;
+      if (((a[0] + b[0]) / 2 - cx) * nx + ((a[1] + b[1]) / 2 - cy) * ny < 0) { nx = -nx; ny = -ny; }
+      const px = (a[0] + b[0]) / 2 + nx * 0.7, py = (a[1] + b[1]) / 2 + ny * 0.7;
+      const ang = Math.atan2(ey, ex);
+      const board = mergeGeoms([
+        new THREE.BoxGeometry(1.1, 0.07, 1.4).translate(0, 0, 1.9),
+        new THREE.BoxGeometry(0.10, 0.10, 1.3).translate(0, 0, 0.65),
+      ]).rotateZ(ang).translate(px, py, 0);
+      this.noticeGroup.add(new THREE.Mesh(board, this.propMaterial(0xe9e5da, false)));
+      const stripe = new THREE.BoxGeometry(1.1, 0.075, 0.22).translate(0, 0, 2.48)
+        .rotateZ(ang).translate(px, py, 0);
+      this.noticeGroup.add(new THREE.Mesh(stripe, this.propMaterial(0xa8362a, false)));
+    }
+    this.map?.triggerRepaint();
+  }
+
+  /**
+   * RETAIL OCCUPANCY, so the storefronts tell the truth. -1 for a building
+   * with no shops (the band draws as it always did); 0..1 papers exactly the
+   * vacant share of the bays. Same per-BBL ranges the tints walk, monthly.
+   */
+  setRetail(ret: Map<string, number>) {
+    if (!this.retAttrs.length) return;
+    for (const a of this.retAttrs) (a.array as Float32Array).fill(-1);
+    for (const [bbl, f] of ret) {
+      const ranges = this.rangesByBBL.get(bbl);
+      if (!ranges) continue;
+      for (const { attr, r } of ranges) {
+        const arr = this.retAttrs[attr].array as Float32Array;
+        arr.fill(f, r.start, r.start + r.count);
+      }
+    }
+    for (const a of this.retAttrs) a.needsUpdate = true;
+    this.map.triggerRepaint();
+  }
+
   setMonth(m: number) {
     if (!Number.isFinite(m) || m === this.simMonth) return;
     this.simMonth = m;
@@ -3174,7 +3511,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // only while the layer is actually visible. MapLibre repaints on demand,
     // so without this call the city would be a still photograph — and with it
     // uncapped, it would burn a core to redraw water nobody is looking at.
-    if (this.waterMat || this.cranes.length) {
+    if (this.waterMat || this.cranes.length || this.hasWalkers) {
       const now = performance.now();
       this.timeUni.value = now / 1000;
       // A crane's slew is its parked bearing plus two slow incommensurate

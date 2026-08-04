@@ -4,7 +4,8 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useStore } from "@/state/store";
 import { composeStyle, gameLayers, landLensColor, LIVE_DEMAND, resolveBaseStyle } from "./style";
 import { ThreeBuildings, type BuildingVolume } from "./ThreeBuildings";
-import { occupancy, resolveRec } from "@/engine/value";
+import { occupancy, resolveRec, useOccupancy } from "@/engine/value";
+import { useSf } from "@/engine/mix";
 
 const CITY_CENTER: [number, number] = [-70.9, 41.1];
 
@@ -196,6 +197,16 @@ export default function MapView() {
                 : undefined,
             }, (useStore.getState().game?.citySeed ?? 1) >>> 0);
             layer.setMonth(useStore.getState().game?.month ?? 0);
+            // the foot-traffic gradient reads demand at plant time, so it has
+            // to arrive before addLayer triggers the build
+            {
+              const ps = useStore.getState().parcels;
+              if (ps) {
+                const dm: Record<string, number> = {};
+                for (const bbl in ps) dm[bbl] = ps[bbl].demandScore;
+                layer.setDemandMap(dm);
+              }
+            }
             threeRef.current = layer;
             // A handle for automated playtests, same as window.__map. The 3D
             // layer is the one part of this game whose correctness cannot be
@@ -476,6 +487,9 @@ export default function MapView() {
     const layer = threeRef.current;
     if (!layer || !mapReady || !game || !parcels) return;
     const occ = new Map<string, number>();
+    // ...and the shops separately, because a full office tower can still have
+    // a dead ground floor, and the street knows the difference.
+    const ret = new Map<string, number>();
     for (const bbl of layer.rangesByBBL.keys()) {
       const h = game.holdings[bbl];
       const rec = resolveRec(parcels, game, bbl);
@@ -486,8 +500,23 @@ export default function MapView() {
       } else {
         occ.set(bbl, occupancy(rec, game.econ));
       }
+      const retailSf = useSf(rec, "retail");
+      if (retailSf > 300) {
+        if (h) {
+          const let_ = h.tenants.reduce((n, t) => n + ((t.use ?? rec.class) === "retail" ? t.sf : 0), 0);
+          ret.set(bbl, Math.max(0, Math.min(1, let_ / retailSf)));
+        } else {
+          ret.set(bbl, useOccupancy(rec, game.econ, "retail"));
+        }
+      }
     }
     layer.setOccupancy(occ);
+    layer.setRetail(ret);
+    // the courthouse on the door: auction lots and noticed foreclosures
+    const notices = new Set<string>();
+    for (const l of game.auction?.lots ?? []) if (game.month < (game.auction?.m ?? 0)) notices.add(l.bbl);
+    for (const f of game.bankFcls ?? []) notices.add(f.bbl);
+    layer.setNotices([...notices]);
   }, [game?.month, game?.holdings, mapReady, parcels, game, city]);
 
   // player construction and city growth onto the skyline
@@ -495,7 +524,7 @@ export default function MapView() {
   useEffect(() => {
     const layer = threeRef.current;
     if (!layer || !mapReady || !game) return;
-    const items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean }[] = [];
+    const items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean }[] = [];
     for (const d of Object.values(game.developments ?? {})) {
       const total = Math.max(1, d.deliverM - d.startM);
       const prog = Math.min(1, Math.max(0.15, (game.month - d.startM + 1) / total));
@@ -514,7 +543,10 @@ export default function MapView() {
       items.push({ bbl: j.bbl, cls: j.use, heightM: j.floors * 3.4 * prog, floors: j.floors, construction: true });
     }
     for (const [bbl, b] of Object.entries(game.built ?? {})) {
-      items.push({ bbl, cls: b.class, heightM: b.floors * 3.4, floors: b.floors, construction: false });
+      // bunting for the first three months after delivery — a grand opening
+      const dM = game.holdings[bbl]?.deliveredM;
+      const fresh = dM !== undefined && game.month - dM <= 3;
+      items.push({ bbl, cls: b.class, heightM: b.floors * 3.4, floors: b.floors, construction: false, fresh });
     }
     // AN ASSEMBLED SITE IS ONE BUILDING ON SEVERAL DEEDS. The massing lives on
     // the parent lot; without this a tower built on three merged lots rose out
@@ -529,7 +561,7 @@ export default function MapView() {
       }
     }
     // meshes are rebuilt only when the skyline actually changed
-    const sig = items.map((i) => i.bbl + ":" + i.heightM.toFixed(1) + (i.construction ? "c" : "")).join("|");
+    const sig = items.map((i) => i.bbl + ":" + i.heightM.toFixed(1) + (i.construction ? "c" : "") + (i.fresh ? "f" : "")).join("|");
     if (sig === dynSigRef.current) return;
     dynSigRef.current = sig;
     layer.setPlayerBuildings(items);

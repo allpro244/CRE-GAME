@@ -448,6 +448,93 @@ compounds directly into the price of dirt, so wiring comparable sales into land
 value on top of it would be building a new mechanism on a broken input. Fix the
 anchor first.
 
+# THE SPACE MARKET DOES NOT FEED BACK INTO THE REAL ECONOMY
+
+F and H are the same missing wire, in opposite directions, and neither is a
+rates problem.
+
+## What the glut actually does
+
+Test H drops 4M sf of empty office on the city and asserts the loan index must
+not rise, "because a glut is a demand shock". Decomposed over its own window:
+
+```
+                         vac     loan  =  policy  +  premium   credit  cityU   natU
+month 0                 43.6%   6.24%     5.18%      1.06%      0.77    3.3%   4.73%
+months 24-96 (H window) 34.4%   7.18%     5.33%      2.01%      0.80    1.9%   4.71%
+```
+
+**The central bank is not tightening into the glut.** Policy moves 15bp. The
+entire rise is the term premium nearly doubling as credit takes fright —
+`termPrem = 1.55 + 1.85 * max(0, 1 - creditIdx)`, and the code's own comment
+says why: *"spreads blow out in a crisis even as the policy rate is being
+cut."* That is what happened to CRE debt in 1990 and again in 2009. The model
+is right and **H's rate clause is testing the wrong quantity**: it reads
+`indexRate`, the all-in cost of borrowing, against a claim that is about the
+policy rate.
+
+## The real defect it is pointing at
+
+Look at the last two columns. Through a **43.6% office vacancy**, with the rent
+index collapsing 78 to 31:
+
+- city unemployment **falls**, 3.3% to 1.9%
+- city jobs **rise**, 138,758 to 153,502
+- national unemployment moves 4.73% to 4.71% — nothing
+
+A city drowning in empty offices adds fifteen thousand jobs. The glut is not an
+economic event at all. Construction stops, tenants are not expanding, landlord
+income halves — and the labour market never hears about it. So there is nothing
+for the central bank to respond to, anywhere, and no amount of tuning the
+policy rule will produce a response to a shock that was never transmitted.
+
+## And it is the same hole F falls through
+
+F's finding was rents outrunning wages by a point a year with the market pinned
+on its frictional vacancy floor and supply growing at half the rate of jobs.
+Both tests are describing one thing: **the space market is downstream of the
+economy and never upstream of it.** Rent can run away forever because nothing
+it does can push back on the incomes that pay it, and a glut cannot hurt
+because nothing it does can reach the labour market either.
+
+## Why NOT to make the central bank read the city
+
+It was already built that way and deliberately removed. The retired note in
+`market.ts`:
+
+> THE OLD CITY-LEVEL POLICY RATE read the CITY's unemployment, so a player who
+> wrecked his own city was handed a rate cut for it. The nation sets the price
+> of money now.
+
+That is correct on both counts. A central bank does not set policy for one
+city, and a rule that eases when the player's own overbuilding hurts the local
+labour market is a money pump wearing a Taylor rule. The city already reaches
+the nation, honestly and weakly, at `n.unemp += 0.004 * (cityU - n.unemp)` —
+"one city, one per cent of a nation", which is the right weight.
+
+## The fix, and why it delivers what the rate idea was reaching for
+
+Wire the space market into the city's own labour market, and let the existing
+city -> nation -> policy chain do the rest:
+
+1. **A glut costs jobs.** Construction employment stops when the pipeline
+   stops; that is immediate and large. Tenants shedding space are tenants
+   shedding people. Landlord income collapsing is spending that does not
+   happen.
+2. **A shortage costs jobs too, at the other end** — this is F's half. A city
+   that cannot house the firms that want to be in it does not grow into the
+   rent; the firms go somewhere else. That is the missing brake that lets rent
+   outrun income indefinitely today, and it is the same wire.
+3. **Then the bank responds on its own**, through the 0.004 channel, at the
+   scale one city deserves — easing into a local slump and tightening into a
+   local boom exactly as intended, without ever being told to look at a city.
+
+That produces the symmetry the rate proposal was after, and it produces it as a
+consequence rather than as an instruction. H's rate clause should then be
+re-specified to test the policy rate and the premium separately, because they
+are supposed to move in opposite directions in a credit event and the current
+clause cannot tell the difference.
+
 # GATE REGRESSION AT THE MERGE — triaged; one was the test, one was the model
 
 The acceptance gates went from **econ 5/5, sim 3/4** to **econ 4/5, sim 2/4**

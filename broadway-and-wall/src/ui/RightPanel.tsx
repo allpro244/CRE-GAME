@@ -153,11 +153,22 @@ function AuctionModal() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels);
   const focus = useStore((s) => s.focus);
+  const auctionOpen = useStore((s) => s.auctionOpen);
+  const setAuctionOpen = useStore((s) => s.setAuctionOpen);
   const { bidAuction } = useStore.getState();
   const [seenM, setSeenM] = useState(-1);
   const [bids, setBids] = useState<Record<string, string>>({});
   const a = game.auction;
-  if (!parcels || game.gameOver || !a || game.month >= a.m || seenM === a.m) return null;
+  if (!parcels || game.gameOver || !a || game.month >= a.m) return null;
+  // A player who has turned the card off still gets the auction — the docket
+  // is on Marketplace and the bidding is the same — they just do not get it
+  // thrown at them. Opening it from that page sets `auctionOpen`, and that
+  // request beats BOTH of the reasons the sheet would otherwise stay shut:
+  // having dismissed it once this month, and having turned the card off for
+  // good. Asking for something and not getting it is the one outcome an
+  // opt-out must never produce.
+  if (auctionOpen) { /* they asked for it */ }
+  else if (seenM === a.m || game.auctionQuiet) return null;
 
   const parsed: Record<string, number> = {};
   for (const [id, v] of Object.entries(bids)) {
@@ -211,13 +222,33 @@ function AuctionModal() {
         </div>
         <div className="modal-actions">
           <button className="btn btn-buy" disabled={!Object.keys(parsed).length || dep > game.cash}
-            onClick={() => { bidAuction(parsed); setSeenM(a.m); }}>
+            onClick={() => { bidAuction(parsed); setSeenM(a.m); setAuctionOpen(false); }}>
             Register bids{dep > 0 ? ` · ${usd(dep)} down` : ""}
           </button>
-          <button className="btn" onClick={() => setSeenM(a.m)}>Watch from the back</button>
+          <button className="btn" onClick={() => { setSeenM(a.m); setAuctionOpen(false); }}>Watch from the back</button>
+          {/* THE CARD IS NOT THE AUCTION. Turning this off stops the interruption
+              and nothing else — so it has to say, in the same breath, where the
+              docket went and how to get the card back. An opt-out that leaves
+              the player unable to find the thing again is a trap. */}
+          {!game.auctionQuiet && (
+            <button
+              className="btn"
+              title="The docket still runs every July. You just read it on your own time."
+              onClick={() => {
+                const st = useStore.getState();
+                useStore.setState({ game: { ...st.game!, auctionQuiet: true } });
+                setSeenM(a.m);
+                setAuctionOpen(false);
+              }}
+            >
+              Don't show me this again
+            </button>
+          )}
         </div>
         <div className="modal-queue">
           The hammer falls at the end of the month. Results come through the news, win or lose.
+          {" "}The docket is always on <b>Marketplace</b> while it is live, and the switch for this card sits
+          beside it there — so turning it off costs you nothing but the interruption.
         </div>
       </div>
     </div>
@@ -4066,12 +4097,43 @@ function MarketPage() {
         >
           {game.brokersOff ? "Brokers: off" : "Brokers: on"}
         </button>
+        <button
+          className={"btn" + (game.auctionQuiet ? "" : " btn-on")}
+          style={{ alignSelf: "center" }}
+          title={game.auctionQuiet
+            ? "The July docket runs without interrupting you. Click to have the card come up again."
+            : "The July docket comes up as a card when it is published. Click to read it here instead."}
+          onClick={() => {
+            const st = useStore.getState();
+            useStore.setState({ game: { ...st.game!, auctionQuiet: !st.game!.auctionQuiet } });
+          }}
+        >
+          {game.auctionQuiet ? "Auction card: off" : "Auction card: on"}
+        </button>
       </div>
       <div className="hint">
         Everything for sale in town. A motivated seller is priced under appraisal and will not last; a half-built
         frame comes with somebody else's job attached, and you finish it. What the market is DOING — cap rates,
         the trades, comparable sales, who has been buying — is on Research.
       </div>
+      {/* THE DOCKET, WHEREVER THE CARD SETTING STANDS. Foreclosure lots are the
+          one thing on the tape nobody chose to sell, and they are gone in a
+          month — so they live at the TOP of the page while they are live, and
+          the button opens the same bidding sheet the card shows. */}
+      {game.auction && game.month < game.auction.m && (
+        <div className="deal" style={{ marginBottom: 10 }}>
+          <div className="deal-head">
+            The county foreclosure docket · {game.auction.lots.length} lot{game.auction.lots.length === 1 ? "" : "s"} · the hammer falls {monthLabel(game.auction.m)}
+          </div>
+          <div className="hint">
+            As-is, ten per cent down the day you register, no financing and no warranty. Nobody on this list
+            chose to sell.
+          </div>
+          <button className="btn btn-buy" onClick={() => useStore.getState().setAuctionOpen(true)}>
+            Open the docket
+          </button>
+        </div>
+      )}
       <div className="deals-grid">
         <section style={{ gridColumn: "1 / -1" }}>
           <div className="page-section">On the market · {live}{mine.length ? ` · ${mine.length} of them yours` : ""}</div>

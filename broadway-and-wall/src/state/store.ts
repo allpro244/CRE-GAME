@@ -39,6 +39,12 @@ interface AppState {
   lens: Lens;
   page: Page;
   toast: { text: string; kind: "ok" | "err"; at: number } | null;
+  /**
+   * The July docket, opened deliberately rather than thrown at you. Purely a
+   * view flag — it is not part of the save, because whether a panel happens to
+   * be open is not a fact about the campaign.
+   */
+  auctionOpen: boolean;
   fps: number;
   loadError: string | null;
   setData: (d: { parcels: ParcelTable; adjacency: Adjacency; manifest: DataManifest; city?: GeneratedCity }) => void;
@@ -46,6 +52,7 @@ interface AppState {
   hover: (bbl: string | null) => void;
   /** Select it AND take the camera there. */
   focus: (bbl: string, closePanel?: boolean) => void;
+  setAuctionOpen: (v: boolean) => void;
   setLens: (l: Lens) => void;
   setPage: (p: Page) => void;
   setFps: (fps: number) => void;
@@ -137,6 +144,7 @@ export const useStore = create<AppState>((set, get) => ({
   flyTo: null,
   lens: "none",
   page: "none",
+  auctionOpen: false,
   toast: null,
   fps: 0,
   loadError: null,
@@ -147,6 +155,7 @@ export const useStore = create<AppState>((set, get) => ({
   // Reading about a building and finding it are two different things, and a
   // list of addresses in a panel is not a place. Every row that names a
   // property can put the camera on it.
+  setAuctionOpen: (v) => set({ auctionOpen: v }),
   focus: (bbl, closePanel = false) => set((st) => ({
     selectedBBL: bbl,
     flyTo: { bbl, n: (st.flyTo?.n ?? 0) + 1 },
@@ -702,7 +711,7 @@ export const useStore = create<AppState>((set, get) => ({
     const { parcels } = get();
     const saved = await loadGame(slot);
     if (!saved || !parcels) { toast("That save wouldn't open.", "err"); return; }
-    if (saved.v !== 30) { toast("That save is from an older build and can't be opened.", "err"); return; }
+    if (saved.v !== 31) { toast("That save is from an older build and can't be opened.", "err"); return; }
 
     // A SAVE CARRIES ITS OWN TOWN.
     //
@@ -844,7 +853,7 @@ export async function loadData() {
     // A save only fits if every deed in it exists in THIS town. Across seeds
     // it will not, and that is not a corrupt save — it is a save from a city
     // that no longer exists, which is exactly what a reroll means.
-    const fits = saved && saved.v === 30 && saved.citySeed === seed
+    const fits = saved && saved.v === 31 && saved.citySeed === seed
       && Object.keys(saved.holdings).every((b) => parcels[b])
       && saved.listings.every((l) => parcels[l.bbl]);
     if (fits) {

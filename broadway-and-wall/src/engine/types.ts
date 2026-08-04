@@ -847,7 +847,7 @@ export type SellerKind = "estate" | "institution" | "partnership" | "developer" 
 
 
 export interface GameState {
-  v: 30;
+  v: 31;
   seed: number;
   /**
    * WHICH TOWN THIS WAS PLAYED IN.
@@ -1081,6 +1081,12 @@ export interface GameState {
   agent: boolean;
   /** The player told the brokers to stop ringing. Nothing else changes. */
   brokersOff?: boolean;
+  /**
+   * The player does not want the July docket thrown in their face. The auction
+   * still happens, on the same day, with the same lots — this only stops the
+   * card. The docket is on Marketplace either way, and so is the switch.
+   */
+  auctionQuiet?: boolean;
   // Revolving line against the portfolio: 35% of net worth at index + 400bps.
   loc: { balance: number; drawnTotal: number; interestPaid: number };
   books: BooksYear[];                        // the ledger, one entry per year

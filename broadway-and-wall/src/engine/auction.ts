@@ -506,11 +506,23 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
 
 // -------------------------------------------------------------------- the tick
 
+/**
+ * THE FIRST DOCKET OF THE CAMPAIGN, in the third July.
+ *
+ * A foreclosure is the end of a long process — a loan struck, a market turned,
+ * arrears run up, a notice filed, a redemption period run out. None of that
+ * can have happened to anybody in the first eighteen months of a run, so a
+ * docket in the first July is the game showing you distress it has not yet
+ * had time to produce. By the third summer the street has had a cycle to get
+ * into trouble in, and the lots on the block have a story behind them.
+ */
+export const FIRST_DOCKET_M = 30;
+
 export function tickAuction(s: GameState, parcels: ParcelTable) {
   tickBankForeclosures(s, parcels);
   // the hammer first — an auction resolved before July's docket is built
   if (s.auction && s.month >= s.auction.m) resolveAuction(s, parcels);
-  if (s.month % 12 === 6 && !s.auction) buildDocket(s, parcels);
+  if (s.month >= FIRST_DOCKET_M && s.month % 12 === 6 && !s.auction) buildDocket(s, parcels);
 }
 
 // ------------------------------------------------------------------ the action

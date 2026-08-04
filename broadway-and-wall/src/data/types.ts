@@ -36,6 +36,15 @@ export interface ParcelRecord {
   unitsRes: number;
   assessedLand: number;
   assessedTotal: number;
+  /**
+   * HOW WELL THIS BUILDING WAS BUILT, 0..1, with 0.5 as ordinary market
+   * standard. Set when the player or the street breaks ground and never
+   * changes afterwards, because it describes the things a renovation cannot
+   * reach: the floor-to-floor, the curtain wall, the structure, the plant.
+   * Read by `condCeiling` — a trophy specification ages more slowly and keeps
+   * a higher ceiling forever.
+   */
+  buildSpec?: number;
   demandScore: number;  // 0–100
   landPsf: number;      // $/sf of land, engine-evolved in later phases
   landPsfHistory: number[];

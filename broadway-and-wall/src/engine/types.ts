@@ -258,6 +258,8 @@ export interface Loan {
 }
 
 export interface Holding {
+  /** this building is part of a package you have taken to market as one ticket */
+  inPackage?: boolean;
   bbl: string;
   boughtM: number;
   costBasis: number;
@@ -391,6 +393,8 @@ export type Contract = "gmp" | "costplus";
 
 export interface Development {
   bbl: string;
+  /** what it is being built to, 0..1 with 0.5 as market standard */
+  spec?: number;
   use: DevUse;
   mix: UseMix;
   sf: number;
@@ -490,6 +494,37 @@ export interface Listing {
   sellerId?: string;
   /** Set when a receiver is clearing a failed firm's book, so it still reads. */
   receiverFor?: string;
+}
+
+/**
+ * A BOOK ON THE MARKET AS ONE TICKET.
+ *
+ * The biggest transactions in this business are not buildings, they are
+ * portfolios: a fund winding down, a bank clearing a borrower's whole
+ * relationship, a principal exiting twenty years of assembly without letting
+ * the market watch him do it lot by lot. They price differently from the sum of
+ * their parts, because the list of counterparties who can close one is short.
+ */
+export interface PortfolioListing {
+  id: string;
+  bbls: string[];
+  /** the number being asked for the whole book, today */
+  ask: number;
+  /** what the buildings appraise at individually — the ask is read against this */
+  gross: number;
+  listedM: number;
+  expiresM: number;
+  /** how many times the price has been cut. A receiver's cuts accelerate. */
+  cuts: number;
+  /** the player is the seller */
+  player?: boolean;
+  /** a rival is the seller */
+  sellerId?: string;
+  /** a bank is the seller, and it took this book into receivership */
+  sellerLender?: string;
+  reo?: boolean;
+  reoBorrower?: string;
+  reason: string;
 }
 
 
@@ -940,7 +975,29 @@ export interface SponsorEvent {
   amount: number;      // the hole left behind, if any
 }
 
-export type RivalStyle = "core" | "opportunistic" | "developer" | "family";
+/**
+ * WHAT KIND OF FIRM THIS IS — and it is a personality, not a difficulty dial.
+ *
+ * Four archetypes described a street where every firm wanted the same thing at
+ * the same time and differed only in how much leverage it used to get it. That
+ * is not a market; a market is a room where the reason one bidder is in it is
+ * the reason another one is not. These eleven each answer a different question
+ * — do I hold or sell, do I buy when money is cheap or when it is gone, do I
+ * spend on the building or milk it, am I here for the yield or the exit — and
+ * the answers put them on opposite sides of the same trade.
+ */
+export type RivalStyle =
+  | "core"           // institutional: stabilised income, disciplined, patient
+  | "opportunistic"  // wins the last three years of every cycle, loses the next
+  | "developer"      // buys dirt and puts buildings on it
+  | "family"         // holds forever, no debt, will not sell to you at any price
+  | "merchant"       // merchant builder: builds to SELL, never holds the finish
+  | "pe"             // local private equity on an IRR clock: buy, fix, exit by year five
+  | "reit"           // listed: must keep paying the dividend, in the market always
+  | "vulture"        // distressed specialist: dormant in a boom, ravenous in a bust
+  | "owneruser"      // a company buying its own premises: never sells, never prices
+  | "foreign"        // offshore capital buying safety: trophy assets, low yield, no debt
+  | "slumlord";      // buys the worst stock cheap and spends nothing on it
 
 /**
  * A competing firm. Aggregate balance sheet, real portfolio — enough to bid
@@ -948,6 +1005,12 @@ export type RivalStyle = "core" | "opportunistic" | "developer" | "family";
  * loan stack for every building in town.
  */
 export interface Rival {
+  /**
+   * When each deed arrived, by BBL. The hold clock: a private-equity fund on
+   * an IRR mandate and a family office holding for a generation both own
+   * buildings, and the only thing that distinguishes them is this number.
+   */
+  heldSince?: Record<string, number>;
   id: string;
   name: string;
   style: RivalStyle;
@@ -1026,6 +1089,9 @@ export type SellerKind = "estate" | "institution" | "partnership" | "developer" 
 
 
 export interface GameState {
+  /** books on the market as one ticket — see engine/portfoliosale.ts */
+  portfolios?: PortfolioListing[];
+  nextPortfolioId?: number;
   v: 32;
   seed: number;
   /**

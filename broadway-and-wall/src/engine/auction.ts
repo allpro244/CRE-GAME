@@ -30,6 +30,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { AuctionLot, GameState, Holding } from "./types";
 import { logBooks, monthLabel, nextJulyAfter } from "./types";
 import { rng, rrange } from "./market";
+import { openReoPortfolio } from "./portfoliosale";
 import { collateralAsIs, holdingValue, resolveRec } from "./value";
 import { lenderPressure, lenderByName, chargeLenderLoss } from "./lenders";
 import { distressPrice, markSponsor } from "./sponsor";
@@ -500,6 +501,26 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         }
       }
       // receiver lots that fail simply stay with the receiver for the drip
+    }
+  }
+  // A BANK THAT TOOK MORE THAN ONE BUILDING OFF THE SAME BORROWER DOES NOT WANT
+  // ELEVEN CLOSINGS. It wants the relationship off the balance sheet, and the
+  // way that is actually done is one ticket for the whole book — put out a
+  // little under the market and then cut, quarter after quarter, until somebody
+  // takes it. See engine/portfoliosale.ts for the walk.
+  {
+    const byLender = new Map<string, { bbls: string[]; borrower?: string }>();
+    for (const lot of a.lots) {
+      if (lot.kind !== "bank") continue;
+      const li = s.listings.find((x) => x.bbl === lot.bbl && x.distress);
+      if (!li) continue;                        // it did not become REO this month
+      const k = lot.holder;
+      if (!byLender.has(k)) byLender.set(k, { bbls: [], borrower: lot.borrower });
+      byLender.get(k)!.bbls.push(lot.bbl);
+    }
+    for (const [lender, g] of byLender) {
+      if (g.bbls.length < 2) continue;
+      openReoPortfolio(s, parcels, lender, g.bbls, g.borrower);
     }
   }
   if (sold + reo + pulled > 1) {

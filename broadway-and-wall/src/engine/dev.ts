@@ -270,8 +270,27 @@ export interface DevPlan {
   months: number;
   yieldOnCost: number;    // stabilised NOI ÷ total cost — the developer's number
   exitCap: number;
+  /** 0..1, 0.5 = market standard. What you chose to build to. */
+  spec: number;
   lenderNote?: string;
 }
+
+/**
+ * THE SPECIFICATION PREMIUM.
+ *
+ * A budget building and a trophy building on the same lot are not the same
+ * project, and the difference is mostly hard cost: the curtain wall, the
+ * floor-to-floor, the lift count, the lobby, the plant. Roughly thirty per cent
+ * either side of market standard, which is about the real spread between a
+ * value-engineered box and a building people want their name on.
+ *
+ * What the money buys is in `condCeiling` and it is PERMANENT — the building
+ * ages more slowly and keeps a higher ceiling forever — plus a better roll,
+ * because the tenants who pay the top of the market will not take space in a
+ * building that leaks.
+ */
+export const specCostMult = (spec: number) => 1 + 0.62 * (clamp01(spec) - 0.5);
+const clamp01 = (x: number) => Math.max(0, Math.min(1, x ?? 0.5));
 
 // The buildable envelope, and nothing else. Ashport has no use districts —
 // any class on any lot — so the only limit is how much floor area the FAR
@@ -513,6 +532,7 @@ export function planDevelopment(
   contract: Contract = "gmp", ltcWanted?: number,
   custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>> },
   lender?: string,
+  spec = 0.5,
 ): DevPlan | null {
   // THE ENVELOPE YOU ACTUALLY HAVE. Zoning moves, variances are won and lots
   // are assembled — all of which live on the resolved record. Planning against
@@ -543,7 +563,8 @@ export function planDevelopment(
   const heightPrem = fl > 30 ? 1.28 : fl > 18 ? 1.18 : fl > 8 ? 1.07 : 1;
   // the budget is the sum of the jobs, not a number attached to a label
   // ...priced on GROSS. You pay for the core; you do not let it.
-  const hardCost = Math.round(gsf * overMix(mix, (u) => HARD_COST_PSF[u]) * s.econ.costIdx * heightPrem * (1 + CONTRACT_PREMIUM[contract]));
+  const specK = specCostMult(spec);
+  const hardCost = Math.round(gsf * overMix(mix, (u) => HARD_COST_PSF[u]) * s.econ.costIdx * heightPrem * (1 + CONTRACT_PREMIUM[contract]) * specK);
   const softCost = Math.round(hardCost * SOFT_COST);
   const demo = rec.bldgArea > 0 ? Math.round(rec.bldgArea * 12 * s.econ.costIdx) : 0;
   const contingency = Math.round((hardCost + softCost) * CONTINGENCY);
@@ -674,7 +695,7 @@ export function planDevelopment(
     // in the ground, which is why a development eats your balance sheet at the
     // start rather than in even slices.
     equityAtClose: Math.round((projectCost - commitment) * 0.55),
-    months, yieldOnCost, exitCap, lenderNote,
+    months, yieldOnCost, exitCap, spec: clamp01(spec), lenderNote,
   };
 }
 
@@ -684,6 +705,7 @@ export function startDevelopment(
   contract: Contract = "gmp", ltcWanted?: number,
   custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>> },
   lender?: string,
+  spec = 0.5,
 ): { s: GameState; err?: string } {
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
@@ -696,7 +718,7 @@ export function startDevelopment(
   if (s.landmarks?.[bbl] !== undefined) return { s, err: "It is landmarked — the envelope is what is already standing." };
   if (s.groundLeases?.[bbl]) return { s, err: "That site is ground-leased. Somebody else builds on it until the term runs out." };
   if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage — build on the site, not the piece." };
-  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, contract, ltcWanted, custom, lender);
+  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, contract, ltcWanted, custom, lender, spec);
   if (!plan) return { s, err: "That's too small to be worth building — add floors or cover more of the lot." };
   // YOU HAVE TO BE ABLE TO FUND THE WHOLE THING.
   //
@@ -750,6 +772,7 @@ export function startDevelopment(
     }
   }
   next.developments[bbl] = {
+    spec: plan.spec,
     bbl, use, mix: plan.mix, sf: plan.sf, floors: plan.floors,
     suites: custom?.suites,
     costTotal: plan.costTotal, hardCost: plan.hardCost, contract,
@@ -1133,7 +1156,13 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // NEW BONES. Ground-up is the only way to own the top of the condition scale —
   // see condCeiling: no amount of capital gets an old building here. That is a
   // real part of what a developer is buying and it was not modelled at all.
-  h.condIdx = 0.96;
+  // WHAT YOU BUILT IT TO. The specification is stamped on the PARCEL, not the
+  // holding, because it outlives your ownership: whoever buys this building in
+  // 2040 is buying the floor-to-floor and the curtain wall you paid for, and
+  // condCeiling reads it forever.
+  const built = parcels[d.bbl] ?? rec;
+  if (built) built.buildSpec = d.spec ?? 0.5;
+  h.condIdx = Math.min(condCeiling(built ?? { yearBuilt: 2000 }, s.month), 0.90 + 0.09 * ((d.spec ?? 0.5)));
   h.service = s.opsPolicy?.service ?? 0;
   h.plan = s.opsPolicy?.plan ?? 1;
   h.svcIdx = 0.70;   // a building that opens this year opens well run

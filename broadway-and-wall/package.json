@@ -32,7 +32,9 @@
     "econ:accept": "node test/econ-accept.mjs",
     "brokercall": "node test/brokercall.mjs",
     "sim:accept": "node test/sim-accept.mjs",
-    "rates": "node test/rate-stress.mjs"
+    "rates": "node test/rate-stress.mjs",
+    "audit": "node tools/econaudit.mjs",
+    "quality": "node tools/qualitytest.mjs"
   },
   "dependencies": {
     "@types/three": "^0.185.3",

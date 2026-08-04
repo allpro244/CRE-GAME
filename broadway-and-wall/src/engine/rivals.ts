@@ -66,40 +66,40 @@ const FIRMS: { name: string; style: RivalStyle; equity: number; ltv: number }[] 
   // --- the establishment: patient money, low leverage, never a forced seller
   { name: "Calloway & Reed", style: "family", equity: 7_000_000, ltv: 0.32 },
   { name: "Harbor Point Partners", style: "core", equity: 9_000_000, ltv: 0.52 },
-  { name: "Wentworth Trust", style: "core", equity: 10_000_000, ltv: 0.41 },
-  { name: "Granite Mutual", style: "core", equity: 10_000_000, ltv: 0.44 },
+  { name: "Wentworth Trust", style: "family", equity: 10_000_000, ltv: 0.41 },
+  { name: "Granite Mutual", style: "reit", equity: 10_000_000, ltv: 0.44 },
   { name: "Thorne & Boyle", style: "family", equity: 6_000_000, ltv: 0.28 },
   { name: "Wrenfield Brothers", style: "family", equity: 5_000_000, ltv: 0.35 },
-  { name: "Ashcombe Estate Co.", style: "family", equity: 6_800_000, ltv: 0.26 },
+  { name: "Ashcombe Estate Co.", style: "foreign", equity: 6_800_000, ltv: 0.26 },
   { name: "The Delancey Trust", style: "core", equity: 9_500_000, ltv: 0.38 },
   // --- the middle: the firms you will actually bid against, week in week out
-  { name: "Meridian Yield Group", style: "opportunistic", equity: 5_500_000, ltv: 0.71 },
+  { name: "Meridian Yield Group", style: "pe", equity: 5_500_000, ltv: 0.71 },
   { name: "Alden Development Co.", style: "developer", equity: 8_000_000, ltv: 0.66 },
   { name: "Kestrel Capital", style: "opportunistic", equity: 4_000_000, ltv: 0.78 },
-  { name: "Longwharf Realty", style: "developer", equity: 6_500_000, ltv: 0.69 },
+  { name: "Longwharf Realty", style: "merchant", equity: 6_500_000, ltv: 0.69 },
   { name: "Pell Street Holdings", style: "opportunistic", equity: 4_500_000, ltv: 0.82 },
   { name: "Tidewater Development", style: "developer", equity: 8_500_000, ltv: 0.72 },
-  { name: "Barrowgate Realty", style: "core", equity: 7_200_000, ltv: 0.55 },
-  { name: "Fairlead Capital", style: "opportunistic", equity: 5_200_000, ltv: 0.74 },
-  { name: "Stonecutter Partners", style: "developer", equity: 7_400_000, ltv: 0.70 },
+  { name: "Barrowgate Realty", style: "reit", equity: 7_200_000, ltv: 0.55 },
+  { name: "Fairlead Capital", style: "pe", equity: 5_200_000, ltv: 0.74 },
+  { name: "Stonecutter Partners", style: "merchant", equity: 7_400_000, ltv: 0.70 },
   { name: "Mercer & Vane", style: "core", equity: 6_600_000, ltv: 0.49 },
-  { name: "Rookery Investments", style: "opportunistic", equity: 4_800_000, ltv: 0.80 },
+  { name: "Rookery Investments", style: "vulture", equity: 4_800_000, ltv: 0.80 },
   { name: "Hollis Yard Group", style: "developer", equity: 5_800_000, ltv: 0.75 },
   { name: "Kingsbridge Realty", style: "core", equity: 8_200_000, ltv: 0.46 },
   { name: "Almond Court Capital", style: "opportunistic", equity: 3_800_000, ltv: 0.83 },
   // --- the tail: small, local, stubborn, and almost impossible to buy out
-  { name: "Vasilis Brothers", style: "family", equity: 3_200_000, ltv: 0.30 },
+  { name: "Vasilis Brothers", style: "slumlord", equity: 3_200_000, ltv: 0.30 },
   { name: "O'Hare & Daughters", style: "family", equity: 2_800_000, ltv: 0.24 },
-  { name: "Castellane Holdings", style: "family", equity: 3_600_000, ltv: 0.33 },
-  { name: "Brannock Property Co.", style: "family", equity: 2_600_000, ltv: 0.22 },
-  { name: "Ninth Ward Realty", style: "opportunistic", equity: 2_900_000, ltv: 0.79 },
-  { name: "Tallow Lane Partners", style: "opportunistic", equity: 3_100_000, ltv: 0.77 },
-  { name: "Ferro Construction Co.", style: "developer", equity: 3_400_000, ltv: 0.76 },
+  { name: "Castellane Holdings", style: "owneruser", equity: 3_600_000, ltv: 0.33 },
+  { name: "Brannock Property Co.", style: "slumlord", equity: 2_600_000, ltv: 0.22 },
+  { name: "Ninth Ward Realty", style: "vulture", equity: 2_900_000, ltv: 0.79 },
+  { name: "Tallow Lane Partners", style: "pe", equity: 3_100_000, ltv: 0.77 },
+  { name: "Ferro Construction Co.", style: "merchant", equity: 3_400_000, ltv: 0.76 },
   { name: "Wexler Building Co.", style: "developer", equity: 4_100_000, ltv: 0.73 },
-  { name: "Prosper Ridge Group", style: "core", equity: 4_400_000, ltv: 0.51 },
-  { name: "Anwar Estates", style: "family", equity: 3_000_000, ltv: 0.27 },
+  { name: "Prosper Ridge Group", style: "reit", equity: 4_400_000, ltv: 0.51 },
+  { name: "Anwar Estates", style: "owneruser", equity: 3_000_000, ltv: 0.27 },
   { name: "Chandler & Roe", style: "opportunistic", equity: 3_500_000, ltv: 0.81 },
-  { name: "Marlowe Kimball", style: "core", equity: 5_000_000, ltv: 0.47 },
+  { name: "Marlowe Kimball", style: "foreign", equity: 5_000_000, ltv: 0.47 },
   { name: "Sixpenny Holdings", style: "family", equity: 2_500_000, ltv: 0.20 },
 ];
 
@@ -112,16 +112,66 @@ const STYLE: Record<RivalStyle, {
   cashOut: number;        // how eagerly they refinance equity out in a boom
   classes: string[] | null;
   patience: number;       // how far above appraisal they will chase a deal
+  /**
+   * TARGET HOLD, IN MONTHS, and 0 means forever. This is the field that makes
+   * a personality a personality rather than a leverage setting: a merchant
+   * builder and a family office can want the same building for opposite
+   * reasons and be on opposite sides of the trade three years later.
+   */
+  holdM: number;
+  /**
+   * WHICH WAY THE CREDIT WINDOW MOVES THEM. Almost everyone buys more when
+   * money is cheap. A vulture buys when it is gone, and a family office quietly
+   * buys the things nobody else can finance. Negative inverts `procyclical`.
+   */
+  contra: number;
+  /** how far they will chase a DISTRESSED listing specifically */
+  distressBias: number;
 }> = {
   // sold their soul to nobody; buys quality, holds forever, sleeps at night
-  family:        { appetite: 0.30, procyclical: 0.5, maxLtv: 0.50, cashOut: 0.00, classes: null, patience: 1.02 },
+  family:        { appetite: 0.30, procyclical: 0.5, maxLtv: 0.50, cashOut: 0.00, classes: null, patience: 1.02, holdM: 0, contra: 0.25, distressBias: 1.1 },
   // institutional money: steady, disciplined, buys stabilised income
-  core:          { appetite: 0.75, procyclical: 1.0, maxLtv: 0.65, cashOut: 0.20, classes: ["office", "multifamily"], patience: 1.06 },
+  core:          { appetite: 0.75, procyclical: 1.0, maxLtv: 0.65, cashOut: 0.20, classes: ["office", "multifamily"], patience: 1.06, holdM: 168, contra: 0, distressBias: 0.7 },
   // the ones who win the last three years of every cycle and lose the next one
-  opportunistic: { appetite: 1.25, procyclical: 1.9, maxLtv: 0.88, cashOut: 0.85, classes: null, patience: 1.16 },
+  opportunistic: { appetite: 1.25, procyclical: 1.9, maxLtv: 0.88, cashOut: 0.85, classes: null, patience: 1.16, holdM: 84, contra: 0, distressBias: 1.4 },
   // buys dirt and puts buildings on it; the city's growth is partly theirs
-  developer:     { appetite: 0.85, procyclical: 1.5, maxLtv: 0.78, cashOut: 0.55, classes: ["land", "industrial", "retail"], patience: 1.10 },
+  developer:     { appetite: 0.85, procyclical: 1.5, maxLtv: 0.78, cashOut: 0.55, classes: ["land", "industrial", "retail"], patience: 1.10, holdM: 120, contra: 0, distressBias: 0.9 },
+
+  // --- and the seven the street was missing ---------------------------------
+
+  // MERCHANT BUILDER. Builds to sell — the fee is in the delivery, not the
+  // hold, and a merchant who is still holding a building at year four has made
+  // a mistake and knows it. Buys land, almost nothing else.
+  merchant:      { appetite: 0.55, procyclical: 1.7, maxLtv: 0.80, cashOut: 0.30, classes: ["land"], patience: 1.08, holdM: 42, contra: 0, distressBias: 0.6 },
+  // LOCAL PRIVATE EQUITY, on an IRR clock. Buy something tired, fix it, exit by
+  // year five, because an IRR is a function of TIME and the fund has a life.
+  // The clock is the whole personality: they will sell a good building into a
+  // bad market because the deadline does not care what the market is doing.
+  pe:            { appetite: 1.05, procyclical: 1.4, maxLtv: 0.75, cashOut: 0.70, classes: null, patience: 1.12, holdM: 60, contra: 0, distressBias: 1.2 },
+  // LISTED REIT. Has to keep paying the dividend, which means it is never
+  // out of the market and never truly patient — it must keep the yield up and
+  // it cannot cut distributions without being punished for it.
+  reit:          { appetite: 0.95, procyclical: 1.1, maxLtv: 0.58, cashOut: 0.45, classes: ["office", "retail", "multifamily"], patience: 1.05, holdM: 240, contra: 0, distressBias: 0.8 },
+  // VULTURE. Dormant in a boom and ravenous in a bust — the only firm on this
+  // street whose appetite RISES as credit closes, which is what makes a
+  // receiver's book contested even in the worst year.
+  vulture:       { appetite: 0.65, procyclical: 0.4, maxLtv: 0.60, cashOut: 0.20, classes: null, patience: 1.03, holdM: 96, contra: -1.6, distressBias: 2.6 },
+  // OWNER-OCCUPIER. A company buying its own premises. It does not price the
+  // building off a cap rate and it never sells, so every deed it takes leaves
+  // the market permanently — which is exactly what a corporate headquarters
+  // purchase does to a submarket's available stock.
+  owneruser:     { appetite: 0.35, procyclical: 0.7, maxLtv: 0.55, cashOut: 0.00, classes: ["office", "industrial"], patience: 1.20, holdM: 0, contra: 0.2, distressBias: 0.5 },
+  // OFFSHORE CAPITAL buying safety rather than yield. Pays up for the trophy,
+  // uses almost no debt, and turns up when the city is fashionable.
+  foreign:       { appetite: 0.50, procyclical: 1.3, maxLtv: 0.35, cashOut: 0.05, classes: ["office", "multifamily"], patience: 1.28, holdM: 0, contra: 0, distressBias: 0.4 },
+  // THE MILKER. Buys the worst stock at the worst prices and spends nothing on
+  // it, which works for years and then does not. Its buildings are where the
+  // city's obsolescence accumulates.
+  slumlord:      { appetite: 0.70, procyclical: 0.9, maxLtv: 0.72, cashOut: 0.60, classes: ["multifamily", "retail", "industrial"], patience: 0.96, holdM: 0, contra: 0.3, distressBias: 1.8 },
 };
+
+/** The style table, for modules that need to read a firm's temperament. */
+export const STYLE_OF = (k: RivalStyle) => STYLE[k];
 
 const RATE_SPREAD = 1.9;   // what a firm of this size pays over the index
 
@@ -141,6 +191,13 @@ const RATE_SPREAD = 1.9;   // what a firm of this size pays over the index
 // in five years and nobody amortises through a hold they intend to sell out of.
 const AMORT_SHARE: Record<RivalStyle, number> = {
   family: 1, core: 0.85, opportunistic: 0.25, developer: 0.35,
+  // A merchant builder and a private-equity fund both intend to be gone before
+  // the first principal payment matters. A REIT amortises because its lenders
+  // and its rating make it. An owner-user pays its building off like a mortgage
+  // on a house. Offshore capital barely borrows. A slumlord services what it
+  // must and no more.
+  merchant: 0.15, pe: 0.20, reit: 0.75, vulture: 0.45,
+  owneruser: 1, foreign: 0.90, slumlord: 0.30,
 };
 
 // ---------------------------------------------------------------- building
@@ -151,6 +208,11 @@ const AMORT_SHARE: Record<RivalStyle, number> = {
 // risk, because that is the entire point of core and family capital.
 const BUILD_APPETITE: Record<RivalStyle, number> = {
   developer: 1, opportunistic: 0.3, core: 0.06, family: 0,
+  // A merchant builder is MORE of a builder than a developer is — building is
+  // the entire business and the hold is an accident. Everybody else has a
+  // reason not to take construction risk, and the reason differs.
+  merchant: 1.25, pe: 0.35, reit: 0.10, vulture: 0.05,
+  owneruser: 0.20, foreign: 0, slumlord: 0,
 };
 const CONSTR_SPREAD_R = 2.6;   // construction paper is dearer than term paper
 
@@ -174,6 +236,10 @@ function transferDeed(s: GameState, bbl: string, to: Rival, price: number) {
     }
   }
   if (!to.bbls.includes(bbl)) to.bbls.push(bbl);
+  // WHEN THE DEED ARRIVED. A hold period is the difference between a family
+  // office and a private-equity fund, and it cannot be modelled without
+  // knowing how long each building has actually been owned.
+  (to.heldSince ??= {})[bbl] = s.month;
 }
 
 /** The all-in budget a firm underwrites for a job, on the same basis the player does. */
@@ -513,6 +579,20 @@ const CARE: Record<RivalStyle, { lease: number; capex: number }> = {
   core:          { lease: 1.15, capex: 1.2 },
   opportunistic: { lease: 0.85, capex: 0.45 },
   developer:     { lease: 1.0,  capex: 0.8 },
+  // A merchant builder's buildings are new, so there is nothing to spend on
+  // yet. A private-equity fund spends HARD for three years and then stops,
+  // because the capital plan is the business plan and it ends at the exit — it
+  // is modelled here as high capex and hard leasing. A REIT keeps its assets
+  // institutional because that is what the analysts look at. An owner-user
+  // maintains its own house. A slumlord spends nothing at all, and its
+  // buildings are where the city's obsolescence goes to live.
+  merchant:      { lease: 1.0,  capex: 0.9 },
+  pe:            { lease: 1.25, capex: 1.1 },
+  reit:          { lease: 1.1,  capex: 1.15 },
+  vulture:       { lease: 0.95, capex: 0.6 },
+  owneruser:     { lease: 1.3,  capex: 1.05 },
+  foreign:       { lease: 0.8,  capex: 0.95 },
+  slumlord:      { lease: 0.7,  capex: 0.10 },
 };
 
 /**
@@ -590,7 +670,8 @@ export function marketAppetite(s: GameState): number {
     const st = STYLE[r.style];
     // a firm with no dry powder is not a bidder, however loudly it talks
     const dry = Math.max(0, Math.min(1.5, r.cash / Math.max(1, 0.04 * Math.max(1, r.aum ?? r.debt))));
-    a += st.appetite * (1 + st.procyclical * (ci - 1)) * Math.min(1.15, 0.2 + dry);
+    a += st.appetite * Math.max(0.05, 1 + st.procyclical * (ci - 1) + st.contra * (1 - ci))
+      * Math.min(1.15, 0.2 + dry);
     n++;
   }
   if (!n) return Math.max(0.25, ci);
@@ -628,37 +709,37 @@ export function ownerOf(s: GameState, bbl: string): Rival | null {
 const NEW_FIRMS: { name: string; style: RivalStyle }[] = [
   { name: "Northgate Partners", style: "opportunistic" },
   { name: "Sable & Hale", style: "core" },
-  { name: "Drydock Holdings", style: "developer" },
-  { name: "Ostrander Group", style: "opportunistic" },
+  { name: "Drydock Holdings", style: "merchant" },
+  { name: "Ostrander Group", style: "vulture" },
   { name: "Bellweather Estates", style: "family" },
-  { name: "Quarry Lane Capital", style: "core" },
+  { name: "Quarry Lane Capital", style: "reit" },
   { name: "Alden Municipal Pension", style: "core" },
-  { name: "Fen & Marrow", style: "opportunistic" },
+  { name: "Fen & Marrow", style: "pe" },
   { name: "Corbin Whitlock", style: "opportunistic" },
-  { name: "Saltmarsh Trust", style: "family" },
+  { name: "Saltmarsh Trust", style: "slumlord" },
   { name: "Ironbound Development", style: "developer" },
-  { name: "Halyard Investors", style: "core" },
-  { name: "Verity Street Capital", style: "opportunistic" },
+  { name: "Halyard Investors", style: "foreign" },
+  { name: "Verity Street Capital", style: "pe" },
   { name: "Merrow & Sons", style: "family" },
-  { name: "Pilotage Partners", style: "developer" },
+  { name: "Pilotage Partners", style: "merchant" },
   { name: "Consolidated Wharf Co.", style: "core" },
-  { name: "Redgrave Capital", style: "opportunistic" },
-  { name: "Bexley Holdings", style: "core" },
-  { name: "Talbot Row Partners", style: "developer" },
-  { name: "Nakamura Realty", style: "family" },
+  { name: "Redgrave Capital", style: "vulture" },
+  { name: "Bexley Holdings", style: "reit" },
+  { name: "Talbot Row Partners", style: "merchant" },
+  { name: "Nakamura Realty", style: "owneruser" },
   { name: "Cormorant Bay Group", style: "opportunistic" },
   { name: "Fielding & Crane", style: "core" },
-  { name: "Osgood Property Trust", style: "family" },
+  { name: "Osgood Property Trust", style: "foreign" },
   { name: "Ravensworth Development", style: "developer" },
-  { name: "Beaumont Ledger Co.", style: "core" },
-  { name: "Halloran Brothers", style: "family" },
-  { name: "Windlass Partners", style: "opportunistic" },
-  { name: "Cheswick Estates", style: "family" },
+  { name: "Beaumont Ledger Co.", style: "slumlord" },
+  { name: "Halloran Brothers", style: "pe" },
+  { name: "Windlass Partners", style: "family" },
+  { name: "Cheswick Estates", style: "developer" },
   { name: "Portland Row Capital", style: "core" },
-  { name: "Ilyushin Development", style: "developer" },
-  { name: "Fairweather & Co.", style: "opportunistic" },
-  { name: "Sanderling Trust", style: "core" },
-  { name: "Okonkwo Holdings", style: "family" },
+  { name: "Ilyushin Development", style: "merchant" },
+  { name: "Fairweather & Co.", style: "reit" },
+  { name: "Sanderling Trust", style: "owneruser" },
+  { name: "Okonkwo Holdings", style: "vulture" },
   { name: "Bridgewright Partners", style: "developer" },
 ];
 // The street refills toward a crowd, not toward four. A market with four firms
@@ -973,7 +1054,54 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // their investors are waiting for, and it is why there is anything on the
     // tape in a good market at all. Without it the street simply ate the city.
     const hot = s.econ.phase === "peak" || s.econ.phase === "expansion";
-    if (r.bbls.length > 6 && !r.stressMs && rng(s) < (hot ? 0.055 : 0.012) * (r.style === "family" ? 0.25 : 1)) {
+    // THE CLOCK, and it is the loudest personality difference on this street.
+    //
+    // Trimming into strength is what every firm does. What a fund with a life
+    // does INSTEAD is sell because the fund is five years old, and it will do
+    // that into a bad market, at a bad price, because an internal rate of
+    // return is a function of TIME and the deadline does not care what the
+    // market is doing. A merchant builder is the same story on a shorter fuse:
+    // the fee was in the delivery and a building he still owns at year four is
+    // a mistake. That is what puts good assets on the tape in a downturn, and
+    // it is why the patient money on the other side of these tables — the
+    // family office, the owner-user, the offshore buyer, none of whom have a
+    // clock at all — ends up owning the best of this city.
+    const stH = STYLE[r.style];
+    let forcedBbl = null;
+    if (stH.holdM > 0 && !r.stressMs) {
+      let oldest = -1;
+      for (const bbl of r.bbls) {
+        const since = r.heldSince?.[bbl] ?? r.bornM ?? 0;
+        const held = s.month - since;
+        if (held >= stH.holdM && held > oldest && !s.holdings[bbl] && !s.listings.some((l) => l.bbl === bbl)) {
+          oldest = held; forcedBbl = bbl;
+        }
+      }
+    }
+    if (forcedBbl) {
+      const rec = resolveRec(parcels, s, forcedBbl);
+      if (rec) {
+        const v = assetValue(rec, s.econ, assetGrade(r, rec));
+        // A seller against a deadline does not get to hold out for a number.
+        s.listings.push({
+          bbl: forcedBbl,
+          ask: Math.round(v * rrange(s, 0.94, 1.04) / 1000) * 1000,
+          listedM: s.month, expiresM: s.month + Math.round(rrange(s, 9, 16)),
+          sellerId: r.id,
+        });
+        if (rng(s) < 0.30) {
+          s.news.unshift({
+            q: s.month, kind: "deal",
+            text: `${r.name} has put ${rec.address} on the market. `
+              + (r.style === "merchant"
+                ? "They build to sell; they were never going to keep it."
+                : `The fund is ${Math.round((s.month - (r.heldSince?.[forcedBbl] ?? 0)) / 12)} years into this one and the clock has run out — `
+                  + `they are selling into ${s.econ.phase === "recession" ? "a market that does not want it" : "this market"} because the mandate says so.`),
+          });
+        }
+      }
+    }
+    if (r.bbls.length > 6 && !r.stressMs && rng(s) < (hot ? 0.055 : 0.012) * (r.style === "family" || r.style === "owneruser" || r.style === "foreign" ? 0.25 : 1)) {
       const bbl = r.bbls[Math.floor(rng(s) * r.bbls.length)];
       const rec = resolveRec(parcels, s, bbl);
       if (rec && !s.holdings[bbl] && !s.listings.some((l) => l.bbl === bbl)) {
@@ -1157,10 +1285,23 @@ export function rivalBuys(s: GameState, rec: ParcelRecord, price: number): Rival
   });
   if (!candidates.length) return null;
   // the hungriest firm with the money wins
+  // WHO ACTUALLY WANTS IT, and the two terms below are what stop every deal
+  // going to whoever has the most leverage.
+  //
+  // `contra` inverts the credit cycle for the firms that live on the other
+  // side of it. Almost everyone bids harder when money is cheap; a vulture
+  // bids hardest when money is GONE, which is the only reason a receiver's
+  // book is contested in the year it comes to market. `distressBias` is the
+  // same idea applied to the individual asset — a distressed listing is what
+  // one firm exists for and what another's committee will not look at.
+  const shut = 1 - (s.econ.creditIdx ?? 1);
+  const isDistress = !!s.listings.find((l) => l.bbl === rec.bbl)?.distress;
   let best = candidates[0], bestW = -Infinity;
   for (const r of candidates) {
     const st = STYLE[r.style];
-    const w = st.appetite * (1 + st.procyclical * ((s.econ.creditIdx ?? 1) - 1)) * (0.6 + rng(s) * 0.8);
+    const cyc = 1 + st.procyclical * ((s.econ.creditIdx ?? 1) - 1) + st.contra * shut;
+    const w = st.appetite * Math.max(0.05, cyc)
+      * (isDistress ? st.distressBias : 1) * (0.6 + rng(s) * 0.8);
     if (w > bestW) { bestW = w; best = r; }
   }
   if (seller) {

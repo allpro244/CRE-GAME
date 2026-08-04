@@ -20,6 +20,7 @@ import { initLenders, tickLenders, chargeLenderLoss } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
 import { tickWorkouts } from "./workout";
+import { tickPortfolios } from "./portfoliosale";
 import { tickLedger } from "./ledger";
 import { tickNotes, maybeSellYourLoan } from "./notes";
 import { tickAuction } from "./auction";
@@ -236,6 +237,7 @@ export function advanceQuarter(
   tickSales(s, parcels, adjacency);
   tickBrokerCalls(s, parcels, bbls);
   tickListingAbsorption(s, parcels); // other buyers work the tape too
+  tickPortfolios(s, parcels);        // and the package market, where books trade whole
   tickTalks(s, parcels);             // a negotiation left open goes stale
 
   // the 1031 clock: redeploy in time or the deferred tax comes due

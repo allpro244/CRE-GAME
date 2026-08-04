@@ -217,9 +217,20 @@ export function condGrade(condIdx: number): Condition {
  * arbitrage. It is also why ground-up development is worth doing: new bones
  * are the only bones that start at the top of the scale.
  */
-export function condCeiling(rec: { yearBuilt: number }, month = 0): number {
+export function condCeiling(rec: { yearBuilt: number; buildSpec?: number }, month = 0): number {
   const age = 2000 + Math.floor(month / 12) - rec.yearBuilt;
-  return clamp(0.97 - age * 0.0022, 0.66, 0.97);
+  // HOW WELL IT WAS BUILT IS PERMANENT, and this is the line that makes the
+  // specification slider worth paying for. Anyone can renovate a building; what
+  // nobody can retrofit is a floor-to-floor height, a curtain wall that does
+  // not leak, a structure that takes the loads, and a plant room with room in
+  // it. A building built to a trophy specification ages more slowly and keeps a
+  // higher ceiling forever; one built to a budget hits its ceiling in twenty
+  // years and no amount of capital lifts it past. spec is 0..1 with 0.5 as
+  // ordinary market standard.
+  const spec = rec.buildSpec ?? 0.5;
+  const lift = (spec - 0.5) * 0.14;                 // +/- 7 points of ceiling
+  const wear = 0.0022 * (1 - (spec - 0.5) * 0.45);  // and it goes off more slowly
+  return clamp(0.97 + lift - age * wear, 0.58, 0.995);
 }
 
 /**

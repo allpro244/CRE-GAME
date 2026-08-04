@@ -849,10 +849,30 @@ export function tickEcon(s: GameState) {
   //
   // The cheap side keeps its cap: empty space is genuinely a magnet, but a
   // town cannot hire faster than it can find people, and that ceiling is real.
+  // ...AND A CITY CANNOT EMPTY OUT AT ANY SPEED IT LIKES.
+  //
+  // The first cut of this removed the rail entirely and was three to five times
+  // too hot: at rent-to-income 1.8x it ran -6.5%/yr, and compounded, so a town
+  // shed 37,000 jobs — 24% of its employment — in five years. Rents then
+  // collapsed 191 to 31 behind it, occupancy went to 15%, and it killed an
+  // ALL-CASH owner, which is not something a market is able to do to somebody
+  // with no debt. Measured in the tournament: the safest posture in the game
+  // went from $116.8M real with zero wipeouts to -$14.6M with three.
+  //
+  // Firms cannot leave that fast and neither can people. A lease has a term, a
+  // relocation costs money and takes a year to plan, and the staff have houses.
+  // The worst year any large metro has ever had is about four per cent, and
+  // that is a floor on the RATE, not on the pressure — the term still grows
+  // with the overshoot right through the range any real city occupies, and
+  // only meets the rail past 2.2x, which is past anywhere that has existed.
+  //
+  //   1.5x rent-to-income  ->  -1.2%/yr   an expensive city, losing a little
+  //   2.0x                 ->  -3.3%/yr   a city genuinely hollowing out
+  //   3.0x                 ->  -4.1%/yr   the rail: nobody leaves faster
   const overCost = Math.max(0, costOfSpace - 1);
   const spacePull = costOfSpace <= 1
     ? clamp((1 - costOfSpace) * 0.0022, 0, 0.0016)
-    : -(overCost * 0.0022 + overCost * overCost * 0.0060);
+    : Math.max(-0.0035, -(overCost * 0.0012 + overCost * overCost * 0.0016));
   // A national recession costs this city jobs whether or not the local property
   // cycle has caught up to it yet — payrolls are cut at head office.
   const natPull = (e.nat?.recM ?? 0) > 0 ? (e.nat?.deep ? -0.0026 : -0.0013) : 0.0002;

@@ -448,6 +448,71 @@ compounds directly into the price of dirt, so wiring comparable sales into land
 value on top of it would be building a new mechanism on a broken input. Fix the
 anchor first.
 
+# THE SPACE-TO-LABOUR WIRE — built, then recalibrated, and one thing left open
+
+The wire is in: construction employment, a non-saturating return wire from the
+cost of space to the demand for it, and zoning that answers scarcity. It closed
+F and H together. Two notes on it, both honest.
+
+## The first cut was three to five times too hot
+
+Removing the rail from `spacePull` entirely was wrong. At rent-to-income 1.8x
+it ran -6.5%/yr and compounded: one traced seed shed **37,000 jobs, 24% of its
+employment, in five years**, rents collapsed 191 to 31 behind it, occupancy
+went to 15%, and it bankrupted an ALL-CASH owner — which is not something a
+market can do to somebody with no debt. The tournament measured it: the safest
+posture in the game went from $116.8M real with zero wipeouts to -$14.6M with
+three, holding nothing at the end.
+
+Firms cannot leave that fast and neither can people. A lease has a term, a
+relocation costs money and takes a year to plan, and the staff have houses. The
+worst year any large metro has ever had is about four per cent, and that is now
+a floor on the RATE, not on the pressure — the term still grows with the
+overshoot through the whole range a real city occupies and only meets the rail
+past 2.2x.
+
+    1.5x rent-to-income  ->  -1.2%/yr     an expensive city, losing a little
+    2.0x                 ->  -3.3%/yr     a city genuinely hollowing out
+    3.0x                 ->  -4.1%/yr     the rail: nobody leaves faster
+
+Recalibrated, it is better than both earlier versions on every measure:
+
+| | before the wire | wire, uncapped | wire, calibrated |
+|---|---|---|---|
+| rent less wage | 0.94 pp/yr | 0.63 pp/yr | **0.17 pp/yr** |
+| rent-to-income at yr 50 | 1.56x | 1.36x | **1.08x** |
+| dispersion (sd) | 1.00pp | 1.77pp | **0.72pp** |
+| seeds over the 1.5 rail | 69% | 56% | **19%** |
+| all-cash, seed 11 | — | bankrupt, gameOver | **$396.1M** |
+
+## And G is open — the inflation leg of the Taylor rule halved
+
+`sim:accept` G now fails on one of its two clauses:
+
+```
+corr(inflation, loan index)     median 0.24   (need >= 0.35)   FAILS
+corr(unemployment, loan index)  median -0.12  (need <= 0)      passes
+```
+
+The bank itself is not broken, and the decomposition says so — measured
+directly against the policy rate rather than the loan rate:
+
+```
+corr(national unemployment, POLICY)  -0.529   the bank reads its mandate
+corr(city unemployment,     POLICY)  -0.328
+corr(inflation,             POLICY)  +0.267
+```
+
+It eases into a weak labour market, hard. What has weakened is the inflation
+leg, and the likely reason is this wire: the employment channel gives the Okun
+half of the Taylor rule far more to do than it had, so a dual-mandate bank
+responding to both spends less of its variance on prices. That is what a real
+dual-mandate bank does — but "that is realistic" is exactly the sentence to be
+suspicious of when it arrives right after your own change, and the threshold
+should not be touched until somebody has actually established whether 0.24 is
+the right number for a bank that reads smoothed, lagged inflation and
+deliberately looks through supply shocks. Left failing on purpose.
+
 # THE SPACE MARKET DOES NOT FEED BACK INTO THE REAL ECONOMY
 
 F and H are the same missing wire, in opposite directions, and neither is a

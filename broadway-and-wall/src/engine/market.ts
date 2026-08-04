@@ -75,7 +75,27 @@ const PHASE_CFG: Record<MarketPhase, { rateGap: number; rentDrift: number; devDr
 // How far the loan index may travel. A century of property covers eras that
 // look nothing like each other, and the point of the wider band is that the
 // deal you underwrote at 4% has to survive being refinanced at 12%.
-const RATE_FLOOR = 1.9, RATE_CEIL = 15.5;
+// A century of the real thing ran from the zero bound (2008-15, 2020-21, where
+// a borrower still paid a term premium over a policy rate of 0.25%) to Volcker
+// at twenty per cent. The old 1.9-15.5 band could represent neither end, which
+// meant the two most consequential rate environments in modern history were
+// both outside what this game could express.
+const RATE_FLOOR = 1.45, RATE_CEIL = 23.0;
+
+// WHAT A NEW BUILDING YIELDS ON ITS COST when rents and costs are both at their
+// opening index, and what the capital stack behind it needs on top of the debt
+// index to be worth two years of construction risk. Together they are the
+// hurdle every groundbreak in this city has to clear. 8.5% over debt + 220bps
+// is the ordinary merchant-build test: at a 5% loan index it pencils
+// comfortably, at 12% it does not pencil at all until rents have risen by two
+// thirds, and at the zero bound everything pencils — which is why 2021 looked
+// the way it did.
+// Deliberately set so that at the century's MEDIAN loan index the hurdle is
+// exactly neutral: this change was meant to make development ANSWER the rate,
+// not to make development harder, and a level shift smuggled in alongside a
+// structural one is how a calibration gets quietly lost. Measured before the
+// level-match, real office rent growth ran 2.08%/yr against wages at 1.06%.
+const BASE_YOC = 0.073, DEV_SPREAD = 0.022;
 
 // Each rebased DOWN by the average value of the new vacancy term below, so
 // CAP_BASE keeps meaning "the class's long-run average cap" rather than "its
@@ -244,6 +264,9 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   econ.tightEma = 0;
   econ.buildEma = 0.02;
   econ.rentExp = { ...econ.rentIdx };
+  econ.nat = { infl: 0.021, inflExp: 0.02, unemp: 0.052, policy: 4.2,
+               neutralReal: 0.019, shockM: 0, shockSev: 0, credibility: 0.8,
+               recM: 0, expM: 0, deep: false, pressureM: 0 };
   econ.concIdx = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
   econ.vacOverM = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
   econ.effRentIdx = { ...econ.rentIdx };
@@ -319,6 +342,16 @@ export function tickEcon(s: GameState) {
     // ...and the other way: a market that has eaten its slack cannot stay in
     // recession forever on a timer. Absorption ends a downturn, not patience.
     if ((e.phase === "recession" || e.phase === "recovery") && slack < -0.01) e.phaseMLeft -= 1;
+
+    // AND THE NATION OUTRANKS THE CITY. No local property cycle survives a
+    // national recession on its own schedule — 1990, 2001 and 2008 each ended
+    // every regional boom in the country within a few quarters of each other,
+    // because the tenants are national firms and the lenders are national
+    // banks. A local boom can outlast a mild downturn for a while; it cannot
+    // ignore one.
+    if ((e.nat?.recM ?? 0) > 0 && (e.phase === "expansion" || e.phase === "peak")) {
+      e.phaseMLeft -= 2;
+    }
   }
 
   e.phaseMLeft--;
@@ -358,6 +391,9 @@ export function tickEcon(s: GameState) {
   // twenty-five years. This is the layer that makes a mortgage struck in one
   // decade a different animal by the time it matures in the next.
   if (e.rateRegime === undefined) { e.rateRegime = 5.4; e.rateAimTo = 5.4; e.rateAimM = s.month + 180; }
+  // NOTE: the era walk below is now vestigial — rateRegime is written by the
+  // central bank block as policy + term premium. It survives only to keep
+  // rateAimTo/rateAimM alive for old saves and for the era news copy.
   if (s.month >= (e.rateAimM ?? 0)) {
     const was = e.rateAimTo ?? 5.4;
     e.rateAimTo = rrange(s, 2.4, 11.0);
@@ -380,31 +416,303 @@ export function tickEcon(s: GameState) {
       : "The central bank cut hard and unexpectedly. Refinancing windows are open that were shut last month.");
   }
 
-  // THE POLICY RATE IS A DECISION, NOT A LOOKUP.
+  // --- THE NATION, AND THE CENTRAL BANK ------------------------------------
   //
-  // This was `rateRegime + PHASE_CFG[phase].rateGap` — the rate was a constant
-  // per phase label. Which meant that when the owner cheated $10B, flooded the
-  // city and drove vacancy to 45%, the phase clock kept saying "expansion" and
-  // the loan index therefore ROSE (+0.35) into the worst property depression
-  // the city had ever seen. The rate machinery could not see the glut because
-  // nothing in it was looking at the economy.
+  // Calibrated against a century of the real thing. The federal funds rate sat
+  // at 3-4% through the twenties, fell to about 1% in the Depression and was
+  // pegged near zero through the war; drifted up through the fifties and
+  // sixties; came apart in the seventies as inflation reached 14.8%; peaked at
+  // TWENTY PER CENT in June 1981 when Volcker decided to break it and accepted
+  // 10.8% unemployment as the price; then declined for forty years, sat at the
+  // zero bound 2008-2015 and again in 2020-21, and rose from zero to 5.33% in
+  // sixteen months in 2022-23 — the fastest tightening in four decades.
   //
-  // A central bank reads two numbers: how far inflation is from target, and
-  // how far unemployment is from full employment. It leans hard against the
-  // first (more than one-for-one, or inflation is self-fulfilling) and cuts
-  // into the second. The monetary ERA is still the neutral level it leans
-  // around — that is the thing that makes a loan struck in one decade a
-  // different animal in the next — but the cycle in the rate is now EARNED by
-  // the economy rather than stamped on by a label. A glut destroys jobs, which
-  // cuts rates, which is the refinancing window the survivors live on.
-  const uGap = (e.unemployment ?? 0.055) - 0.055;
-  const taylor = e.rateRegime
-    + 140 * ((e.inflExp ?? 0.02) - 0.02)     // 1.4x on the inflation gap, in points
-    - 110 * uGap;                            // and a point of slack is a point of cut
-  e.indexRate = clamp(
-    e.indexRate + 0.075 * (taylor - e.indexRate) + rrange(s, -0.13, 0.13),
-    RATE_FLOOR, RATE_CEIL,
-  );
+  // Three things follow from that history and all three are in this block.
+  // ONE: the range is enormous and the old 1.9-15.5 band could represent
+  // neither the zero bound nor Volcker. TWO: regimes last decades, which is
+  // what makes a mortgage struck in one era a different animal in the next.
+  // THREE: what turns a rate cycle into a rate ERA is whether expectations
+  // come unanchored — the Great Inflation was an expectations failure, and the
+  // Great Moderation was thirty years of a central bank being believed.
+  {
+    if (!e.nat) {
+      e.nat = { infl: 0.021, inflExp: 0.02, unemp: 0.052, policy: 4.2,
+                neutralReal: 0.019, shockM: 0, shockSev: 0, credibility: 0.8,
+                recM: 0, expM: 0, deep: false, pressureM: 0 };
+    }
+    const n = e.nat;
+    // r* drifts on a multi-decade clock: ~2% mid-century, closer to 0.5% in
+    // the modern era. It is not a constant and it is not fast.
+    // ...centred near 1.2%, which is where the real one has spent most of the
+    // last century, drifting toward 2%+ mid-century and under 0.5% in the
+    // modern era. Mean-reverting, or a century-long walk becomes the model.
+    n.neutralReal = clamp(n.neutralReal + 0.004 * (0.012 - n.neutralReal)
+      + rrange(s, -0.00020, 0.00020), 0.001, 0.030);
+
+    // SUPPLY SHOCKS. An oil embargo is not a demand story: it raises prices
+    // AND unemployment at once, which is the one thing a central bank cannot
+    // fix with a single instrument, and it is how the seventies actually
+    // happened. Rare — about one a decade — and they run for a year or two.
+    //
+    // AND SHOCKS COME IN CLUSTERS. 1973 and 1979 were six years apart and they
+    // were the same story twice, because the conditions that produce one — a
+    // cartel that has discovered its own power, a strained supply chain, a war
+    // in the wrong place — do not clear in eighteen months. One shock roughly
+    // trebles the odds of the next for a decade, and that clustering is the
+    // difference between a bad year and a bad decade.
+    if (n.shockClusterM === undefined) n.shockClusterM = 0;
+    if (n.shockClusterM > 0) n.shockClusterM--;
+    const shockHaz = 0.0022 + (n.shockClusterM > 0 ? 0.0050 : 0);
+    if (n.shockM > 0) { n.shockM--; } else if (rng(s) < shockHaz) {
+      n.shockM = Math.round(rrange(s, 10, 26));
+      n.shockClusterM = Math.round(rrange(s, 60, 130));
+      // SHOCKS CUT BOTH WAYS, and a model where they only ever raise prices
+      // has a permanent inflationary bias built into its weather — measured,
+      // it pushed the century's median loan rate to 7.4% against a real 4.2%.
+      // An embargo is one kind of supply shock; a decade of cheap oil, a
+      // productivity boom or a new trade route is the other, and the 1990s
+      // were made of exactly that.
+      // THREE KINDS OF SHOCK, and the third is the one that writes history.
+      // A war or a fiscal expansion raises prices through DEMAND, and it
+      // arrives attached to a government that needs to borrow — so the bank is
+      // told, politely and then less politely, that this is not the moment.
+      // That is not a hypothetical: the Fed was formally subordinated to the
+      // Treasury until the 1951 Accord and informally through the Vietnam
+      // build-out, and both of the century's real inflations happened to a
+      // central bank that was not free to act. A model with no politics in it
+      // can only ever produce a bank that does the right thing on time, and
+      // such a bank never has an inflation to disinflate from.
+      const roll = rng(s);
+      if (roll < 0.30) {
+        n.shockSev = rrange(s, 0.010, 0.038);
+        n.pressureM = Math.round(rrange(s, 30, 96));
+        pushNews(s, "warn",
+          "The government has opened the spending taps and is financing it in the bond market. "
+          + "The central bank has been asked — in the way these things are asked — to keep money "
+          + "cheap while it does.");
+      } else {
+        const adverse = roll < 0.30 + 0.42;
+        n.shockSev = (adverse ? 1 : -0.7) * rrange(s, 0.012, 0.055);
+        pushNews(s, adverse ? "warn" : "event", adverse
+          ? "A supply shock has hit the national economy — prices are rising for reasons that have "
+            + "nothing to do with demand, and the central bank cannot cut its way out of this one."
+          : "A favourable supply shock: input costs are falling nationally, and the central bank has "
+            + "room it did not have last year.");
+      }
+    }
+    const shock = n.shockM > 0 ? n.shockSev : 0;
+
+    // --- THE NATIONAL BUSINESS CYCLE -----------------------------------------
+    //
+    // This used to be a table of four numbers keyed to the CITY's property
+    // phase, hand-balanced to sum to zero over an assumed phase mix. Two things
+    // were wrong with it and both mattered. It read the city, so the causation
+    // ran backwards — one town's leasing decided the nation's labour market.
+    // And because the phase mix is itself state-dependent (a glut forces turns;
+    // slack blocks expansions), the hand-balanced weights stopped summing to
+    // zero the moment the property market did anything interesting, and the
+    // residual drift showed up as a 6.5% mean unemployment rate that nothing
+    // chose.
+    //
+    // So the nation gets a cycle of its own, and the thing that ENDS an
+    // expansion is the thing that ends real ones: money that has gone tight.
+    // The real policy rate is the hazard. That single wire is what makes a
+    // Volcker episode possible as a sequence rather than as a script —
+    // inflation runs, the bank hikes past neutral, the hike causes a
+    // recession, the recession opens a labour-market gap, the gap kills the
+    // inflation, and the bank spends the next decade earning back its word.
+    const realPolicy = n.policy / 100 - n.infl;
+    if ((n.recM ?? 0) > 0) {
+      n.recM = (n.recM ?? 0) - 1;
+      if (n.recM === 0) {
+        n.expM = 0; n.deep = false;
+        pushNews(s, "event", "The national recession is over on paper. Nobody in the room feels it yet.");
+      }
+    } else {
+      n.expM = (n.expM ?? 0) + 1;
+      // One recession about every six years at neutral money — the post-war
+      // average is 12 in 75 years — and far more often when the real policy
+      // rate is punitive. At Volcker's ten points of real money the hazard is
+      // better than one in ten a month, which is why 1980 and 1981-82 were two
+      // recessions inside three years.
+      const haz = 0.0095
+        + clamp((realPolicy - 0.022) * 0.70, 0, 0.09)
+        + (shock > 0.02 ? 0.010 : 0)
+        + ((n.expM ?? 0) > 110 ? 0.004 : 0);
+      if (rng(s) < haz) {
+        // Most downturns are downturns. About one in fourteen is 1929 or 2008,
+        // and those are the ones that redraw a career.
+        n.deep = rng(s) < 0.07;
+        n.recM = Math.round(n.deep ? rrange(s, 26, 48) : rrange(s, 7, 19));
+        // EVERY RECESSION IS AIMED, not integrated. A rate of rise applied for
+        // a drawn duration compounds two dice into a third, and a long draw and
+        // a fast draw together produced 27 points of unemployment — the model
+        // pinned against its own ceiling for years at a time, which then held
+        // the Phillips term negative and the policy rate on the floor for a
+        // quarter of the century. A downturn has a depth, and the labour market
+        // approaches it and decelerates into it, the way a real one does.
+        n.uPeak = clamp(n.unemp + (n.deep ? rrange(s, 0.045, 0.135) : rrange(s, 0.016, 0.042)),
+          0.03, 0.26);
+        pushNews(s, "warn", n.deep
+          ? "The country has fallen off a cliff. This is not a soft patch — payrolls are "
+            + "collapsing nationally and nobody can say where the bottom is."
+          : "The national economy has turned. The recession call is official and everyone "
+            + "is revising their numbers down.");
+      }
+    }
+    const inRec = (n.recM ?? 0) > 0;
+
+    // UNEMPLOYMENT RISES LIKE A ROCKET AND FALLS LIKE A FEATHER. That asymmetry
+    // is the single most robust fact about the series — 5% to 10% in twenty
+    // months in 2008, then ten years to walk back down — and a symmetric
+    // mean-reverting process cannot produce it. Firms fire in weeks and hire
+    // over years.
+    const uMove = inRec
+      ? Math.max(0.0008, 0.115 * ((n.uPeak ?? n.unemp + 0.02) - n.unemp))
+      : 0.025 * (0.042 - n.unemp);
+    n.unemp = clamp(n.unemp + uMove
+      + 0.004 * ((e.unemployment ?? 0.055) - n.unemp)   // one city, one per cent of a nation
+      + (shock > 0.02 ? 0.0006 : 0) + rrange(s, -0.0007, 0.0007), 0.026, 0.26);
+
+    // National inflation: expectations, plus a Phillips term, plus the shock.
+    // THE PHILLIPS CURVE IS CONVEX. Slack disinflates weakly — you cannot get
+    // prices to fall much no matter how bad it gets, which is why the 2010s had
+    // 8% unemployment and 1.5% inflation instead of the deflation the linear
+    // version predicts — while a labour market past full employment bids pay up
+    // at an accelerating rate. A straight line through the origin gets both
+    // ends wrong.
+    const uStar = 0.048;
+    const nGap = uStar - n.unemp;
+    const phillips = nGap > 0 ? 0.38 * nGap + 4.5 * nGap * nGap : 0.20 * nGap;
+    // AND MONEY ITSELF IS A CHANNEL. A labour-market gap of a point or two can
+    // move inflation by a point or two; it cannot produce 14.8%, and a model
+    // whose only inflationary force is the Phillips curve can never leave the
+    // 1-3% band no matter how badly the bank behaves. What produced the Great
+    // Inflation was a decade of NEGATIVE REAL RATES — money cheaper than the
+    // return on capital, sustained, until everyone stopped believing it would
+    // ever be otherwise. easeEma is how far below neutral the bank has been
+    // holding, smoothed over about four years, and it is the wire that lets a
+    // policy MISTAKE compound into a regime instead of washing out next month.
+    if (n.easeEma === undefined) n.easeEma = 0;
+    n.easeEma += 0.026 * ((n.neutralReal - realPolicy) - n.easeEma);
+    const easy = 0.55 * clamp(n.easeEma, -0.05, 0.10);
+    n.infl = clamp(n.inflExp + phillips + easy + shock + rrange(s, -0.004, 0.004), -0.06, 0.22);
+
+    // EXPECTATIONS UNANCHOR WHEN THE BANK IS NOT BELIEVED — and that is what
+    // makes an inflation a decade rather than a year. Credibility is spent in
+    // proportion to the miss, not by a flat penalty: a bank running 3% over is
+    // in trouble, and a bank running 8% over is not in three times the trouble,
+    // it is in a different job. It is earned back slowly, and faster when the
+    // bank is visibly holding real rates high into a disinflation — that is the
+    // whole of what Volcker actually bought with 10.8% unemployment.
+    const miss = n.infl - 0.02;
+    const am = Math.abs(miss);
+    n.credibility = clamp(
+      n.credibility + (am < 0.010
+        ? 0.0020 + (realPolicy > 0.03 ? 0.0022 : 0)
+        : -0.0018 - 0.110 * (am - 0.010)),
+      0.10, 0.99);
+    // A believed bank's anchor beats the pass-through and expectations sit at
+    // target; a disbelieved one's does not, and then last year's inflation
+    // becomes next year's baseline. Those two regimes are the Great Moderation
+    // and the Great Inflation, and the same four lines produce both.
+    const anchorPull = 0.004 + 0.030 * n.credibility;
+    n.inflExp = clamp(
+      n.inflExp + (1 - 0.70 * n.credibility) * 0.055 * (n.infl - n.inflExp)
+        - anchorPull * (n.inflExp - 0.02),
+      -0.005, 0.16);
+
+    // THE REACTION FUNCTION — the classic Taylor rule, and it reproduces the
+    // history. At 2% inflation and full employment it wants 4%, which is the
+    // post-war average. At Volcker's 14.8% inflation and 7% unemployment it
+    // wants 21.7%, and he set 20%. At 1% inflation and 10% unemployment it
+    // wants MINUS two per cent, which is precisely why 2009 ended at the zero
+    // bound with the bank out of room and reaching for other tools.
+    // AND THE BANK IS NOT CLAIRVOYANT. It sets policy against what it believes
+    // TREND inflation to be — a smoothed reading, published with a lag — and it
+    // deliberately looks through a supply shock, because raising rates into an
+    // embargo means deepening a recession you did not cause. Both of those are
+    // correct practice most of the time and both of them are exactly how a bank
+    // ends up behind the curve: 1972-79 was not a bank that wanted inflation,
+    // it was a bank that kept calling it transitory. This is the one line that
+    // lets the model make that mistake, and therefore the one line that makes
+    // the disinflation afterwards mean anything.
+    if (n.inflSm === undefined) n.inflSm = n.infl;
+    n.inflSm += 0.085 * (n.infl - n.inflSm);
+    const seen = n.inflSm - 0.45 * shock;
+
+    // AND IT DOES NOT KNOW WHERE FULL EMPLOYMENT IS. This is not a detail; it
+    // is the largest single source of policy error in the historical record.
+    // Through the late 1960s and 1970s the Federal Reserve believed the natural
+    // rate of unemployment was around 4% when it had risen to nearly 6%, so it
+    // read a slack labour market where there was a tight one and held money too
+    // easy for a decade — the Orphanides result, and the best explanation
+    // anyone has for why competent people produced the Great Inflation. The
+    // belief drifts on a decade-plus clock, it is wrong in both directions, and
+    // it LEARNS: a bank that has been running hot revises its estimate up,
+    // which is what finally ended the mistake in the early eighties.
+    if (n.uStarBelief === undefined) n.uStarBelief = uStar;
+    n.uStarBelief = clamp(
+      n.uStarBelief + 0.006 * (uStar - n.uStarBelief)
+        + 0.011 * clamp(n.inflSm - 0.02, -0.012, 0.045)
+        + rrange(s, -0.0018, 0.0018),
+      0.028, 0.075);
+
+    const okunGap = -2.0 * (n.unemp - n.uStarBelief);
+    // The level term reads what the bank BELIEVES trend inflation to be, not
+    // what it is. A rule fed spot inflation prices the real rate correctly
+    // every month by construction, and a bank that can never be behind the
+    // curve can never produce an inflation — which is exactly what the first
+    // cut of this block did: credibility sat at 0.99 for four hundred years.
+    // THE VOLCKER PREMIUM. A bank whose word is worth nothing cannot disinflate
+    // at the rule's prescription, because the rule prices the real rate off
+    // expectations and its expectations are the thing that is broken. It has to
+    // OVERSHOOT — visibly, painfully, for long enough that the overshoot is the
+    // message. Volcker ran real short rates near eight per cent and took 10.8%
+    // unemployment for it, and that is the only reason the 1980s were not the
+    // 1970s again. Without this term the model can enter a Great Inflation and
+    // has no way out of one except waiting.
+    const restore = n.credibility < 0.55 && seen > 0.045
+      ? (0.55 - n.credibility) * 10.5 : 0;
+    const want = 100 * (n.neutralReal + seen + 0.5 * (seen - 0.02) + 0.5 * okunGap) + restore;
+    // Gradualism, except when it is not: a bank moves in quarter points at
+    // eight meetings a year, and in three-quarter points when it is frightened.
+    const dist = Math.abs(want - n.policy);
+    let speed = dist > 7 ? 0.21 : dist > 4 ? 0.16 : dist > 1.5 ? 0.10 : 0.055;
+    // ...unless it is not free to move. Under fiscal pressure the bank can
+    // still cut freely and can barely tighten, which is the whole asymmetry
+    // and the whole mechanism: money stays cheap into a real inflation, the
+    // ease compounds through expectations, and when the pressure finally lifts
+    // the bank has to break the labour market to undo it.
+    if (n.pressureM === undefined) n.pressureM = 0;
+    if (n.pressureM > 0) {
+      n.pressureM--;
+      if (want > n.policy) speed *= 0.22;
+      if (n.pressureM === 0) {
+        pushNews(s, "event",
+          "The central bank has its independence back. Whatever it does next, it is doing on its "
+          + "own account — and it has a great deal of ground to make up.");
+      }
+    }
+    n.policy = Math.max(0.25, n.policy + speed * (want - n.policy));
+
+    // THE LOAN INDEX IS THE POLICY RATE PLUS A TERM PREMIUM. What a borrower
+    // pays was never the central bank's rate; it is that rate plus what the
+    // market charges for time and for risk — and that premium WIDENS when
+    // credit is frightened, which is why spreads blow out in a crisis even as
+    // the policy rate is being cut.
+    const termPrem = 1.55 + 1.85 * Math.max(0, 1 - (e.creditIdx ?? 1));
+    e.indexRate = clamp(
+      e.indexRate + 0.13 * (n.policy + termPrem - e.indexRate) + rrange(s, -0.07, 0.07),
+      RATE_FLOOR, RATE_CEIL,
+    );
+    // the era, for anything that still reads it — now an OUTPUT of the nation
+    e.rateRegime = clamp(n.policy + termPrem, RATE_FLOOR, RATE_CEIL);
+  }
+
+  // (retired) THE OLD CITY-LEVEL POLICY RATE read the CITY's unemployment, so
+  // a player who wrecked his own city was handed a rate cut for it. The nation
+  // sets the price of money now; see the block above.
 
   // cycle deviation drifts with phase, spring-loaded toward its bounds
   e.cycleDev = clamp(e.cycleDev + c2.devDrift + rrange(s, -0.03, 0.03), -1, 1);
@@ -412,8 +720,12 @@ export function tickEcon(s: GameState) {
   // --- capital availability -------------------------------------------------
   // Money is not a smooth function of the policy rate. It leaves the room in a
   // downturn and comes back late, and that lag is where the bargains are.
-  const creditTarget = e.phase === "expansion" ? 1.12 : e.phase === "peak" ? 1.0
-    : e.phase === "recession" ? 0.54 : 0.88;
+  // ...and a national recession closes it further than a local one, because the
+  // balance sheet that has to absorb the loss is the same balance sheet in
+  // every city at once.
+  const creditTarget = clamp((e.phase === "expansion" ? 1.12 : e.phase === "peak" ? 1.0
+    : e.phase === "recession" ? 0.54 : 0.88)
+    - ((e.nat?.recM ?? 0) > 0 ? (e.nat?.deep ? 0.26 : 0.13) : 0), 0.4, 1.25);
   const creditSpeed = creditTarget < e.creditIdx ? 0.16 : 0.055;   // slams shut, reopens slowly
   e.creditIdx = clamp(e.creditIdx + creditSpeed * (creditTarget - e.creditIdx) + rrange(s, -0.012, 0.012), 0.4, 1.25);
   if (e.creditIdx < 0.66 && rng(s) < 0.02) {
@@ -434,7 +746,11 @@ export function tickEcon(s: GameState) {
   const incomeNow = Math.max(0.35, e.wageIdx ?? 1);
   const costOfSpace = (e.rentIdx.office / RENT_BASE.office) / incomeNow;
   const spacePull = clamp((1 - costOfSpace) * 0.0022, -0.0013, 0.0016);
-  e.employIdx = clamp(e.employIdx * (1 + jobDrift + spacePull + rrange(s, -0.0012, 0.0012)), 0.55, 12);
+  // A national recession costs this city jobs whether or not the local property
+  // cycle has caught up to it yet — payrolls are cut at head office.
+  const natPull = (e.nat?.recM ?? 0) > 0 ? (e.nat?.deep ? -0.0026 : -0.0013) : 0.0002;
+  e.employIdx = clamp(
+    e.employIdx * (1 + jobDrift + spacePull + natPull + rrange(s, -0.0012, 0.0012)), 0.55, 12);
 
   // --- THE CITY UNDERNEATH THE PROPERTY MARKET -------------------------------
   //
@@ -515,7 +831,15 @@ export function tickEcon(s: GameState) {
       ? e.costIdx / (h12 as { costIdx?: number }).costIdx! - 1 : e.inflExp;
     // Prices: what everyone expects, plus what the labour market is doing to
     // pay, plus what materials are doing — with slack pulling all three down.
-    const inflM = e.inflExp / 12 + tight * 0.021 + 0.16 * (cost12 - e.inflExp) / 12;
+    // ...and a city does not have its own price level. Rent, wages and the
+    // cost of a haircut in this town are dominated by what is happening to
+    // prices nationally; the local labour market only makes it a little
+    // hotter or a little colder than the country. Without this link the city
+    // could sit at 2% while the nation ran at 14%, which is not a thing that
+    // has ever happened to anywhere.
+    const natInfl = e.nat?.infl ?? e.inflExp;
+    const inflM = (0.72 * natInfl + 0.28 * e.inflExp) / 12
+      + tight * 0.014 + 0.14 * (cost12 - e.inflExp) / 12;
     e.cpi = clamp(e.cpi! * (1 + clamp(inflM, -0.0035, 0.0115)), 0.8, 400);
     // ...and expectations follow realised inflation slowly. This is the anchor
     // that keeps the spiral from either exploding or dying: fast enough that a
@@ -672,7 +996,35 @@ export function tickEcon(s: GameState) {
     e.rentExp[k] += 0.045 * (e.rentIdx[k] - e.rentExp[k]);
     const momentum = clamp(e.rentIdx[k] / Math.max(1, e.rentExp[k]) - 1, -0.30, 0.30);
     const underwritten = (e.rentIdx[k] / RENT_BASE[k]) * (1 + clamp(momentum * 2.4, -0.28, 0.45));
-    const margin = underwritten / e.costIdx - 1;         // profit signal, as BELIEVED
+
+    // THE COST OF CAPITAL — A DEVELOPER'S FIRST NUMBER, AND IT WAS NOT HERE.
+    //
+    // This compared the rent a developer expects to what it costs to build,
+    // and then stopped, which means the single most important input to every
+    // real development decision — what money costs — had no vote. The stress
+    // test made it unmissable: pinned at a permanent SIXTEEN per cent for
+    // fifty years, this city built 31% more office than it did at five, which
+    // is not a simulation of anything. The real 1981 answer is that nothing
+    // gets built at all, for years, and then rents explode because nothing
+    // got built.
+    //
+    // So the pro forma reads like a pro forma. A project makes a yield on
+    // cost; the capital stack behind it requires a return, which is what debt
+    // costs plus the spread a merchant builder needs to be paid for two years
+    // of risk. Build when the first exceeds the second. Everything else in
+    // this block — the extrapolated rent, the vacancy gate, the credit index —
+    // is unchanged, and it still self-corrects: fewer starts mean lower
+    // vacancy, which means higher rents, which eventually pencils even at
+    // twelve per cent. It just takes a decade and a much higher rent to get
+    // there, which is precisely what happened.
+    //
+    // The rate is smoothed over about a year because a developer underwrites
+    // a two-year construction period, not a single month's print — a project
+    // is not killed by one bad meeting and not saved by one good one.
+    e.rateEma = (e.rateEma ?? e.indexRate) + 0.085 * (e.indexRate - (e.rateEma ?? e.indexRate));
+    const required = e.rateEma / 100 + DEV_SPREAD;
+    const yieldOnCost = BASE_YOC * (underwritten / e.costIdx);
+    const margin = yieldOnCost / required - 1;           // profit signal, as BELIEVED
     // Nobody starts a building into a glut, whatever the pro forma says —
     // vacancy above natural chokes starts long before the margin math does.
     // The shortage signal has to be strong enough to actually pull supply
@@ -902,7 +1254,23 @@ export function tickEcon(s: GameState) {
       ? -0.0080 * Math.min(1.6, dev)          // outrunning incomes: pulled down hard
       : -0.0028 * Math.max(-0.65, dev);       // cheap against incomes: drifts back up
 
-    const drift = c2.rentDrift * 0.55 + e.sectorMom[k] * 0.42 + vacTerm + scarcity + anchor + (jobDrift * 0.35);
+    // AND RENT CARRIES THE PRICE LEVEL. Every other term above is REAL — a
+    // sentiment, a vacancy, a job — and none of them knows what a dollar is
+    // worth. That was survivable only while inflation happened to be a
+    // by-product of the same city drivers that moved rent; the moment the
+    // price level became a national object, the two came apart and the failure
+    // was immediate and measurable: inflation fell from 2.77% to 2.18%, wages
+    // fell with it because wages are indexed to expectations, and rent did not
+    // fall with either, so rent outran the incomes paying it by a point a year
+    // for fifty years. A landlord does not re-let at last decade's number in a
+    // world where everything else has repriced, and every lease in this game
+    // already contains an escalation. So the nominal escalation is explicit
+    // here, and the income anchor above is left to do the job it is actually
+    // for — policing the REAL relationship between rent and pay — instead of
+    // being asked to carry the whole price level on a spring.
+    const escalation = (e.inflExp ?? 0.02) / 12;
+    const drift = c2.rentDrift * 0.55 + e.sectorMom[k] * 0.42 + vacTerm + scarcity
+      + anchor + (jobDrift * 0.35) + escalation;
     e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.5, e.rentIdx[k] * (1 + drift + rrange(s, -vol, vol)));
     e.effRentIdx[k] = +(e.rentIdx[k] * (1 - 0.14 * e.concIdx[k])).toFixed(4);
   }

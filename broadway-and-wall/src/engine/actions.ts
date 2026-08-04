@@ -9,7 +9,7 @@ import { firmShort, describeFirm } from "./firm";
 import { rng, rrange } from "./market";
 import { assetValue, condGrade, initialCondition, initialCondIdx, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr, demandLinear, landPsfNow } from "./value";
 import { locAvailable } from "./credit";
-import { marketAppetite, ownerOf, rivalAsk, rivalBuys, livingRivals, gradeOf, tie } from "./rivals";
+import { marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
 import { takeoverDevelopment, cityValueToReplacement } from "./dev";
@@ -1488,9 +1488,33 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
     // Your number is on the street the day you make it, and a broker with a
     // live bid in hand rings everybody else in town — which is why an open
     // negotiation makes a building MORE likely to go, not less.
-    if (rng(s) < base * priceFactor * Math.max(0.25, marketAppetite(s)) * (talk ? 1.7 : 1)) {
+    // A RECEIVER'S BOOK IS NOT A PRIVATE SALE — IT IS A PROCESS.
+    //
+    // A failed firm's buildings came onto the tape at a twenty-five per cent
+    // haircut and cleared at exactly that haircut, every time, no matter how
+    // many firms in town had the cash to turn up. That is not what happens to
+    // distressed paper: a receiver's job is to run a marketing period and take
+    // the best number in the room, and a building marked a quarter under fair
+    // value is precisely the thing every opportunistic shop with dry powder
+    // shows up for. So the discount is now a STARTING point that has to
+    // survive the depth of the bid.
+    //
+    // What this preserves is the thing that makes distress worth chasing: when
+    // credit is shut and nobody else can close, the depth is one or zero and
+    // the discount stands. The player's edge in a crisis is not that the
+    // receiver likes them; it is that they are the only cheque in the room.
+    const depth = li.distress ? qualifiedBuyers(s, rec, li.ask) : 0;
+    const contested = li.distress && depth > 1 ? 1 + 0.22 * Math.min(4, depth - 1) : 1;
+    if (rng(s) < base * priceFactor * contested * Math.max(0.25, marketAppetite(s)) * (talk ? 1.7 : 1)) {
       // And whoever comes over the top pays for the privilege of ending it.
-      const px = talk ? Math.max(li.ask, Math.round(talk.yourPrice * rrange(s, 1.04, 1.12))) : li.ask;
+      let px = talk ? Math.max(li.ask, Math.round(talk.yourPrice * rrange(s, 1.04, 1.12))) : li.ask;
+      if (!talk && li.distress && depth > 1) {
+        // Each additional real bidder closes part of the gap between the
+        // receiver's number and what the building is worth. Five serious
+        // bidders take most of it; two take a fifth of it; one takes none.
+        const gap = Math.max(0, value / Math.max(1, li.ask) - 1);
+        px = Math.round(li.ask * (1 + gap * Math.min(0.85, 0.22 * (depth - 1))));
+      }
       // Somebody takes it, and somebody has a name. Losing the same corner to
       // the same firm twice in a year is information; "another buyer" was not.
       const buyer = rivalBuys(s, rec, px);

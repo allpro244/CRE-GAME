@@ -142,16 +142,34 @@ export function windowOpen(s: GameState, p: LoanProduct): boolean {
 // ------------------------------------------------------- lender relationships
 /**
  * A name they trust is worth basis points. Quiet, performing paper builds the
- * file; a closed loan opens it; a tripped covenant sours the coffee. Worth up
- * to 40bps at the banks and the life company. The conduit gives nothing —
- * the bonds don't know you — and the debt fund prices risk, not friendship.
+ * file; a closed loan opens it; a tripped covenant sours the coffee.
+ *
+ * WHAT IT IS WORTH DEPENDS ON WHO IS LENDING, and the spread between them is
+ * the point. A commercial bank IS a relationship business — the whole reason
+ * to keep deposits and a line with one desk is that the fourth loan prices
+ * better than the first — so a great file there is worth a full forty basis
+ * points. A life company is pricing off its own liabilities and its allocation
+ * committee cares more about the asset than the sponsor, so the same file is
+ * worth about thirty. A debt fund prices risk rather than friendship, and a
+ * known sponsor gets twenty-five and no more. A conduit gives nothing at all:
+ * the loan is going into a bond and the bond has never met you.
+ *
+ * And it is EARNED, not accrued. The curve is convex, so the first twenty
+ * points of file barely move the quote and the last twenty move it a lot — a
+ * borrower who has closed twice is not a relationship, and a borrower who has
+ * closed eleven times and never missed a payment is.
  */
+const REL_MAX: Record<string, number> = { bank: 0.40, life: 0.30, fund: 0.25, conduit: 0 };
 export function lenderRelOf(s: GameState, lender: string): number {
   return s.lenderRel?.[lender] ?? 20;
 }
 export function relDiscount(s: GameState, p: LoanProduct): number {
   if (p.window || p.id === "cordage" || p.id === "mezz") return 0;
-  return Math.min(0.4, Math.max(0, (lenderRelOf(s, p.lender) - 20) * 0.005));
+  const kind = s.lenders?.find((l) => l.name === p.lender)?.kind ?? "bank";
+  const max = REL_MAX[kind] ?? 0.30;
+  if (max <= 0) return 0;
+  const t = Math.max(0, Math.min(1, (lenderRelOf(s, p.lender) - 20) / 80));
+  return +(max * Math.pow(t, 1.35)).toFixed(4);
 }
 export function bumpLenderRel(s: GameState, lender: string | undefined, amt: number) {
   if (!lender) return;

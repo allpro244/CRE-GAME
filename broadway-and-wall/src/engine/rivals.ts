@@ -49,19 +49,58 @@ import { recordComp } from "./comps";
 // so much as watching them. Four to ten million now: some start behind you,
 // the biggest starts at ten, and what they end up owning they earned inside
 // the sim rather than at character creation.
+//
+// THIRTY-FIVE OF THEM, AND THE SIZE DISTRIBUTION IS THE POINT. A real property
+// market is not a dozen equals; it is a power law. A handful of shops own most
+// of what matters, a middle tier trades constantly, and a long tail of family
+// holdings sit on four buildings and a parking lot and will not sell to anyone
+// at any price. Twelve firms produced a market where every bid you lost, you
+// lost to somebody you already knew; thirty-five produces one where the corner
+// you want is quietly owned by a name you have never heard of, and where a
+// self-inflicted glut has thirty-four other balance sheets to travel through
+// before it comes back to yours.
+//
+// The cap stays at ten million. Nobody starts meaningfully bigger than you —
+// what the big ones end up owning, they earn inside the sim.
 const FIRMS: { name: string; style: RivalStyle; equity: number; ltv: number }[] = [
+  // --- the establishment: patient money, low leverage, never a forced seller
   { name: "Calloway & Reed", style: "family", equity: 7_000_000, ltv: 0.32 },
   { name: "Harbor Point Partners", style: "core", equity: 9_000_000, ltv: 0.52 },
+  { name: "Wentworth Trust", style: "core", equity: 10_000_000, ltv: 0.41 },
+  { name: "Granite Mutual", style: "core", equity: 10_000_000, ltv: 0.44 },
+  { name: "Thorne & Boyle", style: "family", equity: 6_000_000, ltv: 0.28 },
+  { name: "Wrenfield Brothers", style: "family", equity: 5_000_000, ltv: 0.35 },
+  { name: "Ashcombe Estate Co.", style: "family", equity: 6_800_000, ltv: 0.26 },
+  { name: "The Delancey Trust", style: "core", equity: 9_500_000, ltv: 0.38 },
+  // --- the middle: the firms you will actually bid against, week in week out
   { name: "Meridian Yield Group", style: "opportunistic", equity: 5_500_000, ltv: 0.71 },
   { name: "Alden Development Co.", style: "developer", equity: 8_000_000, ltv: 0.66 },
-  { name: "Wentworth Trust", style: "core", equity: 10_000_000, ltv: 0.41 },
   { name: "Kestrel Capital", style: "opportunistic", equity: 4_000_000, ltv: 0.78 },
-  { name: "Thorne & Boyle", style: "family", equity: 6_000_000, ltv: 0.28 },
   { name: "Longwharf Realty", style: "developer", equity: 6_500_000, ltv: 0.69 },
   { name: "Pell Street Holdings", style: "opportunistic", equity: 4_500_000, ltv: 0.82 },
-  { name: "Granite Mutual", style: "core", equity: 10_000_000, ltv: 0.44 },
-  { name: "Wrenfield Brothers", style: "family", equity: 5_000_000, ltv: 0.35 },
   { name: "Tidewater Development", style: "developer", equity: 8_500_000, ltv: 0.72 },
+  { name: "Barrowgate Realty", style: "core", equity: 7_200_000, ltv: 0.55 },
+  { name: "Fairlead Capital", style: "opportunistic", equity: 5_200_000, ltv: 0.74 },
+  { name: "Stonecutter Partners", style: "developer", equity: 7_400_000, ltv: 0.70 },
+  { name: "Mercer & Vane", style: "core", equity: 6_600_000, ltv: 0.49 },
+  { name: "Rookery Investments", style: "opportunistic", equity: 4_800_000, ltv: 0.80 },
+  { name: "Hollis Yard Group", style: "developer", equity: 5_800_000, ltv: 0.75 },
+  { name: "Kingsbridge Realty", style: "core", equity: 8_200_000, ltv: 0.46 },
+  { name: "Almond Court Capital", style: "opportunistic", equity: 3_800_000, ltv: 0.83 },
+  // --- the tail: small, local, stubborn, and almost impossible to buy out
+  { name: "Vasilis Brothers", style: "family", equity: 3_200_000, ltv: 0.30 },
+  { name: "O'Hare & Daughters", style: "family", equity: 2_800_000, ltv: 0.24 },
+  { name: "Castellane Holdings", style: "family", equity: 3_600_000, ltv: 0.33 },
+  { name: "Brannock Property Co.", style: "family", equity: 2_600_000, ltv: 0.22 },
+  { name: "Ninth Ward Realty", style: "opportunistic", equity: 2_900_000, ltv: 0.79 },
+  { name: "Tallow Lane Partners", style: "opportunistic", equity: 3_100_000, ltv: 0.77 },
+  { name: "Ferro Construction Co.", style: "developer", equity: 3_400_000, ltv: 0.76 },
+  { name: "Wexler Building Co.", style: "developer", equity: 4_100_000, ltv: 0.73 },
+  { name: "Prosper Ridge Group", style: "core", equity: 4_400_000, ltv: 0.51 },
+  { name: "Anwar Estates", style: "family", equity: 3_000_000, ltv: 0.27 },
+  { name: "Chandler & Roe", style: "opportunistic", equity: 3_500_000, ltv: 0.81 },
+  { name: "Marlowe Kimball", style: "core", equity: 5_000_000, ltv: 0.47 },
+  { name: "Sixpenny Holdings", style: "family", equity: 2_500_000, ltv: 0.20 },
 ];
 
 // What each kind of firm is FOR. These are the only behavioural differences,
@@ -603,10 +642,31 @@ const NEW_FIRMS: { name: string; style: RivalStyle }[] = [
   { name: "Merrow & Sons", style: "family" },
   { name: "Pilotage Partners", style: "developer" },
   { name: "Consolidated Wharf Co.", style: "core" },
+  { name: "Redgrave Capital", style: "opportunistic" },
+  { name: "Bexley Holdings", style: "core" },
+  { name: "Talbot Row Partners", style: "developer" },
+  { name: "Nakamura Realty", style: "family" },
+  { name: "Cormorant Bay Group", style: "opportunistic" },
+  { name: "Fielding & Crane", style: "core" },
+  { name: "Osgood Property Trust", style: "family" },
+  { name: "Ravensworth Development", style: "developer" },
+  { name: "Beaumont Ledger Co.", style: "core" },
+  { name: "Halloran Brothers", style: "family" },
+  { name: "Windlass Partners", style: "opportunistic" },
+  { name: "Cheswick Estates", style: "family" },
+  { name: "Portland Row Capital", style: "core" },
+  { name: "Ilyushin Development", style: "developer" },
+  { name: "Fairweather & Co.", style: "opportunistic" },
+  { name: "Sanderling Trust", style: "core" },
+  { name: "Okonkwo Holdings", style: "family" },
+  { name: "Bridgewright Partners", style: "developer" },
 ];
-// The street refills toward a dozen, not toward four. A market with four firms
-// left in it is a market where nothing is contested.
-const MIN_FIRMS = 9;
+// The street refills toward a crowd, not toward four. A market with four firms
+// left in it is a market where nothing is contested — and a market that opened
+// with thirty-five and never replaces one is a slow liquidation. The floor sits
+// well below the opening roster on purpose: a bad enough decade SHOULD thin the
+// street, and the thinning should be visible and should take years to undo.
+const MIN_FIRMS = 24;
 
 function maybeNewFirm(s: GameState, ci: number) {
   const living = livingRivals(s);
@@ -1036,6 +1096,34 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
  * Returns the firm that bought it, or null if the money in the room today
  * could not close.
  */
+/**
+ * HOW MANY FIRMS COULD ACTUALLY CLOSE THIS, AT THIS PRICE, TODAY.
+ *
+ * Not how many would like to — how many pass the same two tests the player
+ * passes: the equity is in the account with a working reserve left over, and
+ * the debt is lendable against the book they already carry. This is the depth
+ * of the bid, and it is the number that decides whether a discount survives
+ * contact with the market.
+ */
+export function qualifiedBuyers(s: GameState, rec: ParcelRecord, price: number): number {
+  const seller = ownerOf(s, rec.bbl);
+  const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
+  let n = 0;
+  for (const r of livingRivals(s)) {
+    if (r === seller) continue;
+    const st = STYLE[r.style];
+    if (st.classes && !st.classes.includes(rec.class)) continue;
+    const ltvNow = Math.min(r.targetLtv, st.maxLtv) * (ci < 0.8 ? 0.82 : 1);
+    const equity = price * (1 - ltvNow);
+    if (r.cash < equity + Math.max(500_000, r.cash * 0.05)) continue;
+    const aumAfter = (r.aum ?? 0) + price;
+    const debtAfter = r.debt + (price - equity);
+    if (aumAfter > 0 && debtAfter / aumAfter > st.maxLtv) continue;
+    n++;
+  }
+  return n;
+}
+
 export function rivalBuys(s: GameState, rec: ParcelRecord, price: number): Rival | null {
   // A listing may already belong to somebody — a firm selling out of a
   // position, or a receiver clearing a failed one. Whoever holds the deed is

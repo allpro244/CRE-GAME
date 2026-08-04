@@ -37,6 +37,12 @@ const report = (name, pass, detail) => {
   console.log(`\n${pass ? "PASS" : "FAIL"}  ${name}`);
   for (const d of detail) console.log("      " + d);
 };
+// SEVEN SEEDS, NOT THREE. Both of these metrics have a genuinely wide
+// dispersion across a fifty-year run — rent-to-income came back 0.79x, 0.88x
+// and 1.89x from the SAME build — so a three-seed median is a coin flip
+// dressed up as a measurement, and it will report a regression that is not one
+// and hide a regression that is. Seven is the smallest number where the median
+// stopped moving when the unrelated parts of the RNG stream shifted.
 const med = (a) => [...a].sort((x, y) => x - y)[Math.floor((a.length - 1) / 2)];
 const CAGR = (a, b, yrs) => (Math.pow(b / a, 1 / yrs) - 1) * 100;
 const corr = (xs, ys) => {
@@ -82,7 +88,7 @@ function macroRun(seed, months = 600) {
 // rent-to-income ratio is roughly trendless. We allow a dense, chronically
 // tight city to earn a premium, which is why the band has room on the upside.
 {
-  const runs = [550991, 12007, 73303].map((seed) => {
+  const runs = [550991, 12007, 73303, 11, 22, 33, 4242].map((seed) => {
     const t = macroRun(seed);
     const a = t[0], b = t[t.length - 1];
     const yrs = (b.m - a.m) / 12;
@@ -116,7 +122,7 @@ function macroRun(seed, months = 600) {
 // player's fix-or-float decision is a coin flip rather than a read on the
 // economy.
 {
-  const runs = [550991, 12007, 73303].map((seed) => {
+  const runs = [550991, 12007, 73303, 11, 22, 33, 4242].map((seed) => {
     const t = macroRun(seed);
     // year-on-year inflation and the rate, sampled annually after a burn-in
     const infl = [], rate = [], unemp = [];
@@ -176,7 +182,7 @@ function macroRun(seed, months = 600) {
 // deciding they should. If costIdx is deaf to how much is being built, then
 // the only thing stopping a boom is a number somebody typed.
 {
-  const runs = [550991, 12007].map((seed) => {
+  const runs = [550991, 12007, 73303, 11, 22].map((seed) => {
     const t = [];
     const parcels = clone();
     let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);

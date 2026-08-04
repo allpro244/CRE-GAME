@@ -695,6 +695,77 @@ export interface Econ {
   // starts keeping these the month it is opened.
 
   /**
+   * THE NATION THIS CITY SITS IN, and the central bank that sets the price of
+   * money for all of it. Cities do not set interest rates; countries do — and
+   * getting that wrong had a consequence beyond pedantry. With the policy rate
+   * keyed to LOCAL unemployment, a player who cheated the money, overbuilt the
+   * city and destroyed its labour market was rewarded with a rate cut aimed
+   * squarely at his own mistake. A self-inflicted glut has to be a disaster,
+   * and it cannot be one while the central bank is underwriting it.
+   *
+   * So the city is a small open economy inside a national one. It contributes
+   * about a percent of national conditions and inherits all of national
+   * monetary policy — which is exactly the position a real city is in.
+   */
+  nat?: {
+    /** national inflation, annualised */
+    infl: number;
+    /** what the nation EXPECTS — the anchor, and what a credible bank defends */
+    inflExp: number;
+    /** national unemployment */
+    unemp: number;
+    /** the central bank's policy rate, percent */
+    policy: number;
+    /** r*, the neutral real rate — slow, secular, and itself a regime */
+    neutralReal: number;
+    /** months left in a supply shock (an oil embargo is not a demand story) */
+    shockM: number;
+    /** the size of that shock while it runs, in annual inflation points */
+    shockSev: number;
+    /**
+     * How much the bank's word is worth, 0..1. A bank that has held inflation
+     * near target for a decade has anchored expectations and can cut without
+     * being disbelieved; one that let the 1970s happen has to break the
+     * economy to be taken seriously again. This is the Volcker mechanism.
+     */
+    credibility: number;
+    /**
+     * Months left in a NATIONAL recession, 0 while the country is expanding.
+     * The nation has its own cycle and it is not the city's: what makes this
+     * layer worth having is that tight money CAUSES the downturn that ends the
+     * inflation, which is the loop the whole Volcker episode is made of.
+     */
+    recM?: number;
+    /** months the current national expansion has run — the hazard clock */
+    expM?: number;
+    /** true while this recession is a depression rather than a downturn */
+    deep?: boolean;
+    /** where THIS recession is headed — drawn at onset, approached, not exceeded */
+    uPeak?: number;
+    /** what the bank THINKS trend inflation is: smoothed, and it looks through shocks */
+    inflSm?: number;
+    /** how much easier than neutral money has been, smoothed — the 1970s in one number */
+    easeEma?: number;
+    /** months of elevated supply-shock hazard: shocks cluster, 1973 and 1979 did */
+    shockClusterM?: number;
+    /**
+     * Where the bank BELIEVES full employment is. Wrong, drifting, and the
+     * single largest source of policy error in the historical record — the Fed
+     * of the 1970s thought the natural rate was 4% when it was nearly 6%.
+     */
+    uStarBelief?: number;
+    /**
+     * Months the bank is not free to act. Both of the century's real
+     * inflations happened to a central bank under political and fiscal
+     * pressure not to raise rates — the Treasury needed cheap money for a war
+     * and got it, formally until the 1951 Accord and informally into the
+     * seventies. A model of monetary policy with no politics in it cannot
+     * produce either of them.
+     */
+    pressureM?: number;
+  };
+
+  /**
    * EXPECTED INFLATION, annualised. The single most important number in a
    * macro model and the one this game did not have: inflation was a scripted
    * constant per phase, so nothing could be persistent, nothing could be
@@ -702,6 +773,12 @@ export interface Econ {
    * policy rate and construction costs all read this.
    */
   inflExp?: number;
+  /**
+   * The loan index a developer actually underwrites to — smoothed over about a
+   * year, because a groundbreak is a two-year decision and is neither killed
+   * by one bad print nor rescued by one good one.
+   */
+  rateEma?: number;
   /**
    * The property market's slack, stock-weighted across classes and smoothed
    * with roughly an eight-month half-life. This is what the phase machine
@@ -949,7 +1026,7 @@ export type SellerKind = "estate" | "institution" | "partnership" | "developer" 
 
 
 export interface GameState {
-  v: 31;
+  v: 32;
   seed: number;
   /**
    * WHICH TOWN THIS WAS PLAYED IN.

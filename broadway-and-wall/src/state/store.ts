@@ -749,7 +749,7 @@ export const useStore = create<AppState>((set, get) => ({
     const { parcels } = get();
     const saved = await loadGame(slot);
     if (!saved || !parcels) { toast("That save wouldn't open.", "err"); return; }
-    if (saved.v !== 31) { toast("That save is from an older build and can't be opened.", "err"); return; }
+    if (saved.v !== 32) { toast("That save is from an older build and can't be opened.", "err"); return; }
 
     // A SAVE CARRIES ITS OWN TOWN.
     //
@@ -891,7 +891,7 @@ export async function loadData() {
     // A save only fits if every deed in it exists in THIS town. Across seeds
     // it will not, and that is not a corrupt save — it is a save from a city
     // that no longer exists, which is exactly what a reroll means.
-    const fits = saved && saved.v === 31 && saved.citySeed === seed
+    const fits = saved && saved.v === 32 && saved.citySeed === seed
       && Object.keys(saved.holdings).every((b) => parcels[b])
       && saved.listings.every((l) => parcels[l.bbl]);
     if (fits) {

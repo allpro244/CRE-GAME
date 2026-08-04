@@ -376,14 +376,89 @@ job that will mark at 1.03x the day it opens.
 
 ---
 
-# GATE REGRESSION INHERITED AT THE MERGE — isolated, not caused here
+# THE INCOME ANCHOR IS NOT HOLDING — traced, not fixed
 
-The acceptance gates on this branch went from **econ 5/5, sim 3/4** to
-**econ 4/5, sim 2/4** across the merge with the parallel session. Both new
-failures were isolated to that session's head (`3fb95dc`) run on its own, in a
-clean worktree, with byte-identical numbers to the merged tree — so the merge
-inherited them and did not create them, and nothing on this side moved either
-test.
+`sim:accept` F fails, and unlike its neighbour on the same run it is not a
+sampling problem. It is the finding.
+
+**What F asks.** Rent is a payment out of somebody's income, so real rent per
+square foot cannot durably outrun the wages of the city paying it. The file's
+own header quotes the owner: *"rent should be a by product of the economy, and
+the economy should be very complex and pulls on each other and intertwines and
+not have anything be fakely made up."* F is that sentence as a test.
+
+**What it measures now.** Over sixteen seeds, fifty years each:
+
+| | rent less wage | rent-to-income at yr 50 | real rent growth |
+|---|---|---|---|
+| before the merge (`c75012c`) | **0.14 pp/yr** | **1.06x** | 1.13% mean / 1.15% median |
+| after the merge (`965b9b8`) | **0.94 pp/yr** | **1.56x** | 1.57% mean / 1.96% median |
+
+Before, rents tracked wages and the ratio was trendless, which is what the real
+series does. After, rents beat wages by a point a year forever, and individual
+seeds finish at 1.9x–2.1x — past F's own 1.8x rail.
+
+**Bisected in one cut.** Disabling the lease-up mark inside `assetValue`
+restores 0.14 pp/yr and 1.06x exactly. That change is the trigger.
+
+**But it is not the fault, and reverting it would hide the fault.** Tracing the
+macro series with the mark on and off:
+
+- Office vacancy sits at **exactly 3.7%** at year 50 in five of six traced
+  runs. 3.7% is `friction` — a third of `NATURAL_VAC.office`, the frictional
+  floor in the `cityVac` clamp. The market is not clearing; it is resting on a
+  rail.
+- Office stock grows **+20%** across fifty years while jobs grow **+46%**.
+  Supply expands at less than half the rate of the employment that bids for it.
+
+Pinned there, the tight-side rent term is `clamp(-gap * 0.090, 0, 0.009)` —
+linear, and applied at a gap that cannot get any wider because vacancy cannot
+go below friction. So a permanent, constant upward push on rent with nothing to
+relieve it. The glut side of that same expression was made superlinear
+precisely because a saturating term meant "every further point of vacancy cost
+nothing"; the shortage side still has the mirror of that bug.
+
+The income anchor below it is real and is trying. It pulls toward an EARNED
+rent-to-income, where "earned" is `tightEma`, a twenty-year memory of having
+been genuinely tight. A market pinned at frictional vacancy for five decades
+reads as permanently, genuinely tight — so the anchor keeps raising the ratio
+it is anchoring to. It is not being overridden; it is being told the shortage
+is real, because by its own measure it is.
+
+So the lease-up mark did not break the anchor. It moved enough seeds onto the
+rail for the rail to show, which is the correct outcome for a correct change,
+and is why it stays in.
+
+**What to fix, in order.**
+
+1. The shortage side of `vacTerm` should be superlinear and uncapped the way
+   the glut side already is, so a market that cannot get any tighter stops
+   pretending the pressure is constant.
+2. Supply has to answer employment. +20% stock against +46% jobs over fifty
+   years is the imbalance underneath everything else here; the rent term is
+   only how it surfaces.
+3. `tightEma` should distinguish a market that is tight because demand is
+   strong from one that is tight because nothing can be built. The second is
+   not a Manhattan premium, it is a supply failure, and it should not earn a
+   permanently rising rent-to-income.
+
+**This blocks the land work.** `landIdx` is derived from effective rents over
+construction cost. A rent series that outruns income by a point a year
+compounds directly into the price of dirt, so wiring comparable sales into land
+value on top of it would be building a new mechanism on a broken input. Fix the
+anchor first.
+
+# GATE REGRESSION AT THE MERGE — triaged; one was the test, one was the model
+
+The acceptance gates went from **econ 5/5, sim 3/4** to **econ 4/5, sim 2/4**
+across the merge with the parallel session. Both new failures were isolated to
+that session's head (`3fb95dc`) run on its own, in a clean worktree, with
+byte-identical numbers to the merged tree.
+
+**Both are now resolved as diagnoses.** D was the estimator and is fixed — see
+below, and `econ:accept` is back to 5/5. F is a real model defect and has its
+own section above; it stays red on purpose until the anchor is fixed, because
+the honest reading is that the merge exposed it rather than caused it.
 
 | test | on `c75012c` (this side) | on `3fb95dc` (their side) | merged |
 |---|---|---|---|
@@ -391,22 +466,22 @@ test.
 | sim F. INCOME ANCHOR | PASS, real rent 1.04%/yr | **FAIL, 1.51%/yr** | FAIL, 1.51%/yr |
 | sim H. THE GLUT IS SEEN | FAIL (pre-existing) | FAIL | FAIL |
 
-**D. CONSERVATION** — control occupied moved from 5.79/5.94/5.19M of a 6.14M
-stock to 5.65/5.68/5.17M of a 6.23M stock, so the baseline itself shifted:
-the city is building more and letting less of it. Induced demand on the +0.74M
-sf injection reads −8.9% / 44.1% / 19.0% against a 15% budget. Note the spread
-— this statistic is measured on three seed-pairs and ranges over fifty points,
-so the median is one seed away from either verdict in both directions. It wants
-more pairs before anyone tunes against it.
+**D. CONSERVATION — the test, and it is fixed.** Measured over fifteen pairs
+on both trees: induced demand is **−2.5% before the merge and +3.7% after**,
+against a 15% budget. The model conserves tenants on both sides and got
+slightly tighter, not looser. But the gate took a median of THREE pairs from a
+distribution with a 22–27pp standard deviation, and a median-of-3 drawn from it
+reads over budget **24% of the time regardless of the engine** — so this gate
+failed one run in four for no reason, and cost an afternoon proving nothing had
+moved. Induced demand is an expectation, so it now takes the MEAN over twelve
+pairs and reports its own standard error. The 15% budget is untouched.
 
-**F. INCOME ANCHOR** — median real rent growth 1.51%/yr against a band that
-ends at 1.50. One basis point over the rail, on a seven-seed median, with two
-seeds inside the band and the rent-to-income clause still passing at 1.28x.
-This is the tightest verdict in either suite and it is currently sitting on the
-line rather than through it.
+**F. INCOME ANCHOR — the model, and it is not fixed.** The seven-seed median of
+1.51%/yr looked like a hair over the rail. It was a lucky draw: over sixteen
+seeds the median is **1.96%/yr** and 69% of seeds breach. See the section above
+for the trace — the market is pinned on its frictional vacancy floor, supply
+grows at less than half the rate of employment, and the shortage side of the
+rent term is linear where the glut side is superlinear.
 
-The likely common cause is `heldOccupancy` and the `assetValue` lease-up mark:
-both change what occupancy the space market reads back for commercial stock,
-which is upstream of absorption, of rent, and of what the city decides to
-build. That is the right place to look and it is that session's ground, not
-this one's — which is why it is written down here rather than tuned away.
+`heldOccupancy` was the other suspect and is exonerated: it has no consumers in
+`src/engine` at all.

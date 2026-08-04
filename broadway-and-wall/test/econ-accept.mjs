@@ -233,10 +233,25 @@ const rollOf = (g, bbl) => {
   // the control does not. If tenants are conserved, the injected run's OCCUPIED
   // sf may exceed the control's only by a small induced-demand factor.
   //
-  // MEDIAN OF THREE SEED-PAIRS. The metric is a small difference of two large
-  // numbers, and the injection itself forks the RNG stream at month 24 — so a
-  // single pair measured anywhere from -34% to +20% across mechanically
-  // identical builds. One draw is weather; the median is the mechanism.
+  // THE MEAN OF TWELVE SEED-PAIRS, AND THE BUDGET IS UNCHANGED AT 15%.
+  //
+  // This took the median of THREE. The metric is a small difference of two
+  // large numbers and the injection forks the RNG stream at month 24, so the
+  // per-pair value is enormously dispersed — the note that used to be here
+  // said "-34% to +20%" and undersold it. Measured over fifteen pairs on a
+  // mechanically unchanged build: mean 3.7%, sd 21.9pp, range -53.9% to
+  // +44.1%. The model conserves tenants comfortably. But a MEDIAN OF THREE
+  // drawn from that distribution reads over the 15% budget 24% of the time —
+  // so this gate failed roughly one run in four no matter what the engine did,
+  // and it did exactly that at a merge, costing an afternoon proving the model
+  // had not moved. Both trees measured: -2.5% before, +3.7% after.
+  //
+  // A test that fails at random tells you as little as one that cannot fail.
+  // The fix is the estimator, not the threshold: induced demand is an
+  // EXPECTATION, so take the mean, and take enough pairs that its standard
+  // error is small against the thing it is compared to. At n=12 the SE is
+  // about 6pp against a 15pp budget on a true value near 4.
+  const PAIRS = Number(process.env.CONSERVE_PAIRS ?? 12);
   const run = (seed, inject) => {
     const parcels = clone();
     let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
@@ -250,17 +265,23 @@ const rollOf = (g, bbl) => {
     }
     return { occ: g.econ.occupied.office, stock: g.econ.stock.office, addSf };
   };
-  const pairs = [133713, 51423, 900871].map((seed) => {
+  const SEEDS_D = [133713, 51423, 900871, 550991, 12007, 73303, 11, 22, 4242,
+    90210, 313, 777, 2468, 60613, 10001, 94110].slice(0, PAIRS);
+  const pairs = SEEDS_D.map((seed) => {
     const ctl = run(seed, false), inj = run(seed, true);
     return { seed, ctl, inj, frac: (inj.occ - ctl.occ) / Math.max(1, inj.addSf) };
   });
-  const fracs = pairs.map((p) => p.frac).sort((a, b) => a - b);
-  const frac = fracs[1];
-  report("D. CONSERVATION (does supply manufacture tenants? median of 3 seed-pairs)",
+  const fracs = pairs.map((p) => p.frac);
+  const frac = fracs.reduce((a, b) => a + b, 0) / fracs.length;
+  const sd = Math.sqrt(fracs.reduce((a, b) => a + (b - frac) ** 2, 0) / Math.max(1, fracs.length - 1));
+  const se = sd / Math.sqrt(fracs.length);
+  const sorted = [...fracs].sort((a, b) => a - b);
+  report(`D. CONSERVATION (does supply manufacture tenants? mean of ${pairs.length} seed-pairs)`,
     frac <= 0.15,
-    [`control occupied: ${pairs.map((p) => (p.ctl.occ / 1e6).toFixed(2) + "M").join("  ")} of ~${(pairs[0].ctl.stock / 1e6).toFixed(2)}M stock`,
+    [`control occupied: ${pairs.slice(0, 3).map((p) => (p.ctl.occ / 1e6).toFixed(2) + "M").join("  ")} ... of ~${(pairs[0].ctl.stock / 1e6).toFixed(2)}M stock`,
      `injection: +${(pairs[0].inj.addSf / 1e6).toFixed(2)}M sf of office at month 24, per pair`,
-     `conjured per pair: ${pairs.map((p) => (p.frac * 100).toFixed(1) + "%").join("  ")}   median ${(frac * 100).toFixed(1)}%   (allowed <= 15% induced demand)`]);
+     `conjured: mean ${(frac * 100).toFixed(1)}% +/- ${(se * 100).toFixed(1)}pp   (allowed <= 15% induced demand)`,
+     `   spread across pairs: ${(sorted[0] * 100).toFixed(0)}% to ${(sorted[sorted.length - 1] * 100).toFixed(0)}%, sd ${(sd * 100).toFixed(1)}pp — which is why this is a mean over twelve and not a median over three`]);
 }
 
 // ---------------------------------------------------------------------------

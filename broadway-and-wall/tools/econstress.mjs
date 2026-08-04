@@ -144,7 +144,14 @@ function snapshotCity(g, parcels, base) {
     pop: e.population, jobs: e.jobs, vacOff: e.cityVac?.office ?? 0,
     rentOff: e.rentIdx?.office ?? 0, cpi: e.cpi,
     firms: rivals.length, aum: rivals.reduce((a, r) => a + (r.aum ?? 0), 0),
-    demolished: g.demolished ?? 0, comps: (g.comps ?? []).length,
+    // LOTS THAT HAVE CHANGED HANDS, not g.comps.length. The comps sheet is a
+    // rolling window capped at MAX_COMPS (comps.ts), so over twenty-five years
+    // it reports the cap and nothing else — this row read an identical "240"
+    // at year 25 and at year 50 in every seed, and the world-activity check
+    // that tests it for "> 50" could never fail for any reason connected to
+    // the world. lastTradeM is the cumulative record.
+    demolished: g.demolished ?? 0,
+    comps: Object.keys(g.lastTradeM ?? {}).length,
     cityBuilt: (g.cityBuilt ?? []).length,
   };
 }
@@ -176,7 +183,7 @@ if (want("A")) {
     `office rent index   ${at(0, "rentOff").toFixed(0)}${" ".repeat(12)} ${at(1, "rentOff").toFixed(0)}${" ".repeat(12)} ${at(2, "rentOff").toFixed(0)}`,
     `firms alive         ${String(at(0, "firms")).padEnd(13)} ${String(at(1, "firms")).padEnd(13)} ${at(2, "firms")}`,
     `street AUM          ${M(at(0, "aum")).padEnd(13)} ${M(at(1, "aum")).padEnd(13)} ${M(at(2, "aum"))}`,
-    `trades recorded     ${String(at(0, "comps")).padEnd(13)} ${String(at(1, "comps")).padEnd(13)} ${at(2, "comps")}`,
+    `lots ever traded    ${String(at(0, "comps")).padEnd(13)} ${String(at(1, "comps")).padEnd(13)} ${at(2, "comps")}`,
     `city groundbreaks   ${String(at(0, "cityBuilt")).padEnd(13)} ${String(at(1, "cityBuilt")).padEnd(13)} ${at(2, "cityBuilt")}`,
     `buildings demolished${String(at(0, "demolished")).padEnd(13)} ${String(at(1, "demolished")).padEnd(13)} ${at(2, "demolished")}`,
   ];

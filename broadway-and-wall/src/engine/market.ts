@@ -82,20 +82,6 @@ const PHASE_CFG: Record<MarketPhase, { rateGap: number; rentDrift: number; devDr
 // both outside what this game could express.
 const RATE_FLOOR = 1.45, RATE_CEIL = 23.0;
 
-// WHAT A NEW BUILDING YIELDS ON ITS COST when rents and costs are both at their
-// opening index, and what the capital stack behind it needs on top of the debt
-// index to be worth two years of construction risk. Together they are the
-// hurdle every groundbreak in this city has to clear. 8.5% over debt + 220bps
-// is the ordinary merchant-build test: at a 5% loan index it pencils
-// comfortably, at 12% it does not pencil at all until rents have risen by two
-// thirds, and at the zero bound everything pencils — which is why 2021 looked
-// the way it did.
-// Deliberately set so that at the century's MEDIAN loan index the hurdle is
-// exactly neutral: this change was meant to make development ANSWER the rate,
-// not to make development harder, and a level shift smuggled in alongside a
-// structural one is how a calibration gets quietly lost. Measured before the
-// level-match, real office rent growth ran 2.08%/yr against wages at 1.06%.
-const BASE_YOC = 0.073, DEV_SPREAD = 0.022;
 
 /**
  * DOES A GROUNDBREAK PENCIL TODAY, AND HOW COMFORTABLY? 0 = nothing gets
@@ -128,7 +114,51 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
 // CAP_BASE keeps meaning "the class's long-run average cap" rather than "its
 // cap at natural vacancy, which this city rarely sits at". Without the rebase
 // an uncentred risk term silently widens every cap by 15-30bp forever.
-export const CAP_BASE = { office: 5.30, retail: 5.91, multifamily: 4.76, industrial: 6.74 } as const;
+// THE CAP RATE HAS TO CLEAR THE COST OF DEBT, OR LEVERAGE IS A LAW AGAINST
+// ITSELF.
+//
+// These were 5.30 office and 4.76 multifamily against a loan index whose
+// century median is 5.05% and senior spreads of 150-210bp — an all-in
+// borrowing cost of 6.5-7.2%. Every levered purchase in this game therefore
+// paid about a hundred and sixty basis points MORE for its debt than the
+// building yielded, permanently, in every market condition, which is negative
+// leverage as a fact of physics rather than as a phase of the cycle. The
+// strategy tournament measured exactly what that implies: all-cash returned
+// $138M real against $29M for maximum leverage, with a LOWER drawdown and
+// zero wipeouts. Debt was a way to lose money and the entire capital-markets
+// half of the game was dead.
+//
+// Real going-in cap rates sit at or above the mortgage rate most of the time —
+// US office has averaged around 7%, multifamily around 6% — and the years when
+// they do not (2021-23) are remembered as the anomaly that froze the
+// transaction market. Set so the long-run average asset yields roughly fifty
+// basis points over the long-run average all-in loan, which is thin positive
+// leverage: enough that debt earns its risk in a normal market, not so much
+// that borrowing is free money.
+export const CAP_BASE = { office: 6.85, retail: 6.95, multifamily: 5.95, industrial: 7.45 } as const;
+
+// WHAT A NEW BUILDING YIELDS ON ITS COST when rents and costs are both at their
+// opening index, and what the capital stack behind it needs on top of the debt
+// index to be worth two years of construction risk. Together they are the
+// hurdle every groundbreak in this city has to clear. 8.5% over debt + 220bps
+// is the ordinary merchant-build test: at a 5% loan index it pencils
+// comfortably, at 12% it does not pencil at all until rents have risen by two
+// thirds, and at the zero bound everything pencils — which is why 2021 looked
+// the way it did.
+// Deliberately set so that at the century's MEDIAN loan index the hurdle is
+// exactly neutral: this change was meant to make development ANSWER the rate,
+// not to make development harder, and a level shift smuggled in alongside a
+// structural one is how a calibration gets quietly lost. Measured before the
+// level-match, real office rent growth ran 2.08%/yr against wages at 1.06%.
+// ...and BASE_YOC MOVES WITH THE CAP RATE, because it is denominated in the
+// same world. It was 0.073 when office cap rates were 5.30%; raising those to
+// 6.85% without touching this quietly raised the development hurdle by the
+// same 30% and the supply side answered exactly as it should have — starts
+// fell, the market tightened, and real rent growth went to 1.92%/yr against
+// wages at 1.03%. A developer's target yield on cost is a spread over the EXIT
+// CAP, not a constant somebody typed, so it is scaled off CAP_BASE.office and
+// moves whenever that does.
+const BASE_YOC = 0.073 * (CAP_BASE.office / 5.30), DEV_SPREAD = 0.022;
 
 /**
  * VACANCY IS THE RISK, AND THE RISK IS PRICED.
@@ -291,6 +321,13 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   econ.tightEma = 0;
   econ.buildEma = 0.02;
   econ.rentExp = { ...econ.rentIdx };
+  // THE CITY HAS PEOPLE IN IT ON DAY ONE. These were seeded lazily inside the
+  // monthly tick, so between newGame and the first advanceQuarter the economy
+  // reported a population of `undefined` — which the stress harness caught as
+  // a NaN in the year-zero column of the null-player table, and which anything
+  // reading population before the first tick would have inherited.
+  econ.population = 240_000; econ.jobs = 132_000; econ.unemployment = 0.052;
+  econ.wageIdx = 1; econ.outputIdx = 1; econ.cpi = 1;
   econ.nat = { infl: 0.021, inflExp: 0.02, unemp: 0.052, policy: 4.2,
                neutralReal: 0.019, shockM: 0, shockSev: 0, credibility: 0.8,
                recM: 0, expM: 0, deep: false, pressureM: 0 };
@@ -1307,7 +1344,7 @@ export function tickEcon(s: GameState) {
     // This is the correct place to absorb it — the anchor's whole job is to
     // police the real relationship between rent and pay, whatever pushed it.
     const anchor = dev > 0
-      ? -0.0108 * Math.min(1.6, dev)          // outrunning incomes: pulled down hard
+      ? -0.0124 * Math.min(1.6, dev)          // outrunning incomes: pulled down hard
       : -0.0028 * Math.max(-0.65, dev);       // cheap against incomes: drifts back up
 
     // AND RENT CARRIES THE PRICE LEVEL. Every other term above is REAL — a
@@ -1345,7 +1382,14 @@ export function tickEcon(s: GameState) {
     // takes to fill them.
     const vacGap = (e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
     const vacRisk = clamp(CAP_VAC_BETA[k] * vacGap * 100, -0.6, 2.0);
-    const target = CAP_BASE[k] + 0.38 * (e.indexRate - 5.4) - 0.25 * e.cycleDev + crunch + sector + vacRisk;
+    // ...and they TRACK the cost of debt, at about half a point of cap for a
+    // point of rate, which is what the real relationship looks like. At 0.38
+    // the spread between yield and borrowing cost barely moved across a
+    // century of rates, so the fix-or-float decision and the timing of a
+    // levered purchase were both weather rather than judgement. At 0.55 a rate
+    // spike genuinely flips leverage negative and a rate collapse genuinely
+    // makes it free — which is the trade the player is supposed to be reading.
+    const target = CAP_BASE[k] + 0.55 * (e.indexRate - 5.4) - 0.25 * e.cycleDev + crunch + sector + vacRisk;
     e.capRate[k] = clamp(e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045), 3.4, 11);
   }
 

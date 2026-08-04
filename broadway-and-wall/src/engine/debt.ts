@@ -65,14 +65,14 @@ export const PRODUCTS: LoanProduct[] = [
   {
     id: "harbor", label: "First Harbor Bank · 5 yr, 25-yr am", lender: "First Harbor Bank",
     blurb: "The hometown bank. Small checks, honest spreads, recourse — and they answer the phone in a crunch, for their friends.",
-    ltv: 0.68, spread: 1.95, floating: false, ioM: 0, amortYears: 25, termM: 60,
+    ltv: 0.68, spread: 1.55, floating: false, ioM: 0, amortYears: 25, termM: 60,
     uwDscr: 1.25, debtYield: 0.09, points: 0.006, recourse: true, prepay: "stepdown", prepayM: 36,
     minDSCR: 1.25, maxLTV: 0.82, maxLoan: 6_000_000,
   },
   {
     id: "savings", label: "Alden Savings & Trust · 7 yr, 30-yr am", lender: "Alden Savings & Trust",
     blurb: "The regional. Bigger checks, covenant-happy, and they tighten fast when the cycle turns.",
-    ltv: 0.72, spread: 2.10, floating: false, ioM: 0, amortYears: 30, termM: 84,
+    ltv: 0.72, spread: 1.70, floating: false, ioM: 0, amortYears: 30, termM: 84,
     uwDscr: 1.25, debtYield: 0.085, points: 0.008, recourse: false, prepay: "stepdown", prepayM: 48,
     minDSCR: 1.25, maxLTV: 0.85, maxLoan: 25_000_000,
   },
@@ -80,14 +80,14 @@ export const PRODUCTS: LoanProduct[] = [
     // the 25-year sheet: same desk, sharper rate, faster paydown
     id: "savings25", label: "Alden Savings & Trust · 7 yr, 25-yr am · −25bps", lender: "Alden Savings & Trust",
     blurb: "Faster paydown buys a sharper rate. Less cash flow, more equity, and the bank sleeps better than you do.",
-    ltv: 0.72, spread: 1.85, floating: false, ioM: 0, amortYears: 25, termM: 84,
+    ltv: 0.72, spread: 1.45, floating: false, ioM: 0, amortYears: 25, termM: 84,
     uwDscr: 1.25, debtYield: 0.085, points: 0.008, recourse: false, prepay: "stepdown", prepayM: 48,
     minDSCR: 1.25, maxLTV: 0.85, maxLoan: 25_000_000,
   },
   {
     id: "pelican", label: "Pelican Life Insurance · 15 yr, 30-yr am", lender: "Pelican Life Insurance",
     blurb: "Life-company money: the cheapest debt in town, for well-kept product only. Low leverage, long memory, brutal to leave early.",
-    ltv: 0.58, spread: 1.50, floating: false, ioM: 0, amortYears: 30, termM: 180,
+    ltv: 0.58, spread: 1.15, floating: false, ioM: 0, amortYears: 30, termM: 180,
     uwDscr: 1.35, debtYield: 0.095, points: 0.008, recourse: false, prepay: "yieldmaint", prepayM: 144,
     minDSCR: 1.30, maxLTV: 0.80, minLoan: 4_000_000, minCondition: "good",
   },

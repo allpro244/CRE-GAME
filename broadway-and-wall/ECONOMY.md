@@ -373,3 +373,40 @@ spread the plan does not. None of these is wrong on its own and the gap is a
 third of the value of every development decision in the game. A developer
 reading a 9.49% yield on cost against a 5.33% exit is being shown 1.78x on a
 job that will mark at 1.03x the day it opens.
+
+---
+
+# GATE REGRESSION INHERITED AT THE MERGE — isolated, not caused here
+
+The acceptance gates on this branch went from **econ 5/5, sim 3/4** to
+**econ 4/5, sim 2/4** across the merge with the parallel session. Both new
+failures were isolated to that session's head (`3fb95dc`) run on its own, in a
+clean worktree, with byte-identical numbers to the merged tree — so the merge
+inherited them and did not create them, and nothing on this side moved either
+test.
+
+| test | on `c75012c` (this side) | on `3fb95dc` (their side) | merged |
+|---|---|---|---|
+| econ D. CONSERVATION | PASS, conjured median 1.2% | **FAIL, median 19.0%** | FAIL, median 19.0% |
+| sim F. INCOME ANCHOR | PASS, real rent 1.04%/yr | **FAIL, 1.51%/yr** | FAIL, 1.51%/yr |
+| sim H. THE GLUT IS SEEN | FAIL (pre-existing) | FAIL | FAIL |
+
+**D. CONSERVATION** — control occupied moved from 5.79/5.94/5.19M of a 6.14M
+stock to 5.65/5.68/5.17M of a 6.23M stock, so the baseline itself shifted:
+the city is building more and letting less of it. Induced demand on the +0.74M
+sf injection reads −8.9% / 44.1% / 19.0% against a 15% budget. Note the spread
+— this statistic is measured on three seed-pairs and ranges over fifty points,
+so the median is one seed away from either verdict in both directions. It wants
+more pairs before anyone tunes against it.
+
+**F. INCOME ANCHOR** — median real rent growth 1.51%/yr against a band that
+ends at 1.50. One basis point over the rail, on a seven-seed median, with two
+seeds inside the band and the rent-to-income clause still passing at 1.28x.
+This is the tightest verdict in either suite and it is currently sitting on the
+line rather than through it.
+
+The likely common cause is `heldOccupancy` and the `assetValue` lease-up mark:
+both change what occupancy the space market reads back for commercial stock,
+which is upstream of absorption, of rent, and of what the city decides to
+build. That is the right place to look and it is that session's ground, not
+this one's — which is why it is written down here rather than tuned away.

@@ -17,7 +17,7 @@
 //     one that has printed four sales in a row is getting out.
 import type { ParcelRecord } from "@/data/types";
 import type { Condition, GameState, Sector } from "./types";
-import { initialCondition, noiAfterTaxYr } from "./value";
+import { initialCondition, noiAfterTaxYr, landPsfNow, resolveRec } from "./value";
 import { industryStress } from "./market";
 
 export interface Comp {
@@ -155,4 +155,84 @@ export function portfolioIndustries(s: GameState) {
   // — the number that says how bad the next two years are going to be.
   const atRisk = rows.reduce((a, r) => a + r.share * r.stress, 0);
   return { rows, total, top: rows[0] ?? null, atRisk };
+}
+
+/**
+ * WHAT THE STREET IS ACTUALLY PAYING FOR DIRT.
+ *
+ * Land value in this engine was a label rather than a price. `landPsfNow`
+ * reads a static seed off the parcel record, a citywide index, a site-quality
+ * multiplier and the cycle — and nothing else. `s.landAdj`, the per-parcel
+ * mark that every consumer already reads through `resolveBase`, was written by
+ * exactly two things: a delivery, and a rezoning. Nothing anybody BOUGHT ever
+ * moved the ground under it.
+ *
+ * That is the wrong way round for the most fundamental price in the business.
+ * Dirt has no income and no replacement cost; the only way anybody knows what
+ * a lot is worth is what the lots around it have been fetching. Comparable
+ * sales are not a check on the appraisal, they ARE the appraisal.
+ *
+ * Measured before this existed (`pnpm stress --only=B`): a buyer taking 116 to
+ * 142 lots out of one district over twenty-five years moved that district's
+ * land value DOWN 6.6% relative to the rest of the same town. The player's
+ * demand was not an input to the land market at all, so absorbing a third of a
+ * district's dirt read to the appraiser as one fewer building trading there —
+ * which is the sign it moves, backwards.
+ *
+ * How it works, and why it converges rather than running away: every land
+ * print is compared to what this engine would have appraised that same lot at,
+ * and the ratio is the market telling the appraiser it is wrong. Aggregated to
+ * the district, because that is the submarket an appraiser actually pulls
+ * comps from, and only when there are enough prints to be a market rather than
+ * an anecdote. The mark then moves a fraction of the way each quarter — and as
+ * it moves, the appraisal rises toward the prints and the ratio returns to
+ * one, which is what stops it. A district that keeps clearing above its
+ * appraisal keeps getting marked up, exactly as long as it keeps doing it.
+ *
+ * It draws no random numbers, so every paired run in both audits stays in step.
+ */
+const LAND_WINDOW_M = 36;      // three years of prints — an appraiser's window
+const LAND_MIN_PRINTS = 3;     // one sale is an anecdote, two is a coincidence
+const LAND_SPEED = 0.07;       // per quarter, toward what the street is paying
+
+export function tickLandComps(s: GameState, parcels: Record<string, ParcelRecord>) {
+  // Appraisals are quarterly work. Nobody re-marks a book every month.
+  if (s.month % 3 !== 0) return;
+  if (!s.landAdj) s.landAdj = {};
+  const since = s.month - LAND_WINDOW_M;
+  const byDist = new Map<string, number[]>();
+  for (const c of s.comps ?? []) {
+    // LAND PRINTS ONLY. An improved sale is mostly a price for the building;
+    // backing the dirt out of it is a residual, and a residual of two large
+    // numbers is noise at this sample size.
+    if (c.m < since || c.sf !== 0) continue;
+    const rec = resolveRec(parcels, s, c.bbl);
+    if (!rec?.lotArea) continue;
+    const appraised = landPsfNow(rec, s.econ);
+    if (!(appraised > 0) || !(c.psf > 0)) continue;
+    const d = rec.district ?? "—";
+    if (!byDist.has(d)) byDist.set(d, []);
+    byDist.get(d)!.push(c.psf / appraised);
+  }
+  if (!byDist.size) return;
+
+  const pull = new Map<string, number>();
+  for (const [dist, ratios] of byDist) {
+    if (ratios.length < LAND_MIN_PRINTS) continue;
+    ratios.sort((a, b) => a - b);
+    const median = ratios[Math.floor((ratios.length - 1) / 2)];
+    // A single wild print — a distressed clear-out, an assemblage premium —
+    // is real but it is not the market. Bound what one quarter can conclude.
+    if (Number.isFinite(median)) pull.set(dist, Math.max(0.6, Math.min(1.7, median)));
+  }
+  if (!pull.size) return;
+
+  for (const bbl of Object.keys(parcels)) {
+    const p = parcels[bbl];
+    const f = p ? pull.get(p.district ?? "—") : undefined;
+    if (f === undefined) continue;
+    const cur = s.landAdj[bbl] ?? 1;
+    const next = cur * (1 + LAND_SPEED * (f - 1));
+    s.landAdj[bbl] = +Math.max(0.25, Math.min(4, next)).toFixed(4);
+  }
 }

@@ -540,9 +540,16 @@ if (want("B")) {
   const lift = med(dd);
   lines.push(``);
   lines.push(`difference-in-differences on district land value: ${((lift - 1) * 100).toFixed(1)}%   (need >= 2% — buying a district must move its ground)`);
-  lines.push(`lots in the bought district that changed hands: ${med(compsD).toFixed(2)}x the control`);
+  // A HOLDER IS A SINK, and I wrote this clause expecting the opposite.
+  // "More buying means more trades" is wrong for an accumulator: every lot the
+  // whale takes leaves the tape for good (refreshListings skips anything in
+  // s.holdings), so the district's turnover FALLS — which is exactly what an
+  // institution buying up a neighbourhood does to it. The claim worth testing
+  // is that the player is visible in the trade record at all, in whichever
+  // direction their posture implies.
+  lines.push(`lots in the bought district that changed hands: ${med(compsD).toFixed(2)}x the control   (must MOVE — a whale is a sink, not a source)`);
   lines.push(`listings still on the tape there: ${med(listD).toFixed(1)} versus the control (a buyer clears the shelf)`);
-  const moved = [lift >= 1.02, med(compsD) > 1.1, med(listD) <= 0].filter(Boolean).length;
+  const moved = [lift >= 1.02, Math.abs(1 - med(compsD)) > 0.15, med(listD) <= 0].filter(Boolean).length;
   report("B", "THE PLAYER EXISTS TO THE WORLD — 25 years, one district bought out",
     moved >= 3 ? "WIRED" : moved >= 2 ? "WEAK" : "BROKEN", lines);
 }

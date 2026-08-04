@@ -5,7 +5,7 @@ import type { GameState, Listing } from "./types";
 import { START_CASH, CENTURY_MONTHS, CASH_APY, logBooks, monthLabel } from "./types";
 import { initEcon, rng, rrange, tickEcon } from "./market";
 import { assetValue, holdingNOIYr, holdingValue, monthlyNOI, netWorth, resolveRec } from "./value";
-import { recordComp } from "./comps";
+import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLeasing, depositsOn } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote } from "./actions";
@@ -270,6 +270,9 @@ export function advanceQuarter(
   tickLeasing(s, parcels);
   tickGroundLeases(s, parcels);
   tickSales(s, parcels, adjacency);
+  // The dirt reprices off what the dirt has been fetching — after the month's
+  // trades have printed, so a quarter's marks read that quarter's sales.
+  tickLandComps(s, parcels);
   tickBrokerCalls(s, parcels, bbls);
   tickListingAbsorption(s, parcels); // other buyers work the tape too
   tickPortfolios(s, parcels);        // and the package market, where books trade whole

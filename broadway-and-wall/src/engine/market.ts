@@ -869,9 +869,26 @@ export function tickEcon(s: GameState) {
   //   1.5x rent-to-income  ->  -1.2%/yr   an expensive city, losing a little
   //   2.0x                 ->  -3.3%/yr   a city genuinely hollowing out
   //   3.0x                 ->  -4.1%/yr   the rail: nobody leaves faster
+  // AND THE CHEAP SIDE IS CONSTRAINED BY PEOPLE, NOT BY A NUMBER.
+  //
+  // Fixing the expensive side left the cheap one saturating in exactly the way
+  // I had just condemned: a flat +0.0016/month cap, applied at full strength
+  // for as long as space stayed cheap, regardless of whether the city had
+  // anybody left to hire. Traced through H's glut: rents collapse 78 to 31,
+  // the pull pins at its cap and holds there, and the town absorbs the shock
+  // in under two years — city unemployment at 2.0%, which is its own floor,
+  // and fifteen thousand JOBS ADDED while 37% of the offices stand empty.
+  //
+  // Cheap space really does attract employers; that is the mechanism that ends
+  // a glut and it stays. What it cannot do is conjure workers. A city at full
+  // employment absorbs firms at the rate it can staff them, which is why a
+  // boom in a tight labour market shows up as wages rather than as headcount.
+  // So the pull is gated on the slack that actually exists — full strength
+  // with people to spare, and nothing at all against the unemployment floor.
+  const slack = clamp((((e.unemployment ?? 0.055) - 0.018) / 0.04), 0, 1);
   const overCost = Math.max(0, costOfSpace - 1);
   const spacePull = costOfSpace <= 1
-    ? clamp((1 - costOfSpace) * 0.0022, 0, 0.0016)
+    ? clamp((1 - costOfSpace) * 0.0022, 0, 0.0016) * slack
     : Math.max(-0.0035, -(overCost * 0.0012 + overCost * overCost * 0.0016));
   // A national recession costs this city jobs whether or not the local property
   // cycle has caught up to it yet — payrolls are cut at head office.

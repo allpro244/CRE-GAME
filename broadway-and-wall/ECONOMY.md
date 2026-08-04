@@ -448,6 +448,70 @@ compounds directly into the price of dirt, so wiring comparable sales into land
 value on top of it would be building a new mechanism on a broken input. Fix the
 anchor first.
 
+# H IS THE LAST ONE, AND I THINK IT IS THE TEST — your call, not mine
+
+`sim:accept` is 3 of 4. F passes, G passes, I passes. H fails on one clause and
+I have not touched it, because it is your scenario written from your words and
+because I already caught myself once this session saying "that is realistic"
+about a number that had appeared right after my own change. Here is the whole
+case; the decision is yours.
+
+**The clause.** `loan index 6.32% -> 7.12% median over the glut (need not to
+RISE: a glut is a demand shock)`.
+
+**Decomposed** — the loan index is `policy + termPrem`, and the engine widens
+the premium when credit is frightened:
+
+```
+                         vac     loan  =  policy  + premium   credit  cityU   natU
+month 0                 45.0%   6.32%    4.79%     1.53%      0.65    4.7%   5.10%
+months 1-12             45.0%   6.75%    5.00%     1.75%      0.63    6.5%   5.00%
+months 24-96 (H window) 37.4%   7.12%    5.29%     1.86%      0.86    2.8%   4.85%
+months 96-144           16.6%   4.94%    3.17%     1.78%      0.91    1.8%   5.20%
+```
+
+**Three separate problems with the clause, in order of how much they bother me.**
+
+1. *It reads the wrong series.* `indexRate` is what a BORROWER pays: the policy
+   rate plus what the market charges for risk. The claim "policy cuts into a
+   demand shock" is about the policy rate alone. The premium going 1.53 to 1.86
+   as lenders stare at 45% vacancy is not a bug, it is the single most
+   documented fact about CRE credit in a downturn — spreads blew out in 1990
+   and 2009 while the policy rate was being cut, and `market.ts` says so in the
+   comment above the line that does it.
+
+2. *The scenario is a supply shock, not a demand shock.* H injects four million
+   square feet. Nobody lost a job building it, no tenant left, and the effect
+   on the labour market is that space got cheap — city unemployment goes 4.7%
+   to 2.8% and the city ADDS twelve thousand jobs. National unemployment falls,
+   5.10% to 4.85%. There is genuinely nothing here for a central bank to ease
+   into. A demand shock would be tenants handing space back, and that is a
+   different injection.
+
+3. *The window measures the recovery.* Months 24 to 96 begin two years after
+   the shock. The easing, such as it is, happens in months 1-12 — and the
+   engine does ease there relative to trend before the city recovers.
+
+**What the bank does when you ask it directly** (measured over seven seeds,
+against the policy rate rather than the loan rate):
+
+```
+corr(national unemployment, POLICY)  -0.529    it reads its mandate, hard
+corr(city unemployment,     POLICY)  -0.328
+corr(inflation,             POLICY)  +0.267
+```
+
+**What I would change, if you agree.** Keep the phase clause exactly as it is —
+it is the heart of the test and it passes. Replace the single rate clause with
+the two claims it was reaching for, which are separable and both true of a real
+glut: the RISK PREMIUM must widen (a lender looking at empty floors must charge
+for it), and the POLICY rate must not tighten on account of the glut. Then add
+a second scenario for the thing H's sentence actually describes — tenants
+handing back four million square feet — where the bank should visibly ease,
+because that one really is a demand shock.
+
+I have not done it. Say the word.
+
 # LAND LEARNED FROM TRADES — and the first cut compounded
 
 The wire is right and the first version of it was circular. Both halves are

@@ -235,6 +235,19 @@ export const RENT_BASE = { office: 62, retail: 88, multifamily: 46, industrial: 
 // of the table has the upper hand. Below it landlords push rents; above it
 // tenants extract concessions. Office runs structurally looser than housing.
 export const NATURAL_VAC = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07 } as const;
+
+/**
+ * THE BUILDING TRADES, as a share of a city's payroll.
+ *
+ * Construction is about 5% of employment in a city of this kind and it is the
+ * most cyclical 5% there is — it roughly halves in a real bust and it is the
+ * first thing to come back. `REF_PIPE_SHARE` is the pipeline this town runs at
+ * in an ordinary year, measured as square feet under construction over square
+ * feet standing; it is the point where the employment term is exactly neutral,
+ * so it moves nothing about the existing calibration and only prices the swing.
+ */
+export const CONSTRUCTION_JOB_SHARE = 0.048;
+export const REF_PIPE_SHARE = 0.018;
 // How long the rest of the market takes to build each class, in months. This
 // is the lag that makes the cycle a cycle: the decision to start is taken in
 // one market and the building arrives in a different one, and nobody can undo
@@ -817,7 +830,29 @@ export function tickEcon(s: GameState) {
   // a fact about the player's spreadsheet and about nothing else in the world.
   const incomeNow = Math.max(0.35, e.wageIdx ?? 1);
   const costOfSpace = (e.rentIdx.office / RENT_BASE.office) / incomeNow;
-  const spacePull = clamp((1 - costOfSpace) * 0.0022, -0.0013, 0.0016);
+  // ...AND THE RETURN WIRE SATURATED, WHICH IS THE SAME BUG THE GLUT SIDE OF
+  // THE RENT TERM ALREADY HAD.
+  //
+  // This was clamped at -0.0013/month. Rent-to-income reaches that rail at
+  // about 1.6x, and every further point of expensiveness then cost the city
+  // nothing: a town at 2.1x shed employers no faster than one at 1.6x, so the
+  // brake stopped braking exactly where it was needed. Measured over sixteen
+  // seeds, that is precisely where rents ended up — beating the wages that pay
+  // them by 0.94pp a year, forever, with the anchor pinned and unable to
+  // answer. `sim:accept` F is that number.
+  //
+  // Leaving a city because the rent is impossible is not a linear decision. A
+  // firm paying twenty per cent over what it can afford negotiates; one paying
+  // double does not renew, and neither does the firm that would have moved in.
+  // Superlinear on the expensive side, and no rail — the same shape, and for
+  // the same reason, as the capitulation term in the rent block above.
+  //
+  // The cheap side keeps its cap: empty space is genuinely a magnet, but a
+  // town cannot hire faster than it can find people, and that ceiling is real.
+  const overCost = Math.max(0, costOfSpace - 1);
+  const spacePull = costOfSpace <= 1
+    ? clamp((1 - costOfSpace) * 0.0022, 0, 0.0016)
+    : -(overCost * 0.0022 + overCost * overCost * 0.0060);
   // A national recession costs this city jobs whether or not the local property
   // cycle has caught up to it yet — payrolls are cut at head office.
   const natPull = (e.nat?.recM ?? 0) > 0 ? (e.nat?.deep ? -0.0026 : -0.0013) : 0.0002;
@@ -837,9 +872,36 @@ export function tickEcon(s: GameState) {
       e.wageIdx = 1; e.outputIdx = 1; e.cpi = 1;
     }
     const prevJobs = e.jobs!;
-    // Jobs track the employment index directly — that IS the employment index,
-    // expressed as people rather than as a number between nought and twelve.
-    e.jobs = Math.round(132_000 * e.employIdx);
+    // BUILDING IS A JOB, and it was the one job in this city nobody had.
+    //
+    // Jobs tracked the employment index and nothing else, so the construction
+    // industry — the most violently cyclical employer in any real city, and
+    // the one this entire game is about commissioning — did not exist as
+    // employment. A town could stop building altogether and its labour market
+    // would not notice. That is why `sim:accept` H could drop four million
+    // square feet of empty office on the city, collapse the rent index from 78
+    // to 31, and watch the place ADD fifteen thousand jobs: the only wire from
+    // property to payroll was "empty space is cheap space, cheap space
+    // attracts firms", which is true and is half the story. The other half is
+    // that the crash which produced the empty space put the trades out of work.
+    //
+    // It is a LEVEL, not a trend. When the cranes stop those jobs are gone;
+    // they do not keep going away every month afterwards, and they come back
+    // when the cranes do. So it multiplies the index rather than drifting it.
+    //
+    // Sized on the real thing: construction runs about 5% of employment in a
+    // city of this kind, and it is the share that halves in a bust. At the
+    // reference pipeline the term is exactly 1.0, so nothing about the
+    // existing calibration moves; a full stop costs 4.8% of the city's jobs,
+    // which is the order of what 2008-2011 actually did to it.
+    let pipeSf = 0, stockSf = 0;
+    for (const k of BUILT_CLASSES) {
+      pipeSf += e.pipeline?.[k] ?? 0;
+      stockSf += e.stock?.[k] ?? 0;
+    }
+    const pipeShare = stockSf > 0 ? pipeSf / stockSf : REF_PIPE_SHARE;
+    const trades = clamp(CONSTRUCTION_JOB_SHARE * (pipeShare / REF_PIPE_SHARE), 0, 0.11);
+    e.jobs = Math.round(132_000 * e.employIdx * (1 - CONSTRUCTION_JOB_SHARE + trades));
     const jobGrowth = prevJobs > 0 ? e.jobs / prevJobs - 1 : 0;
 
     // UNEMPLOYMENT IS A LAGGING NUMBER and a sticky one. The labour force does

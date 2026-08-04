@@ -25,7 +25,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { GameState } from "./types";
 import { logBooks, monthLabel } from "./types";
-import { rng, rrange } from "./market";
+import { rng, rrange, NATURAL_VAC, RENT_BASE } from "./market";
 import { resolveRec, landValue, demandLinear } from "./value";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -47,9 +47,30 @@ const FAR_CEIL = 2.6;
  */
 export function tickZoning(s: GameState, parcels: ParcelTable, bbls: string[]) {
   if (!s.zoneAdj) s.zoneAdj = {};
-  // A rezoning is a multi-year political process. Roughly one district moves
-  // every four or five years across the whole town.
-  if (rng(s) > 0.019) return;
+  // A SHORTAGE IS A POLITICS, and nothing here could see one.
+  //
+  // This read how much of a district's envelope was used and a STATIC
+  // locational score, and nothing else — so a town at 3.7% vacancy with rents
+  // tripling rezoned at exactly the rate of a town drowning in empty space,
+  // and in the same direction. That is not how a planning board works. Scarcity
+  // is the thing that puts people in the room: rents that have outrun what the
+  // city earns are the argument for more envelope, they are why the argument
+  // gets made more often, and a glut is why it stops being made at all.
+  //
+  // This is the supply side of the income anchor. With no wire from the price
+  // of space back to permission to build more of it, a market that got tight
+  // stayed tight for fifty years, and rent took the whole adjustment forever —
+  // which is exactly what `sim:accept` F was measuring.
+  const ez = s.econ;
+  const tight = NATURAL_VAC.office - (ez.cityVac?.office ?? NATURAL_VAC.office);   // + when short
+  const rentPress = clamp(
+    (ez.rentIdx.office / RENT_BASE.office) / Math.max(0.35, ez.wageIdx ?? 1) - 1, -0.5, 1.5);
+  const scarcity = clamp(tight * 2.2 + rentPress * 0.30, -0.30, 0.45);
+  // A rezoning is a multi-year political process — roughly one district every
+  // four or five years across the whole town, and MORE OFTEN when the town
+  // cannot house what wants to be in it. The draw happens either way, so the
+  // RNG stream is untouched and every paired run in the audits still lines up.
+  if (rng(s) > 0.019 * clamp(1 + scarcity * 2.4, 0.45, 2.4)) return;
 
   // gather districts and how they are doing
   const byDist = new Map<string, { built: number; envelope: number; demand: number; n: number }>();
@@ -84,7 +105,7 @@ export function tickZoning(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // read `usedUp` straight and biased hard the other way, because a third of
   // every district is vacant lots and the ratio is structurally low: nine
   // districts were downzoned for every three upzoned across three centuries.
-  const up = clamp(0.42 + usedUp * 0.7 + (demand - 50) / 120, 0.12, 0.95);
+  const up = clamp(0.42 + usedUp * 0.7 + (demand - 50) / 120 + scarcity, 0.12, 0.97);
   const isUp = rng(s) < up;
   const step = isUp ? rrange(s, 1.12, 1.45) : rrange(s, 0.86, 0.96);
   const next = clamp(cur * step, FAR_FLOOR, FAR_CEIL);

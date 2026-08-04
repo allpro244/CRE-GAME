@@ -47,9 +47,13 @@ function run(botName, seed) {
   const B = BOTS[botName];
   let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
   for (let m = 0; m < HORIZON; m++) {
+    // The book as it stood before the tick, so the month-over-month checks —
+    // the levy waterfall above all — measure the engine's own month and not
+    // the bot's decisions on top of it.
+    const before = g;
     g = E.advanceQuarter(g, parcels, bbls, adjacency);
     checks++;
-    for (const v of E.checkInvariants(g, parcels)) record(botName, seed, g.month, v);
+    for (const v of E.checkInvariants(g, parcels, before)) record(botName, seed, g.month, v);
     if (g.gameOver) break;
 
     for (const loi of [...g.lois]) {

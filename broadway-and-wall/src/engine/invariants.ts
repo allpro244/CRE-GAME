@@ -29,6 +29,7 @@ import { leasableUses, COMMERCIAL_SUITE_MIN, useVacantSf } from "./leasing";
 import { mixOf, useSf } from "./mix";
 import { MAX_FLOORS_BY_USE } from "./dev";
 import { SECTORS } from "./market";
+import { saleTaxQuote } from "./actions";
 
 export interface Violation {
   code: string;
@@ -42,7 +43,7 @@ const fin = (v: unknown): v is number => typeof v === "number" && Number.isFinit
  * Check one state. Returns every violation found, so a broken month reports
  * its whole story rather than the first symptom.
  */
-export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[] {
+export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameState): Violation[] {
   const v: Violation[] = [];
   const bad = (code: string, where: string, detail: string) => v.push({ code, where, detail });
 
@@ -480,6 +481,58 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
     if (w.decideM > s.month + 180) bad("workout", at, `decision date is month ${w.decideM}, ${w.decideM - s.month} months away`);
   }
 
+  // --------------------------------------------------- a deed taken by force
+  //
+  // WHAT A LEVY HANDS BACK, AND WHAT IT DOES NOT.
+  //
+  // The general creditors take the most valuable thing you own and sell it,
+  // and the money used to arrive as if a buyer had walked in off the street:
+  // the whole gross, no commission, no stamps, no legal, no tax on the gain,
+  // and the lien netted but nothing else. Measured on a free-and-clear
+  // $15.50M building with the insolvency clock at twelve months, the account
+  // went from -$5.00M to +$8.03M in one tick — 84.1% of appraisal in cash for
+  // a deed that had just been carried off. It was the cheapest exit in the
+  // game and it was the one nobody chose, which is the wrong way round.
+  //
+  // So: in a month a deed leaves the book by levy, the account cannot have
+  // risen by more than that deed could possibly have released — its price
+  // less the friction of any sale and less the lien that is paid before the
+  // borrower is — plus the rent that arrives in the month the bailiff does
+  // and anything the month borrowed. A foreclosure is deliberately not in
+  // scope: it has a file behind it and it settles on the steps in
+  // engine/auction.ts, on a docket this check has no way to read.
+  if (prev) {
+    const levied = s.exits.filter((e) => e.forced && e.soldM === s.month && !prev.workouts?.[e.bbl] && prev.holdings[e.bbl]);
+    if (levied.length) {
+      let released = 0;
+      for (const e of levied) {
+        const h = prev.holdings[e.bbl]!;
+        released += Math.max(0, saleTaxQuote(h, e.price).net - (h.loan?.balance ?? 0));
+      }
+      // Rent still arrives in the month the bailiff does — gross, because an
+      // over-estimate of the month's income is the safe direction here.
+      let income = 0;
+      for (const h of Object.values(prev.holdings)) {
+        const rec = resolveRec(parcels, prev, h.bbl);
+        if (rec) income += Math.max(0, holdingNOIYr(rec, prev.econ, h, prev.month)) / 12;
+      }
+      const owedNow = Object.values(s.holdings).reduce((a, h) => a + (h.loan?.balance ?? 0), 0)
+        + Object.values(s.developments ?? {}).reduce((a, d) => a + d.loanBalance, 0);
+      const owedWas = Object.values(prev.holdings).reduce((a, h) => a + (h.loan?.balance ?? 0), 0)
+        + Object.values(prev.developments ?? {}).reduce((a, d) => a + d.loanBalance, 0);
+      const borrowed = Math.max(0, owedNow - owedWas)
+        + Math.max(0, (s.loc?.drawnTotal ?? 0) - (prev.loc?.drawnTotal ?? 0));
+      const rose = s.cash - prev.cash;
+      const ceiling = released + income + borrowed;
+      const slack = Math.max(50_000, 0.004 * levied.reduce((a, e) => a + e.price, 0));
+      if (rose > ceiling + slack) {
+        bad("duress", `month ${s.month}`,
+          `${levied.map((e) => e.address).join(", ")} was levied and the account rose `
+          + `${(rose / 1e6).toFixed(2)}M against ${(ceiling / 1e6).toFixed(2)}M of equity, rent and borrowings`);
+      }
+    }
+  }
+
   // ------------------------------------------------------------------- paper
   // A note is money and it can turn into a deed, which means every one of these
   // is a way to invent a building or a dollar out of nothing.
@@ -532,8 +585,8 @@ export function checkInvariants(s: GameState, parcels: ParcelTable): Violation[]
 }
 
 /** Throwing form, for a test that should stop at the first broken month. */
-export function assertInvariants(s: GameState, parcels: ParcelTable): void {
-  const v = checkInvariants(s, parcels);
+export function assertInvariants(s: GameState, parcels: ParcelTable, prev?: GameState): void {
+  const v = checkInvariants(s, parcels, prev);
   if (v.length) {
     throw new Error(`month ${s.month}: ${v.length} invariant violation(s)\n` + v.map((x) => `  [${x.code}] ${x.where}: ${x.detail}`).join("\n"));
   }

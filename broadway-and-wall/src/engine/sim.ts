@@ -8,15 +8,15 @@ import { assetValue, holdingNOIYr, holdingValue, monthlyNOI, netWorth, resolveRe
 import { recordComp } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLeasing, depositsOn } from "./leasing";
-import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases } from "./actions";
+import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote } from "./actions";
 import { tickTalks } from "./acquire";
-import { tickLoan } from "./debt";
+import { tickLoan, prepayPenalty, productById } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
 import { tickLoc } from "./credit";
 import { tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing } from "./dev";
 import { tickDemand } from "./demand";
 import { initRivals, tickRivals, gradeOf } from "./rivals";
-import { initLenders, tickLenders } from "./lenders";
+import { initLenders, tickLenders, chargeLenderLoss } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
 import { tickWorkouts } from "./workout";
@@ -435,9 +435,42 @@ export function advanceQuarter(
         // Creditors liquidating a distressed borrower get the distressed bid,
         // not a polite 15% off — and every seizure goes on the sponsor's record.
         const gross = Math.round(pickV * Math.min(0.85, distressPrice(s)));
-        const proceeds = Math.max(0, gross - (pick.loan?.balance ?? 0));
+        // A SEIZURE IS STILL A SALE, AND A SALE HAS A WATERFALL.
+        //
+        // The whole gross used to land in the account. Measured on a
+        // free-and-clear $15.50M building with the clock at twelve months, that
+        // moved the balance from -$5.00M to +$8.03M in a single tick — 84.1% of
+        // appraisal, in cash, for a deed the creditors had just carried off,
+        // with no commission, no transfer stamps, no legal and no tax on the
+        // gain. It made the exit you did not choose cheaper than the one you
+        // did, and on an unlevered building it read to the player exactly as it
+        // was: the game taking the property and paying appraisal for it.
+        //
+        // The order is the real one. The referee, the broker and the county are
+        // paid off the top, the mortgage is a lien and takes what is left
+        // before anybody else, and only the surplus after all of that reaches
+        // the borrower — which on anything levered is nothing. What the sale
+        // does not cover does not evaporate either: it is the lender's loss on
+        // non-recourse paper and yours on paper you signed for.
+        const { net, tax } = saleTaxQuote(pick, gross);
+        const lien = pick.loan?.balance ?? 0;
+        const breakFee = pick.loan ? prepayPenalty(pick.loan, s.month) : 0;
+        const proceeds = Math.max(0, net - lien - breakFee);
+        const shortfall = Math.max(0, lien + breakFee - net);
         s.cash += proceeds;
         logBooks(s, "sold", proceeds);
+        // A forced disposition is a taxable one. The bill on a gain you never
+        // saw in cash is the thing that finishes a distressed sponsor, and it
+        // is the reason handing back the keys beats being levied.
+        if (tax > 0) {
+          s.cash -= tax;
+          s.taxesPaid = (s.taxesPaid ?? 0) + tax;
+          logBooks(s, "taxes", tax);
+        }
+        if (shortfall > 0 && pick.loan) {
+          if (pick.loan.recourse) { s.cash -= shortfall; logBooks(s, "debtSvc", shortfall); }
+          else chargeLenderLoss(s, pick.loan.holder ?? productById(pick.loan.product).lender, shortfall);
+        }
         recordComp(s, rec, gross, "a distressed buyer", firmShort(s), true, pick.condition);
         s.exits.push({ bbl: pick.bbl, address: rec.address, boughtM: pick.boughtM, soldM: s.month, price: gross, basis: pick.costBasis, gain: gross - pick.costBasis, forced: true });
         if (s.groundLeases?.[pick.bbl]) delete s.groundLeases[pick.bbl];
@@ -446,11 +479,17 @@ export function advanceQuarter(
         s.lastTradeM[pick.bbl] = s.month;
         delete s.holdings[pick.bbl];
         if (s.workouts?.[pick.bbl]) delete s.workouts[pick.bbl];
-        markSponsor(s, "seized", rec.address, Math.max(0, (pick.loan?.balance ?? 0) - gross));
+        markSponsor(s, shortfall > 0 && pick.loan?.recourse ? "deficiency" : "seized", rec.address, shortfall);
         s.lois = s.lois.filter((l) => l.bbl !== pick.bbl);
         s.news.unshift({
           q: s.month, kind: "warn",
-          text: `The creditors took ${rec.address} — sold at $${(gross / 1e6).toFixed(2)}M, ${(100 * (1 - gross / Math.max(1, pickV))).toFixed(0)}% under the mark. ${s.cash < 0 ? "They're not done." : "The balance is square, barely."}`,
+          text: `The creditors took ${rec.address} — sold at $${(gross / 1e6).toFixed(2)}M, ${(100 * (1 - gross / Math.max(1, pickV))).toFixed(0)}% under the mark. `
+            + (lien > 0
+              ? shortfall > 0
+                ? `It did not cover the $${(lien / 1e6).toFixed(2)}M mortgage${pick.loan?.recourse ? `, and you signed for the $${(shortfall / 1e6).toFixed(2)}M shortfall` : `, and the paper was non-recourse`}. `
+                : `The mortgage was paid off the top and $${(proceeds / 1e6).toFixed(2)}M of surplus reached you. `
+              : `$${(proceeds / 1e6).toFixed(2)}M reached you after the costs of the sale${tax > 0 ? ` and $${(tax / 1e6).toFixed(2)}M of tax on the gain` : ``}. `)
+            + `${s.cash < 0 ? "They're not done." : "The balance is square, barely."}`,
         });
         s.insolventMs = 8; // still on the hook until cash goes positive
       } else {

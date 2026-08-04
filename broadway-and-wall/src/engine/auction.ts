@@ -37,6 +37,7 @@ import { recordComp } from "./comps";
 import { firmShort } from "./firm";
 import { genRentRoll, depositsOn } from "./leasing";
 import { bumpLenderRel } from "./debt";
+import { saleTaxQuote } from "./actions";
 import { takeDeed, FILE_COST } from "./notes";
 
 const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
@@ -391,8 +392,14 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       // the lender credit-bids `protect`; the room may or may not clear it
       const gross = room > protect ? room : Math.round(protect);
       const toREO = room <= protect;
-      const shortfall = Math.max(0, bal - gross);
-      const surplus = Math.max(0, gross - bal);
+      // THE REFEREE IS PAID BEFORE ANYBODY ELSE IS. A sale on the courthouse
+      // steps carries the same commission, stamps and legal as a sale across a
+      // table — more, if anything — and they come off the hammer price before
+      // the mortgage sees a cent. The surplus the law hands the borrower is
+      // what is left after all of it, which is why a surplus is so rare.
+      const { net } = saleTaxQuote(h, gross);
+      const shortfall = Math.max(0, bal - net);
+      const surplus = Math.max(0, net - bal);
       if (surplus > 0) { s.cash += surplus; logBooks(s, "sold", surplus); }
       if (shortfall > 0) {
         if (recourse) { s.cash -= shortfall; logBooks(s, "debtSvc", shortfall); }

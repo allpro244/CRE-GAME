@@ -797,6 +797,12 @@ function recordHistory(e: Econ, q: number, abs?: Record<string, number>, comp?: 
       office: +e.rentIdx.office.toFixed(2), retail: +e.rentIdx.retail.toFixed(2),
       multifamily: +e.rentIdx.multifamily.toFixed(2), industrial: +e.rentIdx.industrial.toFixed(2),
     },
+    // what deals actually strike — asking net of the concession dial. The gap
+    // between the two lines IS the state of the market (ECONOMY.md §2c).
+    effRent: e.effRentIdx ? {
+      office: +e.effRentIdx.office.toFixed(2), retail: +e.effRentIdx.retail.toFixed(2),
+      multifamily: +e.effRentIdx.multifamily.toFixed(2), industrial: +e.effRentIdx.industrial.toFixed(2),
+    } : undefined,
     cap: {
       office: +e.capRate.office.toFixed(2), retail: +e.capRate.retail.toFixed(2),
       multifamily: +e.capRate.multifamily.toFixed(2), industrial: +e.capRate.industrial.toFixed(2),

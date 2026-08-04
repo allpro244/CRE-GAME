@@ -649,6 +649,9 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         <Row k="Demand" v={String(Math.round(rec.demandScore)) + " / 100"} />
       </div>
 
+      {/* the builder's read on vacant dirt, owned or not — see ResidualRead */}
+      {rec.class === "land" && rec.bldgArea === 0 && !dev && <ResidualRead bbl={selectedBBL} />}
+
       {/* SOMEBODY ELSE'S CRANE. A job on this site that is not yours — named or
           anonymous — is the most important thing on the parcel, because it is
           the space that will be competing with yours the year it opens. */}
@@ -2448,6 +2451,56 @@ function LeasingDesk({ bbl }: { bbl: string }) {
   );
 }
 
+/**
+ * WHAT THE DIRT IS ACTUALLY WORTH (ECONOMY.md: land value is a residual).
+ * The index prices the map; this prices THIS lot the way a builder would —
+ * best scheme the envelope allows, today's rents against today's costs, and
+ * the dirt is what is left over. When nothing is left over, that is said
+ * too, because "nothing pencils" is the single most load-bearing fact about
+ * a land market. Shown on any vacant lot, owned or not — the read matters
+ * most BEFORE the money moves.
+ */
+function ResidualRead({ bbl }: { bbl: string }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const rec = resolveRec(parcels, game, bbl);
+  if (!rec || !rec.lotArea) return null;
+  const farMax = farMaxFor(rec);
+  const CAND: { u: DevUse; label: string }[] = [
+    { u: "office", label: "office" }, { u: "multifamily", label: "flats" },
+    { u: "mixed", label: "mixed use" }, { u: "retail", label: "shops" },
+    { u: "industrial", label: "industrial" },
+  ];
+  // A builder does not hand the whole surplus to the land — the job has to
+  // pay them too. The trade's rule of thumb is a required profit of ~18% of
+  // gross development value; what is left AFTER that margin is what a bidder
+  // can rationally pay for the dirt. Omit it and the line reads as free money.
+  const PROFIT = 0.18;
+  let best: { label: string; valPsf: number; costPsf: number; resid: number } | null = null;
+  for (const c of CAND) {
+    const fl = Math.max(2, Math.round(farMax / 0.6));
+    const p = planDevelopment(game, parcels, bbl, c.u, fl, 0.6);
+    if (!p || p.sf < 2000) continue;
+    const noi = (p.yieldOnCost / 100) * p.basisTotal;
+    const val = noi / Math.max(0.02, p.exitCap / 100);
+    const buildAllIn = p.costTotal - p.landBasis;
+    const resid = val * (1 - PROFIT) - buildAllIn;
+    const cand = { label: c.label, valPsf: val / p.sf, costPsf: buildAllIn / p.sf, resid };
+    if (!best || cand.resid > best.resid) best = cand;
+  }
+  if (!best) return null;
+  return best.resid > 0
+    ? <div className="grid">
+        <Row k="What pencils" v={`${best.label} — worth $${best.valPsf.toFixed(0)}/sf built against $${best.costPsf.toFixed(0)}/sf all-in to build`} strong />
+        <Row k="Residual to the dirt" v={`${usd(Math.round(best.resid))} · ${usd(Math.round(best.resid / Math.max(1, rec.lotArea)))}/sf of land, after the builder's margin`} />
+      </div>
+    : <div className="hint">
+        Nothing pencils here — the best scheme ({best.label}) is worth ${best.valPsf.toFixed(0)}/sf finished
+        against ${best.costPsf.toFixed(0)}/sf to build it, and a builder has to be paid to take the risk.
+        At today's rents and costs this dirt only has option value: you are buying the next cycle, not this one.
+      </div>;
+}
+
 function LandDesk({ bbl }: { bbl: string }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
@@ -2604,6 +2657,7 @@ function LandDesk({ bbl }: { bbl: string }) {
     <div className="deal">
       <div className="deal-head">The land desk</div>
       {planning}
+      {vacant && <ResidualRead bbl={bbl} />}
       {!vacant && adjacentMine.length > 0 && (
         <div className="hint">
           You own {adjacentMine.length} deed{adjacentMine.length === 1 ? "" : "s"} next to this one. A site has to be
@@ -3608,6 +3662,9 @@ function EconomyPage() {
   const tail = hist.slice(-240);
   const vacSeries = tail.map((h) => (h.vac?.[focus] ?? NATURAL_VAC[focus]) * 100);
   const rentSeries = tail.map((h) => h.rent?.[focus] ?? e.rentIdx[focus]);
+  // pre-v30 history has no effective series; fall back to asking so the two
+  // lines simply overlap until the concession machinery has lived a month
+  const effSeries = tail.map((h) => h.effRent?.[focus] ?? h.rent?.[focus] ?? e.rentIdx[focus]);
   const capSeries = tail.map((h) => h.cap?.[focus] ?? e.capRate[focus]);
   // the past twenty years of vacancy, then the next three of projection, on
   // one axis — the join is where the pipeline takes over from the record
@@ -3727,6 +3784,17 @@ function EconomyPage() {
           const d = ((e.rentIdx[focus] / RENT_BASE[focus]) - 1) * 100;
           return `$${e.rentIdx[focus].toFixed(2)}/sf · ${Math.abs(d).toFixed(0)}% ${d >= 0 ? "above" : "below"} its long-run base`;
         })()} />
+        {/* The concession dial, read out loud. Face rates are sticky by design
+            (ECONOMY.md §2c) — this row is where the market tells the truth
+            before asking admits it. */}
+        {(() => {
+          const c = e.concIdx?.[focus] ?? 0;
+          const off = c * 14;
+          return <Row k="Concessions"
+            v={c < 0.05 ? "none to speak of — space lets at the quoted rate"
+              : `deals striking ~${off.toFixed(0)}% under asking in free rent and work${c > 0.7 ? " — landlords are capitulating" : ""}`}
+            bad={c > 0.7} />;
+        })()}
       </div>
 
       <div className="chart-grid">
@@ -3764,14 +3832,19 @@ function EconomyPage() {
           </div>
         </div>
         <div className="chart-cell">
-          <div className="chart-title">Rent and cap rate</div>
-          <LineChart series={[{ label: "rent", color: COLOR[focus], pts: rentSeries }]} yFmt={(v) => `$${v.toFixed(0)}`} height={92}
+          <div className="chart-title">Asking rent, effective rent, and cap rate</div>
+          <LineChart series={[
+            { label: "asking", color: COLOR[focus], pts: rentSeries },
+            { label: "effective", color: "#7d8a96", pts: effSeries, dashed: true },
+          ]} yFmt={(v) => `$${v.toFixed(0)}`} height={92}
             xLabels={[`${2000 + Math.max(0, Math.floor((game.month - rentSeries.length) / 12))}`, `${2000 + Math.floor(game.month / 12)}`]} />
           <LineChart series={[{ label: "cap", color: "#8a5620", pts: capSeries, dashed: true }]} yFmt={pctFmt} height={92}
             xLabels={[`${2000 + Math.max(0, Math.floor((game.month - capSeries.length) / 12))}`, `${2000 + Math.floor(game.month / 12)}`]} />
           <div className="chart-note">
-            Rent is what the space earns; the cap rate is what the market will pay for that earning. They do not
-            move together, and the gap between them is most of what makes or loses money here.
+            Asking is the face rate landlords quote; effective is what deals actually strike after free rent and
+            work — the gap between the two lines is the concessions market saying what asking will not admit.
+            Cap rate below: what the market pays for the earning. None of the three move together, and the gaps
+            are most of what makes or loses money here.
           </div>
         </div>
       </div>

@@ -563,6 +563,8 @@ export interface EconHistoryPoint {
   employIdx?: number;
   vac?: Record<BuiltClass, number>;
   rent?: Record<BuiltClass, number>;
+  /** effective rent — asking net of concessions; the gap to `rent` is the market */
+  effRent?: Record<BuiltClass, number>;
   cap?: Record<BuiltClass, number>;
   abs?: Record<BuiltClass, number>;    // net absorption that month, sf
   comp?: Record<BuiltClass, number>;   // completions that month, sf

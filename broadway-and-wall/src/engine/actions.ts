@@ -170,7 +170,7 @@ export function executePurchase(
   });
   if (halfBuilt) takeoverDevelopment(next, parcels, bbl, halfBuilt);
   recordComp(next, rec, price, firmShort(s), ownerOf(s, bbl)?.name ?? (offMarket ? "a private owner" : "a listed seller"),
-    s.listings.find((l) => l.bbl === bbl)?.distress, holding.condition);
+    s.listings.find((l) => l.bbl === bbl)?.distress, holding.condition, offMarket);
   return { s: next };
 }
 

@@ -32,6 +32,14 @@ export interface Comp {
   buyer: string;
   seller: string;
   distress?: boolean;
+  /**
+   * NEVER EXPOSED TO THE MARKET. A deed is a deed and this one is real, but
+   * the price was never tested — no marketing, no second bidder, no evidence
+   * anybody else would have paid it. An appraiser takes an off-market print
+   * and weights it down for exactly that reason; they do not throw it away,
+   * because it is still somebody's money. See `tickLandComps`.
+   */
+  offMarket?: boolean;
 }
 
 const MAX_COMPS = 240;
@@ -44,6 +52,7 @@ const MAX_COMPS = 240;
 export function recordComp(
   s: GameState, rec: ParcelRecord, price: number,
   buyer: string, seller: string, distress?: boolean, condition?: Condition,
+  offMarket?: boolean,
 ) {
   if (!rec || price <= 0) return;
   if (!s.comps) s.comps = [];
@@ -61,6 +70,7 @@ export function recordComp(
     capRate: built && price > 0 ? +((noi / price) * 100).toFixed(2) : 0,
     buyer, seller,
     distress: distress || undefined,
+    offMarket: offMarket || undefined,
   });
   if (s.comps.length > MAX_COMPS) s.comps.splice(0, s.comps.length - MAX_COMPS);
 }
@@ -212,7 +222,39 @@ export function tickLandComps(s: GameState, parcels: Record<string, ParcelRecord
     if (!(appraised > 0) || !(c.psf > 0)) continue;
     const d = rec.district ?? "—";
     if (!byDist.has(d)) byDist.set(d, []);
-    byDist.get(d)!.push(c.psf / appraised);
+    const ratio = c.psf / appraised;
+    // AN OFF-MARKET PRINT IS EVIDENCE, NOT A CLEARING PRICE — and it is worth
+    // asking which direction it points.
+    //
+    // A marketed sale is the market's answer: exposed, competed, and if it
+    // cleared at that number then that is what the number is. A quiet deal
+    // between two people is a real deed for real money and it is NOT the same
+    // evidence, because nothing tested it — no second bidder, no proof anybody
+    // else would have gone there. Appraisal practice screens for exactly this
+    // and discounts what it cannot verify rather than discarding it.
+    //
+    // The asymmetry is the interesting part, and it is the reason to model
+    // this at all rather than just weight it down. Somebody who pays OVER the
+    // appraisal with no competition in the room wanted that specific lot, and
+    // in this business there is usually one reason — they are assembling, and
+    // the piece they still need is worth more to them than to anybody else.
+    // That leaks. It is the whole holdout dynamic: as a buyer works down a
+    // block, the neighbours read the prints and the last parcel is the dearest
+    // one. So a premium paid off-market carries most of its weight.
+    //
+    // A quiet sale UNDER the appraisal says much less. Sellers go off-market
+    // for speed, for privacy, to avoid a broker, to settle an estate — the
+    // discount is the price of not being marketed, and reading it as the
+    // market repricing downward would let anybody mark a district down by
+    // doing a favour for a friend.
+    const weight = !c.offMarket ? 1 : ratio >= 1 ? 0.75 : 0.35;
+    const g = byDist.get(d)!;
+    // Weighted by repetition, which keeps the median honest without needing a
+    // weighted-median routine: a print counted twice is a print that speaks
+    // twice, and a quarter-weight one only sometimes gets a vote at all.
+    g.push(ratio);
+    if (weight >= 0.75) g.push(ratio);
+    if (weight >= 1) g.push(ratio, ratio);
   }
   if (!byDist.size) return;
 

@@ -101,8 +101,33 @@ The harnesses are the enforcement, and their job is to be adversarial:
 - `pnpm stress` asks whether the world exists without the player, whether the
   player exists to the world, whether there is a dominant strategy, whether
   there is a money pump, and whether it survives its own bounds.
+- `pnpm conserve` reconciles cash against the ledger every month for fifty
+  years and fails on a single unexplained dollar. Run it after ANY change that
+  moves money — it is the cheapest test in the repo and the only one that can
+  see a payment nobody booked.
 - `pnpm quality`, `pnpm rates`, `pnpm devyield`, `pnpm playdev` measure single
   channels end to end.
+
+## Money moves through the ledger or it does not move
+
+Every write to `s.cash` needs a matching `logBooks` entry, and the two
+balance-sheet movements that are cash without being income or expense — the
+revolver and tenant deposits — must show up in `s.loc.balance` or in a
+holding's `tenants[].deposit`. `pnpm conserve` asserts exactly that identity:
+
+    Dcash == (noi + sold + interest)
+           - (debtSvc + leasing + capex + dev + taxes + bought + ga)
+           + Dloc.balance + Ddeposits
+
+The sign of a residual tells you which kind of fault you have. Money
+DISAPPEARING is a payment nobody booked. Money APPEARING is a liability
+released without recording the gain — a forfeited deposit, a written-off
+obligation — where no cash moves at all but net worth improves. Both existed
+in this engine until the reconciliation was written, and neither was visible
+from anywhere else.
+
+A NaN once ate the player's entire bankroll in silence because nothing in the
+model had the job of noticing. This is that job.
 
 **A test that cannot fail is itself a fake.** Three tests in this repo were
 measuring `g.comps.length`, which is capped at MAX_COMPS, so they reported the

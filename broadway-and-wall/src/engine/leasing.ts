@@ -863,6 +863,20 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // paid twice, and the news reported the phantom number as the deposit.
       const kept = Math.round(t.deposit ?? 0);
       h.tenants.splice(i, 1);
+      // ...AND THE FORFEITURE IS INCOME, even though no cash moves.
+      //
+      // The correction above stopped the double-credit and left the books
+      // silent. Releasing the liability IS the gain: the money has been in
+      // your account since signing, and the entry that belongs here is against
+      // the deposit you no longer owe, not against the bank. Without it a
+      // forfeited deposit was a real improvement in net worth that the Books
+      // page could not account for.
+      //
+      // Found by reconciling cash against the ledger every month for fifty
+      // years — this was the residue left after the balloon cheque was fixed,
+      // and it shows up as money APPEARING, which is the tell for a liability
+      // being released rather than an asset arriving.
+      if (kept > 0) logBooks(s, "noi", kept);
       const down = Math.max(2, Math.round((rec.class === "office" ? 6 : 4) * rrange(s, 0.8, 1.5)));
       h.makeReady = [...(h.makeReady ?? []), { sf: t.sf, readyM: q + down, use: t.use }];
       // TENURE IS THE STORY. "A tenant failed" is a statistic; "the firm that

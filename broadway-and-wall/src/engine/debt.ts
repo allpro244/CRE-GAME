@@ -561,6 +561,15 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
       const shortfall = loan.balance + fee - qd.principal;
       if (s.cash >= shortfall) {
         s.cash -= shortfall;
+        // AND IT GOES ON THE BOOKS. The branch above books its fee; this one
+        // took the money and said nothing, so the largest single cheque a
+        // levered owner ever writes — the gap at a balloon, when the market
+        // will not refinance what it lent you — was invisible on the Books
+        // page. Cash simply dropped. Found by reconciling cash against the
+        // ledger month by month over fifty years: three of the four
+        // unexplained movements in the sample were this line, matching the
+        // news item to the penny, and it cost one seed $1.17M of silence.
+        logBooks(s, "debtSvc", shortfall);
         h.loan = qd.principal > 100_000 ? originate(s, product, value, noi, 1, undefined, rec.class) : null;
         s.news.unshift({
           q, kind: "warn",

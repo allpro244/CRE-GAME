@@ -448,6 +448,63 @@ compounds directly into the price of dirt, so wiring comparable sales into land
 value on top of it would be building a new mechanism on a broken input. Fix the
 anchor first.
 
+# LAND LEARNED FROM TRADES — and the first cut compounded
+
+The wire is right and the first version of it was circular. Both halves are
+worth keeping written down, because the second half is the more useful lesson.
+
+## The circularity
+
+A land ask in this engine IS the appraisal times a denial factor —
+`refreshListings` prices off `assetValue`, and for dirt `assetValue` IS
+`landValue` — and dirt trades at the ask. So comparing a print to
+`landPsfNow` produced a ratio pinned above one BY CONSTRUCTION, at whatever
+the seller's denial band happened to be. Every quarter the wire read that
+premium as "the market pays over appraisal" and marked the city up again.
+Compounding, forever, on the most fundamental price in the game.
+
+It did not look like a bug in test B, which went from -6.6% to +33.5% and read
+as a triumph. It looked like a bug two tests over:
+
+```
+strategies ending in the black      5 of 8  ->  3 of 8
+a competent operator survives       ...     ->  1 world in 4   (34 BROKEN)
+all-cash                            $47M    ->  -$8.9M, 2 wipeouts
+```
+
+Land was inflating under everybody and the tax roll was chasing it.
+
+**The fix is to measure the district against the REST OF TOWN**, in the same
+window, under the same denial band. That difference is real information about
+location — it is what a comps sheet actually tells an appraiser — and it cannot
+drift, because the citywide median is the reference. If every district clears
+4% over appraisal then no district is hot and nothing moves. B still reads
++24.1%, and the tournament came back better than it has ever been: **7 of 8
+strategies in the black**, all-cash at $47.1M with **zero wipeouts** and the
+lowest drawdown of any strategy, 34 back to WIRED at 75% survival.
+
+## And it had been propping up sim:accept F and H
+
+This is the part to keep. With the compounding version, `sim:accept` read 4 of
+4. With the correct version it reads 2 of 4 — F and H both fail again.
+
+That is not a regression. Inflating land raised `assetValue`, which raised the
+value-to-replacement ratio the city reads before it builds, which produced
+**more supply than the model would otherwise have made** — and that extra
+supply was holding rents down and letting the glut clear. F and H were passing
+on the back of a bug.
+
+What the bug was propping up is the thing that has been named twice in this
+document and not yet fixed: **supply cannot answer price**. `cityInfillCap`
+caps infill at the block's existing datum plus a step that grows only with the
+town's age — so a district at 3.7% vacancy with rents tripling is allowed
+exactly as much height as one that is half empty. Zoning answers scarcity now;
+the envelope on any individual site still does not.
+
+Until that is fixed, F and H are the honest reading of a city that cannot build
+its way out of a shortage, and the 4-of-4 that preceded them was a number
+standing on a broken input. Left failing.
+
 # THE SPACE-TO-LABOUR WIRE — built, then recalibrated, and one thing left open
 
 The wire is in: construction employment, a non-saturating return wire from the

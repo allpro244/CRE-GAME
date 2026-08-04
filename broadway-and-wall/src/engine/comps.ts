@@ -258,6 +258,33 @@ export function tickLandComps(s: GameState, parcels: Record<string, ParcelRecord
   }
   if (!byDist.size) return;
 
+  // AGAINST THE REST OF TOWN, NOT AGAINST THE APPRAISAL.
+  //
+  // The first cut of this compared each print to `landPsfNow` and marked the
+  // district toward it. That is circular and it compounds. A land ask in this
+  // engine IS the appraisal times a denial factor — refreshListings prices off
+  // assetValue, and for dirt assetValue IS landValue — and dirt trades at the
+  // ask. So the ratio was pinned above one BY CONSTRUCTION, at whatever the
+  // seller's denial band happened to be, and every quarter the wire read that
+  // premium as "the market pays over appraisal" and marked the whole city up
+  // again. Compounding. Measured at the previous commit: only three of eight
+  // strategies ended in the black, a competent operator survived one world in
+  // four, and the tournament went BROKEN — because land was inflating under
+  // everybody and the tax roll was chasing it.
+  //
+  // The signal a submarket mark should carry is RELATIVE: is this district
+  // clearing stronger than the rest of the town, in the same window, under the
+  // same denial band? That difference is real information about location and
+  // it is what a comps sheet actually tells an appraiser. It also cannot drift,
+  // because the citywide median is the reference — if every district clears 4%
+  // over appraisal, no district is hot and nothing moves.
+  const all: number[] = [];
+  for (const rs of byDist.values()) all.push(...rs);
+  if (all.length < LAND_MIN_PRINTS * 2) return;
+  all.sort((a, b) => a - b);
+  const town = all[Math.floor((all.length - 1) / 2)];
+  if (!(town > 0)) return;
+
   const pull = new Map<string, number>();
   for (const [dist, ratios] of byDist) {
     if (ratios.length < LAND_MIN_PRINTS) continue;
@@ -265,7 +292,7 @@ export function tickLandComps(s: GameState, parcels: Record<string, ParcelRecord
     const median = ratios[Math.floor((ratios.length - 1) / 2)];
     // A single wild print — a distressed clear-out, an assemblage premium —
     // is real but it is not the market. Bound what one quarter can conclude.
-    if (Number.isFinite(median)) pull.set(dist, Math.max(0.6, Math.min(1.7, median)));
+    if (Number.isFinite(median)) pull.set(dist, Math.max(0.6, Math.min(1.7, median / town)));
   }
   if (!pull.size) return;
 

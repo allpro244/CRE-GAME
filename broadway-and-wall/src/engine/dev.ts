@@ -10,7 +10,7 @@ import type { BuiltClass, Contract, DevUse, Development, GameState, UseMix } fro
 import { BUILT_CLASSES } from "./types";
 import { logBooks, monthLabel, serviceSpec, planSpec } from "./types";
 import { demandNow } from "./demand";
-import { rng, rrange, NATURAL_VAC, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock } from "./market";
+import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock } from "./market";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, assetValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
@@ -1571,7 +1571,33 @@ export function cityInfillCap(
   const datum = blockDatumFloors(s, parcels, rec.block);
   // one increment above the datum; the increment itself grows as the town
   // matures and its comps deepen — 2 floors in year one, 6 by year 65
-  const step = 2 + Math.round(maturity * 4);
+  //
+  // ...AND CONTEXT YIELDS TO ECONOMICS. This was the whole story, and it meant
+  // the city answered a shortage with MORE buildings and never with TALLER
+  // ones: a district at 3.7% vacancy with rents tripling got exactly as much
+  // height over its cornice line as one sitting half empty. That is the reason
+  // supply could not answer price anywhere in this model — the crane count
+  // responds to demand through startOwed, the envelope on each crane did not,
+  // so the median city building stayed at 26,000 sf however desperate the
+  // market got. `sim:accept` F and H are both downstream of it.
+  //
+  // A cornice datum is real — most of any city is uniform height because
+  // building in context is cheaper, easier to finance and easier to permit.
+  // But it is a behavioural cap sitting well below the LEGAL one (farMaxFor
+  // times the district's zoneAdj, which the return below still enforces), and
+  // what breaks it is scarcity. When land is dear enough somebody builds the
+  // tower that ignores the street, and then the street has a new datum. That
+  // is how every skyline that exists got made.
+  //
+  // Neutral by construction: at natural vacancy with rent at parity to income
+  // the push is zero and nothing about the old calibration moves.
+  const ez = s.econ;
+  const tight = clamp(
+    (NATURAL_VAC.office - (ez.cityVac?.office ?? NATURAL_VAC.office)) / NATURAL_VAC.office, -1, 1);
+  const rentPress = clamp(
+    (ez.rentIdx.office / RENT_BASE.office) / Math.max(0.35, ez.wageIdx ?? 1) - 1, -0.5, 1.5);
+  const push = clamp(tight * 0.9 + rentPress * 0.5, -0.35, 1.6);
+  const step = Math.max(1, Math.round((2 + maturity * 4) * (1 + push)));
   return Math.max(2, Math.min(Math.max(1, datum) + step, physicalMaxFloors(rec.lotArea * 0.62)));
 }
 

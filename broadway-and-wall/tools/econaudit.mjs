@@ -553,15 +553,28 @@ const KNOBS = [
   ["econ.landIdx", (g) => { g.econ.landIdx *= 1.4; }],
   ["econ.cycleDev", (g) => { g.econ.cycleDev = -0.9; }],
   ["econ.tightEma", (g) => { g.econ.tightEma = 0.5; }],
-  ["econ.slackEma", (g) => { g.econ.slackEma = 0.08; }],
+  ["econ.slackEma (derived)", (g) => { g.econ.slackEma = 0.08; }, true],
   ["econ.inflExp", (g) => { g.econ.inflExp = 0.09; }],
   ["econ.rateEma", (g) => { g.econ.rateEma = (g.econ.rateEma ?? 5) * 2; }],
   ["econ.buildEma", (g) => { g.econ.buildEma = 0.05; }],
   ["econ.rentExp.office", (g) => { g.econ.rentExp.office *= 1.4; }],
   ["econ.sectorMom.office", (g) => { g.econ.sectorMom.office = -0.01; }],
   ["econ.concIdx.office", (g) => { g.econ.concIdx.office = 0.6; }],
-  ["econ.vacOverM.office", (g) => { g.econ.vacOverM.office = 24; }],
-  ["econ.supplyPress", (g) => { if (g.econ.supplyPress) for (const u of USES) g.econ.supplyPress[u] = 0.5; }],
+  // DERIVED, NOT STATE — and therefore not a knob at all.
+  //
+  // These three are recomputed from other state at the TOP of every tick,
+  // before anything reads them: slackEma from the stock-weighted vacancy gap,
+  // supplyPress from deliveries over stock, vacOverM from the vacancy gap.
+  // Perturbing them is overwritten before it can influence a single decision,
+  // which is why they came back at exactly 0.00% even when the perturbation
+  // was HELD for three years. That is not a dead wire, it is a value that
+  // cannot be poked, and calling it dead is a false accusation in a report
+  // whose entire worth is that its accusations are true. What actually needs
+  // testing is the input each is computed from, and each of those is tested
+  // elsewhere in this battery: vacancy in experiments 2 and 3, deliveries in
+  // 4 and 5. Marked so the sweep reports them honestly instead of loudly.
+  ["econ.vacOverM.office (derived)", (g) => { g.econ.vacOverM.office = 24; }, true],
+  ["econ.supplyPress (derived)", (g) => { if (g.econ.supplyPress) for (const u of USES) g.econ.supplyPress[u] = 0.5; }, true],
   ["econ.affordEff", (g) => { if (g.econ.affordEff) for (const u of USES) g.econ.affordEff[u] = 0.6; }],
   ["econ.pool", (g) => { if (g.econ.pool) for (const u of USES) g.econ.pool[u] *= 1.5; }],
   ["econ.nat.credibility", (g) => { if (g.econ.nat) g.econ.nat.credibility = 0.12; }],
@@ -579,13 +592,25 @@ const KNOBS = [
 if (wanted(11)) {
   const DEAD_SEEDS = MARKET_SEEDS.slice(0, 2);
   const results = [];
-  for (const [name, fn] of KNOBS) {
+  for (const [name, fn, derived] of KNOBS) {
     const ds = [];
     for (const ms of DEAD_SEEDS) {
       const c = control(ms);
+      // HELD FOR THREE YEARS, NOT POKED ONCE.
+      //
+      // Four fields came back "dead" in the first sweep and two of them —
+      // vacOverM and supplyPress — are recomputed unconditionally from other
+      // state on the very next tick (`supplyPress[k] = delivered / stk`), so a
+      // one-shot perturbation is erased before it can influence anything. That
+      // is not a dead knob, it is an untestable one, and reporting it as dead
+      // is a false failure in a report whose whole value is that its failures
+      // are real. Holding the perturbation asks the question that actually
+      // matters — does this value influence anything downstream while it is
+      // held? — and it is the right question for the EMAs too, whose one-shot
+      // perturbation decays away before the slow parts of the economy notice.
       const t = run(CITY_SEED, ms, {
         sampleEvery: 1,
-        inject: (g, p, m, b) => { if (m === INJECT_AT) fn(g, p, m, b); },
+        inject: (g, p, m, b) => { if (m >= INJECT_AT && m < INJECT_AT + 36) fn(g, p, m, b); },
       });
       // "did ANYTHING downstream move" — the widest net we can cast
       const probes = ["office rent", "office vacancy", "office starts", "land index",
@@ -606,13 +631,14 @@ if (wanted(11)) {
       ds.push({ best, bestName });
     }
     const m = med(ds.map((d) => Math.abs(d.best)));
-    results.push({ name, mag: m, via: ds[0].bestName, dead: m < 0.004 });
+    results.push({ name, mag: m, via: ds[0].bestName, derived: !!derived, dead: !derived && m < 0.004 });
     log(`   knob ${name.padEnd(24)} ${(m * 100).toFixed(2)}% via ${ds[0].bestName}${m < 0.004 ? "   <-- DEAD" : ""}`);
   }
   const dead = results.filter((r) => r.dead);
+  const derivedN = results.filter((r) => r.derived).length;
   push(11, "DEAD KNOB AUDIT", dead.length === 0 ? "WIRED" : dead.length < 4 ? "WEAK" : "BROKEN",
-    [`${KNOBS.length} knobs perturbed, ${dead.length} moved nothing measurable`,
-     ...results.map((r) => `${r.dead ? "DEAD  " : "live  "} ${r.name.padEnd(24)} peak downstream ${(r.mag * 100).toFixed(2)}% (via ${r.via})`)]);
+    [`${KNOBS.length} fields perturbed and held for 3 years · ${dead.length} moved nothing measurable · ${derivedN} are derived intra-tick and cannot be perturbed at all (their inputs are tested elsewhere)`,
+     ...results.map((r) => `${r.derived ? "deriv " : r.dead ? "DEAD  " : "live  "} ${r.name.padEnd(24)} peak downstream ${(r.mag * 100).toFixed(2)}% (via ${r.via})`)]);
   globalThis.__deadKnobs = results;
 }
 

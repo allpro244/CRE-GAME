@@ -202,7 +202,16 @@ const STRATS = {
   maxlev: { ltv: 0.80, buyWhen: () => true, want: (r) => r.class !== "land", maxPrice: 1.05, sellAt: null, build: false },
   valueadd: { ltv: 0.68, buyWhen: () => true, want: (r, g) => r.class !== "land" && E.initialCondition(r) !== "good", maxPrice: 0.92, sellAt: 96, build: false },
   landbank: { ltv: 0.35, buyWhen: () => true, want: (r) => r.class === "land", maxPrice: 1.0, sellAt: null, build: false },
-  merchant: { ltv: 0.72, buyWhen: () => true, want: (r) => r.class === "land", maxPrice: 1.0, sellAt: 60, build: true },
+  // A MERCHANT BUILDER BUYS DIRT WITH EQUITY AND LEVERS THE CONSTRUCTION, not
+  // the other way round. The first cut of this bought land at 72% LTV, which
+  // is a thing no lender writes and no builder asks for: raw land throws off
+  // no income, so the debt service eats the sponsor alive while the site sits
+  // there, and there is nothing left to fund the build with. It returned
+  // -$0.1M with four wipeouts in four seeds and I reported that as an engine
+  // blocker in the develop-lease-sell chain. It was the bot being stupid.
+  // Land in cash, then build, then sell once it is leased -- which is the
+  // actual business.
+  merchant: { ltv: 0, buyWhen: () => true, want: (r) => r.class === "land", maxPrice: 1.0, sellAt: 60, build: true },
   contrarian: { ltv: 0.60, buyWhen: (e) => e.phase === "recession" || (e.creditIdx ?? 1) < 0.8, want: (r) => r.class !== "land", maxPrice: 0.88, sellAt: null, build: false },
   industrial: { ltv: 0.62, buyWhen: () => true, want: (r) => r.class === "industrial", maxPrice: 1.0, sellAt: null, build: false },
 };
@@ -232,7 +241,16 @@ function playStrategy(name, ms) {
       if (!r.err) { g = r.s; sold++; }
     }
     // ---- buy
-    if (st.buyWhen(e) && m > 2) {
+    // ONE SITE AT A TIME for a builder. Accumulating dirt is a land banker's
+    // business, not a merchant's: seven vacant lots bought with the whole fund
+    // earn nothing, cannot be built on because the equity is already spent,
+    // and the property tax bleeds the account to zero. Which is exactly what
+    // happened -- 101% drawdown, four wipeouts in four seeds. A merchant buys
+    // a site, builds it, sells it, and buys the next one.
+    const busy = st.build
+      && (Object.keys(g.developments).length > 0
+        || Object.values(g.holdings).some((h) => (E.resolveRec(parcels, g, h.bbl)?.class) === "land"));
+    if (st.buyWhen(e) && m > 2 && !busy) {
       for (const li of [...g.listings].slice(0, 6)) {
         const rec = E.resolveRec(parcels, g, li.bbl);
         if (!rec || g.holdings[li.bbl]) continue;

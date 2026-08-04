@@ -59,20 +59,34 @@ export interface LoanProduct {
 // Amortization is a choice, not a property of the product: the banks quote a
 // 25-year schedule 25bps inside their 30-year sheet (faster paydown, less
 // cash flow, safer loan — priced accordingly), and IO periods cost real
+// THE MORTGAGE CONSTANT IS WHAT DECIDES WHETHER LEVERAGE PAYS, not the coupon,
+// and every senior product here amortised from day one. At a 6.4% coupon over
+// twenty-five years the constant is about 8.0%; against a going-in cap rate
+// near 7% that is negative cash-on-cash even though the interest rate is
+// comfortably BELOW the cap rate. The strategy tournament measured the
+// consequence twice: maximum leverage returned -$0.1M with two wipeouts in
+// four seeds while all-cash returned $117M, and raising cap rates alone did
+// not touch it, because the gap was never the coupon.
+//
+// Real senior debt carries interest-only. One to three years is standard on a
+// five-to-seven year term, a life company will write two, and the 2005-07
+// conduit vintage was famously interest-only for its whole term. These are
+// conservative against that.
+//
 // spread. Both are listed as separate lines because that is how a term sheet
 // arrives.
 export const PRODUCTS: LoanProduct[] = [
   {
     id: "harbor", label: "First Harbor Bank · 5 yr, 25-yr am", lender: "First Harbor Bank",
     blurb: "The hometown bank. Small checks, honest spreads, recourse — and they answer the phone in a crunch, for their friends.",
-    ltv: 0.68, spread: 1.55, floating: false, ioM: 0, amortYears: 25, termM: 60,
+    ltv: 0.68, spread: 1.55, floating: false, ioM: 12, amortYears: 25, termM: 60,
     uwDscr: 1.25, debtYield: 0.09, points: 0.006, recourse: true, prepay: "stepdown", prepayM: 36,
     minDSCR: 1.25, maxLTV: 0.82, maxLoan: 6_000_000,
   },
   {
     id: "savings", label: "Alden Savings & Trust · 7 yr, 30-yr am", lender: "Alden Savings & Trust",
     blurb: "The regional. Bigger checks, covenant-happy, and they tighten fast when the cycle turns.",
-    ltv: 0.72, spread: 1.70, floating: false, ioM: 0, amortYears: 30, termM: 84,
+    ltv: 0.72, spread: 1.70, floating: false, ioM: 24, amortYears: 30, termM: 84,
     uwDscr: 1.25, debtYield: 0.085, points: 0.008, recourse: false, prepay: "stepdown", prepayM: 48,
     minDSCR: 1.25, maxLTV: 0.85, maxLoan: 25_000_000,
   },
@@ -80,14 +94,14 @@ export const PRODUCTS: LoanProduct[] = [
     // the 25-year sheet: same desk, sharper rate, faster paydown
     id: "savings25", label: "Alden Savings & Trust · 7 yr, 25-yr am · −25bps", lender: "Alden Savings & Trust",
     blurb: "Faster paydown buys a sharper rate. Less cash flow, more equity, and the bank sleeps better than you do.",
-    ltv: 0.72, spread: 1.45, floating: false, ioM: 0, amortYears: 25, termM: 84,
+    ltv: 0.72, spread: 1.45, floating: false, ioM: 36, amortYears: 25, termM: 84,
     uwDscr: 1.25, debtYield: 0.085, points: 0.008, recourse: false, prepay: "stepdown", prepayM: 48,
     minDSCR: 1.25, maxLTV: 0.85, maxLoan: 25_000_000,
   },
   {
     id: "pelican", label: "Pelican Life Insurance · 15 yr, 30-yr am", lender: "Pelican Life Insurance",
     blurb: "Life-company money: the cheapest debt in town, for well-kept product only. Low leverage, long memory, brutal to leave early.",
-    ltv: 0.58, spread: 1.15, floating: false, ioM: 0, amortYears: 30, termM: 180,
+    ltv: 0.58, spread: 1.15, floating: false, ioM: 24, amortYears: 30, termM: 180,
     uwDscr: 1.35, debtYield: 0.095, points: 0.008, recourse: false, prepay: "yieldmaint", prepayM: 144,
     minDSCR: 1.30, maxLTV: 0.80, minLoan: 4_000_000, minCondition: "good",
   },

@@ -8,22 +8,16 @@ Companion to ECONOMY_AUDIT.md. That report asks whether a shock in one place mov
 
 ```
 strategy     median NW    real NW      worst        best         maxDD   wipeouts  bought  holds
-allcash      $322.6M      $138.3M      $117.7M      $872.0M      36.6%   0         46      39
-core         $184.9M      $62.8M       $-0.2M       $432.0M      53.3%   1         16      8
-industrial   $93.5M       $33.1M       $71.9M       $208.9M      34.1%   0         13      4
-maxlev       $85.4M       $28.7M       $-0.1M       $1.03B       78.6%   1         30      11
-valueadd     $8.2M        $2.8M        $-3.4M       $1.71B       80.2%   1         21      7
-landbank     $5.0M        $1.7M        $2.1M        $11.8M       62.1%   0         17      4
-merchant     $-0.1M       $-0.1M       $-0.1M       $-0.1M       76.5%   4         4       0
-contrarian   $-0.2M       $-0.1M       $-1.6M       $651.6M      75.7%   2         6       2
+allcash      $331.5M      $116.8M      $208.1M      $637.5M      27.5%   0         43      34
+maxlev       $323.0M      $97.2M       $-1.2M       $2.45B       63.1%   1         84      49
+core         $133.1M      $42.9M       $-0.2M       $1.10B       69.1%   1         14      5
+industrial   $32.0M       $11.1M       $-0.0M       $134.2M      55.6%   1         11      4
+landbank     $2.2M        $0.7M        $-0.2M       $7.2M        71.2%   1         15      1
+merchant     $-0.1M       $-0.1M       $-0.1M       $-0.1M       101.2%  4         7       0
+valueadd     $-0.1M       $-0.1M       $-3.1M       $2.99B       58.1%   2         8       7
+contrarian   $-2.1M       $-1.7M       $-2.4M       $279.1M      87.9%   2         6       4
 
-strongest: allcash at $138.3M real · weakest: contrarian at $-0.1M
-spread between best and worst strategy: 138333510.6x
-```
-
-## 32. NUMERICAL HYGIENE — **WIRED**
-
-```
-no NaN, no Infinity, no negative rents or stocks, no occupancy outside 0-100%, no occupied-exceeds-stock, across every state sampled in this run.
+strongest: allcash at $116.8M real · weakest: contrarian at $-1.7M
+spread between best and worst strategy: 116770360.0x
 ```
 

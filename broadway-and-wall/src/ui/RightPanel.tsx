@@ -106,6 +106,7 @@ export default function GamePanels() {
     : page === "economy" ? "The Economy"
     : page === "research" ? "Research"
     : page === "notes" ? "The Note Desk"
+    : page === "settings" ? "Settings"
     : "The Marketplace";
   return (
     <>
@@ -127,6 +128,7 @@ export default function GamePanels() {
             {page === "saves" && <SavesPage />}
             {page === "leasing" && <LeasingPage />}
             {page === "property" && <PropertyPage />}
+            {page === "settings" && <SettingsPage />}
           </div>
         </div>
       )}
@@ -154,6 +156,7 @@ function AuctionModal() {
   const parcels = useStore((s) => s.parcels);
   const focus = useStore((s) => s.focus);
   const auctionOpen = useStore((s) => s.auctionOpen);
+  const popupsOff = useStore((s) => s.popupsOff);
   const setAuctionOpen = useStore((s) => s.setAuctionOpen);
   const { bidAuction } = useStore.getState();
   const [seenM, setSeenM] = useState(-1);
@@ -168,7 +171,7 @@ function AuctionModal() {
   // good. Asking for something and not getting it is the one outcome an
   // opt-out must never produce.
   if (auctionOpen) { /* they asked for it */ }
-  else if (seenM === a.m || game.auctionQuiet) return null;
+  else if (seenM === a.m || game.auctionQuiet || popupsOff) return null;
 
   const parsed: Record<string, number> = {};
   for (const [id, v] of Object.entries(bids)) {
@@ -261,6 +264,7 @@ function AuctionModal() {
 function DecisionModal() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels);
+  const popupsOff = useStore((s) => s.popupsOff);
   const { respondLoi, acceptOffer, declineOffer, select: goTo, setPage: openPage } = useStore.getState();
   const [deferred, setDeferred] = useState<Set<number>>(new Set());
   // the modal's counter sliders
@@ -271,6 +275,11 @@ function DecisionModal() {
   // them in by hashing the last four digits would collide silently
   const [dismissedCalls, setDismissedCalls] = useState<Set<string>>(new Set());
   if (!parcels || game.gameOver) return null;
+  // THE MASTER SWITCH (Settings). Every one of these decisions also lives on
+  // a page — letters on the Deals desk, offers on the portfolio, calls on the
+  // Marketplace — so silencing the cards loses nothing but the interruption,
+  // which is the point when you are simulating twenty years at a stretch.
+  if (popupsOff) return null;
 
   const loi = game.agent ? undefined : game.lois.find((l) => !deferred.has(l.id));
   const offerBbl = deferred.has(-1) ? undefined : Object.keys(game.holdings).find((b) => game.holdings[b].sale?.offer);
@@ -768,12 +777,20 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
                   const near = t.endM - game.month <= 24;
                   const ri = near ? renewalIntent(game, rec, holding, t) : null;
                   const fit = (t.staff ?? 1) > 1.30 ? "growing" : (t.staff ?? 1) < 0.78 ? "shrinking" : null;
+                  // TENURE ON THE ROW. The roll knows exactly how long every
+                  // tenant has been here and never said so — and "since 2004"
+                  // is what turns a row into a relationship.
+                  const yrsIn = Math.floor((game.month - t.startM) / 12);
+                  const strained = t.strainedM !== undefined && game.month - t.strainedM < 24;
                   return (
                   <div key={i} className="roll-row">
-                    <span className="roll-name">{t.name} <span className="roll-credit mono">{CREDIT_LABEL[t.credit]}</span></span>
+                    <span className="roll-name">{t.name} <span className="roll-credit mono">{CREDIT_LABEL[t.credit]}</span>
+                      {yrsIn >= 5 && <span className="dim"> · since {2000 + Math.floor(t.startM / 12)}</span>}
+                    </span>
                     <span className="roll-meta mono">
                       {(t.sf / 1000).toFixed(1)}k sf · ${t.rentPsf.toFixed(0)} {t.net ? "NNN" : "G"} · exp {monthLabel(t.endM)}
                       {fit && <> · {fit}</>}
+                      {strained && <> · <span className="warn">strained</span></>}
                       {ri && <> · <span className={ri.p < 0.5 ? "warn" : ""}>{Math.round(ri.p * 100)}% renews</span> — {ri.why[0]}</>}
                     </span>
                   </div>
@@ -3644,6 +3661,40 @@ function DealsPage() {
             </>
           );
         })()}
+        {/* TENANTS ASKING. Mid-lease relief letters — deliberately cards on
+            this desk and never pop-ups: with thirty tenants a modal per ask
+            would be a fire alarm every quarter. Both buttons are the whole
+            decision; the letter lapses in three months and a lapse is a no. */}
+        {!!game.asks?.length && (
+          <>
+            <div className="page-section">Tenants asking · {game.asks.length}</div>
+            <div className="mini-list">
+              {game.asks.map((a) => {
+                const rec = resolveRec(parcels, game, a.bbl);
+                const monthsLeft = a.expiresM - game.month;
+                const yrsIn = Math.floor((game.month - a.tenantStartM) / 12);
+                return (
+                  <div key={a.id} className="deal" style={{ marginBottom: 8 }}>
+                    <div className="deal-head">
+                      {a.name}{yrsIn >= 8 ? ` · ${yrsIn} years in the building` : ""} · {rec?.address ?? a.bbl}
+                    </div>
+                    <div className="grid">
+                      <Row k="Their ask" v={`$${a.askPsf.toFixed(0)}/sf, down from $${a.currentPsf.toFixed(0)} · adds ${Math.round(a.addM / 12)} yrs of term`} strong />
+                      <Row k="Rent forgone" v={`~${usd(Math.round((a.currentPsf - a.askPsf) * a.sf))} / yr on ${sf(a.sf)}`} />
+                      <Row k="If you decline" v="the paper stands — and a tenant running lean fails at three times the rate" />
+                      <Row k="On the desk" v={`${monthsLeft} month${monthsLeft === 1 ? "" : "s"} — a lapse is a no`} bad={monthsLeft <= 1} />
+                    </div>
+                    <div className="modal-actions">
+                      <button className="btn btn-buy" onClick={() => useStore.getState().answerAsk(a.id, "grant")}>Grant relief</button>
+                      <button className="btn" onClick={() => useStore.getState().answerAsk(a.id, "decline")}>Hold the paper</button>
+                      <button className="btn" onClick={() => go(a.bbl)}>The building</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
         <div className="page-section">Letters of intent · {game.lois.length}</div>
         {game.lois.length === 0 && <div className="hint">No live negotiations. Vacant space in high-demand buildings draws tenants.</div>}
         <div className="loi-grid">
@@ -5498,6 +5549,64 @@ function CreditLine() {
  * page, below the ledger and the milestone list, which is why nobody knew the
  * game could be saved at all. Loading a game is not an accounting task.
  */
+/**
+ * SETTINGS. The first thing in here exists because of a sentence from the
+ * owner: "sometimes I want to simulate the game" — twenty years of Advance
+ * with nothing taking the screen hostage. Every pop-up decision also lives on
+ * a page, so the master switch costs nothing but the interruptions. The other
+ * rows are the switches that already existed, gathered where a person would
+ * look for them.
+ */
+function SettingsPage() {
+  const game = useStore((s) => s.game)!;
+  const popupsOff = useStore((s) => s.popupsOff);
+  const setPopupsOff = useStore((s) => s.setPopupsOff);
+  const flip = (patch: Partial<GameState>) => {
+    const st = useStore.getState();
+    useStore.setState({ game: { ...st.game!, ...patch } });
+  };
+  const Toggle = ({ on, set, label, detail }: { on: boolean; set: (v: boolean) => void; label: string; detail: string }) => (
+    <div className="deal" style={{ marginBottom: 8 }}>
+      <div className="modal-actions" style={{ alignItems: "center", gap: 12 }}>
+        <button className={"btn" + (on ? " btn-buy" : "")} style={{ minWidth: 64 }} onClick={() => set(!on)}>
+          {on ? "On" : "Off"}
+        </button>
+        <div>
+          <div style={{ fontWeight: 600 }}>{label}</div>
+          <div className="hint" style={{ margin: 0 }}>{detail}</div>
+        </div>
+      </div>
+    </div>
+  );
+  return (
+    <div>
+      <div className="page-section">Interruptions</div>
+      <Toggle
+        on={!popupsOff}
+        set={(v) => setPopupsOff(!v)}
+        label="Pop-up cards"
+        detail="Letters of intent, offers on your buildings, broker calls and the auction card take the screen when they arrive. Off, they wait quietly where they live — letters and tenant asks on the Deals desk, offers on the Portfolio, off-market calls and the docket on Marketplace — and nothing is lost but the interruption. Turn this off to simulate long stretches."
+      />
+      <Toggle
+        on={!game.brokersOff}
+        set={(v) => flip({ brokersOff: !v })}
+        label="Brokers ring you"
+        detail="Off-market deals arrive by phone a few times a year once the street knows your name. Off, the phones stay silent entirely — nothing arrives, on any page."
+      />
+      <Toggle
+        on={!game.auctionQuiet}
+        set={(v) => flip({ auctionQuiet: !v })}
+        label="The July auction card"
+        detail="The county docket comes up as a card when it is published each July. Off, the auction still runs on the same day with the same lots — you read it on Marketplace instead."
+      />
+      <div className="hint">
+        Pop-up cards is a preference of this browser and applies to every campaign. The broker and auction
+        switches are decisions of this firm and travel with the save.
+      </div>
+    </div>
+  );
+}
+
 function SavesPage() {
   const devGrant = useStore((s) => s.devGrant);
   const game = useStore((s) => s.game);

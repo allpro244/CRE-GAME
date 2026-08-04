@@ -4,7 +4,7 @@ import type { GameState, Contract, DevUse, UseMix, BuiltClass } from "@/engine/t
 import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfolioQuarterlyCF } from "@/engine/sim";
 import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, assembleLots, grantGroundLease, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
-import { respondLOI, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, type LOIAction } from "@/engine/leasing";
+import { respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, type LOIAction } from "@/engine/leasing";
 import { cureWorkout, requestForbearance, deedInLieu } from "@/engine/workout";
 import { buyNote, modifyNote, fileOnNote, sellNote, discountedPayoff } from "@/engine/notes";
 import { registerAuctionBids } from "@/engine/auction";
@@ -20,7 +20,7 @@ import { currentCity, currentSeed, setSeed, rerollCity } from "@/state/city";
 import { makeCity, type GeneratedCity } from "@/citygen/index.mjs";
 
 export type Lens = "none" | "land" | "demand" | "owners";
-export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "leasing" | "property" | "saves" | "notes";
+export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "leasing" | "property" | "saves" | "notes" | "settings";
 
 interface AppState {
   parcels: ParcelTable | null;
@@ -65,6 +65,17 @@ interface AppState {
   buyOff: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
   approach: (bbl: string) => void;
   respondLoi: (id: number, action: LOIAction, fund?: boolean, counter?: { rentPsf?: number; tiPsf?: number; bestFinal?: boolean }) => void;
+  /** Answer a tenant's mid-lease relief letter. */
+  answerAsk: (id: number, action: "grant" | "decline") => void;
+  /**
+   * THE MASTER SWITCH FOR POP-UP CARDS. Every decision the cards carry also
+   * lives on a page (letters on the Deals desk, offers on the portfolio, the docket
+   * on Marketplace), so turning the cards off loses nothing but the
+   * interruption — which is the point when you are simulating twenty years.
+   * UI preference, not save state: it persists in localStorage, not the file.
+   */
+  popupsOff: boolean;
+  setPopupsOff: (v: boolean) => void;
   refi: (bbl: string, product: string, lev?: number) => void;
   develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>> }) => void;
   offer: (bbl: string, price: number, finalOffer?: boolean) => void;
@@ -145,6 +156,7 @@ export const useStore = create<AppState>((set, get) => ({
   lens: "none",
   page: "none",
   auctionOpen: false,
+  popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups") === "off",
   toast: null,
   fps: 0,
   loadError: null,
@@ -240,6 +252,21 @@ export const useStore = create<AppState>((set, get) => ({
     const r = respondLOI(game, parcels, id, action, fund, counter);
     // An error can still carry a new state — a counter the tenant took but you
     // could not fund kills the deal, and that has to stick.
+    if (r.err) { toast(r.err, "err"); if (r.s !== game) { set({ game: r.s }); void persist(r.s); } return; }
+    set({ game: r.s });
+    if (r.msg) toast(r.msg);
+    void persist(r.s);
+  },
+
+  setPopupsOff: (v) => {
+    try { localStorage.setItem("bw:popups", v ? "off" : "on"); } catch { /* private mode */ }
+    set({ popupsOff: v });
+  },
+
+  answerAsk: (id, action) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = answerAsk(game, parcels, id, action);
     if (r.err) { toast(r.err, "err"); if (r.s !== game) { set({ game: r.s }); void persist(r.s); } return; }
     set({ game: r.s });
     if (r.msg) toast(r.msg);

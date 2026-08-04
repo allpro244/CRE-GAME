@@ -83,6 +83,41 @@ export interface Tenant {
   staff?: number;
   /** When they last asked for more room, so nobody asks twice in two years. */
   askedM?: number;
+  /** When they last asked for rent relief — nobody re-opens a lease twice in four years. */
+  reliefAskedM?: number;
+  /**
+   * THE MONTH YOU TURNED THEM DOWN. A tenant who asked for relief and did not
+   * get it does not forget it: they run leaner, they fail more (see pFail),
+   * and when the lease finally rolls they remember who held the paper over
+   * them. Clears from relevance after two years — businesses recover, and so
+   * do relationships.
+   */
+  strainedM?: number;
+}
+
+/**
+ * A TENANT ASKING, MID-LEASE. The one thing a rent roll never used to do was
+ * SPEAK — tenants signed, paid, and left. This is the anchor whose trade has
+ * turned, three years left on the paper, asking for a blend-and-extend from
+ * the weak side of the table: a cut today for term tomorrow. It sits on the
+ * desk like a letter (never a pop-up — with thirty tenants that would be a
+ * fire alarm every quarter), it expires like one, and both answers are real:
+ * take the haircut and keep the covenant, or hold the paper and carry the
+ * default risk you just chose.
+ */
+export interface TenantAsk {
+  id: number;
+  bbl: string;
+  /** tenant identity — name + original start month, because roll indexes shift */
+  name: string;
+  tenantStartM: number;
+  sf: number;
+  currentPsf: number;
+  askPsf: number;
+  /** months of term they will add for the cut */
+  addM: number;
+  arrivedM: number;
+  expiresM: number;
 }
 
 export interface LOI {
@@ -872,6 +907,9 @@ export interface GameState {
   holdings: Record<string, Holding>;
   listings: Listing[];
   lois: LOI[];
+  /** Tenants asking mid-lease — see TenantAsk. Optional so old saves load. */
+  asks?: TenantAsk[];
+  nextAskId?: number;
   leaseReplies?: LeaseReply[];               // the last few answers to your counters
   nextLoiId: number;
   /** Source of tour ids — see LOI.tourId. Letters on one tour share a number. */

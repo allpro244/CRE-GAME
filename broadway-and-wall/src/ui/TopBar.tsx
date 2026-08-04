@@ -188,6 +188,13 @@ export default function TopBar() {
         >
           ⛁ Saves
         </button>
+        <button
+          className={"lens-btn" + (page === "settings" ? " lens-on" : "")}
+          title="Settings — pop-up cards, broker calls, the auction card"
+          onClick={() => setPage(page === "settings" ? "none" : "settings")}
+        >
+          ⚙ Settings
+        </button>
         {/* No window.confirm here. Browsers that suppress dialogs (an iframe,
             or "prevent this page from creating dialogs" ticked once) make
             confirm() return false silently and forever — the button reads as

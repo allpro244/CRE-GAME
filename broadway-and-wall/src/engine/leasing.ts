@@ -549,8 +549,14 @@ export function renewalIntent(s: GameState, rec: ParcelRecord, h: Holding, t: Te
     : 0;
   const stretched = occNow - supportableOcc(s.econ, rec, use);
   const fFull = stretched > 0 ? clampL(1 - 1.7 * stretched, 0.55, 1) : 1;
+  // THE RENEWAL REMEMBERS THE RELIEF LETTER. A tenant who asked for help and
+  // was refused — or ignored — spends the rest of the term knowing exactly
+  // who holds the paper over them, and when it finally rolls they take the
+  // meeting across town first. Two years of memory, like the strain itself.
+  const fStrain = t.strainedM !== undefined && s.month - t.strainedM < 24 ? 0.72 : 1;
   const why: { s: string; w: number }[] = [];
   if (fFull < 0.97) why.push({ s: "this address was always a reach for them", w: 1 - fFull });
+  if (fStrain < 1) why.push({ s: "you turned them down when they asked for relief, and they did not forget", w: 1 - fStrain });
   if (fSvc < 0.95) why.push({ s: "the building is not being run to their standard", w: 1 - fSvc });
   if (fSvc > 1.10) why.push({ s: "they like the way the building is run", w: fSvc - 1 });
   if (fCond < 0.98) why.push({ s: `the plant is ${h.condition}`, w: 1 - fCond });
@@ -563,10 +569,47 @@ export function renewalIntent(s: GameState, rec: ParcelRecord, h: Holding, t: Te
   return { p, why: why.length ? why.map((x) => x.s) : ["they simply moved"] };
 }
 
+/** A plausible building the departing tenant is moving to, or null for "left town". */
+function departureDestination(s: GameState, parcels: ParcelTable, from: ParcelRecord, use: BuiltClass): string | null {
+  const live = (s.rivals ?? []).filter((r) => r.failedM === undefined && r.bbls.length);
+  // sample a handful of candidates rather than scanning every deed in town
+  for (let tries = 0; tries < 14 && live.length; tries++) {
+    const r = live[Math.floor(rng(s) * live.length) % live.length];
+    const bbl = r.bbls[Math.floor(rng(s) * r.bbls.length) % r.bbls.length];
+    if (bbl === from.bbl) continue;
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec || rec.class !== use || !rec.bldgArea) continue;
+    return `${rec.address} — ${r.name}'s building`;
+  }
+  // a third of unmatched departures leave the market entirely; the rest go
+  // somewhere too small to name, and saying nothing is better than inventing
+  return rng(s) < 0.35 ? "smaller space outside the city" : null;
+}
+
 export function tickLeasing(s: GameState, parcels: ParcelTable) {
   const q = s.month;
   // expire stale LOIs and LOIs on parcels no longer owned
   s.lois = s.lois.filter((l) => l.expiresM > q && s.holdings[l.bbl]);
+
+  // A RELIEF ASK YOU LET LAPSE IS AN ANSWER. The tenant asked in writing and
+  // heard nothing for three months — that is a no, and it carries the same
+  // strain a spoken no carries. Silence is not a way out of the decision.
+  if (s.asks?.length) {
+    const lapsed = s.asks.filter((a) => a.expiresM <= q || !s.holdings[a.bbl]);
+    s.asks = s.asks.filter((a) => a.expiresM > q && s.holdings[a.bbl]);
+    for (const a of lapsed) {
+      const h = s.holdings[a.bbl];
+      const t = h?.tenants.find((x) => x.name === a.name && x.startM === a.tenantStartM);
+      if (!t) continue;
+      t.strainedM = q;
+      const rec = resolveRec(parcels, s, a.bbl);
+      s.news.unshift({
+        q, kind: "info",
+        text: `${a.name}'s relief letter at ${rec?.address ?? a.bbl} has lapsed unanswered. They will finish the term at the full rate — watch the credit.`,
+      });
+    }
+    if (!s.asks.length) delete s.asks;
+  }
 
   // A LETTER FOR SPACE THAT IS GONE DOES NOT SIT ON YOUR DESK.
   //
@@ -608,6 +651,8 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     }
   }
 
+  // one relief ask citywide per month — each is a letter, not a queue
+  let askIssued = false;
   for (const h of Object.values(s.holdings)) {
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
@@ -741,9 +786,25 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       }));
       const down = Math.max(...entries.map((e) => e.readyM - q));
       h.makeReady = [...(h.makeReady ?? []), ...entries];
+      // THE ONE WORTH NAMING. Most departures leave through this aggregate
+      // line, not the earlier "is not renewing" notice — a letter that sat
+      // unanswered, a term that just ran out. The square footage is a
+      // statistic; the firm that was here nineteen years, and where they
+      // went, is the part a landlord actually repeats at dinner.
+      const notable = [...movedOut].sort((a, b) =>
+        (q - b.startM) * 2 + b.sf / 1000 - ((q - a.startM) * 2 + a.sf / 1000))[0];
+      let gone = "";
+      if (notable) {
+        const yrsIn = Math.floor((q - notable.startM) / 12);
+        if (yrsIn >= 8 || notable.sf >= 8000) {
+          const dest = departureDestination(s, parcels, rec, notable.use ?? (rec.class as BuiltClass));
+          gone = ` ${notable.name}${yrsIn >= 8 ? `, here ${yrsIn} years,` : ""} is gone`
+            + (dest ? ` — to ${dest}.` : ".");
+        }
+      }
       s.news.unshift({
         q, kind: "info",
-        text: `${(outSf / 1000).toFixed(1)}k sf back at ${rec.address} — $${(turnCost / 1000).toFixed(0)}K make-ready, ${down} months before it can be shown.`,
+        text: `${(outSf / 1000).toFixed(1)}k sf back at ${rec.address} — $${(turnCost / 1000).toFixed(0)}K make-ready, ${down} months before it can be shown.${gone}`,
       });
     }
     // finished turns come off the books
@@ -785,7 +846,13 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // months. Concentration stops being a word and becomes a thing that
       // happens to you.
       const trade = industryStress(s.econ, t.sector) * 2.6;
-      const pFail = 0.00035 * cycle * grade * (1 + sectorStress + trade);
+      // A TENANT YOU REFUSED RELIEF TO is running on fumes by definition —
+      // they told you so, in writing. For two years after a declined or
+      // lapsed ask they go dark at three times the rate. This is the priced
+      // half of saying no: you kept the face rent and you are carrying the
+      // covenant risk you chose.
+      const strain = t.strainedM !== undefined && q - t.strainedM < 24 ? 3 : 1;
+      const pFail = 0.00035 * cycle * grade * strain * (1 + sectorStress + trade);
       if (rng(s) >= pFail) continue;
       // FORFEITING A DEPOSIT IS NOT A CASH RECEIPT. It was collected at
       // signing and has been sitting in your account ever since as somebody
@@ -798,10 +865,85 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       h.tenants.splice(i, 1);
       const down = Math.max(2, Math.round((rec.class === "office" ? 6 : 4) * rrange(s, 0.8, 1.5)));
       h.makeReady = [...(h.makeReady ?? []), { sf: t.sf, readyM: q + down, use: t.use }];
+      // TENURE IS THE STORY. "A tenant failed" is a statistic; "the firm that
+      // has been on your fourth floor since 2004 failed" is a month you
+      // remember. The engine has always known how long they were there — it
+      // just never said so.
+      const yrsIn = Math.floor((q - t.startM) / 12);
+      const tenure = yrsIn >= 8 ? `, ${yrsIn} years in the building,` : "";
       s.news.unshift({
         q, kind: "warn",
-        text: `${t.name} filed and went dark at ${rec.address} — ${(t.sf / 1000).toFixed(1)}k sf back with ${(t.endM - q) / 12 > 1 ? `${((t.endM - q) / 12).toFixed(1)} years` : `${t.endM - q} months`} left on the lease. You kept their $${(kept / 1000).toFixed(0)}K deposit — which is a month of the hole, not a year of it.`,
+        text: `${t.name}${tenure} filed and went dark at ${rec.address} — ${(t.sf / 1000).toFixed(1)}k sf back with ${(t.endM - q) / 12 > 1 ? `${((t.endM - q) / 12).toFixed(1)} years` : `${t.endM - q} months`} left on the lease. You kept their $${(kept / 1000).toFixed(0)}K deposit — which is a month of the hole, not a year of it.`,
       });
+    }
+
+    // --- the tenant who asks --------------------------------------------------
+    //
+    // Before a weak tenant goes dark, they do the thing real tenants do: they
+    // CALL. A firm in a contracting trade, paying over the market, with real
+    // term left, asks to reopen the lease — a cut today for years of term
+    // tomorrow, the blend-and-extend you could always offer them, proposed
+    // from the other side of the table. It arrives as a letter on the desk
+    // and a news line, never a pop-up (a thirty-tenant portfolio would be a
+    // fire alarm every quarter), it waits three months, and both answers are
+    // priced: grant it and the roll keeps its covenant at a lower number;
+    // refuse it and the face rent survives while the tenant runs strained —
+    // three times the default risk for two years, and they remember it at
+    // the renewal. At most one ask arrives citywide per month, because the
+    // point is that each one is a real letter from a real tenant, not a queue.
+    if (!askIssued) {
+      for (let i = 0; i < h.tenants.length; i++) {
+        const t = h.tenants[i];
+        const left = t.endM - q;
+        if (left < 12 || left > 60) continue;
+        if (t.credit === 2) continue;                       // investment grade does not beg
+        if (t.reliefAskedM !== undefined && q - t.reliefAskedM < 48) continue;
+        if ((s.asks ?? []).some((a) => a.bbl === h.bbl && a.name === t.name && a.tenantStartM === t.startM)) continue;
+        const use = t.use ?? (rec.class as BuiltClass);
+        const market = Math.max(1, managedRentPsfYr(rec, s.econ, h, use));
+        const over = t.rentPsf / market;
+        // WHAT MAKES A TENANT ASK. Measured over 1,596 tenant-months: a lease
+        // materially over market essentially never exists here — escalations
+        // run 2.5% against a market compounding faster, so sitting tenants
+        // ride further UNDER market every year. The real trigger was never
+        // the lease-versus-market spread anyway: a tenant asks for relief
+        // when THEIR BUSINESS cannot make the rent — their trade is in a
+        // bust, their headcount is shrinking, and the number on the lease is
+        // the number they can no longer pay, wherever the market sits. Being
+        // over market on top of that just makes them ask sooner and harder.
+        const stress = industryStress(s.econ, t.sector);
+        const shrinking = (t.staff ?? 1) < 0.85 ? 0.5 : 0;
+        const squeeze = stress * 3 + (s.econ.phase === "recession" ? 0.7 : 0) + shrinking + Math.max(0, over - 1) * 2;
+        if (squeeze <= 0.65) continue;                      // healthy trades honour their paper
+        if (rng(s) >= Math.min(0.07, 0.022 * squeeze * (t.credit === 0 ? 1.6 : 1))) continue;
+        t.reliefAskedM = q;
+        askIssued = true;
+        // The ask is a cut off the rent they PAY — their problem is the
+        // cheque, not the comp sheet. If they are under market, granting it
+        // means renting below a market you could re-let at... minus the
+        // downtime, the fit-out, and the odds this tenant goes dark instead.
+        // That arithmetic is the whole decision, and the card shows both numbers.
+        const askPsf = +(t.rentPsf * (over > 1.1 || stress > 0.3 ? 0.85 : 0.90)).toFixed(2);
+        const addM = Math.round(24 + 24 * Math.min(1, Math.max(0, over - 1)) + 24 * Math.min(1, stress * 2));
+        if (!s.asks) s.asks = [];
+        const id = s.nextAskId ?? 1;
+        s.nextAskId = id + 1;
+        s.asks.push({
+          id, bbl: h.bbl, name: t.name, tenantStartM: t.startM,
+          sf: t.sf, currentPsf: t.rentPsf, askPsf, addM,
+          arrivedM: q, expiresM: q + 3,
+        });
+        const yrsIn = Math.floor((q - t.startM) / 12);
+        s.news.unshift({
+          q, kind: "warn",
+          text: `${t.name}${yrsIn >= 8 ? `, your tenant of ${yrsIn} years at ${rec.address},` : ` at ${rec.address}`} `
+            + `is asking for relief — ${INDUSTRY_LABEL[t.sector].toLowerCase()} has turned and the `
+            + `$${t.rentPsf.toFixed(0)}/sf is more than the business can carry (the market here is $${market.toFixed(0)}). `
+            + `They will sign to $${askPsf.toFixed(0)}/sf for ${Math.round(addM / 12)} more years of term. `
+            + `The letter is on your desk until ${monthLabel(q + 3)}.`,
+        });
+        break;
+      }
     }
 
     // contractual escalations: rents step up ~2.5% on each lease anniversary
@@ -888,10 +1030,18 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // fits them. And the notice says which of those it was.
       const ri = renewalIntent(s, rec, h, t);
       if (rng(s) > ri.p) {
+        // WHERE THEY WENT. A tenant who leaves you does not evaporate — they
+        // take space in somebody else's building, and knowing WHOSE turns
+        // churn into rivalry. The destination is a plausible same-class
+        // building from a named firm's book; when nobody in town fits, they
+        // left the city, which is also a real thing tenants do.
+        const dest = departureDestination(s, parcels, rec, t.use ?? (rec.class as BuiltClass));
+        const yrsIn = Math.floor((q - t.startM) / 12);
         s.news.unshift({
           q, kind: "warn",
-          text: `${t.name} is not renewing at ${rec.address} — ${ri.why[0]}. `
-            + `${(t.sf / 1000).toFixed(1)}k sf comes available ${monthLabel(t.endM)}.`,
+          text: `${t.name}${yrsIn >= 8 ? `, ${yrsIn} years in the building,` : ""} is not renewing at ${rec.address} — ${ri.why[0]}. `
+            + `${(t.sf / 1000).toFixed(1)}k sf comes available ${monthLabel(t.endM)}.`
+            + (dest ? ` They are taking space at ${dest}.` : ""),
         });
         continue;
       }
@@ -1228,6 +1378,53 @@ export function buildSpecSuites(
  * They will only talk if there is something in it for them, which means a
  * tenant paying under market has no reason to pick up the phone.
  */
+/**
+ * ANSWER A TENANT'S RELIEF LETTER. Grant: the lease reprices to their number
+ * and the term extends — a blend-and-extend signed from their side of the
+ * table, with a lawyer's bill and no brokerage, because nobody toured
+ * anything. Decline: the paper stands, the tenant runs strained (see pFail),
+ * and the renewal will remember. Both outcomes are said out loud.
+ */
+export function answerAsk(
+  s: GameState, parcels: ParcelTable, id: number, action: "grant" | "decline",
+): { s: GameState; msg: string; err?: string } {
+  const next: GameState = JSON.parse(JSON.stringify(s));
+  const a = next.asks?.find((x) => x.id === id);
+  if (!a) return { s, msg: "", err: "That letter is gone." };
+  next.asks = next.asks!.filter((x) => x.id !== id);
+  if (!next.asks.length) delete next.asks;
+  const h = next.holdings[a.bbl];
+  const rec = h ? resolveRec(parcels, next, a.bbl) : null;
+  const t = h?.tenants.find((x) => x.name === a.name && x.startM === a.tenantStartM);
+  if (!h || !rec || !t) return { s: next, msg: "", err: "That tenant is no longer on the roll." };
+  if (action === "decline") {
+    t.strainedM = next.month;
+    next.news.unshift({
+      q: next.month, kind: "info",
+      text: `You held the paper on ${t.name} at ${rec.address} — the rent stays $${t.rentPsf.toFixed(0)}/sf `
+        + `to ${monthLabel(t.endM)}. They will run lean to make it, and lean businesses have accidents.`,
+    });
+    return { s: next, msg: "Declined. The rent stands." };
+  }
+  // the lawyer papers the amendment; there is no broker on a deal nobody toured
+  const legal = Math.max(8_000, Math.round(a.askPsf * a.sf * 0.01));
+  if (next.cash < legal) return { s, msg: "", err: `Papering the amendment costs $${(legal / 1000).toFixed(0)}K — you're short.` };
+  next.cash -= legal;
+  logBooks(next, "leasing", legal);
+  const oldRent = t.rentPsf;
+  t.rentPsf = a.askPsf;
+  t.endM = t.endM + a.addM;
+  delete t.strainedM;
+  if (recoveryOf(t) === "base") t.baseStopPsf = +stopPsfNow(rec, next.econ, h, t.use).toFixed(2);
+  next.news.unshift({
+    q: next.month, kind: "deal",
+    text: `Relief granted at ${rec.address}: ${t.name} goes to $${a.askPsf.toFixed(0)}/sf from $${oldRent.toFixed(0)} `
+      + `and the lease runs to ${monthLabel(t.endM)}. You traded rent for term with a tenant who asked — `
+      + `cheaper than the vacancy they were about to become, if you read them right.`,
+  });
+  return { s: next, msg: "Relief granted." };
+}
+
 export function blendExtendQuote(s: GameState, rec: ParcelRecord, h: Holding, idx: number) {
   const t = h.tenants[idx];
   if (!t) return null;

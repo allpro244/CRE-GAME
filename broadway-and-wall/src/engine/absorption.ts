@@ -288,7 +288,16 @@ export interface LeaseFactor { label: string; detail: string; mult: number }
 export function supportableOcc(econ: Econ, rec: ParcelRecord): number {
   const d = demandIdx(rec.demandScore);
   const pivot = econ.locIdxMean ?? 0.62;
-  return clampA(0.945 + 0.75 * (d - pivot), 0.68, 0.985);
+  // ONE-SIDED, and that matters more than the slope. A symmetric line through
+  // the city mean sounds fairer and is wrong: it puts the ceiling at 94% for an
+  // ORDINARY building, so every merely-average block in town started shedding
+  // tenants at the roll, citywide vacancy climbed, industrial never let at all
+  // and the player bot went insolvent inside fifty years. Nothing about a
+  // perfectly good corner should stop it running full. What is true is the
+  // other half: below the city's mean the pool of names willing to take the
+  // address thins out fast, and by the worst corner in town it has run out
+  // somewhere in the mid-seventies.
+  return clampA(0.985 - 0.75 * Math.max(0, pivot - d), 0.70, 0.985);
 }
 
 export function leaseFactors(s: GameState, rec: ParcelRecord, h: Holding, use: BuiltClass): LeaseFactor[] {

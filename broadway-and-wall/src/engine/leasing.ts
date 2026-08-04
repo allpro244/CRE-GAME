@@ -138,7 +138,18 @@ export function useSuiteSf(rec: ParcelRecord, use: BuiltClass): number {
     // it is a serviced office or a kiosk, and neither is what this game is
     // about. Flats keep their own floor, because a flat is a flat.
     case "retail":      return Math.max(COMMERCIAL_SUITE_MIN, Math.min(14_000, a / 6));
-    default:            return Math.max(COMMERCIAL_SUITE_MIN, Math.min(28_000, a / 12));  // office
+    // ...AND TWENTY-EIGHT THOUSAND WAS THE WRONG CEILING AT THE OTHER END.
+    //
+    // The cap binds on everything sizeable: any office building over about
+    // 340,000 sf could only be cut into 28,000 ft blocks, so a tower had no
+    // small tenants at all. Measured on a 614,000 sf delivery, that is what
+    // made a huge new building fill in fourteen leases averaging 36,000 ft and
+    // reach 80% let inside two years — a whale-only rent roll and a lease-up
+    // no real tower has ever had. Fifteen thousand is a large suite, not an
+    // anchor floor: the same tower now needs the better part of thirty deals
+    // and three to four years, which is what leasing a tower actually costs
+    // and most of why merchant development is supposed to be frightening.
+    default:            return Math.max(COMMERCIAL_SUITE_MIN, Math.min(15_000, a / 12));  // office
   }
 }
 /** The building's headline suite size — its dominant leasable use. */
@@ -494,7 +505,24 @@ export function renewalIntent(s: GameState, rec: ParcelRecord, h: Holding, t: Te
   // to take it. This is what holds a fringe building's equilibrium occupancy
   // in the high-70s instead of letting it grind to full over a decade.
   const fLoc = clampL(0.88 + 0.20 * demandIdx(rec.demandScore), 0.88, 1.08);
+  // AND A BUILDING CANNOT HOLD MORE THAN ITS CORNER SUPPORTS.
+  //
+  // supportableOcc caps who will MOVE IN; on its own that is only half an
+  // equilibrium, and the acceptance run proved it — gated on arrivals alone
+  // the worst corner in town still ground its way to 92% over twelve years,
+  // one expansion and one renewal at a time, because nothing ever pushed back.
+  // An equilibrium needs both sides: a building sitting above what its address
+  // supports is holding tenants it did not really win, and it loses them at
+  // the roll. That is what the number means — the occupancy where the people
+  // arriving and the people leaving finally balance.
+  const legSf = useSf(rec, use);
+  const occNow = legSf > 0
+    ? h.tenants.reduce((a, x) => a + ((x.use ?? rec.class) === use ? x.sf : 0), 0) / legSf
+    : 0;
+  const stretched = occNow - supportableOcc(s.econ, rec);
+  const fFull = stretched > 0 ? clampL(1 - 1.7 * stretched, 0.55, 1) : 1;
   const why: { s: string; w: number }[] = [];
+  if (fFull < 0.97) why.push({ s: "this address was always a reach for them", w: 1 - fFull });
   if (fSvc < 0.95) why.push({ s: "the building is not being run to their standard", w: 1 - fSvc });
   if (fSvc > 1.10) why.push({ s: "they like the way the building is run", w: fSvc - 1 });
   if (fCond < 0.98) why.push({ s: `the plant is ${h.condition}`, w: 1 - fCond });
@@ -780,8 +808,18 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       if (s.lois.some((l) => l.bbl === h.bbl && l.tenantIdx === i)) continue;
       const use = t.use ?? leasableUses(rec)[0] ?? "office";
       const free = useVacantSf(rec, h, use, q);
-      const wantSf = toSuites(rec, Math.min(free, need - t.sf), free, use);
-      if (!wantSf) continue;
+      // A GROWING FIRM ON A WEAK CORNER MOVES; IT DOES NOT DOUBLE DOWN.
+      // Expansion was the hole in the occupancy ceiling: it walked straight
+      // past supportableOcc, so a fringe building filled itself one sitting
+      // tenant at a time. Above what the address supports the space next door
+      // stops being the obvious answer and a better building across town
+      // starts being it — which is the same conversation fLoc is having at
+      // the renewal, one lease earlier.
+      const legAll = useSf(rec, use);
+      const room = Math.max(0, free - (1 - supportableOcc(s.econ, rec)) * legAll);
+      if (room < COMMERCIAL_SUITE_MIN) continue;
+      const wantSf = toSuites(rec, Math.min(free, room, need - t.sf), free, use);
+      if (!wantSf || wantSf > room + useSuiteSf(rec, use) * 0.15) continue;
       if (rng(s) > 0.16) continue;                // they get round to it
       t.askedM = q;
       const market = managedRentPsfYr(rec, s.econ, h, use);

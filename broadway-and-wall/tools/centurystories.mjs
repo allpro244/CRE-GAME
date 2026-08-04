@@ -151,6 +151,7 @@ for (const run of runs) {
       pipe: x[C.pipe] / Math.max(1, x[C.stock]),
       pipeP80: q(back.map((b) => b[C.pipe] / Math.max(1, b[C.stock])), 0.8),
       vac: x[C.vOff],
+      vacYoY: x[C.vOff] - mac[i - 12][C.vOff],
       vacMed: med(back.map((b) => b[C.vOff])),
       cap: x[C.cap], capMed: med(back.map((b) => b[C.cap])),
       rentYoY: i >= 12 ? x[C.rOff] / mac[i - 12][C.rOff] - 1 : 0,
@@ -176,7 +177,14 @@ const RULES = [
   ["credit index above 1.05",                  (o) => o.credit > 1.05],
   ["loan index above 9%",                      (o) => o.rate > 9],
   ["city unemployment below 4%",               (o) => o.unemp < 4],
-  ["phase says boom",                          (o) => o.phase === "boom"],
+  // The phase vocabulary is exactly expansion|peak|recession|recovery. This
+  // line used to read `o.phase === "boom"`, fired 0 times out of 35,165, and
+  // printed itself as "(too few to score)" rather than as what it was: a rule
+  // that could not fire, sitting in a table of rules being scored on whether
+  // they fire. Exactly the thing the house rules forbid.
+  ["phase says peak",                          (o) => o.phase === "peak"],
+  ["vacancy up 2pp from a year ago",           (o) => o.vacYoY > 2],
+  ["vacancy over 11.5% AND up 2pp in a year",  (o) => o.vac > 11.5 && o.vacYoY > 2],
   ["TIGHT + BUILDING (vac low AND pipe hot)",  (o) => o.vac < o.vacMed - 2 && o.pipe > o.pipeP80],
   ["DEAR + BUILDING (rent/wage high AND pipe hot)", (o) => o.rentWage > o.rentWageMed * 1.10 && o.pipe > o.pipeP80],
 ];
@@ -187,7 +195,7 @@ for (const [name, f] of RULES) {
   if (hit.length < 200) { say(`  ${name.padEnd(48)} ${String(hit.length).padStart(6)}   (too few to score)`); continue; }
   const p = hit.filter((o) => o.fwd < 0).length / hit.length;
   const mv = med(hit.map((o) => o.fwd));
-  scored.push({ name, n: hit.length, p, mv });
+  scored.push({ name, n: hit.length, p, mv, f });
   say(`  ${name.padEnd(48)} ${String(hit.length).padStart(6)}   ${(p * 100).toFixed(1).padStart(8)}%` +
     `        ${(p - base >= 0 ? "+" : "")}${((p - base) * 100).toFixed(1).padStart(5)}pp   ${(mv * 100 >= 0 ? "+" : "")}${(mv * 100).toFixed(1).padStart(6)}%`);
 }
@@ -195,6 +203,103 @@ scored.sort((a, b) => (b.p - base) - (a.p - base));
 say(`\nSTRONGEST TELL: ${scored[0]?.name} — ${(scored[0]?.p * 100).toFixed(1)}% vs a ${(base * 100).toFixed(1)}% base rate ` +
   `(+${((scored[0]?.p - base) * 100).toFixed(1)}pp), median 3-year real rent ${(scored[0]?.mv * 100).toFixed(1)}%, ${scored[0]?.n.toLocaleString()} observations.`);
 say(`WEAKEST/INVERTED: ${scored[scored.length - 1]?.name} — ${(scored[scored.length - 1]?.p * 100).toFixed(1)}%`);
+
+// ---------------------------------------------------------------------------
+H("THE TELL, HONESTLY — non-overlapping windows, error bars, and a hold-out");
+// Everything above pools 33,769 monthly observations that overlap almost
+// completely: a 36-month forward window starting in March and one starting in
+// April share 35 of their 36 months. The effective sample is one observation
+// per 36 months per run, which is 34 x 33 = about 1,100, not 33,769 — and the
+// standard error is thirty times what the raw count implies. Score the winner
+// again on windows that do not overlap, split the runs in half by seed so the
+// rule has to hold on cities it was not read off, and try thresholds a player
+// could actually hold in their head.
+{
+  const indep = [];
+  for (const run of runs) {
+    const mac = run.macro;
+    for (let i = 120; i + 36 < mac.length; i += 36) {      // stride = horizon
+      const x = mac[i], back = mac.slice(i - 120, i);
+      indep.push({
+        seed: run.meta.marketSeed,
+        fwd: (mac[i + 36][C.rOff] / mac[i + 36][C.cpi]) / Math.max(0.01, x[C.rOff] / x[C.cpi]) - 1,
+        vac: x[C.vOff], vacYoY: x[C.vOff] - mac[i - 12][C.vOff], vacMed: med(back.map((b) => b[C.vOff])),
+        pipe: x[C.pipe] / Math.max(1, x[C.stock]),
+        pipeP80: q(back.map((b) => b[C.pipe] / Math.max(1, b[C.stock])), 0.8),
+        rentYoY: x[C.rOff] / mac[i - 12][C.rOff] - 1,
+        rentWage: (x[C.rOff] / x[C.cpi]) / Math.max(0.2, x[C.wage] / x[C.cpi]),
+        rentWageMed: med(back.map((b) => (b[C.rOff] / b[C.cpi]) / Math.max(0.2, b[C.wage] / b[C.cpi]))),
+        cap: x[C.cap], capMed: med(back.map((b) => b[C.cap])),
+        unemp: x[C.unemp],
+      });
+    }
+  }
+  const seeds = [...new Set(indep.map((o) => o.seed))].sort((a, b) => a - b);
+  const halfA = new Set(seeds.filter((_, i) => i % 2 === 0));
+  const rate = (rows) => rows.length ? rows.filter((o) => o.fwd < 0).length / rows.length : NaN;
+  const err = (p, n) => (n > 0 ? Math.sqrt(p * (1 - p) / n) : NaN);
+  const b0 = rate(indep);
+  say(`independent observations: ${indep.length} (one per 36 months per run), against ${OBS.length.toLocaleString()} overlapping ones`);
+  say(`base rate on independent windows: ${(b0 * 100).toFixed(1)}% +/- ${(err(b0, indep.length) * 100).toFixed(1)}pp\n`);
+  const HONEST = [
+    ["vacancy 2pp above its 10-yr median", (o) => o.vac > o.vacMed + 2],
+    ["vacancy above 10% flat",             (o) => o.vac > 10],
+    ["vacancy above 12% flat",             (o) => o.vac > 12],
+    ["vacancy below 6% flat",              (o) => o.vac < 6],
+    ["rent up >20% year on year",          (o) => o.rentYoY > 0.20],
+    ["rent/wage 10% over its 10-yr median", (o) => o.rentWage > o.rentWageMed * 1.10],
+    ["pipeline over its 10-yr 80th pctile", (o) => o.pipe > o.pipeP80],
+    ["vacancy up 2pp from a year ago",      (o) => o.vacYoY > 2],
+    ["vacancy over 11.5% AND up 2pp/yr",    (o) => o.vac > 11.5 && o.vacYoY > 2],
+  ];
+  say(`rule                                    fires   P(lower in 3y)     lift vs base    half A    half B`);
+  for (const [name, f] of HONEST) {
+    const hit = indep.filter(f);
+    if (hit.length < 30) { say(`  ${name.padEnd(38)} ${String(hit.length).padStart(5)}   (too few)`); continue; }
+    const p = rate(hit), e = err(p, hit.length);
+    const a = rate(hit.filter((o) => halfA.has(o.seed))), b = rate(hit.filter((o) => !halfA.has(o.seed)));
+    say(`  ${name.padEnd(38)} ${String(hit.length).padStart(5)}   ${(p * 100).toFixed(1).padStart(5)}% +/- ${(e * 100).toFixed(1)}pp` +
+      `   ${(p - b0 >= 0 ? "+" : "")}${((p - b0) * 100).toFixed(1).padStart(5)}pp    ${(a * 100).toFixed(0).padStart(4)}%    ${(b * 100).toFixed(0).padStart(4)}%`);
+  }
+  say(`\nA lift is only real if it clears its own error bar AND holds in both halves.`);
+}
+
+// ---------------------------------------------------------------------------
+H("PRICES IN REAL TERMS, AND HOW OFTEN A BUILDING CHANGES HANDS");
+{
+  // Pooling a century of nominal prices measures inflation. Deflate each print
+  // by the CPI of the month it printed in.
+  const byCls = new Map(), early = [], late = [];
+  let n = 0;
+  for (const run of runs) {
+    const cpiAt = new Map(run.macro.map((x) => [x[C.m], x[C.cpi]]));
+    for (const t of run.trades) {
+      const cpi = cpiAt.get(t[0]) ?? 1;
+      if (!(t[5] > 0)) continue;
+      const real = t[5] / cpi;
+      n++;
+      if (!byCls.has(t[2])) byCls.set(t[2], []);
+      byCls.get(t[2]).push(real);
+      if (t[0] < 120) early.push(real); else if (t[0] >= 1080) late.push(real);
+    }
+  }
+  say(`${n.toLocaleString()} priced deeds, price per foot deflated to year-2000 dollars`);
+  for (const [cls, v] of [...byCls.entries()].sort((a, b) => b[1].length - a[1].length)) {
+    say(`  ${String(cls).padEnd(13)} ${String(v.length).padStart(6)} deeds   median $${med(v).toFixed(0)}/sf   p10 $${q(v, 0.1).toFixed(0)}   p90 $${q(v, 0.9).toFixed(0)}`);
+  }
+  say(`  first decade  median $${med(early).toFixed(0)}/sf real     last decade  median $${med(late).toFixed(0)}/sf real`);
+
+  const lots = new Set();
+  for (const run of runs) for (const [bbl] of run.parcelEv) lots.add(bbl);
+  const deedsPerCentury = runs.reduce((a, r) => a + r.trades.length, 0) / runs.length;
+  say(`\nTURNOVER: ${deedsPerCentury.toFixed(0)} deeds per century over ~${lots.size} lots that ever traded`);
+  say(`  implied average hold ${(100 / (deedsPerCentury / lots.size)).toFixed(0)} years   (US commercial real estate runs 8-15)`);
+
+  const om = [], mk = [];
+  for (const run of runs) for (const t of run.trades) (t[10] ? om : mk).push(t[5]);
+  say(`  off-market deeds ${om.length.toLocaleString()} of ${(om.length + mk.length).toLocaleString()}` +
+    `${om.length === 0 ? "   <- NOTHING trades quietly; the off-market flag is written by no rival path" : ""}`);
+}
 
 // ---------------------------------------------------------------------------
 H("HOW LONG DOES THE WARNING LAST? — lead time of the strongest tell");
@@ -206,7 +311,6 @@ if (strongest) {
     for (const run of runs) {
       const mac = run.macro;
       for (let i = 120; i + hz < mac.length; i++) {
-        const o = OBS.find(() => false); void o;
         const x = mac[i], back = mac.slice(i - 120, i);
         const rn = x[C.rOff] / x[C.cpi], rt = mac[i + hz][C.rOff] / mac[i + hz][C.cpi];
         const ch = rt / Math.max(0.01, rn) - 1;
@@ -214,9 +318,10 @@ if (strongest) {
         const probe = {
           pipe: x[C.pipe] / Math.max(1, x[C.stock]),
           pipeP80: q(back.map((b) => b[C.pipe] / Math.max(1, b[C.stock])), 0.8),
-          vac: x[C.vOff], vacMed: med(back.map((b) => b[C.vOff])),
+          vac: x[C.vOff], vacYoY: x[C.vOff] - mac[i - 12][C.vOff], vacMed: med(back.map((b) => b[C.vOff])),
           cap: x[C.cap], capMed: med(back.map((b) => b[C.cap])),
           rentYoY: x[C.rOff] / mac[i - 12][C.rOff] - 1,
+          vacYoY: x[C.vOff] - mac[i - 12][C.vOff],
           rentWage: (x[C.rOff] / x[C.cpi]) / Math.max(0.2, x[C.wage] / x[C.cpi]),
           rentWageMed: med(back.map((b) => (b[C.rOff] / b[C.cpi]) / Math.max(0.2, b[C.wage] / b[C.cpi]))),
           credit: x[C.credit], rate: x[C.rate], unemp: x[C.unemp], phase: x[C.phase],

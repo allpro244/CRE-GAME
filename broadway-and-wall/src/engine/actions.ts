@@ -1029,20 +1029,30 @@ export function declineSaleOffer(s: GameState, bbl: string): GameState {
  * counter-and-close path applies. Nothing new to learn, and something to
  * think about most quarters instead of most decades.
  */
+/**
+ * How long the town takes to learn your name. No off-market call reaches a
+ * principal before this, whatever the hazard says.
+ */
+export const FIRST_CALL_M = 24;
+
 export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // NOBODY RINGS A STRANGER.
   //
   // An off-market call is a favour, and a favour is something you are owed.
   // A broker sitting on a file they can only show to one buyer shows it to a
   // name they have closed with — not to somebody who arrived in town in
-  // January with six million dollars and no record. The first year is the one
-  // where you work the public tape like everybody else, and the phone starting
-  // to ring is the first sign that the street has noticed you exist.
-  // Four months, not twelve. A year of total silence at the start of a game
-  // whose first decade already runs 87% empty is not restraint, it is a wall —
-  // and a broker sitting on one file with one free afternoon does ring the
-  // name who arrived in January with six million dollars and nothing on.
-  if (s.month < 4) return;
+  // January with six million dollars and no record. A record takes a couple of
+  // years of closings, of listings walked and lunches taken, before anybody
+  // thinks of you when a file lands on their desk — so the first two years are
+  // the ones where you work the public tape like everybody else, and the phone
+  // starting to ring is the first sign that the street has noticed you exist.
+  //
+  // The drought clock (quietMs) runs from month one regardless, so the hazard
+  // is already sitting at its ceiling when this gate lifts: the first call
+  // arrives soon AFTER the second anniversary rather than years later.
+  // Measured across ten seeds with an idle desk: earliest month 27, median 36,
+  // all ten inside six years. See test/brokercall.mjs, which is the gate.
+  if (s.month < FIRST_CALL_M) return;
   // A broker's interest in you scales with what you already own — the first
   // deal is the hard one, and after that the phone does not stop.
   const owned = Object.keys(s.holdings).length;

@@ -29,7 +29,8 @@
     "devyield": "node test/run.mjs --devyield",
     "leaseup": "node test/run.mjs --leaseup",
     "banks": "node test/run.mjs --banks",
-    "econ:accept": "node test/econ-accept.mjs"
+    "econ:accept": "node test/econ-accept.mjs",
+    "brokercall": "node test/brokercall.mjs"
   },
   "dependencies": {
     "@types/three": "^0.185.3",

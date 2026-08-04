@@ -595,14 +595,88 @@ export function planDevelopment(
   // found them, and the carry on an empty building for months. Every job is
   // spec, so the whole building carries this — letting it during construction
   // is what claws it back.
+  // AND THE OPERATING DEFICIT, WHICH IS THE PART THAT KILLED PEOPLE.
+  //
+  // The old reserve carried TEN MONTHS of operating cost. A commercial
+  // building takes thirty-eight months to fill — that is the lease-up curve
+  // the space market itself runs — and for every one of those months the
+  // mini-perm charges interest on the whole balance. Ten months of opex on a
+  // job carrying a $620k-a-year coupon is not a reserve, it is a down payment
+  // on one.
+  //
+  // Traced end to end: a $11.5M office job delivered on programme, on budget,
+  // with $0.6M of contingency handed back. Its reserve ran dry sixteen months
+  // later, with the building 65% empty and still filling exactly as the model
+  // said it would. The lender took it. Nothing had gone wrong — the budget
+  // simply did not contain the cost of owning the thing until it earned.
+  //
+  // A real development budget carries an operating deficit reserve sized to
+  // the gap between debt service and income across the whole absorption
+  // period. It is expensive, it is financed, and it is the single biggest
+  // reason a marginal deal does not pencil. That is the point.
   const openSf = sf;
   // apartments have no fit-out, but they do have concessions and marketing
   const tiPsf = overMix(mix, (u) => (u === "office" ? 32 : u === "retail" ? 22 : u === "industrial" ? 5 : 7));
-  const lcPsf = overMix(mix, (u) => (u === "multifamily" ? 0 : 1))
-    * marketRentPsfYr(asBuiltRec(rec, use, sf, fl), s.econ, "good") * 6 * 0.045;
-  const carryMonths = overMix(mix, (u) => (u === "multifamily" ? 6 : 10));
-  const carry = Math.round(openSf * overMix(mix, (u) => opexPsf(u, s.econ, false)) * (carryMonths / 12));
-  const leaseUp = Math.round(openSf * (tiPsf + lcPsf) * s.econ.costIdx) + carry;
+  const asBuilt0 = asBuiltRec(rec, use, sf, fl);
+  const rentPsf0 = marketRentPsfYr(asBuilt0, s.econ, "good");
+  const lcPsf = overMix(mix, (u) => (u === "multifamily" ? 0 : 1)) * rentPsf0 * 6 * 0.045;
+  const carryMonths = overMix(mix, (u) => (u === "multifamily" ? 19 : 38));
+  const opex0 = overMix(mix, (u) => opexPsf(u, s.econ, false));
+  const recovery0 = overMix(mix, (u) => RECOVERY_RATE[u]);
+  const stabOcc0 = overMix(mix, (u) => (u === "multifamily" ? 0.95 : 0.9));
+  // Mean occupancy across the absorption curve the market actually runs
+  // (0.2 + 0.8·t^0.75 over the span) is 0.657 of stabilised. Useful for the
+  // opex carry, which is a total; useless for the deficit, which is not.
+  const fillOcc = stabOcc0 * 0.657;
+  // Debt service during lease-up is interest-only on the takeout, which is
+  // sized off construction cost — a circular reference resolved the honest
+  // way, by estimating it off the cost known so far rather than pretending it
+  // is zero.
+  const preReserve = hardCost + softCost + demo + contingency;
+
+  // The construction lender funds construction. It does not refinance the
+  // equity you already sank into the ground.
+  // The lender's max is the ceiling; how much of it you TAKE is your call.
+  // Less debt is a slower clock and a smaller reserve; more is more building
+  // per dollar of equity and a harder landing if lease-up runs long.
+  // The quote is the chosen desk's, not the town's. Rival and city jobs never
+  // pass a lender, so they land on the regional — the historical default.
+  //
+  // Quoted on the construction cost before the reserves, because the reserves
+  // are sized off the leverage and the leverage cannot wait for them. The
+  // difference to the desk's own sizing is a rounding error; the difference to
+  // the borrower of getting the reserve wrong is the building.
+  const cqs = constructionQuotes(s, mix, preReserve);
+  const cq = cqs.find((q) => q.lender === lender) ?? cqs.find((q) => q.lender === CONSTRUCTION_LENDER)!;
+  const ltcMax = cq.open ? cq.ltcMax : 0;
+  // Math.min(x, undefined) is NaN, and a NaN here does not throw — it becomes
+  // the commitment, then the equity, then the firm's cash, and the first thing
+  // anyone sees is a balance sheet reading NaN twenty months later. Anything
+  // that is not a real number is simply not a request.
+  const wanted = Number.isFinite(ltcWanted as number) ? (ltcWanted as number) : ltcMax;
+  const ltc = Math.max(0, Math.min(ltcMax, wanted));
+  const ratePct = cq.ratePct;
+
+  // THE DEFICIT IS AN INTEGRAL, NOT AN AVERAGE.
+  //
+  // Averaging income across the whole lease-up and comparing it to average
+  // debt service reserves nothing, because the stream is deeply negative for
+  // eighteen months and positive for twenty, and the two cancel. A reserve
+  // sized that way is exactly zero on a job that needs half a million dollars
+  // — which is the arithmetic that took the first building. What the reserve
+  // has to cover is the SHORTFALL WHILE THERE IS ONE: sum the months the
+  // building cannot pay its own coupon, and ignore the months it can, because
+  // by then the money has already been spent.
+  const dsMonthly = (preReserve * ltc * ((s.econ.indexRate + 2.1) / 100)) / 12;
+  let deficit = 0;
+  for (let t = 0; t < carryMonths; t++) {
+    const occT = stabOcc0 * Math.min(1, 0.2 + 0.8 * Math.pow(t / carryMonths, 0.75));
+    const noiT = (openSf * (rentPsf0 * occT - opex0 * (1 - recovery0 * occT))) / 12;
+    deficit += Math.max(0, dsMonthly - noiT);
+  }
+  deficit = Math.round(deficit);
+  const carry = Math.round(openSf * opex0 * (1 - fillOcc) * (carryMonths / 12));
+  const leaseUp = Math.round(openSf * (tiPsf + lcPsf) * s.econ.costIdx) + carry + deficit;
 
   // THE DIRT IS PART OF THE DEAL.
   //
@@ -621,23 +695,6 @@ export function planDevelopment(
   const costTotal = buildCost;
   const basisTotal0 = buildCost + landBasis;
 
-  // The construction lender funds construction. It does not refinance the
-  // equity you already sank into the ground.
-  // The lender's max is the ceiling; how much of it you TAKE is your call.
-  // Less debt is a slower clock and a smaller reserve; more is more building
-  // per dollar of equity and a harder landing if lease-up runs long.
-  // The quote is the chosen desk's, not the town's. Rival and city jobs never
-  // pass a lender, so they land on the regional — the historical default.
-  const cqs = constructionQuotes(s, mix, buildCost);
-  const cq = cqs.find((q) => q.lender === lender) ?? cqs.find((q) => q.lender === CONSTRUCTION_LENDER)!;
-  const ltcMax = cq.open ? cq.ltcMax : 0;
-  // Math.min(x, undefined) is NaN, and a NaN here does not throw — it becomes
-  // the commitment, then the equity, then the firm's cash, and the first thing
-  // anyone sees is a balance sheet reading NaN twenty months later. Anything
-  // that is not a real number is simply not a request.
-  const wanted = Number.isFinite(ltcWanted as number) ? (ltcWanted as number) : ltcMax;
-  const ltc = Math.max(0, Math.min(ltcMax, wanted));
-  const ratePct = cq.ratePct;
   // Foundations, core, a floor every couple of weeks, then facade and fit-out:
   // a mid-rise is a two-year job and a real tower is three to four. Nothing
   // was taking longer than 30 months, which made towers feel like sheds.
@@ -702,7 +759,7 @@ export function planDevelopment(
       ? `Yield on cost is ${yieldOnCost.toFixed(2)}% against a ${exitCap.toFixed(2)}% exit. That is not a development spread — it is a way to build a building for more than it is worth.`
       : undefined;
 
-  return {
+  const plan: DevPlan = {
     use, mix, floors: fl, coverage: cov, contract, sf,
     far: +(gsf / rec.lotArea).toFixed(1), farMax,
     hardCost, softCost, contingency, demo, leaseUp, costTotal, landBasis, basisTotal,
@@ -715,6 +772,15 @@ export function planDevelopment(
     equityAtClose: Math.round((projectCost - commitment) * 0.55),
     months, yieldOnCost, exitCap, spec: clamp01(spec), lenderNote,
   };
+  // The second half of the NaN gate above. Bad inputs are one way to get a
+  // plan full of nonsense; a divide by a zero lot, a mix that sums to nothing,
+  // or an arithmetic path nobody anticipated are others. No plan leaves this
+  // function unless every number in it is a number — a null here reads to the
+  // caller as "this site cannot be planned", which is the truth.
+  for (const v of Object.values(plan)) {
+    if (typeof v === "number" && !Number.isFinite(v)) return null;
+  }
+  return plan;
 }
 
 export function startDevelopment(

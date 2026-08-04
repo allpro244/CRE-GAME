@@ -301,9 +301,13 @@ function playStrategy(name, ms, base = city(CITY_SEED)) {
     // and the property tax bleeds the account to zero. Which is exactly what
     // happened -- 101% drawdown, four wipeouts in four seeds. A merchant buys
     // a site, builds it, sells it, and buys the next one.
+    // ...and it stays busy until the building is SOLD, not until it tops out.
+    // The old rule freed the bot the month the job delivered, so it spent the
+    // entire lease-up reserve on a second lot the same week it took delivery
+    // of an empty building — and then had nothing to fit a tenant out with.
+    // The reserve is the building's money, not the fund's.
     const busy = st.build
-      && (Object.keys(g.developments).length > 0
-        || Object.values(g.holdings).some((h) => (E.resolveRec(parcels, g, h.bbl)?.class) === "land"));
+      && (Object.keys(g.developments).length > 0 || Object.keys(g.holdings).length > 0);
     if (st.buyWhen(e) && m > 2 && !busy) {
       for (const li of [...g.listings].slice(0, 6)) {
         const rec = E.resolveRec(parcels, g, li.bbl);

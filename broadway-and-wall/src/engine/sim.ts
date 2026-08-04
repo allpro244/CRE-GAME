@@ -55,7 +55,7 @@ function targetListings(s: GameState, totalLots: number): number {
 
 export function newGame(seed: number, parcels?: ParcelTable): GameState {
   const s: GameState = {
-    v: 29,
+    v: 30,
     seed,
     rng: seed,
     month: 0,

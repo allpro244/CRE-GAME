@@ -101,7 +101,7 @@ const rollOf = (g, bbl) => {
   const parcels = clone();
   let g = E.firstListings(E.newGame(424243, parcels), parcels, bbls);
   g = { ...g, cash: 2_000_000_000 };
-  const PRE = 24, POST = 60;
+  const PRE = 24, POST = 120;
   for (let m = 0; m < PRE; m++) g = E.advanceQuarter(g, parcels, bbls, adjacency);
   const stock0 = g.econ.stock.office;
   const vac0 = g.econ.cityVac.office;
@@ -124,24 +124,30 @@ const rollOf = (g, bbl) => {
     .filter((r) => r && r.class === "office" && r.bbl !== site.bbl && r.bldgArea > 10000);
   const occBefore = nbhood.reduce((a, r) => a + E.occupancy(r, g.econ) * r.bldgArea, 0)
     / Math.max(1, nbhood.reduce((a, r) => a + r.bldgArea, 0));
-  let vacPeak = vac0, rentTrough = rent0, to80 = null;
+  let vacPeak = vac0, rentTrough = rent0, to80 = null, occAfter = occBefore;
   for (let m = 0; m < POST; m++) {
     g = E.advanceQuarter(g, parcels, bbls, adjacency);
     g = acceptAll(g, parcels);
     vacPeak = Math.max(vacPeak, g.econ.cityVac.office);
     rentTrough = Math.min(rentTrough, g.econ.rentIdx.office);
     if (to80 === null && rollOf(g, site.bbl).sf >= 0.8 * addSf) to80 = m + 1;
+    // the WOUND is the trough, not the end state — over a ten-year window the
+    // market is allowed (expected, even) to heal; it is not allowed to never bleed
+    const occNow = nbhood.reduce((a, r) => a + E.occupancy(r, g.econ) * r.bldgArea, 0)
+      / Math.max(1, nbhood.reduce((a, r) => a + r.bldgArea, 0));
+    occAfter = Math.min(occAfter, occNow);
   }
-  const occAfter = nbhood.reduce((a, r) => a + E.occupancy(r, g.econ) * r.bldgArea, 0)
-    / Math.max(1, nbhood.reduce((a, r) => a + r.bldgArea, 0));
   const rentCut = 1 - rentTrough / rent0;
+  // The panel's upper bound, adopted: a building that NEVER leases should not
+  // pass a queue test. Ten years is the allowance — this is a prime site; if
+  // the market cannot absorb it in a decade the pool is broken the other way.
   report("B. SUPPLY SHOCK (+10% of office stock in one building)",
-    (vacPeak - vac0) >= 0.05 && rentCut >= 0.10 && (to80 === null || to80 >= 24) && (occBefore - occAfter) >= 0.03,
+    (vacPeak - vac0) >= 0.05 && rentCut >= 0.10 && to80 !== null && to80 >= 24 && to80 <= 120 && (occBefore - occAfter) >= 0.03,
     [`stock ${(stock0 / 1e6).toFixed(2)}M sf  + ${(addSf / 1e6).toFixed(2)}M sf delivered empty at demand ${site.demandScore}`,
      `citywide office vacancy ${(vac0 * 100).toFixed(1)}% -> peak ${(vacPeak * 100).toFixed(1)}%   (need +5pp)`,
      `office rent index ${rent0.toFixed(2)} -> trough ${rentTrough.toFixed(2)}  cut ${(rentCut * 100).toFixed(1)}%   (need >= 10%)`,
-     `new building to 80% let: ${to80 === null ? ">60 months" : to80 + " months"}   (need >= 24, and >60 is fine)`,
-     `standing office stock occupancy ${(occBefore * 100).toFixed(1)}% -> ${(occAfter * 100).toFixed(1)}%   (need -3pp: the shock must WOUND somebody)`]);
+     `new building to 80% let: ${to80 === null ? ">120 months" : to80 + " months"}   (need 24-120: years, not forever)`,
+     `standing office stock occupancy ${(occBefore * 100).toFixed(1)}% -> trough ${(occAfter * 100).toFixed(1)}%   (need -3pp: the shock must WOUND somebody)`]);
 }
 
 // ---------------------------------------------------------------------------
@@ -207,6 +213,46 @@ const rollOf = (g, bbl) => {
      `injected +${(inj.addSf / 1e6).toFixed(2)}M sf at month 24: occupied ${(inj.occ / 1e6).toFixed(3)}M sf`,
      `occupied sf conjured by the new supply: ${(conjured / 1e6).toFixed(3)}M = ${(frac * 100).toFixed(1)}% of the injection   (allowed <= 15% induced demand)`,
      `monthly tenant requirement ${ctl.req !== null ? `control ${(ctl.req / 1e3).toFixed(0)}k sf vs injected ${(inj.req / 1e3).toFixed(0)}k sf` : "n/a"} — a requirement that RISES with stock is the leak`]);
+}
+
+// ---------------------------------------------------------------------------
+// E. MID-GRADIENT (adopted from the design panel)
+// ---------------------------------------------------------------------------
+{
+  // The extremes are easy to keep honest; the middle is where the game is
+  // actually played and where tuning quietly re-flattens things. Two identical
+  // empty buildings on ~demand-30 and ~demand-70 blocks, letters counted for
+  // four years, nothing signed: the better block must draw >= 2x the letters.
+  const parcels = clone();
+  const offices = bbls.map((b) => parcels[b])
+    .filter((r) => r && r.class === "office" && r.bldgArea > 30000 && r.bldgArea < 90000);
+  const near = (t) => offices.slice().sort((a, b) => Math.abs(a.demandScore - t) - Math.abs(b.demandScore - t))[0];
+  const mid30 = near(30);
+  const mid70 = offices.filter((r) => r.bbl !== mid30.bbl)
+    .sort((a, b) => Math.abs(a.demandScore - 70) - Math.abs(b.demandScore - 70))[0];
+  const TPL = { bldgArea: 60000, floors: 8, yearBuilt: 1988, unitsRes: 0 };
+  for (const r of [mid30, mid70]) Object.assign(parcels[r.bbl], TPL, { lotArea: 9000 });
+  let g = E.firstListings(E.newGame(777001, parcels), parcels, bbls);
+  g = { ...g, cash: 400_000_000 };
+  for (const bbl of [mid30.bbl, mid70.bbl]) {
+    const r = E.executePurchase(g, parcels, bbl, 5_000_000, "cash", false, 1);
+    if (r.err) { console.log("E: buy failed", bbl, r.err); process.exit(2); }
+    g = r.s;
+    g.holdings[bbl].tenants = [];
+    g.holdings[bbl].makeReady = [];
+    g.holdings[bbl].broker = true;
+  }
+  const seen = { [mid30.bbl]: new Set(), [mid70.bbl]: new Set() };
+  for (let m = 0; m < 48; m++) {
+    g = E.advanceQuarter(g, parcels, bbls, adjacency);
+    for (const l of g.lois) if (seen[l.bbl] && l.kind === "new") seen[l.bbl].add(l.id);
+  }
+  const n30 = seen[mid30.bbl].size, n70 = seen[mid70.bbl].size;
+  const ratio = n30 > 0 ? n70 / n30 : Infinity;
+  report("E. MID-GRADIENT (letters at demand ~30 vs ~70, empty twins, 4 years)",
+    n70 >= 2 && ratio >= 2.0,
+    [`demand ${mid30.demandScore} drew ${n30} letters   demand ${mid70.demandScore} drew ${n70}`,
+     `ratio ${n30 > 0 ? ratio.toFixed(2) + "x" : "inf"}   (need >= 2x — the middle of the gradient must not flatten)`]);
 }
 
 // ---------------------------------------------------------------------------

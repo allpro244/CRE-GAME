@@ -597,7 +597,36 @@ export interface Econ {
   cycleDev: number;
   landIdx: number;
   capRate: Record<BuiltClass, number>;
+  /** THE ASKING INDEX — the sticky face rate landlords quote. See effRentIdx. */
   rentIdx: Record<BuiltClass, number>;
+  /**
+   * THE MARKET REBUILD (ECONOMY.md). Tenants are finite and supply cannot
+   * mint them; location has teeth in both rent and pace; asking rents are
+   * sticky while effective rents move through concessions.
+   */
+  /** The finite pool: SF the city's tenants actually want, per use. Supply
+   *  never touches it — demand forms from employment, sectors and (slowly)
+   *  price, and unhousable demand stops looking within months. */
+  pool?: Record<BuiltClass, number>;
+  /** Damped affordability multiplier (half-life ~6y). A three-year rent swing
+   *  cannot conjure or destroy a fifth of the tenant base. */
+  affordEff?: Record<BuiltClass, number>;
+  /** Concession dial 0..1 — how much of the maximum giveaway (free rent +
+   *  funded TI) the market currently hands tenants. Moves in months. */
+  concIdx?: Record<BuiltClass, number>;
+  /** Months vacancy has sat >1.5pp over natural — the capitulation clock.
+   *  Asking rents do not fall until the landlord has stared at the empty
+   *  floor for half a year. */
+  vacOverM?: Record<BuiltClass, number>;
+  /** EFFECTIVE rent = asking x (1 - 0.14 x concIdx). Everything that PRICES a
+   *  deal or VALUES an asset reads this; everything that reports the market
+   *  headline reads rentIdx. */
+  effRentIdx?: Record<BuiltClass, number>;
+  /** sf-weighted mean demandIdx of the built stock, measured once per city at
+   *  init — the pivot that keeps the location curves mean-neutral on any map. */
+  locIdxMean?: number;
+  /** sf-weighted mean vintage factor, same job for the quality tilt. */
+  vintageMean?: number;
   costIdx: number; // construction & operating cost inflation
   // Sectors do not move together. Each class carries its own momentum, so
   // office can be in a bear market while sheds are the best trade in town —
@@ -816,7 +845,7 @@ export type SellerKind = "estate" | "institution" | "partnership" | "developer" 
 
 
 export interface GameState {
-  v: 29;
+  v: 30;
   seed: number;
   /**
    * WHICH TOWN THIS WAS PLAYED IN.

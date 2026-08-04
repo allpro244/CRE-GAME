@@ -188,6 +188,38 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     history: [],
   };
   econ.phaseMLeft = Math.round(12 + 30 * rng(s));
+
+  // THE MEASURED PIVOTS (ECONOMY.md). The location curves are exponentials
+  // pivoted on the city's own sf-weighted mean, so steepening the gradient
+  // cannot move the aggregate price level on any map we ever ship; the
+  // vintage tilt is renormalised the same way. DEMAND_GAMMA must match
+  // value.ts (1.9) — inlined here because value.ts imports this module.
+  if (parcels) {
+    let wSum = 0, dSum = 0, vSum = 0;
+    for (const bbl in parcels) {
+      const r = parcels[bbl];
+      if (!r || r.class === "land" || !r.bldgArea) continue;
+      const idx = Math.pow(Math.max(0, r.demandScore) / 100, 1 / 1.9);
+      const vin = Math.min(1.7, Math.max(0.5, 0.5 + Math.max(0, 2000 - (r.yearBuilt || 1960)) / 80));
+      wSum += r.bldgArea; dSum += r.bldgArea * idx; vSum += r.bldgArea * vin;
+    }
+    econ.locIdxMean = wSum > 0 ? +(dSum / wSum).toFixed(4) : 0.62;
+    econ.vintageMean = wSum > 0 ? +(vSum / wSum).toFixed(4) : 1.0;
+  } else {
+    econ.locIdxMean = 0.62;
+    econ.vintageMean = 1.0;
+  }
+  // The pool opens exactly balanced: the tenants the city started with.
+  econ.pool = {
+    office: econ.stock.office * (1 - NATURAL_VAC.office),
+    retail: econ.stock.retail * (1 - NATURAL_VAC.retail),
+    multifamily: econ.stock.multifamily * (1 - NATURAL_VAC.multifamily),
+    industrial: econ.stock.industrial * (1 - NATURAL_VAC.industrial),
+  };
+  econ.affordEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
+  econ.concIdx = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+  econ.vacOverM = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+  econ.effRentIdx = { ...econ.rentIdx };
   recordHistory(econ, 0);
   return econ;
 }
@@ -566,23 +598,42 @@ export function tickEcon(s: GameState) {
     // up pegged at half a per cent vacancy with tenants who could not possibly
     // pay for it. Space is a normal good: when it gets dear relative to what
     // the city earns, firms take less of it.
-    const affordability = Math.pow(
+    // CONSERVATION OF DEMAND (ECONOMY.md). The old code chased a target that
+    // repriced at monthly speed off affordability with a -0.58 exponent — a
+    // supply shock that cut rents 18% MANUFACTURED ~11% more demand through
+    // cheapness alone, which is most of how +12% stock conjured tenants equal
+    // to 39.4% of itself in the acceptance run. Price still rations demand,
+    // but at era speed: the exponent softens and the multiplier is damped
+    // with a ~6-year half-life. Firms do not materialise because rent dipped
+    // this quarter.
+    const affordRaw = Math.pow(
       (e.rentIdx[k] / RENT_BASE[k]) / Math.max(0.35, e.employIdx),
-      k === "multifamily" ? -0.62 : -0.58,
+      k === "multifamily" ? -0.50 : -0.40,
     );
-    const target = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - NATURAL_VAC[k])
+    if (!e.affordEff) e.affordEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
+    e.affordEff[k] += 0.010 * (affordRaw - e.affordEff[k]);
+    const targetRaw = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - NATURAL_VAC[k])
       * Math.pow(e.employIdx, elastic)
-      // Sector coupling was calibrated against a sectorMom that never left
-      // +/-0.002; now that the class cycles actually reach their level, 26x
-      // turned every boom into a demand shock that ran occupancy into the
-      // frictional floor and held it there. 11x is still a big sector cycle —
-      // a boom moves the space a class wants by about a seventh — but supply
-      // and price get a chance to answer it.
       * (1 + e.sectorMom[k] * 11)
-      * affordability;
-    const absorb = clamp(0.055 * (target - e.occupied[k]), -0.005 * e.stock[k], 0.009 * e.stock[k])
-      + e.stock[k] * rrange(s, -0.0006, 0.0006);
-    unmet[k] = Math.max(0, (target - e.occupied[k]) / Math.max(1, e.stock[k]));
+      * e.affordEff[k];
+    // THE POOL. Demand takes about a year to form or dissolve, and demand
+    // that cannot be housed here stops looking here within months — the
+    // mainland takes it, exactly the fiction stockFromParcels already tells.
+    // Note targetRaw reads baseStock, frozen at newGame: supply NEVER touches
+    // the demand side. That sentence is the whole rebuild.
+    const frictionRatio = k === "industrial" ? 0.22 : k === "multifamily" ? 0.30 : 0.32;
+    const friction = NATURAL_VAC[k] * frictionRatio;
+    const housable = e.stock[k] * (1 - friction);
+    if (!e.pool) e.pool = { ...e.occupied };
+    e.pool[k] += 0.10 * (targetRaw - e.pool[k]);
+    e.pool[k] -= 0.25 * Math.max(0, e.pool[k] - housable * 1.02);
+    // ABSORPTION IS FINITE, and it is a property of TENANTS, not buildings.
+    // The clamps and the noise used to scale with stock — a bigger city of
+    // buildings signed leases faster. Now they scale with occupied: a bigger
+    // city of tenants does.
+    const absorb = clamp(0.055 * (e.pool[k] - e.occupied[k]), -0.006 * e.occupied[k], 0.010 * e.occupied[k])
+      + e.occupied[k] * rrange(s, -0.0005, 0.0005);
+    unmet[k] = Math.max(0, (e.pool[k] - e.occupied[k]) / Math.max(1, e.stock[k]));
     // FRICTIONAL VACANCY IS A FLOOR, and it is not zero. Some share of every
     // market is empty purely because tenants are moving in and out of it —
     // roughly a third of the natural rate. A flat half-a-percent clamp was a
@@ -595,9 +646,11 @@ export function tickEcon(s: GameState) {
     // that churn constantly. Running one ratio across all four put the
     // industrial clamp above where that market actually clears, and it sat on
     // it a tenth of the century.
-    const frictionRatio = k === "industrial" ? 0.22 : k === "multifamily" ? 0.30 : 0.32;
-    const friction = NATURAL_VAC[k] * frictionRatio;
-    e.occupied[k] = clamp(e.occupied[k] + absorb, e.stock[k] * 0.55, e.stock[k] * (1 - friction));
+    // THE 0.55 x STOCK FLOOR IS DELETED — an occupancy floor that scales with
+    // supply is a tenant printer, and it was the named leak in the acceptance
+    // run. The honest floor on how fast a market can empty is the -0.006 x
+    // occupied absorb bound above; the only hard floor is zero.
+    e.occupied[k] = clamp(e.occupied[k] + absorb, 0, housable);
     e.cityVac[k] = clamp(1 - e.occupied[k] / e.stock[k], friction, 0.45);
     e.absorb12[k] = e.absorb12[k] * (11 / 12) + absorb;
     monthAbs[k] = absorb;
@@ -616,10 +669,25 @@ export function tickEcon(s: GameState) {
     // glut politely coexists with rising rents forever. Six points of excess
     // vacancy now takes rents down about five per cent a year, which is what a
     // real oversupply does.
-    const vacTerm = clamp(-gap * 0.090, -0.009, 0.009);
-    const scarcity = clamp((unmet[k] ?? 0) * 0.078, 0, 0.013);
+    // STICKY ASKING, MOVING EFFECTIVE (ECONOMY.md). A shortage pushes asking
+    // up immediately; cuts ramp in only after the landlord has stared at the
+    // empty floor for half a year — the capitulation clock. Meanwhile the
+    // concession dial moves in months, so what deals actually sign at falls
+    // long before the face rate admits anything.
+    if (!e.vacOverM) e.vacOverM = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+    if (!e.concIdx) e.concIdx = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+    if (!e.effRentIdx) e.effRentIdx = { ...e.rentIdx };
+    e.vacOverM[k] = gap > 0.015 ? (e.vacOverM[k] ?? 0) + 1 : 0;
+    const phaseNudge = e.phase === "recession" ? 0.22 : e.phase === "recovery" ? 0.08 : e.phase === "peak" ? -0.04 : -0.10;
+    const concTarget = clamp(gap * 11 + phaseNudge, 0, 1);
+    e.concIdx[k] += 0.25 * (concTarget - e.concIdx[k]);
+    const vacTerm = gap <= 0
+      ? clamp(-gap * 0.090, 0, 0.009)
+      : -Math.min(0.009, gap * 0.090) * Math.min(1, (e.vacOverM[k] ?? 0) / 6);
+    const scarcity = clamp((unmet[k] ?? 0) * 0.10, 0, 0.016);
     const drift = c2.rentDrift * 0.55 + e.sectorMom[k] * 0.42 + vacTerm + scarcity + (jobDrift * 0.35);
     e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.5, e.rentIdx[k] * (1 + drift + rrange(s, -vol, vol)));
+    e.effRentIdx[k] = +(e.rentIdx[k] * (1 - 0.14 * e.concIdx[k])).toFixed(4);
   }
 
   // cap rates: class base, dragged by the loan index and the cycle, and gapped
@@ -644,9 +712,15 @@ export function tickEcon(s: GameState) {
   // over a 100-year campaign a feedback term would run away into absurdity.
   // Land is levered to rents (exponent > 1) and moody with the cycle, but it
   // is always pulled back toward what the income actually supports.
-  const rentLevel = e.rentIdx.office / RENT_BASE.office;
-  const target = Math.pow(rentLevel, 1.15) * (1 + 0.16 * e.cycleDev);
-  e.landIdx = clamp(e.landIdx + 0.024 * (target - e.landIdx) + e.landIdx * rrange(s, -0.003, 0.003), 0.3, 40);
+  // ...and it is RESIDUAL-SHAPED (ECONOMY.md): what a builder would pay is
+  // rents against construction cost, and NO BUILDER PAYS UP INTO A GLUT — the
+  // excess-vacancy discount is what finally lets a supply cycle reach the
+  // dirt. EFFECTIVE rents, because a builder underwrites what deals sign at,
+  // not what landlords quote.
+  const rentLevel = (e.effRentIdx?.office ?? e.rentIdx.office) / RENT_BASE.office;
+  const vacDisc = 1 - 1.2 * Math.max(0, (e.cityVac?.office ?? NATURAL_VAC.office) - NATURAL_VAC.office);
+  const target = Math.pow(rentLevel / Math.pow(e.costIdx, 0.35), 1.15) * (1 + 0.16 * e.cycleDev) * Math.max(0.25, vacDisc);
+  e.landIdx = clamp(e.landIdx + 0.024 * (target - e.landIdx) + e.landIdx * rrange(s, -0.003, 0.003), 0.25, 40);
 
   // COSTS INFLATE AT LEAST AS FAST AS RENTS.
   //

@@ -114,25 +114,37 @@ pivoted on the measured city mean so the aggregate price level cannot move as
 a side effect:
 
 ```
-RENT     locationRentMult = clamp((demandIdx/locIdxMean)^0.9, 0.45, 1.65)
-         demand 16 → 0.65   demand 98 → 1.52   spread 2.36x   median → 1.01
+RENT     locationRentMult = clamp((demandIdx/locIdxMean)^1.05, 0.42, 1.75)
+         (as-built: the design's 0.9 measured 1.87x ACHIEVED — vintages and
+         concessions eat a fifth of the asking spread, so asking runs ~2.7x
+         for the test's 2.0x achieved; measured 2.37x achieved, median → 1.0)
 ARRIVAL  Location factor  = clamp((demandIdx/locIdxMean)^3.0, 0.10, 3.4)
          → a ~14x tour-traffic ratio between the fringe and the prime corner
 ODDS     loiOdds = 0.85·(1 − e^(−capture/(0.85·typicalDeal)))
          the soft curve keeps ORDERING all the way up — the saturation that
          made arrivals location-blind is dead
-CHURN    renewals gain fLoc = 0.88 + 0.20·demandIdx — fringe rolls turn over
-         faster ("a better building across town made them an offer")
+CEILING  supportableOcc = clamp(0.945 + 0.75·(demandIdx − locIdxMean), 0.68, 0.985)
+         (as-built, the decisive lever the design underweighted: pace alone
+         never fixed the DESTINATION — given 12 years the worst corner still
+         ground to 100%. The pool of names that will take an address is
+         finite: arrival odds taper to a door-knock trickle inside 8pp of the
+         ceiling, and the requirement that tours is capped at what is left of
+         the pool — toSuites rounds UP a suite, so the letter is dropped when
+         the demised ask overshoots the pool by more than a sliver of a suite.)
+CHURN    renewals gain fLoc = clamp(0.88 + 0.20·demandIdx, 0.88, 1.08) — fringe
+         rolls turn over faster ("a better building across town made them an
+         offer")
 OCC      useOccupancy's location term 0.16→0.22, and per-block natural
          vacancy runs structurally looser on the fringe (economist graft):
          vstar_b = natVac · clamp(1.30 − 0.50·demandIdx, 0.80, 1.45)
 ```
 
-**Why A passes:** achieved-rent spread is the mult ratio ≈ 2.36x ≥ 2.0. The
-fringe building now draws ~1/14th the traffic per marketed foot, churns
-faster, and its cheap ask no longer wins the queue — it stalls near 75–80%
-while prime stabilises ~92–95%. The inversion dies because *pace*, not just
-price, now lives on the gradient.
+**Why A passes:** achieved-rent spread measured 2.37x ≥ 2.0. The fringe
+building now draws ~1/14th the traffic per marketed foot, churns faster, and
+— the as-built addition — runs out of willing tenants near 70–80% while
+prime carries ~92–100%: measured at yr 12, worst 50% vs best 83% with the
+worst building shedding tenants through the downturn. The inversion dies
+because *pace* and *destination*, not just price, now live on the gradient.
 
 ### 2c. Sticky asking, moving effective (strengthens C and B; principles 3–4)
 

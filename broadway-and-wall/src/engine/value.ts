@@ -251,8 +251,23 @@ export function initialCondition(rec: ParcelRecord): Condition {
 
 // Location multiplier on citywide class rent: demand is the location. Reads
 // the gravity, not the display scale — see demandIdx above.
-export function locationRentMult(rec: ParcelRecord): number {
-  return 0.62 + 0.76 * demandIdx(rec.demandScore);
+/**
+ * WHAT A CORNER CHARGES (ECONOMY.md). The old line — 0.62 + 0.76 x idx — put
+ * a 1.5x ceiling on the whole city and the acceptance run measured 1.40x
+ * achieved between demand 16 and 98, where a real market runs 2-3x. This is
+ * an exponential pivoted on the city's measured sf-weighted mean, so the
+ * spread widens to ~2.7x asking while the aggregate price level cannot move:
+ * the median block reads ~1.0 on every map the generator can produce.
+ * (Exponent measured against the acceptance suite: at 0.9 the ACHIEVED
+ * spread between demand 16 and 98 came in at 1.87x — lease vintages and
+ * concessions eat a fifth of the asking spread, so asking has to run wider
+ * than the 2x the test demands of achieved.) The econ parameter is optional
+ * so old callers (and the generator's own pricing, which has no econ yet)
+ * fall back to the historical pivot.
+ */
+export function locationRentMult(rec: ParcelRecord, econ?: Econ): number {
+  const pivot = econ?.locIdxMean ?? 0.62;
+  return Math.min(1.75, Math.max(0.42, Math.pow(demandIdx(rec.demandScore) / pivot, 1.05)));
 }
 
 export function marketRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition): number {
@@ -263,12 +278,14 @@ export function marketRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condit
   // ...and each of those markets pays for the floor plate it is getting. See
   // plateRentMult: an office or a shed cares enormously about a big regular
   // floor, a flat does not care at all.
-  return blendBy(rec, (u) => (econ.rentIdx[u] ?? 0) * plateRentMult(rec, u)) * locationRentMult(rec) * condMult(condition);
+  return blendBy(rec, (u) => (econ.effRentIdx?.[u] ?? econ.rentIdx[u] ?? 0) * plateRentMult(rec, u)) * locationRentMult(rec, econ) * condMult(condition);
 }
 
 /** What one component of a building rents for, in its own market. */
 export function useRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition, use: BuiltClass): number {
-  return (econ.rentIdx[use] ?? 0) * plateRentMult(rec, use) * locationRentMult(rec) * condMult(condition);
+  // EFFECTIVE, not asking: everything that prices a deal or values an asset
+  // reads what deals actually sign at. The Economy page shows both lines.
+  return (econ.effRentIdx?.[use] ?? econ.rentIdx[use] ?? 0) * plateRentMult(rec, use) * locationRentMult(rec, econ) * condMult(condition);
 }
 
 // A delivered development overrides the static record — resolve before use.
@@ -440,9 +457,14 @@ function leaseUpFactor(rec: ParcelRecord, econ: Econ, apt: boolean): number {
 
 export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass): number {
   const apt = use === "multifamily";
-  const swing = apt ? 0.04 : 0.09;
-  // fringe empties first: −10pp at demand 5, +6pp at demand 95
-  const loc = 0.16 * (demandIdx(rec.demandScore) - 0.6);
+  // The swing*cycleDev term died here (ECONOMY.md): with the vacancy wire
+  // below live, it counted the cycle twice — cityVac already carries the
+  // phase, honestly now that the space market conserves tenants.
+  // Location: 0.16 -> 0.22. Fringe market buildings run ~-9pp, prime ~+8pp,
+  // which feeds the submarket table, so fringe neighbourhoods read looser and
+  // the local-vacancy channel REINFORCES the arrival gradient instead of
+  // fighting it.
+  const loc = 0.22 * (demandIdx(rec.demandScore) - 0.62);
   // the building's own character, ±11pp commercial, ±6pp residential — and
   // skewed downward, because the tail of this distribution is a tail of pain
   const u = occHash(rec.bbl + use);
@@ -473,8 +495,18 @@ export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass): nu
   // the paper in it has years to run, and that is what stops citywide vacancy
   // from arriving as a step change on every roll in the city.
   const vacNow = econ.cityVac?.[use];
-  const mktDelta = Number.isFinite(vacNow) ? (NATURAL_VAC[use] - (vacNow as number)) * 0.85 : 0;
-  const base = clamp(OCC_BASE[use] + swing * econ.cycleDev + mktDelta + loc + idio - trouble, 0.28, 0.99);
+  let mktDelta = Number.isFinite(vacNow) ? (NATURAL_VAC[use] - (vacNow as number)) * 0.85 : 0;
+  // QUALITY SEGMENTS THE MARKET (ECONOMY.md): when the market sheds tenants,
+  // the 1928 building sheds ~3x what last year's does — flight to quality is
+  // the pain of new supply landing on the oldest competing stock. Applied
+  // only on the DOWNSIDE (a tight market does not favour old bones), and
+  // renormalised by the city's measured vintage mean so the books reconcile.
+  if (mktDelta < 0) {
+    const age = Math.max(0, 2000 - (rec.yearBuilt || 1960));
+    const vintage = Math.min(1.7, Math.max(0.5, 0.5 + age / 80));
+    mktDelta *= vintage / (econ.vintageMean ?? 1.0);
+  }
+  const base = clamp(OCC_BASE[use] + mktDelta + loc + idio - trouble, 0.28, 0.99);
   return base * leaseUpFactor(rec, econ, apt);
 }
 export function occupancy(rec: ParcelRecord, econ: Econ): number {

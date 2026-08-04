@@ -42,8 +42,11 @@ const clampA = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
  * Shops turn over fastest and sheds slower than the headline suggests, because
  * an industrial lease is long but a shed changes hands whole.
  */
+// Rebased for the churn base moving stock -> OCCUPIED (ECONOMY.md): empty
+// buildings do not generate move-outs, and the rebase keeps citywide letter
+// volume bit-identical at natural vacancy (old x stock = new x occupied).
 export const GROSS_TURNOVER: Record<BuiltClass, number> = {
-  office: 0.088, retail: 0.072, industrial: 0.085, multifamily: 0,
+  office: 0.099, retail: 0.079, industrial: 0.091, multifamily: 0,
 };
 
 /**
@@ -110,13 +113,22 @@ export function drawRequirementSf(s: GameState, use: BuiltClass): number {
  * keeps a flat market from being a dead one.
  */
 export function marketRequirement(e: Econ, use: BuiltClass): number {
-  const stock = e.stock?.[use] ?? CITY_STOCK[use];
-  const churn = (stock * (GROSS_TURNOVER[use] ?? 0)) / 12;
-  const growth = Math.max(0, (e.absorb12?.[use] ?? 0) / 12);
-  const phase = e.phase === "recession" ? -0.28 : e.phase === "recovery" ? -0.10
-    : e.phase === "peak" ? 0.12 : 0.08;
-  const mood = clampA(1 + 12 * (e.sectorMom?.[use] ?? 0) + phase, 0.5, 1.5);
-  return Math.max(0, (churn + growth) * mood);
+  // CHURN IS TENANTS RELOCATING, so it scales with OCCUPIED, not stock —
+  // empty buildings do not generate move-outs, and a supply injection leaves
+  // this number flat until real tenants actually occupy the new space. That
+  // is the conservation leak fixed at the site the acceptance test names.
+  const occ = e.occupied?.[use] ?? (e.stock?.[use] ?? CITY_STOCK[use]) * (1 - NATURAL_VAC[use]);
+  const churn = (occ * (GROSS_TURNOVER[use] ?? 0)) / 12;
+  // Growth is the pipe the macro tick fills at: the gap between what the
+  // city's tenants want and what they occupy, signed at the same 5.5%/mo the
+  // pool absorbs at — so the letters on your desk and the absorption chart
+  // are one number.
+  const pool = e.pool?.[use] ?? occ;
+  const growth = Math.max(0, (pool - occ) * 0.055);
+  // The old `mood` multiplier died here: sectorMom is already inside the
+  // pool and the phase is already inside employment. It was counting the
+  // cycle twice.
+  return Math.max(0, churn + growth);
 }
 
 // ------------------------------------------------------------- the submarket
@@ -267,13 +279,56 @@ export function competingSf(s: GameState, parcels: ParcelTable, rec: ParcelRecor
 
 export interface LeaseFactor { label: string; detail: string; mult: number }
 
+/** The occupancy this ADDRESS can hold. The pool of tenants who will take a
+ *  given corner is finite and thins with the corner: a fringe building runs
+ *  out of willing names in the high 70s, a prime one in the high 90s. Both
+ *  the arrival odds and the size of the requirement that walks in are gated
+ *  on it — pace was always graded by location; this is what grades the
+ *  DESTINATION. */
+export function supportableOcc(econ: Econ, rec: ParcelRecord): number {
+  const d = demandIdx(rec.demandScore);
+  const pivot = econ.locIdxMean ?? 0.62;
+  return clampA(0.945 + 0.75 * (d - pivot), 0.68, 0.985);
+}
+
 export function leaseFactors(s: GameState, rec: ParcelRecord, h: Holding, use: BuiltClass): LeaseFactor[] {
   const out: LeaseFactor[] = [];
   const d = demandIdx(rec.demandScore);
+  // LOCATION IS A GRADIENT WITH TEETH (ECONOMY.md). The old curve spanned
+  // 0.40-1.55 — a plateau — and the acceptance run showed the consequence:
+  // the worst corner in town FILLED FIRST, because arrival was location-blind
+  // and cheap. This is an exponential pivoted on the city's own sf-weighted
+  // mean (measured at init), so the fringe-to-prime tour-traffic ratio runs
+  // ~14x while the citywide letter cadence is preserved by construction.
+  const pivot = s.econ.locIdxMean ?? 0.62;
   out.push({
     label: "Location", detail: `demand ${Math.round(100 * d)} of 100`,
-    mult: +clampA(Math.pow(d / 0.70, 1.1), 0.40, 1.55).toFixed(3),
+    mult: +clampA(Math.pow(d / pivot, 3.0), 0.10, 3.4).toFixed(3),
   });
+  // FINITE LOCAL ABSORPTION — the other half of the gradient. The curve above
+  // fixed the PACE; it did not fix the DESTINATION. Given twelve years, the
+  // worst corner in town still ground its way to 100% let, because arrival
+  // odds only ever asked how much space was open, never how many tenants
+  // would actually take this address. That pool is finite and it thins with
+  // the address: a fringe building runs out of willing names in the high 70s,
+  // a prime one in the high 90s. Above that line the phones go quiet,
+  // whatever the asking — and the trickle that remains is what a hungry
+  // landlord scrapes up door-knocking.
+  const legSf = useSf(rec, use);
+  if (legSf > 0) {
+    const takenSf = h.tenants.reduce((a, t) => a + ((t.use ?? rec.class) === use ? t.sf : 0), 0);
+    const occ = takenSf / legSf;
+    const sup = supportableOcc(s.econ, rec);
+    if (occ > sup - 0.08) {
+      out.push({
+        label: "Tenant pool",
+        detail: occ >= sup
+          ? "everyone who would take this address is already housed"
+          : "the names that would take this address are mostly housed",
+        mult: +clampA((sup - occ) / 0.08, 0.03, 1).toFixed(3),
+      });
+    }
+  }
   out.push({
     label: "Condition", detail: h.condition,
     mult: h.condition === "good" ? 1.22 : h.condition === "worn" ? 0.76 : h.condition === "obsolete" ? 0.48 : 1,
@@ -376,7 +431,13 @@ export function leasingOdds(
   const shareOfMarket = (marketedSf * weight * dark) / compete;
   const captureSf = requirementSf * shareOfMarket;
   const typicalDealSf = Math.max(1, Math.min(availSf, REQ_MEAN[use] ?? REQ_MEAN.office));
-  const loiOdds = Math.min(LOI_ODDS_MAX, captureSf / typicalDealSf);
+  // SOFT SATURATION. min() pinned at 0.85 for ANY sizeable vacancy anywhere,
+  // which made arrival odds location-blind at exactly the scale the game is
+  // played at — the measured cause of the fringe tower filling before the
+  // prime one. The exponential keeps ORDERING all the way up: a prime
+  // building at 7x a deal-size of capture runs ~0.85 while a fringe one at
+  // 0.9x runs ~0.55.
+  const loiOdds = LOI_ODDS_MAX * (1 - Math.exp(-captureSf / (LOI_ODDS_MAX * typicalDealSf)));
 
   // months to 85% let, in closed form: capture falls off as availability does,
   // at the exponent above, so the path is a power law rather than a guess.

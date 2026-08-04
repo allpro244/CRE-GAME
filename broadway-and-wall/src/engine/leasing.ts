@@ -10,12 +10,12 @@ import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, IN
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf, demandLinear,
-  condGrade, initialCondIdx, condCeiling, COND_DECAY, COND_WEAR_REF, CONDITION_RENT_MULT, holdingValue } from "./value";
+  condGrade, initialCondIdx, condCeiling, COND_DECAY, COND_WEAR_REF, CONDITION_RENT_MULT, holdingValue, demandIdx } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses, useSf } from "./mix";
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable } from "./credit";
 
-import { leasingOdds, drawRequirementSf } from "./absorption";
+import { leasingOdds, drawRequirementSf, supportableOcc } from "./absorption";
 
 /**
  * What a lease of this class looks like when it is signed. Office in this
@@ -421,10 +421,16 @@ export const TI_ASK: Record<string, [number, number]> = {
  * 1 at natural, ~2.1 in a glut.
  */
 export function concessionPressure(e: GameState["econ"], use: string): number {
+  // ONE SOURCE OF TRUTH (ECONOMY.md): the market tick maintains the
+  // concession dial (concIdx, chased at 0.25/mo off the vacancy gap and the
+  // phase), the effective rent index is asking x (1 - 0.14 x concIdx), and
+  // this function maps the SAME dial onto its historical 0.22..2.1 output
+  // range — so the LOI terms, the tour depth, and the Economy tab can never
+  // disagree about how much a tenant can extract this month.
   const k = (use === "office" || use === "retail" || use === "multifamily" || use === "industrial" ? use : "office") as keyof typeof NATURAL_VAC;
+  const c = e.concIdx?.[k];
+  if (c !== undefined) return 0.22 + 1.88 * c;
   const gap = (e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
-  // ten points of excess vacancy roughly doubles what a tenant can extract;
-  // four points of shortage cuts it to a quarter
   const phase = e.phase === "recession" ? 0.22 : e.phase === "recovery" ? 0.08 : e.phase === "peak" ? -0.04 : -0.10;
   return Math.max(0.22, Math.min(2.1, 1 + gap * 11 + phase));
 }
@@ -482,6 +488,12 @@ export function renewalIntent(s: GameState, rec: ParcelRecord, h: Holding, t: Te
     : need < t.sf * 0.78 ? 0.88 : 1;
   const fCred = t.credit === 2 ? 1.06 : t.credit === 0 ? 0.94 : 1;
   const fTen = 1 + 0.05 * Math.min(2, (s.month - t.startM) / 120);
+  // Location works on the way OUT as well as the way in. A tenant in a prime
+  // building has nowhere better to go; a tenant on the fringe is one broker
+  // lunch away from a nicer address, and every roll of their lease is a chance
+  // to take it. This is what holds a fringe building's equilibrium occupancy
+  // in the high-70s instead of letting it grind to full over a decade.
+  const fLoc = clampL(0.88 + 0.20 * demandIdx(rec.demandScore), 0.88, 1.08);
   const why: { s: string; w: number }[] = [];
   if (fSvc < 0.95) why.push({ s: "the building is not being run to their standard", w: 1 - fSvc });
   if (fSvc > 1.10) why.push({ s: "they like the way the building is run", w: fSvc - 1 });
@@ -489,8 +501,9 @@ export function renewalIntent(s: GameState, rec: ParcelRecord, h: Holding, t: Te
   if (fRent < 1) why.push({ s: `they are ${Math.round((over - 1) * 100)}% over market`, w: 1 - fRent });
   if (fInd < 0.95) why.push({ s: `${INDUSTRY_LABEL[t.sector].toLowerCase()} is contracting`, w: 1 - fInd });
   if (fFit < 0.95) why.push({ s: need > t.sf ? "they have outgrown the space and there is nothing to give them" : "they are paying for space they no longer use", w: 1 - fFit });
+  if (fLoc < 0.97) why.push({ s: "a better building across town made them an offer", w: 1 - fLoc });
   why.sort((a, b) => b.w - a.w);
-  const p = clampL(0.94 * fSvc * fCond * fRent * fInd * fFit * fCred * fTen, 0.10, 0.96);
+  const p = clampL(0.94 * fSvc * fCond * fRent * fInd * fFit * fCred * fTen * fLoc, 0.10, 0.96);
   return { p, why: why.length ? why.map((x) => x.s) : ["they simply moved"] };
 }
 
@@ -921,9 +934,27 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // of requirements rather than from the size of your building. A firm
         // looking for eight thousand feet is looking for eight thousand feet
         // whoever owns the floor.
-        const want = Math.min(legVac, drawRequirementSf(s, use));
+        // ...capped by the pool this ADDRESS has left. Odds taper as a
+        // building nears what its corner supports, but odds cannot stop a
+        // deal already in flight: a letter sized against raw vacancy could
+        // jump a fringe building from 67% straight to 92% in one signing and
+        // the ceiling never got a vote. The requirement that actually tours
+        // here is at most what is left of the address's own tenant pool.
+        const legAll = useSf(rec, use);
+        const poolSf = Math.max(0, legVac - (1 - supportableOcc(s.econ, rec)) * legAll);
+        // toSuites never demises below one suite — pass it a starved `want`
+        // and it hands back a full suite anyway, which is exactly how the
+        // ceiling kept losing. When what is left of the pool will not fill
+        // the smallest thing this building demises, nobody tours.
+        if (poolSf < (use === "multifamily" ? 450 : COMMERCIAL_SUITE_MIN)) continue;
+        const want = Math.min(legVac, poolSf, drawRequirementSf(s, use));
         const sf = toSuites(rec, want, legVac, use);
         if (!sf) continue;
+        // toSuites rounds to whole suites, and round() goes UP — a pool with
+        // 8.4k sf left was minting 10k letters, which is the ceiling losing by
+        // a suite every time it was tested. A demised ask may overshoot the
+        // pool only by a sliver, never by the better part of a suite.
+        if (sf > poolSf + useSuiteSf(rec, use) * 0.15) continue;
         // A TOUR, NOT A LETTER.
         //
         // Measured over 945 arriving letters across four fifty-year runs:

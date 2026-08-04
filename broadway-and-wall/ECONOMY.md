@@ -308,3 +308,66 @@ bound on B's lease-up (≤120 months in a recovery market — a building that
 *Approve, amend, or push back on any section. Nothing in §2–5 is implemented
 until you do — the acceptance suite (`pnpm econ:accept`) is already committed
 and failing A and D, which is the state this document starts from.*
+
+---
+
+# OPEN FINDINGS — measured, not fixed
+
+Three things this branch's harnesses found and proved, and deliberately left
+alone. Each is a real defect with a number on it; none is a change the brief
+asked for, and two of them are economy rebalances that should be their own
+decision rather than a side effect of a bug fix.
+
+## 1. The takeout bills a full payment on a building it knows cannot pay
+
+`deliver()` rolls the construction loan into a mini-perm that is interest-only
+for two years, carries a covenant holiday for three, and matures in five. All
+three of those dates say the same thing: the lender knows this building cannot
+cover itself yet. And then it bills the sponsor the whole monthly payment from
+the first month anyway.
+
+On the small merchant job measured for this: $53k a month against a 12,300 sf
+office with no tenants, out of an account the equity draw had already emptied,
+on a building `leaseUpFactor` expects to take 38 months to fill. The pro forma
+reserves for this and gets it half right — `planDevelopment`'s lease-up reserve
+carries ten months of OPERATING cost and zero months of debt service. A spec
+takeout without a debt-service reserve is not a product any lender writes; the
+reserve is what makes one financeable.
+
+**Measured both ways.** A carry reserve inside the facility — the lender
+advancing the shortfall, capitalising it, and collecting at the balloon,
+exactly as the construction interest reserve already works — was implemented
+and then reverted. It did not destroy value per deal; it removed the cash
+constraint that had been standing in for underwriting. The merchant went from
+2 sites in fifty years to 6, and lost money on the extra four: median $3.7M and
+one wipeout became −$5.5M and three. Running out of cash mid-job is not
+discipline, but it was doing discipline's job, and the two have to be separated
+deliberately rather than by accident. The reserve is right. Shipping it needs
+the development hurdle and probably the mini-perm's dates reconsidered with it.
+
+## 2. Buying a district pushes its land value DOWN
+
+New in `pnpm stress --only=B`. A whale with $400M buys every lot it can inside
+one district for twenty-five years — 116 to 142 of them — and the district's
+land $/sf falls 6.6% RELATIVE to the rest of the same town, measured as a
+difference in differences so the RNG drift between arms cancels.
+
+`landPsfNow` reads `rec.landPsf × siteQualityMult × econ.landIdx × level ×
+cycle` and nothing else. `bumpLand` writes a per-parcel adjustment and is called
+by exactly two things: a delivery, and a rezoning. Nothing anybody BUYS moves
+the ground under it. The player's demand is not an input to the land market, so
+absorbing a third of a district's dirt reads to the appraiser as one fewer
+building trading there — which is the sign it does move, and it is backwards.
+
+## 3. The pro forma's exit and the mark disagree by a third
+
+`planDevelopment` values the finished building at `stabNoi / exitCap`, where
+exitCap is `capRateFor(asBuilt, econ, "good")`. `holdingValue` marks the same
+building at `noiYr / (cap + TAX_RATE)` with the roll-quality spread on top.
+Measured on the 174,300 sf tower: the plan says $299.9M, the mark says $196.5M.
+Both handle tax, differently; the plan uses a 90% stabilised occupancy where
+the mark uses the site's own `useOccupancy`; the mark carries a 55bp empty-roll
+spread the plan does not. None of these is wrong on its own and the gap is a
+third of the value of every development decision in the game. A developer
+reading a 9.49% yield on cost against a 5.33% exit is being shown 1.78x on a
+job that will mark at 1.03x the day it opens.

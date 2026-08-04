@@ -18,7 +18,8 @@
 import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { E, USES, MONTHS, run, city, med, mean, pct } from "./econaudit-core.mjs";
+import { E, USES, MONTHS, run, city, med, mean, pct, districtsOf } from "./econaudit-core.mjs";
+import { makeCity, CITIES } from "../src/citygen/index.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = join(HERE, "..", "ECONOMY_STRESS.md");
@@ -196,6 +197,39 @@ if (want("A")) {
 // Eight archetypes, each a real posture rather than a difficulty setting. They
 // share one leasing policy (take anything at or near market) so that what is
 // being compared is ACQUISITION and CAPITAL strategy, not leasing skill.
+
+// WHAT A BUILDER WOULD ACTUALLY PUT ON THIS SITE, and whether it is worth
+// putting anything there at all. Every use the zoning allows, at the height
+// the envelope carries, and the winner is the one with the widest spread of
+// yield on cost over the cap it will exit at — which is the only number in
+// development that means anything. planDevelopment draws no random numbers, so
+// asking it about a site the bot then declines to buy costs the run nothing
+// and desynchronises no seed.
+const USE_MENU = ["office", "multifamily", "retail", "industrial"];
+function bestPlan(g, parcels, bbl) {
+  const rec = E.resolveRec(parcels, g, bbl);
+  if (!rec || rec.class !== "land") return null;
+  let best = null;
+  for (const use of USE_MENU) {
+    const fl = Math.max(1, Math.min(E.maxFloorsFor(rec, 0.6, use), 12));
+    const plan = E.planDevelopment(g, parcels, bbl, use, fl, 0.6);
+    if (!plan || !Number.isFinite(plan.yieldOnCost)) continue;
+    const spread = plan.yieldOnCost - plan.exitCap;
+    if (!best || spread > best.spread) best = { use, floors: fl, plan, spread };
+  }
+  return best;
+}
+// The hurdle. A developer takes two to three years of construction risk, cost
+// risk and lease-up risk to earn the difference between what a building yields
+// on what it cost and what the market will pay for the income, and below a
+// couple of hundred basis points of that there is no fee in it for the risk.
+// It is the discipline that separates a merchant from a bot with a crane:
+// measured over 941 land listings in this city, the MEDIAN site on the tape
+// yields 0.76 points BELOW its own exit cap. Most dirt does not pencil, which
+// is exactly why most dirt is still dirt.
+//
+const DEV_HURDLE_PP = 1.5;
+
 const STRATS = {
   core: { ltv: 0.55, buyWhen: () => true, want: (r) => r.demandScore >= 55 && r.class !== "land", maxPrice: 1.0, sellAt: null, build: false },
   allcash: { ltv: 0, buyWhen: () => true, want: (r) => r.class !== "land", maxPrice: 0.96, sellAt: null, build: false },
@@ -211,14 +245,27 @@ const STRATS = {
   // blocker in the develop-lease-sell chain. It was the bot being stupid.
   // Land in cash, then build, then sell once it is leased -- which is the
   // actual business.
-  merchant: { ltv: 0, buyWhen: () => true, want: (r) => r.class === "land", maxPrice: 1.0, sellAt: 60, build: true },
+  //
+  // AND IT UNDERWRITES THE SITE BEFORE IT BUYS IT. This bought whatever dirt
+  // the tape offered under appraisal and then put eight floors of office on it
+  // whatever the corner wanted, which is not a strategy — it is a coin toss
+  // with a two-year settlement. A merchant's entire edge is the sites it walks
+  // away from. It prices every use the envelope allows and only writes a
+  // cheque where one of them clears the hurdle; then it builds THAT use.
+  merchant: {
+    ltv: 0, buyWhen: () => true, maxPrice: 1.0, sellAt: 60, build: true,
+    want: (r, g, parcels) => {
+      if (r.class !== "land") return false;
+      const b = bestPlan(g, parcels, r.bbl);
+      return !!b && b.spread >= DEV_HURDLE_PP;
+    },
+  },
   contrarian: { ltv: 0.60, buyWhen: (e) => e.phase === "recession" || (e.creditIdx ?? 1) < 0.8, want: (r) => r.class !== "land", maxPrice: 0.88, sellAt: null, build: false },
   industrial: { ltv: 0.62, buyWhen: () => true, want: (r) => r.class === "industrial", maxPrice: 1.0, sellAt: null, build: false },
 };
 
-function playStrategy(name, ms) {
+function playStrategy(name, ms, base = city(CITY_SEED)) {
   const st = STRATS[name];
-  const base = city(CITY_SEED);
   const parcels = JSON.parse(JSON.stringify(base.parcels));
   let g = E.firstListings(E.newGame(ms, parcels), parcels, base.bbls);
   let bought = 0, sold = 0, builtN = 0, peak = 0, trough = 1;
@@ -258,7 +305,7 @@ function playStrategy(name, ms) {
       for (const li of [...g.listings].slice(0, 6)) {
         const rec = E.resolveRec(parcels, g, li.bbl);
         if (!rec || g.holdings[li.bbl]) continue;
-        if (!st.want(rec, g)) continue;
+        if (!st.want(rec, g, parcels)) continue;
         const worth = rec.class === "land" ? E.landValue(rec, e)
           : E.assetValue?.(rec, e, E.initialCondition(rec)) ?? li.ask;
         if (li.ask > worth * st.maxPrice) continue;
@@ -272,13 +319,27 @@ function playStrategy(name, ms) {
       for (const h of Object.values(g.holdings)) {
         const rec = E.resolveRec(parcels, g, h.bbl);
         if (!rec || rec.class !== "land" || g.developments[h.bbl]) continue;
-        // maxFloorsFor takes (rec, coverage, use). Called with one argument it
-        // returns NaN, not undefined, so `?? 8` never fired and the bot has
-        // been asking for a building NaN floors tall in every tournament run
-        // it has ever done. The engine now refuses that plan outright; this is
-        // the caller that was making it.
-        const fl = Math.min(E.maxFloorsFor(rec, 0.6, "office"), 8);
-        const r = E.startDevelopment(g, parcels, h.bbl, "office", fl, 0.6);
+        // BREAK GROUND ON THE BUILDING THE SITE WANTS, or do not break ground.
+        //
+        // This asked maxFloorsFor(rec) for its height and got NaN back, because
+        // coverage is not an optional argument: the function divides the FAR by
+        // it, undefined poisons the division, and `?? 8` cannot catch a NaN
+        // because NaN is not nullish. That NaN went in as the floor count and
+        // came out the other side as the firm's entire cash balance — every
+        // guard between the two is a comparison, and a comparison against NaN
+        // is false, so all of them waved it through. It is why this bot read as
+        // "-$0.1M, four wipeouts in four seeds" and why ground-up development
+        // looked value-destructive when it was never once attempted. The engine
+        // refuses an unpriceable job now; the harness has to ask a real
+        // question anyway.
+        //
+        // The site was underwritten before the cheque was written, so re-price
+        // it here rather than trusting a number from months ago — the market
+        // moves between contract and closing, and a job that stopped pencilling
+        // while the lawyers worked is a job you do not start.
+        const b = bestPlan(g, parcels, h.bbl);
+        if (!b || b.spread < DEV_HURDLE_PP) break;
+        const r = E.startDevelopment(g, parcels, h.bbl, b.use, b.floors, 0.6);
         if (!r.err) { g = r.s; builtN++; }
         break;
       }
@@ -290,12 +351,16 @@ function playStrategy(name, ms) {
         if (m - (h.boughtM ?? 0) < st.sellAt) continue;
         const rec = E.resolveRec(parcels, g, h.bbl);
         if (!rec || rec.class === "land") continue;
-        // holdingValue is (rec, econ, holding, month). Called as
-        // (game, parcels, bbl) it returned NaN, listForSale refused the ask,
-        // and no bot in this tournament has ever sold a building it built or
-        // repositioned -- which is exactly the failure I was reporting as an
-        // engine blocker in the develop-lease-sell chain.
+        // holdingValue(rec, econ, holding, month) — NOT (state, parcels, bbl).
+        // Called the wrong way it read a GameState as a parcel, found no
+        // bldgArea, fell through to landValue(state, parcels), and returned
+        // NaN. listForSale refuses a price that is not a number, so this
+        // branch has never once put a building on the market: every strategy
+        // with a sell discipline — merchant and value-add, the only two — was
+        // silently a buy-and-hold. Both of them sat at the bottom of the table
+        // and the reason was that half of each was not running.
         const v = E.holdingValue(rec, e, h, g.month);
+        if (!Number.isFinite(v) || v <= 0) break;
         const r = E.listForSale(g, parcels, h.bbl, Math.round(v * 1.02));
         if (!r.err) g = r.s;
         break;
@@ -314,31 +379,716 @@ function playStrategy(name, ms) {
 
 if (want(28)) {
   const table = [];
+  const perSeed = new Map(MARKET_SEEDS.map((ms) => [ms, []]));
   for (const name of Object.keys(STRATS)) {
     const outs = MARKET_SEEDS.map((ms) => playStrategy(name, ms));
+    outs.forEach((o, i) => perSeed.get(MARKET_SEEDS[i]).push({ name, real: o.nw / Math.max(0.1, o.cpi) }));
     const nws = outs.map((o) => o.nw).sort((a, b) => a - b);
     table.push({
       name, med: med(nws), worst: nws[0], best: nws[nws.length - 1],
       realMed: med(outs.map((o) => o.nw / Math.max(0.1, o.cpi))),
       dd: med(outs.map((o) => o.drawdown)), fails: outs.filter((o) => o.nw < 1e6).length,
-      bought: med(outs.map((o) => o.bought)), holds: med(outs.map((o) => o.holdings)),
+      bought: med(outs.map((o) => o.bought)), sold: med(outs.map((o) => o.sold)), holds: med(outs.map((o) => o.holdings)),
     });
     log(`   ${name.padEnd(11)} median ${M(med(nws))}  worst ${M(nws[0])}  best ${M(nws[nws.length - 1])}`);
   }
   table.sort((a, b) => b.realMed - a.realMed);
   const winner = table[0], loser = table[table.length - 1];
-  // How often does the top strategy actually win? Recompute per-seed rank.
+  // WHAT "DOMINANT" ACTUALLY MEANS, and what it does not.
+  //
+  // This divided the best strategy's return by the worst one's. The worst
+  // strategy in a game with leverage in it goes BANKRUPT, so the denominator
+  // is negative, and `Math.max(1, negative)` is 1 — which turned the headline
+  // dominance measure into "the winner's net worth, in dollars, with an x
+  // after it": 116,770,360x, reported to one decimal place. It could never
+  // read anything else while any strategy ended under water, so the verdict
+  // was pinned at BROKEN by arithmetic rather than by evidence.
+  //
+  // A dominant strategy is one that (a) wins most of the worlds it is played
+  // in and (b) beats the FIELD by a wide margin. The median strategy is the
+  // field, it is positive whenever the game is playable at all, and the win
+  // rate is the part that cannot be faked by one lucky seed.
+  const medianReal = med(table.map((t) => t.realMed));
+  const edge = medianReal > 0 ? winner.realMed / medianReal : Infinity;
+  let wins = 0;
+  for (const [, rows] of perSeed) {
+    rows.sort((a, b) => b.real - a.real);
+    if (rows[0]?.name === winner.name) wins++;
+  }
+  const winRate = wins / MARKET_SEEDS.length;
   const lines = [
-    `strategy     median NW    real NW      worst        best         maxDD   wipeouts  bought  holds`,
+    `strategy     median NW    real NW      worst        best         maxDD   wipeouts  bought  sold  holds`,
     ...table.map((t) =>
-      `${t.name.padEnd(12)} ${M(t.med).padEnd(12)} ${M(t.realMed).padEnd(12)} ${M(t.worst).padEnd(12)} ${M(t.best).padEnd(12)} ${pct(t.dd).padEnd(7)} ${String(t.fails).padEnd(9)} ${String(t.bought).padEnd(7)} ${t.holds}`),
+      `${t.name.padEnd(12)} ${M(t.med).padEnd(12)} ${M(t.realMed).padEnd(12)} ${M(t.worst).padEnd(12)} ${M(t.best).padEnd(12)} ${pct(t.dd).padEnd(7)} ${String(t.fails).padEnd(9)} ${String(t.bought).padEnd(7)} ${String(t.sold).padEnd(5)} ${t.holds}`),
     ``,
     `strongest: ${winner.name} at ${M(winner.realMed)} real · weakest: ${loser.name} at ${M(loser.realMed)}`,
-    `spread between best and worst strategy: ${(winner.realMed / Math.max(1, loser.realMed)).toFixed(1)}x`,
+    `the field (median strategy): ${M(medianReal)} real`,
+    `top strategy over the field: ${Number.isFinite(edge) ? edge.toFixed(2) + "x" : "unbounded — the median strategy loses money"}   (need <= 4x)`,
+    `top strategy wins ${wins} of ${MARKET_SEEDS.length} worlds outright: ${pct(winRate)}   (need <= 70% — one right answer is a solved game)`,
+    `strategies that end in the black: ${table.filter((t) => t.realMed > 1e6).length} of ${table.length}`,
   ];
-  const spread = winner.realMed / Math.max(1, loser.realMed);
-  report(28, "STRATEGY TOURNAMENT", spread > 12 ? "BROKEN" : spread > 5 ? "WEAK" : "WIRED", lines);
+  const dominant = (edge > 4 ? 1 : 0) + (winRate > 0.7 ? 1 : 0);
+  report(28, "STRATEGY TOURNAMENT", dominant === 2 ? "BROKEN" : dominant === 1 ? "WEAK" : "WIRED", lines);
   globalThis.__tourney = table;
+}
+
+// ===========================================================================
+// SHARED APPARATUS FOR THE SECTIONS BELOW
+// ===========================================================================
+// A city other than the default one, for the sections that ask whether the map
+// matters. econaudit-core's `city()` caches on the market seed alone because
+// every experiment in that file plays New Alden; this keys on both.
+const CITY_CACHE = new Map();
+function cityNamed(id, seed) {
+  const key = `${id}:${seed}`;
+  if (!CITY_CACHE.has(key)) {
+    const built = makeCity(id, seed);
+    E.normalizeParcels(built.parcels);
+    CITY_CACHE.set(key, { parcels: built.parcels, adjacency: built.adjacency, bbls: Object.keys(built.parcels), name: built.name });
+  }
+  return CITY_CACHE.get(key);
+}
+
+/** Land $/sf across a set of parcels — the number a district reprices through. */
+const landPsf = (parcels, g, bbls) =>
+  med(bbls.map((b) => { const r = E.resolveRec(parcels, g, b); return r?.lotArea ? E.landValue(r, g.econ) / r.lotArea : NaN; }));
+
+/** One shared leasing policy, so nothing below is measuring leasing skill. */
+function leaseAtMarket(g, parcels) {
+  for (const loi of [...g.lois]) {
+    const rec = E.resolveRec(parcels, g, loi.bbl);
+    const h = g.holdings[loi.bbl];
+    if (!rec || !h) continue;
+    const mkt = E.managedRentPsfYr(rec, g.econ, h, loi.use);
+    const r = E.respondLOI(g, parcels, loi.id, loi.rentPsf >= mkt * 0.92 ? "accept" : "pass");
+    if (!r.err) g = r.s;
+  }
+  return g;
+}
+
+// ===========================================================================
+// B. THE PLAYER EXISTS TO THE WORLD — the mirror of A
+// ===========================================================================
+// A asked whether the city moves when nobody plays. This asks the harder
+// half: when somebody DOES play, does the city feel it? A simulation that
+// runs beautifully on its own and treats the player as a spectator with a
+// balance sheet is not a game, it is a screensaver with a ledger.
+//
+// A whale buys everything it can inside ONE district and nothing anywhere
+// else. The measurement is a DIFFERENCE IN DIFFERENCES, and it has to be:
+// buying consumes random numbers, so the treatment's RNG stream desynchronises
+// from the control's on the first purchase and every citywide number after
+// that carries seed drift as well as signal. What does NOT carry the drift is
+// the gap between the bought district and the rest of the same town — so the
+// statistic is (target - rest) under the whale, less (target - rest) without
+// one. Anything that survives that is the player's own footprint.
+if (want("B")) {
+  const lines = [];
+  const dd = [], compsD = [], listD = [];
+  for (const ms of MARKET_SEEDS.slice(0, 3)) {
+    const base = city(CITY_SEED);
+    const dmap = districtsOf(base.parcels, base.bbls);
+    // the biggest district that is not the industrial fringe — where a whale
+    // would actually go
+    const target = [...dmap.entries()].sort((a, b) => b[1].length - a[1].length)[0];
+    const [dName, dBbls] = target;
+    const rest = base.bbls.filter((b) => !dBbls.includes(b));
+    const arm = (whale) => {
+      const parcels = JSON.parse(JSON.stringify(base.parcels));
+      let g = E.firstListings(E.newGame(ms, parcels), parcels, base.bbls);
+      if (whale) { g = JSON.parse(JSON.stringify(g)); g.cash = 400e6; }
+      let bought = 0;
+      for (let m = 0; m < 300; m++) {
+        g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
+        if (!whale) continue;
+        g = leaseAtMarket(g, parcels);
+        for (const li of [...g.listings]) {
+          if (!dBbls.includes(li.bbl) || g.holdings[li.bbl]) continue;
+          const rec = E.resolveRec(parcels, g, li.bbl);
+          if (!rec) continue;
+          const worth = rec.class === "land" ? E.landValue(rec, g.econ) : E.assetValue(rec, g.econ, E.initialCondition(rec));
+          if (li.ask > worth * 1.15) continue;
+          const r = E.executePurchase(g, parcels, li.bbl, li.ask, "cash", false, 1);
+          if (!r.err) { g = r.s; bought++; break; }
+        }
+      }
+      // DISTINCT PARCELS THAT HAVE TRADED, not g.comps — the comps sheet is a
+      // rolling window capped at MAX_COMPS (comps.ts), so counting it over
+      // twenty-five years measures the size of the cap and nothing else. It
+      // read as an identical 240 in every arm of every experiment until this
+      // was caught. `lastTradeM` is the cumulative record.
+      return { g, parcels, bought,
+        gap: landPsf(parcels, g, dBbls) / Math.max(1e-9, landPsf(parcels, g, rest)),
+        traded: dBbls.filter((b) => g.lastTradeM?.[b] !== undefined).length,
+        listings: g.listings.filter((l) => dBbls.includes(l.bbl)).length };
+    };
+    const ctrl = arm(false), treat = arm(true);
+    dd.push(treat.gap / ctrl.gap);
+    compsD.push(treat.traded / Math.max(1, ctrl.traded));
+    listD.push(treat.listings - ctrl.listings);
+    lines.push(`seed ${String(ms).padEnd(7)} whale took ${String(treat.bought).padStart(3)} lots in ${dName}: `
+      + `land $/sf vs the rest of town ${ctrl.gap.toFixed(2)}x -> ${treat.gap.toFixed(2)}x, `
+      + `lots that changed hands there ${ctrl.traded} -> ${treat.traded}, listings left standing ${ctrl.listings} -> ${treat.listings}`);
+  }
+  const lift = med(dd);
+  lines.push(``);
+  lines.push(`difference-in-differences on district land value: ${((lift - 1) * 100).toFixed(1)}%   (need >= 2% — buying a district must move its ground)`);
+  lines.push(`lots in the bought district that changed hands: ${med(compsD).toFixed(2)}x the control`);
+  lines.push(`listings still on the tape there: ${med(listD).toFixed(1)} versus the control (a buyer clears the shelf)`);
+  const moved = [lift >= 1.02, med(compsD) > 1.1, med(listD) <= 0].filter(Boolean).length;
+  report("B", "THE PLAYER EXISTS TO THE WORLD — 25 years, one district bought out",
+    moved >= 3 ? "WIRED" : moved >= 2 ? "WEAK" : "BROKEN", lines);
+}
+
+// ===========================================================================
+// C. THE STREET COMPETES — is anybody else actually bidding?
+// ===========================================================================
+// Rivals that hold buildings and never buy any are set dressing: the tape
+// would clear at the player's price because there is nobody on the other side
+// of it. The question is not whether firms exist, it is whether a listing the
+// player wants can be taken away from them.
+if (want("C")) {
+  const lines = [];
+  const absorbed = [], expired = [], rivalGrew = [], beaten = [];
+  for (const ms of MARKET_SEEDS.slice(0, 3)) {
+    const base = city(CITY_SEED);
+    const parcels = JSON.parse(JSON.stringify(base.parcels));
+    let g = E.firstListings(E.newGame(ms, parcels), parcels, base.bbls);
+    const open = new Map();      // bbl -> the month it was listed
+    let gone = 0, ran = 0, lost = 0;
+    const startAum = (g.rivals ?? []).reduce((a, r) => a + (r.bbls?.length ?? 0), 0);
+    for (let m = 0; m < MONTHS; m++) {
+      const before = new Set(g.listings.map((l) => l.bbl));
+      // what the player would have gone after this month, at a fair price
+      const wanted = g.listings.filter((l) => {
+        const rec = E.resolveRec(parcels, g, l.bbl);
+        if (!rec || rec.class === "land") return false;
+        return l.ask <= E.assetValue(rec, g.econ, E.initialCondition(rec));
+      }).map((l) => l.bbl);
+      g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
+      const after = new Set(g.listings.map((l) => l.bbl));
+      for (const b of before) {
+        if (after.has(b)) continue;
+        // it left the tape: sold if a comp was struck on it this month
+        const sold = (g.comps ?? []).some((c) => c.bbl === b && Math.abs((c.m ?? c.month ?? -99) - g.month) <= 1);
+        if (sold) { gone++; if (wanted.includes(b)) lost++; } else ran++;
+      }
+      void open;
+    }
+    const endAum = (g.rivals ?? []).reduce((a, r) => a + (r.bbls?.length ?? 0), 0);
+    absorbed.push(gone); expired.push(ran); beaten.push(lost);
+    rivalGrew.push(endAum / Math.max(1, startAum));
+    lines.push(`seed ${String(ms).padEnd(7)} ${gone} listings taken off the tape by a buyer, ${ran} simply expired; `
+      + `${lost} of the takes were assets the player would have bought at appraisal`);
+  }
+  const takeShare = med(absorbed) / Math.max(1, med(absorbed) + med(expired));
+  lines.push(``);
+  lines.push(`share of listings that ended in a TRADE rather than an expiry: ${pct(takeShare)}   (need >= 15% — a tape nobody clears is a shop with no customers)`);
+  lines.push(`assets the player wanted and lost to somebody else: ${med(beaten)} over ${MONTHS / 12} years   (need >= 10 — competition has to cost you deals)`);
+  lines.push(`rival holdings, end / start: ${med(rivalGrew).toFixed(2)}x`);
+  const ok = [takeShare >= 0.15, med(beaten) >= 10, med(rivalGrew) > 0.5].filter(Boolean).length;
+  report("C", "THE STREET COMPETES — who else is bidding, and does it cost you",
+    ok >= 3 ? "WIRED" : ok >= 2 ? "WEAK" : "BROKEN", lines);
+}
+
+// ===========================================================================
+// D. CREDIT IS A CONSTRAINT — does capital availability gate anything?
+// ===========================================================================
+// A paired run, and this one CAN be paired honestly: pinning the credit index
+// is a direct write on econ state that draws no random numbers, so the two
+// streams stay in step and every difference is the treatment.
+if (want("D")) {
+  const lines = [];
+  const rows = [];
+  // Its own loop rather than the core's `run`, because the honest trade count
+  // is CUMULATIVE and g.comps is a rolling window capped at MAX_COMPS — read
+  // at the end of fifty years it returns the cap in every arm of every
+  // experiment, which is exactly the identical "240 vs 240" that first made
+  // this test look like it had found something.
+  const arm = (ms, credit) => {
+    const base = city(CITY_SEED);
+    const parcels = JSON.parse(JSON.stringify(base.parcels));
+    let g = E.firstListings(E.newGame(ms, parcels), parcels, base.bbls);
+    let trades = 0;
+    for (let m = 0; m < MONTHS; m++) {
+      g.econ.creditIdx = credit;                      // a plain write; draws no random numbers
+      const before = new Set(g.listings.map((l) => l.bbl));
+      g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
+      const after = new Set(g.listings.map((l) => l.bbl));
+      for (const b of before) if (!after.has(b) && g.lastTradeM?.[b] !== undefined && g.month - g.lastTradeM[b] <= 1) trades++;
+    }
+    return {
+      builds: (g.cityBuilt ?? []).length,
+      trades,
+      stock: USES.reduce((a, u) => a + (g.econ.stock?.[u] ?? 0), 0) / 1e6,
+      rent: g.econ.rentIdx?.office ?? 0,
+      firms: (g.rivals ?? []).filter((x) => x.failedM === undefined && !x.dead).length,
+    };
+  };
+  for (const ms of MARKET_SEEDS.slice(0, 2)) {
+    rows.push({ ms, loose: arm(ms, 1.35), tight: arm(ms, 0.55) });
+  }
+  const r0 = (k) => med(rows.map((r) => r.loose[k])), r1 = (k) => med(rows.map((r) => r.tight[k]));
+  lines.push(`                     credit loose (1.35)   credit tight (0.55)`);
+  for (const [k, label] of [["builds", "city groundbreaks"], ["trades", "listings that traded"], ["stock", "built stock, M sf"], ["rent", "office rent index"], ["firms", "firms still alive"]]) {
+    lines.push(`${label.padEnd(21)}${String(typeof r0(k) === "number" ? r0(k).toFixed(k === "stock" ? 2 : 0) : r0(k)).padEnd(22)}${typeof r1(k) === "number" ? r1(k).toFixed(k === "stock" ? 2 : 0) : r1(k)}`);
+  }
+  const buildGap = r0("builds") / Math.max(1, r1("builds"));
+  const tradeGap = r0("trades") / Math.max(1, r1("trades"));
+  lines.push(``);
+  lines.push(`cranes, loose / tight: ${buildGap.toFixed(2)}x   (need >= 1.15 — cheap money has to build something)`);
+  lines.push(`trades, loose / tight: ${tradeGap.toFixed(2)}x   (need >= 1.10 — dear money has to stop deals)`);
+  const ok = [buildGap >= 1.15, tradeGap >= 1.10].filter(Boolean).length;
+  report("D", "CREDIT IS A CONSTRAINT — pin the index loose, then tight",
+    ok === 2 ? "WIRED" : ok === 1 ? "WEAK" : "BROKEN", lines);
+}
+
+// ===========================================================================
+// E. FAILURE IS REACHABLE, AND IT IS A LADDER
+// ===========================================================================
+// A game you cannot lose is a toy, and a game that ends the instant you slip
+// is a trap. What has to exist is the middle: a breach, then a sweep, then a
+// file on somebody's desk, then a deed changing hands — each rung reachable,
+// each one survivable, and the bottom actually the bottom. This drives a
+// deliberately reckless sponsor into the wall and watches which rungs fire.
+if (want("E")) {
+  const lines = [];
+  const tally = { breach: 0, sweep: 0, workout: 0, foreclosure: 0, seized: 0, gameOver: 0, cured: 0 };
+  let seeds = 0;
+  for (const ms of MARKET_SEEDS.slice(0, 3)) {
+    seeds++;
+    const base = city(CITY_SEED);
+    const parcels = JSON.parse(JSON.stringify(base.parcels));
+    let g = E.firstListings(E.newGame(ms, parcels), parcels, base.bbls);
+    const hit = { breach: false, sweep: false, workout: false, foreclosure: false, seized: false, cured: false };
+    for (let m = 0; m < MONTHS && !g.gameOver; m++) {
+      g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
+      g = leaseAtMarket(g, parcels);
+      // buy anything, at the top of the market, with all the debt on offer
+      for (const li of [...g.listings].slice(0, 4)) {
+        const rec = E.resolveRec(parcels, g, li.bbl);
+        if (!rec || rec.class === "land" || g.holdings[li.bbl]) continue;
+        const r = E.executePurchase(g, parcels, li.bbl, li.ask, "senior", false, 0.85 / 0.65);
+        if (!r.err) { g = r.s; break; }
+      }
+      for (const h of Object.values(g.holdings)) {
+        if (h.loan?.sweep) hit.sweep = true;
+        if ((h.loan?.breachMs ?? 0) > 0) hit.breach = true;
+        if ((h.loan?.cleanQs ?? 0) > 0 && !h.loan?.sweep) hit.cured = true;
+      }
+      for (const w of Object.values(g.workouts ?? {})) {
+        hit.workout = true;
+        if (w.stage === "foreclosure") hit.foreclosure = true;
+      }
+      if ((g.seized ?? 0) > 0) hit.seized = true;
+    }
+    for (const k of Object.keys(hit)) if (hit[k]) tally[k]++;
+    if (g.gameOver) tally.gameOver++;
+    lines.push(`seed ${String(ms).padEnd(7)} ${Object.entries(hit).filter(([, v]) => v).map(([k]) => k).join(" -> ") || "nothing went wrong at 85% LTV on everything, which is its own finding"}`
+      + `${g.gameOver ? "  [RUN ENDED]" : ""}`);
+  }
+  lines.push(``);
+  lines.push(`of ${seeds} reckless sponsors: ${tally.breach} breached a covenant, ${tally.sweep} had cash trapped, ${tally.cured} cured one,`);
+  lines.push(`${tally.workout} reached a workout desk, ${tally.foreclosure} were foreclosed, ${tally.seized} had assets seized, ${tally.gameOver} were ended`);
+  lines.push(`(need every rung of the ladder to fire at least once, and at least one sponsor to survive its own breach)`);
+  const rungs = [tally.breach, tally.sweep, tally.workout].filter((x) => x > 0).length;
+  report("E", "FAILURE IS REACHABLE, AND IT IS A LADDER",
+    rungs === 3 && tally.cured > 0 ? "WIRED" : rungs >= 2 ? "WEAK" : "BROKEN", lines);
+}
+
+// ===========================================================================
+// F. GEOGRAPHY CHANGES THE ANSWER — or the maps are wallpaper
+// ===========================================================================
+// Five cities exist. If the same strategy on the same market seed returns the
+// same money on all five, then the coastlines, the grids and the parks are a
+// skin over one town and there is no reason to play the second one.
+if (want("F")) {
+  const lines = [];
+  const rows = [];
+  for (const id of Object.keys(CITIES)) {
+    const b = cityNamed(id, CITIES[id].seed);
+    const outs = MARKET_SEEDS.slice(0, 2).map((ms) => playStrategy("core", ms, b));
+    const lots = b.bbls.length;
+    const landShare = b.bbls.filter((x) => b.parcels[x].class === "land").length / lots;
+    rows.push({ name: b.name, nw: med(outs.map((o) => o.nw)), bought: med(outs.map((o) => o.bought)), lots, landShare });
+  }
+  rows.sort((a, b) => b.nw - a.nw);
+  lines.push(`city          lots   vacant   the same core strategy, median net worth`);
+  for (const r of rows) lines.push(`${r.name.padEnd(14)}${String(r.lots).padEnd(7)}${pct(r.landShare).padEnd(9)}${M(r.nw)}   (${r.bought} bought)`);
+  // Against the FIELD, not against the worst map — a city the strategy goes
+  // bankrupt in gives a negative denominator and a meaningless ratio, the same
+  // trap the tournament's dominance number fell into.
+  const fieldNw = med(rows.map((r) => r.nw));
+  const spread = fieldNw > 0 ? rows[0].nw / fieldNw : Infinity;
+  const bust = rows.filter((r) => r.nw < 1e6).length;
+  lines.push(``);
+  lines.push(`best map over the median map: ${Number.isFinite(spread) ? spread.toFixed(2) + "x" : "unbounded"}   (need >= 1.25x — the map has to be an argument)`);
+  lines.push(`cities where one unchanged strategy goes broke: ${bust} of ${rows.length}   (geography should be able to beat a plan)`);
+  report("F", "GEOGRAPHY CHANGES THE ANSWER — one strategy, five cities",
+    spread >= 1.25 ? "WIRED" : spread >= 1.1 ? "WEAK" : "BROKEN", lines);
+}
+
+// ===========================================================================
+// G. TIME COSTS SOMETHING — is doing nothing a strategy?
+// ===========================================================================
+// The deposit rate is deliberately dull and the firm carries overhead whether
+// or not it owns anything, both on purpose. This checks the purpose landed:
+// sitting on the opening cheque for fifty years has to LOSE, in real money, to
+// somebody who bought buildings with it.
+if (want("G")) {
+  const lines = [];
+  const idle = [], active = [];
+  for (const ms of MARKET_SEEDS.slice(0, 3)) {
+    const base = city(CITY_SEED);
+    const parcels = JSON.parse(JSON.stringify(base.parcels));
+    let g = E.firstListings(E.newGame(ms, parcels), parcels, base.bbls);
+    for (let m = 0; m < MONTHS; m++) g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
+    const real = E.netWorth(g, parcels) / Math.max(0.1, g.econ.cpi);
+    idle.push({ nom: E.netWorth(g, parcels), real, cpi: g.econ.cpi });
+    const a = playStrategy("allcash", ms);
+    active.push(a.nw / Math.max(0.1, a.cpi));
+  }
+  const idleReal = med(idle.map((x) => x.real)), start = 6e6;
+  lines.push(`the opening cheque, held in the bank for ${MONTHS / 12} years:`);
+  lines.push(`   nominal ${M(med(idle.map((x) => x.nom)))}   ·   real ${M(idleReal)}   ·   CPI ${med(idle.map((x) => x.cpi)).toFixed(2)}x`);
+  lines.push(`the same cheque, spent on buildings (all-cash): real ${M(med(active))}`);
+  lines.push(``);
+  lines.push(`doing nothing, in real terms: ${((idleReal / start - 1) * 100).toFixed(1)}%   (need < 0 — cash must decay)`);
+  lines.push(`penalty for idleness: ${(med(active) / Math.max(1, idleReal)).toFixed(1)}x   (need >= 3x)`);
+  const ok = [idleReal < start, med(active) / Math.max(1, idleReal) >= 3].filter(Boolean).length;
+  report("G", "TIME COSTS SOMETHING — fifty years of doing nothing",
+    ok === 2 ? "WIRED" : ok === 1 ? "WEAK" : "BROKEN", lines);
+}
+
+// ===========================================================================
+// 29. THE MONEY PUMP — is there a loop that mints money?
+// ===========================================================================
+// The question named in this file's own header and never asked. A pump is any
+// repeatable sequence of legal moves that ends with more money than it began
+// and can be run again immediately. It does not have to be large: a loop worth
+// a hundred dollars a cycle with no cooldown is worth infinity, and every
+// economy that has ever shipped with one has been beaten by it inside a week.
+//
+// Each loop below is run from a clean state and measured on the round trip.
+// Every one of them MUST cost money. The size of the loss is the spread, the
+// fees and the taxes doing their job.
+if (want(29)) {
+  const lines = [];
+  const base = city(CITY_SEED);
+  const loops = [];
+  const fresh = (cash = 120e6) => {
+    const parcels = JSON.parse(JSON.stringify(base.parcels));
+    let g = E.firstListings(E.newGame(MARKET_SEEDS[0], parcels), parcels, base.bbls);
+    for (let m = 0; m < 24; m++) g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
+    g = JSON.parse(JSON.stringify(g)); g.cash = cash;
+    return { g, parcels };
+  };
+
+  // 1. BUY AT THE ASK, SELL AT THE APPRAISAL, IMMEDIATELY.
+  {
+    const { g: g0, parcels } = fresh();
+    let g = g0, done = 0, total = 0;
+    for (const li of [...g.listings].slice(0, 8)) {
+      const rec = E.resolveRec(parcels, g, li.bbl);
+      if (!rec || rec.class === "land") continue;
+      const before = E.netWorth(g, parcels);
+      const r = E.executePurchase(g, parcels, li.bbl, li.ask, "cash", false, 1);
+      if (r.err) continue;
+      g = r.s;
+      const h = g.holdings[li.bbl];
+      const v = E.holdingValue(E.resolveRec(parcels, g, li.bbl), g.econ, h, g.month);
+      const s2 = E.listForSale(g, parcels, li.bbl, Math.round(v));
+      if (!s2.err) g = s2.s;
+      total += E.netWorth(g, parcels) - before; done++;
+    }
+    loops.push({ name: "buy at ask, mark at appraisal", n: done, per: done ? total / done : NaN });
+  }
+
+  // 2. LIST AND DELIST, FOREVER. A free option on the market is still a pump.
+  {
+    const { g: g0, parcels } = fresh();
+    let g = g0;
+    const li = [...g.listings].find((l) => E.resolveRec(parcels, g, l.bbl)?.class !== "land");
+    let per = NaN;
+    if (li) {
+      const r = E.executePurchase(g, parcels, li.bbl, li.ask, "cash", false, 1);
+      if (!r.err) {
+        g = r.s;
+        const before = E.netWorth(g, parcels);
+        for (let i = 0; i < 12; i++) {
+          const v = E.holdingValue(E.resolveRec(parcels, g, li.bbl), g.econ, g.holdings[li.bbl], g.month);
+          const a = E.listForSale(g, parcels, li.bbl, Math.round(v * 1.4));   // priced never to sell
+          if (!a.err) g = a.s;
+          g = E.delist(g, li.bbl);   // returns the state, not a {s, err}
+        }
+        per = (E.netWorth(g, parcels) - before) / 12;
+      }
+    }
+    loops.push({ name: "list high, delist, repeat", n: 12, per });
+  }
+
+  // 3. DRAW THE LINE AND PAY IT STRAIGHT BACK.
+  {
+    const { g: g0, parcels } = fresh(40e6);
+    let g = g0;
+    const li = [...g.listings].find((l) => E.resolveRec(parcels, g, l.bbl)?.class !== "land");
+    let per = NaN;
+    if (li) {
+      const r = E.executePurchase(g, parcels, li.bbl, li.ask, "cash", false, 1);
+      if (!r.err) {
+        g = r.s;
+        const before = E.netWorth(g, parcels);
+        for (let i = 0; i < 10; i++) {
+          const avail = E.locAvailable(g, parcels);
+          const d = E.drawLoc(g, parcels, Math.round(avail * 0.9));
+          if (!d.err) g = d.s;
+          const p = E.repayLoc(g, g.loc?.balance ?? 0);
+          if (!p.err) g = p.s;
+        }
+        per = (E.netWorth(g, parcels) - before) / 10;
+      }
+    }
+    loops.push({ name: "draw the revolver, repay it", n: 10, per });
+  }
+
+  // 4. REFINANCE REPEATEDLY. Cash-out that costs nothing is a printing press.
+  {
+    const { g: g0, parcels } = fresh();
+    let g = g0;
+    const li = [...g.listings].find((l) => E.resolveRec(parcels, g, l.bbl)?.class !== "land");
+    let per = NaN, n = 0;
+    if (li) {
+      const r = E.executePurchase(g, parcels, li.bbl, li.ask, "senior", false, 1);
+      if (!r.err) {
+        g = r.s;
+        const before = E.netWorth(g, parcels);
+        for (let i = 0; i < 6; i++) {
+          const { quotes } = E.refiQuotes(g, parcels, li.bbl);
+          const open = (quotes ?? []).find((x) => (x.maxProceeds ?? 0) > 0);
+          if (!open) break;
+          const rr = E.refinance(g, parcels, li.bbl, open.id, 1);
+          if (rr.err) break;
+          g = rr.s; n++;
+        }
+        per = n ? (E.netWorth(g, parcels) - before) / n : NaN;
+      }
+    }
+    loops.push({ name: "refinance, again and again", n, per });
+  }
+
+  for (const l of loops) {
+    lines.push(`${l.name.padEnd(32)} ${String(l.n).padStart(3)} cycles   net worth per cycle: `
+      + `${Number.isFinite(l.per) ? (l.per >= 0 ? "+" : "") + M(l.per) : "n/a — the loop does not run"}`);
+  }
+  const pumps = loops.filter((l) => Number.isFinite(l.per) && l.per > 1000);
+  lines.push(``);
+  lines.push(pumps.length
+    ? `${pumps.length} loop(s) END RICHER THAN THEY STARTED: ${pumps.map((p) => p.name).join(", ")}`
+    : `every loop costs money to run. There is no free round trip in this economy.`);
+  report(29, "THE MONEY PUMP", pumps.length ? "BROKEN" : "WIRED", lines);
+}
+
+// ===========================================================================
+// 30. THE BOUNDS — push it until it breaks, and see what breaking looks like
+// ===========================================================================
+// Every number in this engine has a plausible range and the interesting
+// question is what happens outside it. Not because a 40% policy rate is
+// realistic, but because the code that survives one is the code that has no
+// hidden division by a thing that can be zero.
+if (want(30)) {
+  const lines = [];
+  const base = city(CITY_SEED);
+  const EXTREMES = [
+    ["a 40% policy rate", (g) => { g.econ.indexRate = 40; }],
+    ["ninety per cent vacant", (g) => { for (const u of USES) g.econ.cityVac[u] = 0.9; }],
+    ["construction at 20x", (g) => { g.econ.costIdx = 20; }],
+    ["the town half emptied", (g) => { g.econ.population = Math.max(1000, Math.round(g.econ.population * 0.5)); g.econ.jobs = Math.round(g.econ.jobs * 0.5); }],
+    ["no credit at all", (g) => { g.econ.creditIdx = 0; }],
+    ["rents at a tenth", (g) => { for (const u of USES) g.econ.rentIdx[u] *= 0.1; }],
+    ["the player owns nothing and owes nothing", (g) => { g.cash = 0; }],
+  ];
+  let broke = 0;
+  for (const [label, inject] of EXTREMES) {
+    const parcels = JSON.parse(JSON.stringify(base.parcels));
+    let g = E.firstListings(E.newGame(MARKET_SEEDS[0], parcels), parcels, base.bbls);
+    for (let m = 0; m < 12; m++) g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
+    let err = null, bad = 0;
+    try {
+      for (let m = 0; m < 60; m++) {
+        inject(g);
+        g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
+        if (m % 12 === 0) bad += scan(`bound:${label}`, g, parcels);
+      }
+    } catch (e) { err = e.message; }
+    if (err || bad) broke++;
+    lines.push(`${label.padEnd(42)} ${err ? `THREW: ${err}` : bad ? `${bad} numerical problems` : `survived 5 years`}`
+      + (err ? "" : ` · vac ${pct(g.econ.cityVac.office)} · rent ${g.econ.rentIdx.office.toFixed(0)} · pop ${g.econ.population}`));
+  }
+  lines.push(``);
+  lines.push(`${EXTREMES.length - broke} of ${EXTREMES.length} extremes ran five years without throwing or producing a number that is not a number`);
+  report(30, "THE BOUNDS", broke === 0 ? "WIRED" : broke <= 1 ? "WEAK" : "BROKEN", lines);
+}
+
+// ===========================================================================
+// 31. THE FOUR QUOTES AGREE — appraisal, tape, mark and loan
+// ===========================================================================
+// The engine prices the same building in four places: assetValue for a parcel
+// nobody owns, holdingValue for one somebody does, the ask on the tape, and
+// the proceeds a lender will advance. They are allowed to differ — that is the
+// bid-ask spread and the advance rate doing their jobs — but they have to move
+// TOGETHER, and no lender may advance more than the building is worth. Where
+// they disagree systematically, somebody can stand between two of them and
+// take the difference forever.
+if (want(31)) {
+  const lines = [];
+  const base = city(CITY_SEED);
+  const parcels = JSON.parse(JSON.stringify(base.parcels));
+  let g = E.firstListings(E.newGame(MARKET_SEEDS[0], parcels), parcels, base.bbls);
+  for (let m = 0; m < 120; m++) g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
+  const pairs = [], overAdvance = [], binds = {};
+  let n = 0;
+  for (const b of base.bbls) {
+    if (n >= 400) break;
+    const rec = E.resolveRec(parcels, g, b);
+    if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+    n++;
+    const cond = E.initialCondition(rec);
+    const appraisal = E.assetValue(rec, g.econ, cond);
+    if (!(appraisal > 0)) continue;
+    const q = E.buyQuote(g, parcels, b, Math.round(appraisal), "senior", 1);
+    const debt = q?.principal ?? 0;
+    const noi = E.noiAfterTaxYr(rec, g.econ, cond, appraisal);
+    binds[q?.bind ?? "?"] = (binds[q?.bind ?? "?"] ?? 0) + 1;
+    pairs.push({ appraisal, debt, noi });
+    if (debt > appraisal) overAdvance.push({ b, appraisal, debt });
+  }
+  // RANK correlation, not Pearson. The advance is the SMALLEST of three tests —
+  // an advance rate, a coverage ratio and a debt yield — so it is a kinked
+  // function of value by construction and a linear correlation across four
+  // hundred unlike buildings measures the kink, not the agreement. What has to
+  // hold is the ORDER: a building an appraiser ranks above another must not
+  // borrow less than it, other things equal.
+  const rank = (a) => { const idx = a.map((v, i) => [v, i]).sort((x, y) => x[0] - y[0]); const r = new Array(a.length); idx.forEach(([, i], k) => { r[i] = k; }); return r; };
+  const corr = (xs, ys) => {
+    const mx = mean(xs), my = mean(ys);
+    let a = 0, bb = 0, cc = 0;
+    for (let i = 0; i < xs.length; i++) { const dx = xs[i] - mx, dy = ys[i] - my; a += dx * dy; bb += dx * dx; cc += dy * dy; }
+    return a / Math.max(1e-9, Math.sqrt(bb * cc));
+  };
+  const spearman = (xs, ys) => corr(rank(xs), rank(ys));
+  const rLoan = pairs.length > 2 ? spearman(pairs.map((p) => p.appraisal), pairs.map((p) => p.debt)) : NaN;
+  const rNoi = pairs.length > 2 ? spearman(pairs.map((p) => p.noi), pairs.map((p) => p.debt)) : NaN;
+  const rVal = pairs.length > 2 ? spearman(pairs.map((p) => p.noi), pairs.map((p) => p.appraisal)) : NaN;
+  const ltvs = pairs.filter((p) => p.debt > 0).map((p) => p.debt / p.appraisal);
+  // and the tape against the appraisal, on live listings
+  const asks = g.listings.map((l) => {
+    const rec = E.resolveRec(parcels, g, l.bbl);
+    if (!rec) return null;
+    const v = rec.class === "land" ? E.landValue(rec, g.econ) : E.assetValue(rec, g.econ, E.initialCondition(rec));
+    return v > 0 ? l.ask / v : null;
+  }).filter((x) => x !== null);
+  lines.push(`sampled ${pairs.length} standing buildings at year 10`);
+  lines.push(`rank corr(appraisal, senior advance):  ${rLoan.toFixed(3)}   (need >= 0.6 — the desk and the appraiser read the same building)`);
+  lines.push(`rank corr(income,    senior advance):  ${rNoi.toFixed(3)}   (a loan is sized on income, so this should be the tighter of the two)`);
+  lines.push(`rank corr(income,    appraisal):       ${rVal.toFixed(3)}`);
+  lines.push(`advance rate: median ${pct(med(ltvs))}, worst ${pct(Math.max(...ltvs, 0))}   (nothing may exceed 100% of appraisal)`);
+  lines.push(`lenders advancing MORE than the building is worth: ${overAdvance.length}`);
+  lines.push(`which test actually capped the loan: ${Object.entries(binds).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(" · ")}`);
+  lines.push(`   (a desk where one test binds every time is a desk with two decorative tests)`);
+  lines.push(`the tape against the appraisal: median ${med(asks).toFixed(2)}x over ${asks.length} live listings`);
+  const liveBinds = Object.entries(binds).filter(([k, v]) => k !== "?" && k !== "none" && v > 0).length;
+  const ok = [rLoan >= 0.6, overAdvance.length === 0, Math.abs(med(asks) - 1) <= 0.15, liveBinds >= 2].filter(Boolean).length;
+  report(31, "THE FOUR QUOTES AGREE", ok >= 4 ? "WIRED" : ok >= 3 ? "WEAK" : "BROKEN", lines);
+}
+
+// ===========================================================================
+// 34. THE LONG TAIL OF SEEDS — is the outcome a distribution or a coin flip?
+// ===========================================================================
+// One competent strategy, played identically across every seed available. A
+// game whose result is decided by the draw rather than the play is a lottery
+// with extra steps; one whose result is identical in every world has no
+// weather in it. What is wanted is a spread you can see and a floor you can
+// stand on.
+if (want(34)) {
+  const lines = [];
+  const outs = MARKET_SEEDS.map((ms) => playStrategy("core", ms));
+  const real = outs.map((o) => o.nw / Math.max(0.1, o.cpi)).sort((a, b) => a - b);
+  const p = (x) => real[Math.min(real.length - 1, Math.floor(x * real.length))];
+  lines.push(`${real.length} worlds, one core strategy, ${MONTHS / 12} years each:`);
+  lines.push(`   worst ${M(real[0])}   p25 ${M(p(0.25))}   median ${M(med(real))}   p75 ${M(p(0.75))}   best ${M(real[real.length - 1])}`);
+  lines.push(`   wipeouts: ${outs.filter((o) => o.nw < 1e6).length} of ${outs.length}   ·   median holdings ${med(outs.map((o) => o.holdings))}`);
+  const ratio = p(0.75) / Math.max(1, p(0.25));
+  lines.push(``);
+  lines.push(`p75 / p25: ${ratio.toFixed(2)}x   (need 1.3x to 12x — narrower is a world with no weather, wider is a lottery)`);
+  const survives = outs.filter((o) => o.nw >= 1e6).length / outs.length;
+  lines.push(`share of worlds a competent operator survives: ${pct(survives)}   (need >= 60%)`);
+  const ok = [ratio >= 1.3 && ratio <= 12, survives >= 0.6].filter(Boolean).length;
+  report(34, "THE LONG TAIL OF SEEDS", ok === 2 ? "WIRED" : ok === 1 ? "WEAK" : "BROKEN", lines);
+}
+
+// ===========================================================================
+// 35. THE HUMAN CLOCK — how much of a fifty-year run is a decision?
+// ===========================================================================
+// The engine can simulate six hundred months. A person cannot play six hundred
+// months of nothing. This counts, month by month, whether ANY meaningful move
+// was on the table: a letter to answer, a listing worth buying, a site that
+// pencils, a loan worth refinancing. Months with none of those are months the
+// game is asking the player to press Next, and a game that is mostly Next is a
+// spreadsheet with a coastline.
+if (want(35)) {
+  const lines = [];
+  const rows = [];
+  for (const ms of MARKET_SEEDS.slice(0, 3)) {
+    const base = city(CITY_SEED);
+    const parcels = JSON.parse(JSON.stringify(base.parcels));
+    let g = E.firstListings(E.newGame(ms, parcels), parcels, base.bbls);
+    let live = 0, lois = 0, buys = 0, sites = 0, dead = 0, run = 0, worstRun = 0;
+    for (let m = 0; m < MONTHS; m++) {
+      g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
+      // COUNT THE LETTERS BEFORE ANSWERING THEM. Reading g.lois after
+      // leaseAtMarket has run counts the ones the bot failed to deal with,
+      // which is the opposite of the question and reads as a flat zero.
+      const hasLoi = g.lois.length > 0;
+      g = leaseAtMarket(g, parcels);
+      // buy something occasionally so the run is a real portfolio, not an empty desk
+      if (m % 18 === 0) {
+        for (const li of [...g.listings].slice(0, 5)) {
+          const rec = E.resolveRec(parcels, g, li.bbl);
+          if (!rec || rec.class === "land" || g.holdings[li.bbl]) continue;
+          if (li.ask > E.assetValue(rec, g.econ, E.initialCondition(rec))) continue;
+          const r = E.executePurchase(g, parcels, li.bbl, li.ask, "senior", false, 1);
+          if (!r.err) { g = r.s; break; }
+        }
+      }
+      const buyable = g.listings.some((l) => {
+        const rec = E.resolveRec(parcels, g, l.bbl);
+        if (!rec || rec.class === "land" || g.holdings[l.bbl]) return false;
+        return l.ask <= E.assetValue(rec, g.econ, E.initialCondition(rec)) * 0.98 && l.ask <= g.cash + E.locAvailable(g, parcels);
+      });
+      const pencils = g.listings.some((l) => {
+        const rec = E.resolveRec(parcels, g, l.bbl);
+        return rec?.class === "land" && (bestPlan(g, parcels, l.bbl)?.spread ?? -9) >= DEV_HURDLE_PP;
+      });
+      if (hasLoi) lois++;
+      if (buyable) buys++;
+      if (pencils) sites++;
+      if (hasLoi || buyable || pencils) { live++; run = 0; }
+      else { dead++; run++; worstRun = Math.max(worstRun, run); }
+    }
+    rows.push({ ms, live, lois, buys, sites, dead, worstRun });
+  }
+  lines.push(`                    months with a letter   a buy   a site that pencils   ANY move   longest dead stretch`);
+  for (const r of rows) {
+    lines.push(`seed ${String(r.ms).padEnd(8)}    ${String(r.lois).padEnd(21)} ${String(r.buys).padEnd(7)} ${String(r.sites).padEnd(21)} `
+      + `${String(r.live).padEnd(10)} ${r.worstRun} months`);
+  }
+  const liveShare = med(rows.map((r) => r.live)) / MONTHS;
+  const worst = Math.max(...rows.map((r) => r.worstRun));
+  lines.push(``);
+  lines.push(`share of a fifty-year run with something on the table: ${pct(liveShare)}   (need >= 60%)`);
+  lines.push(`longest stretch with nothing at all: ${worst} months   (need <= 18 — a player should never press Next for two years)`);
+  const ok = [liveShare >= 0.6, worst <= 18].filter(Boolean).length;
+  report(35, "THE HUMAN CLOCK", ok === 2 ? "WIRED" : ok === 1 ? "WEAK" : "BROKEN", lines);
 }
 
 // ===========================================================================

@@ -5,7 +5,7 @@ import type { ParcelRecord } from "@/data/types";
 import type { Condition, Econ, GameState, Holding, Sector } from "./types";
 import { serviceSpec } from "./types";
 import type { BuiltClass } from "./types";
-import { blend, blendBy, commercialShare, dominantUse, uses, useSf } from "./mix";
+import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 import { industryStress, NATURAL_VAC } from "./market";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -503,30 +503,7 @@ function leaseUpFactor(rec: ParcelRecord, econ: Econ, apt: boolean): number {
   return clamp(0.2 + 0.8 * Math.pow(age / span, 0.75), 0.2, 1);
 }
 
-/** Months of filling still ahead of this building, 0 once it is stabilised. */
-export function leaseUpMonthsLeft(rec: ParcelRecord, econ: Econ): number {
-  if (!rec.yearBuilt || econ.m === undefined) return 0;
-  const span = LEASE_UP_YEARS(dominantUse(rec) === "multifamily");
-  const age = 2000 + econ.m / 12 - rec.yearBuilt;
-  return Math.max(0, Math.round((span - age) * 12));
-}
-
-/**
- * OCCUPANCY THIS BUILDING WILL SETTLE AT — the lease-up curve taken back off.
- *
- * `useOccupancy` is the honest answer to "how full is it today", and for a
- * building that opened last year that is a fifth. But a fifth is not what it
- * is WORTH capitalising, and valuation needs both numbers: where the roll is
- * now, and where it is going. Reading the lease-up number as the stabilised
- * one is what made every ground-up job mark at a fifth of its cost the month
- * it topped out.
- */
-export function useOccupancyStabilized(rec: ParcelRecord, econ: Econ, use: BuiltClass): number {
-  const f = leaseUpFactor(rec, econ, use === "multifamily");
-  return f > 0 ? useOccupancy(rec, econ, use) / f : useOccupancy(rec, econ, use);
-}
-
-export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass): number {
+export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, stabilised = false): number {
   const apt = use === "multifamily";
   // The swing*cycleDev term died here (ECONOMY.md): with the vacancy wire
   // below live, it counted the cycle twice — cityVac already carries the
@@ -578,7 +555,12 @@ export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass): nu
     mktDelta *= vintage / (econ.vintageMean ?? 1.0);
   }
   const base = clamp(OCC_BASE[use] + mktDelta + loc + idio - trouble, 0.28, 0.99);
-  return base * leaseUpFactor(rec, econ, apt);
+  // AS-IF-STABILISED IS THE SAME BUILDING WITHOUT THE CALENDAR. `stabilised`
+  // asks for the occupancy this building runs at once it is no longer new —
+  // which is what an appraiser means by the phrase, and what the stabilised
+  // leg of holdingValue has to be measured against. Everything else on this
+  // engine wants the honest as-is number and gets it by default.
+  return stabilised ? base : base * leaseUpFactor(rec, econ, apt);
 }
 export function occupancy(rec: ParcelRecord, econ: Econ): number {
   if (rec.class === "land") return 0;
@@ -722,7 +704,7 @@ export function appraise(bbl: string, value: number): { lo: number; mid: number;
 
 // market-implied NOI before property tax (unowned parcels; also the
 // stabilized case for owned). Tax is capitalized in assetValue.
-export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition): number {
+export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition, stabilised = false): number {
   if (rec.class === "land" || !rec.bldgArea) {
     // carry: taxes and insurance bleed on idle land
     return -landValue(rec, econ) * 0.012;
@@ -743,28 +725,11 @@ export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition): numb
   // falls out for free: because operating cost is per square foot and rent is
   // not, an expensive corner runs a LOWER expense ratio than a cheap one,
   // which is how the business actually works and which no flat ratio can say.
-  return noiAt(rec, econ, condition, (r, use) => useOccupancy(r, econ, use));
-}
-
-/**
- * The same stack read at the occupancy the building will SETTLE at rather than
- * the one it happens to be at — what a buyer capitalises, and the only honest
- * denominator for a yield on cost.
- */
-export function stabilizedNoiYr(rec: ParcelRecord, econ: Econ, condition: Condition): number {
-  if (rec.class === "land" || !rec.bldgArea) return noiYr(rec, econ, condition);
-  return noiAt(rec, econ, condition, (r, use) => useOccupancyStabilized(r, econ, use));
-}
-
-function noiAt(
-  rec: ParcelRecord, econ: Econ, condition: Condition,
-  occOf: (rec: ParcelRecord, use: BuiltClass) => number,
-): number {
   let rent = 0, recovered = 0, opex = 0;
   for (const use of uses(rec)) {
     const sf = useSf(rec, use);
     if (sf <= 0) continue;
-    const occ = occOf(rec, use);
+    const occ = useOccupancy(rec, econ, use, stabilised);
     const op = sf * opexPsf(use, econ, false);
     rent += sf * useRentPsfYr(rec, econ, condition, use) * occ;
     opex += op;
@@ -774,76 +739,6 @@ function noiAt(
   }
   const egi = rent + recovered;
   return egi - opex - egi * MGMT_FEE;
-}
-
-/**
- * WHAT AN EMPTY BUILDING IS ACTUALLY WORTH.
- *
- * You cannot divide a negative NOI by a cap rate. The arithmetic runs — a
- * building bleeding $315k a year "capitalises" at minus five and a half
- * million — but the number it produces is not an opinion of value, it is a
- * category error, and it was the single most expensive line in this engine.
- * Every ground-up job in the game marked at its land value the month it topped
- * out: a $14.2M development, penciled and delivered on programme, appraised at
- * $2.49M the day the scaffolding came down, because it had no tenants yet. Net
- * worth fell by ten million dollars on the day the building was FINISHED. No
- * merchant builder could survive that, and none did.
- *
- * What an appraiser does instead, on any asset in lease-up, is the
- * discounted-to-stabilised approach: take the value it will have when it is
- * full, subtract what it costs to get it there, and subtract a return for
- * carrying that risk. It is bounded below by the dirt and above by the
- * stabilised value, it moves continuously as the building fills, and it is
- * never negative — because a building nobody has leased yet is still a
- * building, and somebody will always pay something for it.
- *
- * The risk deduction is what keeps development honest: a spec building is
- * worth meaningfully less than a full one, which is the whole reason the trade
- * pays. It just is not worth less than the ground it stands on.
- */
-export function leaseUpValue(
-  rec: ParcelRecord, econ: Econ, condition: Condition, occNow: number,
-): number {
-  const land = landValue(rec, econ);
-  if (rec.class === "land" || !rec.bldgArea) return land;
-  const cap = capRateFor(rec, econ, condition) / 100 + TAX_RATE * taxBorneShare(rec);
-  const stab = stabilizedNoiYr(rec, econ, condition);
-  const full = stab > 0 ? stab / cap : land;
-
-  // How much of it still has to be leased, and what that costs. Fit-out and
-  // commissions are the same money the development budget sets aside for
-  // lease-up; the carry is the empty space paying its own operating cost while
-  // it waits. Both are per square foot of VACANT space, which is why a
-  // building that is 80% let is worth far more than four-fifths of a full one.
-  let target = 0, sfAll = 0, cost = 0;
-  for (const use of uses(rec)) {
-    const sf = useSf(rec, use);
-    if (sf <= 0) continue;
-    sfAll += sf;
-    target += sf * useOccupancyStabilized(rec, econ, use);
-  }
-  const stabOcc = sfAll > 0 ? target / sfAll : 0;
-  const gap = Math.max(0, stabOcc - clamp(occNow, 0, 1));
-  for (const use of uses(rec)) {
-    const sf = useSf(rec, use) * gap;
-    if (sf <= 0) continue;
-    const ti = use === "office" ? 32 : use === "retail" ? 22 : use === "industrial" ? 5 : 7;
-    const lc = useRentPsfYr(rec, econ, condition, use) * 6 * 0.045 * (use === "multifamily" ? 0 : 1);
-    cost += sf * (ti + lc) * econ.costIdx;
-  }
-  const months = Math.max(6, leaseUpMonthsLeft(rec, econ) || (gap > 0.02 ? 18 : 0));
-  for (const use of uses(rec)) {
-    cost += useSf(rec, use) * gap * opexPsf(use, econ, false) * (months / 12);
-  }
-
-  // The developer's risk premium on the part that is still a promise. A tenth
-  // of the unlet value is roughly the spread between a stabilised trade and a
-  // lease-up trade in a normal market, and it widens when the market is soft
-  // — which is exactly when a half-empty building is hardest to move.
-  const dom = dominantUse(rec);
-  const soft = clamp((econ.cityVac?.[dom] ?? 0.1) - NATURAL_VAC[dom], -0.05, 0.15);
-  const risk = full * gap * (0.10 + soft * 1.2);
-  return Math.max(land * 0.92, full - cost - risk);
 }
 
 /**
@@ -1024,9 +919,14 @@ export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition):
   // Priced properly it is the stabilised value less the cost and the risk of
   // getting there, which is both lower than a full building and higher than a
   // hole in the ground.
-  if (leaseUpMonthsLeft(rec, econ) > 0) return leaseUpValue(rec, econ, condition, occupancy(rec, econ));
+  const sinceM = rec.yearBuilt && econ.m !== undefined
+    ? Math.round((2000 + econ.m / 12 - rec.yearBuilt) * 12) : 999;
+  const asIs = leaseUpMarkAt(
+    rec, econ, condition, sinceM, occupancy(rec, econ),
+    clamp(capRateFor(rec, econ, condition), 2.8, 13) / 100,
+  );
   // an underbuilt lot is worth the greater of its income or its dirt
-  return Math.max(income, land * 0.92);
+  return Math.max(asIs === null ? income : Math.max(income, asIs), land * 0.92);
 }
 
 // owned assets appraise on a blend of in-place income and stabilized market —
@@ -1179,9 +1079,106 @@ export function remainingAbatement(h: Holding, month: number): number {
   return owed;
 }
 
+/**
+ * WHAT A BUILDING IS WORTH THE MONTH IT OPENS.
+ *
+ * Nothing in this engine hurt a developer more than this, and the number was
+ * not a judgement — it was an accident of arithmetic. holdingValue capitalises
+ * in-place NOI. A building that opened last month has no tenants, so its
+ * in-place NOI is *negative* — it pays the boiler, the insurance and the tax
+ * bill and collects nothing — and dividing a negative income by a cap rate
+ * produces a negative capital value. Measured on a 174,300 sf tower on the best
+ * corner in New Alden, delivered on programme: basis $158.7M, debt $94.1M,
+ * in-place leg −$69.9M, blended mark −$27.6M, and the only thing standing
+ * between the developer and a negative balance sheet was the floor under the
+ * dirt. It carried at $23.0M. Every single job in `pnpm devyield` marked
+ * between 0.07x and 0.26x of cost the day the scaffolding came down.
+ *
+ * That is not a valuation. Net worth sets the revolver (locLimit), the revolver
+ * funds the carry through lease-up, and the mark sets every LTV test the loan
+ * has to pass — so finishing a building on time and on budget triggered a
+ * margin call on the sponsor, in the exact month their costs peaked and their
+ * income was still zero. Ground-up development could not be made to pay,
+ * however good the site, because the accounting took the building away.
+ *
+ * The trade has a standard answer and this is it: a completed building in
+ * lease-up is worth its AS-IF-STABILISED value, less what it costs to fill,
+ * less the income given up while it fills, less a discount for the risk that it
+ * does not. That is the appraiser's "as-is on completion", and it lands where
+ * it should — a shade under cost for a good building on a good corner, well
+ * under for a bad one. Nobody capitalises an empty building's negative NOI,
+ * because nobody would sell it for less than nothing.
+ *
+ * Returns null once the building is no longer new, and the ordinary blend
+ * resumes — vacancy in year five is information about the asset, which is
+ * exactly what the in-place leg is there to price.
+ */
+function leaseUpMark(rec: ParcelRecord, econ: Econ, h: Holding, month: number, capNoRoll: number): number | null {
+  if (h.deliveredM === undefined || !rec.bldgArea) return null;
+  const apt = (rec.class as BuiltClass) === "multifamily";
+  const letSf = apt
+    ? Math.max(0, Math.min(1, h.occ ?? 0)) * rec.bldgArea
+    : (h.tenants ?? []).reduce((a, t) => a + t.sf, 0);
+  return leaseUpMarkAt(rec, econ, h.condition, month - h.deliveredM, letSf / Math.max(1, rec.bldgArea), capNoRoll);
+}
+
+/**
+ * The same mark for a building NOBODY OWNS — the tape, a rival's book, an
+ * appraisal on a lot you are only looking at. `leaseUpMark` needs a rent roll
+ * and a delivery date, and an unowned record has neither; what it has is a
+ * year built and the market's own read of how full a building that age is. So
+ * the arithmetic lives here once, and both callers bring their own answer to
+ * "how new is it" and "how much of it is let".
+ *
+ * Without this, `assetValue` still capitalised a lease-up roll at a stabilised
+ * cap rate — the same double count, on every new building in town except the
+ * ones the player happened to have built themselves.
+ */
+export function leaseUpMarkAt(
+  rec: ParcelRecord, econ: Econ, condition: Condition,
+  sinceM: number, letShare: number, capNoRoll: number,
+): number | null {
+  if (!rec.bldgArea || sinceM < 0) return null;
+  // The same window leaseUpFactor uses, in months: flats fill in a year and a
+  // half, commercial space in a little over three years.
+  const apt = (rec.class as BuiltClass) === "multifamily";
+  const span = apt ? 19 : 38;
+  if (sinceM >= span) return null;
+  const left = Math.max(0, span - sinceM) / 12;   // years still to run
+
+  // AS IF STABILISED. Not "as if full" — at the occupancy this building runs
+  // at when it is no longer the new one, on this corner, in this market. The
+  // cap is the one WITHOUT the empty-roll penalty, because a stabilised
+  // building by definition has a roll; charging that spread here would price
+  // the vacancy a second time, which is the mistake this whole function exists
+  // to undo.
+  const stab = noiYr(rec, econ, condition, true) / (capNoRoll + TAX_RATE);
+  if (!(stab > 0)) return null;
+
+  const vacant = clamp(1 - letShare, 0, 1);
+  const vacantSf = vacant * rec.bldgArea;
+
+  // THE THREE DEDUCTIONS.
+  // 1. The cheque to fill it: fit-out and the commissions on the space still
+  //    to let. Same money planDevelopment reserves, on the part still empty.
+  const cls = (rec.class as BuiltClass) ?? "office";
+  const tiPsf = cls === "office" ? 32 : cls === "retail" ? 22 : cls === "industrial" ? 5 : 7;
+  const lcPsf = apt ? 0 : marketRentPsfYr(rec, econ, condition) * 6 * 0.045;
+  const fill = vacantSf * (tiPsf * econ.costIdx + lcPsf);
+  // 2. The income it does not earn on the way there. Space lets in over the
+  //    window rather than all at the end, so on average half of what is empty
+  //    today is empty for the time that is left.
+  const forgone = stab * (capNoRoll + TAX_RATE) * vacant * left * 0.5;
+  // 3. And the part nobody underwrites away: it may not let. A wholly empty
+  //    building is a project, and it is priced like one.
+  const risk = stab * 0.08 * vacant;
+  return stab - fill - forgone - risk;
+}
+
 export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: number): number {
   if (rec.class === "land" || !rec.bldgArea) return landValue(rec, econ);
   const quality = month === undefined ? 0 : rollQualitySpread(rec, h, month, econ);
+  const capNoRoll = clamp(capRateFor(rec, econ, h.condition), 2.8, 13) / 100;
   const cap = clamp(capRateFor(rec, econ, h.condition) + quality, 2.8, 13) / 100;
   // CONTRACT rent, not the rent that happens to be arriving this month.
   //
@@ -1195,35 +1192,42 @@ export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: 
   // worst, because a developer's whole roll is leases they signed themselves.
   const inGut = month !== undefined && h.renovatingUntilM !== undefined && month < h.renovatingUntilM;
   const contractNoi = holdingNOIYr(rec, econ, h, inGut ? month : Number.POSITIVE_INFINITY);
-  const inPlace = contractNoi / cap;                                    // after-tax NOI, plain cap
-
-  // WHAT REPLACED THE FIXED 55/45 BLEND, AND WHY.
+  // AND YOU CANNOT DIVIDE A NEGATIVE NOI BY A CAP RATE AT ALL.
   //
-  // The old line was `inPlace * 0.55 + stabilized * 0.45`, and it had two
-  // faults that compounded into the worst number in the engine.
+  // A building with no tenants pays operating costs and taxes and bills
+  // nobody, so its in-place NOI is negative — and $-315k over a 5.7% cap is
+  // "minus five and a half million dollars", which is not a conservative
+  // opinion of value, it is a category error with a decimal point. Fifty-five
+  // per cent of it then dragged the blend below the land floor on every empty
+  // building in town.
   //
-  // First, `stabilized` read `noiYr`, which carries the LEASE-UP CURVE — so
-  // for a building under four years old the "stabilised" leg was itself a
-  // fifth of stabilised. Both legs of a blend meant to bracket the truth sat
-  // on the same side of it.
-  //
-  // Second, and worse, a building with no tenants has a NEGATIVE in-place NOI
-  // — it pays operating costs and taxes and bills nobody — and dividing that
-  // by a cap rate produces a large negative number that no discount, floor or
-  // weighting can rehabilitate. Fifty-five per cent of minus five million is
-  // not a conservative opinion of value; it is nonsense with a decimal point.
-  //
-  // So: an empty building is priced the way an appraiser prices one, on
-  // stabilised value less the cost and risk of filling it, and a full one is
-  // priced on the roll it actually has. The weight between them is the roll
-  // itself, which makes the two ends continuous and gives the middle the
-  // honest reading — a half-let building is worth about half a leasing project
-  // and about half a bond, because that is what it is.
-  const w = heldOccupancy(rec, econ, h);
-  const asIs = leaseUpValue(rec, econ, h.condition, w);
-  const blended = inPlace > 0 ? inPlace * w + asIs * (1 - w) : asIs;
+  // The lease-up window above is one place that happens and it is now handled.
+  // This is the other, and the general one: a building that empties out in
+  // year twenty is not new, gets no lease-up mark, and hits exactly the same
+  // arithmetic. A negative income stream contributes NOTHING to value — the
+  // asset is then worth its stabilised mark less what it costs to get there,
+  // which is what the other leg already measures. It is never worth less than
+  // nothing, because nobody would pay to give it away.
+  const inPlace = Math.max(0, contractNoi) / cap;                       // after-tax NOI, plain cap
+  // THE STABILISED LEG HAS TO BE STABILISED. This read noiYr's default, which
+  // runs occupancy through leaseUpFactor — so for a building under four years
+  // old the "stabilised" mark was itself cut to as little as 12% of stabilised
+  // NOI, and the blend then applied the in-place penalty for the same vacancy
+  // on top of it. One lease-up, counted twice, in the two legs that were
+  // supposed to be measuring different things. Nothing older than four years
+  // moves by a cent: leaseUpFactor is already 1 there.
+  const stabilized = noiYr(rec, econ, h.condition, true) / (cap + TAX_RATE);  // pre-tax NOI, tax-loaded cap
+  const blended = inPlace * 0.55 + stabilized * 0.45;
   const abate = month === undefined ? 0 : remainingAbatement(h, month);
-  return Math.max(landValue(rec, econ) * 0.92, blended - abate);
+  const floor = landValue(rec, econ) * 0.92;
+  // A BUILDING IN ITS FIRST LEASE-UP IS NOT A BUILDING WITH A VACANCY PROBLEM.
+  // Inside the window the as-is-on-completion mark governs, and it retires on
+  // its own as the space lets and the calendar runs out — see leaseUpMark. It
+  // never marks BELOW the ordinary blend, so a job that fills fast keeps the
+  // upside the roll has earned it.
+  const asIs = month === undefined ? null : leaseUpMark(rec, econ, h, month, capNoRoll);
+  if (asIs !== null) return Math.max(floor, Math.max(blended, asIs) - abate);
+  return Math.max(floor, blended - abate);
 }
 
 export function monthlyNOI(rec: ParcelRecord, econ: Econ, h: Holding, currentQ: number): number {

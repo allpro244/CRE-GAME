@@ -540,17 +540,25 @@ export function planDevelopment(
   // variance you paid a year of hearings for, bought you nothing at the desk.
   const rec = resolveRec(parcels, s, bbl);
   if (!rec || !rec.lotArea) return null;
-  // A NUMBER THAT IS NOT A NUMBER POISONS EVERYTHING DOWNSTREAM OF IT.
+  // A NUMBER THAT IS NOT A NUMBER IS NOT A DESIGN.
   //
-  // Math.min/max/round all pass NaN through silently, so a single bad height
-  // walks out of here as a whole plan of NaN — cost, commitment, equity — and
-  // startDevelopment writes it to state. From then on the firm's cash is NaN,
-  // its net worth is NaN, and NaN fails every comparison it is in, so no
-  // insolvency check and no affordability gate ever fires again. The run does
-  // not crash; it just quietly stops being a simulation. Caught here, at the
-  // door, rather than twenty months later on a balance sheet.
-  const cov = Number.isFinite(coverage) ? Math.max(0.08, Math.min(0.9, coverage)) : 0.6;
-  if (!Number.isFinite(floors) || floors < 1) return null;
+  // NaN does not throw here, it propagates, and every guard downstream is a
+  // COMPARISON — which against NaN is false, so each one waves it through. A
+  // NaN floor count becomes a NaN square footage; `if (sf < 2000) return null`
+  // does not fire; the budget, the commitment and the equity are all NaN; both
+  // funding tests in startDevelopment ("can you fund it", "is the cheque in the
+  // account") pass because NaN is neither less than nor greater than anything;
+  // and the close does `cash -= NaN`. The state is JSON-cloned every tick, so
+  // NaN comes back as null, the next `cash += x` turns null into x, and the
+  // firm's entire bankroll has silently vanished with no error anywhere in the
+  // chain. That is precisely what happened: it cost a merchant builder its
+  // whole fund on the first groundbreak, in four seeds out of four, and read
+  // as "ground-up development is value-destructive".
+  //
+  // ltcWanted was already defended against this below. It was never the only
+  // way in — the caller supplies floors, coverage and spec too.
+  if (!Number.isFinite(floors) || !Number.isFinite(coverage) || !Number.isFinite(spec)) return null;
+  const cov = Math.max(0.08, Math.min(0.9, coverage));
   const farMax = farMaxFor(rec);
   // The mix has to be known before the height, because a programme that is
   // all shops is a two-storey building whatever the envelope allows.
@@ -796,6 +804,15 @@ export function startDevelopment(
   if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage — build on the site, not the piece." };
   const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, contract, ltcWanted, custom, lender, spec);
   if (!plan) return { s, err: "That's too small to be worth building — add floors or cover more of the lot." };
+  // AND NOTHING UNPRICEABLE CLOSES. planDevelopment refuses a design it cannot
+  // draw; this refuses a budget it cannot add up, whatever made it unaddable.
+  // Every test below this line is a comparison, and a comparison is exactly
+  // what a NaN walks through — so the arithmetic is checked once, here, before
+  // any of them run.
+  const unpriced = [plan.sf, plan.floors, plan.costTotal, plan.commitment, plan.interestReserve,
+    plan.equity, plan.equityAtClose, plan.pointsCost, plan.months, plan.ratePct]
+    .some((n) => !Number.isFinite(n));
+  if (unpriced) return { s, err: "The numbers on that job do not add up — nobody can price it, so nobody will fund it." };
   // YOU HAVE TO BE ABLE TO FUND THE WHOLE THING.
   //
   // This used to test only the day-one cheque, which is 55% of the equity —

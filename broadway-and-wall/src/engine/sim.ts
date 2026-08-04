@@ -21,6 +21,7 @@ import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
 import { tickWorkouts } from "./workout";
 import { tickNotes, maybeSellYourLoan } from "./notes";
+import { tickAuction } from "./auction";
 import { tickPortfolio } from "./portfolio";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
@@ -53,7 +54,7 @@ function targetListings(s: GameState, totalLots: number): number {
 
 export function newGame(seed: number, parcels?: ParcelTable): GameState {
   const s: GameState = {
-    v: 27,
+    v: 28,
     seed,
     rng: seed,
     month: 0,
@@ -211,6 +212,10 @@ export function advanceQuarter(
   tickPortfolio(s, parcels);
   tickFirm(s, parcels);
   tickRivals(s, parcels);
+  // The county's calendar: notices of sale on the street, the July docket,
+  // and the August hammer. It reads the street the banks have just had, and
+  // it must settle BEFORE the note desk services anything it just resolved.
+  tickAuction(s, parcels);
   // The paper desk reads the month the banks and the street have just had:
   // whose capital ratio broke, who stopped leasing, whose building sold out
   // from under whose mortgage. It cannot run before either of them.

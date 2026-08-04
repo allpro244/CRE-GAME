@@ -45,7 +45,7 @@
 // selling ends it. Nothing here can turn into a monthly rhythm of clicks.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Holding, Note, Rival } from "./types";
-import { logBooks, monthLabel } from "./types";
+import { logBooks, monthLabel, nextJulyAfter } from "./types";
 import { rng, rrange } from "./market";
 import { assetValue, collateralAsIs, holdingValue, resolveRec } from "./value";
 import { lenderByName, lenderPressure, chargeLenderLoss } from "./lenders";
@@ -198,7 +198,7 @@ function serviceNotes(s: GameState, parcels: ParcelTable) {
     if (r && !r.bbls.includes(n.bbl)) {
       const got = n.perf === "performing"
         ? n.face
-        : Math.min(n.face, Math.round(collateralAsIs(rec, s.econ, ownerOcc(r))));
+        : Math.min(n.face + (n.arrears ?? 0), Math.round(collateralAsIs(rec, s.econ, ownerOcc(r))));
       s.cash += got; logBooks(s, "sold", got);
       s.news.unshift({
         q: s.month, kind: got >= n.basis ? "deal" : "warn",
@@ -237,18 +237,48 @@ function serviceNotes(s: GameState, parcels: ParcelTable) {
     }
 
     // --- it is not paying ----------------------------------------------------
-    if (n.filedM === undefined) {
-      // They can still cure. Odds are the underwriting, spread over 18 months.
-      if (!dead && rng(s) < pCure(s, r, n.face) / 18) {
-        const px = Math.round(n.face * 1.02);
-        s.cash += px; logBooks(s, "sold", px);
+    // The coupon it is not paying piles up as arrears — a real claim, capped
+    // at two years because a court will not let interest run forever.
+    const cpn = Math.round((n.face * n.ratePct) / 100 / 12);
+    n.arrears = Math.min(cpn * 24, (n.arrears ?? 0) + cpn);
+
+    // THE BORROWER CAN COME BACK, and filing does not stop them — the right to
+    // reinstate runs to the hammer itself. Odds are the underwriting, spread
+    // over ~15 months, and most recoveries are exactly this: they find the
+    // arrears, the file closes, and you own a performing loan again. The
+    // rarer, better outcome is a full payoff — outside money refinancing you
+    // out at face plus everything owed.
+    if (!dead && rng(s) < pCure(s, r, n.face) / 15) {
+      const legal = n.filedM !== undefined ? Math.round(n.face * FILE_COST) : 0;
+      const reinstate = Math.round((n.arrears ?? 0) * 1.05) + legal;
+      // Reinstating is what a borrower DOES with the money they can find — the
+      // cheque is small next to the face, and a firm that is not buried draws
+      // its line for it the way it draws its line for everything else.
+      const ltvR = (r!.aum ?? 0) > 0 ? r!.debt / r!.aum! : 2;
+      if (rng(s) < 0.72 && (r!.cash > reinstate || ltvR < 0.88)) {
+        r!.cash -= reinstate;
+        s.cash += reinstate; n.collected += reinstate; logBooks(s, "interest", reinstate);
+        n.perf = "performing";
+        n.arrears = 0;
+        n.filedM = undefined; n.saleM = undefined; n.toldM = undefined;
         s.news.unshift({
           q: s.month, kind: "deal",
-          text: `${n.obligor} has paid you out on ${n.address} — ${money(px)} against ${money(n.basis)} in. `
-            + `You bought the building and got the money instead, which is the risk you take at that price.`,
+          text: `${n.obligor} has reinstated on ${n.address} — ${money(reinstate)} of arrears${legal ? " and your legal" : ""} `
+            + `paid in one cheque, and the loan is current again. `
+            + (legal ? `The foreclosure file is closed; there is nothing to sell in July. ` : ``)
+            + `You are back to owning a bond, which was never the worst outcome.`,
         });
-        s.notes!.splice(i, 1); continue;
+        continue;
       }
+      // they could not fund the arrears, or they went and found a refinancing
+      const px = Math.round(n.face * 1.02 + (n.arrears ?? 0));
+      s.cash += px; logBooks(s, "sold", px);
+      s.news.unshift({
+        q: s.month, kind: "deal",
+        text: `${n.obligor} has paid you out on ${n.address} — ${money(px)} against ${money(n.basis)} in, arrears and all. `
+          + `You bought the building and got the money instead, which is the risk you take at that price.`,
+      });
+      s.notes!.splice(i, 1); continue;
     }
 
     // THE KEYS, OFFERED. A borrower who is hopelessly under water would rather
@@ -260,11 +290,9 @@ function serviceNotes(s: GameState, parcels: ParcelTable) {
       s.notes!.splice(i, 1); continue;
     }
 
-    // --- the file you opened -------------------------------------------------
-    if (n.filedM !== undefined && n.saleM !== undefined && s.month >= n.saleM) {
-      takeDeed(s, parcels, n, "foreclosure");
-      s.notes!.splice(i, 1);
-    }
+    // The file you opened runs to the county's calendar now: the sale is the
+    // July auction, the docket and the hammer live in engine/auction.ts, and
+    // until that gavel the borrower can still reinstate — see above.
   }
 }
 
@@ -290,7 +318,7 @@ function goBad(s: GameState, n: Note, what: string) {
  * and from here it is an ordinary building and every other system in the game
  * takes over.
  */
-function takeDeed(s: GameState, parcels: ParcelTable, n: Note, how: "foreclosure" | "deed") {
+export function takeDeed(s: GameState, parcels: ParcelTable, n: Note, how: "foreclosure" | "deed") {
   const rec = resolveRec(parcels, s, n.bbl);
   if (!rec) return;
   const r = obligorOf(s, n.obligorId);
@@ -366,11 +394,20 @@ function expireOffers(s: GameState, _parcels: ParcelTable) {
     // an offer mean something, and it is a way for the street to grow that is
     // not "they outbid you on the tape".
     const px = Math.round(o.face * o.askPct);
-    const buyer = (s.rivals ?? []).find((r) =>
+    // A fund does not buy paper out of its checking account; it buys on its
+    // line, against a book that can carry it. The old test wanted 1.6x the
+    // price in idle CASH from firms that distribute everything above a working
+    // reserve — measured over eight fifty-year runs, 139 of 139 expired offers
+    // were taken by NOBODY, which made passing on paper free. It is not free now.
+    const able = (s.rivals ?? []).filter((r) =>
       r.failedM === undefined && r.id !== o.obligorId
-      && (r.style === "opportunistic") && r.cash > px * 1.6);
+      && (r.style === "opportunistic")
+      && (r.aum ?? 0) > px * 3 && r.debt / Math.max(1, r.aum ?? 1) < 0.78);
+    const buyer = able.length && rng(s) < 0.55 ? able[Math.floor(rng(s) * able.length)] : undefined;
     if (!buyer || o.perf === "performing") continue;
-    buyer.cash -= px;
+    const equity = Math.min(Math.max(0, buyer.cash), Math.round(px * 0.35));
+    buyer.cash -= equity;
+    buyer.debt += px - equity;
     if (!s.rivalNotes) s.rivalNotes = [];
     s.rivalNotes.push({
       bbl: o.bbl, firmId: buyer.id, firm: buyer.name, face: o.face,
@@ -563,12 +600,14 @@ export function fileOnNote(s: GameState, _parcels: ParcelTable, id: string): { s
   next.cash -= cost; logBooks(next, "ga", cost);
   const nn = next.notes!.find((x) => x.id === id)!;
   nn.filedM = next.month;
-  nn.saleM = next.month + Math.round(rrange(next, FILE_MIN_M, FILE_MAX_M));
+  // The process takes what it takes, and then it waits for the county: one
+  // sale a year, in July, everything on the courthouse steps together.
+  nn.saleM = nextJulyAfter(next.month, Math.round(rrange(next, FILE_MIN_M, FILE_MAX_M)) - 5);
   next.news.unshift({
     q: next.month, kind: "warn",
-    text: `You have filed to foreclose on ${nn.address}. The sale is set for around ${monthLabel(nn.saleM)}. `
-      + `Between now and then you collect nothing, ${nn.obligor} can still pay you out, and at the end of it `
-      + `you own a building somebody has not spent money on in two years.`,
+    text: `You have filed to foreclose on ${nn.address}. The referee has set it down for the ${monthLabel(nn.saleM)} auction. `
+      + `Between now and then you collect nothing, ${nn.obligor} can still reinstate right up to the hammer — `
+      + `and if somebody outbids your debt on the steps, you get paid off and they get the building.`,
   });
   return { s: next, msg: "Filed." };
 }

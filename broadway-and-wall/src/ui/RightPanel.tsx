@@ -18,6 +18,7 @@ import { isCommercial, vacantSf, walt, loiSigningCost, notReadySf, unitStatus, u
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
 import { lenderHealth, capitalRatio, lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { noteBid, payoffQuote } from "@/engine/notes";
+import { depositFor as auctionDepositFor } from "@/engine/auction";
 import { collateralAsIs } from "@/engine/value";
 import { firmName, firmShort } from "@/engine/firm";
 import { replacementCost, cityValueToReplacement } from "@/engine/dev";
@@ -129,10 +130,96 @@ export default function GamePanels() {
         </div>
       )}
       <DecisionModal />
+      <AuctionModal />
       {/* yield to the saves page — this used to paint over it at the same
           z-index, leaving every control on it visible and dead */}
       {game.gameOver && page !== "saves" && <GameOverPage />}
     </>
+  );
+}
+
+/**
+ * THE JULY AUCTION — one card, once a year.
+ *
+ * The docket goes up when the calendar lands on July and the hammer falls on
+ * the next tick, so this modal exists for exactly one month. Everything on it
+ * is as-is: no diligence, no financing, ten per cent down the day you
+ * register. Passing costs nothing but the bargain — "watch from the back"
+ * dismisses it and the sale reports itself through the news like any other
+ * thing that happened in this town without you.
+ */
+function AuctionModal() {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels);
+  const focus = useStore((s) => s.focus);
+  const { bidAuction } = useStore.getState();
+  const [seenM, setSeenM] = useState(-1);
+  const [bids, setBids] = useState<Record<string, string>>({});
+  const a = game.auction;
+  if (!parcels || game.gameOver || !a || game.month >= a.m || seenM === a.m) return null;
+
+  const parsed: Record<string, number> = {};
+  for (const [id, v] of Object.entries(bids)) {
+    const n = Math.round(parseFloat(v) * 1e6);
+    if (n > 0) parsed[id] = n;
+  }
+  const dep = a.lots.reduce((acc, l) => acc + (parsed[l.id] ? auctionDepositFor(l, parsed[l.id]) : 0), 0);
+  const kindWord = (k: string) =>
+    k === "note" ? "your foreclosure" : k === "yours" ? "YOUR BUILDING" : k === "bank" ? "bank foreclosure" : "receiver's lot";
+  return (
+    <div className="modal-backdrop">
+      <div className="modal" style={{ maxWidth: 720 }}>
+        <div className="modal-kicker">The county foreclosure auction · {monthLabel(game.month)}</div>
+        <div className="modal-title">{a.lots.length} lot{a.lots.length === 1 ? "" : "s"} cross the block</div>
+        <div className="modal-sub">
+          As-is, where-is. Ten per cent down when you register, the balance at the hammer, no financing and no
+          warranty. A lender's debt bids for it without cash — beat the debt and the lender is simply paid off,
+          with anything above it going to the borrower who just lost the building.
+        </div>
+        <table className="tbl" style={{ marginTop: 8 }}>
+          <thead>
+            <tr><th>Lot</th><th>What it is</th><th className="num">Debt / floor</th><th className="num">Flyer est.</th><th className="num">Your bid ($M)</th></tr>
+          </thead>
+          <tbody>
+            {a.lots.map((l) => (
+              <tr key={l.id}>
+                <td style={{ cursor: "pointer" }} onClick={() => focus(l.bbl, true)}>{l.address}</td>
+                <td className={l.kind === "yours" ? "neg" : "dim"}>
+                  {kindWord(l.kind)} · {l.holder}{l.borrower && l.kind !== "yours" ? ` v. ${l.borrower}` : ""}
+                </td>
+                <td className="num">{usd(l.kind === "receiver" ? l.upset : l.debt)}</td>
+                <td className="num">{usd(l.est)}</td>
+                <td className="num">
+                  {l.kind === "yours"
+                    ? <span className="dim" title="You do not bid on your own foreclosure — cure it, hand back the keys, or let the room decide.">—</span>
+                    : <input className="mono" style={{ width: 72, textAlign: "right" }} inputMode="decimal"
+                        placeholder={l.kind === "note" ? "credit" : (l.upset / 1e6).toFixed(2)}
+                        value={bids[l.id] ?? ""}
+                        onChange={(e) => setBids({ ...bids, [l.id]: e.target.value })} />}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="dim" style={{ marginTop: 6 }}>
+          {Object.keys(parsed).length
+            ? <>Deposits due today: <b className="mono">{usd(dep)}</b> against {usd(game.cash)} of cash.</>
+            : a.lots.some((l) => l.kind === "note")
+              ? "Your debt already bids on your own lots — enter a number only to protect the building above it."
+              : "Enter a number to bid, or watch from the back. Most years, watching is right."}
+        </div>
+        <div className="modal-actions">
+          <button className="btn btn-buy" disabled={!Object.keys(parsed).length || dep > game.cash}
+            onClick={() => { bidAuction(parsed); setSeenM(a.m); }}>
+            Register bids{dep > 0 ? ` · ${usd(dep)} down` : ""}
+          </button>
+          <button className="btn" onClick={() => setSeenM(a.m)}>Watch from the back</button>
+        </div>
+        <div className="modal-queue">
+          The hammer falls at the end of the month. Results come through the news, win or lose.
+        </div>
+      </div>
+    </div>
   );
 }
 

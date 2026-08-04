@@ -27,13 +27,13 @@
 // entire reason engine/lenders.ts exists.
 import type { ParcelTable } from "@/data/types";
 import type { GameState, Workout } from "./types";
-import { logBooks, monthLabel } from "./types";
+import { logBooks, monthLabel, nextJulyAfter } from "./types";
 import { firmShort } from "./firm";
 import { rrange } from "./market";
 import { holdingValue, resolveRec } from "./value";
 import { productById, bumpLenderRel } from "./debt";
 import { capitalRatio, chargeLenderLoss, lenderByName } from "./lenders";
-import { markSponsor, distressPrice } from "./sponsor";
+import { markSponsor } from "./sponsor";
 import { recordComp } from "./comps";
 import { depositsOn } from "./leasing";
 
@@ -238,57 +238,23 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
     if (s.month < w.decideM) continue;
 
     if (w.stage === "notice" || w.stage === "forbearance") {
-      // The clock ran out. They file.
+      // The clock ran out. They file — and a filing is not a sale. The sale
+      // is the county's, once a year, in July, on the courthouse steps with
+      // everything else that finished the process. See engine/auction.ts.
       w.stage = "foreclosure";
-      w.decideM = s.month + FORECLOSE_M;
+      w.saleM = nextJulyAfter(s.month, FORECLOSE_M);
+      w.decideM = w.saleM;
       bumpLenderRel(s, w.lender, -10);
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `${w.lender} has filed to foreclose on ${rec.address}. The auction is set for ${monthLabel(w.decideM)} — `
+        text: `${w.lender} has filed to foreclose on ${rec.address}. It is down for the ${monthLabel(w.saleM)} auction — `
           + `you can still cure it or hand back the keys until the hammer falls, and a deed in lieu is worth `
-          + `far more to you than an auction is.`,
+          + `far more to you than the steps are.`,
       });
       continue;
     }
-
-    // --- the auction ---------------------------------------------------------
-    // An auction gets less than a distress sale does, because it is a legal
-    // process with a date on it and everybody bidding knows the seller has no
-    // choice at all.
-    const value = holdingValue(rec, s.econ, h, s.month);
-    const gross = Math.round(value * distressPrice(s) * rrange(s, 0.82, 0.94));
-    const bal = h.loan.balance;
-    const recourse = h.loan.recourse;
-    const shortfall = Math.max(0, bal - gross);
-    const surplus = Math.max(0, gross - bal);
-    if (surplus > 0) { s.cash += surplus; logBooks(s, "sold", surplus); }
-    if (shortfall > 0) {
-      if (recourse) { s.cash -= shortfall; logBooks(s, "debtSvc", shortfall); }
-      else chargeLenderLoss(s, w.lender, shortfall);
-    }
-    s.exits.push({
-      bbl: w.bbl, address: rec.address, boughtM: h.boughtM, soldM: s.month,
-      price: gross, basis: h.costBasis, gain: gross - h.costBasis, forced: true,
-    });
-    recordComp(s, rec, gross, "the auction", firmShort(s), true, h.condition);
-    if (s.groundLeases?.[w.bbl]) delete s.groundLeases[w.bbl];
-    s.cash -= depositsOn(s.holdings[w.bbl]!);
-    s.lastTradeM = s.lastTradeM ?? {};
-    s.lastTradeM[w.bbl] = s.month;
-    delete s.holdings[w.bbl];
-    delete s.workouts[w.bbl];
-    s.lois = s.lois.filter((l) => l.bbl !== w.bbl);
-    markSponsor(s, shortfall > 0 && recourse ? "deficiency" : "seized", rec.address, shortfall);
-    bumpLenderRel(s, w.lender, -20);
-    s.news.unshift({
-      q: s.month, kind: "warn",
-      text: `${rec.address} went to auction at ${money(gross)} — ${(100 * (1 - gross / Math.max(1, value))).toFixed(0)}% under the mark. `
-        + (shortfall > 0
-          ? recourse
-            ? `You signed for this one: the ${money(shortfall)} shortfall came out of your account.`
-            : `The paper was non-recourse, so ${w.lender} ate the ${money(shortfall)}.`
-          : `It cleared the debt and ${money(surplus)} came back to you.`),
-    });
+    // stage === "foreclosure": the hammer belongs to the July docket now —
+    // engine/auction.ts settles it, credit bid, surplus, deficiency and all.
   }
 }
 

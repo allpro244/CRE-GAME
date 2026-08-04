@@ -330,6 +330,17 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
   if (!loan || !rec) return 0;
   const q = s.month;
 
+  // AN ACCELERATED LOAN IS NOT SERVICED. Once the lender has filed, the whole
+  // balance is due and nobody sends the monthly cheque any more — the meter
+  // runs at the default rate against the COLLATERAL instead, which is why the
+  // credit bid at the July sale is always bigger than the balance you
+  // remember. Cash stops leaving; the hole grows where the building is.
+  const wFcl = s.workouts?.[h.bbl];
+  if (wFcl?.stage === "foreclosure") {
+    wFcl.accrued = Math.round((wFcl.accrued ?? 0) + (loan.balance * (loan.ratePct + 2)) / 100 / 12);
+    return 0;
+  }
+
   // floating: reprice off the live index — through the cap, if one was bought
   if (loan.floating ?? loan.product === "float") {
     if (loan.cap && q >= loan.cap.expiresM) {

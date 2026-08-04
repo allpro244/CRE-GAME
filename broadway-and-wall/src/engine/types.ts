@@ -814,7 +814,7 @@ export type SellerKind = "estate" | "institution" | "partnership" | "developer" 
 
 
 export interface GameState {
-  v: 27;
+  v: 28;
   seed: number;
   /**
    * WHICH TOWN THIS WAS PLAYED IN.
@@ -1014,6 +1014,15 @@ export interface GameState {
    * each end, and the expiry window on an offer suddenly means something.
    */
   rivalNotes?: { bbl: string; firmId: string; firm: string; takeM: number; face: number }[];
+  /**
+   * THE JULY AUCTION. Docket published when the tick lands on July; the hammer
+   * falls on the August tick, so the player holds the flyer for exactly one
+   * month — long enough to register bids, never long enough to become a chore.
+   * See engine/auction.ts.
+   */
+  auction?: { m: number; lots: AuctionLot[]; deposit: number };
+  /** Sales the banks have noticed on the street — the pipeline into July. */
+  bankFcls?: BankForeclosure[];
   /** A bundle of buildings in the market as one trade. See engine/portfolio.ts. */
   portfolioSale?: PortfolioSale;
   /** Your firm's name, and what the city has worked out about it. See engine/firm.ts. */
@@ -1204,6 +1213,17 @@ export function monthLabel(m: number): string {
 }
 
 /**
+ * The first July at least `minGap` months after `m`. Foreclosure sales do not
+ * happen when the process finishes; they happen when the county holds its
+ * sale, and the county holds one sale a year. (July is month index 6.)
+ */
+export function nextJulyAfter(m: number, minGap: number): number {
+  const earliest = m + minGap;
+  const intoYear = ((earliest % 12) + 12) % 12;
+  return intoYear <= 6 ? earliest + (6 - intoYear) : earliest + (18 - intoYear);
+}
+
+/**
  * A LOAN THAT HAS STOPPED WORKING, and the conversation that follows.
  *
  * A default used to be an event: the balloon came due, you could not pay, the
@@ -1261,8 +1281,15 @@ export interface Note {
   basis: number;           // what you paid, which is what it carries at
   collected: number;       // coupon received to date
   mods: number;            // times you have modified it; one is the limit
+  /**
+   * MISSED COUPON, ACCUMULATING. From the month it stops paying, the coupon it
+   * is not paying piles up here — and it is a real claim: a borrower who
+   * reinstates pays it all, with a penalty, and a sale that clears above the
+   * principal owes you this on top before the borrower sees a cent.
+   */
+  arrears?: number;
   filedM?: number;         // you have filed to foreclose
-  saleM?: number;          // when the hammer falls
+  saleM?: number;          // the July it crosses the block — see engine/auction.ts
   /** The month it last told you something, so it cannot tell you twice. */
   toldM?: number;
 }
@@ -1281,4 +1308,64 @@ export interface Workout {
   /** How many times you have been to them about this building. */
   asks: number;
   missedMs: number;
+  /** They have noticed the sale: the July your building crosses the block. */
+  saleM?: number;
+  /**
+   * DEFAULT-RATE INTEREST, ACCRUING. An accelerated loan is not serviced — the
+   * cheque stops and the meter runs against the collateral instead, which is
+   * why the credit bid in July is bigger than the balance you remember.
+   */
+  accrued?: number;
+}
+
+/**
+ * ONE LOT ON THE JULY DOCKET.
+ *
+ * A completed foreclosure does not hand anybody a deed. It produces a sale —
+ * once a year, in July, on the courthouse steps, everything in the county that
+ * has finished the process crosses the block together. The noteholder credit-
+ * bids up to what it is owed; cash bids above that pay the noteholder off in
+ * full and take the building; anything above the debt goes to the borrower who
+ * just lost it, because that is the law.
+ */
+export interface AuctionLot {
+  id: string;
+  bbl: string;
+  address: string;
+  /**
+   * note        — you hold the mortgage; your debt is the credit bid.
+   * bank        — a lender foreclosing on somebody on the street.
+   * receiver    — a dead firm's building, sold for whatever it brings.
+   * yours       — YOUR building; your lender is the one credit-bidding.
+   */
+  kind: "note" | "bank" | "receiver" | "yours";
+  /** Everything owed: principal, arrears, legal. The credit-bid ceiling. */
+  debt: number;
+  /** Who is foreclosing — a lender name, a receiver, or your own shop. */
+  holder: string;
+  borrowerId?: string;
+  borrower?: string;
+  noteId?: string;          // kind "note": which of your notes this settles
+  /** The referee's minimum. Below this the lot is struck to the foreclosing party. */
+  upset: number;
+  /** What the flyer says it might be worth, as-is. No diligence, no warranty. */
+  est: number;
+  /** Your registered bid, if any. Ten per cent is down the day you register. */
+  yourBid?: number;
+}
+
+/**
+ * A LENDER'S FILE ON SOMEBODY ELSE. A bank that has run out of patience with a
+ * firm on the street notices a sale; the borrower has until the July auction
+ * to catch up, and most of the ones who recover do — which is why watching
+ * this list is not the same as owning it.
+ */
+export interface BankForeclosure {
+  bbl: string;
+  lender: string;
+  firmId: string;
+  firm: string;
+  debt: number;
+  noticedM: number;
+  saleM: number;
 }

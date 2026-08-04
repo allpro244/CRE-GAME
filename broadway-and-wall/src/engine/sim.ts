@@ -20,6 +20,7 @@ import { initLenders, tickLenders } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
 import { tickWorkouts } from "./workout";
+import { tickLedger } from "./ledger";
 import { tickNotes, maybeSellYourLoan } from "./notes";
 import { tickAuction } from "./auction";
 import { tickPortfolio } from "./portfolio";
@@ -54,7 +55,7 @@ function targetListings(s: GameState, totalLots: number): number {
 
 export function newGame(seed: number, parcels?: ParcelTable): GameState {
   const s: GameState = {
-    v: 28,
+    v: 29,
     seed,
     rng: seed,
     month: 0,
@@ -212,6 +213,10 @@ export function advanceQuarter(
   tickPortfolio(s, parcels);
   tickFirm(s, parcels);
   tickRivals(s, parcels);
+  // The mortgage record reconciles against the street the moment the street
+  // has finished moving, so the statement the note desk sells out of below is
+  // never a month stale.
+  tickLedger(s, parcels);
   // The county's calendar: notices of sale on the street, the July docket,
   // and the August hammer. It reads the street the banks have just had, and
   // it must settle BEFORE the note desk services anything it just resolved.

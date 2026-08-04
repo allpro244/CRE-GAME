@@ -61,7 +61,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   if (prod.minCondition === "good" && gradeOf(s, rec) !== "good") {
     return { principal: 0, ratePct: 0, equity: price + closing, capPremium: 0, bind: "condition" as const, ltvCap: prod.ltv, uwDscr: prod.uwDscr };
   }
-  const q = quote(s, prod, price, noiAfterTaxYr(rec, s.econ, gradeOf(s, rec), price));
+  const q = quote(s, prod, price, noiAfterTaxYr(rec, s.econ, gradeOf(s, rec), price), rec.class);
   const principal = Math.round(q.principal * Math.max(0, Math.min(1, lev)));
   // WHAT ACTUALLY LIMITED THE LOAN. The desk sizes on three tests and takes
   // the smallest: the advance rate, the coverage ratio, and the debt yield.
@@ -130,7 +130,7 @@ export function executePurchase(
   // closing statement; it appears eighteen months later as a roof.
   if (product !== "cash") {
     const prod = productById(product);
-    holding.loan = originate(next, prod, price, noiAfterTaxYr(rec, next.econ, holding.condition, price), lev, holding.condition);
+    holding.loan = originate(next, prod, price, noiAfterTaxYr(rec, next.econ, holding.condition, price), lev, holding.condition, rec.class);
   }
   // a live 1031: this purchase completes the exchange if it's big enough
   if (next.exchange && price >= next.exchange.minPrice * 0.8) {

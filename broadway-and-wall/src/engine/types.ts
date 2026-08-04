@@ -162,6 +162,8 @@ export interface LeaseReply {
 }
 
 export interface Loan {
+  /** The appraisal the desk lent against at closing — "LTV then" on the bank statement. */
+  origValue?: number;
   product: string;
   floating?: boolean;
   points?: number;
@@ -814,7 +816,7 @@ export type SellerKind = "estate" | "institution" | "partnership" | "developer" 
 
 
 export interface GameState {
-  v: 28;
+  v: 29;
   seed: number;
   /**
    * WHICH TOWN THIS WAS PLAYED IN.
@@ -999,6 +1001,14 @@ export interface GameState {
   beaten?: Beat[];
   /** The desks, with books you can open. See engine/lenders.ts. */
   lenders?: Lender[];
+  /**
+   * THE MORTGAGE RECORD — every loan a desk holds against a deed in this
+   * town, keyed by BBL. Built and reconciled by engine/ledger.ts; the note
+   * desk sells out of it and the bank statement on Research is a view of it.
+   */
+  cityLoans?: Record<string, CityLoan>;
+  /** Book-weighted appetite of the live desks — the banking system in one number. */
+  bankApp?: number;
   /** Loans in default and what is being done about them. See engine/workout.ts. */
   workouts?: Record<string, Workout>;
   /** Loans you have bought. Servicing is automatic. See engine/notes.ts. */
@@ -1292,6 +1302,28 @@ export interface Note {
   saleM?: number;          // the July it crosses the block — see engine/auction.ts
   /** The month it last told you something, so it cannot tell you twice. */
   toldM?: number;
+}
+
+/**
+ * A LOAN ON THE PUBLIC RECORD. Not yours — the street's. One row per
+ * mortgaged rival building: who wrote it, what is owed, what the collateral
+ * appraised for the day it was written. The balance is reconciled monthly
+ * against the borrower's aggregate debt, so the record and the street table
+ * cannot disagree. See engine/ledger.ts.
+ */
+export interface CityLoan {
+  bbl: string;
+  lender: string;
+  obligorId: string;
+  balance: number;
+  ratePct: number;
+  originM: number;
+  maturityM: number;
+  /** The appraisal at origination — LTV-then against LTV-now is the statement's whole story. */
+  origValue: number;
+  /** Asset class at origination, for the concentration ledger. */
+  klass: string;
+  status: "current" | "watch" | "workout";
 }
 
 export interface Workout {

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, Fragment} from "react";
 import { useStore } from "@/state/store";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
+import type { ParcelTable } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec } from "@/engine/types";
 import type { BuiltClass, Contract, DevUse, GameState } from "@/engine/types";
 import {
@@ -16,7 +17,7 @@ import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquir
 import { MILESTONES } from "@/engine/sim";
 import { isCommercial, vacantSf, walt, loiSigningCost, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, buyoutQuote, depositsHeld, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
-import { lenderHealth, capitalRatio, lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
+import { lenderHealth, capitalRatio, lenderBlurb, targetCapital, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { noteBid, payoffQuote } from "@/engine/notes";
 import { depositFor as auctionDepositFor } from "@/engine/auction";
 import { collateralAsIs } from "@/engine/value";
@@ -58,7 +59,7 @@ function physicalOcc(rec: never, h: { tenants: { sf: number }[]; occ?: number })
   return Math.min(1, (comm + res) / area);
 }
 import { sponsorStanding } from "@/engine/sponsor";
-import { marketAppetite, markRival, ownerOf, rivalCondition, gradeOf } from "@/engine/rivals";
+import { marketAppetite, markRival, ownerOf, rivalCondition, gradeOf, assetGrade } from "@/engine/rivals";
 import { compFlows, compStats, portfolioIndustries } from "@/engine/comps";
 import { INDUSTRY_LABEL, SECTORS } from "@/engine/market";
 import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses, renewalIntent } from "@/engine/leasing";
@@ -4372,40 +4373,89 @@ function ResearchPage() {
  * still write it, or be the last borrower they say no to.
  */
 /**
- * WHICH BUILDINGS SIT ON WHICH DESK.
+ * THE FULL STATEMENT — every loan this desk holds against a deed in town.
  *
- * The banks page could tell you that you owed First Harbor $18.4M and that
- * First Harbor was in trouble, and those are two facts you could not join up.
- * The thing you actually need to know when a lender goes bad is WHICH of your
- * maturities is stranded there — because a balloon at an impaired desk is a
- * balloon that does not get refinanced, and the fix is to move it BEFORE the
- * capital ratio goes, not after.
- *
- * Nothing new is stored for this. Loans carry a product id, products carry a
- * lender, and construction paper is written by the regional bank — the same
- * three facts recountYours() already uses to compute the number that was on
- * screen with no way to open it.
+ * The old book showed only YOUR paper, which answered "which of my balloons
+ * is stranded at an impaired desk" and nothing else. The mortgage record in
+ * engine/ledger.ts now carries the street's loans too, so a statement can
+ * print what a statement prints: every loan against the property it is
+ * written on — borrower, balance, coupon, maturity, LTV the day it was
+ * written against LTV today, and whether it is paying. Your rows sit on top,
+ * because the first question is still your own.
  */
-function loanBook(game: GameState, lenderName: string) {
-  const rows: { bbl: string; label: string; balance: number; rate: number; matM: number; sweep: boolean; dev: boolean }[] = [];
+type StatementRow = {
+  bbl: string; borrower: string; yours: boolean; dev: boolean;
+  klass: string; district: string;
+  balance: number; rate: number; matM: number;
+  origLtv: number | null; curLtv: number | null;
+  status: string; bad: boolean;
+};
+
+function bankStatement(game: GameState, parcels: ParcelTable, lenderName: string): StatementRow[] {
+  const rows: StatementRow[] = [];
   for (const h of Object.values(game.holdings)) {
     if (!h.loan) continue;
-    if (PRODUCTS.find((p) => p.id === h.loan!.product)?.lender !== lenderName) continue;
+    const holder = h.loan.holder ?? PRODUCTS.find((p) => p.id === h.loan!.product)?.lender;
+    if (holder !== lenderName) continue;
+    const rec = resolveRec(parcels, game, h.bbl);
+    if (!rec) continue;
+    const v = holdingValue(rec, game.econ, h, game.month);
+    const w = game.workouts?.[h.bbl];
     rows.push({
-      bbl: h.bbl, label: h.loan.product, balance: h.loan.balance, rate: h.loan.ratePct,
-      matM: h.loan.maturityM, sweep: !!h.loan.sweep, dev: false,
+      bbl: h.bbl, borrower: firmShort(game), yours: true, dev: false,
+      klass: rec.class, district: rec.district ?? "—",
+      balance: h.loan.balance, rate: h.loan.ratePct, matM: h.loan.maturityM,
+      origLtv: h.loan.origValue ? h.loan.principal / h.loan.origValue : null,
+      curLtv: v > 0 ? h.loan.balance / v : null,
+      status: w ? "workout" : h.loan.sweep ? "swept" : game.month >= h.loan.maturityM ? "due" : "current",
+      bad: !!w || !!h.loan.sweep,
+    });
+  }
+  for (const x of Object.values(game.cityLoans ?? {})) {
+    if (x.lender !== lenderName) continue;
+    const rec = resolveRec(parcels, game, x.bbl);
+    if (!rec) continue;
+    const r = game.rivals?.find((z) => z.id === x.obligorId);
+    const v = r ? assetValue(rec, game.econ, assetGrade(r, rec)) : 0;
+    rows.push({
+      bbl: x.bbl, borrower: r?.name ?? "—", yours: false, dev: false,
+      klass: x.klass, district: rec.district ?? "—",
+      balance: x.balance, rate: x.ratePct, matM: x.maturityM,
+      origLtv: x.origValue > 0 ? x.balance / x.origValue : null,
+      curLtv: v > 0 ? x.balance / v : null,
+      status: x.status, bad: x.status !== "current",
     });
   }
   if (lenderName === CONSTRUCTION_LENDER) {
     for (const d of Object.values(game.developments ?? {})) {
       if (d.loanBalance <= 0) continue;
+      const rec = resolveRec(parcels, game, d.bbl);
       rows.push({
-        bbl: d.bbl, label: "construction", balance: d.loanBalance, rate: d.ratePct ?? 0,
-        matM: d.deliverM ?? game.month, sweep: false, dev: true,
+        bbl: d.bbl, borrower: firmShort(game), yours: true, dev: true,
+        klass: "construction", district: rec?.district ?? "—",
+        balance: d.loanBalance, rate: d.ratePct ?? 0, matM: d.deliverM ?? game.month,
+        origLtv: d.costTotal > 0 ? d.commitment / d.costTotal : null, curLtv: null,
+        status: "construction", bad: false,
       });
     }
   }
-  return rows.sort((a, b) => a.matM - b.matM);
+  return rows.sort((a, b) => (a.yours !== b.yours ? (a.yours ? -1 : 1) : b.balance - a.balance));
+}
+
+/** Fifty years of capital ratio against the target, four numbers wide. */
+function CapSpark({ hist, target }: { hist?: number[]; target: number }) {
+  if (!hist || hist.length < 2) return null;
+  const w = 180, hgt = 34;
+  const n = hist.length;
+  const max = Math.max(target * 1.8, ...hist);
+  const pts = hist.map((v, i) => `${((i / (n - 1)) * w).toFixed(1)},${(hgt - Math.min(1, v / max) * hgt).toFixed(1)}`).join(" ");
+  const ty = hgt - Math.min(1, target / max) * hgt;
+  return (
+    <svg width={w} height={hgt} style={{ verticalAlign: "middle", overflow: "visible" }}>
+      <line x1={0} y1={ty} x2={w} y2={ty} stroke="rgba(190,130,60,0.55)" strokeDasharray="3 2" />
+      <polyline points={pts} fill="none" stroke="currentColor" strokeWidth={1.2} opacity={0.85} />
+    </svg>
+  );
 }
 
 /**
@@ -4569,8 +4619,8 @@ function TheBanks() {
         Every desk on this street has its own balance sheet, and when it goes wrong it goes wrong at a name, not
         at the market. Capital ratio is what they have behind the book; appetite is what is left of their advance
         rate. Below about 0.12 they stop quoting entirely — and unlike the cycle, you can watch this coming.
-        {" "}<b>Click a bank to open its book</b> — their standing, and every loan of yours on that desk,
-        property by property.
+        {" "}<b>Click a bank to open its statement</b> — every loan on that desk, yours and the street's,
+        property by property, with the funding margin and the capital history behind it.
       </div>
       <table className="tbl">
         <thead>
@@ -4623,44 +4673,106 @@ function TheBanks() {
                               : "Writing at their stated terms."}
                       </div>
                       {(() => {
-                        const book = loanBook(game, l.name);
-                        if (!book.length) return null;
-                        const stranded = book.filter((r) => h.bad && r.matM - game.month <= 60);
+                        const book = bankStatement(game, parcels, l.name);
+                        const cityTotal = book.reduce((a, r) => a + r.balance, 0);
+                        const target = targetCapital(l.name);
+                        const nim = (l.bookYield ?? 0) - Math.max(0, l.fundCost ?? 0);
+                        const byClass: Record<string, number> = {};
+                        const byDistrict: Record<string, number> = {};
+                        for (const r of book) {
+                          byClass[r.klass] = (byClass[r.klass] ?? 0) + r.balance;
+                          byDistrict[r.district] = (byDistrict[r.district] ?? 0) + r.balance;
+                        }
+                        const classCap = l.kind === "bank" ? 0.45 : l.kind === "life" ? 0.55 : l.kind === "conduit" ? 0.65 : 1;
+                        const shares = Object.entries(byClass).sort((a, b) => b[1] - a[1]);
+                        const districts = Object.entries(byDistrict).sort((a, b) => b[1] - a[1]).slice(0, 3);
+                        const full = cityTotal > 40_000_000 ? shares.filter(([, v]) => classCap < 1 && v / cityTotal > classCap) : [];
+                        const stranded = book.filter((r) => r.yours && h.bad && r.matM - game.month <= 60);
                         return (
                           <div style={{ marginTop: 10, paddingLeft: 12, borderLeft: "2px solid rgba(120,100,70,0.28)" }}>
-                            <div style={{ marginBottom: 4, letterSpacing: "0.04em", textTransform: "uppercase", fontSize: "0.82em" }}>
-                              Your paper on this desk
-                            </div>
-                            <table className="tbl">
-                              <thead>
-                                <tr>
-                                  <th>Property</th><th className="num">Balance</th><th className="num">Rate</th>
-                                  <th className="num">Balloon</th><th>Standing</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {book.map((r) => {
-                                  const yrs = (r.matM - game.month) / 12;
-                                  return (
-                                    <tr key={r.bbl + r.label} onClick={(e) => { e.stopPropagation(); focus(r.bbl, true); }} style={{ cursor: "pointer" }}>
-                                      <td>{resolveRec(parcels, game, r.bbl)?.address ?? r.bbl}{r.dev && <span className="dim"> · under construction</span>}</td>
-                                      <td className="num">{usd(r.balance)}</td>
-                                      <td className="num">{r.rate > 0 ? r.rate.toFixed(2) + "%" : "—"}</td>
-                                      <td className={"num" + (yrs <= 2 && !r.dev ? " neg" : "")}>{monthLabel(r.matM)}</td>
-                                      <td className={r.sweep ? "neg" : "dim"}>
-                                        {r.dev ? "takeout at delivery"
-                                          : r.sweep ? "swept"
-                                            : yrs <= 0 ? "due"
-                                              : yrs <= 2 ? `${yrs.toFixed(1)} yrs` : "current"}
-                                      </td>
+                            {l.bookYield !== undefined && l.fundCost !== undefined && l.failedM === undefined && (
+                              <div style={{ marginBottom: 6 }}>
+                                The book earns <b className="mono">{l.bookYield.toFixed(2)}%</b> against funding at{" "}
+                                <b className="mono">{Math.max(0, l.fundCost).toFixed(2)}%</b> — a{" "}
+                                <b className={"mono" + (nim < 1.5 ? " neg" : "")}>{nim.toFixed(2)}pt</b> margin.{" "}
+                                {nim < 1.5
+                                  ? <span className="neg">The funding has repriced and the book has not. This is how a lender dies without writing a single bad loan — the advance rates go first.</span>
+                                  : nim < 2.5
+                                    ? "Compressed — loans written in a cheaper era against money priced in this one. They ration before it heals."
+                                    : "A healthy spread; the desk earns its way out of ordinary losses."}
+                                {(l.divYr ?? 0) > 0 && <span className="dim"> Paid {usd(l.divYr!)} out to the owners this year — capital above the buffer does not sit.</span>}
+                              </div>
+                            )}
+                            {(l.capHist?.length ?? 0) > 1 && (
+                              <div style={{ marginBottom: 6 }}>
+                                <CapSpark hist={l.capHist} target={target} />
+                                <span className="dim" style={{ marginLeft: 8 }}>
+                                  capital ratio, quarterly · the dashed line is their {(target * 100).toFixed(1)}% target — a desk
+                                  walking toward it is a desk to refinance away from
+                                </span>
+                              </div>
+                            )}
+                            {cityTotal > 0 && (
+                              <div style={{ marginBottom: 6 }}>
+                                <span className="dim">In this town: </span>
+                                {shares.map(([k, v]) => `${k} ${(100 * v / cityTotal).toFixed(0)}%`).join(" · ")}
+                                {districts.length > 1 && <span className="dim"> — by district {districts.map(([k, v]) => `${k} ${(100 * v / cityTotal).toFixed(0)}%`).join(", ")}</span>}
+                                {full.length > 0 && (
+                                  <span className="neg"> — full on {full.map(([k]) => k).join(" and ")} against their {(classCap * 100).toFixed(0)}% limit; new paper in that class is cut, whoever brings it</span>
+                                )}
+                              </div>
+                            )}
+                            {book.length > 0 && (
+                              <>
+                                <div style={{ margin: "8px 0 4px", letterSpacing: "0.04em", textTransform: "uppercase", fontSize: "0.82em" }}>
+                                  The loan book — {book.length} loan{book.length === 1 ? "" : "s"} against deeds in this town, {usd(cityTotal)}
+                                </div>
+                                <table className="tbl">
+                                  <thead>
+                                    <tr>
+                                      <th>Property</th><th>Borrower</th><th className="num">Balance</th><th className="num">Rate</th>
+                                      <th className="num">Maturity</th><th className="num">LTV then → now</th><th>Standing</th>
                                     </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
+                                  </thead>
+                                  <tbody>
+                                    {book.map((r) => {
+                                      const yrs = (r.matM - game.month) / 12;
+                                      return (
+                                        <tr key={r.bbl} onClick={(e) => { e.stopPropagation(); focus(r.bbl, true); }}
+                                          style={{ cursor: "pointer", ...(r.yours ? { background: "rgba(120,100,70,0.10)" } : {}) }}>
+                                          <td>{resolveRec(parcels, game, r.bbl)?.address ?? r.bbl}{r.dev && <span className="dim"> · under construction</span>}</td>
+                                          <td className={r.yours ? "" : "dim"}>{r.borrower}</td>
+                                          <td className="num">{usd(r.balance)}</td>
+                                          <td className="num">{r.rate > 0 ? r.rate.toFixed(2) + "%" : "—"}</td>
+                                          <td className={"num" + (yrs <= 2 && !r.dev && r.yours ? " neg" : "")}>{monthLabel(r.matM)}</td>
+                                          <td className="num">
+                                            {r.origLtv !== null ? `${(100 * r.origLtv).toFixed(0)}%` : "—"}
+                                            {" → "}
+                                            {r.curLtv !== null
+                                              ? <span className={r.curLtv > 1 ? "neg" : undefined}>{(100 * r.curLtv).toFixed(0)}%</span>
+                                              : "—"}
+                                          </td>
+                                          <td className={r.bad ? "neg" : "dim"}>
+                                            {r.dev ? "takeout at delivery"
+                                              : r.status === "current" && yrs <= 2 ? `${Math.max(0, yrs).toFixed(1)} yrs`
+                                                : r.status}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </>
+                            )}
+                            {l.book > cityTotal && (
+                              <div className="dim" style={{ marginTop: 4 }}>
+                                Plus {usd(l.book - cityTotal)} lent outside this town. The examiners see that book; you cannot —
+                                the delinquency figure above is the only window into it.
+                              </div>
+                            )}
                             {stranded.length > 0 && (
                               <div className="alarm" style={{ marginTop: 6 }}>
-                                {stranded.length === 1 ? "One balloon" : `${stranded.length} balloons`} inside five years
+                                {stranded.length === 1 ? "One balloon" : `${stranded.length} balloons`} of yours inside five years
                                 at a desk that is {h.word}. A maturity here is a maturity that may not get refinanced —
                                 move it while somebody else is still quoting.
                               </div>

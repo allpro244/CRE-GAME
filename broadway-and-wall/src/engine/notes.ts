@@ -407,6 +407,7 @@ function expireOffers(s: GameState, _parcels: ParcelTable) {
     if (!buyer || o.perf === "performing") continue;
     const equity = Math.min(Math.max(0, buyer.cash), Math.round(px * 0.35));
     buyer.cash -= equity;
+    if (s.cityLoans?.[o.bbl]) delete s.cityLoans[o.bbl];       // the record follows the paper
     buyer.debt += px - equity;
     if (!s.rivalNotes) s.rivalNotes = [];
     s.rivalNotes.push({
@@ -456,7 +457,52 @@ function takeRivalNotes(s: GameState, parcels: ParcelTable) {
 function bringPaperToMarket(s: GameState, parcels: ParcelTable) {
   if (s.noteOffers!.length >= MAX_OFFERS) return;
   for (const l of s.lenders ?? []) {
-    if (l.failedM !== undefined) continue;
+    // THE RECEIVER SELLS THE BOOK. A failed desk used to be skipped here
+    // entirely, so a receivership sold nothing and a bank failure was a hole
+    // in the market instead of a flood into it. What actually happens is the
+    // opposite of quiet: the FDIC-equivalent empties the filing cabinet at
+    // whatever the paper fetches, which is where a note buyer's best decade
+    // comes from. lenderPressure is already 1 for a failed desk, so the ask
+    // arrives at full distress without a special price path.
+    if (l.failedM !== undefined) {
+      if (rng(s) > 0.30) continue;
+      const rows = Object.values(s.cityLoans ?? {}).filter((x) => x.lender === l.name);
+      const sale = rows.filter((x) => {
+        const r = obligorOf(s, x.obligorId);
+        return r && r.failedM === undefined && x.balance >= 750_000
+          && !s.holdings[x.bbl] && !s.notes!.some((n) => n.bbl === x.bbl)
+          && !s.noteOffers!.some((o) => o.bbl === x.bbl)
+          && !(s.rivalNotes ?? []).some((rn) => rn.bbl === x.bbl);
+      });
+      if (!sale.length) continue;
+      // worst first — that is the paper the receiver wants gone
+      sale.sort((a, b) => (a.status === b.status ? 0 : a.status === "current" ? 1 : -1));
+      const x = sale[Math.floor(rng(s) * Math.min(2, sale.length))];
+      const r = obligorOf(s, x.obligorId)!;
+      const rec = resolveRec(parcels, s, x.bbl);
+      if (!rec) continue;
+      const kind: "performing" | "nonperforming" = x.status === "current" ? "performing" : "nonperforming";
+      const id = "NO" + (s.nextNoteId = (s.nextNoteId ?? 1) + 1);
+      s.noteOffers!.push({
+        id, bbl: x.bbl, address: rec.address, lender: l.name,
+        obligorId: r.id, obligor: r.name,
+        face: x.balance, ratePct: x.ratePct, maturityM: x.maturityM,
+        perf: kind,
+        askPct: +noteAskPct(s, rec, r, x.balance, kind, l.name).toFixed(4),
+        cure: +pCure(s, r, x.balance).toFixed(3),
+        offeredM: s.month,
+        expiresM: s.month + Math.round(rrange(s, 2, 4)),   // a receiver's window is short
+        why: `${l.name} is in receivership. This is not a desk pricing a loan — it is a receiver emptying `
+          + `a filing cabinet, and the ask is what that always is: the number that makes it somebody else's file.`,
+      });
+      s.news.unshift({
+        q: s.month, kind: "deal",
+        text: `The receiver for ${l.name} is selling the loan on ${rec.address} — ${money(x.balance)} of face at `
+          + `${(100 * s.noteOffers![s.noteOffers!.length - 1].askPct).toFixed(0)} cents. Nobody at that desk is `
+          + `paid to wait any more.`,
+      });
+      return;
+    }
     const p = lenderPressure(l);
     // A regulator makes you sell what is not paying. Above ~2.8% delinquency
     // the examiners start asking, and above 8% it is every other month.
@@ -482,16 +528,25 @@ function bringPaperToMarket(s: GameState, parcels: ParcelTable) {
     // is the one you want, and because a note is the only way back into a
     // building whose owner will never list it.
     const beat = (s.beaten ?? []).find((b) => b.firmId === r.id && r.bbls.includes(b.bbl));
-    const bbl = beat && rng(s) < 0.45 ? beat.bbl : r.bbls[Math.floor(rng(s) * r.bbls.length)];
+    // THE LOAN THE STATEMENT ALREADY SHOWS. The desk sells out of the same
+    // mortgage record the Research page prints — this lender's own row on
+    // this borrower where one exists — so the loan you watched go to
+    // "watch" on a statement last spring is the loan that turns up here.
+    const mine = r.bbls.filter((b) => s.cityLoans?.[b]?.lender === l.name);
+    const bbl = beat && rng(s) < 0.45 && r.bbls.includes(beat.bbl) ? beat.bbl
+      : mine.length ? mine[Math.floor(rng(s) * mine.length)]
+      : r.bbls[Math.floor(rng(s) * r.bbls.length)];
     if (s.holdings[bbl] || s.notes!.some((n) => n.bbl === bbl)) return;
     if (s.noteOffers!.some((o) => o.bbl === bbl)) return;
     if ((s.rivalNotes ?? []).some((x) => x.bbl === bbl)) return;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class === "land") return;
 
+    const row = s.cityLoans?.[bbl];
     const clean = assetValue(rec, s.econ, assetGrade(r, rec));
     if (clean < 500_000) return;
-    const face = Math.round(clean * Math.min(1.4, r.debt / Math.max(1, r.aum!)));
+    const face = row && row.lender === l.name ? row.balance
+      : Math.round(clean * Math.min(1.4, r.debt / Math.max(1, r.aum!)));
     if (face < 750_000) return;
     const kind: "performing" | "nonperforming" = npl ? "nonperforming" : "performing";
     const id = "NO" + (s.nextNoteId = (s.nextNoteId ?? 1) + 1);
@@ -499,8 +554,8 @@ function bringPaperToMarket(s: GameState, parcels: ParcelTable) {
       id, bbl, address: rec.address, lender: l.name,
       obligorId: r.id, obligor: r.name,
       face,
-      ratePct: +(s.econ.indexRate + rrange(s, 1.6, 3.2)).toFixed(2),
-      maturityM: s.month + Math.round(rrange(s, 6, 84)),
+      ratePct: row && row.lender === l.name ? row.ratePct : +(s.econ.indexRate + rrange(s, 1.6, 3.2)).toFixed(2),
+      maturityM: row && row.lender === l.name ? Math.max(s.month + 3, row.maturityM) : s.month + Math.round(rrange(s, 6, 84)),
       perf: kind,
       askPct: +noteAskPct(s, rec, r, face, kind, l.name).toFixed(4),
       cure: +pCure(s, r, face).toFixed(3),
@@ -529,6 +584,7 @@ export function buyNote(s: GameState, _parcels: ParcelTable, id: string): { s: G
   next.cash -= px;
   logBooks(next, "bought", px);
   next.noteOffers = next.noteOffers!.filter((x) => x.id !== o.id);
+  if (next.cityLoans?.[o.bbl]) delete next.cityLoans[o.bbl];   // off the bank's statement — it is your paper now
   next.notes!.push({
     id: "N" + (next.nextNoteId = (next.nextNoteId ?? 1) + 1),
     bbl: o.bbl, address: o.address, originator: o.lender,

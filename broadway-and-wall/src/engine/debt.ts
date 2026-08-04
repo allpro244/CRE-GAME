@@ -159,6 +159,43 @@ export function bumpLenderRel(s: GameState, lender: string | undefined, amt: num
   s.lenderRel[lender] = Math.max(0, Math.min(100, (s.lenderRel[lender] ?? 20) + amt));
 }
 
+/**
+ * FULL ON A NAME, FULL ON A CLASS.
+ *
+ * A credit committee runs two concentration tests that no amount of coverage
+ * can argue with. The single-name test: one borrower cannot be more than a
+ * fixed share of the book, so a desk that already holds a tenth of its book
+ * against you has almost nothing left to write you regardless of the deal.
+ * The class test, read off the mortgage record ledger.ts keeps: a bank whose
+ * paper in this town is already half office does not want your office loan at
+ * par, however good it is. Neither is a wall — proceeds taper, the quote says
+ * why, and the answer is what it is in life: go to the desk that is NOT full.
+ */
+export function concentrationRoom(s: GameState, p: LoanProduct, klass?: string): { mult: number; capRoom: number; why?: string } {
+  const l = lenderByNameLocal(s, p.lender);
+  if (!l || l.book <= 0) return { mult: 1, capRoom: Infinity };
+  const nameCap = l.kind === "bank" ? 0.12 : l.kind === "life" ? 0.08 : l.kind === "conduit" ? 0.30 : 0.35;
+  const capRoom = Math.max(0, l.book * nameCap - l.yours);
+  let mult = 1; let why: string | undefined;
+  if (klass && klass !== "land" && l.classBook) {
+    const tot = Object.values(l.classBook).reduce((a, b) => a + b, 0);
+    const classCap = l.kind === "bank" ? 0.45 : l.kind === "life" ? 0.55 : l.kind === "conduit" ? 0.65 : 1;
+    const share = tot > 0 ? (l.classBook[klass] ?? 0) / tot : 0;
+    if (tot > 40_000_000 && classCap < 1 && share > classCap) {
+      const over = (share - classCap) / Math.max(0.05, 1 - classCap);
+      mult = Math.max(0.35, 1 - 0.8 * over);
+      why = `${p.lender} is already ${(share * 100).toFixed(0)}% ${klass} in this town against a `
+        + `${(classCap * 100).toFixed(0)}% concentration limit — they are full, and new ${klass} paper gets a haircut`;
+    }
+  }
+  return { mult, capRoom, why };
+}
+// lenders.ts imports PRODUCTS from this file; resolve the lender locally to
+// keep the existing one-way import for data and functions both.
+function lenderByNameLocal(s: GameState, name: string) {
+  return s.lenders?.find((l) => l.name === name);
+}
+
 export const productById = (id: string): LoanProduct => PRODUCTS.find((p) => p.id === id) ?? PRODUCTS[0];
 
 const REFI_FEE = 0.01;
@@ -197,7 +234,7 @@ function monthlyPayment(principal: number, ratePct: number, years: number): numb
   return (principal * i) / (1 - Math.pow(1 + i, -n));
 }
 
-export function quote(s: GameState, product: LoanProduct, price: number, noiYr: number) {
+export function quote(s: GameState, product: LoanProduct, price: number, noiYr: number, klass?: string) {
   // Capital availability moves the terms, not just the index. When the credit
   // window closes, spreads widen, advance rates come down and the desk
   // underwrites to a fatter coverage — all at once, which is what makes a
@@ -219,24 +256,26 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   // quarter before it shows up in a quote.
   const app = lenderAppetite(s, product.lender);
   const appMult = Math.min(1.02, 0.55 + 0.45 * app);
+  const conc = concentrationRoom(s, product, klass);
   const ratePct = +(s.econ.indexRate + product.spread * (1 + 1.1 * tight * crunchEase) + 0.9 * tight * crunchEase
     + Math.max(0, 1 - app) * 0.8 + st.spreadAdd - rel).toFixed(2);
-  const byLtv = product.ltv * (1 - 0.30 * tight * crunchEase) * (1 - st.advanceCut) * appMult * price;
+  const byLtv = Math.min(conc.capRoom,
+    product.ltv * (1 - 0.30 * tight * crunchEase) * (1 - st.advanceCut) * appMult * conc.mult * price);
   // a desk that is not in the market for this deal quotes nothing at all
-  if (!windowOpen(s, product)) return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0 };
+  if (!windowOpen(s, product)) return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why };
   if (product.maxLoan && byLtv > product.maxLoan) {
     // they participate up to the hold size rather than walking — a smaller
     // check from a lender who wants the file is still a real quote
-    return sizeRest(s, product, Math.min(byLtv, product.maxLoan), price, noiYr, ratePct, tight);
+    return { ...sizeRest(s, product, Math.min(byLtv, product.maxLoan), price, noiYr, ratePct, tight), concWhy: conc.why };
   }
-  if (product.minLoan && byLtv < product.minLoan) return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0 };
+  if (product.minLoan && byLtv < product.minLoan) return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why };
   // A site produces no income, so a coverage test would size every land loan
   // at zero. This one is underwritten on the dirt alone, which is why it is
   // half-leverage, short, and comes with a guarantee.
   if (product.uwDscr <= 0) {
-    return { principal: Math.max(0, Math.round(byLtv)), ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0 };
+    return { principal: Math.max(0, Math.round(byLtv)), ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why };
   }
-  return sizeRest(s, product, byLtv, price, noiYr, ratePct, tight);
+  return { ...sizeRest(s, product, byLtv, price, noiYr, ratePct, tight), concWhy: conc.why };
 }
 
 function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: number, noiYr: number, ratePct: number, tight: number) {
@@ -267,11 +306,11 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
 
 
 // `lev` scales the loan down from the lender's maximum — the player's dial.
-export function originate(s: GameState, product: LoanProduct, price: number, noiYr: number, lev = 1, condition?: string): Loan | null {
+export function originate(s: GameState, product: LoanProduct, price: number, noiYr: number, lev = 1, condition?: string, klass?: string): Loan | null {
   if (!productOpen(s, product)) return null;
   if (!windowOpen(s, product)) return null;
   if (product.minCondition === "good" && condition !== undefined && condition !== "good") return null;
-  const full = quote(s, product, price, noiYr);
+  const full = quote(s, product, price, noiYr, klass);
   const qd = { ...full, principal: Math.round(full.principal * Math.max(0, Math.min(1, lev))) };
   if (qd.principal < 100_000) return null;
   const pmt = product.ioM > 0
@@ -305,6 +344,7 @@ export function originate(s: GameState, product: LoanProduct, price: number, noi
     sweep: false,
     cleanQs: 0,
     originM: s.month,
+    origValue: Math.round(price),   // what it appraised for the day the desk signed — the statement's "LTV then"
   };
   bumpLenderRel(s, product.lender, 2);   // a closed loan starts a file
   return loanOut;
@@ -464,17 +504,17 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
     const ladder = ["savings", "harbor", "cordage"].map(productById)
       .filter((p) => productOpen(s, p) && windowOpen(s, p));
     let product = ladder[ladder.length - 1] ?? PRODUCTS[0];
-    let qd = { ...quote(s, product, value, noi), principal: 0 };
+    let qd = { ...quote(s, product, value, noi, rec.class), principal: 0 };
     const fee = Math.round(loan.balance * REFI_FEE);
     for (const cand of ladder) {
-      const raw = quote(s, cand, value, noi);
+      const raw = quote(s, cand, value, noi, rec.class);
       const sized = { ...raw, principal: Math.round(raw.principal * hair.mult) };
       product = cand; qd = sized;
       if (sized.principal >= loan.balance + fee) break;
     }
     if (qd.principal >= loan.balance + fee) {
       const rolled = loan.balance;
-      h.loan = originate(s, product, value, noi, hair.mult);
+      h.loan = originate(s, product, value, noi, hair.mult, undefined, rec.class);
       if (h.loan) {
         h.loan.balance = h.loan.principal = rolled;
         h.loan.monthlyPmt = Math.round(monthlyPayment(rolled, h.loan.ratePct, h.loan.amortYears));
@@ -489,7 +529,7 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
       const shortfall = loan.balance + fee - qd.principal;
       if (s.cash >= shortfall) {
         s.cash -= shortfall;
-        h.loan = qd.principal > 100_000 ? originate(s, product, value, noi) : null;
+        h.loan = qd.principal > 100_000 ? originate(s, product, value, noi, 1, undefined, rec.class) : null;
         s.news.unshift({
           q, kind: "warn",
           text: `Balloon at ${rec.address}: today's market only refinances $${(qd.principal / 1e6).toFixed(1)}M — you wrote a $${(shortfall / 1e6).toFixed(2)}M check to close the gap.`,
@@ -649,7 +689,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
   }
   const hair = collateralHaircut(h, s.month, s.econ);
   const quotes = PRODUCTS.map((p) => {
-    const raw = quote(s, p, value, noi);
+    const raw = quote(s, p, value, noi, rec.class);
     const q = { ...raw, principal: Math.round(raw.principal * hair.mult) };
     const annualDs = p.ioM > 0
       ? (q.principal * q.ratePct) / 100
@@ -684,7 +724,9 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
         : p.minCondition === "good" && h.condition !== "good"
         ? "Life-company money wants a well-kept building. Renovate first."
         : p.minLoan && q.principal === 0 && rec.class !== "land"
-        ? `Below their minimum check — ${p.lender} doesn't underwrite anything under $${((p.minLoan) / 1e6).toFixed(0)}M.`
+        ? `Below their minimum check — ${p.lender} doesn't underwrite anything under ${((p.minLoan) / 1e6).toFixed(0)}M.`
+        : raw.concWhy && !p.mezz
+        ? `${raw.concWhy}.`
         : hair.why && hair.mult < 0.95 && !p.mezz
         ? `Proceeds cut ${((1 - hair.mult) * 100).toFixed(0)}% — ${hair.why}.`
         : p.mezz && !senior ? "Mezzanine sits behind a senior loan — put one on first."
@@ -712,7 +754,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   // The quote screen already told you the desk was cutting proceeds for a
   // concentrated or fast-rolling rent roll. The close has to agree with it.
   const hair = collateralHaircut(h, next.month, next.econ);
-  const full = quote(next, product, value, noi);
+  const full = quote(next, product, value, noi, rec.class);
   const qd = { ...full, principal: Math.round(full.principal * hair.mult * Math.max(0, Math.min(1, lev))) };
   if (product.mezz && !h.loan) return { s, err: "Mezzanine sits behind a senior loan — put one on first." };
   const oldBal = h.loan?.balance ?? 0;
@@ -728,7 +770,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
         : "Proceeds don't cover the payoff — you're underwater on this refi.",
     };
   }
-  const newLoan = originate(next, product, value, noi, lev * hair.mult);
+  const newLoan = originate(next, product, value, noi, lev * hair.mult, undefined, rec.class);
   if (!newLoan) return { s, err: "No lender will size a loan against this income." };
   next.cash += qd.principal - oldBal - fee;
   logBooks(next, "debtSvc", fee);

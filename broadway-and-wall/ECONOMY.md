@@ -313,37 +313,39 @@ and failing A and D, which is the state this document starts from.*
 
 # OPEN FINDINGS — measured, not fixed
 
-Three things this branch's harnesses found and proved, and deliberately left
-alone. Each is a real defect with a number on it; none is a change the brief
-asked for, and two of them are economy rebalances that should be their own
-decision rather than a side effect of a bug fix.
+Three things this branch's harnesses found and proved. The first has since been
+fixed, from the other end, by a parallel session on the same branch — its entry
+stays because the measurement is the useful part. The other two are open: each
+is a real defect with a number on it, neither is a change the brief asked for,
+and both are economy rebalances that should be their own decision rather than a
+side effect of a bug fix.
 
-## 1. The takeout bills a full payment on a building it knows cannot pay
+## 1. The takeout bills a full payment on a building it knows cannot pay — FIXED
+
+*Superseded. A parallel session on this branch reached the same gap from the
+other side and fixed it properly; this entry is kept for the measurement.*
 
 `deliver()` rolls the construction loan into a mini-perm that is interest-only
 for two years, carries a covenant holiday for three, and matures in five. All
 three of those dates say the same thing: the lender knows this building cannot
-cover itself yet. And then it bills the sponsor the whole monthly payment from
-the first month anyway.
+cover itself yet. And then it billed the sponsor the whole monthly payment from
+the first month anyway. On the small merchant job measured for this: $53k a
+month against a 12,300 sf office with no tenants, out of an account the equity
+draw had already emptied, on a building `leaseUpFactor` expects to take 38
+months to fill. `planDevelopment`'s lease-up reserve carried ten months of
+OPERATING cost and zero months of debt service.
 
-On the small merchant job measured for this: $53k a month against a 12,300 sf
-office with no tenants, out of an account the equity draw had already emptied,
-on a building `leaseUpFactor` expects to take 38 months to fill. The pro forma
-reserves for this and gets it half right — `planDevelopment`'s lease-up reserve
-carries ten months of OPERATING cost and zero months of debt service. A spec
-takeout without a debt-service reserve is not a product any lender writes; the
-reserve is what makes one financeable.
-
-**Measured both ways.** A carry reserve inside the facility — the lender
-advancing the shortfall, capitalising it, and collecting at the balloon,
-exactly as the construction interest reserve already works — was implemented
-and then reverted. It did not destroy value per deal; it removed the cash
-constraint that had been standing in for underwriting. The merchant went from
-2 sites in fifty years to 6, and lost money on the extra four: median $3.7M and
-one wipeout became −$5.5M and three. Running out of cash mid-job is not
-discipline, but it was doing discipline's job, and the two have to be separated
-deliberately rather than by accident. The reserve is right. Shipping it needs
-the development hurdle and probably the mini-perm's dates reconsidered with it.
+Two attempts, and the second one is the right one. **Reverted:** a debt-service
+reserve inside the takeout facility, sized on a flat month count. It did not
+destroy value per deal — it removed the cash constraint that had been standing
+in for underwriting, and the merchant went from 2 sites in fifty years to 6 and
+lost money on the extra four (median $3.7M and one wipeout became −$5.5M and
+three). Running out of cash mid-job is not discipline, but it was doing
+discipline's job. **Shipped instead:** an operating deficit reserve in the
+budget, sized on the INTEGRAL of the monthly shortfall between debt service and
+the NOI the building actually earns as it fills. Averaging a stream that is
+deeply negative for eighteen months and positive for twenty reserves exactly
+zero, which is why a flat number could not work.
 
 ## 2. Buying a district pushes its land value DOWN
 

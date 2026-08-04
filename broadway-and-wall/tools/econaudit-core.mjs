@@ -83,8 +83,18 @@ export function ringsAround(centre) {
   };
 }
 
-/** The busiest block by built area — a plausible place to put a major employer. */
-export function pickEpicentre(base, klass = "office") {
+/**
+ * A plausible place to put a major employer — the busiest block that still has
+ * ROOM to get busier.
+ *
+ * The first version picked the busiest block outright, which in every city is
+ * already sitting at demand 100 out of 100. The shock then clipped against the
+ * cap and did nothing at all, and the audit dutifully reported that the inner
+ * ring — the one at the epicentre — responded LESS than the ring outside it.
+ * That is not a finding about the economy, it is an experiment that shocked
+ * nothing. `maxDemand` keeps the headroom.
+ */
+export function pickEpicentre(base, klass = "office", maxDemand = 68) {
   const byBlock = new Map();
   for (const b of base.bbls) {
     const r = base.parcels[b];
@@ -96,7 +106,11 @@ export function pickEpicentre(base, klass = "office") {
     o.n++; o.cx += r.centroid[0]; o.cy += r.centroid[1]; o.demand += r.demandScore;
   }
   let best = null;
-  for (const o of byBlock.values()) if (!best || o.sf > best.sf) best = o;
+  for (const o of byBlock.values()) {
+    if (o.demand / o.n > maxDemand) continue;      // no headroom: shocking it is a no-op
+    if (!best || o.sf > best.sf) best = o;
+  }
+  if (!best) for (const o of byBlock.values()) if (!best || o.sf > best.sf) best = o;
   return { block: best.block, centre: [best.cx / best.n, best.cy / best.n], demand: best.demand / best.n };
 }
 
@@ -107,7 +121,7 @@ export function pickEpicentre(base, klass = "office") {
 // vacancy, absorption, land values, cap rates, starts, deliveries, tenant
 // counts, firm behaviour, population, employment — plus the things that turned
 // out to matter once the wires were traced.
-function sampleDistrict(g, parcels, list) {
+function sampleDistrict(g, parcels, list) {  // g is the live state: land is priced off its econ
   // A district's rent and value are read off its actual buildings, at their
   // actual condition, through the same functions the game shows the player.
   const out = { rent: {}, occ: {}, n: {}, land: 0, landN: 0, age: 0, ageN: 0, cap: 0, capN: 0, val: 0 };
@@ -115,7 +129,16 @@ function sampleDistrict(g, parcels, list) {
   for (const b of list) {
     const rec = parcels[b];
     if (!rec) continue;
-    out.land += rec.landPsf || 0; out.landN++;
+    // LAND IS PRICED BY `landPsfNow`, NOT BY THE RAW FIELD.
+    //
+    // This sampled `rec.landPsf`, which is the parcel's static base — the
+    // number the generator wrote once and nothing ever changes. So every land
+    // measurement in the first audit came back "never moved", and it would
+    // have come back "never moved" no matter what the economy did, because it
+    // was reading a constant. A harness that cannot fail is not a harness. The
+    // game prices dirt through landPsfNow (base x site quality x the land
+    // index x the location level x the cycle), so that is what gets measured.
+    out.land += E.landPsfNow(rec, g.econ) || 0; out.landN++;
     if (rec.class === "land" || !rec.bldgArea) continue;
     const cond = E.initialCondition(rec);
     const u = rec.class === "mixed" ? "office" : rec.class;
@@ -129,7 +152,16 @@ function sampleDistrict(g, parcels, list) {
   }
   const r = { land: out.landN ? out.land / out.landN : 0, age: out.ageN ? out.age / out.ageN : 0,
               cap: out.capN ? out.cap / out.capN : 0, val: out.val, rent: {}, occ: {}, n: out.n };
-  for (const u of USES) { r.rent[u] = out.n[u] ? out.rent[u] / out.n[u] : 0; r.occ[u] = out.n[u] ? out.occ[u] / out.n[u] : 0; }
+  // A RING WITH TWO RETAIL BUILDINGS IN IT IS NOT A SUBMARKET. Reporting its
+  // mean rent as a series produced the audit's silliest numbers — a "-150.7%"
+  // divergence in a ring whose control mean was one building that got
+  // demolished. Below the floor the series is NaN, which `diverge` skips, and
+  // the experiment says so rather than printing noise with a percent sign.
+  const MIN_N = 4;
+  for (const u of USES) {
+    r.rent[u] = out.n[u] >= MIN_N ? out.rent[u] / out.n[u] : NaN;
+    r.occ[u] = out.n[u] >= MIN_N ? out.occ[u] / out.n[u] : NaN;
+  }
   return r;
 }
 

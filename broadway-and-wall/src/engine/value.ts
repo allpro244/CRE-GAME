@@ -167,7 +167,28 @@ export function siteQualityMult(rec: { lotArea: number; farMaxComm: number; farM
 }
 
 export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
-  return rec.landPsf * siteQualityMult(rec) * econ.landIdx * (1 + 0.22 * demandBeta(rec.demandScore) * econ.cycleDev);
+  // DEMAND HAD NO LEVEL EFFECT ON LAND, ONLY A CYCLE EFFECT.
+  //
+  // The demand term was multiplied by `cycleDev`, which oscillates around zero
+  // — so a location's demand changed how hard its land value SWUNG with the
+  // cycle and did not change what the land was worth. The audit put a number
+  // on it: force a major employer onto a block, raise demand by 26 points
+  // across 400 metres, and land value in every distance ring came back
+  // "never moved". Land that does not reprice when the demand for the space on
+  // it changes is not land, it is a decoration on the parcel record.
+  //
+  // So the level term is here now and the cycle term stays: a better location
+  // is worth more dirt ALWAYS, and it also swings harder. `demandBeta` is
+  // centred so an ordinary location is 1.0 and neither gains nor loses.
+  // Centred on the CITY'S OWN mean location index, so this reprices land
+  // relative to its neighbours without moving the aggregate — a better corner
+  // gains exactly what a worse one gives up. Centring on a typed constant
+  // would have quietly cut every land value in the game by a sixth, because
+  // demandBeta reads 0.70 at an ordinary location and not 1.0.
+  const mean = econ.locIdxMean ?? 0.62;
+  const level = Math.max(0.35, 1 + 0.85 * (demandIdx(rec.demandScore) - mean));
+  const d = demandBeta(rec.demandScore);
+  return rec.landPsf * siteQualityMult(rec) * econ.landIdx * level * (1 + 0.22 * d * econ.cycleDev);
 }
 
 export function landValue(rec: ParcelRecord, econ: Econ): number {

@@ -1151,8 +1151,31 @@ export function tickEcon(s: GameState) {
     );
     if (!e.affordEff) e.affordEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
     e.affordEff[k] += 0.010 * (affordRaw - e.affordEff[k]);
+    // WHAT EACH KIND OF SPACE IS ACTUALLY DEMANDED BY, and this was the single
+    // largest hole the economy audit found.
+    //
+    // Every class's demand was driven by `employIdx` — jobs — including
+    // housing and including shops. So a city whose population rose eighteen per
+    // cent saw NO new demand for flats, and the audit measured exactly the
+    // absurdity that implies: population +18% moved multifamily rent DOWN
+    // 23.9% and retail rent DOWN 67.1%, because the extra people raised
+    // unemployment, unemployment cut wages, and the affordability term then
+    // rationed demand. More people made housing cheaper. That is backwards in
+    // a way no amount of tuning fixes, because the wire itself was wrong.
+    //
+    // Offices and sheds are leased by FIRMS, so jobs is right for them. Flats
+    // are rented by HOUSEHOLDS, so housing reads population. Shops are a
+    // blend: most trade is residents spending near where they live, and the
+    // rest is the daytime population of workers — which is why a retail
+    // parade in a business district dies at six o'clock and one in a
+    // residential quarter does not.
+    const pop0 = 240_000;   // the opening population, so popIdx opens at exactly 1
+    const popIdx = (e.population ?? pop0) / pop0;
+    const driver = k === "multifamily" ? popIdx
+      : k === "retail" ? Math.pow(popIdx, 0.68) * Math.pow(e.employIdx, 0.32)
+      : e.employIdx;
     const targetRaw = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - NATURAL_VAC[k])
-      * Math.pow(e.employIdx, elastic)
+      * Math.pow(driver, elastic)
       * (1 + e.sectorMom[k] * 11)
       * e.affordEff[k];
     // THE POOL. Demand takes about a year to form or dissolve, and demand
@@ -1250,8 +1273,14 @@ export function tickEcon(s: GameState) {
     const rentToIncome = (e.rentIdx[k] / RENT_BASE[k]) / income;
     const sustain = 1 + 0.80 * clamp(e.tightEma ?? 0, -0.30, 0.55);
     const dev = rentToIncome / sustain - 1;
+    // Tightened from 0.0080 when housing and retail demand were rewired onto
+    // population: giving those two classes their real driver let real rent
+    // growth run at 1.97%/yr against real wages at 1.01%, which is the same
+    // failure the anchor was built to prevent, arriving through a new door.
+    // This is the correct place to absorb it — the anchor's whole job is to
+    // police the real relationship between rent and pay, whatever pushed it.
     const anchor = dev > 0
-      ? -0.0080 * Math.min(1.6, dev)          // outrunning incomes: pulled down hard
+      ? -0.0108 * Math.min(1.6, dev)          // outrunning incomes: pulled down hard
       : -0.0028 * Math.max(-0.65, dev);       // cheap against incomes: drifts back up
 
     // AND RENT CARRIES THE PRICE LEVEL. Every other term above is REAL — a

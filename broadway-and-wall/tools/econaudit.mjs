@@ -154,7 +154,11 @@ if (wanted(1)) {
   }
   const startsD = medDiv(rows, (r) => r.starts.office);
   lines.push(`citywide office starts ${fmtDiv(startsD)}`);
-  const decay = Math.abs(rentD.r0_150m.peak) > Math.abs(rentD.r900m_plus.peak);
+  // Judged on the IMPACT window, like every other direction call. Comparing
+  // peaks compares late-horizon compounding drift, which has nothing to do with
+  // whether the shock was local — it reported "not local" on a run whose inner
+  // ring moved three times as hard as the outer one in the first three years.
+  const decay = Math.abs(rentD.r0_150m.early) > Math.abs(rentD.r400_900m.early) * 1.25;
   lines.push(`distance decay present: ${decay ? "yes" : "NO — the effect is not local"}`);
   const vNear = cell("local demand +26", "local office rent", rentD.r0_150m, +1);
   cell("local demand +26", "local occupancy", occD.r0_150m, +1);
@@ -422,7 +426,7 @@ if (wanted(7)) {
       `nearby retail rent (<150m) ${fmtDiv(dRet)}`,
       `far retail rent (>900m)    ${fmtDiv(dRetFar)}`,
       `citywide retail rent       ${fmtDiv(dRetCity)}`,
-      `local premium over far: ${(Math.abs(dRet.peak) - Math.abs(dRetFar.peak) > 0.005) ? "yes" : "NO — the spillover is not spatial"}`,
+      `local premium over far: ${(dRet.early - dRetFar.early > 0.01) ? "yes" : "NO — the spillover is not spatial"}`,
     ];
     const v = cell("+12% mf stock local", "nearby retail rent", dRet, +1);
     push(7, "SPILLOVER · housing → nearby retail", v, lines);

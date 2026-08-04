@@ -1,4 +1,44 @@
-# THE FIRST PRINCIPLE
+# REALISM OUTRANKS PREFERENCE — INCLUDING THE OWNER'S
+
+**Realism outranks the owner's preferences, including the owner's stated
+preferences about difficulty. When a request and realism disagree, say so with
+evidence and build the realistic thing.** This is standing instruction, not a
+per-task judgement call. The owner has asked for it explicitly: *"I more so care
+about realism before my preferences."*
+
+In practice that means a suggestion arrives as a hypothesis, not a spec. Test
+it. If it holds, build it. If it does not, show the measurement that says so and
+propose the mechanism that delivers what the suggestion was reaching for. A
+worked example is in ECONOMY.md: the proposal was to make the central bank ease
+when the city's economy turns. Measured, the bank was not the broken part — the
+glut never reached the labour market at all, so there was nothing to respond to.
+The realistic fix delivered the same symmetry as a consequence instead of an
+instruction, and it refused a rule that would have paid a player for wrecking
+their own city.
+
+# DIFFICULTY IS AN OUTPUT, NOT A DIAL
+
+The sim should be hard. It does not get to be hard by being made hard — no
+penalty multipliers, no returns quietly shaved, no difficulty setting hiding in
+a coefficient. Real commercial real estate is punishing for specific, nameable
+reasons, and the way this game gets hard is by modelling every one of them
+honestly:
+
+illiquidity and the months a sale actually takes · transaction costs and
+transfer tax on both ends · lease-up risk on anything you build or empty ·
+capital calls when a job overruns · the refinancing cliff when a balloon lands
+in a bad market · covenant tests that trap cash flow · deferred maintenance
+compounding · the tax bill on a value that no longer exists · concentration in
+one submarket or one tenant industry · the fact that most dirt does not pencil
+and most deals should be walked away from.
+
+Get those right and the game is hard because the business is hard. This also
+means difficulty has a SHAPE, not a level: a well-located stabilised asset held
+unlevered is genuinely a boring bond, and it is not a bug when it behaves like
+one. If the game feels too easy, the question is never "what should we make
+worse" — it is "which real risk is not being modelled yet."
+
+# NO FAKE NUMBERS
 
 **The economy is a simulation, not a set of numbers arranged to produce a
 result. Nothing in it is allowed to be a fake number.**

@@ -28,7 +28,8 @@
     "playdev": "node test/run.mjs --playdev",
     "devyield": "node test/run.mjs --devyield",
     "leaseup": "node test/run.mjs --leaseup",
-    "banks": "node test/run.mjs --banks"
+    "banks": "node test/run.mjs --banks",
+    "econ:accept": "node test/econ-accept.mjs"
   },
   "dependencies": {
     "@types/three": "^0.185.3",

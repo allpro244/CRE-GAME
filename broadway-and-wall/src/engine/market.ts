@@ -1614,9 +1614,31 @@ export function tickEcon(s: GameState) {
 }
 
 /** Add real square feet to the citywide stock — a delivered building is supply. */
+/**
+ * Add or REMOVE square feet from the citywide inventory.
+ *
+ * The clamp was on the DELTA — `+ Math.max(0, sf)` — so every negative was
+ * silently discarded, and there is exactly one caller that passes a negative:
+ * the wrecking ball. Every building this city has ever torn down came off the
+ * map and stayed in the economy's inventory forever. Measured over fifty
+ * years, three seeds: 170 to 190 demolitions apiece, not one of them reducing
+ * stock by a foot, and the economy finishing with 13-14% more space than is
+ * standing on the map — multifamily worst at +24 to +31%, and industrial
+ * pinned at its 1.2M floor from month zero while the real thing decayed to
+ * 0.85M, a 42% overstatement.
+ *
+ * It is not a cosmetic number. `cityVac = 1 - occupied / stock` — the
+ * denominator of citywide vacancy, which sets rent, which sets value, which
+ * sets what pencils and what gets built. Phantom stock reads as slack, and
+ * slack suppresses rent, so this was a downward bias on the entire rent
+ * surface that grew for the length of the run.
+ *
+ * The clamp belongs on the RESULT, which is surely what was meant: a class can
+ * be demolished down toward nothing, and it cannot go negative.
+ */
 export function addStock(e: Econ, k: keyof typeof CITY_STOCK, sf: number) {
   if (!e.stock) e.stock = { ...CITY_STOCK };
-  e.stock[k] = (e.stock[k] ?? CITY_STOCK[k]) + Math.max(0, sf);
+  e.stock[k] = Math.max(0, (e.stock[k] ?? CITY_STOCK[k]) + sf);
 }
 
 /**

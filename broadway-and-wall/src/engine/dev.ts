@@ -10,15 +10,15 @@ import type { BuiltClass, Contract, DevUse, Development, GameState, UseMix } fro
 import { BUILT_CLASSES } from "./types";
 import { logBooks, monthLabel, serviceSpec, planSpec } from "./types";
 import { demandNow } from "./demand";
-import { rng, rrange, NATURAL_VAC, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL } from "./market";
+import { rng, rrange, NATURAL_VAC, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock } from "./market";
 import { firmShort } from "./firm";
-import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling } from "./value";
+import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, assetValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
 export { physicalMaxFloors, plateEfficiency } from "./value";
 import { genAnchorTenant } from "./leasing";
-import { claimJob, jobDelivered, ownerOf } from "./rivals";
+import { claimJob, jobDelivered, ownerOf, gradeOf } from "./rivals";
 import { locAvailable } from "./credit";
 import { useSf } from "./mix";
 import { lenderAppetite, lenderByName, CONSTRUCTION_LENDER } from "./lenders";
@@ -1507,7 +1507,12 @@ function classAppetite(s: GameState, k: BuiltClass): number {
   const stk = e.stock?.[k] ?? CITY_STOCK[k];
   const coming = (e.pipeline?.[k] ?? 0) / Math.max(1, stk);   // pipeline as a share of stock
   const tight = clamp(1 - gap * 13 - coming * 5, 0, 2.1);
-  return tight * clamp(e.creditIdx ?? 1, 0.25, 1.25);
+  // ...AND WHETHER IT PENCILS. The city's own infill read vacancy, the
+  // pipeline and the credit window, and never once read what money cost — so
+  // a three-hundred-basis-point shock left the municipal cranes turning at
+  // exactly the same rate. See market.devPencils: one hurdle, read by the
+  // quota, by the street, and by the city.
+  return tight * clamp(e.creditIdx ?? 1, 0.25, 1.25) * devPencils(e, k);
 }
 
 /**
@@ -1544,10 +1549,92 @@ export function noteRecordPlan(
   });
 }
 
+/**
+ * THE CITY TEARS ITS WORST BUILDINGS DOWN.
+ *
+ * Nothing in this town was ever demolished. The audit put it in one line:
+ * mean building age rose fifty years over fifty years, in every seed, which
+ * means the 1890 walk-up standing at the start is the 1890 walk-up standing at
+ * the end and the stock is a museum rather than a market. Real cities lose
+ * about half a per cent of their building stock a year to the wrecking ball,
+ * and they lose a very specific half per cent: the buildings whose LAND is
+ * worth conspicuously more than the building standing on it. That is the
+ * teardown test, it is the oldest calculation in this business, and it is what
+ * turns a neighbourhood over.
+ *
+ * Player buildings are never touched — your asset is yours to run into the
+ * ground or not. Everything else is fair game, and what goes is what fails the
+ * test worst: obsolete, old, and sitting on dirt that wants a better building.
+ */
+function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
+  // A slow clock. Roughly one candidate examined a month, and only the worst
+  // offender in a sample gets the notice — a city does not clear a block a
+  // month, it clears one building every year or two.
+  // Calibrated against the real rate of loss. A city demolishes something like
+  // half a per cent of its building stock a year; at the first cut of these
+  // numbers the mean building age still rose forty-one years over fifty, which
+  // is a town that replaces a tenth of itself in half a century and is still
+  // mostly a museum.
+  if (rng(s) > 0.85) return;
+  const e = s.econ;
+  let worst: { bbl: string; rec: ReturnType<typeof resolveRec>; ratio: number } | null = null;
+  for (let i = 0; i < 26; i++) {
+    const bbl = bbls[Math.floor(rng(s) * bbls.length)];
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+    if (s.holdings[bbl] || s.developments[bbl]) continue;        // never yours
+    if (s.landmarks?.[bbl] !== undefined) continue;              // and never a landmark
+    if ((s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
+    const age = 2000 + Math.floor(s.month / 12) - (rec.yearBuilt || 1900);
+    if (age < 45) continue;                                      // nobody knocks down a young building
+    // `gradeOf` is the OWNER'S stewardship, not the building's birthday — a
+    // shed a slumlord has milked for thirty years is a teardown at sixty and
+    // the same shed in a core fund is not.
+    const cond = gradeOf(s, rec!);
+    if (cond !== "obsolete" && cond !== "worn" && cond !== "standard") continue;
+    // THE TEST: what the dirt is worth against what is standing on it. Above
+    // one, the building is worth less than the ground it occupies and it is
+    // only there because nobody has got round to it yet.
+    // Against what the BUILDING is worth as an investment — the same
+    // assetValue every other price in this game is quoted off. The first cut
+    // of this capitalised GROSS rent, which overstates a building by about
+    // double once you take the expense stack out, so the test never fired once
+    // in fifty years and the wrecking ball stayed in the shed.
+    const land = landValue(rec, e);
+    const built = Math.max(1, assetValue(rec, e, cond));
+    const ratio = land / built;
+    if (ratio < 0.85) continue;
+    if (!worst || ratio > worst.ratio) worst = { bbl, rec, ratio };
+  }
+  if (!worst) return;
+  // ...and it only happens when somebody would actually build the replacement.
+  if (rng(s) > 0.62 * devPencils(e)) return;
+  const { rec, ratio } = worst;
+  const bbl = rec!.bbl;
+  const sf = rec!.bldgArea;
+  const cls = rec!.class as BuiltClass;
+  // Off the record, off the stock, and the lot is dirt again — the existing
+  // city and street builders will find it like any other site.
+  s.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
+  if (cls && (CITY_STOCK as Record<string, number>)[cls] !== undefined) {
+    addStock(e, cls as keyof typeof CITY_STOCK, -sf);
+  }
+  s.demolished = (s.demolished ?? 0) + 1;
+  if (rng(s) < 0.22) {
+    s.news.unshift({
+      q: s.month, kind: "event",
+      text: `${rec!.address} is coming down. It went up in ${rec!.yearBuilt}, and the land under it is worth `
+        + `${ratio.toFixed(1)}x what the building is — which is the only calculation that has ever mattered `
+        + `to a wrecking ball. The lot will be dirt by the spring.`,
+    });
+  }
+}
+
 export function tickCityGrowth(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null,
 ) {
   if (!s.cityJobs) s.cityJobs = [];
+  tickTeardowns(s, parcels, bbls);
 
   // ---- deliveries first: today's opening was somebody's decision years ago --
   const still: NonNullable<GameState["cityJobs"]> = [];

@@ -97,6 +97,33 @@ const RATE_FLOOR = 1.45, RATE_CEIL = 23.0;
 // level-match, real office rent growth ran 2.08%/yr against wages at 1.06%.
 const BASE_YOC = 0.073, DEV_SPREAD = 0.022;
 
+/**
+ * DOES A GROUNDBREAK PENCIL TODAY, AND HOW COMFORTABLY? 0 = nothing gets
+ * built, 1 = an ordinary market, above 1 = everything pencils.
+ *
+ * This exists because the cost of capital reached exactly ONE of the three
+ * parties that put up buildings in this city. The anonymous quota read the
+ * hurdle; the thirty-five named firms and the city's own infill did not, and
+ * both of them kept breaking ground at the same rate when the price of money
+ * doubled. The audit measured the consequence and could not have been clearer
+ * about it: spike the policy rate three hundred basis points and hold it, and
+ * office STOCK came back a dead wire — starts fell, and the buildings went up
+ * anyway, because most of the cranes in town belonged to somebody who had
+ * never heard of the rate. Same for a thirty per cent rise in hard costs.
+ *
+ * One pro forma, read by everyone who can dig a hole. That is the whole fix.
+ */
+export function devPencils(e: Econ, k: BuiltClass = "office"): number {
+  const rentIdx = e.rentIdx?.[k] ?? RENT_BASE[k];
+  const underwritten = rentIdx / RENT_BASE[k];
+  const required = (e.rateEma ?? e.indexRate) / 100 + DEV_SPREAD;
+  const yoc = BASE_YOC * (underwritten / Math.max(0.2, e.costIdx));
+  // Expressed as a multiplier on appetite rather than a hard gate, because a
+  // developer with a site and a conviction still builds into a thin margin —
+  // he just does it less often, and a negative margin stops him dead.
+  return clamp((yoc / required - 1) * 3.2 + 0.55, 0, 2.2);
+}
+
 // Each rebased DOWN by the average value of the new vacancy term below, so
 // CAP_BASE keeps meaning "the class's long-run average cap" rather than "its
 // cap at natural vacancy, which this city rarely sits at". Without the rebase

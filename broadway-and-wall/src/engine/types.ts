@@ -1089,6 +1089,8 @@ export type SellerKind = "estate" | "institution" | "partnership" | "developer" 
 
 
 export interface GameState {
+  /** how many buildings the wrecking ball has taken — the stock turns over */
+  demolished?: number;
   /** books on the market as one ticket — see engine/portfoliosale.ts */
   portfolios?: PortfolioListing[];
   nextPortfolioId?: number;

@@ -32,7 +32,7 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from "./types";
 import { CASH_APY, monthLabel } from "./types";
-import { BUILD_MONTHS, rng, rrange } from "./market";
+import { BUILD_MONTHS, rng, rrange, devPencils } from "./market";
 import { assetValue, initialCondition, landValue, noiAfterTaxYr, occupancy, resolveRec } from "./value";
 import { cityInfillCap, devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retailWantsMixed, SOFT_COST, useForZone, noteRecordPlan } from "./dev";
 import { recordComp } from "./comps";
@@ -857,7 +857,13 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   // Trimmed with the city's own rate: once the anonymous quota came down by
   // three quarters the street's own groundbreakings were most of the cranes
   // in town, and the point was fewer cranes, not different ones.
-  if (rng(s) >= 0.011 * BUILD_APPETITE[r.style] * phaseMult * ci) return;
+  // AND THE PRO FORMA. A developer does not break ground because the phase is
+  // "expansion"; he breaks ground because the yield on cost clears what the
+  // capital stack needs, and when it does not he sits on the dirt. This is the
+  // same hurdle the anonymous quota reads — see market.devPencils — and wiring
+  // the street to it is what makes a rate shock reach the skyline instead of
+  // stopping at the one pro forma nobody on this street was reading.
+  if (rng(s) >= 0.011 * BUILD_APPETITE[r.style] * phaseMult * ci * devPencils(s.econ)) return;
 
   // the best lot they own, by what the neighbourhood has become
   let best: { bbl: string; rec: ParcelRecord } | null = null, bestScore = -1;

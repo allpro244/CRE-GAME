@@ -127,7 +127,14 @@ function sampleDistrict(g, parcels, list) {  // g is the live state: land is pri
   const out = { rent: {}, occ: {}, n: {}, land: 0, landN: 0, age: 0, ageN: 0, cap: 0, capN: 0, val: 0 };
   for (const u of USES) { out.rent[u] = 0; out.occ[u] = 0; out.n[u] = 0; }
   for (const b of list) {
-    const rec = parcels[b];
+    // WHAT IS STANDING ON IT TODAY, not what the generator wrote in year zero.
+    // `parcels[b]` is the birth record; `resolveRec` applies everything that
+    // has happened since — demolitions, deliveries, assemblages. Reading the
+    // raw table meant the mean-building-age trace could not see a teardown or
+    // a replacement even in principle, so it reported "turnover IS NOT
+    // HAPPENING" with total confidence and no ability to observe otherwise.
+    // Same failure as the landPsf one: a measurement that cannot move.
+    const rec = E.resolveRec(parcels, g, b) ?? parcels[b];
     if (!rec) continue;
     // LAND IS PRICED BY `landPsfNow`, NOT BY THE RAW FIELD.
     //

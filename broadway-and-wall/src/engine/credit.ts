@@ -144,8 +144,19 @@ export function tickLoc(s: GameState, parcels: ParcelTable) {
           : `The line is over-advanced — the bank wants $${(stillOver / 1e6).toFixed(2)}M back.`,
       });
       // after half a year the shortfall is treated as cash owed, which is what
-      // pushes the run into the seizure path in sim.ts
-      if (s.locOverMs >= 6) s.cash -= Math.round(stillOver * 0.25);
+      // pushes the run into the seizure path in sim.ts.
+      //
+      // AND IT IS A PAYMENT, SO IT GOES ON THE BOOKS. This took the cash and
+      // told nobody: six consecutive months of an over-advanced line on seed 11
+      // moved $89,000 a month out of the firm with no entry behind it, and
+      // `pnpm conserve` calls that money vanishing, correctly. It is default
+      // interest on a revolver the borrower cannot clear, which is debt
+      // service — the most expensive kind there is.
+      if (s.locOverMs >= 6) {
+        const penalty = Math.round(stillOver * 0.25);
+        s.cash -= penalty;
+        logBooks(s, "debtSvc", penalty);
+      }
     } else s.locOverMs = 0;
   }
 }

@@ -318,6 +318,17 @@ export interface Holding {
   renovatingUntilM?: number;
   tenants: Tenant[];   // commercial rent roll
   makeReady?: { sf: number; readyM: number; use?: BuiltClass }[]; // vacated space being turned; unleasable until ready
+  /**
+   * WHAT YOUR MANAGEMENT IS DOING TO THIS BUILDING'S CONTROLLABLE COSTS.
+   * Stamped once a month by tickStaff so the operating functions can read a
+   * plain number without being handed the whole GameState. 1 is the market
+   * standard; below is a manager earning their salary, above is work that is
+   * not getting done. It moves the OWNER'S result only — `assetValue` still
+   * underwrites at market opex, because a buyer prices their own management,
+   * not yours. That is appraisal practice and it is also the difference
+   * between this and the same-quantity-two-answers fault in `holdingValue`.
+   */
+  pmOpexMult?: number;
   // A leasing exclusive. The house works the phones for nothing and is paid
   // 6% of the base rent over the term of every lease signed while they hold
   // the file, in place of the 4%/2% you pay doing it yourself — see
@@ -1120,6 +1131,25 @@ export interface GameState {
   nextLoiId: number;
   /** Source of tour ids — see LOI.tourId. Letters on one tour share a number. */
   nextTourId?: number;
+  /**
+   * THE PAYROLL. See staff.ts. `staff` are the people at their desks;
+   * `pendingHires` have accepted and are working out their notice; `hirePool`
+   * is who is on the market this half-year. All of it is plain data so the
+   * save file round-trips like everything else.
+   */
+  staff?: import("./staff").Staff[];
+  /**
+   * Stamped once a month by markStaff so leasing, renewals and the operating
+   * statement all quote the same desk. See staff.ts.
+   */
+  leasingOddsMult?: number;
+  pmRenewalMult?: number;
+  leasingRentMult?: number;
+  pendingHires?: { staff: import("./staff").Staff; startM: number }[];
+  hirePool?: { m: number; band: number; list: import("./staff").Candidate[] };
+  nextStaffId?: number;
+  /** A generator of its own, so hiring cannot re-roll the economy. See staff.ts. */
+  staffRng?: number;
   /**
    * HOW MANY MONTHS RUNNING NOBODY HAS BEEN AT THE DOOR.
    *

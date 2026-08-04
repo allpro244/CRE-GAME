@@ -384,6 +384,22 @@ export function leaseFactors(s: GameState, rec: ParcelRecord, h: Holding, use: B
       mult: +clampA(1 + 9 * mom, 0.72, 1.34).toFixed(3),
     });
   }
+  // WHO IS ACTUALLY WORKING THIS SPACE. A leasing team does not create tenants
+  // — the city has the tenants it has — it changes how many of them tour your
+  // building rather than the one across the street. It belongs here, as a
+  // named line the player can read on the leasing panel next to location and
+  // asking rent, rather than as a coefficient buried in the odds. Apartments
+  // are excluded: setBroker already says brokers work commercial space.
+  if (use !== "multifamily") {
+    const m = s.leasingOddsMult ?? 1;
+    if (Math.abs(m - 1) > 0.005) {
+      out.push({
+        label: "Leasing desk",
+        detail: m >= 1 ? "somebody is out working this space" : "nobody is chasing prospects for this one",
+        mult: +m.toFixed(3),
+      });
+    }
+  }
   return out;
 }
 

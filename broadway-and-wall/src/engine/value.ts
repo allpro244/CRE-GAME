@@ -800,13 +800,19 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
     // turns, appliances, roofs. Appraisers skip it; owners never get to.
     const occ = h.occ ?? occupancy(rec, econ);
     const egi = rec.bldgArea * marketRentPsfYr(rec, econ, h.condition) * occ;
-    return egi * 0.93 - rec.bldgArea * OPEX_PSF[cls] * serviceSpec(h.service).opex * econ.costIdx - propertyTaxYr(rec, h);
+    return egi * 0.93 - rec.bldgArea * OPEX_PSF[cls] * serviceSpec(h.service).opex * (h.pmOpexMult ?? 1) * econ.costIdx - propertyTaxYr(rec, h);
   }
   // Rent first, then the expense stack, then what comes back through the
   // recovery clauses. Vacant space reimburses nothing and still costs money —
   // that gap is the whole reason occupancy matters more than headline rent.
   const systemsDone = h.programsDone?.systems !== undefined;
-  const opexNowPsf = opexPsf(cls, econ, systemsDone, h.service);
+  // YOUR MANAGEMENT, ON YOUR BUILDING. See Holding.pmOpexMult. Applied before
+  // the recovery clauses on purpose: a triple-net tenant reimburses what the
+  // building actually spent, so a manager who cuts the contract cost cuts the
+  // reimbursement with it and the owner keeps only the share they were
+  // carrying themselves. That is why good management is worth less on a
+  // net-leased shed than on a gross-leased tower, which is correct.
+  const opexNowPsf = opexPsf(cls, econ, systemsDone, h.service) * (h.pmOpexMult ?? 1);
   const taxBill = grossTaxYr(rec, h);
   const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
 
@@ -877,7 +883,13 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   }
   const cls = rec.class as BuiltClass;
   const systemsDone = h.programsDone?.systems !== undefined;
-  const opexNowPsf = opexPsf(cls, econ, systemsDone, h.service);
+  // YOUR MANAGEMENT, ON YOUR BUILDING. See Holding.pmOpexMult. Applied before
+  // the recovery clauses on purpose: a triple-net tenant reimburses what the
+  // building actually spent, so a manager who cuts the contract cost cuts the
+  // reimbursement with it and the owner keeps only the share they were
+  // carrying themselves. That is why good management is worth less on a
+  // net-leased shed than on a gross-leased tower, which is correct.
+  const opexNowPsf = opexPsf(cls, econ, systemsDone, h.service) * (h.pmOpexMult ?? 1);
   const taxBill = grossTaxYr(rec, h);
   const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
   let baseRent = 0, leasedSf = 0, recOpex = 0, recTax = 0, free = 0;

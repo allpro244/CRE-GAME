@@ -1885,55 +1885,58 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         // parapet line ends up buried inside the slate — its fire escape and
         // its chimneys are what it gets.
         if (!mansard) {
-          if (hgt >= 20) props.push({ kind: 2, x: cx + jit(1, 6), y: cy + jit(2, 6), z: v.z1, s: 1 + (hgt > 60 ? 0.6 : 0), rot: jit(3, 3) });
-          if (v.y < 1968 && hgt >= 22) props.push({ kind: 0, x: cx + jit(4, 8), y: cy + jit(5, 8), z: v.z1, s: 1, rot: 0 });
-          const nAc = hgt > 40 ? 3 : 1;
-          for (let k = 0; k < nAc; k++) props.push({ kind: 1, x: cx + jit(6 + k, 10), y: cy + jit(9 + k, 10), z: v.z1, s: 0.8 + 0.4 * ((seed >> k) % 2), rot: jit(12 + k, 3) });
-          if (hgt >= 105 && v.y >= 1975) props.push({ kind: 3, x: cx, y: cy, z: v.z1, s: 1, rot: 0 });
-          // antennas crown the tallest towers
-          if (hgt >= 95) props.push({ kind: 4, x: cx + jit(15, 5), y: cy + jit(16, 5), z: v.z1, s: 1 + (hgt - 95) / 60, rot: 0 });
-
           // ---- THE MACHINE DECK ------------------------------------------
           //
-          // Each of these is placed by the rule the real one obeys, so what is
-          // standing on a roof tells you what KIND of building it is and
-          // roughly when anybody last spent money on it.
+          // Each of these is on the roof because the real one would be — a lift
+          // overrun only where there is a lift, a cooling tower only where
+          // there is a chiller, PV only after somebody was selling it — so the
+          // parts on a deck tell you what KIND of building you are looking at
+          // and roughly when it was last touched.
+          //
+          // The ORDER is the other half of it, and it is what stops a small
+          // roof looking like a plant room that exploded. This list is written
+          // most-necessary first: the way out, then the lift, then the plant
+          // that makes the building work, then the things somebody chose to
+          // add. fitRoofKit walks it in order and stops when the deck is full,
+          // so a sixteen-metre plate gets a bulkhead and a vent, and the tower
+          // next door still gets everything.
           const R = (k: number) => hash01(keyOf(v.b ?? "x") ^ Math.imul(k + 1, 0x9e3779b1), this.citySeed);
           const bear = R(41) * Math.PI * 2;
           const floors = Math.max(1, Math.round(hgt / Math.max(2.6, fh)));
-
+          const wants: RoofWant[] = [];
+          // A mast IS the silhouette of a tall tower, so it is exempt from the
+          // budget — but it still has to stand inside the parapet like
+          // everything else.
+          if (hgt >= 95) wants.push({ kind: 4, s: 1 + (hgt - 95) / 60, rot: 0, keep: true });
+          if (hgt >= 105 && v.y >= 1975) wants.push({ kind: 3, s: 1, rot: 0, keep: true });
           // Somebody has to be able to get out here. Every flat roof has a way
           // up, and it is the most characteristic silhouette on the deck.
-          if (hgt >= 9) {
-            props.push({ kind: 13, x: cx + jit(31, 9), y: cy + jit(32, 9), z: v.z1, s: 0.9 + 0.3 * R(3), rot: bear });
-          }
+          if (hgt >= 9) wants.push({ kind: 13, s: 0.9 + 0.3 * R(3), rot: bear });
           // A lift overrun exists where there is a lift, which is six floors
           // and up before the war and four floors and up after it.
-          if (floors >= (v.y >= 1955 ? 4 : 6) && hgt >= 16) {
-            props.push({ kind: 14, x: cx + jit(33, 11), y: cy + jit(34, 11), z: v.z1, s: 0.9 + 0.25 * R(5), rot: bear + 0.4 });
-          }
+          if (floors >= (v.y >= 1955 ? 4 : 6) && hgt >= 16) wants.push({ kind: 14, s: 0.9 + 0.25 * R(5), rot: bear + 0.4 });
+          if (hgt >= 20) wants.push({ kind: 2, s: 1 + (hgt > 60 ? 0.6 : 0), rot: jit(3, 3) });
+          // The timber tank on a pre-war roof, and the steel one that replaced
+          // it after the war — the two never share a roof.
+          if (v.y < 1968 && hgt >= 22) wants.push({ kind: 0, s: 1, rot: 0 });
           // Chilled water needs somewhere to reject the heat. Post-war, and
           // only on a building big enough to have a central plant.
-          if (v.y >= 1948 && hgt >= 34 && R(7) < 0.72) {
-            props.push({ kind: 15, x: cx + jit(35, 13), y: cy + jit(36, 13), z: v.z1, s: 0.85 + 0.55 * R(9), rot: bear + 1.1 });
-          }
-          // The steel pressure tank replaced the timber one after the war —
-          // the two do not share a roof.
-          if (v.y >= 1962 && hgt >= 26 && R(11) < 0.45) {
-            props.push({ kind: 16, x: cx + jit(37, 10), y: cy + jit(38, 10), z: v.z1, s: 0.85 + 0.3 * R(13), rot: 0 });
-          }
+          if (v.y >= 1948 && hgt >= 34 && R(7) < 0.72) wants.push({ kind: 15, s: 0.85 + 0.55 * R(9), rot: bear + 1.1 });
+          if (v.y >= 1962 && hgt >= 26 && R(11) < 0.45) wants.push({ kind: 16, s: 0.85 + 0.3 * R(13), rot: 0 });
           // Standby power: hospitals, exchanges, anything with a computer
           // room in it, so tall and late.
-          if (v.y >= 1972 && hgt >= 48 && R(15) < 0.5) {
-            props.push({ kind: 17, x: cx + jit(39, 12), y: cy + jit(40, 12), z: v.z1, s: 1, rot: bear + 2.3 });
-          }
+          if (v.y >= 1972 && hgt >= 48 && R(15) < 0.5) wants.push({ kind: 17, s: 1, rot: bear + 2.3 });
           // Daylight into the top floor: a loft conversion or a studio.
-          if (hgt >= 12 && hgt <= 34 && R(17) < 0.30) {
-            props.push({ kind: 18, x: cx + jit(41, 8), y: cy + jit(42, 8), z: v.z1, s: 0.8 + 0.5 * R(19), rot: bear + 1.57 });
-          }
+          if (hgt >= 12 && hgt <= 34 && R(17) < 0.30) wants.push({ kind: 18, s: 0.8 + 0.5 * R(19), rot: bear + 1.57 });
           // Nobody put panels on a roof before somebody was selling them.
-          if (v.y >= 1996 && hgt >= 10 && R(21) < 0.34) {
-            props.push({ kind: 19, x: cx + jit(43, 9), y: cy + jit(44, 9), z: v.z1, s: 0.9 + 0.4 * R(23), rot: bear });
+          if (v.y >= 1996 && hgt >= 10 && R(21) < 0.34) wants.push({ kind: 19, s: 0.9 + 0.4 * R(23), rot: bear });
+          // Condensers are the filler — they go on last, and only where a big
+          // deck has room left over after the plant that matters.
+          const nAc = hgt > 40 ? 3 : 1;
+          for (let k = 0; k < nAc; k++) wants.push({ kind: 1, s: 0.8 + 0.4 * ((seed >> k) % 2), rot: jit(12 + k, 3) });
+          for (const p of fitRoofKit(ring as [number, number][], v.z1, wants,
+            (i) => hash01(keyOf(v.b ?? "x") ^ Math.imul(i + 7, 0x85ebca6b), this.citySeed))) {
+            props.push(p);
           }
           // And a rail round the edge, which is nearly all EDGE and therefore
           // the one roof part that reads at a distance no box does.
@@ -2907,20 +2910,27 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // and the plant a modern central system actually has.
       if (!item.construction && h >= 9) {
         const topTier = tiers[tiers.length - 1];
-        let tcx = 0, tcy = 0;
-        for (const [x, y] of topTier.fp) { tcx += x; tcy += y; }
-        tcx /= topTier.fp.length; tcy /= topTier.fp.length;
-        const dj = (kk: number, amp: number) => (hash01(k ^ Math.imul(kk + 1, 0x9e37), this.citySeed) - 0.5) * amp;
         const bear2 = hash01(k ^ 0x41, this.citySeed) * Math.PI * 2;
-        const put = (g: THREE.BufferGeometry, col: number, x: number, y: number, z: number, rot: number, sc = 1) => {
-          const m = new THREE.Mesh(g, this.propMaterial(col, false));
-          m.rotation.z = rot; m.scale.setScalar(sc); m.position.set(x, y, z);
-          this.dynGroup.add(m);
+        const GEOM: Record<number, () => THREE.BufferGeometry> = {
+          13: bulkheadGeom, 14: overrunGeom, 15: coolingTowerGeom, 19: pvRowGeom,
         };
-        put(bulkheadGeom(), 0x9d9382, tcx + dj(1, 6), tcy + dj(2, 6), topTier.z1, bear2, 0.9 + 0.3 * hash01(k ^ 0x43, this.citySeed));
-        if (item.floors >= 4 && h >= 16) put(overrunGeom(), 0x93897a, tcx + dj(3, 7), tcy + dj(4, 7), topTier.z1, bear2 + 0.4);
-        if (h >= 34 && hash01(k ^ 0x45, this.citySeed) < 0.72) put(coolingTowerGeom(), 0xa8ada9, tcx + dj(5, 8), tcy + dj(6, 8), topTier.z1, bear2 + 1.1, 0.85 + 0.5 * hash01(k ^ 0x47, this.citySeed));
-        if (h >= 10 && hash01(k ^ 0x49, this.citySeed) < 0.5) put(pvRowGeom(), 0x2b3550, tcx + dj(7, 6), tcy + dj(8, 6), topTier.z1, bear2);
+        const COL: Record<number, number> = { 13: 0x9d9382, 14: 0x93897a, 15: 0xa8ada9, 19: 0x2b3550 };
+        // Same fit as the static stock, and for the same reason: your new
+        // tower's top tier can be a small plate even when the building is
+        // tall, and a cooling tower hung off the edge of a setback is the
+        // ugliest thing in the city.
+        const wants: RoofWant[] = [{ kind: 13, s: 0.9 + 0.3 * hash01(k ^ 0x43, this.citySeed), rot: bear2 }];
+        if (item.floors >= 4 && h >= 16) wants.push({ kind: 14, s: 1, rot: bear2 + 0.4 });
+        if (h >= 34 && hash01(k ^ 0x45, this.citySeed) < 0.72) {
+          wants.push({ kind: 15, s: 0.85 + 0.5 * hash01(k ^ 0x47, this.citySeed), rot: bear2 + 1.1 });
+        }
+        if (h >= 10 && hash01(k ^ 0x49, this.citySeed) < 0.5) wants.push({ kind: 19, s: 1, rot: bear2 });
+        for (const p of fitRoofKit(topTier.fp as [number, number][], topTier.z1, wants,
+          (i) => hash01(k ^ Math.imul(i + 7, 0x85ebca6b), this.citySeed))) {
+          const m = new THREE.Mesh(GEOM[p.kind](), this.propMaterial(COL[p.kind], false));
+          m.rotation.z = p.rot; m.scale.setScalar(p.s); m.position.set(p.x, p.y, p.z);
+          this.dynGroup.add(m);
+        }
       }
       if (item.construction) {
         // A TOWER CRANE, AND NOT THE SAME ONE TWICE.
@@ -3281,6 +3291,145 @@ function antennaGeom(): THREE.BufferGeometry {
 // exists where there is a lift, a cooling tower only where there is a chiller,
 // PV only after somebody was selling it — so the parts on a roof tell you what
 // KIND of building you are looking at and roughly when it was last touched.
+
+// ---------------------------------------------------------------------------
+// FITTING THE KIT TO THE ROOF IT IS STANDING ON.
+//
+// Every one of these was placed at the roof's centroid plus a hash jitter of
+// six to thirteen metres, and nothing anywhere asked how big the roof was. On
+// a tower that is invisible. On a six-storey building with a sixteen-metre
+// plate it is a disaster: a cooling tower whose own body is 4.6 m across,
+// offset 6 m from the middle of an 8 m half-width, hangs bodily over the
+// parapet — and seen from the air, a box hanging off a tall building's edge
+// reads as an object FLOATING above the lower roof next door, which is exactly
+// what a playtester photographed. The same arithmetic let parts sit inside one
+// another, because nothing knew where anything else had been put.
+//
+// So placement stops being a jitter and becomes a fit. Three rules, all of
+// them the ones a real roof obeys:
+//
+//   1. Everything stands INSIDE the parapet, with a walkway round it. A part
+//      is only placed where its own footprint clears every edge of the roof
+//      polygon by its radius plus a metre of access.
+//   2. Nothing stands inside anything else.
+//   3. A small roof holds a small kit. Plant goes on a roof in order of how
+//      necessary it is — the way out first, then the lift, then the plant that
+//      makes the building work — and when the deck runs out of room the rest
+//      of the list simply is not there, which is also what happens in life.
+//
+// The tall buildings are untouched by all of this: their decks are big enough
+// that every part still fits and the budget never binds.
+
+/** Half-footprint radius of each roof prop, metres. Measured off the geometry. */
+const PROP_R: Record<number, number> = {
+  0: 2.2,   // timber water tower
+  1: 1.4,   // condenser unit
+  2: 2.9,   // plant housing
+  3: 4.2,   // dish pad
+  4: 1.2,   // mast
+  13: 2.4,  // stair bulkhead
+  14: 2.6,  // lift overrun
+  15: 2.8,  // cooling tower
+  16: 1.8,  // pressure tank
+  17: 2.2,  // standby generator
+  18: 3.3,  // ribbon skylight
+  19: 4.4,  // PV rank — four rows at 2.1 m centres is 8.4 m deep
+  20: 3.6,  // guardrail run
+};
+
+/** A metre of walkway between anything and the parapet. Code, and it reads. */
+const ROOF_MARGIN = 1.15;
+
+function ringArea2D(ring: [number, number][]): number {
+  let a = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    a += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+  }
+  return Math.abs(a) / 2;
+}
+
+function pointInRing(px: number, py: number, ring: [number, number][]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi || 1e-9) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/** How far the nearest parapet is. Negative outside, so one test covers both. */
+function edgeClearance(px: number, py: number, ring: [number, number][]): number {
+  let best = Infinity;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    const dx = xj - xi, dy = yj - yi;
+    const len2 = dx * dx + dy * dy || 1e-9;
+    const t = Math.max(0, Math.min(1, ((px - xi) * dx + (py - yi) * dy) / len2));
+    const cx = xi + t * dx, cy = yi + t * dy;
+    const d = Math.hypot(px - cx, py - cy);
+    if (d < best) best = d;
+  }
+  return pointInRing(px, py, ring) ? best : -best;
+}
+
+export interface RoofWant { kind: number; s?: number; rot?: number; keep?: boolean }
+export interface RoofPlaced { kind: number; x: number; y: number; z: number; s: number; rot: number }
+
+/**
+ * Lay a roof kit out on an actual polygon. `wants` is in priority order — what
+ * a building cannot fit, it does not get. `rnd(i)` must be deterministic for
+ * the building so the deck is the same every time the tile is rebuilt.
+ * A want marked `keep` is exempt from the count budget (a mast on a 95 m tower
+ * is the silhouette, not clutter) but still has to fit inside the parapet.
+ */
+function fitRoofKit(
+  ring: [number, number][], z: number, wants: RoofWant[], rnd: (i: number) => number,
+): RoofPlaced[] {
+  const out: RoofPlaced[] = [];
+  if (ring.length < 3) return out;
+  const area = ringArea2D(ring);
+  // How much plant a deck can carry. A 260 m² roof — the six-storey building
+  // in the report — gets the way out and one more thing, and that is right:
+  // stand on one and there is a stair bulkhead, a vent, and a lot of asphalt.
+  const budget = area < 90 ? 0 : area < 170 ? 1 : area < 340 ? 2
+    : area < 700 ? 3 : area < 1400 ? 4 : area < 2600 ? 5 : 6;
+  // ...and how big each piece is. A full-size cooling tower on a small plate
+  // is the thing that reads as wrong even when it does technically fit.
+  const sizeK = Math.max(0.72, Math.min(1, Math.sqrt(area / 600)));
+  let xlo = Infinity, xhi = -Infinity, ylo = Infinity, yhi = -Infinity;
+  for (const [x, y] of ring) {
+    if (x < xlo) xlo = x; if (x > xhi) xhi = x;
+    if (y < ylo) ylo = y; if (y > yhi) yhi = y;
+  }
+  let spent = 0;
+  let seq = 0;
+  for (const w of wants) {
+    if (!w.keep && spent >= budget) continue;
+    const baseS = (w.s ?? 1) * sizeK;
+    let placed = false;
+    // Try it at full size, then a little smaller, before giving up on it.
+    for (let attempt = 0; attempt < 3 && !placed; attempt++) {
+      const s = baseS * (1 - attempt * 0.14);
+      const r = (PROP_R[w.kind] ?? 2) * s;
+      for (let i = 0; i < 14; i++) {
+        const px = xlo + (xhi - xlo) * rnd(seq * 97 + i * 2 + 1);
+        const py = ylo + (yhi - ylo) * rnd(seq * 97 + i * 2 + 2);
+        if (edgeClearance(px, py, ring) < r + ROOF_MARGIN) continue;
+        let clash = false;
+        for (const p of out) {
+          if (Math.hypot(px - p.x, py - p.y) < r + (PROP_R[p.kind] ?? 2) * p.s + 0.7) { clash = true; break; }
+        }
+        if (clash) continue;
+        out.push({ kind: w.kind, x: px, y: py, z, s, rot: w.rot ?? 0 });
+        placed = true;
+        break;
+      }
+    }
+    seq++;
+    if (placed && !w.keep) spent++;
+  }
+  return out;
+}
 
 /** The stair bulkhead: the door out onto the roof, with a hood over it. */
 function bulkheadGeom(): THREE.BufferGeometry {

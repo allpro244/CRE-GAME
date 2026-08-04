@@ -209,29 +209,44 @@ const newyork = {
   // York beside the invented one, which is exactly what the first screenshots
   // came back showing: a fictional island, and Hoboken.
   center: [-69.6, 40.2],
+  // THE ISLAND WAS A LOZENGE. It ran 2130 m by 925 — 2.30:1, with a bulbous
+  // rounded top and a width that held flat from the Village to Harlem and then
+  // fell off a cliff. Manhattan is 21.6 km by 3.7 at its widest: 5.8:1, a point
+  // at the Battery, the waist at 14th Street about a third of the way up, and a
+  // steady taper to a finger at Spuyten Duyvil. What was drawn here was not a
+  // narrow island, it was a fat one, and everything downstream reads it: an
+  // island whose scarce thing is frontage cannot be shaped like a thumb.
+  //
+  // Held to 3.9:1 rather than the true 5.8 because the lattice needs four or
+  // five avenues across the waist before a grid is a grid. Every other property
+  // of the real outline is here: the point, the waist a third up, the taper,
+  // and a centreline that drifts west as it climbs.
   coast: [
-    [-70, -980], [-235, -905], [-330, -745], [-395, -560], [-430, -350],
-    [-455, -120], [-470, 130], [-500, 380], [-520, 630], [-495, 860],
-    [-430, 1030], [-260, 1120], [-40, 1150], [180, 1105], [330, 985],
-    [385, 795], [400, 560], [425, 315], [450, 70], [470, -175],
-    [455, -420], [380, -640], [250, -820], [90, -935],
+    [0, -1495], [-107, -1365], [-212, -1196], [-300, -1014], [-361, -832],
+    [-393, -676], [-398, -494], [-396, -286], [-393, -78], [-386, 130],
+    [-377, 338], [-364, 546], [-346, 754], [-318, 949], [-283, 1131],
+    [-242, 1300], [-198, 1443], [-156, 1541], [-104, 1541], [-47, 1443],
+    [18, 1300], [81, 1131], [137, 949], [185, 754], [224, 546],
+    [257, 338], [287, 130], [315, -78], [339, -286], [361, -494],
+    [377, -676], [372, -832], [337, -1014], [269, -1196], [179, -1365],
+    [78, -1495],
   ],
-  coastAmp: 22, esplanade: 22,
+  coastAmp: 18, esplanade: 20,
   cores: [
-    { xy: [60, -760], w: 1.00, r: 270 },    // Wall Street, at the toe
-    { xy: [-20, 60], w: 0.86, r: 330 },     // Midtown, around the terminal
-    { xy: [-60, -330], w: 0.30, r: 250 },   // the Village and the loft district
-    { xy: [-120, 700], w: 0.20, r: 260 },   // uptown, above the park
-    { xy: [-400, -140], w: 0.09, r: 190 },  // the west side yards
+    { xy: [50, -1140], w: 1.00, r: 290 },   // Wall Street, at the toe
+    { xy: [-40, -80], w: 0.86, r: 360 },    // Midtown, around the terminal
+    { xy: [-55, -585], w: 0.30, r: 280 },   // the Village and the loft district
+    { xy: [-180, 940], w: 0.20, r: 280 },   // uptown, above the park
+    { xy: [-325, -195], w: 0.09, r: 200 },  // the west side yards
   ],
   // Four leaves: the colonial toe, the loft district, the numbered grid, and
   // the uptown grid above the park. The cuts run east-west because the island
   // does, which is why every New Yorker gives directions in blocks.
   partition: {
-    cut: cut(0, -560, 0), pos: "downtown",
+    cut: cut(0, -935, 0), pos: "downtown",
     neg: {
-      cut: cut(0, -250, 0), pos: "lofts",
-      neg: { cut: cut(0, 560, 0), neg: "uptown", pos: "midtown" },
+      cut: cut(0, -520, 0), pos: "lofts",
+      neg: { cut: cut(0, 650, 0), neg: "uptown", pos: "midtown" },
     },
   },
   districts: {
@@ -239,57 +254,83 @@ const newyork = {
     downtown: { kind: "organic", flavor: "old", cell: [2600, 6800], jitterDeg: 21, streetW: 8, fullBlockP: 0.02 },
     // The loft district: the grid has arrived but the blocks are still long
     // and the buildings on them were built for machines, not people.
-    lofts:    { kind: "lattice", flavor: "industrial", bearingDeg: 29, stPitch: 78, avePitch: 224, streetW: 13, aveW: 24, warpAmp: 5, fullBlockP: 0.07 },
+    lofts:    { kind: "lattice", flavor: "industrial", bearingDeg: 5, stPitch: 74, avePitch: 158, streetW: 13, aveW: 24, warpAmp: 4, fullBlockP: 0.04 },
     // THE COMMISSIONERS' PLAN. Twenty short blocks to a mile and three long
     // ones — the most valuable rectangle in the world, and the reason a corner
     // on an avenue is worth what it is.
-    midtown:  { kind: "lattice", flavor: "core", bearingDeg: 29, stPitch: 61, avePitch: 274, streetW: 15, aveW: 31, warpAmp: 1, numbered: true, fullBlockP: 0.06 },
-    uptown:   { kind: "lattice", flavor: "resi", bearingDeg: 29, stPitch: 61, avePitch: 274, streetW: 14, aveW: 28, warpAmp: 1, numbered: true, fullBlockP: 0.03 },
+    //
+    // THE GRID RAN AT 29 DEGREES ACROSS AN ISLAND WHOSE AXIS WAS VERTICAL.
+    // Manhattan's grid is rotated 29 degrees on a compass for exactly one
+    // reason: the island is, and the avenues run along it. Rotating the grid
+    // inside a frame where the island already runs north meant every avenue
+    // met the water at an angle, and the plan render showed the consequence
+    // down both shores — a fringe of orange cells too thin to carry a setback
+    // and a rank of red bare-ground dots behind them, for two miles. The
+    // avenues run up the island now, which is what the 29 degrees was always
+    // FOR, and Broadway's 103 becomes what it is supposed to be: a shallow
+    // crossing that makes a square at every avenue instead of a road at right
+    // angles to the town.
+    //
+    // The avenue pitch comes down with it. At 274 m on a 590 m waist the
+    // island carried two avenues; the real one carries twelve across 3.7 km,
+    // which is the same 280 m — the pitch was right for Manhattan's width and
+    // this island is a sixth of it.
+    midtown:  { kind: "lattice", flavor: "core", bearingDeg: 2, stPitch: 61, avePitch: 148, streetW: 15, aveW: 31, warpAmp: 1, numbered: true, fullBlockP: 0.05 },
+    uptown:   { kind: "lattice", flavor: "resi", bearingDeg: 2, stPitch: 61, avePitch: 148, streetW: 14, aveW: 28, warpAmp: 1, numbered: true, fullBlockP: 0.03 },
   },
   parks: [
     // The one nobody may build on, and the reason the addresses beside it cost
-    // what they do.
-    { cx: -75, cy: 430, w: 250, h: 720, deg: 29, name: "Central Park" },
-    { cx: 40, cy: -690, w: 95, h: 95, deg: 29, name: "Bowling Green" },
-    { cx: -95, cy: -300, w: 165, h: 130, deg: 29, name: "Washington Square" },
-    { cx: 40, cy: -60, w: 120, h: 90, deg: 29, name: "Bryant Park" },
+    // what they do. It was 250 by 720 on an island 925 wide — a quarter of the
+    // town under grass. The real park is 4 km by 800 m on an island of 59 km2:
+    // six per cent. This is that proportion, on this island, in the place it
+    // actually sits — up the middle and a little west.
+    { cx: -95, cy: 560, w: 125, h: 610, deg: 2, name: "Central Park" },
+    { cx: 40, cy: -1080, w: 88, h: 88, deg: 2, name: "Bowling Green" },
+    { cx: -90, cy: -545, w: 140, h: 112, deg: 2, name: "Washington Square" },
+    { cx: 30, cy: -145, w: 112, h: 86, deg: 2, name: "Bryant Park" },
   ],
-  // Broadway, running the whole length and agreeing with nothing.
-  diagonals: [{ cx: -60, cy: -110, w: 2000, h: 30, deg: 103 }],
+  // Broadway, running the whole length and agreeing with nothing — but
+  // agreeing enough to stay on the island. At 103 degrees it leans 13 off
+  // vertical, which over 2.9 km of length is 660 m of westward drift on an
+  // island 775 m wide: it left the map through the Hudson somewhere around
+  // 80th Street. The island's own centreline drifts about 2.5 degrees west as
+  // it climbs, so a road that crosses the avenues by four or five degrees
+  // makes its squares and still comes out at the top.
+  diagonals: [{ cx: -60, cy: -235, w: 2900, h: 30, deg: 96.5 }],
   piers: [
-    [[-430, -400], [-560, -430], [-566, -388], [-436, -358]],
-    [[-448, -170], [-580, -196], [-586, -154], [-454, -128]],
-    [[-470, 70], [-600, 48], [-604, 90], [-474, 112]],
-    [[400, -520], [530, -556], [540, -514], [410, -478]],
-    [[425, -260], [556, -288], [564, -246], [433, -218]],
-    [[452, 0], [582, -20], [588, 22], [458, 42]],
+    [[-390, -560], [-520, -590], [-526, -548], [-396, -518]],
+    [[-396, -230], [-528, -256], [-534, -214], [-402, -188]],
+    [[-390, 120], [-520, 98], [-524, 140], [-394, 162]],
+    [[370, -690], [500, -726], [510, -684], [380, -648]],
+    [[358, -300], [489, -328], [497, -286], [366, -258]],
+    [[330, 60], [460, 40], [466, 82], [336, 102]],
   ],
-  cranes: [[-500, -300, 18], [-520, 10, 96]],
-  ships: [[-660, -560, 62], [640, -680, 118], [-30, -1120, 20]],
-  breakwaters: [[120, -1120, 220, 15, 22]],
+  cranes: [[-430, -400, 18], [-420, 20, 96]],
+  ships: [[-620, -760, 62], [600, -900, 118], [-40, -1560, 20]],
+  breakwaters: [[130, -1560, 220, 15, 22]],
   stations: [
-    { name: "Wall St", lines: "2 3 4 5", xy: [60, -760], weight: 100 },
-    { name: "Fulton St", lines: "A C 4 5", xy: [10, -640], weight: 78 },
-    { name: "Canal St", lines: "6 N Q", xy: [-60, -430], weight: 54 },
-    { name: "Union Sq", lines: "4 5 6 N Q L", xy: [-70, -190], weight: 82 },
-    { name: "Grand Central", lines: "4 5 6 7 S", xy: [30, 40], weight: 96 },
-    { name: "Times Sq", lines: "1 2 3 N Q R 7 S", xy: [-70, 70], weight: 94 },
-    { name: "Columbus Circle", lines: "A C B D 1", xy: [-150, 290], weight: 66 },
-    { name: "72nd St", lines: "1 2 3", xy: [-190, 470], weight: 48 },
-    { name: "125th St", lines: "A B C D", xy: [-200, 900], weight: 40 },
-    { name: "Hudson Yards", lines: "7", xy: [-330, 40], weight: 26 },
+    { name: "Wall St", lines: "2 3 4 5", xy: [55, -1150], weight: 100 },
+    { name: "Fulton St", lines: "A C 4 5", xy: [20, -1010], weight: 78 },
+    { name: "Canal St", lines: "6 N Q", xy: [-60, -700], weight: 54 },
+    { name: "Union Sq", lines: "4 5 6 N Q L", xy: [-80, -330], weight: 82 },
+    { name: "Grand Central", lines: "4 5 6 7 S", xy: [25, -30], weight: 96 },
+    { name: "Times Sq", lines: "1 2 3 N Q R 7 S", xy: [-90, 20], weight: 94 },
+    { name: "Columbus Circle", lines: "A C B D 1", xy: [-185, 300], weight: 66 },
+    { name: "72nd St", lines: "1 2 3", xy: [-230, 560], weight: 48 },
+    { name: "125th St", lines: "A B C D", xy: [-255, 1160], weight: 40 },
+    { name: "Hudson Yards", lines: "7", xy: [-330, -20], weight: 26 },
   ],
   labels: [
-    { name: "DOWNTOWN", labelKind: "district", xy: [90, -790] },
-    { name: "THE LOFTS", labelKind: "district", xy: [-120, -400] },
-    { name: "MIDTOWN", labelKind: "district", xy: [30, 90] },
-    { name: "UPTOWN", labelKind: "district", xy: [-160, 830] },
-    { name: "Central Park", labelKind: "park", xy: [-75, 430] },
-    { name: "Washington Square", labelKind: "park", xy: [-95, -300] },
-    { name: "Bowling Green", labelKind: "park", xy: [40, -690] },
-    { name: "Upper Bay", labelKind: "water", xy: [60, -1100] },
-    { name: "Hudson River", labelKind: "water", xy: [-660, 300] },
-    { name: "East River", labelKind: "water", xy: [610, 200] },
+    { name: "DOWNTOWN", labelKind: "district", xy: [90, -1180] },
+    { name: "THE LOFTS", labelKind: "district", xy: [-130, -640] },
+    { name: "MIDTOWN", labelKind: "district", xy: [20, 60] },
+    { name: "UPTOWN", labelKind: "district", xy: [-215, 1080] },
+    { name: "Central Park", labelKind: "park", xy: [-95, 560] },
+    { name: "Washington Square", labelKind: "park", xy: [-90, -545] },
+    { name: "Bowling Green", labelKind: "park", xy: [40, -1080] },
+    { name: "Upper Bay", labelKind: "water", xy: [60, -1620] },
+    { name: "Hudson River", labelKind: "water", xy: [-560, 420] },
+    { name: "East River", labelKind: "water", xy: [510, 300] },
   ],
   avenues: ["Broadway", "Fifth Ave", "Madison Ave", "Park Ave", "Lexington Ave", "Third Ave", "Seventh Ave", "Eighth Ave", "West End Ave"],
   streets: {
@@ -319,13 +360,31 @@ const chicago = {
   // size a player can hold in their head, and the thing that makes Chicago
   // Chicago is not its acreage — it is that the grid meets no obstacle in
   // three directions while the fourth is a lake nobody may build on.
+  // IT WAS AN ISLAND. A rounded blob with water on all four sides, in the one
+  // city on this list whose entire character is that the grid meets NO
+  // obstacle in three directions — the note directly above says so and the
+  // outline said the opposite. A player looking at it saw a small town on a
+  // rock, which is Kestrel Point's game, not this one.
+  //
+  // Three of these edges are dead straight and they are the FRAME, not a
+  // shore: a grid that runs to the edge of the paper reads as a grid that
+  // keeps going. The fourth is Lake Michigan, and it is the only real
+  // coastline on the map — which is exactly the asymmetry the city is built
+  // out of, and why every good address in Chicago faces one direction.
   coast: [
-    [430, -640], [470, -420], [492, -190], [500, 40], [494, 270],
-    [470, 500], [430, 690], [200, 750], [-90, 780], [-390, 775],
-    [-620, 735], [-690, 490], [-710, 210], [-710, -80], [-690, -360],
-    [-620, -610], [-390, -680], [-90, -710], [200, -690],
+    [-700, -720], [-700, -600], [-700, -480], [-700, -360], [-700, -240],
+    [-700, -120], [-700, 0], [-700, 120], [-700, 240], [-700, 360],
+    [-700, 480], [-700, 600], [-700, 720], [-700, 760], [-570, 760],
+    [-440, 760], [-310, 760], [-180, 760], [-50, 760], [80, 760],
+    [210, 760], [340, 760], [430, 760], [476, 600], [496, 430],
+    [504, 250], [500, 60], [488, -130], [468, -320], [440, -500],
+    [408, -660], [380, -720], [270, -720], [140, -720], [10, -720],
+    [-120, -720], [-250, -720], [-380, -720], [-510, -720], [-640, -720],
   ],
-  coastAmp: 10, esplanade: 46,     // Burnham's lakefront: wide, green, public
+  // smooth: 0 — the three straight edges are a FRAME and a frame has corners.
+  // Chaikin rounds every vertex it is given, which turned the four corners of
+  // the grid into arcs and left a bare wedge behind each one.
+  coastAmp: 4, smooth: 0, esplanade: 46,   // Burnham's lakefront: wide, green, public
   cores: [
     { xy: [158, 21], w: 1.00, r: 265 },     // the Loop
     { xy: [119, 186], w: 0.55, r: 250 },    // the Magnificent Mile, north of the river
@@ -351,10 +410,19 @@ const chicago = {
     // THE LOOP. Tight blocks, the tightest street pitch on any map here, and a
     // hard grid — it is a rectangle of about a third of a square mile and it
     // holds more office space than most cities have.
-    loop:      { kind: "lattice", flavor: "core", bearingDeg: 0, stPitch: 66, avePitch: 172, streetW: 16, aveW: 28, warpAmp: 0, numbered: true, fullBlockP: 0.08 },
-    northside: { kind: "lattice", flavor: "resi", bearingDeg: 0, stPitch: 60, avePitch: 168, streetW: 14, aveW: 24, warpAmp: 1, numbered: true, fullBlockP: 0.03 },
-    southloop: { kind: "lattice", flavor: "industrial", bearingDeg: 0, stPitch: 74, avePitch: 196, streetW: 16, aveW: 26, warpAmp: 2, fullBlockP: 0.09 },
-    westside:  { kind: "lattice", flavor: "industrial", bearingDeg: 0, stPitch: 82, avePitch: 220, streetW: 17, aveW: 28, warpAmp: 3, fullBlockP: 0.10 },
+    // AND THE BLOCKS WERE HALF EMPTY BECAUSE THEY WERE NEVER SUBDIVIDED.
+    // Chicago carried the loosest street pitch of any map here AND the highest
+    // full-block probability — 9 and 10 per cent across a third of the town —
+    // so the west and south sides came out as a field of enormous undivided
+    // rectangles: median lot 994 m2 against a 453 m2 median for the game, and
+    // 2.6% of every lot over 2,500 m2 against 0.5-1.2% everywhere else. 1,028
+    // lots on the LARGEST buildable area of the five, which is 714 lots to the
+    // square kilometre where New Alden runs 1,030. That is the sparseness.
+    // Chicago's blocks are big; they are not empty.
+    loop:      { kind: "lattice", flavor: "core", bearingDeg: 0, stPitch: 62, avePitch: 158, streetW: 16, aveW: 28, warpAmp: 0, numbered: true, fullBlockP: 0.05 },
+    northside: { kind: "lattice", flavor: "resi", bearingDeg: 0, stPitch: 56, avePitch: 152, streetW: 14, aveW: 24, warpAmp: 1, numbered: true, fullBlockP: 0.02 },
+    southloop: { kind: "lattice", flavor: "industrial", bearingDeg: 0, stPitch: 68, avePitch: 172, streetW: 16, aveW: 26, warpAmp: 2, fullBlockP: 0.04 },
+    westside:  { kind: "lattice", flavor: "industrial", bearingDeg: 0, stPitch: 72, avePitch: 184, streetW: 17, aveW: 28, warpAmp: 3, fullBlockP: 0.04 },
   },
   parks: [
     { cx: 360, cy: 15, w: 140, h: 430, deg: 0, name: "Grant Park" },
@@ -418,26 +486,37 @@ const chicago = {
 const boston = {
   name: "Boston", district: "boston", abbr: "BO", seed: 16300,
   center: [-67.0, 38.6],   // open water — see the note on New York
+  // IT WAS A DISC. A near-perfect circle, 1.17:1, in the city whose whole
+  // identity is a peninsula so narrow it was nearly an island — the note above
+  // says "built on a peninsula", and what was drawn was a dinner plate. The
+  // shape IS the game here: the neck is why the Back Bay had to be filled, the
+  // fill is why there are two street plans, and a circle has neither.
+  //
+  // So: the bulb of cowpaths on the old shore with the harbour biting into it
+  // from the east, the Charles cutting in from the north, a narrow neck
+  // running west, and the filled bay squared off on the end of it.
   coast: [
-    [-745, -272], [-835, 47], [-790, 382], [-620, 620], [-357, 727],
-    [-47, 786], [276, 765], [561, 667], [765, 476], [837, 212],
-    [790, -94], [620, -357], [395, -514], [217, -395], [47, -535],
-    [-217, -595], [-501, -501],
+    [-996, 328], [-1009, 118], [-963, -52], [-786, -124], [-563, -157],
+    [-393, -196], [-282, -308], [-196, -432], [-79, -550], [105, -616],
+    [308, -596], [432, -511], [550, -393], [655, -229], [734, -39],
+    [786, 170], [773, 393], [694, 583], [550, 734], [354, 838],
+    [157, 904], [-52, 917], [-236, 858], [-367, 747], [-432, 616],
+    [-511, 544], [-681, 517], [-865, 472], [-976, 413],
   ],
-  coastAmp: 30, esplanade: 20,
+  coastAmp: 14, esplanade: 20,
   cores: [
-    { xy: [300, 60], w: 1.00, r: 300 },     // the financial district, on the old shore
-    { xy: [60, 180], w: 0.72, r: 300 },     // downtown crossing and the Common's edge
-    { xy: [-300, 130], w: 0.50, r: 330 },   // Back Bay
-    { xy: [180, 400], w: 0.16, r: 220 },    // the North End and the waterfront
-    { xy: [-120, -320], w: 0.10, r: 210 },  // the channel and the yards
+    { xy: [393, 79], w: 1.00, r: 393 },     // the financial district, on the old shore
+    { xy: [79, 236], w: 0.72, r: 393 },     // downtown crossing and the Common's edge
+    { xy: [-393, 170], w: 0.50, r: 432 },   // Back Bay
+    { xy: [236, 524], w: 0.16, r: 288 },    // the North End and the waterfront
+    { xy: [-157, -419], w: 0.10, r: 275 },  // the channel and the yards
   ],
   // Three plans that never met: the cowpaths, the fill, and the wharves.
   partition: {
-    cut: cut(0, -140, 0), pos: "seaport",
+    cut: cut(0, -183, 0), pos: "seaport",
     neg: {
-      cut: cut(-130, 0, 90), neg: "backbay",
-      pos: { cut: cut(0, 330, 0), neg: "northend", pos: "oldtown" },
+      cut: cut(-170, 0, 90), neg: "backbay",
+      pos: { cut: cut(0, 432, 0), neg: "northend", pos: "oldtown" },
     },
   },
   districts: {
@@ -448,51 +527,54 @@ const boston = {
     // AND THE FILL. Laid out in one go in the 1850s and never deviated from:
     // the straightest grid in the book, sitting at an angle to everything.
     backbay:  { kind: "lattice", flavor: "resi", bearingDeg: -21, stPitch: 62, avePitch: 190, streetW: 14, aveW: 30, warpAmp: 0, fullBlockP: 0.02 },
-    seaport:  { kind: "lattice", flavor: "industrial", bearingDeg: 12, stPitch: 88, avePitch: 240, streetW: 17, aveW: 28, warpAmp: 6, fullBlockP: 0.12 },
+    // The seaport's blocks were the loosest on the map at 88 by 240 with a 12%
+    // full-block roll, and it showed: a 14,000 m2 patch of bare ground in the
+    // middle of it, the single biggest hole in any of the five cities.
+    seaport:  { kind: "lattice", flavor: "industrial", bearingDeg: 12, stPitch: 76, avePitch: 196, streetW: 17, aveW: 28, warpAmp: 5, fullBlockP: 0.05 },
   },
   parks: [
-    { cx: -30, cy: 175, w: 300, h: 210, deg: -6, name: "Boston Common" },
-    { cx: -175, cy: 150, w: 175, h: 130, deg: -21, name: "The Public Garden" },
-    { cx: -420, cy: 90, w: 120, h: 300, deg: -21, name: "The Fens" },
-    { cx: 240, cy: 330, w: 95, h: 95, deg: 8, name: "Faneuil Green" },
+    { cx: -39, cy: 229, w: 393, h: 275, deg: -6, name: "Boston Common" },
+    { cx: -229, cy: 196, w: 229, h: 170, deg: -21, name: "The Public Garden" },
+    { cx: -550, cy: 118, w: 157, h: 393, deg: -21, name: "The Fens" },
+    { cx: 314, cy: 432, w: 124, h: 124, deg: 8, name: "Faneuil Green" },
   ],
   // Commonwealth Avenue's mall, running dead straight through the fill, and
   // the old Post Road out of the neck.
   diagonals: [
-    { cx: -330, cy: 130, w: 700, h: 30, deg: 159 },
-    { cx: 60, cy: -60, w: 620, h: 22, deg: 62 },
+    { cx: -432, cy: 170, w: 917, h: 39, deg: 159 },
+    { cx: 79, cy: -79, w: 812, h: 29, deg: 62 },
   ],
   piers: [
-    [[520, 300], [650, 330], [640, 375], [510, 345]],
-    [[560, 130], [700, 145], [696, 190], [556, 175]],
-    [[430, 470], [545, 520], [528, 562], [413, 512]],
-    [[240, -400], [270, -530], [312, -520], [282, -390]],
+    [[681, 393], [852, 432], [838, 491], [668, 452]],
+    [[734, 170], [917, 190], [912, 249], [728, 229]],
+    [[563, 616], [714, 681], [692, 736], [541, 671]],
+    [[314, -524], [354, -694], [409, -681], [369, -511]],
   ],
-  cranes: [[300, -430, 40], [90, -400, 130]],
-  ships: [[760, 300, 40], [420, -600, 15]],
-  breakwaters: [[720, 420, 180, 14, 48]],
+  cranes: [[393, -563, 40], [118, -524, 130]],
+  ships: [[996, 393, 40], [550, -786, 15]],
+  breakwaters: [[943, 550, 236, 14, 48]],
   stations: [
-    { name: "State St", lines: "O B", xy: [300, 90], weight: 100 },
-    { name: "Downtown Crossing", lines: "R O", xy: [110, 140], weight: 92 },
-    { name: "Park St", lines: "R G", xy: [10, 180], weight: 86 },
-    { name: "Arlington", lines: "G", xy: [-180, 150], weight: 62 },
-    { name: "Copley", lines: "G", xy: [-320, 120], weight: 66 },
-    { name: "Hynes", lines: "G", xy: [-460, 95], weight: 44 },
-    { name: "Haymarket", lines: "O G", xy: [190, 300], weight: 50 },
-    { name: "North Station", lines: "O G", xy: [160, 430], weight: 46 },
-    { name: "South Station", lines: "R S", xy: [250, -110], weight: 70 },
-    { name: "Courthouse", lines: "S", xy: [60, -300], weight: 24 },
+    { name: "State St", lines: "O B", xy: [393, 118], weight: 100 },
+    { name: "Downtown Crossing", lines: "R O", xy: [144, 183], weight: 92 },
+    { name: "Park St", lines: "R G", xy: [13, 236], weight: 86 },
+    { name: "Arlington", lines: "G", xy: [-236, 196], weight: 62 },
+    { name: "Copley", lines: "G", xy: [-419, 157], weight: 66 },
+    { name: "Hynes", lines: "G", xy: [-603, 124], weight: 44 },
+    { name: "Haymarket", lines: "O G", xy: [249, 393], weight: 50 },
+    { name: "North Station", lines: "O G", xy: [210, 563], weight: 46 },
+    { name: "South Station", lines: "R S", xy: [328, -144], weight: 70 },
+    { name: "Courthouse", lines: "S", xy: [79, -393], weight: 24 },
   ],
   labels: [
-    { name: "THE OLD TOWN", labelKind: "district", xy: [140, 60] },
-    { name: "BACK BAY", labelKind: "district", xy: [-360, 160] },
-    { name: "THE NORTH END", labelKind: "district", xy: [190, 450] },
-    { name: "THE SEAPORT", labelKind: "district", xy: [40, -330] },
-    { name: "Boston Common", labelKind: "park", xy: [-30, 175] },
-    { name: "The Public Garden", labelKind: "park", xy: [-175, 150] },
-    { name: "Boston Harbor", labelKind: "water", xy: [640, 60] },
-    { name: "The Charles", labelKind: "water", xy: [-560, 430] },
-    { name: "Fort Point Channel", labelKind: "water", xy: [190, -470] },
+    { name: "THE OLD TOWN", labelKind: "district", xy: [183, 79] },
+    { name: "BACK BAY", labelKind: "district", xy: [-472, 210] },
+    { name: "THE NORTH END", labelKind: "district", xy: [249, 590] },
+    { name: "THE SEAPORT", labelKind: "district", xy: [52, -432] },
+    { name: "Boston Common", labelKind: "park", xy: [-39, 229] },
+    { name: "The Public Garden", labelKind: "park", xy: [-229, 196] },
+    { name: "Boston Harbor", labelKind: "water", xy: [838, 79] },
+    { name: "The Charles", labelKind: "water", xy: [-734, 563] },
+    { name: "Fort Point Channel", labelKind: "water", xy: [249, -616] },
   ],
   avenues: ["Commonwealth Ave", "Boylston St", "Newbury St", "Beacon St", "Tremont St", "Washington St", "Atlantic Ave", "Huntington Ave"],
   streets: {

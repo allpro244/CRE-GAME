@@ -1556,6 +1556,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
       const meta = [style, rnd, varr, v.z1, fh];
       const dWall0 = W.pos.length / 3, dRoof0 = R.pos.length / 3;
+      // WHERE THE PLANT ACTUALLY STANDS. A tall building's roof is mostly
+      // penthouse — the stair and lift overrun below covers the plate bar a
+      // three-to-four-metre terrace — and the kit was being fitted to the
+      // plate UNDERNEATH it. On all 89 penthoused buildings in New Alden every
+      // piece of plant that got placed was placed inside the penthouse it
+      // should have been standing on. The machine deck of a real tower is the
+      // roof of that penthouse; where there is one, that is the polygon the
+      // kit is laid out on, at the height its own cap was drawn.
+      let mechDeck: { ring: [number, number][]; z: number } | null = null;
       extrudeWalls(W, ring, v.z0, v.z1, meta);
 
       // ---- gabled colonial roofs in the old fabric -------------------------
@@ -1853,6 +1862,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
             const pm = [style === S_GLASS || style === S_DARK ? S_PLAIN : style, rnd, varr, v.z1 + ph2, fh];
             extrudeWalls(W, pent, v.z1 + 0.4, v.z1 + ph2, pm);
             capRoof(R, pent, v.z1 + ph2, [pm[0], rnd, varr, v.z1 + ph2, fh]);
+            mechDeck = { ring: pent, z: v.z1 + ph2 };
           }
         }
       }
@@ -1875,9 +1885,6 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // it is 90 m up put an antenna forest on every hill.
       const hgt = v.z1 - v.z0;
       if (v.b && hgt >= 12 && !gable && !hip) {
-        let cx = 0, cy = 0;
-        for (const [x, y] of ring) { cx += x; cy += y; }
-        cx /= ring.length; cy /= ring.length;
         const seed = Number(v.b) % 1000;
         const jit = (k: number, amp: number) => (((seed * (k + 3) * 2654435761) % 1000) / 1000 - 0.5) * amp;
         // Deck-mounted plant needs a deck. A mansard's roof is a slope with a
@@ -1910,11 +1917,21 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           if (hgt >= 95) wants.push({ kind: 4, s: 1 + (hgt - 95) / 60, rot: 0, keep: true });
           if (hgt >= 105 && v.y >= 1975) wants.push({ kind: 3, s: 1, rot: 0, keep: true });
           // Somebody has to be able to get out here. Every flat roof has a way
-          // up, and it is the most characteristic silhouette on the deck.
-          if (hgt >= 9) wants.push({ kind: 13, s: 0.9 + 0.3 * R(3), rot: bear });
+          // up, and it is the most characteristic silhouette on the deck —
+          // unless the building already grew a penthouse, because that IS the
+          // stair and the lift, and a bulkhead standing beside it on its own
+          // roof is the same object drawn twice.
+          if (hgt >= 9 && !mechDeck) wants.push({ kind: 13, s: 0.9 + 0.3 * R(3), rot: bear });
           // A lift overrun exists where there is a lift, which is six floors
           // and up before the war and four floors and up after it.
-          if (floors >= (v.y >= 1955 ? 4 : 6) && hgt >= 16) wants.push({ kind: 14, s: 0.9 + 0.25 * R(5), rot: bear + 0.4 });
+          if (floors >= (v.y >= 1955 ? 4 : 6) && hgt >= 16 && !mechDeck) wants.push({ kind: 14, s: 0.9 + 0.25 * R(5), rot: bear + 0.4 });
+          // A shed is lit through its roof rather than its walls, so a monitor
+          // is the one thing on it that matters. It used to be dropped on top
+          // of whatever the machine deck had already put there, at a six-metre
+          // jitter off the centroid that hung nearly a fifth of them over the
+          // gutter; taking it through the kit costs it a place in the budget
+          // and makes it stand inside the parapet like everything else.
+          if (style === S_MILL && hgt < 15) wants.push({ kind: 6, s: 0.85 + 0.3 * R(25), rot: bear });
           if (hgt >= 20) wants.push({ kind: 2, s: 1 + (hgt > 60 ? 0.6 : 0), rot: jit(3, 3) });
           // The timber tank on a pre-war roof, and the steel one that replaced
           // it after the war — the two never share a roof.
@@ -1934,8 +1951,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           // deck has room left over after the plant that matters.
           const nAc = hgt > 40 ? 3 : 1;
           for (let k = 0; k < nAc; k++) wants.push({ kind: 1, s: 0.8 + 0.4 * ((seed >> k) % 2), rot: jit(12 + k, 3) });
-          for (const p of fitRoofKit(ring as [number, number][], v.z1, wants,
-            (i) => hash01(keyOf(v.b ?? "x") ^ Math.imul(i + 7, 0x85ebca6b), this.citySeed))) {
+          for (const p of fitRoofKit(mechDeck ? mechDeck.ring : (ring as [number, number][]),
+            mechDeck ? mechDeck.z : v.z1, wants,
+            (i) => hash01(keyOf(v.b ?? "x") ^ Math.imul(i + 7, 0x85ebca6b), this.citySeed), hgt)) {
             props.push(p);
           }
           // And a rail round the edge, which is nearly all EDGE and therefore
@@ -1950,6 +1968,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
               const nx = -ey / L, ny = ex / L;      // inward is whichever way the ring winds
               const sgn = area > 0 ? 1 : -1;
               const n = Math.min(4, Math.floor(L / 7.2));
+              // A rail is 7 m of geometry at s = 1 and rl is set off the whole
+              // building's size, so a big building with one short wall asked
+              // for a twelve-metre rail on a nine-metre edge and hung three
+              // metres of it past the corner into the air. It cannot be longer
+              // than the share of the wall it was given.
+              const rs = Math.min(rl, L / (n * 7.0));
               for (let i = 0; i < n; i++) {
                 const t = (i + 0.5) / n;
                 props.push({
@@ -1957,7 +1981,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
                   x: p0[0] + ex * t + nx * sgn * 1.5,
                   y: p0[1] + ey * t + ny * sgn * 1.5,
                   z: v.z1,
-                  s: rl,
+                  s: rs,
                   rot: Math.atan2(ey, ex),
                 });
               }
@@ -2013,10 +2037,6 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
               rot: Math.atan2(b2[1] - a2[1], b2[0] - a2[0]),
             });
           }
-        }
-        // skylight monitors on industrial sheds
-        if (style === S_MILL && hgt < 15) {
-          for (let k = 0; k < 2; k++) props.push({ kind: 6, x: cx + jit(20 + k, 12), y: cy + jit(23 + k, 12), z: v.z1, s: 1, rot: jit(26, 1) });
         }
       }
       // Chimneys on everything with a pitched roof. A stack is the one thing
@@ -2926,7 +2946,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         }
         if (h >= 10 && hash01(k ^ 0x49, this.citySeed) < 0.5) wants.push({ kind: 19, s: 1, rot: bear2 });
         for (const p of fitRoofKit(topTier.fp as [number, number][], topTier.z1, wants,
-          (i) => hash01(k ^ Math.imul(i + 7, 0x85ebca6b), this.citySeed))) {
+          (i) => hash01(k ^ Math.imul(i + 7, 0x85ebca6b), this.citySeed), h)) {
           const m = new THREE.Mesh(GEOM[p.kind](), this.propMaterial(COL[p.kind], false));
           m.rotation.z = p.rot; m.scale.setScalar(p.s); m.position.set(p.x, p.y, p.z);
           this.dynGroup.add(m);
@@ -3327,6 +3347,7 @@ const PROP_R: Record<number, number> = {
   2: 2.9,   // plant housing
   3: 4.2,   // dish pad
   4: 1.2,   // mast
+  6: 3.4,   // sawtooth monitor — a 6.5 m box, so the half-diagonal
   13: 2.4,  // stair bulkhead
   14: 2.6,  // lift overrun
   15: 2.8,  // cooling tower
@@ -3381,21 +3402,50 @@ export interface RoofPlaced { kind: number; x: number; y: number; z: number; s: 
  * the building so the deck is the same every time the tile is rebuilt.
  * A want marked `keep` is exempt from the count budget (a mast on a 95 m tower
  * is the silhouette, not clutter) but still has to fit inside the parapet.
+ * `hgt` is how tall the building under the deck is: it decides how much plant
+ * the building is entitled to, before the plate decides how much of it fits.
  */
 function fitRoofKit(
   ring: [number, number][], z: number, wants: RoofWant[], rnd: (i: number) => number,
+  hgt: number,
 ): RoofPlaced[] {
   const out: RoofPlaced[] = [];
   if (ring.length < 3) return out;
   const area = ringArea2D(ring);
-  // How much plant a deck can carry. A 260 m² roof — the six-storey building
-  // in the report — gets the way out and one more thing, and that is right:
-  // stand on one and there is a stair bulkhead, a vent, and a lot of asphalt.
-  const budget = area < 90 ? 0 : area < 170 ? 1 : area < 340 ? 2
-    : area < 700 ? 3 : area < 1400 ? 4 : area < 2600 ? 5 : 6;
-  // ...and how big each piece is. A full-size cooling tower on a small plate
-  // is the thing that reads as wrong even when it does technically fit.
-  const sizeK = Math.max(0.72, Math.min(1, Math.sqrt(area / 600)));
+  // HOW MUCH PLANT A DECK CAN CARRY, AND HOW BIG IT IS.
+  //
+  // The first cut of this budget was written against a tower and then applied
+  // to a city that has almost none. Measured over New Alden and Kestrel Point,
+  // 1,383 flat roofs stand more than 12 m off their own base, and their plates
+  // run 220 m² at the lower quartile, 291 m² — 3,130 sq ft — at the median and
+  // 586 m² at the ninth decile. EIGHTY-NINE PER CENT OF THIS CITY'S FLAT ROOFS
+  // ARE UNDER 560 m². The old steps gave the median roof two pieces of plant
+  // and the quartile roof two as well, so half the town wore a stair bulkhead
+  // AND a lift overrun on a plate twelve metres across. That is the pile the
+  // complaint is about, and it is the ordinary building, not the exception.
+  //
+  // These steps are a real building's. Nothing under 130 m² (1,400 sq ft) — a
+  // plate that size is a stair, a hatch and nowhere to stand, and it is 2.3%
+  // of the stock. One thing to 280 m² (3,000 sq ft), which is the ordinary
+  // 25 x 100 lot and 47% of the stock. Two to 560 m². The full machine deck
+  // only past 1,000 m², which in this town means a department store, a
+  // warehouse or a tower's podium — 3.4% of roofs, and they can carry it.
+  const areaCap = area < 130 ? 0 : area < 280 ? 1 : area < 560 ? 2
+    : area < 1000 ? 3 : area < 1800 ? 4 : area < 2800 ? 5 : 6;
+  // Stature is the other half of it, because the plate is not the only thing
+  // that decides: a four-storey walk-up has no central plant however wide its
+  // roof is — what stands on one is the way out and a condenser — while the
+  // same plate under forty metres of building is somebody's machine deck.
+  const statureCap = hgt < 16 ? 2 : hgt < 26 ? 3 : hgt < 45 ? 4 : 6;
+  const budget = Math.min(areaCap, statureCap);
+  // And the SIZE, which is the half that actually reads wrong: a catalogue
+  // cooling tower is 4.4 m across, and on a 25-foot roof that is more than
+  // half the width of the building. Size runs off sqrt(area) — a length, so a
+  // plate four times bigger takes parts twice as big — reaching catalogue size
+  // at 1,100 m² and stopping at 0.62, which is a 2.0 m stair bulkhead. Below
+  // that you could not get a stair inside it and it stops reading as a
+  // building part at all.
+  const sizeK = Math.max(0.62, Math.min(1, Math.sqrt(area / 1100)));
   let xlo = Infinity, xhi = -Infinity, ylo = Infinity, yhi = -Infinity;
   for (const [x, y] of ring) {
     if (x < xlo) xlo = x; if (x > xhi) xhi = x;

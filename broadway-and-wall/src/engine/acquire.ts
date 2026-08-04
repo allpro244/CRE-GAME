@@ -16,9 +16,9 @@
 // together they put four screens and two months between deciding to buy a
 // building and owning it, which made the most frequent action in the game its
 // slowest. An offer is a price now, and agreeing one is buying the building.
-import type { ParcelTable } from "@/data/types";
+import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, SellerKind, Talks } from "./types";
-import { monthLabel } from "./types";
+import { monthLabel, START_YEAR } from "./types";
 import { assetValue, resolveRec } from "./value";
 import { ownerOf, gradeOf, tie } from "./rivals";
 import { describeFirm } from "./firm";
@@ -46,38 +46,100 @@ const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
 // institution — a committee with a number and no reason to like you — now
 // barely moves at all. The receiver is still the cheapest money in town at
 // eighty cents, because that is what a receiver is for.
+// AND WHAT THEY LOOK LIKE WHEN THEY ARE NOT SELLING.
+//
+// `blurb` is written for the far side of a table, which assumes there is a
+// table. Most of this city is not on the market and never will be, and the
+// record still has to answer the first question anybody asks about a building
+// they want: who has it. `holds` is that answer — what a broker tells you
+// before there is a deal to discuss, and, because the same six archetypes
+// carry the floors below, the first honest read on how hard the door will be.
 const SELLERS: Record<SellerKind, {
-  label: string; blurb: string; certainty: number; floor: number; patience: number; dawdle: number;
+  label: string; blurb: string; holds: string; certainty: number; floor: number; patience: number; dawdle: number;
 }> = {
   estate: {
     label: "an estate", certainty: 0.055, floor: 0.87, patience: 0.75, dawdle: 0.06,
     blurb: "Executors, three heirs and a deadline. They want it done more than they want the last dollar.",
+    holds: "It sits in an estate — executors, heirs, and a clock nobody in the family controls. That is the easiest door in this town to get open.",
   },
   institution: {
     label: "an institutional owner", certainty: 0.012, floor: 0.98, patience: 0.25, dawdle: 0.02,
     blurb: "A fund rebalancing out of the sector. They have a committee, a number, and no reason to like you.",
+    holds: "An institution holds it inside a fund. There is a committee, a mandate and a hold period, and none of the three has heard of you.",
   },
   partnership: {
     label: "a partnership in dispute", certainty: 0.04, floor: 0.90, patience: 0.55, dawdle: 0.16,
     blurb: "Two partners who no longer speak. Everything takes twice as long and nobody can say yes quickly.",
+    holds: "It belongs to a partnership that no longer speaks. Nothing here gets agreed once — it has to be agreed twice, by people who will not be in the same room.",
   },
   developer: {
     label: "a developer taking profits", certainty: 0.03, floor: 0.93, patience: 0.4, dawdle: 0.04,
     blurb: "They built it, they leased it, and they are recycling the equity into the next one.",
+    holds: "Whoever built it still owns it. They sell when the profit is banked and the next site is under contract, which makes the timing theirs and not yours.",
   },
   local: {
     label: "a local family owner", certainty: 0.035, floor: 0.92, patience: 0.6, dawdle: 0.08,
     blurb: "They have owned it since before you were born and they are in no hurry, but they are reasonable.",
+    holds: "The same family has had it for decades. They will take your call and they will not be hurried — nobody here has to sell anything.",
   },
   lender: {
     label: "a lender's receiver", certainty: 0.07, floor: 0.80, patience: 0.85, dawdle: 0.05,
     blurb: "A special servicer clearing a book. They will take a haircut to be rid of it and they will not warrant a thing.",
+    holds: "A servicer is holding the file for a lender who wants it off the book. It will be sold, and it will be sold to whoever makes it easy.",
   },
 };
 
 export const sellerProfile = (k: SellerKind) => SELLERS[k];
 
-/** Who owns this listing, decided once and stable for the life of the listing. */
+/**
+ * WHO HOLDS THE NINE BUILDINGS IN TEN THAT BELONG TO NOBODY YOU HAVE HEARD OF.
+ *
+ * A dozen named firms own a few hundred lots between them; the rest of the city
+ * belongs to people with no press release, and for those the game's only answer
+ * was a hash. The hash was worse than no answer, because it folded the listing
+ * month in "so the same parcel keeps the same seller while it is up" — which
+ * meant the owner of four lots in five CHANGED the month the building came to
+ * market, and changed again if it was pulled and relisted. Who holds a building
+ * is a fact about the building. The listing is something that happens to it.
+ *
+ * So the archetype is read off the record instead, the way a broker reads it
+ * before he picks the phone up. Nobody's family owns half a million feet; a
+ * building finished in the last fifteen years is still owned by whoever built
+ * it; a walk-up put up in 1912 on a 2,400-foot lot is somebody's grandfather's
+ * building, and whether that is the family or the family's executors is the one
+ * question the hash is still good for.
+ *
+ * Nothing is written down — it is derived on read, so it survives a reload with
+ * no save-format change — and it is read against today's calendar, so a
+ * building that was still the developer's in 2000 has passed into somebody's
+ * long hold by 2030. Measured across both towns that reassigns about a fifth of
+ * the city over thirty years, which is roughly the turnover a real block has.
+ *
+ * What it costs you is nearly nothing in aggregate and a great deal per
+ * building: the mean floor across every lot moves from 0.920 of the ask to
+ * 0.914 in New Alden and from 0.921 to 0.916 in Kestrel Point, while the towers
+ * get materially harder to buy and the old walk-ups get easier — which is the
+ * entire point of knowing who you are talking to.
+ */
+export function anonymousOwner(rec: ParcelRecord | null, month: number, r: number): SellerKind {
+  // Dirt is held, not run. Whoever is sitting on it is waiting for something,
+  // and there is no building to read them off.
+  if (!rec || !rec.bldgArea) return r < 0.4 ? "local" : r < 0.75 ? "partnership" : "developer";
+  // Past the size where a building needs a management company, it belongs to
+  // somebody who has one.
+  if (rec.bldgArea >= 150_000) return "institution";
+  if (rec.bldgArea >= 60_000 || (rec.bldgArea >= 25_000 && rec.demandScore >= 70)) {
+    return r < 0.7 ? "institution" : "partnership";
+  }
+  const age = START_YEAR + Math.floor(month / 12) - (rec.yearBuilt || START_YEAR);
+  if (age <= 15) return r < 0.65 ? "developer" : "partnership";
+  // A small lot held through two generations is a family's building until the
+  // generation that bought it dies, and then it is an estate.
+  if (age >= 55 && rec.lotArea <= 6_000) return r < 0.62 ? "local" : "estate";
+  return r < 0.34 ? "local" : r < 0.6 ? "partnership" : r < 0.82 ? "estate" : "institution";
+}
+
+/** Who owns this building — a fact about the building, not about the listing. */
 export function sellerOf(s: GameState, parcels: ParcelTable, bbl: string): { kind: SellerKind; name: string } {
   const rival = ownerOf(s, bbl);
   // A RECEIVER WINDING UP A NAMED FIRM IS STILL A NAMED FIRM'S BUILDING.
@@ -94,14 +156,13 @@ export function sellerOf(s: GameState, parcels: ParcelTable, bbl: string): { kin
     };
   }
   const li = s.listings.find((l) => l.bbl === bbl);
-  const rec = parcels[bbl];
-  // stable per listing: the same parcel keeps the same seller while it is up
+  // Per parcel and nothing else — see anonymousOwner for why the listing month
+  // came out of this hash.
   let h = 2166136261;
-  for (const ch of bbl + String(li?.listedM ?? 0)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
+  for (const ch of bbl) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
   const r = ((h >>> 0) % 1000) / 1000;
   if (li?.distress) return { kind: r < 0.45 ? "lender" : r < 0.8 ? "estate" : "partnership", name: SELLERS[r < 0.45 ? "lender" : r < 0.8 ? "estate" : "partnership"].label };
-  const kind: SellerKind = r < 0.22 ? "estate" : r < 0.46 ? "local" : r < 0.68 ? "institution" : r < 0.86 ? "partnership" : "developer";
-  void rec;
+  const kind = anonymousOwner(resolveRec(parcels, s, bbl), s.month, r);
   return { kind, name: SELLERS[kind].label };
 }
 

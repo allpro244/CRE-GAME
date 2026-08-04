@@ -1517,7 +1517,9 @@ export function setBroker(s: GameState, parcels: ParcelTable, bbl: string, on: b
   if (on) nh.broker = true; else delete nh.broker;
   next.news.unshift({
     q: next.month, kind: "info",
-    text: on ? `Leasing exclusive signed at ${rec.address} — the brokers start working the phones.` : `Broker dismissed at ${rec.address}.`,
+    text: on
+      ? `Leasing exclusive signed at ${rec.address} — the house works the phones for nothing and takes 6% of the base rent over the term of everything it signs, at the signing.`
+      : `Broker dismissed at ${rec.address} — what you sign from here costs the ordinary 4% on a new lease, 2% on a renewal.`,
   });
   return { s: next };
 }

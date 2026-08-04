@@ -281,7 +281,11 @@ export interface Holding {
   renovatingUntilM?: number;
   tenants: Tenant[];   // commercial rent roll
   makeReady?: { sf: number; readyM: number; use?: BuiltClass }[]; // vacated space being turned; unleasable until ready
-  broker?: boolean;    // leasing broker on retainer: more LOIs, monthly fee
+  // A leasing exclusive. The house works the phones for nothing and is paid
+  // 6% of the base rent over the term of every lease signed while they hold
+  // the file, in place of the 4%/2% you pay doing it yourself — see
+  // exclusiveFeeRate in leasing.ts. It lapses when the building fills.
+  broker?: boolean;
   // Somebody else's building stands on this dirt. It earns ground rent instead
   // of costing carry, and it is not yours to build on until the term is up.
   groundLeased?: boolean;
@@ -627,6 +631,8 @@ export interface Econ {
   /** sf-weighted mean demandIdx of the built stock, measured once per city at
    *  init — the pivot that keeps the location curves mean-neutral on any map. */
   locIdxMean?: number;
+  /** Per-class location pivots — a shed competes with sheds, not with towers. */
+  locIdxMeanBy?: Record<BuiltClass, number>;
   /** sf-weighted mean vintage factor, same job for the quality tilt. */
   vintageMean?: number;
   costIdx: number; // construction & operating cost inflation
@@ -726,7 +732,7 @@ export interface BooksYear {
   yr: number;       // 0-based game year
   noi: number;      // property NOI collected (pre-debt)
   debtSvc: number;  // debt service + refi fees + cap premiums
-  leasing: number;  // TI, LC, broker retainers
+  leasing: number;  // TI and leasing commissions, including the 6% an exclusive takes
   capex: number;    // programs, renovations, make-ready turns
   dev: number;      // development equity, construction interest, overruns
   taxes: number;    // income + capital gains + property (property is inside NOI)

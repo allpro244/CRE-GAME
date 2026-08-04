@@ -265,8 +265,13 @@ export function initialCondition(rec: ParcelRecord): Condition {
  * so old callers (and the generator's own pricing, which has no econ yet)
  * fall back to the historical pivot.
  */
-export function locationRentMult(rec: ParcelRecord, econ?: Econ): number {
-  const pivot = econ?.locIdxMean ?? 0.62;
+export function locationRentMult(rec: ParcelRecord, econ?: Econ, use?: BuiltClass): number {
+  // PIVOTED PER CLASS. The citywide mean is set by the offices, so measuring a
+  // shed against it priced the entire industrial market at ~0.5x its own
+  // calibrated base — a shed on the fringe is in an ordinary industrial
+  // location, and its rent multiplier should read ~1.0 there, not 0.5.
+  const cls = (use ?? rec.class) as BuiltClass;
+  const pivot = (cls !== "land" as string ? econ?.locIdxMeanBy?.[cls] : undefined) ?? econ?.locIdxMean ?? 0.62;
   return Math.min(1.75, Math.max(0.42, Math.pow(demandIdx(rec.demandScore) / pivot, 1.05)));
 }
 
@@ -278,14 +283,14 @@ export function marketRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condit
   // ...and each of those markets pays for the floor plate it is getting. See
   // plateRentMult: an office or a shed cares enormously about a big regular
   // floor, a flat does not care at all.
-  return blendBy(rec, (u) => (econ.effRentIdx?.[u] ?? econ.rentIdx[u] ?? 0) * plateRentMult(rec, u)) * locationRentMult(rec, econ) * condMult(condition);
+  return blendBy(rec, (u) => (econ.effRentIdx?.[u] ?? econ.rentIdx[u] ?? 0) * plateRentMult(rec, u) * locationRentMult(rec, econ, u)) * condMult(condition);
 }
 
 /** What one component of a building rents for, in its own market. */
 export function useRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition, use: BuiltClass): number {
   // EFFECTIVE, not asking: everything that prices a deal or values an asset
   // reads what deals actually sign at. The Economy page shows both lines.
-  return (econ.effRentIdx?.[use] ?? econ.rentIdx[use] ?? 0) * plateRentMult(rec, use) * locationRentMult(rec, econ) * condMult(condition);
+  return (econ.effRentIdx?.[use] ?? econ.rentIdx[use] ?? 0) * plateRentMult(rec, use) * locationRentMult(rec, econ, use) * condMult(condition);
 }
 
 // A delivered development overrides the static record — resolve before use.

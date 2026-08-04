@@ -11,11 +11,11 @@ import {
   occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr, useRentPsfYr,
   rollQualitySpread, operatingStatement, recoveryOf, noiAfterTaxYr, netWorth, remainingAbatement, landPsfNow,
 } from "@/engine/value";
-import { planDevelopment, PROGRAMS, programCost, farMaxFor, maxFloorsFor, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
+import { planDevelopment, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
 import { buyQuote, assemblagePressure, saleTaxQuote } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { MILESTONES } from "@/engine/sim";
-import { isCommercial, vacantSf, walt, loiSigningCost, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, buyoutQuote, depositsHeld, BUYOUT_PREMIUM } from "@/engine/leasing";
+import { isCommercial, vacantSf, walt, loiSigningCost, exclusiveFeeRate, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, buyoutQuote, depositsHeld, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
 import { lenderHealth, capitalRatio, lenderBlurb, targetCapital, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { noteBid, payoffQuote } from "@/engine/notes";
@@ -339,7 +339,7 @@ function DecisionModal() {
     const h = game.holdings[loi.bbl];
     if (!rec || !h) return null;
     const market = managedRentPsfYr(rec, game.econ, h);
-    const cost = loiSigningCost(loi);
+    const cost = loiSigningCost(loi, exclusiveFeeRate(h));
     const annual = loi.rentPsf * loi.sf;
     const live = game.lois.filter((l) => !deferred.has(l.id));
     const idx = live.findIndex((l) => l.id === loi.id) + 1;
@@ -384,6 +384,17 @@ function DecisionModal() {
             <Row k="TI allowance" v={`$${loi.tiPsf}/sf · ${usd(loi.tiPsf * loi.sf)}`} />
             {loi.freeM > 0 && <Row k="Free rent" v={`${loi.freeM} months`} />}
             <Row k="Cash to sign" v={usd(cost)} bad={cost > game.cash} strong />
+            {/* The exclusive is the one line item on this letter the player
+                signed up for months ago and will have forgotten, and it is the
+                only place the game ever says out loud what "the lease" is worth
+                — base rent over the whole term, which is what a commission is
+                struck on. Depth read rather than clicked. */}
+            {h.broker && (
+              <Row
+                k="Your exclusive"
+                v={`6% of ${usd(annual * (loi.termM / 12))} of base rent over the term — ${usd(Math.round(annual * (loi.termM / 12) * 0.06))}, inside the number above`}
+              />
+            )}
             <Row k="Answer by" v={monthLabel(loi.expiresM)} />
           </div>
           <div className="modal-actions">
@@ -634,7 +645,18 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
       {(() => {
         if (holding) return null;
         const own = ownerOf(game, selectedBBL);
-        if (!own) return null;
+        // AND WHEN THERE IS NO NAME ON IT. Most of this city belongs to nobody
+        // you can look up, and the record answered that with silence — which is
+        // not what a broker would tell you. He would tell you it is an estate,
+        // or a family that has had it since the war, or a fund three states
+        // away, because the building itself says so: its age, its size, its lot
+        // and the block it stands on. That is also the first thing you learn
+        // about how hard the door is to open, which is why it belongs up here
+        // beside the address and not inside a negotiation you have not opened.
+        if (!own) {
+          const kind = sellerOf(game, parcels, selectedBBL).kind;
+          return <div className="hint">{sellerProfile(kind).holds}</div>;
+        }
         return (
           <div className="hint" style={{ cursor: "pointer" }}
             onClick={() => { useStore.getState().setPage("research"); }}>
@@ -662,7 +684,13 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
           <Row
             key={u.use}
             k={u.use === "multifamily" ? "Apartments let" : `${USE_WORD[u.use][0].toUpperCase()}${USE_WORD[u.use].slice(1)} spaces let`}
-            v={`${u.leased} of ${u.total} · ${sf(Math.round(u.sfPer))} each`}
+            /* Flats quote the average of the leg, not the demise: the leg is
+               divided into a whole number of apartments and they occupy all of
+               it, so a 1,412 sf residential leg is two flats of 706 and saying
+               "900 each" describes 1,800 feet the building does not have.
+               Commercial keeps the demise, because there the remnant under the
+               floor genuinely is not a suite — see toSuites. */
+            v={`${u.leased} of ${u.total} · ${sf(u.use === "multifamily" ? avgUnitSf(rec) : u.sfPer)} each`}
             bad={u.leased < u.total * 0.6}
           />
         ))}
@@ -985,12 +1013,12 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
             <div className="btn-row">
               <button
                 className={"btn" + (holding.broker ? " btn-on" : "")}
-                title="A leasing exclusive: ~75% more tenant traffic while space is vacant, for a monthly retainer"
+                title="A leasing exclusive: ~45% more tenant traffic while the space is vacant, and no retainer at all while it sits. The house is paid a commission instead — 6% of the base rent over the full term of every lease signed while they hold the file, due at the signing, in place of the 4% on a new lease and 2% on a renewal your own people cost. Cheap to hold, expensive when it works."
                 onClick={() => useStore.getState().broker(selectedBBL, !holding.broker)}
               >
                 {holding.broker
-                  ? "✓ Broker engaged — dismiss"
-                  : `Hire leasing broker · ${usd(Math.max(400, Math.round(vacantSf(rec, holding) * 0.025)))}/mo`}
+                  ? "✓ Broker engaged — 6% of everything they sign"
+                  : "Hire leasing broker · no retainer, 6% of the lease at signing"}
               </button>
             </div>
           )}
@@ -1738,6 +1766,29 @@ function RefiSection({ bbl }: { bbl: string }) {
   );
 }
 
+/**
+ * WHAT THE STACK BECOMES when the shops run into the two-storey cap.
+ *
+ * The planner has always done this to the programme: retail past two floor
+ * plates goes to the uses that can carry height, because a developer who
+ * cannot put shops on the ninth floor puts offices there — they do not shrink
+ * the building. The dial did not know that, and the gap between the two was
+ * the bug. Measured on the lot that produced the complaint, 4,218 sf at 22.5
+ * FAR: twenty-five storeys with the shops dial at 95% read 88,730 sf of
+ * retail off the slider, and the job it described broke ground as 7,472 sf of
+ * shops under an office tower. The overflow now lands where the planner puts
+ * it, in front of the player, while there is still a decision to take.
+ */
+type Stack = { retail: number; office: number; multifamily: number };
+function capStack(p: Stack, retailMaxPct: number): Stack {
+  if (p.retail <= retailMaxPct) return p;
+  const rest = p.office + p.multifamily;
+  const office = rest > 0
+    ? Math.round((p.office * (100 - retailMaxPct)) / rest)
+    : Math.round((100 - retailMaxPct) / 2);
+  return { retail: retailMaxPct, office, multifamily: 100 - retailMaxPct - office };
+}
+
 function DevelopSection({ bbl }: { bbl: string }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
@@ -1761,8 +1812,17 @@ function DevelopSection({ bbl }: { bbl: string }) {
   const [units, setUnits] = useState<Partial<Record<BuiltClass, number>>>({});
   const maxFl = maxFloorsFor(rec, cov, use);
   const fl = Math.min(floors, maxFl);
+  // SHOPS DO NOT STACK, AND THE DIAL NOW SAYS SO. Two floor plates is the
+  // whole retail allowance, so the ceiling on the shops dial falls as the
+  // storeys rise — a quarter of an eight storey building, eight per cent of a
+  // twenty-five storey one — and the stack the planner reads is the stack on
+  // the screen. The dial used to run to 100% at any height and report the
+  // whole building as shops; the planner redistributed it regardless, so the
+  // design the player was reading was one no job could ever be.
+  const retailPctMax = Math.max(0, Math.floor(maxRetailShare(fl) * 100));
+  const stack = capStack(split, retailPctMax);
   const customMix = use === "mixed"
-    ? { retail: split.retail / 100, office: split.office / 100, multifamily: split.multifamily / 100 }
+    ? { retail: stack.retail / 100, office: stack.office / 100, multifamily: stack.multifamily / 100 }
     : undefined;
   const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix });
   // Turn the chosen unit counts into sf-per-space, against the programme that
@@ -1777,6 +1837,14 @@ function DevelopSection({ bbl }: { bbl: string }) {
   }
   const plan = planDevelopment(game, parcels, bbl, use, fl, cov, contract,
     planMax ? planMax.ltcMax * ltcWant : undefined, { mix: customMix, suites: suiteChoice });
+  // ONE NUMBER, WHEREVER IT IS ASKED FOR. The equity figure on the dials and
+  // the equity figure on the groundbreak button are the same decision — what
+  // this design costs you in your own money, all in — and two call sites that
+  // happen to read the same field are one edit away from disagreeing, which
+  // is exactly what this card was accused of. Every equity read below goes
+  // through these two: the whole cheque, and whether you can write it.
+  const equityRequired = plan?.equity ?? 0;
+  const canFund = equityRequired <= game.cash + locAvailable(game, parcels);
   const USES: DevUse[] = ["office", "multifamily", "mixed", "retail", "industrial"];
   return (
     <div className="deal">
@@ -1796,10 +1864,10 @@ function DevelopSection({ bbl }: { bbl: string }) {
       {plan && (
         <div className="grid" style={{ margin: "4px 0 2px" }}>
           <Row
-            k="Your equity, all in"
-            v={`${usd(plan.equity)} · all-in ${usd(plan.costTotal)}`}
+            k="Equity required"
+            v={`${usd(equityRequired)} of ${usd(plan.costTotal)} all in`}
             strong
-            bad={plan.equity > game.cash + locAvailable(game, parcels)}
+            bad={!canFund}
           />
         </div>
       )}
@@ -1843,33 +1911,38 @@ function DevelopSection({ bbl }: { bbl: string }) {
             <Slider
               key={u}
               label={USE_WORD[u]}
-              value={split[u]}
+              value={stack[u]}
               min={0}
-              max={100}
-              step={5}
-              onChange={(v) => setSplit((prev) => {
+              max={u === "retail" ? retailPctMax : 100}
+              step={u === "retail" && retailPctMax < 20 ? 1 : 5}
+              onChange={(v) => setSplit(() => {
                 // The other two absorb the difference in the ratio they already
                 // sit in, so moving one dial never silently rewrites both.
+                // They move from the stack on the screen rather than the one
+                // in state, because the two differ whenever the retail cap is
+                // biting and it is the screen the player is arguing with.
                 const others = (["retail", "office", "multifamily"] as const).filter((k) => k !== u);
-                const restNow = others.reduce((a, k) => a + prev[k], 0);
+                const restNow = others.reduce((a, k) => a + stack[k], 0);
                 const rest = 100 - v;
-                const next = { ...prev, [u]: v } as typeof prev;
-                for (const k of others) next[k] = restNow > 0 ? Math.round((prev[k] / restNow) * rest) : Math.round(rest / 2);
+                const next = { ...stack, [u]: v } as Stack;
+                for (const k of others) next[k] = restNow > 0 ? Math.round((stack[k] / restNow) * rest) : Math.round(rest / 2);
                 next[others[1]] = Math.max(0, 100 - v - next[others[0]]);
                 return next;
               })}
-              format={(v) => `${v}%${planMax ? ` · ${sf(Math.round(planMax.sf * v / 100))}` : ""}`}
-              marks={[{ at: 15, label: "" }, { at: 50, label: "half" }]}
+              format={(v) => `${v}%${planMax ? ` · ${sf(Math.round(planMax.sf * (planMax.mix[u] ?? 0)))}` : ""}`}
+              marks={u === "retail"
+                ? [{ at: retailPctMax, label: `max ${retailPctMax}%` }]
+                : [{ at: 15, label: "" }, { at: 50, label: "half" }]}
               hint={u === "retail"
-                ? "Shops at grade only — past the second floor nobody comes, and retail is the dearest thing per foot in the book."
+                ? `Shops at grade and one above it — past the second floor nobody comes, so two floor plates is the whole allowance, which on ${fl} ${fl === 1 ? "storey" : "storeys"} is ${retailPctMax}% of the building and no more. Take the storeys down if you want a shop building; leave them up and the offices and flats take the height.`
                 : u === "office" ? "The swing leg: the highest rent of the three and the one that empties first in a downturn."
                 : "Flats are the cheapest to build and the thinnest margin. They also let in every market, which is the point of putting them in the stack."}
             />
           ))}
           <div className="hint">
-            {split.retail + split.office + split.multifamily !== 100
+            {stack.retail + stack.office + stack.multifamily !== 100
               ? "The stack has to add to 100%."
-              : `Shops ${split.retail}% · offices ${split.office}% · flats ${split.multifamily}%. Anything under 3% is dropped — that is a lobby, not a use.`}
+              : `Shops ${stack.retail}% · offices ${stack.office}% · flats ${stack.multifamily}%. Anything under 3% is dropped — that is a lobby, not a use.`}
           </div>
         </>
       )}
@@ -1970,7 +2043,7 @@ function DevelopSection({ bbl }: { bbl: string }) {
                 total above it, so a job that wanted $9M of equity looked like
                 a $5M decision and then quietly drew the other $4M over two
                 years. The whole cheque goes first now. */}
-            <Row k="YOUR EQUITY, ALL IN" v={usd(plan.equity)} strong bad={plan.equity > game.cash + locAvailable(game, parcels)} />
+            <Row k="EQUITY REQUIRED, ALL IN" v={usd(equityRequired)} strong bad={!canFund} />
             <Row k="— of that, at close" v={`${usd(plan.equityAtClose)} — the bank funds nothing until yours is in`} />
             <Row
               k="— of that, drawn as it rises"
@@ -1989,16 +2062,16 @@ function DevelopSection({ bbl }: { bbl: string }) {
             <b>{usd(plan.equityAtClose)}</b> leaves your account the day you break ground and{" "}
             <b>{usd(plan.equity - plan.equityAtClose)}</b> more is drawn out of it as the building rises — equity funds
             first and in full, and the construction loan does not advance a dollar until it is spent. Budget for the
-            whole {usd(plan.equity)}, not the first cheque.
+            whole {usd(equityRequired)}, not the first cheque.
           </div>
           <div className="btn-row">
             <button
               className="btn btn-buy"
-              disabled={plan.equityAtClose > game.cash || plan.equity > game.cash + locAvailable(game, parcels)}
+              disabled={plan.equityAtClose > game.cash || !canFund}
               onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, suites: suiteChoice })}
               title={`${usd(plan.equityAtClose)} leaves your account today and ${usd(plan.equity - plan.equityAtClose)} more is drawn as the building rises.`}
             >
-              Break ground · {usd(plan.equity)} of equity
+              Break ground · {usd(equityRequired)} of equity required
             </button>
           </div>
         </>
@@ -3016,6 +3089,17 @@ function PortfolioPage() {
               <td>{rec ? useLabel(rec) : "—"}</td>
               <td className="num" title={rec && rec.bldgArea ? `${usd(v / rec.bldgArea)}/sf of value · ${usd(noi / rec.bldgArea)}/sf of NOI` : "vacant land"}>
                 {rec && rec.bldgArea ? sf(rec.bldgArea) : "—"}
+                {/* THE SIZE OF THE PRODUCT, under the size of the building. A
+                    hundred thousand feet cut into 450-foot studios and the same
+                    hundred thousand cut into 1,800-foot family flats are two
+                    different businesses at identical area — different rents,
+                    different tenants, different turnover — and on anything you
+                    programmed yourself it is a decision you made and can read
+                    back. It hangs under the area instead of taking a column of
+                    its own because half the book has no flats in it at all. */}
+                {rec && avgUnitSf(rec) > 0 && (
+                  <div className="dim" style={{ fontSize: 11 }}>{sf(avgUnitSf(rec))}/flat</div>
+                )}
               </td>
               <td className="num">{rec && rec.bldgArea ? (() => { const u = unitStatus(rec, h, game.month); return `${u.leased} / ${u.total}`; })() : "—"}</td>
               <td className="num">{rec?.class === "land" ? "—" : (occ * 100).toFixed(0) + "%"}</td>
@@ -3357,7 +3441,7 @@ function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (bbl: str
         </div>
       )}
       <div className="loi-line mono dim">
-        market ~${market.toFixed(2)}/sf · signing costs {usd(loiSigningCost(loi))} · answer by {monthLabel(loi.expiresM)}
+        market ~${market.toFixed(2)}/sf · signing costs {usd(loiSigningCost(loi, exclusiveFeeRate(h)))}{h?.broker ? " incl. the 6% exclusive" : ""} · answer by {monthLabel(loi.expiresM)}
       </div>
       {countering && !final && !loi.countered && (
         <>
@@ -3763,7 +3847,13 @@ function EconomyPage() {
         {CLASSES.map((k) => {
           const b = marketBalance(e, k);
           const v = e.cityVac?.[k] ?? NATURAL_VAC[k];
-          const pipe = (e.pipeline?.[k] ?? 0) / (e.stock?.[k] ?? CITY_STOCK[k]);
+          // The stock has always been the denominator under the pipeline
+          // percentage on this card and the card never printed it, which made
+          // the four classes unreadable against each other: a 6% pipeline on
+          // 40M sf of office and the same 6% on 4M sf of industrial are not
+          // the same fact about the city.
+          const stockSf = e.stock?.[k] ?? CITY_STOCK[k];
+          const pipe = (e.pipeline?.[k] ?? 0) / stockSf;
           return (
             <button
               key={k}
@@ -3786,7 +3876,7 @@ function EconomyPage() {
                 </div>
               )}
               <div className="mkt-card-sub mono">
-                ${e.rentIdx[k].toFixed(0)}/sf · {e.capRate[k].toFixed(2)}% cap · pipeline {(pipe * 100).toFixed(1)}%
+                ${e.rentIdx[k].toFixed(0)}/sf · {e.capRate[k].toFixed(2)}% cap · {sfFmt(stockSf)} sf · pipeline {(pipe * 100).toFixed(1)}%
               </div>
             </button>
           );
@@ -3956,9 +4046,9 @@ function EconomyPage() {
 /**
  * EVERY BUILDING IN TOWN, AS A TABLE YOU CAN WORK.
  *
- * The register answers "who owns what"; this answers "what exists" — the whole
- * standing stock, sortable on any column, filterable by class, searchable by
- * address. It is the screen a buyer's analyst actually keeps open: sort by
+ * The street answers "who owns what", firm by firm; this answers "what exists"
+ * — the whole standing stock, sortable on any column, filterable by class,
+ * searchable by address. It is the screen a buyer's analyst actually keeps open: sort by
  * $/sf of value against demand and the mispriced corners fall out the bottom.
  * Occupancy and value here are the same models the engine prices with, so
  * this table cannot disagree with a deal card.
@@ -4333,9 +4423,16 @@ function ResearchPage() {
   // SUB-TABS, NOT A SCROLL. Research had eight collapsible sections stacked in
   // one column, and finding the banks meant scrolling past everything above
   // them. Each section is a tab now; one is on screen at a time.
+  // The register came out of this list because The street already answers who
+  // owns what — firm by firm, every deed, inside the firm's own balance sheet
+  // — and two lists of the same deeds is one list the player has to choose
+  // between. "Stock" became "Properties" because the word meant the standing
+  // building stock and reads as equities; the `stock` key is left alone
+  // because nothing persists it and renaming it would only give one tab two
+  // names in one file.
   const [rtab, setRtab] = useState<string>("sectors");
   const RTABS: [string, string][] = [["sectors", "Sectors"], ["trades", "Trades"], ["banks", "Banks"],
-    ["land", "Land"], ["street", "The street"], ["register", "Owners"], ["stock", "Stock"], ["comps", "Prints"]];
+    ["land", "Land"], ["street", "The street"], ["stock", "Properties"], ["comps", "Prints"]];
   return (
     <div>
       <div className="stat-strip">
@@ -4380,14 +4477,18 @@ function ResearchPage() {
         <div style={{ gridColumn: "1 / -1" }}>
         {rtab === "sectors" && (<div>
           <div className="hint">
-            Classes do not move together. Momentum is where the sector is heading; the pipeline is what
-            everyone <em>else</em> is building, and it lands on the rent about three years from now.
+            Classes do not move together. Momentum is where the sector is heading; demand is what the
+            city's tenants actually did with their feet over the last twelve months, net of everything they
+            handed back; the pipeline is what everyone <em>else</em> is building, and it lands on the rent
+            about three years from now. A sector taking space in while nothing is under construction is
+            where rent gets made — and a sector giving space back while the cranes are still up is the
+            other half of that sentence.
           </div>
           <table className="tbl">
             <thead>
               <tr>
                 <th>Sector</th><th className="num">Rent $/sf</th><th className="num">Cap rate</th>
-                <th className="num">Momentum</th><th className="num">Under construction</th>
+                <th className="num">Momentum</th><th className="num">Demand · 12m</th><th className="num">Under construction</th>
                 <th className="num">Delivering</th><th>Read</th>
               </tr>
             </thead>
@@ -4396,6 +4497,21 @@ function ResearchPage() {
                 const mom = e.sectorMom?.[k] ?? 0;
                 const pipe = e.pipeline?.[k] ?? 0;
                 const press = e.supplyPress?.[k] ?? 0;
+                // WHAT THE TENANTS DID, as against what the market feels like.
+                // Momentum is sentiment and it prices; this is the net
+                // absorption the space market actually recorded over the last
+                // twelve months — feet taken up less feet handed back — carried
+                // against the standing stock, so a shed market and an office
+                // market can be read on one scale. Measured across 2,400 months
+                // of four seeds it runs from about −3% to +4% of stock with a
+                // median near +0.5%, and it is negative 36% of the time, which
+                // is the honest shape of a demand series: it spends real
+                // stretches going backwards while the rent index is still
+                // drifting up, and that gap is the trade.
+                const abs12 = e.absorb12?.[k] ?? 0;
+                const stk = e.stock?.[k] ?? 0;
+                const dmd = stk > 0 ? abs12 / stk : 0;
+                const dmdPct = +(dmd * 100).toFixed(1);
                 const read = mom > 0.004 && press < 0.00035 ? "landlord's market"
                   : mom < -0.004 ? "tenants have the whip"
                   : press > 0.0006 ? "oversupplied — new stock coming"
@@ -4406,6 +4522,12 @@ function ResearchPage() {
                     <td className="num">${e.rentIdx[k].toFixed(0)}</td>
                     <td className="num">{pct(e.capRate[k])}</td>
                     <td className={"num" + (mom < -0.002 ? " neg" : "")}>{(mom * 100).toFixed(2)}</td>
+                    <td className={"num" + (dmd < -0.002 ? " neg" : "")}
+                      title={abs12 >= 0
+                        ? `${sf(Math.round(abs12))} taken up net over the last twelve months, against ${sf(Math.round(stk))} standing`
+                        : `${sf(Math.round(-abs12))} handed back net over the last twelve months, against ${sf(Math.round(stk))} standing`}>
+                      {(dmdPct > 0 ? "+" : "") + dmdPct.toFixed(1)}%
+                    </td>
                     <td className="num">{sf(Math.round(pipe))}</td>
                     <td className="num">{sf(Math.round(pipe / 30))}</td>
                     <td className="dim">{read}</td>
@@ -4466,9 +4588,6 @@ function ResearchPage() {
         {rtab === "street" && (<div>
           <TheStreet />
         </div>)}
-        {rtab === "register" && (<div>
-          <OwnershipRegister />
-        </div>)}
         {rtab === "stock" && (<div>
           <BuildingDatabase />
         </div>)}
@@ -4484,16 +4603,6 @@ function ResearchPage() {
   );
 }
 
-/**
- * THE REGISTER — every deed in town that belongs to a named firm.
- *
- * A firm's holdings were readable one firm at a time, folded inside a row you
- * had to know to click, and truncated at sixty. That is not how anybody looks
- * at ownership. The question is usually the other way round — who has this
- * block, who has been buying industrial, which of them owns the six lots
- * around the one I want — and that question needs the whole city in one list
- * you can sort and filter.
- */
 /**
  * THE BANKS — a balance sheet for every desk that quotes you.
  *
@@ -4929,100 +5038,6 @@ function TheBanks() {
           maturity at an impaired lender is a maturity that does not get refinanced.
         </div>
       )}
-    </>
-  );
-}
-
-function OwnershipRegister() {
-  const game = useStore((s) => s.game)!;
-  const parcels = useStore((s) => s.parcels)!;
-  const focus = useStore((s) => s.focus);
-  const setLens = useStore((s) => s.setLens);
-  const lens = useStore((s) => s.lens);
-  const [firm, setFirm] = useState<string>("all");
-  const [sort, setSort] = useState<"value" | "firm" | "district">("value");
-  const rivals = game.rivals ?? [];
-  if (!rivals.length) return null;
-
-  const rows = rivals.flatMap((r) =>
-    r.bbls.map((b) => {
-      const rec = resolveRec(parcels, game, b);
-      if (!rec) return null;
-      return {
-        bbl: b, firm: r.name, firmId: r.id, dead: r.failedM !== undefined,
-        stressed: (r.stressMs ?? 0) > 0, rec,
-        v: assetValue(rec, game.econ, initialCondition(rec)),
-      };
-    }).filter(Boolean) as {
-      bbl: string; firm: string; firmId: string; dead: boolean; stressed: boolean;
-      rec: ReturnType<typeof resolveRec> & object; v: number;
-    }[],
-  );
-  const shown = rows
-    .filter((x) => firm === "all" || x.firmId === firm)
-    .sort((a, b) =>
-      sort === "firm" ? a.firm.localeCompare(b.firm) || b.v - a.v
-      : sort === "district" ? (a.rec!.district ?? "").localeCompare(b.rec!.district ?? "") || b.v - a.v
-      : b.v - a.v);
-  const total = shown.reduce((a, x) => a + x.v, 0);
-
-  return (
-    <>
-      <div className="page-section">
-        Who owns what · {rows.length} buildings across {rivals.filter((r) => r.bbls.length).length} firms
-      </div>
-      <div className="hint">
-        Every deed on this street that is not yours. What somebody owns tells you more about them than their
-        balance sheet does: a firm with six lots on one block is assembling, and a firm holding nothing but
-        industrial in a soft industrial market is about to be a seller.
-      </div>
-      <div className="btn-row">
-        <button className={"btn btn-sm" + (firm === "all" ? " btn-on" : "")} onClick={() => setFirm("all")}>All firms</button>
-        {rivals.filter((r) => r.bbls.length).map((r) => (
-          <button key={r.id} className={"btn btn-sm" + (firm === r.id ? " btn-on" : "")} onClick={() => setFirm(r.id)}>
-            {r.name} · {r.bbls.length}
-          </button>
-        ))}
-      </div>
-      <div className="btn-row">
-        <button className={"btn btn-sm" + (sort === "value" ? " btn-on" : "")} onClick={() => setSort("value")}>By value</button>
-        <button className={"btn btn-sm" + (sort === "firm" ? " btn-on" : "")} onClick={() => setSort("firm")}>By firm</button>
-        <button className={"btn btn-sm" + (sort === "district" ? " btn-on" : "")} onClick={() => setSort("district")}>By district</button>
-        <button className={"btn btn-sm" + (lens === "owners" ? " btn-on" : "")}
-          onClick={() => setLens(lens === "owners" ? "none" : "owners")}
-          title="Paint the map by owner — one colour per firm, your own buildings stay gold">
-          {lens === "owners" ? "Owners lens on" : "Show on the map"}
-        </button>
-      </div>
-      <table className="tbl">
-        <thead>
-          <tr>
-            <th>Property</th><th>Owner</th><th>District</th><th>Class</th>
-            <th className="num">Building sf</th><th className="num">Value</th><th className="num">$/sf</th><th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {shown.map((x) => {
-            const built = x.rec!.class !== "land" && x.rec!.bldgArea > 0;
-            return (
-              <tr key={x.bbl} onClick={() => focus(x.bbl, true)}>
-                <td>{x.rec!.address}</td>
-                <td className={x.dead ? "dim" : ""}>
-                  {x.firm}{x.dead ? " · receiver" : x.stressed ? " ⚠" : ""}
-                </td>
-                <td className="dim">{x.rec!.district}</td>
-                <td>{useLabel(x.rec as never)}</td>
-                <td className="num">{built ? sf(x.rec!.bldgArea) : sf(x.rec!.lotArea) + " lot"}</td>
-                <td className="num">{usd(x.v)}</td>
-                <td className="num">${Math.round(x.v / Math.max(1, built ? x.rec!.bldgArea : x.rec!.lotArea))}</td>
-                <td><button className="btn-mini" onClick={(ev) => { ev.stopPropagation(); focus(x.bbl, true); }}>go to</button></td>
-              </tr>
-            );
-          })}
-          {!shown.length && <tr><td colSpan={8} className="dim">Nothing held.</td></tr>}
-        </tbody>
-      </table>
-      <div className="hint">{shown.length} buildings · {usd(total)} of gross value{firm !== "all" ? " in this firm's book" : " held by the street"}.</div>
     </>
   );
 }

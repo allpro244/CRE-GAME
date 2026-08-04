@@ -291,6 +291,21 @@ export const RETAIL_FLOORS_MAX = 2;
 export const MAX_FLOORS_BY_USE: Partial<Record<DevUse, number>> = { retail: RETAIL_FLOORS_MAX };
 
 /**
+ * THE SAME CAP, STATED AS A SHARE, so the dial and the planner cannot hold
+ * two opinions about it. Two floor plates of shops is the whole allowance, so
+ * in a building of any height the shops are 2/n of it — a quarter of an eight
+ * storey stack, eight per cent of a twenty-five storey one. `capRetail`
+ * enforces it on the programme after the fact; the development card reads it
+ * to bound the dial before the fact, because a slider that offered 95% shops
+ * on a twenty-five storey stack was describing a building — 88,730 sf of
+ * retail on a 4,218 sf lot, twenty-one FAR of shops — that the planner then
+ * quietly rebuilt as 7,472 sf under an office tower.
+ */
+export function maxRetailShare(floors: number): number {
+  return floors > 0 ? Math.min(1, RETAIL_FLOORS_MAX / floors) : 1;
+}
+
+/**
  * AND THEY DO NOT STACK INSIDE A MIXED BUILDING EITHER.
  *
  * The two-storey cap was enforced on the pure-retail PROGRAMME — a label —
@@ -310,7 +325,7 @@ export const MAX_FLOORS_BY_USE: Partial<Record<DevUse, number>> = { retail: RETA
 export function capRetail(mix: UseMix, floors: number): UseMix {
   const share = mix.retail ?? 0;
   if (share <= 0 || floors <= 0) return mix;
-  const maxShare = RETAIL_FLOORS_MAX / floors;
+  const maxShare = maxRetailShare(floors);
   if (share <= maxShare) return mix;
   const others = Object.entries(mix).filter(([k]) => k !== "retail") as [BuiltClass, number][];
   const rest = others.reduce((a, [, v]) => a + v, 0);

@@ -157,6 +157,31 @@ export function suiteSf(rec: ParcelRecord): number {
   return useSuiteSf(rec, leasableUses(rec)[0] ?? dominantUse(rec));
 }
 
+/**
+ * THE AVERAGE FLAT, in square feet.
+ *
+ * Neither the demise above nor `rec.unitsRes`, and it is worth saying why. The
+ * demise is what the building is cut TO; the flat count is that demise rounded
+ * to a whole number of apartments, and the flats then occupy the whole
+ * residential leg between them — so the average is the leg over the count, and
+ * the rounding is the entire difference. Measured across the 522 buildings in
+ * New Alden carrying a residential leg, 509 of them land more than a foot off
+ * the 900-foot demise, running 840 to 973 feet at the fifth and ninety-fifth
+ * percentiles and as low as 706 on a leg small enough that two flats is the
+ * whole of it.
+ *
+ * `unitsRes` is the assessor's count and implies about a thousand feet a flat.
+ * Nothing in this engine leases against it — the rent roll, the occupancy and
+ * the vacancy on the same screen are all counted off the demise — so printing
+ * it would put a number on the record that no other number on the record
+ * agrees with.
+ */
+export function avgUnitSf(rec: ParcelRecord): number {
+  const area = useSf(rec, "multifamily");
+  if (area <= 0) return 0;
+  return area / Math.max(1, Math.round(area / useSuiteSf(rec, "multifamily")));
+}
+
 // How many leasable spaces the building holds.
 export function unitCount(rec: ParcelRecord): number {
   if (!rec.bldgArea) return 0;
@@ -374,7 +399,10 @@ export function genAnchorTenant(s: GameState, rec: ParcelRecord, h: Holding, sfW
   // put more square feet under lease than the building had.
   const use = (forUse && leasableUses(rec).includes(forUse) ? forUse : leasableUses(rec)[0]) ?? "office";
   const sfAnchor = Math.min(sfWanted, useVacantSf(rec, h, use, s.month));
-  if (sfAnchor < 1000) return;
+  // The same floor every other tenancy obeys. This said 1,000 while the rest
+  // of the engine says a commercial tenancy under 2,000 ft is not one — and
+  // the invariant sweep caught a 1,634 ft anchor signed at a delivery.
+  if (sfAnchor < COMMERCIAL_SUITE_MIN) return;
   const sector = pickSector(s, use);
   const market = useRentPsfYr(rec, s.econ, h.condition, use) * discount;
   h.tenants.push({
@@ -519,7 +547,7 @@ export function renewalIntent(s: GameState, rec: ParcelRecord, h: Holding, t: Te
   const occNow = legSf > 0
     ? h.tenants.reduce((a, x) => a + ((x.use ?? rec.class) === use ? x.sf : 0), 0) / legSf
     : 0;
-  const stretched = occNow - supportableOcc(s.econ, rec);
+  const stretched = occNow - supportableOcc(s.econ, rec, use);
   const fFull = stretched > 0 ? clampL(1 - 1.7 * stretched, 0.55, 1) : 1;
   const why: { s: string; w: number }[] = [];
   if (fFull < 0.97) why.push({ s: "this address was always a reach for them", w: 1 - fFull });
@@ -723,15 +751,21 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       h.makeReady = h.makeReady.filter((m) => m.readyM > q);
       if (!h.makeReady.length) delete h.makeReady;
     }
-    // leasing broker retainer: a live exclusive costs money every month it runs
-    if (h.broker) {
-      const vacNow = vacantSf(rec, h);
-      if (vacNow > 500) {
-        const fee = Math.max(400, Math.round(vacNow * 0.025));
-        s.cash -= fee;
-        logBooks(s, "leasing", fee);
-      } else delete h.broker; // full building: the exclusive lapses
-    }
+    // A LEASING EXCLUSIVE IS NOT A RETAINER, and charging one had the
+    // economics exactly backwards: the invoice was largest on the building
+    // that was emptiest and nothing at all arrived on the day a lease was
+    // finally signed. No house in the business works that way. They tour the
+    // space for nothing for as long as it takes and are paid a commission at
+    // the signing, which is charged where every other leasing commission in
+    // this file is charged — inside loiSigningCost, at the rate
+    // exclusiveFeeRate returns.
+    //
+    // The lapse survives the change and matters more without the retainer
+    // than it did with one. An exclusive on a building with nothing left to
+    // lease has no subject, and a free exclusive left on the file forever
+    // would quietly take six points of every renewal in a full building for
+    // work nobody did.
+    if (h.broker && vacantSf(rec, h) <= 500) delete h.broker;
 
     // --- credit events ------------------------------------------------------
     // Tenants fail. They fail far more often in a downturn, far more often
@@ -816,7 +850,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // starts being it — which is the same conversation fLoc is having at
       // the renewal, one lease earlier.
       const legAll = useSf(rec, use);
-      const room = Math.max(0, free - (1 - supportableOcc(s.econ, rec)) * legAll);
+      const room = Math.max(0, free - (1 - supportableOcc(s.econ, rec, use)) * legAll);
       if (room < COMMERCIAL_SUITE_MIN) continue;
       const wantSf = toSuites(rec, Math.min(free, room, need - t.sf), free, use);
       if (!wantSf || wantSf > room + useSuiteSf(rec, use) * 0.15) continue;
@@ -979,7 +1013,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // the ceiling never got a vote. The requirement that actually tours
         // here is at most what is left of the address's own tenant pool.
         const legAll = useSf(rec, use);
-        const poolSf = Math.max(0, legVac - (1 - supportableOcc(s.econ, rec)) * legAll);
+        const poolSf = Math.max(0, legVac - (1 - supportableOcc(s.econ, rec, use)) * legAll);
         // toSuites never demises below one suite — pass it a starved `want`
         // and it hands back a full suite anyway, which is exactly how the
         // ceiling kept losing. When what is left of the pool will not fill
@@ -1109,6 +1143,28 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
 // sane rent bar gets signed, at a 6% commission instead of the 4%/2% you'd
 // pay negotiating it yourself. Lowballs still get passed on.
 export const AGENT_FEE = 0.06;
+
+/**
+ * WHAT A LEASING EXCLUSIVE COSTS, AND WHEN.
+ *
+ * A house that takes a building on exclusively is paid the same way the
+ * firm-wide agent is paid, because it is the same job done by the same
+ * people: six percent of the base rent over the whole term — rentPsf × sf ×
+ * termM/12 — handed over at the signing alongside the fit-out, and nothing
+ * whatsoever in the months when the space does not move.
+ *
+ * It REPLACES the in-house rate rather than stacking on top of it. Signing a
+ * letter yourself has always paid a commission inside loiSigningCost — 4% on
+ * a new lease, 2% on a renewal — so an exclusive that added six on top would
+ * be charging you twice for one transaction. The two or four extra points are
+ * the entire price of the exclusive, and what they buy is the 45% lift in
+ * tenant traffic that absorption.ts pays for it. Cheap to hold on a dead
+ * building, expensive precisely when it works, which is the deal a landlord
+ * actually signs.
+ */
+export function exclusiveFeeRate(h: Holding | undefined): number | undefined {
+  return h?.broker ? AGENT_FEE : undefined;
+}
 
 // ------------------------------------------------------------- pre-built space
 //
@@ -1419,8 +1475,12 @@ export function respondLOI(
   if (!h || !rec) return { s, msg: "", err: "You no longer control that building." };
 
   let drawn = 0;
+  // Whoever holds the file the day the letter is signed is who gets paid, and
+  // an exclusive on this building takes six points of the base rent over the
+  // term instead of the 4%/2% your own leasing department costs.
+  const fee = exclusiveFeeRate(h);
   const sign = (l: LOI): string | null => {
-    const cost = loiSigningCost(l);
+    const cost = loiSigningCost(l, fee);
     if (next.cash < cost) {
       const short = Math.ceil((cost - next.cash) / 1000) * 1000;
       if (!fund) return `Signing costs ${money(cost)} (TI + commission) — you're short ${money(short)}.`;
@@ -1435,7 +1495,7 @@ export function respondLOI(
     }
     const flagged = next as GameState & { _signFailed?: string };
     delete flagged._signFailed;
-    signLoi(next, rec, h, l);
+    signLoi(next, rec, h, l, fee);
     // signLoi has one path that legitimately signs nothing — the space it was
     // written against went while the letter sat on the desk. That has to come
     // back as an ERROR the player sees, not as silence.

@@ -55,43 +55,61 @@ const rollOf = (g, bbl) => {
 // ---------------------------------------------------------------------------
 // A. LOCATION SPREAD
 // ---------------------------------------------------------------------------
+// MEDIAN OF THREE SEEDS. This test flipped from pass to fail on IDENTICAL
+// mechanics when an unrelated change reshuffled the RNG stream — a snapshot
+// of two specific buildings on one specific seed is weather, not climate. The
+// clauses now assert on the median across three seeds, so a single lucky or
+// unlucky draw can neither pass a broken market nor fail a working one.
 {
-  const parcels = clone();
-  // two identical office buildings, cloned onto the best and worst viable
-  // office blocks in town — same plate, same area, same floors, same year
-  const offices = bbls.map((b) => parcels[b])
-    .filter((r) => r && r.class === "office" && r.bldgArea > 30000 && r.bldgArea < 90000)
-    .sort((a, b) => a.demandScore - b.demandScore);
-  const lo = offices[0], hi = offices[offices.length - 1];
-  const TPL = { bldgArea: 60000, floors: 8, yearBuilt: 1988, unitsRes: 0 };
-  for (const r of [lo, hi]) Object.assign(parcels[r.bbl], TPL, { lotArea: 9000 });
-  let g = E.firstListings(E.newGame(910117, parcels), parcels, bbls);
-  g = { ...g, cash: 400_000_000 };
-  for (const bbl of [lo.bbl, hi.bbl]) {
-    const r = E.executePurchase(g, parcels, bbl, 5_000_000, "cash", false, 1);
-    if (r.err) { console.log("A: buy failed", bbl, r.err); process.exit(2); }
-    g = r.s;
-    g.holdings[bbl].tenants = [];
-    g.holdings[bbl].makeReady = [];
-    g.holdings[bbl].broker = true;
-  }
-  const MO = 144;
-  let to80 = { [lo.bbl]: null, [hi.bbl]: null };
-  for (let m = 0; m < MO; m++) {
-    g = E.advanceQuarter(g, parcels, bbls, adjacency);
-    g = acceptAll(g, parcels);
+  const med = (a) => [...a].sort((x, y) => x - y)[Math.floor((a.length - 1) / 2)];
+  const runs = [];
+  let loD = 0, hiD = 0;
+  for (const seed of [910117, 411133, 87019]) {
+    const parcels = clone();
+    // two identical office buildings, cloned onto the best and worst viable
+    // office blocks in town — same plate, same area, same floors, same year
+    const offices = bbls.map((b) => parcels[b])
+      .filter((r) => r && r.class === "office" && r.bldgArea > 30000 && r.bldgArea < 90000)
+      .sort((a, b) => a.demandScore - b.demandScore);
+    const lo = offices[0], hi = offices[offices.length - 1];
+    loD = lo.demandScore; hiD = hi.demandScore;
+    const TPL = { bldgArea: 60000, floors: 8, yearBuilt: 1988, unitsRes: 0 };
+    for (const r of [lo, hi]) Object.assign(parcels[r.bbl], TPL, { lotArea: 9000 });
+    let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
+    g = { ...g, cash: 400_000_000 };
     for (const bbl of [lo.bbl, hi.bbl]) {
-      if (to80[bbl] === null && rollOf(g, bbl).sf >= 0.8 * 60000) to80[bbl] = m + 1;
+      const r = E.executePurchase(g, parcels, bbl, 5_000_000, "cash", false, 1);
+      if (r.err) { console.log("A: buy failed", bbl, r.err); process.exit(2); }
+      g = r.s;
+      g.holdings[bbl].tenants = [];
+      g.holdings[bbl].makeReady = [];
+      g.holdings[bbl].broker = true;
     }
+    const MO = 144;
+    const to80 = { [lo.bbl]: null, [hi.bbl]: null };
+    for (let m = 0; m < MO; m++) {
+      g = E.advanceQuarter(g, parcels, bbls, adjacency);
+      g = acceptAll(g, parcels);
+      for (const bbl of [lo.bbl, hi.bbl]) {
+        if (to80[bbl] === null && rollOf(g, bbl).sf >= 0.8 * 60000) to80[bbl] = m + 1;
+      }
+    }
+    const L = rollOf(g, lo.bbl), H = rollOf(g, hi.bbl);
+    runs.push({
+      spread: L.rent > 0 ? H.rent / L.rent : Infinity,
+      gap: H.sf / 60000 - L.sf / 60000,
+      occL: L.sf / 60000, occH: H.sf / 60000,
+      loTo80: to80[lo.bbl], hiTo80: to80[hi.bbl],
+    });
   }
-  const L = rollOf(g, lo.bbl), H = rollOf(g, hi.bbl);
-  const spread = L.rent > 0 ? H.rent / L.rent : Infinity;
-  const occL = L.sf / 60000, occH = H.sf / 60000;
-  report("A. LOCATION SPREAD", spread >= 2.0 && (occH - occL) >= 0.08,
-    [`demand ${lo.demandScore} vs ${hi.demandScore} (same 60k sf, 8 fl, 1988 building)`,
-     `achieved rent  worst $${L.rent.toFixed(2)}/sf   best $${H.rent.toFixed(2)}/sf   spread ${spread.toFixed(2)}x   (need >= 2.0x)`,
-     `occupancy at yr 12   worst ${(occL * 100).toFixed(0)}%   best ${(occH * 100).toFixed(0)}%   (need best-worst >= 8pp)`,
-     `months to 80%   worst ${to80[lo.bbl] ?? ">144"}   best ${to80[hi.bbl] ?? ">144"}`]);
+  const spread = med(runs.map((r) => r.spread));
+  const gap = med(runs.map((r) => r.gap));
+  report("A. LOCATION SPREAD (median of 3 seeds)", spread >= 2.0 && gap >= 0.08,
+    [`demand ${loD} vs ${hiD} (same 60k sf, 8 fl, 1988 building)`,
+     `achieved rent spread per seed: ${runs.map((r) => r.spread.toFixed(2) + "x").join("  ")}   median ${spread.toFixed(2)}x   (need >= 2.0x)`,
+     `occupancy gap at yr 12 per seed: ${runs.map((r) => ((r.gap) * 100).toFixed(0) + "pp").join("  ")}   median ${(gap * 100).toFixed(0)}pp   (need >= 8pp)`,
+     `worst-location occupancy per seed: ${runs.map((r) => (r.occL * 100).toFixed(0) + "%").join("  ")}   best: ${runs.map((r) => (r.occH * 100).toFixed(0) + "%").join("  ")}`,
+     `months to 80%, worst location: ${runs.map((r) => r.loTo80 ?? ">144").join("  ")}   best: ${runs.map((r) => r.hiTo80 ?? ">144").join("  ")}`]);
 }
 
 // ---------------------------------------------------------------------------
@@ -190,9 +208,14 @@ const rollOf = (g, bbl) => {
   // paired runs, same seed: one gets +12% office stock injected at month 24,
   // the control does not. If tenants are conserved, the injected run's OCCUPIED
   // sf may exceed the control's only by a small induced-demand factor.
-  const run = (inject) => {
+  //
+  // MEDIAN OF THREE SEED-PAIRS. The metric is a small difference of two large
+  // numbers, and the injection itself forks the RNG stream at month 24 — so a
+  // single pair measured anywhere from -34% to +20% across mechanically
+  // identical builds. One draw is weather; the median is the mechanism.
+  const run = (seed, inject) => {
     const parcels = clone();
-    let g = E.firstListings(E.newGame(133713, parcels), parcels, bbls);
+    let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
     let addSf = 0;
     for (let m = 0; m < 60; m++) {
       if (inject && m === 24) {
@@ -201,18 +224,19 @@ const rollOf = (g, bbl) => {
       }
       g = E.advanceQuarter(g, parcels, bbls, adjacency);
     }
-    return { occ: g.econ.occupied.office, stock: g.econ.stock.office, addSf,
-             req: E.marketRequirement ? E.marketRequirement(g.econ, "office") : null };
+    return { occ: g.econ.occupied.office, stock: g.econ.stock.office, addSf };
   };
-  const ctl = run(false), inj = run(true);
-  const conjured = inj.occ - ctl.occ;
-  const frac = conjured / Math.max(1, inj.addSf);
-  report("D. CONSERVATION (does supply manufacture tenants?)",
+  const pairs = [133713, 51423, 900871].map((seed) => {
+    const ctl = run(seed, false), inj = run(seed, true);
+    return { seed, ctl, inj, frac: (inj.occ - ctl.occ) / Math.max(1, inj.addSf) };
+  });
+  const fracs = pairs.map((p) => p.frac).sort((a, b) => a - b);
+  const frac = fracs[1];
+  report("D. CONSERVATION (does supply manufacture tenants? median of 3 seed-pairs)",
     frac <= 0.15,
-    [`control: occupied ${(ctl.occ / 1e6).toFixed(3)}M sf of ${(ctl.stock / 1e6).toFixed(2)}M stock`,
-     `injected +${(inj.addSf / 1e6).toFixed(2)}M sf at month 24: occupied ${(inj.occ / 1e6).toFixed(3)}M sf`,
-     `occupied sf conjured by the new supply: ${(conjured / 1e6).toFixed(3)}M = ${(frac * 100).toFixed(1)}% of the injection   (allowed <= 15% induced demand)`,
-     `monthly tenant requirement ${ctl.req !== null ? `control ${(ctl.req / 1e3).toFixed(0)}k sf vs injected ${(inj.req / 1e3).toFixed(0)}k sf` : "n/a"} — a requirement that RISES with stock is the leak`]);
+    [`control occupied: ${pairs.map((p) => (p.ctl.occ / 1e6).toFixed(2) + "M").join("  ")} of ~${(pairs[0].ctl.stock / 1e6).toFixed(2)}M stock`,
+     `injection: +${(pairs[0].inj.addSf / 1e6).toFixed(2)}M sf of office at month 24, per pair`,
+     `conjured per pair: ${pairs.map((p) => (p.frac * 100).toFixed(1) + "%").join("  ")}   median ${(frac * 100).toFixed(1)}%   (allowed <= 15% induced demand)`]);
 }
 
 // ---------------------------------------------------------------------------

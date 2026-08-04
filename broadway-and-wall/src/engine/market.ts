@@ -196,15 +196,35 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // value.ts (1.9) — inlined here because value.ts imports this module.
   if (parcels) {
     let wSum = 0, dSum = 0, vSum = 0;
+    // ...AND A PIVOT PER CLASS. The citywide mean is set by the offices,
+    // because offices are most of the floor area — and a shed measured
+    // against an office tower's idea of location is always in a "terrible"
+    // spot, which is backwards: industrial land is SUPPOSED to be on cheap
+    // fringe dirt, and a shed competes with the other sheds, not with the
+    // corner of Broadway & Wall. Measured on New Alden, industrial demand
+    // tops out at 28 while the citywide mean sits at 52 — cubed, that read
+    // every industrial building in the city as un-lettable, and four of four
+    // sheds in the harness never leased at all. Each class pivots on its own
+    // stock's mean now, so "a good industrial location" means what a tenant
+    // shopping for a shed means by it.
+    const wBy: Record<string, number> = {}, dBy: Record<string, number> = {};
     for (const bbl in parcels) {
       const r = parcels[bbl];
       if (!r || r.class === "land" || !r.bldgArea) continue;
       const idx = Math.pow(Math.max(0, r.demandScore) / 100, 1 / 1.9);
       const vin = Math.min(1.7, Math.max(0.5, 0.5 + Math.max(0, 2000 - (r.yearBuilt || 1960)) / 80));
       wSum += r.bldgArea; dSum += r.bldgArea * idx; vSum += r.bldgArea * vin;
+      wBy[r.class] = (wBy[r.class] ?? 0) + r.bldgArea;
+      dBy[r.class] = (dBy[r.class] ?? 0) + r.bldgArea * idx;
     }
     econ.locIdxMean = wSum > 0 ? +(dSum / wSum).toFixed(4) : 0.62;
     econ.vintageMean = wSum > 0 ? +(vSum / wSum).toFixed(4) : 1.0;
+    econ.locIdxMeanBy = {
+      office: (wBy.office ?? 0) > 0 ? +(dBy.office / wBy.office).toFixed(4) : econ.locIdxMean,
+      retail: (wBy.retail ?? 0) > 0 ? +(dBy.retail / wBy.retail).toFixed(4) : econ.locIdxMean,
+      multifamily: (wBy.multifamily ?? 0) > 0 ? +(dBy.multifamily / wBy.multifamily).toFixed(4) : econ.locIdxMean,
+      industrial: (wBy.industrial ?? 0) > 0 ? +(dBy.industrial / wBy.industrial).toFixed(4) : econ.locIdxMean,
+    };
   } else {
     econ.locIdxMean = 0.62;
     econ.vintageMean = 1.0;

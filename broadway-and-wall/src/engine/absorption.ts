@@ -285,9 +285,12 @@ export interface LeaseFactor { label: string; detail: string; mult: number }
  *  the arrival odds and the size of the requirement that walks in are gated
  *  on it — pace was always graded by location; this is what grades the
  *  DESTINATION. */
-export function supportableOcc(econ: Econ, rec: ParcelRecord): number {
+export function supportableOcc(econ: Econ, rec: ParcelRecord, use?: BuiltClass): number {
   const d = demandIdx(rec.demandScore);
-  const pivot = econ.locIdxMean ?? 0.62;
+  // Pivoted on the CLASS's own mean, not the city's — a shed on the fringe is
+  // in an ordinary industrial location, not a terrible office one.
+  const cls = (use ?? rec.class) as BuiltClass;
+  const pivot = econ.locIdxMeanBy?.[cls] ?? econ.locIdxMean ?? 0.62;
   // ONE-SIDED, and that matters more than the slope. A symmetric line through
   // the city mean sounds fairer and is wrong: it puts the ceiling at 94% for an
   // ORDINARY building, so every merely-average block in town started shedding
@@ -309,7 +312,10 @@ export function leaseFactors(s: GameState, rec: ParcelRecord, h: Holding, use: B
   // and cheap. This is an exponential pivoted on the city's own sf-weighted
   // mean (measured at init), so the fringe-to-prime tour-traffic ratio runs
   // ~14x while the citywide letter cadence is preserved by construction.
-  const pivot = s.econ.locIdxMean ?? 0.62;
+  // Pivoted PER CLASS: the citywide mean is set by the offices, and cubing a
+  // shed's demand against an office tower's idea of location read the whole
+  // industrial market as un-lettable (measured: 4 of 4 sheds never leased).
+  const pivot = s.econ.locIdxMeanBy?.[use] ?? s.econ.locIdxMean ?? 0.62;
   out.push({
     label: "Location", detail: `demand ${Math.round(100 * d)} of 100`,
     mult: +clampA(Math.pow(d / pivot, 3.0), 0.10, 3.4).toFixed(3),
@@ -327,7 +333,7 @@ export function leaseFactors(s: GameState, rec: ParcelRecord, h: Holding, use: B
   if (legSf > 0) {
     const takenSf = h.tenants.reduce((a, t) => a + ((t.use ?? rec.class) === use ? t.sf : 0), 0);
     const occ = takenSf / legSf;
-    const sup = supportableOcc(s.econ, rec);
+    const sup = supportableOcc(s.econ, rec, use);
     if (occ > sup - 0.08) {
       out.push({
         label: "Tenant pool",
@@ -360,7 +366,7 @@ export function leaseFactors(s: GameState, rec: ParcelRecord, h: Holding, use: B
       mult: +(0.88 + 0.24 * svc).toFixed(3),
     });
   }
-  if (h.broker) out.push({ label: "Leasing exclusive", detail: "a house working the phones", mult: 1.45 });
+  if (h.broker) out.push({ label: "Leasing exclusive", detail: "a house working the phones for 6% of what they sign", mult: 1.45 });
   const spec = h.specSuites;
   if (spec && spec.use === use && s.month >= spec.readyM) {
     out.push({ label: "Turnkey suites", detail: `${(spec.sf / 1000).toFixed(0)}k sf fitted and standing`, mult: 1.50 });

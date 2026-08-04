@@ -237,6 +237,13 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     industrial: econ.stock.industrial * (1 - NATURAL_VAC.industrial),
   };
   econ.affordEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
+  // the closed loops open at their neutral values; everything after this is
+  // the economy deciding for itself
+  econ.inflExp = 0.02;
+  econ.slackEma = 0;
+  econ.tightEma = 0;
+  econ.buildEma = 0.02;
+  econ.rentExp = { ...econ.rentIdx };
   econ.concIdx = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
   econ.vacOverM = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
   econ.effRentIdx = { ...econ.rentIdx };
@@ -276,13 +283,62 @@ export function tickEcon(s: GameState) {
   const cfg = PHASE_CFG[e.phase];
 
   // phase machine with rumors one or two quarters ahead of the turn
+  // --- THE PHASE MACHINE READS THE PROPERTY MARKET ---------------------------
+  //
+  // It used to be a countdown clock and nothing else: `phaseMLeft--`, then a
+  // fixed round-robin. No state of the market it was describing was ever
+  // consulted. The consequence is the owner's own bug report — cheat the
+  // money, build until the city is 45% empty, and the corner of the screen
+  // still says EXPANSION, because the clock cannot see an empty building.
+  //
+  // Slack is the stock-weighted excess vacancy across all four classes,
+  // smoothed over about eight months so the machine reads a sustained
+  // condition and never a spot number. A boom carrying real slack dies early;
+  // a boom carrying a glut is over. The 36-month guard is what stops one bad
+  // year from rattling the cycle into noise.
+  {
+    let sw = 0, gw = 0;
+    for (const k of BUILT_CLASSES) {
+      const st = e.stock?.[k] ?? CITY_STOCK[k];
+      sw += st;
+      gw += st * ((e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k]);
+    }
+    const gapW = sw > 0 ? gw / sw : 0;
+    e.slackEma = (e.slackEma ?? gapW) + 0.08 * (gapW - (e.slackEma ?? gapW));
+    const slack = e.slackEma;
+    if ((e.phase === "expansion" || e.phase === "peak") && slack > 0.05) {
+      e.phaseMLeft -= 2;                       // the boom is running on fumes
+      if (slack > 0.09 && s.month - (e.forcedTurnM ?? -999) > 36) {
+        e.phaseMLeft = 0;                      // and now it is simply over
+        e.forcedTurnM = s.month;
+        pushNews(s, "warn",
+          "The glut has caught up with the market — there is a year of empty space on the tape "
+          + "and everyone has stopped pretending this is an expansion.");
+      }
+    }
+    // ...and the other way: a market that has eaten its slack cannot stay in
+    // recession forever on a timer. Absorption ends a downturn, not patience.
+    if ((e.phase === "recession" || e.phase === "recovery") && slack < -0.01) e.phaseMLeft -= 1;
+  }
+
   e.phaseMLeft--;
   if (e.phaseMLeft <= 6 && !e.rumoredPhase && rng(s) < 0.25) {
     e.rumoredPhase = cfg.next;
     pushNews(s, "rumor", RUMORS[cfg.next][Math.floor(rng(s) * RUMORS[cfg.next].length)]);
   }
   if (e.phaseMLeft <= 0) {
-    e.phase = cfg.next;
+    // A MARKET CANNOT BEGIN AN EXPANSION WITH A YEAR OF EMPTY SPACE ON THE
+    // TAPE. Forcing a turn out of a boom was only half of it: the round-robin
+    // would then walk recovery -> expansion -> peak again three years later
+    // while the city was still 40% vacant, which is the owner's complaint
+    // wearing a different hat. Entering a boom is a claim about the market,
+    // and slack is the market's answer. The recovery simply continues — which
+    // is what a long depression actually looks like from inside.
+    let nextPhase = cfg.next;
+    if ((nextPhase === "expansion" || nextPhase === "peak") && (e.slackEma ?? 0) > 0.055) {
+      nextPhase = "recovery";
+    }
+    e.phase = nextPhase;
     e.rumoredPhase = null;
     const [lo, hi] = PHASE_CFG[e.phase].nextM;
     e.phaseMLeft = Math.round(lo + (hi - lo) * rng(s));
@@ -324,11 +380,29 @@ export function tickEcon(s: GameState) {
       : "The central bank cut hard and unexpectedly. Refinancing windows are open that were shut last month.");
   }
 
-  // loan index: the era, plus where the cycle sits against it. Reversion is
-  // fast enough (half-life about nine months) that the cycle is legible in the
-  // rate, which at 0.03 it never was.
+  // THE POLICY RATE IS A DECISION, NOT A LOOKUP.
+  //
+  // This was `rateRegime + PHASE_CFG[phase].rateGap` — the rate was a constant
+  // per phase label. Which meant that when the owner cheated $10B, flooded the
+  // city and drove vacancy to 45%, the phase clock kept saying "expansion" and
+  // the loan index therefore ROSE (+0.35) into the worst property depression
+  // the city had ever seen. The rate machinery could not see the glut because
+  // nothing in it was looking at the economy.
+  //
+  // A central bank reads two numbers: how far inflation is from target, and
+  // how far unemployment is from full employment. It leans hard against the
+  // first (more than one-for-one, or inflation is self-fulfilling) and cuts
+  // into the second. The monetary ERA is still the neutral level it leans
+  // around — that is the thing that makes a loan struck in one decade a
+  // different animal in the next — but the cycle in the rate is now EARNED by
+  // the economy rather than stamped on by a label. A glut destroys jobs, which
+  // cuts rates, which is the refinancing window the survivors live on.
+  const uGap = (e.unemployment ?? 0.055) - 0.055;
+  const taylor = e.rateRegime
+    + 140 * ((e.inflExp ?? 0.02) - 0.02)     // 1.4x on the inflation gap, in points
+    - 110 * uGap;                            // and a point of slack is a point of cut
   e.indexRate = clamp(
-    e.indexRate + 0.075 * (e.rateRegime + c2.rateGap - e.indexRate) + rrange(s, -0.13, 0.13),
+    e.indexRate + 0.075 * (taylor - e.indexRate) + rrange(s, -0.13, 0.13),
     RATE_FLOOR, RATE_CEIL,
   );
 
@@ -349,7 +423,18 @@ export function tickEcon(s: GameState) {
   // --- employment: the demand behind every lease -----------------------------
   const jobDrift = e.phase === "expansion" ? 0.0026 : e.phase === "peak" ? 0.0008
     : e.phase === "recession" ? -0.0031 : 0.0015;
-  e.employIdx = clamp(e.employIdx * (1 + jobDrift + rrange(s, -0.0012, 0.0012)), 0.55, 12);
+  // THE RETURN WIRE. Jobs drove rents and rents drove nothing back, so the
+  // causal graph had a dead end where its most important feedback belongs: a
+  // city that becomes ruinously expensive relative to what it pays its
+  // workers LOSES employers, and a city with cheap space wins them. That is
+  // the mechanism by which an overbuilt city eventually recovers (empty space
+  // is cheap space, cheap space attracts firms, firms fill the space) and by
+  // which an expensive one stagnates. Without it, "the rent is too high" was
+  // a fact about the player's spreadsheet and about nothing else in the world.
+  const incomeNow = Math.max(0.35, e.wageIdx ?? 1);
+  const costOfSpace = (e.rentIdx.office / RENT_BASE.office) / incomeNow;
+  const spacePull = clamp((1 - costOfSpace) * 0.0022, -0.0013, 0.0016);
+  e.employIdx = clamp(e.employIdx * (1 + jobDrift + spacePull + rrange(s, -0.0012, 0.0012)), 0.55, 12);
 
   // --- THE CITY UNDERNEATH THE PROPERTY MARKET -------------------------------
   //
@@ -373,7 +458,13 @@ export function tickEcon(s: GameState) {
     // not shrink the month the jobs go; people look for work for a year before
     // they leave town, which is why a bust shows up in the unemployment rate
     // long after it has shown up in the rents.
-    const labourForce = e.population! * 0.62;
+    // The participation rate is 0.58 and not 0.62 for a reason that only
+    // became visible once anything READ unemployment: at 0.62 the opening
+    // state describes 240,000 people, 148,800 of them in the labour force and
+    // 132,000 jobs — an 11.3% unemployment rate, while the same object
+    // initialises `unemployment: 0.052`. The city was born with a number that
+    // contradicted its own population. 0.58 makes the opening state true.
+    const labourForce = e.population! * 0.58;
     const slackTarget = clamp(1 - e.jobs / Math.max(1, labourForce), 0.018, 0.24);
     e.unemployment = clamp(e.unemployment! + 0.18 * (slackTarget - e.unemployment!), 0.015, 0.26);
 
@@ -381,19 +472,69 @@ export function tickEcon(s: GameState) {
     // boom within a couple of years; they leave a bust over a decade, because
     // leaving means selling a house and telling your family. That asymmetry is
     // why cities hollow out rather than empty.
+    //
+    // AND MIGRATION ANSWERS THE LABOUR MARKET, which is the loop that was
+    // missing. Population carried an unconditional +0.42%/yr while jobs
+    // carried nothing of the sort, so the city accumulated permanent
+    // unemployment: measured over fifty years, 240k people and 132k jobs
+    // became 364k people and 160k jobs — a 24% unemployment rate nobody chose
+    // and nothing corrected. It was invisible while unemployment was a
+    // read-out; the moment prices and the policy rate began reading it, the
+    // whole economy deflated into its floor. People do not move to a city
+    // with no work, and they leave one that has run out — that is what keeps
+    // a labour market anchored, and it is now in the model.
     const pull = jobGrowth > 0 ? 0.35 : 0.09;
-    e.population = Math.round(clamp(e.population! * (1 + jobGrowth * pull + 0.00035), 60_000, 4_000_000));
+    const uGapPop = e.unemployment! - 0.055;
+    const migration = jobGrowth * pull - clamp(uGapPop * 0.020, -0.0010, 0.0030);
+    e.population = Math.round(clamp(e.population! * (1 + 0.00016 + migration), 60_000, 4_000_000));
 
-    // REAL WAGES follow the labour market with a lag: tight labour bids pay up,
-    // slack labour does not cut it in nominal terms, so a downturn shows as
-    // stagnation rather than as a fall. On top of that a slow productivity
-    // drift, which is where a century of compounding actually comes from.
+    // --- THE WAGE-PRICE SYSTEM ---------------------------------------------
+    //
+    // This block used to be two scripted drifts, and between them they were
+    // the single largest lie in the game. Wages compounded at 0.42% a year
+    // NOMINAL while the price level ran at 1.94%, so the workers of this city
+    // got 60% poorer in real terms over a campaign — and rents, which are
+    // paid out of exactly those wages, tripled in real terms at the same time.
+    // Measured across three fifty-year runs: rent-to-income rose 9.87x. That
+    // is not a property market, it is two spreadsheets that never met, and it
+    // is the whole reason office rents reached $1,000/sf by 2050.
+    //
+    // So prices and wages are one system now, with the three parts a real one
+    // has: EXPECTATIONS (what everybody assumes next year looks like, which
+    // is what makes an inflation persistent), a PHILLIPS term (a tight labour
+    // market bids pay up and pay pushes prices), and a COST-PUSH term (what
+    // the builders and the utilities are charging). Slack damps all of it.
+    // Nothing here is scripted to a phase; the phase is downstream.
+    if (e.inflExp === undefined) e.inflExp = 0.02;
     const tight = 0.055 - e.unemployment!;
-    e.wageIdx = clamp(e.wageIdx! * (1 + 0.00035 + tight * 0.014 + rrange(s, -0.0004, 0.0004)), 0.7, 6);
+    // realised inflation over the trailing year, straight off the history the
+    // engine already keeps — expectations chase THIS, not a constant
+    const h12 = e.history.length >= 12 ? e.history[e.history.length - 12] : undefined;
+    const infl12 = h12?.cpi ? e.cpi! / h12.cpi - 1 : e.inflExp;
+    const cost12 = h12 && (h12 as { costIdx?: number }).costIdx
+      ? e.costIdx / (h12 as { costIdx?: number }).costIdx! - 1 : e.inflExp;
+    // Prices: what everyone expects, plus what the labour market is doing to
+    // pay, plus what materials are doing — with slack pulling all three down.
+    const inflM = e.inflExp / 12 + tight * 0.021 + 0.16 * (cost12 - e.inflExp) / 12;
+    e.cpi = clamp(e.cpi! * (1 + clamp(inflM, -0.0035, 0.0115)), 0.8, 400);
+    // ...and expectations follow realised inflation slowly. This is the anchor
+    // that keeps the spiral from either exploding or dying: fast enough that a
+    // decade of 6% becomes the new normal, slow enough that one bad year is
+    // not a regime.
+    e.inflExp = clamp(e.inflExp + 0.020 * (infl12 - e.inflExp), -0.008, 0.14);
 
-    // The price level, so a nominal number can be turned into a real one. It
-    // runs with construction cost because in a city they are the same story.
-    e.cpi = clamp(e.cpi! * (1 + 0.0016 + (e.phase === "peak" ? 0.0011 : e.phase === "recession" ? -0.0007 : 0)), 0.8, 40);
+    // WAGES ARE NOMINAL AND THEY TRACK PRICES. A worker whose pay does not
+    // move with the price level is a worker who cannot pay next year's rent —
+    // which is precisely the state this city was in. Expected inflation, plus
+    // real productivity growth (where a century of genuine compounding
+    // actually comes from), plus what a tight or slack labour market does on
+    // top. Real wage growth therefore lands near productivity, which is the
+    // number a real economy delivers.
+    const PRODUCTIVITY = 0.011;    // ~1.1%/yr real, the long-run US figure
+    e.wageIdx = clamp(
+      e.wageIdx! * (1 + e.inflExp / 12 + PRODUCTIVITY / 12 + tight * 0.012 + rrange(s, -0.0004, 0.0004)),
+      0.7, 400,
+    );
 
     // Output is what the place makes: people working, times what each of them
     // produces. It is the broadest number in the game and the slowest to move.
@@ -507,11 +648,31 @@ export function tickEcon(s: GameState) {
   // shortage with flat rents, which is not a market, it is a clamp. Routing
   // the overflow into rent closes the loop — price rises, price rations
   // demand, and eventually price makes building pencil again.
+  // HOW SHORT OF SPACE THIS CITY HAS CHRONICALLY BEEN. A twenty-year memory,
+  // which is the timescale on which a place actually earns the right to be
+  // expensive. Read by the income anchor as the sustainable rent-to-income
+  // ratio: a generation of tightness buys a premium, a permanent glut spends it.
+  {
+    const tightNow = (NATURAL_VAC.office - (e.cityVac?.office ?? NATURAL_VAC.office)) / NATURAL_VAC.office;
+    e.tightEma = (e.tightEma ?? 0) + 0.004 * (tightNow - (e.tightEma ?? 0));
+  }
+
   const unmet: Record<string, number> = {};
   for (const k of BUILT_CLASSES) {
     const stk = e.stock?.[k] ?? CITY_STOCK[k];
     const vacNow = e.cityVac?.[k] ?? NATURAL_VAC[k];
-    const margin = (e.rentIdx[k] / RENT_BASE[k]) / e.costIdx - 1;         // profit signal
+    // DEVELOPERS UNDERWRITE THE RENT THEY EXPECT, NOT THE RENT THAT EXISTS.
+    // This read today's rent, so supply responded to the present and the
+    // cycle had to be supplied by the phase clock. Every real overbuild is
+    // built out of extrapolation: three good years become a pro forma, the
+    // pro forma becomes a crane, and the crane opens into the glut those
+    // pro formas created. rentExp is an adaptive, lagging belief; the gap
+    // between it and today's rent is the momentum being extrapolated.
+    if (!e.rentExp) e.rentExp = { ...e.rentIdx };
+    e.rentExp[k] += 0.045 * (e.rentIdx[k] - e.rentExp[k]);
+    const momentum = clamp(e.rentIdx[k] / Math.max(1, e.rentExp[k]) - 1, -0.30, 0.30);
+    const underwritten = (e.rentIdx[k] / RENT_BASE[k]) * (1 + clamp(momentum * 2.4, -0.28, 0.45));
+    const margin = underwritten / e.costIdx - 1;         // profit signal, as BELIEVED
     // Nobody starts a building into a glut, whatever the pro forma says —
     // vacancy above natural chokes starts long before the margin math does.
     // The shortage signal has to be strong enough to actually pull supply
@@ -626,8 +787,14 @@ export function tickEcon(s: GameState) {
     // but at era speed: the exponent softens and the multiplier is damped
     // with a ~6-year half-life. Firms do not materialise because rent dipped
     // this quarter.
+    // ...and the price is measured against INCOME PER WORKER, not against the
+    // NUMBER of workers. This deflator was `employIdx` — total jobs, which
+    // reached 1.83x by 2050 — so a city that merely GREW licensed an
+    // unbounded rise in rent per square foot: more firms in town was read as
+    // every firm being able to pay more. What rations space is what one
+    // tenant earns, and that is the wage index.
     const affordRaw = Math.pow(
-      (e.rentIdx[k] / RENT_BASE[k]) / Math.max(0.35, e.employIdx),
+      (e.rentIdx[k] / RENT_BASE[k]) / Math.max(0.35, e.wageIdx ?? 1),
       k === "multifamily" ? -0.50 : -0.40,
     );
     if (!e.affordEff) e.affordEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
@@ -701,11 +868,41 @@ export function tickEcon(s: GameState) {
     const phaseNudge = e.phase === "recession" ? 0.22 : e.phase === "recovery" ? 0.08 : e.phase === "peak" ? -0.04 : -0.10;
     const concTarget = clamp(gap * 11 + phaseNudge, 0, 1);
     e.concIdx[k] += 0.25 * (concTarget - e.concIdx[k]);
+    // EMPTY SPACE IS NEVER FREE. This term was capped at -0.9%/month, so at
+    // ten points over natural it saturated and EVERY FURTHER POINT OF VACANCY
+    // COST NOTHING — a 45% glut was priced exactly like a 20% one, which is
+    // most of why rents went flat at $31 through a depression instead of
+    // collapsing. Superlinear now: the second ten points hurt more than the
+    // first ten, the way a real capitulation works.
     const vacTerm = gap <= 0
       ? clamp(-gap * 0.090, 0, 0.009)
-      : -Math.min(0.009, gap * 0.090) * Math.min(1, (e.vacOverM[k] ?? 0) / 6);
+      : -(gap * 0.070 + gap * gap * 0.85) * Math.min(1, (e.vacOverM[k] ?? 0) / 6);
     const scarcity = clamp((unmet[k] ?? 0) * 0.10, 0, 0.016);
-    const drift = c2.rentDrift * 0.55 + e.sectorMom[k] * 0.42 + vacTerm + scarcity + (jobDrift * 0.35);
+
+    // THE INCOME ANCHOR — the line that makes rent a by-product of the economy.
+    //
+    // Every other term here is a FLOW: sentiment, momentum, vacancy, jobs.
+    // Flows have no opinion about the LEVEL, which is why fifty years of them
+    // compounded to a rent-to-income ratio of 9.87x and nothing anywhere
+    // objected. Rent is a payment out of a wage. When the rent per square foot
+    // has outrun the income of the people paying it, tenants take less space,
+    // they take worse space, they leave — and the landlord discovers the
+    // number he can actually get. That discovery is this term.
+    //
+    // It is not a clamp: it is a pull whose strength grows with the overshoot,
+    // and the ratio it pulls toward is EARNED. A city chronically short of
+    // space sustains a higher one — that is the Manhattan premium, and
+    // tightEma is a twenty-year memory of having genuinely been tight rather
+    // than a constant somebody typed. A city with a permanent glut loses it.
+    const income = Math.max(0.35, e.wageIdx ?? 1);
+    const rentToIncome = (e.rentIdx[k] / RENT_BASE[k]) / income;
+    const sustain = 1 + 0.80 * clamp(e.tightEma ?? 0, -0.30, 0.55);
+    const dev = rentToIncome / sustain - 1;
+    const anchor = dev > 0
+      ? -0.0080 * Math.min(1.6, dev)          // outrunning incomes: pulled down hard
+      : -0.0028 * Math.max(-0.65, dev);       // cheap against incomes: drifts back up
+
+    const drift = c2.rentDrift * 0.55 + e.sectorMom[k] * 0.42 + vacTerm + scarcity + anchor + (jobDrift * 0.35);
     e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.5, e.rentIdx[k] * (1 + drift + rrange(s, -vol, vol)));
     e.effRentIdx[k] = +(e.rentIdx[k] * (1 - 0.14 * e.concIdx[k])).toFixed(4);
   }
@@ -770,8 +967,38 @@ export function tickEcon(s: GameState) {
   // long-run ratio stable, which puts the decision to build back where it
   // belongs: with the space market. If rents are high relative to cost it is
   // because vacancy is low, not because of a term nobody chose.
-  const costDrift = c2.rentDrift * 0.55 + (e.phase === "recession" ? 0.0005 : 0.0002);
-  e.costIdx = clamp(e.costIdx * (1 + costDrift + rrange(s, -0.0015, 0.0015)), 0.6, 60);
+  // THE TRADES ARE A MARKET TOO — and this is the brake a supply cycle needs.
+  //
+  // Construction cost drifted with the PHASE, which meant that when everybody
+  // in the city broke ground at once the trades charged exactly what they had
+  // charged when nobody was building. Measured: corr(share of stock under
+  // construction, next year's real cost growth) = -0.18. Backwards. So a boom
+  // had no cost consequence and nothing stopped it but the calendar.
+  //
+  // Real construction cost inflation is materials and labour, and both are
+  // bid up by how much is being built. Costs now run at expected inflation
+  // plus a premium for how busy the city is — so a boom raises the cost of
+  // the next building, which thins the margin, which chokes the boom. That
+  // is a cycle the economy produces rather than one a phase table asserts.
+  {
+    let pipe = 0, stk = 0;
+    for (const k of BUILT_CLASSES) {
+      pipe += e.pipeline?.[k] ?? 0;
+      stk += e.stock?.[k] ?? CITY_STOCK[k];
+    }
+    const buildRate = stk > 0 ? pipe / stk : 0;
+    e.buildEma = (e.buildEma ?? buildRate) + 0.06 * (buildRate - (e.buildEma ?? buildRate));
+    // Pivoted on what this city ACTUALLY builds, measured rather than assumed:
+    // the smoothed share under construction runs from about 0.4% of stock in
+    // a dead market to 2.0% at the top of a cycle, median 1.4%. The first
+    // draft pivoted at 2.0% — the very top of the observed range — so heat was
+    // pinned at its floor essentially always and the whole term did nothing.
+    // A boom is 2% of the city under way with every trade booked; a bust is
+    // half a per cent and men looking for work.
+    const heat = clamp(((e.buildEma ?? 0.014) - 0.014) * 110, -0.8, 1.6);
+    const costDrift = (e.inflExp ?? 0.02) / 12 + heat * 0.0016 + (e.phase === "recession" ? -0.0004 : 0);
+    e.costIdx = clamp(e.costIdx * (1 + costDrift + rrange(s, -0.0012, 0.0012)), 0.6, 400);
+  }
 
   recordHistory(e, s.month, monthAbs, monthComp);
 }
@@ -798,6 +1025,8 @@ function recordHistory(e: Econ, q: number, abs?: Record<string, number>, comp?: 
     q,
     indexRate: +e.indexRate.toFixed(2),
     landIdx: +e.landIdx.toFixed(4),
+    costIdx: +e.costIdx.toFixed(4),
+    inflExp: e.inflExp !== undefined ? +e.inflExp.toFixed(5) : undefined,
     cycleDev: +e.cycleDev.toFixed(3),
     capOffice: +e.capRate.office.toFixed(2),
     rentOffice: +e.rentIdx.office.toFixed(2),

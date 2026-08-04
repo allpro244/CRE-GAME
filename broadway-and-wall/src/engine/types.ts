@@ -620,6 +620,10 @@ export interface EconHistoryPoint {
   rent?: Record<BuiltClass, number>;
   /** effective rent — asking net of concessions; the gap to `rent` is the market */
   effRent?: Record<BuiltClass, number>;
+  /** construction & operating cost level — the cost-push term reads it */
+  costIdx?: number;
+  /** expected inflation, annualised — the anchor of the wage-price system */
+  inflExp?: number;
   cap?: Record<BuiltClass, number>;
   abs?: Record<BuiltClass, number>;    // net absorption that month, sf
   comp?: Record<BuiltClass, number>;   // completions that month, sf
@@ -684,6 +688,47 @@ export interface Econ {
   locIdxMean?: number;
   /** Per-class location pivots — a shed competes with sheds, not with towers. */
   locIdxMeanBy?: Record<BuiltClass, number>;
+
+  // --- THE CLOSED LOOPS -----------------------------------------------------
+  // Everything below is derived state for an economy that pulls on itself.
+  // All optional with computed fallbacks, so an old save loads and simply
+  // starts keeping these the month it is opened.
+
+  /**
+   * EXPECTED INFLATION, annualised. The single most important number in a
+   * macro model and the one this game did not have: inflation was a scripted
+   * constant per phase, so nothing could be persistent, nothing could be
+   * anchored, and the central bank had nothing to lean against. Wages, the
+   * policy rate and construction costs all read this.
+   */
+  inflExp?: number;
+  /**
+   * The property market's slack, stock-weighted across classes and smoothed
+   * with roughly an eight-month half-life. This is what the phase machine
+   * reads so that it can no longer call a 45%-vacant city an expansion.
+   */
+  slackEma?: number;
+  /** When slack last forced a turn, so one glut cannot rattle the cycle. */
+  forcedTurnM?: number;
+  /**
+   * Share of citywide stock under construction, smoothed — how busy the
+   * trades are. Construction costs read it, which is what finally gives a
+   * building boom a brake that is not the calendar.
+   */
+  buildEma?: number;
+  /**
+   * How chronically short of space this city has been, over about a
+   * twenty-year memory. A city that has been tight for a generation earns a
+   * higher sustainable rent-to-income ratio — this is the Manhattan premium,
+   * and it has to be EARNED rather than assumed.
+   */
+  tightEma?: number;
+  /**
+   * What developers believe rents are, as opposed to what they are. Adaptive
+   * and lagging, so a run of rising rents gets extrapolated into pro formas —
+   * which is what actually causes overbuilding in every real cycle.
+   */
+  rentExp?: Record<BuiltClass, number>;
   /** sf-weighted mean vintage factor, same job for the quality tilt. */
   vintageMean?: number;
   costIdx: number; // construction & operating cost inflation

@@ -142,12 +142,35 @@ const rollOf = (g, bbl) => {
     .filter((r) => r && r.class === "office" && r.bbl !== site.bbl && r.bldgArea > 10000);
   const occBefore = nbhood.reduce((a, r) => a + E.occupancy(r, g.econ) * r.bldgArea, 0)
     / Math.max(1, nbhood.reduce((a, r) => a + r.bldgArea, 0));
+  // THE COUNTERFACTUAL. This clause used to measure the rent trough against
+  // the rent on the day of the shock — which was fine while rents had no
+  // trend, and became meaningless the moment they gained one. Rents now grow
+  // with the nominal wages that pay them (~3.4%/yr), so a shock can knock
+  // 15% off where rents WOULD have been without ever pushing them below where
+  // they started. What a supply shock does is depress rents relative to the
+  // path the market would otherwise have taken, so that is what we measure:
+  // the same seed, the same everything, without the building.
+  const ctlPath = (() => {
+    const cp = clone();
+    let cg = E.firstListings(E.newGame(424243, cp), cp, bbls);
+    cg = { ...cg, cash: 2_000_000_000 };
+    for (let m = 0; m < PRE; m++) cg = E.advanceQuarter(cg, cp, bbls, adjacency);
+    const out = [];
+    for (let m = 0; m < POST; m++) {
+      cg = E.advanceQuarter(cg, cp, bbls, adjacency);
+      cg = acceptAll(cg, cp);
+      out.push(cg.econ.rentIdx.office);
+    }
+    return out;
+  })();
   let vacPeak = vac0, rentTrough = rent0, to80 = null, occAfter = occBefore;
+  let worstGap = 0;
   for (let m = 0; m < POST; m++) {
     g = E.advanceQuarter(g, parcels, bbls, adjacency);
     g = acceptAll(g, parcels);
     vacPeak = Math.max(vacPeak, g.econ.cityVac.office);
     rentTrough = Math.min(rentTrough, g.econ.rentIdx.office);
+    worstGap = Math.max(worstGap, 1 - g.econ.rentIdx.office / Math.max(1, ctlPath[m]));
     if (to80 === null && rollOf(g, site.bbl).sf >= 0.8 * addSf) to80 = m + 1;
     // the WOUND is the trough, not the end state — over a ten-year window the
     // market is allowed (expected, even) to heal; it is not allowed to never bleed
@@ -155,7 +178,7 @@ const rollOf = (g, bbl) => {
       / Math.max(1, nbhood.reduce((a, r) => a + r.bldgArea, 0));
     occAfter = Math.min(occAfter, occNow);
   }
-  const rentCut = 1 - rentTrough / rent0;
+  const rentCut = worstGap;
   // The panel's upper bound, adopted: a building that NEVER leases should not
   // pass a queue test. Ten years is the allowance — this is a prime site; if
   // the market cannot absorb it in a decade the pool is broken the other way.
@@ -163,7 +186,8 @@ const rollOf = (g, bbl) => {
     (vacPeak - vac0) >= 0.05 && rentCut >= 0.10 && to80 !== null && to80 >= 24 && to80 <= 120 && (occBefore - occAfter) >= 0.03,
     [`stock ${(stock0 / 1e6).toFixed(2)}M sf  + ${(addSf / 1e6).toFixed(2)}M sf delivered empty at demand ${site.demandScore}`,
      `citywide office vacancy ${(vac0 * 100).toFixed(1)}% -> peak ${(vacPeak * 100).toFixed(1)}%   (need +5pp)`,
-     `office rent index ${rent0.toFixed(2)} -> trough ${rentTrough.toFixed(2)}  cut ${(rentCut * 100).toFixed(1)}%   (need >= 10%)`,
+     `office rents vs the same city WITHOUT the building: ${(rentCut * 100).toFixed(1)}% below the counterfactual at the worst   (need >= 10%)`,
+     `   (nominal path ${rent0.toFixed(0)} -> trough ${rentTrough.toFixed(0)}; rents carry a wage-driven trend now, so the counterfactual is the only honest measure)`,
      `new building to 80% let: ${to80 === null ? ">120 months" : to80 + " months"}   (need 24-120: years, not forever)`,
      `standing office stock occupancy ${(occBefore * 100).toFixed(1)}% -> trough ${(occAfter * 100).toFixed(1)}%   (need -3pp: the shock must WOUND somebody)`]);
 }

@@ -247,9 +247,13 @@ function playStrategy(name, ms) {
     // and the property tax bleeds the account to zero. Which is exactly what
     // happened -- 101% drawdown, four wipeouts in four seeds. A merchant buys
     // a site, builds it, sells it, and buys the next one.
+    // ...and it stays busy until the building is SOLD, not until it tops out.
+    // The old rule freed the bot the month the job delivered, so it spent the
+    // entire lease-up reserve on a second lot the same week it took delivery
+    // of an empty building — and then had nothing to fit a tenant out with.
+    // The reserve is the building's money, not the fund's.
     const busy = st.build
-      && (Object.keys(g.developments).length > 0
-        || Object.values(g.holdings).some((h) => (E.resolveRec(parcels, g, h.bbl)?.class) === "land"));
+      && (Object.keys(g.developments).length > 0 || Object.keys(g.holdings).length > 0);
     if (st.buyWhen(e) && m > 2 && !busy) {
       for (const li of [...g.listings].slice(0, 6)) {
         const rec = E.resolveRec(parcels, g, li.bbl);
@@ -268,7 +272,12 @@ function playStrategy(name, ms) {
       for (const h of Object.values(g.holdings)) {
         const rec = E.resolveRec(parcels, g, h.bbl);
         if (!rec || rec.class !== "land" || g.developments[h.bbl]) continue;
-        const fl = Math.min(E.maxFloorsFor?.(rec) ?? 8, 8);
+        // maxFloorsFor takes (rec, coverage, use). Called with one argument it
+        // returns NaN, not undefined, so `?? 8` never fired and the bot has
+        // been asking for a building NaN floors tall in every tournament run
+        // it has ever done. The engine now refuses that plan outright; this is
+        // the caller that was making it.
+        const fl = Math.min(E.maxFloorsFor(rec, 0.6, "office"), 8);
         const r = E.startDevelopment(g, parcels, h.bbl, "office", fl, 0.6);
         if (!r.err) { g = r.s; builtN++; }
         break;
@@ -281,8 +290,13 @@ function playStrategy(name, ms) {
         if (m - (h.boughtM ?? 0) < st.sellAt) continue;
         const rec = E.resolveRec(parcels, g, h.bbl);
         if (!rec || rec.class === "land") continue;
-        const v = E.holdingValue?.(g, parcels, h.bbl) ?? E.assetValue(rec, e, h.condition);
-        const r = E.listForSale(g, parcels, h.bbl, Math.round((typeof v === "number" ? v : v.value ?? 0) * 1.02));
+        // holdingValue is (rec, econ, holding, month). Called as
+        // (game, parcels, bbl) it returned NaN, listForSale refused the ask,
+        // and no bot in this tournament has ever sold a building it built or
+        // repositioned -- which is exactly the failure I was reporting as an
+        // engine blocker in the develop-lease-sell chain.
+        const v = E.holdingValue(rec, e, h, g.month);
+        const r = E.listForSale(g, parcels, h.bbl, Math.round(v * 1.02));
         if (!r.err) g = r.s;
         break;
       }

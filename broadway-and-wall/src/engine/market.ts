@@ -1343,7 +1343,15 @@ export function tickEcon(s: GameState) {
     // than a constant somebody typed. A city with a permanent glut loses it.
     const income = Math.max(0.35, e.wageIdx ?? 1);
     const rentToIncome = (e.rentIdx[k] / RENT_BASE[k]) / income;
-    const sustain = 1 + 0.80 * clamp(e.tightEma ?? 0, -0.30, 0.55);
+    // HOW MUCH OF A PREMIUM A CHRONICALLY TIGHT CITY IS ALLOWED TO EARN. At
+    // 0.80 this let a tight market sustain a rent-to-income ratio 44% above
+    // parity, which is most of a Manhattan premium granted to any town that
+    // spent twenty years mildly short of space — and it is the slack that let
+    // real rents grow 1.72%/yr against real wages at 1.03%. Measured, rents
+    // reached 3.18x their base while construction costs reached 1.79x, and
+    // costs were the ones tracking inflation correctly. A premium is still
+    // earned here; it is just a quarter rather than a half.
+    const sustain = 1 + 0.45 * clamp(e.tightEma ?? 0, -0.30, 0.55);
     const dev = rentToIncome / sustain - 1;
     // Tightened from 0.0080 when housing and retail demand were rewired onto
     // population: giving those two classes their real driver let real rent
@@ -1487,7 +1495,17 @@ export function tickEcon(s: GameState) {
     // steelworkers — while a bust puts their price on the floor within a year.
     // At full idle real construction costs now fall about six per cent a year,
     // which is roughly what happened to the real thing in 2009-10.
-    const heat = clamp(((e.buildEma ?? 0.014) - 0.014) * 110, -1.9, 1.6);
+    // THE PIVOT IS WHERE THE TRADES ARE FULLY EMPLOYED, and it has to be the
+    // rate this city actually builds at or the cost index has a permanent
+    // drift. Measured over three fifty-year runs the equilibrium share of
+    // stock under construction is 0.0124; the pivot said 0.0140, so heat sat
+    // negative in an ordinary market and real construction costs fell forever.
+    // The consequence was a pro forma that never bound: rents reached 3.17x
+    // base while costs reached only 1.49x, yield on cost averaged 14.98%
+    // against a 7.50% hurdle, and development ran flat out at its ceiling in
+    // 83% of months. A margin that wide is not a decision, it is a formality.
+    const HEAT_PIVOT = 0.0124;
+    const heat = clamp(((e.buildEma ?? HEAT_PIVOT) - HEAT_PIVOT) * 110, -1.9, 1.6);
     const slope = heat < 0 ? 0.0026 : 0.0016;
     const costDrift = (e.inflExp ?? 0.02) / 12 + heat * slope + (e.phase === "recession" ? -0.0004 : 0);
     e.costIdx = clamp(e.costIdx * (1 + costDrift + rrange(s, -0.0012, 0.0012)), 0.6, 400);

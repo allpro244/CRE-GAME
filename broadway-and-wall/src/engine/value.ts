@@ -304,7 +304,15 @@ export function locationRentMult(rec: ParcelRecord, econ?: Econ, use?: BuiltClas
   // location, and its rent multiplier should read ~1.0 there, not 0.5.
   const cls = (use ?? rec.class) as BuiltClass;
   const pivot = (cls !== "land" as string ? econ?.locIdxMeanBy?.[cls] : undefined) ?? econ?.locIdxMean ?? 0.62;
-  return Math.min(1.75, Math.max(0.42, Math.pow(demandIdx(rec.demandScore) / pivot, 1.05)));
+  // LOCATION IS A SEPARATE DIAL FROM THE RENT LEVEL, and it has to be, or the
+  // two get traded against each other. Tightening the sustainable rent-to-
+  // income ratio — a statement about the LEVEL of rents against wages —
+  // compressed the prime-to-fringe SPREAD as a side effect, because the best
+  // addresses carry the highest rent-to-income and the anchor bit them
+  // hardest: the achieved spread between a demand-16 site and a demand-98 site
+  // fell to 1.84x. That is not what the anchor is for. The exponent and the
+  // ceiling are what price location, so they are what moves here.
+  return Math.min(2.15, Math.max(0.40, Math.pow(demandIdx(rec.demandScore) / pivot, 1.28)));
 }
 
 export function marketRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition): number {

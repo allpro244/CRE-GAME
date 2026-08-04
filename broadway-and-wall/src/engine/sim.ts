@@ -134,11 +134,46 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   // discount looks like: a motivated seller, a receiver clearing a book, an
   // estate that wants it done. Below that is not a bargain, it is a bug.
   const ASK_FLOOR = 0.70;
+  // ...AND A SELLER WHOSE BUILDING HAS APPRECIATED TAKES IT OFF THE MARKET.
+  //
+  // The cut above only ever ratchets DOWN. An ask is priced the month it is
+  // written and then trimmed 1.5% every month it does not sell, with no
+  // reference to what the building is doing meanwhile — so in a market whose
+  // values are rising the gap opens until the 70% floor catches it, and the
+  // tape fills up with buildings sitting at the floor. Measured after the
+  // zoning wire started upzoning into shortages and values began moving
+  // faster: the median listing asked 0.75x appraisal, and `pnpm stress
+  // --only=29` found the consequence — buy at the ask, mark at the appraisal,
+  // and you are half a million dollars richer, every time, forever. That is a
+  // money pump, and the only reason it is not infinite is the size of the tape.
+  //
+  // This engine already knows the answer, in the other half of the same
+  // mechanic: an off-market quote is DELETED when the ground moves under it
+  // (see the approaches block below, and its note that otherwise the ask could
+  // drift to a fraction of the appraisal beside it). A seller reads the news.
+  // If the market has run away from the number they wrote, they do not honour
+  // it out of politeness — they withdraw, and if they still want out they come
+  // back at today's price, which refreshListings gives them.
+  //
+  // Distress is the exception and keeps the floor: a receiver clearing a book
+  // or an estate that wants it done really will take 70 cents, and that is the
+  // bargain the player is supposed to be hunting for.
+  const WITHDRAW_AT = 0.85;
+  const withdrawn: string[] = [];
   for (const li of s.listings) {
     const rec = resolveRec(parcels, s, li.bbl);
-    const floor = rec ? assetValue(rec, s.econ, gradeOf(s, rec)) * ASK_FLOOR : 0;
+    const v = rec ? assetValue(rec, s.econ, gradeOf(s, rec)) : 0;
+    const floor = v * ASK_FLOOR;
     if (s.month - li.listedM >= 4) li.ask = Math.round(li.ask * 0.985 / 1000) * 1000;
+    if (v > 0 && !li.distress && li.ask < v * WITHDRAW_AT && !s.talks?.[li.bbl]?.agreed) {
+      withdrawn.push(li.bbl);
+      continue;
+    }
     if (floor > 0 && li.ask < floor) li.ask = Math.round(floor / 1000) * 1000;
+  }
+  if (withdrawn.length) {
+    const pulled = new Set(withdrawn);
+    s.listings = s.listings.filter((l) => !pulled.has(l.bbl));
   }
   // A listing you are under contract on does not lapse out from under you. The
   // contract has its own clock; this one stops while it runs.

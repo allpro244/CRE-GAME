@@ -49,6 +49,57 @@ const framesOf = (f: CityFrame, px: number) => {
   };
 };
 
+// NEIGHBOURHOOD SEAMS, DERIVED. Under the demand and land lenses the whole
+// ground plane becomes one colour ramp, and the districts stop being places —
+// you can see where the city is hot without being able to say it is Harborside.
+// The generator never emits district boundary geometry, but it does not need
+// to: every pavement cell carries its district, and two cells that face each
+// other across a district seam were both cut by the same BSP half-plane, so
+// their seam edges are collinear to within numerical noise. Overlapping
+// collinear edge pairs owned by DIFFERENT districts are exactly the seams.
+// Brute force over the ~1-2k street-length edges runs in under 20ms, once,
+// the first time a lens opens.
+function hoodBoundaries(ctx: GeoJSON.FeatureCollection | null | undefined): GeoJSON.FeatureCollection {
+  const M = 111320; // metres per degree of latitude
+  const cosLat = Math.cos((CITY_CENTER[1] * Math.PI) / 180);
+  type Seg = { ux: number; uy: number; c: number; t0: number; t1: number; d: string };
+  const segs: Seg[] = [];
+  for (const f of ctx?.features ?? []) {
+    if (f.properties?.kind !== "pavement" || f.geometry.type !== "Polygon") continue;
+    const d = String(f.properties?.d ?? "");
+    if (!d) continue;
+    const ring = (f.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][];
+    for (let i = 0; i < ring.length - 1; i++) {
+      const px = ring[i][0] * M * cosLat, py = ring[i][1] * M;
+      const qx = ring[i + 1][0] * M * cosLat, qy = ring[i + 1][1] * M;
+      let ux = qx - px, uy = qy - py;
+      const len = Math.hypot(ux, uy);
+      if (len < 6) continue; // a sliver cannot carry a seam
+      ux /= len; uy /= len;
+      // canonical direction, so the two facing edges land on the same line key
+      if (uy < 0 || (Math.abs(uy) < 1e-9 && ux < 0)) { ux = -ux; uy = -uy; }
+      const ta = ux * px + uy * py, tb = ux * qx + uy * qy;
+      segs.push({ ux, uy, c: -uy * px + ux * py, t0: Math.min(ta, tb), t1: Math.max(ta, tb), d });
+    }
+  }
+  const features: GeoJSON.Feature[] = [];
+  for (let i = 0; i < segs.length; i++) {
+    const a = segs[i];
+    for (let j = i + 1; j < segs.length; j++) {
+      const b = segs[j];
+      if (a.d === b.d) continue;                                  // same neighbourhood
+      if (Math.abs(a.ux * b.uy - a.uy * b.ux) > 0.002) continue;  // not parallel (~0.1 deg)
+      if (Math.abs(a.c - b.c) > 0.9) continue;                    // parallel but a different street
+      const lo = Math.max(a.t0, b.t0), hi = Math.min(a.t1, b.t1);
+      if (hi - lo < 8) continue;                                  // corners touching, not a shared front
+      const pt = (t: number): [number, number] =>
+        [(-a.uy * a.c + a.ux * t) / (M * cosLat), (a.ux * a.c + a.uy * t) / M];
+      features.push({ type: "Feature", geometry: { type: "LineString", coordinates: [pt(lo), pt(hi)] }, properties: {} });
+    }
+  }
+  return { type: "FeatureCollection", features };
+}
+
 export default function MapView() {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -501,6 +552,30 @@ export default function MapView() {
         map.setLayoutProperty("bw-bldg-3d", "visibility", on ? "visible" : "none");
       }
     };
+    // NEIGHBOURHOODS UNDER THE LENSES. The heat map answers "where is it hot"
+    // but not "what is that place called", so while either market lens is up
+    // the district names come up full-strength at every zoom (the CSS side of
+    // the class below) and the seams between districts get a dashed line.
+    // Both go away with the lens — the normal view keeps its clean model look.
+    const hoods = lens === "demand" || lens === "land";
+    map.getContainer().classList.toggle("bw-lens-hoods", hoods);
+    if (hoods && !map.getLayer("bw-hood-line")) {
+      const ctx = useStore.getState().city?.context as GeoJSON.FeatureCollection | null;
+      map.addSource("bw-hoods", { type: "geojson", data: hoodBoundaries(ctx) as never });
+      map.addLayer({
+        id: "bw-hood-line",
+        type: "line",
+        source: "bw-hoods",
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": "#6b6250",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 1.4, 16.5, 3] as never,
+          "line-opacity": 0.5,
+          "line-dasharray": [3, 2.4],
+        },
+      }, map.getLayer("bw-owned-pts") ? "bw-owned-pts" : undefined);
+    }
+    if (map.getLayer("bw-hood-line")) map.setLayoutProperty("bw-hood-line", "visibility", hoods ? "visible" : "none");
     if (lens === "demand" && parcels) {
       ghostBuildings(true);
       map.setPaintProperty("bw-parcel-fill", "fill-color", [

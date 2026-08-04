@@ -152,6 +152,6 @@ export function tickLedger(s: GameState, parcels: ParcelTable) {
     if (lender && rec) add(lender, rec.class, h.loan.balance);
   }
   for (const d of Object.values(s.developments ?? {})) {
-    add(CONSTRUCTION_LENDER, "construction", d.loanBalance);
+    add(d.lender ?? CONSTRUCTION_LENDER, "construction", d.loanBalance);
   }
 }

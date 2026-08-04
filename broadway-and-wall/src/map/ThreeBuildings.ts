@@ -1194,6 +1194,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   propsByBBL = new Map<string, { mesh: THREE.InstancedMesh; i: number }[]>();
   private flattened = new Set<string>();
   private dynGroup = new THREE.Group();
+  // The pivoting jib assemblies of live construction cranes: render() swings
+  // each Group's rotation.z off the shared clock, so the slew costs one
+  // property write per crane per frame, and a dynGroup rebuild clears the
+  // list wholesale alongside the meshes it points into.
+  private cranes: { g: THREE.Group; bear: number; w: number; phase: number }[] = [];
   private shadowTex: THREE.Texture | null = null;
   private water: THREE.Mesh | null = null;
   // dressing for the unbuilt half of the city, collected while the volumes are
@@ -2760,6 +2765,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   // change (a handful of buildings — cheap), sharing the facade materials.
   setPlayerBuildings(items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean }[]) {
     this.dynGroup.clear();
+    this.cranes.length = 0;
     for (const item of items) {
       // FLATTEN FIRST, ALWAYS — and BEFORE the ring lookup, which is the whole
       // bug. Whatever the generator put on this lot comes off the moment the
@@ -2978,7 +2984,6 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const back = jib * 0.34;
         // the trolley runs out along the jib, and the hook hangs off it
         const tro = 0.35 + hash01(k ^ 0xab, this.citySeed) * 0.5;
-        const tx = mx + ca * jib * tro, ty = my + sa * jib * tro;
         const hook = mastH - 4 - hash01(k ^ 0xcd, this.citySeed) * (mastH - h * 0.4 - 6);
         const at = (g: THREE.BufferGeometry, x: number, y: number, z: number) =>
           g.rotateZ(bear).translate(x, y, z);
@@ -2986,16 +2991,36 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           // mast, on a wider foot so it does not look balanced on a pin
           new THREE.Mesh(at(new THREE.CylinderGeometry(0.42, 0.55, mastH, 6).rotateX(Math.PI / 2), mx, my, mastH / 2), orange),
           new THREE.Mesh(at(new THREE.BoxGeometry(3.2, 3.2, 1.0), mx, my, 0.5), grey),
-          // jib forward, counter-jib back, and the counterweight that pays for it
-          new THREE.Mesh(at(new THREE.BoxGeometry(jib, 1.1, 1.3), mx + ca * jib / 2, my + sa * jib / 2, mastH - 1.4), orange),
-          new THREE.Mesh(at(new THREE.BoxGeometry(back, 1.3, 1.5), mx - ca * back / 2, my - sa * back / 2, mastH - 1.4), orange),
-          new THREE.Mesh(at(new THREE.BoxGeometry(3.0, 2.2, 2.0), mx - ca * back, my - sa * back, mastH - 1.6), grey),
-          // operator's cab, at the slewing ring
-          new THREE.Mesh(at(new THREE.BoxGeometry(1.8, 1.8, 1.9), mx + ca * 1.6, my + sa * 1.6, mastH - 3.4), grey),
-          // the hoist line and the hook block — the part that says it is working
-          new THREE.Mesh(at(new THREE.CylinderGeometry(0.09, 0.09, mastH - 1.4 - hook, 4).rotateX(Math.PI / 2), tx, ty, (mastH - 1.4 + hook) / 2), grey),
-          new THREE.Mesh(at(new THREE.BoxGeometry(1.0, 0.8, 1.0), tx, ty, hook), grey),
         );
+        // AND THE CRANE SLEWS. Everything above the slewing ring — jib,
+        // counter-jib, counterweight, cab, hoist line and hook — hangs on one
+        // Group whose local +x is the jib direction, so the whole working
+        // assembly turns with a single rotation.z write. The mast and foot
+        // stay put below it, world-placed by at() like every other prop.
+        // render() drives the angle from the clock; nothing re-randomises.
+        const slew = new THREE.Group();
+        slew.position.set(mx, my, 0);
+        slew.rotation.z = bear;
+        slew.add(
+          // jib forward, counter-jib back, and the counterweight that pays for it
+          new THREE.Mesh(new THREE.BoxGeometry(jib, 1.1, 1.3).translate(jib / 2, 0, mastH - 1.4), orange),
+          new THREE.Mesh(new THREE.BoxGeometry(back, 1.3, 1.5).translate(-back / 2, 0, mastH - 1.4), orange),
+          new THREE.Mesh(new THREE.BoxGeometry(3.0, 2.2, 2.0).translate(-back, 0, mastH - 1.6), grey),
+          // operator's cab, at the slewing ring
+          new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.8, 1.9).translate(1.6, 0, mastH - 3.4), grey),
+          // the hoist line and the hook block — the part that says it is working
+          new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, mastH - 1.4 - hook, 4).rotateX(Math.PI / 2).translate(jib * tro, 0, (mastH - 1.4 + hook) / 2), grey),
+          new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 1.0).translate(jib * tro, 0, hook), grey),
+        );
+        this.dynGroup.add(slew);
+        // One lazy sweep every 22-38 seconds, period and phase hashed off the
+        // deed like everything else about this crane, so two sites never move
+        // in lockstep and a reload finds each crane mid-gesture, not reset.
+        this.cranes.push({
+          g: slew, bear,
+          w: (Math.PI * 2) / (44 + hash01(k ^ 0xe1, this.citySeed) * 32),
+          phase: hash01(k ^ 0xf3, this.citySeed) * Math.PI * 2,
+        });
         // SITE HOARDING. A job with no fence around it is a building that grew.
         for (let i = 0; i < ring.length; i++) {
           const a2 = ring[i], b2 = ring[(i + 1) % ring.length];
@@ -3144,13 +3169,22 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         distM * Math.cos(pitch),
       );
     }
-    // THE ONLY ANIMATED THING IN THE GAME, and it pays its way: ~30fps, and
+    // THE ANIMATED THINGS IN THE GAME — the water, and now the cranes —
+    // share one clock and one budget, and they pay their way: ~30fps, and
     // only while the layer is actually visible. MapLibre repaints on demand,
     // so without this call the city would be a still photograph — and with it
     // uncapped, it would burn a core to redraw water nobody is looking at.
-    if (this.waterMat) {
+    if (this.waterMat || this.cranes.length) {
       const now = performance.now();
       this.timeUni.value = now / 1000;
+      // A crane's slew is its parked bearing plus two slow incommensurate
+      // sines: it sweeps, hesitates, reverses — a driver working a load, not
+      // a turntable. Deterministic in the clock, no per-frame rng, and one
+      // rotation.z write per crane, of which a handful exist at once.
+      for (const c of this.cranes) {
+        c.g.rotation.z = c.bear + 1.1 * Math.sin(this.timeUni.value * c.w + c.phase)
+          + 0.45 * Math.sin(this.timeUni.value * c.w * 2.618 + c.phase * 3.1);
+      }
       if (now - this.lastFrame > 33) {
         this.lastFrame = now;
         this.map.triggerRepaint();

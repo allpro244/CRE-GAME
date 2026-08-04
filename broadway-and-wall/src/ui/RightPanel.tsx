@@ -5,13 +5,13 @@ import { useStore } from "@/state/store";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import type { ParcelTable } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec } from "@/engine/types";
-import type { BuiltClass, Contract, DevUse, GameState } from "@/engine/types";
+import type { BuiltClass, Contract, DevUse, EconHistoryPoint, GameState } from "@/engine/types";
 import {
   assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr,
   occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr, useRentPsfYr,
-  rollQualitySpread, operatingStatement, recoveryOf, noiAfterTaxYr, netWorth, remainingAbatement, landPsfNow,
+  rollQualitySpread, operatingStatement, recoveryOf, noiAfterTaxYr, netWorth, remainingAbatement, landPsfNow, landValue,
 } from "@/engine/value";
-import { planDevelopment, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
+import { planDevelopment, constructionQuotes, devMix, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
 import { buyQuote, assemblagePressure, saleTaxQuote } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { MILESTONES } from "@/engine/sim";
@@ -598,6 +598,10 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
   const select = useStore((s) => s.select);
   const game = useStore((s) => s.game)!;
   const { renovate, approach } = useStore.getState();
+  // Which parcel has a demolition order waiting for a signature. Keyed by BBL
+  // rather than a bare boolean so selecting a different building simply
+  // dismisses the question instead of asking it about the wrong address.
+  const [razeAsk, setRazeAsk] = useState<string | null>(null);
 
   if (!selectedBBL || !parcels) return null;
   const rec = resolveRec(parcels, game, selectedBBL);
@@ -826,6 +830,38 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
 
       {holding && isBuilt && !renovating && <LettingOdds bbl={selectedBBL} />}
 
+      {/* THE MONTHLY STATEMENT. Every income number on this panel was an
+          annual headline, and the arithmetic between the rent and the cheque
+          was nowhere: scheduled rent plus recoveries is revenue, less the
+          expense stack is NOI, less the mortgage is what actually lands in
+          the account each month. Built from the same lines the appraisal
+          runs (operatingStatement), divided by twelve, so this block and the
+          NOI quoted above can never disagree on one building. */}
+      {holding && isBuilt && !renovating && (() => {
+        const os = operatingStatement(rec, game.econ, holding, game.month);
+        const apt = rec.class === "multifamily";
+        const pmt = holding.loan?.monthlyPmt ?? 0;
+        const cfMo = os.noi / 12 - pmt;
+        const mo = (n: number) => usd(Math.round(n / 12));
+        return (
+          <div className="deal">
+            <div className="deal-head">Cash statement · monthly</div>
+            <div className="grid">
+              <Row k={apt ? "Rent collections" : "Scheduled rent"} v={mo(os.baseRent + os.freeRent)} />
+              {os.freeRent > 0 && <Row k="Free rent burning off" v={"−" + mo(os.freeRent)} bad />}
+              {!apt && <Row k="Expense recoveries" v={mo(os.recoveredOpex + os.recoveredTax)} />}
+              <Row k="Revenue" v={mo(os.egi)} strong />
+              <Row k="Operating expenses" v={"−" + mo(os.opex)} />
+              <Row k={apt ? "Reserves for turns and repairs" : "Management fee"} v={"−" + mo(os.mgmt)} />
+              <Row k="Property tax" v={"−" + mo(os.tax)} />
+              <Row k="NOI / mo" v={mo(os.noi)} strong bad={os.noi < 0} />
+              {pmt > 0 && <Row k="Debt service / mo" v={"−" + usd(Math.round(pmt))} />}
+              <Row k="Cash flow / mo" v={usd(Math.round(cfMo))} strong bad={cfMo < 0} />
+            </div>
+          </div>
+        );
+      })()}
+
       {holding?.loan && (
         <div className="deal">
           <div className="deal-head">Debt</div>
@@ -837,13 +873,13 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
             <Row k="Balloon" v={monthLabel(holding.loan.maturityM)} />
             {d !== null && <Row k="DSCR" v={d.toFixed(2) + " (min " + holding.loan.minDSCR.toFixed(2) + ")"} bad={d < holding.loan.minDSCR} />}
             {l !== null && <Row k="LTV" v={(l * 100).toFixed(0) + "% (max " + (holding.loan.maxLTV * 100).toFixed(0) + "%)"} bad={l > holding.loan.maxLTV} />}
-            {holding.loan.cap && <Row k="Rate cap" v={`index ≤ ${holding.loan.cap.strike.toFixed(2)}% until ${monthLabel(holding.loan.cap.expiresM)}`} />}
+            {holding.loan.cap && <Row k="Rate cap" v={`base rate ≤ ${holding.loan.cap.strike.toFixed(2)}% until ${monthLabel(holding.loan.cap.expiresM)}`} />}
           </div>
           <div className="btn-row">
             {(holding.loan.floating ?? holding.loan.product === "float") && !holding.loan.cap && (
               <button
                 className="btn"
-                title={`Index capped at ${(game.econ.indexRate + 0.5).toFixed(2)}% for 3 years`}
+                title={`Base rate capped at ${(game.econ.indexRate + 0.5).toFixed(2)}% for 3 years`}
                 onClick={() => useStore.getState().rateCap(selectedBBL)}
               >
                 Buy rate cap · {usd(rateCapCost(holding.loan))}
@@ -1051,7 +1087,7 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
               <button
                 className="btn btn-sell"
                 title="Clear the site back to dirt so you can rebuild to the full envelope. Needs the building under 20% leased."
-                onClick={() => { if (window.confirm(`Demolish ${rec.address}? The site goes back to vacant land.`)) useStore.getState().raze(selectedBBL); }}
+                onClick={() => setRazeAsk(selectedBBL)}
               >
                 Demolish · {usd(demolitionCost(rec, game))}
               </button>
@@ -1059,6 +1095,46 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
           )}
         </div>
       )}
+
+      {/* The demolition question, asked in the house's own voice. window.confirm
+          painted it as a browser popup captioned "localhost:8080" — and a browser
+          that suppresses dialogs makes confirm() return false silently, which
+          reads as a dead button. This card also says what the click is actually
+          weighing: the wrecking bill against what the cleared dirt is worth. */}
+      {razeAsk === selectedBBL && (() => {
+        const demoCost = demolitionCost(rec, game);
+        const dirt = landValue(rec, game.econ);
+        return (
+          <div className="modal-backdrop">
+            <div className="modal">
+              <div className="modal-kicker">Demolition order</div>
+              <div className="modal-title">{rec.address}</div>
+              <div className="modal-sub">
+                {useLabel(rec)} · {sf(rec.bldgArea)} · {rec.floors} fl · built {rec.yearBuilt}.
+                The site goes back to vacant land — the building, and every lease in it, does not come back.
+              </div>
+              <div className="grid">
+                <Row k="Demolition cost" v={usd(demoCost)} bad={demoCost > game.cash} strong />
+                <Row k="Cleared site is worth" v={usd(dirt)} />
+                {farMax > 0 && <Row k="Buildable envelope" v={`${sf(Math.round(rec.lotArea * farMax))} at ${farMax.toFixed(1)} FAR`} />}
+                <Row k="Cash on hand" v={usd(game.cash)} bad={demoCost > game.cash} />
+              </div>
+              <div className="modal-actions">
+                <button
+                  className="btn btn-sell"
+                  disabled={demoCost > game.cash}
+                  title={demoCost > game.cash ? "The wreckers want cash you don't have." : undefined}
+                  onClick={() => { setRazeAsk(null); useStore.getState().raze(selectedBBL); }}
+                >
+                  Take it down · {usd(demoCost)}
+                </button>
+                <button className="btn" onClick={() => setRazeAsk(null)}>Leave it</button>
+              </div>
+              <div className="modal-queue">Wreckers work fast — the lot is clean dirt the same month.</div>
+            </div>
+          </div>
+        );
+      })()}
 
       {holding && <SaleSection bbl={selectedBBL} value={value} />}
 
@@ -1818,6 +1894,7 @@ function DevelopSection({ bbl }: { bbl: string }) {
   const [floors, setFloors] = useState(8);
   const [contract, setContract] = useState<Contract>("gmp");
   const [ltcWant, setLtcWant] = useState(1);   // share of the lender's max you take
+  const [bank, setBank] = useState<string>(CONSTRUCTION_LENDER);   // who writes the construction loan
   // THE STACK IS YOURS TO CHOOSE. "Mixed-use" was one canonical 15/45/40
   // building, which is a preset rather than a programme — how much retail the
   // frontage carries and whether the middle is offices or flats is the biggest
@@ -1841,7 +1918,7 @@ function DevelopSection({ bbl }: { bbl: string }) {
   const customMix = use === "mixed"
     ? { retail: stack.retail / 100, office: stack.office / 100, multifamily: stack.multifamily / 100 }
     : undefined;
-  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix });
+  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix }, bank);
   // Turn the chosen unit counts into sf-per-space, against the programme that
   // is actually going to be built.
   const suiteChoice: Partial<Record<BuiltClass, number>> = {};
@@ -1853,14 +1930,14 @@ function DevelopSection({ bbl }: { bbl: string }) {
     }
   }
   const plan = planDevelopment(game, parcels, bbl, use, fl, cov, contract,
-    planMax ? planMax.ltcMax * ltcWant : undefined, { mix: customMix, suites: suiteChoice });
+    planMax ? planMax.ltcMax * ltcWant : undefined, { mix: customMix, suites: suiteChoice }, bank);
   // ONE NUMBER, WHEREVER IT IS ASKED FOR. The equity figure on the dials and
   // the equity figure on the groundbreak button are the same decision — what
   // this design costs you in your own money, all in — and two call sites that
   // happen to read the same field are one edit away from disagreeing, which
   // is exactly what this card was accused of. Every equity read below goes
   // through these two: the whole cheque, and whether you can write it.
-  const equityRequired = plan?.equity ?? 0;
+  const equityRequired = (plan?.equity ?? 0) + (plan?.pointsCost ?? 0);   // origination is cash at close, so it belongs on the cheque
   const canFund = equityRequired <= game.cash + locAvailable(game, parcels);
   const USES: DevUse[] = ["office", "multifamily", "mixed", "retail", "industrial"];
   return (
@@ -2014,6 +2091,25 @@ function DevelopSection({ bbl }: { bbl: string }) {
           Cost-plus
         </button>
       </div>
+      {/* THE DESKS. One row of small cards where the facility used to be
+          dictated: the same balance sheets the perm quotes read, quoting
+          construction. A desk that is impaired, in receivership, or past its
+          hold size says so instead of quoting. */}
+      {plan && (
+        <div className="btn-row" style={{ marginTop: 6 }}>
+          {constructionQuotes(game, plan.mix, plan.costTotal).map((q) => (
+            <button
+              key={q.lender}
+              className={"btn" + (plan.lender === q.lender ? " btn-on" : "")}
+              disabled={!q.open}
+              title={q.why ?? lenderBlurb(q.lender)}
+              onClick={() => setBank(q.lender)}
+            >
+              {q.lender.split(" ")[0]} · {q.open ? `${pct(q.ratePct)} · ${Math.round(q.ltcMax * 100)}% LTC · ${(q.points * 100).toFixed(1)} pts` : "not quoting"}
+            </button>
+          ))}
+        </div>
+      )}
       {plan && plan.ltcMax > 0 && (
         <Slider
           label="Construction leverage"
@@ -2042,7 +2138,7 @@ function DevelopSection({ bbl }: { bbl: string }) {
             <Row k="All in" v={`${usd(plan.costTotal)} · $${(plan.costTotal / Math.max(1, plan.sf)).toFixed(0)}/sf`} strong />
             <Row
               k={`Construction loan (${Math.round(plan.ltc * 100)}% of cost)`}
-              v={plan.commitment > 0 ? `${usd(plan.commitment)} @ ${pct(plan.ratePct)}` : "none — nobody will fund it"}
+              v={plan.commitment > 0 ? `${usd(plan.commitment)} @ ${pct(plan.ratePct)} · ${plan.lender} · ${(plan.points * 100).toFixed(1)} pts (${usd(plan.pointsCost)}) at close` : "none — nobody will fund it"}
               bad={plan.commitment === 0 && plan.ltcMax > 0 && ltcWant > 0}
             />
             <Row k="Interest reserve" v={plan.interestReserve > 0 ? `${usd(plan.interestReserve)} — the lender carries it, not you` : "—"} />
@@ -2084,8 +2180,8 @@ function DevelopSection({ bbl }: { bbl: string }) {
           <div className="btn-row">
             <button
               className="btn btn-buy"
-              disabled={plan.equityAtClose > game.cash || !canFund}
-              onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, suites: suiteChoice })}
+              disabled={plan.equityAtClose + plan.pointsCost > game.cash || !canFund}
+              onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, suites: suiteChoice }, plan.lender)}
               title={`${usd(plan.equityAtClose)} leaves your account today and ${usd(plan.equity - plan.equityAtClose)} more is drawn as the building rises.`}
             >
               Break ground · {usd(equityRequired)} of equity required
@@ -2626,7 +2722,7 @@ function LandDesk({ bbl }: { bbl: string }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const adjacency = useStore((s) => s.adjacency);
-  const { assemble, groundLease, applyVariance } = useStore.getState();
+  const { assemble, groundLease, pullGroundOffer, applyVariance } = useStore.getState();
   const [picked, setPicked] = useState<string[]>([]);
   const [years, setYears] = useState(60);
   const h = game.holdings[bbl];
@@ -2769,7 +2865,12 @@ function LandDesk({ bbl }: { bbl: string }) {
       : null;
   }
 
-  const q = vacant ? groundLeaseQuote(game, parcels, bbl, years) : null;
+  // ON OFFER is a state of the lot, like LISTED. The quote is re-run at
+  // today's land value because the offer is an intention, not a price lock —
+  // the panel shows what a lessee arriving THIS month would actually sign.
+  const offer = h.groundOffer;
+  const oq = offer && vacant ? groundLeaseQuote(game, parcels, bbl, offer.years) : null;
+  const q = vacant && !offer ? groundLeaseQuote(game, parcels, bbl, years) : null;
   const cost = mergeCost(game, picked.length + 1);
   const addedArea = picked.reduce((a, b) => a + (parcels[b]?.lotArea ?? 0), 0);
   const farMax = Math.max(rec.farMaxComm, rec.farMaxRes);
@@ -2853,6 +2954,21 @@ function LandDesk({ bbl }: { bbl: string }) {
           )}
         </>
       )}
+      {offer && (
+        <>
+          <div className="page-section" style={{ marginTop: 10 }}>Offered for ground lease</div>
+          <div className="grid">
+            <Row k="On the book since" v={`${monthLabel(offer.sinceM)}${game.month - offer.sinceM > 0 ? ` · ${game.month - offer.sinceM} month${game.month - offer.sinceM === 1 ? "" : "s"} waiting` : ""}`} />
+            <Row k="Terms as of today" v={oq ? `${usd(oq.rentYr)} / yr · ${offer.years} years · +${oq.stepPct}% every ten` : "—"} strong />
+          </div>
+          <div className="hint">
+            Ground lessees are scarce — nobody plans a hospital or a hotel around your corner on your schedule.
+            One turns up when the corner's demand and the building climate say so: months on prime dirt in a
+            building year, years out on the fringe. The deal signs at the terms quoted the month they arrive.
+          </div>
+          <button className="btn" onClick={() => pullGroundOffer(bbl)}>Pull the offer</button>
+        </>
+      )}
       {q && (
         <>
           <div className="page-section" style={{ marginTop: 10 }}>Or ground-lease it</div>
@@ -2872,9 +2988,10 @@ function LandDesk({ bbl }: { bbl: string }) {
           </div>
           <div className="hint">
             No tenants and no operating risk, and you do not build on this corner again for {years} years — including
-            the one cycle where you would have wanted to.
+            the one cycle where you would have wanted to. Offering is a listing, not a closing: the lessee turns up
+            when one wants this corner, and the dirt costs carry while you wait.
           </div>
-          <button className="btn" onClick={() => groundLease(bbl, years)}>Grant a {years}-year ground lease</button>
+          <button className="btn" onClick={() => groundLease(bbl, years)}>Offer a {years}-year ground lease</button>
         </>
       )}
     </div>
@@ -2911,7 +3028,14 @@ function PortfolioPage() {
   const rows = holdings.map((h) => {
     const rec = resolveRec(parcels, game, h.bbl);
     const v = rec ? holdingValue(rec, game.econ, h, game.month) : 0;
-    const noi = rec ? holdingNOIYr(rec, game.econ, h, game.month) : 0;
+    // A LET GROUND LEASE IS A POSITION. The engine wires the ground rent to
+    // cash separately (tickGroundLeases) precisely so the lot itself carries
+    // nothing — and that correctness left the leased fee printing zero income
+    // in this book, indistinguishable from dead dirt and sliced out of the
+    // top-earners view entirely. The coupon belongs on the row: it is the
+    // whole reason the position exists.
+    const glRentYr = game.groundLeases?.[h.bbl]?.rentYr ?? 0;
+    const noi = (rec ? holdingNOIYr(rec, game.econ, h, game.month) : 0) + glRentYr;
     const cf = noi / 12 - (h.loan?.monthlyPmt ?? 0);
     const occ = rec ? physicalOcc(rec as never, h) : 0;
     totV += v; totD += h.loan?.balance ?? 0; totCF += cf;
@@ -3089,6 +3213,8 @@ function PortfolioPage() {
         <tbody>
           {shown.map(({ h, rec, v, noi, cf, occ }, i) => {
             const wk = game.workouts?.[h.bbl];
+            // a crane on your own dirt is a status, not a secret
+            const dv = game.developments[h.bbl];
             return (
             <Fragment key={h.bbl}>
             <tr onClick={() => go(h.bbl)}>
@@ -3173,11 +3299,20 @@ function PortfolioPage() {
                   hunt with a foreclosure at the end of it. */}
               <td className={wk ? "neg" : "dim"}>
                 {[wk ? (wk.stage === "foreclosure" ? "⚠ FORECLOSURE" : wk.stage === "forbearance" ? "⚠ EXTENDED" : "⚠ DEFAULT") : null,
+                  dv ? "UNDER CONSTRUCTION" : null,
                   h.loan?.sweep ? "SWEEP" : null, h.sale ? "LISTED" : null,
                   h.renovatingUntilM !== undefined && game.month < h.renovatingUntilM ? "RENO" : null,
-                  h.program ? "CAPEX" : null].filter(Boolean).join(" · ")}
+                  h.program ? "CAPEX" : null,
+                  game.groundLeases?.[h.bbl] ? "GROUND-LEASED" : h.groundOffer ? "GL OFFERED" : null].filter(Boolean).join(" · ")}
+                {(() => {
+                  const g = game.groundLeases?.[h.bbl];
+                  return g ? <div className="mono" style={{ fontSize: 11 }}>{g.tenant} · reverts {monthLabel(g.endM)}</div> : null;
+                })()}
                 {wk && <div className="mono" style={{ fontSize: 11 }}>
                   {wk.stage === "foreclosure" ? "auction" : "they file"} {monthLabel(wk.decideM)}
+                </div>}
+                {dv && <div className="mono" style={{ fontSize: 11 }}>
+                  {(dv.sf / 1000).toFixed(0)}k sf · delivers {monthLabel(dv.deliverM)}
                 </div>}
               </td>
               <td>
@@ -3789,6 +3924,83 @@ function creditWord(ci: number): string {
 }
 
 /**
+ * THE CITY, SIX CHARTS WIDE — the "general" card's detail view.
+ *
+ * The stat strips print today's numbers; these are the six city series with
+ * their last twenty years attached, one per cell, because the level of a
+ * demand series is nearly meaningless without the path it took to get there.
+ * Wages and output are REAL — already deflated by the price level in the
+ * sixth chart — so a flat real wage across a decade of inflation is a city
+ * treading water, not one getting richer.
+ */
+function CityEconCharts({ tail }: { tail: EconHistoryPoint[] }) {
+  if (tail.length < 2) return <div className="hint">Not enough history yet — advance a few quarters.</div>;
+  const x: [string, string] = [monthLabel(tail[0].q), monthLabel(tail[tail.length - 1].q)];
+  const kFmt = (v: number) => `${v.toFixed(0)}k`;
+  const idxFmt = (v: number) => v.toFixed(2);
+  return (
+    <>
+      <div className="page-section">The city — the last twenty years</div>
+      <div className="hint">
+        The demand behind every lease in the four markets above. Rents are downstream of jobs, and jobs are
+        downstream of whether anybody wants to be here — none of these series reads as a level without the
+        path it took.
+      </div>
+      <div className="chart-grid">
+        <div className="chart-cell">
+          <div className="chart-title">Population</div>
+          <LineChart height={108} series={[{ label: "population", color: "#7a5c1e", pts: tail.map((h) => (h.population ?? 0) / 1000) }]} yFmt={kFmt} xLabels={x} />
+          <div className="chart-note">
+            Souls in the city. It follows jobs slowly, because people move for work and move back reluctantly —
+            a downturn shows here a year after it shows in the chart to the right.
+          </div>
+        </div>
+        <div className="chart-cell">
+          <div className="chart-title">Jobs</div>
+          <LineChart height={108} series={[{ label: "jobs", color: "#2f6f7a", pts: tail.map((h) => (h.jobs ?? 0) / 1000) }]} yFmt={kFmt} xLabels={x} />
+          <div className="chart-note">
+            Filled positions — the line every lease is downstream of. Occupancy chases the space these jobs
+            want, with a lag, which is why rents turn before employment does.
+          </div>
+        </div>
+        <div className="chart-cell">
+          <div className="chart-title">Unemployment</div>
+          <LineChart height={108} series={[{ label: "unemployment", color: "#a8402e", pts: tail.map((h) => (h.unemployment ?? 0) * 100) }]} yFmt={(v) => `${v.toFixed(1)}%`} xLabels={x} />
+          <div className="chart-note">
+            Of the labour force. The LAST thing to turn in a downturn — by the time this reads badly the rents
+            already have, and by the time it recovers the cheap buildings are gone.
+          </div>
+        </div>
+        <div className="chart-cell">
+          <div className="chart-title">Real wage — index, 1.00 = year 2000</div>
+          <LineChart height={108} series={[{ label: "real wage", color: "#3a7d46", pts: tail.map((h) => h.wageIdx ?? 1) }]} yFmt={idxFmt} xLabels={x} />
+          <div className="chart-note">
+            What a paycheque buys, not what it says — inflation is already taken out. Wages follow jobs with a
+            lag plus a slow productivity drift; retail and apartment rents lean on this line hardest.
+          </div>
+        </div>
+        <div className="chart-cell">
+          <div className="chart-title">Real output — index, 1.00 = year 2000</div>
+          <LineChart height={108} series={[{ label: "real output", color: "#3d6f9e", pts: tail.map((h) => h.outputIdx ?? 1) }]} yFmt={idxFmt} xLabels={x} />
+          <div className="chart-note">
+            Jobs times productivity, in real terms — the city's whole product on one line. When it grows faster
+            than the standing stock of space, somebody has to build; when it does not, somebody already did.
+          </div>
+        </div>
+        <div className="chart-cell">
+          <div className="chart-title">Price level — nominal, 1.00 = year 2000</div>
+          <LineChart height={108} series={[{ label: "price level", color: "#8a5620", pts: tail.map((h) => h.cpi ?? 1) }]} yFmt={idxFmt} xLabels={x} />
+          <div className="chart-note">
+            Cumulative inflation — the one NOMINAL series here, and the deflator behind the two real ones.
+            Every dollar elsewhere on this page is quoted in the money this chart is quietly shrinking.
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/**
  * THE ECONOMY, WHOLE.
  *
  * Everything outside your buildings, on one page, arranged the way a market
@@ -3810,7 +4022,15 @@ function EconomyPage() {
   const bbls = useStore((s) => s.bbls);
   const e = game.econ;
   const hist = e.history ?? [];
-  const [focus, setFocus] = useState<BuiltClass>("office");
+  // A fifth stance joins the four classes: "general" swaps the class detail
+  // for the city itself — the six series every rent in the game is downstream
+  // of. It lands first because the class cards only make sense against it.
+  const [sel, setSel] = useState<BuiltClass | "general">("general");
+  // Every per-class computation below still wants a concrete class, and the
+  // cheapest way to keep "general" from breaking marketBalance(e, focus) and
+  // its neighbours is to let them run against office while the general grid
+  // is up — nothing they produce is rendered then.
+  const focus: BuiltClass = sel === "general" ? "office" : sel;
   const CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
   const COLOR: Record<BuiltClass, string> = {
     office: "#3d6f9e", retail: "#a8562e", multifamily: "#4a7d5a", industrial: "#7a6a45",
@@ -3823,6 +4043,40 @@ function EconomyPage() {
   const sched = deliverySchedule(e, game.month, 4)[focus];
   const proj = projectVacancy(e, focus, game.month, 36);
   const subs = submarkets(game, parcels, bbls);
+  // The map's fly-to action, under a name that does not collide with the
+  // class this page is focused on.
+  const flyTo = useStore((s) => s.focus);
+
+  // THE JOBS BEHIND THE PIPELINE. The cohort queue the delivery chart reads
+  // is fed from the city's and the rivals' construction sites — s.cityJobs,
+  // pushed the month the hole is dug — so walking that same list names the
+  // buildings, and the rows reconcile to the cohort sf due in the window
+  // exactly. Your own developments never enter the queue (they land as stock
+  // on delivery), but they are coming supply all the same, so they belong
+  // here too. A mixed-use job contributes only its share of the focused
+  // class; an orphaned frame stays listed — its space is still in the queue —
+  // flagged as stalled.
+  const pipeJobs = (() => {
+    const rows: { bbl: string; who: string; sf: number; floors: number; deliverM: number; stalled?: boolean; mixed?: boolean }[] = [];
+    for (const j of game.cityJobs ?? []) {
+      if (j.deliverM - game.month >= 24) continue;
+      const csf = Math.round(j.sf * (devMix(j.use as DevUse)[focus] ?? 0));
+      if (csf <= 0) continue;
+      rows.push({
+        bbl: j.bbl,
+        who: j.firmId ? (game.rivals.find((r) => r.id === j.firmId)?.name ?? "A rival") : "The city",
+        sf: csf, floors: j.floors, deliverM: j.deliverM, stalled: j.orphaned, mixed: j.use === "mixed",
+      });
+    }
+    for (const d of Object.values(game.developments)) {
+      if (d.deliverM - game.month >= 24) continue;
+      const csf = Math.round(d.sf * (d.mix[focus] ?? 0));
+      if (csf <= 0) continue;
+      rows.push({ bbl: d.bbl, who: "You", sf: csf, floors: d.floors, deliverM: d.deliverM, mixed: d.use === "mixed" });
+    }
+    return rows.sort((a, b) => b.sf - a.sf);
+  })();
+  const pipeJobsSf = pipeJobs.reduce((a, r) => a + r.sf, 0);
 
   // history, monthly, trimmed to the last twenty years
   const tail = hist.slice(-240);
@@ -3876,13 +4130,15 @@ function EconomyPage() {
     <div>
       <div className="stat-strip">
         <Big label="Cycle" value={e.phase} />
-        <Big label="Loan index" value={pct(e.indexRate)} />
+        <Big label="Base rate" value={pct(e.indexRate)}
+          title="Every loan in town prices off this benchmark: your floating coupons reprice to it monthly, a new quote is this rate plus the lender's spread, and cap rates lean on it — so it moves building values too." />
         {/* The era the index is moving inside. A cycle takes rates a point or
             two either way; the era decides whether that is 3% or 13%, and it
             changes on a scale of decades — which is what makes a loan you
             struck twenty years ago a different animal at maturity. */}
         {e.rateRegime !== undefined && (
-          <Big label="Rate era" value={pct(e.rateRegime)}
+          <Big label="Long-run rate" value={pct(e.rateRegime)}
+            title="The level the base rate is being pulled toward — the cheap-money or dear-money era the cycle rides on top of. It re-aims every 12–25 years, which is why a loan struck today can mature in a very different rate world."
             bad={e.rateRegime > 9} />
         )}
         <Big label="Credit window" value={`${Math.round(e.creditIdx * 100)}%`} bad={e.creditIdx < 0.7} />
@@ -3895,6 +4151,22 @@ function EconomyPage() {
       {/* ---- the four markets, at a glance ---- */}
       <div className="page-section">The space market</div>
       <div className="mkt-cards">
+        {/* The pseudo-card. No gauge, because the city has no natural rate to
+            sit against — its numbers are the level everything else is read
+            off. Clicking it swaps the class detail below for six city charts. */}
+        <button
+          className={"mkt-card" + (sel === "general" ? " mkt-card-on" : "")}
+          onClick={() => setSel("general")}
+        >
+          <div className="mkt-card-head">
+            <span className="mkt-card-name">The city</span>
+            <span className="mono">{((e.population ?? 0) / 1000).toFixed(0)}k</span>
+          </div>
+          <div className="mkt-card-state">the demand under all four</div>
+          <div className="mkt-card-sub mono">
+            {((e.jobs ?? 0) / 1000).toFixed(0)}k jobs · {((e.unemployment ?? 0) * 100).toFixed(1)}% out of work
+          </div>
+        </button>
         {CLASSES.map((k) => {
           const b = marketBalance(e, k);
           const v = e.cityVac?.[k] ?? NATURAL_VAC[k];
@@ -3908,8 +4180,8 @@ function EconomyPage() {
           return (
             <button
               key={k}
-              className={"mkt-card" + (focus === k ? " mkt-card-on" : "")}
-              onClick={() => setFocus(k)}
+              className={"mkt-card" + (sel === k ? " mkt-card-on" : "")}
+              onClick={() => setSel(k)}
             >
               <div className="mkt-card-head">
                 <span className="mkt-card-name">{SECTOR_LABEL[k]}</span>
@@ -3934,7 +4206,9 @@ function EconomyPage() {
         })}
       </div>
 
-      {/* ---- the focused class, in depth ---- */}
+      {/* ---- the general view: the city's six series, or one class in depth ---- */}
+      {sel === "general" && <CityEconCharts tail={tail} />}
+      {sel !== "general" && <>
       <div className="page-section">{SECTOR_LABEL[focus]} — {bal.state}</div>
       <div className="hint">{bal.note}</div>
       <div className="grid" style={{ marginTop: 6 }}>
@@ -3994,6 +4268,30 @@ function EconomyPage() {
             Square feet already under construction, by the year they deliver. Nothing here can be cancelled — the
             decision to start was taken in a market that no longer exists.
           </div>
+          {/* THE CRANES BEHIND THE BARS. "400k sf is coming" is a different
+              fact when one tower is most of it than when twenty infills are —
+              one delivery date to watch against twenty you can ignore. These
+              are the largest jobs feeding the bars, named: the city's, the
+              rivals', and yours. Click one and the map takes you there. */}
+          {pipeJobs.length > 0 && (
+            <>
+              <div className="hint" style={{ marginTop: 8 }}>
+                {pipeJobs.length} building{pipeJobs.length === 1 ? "" : "s"} · {sfFmt(pipeJobsSf)} sf of{" "}
+                {SECTOR_LABEL[focus].toLowerCase()} due within 24 months
+              </div>
+              <div className="mini-list">
+                {pipeJobs.slice(0, 5).map((j) => (
+                  <button key={j.bbl} className="neighbor" onClick={() => flyTo(j.bbl, true)}>
+                    <span className="neighbor-addr">{j.stalled ? "⚠ " : ""}{parcels[j.bbl]?.address ?? j.bbl}</span>
+                    <span className="neighbor-meta mono">
+                      {j.who} · {sfFmt(j.sf)} sf{j.mixed ? " of a mixed job" : ""} · {j.floors} fl ·{" "}
+                      {j.stalled ? "stalled — the sponsor is gone" : `due ${monthLabel(j.deliverM)}`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
         <div className="chart-cell">
           <div className="chart-title">Absorption vs completions, per year</div>
@@ -4017,6 +4315,47 @@ function EconomyPage() {
             work — the gap between the two lines is the concessions market saying what asking will not admit.
             Cap rate below: what the market pays for the earning. None of the three move together, and the gaps
             are most of what makes or loses money here.
+          </div>
+        </div>
+        <div className="chart-cell">
+          <div className="chart-title">Demand met vs supply built, and the concession gap</div>
+          {(() => {
+            // The annual bars in the cell to the left show the FLOWS; this
+            // pair shows the stocks. Running totals of the same abs/comp
+            // series — when the delivered line pulls away from the absorbed
+            // line, the widening wedge between them is the vacancy the market
+            // has to eat, and you can see which blade of the scissors cut.
+            let a = 0, c = 0;
+            const absCum: number[] = [], compCum: number[] = [];
+            for (const h of tail) {
+              a += h.abs?.[focus] ?? 0; c += h.comp?.[focus] ?? 0;
+              absCum.push(a); compCum.push(c);
+            }
+            // The effective-vs-asking gap as ONE line, in per cent off asking.
+            // The cell above charts the same pair, but the gap is the signal
+            // and reading it off the distance between two lines hides its shape.
+            const gap = tail.map((h) => {
+              const ask = h.rent?.[focus] ?? 0;
+              return ask > 0 ? Math.max(0, 1 - (h.effRent?.[focus] ?? ask) / ask) * 100 : 0;
+            });
+            const xl: [string, string] = [
+              `${2000 + Math.max(0, Math.floor((game.month - tail.length) / 12))}`,
+              `${2000 + Math.floor(game.month / 12)}`,
+            ];
+            return (<>
+              <LineChart height={92} series={[
+                { label: "absorbed", color: "#4a7d5a", pts: absCum },
+                { label: "delivered", color: "#a8562e", pts: compCum, dashed: true },
+              ]} yFmt={sfFmt} zeroBase xLabels={xl} />
+              <LineChart height={92} series={[{ label: "concession gap", color: "#7d8a96", pts: gap }]}
+                yFmt={pctFmt} zeroBase xLabels={xl} />
+            </>);
+          })()}
+          <div className="chart-note">
+            Top: every foot tenants have taken (solid) against every foot delivered (dashed), summed over
+            twenty years — the wedge between the lines is the structural over- or under-build. Below: deals
+            striking under asking, in per cent. That gap widens quarters before face rents give, which makes
+            it the earliest honest signal on this page.
           </div>
         </div>
       </div>
@@ -4060,6 +4399,7 @@ function EconomyPage() {
           })}
         </tbody>
       </table>
+      </>}
 
       <div className="page-section">How this works</div>
       <div className="hint">
@@ -4114,15 +4454,34 @@ function BuildingDatabase() {
   const [q, setQ] = useState("");
   const rows = useMemo(() => {
     const out: { bbl: string; addr: string; cls: string; sf: number; fl: number; yr: number;
-                 owner: string; occ: number; dmd: number; val: number; psf: number }[] = [];
+                 owner: string; occ: number; rent: number; noi: number; dmd: number; val: number; psf: number }[] = [];
     for (const bbl in parcels) {
       const rec = resolveRec(parcels, game, bbl);
       if (!rec || rec.class === "land" || !rec.bldgArea) continue;
-      const own = game.holdings[bbl] ? "You" : (ownerOf(game, bbl)?.name ?? "private");
-      const val = assetValue(rec, game.econ, gradeOf(game, rec));
+      const h = game.holdings[bbl];
+      const own = h ? "You" : (ownerOf(game, bbl)?.name ?? "private");
+      // Your own buildings price on the condition you have actually let them
+      // drift to; everyone else's on the street's grade, as before.
+      const cond = h?.condition ?? gradeOf(game, rec);
+      const val = assetValue(rec, game.econ, cond);
+      // In-place rent where a roll exists — your own commercial leases,
+      // weighted by the square feet each one covers — and the market's
+      // estimate for the rest of town, which is the same model the engine
+      // signs leases at. A mixed-use roll reads its commercial paper only;
+      // the flats have no individual leases to read.
+      const rollSf = h ? h.tenants.reduce((a, t) => a + t.sf, 0) : 0;
+      const rent = h && rollSf > 0
+        ? h.tenants.reduce((a, t) => a + t.rentPsf * t.sf, 0) / rollSf
+        : marketRentPsfYr(rec, game.econ, cond);
+      // NOI from the actual roll on owned buildings; for everyone else's the
+      // market model, net of the tax bill a buyer would carry at this value —
+      // the same number the tape and the deal card quote.
+      const noi = h ? holdingNOIYr(rec, game.econ, h, game.month) : noiAfterTaxYr(rec, game.econ, cond, val);
       out.push({
         bbl, addr: rec.address, cls: rec.class, sf: rec.bldgArea, fl: rec.floors,
-        yr: rec.yearBuilt, owner: own, occ: occupancy(rec, game.econ),
+        yr: rec.yearBuilt, owner: own,
+        occ: h ? physicalOcc(rec as never, h) : occupancy(rec, game.econ),
+        rent, noi,
         dmd: Math.round(rec.demandScore + (game.blockD?.[rec.block] ?? 0)),
         val, psf: val / Math.max(1, rec.bldgArea),
       });
@@ -4171,6 +4530,8 @@ function BuildingDatabase() {
             <H k="fl" label="Fl" num />
             <H k="yr" label="Built" num />
             <H k="occ" label="Occ" num />
+            <H k="rent" label="Rent $/sf" num />
+            <H k="noi" label="NOI / yr" num />
             <H k="dmd" label="Demand" num />
             <H k="val" label="Value" num />
             <H k="psf" label="$/sf" num />
@@ -4186,6 +4547,8 @@ function BuildingDatabase() {
               <td className="num">{r.fl}</td>
               <td className="num">{r.yr || "—"}</td>
               <td className="num">{(r.occ * 100).toFixed(0)}%</td>
+              <td className="num">${r.rent.toFixed(0)}</td>
+              <td className={"num" + (r.noi < 0 ? " neg" : "")}>{usd(r.noi)}</td>
               <td className="num">{r.dmd}</td>
               <td className="num">{usd(r.val)}</td>
               <td className="num">${r.psf.toFixed(0)}</td>
@@ -4487,7 +4850,8 @@ function ResearchPage() {
   return (
     <div>
       <div className="stat-strip">
-        <Big label="Loan index" value={pct(e.indexRate)} />
+        <Big label="Base rate" value={pct(e.indexRate)}
+          title="Every loan in town prices off this benchmark: floating coupons reprice to it monthly, and new quotes are struck at this rate plus the lender's spread." />
         <Big label="Phase" value={e.phase + (e.rumoredPhase ? " ⚠" : "")} />
         <Big label="Cap · office" value={pct(e.capRate.office)} />
         <Big label="Cap · multifam" value={pct(e.capRate.multifamily)} />
@@ -4721,9 +5085,11 @@ function bankStatement(game: GameState, parcels: ParcelTable, lenderName: string
       status: x.status, bad: x.status !== "current",
     });
   }
-  if (lenderName === CONSTRUCTION_LENDER) {
+  {
+    // Construction paper sits with whichever desk the developer picked at
+    // groundbreak; older jobs and takeovers fall back to the regional.
     for (const d of Object.values(game.developments ?? {})) {
-      if (d.loanBalance <= 0) continue;
+      if ((d.lender ?? CONSTRUCTION_LENDER) !== lenderName || d.loanBalance <= 0) continue;
       const rec = resolveRec(parcels, game, d.bbl);
       rows.push({
         bbl: d.bbl, borrower: firmShort(game), yours: true, dev: true,
@@ -4917,6 +5283,46 @@ function TheBanks() {
         {" "}<b>Click a bank to open its statement</b> — every loan on that desk, yours and the street's,
         property by property, with the funding margin and the capital history behind it.
       </div>
+      {/* EVERY DESK ON ONE AXIS. The sparkline inside a statement answers
+          "how is this desk"; opened one at a time it cannot answer "WHICH
+          desk", which is the question refinancing actually asks. Each line is
+          capital ratio over the desk's OWN target — the kinds run wildly
+          different books (a conduit holds 4%, an insurer 18%), so the raw
+          ratios share no scale but the multiples do. 1.0× is managed to plan;
+          the examiners' patience runs out around 0.22× of target. */}
+      {(() => {
+        const withHist = lenders.filter((l) => (l.capHist?.length ?? 0) > 1);
+        if (withHist.length < 2) return null;
+        const C = ["#3d6f9e", "#a8562e", "#4a7d5a", "#7a6a45", "#8a5620", "#2f6f7a"];
+        // capHist is sampled in lockstep, but a desk refounded by a receiver
+        // starts its history short — right-align on the shortest so every
+        // point in a vertical slice is the same quarter.
+        const m = Math.min(...withHist.map((l) => l.capHist!.length));
+        return (
+          <>
+            <LineChart height={140}
+              series={withHist.map((l, i) => ({
+                label: l.name, color: C[i % C.length],
+                pts: l.capHist!.slice(-m).map((v) => v / targetCapital(l.name)),
+              }))}
+              bands={[{ at: 1, label: "own target", color: "#8b8370" }, { at: 0.22, label: "seized" }]}
+              yFmt={(v) => `${v.toFixed(1)}×`}
+              xLabels={[`${Math.round(m / 4)} yrs ago`, "now"]}
+            />
+            <div className="hint">
+              {withHist.map((l, i) => (
+                <span key={l.id} style={{ marginRight: 14, whiteSpace: "nowrap" }}>
+                  <span style={{ display: "inline-block", width: 12, height: 3, background: C[i % C.length], verticalAlign: "middle", marginRight: 5 }} />
+                  {l.name}
+                </span>
+              ))}
+              — quarterly, as a multiple of each desk's own capital target. A line walking down toward the
+              seizure band is the most readable warning in the game: refinance away from that desk while it
+              still quotes.
+            </div>
+          </>
+        );
+      })()}
       <table className="tbl">
         <thead>
           <tr>
@@ -5199,6 +5605,39 @@ function CompsSheet() {
           })}
         </tbody>
       </table>
+
+      {/* THE TAPE'S YARDSTICK. The table above says where the median print
+          cleared; this says where the market's own asking yields have been for
+          twenty years, class by class — a print is only rich or cheap AGAINST
+          this line, and until now holding the line in your head meant flipping
+          back to the Economy page between rows. */}
+      {(() => {
+        const hist = (game.econ.history ?? []).slice(-240);
+        if (hist.length < 2) return null;
+        const KL = ["office", "retail", "multifamily", "industrial"] as const;
+        const C: Record<(typeof KL)[number], string> = { office: "#3d6f9e", retail: "#a8562e", multifamily: "#4a7d5a", industrial: "#7a6a45" };
+        return (
+          <>
+            <div className="page-section" style={{ marginTop: 14 }}>Cap rates — twenty years, by class</div>
+            <LineChart height={132}
+              series={KL.map((k) => ({ label: CLASS_LABEL[k], color: C[k], pts: hist.map((h) => h.cap?.[k] ?? game.econ.capRate[k]) }))}
+              yFmt={(v) => `${v.toFixed(1)}%`}
+              xLabels={[monthLabel(hist[0].q), monthLabel(hist[hist.length - 1].q)]}
+            />
+            <div className="hint">
+              {KL.map((k) => (
+                <span key={k} style={{ marginRight: 14, whiteSpace: "nowrap" }}>
+                  <span style={{ display: "inline-block", width: 12, height: 3, background: C[k], verticalAlign: "middle", marginRight: 5 }} />
+                  {CLASS_LABEL[k]}
+                </span>
+              ))}
+              — a print well above its line bought a problem or a bargain; below it, somebody paid up. When a
+              whole line drifts down, the market is repricing and your own book is worth more than the tape
+              says yet.
+            </div>
+          </>
+        );
+      })()}
 
       {/* WHO IS DOING WHAT. A shop that has bought nine buildings in eighteen
           months is levering into the top, and you can watch them do it. */}
@@ -5633,6 +6072,9 @@ function SaveSlots() {
   const slots = useStore((s) => s.slots);
   const { saveTo, loadFrom, dropSave, refreshSlots } = useStore.getState();
   const [name, setName] = useState("");
+  // The named save with a deletion pending — window.confirm here had the same
+  // browser-chrome problem as demolition, and the same silent-false failure.
+  const [killSlot, setKillSlot] = useState<string | null>(null);
   useEffect(() => { void refreshSlots(); }, [refreshSlots]);
   return (
     <div className="page-section">
@@ -5659,11 +6101,31 @@ function SaveSlots() {
             </div>
             <div className="btn-row" style={{ margin: 0 }}>
               <button className="btn btn-buy" onClick={() => void loadFrom(m.slot)}>Load</button>
-              <button className="btn btn-sell" onClick={() => { if (window.confirm(`Delete “${m.slot}”?`)) void dropSave(m.slot); }}>Delete</button>
+              <button className="btn btn-sell" onClick={() => setKillSlot(m.slot)}>Delete</button>
             </div>
           </div>
         ))}
         {!slots.length && <div className="hint">No named saves yet.</div>}
+        {(() => {
+          const doomed = killSlot === null ? undefined : slots.find((s2) => s2.slot === killSlot);
+          if (!doomed) return null;
+          return (
+            <div className="modal-backdrop">
+              <div className="modal">
+                <div className="modal-kicker">Delete a saved game</div>
+                <div className="modal-title">{doomed.slot}</div>
+                <div className="modal-sub">
+                  {monthLabel(doomed.month)} · {usd(doomed.cash)} cash · saved {new Date(doomed.savedAt).toLocaleDateString()}.
+                  Gone is gone — there is no bin to fish it back out of.
+                </div>
+                <div className="modal-actions">
+                  <button className="btn btn-sell" onClick={() => { setKillSlot(null); void dropSave(doomed.slot); }}>Delete it</button>
+                  <button className="btn" onClick={() => setKillSlot(null)}>Keep it</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
@@ -6093,9 +6555,9 @@ function IncomeStatement() {
   );
 }
 
-function Big({ label, value, bad }: { label: string; value: string; bad?: boolean }) {
+function Big({ label, value, bad, title }: { label: string; value: string; bad?: boolean; title?: string }) {
   return (
-    <div className="big-stat">
+    <div className="big-stat" title={title}>
       <div className="big-label">{label}</div>
       <div className={"big-value mono" + (bad ? " v-bad" : "")}>{value}</div>
     </div>

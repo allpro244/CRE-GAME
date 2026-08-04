@@ -98,7 +98,12 @@ export default function TopBar() {
           <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} />
           <Stat label="Net worth" value={usd(nw)} drop={2} />
           <Stat label="CF / mo" value={usd(cf)} bad={cf < 0} drop={2} />
-          <Stat label="Index" value={pct(game.econ.indexRate)} drop={3} />
+          <Stat
+            label="Base rate"
+            value={pct(game.econ.indexRate)}
+            drop={3}
+            title="The benchmark every loan in town prices off. Your floating loans reprice to it monthly (through the cap strike, if you bought one), and any new quote — mortgage, construction loan, credit line — is this rate plus the lender's spread."
+          />
           {(game.loc?.balance ?? 0) > 0 && <Stat label="Line drawn" value={usd(game.loc.balance)} bad />}
           <Stat label="Market" value={game.econ.phase} drop={3} />
           <Stat

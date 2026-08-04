@@ -787,6 +787,28 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
  * building in year twelve of an inflation run it is the whole margin.
  */
 export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, month: number) {
+  // Apartments never ran this statement honestly: the machinery below walks a
+  // rent roll, and a residential building does not keep one — its roll is an
+  // occupancy (see holdingNOIYr), every lease is gross, and nothing is ever
+  // recovered. So the statement is assembled from the same lines that
+  // function nets — collections, the flat opex load, the 7% reserve for turns
+  // and roofs, the full tax bill — and the two can never quote different NOIs
+  // for one building.
+  if (rec.class === "multifamily") {
+    const occ = h.occ ?? occupancy(rec, econ);
+    const egi = rec.bldgArea * marketRentPsfYr(rec, econ, h.condition) * occ;
+    const opexBill = rec.bldgArea * OPEX_PSF.multifamily * serviceSpec(h.service).opex * econ.costIdx;
+    const taxBill = grossTaxYr(rec, h);
+    return {
+      baseRent: egi, freeRent: 0, recoveredOpex: 0, recoveredTax: 0, egi,
+      opex: opexBill, mgmt: egi * 0.07, tax: taxBill,
+      noi: egi * 0.93 - opexBill - taxBill,
+      leasedSf: Math.round(rec.bldgArea * occ), vacantSf: Math.round(rec.bldgArea * (1 - occ)),
+      // gross leases bill nothing back; the whole expense stack is the owner's
+      leakage: opexBill + taxBill > 0 ? 1 : 0,
+      opexPsf: opexBill / Math.max(1, rec.bldgArea), taxPsf: taxBill / Math.max(1, rec.bldgArea),
+    };
+  }
   const cls = rec.class as BuiltClass;
   const systemsDone = h.programsDone?.systems !== undefined;
   const opexNowPsf = opexPsf(cls, econ, systemsDone, h.service);

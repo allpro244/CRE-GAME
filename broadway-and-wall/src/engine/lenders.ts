@@ -389,14 +389,15 @@ function recountYours(s: GameState) {
   const by: Record<string, number> = {};
   for (const h of Object.values(s.holdings)) {
     if (!h.loan) continue;
-    const lender = PRODUCTS.find((p) => p.id === h.loan!.product)?.lender;
+    const lender = h.loan.holder ?? PRODUCTS.find((p) => p.id === h.loan!.product)?.lender;
     if (lender) by[lender] = (by[lender] ?? 0) + h.loan.balance;
   }
   // Construction paper has never carried a product id, but somebody writes it,
   // and in every city this size it is the regional bank — which is precisely
   // why regionals are the ones that die in a development bust.
   for (const d of Object.values(s.developments ?? {})) {
-    by[CONSTRUCTION_LENDER] = (by[CONSTRUCTION_LENDER] ?? 0) + d.loanBalance;
+    const name = d.lender ?? CONSTRUCTION_LENDER;
+    by[name] = (by[name] ?? 0) + d.loanBalance;
   }
   for (const l of s.lenders ?? []) l.yours = Math.round(by[l.name] ?? 0);
 }

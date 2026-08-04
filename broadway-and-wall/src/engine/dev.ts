@@ -10,7 +10,7 @@ import type { BuiltClass, Contract, DevUse, Development, GameState, UseMix } fro
 import { BUILT_CLASSES } from "./types";
 import { logBooks, monthLabel, serviceSpec, planSpec } from "./types";
 import { demandNow } from "./demand";
-import { rng, rrange, addStock, NATURAL_VAC, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL } from "./market";
+import { rng, rrange, NATURAL_VAC, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL } from "./market";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
@@ -21,7 +21,8 @@ import { genAnchorTenant } from "./leasing";
 import { claimJob, jobDelivered, ownerOf } from "./rivals";
 import { locAvailable } from "./credit";
 import { useSf } from "./mix";
-import { lenderAppetite, CONSTRUCTION_LENDER } from "./lenders";
+import { lenderAppetite, lenderByName, CONSTRUCTION_LENDER } from "./lenders";
+import { lenderRelOf, bumpLenderRel } from "./debt";
 
 const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
 
@@ -168,6 +169,66 @@ function constructionLtc(mix: UseMix, phase: string, creditIdx: number, appetite
 }
 
 /**
+ * THE CONSTRUCTION DESKS.
+ *
+ * Alden wrote every construction loan in this town by fiat, which made the
+ * most dangerous paper in banking the one loan you could not shop. Three desks
+ * quote it now, priced off the same balance sheets everything else reads: the
+ * hometown bank writes small jobs cheaply for names it knows and stops at its
+ * hold size, the regional remains the volume desk, and the debt fund will
+ * finance a hole in the ground in any market — at fund prices, which is the
+ * whole business model. Personality is not invented here: appetite comes off
+ * each desk's capital, the relationship discount off the same file the perm
+ * quotes read, and a desk in receivership quotes nothing at all.
+ */
+export interface ConstructionQuote {
+  lender: string;
+  ratePct: number;
+  ltcMax: number;
+  points: number;   // origination, as a share of the commitment — cash at close
+  open: boolean;
+  why?: string;
+}
+
+const CONSTRUCTION_DESKS: { name: string; spread: number; points: number; scale: number; cap: number; maxCommit?: number; fund?: boolean }[] = [
+  // Small, cheap, and they remember you: the hometown bank's hold stops at
+  // $9M, so on anything bigger it funds its piece and no more.
+  { name: "First Harbor Bank", spread: 2.15, points: 0.008, scale: 0.92, cap: 0.65, maxCommit: 9_000_000 },
+  // The regional — the historical monopoly desk, and still the volume quote.
+  { name: CONSTRUCTION_LENDER, spread: CONSTR_SPREAD, points: 0.010, scale: 1, cap: 0.70 },
+  // Committed capital and no depositors: they quote through the cycle, and the
+  // coupon is why nobody borrows from them twice unless they have to.
+  { name: "Cordage Debt Partners", spread: 4.00, points: 0.020, scale: 1.05, cap: 0.75, fund: true },
+];
+
+export function constructionQuotes(s: GameState, mix: UseMix, costTotal: number): ConstructionQuote[] {
+  const e = s.econ;
+  const tight = Math.max(0, 1 - (e.creditIdx ?? 1));
+  return CONSTRUCTION_DESKS.map((d) => {
+    const app = lenderAppetite(s, d.name);
+    const bank = lenderByName(s, d.name);
+    // The fund prices the cycle instead of leaving it: its advance rate reads
+    // through a recession the way its perm sheet does, at its coupon.
+    const base = d.fund
+      ? constructionLtc(mix, "expansion", Math.max(0.85, e.creditIdx ?? 1), Math.max(0.5, app))
+      : constructionLtc(mix, e.phase, e.creditIdx ?? 1, app);
+    const uncapped = Math.min(d.cap, base * d.scale);
+    // The 1.1 approximates the interest-reserve gross-up, so the solved
+    // commitment lands at the hold size rather than a tenth over it.
+    const ltcMax = d.maxCommit && costTotal > 0 ? Math.min(uncapped, d.maxCommit / (costTotal * 1.1)) : uncapped;
+    const rel = d.fund ? 0 : Math.min(0.4, Math.max(0, (lenderRelOf(s, d.name) - 20) * 0.005));
+    const ratePct = +(e.indexRate + d.spread * (1 + (d.fund ? 0 : 0.9 * tight)) + Math.max(0, 1 - app) * (d.fund ? 0.3 : 0.8) - rel).toFixed(2);
+    const open = app >= 0.12 && ltcMax > 0.02;
+    const why = bank?.failedM !== undefined ? `${d.name} is in receivership — nobody is answering the phone.`
+      : app < 0.12 ? `${d.name} has stopped writing new paper — their capital will not carry it.`
+      : ltcMax <= 0.02 ? `${d.name} will not touch spec construction in this market.`
+      : d.maxCommit && ltcMax < uncapped - 0.005 ? `A job this size is past ${d.name}'s hold — they will only fund $${(d.maxCommit / 1e6).toFixed(0)}M of it.`
+      : undefined;
+    return { lender: d.name, ratePct, ltcMax: +Math.max(0, ltcMax).toFixed(3), points: d.points, open, why };
+  });
+}
+
+/**
  * What a lender sets aside to carry a construction loan to delivery.
  *
  * Average outstanding across an S-curve draw is a bit over half the
@@ -201,6 +262,9 @@ export interface DevPlan {
   commitment: number;
   interestReserve: number;
   ratePct: number;
+  lender: string;         // whose commitment this is — the desk you picked
+  points: number;         // their origination fee, as a share of the commitment
+  pointsCost: number;     // ...in dollars, cash at close, on top of the equity
   equity: number;         // the whole equity budget
   equityAtClose: number;  // what you actually write on day one
   months: number;
@@ -448,6 +512,7 @@ export function planDevelopment(
   floors: number, coverage = 0.6,
   contract: Contract = "gmp", ltcWanted?: number,
   custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>> },
+  lender?: string,
 ): DevPlan | null {
   // THE ENVELOPE YOU ACTUALLY HAVE. Zoning moves, variances are won and lots
   // are assembled — all of which live on the resolved record. Planning against
@@ -522,14 +587,18 @@ export function planDevelopment(
   // The lender's max is the ceiling; how much of it you TAKE is your call.
   // Less debt is a slower clock and a smaller reserve; more is more building
   // per dollar of equity and a harder landing if lease-up runs long.
-  const ltcMax = constructionLtc(mix, s.econ.phase, s.econ.creditIdx ?? 1, lenderAppetite(s, CONSTRUCTION_LENDER));
+  // The quote is the chosen desk's, not the town's. Rival and city jobs never
+  // pass a lender, so they land on the regional — the historical default.
+  const cqs = constructionQuotes(s, mix, buildCost);
+  const cq = cqs.find((q) => q.lender === lender) ?? cqs.find((q) => q.lender === CONSTRUCTION_LENDER)!;
+  const ltcMax = cq.open ? cq.ltcMax : 0;
   // Math.min(x, undefined) is NaN, and a NaN here does not throw — it becomes
   // the commitment, then the equity, then the firm's cash, and the first thing
   // anyone sees is a balance sheet reading NaN twenty months later. Anything
   // that is not a real number is simply not a request.
   const wanted = Number.isFinite(ltcWanted as number) ? (ltcWanted as number) : ltcMax;
   const ltc = Math.max(0, Math.min(ltcMax, wanted));
-  const ratePct = +(s.econ.indexRate + CONSTR_SPREAD).toFixed(2);
+  const ratePct = cq.ratePct;
   // Foundations, core, a floor every couple of weeks, then facade and fit-out:
   // a mid-rise is a two-year job and a real tower is three to four. Nothing
   // was taking longer than 30 months, which made towers feel like sheds.
@@ -599,6 +668,7 @@ export function planDevelopment(
     far: +(gsf / rec.lotArea).toFixed(1), farMax,
     hardCost, softCost, contingency, demo, leaseUp, costTotal, landBasis, basisTotal,
     ltc, ltcMax, commitment, interestReserve, ratePct,
+    lender: cq.lender, points: cq.points, pointsCost: commitment > 0 ? Math.round(commitment * cq.points) : 0,
     equity: projectCost - commitment,
     // Equity funds FIRST. The bank does not release a dollar until yours are
     // in the ground, which is why a development eats your balance sheet at the
@@ -613,6 +683,7 @@ export function startDevelopment(
   floors: number, coverage = 0.6,
   contract: Contract = "gmp", ltcWanted?: number,
   custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>> },
+  lender?: string,
 ): { s: GameState; err?: string } {
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
@@ -625,7 +696,7 @@ export function startDevelopment(
   if (s.landmarks?.[bbl] !== undefined) return { s, err: "It is landmarked — the envelope is what is already standing." };
   if (s.groundLeases?.[bbl]) return { s, err: "That site is ground-leased. Somebody else builds on it until the term runs out." };
   if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage — build on the site, not the piece." };
-  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, contract, ltcWanted, custom);
+  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, contract, ltcWanted, custom, lender);
   if (!plan) return { s, err: "That's too small to be worth building — add floors or cover more of the lot." };
   // YOU HAVE TO BE ABLE TO FUND THE WHOLE THING.
   //
@@ -639,7 +710,7 @@ export function startDevelopment(
   // No construction lender on earth closes without evidence the sponsor can
   // fund its whole share — that is the first thing they ask for. The line of
   // credit counts, because it is committed money and that is what it is for.
-  const commitCap = plan.equity + Math.round(plan.costTotal * 0.06);   // and a margin for change orders
+  const commitCap = plan.equity + plan.pointsCost + Math.round(plan.costTotal * 0.06);   // and a margin for change orders — origination is cash at close too
   const fundable = s.cash + locAvailable(s, parcels);
   if (fundable < commitCap) {
     return {
@@ -649,18 +720,41 @@ export function startDevelopment(
         + `including the line. No lender closes without evidence you can finish it.`,
     };
   }
-  if (s.cash < plan.equityAtClose) {
-    return { s, err: `The bank funds nothing until your equity is in the ground. That is $${(plan.equityAtClose / 1e6).toFixed(2)}M at close, of $${(plan.equity / 1e6).toFixed(2)}M total — you're short.` };
+  if (s.cash < plan.equityAtClose + plan.pointsCost) {
+    return { s, err: `The bank funds nothing until your equity is in the ground. That is $${((plan.equityAtClose + plan.pointsCost) / 1e6).toFixed(2)}M at close — equity plus origination — of $${((plan.equity + plan.pointsCost) / 1e6).toFixed(2)}M total. You're short.` };
   }
   const next = clone(s);
-  next.cash -= plan.equityAtClose;
-  logBooks(next, "dev", plan.equityAtClose);
+  // The origination fee is the lender's, paid at close and never part of the
+  // job's own budget — folding it into the prefund would hand it back later as
+  // free construction money.
+  next.cash -= plan.equityAtClose + plan.pointsCost;
+  logBooks(next, "dev", plan.equityAtClose + plan.pointsCost);
+  if (plan.commitment > 0) bumpLenderRel(next, plan.lender, 2);   // a closed loan starts a file
   noteRecordPlan(next, parcels, bbl, dominantOf(plan.mix), plan.sf, plan.floors, firmShort(next));
+  // YOUR CRANE IS IN THE SAME SKY AS EVERYBODY ELSE'S. A city job enters
+  // econ.cohorts the month the hole is dug (tickCityGrowth), and a rival's own
+  // job does too (startOwnJob) — but the player's never did. Two million
+  // square feet of your office appeared in no delivery schedule, moved no
+  // projected vacancy, and then landed on the market as a surprise the month
+  // it opened. Same queue as everyone now, tagged with the parcel so a
+  // schedule slip can move it and an abandoned job can pull it back out; and
+  // it fills part of the order the space market has already placed
+  // (startOwed), exactly as an anonymous start on the same corner would have.
+  if (!next.econ.cohorts) next.econ.cohorts = { office: [], retail: [], multifamily: [], industrial: [] };
+  for (const [u, share] of Object.entries(plan.mix)) {
+    const usf = Math.round(plan.sf * (share as number));
+    if (usf <= 0) continue;
+    next.econ.cohorts[u as BuiltClass].push({ m: next.month + plan.months, sf: usf, bbl });
+    if (next.econ.startOwed) {
+      next.econ.startOwed[u as BuiltClass] = Math.max(0, (next.econ.startOwed[u as BuiltClass] ?? 0) - usf);
+    }
+  }
   next.developments[bbl] = {
     bbl, use, mix: plan.mix, sf: plan.sf, floors: plan.floors,
     suites: custom?.suites,
     costTotal: plan.costTotal, hardCost: plan.hardCost, contract,
     contingency: plan.contingency, contingencyUsed: 0,
+    lender: plan.lender,
     commitment: plan.commitment, drawn: 0, loanBalance: 0,
     interestReserve: plan.interestReserve, reserveUsed: 0,
     leaseUpReserve: plan.leaseUp,
@@ -669,12 +763,13 @@ export function startDevelopment(
     equityPrefunded: plan.equityAtClose,
     ratePct: plan.ratePct,
     startM: next.month, deliverM: next.month + plan.months, baseMonths: plan.months,
+    piped: true,   // its cohort is in the market's queue, pushed above
     signed: [],
     events: 0,
   } satisfies Development;
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Ground broken at ${rec.address}: ${plan.floors} floors, ${(plan.sf / 1000).toFixed(0)}k sf of ${use === "mixed" ? "mixed-use" : use} at ${plan.far} FAR on a ${contract === "gmp" ? "guaranteed max price" : "cost-plus"} contract. $${(plan.costTotal / 1e6).toFixed(1)}M budget, ${(plan.ltc * 100).toFixed(0)}% funded, on spec. Delivery ${monthLabel(next.month + plan.months)}.`,
+    text: `Ground broken at ${rec.address}: ${plan.floors} floors, ${(plan.sf / 1000).toFixed(0)}k sf of ${use === "mixed" ? "mixed-use" : use} at ${plan.far} FAR on a ${contract === "gmp" ? "guaranteed max price" : "cost-plus"} contract. $${(plan.costTotal / 1e6).toFixed(1)}M budget, ${(plan.ltc * 100).toFixed(0)}% funded by ${plan.lender}, on spec. Delivery ${monthLabel(next.month + plan.months)}.`,
   });
   return { s: next };
 }
@@ -722,6 +817,9 @@ export function takeoverDevelopment(
     equityPrefunded: 0,   // a takeover writes no cheque at close
     ratePct: +(s.econ.indexRate + 3.2).toFixed(2),
     startM: s.month, deliverM: s.month + months, baseMonths: months,
+    // the dead sponsor's start already queued this building's square feet in
+    // econ.cohorts; the market has been expecting it since their groundbreak
+    piped: true,
     signed: [],
     events: 0,
   } satisfies Development;
@@ -795,7 +893,31 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
 export function tickDevelopments(s: GameState, parcels: ParcelTable) {
   for (const d of Object.values(s.developments)) {
     const rec = parcels[d.bbl];
-    if (!rec || !s.holdings[d.bbl]) { delete s.developments[d.bbl]; continue; }
+    if (!rec || !s.holdings[d.bbl]) {
+      // The job dies with the deed — pull its square feet back out of the
+      // pipeline too, or the market absorbs a building nobody is building.
+      if (s.econ.cohorts) {
+        for (const k of Object.keys(s.econ.cohorts) as BuiltClass[]) {
+          s.econ.cohorts[k] = s.econ.cohorts[k].filter((c) => c.bbl !== d.bbl);
+        }
+      }
+      delete s.developments[d.bbl];
+      continue;
+    }
+    // SELF-HEAL, once, for jobs in flight from saves written before player
+    // starts entered the pipeline: register the square feet now, tagged. New
+    // jobs are marked at the desk (startDevelopment) or already covered by
+    // their original sponsor's cohort (takeoverDevelopment). If the schedule
+    // is already due, the cohort matures on the next econ tick — deliver() no
+    // longer adds stock itself, so it still lands exactly once.
+    if (!d.piped) {
+      d.piped = true;
+      if (!s.econ.cohorts) s.econ.cohorts = { office: [], retail: [], multifamily: [], industrial: [] };
+      for (const [u, share] of Object.entries(d.mix ?? devMix(d.use))) {
+        const usf = Math.round(d.sf * (share as number));
+        if (usf > 0) s.econ.cohorts[u as BuiltClass].push({ m: d.deliverM, sf: usf, bbl: d.bbl });
+      }
+    }
     const span = Math.max(1, d.deliverM - d.startM);
     const t0 = Math.max(0, Math.min(1, (s.month - 1 - d.startM) / span));
     const t1 = Math.max(0, Math.min(1, (s.month - d.startM) / span));
@@ -903,6 +1025,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
         });
       } else if (roll < 0.055) {
         d.deliverM += 1 + Math.round(rng(s));
+        syncDevCohorts(s, d);
         d.events++;
         s.news.unshift({ q: s.month, kind: "warn", text: `Weather and inspections at ${rec.address} — delivery moves to ${monthLabel(d.deliverM)}.` });
       } else if (roll < 0.062) {
@@ -913,6 +1036,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
         const overrun = extra - fromContingency;
         d.costTotal += overrun; d.hardCost += overrun; d.equityBudget += overrun;
         d.deliverM += 2 + Math.round(rng(s) * 3);
+        syncDevCohorts(s, d);
         d.events++;
         s.news.unshift({
           q: s.month, kind: "warn",
@@ -977,6 +1101,18 @@ export function tickConstructionLeasing(s: GameState, parcels: ParcelTable) {
   }
 }
 
+/**
+ * A SLIPPED JOB SLIPS ITS COHORT TOO. The month ground broke, the job's square
+ * feet entered econ.cohorts tagged with this parcel; when weather or a dead
+ * subcontractor moves deliverM, the pipeline's date moves with it.
+ */
+function syncDevCohorts(s: GameState, d: Development) {
+  if (!s.econ.cohorts) return;
+  for (const arr of Object.values(s.econ.cohorts)) {
+    for (const c of arr) if (c.bbl === d.bbl) c.m = d.deliverM;
+  }
+}
+
 function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { address: string }) {
   // Buildings you have put up. The city notices a developer.
   s.delivered = (s.delivered ?? 0) + 1;
@@ -985,7 +1121,13 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // YOUR BUILDING IS SUPPLY TOO. A tower you deliver competes with everybody
   // else's space, including your own — and if you build enough of one class
   // you will move its vacancy against yourself, which is the correct lesson.
-  for (const [u, share] of Object.entries(dmix)) addStock(s.econ, u as BuiltClass, d.sf * (share as number));
+  // NOTE: no addStock here — the same rule as city deliveries in
+  // tickCityGrowth. The square feet went into econ.cohorts the month ground
+  // broke (startDevelopment), or with the original sponsor's start for a
+  // takeover, and the cohort matures into citywide stock on its own in
+  // tickEcon. Adding it again on delivery double-counted the building:
+  // measured at exactly 2x the job's sf landing in stock across the delivery
+  // month.
   const h = s.holdings[d.bbl];
   h.condition = "good";
   // NEW BONES. Ground-up is the only way to own the top of the condition scale —
@@ -1073,7 +1215,12 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
     holidayUntilM: s.month + 36,
     prepay: "open",
     prepayUntilM: s.month,
+    // The mini-perm is the construction lender rolling its own facility — the
+    // balance stays on the desk that carried the job, which is what its
+    // statement on Research shows and whose capital a default would eat.
+    holder: d.lender ?? CONSTRUCTION_LENDER,
   };
+  bumpLenderRel(s, d.lender ?? CONSTRUCTION_LENDER, 2);   // a job delivered is the best line in the file
   delete s.developments[d.bbl];
   bumpLand(s, d.bbl, 1.06);
 

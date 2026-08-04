@@ -324,6 +324,12 @@ export interface Holding {
   // Somebody else's building stands on this dirt. It earns ground rent instead
   // of costing carry, and it is not yours to build on until the term is up.
   groundLeased?: boolean;
+  // The lot is on OFFER for a ground lease — a listing, not a deal. Ground
+  // lessees are scarce, so a counterparty arrives stochastically through
+  // tickGroundLeases, at odds set by the corner's live demand and the same
+  // development climate that governs the city's own starts. Optional, with
+  // fallbacks everywhere it is read, so old saves load untouched.
+  groundOffer?: { years: number; sinceM: number };
   // Designated. No demolition, no bigger building, a rent premium forever.
   landmarked?: boolean;
   // PRE-BUILT SPACE. Suites fitted out speculatively, before anyone has signed
@@ -400,6 +406,8 @@ export interface Development {
   // The loan does not land in your account on day one. Equity goes in first,
   // then the bank funds draws against work in place, and the interest on what
   // has been drawn is paid out of a reserve inside the loan until it runs dry.
+  /** Which desk wrote the facility. Older saves carry none — the regional, the historical default. */
+  lender?: string;
   commitment: number;     // the lender's total commitment
   drawn: number;          // funded to date
   loanBalance: number;    // drawn + capitalised interest
@@ -427,6 +435,14 @@ export interface Development {
    * the job has not yet drawn down.
    */
   equityPrefunded?: number;
+  /**
+   * WHETHER THIS JOB'S SQUARE FEET ARE ALREADY IN THE MARKET'S PIPELINE.
+   * True from the desk for a new start (startDevelopment pushes its cohort the
+   * month ground breaks) and for a takeover (the original sponsor's start
+   * already queued it). Absent only on saves from before player construction
+   * entered econ.cohorts — tickDevelopments registers those once and sets it.
+   */
+  piped?: boolean;
   ratePct: number;
 
   startM: number;
@@ -703,7 +719,7 @@ export interface Econ {
   // developer actually asks — "what is coming, and when" — instead of only
   // "how much is out there somewhere". This is what makes the supply side
   // legible: you can see the wave before it lands on you.
-  cohorts?: Record<BuiltClass, { m: number; sf: number }[]>;
+  cohorts?: Record<BuiltClass, { m: number; sf: number; bbl?: string }[]>;
   /**
    * SQUARE FEET THE SPACE MARKET HAS ASKED FOR AND THE MAP HAS NOT YET BUILT.
    *

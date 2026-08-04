@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass } from "@/engine/types";
 import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfolioQuarterlyCF } from "@/engine/sim";
-import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, assembleLots, grantGroundLease, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
+import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import { respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, type LOIAction } from "@/engine/leasing";
 import { cureWorkout, requestForbearance, deedInLieu } from "@/engine/workout";
@@ -77,7 +77,7 @@ interface AppState {
   popupsOff: boolean;
   setPopupsOff: (v: boolean) => void;
   refi: (bbl: string, product: string, lev?: number) => void;
-  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>> }) => void;
+  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>> }, lender?: string) => void;
   offer: (bbl: string, price: number, finalOffer?: boolean) => void;
   closeDeal: (bbl: string, product: string, lev: number) => void;
   acceptCounter: (bbl: string) => void;
@@ -111,6 +111,7 @@ interface AppState {
   holdLeasing: (bbl: string, on: boolean) => void;
   assemble: (bbls: string[]) => void;
   groundLease: (bbl: string, years: number) => void;
+  pullGroundOffer: (bbl: string) => void;
   delistSale: (bbl: string) => void;
   acceptOffer: (bbl: string, exchange?: boolean) => void;
   declineOffer: (bbl: string) => void;
@@ -283,10 +284,10 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  develop: (bbl, use, floors, coverage, contract, ltcWanted, custom) => {
+  develop: (bbl, use, floors, coverage, contract, ltcWanted, custom, lender) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = startDevelopment(game, parcels, bbl, use, floors, coverage, contract, ltcWanted, custom);
+    const r = startDevelopment(game, parcels, bbl, use, floors, coverage, contract, ltcWanted, custom, lender);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("Ground broken. Watch it rise.");
@@ -600,10 +601,20 @@ export const useStore = create<AppState>((set, get) => ({
   groundLease: (bbl, years) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = grantGroundLease(game, parcels, bbl, years);
+    const r = offerGroundLease(game, parcels, bbl, years);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
-    toast(r.msg ?? "Ground-leased.");
+    toast(r.msg ?? "Offered.");
+    void persist(r.s);
+  },
+
+  pullGroundOffer: (bbl) => {
+    const { game } = get();
+    if (!game) return;
+    const r = pullGroundOffer(game, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Offer withdrawn.");
     void persist(r.s);
   },
 

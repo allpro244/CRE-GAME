@@ -172,7 +172,9 @@ function run(botName, seed) {
           const r = E.assembleLots(g, parcels, adjacency, [bbl, ...nbrs.slice(0, 2)]);
           if (!r.err) { g = r.s; break; }
         } else if (m % 27 === 5) {
-          const r = E.grantGroundLease(g, parcels, bbl, 30 + (m % 4) * 20);
+          // grantGroundLease conjured a tenant on click; the reshaped flow
+          // OFFERS the ground and a counterparty arrives (or not) in the tick
+          const r = E.offerGroundLease(g, parcels, bbl, 30 + (m % 4) * 20);
           if (!r.err) { g = r.s; break; }
         }
       }

@@ -150,15 +150,23 @@ export const CAP_BASE = { office: 6.85, retail: 6.95, multifamily: 5.95, industr
 // not to make development harder, and a level shift smuggled in alongside a
 // structural one is how a calibration gets quietly lost. Measured before the
 // level-match, real office rent growth ran 2.08%/yr against wages at 1.06%.
-// ...and BASE_YOC MOVES WITH THE CAP RATE, because it is denominated in the
-// same world. It was 0.073 when office cap rates were 5.30%; raising those to
-// 6.85% without touching this quietly raised the development hurdle by the
-// same 30% and the supply side answered exactly as it should have — starts
-// fell, the market tightened, and real rent growth went to 1.92%/yr against
-// wages at 1.03%. A developer's target yield on cost is a spread over the EXIT
-// CAP, not a constant somebody typed, so it is scaled off CAP_BASE.office and
-// moves whenever that does.
-const BASE_YOC = 0.073 * (CAP_BASE.office / 5.30), DEV_SPREAD = 0.022;
+// WHAT A NEW BUILDING YIELDS ON ITS COST when rents and costs are both at their
+// opening index, and what the capital stack needs on top of the debt index to
+// be worth two years of construction risk.
+//
+// THIS IS NOT A CAPITAL-MARKETS NUMBER and briefly it was, which was a
+// category error: it was scaled off CAP_BASE so that raising cap rates would
+// not choke development. But a yield on cost is a fact about RENTS AGAINST
+// CONSTRUCTION COSTS — what the building earns over what it took to put up —
+// and it has nothing to do with what buyers are paying for stabilised income.
+// Tying them made the numerator of the pro forma a function of the discount
+// rate, which is not how a builder's economics work in any market.
+//
+// What actually reopens development after a hurdle rises is the SUPPLY side of
+// the construction industry: the cranes stop, the trades go idle, and idle
+// trades cut their prices until the deal pencils again. That loop lives in the
+// cost drift below, where it belongs.
+const BASE_YOC = 0.073, DEV_SPREAD = 0.022;
 
 /**
  * VACANCY IS THE RISK, AND THE RISK IS PRICED.
@@ -1463,8 +1471,25 @@ export function tickEcon(s: GameState) {
     // pinned at its floor essentially always and the whole term did nothing.
     // A boom is 2% of the city under way with every trade booked; a bust is
     // half a per cent and men looking for work.
-    const heat = clamp(((e.buildEma ?? 0.014) - 0.014) * 110, -0.8, 1.6);
-    const costDrift = (e.inflExp ?? 0.02) / 12 + heat * 0.0016 + (e.phase === "recession" ? -0.0004 : 0);
+    // THE TRADES CUT THEIR PRICES WHEN THE CRANES STOP, and this is the loop
+    // that reopens development after anything closes it — a rate spike, a cost
+    // spike, a glut, a rise in what buyers demand as a yield. Nobody fixes an
+    // unpenciled deal by lowering their return requirement; the deal gets
+    // fixed because the contractor who has laid off half his men bids the next
+    // job at a number he would have laughed at two years ago.
+    //
+    // The floor was -0.8 against a ceiling of +1.6, which made a dead
+    // construction market cost about the same as a normal one: at full idle the
+    // drift came to -0.0001/month, flat in nominal terms, so real costs fell
+    // only as fast as inflation and a hurdle once raised stayed unmet for
+    // decades. Both ends are wider now and the DOWNSIDE IS STEEPER than the
+    // upside, because a boom bids the trades up slowly — you cannot conjure
+    // steelworkers — while a bust puts their price on the floor within a year.
+    // At full idle real construction costs now fall about six per cent a year,
+    // which is roughly what happened to the real thing in 2009-10.
+    const heat = clamp(((e.buildEma ?? 0.014) - 0.014) * 110, -1.9, 1.6);
+    const slope = heat < 0 ? 0.0026 : 0.0016;
+    const costDrift = (e.inflExp ?? 0.02) / 12 + heat * slope + (e.phase === "recession" ? -0.0004 : 0);
     e.costIdx = clamp(e.costIdx * (1 + costDrift + rrange(s, -0.0012, 0.0012)), 0.6, 400);
   }
 

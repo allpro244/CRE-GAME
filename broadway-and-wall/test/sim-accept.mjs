@@ -121,8 +121,15 @@ function macroRun(seed, months = 600) {
 // index correlates with neither, then "the rate era" is weather and the
 // player's fix-or-float decision is a coin flip rather than a read on the
 // economy.
+//
+// FIFTEEN SEEDS, NOT SEVEN, for the same reason as H. A single run's
+// correlation between inflation and the loan index lands anywhere from -0.08
+// to +0.77 depending only on which fifty years you happened to live through,
+// so a median of seven sits well inside its own sampling error and this gate
+// used to pass by 0.03. The threshold has not moved.
 {
-  const runs = [550991, 12007, 73303, 11, 22, 33, 4242].map((seed) => {
+  const runs = [550991, 12007, 73303, 11, 22, 33, 4242, 90210, 313, 777,
+    2468, 60613, 10001, 94110, 2020].map((seed) => {
     const t = macroRun(seed);
     // year-on-year inflation and the rate, sampled annually after a burn-in
     const infl = [], rate = [], unemp = [];
@@ -149,29 +156,51 @@ function macroRun(seed, months = 600) {
 // machine must see the slack; and the rent drift must never SATURATE — every
 // extra point of vacancy has to keep costing rent, or a 45% glut is priced
 // the same as a 20% one.
+//
+// ONE GLUT WAS NOT A MEASUREMENT. This ran a single seed, and the rate clause
+// turned out to be a coin flip: across fifteen gluts the loan-index drift
+// spans -2.9pp to +2.4pp, and on the engine as it stood when this note was
+// written SEVEN of those fifteen breached the +0.5pp limit. The suite reported
+// a pass because seed 910117 happened to land on the good side of its own
+// distribution, and any change anywhere in the engine could flip it without
+// touching what the test claims to measure.
+//
+// So the scenario now runs nine times and every clause is a median. Nothing
+// about the standard moved — the thresholds are the ones that were here, and
+// they are applied to an estimate that can actually resolve them. This is the
+// same repair econ-accept's conservation test already carries, for the same
+// reason: a gate that answers from one draw is not a gate, it is a coin.
 {
-  const parcels = clone();
-  let g = E.firstListings(E.newGame(910117, parcels), parcels, bbls);
-  for (let m = 0; m < 36; m++) g = E.advanceQuarter(g, parcels, bbls, adjacency);
-  E.addStock(g.econ, "office", 4_000_000);
-  const t = [];
-  for (let m = 0; m < 144; m++) {
-    g = E.advanceQuarter(g, parcels, bbls, adjacency);
-    t.push({ vac: g.econ.cityVac.office, phase: g.econ.phase, rent: g.econ.rentIdx.office, rate: g.econ.indexRate });
-  }
-  const peakVac = Math.max(...t.map((x) => x.vac));
-  // months describing a >25%-vacant market as expansion or peak
-  const lying = t.filter((x) => x.vac > 0.25 && (x.phase === "expansion" || x.phase === "peak")).length;
-  const deep = t.filter((x) => x.vac > 0.25).length;
-  const share = deep ? lying / deep : 0;
-  // and the rate must not RISE through it — a glut is a demand shock
-  const rate0 = t[0].rate, rateLate = med(t.slice(24, 96).map((x) => x.rate));
-  report("H. THE GLUT IS SEEN — 4M sf of empty office dropped on the city",
-    peakVac > 0.25 && share <= 0.15 && rateLate <= rate0 + 0.5,
-    [`office vacancy peaked at ${(peakVac * 100).toFixed(1)}%`,
-     `months calling a >25%-vacant market 'expansion' or 'peak': ${lying} of ${deep} (${(share * 100).toFixed(0)}%)   (need <= 15%)`,
-     `loan index ${rate0.toFixed(2)}% -> ${rateLate.toFixed(2)}% median over the glut   (need not to RISE: a glut is a demand shock)`,
-     `rent index over the glut: ${t[0].rent.toFixed(0)} -> ${Math.min(...t.map((x) => x.rent)).toFixed(0)} trough`]);
+  const GLUTS = [910117, 550991, 12007, 73303, 11, 22, 33, 4242, 90210];
+  const runs = GLUTS.map((seed) => {
+    const parcels = clone();
+    let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
+    for (let m = 0; m < 36; m++) g = E.advanceQuarter(g, parcels, bbls, adjacency);
+    E.addStock(g.econ, "office", 4_000_000);
+    const t = [];
+    for (let m = 0; m < 144; m++) {
+      g = E.advanceQuarter(g, parcels, bbls, adjacency);
+      t.push({ vac: g.econ.cityVac.office, phase: g.econ.phase, rent: g.econ.rentIdx.office, rate: g.econ.indexRate });
+    }
+    const deep = t.filter((x) => x.vac > 0.25);
+    const lying = deep.filter((x) => x.phase === "expansion" || x.phase === "peak").length;
+    return {
+      peakVac: Math.max(...t.map((x) => x.vac)),
+      share: deep.length ? lying / deep.length : 0,
+      drift: med(t.slice(24, 96).map((x) => x.rate)) - t[0].rate,
+      rentFall: 1 - Math.min(...t.map((x) => x.rent)) / t[0].rent,
+    };
+  });
+  const peakVac = med(runs.map((r) => r.peakVac));
+  const share = med(runs.map((r) => r.share));
+  const drift = med(runs.map((r) => r.drift));
+  report("H. THE GLUT IS SEEN — 4M sf of empty office dropped on the city, 9 seeds",
+    peakVac > 0.25 && share <= 0.15 && drift <= 0.5,
+    [`office vacancy peaked at ${(peakVac * 100).toFixed(1)}% median   (per seed ${runs.map((r) => (r.peakVac * 100).toFixed(0) + "%").join(" ")})`,
+     `share of a >25%-vacant market called 'expansion' or 'peak': ${(share * 100).toFixed(0)}% median   (need <= 15%)`,
+     `loan index drift over the glut: ${drift >= 0 ? "+" : ""}${drift.toFixed(2)}pp median   (need <= +0.50pp: a glut is a demand shock)`,
+     `   per seed ${runs.map((r) => (r.drift >= 0 ? "+" : "") + r.drift.toFixed(1)).join("  ")} — the spread is why this is nine seeds and not one`,
+     `rent fell ${(med(runs.map((r) => r.rentFall)) * 100).toFixed(0)}% from the drop to the trough, median`]);
 }
 
 // ---------------------------------------------------------------------------

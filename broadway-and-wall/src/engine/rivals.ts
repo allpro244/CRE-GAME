@@ -1312,7 +1312,10 @@ export function rivalBuys(s: GameState, rec: ParcelRecord, price: number): Rival
   }
   if (seller) {
     seller.bbls = seller.bbls.filter((b) => b !== rec.bbl);
-    const relief = Math.min(seller.debt, Math.round(price * seller.targetLtv));
+    // Same event, same rule — a firm selling to another firm and a firm selling
+    // to Hartford both retire the loan that was on the building. See
+    // debtReleasedOnSale.
+    const relief = debtReleasedOnSale(seller, price);
     seller.debt -= relief;
     seller.cash += price - relief - gainsTax(seller, price);
   }
@@ -1330,6 +1333,60 @@ export function rivalBuys(s: GameState, rec: ParcelRecord, price: number): Rival
   recordComp(s, rec, price, best.name, seller?.name ?? "a private owner",
     s.listings.find((l) => l.bbl === rec.bbl)?.distress, seller ? assetGrade(seller, rec) : undefined);
   return best;
+}
+
+/**
+ * A BUILDING SOLD TO SOMEBODY WE DO NOT MODEL IS STILL SOLD.
+ *
+ * When a listing is absorbed and no modelled firm wants it, the buyer is an
+ * out-of-town name and the trade goes on the comps sheet. It did not, until
+ * now, come off the seller. The rival kept the deed, kept collecting the rent,
+ * and re-listed the same building a few months later — so 20 Sloop Alley
+ * "sold" eighty-three times in one century while Tidewater Development owned it
+ * from the first month to the last. Eighty-three prints of a sale that never
+ * happened, on a comps sheet that sets land value for the whole district.
+ *
+ * The seller side is the same accounting `rivalBuys` already does for a firm
+ * selling to another firm: the deed goes, the debt against it is retired out of
+ * the proceeds, the gain is taxed, and what is left is cash. The only
+ * difference is that the buyer has no balance sheet here, because the buyer is
+ * an insurance company in Hartford and we do not model Hartford. `aum` is not
+ * adjusted because `tickRivals` re-marks it from the portfolio every month.
+ *
+ * Returns whether a modelled firm actually lost a building — false means the
+ * listing was the street's own and no deed had to move.
+ */
+export function sellToOutsider(s: GameState, bbl: string, price: number): boolean {
+  const seller = (s.rivals ?? []).find((r) => r.bbls.includes(bbl));
+  if (!seller) return false;
+  seller.bbls = seller.bbls.filter((b) => b !== bbl);
+  const relief = debtReleasedOnSale(seller, price);
+  seller.debt -= relief;
+  seller.cash += price - relief - gainsTax(seller, price);
+  return true;
+}
+
+/**
+ * WHAT A SALE PAYS OFF is the loan that was on the building, not the loan the
+ * firm wishes it had. Retiring `price * targetLtv` over-repays every firm that
+ * is running below its target, and a firm that sells often ends up with no debt
+ * at all — when the outsider sale started actually conveying the deed and
+ * became the commonest way a building leaves a portfolio, aggregate firm debt
+ * across the town fell from $1.26B to $108M by year 50, which is a market of
+ * unlevered landlords and not a property market. Firms that could not borrow
+ * stopped building, the city delivered 108 jobs instead of 128, and real office
+ * rents rose 0.44pp a year faster for the whole fifty years on the resulting
+ * shortage.
+ *
+ * The honest proxy for the mortgage on one asset is the leverage actually on
+ * the book, so a sale leaves the firm at roughly the leverage it had. Target
+ * LTV is the fallback only for a firm with nothing marked yet.
+ */
+function debtReleasedOnSale(r: Rival, price: number): number {
+  const lev = (r.aum ?? 0) > 0
+    ? Math.min(1, Math.max(0, r.debt / (r.aum as number)))
+    : r.targetLtv;
+  return Math.min(r.debt, Math.round(price * lev));
 }
 
 /** What a rival will take for a building of theirs, and why. */

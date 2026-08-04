@@ -9,7 +9,7 @@ import { firmShort, describeFirm } from "./firm";
 import { rng, rrange } from "./market";
 import { assetValue, condGrade, initialCondition, initialCondIdx, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr, demandLinear, landPsfNow } from "./value";
 import { locAvailable } from "./credit";
-import { marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie } from "./rivals";
+import { marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
 import { takeoverDevelopment, cityValueToReplacement } from "./dev";
@@ -1569,6 +1569,11 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
         // other, which is what makes an anonymous market legible instead of
         // just noisy.
         const b = OUT_OF_TOWN[Math.floor(rng(s) * OUT_OF_TOWN.length)];
+        // AND THE SELLER LOSES THE BUILDING. Recording the comp without
+        // conveying the deed left the seller owning a building they had just
+        // sold, free to list it again next quarter and print the sale a second
+        // time, and a third. See sellToOutsider.
+        sellToOutsider(s, li.bbl, li.ask);
         recordComp(s, rec, li.ask, b, "a listed seller", li.distress, initialCondition(rec));
         if (rng(s) < 0.5) {
           s.news.unshift({

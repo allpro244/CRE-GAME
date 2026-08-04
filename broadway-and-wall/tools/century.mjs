@@ -149,7 +149,7 @@ function runCentury(marketSeed, botName, cityId = CITY, citySeed = CITY_SEED) {
     snapshots.push({ yr: Math.round(m / 12), rows });
   };
 
-  let prevBuilt = {}, prevRivals = new Set(), lastCompN = 0, seenNews = 0;
+  let prevBuilt = {}, prevRivals = new Set(), lastCompM = -1, seenNews = 0;
   snapParcels(0);
 
   for (let m = 0; m < MONTHS; m++) {
@@ -183,14 +183,20 @@ function runCentury(marketSeed, botName, cityId = CITY, citySeed = CITY_SEED) {
     ]);
 
     // ---- trades, harvested incrementally (s.comps is a capped window)
-    const cs = g.comps ?? [];
-    for (const c of cs) {
-      if (c.m < m) continue;                      // only this month's prints
+    //
+    // A HIGH-WATER MARK, NOT A COMPARISON AGAINST THE LOOP COUNTER. `g.month`
+    // is one ahead of `m`, so `c.m < m` kept every print for two consecutive
+    // ticks and every deed in this dataset was recorded exactly twice —
+    // 156,209 rows for 78,105 sales, and a most-traded table with all its
+    // counts doubled. Track the last month already harvested instead; it
+    // cannot double-count whatever the offset turns out to be.
+    for (const c of g.comps ?? []) {
+      if (c.m <= lastCompM) continue;
       trades.push([c.m, c.bbl, c.cls, c.price, c.sf, +c.psf.toFixed(2), c.capRate,
         c.buyer, c.seller, c.distress ? 1 : 0, c.offMarket ? 1 : 0]);
       noteParcel(c.bbl, { m: c.m, kind: "trade", price: c.price, buyer: c.buyer, seller: c.seller, distress: !!c.distress });
     }
-    void lastCompN;
+    lastCompM = Math.max(lastCompM, g.month);
 
     // ---- what got knocked down and what went up (s.built transitions)
     for (const [bbl, b] of Object.entries(g.built)) {

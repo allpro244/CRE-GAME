@@ -1829,10 +1829,35 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   const nextUse = useForZone(rec!.zoneDist ?? "C", rec!.demandScore, rng(s));
   const lead = dominantOf(devMix(nextUse));
   const farMax = farMaxFor(rec!);
-  // A redevelopment goes BIGGER than what it replaced — that is the arithmetic
-  // that condemned the old building — but it is still a city job and not a
-  // trophy, so it takes the ordinary share of its envelope.
-  let nsf = Math.max(3000, Math.round((rec!.lotArea * farMax * (0.45 + rng(s) * 0.35)) / 100) * 100);
+  // A redevelopment goes bigger than what it replaced — that is the arithmetic
+  // that condemned the old building — but HOW MUCH BIGGER IS A MARKET
+  // QUESTION, and the first cut of this did not ask it. It took 45-80% of the
+  // envelope unconditionally, so every teardown added floor area whether or
+  // not anybody wanted the space. Measured: the city grew its floor area
+  // ~50% in fifty years regardless of vacancy, and sim:accept F went bimodal —
+  // office rent at year 50 landed anywhere from $34 to $505 across seven
+  // seeds, because in half the runs the supply response ran away from demand
+  // and real rents fell 3-5% a year for half a century.
+  //
+  // Nobody builds fifty per cent more space into a glut. A developer facing
+  // slack takes the smallest building that justifies clearing the site — or
+  // walks — and the same site in a shortage gets the full envelope. So the
+  // share is read off how far this class's vacancy sits from its natural
+  // rate, which is the same signal the rest of the pipeline already uses.
+  //
+  // These two are SHAPE PARAMETERS and, per CLAUDE.md, they get to say which.
+  // The elasticity (7) is anchored on how hard real starts respond to slack:
+  // about five points of vacancy above natural roughly halves them, and ten
+  // points very nearly stops them — 1 - 7*slack reads 0.65 and 0.30 at those
+  // two points, which is the right shape. The 0.30 floor is the smallest
+  // building that still justifies mobilising a site at all. Neither was
+  // iterated against a test: they were chosen once from that anchor. What DID
+  // come from measurement is that the previous unconditional 0.45-0.80 share
+  // was wrong, and the evidence is in the paragraph above.
+  const slack = Math.max(0, (e.cityVac[lead] ?? NATURAL_VAC[lead]) - NATURAL_VAC[lead]);
+  const appetite = Math.max(0.18, Math.min(1, 1 - slack * 7));
+  const share = 0.30 + 0.50 * appetite * (0.75 + rng(s) * 0.5);
+  let nsf = Math.max(3000, Math.round((rec!.lotArea * farMax * Math.min(0.92, share)) / 100) * 100);
   let nfl = Math.max(1, Math.round(nsf / (rec!.lotArea * 0.62)));
   const infill = cityInfillCap(s, parcels, rec!, 1);
   if (nfl > infill) { nfl = infill; nsf = Math.max(3000, Math.round((rec!.lotArea * 0.62 * nfl) / 100) * 100); }

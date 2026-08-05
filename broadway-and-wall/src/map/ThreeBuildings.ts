@@ -146,7 +146,33 @@ const vec3 SKY_COL = vec3(0.408, 0.502, 0.688);
 const vec3 GND_COL = vec3(0.372, 0.318, 0.248);
 
 vec3 hemiLight(vec3 n, float ao) {
-  vec3 amb = mix(GND_COL, SKY_COL, clamp(n.z * 0.5 + 0.5, 0.0, 1.0));
+  // THE GROUND HALF OF THIS IS A BOUNCE, AND IT WAS NOT LIT.
+  //
+  // GND_COL is a flat brown that has no idea whether the sun is out. But the
+  // downward half of an ambient term is not a light source in its own right —
+  // it is sunlight that has already hit the pavement and come back up, so it
+  // should carry the sun's own colour and its own strength. That is the light
+  // filling the underside of every cornice, every awning, every balcony, and
+  // the whole shaded lower half of a street canyon on a bright day.
+  //
+  // Warm, because it has bounced off warm stone, and stronger than the flat
+  // constant it replaces: pavement is a far better reflector than a brown
+  // constant implies, and getting it wrong is why undersides here have been
+  // reading as holes.
+  //
+  // This is the pavement's share of the indirect light. The buildings' share
+  // is done in screen space in the composite, off the blurred scene, because
+  // no analytic term can know that the wall opposite happens to be red.
+  // HUE, NOT AMPLITUDE. Multiplying straight by SUN_COL — which runs well
+  // above 1 so that lit faces expose correctly — made this term 1.6x brighter
+  // as a side effect, and since a vertical wall takes half its ambient from
+  // the ground half, every facade in the city lifted and the contrast bought
+  // by the light rig went straight back out. Normalising by the sun's own
+  // luminance keeps the strength exactly where it was and changes only the
+  // colour, which was the whole point.
+  vec3 sunTint = SUN_COL / max(dot(SUN_COL, vec3(0.2126, 0.7152, 0.0722)), 1e-3);
+  vec3 bounce = GND_COL * mix(vec3(1.0), sunTint, 0.85);
+  vec3 amb = mix(bounce, SKY_COL, clamp(n.z * 0.5 + 0.5, 0.0, 1.0));
   return amb * ao;
 }
 
@@ -200,6 +226,23 @@ vec3 seasonGreen(vec3 c) {
   c = mix(c, gold, AUTUMN * 0.72);
   c = mix(c, dorm, (1.0 - VIGOUR) * 0.42);
   return c;
+}
+
+// TURF DOES NOT TURN.
+//
+// A deciduous canopy goes gold in October because its leaves are dying and
+// about to be abandoned. A lawn is a perennial: it stops growing, goes dull,
+// grey and a little brown as it hardens off, and it stays GREEN through the
+// whole of it. Both were running through seasonGreen, so every park in the
+// city came out the colour of a wheatfield in autumn — which was, by some
+// distance, the loudest wrong colour anywhere in the calendar.
+//
+// Same two drivers, quite different destination: toward a desaturated olive
+// rather than toward gold, and never all the way there.
+vec3 seasonTurf(vec3 c) {
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  vec3 dorm = mix(c, l * vec3(1.16, 1.10, 0.84), 0.60);
+  return mix(c, dorm, clamp(max(AUTUMN * 0.50, (1.0 - VIGOUR) * 0.62), 0.0, 1.0));
 }
 
 vec3 snowOn(vec3 c, float up, float k) {
@@ -2680,7 +2723,11 @@ void main() {
     // spotting problem. A roof drains; you cannot see it from an aeroplane.)
   }
 
-  if (s == 9 || s == 12 || (s == 10 && vVar > 0.62)) roof = seasonGreen(roof);
+  // A sedum roof genuinely does redden — that is what sedum does — so the
+  // green roof keeps the leaf treatment. The park lawn and the grass that has
+  // taken a vacant lot are turf, and turf goes dormant instead.
+  if (s == 9) roof = seasonGreen(roof);
+  else if (s == 12 || (s == 10 && vVar > 0.62)) roof = seasonTurf(roof);
   vec3 n = normalize(vNormal);
   if (SNOW > 0.001) {
     float up = smoothstep(0.28, 0.80, n.z);
@@ -2804,6 +2851,54 @@ varying vec3 vPos;
 void main() {
   vPos = position;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+
+// THE STREETS WERE NEVER LIT.
+//
+// Every road surface in this city is drawn by MapLibre as a flat fill. The
+// renderer reaches them twice — the catcher lays a shadow on them, the
+// occlusion pass darkens where buildings meet them — and both of those only
+// ever SUBTRACT. No sun has ever touched the largest continuous surface in the
+// frame, which is why the ground has stayed a flat grey field under a city
+// that otherwise has warm stone, glinting glass and a harbour full of light.
+//
+// Asphalt and flagstone are nothing like matte. They go sharply glossy toward
+// grazing angles, and a street photographed down the line of a low sun has a
+// sheen running the whole way up it — one of the most recognisable things
+// about a city in late light. That is a specular term on an up-facing plane,
+// which is cheap, and it has to be gated on sun visibility or the road lights
+// up inside the shadow of the building next to it.
+//
+// Added rather than blended, on its own quad, because the catcher composites
+// with alpha and alpha can only ever darken toward a colour: to make the
+// ground BRIGHTER than whatever MapLibre painted there, the contribution has
+// to be additive.
+const GROUND_SHEEN_FRAG = /* glsl */ `
+precision highp float;
+varying vec3 vPos;
+uniform vec3 uCam;
+uniform vec4 uSeason;
+` + SHADOW_GLSL + LIGHT_GLSL + /* glsl */ `
+void main() {
+  vec3 n = vec3(0.0, 0.0, 1.0);          // the ground is flat and faces up
+  float vis = sunVis(vPos, n);
+  if (vis < 0.01) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); }
+  else {
+    vec3 V = normalize(uCam - vPos);
+    float sd = max(dot(n, normalize(SUN_DIR + V)), 0.0);
+    // a broad wet-looking sheen, and a tighter core down the sun's own line
+    // A FLAT PLANE UNDER A LOW SUN FIRES ALL AT ONCE. There is no ripple here
+    // to break the highlight the way the harbour's swell does — asphalt is
+    // flat, and that is the point — so the whole road network shares one
+    // alignment with the half-vector and whatever gain this carries is applied
+    // to all of it simultaneously. It has to be a sheen you notice on the
+    // second look, not a light source.
+    float sheen = pow(sd, 18.0) * 0.05 + pow(sd, 90.0) * 0.13;
+    // Snow is diffuse and kills a specular stone dead — what snow does instead
+    // is glitter, and that is handled per-crystal on the surfaces this layer
+    // actually draws.
+    gl_FragColor = vec4(SUN_COL * sheen * vis * (1.0 - uSeason.x * 0.85), 1.0);
+  }
 }`;
 
 // ---------------------------------------------------------------------------
@@ -3119,6 +3214,8 @@ uniform float uGlare;
 uniform sampler2D uShaft;
 uniform float uShaftAmt;
 uniform sampler2D uAoTex;
+uniform sampler2D uIrr;
+uniform float uBounce;
 // still needed here, though the occlusion moved out: the glare has to know
 // whether a building is standing between the camera and the sun
 uniform sampler2D uDepth;
@@ -3253,6 +3350,30 @@ void main() {
   vec2 aoc = texture2D(uAoTex, vUv).rg;
   c.rgb *= mix(vec3(1.0), vec3(0.62, 0.68, 0.80), aoc.r);
   c.rgb *= mix(vec3(1.0), vec3(0.55, 0.61, 0.76), aoc.g * 0.80);
+
+  // INDIRECT BOUNCE — light the occlusion took away, given back in the colour
+  // of whatever is standing next to it.
+  //
+  // This city is lit by two things: a sun, and a uniform blue sky dome. Real
+  // shaded surfaces are lit mostly by their NEIGHBOURS — sunlit pavement
+  // throwing warm light up under a cornice, a brick wall tinting the wall
+  // across the alley, a courtyard glowing with its own stone. None of that
+  // existed, and the occlusion pass made its absence worse: it subtracted
+  // light in precisely the places where, in life, bounced light is doing most
+  // of the lighting. That is why strong AO so often reads as dirt.
+  //
+  // The blurred scene is a serviceable estimate of local irradiance — at any
+  // pixel it holds the average colour of its surroundings, which is what
+  // bounced light is made of. Weighted by AO, so it arrives exactly where the
+  // occlusion removed something, and multiplied by the surface's own colour,
+  // because reflected light is albedo times irradiance and a wall only returns
+  // what it is able to reflect. A red wall in a grey courtyard stays red.
+  //
+  // Honest about its limits: the streets are drawn by MapLibre and are not in
+  // this buffer, so pavement bounce is not in here — that is the analytic
+  // ground term in the light rig, and the two are meant to be read together.
+  vec3 irr = texture2D(uIrr, vUv).rgb;
+  c.rgb += irr * c.rgb * (aoc.r + aoc.g * 0.6) * uBounce;
 
   c.rgb += texture2D(uBloom, vUv).rgb * uBloomAmt;
 
@@ -3598,6 +3719,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private bloomB: THREE.WebGLRenderTarget | null = null;
   private reflectRT: THREE.WebGLRenderTarget | null = null;
   private shaftRT: THREE.WebGLRenderTarget | null = null;
+  private irrA: THREE.WebGLRenderTarget | null = null;
+  private irrB: THREE.WebGLRenderTarget | null = null;
   private aoA: THREE.WebGLRenderTarget | null = null;
   private aoB: THREE.WebGLRenderTarget | null = null;
   private postScene = new THREE.Scene();
@@ -3646,6 +3769,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private shadowSpan = 5999;
   private depthMat: THREE.MeshDepthMaterial | null = null;
   private groundCatcher: THREE.Mesh | null = null;
+  private groundSheen: THREE.Mesh | null = null;
   private aoGround: THREE.Mesh | null = null;
   visible = true;
 
@@ -3781,6 +3905,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           uGlare: { value: 0.30 },
           uShaft: { value: null }, uShaftAmt: { value: 0.42 },
           uAoTex: { value: null }, uDepth: { value: null },
+          uIrr: { value: null }, uBounce: { value: 0.40 },
           uInvProj: { value: new THREE.Matrix4() }, uEye: { value: new THREE.Vector3() },
         },
       });
@@ -3831,6 +3956,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // The reflection runs at half resolution. It is about to be displaced by
       // a wave normal and then mixed in at a Fresnel weight; there is no
       // resolution in it left to see.
+      this.irrA?.dispose(); this.irrB?.dispose();
+      this.irrA = new THREE.WebGLRenderTarget(bw, bh, { ...opts, depthBuffer: false });
+      this.irrB = new THREE.WebGLRenderTarget(bw, bh, { ...opts, depthBuffer: false });
       this.aoA?.dispose(); this.aoB?.dispose();
       const aw = Math.max(2, size.x >> 1), ah = Math.max(2, size.y >> 1);
       this.aoA = new THREE.WebGLRenderTarget(aw, ah, { ...opts, depthBuffer: false });
@@ -5894,6 +6022,49 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         });
         this.groundCatcher = new THREE.Mesh(new THREE.PlaneGeometry(3800, 3200).translate(0, 150, 0.07), catcherMat);
         this.scene.add(this.groundCatcher);
+
+        // and the sun's own contribution to that same ground, added on top
+        const sheenMat = new THREE.ShaderMaterial({
+          vertexShader: CATCHER_VERT,
+          fragmentShader: GROUND_SHEEN_FRAG,
+          uniforms: {
+            uShadow: { value: target.texture }, uSunVP: { value: sunVP },
+            uShadowOn: { value: 1 }, uShadowSpan: { value: this.shadowSpan },
+            uSeason: this.seasonUni, uCam: this.camUni,
+            uSunDir: this.sunDirUni, uSunCol: this.sunColUni,
+          },
+          transparent: true,
+          depthWrite: false,
+          // ADD LIGHT, TOUCH NOTHING ELSE — and THREE.AdditiveBlending will not
+          // do it. Additive blends the ALPHA channel by the same factors as the
+          // colour, so this quad was writing a=1 across the entire city while
+          // carrying rgb near zero. The scene buffer is premultiplied, so the
+          // composite read that as "opaque, and black" and dutifully replaced
+          // every street MapLibre had drawn underneath. The streets went to
+          // pitch from a pass that is arithmetically incapable of darkening
+          // anything.
+          //
+          // Colour adds; alpha is left exactly as the geometry left it. In a
+          // premultiplied buffer, rgb > 0 with a = 0 is precisely the encoding
+          // for "light that arrived here without a surface", which is what a
+          // specular highlight on somebody else's pavement is.
+          blending: THREE.CustomBlending,
+          blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+          blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+        });
+        // UNDER THE SEA, NOT OVER IT. This quad is a rectangle and the city is
+        // an island, so at 0.08 it was laying a specular sheet across the whole
+        // harbour — the sun's road on the water, painted twice, once by water
+        // that had earned it and once by a slab of asphalt lighting that was
+        // not there. Dropped below the water sheet at 0.01, the sea occludes it
+        // by depth exactly where there is no ground, and the hole punched in
+        // the water for the island is precisely where it should show through.
+        this.groundSheen = new THREE.Mesh(
+          new THREE.PlaneGeometry(3800, 3200).translate(0, 150, 0.005), sheenMat,
+        );
+        // a flat sheet lying on the ground: nothing to cast, nothing to mirror
+        this.groundSheen.userData.noShadow = true;
+        this.scene.add(this.groundSheen);
       }
     } catch {
       // shadows are enhancement, never a blocker — flat lighting still ships
@@ -6538,12 +6709,17 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const reflStrength = smoothstep(20, 46, this.map.getPitch());
     if (this.waterMat) this.waterMat.uniforms.uReflectOn.value = reflStrength;
     if (this.water && this.reflectRT && this.waterMat && reflStrength > 0.02) {
+      // Everything lying ON the mirror plane is coplanar with its own
+      // reflection — the same set the shadow bake excludes, for the same
+      // reason it is flagged: flat ground sheets.
       const wasWater = this.water.visible;
       const wasCatcher = this.groundCatcher?.visible ?? false;
       const wasAo = this.aoGround?.visible ?? false;
+      const wasSheen = this.groundSheen?.visible ?? false;
       this.water.visible = false;
       if (this.groundCatcher) this.groundCatcher.visible = false;
       if (this.aoGround) this.aoGround.visible = false;
+      if (this.groundSheen) this.groundSheen.visible = false;
 
       this.camera.projectionMatrix = new THREE.Matrix4()
         .multiplyMatrices(base, new THREE.Matrix4().makeScale(1, 1, -1));
@@ -6555,6 +6731,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.water.visible = wasWater;
       if (this.groundCatcher) this.groundCatcher.visible = wasCatcher;
       if (this.aoGround) this.aoGround.visible = wasAo;
+      if (this.groundSheen) this.groundSheen.visible = wasSheen;
       this.camera.projectionMatrix = base;
 
       this.waterMat.uniforms.uReflect.value = this.reflectRT.texture;
@@ -6653,6 +6830,27 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const inFront = p.z > -1 && p.z < 1;
       const su = this.compMat.uniforms.uSunScreen.value as THREE.Vector3;
       su.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5, inFront ? 1 : 0);
+    }
+
+    // 3a. IRRADIANCE — what every surface's neighbours are throwing back at it.
+    //
+    // Three blurs of the scene at quarter resolution. A heavily blurred image
+    // is a crude but genuinely useful estimate of local incoming light: at a
+    // given pixel it holds the average colour of everything around it, which
+    // is exactly what bounced light IS. The first pass doubles as the
+    // downsample, so the whole thing costs three quarter-res blits.
+    if (this.irrA && this.irrB) {
+      const iw = this.irrA.width, ih = this.irrA.height;
+      this.blurMat.uniforms.uTex.value = this.sceneRT.texture;
+      (this.blurMat.uniforms.uDir.value as THREE.Vector2).set(2.2 / iw, 0);
+      this.blit(this.blurMat, this.irrA);
+      this.blurMat.uniforms.uTex.value = this.irrA.texture;
+      (this.blurMat.uniforms.uDir.value as THREE.Vector2).set(0, 2.2 / ih);
+      this.blit(this.blurMat, this.irrB);
+      this.blurMat.uniforms.uTex.value = this.irrB.texture;
+      (this.blurMat.uniforms.uDir.value as THREE.Vector2).set(2.2 / iw, 0);
+      this.blit(this.blurMat, this.irrA);
+      this.compMat.uniforms.uIrr.value = this.irrA.texture;
     }
 
     // 3b. light shafts, at quarter res, off the same depth and sun position.

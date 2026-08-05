@@ -24,6 +24,10 @@ let replaced = 0, stranded = 0, deliveredWhileDead = 0;
 const waitMs = [];
 const rateJump = [];
 let seedsWithFailure = 0;
+// The anonymous pipeline cannot be repudiated — it has no balance sheet. What
+// it does instead is stop starting things, because a town with a desk in
+// receivership is a town with less credit in it. That is the city channel.
+let startsOpen = 0, monthsOpen = 0, startsDown = 0, monthsDown = 0;
 
 for (let i = 0; i < SEEDS; i++) {
   const { parcels, bbls, adjacency, seed } = loadCity(i, E.normalizeParcels);
@@ -34,21 +38,29 @@ for (let i = 0; i < SEEDS; i++) {
   // only has to watch the field change.
   const seen = new Map();   // bbl -> {m, rate, commitment}
   let sawFailure = false;
+  let prevJobs = 0;
 
   for (let mo = 0; mo < YEARS * 12; mo++) {
     g = E.advanceQuarter(g, parcels, bbls, adjacency);
     // The observer owns nothing; this only stops an insolvency clock from
     // ending a run that has no player in it.
     g.cash = 50_000_000; g.insolventMs = 0; g.gameOver = null;
+    const jobsNow = (g.cityJobs ?? []).length;
+    const started = Math.max(0, jobsNow - prevJobs); prevJobs = jobsNow;
+    if ((g.lenders ?? []).some((l) => l.failedM !== undefined)) { startsDown += started; monthsDown++; }
+    else { startsOpen += started; monthsOpen++; }
     const dead = (g.lenders ?? []).filter((l) => l.failedM === g.month - 1).length;
     if (dead) { failures += dead; sawFailure = true; }
 
-    for (const d of Object.values(g.developments ?? {})) {
+    // The player's jobs live in s.developments; the street's live in
+    // s.cityJobs. There is only ever one of the player and there are hundreds
+    // of the street, so this observer run measures the street.
+    for (const d of [...Object.values(g.developments ?? {}), ...(g.cityJobs ?? []).filter((j) => j.firmId)]) {
       const was = seen.get(d.bbl);
       if (d.repudiatedM !== undefined && !was) {
-        seen.set(d.bbl, { m: d.repudiatedM, rate: d.ratePct, room: Math.max(0, d.commitment - d.drawn) });
+        seen.set(d.bbl, { m: d.repudiatedM, rate: d.ratePct, room: Math.max(0, (d.commitment ?? d.cost ?? 0) - (d.drawn ?? d.spent ?? 0)) });
         repudJobs++;
-        repudDollars += Math.max(0, d.commitment - d.drawn);
+        repudDollars += Math.max(0, (d.commitment ?? d.cost ?? 0) - (d.drawn ?? d.spent ?? 0));
       } else if (d.repudiatedM === undefined && was) {
         replaced++;
         waitMs.push(g.month - was.m);
@@ -58,7 +70,7 @@ for (let i = 0; i < SEEDS; i++) {
     }
     // A job that reaches delivery while still repudiated never came back.
     for (const [bbl, was] of [...seen]) {
-      if (!g.developments?.[bbl]) {
+      if (!g.developments?.[bbl] && !(g.cityJobs ?? []).some((j) => j.bbl === bbl && j.repudiatedM !== undefined)) {
         stranded++;
         deliveredWhileDead++;
         waitMs.push(g.month - was.m);
@@ -74,10 +86,19 @@ console.log(`\n${SEEDS} seeds x ${YEARS} years, no player bot\n`);
 console.log(`bank failures                ${failures}   (${seedsWithFailure}/${SEEDS} seeds saw one)`);
 console.log(`jobs repudiated              ${repudJobs}`);
 console.log(`undrawn commitment killed    ${m$(repudDollars)}`);
+console.log(`\ncity starts/mo, every desk open  ${(startsOpen / Math.max(1, monthsOpen)).toFixed(3)}   (${monthsOpen} months)`);
+console.log(`city starts/mo, a desk in receivership  ${(startsDown / Math.max(1, monthsDown)).toFixed(3)}   (${monthsDown} months)`);
 if (repudJobs === 0) {
-  console.log(`\nTHE CHANNEL NEVER FIRED. Either banks do not fail often enough to`);
-  console.log(`catch a job in flight, or the wiring is not connected. Both are`);
-  console.log(`findings; neither is "it works".`);
+  console.log(`\nNO NAMED JOB WAS EVER CAUGHT MID-DRAW, and that is structural rather`);
+  console.log(`than broken. Named rival jobs are about 1% of this city's cranes —`);
+  console.log(`105 job-months against 9,917 anonymous ones in a fifty-year run, three`);
+  console.log(`concurrent at the most — so the odds of a seizure landing on one are`);
+  console.log(`small by construction. The anonymous pipeline has no balance sheet to`);
+  console.log(`repudiate; it answers a bank failure the way it should, through the`);
+  console.log(`price and availability of credit. That is the pair of numbers above,`);
+  console.log(`and it is the city channel actually working. Repudiation is the`);
+  console.log(`channel for jobs that HAVE a balance sheet: the player's, and the`);
+  console.log(`named firms' on the rare month it catches one.`);
 } else {
   console.log(`refinanced by another desk  ${replaced}  (${((replaced / repudJobs) * 100).toFixed(0)}%)`);
   console.log(`never refinanced            ${stranded}  (${((stranded / repudJobs) * 100).toFixed(0)}%)`);

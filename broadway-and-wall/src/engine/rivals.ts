@@ -34,7 +34,8 @@ import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from
 import { CASH_APY, monthLabel } from "./types";
 import { BUILD_MONTHS, rng, rrange, devPencils } from "./market";
 import { assetValue, initialCondition, landValue, noiAfterTaxYr, occupancy, resolveRec } from "./value";
-import { cityInfillCap, devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retailWantsMixed, SOFT_COST, useForZone, noteRecordPlan } from "./dev";
+import { cityInfillCap, devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retailWantsMixed, SOFT_COST, useForZone, noteRecordPlan, openConstructionDesks, pickConstructionDesk } from "./dev";
+import { CONSTRUCTION_LENDER, chargeLenderLoss } from "./lenders";
 import { recordComp } from "./comps";
 
 // Ashport is an old port town; its money has old-port-town names.
@@ -353,6 +354,49 @@ function fundJobs(s: GameState) {
     const t0 = Math.min(1, (s.month - j.startM) / span);
     const curve = (t: number) => t * t * (3 - 2 * t);
     const spend = Math.round((j.cost ?? 0) * Math.max(0, curve(t1) - curve(t0)));
+
+    // THEIR BANK FAILED TOO. No draws, so the month's work in place comes out
+    // of the sponsor's own account, and the receiver's interest comes out of
+    // it as well instead of capitalising. A firm with a balance sheet carries
+    // the job to the finish; a firm without one leaves a frame standing on the
+    // corner, and orphanToTape puts that frame in front of the player at land
+    // plus a fraction of the sunk cost. This is why a seizure is the best
+    // buying window in the game — it is not a bonus, it is somebody's job.
+    if (j.repudiatedM !== undefined) {
+      const carry = Math.round(((j.debt ?? 0) * (j.ratePct ?? 8)) / 100 / 12);
+      if (r.cash < spend + carry) {
+        j.orphaned = true;
+        s.news.unshift({
+          q: s.month, kind: "event",
+          text: `${r.name} has stopped work. Their construction lender was seized, nobody would refinance the job, `
+            + `and they have run out of cash to carry it themselves. The frame stands where it stands.`,
+        });
+        continue;
+      }
+      r.cash -= spend + carry;
+      j.equityLeft = Math.max(0, (j.equityLeft ?? 0) - spend);
+      j.spent = (j.spent ?? 0) + spend;
+
+      // And the same way out the player has: another desk, once the paperwork
+      // is done, and only if its advance rate on the whole cost clears what is
+      // already owed to the receiver.
+      if (s.month >= (j.replaceM ?? 0)) {
+        const desk = openConstructionDesks(s)
+          .filter((d) => d.name !== (j.lender ?? CONSTRUCTION_LENDER))
+          .find((d) => d.cap * (j.cost ?? 0) > (j.debt ?? 0));
+        if (desk) {
+          j.lender = desk.name;
+          // The premium a desk charges to step into a receiver's shoes — the
+          // same one orphanToTape's takeover paper carries, for the same
+          // reason. It is not a new number.
+          j.ratePct = +(s.econ.indexRate + CONSTR_SPREAD_R + 0.6).toFixed(2);
+          delete j.repudiatedM;
+          delete j.replaceM;
+        }
+      }
+      continue;
+    }
+
     if (spend > 0) {
       const fromEquity = Math.min(spend, Math.max(0, j.equityLeft ?? 0));
       r.cash -= fromEquity;
@@ -365,6 +409,80 @@ function fundJobs(s: GameState) {
     // capitalised, the way construction interest actually works
     const cap = Math.round(((j.debt ?? 0) * (j.ratePct ?? 8)) / 100 / 12);
     if (cap > 0) { j.debt = (j.debt ?? 0) + cap; r.debt += cap; }
+  }
+}
+
+/**
+ * SOMEBODY LENT THEM THAT MONEY.
+ *
+ * A firm on this street dies two ways and the news says so both times — "the
+ * debt outlived the portfolio", "the buildings go to the lenders" — and until
+ * now not one dollar of it reached a lender's balance sheet. Thirty-two of
+ * fifty firms failed across a fifty-year run and the two bank desks' worst
+ * delinquency in the whole century was 4.89%, against a market whose office
+ * vacancy peaked at 28.9%. Their capital never came within a point of their
+ * target, so no bank could ever fail, so every consequence hanging off a bank
+ * failure — the insured deposits, the receiver's dividend, the repudiated
+ * construction commitments — was machinery that could not engage.
+ *
+ * That is the whole 1990 mechanism and it was open at one end. Developers go
+ * under; the banks that financed them eat it; enough of that and the bank goes
+ * under too. This closes it.
+ *
+ * WHOSE LOSS IT IS. Construction debt names its desk — a job carries the
+ * lender that wrote it — so that part is known rather than guessed. The rest
+ * is term paper, and the model does not track which desk wrote which mortgage
+ * for a firm on the street. It is allocated across the live desks by book
+ * share, because a bigger book holds more of this town's paper. That is an
+ * allocation, not a fact the engine knows, and it is written here as one.
+ */
+function chargeSponsorFailure(s: GameState, parcels: ParcelTable, r: Rival) {
+  if (r.debt <= 0) return;
+  // What the receiver gets back: the cash, and the buildings sold into the
+  // market that killed the borrower — the same distressed band the firm was
+  // already selling into on its way down, not a second invented number.
+  let recovered = Math.max(0, r.cash);
+  for (const bbl of r.bbls) {
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec) continue;
+    recovered += assetValue(rec, s.econ, assetGrade(r, rec)) * rrange(s, 0.68, 0.88);
+  }
+  const loss = Math.round(r.debt - recovered);
+  if (loss <= 0) return;
+
+  const exposure: Record<string, number> = {};
+  let known = 0;
+  for (const j of s.cityJobs ?? []) {
+    if (j.firmId !== r.id || !(j.debt ?? 0)) continue;
+    const name = j.lender ?? CONSTRUCTION_LENDER;
+    exposure[name] = (exposure[name] ?? 0) + (j.debt ?? 0);
+    known += j.debt ?? 0;
+  }
+  const term = Math.max(0, r.debt - known);
+  const live = (s.lenders ?? []).filter((l) => l.failedM === undefined);
+  const books = live.reduce((a, l) => a + l.book, 0);
+  if (term > 0 && books > 0) {
+    for (const l of live) exposure[l.name] = (exposure[l.name] ?? 0) + term * (l.book / books);
+  }
+  const total = Object.values(exposure).reduce((a, x) => a + x, 0);
+  if (total <= 0) return;
+
+  let worst = { name: "", amt: 0 };
+  for (const [name, exp] of Object.entries(exposure)) {
+    const share = Math.round((loss * exp) / total);
+    chargeLenderLoss(s, name, share);
+    if (share > worst.amt) worst = { name, amt: share };
+  }
+  // Only when it is big enough to be a story. A desk taking a hole worth more
+  // than a twentieth of its book is news in this town.
+  const wl = live.find((l) => l.name === worst.name);
+  if (wl && worst.amt > wl.book * 0.02) {
+    s.news.unshift({
+      q: s.month, kind: "warn",
+      text: `${worst.name} is carrying the biggest piece of the ${r.name} failure — about `
+        + `$${(worst.amt / 1e6).toFixed(1)}M of a $${(loss / 1e6).toFixed(1)}M hole. `
+        + `Somebody lent them that money, and this is the month it stops being an asset.`,
+    });
   }
 }
 
@@ -948,6 +1066,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
     firmId: r.id, cost, spent: 0,
     equityLeft: Math.round(cost * (1 - ltc)), debt: 0,
     ratePct: +(s.econ.indexRate + CONSTR_SPREAD_R).toFixed(2),
+    lender: pickConstructionDesk(s, bbl + "#" + s.month) ?? CONSTRUCTION_LENDER,
   });
   noteRecordPlan(s, parcels, bbl, lead, sf, floors, r.name);
   // into the delivery pipeline the day the hole is dug, exactly like the city's
@@ -1187,6 +1306,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // cycle from being a seller it could never be.
     if (!r.bbls.length && r.debt > Math.max(0, r.cash)) {
       r.failedM = s.month;
+      chargeSponsorFailure(s, parcels, r);
       s.news.unshift({
         q: s.month, kind: "warn",
         text: `${r.name} is done. They sold the last building months ago and the debt outlived the portfolio — there is nothing for the receiver to take.`,
@@ -1247,6 +1367,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       }
       if (r.stressMs > 30 && (r.cash < 0 || ltvNow > st.maxLtv + 0.2)) {
         r.failedM = s.month;
+        chargeSponsorFailure(s, parcels, r);
         s.news.unshift({
           q: s.month, kind: "warn",
           text: `${r.name} is finished — ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"} go to the lenders. A firm that was buying everything two years ago could not roll a single loan this month. The receiver will be selling for years.`,

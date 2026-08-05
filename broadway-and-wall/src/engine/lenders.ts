@@ -239,7 +239,15 @@ function seizeDeposits(s: GameState, l: Lender) {
   const eventual = Math.round(exposed * recovery);
   const lost = exposed - eventual;
   s.cash = insured;
-  logBooks(s, "ga", lost);                       // the haircut, booked where losses land
+  // THE WHOLE UNINSURED BALANCE LEAVES THE ACCOUNT TODAY, not just the part
+  // that never comes back. Booking only the haircut left the receiver's
+  // eventual dividend as cash that walked out with no entry behind it —
+  // six months out of balance across 3,546 the first time a seizure ever
+  // actually fired, which it never had before the losses on the street
+  // started reaching the desks that funded them. The dividend is booked back
+  // as it arrives in tickReceivership, so the net expense over the whole
+  // episode is exactly the haircut.
+  logBooks(s, "ga", exposed);
   (s.receivership ??= []).push({ from: l.name, amount: eventual, payM: s.month + Math.round(rrange(s, 12, 36)) });
   s.news.unshift({
     q: s.month, kind: "warn",
@@ -298,6 +306,28 @@ function repudiateCommitments(s: GameState, l: Lender) {
     exposed += room;
     if (s.holdings[d.bbl]) mine++;
   }
+  // AND THE STREET'S CRANES, WHICH ARE THE MAJORITY OF THEM. A rival's job
+  // carries a balance and a rate but no commitment — they are modelled more
+  // coarsely than the player's — so repudiation for them means one thing: the
+  // draws stop and the sponsor funds it out of their own account or the
+  // contractor walks off. See fundJobs in rivals.ts.
+  let street = 0;
+  for (const j of s.cityJobs ?? []) {
+    if (!j.firmId || j.orphaned || j.repudiatedM !== undefined) continue;
+    if ((j.lender ?? CONSTRUCTION_LENDER) !== l.name) continue;
+    j.repudiatedM = s.month;
+    j.replaceM = s.month + Math.round(rrange(s, 3, 9));
+    street++;
+  }
+  if (street) {
+    s.news.unshift({
+      q: s.month, kind: "info",
+      text: `${street} site${street > 1 ? "s" : ""} on the street ${street > 1 ? "were" : "was"} being funded by ${l.name}. `
+        + `The draws stopped on Friday. Whoever cannot carry their own job out of pocket is going to leave a frame `
+        + `standing, and a frame that stops is a frame that ends up on the tape.`,
+    });
+  }
+
   if (!jobs) return;
   s.news.unshift({
     q: s.month, kind: mine > 0 ? "warn" : "info",

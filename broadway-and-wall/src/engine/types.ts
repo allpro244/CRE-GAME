@@ -1338,6 +1338,16 @@ export interface GameState {
     equityLeft?: number;  // their equity still to go in
     debt?: number;        // construction balance, drawn plus capitalised interest
     ratePct?: number;
+    /** Which desk wrote it. See pickConstructionDesk — they borrow where you do. */
+    lender?: string;
+    /**
+     * Their bank was seized and their draws stopped, same as yours. A rival
+     * carries it out of their own account or the contractor walks off, and a
+     * frame that stops is a frame that goes on the tape — which is why a bank
+     * failure is the best buying window in the game and always was.
+     */
+    repudiatedM?: number;
+    replaceM?: number;
     orphaned?: boolean;   // the sponsor died and the frame is standing there
     listedM?: number;     // when the receiver put the frame on the tape
   }[];

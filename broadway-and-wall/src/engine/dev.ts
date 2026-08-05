@@ -200,6 +200,37 @@ const CONSTRUCTION_DESKS: { name: string; spread: number; points: number; scale:
   { name: "Cordage Debt Partners", spread: 4.00, points: 0.020, scale: 1.05, cap: 0.75, fund: true },
 ];
 
+/**
+ * WHICH DESK WROTE THE PAPER, for a job the player did not underwrite.
+ *
+ * Rival and city jobs never named a lender, which was fine while nothing ever
+ * asked — and stopped being fine the moment a bank failure had to know whose
+ * borrowers had just lost their funding. A developer on this street borrows
+ * from one of the same three desks the player does, and they go where the
+ * money is: a desk with no appetite is not writing the loan.
+ *
+ * THE DRAW IS PRIVATE, keyed off the site. The shared PRNG drives every other
+ * outcome in the world, so one extra call to it from every groundbreaking
+ * would have re-rolled fifty years of history for a change that is supposed to
+ * be additive. Same technique, and the same reason, as genRentRoll.
+ */
+export function openConstructionDesks(s: GameState): { name: string; cap: number; appetite: number }[] {
+  return CONSTRUCTION_DESKS
+    .map((d) => ({ name: d.name, cap: d.cap, appetite: lenderAppetite(s, d.name) }))
+    .filter((d) => d.appetite >= 0.12);
+}
+
+export function pickConstructionDesk(s: GameState, key: string): string | undefined {
+  const open = openConstructionDesks(s);
+  if (!open.length) return undefined;
+  const total = open.reduce((a, d) => a + d.appetite, 0);
+  let h = 2166136261 ^ (s.seed >>> 0);
+  for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
+  let u = (((h >>> 0) % 1_000_003) / 1_000_003) * total;
+  for (const d of open) { u -= d.appetite; if (u <= 0) return d.name; }
+  return open[open.length - 1].name;
+}
+
 export function constructionQuotes(s: GameState, mix: UseMix, costTotal: number): ConstructionQuote[] {
   const e = s.econ;
   const tight = Math.max(0, 1 - (e.creditIdx ?? 1));

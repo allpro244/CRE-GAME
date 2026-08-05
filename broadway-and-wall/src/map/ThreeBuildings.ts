@@ -3370,12 +3370,12 @@ void main() {
   float reflFar = 1.0 - smoothstep(350.0, 1500.0, length(vec3(vXY, 0.0) - uCam));
   vec3 reflCol = vec3(0.0);
   float reflA = 0.0;
-  if (uReflectOn > 0.5 && reflFar > 0.002) {
+  if (uReflectOn > 0.01 && reflFar > 0.002) {
     vec2 suv = gl_FragCoord.xy / uResolution;
     suv += n.xy * 0.055 * (0.35 + 0.65 * fres);
     vec4 r = texture2D(uReflect, clamp(suv, vec2(0.002), vec2(0.998)));
     // premultiplied, so undo it to get the colour back out
-    reflA = r.a * reflFar;
+    reflA = r.a * reflFar * uReflectOn;
     reflCol = r.a > 0.001 ? r.rgb / r.a : vec3(0.0);
   }
 
@@ -3432,6 +3432,28 @@ void main() {
   // foam: only on the real crests, and heavier in the shallows where the
   // swell actually breaks
   col += vec3(0.075) * smoothstep(0.86, 1.02, h) * (0.5 + 0.8 * shoal);
+
+  // THE WATER'S EDGE MOVES, AND THIS ONE WAS RULED IN PEN.
+  //
+  // The whole harbour has been alive for a while — the swell runs, the sun
+  // road breaks up, the city reflects in it — and it all stopped dead at the
+  // coastline, which was a fixed boundary between blue and sand. That edge is
+  // the longest line in the frame and it rings the entire island, so a static
+  // one is the single largest thing telling you the sea is a texture.
+  //
+  // vDepth already carries metres to the shore, baked per vertex for the
+  // shoal. Running the waterline in and out along it costs one sine: the band
+  // of wash advances a few metres up the beach and drags back, and because the
+  // phase is driven by position as well as time it arrives along the coast
+  // rather than the whole island pulsing at once.
+  float swell = sin(uTime * 0.55 + vXY.x * 0.011 + vXY.y * 0.008)
+              + 0.4 * sin(uTime * 0.83 - vXY.x * 0.019 + vXY.y * 0.013);
+  float edge = vDepth - (3.4 + 2.0 * swell);
+  float wash = 1.0 - smoothstep(0.0, 4.8, abs(edge));
+  // Thickest right at the top of its run, the way a spent wave is, and gone
+  // under ice — a rimed harbour has no surf.
+  col = mix(col, vec3(0.880, 0.910, 0.932),
+            wash * 0.52 * smoothstep(0.0, 0.35, swell + 1.4) * (1.0 - SNOW * 0.75));
 
   // RIME. A cold harbour does not freeze over — this one has ships working it
   // all winter — but the still water inside the shoal line skins over and
@@ -6501,7 +6523,21 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // The water itself, the shadow catcher and the occlusion floor all sit ON
     // the mirror plane and are coplanar with their own reflections; they are
     // hidden, or they z-fight with themselves and cover the result.
-    if (this.water && this.reflectRT && this.waterMat) {
+    // HOW MUCH REFLECTION IS WORTH RENDERING FOR.
+    //
+    // The mirrored pass draws the entire city a second time, every frame. What
+    // it buys is governed by Fresnel, and Fresnel is the reason it is not
+    // always worth buying: looking straight down at water you see about two per
+    // cent reflection and ninety-eight per cent riverbed, so the pass is
+    // rendering a skyline nobody can see. It earns its cost at a graze and
+    // almost nowhere else.
+    //
+    // Faded rather than switched, so there is no frame where the harbour pops,
+    // and the pass is skipped outright only once the strength has already
+    // reached zero.
+    const reflStrength = smoothstep(20, 46, this.map.getPitch());
+    if (this.waterMat) this.waterMat.uniforms.uReflectOn.value = reflStrength;
+    if (this.water && this.reflectRT && this.waterMat && reflStrength > 0.02) {
       const wasWater = this.water.visible;
       const wasCatcher = this.groundCatcher?.visible ?? false;
       const wasAo = this.aoGround?.visible ?? false;
@@ -6523,7 +6559,6 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
       this.waterMat.uniforms.uReflect.value = this.reflectRT.texture;
       (this.waterMat.uniforms.uResolution.value as THREE.Vector2).copy(this.postSize);
-      this.waterMat.uniforms.uReflectOn.value = 1;
     }
 
     // 1. the city, offscreen, onto nothing

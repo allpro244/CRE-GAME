@@ -55,6 +55,37 @@ const devUseLabel = (u: string) => (u === "mixed" ? "Mixed-Use" : CLASS_LABEL[u 
 function physicalOcc(rec: never, h: { tenants: { sf: number }[]; occ?: number }): number {
   return physicalOccupancy(rec as never as ParcelRecord, h as never as Holding);
 }
+
+/**
+ * WHAT THE SELLER HAS DISCLOSED, shaped like a holding so every reader that
+ * already knows how to price a building you own can price one you are looking
+ * at — using the SAME functions and therefore producing the SAME numbers.
+ *
+ * The owner's complaint, exactly: "the market NOI and occupancy should be the
+ * same after you close on the property." They were not. The tape quoted a
+ * MARKET occupancy — the model's opinion of how full a building like this one
+ * ought to be — and the deed handed over an actual rent roll. Two honest
+ * numbers, and the one on screen while you were deciding was the wrong one,
+ * which is why a building appeared to lose value the moment it became yours.
+ *
+ * The roll now travels with the listing (see Listing.roll and refreshListings),
+ * so there is a real answer available before the bid. This wraps it in the
+ * shape holdingNOIYr and physicalOcc expect, with `assessed` set to the price
+ * you would actually pay, because that is what the tax bill would be struck on
+ * once you owned it.
+ *
+ * Returns null when there is nothing disclosed — an off-market lot you cold
+ * -called about has no offering memorandum, and finding out what is in the
+ * building is exactly the risk you are taking.
+ */
+function disclosed(game: GameState, bbl: string, price?: number): Holding | null {
+  const li = game.listings.find((l) => l.bbl === bbl);
+  if (!li?.roll) return null;
+  return {
+    bbl, boughtM: game.month, costBasis: price ?? li.ask, assessed: price ?? li.ask,
+    loan: null, condition: li.cond ?? "standard", tenants: li.roll, occ: li.occ, cfHistory: [],
+  } as unknown as Holding;
+}
 import { sponsorStanding } from "@/engine/sponsor";
 import { marketAppetite, markRival, ownerOf, rivalCondition, gradeOf, assetGrade } from "@/engine/rivals";
 import { compFlows, compStats, portfolioIndustries } from "@/engine/comps";
@@ -800,7 +831,14 @@ function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: Prop
       {on("summary") && <div className="grid">
         <Row k="Appraisal" v={band(selectedBBL, value)} strong />
         {isBuilt && <Row k="Market rent" v={"$" + marketRentPsfYr(rec, game.econ, cond).toFixed(0) + " /sf/yr"} />}
-        {isBuilt && !holding && <Row k="Occupancy (mkt)" v={(occupancy(rec, game.econ) * 100).toFixed(0) + "%"} />}
+        {/* DISCLOSED, not estimated, whenever the seller has shown a roll. The
+            label drops "(mkt)" with it, because it is no longer an opinion. */}
+        {isBuilt && !holding && (() => {
+          const d = disclosed(game, selectedBBL);
+          return d
+            ? <Row k="Occupancy" v={(physicalOcc(rec as never, d) * 100).toFixed(0) + "%"} bad={physicalOcc(rec as never, d) < 0.75} />
+            : <Row k="Occupancy (mkt)" v={(occupancy(rec, game.econ) * 100).toFixed(0) + "%"} />;
+        })()}
         {isBuilt && !holding && (
           isMixedUse(rec)
             ? <Row k="Leasable spaces" v={usesOf(rec).map((u) => `${Math.max(1, Math.round(useSf(rec, u) / useSuiteSf(rec, u)))} ${USE_WORD[u]}`).join(" · ")} />
@@ -826,7 +864,12 @@ function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: Prop
             assets already net out the tax bill; an unowned one is estimated
             against its own appraisal, which is the only price on offer until
             somebody names one. */}
-        {isBuilt && <Row k="NOI / yr" v={usd(holding ? holdingNOIYr(rec, game.econ, holding, game.month) : noiAfterTaxYr(rec, game.econ, cond, value))} />}
+        {isBuilt && (() => {
+          const d = holding ?? disclosed(game, selectedBBL);
+          return <Row k="NOI / yr" v={usd(d
+            ? holdingNOIYr(rec, game.econ, d, game.month)
+            : noiAfterTaxYr(rec, game.econ, cond, value))} />;
+        })()}
         {holding && isBuilt && <Row k="Property tax / yr" v={usd(propertyTaxYr(rec, holding)) + (commercial ? " (your share)" : "")} />}
         <Row k="Lot area" v={sf(rec.lotArea)} />
         {isBuilt && <Row k="Building" v={sf(rec.bldgArea) + ` · ${rec.floors} fl · ${rec.yearBuilt}`} />}
@@ -1023,9 +1066,27 @@ function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: Prop
                 : <Row k="Ask" v={usd(listing.ask)} strong />}
               {contract && <Row k="Must fund by" v={monthLabel(contract.closeByM ?? game.month + 3)} bad />}
               {contract && <Row k="Deposit posted" v={usd(contract.deposit ?? 0)} />}
-              {isBuilt && <Row k="NOI / yr" v={usd(noiAfterTaxYr(rec, game.econ, cond, contract?.agreedPrice ?? listing.ask))} />}
-              {isBuilt && <Row k="Cap rate" v={((noiAfterTaxYr(rec, game.econ, cond, contract?.agreedPrice ?? listing.ask) / (contract?.agreedPrice ?? listing.ask)) * 100).toFixed(2) + "%"} strong />}
-              {isBuilt && <Row k="Occupancy" v={(occupancy(rec, game.econ) * 100).toFixed(0) + "%"} />}
+              {/* THE NUMBERS YOU BID ON ARE THE NUMBERS YOU CLOSE ON. Priced
+                  off the disclosed rent roll where there is one, so the cap
+                  rate on this card is the cap rate you actually buy at rather
+                  than the one a building of this type ought to trade at. */}
+              {isBuilt && (() => {
+                const px = contract?.agreedPrice ?? listing.ask;
+                const d = disclosed(game, selectedBBL, px);
+                const n = d ? holdingNOIYr(rec, game.econ, d, game.month)
+                            : noiAfterTaxYr(rec, game.econ, cond, px);
+                return (
+                  <>
+                    <Row k="NOI / yr" v={usd(n)} bad={n < 0} />
+                    <Row k="Cap rate" v={((n / Math.max(1, px)) * 100).toFixed(2) + "%"} strong />
+                    <Row
+                      k={d ? "Occupancy" : "Occupancy (mkt)"}
+                      v={((d ? physicalOcc(rec as never, d) : occupancy(rec, game.econ)) * 100).toFixed(0) + "%"}
+                    />
+                    {d && <Row k="In place" v={`${d.tenants.length} lease${d.tenants.length === 1 ? "" : "s"}`} />}
+                  </>
+                );
+              })()}
               {!isBuilt && <Row k="Land" v={"$" + ((contract?.agreedPrice ?? listing.ask) / rec.lotArea).toFixed(0) + " /sf of lot"} />}
             </div>
             {/* TWO ACTS, and never both at once. Before a handshake there is

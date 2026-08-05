@@ -4,7 +4,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Holding, Listing } from "./types";
 import { START_CASH, CENTURY_MONTHS, CASH_APY, logBooks, monthLabel } from "./types";
 import { initEcon, rng, rrange, tickEcon } from "./market";
-import { assetValue, holdingNOIYr, holdingValue, monthlyNOI, netWorth, operatingStatement, physicalOcc, resolveRec } from "./value";
+import { assetValue, condGrade, holdingNOIYr, holdingValue, initialCondIdx, monthlyNOI, netWorth, operatingStatement, physicalOcc, resolveRec } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLeasing, depositsOn, genRentRoll } from "./leasing";
@@ -232,9 +232,15 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
       distress: distress || undefined,
     };
     if (rec.class !== "land" && rec.bldgArea > 0) {
+      // The grade the deed will convey: today's grade, less the notch a
+      // distressed building takes at the closing (see executePurchase). Stamped
+      // on the listing so the tape and the deed cannot disagree about it.
+      const listCondIdx = distress ? Math.max(0.30, (initialCondIdx(rec) ?? 0.7) - 0.10) : undefined;
+      const listCond = distress ? condGrade(listCondIdx as number) : gradeOf(s, rec);
       const vessel = { bbl, boughtM: s.month, costBasis: ask, loan: null,
-        condition: gradeOf(s, rec), tenants: [], cfHistory: [] } as unknown as Holding;
+        condition: listCond, tenants: [], cfHistory: [] } as unknown as Holding;
       genRentRoll(s, rec, vessel, distress, false);   // no closing, no settlement
+      listing.cond = listCond;
       listing.roll = vessel.tenants;
       if (vessel.occ !== undefined) listing.occ = vessel.occ;
     }

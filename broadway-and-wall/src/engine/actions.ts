@@ -168,6 +168,10 @@ export function executePurchase(
   if (wasListing?.roll) {
     holding.tenants = wasListing.roll;
     if (wasListing.occ !== undefined) holding.occ = wasListing.occ;
+    // ...and the grade the memorandum was priced at. The distress knock above
+    // has already been applied to this value at listing time, so taking it
+    // verbatim is what makes the NOI on the tape the NOI on the deed.
+    if (wasListing.cond) { holding.condition = wasListing.cond; holding.condIdx = initialCondIdx(rec); }
     // THE DEPOSITS SETTLE HERE INSTEAD. genRentRoll normally credits them as it
     // writes the roll, because that is a closing; a roll written for a listing
     // passes settle=false, so the money moves at the deed rather than at the

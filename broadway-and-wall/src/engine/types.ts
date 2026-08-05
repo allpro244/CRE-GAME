@@ -530,6 +530,14 @@ export interface Listing {
   roll?: Tenant[];
   occ?: number;
   /**
+   * The condition the roll was written against, and the condition the deed
+   * conveys. Without this the panel priced the disclosed roll at "good" while
+   * the closing graded the building and knocked a distressed one down a
+   * notch — so occupancy matched across the closing and NOI did not, on 17 of
+   * 40 measured purchases, by as much as 62%. One quantity, one answer.
+   */
+  cond?: Condition;
+  /**
    * WHOSE BUILDING THIS IS, while it is on the market.
    *
    * The distress paths used to strip the deed out of a firm's book before

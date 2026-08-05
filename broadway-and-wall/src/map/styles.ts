@@ -195,6 +195,27 @@ export const S_SELFSTOR = 80;    // rank upon rank of roller doors under one bri
 export const S_DATACENTER = 81;  // a blind box with louvre banks and no windows anywhere
 
 // ---------------------------------------------------------------------------
+// HOW PEOPLE ACTUALLY LIVE.
+//
+// Multifamily is the largest class in every city here and it spanned the fewest
+// families — brick, tenement, project, white brick and a handful of towers.
+// But housing is the most VARIED thing a country builds, because it is the only
+// building type that gets made by ordinary people with local timber and no
+// architect. A triple-decker, a shotgun and a bungalow share nothing at all.
+const S_TRIPLEDECK = 82;  // stacked open porches, three floors of them, one per family
+const S_SHOTGUN = 83;     // one room wide and four deep: a door, a window, a gable
+const S_GAMBREL = 84;     // the Dutch barn roof, with flared eaves over the wall head
+const S_FOURSQUARE = 85;  // a cube with a hipped roof, one big dormer, full-width porch
+const S_BUNGALOW = 86;    // deep eaves on exposed rafters, and tapered porch piers
+const S_SRO = 87;         // a hundred identical tiny windows: one room, one man, one bulb
+const S_ORIEL = 88;       // a bay window carried the full height of the front
+const S_TWOFLAT = 89;     // raised basement, a bowed bay, flat roof, two doors
+const S_RANCH = 90;       // long, low, a picture window and the garage on the front
+const S_GARDENAPT = 91;   // two storeys round a lawn, with open breezeway stairs
+const S_MANSIONBLK = 92;  // a porte-cochere, and the same window ninety times
+const S_BACKTOBACK = 93;  // the cheapest terrace ever built: one room per floor
+
+// ---------------------------------------------------------------------------
 // TRAITS, NOT NUMBERS.
 //
 // Downstream behaviour was keyed to the numeric VALUE of a style id — `s < 8`
@@ -216,6 +237,7 @@ export const T_MASONRY = [
   S_POWERHOUSE, S_COLDSTORE, S_BREWERY, S_TEXTILE, S_PUMPHOUSE, S_DEPOT,
   S_QUEENANNE, S_TUDOR, S_MISSION, S_FIREHOUSE, S_SCHOOL, S_LIBRARY,
   S_BANKTEMPLE, S_HOTEL, S_THEATRE,
+  S_SRO, S_ORIEL, S_TWOFLAT, S_MANSIONBLK, S_BACKTOBACK, S_GARDENAPT,
 ];
 
 /** Reflects the sky and throws a specular back at the sun. */
@@ -234,7 +256,7 @@ export const T_TRADE = [
   S_TERRAPIER, S_UNITGLASS, S_MEGAPANEL, S_STEELSHELF, S_DEEPFRAME,
   S_DEPOT, S_PUMPHOUSE,
   S_THEATRE, S_DINER, S_HOTEL, S_DEPTSTORE, S_STRIPMALL, S_MISSION, S_BANKTEMPLE,
-  S_FLEX,
+  S_FLEX, S_TWOFLAT, S_ORIEL, S_MANSIONBLK, S_SRO,
 ];
 
 /** Expresses its floor line as a shadow under every storey. */
@@ -247,6 +269,8 @@ export const T_FLOORLINE = [
   S_POWERHOUSE, S_BREWERY, S_TEXTILE, S_FOUNDRY, S_DEPOT,
   S_QUEENANNE, S_STICK, S_TUDOR, S_MISSION, S_SCHOOL, S_LIBRARY, S_HOTEL,
   S_DEPTSTORE, S_MOTEL, S_FIREHOUSE, S_BANKTEMPLE, S_TILTUP, S_FLEX,
+  S_TRIPLEDECK, S_SHOTGUN, S_GAMBREL, S_FOURSQUARE, S_BUNGALOW, S_SRO,
+  S_ORIEL, S_TWOFLAT, S_RANCH, S_GARDENAPT, S_MANSIONBLK, S_BACKTOBACK,
 ];
 
 /** A modern skin whose parapet is metal or stone rather than more of itself. */
@@ -277,6 +301,8 @@ export const T_STONE = [
 export const T_OLDROOF = [
   S_PREWAR, S_BRICK, S_FEDERAL, S_ITALIANATE, S_EMPIRE, S_TENEMENT, S_CARRIAGE,
   S_QUEENANNE, S_STICK, S_TUDOR, S_MISSION,
+  S_TRIPLEDECK, S_SHOTGUN, S_GAMBREL, S_FOURSQUARE, S_BUNGALOW, S_RANCH,
+  S_BACKTOBACK,
 ];
 
 export const has = (list: readonly number[], s: number) => list.indexOf(s) >= 0;
@@ -401,7 +427,7 @@ export function stylePool(v: BuildingVolume): number[] {
     p.push(S_ITALIANATE, S_ITALIANATE, S_FEDERAL, S_BRICK, S_PREWAR, S_EMPIRE);
     if (!resi && f >= 3) p.push(S_CASTIRON, S_CASTIRON, S_CASTIRON);
     if (f >= 4) p.push(S_EMPIRE, S_ROMANESQUE);
-    if (resi) p.push(S_TENEMENT, S_BRICK);
+    if (resi) p.push(S_TENEMENT, S_BRICK, S_BACKTOBACK, S_SHOTGUN, S_GAMBREL);
     return p;
   }
   if (y < 1905) {
@@ -423,7 +449,9 @@ export function stylePool(v: BuildingVolume): number[] {
     // nineteenth century, at three storeys, and that is where a port town
     // actually keeps it. The steeple rule reads this style too.
     if (!resi) p.push(S_GOTHIC);
-    if (resi) p.push(S_TENEMENT, S_TENEMENT, S_BRICK, S_QUEENANNE, S_STICK);
+    if (resi) p.push(S_TENEMENT, S_BRICK, S_QUEENANNE, S_STICK);
+    if (resi && f <= 4) p.push(S_TRIPLEDECK, S_TRIPLEDECK, S_SHOTGUN, S_BACKTOBACK, S_TWOFLAT);
+    if (resi && f >= 4) p.push(S_ORIEL, S_MANSIONBLK, S_SRO);
     if (office && f >= 6) p.push(S_CHICAGO, S_CHICAGO, S_BEAUX);
     // The buildings a town has one of. They are rare by weight, not by gate —
     // a place has one bank with columns and one firehouse, and both of them
@@ -443,7 +471,9 @@ export function stylePool(v: BuildingVolume): number[] {
     if (office && f >= 6) p.push(S_GOTHIC, S_GOTHIC, S_GOTHIC, S_TERRACOTTA);
     if (shop) p.push(S_TERRACOTTA, S_BEAUX, S_CHICAGO, S_MARKET);
     if (resi) p.push(S_TENEMENT, S_TENEMENT, S_BRICK, S_PREWAR, S_BEAUX);
-    if (resi && f <= 4) p.push(S_QUEENANNE, S_TUDOR, S_MISSION);
+    if (resi && f <= 4) p.push(S_QUEENANNE, S_TUDOR, S_MISSION,
+      S_TRIPLEDECK, S_FOURSQUARE, S_FOURSQUARE, S_BUNGALOW, S_BUNGALOW, S_TWOFLAT, S_GAMBREL);
+    if (resi && f >= 4) p.push(S_ORIEL, S_ORIEL, S_MANSIONBLK, S_SRO, S_SRO);
     if (!resi && f <= 3) p.push(S_CARRIAGE, S_CARRIAGE);
     if (!resi) p.push(S_FIREHOUSE, S_LIBRARY, S_BANKTEMPLE, S_SCHOOL, S_HOTEL, S_THEATRE);
     if (shop && f >= 3) p.push(S_DEPTSTORE, S_DEPTSTORE);
@@ -457,7 +487,8 @@ export function stylePool(v: BuildingVolume): number[] {
     p.push(S_CIVIC, S_PREWAR, S_BRICK);
     if (resi) p.push(S_BRICK, S_PREWAR, S_TENEMENT, S_TUDOR, S_MISSION);
     if (shop) p.push(S_MODERNE, S_TERRACOTTA, S_DEPTSTORE);
-    if (resi && f <= 4) p.push(S_TUDOR, S_TUDOR, S_MISSION);
+    if (resi && f <= 4) p.push(S_TUDOR, S_MISSION, S_BUNGALOW, S_FOURSQUARE, S_GAMBREL);
+    if (resi && f >= 4) p.push(S_MANSIONBLK, S_ORIEL, S_SRO);
     if (!resi) p.push(S_THEATRE, S_THEATRE, S_SCHOOL, S_HOTEL, S_LIBRARY, S_FIREHOUSE);
     return p;
   }
@@ -467,7 +498,7 @@ export function stylePool(v: BuildingVolume): number[] {
     if (resi) p.push(S_PROJECT, S_PROJECT, S_WHITEBRICK, S_WHITEBRICK, S_WHITEBRICK);
     if (shop) p.push(S_MODERNE, S_RIBBON, S_EIFS, S_DINER, S_STRIPMALL);
     if (!resi) p.push(S_SCHOOL, S_THEATRE, S_HOTEL);
-    if (resi && f <= 3) p.push(S_MOTEL, S_MOTEL);
+    if (resi && f <= 3) p.push(S_MOTEL, S_RANCH, S_RANCH, S_RANCH, S_GARDENAPT, S_GARDENAPT);
     return p;
   }
   if (y < 1980) {
@@ -477,7 +508,7 @@ export function stylePool(v: BuildingVolume): number[] {
     if (resi) p.push(S_WHITEBRICK, S_WHITEBRICK, S_PROJECT, S_PRECAST, S_BRICK);
     if (shop) p.push(S_EIFS, S_PRECAST, S_METALPAN, S_STRIPMALL, S_STRIPMALL, S_DINER);
     if (!resi) p.push(S_SCHOOL, S_HOTEL);
-    if (resi && f <= 3) p.push(S_MOTEL, S_MOTEL);
+    if (resi && f <= 3) p.push(S_MOTEL, S_RANCH, S_RANCH, S_GARDENAPT, S_GARDENAPT, S_GARDENAPT);
     if (f >= 4) p.push(S_GARAGE);
     return p;
   }
@@ -488,7 +519,7 @@ export function stylePool(v: BuildingVolume): number[] {
     if (resi) p.push(S_EIFS, S_WHITEBRICK, S_BALCONY, S_BALCONY);
     if (shop) p.push(S_EIFS, S_BIGBOX, S_METALPAN, S_STRIPMALL, S_STRIPMALL, S_TILTUP);
     if (!resi) p.push(S_HOTEL, S_SCHOOL);
-    if (resi && f <= 3) p.push(S_MOTEL);
+    if (resi && f <= 3) p.push(S_MOTEL, S_RANCH, S_GARDENAPT, S_GARDENAPT);
     if (f >= 4) p.push(S_GARAGE);
     return p;
   }

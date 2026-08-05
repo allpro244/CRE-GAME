@@ -974,6 +974,97 @@ void main() {
     colW = 8.0; win = vec2(0.0, 0.0);
     wall = mix(vec3(0.78, 0.75, 0.69), vec3(0.70, 0.68, 0.64), step(0.5, vVar));
     glassA = wall; glassB = wall;
+  } else if (s == 82) {
+    // THE TRIPLE-DECKER. Three floors, three families, and an OPEN PORCH on
+    // each one stacked up the front — the porches are the building. Painted
+    // clapboard, in whatever two colours were on sale.
+    colW = 3.2; win = vec2(0.44, 0.60);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.24)      { wall = vec3(0.570, 0.510, 0.430); }  // buff
+    else if (pk < 0.46) { wall = vec3(0.450, 0.470, 0.430); }  // sage
+    else if (pk < 0.66) { wall = vec3(0.530, 0.390, 0.335); }  // barn red
+    else if (pk < 0.84) { wall = vec3(0.430, 0.455, 0.500); }  // slate blue
+    else                { wall = vec3(0.680, 0.665, 0.625); }  // white
+    glassA = vec3(0.27, 0.32, 0.37); glassB = vec3(0.42, 0.49, 0.55);
+  } else if (s == 83) {
+    // THE SHOTGUN. One room wide — a door, one window, a gable, and the whole
+    // house running back off the street. The narrowness IS the type.
+    colW = 4.2; win = vec2(0.30, 0.58);
+    wall = mix(vec3(0.660, 0.630, 0.575), vec3(0.560, 0.520, 0.470), step(0.5, vVar));
+    glassA = vec3(0.26, 0.31, 0.35); glassB = vec3(0.40, 0.47, 0.52);
+  } else if (s == 84) {
+    // DUTCH COLONIAL. The gambrel comes down over the wall head with a flared
+    // eave, so the top storey is roof rather than wall and the house looks
+    // like it is wearing it.
+    colW = 3.0; win = vec2(0.42, 0.54);
+    wall = mix(vec3(0.680, 0.660, 0.615), vec3(0.585, 0.540, 0.485), step(0.5, vVar));
+    glassA = vec3(0.27, 0.32, 0.36); glassB = vec3(0.42, 0.49, 0.54);
+  } else if (s == 85) {
+    // THE FOURSQUARE. A cube: four rooms up, four down, a hipped roof with one
+    // big dormer in it and a porch across the whole front. Utterly regular.
+    colW = 3.4; win = vec2(0.42, 0.56);
+    wall = mix(vec3(0.615, 0.475, 0.390), vec3(0.640, 0.615, 0.560), step(0.55, vVar));
+    glassA = vec3(0.27, 0.32, 0.37); glassB = vec3(0.42, 0.50, 0.55);
+  } else if (s == 86) {
+    // THE BUNGALOW. Deep eaves carried on exposed rafter tails, and porch piers
+    // that TAPER — battered, wide at the base. Low, wide, and horizontal.
+    colW = 3.8; win = vec2(0.48, 0.48);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.34)      { wall = vec3(0.510, 0.450, 0.360); }  // stained shingle
+    else if (pk < 0.62) { wall = vec3(0.570, 0.520, 0.430); }  // olive
+    else                { wall = vec3(0.620, 0.560, 0.480); }  // tan
+    glassA = vec3(0.28, 0.33, 0.37); glassB = vec3(0.43, 0.50, 0.55);
+  } else if (s == 87) {
+    // THE SRO. One room, one man, one bulb — so a hundred identical tiny
+    // windows in a tight grid, and nothing else on the wall at all. The
+    // FREQUENCY is the fact: these openings are half the size of a flat's.
+    colW = 1.95; win = vec2(0.40, 0.44);
+    wall = mix(vec3(0.545, 0.455, 0.400), vec3(0.590, 0.560, 0.520), step(0.5, vVar));
+    glassA = vec3(0.24, 0.28, 0.32); glassB = vec3(0.37, 0.43, 0.48);
+  } else if (s == 88) {
+    // THE ORIEL. A bay window carried the FULL HEIGHT of the front, standing
+    // proud of the wall — the one move that gives a flat facade a shadow line
+    // from top to bottom.
+    colW = 3.3; win = vec2(0.46, 0.62);
+    wall = mix(vec3(0.545, 0.435, 0.360), vec3(0.630, 0.590, 0.530), step(0.55, vVar));
+    glassA = vec3(0.27, 0.32, 0.37); glassB = vec3(0.42, 0.49, 0.55);
+  } else if (s == 89) {
+    // THE TWO-FLAT. A raised basement, so the front door is up a short flight;
+    // a bowed bay running the height; a flat roof and a parapet. Two doors
+    // side by side is the giveaway and the bay is what you see.
+    colW = 3.6; win = vec2(0.46, 0.58);
+    wall = mix(vec3(0.575, 0.420, 0.345), vec3(0.620, 0.585, 0.530), step(0.55, vVar));
+    glassA = vec3(0.26, 0.31, 0.36); glassB = vec3(0.41, 0.48, 0.54);
+  } else if (s == 90) {
+    // THE RANCH. Long, low, and horizontal: a picture window at one end, the
+    // garage door on the front, and a shallow roof over the lot.
+    colW = 5.0; win = vec2(0.56, 0.40);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.30)      { wall = vec3(0.640, 0.600, 0.535); }
+    else if (pk < 0.58) { wall = vec3(0.585, 0.450, 0.375); }
+    else if (pk < 0.80) { wall = vec3(0.520, 0.545, 0.510); }
+    else                { wall = vec3(0.680, 0.665, 0.630); }
+    glassA = vec3(0.30, 0.35, 0.40); glassB = vec3(0.46, 0.54, 0.59);
+  } else if (s == 91) {
+    // THE GARDEN APARTMENT. Two or three storeys round a lawn, with the stairs
+    // OUTSIDE in open breezeways — a dark slot cut clean through the block
+    // every few bays, which no other housing type has.
+    colW = 3.5; win = vec2(0.48, 0.52);
+    wall = mix(vec3(0.605, 0.470, 0.395), vec3(0.660, 0.630, 0.575), step(0.55, vVar));
+    glassA = vec3(0.26, 0.31, 0.36); glassB = vec3(0.41, 0.48, 0.53);
+  } else if (s == 92) {
+    // THE MANSION BLOCK. The same window ninety times over, in good stone,
+    // with a porte-cochere cut into the middle of the base for a carriage.
+    colW = 3.1; win = vec2(0.42, 0.64);
+    wall = mix(vec3(0.700, 0.665, 0.600), vec3(0.605, 0.485, 0.410), step(0.6, vVar));
+    glassA = vec3(0.25, 0.30, 0.35); glassB = vec3(0.40, 0.47, 0.53);
+  } else if (s == 93) {
+    // BACK-TO-BACK. The cheapest terrace ever built: one room per floor, one
+    // window per room, a shared wall on three sides. Tiny openings, tight
+    // rhythm, soot, and a chimney stack every two houses.
+    colW = 2.5; win = vec2(0.36, 0.46);
+    wall = mix(vec3(0.470, 0.360, 0.315), vec3(0.520, 0.470, 0.440), step(0.5, vVar));
+    glassA = vec3(0.23, 0.27, 0.31); glassB = vec3(0.36, 0.42, 0.47);
   } else if (s == 75) {
     // TILT-UP. The wall was cast flat on the slab and stood up by crane, so it
     // arrives in panels about seven metres wide with a joint down every one of
@@ -1264,6 +1355,12 @@ void main() {
   // in it. A brutalist slot is half a metre deep; a mirror-glass unit is
   // flush enough to be a mirror.
   float revealM = (s == 49) ? 0.028
+                : (s == 90) ? 0.14
+                : (s == 82 || s == 83 || s == 84 || s == 85 || s == 86) ? 0.20
+                : (s == 91) ? 0.24
+                : (s == 87 || s == 93) ? 0.28
+                : (s == 88 || s == 89) ? 0.32
+                : (s == 92) ? 0.38
                 : (s == 78) ? 0.05
                 : (s == 76 || s == 79 || s == 80) ? 0.10
                 : (s == 77) ? 0.12
@@ -1669,6 +1766,115 @@ void main() {
       float cover = clamp(fin + obliq * 1.25, 0.0, 1.0);
       wall = mix(wall, wall * (0.82 + 0.30 * fin), 0.9);
       winMask *= 1.0 - cover * 0.92;
+    } else if (s == 82) {
+      // THE STACKED PORCHES. One per floor, the full width of the front, with
+      // a rail and a deep shadow behind — and the porch is set BACK from the
+      // wall, so what you read is a column of dark with a pale rail across it
+      // at every level. The porches are the building.
+      float fy = fract(v);
+      if (f.x > 0.12 && f.x < 0.88) {
+        if (fy < 0.10) { wall = mix(wall, wall * 1.22, 0.9); winMask = 0.0; }        // deck edge
+        else if (fy < 0.34) { wall = mix(wall, wall * 1.06, 0.55); winMask = 0.0; }  // the rail
+        else if (fy < 0.80) { wall = mix(wall, wall * 0.42, 0.88); winMask *= 0.35; } // in shade
+        else { wall = mix(wall, wall * 1.14, 0.7); winMask = 0.0; }                   // the beam
+        // the posts at each end of the porch
+        float pst = max(1.0 - smoothstep(0.12, 0.17, f.x), 1.0 - smoothstep(0.12, 0.17, 1.0 - f.x));
+        if (pst > 0.0) wall = mix(wall, wall * 1.30, pst * 0.9);
+      } else {
+        wall *= 0.955 + 0.055 * step(0.5, fract(vZ / 0.22));    // clapboard beyond
+      }
+    } else if (s == 83 || s == 90) {
+      // CLAPBOARD, and one big opening. The shotgun puts its door and window
+      // on a front one room wide; the ranch runs a picture window and a garage
+      // door along a front five rooms long. Same siding, opposite proportion.
+      wall *= 0.955 + 0.055 * step(0.5, fract(vZ / 0.21));
+      if (s == 90 && vZ < fh * 0.95) {
+        float t = fract(vU / 11.0);
+        if (t > 0.58 && t < 0.92) { wall = mix(wall, wall * 0.60, 0.85); winMask = 0.0; }  // garage
+      }
+    } else if (s == 84) {
+      // THE GAMBREL comes down OVER the wall head, so the top of the wall is
+      // roof: a dark band with a flared kick at its bottom edge where the eave
+      // turns out. Below it, clapboard.
+      float head = vTop - vZ;
+      if (head < fh * 0.95) {
+        wall = mix(wall, vec3(0.300, 0.270, 0.250), 0.88);
+        winMask *= 0.4;
+        if (head > fh * 0.80) wall = mix(wall, wall * 1.35, 0.7);   // the flare
+      } else {
+        wall *= 0.955 + 0.055 * step(0.5, fract(vZ / 0.22));
+      }
+    } else if (s == 85 || s == 86) {
+      // THE PORCH ACROSS THE FRONT, and what is over it. A foursquare carries
+      // a plain post; a bungalow's pier is BATTERED — wide at the bottom,
+      // narrowing as it rises — which is the one detail that names the type.
+      if (vZ < fh * 1.05) {
+        float t = fract(vU / 3.6);
+        float taper = s == 86 ? (0.30 - 0.13 * (vZ / (fh * 1.05))) : 0.17;
+        float pst = 1.0 - smoothstep(taper * 0.55, taper, min(t, 1.0 - t));
+        wall = mix(wall * 0.44, wall * 1.20, pst);
+        winMask = 0.0;
+        if (vZ > fh * 0.92) wall = mix(wall, wall * 1.22, 0.8);     // the porch beam
+      } else if (s == 86 && vTop - vZ < 0.85) {
+        // exposed rafter tails under a deep eave, which is the other half of it
+        float rt = fract(vU / 0.78);
+        wall = mix(wall, wall * 0.55, (1.0 - smoothstep(0.0, 0.22, min(rt, 1.0 - rt))) * 0.8);
+      }
+    } else if (s == 87) {
+      // A HUNDRED IDENTICAL WINDOWS. Nothing else — no bands, no base, no top.
+      // What reads is the FREQUENCY: these openings are half the size of a
+      // flat's and there are twice as many, and that alone says what it is.
+      if (fract(vZ / fh) < 0.06) wall *= 0.96;
+      if (inHole && oy > 0.92) wall = mix(wall, wall * 1.12, 0.6);   // a thin lintel
+    } else if (s == 88 || s == 89) {
+      // THE BAY. Carried the full height on a mansion block, bowed and stopping
+      // under the parapet on a two-flat. Drawn as a projection: bright on the
+      // face, shaded on the return the sun is not on, with the wall beside it
+      // dropping back.
+      float t = fract(vU / (s == 88 ? 9.2 : 7.4));
+      float inBay = smoothstep(0.14, 0.20, t) * (1.0 - smoothstep(0.66, 0.72, t));
+      float lo = (vZ > fh * (s == 89 ? 0.85 : 0.0)) ? 1.0 : 0.0;
+      if (inBay > 0.01 && (s == 88 || lo > 0.5) && vZ < vTop - 0.9) {
+        float across = clamp((t - 0.17) / 0.49, 0.0, 1.0);
+        float face = sin(across * 3.14159265);
+        float sunK = dot(SUN_DIR, T) > 0.0 ? across : 1.0 - across;
+        wall = mix(wall, wall * (0.78 + 0.42 * face) * (0.90 + 0.22 * sunK), inBay);
+        // the returns are cheeks, so no window on them
+        if (across < 0.16 || across > 0.84) winMask = 0.0;
+      } else if (inBay <= 0.01) {
+        wall *= 0.93;                                   // the wall behind the bay
+      }
+      if (s == 89 && vZ < fh * 0.85) { wall *= 0.90; winMask *= 0.5; }   // raised basement
+    } else if (s == 91) {
+      // THE BREEZEWAY. Open stairs cut clean through the block every few bays,
+      // so the building has a dark slot in it from grade to eaves — no other
+      // housing type does that and it is visible from the air.
+      float t = fract(vU / 17.0);
+      if (t > 0.40 && t < 0.56) {
+        wall = mix(wall, wall * 0.28, 0.92);
+        winMask = 0.0;
+        // the stair flights crossing the slot
+        float fl2 = fract(v * 1.0 + (t - 0.40) * 3.0);
+        if (fl2 < 0.16) wall = mix(wall, wall * 2.2, 0.5);
+      }
+    } else if (s == 92) {
+      // THE PORTE-COCHERE. One carriage arch cut into the middle of the base,
+      // two storeys high, with the same window ninety times above it.
+      float t = fract(vU / 38.0);
+      if (vZ < fh * 1.9 && t > 0.42 && t < 0.58) {
+        float head = smoothstep(0.55, 0.95, vZ / (fh * 1.9));
+        float cut = 1.0 - smoothstep(0.72 - head * 0.55, 0.99, abs((t - 0.5) / 0.08) + head);
+        wall = mix(wall, vec3(0.180, 0.165, 0.150), cut * 0.95);
+        if (cut > 0.4) winMask = 0.0;
+      }
+      if (vZ < fh * 1.9) wall *= 0.95 + 0.06 * step(0.5, fract(vZ / 0.86));   // rustication
+    } else if (s == 93) {
+      // ONE ROOM PER FLOOR. Tight rhythm, tiny openings, a flat stone lintel
+      // on each, and a party wall you can see because the chimney stack sits
+      // on it every second house.
+      if (inHole && (oy > 0.94 || oy < 0.06)) wall = mix(wall, vec3(0.620, 0.600, 0.565), 0.5);
+      float pw = fract(vU / 5.0);
+      if (pw < 0.035 || pw > 0.965) wall = mix(wall, wall * 1.08, 0.7);
     } else if (s == 75) {
       // THE PANEL JOINT. A 20 mm gap down every panel, full height, and a
       // shallow reveal band cast across the face — those two lines are the
@@ -2567,6 +2773,18 @@ void main() {
   else if (s == 79) roof = vec3(0.615, 0.620, 0.615); // cross-dock
   else if (s == 80) roof = vec3(0.600, 0.590, 0.570); // self storage
   else if (s == 81) roof = vec3(0.500, 0.510, 0.525); // data centre: chiller deck
+  else if (s == 82) roof = vec3(0.455, 0.435, 0.405); // triple-decker: tar
+  else if (s == 83) roof = vec3(0.390, 0.345, 0.310); // shotgun: tin
+  else if (s == 84) roof = vec3(0.320, 0.290, 0.270); // gambrel: shingle
+  else if (s == 85) roof = vec3(0.355, 0.315, 0.285); // foursquare: hipped shingle
+  else if (s == 86) roof = vec3(0.340, 0.310, 0.275); // bungalow: deep-eaved shingle
+  else if (s == 87) roof = vec3(0.470, 0.450, 0.425); // SRO
+  else if (s == 88) roof = vec3(0.475, 0.455, 0.425); // oriel block
+  else if (s == 89) roof = vec3(0.465, 0.445, 0.420); // two-flat
+  else if (s == 90) roof = vec3(0.410, 0.375, 0.345); // ranch
+  else if (s == 91) roof = vec3(0.485, 0.465, 0.435); // garden apartment
+  else if (s == 92) roof = vec3(0.505, 0.490, 0.460); // mansion block: lead
+  else if (s == 93) roof = vec3(0.330, 0.320, 0.315); // back-to-back: welsh slate
   else              roof = vec3(0.76, 0.76, 0.74);
   roof *= 0.92 + 0.16 * vRand;
 

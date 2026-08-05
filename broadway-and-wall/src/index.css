@@ -83,58 +83,16 @@ body {
   margin-left: 12px; font-size: 12px; color: var(--ink-dim);
   letter-spacing: 1.2px; text-transform: uppercase;
 }
-/* the city menu — six towns, one campaign each */
-/* THE PICKER HAS TO TAKE CLICKS. `.topbar` is pointer-events:none so the map
-   can be dragged through the empty space either side of the header, and every
-   interactive island in the bar re-enables it — .topbar-right and .topbar-game
-   both do. The city picker sits inside .brand, which never did, so the button
-   rendered, showed its caret, and did precisely nothing when clicked, at every
-   width. Scoped to the picker rather than the whole brand block: the title
-   next to it spans a lot of otherwise draggable map. */
+/* THE NEW-CITY BUTTON HAS TO TAKE CLICKS. `.topbar` is pointer-events:none so
+   the map can be dragged through the empty space either side of the header,
+   and every interactive island in the bar re-enables it — .topbar-right and
+   .topbar-game both do.
+   The dropdown that used to hang off this is gone: with three sections in it
+   the menu measured 973px tall at 1280x720 and its confirm button sat 353px
+   below the bottom of the window. Those choices are the start screen's now
+   (.start below), which has a scroller and a footer that stays put. */
 .city-pick { position: relative; display: inline-block; pointer-events: auto; }
-.city-pick-btn {
-  background: none; border: none; cursor: pointer; padding: 2px 4px;
-  font: inherit;
-}
-.city-pick-btn:hover { color: var(--ink); }
-.city-menu {
-  position: absolute; top: 24px; left: 8px; z-index: 60;
-  min-width: 340px; padding: 6px;
-  background: var(--paper, #f7f3e8); border: 1px solid #c9c2ae; border-radius: 6px;
-  box-shadow: 0 8px 28px rgba(40, 34, 20, 0.25);
-  display: flex; flex-direction: column; gap: 2px;
-}
-.city-item {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
-  padding: 7px 10px; border: none; border-radius: 4px; background: none;
-  cursor: pointer; text-align: left; font: inherit;
-}
-/* THE NEW-CITY MENU IS ANCHORED TO THE WINDOW, NOT TO ITS BUTTON.
-   Anchoring it to the button's right edge is only correct while the button is
-   on the right, and it is not: below about 1500px the control row wraps and
-   that button lands near the LEFT of a second row, which put a 300px menu at
-   x = -68 with its first two words off the screen. Fixed to the viewport's
-   right edge under the measured bar height, it is on screen at every width
-   this bar has. */
-.city-menu-right {
-  position: fixed; left: auto; right: 12px; top: calc(var(--topbar-h, 60px) + 4px);
-  min-width: 300px; max-width: min(360px, calc(100vw - 24px));
-}
-.city-menu-head {
-  padding: 4px 10px 6px; font-size: 10.5px; letter-spacing: 0.6px;
-  text-transform: uppercase; color: var(--ink-dim); border-bottom: 1px solid #ddd6c2; margin-bottom: 3px;
-}
 .city-locked { cursor: default; }
-.city-size-lots { font-weight: 400; color: var(--ink-dim); letter-spacing: 0.2px; }
-.city-item-go {
-  margin-top: 6px; border-top: 1px solid #ddd6c2; padding-top: 8px;
-  background: rgba(176, 127, 30, 0.10);
-}
-.city-item-go:hover { background: rgba(176, 127, 30, 0.20); }
-.city-item:hover { background: rgba(176, 127, 30, 0.12); }
-.city-item-on { background: rgba(176, 127, 30, 0.18); }
-.city-item-name { font-size: 13px; font-weight: 600; color: var(--ink); letter-spacing: 0.3px; }
-.city-item-tag { font-size: 11px; color: var(--ink-dim); letter-spacing: 0.2px; text-transform: none; }
 
 .topbar-right { display: flex; align-items: center; gap: 14px; pointer-events: auto; }
 .stat { font-size: 13px; color: var(--ink-dim); }
@@ -603,16 +561,12 @@ body {
 .lens-btn { padding: 4px 7px; font-size: 10px; }
 .advance-btn { padding: 5px 10px; font-size: 13px; }
 .brand { white-space: nowrap; }
-/* Drop the static caption when the bar gets tight, but NEVER the city picker.
-   It carries .brand-sub for its typography, and this rule used to hide it —
-   which meant that on any window under 1560px wide, which is most laptops,
-   the only control that switches city simply was not there. A label is fair
-   to drop for space. A control is not. */
-/* ...and the town you are LOCKED INTO is not a decoration either. Once a game
-   starts the picker becomes a label, and that label is the only place the
-   answer to "which town is this" appears. Dropping it for width would leave
-   the permanent fact about a campaign invisible on every laptop. */
-@media (max-width: 1900px) { .brand-sub:not(.city-pick-btn):not(.city-locked) { display: none; } .badge { display: none; } }
+/* Drop the static caption when the bar gets tight, but NEVER the town you are
+   LOCKED INTO. Once a game starts that label is the only place the answer to
+   "which town is this" appears, and dropping it for width would leave the
+   permanent fact about a campaign invisible on every laptop. A caption is fair
+   to drop for space; the identity of the city is not. */
+@media (max-width: 1900px) { .brand-sub:not(.city-locked) { display: none; } .badge { display: none; } }
 /* THE BAR SHEDS READOUTS, NEVER CONTROLS.
    .topbar-game is nowrap with eight readouts, six nav buttons, two lenses and
    three advance buttons in it. At 1280 — a MacBook, a 1366x768 laptop, any
@@ -634,7 +588,6 @@ body {
 @media (max-width: 1360px) {
   .brand-name { font-size: 18px; }
   .topbar-right .stat { display: none; }
-  .city-pick-btn { margin-left: 8px; font-size: 11px; letter-spacing: 0.8px; }
 }
 /* Wrapping stops the collision; this stops the bar becoming a third of the
    screen. At 1280 the row was breaking three ways — brand, controls, then
@@ -663,10 +616,8 @@ body {
   .advance-btn { padding: 5px 9px; font-size: 13px; }
 }
 @media (max-width: 1100px) {
-  /* last resort: the wordmark goes before the picker does */
+  /* last resort: the wordmark goes before the town label does */
   .brand-name { font-size: 15px; }
-  .city-pick-btn { margin-left: 6px; }
-  .city-menu { min-width: 260px; }
 }
 
 /* 1031 exchange clock banner on the Deals desk */
@@ -1112,3 +1063,134 @@ body {
 .cand-sub { font-size: 11px; color: var(--ink-dim); line-height: 1.45; margin-top: 4px; }
 .cand-cover { font-size: 11.5px; color: var(--ink); margin-top: 8px; }
 .cand-note { font-size: 11px; color: var(--ink-dim); font-style: italic; margin-top: 6px; }
+
+/* ---- the start screen ----
+   THREE COLUMNS AND A FOOTER, because the old picker was one column and it did
+   not fit. Fourteen options stacked vertically came to 973px at 1280x720 with
+   the confirm button 353px past the bottom edge of the window; the same
+   fourteen in three columns come to 490px, and the button that starts the game
+   is a sibling of the scroller rather than the last thing inside it, so it
+   cannot leave the screen at any height. Measured with a headless browser at
+   1280x720 and 1600x1000 — the numbers are in the probe. */
+.start {
+  position: fixed; inset: 0; z-index: 90;
+  display: flex; flex-direction: column;
+  color: var(--ink);
+  /* The plat map before anything is drawn on it: warm paper, a faint wash of
+     harbour at the bottom where the city will be. */
+  background:
+    radial-gradient(120% 80% at 50% 118%, rgba(120, 168, 196, 0.30), rgba(120, 168, 196, 0) 60%),
+    linear-gradient(to bottom, #f8f4e8, #efe8d5);
+}
+.start-head { flex: 0 0 auto; padding: 20px 34px 8px; }
+.start-title {
+  font-family: var(--serif); font-size: 34px; letter-spacing: 0.6px; color: var(--ink);
+}
+.start-sub { font-size: 13px; color: var(--ink-dim); margin-top: 2px; font-style: italic; }
+/* THE SCROLLER. min-height:0 is the whole trick — a flex child will not
+   shrink below its content without it, which is exactly how a menu ends up
+   taller than the window it is in. */
+.start-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 6px 34px 14px; }
+.start-boot { font-size: 13px; color: var(--ink-dim); padding: 22px 2px; font-style: italic; }
+
+.start-continue {
+  display: flex; align-items: center; justify-content: space-between; gap: 18px;
+  width: 100%; text-align: left; font: inherit; cursor: pointer;
+  padding: 13px 18px; border-radius: var(--r-md);
+  border: 1px solid rgba(146, 110, 40, 0.55);
+  background: linear-gradient(to bottom, rgba(247, 231, 197, 0.95), rgba(238, 216, 170, 0.85));
+  box-shadow: var(--edge-top), var(--lift-1);
+  transition: box-shadow 0.13s var(--ease), transform 0.1s var(--ease);
+}
+.start-continue:hover { box-shadow: var(--edge-top), var(--lift-2); transform: translateY(-1px); }
+.start-continue-l { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.start-continue-head {
+  font-size: 10.5px; letter-spacing: 1.4px; text-transform: uppercase; color: #7a5a18;
+}
+.start-continue-town { font-family: var(--serif); font-size: 20px; color: var(--ink); }
+.start-continue-dim { font-family: system-ui, sans-serif; font-size: 12px; color: var(--ink-dim); }
+.start-continue-when { font-size: 12px; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+.start-continue-go { font-family: var(--serif); font-size: 17px; color: #7a5a18; white-space: nowrap; }
+
+.start-or {
+  font-size: 10.5px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--ink-dim);
+  margin: 16px 0 8px; display: flex; align-items: center; gap: 10px;
+}
+.start-or::after {
+  content: ""; flex: 1 1 auto; height: 1px; background: rgba(146, 110, 40, 0.25);
+}
+
+.start-cols {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 16px; align-items: start;
+}
+.start-col { min-width: 0; }
+.start-col-head {
+  font-size: 10.5px; letter-spacing: 0.8px; text-transform: uppercase; color: var(--ink-dim);
+  border-bottom: 1px solid rgba(146, 110, 40, 0.25); padding-bottom: 4px; margin-bottom: 4px;
+}
+.start-opt {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  width: 100%; padding: 6px 9px; border: 1px solid transparent; border-radius: var(--r-sm);
+  background: none; cursor: pointer; text-align: left; font: inherit;
+}
+.start-opt:hover { background: rgba(176, 127, 30, 0.10); }
+.start-opt-on {
+  background: rgba(176, 127, 30, 0.18); border-color: rgba(146, 110, 40, 0.45);
+}
+.start-opt-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+.start-opt-lots { font-weight: 400; color: var(--ink-dim); }
+.start-opt-note { font-size: 11px; color: var(--ink-dim); line-height: 1.35; }
+
+.start-foot {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  padding: 12px 34px 16px;
+  border-top: 1px solid rgba(120, 92, 38, 0.22);
+  background: linear-gradient(to bottom, rgba(248, 244, 232, 0.6), rgba(243, 236, 219, 0.9));
+}
+.start-foot-sum { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.start-foot-town { font-family: var(--serif); font-size: 17px; color: var(--ink); }
+.start-foot-note { font-size: 11.5px; color: var(--ink-dim); }
+.start-foot-warn { font-size: 11.5px; color: #a8402e; }
+.start-go {
+  font-family: var(--serif); font-size: 17px; letter-spacing: 0.4px;
+  padding: 10px 24px; border-radius: var(--r-md); cursor: pointer; white-space: nowrap;
+  color: #fdf8ea; border: 1px solid #6e4419;
+  background: linear-gradient(to bottom, #b4831f, #8a5f14);
+  box-shadow: var(--edge-top), var(--lift-1);
+  transition: box-shadow 0.13s var(--ease), transform 0.1s var(--ease);
+}
+.start-go:hover { box-shadow: var(--edge-top), var(--lift-2); transform: translateY(-1px); }
+.start-go:disabled { opacity: 0.5; cursor: default; transform: none; }
+.start-err {
+  margin: 0 34px 16px; padding: 10px 14px; border-radius: var(--r-sm);
+  border: 1px solid #8a5620; background: rgba(255, 253, 246, 0.7);
+  font-size: 12.5px; line-height: 1.5;
+}
+
+/* GENERATION IS NOT INSTANT AND MUST NOT LOOK BROKEN. makeCity holds the main
+   thread for the whole build, so this state has to be painted before it starts
+   — see `painted()` in state/store.ts — and the bar is a CSS animation, which
+   keeps moving because the compositor runs it off the blocked thread. */
+.start-wait {
+  margin: auto; text-align: center; padding: 0 34px; max-width: 560px;
+}
+.start-wait-line { font-size: 13px; color: var(--ink-dim); margin-top: 6px; line-height: 1.5; }
+.start-bar {
+  margin: 18px auto 0; width: 260px; height: 4px; border-radius: 3px;
+  background: rgba(146, 110, 40, 0.18); overflow: hidden;
+}
+.start-bar span {
+  display: block; width: 40%; height: 100%; border-radius: 3px; background: var(--gold);
+  animation: start-sweep 1.1s var(--ease) infinite;
+}
+@keyframes start-sweep {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(360%); }
+}
+
+/* Below this the three columns stop being columns rather than becoming
+   unreadable slivers; the body scrolls, and the footer does not. */
+@media (max-width: 980px) { .start-cols { grid-template-columns: minmax(0, 1fr); } }
+@media (max-height: 620px) { .start-title { font-size: 26px; } .start-head { padding-top: 14px; } }

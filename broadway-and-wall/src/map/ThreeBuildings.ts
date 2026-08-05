@@ -206,6 +206,29 @@ const S_DEPOT = 59;       // rail depot: a long platform canopy on iron columns
 const S_PUMPHOUSE = 60;   // a small brick temple with one enormous window, built round a pump
 
 // ---------------------------------------------------------------------------
+// THE BUILDINGS A TOWN HAS ONE OF.
+//
+// A city is not only fabric. It is also the firehouse, the library, the bank
+// with columns, the hotel, the department store, the picture palace — the
+// buildings everybody can name, which are the ones that make a place somewhere
+// rather than anywhere. Almost none of them look like the block next door, and
+// that is the entire point of them.
+const S_QUEENANNE = 61;   // turret, shingled gable, bay windows — the 1890s house
+const S_STICK = 62;       // exposed framing laid over the boards, in a contrast colour
+const S_TUDOR = 63;       // half-timbering over render, on the upper floors only
+const S_MISSION = 64;     // curved shaped parapet and a tiled pent over the openings
+const S_THEATRE = 65;     // a blind box behind a marquee and a vertical blade sign
+const S_DINER = 66;       // a stainless railcar: horizontal flutes, a band of glass
+const S_FIREHOUSE = 67;   // apparatus doors that are most of the ground floor
+const S_SCHOOL = 68;      // banks of tall windows in threes, and a raised entrance bay
+const S_LIBRARY = 69;     // a portico, and tall arched windows above a blind plinth
+const S_BANKTEMPLE = 70;  // a giant order across the front and no windows at grade
+const S_HOTEL = 71;       // rusticated base, banded middle, heavy cornice, a canopy
+const S_DEPTSTORE = 72;   // continuous display glazing, floor after floor of it
+const S_MOTEL = 73;       // an exterior walkway with a rail, and every door on it
+const S_STRIPMALL = 74;   // deep canopy over continuous glazing, sign band above
+
+// ---------------------------------------------------------------------------
 // TRAITS, NOT NUMBERS.
 //
 // Downstream behaviour was keyed to the numeric VALUE of a style id — `s < 8`
@@ -225,6 +248,8 @@ const T_MASONRY = [
   S_FEDERAL, S_TENEMENT, S_CIVIC, S_CARRIAGE, S_MARKET, S_GOTHIC, S_TERRACOTTA,
   S_CHICAGO, S_PROJECT, S_WHITEBRICK, S_EIFS,
   S_POWERHOUSE, S_COLDSTORE, S_BREWERY, S_TEXTILE, S_PUMPHOUSE, S_DEPOT,
+  S_QUEENANNE, S_TUDOR, S_MISSION, S_FIREHOUSE, S_SCHOOL, S_LIBRARY,
+  S_BANKTEMPLE, S_HOTEL, S_THEATRE,
 ];
 
 /** Reflects the sky and throws a specular back at the sun. */
@@ -242,6 +267,7 @@ const T_TRADE = [
   S_WHITEBRICK, S_TENEMENT,
   S_TERRAPIER, S_UNITGLASS, S_MEGAPANEL, S_STEELSHELF, S_DEEPFRAME,
   S_DEPOT, S_PUMPHOUSE,
+  S_THEATRE, S_DINER, S_HOTEL, S_DEPTSTORE, S_STRIPMALL, S_MISSION, S_BANKTEMPLE,
 ];
 
 /** Expresses its floor line as a shadow under every storey. */
@@ -252,6 +278,8 @@ const T_FLOORLINE = [
   S_MARKET, S_INTL, S_PRECAST, S_PROJECT, S_WHITEBRICK, S_BALCONY, S_TIMBER,
   S_EIFS, S_FRIT, S_STEELSHELF, S_MEGAPANEL, S_DEEPFRAME,
   S_POWERHOUSE, S_BREWERY, S_TEXTILE, S_FOUNDRY, S_DEPOT,
+  S_QUEENANNE, S_STICK, S_TUDOR, S_MISSION, S_SCHOOL, S_LIBRARY, S_HOTEL,
+  S_DEPTSTORE, S_MOTEL, S_FIREHOUSE, S_BANKTEMPLE,
 ];
 
 /** A modern skin whose parapet is metal or stone rather than more of itself. */
@@ -259,7 +287,7 @@ const T_CAPPED_STONE = [S_GLASS, S_DARK, S_MIRROR, S_FRIT];
 const T_CAPPED_PLAIN = [
   S_CRYSTAL, S_DIAGRID, S_SCREEN, S_BALCONY, S_METALPAN, S_GARAGE, S_BIGBOX,
   S_TERRAPIER, S_DEEPFRAME, S_STEELSHELF, S_UNITGLASS, S_MEGAPANEL,
-  S_GRAINHOUSE, S_GASHOLDER, S_SHIPSHED,
+  S_GRAINHOUSE, S_GASHOLDER, S_SHIPSHED, S_DINER, S_STRIPMALL, S_MOTEL,
 ];
 
 /** Reads as a modern building when a crown is being chosen for it. */
@@ -273,11 +301,13 @@ const T_MODERN = [
 const T_STONE = [
   S_PREWAR, S_ARTDECO, S_CORNICE, S_PMOD, S_ROMANESQUE, S_GOTHIC, S_BEAUX,
   S_EMPIRE, S_ITALIANATE, S_CIVIC, S_TERRACOTTA, S_CHICAGO, S_MARKET, S_MODERNE,
+  S_LIBRARY, S_BANKTEMPLE, S_HOTEL, S_SCHOOL,
 ];
 
 /** Old enough, and soft enough, to have grown a pitched roof over it. */
 const T_OLDROOF = [
   S_PREWAR, S_BRICK, S_FEDERAL, S_ITALIANATE, S_EMPIRE, S_TENEMENT, S_CARRIAGE,
+  S_QUEENANNE, S_STICK, S_TUDOR, S_MISSION,
 ];
 
 const has = (list: readonly number[], s: number) => list.indexOf(s) >= 0;
@@ -300,6 +330,7 @@ const styleFn = (name: string, ids: readonly number[]): string =>
 const T_ARCHED = [
   S_PREWAR, S_BRICK, S_ROMANESQUE, S_ITALIANATE, S_EMPIRE, S_MARKET,
   S_CARRIAGE, S_CASTIRON, S_POWERHOUSE, S_BREWERY, S_PUMPHOUSE,
+  S_FIREHOUSE, S_LIBRARY, S_MISSION,
 ];
 
 const STYLE_SETS_GLSL = /* glsl */ `
@@ -418,6 +449,12 @@ function stylePool(v: BuildingVolume): number[] {
     if (!resi) p.push(S_GOTHIC);
     if (resi) p.push(S_TENEMENT, S_TENEMENT, S_TENEMENT, S_BRICK);
     if (office && f >= 6) p.push(S_CHICAGO, S_CHICAGO, S_BEAUX);
+    // The buildings a town has one of. They are rare by weight, not by gate —
+    // a place has one bank with columns and one firehouse, and both of them
+    // are on a corner everybody knows.
+    if (resi && f <= 4) p.push(S_QUEENANNE, S_QUEENANNE, S_STICK);
+    if (!resi) p.push(S_FIREHOUSE, S_LIBRARY, S_BANKTEMPLE, S_SCHOOL, S_HOTEL);
+    if (shop && f >= 3) p.push(S_DEPTSTORE);
     return p;
   }
   if (y < 1925) {
@@ -430,6 +467,9 @@ function stylePool(v: BuildingVolume): number[] {
     if (office && f >= 6) p.push(S_GOTHIC, S_GOTHIC, S_GOTHIC, S_TERRACOTTA);
     if (shop) p.push(S_TERRACOTTA, S_BEAUX, S_CHICAGO, S_MARKET);
     if (resi) p.push(S_TENEMENT, S_TENEMENT, S_BRICK, S_PREWAR, S_BEAUX);
+    if (resi && f <= 4) p.push(S_QUEENANNE, S_TUDOR, S_MISSION);
+    if (!resi) p.push(S_FIREHOUSE, S_LIBRARY, S_BANKTEMPLE, S_SCHOOL, S_HOTEL, S_THEATRE);
+    if (shop && f >= 3) p.push(S_DEPTSTORE, S_DEPTSTORE);
     return p;
   }
   if (y < 1945) {
@@ -439,14 +479,18 @@ function stylePool(v: BuildingVolume): number[] {
     else p.push(S_MODERNE, S_MODERNE, S_ARTDECO, S_TERRACOTTA);
     p.push(S_CIVIC, S_PREWAR, S_BRICK);
     if (resi) p.push(S_BRICK, S_BRICK, S_PREWAR, S_TENEMENT);
-    if (shop) p.push(S_MODERNE, S_TERRACOTTA);
+    if (shop) p.push(S_MODERNE, S_TERRACOTTA, S_DEPTSTORE);
+    if (resi && f <= 4) p.push(S_TUDOR, S_TUDOR, S_MISSION);
+    if (!resi) p.push(S_THEATRE, S_THEATRE, S_SCHOOL, S_HOTEL, S_LIBRARY, S_FIREHOUSE);
     return p;
   }
   if (y < 1962) {
     p.push(S_RIBBON, S_RIBBON, S_BRICK, S_PROJECT, S_CIVIC);
     if (office && f >= 6) p.push(S_INTL, S_INTL, S_INTL, S_RIBBON);
     if (resi) p.push(S_PROJECT, S_PROJECT, S_WHITEBRICK, S_BRICK);
-    if (shop) p.push(S_MODERNE, S_RIBBON, S_EIFS);
+    if (shop) p.push(S_MODERNE, S_RIBBON, S_EIFS, S_DINER, S_STRIPMALL);
+    if (!resi) p.push(S_SCHOOL, S_THEATRE, S_HOTEL);
+    if (resi && f <= 3) p.push(S_MOTEL, S_MOTEL);
     return p;
   }
   if (y < 1980) {
@@ -454,7 +498,9 @@ function stylePool(v: BuildingVolume): number[] {
     if (office && f >= 6) p.push(S_INTL, S_INTL, S_PRECAST, S_PRECAST, S_MIRROR, S_BRUTAL);
     if (office && f >= 9) p.push(S_MIRROR, S_MIRROR, S_DARK);
     if (resi) p.push(S_WHITEBRICK, S_WHITEBRICK, S_PROJECT, S_PRECAST, S_BRICK);
-    if (shop) p.push(S_EIFS, S_PRECAST, S_METALPAN);
+    if (shop) p.push(S_EIFS, S_PRECAST, S_METALPAN, S_STRIPMALL, S_STRIPMALL, S_DINER);
+    if (!resi) p.push(S_SCHOOL, S_HOTEL);
+    if (resi && f <= 3) p.push(S_MOTEL, S_MOTEL);
     if (f >= 4) p.push(S_GARAGE);
     return p;
   }
@@ -463,7 +509,9 @@ function stylePool(v: BuildingVolume): number[] {
     if (office && f >= 6) p.push(S_PMOD, S_PMOD, S_MIRROR, S_MIRROR, S_GLASS, S_DARK);
     if (office && f >= 10) p.push(S_PMOD, S_DARK);
     if (resi) p.push(S_BRICK, S_EIFS, S_WHITEBRICK, S_BALCONY);
-    if (shop) p.push(S_EIFS, S_EIFS, S_BIGBOX, S_METALPAN);
+    if (shop) p.push(S_EIFS, S_EIFS, S_BIGBOX, S_METALPAN, S_STRIPMALL, S_STRIPMALL);
+    if (!resi) p.push(S_HOTEL, S_SCHOOL);
+    if (resi && f <= 3) p.push(S_MOTEL);
     if (f >= 4) p.push(S_GARAGE);
     return p;
   }
@@ -1351,6 +1399,104 @@ void main() {
     colW = 8.0; win = vec2(0.0, 0.0);
     wall = mix(vec3(0.78, 0.75, 0.69), vec3(0.70, 0.68, 0.64), step(0.5, vVar));
     glassA = wall; glassB = wall;
+  } else if (s == 61) {
+    // QUEEN ANNE. Shingle above, clapboard below, in two colours that were
+    // chosen to be different — the "painted lady" is not a myth, it is what
+    // the paint catalogues of the 1890s sold. Busy, and proud of it.
+    colW = 2.6; win = vec2(0.44, 0.62);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.20)      { wall = vec3(0.560, 0.395, 0.335); }  // barn red
+    else if (pk < 0.40) { wall = vec3(0.470, 0.480, 0.420); }  // sage
+    else if (pk < 0.58) { wall = vec3(0.630, 0.575, 0.455); }  // buff
+    else if (pk < 0.76) { wall = vec3(0.395, 0.430, 0.480); }  // slate blue
+    else                { wall = vec3(0.700, 0.680, 0.630); }  // cream
+    glassA = vec3(0.28, 0.33, 0.38); glassB = vec3(0.44, 0.51, 0.57);
+  } else if (s == 62) {
+    // STICK STYLE. The framing is laid ON the wall as flat boards in a contrast
+    // colour, so the house wears a diagram of its own structure.
+    colW = 2.9; win = vec2(0.42, 0.60);
+    wall = mix(vec3(0.610, 0.560, 0.475), vec3(0.520, 0.475, 0.430), step(0.5, vVar));
+    glassA = vec3(0.27, 0.32, 0.37); glassB = vec3(0.42, 0.49, 0.55);
+  } else if (s == 63) {
+    // TUDOR REVIVAL. Render below, half-timbering above — and only above,
+    // because that is what makes it read: the upper floor is patterned and the
+    // lower one is not.
+    colW = 3.1; win = vec2(0.46, 0.56);
+    wall = mix(vec3(0.700, 0.675, 0.615), vec3(0.640, 0.610, 0.550), step(0.5, vVar));
+    glassA = vec3(0.26, 0.31, 0.36); glassB = vec3(0.41, 0.48, 0.54);
+  } else if (s == 64) {
+    // MISSION REVIVAL. Smooth stucco, a shaped curved parapet, and a little
+    // tiled pent roof running over the openings.
+    colW = 3.6; win = vec2(0.40, 0.60);
+    wall = mix(vec3(0.720, 0.665, 0.575), vec3(0.680, 0.640, 0.580), step(0.5, vVar));
+    glassA = vec3(0.25, 0.29, 0.34); glassB = vec3(0.39, 0.46, 0.52);
+  } else if (s == 65) {
+    // THE PICTURE PALACE. The auditorium has no windows at all, so the whole
+    // building is a blind box with a marquee across the bottom of it and a
+    // vertical blade sign up the corner. The blankness IS the type.
+    colW = 6.0; win = vec2(0.10, 0.12);
+    if (vVar < 0.4)      { wall = vec3(0.640, 0.545, 0.430); }
+    else if (vVar < 0.75){ wall = vec3(0.560, 0.470, 0.455); }
+    else                 { wall = vec3(0.690, 0.660, 0.600); }
+    glassA = vec3(0.24, 0.27, 0.31); glassB = vec3(0.36, 0.42, 0.47);
+  } else if (s == 66) {
+    // THE DINER. A stainless railcar: horizontal flutes the whole length, a
+    // continuous band of glass, and a rounded end. Small, shiny, unmistakable.
+    glassy = true; colW = 1.5; win = vec2(0.92, 0.42);
+    wall = mix(vec3(0.700, 0.710, 0.715), vec3(0.620, 0.640, 0.655), step(0.5, vVar));
+    glassA = vec3(0.44, 0.52, 0.56); glassB = vec3(0.64, 0.74, 0.78);
+  } else if (s == 67) {
+    // THE FIREHOUSE. Apparatus doors are most of the ground floor because an
+    // engine has to get out, and they are arched on the old ones. Everything
+    // above is domestic in scale — it is where the crew lived.
+    colW = 4.5; win = vec2(0.44, 0.58);
+    wall = mix(vec3(0.560, 0.345, 0.290), vec3(0.610, 0.520, 0.440), step(0.55, vVar));
+    glassA = vec3(0.25, 0.30, 0.35); glassB = vec3(0.40, 0.47, 0.53);
+  } else if (s == 68) {
+    // THE SCHOOL. Windows in banks of three, floor to near-ceiling, because a
+    // classroom needs daylight from one side — the most regular facade in any
+    // town, with one raised entrance bay in the middle of it.
+    colW = 5.4; win = vec2(0.74, 0.66);
+    wall = mix(vec3(0.605, 0.430, 0.350), vec3(0.680, 0.640, 0.565), step(0.5, vVar));
+    glassA = vec3(0.28, 0.34, 0.39); glassB = vec3(0.44, 0.52, 0.58);
+  } else if (s == 69) {
+    // THE LIBRARY. A blind plinth — the stacks are behind it and books hate
+    // daylight — with tall arched reading-room windows over it, and a portico.
+    colW = 4.2; win = vec2(0.44, 0.72);
+    wall = mix(vec3(0.735, 0.705, 0.640), vec3(0.680, 0.660, 0.615), step(0.5, vVar));
+    glassA = vec3(0.23, 0.28, 0.33); glassB = vec3(0.37, 0.44, 0.50);
+  } else if (s == 70) {
+    // THE BANK. A giant order across the front and NOTHING at street level —
+    // a bank does not put its money behind a shop window. Two storeys of blind
+    // ashlar, then the columns, then a heavy entablature.
+    colW = 4.8; win = vec2(0.30, 0.62);
+    wall = mix(vec3(0.760, 0.740, 0.690), vec3(0.700, 0.685, 0.650), step(0.5, vVar));
+    glassA = vec3(0.20, 0.25, 0.30); glassB = vec3(0.33, 0.40, 0.46);
+  } else if (s == 71) {
+    // THE HOTEL. Three parts and a canopy: rusticated base, a banded middle of
+    // identical bedroom windows, a heavy cornice. The regularity of the middle
+    // is the tell — every room is the same room.
+    colW = 3.0; win = vec2(0.44, 0.62);
+    wall = mix(vec3(0.680, 0.620, 0.535), vec3(0.615, 0.505, 0.425), step(0.55, vVar));
+    glassA = vec3(0.26, 0.31, 0.36); glassB = vec3(0.41, 0.48, 0.54);
+  } else if (s == 72) {
+    // THE DEPARTMENT STORE. Continuous display glazing floor after floor,
+    // because the whole building is a shop window. Almost no wall left.
+    glassy = true; colW = 5.6; win = vec2(0.88, 0.76);
+    wall = mix(vec3(0.700, 0.665, 0.590), vec3(0.630, 0.600, 0.555), step(0.5, vVar));
+    glassA = vec3(0.32, 0.38, 0.43); glassB = vec3(0.50, 0.58, 0.64);
+  } else if (s == 73) {
+    // THE MOTEL. Every door opens onto an outdoor walkway with a rail — the
+    // building is a corridor turned inside out, and you can see it from the road.
+    colW = 3.4; win = vec2(0.50, 0.52);
+    wall = mix(vec3(0.720, 0.680, 0.615), vec3(0.660, 0.615, 0.560), step(0.5, vVar));
+    glassA = vec3(0.24, 0.28, 0.32); glassB = vec3(0.38, 0.44, 0.49);
+  } else if (s == 74) {
+    // THE STRIP. A deep canopy over continuous glazing with a sign band above
+    // it, running the length of the row — one building pretending to be six.
+    colW = 6.4; win = vec2(0.86, 0.44);
+    wall = mix(vec3(0.700, 0.660, 0.600), vec3(0.640, 0.615, 0.590), step(0.5, vVar));
+    glassA = vec3(0.30, 0.35, 0.40); glassB = vec3(0.46, 0.54, 0.60);
   } else if (s == 51) {
     // THE GENERATING STATION. One enormous room with turbines in it, so the
     // openings are the height of the whole building rather than the height of
@@ -1491,6 +1637,13 @@ void main() {
   // in it. A brutalist slot is half a metre deep; a mirror-glass unit is
   // flush enough to be a mirror.
   float revealM = (s == 49) ? 0.028
+                : (s == 66) ? 0.045
+                : (s == 72 || s == 74) ? 0.09
+                : (s == 65 || s == 73) ? 0.20
+                : (s == 61 || s == 62 || s == 63 || s == 64) ? 0.22
+                : (s == 71 || s == 68 || s == 67) ? 0.30
+                : (s == 69) ? 0.40
+                : (s == 70) ? 0.46
                 : (s == 55 || s == 56 || s == 57) ? 0.06
                 : (s == 54) ? 0.13
                 : (s == 58 || s == 52) ? 0.30
@@ -1884,6 +2037,139 @@ void main() {
       float cover = clamp(fin + obliq * 1.25, 0.0, 1.0);
       wall = mix(wall, wall * (0.82 + 0.30 * fin), 0.9);
       winMask *= 1.0 - cover * 0.92;
+    } else if (s == 61 || s == 62 || s == 63) {
+      // THE UPPER FLOOR IS DIFFERENT FROM THE LOWER ONE, which is the whole
+      // grammar of these three: shingle over clapboard, half-timber over
+      // render, boards over boards. Below, horizontal siding; above, the
+      // pattern the style is named for.
+      float upper = step(fh * 1.55, vZ);
+      if (upper < 0.5) {
+        wall *= 0.955 + 0.055 * step(0.5, fract(vZ / 0.24));      // clapboard
+      } else if (s == 61) {
+        vec2 sc = vec2(vU / 0.42, vZ / 0.30);                     // shingle courses
+        float row = floor(sc.y);
+        float off = fract(sc.x + row * 0.5);
+        wall *= 0.90 + 0.16 * fract(hash(vec2(floor(sc.x + row * 0.5), row)) * 3.1);
+        wall *= 1.0 - 0.20 * (1.0 - smoothstep(0.0, 0.10, min(off, 1.0 - off)));
+      } else if (s == 63) {
+        float bx = 1.0 - smoothstep(0.055, 0.10, min(fract(vU / 1.35), 1.0 - fract(vU / 1.35)));
+        float bz = 1.0 - smoothstep(0.05, 0.09, min(fract(vZ / 1.5), 1.0 - fract(vZ / 1.5)));
+        float dg = 1.0 - smoothstep(0.40, 0.48, abs(fract(vU / 2.4 + vZ / 2.4) - 0.5) * 2.0);
+        wall = mix(wall, vec3(0.185, 0.145, 0.115), clamp(max(bx, max(bz, dg * 0.8)), 0.0, 1.0) * 0.92);
+      } else {
+        float bx = 1.0 - smoothstep(0.05, 0.09, min(fract(vU / 1.15), 1.0 - fract(vU / 1.15)));
+        float bz = 1.0 - smoothstep(0.05, 0.09, min(fract(vZ / 1.9), 1.0 - fract(vZ / 1.9)));
+        wall = mix(wall, wall * 0.58, clamp(bx + bz, 0.0, 1.0) * 0.85);
+      }
+    } else if (s == 64) {
+      // THE PENT. A little tiled roof running over the openings, and the
+      // stucco below it kept deliberately smooth — no coursing anywhere.
+      float fy = fract(v);
+      if (fy > 0.80 && fy < 0.90) { wall = mix(wall, vec3(0.470, 0.290, 0.225), 0.85); winMask = 0.0; }
+      else if (fy >= 0.90) wall *= 0.90;
+    } else if (s == 65) {
+      // THE MARQUEE, and the blade. A deep lit canopy across the whole
+      // frontage at first-floor level with the box blank above it, and one
+      // vertical sign running up past the parapet.
+      if (vZ < fh * 1.5) {
+        if (vZ > fh * 0.95 && vZ < fh * 1.32) {
+          wall = mix(wall, vec3(0.780, 0.700, 0.470), 0.9);       // the marquee
+          winMask = 0.0;
+        } else if (vZ <= fh * 0.95) {
+          wall = mix(wall, wall * 0.72, 0.7); winMask = 0.0;      // its shadow, and the lobby
+        }
+      }
+      float blade = 1.0 - smoothstep(0.02, 0.055, abs(fract(vU / 34.0) - 0.12));
+      if (blade > 0.0 && vZ > fh * 1.2) wall = mix(wall, vec3(0.620, 0.245, 0.215), blade * 0.9);
+    } else if (s == 66) {
+      // STAINLESS FLUTES the whole length, and a band of glass at counter
+      // height. The flutes are what makes a railcar read as a railcar.
+      float fl = fract(vZ / 0.115);
+      wall *= 0.90 + 0.20 * sin(fl * 6.2831853);
+      if (vZ > vTop - 0.55 || vZ < 0.7) wall = mix(wall, wall * 1.22, 0.8);
+    } else if (s == 67) {
+      // APPARATUS DOORS. Most of the ground floor, arched, and set in a
+      // surround — an engine has to get out and the opening says so.
+      if (vZ < fh * 1.02 && vTop > fh * 1.6) {
+        float t = fract(vU / 5.6);
+        if (t > 0.10 && t < 0.90) {
+          float head = smoothstep(0.66, 0.99, vZ / (fh * 1.02));
+          float cut = 1.0 - smoothstep(0.70 - head * 0.55, 0.99, abs(t - 0.5) * 2.0 + head);
+          wall = mix(wall, vec3(0.300, 0.235, 0.190), cut * 0.95);
+          winMask = 0.0;
+        }
+      }
+    } else if (s == 68) {
+      // BANKS OF THREE. A classroom is lit from one side, so the windows come
+      // in threes with a pier between each group and nothing between the three.
+      if (inHole) {
+        float m1 = abs(ox - 0.3333), m2 = abs(ox - 0.6667);
+        winMask *= 1.0 - (1.0 - smoothstep(0.0, 0.022, min(m1, m2))) * 0.9;
+      }
+      if (fract(vZ / fh) < 0.10) wall *= 0.94;                    // the spandrel course
+    } else if (s == 69 || s == 70) {
+      // THE GIANT ORDER, and the blind plinth under it. Two storeys of solid
+      // ashlar — a library keeps books behind it, a bank keeps money — then
+      // columns running three floors, then a heavy entablature.
+      float baseTop = fh * (s == 70 ? 2.0 : 1.35);
+      if (vZ < baseTop) {
+        wall *= 0.955 + 0.055 * step(0.5, fract(vZ / 0.92));      // coursed ashlar
+        winMask = 0.0;
+      } else if (vZ > vTop - fh * 0.85) {
+        wall *= 1.06; winMask = 0.0;                              // the entablature
+      } else {
+        float d = min(f.x, 1.0 - f.x);
+        float col = 1.0 - smoothstep(0.15, 0.27, d);
+        float belly = smoothstep(0.27, 0.0, d);
+        wall = mix(wall, wall * (0.84 + 0.40 * belly), col);
+        winMask *= 1.0 - col;
+        if (s == 69 && inHole && oy > 0.78) {                     // arched reading room
+          float spring = smoothstep(0.78, 1.0, oy);
+          float rad = sqrt(max(0.0, 1.0 - spring * spring));
+          winMask *= 1.0 - smoothstep(rad - 0.16, rad + 0.02, abs(ox - 0.5) * 2.0 * spring);
+        }
+      }
+    } else if (s == 71) {
+      // THREE PARTS AND A CANOPY. Rusticated base, a banded middle of
+      // identical bedroom windows, a cornice — and a canopy over the door,
+      // which is the one asymmetric thing on the whole front.
+      if (vZ < fh * 1.9) wall *= 0.94 + 0.07 * step(0.5, fract(vZ / 0.88));
+      if (fract(vZ / fh) < 0.08) wall *= 0.93;                    // the sill band
+      float dcan = 1.0 - smoothstep(0.0, 0.22, abs(fract(vU / 31.0) - 0.28));
+      if (dcan > 0.0 && vZ > fh * 0.85 && vZ < fh * 1.12) {
+        wall = mix(wall, vec3(0.360, 0.235, 0.215), dcan * 0.9); winMask = 0.0;
+      }
+    } else if (s == 72) {
+      // CONTINUOUS DISPLAY GLAZING. The wall is reduced to a slim column
+      // between bays and a slab band at each floor — the whole building is a
+      // shop window and that is why it feels different from an office.
+      float col = 1.0 - smoothstep(0.0, 0.045, min(f.x, 1.0 - f.x));
+      float band = 1.0 - smoothstep(0.0, 0.11, min(f.y, 1.0 - f.y));
+      wall = mix(wall, wall * 1.10, max(col, band));
+      winMask *= 1.0 - clamp(col + band, 0.0, 1.0);
+    } else if (s == 73) {
+      // THE OUTDOOR WALKWAY. A deck and a rail at every floor with all the
+      // doors on it, and the recess behind in permanent shade.
+      float fy = fract(v);
+      if (fy < 0.12) { wall = mix(wall, wall * 1.22, 0.9); winMask = 0.0; }        // deck nose
+      else if (fy < 0.30) { wall = mix(wall, wall * 1.02, 0.6); winMask *= 0.3; }  // the rail
+      else if (fy < 0.42) { wall = mix(wall, wall * 0.46, 0.85); winMask = 0.0; }  // under it
+      float dr = step(0.55, hash(vec2(floor(u) + 9.0, floor(v))));
+      if (dr > 0.5 && fy > 0.42 && fy < 0.92 && abs(f.x - 0.5) < 0.16) {
+        wall = mix(wall, vec3(0.290, 0.245, 0.215), 0.85); winMask = 0.0;
+      }
+    } else if (s == 74) {
+      // THE CANOPY AND THE SIGN BAND. One deep shadow line the whole length,
+      // glazing under it, and each unit's colour painted above.
+      if (vZ < fh * 1.25) {
+        if (vZ > fh * 0.86) {
+          float unit = hash(vec2(floor(vU / 9.5), floor(vRand * 11.0)));
+          wall = mix(wall, vec3(0.32 + 0.42 * unit, 0.30 + 0.26 * fract(unit * 6.1), 0.28 + 0.30 * fract(unit * 2.3)), 0.72);
+          winMask = 0.0;
+        } else {
+          wall = mix(wall, wall * 0.62, 0.55);                    // the canopy's shade
+        }
+      }
     } else if (s == 51 || s == 60) {
       // THE ENGINE HALL. One room, so the bay is the height of the building and
       // the pier between bays is a buttress rather than a mullion — heavy,
@@ -2547,6 +2833,20 @@ void main() {
   else if (s == 58) roof = vec3(0.470, 0.445, 0.415); // mill: asphalt over timber
   else if (s == 59) roof = vec3(0.505, 0.525, 0.530); // depot: standing seam
   else if (s == 60) roof = vec3(0.430, 0.375, 0.335); // pump house: slate
+  else if (s == 61) roof = vec3(0.350, 0.300, 0.270); // queen anne: shingle
+  else if (s == 62) roof = vec3(0.365, 0.325, 0.290); // stick: shingle
+  else if (s == 63) roof = vec3(0.330, 0.300, 0.290); // tudor: dark tile
+  else if (s == 64) roof = vec3(0.505, 0.310, 0.245); // mission: terracotta tile
+  else if (s == 65) roof = vec3(0.430, 0.420, 0.400); // theatre: the flat over the house
+  else if (s == 66) roof = vec3(0.620, 0.635, 0.640); // diner: the same steel
+  else if (s == 67) roof = vec3(0.435, 0.395, 0.360); // firehouse
+  else if (s == 68) roof = vec3(0.470, 0.450, 0.425); // school
+  else if (s == 69) roof = vec3(0.545, 0.535, 0.510); // library: lead flat
+  else if (s == 70) roof = vec3(0.575, 0.565, 0.540); // bank: stone coping
+  else if (s == 71) roof = vec3(0.480, 0.455, 0.425); // hotel
+  else if (s == 72) roof = vec3(0.520, 0.505, 0.475); // department store
+  else if (s == 73) roof = vec3(0.545, 0.520, 0.485); // motel
+  else if (s == 74) roof = vec3(0.560, 0.545, 0.520); // strip
   else              roof = vec3(0.76, 0.76, 0.74);
   roof *= 0.92 + 0.16 * vRand;
 

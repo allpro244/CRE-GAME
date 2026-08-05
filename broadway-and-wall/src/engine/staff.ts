@@ -49,6 +49,7 @@
  */
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState } from "./types";
+import { logBooks } from "./types";
 import { mulberry32Step } from "./market";
 import { resolveRec } from "./value";
 
@@ -449,7 +450,7 @@ export function refreshPool(s: GameState, force = false) {
  * tell you immediately whether the capacity model still binds: test A asserts
  * a 55k sf book does not slip and a 2.4M sf book does.
  */
-export const HIRING_UI_SHIPPED = false;
+export const HIRING_UI_SHIPPED = true;
 
 export function markStaff(s: GameState, parcels: ParcelTable) {
   const pm = roleState(s, parcels, "pm");
@@ -513,7 +514,15 @@ export function fire(s: GameState, staffId: number): { s: GameState; err?: strin
   if (s.cash < pay) return { s, err: `Severance is $${Math.round(pay / 1000)}k and you do not have it.` };
   const next: GameState = JSON.parse(JSON.stringify(s));
   next.staff = (next.staff ?? []).filter((x) => x.id !== staffId);
+  // MONEY MOVES THROUGH THE LEDGER OR IT DOES NOT MOVE. This wrote severance
+  // straight off the balance with no entry behind it — the only unbooked
+  // payment left in the engine, and precisely the fault class pnpm conserve
+  // exists to catch. It never caught this one because the conservation bot
+  // has no staff and therefore never fires anybody, so a player who let
+  // somebody go silently put the ledger out by three months of salary. It is
+  // overhead, so it books where the rest of the office does.
   next.cash -= pay;
+  logBooks(next, "ga", pay);
   next.news.unshift({
     q: next.month, kind: "warn",
     text: `${st.name} is out. Severance $${Math.round(pay / 1000)}k, and the desk is empty until you fill it.`,

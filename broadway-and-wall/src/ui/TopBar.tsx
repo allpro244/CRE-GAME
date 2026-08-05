@@ -29,6 +29,28 @@ export default function TopBar() {
   const [cities, setCities] = useState<CityInfo[]>([]);
   const [cityOpen, setCityOpen] = useState(false);
   const cityRef = useRef<HTMLDivElement>(null);
+
+  /* THE BAR PUBLISHES ITS OWN HEIGHT.
+     Everything that hangs below it — the parcel panel, the page overlays, the
+     deed stamp — was positioned from a constant of 60px, and the bar has not
+     been 60px tall since the firm's name went under the title: it measures 91
+     at 1600px and taller still when the controls wrap to a second row at
+     narrow widths. While the bar faded to transparent the overlap was
+     invisible; now that it is an opaque plate, it clips the panel's address
+     off the top of the card.
+     Fixed by measuring rather than by choosing a bigger constant, because the
+     wrap means there is no constant that is right at every width. */
+  const barRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el) return;
+    const apply = () =>
+      document.documentElement.style.setProperty("--topbar-h", `${Math.round(el.getBoundingClientRect().height)}px`);
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   useEffect(() => { void listCities().then(setCities); }, []);
   useEffect(() => {
     if (!cityOpen) return;
@@ -40,7 +62,7 @@ export default function TopBar() {
   }, [cityOpen]);
 
   return (
-    <div className="topbar">
+    <div className="topbar" ref={barRef}>
       <div className="brand">
         <span className="brand-name">Broadway &amp; Wall</span>
         {/* WHO THE CITY THINKS YOU ARE. Every rival firm has a name and a

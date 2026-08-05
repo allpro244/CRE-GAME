@@ -7,7 +7,7 @@ import { initEcon, rng, rrange, tickEcon } from "./market";
 import { assetValue, holdingNOIYr, holdingValue, monthlyNOI, netWorth, operatingStatement, physicalOcc, resolveRec } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
-import { tickLeasing, depositsOn } from "./leasing";
+import { tickLeasing, depositsOn, stampListing } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote } from "./actions";
 import { tickTalks } from "./acquire";
 import { tickLoan, prepayPenalty, productById } from "./debt";
@@ -134,6 +134,20 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   // The floor is 70% of TODAY'S appraisal, which is the bottom of what a real
   // discount looks like: a motivated seller, a receiver clearing a book, an
   // estate that wants it done. Below that is not a bargain, it is a bug.
+  // EVERY BUILDING ON THE TAPE CARRIES ITS ROLL, whichever door it came in
+  // through. Eight places push a listing — the courthouse, the package desk,
+  // and five in rivals.ts where a firm sells, is squeezed, or dies — and only
+  // this one used to write a roll, so a building that reached the market via a
+  // rival's distress arrived with no disclosed tenancy and the panel showed a
+  // market estimate the deed did not honour. Measured at 36 of 200 purchases
+  // disagreeing on NOI. Stamping here catches all of them the tick after they
+  // appear, and costs nothing: the roll is deterministic per building and
+  // drawn from a private stream. See stampListing.
+  for (const li of s.listings) {
+    if (li.roll) continue;
+    const r = resolveRec(parcels, s, li.bbl);
+    if (r) stampListing(s, r, li);
+  }
   const ASK_FLOOR = 0.70;
   // ...AND A SELLER WHOSE BUILDING HAS APPRECIATED TAKES IT OFF THE MARKET.
   //
@@ -219,13 +233,25 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
       : s.econ.phase === "recovery" ? rrange(s, 1.02, 1.14)
       : rrange(s, 0.94, 1.10);
     const ask = Math.round(value * (distress ? rrange(s, 0.72, 0.90) : denial) / 1000) * 1000;
-    s.listings.push({
+    // THE ROLL IS WRITTEN WHEN IT COMES TO MARKET, NOT AT THE CLOSING.
+    // See Listing.roll. A scratch holding is used purely as a vessel for
+    // genRentRoll to fill; nothing but the roll and the residential occupancy
+    // is kept, and executePurchase takes them over verbatim so the deed and
+    // the offering memorandum can never disagree.
+    const listing: Listing = {
       bbl,
       ask,
       listedM: s.month,
       expiresM: s.month + Math.round(rrange(s, ...LISTING_LIFE_M)),
       distress: distress || undefined,
-    } satisfies Listing);
+    };
+    if (rec.class !== "land" && rec.bldgArea > 0) {
+      // The grade the deed will convey: today's grade, less the notch a
+      // distressed building takes at the closing (see executePurchase). Stamped
+      // on the listing so the tape and the deed cannot disagree about it.
+      stampListing(s, rec, listing);
+    }
+    s.listings.push(listing);
     listed.add(bbl);
     if (distress && rng(s) < 0.6) {
       s.news.unshift({ q: s.month, kind: "event", text: `Motivated seller: ${rec.address} hits the tape at $${(ask / 1e6).toFixed(2)}M — well under appraisal. It won't last.` });

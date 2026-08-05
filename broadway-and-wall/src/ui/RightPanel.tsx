@@ -16,7 +16,7 @@ import { planDevelopment, constructionQuotes, devMix, PROGRAMS, programCost, far
 import { buyQuote, assemblagePressure, saleTaxQuote } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { MILESTONES } from "@/engine/sim";
-import { isCommercial, vacantSf, walt, loiSigningCost, exclusiveFeeRate, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, buyoutQuote, depositsHeld, BUYOUT_PREMIUM } from "@/engine/leasing";
+import { genRentRoll, isCommercial, vacantSf, walt, loiSigningCost, exclusiveFeeRate, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, buyoutQuote, depositsHeld, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
 import { lenderHealth, capitalRatio, lenderBlurb, targetCapital, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { noteBid, payoffQuote } from "@/engine/notes";
@@ -55,6 +55,59 @@ const devUseLabel = (u: string) => (u === "mixed" ? "Mixed-Use" : CLASS_LABEL[u 
 function physicalOcc(rec: never, h: { tenants: { sf: number }[]; occ?: number }): number {
   return physicalOccupancy(rec as never as ParcelRecord, h as never as Holding);
 }
+
+/**
+ * WHAT THE SELLER HAS DISCLOSED, shaped like a holding so every reader that
+ * already knows how to price a building you own can price one you are looking
+ * at — using the SAME functions and therefore producing the SAME numbers.
+ *
+ * The owner's complaint, exactly: "the market NOI and occupancy should be the
+ * same after you close on the property." They were not. The tape quoted a
+ * MARKET occupancy — the model's opinion of how full a building like this one
+ * ought to be — and the deed handed over an actual rent roll. Two honest
+ * numbers, and the one on screen while you were deciding was the wrong one,
+ * which is why a building appeared to lose value the moment it became yours.
+ *
+ * The roll now travels with the listing (see Listing.roll and refreshListings),
+ * so there is a real answer available before the bid. This wraps it in the
+ * shape holdingNOIYr and physicalOcc expect, with `assessed` set to the price
+ * you would actually pay, because that is what the tax bill would be struck on
+ * once you owned it.
+ *
+ * Returns null when there is nothing disclosed — an off-market lot you cold
+ * -called about has no offering memorandum, and finding out what is in the
+ * building is exactly the risk you are taking.
+ */
+function disclosed(game: GameState, bbl: string, price?: number): Holding | null {
+  const parcels = useStore.getState().parcels;
+  const rec = parcels ? resolveRec(parcels, game, bbl) : null;
+  if (!rec || rec.class === "land" || !rec.bldgArea) return null;
+  const li = game.listings.find((l) => l.bbl === bbl);
+  const px = price ?? li?.ask ?? game.approaches[bbl]?.ask ?? assetValue(rec, game.econ, gradeOf(game, rec));
+  const distress = !!li?.distress;
+  const cond = li?.cond ?? (distress ? "worn" : gradeOf(game, rec));
+  const h = {
+    bbl, boughtM: game.month, costBasis: px, assessed: px,
+    loan: null, condition: cond, tenants: [] as never[], cfHistory: [],
+  } as unknown as Holding;
+  // A MARKETED BUILDING'S ROLL WAS WRITTEN THE DAY IT CAME TO MARKET, and that
+  // is the roll the deed conveys — so read it rather than writing a fresh one.
+  // Regenerating here looked identical and was not: genRentRoll stamps lease
+  // start and expiry dates off s.month, so a listing written in month 5 and
+  // previewed in month 40 produced a roll with the same tenants on different
+  // paper. Measured: 39 of 200 purchases differed on occupancy and 84 on NOI.
+  if (li?.roll) {
+    h.tenants = li.roll as never;
+    if (li.occ !== undefined) h.occ = li.occ;
+    return h;
+  }
+  // Nothing marketed, so this is a door you knocked on. Deterministic per
+  // building — see genRentRoll — with settle=false so looking at a building
+  // never moves money, drawn from a private stream so looking never re-rolls
+  // the world, and identical to what the deed will hand over.
+  genRentRoll(game, rec, h, distress, false);
+  return h;
+}
 import { sponsorStanding } from "@/engine/sponsor";
 import { marketAppetite, markRival, ownerOf, rivalCondition, gradeOf, assetGrade } from "@/engine/rivals";
 import { compFlows, compStats, portfolioIndustries } from "@/engine/comps";
@@ -66,6 +119,7 @@ import { plateEfficiency } from "@/engine/value";
 import { varianceQuote } from "@/engine/zoning";
 import { usd, sf, pct } from "./format";
 import Slider from "./Slider";
+import StaffPage from "./StaffPage";
 
 // Appraisals are opinions with a range, not the true number.
 function band(bbl: string, value: number): string {
@@ -104,6 +158,7 @@ export default function GamePanels() {
     : page === "economy" ? "The Economy"
     : page === "research" ? "Research"
     : page === "notes" ? "The Note Desk"
+    : page === "staff" ? "The Desk"
     : page === "settings" ? "Settings"
     : "The Marketplace";
   return (
@@ -127,6 +182,7 @@ export default function GamePanels() {
             {page === "saves" && <SavesPage />}
             {page === "leasing" && <LeasingPage />}
             {page === "property" && <PropertyPage />}
+            {page === "staff" && <StaffPage />}
             {page === "settings" && <SettingsPage />}
           </div>
         </div>
@@ -800,7 +856,14 @@ function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: Prop
       {on("summary") && <div className="grid">
         <Row k="Appraisal" v={band(selectedBBL, value)} strong />
         {isBuilt && <Row k="Market rent" v={"$" + marketRentPsfYr(rec, game.econ, cond).toFixed(0) + " /sf/yr"} />}
-        {isBuilt && !holding && <Row k="Occupancy (mkt)" v={(occupancy(rec, game.econ) * 100).toFixed(0) + "%"} />}
+        {/* DISCLOSED, not estimated, whenever the seller has shown a roll. The
+            label drops "(mkt)" with it, because it is no longer an opinion. */}
+        {isBuilt && !holding && (() => {
+          const d = disclosed(game, selectedBBL);
+          return d
+            ? <Row k="Occupancy" v={(physicalOcc(rec as never, d) * 100).toFixed(0) + "%"} bad={physicalOcc(rec as never, d) < 0.75} />
+            : <Row k="Occupancy (mkt)" v={(occupancy(rec, game.econ) * 100).toFixed(0) + "%"} />;
+        })()}
         {isBuilt && !holding && (
           isMixedUse(rec)
             ? <Row k="Leasable spaces" v={usesOf(rec).map((u) => `${Math.max(1, Math.round(useSf(rec, u) / useSuiteSf(rec, u)))} ${USE_WORD[u]}`).join(" · ")} />
@@ -826,7 +889,12 @@ function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: Prop
             assets already net out the tax bill; an unowned one is estimated
             against its own appraisal, which is the only price on offer until
             somebody names one. */}
-        {isBuilt && <Row k="NOI / yr" v={usd(holding ? holdingNOIYr(rec, game.econ, holding, game.month) : noiAfterTaxYr(rec, game.econ, cond, value))} />}
+        {isBuilt && (() => {
+          const d = holding ?? disclosed(game, selectedBBL);
+          return <Row k="NOI / yr" v={usd(d
+            ? holdingNOIYr(rec, game.econ, d, game.month)
+            : noiAfterTaxYr(rec, game.econ, cond, value))} />;
+        })()}
         {holding && isBuilt && <Row k="Property tax / yr" v={usd(propertyTaxYr(rec, holding)) + (commercial ? " (your share)" : "")} />}
         <Row k="Lot area" v={sf(rec.lotArea)} />
         {isBuilt && <Row k="Building" v={sf(rec.bldgArea) + ` · ${rec.floors} fl · ${rec.yearBuilt}`} />}
@@ -966,7 +1034,14 @@ function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: Prop
               {!apt && <Row k="Expense recoveries" v={mo(os.recoveredOpex + os.recoveredTax)} />}
               <Row k="Revenue" v={mo(os.egi)} strong />
               <Row k="Operating expenses" v={"−" + mo(os.opex)} />
-              <Row k={apt ? "Reserves for turns and repairs" : "Management fee"} v={"−" + mo(os.mgmt)} />
+              {/* TWO LINES, NOT ONE. Apartments used to show a single 7% line
+                  doing two jobs. The fee goes to whoever runs the building;
+                  the reserve is capital for carpets, appliances and roofs.
+                  Different money, different people, different reasons. */}
+              <Row k="Management fee" v={"−" + mo(os.mgmt)} />
+              {apt && os.reserve !== undefined && (
+                <Row k="Replacement reserve" v={"−" + mo(os.reserve)} />
+              )}
               <Row k="Property tax" v={"−" + mo(os.tax)} />
               <Row k="NOI / mo" v={mo(os.noi)} strong bad={os.noi < 0} />
               {pmt > 0 && <Row k="Debt service / mo" v={"−" + usd(Math.round(pmt))} />}
@@ -1016,9 +1091,27 @@ function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: Prop
                 : <Row k="Ask" v={usd(listing.ask)} strong />}
               {contract && <Row k="Must fund by" v={monthLabel(contract.closeByM ?? game.month + 3)} bad />}
               {contract && <Row k="Deposit posted" v={usd(contract.deposit ?? 0)} />}
-              {isBuilt && <Row k="NOI / yr" v={usd(noiAfterTaxYr(rec, game.econ, cond, contract?.agreedPrice ?? listing.ask))} />}
-              {isBuilt && <Row k="Cap rate" v={((noiAfterTaxYr(rec, game.econ, cond, contract?.agreedPrice ?? listing.ask) / (contract?.agreedPrice ?? listing.ask)) * 100).toFixed(2) + "%"} strong />}
-              {isBuilt && <Row k="Occupancy" v={(occupancy(rec, game.econ) * 100).toFixed(0) + "%"} />}
+              {/* THE NUMBERS YOU BID ON ARE THE NUMBERS YOU CLOSE ON. Priced
+                  off the disclosed rent roll where there is one, so the cap
+                  rate on this card is the cap rate you actually buy at rather
+                  than the one a building of this type ought to trade at. */}
+              {isBuilt && (() => {
+                const px = contract?.agreedPrice ?? listing.ask;
+                const d = disclosed(game, selectedBBL, px);
+                const n = d ? holdingNOIYr(rec, game.econ, d, game.month)
+                            : noiAfterTaxYr(rec, game.econ, cond, px);
+                return (
+                  <>
+                    <Row k="NOI / yr" v={usd(n)} bad={n < 0} />
+                    <Row k="Cap rate" v={((n / Math.max(1, px)) * 100).toFixed(2) + "%"} strong />
+                    <Row
+                      k={d ? "Occupancy" : "Occupancy (mkt)"}
+                      v={((d ? physicalOcc(rec as never, d) : occupancy(rec, game.econ)) * 100).toFixed(0) + "%"}
+                    />
+                    {d && <Row k="In place" v={`${d.tenants.length} lease${d.tenants.length === 1 ? "" : "s"}`} />}
+                  </>
+                );
+              })()}
               {!isBuilt && <Row k="Land" v={"$" + ((contract?.agreedPrice ?? listing.ask) / rec.lotArea).toFixed(0) + " /sf of lot"} />}
             </div>
             {/* TWO ACTS, and never both at once. Before a handshake there is
@@ -1668,16 +1761,27 @@ function SaleSection({ bbl, value }: { bbl: string; value: number }) {
           costs a point more and three months, and puts every one of them in
           the same room on the same day. In a thin market the campaign finds
           nobody and you have paid for the privilege. */}
+      {/* THE OWNER ASKED WHETHER THE QUIET LISTING SHOULD EXIST AT ALL. It
+          should: selling off-market is a real and common way to trade a
+          building, and the trade the engine models is the right one — you pay
+          a point less in fees and you give up price discovery. What was wrong
+          was that the choice was described in a paragraph instead of priced.
+          A decision with two numbers on it is a decision; a decision with an
+          adjective on it is a paragraph. Both buttons now carry the fee in
+          dollars, and the ask is on both of them. */}
       <div className="btn-row">
         <button className="btn btn-buy" onClick={() => listSale(bbl, price, "marketed")}>
-          Run a process at {usd(price)}
+          Run a process · {usd(price)} less {usd(Math.round(price * 0.025))} fee
         </button>
-        <button className="btn" onClick={() => listSale(bbl, price)}>Quiet listing</button>
+        <button className="btn" onClick={() => listSale(bbl, price)}>
+          Sell it quietly · {usd(price)} less {usd(Math.round(price * 0.015))} fee
+        </button>
       </div>
       <div className="hint">
-        A campaign takes two to four months, costs 2.5% instead of 1.5%, and ends with every bid on your desk at
-        once — with the option to go back to the top of the list once. A quiet listing costs less and finds you one
-        buyer at a time, whoever happens to ring.
+        The campaign costs {usd(Math.round(price * 0.01))} more and two to four months, and ends with every bid on
+        your desk on the same day — plus one go back to the top of the list. That is what the extra point buys:
+        not a better building, a better-tested price. A quiet sale saves the fee and finds you one buyer at a
+        time, whoever happens to ring, and you never learn what the best buyer in the city would have paid.
       </div>
     </div>
   );
@@ -6785,6 +6889,16 @@ function BooksPage() {
       </div>
       <NWChart data={game.nwHistory} />
       <CreditLine />
+      {/* THE WAY IN TO THE PAYROLL. Firm overhead is a line on the statement
+          below and, since the desk exists, half of it is people with names,
+          salaries and a notice period. The books are where you find out what
+          the office costs; this is where you find out who is in it. */}
+      <div className="btn-row">
+        <button className="btn" onClick={() => useStore.getState().setPage("staff")}
+          title="Property management and leasing — capacity, the shortlist, and what the slip is costing you">
+          The desk · {(game.staff ?? []).length} on the payroll →
+        </button>
+      </div>
       <IncomeStatement />
       <div className="page-section">
         <div className="page-section-head">The ledger, by year — every line, side by side</div>

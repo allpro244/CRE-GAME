@@ -3,3 +3,6 @@ dist/
 bundle.html
 *.log
 groundwork.html
+
+# agent worktrees — never part of the repo
+.claude/worktrees/

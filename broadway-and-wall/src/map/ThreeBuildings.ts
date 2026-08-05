@@ -466,8 +466,16 @@ uniform vec3 uSunDir;
 uniform vec3 uSunCol;
 #define SUN_DIR uSunDir
 #define SUN_COL uSunCol
-const vec3 SKY_COL = vec3(0.53, 0.635, 0.83);
-const vec3 GND_COL = vec3(0.48, 0.405, 0.31);
+// THE FILL WAS DOING THE SUN'S JOB. A sky term this bright lands about
+// two-thirds of full illumination on a surface the sun cannot see at all,
+// which is why a city lit at 28 degrees — an angle chosen precisely so the
+// massing would have something to read against — was throwing shadows you had
+// to look for. Open shade outdoors is genuinely a couple of stops under
+// sunlight, not a quarter of one. Pulling the dome down and pushing the sun up
+// keeps the same exposure on the lit planes and buys back the contrast between
+// a wall in the light and a wall in the shade.
+const vec3 SKY_COL = vec3(0.408, 0.502, 0.688);
+const vec3 GND_COL = vec3(0.372, 0.318, 0.248);
 
 vec3 hemiLight(vec3 n, float ao) {
   vec3 amb = mix(GND_COL, SKY_COL, clamp(n.z * 0.5 + 0.5, 0.0, 1.0));
@@ -481,14 +489,33 @@ vec3 aces(vec3 x) {
 // filmic roll-off plus a gentle split-tone: cool in the shadows, warm in the
 // light. Keeps the pale architectural-model palette but stops it going chalky.
 vec3 grade(vec3 c) {
-  vec3 t = aces(c * 1.06);
-  t = mix(c * 0.92, t, 0.9);
+  c = max(c, vec3(0.0));
+
+  // CONTRAST BEFORE THE CURVE, NOT AFTER.
+  //
+  // The palette here is pale on purpose, and it was arriving inside about a
+  // third of a stop — sunlit stone, roadway, roof and open sea all within one
+  // value of each other. Geometry cannot rescue that; a model photographed in
+  // flat light reads as a model. But an S-curve applied to the OUTPUT of ACES
+  // pushes the top of the range straight into the clamp, and because the clamp
+  // is per-channel it takes the hue with it: a snow roof in January went to
+  // flat paper white with no blue left in it, and the shoulder that ACES exists
+  // to provide never got a chance to run.
+  //
+  // Doing it in linear, about middle grey, is the same contrast with none of
+  // that. Values under 0.18 fall, values over it rise, and then the filmic
+  // curve rolls the highlights off smoothly and keeps them coloured.
+  c = 0.18 * pow(c / 0.18 + 1e-5, vec3(1.24));
+
+  vec3 t = aces(c * 1.10);
+  t = clamp(t, 0.0, 1.0);
+
   float lum = dot(t, vec3(0.2126, 0.7152, 0.0722));
-  t = mix(vec3(lum), t, 1.16);                 // ACES eats chroma; put it back
+  t = mix(vec3(lum), t, 1.30);                 // ACES eats chroma; put it back
   t = clamp(t, 0.0, 1.0);
   lum = dot(t, vec3(0.2126, 0.7152, 0.0722));
-  t *= mix(vec3(0.935, 0.972, 1.082), vec3(1.062, 1.007, 0.926), smoothstep(0.16, 0.84, lum));
-  return t;
+  t *= mix(vec3(0.910, 0.958, 1.108), vec3(1.078, 1.010, 0.904), smoothstep(0.14, 0.86, lum));
+  return clamp(t, 0.0, 1.0);
 }`;
 
 const SEASON_GLSL = /* glsl */ `
@@ -519,12 +546,52 @@ vec3 snowOn(vec3 c, float up, float k) {
 // is scaled by how high the camera sits, so the effect reads the same whether
 // you are looking down a street or across the whole harbor.
 const HAZE_GLSL = /* glsl */ `
-const vec3 HAZE_COL = vec3(0.772, 0.836, 0.902);
+// AIR IS NOT ONE COLOUR, AND IT IS NOT EVENLY DISTRIBUTED.
+//
+// A single grey constant is haze; these two together are weather. Looking
+// along the sun's bearing you are looking INTO forward-scattered light and the
+// air goes warm, bright and low-contrast — the effect that makes the far end
+// of a sunlit street glow. Looking away from it you are seeing the sky's own
+// blue scattered back at you, which is cooler and darker. Every aerial
+// photograph of a city has both in the same frame, and a renderer that picks
+// one loses the single strongest cue that the city is sitting in atmosphere
+// rather than in front of a backdrop.
+const vec3 HAZE_COOL = vec3(0.742, 0.818, 0.900);   // the sky, scattered back
+const vec3 HAZE_WARM = vec3(0.952, 0.906, 0.826);   // the sun, scattered forward
+const vec3 HAZE_COL  = vec3(0.790, 0.845, 0.902);   // the average, for anything that wants one
+
 vec3 aerial(vec3 c, vec3 p, vec3 cam) {
-  float d = length(p - cam);
+  vec3 d3 = p - cam;
+  float d = length(d3);
   float k = max(cam.z, 140.0);
-  float f = 1.0 - exp(-(d / k) * 0.070);
-  return mix(c, HAZE_COL, clamp(f, 0.0, 1.0) * 0.47);
+  // WEAKER, AND FURTHER OUT. At 0.47 the haze was doing the job of depth cue
+  // and the job of a grey wash at the same time: by mid-frame it had eaten
+  // half the contrast of every surface, so the far half of the city arrived
+  // pre-flattened and no amount of grading downstream could get it back.
+  // Depth reads better from a curve that stays clear up close and then falls
+  // away hard, which is also what air actually does.
+  float f = 1.0 - exp(-(d / k) * 0.056);
+
+  // Which way am I looking, relative to where the sun is? Taken on the compass
+  // only: the elevation of the sun is the same everywhere in frame, so letting
+  // it into this term would just add a constant tilt top-to-bottom.
+  vec2 vdir = d3.xy;
+  vec2 sdir = SUN_DIR.xy;
+  float toSun = 0.5;
+  if (dot(vdir, vdir) > 1e-6 && dot(sdir, sdir) > 1e-6) {
+    toSun = clamp(dot(normalize(vdir), normalize(sdir)) * 0.5 + 0.5, 0.0, 1.0);
+  }
+  vec3 haze = mix(HAZE_COOL, HAZE_WARM, pow(toSun, 2.4));
+
+  // AND IT POOLS IN THE STREETS. Haze is densest where the air is thickest and
+  // dirtiest, which is at the bottom — so a distant street floor washes out
+  // while the towers standing in the same air keep their edges, and the city
+  // reads as rising out of something. A 46 m scale height puts the effect
+  // across the low fabric and leaves anything tall standing clear of it.
+  float lowFog = exp(-max(p.z, 0.0) / 46.0);
+  f = clamp(f * (1.0 + 0.44 * lowFog), 0.0, 1.0);
+
+  return mix(c, haze, f * 0.35);
 }`;
 
 /**
@@ -664,19 +731,70 @@ const float SHADOW_SPAN_M = 5999.0;   // the sun camera's far minus its near
 const float SHADOW_BIAS_M = 1.6;      // was 0.0028 NDC == 16.80 m
 const float SHADOW_NORMAL_M = 1.15;   // ~one texel, along the surface normal
 
-// 1.0 = fully sunlit, 0.0 = fully shadowed (4-tap PCF)
+// A SHADOW IS NOT ONE BLUR WIDE ALONG ITS WHOLE LENGTH.
+//
+// Four taps at a fixed 1.4-texel radius gives every shadow in the city the
+// same soft edge everywhere — the same at the foot of the wall that casts it
+// as at the far tip forty metres away. Real ones do the opposite of that, and
+// it is one of the most legible depth cues there is: the contact edge under a
+// parapet is nearly a hard line, and the same parapet's shadow across the
+// street has an edge you can put your thumb over. The sun is half a degree
+// wide, so the penumbra opens in proportion to how far the blocker stands
+// above what it lands on.
+//
+// So: find how deep the blockers are, take the gap, open the filter by it.
+// Sixteen taps total, laid out on a Vogel disk (golden angle, sqrt radius)
+// computed in the loop rather than read from a const array, because array
+// constructors are GLSL ES 3.00 and this shader still has to compile as 1.00.
+// The disk is rotated per fragment by a hash of world position, which turns
+// what would be sixteen visible banding rings into noise the eye reads as
+// grain.
+const float SHADOW_TEXEL = 1.0 / 3072.0;
+const float PENUMBRA_OPEN = 0.085;    // texels of blur per metre of blocker gap
+const float PENUMBRA_MAX = 9.0;       // and it stops opening here
+
+float shadowHash(vec2 v) {
+  return fract(sin(dot(v, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+// 1.0 = fully sunlit, 0.0 = fully shadowed
 float sunVis(vec3 p, vec3 n) {
   if (uShadowOn < 0.5) return 1.0;
   vec4 sc = uSunVP * vec4(p + n * SHADOW_NORMAL_M, 1.0);
   vec3 ndc = sc.xyz / sc.w * 0.5 + 0.5;
   if (ndc.x < 0.0 || ndc.x > 1.0 || ndc.y < 0.0 || ndc.y > 1.0 || ndc.z > 1.0) return 1.0;
-  float sum = 0.0;
-  for (int i = 0; i < 4; i++) {
-    vec2 off = vec2(float(i - (i / 2) * 2) - 0.5, float(i / 2) - 0.5) * (1.4 / 3072.0);
-    float d = unpackDepth(texture2D(uShadow, ndc.xy + off));
-    sum += step(ndc.z - SHADOW_BIAS_M / SHADOW_SPAN_M, d);
+  float recv = ndc.z - SHADOW_BIAS_M / SHADOW_SPAN_M;
+
+  float ang = shadowHash(floor(p.xy * 4.0)) * 6.2831853;
+  vec2 rc = vec2(cos(ang), sin(ang));
+
+  // ---- 1. how far above me is whatever is blocking the sun? ----------------
+  float bSum = 0.0, bHits = 0.0;
+  for (int i = 0; i < 6; i++) {
+    float a = float(i) * 2.39996323 + ang;
+    float r = sqrt((float(i) + 0.5) / 6.0) * 4.5 * SHADOW_TEXEL;
+    float d = unpackDepth(texture2D(uShadow, ndc.xy + vec2(cos(a), sin(a)) * r));
+    if (d < recv) { bSum += d; bHits += 1.0; }
   }
-  return sum * 0.25;
+  // Nothing between this fragment and the sun. Full light, and we are done in
+  // six taps rather than twenty-two — which is most of the frame, most of the
+  // time, and is what pays for the rest of this function.
+  if (bHits < 0.5) return 1.0;
+
+  float gapM = max(recv - bSum / bHits, 0.0) * SHADOW_SPAN_M;
+  float radius = min(1.1 + gapM * PENUMBRA_OPEN, PENUMBRA_MAX) * SHADOW_TEXEL;
+
+  // ---- 2. filter at that width --------------------------------------------
+  float sum = 0.0;
+  for (int i = 0; i < 16; i++) {
+    float a = float(i) * 2.39996323;
+    float r = sqrt((float(i) + 0.5) / 16.0) * radius;
+    vec2 o = vec2(cos(a), sin(a)) * r;
+    // rotate the whole disk by the per-fragment angle
+    o = vec2(o.x * rc.x - o.y * rc.y, o.x * rc.y + o.y * rc.x);
+    sum += step(recv, unpackDepth(texture2D(uShadow, ndc.xy + o)));
+  }
+  return sum * (1.0 / 16.0);
 }`;
 
 const FRAG = /* glsl */ `
@@ -1501,10 +1619,76 @@ void main() {
   glass = mix(glass, glass * 1.25, step(0.82, wid));
   glass = mix(glass, glass * 0.72, step(wid, 0.14));
 
+  // ---- what is actually behind the glass -----------------------------------
+  // A WINDOW IS A HOLE, AND UNTIL NOW IT HAS BEEN A PAINTED ONE. Everything
+  // above gives the opening depth in the MASONRY — the reveal, the jamb the
+  // sun stands behind, the head it hangs under — and then stops dead at a flat
+  // pane with a bit of sky on it. What was missing is the room. It is the
+  // reason a real facade reads as a hundred separate boxes stacked up rather
+  // than as one gridded surface, and no amount of work on the stonework around
+  // the opening can stand in for it.
+  //
+  // Interior mapping, after van Dongen: walk the view ray into a virtual box
+  // sitting behind the pane and shade whichever of its planes the ray reaches
+  // first. It is analytic — no texture, no loop, three divides — and because
+  // the box is anchored to the BUILDING rather than to the screen, the
+  // parallax is correct from every angle and every distance: look along a
+  // facade and you see the side walls, look square at it and you see the back
+  // of the room. Each room takes its brightness and depth from a hash of its
+  // own cell, so no two floors of the same tower come out stamped.
+  //
+  // Gated on the same LOD term the reveal uses. At the zoom where a floor is
+  // four pixels tall there is nothing to see inside it and it would only
+  // alias.
+  if (near > 0.05 && winMask > 0.01) {
+    float ix = clamp((f.x - m.x) / max(win.x, 0.001), 0.0, 1.0);
+    float iy = clamp((f.y - m.y - 0.04) / max(win.y, 0.001), 0.0, 1.0);
+    float rn = max(dot(n, Vw), 0.05);
+    // how far the ray slides across the opening per metre it travels inward,
+    // expressed in the opening's own 0..1 coordinates
+    float sx = (dot(-Vw, T) / rn) / max(win.x * colW, 0.05);
+    float sy = ((-Vw).z / rn) / max(win.y * fh, 0.05);
+    float roomD = mix(2.2, 3.4, hash(vec2(floor(u) * 3.1, floor(v) * 1.9)));
+    float tx = abs(sx) > 1e-5 ? ((sx > 0.0 ? 1.0 - ix : -ix) / sx) : 1e9;
+    float ty = abs(sy) > 1e-5 ? ((sy > 0.0 ? 1.0 - iy : -iy) / sy) : 1e9;
+    float t = roomD; int face = 0;          // 0 back wall, 1 side wall, 2 up/down
+    if (tx < t) { t = tx; face = 1; }
+    if (ty < t) { t = ty; face = 2; }
+
+    vec3 room;
+    if (face == 0)      room = vec3(0.44, 0.42, 0.385);                     // back wall
+    else if (face == 1) room = vec3(0.28, 0.27, 0.255);                     // a side wall, edge-on to the light
+    else                room = sy > 0.0 ? vec3(0.58, 0.57, 0.535)           // ceiling, pale, catches the opening
+                                        : vec3(0.20, 0.185, 0.165);         // floor
+    // deeper into the room is darker: the only light in there came in through
+    // the hole we are looking through
+    room *= mix(1.0, 0.40, clamp(t / roomD, 0.0, 1.0));
+    // and one room is not another — blinds down, lights on, empty shell
+    room *= 0.62 + 0.62 * hash(vec2(floor(u) * 1.7 + 5.0, floor(v) * 2.3));
+
+    glass = mix(glass, room, 0.74 * near);
+  }
+
   vec3 V = Vw;
   vec3 R = reflect(-V, n);
-  float skyT = clamp(R.z * 0.9 + 0.35, 0.0, 1.0);
-  vec3 sky = mix(vec3(0.80, 0.78, 0.72), vec3(0.56, 0.72, 0.86), skyT);
+  // WHAT A GLASS WALL IS ACTUALLY LOOKING AT.
+  //
+  // Two colours lerped by height gave every reflective surface in this city the
+  // same soft grey-blue wash, which is most of why the glass towers read as
+  // pale boxes rather than as mirrors. A real environment has three parts and a
+  // glass building shows you all of them down its own height at once: the dark
+  // ground below the horizon, the bright band at the horizon itself — which is
+  // the brightest thing in any outdoor scene that is not the sun — and the deep
+  // sky above it. The transition at the horizon is sharp, which is exactly the
+  // hard line you see running across a curtain wall.
+  //
+  // And then the sun, tight and very bright, because a tower flaring as you
+  // pass it is the single most recognisable thing glass does.
+  float rz = R.z;
+  vec3 sky = rz < 0.0
+    ? mix(vec3(0.345, 0.325, 0.292), vec3(0.845, 0.860, 0.870), clamp(rz * 2.8 + 1.0, 0.0, 1.0))
+    : mix(vec3(0.845, 0.860, 0.870), vec3(0.315, 0.505, 0.795), clamp(rz * 1.45, 0.0, 1.0));
+  sky += SUN_COL * pow(max(dot(normalize(R), SUN_DIR), 0.0), 300.0) * 2.4;
   float fres = pow(1.0 - abs(dot(n, V)), 2.0);
   float refl = glassy ? (0.30 + 0.38 * fres) : (0.10 + 0.18 * fres);
   // MIRROR GLASS IS MOSTLY NOT THE BUILDING. A 1970s reflective unit returns
@@ -1788,14 +1972,33 @@ void main() {
   // ---- light --------------------------------------------------------------
   float ndl = max(dot(n, SUN_DIR), 0.0);
   vec3 light = SUN_COL * (ndl * vis * 0.92 * mix(0.72, 1.0, smoothstep(0.0, 1.9, vZ))) + hemiLight(n, ao);
+  vec3 eyeV = normalize(uCam - vPos);
   // glass throws a specular back at the sun; masonry doesn't
   if (glassy) {
-    vec3 V = normalize(uCam - vPos);
-    vec3 H = normalize(SUN_DIR + V);
+    vec3 H = normalize(SUN_DIR + eyeV);
     light += SUN_COL * pow(max(dot(n, H), 0.0), 48.0) * 0.55 * vis * winMask;
   }
   col *= light * edgeLift;
   col *= vTint;
+
+  // GRAZING SKY, WHICH IS WHAT SEPARATES A BUILDING FROM THE ONE BEHIND IT.
+  //
+  // Every material gets more reflective the further along it you look — it is
+  // why the wet road ahead of you is a mirror and the same road at your feet
+  // is grey. On a city this means the facades turned away from the camera pick
+  // up a wash of sky along their length, and the near ones do not, so two
+  // identical stone walls one street apart arrive at different values and read
+  // as two walls. Without it every facade in the frame is lit purely by its
+  // own normal, which is why a dense skyline flattens into one mass at the
+  // point where the shadows stop separating it.
+  //
+  // Added AFTER the albedo multiply because it is reflected light, not more
+  // illumination of the surface: it does not care what colour the brick is,
+  // which is exactly why it lifts dark brick out of the background and leaves
+  // pale stone alone. Squared falloff, small on masonry, real on glass.
+  float graze = pow(1.0 - clamp(dot(n, eyeV), 0.0, 1.0), 4.0);
+  col += SKY_COL * graze * (glassy ? 0.34 : 0.085) * mix(0.55, 1.0, ao);
+
   gl_FragColor = vec4(aerial(grade(col), vPos, uCam), uOpacity);
 }`;
 
@@ -2064,9 +2267,9 @@ void main() {
   // are, so they are allowed to read: deeper, and cooler, because a shadow
   // outdoors is lit by the sky and the sky is blue.
   float sa = uSeason.x * 0.42;
-  float a  = (1.0 - vis) * 0.60;
+  float a  = (1.0 - vis) * 0.74;
   vec3  sc = vec3(0.800, 0.828, 0.880);
-  vec3  hc = mix(vec3(0.155, 0.185, 0.30), vec3(0.42, 0.49, 0.66), uSeason.x);
+  vec3  hc = mix(vec3(0.128, 0.158, 0.272), vec3(0.42, 0.49, 0.66), uSeason.x);
   float outA = sa + a * (1.0 - sa);
   vec3  outC = outA > 0.0001 ? (sc * sa * (1.0 - a) + hc * a) / outA : sc;
   gl_FragColor = vec4(outC, outA);
@@ -2077,6 +2280,441 @@ varying vec3 vPos;
 void main() {
   vPos = position;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+
+// ---------------------------------------------------------------------------
+// THE POST STAGE
+// ---------------------------------------------------------------------------
+//
+// Until now this layer rendered straight into MapLibre's framebuffer, which
+// meant there was no frame to work ON — every effect had to be something a
+// fragment could do knowing only about itself. That rules out the entire class
+// of things that separate a render from a photograph, because all of them need
+// to see the finished image: light that spills off a bright surface into the
+// ones around it, and a lens that can only be focused at one distance at a
+// time.
+//
+// So the scene goes to an offscreen target first, and what lands in MapLibre's
+// buffer is a composite. Everything here is written to fail safe: if the target
+// cannot be created the layer falls back to drawing directly, exactly as before.
+const POST_VERT = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = vec4(position.xy, 0.0, 1.0);
+}`;
+
+// What is bright enough to spill. Working on premultiplied colour, so the
+// threshold is against light actually emitted into the frame rather than
+// against the surface's own brightness.
+const BRIGHT_FRAG = /* glsl */ `
+precision highp float;
+varying vec2 vUv;
+uniform sampler2D uTex;
+uniform float uThresh;
+uniform float uKnee;
+void main() {
+  vec4 c = texture2D(uTex, vUv);
+  float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+  // a soft knee rather than a hard cut, or the bloom develops a visible
+  // outline exactly where the threshold sits
+  float k = smoothstep(uThresh, uThresh + uKnee, l);
+  gl_FragColor = vec4(c.rgb * k, 1.0);
+}`;
+
+const BLUR_FRAG = /* glsl */ `
+precision highp float;
+varying vec2 vUv;
+uniform sampler2D uTex;
+uniform vec2 uDir;
+void main() {
+  // 9-tap gaussian as 5 samples on the linear-filter trick
+  vec3 s = texture2D(uTex, vUv).rgb * 0.227027;
+  s += (texture2D(uTex, vUv + uDir * 1.3846).rgb + texture2D(uTex, vUv - uDir * 1.3846).rgb) * 0.316216;
+  s += (texture2D(uTex, vUv + uDir * 3.2308).rgb + texture2D(uTex, vUv - uDir * 3.2308).rgb) * 0.070270;
+  gl_FragColor = vec4(s, 1.0);
+}`;
+
+// AMBIENT OCCLUSION, IN WORLD SPACE, OFF THE DEPTH BUFFER.
+//
+// The hemisphere term in the light rig is analytic: it knows a wall's height
+// off the ground and whether it sits in a concave corner of its OWN footprint,
+// and that is all it can know, because a fragment cannot see the building
+// across the alley. So the one place a dense city should be darkest — the slot
+// between two blocks, the back of a courtyard, the notch where a setback meets
+// its neighbour — was lit exactly like an open plaza.
+//
+// The reconstruction is exact rather than a depth-difference approximation:
+// this layer's camera has an identity view matrix (MapLibre hands over a
+// combined matrix and Three's camera sits at the origin), so inverting the
+// projection takes a depth sample straight back to a world position. From
+// there it is the ordinary normal-oriented estimator — sample a disk, ask how
+// far each neighbour rises above this fragment's tangent plane, weight by
+// distance so a building a street away cannot occlude anything.
+//
+// The surface normal comes from the derivatives of the reconstructed position,
+// which costs nothing and is exact for the flat faces this city is made of.
+const AO_GLSL = /* glsl */ `
+uniform sampler2D uDepth;
+uniform mat4 uInvProj;
+uniform mat4 uProj;
+uniform vec2 uAoTexel;
+uniform vec3 uAoCam;
+uniform vec3 uAoSun;
+uniform float uAoRadius;    // metres
+uniform float uAoStrength;
+uniform float uContactLen;  // metres the contact ray walks
+
+vec3 worldAt(vec2 uv, float d) {
+  vec4 clip = vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+  vec4 p = uInvProj * clip;
+  return p.xyz / p.w;
+}
+
+float occlusion(vec2 uv) {
+  float d = texture2D(uDepth, uv).x;
+  if (d >= 0.9999) return 0.0;                 // sky: nothing to occlude
+  vec3 P = worldAt(uv, d);
+
+  // CONTACT IS A NEAR-FIELD EFFECT AND THE GROUND PLANE RUNS TO THE HORIZON.
+  // Out at three or four kilometres that plane is edge-on to the eye, a whole
+  // pixel spans hundreds of metres of it, and both the reconstruction and its
+  // derivatives fall apart — which arrived on screen as ruled bands across the
+  // sky. Nothing that far away has readable contact anyway, so the pass simply
+  // stops, faded out rather than cut so the boundary is not its own edge.
+  float dist = length(P - uAoCam);
+  float reach = 1.0 - smoothstep(420.0, 850.0, dist);
+  if (reach <= 0.001) return 0.0;
+
+  vec3 dPx = dFdx(P), dPy = dFdy(P);
+  if (length(dPx) < 1e-7 || length(dPy) < 1e-7) return 0.0;
+  vec3 N = normalize(cross(dPx, dPy));
+
+  // Sampling radius shrinks on screen as the fragment gets further away, so a
+  // fixed pixel disk would sample metres at the front of the frame and
+  // kilometres at the back. Scale it by how big a metre is here.
+  vec3 Px = worldAt(uv + vec2(uAoTexel.x, 0.0), d);
+  float mPerPx = max(length(Px - P), 1e-4);
+  float rad = clamp(uAoRadius / mPerPx, 2.0, 64.0);
+
+  // AND IT HAS TO STOP WHEN THE SCALE RUNS OUT FROM UNDER IT.
+  //
+  // That clamp has a floor of two pixels, which is doing something quietly
+  // wrong at the far end: zoomed out to the whole island, one pixel already
+  // spans more ground than the 2.5 m radius this is supposed to measure, so
+  // the floor takes over and the estimator goes looking twenty or thirty
+  // metres out. That is not contact any more — it is whole buildings occluding
+  // each other — and the result was a grey wash over the entire city in the
+  // establishing shot, which read as the roofs being muddy.
+  //
+  // Contact occlusion is meaningless once it is smaller than a pixel. Fade it
+  // out there rather than let the clamp quietly redefine what is being asked.
+  float scaleFade = 1.0 - smoothstep(uAoRadius * 0.75, uAoRadius * 2.6, mPerPx);
+  if (scaleFade <= 0.002) return 0.0;
+
+  float occ = 0.0;
+  for (int i = 0; i < 12; i++) {
+    float a = float(i) * 2.39996323;
+    float rr = sqrt((float(i) + 0.5) / 12.0) * rad;
+    vec2 suv = uv + vec2(cos(a), sin(a)) * rr * uAoTexel;
+    float sd = texture2D(uDepth, suv).x;
+    if (sd >= 0.9999) continue;
+    vec3 S = worldAt(suv, sd) - P;
+    float len = length(S);
+    if (len < 1e-4) continue;
+    // how far above my own tangent plane the neighbour stands, and a falloff
+    // so something across the street contributes nothing
+    float rise = max(dot(S / len, N) - 0.06, 0.0);
+    occ += rise * (uAoRadius / (uAoRadius + len * len / max(uAoRadius, 0.5)));
+  }
+  return clamp(occ / 12.0 * uAoStrength, 0.0, 1.0) * reach * scaleFade;
+}`;
+
+// SOLVED ONCE, AT HALF SIZE, AND BLURRED.
+//
+// The occlusion is needed in two places — as a multiply onto the pavement
+// MapLibre drew, and again inside our own composite — and the first version
+// computed it independently in both, twelve depth taps each, at full
+// resolution. That is the same answer paid for twice.
+//
+// Solving it into its own buffer is cheaper AND better: a twelve-tap estimator
+// on a rotated disk is inherently noisy, and the standard treatment is exactly
+// the one this now gets for free — resolve at half resolution, then blur. AO
+// is the lowest-frequency thing in the frame; there was never any detail in it
+// to protect.
+// SHADOWS SMALLER THAN A SHADOW-MAP TEXEL.
+//
+// The sun's depth map is 3072 across 4,400 m — 1.43 m per texel. A street tree
+// is about four metres of canopy, a parked car is under two, a cornice is
+// under one, and a fire escape is a handful of centimetres of ironwork. Every
+// one of those is at or below the resolution of the map that is supposed to be
+// shadowing them, so the city has thousands of objects sitting on the pavement
+// casting either a blur or nothing at all. It is the reason props have always
+// looked slightly pasted on rather than standing there.
+//
+// A short ray walked through the depth buffer toward the sun fixes exactly
+// that band and nothing else: it is only accurate for a metre or two, which is
+// precisely the range the shadow map cannot resolve. The two are complementary
+// — the map does the buildings, this does everything standing next to them.
+//
+// The thickness test is what keeps it honest. A surface that is nearer the
+// camera than the ray is only a blocker if it is nearer by a LITTLE; a tower
+// half a kilometre in front is not shadowing this pavement, it is merely in
+// front of it, and without an upper bound every distant silhouette would drag
+// a black smear across everything behind it.
+const AO_CALC_FRAG = /* glsl */ `
+precision highp float;
+varying vec2 vUv;
+` + AO_GLSL + /* glsl */ `
+float contactShadow(vec2 uv, vec3 P, vec3 N) {
+  if (dot(N, uAoSun) <= 0.02) return 0.0;      // already facing away from the sun
+  vec3 step = uAoSun * (uContactLen / 10.0);
+  vec3 sp = P + N * 0.035;                     // off the surface, or it shadows itself
+  for (int i = 0; i < 10; i++) {
+    sp += step;
+    vec4 c = uProj * vec4(sp, 1.0);
+    if (c.w <= 0.0) return 0.0;
+    vec2 su = (c.xy / c.w) * 0.5 + 0.5;
+    if (su.x < 0.0 || su.x > 1.0 || su.y < 0.0 || su.y > 1.0) return 0.0;
+    float sd = texture2D(uDepth, su).x;
+    if (sd >= 0.9999) continue;                // open sky along the ray
+    float dRay = length(sp - uAoCam);
+    float dHit = length(worldAt(su, sd) - uAoCam);
+    if (dHit < dRay - 0.06 && dHit > dRay - 1.6) {
+      // fade the last steps out so the shadow ends rather than stopping
+      return 1.0 - float(i) / 10.0 * 0.45;
+    }
+  }
+  return 0.0;
+}
+
+void main() {
+  float d = texture2D(uDepth, vUv).x;
+  float csh = 0.0;
+  if (d < 0.9999) {
+    vec3 P = worldAt(vUv, d);
+    vec3 dPx = dFdx(P), dPy = dFdy(P);
+    if (length(dPx) > 1e-7 && length(dPy) > 1e-7) {
+      // ONLY WHERE THE SCALE SUPPORTS IT, and this bound has to be tighter
+      // than it first looks. The test is a metre-scale distance comparison
+      // between two points reconstructed from depth, and depth precision at a
+      // kilometre is worse than the 1.6 m thickness window the test uses — so
+      // out at the horizon it starts finding blockers in its own quantisation
+      // noise. That arrived as a hard-edged wedge of shade lying across the
+      // far water, on the far side of wherever this cutoff happened to fall.
+      //
+      // Two bounds, both faded rather than cut, because a step in either one
+      // is itself a visible edge: the pixel must be well under the ray length
+      // in size, and the fragment must be near enough that depth still has
+      // bits to spare.
+      vec3 Px = worldAt(vUv + vec2(uAoTexel.x, 0.0), d);
+      float pxOk = 1.0 - smoothstep(uContactLen * 0.18, uContactLen * 0.34, length(Px - P));
+      float nearOk = 1.0 - smoothstep(180.0, 340.0, length(P - uAoCam));
+      float gate = pxOk * nearOk;
+      if (gate > 0.004) {
+        csh = contactShadow(vUv, P, normalize(cross(dPx, dPy))) * gate;
+      }
+    }
+  }
+  gl_FragColor = vec4(occlusion(vUv), csh, 0.0, 1.0);
+}`;
+
+// The occlusion, alone, as a multiply over whatever is already in MapLibre's
+// buffer. This is the pass that darkens the STREET — the pavement is drawn by
+// MapLibre, so the only way to put a building's contact shadow on it is to
+// multiply the destination.
+const AO_MULT_FRAG = /* glsl */ `
+precision highp float;
+varying vec2 vUv;
+uniform sampler2D uAoTex;
+void main() {
+  vec2 a = texture2D(uAoTex, vUv).rg;
+  // Cool, because ambient occlusion is the absence of SKY light and the sky
+  // here is blue. A neutral grey multiply reads as dirt.
+  vec3 tint = mix(vec3(1.0), vec3(0.62, 0.68, 0.80), a.r);
+  // The contact shadow is the absence of SUN, which is a different and deeper
+  // thing than the absence of sky — and bluer still, because what is left
+  // lighting it is the dome.
+  tint *= mix(vec3(1.0), vec3(0.55, 0.61, 0.76), a.g * 0.80);
+  gl_FragColor = vec4(tint, 1.0);
+}`;
+
+// CREPUSCULAR RAYS — the reason to put the sun at 28 degrees in the first place.
+//
+// A low sun behind a skyline is the single most photographed thing a city
+// does, and every part of the machinery to draw it was already here: a sun
+// whose screen position is known, and a depth buffer that says exactly which
+// pixels it can shine through. What was missing is the air for it to shine
+// through, which in screen space is a radial blur of the SKY MASK away from
+// the sun — light accumulating along each ray until a building interrupts it.
+//
+// Quarter resolution, because a shaft of light is the softest thing in any
+// frame and there is no detail in it to lose. Twenty-four steps with a
+// geometric decay, so the near end of each ray counts for most of it and the
+// far end trails off rather than ending.
+const SHAFT_FRAG = /* glsl */ `
+precision highp float;
+varying vec2 vUv;
+uniform sampler2D uDepth;
+uniform vec3 uSunScreen;
+uniform float uDensity;
+uniform float uDecay;
+void main() {
+  if (uSunScreen.z < 0.5) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); }
+  else {
+    vec2 uv = vUv;
+    vec2 stride = (uv - uSunScreen.xy) * (uDensity / 24.0);
+    float illum = 1.0;
+    float acc = 0.0;
+    for (int i = 0; i < 24; i++) {
+      uv -= stride;
+      // 1 where the ray is still in open sky, 0 the moment a building eats it
+      acc += step(0.9999, texture2D(uDepth, uv).x) * illum;
+      illum *= uDecay;
+    }
+    gl_FragColor = vec4(vec3(acc / 24.0), 1.0);
+  }
+}`;
+
+// The composite. Tilt-shift first, then the bloom on top of it, because light
+// that has spilled has already left the lens and does not get defocused again.
+const COMPOSITE_FRAG = /* glsl */ `
+precision highp float;
+varying vec2 vUv;
+uniform sampler2D uScene;
+uniform sampler2D uBloom;
+uniform vec2 uTexel;
+uniform float uBloomAmt;
+uniform float uFocus;      // where the plane of focus sits, 0..1 up the frame
+uniform float uBand;       // how much of the frame is sharp
+uniform float uDefocus;    // blur radius in pixels at the top and bottom
+uniform float uGrain;
+uniform vec3 uSunScreen;   // xy = where the sun is on screen, z = 1 if in front
+uniform vec3 uSunTint;
+uniform float uGlare;
+uniform sampler2D uShaft;
+uniform float uShaftAmt;
+uniform sampler2D uAoTex;
+// still needed here, though the occlusion moved out: the glare has to know
+// whether a building is standing between the camera and the sun
+uniform sampler2D uDepth;
+` + /* glsl */ `
+
+// A MODEL CITY PHOTOGRAPHS LIKE A MODEL CITY.
+//
+// This game's whole identity is an architectural model — the README says so,
+// the palette says so, the pale card stock the buildings are made of says so.
+// A real model gets shot on a view camera close up, and a lens that close has
+// a depth of field measured in centimetres, so the plate is sharp in a band
+// and falls off above and below it. That single cue is why tilt-shift makes
+// photographs of real cities look like toys: our eyes read the shallow focus
+// as "this is small and it is near".
+//
+// Here it is the honest description of what the thing IS, and it costs eight
+// taps on a disk whose radius is zero through the focus band.
+// EDGES, BECAUSE GOING OFFSCREEN THREW THE MSAA AWAY.
+//
+// The direct path rendered into MapLibre's own multisampled buffer and got
+// antialiasing for free. A render target does not come with that — and it
+// cannot simply be asked for one either, because a multisampled target cannot
+// also hand back the depth texture the occlusion pass reads. So the edges are
+// found and softened here instead.
+//
+// Run on RGBA rather than RGB. The most visible edge in the frame is the
+// city's silhouette against the basemap, and that is an edge in ALPHA: treat
+// only the colour and every roofline stays a staircase.
+vec4 fxaa(vec2 uv) {
+  vec3 L = vec3(0.299, 0.587, 0.114);
+  vec4 m  = texture2D(uScene, uv);
+  vec4 nw = texture2D(uScene, uv + vec2(-1.0, -1.0) * uTexel);
+  vec4 ne = texture2D(uScene, uv + vec2( 1.0, -1.0) * uTexel);
+  vec4 sw = texture2D(uScene, uv + vec2(-1.0,  1.0) * uTexel);
+  vec4 se = texture2D(uScene, uv + vec2( 1.0,  1.0) * uTexel);
+  // alpha counts toward luma so a silhouette registers as contrast
+  float lM  = dot(m.rgb,  L) + m.a  * 0.5;
+  float lNW = dot(nw.rgb, L) + nw.a * 0.5;
+  float lNE = dot(ne.rgb, L) + ne.a * 0.5;
+  float lSW = dot(sw.rgb, L) + sw.a * 0.5;
+  float lSE = dot(se.rgb, L) + se.a * 0.5;
+  float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));
+  float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
+  if (lMax - lMin < 0.028) return m;            // flat: nothing to do
+
+  vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), ((lNW + lSW) - (lNE + lSE)));
+  float red = max((lNW + lNE + lSW + lSE) * 0.25 * 0.125, 1.0 / 128.0);
+  dir = clamp(dir * (1.0 / (min(abs(dir.x), abs(dir.y)) + red)), -8.0, 8.0) * uTexel;
+
+  vec4 a = 0.5 * (texture2D(uScene, uv + dir * (1.0 / 3.0 - 0.5))
+                + texture2D(uScene, uv + dir * (2.0 / 3.0 - 0.5)));
+  vec4 b = a * 0.5 + 0.25 * (texture2D(uScene, uv + dir * -0.5)
+                           + texture2D(uScene, uv + dir *  0.5));
+  float lB = dot(b.rgb, L) + b.a * 0.5;
+  return (lB < lMin || lB > lMax) ? a : b;
+}
+
+vec4 defocused(vec2 uv, float r) {
+  // Inside the focus band there is no blur to hide the stair-stepping, so this
+  // is where the edge work goes. Outside it the disk is already doing more
+  // smoothing than any edge filter would.
+  if (r < 0.35) return fxaa(uv);
+  vec4 sum = texture2D(uScene, uv);
+  for (int i = 0; i < 8; i++) {
+    float a = float(i) * 2.39996323;
+    float rr = sqrt((float(i) + 0.5) / 8.0) * r;
+    sum += texture2D(uScene, uv + vec2(cos(a), sin(a)) * rr * uTexel);
+  }
+  return sum * (1.0 / 9.0);
+}
+
+void main() {
+  float off = abs(vUv.y - uFocus);
+  float defocus = smoothstep(uBand, 1.0, off) * uDefocus;
+  vec4 c = defocused(vUv, defocus);
+
+  // The same occlusion the multiply pass put on the street, applied to the
+  // city's own geometry. Before the bloom: light that has already spilled off
+  // a surface is not sitting in the crevice any more.
+  vec2 aoc = texture2D(uAoTex, vUv).rg;
+  c.rgb *= mix(vec3(1.0), vec3(0.62, 0.68, 0.80), aoc.r);
+  c.rgb *= mix(vec3(1.0), vec3(0.55, 0.61, 0.76), aoc.g * 0.80);
+
+  c.rgb += texture2D(uBloom, vUv).rgb * uBloomAmt;
+
+  // THE SUN HAS BEEN LIGHTING THIS CITY AND HAS NEVER BEEN IN IT.
+  //
+  // The whole rig is built around a 28-degree sun — the shadows, the warm
+  // west faces, the forward-scattered haze along its bearing — and turn the
+  // camera to face it and there is nothing there. Real glass in front of a low
+  // sun veils: light scatters inside the lens and lifts the whole frame near
+  // it, with no visible disc needed.
+  //
+  // It has to be occluded, or the glare sits happily in front of the building
+  // between you and it. One depth tap where the sun is, so a tower crossing
+  // the sun cuts the flare — which is the moment the effect earns its place,
+  // because that is when a viewer reads the light as being IN the scene.
+  // The shafts go on before the veil, because the veil is happening in the
+  // lens and the shafts are happening out in the city.
+  if (uSunScreen.z > 0.5 && uShaftAmt > 0.001) {
+    c.rgb += uSunTint * texture2D(uShaft, vUv).r * uShaftAmt;
+  }
+
+  if (uSunScreen.z > 0.5 && uGlare > 0.001) {
+    // aspect-corrected, or the glare is an ellipse on any non-square window
+    vec2 d = (vUv - uSunScreen.xy) * vec2(uTexel.y / max(uTexel.x, 1e-6), 1.0);
+    float r = length(d);
+    float blocked = step(0.9999, texture2D(uDepth, uSunScreen.xy).x);
+    float veil = exp(-r * 4.2) * 0.55 + exp(-r * 13.0) * 0.45;
+    c.rgb += uSunTint * veil * uGlare * blocked;
+  }
+
+  // A WHISPER OF GRAIN. Everything above is smooth gradients over smooth
+  // gradients — bloom, defocus, aerial haze — and smooth gradients on an 8-bit
+  // buffer band. A dither below the level anybody can consciously see costs
+  // one hash and removes every one of them.
+  float g = fract(sin(dot(vUv, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
+  c.rgb += g * uGrain;
+
+  gl_FragColor = c;
 }`;
 
 // LIVING WATER. Two crossed wave trains give a normal that actually moves,
@@ -2100,6 +2738,9 @@ varying vec2 vXY;
 varying float vDepth;
 uniform float uTime;
 uniform vec3 uCam;
+uniform sampler2D uReflect;
+uniform vec2 uResolution;
+uniform float uReflectOn;
 ` + LIGHT_GLSL + HAZE_GLSL + /* glsl */ `
 float wave(vec2 p, vec2 dir, float len, float spd, float t) {
   return sin(dot(p, dir) / len + t * spd);
@@ -2122,29 +2763,91 @@ void main() {
   vec3 V = normalize(uCam - vec3(p, 0.0));
   float fres = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 3.0);
 
+  // THE CITY STANDS ON THIS AND HAS NEVER ONCE APPEARED IN IT.
+  //
+  // Everything below — the shoal gradient, the sun's road, the foam on the
+  // crests — describes water very well and describes water with NOTHING ON THE
+  // FAR SIDE OF IT. A harbour in front of a city is mostly a picture of that
+  // city, upside down and shaken; it is the single largest thing this surface
+  // was missing, and no amount of tuning the blue could stand in for it.
+  //
+  // Planar reflection: the scene is rendered a second time with world Z
+  // negated, which puts every building exactly where its reflection belongs on
+  // screen, so this samples at its own fragment position — no matrix work in
+  // here at all. The wave normal displaces the lookup, which is what turns a
+  // mirror into water, and the displacement grows with distance because a
+  // reflection seen at a grazing angle travels further across the surface.
+  //
+  // Alpha carries whether anything was actually there: where the mirrored
+  // render is empty the water keeps the sky mix it always had.
+  // AND IT IS A NEAR-FIELD EFFECT, for the same reason the occlusion is. Out
+  // at the horizon the sea is edge-on: a single pixel of it spans hundreds of
+  // metres, its reflection lookup lands wherever the mirrored city happens to
+  // be, and the result arrives as ruled bands across the sky rather than as a
+  // reflection of anything. A real harbour goes flat and bright out there too.
+  float reflFar = 1.0 - smoothstep(350.0, 1500.0, length(vec3(vXY, 0.0) - uCam));
+  vec3 reflCol = vec3(0.0);
+  float reflA = 0.0;
+  if (uReflectOn > 0.5 && reflFar > 0.002) {
+    vec2 suv = gl_FragCoord.xy / uResolution;
+    suv += n.xy * 0.055 * (0.35 + 0.65 * fres);
+    vec4 r = texture2D(uReflect, clamp(suv, vec2(0.002), vec2(0.998)));
+    // premultiplied, so undo it to get the colour back out
+    reflA = r.a * reflFar;
+    reflCol = r.a > 0.001 ? r.rgb / r.a : vec3(0.0);
+  }
+
   // SHALLOWS FOLLOW THE COAST. vDepth carries distance to the land edge, baked
   // per vertex, so the water genuinely pales where it runs up on the shore
   // instead of being one flat sheet with a painted band around it.
-  float shoal = 1.0 - smoothstep(0.0, 190.0, vDepth);
-  vec3 deep    = vec3(0.243, 0.418, 0.553);
-  vec3 shallow = vec3(0.451, 0.639, 0.729);
-  vec3 sky     = vec3(0.741, 0.843, 0.918);
-  vec3 body = mix(deep, shallow, shoal * 0.85);
-  vec3 col = mix(body, sky, 0.16 + 0.58 * fres);
+  // A HARBOUR HAS A BOTTOM. The old deep tone was a mid blue-grey that sat at
+  // almost exactly the value of the pale stone across the shoreline, so the
+  // single hardest edge in the frame — where the city stops and the sea starts
+  // — was carrying no contrast at all. Deep water offshore is dark and it is
+  // saturated, and giving it back both is what makes the island read as an
+  // island rather than a pale shape on a pale field.
+  // A HARBOUR HAS A BOTTOM, but a bottom is not a halo. The shoal band reads
+  // over a shorter run than the sea's own colour change, or the island wears a
+  // bright ring that reads as glow rather than as shallow water.
+  float shoal = 1.0 - smoothstep(0.0, 120.0, vDepth);
+  vec3 deep    = vec3(0.096, 0.245, 0.372);
+  vec3 shallow = vec3(0.310, 0.534, 0.632);
+  vec3 sky     = vec3(0.706, 0.822, 0.906);
+  vec3 body = mix(deep, shallow, shoal * 0.82);
+  vec3 col = mix(body, sky, 0.10 + 0.54 * fres);
+  // Water reflects hardly anything face-on and nearly everything at a grazing
+  // angle — that Fresnel curve is the whole reason a harbour mirrors the far
+  // shore and not your own feet. Damped in the shallows, where the bottom is
+  // close enough to see and the light coming back up through it competes.
+  col = mix(col, reflCol, reflA * (0.09 + 0.72 * fres) * (1.0 - shoal * 0.45));
 
   // the sun's road across the water — broad sheen, then hard sparkles on the
   // faces that happen to be pointing at it
   vec3 H = normalize(normalize(SUN_DIR) + V);
   float spec = pow(max(dot(n, H), 0.0), 220.0);
   float sheen = pow(max(dot(n, H), 0.0), 24.0);
-  col += SUN_COL * (spec * 1.9 + sheen * 0.20);
+  float glit = pow(max(dot(n, H), 0.0), 800.0);   // the hard points in the road
+  col += SUN_COL * (spec * 2.3 + sheen * 0.26 + glit * 3.4);
 
   // foam: only on the real crests, and heavier in the shallows where the
   // swell actually breaks
-  col += vec3(0.085) * smoothstep(0.86, 1.02, h) * (0.5 + 0.9 * shoal);
-  // the far sea has to dissolve into the horizon or the plane's own edge
-  // shows up as a hard line across the sky
-  gl_FragColor = vec4(aerial(grade(col), vec3(vXY, 0.0), uCam), 1.0);
+  col += vec3(0.075) * smoothstep(0.86, 1.02, h) * (0.5 + 0.8 * shoal);
+
+  // THE SEA HAS NO EDGE AND THIS MESH DOES. The sheet stops at six kilometres,
+  // and the global aerial term — deliberately weakened so the city keeps its
+  // contrast — no longer takes the far water all the way to the sky, so the
+  // boundary of the plane arrives as a ruled line straight across the picture.
+  // The sea gets its own far-field fade, run to completion, because the one
+  // thing the horizon must never do is show you where the geometry ran out.
+  // The sheet is a SQUARE six kilometres on the half-side, so its corners
+  // reach 1.41x further than its edges and a fade that is still running at the
+  // edge distance shows the diagonal. Finish well inside the boundary, and
+  // finish on the sky's own horizon colour rather than the haze grey, so the
+  // sea meets the sky instead of meeting a slightly different sky.
+  vec3 outc = aerial(grade(col), vec3(vXY, 0.0), uCam);
+  float dist = length(vec3(vXY, 0.0) - uCam);
+  outc = mix(outc, vec3(0.874, 0.914, 0.933), smoothstep(1400.0, 3900.0, dist));
+  gl_FragColor = vec4(outc, 1.0);
 }`;
 
 const PROP_FRAG = /* glsl */ `
@@ -2169,15 +2872,49 @@ void main() {
   if (SNOW > 0.001) base = snowOn(base, smoothstep(0.30, 0.85, n.z), 0.85);
   float vis = sunVis(vW, n);
   float ao = mix(0.62, 1.0, clamp(vW.z / 5.0, 0.0, 1.0));
-  vec3 light = SUN_COL * (max(dot(n, SUN_DIR), 0.0) * vis * 0.92) + hemiLight(n, ao);
+  vec3 light;
+  if (uFoliage > 0.5) {
+    // A CANOPY IS NOT AN OPAQUE SOLID, and shading it like one is why every
+    // tree in this city has been a green rock. Two things are wrong with a
+    // Lambert term on foliage, and both have one-line fixes.
+    //
+    // It has no hard terminator. A canopy is a thousand leaves at a thousand
+    // angles, not one surface, so the light wraps around it well past where
+    // the geometric normal says it should stop.
+    float wrap = max((dot(n, SUN_DIR) + 0.42) / 1.42, 0.0);
+    //
+    // And it TRANSMITS. Look at a sunlit tree from the shaded side and it does
+    // not read dark, it GLOWS — you are seeing light that came THROUGH a leaf
+    // rather than off one, which is why it arrives warmer and greener than the
+    // light that fell on it. It is the single most recognisable thing foliage
+    // does and it costs one dot product: strongest looking into the sun,
+    // strongest on the faces the sun cannot reach directly.
+    vec3 Vv = normalize(uCam - vW);
+    float thru = pow(max(dot(-Vv, SUN_DIR), 0.0), 2.6)
+               * (1.0 - max(dot(n, SUN_DIR), 0.0))
+               * (1.0 - BARE);      // in February there is nothing to shine through
+    light = SUN_COL * (wrap * vis * 0.80)
+          + hemiLight(n, ao)
+          + SUN_COL * vec3(0.72, 1.02, 0.50) * (thru * vis * 0.62);
+  } else {
+    light = SUN_COL * (max(dot(n, SUN_DIR), 0.0) * vis * 0.92) + hemiLight(n, ao);
+  }
   gl_FragColor = vec4(aerial(grade(base * light), vW, uCam), uOpacity);
 }`;
+
+/** GLSL's smoothstep, on the CPU side, for uniforms that ease. */
+function smoothstep(e0: number, e1: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+}
 
 const SUN_LEN = 1.05799;
 const SUN_EL_MID = 27.96, SUN_EL_AMP = 6.0;
 const SUN_AZ_MID = 125.38, SUN_AZ_AMP = 12;
-const SUN_COL_SUMMER: readonly [number, number, number] = [1.260, 1.090, 0.820];
-const SUN_COL_WINTER: readonly [number, number, number] = [1.470, 0.772, 0.236];
+// Lifted with the sky dome's drop, so a sunlit wall keeps the exposure it had
+// and only the shaded one moves. The ratio between them is the whole point.
+const SUN_COL_SUMMER: readonly [number, number, number] = [1.462, 1.258, 0.936];
+const SUN_COL_WINTER: readonly [number, number, number] = [1.686, 0.886, 0.272];
 const SUN_WARMTH = 0.55;
 
 const SEASON_TABLE: readonly (readonly [number, number, number, number])[] = [
@@ -2219,6 +2956,25 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private timeUni = { value: 0 };
   private waterMat: THREE.ShaderMaterial | null = null;
   private lastFrame = 0;
+  // ---- post stage ----
+  private postOK = true;
+  private sceneRT: THREE.WebGLRenderTarget | null = null;
+  private bloomA: THREE.WebGLRenderTarget | null = null;
+  private bloomB: THREE.WebGLRenderTarget | null = null;
+  private reflectRT: THREE.WebGLRenderTarget | null = null;
+  private shaftRT: THREE.WebGLRenderTarget | null = null;
+  private aoA: THREE.WebGLRenderTarget | null = null;
+  private aoB: THREE.WebGLRenderTarget | null = null;
+  private postScene = new THREE.Scene();
+  private postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  private postQuad: THREE.Mesh | null = null;
+  private brightMat!: THREE.ShaderMaterial;
+  private blurMat!: THREE.ShaderMaterial;
+  private compMat!: THREE.ShaderMaterial;
+  private aoMultMat!: THREE.ShaderMaterial;
+  private shaftMat!: THREE.ShaderMaterial;
+  private aoCalcMat!: THREE.ShaderMaterial;
+  private postSize = new THREE.Vector2(0, 0);
   /** Exposed for playtests: the only way to assert a demolition really happened. */
   posAttrs: THREE.BufferAttribute[] = [];
   rangesByBBL = new Map<string, { attr: number; r: Ranges }[]>();
@@ -2253,6 +3009,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private shadowTarget: THREE.WebGLRenderTarget | null = null;
   private depthMat: THREE.MeshDepthMaterial | null = null;
   private groundCatcher: THREE.Mesh | null = null;
+  private aoGround: THREE.Mesh | null = null;
   visible = true;
 
   constructor(
@@ -2288,6 +3045,168 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.renderer.autoClear = false;
     this.camera.matrixAutoUpdate = false;
     this.buildCity();
+    this.initPost();
+  }
+
+  // ---- the post stage ------------------------------------------------------
+
+  /**
+   * Build the offscreen targets and the three screen passes. Every failure
+   * here is survivable: `postOK` goes false and `render` draws straight into
+   * MapLibre's buffer the way it always did, so the worst case is the city
+   * without bloom rather than no city.
+   */
+  private initPost() {
+    try {
+      const quad = new THREE.PlaneGeometry(2, 2);
+      this.brightMat = new THREE.ShaderMaterial({
+        vertexShader: POST_VERT, fragmentShader: BRIGHT_FRAG, depthTest: false, depthWrite: false,
+        // MEASURED AGAINST THE WORST CASE, which is January. A city under snow
+        // in low sun puts most of its roofs above 0.75 luminance, so a
+        // threshold picked while looking at summer stone turns every roof in
+        // town into a light source and the whole frame fogs. It has to sit
+        // above the brightest thing that is merely WELL LIT, and catch only
+        // what is actually specular: glints off water and glass.
+        uniforms: { uTex: { value: null }, uThresh: { value: 0.86 }, uKnee: { value: 0.16 } },
+      });
+      this.blurMat = new THREE.ShaderMaterial({
+        vertexShader: POST_VERT, fragmentShader: BLUR_FRAG, depthTest: false, depthWrite: false,
+        uniforms: { uTex: { value: null }, uDir: { value: new THREE.Vector2() } },
+      });
+      const aoUniforms = () => ({
+        uDepth: { value: null as THREE.Texture | null },
+        uInvProj: { value: new THREE.Matrix4() },
+        uAoTexel: { value: new THREE.Vector2() },
+        uAoCam: { value: new THREE.Vector3() },
+        // Two and a half metres. An alley is three or four wide, a light well
+        // less; much beyond this and a building starts occluding the one
+        // across the street, which is a shadow, not contact.
+        uAoRadius: { value: 2.5 },
+        uAoStrength: { value: 1.30 },
+        uProj: { value: new THREE.Matrix4() },
+        uAoSun: { value: new THREE.Vector3() },
+        // Two metres. Past that the shadow map has the resolution to do the
+        // job properly and a screen-space ray starts inventing occluders out
+        // of whatever happens to be in front.
+        uContactLen: { value: 2.0 },
+      });
+      this.aoCalcMat = new THREE.ShaderMaterial({
+        vertexShader: POST_VERT, fragmentShader: AO_CALC_FRAG, depthTest: false, depthWrite: false,
+        uniforms: aoUniforms(),
+      });
+      this.aoMultMat = new THREE.ShaderMaterial({
+        vertexShader: POST_VERT, fragmentShader: AO_MULT_FRAG, depthTest: false, depthWrite: false,
+        transparent: true,
+        // dst *= src — the only way to put a contact shadow onto pavement this
+        // layer did not draw
+        blending: THREE.CustomBlending,
+        blendSrc: THREE.ZeroFactor, blendDst: THREE.SrcColorFactor,
+        blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+        uniforms: { uAoTex: { value: null } },
+      });
+      this.shaftMat = new THREE.ShaderMaterial({
+        vertexShader: POST_VERT, fragmentShader: SHAFT_FRAG, depthTest: false, depthWrite: false,
+        uniforms: {
+          uDepth: { value: null }, uSunScreen: { value: new THREE.Vector3() },
+          // Density is how far back along each ray the walk reaches. Much past
+          // this and the shafts stop converging on the sun and start looking
+          // like a zoom blur of the whole frame.
+          uDensity: { value: 0.62 }, uDecay: { value: 0.955 },
+        },
+      });
+      this.compMat = new THREE.ShaderMaterial({
+        vertexShader: POST_VERT, fragmentShader: COMPOSITE_FRAG, depthTest: false, depthWrite: false,
+        transparent: true,
+        // THE SCENE TARGET HOLDS PREMULTIPLIED COLOUR, because that is what a
+        // Three renderer writes. Compositing it over MapLibre's basemap with
+        // the usual SRC_ALPHA blend would multiply by alpha a second time and
+        // every translucent thing in the city — the shadow catcher above all —
+        // would come out half strength. ONE / ONE_MINUS_SRC_ALPHA is the
+        // premultiplied form and is what makes the composite invisible.
+        blending: THREE.CustomBlending,
+        blendSrc: THREE.OneFactor,
+        blendDst: THREE.OneMinusSrcAlphaFactor,
+        blendSrcAlpha: THREE.OneFactor,
+        blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
+        uniforms: {
+          uScene: { value: null }, uBloom: { value: null },
+          uTexel: { value: new THREE.Vector2() },
+          // Bloom is a garnish. At 0.62 it was an atmosphere, and an
+          // atmosphere made of clipped highlights is just fog with extra steps.
+          uBloomAmt: { value: 0.20 },
+          // The focus band sits a little above centre: in a pitched view the
+          // middle of the frame is the middle distance, which is where the
+          // city one is actually looking at lives.
+          uFocus: { value: 0.56 }, uBand: { value: 0.26 }, uDefocus: { value: 2.7 },
+          uGrain: { value: 0.006 },
+          uSunScreen: { value: new THREE.Vector3() },
+          uSunTint: { value: new THREE.Vector3(1.0, 0.86, 0.66) },
+          uGlare: { value: 0.30 },
+          uShaft: { value: null }, uShaftAmt: { value: 0.42 },
+          uAoTex: { value: null }, uDepth: { value: null },
+        },
+      });
+      this.postQuad = new THREE.Mesh(quad, this.brightMat);
+      this.postQuad.frustumCulled = false;
+      this.postScene.add(this.postQuad);
+    } catch {
+      this.postOK = false;
+    }
+  }
+
+  /** Match the targets to the drawing buffer; rebuild them when it changes. */
+  private ensurePostSize(): boolean {
+    if (!this.postOK || !this.postQuad) return false;
+    const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    if (size.x < 4 || size.y < 4) return false;
+    if (this.sceneRT && size.x === this.postSize.x && size.y === this.postSize.y) return true;
+    try {
+      this.sceneRT?.dispose(); this.bloomA?.dispose(); this.bloomB?.dispose();
+      const opts = {
+        minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+        format: THREE.RGBAFormat, type: THREE.UnsignedByteType,
+        depthBuffer: true, stencilBuffer: false,
+      } as const;
+      this.sceneRT = new THREE.WebGLRenderTarget(size.x, size.y, opts);
+      // The occlusion pass reads this. UnsignedInt rather than the default
+      // UnsignedShort: at 16 bits the reconstruction quantises into visible
+      // terraces across a frame that spans kilometres.
+      const dt = new THREE.DepthTexture(size.x, size.y, THREE.UnsignedIntType);
+      dt.minFilter = THREE.NearestFilter;
+      dt.magFilter = THREE.NearestFilter;
+      this.sceneRT.depthTexture = dt;
+      // Bloom runs at quarter resolution. It is a wide blur — nobody can see
+      // the resolution it was computed at, and it is the difference between
+      // the pass costing something and costing nothing.
+      const bw = Math.max(2, size.x >> 2), bh = Math.max(2, size.y >> 2);
+      this.bloomA = new THREE.WebGLRenderTarget(bw, bh, { ...opts, depthBuffer: false });
+      this.bloomB = new THREE.WebGLRenderTarget(bw, bh, { ...opts, depthBuffer: false });
+      // The reflection runs at half resolution. It is about to be displaced by
+      // a wave normal and then mixed in at a Fresnel weight; there is no
+      // resolution in it left to see.
+      this.aoA?.dispose(); this.aoB?.dispose();
+      const aw = Math.max(2, size.x >> 1), ah = Math.max(2, size.y >> 1);
+      this.aoA = new THREE.WebGLRenderTarget(aw, ah, { ...opts, depthBuffer: false });
+      this.aoB = new THREE.WebGLRenderTarget(aw, ah, { ...opts, depthBuffer: false });
+      this.shaftRT?.dispose();
+      this.shaftRT = new THREE.WebGLRenderTarget(bw, bh, { ...opts, depthBuffer: false });
+      this.reflectRT?.dispose();
+      this.reflectRT = new THREE.WebGLRenderTarget(
+        Math.max(2, size.x >> 1), Math.max(2, size.y >> 1),
+        { ...opts, depthBuffer: true },
+      );
+      this.postSize.copy(size);
+      return true;
+    } catch {
+      this.postOK = false;
+      return false;
+    }
+  }
+
+  private blit(mat: THREE.ShaderMaterial, target: THREE.WebGLRenderTarget | null) {
+    this.postQuad!.material = mat;
+    this.renderer.setRenderTarget(target);
+    this.renderer.render(this.postScene, this.postCam);
   }
 
   private project([lon, lat]: [number, number]): [number, number] {
@@ -3391,6 +4310,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.scene.add(mesh);
     }
     this.plantStreets();
+    this.buildAoGround();
     this.buildWater();
     this.buildSeawall();
     this.buildLawns();
@@ -3920,6 +4840,42 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.scene.add(mesh);
   }
 
+  /**
+   * A FLOOR THAT IS NEVER DRAWN.
+   *
+   * The streets of this city are painted by MapLibre, not by this layer, so
+   * the depth buffer the occlusion pass reads has buildings in it and nothing
+   * underneath them. Screen-space occlusion against that finds a tower's
+   * neighbours and never finds the pavement it is standing on — which loses
+   * precisely the contact the effect exists to draw.
+   *
+   * One plane at ground level with colour writes off costs nothing to draw,
+   * changes not a single pixel, and gives every building in town a floor to be
+   * occluded against. It has to be hidden during the sun's depth pass, where
+   * it would be a lid over the whole city.
+   */
+  private buildAoGround() {
+    const g = new THREE.PlaneGeometry(13000, 13000);
+    // AND IT HAS TO SIT UNDER THE SEA, NOT IN IT. At z = 0 this plane is half a
+    // centimetre below the water sheet, which is inside the depth buffer's
+    // precision out at a kilometre — the two fought, the floor won in patches,
+    // and the harbour came out in ruled terraces where the water had simply
+    // been depth-tested away. Half a metre down settles it for good, and the
+    // occlusion cannot tell the difference: it is sampling contact between
+    // buildings and a ground plane, and the ground moved by half a metre.
+    const m = new THREE.MeshBasicMaterial({
+      colorWrite: false,
+      polygonOffset: true, polygonOffsetFactor: 4, polygonOffsetUnits: 8,
+    });
+    const mesh = new THREE.Mesh(g, m);
+    mesh.position.z = -0.5;
+    mesh.frustumCulled = false;
+    mesh.renderOrder = -2;         // before the water, which sits just above it
+    mesh.userData.noShadow = true;
+    this.scene.add(mesh);
+    this.aoGround = mesh;
+  }
+
   private buildWater() {
     const land = this.ctxPoints.land;
     if (!land || land.length < 4) return;
@@ -3963,7 +4919,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.waterMat = new THREE.ShaderMaterial({
       vertexShader: WATER_VERT,
       fragmentShader: WATER_FRAG,
-      uniforms: { uTime: this.timeUni, uCam: this.camUni, uSunDir: this.sunDirUni, uSunCol: this.sunColUni },
+      uniforms: {
+        uTime: this.timeUni, uCam: this.camUni, uSunDir: this.sunDirUni, uSunCol: this.sunColUni,
+        uReflect: { value: null }, uResolution: { value: new THREE.Vector2(1, 1) },
+        uReflectOn: { value: 0 },
+      },
       side: THREE.DoubleSide,
     });
     const mesh = new THREE.Mesh(g, this.waterMat);
@@ -4027,6 +4987,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const target = this.shadowTarget;
       if (this.water) this.water.visible = false;   // a flat sea casts nothing
       if (this.groundCatcher) this.groundCatcher.visible = false;
+      // and neither does the invisible plane that only exists to give the
+      // occlusion pass a floor — left in, it is a lid over the whole city and
+      // every building in town stands in its shadow
+      if (this.aoGround) this.aoGround.visible = false;
       const prevClear = new THREE.Color();
       this.renderer.getClearColor(prevClear);
       const prevAlpha = this.renderer.getClearAlpha();
@@ -4040,6 +5004,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.scene.overrideMaterial = null;
       if (this.water) this.water.visible = true;
       if (this.groundCatcher) this.groundCatcher.visible = true;
+      if (this.aoGround) this.aoGround.visible = true;
 
       this.sunVP.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
       this.shadowTex = target.texture;
@@ -4654,9 +5619,173 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const l = new THREE.Matrix4()
       .makeTranslation(this.origin.x, this.origin.y, this.origin.z)
       .scale(new THREE.Vector3(this.origin.s, -this.origin.s, this.origin.s));
-    this.camera.projectionMatrix = m.multiply(l);
+    const base = new THREE.Matrix4().multiplyMatrices(m, l);
+    this.camera.projectionMatrix = base;
     this.renderer.resetState();
+
+    if (!this.ensurePostSize() || !this.sceneRT || !this.bloomA || !this.bloomB) {
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
+
+    const prevTarget = this.renderer.getRenderTarget();
+
+    // 0. THE CITY, UPSIDE DOWN, for the harbour to carry.
+    //
+    // Negating world Z projects every building to exactly where its reflection
+    // belongs on screen, which is what lets the water shader sample at its own
+    // fragment position with no matrix work of its own. The mirror flips
+    // winding — normally that would cull the whole city away — but the wall and
+    // roof materials are already DoubleSide for their own reasons, so the
+    // buildings survive it and no cull-face juggling is needed.
+    //
+    // The water itself, the shadow catcher and the occlusion floor all sit ON
+    // the mirror plane and are coplanar with their own reflections; they are
+    // hidden, or they z-fight with themselves and cover the result.
+    if (this.water && this.reflectRT && this.waterMat) {
+      const wasWater = this.water.visible;
+      const wasCatcher = this.groundCatcher?.visible ?? false;
+      const wasAo = this.aoGround?.visible ?? false;
+      this.water.visible = false;
+      if (this.groundCatcher) this.groundCatcher.visible = false;
+      if (this.aoGround) this.aoGround.visible = false;
+
+      this.camera.projectionMatrix = new THREE.Matrix4()
+        .multiplyMatrices(base, new THREE.Matrix4().makeScale(1, 1, -1));
+      this.renderer.setRenderTarget(this.reflectRT);
+      this.renderer.setClearColor(0x000000, 0);
+      this.renderer.clear(true, true, false);
+      this.renderer.render(this.scene, this.camera);
+
+      this.water.visible = wasWater;
+      if (this.groundCatcher) this.groundCatcher.visible = wasCatcher;
+      if (this.aoGround) this.aoGround.visible = wasAo;
+      this.camera.projectionMatrix = base;
+
+      this.waterMat.uniforms.uReflect.value = this.reflectRT.texture;
+      (this.waterMat.uniforms.uResolution.value as THREE.Vector2).copy(this.postSize);
+      this.waterMat.uniforms.uReflectOn.value = 1;
+    }
+
+    // 1. the city, offscreen, onto nothing
+    this.renderer.setRenderTarget(this.sceneRT);
+    this.renderer.setClearColor(0x000000, 0);
+    this.renderer.clear(true, true, false);
     this.renderer.render(this.scene, this.camera);
+
+    // 2. what is bright enough to spill, at quarter res
+    this.brightMat.uniforms.uTex.value = this.sceneRT.texture;
+    this.blit(this.brightMat, this.bloomA);
+
+    // 3. spill it, separably
+    const bw = this.bloomA.width, bh = this.bloomA.height;
+    this.blurMat.uniforms.uTex.value = this.bloomA.texture;
+    (this.blurMat.uniforms.uDir.value as THREE.Vector2).set(1 / bw, 0);
+    this.blit(this.blurMat, this.bloomB);
+    this.blurMat.uniforms.uTex.value = this.bloomB.texture;
+    (this.blurMat.uniforms.uDir.value as THREE.Vector2).set(0, 1 / bh);
+    this.blit(this.blurMat, this.bloomA);
+
+    // 4. the occlusion needs to reach the pavement, and the pavement belongs
+    //    to MapLibre — so it goes down first, as a multiply on what is already
+    //    in the buffer, before anything of ours covers it.
+    const invProj = new THREE.Matrix4().copy(this.camera.projectionMatrix).invert();
+    {
+      const u = this.aoCalcMat.uniforms;
+      u.uDepth.value = this.sceneRT.depthTexture;
+      (u.uInvProj.value as THREE.Matrix4).copy(invProj);
+      (u.uAoTexel.value as THREE.Vector2).set(1 / this.postSize.x, 1 / this.postSize.y);
+      (u.uAoCam.value as THREE.Vector3).copy(this.camUni.value);
+      (u.uProj.value as THREE.Matrix4).copy(this.camera.projectionMatrix);
+      (u.uAoSun.value as THREE.Vector3).copy(this.sunDirUni.value).normalize();
+    }
+    // solve once at half size, then blur the estimator's noise off it
+    if (this.aoA && this.aoB) {
+      this.blit(this.aoCalcMat, this.aoA);
+      // A NARROWER KERNEL THAN THE BLOOM USES. This is the same separable
+      // gaussian, but its taps sit at 1.4 and 3.2 texels — at half resolution
+      // that is a six-pixel reach at full size, which is fine on the low
+      // frequencies of a courtyard and far too wide on a fire escape, where it
+      // smears the occlusion off the ironwork and onto the wall behind as a
+      // blob. Sixty per cent of the step keeps the estimator's noise down
+      // without spreading contact past the thing making it.
+      const aw = this.aoA.width, ah = this.aoA.height;
+      this.blurMat.uniforms.uTex.value = this.aoA.texture;
+      (this.blurMat.uniforms.uDir.value as THREE.Vector2).set(0.6 / aw, 0);
+      this.blit(this.blurMat, this.aoB);
+      this.blurMat.uniforms.uTex.value = this.aoB.texture;
+      (this.blurMat.uniforms.uDir.value as THREE.Vector2).set(0, 0.6 / ah);
+      this.blit(this.blurMat, this.aoA);
+      this.aoMultMat.uniforms.uAoTex.value = this.aoA.texture;
+      this.compMat.uniforms.uAoTex.value = this.aoA.texture;
+    }
+    this.compMat.uniforms.uDepth.value = this.sceneRT.depthTexture;
+    {
+    }
+    // THE LENS READS THE CAMERA — AND IT READS ZOOM, NOT PITCH.
+    //
+    // This was gated on pitch first, on the reasoning that a horizontal focus
+    // band needs a depth gradient running up the frame and a plan view has
+    // none. That is true of real depth of field and it is exactly backwards
+    // for this effect. Tilt-shift photographs of cities are shot from
+    // altitude, near nadir, and the band is not simulating a focal plane —
+    // it IS the cue, the thing that makes a viewer read a real city as a
+    // model. Killing it at low pitch removed it from the establishing shot,
+    // which is the one frame in the game that is most explicitly a photograph
+    // of a model.
+    //
+    // Zoom is the right axis. Far out you are looking at the model; down at
+    // street level you are looking at a building you are about to buy, and
+    // there the blur is only in the way. Depth of field is decoration;
+    // legibility is not.
+    {
+      const zoom = this.map.getZoom();
+      this.compMat.uniforms.uDefocus.value = 3.1 * (1 - smoothstep(16.4, 18.2, zoom));
+    }
+
+    // Where the sun sits on screen. Projected on the CPU because it is one
+    // point per frame, and the fragment shader has no way to find it: the
+    // combined matrix MapLibre hands over is not decomposable into a camera
+    // the shader could reason about.
+    {
+      const sd = this.sunDirUni.value;
+      const p = new THREE.Vector3(
+        this.camUni.value.x + sd.x * 9000,
+        this.camUni.value.y + sd.y * 9000,
+        this.camUni.value.z + sd.z * 9000,
+      ).applyMatrix4(this.camera.projectionMatrix);
+      const inFront = p.z > -1 && p.z < 1;
+      const su = this.compMat.uniforms.uSunScreen.value as THREE.Vector3;
+      su.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5, inFront ? 1 : 0);
+    }
+
+    // 3b. light shafts, at quarter res, off the same depth and sun position.
+    //     Skipped outright when the sun is behind the camera: the shader
+    //     already returns black in that case, and a pass whose every output is
+    //     known is a pass not worth dispatching. The composite is told to stop
+    //     adding it so the last frame's shafts cannot linger.
+    const sunUp = (this.compMat.uniforms.uSunScreen.value as THREE.Vector3).z > 0.5;
+    if (this.shaftRT && sunUp) {
+      this.shaftMat.uniforms.uDepth.value = this.sceneRT.depthTexture;
+      (this.shaftMat.uniforms.uSunScreen.value as THREE.Vector3)
+        .copy(this.compMat.uniforms.uSunScreen.value as THREE.Vector3);
+      this.blit(this.shaftMat, this.shaftRT);
+      this.compMat.uniforms.uShaft.value = this.shaftRT.texture;
+    }
+    this.compMat.uniforms.uShaftAmt.value = sunUp ? 0.42 : 0.0;
+
+    this.renderer.setRenderTarget(prevTarget);
+    this.blit(this.aoMultMat, prevTarget);
+
+    // 5. lens and composite, back into MapLibre's buffer
+    this.compMat.uniforms.uScene.value = this.sceneRT.texture;
+    this.compMat.uniforms.uBloom.value = this.bloomA.texture;
+    (this.compMat.uniforms.uTexel.value as THREE.Vector2).set(1 / this.postSize.x, 1 / this.postSize.y);
+    this.blit(this.compMat, prevTarget);
+
+    // Hand the context back exactly as MapLibre expects to find it — it still
+    // has its own symbol layers and controls to draw after this.
+    this.renderer.resetState();
   }
 
   onRemove() {

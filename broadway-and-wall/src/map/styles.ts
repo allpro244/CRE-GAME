@@ -237,6 +237,23 @@ export const S_MUSEUM = 102;     // a blind box that opens only in the last metr
 export const S_CONVENT = 103;    // a cloister arcade at HALF the upper bay pitch, then cell windows
 
 // ---------------------------------------------------------------------------
+// THE BUILDINGS THAT MOVE THINGS, OR MAKE THE CITY WORK.
+//
+// Infrastructure was entirely absent. These are not commercial buildings and
+// they do not look like any: a train shed is one arch, a substation is a comb
+// of louvre with no glass in it at all, a telephone exchange is deliberately
+// almost blind because there is nothing inside that needs a view. Each is the
+// shape of one piece of equipment, wrapped just enough to keep the rain off.
+export const S_TRAINSHED = 104;   // one colossal glazed lunette, its bars radiating from a single centre
+export const S_CARBARN = 105;     // a row of segmental track arches with fanlights over board leaves
+export const S_HANGAR = 106;      // the lower two thirds is ONE door in a dozen leaves
+export const S_BUSCANOPY = 107;   // a canopy slab cantilevering clear, and everything under it in shade
+export const S_CONTROLTWR = 108;  // a blind battered shaft under a cab whose glass leans out over it
+export const S_EXCHANGE = 109;    // almost blind brick: one deep slot per floor on half the bays
+export const S_SUBSTATION = 110;  // a wall combed with louvre from top to bottom and no glass anywhere
+export const S_LIGHTHOUSE = 111;  // a shaft that narrows as it rises, shaded as a cylinder, black gallery
+
+// ---------------------------------------------------------------------------
 // TRAITS, NOT NUMBERS.
 //
 // Downstream behaviour was keyed to the numeric VALUE of a style id — `s < 8`
@@ -261,6 +278,7 @@ export const T_MASONRY = [
   S_SRO, S_ORIEL, S_TWOFLAT, S_MANSIONBLK, S_BACKTOBACK, S_GARDENAPT,
   S_CHURCHSTONE, S_SYNAGOGUE, S_HOSPITAL, S_CELLBLOCK, S_ARMORY, S_COLLEGIATE,
   S_BATHHOUSE, S_MUSEUM, S_CONVENT,
+  S_CARBARN, S_EXCHANGE, S_TRAINSHED,
 ];
 
 /** Reflects the sky and throws a specular back at the sun. */
@@ -296,6 +314,7 @@ export const T_FLOORLINE = [
   S_ORIEL, S_TWOFLAT, S_RANCH, S_GARDENAPT, S_MANSIONBLK, S_BACKTOBACK,
   S_CHURCHSTONE, S_MEETINGHSE, S_SYNAGOGUE, S_HOSPITAL, S_CELLBLOCK, S_ARMORY,
   S_COLLEGIATE, S_BATHHOUSE, S_MUSEUM, S_CONVENT,
+  S_TRAINSHED, S_CARBARN, S_BUSCANOPY, S_EXCHANGE, S_LIGHTHOUSE,
 ];
 
 /** A modern skin whose parapet is metal or stone rather than more of itself. */
@@ -305,6 +324,7 @@ export const T_CAPPED_PLAIN = [
   S_TERRAPIER, S_DEEPFRAME, S_STEELSHELF, S_UNITGLASS, S_MEGAPANEL,
   S_GRAINHOUSE, S_GASHOLDER, S_SHIPSHED, S_DINER, S_STRIPMALL, S_MOTEL,
   S_TILTUP, S_DISTCENTER, S_FLEX, S_QUONSET, S_TRUCKTERM, S_SELFSTOR, S_DATACENTER,
+  S_HANGAR, S_SUBSTATION, S_CONTROLTWR, S_LIGHTHOUSE,
 ];
 
 /** Reads as a modern building when a crown is being chosen for it. */
@@ -438,11 +458,13 @@ export function stylePool(v: BuildingVolume): number[] {
       if (f >= 3) p.push(S_TEXTILE, S_TEXTILE, S_BREWERY);
       if (f >= 2) p.push(S_FOUNDRY, S_COLDSTORE, S_DEPOT);
       if (f >= 3) p.push(S_POWERHOUSE, S_GRAINHOUSE, S_GASHOLDER);
+      rare(0.34, 20, S_TRAINSHED, S_CARBARN, S_LIGHTHOUSE, S_EXCHANGE);
     } else if (y < 1945) {
       p.push(S_MILL, S_PUMPHOUSE, S_BREWERY, S_DEPOT, S_CARRIAGE);
       if (f >= 3) p.push(S_TEXTILE, S_TEXTILE, S_COLDSTORE);
       if (f >= 2) p.push(S_FOUNDRY, S_FOUNDRY, S_SHIPSHED);
       if (f >= 3) p.push(S_POWERHOUSE, S_POWERHOUSE, S_GRAINHOUSE, S_GRAINHOUSE, S_GASHOLDER, S_GASHOLDER);
+      rare(0.36, 21, S_TRAINSHED, S_CARBARN, S_EXCHANGE, S_SUBSTATION, S_HANGAR, S_LIGHTHOUSE);
     } else if (y < 1980) {
       // The tilt-up arrives in the sixties and takes over completely. Low and
       // wide is a shed; anything with a couple of floors is still a frame.
@@ -450,11 +472,13 @@ export function stylePool(v: BuildingVolume): number[] {
       if (f <= 2) p.push(S_TILTUP, S_TILTUP, S_QUONSET, S_TRUCKTERM, S_DISTCENTER);
       if (f >= 3) p.push(S_BRUTAL, S_TEXTILE, S_FLEX);
       if (f >= 4) p.push(S_GRAINHOUSE, S_POWERHOUSE, S_GASHOLDER);
+      rare(0.34, 22, S_SUBSTATION, S_HANGAR, S_BUSCANOPY, S_CONTROLTWR, S_EXCHANGE);
     } else {
       p.push(S_METALPAN, S_BIGBOX, S_EIFS, S_SHIPSHED);
       if (f <= 2) p.push(S_TILTUP, S_TILTUP, S_TILTUP, S_DISTCENTER, S_DISTCENTER,
         S_TRUCKTERM, S_SELFSTOR, S_QUONSET);
       if (f >= 2) p.push(S_FLEX, S_FLEX, S_SELFSTOR);
+      rare(0.30, 23, S_SUBSTATION, S_HANGAR, S_BUSCANOPY, S_CONTROLTWR);
       if (f >= 2) p.push(S_DATACENTER);
       if (f >= 3) p.push(S_COLDSTORE, S_DATACENTER);
     }

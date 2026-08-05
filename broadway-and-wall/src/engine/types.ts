@@ -650,6 +650,8 @@ export interface NewsItem {
 export interface EconHistoryPoint {
   q: number;
   indexRate: number;
+  /** The secular level money is being pulled toward. See recordHistory. */
+  rateRegime?: number;
   population?: number;
   jobs?: number;
   unemployment?: number;

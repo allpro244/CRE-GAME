@@ -4164,6 +4164,38 @@ function EconomyPage() {
       </div>
       <div className="hint">{phaseBlurb}{e.rumoredPhase ? ` Word on the street: ${e.rumoredPhase} is coming.` : ""}</div>
 
+      {/* THE RATE, WITH ITS HISTORY. Asked for twice. The series was already
+          being written — every EconHistoryPoint carries indexRate, and
+          recordHistory has been stamping one a month since month zero — and
+          nothing had ever drawn it. A single number tells you what money costs
+          today; the line tells you whether you are early or late, which is the
+          whole fix-or-float decision and most of the refinancing one.
+          The long-run rate is drawn alongside because the gap between them is
+          the thing to read: the cycle moves the index a point or two, the era
+          decides whether it is orbiting 3% or 13%. */}
+      {hist.length > 8 && (
+        <div className="page-section" style={{ marginTop: 12 }}>
+          <div className="page-section-head">What money has cost</div>
+          <LineChart
+            height={132}
+            series={[
+              { label: "Base rate %", color: "#8a4b2a", pts: hist.map((p) => p.indexRate) },
+              ...(hist.some((p) => p.rateRegime !== undefined)
+                ? [{ label: "Long-run rate %", color: "#8b8370", dashed: true,
+                     pts: hist.map((p) => p.rateRegime ?? p.indexRate) }]
+                : []),
+            ]}
+            yFmt={(v) => v.toFixed(1) + "%"}
+            xLabels={[monthLabel(hist[0].q), monthLabel(hist[hist.length - 1].q)]}
+          />
+          <div className="hint">
+            Every loan in town prices off the solid line. Where it sits against the dashed one is
+            whether today is a cheap-money year inside a dear-money era, or the other way round —
+            and that is the difference between fixing and floating.
+          </div>
+        </div>
+      )}
+
       {/* ---- the four markets, at a glance ---- */}
       <div className="page-section">The space market</div>
       <div className="mkt-cards">

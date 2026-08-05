@@ -1686,6 +1686,10 @@ function recordHistory(e: Econ, q: number, abs?: Record<string, number>, comp?: 
   e.history.push({
     q,
     indexRate: +e.indexRate.toFixed(2),
+    // The era the index is orbiting. Recorded because the GAP between the two
+    // is the readable thing — a 6% rate is cheap money inside a 1970s and dear
+    // money inside a 2010s — and a chart of the base rate alone cannot show it.
+    rateRegime: e.rateRegime !== undefined ? +e.rateRegime.toFixed(2) : undefined,
     landIdx: +e.landIdx.toFixed(4),
     costIdx: +e.costIdx.toFixed(4),
     inflExp: e.inflExp !== undefined ? +e.inflExp.toFixed(5) : undefined,

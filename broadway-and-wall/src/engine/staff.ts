@@ -431,9 +431,34 @@ export function refreshPool(s: GameState, force = false) {
  * this project keeps finding is two functions answering one question
  * differently, and a single stamped number cannot do that.
  */
+/**
+ * DORMANT UNTIL YOU CAN ACTUALLY HIRE SOMEBODY.
+ *
+ * The capacity model is finished and measured and the hiring screen is not, so
+ * a player past 150,000 sf was being charged for management they had no way to
+ * buy. A penalty with no counterplay is not a modelled risk — it is half a
+ * feature showing through — and this project's rule is that difficulty is an
+ * output of something real, not a cost with no decision attached to it.
+ *
+ * So while there is no way to hire, the capacity effects are held at neutral:
+ * the pool still turns over, salaries still bill if staff somehow exist, every
+ * measurement in `pnpm staff` still runs against the live functions. Only the
+ * multipliers the player feels are pinned to 1.
+ *
+ * Delete this the day the hiring UI lands. It is one flag and the harness will
+ * tell you immediately whether the capacity model still binds: test A asserts
+ * a 55k sf book does not slip and a 2.4M sf book does.
+ */
+export const HIRING_UI_SHIPPED = false;
+
 export function markStaff(s: GameState, parcels: ParcelTable) {
   const pm = roleState(s, parcels, "pm");
   const lease = roleState(s, parcels, "leasing");
+  if (!HIRING_UI_SHIPPED && !(s.staff ?? []).length) {
+    for (const h of Object.values(s.holdings)) delete h.pmOpexMult;
+    delete s.leasingOddsMult; delete s.pmRenewalMult; delete s.leasingRentMult;
+    return;
+  }
   const opex = pmOpexMult(pm);
   for (const h of Object.values(s.holdings)) h.pmOpexMult = +opex.toFixed(4);
   s.leasingOddsMult = +leasingOddsMult(lease).toFixed(4);

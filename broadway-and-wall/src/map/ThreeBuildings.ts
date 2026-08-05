@@ -6,6 +6,18 @@
 // camera, and picking.
 import * as THREE from "three";
 import maplibregl from "maplibre-gl";
+import type { BuildingVolume } from "./volume";
+export type { BuildingVolume };
+import {
+  S_LAWN, S_PATH, S_POND,
+  S_GLASS, S_PREWAR, S_BRICK, S_MILL, S_PLAIN, S_ARTDECO, S_CORNICE, S_GREEN, S_LOT, S_GABLE, S_CRYSTAL, S_DIAGRID, S_PMOD,
+  S_GOTHIC, S_BEAUX, S_ITALIANATE,
+  S_FEDERAL, S_CHICAGO, S_CIVIC,
+  S_CARRIAGE, S_MARKET, S_METALPAN,
+  S_TERRAPIER, S_DEEPFRAME, S_STEELSHELF, S_UNITGLASS,
+  S_MEGAPANEL, T_MODERN, T_STONE, T_OLDROOF, T_CAPPED_PLAIN, T_TRADE,
+  STYLE_SETS_GLSL, has, modernCap, styleFor, keyOf, hash01,
+} from "./styles";
 
 /** A context point that knows which way it is pointing. Bearing in degrees. */
 export interface Oriented { p: [number, number]; r: number }
@@ -49,22 +61,6 @@ function scatterInRing(ring: [number, number][], n: number, seed: number): [numb
   return out;
 }
 
-export interface BuildingVolume {
-  b: string;   // bbl ("" for decorative props like ships and cranes)
-  c: string;   // asset class
-  y: number;   // year built
-  t: number;   // tone jitter 0-4
-  f: number;   // floors (whole building)
-  z0: number;  // base meters
-  z1: number;  // top meters
-  d: number;   // 1 = decorative
-  k?: number;  // 1 = vacant lot (dress with gravel + fence)
-  x?: number;  // 1 = this volume is the ROOF of its building, not a setback
-               //     terrace under it. Bulkheads, masts and stepped crowns
-               //     go here and nowhere else.
-  dk?: string; // decorative kind: hull0-2, super, funnel, box0-2, crane, shed, light, boat, mast...
-  r: [number, number][]; // footprint ring, lon/lat
-}
 
 // What each decorative kind is painted. The harbor used to be a fleet of
 // uniform grey boxes; a hull is navy or rust, a wheelhouse is white, a crane
@@ -90,459 +86,6 @@ const DECO_TINT: Record<string, [number, number, number]> = {
 };
 
 // facade / surface styles
-const S_GLASS = 0;   // modern curtain wall (sky-reflecting)
-const S_PREWAR = 1;  // punched masonry: limestone / brownstone / painted
-const S_BRICK = 2;   // residential brick, four hues
-const S_MILL = 3;    // industrial sash
-const S_DARK = 4;    // dark premium tower, gold glazing
-const S_PLAIN = 5;   // ships, cranes, sheds
-const S_ARTDECO = 6; // vertical stone piers, 1920s–50s towers
-const S_RIBBON = 7;  // mid-century ribbon windows
-const S_CORNICE = 8; // cornice stonework
-const S_GREEN = 9;   // green roof
-const S_LOT = 10;    // vacant lot: gravel + fence
-const S_GABLE = 11;  // pitched shingle roof
-const S_LAWN = 12;   // park turf
-const S_PATH = 13;   // park walk: compacted buff gravel
-const S_POND = 14;   // park water
-// THE MODERN TOWERS THIS CITY HAD NEVER BUILT.
-//
-// Every tower after 1975 came out of the same two hats — S_GLASS, a 1980s
-// curtain wall with a spandrel band at every floor, or S_DARK, its bronze
-// cousin. Both are punched-and-banded buildings wearing glass; neither is what
-// anyone means by a modern glass tower, and a skyline of nothing else is why
-// the new stock reads as one building repeated. These three are the families
-// New York actually put up, and they differ in ARCHITECTURE rather than in
-// colour: how the glass meets the floor plate, whether the structure is inside
-// or outside, and what the wall is made of when it is not glass.
-const S_CRYSTAL = 15; // frameless floor-to-ceiling vision glass — 7 WTC, One WTC, Manhattan West
-const S_DIAGRID = 16; // structure worn on the outside — Hearst Tower, the Bow
-const S_PMOD = 17;    // postmodern polished granite and punched glass — 550 Madison, Worldwide Plaza
-
-// ---------------------------------------------------------------------------
-// THE OTHER HUNDRED AND FIFTY YEARS.
-//
-// Eighteen slots covered the whole history of building, and ten of them were
-// facades. One of those ten carried 2,403 buildings and another carried 1,655
-// — so 71% of the city was painted by two families. The eye does not read a
-// palette, it reads a TYPE: a cast-iron front is not a limestone front in a
-// different colour, it is a different building, with different proportions,
-// a different structural rhythm and a different window.
-//
-// These are the families an American port city actually accumulates between
-// 1790 and 2030. Each one is defined by the thing you could identify it by
-// from across a harbour, and each is implemented as that one signature rather
-// than as a hue: the arch, the pier, the band, the balcony, the slot.
-//
-// --- built before the war ---
-const S_CASTIRON = 18;   // SoHo loft front: painted iron colonnettes, arched bays, more glass than wall
-const S_ROMANESQUE = 19; // Richardsonian: rusticated stone, heavy round arcades, deep shadow
-const S_GOTHIC = 20;     // terra-cotta Gothic: pointed heads, crocketed piers — the Woolworth family
-const S_BEAUX = 21;      // Beaux-Arts: rusticated base, giant order through the middle, huge cornice
-const S_EMPIRE = 22;     // Second Empire: segmental heads, bracket rhythm, a mansard over it
-const S_ITALIANATE = 23; // bracketed cornice, tall round-head windows, painted brownstone
-const S_FEDERAL = 24;    // Federal / Greek Revival: small panes, flat splayed lintels, white trim
-const S_TENEMENT = 25;   // the walk-up: tight window rhythm, painted brick, iron on the front
-const S_CHICAGO = 26;    // Chicago school: tripartite, wide Chicago window, terra-cotta grid
-const S_TERRACOTTA = 27; // glazed white terra cotta — glossy, crisp, and it never got dirty the same way
-const S_MODERNE = 28;    // Streamline Moderne: horizontal bands, rounded corner, glass block
-const S_CIVIC = 29;      // stripped classicism: giant pilasters, deep reveals, pale granite
-const S_CARRIAGE = 30;   // carriage house / stable: one big arch below, a hayloft door above
-const S_MARKET = 31;     // market hall: clerestory over a big arched arcade
-// --- built after it ---
-const S_INTL = 32;       // International Style: bronze steel I-beam mullions — the Seagram family
-const S_PRECAST = 33;    // precast eggcrate: a concrete waffle with the window deep inside each cell
-const S_BRUTAL = 34;     // board-formed concrete, narrow deep slots, no expressed floor
-const S_MIRROR = 35;     // 1970s mirror glass: no mullion you can see, and it reflects everything
-const S_METALPAN = 36;   // corrugated metal shed — the working waterfront's modern skin
-const S_EIFS = 37;       // stucco infill: thin punched openings, a colour somebody chose from a chart
-const S_GARAGE = 38;     // parking deck: open decks, spandrel rails, and no glass at all
-const S_PROJECT = 39;    // postwar brick slab: paired windows, absolute regularity
-const S_WHITEBRICK = 40; // 1960s glazed white brick apartment, with its balcony slot
-const S_BALCONY = 41;    // balcony tower: the slab edge is the architecture
-const S_FRIT = 42;       // fritted unitized glass — a ceramic dot pattern that reads as a gradient
-const S_TIMBER = 43;     // mass timber: warm wood spandrels between big square openings
-const S_SCREEN = 44;     // rainscreen: terracotta baguettes or perforated metal in front of the glass
-const S_BIGBOX = 45;     // big-box retail: a blank field under a parapet sign band
-
-// ---------------------------------------------------------------------------
-// THE TOWER SKINS OF THE LAST TEN YEARS.
-//
-// Everything above stops around 2010. What has actually gone up in New York
-// since is a different animal again, and none of it is the 1980s curtain wall
-// the word "glass tower" still summons: the wall got a THICKNESS back. One
-// Vanderbilt and 111 West 57th hang terracotta and bronze piers off the face;
-// 55 Hudson Yards punches frames half a metre deep; 425 Park wears its steel
-// on the outside as horizontal shelves. Even the plainest of them — One
-// Manhattan West, 50 Hudson Yards — is a unitised wall with a mullion rhythm
-// fine enough to read as fabric rather than as a mirror.
-//
-// These five are what a tower over twenty storeys built in the last decade is
-// made of, and they differ, as everything above does, in ARCHITECTURE.
-const S_TERRAPIER = 46;  // bronze/terracotta piers running unbroken, glass between — One Vanderbilt, 111 W 57th
-const S_DEEPFRAME = 47;  // frames punched half a metre deep, so the wall is mostly its own shadow — 55 Hudson Yards
-const S_STEELSHELF = 48; // structure worn outside as horizontal shelves — 425 Park Avenue
-const S_UNITGLASS = 49;  // contemporary unitised wall: a fine mullion rhythm and panel-to-panel tint
-const S_MEGAPANEL = 50;  // two-storey mega panels with an expressed shadow box between them
-
-// ---------------------------------------------------------------------------
-// THE WORKING CITY.
-//
-// Every building that made something was one style — S_MILL, an industrial
-// sash — and a port city's industry is not one building. A gasholder, a grain
-// elevator, a power station, a cold store and a brewery share nothing at all:
-// they are different SHAPES holding different things, and what they look like
-// follows entirely from what is inside them. This is the part of the city the
-// game is named after and it had the least in it.
-const S_POWERHOUSE = 51;  // generating station: giant arched bays, engine-hall scale
-const S_COLDSTORE = 52;   // insulated brick, almost no openings, and a stack of loading doors
-const S_BREWERY = 53;     // brick with segmental arches, a stair tower and a copper vent
-const S_FOUNDRY = 54;     // steel sash to the roof, sooted, with a monitor over it
-const S_GRAINHOUSE = 55;  // slip-formed concrete silos: vertical drums, no windows at all
-const S_GASHOLDER = 56;   // a lattice guide frame round a drum that goes up and down
-const S_SHIPSHED = 57;    // shipyard fabrication shed: portal frame, crane rail, vast doors
-const S_TEXTILE = 58;     // the multi-storey mill: bay after identical bay, and a stair tower
-const S_DEPOT = 59;       // rail depot: a long platform canopy on iron columns
-const S_PUMPHOUSE = 60;   // a small brick temple with one enormous window, built round a pump
-
-// ---------------------------------------------------------------------------
-// THE BUILDINGS A TOWN HAS ONE OF.
-//
-// A city is not only fabric. It is also the firehouse, the library, the bank
-// with columns, the hotel, the department store, the picture palace — the
-// buildings everybody can name, which are the ones that make a place somewhere
-// rather than anywhere. Almost none of them look like the block next door, and
-// that is the entire point of them.
-const S_QUEENANNE = 61;   // turret, shingled gable, bay windows — the 1890s house
-const S_STICK = 62;       // exposed framing laid over the boards, in a contrast colour
-const S_TUDOR = 63;       // half-timbering over render, on the upper floors only
-const S_MISSION = 64;     // curved shaped parapet and a tiled pent over the openings
-const S_THEATRE = 65;     // a blind box behind a marquee and a vertical blade sign
-const S_DINER = 66;       // a stainless railcar: horizontal flutes, a band of glass
-const S_FIREHOUSE = 67;   // apparatus doors that are most of the ground floor
-const S_SCHOOL = 68;      // banks of tall windows in threes, and a raised entrance bay
-const S_LIBRARY = 69;     // a portico, and tall arched windows above a blind plinth
-const S_BANKTEMPLE = 70;  // a giant order across the front and no windows at grade
-const S_HOTEL = 71;       // rusticated base, banded middle, heavy cornice, a canopy
-const S_DEPTSTORE = 72;   // continuous display glazing, floor after floor of it
-const S_MOTEL = 73;       // an exterior walkway with a rail, and every door on it
-const S_STRIPMALL = 74;   // deep canopy over continuous glazing, sign band above
-
-// ---------------------------------------------------------------------------
-// TRAITS, NOT NUMBERS.
-//
-// Downstream behaviour was keyed to the numeric VALUE of a style id — `s < 8`
-// decided which buildings got a floor line, `s <= 4 || s == 6 || s == 7`
-// decided which got shops at grade. Those tests were correct for the eighteen
-// ids that existed and are silently wrong for every id added after them: a
-// cast-iron loft front is the most shopfronted building type in this city and
-// `s <= 4` says it has no shops.
-//
-// So membership is declared once, here, and every test downstream — in TS and
-// in GLSL, which is generated from these same arrays — asks the question by
-// name. Adding a style is adding it to the lists it belongs to.
-
-/** Punched openings in a load-bearing wall: string courses, arches, quoins. */
-const T_MASONRY = [
-  S_PREWAR, S_BRICK, S_MILL, S_ROMANESQUE, S_BEAUX, S_EMPIRE, S_ITALIANATE,
-  S_FEDERAL, S_TENEMENT, S_CIVIC, S_CARRIAGE, S_MARKET, S_GOTHIC, S_TERRACOTTA,
-  S_CHICAGO, S_PROJECT, S_WHITEBRICK, S_EIFS,
-  S_POWERHOUSE, S_COLDSTORE, S_BREWERY, S_TEXTILE, S_PUMPHOUSE, S_DEPOT,
-  S_QUEENANNE, S_TUDOR, S_MISSION, S_FIREHOUSE, S_SCHOOL, S_LIBRARY,
-  S_BANKTEMPLE, S_HOTEL, S_THEATRE,
-];
-
-/** Reflects the sky and throws a specular back at the sun. */
-const T_GLASSY = [
-  S_GLASS, S_DARK, S_RIBBON, S_CRYSTAL, S_DIAGRID, S_CASTIRON, S_INTL,
-  S_MIRROR, S_FRIT, S_SCREEN, S_BALCONY, S_MODERNE,
-  S_TERRAPIER, S_UNITGLASS, S_MEGAPANEL, S_STEELSHELF,
-];
-
-/** Meets the pavement as shopfronts rather than as more wall. */
-const T_TRADE = [
-  S_GLASS, S_PREWAR, S_BRICK, S_MILL, S_DARK, S_ARTDECO, S_RIBBON, S_CASTIRON,
-  S_ROMANESQUE, S_GOTHIC, S_BEAUX, S_EMPIRE, S_ITALIANATE, S_CHICAGO,
-  S_TERRACOTTA, S_MODERNE, S_MARKET, S_INTL, S_PMOD, S_EIFS, S_TIMBER,
-  S_WHITEBRICK, S_TENEMENT,
-  S_TERRAPIER, S_UNITGLASS, S_MEGAPANEL, S_STEELSHELF, S_DEEPFRAME,
-  S_DEPOT, S_PUMPHOUSE,
-  S_THEATRE, S_DINER, S_HOTEL, S_DEPTSTORE, S_STRIPMALL, S_MISSION, S_BANKTEMPLE,
-];
-
-/** Expresses its floor line as a shadow under every storey. */
-const T_FLOORLINE = [
-  S_GLASS, S_PREWAR, S_BRICK, S_MILL, S_DARK, S_ARTDECO, S_RIBBON, S_PMOD,
-  S_CASTIRON, S_ROMANESQUE, S_GOTHIC, S_BEAUX, S_EMPIRE, S_ITALIANATE,
-  S_FEDERAL, S_TENEMENT, S_CHICAGO, S_TERRACOTTA, S_MODERNE, S_CIVIC,
-  S_MARKET, S_INTL, S_PRECAST, S_PROJECT, S_WHITEBRICK, S_BALCONY, S_TIMBER,
-  S_EIFS, S_FRIT, S_STEELSHELF, S_MEGAPANEL, S_DEEPFRAME,
-  S_POWERHOUSE, S_BREWERY, S_TEXTILE, S_FOUNDRY, S_DEPOT,
-  S_QUEENANNE, S_STICK, S_TUDOR, S_MISSION, S_SCHOOL, S_LIBRARY, S_HOTEL,
-  S_DEPTSTORE, S_MOTEL, S_FIREHOUSE, S_BANKTEMPLE,
-];
-
-/** A modern skin whose parapet is metal or stone rather than more of itself. */
-const T_CAPPED_STONE = [S_GLASS, S_DARK, S_MIRROR, S_FRIT];
-const T_CAPPED_PLAIN = [
-  S_CRYSTAL, S_DIAGRID, S_SCREEN, S_BALCONY, S_METALPAN, S_GARAGE, S_BIGBOX,
-  S_TERRAPIER, S_DEEPFRAME, S_STEELSHELF, S_UNITGLASS, S_MEGAPANEL,
-  S_GRAINHOUSE, S_GASHOLDER, S_SHIPSHED, S_DINER, S_STRIPMALL, S_MOTEL,
-];
-
-/** Reads as a modern building when a crown is being chosen for it. */
-const T_MODERN = [
-  S_GLASS, S_DARK, S_RIBBON, S_CRYSTAL, S_DIAGRID, S_INTL, S_MIRROR, S_FRIT,
-  S_SCREEN, S_BALCONY, S_PRECAST, S_BRUTAL, S_TIMBER, S_WHITEBRICK, S_PROJECT,
-  S_TERRAPIER, S_DEEPFRAME, S_STEELSHELF, S_UNITGLASS, S_MEGAPANEL,
-];
-
-/** Reads as cut stone when a crown is being chosen for it. */
-const T_STONE = [
-  S_PREWAR, S_ARTDECO, S_CORNICE, S_PMOD, S_ROMANESQUE, S_GOTHIC, S_BEAUX,
-  S_EMPIRE, S_ITALIANATE, S_CIVIC, S_TERRACOTTA, S_CHICAGO, S_MARKET, S_MODERNE,
-  S_LIBRARY, S_BANKTEMPLE, S_HOTEL, S_SCHOOL,
-];
-
-/** Old enough, and soft enough, to have grown a pitched roof over it. */
-const T_OLDROOF = [
-  S_PREWAR, S_BRICK, S_FEDERAL, S_ITALIANATE, S_EMPIRE, S_TENEMENT, S_CARRIAGE,
-  S_QUEENANNE, S_STICK, S_TUDOR, S_MISSION,
-];
-
-const has = (list: readonly number[], s: number) => list.indexOf(s) >= 0;
-
-/**
- * The same membership tests, as GLSL. Generated from the arrays above so the
- * shader cannot drift from the TypeScript — the failure mode this replaces is
- * exactly a threshold that was right when it was written and silently wrong
- * two styles later.
- */
-const styleFn = (name: string, ids: readonly number[]): string =>
-  `bool ${name}(int s) { return ${ids.map((i) => `s==${i}`).join("||")}; }\n`;
-
-/**
- * Old enough to have turned its window heads. A round arch is a nineteenth
- * century way of carrying a wall over a hole; a 1958 brick slab has a steel
- * lintel and a flat head, and putting an arch on it was the single wrongest
- * thing the old blanket masonry test did.
- */
-const T_ARCHED = [
-  S_PREWAR, S_BRICK, S_ROMANESQUE, S_ITALIANATE, S_EMPIRE, S_MARKET,
-  S_CARRIAGE, S_CASTIRON, S_POWERHOUSE, S_BREWERY, S_PUMPHOUSE,
-  S_FIREHOUSE, S_LIBRARY, S_MISSION,
-];
-
-const STYLE_SETS_GLSL = /* glsl */ `
-${styleFn("isMasonry", T_MASONRY)}${styleFn("isGlassy", T_GLASSY)}${styleFn("isTrade", T_TRADE)}${styleFn("isFloorLine", T_FLOORLINE)}${styleFn("isArched", T_ARCHED)}`;
-
-/**
- * What a PARAPET or a bulkhead on top of this building is made of. A glass
- * tower's parapet is not more glass — it is a metal coping or a stone cap, and
- * drawing it in the wall style put a window grid on a two-foot-high object.
- */
-function modernCap(style: number): number {
-  if (has(T_CAPPED_STONE, style)) return S_CORNICE;
-  if (has(T_CAPPED_PLAIN, style)) return S_PLAIN;
-  return style;
-}
-
-/**
- * WHICH BUILDING THIS IS.
- *
- * The old chooser was a ladder of five returns over ten styles, and it had two
- * faults that no amount of new styles would have fixed on their own.
- *
- * The first is that its only randomness was `(year, floors)`. Every building
- * in the city finished in 1978 with twenty floors was assigned the SAME style,
- * because nothing about the building itself entered the hash — so the repeats
- * were not bad luck, they were arithmetic. The BBL goes in now.
- *
- * The second is that it gated on `v.z1`, the top of THIS VOLUME. A wedding
- * cake whose base tier tops out at 38 m and whose shaft reaches 60 m took two
- * different branches of the same ladder, so one building was drawn in two
- * materials with the seam at the setback. Every height test here is on floors,
- * which every volume of a building shares.
- *
- * What it does now is offer the families that could plausibly have been built
- * on this site, in this class, in this decade, at this height, and choose among
- * them. Repeats in a pool are weights. A pool is never empty — the last line
- * of each branch is the family that was always the safe answer for that class.
- */
-function stylePool(v: BuildingVolume): number[] {
-  const y = v.y || 1950;
-  const f = Math.max(1, v.f || 1);
-  const p: number[] = [];
-  const office = v.c === "office" || v.c === "mixed";
-  const resi = v.c === "multifamily";
-  const shop = v.c === "retail";
-  const works = !office && !resi && !shop;   // industrial and everything odd
-
-  // ---- the working waterfront, which does not follow fashion ---------------
-  if (works) {
-    // WHAT IT IS MAKING DECIDES WHAT IT LOOKS LIKE. A gasholder, a grain
-    // elevator, a cold store and a brewery share nothing — they are different
-    // shapes holding different things, and the walls follow from the contents.
-    // Height and plate stand in for the contents here, because they are what
-    // the process actually dictates: a silo is tall and blind, an engine hall
-    // is one enormous room, a mill is a grid of identical bays.
-    // A SILO HAS NO FLOORS. The generator gives every building a floor count
-    // because everything gets one, but a grain elevator is a thirty-metre drum
-    // and a gasholder is a tank in a frame — neither has a storey in it. Gating
-    // them on floors is gating them on a fiction, and measured it made them
-    // unreachable: no industrial building in this town has five floors, and the
-    // whole class runs 2 at the quartile and 4 at the ninth decile. So the gate
-    // is TALL FOR ITS CLASS, which here is four.
-    if (y < 1900) {
-      p.push(S_MILL, S_CARRIAGE, S_ROMANESQUE, S_PUMPHOUSE);
-      if (f >= 3) p.push(S_TEXTILE, S_TEXTILE, S_BREWERY);
-      if (f >= 2) p.push(S_FOUNDRY, S_COLDSTORE, S_DEPOT);
-      if (f >= 4) p.push(S_POWERHOUSE, S_GRAINHOUSE, S_GASHOLDER);
-    } else if (y < 1945) {
-      p.push(S_MILL, S_PUMPHOUSE, S_BREWERY, S_DEPOT);
-      if (f >= 3) p.push(S_TEXTILE, S_TEXTILE, S_COLDSTORE);
-      if (f >= 2) p.push(S_FOUNDRY, S_FOUNDRY, S_SHIPSHED);
-      if (f >= 4) p.push(S_POWERHOUSE, S_GRAINHOUSE, S_GASHOLDER);
-    } else if (y < 1980) {
-      p.push(S_METALPAN, S_PRECAST, S_SHIPSHED, S_SHIPSHED, S_COLDSTORE, S_FOUNDRY);
-      if (f >= 3) p.push(S_BRUTAL, S_TEXTILE);
-      if (f >= 4) p.push(S_GRAINHOUSE, S_POWERHOUSE, S_GASHOLDER);
-    } else {
-      p.push(S_METALPAN, S_METALPAN, S_BIGBOX, S_EIFS, S_SHIPSHED, S_SHIPSHED);
-      if (f >= 3) p.push(S_COLDSTORE);
-    }
-    if (f >= 4 && y >= 1955) p.push(S_GARAGE);
-    return p;
-  }
-
-  // ---- before the elevator, everything is a wall with holes in it ----------
-  if (y < 1850) {
-    p.push(S_FEDERAL, S_FEDERAL, S_FEDERAL, S_BRICK, S_PREWAR);
-    if (shop) p.push(S_FEDERAL, S_ITALIANATE);
-    return p;
-  }
-  if (y < 1885) {
-    p.push(S_ITALIANATE, S_ITALIANATE, S_FEDERAL, S_BRICK, S_PREWAR, S_EMPIRE);
-    if (!resi && f >= 3) p.push(S_CASTIRON, S_CASTIRON, S_CASTIRON);
-    if (f >= 4) p.push(S_EMPIRE, S_ROMANESQUE);
-    if (resi) p.push(S_TENEMENT, S_BRICK);
-    return p;
-  }
-  if (y < 1905) {
-    p.push(S_ROMANESQUE, S_ITALIANATE, S_PREWAR, S_BRICK);
-    // VERNACULAR LAGS FASHION BY A GENERATION, and in a small port it lags by
-    // two. New Alden's oldest recorded building is 1885 — the generator makes
-    // nothing before it — so the Federal and Second Empire families would be
-    // dead code gated to the dates the styles were invented. They are not dead
-    // in the world: a carpenter in an 1890s harbour town was still building the
-    // house he had been taught to build in 1850, which is the whole reason
-    // small-town stock reads as older than its dates.
-    p.push(S_FEDERAL, S_EMPIRE);
-    if (resi) p.push(S_FEDERAL, S_EMPIRE);
-    if (!resi) p.push(S_CASTIRON, S_ROMANESQUE, S_MARKET);
-    // GOTHIC AT SMALL SCALE. Terra-cotta Gothic is a tall-office style and this
-    // town has two prewar offices over six storeys, so gated there it is worth
-    // 0.7 buildings and draws none. It is not only a tall-office style: the
-    // same pointed arch built every church, school and parish hall in the
-    // nineteenth century, at three storeys, and that is where a port town
-    // actually keeps it. The steeple rule reads this style too.
-    if (!resi) p.push(S_GOTHIC);
-    if (resi) p.push(S_TENEMENT, S_TENEMENT, S_TENEMENT, S_BRICK);
-    if (office && f >= 6) p.push(S_CHICAGO, S_CHICAGO, S_BEAUX);
-    // The buildings a town has one of. They are rare by weight, not by gate —
-    // a place has one bank with columns and one firehouse, and both of them
-    // are on a corner everybody knows.
-    if (resi && f <= 4) p.push(S_QUEENANNE, S_QUEENANNE, S_STICK);
-    if (!resi) p.push(S_FIREHOUSE, S_LIBRARY, S_BANKTEMPLE, S_SCHOOL, S_HOTEL);
-    if (shop && f >= 3) p.push(S_DEPTSTORE);
-    return p;
-  }
-  if (y < 1925) {
-    p.push(S_PREWAR, S_BRICK);
-    if (!resi) p.push(S_GOTHIC);              // the parish hall, the school
-    if (office) p.push(S_BEAUX, S_BEAUX, S_CHICAGO, S_CHICAGO, S_TERRACOTTA);
-    // Terra-cotta Gothic on six storeys is the small-city version of the
-    // type and there are hundreds of them; gated at eight it lost to the fact
-    // that this town has twenty buildings that tall in total.
-    if (office && f >= 6) p.push(S_GOTHIC, S_GOTHIC, S_GOTHIC, S_TERRACOTTA);
-    if (shop) p.push(S_TERRACOTTA, S_BEAUX, S_CHICAGO, S_MARKET);
-    if (resi) p.push(S_TENEMENT, S_TENEMENT, S_BRICK, S_PREWAR, S_BEAUX);
-    if (resi && f <= 4) p.push(S_QUEENANNE, S_TUDOR, S_MISSION);
-    if (!resi) p.push(S_FIREHOUSE, S_LIBRARY, S_BANKTEMPLE, S_SCHOOL, S_HOTEL, S_THEATRE);
-    if (shop && f >= 3) p.push(S_DEPTSTORE, S_DEPTSTORE);
-    return p;
-  }
-  if (y < 1945) {
-    // The deco decades. Height decides whether a building got the tower
-    // treatment or the low, wide, horizontal one.
-    if (f >= 7) p.push(S_ARTDECO, S_ARTDECO, S_ARTDECO, S_GOTHIC, S_TERRACOTTA);
-    else p.push(S_MODERNE, S_MODERNE, S_ARTDECO, S_TERRACOTTA);
-    p.push(S_CIVIC, S_PREWAR, S_BRICK);
-    if (resi) p.push(S_BRICK, S_BRICK, S_PREWAR, S_TENEMENT);
-    if (shop) p.push(S_MODERNE, S_TERRACOTTA, S_DEPTSTORE);
-    if (resi && f <= 4) p.push(S_TUDOR, S_TUDOR, S_MISSION);
-    if (!resi) p.push(S_THEATRE, S_THEATRE, S_SCHOOL, S_HOTEL, S_LIBRARY, S_FIREHOUSE);
-    return p;
-  }
-  if (y < 1962) {
-    p.push(S_RIBBON, S_RIBBON, S_BRICK, S_PROJECT, S_CIVIC);
-    if (office && f >= 6) p.push(S_INTL, S_INTL, S_INTL, S_RIBBON);
-    if (resi) p.push(S_PROJECT, S_PROJECT, S_WHITEBRICK, S_BRICK);
-    if (shop) p.push(S_MODERNE, S_RIBBON, S_EIFS, S_DINER, S_STRIPMALL);
-    if (!resi) p.push(S_SCHOOL, S_THEATRE, S_HOTEL);
-    if (resi && f <= 3) p.push(S_MOTEL, S_MOTEL);
-    return p;
-  }
-  if (y < 1980) {
-    p.push(S_RIBBON, S_PRECAST, S_BRUTAL, S_PROJECT);
-    if (office && f >= 6) p.push(S_INTL, S_INTL, S_PRECAST, S_PRECAST, S_MIRROR, S_BRUTAL);
-    if (office && f >= 9) p.push(S_MIRROR, S_MIRROR, S_DARK);
-    if (resi) p.push(S_WHITEBRICK, S_WHITEBRICK, S_PROJECT, S_PRECAST, S_BRICK);
-    if (shop) p.push(S_EIFS, S_PRECAST, S_METALPAN, S_STRIPMALL, S_STRIPMALL, S_DINER);
-    if (!resi) p.push(S_SCHOOL, S_HOTEL);
-    if (resi && f <= 3) p.push(S_MOTEL, S_MOTEL);
-    if (f >= 4) p.push(S_GARAGE);
-    return p;
-  }
-  if (y < 1998) {
-    p.push(S_EIFS, S_GLASS, S_PMOD, S_BRICK);
-    if (office && f >= 6) p.push(S_PMOD, S_PMOD, S_MIRROR, S_MIRROR, S_GLASS, S_DARK);
-    if (office && f >= 10) p.push(S_PMOD, S_DARK);
-    if (resi) p.push(S_BRICK, S_EIFS, S_WHITEBRICK, S_BALCONY);
-    if (shop) p.push(S_EIFS, S_EIFS, S_BIGBOX, S_METALPAN, S_STRIPMALL, S_STRIPMALL);
-    if (!resi) p.push(S_HOTEL, S_SCHOOL);
-    if (resi && f <= 3) p.push(S_MOTEL);
-    if (f >= 4) p.push(S_GARAGE);
-    return p;
-  }
-  if (y < 2012) {
-    p.push(S_GLASS, S_EIFS, S_BRICK);
-    if (office && f >= 6) p.push(S_CRYSTAL, S_CRYSTAL, S_GLASS, S_FRIT, S_SCREEN, S_DARK);
-    if (office && f >= 24) p.push(S_DIAGRID, S_CRYSTAL);
-    if (resi) p.push(S_BALCONY, S_BALCONY, S_GLASS, S_EIFS, S_BRICK);
-    if (resi && f >= 8) p.push(S_BALCONY, S_CRYSTAL);
-    if (shop) p.push(S_EIFS, S_BIGBOX, S_SCREEN);
-    if (f >= 4) p.push(S_GARAGE);
-    return p;
-  }
-  // the present, which builds thinner walls and warmer ones at the same time
-  p.push(S_CRYSTAL, S_FRIT, S_SCREEN, S_TIMBER);
-  if (office && f >= 6) p.push(S_CRYSTAL, S_CRYSTAL, S_FRIT, S_FRIT, S_SCREEN, S_SCREEN, S_TIMBER);
-  if (office && f >= 22) p.push(S_DIAGRID, S_CRYSTAL, S_DARK);
-  if (resi) p.push(S_BALCONY, S_BALCONY, S_BALCONY, S_SCREEN, S_TIMBER, S_FRIT, S_BRICK);
-  if (shop) p.push(S_SCREEN, S_TIMBER, S_BIGBOX, S_EIFS);
-  if (f >= 4) p.push(S_GARAGE);
-  return p;
-}
-
-function styleFor(v: BuildingVolume): number {
-  if (v.d) return S_PLAIN;
-  // The BUILDING, not just its year and its height — see stylePool. Keying on
-  // the deed is what stops two towers finished the same year being twins.
-  const pool = stylePool(v);
-  const h = hash01(keyOf(v.b) ^ 0x5f3a91c7, ((v.y | 0) * 2654435761) >>> 0);
-  return pool[Math.min(pool.length - 1, Math.floor(h * pool.length))];
-}
 
 const VERT = /* glsl */ `
 attribute float aU;
@@ -776,23 +319,12 @@ vec3 aerial(vec3 c, vec3 p, vec3 cam) {
  * reason for a hash to work. FNV over the digits costs ten iterations and is
  * correct for any BBL anyone ever invents.
  */
-function keyOf(bbl: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < bbl.length; i++) { h ^= bbl.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return h >>> 0;
-}
 
 /**
  * A well-mixed [0,1) from two integers. Two calls with different constants give
  * two INDEPENDENT streams, which is the whole point — the old scheme derived
  * its second scalar from its first, so colour and detail moved together.
  */
-function hash01(a: number, b: number): number {
-  let x = (Math.imul(a, 2654435761) ^ Math.imul(b, 2246822519)) >>> 0;
-  x = Math.imul(x ^ (x >>> 16), 2246822507) >>> 0;
-  x = Math.imul(x ^ (x >>> 13), 3266489909) >>> 0;
-  return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
-}
 
 /** Twice the signed area of a ring — enough to compare two footprints. */
 function ringArea(r: [number, number][]): number {
@@ -1399,6 +931,58 @@ void main() {
     colW = 8.0; win = vec2(0.0, 0.0);
     wall = mix(vec3(0.78, 0.75, 0.69), vec3(0.70, 0.68, 0.64), step(0.5, vVar));
     glassA = wall; glassB = wall;
+  } else if (s == 75) {
+    // TILT-UP. The wall was cast flat on the slab and stood up by crane, so it
+    // arrives in panels about seven metres wide with a joint down every one of
+    // them and a shallow reveal band cast into the face. Painted, always, and
+    // in whatever the tenant's colour was that decade.
+    colW = 7.0; win = vec2(0.20, 0.22);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.28)      { wall = vec3(0.700, 0.695, 0.675); }  // off-white
+    else if (pk < 0.50) { wall = vec3(0.640, 0.650, 0.645); }  // pale grey-green
+    else if (pk < 0.68) { wall = vec3(0.660, 0.620, 0.560); }  // sand
+    else if (pk < 0.84) { wall = vec3(0.560, 0.580, 0.605); }  // blue-grey
+    else                { wall = vec3(0.605, 0.575, 0.560); }  // warm grey
+    glassA = vec3(0.26, 0.32, 0.37); glassB = vec3(0.40, 0.49, 0.55);
+  } else if (s == 76) {
+    // THE BIG SHED. A quarter of a mile of wall with a dock door every nine
+    // metres and nothing else on it — no windows, because there is nothing to
+    // look at and nobody to look. Scale is the whole identification.
+    colW = 9.0; win = vec2(0.0, 0.0);
+    wall = mix(vec3(0.680, 0.680, 0.665), vec3(0.615, 0.630, 0.640), step(0.5, vVar));
+    glassA = vec3(0.22, 0.24, 0.26); glassB = vec3(0.33, 0.37, 0.40);
+  } else if (s == 77) {
+    // FLEX. A glazed office corner bolted onto a metal warehouse — two
+    // completely different buildings sharing a slab, which is exactly what a
+    // business park is.
+    glassy = true; colW = 3.2; win = vec2(0.72, 0.56);
+    wall = mix(vec3(0.610, 0.625, 0.630), vec3(0.660, 0.640, 0.600), step(0.5, vVar));
+    glassA = vec3(0.32, 0.42, 0.48); glassB = vec3(0.50, 0.62, 0.68);
+  } else if (s == 78) {
+    // THE QUONSET. A corrugated half-cylinder — no walls at all, strictly, and
+    // the end is mostly door. The curve is drawn by the shading below.
+    colW = 4.0; win = vec2(0.24, 0.26);
+    wall = mix(vec3(0.605, 0.615, 0.605), vec3(0.545, 0.520, 0.480), step(0.6, vVar));
+    glassA = vec3(0.26, 0.29, 0.31); glassB = vec3(0.39, 0.44, 0.47);
+  } else if (s == 79) {
+    // CROSS-DOCK. Doors down BOTH long sides so a trailer backs in one side
+    // and out the other, with a canopy over each run. Very long, very thin.
+    colW = 4.4; win = vec2(0.0, 0.0);
+    wall = mix(vec3(0.655, 0.660, 0.650), vec3(0.590, 0.600, 0.615), step(0.5, vVar));
+    glassA = vec3(0.20, 0.22, 0.24); glassB = vec3(0.30, 0.34, 0.37);
+  } else if (s == 80) {
+    // SELF STORAGE. Rank upon rank of roller doors, all identical, under one
+    // bright band of the operator's colour. The repetition is the building.
+    colW = 3.0; win = vec2(0.0, 0.0);
+    wall = mix(vec3(0.690, 0.670, 0.630), vec3(0.640, 0.635, 0.620), step(0.5, vVar));
+    glassA = vec3(0.24, 0.26, 0.28); glassB = vec3(0.36, 0.40, 0.43);
+  } else if (s == 81) {
+    // THE DATA CENTRE. A blind box with banks of louvres where the air goes in
+    // and out, and not one window anywhere — a building designed for machines
+    // that reads, correctly, as having nobody in it.
+    colW = 5.2; win = vec2(0.0, 0.0);
+    wall = mix(vec3(0.555, 0.565, 0.580), vec3(0.610, 0.605, 0.595), step(0.5, vVar));
+    glassA = vec3(0.22, 0.25, 0.28); glassB = vec3(0.33, 0.38, 0.42);
   } else if (s == 61) {
     // QUEEN ANNE. Shingle above, clapboard below, in two colours that were
     // chosen to be different — the "painted lady" is not a myth, it is what
@@ -1637,6 +1221,11 @@ void main() {
   // in it. A brutalist slot is half a metre deep; a mirror-glass unit is
   // flush enough to be a mirror.
   float revealM = (s == 49) ? 0.028
+                : (s == 78) ? 0.05
+                : (s == 76 || s == 79 || s == 80) ? 0.10
+                : (s == 77) ? 0.12
+                : (s == 75) ? 0.16
+                : (s == 81) ? 0.34
                 : (s == 66) ? 0.045
                 : (s == 72 || s == 74) ? 0.09
                 : (s == 65 || s == 73) ? 0.20
@@ -2037,6 +1626,86 @@ void main() {
       float cover = clamp(fin + obliq * 1.25, 0.0, 1.0);
       wall = mix(wall, wall * (0.82 + 0.30 * fin), 0.9);
       winMask *= 1.0 - cover * 0.92;
+    } else if (s == 75) {
+      // THE PANEL JOINT. A 20 mm gap down every panel, full height, and a
+      // shallow reveal band cast across the face — those two lines are the
+      // entire architecture of a tilt-up and they are both free.
+      float j = min(f.x, 1.0 - f.x);
+      wall *= 1.0 - 0.30 * (1.0 - smoothstep(0.0, 0.012, j));
+      float rv = fract(vZ / 2.35);
+      wall *= 1.0 - 0.13 * (1.0 - smoothstep(0.0, 0.09, min(rv, 1.0 - rv)));
+      // the taller entry element, once per building, with the only glass on it
+      float ent = 1.0 - smoothstep(0.0, 0.30, abs(fract(vU / 62.0) - 0.20));
+      if (ent > 0.5) {
+        wall = mix(wall, wall * 1.10, 0.6);
+        if (vZ > fh * 0.35 && vZ < fh * 1.25) { winMask = 1.0; }
+      } else if (vZ < fh * 0.92 && fract(vU / 9.2) > 0.30 && fract(vU / 9.2) < 0.78) {
+        wall = mix(wall, wall * 0.42, 0.9);       // a dock door
+        winMask = 0.0;
+      }
+    } else if (s == 76 || s == 79) {
+      // DOCK DOORS, and nothing else. Every nine metres, a recessed leaf with
+      // a bumper each side and a shallow canopy over it. On a cross-dock the
+      // same run happens on the far side too, which you read in the roof.
+      float t = fract(vU / 9.2);
+      if (vZ < fh * 0.86) {
+        if (t > 0.24 && t < 0.80) { wall = mix(wall, wall * 0.38, 0.92); }
+        else if (t > 0.16 && t < 0.88) wall = mix(wall, wall * 1.10, 0.5);   // the jamb
+      } else if (vZ < fh * 1.02 && t > 0.14 && t < 0.90) {
+        wall = mix(wall, wall * 1.18, 0.75);      // the canopy
+      }
+      // the panelised skin above the doors
+      float rib = fract(vU / 0.92);
+      wall *= 1.0 - 0.07 * (1.0 - smoothstep(0.0, 0.05, min(rib, 1.0 - rib)));
+    } else if (s == 77) {
+      // TWO BUILDINGS ON ONE SLAB. The office end is glazed and has a floor
+      // line; the warehouse end is ribbed metal with none. The seam between
+      // them is abrupt on purpose — nobody blends them in life either.
+      float office = step(fract(vU / 54.0), 0.34);
+      if (office > 0.5) {
+        if (fract(v) < 0.14) { wall = mix(wall, wall * 1.12, 0.8); winMask = 0.0; }
+      } else {
+        float rib = fract(vU / 0.30);
+        wall *= 1.0 + 0.11 * sin(rib * 6.2831853) * sign(dot(SUN_DIR, T));
+        winMask = 0.0;
+      }
+    } else if (s == 78) {
+      // THE ARCH. A half-cylinder read as shading rather than as geometry:
+      // brightest where the surface faces up, falling away hard to the eaves,
+      // with the corrugation running over the top of it.
+      float t = clamp(vZ / max(vTop, 1.0), 0.0, 1.0);
+      wall *= 0.62 + 0.55 * sin(t * 3.14159265 * 0.85 + 0.25);
+      float rib = fract(vU / 0.26);
+      wall *= 1.0 + 0.10 * sin(rib * 6.2831853);
+      if (vZ < fh * 0.7 && abs(fract(vU / 17.0) - 0.5) < 0.24) {
+        wall = mix(wall, wall * 0.55, 0.85); winMask = 0.0;   // the end door
+      }
+    } else if (s == 80) {
+      // ROLLER DOORS, identically, for as far as the building goes — and one
+      // band of the operator's colour along the top, which is the only thing
+      // anybody remembers about the building.
+      float t = fract(vU / 3.0);
+      float fy = fract(v);
+      if (fy > 0.18 && fy < 0.86 && t > 0.10 && t < 0.90) {
+        wall = mix(wall, wall * 0.72, 0.85);
+        // the corrugations of the shutter itself
+        wall *= 1.0 - 0.10 * (1.0 - smoothstep(0.0, 0.06, min(fract(vZ / 0.16), 1.0 - fract(vZ / 0.16))));
+      }
+      if (vZ > vTop - fh * 0.5) {
+        vec3 band = vec3(0.62 + 0.26 * vVar, 0.32 + 0.20 * fract(vVar * 4.3), 0.22 + 0.16 * fract(vVar * 7.1));
+        wall = mix(wall, band, 0.72);
+      }
+    } else if (s == 81) {
+      // LOUVRE BANKS. Where the air goes in and out, in tall recessed panels
+      // with a fine horizontal blade pitch — the only relief on the whole box,
+      // and the reason you can tell it from a warehouse.
+      float t = fract(vU / 10.4);
+      if (t > 0.14 && t < 0.52 && vZ > fh * 0.35 && vZ < vTop - fh * 0.3) {
+        float bl = fract(vZ / 0.22);
+        wall = mix(wall, wall * (0.52 + 0.30 * bl), 0.9);
+      }
+      float pj = min(f.x, 1.0 - f.x);
+      wall *= 1.0 - 0.14 * (1.0 - smoothstep(0.0, 0.02, pj));
     } else if (s == 61 || s == 62 || s == 63) {
       // THE UPPER FLOOR IS DIFFERENT FROM THE LOWER ONE, which is the whole
       // grammar of these three: shingle over clapboard, half-timber over
@@ -2848,6 +2517,13 @@ void main() {
   else if (s == 72) roof = vec3(0.520, 0.505, 0.475); // department store
   else if (s == 73) roof = vec3(0.545, 0.520, 0.485); // motel
   else if (s == 74) roof = vec3(0.560, 0.545, 0.520); // strip
+  else if (s == 75) roof = vec3(0.640, 0.640, 0.625); // tilt-up: white TPO
+  else if (s == 76) roof = vec3(0.660, 0.660, 0.645); // big shed: acres of it
+  else if (s == 77) roof = vec3(0.595, 0.610, 0.615); // flex
+  else if (s == 78) roof = vec3(0.585, 0.595, 0.585); // quonset: the same sheet
+  else if (s == 79) roof = vec3(0.615, 0.620, 0.615); // cross-dock
+  else if (s == 80) roof = vec3(0.600, 0.590, 0.570); // self storage
+  else if (s == 81) roof = vec3(0.500, 0.510, 0.525); // data centre: chiller deck
   else              roof = vec3(0.76, 0.76, 0.74);
   roof *= 0.92 + 0.16 * vRand;
 

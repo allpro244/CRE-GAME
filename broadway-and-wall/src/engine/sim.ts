@@ -684,10 +684,35 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
   }
   for (const h of Object.values(s.holdings)) {
     if (h.sale?.offer) out.push({ key: `offer:${h.bbl}:${h.sale.offer.price}`, label: `Offer in hand — good until ${monthLabel(h.sale.offer.expiresM)}` });
-    if (h.loan && h.loan.maturityM - s.month <= 3 && h.loan.maturityM > s.month) {
-      out.push({ key: `balloon:${h.bbl}`, label: `Balloon due ${monthLabel(h.loan.maturityM)}` });
+    // A YEAR, NOT A QUARTER. Three months' notice on a balloon is not notice —
+    // it is barely time to get an appraisal, let alone market a building. Real
+    // lenders send a maturity letter six to twelve months out and real
+    // borrowers start working the refinancing a year ahead, because selling an
+    // income building takes six to nine months from decision to deed. The date
+    // has been known since the day the loan closed; there is no reason to sit
+    // on it.
+    if (h.loan && h.loan.maturityM - s.month <= 12 && h.loan.maturityM > s.month) {
+      const mo = h.loan.maturityM - s.month;
+      out.push({
+        key: `balloon:${h.bbl}:${mo > 6 ? "far" : "near"}`,
+        label: `Balloon due ${monthLabel(h.loan.maturityM)} — ${mo} month${mo === 1 ? "" : "s"}`,
+      });
     }
     if (h.loan?.sweep) out.push({ key: `sweep:${h.bbl}`, label: "Covenant breach — cash flow swept" });
+  }
+  // A FILE IS OPEN AND THE CLOCK IS RUNNING. Nothing in this list said so,
+  // which meant auto-advance would run straight past a foreclosure and the
+  // only trace was one line of news six months earlier.
+  for (const w of Object.values(s.workouts ?? {})) {
+    const left = Math.max(0, (w.saleM ?? w.decideM) - s.month);
+    out.push({
+      key: `workout:${w.bbl}:${w.stage}${w.servicing ? ":paying" : ""}`,
+      label: w.stage === "foreclosure"
+        ? `${w.lender} has filed on ${w.bbl} — auction in ${left} months`
+        : w.servicing
+        ? `${w.bbl}: keeping it current, ${w.servicedMs ?? 0} months paid`
+        : `${w.lender} wants ${Math.round(w.cure / 1000)}K on ${w.bbl} — ${left} months to decide`,
+    });
   }
   // A counter on the table is the definition of something needing you — and an
   // unfunded contract is the same thing with a deadline attached.

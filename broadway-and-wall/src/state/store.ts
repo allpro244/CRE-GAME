@@ -5,7 +5,7 @@ import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfoli
 import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import { respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, type LOIAction } from "@/engine/leasing";
-import { cureWorkout, requestForbearance, deedInLieu } from "@/engine/workout";
+import { cureWorkout, requestForbearance, deedInLieu, serviceWorkout } from "@/engine/workout";
 import { buyNote, modifyNote, fileOnNote, sellNote, discountedPayoff } from "@/engine/notes";
 import { registerAuctionBids } from "@/engine/auction";
 import { listPortfolio, repricePortfolio, counterPortfolio, acceptPortfolioBid, delistPortfolio } from "@/engine/portfolio";
@@ -94,6 +94,7 @@ interface AppState {
   prebuild: (bbl: string, use: string, sf: number) => void;
   extendLease: (bbl: string, idx: number) => void;
   cureDefault: (bbl: string) => void;
+  serviceWorkout: (bbl: string, on: boolean) => void;
   sellPortfolio: (bbls: string[], ask: number) => void;
   repricePortfolioSale: (ask: number) => void;
   counterPortfolioBid: (price: number) => void;
@@ -477,6 +478,18 @@ export const useStore = create<AppState>((set, get) => ({
     set({ game: next });
     toast("Pulled from the market.");
     void persist(next);
+  },
+
+  // Elect to carry a defaulted loan out of the rest of the book. See
+  // engine/workout.ts — the money is charged in tickWorkouts, not here.
+  serviceWorkout: (bbl, on) => {
+    const { game } = get();
+    if (!game) return;
+    const r = serviceWorkout(game, bbl, on);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Done.");
+    void persist(r.s);
   },
 
   cureDefault: (bbl) => {

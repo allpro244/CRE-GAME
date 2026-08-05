@@ -110,6 +110,32 @@ export function openWorkout(
 }
 
 /** Pay it off and make it go away. */
+/**
+ * Elect, or stop electing, to keep a defaulted loan current out of the firm's
+ * other income. Free to switch on — the cost is the payment, every month, and
+ * it is charged in tickWorkouts where every other payment is charged.
+ */
+export function serviceWorkout(s: GameState, bbl: string, on: boolean): { s: GameState; err?: string; msg?: string } {
+  const w = s.workouts?.[bbl];
+  const h = s.holdings[bbl];
+  if (!w || !h?.loan) return { s, err: "There is nothing in default there." };
+  if (on && w.stage === "foreclosure") {
+    return { s, err: "They have filed. A payment is not a cure any more — it takes the arrears in full, a deed in lieu, or the auction." };
+  }
+  const next = clone(s);
+  const nw = next.workouts![bbl];
+  nw.servicing = on;
+  if (on) nw.decideM = Math.max(nw.decideM, next.month + 1);
+  next.news.unshift({
+    q: next.month, kind: on ? "deal" : "warn",
+    text: on
+      ? `You will keep ${bbl} current out of the rest of the book — ${money(Math.round(h.loan.monthlyPmt * 1.15))} a month `
+        + `at the default rate. The clock stops while the cheques clear.`
+      : `You have stopped paying on ${bbl}. ${w.lender}'s clock is running again.`,
+  });
+  return { s: next, msg: on ? "The lender will wait while you pay." : "Stopped." };
+}
+
 export function cureWorkout(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string; msg?: string } {
   const w = s.workouts?.[bbl];
   const h = s.holdings[bbl];
@@ -234,6 +260,40 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
       delete s.workouts[w.bbl];
       s.news.unshift({ q: s.month, kind: "info", text: `${rec.address} is performing again — ${w.lender} has closed the file.` });
       continue;
+    }
+    // KEEPING IT CURRENT. See Workout.servicing. While the lender has not
+    // filed, a borrower who goes on paying is a borrower the lender would
+    // rather keep — so every month the cheque clears, the clock moves with it
+    // and nothing is decided. The payment is the ordinary one plus the default
+    // spread, because a loan in default does not accrue at the note rate.
+    if (w.servicing && w.stage !== "foreclosure" && h.loan) {
+      const due = Math.round(h.loan.monthlyPmt * 1.15);
+      if (s.cash >= due) {
+        s.cash -= due;
+        logBooks(s, "debtSvc", due);
+        w.servicedMs = (w.servicedMs ?? 0) + 1;
+        w.decideM = s.month + 1;
+        h.loan.arrearsMs = 0;
+        // A file that has been performing for a year stops being a file. The
+        // lender has what they wanted and no reason to spend money on lawyers.
+        if ((w.servicedMs ?? 0) >= 12 && w.cause !== "balloon") {
+          delete s.workouts[w.bbl];
+          bumpLenderRel(s, w.lender, 6);
+          s.news.unshift({
+            q: s.month, kind: "deal",
+            text: `${w.lender} has closed the file on ${rec.address}. A year of payments arriving on time is `
+              + `the only argument that ever worked on a credit committee.`,
+          });
+        }
+        continue;
+      }
+      // The cheque did not clear. That is the end of the arrangement.
+      w.servicing = false;
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `The payment on ${rec.address} did not go out — ${money(due)} and you did not have it. `
+          + `${w.lender} is no longer waiting.`,
+      });
     }
     if (s.month < w.decideM) continue;
 

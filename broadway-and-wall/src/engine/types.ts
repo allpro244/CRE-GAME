@@ -1677,6 +1677,21 @@ export interface Workout {
   decideM: number;
   /** How many times you have been to them about this building. */
   asks: number;
+  /**
+   * KEEPING IT CURRENT OUT OF THE OTHER BUILDINGS.
+   *
+   * A maturity default where the borrower keeps paying is the commonest
+   * situation in commercial real estate and it almost never goes to the steps:
+   * the lender has a performing loan they would rather not own, the borrower
+   * has income elsewhere, and the two of them let it run month to month while
+   * a refinancing or a sale is arranged. That is what this flag is. It costs
+   * the ordinary payment plus default-rate interest, it holds the clock only
+   * while the cheque actually clears, and it stops working the moment they
+   * file — once it is with the court a payment is not a cure, the arrears are.
+   */
+  servicing?: boolean;
+  /** Months the player has held it off this way, for the news and the panel. */
+  servicedMs?: number;
   missedMs: number;
   /** They have noticed the sale: the July your building crosses the block. */
   saleM?: number;

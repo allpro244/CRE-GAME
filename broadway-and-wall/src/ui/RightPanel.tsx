@@ -7,7 +7,7 @@ import type { ParcelTable } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec } from "@/engine/types";
 import type { BuiltClass, Contract, DevUse, EconHistoryPoint, GameState } from "@/engine/types";
 import {
-  assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr,
+  assetValue, initialCondition, holdingValue, monthlyNOI, marketRentPsfYr, managedRentPsfYr,
   occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr, useRentPsfYr,
   rollQualitySpread, operatingStatement, recoveryOf, noiAfterTaxYr, netWorth, remainingAbatement, landPsfNow, landValue,
 } from "@/engine/value";
@@ -136,6 +136,7 @@ export default function GamePanels() {
       )}
       <DecisionModal />
       <AuctionModal />
+      <DefaultNoticeModal />
       {/* yield to the saves page — this used to paint over it at the same
           z-index, leaving every control on it visible and dead */}
       {game.gameOver && page !== "saves" && <GameOverPage />}
@@ -153,6 +154,109 @@ export default function GamePanels() {
  * dismisses it and the sale reports itself through the news like any other
  * thing that happened in this town without you.
  */
+/**
+ * THE LETTER FROM THE LENDER.
+ *
+ * A foreclosure in this engine already takes a year and a bit — six months of
+ * notice, then a filing, then the next July docket at least eight months out —
+ * and none of that reached the player as anything but one line of news in a
+ * feed six months earlier. Auto-advance ran straight past it. The owner asked
+ * for the notice to be a pop-up, in advance, so there is time to sell instead
+ * of watching it go to the steps, and that is exactly how it works in life: the
+ * default letter arrives long before the filing, and most of what happens next
+ * is decided in that window.
+ *
+ * It fires ONCE per building per stage. Dismissing it is free — the file is on
+ * the property page and in the attention list either way — and the popup
+ * opt-out is honoured, because a player who has turned cards off has said what
+ * they want.
+ */
+function DefaultNoticeModal() {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels);
+  const popupsOff = useStore((s) => s.popupsOff);
+  const setPage = useStore((s) => s.setPage);
+  const select = useStore((s) => s.select);
+  const focus = useStore((s) => s.focus);
+  const { serviceWorkout } = useStore.getState();
+  const [seen, setSeen] = useState<Record<string, boolean>>({});
+  if (!parcels || game.gameOver || popupsOff) return null;
+  const open = Object.values(game.workouts ?? {})
+    .filter((w) => !seen[`${w.bbl}:${w.stage}`])
+    .sort((a, b) => (a.saleM ?? a.decideM) - (b.saleM ?? b.decideM))[0];
+  if (!open) return null;
+  const rec = resolveRec(parcels, game, open.bbl);
+  const h = game.holdings[open.bbl];
+  if (!rec || !h?.loan) return null;
+
+  const filed = open.stage === "foreclosure";
+  const deadline = open.saleM ?? open.decideM;
+  const monthsLeft = Math.max(0, deadline - game.month);
+  const value = holdingValue(rec, game.econ, h, game.month);
+  const equity = value - open.cure;
+  const monthly = Math.round(h.loan.monthlyPmt * 1.15);
+  // What the REST of the book throws off, which is the whole question the
+  // owner asked: can the other buildings carry this one while you sell it?
+  const otherCF = Object.values(game.holdings)
+    .filter((x) => x.bbl !== open.bbl)
+    .reduce((a, x) => {
+      const r = resolveRec(parcels, game, x.bbl);
+      return a + (r ? monthlyNOI(r, game.econ, x, game.month) : 0);
+    }, 0);
+  const dismiss = () => setSeen({ ...seen, [`${open.bbl}:${open.stage}`]: true });
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal" style={{ maxWidth: 660 }}>
+        <div className="modal-kicker">{open.lender} · {monthLabel(game.month)}</div>
+        <div className="modal-title">
+          {filed ? `They have filed on ${rec.address}` : `Notice of default — ${rec.address}`}
+        </div>
+        <div className="modal-sub">
+          {filed
+            ? `It is down for the ${monthLabel(deadline)} auction. From here a payment is not a cure — it takes the
+               arrears in full, a deed in lieu, or the hammer.`
+            : `${open.cause === "balloon" ? "The loan has matured and there is nothing to repay it with."
+               : open.cause === "covenant" ? "The building has breached its covenants."
+               : "The payments have stopped."} You have ${monthsLeft} month${monthsLeft === 1 ? "" : "s"} before
+               ${open.lender} can file. A building takes six to nine months to sell properly, so this is the window.`}
+        </div>
+        <div className="grid" style={{ marginTop: 10 }}>
+          <Row k="What they want" v={usd(open.cure)} strong />
+          <Row k="The building is worth" v={usd(value)} />
+          <Row k={equity >= 0 ? "Your equity in it" : "It is under water by"} v={usd(Math.abs(equity))} bad={equity < 0} />
+          <Row k="Cash on hand" v={usd(game.cash)} bad={game.cash < open.cure} />
+          <Row k="The rest of the book earns" v={`${usd(otherCF)} / mo`} />
+          <Row k="Keeping this one current costs" v={`${usd(monthly)} / mo at the default rate`}
+               bad={monthly > otherCF} />
+        </div>
+        <div className="hint" style={{ marginTop: 8 }}>
+          {equity > 0
+            ? `There is equity here. Selling it yourself beats the steps by a wide margin — the auction is a legal
+               process with a calendar and it gets less than a distress sale does.`
+            : `There is no equity left. A deed in lieu hands it back with a smaller mark than a foreclosure and no
+               deficiency, which is usually the right answer on paper like this.`}
+          {!filed && otherCF > monthly
+            ? ` The rest of the book covers the payment ${(otherCF / Math.max(1, monthly)).toFixed(1)} times over —
+                you can carry it while you find a buyer.`
+            : ""}
+        </div>
+        <div className="btn-row" style={{ marginTop: 12, flexWrap: "wrap" }}>
+          {!filed && !open.servicing && (
+            <button className="btn btn-primary" onClick={() => { serviceWorkout(open.bbl, true); dismiss(); }}>
+              Keep it current · {usd(monthly)}/mo
+            </button>
+          )}
+          <button className="btn" onClick={() => { select(open.bbl); focus(open.bbl, true); setPage("property"); dismiss(); }}>
+            Open the file
+          </button>
+          <button className="btn" onClick={dismiss}>Not now</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AuctionModal() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels);

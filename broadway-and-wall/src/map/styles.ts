@@ -306,6 +306,27 @@ export const S_BOUTIQUEOFF = 137; // small and expensive: stone, deep reveals, o
 export const S_BTSHQ = 138;       // build-to-suit: a logo band where a cornice would be
 
 // ---------------------------------------------------------------------------
+// RETAIL, AS A PRODUCT.
+//
+// Retail is not one thing either. An anchor is a windowless box with a portal
+// cut in it; a freestanding pharmacy is a brick pavilion with a rotunda on the
+// corner; a lifestyle centre is a single building pretending to be eight. They
+// differ by FORMAT — how the tenant meets the car park — more than by style.
+export const S_MALLANCHOR = 139;  // a blank department box with one portal cut into it
+export const S_LIFESTYLE = 140;   // one building pretending to be eight, with eight fascias
+export const S_POWERINLINE = 141; // the inline run: blank above, glass below, pylon signs
+export const S_JRBOX = 142;       // junior box: a gable parapet and one band of colour
+export const S_AUTOPARTS = 143;   // split-face block under a bright band the colour of the chain
+export const S_FASTFOOD = 144;    // small, a canopy, and a drive lane wrapping one end
+export const S_BANKBRANCH = 145;  // a brick pavilion with a drive-up canopy on a limb
+export const S_PHARMACY = 146;    // brick with a ROTUNDA on the corner, because the corner is the door
+export const S_GROCERY = 147;     // an arcade front under one big gable, and cart bays
+export const S_RESTAURANT = 148;  // varied roof, a patio wall, awnings on every opening
+export const S_SHOWROOM = 149;    // full-height glass, because the stock IS the display
+export const S_OUTLET = 150;      // a covered walkway the whole length, gable after gable
+export const S_CORNERRETAIL = 151;// urban corner: glazed to the pavement under a deep canopy
+
+// ---------------------------------------------------------------------------
 // TRAITS, NOT NUMBERS.
 //
 // Downstream behaviour was keyed to the numeric VALUE of a style id — `s < 8`
@@ -342,6 +363,7 @@ export const T_GLASSY = [
   S_SKYGARDEN, S_PLEATED, S_SHINGLED, S_DOUBLESKIN, S_MEGABRACE, S_CHEVRON,
   S_PVCLAD, S_CREATIVE, S_MEDIAFACE,
   S_OFFICEPARK, S_CAMPUSBLOCK, S_SKYLOBBY, S_PROFBLDG, S_LOFTOFFICE,
+  S_SHOWROOM, S_CORNERRETAIL,
 ];
 
 /** Meets the pavement as shopfronts rather than as more wall. */
@@ -354,6 +376,8 @@ export const T_TRADE = [
   S_DEPOT, S_PUMPHOUSE,
   S_PODIUMWRAP, S_CREATIVE, S_MEDIAFACE, S_LABBLDG,
   S_MEDOFFICE, S_OFFICEPARK, S_PROFBLDG, S_BOUTIQUEOFF, S_LOFTOFFICE, S_BTSHQ,
+  S_LIFESTYLE, S_POWERINLINE, S_JRBOX, S_AUTOPARTS, S_FASTFOOD, S_BANKBRANCH,
+  S_PHARMACY, S_GROCERY, S_RESTAURANT, S_SHOWROOM, S_OUTLET, S_CORNERRETAIL,
   S_THEATRE, S_DINER, S_HOTEL, S_DEPTSTORE, S_STRIPMALL, S_MISSION, S_BANKTEMPLE,
   S_FLEX, S_TWOFLAT, S_ORIEL, S_MANSIONBLK, S_SRO,
 ];
@@ -368,6 +392,8 @@ export const T_FLOORLINE = [
   S_PODIUMWRAP, S_MICROUNIT, S_PASSIVE, S_LABBLDG, S_CREATIVE, S_MODULAR,
   S_MEDOFFICE, S_OFFICEPARK, S_GARDENOFF, S_INSURANCE, S_GOVLEASE, S_SKYLOBBY,
   S_PROFBLDG, S_BOUTIQUEOFF, S_BTSHQ, S_LOFTOFFICE, S_CAMPUSBLOCK,
+  S_LIFESTYLE, S_POWERINLINE, S_JRBOX, S_BANKBRANCH, S_PHARMACY, S_GROCERY,
+  S_RESTAURANT, S_SHOWROOM, S_OUTLET, S_CORNERRETAIL,
   S_POWERHOUSE, S_BREWERY, S_TEXTILE, S_FOUNDRY, S_DEPOT,
   S_QUEENANNE, S_STICK, S_TUDOR, S_MISSION, S_SCHOOL, S_LIBRARY, S_HOTEL,
   S_DEPTSTORE, S_MOTEL, S_FIREHOUSE, S_BANKTEMPLE, S_TILTUP, S_FLEX,
@@ -389,6 +415,7 @@ export const T_CAPPED_PLAIN = [
   S_SKYGARDEN, S_PLEATED, S_SHINGLED, S_DOUBLESKIN, S_MEGABRACE, S_CHEVRON,
   S_MODULAR, S_PVCLAD, S_PODIUMWRAP, S_LABBLDG, S_CREATIVE, S_MEDIAFACE,
   S_BACKOFFICE, S_CARRIERHTL, S_GOVLEASE, S_CAMPUSBLOCK,
+  S_MALLANCHOR, S_AUTOPARTS, S_FASTFOOD, S_JRBOX, S_OUTLET,
 ];
 
 /** Reads as a modern building when a crown is being chosen for it. */
@@ -596,6 +623,7 @@ export function stylePool(v: BuildingVolume): number[] {
     if (!resi) rare(0.42, 2, S_FIREHOUSE, S_LIBRARY, S_SCHOOL,
       S_CHURCHSTONE, S_SYNAGOGUE, S_ARMORY, S_CONVENT, S_CELLBLOCK, S_HOSPITAL, S_MEETINGHSE);
     if (shop && f >= 3) p.push(S_DEPTSTORE);
+    if (shop) p.push(S_CORNERRETAIL, S_RESTAURANT);
     return p;
   }
   if (y < 1925) {
@@ -616,6 +644,7 @@ export function stylePool(v: BuildingVolume): number[] {
     if (!resi) rare(0.42, 3, S_FIREHOUSE, S_LIBRARY, S_SCHOOL,
       S_CHURCHSTONE, S_SYNAGOGUE, S_COLLEGIATE, S_BATHHOUSE, S_MUSEUM, S_HOSPITAL, S_ARMORY);
     if (shop && f >= 3) p.push(S_DEPTSTORE, S_DEPTSTORE);
+    if (shop) p.push(S_CORNERRETAIL, S_CORNERRETAIL, S_RESTAURANT, S_BANKBRANCH);
     return p;
   }
   if (y < 1945) {
@@ -625,7 +654,8 @@ export function stylePool(v: BuildingVolume): number[] {
     else p.push(S_MODERNE, S_MODERNE, S_ARTDECO, S_TERRACOTTA);
     p.push(S_CIVIC, S_PREWAR, S_BRICK);
     if (resi) p.push(S_BRICK, S_PREWAR, S_TENEMENT, S_TUDOR, S_MISSION);
-    if (shop) p.push(S_MODERNE, S_TERRACOTTA, S_DEPTSTORE);
+    if (shop) p.push(S_MODERNE, S_TERRACOTTA, S_DEPTSTORE, S_CORNERRETAIL,
+      S_RESTAURANT, S_BANKBRANCH, S_SHOWROOM, S_GROCERY);
     if (resi && f <= 4) p.push(S_TUDOR, S_MISSION, S_BUNGALOW, S_FOURSQUARE, S_GAMBREL);
     if (resi && f >= 4) p.push(S_MANSIONBLK, S_ORIEL, S_SRO);
     if (!resi) p.push(S_THEATRE, S_HOTEL);
@@ -639,7 +669,8 @@ export function stylePool(v: BuildingVolume): number[] {
     if (office && f <= 4) p.push(S_PROFBLDG, S_PROFBLDG, S_GARDENOFF, S_MEDOFFICE, S_GOVLEASE);
     if (office) p.push(S_BACKOFFICE, S_CAMPUSBLOCK);
     if (resi) p.push(S_PROJECT, S_PROJECT, S_WHITEBRICK, S_WHITEBRICK, S_WHITEBRICK);
-    if (shop) p.push(S_MODERNE, S_RIBBON, S_EIFS, S_DINER, S_STRIPMALL);
+    if (shop) p.push(S_MODERNE, S_RIBBON, S_EIFS, S_DINER, S_STRIPMALL,
+      S_GROCERY, S_GROCERY, S_SHOWROOM, S_RESTAURANT, S_BANKBRANCH, S_FASTFOOD, S_PHARMACY);
     if (!resi) p.push(S_THEATRE, S_HOTEL);
     if (!resi) rare(0.40, 5, S_SCHOOL, S_COLLEGIATE, S_MUSEUM, S_HOSPITAL);
     if (resi && f <= 3) p.push(S_MOTEL, S_RANCH, S_RANCH, S_RANCH, S_GARDENAPT, S_GARDENAPT);
@@ -652,7 +683,9 @@ export function stylePool(v: BuildingVolume): number[] {
     if (office) p.push(S_BACKOFFICE, S_CAMPUSBLOCK, S_CARRIERHTL);
     if (office && f >= 9) p.push(S_MIRROR, S_MIRROR, S_DARK);
     if (resi) p.push(S_WHITEBRICK, S_WHITEBRICK, S_PROJECT, S_PRECAST, S_BRICK);
-    if (shop) p.push(S_EIFS, S_PRECAST, S_METALPAN, S_STRIPMALL, S_STRIPMALL, S_DINER);
+    if (shop) p.push(S_EIFS, S_PRECAST, S_METALPAN, S_STRIPMALL, S_DINER,
+      S_GROCERY, S_JRBOX, S_JRBOX, S_FASTFOOD, S_FASTFOOD, S_BANKBRANCH, S_PHARMACY,
+      S_AUTOPARTS, S_SHOWROOM, S_RESTAURANT, S_MALLANCHOR);
     if (!resi) p.push(S_HOTEL);
     if (!resi) rare(0.40, 6, S_SCHOOL, S_MUSEUM, S_HOSPITAL);
     if (resi && f <= 3) p.push(S_MOTEL, S_RANCH, S_RANCH, S_GARDENAPT, S_GARDENAPT, S_GARDENAPT);
@@ -667,7 +700,9 @@ export function stylePool(v: BuildingVolume): number[] {
     if (office && f >= 10) p.push(S_PMOD, S_DARK);
     if (resi) p.push(S_EIFS, S_WHITEBRICK, S_BALCONY, S_BALCONY, S_PODIUMWRAP);
     if (office && f >= 4) p.push(S_LABBLDG, S_CREATIVE, S_BTSHQ);
-    if (shop) p.push(S_EIFS, S_BIGBOX, S_METALPAN, S_STRIPMALL, S_STRIPMALL, S_TILTUP);
+    if (shop) p.push(S_EIFS, S_BIGBOX, S_METALPAN, S_STRIPMALL, S_TILTUP,
+      S_JRBOX, S_JRBOX, S_POWERINLINE, S_POWERINLINE, S_FASTFOOD, S_PHARMACY, S_PHARMACY,
+      S_AUTOPARTS, S_BANKBRANCH, S_GROCERY, S_OUTLET, S_MALLANCHOR, S_RESTAURANT);
     if (!resi) p.push(S_HOTEL);
     if (!resi) rare(0.40, 7, S_SCHOOL, S_MUSEUM, S_HOSPITAL);
     if (resi && f <= 3) p.push(S_MOTEL, S_RANCH, S_GARDENAPT, S_GARDENAPT);
@@ -686,7 +721,9 @@ export function stylePool(v: BuildingVolume): number[] {
     if (office && f >= 20) p.push(S_DIAGRID, S_CRYSTAL);
     if (resi) p.push(S_BALCONY, S_BALCONY, S_GLASS, S_EIFS, S_BRICK);
     if (resi && f >= 8) p.push(S_BALCONY, S_CRYSTAL);
-    if (shop) p.push(S_EIFS, S_BIGBOX, S_SCREEN, S_TILTUP, S_SELFSTOR);
+    if (shop) p.push(S_EIFS, S_BIGBOX, S_SCREEN, S_TILTUP, S_SELFSTOR,
+      S_POWERINLINE, S_JRBOX, S_LIFESTYLE, S_LIFESTYLE, S_FASTFOOD, S_PHARMACY,
+      S_AUTOPARTS, S_GROCERY, S_RESTAURANT, S_CORNERRETAIL, S_OUTLET);
     if (f >= 4) p.push(S_GARAGE);
     return p;
   }
@@ -703,7 +740,9 @@ export function stylePool(v: BuildingVolume): number[] {
   if (resi) p.push(S_BALCONY, S_BALCONY, S_SCREEN, S_TIMBER, S_FRIT, S_BRICK,
     S_PODIUMWRAP, S_PODIUMWRAP, S_MICROUNIT, S_PASSIVE, S_MODULAR);
   if (resi && f >= 10) p.push(S_SKYGARDEN, S_SKYGARDEN, S_MODULAR, S_PLEATED);
-  if (shop) p.push(S_SCREEN, S_TIMBER, S_BIGBOX, S_EIFS, S_TILTUP);
+  if (shop) p.push(S_SCREEN, S_TIMBER, S_BIGBOX, S_EIFS, S_TILTUP,
+    S_LIFESTYLE, S_LIFESTYLE, S_POWERINLINE, S_JRBOX, S_FASTFOOD, S_PHARMACY,
+    S_GROCERY, S_RESTAURANT, S_CORNERRETAIL, S_SHOWROOM);
   if (f >= 4) p.push(S_GARAGE);
   return p;
 }

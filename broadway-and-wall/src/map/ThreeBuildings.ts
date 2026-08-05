@@ -1809,6 +1809,100 @@ void main() {
     wall = mix(vec3(0.335, 0.350, 0.375), vec3(0.500, 0.505, 0.510), step(0.55, vVar));
     glassA = vec3(0.40, 0.52, 0.58); glassB = vec3(0.62, 0.74, 0.79);
   }
+  if (s == 139) {
+    // THE ANCHOR. A blank box the size of a city block with ONE portal cut
+    // into it — there are no windows because every square foot of wall is
+    // shelving on the other side.
+    colW = 9.0; win = vec2(0.0, 0.0);
+    wall = mix(vec3(0.680, 0.640, 0.585), vec3(0.610, 0.600, 0.590), step(0.55, vVar));
+    glassA = wall; glassB = wall;
+  }
+  if (s == 140) {
+    // THE LIFESTYLE CENTRE. One building pretending to be eight: the fascia
+    // changes height, colour and material every few bays, and none of the
+    // changes correspond to anything behind them.
+    colW = 4.2; win = vec2(0.72, 0.60);
+    wall = mix(vec3(0.640, 0.520, 0.430), vec3(0.680, 0.655, 0.600), step(0.5, vVar));
+    glassA = vec3(0.30, 0.37, 0.43); glassB = vec3(0.48, 0.58, 0.64);
+  }
+  if (s == 141) {
+    // THE INLINE RUN. Blank above, glass below, and a deep canopy between —
+    // the upper wall exists only to carry signs.
+    colW = 7.0; win = vec2(0.86, 0.30);
+    wall = mix(vec3(0.660, 0.640, 0.600), vec3(0.585, 0.590, 0.585), step(0.55, vVar));
+    glassA = vec3(0.28, 0.34, 0.40); glassB = vec3(0.44, 0.53, 0.60);
+  }
+  if (s == 142) {
+    // JUNIOR BOX. A gable parapet in the middle of a flat one, and a single
+    // band of the chain's colour under it. That gable is the whole design.
+    colW = 8.0; win = vec2(0.30, 0.26);
+    wall = mix(vec3(0.700, 0.670, 0.615), vec3(0.620, 0.615, 0.600), step(0.55, vVar));
+    glassA = vec3(0.28, 0.34, 0.40); glassB = vec3(0.44, 0.52, 0.58);
+  }
+  if (s == 143) {
+    // AUTO PARTS. Split-face block below, a bright band above, and the band is
+    // always the same colour because the chain owns it.
+    colW = 5.0; win = vec2(0.34, 0.30);
+    wall = mix(vec3(0.640, 0.630, 0.610), vec3(0.590, 0.575, 0.550), step(0.55, vVar));
+    glassA = vec3(0.26, 0.32, 0.37); glassB = vec3(0.42, 0.50, 0.56);
+  }
+  if (s == 144) {
+    // FAST FOOD. Small, low, a canopy over the door and a drive lane wrapping
+    // one end — the building is mostly roof and the roof is mostly overhang.
+    colW = 3.6; win = vec2(0.62, 0.46);
+    wall = mix(vec3(0.660, 0.605, 0.520), vec3(0.545, 0.470, 0.430), step(0.55, vVar));
+    glassA = vec3(0.32, 0.38, 0.44); glassB = vec3(0.50, 0.59, 0.65);
+  }
+  if (s == 145) {
+    // THE BRANCH. A brick pavilion trying to look like a small bank temple,
+    // with a drive-up canopy on a limb off one side.
+    colW = 3.9; win = vec2(0.40, 0.56);
+    wall = mix(vec3(0.600, 0.440, 0.370), vec3(0.680, 0.655, 0.610), step(0.6, vVar));
+    glassA = vec3(0.26, 0.32, 0.38); glassB = vec3(0.42, 0.50, 0.57);
+  }
+  if (s == 146) {
+    // THE PHARMACY. Brick, and a ROTUNDA on the corner — because the corner is
+    // the door, and every one of these was built to the same drawing.
+    colW = 4.4; win = vec2(0.44, 0.48);
+    wall = mix(vec3(0.615, 0.430, 0.355), vec3(0.660, 0.620, 0.560), step(0.6, vVar));
+    glassA = vec3(0.28, 0.34, 0.40); glassB = vec3(0.44, 0.53, 0.59);
+  }
+  if (s == 147) {
+    // THE GROCERY ANCHOR. An arcade the length of the front under one very big
+    // gable, with the cart bays notched into it.
+    colW = 5.6; win = vec2(0.70, 0.48);
+    wall = mix(vec3(0.690, 0.655, 0.590), vec3(0.605, 0.505, 0.435), step(0.55, vVar));
+    glassA = vec3(0.30, 0.36, 0.42); glassB = vec3(0.46, 0.55, 0.62);
+  }
+  if (s == 148) {
+    // THE RESTAURANT. A roof that changes height three times across one small
+    // building, awnings on every opening, and a low patio wall in front.
+    colW = 3.4; win = vec2(0.58, 0.54);
+    wall = mix(vec3(0.575, 0.445, 0.380), vec3(0.640, 0.610, 0.555), step(0.5, vVar));
+    glassA = vec3(0.30, 0.36, 0.42); glassB = vec3(0.47, 0.56, 0.62);
+  }
+  if (s == 149) {
+    // THE SHOWROOM. Full-height glass, because the STOCK is the display — no
+    // spandrel, no sill, nothing between the pavement and the merchandise.
+    glassy = true; colW = 5.2; win = vec2(0.92, 0.88);
+    wall = mix(vec3(0.560, 0.570, 0.580), vec3(0.500, 0.490, 0.480), step(0.55, vVar));
+    glassA = vec3(0.40, 0.50, 0.56); glassB = vec3(0.62, 0.74, 0.79);
+  }
+  if (s == 150) {
+    // THE OUTLET. A covered walkway the entire length, on posts, with a gable
+    // over every second unit — a strip mall with a colonnade bolted on.
+    colW = 4.8; win = vec2(0.66, 0.50);
+    wall = mix(vec3(0.680, 0.640, 0.575), vec3(0.615, 0.560, 0.500), step(0.55, vVar));
+    glassA = vec3(0.29, 0.35, 0.41); glassB = vec3(0.45, 0.54, 0.60);
+  }
+  if (s == 151) {
+    // URBAN CORNER RETAIL. Glazed right down to the pavement under a deep
+    // canopy, with the residential floors above it a different material —
+    // two buildings stacked, and the seam between them is the point.
+    glassy = true; colW = 4.0; win = vec2(0.86, 0.66);
+    wall = mix(vec3(0.545, 0.450, 0.395), vec3(0.590, 0.585, 0.570), step(0.55, vVar));
+    glassA = vec3(0.32, 0.40, 0.46); glassB = vec3(0.50, 0.60, 0.67);
+  }
   if (s == 8) { wall = vec3(0.60, 0.56, 0.48); glassA = wall; glassB = wall; colW = 100.0; win = vec2(0.0); }
   if (s == 10) { wall = vec3(0.58, 0.55, 0.50); glassA = wall; glassB = wall; colW = 100.0; win = vec2(0.0); }
 
@@ -1848,6 +1942,13 @@ void main() {
   if (s == 128) revealM = 0.28;
   if (s == 129 || s == 132) revealM = 0.34;
   if (s == 137) revealM = 0.44;
+  if (s == 149 || s == 151) revealM = 0.05;
+  if (s == 139 || s == 141 || s == 142) revealM = 0.10;
+  if (s == 140 || s == 150) revealM = 0.16;
+  if (s == 143 || s == 144) revealM = 0.20;
+  if (s == 147) revealM = 0.24;
+  if (s == 148) revealM = 0.26;
+  if (s == 145 || s == 146) revealM = 0.30;
   if (s == 113 || s == 117 || s == 119) revealM = 0.030;
   if (s == 114 || s == 115) revealM = 0.040;
   if (s == 112 || s == 116 || s == 125) revealM = 0.075;
@@ -2414,6 +2515,114 @@ void main() {
       }
       float fy = fract(v);
       if (fy > 0.66) { wall = mix(wall, wall * 0.78, 0.8); winMask = 0.0; }
+    }
+    if (s == 139 || s == 142 || s == 143) {
+      // THE BLANK BOX AND ITS BAND. Every square foot of wall is shelving on
+      // the other side, so the only things on it are the chain's colour band
+      // and, on a junior box, one gable parapet standing above the flat one.
+      float bandTop = vTop - fh * (s == 139 ? 0.55 : 0.85);
+      if (vZ > bandTop) {
+        vec3 chain = vVar < 0.3 ? vec3(0.60, 0.18, 0.18)
+                   : vVar < 0.6 ? vec3(0.16, 0.32, 0.58)
+                                : vec3(0.62, 0.46, 0.12);
+        wall = mix(wall, chain, s == 139 ? 0.55 : 0.80);
+      }
+      if (s != 139) wall *= 0.96 + 0.07 * step(0.5, fract(vZ / 0.41));   // split-face block
+      // the gable parapet, once, in the middle of the frontage
+      float g = abs(fract(vU / 46.0) - 0.5);
+      if (s == 142 && g < 0.13 && vZ > vTop - fh * 1.5) {
+        float rise = (0.13 - g) / 0.13;
+        if (vZ < vTop - fh * 1.5 + rise * fh * 1.5) wall = mix(wall, wall * 1.10, 0.8);
+      }
+      // the entrance portal: the one hole in the whole elevation
+      if (s == 139 && vZ < fh * 1.5 && abs(fract(vU / 60.0) - 0.3) < 0.045) {
+        wall = mix(wall, wall * 0.42, 0.9);
+      }
+    }
+    if (s == 140 || s == 150) {
+      // EIGHT SHOPS, ONE BUILDING. The fascia changes height, colour and
+      // material every few bays and none of it corresponds to anything behind.
+      float unit = floor(vU / 13.0);
+      float h1 = hash(vec2(unit, vRand * 23.0));
+      float lift = fh * (0.10 + 0.30 * h1);
+      if (vZ > vTop - fh * 0.9 - lift) {
+        vec3 c2 = mix(vec3(0.560, 0.430, 0.350), vec3(0.640, 0.620, 0.575), fract(h1 * 5.3));
+        wall = mix(wall, c2, 0.7); winMask = 0.0;
+      }
+      // the covered walkway on an outlet: posts and a deep shade behind
+      if (s == 150 && vZ < fh * 1.05) {
+        float t = fract(vU / 3.4);
+        float post = 1.0 - smoothstep(0.10, 0.18, min(t, 1.0 - t));
+        wall = mix(wall * 0.40, wall * 1.12, post); winMask = 0.0;
+      }
+    }
+    if (s == 141 || s == 147) {
+      // BLANK ABOVE, GLASS BELOW, and a deep canopy between them. The upper
+      // wall exists only to carry signs; the lower one is entirely shopfront.
+      float cz = fh * 1.15;
+      if (vZ > cz) {
+        winMask = 0.0;
+        if (vZ < cz + 0.75) wall = mix(wall, wall * 1.18, 0.85);          // canopy fascia
+        else if (s == 147) {
+          // one very big gable over the entrance of a grocery
+          float g = abs(fract(vU / 52.0) - 0.42);
+          if (g < 0.10) wall = mix(wall, wall * 1.08, 0.7);
+        }
+      } else {
+        wall = mix(wall, wall * 0.66, 0.5);
+        winMask = step(0.08, fract(vU / 2.6)) * step(0.55, vZ);
+        glassShade = 0.78;
+      }
+    }
+    if (s == 144 || s == 145 || s == 148) {
+      // THE SMALL FREESTANDING BUILDING. A deep overhanging eave all round,
+      // awnings over the openings, and on a bank a canopy on a limb off one
+      // side. Mostly roof, and the roof is mostly overhang.
+      if (vZ > vTop - 0.9) { wall = mix(wall, wall * 0.80, 0.85); winMask = 0.0; }
+      if (inHole && oy > 0.80) {
+        vec3 awn = vec3(0.44 + 0.20 * vVar, 0.30 + 0.14 * fract(vVar * 3.7), 0.28);
+        wall = mix(wall, awn, 0.75); winMask = 0.0;
+      }
+      if (s == 145 && vZ < fh * 0.95 && fract(vU / 26.0) > 0.78) {
+        wall = mix(wall, wall * 1.16, 0.7); winMask = 0.0;               // drive-up canopy
+      }
+    }
+    if (s == 146) {
+      // THE ROTUNDA. The corner is the door, so the corner is a drum — a
+      // curved bay with a conical cap, and every one of these was built to the
+      // same drawing in every town in the country.
+      float t = fract(vU / 34.0);
+      if (t < 0.14) {
+        float across = t / 0.14;
+        float face = sin(across * 3.14159265);
+        wall *= 0.80 + 0.38 * face;
+        if (vZ > vTop - fh * 0.9) { wall = mix(wall, wall * 0.88, 0.7); winMask = 0.0; }
+        else winMask = step(0.10, fract(across * 5.0)) * step(fh * 0.35, vZ);
+      } else {
+        wall *= 0.96 + 0.07 * hash(vec2(floor(vU / 0.22), floor(vZ / 0.075)));
+      }
+    }
+    if (s == 149) {
+      // NOTHING BETWEEN THE PAVEMENT AND THE MERCHANDISE. Full-height glass,
+      // no spandrel and no sill — only a slim column every bay and a shallow
+      // fascia at the top.
+      float col = 1.0 - smoothstep(0.0, 0.035, min(f.x, 1.0 - f.x));
+      wall = mix(wall, wall * 1.20, col); winMask *= 1.0 - col;
+      if (vZ > vTop - 0.8) { wall = mix(wall, wall * 1.10, 0.85); winMask = 0.0; }
+      if (inHole) glassShade = 1.12;                                     // lit interior
+    }
+    if (s == 151) {
+      // TWO BUILDINGS STACKED. Glazed to the pavement under a deep canopy, and
+      // above the canopy a completely different material. The seam is the type.
+      float cz = fh * 1.35;
+      if (vZ < cz) {
+        winMask = step(0.06, fract(vU / 2.8)) * step(0.35, vZ);
+        glassShade = 0.82;
+        if (vZ > cz - 0.55) { wall = mix(wall, wall * 0.52, 0.9); winMask = 0.0; }
+      } else {
+        wall = mix(wall, wall * 1.10, 0.55);
+        if (fract(v) < 0.08) wall *= 0.94;
+      }
     }
     if (s == 112) {
       // THE PLANTING. A deep terrace at every floor with soil in it, and the
@@ -3967,6 +4176,19 @@ void main() {
   if (s == 136) roof = vec3(0.535, 0.520, 0.495); // professional building
   if (s == 137) roof = vec3(0.560, 0.550, 0.525); // boutique
   if (s == 138) roof = vec3(0.555, 0.560, 0.565); // build-to-suit
+  if (s == 139) roof = vec3(0.640, 0.635, 0.615); // mall anchor: acres of TPO
+  if (s == 140) roof = vec3(0.470, 0.410, 0.365); // lifestyle: fake tile
+  if (s == 141) roof = vec3(0.600, 0.595, 0.580); // power inline
+  if (s == 142) roof = vec3(0.615, 0.610, 0.595); // junior box
+  if (s == 143) roof = vec3(0.585, 0.575, 0.560); // auto parts
+  if (s == 144) roof = vec3(0.455, 0.400, 0.365); // fast food
+  if (s == 145) roof = vec3(0.400, 0.360, 0.330); // bank branch: hipped
+  if (s == 146) roof = vec3(0.430, 0.380, 0.345); // pharmacy
+  if (s == 147) roof = vec3(0.560, 0.545, 0.520); // grocery
+  if (s == 148) roof = vec3(0.435, 0.385, 0.350); // restaurant
+  if (s == 149) roof = vec3(0.585, 0.590, 0.595); // showroom
+  if (s == 150) roof = vec3(0.475, 0.420, 0.375); // outlet
+  if (s == 151) roof = vec3(0.545, 0.530, 0.505); // corner retail
 
   roof *= 0.92 + 0.16 * vRand;
 

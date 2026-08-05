@@ -1000,6 +1000,20 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
 
       {holding && !dev && rec.class === "land" && <DevelopSection bbl={selectedBBL} />}
 
+      {/* THE LAND DESK BELONGS IN THE PANEL YOU ACTUALLY USE.
+          Assembly has been reported broken twice, and the engine was never the
+          problem: assembleLots merges two adjacent deeds for $105k headless and
+          through the store, and the adjacency graph is clean — 2,543 edges,
+          symmetric, matched to the drawn geometry. It was unreachable. LandDesk
+          holds the whole assemble flow — the neighbour picker, the site-after-
+          merger arithmetic, the plate-efficiency gain, the reasons a given
+          neighbour is blocked — and it was rendered ONLY inside PropertyPage,
+          the full-page view. Most play goes through this docked panel, which
+          showed you the lot, told you nothing, and offered no way to fold it in.
+          It renders itself to nothing when there is no adjacent deed you own,
+          so it costs nothing on the parcels where it does not apply. */}
+      {holding && <LandDesk bbl={selectedBBL} />}
+
       {holding && isBuilt && !renovating && <LeasingDesk bbl={selectedBBL} />}
 
       {holding && isBuilt && !renovating && (

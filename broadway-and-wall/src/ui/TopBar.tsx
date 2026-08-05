@@ -94,6 +94,19 @@ export default function TopBar() {
 
       {game && (
         <div className="topbar-game">
+          {/* THE READOUTS ARE THE ONLY THING ALLOWED TO SHRINK.
+              This row was one flat nowrap flex line — eight readouts, six nav
+              buttons, three lenses and three advance buttons — inside a bar
+              laid out with space-between. Once the contents exceeded the
+              window the row simply overflowed its box and the advance buttons
+              came to rest ON TOP of Saves, Settings and New city. The media
+              queries hid readouts one at a time to buy room, which is a guess
+              about how much room is needed rather than a guarantee.
+              Boxing the numbers separately makes it structural: the numbers
+              can shrink and clip because every one of them is also on a page,
+              and the CONTROLS cannot, because a button you cannot reach is not
+              a control. */}
+          <div className="topbar-stats">
           <Stat label={monthLabel(game.month)} value={`Yr ${Math.floor(game.month / 12) + 1}`} wide />
           <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} />
           <Stat label="Net worth" value={usd(nw)} drop={2} />
@@ -112,6 +125,7 @@ export default function TopBar() {
             value={String(Math.max(0, game.totalLots - game.builtAtStart - Object.keys(game.built).length))}
             title={`Empty lots left in ${manifest?.city ?? "town"}. Every one is a site someone can build on — as they run out, land gets scarce and prices climb. ${game.totalLots ? Math.round((100 * (game.builtAtStart + Object.keys(game.built).length)) / game.totalLots) : 0}% of the city is built.`}
           />
+          </div>
           <span className="topbar-sep" />
           <button className={"nav-btn" + (page === "portfolio" ? " nav-on" : "")} onClick={() => setPage(page === "portfolio" ? "none" : "portfolio")}>
             Portfolio

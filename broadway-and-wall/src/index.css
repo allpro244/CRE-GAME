@@ -30,6 +30,19 @@ body {
 .topbar {
   position: absolute; top: 0; left: 0; right: 0;
   display: flex; align-items: center; justify-content: space-between;
+  /* AND IT WRAPS RATHER THAN OVERLAPPING.
+     Shrinking the readouts was not enough: by 1280 the media queries have
+     already hidden them, so what no longer fits is the CONTROLS — six nav
+     buttons, three lenses, three advance buttons and the four on the right —
+     and a nowrap space-between row resolves that by drawing them on top of
+     each other. Measured with a headless browser at six widths, Advance, Yr
+     and the skip button all landed on Saves, Settings and New city from
+     1440px down.
+     Wrapping makes the collision impossible instead of unlikely: when the two
+     islands cannot share a line the right-hand one drops to a second row and
+     everything stays clickable. A slightly taller bar on a narrow window is a
+     much smaller cost than a button you cannot press. */
+  flex-wrap: wrap; row-gap: 6px;
   padding: 10px 16px;
   background: linear-gradient(to bottom, rgba(246, 241, 226, 0.92), rgba(246, 241, 226, 0));
   pointer-events: none;
@@ -202,7 +215,21 @@ body {
 .maplibregl-ctrl-attrib a { color: var(--ink-dim); }
 
 /* ---- game top bar ---- */
-.topbar-game { display: flex; align-items: center; gap: 16px; pointer-events: auto; }
+.topbar-game { display: flex; align-items: center; gap: 16px; pointer-events: auto; min-width: 0; flex: 0 1 auto; }
+/* THE BAR CANNOT OVERLAP ITSELF.
+   Only .topbar-stats may shrink, and it clips rather than overflowing; every
+   readout in it is also on a page. Everything else in the bar is flex-shrink:0
+   so the controls keep their size and the right-hand island keeps its place,
+   which is what stops Advance/Yr/skip landing on top of Saves and Settings. */
+.topbar-stats {
+  display: flex; align-items: center; gap: 16px;
+  /* SHRINK, NEVER GROW. flex-grow:1 here made the readouts expand to fill the
+     bar and shove the right-hand island onto a second line at EVERY width —
+     the bar measured 122px tall at 1920px, where there was room to spare. */
+  min-width: 0; flex: 0 1 auto; overflow: hidden;
+}
+.topbar-game > :not(.topbar-stats) { flex: 0 0 auto; }
+.topbar-right { flex: 0 0 auto; }
 .tstat { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15; }
 .tstat-wide .tstat-label { font-family: var(--serif); font-size: 16px; color: var(--ink); letter-spacing: 0.4px; }
 .tstat-label { font-size: 10px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 1px; }
@@ -434,19 +461,25 @@ body {
 .gameover-page { text-align: center; padding: 30px 10px; }
 .gameover-page .gameover-head { font-size: 26px; }
 
-/* topbar got crowded once the nav buttons moved in — tighten it up */
+/* THE COMPACT SIZING IS THE DEFAULT, NOT A CONCESSION TO SMALL WINDOWS.
+   Seven nav buttons, three lenses, three advance buttons and four on the right
+   come to roughly 2,200px of content — so the bar overflowed at EVERY width,
+   including 1920, and simply drew the overflow on top of Saves and Settings.
+   The tightened sizing that used to appear only below 1460px fits the whole
+   row on one line at 1440, so it becomes the sizing everywhere: one row, no
+   collision, and the same buttons the narrow layout has always used. */
 .topbar { gap: 10px; }
-.topbar-game { gap: 10px; flex-wrap: nowrap; }
-.nav-btn { padding: 5px 10px; font-size: 13px; }
-.lens-btn { padding: 5px 8px; font-size: 11px; }
-.advance-btn { padding: 6px 12px; font-size: 14px; }
+.topbar-game { gap: 8px; flex-wrap: nowrap; }
+.nav-btn { padding: 4px 8px; font-size: 12px; letter-spacing: 0; }
+.lens-btn { padding: 4px 7px; font-size: 10px; }
+.advance-btn { padding: 5px 10px; font-size: 13px; }
 .brand { white-space: nowrap; }
 /* Drop the static caption when the bar gets tight, but NEVER the city picker.
    It carries .brand-sub for its typography, and this rule used to hide it —
    which meant that on any window under 1560px wide, which is most laptops,
    the only control that switches city simply was not there. A label is fair
    to drop for space. A control is not. */
-@media (max-width: 1560px) { .brand-sub:not(.city-pick-btn) { display: none; } .badge { display: none; } }
+@media (max-width: 1900px) { .brand-sub:not(.city-pick-btn) { display: none; } .badge { display: none; } }
 /* THE BAR SHEDS READOUTS, NEVER CONTROLS.
    .topbar-game is nowrap with eight readouts, six nav buttons, two lenses and
    three advance buttons in it. At 1280 — a MacBook, a 1366x768 laptop, any
@@ -459,12 +492,31 @@ body {
    Advance button off the edge at 1600. The thresholds move with the contents:
    the expendable readouts go earlier now, and every one of them is still on a
    page. */
-@media (max-width: 1700px) { .tstat-d3 { display: none; } }
-@media (max-width: 1480px) { .tstat-d2 { display: none; } }
+/* Breakpoints pulled forward: with the bar now WRAPPING instead of
+   overlapping, a readout kept one pixel too long costs a whole second row of
+   chrome rather than a collision. Measured across ten widths with a headless
+   browser until the bar sat on one line through the common range. */
+@media (max-width: 1900px) { .tstat-d3 { display: none; } }
+@media (max-width: 1680px) { .tstat-d2 { display: none; } }
 @media (max-width: 1360px) {
   .brand-name { font-size: 18px; }
   .topbar-right .stat { display: none; }
   .city-pick-btn { margin-left: 8px; font-size: 11px; letter-spacing: 0.8px; }
+}
+/* Wrapping stops the collision; this stops the bar becoming a third of the
+   screen. At 1280 the row was breaking three ways — brand, controls, then
+   Saves/Settings/New city on a line of their own — so the controls get tighter
+   earlier and the right-hand island keeps its seat on the same line. Measured
+   with the headless harness: 157px tall before, and it must stay clickable at
+   every width or the wrap rule above catches it anyway. */
+@media (max-width: 1460px) {
+  .nav-btn { padding: 4px 7px; font-size: 12px; letter-spacing: 0; }
+  .lens-btn { padding: 4px 6px; font-size: 10px; }
+  .advance-btn { padding: 5px 9px; font-size: 13px; }
+  .topbar-game { gap: 7px; }
+  .topbar-right { gap: 7px; }
+  .topbar { padding: 8px 10px; gap: 8px; }
+  .brand-name { font-size: 17px; }
 }
 @media (max-width: 1200px) {
   /* once the readouts are gone there is nothing left to drop, so the controls

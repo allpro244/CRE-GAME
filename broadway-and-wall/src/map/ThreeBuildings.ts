@@ -3757,6 +3757,28 @@ void main() {
   // swell actually breaks
   col += vec3(0.075) * smoothstep(0.86, 1.02, h) * (0.5 + 0.8 * shoal);
 
+  // THE WATER'S EDGE MOVES, AND THIS ONE WAS RULED IN PEN.
+  //
+  // The whole harbour has been alive for a while — the swell runs, the sun
+  // road breaks up, the city reflects in it — and it all stopped dead at the
+  // coastline, which was a fixed boundary between blue and sand. That edge is
+  // the longest line in the frame and it rings the entire island, so a static
+  // one is the single largest thing telling you the sea is a texture.
+  //
+  // vDepth already carries metres to the shore, baked per vertex for the
+  // shoal. Running the waterline in and out along it costs one sine: the band
+  // of wash advances a few metres up the beach and drags back, and because the
+  // phase is driven by position as well as time it arrives along the coast
+  // rather than the whole island pulsing at once.
+  float swell = sin(uTime * 0.55 + vXY.x * 0.011 + vXY.y * 0.008)
+              + 0.4 * sin(uTime * 0.83 - vXY.x * 0.019 + vXY.y * 0.013);
+  float edge = vDepth - (3.4 + 2.0 * swell);
+  float wash = 1.0 - smoothstep(0.0, 4.8, abs(edge));
+  // Thickest right at the top of its run, the way a spent wave is, and gone
+  // under ice — a rimed harbour has no surf.
+  col = mix(col, vec3(0.880, 0.910, 0.932),
+            wash * 0.52 * smoothstep(0.0, 0.35, swell + 1.4) * (1.0 - SNOW * 0.75));
+
   // RIME. A cold harbour does not freeze over — this one has ships working it
   // all winter — but the still water inside the shoal line skins over and
   // takes a crust along the shore, and that pale fringe against dark water is

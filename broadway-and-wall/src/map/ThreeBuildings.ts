@@ -5333,6 +5333,54 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // whose posts are each a different height is a fence, not an esplanade.
     addRigid(benchGeom(), 0x6d5a45, oriented(this.ctxPoints.benches));
     addRigid(railGeom(), 0x3f464b, oriented(this.ctxPoints.rails));
+
+    // ---- what the walks were converging on -------------------------------
+    //
+    // The park generator drives its cross paths corner-to-corner "through the
+    // middle" and keeps the lawn open where they meet. That intersection had
+    // nothing standing on it, which leaves four walks arriving at a patch of
+    // grass — and leaves a hundred-metre lawn with no vertical anything to
+    // read its scale against.
+    //
+    // A column in the big parks, a fountain in the small ones. Both on the
+    // centroid, which is where the paths already go; the pond is generated
+    // offset from centre precisely so the middle stays free, so nothing has to
+    // be dodged. Bearing comes off the position hash so a town's monuments do
+    // not all face the same way, and the whole thing is deterministic in the
+    // city seed like every other prop.
+    {
+      const columns: Item[] = [];
+      const fountains: Item[] = [];
+      for (const ring of this.ctxPoints.parks ?? []) {
+        if (!ring || ring.length < 3) continue;
+        const pts = ring.map((q) => this.project(q));
+        // area and centroid of the ring, by the shoelace
+        let a2 = 0, cx = 0, cy = 0;
+        for (let i = 0; i < pts.length; i++) {
+          const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length];
+          const cross = x1 * y2 - x2 * y1;
+          a2 += cross; cx += (x1 + x2) * cross; cy += (y1 + y2) * cross;
+        }
+        if (Math.abs(a2) < 1e-6) continue;
+        const area = Math.abs(a2) / 2;
+        const p: Item = {
+          x: cx / (3 * a2), y: cy / (3 * a2),
+          // addRigid ignores scale by design — a manufactured thing is one
+          // size — but Item carries it, so hand it the identity.
+          s: 1,
+          rot: (Math.abs(Math.round(cx * 7 + cy * 13)) % 360) * Math.PI / 180,
+        };
+        // A column is a civic gesture and it needs a park to stand in; a
+        // square that would be crowded by one gets a basin instead.
+        if (area > 9000) columns.push(p);
+        else if (area > 1800) fountains.push(p);
+      }
+      addRigid(monumentGeom(), 0xb9b2a4, columns);          // weathered granite
+      addRigid(monumentFigureGeom(), 0x6f8a72, columns);    // bronze gone verdigris
+      addRigid(parterreGeom(), 0x5f8039, columns);          // clipped box hedge
+      addRigid(fountainStoneGeom(), 0xc0b9ab, fountains);
+      addRigid(fountainWaterGeom(), 0x2f5a63, fountains);
+    }
     addCars(cars);
     addPeople(people);
     addWalkers(personGeom(), walkers, COAT);
@@ -7594,4 +7642,106 @@ function mergeGeoms(geoms: THREE.BufferGeometry[]): THREE.BufferGeometry {
   out.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   out.setAttribute("normal", new THREE.Float32BufferAttribute(norm, 3));
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// PARK MONUMENTS
+// ---------------------------------------------------------------------------
+//
+// The generator already lays these parks out like parks: a perimeter
+// promenade, an allée of paired trees along it, cross paths driven
+// corner-to-corner, corner groves, and a lawn deliberately kept open in the
+// middle. Every one of those cross paths converges on a point — and that point
+// had nothing on it.
+//
+// That is not a small omission, it is the omission. A nineteenth-century civic
+// park is ORGANISED around its monument: the walks exist to arrive at it, and
+// without one they are four paths meeting in the grass for no stated reason.
+// It is also the only vertical thing in a hundred metres of flat lawn, which
+// makes it the one element giving the Common a middle to read against.
+//
+// Kept to the prop path — instanced geometry, flat colour, the same light rig
+// as a bench — because a monument is street furniture at civic scale, not a
+// building, and it has no business in the massing pipeline.
+
+/** Stepped plinth and tapered shaft, ~13 m. Z-up, like every prop here. */
+function monumentGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  // three-step base: a monument is approached, so it stands on stairs
+  parts.push(new THREE.BoxGeometry(5.2, 5.2, 0.34).translate(0, 0, 0.17));
+  parts.push(new THREE.BoxGeometry(4.2, 4.2, 0.34).translate(0, 0, 0.51));
+  parts.push(new THREE.BoxGeometry(3.3, 3.3, 0.40).translate(0, 0, 0.88));
+  // the die: the block that carries the inscription
+  parts.push(new THREE.BoxGeometry(2.3, 2.3, 2.15).translate(0, 0, 2.15));
+  parts.push(new THREE.BoxGeometry(2.7, 2.7, 0.26).translate(0, 0, 3.35));
+  // the shaft, tapered — a column that does not taper reads as a pipe
+  parts.push(new THREE.CylinderGeometry(0.62, 0.86, 7.6, 12)
+    .rotateX(Math.PI / 2).translate(0, 0, 7.28));
+  // capital
+  parts.push(new THREE.CylinderGeometry(0.98, 0.72, 0.52, 12)
+    .rotateX(Math.PI / 2).translate(0, 0, 11.34));
+  parts.push(new THREE.BoxGeometry(1.9, 1.9, 0.22).translate(0, 0, 11.71));
+  return mergeGeoms(parts);
+}
+
+/** The figure on top, in bronze — separate so it takes its own colour. */
+function monumentFigureGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  parts.push(new THREE.CylinderGeometry(0.30, 0.40, 0.42, 8)
+    .rotateX(Math.PI / 2).translate(0, 0, 12.03));
+  // a standing figure, read at fifty metres: legs, coat, shoulders, head
+  parts.push(new THREE.BoxGeometry(0.42, 0.34, 1.02).translate(0, 0, 12.75));
+  parts.push(new THREE.BoxGeometry(0.62, 0.42, 0.30).translate(0, 0, 13.38));
+  parts.push(new THREE.CylinderGeometry(0.17, 0.17, 0.26, 7)
+    .rotateX(Math.PI / 2).translate(0, 0, 13.66));
+  return mergeGeoms(parts);
+}
+
+/** A basin with a coping you could sit on, ~7 m across. */
+function fountainStoneGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  // the coping ring, built as a wide short drum with the water disc dropped
+  // into it — cheaper than a real annulus and identical at this distance
+  parts.push(new THREE.CylinderGeometry(3.5, 3.6, 0.62, 20)
+    .rotateX(Math.PI / 2).translate(0, 0, 0.31));
+  // the tiered centre
+  parts.push(new THREE.CylinderGeometry(0.72, 0.95, 0.55, 12)
+    .rotateX(Math.PI / 2).translate(0, 0, 0.72));
+  parts.push(new THREE.CylinderGeometry(1.15, 1.15, 0.14, 14)
+    .rotateX(Math.PI / 2).translate(0, 0, 1.05));
+  parts.push(new THREE.CylinderGeometry(0.30, 0.44, 0.85, 10)
+    .rotateX(Math.PI / 2).translate(0, 0, 1.52));
+  parts.push(new THREE.CylinderGeometry(0.62, 0.62, 0.11, 12)
+    .rotateX(Math.PI / 2).translate(0, 0, 2.00));
+  return mergeGeoms(parts);
+}
+
+/** The water in it, a disc set just below the coping. */
+function fountainWaterGeom(): THREE.BufferGeometry {
+  return new THREE.CylinderGeometry(3.34, 3.34, 0.04, 20)
+    .rotateX(Math.PI / 2).translate(0, 0, 0.50);
+}
+
+/**
+ * A clipped parterre hedge ringing a monument. Twelve low blocks on a circle
+ * rather than a torus: a formal bed is planted in segments with the walks
+ * between them, and at this scale the gaps are what say "clipped" rather than
+ * "green doughnut".
+ */
+function parterreGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const R = 5.6;
+  const N = 20;
+  for (let i = 0; i < N; i++) {
+    // four gaps, on the compass points, where the cross paths come in
+    if (i % 5 === 0) continue;
+    const a = (i / N) * Math.PI * 2;
+    // Long enough to close on its neighbour and tall enough to cast: at 12
+    // sparse segments these read as blocks dropped on the grass rather than as
+    // a clipped bed, which is the difference between planting and litter.
+    parts.push(new THREE.BoxGeometry(1.90, 1.05, 0.80)
+      .rotateZ(a + Math.PI / 2)
+      .translate(Math.cos(a) * R, Math.sin(a) * R, 0.40));
+  }
+  return mergeGeoms(parts);
 }

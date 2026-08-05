@@ -1488,6 +1488,99 @@ void main() {
   gl_FragColor = vec4(s, 1.0);
 }`;
 
+// AMBIENT OCCLUSION, IN WORLD SPACE, OFF THE DEPTH BUFFER.
+//
+// The hemisphere term in the light rig is analytic: it knows a wall's height
+// off the ground and whether it sits in a concave corner of its OWN footprint,
+// and that is all it can know, because a fragment cannot see the building
+// across the alley. So the one place a dense city should be darkest — the slot
+// between two blocks, the back of a courtyard, the notch where a setback meets
+// its neighbour — was lit exactly like an open plaza.
+//
+// The reconstruction is exact rather than a depth-difference approximation:
+// this layer's camera has an identity view matrix (MapLibre hands over a
+// combined matrix and Three's camera sits at the origin), so inverting the
+// projection takes a depth sample straight back to a world position. From
+// there it is the ordinary normal-oriented estimator — sample a disk, ask how
+// far each neighbour rises above this fragment's tangent plane, weight by
+// distance so a building a street away cannot occlude anything.
+//
+// The surface normal comes from the derivatives of the reconstructed position,
+// which costs nothing and is exact for the flat faces this city is made of.
+const AO_GLSL = /* glsl */ `
+uniform sampler2D uDepth;
+uniform mat4 uInvProj;
+uniform vec2 uAoTexel;
+uniform vec3 uAoCam;
+uniform float uAoRadius;    // metres
+uniform float uAoStrength;
+
+vec3 worldAt(vec2 uv, float d) {
+  vec4 clip = vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+  vec4 p = uInvProj * clip;
+  return p.xyz / p.w;
+}
+
+float occlusion(vec2 uv) {
+  float d = texture2D(uDepth, uv).x;
+  if (d >= 0.9999) return 0.0;                 // sky: nothing to occlude
+  vec3 P = worldAt(uv, d);
+
+  // CONTACT IS A NEAR-FIELD EFFECT AND THE GROUND PLANE RUNS TO THE HORIZON.
+  // Out at three or four kilometres that plane is edge-on to the eye, a whole
+  // pixel spans hundreds of metres of it, and both the reconstruction and its
+  // derivatives fall apart — which arrived on screen as ruled bands across the
+  // sky. Nothing that far away has readable contact anyway, so the pass simply
+  // stops, faded out rather than cut so the boundary is not its own edge.
+  float dist = length(P - uAoCam);
+  float reach = 1.0 - smoothstep(420.0, 850.0, dist);
+  if (reach <= 0.001) return 0.0;
+
+  vec3 dPx = dFdx(P), dPy = dFdy(P);
+  if (length(dPx) < 1e-7 || length(dPy) < 1e-7) return 0.0;
+  vec3 N = normalize(cross(dPx, dPy));
+
+  // Sampling radius shrinks on screen as the fragment gets further away, so a
+  // fixed pixel disk would sample metres at the front of the frame and
+  // kilometres at the back. Scale it by how big a metre is here.
+  vec3 Px = worldAt(uv + vec2(uAoTexel.x, 0.0), d);
+  float mPerPx = max(length(Px - P), 1e-4);
+  float rad = clamp(uAoRadius / mPerPx, 2.0, 64.0);
+
+  float occ = 0.0;
+  for (int i = 0; i < 12; i++) {
+    float a = float(i) * 2.39996323;
+    float rr = sqrt((float(i) + 0.5) / 12.0) * rad;
+    vec2 suv = uv + vec2(cos(a), sin(a)) * rr * uAoTexel;
+    float sd = texture2D(uDepth, suv).x;
+    if (sd >= 0.9999) continue;
+    vec3 S = worldAt(suv, sd) - P;
+    float len = length(S);
+    if (len < 1e-4) continue;
+    // how far above my own tangent plane the neighbour stands, and a falloff
+    // so something across the street contributes nothing
+    float rise = max(dot(S / len, N) - 0.06, 0.0);
+    occ += rise * (uAoRadius / (uAoRadius + len * len / max(uAoRadius, 0.5)));
+  }
+  return clamp(occ / 12.0 * uAoStrength, 0.0, 1.0) * reach;
+}`;
+
+// The occlusion, alone, as a multiply over whatever is already in MapLibre's
+// buffer. This is the pass that darkens the STREET — the pavement is drawn by
+// MapLibre, so the only way to put a building's contact shadow on it is to
+// multiply the destination.
+const AO_MULT_FRAG = /* glsl */ `
+precision highp float;
+varying vec2 vUv;
+` + AO_GLSL + /* glsl */ `
+void main() {
+  float o = occlusion(vUv);
+  // Cool, because ambient occlusion is the absence of SKY light and the sky
+  // here is blue. A neutral grey multiply reads as dirt.
+  vec3 tint = mix(vec3(1.0), vec3(0.62, 0.68, 0.80), o);
+  gl_FragColor = vec4(tint, 1.0);
+}`;
+
 // The composite. Tilt-shift first, then the bloom on top of it, because light
 // that has spilled has already left the lens and does not get defocused again.
 const COMPOSITE_FRAG = /* glsl */ `
@@ -1501,6 +1594,7 @@ uniform float uFocus;      // where the plane of focus sits, 0..1 up the frame
 uniform float uBand;       // how much of the frame is sharp
 uniform float uDefocus;    // blur radius in pixels at the top and bottom
 uniform float uGrain;
+` + AO_GLSL + /* glsl */ `
 
 // A MODEL CITY PHOTOGRAPHS LIKE A MODEL CITY.
 //
@@ -1529,6 +1623,11 @@ void main() {
   float off = abs(vUv.y - uFocus);
   float defocus = smoothstep(uBand, 1.0, off) * uDefocus;
   vec4 c = defocused(vUv, defocus);
+
+  // The same occlusion the multiply pass put on the street, applied to the
+  // city's own geometry. Before the bloom: light that has already spilled off
+  // a surface is not sitting in the crevice any more.
+  c.rgb *= mix(vec3(1.0), vec3(0.62, 0.68, 0.80), occlusion(vUv));
 
   c.rgb += texture2D(uBloom, vUv).rgb * uBloomAmt;
 
@@ -1718,6 +1817,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private brightMat!: THREE.ShaderMaterial;
   private blurMat!: THREE.ShaderMaterial;
   private compMat!: THREE.ShaderMaterial;
+  private aoMultMat!: THREE.ShaderMaterial;
   private postSize = new THREE.Vector2(0, 0);
   /** Exposed for playtests: the only way to assert a demolition really happened. */
   posAttrs: THREE.BufferAttribute[] = [];
@@ -1753,6 +1853,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private shadowTarget: THREE.WebGLRenderTarget | null = null;
   private depthMat: THREE.MeshDepthMaterial | null = null;
   private groundCatcher: THREE.Mesh | null = null;
+  private aoGround: THREE.Mesh | null = null;
   visible = true;
 
   constructor(
@@ -1816,6 +1917,27 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         vertexShader: POST_VERT, fragmentShader: BLUR_FRAG, depthTest: false, depthWrite: false,
         uniforms: { uTex: { value: null }, uDir: { value: new THREE.Vector2() } },
       });
+      const aoUniforms = () => ({
+        uDepth: { value: null as THREE.Texture | null },
+        uInvProj: { value: new THREE.Matrix4() },
+        uAoTexel: { value: new THREE.Vector2() },
+        uAoCam: { value: new THREE.Vector3() },
+        // Two and a half metres. An alley is three or four wide, a light well
+        // less; much beyond this and a building starts occluding the one
+        // across the street, which is a shadow, not contact.
+        uAoRadius: { value: 2.5 },
+        uAoStrength: { value: 1.55 },
+      });
+      this.aoMultMat = new THREE.ShaderMaterial({
+        vertexShader: POST_VERT, fragmentShader: AO_MULT_FRAG, depthTest: false, depthWrite: false,
+        transparent: true,
+        // dst *= src — the only way to put a contact shadow onto pavement this
+        // layer did not draw
+        blending: THREE.CustomBlending,
+        blendSrc: THREE.ZeroFactor, blendDst: THREE.SrcColorFactor,
+        blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+        uniforms: aoUniforms(),
+      });
       this.compMat = new THREE.ShaderMaterial({
         vertexShader: POST_VERT, fragmentShader: COMPOSITE_FRAG, depthTest: false, depthWrite: false,
         transparent: true,
@@ -1841,6 +1963,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           // city one is actually looking at lives.
           uFocus: { value: 0.56 }, uBand: { value: 0.26 }, uDefocus: { value: 2.7 },
           uGrain: { value: 0.006 },
+          ...aoUniforms(),
         },
       });
       this.postQuad = new THREE.Mesh(quad, this.brightMat);
@@ -1865,6 +1988,13 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         depthBuffer: true, stencilBuffer: false,
       } as const;
       this.sceneRT = new THREE.WebGLRenderTarget(size.x, size.y, opts);
+      // The occlusion pass reads this. UnsignedInt rather than the default
+      // UnsignedShort: at 16 bits the reconstruction quantises into visible
+      // terraces across a frame that spans kilometres.
+      const dt = new THREE.DepthTexture(size.x, size.y, THREE.UnsignedIntType);
+      dt.minFilter = THREE.NearestFilter;
+      dt.magFilter = THREE.NearestFilter;
+      this.sceneRT.depthTexture = dt;
       // Bloom runs at quarter resolution. It is a wide blur — nobody can see
       // the resolution it was computed at, and it is the difference between
       // the pass costing something and costing nothing.
@@ -2832,6 +2962,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.scene.add(mesh);
     }
     this.plantStreets();
+    this.buildAoGround();
     this.buildWater();
     this.buildSeawall();
     this.buildLawns();
@@ -3361,6 +3492,31 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.scene.add(mesh);
   }
 
+  /**
+   * A FLOOR THAT IS NEVER DRAWN.
+   *
+   * The streets of this city are painted by MapLibre, not by this layer, so
+   * the depth buffer the occlusion pass reads has buildings in it and nothing
+   * underneath them. Screen-space occlusion against that finds a tower's
+   * neighbours and never finds the pavement it is standing on — which loses
+   * precisely the contact the effect exists to draw.
+   *
+   * One plane at ground level with colour writes off costs nothing to draw,
+   * changes not a single pixel, and gives every building in town a floor to be
+   * occluded against. It has to be hidden during the sun's depth pass, where
+   * it would be a lid over the whole city.
+   */
+  private buildAoGround() {
+    const g = new THREE.PlaneGeometry(13000, 13000);
+    const m = new THREE.MeshBasicMaterial({ colorWrite: false });
+    const mesh = new THREE.Mesh(g, m);
+    mesh.frustumCulled = false;
+    mesh.renderOrder = -2;         // before the water, which sits just above it
+    mesh.userData.noShadow = true;
+    this.scene.add(mesh);
+    this.aoGround = mesh;
+  }
+
   private buildWater() {
     const land = this.ctxPoints.land;
     if (!land || land.length < 4) return;
@@ -3468,6 +3624,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const target = this.shadowTarget;
       if (this.water) this.water.visible = false;   // a flat sea casts nothing
       if (this.groundCatcher) this.groundCatcher.visible = false;
+      // and neither does the invisible plane that only exists to give the
+      // occlusion pass a floor — left in, it is a lid over the whole city and
+      // every building in town stands in its shadow
+      if (this.aoGround) this.aoGround.visible = false;
       const prevClear = new THREE.Color();
       this.renderer.getClearColor(prevClear);
       const prevAlpha = this.renderer.getClearAlpha();
@@ -3481,6 +3641,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.scene.overrideMaterial = null;
       if (this.water) this.water.visible = true;
       if (this.groundCatcher) this.groundCatcher.visible = true;
+      if (this.aoGround) this.aoGround.visible = true;
 
       this.sunVP.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
       this.shadowTex = target.texture;
@@ -4123,11 +4284,23 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     (this.blurMat.uniforms.uDir.value as THREE.Vector2).set(0, 1 / bh);
     this.blit(this.blurMat, this.bloomA);
 
-    // 4. lens and composite, back into MapLibre's buffer
+    // 4. the occlusion needs to reach the pavement, and the pavement belongs
+    //    to MapLibre — so it goes down first, as a multiply on what is already
+    //    in the buffer, before anything of ours covers it.
+    const invProj = new THREE.Matrix4().copy(this.camera.projectionMatrix).invert();
+    for (const mat of [this.aoMultMat, this.compMat]) {
+      mat.uniforms.uDepth.value = this.sceneRT.depthTexture;
+      (mat.uniforms.uInvProj.value as THREE.Matrix4).copy(invProj);
+      (mat.uniforms.uAoTexel.value as THREE.Vector2).set(1 / this.postSize.x, 1 / this.postSize.y);
+      (mat.uniforms.uAoCam.value as THREE.Vector3).copy(this.camUni.value);
+    }
+    this.renderer.setRenderTarget(prevTarget);
+    this.blit(this.aoMultMat, prevTarget);
+
+    // 5. lens and composite, back into MapLibre's buffer
     this.compMat.uniforms.uScene.value = this.sceneRT.texture;
     this.compMat.uniforms.uBloom.value = this.bloomA.texture;
     (this.compMat.uniforms.uTexel.value as THREE.Vector2).set(1 / this.postSize.x, 1 / this.postSize.y);
-    this.renderer.setRenderTarget(prevTarget);
     this.blit(this.compMat, prevTarget);
 
     // Hand the context back exactly as MapLibre expects to find it — it still

@@ -189,10 +189,18 @@ export interface ConstructionQuote {
   why?: string;
 }
 
-const CONSTRUCTION_DESKS: { name: string; spread: number; points: number; scale: number; cap: number; maxCommit?: number; fund?: boolean }[] = [
+const CONSTRUCTION_DESKS: { name: string; spread: number; points: number; scale: number; cap: number; holdShare?: number; fund?: boolean }[] = [
   // Small, cheap, and they remember you: the hometown bank's hold stops at
   // $9M, so on anything bigger it funds its piece and no more.
-  { name: "First Harbor Bank", spread: 2.15, points: 0.008, scale: 0.92, cap: 0.65, maxCommit: 9_000_000 },
+  // A HOLD LIMIT IS A SHARE OF A BALANCE SHEET, not a number of dollars.
+  // This was a flat $9M, which is right for a small local desk in the town
+  // that shipped and meaningless in a town four times the size — the same
+  // hometown bank, still the hometown bank, but a $9M hold against jobs that
+  // cost ten times that is not "they only fund their piece", it is a desk that
+  // never appears. 6.4% of its own book is what $9M was against the $140M it
+  // used to carry, and the book is now derived from the city (see initLenders),
+  // so this follows the town without being told about it.
+  { name: "First Harbor Bank", spread: 2.15, points: 0.008, scale: 0.92, cap: 0.65, holdShare: 0.064 },
   // The regional — the historical monopoly desk, and still the volume quote.
   { name: CONSTRUCTION_LENDER, spread: CONSTR_SPREAD, points: 0.010, scale: 1, cap: 0.70 },
   // Committed capital and no depositors: they quote through the cycle, and the
@@ -245,14 +253,15 @@ export function constructionQuotes(s: GameState, mix: UseMix, costTotal: number)
     const uncapped = Math.min(d.cap, base * d.scale);
     // The 1.1 approximates the interest-reserve gross-up, so the solved
     // commitment lands at the hold size rather than a tenth over it.
-    const ltcMax = d.maxCommit && costTotal > 0 ? Math.min(uncapped, d.maxCommit / (costTotal * 1.1)) : uncapped;
+    const maxCommit = d.holdShare && bank ? bank.book * d.holdShare : undefined;
+    const ltcMax = maxCommit && costTotal > 0 ? Math.min(uncapped, maxCommit / (costTotal * 1.1)) : uncapped;
     const rel = d.fund ? 0 : Math.min(0.4, Math.max(0, (lenderRelOf(s, d.name) - 20) * 0.005));
     const ratePct = +(e.indexRate + d.spread * (1 + (d.fund ? 0 : 0.9 * tight)) + Math.max(0, 1 - app) * (d.fund ? 0.3 : 0.8) - rel).toFixed(2);
     const open = app >= 0.12 && ltcMax > 0.02;
     const why = bank?.failedM !== undefined ? `${d.name} is in receivership — nobody is answering the phone.`
       : app < 0.12 ? `${d.name} has stopped writing new paper — their capital will not carry it.`
       : ltcMax <= 0.02 ? `${d.name} will not touch spec construction in this market.`
-      : d.maxCommit && ltcMax < uncapped - 0.005 ? `A job this size is past ${d.name}'s hold — they will only fund $${(d.maxCommit / 1e6).toFixed(0)}M of it.`
+      : maxCommit && ltcMax < uncapped - 0.005 ? `A job this size is past ${d.name}'s hold — they will only fund $${(maxCommit / 1e6).toFixed(0)}M of it.`
       : undefined;
     return { lender: d.name, ratePct, ltcMax: +Math.max(0, ltcMax).toFixed(3), points: d.points, open, why };
   });

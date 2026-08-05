@@ -82,7 +82,7 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
     lenderRel: {},
     // Sized to the town they lend to — see initLenders. A newGame with no
     // parcels (a few harnesses) falls back to the reference island.
-    lenders: initLenders(parcels ? Object.values(stockFromParcels(parcels)).reduce((a, v) => a + v, 0) : undefined),
+    lenders: initLenders(parcels ? stockFromParcels(parcels) : undefined),
     // A NAME, NOT A PRONOUN. Generated from the seed so it is stable across
     // reloads of the same run, and editable from the Books page.
     firm: { ...generateFirmName(seed), foundedM: 0, epithets: [] },

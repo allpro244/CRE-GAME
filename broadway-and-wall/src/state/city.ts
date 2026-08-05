@@ -50,7 +50,22 @@ export function currentSeed(city = currentCity()): number {
  * more submarkets in it, so it can only be chosen at the start of a game.
  */
 const SIZE_KEY = "bw:size:";
+const DEV_KEY = "bw:density";
 export const DEFAULT_SIZE = "city";
+export const DEFAULT_DEV = "village";
+
+/**
+ * How built-up the town starts. Browser-local like the seed, and read at
+ * generation time — it decides what buildings exist, so like the size it can
+ * only be chosen when a run begins.
+ */
+export function currentDev(): string {
+  try { return localStorage.getItem(DEV_KEY) || DEFAULT_DEV; } catch { return DEFAULT_DEV; }
+}
+
+export function setDev(d: string): void {
+  try { localStorage.setItem(DEV_KEY, d); } catch { /* private mode: the standard town, which is survivable */ }
+}
 
 export function currentSize(city = currentCity()): string {
   try {

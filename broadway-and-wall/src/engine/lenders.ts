@@ -17,9 +17,9 @@
 // Which is the whole point: a credit crunch you can read a quarter early is a
 // decision. One that arrives as a number going down is weather.
 import type { GameState } from "./types";
-import { logBooks } from "./types";
+import { logBooks, BUILT_CLASSES } from "./types";
 import { PRODUCTS } from "./debt";
-import { rng, rrange } from "./market";
+import { rng, rrange, RENT_BASE, NATURAL_VAC, CAP_BASE } from "./market";
 import { DEPOSIT_INSURANCE, chooseEra } from "./regime";
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
@@ -145,39 +145,70 @@ export function lenderNames(): string[] {
 }
 
 /**
- * The standing stock of the island these books were sized against — New Alden
- * at its standard size. Banks are scaled off it so a bigger town gets bigger
- * banks; see initLenders.
+ * THE SHARE OF THIS TOWN'S PROPERTY DEBT EACH DESK HOLDS.
+ *
+ * A conduit is enormous and fragile; a hometown bank is neither. These are the
+ * relative weights the five original absolute books were in, kept because the
+ * SHAPE of the lending market — one dominant securitiser, a patient life
+ * company, a regional, a small local, a fund — is a fact about the business.
+ * What is no longer asserted is how big the market is; see initLenders.
  */
-const REF_CITY_SF = 15_350_000;
+const BOOK_SHARE: Record<LenderKind | "firstharbor", number> = {
+  conduit: 900 / 2410, life: 640 / 2410, fund: 310 / 2410, bank: 420 / 2410, firstharbor: 140 / 2410,
+};
 
-export function initLenders(citySf?: number): Lender[] {
-  // A CITY'S BANKS ARE THE SIZE OF THE CITY.
+/**
+ * WHAT THE PROPERTY IN THIS TOWN IS WORTH, roughly, from its own rents.
+ *
+ * Income capitalised — the same way every other price in this engine is
+ * discovered. Stock by class, at that class's opening rent net of a typical
+ * operating load and its natural vacancy, divided by that class's opening cap
+ * rate. It is an order-of-magnitude figure and it only ever has to be one:
+ * nothing is priced off it, it only sets how big the banks are.
+ */
+function cityPropertyValue(stock: Record<string, number>): number {
+  let v = 0;
+  for (const k of BUILT_CLASSES) {
+    const sf = stock[k] ?? 0;
+    if (sf <= 0) continue;
+    // ~35% of gross goes out as opex and non-recovered costs across classes.
+    const noiPsf = RENT_BASE[k] * (1 - NATURAL_VAC[k]) * 0.65;
+    v += (sf * noiPsf) / (CAP_BASE[k] / 100);
+  }
+  return v;
+}
+
+export function initLenders(stock?: Record<string, number>): Lender[] {
+  // A CITY'S BANKS ARE THE SIZE OF THE CITY, AND THEY DERIVE IT.
   //
   // These five books were absolute numbers, which was fine while there was one
-  // island at one size. Now the map can be a third of the standard town or
-  // four times it, and a fixed $2.41bn of book against a market with four
-  // times the buildings in it is not a hard game, it is a broken one: every
-  // deal past the first few would be past somebody's hold limit, the desks
-  // would ration permanently, and a credit crunch would be the default state
-  // of a large city rather than something that happens to it.
+  // island at one size. The first fix was a scale factor against a reference
+  // island — which worked, and was still an asserted number: it said "the
+  // standard town has 15.35M sf" in a constant, so the engine only knew how
+  // big a city was by comparing it to one particular city that happened to
+  // ship. That is a label, not a mechanism, and it would have gone stale the
+  // first time anybody retuned the generator.
   //
-  // Scaled on the square root rather than linearly, because banking
-  // concentrates: a city four times the size does not have four times as many
-  // lenders of the same size, it has bigger ones AND more of them, and this
-  // game only models five names. Two times the book across five desks in a
-  // four-times city is the shape that leaves a large market genuinely harder
-  // to finance in without making it impossible — and it is the one thing here
-  // that is a judgement rather than a measurement, so it is written as one.
-  const scale = citySf && citySf > 0 ? Math.sqrt(citySf / REF_CITY_SF) : 1;
+  // A property lender's book is a share of the property debt in its market,
+  // and the property debt is a share of what the property is worth. So: value
+  // the town from its own rents and cap rates, lend against it at a normal
+  // system-wide loan-to-value, and split that between the desks in the
+  // proportions their names imply. No reference city, nothing to keep in sync,
+  // and a map the generator has never produced before still gets banks the
+  // right size for it.
+  //
+  // 55% is the aggregate loan-to-value of a whole commercial property market
+  // rather than of one deal — individual loans are written at 60-75%, plenty
+  // of buildings are owned free and clear, and the two together land near
+  // here. It reproduces the original $2.41bn on the standard island to within
+  // a few per cent, which is the check that it is a restatement and not a
+  // rebalance.
+  const SYSTEM_LTV = 0.55;
+  const total = stock ? cityPropertyValue(stock) * SYSTEM_LTV : 2_410_000_000;
   return lenderNames().map((name, i) => {
     const k = KIND[name] ?? { kind: "bank" as LenderKind, capitalRatio: 0.10, brittle: 1 };
-    // Book size is scale, and scale is what decides whether they can write your
-    // cheque. A conduit is enormous and fragile; a hometown bank is neither.
-    const book = Math.round(scale * (k.kind === "conduit" ? 900_000_000
-      : k.kind === "life" ? 640_000_000
-      : k.kind === "fund" ? 310_000_000
-      : name === "First Harbor Bank" ? 140_000_000 : 420_000_000));
+    const share = name === "First Harbor Bank" ? BOOK_SHARE.firstharbor : BOOK_SHARE[k.kind];
+    const book = Math.max(20_000_000, Math.round(total * share));
     return {
       id: "L" + i, name, kind: k.kind,
       book, capital: Math.round(book * k.capitalRatio),
@@ -444,8 +475,7 @@ export function tickLenders(s: GameState) {
   // A save from before banks were sized to the city, or a state built without
   // parcels: the econ already knows the stock, so use it.
   if (!s.lenders?.length) {
-    const st = s.econ?.stock;
-    s.lenders = initLenders(st ? Object.values(st).reduce((a, v) => a + v, 0) : undefined);
+    s.lenders = initLenders(s.econ?.stock);
   }
   recountYours(s);
   const e = s.econ;

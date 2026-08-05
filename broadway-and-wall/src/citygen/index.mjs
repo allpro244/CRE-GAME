@@ -31,6 +31,34 @@ export function sizeList() {
   return Object.entries(SIZES).map(([id, s]) => ({ id, ...s }));
 }
 
+/**
+ * HOW BUILT-UP THE TOWN IS ON DAY ONE, for the picker.
+ *
+ * A subset of DENSITY in citygen.mjs — that table has nine entries and some of
+ * them are historical calibration points rather than places anyone would
+ * choose to play. These are the ones that read as different towns. `village`
+ * is the default and is exactly the town the game has always shipped; every
+ * other entry is a stated move away from it in BOTH height and build-out,
+ * because a town that has not been built up yet is not merely shorter, it has
+ * gaps in it.
+ *
+ * The numbers in the notes are measured on the standard island, seed 20261.
+ */
+export const DEVELOPMENT = [
+  { id: "frontier",   name: "Frontier",   note: "43% of the lots are still empty and nothing stands above nine floors. Almost everything here is yours to build." },
+  { id: "village",    name: "Young town", note: "The standard opening. A quarter of it unbuilt, a low skyline, and somewhere to go." },
+  { id: "provincial", name: "Provincial", note: "A working town that has filled in. A quarter vacant still, and a few thirty-floor buildings." },
+  { id: "harbour",    name: "Established", note: "A real skyline and less dirt — 23% vacant, towers to forty floors." },
+  { id: "spiky",      name: "Boomtown",   note: "Low fabric, dramatic towers. A town that boomed once and stopped — plenty of gaps beside forty-eight floors." },
+  { id: "capital",    name: "Capital",    note: "Built up and tall. Under a fifth of it vacant; you will be redeveloping more than you build." },
+  { id: "metropolis", name: "Metropolis", note: "13% vacant and sixty floors. There is very little dirt left — this is a game about buying what exists." },
+];
+export const DEFAULT_DEVELOPMENT = "village";
+
+export function developmentList() {
+  return DEVELOPMENT.map((d) => ({ ...d }));
+}
+
 /** The cities you can play, for the picker. */
 export function cityList() {
   return Object.keys(CITIES).map((id) => ({

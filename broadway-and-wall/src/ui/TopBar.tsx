@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { headlineEpithet } from "@/engine/firm";
 import { useStore, derivedNetWorth, derivedQuarterCF } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { currentCity, currentSeed, currentSize, listCities, switchCity, type CityInfo } from "@/state/city";
-import { sizeList } from "@/citygen/index.mjs";
+import { currentCity, currentSeed, currentSize, currentDev, listCities, switchCity, type CityInfo } from "@/state/city";
+import { sizeList, developmentList } from "@/citygen/index.mjs";
 import { usd, pct } from "./format";
 
 export default function TopBar() {
@@ -37,6 +37,8 @@ export default function TopBar() {
   const sizes = sizeList();
   const [newIsland, setNewIsland] = useState(currentCity());
   const [newSize, setNewSize] = useState(currentSize());
+  const devs = developmentList();
+  const [newDev, setNewDev] = useState(currentDev());
   // Lot count goes as the square of the scale. The standard island is about
   // 1,420 lots measured, which is what this quotes off — it is a preview of a
   // decision, not a promise, so it is rounded hard.
@@ -307,7 +309,7 @@ export default function TopBar() {
             onClick={() => {
               if (!armNewRun) { setArmNewRun(true); setTimeout(() => setArmNewRun(false), 12000); return; }
               setArmNewRun(false);
-              useStore.getState().newRun(newIsland, newSize);
+              useStore.getState().newRun(newIsland, newSize, newDev);
             }}
           >
             {armNewRun ? "Erase this game?" : "↺ New city"}
@@ -335,6 +337,21 @@ export default function TopBar() {
                   <span className="city-item-tag">{s.note}</span>
                 </button>
               ))}
+              {/* HOW MUCH OF IT IS ALREADY THERE. Not a graphics preset: it
+                  decides how many lots are still dirt and how tall what stands
+                  on the rest is, which is the difference between a game about
+                  building a city and a game about buying one. */}
+              <div className="city-menu-head" style={{ marginTop: 6 }}>how built up</div>
+              {devs.map((d) => (
+                <button
+                  key={d.id}
+                  className={"city-item" + (d.id === newDev ? " city-item-on" : "")}
+                  onClick={() => setNewDev(d.id)}
+                >
+                  <span className="city-item-name">{d.name}</span>
+                  <span className="city-item-tag">{d.note}</span>
+                </button>
+              ))}
               {cities.length > 1 && (
                 <>
                   <div className="city-menu-head" style={{ marginTop: 6 }}>which island</div>
@@ -352,10 +369,10 @@ export default function TopBar() {
               )}
               <button
                 className="city-item city-item-go"
-                onClick={() => { setArmNewRun(false); useStore.getState().newRun(newIsland, newSize); }}
+                onClick={() => { setArmNewRun(false); useStore.getState().newRun(newIsland, newSize, newDev); }}
               >
                 <span className="city-item-name">
-                  Build {cities.find((c) => c.id === newIsland)?.name ?? "it"} at {sizes.find((s) => s.id === newSize)?.name ?? "standard"}
+                  Build {cities.find((c) => c.id === newIsland)?.name ?? "it"} · {sizes.find((s) => s.id === newSize)?.name ?? "standard"} · {devs.find((d) => d.id === newDev)?.name ?? "young"}
                 </span>
                 <span className="city-item-tag">Erases the game you are playing.</span>
               </button>

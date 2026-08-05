@@ -1242,6 +1242,12 @@ export interface GameState {
    * standard island, which is what they were.
    */
   citySize?: string;
+  /**
+   * How built-up the town was generated. Third half of the address: the same
+   * island, seed and size at Frontier and at Metropolis are different towns
+   * with different deeds. Absent means the standard opening.
+   */
+  cityDev?: string;
   rng: number;
   month: number;
   cash: number;

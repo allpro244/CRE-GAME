@@ -280,16 +280,40 @@ function classFor(flavor, heat, rand) {
 // landmark peak is capped (peakCap, in floors). Everything downstream — stock,
 // the space market, land value — self-normalises off the parcels, so any
 // preset is a playable economy, not just a picture.
+// `vac` MULTIPLIES HOW MUCH OF THE TOWN IS STILL A HOLE IN THE GROUND, and it
+// belongs on this ladder because in life it is the same ladder. A town that has
+// not been built up yet is not merely shorter — it has gaps in it, whole
+// blocks nobody has got to, and the industrial edge is half fields. A city that
+// HAS been built up is tall AND full: the empty lots went first, which is why
+// a mature downtown redevelops rather than infills.
+//
+// Modelling height without build-out would have made "less developed" mean a
+// metropolis with its towers filed down — every lot still taken, nowhere to
+// build, which is the opposite of a young town.
+//
+// The floor on this matters more than the ceiling: unbuilt land is the game's
+// entire surface, so even the most built-out preset has to leave a player
+// somewhere to go. Measured rather than assumed — see the sweep in the commit.
+// VILLAGE IS THE ANCHOR AT 1.00, not `shipped`, because `village` is the
+// preset the game actually defaults to — the `mat` column is scaled against a
+// historical baseline that nothing has used for a long time. Setting the
+// ladder against `shipped` made the standard town 41% vacant instead of the
+// 27.5% it has always been, which is a change to everybody's game smuggled in
+// under an option nobody had switched on. An option has to leave the default
+// untouched or it is not an option.
 export const DENSITY = {
-  village:    { mat: 0.25, tower: 0.45, towerP: 0.50, peakCap: 14 },
-  town1900:   { mat: 0.45, tower: 0.60, towerP: 0.70, peakCap: 22 },
-  provincial: { mat: 0.62, tower: 0.75, towerP: 0.85, peakCap: 30 },
-  harbour:    { mat: 0.80, tower: 0.88, towerP: 0.90, peakCap: 40 },
-  shipped:    { mat: 1.00, tower: 1.00, towerP: 1.00, peakCap: 52 },
-  capital:    { mat: 1.20, tower: 1.12, towerP: 1.10, peakCap: 62 },
-  metropolis: { mat: 1.45, tower: 1.28, towerP: 1.25, peakCap: 75 },
+  // Below the default: a town that has barely happened yet. Whole blocks
+  // nobody has got to, and nothing above eight floors anywhere.
+  frontier:   { mat: 0.16, tower: 0.30, towerP: 0.30, peakCap: 8,  vac: 1.45 },
+  village:    { mat: 0.25, tower: 0.45, towerP: 0.50, peakCap: 14, vac: 1.00 },
+  town1900:   { mat: 0.45, tower: 0.60, towerP: 0.70, peakCap: 22, vac: 0.92 },
+  provincial: { mat: 0.62, tower: 0.75, towerP: 0.85, peakCap: 30, vac: 0.84 },
+  harbour:    { mat: 0.80, tower: 0.88, towerP: 0.90, peakCap: 40, vac: 0.76 },
+  shipped:    { mat: 1.00, tower: 1.00, towerP: 1.00, peakCap: 52, vac: 0.68 },
+  capital:    { mat: 1.20, tower: 1.12, towerP: 1.10, peakCap: 62, vac: 0.60 },
+  metropolis: { mat: 1.45, tower: 1.28, towerP: 1.25, peakCap: 75, vac: 0.50 },
   // low fabric with dramatic towers — the skyline of a town that boomed once
-  spiky:      { mat: 0.50, tower: 1.10, towerP: 1.15, peakCap: 48 },
+  spiky:      { mat: 0.50, tower: 1.10, towerP: 1.15, peakCap: 48, vac: 0.95 },
 };
 
 export function generateCity(cfg) {
@@ -662,7 +686,18 @@ export function generateCity(cfg) {
   }
   function vacancyP(name, heat) {
     const edge = Math.pow(1 - heat, 1.5);
-    return Math.min(0.88, Math.max(0.2, flavorOf(name).vac * (0.42 + 1.05 * edge)));
+    // THE MULTIPLIER GOES OUTSIDE THE ORIGINAL CLAMP, and that ordering is the
+    // whole point. Folding it inside and widening the floor from 0.2 to 0.06
+    // changed the DEFAULT town — the 0.2 was binding on core and resi lots at
+    // high heat (0.26 x 0.42 = 0.109), so downtown got measurably less vacant
+    // for everybody, from an option nobody had switched on. Clamped first, then
+    // scaled, `village` is exactly the town it has always been and every other
+    // preset is a stated multiple of it.
+    const base = Math.min(0.88, Math.max(0.2, flavorOf(name).vac * (0.42 + 1.05 * edge)));
+    // The maturity multiplier rides the same edge gradient rather than
+    // flattening it: a built-up city fills its centre first and still has gaps
+    // on the industrial fringe, which is where the gaps actually are.
+    return Math.min(0.88, Math.max(0.05, base * (DZ.vac ?? 1)));
   }
   function yearFor(name) {
     const [a0, a1, p, b0, b1] = flavorOf(name).yr;

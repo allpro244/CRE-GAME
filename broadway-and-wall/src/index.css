@@ -125,6 +125,12 @@ body {
   text-transform: uppercase; color: var(--ink-dim); border-bottom: 1px solid #ddd6c2; margin-bottom: 3px;
 }
 .city-locked { cursor: default; }
+.city-size-lots { font-weight: 400; color: var(--ink-dim); letter-spacing: 0.2px; }
+.city-item-go {
+  margin-top: 6px; border-top: 1px solid #ddd6c2; padding-top: 8px;
+  background: rgba(176, 127, 30, 0.10);
+}
+.city-item-go:hover { background: rgba(176, 127, 30, 0.20); }
 .city-item:hover { background: rgba(176, 127, 30, 0.12); }
 .city-item-on { background: rgba(176, 127, 30, 0.18); }
 .city-item-name { font-size: 13px; font-weight: 600; color: var(--ink); letter-spacing: 0.3px; }

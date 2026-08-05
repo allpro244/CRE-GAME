@@ -22,9 +22,14 @@
 // else's corner now.
 import { generateCity } from "./citygen.mjs";
 import { buildCityData } from "./build.mjs";
-import { CITIES, TAGLINES } from "./cities.mjs";
+import { CITIES, TAGLINES, SIZES, DEFAULT_SIZE, scaleCity } from "./cities.mjs";
 
-export { CITIES, TAGLINES };
+export { CITIES, TAGLINES, SIZES, DEFAULT_SIZE };
+
+/** The sizes an island can be built at, for the picker. */
+export function sizeList() {
+  return Object.entries(SIZES).map(([id, s]) => ({ id, ...s }));
+}
 
 /** The cities you can play, for the picker. */
 export function cityList() {
@@ -49,8 +54,14 @@ export function randomSeed() {
  * output, which is what lets a save store six digits instead of two megabytes.
  */
 export function makeCity(cityId, seed, opts) {
-  const cfg = CITIES[cityId];
-  if (!cfg) throw new Error(`unknown city: ${cityId}`);
+  const base = CITIES[cityId];
+  if (!base) throw new Error(`unknown city: ${cityId}`);
+  // The island's size is part of what the town IS, so it is settled before the
+  // generator runs and never afterwards — same island, same seed, same size
+  // gives the same city, which is what lets a save store three fields instead
+  // of two megabytes.
+  const sizeId = opts?.size && SIZES[opts.size] ? opts.size : DEFAULT_SIZE;
+  const cfg = scaleCity(base, SIZES[sizeId].k);
   const city = generateCity({ ...cfg, seed: seed >>> 0, density: opts?.density });
   const data = buildCityData({
     rawParcels: city.parcels,
@@ -62,6 +73,8 @@ export function makeCity(cityId, seed, opts) {
   return {
     id: cityId,
     seed: seed >>> 0,
+    size: sizeId,
+    sizeK: SIZES[sizeId].k,
     name: cfg.name,
     parcels: data.parcels,
     adjacency: data.adjacency,

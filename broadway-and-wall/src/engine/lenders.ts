@@ -144,15 +144,40 @@ export function lenderNames(): string[] {
   return [...new Set(PRODUCTS.map((p) => p.lender))];
 }
 
-export function initLenders(): Lender[] {
+/**
+ * The standing stock of the island these books were sized against — New Alden
+ * at its standard size. Banks are scaled off it so a bigger town gets bigger
+ * banks; see initLenders.
+ */
+const REF_CITY_SF = 15_350_000;
+
+export function initLenders(citySf?: number): Lender[] {
+  // A CITY'S BANKS ARE THE SIZE OF THE CITY.
+  //
+  // These five books were absolute numbers, which was fine while there was one
+  // island at one size. Now the map can be a third of the standard town or
+  // four times it, and a fixed $2.41bn of book against a market with four
+  // times the buildings in it is not a hard game, it is a broken one: every
+  // deal past the first few would be past somebody's hold limit, the desks
+  // would ration permanently, and a credit crunch would be the default state
+  // of a large city rather than something that happens to it.
+  //
+  // Scaled on the square root rather than linearly, because banking
+  // concentrates: a city four times the size does not have four times as many
+  // lenders of the same size, it has bigger ones AND more of them, and this
+  // game only models five names. Two times the book across five desks in a
+  // four-times city is the shape that leaves a large market genuinely harder
+  // to finance in without making it impossible — and it is the one thing here
+  // that is a judgement rather than a measurement, so it is written as one.
+  const scale = citySf && citySf > 0 ? Math.sqrt(citySf / REF_CITY_SF) : 1;
   return lenderNames().map((name, i) => {
     const k = KIND[name] ?? { kind: "bank" as LenderKind, capitalRatio: 0.10, brittle: 1 };
     // Book size is scale, and scale is what decides whether they can write your
     // cheque. A conduit is enormous and fragile; a hometown bank is neither.
-    const book = k.kind === "conduit" ? 900_000_000
+    const book = Math.round(scale * (k.kind === "conduit" ? 900_000_000
       : k.kind === "life" ? 640_000_000
       : k.kind === "fund" ? 310_000_000
-      : name === "First Harbor Bank" ? 140_000_000 : 420_000_000;
+      : name === "First Harbor Bank" ? 140_000_000 : 420_000_000));
     return {
       id: "L" + i, name, kind: k.kind,
       book, capital: Math.round(book * k.capitalRatio),
@@ -416,7 +441,12 @@ export function lenderAppetite(s: GameState, name: string): number {
 export function tickLenders(s: GameState) {
   // The receiver pays out on its own clock, whatever the banks are doing.
   tickReceivership(s);
-  if (!s.lenders?.length) s.lenders = initLenders();
+  // A save from before banks were sized to the city, or a state built without
+  // parcels: the econ already knows the stock, so use it.
+  if (!s.lenders?.length) {
+    const st = s.econ?.stock;
+    s.lenders = initLenders(st ? Object.values(st).reduce((a, v) => a + v, 0) : undefined);
+  }
   recountYours(s);
   const e = s.econ;
   const vac = e.cityVac ?? {};

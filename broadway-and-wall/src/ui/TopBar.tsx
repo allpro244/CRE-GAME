@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { headlineEpithet } from "@/engine/firm";
 import { useStore, derivedNetWorth, derivedQuarterCF } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { currentCity, currentSeed, listCities, switchCity, type CityInfo } from "@/state/city";
+import { currentCity, currentSeed, currentSize, listCities, switchCity, type CityInfo } from "@/state/city";
+import { sizeList } from "@/citygen/index.mjs";
 import { usd, pct } from "./format";
 
 export default function TopBar() {
@@ -31,6 +32,18 @@ export default function TopBar() {
   const [cityOpen, setCityOpen] = useState(false);
   const cityRef = useRef<HTMLDivElement>(null);
   const newRunRef = useRef<HTMLDivElement>(null);
+  // What the NEXT run will be built as. Held here rather than committed as it
+  // is clicked, so choosing a size is not the same act as erasing a campaign.
+  const sizes = sizeList();
+  const [newIsland, setNewIsland] = useState(currentCity());
+  const [newSize, setNewSize] = useState(currentSize());
+  // Lot count goes as the square of the scale. The standard island is about
+  // 1,420 lots measured, which is what this quotes off — it is a preview of a
+  // decision, not a promise, so it is rounded hard.
+  const lotsAt = (k: number) => {
+    const n = 1420 * k * k;
+    return n >= 1000 ? `${(n / 1000).toFixed(n < 3000 ? 1 : 0)}k` : `${Math.round(n / 50) * 50}`;
+  };
 
   /* THE BAR PUBLISHES ITS OWN HEIGHT.
      Everything that hangs below it — the parcel panel, the page overlays, the
@@ -292,26 +305,60 @@ export default function TopBar() {
             className={"lens-btn" + (armNewRun ? " lens-on" : "")}
             title="Start over. A brand new town — every block re-cut, every lot line new, every building somewhere else — and a chance to pick a different island. No holdings, $6M cash."
             onClick={() => {
-              if (!armNewRun) { setArmNewRun(true); setTimeout(() => setArmNewRun(false), 8000); return; }
+              if (!armNewRun) { setArmNewRun(true); setTimeout(() => setArmNewRun(false), 12000); return; }
               setArmNewRun(false);
-              useStore.getState().newRun();
+              useStore.getState().newRun(newIsland, newSize);
             }}
           >
             {armNewRun ? "Erase this game?" : "↺ New city"}
           </button>
-          {armNewRun && cities.length > 1 && (
+          {armNewRun && (
             <div className="city-menu city-menu-right">
-              <div className="city-menu-head">or start over somewhere else</div>
-              {cities.filter((c) => c.id !== currentCity()).map((c) => (
+              {/* HOW BIG, which is a decision about what game you are playing
+                  rather than a graphics setting. Land area goes as the square
+                  of the scale, so this moves the lot count from a few hundred
+                  to a few thousand — and with it the standing stock, the size
+                  of the banks that lend against it, and how much of the town
+                  one firm can ever be. It can only be set here because the
+                  deeds in a save only exist on the island they were cut on. */}
+              <div className="city-menu-head">how big</div>
+              {sizes.map((s) => (
                 <button
-                  key={c.id}
-                  className="city-item"
-                  onClick={() => { setArmNewRun(false); useStore.getState().newRun(c.id); }}
+                  key={s.id}
+                  className={"city-item" + (s.id === newSize ? " city-item-on" : "")}
+                  onClick={() => setNewSize(s.id)}
                 >
-                  <span className="city-item-name">{c.name}</span>
-                  <span className="city-item-tag">{c.tagline}</span>
+                  <span className="city-item-name">
+                    {s.name}
+                    <span className="city-size-lots"> · about {lotsAt(s.k)} lots</span>
+                  </span>
+                  <span className="city-item-tag">{s.note}</span>
                 </button>
               ))}
+              {cities.length > 1 && (
+                <>
+                  <div className="city-menu-head" style={{ marginTop: 6 }}>which island</div>
+                  {cities.map((c) => (
+                    <button
+                      key={c.id}
+                      className={"city-item" + (c.id === newIsland ? " city-item-on" : "")}
+                      onClick={() => setNewIsland(c.id)}
+                    >
+                      <span className="city-item-name">{c.name}</span>
+                      <span className="city-item-tag">{c.tagline}</span>
+                    </button>
+                  ))}
+                </>
+              )}
+              <button
+                className="city-item city-item-go"
+                onClick={() => { setArmNewRun(false); useStore.getState().newRun(newIsland, newSize); }}
+              >
+                <span className="city-item-name">
+                  Build {cities.find((c) => c.id === newIsland)?.name ?? "it"} at {sizes.find((s) => s.id === newSize)?.name ?? "standard"}
+                </span>
+                <span className="city-item-tag">Erases the game you are playing.</span>
+              </button>
             </div>
           )}
         </div>

@@ -17,7 +17,7 @@ import { hire, fire, refreshPool, POOL_REFRESH_M } from "@/engine/staff";
 import { normalizeParcels } from "@/engine/mix";
 import { netWorth } from "@/engine/value";
 import { loadGame, saveGame, listSaves, deleteSave, type SaveMeta } from "@/engine/save";
-import { currentCity, currentSeed, setSeed, rerollCity, setCity } from "@/state/city";
+import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize } from "@/state/city";
 import { makeCity, type GeneratedCity } from "@/citygen/index.mjs";
 
 export type Lens = "none" | "land" | "demand" | "owners";
@@ -135,7 +135,7 @@ interface AppState {
   hireStaff: (candidateId: number) => void;
   fireStaff: (staffId: number) => void;
   postJob: () => void;
-  newRun: (island?: string) => void;
+  newRun: (island?: string, size?: string) => void;
   devGrant: () => void;
   saveTo: (slot: string) => Promise<void>;
   loadFrom: (slot: string) => Promise<void>;
@@ -898,7 +898,7 @@ export const useStore = create<AppState>((set, get) => ({
    * parcel table, the adjacency graph, four map sources and the skyline
    * underneath a live game.
    */
-  newRun: (island?: string) => {
+  newRun: (island?: string, size?: string) => {
     // The autosave is the authority on which town you are in — it was played
     // there — so rolling a new seed without clearing it means the reload puts
     // you straight back in the old city. Erasing the game and rolling the town
@@ -913,6 +913,9 @@ export const useStore = create<AppState>((set, get) => ({
     const target = island && island !== currentCity() ? island : undefined;
     if (target) setCity(target);
     const to = AUTO();                                      // where we are starting
+    // The island size is settled before the town is rolled, because the town
+    // is rolled AT that size. Omitted means keep whatever this island was on.
+    if (size) setSize(size);
     rerollCity();                                           // rolls a town on `to`
     void deleteSave(from)
       .catch(() => { /* nothing saved: nothing to clear */ })
@@ -967,11 +970,18 @@ export async function loadData() {
     const saved = (await loadGame(AUTO())) ?? (await loadGame("auto"));
     const seed = (saved?.citySeed ?? currentSeed(island)) >>> 0;
     setSeed(seed, island);
+    // The save is the authority on size too. A run played on a Great City has
+    // deeds that only exist on a Great City — rebuilding it at the standard
+    // size would not load a smaller town, it would throw every parcel in the
+    // save away. Older saves carry none, which means standard, which is what
+    // they were built at.
+    const size = saved?.citySize ?? currentSize(island);
+    setSize(size, island);
 
     // The density preset is a browser-local choice, not part of the save: the
     // same seed renders the same town at whatever scale is set. Default is the
     // shipped calibration until one is chosen.
-    const built = makeCity(island, seed, { density: localStorage.getItem("bw:density") ?? undefined });
+    const built = makeCity(island, seed, { size, density: localStorage.getItem("bw:density") ?? undefined });
     // Any record the pipeline still files as "mixed" becomes its dominant use
     // plus an explicit mix, once, at the door.
     const parcels = normalizeParcels(built.parcels as ParcelTable);
@@ -985,7 +995,7 @@ export async function loadData() {
     // A save only fits if every deed in it exists in THIS town. Across seeds
     // it will not, and that is not a corrupt save — it is a save from a city
     // that no longer exists, which is exactly what a reroll means.
-    const fits = saved && saved.v === 32 && saved.citySeed === seed
+    const fits = saved && saved.v === 32 && saved.citySeed === seed && (saved.citySize ?? "city") === size
       && Object.keys(saved.holdings).every((b) => parcels[b])
       && saved.listings.every((l) => parcels[l.bbl]);
     if (fits) {
@@ -994,6 +1004,7 @@ export async function loadData() {
       const bbls = Object.keys(parcels);
       const g = firstListings(newGame(seed, parcels), parcels, bbls);
       g.citySeed = seed;
+      g.citySize = size;
       useStore.setState({ game: g });
       void saveGame(AUTO(), g).catch(() => { /* private mode: play on unsaved */ });
     }

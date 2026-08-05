@@ -30,7 +30,9 @@ declare module "@/citygen/index.mjs" {
     };
   }
 
-  export function makeCity(cityId: string, seed: number, opts?: { density?: string }): GeneratedCity;
+  export function makeCity(cityId: string, seed: number, opts?: { density?: string; size?: string }): GeneratedCity;
+  export function sizeList(): { id: string; k: number; name: string; note: string }[];
+  export const SIZES: Record<string, { k: number; name: string; note: string }>;
   export function randomSeed(): number;
   export function cityList(): { id: string; name: string; tagline: string }[];
   export const CITIES: Record<string, { name: string; district: string; seed: number }>;

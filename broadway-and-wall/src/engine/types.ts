@@ -1234,6 +1234,14 @@ export interface GameState {
    * of parcel table.
    */
   citySeed?: number;
+  /**
+   * How big the island was built. The seed alone does not identify a town any
+   * more — the same seed at Hamlet and at Great City are different places with
+   * different deeds — so this travels with the game for the same reason the
+   * seed does. Absent on saves written before sizes existed, which means the
+   * standard island, which is what they were.
+   */
+  citySize?: string;
   rng: number;
   month: number;
   cash: number;

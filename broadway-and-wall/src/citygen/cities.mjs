@@ -247,3 +247,80 @@ export const TAGLINES = {
 // engine invents for itself is both better looking and honest about what it
 // is, and procedural generation is where this is going anyway.
 export const CITIES = { newalden, kestrel };
+
+/**
+ * HOW BIG THIS TOWN IS — and the one thing that must NOT change with it.
+ *
+ * A bigger island is more blocks, not bigger blocks. Manhattan's blocks are
+ * the same size as a small town's; there are simply a great many more of them.
+ * So the scale multiplies every POSITION and every EXTENT in the geography —
+ * the coastline, the core radii, the partition cuts, the parks, the piers —
+ * and leaves the street grid alone: stPitch, avePitch, streetW, aveW and the
+ * organic districts' block-area range are dimensions of a city block, and a
+ * block is a block at any city size.
+ *
+ * Scaling the pitch too would have been the easy version and it would have
+ * been wrong twice over. Visually it is a zoom, not a bigger town — the same
+ * map with everything fattened. Economically it is worse: lot areas, buildable
+ * envelopes, rent per square foot and cost per square foot are all quoted
+ * against real dimensions, so a 2x grid would hand every parcel four times the
+ * land under the same building and quietly break every number the economy is
+ * measured in.
+ *
+ * Land area goes as the square of this, so lot count roughly does too: 0.55
+ * gives about a third of a standard town, 2.0 about four times one.
+ *
+ * The core RADII do scale. A core's reach is the decay length of the land
+ * gradient, and downtown in a big city genuinely does pull further than
+ * downtown in a small one. Keeping them fixed would make a large island almost
+ * entirely fringe — one small bright middle and miles of nothing — which is a
+ * different city rather than a bigger one.
+ */
+export const SIZES = {
+  hamlet: { k: 0.55, name: "Hamlet", note: "A few hundred lots. You can hold every corner of it in your head." },
+  town:   { k: 0.78, name: "Town", note: "Half the standard map. Tight, and every mistake is visible." },
+  city:   { k: 1.00, name: "City", note: "The standard island — about fourteen hundred lots, two miles end to end." },
+  metro:  { k: 1.45, name: "Metropolis", note: "Twice the land. Submarkets you will never personally visit." },
+  giant:  { k: 2.00, name: "Great City", note: "Four times the land. A career is not long enough to learn all of it." },
+};
+export const DEFAULT_SIZE = "city";
+
+const isNum = (v) => typeof v === "number" && Number.isFinite(v);
+const pt = (p, k) => (Array.isArray(p) ? [p[0] * k, p[1] * k] : p);
+
+/** Scale the third term of a half-plane [nx, ny, c]: the normal is a direction, c is a distance. */
+function scaleCuts(node, k) {
+  if (!node || typeof node !== "object" || !node.cut) return node;
+  return {
+    ...node,
+    cut: [node.cut[0], node.cut[1], node.cut[2] * k],
+    pos: scaleCuts(node.pos, k),
+    neg: scaleCuts(node.neg, k),
+  };
+}
+
+export function scaleCity(cfg, k) {
+  if (!isNum(k) || Math.abs(k - 1) < 1e-6) return cfg;
+  const box = (o) => ({ ...o, cx: o.cx * k, cy: o.cy * k, w: o.w * k, h: o.h * k });
+  return {
+    ...cfg,
+    coast: cfg.coast.map((p) => pt(p, k)),
+    coastAmp: cfg.coastAmp * k,
+    esplanade: cfg.esplanade * k,
+    // `w` on a core is a WEIGHT, not a width — it stays.
+    cores: cfg.cores.map((c) => ({ ...c, xy: pt(c.xy, k), r: c.r * k })),
+    partition: scaleCuts(cfg.partition, k),
+    // districts deliberately untouched — see the note above.
+    parks: (cfg.parks ?? []).map(box),
+    diagonals: (cfg.diagonals ?? []).map(box),
+    piers: (cfg.piers ?? []).map((ring) => ring.map((p) => pt(p, k))),
+    // [x, y, bearing] — the bearing is an angle.
+    cranes: (cfg.cranes ?? []).map(([x, y, d]) => [x * k, y * k, d]),
+    ships: (cfg.ships ?? []).map(([x, y, d]) => [x * k, y * k, d]),
+    // [x, y, w, h, bearing]
+    breakwaters: (cfg.breakwaters ?? []).map(([x, y, w, h, d]) => [x * k, y * k, w * k, h * k, d]),
+    // A station's weight is its ridership, not a distance.
+    stations: (cfg.stations ?? []).map((st) => ({ ...st, xy: pt(st.xy, k) })),
+    labels: (cfg.labels ?? []).map((l) => ({ ...l, xy: pt(l.xy, k) })),
+  };
+}

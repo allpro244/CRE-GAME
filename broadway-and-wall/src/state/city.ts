@@ -40,6 +40,32 @@ export function currentSeed(city = currentCity()): number {
   return fresh;
 }
 
+/**
+ * HOW BIG THE ISLAND IS, per island, chosen when a run starts.
+ *
+ * Kept beside the seed and for the same reason: the pair (island, seed, size)
+ * is what identifies a town, and all three have to survive a reload or the
+ * deeds in a save point at parcels that no longer exist. It is not a graphics
+ * setting — a bigger map is a bigger market with more stock, bigger banks and
+ * more submarkets in it, so it can only be chosen at the start of a game.
+ */
+const SIZE_KEY = "bw:size:";
+export const DEFAULT_SIZE = "city";
+
+export function currentSize(city = currentCity()): string {
+  try {
+    return localStorage.getItem(SIZE_KEY + city) || DEFAULT_SIZE;
+  } catch {
+    return DEFAULT_SIZE;
+  }
+}
+
+export function setSize(size: string, city = currentCity()): void {
+  try {
+    localStorage.setItem(SIZE_KEY + city, size);
+  } catch { /* private mode: the run is standard-sized, which is survivable */ }
+}
+
 export function setSeed(seed: number, city = currentCity()): void {
   try {
     localStorage.setItem(SEED_KEY + city, String(seed >>> 0));

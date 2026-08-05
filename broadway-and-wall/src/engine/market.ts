@@ -227,7 +227,26 @@ export function stockFromParcels(parcels: ParcelTable): Record<BuiltClass, numbe
       out[r.class as BuiltClass] += r.bldgArea;
     }
   }
-  for (const k of BUILT_CLASSES) out[k] = Math.max(1_200_000, Math.round(out[k]));
+  // THE FLOOR IS A SHARE OF THE TOWN, NOT A FIXED NUMBER OF FEET.
+  //
+  // It was 1,200,000 sf flat, which was right for the one island size the game
+  // had. It stops being right the moment the map can be a third of that or
+  // four times it: on a Hamlet, retail (0.56M sf standing) and industrial
+  // (0.20M) both sat BELOW the flat floor, so on a small island two of the
+  // four sectors were not priced by the buildings on the map at all — the
+  // constant was. A delivery moved vacancy half as much as it should have,
+  // and the map stopped being the market.
+  //
+  // The reason the floor exists is regional spillover — industrial tenants in
+  // a harbour town take sheds on the mainland too — and a mainland is
+  // proportional to the town in front of it, not a fixed size. 1.2M sf was
+  // 7.8% of the standard island's 15.35M sf of stock, so stating it as that
+  // share reproduces today's behaviour exactly at standard size and carries
+  // correctly to every other. The absolute minimum underneath it is only there
+  // so an empty or broken map cannot divide by zero.
+  const total = BUILT_CLASSES.reduce((a, k) => a + out[k], 0);
+  const floor = Math.max(150_000, total * 0.078);
+  for (const k of BUILT_CLASSES) out[k] = Math.max(floor, Math.round(out[k]));
   return out;
 }
 export const SECTOR_LABEL = { office: "Office", retail: "Retail", multifamily: "Apartments", industrial: "Industrial" } as const;

@@ -1565,6 +1565,26 @@ float occlusion(vec2 uv) {
   return clamp(occ / 12.0 * uAoStrength, 0.0, 1.0) * reach;
 }`;
 
+// SOLVED ONCE, AT HALF SIZE, AND BLURRED.
+//
+// The occlusion is needed in two places — as a multiply onto the pavement
+// MapLibre drew, and again inside our own composite — and the first version
+// computed it independently in both, twelve depth taps each, at full
+// resolution. That is the same answer paid for twice.
+//
+// Solving it into its own buffer is cheaper AND better: a twelve-tap estimator
+// on a rotated disk is inherently noisy, and the standard treatment is exactly
+// the one this now gets for free — resolve at half resolution, then blur. AO
+// is the lowest-frequency thing in the frame; there was never any detail in it
+// to protect.
+const AO_CALC_FRAG = /* glsl */ `
+precision highp float;
+varying vec2 vUv;
+` + AO_GLSL + /* glsl */ `
+void main() {
+  gl_FragColor = vec4(vec3(occlusion(vUv)), 1.0);
+}`;
+
 // The occlusion, alone, as a multiply over whatever is already in MapLibre's
 // buffer. This is the pass that darkens the STREET — the pavement is drawn by
 // MapLibre, so the only way to put a building's contact shadow on it is to
@@ -1572,13 +1592,12 @@ float occlusion(vec2 uv) {
 const AO_MULT_FRAG = /* glsl */ `
 precision highp float;
 varying vec2 vUv;
-` + AO_GLSL + /* glsl */ `
+uniform sampler2D uAoTex;
 void main() {
-  float o = occlusion(vUv);
+  float o = texture2D(uAoTex, vUv).r;
   // Cool, because ambient occlusion is the absence of SKY light and the sky
   // here is blue. A neutral grey multiply reads as dirt.
-  vec3 tint = mix(vec3(1.0), vec3(0.62, 0.68, 0.80), o);
-  gl_FragColor = vec4(tint, 1.0);
+  gl_FragColor = vec4(mix(vec3(1.0), vec3(0.62, 0.68, 0.80), o), 1.0);
 }`;
 
 // CREPUSCULAR RAYS — the reason to put the sun at 28 degrees in the first place.
@@ -1636,7 +1655,11 @@ uniform vec3 uSunTint;
 uniform float uGlare;
 uniform sampler2D uShaft;
 uniform float uShaftAmt;
-` + AO_GLSL + /* glsl */ `
+uniform sampler2D uAoTex;
+// still needed here, though the occlusion moved out: the glare has to know
+// whether a building is standing between the camera and the sun
+uniform sampler2D uDepth;
+` + /* glsl */ `
 
 // A MODEL CITY PHOTOGRAPHS LIKE A MODEL CITY.
 //
@@ -1712,7 +1735,7 @@ void main() {
   // The same occlusion the multiply pass put on the street, applied to the
   // city's own geometry. Before the bloom: light that has already spilled off
   // a surface is not sitting in the crevice any more.
-  c.rgb *= mix(vec3(1.0), vec3(0.62, 0.68, 0.80), occlusion(vUv));
+  c.rgb *= mix(vec3(1.0), vec3(0.62, 0.68, 0.80), texture2D(uAoTex, vUv).r);
 
   c.rgb += texture2D(uBloom, vUv).rgb * uBloomAmt;
 
@@ -1908,9 +1931,41 @@ void main() {
   if (SNOW > 0.001) base = snowOn(base, smoothstep(0.30, 0.85, n.z), 0.85);
   float vis = sunVis(vW, n);
   float ao = mix(0.62, 1.0, clamp(vW.z / 5.0, 0.0, 1.0));
-  vec3 light = SUN_COL * (max(dot(n, SUN_DIR), 0.0) * vis * 0.92) + hemiLight(n, ao);
+  vec3 light;
+  if (uFoliage > 0.5) {
+    // A CANOPY IS NOT AN OPAQUE SOLID, and shading it like one is why every
+    // tree in this city has been a green rock. Two things are wrong with a
+    // Lambert term on foliage, and both have one-line fixes.
+    //
+    // It has no hard terminator. A canopy is a thousand leaves at a thousand
+    // angles, not one surface, so the light wraps around it well past where
+    // the geometric normal says it should stop.
+    float wrap = max((dot(n, SUN_DIR) + 0.42) / 1.42, 0.0);
+    //
+    // And it TRANSMITS. Look at a sunlit tree from the shaded side and it does
+    // not read dark, it GLOWS — you are seeing light that came THROUGH a leaf
+    // rather than off one, which is why it arrives warmer and greener than the
+    // light that fell on it. It is the single most recognisable thing foliage
+    // does and it costs one dot product: strongest looking into the sun,
+    // strongest on the faces the sun cannot reach directly.
+    vec3 Vv = normalize(uCam - vW);
+    float thru = pow(max(dot(-Vv, SUN_DIR), 0.0), 2.6)
+               * (1.0 - max(dot(n, SUN_DIR), 0.0))
+               * (1.0 - BARE);      // in February there is nothing to shine through
+    light = SUN_COL * (wrap * vis * 0.80)
+          + hemiLight(n, ao)
+          + SUN_COL * vec3(0.72, 1.02, 0.50) * (thru * vis * 0.62);
+  } else {
+    light = SUN_COL * (max(dot(n, SUN_DIR), 0.0) * vis * 0.92) + hemiLight(n, ao);
+  }
   gl_FragColor = vec4(aerial(grade(base * light), vW, uCam), uOpacity);
 }`;
+
+/** GLSL's smoothstep, on the CPU side, for uniforms that ease. */
+function smoothstep(e0: number, e1: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+}
 
 const SUN_LEN = 1.05799;
 const SUN_EL_MID = 27.96, SUN_EL_AMP = 6.0;
@@ -1967,6 +2022,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private bloomB: THREE.WebGLRenderTarget | null = null;
   private reflectRT: THREE.WebGLRenderTarget | null = null;
   private shaftRT: THREE.WebGLRenderTarget | null = null;
+  private aoA: THREE.WebGLRenderTarget | null = null;
+  private aoB: THREE.WebGLRenderTarget | null = null;
   private postScene = new THREE.Scene();
   private postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private postQuad: THREE.Mesh | null = null;
@@ -1975,6 +2032,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private compMat!: THREE.ShaderMaterial;
   private aoMultMat!: THREE.ShaderMaterial;
   private shaftMat!: THREE.ShaderMaterial;
+  private aoCalcMat!: THREE.ShaderMaterial;
   private postSize = new THREE.Vector2(0, 0);
   /** Exposed for playtests: the only way to assert a demolition really happened. */
   posAttrs: THREE.BufferAttribute[] = [];
@@ -2083,7 +2141,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         // less; much beyond this and a building starts occluding the one
         // across the street, which is a shadow, not contact.
         uAoRadius: { value: 2.5 },
-        uAoStrength: { value: 1.55 },
+        uAoStrength: { value: 1.30 },
+      });
+      this.aoCalcMat = new THREE.ShaderMaterial({
+        vertexShader: POST_VERT, fragmentShader: AO_CALC_FRAG, depthTest: false, depthWrite: false,
+        uniforms: aoUniforms(),
       });
       this.aoMultMat = new THREE.ShaderMaterial({
         vertexShader: POST_VERT, fragmentShader: AO_MULT_FRAG, depthTest: false, depthWrite: false,
@@ -2093,7 +2155,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         blending: THREE.CustomBlending,
         blendSrc: THREE.ZeroFactor, blendDst: THREE.SrcColorFactor,
         blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
-        uniforms: aoUniforms(),
+        uniforms: { uAoTex: { value: null } },
       });
       this.shaftMat = new THREE.ShaderMaterial({
         vertexShader: POST_VERT, fragmentShader: SHAFT_FRAG, depthTest: false, depthWrite: false,
@@ -2134,7 +2196,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           uSunTint: { value: new THREE.Vector3(1.0, 0.86, 0.66) },
           uGlare: { value: 0.30 },
           uShaft: { value: null }, uShaftAmt: { value: 0.42 },
-          ...aoUniforms(),
+          uAoTex: { value: null }, uDepth: { value: null },
         },
       });
       this.postQuad = new THREE.Mesh(quad, this.brightMat);
@@ -2175,6 +2237,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // The reflection runs at half resolution. It is about to be displaced by
       // a wave normal and then mixed in at a Fresnel weight; there is no
       // resolution in it left to see.
+      this.aoA?.dispose(); this.aoB?.dispose();
+      const aw = Math.max(2, size.x >> 1), ah = Math.max(2, size.y >> 1);
+      this.aoA = new THREE.WebGLRenderTarget(aw, ah, { ...opts, depthBuffer: false });
+      this.aoB = new THREE.WebGLRenderTarget(aw, ah, { ...opts, depthBuffer: false });
       this.shaftRT?.dispose();
       this.shaftRT = new THREE.WebGLRenderTarget(bw, bh, { ...opts, depthBuffer: false });
       this.reflectRT?.dispose();
@@ -4523,12 +4589,53 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     //    to MapLibre — so it goes down first, as a multiply on what is already
     //    in the buffer, before anything of ours covers it.
     const invProj = new THREE.Matrix4().copy(this.camera.projectionMatrix).invert();
-    for (const mat of [this.aoMultMat, this.compMat]) {
-      mat.uniforms.uDepth.value = this.sceneRT.depthTexture;
-      (mat.uniforms.uInvProj.value as THREE.Matrix4).copy(invProj);
-      (mat.uniforms.uAoTexel.value as THREE.Vector2).set(1 / this.postSize.x, 1 / this.postSize.y);
-      (mat.uniforms.uAoCam.value as THREE.Vector3).copy(this.camUni.value);
+    {
+      const u = this.aoCalcMat.uniforms;
+      u.uDepth.value = this.sceneRT.depthTexture;
+      (u.uInvProj.value as THREE.Matrix4).copy(invProj);
+      (u.uAoTexel.value as THREE.Vector2).set(1 / this.postSize.x, 1 / this.postSize.y);
+      (u.uAoCam.value as THREE.Vector3).copy(this.camUni.value);
     }
+    // solve once at half size, then blur the estimator's noise off it
+    if (this.aoA && this.aoB) {
+      this.blit(this.aoCalcMat, this.aoA);
+      // A NARROWER KERNEL THAN THE BLOOM USES. This is the same separable
+      // gaussian, but its taps sit at 1.4 and 3.2 texels — at half resolution
+      // that is a six-pixel reach at full size, which is fine on the low
+      // frequencies of a courtyard and far too wide on a fire escape, where it
+      // smears the occlusion off the ironwork and onto the wall behind as a
+      // blob. Sixty per cent of the step keeps the estimator's noise down
+      // without spreading contact past the thing making it.
+      const aw = this.aoA.width, ah = this.aoA.height;
+      this.blurMat.uniforms.uTex.value = this.aoA.texture;
+      (this.blurMat.uniforms.uDir.value as THREE.Vector2).set(0.6 / aw, 0);
+      this.blit(this.blurMat, this.aoB);
+      this.blurMat.uniforms.uTex.value = this.aoB.texture;
+      (this.blurMat.uniforms.uDir.value as THREE.Vector2).set(0, 0.6 / ah);
+      this.blit(this.blurMat, this.aoA);
+      this.aoMultMat.uniforms.uAoTex.value = this.aoA.texture;
+      this.compMat.uniforms.uAoTex.value = this.aoA.texture;
+    }
+    this.compMat.uniforms.uDepth.value = this.sceneRT.depthTexture;
+    {
+    }
+    // THE LENS READS THE CAMERA.
+    //
+    // A fixed horizontal focus band assumes the frame has a depth gradient
+    // running up it, and that is only true when the view is pitched. Looking
+    // straight down, every pixel is at the same distance and a band of sharp
+    // across the middle is not shallow focus, it is a smear at the top and
+    // bottom of a map for no reason. It also has to get out of the way when
+    // the player is down at street level actually looking at a building:
+    // depth of field is decoration and legibility is not.
+    {
+      const pitch = this.map.getPitch();
+      const zoom = this.map.getZoom();
+      const byPitch = smoothstep(14, 52, pitch);
+      const byZoom = 1 - smoothstep(16.8, 18.4, zoom);
+      this.compMat.uniforms.uDefocus.value = 2.9 * byPitch * byZoom;
+    }
+
     // Where the sun sits on screen. Projected on the CPU because it is one
     // point per frame, and the fragment shader has no way to find it: the
     // combined matrix MapLibre hands over is not decomposable into a camera
@@ -4545,14 +4652,20 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       su.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5, inFront ? 1 : 0);
     }
 
-    // 3b. light shafts, at quarter res, off the same depth and sun position
-    if (this.shaftRT) {
+    // 3b. light shafts, at quarter res, off the same depth and sun position.
+    //     Skipped outright when the sun is behind the camera: the shader
+    //     already returns black in that case, and a pass whose every output is
+    //     known is a pass not worth dispatching. The composite is told to stop
+    //     adding it so the last frame's shafts cannot linger.
+    const sunUp = (this.compMat.uniforms.uSunScreen.value as THREE.Vector3).z > 0.5;
+    if (this.shaftRT && sunUp) {
       this.shaftMat.uniforms.uDepth.value = this.sceneRT.depthTexture;
       (this.shaftMat.uniforms.uSunScreen.value as THREE.Vector3)
         .copy(this.compMat.uniforms.uSunScreen.value as THREE.Vector3);
       this.blit(this.shaftMat, this.shaftRT);
       this.compMat.uniforms.uShaft.value = this.shaftRT.texture;
     }
+    this.compMat.uniforms.uShaftAmt.value = sunUp ? 0.42 : 0.0;
 
     this.renderer.setRenderTarget(prevTarget);
     this.blit(this.aoMultMat, prevTarget);

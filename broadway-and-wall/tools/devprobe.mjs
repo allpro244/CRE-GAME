@@ -54,14 +54,21 @@ function bestPlan(g, parcels, bbl, budget) {
   const rec = E.resolveRec(parcels, g, bbl);
   if (!rec || !rec.lotArea) return null;
   let best = null;
+  // COVERAGE IS A DECISION AND THE PROBE HAS TO MAKE IT. Fixing it at 0.6 was
+  // an instrument error worth recording: land is now priced at its highest and
+  // best use, so a bot that always builds six-tenths of the lot pays for an
+  // envelope it then declines to build and loses money on every site. A
+  // developer sweeps the ladder; so does this.
   for (const use of USES) {
-    const fl = E.maxFloorsFor(rec, 0.6, use);
-    const plan = E.planDevelopment(g, parcels, bbl, use, fl, 0.6, "gmp", 1);
-    if (!plan || !(plan.costTotal > 0)) continue;
-    if (plan.equityAtClose + plan.pointsCost > budget) continue;
-    const spread = plan.yieldOnCost - plan.exitCap;
-    if (spread < MIN_SPREAD) continue;
-    if (!best || spread > best.spread) best = { use, fl, spread, plan };
+    for (const cov of [0.45, 0.6, 0.75, 0.9]) {
+      const fl = E.maxFloorsFor(rec, cov, use);
+      const plan = E.planDevelopment(g, parcels, bbl, use, fl, cov, "gmp", 1);
+      if (!plan || !(plan.costTotal > 0)) continue;
+      if (plan.equityAtClose + plan.pointsCost > budget) continue;
+      const spread = plan.yieldOnCost - plan.exitCap;
+      if (spread < MIN_SPREAD) continue;
+      if (!best || spread > best.spread) best = { use, fl, cov, spread, plan };
+    }
   }
   return best;
 }
@@ -165,7 +172,20 @@ for (let run = 0; run < SEEDS; run++) {
       // tax is the other half — planDevelopment charges a taxLoad and noiYr
       // does not, so the tax comes off explicitly.
       const stabNOI = E.noiYr(rec, g.econ, h.condition, true) - E.propertyTaxYr(rec, h);
-      const stabVal = E.assetValue(rec, g.econ, h.condition);
+      // THE MERCHANT'S EXIT, CAPITALISED DIRECTLY — and this is the THIRD
+      // instrument error on this investigation, so it is worth naming.
+      // assetValue is an AS-IS mark: it applies a lease-up discount to a new
+      // building's occupancy, and it floors the answer at 92% of land value,
+      // which is correct appraisal practice (a building worth less than its
+      // cleared site is a teardown) and completely wrong as a measure of what
+      // a stabilised job is worth. Once land was priced properly that floor
+      // became the binding term on most new buildings and the probe started
+      // reporting 2.67% "cap rates" — which is land, not income.
+      // A merchant builder sells a STABILISED building at a market cap, so
+      // that is what gets measured: the same NOI the desk underwrote, over the
+      // same cap the desk quoted.
+      const exitCapPct = E.capRateFor(rec, g.econ, h.condition);
+      const stabVal = exitCapPct > 0 ? stabNOI / (exitCapPct / 100) : 0;
       deliveries.push({
         seed, bbl, use: w.use, sf: rec.bldgArea, months: g.month - w.startM,
         cost: w.basis || w.cost, equity: w.equity, occ, noi, val, stabNOI, stabVal,

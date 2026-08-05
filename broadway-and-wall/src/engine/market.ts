@@ -136,7 +136,7 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
 // basis points over the long-run average all-in loan, which is thin positive
 // leverage: enough that debt earns its risk in a normal market, not so much
 // that borrowing is free money.
-export const CAP_BASE = { office: 6.85, retail: 6.95, multifamily: 5.95, industrial: 7.45 } as const;
+export const CAP_BASE = { office: 8.50, retail: 7.00, multifamily: 5.60, industrial: 7.00 } as const;
 
 // WHAT A NEW BUILDING YIELDS ON ITS COST when rents and costs are both at their
 // opening index, and what the capital stack behind it needs on top of the debt
@@ -231,7 +231,7 @@ export function stockFromParcels(parcels: ParcelTable): Record<BuiltClass, numbe
   return out;
 }
 export const SECTOR_LABEL = { office: "Office", retail: "Retail", multifamily: "Apartments", industrial: "Industrial" } as const;
-export const RENT_BASE = { office: 62, retail: 88, multifamily: 46, industrial: 16 } as const; // $/sf/yr
+export const RENT_BASE = { office: 43.65, retail: 42.91, multifamily: 30.22, industrial: 18.00 } as const; // $/sf/yr
 // The natural (frictional) vacancy per class — the rate at which neither side
 // of the table has the upper hand. Below it landlords push rents; above it
 // tenants extract concessions. Office runs structurally looser than housing.

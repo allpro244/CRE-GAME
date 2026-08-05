@@ -12,7 +12,8 @@ import { logBooks, monthLabel, serviceSpec, planSpec } from "./types";
 import { demandNow } from "./demand";
 import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock } from "./market";
 import { firmShort } from "./firm";
-import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, assetValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling } from "./value";
+import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, assetValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling,
+  HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
@@ -58,12 +59,12 @@ const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
  * A better corner still beats the hurdle comfortably; a poor one does not
  * pencil, which is why most land in a real city stays empty.
  */
-export const HARD_COST_PSF: Record<BuiltClass, number> = {
-  office: 560,        // net $62/sf against a 5.3% exit
-  multifamily: 345,   // net $37/sf against a 4.6% exit — the thinnest margin in the book
-  retail: 865,        // net $97/sf; podium retail is expensive and earns it
-  industrial: 140,    // net $17/sf against a 6.6% exit
-};
+// THE NUMBERS MOVED DOWN A LAYER. Land is now priced as a residual — what a
+// building on this envelope is worth, less what it costs to build — and a
+// residual cannot be computed without the cost of construction. value.ts sits
+// below this module and cannot import it, so the constants live there and are
+// re-exported here, where every existing caller still finds them.
+export { HARD_COST_PSF, SOFT_COST, CONTINGENCY } from "./value";
 
 /**
  * A PROGRAMME, not a class. You do not build "mixed use" — you build shops at
@@ -112,9 +113,7 @@ function overMix(mix: UseMix, f: (u: BuiltClass) => number): number {
 function specShare(mix: UseMix): number {
   return (mix.office ?? 0) + (mix.retail ?? 0);
 }
-export const SOFT_COST = 0.16;        // design, legal, permits, insurance, financing fees
 const CONSTR_SPREAD = 2.4;     // over the index, interest-only
-export const CONTINGENCY = 0.06;  // held against change orders; unspent is yours
 
 /**
  * THE CONTRACT.
@@ -370,7 +369,7 @@ export const ABS_MAX_FLOORS = 90;
  * can carry more than two floors should be getting a mixed building rather
  * than a squashed one — see `useForZone` and `retailWantsMixed`.
  */
-export const RETAIL_FLOORS_MAX = 2;
+export { RETAIL_FLOORS_MAX } from "./value";
 /**
  * AND A SHED IS NOT A TOWER EITHER.
  *
@@ -382,7 +381,7 @@ export const RETAIL_FLOORS_MAX = 2;
  * is two or three levels with ramps. Two floors is the same allowance retail
  * gets and for the same reason — the use has a shape, and the shape is flat.
  */
-export const INDUSTRIAL_FLOORS_MAX = 2;
+export { INDUSTRIAL_FLOORS_MAX } from "./value";
 export const MAX_FLOORS_BY_USE: Partial<Record<DevUse, number>> = {
   retail: RETAIL_FLOORS_MAX,
   industrial: INDUSTRIAL_FLOORS_MAX,

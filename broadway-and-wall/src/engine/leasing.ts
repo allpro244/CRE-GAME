@@ -389,7 +389,7 @@ export function notReadySf(h: Holding, month: number, use?: BuiltClass): number 
   );
 }
 
-export const MAKE_READY_PSF = 6; // turn cost, $/sf before cost inflation
+export const MAKE_READY_PSF = 3.9; // turn cost, $/sf before cost inflation
 
 // Anchor pre-lease for a development: one large credit tenant signed before
 // delivery, long paper at a small discount to market for taking the risk.
@@ -1373,7 +1373,7 @@ export function exclusiveFeeRate(h: Holding | undefined): number | undefined {
 // per foot, because you are doing the whole job to a generic spec rather than
 // contributing to theirs — and because you are doing it before anyone has
 // signed. The premium over the allowance is what you pay for speed.
-export const SPEC_COST_PSF: Record<string, number> = { office: 48, retail: 26, industrial: 9, multifamily: 0 };
+export const SPEC_COST_PSF: Record<string, number> = { office: 31.5, retail: 17, industrial: 5.9, multifamily: 0 };
 export const SPEC_MONTHS = 4;
 
 export function specSuiteQuote(s: GameState, rec: ParcelRecord, h: Holding, use: BuiltClass, sf: number) {

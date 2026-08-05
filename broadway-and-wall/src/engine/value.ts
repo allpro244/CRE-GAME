@@ -166,6 +166,207 @@ export function siteQualityMult(rec: { lotArea: number; farMaxComm: number; farM
   return clamp(useable * (siteQ(Math.max(400, rec.lotArea * 0.70)) / REF_SITE_Q), 0.82, 1.22);
 }
 
+/**
+ * WHAT IT COSTS TO PUT UP A BUILDING. These live here, below dev.ts, because
+ * land is priced as a residual and a residual cannot be computed without them.
+ * dev.ts re-exports them, so every existing caller is untouched.
+ *
+ * These are not observed averages. They are SOLVED: the cost at which a new
+ * building on a median site yields about 150bp over its own exit cap, after
+ * operating cost, after what a typical lease bills back, and after the
+ * property tax the owner carries. A better corner still beats the hurdle
+ * comfortably; a poor one does not pencil, which is why most land in a real
+ * city stays empty.
+ */
+export const HARD_COST_PSF: Record<BuiltClass, number> = {
+  office: 368,        // Sunbelt CCI 0.657x gateway; band $280-380
+  multifamily: 227,   // Sunbelt wrap/podium band $220-280
+  retail: 230,        // Sunbelt SHELL, not gateway podium; band $200-260
+  industrial: 92,     // Sunbelt band $90-130
+};
+export const SOFT_COST = 0.16;    // design, legal, permits, insurance, financing fees
+export const CONTINGENCY = 0.06;  // held against change orders; unspent is yours
+
+/**
+ * THE DEVELOPER'S MARGIN — what the trade requires to take the risk, as a
+ * share of cost. 15-20% on cost is the standard hurdle a lender underwrites
+ * to and a developer will not go below; below it, nobody breaks ground.
+ */
+const DEV_MARGIN = 0.17;
+/**
+ * A RESIDUAL IS A FUTURE NUMBER AND LAND IS BOUGHT TODAY. Two to three years
+ * of entitlement and construction at a land discount rate of about 12% — the
+ * rate the trade actually applies to a site, well above the rate applied to a
+ * finished building, because a site earns nothing while it waits.
+ *   1 / 1.12^2.5 = 0.752
+ */
+const BUILD_DISCOUNT = 0.752;
+/**
+ * AND WHEN NOTHING PENCILS TODAY, THE DIRT IS STILL WORTH SOMETHING.
+ *
+ * Most land in most cities does not support a new building at today's rents,
+ * and it does not therefore trade at zero — it trades on the option. Somebody
+ * holds it, pays the taxes and waits for the rent to arrive, and what they
+ * will pay is the residual at the rents they expect at the next peak,
+ * discounted for the wait. About five years at the same 12%:
+ *   1 / 1.12^5 = 0.567
+ * and a peak is worth roughly a quarter more than the middle of the cycle,
+ * which is the amplitude the rent index actually runs at.
+ */
+const WAIT_DISCOUNT = 0.567;
+const PEAK_RENT_MULT = 1.25;
+
+/**
+ * THE SHAPE EACH USE HAS. Shops and sheds are flat — two floor plates is the
+ * whole allowance, for the same reason in both cases: the use has a shape.
+ * dev.ts re-exports these; they live here because the residual has to know
+ * them or it prices a fringe lot as thirty storeys of shops.
+ *
+ * Getting this wrong was the first draft's biggest error and it is worth
+ * writing down: the residual took the best use over the FULL envelope, so a
+ * 15.7-FAR lot was priced as fifteen floor-plates of retail at $865/sf
+ * against retail rents. That produced a land price nothing could pay, and
+ * measurably: zero jobs pencilled anywhere in the city.
+ */
+export const RETAIL_FLOORS_MAX = 2;
+export const INDUSTRIAL_FLOORS_MAX = 2;
+
+/** The four things anybody would consider building here. */
+const RESIDUAL_USES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
+const USE_FLOORS_MAX: Partial<Record<BuiltClass, number>> = {
+  retail: RETAIL_FLOORS_MAX,
+  industrial: INDUSTRIAL_FLOORS_MAX,
+};
+
+/**
+ * THE RESIDUAL: WHAT A FOOT OF THIS DIRT IS WORTH TO THE ONLY PERSON WHO CAN
+ * USE IT.
+ *
+ * This is the fix for the fault that paid for the whole $6M-to-$200M run.
+ * `landPsfNow` used to be `rec.landPsf` — a static number stamped on the
+ * parcel by the city generator — multiplied by indices. It never read what
+ * could be BUILT on the lot. The only channel from the envelope to the price
+ * was `siteQualityMult`, and measured across 1,421 parcels that channel was
+ * broken in three separate ways at once: 29.4% of the city rested on its
+ * [0.82, 1.22] clamp, its correlation with buildable FAR was -0.305, and its
+ * correlation with demand was -0.283. Both BACKWARDS. `pnpm audit` reports
+ * backwards as worse than broken, because a wire that transmits the wrong way
+ * is a fake that also lies.
+ *
+ * The consequence was that land price per buildable square foot FELL across
+ * the top demand deciles ($157.89 -> $60.74 -> $88.12) while the residual
+ * doubled and doubled again ($110.73 -> $202.89 -> $477.73), and land came to
+ * 13.6% of an all-in development budget on the best corners in town against
+ * 35-50% in life. Buildings were therefore worth far more than they cost, and
+ * the difference was simply handed to whoever broke ground.
+ *
+ * So: land is valued the way land is actually valued. Take the highest and
+ * best use, work out what the finished building is worth, subtract what it
+ * costs to build and the margin the trade requires, and what is left is what
+ * somebody can pay for the dirt. This is the residual method and it is the
+ * primary approach for any site whose value is in its development potential.
+ *
+ * Everything it needs — rent, occupancy, operating cost, recovery, cap rate,
+ * construction cost — is already modelled and none of it reads land value, so
+ * there is no circularity. The envelope enters where it belongs: multiplied
+ * through the buildable area, which is why a 34-FAR lot is now worth many
+ * times a 2-FAR lot beside it instead of slightly less.
+ */
+/**
+ * FIT-OUT AND COMMISSIONS, per rentable foot. The same numbers planDevelopment
+ * carries in its lease-up reserve — the single biggest reason a marginal deal
+ * does not pencil, which makes leaving them out of the residual the single
+ * biggest way to overpay for dirt.
+ */
+const TI_PSF: Record<BuiltClass, number> = { office: 21, retail: 14.5, industrial: 3.3, multifamily: 4.6 };
+
+export function residualLandPsf(rec: ParcelRecord, econ: Econ, rentMult = 1): number {
+  if (!rec.lotArea) return 0;
+  // The envelope you can actually reach, not the one the zoning text allows.
+  // This is what siteQualityMult was reaching for and could not express as a
+  // price multiplier: a narrow lot that cannot fit an efficient floor plate
+  // builds less, and building less is exactly how that fact should reach the
+  // price. Folding three such lots into one site raises the realisation for
+  // all three, which is the entire economics of assemblage.
+  const far = farMaxForLocal(rec) * envelopeRealisation(rec);
+  if (!(far > 0)) return 0;
+
+  let best = 0;
+  for (const use of RESIDUAL_USES) {
+    // WHAT THIS USE CAN ACTUALLY BUILD HERE. Shops and sheds are two floor
+    // plates, so on a high-FAR lot they leave most of the envelope on the
+    // table and cannot bid for it — which is exactly why a tall zone gets a
+    // tower and not a very expensive supermarket. At 0.85 site coverage, two
+    // floors is 1.7 FAR of usable envelope and no more.
+    const maxFl = USE_FLOORS_MAX[use];
+    const usable = maxFl === undefined ? far : Math.min(far, maxFl * 0.85);
+    if (!(usable > 0)) continue;
+
+    // Stabilised income per square foot of BUILDING, at the same occupancies
+    // planDevelopment underwrites to, so the desk and the dirt agree.
+    const rent = useRentPsfYr(rec, econ, "good", use) * rentMult;
+    if (!(rent > 0)) continue;
+    const occ = use === "multifamily" ? 0.95 : 0.90;
+    const opex = opexPsf(use, econ, false);
+    const recov = RECOVERY_RATE[use] ?? 0;
+    const noiPsf = rent * occ - opex * (1 - recov * occ);
+    if (!(noiPsf > 0)) continue;
+
+    // Property tax is charged on the finished value, so value and tax define
+    // each other. Solved rather than iterated:
+    //     V = (NOI - V·t·(1-r)) / c   =>   V = NOI / (c + t·(1-r))
+    // Priced as a building of THIS use on THIS corner. `mix` has to go with
+    // the class or mixOf hands back the parcel's existing stack and every use
+    // gets the same cap rate — which would make the choice between them a
+    // rent comparison with no yield in it.
+    const cap = capRateFor({ ...rec, class: use, mix: undefined } as ParcelRecord, econ, "good") / 100;
+    const denom = cap + TAX_RATE * (1 - recov);
+    if (!(denom > 0)) continue;
+    const valuePsf = noiPsf / denom;
+
+    // ZONING COUNTS GROSS AND THE CONTRACTOR BILLS GROSS; YOU LET RENTABLE.
+    // The core, the stairs, the risers and the corridor come out of every
+    // floor. Leaving this out was worth 10-30% of overstated income on every
+    // lot in the city, and it fell straight through into the land price.
+    const eff = plateEfficiency(rec.lotArea * 0.7);
+    // HEIGHT COSTS MONEY. The same square foot on floor forty needs more
+    // structure, more lift and more time than it does on floor two — so a
+    // tall envelope is not simply more of a short one, and pricing it as if
+    // it were is how a 34-FAR lot gets valued as thirty-four cheap floors.
+    // Same ladder replacementCostPsf and planDevelopment use.
+    const fl = Math.max(1, Math.round(usable / 0.7));
+    const heightPrem = fl > 30 ? 1.28 : fl > 18 ? 1.18 : fl > 8 ? 1.07 : 1;
+    const costPsf = HARD_COST_PSF[use] * econ.costIdx * heightPrem * (1 + SOFT_COST) * (1 + CONTINGENCY);
+    // ...AND FILLING IT COSTS MONEY TOO. Fit-out and commissions are charged
+    // on the rentable feet, which is where the income is.
+    const fitPsf = (TI_PSF[use] + (use === "multifamily" ? 0 : rent * 6 * 0.045)) * econ.costIdx;
+
+    // THE MARGIN IS EARNED ON ALL THE MONEY, INCLUDING THE LAND.
+    //
+    // The first cut of this took the margin on construction only —
+    //     land = value − cost·(1+m)
+    // — which is the generous form and is not what anybody underwrites. A
+    // developer's hurdle is a return on the WHOLE basis; the dirt is capital
+    // too, and it is at risk from the day it is bought. So:
+    //     value = (cost + land)·(1+m)   =>   land = value/(1+m) − cost
+    // which is the standard residual, and it is strictly tighter. The
+    // difference is not academic: the generous form let the land seller
+    // capture enough of the surplus that a job could not clear its own
+    // hurdle, and 0 of 32 sites in the top demand decile pencilled at all.
+    // This form guarantees a positive spread wherever the residual is
+    // positive, because the margin is taken out before the land is priced.
+    const surplus = (valuePsf * eff) / (1 + DEV_MARGIN) - (costPsf + fitPsf * eff);
+    if (surplus <= 0) continue;
+    best = Math.max(best, surplus * usable);
+  }
+  return best * BUILD_DISCOUNT;
+}
+
+/** farMaxFor lives in dev.ts, which cannot be imported here. Same expression. */
+function farMaxForLocal(rec: { farMaxComm: number; farMaxRes: number }): number {
+  return Math.max(rec.farMaxComm, rec.farMaxRes, 2);
+}
+
 export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
   // DEMAND HAD NO LEVEL EFFECT ON LAND, ONLY A CYCLE EFFECT.
   //
@@ -188,7 +389,46 @@ export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
   const mean = econ.locIdxMean ?? 0.62;
   const level = Math.max(0.35, 1 + 0.85 * (demandIdx(rec.demandScore) - mean));
   const d = demandBeta(rec.demandScore);
-  return rec.landPsf * siteQualityMult(rec) * econ.landIdx * level * (1 + 0.22 * d * econ.cycleDev);
+
+  // THE PRICE OF DIRT IS THE BETTER OF TWO OFFERS, WHICH IS WHAT AN AUCTION IS.
+  //
+  // A BUILDER bids the residual: what the finished building is worth less what
+  // it costs to build less the margin the trade requires. See residualLandPsf.
+  //
+  // A HOLDER bids the option: most land in most cities does not support a new
+  // building at today's rents and does not therefore trade at nothing. Somebody
+  // pays the taxes and waits for the rent to arrive, and what they will pay is
+  // the residual at the rents they expect at the next peak, discounted for the
+  // wait. That bid is what puts a floor under fringe dirt, and it is why a
+  // vacant lot on a bad street still costs money.
+  //
+  // Whichever of them wants it more sets the price. On a prime corner in a good
+  // market the builder wins and the number is large; on a fringe lot in a slump
+  // the holder wins and the number is small but real; and the crossover between
+  // them is exactly where redevelopment pressure starts, which is the most
+  // important line in a city and the game could not draw it before.
+  const builder = residualLandPsf(rec, econ);
+  const holder = residualLandPsf(rec, econ, PEAK_RENT_MULT) * WAIT_DISCOUNT;
+
+  // AND WHAT THE CITY GENERATOR THOUGHT, which is not nothing.
+  //
+  // `rec.landPsf` is a static number stamped on the parcel at generation. It
+  // was the ENTIRE price before this change and that was the fault; it is not
+  // therefore worthless. It carries the map's own texture — the waterfront,
+  // the park frontage, the corner, everything about a location that no income
+  // model can see because it is not in the rent yet. Kept as a minority term
+  // so a residual of zero does not erase a street, and so two lots with the
+  // same envelope on different corners are still different lots.
+  //
+  // It is a MINORITY term deliberately: appraisal practice weights the
+  // residual heavily on a site whose value is in its development potential,
+  // and the sales-comparison memory lightly when it cannot be tested. The
+  // comp wire (tickLandComps -> s.landAdj) is the part that gets tested, and
+  // it multiplies this whole expression downstream.
+  const texture = rec.landPsf * econ.landIdx * level * envelopeRealisation(rec);
+
+  const base = Math.max(builder, holder, texture * 0.30) + texture * 0.14;
+  return base * (1 + 0.22 * d * econ.cycleDev);
 }
 
 export function landValue(rec: ParcelRecord, econ: Econ): number {
@@ -616,8 +856,8 @@ export function physicalOcc(rec: ParcelRecord, h: Holding): number {
  * industrial building instead of an office one, and in what a VACANT shed
  * costs to sit on, which is where the whole difference lands.
  */
-export const OPEX_CONTROLLABLE: Record<BuiltClass, number> = { office: 9.2, retail: 5.4, multifamily: 13.0, industrial: 0.75 };
-export const OPEX_FIXED: Record<BuiltClass, number> = { office: 3.8, retail: 2.6, multifamily: 4.2, industrial: 0.45 };
+export const OPEX_CONTROLLABLE: Record<BuiltClass, number> = { office: 4.17, retail: 3.20, multifamily: 6.21, industrial: 0.50 };
+export const OPEX_FIXED: Record<BuiltClass, number> = { office: 1.72, retail: 1.54, multifamily: 2.01, industrial: 0.30 };
 export const MGMT_FEE = 0.04;   // of effective gross income, industry standard
 
 /** Total operating cost per sf/yr before management fee and property tax. */
@@ -695,7 +935,7 @@ export function recoveryFor(
 
 // Property tax: ~1.1% of assessed value a year. On net leases the tenant
 // reimburses it; the landlord eats the share on vacant space and gross leases.
-export const TAX_RATE = 0.011;
+export const TAX_RATE = 0.0235;
 
 // Cap rates aren't one number per class: a trophy on the square trades tighter
 // than a tired walk-up on the edge of town. Demand is location; condition is

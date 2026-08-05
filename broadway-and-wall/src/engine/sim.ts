@@ -4,7 +4,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
 import { START_CASH, CENTURY_MONTHS, CASH_APY, logBooks, monthLabel } from "./types";
 import { initEcon, rng, rrange, tickEcon } from "./market";
-import { assetValue, holdingNOIYr, holdingValue, monthlyNOI, netWorth, resolveRec } from "./value";
+import { assetValue, holdingNOIYr, holdingValue, monthlyNOI, netWorth, operatingStatement, physicalOcc, resolveRec } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLeasing, depositsOn } from "./leasing";
@@ -312,6 +312,28 @@ export function advanceQuarter(
     h.cfHistory.push(Math.round(cf));
     if (h.cfHistory.length > 40) h.cfHistory.shift();
     monthCF += cf;
+
+    // THE QUARTERLY REPORT ON ONE ASSET. See Holding.hist — the three lines an
+    // owner watches, stamped at the same moment the month's NOI is booked so
+    // the history and the cheque can never disagree. Rent is the in-place
+    // average over LET space, not over the building, because a half-empty
+    // tower at $40 is a $40 building with a leasing problem, not a $20 one.
+    if (s.month % 3 === 0 && rec.bldgArea > 0) {
+      const occNow = physicalOcc(rec, h);
+      const os = operatingStatement(rec, s.econ, h, s.month);
+      const letSf = occNow * rec.bldgArea;
+      const rentPsf = letSf > 0 ? os.baseRent / letSf : 0;
+      (h.hist ??= []).push([
+        s.month,
+        Math.round(occNow * 1000),
+        Math.round(rentPsf * 100),
+        Math.round(noiQ * 12),
+      ]);
+      // 100 years of quarters. Past that the early rows go, which is the right
+      // end to lose: nobody underwrites off the first decade of a century-old
+      // hold, and the alternative is a save that grows without limit.
+      if (h.hist.length > 400) h.hist.shift();
+    }
   }
   s.cash += monthCF;
 

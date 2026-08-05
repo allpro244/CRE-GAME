@@ -567,6 +567,22 @@ export function occupancy(rec: ParcelRecord, econ: Econ): number {
   return blendBy(rec, (u) => useOccupancy(rec, econ, u));
 }
 
+/**
+ * PHYSICAL OCCUPANCY OF A BUILDING YOU ACTUALLY OWN — commercial square feet
+ * under lease plus residential square feet occupied, over the building.
+ * `occupancy` above is the market's read on a building; this is the roll.
+ *
+ * It lived in the panel, which meant the number on screen and any number the
+ * engine wanted to record were two implementations of one quantity. It is here
+ * now, and the panel imports it.
+ */
+export function physicalOcc(rec: ParcelRecord, h: Holding): number {
+  if (!rec.bldgArea) return 0;
+  const comm = h.tenants.reduce((a, t) => a + t.sf, 0);
+  const res = useSf(rec, "multifamily") * (h.occ ?? 0);
+  return Math.min(1, (comm + res) / rec.bldgArea);
+}
+
 // ---------------------------------------------------------------- the opex stack
 // A single blended $/sf hides the two things that actually matter: which line
 // items a tenant reimburses, and which ones the owner can do anything about.

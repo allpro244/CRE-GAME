@@ -3,13 +3,14 @@
 import { useEffect, useMemo, useState, Fragment} from "react";
 import { useStore } from "@/state/store";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
-import type { ParcelTable } from "@/data/types";
+import type { ParcelRecord, ParcelTable } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec } from "@/engine/types";
-import type { BuiltClass, Contract, DevUse, EconHistoryPoint, GameState } from "@/engine/types";
+import type { BuiltClass, Contract, DevUse, EconHistoryPoint, GameState, Holding } from "@/engine/types";
 import {
   assetValue, initialCondition, holdingValue, monthlyNOI, marketRentPsfYr, managedRentPsfYr,
   occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr, useRentPsfYr,
   rollQualitySpread, operatingStatement, recoveryOf, noiAfterTaxYr, netWorth, remainingAbatement, landPsfNow, landValue,
+  physicalOcc as physicalOccupancy,
 } from "@/engine/value";
 import { planDevelopment, constructionQuotes, devMix, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
 import { buyQuote, assemblagePressure, saleTaxQuote } from "@/engine/actions";
@@ -46,17 +47,13 @@ function dominantOf(rec: never): "office" | "retail" | "multifamily" | "industri
 const devUseLabel = (u: string) => (u === "mixed" ? "Mixed-Use" : CLASS_LABEL[u as "office"]);
 
 /**
- * Physical occupancy of the WHOLE building: commercial square feet under
- * lease plus residential square feet occupied, over the building. Dividing
- * commercial leases by the whole floor area reported a full mixed-use block
- * as 47% let because it counted the flats as empty offices.
+ * Physical occupancy of the WHOLE building. It used to be implemented here;
+ * it now lives in value.ts, because the engine records it every quarter and
+ * one quantity does not get two implementations. The `never` shim keeps the
+ * ~7 existing call sites in this file, which pass `rec as never`, untouched.
  */
 function physicalOcc(rec: never, h: { tenants: { sf: number }[]; occ?: number }): number {
-  const area = (rec as unknown as { bldgArea: number }).bldgArea;
-  if (!area) return 0;
-  const comm = h.tenants.reduce((a, t) => a + t.sf, 0);
-  const res = useSf(rec, "multifamily") * (h.occ ?? 0);
-  return Math.min(1, (comm + res) / area);
+  return physicalOccupancy(rec as never as ParcelRecord, h as never as Holding);
 }
 import { sponsorStanding } from "@/engine/sponsor";
 import { marketAppetite, markRival, ownerOf, rivalCondition, gradeOf, assetGrade } from "@/engine/rivals";
@@ -697,7 +694,16 @@ function NWChart({ data, height = 120 }: { data: number[]; height?: number }) {
 }
 
 // ---------------------------------------------------------------- parcel card
-function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
+/**
+ * THE DESKS A BUILDING HAS. The property page grew until it was one scroll of
+ * eleven unrelated cards — a rent roll, a mortgage, a wrecking bill and a bid
+ * list, all in a column. These are the same cards, sorted by which question
+ * you opened the page to ask. The docked panel passes no tab and still gets
+ * the lot, because there you are glancing rather than working.
+ */
+type PropTab = "summary" | "leasing" | "money" | "ops" | "deal" | "build";
+
+function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: PropTab } = {}) {
   const parcels = useStore((s) => s.parcels);
   const adjacency = useStore((s) => s.adjacency);
   const selectedBBL = useStore((s) => s.selectedBBL);
@@ -727,6 +733,8 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
   const leasedSf = holding && commercial ? holding.tenants.reduce((s2, t) => s2 + t.sf, 0) : 0;
   const d = holding ? dscr(rec, game, holding) : null;
   const l = holding ? ltv(rec, game, holding) : null;
+  // No tab means the docked card, which shows the whole file as it always has.
+  const on = (t: PropTab) => tab === undefined || tab === t;
 
   return (
     <div className={embedded ? "panel-embed" : "panel"}>
@@ -743,7 +751,7 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         </div>
       )}
 
-      <div className="chip-row">
+      {on("summary") && <div className="chip-row">
         <span className="chip" style={{ background: CLASS_COLOR[rec.class] }}>{useLabel(rec)}</span>
         <span className="chip chip-zone mono">{rec.zoneDist}</span>
         {holding && <span className="chip chip-owned">OWNED</span>}
@@ -754,14 +762,14 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         {renovating && <span className="chip chip-reno">RENOVATING</span>}
         {holding?.loan?.sweep && <span className="chip chip-sweep">CASH SWEEP</span>}
         {game.landmarks?.[selectedBBL] !== undefined && <span className="chip chip-reno">LANDMARKED</span>}
-      </div>
+      </div>}
 
       {/* WHO OWNS IT. Every building in this city has an owner and for most of
           them that owner is a named firm with a balance sheet you can read —
           and there was nowhere on the record that said so. Knowing that the
           corner you want belongs to the shop that is three points over its
           covenant is the difference between a cold call and a bid. */}
-      {(() => {
+      {on("summary") && (() => {
         if (holding) return null;
         const own = ownerOf(game, selectedBBL);
         // AND WHEN THERE IS NO NAME ON IT. Most of this city belongs to nobody
@@ -789,7 +797,7 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         );
       })()}
 
-      <div className="grid">
+      {on("summary") && <div className="grid">
         <Row k="Appraisal" v={band(selectedBBL, value)} strong />
         {isBuilt && <Row k="Market rent" v={"$" + marketRentPsfYr(rec, game.econ, cond).toFixed(0) + " /sf/yr"} />}
         {isBuilt && !holding && <Row k="Occupancy (mkt)" v={(occupancy(rec, game.econ) * 100).toFixed(0) + "%"} />}
@@ -825,15 +833,15 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         {isBuilt && isMixedUse(rec) && <Row k="The stack" v={mixLabel(rec)} />}
         <Row k="FAR built / max" v={`${builtFar.toFixed(1)} / ${farMax.toFixed(1)}`} />
         <Row k="Demand" v={String(Math.round(rec.demandScore)) + " / 100"} />
-      </div>
+      </div>}
 
       {/* the builder's read on vacant dirt, owned or not — see ResidualRead */}
-      {rec.class === "land" && rec.bldgArea === 0 && !dev && <ResidualRead bbl={selectedBBL} />}
+      {on("summary") && rec.class === "land" && rec.bldgArea === 0 && !dev && <ResidualRead bbl={selectedBBL} />}
 
       {/* SOMEBODY ELSE'S CRANE. A job on this site that is not yours — named or
           anonymous — is the most important thing on the parcel, because it is
           the space that will be competing with yours the year it opens. */}
-      {!dev && (() => {
+      {on("summary") && !dev && (() => {
         const j = (game.cityJobs ?? []).find((x) => x.bbl === selectedBBL);
         if (!j) return null;
         const firm = game.rivals?.find((r) => r.id === j.firmId);
@@ -861,9 +869,9 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         );
       })()}
 
-      <Neighbourhood bbl={rec.bbl} block={rec.block} />
+      {on("summary") && <Neighbourhood bbl={rec.bbl} block={rec.block} />}
 
-      {holding && commercial && holding.tenants.length > 0 && (
+      {on("leasing") && holding && commercial && holding.tenants.length > 0 && (
         <div className="deal">
           <div className="deal-head">Rent roll · {sf(leasedSf)} of {sf(Math.round(rec.bldgArea * (1 - (mixOf(rec).multifamily ?? 0))))} commercial</div>
           <div className="roll">
@@ -934,7 +942,7 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         </div>
       )}
 
-      {holding && isBuilt && !renovating && <LettingOdds bbl={selectedBBL} />}
+      {on("leasing") && holding && isBuilt && !renovating && <LettingOdds bbl={selectedBBL} />}
 
       {/* THE MONTHLY STATEMENT. Every income number on this panel was an
           annual headline, and the arithmetic between the rent and the cheque
@@ -943,7 +951,7 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
           the account each month. Built from the same lines the appraisal
           runs (operatingStatement), divided by twelve, so this block and the
           NOI quoted above can never disagree on one building. */}
-      {holding && isBuilt && !renovating && (() => {
+      {on("money") && holding && isBuilt && !renovating && (() => {
         const os = operatingStatement(rec, game.econ, holding, game.month);
         const apt = rec.class === "multifamily";
         const pmt = holding.loan?.monthlyPmt ?? 0;
@@ -968,7 +976,7 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         );
       })()}
 
-      {holding?.loan && (
+      {on("money") && holding?.loan && (
         <div className="deal">
           <div className="deal-head">Debt</div>
           <div className="grid">
@@ -996,7 +1004,7 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         </div>
       )}
 
-      {listing && !holding && (() => {
+      {on("deal") && listing && !holding && (() => {
         const t0 = game.talks?.[selectedBBL];
         const contract = t0?.agreed ? t0 : null;
         return (
@@ -1027,7 +1035,7 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         );
       })()}
 
-      {!listing && !holding && (
+      {on("deal") && !listing && !holding && (
         <div className="deal">
           <div className="deal-head">Off-market</div>
           {appr && !appr.refused && appr.ask ? (
@@ -1092,7 +1100,7 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         </div>
       )}
 
-      {holding && dev && (
+      {on("build") && holding && dev && (
         <div className="deal">
           <div className="deal-head">Construction</div>
           <div className="grid">
@@ -1104,7 +1112,7 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         </div>
       )}
 
-      {holding && !dev && rec.class === "land" && <DevelopSection bbl={selectedBBL} />}
+      {on("build") && holding && !dev && rec.class === "land" && <DevelopSection bbl={selectedBBL} />}
 
       {/* THE LAND DESK BELONGS IN THE PANEL YOU ACTUALLY USE.
           Assembly has been reported broken twice, and the engine was never the
@@ -1118,11 +1126,22 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
           showed you the lot, told you nothing, and offered no way to fold it in.
           It renders itself to nothing when there is no adjacent deed you own,
           so it costs nothing on the parcels where it does not apply. */}
-      {holding && <LandDesk bbl={selectedBBL} />}
+      {on("build") && holding && <LandDesk bbl={selectedBBL} />}
 
-      {holding && isBuilt && !renovating && <LeasingDesk bbl={selectedBBL} />}
+      {on("leasing") && holding && isBuilt && !renovating && <LeasingDesk bbl={selectedBBL} />}
 
-      {holding && isBuilt && !renovating && (
+      {/* VACANT POSSESSION, IN ONE PLACE. Stopping the letting, buying the roll
+          out and taking the building down are three steps of one decision, and
+          they were spread across two cards on opposite ends of the page — the
+          buyout inside the leasing desk, the wrecking bill at the bottom of
+          Management. Nobody empties a building for fun; they empty it because
+          they intend to knock it down, so the wrecker's number belongs beside
+          the tenants' number. */}
+      {on("ops") && holding && isBuilt && !renovating && (
+        <VacantPossession bbl={selectedBBL} onRaze={() => setRazeAsk(selectedBBL)} />
+      )}
+
+      {on("ops") && holding && isBuilt && !renovating && (
         <div className="deal">
           <div className="deal-head">Management</div>
           <div className="grid">
@@ -1202,17 +1221,6 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
               </button>
             </div>
           )}
-          {isBuilt && (
-            <div className="btn-row">
-              <button
-                className="btn btn-sell"
-                title="Clear the site back to dirt so you can rebuild to the full envelope. Needs the building under 20% leased."
-                onClick={() => setRazeAsk(selectedBBL)}
-              >
-                Demolish · {usd(demolitionCost(rec, game))}
-              </button>
-            </div>
-          )}
         </div>
       )}
 
@@ -1256,9 +1264,9 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         );
       })()}
 
-      {holding && <SaleSection bbl={selectedBBL} value={value} />}
+      {on("deal") && holding && <SaleSection bbl={selectedBBL} value={value} />}
 
-      {holding && (
+      {on("summary") && holding && (
         <div className="deal">
           <div className="deal-head">Your position · since {monthLabel(holding.boughtM)}</div>
           <div className="grid">
@@ -1270,7 +1278,7 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
         </div>
       )}
 
-      <div className="neighbors">
+      {on("summary") && <div className="neighbors">
         <div className="neighbors-head">Adjoining lots · {neighbors.length}</div>
         <div className="neighbors-list">
           {neighbors.map((n) => {
@@ -1286,7 +1294,95 @@ function ParcelPanel({ embedded = false }: { embedded?: boolean } = {}) {
           })}
           {neighbors.length === 0 && <div className="neighbor-none">No shared lot lines on record.</div>}
         </div>
+      </div>}
+    </div>
+  );
+}
+
+/**
+ * EMPTYING A BUILDING. Lifted out of the leasing desk so the three moves sit
+ * together and in the order you make them: stop signing, pay the sitting
+ * tenants to go, take it down. The wrecker's number is on the same row as the
+ * tenants' number because the sum of the two is the real cost of the dirt —
+ * which is exactly why the site under a well-let building is worth less than
+ * the site under a half-empty one.
+ */
+function VacantPossession({ bbl, onRaze }: { bbl: string; onRaze: () => void }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const h = game.holdings[bbl];
+  const rec = h ? resolveRec(parcels, game, bbl) : null;
+  if (!h || !rec) return null;
+
+  const bq = buyoutQuote(game, bbl);
+  const occupied = (bq?.tenants ?? 0) > 0 || (h.occ ?? 0) > 0.02;
+  const resSf = useSf(rec as never, "multifamily") * (h.occ ?? 0);
+  const resCost = Math.round(resSf * useRentPsfYr(rec, game.econ, h.condition, "multifamily") * BUYOUT_PREMIUM);
+  const clearCost = (bq?.cost ?? 0) + resCost;
+  const demoCost = demolitionCost(rec, game);
+  // The engine's own bar for a wrecking permit. Named on the button rather
+  // than discovered by clicking it — see raze in actions.ts.
+  const occNow = physicalOcc(rec as never, h);
+  const canRaze = occNow < 0.20;
+
+  return (
+    <div className="deal">
+      <div className="deal-head">Emptying the building</div>
+      <div className="grid">
+        <Row k="Letting" v={h.leasingHold ? "STOPPED — nobody new, nobody renewed" : "Open — new tenants and renewals"} bad={h.leasingHold} />
+        <Row k="Occupied" v={(occNow * 100).toFixed(0) + "%"} />
+        {occupied && <Row k="In place" v={`${bq?.tenants ?? 0} lease${(bq?.tenants ?? 0) === 1 ? "" : "s"}${resSf > 900 ? ` · ${sf(Math.round(resSf))} of let flats` : ""}`} />}
+        {occupied && h.tenants.length > 0 && (
+          <Row k="Longest lease runs to" v={monthLabel(Math.max(...h.tenants.map((t) => t.endM)))} />
+        )}
+        {occupied && <Row k="Cost to buy them all out" v={usd(clearCost)} strong />}
+        <Row k="Demolition" v={usd(demoCost)} />
+        {occupied && <Row k="Vacant dirt costs you" v={usd(clearCost + demoCost)} strong bad={clearCost + demoCost > game.cash} />}
       </div>
+      <div className="btn-row">
+        <button className={"btn" + (h.leasingHold ? " btn-on" : "")}
+          onClick={() => useStore.getState().holdLeasing(bbl, !h.leasingHold)}
+          title={h.leasingHold
+            ? "Start letting again — new prospects and renewals resume next month"
+            : "Sign nobody new and renew nobody. The roll runs off and the income with it."}>
+          {h.leasingHold ? "Resume letting" : "Stop letting"}
+        </button>
+        {occupied && clearCost > 0 && (
+          <button className="btn btn-sell" disabled={clearCost > game.cash}
+            onClick={() => useStore.getState().buyOutLeases(bbl)}
+            title={`Every remaining month of every contract, plus ${((BUYOUT_PREMIUM - 1) * 100).toFixed(0)}% for making them move`}>
+            Buy out every lease · {usd(clearCost)}
+          </button>
+        )}
+        <button
+          className="btn btn-sell"
+          disabled={!canRaze}
+          title={canRaze
+            ? "Clear the site back to dirt so you can rebuild to the full envelope."
+            : `The building is ${(occNow * 100).toFixed(0)}% let. Nobody signs a wrecking permit over sitting tenants — it has to be under 20%.`}
+          onClick={onRaze}
+        >
+          Demolish · {usd(demoCost)}
+        </button>
+      </div>
+      {occupied && bq && bq.rows.length > 0 && (
+        <table className="tbl">
+          <thead><tr><th>Tenant</th><th className="num">Left</th><th className="num">Rent / yr</th><th className="num">Buyout</th></tr></thead>
+          <tbody>
+            {bq.rows.slice(0, 8).map((r, i) => (
+              <tr key={i} style={{ cursor: "default" }}>
+                <td>{r.name}</td>
+                <td className="num">{(r.monthsLeft / 12).toFixed(1)} yrs</td>
+                <td className="num">{usd(r.annual)}</td>
+                <td className="num">{usd(r.cost)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {clearCost > game.cash && occupied && (
+        <div className="hint">Short {usd(clearCost - game.cash)} of what it takes to clear it.</div>
+      )}
     </div>
   );
 }
@@ -2321,7 +2417,12 @@ function DevelopSection({ bbl }: { bbl: string }) {
 function PropertyPage() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
+  const adjacency = useStore((s) => s.adjacency);
   const bbl = useStore((s) => s.selectedBBL);
+  const [tab, setTab] = useState<PropTab>("summary");
+  // A different building is a different file. Opening one and landing on the
+  // last building's mortgage tab is how you misread a balance.
+  useEffect(() => { setTab("summary"); }, [bbl]);
   if (!bbl) return <div className="hint">Nothing selected.</div>;
   const rec = resolveRec(parcels, game, bbl);
   if (!rec) return <div className="hint">Unknown parcel.</div>;
@@ -2333,6 +2434,24 @@ function PropertyPage() {
   const noi = built ? (h ? holdingNOIYr(rec, game.econ, h, game.month) : noiYr(rec, game.econ, cond)) : 0;
   const dsYr = (h?.loan?.monthlyPmt ?? 0) * 12;
   const dev = game.developments[bbl];
+  // WHICH DESKS THIS BUILDING HAS. A tab that would open on an empty page is
+  // worse than no tab: it teaches the player that the page lies about where
+  // things are. Assembly is the awkward one — the Land desk hides itself when
+  // there is no adjoining deed of yours, so the tab has to ask the same
+  // question the desk does.
+  const ownsNeighbour = (adjacency?.[bbl] ?? []).some((n) => game.holdings[n]);
+  const TABS: { key: PropTab; label: string; show: boolean }[] = [
+    { key: "summary", label: "Overview", show: true },
+    { key: "leasing", label: "Rent roll", show: !!h && built },
+    { key: "money", label: "Money", show: !!h && (built || !!h.loan) },
+    { key: "ops", label: "Operations", show: !!h && built },
+    { key: "deal", label: h ? "Sell" : "Acquire", show: true },
+    { key: "build", label: "Build", show: !!h && (rec.class === "land" || !!dev || ownsNeighbour) },
+  ];
+  const shown = TABS.filter((t) => t.show);
+  // A tab can disappear under you — you sell the neighbouring lot and Build
+  // goes with it. Fall back rather than render a page with nothing on it.
+  const active = shown.some((t) => t.key === tab) ? tab : "summary";
   return (
     <div>
       <div className="stat-strip">
@@ -2391,8 +2510,18 @@ function PropertyPage() {
           <div className="page-title" style={{ fontSize: 22 }}>{rec.address}</div>
           <div className="panel-bbl mono">Parcel {rec.bbl} · {useLabel(rec)} · {rec.zoneDist}</div>
           {/* Every building in this game is somewhere. Closing the page and
-              putting the camera on it is one click, not a hunt. */}
+              putting the camera on it is one click, not a hunt.
+              AND SELLING IS THE OTHER ONE. The exit used to be the ninth card
+              down a page that is mostly operating detail — which is the wrong
+              way round, because the decision to sell is the one you open this
+              page having already half made. */}
           <div className="btn-row" style={{ marginTop: 6 }}>
+            {h && (
+              <button className="btn btn-sell" onClick={() => setTab("deal")}
+                title={h.sale ? "Your listing, the bids and the offers" : "Take it to market — quietly or as a campaign"}>
+                {h.sale ? "◆ On the market — open the file" : "Sell this building"}
+              </button>
+            )}
             <button className="btn" onClick={() => useStore.getState().focus(bbl, true)}
               title="Close this page and fly the map to the building">
               ⌖ Go to property
@@ -2408,9 +2537,25 @@ function PropertyPage() {
           <Row k="Demand" v={rec.demandScore + " / 100"} />
         </div>
       </div>
+      {/* A default is not a tab. It is the only thing on the page that matters
+          while it is running, so it stays above the tab bar on every one. */}
       <WorkoutDesk bbl={bbl} />
-      <LandDesk bbl={bbl} />
-      {dev && (
+
+      <div className="prop-tabs">
+        {shown.map((t) => (
+          <button
+            key={t.key}
+            className={"prop-tab" + (active === t.key ? " on" : "")}
+            onClick={() => setTab(t.key)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {active === "money" && <AssetHistory bbl={bbl} />}
+      {active === "build" && <LandDesk bbl={bbl} />}
+      {active === "build" && dev && (
         <div className="page-section">
           <div className="page-section-head">Under construction</div>
           <div className="grid">
@@ -2441,7 +2586,76 @@ function PropertyPage() {
         </div>
       )}
       <div className="prop-cols">
-        <ParcelPanel embedded />
+        <ParcelPanel embedded tab={active} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * THE ASSET'S OWN TRACK RECORD.
+ *
+ * Three lines, three scales, one column: what share of it is let, what the let
+ * space is paying per foot, and what the whole thing nets. Read together they
+ * are the only diagnosis this game could not give you — because a falling NOI
+ * has three completely different causes and the panel showed you a single
+ * number that could not tell them apart. Occupancy down with rent flat is a
+ * leasing problem. Rent down with occupancy flat is a market you cannot fix.
+ * Both flat with NOI falling is the expense stack, and that one is yours.
+ *
+ * Recorded quarterly by the engine from the same operating statement the
+ * appraisal runs — see Holding.hist. Nothing here is recomputed, so the chart
+ * and the cash statement can never disagree about a month that has happened.
+ */
+function AssetHistory({ bbl }: { bbl: string }) {
+  const game = useStore((s) => s.game)!;
+  const h = game.holdings[bbl];
+  const rows = h?.hist ?? [];
+  if (!h) return null;
+  if (rows.length < 2) {
+    return (
+      <div className="deal">
+        <div className="deal-head">Track record</div>
+        <div className="hint">
+          Held since {monthLabel(h.boughtM)}. The record is stamped every quarter — there is not
+          enough of it yet to draw.
+        </div>
+      </div>
+    );
+  }
+  const occ = rows.map((r) => r[1] / 10);          // per cent
+  const rent = rows.map((r) => r[2] / 100);        // $/sf/yr
+  const noi = rows.map((r) => r[3]);               // $/yr
+  const xs: [string, string] = [monthLabel(rows[0][0]), monthLabel(rows[rows.length - 1][0])];
+  // What it has actually done, in one line, so the charts have a conclusion
+  // and not just a shape.
+  const dOcc = occ[occ.length - 1] - occ[0];
+  const dRent = rent[0] > 0 ? (rent[rent.length - 1] / rent[0] - 1) * 100 : 0;
+  const yrs = Math.max(0.25, (rows[rows.length - 1][0] - rows[0][0]) / 12);
+  return (
+    <div className="deal">
+      <div className="deal-head">Track record · {yrs.toFixed(1)} years on the books</div>
+      <div className="grid">
+        <Row k="Occupancy" v={`${occ[occ.length - 1].toFixed(0)}% · ${dOcc >= 0 ? "+" : ""}${dOcc.toFixed(0)}pp since you bought it`} bad={dOcc < -5} />
+        <Row k="In-place rent" v={`$${rent[rent.length - 1].toFixed(2)}/sf · ${dRent >= 0 ? "+" : ""}${dRent.toFixed(0)}% · ${(Math.pow(1 + dRent / 100, 1 / yrs) - 1 >= 0 ? "+" : "")}${((Math.pow(1 + dRent / 100, 1 / yrs) - 1) * 100).toFixed(1)}%/yr`} />
+        <Row k="NOI" v={`${usd(noi[noi.length - 1])}/yr`} bad={noi[noi.length - 1] < 0} strong />
+      </div>
+      <div className="chart-stack">
+        <div className="chart-cap">Occupancy · % of the building let</div>
+        <LineChart
+          series={[{ label: "Occupied", color: "#5aa9e6", pts: occ }]}
+          xLabels={xs} height={104} yFmt={(v) => v.toFixed(0) + "%"}
+        />
+        <div className="chart-cap">In-place rent · $/sf/yr on let space</div>
+        <LineChart
+          series={[{ label: "In place", color: "#e0a34a", pts: rent }]}
+          xLabels={xs} height={104} yFmt={(v) => "$" + v.toFixed(0)}
+        />
+        <div className="chart-cap">Net operating income · $/yr</div>
+        <LineChart
+          series={[{ label: "NOI", color: "#6fcf97", pts: noi }]}
+          xLabels={xs} height={104} zeroBase
+        />
       </div>
     </div>
   );
@@ -2658,71 +2872,12 @@ function LeasingDesk({ bbl }: { bbl: string }) {
     .filter((x): x is NonNullable<typeof x> => !!x)
     .sort((a, b) => (b.current - b.market) - (a.current - a.market));
 
-  // Emptying a building is a leasing decision before it is a demolition one.
-  const bq = buyoutQuote(game, bbl);
-  const occupied = (bq?.tenants ?? 0) > 0 || (h.occ ?? 0) > 0.02;
-  const resSf = useSf(rec, "multifamily") * (h.occ ?? 0);
-  const resCost = Math.round(resSf * useRentPsfYr(rec, game.econ, h.condition, "multifamily") * BUYOUT_PREMIUM);
-  const clearCost = (bq?.cost ?? 0) + resCost;
-
-  if (!spec && !q && !extends_.length && !occupied && !h.leasingHold) return null;
+  // Emptying the building moved to VacantPossession, next to the wrecking
+  // bill, which is the only reason anybody empties one.
+  if (!spec && !q && !extends_.length) return null;
   return (
     <div className="deal">
       <div className="deal-head">Leasing desk</div>
-
-      {/* VACANT POSSESSION. You cannot knock down an occupied building, and you
-          cannot wait out a rent roll inside a human lifetime — so there are two
-          ways to empty one, and they cost very different things. Stopping the
-          letting is free and takes as long as the longest lease. Buying the
-          leases out is instant and costs the whole remaining contract plus a
-          quarter, which is why the site under a well-let building is worth less
-          than the site under a half-empty one. */}
-      <div className="page-section" style={{ marginTop: 2 }}>Emptying the building</div>
-      <div className="grid">
-        <Row k="Letting" v={h.leasingHold ? "STOPPED — nobody new, nobody renewed" : "Open — new tenants and renewals"} bad={h.leasingHold} />
-        {occupied && <Row k="In place" v={`${bq?.tenants ?? 0} lease${(bq?.tenants ?? 0) === 1 ? "" : "s"}${resSf > 900 ? ` · ${sf(Math.round(resSf))} of let flats` : ""}`} />}
-        {occupied && (
-          <Row
-            k="Longest lease runs to"
-            v={h.tenants.length ? monthLabel(Math.max(...h.tenants.map((t) => t.endM))) : "—"}
-          />
-        )}
-        {occupied && <Row k="Cost to buy them all out" v={usd(clearCost)} strong />}
-      </div>
-      <div className="btn-row">
-        <button className={"btn" + (h.leasingHold ? " btn-on" : "")}
-          onClick={() => useStore.getState().holdLeasing(bbl, !h.leasingHold)}
-          title={h.leasingHold
-            ? "Start letting again — new prospects and renewals resume next month"
-            : "Sign nobody new and renew nobody. The roll runs off and the income with it."}>
-          {h.leasingHold ? "Resume letting" : "Stop letting"}
-        </button>
-        {occupied && clearCost > 0 && (
-          <button className="btn btn-sell" disabled={clearCost > game.cash}
-            onClick={() => useStore.getState().buyOutLeases(bbl)}
-            title={`Every remaining month of every contract, plus ${((BUYOUT_PREMIUM - 1) * 100).toFixed(0)}% for making them move`}>
-            Buy out every lease · {usd(clearCost)}
-          </button>
-        )}
-      </div>
-      {occupied && bq && bq.rows.length > 0 && (
-        <table className="tbl">
-          <thead><tr><th>Tenant</th><th className="num">Left</th><th className="num">Rent / yr</th><th className="num">Buyout</th></tr></thead>
-          <tbody>
-            {bq.rows.slice(0, 8).map((r, i) => (
-              <tr key={i} style={{ cursor: "default" }}>
-                <td>{r.name}</td>
-                <td className="num">{(r.monthsLeft / 12).toFixed(1)} yrs</td>
-                <td className="num">{usd(r.annual)}</td>
-                <td className="num">{usd(r.cost)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {clearCost > game.cash && occupied && (
-        <div className="hint">Short {usd(clearCost - game.cash)} of what it takes to clear it.</div>
-      )}
 
       {spec && (
         <div className="grid">

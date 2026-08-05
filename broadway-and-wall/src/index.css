@@ -731,18 +731,6 @@ body {
 /* CHART LEGEND. Sits under the plot as HTML, not as <text> inside the scaled
    viewBox, so the type stays the size it was asked for whatever width the
    panel is. Only drawn when there is more than one series — a single line
-   needs no key. */
-.chart-legend {
-  display: flex; flex-wrap: wrap; gap: 4px 14px;
-  margin: 4px 0 2px 52px;                 /* line up with the plot, past the y axis */
-  font-size: 11px; color: var(--ink-dim); letter-spacing: 0.2px;
-}
-.chart-legend-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.chart-legend-swatch { width: 14px; height: 3px; border-radius: 1px; display: inline-block; }
-
-/* CHART LEGEND. Sits under the plot as HTML, not as <text> inside the scaled
-   viewBox, so the type stays the size it was asked for whatever width the
-   panel is. Only drawn when there is more than one series — a single line
    needs no key. Indented to the plot's left edge, past the y-axis labels. */
 .chart-legend {
   display: flex; flex-wrap: wrap; gap: 3px 14px;
@@ -751,6 +739,33 @@ body {
 }
 .chart-legend-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .chart-legend-swatch { width: 15px; height: 3px; border-radius: 1px; display: inline-block; flex: none; }
+
+/* THREE SCALES, ONE COLUMN. Occupancy, rent and NOI cannot share a y-axis —
+   a per-cent, a $/sf and a $/yr on one scale is a flat line and a spike. So
+   they are three plots stacked, each captioned, and the column is what makes
+   them read as one record instead of three charts. */
+.chart-stack { margin-top: 4px; }
+.chart-stack .chart-cap {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 1.1px;
+  color: var(--ink-dim); margin: 8px 0 1px 52px;
+}
+.chart-stack .chart-cap:first-child { margin-top: 2px; }
+
+/* PROPERTY SUBTABS. The file has six desks in it and a player opens the page
+   with one question. Underlined-on state rather than a pill, because these are
+   sections of one document and not a navigation bar. */
+.prop-tabs {
+  display: flex; flex-wrap: wrap; gap: 2px;
+  margin: 10px 0 2px; border-bottom: 1px solid rgba(146,110,40,0.30);
+}
+.prop-tab {
+  appearance: none; background: none; border: none; cursor: pointer;
+  font-family: var(--serif); font-size: 14px; color: var(--ink-dim);
+  padding: 5px 12px 6px; margin-bottom: -1px;
+  border-bottom: 2px solid transparent; white-space: nowrap;
+}
+.prop-tab:hover { color: var(--ink); background: rgba(146,110,40,0.07); }
+.prop-tab.on { color: var(--ink); border-bottom-color: #8a6d2b; }
 
 /* THE TAPE AS A PAGE. The docked ticker is a one-line feed; on its own page
    each headline is a row you can read and, when it names a building, click. */

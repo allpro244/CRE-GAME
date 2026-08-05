@@ -395,6 +395,23 @@ export interface Holding {
   program?: { id: string; untilM: number };  // capital program underway
   programsDone?: Record<string, number>;     // id -> completed quarter
   cfHistory: number[];
+  /**
+   * THE ASSET'S OWN TRACK RECORD — occupancy, in-place rent and NOI, stamped
+   * every quarter for as long as you hold it.
+   *
+   * A building's history was invisible: the panel showed today's occupancy and
+   * today's NOI, and the only way to know whether either was going the right
+   * way was to remember. That is the one thing an operator actually has that a
+   * buyer does not — you have watched it, and the trend is the reason you hold
+   * or sell.
+   *
+   * Stored as a flat tuple rather than an object because saves are snapshots
+   * and this is the only per-month array in the game that never stops growing:
+   * [month, occ×1000, rent psf ×100, NOI/yr]. Quarterly, not monthly, because
+   * quarterly is how the business reports and it keeps a century's hold to 400
+   * rows instead of 1,200 — the whole state is deep-cloned every tick.
+   */
+  hist?: number[][];
 }
 
 // Ground-up development on an owned vacant lot (Groundwork, simplified):

@@ -511,6 +511,25 @@ export interface Listing {
   // rather than at a hole in the ground.
   halfBuilt?: { use: string; sf: number; floors: number; progress: number; costToComplete: number };
   /**
+   * THE RENT ROLL, DISCLOSED BEFORE YOU BID — which is what due diligence IS.
+   *
+   * This building's actual leases used to be conjured at the CLOSING. The tape
+   * quoted market occupancy, you bought against that, and the deed handed you
+   * whatever roll the dice wrote — which is why a building's value appeared to
+   * collapse the moment it became yours. Both numbers were honest and they
+   * were not the same number, and the player was shown the wrong one at the
+   * only moment a decision was being taken.
+   *
+   * No seller in this business refuses to show a rent roll. It is the first
+   * thing in the offering memorandum, and a buyer who is not given one walks.
+   * So the roll is written when the building comes to market, it travels with
+   * the listing, and the deed hands over exactly what the panel showed.
+   *
+   * `occ` carries the residential leg, which has no per-lease roll.
+   */
+  roll?: Tenant[];
+  occ?: number;
+  /**
    * WHOSE BUILDING THIS IS, while it is on the market.
    *
    * The distress paths used to strip the deed out of a firm's book before

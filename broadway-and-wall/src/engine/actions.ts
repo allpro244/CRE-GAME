@@ -145,12 +145,37 @@ export function executePurchase(
   // A DISTRESSED DEED ARRIVES DISTRESSED. The seller's urgency was priced in
   // the ask; what the buyer takes over is the reason for it — empty floors and
   // deferred plant. See genRentRoll for the measurement that forced this.
-  const wasDistress = !!s.listings.find((l) => l.bbl === bbl)?.distress;
+  const wasListing = s.listings.find((l) => l.bbl === bbl);
+  const wasDistress = !!wasListing?.distress;
   if (wasDistress && rec.class !== "land" && rec.bldgArea > 0) {
     holding.condIdx = Math.max(0.30, (holding.condIdx ?? 0.7) - 0.10);
     holding.condition = condGrade(holding.condIdx);
   }
-  genRentRoll(next, rec, holding, wasDistress); // walk into the in-place rent roll
+  // WHAT THE OFFERING MEMORANDUM SHOWED IS WHAT THE DEED CONVEYS.
+  //
+  // This used to call genRentRoll at the CLOSING, so the tape quoted market
+  // occupancy, the player bought against that, and the deed handed over
+  // whatever roll the dice then wrote. Both numbers were honest; they were not
+  // the same number; and the one on screen at the moment of decision was the
+  // wrong one. That is the whole of the "my building loses half its value the
+  // second I buy it" complaint.
+  //
+  // A marketed building now carries its roll from the day it is listed (see
+  // refreshListings), and the closing takes it over verbatim. Off-market and
+  // auction deeds still write one here, which is correct — there is no
+  // offering memorandum on a lot you cold-called about, and finding out what
+  // is actually in the building is exactly the risk you took.
+  if (wasListing?.roll) {
+    holding.tenants = wasListing.roll;
+    if (wasListing.occ !== undefined) holding.occ = wasListing.occ;
+    // THE DEPOSITS SETTLE HERE INSTEAD. genRentRoll normally credits them as it
+    // writes the roll, because that is a closing; a roll written for a listing
+    // passes settle=false, so the money moves at the deed rather than at the
+    // advertisement. Cash in, liability up, no change in net worth.
+    next.cash += depositsOn(holding);
+  } else {
+    genRentRoll(next, rec, holding, wasDistress);
+  }
   next.holdings[bbl] = holding;
   // A RECEIVER'S SITE MAY HAVE A BUILDING HALF ON IT. If it does, what you
   // just bought is a job, not a lot, and you take it on at the closing.

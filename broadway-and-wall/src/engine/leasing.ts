@@ -295,7 +295,15 @@ function toSuites(rec: ParcelRecord, want: number, cap: number, use?: BuiltClass
  * (4-166 months), on plant the last owner deferred. The discount is
  * compensation for work, and the 2-5x is earned over the years the work takes.
  */
-export function genRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distressed = false) {
+/**
+ * @param settle  Whether the deposits move cash. TRUE at a closing, where the
+ *   in-place deposits come across on the settlement statement. FALSE when a
+ *   roll is written for a LISTING (see refreshListings) — that building is not
+ *   yours, nobody has settled anything, and crediting the player for deposits
+ *   on somebody else's tenants is cash out of thin air. pnpm conserve caught
+ *   it immediately: 42 months of 4,200 stopped balancing.
+ */
+export function genRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distressed = false, settle = true) {
   if (!rec.bldgArea) return;
   const m = mixOf(rec);
   if ((m.multifamily ?? 0) > 0) {
@@ -356,7 +364,7 @@ export function genRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, d
       // give back, which is exactly how the closing works.
       deposit: depositFor(s, market, sf, rollCredit(s, demandLinear(rec.demandScore))),
     });
-    s.cash += holding.tenants[holding.tenants.length - 1].deposit ?? 0;
+    if (settle) s.cash += holding.tenants[holding.tenants.length - 1].deposit ?? 0;
     leased += sf;
   }
   }

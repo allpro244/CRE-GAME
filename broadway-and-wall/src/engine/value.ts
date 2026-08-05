@@ -179,10 +179,10 @@ export function siteQualityMult(rec: { lotArea: number; farMaxComm: number; farM
  * city stays empty.
  */
 export const HARD_COST_PSF: Record<BuiltClass, number> = {
-  office: 368,        // Sunbelt CCI 0.657x gateway; band $280-380
-  multifamily: 227,   // Sunbelt wrap/podium band $220-280
-  retail: 230,        // Sunbelt SHELL, not gateway podium; band $200-260
-  industrial: 92,     // Sunbelt band $90-130
+  office: 560,        // net $62/sf against a 5.3% exit
+  multifamily: 345,   // net $37/sf against a 4.6% exit — the thinnest margin in the book
+  retail: 865,        // net $97/sf; podium retail is expensive and earns it
+  industrial: 140,    // net $17/sf against a 6.6% exit
 };
 export const SOFT_COST = 0.16;    // design, legal, permits, insurance, financing fees
 export const CONTINGENCY = 0.06;  // held against change orders; unspent is yours
@@ -278,7 +278,7 @@ const USE_FLOORS_MAX: Partial<Record<BuiltClass, number>> = {
  * does not pencil, which makes leaving them out of the residual the single
  * biggest way to overpay for dirt.
  */
-const TI_PSF: Record<BuiltClass, number> = { office: 21, retail: 14.5, industrial: 3.3, multifamily: 4.6 };
+const TI_PSF: Record<BuiltClass, number> = { office: 32, retail: 22, industrial: 5, multifamily: 7 };
 
 export function residualLandPsf(rec: ParcelRecord, econ: Econ, rentMult = 1): number {
   if (!rec.lotArea) return 0;
@@ -859,14 +859,33 @@ export function physicalOcc(rec: ParcelRecord, h: Holding): number {
 export const OPEX_CONTROLLABLE: Record<BuiltClass, number> = { office: 4.17, retail: 3.20, multifamily: 6.21, industrial: 0.50 };
 export const OPEX_FIXED: Record<BuiltClass, number> = { office: 1.72, retail: 1.54, multifamily: 2.01, industrial: 0.30 };
 export const MGMT_FEE = 0.04;   // of effective gross income, industry standard
+/**
+ * THE REPLACEMENT RESERVE ON A BLOCK OF FLATS, and it is NOT the management
+ * fee — which is the confusion this constant exists to end.
+ *
+ * Apartments used to carry one 7% line doing two jobs, labelled "Reserves for
+ * turns and repairs" on the statement and standing in for the management fee
+ * as well. They are different money paid to different people for different
+ * reasons: the fee is 3-4% of collections paid to whoever runs the building,
+ * and the reserve is capital set aside for carpets, appliances, roofs and
+ * turns — roughly $250-350 a unit a year, which on ordinary unit sizes is
+ * about three points of collections. Together they are the seven points that
+ * were there before, so this splits a number rather than changing one.
+ */
+export const APT_RESERVE = 0.03;
 
 /** Total operating cost per sf/yr before management fee and property tax. */
 export function opexPsf(cls: BuiltClass, econ: Econ, systemsDone: boolean, service?: -1 | 0 | 1): number {
   return (OPEX_CONTROLLABLE[cls] * (systemsDone ? 0.82 : 1) * serviceSpec(service).opex + OPEX_FIXED[cls]) * econ.costIdx;
 }
 
-// Kept for compatibility with anything still asking the old question.
-export const OPEX_PSF: Record<BuiltClass, number> = { office: 13, retail: 8, multifamily: 10, industrial: 3.5 };
+// THE LEGACY FLAT TABLE IS GONE. It was "kept for compatibility with anything
+// still asking the old question", and the thing still asking was multifamily —
+// which billed $10.00/sf while planDevelopment, the land residual and every
+// other class read opexPsf() at $8.22. A compatibility shim with one caller is
+// not a shim, it is a second answer, and this one was worth 22% of an
+// apartment building's operating cost. Deleted so it cannot come back: there
+// is one operating-cost model and opexPsf is it.
 
 /**
  * What share of the expense stack a TYPICAL roll of each class bills back.
@@ -935,7 +954,7 @@ export function recoveryFor(
 
 // Property tax: ~1.1% of assessed value a year. On net leases the tenant
 // reimburses it; the landlord eats the share on vacant space and gross leases.
-export const TAX_RATE = 0.0235;
+export const TAX_RATE = 0.011;
 
 // Cap rates aren't one number per class: a trophy on the square trades tighter
 // than a tired walk-up on the edge of town. Demand is location; condition is
@@ -1074,7 +1093,16 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
     // turns, appliances, roofs. Appraisers skip it; owners never get to.
     const occ = h.occ ?? occupancy(rec, econ);
     const egi = rec.bldgArea * marketRentPsfYr(rec, econ, h.condition) * occ;
-    return egi * 0.93 - rec.bldgArea * OPEX_PSF[cls] * serviceSpec(h.service).opex * (h.pmOpexMult ?? 1) * econ.costIdx - propertyTaxYr(rec, h);
+    // ONE OPERATING-COST MODEL, AND APARTMENTS ARE NOT AN EXCEPTION. This read
+    // the legacy flat table at $10.00/sf while planDevelopment, the land
+    // residual and every other class read opexPsf() at $8.22 — so a block of
+    // flats was UNDERWRITTEN at one operating cost and OPERATED at another 22%
+    // higher. It also skipped the two things opexPsf carries and a flat number
+    // cannot: the service policy moving the CONTROLLABLE half only (a manager
+    // cannot economise on insurance), and the systems programme.
+    const systemsDone = h.programsDone?.systems !== undefined;
+    const opexBill = rec.bldgArea * opexPsf(cls, econ, systemsDone, h.service) * (h.pmOpexMult ?? 1);
+    return egi * (1 - MGMT_FEE - APT_RESERVE) - opexBill - propertyTaxYr(rec, h);
   }
   // Rent first, then the expense stack, then what comes back through the
   // recovery clauses. Vacant space reimburses nothing and still costs money —
@@ -1143,12 +1171,15 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   if (rec.class === "multifamily") {
     const occ = h.occ ?? occupancy(rec, econ);
     const egi = rec.bldgArea * marketRentPsfYr(rec, econ, h.condition) * occ;
-    const opexBill = rec.bldgArea * OPEX_PSF.multifamily * serviceSpec(h.service).opex * econ.costIdx;
+    // The same opexPsf every other class reads — see holdingNOIYr, where the
+    // flat legacy table used to disagree with it by 22%.
+    const systemsDone = h.programsDone?.systems !== undefined;
+    const opexBill = rec.bldgArea * opexPsf("multifamily", econ, systemsDone, h.service) * (h.pmOpexMult ?? 1);
     const taxBill = grossTaxYr(rec, h);
     return {
       baseRent: egi, freeRent: 0, recoveredOpex: 0, recoveredTax: 0, egi,
-      opex: opexBill, mgmt: egi * 0.07, tax: taxBill,
-      noi: egi * 0.93 - opexBill - taxBill,
+      opex: opexBill, mgmt: egi * MGMT_FEE, reserve: egi * APT_RESERVE, tax: taxBill,
+      noi: egi * (1 - MGMT_FEE - APT_RESERVE) - opexBill - taxBill,
       leasedSf: Math.round(rec.bldgArea * occ), vacantSf: Math.round(rec.bldgArea * (1 - occ)),
       // gross leases bill nothing back; the whole expense stack is the owner's
       leakage: opexBill + taxBill > 0 ? 1 : 0,

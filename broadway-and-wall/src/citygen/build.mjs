@@ -15,7 +15,10 @@
 // calls this, and writes files.
 //
 // Pure: same inputs, same outputs, no I/O, no clock, no globals.
-import { makeProjection, polygonArea, centroid, bboxOfRing, sharedBoundaryLength, insetRingPerp } from "./geom.mjs";
+import {
+  makeProjection, polygonArea, centroid, bboxOfRing, sharedBoundaryLength, insetRingPerp,
+  clipRingHalfPlane, longestEdgeAngle, extentAlong, isConvex,
+} from "./geom.mjs";
 
 /**
  * @param {{rawParcels:object, rawBuildings:object, rawStations:object,
@@ -412,6 +415,52 @@ export function buildCityData(src) {
     return { type: "Polygon", coordinates: [[...ll, ll[0]]] };
   };
 
+  // -------------------------------------------------------------- PLAN SHAPES
+  //
+  // EVERY SILHOUETTE SO FAR WAS THE FOOTPRINT, SHRUNK.
+  //
+  // All ten families below take one ring and step it inward as it rises, so
+  // however many of them there are, every building in the city is a stack of
+  // concentric plates. That is a real move — it is what the sky-exposure plane
+  // produces — but it is not the only thing a plan does, and a city where it
+  // is the only thing has no courtyards in it, no light wells, no wings, and
+  // no tower standing on the corner of a low block.
+  //
+  // Those shapes are not setbacks, they are the PLAN, and they exist for a
+  // reason that has nothing to do with zoning: rooms need daylight. Before air
+  // conditioning and the fluorescent tube, no habitable room could sit much
+  // more than eight metres from a window, so any plate deeper than about
+  // sixteen metres had to be cut open. The courtyard block, the light court
+  // and the dumbbell tenement are that one constraint answered at three
+  // different lot sizes, and together they are most of what a prewar
+  // residential district looks like from the air.
+  //
+  // A volume is a single ring, so a plan with a hole in it is expressed the
+  // way the building is actually built: as separate WINGS standing side by
+  // side at the same height. The frame below measures the plate along its own
+  // dominant axis, and every wing is an exact half-plane clip of the
+  // footprint, so the pieces partition the plate instead of overlapping it.
+
+  /** The plate measured on its own long axis: extents u (along) and v (across). */
+  const plateFrame = (r) => {
+    const th = longestEdgeAngle(r);
+    const eu = extentAlong(r, th), ev = extentAlong(r, th + Math.PI / 2);
+    return {
+      ux: Math.cos(th), uy: Math.sin(th),
+      vx: -Math.sin(th), vy: Math.cos(th),
+      u0: eu.lo, u1: eu.hi, du: eu.span,
+      v0: ev.lo, v1: ev.hi, dv: ev.span,
+    };
+  };
+  /** Keep the part of r whose coordinate on axis (ax,ay) is at most c. */
+  const clipLo = (r, ax, ay, c) => (r ? clipRingHalfPlane(r, ax, ay, c) : null);
+  /** Keep the part of r whose coordinate on axis (ax,ay) is at least c. */
+  const clipHi = (r, ax, ay, c) => (r ? clipRingHalfPlane(r, -ax, -ay, -c) : null);
+  /** The slice of r between two coordinates on one axis. */
+  const clipBand = (r, ax, ay, a, b) => clipLo(clipHi(r, ax, ay, a), ax, ay, b);
+  /** Slide a ring sideways — for stacks whose plates do not sit over each other. */
+  const slide = (r, dx, dy) => (r ? r.map(([x, y]) => [x + dx, y + dy]) : null);
+
   /**
    * The stack of volumes a building actually stands as, base first.
    * null means "a plain extrusion is the right answer" — which for most of the
@@ -435,6 +484,255 @@ export function buildCityData(src) {
     /** File the silhouette and hand it back, or fall through to a slab. */
     const done = (name) => { if (out.length < 2) return null; shape(name); return out; };
 
+    // ---- the plan families, which any era can reach --------------------------
+    //
+    // These are keyed to the DEPTH of the plate rather than to a date, because
+    // that is the thing that actually forces them: a plate you cannot get
+    // daylight into has to be opened up, whoever is building it and whenever.
+    // Salts 60+ — everything below 60 is spoken for by the families above.
+
+    /** Wings round a closed light well. The prewar big-lot answer. */
+    const courtyard = (depth) => {
+      const F = plateFrame(ringXY);
+      if (F.du < depth * 2.9 || F.dv < depth * 2.9) return null;
+      const uA = F.u0 + depth, uB = F.u1 - depth;
+      const mid = clipBand(ringXY, F.ux, F.uy, uA, uB);
+      const wings = [
+        clipLo(ringXY, F.ux, F.uy, uA),
+        clipHi(ringXY, F.ux, F.uy, uB),
+        clipLo(mid, F.vx, F.vy, F.v0 + depth),
+        clipHi(mid, F.vx, F.vy, F.v1 - depth),
+      ].filter((r) => r && r.length >= 3 && Math.abs(polygonArea([r])) > 40);
+      return wings.length === 4 ? wings : null;
+    };
+
+    /** The same, open on one side — a light court facing the rear yard. */
+    const lightCourt = (depth) => {
+      const F = plateFrame(ringXY);
+      if (F.du < depth * 2.9 || F.dv < depth * 2.2) return null;
+      const uA = F.u0 + depth, uB = F.u1 - depth;
+      const mid = clipBand(ringXY, F.ux, F.uy, uA, uB);
+      const wings = [
+        clipLo(ringXY, F.ux, F.uy, uA),
+        clipHi(ringXY, F.ux, F.uy, uB),
+        clipLo(mid, F.vx, F.vy, F.v0 + depth),
+      ].filter((r) => r && r.length >= 3 && Math.abs(polygonArea([r])) > 40);
+      return wings.length === 3 ? wings : null;
+    };
+
+    /** The dumbbell: full-depth ends, and a waist notched on both long sides. */
+    const dumbbell = (endW, notch) => {
+      const F = plateFrame(ringXY);
+      if (F.du < endW * 2.6 || F.dv < notch * 2.8) return null;
+      const mid = clipBand(ringXY, F.ux, F.uy, F.u0 + endW, F.u1 - endW);
+      const waist = clipBand(mid, F.vx, F.vy, F.v0 + notch, F.v1 - notch);
+      const wings = [
+        clipLo(ringXY, F.ux, F.uy, F.u0 + endW),
+        clipHi(ringXY, F.ux, F.uy, F.u1 - endW),
+        waist,
+      ].filter((r) => r && r.length >= 3 && Math.abs(polygonArea([r])) > 30);
+      return wings.length === 3 ? wings : null;
+    };
+
+    /** A square of plate at one corner — what a tower actually stands on. */
+    const cornerCell = (cell, k) => {
+      const F = plateFrame(ringXY);
+      const uSide = k & 1 ? clipHi(ringXY, F.ux, F.uy, F.u1 - cell) : clipLo(ringXY, F.ux, F.uy, F.u0 + cell);
+      const c = k & 2 ? clipHi(uSide, F.vx, F.vy, F.v1 - cell) : clipLo(uSide, F.vx, F.vy, F.v0 + cell);
+      return c && c.length >= 3 && Math.abs(polygonArea([c])) > 25 ? c : null;
+    };
+
+    /** The plan families. Any era can reach these — the lot decides, not the date. */
+    const PLAN = new Set([
+      "courtyard", "lightcourt", "dumbbell", "campanile", "endtowers",
+      "twins", "cruciform", "shifted", "hat", "notch",
+    ]);
+    function tryPlan(fam) {
+      // The wing clip is Sutherland–Hodgman, which is an exact partition on a
+      // convex ring and BRIDGES ACROSS THE CUT on a concave one — two wings
+      // that both cover the same ground, drawn one inside the other. Measured,
+      // every footprint this generator makes is convex in metres (1,113 of
+      // 1,113 on New Alden; the same test in degrees reads 95% concave, which
+      // is the epsilon being meaningless at 1e-4 rather than a real result).
+      // The guard is here so that stays true rather than being assumed.
+      if (!isConvex(ringXY)) return null;
+      switch (fam) {
+        case "courtyard": {
+          // A block built solid round a closed well. Eight storeys of flats
+          // with every room on either the street or the court.
+          const wings = courtyard(9.5 + 4.0 * u(60));
+          if (!wings) return null;
+          for (const w of wings) push(w, 0, hM);
+          return done("courtyard block");
+        }
+        case "lightcourt": {
+          // The same idea on a lot too narrow to close: a U with the court
+          // open to the rear, which is where the light was going to come from.
+          const wings = lightCourt(9.0 + 3.5 * u(61));
+          if (!wings) return null;
+          for (const w of wings) push(w, 0, hM);
+          return done("light court");
+        }
+        case "dumbbell": {
+          // THE DUMBBELL. Full-depth ends and a waist pinched in on both sides
+          // to get an air shaft down the middle of the block — the 1879 answer
+          // to a law that said every room needed a window, and the single most
+          // characteristic plan of a nineteenth century tenement district.
+          const wings = dumbbell(7 + 4 * u(62), 3.6 + 2.4 * u(63));
+          if (!wings) return null;
+          for (const w of wings) push(w, 0, hM);
+          return done("dumbbell");
+        }
+        case "campanile": {
+          // A tower on the corner of a low block: a bank clock, a market
+          // campanile, the tower over a station entrance. One small square of
+          // plate carried up well past everything around it, and from a
+          // distance it is the only thing on the block you can see.
+          const cell = cornerCell(Math.max(7, Math.min(17, side * 0.36)), Math.floor(u(64) * 4));
+          if (!cell) return null;
+          push(geom, 0, hM);
+          push(cell, hM, hM + Math.max(6, hM * (0.32 + 0.40 * u(65))));
+          return done("corner tower");
+        }
+        case "endtowers": {
+          // A low bar with its ends carried higher — the courthouse-and-wings
+          // move, and it gives a block a profile instead of a line.
+          const F = plateFrame(ringXY);
+          const endW = Math.max(6, Math.min(F.du * 0.30, 15));
+          const A = clipLo(ringXY, F.ux, F.uy, F.u0 + endW);
+          const B = clipHi(ringXY, F.ux, F.uy, F.u1 - endW);
+          if (!A || !B) return null;
+          const barTop = hM * (0.52 + 0.16 * u(66));
+          push(geom, 0, barTop);
+          push(A, barTop, hM);
+          push(B, barTop, hM * (0.90 + 0.10 * u(67)));
+          return done("end towers");
+        }
+        case "twins": {
+          // TWO SHAFTS OFF ONE PODIUM, and never quite the same height —
+          // matched twins are rarer than the phrase suggests, and the offset
+          // is what makes the pair read as a pair rather than as a mistake.
+          const podTop = 7 + 13 * u(68);
+          const sh = shrink(ringXY, side, 0.60 + 0.18 * u(69));
+          if (!sh) return null;
+          const F = plateFrame(sh);
+          if (F.du < 26) return null;
+          const gap = 3 + 4.5 * u(70), mid = (F.u0 + F.u1) / 2;
+          const A = clipLo(sh, F.ux, F.uy, mid - gap / 2);
+          const B = clipHi(sh, F.ux, F.uy, mid + gap / 2);
+          if (!A || !B || podTop >= hM * 0.6) return null;
+          push(geom, 0, podTop);
+          push(A, podTop, hM);
+          push(B, podTop, hM * (0.78 + 0.20 * u(71)));
+          return done("twin towers");
+        }
+        case "cruciform": {
+          // A PLUS-SHAPED SHAFT. Four short wings off a core, so every office
+          // is near a window and the tower has a different width from every
+          // angle — which is why it never reads as a slab however big it is.
+          const baseTop = hM * (0.12 + 0.14 * u(72));
+          const sh = shrink(ringXY, side, 0.72) ?? ringXY;
+          const F = plateFrame(sh);
+          const wA = Math.max(7, F.dv * 0.44), wB = Math.max(7, F.du * 0.34);
+          const cu = (F.u0 + F.u1) / 2, cv = (F.v0 + F.v1) / 2;
+          const barA = clipBand(sh, F.vx, F.vy, cv - wA / 2, cv + wA / 2);
+          const barB = clipBand(sh, F.ux, F.uy, cu - wB / 2, cu + wB / 2);
+          if (!barA || !barB) return null;
+          push(geom, 0, baseTop);
+          push(barA, baseTop, hM);
+          push(barB, baseTop, hM * (0.92 + 0.08 * u(73)));
+          return done("cruciform");
+        }
+        case "shifted": {
+          // PLATES THAT DO NOT SIT OVER EACH OTHER. The contemporary move: each
+          // stage slides sideways off the one below, so the building has an
+          // overhang and a terrace on opposite faces at every level.
+          const F = plateFrame(ringXY);
+          const n = 2 + (u(74) > 0.5 ? 1 : 0);
+          let z = 0, r = ringXY;
+          for (let k = 0; k <= n; k++) {
+            const top = k === n ? hM : hM * ((k + 1) / (n + 1));
+            if (!push(r, z, top)) break;
+            z = top;
+            const s2 = shrink(ringXY, side, 0.86 - k * 0.08) ?? r;
+            const off = (bh(bbl, 75 + k) - 0.5) * Math.min(10, F.dv * 0.34);
+            r = slide(s2, F.vx * off, F.vy * off);
+          }
+          return done("shifted stack");
+        }
+        case "hat": {
+          // A CROWN WIDER THAN THE SHAFT. Every other family in this file gives
+          // width away as it rises; the plant floor of a postwar tower takes
+          // some back, and that one overhang is the whole top of the building.
+          const zc = hM * (0.84 + 0.07 * u(78));
+          push(geom, 0, zc);
+          const wide = insetRingPerp(ringXY, -(1.1 + 1.9 * u(79)));
+          if (!push(wide ?? ringXY, zc, hM)) return null;
+          return done("cantilevered hat");
+        }
+        case "notch": {
+          // A SLOT CUT THROUGH THE MIDDLE OF A SLAB, open at the top, with the
+          // low link left across the bottom of it. A slab with a hole in it is
+          // a completely different object against the sky.
+          const F = plateFrame(ringXY);
+          const cu = (F.u0 + F.u1) / 2;
+          const slot = Math.max(6, F.du * (0.16 + 0.10 * u(80)));
+          const A = clipLo(ringXY, F.ux, F.uy, cu - slot / 2);
+          const B = clipHi(ringXY, F.ux, F.uy, cu + slot / 2);
+          if (!A || !B) return null;
+          push(A, 0, hM);
+          push(B, 0, hM * (0.94 + 0.06 * u(81)));
+          const link = clipBand(ringXY, F.ux, F.uy, cu - slot / 2, cu + slot / 2);
+          if (link) push(link, 0, hM * (0.26 + 0.24 * u(82)));
+          return done("notched slab");
+        }
+        default: return null;
+      }
+    }
+
+    // ---- a plate too deep to daylight has to be opened up -------------------
+    //
+    // THE PLAN FAMILIES CANNOT LIVE BEHIND THE HEIGHT GATE.
+    //
+    // Both era branches below start by refusing anything under about twenty
+    // metres, because a setback is a thing that happens to a TALL building —
+    // and that is right for setbacks. It is exactly wrong for the plan, and
+    // measured it cost almost all of the effect: across three cities only 99
+    // buildings out of 4,394 volumes ever reached massing() at all, so a
+    // courtyard block could only ever appear on a lot that was both enormous
+    // and tall. The types this is trying to draw — the dumbbell tenement, the
+    // courtyard apartment house, the light court — are five and six storey
+    // buildings. They are the fabric, not the skyline.
+    //
+    // The real gate is not height, it is DEPTH. A room needs a window; a plate
+    // whose short dimension runs past about twenty metres has a middle that
+    // cannot reach one, and it gets cut open — at any height, on any lot.
+    //
+    // And it stops. Air conditioning and the fluorescent tube between them
+    // made a deep plate habitable, so from the mid-fifties nobody bothers
+    // any more. That is why a prewar district reads as blocks with holes in
+    // them and a postwar one reads as solid slabs, and it now falls out of the
+    // dates rather than being asserted.
+    if (hM >= 7.5 && year < 1958) {
+      const F0 = plateFrame(ringXY);
+      const deep = Math.min(F0.du, F0.dv);
+      if (deep > 19.5) {
+        const plans = [];
+        if (deep > 29 && F0.du > 33 && areaM2 >= 1000) plans.push("courtyard", "courtyard", "courtyard");
+        if (deep > 21 && F0.du > 25) plans.push("lightcourt", "lightcourt");
+        if (F0.du > 23) plans.push("dumbbell", "dumbbell");
+        // Not every deep plate got opened. Some were built solid and were
+        // miserable, and those are the ones that got converted a century later.
+        for (let k = 0; k < 3; k++) plans.push("solid");
+        const pf = plans[Math.min(plans.length - 1, Math.floor(u(59) * plans.length))];
+        if (pf !== "solid") {
+          const r = tryPlan(pf);
+          if (r) return r;
+          out.length = 0;              // a plan that would not fit leaves no trace
+        }
+      }
+    }
+
     // ---- pre-1961: the sky-exposure plane, and the tower that dodged it ----
     if (year < 1961) {
       // WHAT A PLATE WILL TAKE.
@@ -454,11 +752,23 @@ export function buildCityData(src) {
         fams.push("loft");
       }
       if (hM >= 24) fams.push("terrace");
+      // THE PLAN FAMILIES, offered on the lots that force them. A plate you
+      // cannot get daylight into the middle of has to be opened up, and how it
+      // opens depends on how much frontage there is to do it with: a big
+      // through-block lot closes a courtyard, a narrower one leaves the court
+      // open at the back, and a tenement lot pinches its waist.
+      if (areaM2 >= 1500 && W >= 36) fams.push("courtyard", "courtyard");
+      if (areaM2 >= 850 && W >= 27) fams.push("lightcourt", "lightcourt");
+      if (areaM2 >= 620 && W >= 23) fams.push("dumbbell", "dumbbell");
+      if (hM >= 32 && W >= 20) fams.push("campanile");
+      if (hM >= 28 && W >= 26) fams.push("endtowers");
       // A box is a real answer, and a city with no boxes in it is as obviously
       // fake as a city with nothing else. Fewer of them once a building is
       // tall enough that somebody had to think about its top.
       for (let k = hM >= 30 ? 2 : 3; k > 0; k--) fams.push("slab");
-      switch (fams[Math.min(fams.length - 1, Math.floor(u(4) * fams.length))]) {
+      const fam = fams[Math.min(fams.length - 1, Math.floor(u(4) * fams.length))];
+      if (PLAN.has(fam)) return tryPlan(fam);
+      switch (fam) {
         case "cake": {
           // WEDDING CAKE — two to four setbacks above a street wall whose
           // height comes off the lot rather than off a constant.
@@ -527,8 +837,22 @@ export function buildCityData(src) {
       post.push("mech", "mech");
       if (W >= 18) post.push("taper", "taper");
     }
+    // The post-war plan families. The daylight constraint eased — air
+    // conditioning and the fluorescent tube between them made a deep plate
+    // habitable — so the courtyard becomes rare and the shapes that survive
+    // are the ones done for PROFILE rather than for light: the cruciform, the
+    // pair off one podium, the plates that slide, the hat that oversails.
+    if (hM >= 38 && W >= 22) post.push("cruciform", "cruciform");
+    if (hM >= 42 && W >= 26) post.push("twins");
+    if (hM >= 40) post.push("shifted", "shifted");
+    if (hM >= 34) post.push("hat", "hat");
+    if (hM >= 30 && W >= 30) post.push("notch");
+    if (areaM2 >= 1600 && W >= 38 && hM < 46) post.push("courtyard");
+    if (hM >= 26 && W >= 26) post.push("endtowers");
     for (let k = hM >= 32 ? 2 : 4; k > 0; k--) post.push("slab");
-    switch (post[Math.min(post.length - 1, Math.floor(u(19) * post.length))]) {
+    const pfam = post[Math.min(post.length - 1, Math.floor(u(19) * post.length))];
+    if (PLAN.has(pfam)) return tryPlan(pfam);
+    switch (pfam) {
       case "retail base": {
         // Shops at grade run out to the lot line under a set-back upper floor.
         const pod = insetRingPerp(lotRingM, 1.2 + 1.8 * u(20));

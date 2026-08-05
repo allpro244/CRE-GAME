@@ -4815,6 +4815,22 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       g.setAttribute("aWalk2", new THREE.InstancedBufferAttribute(walk2, 2));
       mesh.instanceColor = new THREE.InstancedBufferAttribute(cols, 3);
       mesh.frustumCulled = false;
+      // A WALKER'S SHADOW CANNOT BE BAKED, so it must not be.
+      //
+      // These figures are moved entirely by WALKER_VERT — the patrol along
+      // aWalk, the gait bob, and the `alive` cull that scales half of them to
+      // zero. The shadow pass swaps in a MeshDepthMaterial, which replaces the
+      // VERTEX shader too, so none of that motion exists as far as the bake is
+      // concerned: every walker was being stamped into the map at the base
+      // instance position it never actually stands at, including the ones
+      // culled to nothing. The result is a field of little shadows lying in
+      // the street with nobody on them, drifting further from their owners the
+      // longer the month runs.
+      //
+      // Nothing at this scale needs a shadow map anyway: a pedestrian is under
+      // two metres and the screen-space contact pass resolves exactly that
+      // band, dynamically, from the real animated depth.
+      mesh.userData.noShadow = true;
       this.scene.add(mesh);
       this.hasWalkers = true;
     };
@@ -5287,12 +5303,24 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         this.depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
       }
       const target = this.shadowTarget;
-      if (this.water) this.water.visible = false;   // a flat sea casts nothing
-      if (this.groundCatcher) this.groundCatcher.visible = false;
-      // and neither does the invisible plane that only exists to give the
-      // occlusion pass a floor — left in, it is a lid over the whole city and
-      // every building in town stands in its shadow
-      if (this.aoGround) this.aoGround.visible = false;
+      // WHAT DOES NOT CAST.
+      //
+      // `userData.noShadow` was being set on three meshes and read by nothing
+      // — a flag that looked like it worked, which is worse than no flag,
+      // because the next person to set it on a new mesh gets silence. The
+      // actual exclusions were three hardcoded references maintained by hand
+      // beside it. This honours the flag instead, so the list lives on the
+      // meshes that know why they are on it:
+      //   the sea            — a flat sheet casts nothing
+      //   the occlusion floor — left in, it is a lid over the whole city and
+      //                         every building in town stands in its shadow
+      //   the pavement sheet  — flat, and only ever self-shadows into acne
+      //   the walkers         — their motion is invisible to the depth pass
+      const hidden: THREE.Object3D[] = [];
+      this.scene.traverse((o) => {
+        if (o.userData && o.userData.noShadow && o.visible) { o.visible = false; hidden.push(o); }
+      });
+      if (this.groundCatcher) { this.groundCatcher.visible = false; hidden.push(this.groundCatcher); }
       const prevClear = new THREE.Color();
       this.renderer.getClearColor(prevClear);
       const prevAlpha = this.renderer.getClearAlpha();
@@ -5304,9 +5332,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.renderer.setRenderTarget(null);
       this.renderer.setClearColor(prevClear, prevAlpha);
       this.scene.overrideMaterial = null;
-      if (this.water) this.water.visible = true;
-      if (this.groundCatcher) this.groundCatcher.visible = true;
-      if (this.aoGround) this.aoGround.visible = true;
+      for (const o of hidden) o.visible = true;
 
       this.sunVP.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
       this.shadowTex = target.texture;

@@ -166,6 +166,26 @@ const S_SCREEN = 44;     // rainscreen: terracotta baguettes or perforated metal
 const S_BIGBOX = 45;     // big-box retail: a blank field under a parapet sign band
 
 // ---------------------------------------------------------------------------
+// THE TOWER SKINS OF THE LAST TEN YEARS.
+//
+// Everything above stops around 2010. What has actually gone up in New York
+// since is a different animal again, and none of it is the 1980s curtain wall
+// the word "glass tower" still summons: the wall got a THICKNESS back. One
+// Vanderbilt and 111 West 57th hang terracotta and bronze piers off the face;
+// 55 Hudson Yards punches frames half a metre deep; 425 Park wears its steel
+// on the outside as horizontal shelves. Even the plainest of them — One
+// Manhattan West, 50 Hudson Yards — is a unitised wall with a mullion rhythm
+// fine enough to read as fabric rather than as a mirror.
+//
+// These five are what a tower over twenty storeys built in the last decade is
+// made of, and they differ, as everything above does, in ARCHITECTURE.
+const S_TERRAPIER = 46;  // bronze/terracotta piers running unbroken, glass between — One Vanderbilt, 111 W 57th
+const S_DEEPFRAME = 47;  // frames punched half a metre deep, so the wall is mostly its own shadow — 55 Hudson Yards
+const S_STEELSHELF = 48; // structure worn outside as horizontal shelves — 425 Park Avenue
+const S_UNITGLASS = 49;  // contemporary unitised wall: a fine mullion rhythm and panel-to-panel tint
+const S_MEGAPANEL = 50;  // two-storey mega panels with an expressed shadow box between them
+
+// ---------------------------------------------------------------------------
 // TRAITS, NOT NUMBERS.
 //
 // Downstream behaviour was keyed to the numeric VALUE of a style id — `s < 8`
@@ -190,6 +210,7 @@ const T_MASONRY = [
 const T_GLASSY = [
   S_GLASS, S_DARK, S_RIBBON, S_CRYSTAL, S_DIAGRID, S_CASTIRON, S_INTL,
   S_MIRROR, S_FRIT, S_SCREEN, S_BALCONY, S_MODERNE,
+  S_TERRAPIER, S_UNITGLASS, S_MEGAPANEL, S_STEELSHELF,
 ];
 
 /** Meets the pavement as shopfronts rather than as more wall. */
@@ -198,6 +219,7 @@ const T_TRADE = [
   S_ROMANESQUE, S_GOTHIC, S_BEAUX, S_EMPIRE, S_ITALIANATE, S_CHICAGO,
   S_TERRACOTTA, S_MODERNE, S_MARKET, S_INTL, S_PMOD, S_EIFS, S_TIMBER,
   S_WHITEBRICK, S_TENEMENT,
+  S_TERRAPIER, S_UNITGLASS, S_MEGAPANEL, S_STEELSHELF, S_DEEPFRAME,
 ];
 
 /** Expresses its floor line as a shadow under every storey. */
@@ -206,17 +228,21 @@ const T_FLOORLINE = [
   S_CASTIRON, S_ROMANESQUE, S_GOTHIC, S_BEAUX, S_EMPIRE, S_ITALIANATE,
   S_FEDERAL, S_TENEMENT, S_CHICAGO, S_TERRACOTTA, S_MODERNE, S_CIVIC,
   S_MARKET, S_INTL, S_PRECAST, S_PROJECT, S_WHITEBRICK, S_BALCONY, S_TIMBER,
-  S_EIFS, S_FRIT,
+  S_EIFS, S_FRIT, S_STEELSHELF, S_MEGAPANEL, S_DEEPFRAME,
 ];
 
 /** A modern skin whose parapet is metal or stone rather than more of itself. */
 const T_CAPPED_STONE = [S_GLASS, S_DARK, S_MIRROR, S_FRIT];
-const T_CAPPED_PLAIN = [S_CRYSTAL, S_DIAGRID, S_SCREEN, S_BALCONY, S_METALPAN, S_GARAGE, S_BIGBOX];
+const T_CAPPED_PLAIN = [
+  S_CRYSTAL, S_DIAGRID, S_SCREEN, S_BALCONY, S_METALPAN, S_GARAGE, S_BIGBOX,
+  S_TERRAPIER, S_DEEPFRAME, S_STEELSHELF, S_UNITGLASS, S_MEGAPANEL,
+];
 
 /** Reads as a modern building when a crown is being chosen for it. */
 const T_MODERN = [
   S_GLASS, S_DARK, S_RIBBON, S_CRYSTAL, S_DIAGRID, S_INTL, S_MIRROR, S_FRIT,
   S_SCREEN, S_BALCONY, S_PRECAST, S_BRUTAL, S_TIMBER, S_WHITEBRICK, S_PROJECT,
+  S_TERRAPIER, S_DEEPFRAME, S_STEELSHELF, S_UNITGLASS, S_MEGAPANEL,
 ];
 
 /** Reads as cut stone when a crown is being chosen for it. */
@@ -976,7 +1002,7 @@ void main() {
     // giant order is drawn below; here it is the stone and the calm bay.
     colW = 3.9; win = vec2(0.46, 0.63);
     float pk = clamp(vVar, 0.0, 0.999);
-    if (pk < 0.34)      { wall = vec3(0.86, 0.82, 0.73); } // limestone
+    if (pk < 0.34)      { wall = vec3(0.795, 0.760, 0.680); } // limestone
     else if (pk < 0.64) { wall = vec3(0.80, 0.77, 0.70); } // pale ashlar
     else if (pk < 0.86) { wall = vec3(0.74, 0.71, 0.66); } // grey stone
     else                { wall = vec3(0.82, 0.76, 0.64); } // warm bath stone
@@ -1042,7 +1068,11 @@ void main() {
     // and it washes clean in the rain — the one old building on the block that
     // never went black. Crisp, bright, and slightly cold.
     colW = 3.2; win = vec2(0.50, 0.66);
-    wall = mix(vec3(0.90, 0.89, 0.84), vec3(0.86, 0.84, 0.76), step(0.5, vVar));
+    // Held under 0.80: contrast runs in linear space about a 0.18 pivot, so an
+    // albedo over ~0.85 clips to flat white before the light rig touches it.
+    // A glaze reads bright because it is GLOSSY, not because it is pale, and
+    // the sheen below is what carries that.
+    wall = mix(vec3(0.795, 0.785, 0.740), vec3(0.760, 0.745, 0.675), step(0.5, vVar));
     glassA = vec3(0.26, 0.32, 0.38); glassB = vec3(0.42, 0.50, 0.57);
   } else if (s == 28) {
     // STREAMLINE MODERNE. Everything horizontal: banded sills, a wrapped
@@ -1153,7 +1183,7 @@ void main() {
     // GLAZED WHITE BRICK. The 1960s apartment house: a hard bright ivory
     // brick, dark aluminium windows, and a balcony slot punched in the wall.
     colW = 3.3; win = vec2(0.56, 0.54);
-    wall = mix(vec3(0.88, 0.87, 0.82), vec3(0.83, 0.82, 0.78), step(0.5, vVar));
+    wall = mix(vec3(0.790, 0.782, 0.735), vec3(0.752, 0.744, 0.706), step(0.5, vVar));
     glassA = vec3(0.24, 0.28, 0.32); glassB = vec3(0.38, 0.44, 0.49);
   } else if (s == 41) {
     // THE BALCONY TOWER. On a modern residential slab the architecture IS the
@@ -1168,9 +1198,9 @@ void main() {
     // densest at the slab and fading out at eye level — so the tower carries a
     // soft horizontal gradient that is not a spandrel and not a shadow.
     glassy = true; colW = 1.62; win = vec2(0.96, 0.92);
-    if (vVar < 0.40)      { glassA = vec3(0.56, 0.70, 0.76); glassB = vec3(0.78, 0.88, 0.92); wall = vec3(0.44, 0.56, 0.62); }
-    else if (vVar < 0.74) { glassA = vec3(0.50, 0.60, 0.68); glassB = vec3(0.72, 0.80, 0.86); wall = vec3(0.40, 0.48, 0.55); }
-    else                  { glassA = vec3(0.58, 0.66, 0.64); glassB = vec3(0.80, 0.86, 0.84); wall = vec3(0.46, 0.53, 0.52); }
+    if (vVar < 0.40)      { glassA = vec3(0.52, 0.64, 0.70); glassB = vec3(0.70, 0.79, 0.83); wall = vec3(0.44, 0.56, 0.62); }
+    else if (vVar < 0.74) { glassA = vec3(0.47, 0.56, 0.63); glassB = vec3(0.66, 0.74, 0.79); wall = vec3(0.40, 0.48, 0.55); }
+    else                  { glassA = vec3(0.54, 0.61, 0.60); glassB = vec3(0.72, 0.78, 0.76); wall = vec3(0.46, 0.53, 0.52); }
   } else if (s == 43) {
     // MASS TIMBER. A CLT frame with the wood left visible in the spandrel: a
     // warm, slightly orange band at every floor between big square openings.
@@ -1196,6 +1226,50 @@ void main() {
     colW = 8.0; win = vec2(0.0, 0.0);
     wall = mix(vec3(0.78, 0.75, 0.69), vec3(0.70, 0.68, 0.64), step(0.5, vVar));
     glassA = wall; glassB = wall;
+  } else if (s == 46) {
+    // TERRACOTTA / BRONZE PIERS. The pier runs the whole height without a
+    // single horizontal interruption and the glass is a slot behind it. That
+    // unbroken vertical is why One Vanderbilt reads as one object from a mile
+    // away while a 1980s tower reads as a stack of floors.
+    glassy = true; colW = 2.35; win = vec2(0.62, 0.965);
+    if (vVar < 0.34)      { wall = vec3(0.545, 0.400, 0.290); }  // warm terracotta
+    else if (vVar < 0.62) { wall = vec3(0.470, 0.370, 0.255); }  // bronze anodise
+    else if (vVar < 0.84) { wall = vec3(0.610, 0.560, 0.480); }  // pale stone pier
+    else                  { wall = vec3(0.330, 0.300, 0.280); }  // dark bronze
+    glassA = vec3(0.34, 0.44, 0.50); glassB = vec3(0.56, 0.68, 0.74);
+  } else if (s == 47) {
+    // FRAMES PUNCHED HALF A METRE DEEP. The wall is mostly its own shadow, and
+    // which half of each frame is dark tells you where the sun is — the one
+    // modern facade that changes across the day the way masonry does.
+    colW = 3.15; win = vec2(0.70, 0.72);
+    if (vVar < 0.40)      { wall = vec3(0.625, 0.615, 0.590); }  // grey precast
+    else if (vVar < 0.72) { wall = vec3(0.560, 0.530, 0.480); }  // warm precast
+    else                  { wall = vec3(0.470, 0.475, 0.485); }  // dark metal
+    glassA = vec3(0.26, 0.33, 0.39); glassB = vec3(0.42, 0.52, 0.60);
+  } else if (s == 48) {
+    // THE STEEL WORN OUTSIDE. A painted shelf at every floor standing well
+    // proud of the glass and throwing a hard shadow band across the whole
+    // face: 425 Park is a glass building you read entirely as horizontal.
+    glassy = true; colW = 3.05; win = vec2(0.90, 0.80);
+    wall = mix(vec3(0.735, 0.730, 0.715), vec3(0.400, 0.405, 0.415), step(0.62, vVar));
+    glassA = vec3(0.36, 0.47, 0.53); glassB = vec3(0.58, 0.70, 0.76);
+  } else if (s == 49) {
+    // THE CONTEMPORARY UNITISED WALL. Nearly frameless, but not a mirror: a
+    // mullion every 1.5 m and a tint that shifts panel to panel because the
+    // units were coated in batches. That fine rhythm is what makes a modern
+    // tower read as FABRIC rather than as a sheet of reflection.
+    glassy = true; colW = 1.52; win = vec2(0.955, 0.945);
+    if (vVar < 0.30)      { glassA = vec3(0.46, 0.60, 0.66); glassB = vec3(0.66, 0.78, 0.79); wall = vec3(0.36, 0.47, 0.52); }
+    else if (vVar < 0.56) { glassA = vec3(0.42, 0.53, 0.60); glassB = vec3(0.62, 0.72, 0.78); wall = vec3(0.33, 0.42, 0.48); }
+    else if (vVar < 0.80) { glassA = vec3(0.48, 0.58, 0.56); glassB = vec3(0.68, 0.76, 0.74); wall = vec3(0.38, 0.46, 0.45); }
+    else                  { glassA = vec3(0.36, 0.42, 0.50); glassB = vec3(0.56, 0.64, 0.72); wall = vec3(0.29, 0.34, 0.40); }
+  } else if (s == 50) {
+    // MEGA PANELS. A unit two storeys tall, with the slab edge between them
+    // expressed as a deep shadow box — so the building is banded at HALF the
+    // frequency of its own floors, a proportion nothing older here has.
+    glassy = true; colW = 2.9; win = vec2(0.93, 0.885);
+    wall = mix(vec3(0.335, 0.350, 0.375), vec3(0.500, 0.505, 0.510), step(0.55, vVar));
+    glassA = vec3(0.40, 0.52, 0.58); glassB = vec3(0.62, 0.74, 0.79);
   }
   else if (s == 8) { wall = vec3(0.60, 0.56, 0.48); glassA = wall; glassB = wall; colW = 100.0; win = vec2(0.0); }
   else if (s == 10) { wall = vec3(0.58, 0.55, 0.50); glassA = wall; glassB = wall; colW = 100.0; win = vec2(0.0); }
@@ -1220,7 +1294,12 @@ void main() {
   // reads as a thin skin hung off a frame or as a thick thing with holes cut
   // in it. A brutalist slot is half a metre deep; a mirror-glass unit is
   // flush enough to be a mirror.
-  float revealM = (s == 35 || s == 42) ? 0.030
+  float revealM = (s == 49) ? 0.028
+                : (s == 35 || s == 42) ? 0.030
+                : (s == 50) ? 0.055
+                : (s == 48) ? 0.075
+                : (s == 46) ? 0.34
+                : (s == 47) ? 0.52
                 : (s == 15 || s == 16) ? 0.045
                 : (s == 36 || s == 45) ? 0.055
                 : (s == 44) ? 0.065
@@ -1370,6 +1449,11 @@ void main() {
   float ox = clamp((f.x - m.x) / max(win.x, 0.001), 0.0, 1.0);      // 0..1 across the hole
   float oy = clamp((f.y - m.y - 0.04) / max(win.y, 0.001), 0.0, 1.0); // 0..1 up the hole
   bool inHole = winMask > 0.5;
+  // Shade a style's own signature casts onto its glass — a fin's return, the
+  // back of a deep frame, the underside of a shelf. Collected here and applied
+  // once, after the glass colour exists, so a branch can shade glass it cannot
+  // yet see.
+  float glassShade = 1.0;
 
   if (near > 0.10) {
     if (s == 18) {
@@ -1598,6 +1682,69 @@ void main() {
       float cover = clamp(fin + obliq * 1.25, 0.0, 1.0);
       wall = mix(wall, wall * (0.82 + 0.30 * fin), 0.9);
       winMask *= 1.0 - cover * 0.92;
+    } else if (s == 46) {
+      // THE PIER. A deep terracotta or bronze fin standing off the face, with
+      // the glass in the slot behind it. Two things sell it: the pier is
+      // ROUNDED, so it carries a highlight up its whole height, and it is
+      // deep enough that the return catches shade on the shadow side. There
+      // is deliberately nothing horizontal — no floor line, no spandrel.
+      float d = min(f.x, 1.0 - f.x);
+      float pier = 1.0 - smoothstep(0.11, 0.20, d);
+      float belly = smoothstep(0.20, 0.0, d);                 // across the fin's face
+      float sideK = dot(SUN_DIR, T) > 0.0 ? f.x : 1.0 - f.x;
+      wall = mix(wall, wall * (0.80 + 0.52 * belly) * (0.86 + 0.30 * sideK), pier);
+      winMask *= 1.0 - pier;
+      // and the reveal the fin casts onto the glass beside it
+      if (inHole) glassShade = 1.0 - 0.30 * (1.0 - smoothstep(0.0, 0.30, sideK));
+    } else if (s == 47) {
+      // THE DEEP FRAME. Every opening sits at the back of a half-metre box, so
+      // the head and one jamb are in shade and the sill is catching. At this
+      // depth the frame reads before the glass does, which is the whole point
+      // of the type — the building is a grid of shadows.
+      float fr = max(1.0 - smoothstep(0.0, 0.13, min(f.x, 1.0 - f.x)),
+                     1.0 - smoothstep(0.0, 0.13, min(f.y, 1.0 - f.y)));
+      wall = mix(wall, wall * 1.14, fr);
+      if (inHole) {
+        float sunSide = dot(SUN_DIR, T) > 0.0 ? ox : 1.0 - ox;
+        float jambK = 1.0 - smoothstep(0.0, 0.40, sunSide);
+        float headK = smoothstep(0.58, 1.0, oy);
+        glassShade = 1.0 - 0.46 * jambK - 0.30 * headK;
+        glassShade *= 1.0 + 0.20 * (1.0 - smoothstep(0.0, 0.16, oy));   // the sill kicks light back
+      }
+    } else if (s == 48) {
+      // THE SHELF. A painted steel plate standing proud at every floor: bright
+      // on its top face, black underneath, and the glass under it in shade for
+      // a good part of a storey. The band is at FLOOR frequency and it is the
+      // only thing you read on the building.
+      float fy = fract(v);
+      if (fy > 0.90) { wall = mix(wall, wall * 1.30, 0.92); winMask = 0.0; }   // the plate, lit
+      else if (fy > 0.84) { wall = mix(wall, wall * 0.30, 0.90); winMask = 0.0; } // its underside
+      else if (inHole) glassShade = mix(1.0, 0.72, smoothstep(0.58, 0.84, fy)); // shelf shade
+    } else if (s == 49) {
+      // THE UNITISED WALL. A slim mullion cap every bay and a tint that steps
+      // panel to panel, because the units were coated in batches and no two
+      // batches match. Both are tiny; together they are the difference between
+      // a modern tower and a mirror.
+      float mull = 1.0 - smoothstep(0.010, 0.030, min(f.x, 1.0 - f.x));
+      wall = mix(wall, wall * 1.35 + vec3(0.03), mull);
+      winMask *= 1.0 - mull * 0.85;
+      float batch = hash(vec2(floor(u) * 0.37, floor(v / 3.0) + vRand * 23.0));
+      if (inHole) glassShade = 0.93 + 0.14 * batch;
+    } else if (s == 50) {
+      // MEGA PANELS. The unit is two storeys, so the expressed slab edge comes
+      // at half the frequency of the floors — and between the two, at the
+      // intermediate level, there is nothing at all. That mismatch is the tell.
+      float p2 = fract(v * 0.5);
+      if (p2 < 0.085) {
+        wall = mix(wall, wall * 0.42, 0.92);                  // the shadow box
+        winMask = 0.0;
+      } else if (p2 < 0.125) {
+        wall = mix(wall, wall * 1.26, 0.85);                  // its lit lower lip
+        winMask = 0.0;
+      }
+      float mull = 1.0 - smoothstep(0.012, 0.032, min(f.x, 1.0 - f.x));
+      wall = mix(wall, wall * 1.22, mull);
+      winMask *= 1.0 - mull * 0.7;
     } else if (s == 45) {
       // BIG BOX: split-face block coursing, and the tenant's colour on the
       // parapet band. The band is the only thing on the building.
@@ -1745,6 +1892,7 @@ void main() {
   }
   }
 
+  glass *= glassShade;
   vec3 col = mix(wall, glass, winMask);
   // sill highlight just under the window row
   col *= 1.0 + 0.10 * (1.0 - winMask) * smoothstep(0.0, 0.04, f.y) * (1.0 - smoothstep(0.04, 0.09, f.y)) * step(0.5, float(s != 0));
@@ -2083,6 +2231,11 @@ void main() {
   else if (s == 43) roof = vec3(0.565, 0.505, 0.430); // timber: a deck you walk on
   else if (s == 44) roof = vec3(0.675, 0.670, 0.660);
   else if (s == 45) roof = vec3(0.625, 0.625, 0.605); // big box: white TPO
+  else if (s == 46) roof = vec3(0.455, 0.430, 0.395); // terracotta pier: dark coping
+  else if (s == 47) roof = vec3(0.560, 0.550, 0.530); // deep frame: matching precast
+  else if (s == 48) roof = vec3(0.640, 0.640, 0.630); // steel shelf: painted deck
+  else if (s == 49) roof = vec3(0.615, 0.630, 0.645); // unitised: pale membrane
+  else if (s == 50) roof = vec3(0.430, 0.445, 0.465); // mega panel: dark ballast
   else              roof = vec3(0.76, 0.76, 0.74);
   roof *= 0.92 + 0.16 * vRand;
 
@@ -5148,9 +5301,33 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const mroll = hash01(k ^ 0x77aa11, this.citySeed ^ 0x1234);
       const inset = (f: number) => ring.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as [number, number]);
       const B = 0.78;                                // the base plate the prism used
-      let tiers: { fp: [number, number][]; z0: number; z1: number }[];
+      let tiers: TowerTier[] = [];
       const fl = Math.max(1, item.floors);
-      if (item.construction || fl < 7 || h < 22) {
+      // ---- OVER TWENTY STOREYS IS ITS OWN PROBLEM --------------------------
+      //
+      // Below this the five silhouettes underneath are right: a podium, a
+      // setback, a shaft — those are the trades a mid-rise actually makes.
+      // Above it they are not, because every one of them is the plate scaled
+      // toward its own centre, which is a 1961 move, and a tower finished last
+      // year does not look like that. towerMassing rotates the plate, offsets
+      // it, cuts its corners off and lets the top oversail — and it brings its
+      // own skin, because these shapes and those walls were designed together.
+      //
+      // It can refuse: a spiral needs height to turn through and a blade needs
+      // a plate long enough to be slender ON. When it does, the stack below
+      // catches it.
+      let towerStyle = -1;
+      if (!item.construction && fl >= 20 && h >= 62) {
+        const tf = TOWER_FAMILIES[Math.floor(hash01(k ^ 0x70e2, this.citySeed ^ 0xa11) * TOWER_FAMILIES.length) % TOWER_FAMILIES.length];
+        const built = towerMassing(tf, ring as [number, number][], cx, cy, h, fl, fh2,
+          (n) => hash01(k ^ Math.imul(n + 1, 0x9e3779b1), this.citySeed ^ 0x7057));
+        if (built && built.tiers.length >= 2) {
+          tiers = built.tiers;
+          towerStyle = built.style;
+        }
+      }
+      if (towerStyle >= 0) { meta[0] = towerStyle; }
+      else if (item.construction || fl < 7 || h < 22) {
         tiers = [{ fp: inset(B), z0: 0, z1: h }];
       } else if (mroll < 0.30) {
         const podTop = Math.min(h * 0.28, fh2 * 3.2);
@@ -5208,7 +5385,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           ];
           for (const [x, y, z, u] of quad) {
             T.pos.push(x, y, z); T.norm.push(n[0], n[1], n[2]); T.u.push(u);
-            T.style.push(meta[0]); T.rand.push(meta[1]); T.varr.push(meta[2]); T.top.push(tier.z1); T.fh.push(meta[4]);
+            T.style.push(tier.style ?? meta[0]); T.rand.push(meta[1]); T.varr.push(meta[2]); T.top.push(tier.z1); T.fh.push(meta[4]);
             T.era.push(nowEra);
             T.seg.push(u0, u1); T.ccv.push(1, 1);
           }
@@ -5237,7 +5414,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         for (const t of tris) {
           for (const idx of t) {
             R2.pos.push(tfp[idx][0], tfp[idx][1], tier.z1); R2.norm.push(0, 0, 1); R2.u.push(4);
-            R2.style.push(item.construction ? 5 : meta[0]); R2.rand.push(rnd); R2.varr.push(varr); R2.top.push(tier.z1); R2.fh.push(fh2);
+            R2.style.push(item.construction ? 5 : (tier.roof ?? tier.style ?? meta[0])); R2.rand.push(rnd); R2.varr.push(varr); R2.top.push(tier.z1); R2.fh.push(fh2);
             R2.era.push(nowEra);
             R2.seg.push(deck2, wear2); R2.ccv.push(bx2, by2);
           }
@@ -6535,6 +6712,300 @@ function urnGeom(): THREE.BufferGeometry {
     new THREE.SphereGeometry(0.52, 10, 7).scale(1, 1, 1.25).translate(0, 0, 1.36),
     new THREE.CylinderGeometry(0.44, 0.30, 0.30, 10).rotateX(Math.PI / 2).translate(0, 0, 2.05),
   ]);
+}
+
+// ===========================================================================
+// TEN TOWERS.
+//
+// Everything over twenty storeys in this game was one of five shapes: a prism,
+// a prism on a podium, a prism with a setback, a prism with two setbacks, and a
+// slender prism on a podium. All five are the same operation — scale the plate
+// toward its own centre and stack it — which is the 1916 sky-exposure plane and
+// nothing since. A city whose newest tower is a 1961 move does not look like a
+// city anybody is building in now.
+//
+// What has actually gone up in New York in the last decade does four things
+// that stack-and-shrink cannot express: it ROTATES the plate, it OFFSETS it,
+// it CUTS the corners off at an angle, and it lets the top oversail the shaft.
+// These ten are those moves, each taken from a building that exists.
+//
+// The kit below is four plate operations. Every family is a short recipe in
+// them, which is also how the real ones were drawn.
+
+type Plate = [number, number][];
+
+/** Scale a plate about a point. */
+const plScale = (r: Plate, cx: number, cy: number, f: number): Plate =>
+  r.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f]);
+
+/** Scale a plate differently along two perpendicular axes — how a slab gets slender. */
+const plScaleAxis = (r: Plate, cx: number, cy: number, ang: number, fA: number, fB: number): Plate => {
+  const ca = Math.cos(ang), sa = Math.sin(ang);
+  return r.map(([x, y]) => {
+    const dx = x - cx, dy = y - cy;
+    const a = (dx * ca + dy * sa) * fA;      // along
+    const b = (-dx * sa + dy * ca) * fB;     // across
+    return [cx + a * ca - b * sa, cy + a * sa + b * ca];
+  });
+};
+
+/** Rotate a plate about a point. */
+const plRot = (r: Plate, cx: number, cy: number, a: number): Plate => {
+  const c = Math.cos(a), s = Math.sin(a);
+  return r.map(([x, y]) => {
+    const dx = x - cx, dy = y - cy;
+    return [cx + dx * c - dy * s, cy + dx * s + dy * c];
+  });
+};
+
+/** Slide a plate sideways. */
+const plMove = (r: Plate, dx: number, dy: number): Plate => r.map(([x, y]) => [x + dx, y + dy]);
+
+/**
+ * Cut every corner off at `cut` metres. The chamfer is the single most
+ * characteristic move of the current generation — One Vanderbilt is a box
+ * whose corners have been taken off four times on the way up — and it is what
+ * stops a tower reading as a rectangle from every angle at once.
+ */
+const plChamfer = (r: Plate, cut: number): Plate => {
+  const n = r.length;
+  if (n < 3 || cut <= 0.01) return r;
+  const out: Plate = [];
+  for (let i = 0; i < n; i++) {
+    const p = r[i], a = r[(i - 1 + n) % n], b = r[(i + 1) % n];
+    const la = Math.hypot(p[0] - a[0], p[1] - a[1]) || 1;
+    const lb = Math.hypot(b[0] - p[0], b[1] - p[1]) || 1;
+    const ka = Math.min(cut, la * 0.45) / la, kb = Math.min(cut, lb * 0.45) / lb;
+    out.push([p[0] + (a[0] - p[0]) * ka, p[1] + (a[1] - p[1]) * ka]);
+    out.push([p[0] + (b[0] - p[0]) * kb, p[1] + (b[1] - p[1]) * kb]);
+  }
+  return out;
+};
+
+/** Round the corners — Chaikin, twice, which is a soft radius on a convex plate. */
+const plRound = (r: Plate, iters: number): Plate => {
+  let cur = r;
+  for (let k = 0; k < iters; k++) {
+    const out: Plate = [];
+    for (let i = 0; i < cur.length; i++) {
+      const p = cur[i], q = cur[(i + 1) % cur.length];
+      out.push([p[0] * 0.75 + q[0] * 0.25, p[1] * 0.75 + q[1] * 0.25]);
+      out.push([p[0] * 0.25 + q[0] * 0.75, p[1] * 0.25 + q[1] * 0.75]);
+    }
+    cur = out;
+  }
+  return cur;
+};
+
+/** The long axis of a plate, for the families that need to know which way is which. */
+const plAxis = (r: Plate): number => {
+  let best = 0, bl = -1;
+  for (let i = 0; i < r.length; i++) {
+    const a = r[i], b = r[(i + 1) % r.length];
+    const l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (l > bl) { bl = l; best = Math.atan2(b[1] - a[1], b[0] - a[0]); }
+  }
+  return best;
+};
+
+export interface TowerTier {
+  fp: Plate; z0: number; z1: number;
+  /** Overrides the building's wall style for this tier — steel shelves, a glass box on a stone base. */
+  style?: number;
+  /** Overrides the roof surface where this tier's top is a terrace rather than a cap. */
+  roof?: number;
+}
+
+export const TOWER_FAMILIES = [
+  "vanderbilt", "spiral", "exo", "stack", "carve",
+  "blade", "shelf", "curveslab", "deepframe", "twist",
+] as const;
+
+/**
+ * The shape of a tower, and the skin that goes with it.
+ *
+ * `h` is metres, `fl` floors, `fh` the floor height. `u(k)` is a stable hash in
+ * [0,1) for this building. Returns null when the site cannot carry the family —
+ * a spiral needs the height to turn through, a blade needs a plate long enough
+ * to be slender ON — and the caller falls back to the ordinary stack.
+ */
+function towerMassing(
+  fam: string, ring: Plate, cx: number, cy: number, h: number, fl: number, fh: number,
+  u: (k: number) => number,
+): { tiers: TowerTier[]; style: number } | null {
+  const ax = plAxis(ring);
+  let span = 0;
+  for (const [x, y] of ring) span = Math.max(span, Math.hypot(x - cx, y - cy));
+  const B = 0.78;                                  // the base plate the old prism used
+  const base = plScale(ring, cx, cy, B);
+  const T: TowerTier[] = [];
+  const at = (f: number) => h * f;
+
+  switch (fam) {
+    case "vanderbilt": {
+      // ONE VANDERBILT. A box whose corners come off four times on the way up,
+      // each cut deeper than the last, so the tower is an octagon by the time
+      // it reaches the top and never shows you the same width twice.
+      const n = 4;
+      const cuts = [1.2, 2.8, 5.0, 7.8].map((c) => c * (0.8 + 0.5 * u(1)));
+      const sc = [1.0, 0.90, 0.79, 0.66];
+      const tops = [0.30, 0.56, 0.80, 1.0];
+      let z = 0;
+      for (let k = 0; k < n; k++) {
+        T.push({ fp: plChamfer(plScale(base, cx, cy, sc[k]), cuts[k] * span * 0.10), z0: z, z1: at(tops[k]) });
+        z = at(tops[k]);
+      }
+      return { tiers: T, style: S_TERRAPIER };
+    }
+    case "spiral": {
+      // THE SPIRAL. A planted terrace that climbs the building one corner at a
+      // time — every tier is the last one rotated and pulled in slightly, so
+      // the setback travels round the tower instead of ringing it.
+      // a terrace every four floors or so, which is what the real one does
+      const n = Math.max(5, Math.min(9, Math.round(h / (fh * 4))));
+      if (h < 55) return null;
+      const dir = u(2) < 0.5 ? 1 : -1;
+      let z = 0;
+      for (let k = 0; k < n; k++) {
+        const f = 1 - k * (0.052 + 0.018 * u(3));
+        const fp = plRot(plScale(base, cx, cy, f), cx, cy, dir * k * (0.10 + 0.05 * u(4)));
+        const top = at((k + 1) / n);
+        // every tier but the last has somebody's garden on it
+        T.push({ fp, z0: z, z1: top, roof: k === n - 1 ? undefined : S_GREEN });
+        z = top;
+      }
+      return { tiers: T, style: S_UNITGLASS };
+    }
+    case "exo": {
+      // 270 PARK. The tower does not reach the ground — it stands on splayed
+      // braced legs, so the base is WIDER than the shaft and open under it.
+      // The diagrid skin is the same structure carried on up the building.
+      if (h < 60) return null;
+      const legTop = at(0.10 + 0.03 * u(5));
+      T.push({ fp: plChamfer(plScale(ring, cx, cy, 0.98), span * 0.22), z0: 0, z1: legTop, style: S_DIAGRID });
+      T.push({ fp: plScale(base, cx, cy, 0.94), z0: legTop, z1: at(0.16), style: S_PLAIN });
+      T.push({ fp: plScale(base, cx, cy, 0.80), z0: at(0.16), z1: h });
+      return { tiers: T, style: S_DIAGRID };
+    }
+    case "stack": {
+      // STACKED AND SHIFTED. Three or four boxes that do not sit over each
+      // other — every one gives a terrace on one side and an overhang on the
+      // other, and the tower has a different profile from all four elevations.
+      const n = 3 + (u(6) > 0.55 ? 1 : 0);
+      let z = 0;
+      for (let k = 0; k < n; k++) {
+        const f = 1 - k * 0.09;
+        const off = (u(7 + k) - 0.5) * span * 0.42;
+        const oa = ax + (k % 2 ? Math.PI / 2 : 0);
+        const fp = plRot(plMove(plScale(base, cx, cy, f), Math.cos(oa) * off, Math.sin(oa) * off),
+          cx, cy, (u(11 + k) - 0.5) * 0.14);
+        const top = at((k + 1) / n);
+        T.push({ fp, z0: z, z1: top, roof: k === n - 1 ? undefined : S_GREEN });
+        z = top;
+      }
+      return { tiers: T, style: S_CRYSTAL };
+    }
+    case "carve": {
+      // SOLAR CARVE. The mass has planes sliced off it at an angle — the cut
+      // is deepest where it would otherwise shade its neighbour, which is
+      // literally how 40 Tenth Avenue was shaped. Each stage takes its slice
+      // from the opposite side of the one below.
+      const n = 3;
+      let z = 0;
+      for (let k = 0; k < n; k++) {
+        const side = k % 2 ? 1 : -1;
+        const cut = span * (0.16 + 0.10 * u(15 + k));
+        // chamfer, then push the plate off-centre so the cut reads as a slice
+        const fp = plMove(plChamfer(plScale(base, cx, cy, 1 - k * 0.10), cut),
+          Math.cos(ax + Math.PI / 2) * side * cut * 0.42,
+          Math.sin(ax + Math.PI / 2) * side * cut * 0.42);
+        const top = at((k + 1) / n);
+        T.push({ fp, z0: z, z1: top });
+        z = top;
+      }
+      return { tiers: T, style: S_CRYSTAL };
+    }
+    case "blade": {
+      // 111 WEST 57TH. Hyper-slender: the plate is squeezed across its short
+      // axis until the tower is a blade, and the setbacks feather up ONE face
+      // in small steps rather than stepping all four. It ends as a wall.
+      if (fl < 26) return null;
+      const n = 7;
+      let z = 0;
+      for (let k = 0; k < n; k++) {
+        const fA = 1 - k * 0.012;                     // barely narrows the long way
+        const fB = 0.62 - k * 0.055;                  // and closes hard the short way
+        if (fB < 0.14) break;
+        const fp = plMove(plScaleAxis(base, cx, cy, ax, fA, fB),
+          Math.cos(ax + Math.PI / 2) * span * 0.02 * k,
+          Math.sin(ax + Math.PI / 2) * span * 0.02 * k);
+        const top = at((k + 1) / n);
+        T.push({ fp, z0: z, z1: top });
+        z = top;
+      }
+      return T.length >= 3 ? { tiers: T, style: S_TERRAPIER } : null;
+    }
+    case "shelf": {
+      // 425 PARK. Three stacked volumes with the steel expressed BETWEEN them:
+      // a shallow plate standing proud at each junction, which reads as a
+      // shelf the whole width of the building.
+      if (h < 55) return null;
+      const cuts = [0.34, 0.66, 1.0];
+      const sc = [1.0, 0.86, 0.70];
+      let z = 0;
+      for (let k = 0; k < 3; k++) {
+        const fp = plScale(base, cx, cy, sc[k]);
+        const top = at(cuts[k]);
+        T.push({ fp, z0: z, z1: top - (k < 2 ? 1.4 : 0) });
+        if (k < 2) {
+          // the shelf itself: wider than both volumes, and made of steel
+          T.push({ fp: plScale(base, cx, cy, sc[k] + 0.07), z0: top - 1.4, z1: top, style: S_PLAIN });
+        }
+        z = top;
+      }
+      return { tiers: T, style: S_STEELSHELF };
+    }
+    case "curveslab": {
+      // ONE MANHATTAN WEST. Corners rounded rather than cut, and the top
+      // sliced on a slope — a soft-edged slab, which at this size is a
+      // completely different object from a sharp one.
+      const r0 = plRound(base, 2);
+      const cut = at(0.86 + 0.06 * u(19));
+      T.push({ fp: r0, z0: 0, z1: cut });
+      // the sloped crown, drawn as two shallow oversailing stages
+      T.push({ fp: plMove(plScale(r0, cx, cy, 0.94), Math.cos(ax) * span * 0.06, Math.sin(ax) * span * 0.06), z0: cut, z1: at(0.95) });
+      T.push({ fp: plMove(plScale(r0, cx, cy, 0.80), Math.cos(ax) * span * 0.13, Math.sin(ax) * span * 0.13), z0: at(0.95), z1: h });
+      return { tiers: T, style: S_UNITGLASS };
+    }
+    case "deepframe": {
+      // 55 HUDSON YARDS. Almost no taper at all — the interest is entirely in
+      // the wall, which is a half-metre-deep grid. One notch is taken out of a
+      // corner for the whole height so the mass is not a plain box.
+      const notch = plChamfer(base, span * 0.30);
+      T.push({ fp: notch, z0: 0, z1: at(0.92) });
+      T.push({ fp: plScale(notch, cx, cy, 0.965), z0: at(0.92), z1: h, style: S_PLAIN });
+      return { tiers: T, style: S_DEEPFRAME };
+    }
+    case "twist": {
+      // THE TWIST. Every floor turns a degree or two on the one below, so the
+      // corners run up the building as slow helices and the silhouette changes
+      // as you walk round it. Drawn as a stack thin enough that the steps read
+      // as a curve.
+      if (fl < 22) return null;
+      const n = Math.max(9, Math.min(16, Math.round(fl / 2.5)));
+      const total = (0.42 + 0.30 * u(21)) * (u(22) < 0.5 ? 1 : -1);
+      let z = 0;
+      for (let k = 0; k < n; k++) {
+        const t = (k + 1) / n;
+        const fp = plRot(plScale(base, cx, cy, 1 - t * 0.16), cx, cy, total * (k / n));
+        const top = at(t);
+        T.push({ fp, z0: z, z1: top });
+        z = top;
+      }
+      return { tiers: T, style: S_MEGAPANEL };
+    }
+    default: return null;
+  }
 }
 
 function mergeGeoms(geoms: THREE.BufferGeometry[]): THREE.BufferGeometry {

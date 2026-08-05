@@ -644,7 +644,26 @@ vec3 aerial(vec3 c, vec3 p, vec3 cam) {
   float lowFog = exp(-max(p.z, 0.0) / 46.0);
   f = clamp(f * (1.0 + 0.44 * lowFog), 0.0, 1.0);
 
-  return mix(c, haze, f * 0.35);
+  // AND THE AIR HAS A SEASON. Cold air holds almost no water and a great deal
+  // less dust, which is why a clear February day sees for ever and August
+  // haze closes the same view down to a mile — it is one of the largest
+  // visible differences between two months of the year, and this term was a
+  // constant. Winter also has the longest shadows and the lowest sun, so the
+  // clarity and the drama arrive together, which is exactly what a northern
+  // city looks like in January.
+  float clarity = mix(1.06, 0.72, SNOW);
+  // Summer's own contribution, taken off leaf vigour rather than a second
+  // date: humid air and full canopies are the same weather.
+  clarity *= mix(1.0, 1.16, VIGOUR);
+
+  // AND AN ALTITUDE FLOOR. Dividing distance by camera height keeps the effect
+  // reading the same down a street and across the harbour, which is what it is
+  // for — but it also cancels itself at altitude, so the establishing shot,
+  // three kilometres up over the whole island, was getting almost no
+  // atmosphere at all. Real aerial photography from that height has a lot.
+  float alt = smoothstep(1100.0, 4200.0, cam.z) * 0.20 * (1.0 - exp(-d / 1200.0));
+
+  return mix(c, haze, clamp(f * 0.35 * clarity + alt, 0.0, 1.0));
 }`;
 
 /**
@@ -867,7 +886,7 @@ varying float vRet;
 uniform float uOpacity;
 uniform vec3 uCam;
 ${"" /* shadow sampling */}
-` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + SEASON_GLSL + STYLE_SETS_GLSL + /* glsl */ `
+` + SHADOW_GLSL + LIGHT_GLSL + SEASON_GLSL + HAZE_GLSL + STYLE_SETS_GLSL + /* glsl */ `
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
@@ -2193,7 +2212,7 @@ varying float vLit;
 varying float vRet;
 uniform float uOpacity;
 uniform vec3 uCam;
-` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + SEASON_GLSL + STYLE_SETS_GLSL + /* glsl */ `
+` + SHADOW_GLSL + LIGHT_GLSL + SEASON_GLSL + HAZE_GLSL + STYLE_SETS_GLSL + /* glsl */ `
 float rhash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float rnoise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
@@ -2949,7 +2968,7 @@ uniform vec3 uCam;
 uniform sampler2D uReflect;
 uniform vec2 uResolution;
 uniform float uReflectOn;
-` + LIGHT_GLSL + HAZE_GLSL + SEASON_GLSL + /* glsl */ `
+` + LIGHT_GLSL + SEASON_GLSL + HAZE_GLSL + /* glsl */ `
 float wave(vec2 p, vec2 dir, float len, float spd, float t) {
   return sin(dot(p, dir) / len + t * spd);
 }
@@ -3098,7 +3117,7 @@ uniform vec3 uColor;
 uniform float uOpacity;
 uniform vec3 uCam;
 uniform float uFoliage;   // 0 = not a leaf, 1 = deciduous canopy, 2 = conifer
-` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + SEASON_GLSL + /* glsl */ `
+` + SHADOW_GLSL + LIGHT_GLSL + SEASON_GLSL + HAZE_GLSL + /* glsl */ `
 void main() {
   vec3 n = normalize(vN);
   vec3 base = uColor * vC;

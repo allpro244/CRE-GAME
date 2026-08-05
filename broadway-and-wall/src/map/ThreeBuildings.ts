@@ -2853,6 +2853,54 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 
+// THE STREETS WERE NEVER LIT.
+//
+// Every road surface in this city is drawn by MapLibre as a flat fill. The
+// renderer reaches them twice — the catcher lays a shadow on them, the
+// occlusion pass darkens where buildings meet them — and both of those only
+// ever SUBTRACT. No sun has ever touched the largest continuous surface in the
+// frame, which is why the ground has stayed a flat grey field under a city
+// that otherwise has warm stone, glinting glass and a harbour full of light.
+//
+// Asphalt and flagstone are nothing like matte. They go sharply glossy toward
+// grazing angles, and a street photographed down the line of a low sun has a
+// sheen running the whole way up it — one of the most recognisable things
+// about a city in late light. That is a specular term on an up-facing plane,
+// which is cheap, and it has to be gated on sun visibility or the road lights
+// up inside the shadow of the building next to it.
+//
+// Added rather than blended, on its own quad, because the catcher composites
+// with alpha and alpha can only ever darken toward a colour: to make the
+// ground BRIGHTER than whatever MapLibre painted there, the contribution has
+// to be additive.
+const GROUND_SHEEN_FRAG = /* glsl */ `
+precision highp float;
+varying vec3 vPos;
+uniform vec3 uCam;
+uniform vec4 uSeason;
+` + SHADOW_GLSL + LIGHT_GLSL + /* glsl */ `
+void main() {
+  vec3 n = vec3(0.0, 0.0, 1.0);          // the ground is flat and faces up
+  float vis = sunVis(vPos, n);
+  if (vis < 0.01) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); }
+  else {
+    vec3 V = normalize(uCam - vPos);
+    float sd = max(dot(n, normalize(SUN_DIR + V)), 0.0);
+    // a broad wet-looking sheen, and a tighter core down the sun's own line
+    // A FLAT PLANE UNDER A LOW SUN FIRES ALL AT ONCE. There is no ripple here
+    // to break the highlight the way the harbour's swell does — asphalt is
+    // flat, and that is the point — so the whole road network shares one
+    // alignment with the half-vector and whatever gain this carries is applied
+    // to all of it simultaneously. It has to be a sheen you notice on the
+    // second look, not a light source.
+    float sheen = pow(sd, 18.0) * 0.05 + pow(sd, 90.0) * 0.13;
+    // Snow is diffuse and kills a specular stone dead — what snow does instead
+    // is glitter, and that is handled per-crystal on the surfaces this layer
+    // actually draws.
+    gl_FragColor = vec4(SUN_COL * sheen * vis * (1.0 - uSeason.x * 0.85), 1.0);
+  }
+}`;
+
 // ---------------------------------------------------------------------------
 // THE POST STAGE
 // ---------------------------------------------------------------------------
@@ -3721,6 +3769,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private shadowSpan = 5999;
   private depthMat: THREE.MeshDepthMaterial | null = null;
   private groundCatcher: THREE.Mesh | null = null;
+  private groundSheen: THREE.Mesh | null = null;
   private aoGround: THREE.Mesh | null = null;
   visible = true;
 
@@ -5973,6 +6022,49 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         });
         this.groundCatcher = new THREE.Mesh(new THREE.PlaneGeometry(3800, 3200).translate(0, 150, 0.07), catcherMat);
         this.scene.add(this.groundCatcher);
+
+        // and the sun's own contribution to that same ground, added on top
+        const sheenMat = new THREE.ShaderMaterial({
+          vertexShader: CATCHER_VERT,
+          fragmentShader: GROUND_SHEEN_FRAG,
+          uniforms: {
+            uShadow: { value: target.texture }, uSunVP: { value: sunVP },
+            uShadowOn: { value: 1 }, uShadowSpan: { value: this.shadowSpan },
+            uSeason: this.seasonUni, uCam: this.camUni,
+            uSunDir: this.sunDirUni, uSunCol: this.sunColUni,
+          },
+          transparent: true,
+          depthWrite: false,
+          // ADD LIGHT, TOUCH NOTHING ELSE — and THREE.AdditiveBlending will not
+          // do it. Additive blends the ALPHA channel by the same factors as the
+          // colour, so this quad was writing a=1 across the entire city while
+          // carrying rgb near zero. The scene buffer is premultiplied, so the
+          // composite read that as "opaque, and black" and dutifully replaced
+          // every street MapLibre had drawn underneath. The streets went to
+          // pitch from a pass that is arithmetically incapable of darkening
+          // anything.
+          //
+          // Colour adds; alpha is left exactly as the geometry left it. In a
+          // premultiplied buffer, rgb > 0 with a = 0 is precisely the encoding
+          // for "light that arrived here without a surface", which is what a
+          // specular highlight on somebody else's pavement is.
+          blending: THREE.CustomBlending,
+          blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+          blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+        });
+        // UNDER THE SEA, NOT OVER IT. This quad is a rectangle and the city is
+        // an island, so at 0.08 it was laying a specular sheet across the whole
+        // harbour — the sun's road on the water, painted twice, once by water
+        // that had earned it and once by a slab of asphalt lighting that was
+        // not there. Dropped below the water sheet at 0.01, the sea occludes it
+        // by depth exactly where there is no ground, and the hole punched in
+        // the water for the island is precisely where it should show through.
+        this.groundSheen = new THREE.Mesh(
+          new THREE.PlaneGeometry(3800, 3200).translate(0, 150, 0.005), sheenMat,
+        );
+        // a flat sheet lying on the ground: nothing to cast, nothing to mirror
+        this.groundSheen.userData.noShadow = true;
+        this.scene.add(this.groundSheen);
       }
     } catch {
       // shadows are enhancement, never a blocker — flat lighting still ships
@@ -6617,12 +6709,17 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const reflStrength = smoothstep(20, 46, this.map.getPitch());
     if (this.waterMat) this.waterMat.uniforms.uReflectOn.value = reflStrength;
     if (this.water && this.reflectRT && this.waterMat && reflStrength > 0.02) {
+      // Everything lying ON the mirror plane is coplanar with its own
+      // reflection — the same set the shadow bake excludes, for the same
+      // reason it is flagged: flat ground sheets.
       const wasWater = this.water.visible;
       const wasCatcher = this.groundCatcher?.visible ?? false;
       const wasAo = this.aoGround?.visible ?? false;
+      const wasSheen = this.groundSheen?.visible ?? false;
       this.water.visible = false;
       if (this.groundCatcher) this.groundCatcher.visible = false;
       if (this.aoGround) this.aoGround.visible = false;
+      if (this.groundSheen) this.groundSheen.visible = false;
 
       this.camera.projectionMatrix = new THREE.Matrix4()
         .multiplyMatrices(base, new THREE.Matrix4().makeScale(1, 1, -1));
@@ -6634,6 +6731,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.water.visible = wasWater;
       if (this.groundCatcher) this.groundCatcher.visible = wasCatcher;
       if (this.aoGround) this.aoGround.visible = wasAo;
+      if (this.groundSheen) this.groundSheen.visible = wasSheen;
       this.camera.projectionMatrix = base;
 
       this.waterMat.uniforms.uReflect.value = this.reflectRT.texture;

@@ -3844,13 +3844,53 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const inset = mansard ? Math.min(2.4, span * 0.16) : Math.max(1.6, span * 0.34);
         roofZ = v.z1 + rise;
         if (!pitchCap(ring, v.z1, rise, inset, rMeta)) capRoof(R, ring, v.z1, meta);
-        else if (mansard) {
-          // the cornice a mansard sits on — the eave line is the whole point
-          const lip = insetRing(ring, -0.32);
-          if (lip) {
-            const cMeta = [S_CORNICE, rnd, varr, v.z1 + 0.3, fh];
-            extrudeWalls(W, lip, v.z1 - 0.6, v.z1 + 0.1, cMeta);
-            capRoof(R, lip, v.z1 + 0.1, cMeta);
+        else {
+          if (mansard) {
+            // the cornice a mansard sits on — the eave line is the whole point
+            const lip = insetRing(ring, -0.32);
+            if (lip) {
+              const cMeta = [S_CORNICE, rnd, varr, v.z1 + 0.3, fh];
+              extrudeWalls(W, lip, v.z1 - 0.6, v.z1 + 0.1, cMeta);
+              capRoof(R, lip, v.z1 + 0.1, cMeta);
+            }
+          }
+          // ---- DORMERS, which are the thing a mansard is FOR ----------------
+          //
+          // A mansard exists so the top storey is a room rather than a void,
+          // and that room gets its light through the slope. Every mansard and
+          // hip in this city was a bare plane of slate — which is not a roof
+          // shape, it is a hat.
+          //
+          // They go on the slope, so the deck kit cannot place them: it fits
+          // parts to a flat polygon and every candidate here is on a pitch.
+          // Walked along the eave instead, one per window bay, set a third of
+          // the way up the slope and turned to face out of it — which is where
+          // the rooms behind them are.
+          const topR = insetRing(ring, inset);
+          const dorm = mansard ? 41 : 40;
+          if (topR && topR.length === ring.length && rise > 2.2 && varr > 0.18) {
+            const t = 0.34;                       // up the slope, out of the gutter
+            const dz = v.z1 + rise * t;
+            const dScale = Math.min(1.25, Math.max(0.72, rise / 3.4));
+            for (let i = 0; i < ring.length; i++) {
+              const a2 = ring[i], b2 = ring[(i + 1) % ring.length];
+              const d2 = topR[i], c2 = topR[(i + 1) % topR.length];
+              const ex = b2[0] - a2[0], ey = b2[1] - a2[1];
+              const eL = Math.hypot(ex, ey);
+              if (eL < 5.5) continue;             // no room for one on a return
+              const nx = ey / eL, ny = -ex / eL;  // outward: rings are CCW here
+              const n2 = Math.min(5, Math.floor(eL / 4.6));
+              for (let k = 0; k < n2; k++) {
+                const f = (k + 0.5) / n2;
+                const px = a2[0] + ex * f, py = a2[1] + ey * f;
+                const qx = d2[0] + (c2[0] - d2[0]) * f, qy = d2[1] + (c2[1] - d2[1]) * f;
+                props.push({
+                  kind: dorm, b: v.b,
+                  x: px + (qx - px) * t, y: py + (qy - py) * t, z: dz,
+                  s: dScale, rot: Math.atan2(ny, nx),
+                });
+              }
+            }
           }
         }
       } else {
@@ -4510,6 +4550,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       { geom: roofSignGeom(), color: 0xffffff },        // 37 painted — see SIGN_COLORS
       { geom: tankTowerGeom(), color: 0x8a8f8c },       // 38 steel tank
       { geom: urnGeom(), color: 0xa9a293 },             // 39 cast stone
+      { geom: dormerGeom(), color: 0xcfc7b4 },          // 40 painted trim
+      { geom: dormerRoundGeom(), color: 0xc9c1af },     // 41 painted trim
     ];
     // painted signs come in painted-sign colours
     const SIGN_COLORS: [number, number, number][] = [
@@ -6307,6 +6349,8 @@ const PROP_R: Record<number, number> = {
   37: 4.6,  // roof sign
   38: 2.6,  // tank on a steel tower
   39: 0.8,  // parapet urn
+  40: 0.9,  // dormer — placed on the slope, not through the deck kit
+  41: 0.9,  // round-headed dormer
 };
 
 /** A metre of walkway between anything and the parapet. Code, and it reads. */
@@ -6783,6 +6827,34 @@ function tankTowerGeom(): THREE.BufferGeometry {
   parts.push(new THREE.ConeGeometry(2.45, 1.3, 14).rotateX(Math.PI / 2).translate(0, 0, 10.2));
   parts.push(new THREE.TorusGeometry(0.42, 0.05, 4, 8).rotateY(Math.PI / 2).translate(1.5, -1.5, 4.4));
   return mergeGeoms(parts);
+}
+
+/**
+ * A DORMER, which is the thing a mansard is FOR.
+ *
+ * A mansard roof exists so the top storey is a habitable room rather than a
+ * void, and the only way that room gets light is a dormer punched through the
+ * slope. A mansard without them is not a roof shape, it is a hat — and every
+ * mansard and hip in this city was wearing one.
+ *
+ * Gabled, with cheeks and a little pitched hood, facing outward along +X.
+ */
+function dormerGeom(): THREE.BufferGeometry {
+  return mergeGeoms([
+    new THREE.BoxGeometry(1.30, 1.40, 1.60).translate(0.22, 0, 0.80),
+    new THREE.ConeGeometry(1.12, 0.80, 4).rotateX(Math.PI / 2).rotateZ(Math.PI / 4).translate(0.22, 0, 1.98),
+    new THREE.BoxGeometry(0.10, 1.55, 0.14).translate(0.86, 0, 1.62),   // the hood's drip
+  ]);
+}
+
+/** The round-headed dormer of a good Second Empire roof: a drum with a hood. */
+function dormerRoundGeom(): THREE.BufferGeometry {
+  return mergeGeoms([
+    new THREE.BoxGeometry(1.20, 1.30, 1.25).translate(0.20, 0, 0.62),
+    new THREE.CylinderGeometry(0.65, 0.65, 1.20, 10, 1, false, 0, Math.PI)
+      .rotateZ(-Math.PI / 2).rotateX(Math.PI / 2).translate(0.20, 0, 1.25),
+    new THREE.SphereGeometry(0.72, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 1, 0.7).translate(0.20, 0, 1.24),
+  ]);
 }
 
 /** A parapet urn on its plinth — the cornice-level ornament of a good address. */

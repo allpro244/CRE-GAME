@@ -1581,6 +1581,43 @@ void main() {
   gl_FragColor = vec4(tint, 1.0);
 }`;
 
+// CREPUSCULAR RAYS — the reason to put the sun at 28 degrees in the first place.
+//
+// A low sun behind a skyline is the single most photographed thing a city
+// does, and every part of the machinery to draw it was already here: a sun
+// whose screen position is known, and a depth buffer that says exactly which
+// pixels it can shine through. What was missing is the air for it to shine
+// through, which in screen space is a radial blur of the SKY MASK away from
+// the sun — light accumulating along each ray until a building interrupts it.
+//
+// Quarter resolution, because a shaft of light is the softest thing in any
+// frame and there is no detail in it to lose. Twenty-four steps with a
+// geometric decay, so the near end of each ray counts for most of it and the
+// far end trails off rather than ending.
+const SHAFT_FRAG = /* glsl */ `
+precision highp float;
+varying vec2 vUv;
+uniform sampler2D uDepth;
+uniform vec3 uSunScreen;
+uniform float uDensity;
+uniform float uDecay;
+void main() {
+  if (uSunScreen.z < 0.5) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); }
+  else {
+    vec2 uv = vUv;
+    vec2 stride = (uv - uSunScreen.xy) * (uDensity / 24.0);
+    float illum = 1.0;
+    float acc = 0.0;
+    for (int i = 0; i < 24; i++) {
+      uv -= stride;
+      // 1 where the ray is still in open sky, 0 the moment a building eats it
+      acc += step(0.9999, texture2D(uDepth, uv).x) * illum;
+      illum *= uDecay;
+    }
+    gl_FragColor = vec4(vec3(acc / 24.0), 1.0);
+  }
+}`;
+
 // The composite. Tilt-shift first, then the bloom on top of it, because light
 // that has spilled has already left the lens and does not get defocused again.
 const COMPOSITE_FRAG = /* glsl */ `
@@ -1597,6 +1634,8 @@ uniform float uGrain;
 uniform vec3 uSunScreen;   // xy = where the sun is on screen, z = 1 if in front
 uniform vec3 uSunTint;
 uniform float uGlare;
+uniform sampler2D uShaft;
+uniform float uShaftAmt;
 ` + AO_GLSL + /* glsl */ `
 
 // A MODEL CITY PHOTOGRAPHS LIKE A MODEL CITY.
@@ -1689,6 +1728,12 @@ void main() {
   // between you and it. One depth tap where the sun is, so a tower crossing
   // the sun cuts the flare — which is the moment the effect earns its place,
   // because that is when a viewer reads the light as being IN the scene.
+  // The shafts go on before the veil, because the veil is happening in the
+  // lens and the shafts are happening out in the city.
+  if (uSunScreen.z > 0.5 && uShaftAmt > 0.001) {
+    c.rgb += uSunTint * texture2D(uShaft, vUv).r * uShaftAmt;
+  }
+
   if (uSunScreen.z > 0.5 && uGlare > 0.001) {
     // aspect-corrected, or the glare is an ellipse on any non-square window
     vec2 d = (vUv - uSunScreen.xy) * vec2(uTexel.y / max(uTexel.x, 1e-6), 1.0);
@@ -1921,6 +1966,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private bloomA: THREE.WebGLRenderTarget | null = null;
   private bloomB: THREE.WebGLRenderTarget | null = null;
   private reflectRT: THREE.WebGLRenderTarget | null = null;
+  private shaftRT: THREE.WebGLRenderTarget | null = null;
   private postScene = new THREE.Scene();
   private postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private postQuad: THREE.Mesh | null = null;
@@ -1928,6 +1974,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private blurMat!: THREE.ShaderMaterial;
   private compMat!: THREE.ShaderMaterial;
   private aoMultMat!: THREE.ShaderMaterial;
+  private shaftMat!: THREE.ShaderMaterial;
   private postSize = new THREE.Vector2(0, 0);
   /** Exposed for playtests: the only way to assert a demolition really happened. */
   posAttrs: THREE.BufferAttribute[] = [];
@@ -2048,6 +2095,16 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
         uniforms: aoUniforms(),
       });
+      this.shaftMat = new THREE.ShaderMaterial({
+        vertexShader: POST_VERT, fragmentShader: SHAFT_FRAG, depthTest: false, depthWrite: false,
+        uniforms: {
+          uDepth: { value: null }, uSunScreen: { value: new THREE.Vector3() },
+          // Density is how far back along each ray the walk reaches. Much past
+          // this and the shafts stop converging on the sun and start looking
+          // like a zoom blur of the whole frame.
+          uDensity: { value: 0.62 }, uDecay: { value: 0.955 },
+        },
+      });
       this.compMat = new THREE.ShaderMaterial({
         vertexShader: POST_VERT, fragmentShader: COMPOSITE_FRAG, depthTest: false, depthWrite: false,
         transparent: true,
@@ -2076,6 +2133,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           uSunScreen: { value: new THREE.Vector3() },
           uSunTint: { value: new THREE.Vector3(1.0, 0.86, 0.66) },
           uGlare: { value: 0.30 },
+          uShaft: { value: null }, uShaftAmt: { value: 0.42 },
           ...aoUniforms(),
         },
       });
@@ -2117,6 +2175,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // The reflection runs at half resolution. It is about to be displaced by
       // a wave normal and then mixed in at a Fresnel weight; there is no
       // resolution in it left to see.
+      this.shaftRT?.dispose();
+      this.shaftRT = new THREE.WebGLRenderTarget(bw, bh, { ...opts, depthBuffer: false });
       this.reflectRT?.dispose();
       this.reflectRT = new THREE.WebGLRenderTarget(
         Math.max(2, size.x >> 1), Math.max(2, size.y >> 1),
@@ -3629,8 +3689,19 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
    */
   private buildAoGround() {
     const g = new THREE.PlaneGeometry(13000, 13000);
-    const m = new THREE.MeshBasicMaterial({ colorWrite: false });
+    // AND IT HAS TO SIT UNDER THE SEA, NOT IN IT. At z = 0 this plane is half a
+    // centimetre below the water sheet, which is inside the depth buffer's
+    // precision out at a kilometre — the two fought, the floor won in patches,
+    // and the harbour came out in ruled terraces where the water had simply
+    // been depth-tested away. Half a metre down settles it for good, and the
+    // occlusion cannot tell the difference: it is sampling contact between
+    // buildings and a ground plane, and the ground moved by half a metre.
+    const m = new THREE.MeshBasicMaterial({
+      colorWrite: false,
+      polygonOffset: true, polygonOffsetFactor: 4, polygonOffsetUnits: 8,
+    });
     const mesh = new THREE.Mesh(g, m);
+    mesh.position.z = -0.5;
     mesh.frustumCulled = false;
     mesh.renderOrder = -2;         // before the water, which sits just above it
     mesh.userData.noShadow = true;
@@ -4472,6 +4543,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const inFront = p.z > -1 && p.z < 1;
       const su = this.compMat.uniforms.uSunScreen.value as THREE.Vector3;
       su.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5, inFront ? 1 : 0);
+    }
+
+    // 3b. light shafts, at quarter res, off the same depth and sun position
+    if (this.shaftRT) {
+      this.shaftMat.uniforms.uDepth.value = this.sceneRT.depthTexture;
+      (this.shaftMat.uniforms.uSunScreen.value as THREE.Vector3)
+        .copy(this.compMat.uniforms.uSunScreen.value as THREE.Vector3);
+      this.blit(this.shaftMat, this.shaftRT);
+      this.compMat.uniforms.uShaft.value = this.shaftRT.texture;
     }
 
     this.renderer.setRenderTarget(prevTarget);

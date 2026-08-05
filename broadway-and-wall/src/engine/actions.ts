@@ -1079,7 +1079,23 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   const breakFee = h.loan ? prepayPenalty(h.loan, next.month) : 0;
   const toSeller = net - (h.loan?.balance ?? 0) - kick - breakFee;
   next.cash += toSeller;
-  logBooks(next, "sold", toSeller);
+  // THE FEE COMES OUT OF THE PROCEEDS ONCE, NOT TWICE.
+  //
+  // The kicker and the break fee are already deducted from `toSeller` — they
+  // are settled at the closing table out of the sale price — and they were
+  // ALSO booked as debt service. So the ledger deducted them a second time and
+  // the conservation identity showed money APPEARING by exactly their amount.
+  // Measured at $0.027M on a sale whose news line read "$0.03M to break the
+  // loan early", which is the same number twice.
+  //
+  // Booking the proceeds GROSS of the fee and the fee as the expense it is
+  // balances the identity and is the better statement besides: a player who
+  // paid a prepayment penalty should see a prepayment penalty, not a smaller
+  // sale. The loan PRINCIPAL stays out of both — repaying a balance is a
+  // balance-sheet movement, not income and not expense.
+  //
+  // This survived because conserve's bot never sold anything. It sells now.
+  logBooks(next, "sold", toSeller + kick + breakFee);
   if (kick + breakFee > 0) logBooks(next, "debtSvc", kick + breakFee);
   if (exchange) {
     next.exchange = { deferredTax: tax, rolledGain: gain, minPrice: offer.price, deadlineM: next.month + EXCHANGE_WINDOW_M };

@@ -34,9 +34,10 @@ import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from
 import { CASH_APY, monthLabel } from "./types";
 import { BUILD_MONTHS, rng, rrange, devPencils } from "./market";
 import { assetValue, initialCondition, landValue, noiAfterTaxYr, occupancy, resolveRec } from "./value";
-import { cityInfillCap, devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retailWantsMixed, SOFT_COST, useForZone, noteRecordPlan, openConstructionDesks, pickConstructionDesk } from "./dev";
+import { cityInfillCap, devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retailWantsMixed, SOFT_COST, useForZone, noteRecordPlan, openConstructionDesks, pickConstructionDesk, capRetail, withStreetRetail } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss } from "./lenders";
 import { recordComp } from "./comps";
+import { demandNow } from "./demand";
 
 // Ashport is an old port town; its money has old-port-town names.
 // A DOZEN FIRMS, NOT SIX. Six was enough to have somebody to lose a deal to;
@@ -1061,8 +1062,12 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   const months = Math.round(bLo + rng(s) * (bHi - bLo));
   const deliverM = s.month + months;
   if (!s.cityJobs) s.cityJobs = [];
+  // A NAMED FIRM BUILDS THE SAME BUILDING THE CITY DOES — shops at grade where
+  // the street carries them. Settled here and carried on the job so the
+  // pipeline below and the delivery record cannot disagree.
+  const prog = capRetail(withStreetRetail(devMix(use), floors, demandNow(s, rec)), floors);
   s.cityJobs.push({
-    bbl, use, sf, floors, startM: s.month, deliverM,
+    bbl, use, sf, floors, startM: s.month, deliverM, mix: prog,
     firmId: r.id, cost, spent: 0,
     equityLeft: Math.round(cost * (1 - ltc)), debt: 0,
     ratePct: +(s.econ.indexRate + CONSTR_SPREAD_R).toFixed(2),
@@ -1071,7 +1076,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   noteRecordPlan(s, parcels, bbl, lead, sf, floors, r.name);
   // into the delivery pipeline the day the hole is dug, exactly like the city's
   if (!s.econ.cohorts) s.econ.cohorts = { office: [], retail: [], multifamily: [], industrial: [] };
-  for (const [u, share] of Object.entries(devMix(use))) {
+  for (const [u, share] of Object.entries(prog)) {
     const usf = Math.round(sf * (share as number));
     if (usf > 0) s.econ.cohorts[u as BuiltClass].push({ m: deliverM, sf: usf });
   }

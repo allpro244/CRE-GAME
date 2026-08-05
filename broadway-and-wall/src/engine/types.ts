@@ -1365,6 +1365,14 @@ export interface GameState {
   // building went up" and "Alden Development Co. got to that corner first".
   cityJobs?: {
     bbl: string; use: string; sf: number; floors: number; startM: number; deliverM: number;
+    /**
+     * The programme, settled at groundbreak. Shops at grade depend on the final
+     * floor count and on the demand score of the day, and the pipeline books
+     * square feet by class the month the hole is dug — so the answer is decided
+     * once and carried, rather than recomputed at delivery against a city that
+     * has moved. Absent on jobs from older saves, which had no ground floor.
+     */
+    mix?: UseMix;
     firmId?: string;      // whose job it is; absent means the anonymous city
     cost?: number;        // the budget, for a firm's job
     spent?: number;       // work in place to date

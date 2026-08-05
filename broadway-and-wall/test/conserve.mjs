@@ -82,13 +82,51 @@ for (const seed of SEEDS) {
       const r = E.respondLOI(g, parcels, loi.id, loi.rentPsf >= mkt * 0.92 ? "accept" : "pass");
       if (!r.err) g = r.s;
     }
-    if (m % 9 === 0) {
+    // ...AND IT KEEPS A RESERVE, because a bot that buys on a clock regardless
+    // of its balance is not exercising the ledger, it is racing to insolvency.
+    //
+    // This file stops at gameOver, so how long the bot lives IS how many
+    // months get reconciled — and that fell from 3,385 to 1,987 across two
+    // changes that stopped rents compounding. Diagnosed rather than assumed:
+    // it died at year 4 to 17 every time with a POSITIVE net worth ($7M to
+    // $105M peak) and cash of -$0.1M to -$2.5M. Not a firm the economy broke;
+    // a levered buyer with no liquidity management, which used to be bailed
+    // out by rent growth that was itself the bug.
+    //
+    // Fixing the bot rather than the economy is the whole point of the
+    // distinction: conserve tests the LEDGER IDENTITY, and it needs the bot
+    // alive to test it over fifty years, not to prove the bot is any good.
+    // Nothing here touches an engine number.
+    if (m % 9 === 0 && g.cash > 4_000_000) {
       for (const li of [...g.listings].slice(0, 5)) {
         const rec = E.resolveRec(parcels, g, li.bbl);
         if (!rec || g.holdings[li.bbl] || rec.class === "land") continue;
         if (li.ask > E.assetValue(rec, g.econ, E.initialCondition(rec))) continue;
+        // Leave a working balance behind, the way anybody solvent does.
+        if (li.ask * 0.35 > g.cash - 2_500_000) continue;
         const r = E.executePurchase(g, parcels, li.bbl, li.ask, "senior", false, 1);
         if (!r.err) { g = r.s; break; }
+      }
+    }
+    // A LANDLORD SHORT OF CASH SELLS SOMETHING. Without an exit the bot can
+    // only ever accumulate, so one bad decade ends it no matter how much
+    // equity it is sitting on — which is a fact about the bot, not the world.
+    if (g.cash < 1_200_000) {
+      const own = Object.keys(g.holdings).filter((b) => !g.holdings[b].sale);
+      if (own.length > 1) {
+        const bbl = own[0];
+        const rec = E.resolveRec(parcels, g, bbl);
+        if (rec) {
+          const r = E.listForSale(g, parcels, bbl, Math.round(E.assetValue(rec, g.econ, E.initialCondition(rec)) * 0.92));
+          if (!r.err) g = r.s;
+        }
+      }
+    }
+    for (const bbl of Object.keys(g.holdings)) {
+      const off = g.holdings[bbl].sale?.offer;
+      if (off && g.cash < 3_000_000) {
+        const r = E.acceptSaleOffer(g, parcels, bbl);
+        if (!r.err) g = r.s;
       }
     }
 

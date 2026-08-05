@@ -1,7 +1,8 @@
 BROADWAY & WALL
-A commercial real estate game. Two harbour cities, a brand-new town on
-whichever one you pick every time you start over, and no end date — one
-principal, one balance sheet, and as long as you last.
+A commercial real estate game. Two harbour islands, a brand-new town built
+from scratch every time you start over — at whatever size and whatever stage
+of its life you choose — and no end date. One principal, one balance sheet,
+and as long as you last.
 
 
 HOW TO PLAY
@@ -28,7 +29,11 @@ loading their own modules, so the game needs the small server to run.
 
 THE CITIES
 ----------
-Two islands, picked from the dropdown beside the title.
+Two islands. You choose one when you start a game, and then you are stuck
+with it — the picker is a plain label for the rest of the run. That is
+deliberate: the submarket you misread is the submarket you have to trade your
+way out of, and a town you can walk away from in two clicks is not a town you
+ever have to learn.
 
   New Alden       A colonial landing, a numbered grid, and a Broadway cutting
                   across both.
@@ -40,38 +45,66 @@ harbour, so there is always somewhere cheaper to go. Kestrel Point does not —
 the whole town is within four blocks of water, and the only way to get more
 building is to buy somebody out or go up.
 
-Each island keeps its own campaign and its own autosave, so switching away and
-back resumes where you left off.
-
-
-A NEW TOWN EVERY TIME
----------------------
+A NEW TOWN EVERY TIME, AND YOU SAY WHAT KIND
+-------------------------------------------
 The island is fixed. The town on it is not.
 
-Every time you press "New city", the whole place is rebuilt from scratch: the
-block grid is re-cut, every block is subdivided into different lots, so parcel
-sizes and shapes are new; what is already built and what is left as vacant
-ground is new; heights, ages, uses and the mix inside each building are new.
+Press "New city" and it asks three things before it erases anything — which
+island, how big, and how built up. Then the whole place is rebuilt from
+scratch: the block grid is re-cut, every block is subdivided into different
+lots, so parcel sizes and shapes are new; what is already built and what is
+left as vacant ground is new; heights, ages, uses and the mix inside each
+building are new.
+
+HOW BIG                     lots      the shape of the game
+  Hamlet                    ~380      you can hold every corner in your head
+  Town                      ~870      tight, and every mistake is visible
+  City (standard)          ~1420      two miles end to end, four districts
+  Metropolis               ~3000      submarkets you will never visit
+  Great City               ~5800      a career is not long enough to learn it
+
+A bigger island is MORE BLOCKS, not bigger blocks — the streets and the lots
+stay the size streets and lots are. And it is a bigger economy with it: more
+standing stock, and banks sized to lend against it, because a city four times
+the size with the same five balance sheets behind it would simply be a city
+where nothing can be financed.
+
+HOW BUILT UP                vacant    tallest
+  Frontier                    43%      9 floors    almost all of it is yours to build
+  Young town (standard)       28%     14
+  Provincial                  26%     32
+  Established                 23%     40
+  Boomtown                    28%     48    low fabric, dramatic towers
+  Capital                     19%     58    you will redevelop more than you build
+  Metropolis                  14%     60    a game about buying what exists
+
+Both settle before the town is generated and both travel with your save,
+because the same seed at Hamlet and at Great City are different places with
+different deeds.
 
 Same harbour, same parks, same street names — a completely different town on
 top of them. The corner you learned last game belongs to somebody else now,
 and the good ground is somewhere you have not looked yet.
 
-It takes about a third of a second, and none of it is downloaded: the city is
-generated in your browser from a single number. That number is written into
+It takes between a fifth of a second and a second and a half depending on the
+size, and none of it is downloaded: the city is generated in your browser from
+a single number. That number is written into
 your save, so refreshing the page puts you back in YOUR town with your
 campaign — only starting over rolls a new one.
 
 
 THE OPENING
 -----------
-January 2000. You have $6,000,000 and about half the city is still vacant lots.
+January 2000. You have $6,000,000 and, on the standard settings, about
+twenty-eight per cent of the city is still vacant ground.
 
-That is your opening and it is also everyone else's: twelve rival firms start
-alongside you with $4-10M of equity each — family money that will not sell at
-any price, core institutions, opportunistic shops levered to eighty, and
-developers who will build whether you do or not. They buy with their actual
-money, they can be inspected building by building, and they can fail.
+That is your opening and it is also everyone else's: thirty-two rival firms
+start alongside you, already owning buildings and holding working capital —
+family money that will not sell at any price, core institutions, opportunistic
+shops levered to eighty, and developers who will build whether you do or not.
+They buy with their actual money, they can be inspected building by building,
+and they can fail. When one does, the buildings go to its lenders and the
+lenders take the loss — which is how a bank in this town ends up in trouble.
 
 There is no tutorial and no beginner mode. There is a market, and you are in
 it.

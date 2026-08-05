@@ -443,6 +443,59 @@ export function maxRetailShare(floors: number): number {
 }
 
 /**
+ * THE GROUND FLOOR IS SHOPS, AND THAT IS WHERE URBAN RETAIL COMES FROM.
+ *
+ * Nobody builds a parade of standalone shops in a city with land worth
+ * building on — they build the offices and the flats the market wants and put
+ * the retail at grade underneath, because the ground floor of a tower is worth
+ * more as a shop than as a lobby and the tenants upstairs want somewhere to
+ * buy lunch. Almost all the retail floor space added to a dense city in the
+ * last century arrived this way.
+ *
+ * The model had every piece of this and never joined them. `MIXED_STACK` put
+ * 15% retail in a building only when a developer explicitly chose "mixed";
+ * `capRetail` and `maxRetailShare` already knew retail is a ground-floor thing
+ * capped at two plates. But an office or a housing programme carried no retail
+ * at all, so the only shops the city ever built were standalone ones — capped
+ * at two storeys, and therefore tiny. Measured over fifty years: 27 retail
+ * groundbreakings averaging 13,300 sf, against office at 70,200. Retail stock
+ * grew 0.04%/yr.
+ *
+ * MORE LAND DOES NOT FIX THAT, and it was worth checking before building
+ * anything, because it was the obvious first idea. The size dial IS more land.
+ * Retail stock growth over fifty years: -0.12%/yr on a Hamlet, -0.04% on the
+ * standard island, +0.05% on a Great City, and +0.04% on a Great City opened
+ * at 42% vacant — four times the island and half again the dirt, and the line
+ * does not move. It was never a land constraint. It was a form constraint.
+ *
+ * THE SHARE IS ONE FLOOR OUT OF N, which is the mechanism rather than a
+ * number: a four-storey walk-up is a quarter shops, a forty-storey tower is
+ * two and a half per cent, and it falls out of the geometry with nothing to
+ * tune. The 1.25 is real — a retail ground floor is taller and deeper than the
+ * plates above it, typically 18-22 feet against 11-14, so it is worth more
+ * than its share of the stack.
+ *
+ * IT IS NOT EVERY STREET. Shops need footfall, so this reads the same demand
+ * score the rest of the engine prices off. A quiet residential block gets a
+ * lobby, which is what a quiet residential block has.
+ */
+const STREET_RETAIL_DEMAND = 38;   // below this a shop at grade has no trade
+export function withStreetRetail(mix: UseMix, floors: number, demand: number): UseMix {
+  const lead = dominantOf(mix);
+  if (lead !== "office" && lead !== "multifamily") return mix;
+  if ((mix.retail ?? 0) > 0) return mix;                 // already a mixed programme
+  if (floors < 2 || demand < STREET_RETAIL_DEMAND) return mix;
+  const share = Math.min(maxRetailShare(floors), 1.25 / floors);
+  if (share <= 0.01) return mix;
+  const out: UseMix = { retail: +share.toFixed(4) };
+  const rest = 1 - share;
+  const others = Object.entries(mix).filter(([k]) => k !== "retail") as [BuiltClass, number][];
+  const tot = others.reduce((a, [, v]) => a + v, 0) || 1;
+  for (const [k, v] of others) out[k] = +((v / tot) * rest).toFixed(4);
+  return out;
+}
+
+/**
  * AND THEY DO NOT STACK INSIDE A MIXED BUILDING EITHER.
  *
  * The two-storey cap was enforced on the pure-retail PROGRAMME — a label —
@@ -630,7 +683,9 @@ export function planDevelopment(
   const sf = Math.round((gsf * eff) / 100) * 100;
   if (sf < 2000) return null;
 
-  const mix = capRetail(raw, fl);
+  // Shops at grade wherever the street will carry them — see withStreetRetail.
+  // Applied before the cap, so the cap still has the last word.
+  const mix = capRetail(withStreetRetail(raw, fl, rec.demandScore ?? 50), fl);
 
   const heightPrem = fl > 30 ? 1.28 : fl > 18 ? 1.18 : fl > 8 ? 1.07 : 1;
   // the budget is the sum of the jobs, not a number attached to a label
@@ -2055,8 +2110,19 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // block can look derelict for two years in the middle of a boom.
   const [bLo, bHi] = BUILD_MONTHS[lead];
   const months = Math.round(bLo + rng(s) * (bHi - bLo)) + 4 + Math.round(rng(s) * 5);
-  (s.cityJobs ??= []).push({ bbl, use: nextUse, sf: nsf, floors: nfl, startM: s.month, deliverM: s.month + months });
-  if (s.econ.cohorts?.[lead]) s.econ.cohorts[lead].push({ m: s.month + months, sf: nsf, bbl });
+  // A REDEVELOPMENT GETS ITS GROUND FLOOR TOO. This is the teardown path — the
+  // replacement that goes up where something was knocked down — and it is most
+  // of what a mature city builds, so a shops-at-grade rule that skipped it
+  // would apply to almost nothing.
+  const tprog = capRetail(withStreetRetail(devMix(nextUse), nfl, demandNow(s, rec!)), nfl);
+  (s.cityJobs ??= []).push({ bbl, use: nextUse, sf: nsf, floors: nfl, startM: s.month, deliverM: s.month + months, mix: tprog });
+  // ...and the pipeline is booked against the same programme, class by class,
+  // or the market absorbs one building and receives another.
+  if (!s.econ.cohorts) s.econ.cohorts = { office: [], retail: [], multifamily: [], industrial: [] };
+  for (const [u, share] of Object.entries(tprog)) {
+    const usf = Math.round(nsf * (share as number));
+    if (usf > 0) s.econ.cohorts[u as BuiltClass].push({ m: s.month + months, sf: usf, bbl });
+  }
 
   if (rng(s) < 0.30) {
     s.news.unshift({
@@ -2092,7 +2158,12 @@ export function tickCityGrowth(
     // presence of a key.
     const standing = s.built[j.bbl];
     if (!rec || s.holdings[j.bbl] || (standing && standing.bldgArea > 0)) continue;
-    const cmix = devMix(j.use as DevUse);
+    // THE CITY'S BUILDINGS GET THEIR GROUND FLOOR TOO. This is where the
+    // volume is — the street starts 250-odd jobs a century against the
+    // player's handful — so a shops-at-grade rule the city did not follow
+    // would supply almost no retail at all.
+    const cmix = j.mix ?? capRetail(
+      withStreetRetail(devMix(j.use as DevUse), j.floors, rec.demandScore ?? 50), j.floors);
     s.built[j.bbl] = {
       class: dominantOf(cmix), mix: cmix, bldgArea: j.sf, floors: j.floors,
       yearBuilt: 2000 + Math.floor(s.month / 12),
@@ -2268,17 +2339,26 @@ export function tickCityGrowth(
       floors = cap;
       sf = Math.max(3000, Math.round((rec.lotArea * 0.62 * floors) / 100) * 100);
     }
+    // THE PROGRAMME IS SETTLED ONCE, HERE, AND TRAVELS WITH THE JOB.
+    //
+    // The ground-floor retail share depends on the final floor count, which is
+    // only known after the infill and use caps above have had their say — and
+    // the pipeline below registers square feet BY CLASS the day the hole is
+    // dug, while delivery builds the record fifty months later. Recomputing it
+    // at the far end from a demand score that has moved in the meantime would
+    // let the market absorb one building and receive a different one.
+    const prog = capRetail(withStreetRetail(cmix, floors, dNow), floors);
     const [bLo, bHi] = BUILD_MONTHS[lead];
     const months = Math.round(bLo + rng(s) * (bHi - bLo));
     const deliverM = s.month + months;
-    s.cityJobs.push({ bbl, use, sf, floors, startM: s.month, deliverM });
+    s.cityJobs.push({ bbl, use, sf, floors, startM: s.month, deliverM, mix: prog });
     noteRecordPlan(s, parcels, bbl, lead, sf, floors, "The city");
 
     // Into the pipeline the day the hole is dug: the Economy page's delivery
     // schedule and forward vacancy are reading this queue, so what is coming
     // is visible for years before it lands.
     if (!s.econ.cohorts) s.econ.cohorts = { office: [], retail: [], multifamily: [], industrial: [] };
-    for (const [u, share] of Object.entries(cmix)) {
+    for (const [u, share] of Object.entries(prog)) {
       const usf = Math.round(sf * (share as number));
       if (usf > 0) {
         s.econ.cohorts[u as BuiltClass].push({ m: deliverM, sf: usf });

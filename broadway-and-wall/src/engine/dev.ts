@@ -1194,6 +1194,45 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
  * the way up and opens empty against a mini-perm clock; one whose market holds
  * opens half-full and covers itself from month one.
  */
+/**
+ * HOW MUCH OF A BUILDING IS SPOKEN FOR ON THE DAY IT OPENS, by class.
+ *
+ * These are the two facts about pre-letting that the old model got by
+ * accident and mostly got wrong. It ran one probability for every class, so
+ * how full a building opened was decided by HOW LONG IT TOOK TO BUILD: a
+ * 31-month office tower got twenty-odd chances to sign somebody and opened a
+ * median 66% let, while a 12-month shed got eight and opened empty every
+ * single time. Duration is a real influence — a longer build genuinely has
+ * more time to lease — but it is not the reason retail pre-lets and sheds do
+ * not, and it produced an office market where spec towers open two-thirds
+ * full. Real spec office opens 0-30% pre-let.
+ *
+ * `rate` scales the monthly odds a prospect signs. `ceiling` is the share of
+ * the building that can be spoken for at delivery, and it is a fact about how
+ * each product is actually let:
+ *
+ *   retail      Anchors sign before ground breaks — that is what an anchor IS,
+ *               and it is how the centre gets financed. An anchored scheme is
+ *               well over half pre-let on opening day.
+ *   office      A tenant with a lease expiring in two years will take space in
+ *               a building they can walk. Most will not sign against a hole in
+ *               the ground, so the honest spec number is a third at the very
+ *               best and usually much less.
+ *   industrial  Bimodal in life: a shed is either build-to-suit and 100% let
+ *               before a spade goes in, or it is pure spec and opens empty.
+ *               Build-to-suit is a different product and is not modelled yet,
+ *               so what is left here is the spec leg — thin.
+ *   multifamily Flats do not pre-let in the commercial sense. They lease from
+ *               a trailer thirty days out, which arrives as h.occ at delivery
+ *               rather than as signed leases. Nearly nothing here.
+ */
+const PRELET: Record<BuiltClass, { rate: number; ceiling: number }> = {
+  retail: { rate: 1.15, ceiling: 0.62 },
+  office: { rate: 0.55, ceiling: 0.32 },
+  industrial: { rate: 0.45, ceiling: 0.22 },
+  multifamily: { rate: 0.10, ceiling: 0.08 },
+};
+
 export function tickConstructionLeasing(s: GameState, parcels: ParcelTable) {
   for (const d of Object.values(s.developments)) {
     const rec = parcels[d.bbl];
@@ -1205,17 +1244,23 @@ export function tickConstructionLeasing(s: GameState, parcels: ParcelTable) {
     if (!d.signed) d.signed = [];
     const takenSf = d.signed.reduce((a, x) => a + x.sf, 0);
     const leasable = Math.round(d.sf * specShare(d.mix ?? devMix(d.use)));
-    const openSf = leasable - takenSf;
-    if (openSf < 1500) continue;
 
     const lead = dominantOf(d.mix ?? devMix(d.use));
+    const pre = PRELET[lead] ?? PRELET.office;
+    // THE CEILING BINDS BEFORE THE DICE DO. Past it, the space that is left is
+    // the space that gets let after the building opens — which is the lease-up
+    // risk the developer is being paid to carry, and the thing this model
+    // exists to make real.
+    const openSf = Math.round(leasable * pre.ceiling) - takenSf;
+    if (openSf < 1500) continue;
+
     // a tight market lets a building before it opens; a glut does not
     const appetite = classAppetite(s, lead);
     const months = Math.max(1, d.deliverM - s.month);
     // interest builds as the date approaches — the risk a tenant is taking
     // shrinks, and so does what they will hold out for
     const near = clamp(1.35 - months / 18, 0.35, 1.35);
-    const p = clamp(0.055 * appetite * near * (0.55 + demandLinear(rec.demandScore) / 130), 0, 0.42);
+    const p = clamp(0.055 * pre.rate * appetite * near * (0.55 + demandLinear(rec.demandScore) / 130), 0, 0.42);
     if (rng(s) >= p) continue;
 
     const want = Math.round(openSf * rrange(s, 0.16, 0.5));
@@ -1277,7 +1322,17 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   h.lastCapM = s.month;
   h.tenants = [];
   h.deliveredM = s.month;
-  if ((dmix.multifamily ?? 0) > 0) h.occ = 0.1;
+  // FLATS LEASE FROM A TRAILER. A block of flats does not pre-let the way an
+  // office does — there are no leases signed against a hole in the ground —
+  // but a leasing office opens thirty to sixty days before the certificate of
+  // occupancy and the first residents move in on day one. In a tight market
+  // that is a fifth of the building; into a glut it is nearly nobody. This was
+  // a flat 0.1 and then, one month later, the 0.4 floor in tickLeasing threw it
+  // away entirely — see the note there.
+  if ((dmix.multifamily ?? 0) > 0) {
+    const slack = Math.max(0, (s.econ.cityVac.multifamily ?? 0.06) - NATURAL_VAC.multifamily);
+    h.occ = Math.max(0.01, Math.min(0.22, 0.17 - 1.4 * slack + rrange(s, -0.04, 0.04)));
+  }
   h.costBasis += d.costTotal;
   h.assessed = (h.assessed ?? h.costBasis - d.costTotal) + d.costTotal;
 

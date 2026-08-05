@@ -299,7 +299,13 @@ export function genRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, d
   if (!rec.bldgArea) return;
   const m = mixOf(rec);
   if ((m.multifamily ?? 0) > 0) {
-    holding.occ = Math.min(0.99, Math.max(0.35,
+    // A STANDING BUILDING, NOT A NEW ONE — so it opens near its market and the
+    // spread around it is small. The floor here was 0.35 and is 0.12: a
+    // receiver's block of flats genuinely can be a tenth full, and refusing to
+    // represent that is refusing to represent the only reason it is cheap.
+    // It is not zero because a building with nobody in it at all is not a
+    // going concern being sold, it is a shell — and that is a different deal.
+    holding.occ = Math.min(0.99, Math.max(0.12,
       useOccupancy(rec, s.econ, "multifamily") + (distressed ? rrange(s, -0.38, -0.16) : rrange(s, -0.05, 0.04))));
   }
   if (!isCommercial(rec)) return;
@@ -662,7 +668,31 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     const resShare = mixOf(rec).multifamily ?? 0;
     if (resShare > 0) {
       const target = useOccupancy(rec, s.econ, "multifamily");
-      h.occ = Math.min(0.99, Math.max(0.4, (h.occ ?? target) + (target - (h.occ ?? target)) * 0.1 + rrange(s, -0.006, 0.006)));
+      // THE FLOOR THAT MADE EVERY APARTMENT BUILDING THE SAME BUILDING.
+      //
+      // This line used to read Math.max(0.4, ...). No block of flats in this
+      // city could be less than 40% let, ever — not a building delivered
+      // yesterday, not one in a glut, not one whose owner had stopped paying
+      // for two years. Measured over 4 seeds x 15 years, multifamily delivered
+      // at 40.0% occupancy at p10, at the median AND at p90: not a
+      // distribution, a rail. CLAUDE.md: a clamp the model rests on is
+      // load-bearing and therefore a defect.
+      //
+      // It also made lease-up risk — the thing a residential developer is
+      // actually paid for carrying — literally unrepresentable, because a job
+      // that delivered at 10% was marked up to 40% the following month.
+      //
+      // The walk itself is the mechanism and it always was: occupancy closes a
+      // share of the gap to the market each month. What that SHARE is depends
+      // on the market, because filling a building in a tight market and
+      // filling one in a glut are not the same job. At the natural vacancy the
+      // pace is ~9%/mo of the remaining gap, which stabilises a new building in
+      // about 18 months; in a soft market it halves, which is how a delivery
+      // into a glut ends up in front of a workout desk.
+      const slack = Math.max(0, (s.econ.cityVac.multifamily ?? 0.06) - NATURAL_VAC.multifamily);
+      const pace = Math.max(0.030, 0.090 - 0.75 * slack);
+      const now = h.occ ?? target;
+      h.occ = Math.min(0.99, Math.max(0, now + (target - now) * pace + rrange(s, -0.006, 0.006)));
     }
     const renovating = h.renovatingUntilM !== undefined && q < h.renovatingUntilM;
 

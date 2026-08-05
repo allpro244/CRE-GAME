@@ -3488,7 +3488,13 @@ vec4 fxaa(vec2 uv) {
   float lSE = dot(se.rgb, L) + se.a * 0.5;
   float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));
   float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
-  if (lMax - lMin < 0.028) return m;            // flat: nothing to do
+  // A HIGHER BAR NOW THAT COVERAGE SAMPLING IS BACK. MSAA answers geometric
+  // edges properly, so this is left with the one thing it cannot: aliasing
+  // generated INSIDE the fragment shader — window grids, mullions, seams —
+  // which no amount of coverage sampling touches, because the geometry there
+  // is one flat quad. At 0.028 it was also filtering pixels that were already
+  // clean and quietly costing sharpness for it.
+  if (lMax - lMin < 0.055) return m;            // flat, or MSAA already had it
 
   vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), ((lNW + lSW) - (lNE + lSE)));
   float red = max((lNW + lNE + lSW + lSE) * 0.25 * 0.125, 1.0 / 128.0);
@@ -4101,7 +4107,16 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         format: THREE.RGBAFormat, type: THREE.UnsignedByteType,
         depthBuffer: true, stencilBuffer: false,
       } as const;
-      this.sceneRT = new THREE.WebGLRenderTarget(size.x, size.y, opts);
+      // MULTISAMPLING, IF THE DEPTH TEXTURE SURVIVES IT.
+      // FXAA is a blur that guesses at edges from colour; it does nothing for
+      // the real problem at the establishing zoom, which is geometry smaller
+      // than a pixel — a roof vent or a parked car one pixel wide either
+      // covers its pixel or does not, and the city speckles. Coverage sampling
+      // is the only thing that actually answers that. The open question is
+      // whether this implementation will resolve a multisampled depth
+      // attachment back into a sampleable texture, which the occlusion, the
+      // focus and the sun glare all now depend on.
+      this.sceneRT = new THREE.WebGLRenderTarget(size.x, size.y, { ...opts, samples: 4 });
       // The occlusion pass reads this. UnsignedInt rather than the default
       // UnsignedShort: at 16 bits the reconstruction quantises into visible
       // terraces across a frame that spans kilometres.

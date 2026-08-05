@@ -3446,6 +3446,8 @@ uniform sampler2D uAoTex;
 // still needed here, though the occlusion moved out: the glare has to know
 // whether a building is standing between the camera and the sun
 uniform sampler2D uDepth;
+uniform mat4 uInvProj;
+uniform vec3 uEye;
 ` + /* glsl */ `
 
 // A MODEL CITY PHOTOGRAPHS LIKE A MODEL CITY.
@@ -3514,9 +3516,53 @@ vec4 defocused(vec2 uv, float r) {
   return sum * (1.0 / 9.0);
 }
 
+/** World position from a depth sample. The view matrix here is identity, so
+    inverting the projection lands straight in world space. */
+vec3 dofWorldAt(vec2 uv, float d) {
+  vec4 clip = vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+  vec4 p = uInvProj * clip;
+  return p.xyz / p.w;
+}
+
 void main() {
-  float off = abs(vUv.y - uFocus);
-  float defocus = smoothstep(uBand, 1.0, off) * uDefocus;
+  // FOCUS IS A DISTANCE, NOT A HEIGHT ON THE SCREEN.
+  //
+  // The band was measured in screen Y, which is only a stand-in for depth and
+  // stops being one the moment anything is tall: a tower standing squarely in
+  // the plane of focus went soft toward its roof for no reason except that its
+  // roof was higher up the picture, while a rooftop two kilometres away at the
+  // same screen height stayed sharp. Both are backwards, and on a skyline both
+  // are obvious.
+  //
+  // The depth buffer has been sitting here since the occlusion pass went in.
+  // Focus on what is actually in the middle of the frame and defocus by how
+  // far from THAT each fragment lies, and the effect keeps the toy-model look
+  // — in a pitched aerial view distance still correlates with screen height —
+  // while treating buildings as the solid objects they are.
+  //
+  // The spread is proportional to the focus distance rather than absolute, so
+  // one setting holds from a street corner to the whole island.
+  float dFoc = texture2D(uDepth, vec2(0.5, uFocus)).x;
+  float defocus;
+  if (dFoc >= 0.9999) {
+    // nothing under the focus point but sky — fall back to the screen-space
+    // band, which is what this always was
+    defocus = smoothstep(uBand, 1.0, abs(vUv.y - uFocus)) * uDefocus;
+  } else {
+    float focusD = length(dofWorldAt(vec2(0.5, uFocus), dFoc) - uEye);
+    float dHere = texture2D(uDepth, vUv).x;
+    // sky defocuses fully: it is the far plane, and a sharp horizon behind a
+    // soft city is the one combination that reads as a bug
+    float rel = dHere >= 0.9999
+      ? 1.0
+      // A FEW PER CENT OF THE SUBJECT DISTANCE, which is what a macro lens on
+      // a real model actually has and what the eye reads as "this thing is
+      // small". At 85% the sharp band swallowed the entire island and the
+      // effect vanished into ordinary correctness — everything in focus is
+      // physically defensible and photographically pointless.
+      : clamp(abs(length(dofWorldAt(vUv, dHere) - uEye) - focusD) / max(focusD * 0.17, 30.0), 0.0, 1.0);
+    defocus = smoothstep(0.16, 1.0, rel) * uDefocus;
+  }
   vec4 c = defocused(vUv, defocus);
 
   // The same occlusion the multiply pass put on the street, applied to the
@@ -4031,6 +4077,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           uGlare: { value: 0.30 },
           uShaft: { value: null }, uShaftAmt: { value: 0.42 },
           uAoTex: { value: null }, uDepth: { value: null },
+          uInvProj: { value: new THREE.Matrix4() }, uEye: { value: new THREE.Vector3() },
         },
       });
       this.postQuad = new THREE.Mesh(quad, this.brightMat);
@@ -6841,6 +6888,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.compMat.uniforms.uAoTex.value = this.aoA.texture;
     }
     this.compMat.uniforms.uDepth.value = this.sceneRT.depthTexture;
+    (this.compMat.uniforms.uInvProj.value as THREE.Matrix4).copy(invProj);
+    (this.compMat.uniforms.uEye.value as THREE.Vector3).copy(this.camUni.value);
     {
     }
     // THE LENS READS THE CAMERA — AND IT READS ZOOM, NOT PITCH.

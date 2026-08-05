@@ -1510,10 +1510,13 @@ void main() {
 const AO_GLSL = /* glsl */ `
 uniform sampler2D uDepth;
 uniform mat4 uInvProj;
+uniform mat4 uProj;
 uniform vec2 uAoTexel;
 uniform vec3 uAoCam;
+uniform vec3 uAoSun;
 uniform float uAoRadius;    // metres
 uniform float uAoStrength;
+uniform float uContactLen;  // metres the contact ray walks
 
 vec3 worldAt(vec2 uv, float d) {
   vec4 clip = vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
@@ -1592,12 +1595,81 @@ float occlusion(vec2 uv) {
 // the one this now gets for free — resolve at half resolution, then blur. AO
 // is the lowest-frequency thing in the frame; there was never any detail in it
 // to protect.
+// SHADOWS SMALLER THAN A SHADOW-MAP TEXEL.
+//
+// The sun's depth map is 3072 across 4,400 m — 1.43 m per texel. A street tree
+// is about four metres of canopy, a parked car is under two, a cornice is
+// under one, and a fire escape is a handful of centimetres of ironwork. Every
+// one of those is at or below the resolution of the map that is supposed to be
+// shadowing them, so the city has thousands of objects sitting on the pavement
+// casting either a blur or nothing at all. It is the reason props have always
+// looked slightly pasted on rather than standing there.
+//
+// A short ray walked through the depth buffer toward the sun fixes exactly
+// that band and nothing else: it is only accurate for a metre or two, which is
+// precisely the range the shadow map cannot resolve. The two are complementary
+// — the map does the buildings, this does everything standing next to them.
+//
+// The thickness test is what keeps it honest. A surface that is nearer the
+// camera than the ray is only a blocker if it is nearer by a LITTLE; a tower
+// half a kilometre in front is not shadowing this pavement, it is merely in
+// front of it, and without an upper bound every distant silhouette would drag
+// a black smear across everything behind it.
 const AO_CALC_FRAG = /* glsl */ `
 precision highp float;
 varying vec2 vUv;
 ` + AO_GLSL + /* glsl */ `
+float contactShadow(vec2 uv, vec3 P, vec3 N) {
+  if (dot(N, uAoSun) <= 0.02) return 0.0;      // already facing away from the sun
+  vec3 step = uAoSun * (uContactLen / 10.0);
+  vec3 sp = P + N * 0.035;                     // off the surface, or it shadows itself
+  for (int i = 0; i < 10; i++) {
+    sp += step;
+    vec4 c = uProj * vec4(sp, 1.0);
+    if (c.w <= 0.0) return 0.0;
+    vec2 su = (c.xy / c.w) * 0.5 + 0.5;
+    if (su.x < 0.0 || su.x > 1.0 || su.y < 0.0 || su.y > 1.0) return 0.0;
+    float sd = texture2D(uDepth, su).x;
+    if (sd >= 0.9999) continue;                // open sky along the ray
+    float dRay = length(sp - uAoCam);
+    float dHit = length(worldAt(su, sd) - uAoCam);
+    if (dHit < dRay - 0.06 && dHit > dRay - 1.6) {
+      // fade the last steps out so the shadow ends rather than stopping
+      return 1.0 - float(i) / 10.0 * 0.45;
+    }
+  }
+  return 0.0;
+}
+
 void main() {
-  gl_FragColor = vec4(vec3(occlusion(vUv)), 1.0);
+  float d = texture2D(uDepth, vUv).x;
+  float csh = 0.0;
+  if (d < 0.9999) {
+    vec3 P = worldAt(vUv, d);
+    vec3 dPx = dFdx(P), dPy = dFdy(P);
+    if (length(dPx) > 1e-7 && length(dPy) > 1e-7) {
+      // ONLY WHERE THE SCALE SUPPORTS IT, and this bound has to be tighter
+      // than it first looks. The test is a metre-scale distance comparison
+      // between two points reconstructed from depth, and depth precision at a
+      // kilometre is worse than the 1.6 m thickness window the test uses — so
+      // out at the horizon it starts finding blockers in its own quantisation
+      // noise. That arrived as a hard-edged wedge of shade lying across the
+      // far water, on the far side of wherever this cutoff happened to fall.
+      //
+      // Two bounds, both faded rather than cut, because a step in either one
+      // is itself a visible edge: the pixel must be well under the ray length
+      // in size, and the fragment must be near enough that depth still has
+      // bits to spare.
+      vec3 Px = worldAt(vUv + vec2(uAoTexel.x, 0.0), d);
+      float pxOk = 1.0 - smoothstep(uContactLen * 0.18, uContactLen * 0.34, length(Px - P));
+      float nearOk = 1.0 - smoothstep(180.0, 340.0, length(P - uAoCam));
+      float gate = pxOk * nearOk;
+      if (gate > 0.004) {
+        csh = contactShadow(vUv, P, normalize(cross(dPx, dPy))) * gate;
+      }
+    }
+  }
+  gl_FragColor = vec4(occlusion(vUv), csh, 0.0, 1.0);
 }`;
 
 // The occlusion, alone, as a multiply over whatever is already in MapLibre's
@@ -1609,10 +1681,15 @@ precision highp float;
 varying vec2 vUv;
 uniform sampler2D uAoTex;
 void main() {
-  float o = texture2D(uAoTex, vUv).r;
+  vec2 a = texture2D(uAoTex, vUv).rg;
   // Cool, because ambient occlusion is the absence of SKY light and the sky
   // here is blue. A neutral grey multiply reads as dirt.
-  gl_FragColor = vec4(mix(vec3(1.0), vec3(0.62, 0.68, 0.80), o), 1.0);
+  vec3 tint = mix(vec3(1.0), vec3(0.62, 0.68, 0.80), a.r);
+  // The contact shadow is the absence of SUN, which is a different and deeper
+  // thing than the absence of sky — and bluer still, because what is left
+  // lighting it is the dome.
+  tint *= mix(vec3(1.0), vec3(0.55, 0.61, 0.76), a.g * 0.80);
+  gl_FragColor = vec4(tint, 1.0);
 }`;
 
 // CREPUSCULAR RAYS — the reason to put the sun at 28 degrees in the first place.
@@ -1750,7 +1827,9 @@ void main() {
   // The same occlusion the multiply pass put on the street, applied to the
   // city's own geometry. Before the bloom: light that has already spilled off
   // a surface is not sitting in the crevice any more.
-  c.rgb *= mix(vec3(1.0), vec3(0.62, 0.68, 0.80), texture2D(uAoTex, vUv).r);
+  vec2 aoc = texture2D(uAoTex, vUv).rg;
+  c.rgb *= mix(vec3(1.0), vec3(0.62, 0.68, 0.80), aoc.r);
+  c.rgb *= mix(vec3(1.0), vec3(0.55, 0.61, 0.76), aoc.g * 0.80);
 
   c.rgb += texture2D(uBloom, vUv).rgb * uBloomAmt;
 
@@ -2157,6 +2236,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         // across the street, which is a shadow, not contact.
         uAoRadius: { value: 2.5 },
         uAoStrength: { value: 1.30 },
+        uProj: { value: new THREE.Matrix4() },
+        uAoSun: { value: new THREE.Vector3() },
+        // Two metres. Past that the shadow map has the resolution to do the
+        // job properly and a screen-space ray starts inventing occluders out
+        // of whatever happens to be in front.
+        uContactLen: { value: 2.0 },
       });
       this.aoCalcMat = new THREE.ShaderMaterial({
         vertexShader: POST_VERT, fragmentShader: AO_CALC_FRAG, depthTest: false, depthWrite: false,
@@ -4610,6 +4695,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       (u.uInvProj.value as THREE.Matrix4).copy(invProj);
       (u.uAoTexel.value as THREE.Vector2).set(1 / this.postSize.x, 1 / this.postSize.y);
       (u.uAoCam.value as THREE.Vector3).copy(this.camUni.value);
+      (u.uProj.value as THREE.Matrix4).copy(this.camera.projectionMatrix);
+      (u.uAoSun.value as THREE.Vector3).copy(this.sunDirUni.value).normalize();
     }
     // solve once at half size, then blur the estimator's noise off it
     if (this.aoA && this.aoB) {

@@ -3694,12 +3694,12 @@ void main() {
   float reflFar = 1.0 - smoothstep(350.0, 1500.0, length(vec3(vXY, 0.0) - uCam));
   vec3 reflCol = vec3(0.0);
   float reflA = 0.0;
-  if (uReflectOn > 0.5 && reflFar > 0.002) {
+  if (uReflectOn > 0.01 && reflFar > 0.002) {
     vec2 suv = gl_FragCoord.xy / uResolution;
     suv += n.xy * 0.055 * (0.35 + 0.65 * fres);
     vec4 r = texture2D(uReflect, clamp(suv, vec2(0.002), vec2(0.998)));
     // premultiplied, so undo it to get the colour back out
-    reflA = r.a * reflFar;
+    reflA = r.a * reflFar * uReflectOn;
     reflCol = r.a > 0.001 ? r.rgb / r.a : vec3(0.0);
   }
 
@@ -6847,7 +6847,21 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // The water itself, the shadow catcher and the occlusion floor all sit ON
     // the mirror plane and are coplanar with their own reflections; they are
     // hidden, or they z-fight with themselves and cover the result.
-    if (this.water && this.reflectRT && this.waterMat) {
+    // HOW MUCH REFLECTION IS WORTH RENDERING FOR.
+    //
+    // The mirrored pass draws the entire city a second time, every frame. What
+    // it buys is governed by Fresnel, and Fresnel is the reason it is not
+    // always worth buying: looking straight down at water you see about two per
+    // cent reflection and ninety-eight per cent riverbed, so the pass is
+    // rendering a skyline nobody can see. It earns its cost at a graze and
+    // almost nowhere else.
+    //
+    // Faded rather than switched, so there is no frame where the harbour pops,
+    // and the pass is skipped outright only once the strength has already
+    // reached zero.
+    const reflStrength = smoothstep(20, 46, this.map.getPitch());
+    if (this.waterMat) this.waterMat.uniforms.uReflectOn.value = reflStrength;
+    if (this.water && this.reflectRT && this.waterMat && reflStrength > 0.02) {
       const wasWater = this.water.visible;
       const wasCatcher = this.groundCatcher?.visible ?? false;
       const wasAo = this.aoGround?.visible ?? false;
@@ -6869,7 +6883,6 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
       this.waterMat.uniforms.uReflect.value = this.reflectRT.texture;
       (this.waterMat.uniforms.uResolution.value as THREE.Vector2).copy(this.postSize);
-      this.waterMat.uniforms.uReflectOn.value = 1;
     }
 
     // 1. the city, offscreen, onto nothing

@@ -284,6 +284,28 @@ export const S_PASSIVE = 124;     // passive house: thick walls, small deep open
 export const S_MEDIAFACE = 125;   // a corner podium with an LED media band wrapping it
 
 // ---------------------------------------------------------------------------
+// OFFICE, AS A PRODUCT.
+//
+// Everything above is architecture. This is the stock a leasing agent actually
+// has on a list, and most of it is not downtown: a medical building beside a
+// hospital, a two-storey professional block over a car park, a back-office
+// campus nobody has ever looked at. They are the buildings this game is ABOUT
+// and they were the thinnest part of the registry.
+export const S_MEDOFFICE = 126;   // medical: precast, punched, a canopy, a pharmacy at grade
+export const S_OFFICEPARK = 127;  // suburban low-rise: reflective ribbon, three storeys, a berm
+export const S_GARDENOFF = 128;   // executive garden office: brick, hipped roof, domestic scale
+export const S_BACKOFFICE = 129;  // an operations centre: enormous plate, almost no window
+export const S_CAMPUSBLOCK = 130; // corporate campus: very long, very low, entirely horizontal
+export const S_INSURANCE = 131;   // the 1960s company slab: a precast grid, identical for 200 m
+export const S_GOVLEASE = 132;    // leased government: blank precast and a security setback
+export const S_CARRIERHTL = 133;  // a carrier hotel: blank, heavy, louvre where windows go
+export const S_LOFTOFFICE = 134;  // a mill re-glazed: old openings, new frameless glass inside
+export const S_SKYLOBBY = 135;    // a trophy tower that shifts plate at its sky lobby
+export const S_PROFBLDG = 136;    // the two-storey professional block: shallow, glazed, a walkway
+export const S_BOUTIQUEOFF = 137; // small and expensive: stone, deep reveals, one storey of glass
+export const S_BTSHQ = 138;       // build-to-suit: a logo band where a cornice would be
+
+// ---------------------------------------------------------------------------
 // TRAITS, NOT NUMBERS.
 //
 // Downstream behaviour was keyed to the numeric VALUE of a style id — `s < 8`
@@ -302,6 +324,7 @@ export const T_MASONRY = [
   S_PREWAR, S_BRICK, S_MILL, S_ROMANESQUE, S_BEAUX, S_EMPIRE, S_ITALIANATE,
   S_FEDERAL, S_TENEMENT, S_CIVIC, S_CARRIAGE, S_MARKET, S_GOTHIC, S_TERRACOTTA,
   S_CHICAGO, S_PROJECT, S_WHITEBRICK, S_EIFS, S_PODIUMWRAP, S_MICROUNIT, S_PASSIVE,
+  S_MEDOFFICE, S_GARDENOFF, S_INSURANCE, S_GOVLEASE, S_BOUTIQUEOFF,
   S_POWERHOUSE, S_COLDSTORE, S_BREWERY, S_TEXTILE, S_PUMPHOUSE, S_DEPOT,
   S_QUEENANNE, S_TUDOR, S_MISSION, S_FIREHOUSE, S_SCHOOL, S_LIBRARY,
   S_BANKTEMPLE, S_HOTEL, S_THEATRE,
@@ -318,6 +341,7 @@ export const T_GLASSY = [
   S_TERRAPIER, S_UNITGLASS, S_MEGAPANEL, S_STEELSHELF,
   S_SKYGARDEN, S_PLEATED, S_SHINGLED, S_DOUBLESKIN, S_MEGABRACE, S_CHEVRON,
   S_PVCLAD, S_CREATIVE, S_MEDIAFACE,
+  S_OFFICEPARK, S_CAMPUSBLOCK, S_SKYLOBBY, S_PROFBLDG, S_LOFTOFFICE,
 ];
 
 /** Meets the pavement as shopfronts rather than as more wall. */
@@ -329,6 +353,7 @@ export const T_TRADE = [
   S_TERRAPIER, S_UNITGLASS, S_MEGAPANEL, S_STEELSHELF, S_DEEPFRAME,
   S_DEPOT, S_PUMPHOUSE,
   S_PODIUMWRAP, S_CREATIVE, S_MEDIAFACE, S_LABBLDG,
+  S_MEDOFFICE, S_OFFICEPARK, S_PROFBLDG, S_BOUTIQUEOFF, S_LOFTOFFICE, S_BTSHQ,
   S_THEATRE, S_DINER, S_HOTEL, S_DEPTSTORE, S_STRIPMALL, S_MISSION, S_BANKTEMPLE,
   S_FLEX, S_TWOFLAT, S_ORIEL, S_MANSIONBLK, S_SRO,
 ];
@@ -341,6 +366,8 @@ export const T_FLOORLINE = [
   S_MARKET, S_INTL, S_PRECAST, S_PROJECT, S_WHITEBRICK, S_BALCONY, S_TIMBER,
   S_EIFS, S_FRIT, S_STEELSHELF, S_MEGAPANEL, S_DEEPFRAME,
   S_PODIUMWRAP, S_MICROUNIT, S_PASSIVE, S_LABBLDG, S_CREATIVE, S_MODULAR,
+  S_MEDOFFICE, S_OFFICEPARK, S_GARDENOFF, S_INSURANCE, S_GOVLEASE, S_SKYLOBBY,
+  S_PROFBLDG, S_BOUTIQUEOFF, S_BTSHQ, S_LOFTOFFICE, S_CAMPUSBLOCK,
   S_POWERHOUSE, S_BREWERY, S_TEXTILE, S_FOUNDRY, S_DEPOT,
   S_QUEENANNE, S_STICK, S_TUDOR, S_MISSION, S_SCHOOL, S_LIBRARY, S_HOTEL,
   S_DEPTSTORE, S_MOTEL, S_FIREHOUSE, S_BANKTEMPLE, S_TILTUP, S_FLEX,
@@ -361,6 +388,7 @@ export const T_CAPPED_PLAIN = [
   S_HANGAR, S_SUBSTATION, S_CONTROLTWR, S_LIGHTHOUSE,
   S_SKYGARDEN, S_PLEATED, S_SHINGLED, S_DOUBLESKIN, S_MEGABRACE, S_CHEVRON,
   S_MODULAR, S_PVCLAD, S_PODIUMWRAP, S_LABBLDG, S_CREATIVE, S_MEDIAFACE,
+  S_BACKOFFICE, S_CARRIERHTL, S_GOVLEASE, S_CAMPUSBLOCK,
 ];
 
 /** Reads as a modern building when a crown is being chosen for it. */
@@ -559,6 +587,7 @@ export function stylePool(v: BuildingVolume): number[] {
     if (resi && f <= 4) p.push(S_TRIPLEDECK, S_TRIPLEDECK, S_SHOTGUN, S_BACKTOBACK, S_TWOFLAT);
     if (resi && f >= 4) p.push(S_ORIEL, S_MANSIONBLK, S_SRO);
     if (office && f >= 6) p.push(S_CHICAGO, S_CHICAGO, S_BEAUX);
+    if (office && f <= 4) p.push(S_PROFBLDG, S_BOUTIQUEOFF);
     // The buildings a town has one of. They are rare by weight, not by gate —
     // a place has one bank with columns and one firehouse, and both of them
     // are on a corner everybody knows.
@@ -606,7 +635,9 @@ export function stylePool(v: BuildingVolume): number[] {
   }
   if (y < 1962) {
     p.push(S_RIBBON, S_RIBBON, S_BRICK, S_PROJECT, S_CIVIC);
-    if (office && f >= 6) p.push(S_INTL, S_INTL, S_INTL, S_RIBBON);
+    if (office && f >= 6) p.push(S_INTL, S_INTL, S_RIBBON, S_INSURANCE, S_SKYLOBBY);
+    if (office && f <= 4) p.push(S_PROFBLDG, S_PROFBLDG, S_GARDENOFF, S_MEDOFFICE, S_GOVLEASE);
+    if (office) p.push(S_BACKOFFICE, S_CAMPUSBLOCK);
     if (resi) p.push(S_PROJECT, S_PROJECT, S_WHITEBRICK, S_WHITEBRICK, S_WHITEBRICK);
     if (shop) p.push(S_MODERNE, S_RIBBON, S_EIFS, S_DINER, S_STRIPMALL);
     if (!resi) p.push(S_THEATRE, S_HOTEL);
@@ -616,7 +647,9 @@ export function stylePool(v: BuildingVolume): number[] {
   }
   if (y < 1980) {
     p.push(S_RIBBON, S_PRECAST, S_BRUTAL, S_PROJECT);
-    if (office && f >= 6) p.push(S_INTL, S_INTL, S_PRECAST, S_PRECAST, S_MIRROR, S_BRUTAL);
+    if (office && f >= 6) p.push(S_INTL, S_PRECAST, S_PRECAST, S_MIRROR, S_BRUTAL, S_INSURANCE, S_INSURANCE, S_SKYLOBBY);
+    if (office && f <= 4) p.push(S_OFFICEPARK, S_OFFICEPARK, S_PROFBLDG, S_MEDOFFICE, S_MEDOFFICE, S_GARDENOFF, S_GOVLEASE);
+    if (office) p.push(S_BACKOFFICE, S_CAMPUSBLOCK, S_CARRIERHTL);
     if (office && f >= 9) p.push(S_MIRROR, S_MIRROR, S_DARK);
     if (resi) p.push(S_WHITEBRICK, S_WHITEBRICK, S_PROJECT, S_PRECAST, S_BRICK);
     if (shop) p.push(S_EIFS, S_PRECAST, S_METALPAN, S_STRIPMALL, S_STRIPMALL, S_DINER);
@@ -628,10 +661,12 @@ export function stylePool(v: BuildingVolume): number[] {
   }
   if (y < 1998) {
     p.push(S_EIFS, S_GLASS, S_PMOD, S_BRICK);
-    if (office && f >= 6) p.push(S_PMOD, S_PMOD, S_MIRROR, S_MIRROR, S_GLASS, S_DARK, S_DEEPFRAME);
+    if (office && f >= 6) p.push(S_PMOD, S_PMOD, S_MIRROR, S_GLASS, S_DARK, S_DEEPFRAME, S_SKYLOBBY);
+    if (office && f <= 4) p.push(S_OFFICEPARK, S_OFFICEPARK, S_MEDOFFICE, S_MEDOFFICE, S_PROFBLDG, S_BTSHQ, S_GOVLEASE);
+    if (office) p.push(S_BACKOFFICE, S_CAMPUSBLOCK, S_CARRIERHTL, S_LOFTOFFICE);
     if (office && f >= 10) p.push(S_PMOD, S_DARK);
     if (resi) p.push(S_EIFS, S_WHITEBRICK, S_BALCONY, S_BALCONY, S_PODIUMWRAP);
-    if (office && f >= 4) p.push(S_LABBLDG, S_CREATIVE);
+    if (office && f >= 4) p.push(S_LABBLDG, S_CREATIVE, S_BTSHQ);
     if (shop) p.push(S_EIFS, S_BIGBOX, S_METALPAN, S_STRIPMALL, S_STRIPMALL, S_TILTUP);
     if (!resi) p.push(S_HOTEL);
     if (!resi) rare(0.40, 7, S_SCHOOL, S_MUSEUM, S_HOSPITAL);

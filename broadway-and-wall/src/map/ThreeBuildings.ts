@@ -977,6 +977,96 @@ void main() {
     colW = 8.0; win = vec2(0.0, 0.0);
     wall = mix(vec3(0.78, 0.75, 0.69), vec3(0.70, 0.68, 0.64), step(0.5, vVar));
     glassA = wall; glassB = wall;
+  } else if (s == 126) {
+    // MEDICAL OFFICE. Precast panels, punched openings on a tight regular
+    // grid because every exam room is the same room, and a canopy at the door
+    // deep enough to unload a patient under.
+    colW = 3.0; win = vec2(0.46, 0.52);
+    wall = mix(vec3(0.700, 0.680, 0.640), vec3(0.640, 0.600, 0.545), step(0.55, vVar));
+    glassA = vec3(0.30, 0.37, 0.43); glassB = vec3(0.47, 0.57, 0.63);
+  } else if (s == 127) {
+    // THE SUBURBAN OFFICE PARK. Three storeys of continuous reflective ribbon
+    // over a dark spandrel, set behind a berm — the building is a horizontal
+    // stripe, and it is the same stripe on all four sides.
+    glassy = true; colW = 6.8; win = vec2(0.94, 0.54);
+    wall = mix(vec3(0.360, 0.375, 0.390), vec3(0.560, 0.545, 0.520), step(0.55, vVar));
+    glassA = vec3(0.44, 0.55, 0.58); glassB = vec3(0.66, 0.78, 0.80);
+  } else if (s == 128) {
+    // THE GARDEN OFFICE. Brick, a hipped roof, small-paned windows — a
+    // building deliberately pretending to be a large house, which is what an
+    // executive suite in a business park always did.
+    colW = 3.4; win = vec2(0.42, 0.50);
+    wall = mix(vec3(0.585, 0.430, 0.360), vec3(0.640, 0.610, 0.560), step(0.6, vVar));
+    glassA = vec3(0.28, 0.34, 0.40); glassB = vec3(0.44, 0.53, 0.59);
+  } else if (s == 129) {
+    // THE OPERATIONS CENTRE. An enormous plate with almost no window, because
+    // what is inside is desks and machines and neither needs a view — a strip
+    // of glass at the top floor for the people who chose the building.
+    colW = 5.6; win = vec2(0.22, 0.20);
+    wall = mix(vec3(0.640, 0.630, 0.610), vec3(0.585, 0.560, 0.520), step(0.55, vVar));
+    glassA = vec3(0.26, 0.32, 0.37); glassB = vec3(0.42, 0.50, 0.56);
+  } else if (s == 130) {
+    // THE CAMPUS BLOCK. Very long, very low, and entirely horizontal — no
+    // vertical anything, on purpose, so it lies in the landscape rather than
+    // standing in it.
+    glassy = true; colW = 7.6; win = vec2(0.92, 0.46);
+    wall = mix(vec3(0.620, 0.615, 0.595), vec3(0.545, 0.560, 0.570), step(0.55, vVar));
+    glassA = vec3(0.38, 0.48, 0.53); glassB = vec3(0.58, 0.70, 0.75);
+  } else if (s == 131) {
+    // THE COMPANY SLAB. A precast grid — one cell per desk — repeated without
+    // variation for two hundred metres. The relentlessness is the point: it
+    // said the company was large and would be there forever.
+    colW = 2.7; win = vec2(0.56, 0.56);
+    wall = mix(vec3(0.700, 0.690, 0.665), vec3(0.620, 0.610, 0.585), step(0.55, vVar));
+    glassA = vec3(0.28, 0.34, 0.39); glassB = vec3(0.44, 0.52, 0.58);
+  } else if (s == 132) {
+    // LEASED GOVERNMENT. Blank precast, a deep security setback at grade with
+    // bollards, and windows that are smaller than the budget implies.
+    colW = 3.6; win = vec2(0.34, 0.44);
+    wall = mix(vec3(0.665, 0.655, 0.630), vec3(0.600, 0.585, 0.560), step(0.55, vVar));
+    glassA = vec3(0.24, 0.30, 0.35); glassB = vec3(0.39, 0.47, 0.53);
+  } else if (s == 133) {
+    // THE CARRIER HOTEL. A telephone exchange for the internet: immensely
+    // heavy floors, no windows at all, and banks of louvre where the openings
+    // would be. Usually an old building nobody can see into any more.
+    colW = 3.4; win = vec2(0.0, 0.0);
+    wall = mix(vec3(0.505, 0.400, 0.350), vec3(0.545, 0.530, 0.505), step(0.55, vVar));
+    glassA = wall; glassB = wall;
+  } else if (s == 134) {
+    // THE LOFT CONVERSION. The mill's openings kept exactly as they were, with
+    // new frameless glass set inside them — so the wall is old and the glass
+    // is obviously not, and the join between them is the whole character.
+    glassy = true; colW = 3.3; win = vec2(0.70, 0.74);
+    wall = mix(vec3(0.560, 0.395, 0.330), vec3(0.505, 0.450, 0.405), step(0.55, vVar));
+    glassA = vec3(0.36, 0.46, 0.52); glassB = vec3(0.56, 0.68, 0.74);
+  } else if (s == 135) {
+    // THE SKY LOBBY. A trophy tower changes plate where its lifts change over,
+    // a third of the way up — and the two stacks do not quite line up, which
+    // is a seam nothing else in a curtain wall has.
+    glassy = true; colW = 1.9; win = vec2(0.95, 0.92);
+    if (vVar < 0.45) { glassA = vec3(0.44, 0.58, 0.64); glassB = vec3(0.64, 0.76, 0.80); wall = vec3(0.34, 0.45, 0.51); }
+    else             { glassA = vec3(0.38, 0.44, 0.52); glassB = vec3(0.58, 0.66, 0.74); wall = vec3(0.29, 0.35, 0.42); }
+  } else if (s == 136) {
+    // THE PROFESSIONAL BUILDING. Two storeys, very shallow plate, and an
+    // external walkway along the upper floor serving every suite door — a
+    // motel plan sold to dentists and accountants.
+    colW = 3.6; win = vec2(0.54, 0.52);
+    wall = mix(vec3(0.660, 0.640, 0.600), vec3(0.585, 0.470, 0.400), step(0.6, vVar));
+    glassA = vec3(0.30, 0.37, 0.43); glassB = vec3(0.47, 0.57, 0.63);
+  } else if (s == 137) {
+    // THE BOUTIQUE. Small, expensive, and almost entirely stone: one storey of
+    // very good glass at the base and deep punched openings above it, because
+    // the money went into the wall rather than into the window.
+    colW = 3.8; win = vec2(0.38, 0.60);
+    wall = mix(vec3(0.700, 0.680, 0.640), vec3(0.470, 0.460, 0.455), step(0.6, vVar));
+    glassA = vec3(0.24, 0.30, 0.36); glassB = vec3(0.40, 0.48, 0.55);
+  } else if (s == 138) {
+    // BUILD-TO-SUIT. Where a cornice would be there is a LOGO BAND — a
+    // saturated stripe of the tenant's colour running the whole frontage,
+    // which is the only reason the building looks the way it does.
+    glassy = true; colW = 4.2; win = vec2(0.88, 0.62);
+    wall = mix(vec3(0.600, 0.605, 0.615), vec3(0.545, 0.530, 0.510), step(0.55, vVar));
+    glassA = vec3(0.36, 0.46, 0.52); glassB = vec3(0.56, 0.67, 0.73);
   } else if (s == 112) {
     // THE SKY GARDEN. Planted terraces at every level, so the tower is half
     // foliage — the only green vertical surface in any city, and from a
@@ -1606,6 +1696,15 @@ void main() {
   // in it. A brutalist slot is half a metre deep; a mirror-glass unit is
   // flush enough to be a mirror.
   float revealM = (s == 49) ? 0.028
+                : (s == 135) ? 0.030
+                : (s == 127 || s == 130) ? 0.055
+                : (s == 138) ? 0.09
+                : (s == 134) ? 0.12
+                : (s == 133) ? 0.20
+                : (s == 126 || s == 131 || s == 136) ? 0.26
+                : (s == 128) ? 0.28
+                : (s == 129 || s == 132) ? 0.34
+                : (s == 137) ? 0.44
                 : (s == 113 || s == 117 || s == 119) ? 0.030
                 : (s == 114 || s == 115) ? 0.040
                 : (s == 112 || s == 116 || s == 125) ? 0.075
@@ -2041,6 +2140,106 @@ void main() {
       float cover = clamp(fin + obliq * 1.25, 0.0, 1.0);
       wall = mix(wall, wall * (0.82 + 0.30 * fin), 0.9);
       winMask *= 1.0 - cover * 0.92;
+    } else if (s == 126 || s == 131 || s == 132) {
+      // THE REPEATED CELL. A precast grid where every opening is identical
+      // because every room behind it is identical — an exam room, a desk, a
+      // clerk. The panel joint round each cell is the only relief there is.
+      float jx = 1.0 - smoothstep(0.0, 0.020, min(f.x, 1.0 - f.x));
+      float jy = 1.0 - smoothstep(0.0, 0.024, min(f.y, 1.0 - f.y));
+      wall = mix(wall, wall * 1.13, clamp(max(jx, jy), 0.0, 1.0));
+      if (s == 126 && vZ < fh * 1.15 && fract(vU / 24.0) < 0.22) {
+        wall = mix(wall, wall * 1.24, 0.85); winMask = 0.0;      // the entrance canopy
+      }
+      if (s == 132 && vZ < fh * 0.55) { wall *= 0.90; winMask = 0.0; }   // security base
+    } else if (s == 127 || s == 130) {
+      // THE HORIZONTAL STRIPE. Continuous ribbon over a dark spandrel with
+      // nothing vertical anywhere — a mullion so slim it disappears, and the
+      // spandrel darker than the glass so the band reads from a mile off.
+      float fy = fract(v);
+      if (fy > 0.58) { wall = mix(wall, wall * 0.62, 0.9); winMask = 0.0; }
+      float mull = 1.0 - smoothstep(0.006, 0.016, min(f.x, 1.0 - f.x));
+      wall = mix(wall, wall * 1.30, mull * 0.6); winMask *= 1.0 - mull * 0.5;
+      if (s == 130 && vZ < 0.9) wall *= 0.92;
+    } else if (s == 129 || s == 133) {
+      // ALMOST NO WINDOW. What is inside is desks and machines, and neither
+      // needs a view — so the wall is a field of panel with louvre banks on a
+      // carrier hotel, and one strip of glass at the top for the people who
+      // chose the building.
+      if (s == 133) {
+        float t = fract(vU / 9.0);
+        if (t > 0.16 && t < 0.54 && vZ > fh * 0.6 && vZ < vTop - fh * 0.4) {
+          float bl = fract(vZ / 0.24);
+          wall = mix(wall, wall * mix(0.44, 1.16, bl), 0.9);
+        }
+        winMask = 0.0;
+      } else {
+        if (vZ < vTop - fh * 1.1) winMask *= step(0.72, hash(vec2(floor(u), floor(v))));
+      }
+      float pj = 1.0 - smoothstep(0.0, 0.018, min(f.x, 1.0 - f.x));
+      wall = mix(wall, wall * 1.08, pj);
+    } else if (s == 134) {
+      // OLD HOLE, NEW GLASS. The mill's opening is kept exactly, and the new
+      // unit sits flush inside it with no frame at all — so there is a hard
+      // shadow at the jamb where the old wall stops and nothing where the
+      // glass begins. That join is the entire conversion.
+      if (inHole) {
+        glassShade = 0.94;
+        float edge = min(min(ox, 1.0 - ox), min(oy, 1.0 - oy));
+        glassShade *= 1.0 - 0.42 * (1.0 - smoothstep(0.0, 0.055, edge));
+      } else if (oy > 0.86 && abs(ox - 0.5) < 0.5) {
+        wall *= 1.05;                                            // the old segmental head
+      }
+      wall *= 0.96 + 0.08 * hash(vec2(floor(vU / 0.22), floor(vZ / 0.075)));
+    } else if (s == 135) {
+      // THE SKY LOBBY SEAM. The lift stacks change over a third of the way up
+      // and the plate changes with them — a band of mechanical louvre, and the
+      // mullion rhythm above it does not line up with the rhythm below.
+      float sz = vTop * (0.34 + 0.10 * vVar);
+      float off = vZ > sz ? 0.37 : 0.0;
+      float mull = 1.0 - smoothstep(0.010, 0.026, min(fract(vU / colW + off), 1.0 - fract(vU / colW + off)));
+      wall = mix(wall, wall * 1.32, mull); winMask *= 1.0 - mull * 0.85;
+      if (abs(vZ - sz) < fh * 0.55) {
+        float bl = fract(vZ / 0.30);
+        wall = mix(wall, wall * mix(0.46, 1.14, bl), 0.9); winMask = 0.0;
+      }
+    } else if (s == 136) {
+      // THE WALKWAY. An external deck along the upper floor with a rail and a
+      // suite door every bay — the motel plan, sold to dentists.
+      float fy = fract(v);
+      if (vZ > fh * 0.95) {
+        if (fy < 0.10) { wall = mix(wall, wall * 1.20, 0.9); winMask = 0.0; }
+        else if (fy < 0.28) { wall = mix(wall, wall * 1.02, 0.6); winMask *= 0.3; }
+        else if (fy < 0.38) { wall = mix(wall, wall * 0.44, 0.85); winMask = 0.0; }
+        else if (hash(vec2(floor(u) + 3.0, floor(v))) > 0.55 && abs(f.x - 0.5) < 0.15) {
+          wall = mix(wall, vec3(0.280, 0.250, 0.230), 0.85); winMask = 0.0;
+        }
+      }
+    } else if (s == 137) {
+      // THE MONEY WENT INTO THE WALL. One storey of very good glass at grade,
+      // then deep punched openings in big ashlar above — fewer holes, better
+      // stone, and a reveal you could sit in.
+      if (vZ < fh * 1.15) { winMask = step(0.06, fract(vU / 3.2)); glassShade = 0.80; }
+      else {
+        float jj = 1.0 - smoothstep(0.0, 0.020, min(fract(vU / 1.9), 1.0 - fract(vU / 1.9)));
+        wall *= 1.0 - 0.07 * jj;
+        if (inHole) {
+          float sunSide = dot(SUN_DIR, T) > 0.0 ? ox : 1.0 - ox;
+          glassShade = 1.0 - 0.44 * (1.0 - smoothstep(0.0, 0.36, sunSide));
+        }
+      }
+    } else if (s == 138) {
+      // THE LOGO BAND. A saturated stripe of the tenant's colour where a
+      // cornice would be, running the whole frontage. It is the only reason
+      // the building looks the way it does and everybody knows it.
+      if (vZ > vTop - fh * 0.85) {
+        vec3 brand = vVar < 0.25 ? vec3(0.58, 0.16, 0.18)
+                   : vVar < 0.50 ? vec3(0.14, 0.30, 0.56)
+                   : vVar < 0.75 ? vec3(0.16, 0.38, 0.26)
+                                 : vec3(0.60, 0.46, 0.10);
+        wall = mix(wall, brand, 0.86); winMask = 0.0;
+      }
+      float fy = fract(v);
+      if (fy > 0.66) { wall = mix(wall, wall * 0.78, 0.8); winMask = 0.0; }
     } else if (s == 112) {
       // THE PLANTING. A deep terrace at every floor with soil in it, and the
       // foliage spilling over the edge — so the tower alternates a band of
@@ -3504,6 +3703,19 @@ void main() {
   else if (s == 123) roof = vec3(0.575, 0.565, 0.545); // micro-units
   else if (s == 124) roof = vec3(0.650, 0.645, 0.625); // passive: pale membrane
   else if (s == 125) roof = vec3(0.360, 0.370, 0.390); // media facade
+  else if (s == 126) roof = vec3(0.560, 0.550, 0.530); // medical office
+  else if (s == 127) roof = vec3(0.520, 0.520, 0.510); // office park
+  else if (s == 128) roof = vec3(0.365, 0.325, 0.295); // garden office: hipped shingle
+  else if (s == 129) roof = vec3(0.585, 0.580, 0.565); // back office: acres of membrane
+  else if (s == 130) roof = vec3(0.575, 0.575, 0.560); // campus block
+  else if (s == 131) roof = vec3(0.505, 0.500, 0.485); // insurance slab
+  else if (s == 132) roof = vec3(0.545, 0.540, 0.525); // government
+  else if (s == 133) roof = vec3(0.470, 0.470, 0.470); // carrier hotel: chillers
+  else if (s == 134) roof = vec3(0.470, 0.445, 0.415); // loft office
+  else if (s == 135) roof = vec3(0.600, 0.615, 0.630); // sky lobby tower
+  else if (s == 136) roof = vec3(0.535, 0.520, 0.495); // professional building
+  else if (s == 137) roof = vec3(0.560, 0.550, 0.525); // boutique
+  else if (s == 138) roof = vec3(0.555, 0.560, 0.565); // build-to-suit
   else              roof = vec3(0.76, 0.76, 0.74);
   roof *= 0.92 + 0.16 * vRand;
 

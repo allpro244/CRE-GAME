@@ -731,6 +731,10 @@ export interface Econ {
   effRentIdx?: Record<BuiltClass, number>;
   /** sf-weighted mean demandIdx of the built stock, measured once per city at
    *  init — the pivot that keeps the location curves mean-neutral on any map. */
+  /** Which decade this game opened in. See regime.ts. */
+  eraKey?: string;
+  eraLabel?: string;
+  eraBlurb?: string;
   locIdxMean?: number;
   /** Per-class location pivots — a shed competes with sheds, not with towers. */
   locIdxMeanBy?: Record<BuiltClass, number>;
@@ -775,6 +779,21 @@ export interface Econ {
      * economy to be taken seriously again. This is the Volcker mechanism.
      */
     credibility: number;
+    /**
+     * WHAT THE BANK IS AIMING AT, which is not a constant of nature. The
+     * Taylor rule used a hardcoded 0.02 and so every century converged on the
+     * same monetary world — measured, twelve of twenty-two never once saw an
+     * 11% loan. Before 1990 no central bank published a target at all and the
+     * implicit one drifted with the politics. See regime.ts.
+     */
+    inflTarget?: number;
+    /**
+     * Where the neutral real rate is heading on a multi-decade clock. r* is
+     * not a constant — roughly 3.5% in the 1960s, roughly 0.5% after 2010
+     * (Laubach-Williams). Reverting to a fixed 1.2% is what collapsed every
+     * century into the same monetary world. See regime.ts.
+     */
+    neutralAnchor?: number;
     /**
      * Months left in a NATIONAL recession, 0 while the country is expanding.
      * The nation has its own cycle and it is not the city's: what makes this

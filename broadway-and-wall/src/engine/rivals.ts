@@ -428,6 +428,43 @@ function orphanToTape(s: GameState, parcels: ParcelTable) {
   }
 }
 
+/**
+ * WHO ELSE IS IN THIS TOWN, and it should not be the same answer every time.
+ *
+ * FIRMS is the population of operators this city could have produced. It used
+ * to be the roster, entire and identical in every game: the same thirty-five
+ * names with the same capital and the same leverage, which is why a hundred
+ * years later the same family office had won. Measured over twenty-two
+ * unplayed centuries, Wentworth Trust finished first in eleven of them and
+ * every single winner was one of five family offices — not an emergent dynasty
+ * so much as the same race run twenty-two times.
+ *
+ * A city has the firms it happens to have. Some never got founded, some raised
+ * more than others, and the one that ends up owning the place is not
+ * determined on day one. So each game draws its own field: most of the
+ * population turns up, a handful do not, and what they came to the table with
+ * varies the way real capital raises vary.
+ *
+ * The bands are deliberately narrow on leverage and wide on equity. How much a
+ * firm raised is a fact about its investors; how much it is willing to borrow
+ * is a fact about its character, and character is what STYLE already encodes.
+ */
+function rosterFor(s: GameState): typeof FIRMS {
+  const out: typeof FIRMS = [];
+  for (const f of FIRMS) {
+    // A quarter of the field, at most, never got off the ground in this city.
+    if (rng(s) < 0.14) continue;
+    out.push({
+      ...f,
+      equity: Math.round(f.equity * rrange(s, 0.55, 1.75) / 100_000) * 100_000,
+      ltv: +Math.max(0.15, Math.min(0.82, f.ltv + rrange(s, -0.06, 0.06))).toFixed(3),
+    });
+  }
+  // A town with four landlords is not a market. If the draw thinned the field
+  // too far, take the population as it stands.
+  return out.length >= 22 ? out : FIRMS.map((f) => ({ ...f }));
+}
+
 export function initRivals(s: GameState, parcels: ParcelTable, bbls: string[]): Rival[] {
   const out: Rival[] = [];
   // The built stock that isn't yours has to belong to SOMEBODY. Handing a
@@ -438,7 +475,7 @@ export function initRivals(s: GameState, parcels: ParcelTable, bbls: string[]): 
     return r && r.class !== "land" && r.bldgArea > 0;
   });
   const taken = new Set<string>();
-  FIRMS.forEach((f, i) => {
+  rosterFor(s).forEach((f, i) => {
     const r: Rival = {
       id: `r${i}`, name: f.name, style: f.style,
       // The reserve comes OUT of what they raised, it is not conjured on top

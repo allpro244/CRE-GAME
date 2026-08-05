@@ -90,7 +90,18 @@ function macroRun(seed, months = 600) {
 {
   const runs = [550991, 12007, 73303, 11, 22, 33, 4242].map((seed) => {
     const t = macroRun(seed);
-    const a = t[0], b = t[t.length - 1];
+    // MEASURED FROM YEAR TEN, NOT FROM MONTH ZERO.
+    //
+    // Month zero is no longer a neutral position: a new game now draws a
+    // starting era (see src/engine/regime.ts), so it can open in a Volcker
+    // aftermath with the rent index at 40 or in a long expansion with it at
+    // 72. Trend growth measured from a random point in the cycle is not trend
+    // growth — a run that opens depressed shows high "growth" while it is
+    // merely normalising, which is exactly what pushed this median to 1.67%.
+    // Ten years of burn-in puts every seed past its opening draw before the
+    // clock starts. The ratio clause below needs no burn-in and did not move:
+    // it is a level, and a level is unaffected by where the measurement began.
+    const a = t.find((x) => x.m >= 120) ?? t[0], b = t[t.length - 1];
     const yrs = (b.m - a.m) / 12;
     const nom = CAGR(a.rent, b.rent, yrs);
     const infl = CAGR(a.cpi, b.cpi, yrs);
@@ -172,22 +183,44 @@ function macroRun(seed, months = 600) {
 // reason: a gate that answers from one draw is not a gate, it is a coin.
 {
   const GLUTS = [910117, 550991, 12007, 73303, 11, 22, 33, 4242, 90210];
+  //
+  // AND THE RATE CLAUSE IS MEASURED AGAINST A CONTROL.
+  //
+  // "Did the loan index rise over the twelve years after the glut" attributes
+  // every basis point in that window to the glut, and that stopped being safe
+  // when the neutral real rate started wandering on a multi-decade clock (see
+  // regime.ts): a run can now contain a genuine secular rate rise that has
+  // nothing whatever to do with 4M sf of empty office. So each glut is run
+  // twice from the identical month-36 state — once with the space dropped in,
+  // once without — and what is asserted is the DIFFERENCE. That is the same
+  // counterfactual econ-accept's supply-shock test already uses, and for the
+  // same reason: the only honest way to measure what a shock did is against
+  // the city that did not receive it.
   const runs = GLUTS.map((seed) => {
     const parcels = clone();
-    let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
-    for (let m = 0; m < 36; m++) g = E.advanceQuarter(g, parcels, bbls, adjacency);
-    E.addStock(g.econ, "office", 4_000_000);
-    const t = [];
-    for (let m = 0; m < 144; m++) {
-      g = E.advanceQuarter(g, parcels, bbls, adjacency);
-      t.push({ vac: g.econ.cityVac.office, phase: g.econ.phase, rent: g.econ.rentIdx.office, rate: g.econ.indexRate });
-    }
+    let g0 = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
+    for (let m = 0; m < 36; m++) g0 = E.advanceQuarter(g0, parcels, bbls, adjacency);
+    const walk = (g, glut) => {
+      const p = JSON.parse(JSON.stringify(parcels));
+      let s2 = JSON.parse(JSON.stringify(g));
+      if (glut) E.addStock(s2.econ, "office", 4_000_000);
+      const t = [];
+      for (let m = 0; m < 144; m++) {
+        s2 = E.advanceQuarter(s2, p, bbls, adjacency);
+        t.push({ vac: s2.econ.cityVac.office, phase: s2.econ.phase, rent: s2.econ.rentIdx.office, rate: s2.econ.indexRate });
+      }
+      return t;
+    };
+    const t = walk(g0, true), ctrl = walk(g0, false);
     const deep = t.filter((x) => x.vac > 0.25);
     const lying = deep.filter((x) => x.phase === "expansion" || x.phase === "peak").length;
+    const drift = med(t.slice(24, 96).map((x) => x.rate)) - t[0].rate;
+    const ctrlDrift = med(ctrl.slice(24, 96).map((x) => x.rate)) - ctrl[0].rate;
     return {
       peakVac: Math.max(...t.map((x) => x.vac)),
       share: deep.length ? lying / deep.length : 0,
-      drift: med(t.slice(24, 96).map((x) => x.rate)) - t[0].rate,
+      drift: drift - ctrlDrift,
+      raw: drift, ctrl: ctrlDrift,
       rentFall: 1 - Math.min(...t.map((x) => x.rent)) / t[0].rent,
     };
   });
@@ -198,8 +231,10 @@ function macroRun(seed, months = 600) {
     peakVac > 0.25 && share <= 0.15 && drift <= 0.5,
     [`office vacancy peaked at ${(peakVac * 100).toFixed(1)}% median   (per seed ${runs.map((r) => (r.peakVac * 100).toFixed(0) + "%").join(" ")})`,
      `share of a >25%-vacant market called 'expansion' or 'peak': ${(share * 100).toFixed(0)}% median   (need <= 15%)`,
-     `loan index drift over the glut: ${drift >= 0 ? "+" : ""}${drift.toFixed(2)}pp median   (need <= +0.50pp: a glut is a demand shock)`,
-     `   per seed ${runs.map((r) => (r.drift >= 0 ? "+" : "") + r.drift.toFixed(1)).join("  ")} — the spread is why this is nine seeds and not one`,
+     `loan index drift ATTRIBUTABLE TO THE GLUT: ${drift >= 0 ? "+" : ""}${drift.toFixed(2)}pp median   (need <= +0.50pp: a glut is a demand shock)`,
+     `   glut ${runs.map((r) => (r.raw >= 0 ? "+" : "") + r.raw.toFixed(1)).join(" ")}`,
+     `   control ${runs.map((r) => (r.ctrl >= 0 ? "+" : "") + r.ctrl.toFixed(1)).join(" ")}   — the same city without the 4M sf`,
+     `   net ${runs.map((r) => (r.drift >= 0 ? "+" : "") + r.drift.toFixed(1)).join(" ")}`,
      `rent fell ${(med(runs.map((r) => r.rentFall)) * 100).toFixed(0)}% from the drop to the trough, median`]);
 }
 

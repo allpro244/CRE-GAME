@@ -4,6 +4,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, MarketPhase, NewsItem, Sector } from "./types";
 import { BUILT_CLASSES } from "./types";
+import { applyEra, driftInflTarget } from "./regime";
 
 export function mulberry32Step(a: number): { state: number; value: number } {
   a |= 0; a = (a + 0x6d2b79f5) | 0;
@@ -355,6 +356,13 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   econ.concIdx = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
   econ.vacOverM = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
   econ.effRentIdx = { ...econ.rentIdx };
+  // WHICH DECADE YOU WALKED INTO. Applied last, so everything above is the
+  // long-run baseline and this is the deliberate departure from it. Drawn from
+  // the run seed on a private generator — see regime.ts for why that matters.
+  {
+    const era = applyEra(econ, s.seed, NATURAL_VAC as unknown as Record<string, number>);
+    econ.eraKey = era.key; econ.eraLabel = era.label; econ.eraBlurb = era.blurb;
+  }
   recordHistory(econ, 0);
   return econ;
 }
@@ -531,8 +539,26 @@ export function tickEcon(s: GameState) {
     // ...centred near 1.2%, which is where the real one has spent most of the
     // last century, drifting toward 2%+ mid-century and under 0.5% in the
     // modern era. Mean-reverting, or a century-long walk becomes the model.
-    n.neutralReal = clamp(n.neutralReal + 0.004 * (0.012 - n.neutralReal)
-      + rrange(s, -0.00020, 0.00020), 0.001, 0.030);
+    // AND IT REVERTS TO SOMETHING THAT ITSELF MOVES. This pulled toward a
+    // hardcoded 1.2% in every game, which is why a century opening at 15%
+    // short rates was back at the same 4.5% median within two decades and why
+    // twelve of twenty-two centuries never once saw an 11% loan. The neutral
+    // rate is not a constant: Laubach-Williams puts r* near 3.5% in the 1960s
+    // and near 0.5% after 2010, and it moves on a multi-decade clock, not a
+    // business cycle. So the ANCHOR wanders slowly between those two poles and
+    // neutralReal reverts to wherever the anchor currently is.
+    if (n.neutralAnchor === undefined) n.neutralAnchor = n.neutralReal;
+    n.neutralAnchor = clamp(
+      n.neutralAnchor + 0.0009 * (0.014 - n.neutralAnchor) + rrange(s, -0.00035, 0.00035),
+      0.004, 0.032,
+    );
+    n.neutralReal = clamp(n.neutralReal + 0.004 * (n.neutralAnchor - n.neutralReal)
+      + rrange(s, -0.00020, 0.00020), 0.001, 0.034);
+    // Deterministic in (seed, month) rather than a draw from the shared
+    // stream: consuming s.rng here would re-roll the whole century and any
+    // movement in the acceptance gates would then be reshuffling rather than
+    // economics. Same lesson as staff.ts.
+    driftInflTarget(e, mulberry32Step((s.seed ^ (s.month * 0x2545f491)) | 0).value);
 
     // SUPPLY SHOCKS. An oil embargo is not a demand story: it raises prices
     // AND unemployment at once, which is the one thing a central bank cannot
@@ -759,7 +785,11 @@ export function tickEcon(s: GameState) {
     // has no way out of one except waiting.
     const restore = n.credibility < 0.55 && seen > 0.045
       ? (0.55 - n.credibility) * 10.5 : 0;
-    const want = 100 * (n.neutralReal + seen + 0.5 * (seen - 0.02) + 0.5 * okunGap) + restore;
+    // ...against the target the bank actually holds, which drifts. See
+    // regime.ts: 0.02 was written here as a constant and it is the reason a
+    // century could not contain two different monetary worlds.
+    const tgt = n.inflTarget ?? 0.02;
+    const want = 100 * (n.neutralReal + seen + 0.5 * (seen - tgt) + 0.5 * okunGap) + restore;
     // Gradualism, except when it is not: a bank moves in quarter points at
     // eight meetings a year, and in three-quarter points when it is frightened.
     const dist = Math.abs(want - n.policy);

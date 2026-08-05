@@ -2753,6 +2753,7 @@ varying float vLit;
 varying float vRet;
 uniform float uOpacity;
 uniform vec3 uCam;
+uniform float uTime;
 ` + SHADOW_GLSL + LIGHT_GLSL + SEASON_GLSL + HAZE_GLSL + STYLE_SETS_GLSL + /* glsl */ `
 float rhash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float rnoise(vec2 p) {
@@ -3011,6 +3012,67 @@ void main() {
     if (s == 14) roof = mix(roof, vec3(0.63, 0.70, 0.76), clamp(SNOW * 1.15, 0.0, 1.0));
     roof = snowOn(roof, up, drift);
   }
+  // ---- the pond, which is water and was never treated as any ---------------
+  //
+  // A hundred metres from a harbour that has waves, Fresnel, a sun road and a
+  // planar reflection, the park pond was a flat green-grey with two octaves of
+  // static noise laid over it. It did not need the harbour's swell — a
+  // sheltered basin has none — but it did need the two things that make still
+  // water read as water at all: a surface that MOVES, and a sky in it.
+  //
+  // Three slow crossed trains give the ripple; the slope of their sum is the
+  // normal, and everything else falls out of that. vU carries distance to the
+  // pond's own bank, baked per vertex, so the rim goes green and opaque where
+  // you can see the bottom and the middle holds the sky.
+  if (s == 14) {
+    // FOUR TRAINS, DELIBERATELY UNCORRELATED. Three with similar bearings sum
+    // into a corduroy of parallel ridges — the pond came out looking milled
+    // rather than wet. Spread the headings around the compass, keep the
+    // wavelengths incommensurate, and the interference pattern stops having a
+    // direction.
+    float t = uTime;
+    float a1 = sin(wp.x *  0.97 + wp.y *  0.14 + t * 0.83);
+    float a2 = sin(wp.x * -0.34 + wp.y *  0.92 + t * 1.27);
+    float a3 = sin(wp.x *  1.51 - wp.y *  1.19 + t * 1.94);
+    float a4 = sin(wp.x * -1.77 - wp.y *  1.05 + t * 2.61);
+    // THE SLOPE HAS TO BE REAL OR THE SPECULAR IS NOT A GLINT, IT IS A FLARE.
+    // At 0.028 the ripple barely tilted the normal, so every point on the pond
+    // shared one alignment with the half-vector — and with a low sun over a
+    // horizontal surface that alignment is near perfect, so the entire pond
+    // went to white at once. Water sparkles because its normal VARIES; the
+    // tight exponents below are only meaningful against a surface that moves
+    // enough to put some of itself out of alignment.
+    vec2 slope = vec2( 0.97 * a1 - 0.34 * a2 + 1.51 * a3 - 1.77 * a4,
+                       0.14 * a1 + 0.92 * a2 - 1.19 * a3 - 1.05 * a4) * 0.075;
+    vec3 pn = normalize(vec3(-slope, 1.0));
+    vec3 Vp = normalize(uCam - vPos);
+
+    // SCHLICK, NOT A GUESS. Water reflects about 2% of what hits it head-on
+    // and nearly everything at a grazing angle, and the curve between the two
+    // is very flat until it turns hard near the edge. A cubed falloff put 26%
+    // of sky into a pond being looked at from well above it, which is four
+    // times what is really there — and that, not the highlight, is why it kept
+    // reading as a pale sheet instead of as water.
+    float fr = 0.02 + 0.98 * pow(1.0 - clamp(dot(pn, Vp), 0.0, 1.0), 5.0);
+
+    // AND A POND IS DARK. Standing water over silt and weed is one of the
+    // darkest surfaces in a park — considerably darker than the grass around
+    // it — which is exactly what makes it read as depth rather than as a
+    // puddle of sky lying on the lawn.
+    roof = vec3(0.088, 0.128, 0.116);
+    float rim = 1.0 - smoothstep(0.0, 3.4, vU);
+    // the bank: silt, weed and the bottom showing through
+    roof = mix(roof, vec3(0.232, 0.290, 0.212), rim * 0.72);
+    roof = mix(roof, vec3(0.556, 0.688, 0.836), fr * (1.0 - rim * 0.55));
+    // and the sun on it — broad sheen, then the hard points
+    float sd = max(dot(pn, normalize(SUN_DIR + Vp)), 0.0);
+    // A small pond looked at down the sun's bearing IS a sheet of light — that
+    // part was never wrong. What was wrong was the amount: enough to clip to
+    // paper white and lose the ripple that makes it legible as water.
+    roof += SUN_COL * (pow(sd, 30.0) * 0.03 + pow(sd, 260.0) * 0.14 + pow(sd, 900.0) * 0.38)
+          * (1.0 - rim * 0.7);
+  }
+
   float vis = sunVis(vPos, n);
   // vU carries distance to the roof edge: the parapet shades its own deck
   float aoEdge = mix(0.78, 1.0, smoothstep(0.0, 2.8, vU));
@@ -3829,6 +3891,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private demandByBbl: Record<string, number> = {};
   /** true once any walker mesh exists — gates the animation clock. */
   private hasWalkers = false;
+  private hasPonds = false;
   private shadowTarget: THREE.WebGLRenderTarget | null = null;
   private shadowSpan = 5999;
   private depthMat: THREE.MeshDepthMaterial | null = null;
@@ -5055,6 +5118,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       uSunVP: { value: new THREE.Matrix4() },
       uShadowOn: { value: 0 },
       uShadowSpan: { value: 5999 },
+      uTime: this.timeUni,
     });
     this.wallMat = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: FRAG, uniforms: uniforms(), side: THREE.DoubleSide });
     this.roofMat = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: ROOF_FRAG, uniforms: uniforms(), side: THREE.DoubleSide });
@@ -5569,6 +5633,54 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // whose posts are each a different height is a fence, not an esplanade.
     addRigid(benchGeom(), 0x6d5a45, oriented(this.ctxPoints.benches));
     addRigid(railGeom(), 0x3f464b, oriented(this.ctxPoints.rails));
+
+    // ---- what the walks were converging on -------------------------------
+    //
+    // The park generator drives its cross paths corner-to-corner "through the
+    // middle" and keeps the lawn open where they meet. That intersection had
+    // nothing standing on it, which leaves four walks arriving at a patch of
+    // grass — and leaves a hundred-metre lawn with no vertical anything to
+    // read its scale against.
+    //
+    // A column in the big parks, a fountain in the small ones. Both on the
+    // centroid, which is where the paths already go; the pond is generated
+    // offset from centre precisely so the middle stays free, so nothing has to
+    // be dodged. Bearing comes off the position hash so a town's monuments do
+    // not all face the same way, and the whole thing is deterministic in the
+    // city seed like every other prop.
+    {
+      const columns: Item[] = [];
+      const fountains: Item[] = [];
+      for (const ring of this.ctxPoints.parks ?? []) {
+        if (!ring || ring.length < 3) continue;
+        const pts = ring.map((q) => this.project(q));
+        // area and centroid of the ring, by the shoelace
+        let a2 = 0, cx = 0, cy = 0;
+        for (let i = 0; i < pts.length; i++) {
+          const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length];
+          const cross = x1 * y2 - x2 * y1;
+          a2 += cross; cx += (x1 + x2) * cross; cy += (y1 + y2) * cross;
+        }
+        if (Math.abs(a2) < 1e-6) continue;
+        const area = Math.abs(a2) / 2;
+        const p: Item = {
+          x: cx / (3 * a2), y: cy / (3 * a2),
+          // addRigid ignores scale by design — a manufactured thing is one
+          // size — but Item carries it, so hand it the identity.
+          s: 1,
+          rot: (Math.abs(Math.round(cx * 7 + cy * 13)) % 360) * Math.PI / 180,
+        };
+        // A column is a civic gesture and it needs a park to stand in; a
+        // square that would be crowded by one gets a basin instead.
+        if (area > 9000) columns.push(p);
+        else if (area > 1800) fountains.push(p);
+      }
+      addRigid(monumentGeom(), 0xb9b2a4, columns);          // weathered granite
+      addRigid(monumentFigureGeom(), 0x6f8a72, columns);    // bronze gone verdigris
+      addRigid(parterreGeom(), 0x5f8039, columns);          // clipped box hedge
+      addRigid(fountainStoneGeom(), 0xc0b9ab, fountains);
+      addRigid(fountainWaterGeom(), 0x2f5a63, fountains);
+    }
     addCars(cars);
     addPeople(people);
     addWalkers(personGeom(), walkers, COAT);
@@ -5660,8 +5772,29 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const parks = this.ctxPoints.parks;
     if (!parks?.length) return;
     const T = { pos: [] as number[], norm: [] as number[], u: [] as number[], style: [] as number[] };
+    // `uOf` lets a surface bake something useful into the spare per-vertex
+    // float. The lawn and the walks have nothing to say and push the old
+    // constant; the pond writes its distance to its own bank, which is what
+    // lets the shader shallow the rim and hold the sky in the middle.
+    let uOf: ((v: [number, number]) => number) | null = null;
     const emit = (q: [number, number][], z: number, style: number) => {
-      for (const v of q) { T.pos.push(v[0], v[1], z); T.norm.push(0, 0, 1); T.u.push(6); T.style.push(style); }
+      for (const v of q) {
+        T.pos.push(v[0], v[1], z); T.norm.push(0, 0, 1);
+        T.u.push(uOf ? uOf(v) : 6); T.style.push(style);
+      }
+    };
+    /** Shortest distance from a point to a closed ring, in metres. */
+    const distToRing = (v: [number, number], ring: [number, number][]) => {
+      let best = Infinity;
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        const dx = b[0] - a[0], dy = b[1] - a[1];
+        const l2 = dx * dx + dy * dy;
+        let t = l2 ? ((v[0] - a[0]) * dx + (v[1] - a[1]) * dy) / l2 : 0;
+        t = Math.max(0, Math.min(1, t));
+        best = Math.min(best, Math.hypot(v[0] - (a[0] + t * dx), v[1] - (a[1] + t * dy)));
+      }
+      return best;
     };
     // subdivide: the shader varies with world position, so a park drawn as
     // four huge triangles still shades smoothly, but the mown bands want
@@ -5693,7 +5826,18 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // through the park. They come up with it. Laid in metres rather than
     // screen pixels, they also hold their width properly at any pitch, which
     // the line layers never did.
-    for (const p of this.ctxPoints.ponds ?? []) fillRing(p, 0.09, S_POND, false);
+    // Subdivided, and not only for the shading. Triangulating a ring produces
+    // triangles whose every corner is ON the ring — there are no interior
+    // vertices at all — so a per-vertex distance to the bank would have been
+    // zero everywhere and the pond would have been all rim. Splitting to the
+    // same 400 m² the lawn uses gives it a middle to be deep in.
+    for (const p of this.ctxPoints.ponds ?? []) {
+      const ring = p.map((q) => this.project(q));
+      uOf = (v) => distToRing(v, ring);
+      fillRing(p, 0.09, S_POND, true);
+      uOf = null;
+      this.hasPonds = true;
+    }
     for (const line of this.ctxPoints.paths ?? []) {
       const pts = line.map((q) => this.project(q));
       const HW = 1.35;
@@ -6576,7 +6720,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // only while the layer is actually visible. MapLibre repaints on demand,
     // so without this call the city would be a still photograph — and with it
     // uncapped, it would burn a core to redraw water nobody is looking at.
-    if (this.waterMat || this.cranes.length || this.hasWalkers) {
+    if (this.waterMat || this.cranes.length || this.hasWalkers || this.hasPonds) {
       const now = performance.now();
       this.timeUni.value = now / 1000;
       // A crane's slew is its parked bearing plus two slow incommensurate
@@ -7798,4 +7942,106 @@ function mergeGeoms(geoms: THREE.BufferGeometry[]): THREE.BufferGeometry {
   out.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   out.setAttribute("normal", new THREE.Float32BufferAttribute(norm, 3));
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// PARK MONUMENTS
+// ---------------------------------------------------------------------------
+//
+// The generator already lays these parks out like parks: a perimeter
+// promenade, an allée of paired trees along it, cross paths driven
+// corner-to-corner, corner groves, and a lawn deliberately kept open in the
+// middle. Every one of those cross paths converges on a point — and that point
+// had nothing on it.
+//
+// That is not a small omission, it is the omission. A nineteenth-century civic
+// park is ORGANISED around its monument: the walks exist to arrive at it, and
+// without one they are four paths meeting in the grass for no stated reason.
+// It is also the only vertical thing in a hundred metres of flat lawn, which
+// makes it the one element giving the Common a middle to read against.
+//
+// Kept to the prop path — instanced geometry, flat colour, the same light rig
+// as a bench — because a monument is street furniture at civic scale, not a
+// building, and it has no business in the massing pipeline.
+
+/** Stepped plinth and tapered shaft, ~13 m. Z-up, like every prop here. */
+function monumentGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  // three-step base: a monument is approached, so it stands on stairs
+  parts.push(new THREE.BoxGeometry(5.2, 5.2, 0.34).translate(0, 0, 0.17));
+  parts.push(new THREE.BoxGeometry(4.2, 4.2, 0.34).translate(0, 0, 0.51));
+  parts.push(new THREE.BoxGeometry(3.3, 3.3, 0.40).translate(0, 0, 0.88));
+  // the die: the block that carries the inscription
+  parts.push(new THREE.BoxGeometry(2.3, 2.3, 2.15).translate(0, 0, 2.15));
+  parts.push(new THREE.BoxGeometry(2.7, 2.7, 0.26).translate(0, 0, 3.35));
+  // the shaft, tapered — a column that does not taper reads as a pipe
+  parts.push(new THREE.CylinderGeometry(0.62, 0.86, 7.6, 12)
+    .rotateX(Math.PI / 2).translate(0, 0, 7.28));
+  // capital
+  parts.push(new THREE.CylinderGeometry(0.98, 0.72, 0.52, 12)
+    .rotateX(Math.PI / 2).translate(0, 0, 11.34));
+  parts.push(new THREE.BoxGeometry(1.9, 1.9, 0.22).translate(0, 0, 11.71));
+  return mergeGeoms(parts);
+}
+
+/** The figure on top, in bronze — separate so it takes its own colour. */
+function monumentFigureGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  parts.push(new THREE.CylinderGeometry(0.30, 0.40, 0.42, 8)
+    .rotateX(Math.PI / 2).translate(0, 0, 12.03));
+  // a standing figure, read at fifty metres: legs, coat, shoulders, head
+  parts.push(new THREE.BoxGeometry(0.42, 0.34, 1.02).translate(0, 0, 12.75));
+  parts.push(new THREE.BoxGeometry(0.62, 0.42, 0.30).translate(0, 0, 13.38));
+  parts.push(new THREE.CylinderGeometry(0.17, 0.17, 0.26, 7)
+    .rotateX(Math.PI / 2).translate(0, 0, 13.66));
+  return mergeGeoms(parts);
+}
+
+/** A basin with a coping you could sit on, ~7 m across. */
+function fountainStoneGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  // the coping ring, built as a wide short drum with the water disc dropped
+  // into it — cheaper than a real annulus and identical at this distance
+  parts.push(new THREE.CylinderGeometry(3.5, 3.6, 0.62, 20)
+    .rotateX(Math.PI / 2).translate(0, 0, 0.31));
+  // the tiered centre
+  parts.push(new THREE.CylinderGeometry(0.72, 0.95, 0.55, 12)
+    .rotateX(Math.PI / 2).translate(0, 0, 0.72));
+  parts.push(new THREE.CylinderGeometry(1.15, 1.15, 0.14, 14)
+    .rotateX(Math.PI / 2).translate(0, 0, 1.05));
+  parts.push(new THREE.CylinderGeometry(0.30, 0.44, 0.85, 10)
+    .rotateX(Math.PI / 2).translate(0, 0, 1.52));
+  parts.push(new THREE.CylinderGeometry(0.62, 0.62, 0.11, 12)
+    .rotateX(Math.PI / 2).translate(0, 0, 2.00));
+  return mergeGeoms(parts);
+}
+
+/** The water in it, a disc set just below the coping. */
+function fountainWaterGeom(): THREE.BufferGeometry {
+  return new THREE.CylinderGeometry(3.34, 3.34, 0.04, 20)
+    .rotateX(Math.PI / 2).translate(0, 0, 0.50);
+}
+
+/**
+ * A clipped parterre hedge ringing a monument. Twelve low blocks on a circle
+ * rather than a torus: a formal bed is planted in segments with the walks
+ * between them, and at this scale the gaps are what say "clipped" rather than
+ * "green doughnut".
+ */
+function parterreGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const R = 5.6;
+  const N = 20;
+  for (let i = 0; i < N; i++) {
+    // four gaps, on the compass points, where the cross paths come in
+    if (i % 5 === 0) continue;
+    const a = (i / N) * Math.PI * 2;
+    // Long enough to close on its neighbour and tall enough to cast: at 12
+    // sparse segments these read as blocks dropped on the grass rather than as
+    // a clipped bed, which is the difference between planting and litter.
+    parts.push(new THREE.BoxGeometry(1.90, 1.05, 0.80)
+      .rotateZ(a + Math.PI / 2)
+      .translate(Math.cos(a) * R, Math.sin(a) * R, 0.40));
+  }
+  return mergeGeoms(parts);
 }

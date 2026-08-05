@@ -974,6 +974,95 @@ void main() {
     colW = 8.0; win = vec2(0.0, 0.0);
     wall = mix(vec3(0.78, 0.75, 0.69), vec3(0.70, 0.68, 0.64), step(0.5, vVar));
     glassA = wall; glassB = wall;
+  } else if (s == 94) {
+    // THE PARISH CHURCH. Fat stone buttresses stepping back in weathered
+    // stages, and one rose wheel high on a single bay. Stained glass, so the
+    // openings are dark blue and ruby rather than sky.
+    colW = 6.2; win = vec2(0.30, 0.72);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.36)      { wall = vec3(0.580, 0.570, 0.540); }  // grey granite
+    else if (pk < 0.68) { wall = vec3(0.520, 0.440, 0.370); }  // brownstone
+    else                { wall = vec3(0.740, 0.700, 0.600); }  // buff limestone
+    glassA = vec3(0.18, 0.20, 0.34); glassB = vec3(0.52, 0.26, 0.24);
+  } else if (s == 95) {
+    // THE MEETING HOUSE. Clapboard lap-lines the whole wall and white-cased
+    // twelve-over-twelve sash sitting almost flush on the boards.
+    colW = 3.4; win = vec2(0.30, 0.62);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.44)      { wall = vec3(0.780, 0.770, 0.720); }  // white lead paint
+    else if (pk < 0.76) { wall = vec3(0.740, 0.720, 0.660); }  // weathered white
+    else                { wall = vec3(0.620, 0.610, 0.570); }  // unpainted grey
+    glassA = vec3(0.34, 0.38, 0.40); glassB = vec3(0.55, 0.60, 0.60);
+  } else if (s == 96) {
+    // HORSESHOE HEADS over a wall banded in two stones, and a six-spoke wheel.
+    colW = 4.0; win = vec2(0.34, 0.66);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.40)      { wall = vec3(0.660, 0.550, 0.440); }  // warm sandstone
+    else if (pk < 0.74) { wall = vec3(0.740, 0.660, 0.540); }  // pale band
+    else                { wall = vec3(0.600, 0.580, 0.550); }  // grey stone
+    glassA = vec3(0.26, 0.22, 0.36); glassB = vec3(0.60, 0.42, 0.22);
+  } else if (s == 97) {
+    // THE PAVILION HOSPITAL. In 1880 the cure for everything was fresh air, so
+    // every floor above the ground is half open — a continuous recessed veranda
+    // in deep shade behind slender white posts.
+    colW = 3.2; win = vec2(0.50, 0.60);
+    wall = mix(vec3(0.660, 0.440, 0.360), vec3(0.740, 0.680, 0.560), step(0.55, vVar));
+    glassA = vec3(0.30, 0.36, 0.40); glassB = vec3(0.48, 0.55, 0.58);
+  } else if (s == 98) {
+    // THE CELLBLOCK. A cell tier is HALF a storey, so the openings run at twice
+    // the floor frequency and refuse to line up with anything — which is the
+    // single most unsettling thing a facade can do, and it is why you know.
+    colW = 3.0; win = vec2(0.16, 0.34);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.40)      { wall = vec3(0.550, 0.550, 0.530); }  // granite
+    else if (pk < 0.74) { wall = vec3(0.620, 0.600, 0.560); }  // pale ashlar
+    else                { wall = vec3(0.460, 0.450, 0.430); }  // soot granite
+    glassA = vec3(0.14, 0.16, 0.18); glassB = vec3(0.24, 0.27, 0.30);
+  } else if (s == 99) {
+    // THE ARMORY. Merlons and dark embrasures over a corbelled course, above a
+    // battered base with arrow slits. A castle, built in 1890, for a militia.
+    colW = 4.6; win = vec2(0.14, 0.55);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.42)      { wall = vec3(0.520, 0.310, 0.260); }  // dark red brick
+    else if (pk < 0.76) { wall = vec3(0.460, 0.360, 0.310); }  // brown brick
+    else                { wall = vec3(0.580, 0.560, 0.520); }  // granite trim
+    glassA = vec3(0.16, 0.18, 0.20); glassB = vec3(0.26, 0.30, 0.32);
+  } else if (s == 100) {
+    // COLLEGIATE GOTHIC. A square head split by heavy STONE mullions into four
+    // lights and one transom, each under a drip hood stepped over it.
+    colW = 4.2; win = vec2(0.56, 0.52);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.40)      { wall = vec3(0.660, 0.650, 0.600); }  // coursed grey limestone
+    else if (pk < 0.74) { wall = vec3(0.720, 0.690, 0.610); }  // warm ashlar
+    else                { wall = vec3(0.520, 0.540, 0.500); }  // seam-face granite
+    glassA = vec3(0.30, 0.34, 0.33); glassB = vec3(0.50, 0.56, 0.52);
+  } else if (s == 101) {
+    // THE BATHS. One enormous half-round thermal lunette per bay, divided by
+    // two heavy mullions, in a wall of white glazed terracotta.
+    colW = 5.4; win = vec2(0.62, 0.42);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.42)      { wall = vec3(0.790, 0.780, 0.740); }  // white glaze
+    else if (pk < 0.76) { wall = vec3(0.760, 0.730, 0.650); }  // cream terracotta
+    else                { wall = vec3(0.660, 0.720, 0.680); }  // pale green tile
+    glassA = vec3(0.42, 0.50, 0.52); glassB = vec3(0.62, 0.72, 0.72);
+  } else if (s == 102) {
+    // THE MUSEUM. A blind stone box that opens only in the last metre, because
+    // the light comes from the roof. Nothing on the wall at all until then.
+    colW = 6.0; win = vec2(0.88, 0.14);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.42)      { wall = vec3(0.760, 0.730, 0.660); }  // limestone ashlar
+    else if (pk < 0.76) { wall = vec3(0.640, 0.630, 0.600); }  // grey stone
+    else                { wall = vec3(0.440, 0.440, 0.430); }  // dark granite
+    glassA = vec3(0.40, 0.44, 0.46); glassB = vec3(0.62, 0.66, 0.66);
+  } else if (s == 103) {
+    // THE CONVENT. A cloister arcade at HALF the upper bay pitch opening into
+    // shade, under three storeys of identical cell windows and nothing else.
+    colW = 2.6; win = vec2(0.26, 0.52);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.42)      { wall = vec3(0.760, 0.740, 0.680); }  // lime stucco
+    else if (pk < 0.76) { wall = vec3(0.720, 0.640, 0.500); }  // ochre wash
+    else                { wall = vec3(0.620, 0.610, 0.580); }  // grey render
+    glassA = vec3(0.24, 0.28, 0.30); glassB = vec3(0.38, 0.44, 0.46);
   } else if (s == 82) {
     // THE TRIPLE-DECKER. Three floors, three families, and an OPEN PORCH on
     // each one stacked up the front — the porches are the building. Painted
@@ -1355,6 +1444,15 @@ void main() {
   // in it. A brutalist slot is half a metre deep; a mirror-glass unit is
   // flush enough to be a mirror.
   float revealM = (s == 49) ? 0.028
+                : (s == 95) ? 0.09
+                : (s == 97 || s == 101) ? 0.30
+                : (s == 102) ? 0.36
+                : (s == 96) ? 0.38
+                : (s == 100) ? 0.40
+                : (s == 103) ? 0.42
+                : (s == 94) ? 0.55
+                : (s == 98) ? 0.65
+                : (s == 99) ? 0.70
                 : (s == 90) ? 0.14
                 : (s == 82 || s == 83 || s == 84 || s == 85 || s == 86) ? 0.20
                 : (s == 91) ? 0.24
@@ -1766,6 +1864,143 @@ void main() {
       float cover = clamp(fin + obliq * 1.25, 0.0, 1.0);
       wall = mix(wall, wall * (0.82 + 0.30 * fin), 0.9);
       winMask *= 1.0 - cover * 0.92;
+    } else if (s == 94) {
+      // THE BUTTRESS, stepping back a stage at every floor and rounded on its
+      // face, and one ROSE WHEEL high on a single bay of the building. Twelve
+      // spokes, cut out of the mask rather than drawn on it.
+      float bw = 0.21 - 0.045 * floor(vZ / (fh * 1.15));
+      float bt = 1.0 - smoothstep(0.0, max(bw, 0.07), min(f.x, 1.0 - f.x));
+      wall = mix(wall, wall * (1.18 - 0.32 * abs(f.x - 0.5) * 2.0), bt);
+      if (bt > 0.5 && fract(vZ / (fh * 1.15)) < 0.06) wall *= 1.28;
+      winMask *= 1.0 - bt;
+      vec2 rp = vec2((f.x - 0.5) * colW, vZ - (vTop - fh * 1.7));
+      float rr = length(rp);
+      if (abs(floor(vU / colW) - (floor(vRand * 3.0) + 1.0)) < 0.5 && rr < 2.35) {
+        float spk = abs(fract(atan(rp.y, rp.x) * 1.9099) - 0.5) * 2.0;
+        winMask = step(rr, 2.0) * max(smoothstep(0.10, 0.26, spk), step(rr, 0.40));
+      }
+    } else if (s == 95) {
+      // CLAPBOARD, lit up each board's face with a hard shadow at the butt,
+      // and a white casing round every opening with twelve-over-twelve muntins.
+      float lap = fract(vZ / 0.145);
+      wall *= 0.90 + 0.16 * smoothstep(0.0, 0.55, lap);
+      wall *= 1.0 - 0.22 * (1.0 - smoothstep(0.0, 0.09, lap));
+      float cas = step(abs(f.x - 0.5), win.x * 0.5 + 0.055)
+                * step(abs(f.y - 0.52), win.y * 0.5 + 0.055);
+      if (cas > 0.5 && !inHole) wall = mix(wall, vec3(0.780, 0.770, 0.730), 0.85);
+      if (inHole) {
+        float gx = fract(ox * 3.0), gy = fract(oy * 4.0);
+        winMask *= 1.0 - 0.90 * (1.0 - smoothstep(0.0, 0.055,
+                   min(min(gx, 1.0 - gx), min(gy, 1.0 - gy))));
+      }
+    } else if (s == 96) {
+      // THE HORSESHOE. Pinched at the jamb, swelling above the spring, then
+      // closing — the one arch profile nothing else here has. Voussoirs round
+      // it, ablaq banding across the wall, and a six-spoke wheel on one bay.
+      float ah = (oy - 0.60) / 0.40;
+      float hw = oy < 0.60 ? 0.86
+               : sqrt(max(0.0, 0.36 - (ah - 0.28) * (ah - 0.28))) * 1.667;
+      if (inHole) winMask *= step(abs(ox - 0.5) * 2.0, hw);
+      float ang = atan(max(oy - 0.60, 0.0) * 2.2, (ox - 0.5) * 2.0);
+      if (oy > 0.58 && winMask < 0.5) wall *= 0.88 + 0.26 * step(0.5, fract(ang * 2.9));
+      wall *= 0.94 + 0.12 * step(0.5, fract(vZ / 0.62));
+      vec2 rp2 = vec2((f.x - 0.5) * colW, vZ - (vTop - fh * 1.5));
+      float rr2 = length(rp2);
+      if (abs(floor(vU / colW) - (floor(vRand * 2.0) + 2.0)) < 0.5 && rr2 < 1.90) {
+        float spk2 = abs(fract(atan(rp2.y, rp2.x) * 0.9549) - 0.5) * 2.0;
+        winMask = step(rr2, 1.6) * max(smoothstep(0.10, 0.24, spk2), step(rr2, 0.32));
+      }
+    } else if (s == 97) {
+      // THE VERANDA. Every floor above the ground is half open: a recessed
+      // band in deep shade behind slender posts, over a solid balustrade.
+      float vy = f.y / 0.62;
+      if (f.y < 0.62 && vZ > fh) {
+        winMask = 1.0; glassShade = 0.30;
+        float post = 1.0 - smoothstep(0.0, 0.06, abs(fract(vU / 2.15) - 0.5));
+        if (post > 0.4 || vy < 0.34) { winMask = 0.0; wall = vec3(0.760, 0.740, 0.680); }
+        if (vy < 0.34) wall *= 0.92 + 0.10 * step(0.5, fract(vU / 0.18));
+      } else {
+        wall *= 1.0 - 0.18 * (1.0 - smoothstep(0.0, 0.05, f.y - 0.63));
+      }
+    } else if (s == 98) {
+      // TWICE THE FLOOR FREQUENCY. A cell tier is half a storey, so the
+      // openings refuse to line up with the floors — and they are barred.
+      float tier = fract(vZ / (fh * 0.5));
+      float ty = smoothstep(0.30, 0.34, tier) * (1.0 - smoothstep(0.72, 0.76, tier));
+      winMask = ty * step(abs(f.x - 0.5), win.x * 0.5);
+      if (vZ < fh * 1.2 || vZ > vTop - fh * 0.8) winMask = 0.0;
+      if (winMask > 0.5) {
+        float bar = fract((f.x - 0.5) * colW / 0.11);
+        winMask *= smoothstep(0.0, 0.22, min(bar, 1.0 - bar));
+      }
+      wall *= 0.97 + 0.06 * hash(vec2(floor(vU / 1.25), floor(vZ / 0.62)));
+      wall *= 1.0 - 0.16 * (1.0 - smoothstep(0.0, 0.05, fract(vZ / 0.62)));
+    } else if (s == 99) {
+      // THE BATTLEMENT. Merlons and embrasures on a corbelled course, over a
+      // battered base that catches the light because it leans back.
+      float topd = vTop - vZ;
+      if (topd < 1.7) {
+        float gap = step(0.55, fract(vU / 2.3));
+        wall = mix(wall * 1.06, wall * 0.42, gap * smoothstep(1.1, 0.75, topd));
+        winMask = 0.0;
+      }
+      if (topd > 1.6 && topd < 2.4) wall *= 0.72 + 0.34 * step(0.5, fract(vU / 0.62));
+      wall *= 1.0 + 0.16 * smoothstep(fh * 1.6, 0.0, vZ);
+      if (vZ < fh * 1.5) winMask = 0.0;
+      if (inHole) winMask *= step(abs(ox - 0.5), 0.5 - 0.10 * smoothstep(0.75, 1.0, oy));
+    } else if (s == 100) {
+      // STONE MULLIONS, thick enough to read as structure, splitting the head
+      // into four lights and one transom — under a drip hood stepped over it.
+      if (inHole) {
+        float mull = fract(ox * 4.0);
+        winMask *= smoothstep(0.0, 0.10, min(mull, 1.0 - mull));
+        winMask *= smoothstep(0.0, 0.045, abs(oy - 0.62));
+        float lead = min(fract(ox * 16.0), fract(oy * 9.0));
+        glassShade *= 0.90 + 0.14 * step(0.12, lead);
+      }
+      float hd = f.y - (0.52 + win.y * 0.5);
+      if (!inHole && abs(f.x - 0.5) < win.x * 0.62) {
+        if (hd > 0.0 && hd < 0.055) wall *= 1.22;
+        else if (hd < 0.075 && hd > 0.055) wall *= 0.80;
+      }
+    } else if (s == 101) {
+      // THE THERMAL LUNETTE. One enormous half-round per bay, sitting on a
+      // shadowed sill, split by two heavy mullions, with a moulded archivolt.
+      vec2 q = vec2((f.x - 0.5) / max(win.x * 0.5, 0.001),
+                    (f.y - 0.52 + win.y * 0.5) / max(win.y, 0.001));
+      float rq = length(q);
+      winMask = step(rq, 1.0) * step(0.0, q.y);
+      winMask *= smoothstep(0.0, 0.06, abs(abs(q.x) - 0.34));
+      if (rq > 1.0 && rq < 1.20 && q.y > -0.02) wall *= 1.16;
+      if (q.y < -0.03 && q.y > -0.14) wall *= 0.86;
+      wall *= 1.0 - 0.05 * (1.0 - smoothstep(0.0, 0.025, fract(vU / 0.61)));
+      if (vZ < 1.1) wall *= 0.88 + 0.08 * step(0.5, fract(vU / 0.28));
+    } else if (s == 102) {
+      // BLIND, until the last metre. The galleries are lit from the roof, so
+      // the wall opens only in a clerestory ribbon under a deep cornice slot.
+      if (vZ < vTop - fh * 0.85) winMask = 0.0;
+      float jj = fract(vU / 1.55);
+      wall *= 1.0 - 0.05 * (1.0 - smoothstep(0.0, 0.02, min(jj, 1.0 - jj)));
+      wall *= 1.0 - 0.05 * (1.0 - smoothstep(0.0, 0.02, fract(vZ / 1.05)));
+      if (vZ < fh * 1.15) wall *= 0.90 + 0.08 * step(0.5, fract(vZ / 0.55));
+      float cz = vTop - vZ;
+      if (cz < 1.5 && cz > 0.9) { wall *= 0.66; winMask = 0.0; }
+      else if (cz < 0.9) wall *= 1.10;
+    } else if (s == 103) {
+      // THE CLOISTER, at HALF the pitch of everything above it — which is the
+      // tell, because no other building changes bay rhythm at the ground.
+      if (vZ < fh * 1.05) {
+        float dx = (fract(vU / (colW * 0.5)) - 0.5) * 2.0;
+        float dy = (vZ / (fh * 1.05) - 0.46) / 0.42;
+        float arch = dy > 0.0 ? length(vec2(dx / 0.62, dy)) : abs(dx) / 0.62;
+        winMask = step(arch, 1.0); glassShade = 0.30;
+        if (arch > 1.0 && arch < 1.16) wall *= 1.12;
+      } else {
+        if (inHole && oy > 0.86) winMask *= 1.0 - smoothstep(0.45, 0.95, abs(ox - 0.5) * 2.0);
+        float sy = f.y - (0.52 - win.y * 0.5);
+        if (sy < 0.0 && sy > -0.045 && abs(f.x - 0.5) < win.x * 0.62) wall *= 1.18;
+      }
+      wall *= 0.97 + 0.05 * hash(vec2(floor(vU / 0.7), floor(vZ / 0.7)));
     } else if (s == 82) {
       // THE STACKED PORCHES. One per floor, the full width of the front, with
       // a rail and a deep shadow behind — and the porch is set BACK from the
@@ -2785,6 +3020,16 @@ void main() {
   else if (s == 91) roof = vec3(0.485, 0.465, 0.435); // garden apartment
   else if (s == 92) roof = vec3(0.505, 0.490, 0.460); // mansion block: lead
   else if (s == 93) roof = vec3(0.330, 0.320, 0.315); // back-to-back: welsh slate
+  else if (s == 94) roof = vec3(0.300, 0.310, 0.320); // church: slate
+  else if (s == 95) roof = vec3(0.345, 0.335, 0.320); // meeting house: shingle
+  else if (s == 96) roof = vec3(0.380, 0.420, 0.400); // synagogue: copper
+  else if (s == 97) roof = vec3(0.430, 0.400, 0.375); // hospital pavilion
+  else if (s == 98) roof = vec3(0.470, 0.470, 0.455); // cellblock
+  else if (s == 99) roof = vec3(0.420, 0.390, 0.370); // armory
+  else if (s == 100) roof = vec3(0.315, 0.325, 0.330); // collegiate: slate
+  else if (s == 101) roof = vec3(0.545, 0.575, 0.570); // bathhouse: glazed vault
+  else if (s == 102) roof = vec3(0.580, 0.590, 0.600); // museum: the skylights
+  else if (s == 103) roof = vec3(0.470, 0.400, 0.345); // convent: pantile
   else              roof = vec3(0.76, 0.76, 0.74);
   roof *= 0.92 + 0.16 * vRand;
 

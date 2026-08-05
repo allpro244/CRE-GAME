@@ -89,8 +89,15 @@ const reachable = new Map();
 for (const c of CLASSES) {
   for (let y = 1820; y <= 2035; y += 5) {
     for (let f = 1; f <= 60; f++) {
-      for (const st of S.stylePool({ b: "1", c, y, f, t: 0, z0: 0, z1: f * 3.6, d: 0, r: [] })) {
-        if (!reachable.has(st)) reachable.set(st, { y, f, c });
+      // Vary the deed as well. Families behind a per-building rarity roll are
+      // invisible to a sweep that probes every input with the same BBL — it
+      // either always passes the roll or always fails it, and the second case
+      // reports a reachable family as DEAD. Eight deeds is enough to clear a
+      // gate down to about 1%.
+      for (let d = 0; d < 8; d++) {
+        for (const st of S.stylePool({ b: String(1 + d * 7919), c, y, f, t: 0, z0: 0, z1: f * 3.6, d: 0, r: [] })) {
+          if (!reachable.has(st)) reachable.set(st, { y, f, c });
+        }
       }
     }
   }

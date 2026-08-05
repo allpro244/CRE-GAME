@@ -741,6 +741,13 @@ export function approachOwner(
   // because there are three ways out of it that already exist — build the
   // L-shaped site, wait for their cycle to break, or buy their whole position
   // as a bundle.
+  //
+  // The holdout since MOVED, from the gate to the number, and it is stronger
+  // for it. A family trust used to be a 96% refusal — a closed door with
+  // nothing behind it. Now they take your call 62% of the time, decline to
+  // name a price in 63% of those, and the figure they are sitting on runs a
+  // median 1.78x appraisal with three quarters of it over 1.35x. You get to
+  // have the conversation. You still do not get the building.
   const owner = ownerOf(next, bbl);
   const stressed = (owner?.stressMs ?? 0) > 4;
   const styleHold = owner
@@ -761,8 +768,11 @@ export function approachOwner(
   // through — and 0.3% of approaches ended with a number a rational buyer
   // would take. Not 10%, not 5%: three in a thousand, because the ask could
   // not be priced under 1.06x appraisal unless the owner was in distress. The
-  // gate was rationing conversations that were worthless anyway. A player who
-  // rang two hundred owners in a career met two hundred no's and four numbers.
+  // gate was rationing conversations that were worthless anyway: two hundred
+  // cold calls bought you a hundred and fifty-four flat no's, forty-six
+  // numbers, and — on the measured rate — less than one number worth taking.
+  // Same six seeds after the rewrite: a hundred and fifty conversations, and
+  // eighteen numbers at or inside appraisal.
   //
   // So the door opens and the numbers behind it do the rationing, which is
   // what happens in life: owners take the call, and most of them say something

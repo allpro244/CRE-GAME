@@ -1547,6 +1547,21 @@ float occlusion(vec2 uv) {
   float mPerPx = max(length(Px - P), 1e-4);
   float rad = clamp(uAoRadius / mPerPx, 2.0, 64.0);
 
+  // AND IT HAS TO STOP WHEN THE SCALE RUNS OUT FROM UNDER IT.
+  //
+  // That clamp has a floor of two pixels, which is doing something quietly
+  // wrong at the far end: zoomed out to the whole island, one pixel already
+  // spans more ground than the 2.5 m radius this is supposed to measure, so
+  // the floor takes over and the estimator goes looking twenty or thirty
+  // metres out. That is not contact any more — it is whole buildings occluding
+  // each other — and the result was a grey wash over the entire city in the
+  // establishing shot, which read as the roofs being muddy.
+  //
+  // Contact occlusion is meaningless once it is smaller than a pixel. Fade it
+  // out there rather than let the clamp quietly redefine what is being asked.
+  float scaleFade = 1.0 - smoothstep(uAoRadius * 0.75, uAoRadius * 2.6, mPerPx);
+  if (scaleFade <= 0.002) return 0.0;
+
   float occ = 0.0;
   for (int i = 0; i < 12; i++) {
     float a = float(i) * 2.39996323;
@@ -1562,7 +1577,7 @@ float occlusion(vec2 uv) {
     float rise = max(dot(S / len, N) - 0.06, 0.0);
     occ += rise * (uAoRadius / (uAoRadius + len * len / max(uAoRadius, 0.5)));
   }
-  return clamp(occ / 12.0 * uAoStrength, 0.0, 1.0) * reach;
+  return clamp(occ / 12.0 * uAoStrength, 0.0, 1.0) * reach * scaleFade;
 }`;
 
 // SOLVED ONCE, AT HALF SIZE, AND BLURRED.
@@ -4619,21 +4634,25 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.compMat.uniforms.uDepth.value = this.sceneRT.depthTexture;
     {
     }
-    // THE LENS READS THE CAMERA.
+    // THE LENS READS THE CAMERA — AND IT READS ZOOM, NOT PITCH.
     //
-    // A fixed horizontal focus band assumes the frame has a depth gradient
-    // running up it, and that is only true when the view is pitched. Looking
-    // straight down, every pixel is at the same distance and a band of sharp
-    // across the middle is not shallow focus, it is a smear at the top and
-    // bottom of a map for no reason. It also has to get out of the way when
-    // the player is down at street level actually looking at a building:
-    // depth of field is decoration and legibility is not.
+    // This was gated on pitch first, on the reasoning that a horizontal focus
+    // band needs a depth gradient running up the frame and a plan view has
+    // none. That is true of real depth of field and it is exactly backwards
+    // for this effect. Tilt-shift photographs of cities are shot from
+    // altitude, near nadir, and the band is not simulating a focal plane —
+    // it IS the cue, the thing that makes a viewer read a real city as a
+    // model. Killing it at low pitch removed it from the establishing shot,
+    // which is the one frame in the game that is most explicitly a photograph
+    // of a model.
+    //
+    // Zoom is the right axis. Far out you are looking at the model; down at
+    // street level you are looking at a building you are about to buy, and
+    // there the blur is only in the way. Depth of field is decoration;
+    // legibility is not.
     {
-      const pitch = this.map.getPitch();
       const zoom = this.map.getZoom();
-      const byPitch = smoothstep(14, 52, pitch);
-      const byZoom = 1 - smoothstep(16.8, 18.4, zoom);
-      this.compMat.uniforms.uDefocus.value = 2.9 * byPitch * byZoom;
+      this.compMat.uniforms.uDefocus.value = 3.1 * (1 - smoothstep(16.4, 18.2, zoom));
     }
 
     // Where the sun sits on screen. Projected on the CPU because it is one

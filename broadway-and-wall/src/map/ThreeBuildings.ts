@@ -563,6 +563,33 @@ vec3 seasonGreen(vec3 c) {
 vec3 snowOn(vec3 c, float up, float k) {
   return mix(c, vec3(0.905, 0.925, 0.975), clamp(SNOW * up * k, 0.0, 1.0));
 }
+
+// SNOW IS NOT A SHEET OF MATTE WHITE PAINT.
+//
+// It is a field of ice crystals lying at every angle, and the small fraction
+// of them oriented to bounce the sun straight back at the eye is why fresh
+// snow in low light GLITTERS rather than glowing. That single behaviour is
+// most of what distinguishes snow from any other white surface, and this city
+// spends five months a year under it — through a flat lerp to one colour, so
+// half the calendar has been rendering the most optically interesting material
+// in the scene as paper.
+//
+// Cheap version: dice world space into crystal-sized cells, give each cell a
+// facet tilted a little off the true surface, and run a very tight specular
+// against it. Cells that happen to line up with the half-vector fire; the rest
+// stay dark. No texture, one hash pair, and because the cells are anchored in
+// WORLD space the glitter belongs to the roof rather than sliding across it as
+// the camera moves.
+vec3 snowSparkle(vec3 p, vec3 n, vec3 V, float cover) {
+  if (cover < 0.02) return vec3(0.0);
+  vec3 cell = floor(p * 3.0);
+  float h1 = fract(sin(dot(cell, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+  float h2 = fract(sin(dot(cell, vec3(93.9898, 27.345, 61.121))) * 24634.6345);
+  vec3 facet = normalize(n + vec3(h1 - 0.5, h2 - 0.5, 0.22) * 0.62);
+  vec3 H = normalize(SUN_DIR + V);
+  float spec = pow(max(dot(facet, H), 0.0), 240.0);
+  return SUN_COL * spec * cover * 2.4;
+}
 `;
 
 // AERIAL PERSPECTIVE. Air is not transparent. Over a mile of it, contrast
@@ -2405,7 +2432,24 @@ void main() {
   float aoEdge = mix(0.78, 1.0, smoothstep(0.0, 2.8, vU));
   float ndl = max(dot(n, SUN_DIR), 0.0);
   vec3 light = SUN_COL * (ndl * vis * 0.92) + hemiLight(n, aoEdge);
-  gl_FragColor = vec4(aerial(grade(roof * light * vTint), vPos, uCam), uOpacity);
+  vec3 outc = roof * light * vTint;
+
+  vec3 Vr = normalize(uCam - vPos);
+  // A ROOF IS NOT PERFECTLY MATTE EITHER. Membrane, asphalt, slate and metal
+  // all go glossy toward grazing, which is why a city photographed into a low
+  // sun has a sheen running across the rooftops rather than a flat field of
+  // colour. Broad and weak — this is sheen, not a mirror — and it only shows
+  // where the sun can actually see the roof.
+  vec3 Hr = normalize(SUN_DIR + Vr);
+  float sheen = pow(max(dot(n, Hr), 0.0), 26.0);
+  outc += SUN_COL * sheen * 0.13 * vis;
+
+  // and the glitter, on whatever snow is lying up here
+  if (SNOW > 0.001) {
+    outc += snowSparkle(vPos, n, Vr, clamp(SNOW * smoothstep(0.28, 0.80, n.z), 0.0, 1.0)) * vis;
+  }
+
+  gl_FragColor = vec4(aerial(grade(outc), vPos, uCam), uOpacity);
 }`;
 
 // transparent quad over the whole city: darkens the MapLibre ground where
@@ -2863,6 +2907,12 @@ void main() {
     float blocked = step(0.9999, texture2D(uDepth, uSunScreen.xy).x);
     float veil = exp(-r * 4.2) * 0.55 + exp(-r * 13.0) * 0.45;
     c.rgb += uSunTint * veil * uGlare * blocked;
+    // AND THE BODY OF IT. The veil says light is scattering in the lens; it
+    // never says where from. Half a degree of actual disc, blown well past
+    // white so it reads as a source rather than a pale spot, and gone the
+    // instant anything crosses in front — which is the same depth tap the
+    // veil already pays for.
+    c.rgb += uSunTint * (1.0 - smoothstep(0.007, 0.015, r)) * uGlare * 7.0 * blocked;
   }
 
   // A WHISPER OF GRAIN. Everything above is smooth gradients over smooth
@@ -2899,7 +2949,7 @@ uniform vec3 uCam;
 uniform sampler2D uReflect;
 uniform vec2 uResolution;
 uniform float uReflectOn;
-` + LIGHT_GLSL + HAZE_GLSL + /* glsl */ `
+` + LIGHT_GLSL + HAZE_GLSL + SEASON_GLSL + /* glsl */ `
 float wave(vec2 p, vec2 dir, float len, float spd, float t) {
   return sin(dot(p, dir) / len + t * spd);
 }
@@ -2971,6 +3021,24 @@ void main() {
   vec3 deep    = vec3(0.096, 0.245, 0.372);
   vec3 shallow = vec3(0.310, 0.534, 0.632);
   vec3 sky     = vec3(0.706, 0.822, 0.906);
+
+  // THE SEA DID NOT KNOW WHAT MONTH IT WAS.
+  //
+  // Every other surface in this city reads the season — the trees turn, the
+  // roofs take snow, the lawns go dormant — and the harbour, which is a third
+  // of the frame in half the shots, was byte-identical in January and July.
+  // The shader never even included the season block.
+  //
+  // Cold water genuinely looks different, and not only in temperature of hue:
+  // there is less life suspended in it and less light coming back up from the
+  // bottom, so it goes darker and greyer, and the shallows lose the green
+  // entirely. Winter light is coming in at a lower angle onto the same
+  // surface, which is the other half of why a northern harbour in February
+  // reads like slate.
+  deep    = mix(deep,    vec3(0.062, 0.150, 0.228), SNOW * 0.85);
+  shallow = mix(shallow, vec3(0.286, 0.412, 0.470), SNOW * 0.85);
+  sky     = mix(sky,     vec3(0.742, 0.800, 0.848), SNOW * 0.70);
+
   vec3 body = mix(deep, shallow, shoal * 0.82);
   vec3 col = mix(body, sky, 0.10 + 0.54 * fres);
   // Water reflects hardly anything face-on and nearly everything at a grazing
@@ -2990,6 +3058,19 @@ void main() {
   // foam: only on the real crests, and heavier in the shallows where the
   // swell actually breaks
   col += vec3(0.075) * smoothstep(0.86, 1.02, h) * (0.5 + 0.8 * shoal);
+
+  // RIME. A cold harbour does not freeze over — this one has ships working it
+  // all winter — but the still water inside the shoal line skins over and
+  // takes a crust along the shore, and that pale fringe against dark water is
+  // the single most legible sign that a port is in February. It sits where the
+  // shallows already are, thickened by the same low-frequency noise the swell
+  // uses so the edge is ragged rather than drawn with a compass.
+  if (SNOW > 0.02) {
+    float crust = smoothstep(0.45, 1.0, shoal) * SNOW;
+    float ragged = 0.55 + 0.45 * sin(p.x * 0.031 + p.y * 0.047)
+                            * sin(p.x * 0.017 - p.y * 0.023);
+    col = mix(col, vec3(0.845, 0.878, 0.905), clamp(crust * ragged * 0.80, 0.0, 1.0));
+  }
 
   // THE SEA HAS NO EDGE AND THIS MESH DOES. The sheet stops at six kilometres,
   // and the global aerial term — deliberately weakened so the city keeps its
@@ -5082,7 +5163,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       uniforms: {
         uTime: this.timeUni, uCam: this.camUni, uSunDir: this.sunDirUni, uSunCol: this.sunColUni,
         uReflect: { value: null }, uResolution: { value: new THREE.Vector2(1, 1) },
-        uReflectOn: { value: 0 },
+        uReflectOn: { value: 0 }, uSeason: this.seasonUni,
       },
       side: THREE.DoubleSide,
     });

@@ -1808,14 +1808,53 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     addStock(e, cls as keyof typeof CITY_STOCK, -sf);
   }
   s.demolished = (s.demolished ?? 0) + 1;
-  if (rng(s) < 0.22) {
+
+  // NOBODY DEMOLISHES A BUILDING AND LEAVES A HOLE.
+  //
+  // A wrecking ball is the first line item of a development budget, not an end
+  // in itself: you clear a site BECAUSE you have a project, financing and a
+  // contractor, and the hoarding goes up the same season. This used to clear
+  // the lot and trust that "the existing city and street builders will find it
+  // like any other site" — and measured over 50 years with no player, they did
+  // not. The city tore down 343 buildings and delivered 115, and the standing
+  // stock fell from 1,030 to 802. That is not a city recycling itself, it is a
+  // city being quietly dismantled.
+  //
+  // So the teardown IS the groundbreaking. The replacement is sized off the
+  // envelope the site can now reach rather than off what stood here — which is
+  // the entire reason the old building came down — and it is bound by the same
+  // cornice datum and per-use floor caps every other city job respects, so a
+  // three-storey town does not sprout a tower on one cleared lot.
+  const yr = 2000 + Math.floor(s.month / 12);
+  const nextUse = useForZone(rec!.zoneDist ?? "C", rec!.demandScore, rng(s));
+  const lead = dominantOf(devMix(nextUse));
+  const farMax = farMaxFor(rec!);
+  // A redevelopment goes BIGGER than what it replaced — that is the arithmetic
+  // that condemned the old building — but it is still a city job and not a
+  // trophy, so it takes the ordinary share of its envelope.
+  let nsf = Math.max(3000, Math.round((rec!.lotArea * farMax * (0.45 + rng(s) * 0.35)) / 100) * 100);
+  let nfl = Math.max(1, Math.round(nsf / (rec!.lotArea * 0.62)));
+  const infill = cityInfillCap(s, parcels, rec!, 1);
+  if (nfl > infill) { nfl = infill; nsf = Math.max(3000, Math.round((rec!.lotArea * 0.62 * nfl) / 100) * 100); }
+  const ucap = MAX_FLOORS_BY_USE[nextUse];
+  if (ucap !== undefined && nfl > ucap) { nfl = ucap; nsf = Math.max(3000, Math.round((rec!.lotArea * 0.62 * nfl) / 100) * 100); }
+  // Demolition, permits and mobilisation before a spade goes in — a
+  // redevelopment opens later than a job on clean dirt, and that lag is why a
+  // block can look derelict for two years in the middle of a boom.
+  const [bLo, bHi] = BUILD_MONTHS[lead];
+  const months = Math.round(bLo + rng(s) * (bHi - bLo)) + 4 + Math.round(rng(s) * 5);
+  (s.cityJobs ??= []).push({ bbl, use: nextUse, sf: nsf, floors: nfl, startM: s.month, deliverM: s.month + months });
+  if (s.econ.cohorts?.[lead]) s.econ.cohorts[lead].push({ m: s.month + months, sf: nsf, bbl });
+
+  if (rng(s) < 0.30) {
     s.news.unshift({
       q: s.month, kind: "event",
       text: `${rec!.address} is coming down. It went up in ${rec!.yearBuilt}, and the land under it is worth `
         + `${ratio.toFixed(1)}x what the building is — which is the only calculation that has ever mattered `
-        + `to a wrecking ball. The lot will be dirt by the spring.`,
+        + `to a wrecking ball. ${(nsf / 1000).toFixed(0)}k sf of ${nextUse} replaces it, opening ${monthLabel(s.month + months)}.`,
     });
   }
+  void yr;
 }
 
 export function tickCityGrowth(
@@ -1832,7 +1871,15 @@ export function tickCityGrowth(
     if (j.orphaned) { if (!s.built[j.bbl] && !s.holdings[j.bbl]) still.push(j); continue; }
     if (s.month < j.deliverM) { still.push(j); continue; }
     const rec = parcels[j.bbl];
-    if (!rec || s.holdings[j.bbl] || s.built[j.bbl]) continue;   // you bought the site out from under them
+    // A CLEARED LOT IS NOT A BUILT ONE. This read `s.built[j.bbl]` as "somebody
+    // has already put something here" — but tickTeardowns writes a CLEARED
+    // marker into exactly that map ({class:"land", bldgArea:0}) to take the old
+    // building off the record. So every redevelopment job died silently on the
+    // day it was due to open: measured, the city started 200-odd replacements
+    // over fifty years and delivered eight. Test the square footage, not the
+    // presence of a key.
+    const standing = s.built[j.bbl];
+    if (!rec || s.holdings[j.bbl] || (standing && standing.bldgArea > 0)) continue;
     const cmix = devMix(j.use as DevUse);
     s.built[j.bbl] = {
       class: dominantOf(cmix), mix: cmix, bldgArea: j.sf, floors: j.floors,

@@ -202,6 +202,23 @@ vec3 seasonGreen(vec3 c) {
   return c;
 }
 
+// TURF DOES NOT TURN.
+//
+// A deciduous canopy goes gold in October because its leaves are dying and
+// about to be abandoned. A lawn is a perennial: it stops growing, goes dull,
+// grey and a little brown as it hardens off, and it stays GREEN through the
+// whole of it. Both were running through seasonGreen, so every park in the
+// city came out the colour of a wheatfield in autumn — which was, by some
+// distance, the loudest wrong colour anywhere in the calendar.
+//
+// Same two drivers, quite different destination: toward a desaturated olive
+// rather than toward gold, and never all the way there.
+vec3 seasonTurf(vec3 c) {
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  vec3 dorm = mix(c, l * vec3(1.16, 1.10, 0.84), 0.60);
+  return mix(c, dorm, clamp(max(AUTUMN * 0.50, (1.0 - VIGOUR) * 0.62), 0.0, 1.0));
+}
+
 vec3 snowOn(vec3 c, float up, float k) {
   return mix(c, vec3(0.905, 0.925, 0.975), clamp(SNOW * up * k, 0.0, 1.0));
 }
@@ -2680,7 +2697,11 @@ void main() {
     // spotting problem. A roof drains; you cannot see it from an aeroplane.)
   }
 
-  if (s == 9 || s == 12 || (s == 10 && vVar > 0.62)) roof = seasonGreen(roof);
+  // A sedum roof genuinely does redden — that is what sedum does — so the
+  // green roof keeps the leaf treatment. The park lawn and the grass that has
+  // taken a vacant lot are turf, and turf goes dormant instead.
+  if (s == 9) roof = seasonGreen(roof);
+  else if (s == 12 || (s == 10 && vVar > 0.62)) roof = seasonTurf(roof);
   vec3 n = normalize(vNormal);
   if (SNOW > 0.001) {
     float up = smoothstep(0.28, 0.80, n.z);

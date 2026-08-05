@@ -371,7 +371,22 @@ export const ABS_MAX_FLOORS = 90;
  * than a squashed one — see `useForZone` and `retailWantsMixed`.
  */
 export const RETAIL_FLOORS_MAX = 2;
-export const MAX_FLOORS_BY_USE: Partial<Record<DevUse, number>> = { retail: RETAIL_FLOORS_MAX };
+/**
+ * AND A SHED IS NOT A TOWER EITHER.
+ *
+ * Industrial had no cap at all: the envelope allowed 66 storeys and the
+ * planner's optimum on a median vacant lot came out at 13, which is a
+ * thirteen-storey warehouse. Modern distribution is single-storey with 32-40ft
+ * clear heights because forklifts do not use lifts; multi-storey industrial
+ * exists only where land is so dear that nothing else pencils, and even then it
+ * is two or three levels with ramps. Two floors is the same allowance retail
+ * gets and for the same reason — the use has a shape, and the shape is flat.
+ */
+export const INDUSTRIAL_FLOORS_MAX = 2;
+export const MAX_FLOORS_BY_USE: Partial<Record<DevUse, number>> = {
+  retail: RETAIL_FLOORS_MAX,
+  industrial: INDUSTRIAL_FLOORS_MAX,
+};
 
 /**
  * THE SAME CAP, STATED AS A SHARE, so the dial and the planner cannot hold

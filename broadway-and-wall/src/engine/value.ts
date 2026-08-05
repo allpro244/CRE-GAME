@@ -582,8 +582,26 @@ export function occupancy(rec: ParcelRecord, econ: Econ): number {
 // payroll, turns, marketing, utilities the tenant does not pay — and it runs
 // 40-45% before the capex reserve. Understating it made multifamily pencil on
 // ninety-nine sites out of a hundred.
-export const OPEX_CONTROLLABLE: Record<BuiltClass, number> = { office: 9.2, retail: 5.4, multifamily: 13.0, industrial: 2.3 };
-export const OPEX_FIXED: Record<BuiltClass, number> = { office: 3.8, retail: 2.6, multifamily: 4.2, industrial: 1.2 };
+/**
+ * INDUSTRIAL WAS $3.50/SF AND THE BUSINESS RUNS $0.50-1.50.
+ *
+ * A warehouse is a slab, a shell and a roof. There is no lobby to staff, no
+ * lifts to service, no cleaning contract for common areas, no chilled water:
+ * landlord-retained opex on a single-tenant shed is roughly $0.50-1.50/sf/yr
+ * excluding taxes, and at the bottom of that band on an absolute-net deal
+ * where the tenant carries the roof. This carried $2.30 controllable + $1.20
+ * fixed = $3.50, which is 2.3x to 7x the real figure and read as 33% of base
+ * rent where the business runs 5-12%.
+ *
+ * Corrected to $0.75 + $0.45 = $1.20/sf. Worth being honest about the size of
+ * the consequence: because industrial leases here are overwhelmingly net, the
+ * tenant reimburses most of this, so on a fully-let shed the owner's NOI moves
+ * about 1% — the visible change is in the operating statement reading like an
+ * industrial building instead of an office one, and in what a VACANT shed
+ * costs to sit on, which is where the whole difference lands.
+ */
+export const OPEX_CONTROLLABLE: Record<BuiltClass, number> = { office: 9.2, retail: 5.4, multifamily: 13.0, industrial: 0.75 };
+export const OPEX_FIXED: Record<BuiltClass, number> = { office: 3.8, retail: 2.6, multifamily: 4.2, industrial: 0.45 };
 export const MGMT_FEE = 0.04;   // of effective gross income, industry standard
 
 /** Total operating cost per sf/yr before management fee and property tax. */

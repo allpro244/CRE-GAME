@@ -629,9 +629,35 @@ export function generateCity(cfg) {
     };
   };
 
+  // A CITY HAS MORE THAN ONE KIND OF ZONING DISTRICT.
+  //
+  // This only ever emitted C-2 through C-8 — commercial, everywhere, including
+  // the working waterfront and the row housing. The engine reads the first
+  // letter of this string to decide what may be built on a site
+  // (dev.ts useForZone: "M" -> industrial, "R" -> multifamily), so BOTH of
+  // those branches were unreachable and the demand fallback beneath them can
+  // return office, mixed, retail or multifamily but never industrial. Measured
+  // across thirty-four centuries: the city and its rivals broke ground on zero
+  // industrial buildings, ever. Every shed standing in the port at year 100 was
+  // one the generator placed at year zero.
+  //
+  // Real zoning codes name the use: M for manufacturing, R for residence, C for
+  // commercial, with the number carrying the bulk allowance. Emitting the
+  // letter the district actually is costs nothing and turns two dead branches
+  // of the engine back on.
   function zoningFor(name, heat) {
+    const flavor = cfg.districts[name]?.flavor ?? "core";
     const far = Math.round((flavorOf(name).far + heat * heat * 22) * 10) / 10;
-    const z = far >= 24 ? "C-8" : far >= 18 ? "C-6" : far >= 12 ? "C-5" : far >= 8 ? "C-4" : "C-2";
+    let z;
+    if (flavor === "industrial") {
+      // M1 light manufacturing, M2 general, M3 heavy — bulk rises with the FAR
+      // the district actually carries.
+      z = far >= 5 ? "M3" : far >= 3 ? "M2" : "M1";
+    } else if (flavor === "resi") {
+      z = far >= 9 ? "R8" : far >= 6 ? "R6" : "R4";
+    } else {
+      z = far >= 24 ? "C-8" : far >= 18 ? "C-6" : far >= 12 ? "C-5" : far >= 8 ? "C-4" : "C-2";
+    }
     return { z, commfar: far, resfar: far };
   }
   function vacancyP(name, heat) {

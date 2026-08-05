@@ -709,6 +709,8 @@ const PROP_VERT = /* glsl */ `
 // instanceColor is declared for us when the mesh carries one
 uniform vec4 uSeason;
 uniform float uFoliage;   // 0 = not a leaf, 1 = deciduous canopy, 2 = conifer
+uniform vec3 uCamP;
+uniform vec2 uFade;       // (start, end) metres — 0 disables
 varying vec3 vN;
 varying vec3 vW;
 varying vec3 vC;
@@ -717,6 +719,32 @@ void main() {
   vec3 p = position;
   p.xy *= mix(1.0, 0.32, bare);
   p.z  *= mix(1.0, 0.94, bare);
+
+  // ---- THE SPECKLE ---------------------------------------------------------
+  //
+  // A guardrail is 7 m of 70 mm steel and there are four and a half thousand of
+  // them. Up close that is the best object on the roof — a long horizontal line
+  // floating above the deck reads as a roof when the deck itself is nine pixels
+  // of flat colour. At the establishing zoom it is one or two pixels of hard
+  // dark against pale render, four thousand times, and the city wears it as
+  // GRAIN rather than as objects. Same for urns, chimney pots and condensers.
+  //
+  // So the small parts shrink out of existence over a band. They do not fade:
+  // a fade needs blending and these are opaque and unsorted. Shrinking toward
+  // the instance origin costs nothing, has no draw-order problem, and the last
+  // thing to go is the middle of the object rather than its aliasing edge.
+  //
+  // These same parts are marked noShadow, and that is not a separate decision.
+  // The bake replaces the vertex stage with MeshDepthMaterial, so it cannot see
+  // this shrink and would go on casting a full-size shadow for a prop that is
+  // no longer drawn — the orphan-shadow failure the pedestrians had. A rail's
+  // cast shadow is worth nothing next to that.
+  if (uFade.y > 0.0) {
+    vec3 iOrigin = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+    float d = distance(uCamP, iOrigin);
+    p *= 1.0 - smoothstep(uFade.x, uFade.y, d);
+  }
+
   vN = normalize(mat3(instanceMatrix) * normal);
   vW = (instanceMatrix * vec4(p, 1.0)).xyz;
   vC = instanceColor;
@@ -4580,7 +4608,21 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     for (let kind = 0; kind < propDefs.length; kind++) {
       const items = props.filter((p) => p.kind === kind);
       if (!items.length) continue;
-      const mesh = new THREE.InstancedMesh(propDefs[kind].geom, this.propMaterial(propDefs[kind].color), items.length);
+      // WHICH PARTS ARE GRAIN AT DISTANCE. Radius is the honest test: a part
+      // whose whole footprint is a metre or two is sub-pixel at the
+      // establishing zoom and contributes nothing but aliasing, while a water
+      // tower or a steeple is the reason you are looking. The band is set off
+      // the part's own size, so a 0.7 m flagpole goes first and a 3 m plant
+      // housing hangs on much longer.
+      const pr = PROP_R[kind] ?? 2;
+      const small = pr <= 2.6 && kind !== 22 && kind !== 24 && kind !== 27;
+      const fade: [number, number] = small
+        ? [520 + pr * 260, 900 + pr * 420]
+        : [0, 0];
+      const mesh = new THREE.InstancedMesh(propDefs[kind].geom, this.propMaterial(propDefs[kind].color, true, 0, fade), items.length);
+      // Shrunk-out geometry the shadow bake cannot see would otherwise leave a
+      // full-size shadow behind it — see the note in PROP_VERT.
+      if (small) mesh.userData.noShadow = true;
       // Which kit part this is, so a count of what actually reached the roofs
       // can be taken from the scene rather than inferred from the placement
       // rules. A part gated at a 9% roll on a rare style is exactly the kind
@@ -5255,7 +5297,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
   // Props share the buildings' light rig so a water tower and the roof it
   // stands on are lit by the same sun.
-  private propMaterial(color: number, instanced = true, foliage = 0): THREE.ShaderMaterial {
+  private propMaterial(color: number, instanced = true, foliage = 0, fade: [number, number] = [0, 0]): THREE.ShaderMaterial {
     const c = new THREE.Color(color);
     return new THREE.ShaderMaterial({
       vertexShader: instanced ? PROP_VERT : PROP_VERT_PLAIN,
@@ -5268,6 +5310,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         uSunCol: this.sunColUni,
         uSeason: this.seasonUni,
         uFoliage: { value: foliage },
+        uCamP: this.camUni,
+        uFade: { value: new THREE.Vector2(fade[0], fade[1]) },
         uShadow: { value: this.shadowTex },
         uSunVP: { value: this.sunVP },
         uShadowOn: { value: this.shadowTex ? 1 : 0 },
@@ -7157,7 +7201,7 @@ function towerMassing(
         T.push({ fp, z0: z, z1: top - (k < 2 ? 1.4 : 0) });
         if (k < 2) {
           // the shelf itself: wider than both volumes, and made of steel
-          T.push({ fp: plScale(base, cx, cy, sc[k] + 0.07), z0: top - 1.4, z1: top, style: S_PLAIN });
+          T.push({ fp: plScale(base, cx, cy, sc[k]), z0: top - 1.4, z1: top, style: S_PLAIN });
         }
         z = top;
       }
@@ -7171,8 +7215,8 @@ function towerMassing(
       const cut = at(0.86 + 0.06 * u(19));
       T.push({ fp: r0, z0: 0, z1: cut });
       // the sloped crown, drawn as two shallow oversailing stages
-      T.push({ fp: plMove(plScale(r0, cx, cy, 0.94), Math.cos(ax) * span * 0.06, Math.sin(ax) * span * 0.06), z0: cut, z1: at(0.95) });
-      T.push({ fp: plMove(plScale(r0, cx, cy, 0.80), Math.cos(ax) * span * 0.13, Math.sin(ax) * span * 0.13), z0: at(0.95), z1: h });
+      T.push({ fp: plMove(plScale(r0, cx, cy, 0.90), Math.cos(ax) * span * 0.030, Math.sin(ax) * span * 0.030), z0: cut, z1: at(0.95) });
+      T.push({ fp: plMove(plScale(r0, cx, cy, 0.74), Math.cos(ax) * span * 0.055, Math.sin(ax) * span * 0.055), z0: at(0.95), z1: h });
       return { tiers: T, style: S_UNITGLASS };
     }
     case "deepframe": {

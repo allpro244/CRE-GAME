@@ -576,7 +576,7 @@ export function buildCityData(src) {
     /** The plan families. Any era can reach these — the lot decides, not the date. */
     const PLAN = new Set([
       "courtyard", "lightcourt", "dumbbell", "campanile", "endtowers",
-      "twins", "cruciform", "shifted", "hat", "notch",
+      "twins", "cruciform", "shifted", "notch",
       "chamfertaper", "twist",
     ]);
     function tryPlan(fam) {
@@ -691,16 +691,6 @@ export function buildCityData(src) {
             r = slide(s2, F.vx * off, F.vy * off);
           }
           return done("shifted stack");
-        }
-        case "hat": {
-          // A CROWN WIDER THAN THE SHAFT. Every other family in this file gives
-          // width away as it rises; the plant floor of a postwar tower takes
-          // some back, and that one overhang is the whole top of the building.
-          const zc = hM * (0.84 + 0.07 * u(78));
-          push(geom, 0, zc);
-          const wide = insetRingPerp(ringXY, -(1.1 + 1.9 * u(79)));
-          if (!push(wide ?? ringXY, zc, hM)) return null;
-          return done("cantilevered hat");
         }
         case "notch": {
           // A SLOT CUT THROUGH THE MIDDLE OF A SLAB, open at the top, with the
@@ -912,7 +902,6 @@ export function buildCityData(src) {
     if (hM >= 38 && W >= 22) post.push("cruciform", "cruciform");
     if (hM >= 42 && W >= 26) post.push("twins");
     if (hM >= 40) post.push("shifted", "shifted");
-    if (hM >= 34) post.push("hat", "hat");
     if (hM >= 30 && W >= 30) post.push("notch");
     // THE TOWERS OF THE LAST DECADE, for the stock a city is generated with.
     // Gated on 1998 and on 62 m — about twenty storeys — because a chamfered

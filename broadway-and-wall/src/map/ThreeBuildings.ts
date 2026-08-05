@@ -537,6 +537,33 @@ vec3 seasonGreen(vec3 c) {
 vec3 snowOn(vec3 c, float up, float k) {
   return mix(c, vec3(0.905, 0.925, 0.975), clamp(SNOW * up * k, 0.0, 1.0));
 }
+
+// SNOW IS NOT A SHEET OF MATTE WHITE PAINT.
+//
+// It is a field of ice crystals lying at every angle, and the small fraction
+// of them oriented to bounce the sun straight back at the eye is why fresh
+// snow in low light GLITTERS rather than glowing. That single behaviour is
+// most of what distinguishes snow from any other white surface, and this city
+// spends five months a year under it — through a flat lerp to one colour, so
+// half the calendar has been rendering the most optically interesting material
+// in the scene as paper.
+//
+// Cheap version: dice world space into crystal-sized cells, give each cell a
+// facet tilted a little off the true surface, and run a very tight specular
+// against it. Cells that happen to line up with the half-vector fire; the rest
+// stay dark. No texture, one hash pair, and because the cells are anchored in
+// WORLD space the glitter belongs to the roof rather than sliding across it as
+// the camera moves.
+vec3 snowSparkle(vec3 p, vec3 n, vec3 V, float cover) {
+  if (cover < 0.02) return vec3(0.0);
+  vec3 cell = floor(p * 3.0);
+  float h1 = fract(sin(dot(cell, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+  float h2 = fract(sin(dot(cell, vec3(93.9898, 27.345, 61.121))) * 24634.6345);
+  vec3 facet = normalize(n + vec3(h1 - 0.5, h2 - 0.5, 0.22) * 0.62);
+  vec3 H = normalize(SUN_DIR + V);
+  float spec = pow(max(dot(facet, H), 0.0), 240.0);
+  return SUN_COL * spec * cover * 2.4;
+}
 `;
 
 // AERIAL PERSPECTIVE. Air is not transparent. Over a mile of it, contrast
@@ -2252,7 +2279,24 @@ void main() {
   float aoEdge = mix(0.78, 1.0, smoothstep(0.0, 2.8, vU));
   float ndl = max(dot(n, SUN_DIR), 0.0);
   vec3 light = SUN_COL * (ndl * vis * 0.92) + hemiLight(n, aoEdge);
-  gl_FragColor = vec4(aerial(grade(roof * light * vTint), vPos, uCam), uOpacity);
+  vec3 outc = roof * light * vTint;
+
+  vec3 Vr = normalize(uCam - vPos);
+  // A ROOF IS NOT PERFECTLY MATTE EITHER. Membrane, asphalt, slate and metal
+  // all go glossy toward grazing, which is why a city photographed into a low
+  // sun has a sheen running across the rooftops rather than a flat field of
+  // colour. Broad and weak — this is sheen, not a mirror — and it only shows
+  // where the sun can actually see the roof.
+  vec3 Hr = normalize(SUN_DIR + Vr);
+  float sheen = pow(max(dot(n, Hr), 0.0), 26.0);
+  outc += SUN_COL * sheen * 0.13 * vis;
+
+  // and the glitter, on whatever snow is lying up here
+  if (SNOW > 0.001) {
+    outc += snowSparkle(vPos, n, Vr, clamp(SNOW * smoothstep(0.28, 0.80, n.z), 0.0, 1.0)) * vis;
+  }
+
+  gl_FragColor = vec4(aerial(grade(outc), vPos, uCam), uOpacity);
 }`;
 
 // transparent quad over the whole city: darkens the MapLibre ground where
@@ -2710,6 +2754,12 @@ void main() {
     float blocked = step(0.9999, texture2D(uDepth, uSunScreen.xy).x);
     float veil = exp(-r * 4.2) * 0.55 + exp(-r * 13.0) * 0.45;
     c.rgb += uSunTint * veil * uGlare * blocked;
+    // AND THE BODY OF IT. The veil says light is scattering in the lens; it
+    // never says where from. Half a degree of actual disc, blown well past
+    // white so it reads as a source rather than a pale spot, and gone the
+    // instant anything crosses in front — which is the same depth tap the
+    // veil already pays for.
+    c.rgb += uSunTint * (1.0 - smoothstep(0.007, 0.015, r)) * uGlare * 7.0 * blocked;
   }
 
   // A WHISPER OF GRAIN. Everything above is smooth gradients over smooth

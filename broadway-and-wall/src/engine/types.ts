@@ -676,12 +676,62 @@ export interface Bid {
   countered?: boolean;   // you have already been back to this one privately
 }
 
+/**
+ * ONE OFF-MARKET CONVERSATION, and there are exactly three ways it can be
+ * standing when the panel reads it. Everything a screen needs is in this
+ * comment; nothing downstream should have to open `approachOwner` to find out
+ * what state it is in.
+ *
+ *   1. `refused === true`      — they turned you away. The door is shut until
+ *                                `q + 6`; `approachOwner` enforces that itself
+ *                                and returns an error before then.
+ *   2. `ask !== undefined`     — there is a number on the table. Buy at it, or
+ *                                counter once (`countered` says whether that
+ *                                shot is spent). This is the old behaviour and
+ *                                the only state old saves can be in.
+ *   3. neither of those        — MAKE ME AN OFFER. The owner is willing to
+ *                                trade and has refused to name a price. There
+ *                                is nothing to display, because there is
+ *                                nothing they told you. The only move is
+ *                                `buyOffMarket(..., bid)` with a real number.
+ *
+ * `mode` records which kind of conversation it STARTED as and never changes;
+ * `ask` records where it is NOW. So `mode === "offer"` with an `ask` present
+ * means the owner finally named a figure after the player bid at them, which
+ * is worth saying out loud on the panel because it is the only way that number
+ * could have got there.
+ *
+ * Absent `mode` means the record predates this shape: treat it as `"ask"`, and
+ * every old save reads exactly as it did before.
+ */
 export interface Approach {
   q: number;           // when the owner was approached
   refused: boolean;
   ask?: number;        // if willing: their number, good for 4 quarters
   countered?: boolean; // you get one counter per approach
   inbound?: boolean;   // they called you, not the other way round
+  /** How this conversation opened. Absent on saves written before it existed. */
+  mode?: "ask" | "offer";
+  /**
+   * WHAT THEY WILL ACTUALLY TAKE, AND THE PLAYER MUST NEVER SEE IT.
+   *
+   * Only set while `mode === "offer"` and no `ask` has been drawn out yet. It
+   * is the whole point of the mechanic that this number is private: an owner
+   * who says "make me an offer" is refusing to anchor the negotiation, and a
+   * panel that renders their floor — as a figure, a bar, a "you're close"
+   * hint, a disabled slider that stops at it, anything — hands back the exact
+   * information the refusal withheld. The player learns it by bidding and by
+   * nothing else. It lives on state only because a save has to survive being
+   * closed mid-negotiation.
+   */
+  reserve?: number;
+  /** Blind bids made against `reserve` so far. Their patience is finite and it
+   *  runs down with this — the panel may warn, and should not pretend to know
+   *  how much is left. */
+  probes?: number;
+  /** The last number the player put in, so the panel can show them their own
+   *  side of a conversation with no other numbers in it. */
+  lastBid?: number;
   /**
    * YOU INSULTED THEM, AND WHEN THEY WILL TAKE YOUR CALL AGAIN.
    *

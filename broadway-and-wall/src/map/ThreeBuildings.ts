@@ -348,7 +348,7 @@ vec3 aerial(vec3 c, vec3 p, vec3 cam) {
   // atmosphere at all. Real aerial photography from that height has a lot.
   float alt = smoothstep(1100.0, 4200.0, cam.z) * 0.20 * (1.0 - exp(-d / 1200.0));
 
-  return mix(c, haze, clamp(f * 0.35 * clarity + alt, 0.0, 1.0));
+  return mix(c, haze, clamp(f * 0.0 * clarity + alt * 0.0, 0.0, 1.0));
 }`;
 
 /**

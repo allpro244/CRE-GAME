@@ -1908,7 +1908,33 @@ void main() {
   if (SNOW > 0.001) base = snowOn(base, smoothstep(0.30, 0.85, n.z), 0.85);
   float vis = sunVis(vW, n);
   float ao = mix(0.62, 1.0, clamp(vW.z / 5.0, 0.0, 1.0));
-  vec3 light = SUN_COL * (max(dot(n, SUN_DIR), 0.0) * vis * 0.92) + hemiLight(n, ao);
+  vec3 light;
+  if (uFoliage > 0.5) {
+    // A CANOPY IS NOT AN OPAQUE SOLID, and shading it like one is why every
+    // tree in this city has been a green rock. Two things are wrong with a
+    // Lambert term on foliage, and both have one-line fixes.
+    //
+    // It has no hard terminator. A canopy is a thousand leaves at a thousand
+    // angles, not one surface, so the light wraps around it well past where
+    // the geometric normal says it should stop.
+    float wrap = max((dot(n, SUN_DIR) + 0.42) / 1.42, 0.0);
+    //
+    // And it TRANSMITS. Look at a sunlit tree from the shaded side and it does
+    // not read dark, it GLOWS — you are seeing light that came THROUGH a leaf
+    // rather than off one, which is why it arrives warmer and greener than the
+    // light that fell on it. It is the single most recognisable thing foliage
+    // does and it costs one dot product: strongest looking into the sun,
+    // strongest on the faces the sun cannot reach directly.
+    vec3 Vv = normalize(uCam - vW);
+    float thru = pow(max(dot(-Vv, SUN_DIR), 0.0), 2.6)
+               * (1.0 - max(dot(n, SUN_DIR), 0.0))
+               * (1.0 - BARE);      // in February there is nothing to shine through
+    light = SUN_COL * (wrap * vis * 0.80)
+          + hemiLight(n, ao)
+          + SUN_COL * vec3(0.72, 1.02, 0.50) * (thru * vis * 0.62);
+  } else {
+    light = SUN_COL * (max(dot(n, SUN_DIR), 0.0) * vis * 0.92) + hemiLight(n, ao);
+  }
   gl_FragColor = vec4(aerial(grade(base * light), vW, uCam), uOpacity);
 }`;
 

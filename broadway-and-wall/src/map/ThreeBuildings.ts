@@ -6,6 +6,18 @@
 // camera, and picking.
 import * as THREE from "three";
 import maplibregl from "maplibre-gl";
+import type { BuildingVolume } from "./volume";
+export type { BuildingVolume };
+import {
+  S_LAWN, S_PATH, S_POND,
+  S_GLASS, S_PREWAR, S_BRICK, S_MILL, S_PLAIN, S_ARTDECO, S_CORNICE, S_GREEN, S_LOT, S_GABLE, S_CRYSTAL, S_DIAGRID, S_PMOD,
+  S_GOTHIC, S_BEAUX, S_ITALIANATE,
+  S_FEDERAL, S_CHICAGO, S_CIVIC,
+  S_CARRIAGE, S_MARKET, S_METALPAN,
+  S_TERRAPIER, S_DEEPFRAME, S_STEELSHELF, S_UNITGLASS,
+  S_MEGAPANEL, T_MODERN, T_STONE, T_OLDROOF, T_CAPPED_PLAIN, T_TRADE,
+  STYLE_SETS_GLSL, has, modernCap, styleFor, keyOf, hash01,
+} from "./styles";
 
 /** A context point that knows which way it is pointing. Bearing in degrees. */
 export interface Oriented { p: [number, number]; r: number }
@@ -49,22 +61,6 @@ function scatterInRing(ring: [number, number][], n: number, seed: number): [numb
   return out;
 }
 
-export interface BuildingVolume {
-  b: string;   // bbl ("" for decorative props like ships and cranes)
-  c: string;   // asset class
-  y: number;   // year built
-  t: number;   // tone jitter 0-4
-  f: number;   // floors (whole building)
-  z0: number;  // base meters
-  z1: number;  // top meters
-  d: number;   // 1 = decorative
-  k?: number;  // 1 = vacant lot (dress with gravel + fence)
-  x?: number;  // 1 = this volume is the ROOF of its building, not a setback
-               //     terrace under it. Bulkheads, masts and stepped crowns
-               //     go here and nowhere else.
-  dk?: string; // decorative kind: hull0-2, super, funnel, box0-2, crane, shed, light, boat, mast...
-  r: [number, number][]; // footprint ring, lon/lat
-}
 
 // What each decorative kind is painted. The harbor used to be a fleet of
 // uniform grey boxes; a hull is navy or rust, a wheelhouse is white, a crane
@@ -90,334 +86,6 @@ const DECO_TINT: Record<string, [number, number, number]> = {
 };
 
 // facade / surface styles
-const S_GLASS = 0;   // modern curtain wall (sky-reflecting)
-const S_PREWAR = 1;  // punched masonry: limestone / brownstone / painted
-const S_BRICK = 2;   // residential brick, four hues
-const S_MILL = 3;    // industrial sash
-const S_DARK = 4;    // dark premium tower, gold glazing
-const S_PLAIN = 5;   // ships, cranes, sheds
-const S_ARTDECO = 6; // vertical stone piers, 1920s–50s towers
-const S_RIBBON = 7;  // mid-century ribbon windows
-const S_CORNICE = 8; // cornice stonework
-const S_GREEN = 9;   // green roof
-const S_LOT = 10;    // vacant lot: gravel + fence
-const S_GABLE = 11;  // pitched shingle roof
-const S_LAWN = 12;   // park turf
-const S_PATH = 13;   // park walk: compacted buff gravel
-const S_POND = 14;   // park water
-// THE MODERN TOWERS THIS CITY HAD NEVER BUILT.
-//
-// Every tower after 1975 came out of the same two hats — S_GLASS, a 1980s
-// curtain wall with a spandrel band at every floor, or S_DARK, its bronze
-// cousin. Both are punched-and-banded buildings wearing glass; neither is what
-// anyone means by a modern glass tower, and a skyline of nothing else is why
-// the new stock reads as one building repeated. These three are the families
-// New York actually put up, and they differ in ARCHITECTURE rather than in
-// colour: how the glass meets the floor plate, whether the structure is inside
-// or outside, and what the wall is made of when it is not glass.
-const S_CRYSTAL = 15; // frameless floor-to-ceiling vision glass — 7 WTC, One WTC, Manhattan West
-const S_DIAGRID = 16; // structure worn on the outside — Hearst Tower, the Bow
-const S_PMOD = 17;    // postmodern polished granite and punched glass — 550 Madison, Worldwide Plaza
-
-// ---------------------------------------------------------------------------
-// THE OTHER HUNDRED AND FIFTY YEARS.
-//
-// Eighteen slots covered the whole history of building, and ten of them were
-// facades. One of those ten carried 2,403 buildings and another carried 1,655
-// — so 71% of the city was painted by two families. The eye does not read a
-// palette, it reads a TYPE: a cast-iron front is not a limestone front in a
-// different colour, it is a different building, with different proportions,
-// a different structural rhythm and a different window.
-//
-// These are the families an American port city actually accumulates between
-// 1790 and 2030. Each one is defined by the thing you could identify it by
-// from across a harbour, and each is implemented as that one signature rather
-// than as a hue: the arch, the pier, the band, the balcony, the slot.
-//
-// --- built before the war ---
-const S_CASTIRON = 18;   // SoHo loft front: painted iron colonnettes, arched bays, more glass than wall
-const S_ROMANESQUE = 19; // Richardsonian: rusticated stone, heavy round arcades, deep shadow
-const S_GOTHIC = 20;     // terra-cotta Gothic: pointed heads, crocketed piers — the Woolworth family
-const S_BEAUX = 21;      // Beaux-Arts: rusticated base, giant order through the middle, huge cornice
-const S_EMPIRE = 22;     // Second Empire: segmental heads, bracket rhythm, a mansard over it
-const S_ITALIANATE = 23; // bracketed cornice, tall round-head windows, painted brownstone
-const S_FEDERAL = 24;    // Federal / Greek Revival: small panes, flat splayed lintels, white trim
-const S_TENEMENT = 25;   // the walk-up: tight window rhythm, painted brick, iron on the front
-const S_CHICAGO = 26;    // Chicago school: tripartite, wide Chicago window, terra-cotta grid
-const S_TERRACOTTA = 27; // glazed white terra cotta — glossy, crisp, and it never got dirty the same way
-const S_MODERNE = 28;    // Streamline Moderne: horizontal bands, rounded corner, glass block
-const S_CIVIC = 29;      // stripped classicism: giant pilasters, deep reveals, pale granite
-const S_CARRIAGE = 30;   // carriage house / stable: one big arch below, a hayloft door above
-const S_MARKET = 31;     // market hall: clerestory over a big arched arcade
-// --- built after it ---
-const S_INTL = 32;       // International Style: bronze steel I-beam mullions — the Seagram family
-const S_PRECAST = 33;    // precast eggcrate: a concrete waffle with the window deep inside each cell
-const S_BRUTAL = 34;     // board-formed concrete, narrow deep slots, no expressed floor
-const S_MIRROR = 35;     // 1970s mirror glass: no mullion you can see, and it reflects everything
-const S_METALPAN = 36;   // corrugated metal shed — the working waterfront's modern skin
-const S_EIFS = 37;       // stucco infill: thin punched openings, a colour somebody chose from a chart
-const S_GARAGE = 38;     // parking deck: open decks, spandrel rails, and no glass at all
-const S_PROJECT = 39;    // postwar brick slab: paired windows, absolute regularity
-const S_WHITEBRICK = 40; // 1960s glazed white brick apartment, with its balcony slot
-const S_BALCONY = 41;    // balcony tower: the slab edge is the architecture
-const S_FRIT = 42;       // fritted unitized glass — a ceramic dot pattern that reads as a gradient
-const S_TIMBER = 43;     // mass timber: warm wood spandrels between big square openings
-const S_SCREEN = 44;     // rainscreen: terracotta baguettes or perforated metal in front of the glass
-const S_BIGBOX = 45;     // big-box retail: a blank field under a parapet sign band
-
-// ---------------------------------------------------------------------------
-// TRAITS, NOT NUMBERS.
-//
-// Downstream behaviour was keyed to the numeric VALUE of a style id — `s < 8`
-// decided which buildings got a floor line, `s <= 4 || s == 6 || s == 7`
-// decided which got shops at grade. Those tests were correct for the eighteen
-// ids that existed and are silently wrong for every id added after them: a
-// cast-iron loft front is the most shopfronted building type in this city and
-// `s <= 4` says it has no shops.
-//
-// So membership is declared once, here, and every test downstream — in TS and
-// in GLSL, which is generated from these same arrays — asks the question by
-// name. Adding a style is adding it to the lists it belongs to.
-
-/** Punched openings in a load-bearing wall: string courses, arches, quoins. */
-const T_MASONRY = [
-  S_PREWAR, S_BRICK, S_MILL, S_ROMANESQUE, S_BEAUX, S_EMPIRE, S_ITALIANATE,
-  S_FEDERAL, S_TENEMENT, S_CIVIC, S_CARRIAGE, S_MARKET, S_GOTHIC, S_TERRACOTTA,
-  S_CHICAGO, S_PROJECT, S_WHITEBRICK, S_EIFS,
-];
-
-/** Reflects the sky and throws a specular back at the sun. */
-const T_GLASSY = [
-  S_GLASS, S_DARK, S_RIBBON, S_CRYSTAL, S_DIAGRID, S_CASTIRON, S_INTL,
-  S_MIRROR, S_FRIT, S_SCREEN, S_BALCONY, S_MODERNE,
-];
-
-/** Meets the pavement as shopfronts rather than as more wall. */
-const T_TRADE = [
-  S_GLASS, S_PREWAR, S_BRICK, S_MILL, S_DARK, S_ARTDECO, S_RIBBON, S_CASTIRON,
-  S_ROMANESQUE, S_GOTHIC, S_BEAUX, S_EMPIRE, S_ITALIANATE, S_CHICAGO,
-  S_TERRACOTTA, S_MODERNE, S_MARKET, S_INTL, S_PMOD, S_EIFS, S_TIMBER,
-  S_WHITEBRICK, S_TENEMENT,
-];
-
-/** Expresses its floor line as a shadow under every storey. */
-const T_FLOORLINE = [
-  S_GLASS, S_PREWAR, S_BRICK, S_MILL, S_DARK, S_ARTDECO, S_RIBBON, S_PMOD,
-  S_CASTIRON, S_ROMANESQUE, S_GOTHIC, S_BEAUX, S_EMPIRE, S_ITALIANATE,
-  S_FEDERAL, S_TENEMENT, S_CHICAGO, S_TERRACOTTA, S_MODERNE, S_CIVIC,
-  S_MARKET, S_INTL, S_PRECAST, S_PROJECT, S_WHITEBRICK, S_BALCONY, S_TIMBER,
-  S_EIFS, S_FRIT,
-];
-
-/** A modern skin whose parapet is metal or stone rather than more of itself. */
-const T_CAPPED_STONE = [S_GLASS, S_DARK, S_MIRROR, S_FRIT];
-const T_CAPPED_PLAIN = [S_CRYSTAL, S_DIAGRID, S_SCREEN, S_BALCONY, S_METALPAN, S_GARAGE, S_BIGBOX];
-
-/** Reads as a modern building when a crown is being chosen for it. */
-const T_MODERN = [
-  S_GLASS, S_DARK, S_RIBBON, S_CRYSTAL, S_DIAGRID, S_INTL, S_MIRROR, S_FRIT,
-  S_SCREEN, S_BALCONY, S_PRECAST, S_BRUTAL, S_TIMBER, S_WHITEBRICK, S_PROJECT,
-];
-
-/** Reads as cut stone when a crown is being chosen for it. */
-const T_STONE = [
-  S_PREWAR, S_ARTDECO, S_CORNICE, S_PMOD, S_ROMANESQUE, S_GOTHIC, S_BEAUX,
-  S_EMPIRE, S_ITALIANATE, S_CIVIC, S_TERRACOTTA, S_CHICAGO, S_MARKET, S_MODERNE,
-];
-
-/** Old enough, and soft enough, to have grown a pitched roof over it. */
-const T_OLDROOF = [
-  S_PREWAR, S_BRICK, S_FEDERAL, S_ITALIANATE, S_EMPIRE, S_TENEMENT, S_CARRIAGE,
-];
-
-const has = (list: readonly number[], s: number) => list.indexOf(s) >= 0;
-
-/**
- * The same membership tests, as GLSL. Generated from the arrays above so the
- * shader cannot drift from the TypeScript — the failure mode this replaces is
- * exactly a threshold that was right when it was written and silently wrong
- * two styles later.
- */
-const styleFn = (name: string, ids: readonly number[]): string =>
-  `bool ${name}(int s) { return ${ids.map((i) => `s==${i}`).join("||")}; }\n`;
-
-/**
- * Old enough to have turned its window heads. A round arch is a nineteenth
- * century way of carrying a wall over a hole; a 1958 brick slab has a steel
- * lintel and a flat head, and putting an arch on it was the single wrongest
- * thing the old blanket masonry test did.
- */
-const T_ARCHED = [
-  S_PREWAR, S_BRICK, S_ROMANESQUE, S_ITALIANATE, S_EMPIRE, S_MARKET,
-  S_CARRIAGE, S_CASTIRON,
-];
-
-const STYLE_SETS_GLSL = /* glsl */ `
-${styleFn("isMasonry", T_MASONRY)}${styleFn("isGlassy", T_GLASSY)}${styleFn("isTrade", T_TRADE)}${styleFn("isFloorLine", T_FLOORLINE)}${styleFn("isArched", T_ARCHED)}`;
-
-/**
- * What a PARAPET or a bulkhead on top of this building is made of. A glass
- * tower's parapet is not more glass — it is a metal coping or a stone cap, and
- * drawing it in the wall style put a window grid on a two-foot-high object.
- */
-function modernCap(style: number): number {
-  if (has(T_CAPPED_STONE, style)) return S_CORNICE;
-  if (has(T_CAPPED_PLAIN, style)) return S_PLAIN;
-  return style;
-}
-
-/**
- * WHICH BUILDING THIS IS.
- *
- * The old chooser was a ladder of five returns over ten styles, and it had two
- * faults that no amount of new styles would have fixed on their own.
- *
- * The first is that its only randomness was `(year, floors)`. Every building
- * in the city finished in 1978 with twenty floors was assigned the SAME style,
- * because nothing about the building itself entered the hash — so the repeats
- * were not bad luck, they were arithmetic. The BBL goes in now.
- *
- * The second is that it gated on `v.z1`, the top of THIS VOLUME. A wedding
- * cake whose base tier tops out at 38 m and whose shaft reaches 60 m took two
- * different branches of the same ladder, so one building was drawn in two
- * materials with the seam at the setback. Every height test here is on floors,
- * which every volume of a building shares.
- *
- * What it does now is offer the families that could plausibly have been built
- * on this site, in this class, in this decade, at this height, and choose among
- * them. Repeats in a pool are weights. A pool is never empty — the last line
- * of each branch is the family that was always the safe answer for that class.
- */
-function stylePool(v: BuildingVolume): number[] {
-  const y = v.y || 1950;
-  const f = Math.max(1, v.f || 1);
-  const p: number[] = [];
-  const office = v.c === "office" || v.c === "mixed";
-  const resi = v.c === "multifamily";
-  const shop = v.c === "retail";
-  const works = !office && !resi && !shop;   // industrial and everything odd
-
-  // ---- the working waterfront, which does not follow fashion ---------------
-  if (works) {
-    if (y < 1900) p.push(S_MILL, S_MILL, S_MILL, S_CARRIAGE, S_ROMANESQUE, S_MARKET);
-    else if (y < 1945) p.push(S_MILL, S_MILL, S_MILL, S_MARKET, S_CARRIAGE, S_MODERNE);
-    else if (y < 1980) p.push(S_MILL, S_METALPAN, S_METALPAN, S_PRECAST, S_BRUTAL);
-    else p.push(S_METALPAN, S_METALPAN, S_METALPAN, S_BIGBOX, S_EIFS);
-    if (f >= 4 && y >= 1955) p.push(S_GARAGE);
-    return p;
-  }
-
-  // ---- before the elevator, everything is a wall with holes in it ----------
-  if (y < 1850) {
-    p.push(S_FEDERAL, S_FEDERAL, S_FEDERAL, S_BRICK, S_PREWAR);
-    if (shop) p.push(S_FEDERAL, S_ITALIANATE);
-    return p;
-  }
-  if (y < 1885) {
-    p.push(S_ITALIANATE, S_ITALIANATE, S_FEDERAL, S_BRICK, S_PREWAR, S_EMPIRE);
-    if (!resi && f >= 3) p.push(S_CASTIRON, S_CASTIRON, S_CASTIRON);
-    if (f >= 4) p.push(S_EMPIRE, S_ROMANESQUE);
-    if (resi) p.push(S_TENEMENT, S_BRICK);
-    return p;
-  }
-  if (y < 1905) {
-    p.push(S_ROMANESQUE, S_ITALIANATE, S_PREWAR, S_BRICK);
-    // VERNACULAR LAGS FASHION BY A GENERATION, and in a small port it lags by
-    // two. New Alden's oldest recorded building is 1885 — the generator makes
-    // nothing before it — so the Federal and Second Empire families would be
-    // dead code gated to the dates the styles were invented. They are not dead
-    // in the world: a carpenter in an 1890s harbour town was still building the
-    // house he had been taught to build in 1850, which is the whole reason
-    // small-town stock reads as older than its dates.
-    p.push(S_FEDERAL, S_EMPIRE);
-    if (resi) p.push(S_FEDERAL, S_EMPIRE);
-    if (!resi) p.push(S_CASTIRON, S_ROMANESQUE, S_MARKET);
-    // GOTHIC AT SMALL SCALE. Terra-cotta Gothic is a tall-office style and this
-    // town has two prewar offices over six storeys, so gated there it is worth
-    // 0.7 buildings and draws none. It is not only a tall-office style: the
-    // same pointed arch built every church, school and parish hall in the
-    // nineteenth century, at three storeys, and that is where a port town
-    // actually keeps it. The steeple rule reads this style too.
-    if (!resi) p.push(S_GOTHIC);
-    if (resi) p.push(S_TENEMENT, S_TENEMENT, S_TENEMENT, S_BRICK);
-    if (office && f >= 6) p.push(S_CHICAGO, S_CHICAGO, S_BEAUX);
-    return p;
-  }
-  if (y < 1925) {
-    p.push(S_PREWAR, S_BRICK);
-    if (!resi) p.push(S_GOTHIC);              // the parish hall, the school
-    if (office) p.push(S_BEAUX, S_BEAUX, S_CHICAGO, S_CHICAGO, S_TERRACOTTA);
-    // Terra-cotta Gothic on six storeys is the small-city version of the
-    // type and there are hundreds of them; gated at eight it lost to the fact
-    // that this town has twenty buildings that tall in total.
-    if (office && f >= 6) p.push(S_GOTHIC, S_GOTHIC, S_GOTHIC, S_TERRACOTTA);
-    if (shop) p.push(S_TERRACOTTA, S_BEAUX, S_CHICAGO, S_MARKET);
-    if (resi) p.push(S_TENEMENT, S_TENEMENT, S_BRICK, S_PREWAR, S_BEAUX);
-    return p;
-  }
-  if (y < 1945) {
-    // The deco decades. Height decides whether a building got the tower
-    // treatment or the low, wide, horizontal one.
-    if (f >= 7) p.push(S_ARTDECO, S_ARTDECO, S_ARTDECO, S_GOTHIC, S_TERRACOTTA);
-    else p.push(S_MODERNE, S_MODERNE, S_ARTDECO, S_TERRACOTTA);
-    p.push(S_CIVIC, S_PREWAR, S_BRICK);
-    if (resi) p.push(S_BRICK, S_BRICK, S_PREWAR, S_TENEMENT);
-    if (shop) p.push(S_MODERNE, S_TERRACOTTA);
-    return p;
-  }
-  if (y < 1962) {
-    p.push(S_RIBBON, S_RIBBON, S_BRICK, S_PROJECT, S_CIVIC);
-    if (office && f >= 6) p.push(S_INTL, S_INTL, S_INTL, S_RIBBON);
-    if (resi) p.push(S_PROJECT, S_PROJECT, S_WHITEBRICK, S_BRICK);
-    if (shop) p.push(S_MODERNE, S_RIBBON, S_EIFS);
-    return p;
-  }
-  if (y < 1980) {
-    p.push(S_RIBBON, S_PRECAST, S_BRUTAL, S_PROJECT);
-    if (office && f >= 6) p.push(S_INTL, S_INTL, S_PRECAST, S_PRECAST, S_MIRROR, S_BRUTAL);
-    if (office && f >= 9) p.push(S_MIRROR, S_MIRROR, S_DARK);
-    if (resi) p.push(S_WHITEBRICK, S_WHITEBRICK, S_PROJECT, S_PRECAST, S_BRICK);
-    if (shop) p.push(S_EIFS, S_PRECAST, S_METALPAN);
-    if (f >= 4) p.push(S_GARAGE);
-    return p;
-  }
-  if (y < 1998) {
-    p.push(S_EIFS, S_GLASS, S_PMOD, S_BRICK);
-    if (office && f >= 6) p.push(S_PMOD, S_PMOD, S_MIRROR, S_MIRROR, S_GLASS, S_DARK);
-    if (office && f >= 10) p.push(S_PMOD, S_DARK);
-    if (resi) p.push(S_BRICK, S_EIFS, S_WHITEBRICK, S_BALCONY);
-    if (shop) p.push(S_EIFS, S_EIFS, S_BIGBOX, S_METALPAN);
-    if (f >= 4) p.push(S_GARAGE);
-    return p;
-  }
-  if (y < 2012) {
-    p.push(S_GLASS, S_EIFS, S_BRICK);
-    if (office && f >= 6) p.push(S_CRYSTAL, S_CRYSTAL, S_GLASS, S_FRIT, S_SCREEN, S_DARK);
-    if (office && f >= 24) p.push(S_DIAGRID, S_CRYSTAL);
-    if (resi) p.push(S_BALCONY, S_BALCONY, S_GLASS, S_EIFS, S_BRICK);
-    if (resi && f >= 8) p.push(S_BALCONY, S_CRYSTAL);
-    if (shop) p.push(S_EIFS, S_BIGBOX, S_SCREEN);
-    if (f >= 4) p.push(S_GARAGE);
-    return p;
-  }
-  // the present, which builds thinner walls and warmer ones at the same time
-  p.push(S_CRYSTAL, S_FRIT, S_SCREEN, S_TIMBER);
-  if (office && f >= 6) p.push(S_CRYSTAL, S_CRYSTAL, S_FRIT, S_FRIT, S_SCREEN, S_SCREEN, S_TIMBER);
-  if (office && f >= 22) p.push(S_DIAGRID, S_CRYSTAL, S_DARK);
-  if (resi) p.push(S_BALCONY, S_BALCONY, S_BALCONY, S_SCREEN, S_TIMBER, S_FRIT, S_BRICK);
-  if (shop) p.push(S_SCREEN, S_TIMBER, S_BIGBOX, S_EIFS);
-  if (f >= 4) p.push(S_GARAGE);
-  return p;
-}
-
-function styleFor(v: BuildingVolume): number {
-  if (v.d) return S_PLAIN;
-  // The BUILDING, not just its year and its height — see stylePool. Keying on
-  // the deed is what stops two towers finished the same year being twins.
-  const pool = stylePool(v);
-  const h = hash01(keyOf(v.b) ^ 0x5f3a91c7, ((v.y | 0) * 2654435761) >>> 0);
-  return pool[Math.min(pool.length - 1, Math.floor(h * pool.length))];
-}
 
 const VERT = /* glsl */ `
 attribute float aU;
@@ -534,6 +202,23 @@ vec3 seasonGreen(vec3 c) {
   return c;
 }
 
+// TURF DOES NOT TURN.
+//
+// A deciduous canopy goes gold in October because its leaves are dying and
+// about to be abandoned. A lawn is a perennial: it stops growing, goes dull,
+// grey and a little brown as it hardens off, and it stays GREEN through the
+// whole of it. Both were running through seasonGreen, so every park in the
+// city came out the colour of a wheatfield in autumn — which was, by some
+// distance, the loudest wrong colour anywhere in the calendar.
+//
+// Same two drivers, quite different destination: toward a desaturated olive
+// rather than toward gold, and never all the way there.
+vec3 seasonTurf(vec3 c) {
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  vec3 dorm = mix(c, l * vec3(1.16, 1.10, 0.84), 0.60);
+  return mix(c, dorm, clamp(max(AUTUMN * 0.50, (1.0 - VIGOUR) * 0.62), 0.0, 1.0));
+}
+
 vec3 snowOn(vec3 c, float up, float k) {
   return mix(c, vec3(0.905, 0.925, 0.975), clamp(SNOW * up * k, 0.0, 1.0));
 }
@@ -618,7 +303,26 @@ vec3 aerial(vec3 c, vec3 p, vec3 cam) {
   float lowFog = exp(-max(p.z, 0.0) / 46.0);
   f = clamp(f * (1.0 + 0.44 * lowFog), 0.0, 1.0);
 
-  return mix(c, haze, f * 0.35);
+  // AND THE AIR HAS A SEASON. Cold air holds almost no water and a great deal
+  // less dust, which is why a clear February day sees for ever and August
+  // haze closes the same view down to a mile — it is one of the largest
+  // visible differences between two months of the year, and this term was a
+  // constant. Winter also has the longest shadows and the lowest sun, so the
+  // clarity and the drama arrive together, which is exactly what a northern
+  // city looks like in January.
+  float clarity = mix(1.06, 0.72, SNOW);
+  // Summer's own contribution, taken off leaf vigour rather than a second
+  // date: humid air and full canopies are the same weather.
+  clarity *= mix(1.0, 1.16, VIGOUR);
+
+  // AND AN ALTITUDE FLOOR. Dividing distance by camera height keeps the effect
+  // reading the same down a street and across the harbour, which is what it is
+  // for — but it also cancels itself at altitude, so the establishing shot,
+  // three kilometres up over the whole island, was getting almost no
+  // atmosphere at all. Real aerial photography from that height has a lot.
+  float alt = smoothstep(1100.0, 4200.0, cam.z) * 0.20 * (1.0 - exp(-d / 1200.0));
+
+  return mix(c, haze, clamp(f * 0.35 * clarity + alt, 0.0, 1.0));
 }`;
 
 /**
@@ -632,23 +336,12 @@ vec3 aerial(vec3 c, vec3 p, vec3 cam) {
  * reason for a hash to work. FNV over the digits costs ten iterations and is
  * correct for any BBL anyone ever invents.
  */
-function keyOf(bbl: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < bbl.length; i++) { h ^= bbl.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return h >>> 0;
-}
 
 /**
  * A well-mixed [0,1) from two integers. Two calls with different constants give
  * two INDEPENDENT streams, which is the whole point — the old scheme derived
  * its second scalar from its first, so colour and detail moved together.
  */
-function hash01(a: number, b: number): number {
-  let x = (Math.imul(a, 2654435761) ^ Math.imul(b, 2246822519)) >>> 0;
-  x = Math.imul(x ^ (x >>> 16), 2246822507) >>> 0;
-  x = Math.imul(x ^ (x >>> 13), 3266489909) >>> 0;
-  return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
-}
 
 /** Twice the signed area of a ring — enough to compare two footprints. */
 function ringArea(r: [number, number][]): number {
@@ -664,6 +357,8 @@ const PROP_VERT = /* glsl */ `
 // instanceColor is declared for us when the mesh carries one
 uniform vec4 uSeason;
 uniform float uFoliage;   // 0 = not a leaf, 1 = deciduous canopy, 2 = conifer
+uniform vec3 uCamP;
+uniform vec2 uFade;       // (start, end) metres — 0 disables
 varying vec3 vN;
 varying vec3 vW;
 varying vec3 vC;
@@ -672,6 +367,32 @@ void main() {
   vec3 p = position;
   p.xy *= mix(1.0, 0.32, bare);
   p.z  *= mix(1.0, 0.94, bare);
+
+  // ---- THE SPECKLE ---------------------------------------------------------
+  //
+  // A guardrail is 7 m of 70 mm steel and there are four and a half thousand of
+  // them. Up close that is the best object on the roof — a long horizontal line
+  // floating above the deck reads as a roof when the deck itself is nine pixels
+  // of flat colour. At the establishing zoom it is one or two pixels of hard
+  // dark against pale render, four thousand times, and the city wears it as
+  // GRAIN rather than as objects. Same for urns, chimney pots and condensers.
+  //
+  // So the small parts shrink out of existence over a band. They do not fade:
+  // a fade needs blending and these are opaque and unsorted. Shrinking toward
+  // the instance origin costs nothing, has no draw-order problem, and the last
+  // thing to go is the middle of the object rather than its aliasing edge.
+  //
+  // These same parts are marked noShadow, and that is not a separate decision.
+  // The bake replaces the vertex stage with MeshDepthMaterial, so it cannot see
+  // this shrink and would go on casting a full-size shadow for a prop that is
+  // no longer drawn — the orphan-shadow failure the pedestrians had. A rail's
+  // cast shadow is worth nothing next to that.
+  if (uFade.y > 0.0) {
+    vec3 iOrigin = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+    float d = distance(uCamP, iOrigin);
+    p *= 1.0 - smoothstep(uFade.x, uFade.y, d);
+  }
+
   vN = normalize(mat3(instanceMatrix) * normal);
   vW = (instanceMatrix * vec4(p, 1.0)).xyz;
   vC = instanceColor;
@@ -841,7 +562,7 @@ varying float vRet;
 uniform float uOpacity;
 uniform vec3 uCam;
 ${"" /* shadow sampling */}
-` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + SEASON_GLSL + STYLE_SETS_GLSL + /* glsl */ `
+` + SHADOW_GLSL + LIGHT_GLSL + SEASON_GLSL + HAZE_GLSL + STYLE_SETS_GLSL + /* glsl */ `
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
@@ -1003,7 +724,7 @@ void main() {
     // giant order is drawn below; here it is the stone and the calm bay.
     colW = 3.9; win = vec2(0.46, 0.63);
     float pk = clamp(vVar, 0.0, 0.999);
-    if (pk < 0.34)      { wall = vec3(0.86, 0.82, 0.73); } // limestone
+    if (pk < 0.34)      { wall = vec3(0.795, 0.760, 0.680); } // limestone
     else if (pk < 0.64) { wall = vec3(0.80, 0.77, 0.70); } // pale ashlar
     else if (pk < 0.86) { wall = vec3(0.74, 0.71, 0.66); } // grey stone
     else                { wall = vec3(0.82, 0.76, 0.64); } // warm bath stone
@@ -1069,7 +790,11 @@ void main() {
     // and it washes clean in the rain — the one old building on the block that
     // never went black. Crisp, bright, and slightly cold.
     colW = 3.2; win = vec2(0.50, 0.66);
-    wall = mix(vec3(0.90, 0.89, 0.84), vec3(0.86, 0.84, 0.76), step(0.5, vVar));
+    // Held under 0.80: contrast runs in linear space about a 0.18 pivot, so an
+    // albedo over ~0.85 clips to flat white before the light rig touches it.
+    // A glaze reads bright because it is GLOSSY, not because it is pale, and
+    // the sheen below is what carries that.
+    wall = mix(vec3(0.795, 0.785, 0.740), vec3(0.760, 0.745, 0.675), step(0.5, vVar));
     glassA = vec3(0.26, 0.32, 0.38); glassB = vec3(0.42, 0.50, 0.57);
   } else if (s == 28) {
     // STREAMLINE MODERNE. Everything horizontal: banded sills, a wrapped
@@ -1180,7 +905,7 @@ void main() {
     // GLAZED WHITE BRICK. The 1960s apartment house: a hard bright ivory
     // brick, dark aluminium windows, and a balcony slot punched in the wall.
     colW = 3.3; win = vec2(0.56, 0.54);
-    wall = mix(vec3(0.88, 0.87, 0.82), vec3(0.83, 0.82, 0.78), step(0.5, vVar));
+    wall = mix(vec3(0.790, 0.782, 0.735), vec3(0.752, 0.744, 0.706), step(0.5, vVar));
     glassA = vec3(0.24, 0.28, 0.32); glassB = vec3(0.38, 0.44, 0.49);
   } else if (s == 41) {
     // THE BALCONY TOWER. On a modern residential slab the architecture IS the
@@ -1195,9 +920,9 @@ void main() {
     // densest at the slab and fading out at eye level — so the tower carries a
     // soft horizontal gradient that is not a spandrel and not a shadow.
     glassy = true; colW = 1.62; win = vec2(0.96, 0.92);
-    if (vVar < 0.40)      { glassA = vec3(0.56, 0.70, 0.76); glassB = vec3(0.78, 0.88, 0.92); wall = vec3(0.44, 0.56, 0.62); }
-    else if (vVar < 0.74) { glassA = vec3(0.50, 0.60, 0.68); glassB = vec3(0.72, 0.80, 0.86); wall = vec3(0.40, 0.48, 0.55); }
-    else                  { glassA = vec3(0.58, 0.66, 0.64); glassB = vec3(0.80, 0.86, 0.84); wall = vec3(0.46, 0.53, 0.52); }
+    if (vVar < 0.40)      { glassA = vec3(0.52, 0.64, 0.70); glassB = vec3(0.70, 0.79, 0.83); wall = vec3(0.44, 0.56, 0.62); }
+    else if (vVar < 0.74) { glassA = vec3(0.47, 0.56, 0.63); glassB = vec3(0.66, 0.74, 0.79); wall = vec3(0.40, 0.48, 0.55); }
+    else                  { glassA = vec3(0.54, 0.61, 0.60); glassB = vec3(0.72, 0.78, 0.76); wall = vec3(0.46, 0.53, 0.52); }
   } else if (s == 43) {
     // MASS TIMBER. A CLT frame with the wood left visible in the spandrel: a
     // warm, slightly orange band at every floor between big square openings.
@@ -1223,6 +948,271 @@ void main() {
     colW = 8.0; win = vec2(0.0, 0.0);
     wall = mix(vec3(0.78, 0.75, 0.69), vec3(0.70, 0.68, 0.64), step(0.5, vVar));
     glassA = wall; glassB = wall;
+  } else if (s == 75) {
+    // TILT-UP. The wall was cast flat on the slab and stood up by crane, so it
+    // arrives in panels about seven metres wide with a joint down every one of
+    // them and a shallow reveal band cast into the face. Painted, always, and
+    // in whatever the tenant's colour was that decade.
+    colW = 7.0; win = vec2(0.20, 0.22);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.28)      { wall = vec3(0.700, 0.695, 0.675); }  // off-white
+    else if (pk < 0.50) { wall = vec3(0.640, 0.650, 0.645); }  // pale grey-green
+    else if (pk < 0.68) { wall = vec3(0.660, 0.620, 0.560); }  // sand
+    else if (pk < 0.84) { wall = vec3(0.560, 0.580, 0.605); }  // blue-grey
+    else                { wall = vec3(0.605, 0.575, 0.560); }  // warm grey
+    glassA = vec3(0.26, 0.32, 0.37); glassB = vec3(0.40, 0.49, 0.55);
+  } else if (s == 76) {
+    // THE BIG SHED. A quarter of a mile of wall with a dock door every nine
+    // metres and nothing else on it — no windows, because there is nothing to
+    // look at and nobody to look. Scale is the whole identification.
+    colW = 9.0; win = vec2(0.0, 0.0);
+    wall = mix(vec3(0.680, 0.680, 0.665), vec3(0.615, 0.630, 0.640), step(0.5, vVar));
+    glassA = vec3(0.22, 0.24, 0.26); glassB = vec3(0.33, 0.37, 0.40);
+  } else if (s == 77) {
+    // FLEX. A glazed office corner bolted onto a metal warehouse — two
+    // completely different buildings sharing a slab, which is exactly what a
+    // business park is.
+    glassy = true; colW = 3.2; win = vec2(0.72, 0.56);
+    wall = mix(vec3(0.610, 0.625, 0.630), vec3(0.660, 0.640, 0.600), step(0.5, vVar));
+    glassA = vec3(0.32, 0.42, 0.48); glassB = vec3(0.50, 0.62, 0.68);
+  } else if (s == 78) {
+    // THE QUONSET. A corrugated half-cylinder — no walls at all, strictly, and
+    // the end is mostly door. The curve is drawn by the shading below.
+    colW = 4.0; win = vec2(0.24, 0.26);
+    wall = mix(vec3(0.605, 0.615, 0.605), vec3(0.545, 0.520, 0.480), step(0.6, vVar));
+    glassA = vec3(0.26, 0.29, 0.31); glassB = vec3(0.39, 0.44, 0.47);
+  } else if (s == 79) {
+    // CROSS-DOCK. Doors down BOTH long sides so a trailer backs in one side
+    // and out the other, with a canopy over each run. Very long, very thin.
+    colW = 4.4; win = vec2(0.0, 0.0);
+    wall = mix(vec3(0.655, 0.660, 0.650), vec3(0.590, 0.600, 0.615), step(0.5, vVar));
+    glassA = vec3(0.20, 0.22, 0.24); glassB = vec3(0.30, 0.34, 0.37);
+  } else if (s == 80) {
+    // SELF STORAGE. Rank upon rank of roller doors, all identical, under one
+    // bright band of the operator's colour. The repetition is the building.
+    colW = 3.0; win = vec2(0.0, 0.0);
+    wall = mix(vec3(0.690, 0.670, 0.630), vec3(0.640, 0.635, 0.620), step(0.5, vVar));
+    glassA = vec3(0.24, 0.26, 0.28); glassB = vec3(0.36, 0.40, 0.43);
+  } else if (s == 81) {
+    // THE DATA CENTRE. A blind box with banks of louvres where the air goes in
+    // and out, and not one window anywhere — a building designed for machines
+    // that reads, correctly, as having nobody in it.
+    colW = 5.2; win = vec2(0.0, 0.0);
+    wall = mix(vec3(0.555, 0.565, 0.580), vec3(0.610, 0.605, 0.595), step(0.5, vVar));
+    glassA = vec3(0.22, 0.25, 0.28); glassB = vec3(0.33, 0.38, 0.42);
+  } else if (s == 61) {
+    // QUEEN ANNE. Shingle above, clapboard below, in two colours that were
+    // chosen to be different — the "painted lady" is not a myth, it is what
+    // the paint catalogues of the 1890s sold. Busy, and proud of it.
+    colW = 2.6; win = vec2(0.44, 0.62);
+    float pk = clamp(vVar, 0.0, 0.999);
+    if (pk < 0.20)      { wall = vec3(0.560, 0.395, 0.335); }  // barn red
+    else if (pk < 0.40) { wall = vec3(0.470, 0.480, 0.420); }  // sage
+    else if (pk < 0.58) { wall = vec3(0.630, 0.575, 0.455); }  // buff
+    else if (pk < 0.76) { wall = vec3(0.395, 0.430, 0.480); }  // slate blue
+    else                { wall = vec3(0.700, 0.680, 0.630); }  // cream
+    glassA = vec3(0.28, 0.33, 0.38); glassB = vec3(0.44, 0.51, 0.57);
+  } else if (s == 62) {
+    // STICK STYLE. The framing is laid ON the wall as flat boards in a contrast
+    // colour, so the house wears a diagram of its own structure.
+    colW = 2.9; win = vec2(0.42, 0.60);
+    wall = mix(vec3(0.610, 0.560, 0.475), vec3(0.520, 0.475, 0.430), step(0.5, vVar));
+    glassA = vec3(0.27, 0.32, 0.37); glassB = vec3(0.42, 0.49, 0.55);
+  } else if (s == 63) {
+    // TUDOR REVIVAL. Render below, half-timbering above — and only above,
+    // because that is what makes it read: the upper floor is patterned and the
+    // lower one is not.
+    colW = 3.1; win = vec2(0.46, 0.56);
+    wall = mix(vec3(0.700, 0.675, 0.615), vec3(0.640, 0.610, 0.550), step(0.5, vVar));
+    glassA = vec3(0.26, 0.31, 0.36); glassB = vec3(0.41, 0.48, 0.54);
+  } else if (s == 64) {
+    // MISSION REVIVAL. Smooth stucco, a shaped curved parapet, and a little
+    // tiled pent roof running over the openings.
+    colW = 3.6; win = vec2(0.40, 0.60);
+    wall = mix(vec3(0.720, 0.665, 0.575), vec3(0.680, 0.640, 0.580), step(0.5, vVar));
+    glassA = vec3(0.25, 0.29, 0.34); glassB = vec3(0.39, 0.46, 0.52);
+  } else if (s == 65) {
+    // THE PICTURE PALACE. The auditorium has no windows at all, so the whole
+    // building is a blind box with a marquee across the bottom of it and a
+    // vertical blade sign up the corner. The blankness IS the type.
+    colW = 6.0; win = vec2(0.10, 0.12);
+    if (vVar < 0.4)      { wall = vec3(0.640, 0.545, 0.430); }
+    else if (vVar < 0.75){ wall = vec3(0.560, 0.470, 0.455); }
+    else                 { wall = vec3(0.690, 0.660, 0.600); }
+    glassA = vec3(0.24, 0.27, 0.31); glassB = vec3(0.36, 0.42, 0.47);
+  } else if (s == 66) {
+    // THE DINER. A stainless railcar: horizontal flutes the whole length, a
+    // continuous band of glass, and a rounded end. Small, shiny, unmistakable.
+    glassy = true; colW = 1.5; win = vec2(0.92, 0.42);
+    wall = mix(vec3(0.700, 0.710, 0.715), vec3(0.620, 0.640, 0.655), step(0.5, vVar));
+    glassA = vec3(0.44, 0.52, 0.56); glassB = vec3(0.64, 0.74, 0.78);
+  } else if (s == 67) {
+    // THE FIREHOUSE. Apparatus doors are most of the ground floor because an
+    // engine has to get out, and they are arched on the old ones. Everything
+    // above is domestic in scale — it is where the crew lived.
+    colW = 4.5; win = vec2(0.44, 0.58);
+    wall = mix(vec3(0.560, 0.345, 0.290), vec3(0.610, 0.520, 0.440), step(0.55, vVar));
+    glassA = vec3(0.25, 0.30, 0.35); glassB = vec3(0.40, 0.47, 0.53);
+  } else if (s == 68) {
+    // THE SCHOOL. Windows in banks of three, floor to near-ceiling, because a
+    // classroom needs daylight from one side — the most regular facade in any
+    // town, with one raised entrance bay in the middle of it.
+    colW = 5.4; win = vec2(0.74, 0.66);
+    wall = mix(vec3(0.605, 0.430, 0.350), vec3(0.680, 0.640, 0.565), step(0.5, vVar));
+    glassA = vec3(0.28, 0.34, 0.39); glassB = vec3(0.44, 0.52, 0.58);
+  } else if (s == 69) {
+    // THE LIBRARY. A blind plinth — the stacks are behind it and books hate
+    // daylight — with tall arched reading-room windows over it, and a portico.
+    colW = 4.2; win = vec2(0.44, 0.72);
+    wall = mix(vec3(0.735, 0.705, 0.640), vec3(0.680, 0.660, 0.615), step(0.5, vVar));
+    glassA = vec3(0.23, 0.28, 0.33); glassB = vec3(0.37, 0.44, 0.50);
+  } else if (s == 70) {
+    // THE BANK. A giant order across the front and NOTHING at street level —
+    // a bank does not put its money behind a shop window. Two storeys of blind
+    // ashlar, then the columns, then a heavy entablature.
+    colW = 4.8; win = vec2(0.30, 0.62);
+    wall = mix(vec3(0.760, 0.740, 0.690), vec3(0.700, 0.685, 0.650), step(0.5, vVar));
+    glassA = vec3(0.20, 0.25, 0.30); glassB = vec3(0.33, 0.40, 0.46);
+  } else if (s == 71) {
+    // THE HOTEL. Three parts and a canopy: rusticated base, a banded middle of
+    // identical bedroom windows, a heavy cornice. The regularity of the middle
+    // is the tell — every room is the same room.
+    colW = 3.0; win = vec2(0.44, 0.62);
+    wall = mix(vec3(0.680, 0.620, 0.535), vec3(0.615, 0.505, 0.425), step(0.55, vVar));
+    glassA = vec3(0.26, 0.31, 0.36); glassB = vec3(0.41, 0.48, 0.54);
+  } else if (s == 72) {
+    // THE DEPARTMENT STORE. Continuous display glazing floor after floor,
+    // because the whole building is a shop window. Almost no wall left.
+    glassy = true; colW = 5.6; win = vec2(0.88, 0.76);
+    wall = mix(vec3(0.700, 0.665, 0.590), vec3(0.630, 0.600, 0.555), step(0.5, vVar));
+    glassA = vec3(0.32, 0.38, 0.43); glassB = vec3(0.50, 0.58, 0.64);
+  } else if (s == 73) {
+    // THE MOTEL. Every door opens onto an outdoor walkway with a rail — the
+    // building is a corridor turned inside out, and you can see it from the road.
+    colW = 3.4; win = vec2(0.50, 0.52);
+    wall = mix(vec3(0.720, 0.680, 0.615), vec3(0.660, 0.615, 0.560), step(0.5, vVar));
+    glassA = vec3(0.24, 0.28, 0.32); glassB = vec3(0.38, 0.44, 0.49);
+  } else if (s == 74) {
+    // THE STRIP. A deep canopy over continuous glazing with a sign band above
+    // it, running the length of the row — one building pretending to be six.
+    colW = 6.4; win = vec2(0.86, 0.44);
+    wall = mix(vec3(0.700, 0.660, 0.600), vec3(0.640, 0.615, 0.590), step(0.5, vVar));
+    glassA = vec3(0.30, 0.35, 0.40); glassB = vec3(0.46, 0.54, 0.60);
+  } else if (s == 51) {
+    // THE GENERATING STATION. One enormous room with turbines in it, so the
+    // openings are the height of the whole building rather than the height of
+    // a floor — a bay four storeys tall, arched, in engineering brick. Nothing
+    // else in a city has that proportion and it reads from anywhere.
+    colW = 7.4; win = vec2(0.56, 0.86);
+    wall = mix(vec3(0.470, 0.330, 0.270), vec3(0.560, 0.470, 0.400), step(0.5, vVar));
+    glassA = vec3(0.22, 0.27, 0.31); glassB = vec3(0.36, 0.44, 0.50);
+  } else if (s == 52) {
+    // THE COLD STORE. Insulation means no windows: a blank brick cliff with a
+    // stack of loading doors down one bay and a handful of tiny openings where
+    // somebody has to see out. The blankness is the building.
+    colW = 4.6; win = vec2(0.16, 0.14);
+    wall = mix(vec3(0.545, 0.430, 0.380), vec3(0.610, 0.560, 0.505), step(0.6, vVar));
+    glassA = vec3(0.20, 0.22, 0.24); glassB = vec3(0.30, 0.34, 0.37);
+  } else if (s == 53) {
+    // THE BREWERY. Segmental-arched brick, a tall stair-and-liquor tower, and
+    // the good ones got a cornice — a brewery was a proud building in a way a
+    // warehouse never was, and it is usually the best brickwork in the district.
+    colW = 3.6; win = vec2(0.44, 0.66);
+    wall = mix(vec3(0.520, 0.330, 0.270), vec3(0.590, 0.420, 0.330), step(0.5, vVar));
+    glassA = vec3(0.24, 0.28, 0.33); glassB = vec3(0.38, 0.45, 0.51);
+  } else if (s == 54) {
+    // THE FOUNDRY. Steel sash from waist height to the roof because the work
+    // needs light and the walls carry nothing, and a century of carbon on top
+    // of it. Almost all glazing, and almost all of it filthy.
+    colW = 4.0; win = vec2(0.82, 0.74);
+    wall = mix(vec3(0.415, 0.400, 0.375), vec3(0.480, 0.455, 0.420), step(0.5, vVar));
+    glassA = vec3(0.30, 0.33, 0.32); glassB = vec3(0.44, 0.48, 0.46);
+  } else if (s == 55) {
+    // THE GRAIN ELEVATOR. Slip-formed concrete drums with no openings at all —
+    // the one industrial building taller than the district round it, and it is
+    // not clad, it is POURED. The drum lines are the whole facade.
+    colW = 6.5; win = vec2(0.0, 0.0);
+    wall = mix(vec3(0.660, 0.650, 0.620), vec3(0.590, 0.580, 0.560), step(0.5, vVar));
+    glassA = wall; glassB = wall;
+  } else if (s == 56) {
+    // THE GASHOLDER. A lattice guide frame standing round a drum that rises
+    // and falls with the gas in it — so what you see is mostly SKY, crossed by
+    // ironwork, with the tank sitting somewhere inside.
+    colW = 3.0; win = vec2(0.0, 0.0);
+    wall = mix(vec3(0.430, 0.415, 0.385), vec3(0.360, 0.370, 0.375), step(0.5, vVar));
+    glassA = wall; glassB = wall;
+  } else if (s == 57) {
+    // THE FABRICATION SHED. A portal frame with a crane rail down it and doors
+    // big enough to take a hull out — profiled steel above, and the door is
+    // most of the gable end.
+    colW = 5.5; win = vec2(0.30, 0.20);
+    wall = mix(vec3(0.545, 0.560, 0.545), vec3(0.470, 0.490, 0.505), step(0.5, vVar));
+    glassA = vec3(0.28, 0.32, 0.34); glassB = vec3(0.42, 0.47, 0.49);
+  } else if (s == 58) {
+    // THE MULTI-STOREY MILL. Bay after identical bay for a hundred metres,
+    // because the frame is a grid and the machines sat on it — plus the stair
+    // tower, which is the only thing that breaks the rhythm.
+    colW = 3.25; win = vec2(0.62, 0.68);
+    wall = mix(vec3(0.560, 0.395, 0.320), vec3(0.505, 0.440, 0.390), step(0.5, vVar));
+    glassA = vec3(0.28, 0.33, 0.37); glassB = vec3(0.43, 0.50, 0.55);
+  } else if (s == 59) {
+    // THE DEPOT. A long low building whose front is a platform canopy on iron
+    // columns — so at street level it is mostly a colonnade with a deep shade
+    // behind it, and the building proper starts well back.
+    colW = 4.4; win = vec2(0.52, 0.56);
+    wall = mix(vec3(0.590, 0.480, 0.400), vec3(0.640, 0.605, 0.545), step(0.5, vVar));
+    glassA = vec3(0.26, 0.31, 0.36); glassB = vec3(0.40, 0.48, 0.54);
+  } else if (s == 60) {
+    // THE PUMP HOUSE. A little brick temple built round one machine, with a
+    // single arched window nearly the height of the wall — Victorian engineers
+    // dressed their machinery, and this is the smallest example of it.
+    colW = 5.0; win = vec2(0.46, 0.78);
+    wall = mix(vec3(0.545, 0.375, 0.310), vec3(0.610, 0.545, 0.470), step(0.5, vVar));
+    glassA = vec3(0.24, 0.29, 0.34); glassB = vec3(0.38, 0.46, 0.52);
+  } else if (s == 46) {
+    // TERRACOTTA / BRONZE PIERS. The pier runs the whole height without a
+    // single horizontal interruption and the glass is a slot behind it. That
+    // unbroken vertical is why One Vanderbilt reads as one object from a mile
+    // away while a 1980s tower reads as a stack of floors.
+    glassy = true; colW = 2.35; win = vec2(0.62, 0.965);
+    if (vVar < 0.34)      { wall = vec3(0.545, 0.400, 0.290); }  // warm terracotta
+    else if (vVar < 0.62) { wall = vec3(0.470, 0.370, 0.255); }  // bronze anodise
+    else if (vVar < 0.84) { wall = vec3(0.610, 0.560, 0.480); }  // pale stone pier
+    else                  { wall = vec3(0.330, 0.300, 0.280); }  // dark bronze
+    glassA = vec3(0.34, 0.44, 0.50); glassB = vec3(0.56, 0.68, 0.74);
+  } else if (s == 47) {
+    // FRAMES PUNCHED HALF A METRE DEEP. The wall is mostly its own shadow, and
+    // which half of each frame is dark tells you where the sun is — the one
+    // modern facade that changes across the day the way masonry does.
+    colW = 3.15; win = vec2(0.70, 0.72);
+    if (vVar < 0.40)      { wall = vec3(0.625, 0.615, 0.590); }  // grey precast
+    else if (vVar < 0.72) { wall = vec3(0.560, 0.530, 0.480); }  // warm precast
+    else                  { wall = vec3(0.470, 0.475, 0.485); }  // dark metal
+    glassA = vec3(0.26, 0.33, 0.39); glassB = vec3(0.42, 0.52, 0.60);
+  } else if (s == 48) {
+    // THE STEEL WORN OUTSIDE. A painted shelf at every floor standing well
+    // proud of the glass and throwing a hard shadow band across the whole
+    // face: 425 Park is a glass building you read entirely as horizontal.
+    glassy = true; colW = 3.05; win = vec2(0.90, 0.80);
+    wall = mix(vec3(0.735, 0.730, 0.715), vec3(0.400, 0.405, 0.415), step(0.62, vVar));
+    glassA = vec3(0.36, 0.47, 0.53); glassB = vec3(0.58, 0.70, 0.76);
+  } else if (s == 49) {
+    // THE CONTEMPORARY UNITISED WALL. Nearly frameless, but not a mirror: a
+    // mullion every 1.5 m and a tint that shifts panel to panel because the
+    // units were coated in batches. That fine rhythm is what makes a modern
+    // tower read as FABRIC rather than as a sheet of reflection.
+    glassy = true; colW = 1.52; win = vec2(0.955, 0.945);
+    if (vVar < 0.30)      { glassA = vec3(0.46, 0.60, 0.66); glassB = vec3(0.66, 0.78, 0.79); wall = vec3(0.36, 0.47, 0.52); }
+    else if (vVar < 0.56) { glassA = vec3(0.42, 0.53, 0.60); glassB = vec3(0.62, 0.72, 0.78); wall = vec3(0.33, 0.42, 0.48); }
+    else if (vVar < 0.80) { glassA = vec3(0.48, 0.58, 0.56); glassB = vec3(0.68, 0.76, 0.74); wall = vec3(0.38, 0.46, 0.45); }
+    else                  { glassA = vec3(0.36, 0.42, 0.50); glassB = vec3(0.56, 0.64, 0.72); wall = vec3(0.29, 0.34, 0.40); }
+  } else if (s == 50) {
+    // MEGA PANELS. A unit two storeys tall, with the slab edge between them
+    // expressed as a deep shadow box — so the building is banded at HALF the
+    // frequency of its own floors, a proportion nothing older here has.
+    glassy = true; colW = 2.9; win = vec2(0.93, 0.885);
+    wall = mix(vec3(0.335, 0.350, 0.375), vec3(0.500, 0.505, 0.510), step(0.55, vVar));
+    glassA = vec3(0.40, 0.52, 0.58); glassB = vec3(0.62, 0.74, 0.79);
   }
   else if (s == 8) { wall = vec3(0.60, 0.56, 0.48); glassA = wall; glassB = wall; colW = 100.0; win = vec2(0.0); }
   else if (s == 10) { wall = vec3(0.58, 0.55, 0.50); glassA = wall; glassB = wall; colW = 100.0; win = vec2(0.0); }
@@ -1247,7 +1237,30 @@ void main() {
   // reads as a thin skin hung off a frame or as a thick thing with holes cut
   // in it. A brutalist slot is half a metre deep; a mirror-glass unit is
   // flush enough to be a mirror.
-  float revealM = (s == 35 || s == 42) ? 0.030
+  float revealM = (s == 49) ? 0.028
+                : (s == 78) ? 0.05
+                : (s == 76 || s == 79 || s == 80) ? 0.10
+                : (s == 77) ? 0.12
+                : (s == 75) ? 0.16
+                : (s == 81) ? 0.34
+                : (s == 66) ? 0.045
+                : (s == 72 || s == 74) ? 0.09
+                : (s == 65 || s == 73) ? 0.20
+                : (s == 61 || s == 62 || s == 63 || s == 64) ? 0.22
+                : (s == 71 || s == 68 || s == 67) ? 0.30
+                : (s == 69) ? 0.40
+                : (s == 70) ? 0.46
+                : (s == 55 || s == 56 || s == 57) ? 0.06
+                : (s == 54) ? 0.13
+                : (s == 58 || s == 52) ? 0.30
+                : (s == 53) ? 0.34
+                : (s == 59) ? 0.36
+                : (s == 51 || s == 60) ? 0.44
+                : (s == 35 || s == 42) ? 0.030
+                : (s == 50) ? 0.055
+                : (s == 48) ? 0.075
+                : (s == 46) ? 0.34
+                : (s == 47) ? 0.52
                 : (s == 15 || s == 16) ? 0.045
                 : (s == 36 || s == 45) ? 0.055
                 : (s == 44) ? 0.065
@@ -1397,6 +1410,11 @@ void main() {
   float ox = clamp((f.x - m.x) / max(win.x, 0.001), 0.0, 1.0);      // 0..1 across the hole
   float oy = clamp((f.y - m.y - 0.04) / max(win.y, 0.001), 0.0, 1.0); // 0..1 up the hole
   bool inHole = winMask > 0.5;
+  // Shade a style's own signature casts onto its glass — a fin's return, the
+  // back of a deep frame, the underside of a shelf. Collected here and applied
+  // once, after the glass colour exists, so a branch can shade glass it cannot
+  // yet see.
+  float glassShade = 1.0;
 
   if (near > 0.10) {
     if (s == 18) {
@@ -1625,6 +1643,381 @@ void main() {
       float cover = clamp(fin + obliq * 1.25, 0.0, 1.0);
       wall = mix(wall, wall * (0.82 + 0.30 * fin), 0.9);
       winMask *= 1.0 - cover * 0.92;
+    } else if (s == 75) {
+      // THE PANEL JOINT. A 20 mm gap down every panel, full height, and a
+      // shallow reveal band cast across the face — those two lines are the
+      // entire architecture of a tilt-up and they are both free.
+      float j = min(f.x, 1.0 - f.x);
+      wall *= 1.0 - 0.30 * (1.0 - smoothstep(0.0, 0.012, j));
+      float rv = fract(vZ / 2.35);
+      wall *= 1.0 - 0.13 * (1.0 - smoothstep(0.0, 0.09, min(rv, 1.0 - rv)));
+      // the taller entry element, once per building, with the only glass on it
+      float ent = 1.0 - smoothstep(0.0, 0.30, abs(fract(vU / 62.0) - 0.20));
+      if (ent > 0.5) {
+        wall = mix(wall, wall * 1.10, 0.6);
+        if (vZ > fh * 0.35 && vZ < fh * 1.25) { winMask = 1.0; }
+      } else if (vZ < fh * 0.92 && fract(vU / 9.2) > 0.30 && fract(vU / 9.2) < 0.78) {
+        wall = mix(wall, wall * 0.42, 0.9);       // a dock door
+        winMask = 0.0;
+      }
+    } else if (s == 76 || s == 79) {
+      // DOCK DOORS, and nothing else. Every nine metres, a recessed leaf with
+      // a bumper each side and a shallow canopy over it. On a cross-dock the
+      // same run happens on the far side too, which you read in the roof.
+      float t = fract(vU / 9.2);
+      if (vZ < fh * 0.86) {
+        if (t > 0.24 && t < 0.80) { wall = mix(wall, wall * 0.38, 0.92); }
+        else if (t > 0.16 && t < 0.88) wall = mix(wall, wall * 1.10, 0.5);   // the jamb
+      } else if (vZ < fh * 1.02 && t > 0.14 && t < 0.90) {
+        wall = mix(wall, wall * 1.18, 0.75);      // the canopy
+      }
+      // the panelised skin above the doors
+      float rib = fract(vU / 0.92);
+      wall *= 1.0 - 0.07 * (1.0 - smoothstep(0.0, 0.05, min(rib, 1.0 - rib)));
+    } else if (s == 77) {
+      // TWO BUILDINGS ON ONE SLAB. The office end is glazed and has a floor
+      // line; the warehouse end is ribbed metal with none. The seam between
+      // them is abrupt on purpose — nobody blends them in life either.
+      float office = step(fract(vU / 54.0), 0.34);
+      if (office > 0.5) {
+        if (fract(v) < 0.14) { wall = mix(wall, wall * 1.12, 0.8); winMask = 0.0; }
+      } else {
+        float rib = fract(vU / 0.30);
+        wall *= 1.0 + 0.11 * sin(rib * 6.2831853) * sign(dot(SUN_DIR, T));
+        winMask = 0.0;
+      }
+    } else if (s == 78) {
+      // THE ARCH. A half-cylinder read as shading rather than as geometry:
+      // brightest where the surface faces up, falling away hard to the eaves,
+      // with the corrugation running over the top of it.
+      float t = clamp(vZ / max(vTop, 1.0), 0.0, 1.0);
+      wall *= 0.62 + 0.55 * sin(t * 3.14159265 * 0.85 + 0.25);
+      float rib = fract(vU / 0.26);
+      wall *= 1.0 + 0.10 * sin(rib * 6.2831853);
+      if (vZ < fh * 0.7 && abs(fract(vU / 17.0) - 0.5) < 0.24) {
+        wall = mix(wall, wall * 0.55, 0.85); winMask = 0.0;   // the end door
+      }
+    } else if (s == 80) {
+      // ROLLER DOORS, identically, for as far as the building goes — and one
+      // band of the operator's colour along the top, which is the only thing
+      // anybody remembers about the building.
+      float t = fract(vU / 3.0);
+      float fy = fract(v);
+      if (fy > 0.18 && fy < 0.86 && t > 0.10 && t < 0.90) {
+        wall = mix(wall, wall * 0.72, 0.85);
+        // the corrugations of the shutter itself
+        wall *= 1.0 - 0.10 * (1.0 - smoothstep(0.0, 0.06, min(fract(vZ / 0.16), 1.0 - fract(vZ / 0.16))));
+      }
+      if (vZ > vTop - fh * 0.5) {
+        vec3 band = vec3(0.62 + 0.26 * vVar, 0.32 + 0.20 * fract(vVar * 4.3), 0.22 + 0.16 * fract(vVar * 7.1));
+        wall = mix(wall, band, 0.72);
+      }
+    } else if (s == 81) {
+      // LOUVRE BANKS. Where the air goes in and out, in tall recessed panels
+      // with a fine horizontal blade pitch — the only relief on the whole box,
+      // and the reason you can tell it from a warehouse.
+      float t = fract(vU / 10.4);
+      if (t > 0.14 && t < 0.52 && vZ > fh * 0.35 && vZ < vTop - fh * 0.3) {
+        float bl = fract(vZ / 0.22);
+        wall = mix(wall, wall * (0.52 + 0.30 * bl), 0.9);
+      }
+      float pj = min(f.x, 1.0 - f.x);
+      wall *= 1.0 - 0.14 * (1.0 - smoothstep(0.0, 0.02, pj));
+    } else if (s == 61 || s == 62 || s == 63) {
+      // THE UPPER FLOOR IS DIFFERENT FROM THE LOWER ONE, which is the whole
+      // grammar of these three: shingle over clapboard, half-timber over
+      // render, boards over boards. Below, horizontal siding; above, the
+      // pattern the style is named for.
+      float upper = step(fh * 1.55, vZ);
+      if (upper < 0.5) {
+        wall *= 0.955 + 0.055 * step(0.5, fract(vZ / 0.24));      // clapboard
+      } else if (s == 61) {
+        vec2 sc = vec2(vU / 0.42, vZ / 0.30);                     // shingle courses
+        float row = floor(sc.y);
+        float off = fract(sc.x + row * 0.5);
+        wall *= 0.90 + 0.16 * fract(hash(vec2(floor(sc.x + row * 0.5), row)) * 3.1);
+        wall *= 1.0 - 0.20 * (1.0 - smoothstep(0.0, 0.10, min(off, 1.0 - off)));
+      } else if (s == 63) {
+        float bx = 1.0 - smoothstep(0.055, 0.10, min(fract(vU / 1.35), 1.0 - fract(vU / 1.35)));
+        float bz = 1.0 - smoothstep(0.05, 0.09, min(fract(vZ / 1.5), 1.0 - fract(vZ / 1.5)));
+        float dg = 1.0 - smoothstep(0.40, 0.48, abs(fract(vU / 2.4 + vZ / 2.4) - 0.5) * 2.0);
+        wall = mix(wall, vec3(0.185, 0.145, 0.115), clamp(max(bx, max(bz, dg * 0.8)), 0.0, 1.0) * 0.92);
+      } else {
+        float bx = 1.0 - smoothstep(0.05, 0.09, min(fract(vU / 1.15), 1.0 - fract(vU / 1.15)));
+        float bz = 1.0 - smoothstep(0.05, 0.09, min(fract(vZ / 1.9), 1.0 - fract(vZ / 1.9)));
+        wall = mix(wall, wall * 0.58, clamp(bx + bz, 0.0, 1.0) * 0.85);
+      }
+    } else if (s == 64) {
+      // THE PENT. A little tiled roof running over the openings, and the
+      // stucco below it kept deliberately smooth — no coursing anywhere.
+      float fy = fract(v);
+      if (fy > 0.80 && fy < 0.90) { wall = mix(wall, vec3(0.470, 0.290, 0.225), 0.85); winMask = 0.0; }
+      else if (fy >= 0.90) wall *= 0.90;
+    } else if (s == 65) {
+      // THE MARQUEE, and the blade. A deep lit canopy across the whole
+      // frontage at first-floor level with the box blank above it, and one
+      // vertical sign running up past the parapet.
+      if (vZ < fh * 1.5) {
+        if (vZ > fh * 0.95 && vZ < fh * 1.32) {
+          wall = mix(wall, vec3(0.780, 0.700, 0.470), 0.9);       // the marquee
+          winMask = 0.0;
+        } else if (vZ <= fh * 0.95) {
+          wall = mix(wall, wall * 0.72, 0.7); winMask = 0.0;      // its shadow, and the lobby
+        }
+      }
+      float blade = 1.0 - smoothstep(0.02, 0.055, abs(fract(vU / 34.0) - 0.12));
+      if (blade > 0.0 && vZ > fh * 1.2) wall = mix(wall, vec3(0.620, 0.245, 0.215), blade * 0.9);
+    } else if (s == 66) {
+      // STAINLESS FLUTES the whole length, and a band of glass at counter
+      // height. The flutes are what makes a railcar read as a railcar.
+      float fl = fract(vZ / 0.115);
+      wall *= 0.90 + 0.20 * sin(fl * 6.2831853);
+      if (vZ > vTop - 0.55 || vZ < 0.7) wall = mix(wall, wall * 1.22, 0.8);
+    } else if (s == 67) {
+      // APPARATUS DOORS. Most of the ground floor, arched, and set in a
+      // surround — an engine has to get out and the opening says so.
+      if (vZ < fh * 1.02 && vTop > fh * 1.6) {
+        float t = fract(vU / 5.6);
+        if (t > 0.10 && t < 0.90) {
+          float head = smoothstep(0.66, 0.99, vZ / (fh * 1.02));
+          float cut = 1.0 - smoothstep(0.70 - head * 0.55, 0.99, abs(t - 0.5) * 2.0 + head);
+          wall = mix(wall, vec3(0.300, 0.235, 0.190), cut * 0.95);
+          winMask = 0.0;
+        }
+      }
+    } else if (s == 68) {
+      // BANKS OF THREE. A classroom is lit from one side, so the windows come
+      // in threes with a pier between each group and nothing between the three.
+      if (inHole) {
+        float m1 = abs(ox - 0.3333), m2 = abs(ox - 0.6667);
+        winMask *= 1.0 - (1.0 - smoothstep(0.0, 0.022, min(m1, m2))) * 0.9;
+      }
+      if (fract(vZ / fh) < 0.10) wall *= 0.94;                    // the spandrel course
+    } else if (s == 69 || s == 70) {
+      // THE GIANT ORDER, and the blind plinth under it. Two storeys of solid
+      // ashlar — a library keeps books behind it, a bank keeps money — then
+      // columns running three floors, then a heavy entablature.
+      float baseTop = fh * (s == 70 ? 2.0 : 1.35);
+      if (vZ < baseTop) {
+        wall *= 0.955 + 0.055 * step(0.5, fract(vZ / 0.92));      // coursed ashlar
+        winMask = 0.0;
+      } else if (vZ > vTop - fh * 0.85) {
+        wall *= 1.06; winMask = 0.0;                              // the entablature
+      } else {
+        float d = min(f.x, 1.0 - f.x);
+        float col = 1.0 - smoothstep(0.15, 0.27, d);
+        float belly = smoothstep(0.27, 0.0, d);
+        wall = mix(wall, wall * (0.84 + 0.40 * belly), col);
+        winMask *= 1.0 - col;
+        if (s == 69 && inHole && oy > 0.78) {                     // arched reading room
+          float spring = smoothstep(0.78, 1.0, oy);
+          float rad = sqrt(max(0.0, 1.0 - spring * spring));
+          winMask *= 1.0 - smoothstep(rad - 0.16, rad + 0.02, abs(ox - 0.5) * 2.0 * spring);
+        }
+      }
+    } else if (s == 71) {
+      // THREE PARTS AND A CANOPY. Rusticated base, a banded middle of
+      // identical bedroom windows, a cornice — and a canopy over the door,
+      // which is the one asymmetric thing on the whole front.
+      if (vZ < fh * 1.9) wall *= 0.94 + 0.07 * step(0.5, fract(vZ / 0.88));
+      if (fract(vZ / fh) < 0.08) wall *= 0.93;                    // the sill band
+      float dcan = 1.0 - smoothstep(0.0, 0.22, abs(fract(vU / 31.0) - 0.28));
+      if (dcan > 0.0 && vZ > fh * 0.85 && vZ < fh * 1.12) {
+        wall = mix(wall, vec3(0.360, 0.235, 0.215), dcan * 0.9); winMask = 0.0;
+      }
+    } else if (s == 72) {
+      // CONTINUOUS DISPLAY GLAZING. The wall is reduced to a slim column
+      // between bays and a slab band at each floor — the whole building is a
+      // shop window and that is why it feels different from an office.
+      float col = 1.0 - smoothstep(0.0, 0.045, min(f.x, 1.0 - f.x));
+      float band = 1.0 - smoothstep(0.0, 0.11, min(f.y, 1.0 - f.y));
+      wall = mix(wall, wall * 1.10, max(col, band));
+      winMask *= 1.0 - clamp(col + band, 0.0, 1.0);
+    } else if (s == 73) {
+      // THE OUTDOOR WALKWAY. A deck and a rail at every floor with all the
+      // doors on it, and the recess behind in permanent shade.
+      float fy = fract(v);
+      if (fy < 0.12) { wall = mix(wall, wall * 1.22, 0.9); winMask = 0.0; }        // deck nose
+      else if (fy < 0.30) { wall = mix(wall, wall * 1.02, 0.6); winMask *= 0.3; }  // the rail
+      else if (fy < 0.42) { wall = mix(wall, wall * 0.46, 0.85); winMask = 0.0; }  // under it
+      float dr = step(0.55, hash(vec2(floor(u) + 9.0, floor(v))));
+      if (dr > 0.5 && fy > 0.42 && fy < 0.92 && abs(f.x - 0.5) < 0.16) {
+        wall = mix(wall, vec3(0.290, 0.245, 0.215), 0.85); winMask = 0.0;
+      }
+    } else if (s == 74) {
+      // THE CANOPY AND THE SIGN BAND. One deep shadow line the whole length,
+      // glazing under it, and each unit's colour painted above.
+      if (vZ < fh * 1.25) {
+        if (vZ > fh * 0.86) {
+          float unit = hash(vec2(floor(vU / 9.5), floor(vRand * 11.0)));
+          wall = mix(wall, vec3(0.32 + 0.42 * unit, 0.30 + 0.26 * fract(unit * 6.1), 0.28 + 0.30 * fract(unit * 2.3)), 0.72);
+          winMask = 0.0;
+        } else {
+          wall = mix(wall, wall * 0.62, 0.55);                    // the canopy's shade
+        }
+      }
+    } else if (s == 51 || s == 60) {
+      // THE ENGINE HALL. One room, so the bay is the height of the building and
+      // the pier between bays is a buttress rather than a mullion — heavy,
+      // stepped in at the top, with the arch springing off it. A round head on
+      // an opening four storeys tall is unmistakable.
+      float pil = 1.0 - smoothstep(0.0, 0.14, min(f.x, 1.0 - f.x));
+      wall = mix(wall, wall * 1.12, pil);
+      if (inHole) {
+        float spring = smoothstep(0.72, 1.0, oy);
+        float rad = sqrt(max(0.0, 1.0 - spring * spring));
+        winMask *= 1.0 - smoothstep(rad - 0.18, rad + 0.02, abs(ox - 0.5) * 2.0 * spring);
+        // the glazing bars of an industrial sash, which are a real grid
+        float gx = abs(fract(ox * 5.0) - 0.5), gy = abs(fract(oy * 8.0) - 0.5);
+        winMask *= 1.0 - clamp((1.0 - smoothstep(0.34, 0.48, gx)) + (1.0 - smoothstep(0.34, 0.48, gy)), 0.0, 1.0) * 0.75;
+      }
+      if (vZ < fh * 0.9) wall *= 0.94;                  // a plinth of engineering brick
+    } else if (s == 52) {
+      // THE COLD STORE. What the wall has instead of windows is a stack of
+      // LOADING DOORS in one bay, floor after floor, each with its hoist beam
+      // over it — the only thing on a hundred feet of blank brick.
+      float dBay = step(0.72, hash(vec2(floor(u) + 4.0, floor(vRand * 17.0))));
+      if (dBay > 0.5 && abs(f.x - 0.5) < 0.30) {
+        float fy = fract(v);
+        if (fy > 0.12 && fy < 0.72) { wall = mix(wall, vec3(0.24, 0.22, 0.20), 0.88); winMask = 0.0; }
+        else if (fy >= 0.72 && fy < 0.80) wall = mix(wall, wall * 1.18, 0.7);   // the hoist beam
+      }
+      // pilaster strips, which is all the relief a blank wall ever gets
+      float ps = 1.0 - smoothstep(0.0, 0.06, min(f.x, 1.0 - f.x));
+      wall = mix(wall, wall * 1.07, ps);
+    } else if (s == 53) {
+      // SEGMENTAL ARCHES and a corbelled brick band under the eaves. A brewery
+      // was a proud building in a way a warehouse never was.
+      if (inHole && oy > 0.84) winMask *= 1.0 - smoothstep(0.50, 0.94, abs(ox - 0.5) * 2.0);
+      float br = vTop - vZ;
+      if (br < 1.9 && br > 0.5) {
+        float t = fract(vU / 1.15);
+        wall *= 1.0 - 0.20 * (1.0 - smoothstep(0.0, 0.26, min(t, 1.0 - t)));
+      }
+    } else if (s == 54) {
+      // STEEL SASH. A real glazing grid — small panes in a heavy frame — and a
+      // solid plinth up to waist height because nobody glazes what gets hit.
+      if (vZ < fh * 0.55) { winMask = 0.0; wall *= 0.95; }
+      else if (inHole) {
+        float gx = abs(fract(ox * 6.0) - 0.5), gy = abs(fract(oy * 7.0) - 0.5);
+        winMask *= 1.0 - clamp((1.0 - smoothstep(0.32, 0.47, gx)) + (1.0 - smoothstep(0.32, 0.47, gy)), 0.0, 1.0) * 0.8;
+      }
+    } else if (s == 55) {
+      // THE DRUMS. Slip-formed silos stand in a row and each one is a cylinder,
+      // so the wall is a series of vertical lobes — lit down one flank, shaded
+      // down the other, with a hard seam where two drums meet. The pour lines
+      // ring the whole thing every metre and a half.
+      float drum = fract(vU / 7.6);
+      float lobe = sin(drum * 3.14159265);
+      wall *= 0.74 + 0.42 * lobe;
+      wall *= 1.0 - 0.26 * (1.0 - smoothstep(0.0, 0.06, min(drum, 1.0 - drum)));
+      wall *= 0.985 + 0.03 * step(0.5, fract(vZ / 1.55));
+    } else if (s == 56) {
+      // THE GUIDE FRAME. Lattice columns round the tank with lattice girders
+      // ringing them — mostly air, and what you actually read is the ironwork
+      // against the sky rather than any wall at all.
+      float col = 1.0 - smoothstep(0.055, 0.12, min(f.x, 1.0 - f.x));
+      float ring = 1.0 - smoothstep(0.0, 0.05, min(fract(vZ / 6.4), 1.0 - fract(vZ / 6.4)));
+      float diag = 1.0 - smoothstep(0.30, 0.44, abs(fract(vU / 3.1 + vZ / 6.4) - 0.5) * 2.0);
+      float iron = clamp(max(col, max(ring, diag * 0.7)), 0.0, 1.0);
+      wall = mix(wall * 0.55, wall * 1.25, iron);
+      // the tank inside, which only reaches part way up
+      if (vZ < vTop * 0.55) wall = mix(wall, wall * 0.88 + vec3(0.04), 0.5);
+    } else if (s == 57) {
+      // THE PORTAL FRAME. Profiled sheet with a rib every 300 mm, the crane
+      // rail expressed as a heavy band at gantry height, and one enormous door.
+      float rib = fract(vU / 0.30);
+      wall *= 1.0 + 0.13 * sin(rib * 6.2831853) * sign(dot(SUN_DIR, T));
+      float rail = 1.0 - smoothstep(0.0, 0.55, abs(vZ - vTop * 0.62));
+      wall = mix(wall, wall * 0.82, rail * 0.8);
+      if (vZ < vTop * 0.46 && abs(fract(vU / 26.0) - 0.5) < 0.22) {
+        wall = mix(wall, wall * 0.66, 0.85);            // the door leaf
+        winMask = 0.0;
+      }
+    } else if (s == 58) {
+      // THE MILL BAY, repeated without mercy, and the STAIR TOWER that is the
+      // only thing that breaks it: one bay running the full height with no
+      // floor line in it and a different brick.
+      if (fract(vZ / fh) < 0.09) wall *= 0.93;          // the floor band
+      float tw = fract(vU / 46.0);
+      if (tw > 0.02 && tw < 0.13) {
+        wall = mix(wall, wall * 1.10, 0.8);
+        if (inHole) winMask *= 0.55;                    // slit windows up the stair
+      }
+    } else if (s == 59) {
+      // THE PLATFORM CANOPY. At street level the building is a colonnade with
+      // deep shade behind it, and the fascia runs the whole length above.
+      float cH = fh * 1.25;
+      if (vZ < cH) {
+        float t = fract(vU / 3.9);
+        float colm = 1.0 - smoothstep(0.10, 0.20, min(t, 1.0 - t));
+        wall = mix(wall * 0.34, wall * 1.06, colm);     // shade, and the iron column in it
+        winMask = 0.0;
+        if (vZ > cH - 0.9) { wall = mix(wall, wall * 1.14, 0.85); }   // the fascia
+      }
+    } else if (s == 46) {
+      // THE PIER. A deep terracotta or bronze fin standing off the face, with
+      // the glass in the slot behind it. Two things sell it: the pier is
+      // ROUNDED, so it carries a highlight up its whole height, and it is
+      // deep enough that the return catches shade on the shadow side. There
+      // is deliberately nothing horizontal — no floor line, no spandrel.
+      float d = min(f.x, 1.0 - f.x);
+      float pier = 1.0 - smoothstep(0.11, 0.20, d);
+      float belly = smoothstep(0.20, 0.0, d);                 // across the fin's face
+      float sideK = dot(SUN_DIR, T) > 0.0 ? f.x : 1.0 - f.x;
+      wall = mix(wall, wall * (0.80 + 0.52 * belly) * (0.86 + 0.30 * sideK), pier);
+      winMask *= 1.0 - pier;
+      // and the reveal the fin casts onto the glass beside it
+      if (inHole) glassShade = 1.0 - 0.30 * (1.0 - smoothstep(0.0, 0.30, sideK));
+    } else if (s == 47) {
+      // THE DEEP FRAME. Every opening sits at the back of a half-metre box, so
+      // the head and one jamb are in shade and the sill is catching. At this
+      // depth the frame reads before the glass does, which is the whole point
+      // of the type — the building is a grid of shadows.
+      float fr = max(1.0 - smoothstep(0.0, 0.13, min(f.x, 1.0 - f.x)),
+                     1.0 - smoothstep(0.0, 0.13, min(f.y, 1.0 - f.y)));
+      wall = mix(wall, wall * 1.14, fr);
+      if (inHole) {
+        float sunSide = dot(SUN_DIR, T) > 0.0 ? ox : 1.0 - ox;
+        float jambK = 1.0 - smoothstep(0.0, 0.40, sunSide);
+        float headK = smoothstep(0.58, 1.0, oy);
+        glassShade = 1.0 - 0.46 * jambK - 0.30 * headK;
+        glassShade *= 1.0 + 0.20 * (1.0 - smoothstep(0.0, 0.16, oy));   // the sill kicks light back
+      }
+    } else if (s == 48) {
+      // THE SHELF. A painted steel plate standing proud at every floor: bright
+      // on its top face, black underneath, and the glass under it in shade for
+      // a good part of a storey. The band is at FLOOR frequency and it is the
+      // only thing you read on the building.
+      float fy = fract(v);
+      if (fy > 0.90) { wall = mix(wall, wall * 1.30, 0.92); winMask = 0.0; }   // the plate, lit
+      else if (fy > 0.84) { wall = mix(wall, wall * 0.30, 0.90); winMask = 0.0; } // its underside
+      else if (inHole) glassShade = mix(1.0, 0.72, smoothstep(0.58, 0.84, fy)); // shelf shade
+    } else if (s == 49) {
+      // THE UNITISED WALL. A slim mullion cap every bay and a tint that steps
+      // panel to panel, because the units were coated in batches and no two
+      // batches match. Both are tiny; together they are the difference between
+      // a modern tower and a mirror.
+      float mull = 1.0 - smoothstep(0.010, 0.030, min(f.x, 1.0 - f.x));
+      wall = mix(wall, wall * 1.35 + vec3(0.03), mull);
+      winMask *= 1.0 - mull * 0.85;
+      float batch = hash(vec2(floor(u) * 0.37, floor(v / 3.0) + vRand * 23.0));
+      if (inHole) glassShade = 0.93 + 0.14 * batch;
+    } else if (s == 50) {
+      // MEGA PANELS. The unit is two storeys, so the expressed slab edge comes
+      // at half the frequency of the floors — and between the two, at the
+      // intermediate level, there is nothing at all. That mismatch is the tell.
+      float p2 = fract(v * 0.5);
+      if (p2 < 0.085) {
+        wall = mix(wall, wall * 0.42, 0.92);                  // the shadow box
+        winMask = 0.0;
+      } else if (p2 < 0.125) {
+        wall = mix(wall, wall * 1.26, 0.85);                  // its lit lower lip
+        winMask = 0.0;
+      }
+      float mull = 1.0 - smoothstep(0.012, 0.032, min(f.x, 1.0 - f.x));
+      wall = mix(wall, wall * 1.22, mull);
+      winMask *= 1.0 - mull * 0.7;
     } else if (s == 45) {
       // BIG BOX: split-face block coursing, and the tenant's colour on the
       // parapet band. The band is the only thing on the building.
@@ -1772,6 +2165,7 @@ void main() {
   }
   }
 
+  glass *= glassShade;
   vec3 col = mix(wall, glass, winMask);
   // sill highlight just under the window row
   col *= 1.0 + 0.10 * (1.0 - winMask) * smoothstep(0.0, 0.04, f.y) * (1.0 - smoothstep(0.04, 0.09, f.y)) * step(0.5, float(s != 0));
@@ -2045,7 +2439,8 @@ varying float vLit;
 varying float vRet;
 uniform float uOpacity;
 uniform vec3 uCam;
-` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + SEASON_GLSL + STYLE_SETS_GLSL + /* glsl */ `
+uniform float uTime;
+` + SHADOW_GLSL + LIGHT_GLSL + SEASON_GLSL + HAZE_GLSL + STYLE_SETS_GLSL + /* glsl */ `
 float rhash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float rnoise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
@@ -2110,6 +2505,42 @@ void main() {
   else if (s == 43) roof = vec3(0.565, 0.505, 0.430); // timber: a deck you walk on
   else if (s == 44) roof = vec3(0.675, 0.670, 0.660);
   else if (s == 45) roof = vec3(0.625, 0.625, 0.605); // big box: white TPO
+  else if (s == 46) roof = vec3(0.455, 0.430, 0.395); // terracotta pier: dark coping
+  else if (s == 47) roof = vec3(0.560, 0.550, 0.530); // deep frame: matching precast
+  else if (s == 48) roof = vec3(0.640, 0.640, 0.630); // steel shelf: painted deck
+  else if (s == 49) roof = vec3(0.615, 0.630, 0.645); // unitised: pale membrane
+  else if (s == 50) roof = vec3(0.430, 0.445, 0.465); // mega panel: dark ballast
+  else if (s == 51) roof = vec3(0.395, 0.400, 0.410); // powerhouse: sooted slate
+  else if (s == 52) roof = vec3(0.505, 0.490, 0.455); // cold store: patched felt
+  else if (s == 53) roof = vec3(0.455, 0.395, 0.350); // brewery: pantile
+  else if (s == 54) roof = vec3(0.440, 0.450, 0.450); // foundry: glazed monitor
+  else if (s == 55) roof = vec3(0.615, 0.610, 0.585); // silos: the same concrete
+  else if (s == 56) roof = vec3(0.395, 0.385, 0.365); // gasholder: the tank crown
+  else if (s == 57) roof = vec3(0.560, 0.575, 0.575); // shed: profiled sheet
+  else if (s == 58) roof = vec3(0.470, 0.445, 0.415); // mill: asphalt over timber
+  else if (s == 59) roof = vec3(0.505, 0.525, 0.530); // depot: standing seam
+  else if (s == 60) roof = vec3(0.430, 0.375, 0.335); // pump house: slate
+  else if (s == 61) roof = vec3(0.350, 0.300, 0.270); // queen anne: shingle
+  else if (s == 62) roof = vec3(0.365, 0.325, 0.290); // stick: shingle
+  else if (s == 63) roof = vec3(0.330, 0.300, 0.290); // tudor: dark tile
+  else if (s == 64) roof = vec3(0.505, 0.310, 0.245); // mission: terracotta tile
+  else if (s == 65) roof = vec3(0.430, 0.420, 0.400); // theatre: the flat over the house
+  else if (s == 66) roof = vec3(0.620, 0.635, 0.640); // diner: the same steel
+  else if (s == 67) roof = vec3(0.435, 0.395, 0.360); // firehouse
+  else if (s == 68) roof = vec3(0.470, 0.450, 0.425); // school
+  else if (s == 69) roof = vec3(0.545, 0.535, 0.510); // library: lead flat
+  else if (s == 70) roof = vec3(0.575, 0.565, 0.540); // bank: stone coping
+  else if (s == 71) roof = vec3(0.480, 0.455, 0.425); // hotel
+  else if (s == 72) roof = vec3(0.520, 0.505, 0.475); // department store
+  else if (s == 73) roof = vec3(0.545, 0.520, 0.485); // motel
+  else if (s == 74) roof = vec3(0.560, 0.545, 0.520); // strip
+  else if (s == 75) roof = vec3(0.640, 0.640, 0.625); // tilt-up: white TPO
+  else if (s == 76) roof = vec3(0.660, 0.660, 0.645); // big shed: acres of it
+  else if (s == 77) roof = vec3(0.595, 0.610, 0.615); // flex
+  else if (s == 78) roof = vec3(0.585, 0.595, 0.585); // quonset: the same sheet
+  else if (s == 79) roof = vec3(0.615, 0.620, 0.615); // cross-dock
+  else if (s == 80) roof = vec3(0.600, 0.590, 0.570); // self storage
+  else if (s == 81) roof = vec3(0.500, 0.510, 0.525); // data centre: chiller deck
   else              roof = vec3(0.76, 0.76, 0.74);
   roof *= 0.92 + 0.16 * vRand;
 
@@ -2266,7 +2697,11 @@ void main() {
     // spotting problem. A roof drains; you cannot see it from an aeroplane.)
   }
 
-  if (s == 9 || s == 12 || (s == 10 && vVar > 0.62)) roof = seasonGreen(roof);
+  // A sedum roof genuinely does redden — that is what sedum does — so the
+  // green roof keeps the leaf treatment. The park lawn and the grass that has
+  // taken a vacant lot are turf, and turf goes dormant instead.
+  if (s == 9) roof = seasonGreen(roof);
+  else if (s == 12 || (s == 10 && vVar > 0.62)) roof = seasonTurf(roof);
   vec3 n = normalize(vNormal);
   if (SNOW > 0.001) {
     float up = smoothstep(0.28, 0.80, n.z);
@@ -2274,6 +2709,67 @@ void main() {
     if (s == 14) roof = mix(roof, vec3(0.63, 0.70, 0.76), clamp(SNOW * 1.15, 0.0, 1.0));
     roof = snowOn(roof, up, drift);
   }
+  // ---- the pond, which is water and was never treated as any ---------------
+  //
+  // A hundred metres from a harbour that has waves, Fresnel, a sun road and a
+  // planar reflection, the park pond was a flat green-grey with two octaves of
+  // static noise laid over it. It did not need the harbour's swell — a
+  // sheltered basin has none — but it did need the two things that make still
+  // water read as water at all: a surface that MOVES, and a sky in it.
+  //
+  // Three slow crossed trains give the ripple; the slope of their sum is the
+  // normal, and everything else falls out of that. vU carries distance to the
+  // pond's own bank, baked per vertex, so the rim goes green and opaque where
+  // you can see the bottom and the middle holds the sky.
+  if (s == 14) {
+    // FOUR TRAINS, DELIBERATELY UNCORRELATED. Three with similar bearings sum
+    // into a corduroy of parallel ridges — the pond came out looking milled
+    // rather than wet. Spread the headings around the compass, keep the
+    // wavelengths incommensurate, and the interference pattern stops having a
+    // direction.
+    float t = uTime;
+    float a1 = sin(wp.x *  0.97 + wp.y *  0.14 + t * 0.83);
+    float a2 = sin(wp.x * -0.34 + wp.y *  0.92 + t * 1.27);
+    float a3 = sin(wp.x *  1.51 - wp.y *  1.19 + t * 1.94);
+    float a4 = sin(wp.x * -1.77 - wp.y *  1.05 + t * 2.61);
+    // THE SLOPE HAS TO BE REAL OR THE SPECULAR IS NOT A GLINT, IT IS A FLARE.
+    // At 0.028 the ripple barely tilted the normal, so every point on the pond
+    // shared one alignment with the half-vector — and with a low sun over a
+    // horizontal surface that alignment is near perfect, so the entire pond
+    // went to white at once. Water sparkles because its normal VARIES; the
+    // tight exponents below are only meaningful against a surface that moves
+    // enough to put some of itself out of alignment.
+    vec2 slope = vec2( 0.97 * a1 - 0.34 * a2 + 1.51 * a3 - 1.77 * a4,
+                       0.14 * a1 + 0.92 * a2 - 1.19 * a3 - 1.05 * a4) * 0.075;
+    vec3 pn = normalize(vec3(-slope, 1.0));
+    vec3 Vp = normalize(uCam - vPos);
+
+    // SCHLICK, NOT A GUESS. Water reflects about 2% of what hits it head-on
+    // and nearly everything at a grazing angle, and the curve between the two
+    // is very flat until it turns hard near the edge. A cubed falloff put 26%
+    // of sky into a pond being looked at from well above it, which is four
+    // times what is really there — and that, not the highlight, is why it kept
+    // reading as a pale sheet instead of as water.
+    float fr = 0.02 + 0.98 * pow(1.0 - clamp(dot(pn, Vp), 0.0, 1.0), 5.0);
+
+    // AND A POND IS DARK. Standing water over silt and weed is one of the
+    // darkest surfaces in a park — considerably darker than the grass around
+    // it — which is exactly what makes it read as depth rather than as a
+    // puddle of sky lying on the lawn.
+    roof = vec3(0.088, 0.128, 0.116);
+    float rim = 1.0 - smoothstep(0.0, 3.4, vU);
+    // the bank: silt, weed and the bottom showing through
+    roof = mix(roof, vec3(0.232, 0.290, 0.212), rim * 0.72);
+    roof = mix(roof, vec3(0.556, 0.688, 0.836), fr * (1.0 - rim * 0.55));
+    // and the sun on it — broad sheen, then the hard points
+    float sd = max(dot(pn, normalize(SUN_DIR + Vp)), 0.0);
+    // A small pond looked at down the sun's bearing IS a sheet of light — that
+    // part was never wrong. What was wrong was the amount: enough to clip to
+    // paper white and lose the ripple that makes it legible as water.
+    roof += SUN_COL * (pow(sd, 30.0) * 0.03 + pow(sd, 260.0) * 0.14 + pow(sd, 900.0) * 0.38)
+          * (1.0 - rim * 0.7);
+  }
+
   float vis = sunVis(vPos, n);
   // vU carries distance to the roof edge: the parapet shades its own deck
   float aoEdge = mix(0.78, 1.0, smoothstep(0.0, 2.8, vU));
@@ -2647,6 +3143,8 @@ uniform sampler2D uAoTex;
 // still needed here, though the occlusion moved out: the glare has to know
 // whether a building is standing between the camera and the sun
 uniform sampler2D uDepth;
+uniform mat4 uInvProj;
+uniform vec3 uEye;
 ` + /* glsl */ `
 
 // A MODEL CITY PHOTOGRAPHS LIKE A MODEL CITY.
@@ -2687,7 +3185,13 @@ vec4 fxaa(vec2 uv) {
   float lSE = dot(se.rgb, L) + se.a * 0.5;
   float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));
   float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
-  if (lMax - lMin < 0.028) return m;            // flat: nothing to do
+  // A HIGHER BAR NOW THAT COVERAGE SAMPLING IS BACK. MSAA answers geometric
+  // edges properly, so this is left with the one thing it cannot: aliasing
+  // generated INSIDE the fragment shader — window grids, mullions, seams —
+  // which no amount of coverage sampling touches, because the geometry there
+  // is one flat quad. At 0.028 it was also filtering pixels that were already
+  // clean and quietly costing sharpness for it.
+  if (lMax - lMin < 0.055) return m;            // flat, or MSAA already had it
 
   vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), ((lNW + lSW) - (lNE + lSE)));
   float red = max((lNW + lNE + lSW + lSE) * 0.25 * 0.125, 1.0 / 128.0);
@@ -2715,9 +3219,53 @@ vec4 defocused(vec2 uv, float r) {
   return sum * (1.0 / 9.0);
 }
 
+/** World position from a depth sample. The view matrix here is identity, so
+    inverting the projection lands straight in world space. */
+vec3 dofWorldAt(vec2 uv, float d) {
+  vec4 clip = vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+  vec4 p = uInvProj * clip;
+  return p.xyz / p.w;
+}
+
 void main() {
-  float off = abs(vUv.y - uFocus);
-  float defocus = smoothstep(uBand, 1.0, off) * uDefocus;
+  // FOCUS IS A DISTANCE, NOT A HEIGHT ON THE SCREEN.
+  //
+  // The band was measured in screen Y, which is only a stand-in for depth and
+  // stops being one the moment anything is tall: a tower standing squarely in
+  // the plane of focus went soft toward its roof for no reason except that its
+  // roof was higher up the picture, while a rooftop two kilometres away at the
+  // same screen height stayed sharp. Both are backwards, and on a skyline both
+  // are obvious.
+  //
+  // The depth buffer has been sitting here since the occlusion pass went in.
+  // Focus on what is actually in the middle of the frame and defocus by how
+  // far from THAT each fragment lies, and the effect keeps the toy-model look
+  // — in a pitched aerial view distance still correlates with screen height —
+  // while treating buildings as the solid objects they are.
+  //
+  // The spread is proportional to the focus distance rather than absolute, so
+  // one setting holds from a street corner to the whole island.
+  float dFoc = texture2D(uDepth, vec2(0.5, uFocus)).x;
+  float defocus;
+  if (dFoc >= 0.9999) {
+    // nothing under the focus point but sky — fall back to the screen-space
+    // band, which is what this always was
+    defocus = smoothstep(uBand, 1.0, abs(vUv.y - uFocus)) * uDefocus;
+  } else {
+    float focusD = length(dofWorldAt(vec2(0.5, uFocus), dFoc) - uEye);
+    float dHere = texture2D(uDepth, vUv).x;
+    // sky defocuses fully: it is the far plane, and a sharp horizon behind a
+    // soft city is the one combination that reads as a bug
+    float rel = dHere >= 0.9999
+      ? 1.0
+      // A FEW PER CENT OF THE SUBJECT DISTANCE, which is what a macro lens on
+      // a real model actually has and what the eye reads as "this thing is
+      // small". At 85% the sharp band swallowed the entire island and the
+      // effect vanished into ordinary correctness — everything in focus is
+      // physically defensible and photographically pointless.
+      : clamp(abs(length(dofWorldAt(vUv, dHere) - uEye) - focusD) / max(focusD * 0.17, 30.0), 0.0, 1.0);
+    defocus = smoothstep(0.16, 1.0, rel) * uDefocus;
+  }
   vec4 c = defocused(vUv, defocus);
 
   // The same occlusion the multiply pass put on the street, applied to the
@@ -2796,7 +3344,7 @@ uniform vec3 uCam;
 uniform sampler2D uReflect;
 uniform vec2 uResolution;
 uniform float uReflectOn;
-` + LIGHT_GLSL + HAZE_GLSL + /* glsl */ `
+` + LIGHT_GLSL + SEASON_GLSL + HAZE_GLSL + /* glsl */ `
 float wave(vec2 p, vec2 dir, float len, float spd, float t) {
   return sin(dot(p, dir) / len + t * spd);
 }
@@ -2843,12 +3391,12 @@ void main() {
   float reflFar = 1.0 - smoothstep(350.0, 1500.0, length(vec3(vXY, 0.0) - uCam));
   vec3 reflCol = vec3(0.0);
   float reflA = 0.0;
-  if (uReflectOn > 0.5 && reflFar > 0.002) {
+  if (uReflectOn > 0.01 && reflFar > 0.002) {
     vec2 suv = gl_FragCoord.xy / uResolution;
     suv += n.xy * 0.055 * (0.35 + 0.65 * fres);
     vec4 r = texture2D(uReflect, clamp(suv, vec2(0.002), vec2(0.998)));
     // premultiplied, so undo it to get the colour back out
-    reflA = r.a * reflFar;
+    reflA = r.a * reflFar * uReflectOn;
     reflCol = r.a > 0.001 ? r.rgb / r.a : vec3(0.0);
   }
 
@@ -2868,6 +3416,24 @@ void main() {
   vec3 deep    = vec3(0.096, 0.245, 0.372);
   vec3 shallow = vec3(0.310, 0.534, 0.632);
   vec3 sky     = vec3(0.706, 0.822, 0.906);
+
+  // THE SEA DID NOT KNOW WHAT MONTH IT WAS.
+  //
+  // Every other surface in this city reads the season — the trees turn, the
+  // roofs take snow, the lawns go dormant — and the harbour, which is a third
+  // of the frame in half the shots, was byte-identical in January and July.
+  // The shader never even included the season block.
+  //
+  // Cold water genuinely looks different, and not only in temperature of hue:
+  // there is less life suspended in it and less light coming back up from the
+  // bottom, so it goes darker and greyer, and the shallows lose the green
+  // entirely. Winter light is coming in at a lower angle onto the same
+  // surface, which is the other half of why a northern harbour in February
+  // reads like slate.
+  deep    = mix(deep,    vec3(0.062, 0.150, 0.228), SNOW * 0.85);
+  shallow = mix(shallow, vec3(0.286, 0.412, 0.470), SNOW * 0.85);
+  sky     = mix(sky,     vec3(0.742, 0.800, 0.848), SNOW * 0.70);
+
   vec3 body = mix(deep, shallow, shoal * 0.82);
   vec3 col = mix(body, sky, 0.10 + 0.54 * fres);
   // Water reflects hardly anything face-on and nearly everything at a grazing
@@ -2887,6 +3453,41 @@ void main() {
   // foam: only on the real crests, and heavier in the shallows where the
   // swell actually breaks
   col += vec3(0.075) * smoothstep(0.86, 1.02, h) * (0.5 + 0.8 * shoal);
+
+  // THE WATER'S EDGE MOVES, AND THIS ONE WAS RULED IN PEN.
+  //
+  // The whole harbour has been alive for a while — the swell runs, the sun
+  // road breaks up, the city reflects in it — and it all stopped dead at the
+  // coastline, which was a fixed boundary between blue and sand. That edge is
+  // the longest line in the frame and it rings the entire island, so a static
+  // one is the single largest thing telling you the sea is a texture.
+  //
+  // vDepth already carries metres to the shore, baked per vertex for the
+  // shoal. Running the waterline in and out along it costs one sine: the band
+  // of wash advances a few metres up the beach and drags back, and because the
+  // phase is driven by position as well as time it arrives along the coast
+  // rather than the whole island pulsing at once.
+  float swell = sin(uTime * 0.55 + vXY.x * 0.011 + vXY.y * 0.008)
+              + 0.4 * sin(uTime * 0.83 - vXY.x * 0.019 + vXY.y * 0.013);
+  float edge = vDepth - (3.4 + 2.0 * swell);
+  float wash = 1.0 - smoothstep(0.0, 4.8, abs(edge));
+  // Thickest right at the top of its run, the way a spent wave is, and gone
+  // under ice — a rimed harbour has no surf.
+  col = mix(col, vec3(0.880, 0.910, 0.932),
+            wash * 0.52 * smoothstep(0.0, 0.35, swell + 1.4) * (1.0 - SNOW * 0.75));
+
+  // RIME. A cold harbour does not freeze over — this one has ships working it
+  // all winter — but the still water inside the shoal line skins over and
+  // takes a crust along the shore, and that pale fringe against dark water is
+  // the single most legible sign that a port is in February. It sits where the
+  // shallows already are, thickened by the same low-frequency noise the swell
+  // uses so the edge is ragged rather than drawn with a compass.
+  if (SNOW > 0.02) {
+    float crust = smoothstep(0.45, 1.0, shoal) * SNOW;
+    float ragged = 0.55 + 0.45 * sin(p.x * 0.031 + p.y * 0.047)
+                            * sin(p.x * 0.017 - p.y * 0.023);
+    col = mix(col, vec3(0.845, 0.878, 0.905), clamp(crust * ragged * 0.80, 0.0, 1.0));
+  }
 
   // THE SEA HAS NO EDGE AND THIS MESH DOES. The sheet stops at six kilometres,
   // and the global aerial term — deliberately weakened so the city keeps its
@@ -2914,7 +3515,7 @@ uniform vec3 uColor;
 uniform float uOpacity;
 uniform vec3 uCam;
 uniform float uFoliage;   // 0 = not a leaf, 1 = deciduous canopy, 2 = conifer
-` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + SEASON_GLSL + /* glsl */ `
+` + SHADOW_GLSL + LIGHT_GLSL + SEASON_GLSL + HAZE_GLSL + /* glsl */ `
 void main() {
   vec3 n = normalize(vN);
   vec3 base = uColor * vC;
@@ -3061,6 +3662,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private demandByBbl: Record<string, number> = {};
   /** true once any walker mesh exists — gates the animation clock. */
   private hasWalkers = false;
+  private hasPonds = false;
   private shadowTarget: THREE.WebGLRenderTarget | null = null;
   private shadowSpan = 5999;
   private depthMat: THREE.MeshDepthMaterial | null = null;
@@ -3200,6 +3802,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           uGlare: { value: 0.30 },
           uShaft: { value: null }, uShaftAmt: { value: 0.42 },
           uAoTex: { value: null }, uDepth: { value: null },
+          uInvProj: { value: new THREE.Matrix4() }, uEye: { value: new THREE.Vector3() },
         },
       });
       this.postQuad = new THREE.Mesh(quad, this.brightMat);
@@ -3223,7 +3826,16 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         format: THREE.RGBAFormat, type: THREE.UnsignedByteType,
         depthBuffer: true, stencilBuffer: false,
       } as const;
-      this.sceneRT = new THREE.WebGLRenderTarget(size.x, size.y, opts);
+      // MULTISAMPLING, IF THE DEPTH TEXTURE SURVIVES IT.
+      // FXAA is a blur that guesses at edges from colour; it does nothing for
+      // the real problem at the establishing zoom, which is geometry smaller
+      // than a pixel — a roof vent or a parked car one pixel wide either
+      // covers its pixel or does not, and the city speckles. Coverage sampling
+      // is the only thing that actually answers that. The open question is
+      // whether this implementation will resolve a multisampled depth
+      // attachment back into a sampleable texture, which the occlusion, the
+      // focus and the sun glare all now depend on.
+      this.sceneRT = new THREE.WebGLRenderTarget(size.x, size.y, { ...opts, samples: 4 });
       // The occlusion pass reads this. UnsignedInt rather than the default
       // UnsignedShort: at 16 bits the reconstruction quantises into visible
       // terraces across a frame that spans kilometres.
@@ -3660,13 +4272,53 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const inset = mansard ? Math.min(2.4, span * 0.16) : Math.max(1.6, span * 0.34);
         roofZ = v.z1 + rise;
         if (!pitchCap(ring, v.z1, rise, inset, rMeta)) capRoof(R, ring, v.z1, meta);
-        else if (mansard) {
-          // the cornice a mansard sits on — the eave line is the whole point
-          const lip = insetRing(ring, -0.32);
-          if (lip) {
-            const cMeta = [S_CORNICE, rnd, varr, v.z1 + 0.3, fh];
-            extrudeWalls(W, lip, v.z1 - 0.6, v.z1 + 0.1, cMeta);
-            capRoof(R, lip, v.z1 + 0.1, cMeta);
+        else {
+          if (mansard) {
+            // the cornice a mansard sits on — the eave line is the whole point
+            const lip = insetRing(ring, -0.32);
+            if (lip) {
+              const cMeta = [S_CORNICE, rnd, varr, v.z1 + 0.3, fh];
+              extrudeWalls(W, lip, v.z1 - 0.6, v.z1 + 0.1, cMeta);
+              capRoof(R, lip, v.z1 + 0.1, cMeta);
+            }
+          }
+          // ---- DORMERS, which are the thing a mansard is FOR ----------------
+          //
+          // A mansard exists so the top storey is a room rather than a void,
+          // and that room gets its light through the slope. Every mansard and
+          // hip in this city was a bare plane of slate — which is not a roof
+          // shape, it is a hat.
+          //
+          // They go on the slope, so the deck kit cannot place them: it fits
+          // parts to a flat polygon and every candidate here is on a pitch.
+          // Walked along the eave instead, one per window bay, set a third of
+          // the way up the slope and turned to face out of it — which is where
+          // the rooms behind them are.
+          const topR = insetRing(ring, inset);
+          const dorm = mansard ? 41 : 40;
+          if (topR && topR.length === ring.length && rise > 2.2 && varr > 0.18) {
+            const t = 0.34;                       // up the slope, out of the gutter
+            const dz = v.z1 + rise * t;
+            const dScale = Math.min(1.25, Math.max(0.72, rise / 3.4));
+            for (let i = 0; i < ring.length; i++) {
+              const a2 = ring[i], b2 = ring[(i + 1) % ring.length];
+              const d2 = topR[i], c2 = topR[(i + 1) % topR.length];
+              const ex = b2[0] - a2[0], ey = b2[1] - a2[1];
+              const eL = Math.hypot(ex, ey);
+              if (eL < 5.5) continue;             // no room for one on a return
+              const nx = ey / eL, ny = -ex / eL;  // outward: rings are CCW here
+              const n2 = Math.min(5, Math.floor(eL / 4.6));
+              for (let k = 0; k < n2; k++) {
+                const f = (k + 0.5) / n2;
+                const px = a2[0] + ex * f, py = a2[1] + ey * f;
+                const qx = d2[0] + (c2[0] - d2[0]) * f, qy = d2[1] + (c2[1] - d2[1]) * f;
+                props.push({
+                  kind: dorm, b: v.b,
+                  x: px + (qx - px) * t, y: py + (qy - py) * t, z: dz,
+                  s: dScale, rot: Math.atan2(ny, nx),
+                });
+              }
+            }
           }
         }
       } else {
@@ -4247,6 +4899,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       uSunVP: { value: new THREE.Matrix4() },
       uShadowOn: { value: 0 },
       uShadowSpan: { value: 5999 },
+      uTime: this.timeUni,
     });
     this.wallMat = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: FRAG, uniforms: uniforms(), side: THREE.DoubleSide });
     this.roofMat = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: ROOF_FRAG, uniforms: uniforms(), side: THREE.DoubleSide });
@@ -4326,6 +4979,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       { geom: roofSignGeom(), color: 0xffffff },        // 37 painted — see SIGN_COLORS
       { geom: tankTowerGeom(), color: 0x8a8f8c },       // 38 steel tank
       { geom: urnGeom(), color: 0xa9a293 },             // 39 cast stone
+      { geom: dormerGeom(), color: 0xcfc7b4 },          // 40 painted trim
+      { geom: dormerRoundGeom(), color: 0xc9c1af },     // 41 painted trim
     ];
     // painted signs come in painted-sign colours
     const SIGN_COLORS: [number, number, number][] = [
@@ -4335,7 +4990,21 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     for (let kind = 0; kind < propDefs.length; kind++) {
       const items = props.filter((p) => p.kind === kind);
       if (!items.length) continue;
-      const mesh = new THREE.InstancedMesh(propDefs[kind].geom, this.propMaterial(propDefs[kind].color), items.length);
+      // WHICH PARTS ARE GRAIN AT DISTANCE. Radius is the honest test: a part
+      // whose whole footprint is a metre or two is sub-pixel at the
+      // establishing zoom and contributes nothing but aliasing, while a water
+      // tower or a steeple is the reason you are looking. The band is set off
+      // the part's own size, so a 0.7 m flagpole goes first and a 3 m plant
+      // housing hangs on much longer.
+      const pr = PROP_R[kind] ?? 2;
+      const small = pr <= 2.6 && kind !== 22 && kind !== 24 && kind !== 27;
+      const fade: [number, number] = small
+        ? [520 + pr * 260, 900 + pr * 420]
+        : [0, 0];
+      const mesh = new THREE.InstancedMesh(propDefs[kind].geom, this.propMaterial(propDefs[kind].color, true, 0, fade), items.length);
+      // Shrunk-out geometry the shadow bake cannot see would otherwise leave a
+      // full-size shadow behind it — see the note in PROP_VERT.
+      if (small) mesh.userData.noShadow = true;
       // Which kit part this is, so a count of what actually reached the roofs
       // can be taken from the scene rather than inferred from the placement
       // rules. A part gated at a 9% roll on a rare style is exactly the kind
@@ -4612,6 +5281,22 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       g.setAttribute("aWalk2", new THREE.InstancedBufferAttribute(walk2, 2));
       mesh.instanceColor = new THREE.InstancedBufferAttribute(cols, 3);
       mesh.frustumCulled = false;
+      // A WALKER'S SHADOW CANNOT BE BAKED, so it must not be.
+      //
+      // These figures are moved entirely by WALKER_VERT — the patrol along
+      // aWalk, the gait bob, and the `alive` cull that scales half of them to
+      // zero. The shadow pass swaps in a MeshDepthMaterial, which replaces the
+      // VERTEX shader too, so none of that motion exists as far as the bake is
+      // concerned: every walker was being stamped into the map at the base
+      // instance position it never actually stands at, including the ones
+      // culled to nothing. The result is a field of little shadows lying in
+      // the street with nobody on them, drifting further from their owners the
+      // longer the month runs.
+      //
+      // Nothing at this scale needs a shadow map anyway: a pedestrian is under
+      // two metres and the screen-space contact pass resolves exactly that
+      // band, dynamically, from the real animated depth.
+      mesh.userData.noShadow = true;
       this.scene.add(mesh);
       this.hasWalkers = true;
     };
@@ -4729,6 +5414,54 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // whose posts are each a different height is a fence, not an esplanade.
     addRigid(benchGeom(), 0x6d5a45, oriented(this.ctxPoints.benches));
     addRigid(railGeom(), 0x3f464b, oriented(this.ctxPoints.rails));
+
+    // ---- what the walks were converging on -------------------------------
+    //
+    // The park generator drives its cross paths corner-to-corner "through the
+    // middle" and keeps the lawn open where they meet. That intersection had
+    // nothing standing on it, which leaves four walks arriving at a patch of
+    // grass — and leaves a hundred-metre lawn with no vertical anything to
+    // read its scale against.
+    //
+    // A column in the big parks, a fountain in the small ones. Both on the
+    // centroid, which is where the paths already go; the pond is generated
+    // offset from centre precisely so the middle stays free, so nothing has to
+    // be dodged. Bearing comes off the position hash so a town's monuments do
+    // not all face the same way, and the whole thing is deterministic in the
+    // city seed like every other prop.
+    {
+      const columns: Item[] = [];
+      const fountains: Item[] = [];
+      for (const ring of this.ctxPoints.parks ?? []) {
+        if (!ring || ring.length < 3) continue;
+        const pts = ring.map((q) => this.project(q));
+        // area and centroid of the ring, by the shoelace
+        let a2 = 0, cx = 0, cy = 0;
+        for (let i = 0; i < pts.length; i++) {
+          const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length];
+          const cross = x1 * y2 - x2 * y1;
+          a2 += cross; cx += (x1 + x2) * cross; cy += (y1 + y2) * cross;
+        }
+        if (Math.abs(a2) < 1e-6) continue;
+        const area = Math.abs(a2) / 2;
+        const p: Item = {
+          x: cx / (3 * a2), y: cy / (3 * a2),
+          // addRigid ignores scale by design — a manufactured thing is one
+          // size — but Item carries it, so hand it the identity.
+          s: 1,
+          rot: (Math.abs(Math.round(cx * 7 + cy * 13)) % 360) * Math.PI / 180,
+        };
+        // A column is a civic gesture and it needs a park to stand in; a
+        // square that would be crowded by one gets a basin instead.
+        if (area > 9000) columns.push(p);
+        else if (area > 1800) fountains.push(p);
+      }
+      addRigid(monumentGeom(), 0xb9b2a4, columns);          // weathered granite
+      addRigid(monumentFigureGeom(), 0x6f8a72, columns);    // bronze gone verdigris
+      addRigid(parterreGeom(), 0x5f8039, columns);          // clipped box hedge
+      addRigid(fountainStoneGeom(), 0xc0b9ab, fountains);
+      addRigid(fountainWaterGeom(), 0x2f5a63, fountains);
+    }
     addCars(cars);
     addPeople(people);
     addWalkers(personGeom(), walkers, COAT);
@@ -4820,8 +5553,29 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const parks = this.ctxPoints.parks;
     if (!parks?.length) return;
     const T = { pos: [] as number[], norm: [] as number[], u: [] as number[], style: [] as number[] };
+    // `uOf` lets a surface bake something useful into the spare per-vertex
+    // float. The lawn and the walks have nothing to say and push the old
+    // constant; the pond writes its distance to its own bank, which is what
+    // lets the shader shallow the rim and hold the sky in the middle.
+    let uOf: ((v: [number, number]) => number) | null = null;
     const emit = (q: [number, number][], z: number, style: number) => {
-      for (const v of q) { T.pos.push(v[0], v[1], z); T.norm.push(0, 0, 1); T.u.push(6); T.style.push(style); }
+      for (const v of q) {
+        T.pos.push(v[0], v[1], z); T.norm.push(0, 0, 1);
+        T.u.push(uOf ? uOf(v) : 6); T.style.push(style);
+      }
+    };
+    /** Shortest distance from a point to a closed ring, in metres. */
+    const distToRing = (v: [number, number], ring: [number, number][]) => {
+      let best = Infinity;
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        const dx = b[0] - a[0], dy = b[1] - a[1];
+        const l2 = dx * dx + dy * dy;
+        let t = l2 ? ((v[0] - a[0]) * dx + (v[1] - a[1]) * dy) / l2 : 0;
+        t = Math.max(0, Math.min(1, t));
+        best = Math.min(best, Math.hypot(v[0] - (a[0] + t * dx), v[1] - (a[1] + t * dy)));
+      }
+      return best;
     };
     // subdivide: the shader varies with world position, so a park drawn as
     // four huge triangles still shades smoothly, but the mown bands want
@@ -4853,7 +5607,18 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // through the park. They come up with it. Laid in metres rather than
     // screen pixels, they also hold their width properly at any pitch, which
     // the line layers never did.
-    for (const p of this.ctxPoints.ponds ?? []) fillRing(p, 0.09, S_POND, false);
+    // Subdivided, and not only for the shading. Triangulating a ring produces
+    // triangles whose every corner is ON the ring — there are no interior
+    // vertices at all — so a per-vertex distance to the bank would have been
+    // zero everywhere and the pond would have been all rim. Splitting to the
+    // same 400 m² the lawn uses gives it a middle to be deep in.
+    for (const p of this.ctxPoints.ponds ?? []) {
+      const ring = p.map((q) => this.project(q));
+      uOf = (v) => distToRing(v, ring);
+      fillRing(p, 0.09, S_POND, true);
+      uOf = null;
+      this.hasPonds = true;
+    }
     for (const line of this.ctxPoints.paths ?? []) {
       const pts = line.map((q) => this.project(q));
       const HW = 1.35;
@@ -4979,7 +5744,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       uniforms: {
         uTime: this.timeUni, uCam: this.camUni, uSunDir: this.sunDirUni, uSunCol: this.sunColUni,
         uReflect: { value: null }, uResolution: { value: new THREE.Vector2(1, 1) },
-        uReflectOn: { value: 0 },
+        uReflectOn: { value: 0 }, uSeason: this.seasonUni,
       },
       side: THREE.DoubleSide,
     });
@@ -4994,7 +5759,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
   // Props share the buildings' light rig so a water tower and the roof it
   // stands on are lit by the same sun.
-  private propMaterial(color: number, instanced = true, foliage = 0): THREE.ShaderMaterial {
+  private propMaterial(color: number, instanced = true, foliage = 0, fade: [number, number] = [0, 0]): THREE.ShaderMaterial {
     const c = new THREE.Color(color);
     return new THREE.ShaderMaterial({
       vertexShader: instanced ? PROP_VERT : PROP_VERT_PLAIN,
@@ -5007,6 +5772,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         uSunCol: this.sunColUni,
         uSeason: this.seasonUni,
         uFoliage: { value: foliage },
+        uCamP: this.camUni,
+        uFade: { value: new THREE.Vector2(fade[0], fade[1]) },
         uShadow: { value: this.shadowTex },
         uSunVP: { value: this.sunVP },
         uShadowOn: { value: this.shadowTex ? 1 : 0 },
@@ -5084,12 +5851,24 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         this.depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
       }
       const target = this.shadowTarget;
-      if (this.water) this.water.visible = false;   // a flat sea casts nothing
-      if (this.groundCatcher) this.groundCatcher.visible = false;
-      // and neither does the invisible plane that only exists to give the
-      // occlusion pass a floor — left in, it is a lid over the whole city and
-      // every building in town stands in its shadow
-      if (this.aoGround) this.aoGround.visible = false;
+      // WHAT DOES NOT CAST.
+      //
+      // `userData.noShadow` was being set on three meshes and read by nothing
+      // — a flag that looked like it worked, which is worse than no flag,
+      // because the next person to set it on a new mesh gets silence. The
+      // actual exclusions were three hardcoded references maintained by hand
+      // beside it. This honours the flag instead, so the list lives on the
+      // meshes that know why they are on it:
+      //   the sea            — a flat sheet casts nothing
+      //   the occlusion floor — left in, it is a lid over the whole city and
+      //                         every building in town stands in its shadow
+      //   the pavement sheet  — flat, and only ever self-shadows into acne
+      //   the walkers         — their motion is invisible to the depth pass
+      const hidden: THREE.Object3D[] = [];
+      this.scene.traverse((o) => {
+        if (o.userData && o.userData.noShadow && o.visible) { o.visible = false; hidden.push(o); }
+      });
+      if (this.groundCatcher) { this.groundCatcher.visible = false; hidden.push(this.groundCatcher); }
       const prevClear = new THREE.Color();
       this.renderer.getClearColor(prevClear);
       const prevAlpha = this.renderer.getClearAlpha();
@@ -5101,9 +5880,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.renderer.setRenderTarget(null);
       this.renderer.setClearColor(prevClear, prevAlpha);
       this.scene.overrideMaterial = null;
-      if (this.water) this.water.visible = true;
-      if (this.groundCatcher) this.groundCatcher.visible = true;
-      if (this.aoGround) this.aoGround.visible = true;
+      for (const o of hidden) o.visible = true;
 
       this.sunVP.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
       this.shadowTex = target.texture;
@@ -5198,9 +5975,33 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const mroll = hash01(k ^ 0x77aa11, this.citySeed ^ 0x1234);
       const inset = (f: number) => ring.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as [number, number]);
       const B = 0.78;                                // the base plate the prism used
-      let tiers: { fp: [number, number][]; z0: number; z1: number }[];
+      let tiers: TowerTier[] = [];
       const fl = Math.max(1, item.floors);
-      if (item.construction || fl < 7 || h < 22) {
+      // ---- OVER TWENTY STOREYS IS ITS OWN PROBLEM --------------------------
+      //
+      // Below this the five silhouettes underneath are right: a podium, a
+      // setback, a shaft — those are the trades a mid-rise actually makes.
+      // Above it they are not, because every one of them is the plate scaled
+      // toward its own centre, which is a 1961 move, and a tower finished last
+      // year does not look like that. towerMassing rotates the plate, offsets
+      // it, cuts its corners off and lets the top oversail — and it brings its
+      // own skin, because these shapes and those walls were designed together.
+      //
+      // It can refuse: a spiral needs height to turn through and a blade needs
+      // a plate long enough to be slender ON. When it does, the stack below
+      // catches it.
+      let towerStyle = -1;
+      if (!item.construction && fl >= 20 && h >= 62) {
+        const tf = TOWER_FAMILIES[Math.floor(hash01(k ^ 0x70e2, this.citySeed ^ 0xa11) * TOWER_FAMILIES.length) % TOWER_FAMILIES.length];
+        const built = towerMassing(tf, ring as [number, number][], cx, cy, h, fl, fh2,
+          (n) => hash01(k ^ Math.imul(n + 1, 0x9e3779b1), this.citySeed ^ 0x7057));
+        if (built && built.tiers.length >= 2) {
+          tiers = built.tiers;
+          towerStyle = built.style;
+        }
+      }
+      if (towerStyle >= 0) { meta[0] = towerStyle; }
+      else if (item.construction || fl < 7 || h < 22) {
         tiers = [{ fp: inset(B), z0: 0, z1: h }];
       } else if (mroll < 0.30) {
         const podTop = Math.min(h * 0.28, fh2 * 3.2);
@@ -5258,7 +6059,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           ];
           for (const [x, y, z, u] of quad) {
             T.pos.push(x, y, z); T.norm.push(n[0], n[1], n[2]); T.u.push(u);
-            T.style.push(meta[0]); T.rand.push(meta[1]); T.varr.push(meta[2]); T.top.push(tier.z1); T.fh.push(meta[4]);
+            T.style.push(tier.style ?? meta[0]); T.rand.push(meta[1]); T.varr.push(meta[2]); T.top.push(tier.z1); T.fh.push(meta[4]);
             T.era.push(nowEra);
             T.seg.push(u0, u1); T.ccv.push(1, 1);
           }
@@ -5287,7 +6088,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         for (const t of tris) {
           for (const idx of t) {
             R2.pos.push(tfp[idx][0], tfp[idx][1], tier.z1); R2.norm.push(0, 0, 1); R2.u.push(4);
-            R2.style.push(item.construction ? 5 : meta[0]); R2.rand.push(rnd); R2.varr.push(varr); R2.top.push(tier.z1); R2.fh.push(fh2);
+            R2.style.push(item.construction ? 5 : (tier.roof ?? tier.style ?? meta[0])); R2.rand.push(rnd); R2.varr.push(varr); R2.top.push(tier.z1); R2.fh.push(fh2);
             R2.era.push(nowEra);
             R2.seg.push(deck2, wear2); R2.ccv.push(bx2, by2);
           }
@@ -5700,7 +6501,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // only while the layer is actually visible. MapLibre repaints on demand,
     // so without this call the city would be a still photograph — and with it
     // uncapped, it would burn a core to redraw water nobody is looking at.
-    if (this.waterMat || this.cranes.length || this.hasWalkers) {
+    if (this.waterMat || this.cranes.length || this.hasWalkers || this.hasPonds) {
       const now = performance.now();
       this.timeUni.value = now / 1000;
       // A crane's slew is its parked bearing plus two slow incommensurate
@@ -5743,7 +6544,21 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // The water itself, the shadow catcher and the occlusion floor all sit ON
     // the mirror plane and are coplanar with their own reflections; they are
     // hidden, or they z-fight with themselves and cover the result.
-    if (this.water && this.reflectRT && this.waterMat) {
+    // HOW MUCH REFLECTION IS WORTH RENDERING FOR.
+    //
+    // The mirrored pass draws the entire city a second time, every frame. What
+    // it buys is governed by Fresnel, and Fresnel is the reason it is not
+    // always worth buying: looking straight down at water you see about two per
+    // cent reflection and ninety-eight per cent riverbed, so the pass is
+    // rendering a skyline nobody can see. It earns its cost at a graze and
+    // almost nowhere else.
+    //
+    // Faded rather than switched, so there is no frame where the harbour pops,
+    // and the pass is skipped outright only once the strength has already
+    // reached zero.
+    const reflStrength = smoothstep(20, 46, this.map.getPitch());
+    if (this.waterMat) this.waterMat.uniforms.uReflectOn.value = reflStrength;
+    if (this.water && this.reflectRT && this.waterMat && reflStrength > 0.02) {
       const wasWater = this.water.visible;
       const wasCatcher = this.groundCatcher?.visible ?? false;
       const wasAo = this.aoGround?.visible ?? false;
@@ -5765,7 +6580,6 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
       this.waterMat.uniforms.uReflect.value = this.reflectRT.texture;
       (this.waterMat.uniforms.uResolution.value as THREE.Vector2).copy(this.postSize);
-      this.waterMat.uniforms.uReflectOn.value = 1;
     }
 
     // 1. the city, offscreen, onto nothing
@@ -5821,6 +6635,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.compMat.uniforms.uAoTex.value = this.aoA.texture;
     }
     this.compMat.uniforms.uDepth.value = this.sceneRT.depthTexture;
+    (this.compMat.uniforms.uInvProj.value as THREE.Matrix4).copy(invProj);
+    (this.compMat.uniforms.uEye.value as THREE.Vector3).copy(this.camUni.value);
     {
     }
     // THE LENS READS THE CAMERA — AND IT READS ZOOM, NOT PITCH.
@@ -6099,6 +6915,8 @@ const PROP_R: Record<number, number> = {
   37: 4.6,  // roof sign
   38: 2.6,  // tank on a steel tower
   39: 0.8,  // parapet urn
+  40: 0.9,  // dormer — placed on the slope, not through the deck kit
+  41: 0.9,  // round-headed dormer
 };
 
 /** A metre of walkway between anything and the parapet. Code, and it reads. */
@@ -6577,6 +7395,34 @@ function tankTowerGeom(): THREE.BufferGeometry {
   return mergeGeoms(parts);
 }
 
+/**
+ * A DORMER, which is the thing a mansard is FOR.
+ *
+ * A mansard roof exists so the top storey is a habitable room rather than a
+ * void, and the only way that room gets light is a dormer punched through the
+ * slope. A mansard without them is not a roof shape, it is a hat — and every
+ * mansard and hip in this city was wearing one.
+ *
+ * Gabled, with cheeks and a little pitched hood, facing outward along +X.
+ */
+function dormerGeom(): THREE.BufferGeometry {
+  return mergeGeoms([
+    new THREE.BoxGeometry(1.30, 1.40, 1.60).translate(0.22, 0, 0.80),
+    new THREE.ConeGeometry(1.12, 0.80, 4).rotateX(Math.PI / 2).rotateZ(Math.PI / 4).translate(0.22, 0, 1.98),
+    new THREE.BoxGeometry(0.10, 1.55, 0.14).translate(0.86, 0, 1.62),   // the hood's drip
+  ]);
+}
+
+/** The round-headed dormer of a good Second Empire roof: a drum with a hood. */
+function dormerRoundGeom(): THREE.BufferGeometry {
+  return mergeGeoms([
+    new THREE.BoxGeometry(1.20, 1.30, 1.25).translate(0.20, 0, 0.62),
+    new THREE.CylinderGeometry(0.65, 0.65, 1.20, 10, 1, false, 0, Math.PI)
+      .rotateZ(-Math.PI / 2).rotateX(Math.PI / 2).translate(0.20, 0, 1.25),
+    new THREE.SphereGeometry(0.72, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 1, 0.7).translate(0.20, 0, 1.24),
+  ]);
+}
+
 /** A parapet urn on its plinth — the cornice-level ornament of a good address. */
 function urnGeom(): THREE.BufferGeometry {
   return mergeGeoms([
@@ -6585,6 +7431,300 @@ function urnGeom(): THREE.BufferGeometry {
     new THREE.SphereGeometry(0.52, 10, 7).scale(1, 1, 1.25).translate(0, 0, 1.36),
     new THREE.CylinderGeometry(0.44, 0.30, 0.30, 10).rotateX(Math.PI / 2).translate(0, 0, 2.05),
   ]);
+}
+
+// ===========================================================================
+// TEN TOWERS.
+//
+// Everything over twenty storeys in this game was one of five shapes: a prism,
+// a prism on a podium, a prism with a setback, a prism with two setbacks, and a
+// slender prism on a podium. All five are the same operation — scale the plate
+// toward its own centre and stack it — which is the 1916 sky-exposure plane and
+// nothing since. A city whose newest tower is a 1961 move does not look like a
+// city anybody is building in now.
+//
+// What has actually gone up in New York in the last decade does four things
+// that stack-and-shrink cannot express: it ROTATES the plate, it OFFSETS it,
+// it CUTS the corners off at an angle, and it lets the top oversail the shaft.
+// These ten are those moves, each taken from a building that exists.
+//
+// The kit below is four plate operations. Every family is a short recipe in
+// them, which is also how the real ones were drawn.
+
+type Plate = [number, number][];
+
+/** Scale a plate about a point. */
+const plScale = (r: Plate, cx: number, cy: number, f: number): Plate =>
+  r.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f]);
+
+/** Scale a plate differently along two perpendicular axes — how a slab gets slender. */
+const plScaleAxis = (r: Plate, cx: number, cy: number, ang: number, fA: number, fB: number): Plate => {
+  const ca = Math.cos(ang), sa = Math.sin(ang);
+  return r.map(([x, y]) => {
+    const dx = x - cx, dy = y - cy;
+    const a = (dx * ca + dy * sa) * fA;      // along
+    const b = (-dx * sa + dy * ca) * fB;     // across
+    return [cx + a * ca - b * sa, cy + a * sa + b * ca];
+  });
+};
+
+/** Rotate a plate about a point. */
+const plRot = (r: Plate, cx: number, cy: number, a: number): Plate => {
+  const c = Math.cos(a), s = Math.sin(a);
+  return r.map(([x, y]) => {
+    const dx = x - cx, dy = y - cy;
+    return [cx + dx * c - dy * s, cy + dx * s + dy * c];
+  });
+};
+
+/** Slide a plate sideways. */
+const plMove = (r: Plate, dx: number, dy: number): Plate => r.map(([x, y]) => [x + dx, y + dy]);
+
+/**
+ * Cut every corner off at `cut` metres. The chamfer is the single most
+ * characteristic move of the current generation — One Vanderbilt is a box
+ * whose corners have been taken off four times on the way up — and it is what
+ * stops a tower reading as a rectangle from every angle at once.
+ */
+const plChamfer = (r: Plate, cut: number): Plate => {
+  const n = r.length;
+  if (n < 3 || cut <= 0.01) return r;
+  const out: Plate = [];
+  for (let i = 0; i < n; i++) {
+    const p = r[i], a = r[(i - 1 + n) % n], b = r[(i + 1) % n];
+    const la = Math.hypot(p[0] - a[0], p[1] - a[1]) || 1;
+    const lb = Math.hypot(b[0] - p[0], b[1] - p[1]) || 1;
+    const ka = Math.min(cut, la * 0.45) / la, kb = Math.min(cut, lb * 0.45) / lb;
+    out.push([p[0] + (a[0] - p[0]) * ka, p[1] + (a[1] - p[1]) * ka]);
+    out.push([p[0] + (b[0] - p[0]) * kb, p[1] + (b[1] - p[1]) * kb]);
+  }
+  return out;
+};
+
+/** Round the corners — Chaikin, twice, which is a soft radius on a convex plate. */
+const plRound = (r: Plate, iters: number): Plate => {
+  let cur = r;
+  for (let k = 0; k < iters; k++) {
+    const out: Plate = [];
+    for (let i = 0; i < cur.length; i++) {
+      const p = cur[i], q = cur[(i + 1) % cur.length];
+      out.push([p[0] * 0.75 + q[0] * 0.25, p[1] * 0.75 + q[1] * 0.25]);
+      out.push([p[0] * 0.25 + q[0] * 0.75, p[1] * 0.25 + q[1] * 0.75]);
+    }
+    cur = out;
+  }
+  return cur;
+};
+
+/** The long axis of a plate, for the families that need to know which way is which. */
+const plAxis = (r: Plate): number => {
+  let best = 0, bl = -1;
+  for (let i = 0; i < r.length; i++) {
+    const a = r[i], b = r[(i + 1) % r.length];
+    const l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (l > bl) { bl = l; best = Math.atan2(b[1] - a[1], b[0] - a[0]); }
+  }
+  return best;
+};
+
+export interface TowerTier {
+  fp: Plate; z0: number; z1: number;
+  /** Overrides the building's wall style for this tier — steel shelves, a glass box on a stone base. */
+  style?: number;
+  /** Overrides the roof surface where this tier's top is a terrace rather than a cap. */
+  roof?: number;
+}
+
+export const TOWER_FAMILIES = [
+  "vanderbilt", "spiral", "exo", "stack", "carve",
+  "blade", "shelf", "curveslab", "deepframe", "twist",
+] as const;
+
+/**
+ * The shape of a tower, and the skin that goes with it.
+ *
+ * `h` is metres, `fl` floors, `fh` the floor height. `u(k)` is a stable hash in
+ * [0,1) for this building. Returns null when the site cannot carry the family —
+ * a spiral needs the height to turn through, a blade needs a plate long enough
+ * to be slender ON — and the caller falls back to the ordinary stack.
+ */
+function towerMassing(
+  fam: string, ring: Plate, cx: number, cy: number, h: number, fl: number, fh: number,
+  u: (k: number) => number,
+): { tiers: TowerTier[]; style: number } | null {
+  const ax = plAxis(ring);
+  let span = 0;
+  for (const [x, y] of ring) span = Math.max(span, Math.hypot(x - cx, y - cy));
+  const B = 0.78;                                  // the base plate the old prism used
+  const base = plScale(ring, cx, cy, B);
+  const T: TowerTier[] = [];
+  const at = (f: number) => h * f;
+
+  switch (fam) {
+    case "vanderbilt": {
+      // ONE VANDERBILT. A box whose corners come off four times on the way up,
+      // each cut deeper than the last, so the tower is an octagon by the time
+      // it reaches the top and never shows you the same width twice.
+      const n = 4;
+      const cuts = [1.2, 2.8, 5.0, 7.8].map((c) => c * (0.8 + 0.5 * u(1)));
+      const sc = [1.0, 0.90, 0.79, 0.66];
+      const tops = [0.30, 0.56, 0.80, 1.0];
+      let z = 0;
+      for (let k = 0; k < n; k++) {
+        T.push({ fp: plChamfer(plScale(base, cx, cy, sc[k]), cuts[k] * span * 0.10), z0: z, z1: at(tops[k]) });
+        z = at(tops[k]);
+      }
+      return { tiers: T, style: S_TERRAPIER };
+    }
+    case "spiral": {
+      // THE SPIRAL. A planted terrace that climbs the building one corner at a
+      // time — every tier is the last one rotated and pulled in slightly, so
+      // the setback travels round the tower instead of ringing it.
+      // a terrace every four floors or so, which is what the real one does
+      const n = Math.max(5, Math.min(9, Math.round(h / (fh * 4))));
+      if (h < 55) return null;
+      const dir = u(2) < 0.5 ? 1 : -1;
+      let z = 0;
+      for (let k = 0; k < n; k++) {
+        const f = 1 - k * (0.052 + 0.018 * u(3));
+        const fp = plRot(plScale(base, cx, cy, f), cx, cy, dir * k * (0.10 + 0.05 * u(4)));
+        const top = at((k + 1) / n);
+        // every tier but the last has somebody's garden on it
+        T.push({ fp, z0: z, z1: top, roof: k === n - 1 ? undefined : S_GREEN });
+        z = top;
+      }
+      return { tiers: T, style: S_UNITGLASS };
+    }
+    case "exo": {
+      // 270 PARK. The tower does not reach the ground — it stands on splayed
+      // braced legs, so the base is WIDER than the shaft and open under it.
+      // The diagrid skin is the same structure carried on up the building.
+      if (h < 60) return null;
+      const legTop = at(0.10 + 0.03 * u(5));
+      T.push({ fp: plChamfer(plScale(ring, cx, cy, 0.98), span * 0.22), z0: 0, z1: legTop, style: S_DIAGRID });
+      T.push({ fp: plScale(base, cx, cy, 0.94), z0: legTop, z1: at(0.16), style: S_PLAIN });
+      T.push({ fp: plScale(base, cx, cy, 0.80), z0: at(0.16), z1: h });
+      return { tiers: T, style: S_DIAGRID };
+    }
+    case "stack": {
+      // STACKED AND SHIFTED. Three or four boxes that do not sit over each
+      // other — every one gives a terrace on one side and an overhang on the
+      // other, and the tower has a different profile from all four elevations.
+      const n = 3 + (u(6) > 0.55 ? 1 : 0);
+      let z = 0;
+      for (let k = 0; k < n; k++) {
+        const f = 1 - k * 0.09;
+        const off = (u(7 + k) - 0.5) * span * 0.42;
+        const oa = ax + (k % 2 ? Math.PI / 2 : 0);
+        const fp = plRot(plMove(plScale(base, cx, cy, f), Math.cos(oa) * off, Math.sin(oa) * off),
+          cx, cy, (u(11 + k) - 0.5) * 0.14);
+        const top = at((k + 1) / n);
+        T.push({ fp, z0: z, z1: top, roof: k === n - 1 ? undefined : S_GREEN });
+        z = top;
+      }
+      return { tiers: T, style: S_CRYSTAL };
+    }
+    case "carve": {
+      // SOLAR CARVE. The mass has planes sliced off it at an angle — the cut
+      // is deepest where it would otherwise shade its neighbour, which is
+      // literally how 40 Tenth Avenue was shaped. Each stage takes its slice
+      // from the opposite side of the one below.
+      const n = 3;
+      let z = 0;
+      for (let k = 0; k < n; k++) {
+        const side = k % 2 ? 1 : -1;
+        const cut = span * (0.16 + 0.10 * u(15 + k));
+        // chamfer, then push the plate off-centre so the cut reads as a slice
+        const fp = plMove(plChamfer(plScale(base, cx, cy, 1 - k * 0.10), cut),
+          Math.cos(ax + Math.PI / 2) * side * cut * 0.42,
+          Math.sin(ax + Math.PI / 2) * side * cut * 0.42);
+        const top = at((k + 1) / n);
+        T.push({ fp, z0: z, z1: top });
+        z = top;
+      }
+      return { tiers: T, style: S_CRYSTAL };
+    }
+    case "blade": {
+      // 111 WEST 57TH. Hyper-slender: the plate is squeezed across its short
+      // axis until the tower is a blade, and the setbacks feather up ONE face
+      // in small steps rather than stepping all four. It ends as a wall.
+      if (fl < 26) return null;
+      const n = 7;
+      let z = 0;
+      for (let k = 0; k < n; k++) {
+        const fA = 1 - k * 0.012;                     // barely narrows the long way
+        const fB = 0.62 - k * 0.055;                  // and closes hard the short way
+        if (fB < 0.14) break;
+        const fp = plMove(plScaleAxis(base, cx, cy, ax, fA, fB),
+          Math.cos(ax + Math.PI / 2) * span * 0.02 * k,
+          Math.sin(ax + Math.PI / 2) * span * 0.02 * k);
+        const top = at((k + 1) / n);
+        T.push({ fp, z0: z, z1: top });
+        z = top;
+      }
+      return T.length >= 3 ? { tiers: T, style: S_TERRAPIER } : null;
+    }
+    case "shelf": {
+      // 425 PARK. Three stacked volumes with the steel expressed BETWEEN them:
+      // a shallow plate standing proud at each junction, which reads as a
+      // shelf the whole width of the building.
+      if (h < 55) return null;
+      const cuts = [0.34, 0.66, 1.0];
+      const sc = [1.0, 0.86, 0.70];
+      let z = 0;
+      for (let k = 0; k < 3; k++) {
+        const fp = plScale(base, cx, cy, sc[k]);
+        const top = at(cuts[k]);
+        T.push({ fp, z0: z, z1: top - (k < 2 ? 1.4 : 0) });
+        if (k < 2) {
+          // the shelf itself: wider than both volumes, and made of steel
+          T.push({ fp: plScale(base, cx, cy, sc[k]), z0: top - 1.4, z1: top, style: S_PLAIN });
+        }
+        z = top;
+      }
+      return { tiers: T, style: S_STEELSHELF };
+    }
+    case "curveslab": {
+      // ONE MANHATTAN WEST. Corners rounded rather than cut, and the top
+      // sliced on a slope — a soft-edged slab, which at this size is a
+      // completely different object from a sharp one.
+      const r0 = plRound(base, 2);
+      const cut = at(0.86 + 0.06 * u(19));
+      T.push({ fp: r0, z0: 0, z1: cut });
+      // the sloped crown, drawn as two shallow oversailing stages
+      T.push({ fp: plMove(plScale(r0, cx, cy, 0.90), Math.cos(ax) * span * 0.030, Math.sin(ax) * span * 0.030), z0: cut, z1: at(0.95) });
+      T.push({ fp: plMove(plScale(r0, cx, cy, 0.74), Math.cos(ax) * span * 0.055, Math.sin(ax) * span * 0.055), z0: at(0.95), z1: h });
+      return { tiers: T, style: S_UNITGLASS };
+    }
+    case "deepframe": {
+      // 55 HUDSON YARDS. Almost no taper at all — the interest is entirely in
+      // the wall, which is a half-metre-deep grid. One notch is taken out of a
+      // corner for the whole height so the mass is not a plain box.
+      const notch = plChamfer(base, span * 0.30);
+      T.push({ fp: notch, z0: 0, z1: at(0.92) });
+      T.push({ fp: plScale(notch, cx, cy, 0.965), z0: at(0.92), z1: h, style: S_PLAIN });
+      return { tiers: T, style: S_DEEPFRAME };
+    }
+    case "twist": {
+      // THE TWIST. Every floor turns a degree or two on the one below, so the
+      // corners run up the building as slow helices and the silhouette changes
+      // as you walk round it. Drawn as a stack thin enough that the steps read
+      // as a curve.
+      if (fl < 22) return null;
+      const n = Math.max(9, Math.min(16, Math.round(fl / 2.5)));
+      const total = (0.42 + 0.30 * u(21)) * (u(22) < 0.5 ? 1 : -1);
+      let z = 0;
+      for (let k = 0; k < n; k++) {
+        const t = (k + 1) / n;
+        const fp = plRot(plScale(base, cx, cy, 1 - t * 0.16), cx, cy, total * (k / n));
+        const top = at(t);
+        T.push({ fp, z0: z, z1: top });
+        z = top;
+      }
+      return { tiers: T, style: S_MEGAPANEL };
+    }
+    default: return null;
+  }
 }
 
 function mergeGeoms(geoms: THREE.BufferGeometry[]): THREE.BufferGeometry {
@@ -6598,4 +7738,106 @@ function mergeGeoms(geoms: THREE.BufferGeometry[]): THREE.BufferGeometry {
   out.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   out.setAttribute("normal", new THREE.Float32BufferAttribute(norm, 3));
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// PARK MONUMENTS
+// ---------------------------------------------------------------------------
+//
+// The generator already lays these parks out like parks: a perimeter
+// promenade, an allée of paired trees along it, cross paths driven
+// corner-to-corner, corner groves, and a lawn deliberately kept open in the
+// middle. Every one of those cross paths converges on a point — and that point
+// had nothing on it.
+//
+// That is not a small omission, it is the omission. A nineteenth-century civic
+// park is ORGANISED around its monument: the walks exist to arrive at it, and
+// without one they are four paths meeting in the grass for no stated reason.
+// It is also the only vertical thing in a hundred metres of flat lawn, which
+// makes it the one element giving the Common a middle to read against.
+//
+// Kept to the prop path — instanced geometry, flat colour, the same light rig
+// as a bench — because a monument is street furniture at civic scale, not a
+// building, and it has no business in the massing pipeline.
+
+/** Stepped plinth and tapered shaft, ~13 m. Z-up, like every prop here. */
+function monumentGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  // three-step base: a monument is approached, so it stands on stairs
+  parts.push(new THREE.BoxGeometry(5.2, 5.2, 0.34).translate(0, 0, 0.17));
+  parts.push(new THREE.BoxGeometry(4.2, 4.2, 0.34).translate(0, 0, 0.51));
+  parts.push(new THREE.BoxGeometry(3.3, 3.3, 0.40).translate(0, 0, 0.88));
+  // the die: the block that carries the inscription
+  parts.push(new THREE.BoxGeometry(2.3, 2.3, 2.15).translate(0, 0, 2.15));
+  parts.push(new THREE.BoxGeometry(2.7, 2.7, 0.26).translate(0, 0, 3.35));
+  // the shaft, tapered — a column that does not taper reads as a pipe
+  parts.push(new THREE.CylinderGeometry(0.62, 0.86, 7.6, 12)
+    .rotateX(Math.PI / 2).translate(0, 0, 7.28));
+  // capital
+  parts.push(new THREE.CylinderGeometry(0.98, 0.72, 0.52, 12)
+    .rotateX(Math.PI / 2).translate(0, 0, 11.34));
+  parts.push(new THREE.BoxGeometry(1.9, 1.9, 0.22).translate(0, 0, 11.71));
+  return mergeGeoms(parts);
+}
+
+/** The figure on top, in bronze — separate so it takes its own colour. */
+function monumentFigureGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  parts.push(new THREE.CylinderGeometry(0.30, 0.40, 0.42, 8)
+    .rotateX(Math.PI / 2).translate(0, 0, 12.03));
+  // a standing figure, read at fifty metres: legs, coat, shoulders, head
+  parts.push(new THREE.BoxGeometry(0.42, 0.34, 1.02).translate(0, 0, 12.75));
+  parts.push(new THREE.BoxGeometry(0.62, 0.42, 0.30).translate(0, 0, 13.38));
+  parts.push(new THREE.CylinderGeometry(0.17, 0.17, 0.26, 7)
+    .rotateX(Math.PI / 2).translate(0, 0, 13.66));
+  return mergeGeoms(parts);
+}
+
+/** A basin with a coping you could sit on, ~7 m across. */
+function fountainStoneGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  // the coping ring, built as a wide short drum with the water disc dropped
+  // into it — cheaper than a real annulus and identical at this distance
+  parts.push(new THREE.CylinderGeometry(3.5, 3.6, 0.62, 20)
+    .rotateX(Math.PI / 2).translate(0, 0, 0.31));
+  // the tiered centre
+  parts.push(new THREE.CylinderGeometry(0.72, 0.95, 0.55, 12)
+    .rotateX(Math.PI / 2).translate(0, 0, 0.72));
+  parts.push(new THREE.CylinderGeometry(1.15, 1.15, 0.14, 14)
+    .rotateX(Math.PI / 2).translate(0, 0, 1.05));
+  parts.push(new THREE.CylinderGeometry(0.30, 0.44, 0.85, 10)
+    .rotateX(Math.PI / 2).translate(0, 0, 1.52));
+  parts.push(new THREE.CylinderGeometry(0.62, 0.62, 0.11, 12)
+    .rotateX(Math.PI / 2).translate(0, 0, 2.00));
+  return mergeGeoms(parts);
+}
+
+/** The water in it, a disc set just below the coping. */
+function fountainWaterGeom(): THREE.BufferGeometry {
+  return new THREE.CylinderGeometry(3.34, 3.34, 0.04, 20)
+    .rotateX(Math.PI / 2).translate(0, 0, 0.50);
+}
+
+/**
+ * A clipped parterre hedge ringing a monument. Twelve low blocks on a circle
+ * rather than a torus: a formal bed is planted in segments with the walks
+ * between them, and at this scale the gaps are what say "clipped" rather than
+ * "green doughnut".
+ */
+function parterreGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const R = 5.6;
+  const N = 20;
+  for (let i = 0; i < N; i++) {
+    // four gaps, on the compass points, where the cross paths come in
+    if (i % 5 === 0) continue;
+    const a = (i / N) * Math.PI * 2;
+    // Long enough to close on its neighbour and tall enough to cast: at 12
+    // sparse segments these read as blocks dropped on the grass rather than as
+    // a clipped bed, which is the difference between planting and litter.
+    parts.push(new THREE.BoxGeometry(1.90, 1.05, 0.80)
+      .rotateZ(a + Math.PI / 2)
+      .translate(Math.cos(a) * R, Math.sin(a) * R, 0.40));
+  }
+  return mergeGeoms(parts);
 }

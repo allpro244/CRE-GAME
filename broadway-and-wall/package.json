@@ -38,7 +38,8 @@
     "rates": "node test/rate-stress.mjs",
     "audit": "node tools/econaudit.mjs",
     "quality": "node tools/qualitytest.mjs",
-    "stress": "node tools/econstress.mjs"
+    "stress": "node tools/econstress.mjs",
+    "styles": "node tools/styleaudit.mjs"
   },
   "dependencies": {
     "@types/three": "^0.185.3",

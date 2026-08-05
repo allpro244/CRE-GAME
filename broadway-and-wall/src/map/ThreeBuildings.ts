@@ -1729,6 +1729,9 @@ varying vec2 vXY;
 varying float vDepth;
 uniform float uTime;
 uniform vec3 uCam;
+uniform sampler2D uReflect;
+uniform vec2 uResolution;
+uniform float uReflectOn;
 ` + LIGHT_GLSL + HAZE_GLSL + /* glsl */ `
 float wave(vec2 p, vec2 dir, float len, float spd, float t) {
   return sin(dot(p, dir) / len + t * spd);
@@ -1751,6 +1754,40 @@ void main() {
   vec3 V = normalize(uCam - vec3(p, 0.0));
   float fres = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 3.0);
 
+  // THE CITY STANDS ON THIS AND HAS NEVER ONCE APPEARED IN IT.
+  //
+  // Everything below — the shoal gradient, the sun's road, the foam on the
+  // crests — describes water very well and describes water with NOTHING ON THE
+  // FAR SIDE OF IT. A harbour in front of a city is mostly a picture of that
+  // city, upside down and shaken; it is the single largest thing this surface
+  // was missing, and no amount of tuning the blue could stand in for it.
+  //
+  // Planar reflection: the scene is rendered a second time with world Z
+  // negated, which puts every building exactly where its reflection belongs on
+  // screen, so this samples at its own fragment position — no matrix work in
+  // here at all. The wave normal displaces the lookup, which is what turns a
+  // mirror into water, and the displacement grows with distance because a
+  // reflection seen at a grazing angle travels further across the surface.
+  //
+  // Alpha carries whether anything was actually there: where the mirrored
+  // render is empty the water keeps the sky mix it always had.
+  // AND IT IS A NEAR-FIELD EFFECT, for the same reason the occlusion is. Out
+  // at the horizon the sea is edge-on: a single pixel of it spans hundreds of
+  // metres, its reflection lookup lands wherever the mirrored city happens to
+  // be, and the result arrives as ruled bands across the sky rather than as a
+  // reflection of anything. A real harbour goes flat and bright out there too.
+  float reflFar = 1.0 - smoothstep(350.0, 1500.0, length(vec3(vXY, 0.0) - uCam));
+  vec3 reflCol = vec3(0.0);
+  float reflA = 0.0;
+  if (uReflectOn > 0.5 && reflFar > 0.002) {
+    vec2 suv = gl_FragCoord.xy / uResolution;
+    suv += n.xy * 0.055 * (0.35 + 0.65 * fres);
+    vec4 r = texture2D(uReflect, clamp(suv, vec2(0.002), vec2(0.998)));
+    // premultiplied, so undo it to get the colour back out
+    reflA = r.a * reflFar;
+    reflCol = r.a > 0.001 ? r.rgb / r.a : vec3(0.0);
+  }
+
   // SHALLOWS FOLLOW THE COAST. vDepth carries distance to the land edge, baked
   // per vertex, so the water genuinely pales where it runs up on the shore
   // instead of being one flat sheet with a painted band around it.
@@ -1769,6 +1806,11 @@ void main() {
   vec3 sky     = vec3(0.706, 0.822, 0.906);
   vec3 body = mix(deep, shallow, shoal * 0.82);
   vec3 col = mix(body, sky, 0.10 + 0.54 * fres);
+  // Water reflects hardly anything face-on and nearly everything at a grazing
+  // angle — that Fresnel curve is the whole reason a harbour mirrors the far
+  // shore and not your own feet. Damped in the shallows, where the bottom is
+  // close enough to see and the light coming back up through it competes.
+  col = mix(col, reflCol, reflA * (0.09 + 0.72 * fres) * (1.0 - shoal * 0.45));
 
   // the sun's road across the water — broad sheen, then hard sparkles on the
   // faces that happen to be pointing at it
@@ -1878,6 +1920,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private sceneRT: THREE.WebGLRenderTarget | null = null;
   private bloomA: THREE.WebGLRenderTarget | null = null;
   private bloomB: THREE.WebGLRenderTarget | null = null;
+  private reflectRT: THREE.WebGLRenderTarget | null = null;
   private postScene = new THREE.Scene();
   private postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private postQuad: THREE.Mesh | null = null;
@@ -2071,6 +2114,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const bw = Math.max(2, size.x >> 2), bh = Math.max(2, size.y >> 2);
       this.bloomA = new THREE.WebGLRenderTarget(bw, bh, { ...opts, depthBuffer: false });
       this.bloomB = new THREE.WebGLRenderTarget(bw, bh, { ...opts, depthBuffer: false });
+      // The reflection runs at half resolution. It is about to be displaced by
+      // a wave normal and then mixed in at a Fresnel weight; there is no
+      // resolution in it left to see.
+      this.reflectRT?.dispose();
+      this.reflectRT = new THREE.WebGLRenderTarget(
+        Math.max(2, size.x >> 1), Math.max(2, size.y >> 1),
+        { ...opts, depthBuffer: true },
+      );
       this.postSize.copy(size);
       return true;
     } catch {
@@ -3630,7 +3681,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.waterMat = new THREE.ShaderMaterial({
       vertexShader: WATER_VERT,
       fragmentShader: WATER_FRAG,
-      uniforms: { uTime: this.timeUni, uCam: this.camUni, uSunDir: this.sunDirUni, uSunCol: this.sunColUni },
+      uniforms: {
+        uTime: this.timeUni, uCam: this.camUni, uSunDir: this.sunDirUni, uSunCol: this.sunColUni,
+        uReflect: { value: null }, uResolution: { value: new THREE.Vector2(1, 1) },
+        uReflectOn: { value: 0 },
+      },
       side: THREE.DoubleSide,
     });
     const mesh = new THREE.Mesh(g, this.waterMat);
@@ -4326,7 +4381,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const l = new THREE.Matrix4()
       .makeTranslation(this.origin.x, this.origin.y, this.origin.z)
       .scale(new THREE.Vector3(this.origin.s, -this.origin.s, this.origin.s));
-    this.camera.projectionMatrix = m.multiply(l);
+    const base = new THREE.Matrix4().multiplyMatrices(m, l);
+    this.camera.projectionMatrix = base;
     this.renderer.resetState();
 
     if (!this.ensurePostSize() || !this.sceneRT || !this.bloomA || !this.bloomB) {
@@ -4334,8 +4390,46 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       return;
     }
 
-    // 1. the city, offscreen, onto nothing
     const prevTarget = this.renderer.getRenderTarget();
+
+    // 0. THE CITY, UPSIDE DOWN, for the harbour to carry.
+    //
+    // Negating world Z projects every building to exactly where its reflection
+    // belongs on screen, which is what lets the water shader sample at its own
+    // fragment position with no matrix work of its own. The mirror flips
+    // winding — normally that would cull the whole city away — but the wall and
+    // roof materials are already DoubleSide for their own reasons, so the
+    // buildings survive it and no cull-face juggling is needed.
+    //
+    // The water itself, the shadow catcher and the occlusion floor all sit ON
+    // the mirror plane and are coplanar with their own reflections; they are
+    // hidden, or they z-fight with themselves and cover the result.
+    if (this.water && this.reflectRT && this.waterMat) {
+      const wasWater = this.water.visible;
+      const wasCatcher = this.groundCatcher?.visible ?? false;
+      const wasAo = this.aoGround?.visible ?? false;
+      this.water.visible = false;
+      if (this.groundCatcher) this.groundCatcher.visible = false;
+      if (this.aoGround) this.aoGround.visible = false;
+
+      this.camera.projectionMatrix = new THREE.Matrix4()
+        .multiplyMatrices(base, new THREE.Matrix4().makeScale(1, 1, -1));
+      this.renderer.setRenderTarget(this.reflectRT);
+      this.renderer.setClearColor(0x000000, 0);
+      this.renderer.clear(true, true, false);
+      this.renderer.render(this.scene, this.camera);
+
+      this.water.visible = wasWater;
+      if (this.groundCatcher) this.groundCatcher.visible = wasCatcher;
+      if (this.aoGround) this.aoGround.visible = wasAo;
+      this.camera.projectionMatrix = base;
+
+      this.waterMat.uniforms.uReflect.value = this.reflectRT.texture;
+      (this.waterMat.uniforms.uResolution.value as THREE.Vector2).copy(this.postSize);
+      this.waterMat.uniforms.uReflectOn.value = 1;
+    }
+
+    // 1. the city, offscreen, onto nothing
     this.renderer.setRenderTarget(this.sceneRT);
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.clear(true, true, false);

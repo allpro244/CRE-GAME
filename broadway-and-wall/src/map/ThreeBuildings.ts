@@ -119,14 +119,150 @@ const S_CRYSTAL = 15; // frameless floor-to-ceiling vision glass — 7 WTC, One 
 const S_DIAGRID = 16; // structure worn on the outside — Hearst Tower, the Bow
 const S_PMOD = 17;    // postmodern polished granite and punched glass — 550 Madison, Worldwide Plaza
 
+// ---------------------------------------------------------------------------
+// THE OTHER HUNDRED AND FIFTY YEARS.
+//
+// Eighteen slots covered the whole history of building, and ten of them were
+// facades. One of those ten carried 2,403 buildings and another carried 1,655
+// — so 71% of the city was painted by two families. The eye does not read a
+// palette, it reads a TYPE: a cast-iron front is not a limestone front in a
+// different colour, it is a different building, with different proportions,
+// a different structural rhythm and a different window.
+//
+// These are the families an American port city actually accumulates between
+// 1790 and 2030. Each one is defined by the thing you could identify it by
+// from across a harbour, and each is implemented as that one signature rather
+// than as a hue: the arch, the pier, the band, the balcony, the slot.
+//
+// --- built before the war ---
+const S_CASTIRON = 18;   // SoHo loft front: painted iron colonnettes, arched bays, more glass than wall
+const S_ROMANESQUE = 19; // Richardsonian: rusticated stone, heavy round arcades, deep shadow
+const S_GOTHIC = 20;     // terra-cotta Gothic: pointed heads, crocketed piers — the Woolworth family
+const S_BEAUX = 21;      // Beaux-Arts: rusticated base, giant order through the middle, huge cornice
+const S_EMPIRE = 22;     // Second Empire: segmental heads, bracket rhythm, a mansard over it
+const S_ITALIANATE = 23; // bracketed cornice, tall round-head windows, painted brownstone
+const S_FEDERAL = 24;    // Federal / Greek Revival: small panes, flat splayed lintels, white trim
+const S_TENEMENT = 25;   // the walk-up: tight window rhythm, painted brick, iron on the front
+const S_CHICAGO = 26;    // Chicago school: tripartite, wide Chicago window, terra-cotta grid
+const S_TERRACOTTA = 27; // glazed white terra cotta — glossy, crisp, and it never got dirty the same way
+const S_MODERNE = 28;    // Streamline Moderne: horizontal bands, rounded corner, glass block
+const S_CIVIC = 29;      // stripped classicism: giant pilasters, deep reveals, pale granite
+const S_CARRIAGE = 30;   // carriage house / stable: one big arch below, a hayloft door above
+const S_MARKET = 31;     // market hall: clerestory over a big arched arcade
+// --- built after it ---
+const S_INTL = 32;       // International Style: bronze steel I-beam mullions — the Seagram family
+const S_PRECAST = 33;    // precast eggcrate: a concrete waffle with the window deep inside each cell
+const S_BRUTAL = 34;     // board-formed concrete, narrow deep slots, no expressed floor
+const S_MIRROR = 35;     // 1970s mirror glass: no mullion you can see, and it reflects everything
+const S_METALPAN = 36;   // corrugated metal shed — the working waterfront's modern skin
+const S_EIFS = 37;       // stucco infill: thin punched openings, a colour somebody chose from a chart
+const S_GARAGE = 38;     // parking deck: open decks, spandrel rails, and no glass at all
+const S_PROJECT = 39;    // postwar brick slab: paired windows, absolute regularity
+const S_WHITEBRICK = 40; // 1960s glazed white brick apartment, with its balcony slot
+const S_BALCONY = 41;    // balcony tower: the slab edge is the architecture
+const S_FRIT = 42;       // fritted unitized glass — a ceramic dot pattern that reads as a gradient
+const S_TIMBER = 43;     // mass timber: warm wood spandrels between big square openings
+const S_SCREEN = 44;     // rainscreen: terracotta baguettes or perforated metal in front of the glass
+const S_BIGBOX = 45;     // big-box retail: a blank field under a parapet sign band
+
+// ---------------------------------------------------------------------------
+// TRAITS, NOT NUMBERS.
+//
+// Downstream behaviour was keyed to the numeric VALUE of a style id — `s < 8`
+// decided which buildings got a floor line, `s <= 4 || s == 6 || s == 7`
+// decided which got shops at grade. Those tests were correct for the eighteen
+// ids that existed and are silently wrong for every id added after them: a
+// cast-iron loft front is the most shopfronted building type in this city and
+// `s <= 4` says it has no shops.
+//
+// So membership is declared once, here, and every test downstream — in TS and
+// in GLSL, which is generated from these same arrays — asks the question by
+// name. Adding a style is adding it to the lists it belongs to.
+
+/** Punched openings in a load-bearing wall: string courses, arches, quoins. */
+const T_MASONRY = [
+  S_PREWAR, S_BRICK, S_MILL, S_ROMANESQUE, S_BEAUX, S_EMPIRE, S_ITALIANATE,
+  S_FEDERAL, S_TENEMENT, S_CIVIC, S_CARRIAGE, S_MARKET, S_GOTHIC, S_TERRACOTTA,
+  S_CHICAGO, S_PROJECT, S_WHITEBRICK, S_EIFS,
+];
+
+/** Reflects the sky and throws a specular back at the sun. */
+const T_GLASSY = [
+  S_GLASS, S_DARK, S_RIBBON, S_CRYSTAL, S_DIAGRID, S_CASTIRON, S_INTL,
+  S_MIRROR, S_FRIT, S_SCREEN, S_BALCONY, S_MODERNE,
+];
+
+/** Meets the pavement as shopfronts rather than as more wall. */
+const T_TRADE = [
+  S_GLASS, S_PREWAR, S_BRICK, S_MILL, S_DARK, S_ARTDECO, S_RIBBON, S_CASTIRON,
+  S_ROMANESQUE, S_GOTHIC, S_BEAUX, S_EMPIRE, S_ITALIANATE, S_CHICAGO,
+  S_TERRACOTTA, S_MODERNE, S_MARKET, S_INTL, S_PMOD, S_EIFS, S_TIMBER,
+  S_WHITEBRICK, S_TENEMENT,
+];
+
+/** Expresses its floor line as a shadow under every storey. */
+const T_FLOORLINE = [
+  S_GLASS, S_PREWAR, S_BRICK, S_MILL, S_DARK, S_ARTDECO, S_RIBBON, S_PMOD,
+  S_CASTIRON, S_ROMANESQUE, S_GOTHIC, S_BEAUX, S_EMPIRE, S_ITALIANATE,
+  S_FEDERAL, S_TENEMENT, S_CHICAGO, S_TERRACOTTA, S_MODERNE, S_CIVIC,
+  S_MARKET, S_INTL, S_PRECAST, S_PROJECT, S_WHITEBRICK, S_BALCONY, S_TIMBER,
+  S_EIFS, S_FRIT,
+];
+
+/** A modern skin whose parapet is metal or stone rather than more of itself. */
+const T_CAPPED_STONE = [S_GLASS, S_DARK, S_MIRROR, S_FRIT];
+const T_CAPPED_PLAIN = [S_CRYSTAL, S_DIAGRID, S_SCREEN, S_BALCONY, S_METALPAN, S_GARAGE, S_BIGBOX];
+
+/** Reads as a modern building when a crown is being chosen for it. */
+const T_MODERN = [
+  S_GLASS, S_DARK, S_RIBBON, S_CRYSTAL, S_DIAGRID, S_INTL, S_MIRROR, S_FRIT,
+  S_SCREEN, S_BALCONY, S_PRECAST, S_BRUTAL, S_TIMBER, S_WHITEBRICK, S_PROJECT,
+];
+
+/** Reads as cut stone when a crown is being chosen for it. */
+const T_STONE = [
+  S_PREWAR, S_ARTDECO, S_CORNICE, S_PMOD, S_ROMANESQUE, S_GOTHIC, S_BEAUX,
+  S_EMPIRE, S_ITALIANATE, S_CIVIC, S_TERRACOTTA, S_CHICAGO, S_MARKET, S_MODERNE,
+];
+
+/** Old enough, and soft enough, to have grown a pitched roof over it. */
+const T_OLDROOF = [
+  S_PREWAR, S_BRICK, S_FEDERAL, S_ITALIANATE, S_EMPIRE, S_TENEMENT, S_CARRIAGE,
+];
+
+const has = (list: readonly number[], s: number) => list.indexOf(s) >= 0;
+
+/**
+ * The same membership tests, as GLSL. Generated from the arrays above so the
+ * shader cannot drift from the TypeScript — the failure mode this replaces is
+ * exactly a threshold that was right when it was written and silently wrong
+ * two styles later.
+ */
+const styleFn = (name: string, ids: readonly number[]): string =>
+  `bool ${name}(int s) { return ${ids.map((i) => `s==${i}`).join("||")}; }\n`;
+
+/**
+ * Old enough to have turned its window heads. A round arch is a nineteenth
+ * century way of carrying a wall over a hole; a 1958 brick slab has a steel
+ * lintel and a flat head, and putting an arch on it was the single wrongest
+ * thing the old blanket masonry test did.
+ */
+const T_ARCHED = [
+  S_PREWAR, S_BRICK, S_ROMANESQUE, S_ITALIANATE, S_EMPIRE, S_MARKET,
+  S_CARRIAGE, S_CASTIRON,
+];
+
+const STYLE_SETS_GLSL = /* glsl */ `
+${styleFn("isMasonry", T_MASONRY)}${styleFn("isGlassy", T_GLASSY)}${styleFn("isTrade", T_TRADE)}${styleFn("isFloorLine", T_FLOORLINE)}${styleFn("isArched", T_ARCHED)}`;
+
 /**
  * What a PARAPET or a bulkhead on top of this building is made of. A glass
  * tower's parapet is not more glass — it is a metal coping or a stone cap, and
  * drawing it in the wall style put a window grid on a two-foot-high object.
  */
 function modernCap(style: number): number {
-  if (style === S_GLASS || style === S_DARK) return S_CORNICE;
-  if (style === S_CRYSTAL || style === S_DIAGRID) return S_PLAIN;
+  if (has(T_CAPPED_STONE, style)) return S_CORNICE;
+  if (has(T_CAPPED_PLAIN, style)) return S_PLAIN;
   return style;
 }
 
@@ -441,7 +577,7 @@ varying float vRet;
 uniform float uOpacity;
 uniform vec3 uCam;
 ${"" /* shadow sampling */}
-` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + SEASON_GLSL + /* glsl */ `
+` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + SEASON_GLSL + STYLE_SETS_GLSL + /* glsl */ `
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
@@ -614,7 +750,7 @@ void main() {
   // They cost nothing — the shader already knows where the floors and the
   // window openings are — and they are what stops a brick wall reading as a
   // grid of holes.
-  bool masonry = (s == 1 || s == 2 || s == 3);
+  bool masonry = isMasonry(s);
   if (masonry && near > 0.15) {
     // STRING COURSE. A projecting band of stone at one floor line, on maybe
     // half the buildings, at a height that varies with the building.
@@ -629,7 +765,7 @@ void main() {
     }
     // ARCHED HEADS. Round-topped openings on the older stock: cut the top
     // corners off the window by pushing the mask in as it nears the head.
-    if (vVar > 0.55 && s != 3) {
+    if (vVar > 0.55 && isArched(s)) {
       float wyA = clamp((f.y - m.y - 0.04) / max(win.y, 0.001), 0.0, 1.0);
       float wxA = abs(f.x - 0.5) / max(win.x * 0.5, 0.001);
       // the arch springs at 70% of the opening height
@@ -762,7 +898,7 @@ void main() {
   col *= 1.0 + 0.10 * (1.0 - winMask) * smoothstep(0.0, 0.04, f.y) * (1.0 - smoothstep(0.04, 0.09, f.y)) * step(0.5, float(s != 0));
   // mullion shadow line under each floor
   col *= 1.0 - 0.10 * (1.0 - winMask) * (1.0 - smoothstep(0.08, 0.12, f.y))
-       * ((s < 8 || s == 17) ? 1.0 : 0.0);
+       * (isFloorLine(s) ? 1.0 : 0.0);
 
   // ---- the ground floor ---------------------------------------------------
   // Where the building meets the street it stops being a facade and becomes
@@ -805,7 +941,7 @@ void main() {
     }
   }
 
-  bool trade = (s <= 4 || s == 6 || s == 7) && !row;
+  bool trade = isTrade(s) && !row;
   float gfTop = fh * 1.04;
 
   if (trade && near > 0.25 && vZ < gfTop && vTop > fh * 1.7) {
@@ -1011,7 +1147,7 @@ varying float vLit;
 varying float vRet;
 uniform float uOpacity;
 uniform vec3 uCam;
-` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + SEASON_GLSL + /* glsl */ `
+` + SHADOW_GLSL + LIGHT_GLSL + HAZE_GLSL + SEASON_GLSL + STYLE_SETS_GLSL + /* glsl */ `
 float rhash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float rnoise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
@@ -1684,8 +1820,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
       {
         const yr = v.y || 1950;
-        const modernCls = style === S_GLASS || style === S_DARK || style === S_RIBBON
-          || style === S_CRYSTAL || style === S_DIAGRID || style === S_PMOD;
+        const modernCls = has(T_MODERN, style) || style === S_PMOD;
         const bigPlate = v.f >= 6 || v.z1 >= 24;
         const pool: number[] = [];
         if (yr < 1930)      pool.push(1, 1, 1, 0, 0, 0, 0, 3, 3, 4, 4, 5);
@@ -1783,10 +1918,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
       // ---- gabled colonial roofs in the old fabric -------------------------
       const gable = ring.length === 4 && v.z1 > 0 && v.z1 <= 15 && v.y > 0 && v.y < 1945 &&
-        (style === S_PREWAR || style === S_BRICK) && volsPerBBL.get(v.b) === 1;
+        has(T_OLDROOF, style) && volsPerBBL.get(v.b) === 1;
       // the rest of the old stock, which the gable path could never reach
       const oldStock = !v.d && !v.k && !gable && v.y > 0 &&
-        (style === S_PREWAR || style === S_BRICK) && ring.length >= 3;
+        has(T_OLDROOF, style) && ring.length >= 3;
       const mansard = oldStock && v.y < 1935 && v.z1 >= 11 && v.z1 <= 28 && varr > 0.66;
       const hip = oldStock && !mansard && v.y < 1945 && v.z1 > 3 && v.z1 <= 14 && varr > 0.34;
       if (gable) {
@@ -1887,9 +2022,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const cs = (n: number) => hash01(key ^ Math.imul(n + 1, 0x9e3779b1), this.citySeed ^ 0x00c0ffee);
         const tall = v.z1 >= 26 && !!v.x;
         const deco = style === S_ARTDECO;
-        const modern = style === S_GLASS || style === S_DARK || style === S_RIBBON
-          || style === S_CRYSTAL || style === S_DIAGRID;
-        const stone = style === S_PREWAR || deco || style === S_CORNICE || style === S_PMOD;
+        const modern = has(T_MODERN, style);
+        const stone = has(T_STONE, style);
         // WHAT THIS BUILDING'S TOP COULD PLAUSIBLY BE. Repeats are weights.
         const crowns: string[] = [];
         if (v.z1 >= 12) {
@@ -2074,7 +2208,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           const pent = insetRing(ring, Math.min(6, Math.max(2.2, Math.sqrt(v.z1) * 0.55)));
           if (pent) {
             const ph2 = v.z1 > 70 ? 5.2 : 3.6;
-            const pm = [style === S_GLASS || style === S_DARK || style === S_CRYSTAL || style === S_DIAGRID ? S_PLAIN : style, rnd, varr, v.z1 + ph2, fh];
+            const pm = [has(T_MODERN, style) || has(T_CAPPED_PLAIN, style) ? S_PLAIN : style, rnd, varr, v.z1 + ph2, fh];
             extrudeWalls(W, pent, v.z1 + 0.4, v.z1 + ph2, pm);
             capRoof(R, pent, v.z1 + ph2, [pm[0], rnd, varr, v.z1 + ph2, fh]);
             mechDeck = { ring: pent, z: v.z1 + ph2 };

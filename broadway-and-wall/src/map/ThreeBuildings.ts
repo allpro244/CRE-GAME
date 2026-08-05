@@ -186,6 +186,26 @@ const S_UNITGLASS = 49;  // contemporary unitised wall: a fine mullion rhythm an
 const S_MEGAPANEL = 50;  // two-storey mega panels with an expressed shadow box between them
 
 // ---------------------------------------------------------------------------
+// THE WORKING CITY.
+//
+// Every building that made something was one style — S_MILL, an industrial
+// sash — and a port city's industry is not one building. A gasholder, a grain
+// elevator, a power station, a cold store and a brewery share nothing at all:
+// they are different SHAPES holding different things, and what they look like
+// follows entirely from what is inside them. This is the part of the city the
+// game is named after and it had the least in it.
+const S_POWERHOUSE = 51;  // generating station: giant arched bays, engine-hall scale
+const S_COLDSTORE = 52;   // insulated brick, almost no openings, and a stack of loading doors
+const S_BREWERY = 53;     // brick with segmental arches, a stair tower and a copper vent
+const S_FOUNDRY = 54;     // steel sash to the roof, sooted, with a monitor over it
+const S_GRAINHOUSE = 55;  // slip-formed concrete silos: vertical drums, no windows at all
+const S_GASHOLDER = 56;   // a lattice guide frame round a drum that goes up and down
+const S_SHIPSHED = 57;    // shipyard fabrication shed: portal frame, crane rail, vast doors
+const S_TEXTILE = 58;     // the multi-storey mill: bay after identical bay, and a stair tower
+const S_DEPOT = 59;       // rail depot: a long platform canopy on iron columns
+const S_PUMPHOUSE = 60;   // a small brick temple with one enormous window, built round a pump
+
+// ---------------------------------------------------------------------------
 // TRAITS, NOT NUMBERS.
 //
 // Downstream behaviour was keyed to the numeric VALUE of a style id — `s < 8`
@@ -204,6 +224,7 @@ const T_MASONRY = [
   S_PREWAR, S_BRICK, S_MILL, S_ROMANESQUE, S_BEAUX, S_EMPIRE, S_ITALIANATE,
   S_FEDERAL, S_TENEMENT, S_CIVIC, S_CARRIAGE, S_MARKET, S_GOTHIC, S_TERRACOTTA,
   S_CHICAGO, S_PROJECT, S_WHITEBRICK, S_EIFS,
+  S_POWERHOUSE, S_COLDSTORE, S_BREWERY, S_TEXTILE, S_PUMPHOUSE, S_DEPOT,
 ];
 
 /** Reflects the sky and throws a specular back at the sun. */
@@ -220,6 +241,7 @@ const T_TRADE = [
   S_TERRACOTTA, S_MODERNE, S_MARKET, S_INTL, S_PMOD, S_EIFS, S_TIMBER,
   S_WHITEBRICK, S_TENEMENT,
   S_TERRAPIER, S_UNITGLASS, S_MEGAPANEL, S_STEELSHELF, S_DEEPFRAME,
+  S_DEPOT, S_PUMPHOUSE,
 ];
 
 /** Expresses its floor line as a shadow under every storey. */
@@ -229,6 +251,7 @@ const T_FLOORLINE = [
   S_FEDERAL, S_TENEMENT, S_CHICAGO, S_TERRACOTTA, S_MODERNE, S_CIVIC,
   S_MARKET, S_INTL, S_PRECAST, S_PROJECT, S_WHITEBRICK, S_BALCONY, S_TIMBER,
   S_EIFS, S_FRIT, S_STEELSHELF, S_MEGAPANEL, S_DEEPFRAME,
+  S_POWERHOUSE, S_BREWERY, S_TEXTILE, S_FOUNDRY, S_DEPOT,
 ];
 
 /** A modern skin whose parapet is metal or stone rather than more of itself. */
@@ -236,6 +259,7 @@ const T_CAPPED_STONE = [S_GLASS, S_DARK, S_MIRROR, S_FRIT];
 const T_CAPPED_PLAIN = [
   S_CRYSTAL, S_DIAGRID, S_SCREEN, S_BALCONY, S_METALPAN, S_GARAGE, S_BIGBOX,
   S_TERRAPIER, S_DEEPFRAME, S_STEELSHELF, S_UNITGLASS, S_MEGAPANEL,
+  S_GRAINHOUSE, S_GASHOLDER, S_SHIPSHED,
 ];
 
 /** Reads as a modern building when a crown is being chosen for it. */
@@ -275,7 +299,7 @@ const styleFn = (name: string, ids: readonly number[]): string =>
  */
 const T_ARCHED = [
   S_PREWAR, S_BRICK, S_ROMANESQUE, S_ITALIANATE, S_EMPIRE, S_MARKET,
-  S_CARRIAGE, S_CASTIRON,
+  S_CARRIAGE, S_CASTIRON, S_POWERHOUSE, S_BREWERY, S_PUMPHOUSE,
 ];
 
 const STYLE_SETS_GLSL = /* glsl */ `
@@ -325,10 +349,37 @@ function stylePool(v: BuildingVolume): number[] {
 
   // ---- the working waterfront, which does not follow fashion ---------------
   if (works) {
-    if (y < 1900) p.push(S_MILL, S_MILL, S_MILL, S_CARRIAGE, S_ROMANESQUE, S_MARKET);
-    else if (y < 1945) p.push(S_MILL, S_MILL, S_MILL, S_MARKET, S_CARRIAGE, S_MODERNE);
-    else if (y < 1980) p.push(S_MILL, S_METALPAN, S_METALPAN, S_PRECAST, S_BRUTAL);
-    else p.push(S_METALPAN, S_METALPAN, S_METALPAN, S_BIGBOX, S_EIFS);
+    // WHAT IT IS MAKING DECIDES WHAT IT LOOKS LIKE. A gasholder, a grain
+    // elevator, a cold store and a brewery share nothing — they are different
+    // shapes holding different things, and the walls follow from the contents.
+    // Height and plate stand in for the contents here, because they are what
+    // the process actually dictates: a silo is tall and blind, an engine hall
+    // is one enormous room, a mill is a grid of identical bays.
+    // A SILO HAS NO FLOORS. The generator gives every building a floor count
+    // because everything gets one, but a grain elevator is a thirty-metre drum
+    // and a gasholder is a tank in a frame — neither has a storey in it. Gating
+    // them on floors is gating them on a fiction, and measured it made them
+    // unreachable: no industrial building in this town has five floors, and the
+    // whole class runs 2 at the quartile and 4 at the ninth decile. So the gate
+    // is TALL FOR ITS CLASS, which here is four.
+    if (y < 1900) {
+      p.push(S_MILL, S_CARRIAGE, S_ROMANESQUE, S_PUMPHOUSE);
+      if (f >= 3) p.push(S_TEXTILE, S_TEXTILE, S_BREWERY);
+      if (f >= 2) p.push(S_FOUNDRY, S_COLDSTORE, S_DEPOT);
+      if (f >= 4) p.push(S_POWERHOUSE, S_GRAINHOUSE, S_GASHOLDER);
+    } else if (y < 1945) {
+      p.push(S_MILL, S_PUMPHOUSE, S_BREWERY, S_DEPOT);
+      if (f >= 3) p.push(S_TEXTILE, S_TEXTILE, S_COLDSTORE);
+      if (f >= 2) p.push(S_FOUNDRY, S_FOUNDRY, S_SHIPSHED);
+      if (f >= 4) p.push(S_POWERHOUSE, S_GRAINHOUSE, S_GASHOLDER);
+    } else if (y < 1980) {
+      p.push(S_METALPAN, S_PRECAST, S_SHIPSHED, S_SHIPSHED, S_COLDSTORE, S_FOUNDRY);
+      if (f >= 3) p.push(S_BRUTAL, S_TEXTILE);
+      if (f >= 4) p.push(S_GRAINHOUSE, S_POWERHOUSE, S_GASHOLDER);
+    } else {
+      p.push(S_METALPAN, S_METALPAN, S_BIGBOX, S_EIFS, S_SHIPSHED, S_SHIPSHED);
+      if (f >= 3) p.push(S_COLDSTORE);
+    }
     if (f >= 4 && y >= 1955) p.push(S_GARAGE);
     return p;
   }
@@ -1300,6 +1351,77 @@ void main() {
     colW = 8.0; win = vec2(0.0, 0.0);
     wall = mix(vec3(0.78, 0.75, 0.69), vec3(0.70, 0.68, 0.64), step(0.5, vVar));
     glassA = wall; glassB = wall;
+  } else if (s == 51) {
+    // THE GENERATING STATION. One enormous room with turbines in it, so the
+    // openings are the height of the whole building rather than the height of
+    // a floor — a bay four storeys tall, arched, in engineering brick. Nothing
+    // else in a city has that proportion and it reads from anywhere.
+    colW = 7.4; win = vec2(0.56, 0.86);
+    wall = mix(vec3(0.470, 0.330, 0.270), vec3(0.560, 0.470, 0.400), step(0.5, vVar));
+    glassA = vec3(0.22, 0.27, 0.31); glassB = vec3(0.36, 0.44, 0.50);
+  } else if (s == 52) {
+    // THE COLD STORE. Insulation means no windows: a blank brick cliff with a
+    // stack of loading doors down one bay and a handful of tiny openings where
+    // somebody has to see out. The blankness is the building.
+    colW = 4.6; win = vec2(0.16, 0.14);
+    wall = mix(vec3(0.545, 0.430, 0.380), vec3(0.610, 0.560, 0.505), step(0.6, vVar));
+    glassA = vec3(0.20, 0.22, 0.24); glassB = vec3(0.30, 0.34, 0.37);
+  } else if (s == 53) {
+    // THE BREWERY. Segmental-arched brick, a tall stair-and-liquor tower, and
+    // the good ones got a cornice — a brewery was a proud building in a way a
+    // warehouse never was, and it is usually the best brickwork in the district.
+    colW = 3.6; win = vec2(0.44, 0.66);
+    wall = mix(vec3(0.520, 0.330, 0.270), vec3(0.590, 0.420, 0.330), step(0.5, vVar));
+    glassA = vec3(0.24, 0.28, 0.33); glassB = vec3(0.38, 0.45, 0.51);
+  } else if (s == 54) {
+    // THE FOUNDRY. Steel sash from waist height to the roof because the work
+    // needs light and the walls carry nothing, and a century of carbon on top
+    // of it. Almost all glazing, and almost all of it filthy.
+    colW = 4.0; win = vec2(0.82, 0.74);
+    wall = mix(vec3(0.415, 0.400, 0.375), vec3(0.480, 0.455, 0.420), step(0.5, vVar));
+    glassA = vec3(0.30, 0.33, 0.32); glassB = vec3(0.44, 0.48, 0.46);
+  } else if (s == 55) {
+    // THE GRAIN ELEVATOR. Slip-formed concrete drums with no openings at all —
+    // the one industrial building taller than the district round it, and it is
+    // not clad, it is POURED. The drum lines are the whole facade.
+    colW = 6.5; win = vec2(0.0, 0.0);
+    wall = mix(vec3(0.660, 0.650, 0.620), vec3(0.590, 0.580, 0.560), step(0.5, vVar));
+    glassA = wall; glassB = wall;
+  } else if (s == 56) {
+    // THE GASHOLDER. A lattice guide frame standing round a drum that rises
+    // and falls with the gas in it — so what you see is mostly SKY, crossed by
+    // ironwork, with the tank sitting somewhere inside.
+    colW = 3.0; win = vec2(0.0, 0.0);
+    wall = mix(vec3(0.430, 0.415, 0.385), vec3(0.360, 0.370, 0.375), step(0.5, vVar));
+    glassA = wall; glassB = wall;
+  } else if (s == 57) {
+    // THE FABRICATION SHED. A portal frame with a crane rail down it and doors
+    // big enough to take a hull out — profiled steel above, and the door is
+    // most of the gable end.
+    colW = 5.5; win = vec2(0.30, 0.20);
+    wall = mix(vec3(0.545, 0.560, 0.545), vec3(0.470, 0.490, 0.505), step(0.5, vVar));
+    glassA = vec3(0.28, 0.32, 0.34); glassB = vec3(0.42, 0.47, 0.49);
+  } else if (s == 58) {
+    // THE MULTI-STOREY MILL. Bay after identical bay for a hundred metres,
+    // because the frame is a grid and the machines sat on it — plus the stair
+    // tower, which is the only thing that breaks the rhythm.
+    colW = 3.25; win = vec2(0.62, 0.68);
+    wall = mix(vec3(0.560, 0.395, 0.320), vec3(0.505, 0.440, 0.390), step(0.5, vVar));
+    glassA = vec3(0.28, 0.33, 0.37); glassB = vec3(0.43, 0.50, 0.55);
+  } else if (s == 59) {
+    // THE DEPOT. A long low building whose front is a platform canopy on iron
+    // columns — so at street level it is mostly a colonnade with a deep shade
+    // behind it, and the building proper starts well back.
+    colW = 4.4; win = vec2(0.52, 0.56);
+    wall = mix(vec3(0.590, 0.480, 0.400), vec3(0.640, 0.605, 0.545), step(0.5, vVar));
+    glassA = vec3(0.26, 0.31, 0.36); glassB = vec3(0.40, 0.48, 0.54);
+  } else if (s == 60) {
+    // THE PUMP HOUSE. A little brick temple built round one machine, with a
+    // single arched window nearly the height of the wall — Victorian engineers
+    // dressed their machinery, and this is the smallest example of it.
+    colW = 5.0; win = vec2(0.46, 0.78);
+    wall = mix(vec3(0.545, 0.375, 0.310), vec3(0.610, 0.545, 0.470), step(0.5, vVar));
+    glassA = vec3(0.24, 0.29, 0.34); glassB = vec3(0.38, 0.46, 0.52);
   } else if (s == 46) {
     // TERRACOTTA / BRONZE PIERS. The pier runs the whole height without a
     // single horizontal interruption and the glass is a slot behind it. That
@@ -1369,6 +1491,12 @@ void main() {
   // in it. A brutalist slot is half a metre deep; a mirror-glass unit is
   // flush enough to be a mirror.
   float revealM = (s == 49) ? 0.028
+                : (s == 55 || s == 56 || s == 57) ? 0.06
+                : (s == 54) ? 0.13
+                : (s == 58 || s == 52) ? 0.30
+                : (s == 53) ? 0.34
+                : (s == 59) ? 0.36
+                : (s == 51 || s == 60) ? 0.44
                 : (s == 35 || s == 42) ? 0.030
                 : (s == 50) ? 0.055
                 : (s == 48) ? 0.075
@@ -1756,6 +1884,105 @@ void main() {
       float cover = clamp(fin + obliq * 1.25, 0.0, 1.0);
       wall = mix(wall, wall * (0.82 + 0.30 * fin), 0.9);
       winMask *= 1.0 - cover * 0.92;
+    } else if (s == 51 || s == 60) {
+      // THE ENGINE HALL. One room, so the bay is the height of the building and
+      // the pier between bays is a buttress rather than a mullion — heavy,
+      // stepped in at the top, with the arch springing off it. A round head on
+      // an opening four storeys tall is unmistakable.
+      float pil = 1.0 - smoothstep(0.0, 0.14, min(f.x, 1.0 - f.x));
+      wall = mix(wall, wall * 1.12, pil);
+      if (inHole) {
+        float spring = smoothstep(0.72, 1.0, oy);
+        float rad = sqrt(max(0.0, 1.0 - spring * spring));
+        winMask *= 1.0 - smoothstep(rad - 0.18, rad + 0.02, abs(ox - 0.5) * 2.0 * spring);
+        // the glazing bars of an industrial sash, which are a real grid
+        float gx = abs(fract(ox * 5.0) - 0.5), gy = abs(fract(oy * 8.0) - 0.5);
+        winMask *= 1.0 - clamp((1.0 - smoothstep(0.34, 0.48, gx)) + (1.0 - smoothstep(0.34, 0.48, gy)), 0.0, 1.0) * 0.75;
+      }
+      if (vZ < fh * 0.9) wall *= 0.94;                  // a plinth of engineering brick
+    } else if (s == 52) {
+      // THE COLD STORE. What the wall has instead of windows is a stack of
+      // LOADING DOORS in one bay, floor after floor, each with its hoist beam
+      // over it — the only thing on a hundred feet of blank brick.
+      float dBay = step(0.72, hash(vec2(floor(u) + 4.0, floor(vRand * 17.0))));
+      if (dBay > 0.5 && abs(f.x - 0.5) < 0.30) {
+        float fy = fract(v);
+        if (fy > 0.12 && fy < 0.72) { wall = mix(wall, vec3(0.24, 0.22, 0.20), 0.88); winMask = 0.0; }
+        else if (fy >= 0.72 && fy < 0.80) wall = mix(wall, wall * 1.18, 0.7);   // the hoist beam
+      }
+      // pilaster strips, which is all the relief a blank wall ever gets
+      float ps = 1.0 - smoothstep(0.0, 0.06, min(f.x, 1.0 - f.x));
+      wall = mix(wall, wall * 1.07, ps);
+    } else if (s == 53) {
+      // SEGMENTAL ARCHES and a corbelled brick band under the eaves. A brewery
+      // was a proud building in a way a warehouse never was.
+      if (inHole && oy > 0.84) winMask *= 1.0 - smoothstep(0.50, 0.94, abs(ox - 0.5) * 2.0);
+      float br = vTop - vZ;
+      if (br < 1.9 && br > 0.5) {
+        float t = fract(vU / 1.15);
+        wall *= 1.0 - 0.20 * (1.0 - smoothstep(0.0, 0.26, min(t, 1.0 - t)));
+      }
+    } else if (s == 54) {
+      // STEEL SASH. A real glazing grid — small panes in a heavy frame — and a
+      // solid plinth up to waist height because nobody glazes what gets hit.
+      if (vZ < fh * 0.55) { winMask = 0.0; wall *= 0.95; }
+      else if (inHole) {
+        float gx = abs(fract(ox * 6.0) - 0.5), gy = abs(fract(oy * 7.0) - 0.5);
+        winMask *= 1.0 - clamp((1.0 - smoothstep(0.32, 0.47, gx)) + (1.0 - smoothstep(0.32, 0.47, gy)), 0.0, 1.0) * 0.8;
+      }
+    } else if (s == 55) {
+      // THE DRUMS. Slip-formed silos stand in a row and each one is a cylinder,
+      // so the wall is a series of vertical lobes — lit down one flank, shaded
+      // down the other, with a hard seam where two drums meet. The pour lines
+      // ring the whole thing every metre and a half.
+      float drum = fract(vU / 7.6);
+      float lobe = sin(drum * 3.14159265);
+      wall *= 0.74 + 0.42 * lobe;
+      wall *= 1.0 - 0.26 * (1.0 - smoothstep(0.0, 0.06, min(drum, 1.0 - drum)));
+      wall *= 0.985 + 0.03 * step(0.5, fract(vZ / 1.55));
+    } else if (s == 56) {
+      // THE GUIDE FRAME. Lattice columns round the tank with lattice girders
+      // ringing them — mostly air, and what you actually read is the ironwork
+      // against the sky rather than any wall at all.
+      float col = 1.0 - smoothstep(0.055, 0.12, min(f.x, 1.0 - f.x));
+      float ring = 1.0 - smoothstep(0.0, 0.05, min(fract(vZ / 6.4), 1.0 - fract(vZ / 6.4)));
+      float diag = 1.0 - smoothstep(0.30, 0.44, abs(fract(vU / 3.1 + vZ / 6.4) - 0.5) * 2.0);
+      float iron = clamp(max(col, max(ring, diag * 0.7)), 0.0, 1.0);
+      wall = mix(wall * 0.55, wall * 1.25, iron);
+      // the tank inside, which only reaches part way up
+      if (vZ < vTop * 0.55) wall = mix(wall, wall * 0.88 + vec3(0.04), 0.5);
+    } else if (s == 57) {
+      // THE PORTAL FRAME. Profiled sheet with a rib every 300 mm, the crane
+      // rail expressed as a heavy band at gantry height, and one enormous door.
+      float rib = fract(vU / 0.30);
+      wall *= 1.0 + 0.13 * sin(rib * 6.2831853) * sign(dot(SUN_DIR, T));
+      float rail = 1.0 - smoothstep(0.0, 0.55, abs(vZ - vTop * 0.62));
+      wall = mix(wall, wall * 0.82, rail * 0.8);
+      if (vZ < vTop * 0.46 && abs(fract(vU / 26.0) - 0.5) < 0.22) {
+        wall = mix(wall, wall * 0.66, 0.85);            // the door leaf
+        winMask = 0.0;
+      }
+    } else if (s == 58) {
+      // THE MILL BAY, repeated without mercy, and the STAIR TOWER that is the
+      // only thing that breaks it: one bay running the full height with no
+      // floor line in it and a different brick.
+      if (fract(vZ / fh) < 0.09) wall *= 0.93;          // the floor band
+      float tw = fract(vU / 46.0);
+      if (tw > 0.02 && tw < 0.13) {
+        wall = mix(wall, wall * 1.10, 0.8);
+        if (inHole) winMask *= 0.55;                    // slit windows up the stair
+      }
+    } else if (s == 59) {
+      // THE PLATFORM CANOPY. At street level the building is a colonnade with
+      // deep shade behind it, and the fascia runs the whole length above.
+      float cH = fh * 1.25;
+      if (vZ < cH) {
+        float t = fract(vU / 3.9);
+        float colm = 1.0 - smoothstep(0.10, 0.20, min(t, 1.0 - t));
+        wall = mix(wall * 0.34, wall * 1.06, colm);     // shade, and the iron column in it
+        winMask = 0.0;
+        if (vZ > cH - 0.9) { wall = mix(wall, wall * 1.14, 0.85); }   // the fascia
+      }
     } else if (s == 46) {
       // THE PIER. A deep terracotta or bronze fin standing off the face, with
       // the glass in the slot behind it. Two things sell it: the pier is
@@ -2310,6 +2537,16 @@ void main() {
   else if (s == 48) roof = vec3(0.640, 0.640, 0.630); // steel shelf: painted deck
   else if (s == 49) roof = vec3(0.615, 0.630, 0.645); // unitised: pale membrane
   else if (s == 50) roof = vec3(0.430, 0.445, 0.465); // mega panel: dark ballast
+  else if (s == 51) roof = vec3(0.395, 0.400, 0.410); // powerhouse: sooted slate
+  else if (s == 52) roof = vec3(0.505, 0.490, 0.455); // cold store: patched felt
+  else if (s == 53) roof = vec3(0.455, 0.395, 0.350); // brewery: pantile
+  else if (s == 54) roof = vec3(0.440, 0.450, 0.450); // foundry: glazed monitor
+  else if (s == 55) roof = vec3(0.615, 0.610, 0.585); // silos: the same concrete
+  else if (s == 56) roof = vec3(0.395, 0.385, 0.365); // gasholder: the tank crown
+  else if (s == 57) roof = vec3(0.560, 0.575, 0.575); // shed: profiled sheet
+  else if (s == 58) roof = vec3(0.470, 0.445, 0.415); // mill: asphalt over timber
+  else if (s == 59) roof = vec3(0.505, 0.525, 0.530); // depot: standing seam
+  else if (s == 60) roof = vec3(0.430, 0.375, 0.335); // pump house: slate
   else              roof = vec3(0.76, 0.76, 0.74);
   roof *= 0.92 + 0.16 * vRand;
 

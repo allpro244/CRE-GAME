@@ -2467,6 +2467,7 @@ varying float vLit;
 varying float vRet;
 uniform float uOpacity;
 uniform vec3 uCam;
+uniform float uTime;
 ` + SHADOW_GLSL + LIGHT_GLSL + SEASON_GLSL + HAZE_GLSL + STYLE_SETS_GLSL + /* glsl */ `
 float rhash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float rnoise(vec2 p) {
@@ -2711,6 +2712,67 @@ void main() {
     if (s == 14) roof = mix(roof, vec3(0.63, 0.70, 0.76), clamp(SNOW * 1.15, 0.0, 1.0));
     roof = snowOn(roof, up, drift);
   }
+  // ---- the pond, which is water and was never treated as any ---------------
+  //
+  // A hundred metres from a harbour that has waves, Fresnel, a sun road and a
+  // planar reflection, the park pond was a flat green-grey with two octaves of
+  // static noise laid over it. It did not need the harbour's swell — a
+  // sheltered basin has none — but it did need the two things that make still
+  // water read as water at all: a surface that MOVES, and a sky in it.
+  //
+  // Three slow crossed trains give the ripple; the slope of their sum is the
+  // normal, and everything else falls out of that. vU carries distance to the
+  // pond's own bank, baked per vertex, so the rim goes green and opaque where
+  // you can see the bottom and the middle holds the sky.
+  if (s == 14) {
+    // FOUR TRAINS, DELIBERATELY UNCORRELATED. Three with similar bearings sum
+    // into a corduroy of parallel ridges — the pond came out looking milled
+    // rather than wet. Spread the headings around the compass, keep the
+    // wavelengths incommensurate, and the interference pattern stops having a
+    // direction.
+    float t = uTime;
+    float a1 = sin(wp.x *  0.97 + wp.y *  0.14 + t * 0.83);
+    float a2 = sin(wp.x * -0.34 + wp.y *  0.92 + t * 1.27);
+    float a3 = sin(wp.x *  1.51 - wp.y *  1.19 + t * 1.94);
+    float a4 = sin(wp.x * -1.77 - wp.y *  1.05 + t * 2.61);
+    // THE SLOPE HAS TO BE REAL OR THE SPECULAR IS NOT A GLINT, IT IS A FLARE.
+    // At 0.028 the ripple barely tilted the normal, so every point on the pond
+    // shared one alignment with the half-vector — and with a low sun over a
+    // horizontal surface that alignment is near perfect, so the entire pond
+    // went to white at once. Water sparkles because its normal VARIES; the
+    // tight exponents below are only meaningful against a surface that moves
+    // enough to put some of itself out of alignment.
+    vec2 slope = vec2( 0.97 * a1 - 0.34 * a2 + 1.51 * a3 - 1.77 * a4,
+                       0.14 * a1 + 0.92 * a2 - 1.19 * a3 - 1.05 * a4) * 0.075;
+    vec3 pn = normalize(vec3(-slope, 1.0));
+    vec3 Vp = normalize(uCam - vPos);
+
+    // SCHLICK, NOT A GUESS. Water reflects about 2% of what hits it head-on
+    // and nearly everything at a grazing angle, and the curve between the two
+    // is very flat until it turns hard near the edge. A cubed falloff put 26%
+    // of sky into a pond being looked at from well above it, which is four
+    // times what is really there — and that, not the highlight, is why it kept
+    // reading as a pale sheet instead of as water.
+    float fr = 0.02 + 0.98 * pow(1.0 - clamp(dot(pn, Vp), 0.0, 1.0), 5.0);
+
+    // AND A POND IS DARK. Standing water over silt and weed is one of the
+    // darkest surfaces in a park — considerably darker than the grass around
+    // it — which is exactly what makes it read as depth rather than as a
+    // puddle of sky lying on the lawn.
+    roof = vec3(0.088, 0.128, 0.116);
+    float rim = 1.0 - smoothstep(0.0, 3.4, vU);
+    // the bank: silt, weed and the bottom showing through
+    roof = mix(roof, vec3(0.232, 0.290, 0.212), rim * 0.72);
+    roof = mix(roof, vec3(0.556, 0.688, 0.836), fr * (1.0 - rim * 0.55));
+    // and the sun on it — broad sheen, then the hard points
+    float sd = max(dot(pn, normalize(SUN_DIR + Vp)), 0.0);
+    // A small pond looked at down the sun's bearing IS a sheet of light — that
+    // part was never wrong. What was wrong was the amount: enough to clip to
+    // paper white and lose the ripple that makes it legible as water.
+    roof += SUN_COL * (pow(sd, 30.0) * 0.03 + pow(sd, 260.0) * 0.14 + pow(sd, 900.0) * 0.38)
+          * (1.0 - rim * 0.7);
+  }
+
   float vis = sunVis(vPos, n);
   // vU carries distance to the roof edge: the parapet shades its own deck
   float aoEdge = mix(0.78, 1.0, smoothstep(0.0, 2.8, vU));
@@ -3529,6 +3591,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private demandByBbl: Record<string, number> = {};
   /** true once any walker mesh exists — gates the animation clock. */
   private hasWalkers = false;
+  private hasPonds = false;
   private shadowTarget: THREE.WebGLRenderTarget | null = null;
   private shadowSpan = 5999;
   private depthMat: THREE.MeshDepthMaterial | null = null;
@@ -4755,6 +4818,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       uSunVP: { value: new THREE.Matrix4() },
       uShadowOn: { value: 0 },
       uShadowSpan: { value: 5999 },
+      uTime: this.timeUni,
     });
     this.wallMat = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: FRAG, uniforms: uniforms(), side: THREE.DoubleSide });
     this.roofMat = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: ROOF_FRAG, uniforms: uniforms(), side: THREE.DoubleSide });
@@ -5360,8 +5424,29 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     const parks = this.ctxPoints.parks;
     if (!parks?.length) return;
     const T = { pos: [] as number[], norm: [] as number[], u: [] as number[], style: [] as number[] };
+    // `uOf` lets a surface bake something useful into the spare per-vertex
+    // float. The lawn and the walks have nothing to say and push the old
+    // constant; the pond writes its distance to its own bank, which is what
+    // lets the shader shallow the rim and hold the sky in the middle.
+    let uOf: ((v: [number, number]) => number) | null = null;
     const emit = (q: [number, number][], z: number, style: number) => {
-      for (const v of q) { T.pos.push(v[0], v[1], z); T.norm.push(0, 0, 1); T.u.push(6); T.style.push(style); }
+      for (const v of q) {
+        T.pos.push(v[0], v[1], z); T.norm.push(0, 0, 1);
+        T.u.push(uOf ? uOf(v) : 6); T.style.push(style);
+      }
+    };
+    /** Shortest distance from a point to a closed ring, in metres. */
+    const distToRing = (v: [number, number], ring: [number, number][]) => {
+      let best = Infinity;
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        const dx = b[0] - a[0], dy = b[1] - a[1];
+        const l2 = dx * dx + dy * dy;
+        let t = l2 ? ((v[0] - a[0]) * dx + (v[1] - a[1]) * dy) / l2 : 0;
+        t = Math.max(0, Math.min(1, t));
+        best = Math.min(best, Math.hypot(v[0] - (a[0] + t * dx), v[1] - (a[1] + t * dy)));
+      }
+      return best;
     };
     // subdivide: the shader varies with world position, so a park drawn as
     // four huge triangles still shades smoothly, but the mown bands want
@@ -5393,7 +5478,18 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // through the park. They come up with it. Laid in metres rather than
     // screen pixels, they also hold their width properly at any pitch, which
     // the line layers never did.
-    for (const p of this.ctxPoints.ponds ?? []) fillRing(p, 0.09, S_POND, false);
+    // Subdivided, and not only for the shading. Triangulating a ring produces
+    // triangles whose every corner is ON the ring — there are no interior
+    // vertices at all — so a per-vertex distance to the bank would have been
+    // zero everywhere and the pond would have been all rim. Splitting to the
+    // same 400 m² the lawn uses gives it a middle to be deep in.
+    for (const p of this.ctxPoints.ponds ?? []) {
+      const ring = p.map((q) => this.project(q));
+      uOf = (v) => distToRing(v, ring);
+      fillRing(p, 0.09, S_POND, true);
+      uOf = null;
+      this.hasPonds = true;
+    }
     for (const line of this.ctxPoints.paths ?? []) {
       const pts = line.map((q) => this.project(q));
       const HW = 1.35;
@@ -6276,7 +6372,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // only while the layer is actually visible. MapLibre repaints on demand,
     // so without this call the city would be a still photograph — and with it
     // uncapped, it would burn a core to redraw water nobody is looking at.
-    if (this.waterMat || this.cranes.length || this.hasWalkers) {
+    if (this.waterMat || this.cranes.length || this.hasWalkers || this.hasPonds) {
       const now = performance.now();
       this.timeUni.value = now / 1000;
       // A crane's slew is its parked bearing plus two slow incommensurate

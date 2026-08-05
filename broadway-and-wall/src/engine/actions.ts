@@ -501,8 +501,22 @@ export function approachOwner(
   const styleHold = owner
     ? (owner.style === "family" ? 0.30 : owner.style === "core" ? 0.14 : owner.style === "developer" ? 0.05 : -0.04)
     : 0;
-  const refuseP = Math.min(0.94, Math.max(0.05,
-    0.34 + 0.35 * pressure + styleHold
+  // NOBODY IS SELLING, MOSTLY. The base refusal was 0.34 and measured across
+  // 8,682 cold approaches the player got through 67.3% of the time — you rang
+  // a stranger about a building that was not for sale and two times in three
+  // they named a price. Brokers who do this for a living report single digits
+  // to about 20%. At 0.78 the same measurement lands at 22%, which is the top
+  // of the real band and is what the owner asked for by feel ("land owners
+  // should accept your calls about 3x less often") before either of us had the
+  // number.
+  //
+  // The modifiers matter more now than the base does, which is the point: a
+  // stressed owner still answers (-0.42), a firm with negative cash answers
+  // (-0.15), a recession opens doors (-0.10), and a family trust that knows
+  // what you are assembling does not open at any price. Getting through is now
+  // information about the OWNER rather than a coin you flip until it lands.
+  const refuseP = Math.min(0.96, Math.max(0.05,
+    0.78 + 0.35 * pressure + styleHold
     // A firm that needs money answers the phone. A firm that does not, does not.
     - (stressed ? 0.42 : 0)
     - (owner && owner.cash < 0 ? 0.15 : 0)

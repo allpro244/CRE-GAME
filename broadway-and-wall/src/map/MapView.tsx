@@ -6,6 +6,7 @@ import { composeStyle, gameLayers, landLensColor, LIVE_DEMAND, resolveBaseStyle 
 import { ThreeBuildings, type BuildingVolume } from "./ThreeBuildings";
 import { occupancy, resolveRec, useOccupancy } from "@/engine/value";
 import { useSf } from "@/engine/mix";
+import { monthLabel } from "@/engine/types";
 
 const CITY_CENTER: [number, number] = [-70.9, 41.1];
 
@@ -662,7 +663,15 @@ export default function MapView() {
       const rec = hoveredBBL && hoveredBBL !== selectedBBL ? table?.[hoveredBBL] : null;
       if (!rec) { tip.style.display = "none"; return; }
       const dmd = Math.round(Math.max(2, Math.min(100, rec.demandScore + (g?.blockD?.[rec.block] ?? 0))));
-      tip.textContent = rec.class === "land"
+      // A SITE WITH A CRANE ON IT IS NOT A VACANT LOT. The parcel stays class
+      // "land" until the day it delivers, so a job eighteen months into
+      // construction read as bare dirt on the one label you get without
+      // clicking. The panel already flags it; the map did not.
+      const job = g?.developments?.[rec.bbl];
+      tip.textContent = job
+        ? `${rec.address} · UNDER CONSTRUCTION · ${Math.round(job.sf).toLocaleString()} sf of ${job.use}`
+          + `, ${job.floors} fl · opens ${monthLabel(job.deliverM)}`
+        : rec.class === "land"
         ? `${rec.address} · vacant · ${rec.lotArea.toLocaleString()} sf lot · demand ${dmd}`
         : `${rec.address} · ${rec.floors} fl · ${Math.round(rec.bldgArea).toLocaleString()} sf · demand ${dmd}`;
       tip.style.display = "block";

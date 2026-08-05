@@ -20,6 +20,9 @@ export default function TopBar() {
   const nw = derivedNetWorth();
   const cf = derivedQuarterCF();
   const dealsCount = game ? game.lois.length + Object.values(game.holdings).filter((h) => h.sale?.offer).length : 0;
+  // What happened THIS MONTH that was not routine — the badge is the reason to
+  // look, not a count of everything ever written.
+  const unread = game ? game.news.filter((n) => n.q === game.month && (n.kind === "warn" || n.kind === "event")).length : 0;
 
   // The city menu. Six towns ship side by side; each keeps its own autosave,
   // so this is a switch between campaigns, not a reset of one.
@@ -160,6 +163,15 @@ export default function TopBar() {
           </button>
           <button className={"nav-btn" + (page === "books" ? " nav-on" : "")} onClick={() => setPage(page === "books" ? "none" : "books")}>
             Books
+          </button>
+          {/* THE TAPE HAD NOWHERE TO LIVE. Every headline this economy writes
+              was rendered into a 260px scroll box at the BOTTOM of the Books
+              page, under the ledger — which is the same as not having a news
+              page, and the owner asked where it was. It is a top-level
+              destination now, for the same reason Saves was promoted out of
+              that page: reading the news is not an accounting task. */}
+          <button className={"nav-btn" + (page === "news" ? " nav-on" : "")} onClick={() => setPage(page === "news" ? "none" : "news")}>
+            News{unread > 0 ? ` · ${unread}` : ""}
           </button>
           <span className="topbar-sep" />
           <button

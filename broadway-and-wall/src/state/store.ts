@@ -20,7 +20,7 @@ import { currentCity, currentSeed, setSeed, rerollCity } from "@/state/city";
 import { makeCity, type GeneratedCity } from "@/citygen/index.mjs";
 
 export type Lens = "none" | "land" | "demand" | "owners";
-export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "leasing" | "property" | "saves" | "notes" | "settings";
+export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "news" | "leasing" | "property" | "saves" | "notes" | "settings";
 
 interface AppState {
   parcels: ParcelTable | null;

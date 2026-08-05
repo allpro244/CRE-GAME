@@ -751,3 +751,9 @@ body {
 }
 .chart-legend-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .chart-legend-swatch { width: 15px; height: 3px; border-radius: 1px; display: inline-block; flex: none; }
+
+/* THE TAPE AS A PAGE. The docked ticker is a one-line feed; on its own page
+   each headline is a row you can read and, when it names a building, click. */
+.news-item { padding: 3px 0; line-height: 1.45; }
+.news-clickable { cursor: pointer; }
+.news-clickable:hover { color: var(--gold, #8a6d2b); }

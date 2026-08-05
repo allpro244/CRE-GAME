@@ -212,13 +212,13 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
       // The Three.js layer paints the living sea over the top of this; the
       // background and the shallows band remain as the still-water fallback
       // for anyone whose WebGL context never comes up.
-      { id: "bg", type: "background", paint: { "background-color": "#7fa3bd" } },
+      { id: "bg", type: "background", paint: { "background-color": "#2d5f86" } },
       {
         id: "shallows",
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "shallows"],
-        paint: { "fill-color": "#9dc0d6" },
+        paint: { "fill-color": "#6fa2bf" },
       },
       {
         id: "land",
@@ -228,16 +228,20 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         paint: { "fill-color": "#e6e3d9" },
       },
       {
-        // the waterline itself: a pale foam stroke where the sea meets land
+        // The waterline itself. This was a near-white stroke at 70% with more
+        // blur than width, which against the old pale sea was a hint and
+        // against a sea that now has a real value became a lit halo ringing
+        // the whole island. A waterline is a wet edge, not a light source:
+        // narrower than its blur radius, cooler, and much further down.
         id: "coast-foam",
         type: "line",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "coastline"],
         paint: {
-          "line-color": "#e8f1f4",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 12, 0.8, 16, 2.6] as never,
-          "line-opacity": 0.7,
-          "line-blur": 1.2,
+          "line-color": "#cfe0e6",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 12, 0.6, 16, 2.0] as never,
+          "line-opacity": 0.42,
+          "line-blur": 0.6,
         },
       },
       {
@@ -551,14 +555,22 @@ export function composeStyle(base: StyleSpecification, city?: {
     // whisper of ground fog in the last of the distance — which is the same
     // aerial perspective the building shader applies, so the 3D and the map
     // agree about how far away far is.
+    // A SKY WITH A TOP TO IT. Every number here was pulling the same way: a
+    // pale zenith, a horizon blend of 0.76 that dragged that pale band most of
+    // the way up the dome, and an atmosphere blend of 0.9 that washed whatever
+    // survived. The result was a flat cream field above a flat blue field —
+    // no gradient, no altitude, and nothing for the skyline to be drawn
+    // against. Deeper at the zenith, warmer where it meets the water, and the
+    // blend pulled back so the transition happens near the horizon where a
+    // real one does.
     sky: {
-      "sky-color": "#7fb6e0",
-      "sky-horizon-blend": 0.76,
-      "horizon-color": "#e2ecf1",
-      "horizon-fog-blend": 0.62,
-      "fog-color": "#cfe0ea",
-      "fog-ground-blend": 0.88,
-      "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 12, 0.9, 15.5, 0.7, 18, 0.45],
+      "sky-color": "#4f93cf",
+      "sky-horizon-blend": 0.52,
+      "horizon-color": "#dfe9ee",
+      "horizon-fog-blend": 0.72,
+      "fog-color": "#c3d8e6",
+      "fog-ground-blend": 0.80,
+      "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 12, 0.72, 15.5, 0.52, 18, 0.32],
     },
     sources: { ...base.sources, ...gameSources(city) },
     layers: [...baseLayers, ...gameLayers()],

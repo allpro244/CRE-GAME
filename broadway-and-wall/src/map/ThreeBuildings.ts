@@ -216,8 +216,16 @@ uniform vec3 uSunDir;
 uniform vec3 uSunCol;
 #define SUN_DIR uSunDir
 #define SUN_COL uSunCol
-const vec3 SKY_COL = vec3(0.53, 0.635, 0.83);
-const vec3 GND_COL = vec3(0.48, 0.405, 0.31);
+// THE FILL WAS DOING THE SUN'S JOB. A sky term this bright lands about
+// two-thirds of full illumination on a surface the sun cannot see at all,
+// which is why a city lit at 28 degrees — an angle chosen precisely so the
+// massing would have something to read against — was throwing shadows you had
+// to look for. Open shade outdoors is genuinely a couple of stops under
+// sunlight, not a quarter of one. Pulling the dome down and pushing the sun up
+// keeps the same exposure on the lit planes and buys back the contrast between
+// a wall in the light and a wall in the shade.
+const vec3 SKY_COL = vec3(0.408, 0.502, 0.688);
+const vec3 GND_COL = vec3(0.372, 0.318, 0.248);
 
 vec3 hemiLight(vec3 n, float ao) {
   vec3 amb = mix(GND_COL, SKY_COL, clamp(n.z * 0.5 + 0.5, 0.0, 1.0));
@@ -231,14 +239,26 @@ vec3 aces(vec3 x) {
 // filmic roll-off plus a gentle split-tone: cool in the shadows, warm in the
 // light. Keeps the pale architectural-model palette but stops it going chalky.
 vec3 grade(vec3 c) {
-  vec3 t = aces(c * 1.06);
-  t = mix(c * 0.92, t, 0.9);
+  vec3 t = aces(c * 1.13);
+  t = mix(c * 0.92, t, 0.94);
+  t = clamp(t, 0.0, 1.0);
+
+  // CONTRAST, ABOUT A MIDDLE PIVOT. The palette here is pale on purpose, and
+  // the curve above was landing the whole city inside about a third of a stop
+  // — sunlit stone, roadway, roof and open sea all within one value of each
+  // other. Geometry cannot rescue that: a model photographed in flat light
+  // reads as a model. An S-curve pivoted just under middle grey pushes the
+  // sunlit planes up and lets the shaded ones fall properly away, and because
+  // it pivots rather than scales, neither end clips.
+  t = clamp((t - 0.46) * 1.26 + 0.46, 0.0, 1.0);
+  t = mix(t, t * t * (3.0 - 2.0 * t), 0.22);   // and a little shoulder/toe on top
+
   float lum = dot(t, vec3(0.2126, 0.7152, 0.0722));
-  t = mix(vec3(lum), t, 1.16);                 // ACES eats chroma; put it back
+  t = mix(vec3(lum), t, 1.34);                 // ACES eats chroma; put it back
   t = clamp(t, 0.0, 1.0);
   lum = dot(t, vec3(0.2126, 0.7152, 0.0722));
-  t *= mix(vec3(0.935, 0.972, 1.082), vec3(1.062, 1.007, 0.926), smoothstep(0.16, 0.84, lum));
-  return t;
+  t *= mix(vec3(0.910, 0.958, 1.108), vec3(1.078, 1.010, 0.904), smoothstep(0.14, 0.86, lum));
+  return clamp(t, 0.0, 1.0);
 }`;
 
 const SEASON_GLSL = /* glsl */ `
@@ -269,12 +289,18 @@ vec3 snowOn(vec3 c, float up, float k) {
 // is scaled by how high the camera sits, so the effect reads the same whether
 // you are looking down a street or across the whole harbor.
 const HAZE_GLSL = /* glsl */ `
-const vec3 HAZE_COL = vec3(0.772, 0.836, 0.902);
+const vec3 HAZE_COL = vec3(0.790, 0.845, 0.902);
 vec3 aerial(vec3 c, vec3 p, vec3 cam) {
   float d = length(p - cam);
   float k = max(cam.z, 140.0);
-  float f = 1.0 - exp(-(d / k) * 0.070);
-  return mix(c, HAZE_COL, clamp(f, 0.0, 1.0) * 0.47);
+  // WEAKER, AND FURTHER OUT. At 0.47 the haze was doing the job of depth cue
+  // and the job of a grey wash at the same time: by mid-frame it had eaten
+  // half the contrast of every surface, so the far half of the city arrived
+  // pre-flattened and no amount of grading downstream could get it back.
+  // Depth reads better from a curve that stays clear up close and then falls
+  // away hard, which is also what air actually does.
+  float f = 1.0 - exp(-(d / k) * 0.056);
+  return mix(c, HAZE_COL, clamp(f, 0.0, 1.0) * 0.35);
 }`;
 
 /**
@@ -1233,9 +1259,9 @@ void main() {
   // are, so they are allowed to read: deeper, and cooler, because a shadow
   // outdoors is lit by the sky and the sky is blue.
   float sa = uSeason.x * 0.42;
-  float a  = (1.0 - vis) * 0.60;
+  float a  = (1.0 - vis) * 0.74;
   vec3  sc = vec3(0.800, 0.828, 0.880);
-  vec3  hc = mix(vec3(0.155, 0.185, 0.30), vec3(0.42, 0.49, 0.66), uSeason.x);
+  vec3  hc = mix(vec3(0.128, 0.158, 0.272), vec3(0.42, 0.49, 0.66), uSeason.x);
   float outA = sa + a * (1.0 - sa);
   vec3  outC = outA > 0.0001 ? (sc * sa * (1.0 - a) + hc * a) / outA : sc;
   gl_FragColor = vec4(outC, outA);
@@ -1294,26 +1320,49 @@ void main() {
   // SHALLOWS FOLLOW THE COAST. vDepth carries distance to the land edge, baked
   // per vertex, so the water genuinely pales where it runs up on the shore
   // instead of being one flat sheet with a painted band around it.
-  float shoal = 1.0 - smoothstep(0.0, 190.0, vDepth);
-  vec3 deep    = vec3(0.243, 0.418, 0.553);
-  vec3 shallow = vec3(0.451, 0.639, 0.729);
-  vec3 sky     = vec3(0.741, 0.843, 0.918);
-  vec3 body = mix(deep, shallow, shoal * 0.85);
-  vec3 col = mix(body, sky, 0.16 + 0.58 * fres);
+  // A HARBOUR HAS A BOTTOM. The old deep tone was a mid blue-grey that sat at
+  // almost exactly the value of the pale stone across the shoreline, so the
+  // single hardest edge in the frame — where the city stops and the sea starts
+  // — was carrying no contrast at all. Deep water offshore is dark and it is
+  // saturated, and giving it back both is what makes the island read as an
+  // island rather than a pale shape on a pale field.
+  // A HARBOUR HAS A BOTTOM, but a bottom is not a halo. The shoal band reads
+  // over a shorter run than the sea's own colour change, or the island wears a
+  // bright ring that reads as glow rather than as shallow water.
+  float shoal = 1.0 - smoothstep(0.0, 120.0, vDepth);
+  vec3 deep    = vec3(0.096, 0.245, 0.372);
+  vec3 shallow = vec3(0.310, 0.534, 0.632);
+  vec3 sky     = vec3(0.706, 0.822, 0.906);
+  vec3 body = mix(deep, shallow, shoal * 0.82);
+  vec3 col = mix(body, sky, 0.10 + 0.54 * fres);
 
   // the sun's road across the water — broad sheen, then hard sparkles on the
   // faces that happen to be pointing at it
   vec3 H = normalize(normalize(SUN_DIR) + V);
   float spec = pow(max(dot(n, H), 0.0), 220.0);
   float sheen = pow(max(dot(n, H), 0.0), 24.0);
-  col += SUN_COL * (spec * 1.9 + sheen * 0.20);
+  float glit = pow(max(dot(n, H), 0.0), 800.0);   // the hard points in the road
+  col += SUN_COL * (spec * 2.3 + sheen * 0.26 + glit * 3.4);
 
   // foam: only on the real crests, and heavier in the shallows where the
   // swell actually breaks
-  col += vec3(0.085) * smoothstep(0.86, 1.02, h) * (0.5 + 0.9 * shoal);
-  // the far sea has to dissolve into the horizon or the plane's own edge
-  // shows up as a hard line across the sky
-  gl_FragColor = vec4(aerial(grade(col), vec3(vXY, 0.0), uCam), 1.0);
+  col += vec3(0.075) * smoothstep(0.86, 1.02, h) * (0.5 + 0.8 * shoal);
+
+  // THE SEA HAS NO EDGE AND THIS MESH DOES. The sheet stops at six kilometres,
+  // and the global aerial term — deliberately weakened so the city keeps its
+  // contrast — no longer takes the far water all the way to the sky, so the
+  // boundary of the plane arrives as a ruled line straight across the picture.
+  // The sea gets its own far-field fade, run to completion, because the one
+  // thing the horizon must never do is show you where the geometry ran out.
+  // The sheet is a SQUARE six kilometres on the half-side, so its corners
+  // reach 1.41x further than its edges and a fade that is still running at the
+  // edge distance shows the diagonal. Finish well inside the boundary, and
+  // finish on the sky's own horizon colour rather than the haze grey, so the
+  // sea meets the sky instead of meeting a slightly different sky.
+  vec3 outc = aerial(grade(col), vec3(vXY, 0.0), uCam);
+  float dist = length(vec3(vXY, 0.0) - uCam);
+  outc = mix(outc, vec3(0.874, 0.914, 0.933), smoothstep(1400.0, 3900.0, dist));
+  gl_FragColor = vec4(outc, 1.0);
 }`;
 
 const PROP_FRAG = /* glsl */ `
@@ -1345,8 +1394,10 @@ void main() {
 const SUN_LEN = 1.05799;
 const SUN_EL_MID = 27.96, SUN_EL_AMP = 6.0;
 const SUN_AZ_MID = 125.38, SUN_AZ_AMP = 12;
-const SUN_COL_SUMMER: readonly [number, number, number] = [1.260, 1.090, 0.820];
-const SUN_COL_WINTER: readonly [number, number, number] = [1.470, 0.772, 0.236];
+// Lifted with the sky dome's drop, so a sunlit wall keeps the exposure it had
+// and only the shaded one moves. The ratio between them is the whole point.
+const SUN_COL_SUMMER: readonly [number, number, number] = [1.462, 1.258, 0.936];
+const SUN_COL_WINTER: readonly [number, number, number] = [1.686, 0.886, 0.272];
 const SUN_WARMTH = 0.55;
 
 const SEASON_TABLE: readonly (readonly [number, number, number, number])[] = [

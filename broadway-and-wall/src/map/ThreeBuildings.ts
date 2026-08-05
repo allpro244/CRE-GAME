@@ -2796,7 +2796,7 @@ uniform vec3 uCam;
 uniform sampler2D uReflect;
 uniform vec2 uResolution;
 uniform float uReflectOn;
-` + LIGHT_GLSL + HAZE_GLSL + /* glsl */ `
+` + LIGHT_GLSL + HAZE_GLSL + SEASON_GLSL + /* glsl */ `
 float wave(vec2 p, vec2 dir, float len, float spd, float t) {
   return sin(dot(p, dir) / len + t * spd);
 }
@@ -2868,6 +2868,24 @@ void main() {
   vec3 deep    = vec3(0.096, 0.245, 0.372);
   vec3 shallow = vec3(0.310, 0.534, 0.632);
   vec3 sky     = vec3(0.706, 0.822, 0.906);
+
+  // THE SEA DID NOT KNOW WHAT MONTH IT WAS.
+  //
+  // Every other surface in this city reads the season — the trees turn, the
+  // roofs take snow, the lawns go dormant — and the harbour, which is a third
+  // of the frame in half the shots, was byte-identical in January and July.
+  // The shader never even included the season block.
+  //
+  // Cold water genuinely looks different, and not only in temperature of hue:
+  // there is less life suspended in it and less light coming back up from the
+  // bottom, so it goes darker and greyer, and the shallows lose the green
+  // entirely. Winter light is coming in at a lower angle onto the same
+  // surface, which is the other half of why a northern harbour in February
+  // reads like slate.
+  deep    = mix(deep,    vec3(0.062, 0.150, 0.228), SNOW * 0.85);
+  shallow = mix(shallow, vec3(0.286, 0.412, 0.470), SNOW * 0.85);
+  sky     = mix(sky,     vec3(0.742, 0.800, 0.848), SNOW * 0.70);
+
   vec3 body = mix(deep, shallow, shoal * 0.82);
   vec3 col = mix(body, sky, 0.10 + 0.54 * fres);
   // Water reflects hardly anything face-on and nearly everything at a grazing
@@ -2887,6 +2905,19 @@ void main() {
   // foam: only on the real crests, and heavier in the shallows where the
   // swell actually breaks
   col += vec3(0.075) * smoothstep(0.86, 1.02, h) * (0.5 + 0.8 * shoal);
+
+  // RIME. A cold harbour does not freeze over — this one has ships working it
+  // all winter — but the still water inside the shoal line skins over and
+  // takes a crust along the shore, and that pale fringe against dark water is
+  // the single most legible sign that a port is in February. It sits where the
+  // shallows already are, thickened by the same low-frequency noise the swell
+  // uses so the edge is ragged rather than drawn with a compass.
+  if (SNOW > 0.02) {
+    float crust = smoothstep(0.45, 1.0, shoal) * SNOW;
+    float ragged = 0.55 + 0.45 * sin(p.x * 0.031 + p.y * 0.047)
+                            * sin(p.x * 0.017 - p.y * 0.023);
+    col = mix(col, vec3(0.845, 0.878, 0.905), clamp(crust * ragged * 0.80, 0.0, 1.0));
+  }
 
   // THE SEA HAS NO EDGE AND THIS MESH DOES. The sheet stops at six kilometres,
   // and the global aerial term — deliberately weakened so the city keeps its
@@ -4979,7 +5010,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       uniforms: {
         uTime: this.timeUni, uCam: this.camUni, uSunDir: this.sunDirUni, uSunCol: this.sunColUni,
         uReflect: { value: null }, uResolution: { value: new THREE.Vector2(1, 1) },
-        uReflectOn: { value: 0 },
+        uReflectOn: { value: 0 }, uSeason: this.seasonUni,
       },
       side: THREE.DoubleSide,
     });

@@ -886,8 +886,24 @@ void main() {
 
   vec3 V = Vw;
   vec3 R = reflect(-V, n);
-  float skyT = clamp(R.z * 0.9 + 0.35, 0.0, 1.0);
-  vec3 sky = mix(vec3(0.80, 0.78, 0.72), vec3(0.56, 0.72, 0.86), skyT);
+  // WHAT A GLASS WALL IS ACTUALLY LOOKING AT.
+  //
+  // Two colours lerped by height gave every reflective surface in this city the
+  // same soft grey-blue wash, which is most of why the glass towers read as
+  // pale boxes rather than as mirrors. A real environment has three parts and a
+  // glass building shows you all of them down its own height at once: the dark
+  // ground below the horizon, the bright band at the horizon itself — which is
+  // the brightest thing in any outdoor scene that is not the sun — and the deep
+  // sky above it. The transition at the horizon is sharp, which is exactly the
+  // hard line you see running across a curtain wall.
+  //
+  // And then the sun, tight and very bright, because a tower flaring as you
+  // pass it is the single most recognisable thing glass does.
+  float rz = R.z;
+  vec3 sky = rz < 0.0
+    ? mix(vec3(0.345, 0.325, 0.292), vec3(0.845, 0.860, 0.870), clamp(rz * 2.8 + 1.0, 0.0, 1.0))
+    : mix(vec3(0.845, 0.860, 0.870), vec3(0.315, 0.505, 0.795), clamp(rz * 1.45, 0.0, 1.0));
+  sky += SUN_COL * pow(max(dot(normalize(R), SUN_DIR), 0.0), 300.0) * 2.4;
   float fres = pow(1.0 - abs(dot(n, V)), 2.0);
   float refl = glassy ? (0.30 + 0.38 * fres) : (0.10 + 0.18 * fres);
   glass = mix(glass, sky, refl);

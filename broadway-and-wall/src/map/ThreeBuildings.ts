@@ -834,6 +834,56 @@ void main() {
   glass = mix(glass, glass * 1.25, step(0.82, wid));
   glass = mix(glass, glass * 0.72, step(wid, 0.14));
 
+  // ---- what is actually behind the glass -----------------------------------
+  // A WINDOW IS A HOLE, AND UNTIL NOW IT HAS BEEN A PAINTED ONE. Everything
+  // above gives the opening depth in the MASONRY — the reveal, the jamb the
+  // sun stands behind, the head it hangs under — and then stops dead at a flat
+  // pane with a bit of sky on it. What was missing is the room. It is the
+  // reason a real facade reads as a hundred separate boxes stacked up rather
+  // than as one gridded surface, and no amount of work on the stonework around
+  // the opening can stand in for it.
+  //
+  // Interior mapping, after van Dongen: walk the view ray into a virtual box
+  // sitting behind the pane and shade whichever of its planes the ray reaches
+  // first. It is analytic — no texture, no loop, three divides — and because
+  // the box is anchored to the BUILDING rather than to the screen, the
+  // parallax is correct from every angle and every distance: look along a
+  // facade and you see the side walls, look square at it and you see the back
+  // of the room. Each room takes its brightness and depth from a hash of its
+  // own cell, so no two floors of the same tower come out stamped.
+  //
+  // Gated on the same LOD term the reveal uses. At the zoom where a floor is
+  // four pixels tall there is nothing to see inside it and it would only
+  // alias.
+  if (near > 0.05 && winMask > 0.01) {
+    float ix = clamp((f.x - m.x) / max(win.x, 0.001), 0.0, 1.0);
+    float iy = clamp((f.y - m.y - 0.04) / max(win.y, 0.001), 0.0, 1.0);
+    float rn = max(dot(n, Vw), 0.05);
+    // how far the ray slides across the opening per metre it travels inward,
+    // expressed in the opening's own 0..1 coordinates
+    float sx = (dot(-Vw, T) / rn) / max(win.x * colW, 0.05);
+    float sy = ((-Vw).z / rn) / max(win.y * fh, 0.05);
+    float roomD = mix(2.2, 3.4, hash(vec2(floor(u) * 3.1, floor(v) * 1.9)));
+    float tx = abs(sx) > 1e-5 ? ((sx > 0.0 ? 1.0 - ix : -ix) / sx) : 1e9;
+    float ty = abs(sy) > 1e-5 ? ((sy > 0.0 ? 1.0 - iy : -iy) / sy) : 1e9;
+    float t = roomD; int face = 0;          // 0 back wall, 1 side wall, 2 up/down
+    if (tx < t) { t = tx; face = 1; }
+    if (ty < t) { t = ty; face = 2; }
+
+    vec3 room;
+    if (face == 0)      room = vec3(0.44, 0.42, 0.385);                     // back wall
+    else if (face == 1) room = vec3(0.28, 0.27, 0.255);                     // a side wall, edge-on to the light
+    else                room = sy > 0.0 ? vec3(0.58, 0.57, 0.535)           // ceiling, pale, catches the opening
+                                        : vec3(0.20, 0.185, 0.165);         // floor
+    // deeper into the room is darker: the only light in there came in through
+    // the hole we are looking through
+    room *= mix(1.0, 0.40, clamp(t / roomD, 0.0, 1.0));
+    // and one room is not another — blinds down, lights on, empty shell
+    room *= 0.62 + 0.62 * hash(vec2(floor(u) * 1.7 + 5.0, floor(v) * 2.3));
+
+    glass = mix(glass, room, 0.74 * near);
+  }
+
   vec3 V = Vw;
   vec3 R = reflect(-V, n);
   float skyT = clamp(R.z * 0.9 + 0.35, 0.0, 1.0);
@@ -1107,14 +1157,33 @@ void main() {
   // ---- light --------------------------------------------------------------
   float ndl = max(dot(n, SUN_DIR), 0.0);
   vec3 light = SUN_COL * (ndl * vis * 0.92 * mix(0.72, 1.0, smoothstep(0.0, 1.9, vZ))) + hemiLight(n, ao);
+  vec3 eyeV = normalize(uCam - vPos);
   // glass throws a specular back at the sun; masonry doesn't
   if (glassy) {
-    vec3 V = normalize(uCam - vPos);
-    vec3 H = normalize(SUN_DIR + V);
+    vec3 H = normalize(SUN_DIR + eyeV);
     light += SUN_COL * pow(max(dot(n, H), 0.0), 48.0) * 0.55 * vis * winMask;
   }
   col *= light * edgeLift;
   col *= vTint;
+
+  // GRAZING SKY, WHICH IS WHAT SEPARATES A BUILDING FROM THE ONE BEHIND IT.
+  //
+  // Every material gets more reflective the further along it you look — it is
+  // why the wet road ahead of you is a mirror and the same road at your feet
+  // is grey. On a city this means the facades turned away from the camera pick
+  // up a wash of sky along their length, and the near ones do not, so two
+  // identical stone walls one street apart arrive at different values and read
+  // as two walls. Without it every facade in the frame is lit purely by its
+  // own normal, which is why a dense skyline flattens into one mass at the
+  // point where the shadows stop separating it.
+  //
+  // Added AFTER the albedo multiply because it is reflected light, not more
+  // illumination of the surface: it does not care what colour the brick is,
+  // which is exactly why it lifts dark brick out of the background and leaves
+  // pale stone alone. Squared falloff, small on masonry, real on glass.
+  float graze = pow(1.0 - clamp(dot(n, eyeV), 0.0, 1.0), 4.0);
+  col += SKY_COL * graze * (glassy ? 0.34 : 0.085) * mix(0.55, 1.0, ao);
+
   gl_FragColor = vec4(aerial(grade(col), vPos, uCam), uOpacity);
 }`;
 
@@ -1366,6 +1435,113 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 
+// ---------------------------------------------------------------------------
+// THE POST STAGE
+// ---------------------------------------------------------------------------
+//
+// Until now this layer rendered straight into MapLibre's framebuffer, which
+// meant there was no frame to work ON — every effect had to be something a
+// fragment could do knowing only about itself. That rules out the entire class
+// of things that separate a render from a photograph, because all of them need
+// to see the finished image: light that spills off a bright surface into the
+// ones around it, and a lens that can only be focused at one distance at a
+// time.
+//
+// So the scene goes to an offscreen target first, and what lands in MapLibre's
+// buffer is a composite. Everything here is written to fail safe: if the target
+// cannot be created the layer falls back to drawing directly, exactly as before.
+const POST_VERT = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = vec4(position.xy, 0.0, 1.0);
+}`;
+
+// What is bright enough to spill. Working on premultiplied colour, so the
+// threshold is against light actually emitted into the frame rather than
+// against the surface's own brightness.
+const BRIGHT_FRAG = /* glsl */ `
+precision highp float;
+varying vec2 vUv;
+uniform sampler2D uTex;
+uniform float uThresh;
+uniform float uKnee;
+void main() {
+  vec4 c = texture2D(uTex, vUv);
+  float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+  // a soft knee rather than a hard cut, or the bloom develops a visible
+  // outline exactly where the threshold sits
+  float k = smoothstep(uThresh, uThresh + uKnee, l);
+  gl_FragColor = vec4(c.rgb * k, 1.0);
+}`;
+
+const BLUR_FRAG = /* glsl */ `
+precision highp float;
+varying vec2 vUv;
+uniform sampler2D uTex;
+uniform vec2 uDir;
+void main() {
+  // 9-tap gaussian as 5 samples on the linear-filter trick
+  vec3 s = texture2D(uTex, vUv).rgb * 0.227027;
+  s += (texture2D(uTex, vUv + uDir * 1.3846).rgb + texture2D(uTex, vUv - uDir * 1.3846).rgb) * 0.316216;
+  s += (texture2D(uTex, vUv + uDir * 3.2308).rgb + texture2D(uTex, vUv - uDir * 3.2308).rgb) * 0.070270;
+  gl_FragColor = vec4(s, 1.0);
+}`;
+
+// The composite. Tilt-shift first, then the bloom on top of it, because light
+// that has spilled has already left the lens and does not get defocused again.
+const COMPOSITE_FRAG = /* glsl */ `
+precision highp float;
+varying vec2 vUv;
+uniform sampler2D uScene;
+uniform sampler2D uBloom;
+uniform vec2 uTexel;
+uniform float uBloomAmt;
+uniform float uFocus;      // where the plane of focus sits, 0..1 up the frame
+uniform float uBand;       // how much of the frame is sharp
+uniform float uDefocus;    // blur radius in pixels at the top and bottom
+uniform float uGrain;
+
+// A MODEL CITY PHOTOGRAPHS LIKE A MODEL CITY.
+//
+// This game's whole identity is an architectural model — the README says so,
+// the palette says so, the pale card stock the buildings are made of says so.
+// A real model gets shot on a view camera close up, and a lens that close has
+// a depth of field measured in centimetres, so the plate is sharp in a band
+// and falls off above and below it. That single cue is why tilt-shift makes
+// photographs of real cities look like toys: our eyes read the shallow focus
+// as "this is small and it is near".
+//
+// Here it is the honest description of what the thing IS, and it costs eight
+// taps on a disk whose radius is zero through the focus band.
+vec4 defocused(vec2 uv, float r) {
+  if (r < 0.35) return texture2D(uScene, uv);
+  vec4 sum = texture2D(uScene, uv);
+  for (int i = 0; i < 8; i++) {
+    float a = float(i) * 2.39996323;
+    float rr = sqrt((float(i) + 0.5) / 8.0) * r;
+    sum += texture2D(uScene, uv + vec2(cos(a), sin(a)) * rr * uTexel);
+  }
+  return sum * (1.0 / 9.0);
+}
+
+void main() {
+  float off = abs(vUv.y - uFocus);
+  float defocus = smoothstep(uBand, 1.0, off) * uDefocus;
+  vec4 c = defocused(vUv, defocus);
+
+  c.rgb += texture2D(uBloom, vUv).rgb * uBloomAmt;
+
+  // A WHISPER OF GRAIN. Everything above is smooth gradients over smooth
+  // gradients — bloom, defocus, aerial haze — and smooth gradients on an 8-bit
+  // buffer band. A dither below the level anybody can consciously see costs
+  // one hash and removes every one of them.
+  float g = fract(sin(dot(vUv, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
+  c.rgb += g * uGrain;
+
+  gl_FragColor = c;
+}`;
+
 // LIVING WATER. Two crossed wave trains give a normal that actually moves,
 // and everything else falls out of it: a Fresnel mix between deep water and
 // sky, a sun glitter that breaks into sparkles on the wave faces, and a band
@@ -1531,6 +1707,18 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private timeUni = { value: 0 };
   private waterMat: THREE.ShaderMaterial | null = null;
   private lastFrame = 0;
+  // ---- post stage ----
+  private postOK = true;
+  private sceneRT: THREE.WebGLRenderTarget | null = null;
+  private bloomA: THREE.WebGLRenderTarget | null = null;
+  private bloomB: THREE.WebGLRenderTarget | null = null;
+  private postScene = new THREE.Scene();
+  private postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  private postQuad: THREE.Mesh | null = null;
+  private brightMat!: THREE.ShaderMaterial;
+  private blurMat!: THREE.ShaderMaterial;
+  private compMat!: THREE.ShaderMaterial;
+  private postSize = new THREE.Vector2(0, 0);
   /** Exposed for playtests: the only way to assert a demolition really happened. */
   posAttrs: THREE.BufferAttribute[] = [];
   rangesByBBL = new Map<string, { attr: number; r: Ranges }[]>();
@@ -1600,6 +1788,101 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.renderer.autoClear = false;
     this.camera.matrixAutoUpdate = false;
     this.buildCity();
+    this.initPost();
+  }
+
+  // ---- the post stage ------------------------------------------------------
+
+  /**
+   * Build the offscreen targets and the three screen passes. Every failure
+   * here is survivable: `postOK` goes false and `render` draws straight into
+   * MapLibre's buffer the way it always did, so the worst case is the city
+   * without bloom rather than no city.
+   */
+  private initPost() {
+    try {
+      const quad = new THREE.PlaneGeometry(2, 2);
+      this.brightMat = new THREE.ShaderMaterial({
+        vertexShader: POST_VERT, fragmentShader: BRIGHT_FRAG, depthTest: false, depthWrite: false,
+        // MEASURED AGAINST THE WORST CASE, which is January. A city under snow
+        // in low sun puts most of its roofs above 0.75 luminance, so a
+        // threshold picked while looking at summer stone turns every roof in
+        // town into a light source and the whole frame fogs. It has to sit
+        // above the brightest thing that is merely WELL LIT, and catch only
+        // what is actually specular: glints off water and glass.
+        uniforms: { uTex: { value: null }, uThresh: { value: 0.86 }, uKnee: { value: 0.16 } },
+      });
+      this.blurMat = new THREE.ShaderMaterial({
+        vertexShader: POST_VERT, fragmentShader: BLUR_FRAG, depthTest: false, depthWrite: false,
+        uniforms: { uTex: { value: null }, uDir: { value: new THREE.Vector2() } },
+      });
+      this.compMat = new THREE.ShaderMaterial({
+        vertexShader: POST_VERT, fragmentShader: COMPOSITE_FRAG, depthTest: false, depthWrite: false,
+        transparent: true,
+        // THE SCENE TARGET HOLDS PREMULTIPLIED COLOUR, because that is what a
+        // Three renderer writes. Compositing it over MapLibre's basemap with
+        // the usual SRC_ALPHA blend would multiply by alpha a second time and
+        // every translucent thing in the city — the shadow catcher above all —
+        // would come out half strength. ONE / ONE_MINUS_SRC_ALPHA is the
+        // premultiplied form and is what makes the composite invisible.
+        blending: THREE.CustomBlending,
+        blendSrc: THREE.OneFactor,
+        blendDst: THREE.OneMinusSrcAlphaFactor,
+        blendSrcAlpha: THREE.OneFactor,
+        blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
+        uniforms: {
+          uScene: { value: null }, uBloom: { value: null },
+          uTexel: { value: new THREE.Vector2() },
+          // Bloom is a garnish. At 0.62 it was an atmosphere, and an
+          // atmosphere made of clipped highlights is just fog with extra steps.
+          uBloomAmt: { value: 0.20 },
+          // The focus band sits a little above centre: in a pitched view the
+          // middle of the frame is the middle distance, which is where the
+          // city one is actually looking at lives.
+          uFocus: { value: 0.56 }, uBand: { value: 0.26 }, uDefocus: { value: 2.7 },
+          uGrain: { value: 0.006 },
+        },
+      });
+      this.postQuad = new THREE.Mesh(quad, this.brightMat);
+      this.postQuad.frustumCulled = false;
+      this.postScene.add(this.postQuad);
+    } catch {
+      this.postOK = false;
+    }
+  }
+
+  /** Match the targets to the drawing buffer; rebuild them when it changes. */
+  private ensurePostSize(): boolean {
+    if (!this.postOK || !this.postQuad) return false;
+    const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    if (size.x < 4 || size.y < 4) return false;
+    if (this.sceneRT && size.x === this.postSize.x && size.y === this.postSize.y) return true;
+    try {
+      this.sceneRT?.dispose(); this.bloomA?.dispose(); this.bloomB?.dispose();
+      const opts = {
+        minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+        format: THREE.RGBAFormat, type: THREE.UnsignedByteType,
+        depthBuffer: true, stencilBuffer: false,
+      } as const;
+      this.sceneRT = new THREE.WebGLRenderTarget(size.x, size.y, opts);
+      // Bloom runs at quarter resolution. It is a wide blur — nobody can see
+      // the resolution it was computed at, and it is the difference between
+      // the pass costing something and costing nothing.
+      const bw = Math.max(2, size.x >> 2), bh = Math.max(2, size.y >> 2);
+      this.bloomA = new THREE.WebGLRenderTarget(bw, bh, { ...opts, depthBuffer: false });
+      this.bloomB = new THREE.WebGLRenderTarget(bw, bh, { ...opts, depthBuffer: false });
+      this.postSize.copy(size);
+      return true;
+    } catch {
+      this.postOK = false;
+      return false;
+    }
+  }
+
+  private blit(mat: THREE.ShaderMaterial, target: THREE.WebGLRenderTarget | null) {
+    this.postQuad!.material = mat;
+    this.renderer.setRenderTarget(target);
+    this.renderer.render(this.postScene, this.postCam);
   }
 
   private project([lon, lat]: [number, number]): [number, number] {
@@ -3814,7 +4097,42 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       .scale(new THREE.Vector3(this.origin.s, -this.origin.s, this.origin.s));
     this.camera.projectionMatrix = m.multiply(l);
     this.renderer.resetState();
+
+    if (!this.ensurePostSize() || !this.sceneRT || !this.bloomA || !this.bloomB) {
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
+
+    // 1. the city, offscreen, onto nothing
+    const prevTarget = this.renderer.getRenderTarget();
+    this.renderer.setRenderTarget(this.sceneRT);
+    this.renderer.setClearColor(0x000000, 0);
+    this.renderer.clear(true, true, false);
     this.renderer.render(this.scene, this.camera);
+
+    // 2. what is bright enough to spill, at quarter res
+    this.brightMat.uniforms.uTex.value = this.sceneRT.texture;
+    this.blit(this.brightMat, this.bloomA);
+
+    // 3. spill it, separably
+    const bw = this.bloomA.width, bh = this.bloomA.height;
+    this.blurMat.uniforms.uTex.value = this.bloomA.texture;
+    (this.blurMat.uniforms.uDir.value as THREE.Vector2).set(1 / bw, 0);
+    this.blit(this.blurMat, this.bloomB);
+    this.blurMat.uniforms.uTex.value = this.bloomB.texture;
+    (this.blurMat.uniforms.uDir.value as THREE.Vector2).set(0, 1 / bh);
+    this.blit(this.blurMat, this.bloomA);
+
+    // 4. lens and composite, back into MapLibre's buffer
+    this.compMat.uniforms.uScene.value = this.sceneRT.texture;
+    this.compMat.uniforms.uBloom.value = this.bloomA.texture;
+    (this.compMat.uniforms.uTexel.value as THREE.Vector2).set(1 / this.postSize.x, 1 / this.postSize.y);
+    this.renderer.setRenderTarget(prevTarget);
+    this.blit(this.compMat, prevTarget);
+
+    // Hand the context back exactly as MapLibre expects to find it — it still
+    // has its own symbol layers and controls to draw after this.
+    this.renderer.resetState();
   }
 
   onRemove() {

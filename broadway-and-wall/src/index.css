@@ -178,8 +178,10 @@ body {
 
 /* ---- parcel panel ---- */
 .panel {
-  position: absolute; top: 60px; right: 14px; width: 330px;
-  max-height: calc(100% - 90px);
+  /* --topbar-h is measured and published by TopBar; the fallback is the
+     one-row height at a typical desktop width. */
+  position: absolute; top: calc(var(--topbar-h, 91px) + 10px); right: 14px; width: 330px;
+  max-height: calc(100% - var(--topbar-h, 91px) - 28px);
   overflow-y: auto;
   background: linear-gradient(to bottom, rgba(249, 245, 234, 0.95), rgba(243, 237, 220, 0.92));
   border: 1px solid var(--card-line);
@@ -365,7 +367,7 @@ body {
 
 /* ---- toast (the deed stamp) ---- */
 .toast {
-  position: absolute; top: 64px; left: 50%; transform: translateX(-50%);
+  position: absolute; top: calc(var(--topbar-h, 91px) + 12px); left: 50%; transform: translateX(-50%);
   font-family: var(--serif); font-size: 15px;
   background: var(--card); color: var(--ink);
   border: 2px solid var(--gold); border-radius: 4px;
@@ -697,7 +699,7 @@ body {
 /* The top bar stays above the page overlay: a page is a room you can read
    while the clock runs, not a wall between you and the Advance button. */
 .topbar { z-index: 60; }
-.page-backdrop { padding-top: 62px; }
+.page-backdrop { padding-top: calc(var(--topbar-h, 91px) + 12px); }
 .page-backdrop { pointer-events: auto; }
 
 /* ---- blocking decisions: LOIs and offers take the screen ---- */

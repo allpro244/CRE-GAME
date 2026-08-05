@@ -201,6 +201,13 @@ const rollOf = (g, bbl) => {
   const rents = [], phases = [];
   for (let m = 0; m < 600; m++) {
     g = E.advanceQuarter(g, parcels, bbls, adjacency);
+    // KEEP THE OBSERVER ALIVE. advanceQuarter returns the state UNCHANGED once
+    // gameOver is set, and a firm that does nothing for fifty years still pays
+    // its G&A out of $6M — this seed dies at month 506, so ninety-four of the
+    // six hundred months counted here were the same frozen index repeated, and
+    // both the drawdown and the recession count were reading it. See the note
+    // on keepAlive in sim-accept.mjs, where four of seven seeds had it.
+    g.cash = 50_000_000; g.insolventMs = 0; g.gameOver = null;
     rents.push(g.econ.rentIdx.office);
     phases.push(g.econ.phase);
   }

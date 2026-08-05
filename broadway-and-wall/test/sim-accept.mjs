@@ -58,13 +58,43 @@ const corr = (xs, ys) => {
   return sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : 0;
 };
 
+/**
+ * KEEP THE OBSERVER ALIVE, OR THE WORLD STOPS AND THE TEST DOES NOT NOTICE.
+ *
+ * `advanceQuarter` opens with `if (prev.gameOver) return prev` — the state is
+ * returned UNCHANGED. A macro run has no bot in it, so the firm does nothing,
+ * pays its G&A every month out of $6M, and goes insolvent; from that month on
+ * the run is a no-op and every index in it is frozen at the value it had when
+ * the firm died. Nothing throws. Nothing is logged. The loop keeps counting to
+ * 600 and the arrays keep filling with the same number.
+ *
+ * MEASURED: 15 of 20 seeds die before month 600, median at year 41, and four
+ * of the seven seeds F and G actually use are among them — seed 11 simulates
+ * SIXTEEN years and then reports a fifty-year trend from thirty-four years of
+ * a frozen index. That is what produced real rent CAGRs of -22.9%/yr and
+ * +13.0%/yr in the same test: they are not economies, they are a cliff
+ * followed by a flat line, annualised.
+ *
+ * city-accept.mjs already does this and says why. sim-accept never did.
+ *
+ * The observer owns nothing and buys nothing, so handing it cash cannot
+ * flatter any number this file measures — every one of them is read off
+ * `econ`, which belongs to the city rather than to the firm.
+ */
+function keepAlive(g) {
+  g.cash = 50_000_000;
+  g.insolventMs = 0;
+  g.gameOver = null;
+  return g;
+}
+
 /** A plain 50-year run of the city with nobody playing. */
 function macroRun(seed, months = 600) {
   const parcels = clone();
   let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
   const t = [];
   for (let m = 0; m < months; m++) {
-    g = E.advanceQuarter(g, parcels, bbls, adjacency);
+    g = keepAlive(E.advanceQuarter(g, parcels, bbls, adjacency));
     const e = g.econ;
     t.push({
       m: g.month,
@@ -199,14 +229,14 @@ function macroRun(seed, months = 600) {
   const runs = GLUTS.map((seed) => {
     const parcels = clone();
     let g0 = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
-    for (let m = 0; m < 36; m++) g0 = E.advanceQuarter(g0, parcels, bbls, adjacency);
+    for (let m = 0; m < 36; m++) g0 = keepAlive(E.advanceQuarter(g0, parcels, bbls, adjacency));
     const walk = (g, glut) => {
       const p = JSON.parse(JSON.stringify(parcels));
       let s2 = JSON.parse(JSON.stringify(g));
       if (glut) E.addStock(s2.econ, "office", 4_000_000);
       const t = [];
       for (let m = 0; m < 144; m++) {
-        s2 = E.advanceQuarter(s2, p, bbls, adjacency);
+        s2 = keepAlive(E.advanceQuarter(s2, p, bbls, adjacency));
         t.push({ vac: s2.econ.cityVac.office, phase: s2.econ.phase, rent: s2.econ.rentIdx.office, rate: s2.econ.indexRate });
       }
       return t;
@@ -251,7 +281,7 @@ function macroRun(seed, months = 600) {
     const parcels = clone();
     let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
     for (let m = 0; m < 600; m++) {
-      g = E.advanceQuarter(g, parcels, bbls, adjacency);
+      g = keepAlive(E.advanceQuarter(g, parcels, bbls, adjacency));
       const e = g.econ;
       const pipe = (e.pipeline?.office ?? 0) + (e.pipeline?.multifamily ?? 0)
         + (e.pipeline?.retail ?? 0) + (e.pipeline?.industrial ?? 0);

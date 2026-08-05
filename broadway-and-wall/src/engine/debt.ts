@@ -266,7 +266,19 @@ function monthlyPayment(principal: number, ratePct: number, years: number): numb
   return (principal * i) / (1 - Math.pow(1 + i, -n));
 }
 
-export function quote(s: GameState, product: LoanProduct, price: number, noiYr: number, klass?: string) {
+/** What a desk will actually write, and — as of the hold-size fix — why not more. */
+export interface Quote {
+  principal: number;
+  ratePct: number;
+  dscrConstrained: boolean;
+  dyConstrained: boolean;
+  debtYield: number;
+  concWhy?: string;
+  /** The advance was truncated by the DESK's limit, not by anything about the building. */
+  holdCapped?: boolean;
+}
+
+export function quote(s: GameState, product: LoanProduct, price: number, noiYr: number, klass?: string): Quote {
   // Capital availability moves the terms, not just the index. When the credit
   // window closes, spreads widen, advance rates come down and the desk
   // underwrites to a fatter coverage — all at once, which is what makes a
@@ -297,8 +309,21 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   if (!windowOpen(s, product)) return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why };
   if (product.maxLoan && byLtv > product.maxLoan) {
     // they participate up to the hold size rather than walking — a smaller
-    // check from a lender who wants the file is still a real quote
-    return { ...sizeRest(s, product, Math.min(byLtv, product.maxLoan), price, noiYr, ratePct, tight), concWhy: conc.why };
+    // check from a lender who wants the file is still a real quote.
+    //
+    // AND IT HAS TO SAY SO. This branch silently truncated the advance and
+    // then reported whichever of DSCR/debt-yield/LTV happened to bind the
+    // stub, so a $700M tower asking First Harbor for money got a $6.0M quote
+    // labelled "advance rate" — which is not the reason and is not fixable by
+    // anything the player can do to the building. Three different walls
+    // (standing, hold size, window) all read to the borrower as "pay money
+    // in", and that is the whole defect: a quote with no reason is a dead
+    // button. `holdCapped` carries the fact up to the panel.
+    return {
+      ...sizeRest(s, product, Math.min(byLtv, product.maxLoan), price, noiYr, ratePct, tight),
+      concWhy: conc.why,
+      holdCapped: true,
+    };
   }
   if (product.minLoan && byLtv < product.minLoan) return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why };
   // A site produces no income, so a coverage test would size every land loan
@@ -745,7 +770,15 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       ltvAtMax: value > 0 ? q.principal / value : 0,
       dscrAtMax: annualDs > 0 ? noi / annualDs : 0,
       debtYieldAtMax: q.principal > 0 ? noi / q.principal : 0,
-      binding: q.dyConstrained ? "debt yield" : q.dscrConstrained ? "coverage" : "advance rate",
+      // HOLD SIZE OUTRANKS THE THREE UNDERWRITING TESTS, because it is not one
+      // of them. DSCR, debt yield and advance rate are all things about the
+      // BUILDING; a hold size is a thing about the LENDER, and telling a
+      // borrower "advance rate" when the truth is "we don't write cheques that
+      // big" sends them off to fix a building that is not broken.
+      binding: q.holdCapped ? "their hold size"
+        : q.dyConstrained ? "debt yield"
+        : q.dscrConstrained ? "coverage"
+        : "advance rate",
       ioM: p.ioM,
       termM: p.termM,
       amortYears: p.amortYears,
@@ -759,13 +792,21 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
         : p.minCondition === "good" && h.condition !== "good" ? false
         : p.mezz ? !!senior : p.uwDscr <= 0 ? rec.class === "land" : rec.class !== "land" && q.principal > 0,
       why: !productOpen(s, p)
-        ? `This desk won't look at you — ${sponsorStanding(s).label}.`
+        ? `This desk won't look at you — ${sponsorStanding(s).label}. It recovers with clean payments; bridge and mezzanine money will still talk in the meantime.`
         : !windowOpen(s, p)
-        ? "The securitization window is closed — nobody is buying the bonds until markets reopen."
+        ? "The securitization window is closed — nobody is buying the bonds until markets reopen. Nothing about this building will change that."
         : p.minCondition === "good" && h.condition !== "good"
         ? "Life-company money wants a well-kept building. Renovate first."
         : p.minLoan && q.principal === 0 && rec.class !== "land"
-        ? `Below their minimum check — ${p.lender} doesn't underwrite anything under ${((p.minLoan) / 1e6).toFixed(0)}M.`
+        ? `Below their minimum check — ${p.lender} doesn't underwrite anything under $${((p.minLoan) / 1e6).toFixed(0)}M.`
+        /* THE WALL THAT USED TO BE INVISIBLE. A desk's hold size is the most
+           common reason a large, perfectly good building gets a small quote,
+           and it was the one wall with nothing written on it. It also names
+           the way out, because there is one: a bigger balance sheet, or a
+           syndicate, or several desks at once. */
+        : q.holdCapped
+        ? `${p.lender} won't hold more than $${((p.maxLoan ?? 0) / 1e6).toFixed(0)}M on one asset — that is their limit, not this building's. `
+          + `A building this size needs a balance-sheet lender, a conduit, or the debt split across desks.`
         : raw.concWhy && !p.mezz
         ? `${raw.concWhy}.`
         : hair.why && hair.mult < 0.95 && !p.mezz

@@ -740,6 +740,10 @@ body {
 .chart-legend-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .chart-legend-swatch { width: 15px; height: 3px; border-radius: 1px; display: inline-block; flex: none; }
 
+/* A wide table inside a narrow docked panel scrolls itself rather than
+   pushing the whole page sideways. */
+.scroll-x { overflow-x: auto; max-width: 100%; }
+
 /* THREE SCALES, ONE COLUMN. Occupancy, rent and NOI cannot share a y-axis —
    a per-cent, a $/sf and a $/yr on one scale is a flat line and a spike. So
    they are three plots stacked, each captioned, and the column is what makes

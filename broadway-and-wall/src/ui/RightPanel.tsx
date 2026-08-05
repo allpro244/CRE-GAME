@@ -1986,6 +1986,8 @@ function RefiSection({ bbl }: { bbl: string }) {
   const [product, setProduct] = useState<string>(isLand ? "land" : "savings");
   const [lev, setLev] = useState(1);
   const { quotes, value, payoff } = refiQuotes(game, parcels, bbl);
+  const cur = game.holdings[bbl]?.loan;
+  const existing = cur ? prepayPenalty(cur, game.month) : 0;
   if (!quotes.length) {
     return (
       <div className="refi">
@@ -1998,8 +2000,6 @@ function RefiSection({ bbl }: { bbl: string }) {
     );
   }
   const q = quotes.find((x) => x.id === product) ?? quotes[0];
-  const cur = game.holdings[bbl]?.loan;
-  const existing = cur ? prepayPenalty(cur, game.month) : 0;
   const proceeds = Math.round(q.maxProceeds * lev);
   const fee = Math.round(Math.max(proceeds, payoff) * 0.01) + Math.round(proceeds * q.points) + existing;
   const toYou = proceeds - payoff - fee;
@@ -2031,6 +2031,54 @@ function RefiSection({ bbl }: { bbl: string }) {
         ))}
       </div>
       <div className="hint">{q.why ?? q.blurb}</div>
+
+      {/* EVERY DESK AT ONCE, AND WHAT STOPPED EACH ONE.
+          The complaint that started this was a $700M building with $130M of
+          debt where every refinance option asked for money instead of giving
+          it. The capital was there the whole time — the reason was not. Four
+          desks quoted small for FOUR DIFFERENT reasons (a hold size, a minimum
+          check, a shut securitisation window, a sponsor mark), and all four
+          presented identically as "pay money in", so the screen read as one
+          wall instead of four different ones with four different ways round.
+          Reading them one at a time by clicking each button is not a market;
+          this is the market. Sorted by what actually reaches your account. */}
+      <div className="page-section" style={{ marginTop: 8 }}>The market for this building</div>
+      <div className="scroll-x">
+        <table className="tbl">
+          <thead>
+            <tr><th>Desk</th><th className="num">Rate</th><th className="num">Most they'll write</th><th className="num">To you</th><th>What stops them</th></tr>
+          </thead>
+          <tbody>
+            {[...quotes]
+              .map((x) => {
+                const px = Math.round(x.maxProceeds);
+                const f = Math.round(Math.max(px, payoff) * 0.01) + Math.round(px * x.points) + existing;
+                return { x, px, net: px - payoff - f };
+              })
+              .sort((a, b) => b.net - a.net)
+              .map(({ x, px, net }) => (
+                <tr
+                  key={x.id}
+                  className={x.id === product ? "" : "dim"}
+                  style={{ cursor: x.available ? "pointer" : "default" }}
+                  onClick={() => x.available && setProduct(x.id)}
+                >
+                  <td>{x.label}</td>
+                  <td className="num">{x.available ? pct(x.ratePct) : "—"}</td>
+                  <td className="num">{px > 0 ? usd(px) : "—"}</td>
+                  <td className="num" style={{ color: net > 0 ? undefined : "#a8402e" }}>
+                    {px > 0 ? (net >= 0 ? usd(net) : "−" + usd(-net)) : "—"}
+                  </td>
+                  {/* The reason, in the lender's own words when there is one,
+                      and otherwise the test that actually bound. Never blank —
+                      a quote with no reason is the same defect as a dead
+                      button, which is what this whole card is fixing. */}
+                  <td className="dim">{x.why ?? (px > 0 ? x.binding : "nothing to lend against")}</td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
       <div className="grid">
         <Row k="Lender's maximum" v={`${usd(q.maxProceeds)} · ${(q.ltvAtMax * 100).toFixed(0)}% LTV`} />
         {/* A vacant site has no income, so a coverage ratio computed against it

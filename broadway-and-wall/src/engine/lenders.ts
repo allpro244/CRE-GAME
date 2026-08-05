@@ -17,10 +17,38 @@
 // Which is the whole point: a credit crunch you can read a quarter early is a
 // decision. One that arrives as a number going down is weather.
 import type { GameState } from "./types";
+import { logBooks } from "./types";
 import { PRODUCTS } from "./debt";
 import { rng, rrange } from "./market";
+import { DEPOSIT_INSURANCE, chooseEra } from "./regime";
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 export type LenderKind = "bank" | "life" | "conduit" | "fund";
+
+/**
+ * WHOSE DEPOSITS THESE ARE — the liability side, which this model did not have.
+ *
+ * A bank in this game had a loan book and no depositors. It failed AT NOBODY:
+ * the regulator walked in on a Friday, the paper went to a receiver, and not
+ * one person in the city noticed. That is the half that was missing, and it is
+ * the half the owner asked for.
+ *
+ * `uninsuredShare` is the fact that decides how much a failure hurts, and it is
+ * a fact about WHO BANKS THERE rather than about the bank's size. A thrift full
+ * of household savings is almost entirely insured and its failure travels by
+ * the credit channel — the small businesses who cannot get a working-capital
+ * line. A commercial bank full of business operating accounts is badly
+ * uninsured, and when it fails payroll does not get made. Silicon Valley Bank
+ * was ~94% uninsured in 2023, which is why a bank nobody had heard of nearly
+ * took the payroll of half an industry with it; a community thrift runs nearer
+ * a third.
+ */
+export interface Deposits {
+  /** Household and business money on the books, in today's dollars. */
+  total: number;
+  /** Share of it above the insurance limit — see DEPOSIT_INSURANCE. */
+  uninsuredShare: number;
+}
 
 export interface Lender {
   id: string;
@@ -55,6 +83,10 @@ export interface Lender {
   capHist?: number[];
   /** What this desk holds against this town, by asset class. Rebuilt monthly by ledger.ts. */
   classBook?: Record<string, number>;
+  /** The liability side. See Deposits. */
+  dep?: Deposits;
+  /** Where the PLAYER's cash sits, if it sits here. */
+  playerDeposits?: number;
 }
 
 /**
@@ -153,6 +185,91 @@ export function lenderByName(s: GameState, name: string): Lender | undefined {
 }
 
 /** Capital over book — the one number that decides whether a desk is open. */
+/**
+ * WHERE YOUR MONEY SITS, AND WHAT HAPPENS WHEN THE DOOR IS PADLOCKED.
+ *
+ * The firm's cash used to be one abstract number that lived nowhere. It sits
+ * at a bank now, and a bank is a thing that can fail — which turns "who do I
+ * bank with" from flavour into a decision a real treasurer makes every week.
+ *
+ * Above the insurance limit you are an UNSECURED CREDITOR of the receiver.
+ * You do not lose it all: the receiver sells the assets and pays out over a
+ * year or two, historically 60-90 cents on the dollar for uninsured
+ * depositors, with an advance dividend early and the rest when the book is
+ * cleared. What you lose immediately is the USE of it, which for a developer
+ * with a capital call due next month is frequently worse than the haircut.
+ *
+ * THE REWARD FOR SPREADING DEPOSITS IS AVOIDED LOSS, NEVER YIELD. sim.ts is
+ * explicit that cash must not become a strategy — the deposit rate is a flat,
+ * deliberately dull 1% — and that stands. Splitting your balance across desks
+ * costs nothing and earns nothing; it only means a Friday afternoon does not
+ * take all of it. That is exactly the trade a real treasurer makes, and it is
+ * free until the one week it is not.
+ */
+export function insuredLimit(s: GameState): number {
+  // The era is not stored on econ — it is chosen deterministically from the
+  // seed, so it can simply be re-derived. See chooseEra.
+  const era = chooseEra(s.seed).key;
+  return (DEPOSIT_INSURANCE[era] ?? 100_000) * (s.econ.costIdx ?? 1);
+}
+
+/** Which desk the firm banks with, defaulting to its deepest relationship. */
+export function bankOf(s: GameState): Lender | undefined {
+  const live = (s.lenders ?? []).filter((l) => l.failedM === undefined && l.kind !== "conduit");
+  if (!live.length) return undefined;
+  return live.find((l) => l.id === s.bankId) ?? live[0];
+}
+
+function seizeDeposits(s: GameState, l: Lender) {
+  const here = Math.max(0, s.cash);
+  if (here <= 0) return;
+  const limit = insuredLimit(s);
+  const insured = Math.min(here, limit);
+  const exposed = Math.max(0, here - limit);
+  if (exposed <= 0) {
+    s.news.unshift({
+      q: s.month, kind: "info",
+      text: `Your balance at ${l.name} was under the ${usdShort(limit)} insurance limit. It is all covered, and it is available Monday.`,
+    });
+    return;
+  }
+  // The receiver's advance dividend lands with the insured money; the rest is
+  // a certificate and a wait. Recovery drawn from the real range.
+  const recovery = clamp(0.60 + rng(s) * 0.30, 0.60, 0.90);
+  const eventual = Math.round(exposed * recovery);
+  const lost = exposed - eventual;
+  s.cash = insured;
+  logBooks(s, "ga", lost);                       // the haircut, booked where losses land
+  (s.receivership ??= []).push({ from: l.name, amount: eventual, payM: s.month + Math.round(rrange(s, 12, 36)) });
+  s.news.unshift({
+    q: s.month, kind: "warn",
+    text: `YOUR BANK HAS FAILED. ${usdShort(here)} of the firm's money was at ${l.name}. `
+      + `${usdShort(insured)} is insured and available Monday; ${usdShort(exposed)} was over the limit and you are `
+      + `an unsecured creditor of the receiver. They expect to return about ${(recovery * 100).toFixed(0)}c on the dollar — `
+      + `${usdShort(eventual)} — but not for another year or two. The ${usdShort(lost)} difference is gone. `
+      + `A balance split across two desks would have been split across two Fridays.`,
+  });
+}
+
+const usdShort = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}k`);
+
+/** The receiver pays out, eventually. Called once a month from tickLenders. */
+export function tickReceivership(s: GameState) {
+  if (!s.receivership?.length) return;
+  const due = s.receivership.filter((r) => s.month >= r.payM);
+  if (!due.length) return;
+  for (const r of due) {
+    s.cash += r.amount;
+    logBooks(s, "interest", r.amount);          // money coming back, not income earned
+    s.news.unshift({
+      q: s.month, kind: "deal",
+      text: `The receiver for ${r.from} has finished selling the book. ${usdShort(r.amount)} of your money comes back — `
+        + `later than you needed it, which was the whole cost of it.`,
+    });
+  }
+  s.receivership = s.receivership.filter((r) => s.month < r.payM);
+}
+
 export function capitalRatio(l: Lender): number {
   return l.book > 0 ? l.capital / l.book : 1;
 }
@@ -199,6 +316,8 @@ export function lenderAppetite(s: GameState, name: string): number {
  * event with a cause instead of a slider.
  */
 export function tickLenders(s: GameState) {
+  // The receiver pays out on its own clock, whatever the banks are doing.
+  tickReceivership(s);
   if (!s.lenders?.length) s.lenders = initLenders();
   recountYours(s);
   const e = s.econ;
@@ -334,9 +453,16 @@ export function tickLenders(s: GameState) {
     // asymptote it can hug forever.
     const seizable = l.kind === "bank" || l.kind === "life";   // the conduit dies by market, not by regulator
     if ((l.capital <= 0 && rng(s) < 0.35) || (seizable && cr < target * 0.22 && rng(s) < 0.09)) {
+      // ASK WHOSE BANK THIS IS BEFORE YOU CLOSE IT. bankOf() only considers
+      // LIVE desks, so calling seizeDeposits after failedM was set meant the
+      // failing bank had already been filtered out of its own question and the
+      // player's balance was never touched — measured at 8 failures across 8
+      // runs and not one cut. Establish it first, then padlock the door.
+      const wasOurs = bankOf(s)?.id === l.id;
       l.failedM = s.month;
       l.reopenM = Math.round(rrange(s, 12, 30));
       l.appetite = 0;
+      if (wasOurs) seizeDeposits(s, l);
       s.news.unshift({
         q: s.month, kind: "warn",
         text: `${l.name} has failed. ${l.kind === "conduit" ? "The securitisation market took it with them" : "The regulators walked in on a Friday afternoon and the name on the door meant nothing by Monday"} — `

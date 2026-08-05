@@ -95,6 +95,33 @@ export interface Era {
  * are how much of the last century each describes, so a fresh game is most
  * often ordinary and occasionally is not — which is also true of life.
  */
+/**
+ * WHAT THE GOVERNMENT INSURES, BY ERA — the fact that decides whether a bank
+ * failure is a headline or a catastrophe for the people who banked there.
+ *
+ * These are the real FDIC limits and the real dates, and they are the reason
+ * the same event feels completely different depending on when the game opens:
+ *   1934 $2,500 · 1934 $5,000 · 1950 $10,000 · 1966 $15,000 · 1969 $20,000
+ *   1974 $40,000 · 1980 $100,000 · 2008 $250,000 (permanent 2010)
+ *
+ * Mapped onto the five eras this engine actually opens from. In a postwar game
+ * the limit is $10-20k and a failure genuinely wipes households out; in a ZIRP
+ * game it is $250k and almost every resident is whole, so the damage has to
+ * travel by another road entirely — uninsured BUSINESS deposits and the
+ * withdrawal of local credit. That difference is a consequence of the date,
+ * which is exactly how it works in life.
+ *
+ * Expressed in year-2000 dollars, like every other salary and price in this
+ * engine; the reader multiplies by costIdx.
+ */
+export const DEPOSIT_INSURANCE: Record<string, number> = {
+  postwar: 20_000,
+  greatinflation: 40_000,
+  volcker: 100_000,
+  disinflation: 100_000,
+  zirp: 250_000,
+};
+
 export const ERAS: Era[] = [
   {
     key: "postwar", label: "A long expansion",

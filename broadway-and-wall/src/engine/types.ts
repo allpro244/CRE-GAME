@@ -1165,6 +1165,14 @@ export type SellerKind = "estate" | "institution" | "partnership" | "developer" 
 
 
 export interface GameState {
+  /** Which desk the firm banks with. See bankOf in lenders.ts. */
+  bankId?: string;
+  /**
+   * Money owed to you by the receiver of a failed bank — uninsured deposits
+   * that will come back at 60-90c, in a year or two. It is not cash and it is
+   * not net worth you can spend; it is a certificate and a wait.
+   */
+  receivership?: { from: string; amount: number; payM: number }[];
   /** how many buildings the wrecking ball has taken — the stock turns over */
   demolished?: number;
   /** books on the market as one ticket — see engine/portfoliosale.ts */

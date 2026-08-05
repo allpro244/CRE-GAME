@@ -462,6 +462,37 @@ export function buildCityData(src) {
   const slide = (r, dx, dy) => (r ? r.map(([x, y]) => [x + dx, y + dy]) : null);
 
   /**
+   * Cut every corner off at `cut` metres — the move that separates a tower
+   * built this decade from one built in 1985. The renderer's tower kit has the
+   * same operation for the buildings the PLAYER puts up; this is the one for
+   * the stock a city is generated with, so a scenario that starts with a
+   * modern downtown looks like one.
+   */
+  const chamferRing = (r, cut) => {
+    if (!r || r.length < 3 || cut <= 0.01) return r;
+    const n = r.length, out = [];
+    for (let i = 0; i < n; i++) {
+      const p = r[i], a = r[(i - 1 + n) % n], b = r[(i + 1) % n];
+      const la = Math.hypot(p[0] - a[0], p[1] - a[1]) || 1;
+      const lb = Math.hypot(b[0] - p[0], b[1] - p[1]) || 1;
+      const ka = Math.min(cut, la * 0.45) / la, kb = Math.min(cut, lb * 0.45) / lb;
+      out.push([p[0] + (a[0] - p[0]) * ka, p[1] + (a[1] - p[1]) * ka]);
+      out.push([p[0] + (b[0] - p[0]) * kb, p[1] + (b[1] - p[1]) * kb]);
+    }
+    return out;
+  };
+
+  /** Turn a ring about a point — the twist, and the spiral's step. */
+  const spin = (r, cx, cy, a) => {
+    if (!r) return null;
+    const c = Math.cos(a), s = Math.sin(a);
+    return r.map(([x, y]) => {
+      const dx = x - cx, dy = y - cy;
+      return [cx + dx * c - dy * s, cy + dx * s + dy * c];
+    });
+  };
+
+  /**
    * The stack of volumes a building actually stands as, base first.
    * null means "a plain extrusion is the right answer" — which for most of the
    * city it is, because most of a city is five storeys of brick.
@@ -546,6 +577,7 @@ export function buildCityData(src) {
     const PLAN = new Set([
       "courtyard", "lightcourt", "dumbbell", "campanile", "endtowers",
       "twins", "cruciform", "shifted", "hat", "notch",
+      "chamfertaper", "twist",
     ]);
     function tryPlan(fam) {
       // The wing clip is Sutherland–Hodgman, which is an exact partition on a
@@ -685,6 +717,41 @@ export function buildCityData(src) {
           const link = clipBand(ringXY, F.ux, F.uy, cu - slot / 2, cu + slot / 2);
           if (link) push(link, 0, hM * (0.26 + 0.24 * u(82)));
           return done("notched slab");
+        }
+        case "chamfertaper": {
+          // ONE VANDERBILT, as generated stock. The corners come off four
+          // times on the way up, each cut deeper than the last, so the tower
+          // is an octagon by the top and never shows the same width twice.
+          // The renderer's tower kit does this for what the PLAYER builds;
+          // this is the one for the stock a city STARTS with, so a scenario
+          // that opens on a modern downtown looks like one.
+          const cuts = [0.06, 0.13, 0.22, 0.33], sc = [1.0, 0.90, 0.79, 0.66];
+          const tops = [0.30, 0.56, 0.80, 1.0];
+          let z = 0, ok = 0;
+          for (let k = 0; k < 4; k++) {
+            const plate = k === 0 ? ringXY : shrink(ringXY, side, sc[k] * sc[k]);
+            if (!plate) break;
+            if (push(chamferRing(plate, cuts[k] * side * (0.7 + 0.6 * u(84))), z, hM * tops[k])) ok++;
+            z = hM * tops[k];
+          }
+          return ok >= 3 ? done("chamfer taper") : null;
+        }
+        case "twist": {
+          // Every stage turns on the one below, so the corners run up the
+          // building as slow helices and the silhouette changes as you walk
+          // round it. Thin enough that the steps read as a curve.
+          const cen = centroid(ringXY);
+          const n = 8 + Math.floor(u(85) * 5);
+          const total = (0.40 + 0.30 * u(86)) * (u(87) < 0.5 ? 1 : -1);
+          let z = 0, ok = 0;
+          for (let k = 0; k < n; k++) {
+            const t = (k + 1) / n;
+            const plate = shrink(ringXY, side, (1 - t * 0.16) ** 2);
+            if (!plate) break;
+            if (push(spin(plate, cen[0], cen[1], total * (k / n)), z, hM * t)) ok++;
+            z = hM * t;
+          }
+          return ok >= 4 ? done("twist") : null;
         }
         default: return null;
       }
@@ -847,6 +914,13 @@ export function buildCityData(src) {
     if (hM >= 40) post.push("shifted", "shifted");
     if (hM >= 34) post.push("hat", "hat");
     if (hM >= 30 && W >= 30) post.push("notch");
+    // THE TOWERS OF THE LAST DECADE, for the stock a city is generated with.
+    // Gated on 1998 and on 62 m — about twenty storeys — because a chamfered
+    // faceted taper is a move nobody was making before that, and putting one
+    // on a 1974 building would be the same anachronism as an arch on a 1958
+    // brick slab.
+    if (hM >= 62 && year >= 1998) post.push("chamfertaper", "chamfertaper", "twist");
+    if (hM >= 78 && year >= 2005) post.push("chamfertaper", "twist");
     if (areaM2 >= 1600 && W >= 38 && hM < 46) post.push("courtyard");
     if (hM >= 26 && W >= 26) post.push("endtowers");
     for (let k = hM >= 32 ? 2 : 4; k > 0; k--) post.push("slab");

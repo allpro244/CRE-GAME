@@ -251,6 +251,67 @@ function seizeDeposits(s: GameState, l: Lender) {
   });
 }
 
+/**
+ * THE RECEIVER REPUDIATES THE UNDRAWN COMMITMENT.
+ *
+ * Deposits are the loud half of a bank failure and the smaller one. The half
+ * that ends firms is this: a construction loan is a promise to advance against
+ * work in place, and a receiver does not advance. Every job in the failed
+ * desk's pipeline stops funding on the same Friday — not because the job went
+ * wrong, but because the lender did.
+ *
+ * The borrower's position afterwards is genuinely brutal and entirely real.
+ * The drawn balance stays outstanding and keeps accruing, and the interest
+ * reserve inside the dead commitment is as unfundable as everything else, so
+ * carry that was capitalising into the loan becomes cash out of the firm's
+ * account every month. The contractor is still on site under a contract the
+ * developer signed. And the only way out is a replacement facility, which
+ * takes a season to paper because a new desk has to re-underwrite a job it did
+ * not originate and the receiver has to sign an intercreditor.
+ *
+ * This is not applied only to the player's own bank — the desk that holds your
+ * deposits and the desk that wrote your construction loan are usually not the
+ * same desk, and it is the second one that matters here.
+ *
+ * IT DOES NOT YET REACH THE CITY'S OWN CRANES. Rival and anonymous jobs live
+ * in econ.cityJobs, which carries a balance and a rate but no lender, so there
+ * is nothing to match a failed name against. Until that is wired, a bank
+ * failure stops the player's sites and not the town's, which understates it:
+ * the reason a seizure moved a whole market was that every borrower on that
+ * desk's book stopped in the same week. See tickRepudiation in dev.ts for what
+ * the borrower can do about it.
+ */
+function repudiateCommitments(s: GameState, l: Lender) {
+  let jobs = 0;
+  let exposed = 0;
+  let mine = 0;
+  for (const d of Object.values(s.developments ?? {})) {
+    const desk = d.lender ?? CONSTRUCTION_LENDER;
+    if (desk !== l.name || d.repudiatedM !== undefined) continue;
+    // A job that has already drawn everything it was ever going to draw is not
+    // harmed by the promise dying — there was nothing left in it.
+    const room = Math.max(0, d.commitment - d.drawn);
+    if (room <= 0) continue;
+    d.repudiatedM = s.month;
+    d.replaceM = s.month + Math.round(rrange(s, 3, 9));
+    jobs++;
+    exposed += room;
+    if (s.holdings[d.bbl]) mine++;
+  }
+  if (!jobs) return;
+  s.news.unshift({
+    q: s.month, kind: mine > 0 ? "warn" : "info",
+    text: mine > 0
+      ? `THE RECEIVER HAS STOPPED FUNDING YOUR JOB${mine > 1 ? "S" : ""}. ${l.name} had ${usdShort(exposed)} of undrawn `
+        + `commitment across ${jobs} site${jobs > 1 ? "s" : ""} in this town, ${mine} of them your${mine > 1 ? "s" : " s"}. `
+        + `A receiver liquidates a book; it does not advance against work in place. The balance you have already drawn `
+        + `stays outstanding and its interest now comes out of your account instead of the reserve. `
+        + `You have a season to find a desk that will take the job out, and a contractor on site the whole time.`
+      : `${usdShort(exposed)} of undrawn construction commitment died with ${l.name}. `
+        + `${jobs} site${jobs > 1 ? "s" : ""} in this town stopped funding on Friday — watch which of them come back.`,
+  });
+}
+
 const usdShort = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}k`);
 
 /** The receiver pays out, eventually. Called once a month from tickLenders. */
@@ -463,6 +524,8 @@ export function tickLenders(s: GameState) {
       l.reopenM = Math.round(rrange(s, 12, 30));
       l.appetite = 0;
       if (wasOurs) seizeDeposits(s, l);
+      // And whether or not you banked with them, their cranes stop.
+      repudiateCommitments(s, l);
       s.news.unshift({
         q: s.month, kind: "warn",
         text: `${l.name} has failed. ${l.kind === "conduit" ? "The securitisation market took it with them" : "The regulators walked in on a Friday afternoon and the name on the door meant nothing by Monday"} — `

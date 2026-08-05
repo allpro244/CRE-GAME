@@ -440,6 +440,31 @@ export interface Development {
   // has been drawn is paid out of a reserve inside the loan until it runs dry.
   /** Which desk wrote the facility. Older saves carry none — the regional, the historical default. */
   lender?: string;
+  /**
+   * THE DAY THE MONEY STOPPED.
+   *
+   * A construction loan is not cash — it is a promise to advance, month by
+   * month, against work in place. When the regulator closes the desk that
+   * made the promise, the promise dies with it: a receiver's job is to
+   * liquidate a book, not to fund a half-built building. The borrower is left
+   * with a hole in the ground, a balance that still accrues, and a
+   * construction contract they are personally on the hook for.
+   *
+   * This is the channel that made 1990 what it was. The seizure of a bank was
+   * never mainly about the depositors — they were insured. It was about every
+   * job in that bank's pipeline stopping in the same week.
+   *
+   * Set when the desk is seized; cleared when a replacement facility closes.
+   */
+  repudiatedM?: number;
+  /**
+   * When a replacement facility could realistically close. Drawn once at
+   * repudiation: a new bank has to re-underwrite a job it did not originate,
+   * and the receiver has to consent to the intercreditor. Three to nine
+   * months is what that paperwork takes, and the job burns the developer's
+   * own cash for every one of them.
+   */
+  replaceM?: number;
   commitment: number;     // the lender's total commitment
   drawn: number;          // funded to date
   loanBalance: number;    // drawn + capitalised interest

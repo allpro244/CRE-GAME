@@ -1020,6 +1020,106 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
  * problem. Costs move under you unless you bought a guaranteed price. And
  * things go wrong on their own schedule, not at a convenient midpoint.
  */
+/**
+ * REPLACING A FACILITY THAT DIED WITH ITS BANK.
+ *
+ * The only way off a repudiated construction loan is another desk, and what
+ * that desk is buying is not a business plan — it is a half-finished building
+ * with a receiver's lien on it. So it underwrites the whole job at its own
+ * advance rate against total cost, uses the first draw to retire the
+ * receiver's balance so it holds a clean first lien, and what is left over is
+ * the money to finish. If its advance rate on the whole cost does not clear
+ * the balance already outstanding, there is no deal at any price — which is
+ * why a job that overran BEFORE its bank failed is usually the one that never
+ * comes back.
+ *
+ * Nothing here rolls a die on whether a rescue "happens". The desks are the
+ * same three desks, their appetite is the same appetite off the same capital,
+ * and a market that has just seized a bank is a market where two of the three
+ * have stopped quoting. The only thing drawn is how long the paperwork takes,
+ * and that is drawn once, at repudiation.
+ */
+function tickRepudiation(s: GameState, d: Development, rec: { address: string }, progress: number) {
+  const monthsLeft = Math.max(2, d.deliverM - s.month);
+  const open = constructionQuotes(s, d.mix ?? devMix(d.use), d.costTotal)
+    .filter((q) => q.open && q.lender !== (d.lender ?? CONSTRUCTION_LENDER))
+    .sort((a, b) => a.ratePct - b.ratePct);
+
+  // WHAT IT STILL COSTS TO GET A BUILDING OUT OF THIS. The S-curve has spent
+  // `progress` of the construction budget; the lease-up reserve has not been
+  // touched and is still ahead of the job.
+  const toComplete = Math.max(0, d.costTotal - (d.leaseUpReserve ?? 0)) * (1 - progress) + (d.leaseUpReserve ?? 0);
+  const equityLeft = Math.max(0, d.equityBudget - d.equitySpent) + (d.equityPrefunded ?? 0);
+
+  let deal: { q: ConstructionQuote; gross: number; reserve: number } | undefined;
+  let short = false;
+  for (const q of open) {
+    const gross = q.ltcMax * d.costTotal;
+    const reserve = reserveFor(gross, q.ratePct, monthsLeft);
+    // It has to take the receiver out AND carry itself to delivery before a
+    // single dollar of it buys any steel.
+    if (gross <= d.loanBalance + reserve) continue;
+    // AND SOURCES HAVE TO MEET USES. This is the first test on any
+    // construction loan and it was missing here: the hometown bank stops at a
+    // $9M hold, and without this it would happily "rescue" a $330M job with
+    // $4M of new money — a facility that pays points, retires the receiver,
+    // and still leaves the building unfinished. Neither side signs that. The
+    // borrower's own cash counts, because a developer with money in the bank
+    // genuinely can finish a job that the bank alone cannot.
+    const newMoney = gross - reserve - d.loanBalance;
+    if (newMoney + equityLeft + Math.max(0, s.cash) < toComplete) { short = true; continue; }
+    deal = { q, gross, reserve };
+    break;
+  }
+
+  if (!deal) {
+    // Report it, but not every month — the borrower already knows.
+    if ((s.month - (d.repudiatedM ?? s.month)) % 6 === 0 && s.holdings[d.bbl]) {
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: short
+          ? `The desks will look at ${rec.address} and none of them will write enough. The job is `
+            + `${(progress * 100).toFixed(0)}% built, $${(d.loanBalance / 1e6).toFixed(1)}M is owed to a receiver and `
+            + `$${(toComplete / 1e6).toFixed(1)}M of cost is still ahead of it — a facility that does not cover both `
+            + `buys nobody a building. Find the difference or find a partner.`
+          : `Nobody will refinance ${rec.address}. The job is ${(progress * 100).toFixed(0)}% built with `
+            + `$${(d.loanBalance / 1e6).toFixed(1)}M outstanding to a receiver, and no desk in town is quoting `
+            + `against that at any price. Until one is, every dollar of work in place is yours.`,
+      });
+    }
+    return;
+  }
+
+  const { q, gross, reserve } = deal;
+  const payoff = d.loanBalance;
+  const points = Math.round(gross * q.points);
+  // Points are cash at close, exactly as they were the first time.
+  s.cash -= points;
+  logBooks(s, "dev", points);
+  // The takeout itself never touches the borrower's account: the new desk pays
+  // the receiver directly and books the same number as its own first draw.
+  d.commitment = Math.round(gross);
+  d.interestReserve = Math.round(reserve);
+  d.reserveUsed = 0;
+  d.drawn = Math.round(payoff);
+  d.loanBalance = Math.round(payoff);
+  d.ratePct = q.ratePct;
+  d.lender = q.lender;
+  delete d.repudiatedM;
+  delete d.replaceM;
+  bumpLenderRel(s, q.lender, 3);   // you are their borrower now, and they took a job nobody wanted
+
+  const toBuild = Math.round(gross - reserve - payoff);
+  if (s.holdings[d.bbl]) {
+    s.news.unshift({
+      q: s.month, kind: "deal",
+      text: `${q.lender} has refinanced ${rec.address} at ${q.ratePct.toFixed(2)}% — $${(gross / 1e6).toFixed(1)}M, of which `
+        + `$${(payoff / 1e6).toFixed(1)}M goes straight to the receiver and $${(toBuild / 1e6).toFixed(1)}M is left to finish with. `
+        + `$${(points / 1e3).toFixed(0)}k of points, and a coupon you would not have signed a year ago. The crane turns again.`,
+    });
+  }
+}
+
 export function tickDevelopments(s: GameState, parcels: ParcelTable) {
   for (const d of Object.values(s.developments)) {
     const rec = parcels[d.bbl];
@@ -1063,6 +1163,12 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
     const buildSpend = Math.max(0, d.costTotal - (d.leaseUpReserve ?? 0));
     const spendNow = Math.round(buildSpend * spendShare);
 
+    // FINDING A DESK THAT WILL TAKE THE JOB OUT. See repudiateCommitments in
+    // lenders.ts for how the job got here.
+    if (d.repudiatedM !== undefined && s.month >= (d.replaceM ?? 0)) {
+      tickRepudiation(s, d, rec, curve(t1));
+    }
+
     if (spendNow > 0) {
       // THE CHEQUE YOU ALREADY WROTE PAYS FIRST, and it costs nothing further.
       // Without this the S-curve spent the full build cost ON TOP of the
@@ -1078,8 +1184,14 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
       const fromEquity = Math.min(equityLeft, rest);
       // the loan's construction bucket is the commitment LESS the reserve it
       // is holding back for its own interest; interest draws are tracked in
-      // reserveUsed, so construction-to-date is drawn minus that
-      const hardRoom = Math.max(0, (d.commitment - d.interestReserve) - (d.drawn - d.reserveUsed));
+      // reserveUsed, so construction-to-date is drawn minus that.
+      // A REPUDIATED FACILITY HAS NO ROOM IN IT. The commitment is still on
+      // the books of a receiver who will not fund it, so every dollar of work
+      // in place falls through to the borrower as a capital call — which is
+      // exactly what a developer whose bank failed woke up to.
+      const hardRoom = d.repudiatedM !== undefined
+        ? 0
+        : Math.max(0, (d.commitment - d.interestReserve) - (d.drawn - d.reserveUsed));
       const fromLoan = Math.min(hardRoom, rest - fromEquity);
       const unfunded = rest - fromEquity - fromLoan;
       d.equitySpent += fromEquity;
@@ -1104,7 +1216,18 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
     // re-sizes it rather than calling the borrower — it wants the building
     // finished at least as much as you do — and it charges for the privilege
     // by adding it to the balance you have to refinance.
-    if (d.loanBalance > 0) {
+    if (d.loanBalance > 0 && d.repudiatedM !== undefined) {
+      // A RECEIVER TAKES INTEREST AND ADVANCES NOTHING. The reserve that was
+      // paying this carry lived inside the commitment, and the commitment is
+      // dead — so the loan stops paying its own interest and the borrower
+      // starts. It does not capitalise, because nobody is lending it: it is a
+      // cheque, every month, on a building that is not earning anything yet.
+      // On a $40M job at 9% that is $300k a month against no income, which is
+      // the number that actually ended developers.
+      const interest = Math.round((d.loanBalance * d.ratePct) / 100 / 12);
+      s.cash -= interest;
+      logBooks(s, "debtSvc", interest);
+    } else if (d.loanBalance > 0) {
       const interest = Math.round((d.loanBalance * d.ratePct) / 100 / 12);
       if (d.reserveUsed + interest > d.interestReserve) {
         const extra = Math.round(reserveFor(d.commitment, d.ratePct, Math.max(3, d.deliverM - s.month)) * 0.5) + interest;
@@ -1352,17 +1475,28 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // which quietly conjured money into the game. It is part of the loan
   // commitment — the bank is advancing it now that there is a building to
   // lease — so it draws like any other advance and the balance goes up.
+  // AND ONLY WHAT THE BANK ACTUALLY ADVANCES ARRIVES. This handed over the
+  // full reserve while drawing only what was left in the commitment, so any
+  // gap between the two was cash from nowhere. It never showed up, because
+  // the conserve identity nets it against the dev bucket and balances either
+  // way — and on a job that ran to plan the gap was always exactly zero. The
+  // room was a rail holding the model up. A repudiated facility has no room in
+  // it at all, and a developer whose bank failed is not handed the fit-out
+  // money on the way out the door.
   const lease = d.leaseUpReserve ?? 0;
   if (lease > 0) {
     const room = Math.max(0, d.commitment - d.drawn);
     const advance = Math.min(lease, room);
     d.drawn += advance;
     d.loanBalance += advance;
-    s.cash += lease;
-    logBooks(s, "dev", -lease);
+    s.cash += advance;
+    logBooks(s, "dev", -advance);
     s.news.unshift({
-      q: s.month, kind: "info",
-      text: `The lease-up reserve at ${rec.address} — $${(lease / 1e6).toFixed(2)}M — is released. That is what fits out the first tenants.`,
+      q: s.month, kind: advance < lease ? "warn" : "info",
+      text: advance < lease
+        ? `The lease-up reserve at ${rec.address} was $${(lease / 1e6).toFixed(2)}M, and only $${(advance / 1e6).toFixed(2)}M of it `
+          + `is still fundable. The fit-out and the leasing commissions on the rest come out of your own account.`
+        : `The lease-up reserve at ${rec.address} — $${(lease / 1e6).toFixed(2)}M — is released. That is what fits out the first tenants.`,
     });
   }
 

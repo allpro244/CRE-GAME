@@ -16,7 +16,7 @@ import { planDevelopment, constructionQuotes, devMix, PROGRAMS, programCost, far
 import { buyQuote, assemblagePressure, saleTaxQuote } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { MILESTONES } from "@/engine/sim";
-import { isCommercial, vacantSf, walt, loiSigningCost, exclusiveFeeRate, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, buyoutQuote, depositsHeld, BUYOUT_PREMIUM } from "@/engine/leasing";
+import { genRentRoll, isCommercial, vacantSf, walt, loiSigningCost, exclusiveFeeRate, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, buyoutQuote, depositsHeld, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
 import { lenderHealth, capitalRatio, lenderBlurb, targetCapital, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { noteBid, payoffQuote } from "@/engine/notes";
@@ -79,12 +79,34 @@ function physicalOcc(rec: never, h: { tenants: { sf: number }[]; occ?: number })
  * building is exactly the risk you are taking.
  */
 function disclosed(game: GameState, bbl: string, price?: number): Holding | null {
+  const parcels = useStore.getState().parcels;
+  const rec = parcels ? resolveRec(parcels, game, bbl) : null;
+  if (!rec || rec.class === "land" || !rec.bldgArea) return null;
   const li = game.listings.find((l) => l.bbl === bbl);
-  if (!li?.roll) return null;
-  return {
-    bbl, boughtM: game.month, costBasis: price ?? li.ask, assessed: price ?? li.ask,
-    loan: null, condition: li.cond ?? "standard", tenants: li.roll, occ: li.occ, cfHistory: [],
+  const px = price ?? li?.ask ?? game.approaches[bbl]?.ask ?? assetValue(rec, game.econ, gradeOf(game, rec));
+  const distress = !!li?.distress;
+  const cond = li?.cond ?? (distress ? "worn" : gradeOf(game, rec));
+  const h = {
+    bbl, boughtM: game.month, costBasis: px, assessed: px,
+    loan: null, condition: cond, tenants: [] as never[], cfHistory: [],
   } as unknown as Holding;
+  // A MARKETED BUILDING'S ROLL WAS WRITTEN THE DAY IT CAME TO MARKET, and that
+  // is the roll the deed conveys — so read it rather than writing a fresh one.
+  // Regenerating here looked identical and was not: genRentRoll stamps lease
+  // start and expiry dates off s.month, so a listing written in month 5 and
+  // previewed in month 40 produced a roll with the same tenants on different
+  // paper. Measured: 39 of 200 purchases differed on occupancy and 84 on NOI.
+  if (li?.roll) {
+    h.tenants = li.roll as never;
+    if (li.occ !== undefined) h.occ = li.occ;
+    return h;
+  }
+  // Nothing marketed, so this is a door you knocked on. Deterministic per
+  // building — see genRentRoll — with settle=false so looking at a building
+  // never moves money, drawn from a private stream so looking never re-rolls
+  // the world, and identical to what the deed will hand over.
+  genRentRoll(game, rec, h, distress, false);
+  return h;
 }
 import { sponsorStanding } from "@/engine/sponsor";
 import { marketAppetite, markRival, ownerOf, rivalCondition, gradeOf, assetGrade } from "@/engine/rivals";

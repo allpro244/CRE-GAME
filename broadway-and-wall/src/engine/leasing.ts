@@ -3,7 +3,7 @@
 // market against moving costs, and rollover risk that clusters.
 // Multifamily skips all of this and runs aggregate occupancy.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { BuiltClass, Credit, GameState, Holding, LOI, Sector } from "./types";
+import type { BuiltClass, Credit, GameState, Holding, Listing, LOI, Sector } from "./types";
 import { logBooks, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START } from "./types";
 import type { Tenant } from "./types";
 import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL } from "./market";
@@ -296,14 +296,83 @@ function toSuites(rec: ParcelRecord, want: number, cap: number, use?: BuiltClass
  * compensation for work, and the 2-5x is earned over the years the work takes.
  */
 /**
+ * A BUILDING HAS ONE RENT ROLL, AND YOU CAN ALWAYS SEE IT BEFORE YOU BID.
+ *
+ * In this business nobody offers on a building without knowing the tenancy and
+ * the NOI. Not on the tape, and not off-market either — an off-market offer is
+ * made subject to diligence, the roll and the operating statements arrive, and
+ * if they are not what you were told you retrade or you walk. There is real
+ * information asymmetry in real estate and it is about the MARKET: what is
+ * coming out of the ground, who else is bidding, what the block will do in ten
+ * years. It is not about the subject property's own rent roll.
+ *
+ * So the roll is DETERMINISTIC PER BUILDING. Same seed, same parcel, same
+ * roll — whenever it is asked for, by whichever path, however many times.
+ * That makes "what the preview shows" and "what the deed conveys" the same
+ * object by construction rather than by two code paths agreeing to be careful.
+ *
+ * It also closes a real hazard. ONE shared mulberry32 stream drives the whole
+ * world (market.ts:15-19), and this function used to draw from it AT THE
+ * MOMENT OF PURCHASE — so the century a player got depended on which buildings
+ * they happened to buy and when. Rolls now draw from a private stream keyed on
+ * the parcel, restored afterwards, and cost the shared stream nothing at all.
+ *
  * @param settle  Whether the deposits move cash. TRUE at a closing, where the
- *   in-place deposits come across on the settlement statement. FALSE when a
- *   roll is written for a LISTING (see refreshListings) — that building is not
- *   yours, nobody has settled anything, and crediting the player for deposits
- *   on somebody else's tenants is cash out of thin air. pnpm conserve caught
- *   it immediately: 42 months of 4,200 stopped balancing.
+ *   in-place deposits come across on the settlement statement. FALSE for a
+ *   PREVIEW — that building is not yours, nobody has settled anything, and
+ *   crediting the player for deposits on somebody else's tenants is cash out
+ *   of thin air. pnpm conserve caught exactly that: 42 months of 4,200.
  */
+/**
+ * STAMP A LISTING WITH THE ROLL THE DEED WILL CONVEY.
+ *
+ * Every path that puts a building on the market goes through here, and there
+ * are eight of them: refreshListings, the courthouse, the package desk, and
+ * five separate places in rivals.ts where a firm sells, is squeezed, or dies.
+ * Only ONE of them used to write a roll, so a building that reached the tape
+ * via a rival's distress arrived with no disclosed tenancy at all — and the
+ * panel then showed a market estimate that the deed did not honour. Measured:
+ * 36 of 200 purchases disagreed on NOI, and every one of them came in through
+ * a path that was not refreshListings.
+ *
+ * Centralised so a ninth path cannot forget. Cheap to call: the roll is
+ * deterministic per building and drawn from a private stream, so this costs
+ * the shared world PRNG nothing.
+ */
+export function stampListing(s: GameState, rec: ParcelRecord, li: Listing): Listing {
+  if (rec.class === "land" || !rec.bldgArea || li.roll) return li;
+  const distress = !!li.distress;
+  // The grade the deed will convey: today's grade, less the notch a distressed
+  // building takes at the closing. See executePurchase.
+  const cond = distress
+    ? condGrade(Math.max(0.30, (initialCondIdx(rec, s.month) ?? 0.7) - 0.10))
+    : condGrade(initialCondIdx(rec, s.month));
+  const vessel = { bbl: li.bbl, boughtM: s.month, costBasis: li.ask, loan: null,
+    condition: cond, tenants: [], cfHistory: [] } as unknown as Holding;
+  genRentRoll(s, rec, vessel, distress, false);   // no closing, no settlement
+  li.cond = cond;
+  li.roll = vessel.tenants;
+  if (vessel.occ !== undefined) li.occ = vessel.occ;
+  return li;
+}
+
 export function genRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distressed = false, settle = true) {
+  // The private stream, keyed on the parcel and on whether this is the
+  // distressed reading of it — a receiver's building is a different roll, and
+  // it has to be a STABLE different roll.
+  const saved = s.rng;
+  let hsh = 2166136261 ^ (s.seed >>> 0);
+  const key = rec.bbl + (distressed ? "#d" : "");
+  for (let i = 0; i < key.length; i++) { hsh ^= key.charCodeAt(i); hsh = Math.imul(hsh, 16777619); }
+  s.rng = hsh >>> 0;
+  try {
+    buildRentRoll(s, rec, holding, distressed, settle);
+  } finally {
+    s.rng = saved;
+  }
+}
+
+function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distressed: boolean, settle: boolean) {
   if (!rec.bldgArea) return;
   const m = mixOf(rec);
   if ((m.multifamily ?? 0) > 0) {

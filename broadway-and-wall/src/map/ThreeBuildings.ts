@@ -727,7 +727,12 @@ float unpackDepth(vec4 c) {
 // acne is handled where acne actually comes from — surfaces seen edge-on to
 // the light — by offsetting the sample along the surface normal instead of
 // burying the whole scene deeper into the light.
-const float SHADOW_SPAN_M = 5999.0;   // the sun camera's far minus its near
+// The sun camera's far minus its near, in metres. A uniform rather than a
+// constant since the frustum is fitted to each city: hardcode it and the
+// metre-denominated bias below silently means something different in every
+// town, which is the kind of fault that shows up as shadows detaching from
+// their buildings in one city and nowhere else.
+uniform float uShadowSpan;
 const float SHADOW_BIAS_M = 1.6;      // was 0.0028 NDC == 16.80 m
 const float SHADOW_NORMAL_M = 1.15;   // ~one texel, along the surface normal
 
@@ -763,7 +768,7 @@ float sunVis(vec3 p, vec3 n) {
   vec4 sc = uSunVP * vec4(p + n * SHADOW_NORMAL_M, 1.0);
   vec3 ndc = sc.xyz / sc.w * 0.5 + 0.5;
   if (ndc.x < 0.0 || ndc.x > 1.0 || ndc.y < 0.0 || ndc.y > 1.0 || ndc.z > 1.0) return 1.0;
-  float recv = ndc.z - SHADOW_BIAS_M / SHADOW_SPAN_M;
+  float recv = ndc.z - SHADOW_BIAS_M / uShadowSpan;
 
   float ang = shadowHash(floor(p.xy * 4.0)) * 6.2831853;
   vec2 rc = vec2(cos(ang), sin(ang));
@@ -781,7 +786,7 @@ float sunVis(vec3 p, vec3 n) {
   // time, and is what pays for the rest of this function.
   if (bHits < 0.5) return 1.0;
 
-  float gapM = max(recv - bSum / bHits, 0.0) * SHADOW_SPAN_M;
+  float gapM = max(recv - bSum / bHits, 0.0) * uShadowSpan;
   float radius = min(1.1 + gapM * PENUMBRA_OPEN, PENUMBRA_MAX) * SHADOW_TEXEL;
 
   // ---- 2. filter at that width --------------------------------------------
@@ -3007,6 +3012,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   /** true once any walker mesh exists — gates the animation clock. */
   private hasWalkers = false;
   private shadowTarget: THREE.WebGLRenderTarget | null = null;
+  private shadowSpan = 5999;
   private depthMat: THREE.MeshDepthMaterial | null = null;
   private groundCatcher: THREE.Mesh | null = null;
   private aoGround: THREE.Mesh | null = null;
@@ -4190,6 +4196,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       uShadow: { value: null as THREE.Texture | null },
       uSunVP: { value: new THREE.Matrix4() },
       uShadowOn: { value: 0 },
+      uShadowSpan: { value: 5999 },
     });
     this.wallMat = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: FRAG, uniforms: uniforms(), side: THREE.DoubleSide });
     this.roofMat = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: ROOF_FRAG, uniforms: uniforms(), side: THREE.DoubleSide });
@@ -4953,6 +4960,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         uShadow: { value: this.shadowTex },
         uSunVP: { value: this.sunVP },
         uShadowOn: { value: this.shadowTex ? 1 : 0 },
+        uShadowSpan: { value: this.shadowSpan },
       },
       side: THREE.DoubleSide,
     });
@@ -4974,6 +4982,47 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       cam.up.set(0, 0, 1);
       cam.lookAt(look);
       cam.updateMatrixWorld(true);
+
+      // FIT THE FRUSTUM TO THE CITY INSTEAD OF GUESSING AT IT.
+      //
+      // Those bounds are a hand-picked 4,400 x 3,800 m, which across a 3,072
+      // map is 1.43 m per texel — and every one of these cities is smaller
+      // than that box, so a good part of the shadow map has been photographing
+      // open water. Fitting to the actual coastline is free resolution: the
+      // same texels spread over less ground, and shadows sharpen everywhere at
+      // no cost in memory or time.
+      //
+      // Fitted in the LIGHT's own space, which is the only place the answer is
+      // exact — the sun is low and off to one side, so the ground footprint of
+      // this frustum is a sheared parallelogram, not the axis-aligned box the
+      // world coordinates suggest. Corners are taken at ground level and at
+      // the height of the tallest thing the generator builds, because a tower
+      // must be inside the box to cast at all.
+      const land = this.ctxPoints.land;
+      if (land && land.length > 2) {
+        let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+        for (const p of land) {
+          const [x, y] = this.project(p);
+          x0 = Math.min(x0, x); x1 = Math.max(x1, x);
+          y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+        }
+        const TALLEST = 320;                   // metres, comfortably over any volume
+        const inv = cam.matrixWorldInverse;
+        let l = Infinity, r = -Infinity, b = Infinity, t = -Infinity, n = Infinity, f = -Infinity;
+        const v = new THREE.Vector3();
+        for (const x of [x0, x1]) for (const y of [y0, y1]) for (const z of [0, TALLEST]) {
+          v.set(x, y, z).applyMatrix4(inv);
+          l = Math.min(l, v.x); r = Math.max(r, v.x);
+          b = Math.min(b, v.y); t = Math.max(t, v.y);
+          n = Math.min(n, -v.z); f = Math.max(f, -v.z);
+        }
+        const pad = 40;                        // a little slack for roof furniture
+        cam.left = l - pad; cam.right = r + pad;
+        cam.bottom = b - pad; cam.top = t + pad;
+        cam.near = Math.max(1, n - pad); cam.far = f + pad;
+        cam.updateProjectionMatrix();
+      }
+      this.shadowSpan = cam.far - cam.near;
 
       if (!this.shadowTarget) {
         this.shadowTarget = new THREE.WebGLRenderTarget(3072, 3072, {
@@ -5017,6 +5066,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           mat.uniforms.uSunVP.value = sunVP;
           mat.uniforms.uShadowOn.value = 1;
         }
+        if (mat && mat.uniforms && mat.uniforms.uShadowSpan) mat.uniforms.uShadowSpan.value = this.shadowSpan;
       });
       for (const mat of [this.wallMat, this.roofMat]) {
         mat.uniforms.uShadow.value = target.texture;
@@ -5030,7 +5080,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           fragmentShader: CATCHER_FRAG,
           uniforms: {
             uShadow: { value: target.texture }, uSunVP: { value: sunVP },
-            uShadowOn: { value: 1 }, uSeason: this.seasonUni,
+            uShadowOn: { value: 1 }, uShadowSpan: { value: this.shadowSpan },
+            uSeason: this.seasonUni,
           },
           transparent: true,
           depthWrite: false,

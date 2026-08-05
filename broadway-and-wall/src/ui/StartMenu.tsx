@@ -83,95 +83,101 @@ export default function StartMenu() {
       </div>
 
       <div className="start-body">
-        {phase === "boot" ? (
-          <div className="start-boot">Looking for a game in progress&hellip;</div>
-        ) : (
-          <>
-            {/* CONTINUE IS THE FIRST THING, because for anyone who has played
-                before it is the only thing they came here to press. It names
-                the town and the date so it is a decision and not a leap. */}
-            {resume && (
-              <button className="start-continue" onClick={() => void continueRun()}>
-                <span className="start-continue-l">
-                  <span className="start-continue-head">Continue</span>
-                  <span className="start-continue-town">
-                    {islandName(resume.island)}
-                    <span className="start-continue-dim">
-                      {" · "}{sizes.find((s) => s.id === resume.size)?.name ?? resume.size}
-                      {" · "}{devs.find((d) => d.id === resume.dev)?.name ?? resume.dev}
+        {/* The inner block is what gets centred when the window is taller than
+            the choices; it is a child of the scroller rather than the scroller
+            itself, because centring a flex CONTAINER clips the top of its
+            content the moment the content is taller than the box. */}
+        <div className="start-inner">
+          {phase === "boot" ? (
+            <div className="start-boot">Looking for a game in progress&hellip;</div>
+          ) : (
+            <>
+              {/* CONTINUE IS THE FIRST THING, because for anyone who has played
+                  before it is the only thing they came here to press. It names
+                  the town and the date so it is a decision and not a leap. */}
+              {resume && (
+                <button className="start-continue" onClick={() => void continueRun()}>
+                  <span className="start-continue-l">
+                    <span className="start-continue-head">Continue</span>
+                    <span className="start-continue-town">
+                      {islandName(resume.island)}
+                      <span className="start-continue-dim">
+                        {" · "}{sizes.find((s) => s.id === resume.size)?.name ?? resume.size}
+                        {" · "}{devs.find((d) => d.id === resume.dev)?.name ?? resume.dev}
+                      </span>
+                    </span>
+                    <span className="start-continue-when">
+                      {monthLabel(resume.month)} · Year {Math.floor(resume.month / 12) + 1} · {usd(resume.cash)} in hand
                     </span>
                   </span>
-                  <span className="start-continue-when">
-                    {monthLabel(resume.month)} · Year {Math.floor(resume.month / 12) + 1} · {usd(resume.cash)} in hand
-                  </span>
-                </span>
-                <span className="start-continue-go">Resume ▸</span>
-              </button>
-            )}
+                  <span className="start-continue-go">Resume ▸</span>
+                </button>
+              )}
 
-            <div className="start-or">{resume ? "or cut a new town" : "cut a town and break ground"}</div>
+              <div className="start-or">{resume ? "or cut a new town" : "cut a town and break ground"}</div>
 
-            <div className="start-cols">
-              {/* WHICH ISLAND. Fixed for the life of a campaign — the coast,
-                  the districts and the stations are what make a place a place
-                  — so this is the only screen it can be asked on. */}
-              <div className="start-col">
-                <div className="start-col-head">which island</div>
-                {islands.map((c) => (
-                  <button
-                    key={c.id}
-                    className={"start-opt" + (c.id === island ? " start-opt-on" : "")}
-                    onClick={() => setIsland(c.id)}
-                  >
-                    <span className="start-opt-name">{c.name}</span>
-                    <span className="start-opt-note">{c.tagline}</span>
-                  </button>
-                ))}
+              <div className="start-cols">
+                {/* WHICH ISLAND. Fixed for the life of a campaign — the coast,
+                    the districts and the stations are what make a place a place
+                    — so this is the only screen it can be asked on. */}
+                <div className="start-col">
+                  <div className="start-col-head">which island</div>
+                  {islands.map((c) => (
+                    <button
+                      key={c.id}
+                      className={"start-opt" + (c.id === island ? " start-opt-on" : "")}
+                      onClick={() => setIsland(c.id)}
+                    >
+                      <span className="start-opt-name">{c.name}</span>
+                      <span className="start-opt-note">{c.tagline}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* HOW BIG, which is a decision about what game you are playing
+                    rather than a graphics setting. Land area goes as the square
+                    of the scale, so this moves the lot count from a few hundred
+                    to a few thousand — and with it the standing stock, the size
+                    of the banks that lend against it, and how much of the town
+                    one firm can ever be. */}
+                <div className="start-col">
+                  <div className="start-col-head">how big</div>
+                  {sizes.map((s) => (
+                    <button
+                      key={s.id}
+                      className={"start-opt" + (s.id === size ? " start-opt-on" : "")}
+                      onClick={() => setSize(s.id)}
+                    >
+                      <span className="start-opt-name">
+                        {s.name}
+                        <span className="start-opt-lots"> · about {lotsAt(s.k)} lots</span>
+                      </span>
+                      <span className="start-opt-note">{s.note}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* HOW MUCH OF IT IS ALREADY THERE. Not a graphics preset: it
+                    decides how many lots are still dirt and how tall what stands
+                    on the rest is, which is the difference between a game about
+                    building a city and a game about buying one. */}
+                <div className="start-col">
+                  <div className="start-col-head">how built up</div>
+                  {devs.map((d) => (
+                    <button
+                      key={d.id}
+                      className={"start-opt" + (d.id === dev ? " start-opt-on" : "")}
+                      onClick={() => setDev(d.id)}
+                    >
+                      <span className="start-opt-name">{d.name}</span>
+                      <span className="start-opt-note">{d.note}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-
-              {/* HOW BIG, which is a decision about what game you are playing
-                  rather than a graphics setting. Land area goes as the square
-                  of the scale, so this moves the lot count from a few hundred
-                  to a few thousand — and with it the standing stock, the size
-                  of the banks that lend against it, and how much of the town
-                  one firm can ever be. */}
-              <div className="start-col">
-                <div className="start-col-head">how big</div>
-                {sizes.map((s) => (
-                  <button
-                    key={s.id}
-                    className={"start-opt" + (s.id === size ? " start-opt-on" : "")}
-                    onClick={() => setSize(s.id)}
-                  >
-                    <span className="start-opt-name">
-                      {s.name}
-                      <span className="start-opt-lots"> · about {lotsAt(s.k)} lots</span>
-                    </span>
-                    <span className="start-opt-note">{s.note}</span>
-                  </button>
-                ))}
-              </div>
-
-              {/* HOW MUCH OF IT IS ALREADY THERE. Not a graphics preset: it
-                  decides how many lots are still dirt and how tall what stands
-                  on the rest is, which is the difference between a game about
-                  building a city and a game about buying one. */}
-              <div className="start-col">
-                <div className="start-col-head">how built up</div>
-                {devs.map((d) => (
-                  <button
-                    key={d.id}
-                    className={"start-opt" + (d.id === dev ? " start-opt-on" : "")}
-                    onClick={() => setDev(d.id)}
-                  >
-                    <span className="start-opt-name">{d.name}</span>
-                    <span className="start-opt-note">{d.note}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* THE CONFIRM CANNOT LEAVE THE SCREEN. It is a sibling of the scroller,

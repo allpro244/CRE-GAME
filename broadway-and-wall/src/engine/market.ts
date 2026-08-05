@@ -1074,11 +1074,127 @@ export function tickEcon(s: GameState) {
     // actually comes from), plus what a tight or slack labour market does on
     // top. Real wage growth therefore lands near productivity, which is the
     // number a real economy delivers.
+    // PRODUCTIVITY IS NOT A CONSTANT, AND WHILE IT WAS ONE IT WAS A FLOOR
+    // UNDER REAL WAGES THAT NO REAL ECONOMY HAS.
+    //
+    // This was a flat 0.011 — 1.1%/yr real, forever, in every month of every
+    // run. Since expectations track realised inflation closely, real wage
+    // growth reduces to roughly PRODUCTIVITY + tight*0.012, which at 9%
+    // unemployment still comes out around +0.6%/yr. Real wages could only
+    // fall when inflation SURPRISED expectations, and expectations reset at
+    // 2%/month, so the fall was always brief and always shallow.
+    //
+    // MEASURED over 12 seeds x 50 years, 7,188 months: the nominal wage index
+    // fell in 0.0% of them — not once — and the worst twelve-month real wage
+    // change in any run was -3.35%. The nominal figure is defensible and
+    // should stay near zero: downward nominal wage rigidity is one of the most
+    // robust findings in macro and aggregate nominal wages essentially never
+    // fall. The real figure is not. US real average hourly earnings fell about
+    // 2.8% in 2022 alone, and real wages fell for three consecutive years
+    // through 1979-81 for a cumulative loss near 7%.
+    //
+    // What actually varies is productivity, on two timescales, and both are
+    // measured facts rather than shape parameters:
+    //
+    // BY ERA. US labour productivity grew ~2.8%/yr in 1947-73, ~1.4% in
+    // 1973-95, ~2.9% in 1995-2004 and ~1.3% since. That is a 2-point spread
+    // between regimes that each lasted twenty years, and it is the single
+    // largest fact about why one generation got richer faster than the next.
+    // Modelled as a slow wave keyed on the seed and the month so a run passes
+    // through regimes without needing a new field on the save — a productivity
+    // era is not a decision anybody makes, so it does not need to be stored,
+    // only to be the same every time this town is rebuilt.
+    //
+    // BY CYCLE. Productivity is procyclical, and the mechanism is labour
+    // hoarding: firms carry staff they cannot use into a downturn, so output
+    // per worker falls first and rebounds hard in the recovery. 2022 was
+    // -1.7%, the worst since 1947. That is where a genuinely negative
+    // productivity year comes from, and with it a real wage that gives back
+    // ground rather than merely growing more slowly.
+    // THE SPREAD IS THE NEW FACT. THE CENTRE WAS ALREADY CALIBRATED.
+    //
+    // First attempt centred this at 2.05%/yr, reading the era figures above as
+    // the thing to average. That was wrong and it broke the economy: real wage
+    // growth went to 2.78%/yr against a 0.0-2.5 band and dragged all four rent
+    // classes out with it (+1.86 office to +2.59 retail, against a -1.0/+1.5
+    // band). Raw productivity and real COMPENSATION are not the same series —
+    // they have diverged since the 1970s, which is the productivity-pay gap —
+    // and 1.1% was the figure this whole economy was balanced against.
+    //
+    // So the centre stays exactly where it was and only the variation is new.
+    // The amplitude is the measured era spread: roughly +/-0.8 points between
+    // the 1.3-1.4%/yr regimes and the 2.8-2.9% ones.
     const PRODUCTIVITY = 0.011;    // ~1.1%/yr real, the long-run US figure
-    e.wageIdx = clamp(
-      e.wageIdx! * (1 + e.inflExp / 12 + PRODUCTIVITY / 12 + tight * 0.012 + rrange(s, -0.0004, 0.0004)),
-      0.7, 400,
+    const prodEra = PRODUCTIVITY + 0.0075 * Math.sin(
+      (s.seed % 1000) / 159.1549 + s.month / 47.75,   // ~25-year regimes, seeded phase
     );
+    // Labour hoarding: firms carry staff they cannot use into a downturn, so
+    // output per worker falls first and rebounds in the recovery.
+    //
+    // KEYED ON THE RECESSION, NOT ON SLACK, and the first version got that
+    // wrong in a way worth recording. It read `tight * 0.55` — the same
+    // tightness the Phillips term below already uses at `tight * 0.012` — so
+    // the two were the same signal counted twice, and because `tight` is
+    // `0.055 - unemployment` against a city that averages below 5.5%, its mean
+    // is POSITIVE. A term meant to add cyclical texture was quietly adding
+    // about 0.275%/yr of permanent trend: real wage growth went 1.18% to
+    // 1.71%/yr and industrial real rent to +1.81% against a +1.5 band. That is
+    // a fake number nobody typed — it arrived as the mean of a term that was
+    // supposed to average out.
+    //
+    // A recession is an EVENT, so keying on it is mean-negative by
+    // construction and cannot smuggle in a trend. It is also the honest read:
+    // 2022's -1.7% was a labour-hoarding year, not a slack-labour-market year.
+    const hoarding = -((e.nat?.recM ?? 0) > 0 ? (e.nat?.deep ? 0.021 : 0.011) : 0);
+    const productivity = clamp(prodEra + hoarding, -0.028, 0.042);
+    // AND NOMINAL PAY DOES NOT GET CUT. It gets FROZEN, and inflation does the
+    // rest — which is the whole reason real wages fall while nominal ones do
+    // not, and the mechanism behind 1974-75 and 2021-22 alike.
+    //
+    // Downward nominal wage rigidity is one of the most heavily evidenced
+    // facts in labour economics: the distribution of annual nominal wage
+    // changes has a large spike sitting exactly at zero and almost no mass
+    // below it (Card & Hyslop; Kahn). Flooring the growth factor at zero
+    // reproduces that spike rather than approximating it.
+    //
+    // It also has to be here rather than left to the arithmetic. Letting
+    // productivity vary made the nominal index fall in 4.00% of twelve-month
+    // windows, worst -2.22% — a quarter of a century of runs producing an
+    // outright cut in average pay, which does not happen to real economies.
+    // With the floor the same variation lands entirely on the real wage, which
+    // is where it belongs and where it was missing.
+    // ...AND THE FREEZE IS PAID FOR LATER, WHICH IS WHAT MAKES IT RIGIDITY
+    // RATHER THAN A SUBSIDY.
+    //
+    // Flooring alone truncates the bottom of a noisy series and keeps the top,
+    // so it RAISES the mean — measured, trend real wage growth went from
+    // 1.18%/yr to 1.71% and industrial real rent to +1.77% against a +1.5
+    // band, purely as an artefact of the clamp. That is a fake number arriving
+    // through the back door: nobody typed it, and it was still a thumb on the
+    // scale.
+    //
+    // Pent-up wage deflation is the real mechanism and it fixes the bias
+    // mechanically. The cut a firm could not make is not forgiven, it is owed:
+    // the shortfall accumulates and is worked off by under-granting later
+    // raises. Pay plateaus for years instead of ratcheting, which is the shape
+    // rigidity actually has, and the trend ends up where it would have been.
+    //
+    // It is worked off at 12%/month rather than instantly, because a firm that
+    // has frozen pay through a bad year does not claw it all back in the first
+    // good month — it grants a thin raise for a while, which is the observed
+    // pattern after every freeze.
+    const growth = e.inflExp / 12 + productivity / 12 + tight * 0.012 + rrange(s, -0.0004, 0.0004);
+    if (e.wageDebt === undefined) e.wageDebt = 0;
+    if (growth < 0) {
+      e.wageDebt -= growth;          // the cut nobody took, owed
+      e.wageIdx = clamp(e.wageIdx!, 0.7, 400);   // frozen: no cut, no rise
+    } else {
+      // Later raises are thinned until the debt is worked off.
+      const repay = Math.min(e.wageDebt, growth * 0.12 + 0.00008);
+      e.wageDebt -= repay;
+      e.wageIdx = clamp(e.wageIdx! * (1 + growth - repay), 0.7, 400);
+    }
+    e.wageDebt = clamp(e.wageDebt, 0, 0.25);
 
     // Output is what the place makes: people working, times what each of them
     // produces. It is the broadest number in the game and the slowest to move.

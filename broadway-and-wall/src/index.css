@@ -1082,7 +1082,7 @@ body {
     radial-gradient(120% 80% at 50% 118%, rgba(120, 168, 196, 0.30), rgba(120, 168, 196, 0) 60%),
     linear-gradient(to bottom, #f8f4e8, #efe8d5);
 }
-.start-head { flex: 0 0 auto; padding: 20px 34px 8px; }
+.start-head { flex: 0 0 auto; padding: 20px 0 8px; }
 .start-title {
   font-family: var(--serif); font-size: 34px; letter-spacing: 0.6px; color: var(--ink);
 }
@@ -1090,7 +1090,15 @@ body {
 /* THE SCROLLER. min-height:0 is the whole trick — a flex child will not
    shrink below its content without it, which is exactly how a menu ends up
    taller than the window it is in. */
-.start-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 6px 34px 14px; }
+.start-body {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 6px 0 14px;
+  display: flex; flex-direction: column;
+}
+/* Centred by auto margins, not by justify-content: a centred flex container
+   pushes the first row off the top edge of the scroller when the content is
+   taller than the box, and there is then no way to scroll back up to it. Auto
+   margins collapse to zero instead. */
+.start-inner { margin: auto 0; width: 100%; }
 .start-boot { font-size: 13px; color: var(--ink-dim); padding: 22px 2px; font-style: italic; }
 
 .start-continue {
@@ -1145,7 +1153,7 @@ body {
 .start-foot {
   flex: 0 0 auto;
   display: flex; align-items: center; justify-content: space-between; gap: 20px;
-  padding: 12px 34px 16px;
+  padding: 12px 0 16px;
   border-top: 1px solid rgba(120, 92, 38, 0.22);
   background: linear-gradient(to bottom, rgba(248, 244, 232, 0.6), rgba(243, 236, 219, 0.9));
 }
@@ -1164,7 +1172,7 @@ body {
 .start-go:hover { box-shadow: var(--edge-top), var(--lift-2); transform: translateY(-1px); }
 .start-go:disabled { opacity: 0.5; cursor: default; transform: none; }
 .start-err {
-  margin: 0 34px 16px; padding: 10px 14px; border-radius: var(--r-sm);
+  margin: 0 0 16px; padding: 10px 14px; border-radius: var(--r-sm);
   border: 1px solid #8a5620; background: rgba(255, 253, 246, 0.7);
   font-size: 12.5px; line-height: 1.5;
 }
@@ -1189,6 +1197,13 @@ body {
   from { transform: translateX(-110%); }
   to { transform: translateX(360%); }
 }
+
+/* ONE MEASURE FOR ALL THREE BANDS. The head, the choices and the footer are
+   separate rows so the footer can stay put while the middle scrolls, which
+   leaves them free to disagree about where the left edge is. A shared inline
+   padding keeps them on one axis and stops the three columns sprawling to
+   1,600px, where a one-line description ran the width of the screen. */
+.start-head, .start-body, .start-foot { padding-inline: max(34px, calc((100vw - 1180px) / 2)); }
 
 /* Below this the three columns stop being columns rather than becoming
    unreadable slivers; the body scrolls, and the footer does not. */

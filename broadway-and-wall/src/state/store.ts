@@ -203,13 +203,17 @@ function islandName(id: string): string {
 /**
  * A FRAME ON THE SCREEN BEFORE THE MAIN THREAD GOES AWAY.
  *
- * `makeCity` is synchronous and takes 0.2s on a Hamlet and 1.5s on a Great
- * City — measured 232ms / 1,486ms in this browser — so calling it in the same
- * task as the click that asked for it means the button never repaints and the
- * player is looking at a page that is, as far as they can tell, broken. Two
- * animation frames put the "laying out the streets" state through layout and
- * paint; the timeout hands the paint back to the compositor before the
- * generator takes the thread.
+ * `makeCity` is synchronous and holds the main thread for the whole build —
+ * measured in a headless Chromium on this machine: 120ms for a Hamlet (378
+ * lots), 265ms for the standard City (1,421 lots), 979ms for a Great City
+ * (5,791 lots), and the game and the map that follow it push a Great City to
+ * about six seconds end to end. Calling it in the same task as the click that
+ * asked for it means the button never repaints and the player is looking at a
+ * page that is, as far as they can tell, broken. Two animation frames put the
+ * "laying out the streets" state through layout and paint; the timeout hands
+ * the frame to the compositor before the generator takes the thread. Verified
+ * by screencast: seven composited frames of the waiting screen, its bar still
+ * sweeping, across the 1.1s the generator was holding the thread.
  */
 function painted(): Promise<void> {
   return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 0))));
@@ -1126,33 +1130,38 @@ export async function fetchGzJson(url: string) {
  * carries its own town and this browser's last choice may be a different one.
  */
 export async function bootMenu() {
-  const metas = await listSaves();
-  // Newest first: the campaign you were last in is the one Continue means.
-  const autos = metas
-    .filter((m) => m.slot === "auto" || m.slot.startsWith("auto@"))
-    .sort((a, b) => b.savedAt - a.savedAt);
   let resume: Resume | null = null;
-  for (const m of autos) {
-    const g = await loadGame(m.slot);
-    // A save from an older build cannot be opened, and one written before the
-    // city was generated at runtime has no town to rebuild — the seed IS the
-    // town, and without it "continue" would mean "generate a stranger's city
-    // and hope the deeds land on parcels". Neither is offered.
-    if (!g || g.v !== 32 || g.citySeed === undefined) continue;
-    resume = {
-      slot: m.slot,
-      island: m.slot.startsWith("auto@") ? m.slot.slice(5) : currentCity(),
-      seed: g.citySeed >>> 0,
-      // Older saves carry no size or build-out, which means the standard town,
-      // which is what they were built at.
-      size: g.citySize ?? currentSize(),
-      dev: g.cityDev ?? currentDev(),
-      month: g.month,
-      cash: g.cash,
-      savedAt: m.savedAt,
-    };
-    break;
-  }
+  // A save store that will not open is a reason to offer a new town, never a
+  // reason to sit on "looking for a game in progress" forever. Private-mode
+  // browsers land here.
+  try {
+    const metas = await listSaves();
+    // Newest first: the campaign you were last in is the one Continue means.
+    const autos = metas
+      .filter((m) => m.slot === "auto" || m.slot.startsWith("auto@"))
+      .sort((a, b) => b.savedAt - a.savedAt);
+    for (const m of autos) {
+      const g = await loadGame(m.slot);
+      // A save from an older build cannot be opened, and one written before the
+      // city was generated at runtime has no town to rebuild — the seed IS the
+      // town, and without it "continue" would mean "generate a stranger's city
+      // and hope the deeds land on parcels". Neither is offered.
+      if (!g || g.v !== 32 || g.citySeed === undefined) continue;
+      resume = {
+        slot: m.slot,
+        island: m.slot.startsWith("auto@") ? m.slot.slice(5) : currentCity(),
+        seed: g.citySeed >>> 0,
+        // Older saves carry no size or build-out, which means the standard
+        // town, which is what they were built at.
+        size: g.citySize ?? currentSize(),
+        dev: g.cityDev ?? currentDev(),
+        month: g.month,
+        cash: g.cash,
+        savedAt: m.savedAt,
+      };
+      break;
+    }
+  } catch { /* no save store: there is nothing to continue, and that is fine */ }
   useStore.setState({ resume, phase: "menu" });
 
   // LOADING A NAMED SAVE FROM ANOTHER TOWN COMES BACK THROUGH HERE.

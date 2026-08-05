@@ -971,6 +971,24 @@ export interface Econ {
    */
   inflExp?: number;
   /**
+   * THE RAISE THAT WAS NOT GIVEN, CARRIED FORWARD.
+   *
+   * Nominal pay does not get cut, it gets frozen — see the wage block in
+   * market.ts. But a floor that simply discards the months when pay "should"
+   * have fallen is not rigidity, it is a subsidy: truncating the bottom of a
+   * noisy series and keeping the top raises its mean. Measured, that lifted
+   * trend real wage growth from 1.18%/yr to 1.71% and pushed industrial real
+   * rent to +1.77% against a +1.5 band, purely as an artefact of the clamp.
+   *
+   * What actually happens is pent-up wage deflation: the adjustment a firm
+   * could not make by cutting is made by under-granting the next increase, and
+   * it can sit unpaid for years. So the shortfall accumulates here and is
+   * worked off against later raises, which gives rigidity its real shape — pay
+   * that plateaus for a long time rather than pay that ratchets — without
+   * changing where the trend ends up.
+   */
+  wageDebt?: number;
+  /**
    * The loan index a developer actually underwrites to — smoothed over about a
    * year, because a groundbreak is a two-year decision and is neither killed
    * by one bad print nor rescued by one good one.

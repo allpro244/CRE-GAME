@@ -5,7 +5,7 @@ import { useStore } from "@/state/store";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec } from "@/engine/types";
-import type { BuiltClass, Contract, DevUse, EconHistoryPoint, GameState, Holding } from "@/engine/types";
+import type { Approach, BuiltClass, Contract, DevUse, EconHistoryPoint, GameState, Holding } from "@/engine/types";
 import {
   assetValue, initialCondition, holdingValue, monthlyNOI, marketRentPsfYr, managedRentPsfYr,
   occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr, useRentPsfYr,
@@ -1133,6 +1133,21 @@ function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: Prop
           <div className="deal-head">Off-market</div>
           {appr && !appr.refused && appr.ask ? (
             <>
+              {/* A NUMBER THAT ARRIVED THE HARD WAY READS DIFFERENTLY.
+                  `mode` says how the conversation opened and never changes, so
+                  `mode === "offer"` with an ask present can only mean one
+                  thing: they deflected, you bid at them, and the bid drew the
+                  figure out. That is worth saying, because the ask below it
+                  has the knowledge that you want the building priced into it —
+                  and because the counter button is gone and the player is owed
+                  a reason why (bidBlind spends the counter on the bid). */}
+              {appr.mode === "offer" && (
+                <div className="hint">
+                  They would not name a price until you bid.
+                  {appr.lastBid ? ` Your ${usd(appr.lastBid)} got this out of them` : " This came back"} —
+                  and it is a number quoted to somebody they now know wants it.
+                </div>
+              )}
               <div className="grid">
                 <Row k="Owner's ask" v={usd(appr.ask)} strong />
                 <Row k="vs. appraisal" v={((appr.ask / apMid(selectedBBL, value) - 1) * 100).toFixed(1) + "%"} />
@@ -1150,6 +1165,16 @@ function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: Prop
               </div>
               <BuyButtons bbl={selectedBBL} price={appr.ask} off closeLabel={`Buy at ${usd(appr.ask)}`} />
             </>
+          ) : appr && !appr.refused ? (
+            /* THE THIRD STATE, WHICH THIS PANEL DID NOT HAVE.
+               An approach that is neither refused nor carrying an ask is the
+               "make me an offer" conversation, and it fell through to the
+               else-arm below — the one that says "Not listed, but everything
+               has a price" and offers an Approach button whose only possible
+               answer is "You already have them. They are waiting on YOUR
+               number, not another call." A live negotiation rendered as though
+               it had never happened. */
+            <BlindBidDesk bbl={selectedBBL} appr={appr} value={value} />
           ) : appr && appr.refused ? (
             /* THE DATE PASSES AND THE PHONE STILL WORKS.
                This branch printed "try again after March" and then rendered no
@@ -1829,6 +1854,102 @@ function OffMarketCounter({ bbl, ask }: { bbl: string; ask: number }) {
 }
 
 /**
+ * "MAKE ME AN OFFER." — the off-market conversation with no number in it.
+ *
+ * `approachOwner` now has two ways of saying yes. One names a figure and this
+ * panel has always drawn it. The other deflects, keeps the figure in the
+ * owner's head as `Approach.reserve`, and leaves the player exactly one
+ * instrument: a bid.
+ *
+ * THE ONE RULE HERE IS WHAT IS NOT ON THE SCREEN. types.ts is explicit that no
+ * view may render the reserve "as a figure, a bar, a 'you're close' hint, a
+ * disabled slider that stops at it, anything" — the refusal to anchor IS the
+ * mechanic, and any of those hands the information straight back. So every
+ * number below belongs to the player: the appraisal, which they can already
+ * read off the summary tab, and their own bids.
+ *
+ * The dial is a multiple of that appraisal because the appraisal is the only
+ * anchor in the room, and its endpoints are the SAME for every parcel in the
+ * game — 0.5x to 4x — so where it stops says nothing about where this owner
+ * is. Measured over 2,148 blind conversations across four seeds, reserves run
+ * 0.56x to 7.4x appraisal with a median of 1.42x; 4x reaches about 95% of
+ * them, and the ones past it are owners saying no in numbers, which is what
+ * the named-ask path does at 3.94x too.
+ */
+function BlindBidDesk({ bbl, appr, value }: { bbl: string; appr: Approach; value: number }) {
+  const game = useStore((s) => s.game)!;
+  const ap = apMid(bbl, value);
+  const [mult, setMult] = useState(1);
+  // Round to the thousand the way approachOwner rounds its own number, so the
+  // bid the player sees is the bid the engine books.
+  const bid = Math.max(1000, Math.round((ap * mult) / 1000) * 1000);
+  const probes = appr.probes ?? 0;
+  // buyOffMarket kills a blind conversation at q+6 with "that has gone cold";
+  // approachOwner reopens the phone at q+6 as well, so the two meet exactly.
+  const cold = game.month > appr.q + 6;
+  if (cold) {
+    return (
+      <>
+        <div className="hint">
+          They asked you for a number and you never put one in. That conversation is cold — six months is
+          as long as anybody holds a door open for a buyer who is thinking about it.
+        </div>
+        <div className="btn-row">
+          <button className="btn" onClick={() => useStore.getState().approach(bbl)}>Ring them again</button>
+        </div>
+      </>
+    );
+  }
+  return (
+    <>
+      <div className="hint">
+        They took the call and would not put a price on it. <em>"Make me an offer."</em>
+      </div>
+      <div className="grid">
+        <Row k="Their ask" v="none — they refused to name one" strong />
+        <Row k="Appraisal" v={band(bbl, value)} />
+        <Row k="They will listen until" v={monthLabel(appr.q + 6)} />
+        {probes > 0 && (
+          <Row
+            k="Bids you have made"
+            v={`${probes}${appr.lastBid ? ` · last ${usd(appr.lastBid)}` : ""}`}
+            bad={probes >= 3}
+          />
+        )}
+      </div>
+      <Slider
+        label="Your bid"
+        value={mult}
+        min={0.5}
+        max={4}
+        step={0.05}
+        onChange={setMult}
+        format={() => `${usd(bid)} · ${mult.toFixed(2)}× appraisal`}
+        marks={[{ at: 0.8, label: "0.8×" }, { at: 1, label: "appraisal" }, { at: 1.5, label: "1.5×" }, { at: 2, label: "2×" }]}
+        hint="Nothing on this screen knows what they want. The dial is measured against the appraisal because that is the only number anybody in this conversation has."
+      />
+      {/* WHAT EACH OUTCOME MEANS, because a blind bid has four of them and
+          three look like failure. Written from bidBlind's branches, in the
+          order they are checked, and deliberately without odds attached: the
+          player is not entitled to the shape of the distribution either. */}
+      <div className="hint">
+        Over their number and it is done <strong>at yours</strong> — and nobody will ever tell you that you
+        were twenty points high. Close under it and they may finally name a figure, which costs you the fact
+        that they now know you want it. Well under and you get a no with nothing attached. Insulting and the
+        conversation ends.
+      </div>
+      {probes >= 2 && (
+        <div className="hint">
+          {probes} bids in. Their patience is finite and this panel does not know how much of it is left —
+          by the third number you have stopped being a buyer and started being a process.
+        </div>
+      )}
+      <BuyButtons bbl={bbl} price={bid} off bid={bid} closeLabel={`Bid ${usd(bid)}`} />
+    </>
+  );
+}
+
+/**
  * THE OFFER. A price, and nothing else on the screen.
  *
  * This used to be one component with a lender selector, a leverage dial, three
@@ -1952,7 +2073,14 @@ function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
 /**
  * THE MONEY. Only ever shown against a price that is already agreed.
  */
-function BuyButtons({ bbl, price, off, closeLabel }: { bbl: string; price: number; off: boolean; closeLabel?: string }) {
+function BuyButtons({ bbl, price, off, closeLabel, bid }: {
+  bbl: string; price: number; off: boolean; closeLabel?: string;
+  /** A blind bid, which is a price nobody has agreed to yet. Passed through to
+   *  buyOffMarket so bidBlind sees a number; omitted on the named-ask path,
+   *  where the engine funds `approaches[bbl].ask` and there is nothing to
+   *  invent. */
+  bid?: number;
+}) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const { buyOff } = useStore.getState();
@@ -2066,7 +2194,7 @@ function BuyButtons({ bbl, price, off, closeLabel }: { bbl: string; price: numbe
           onClick={() => {
             const prod = principal <= 0 ? "cash" : product;
             const l = principal <= 0 ? 1 : lev;
-            if (off) buyOff(bbl, prod as never, l);
+            if (off) buyOff(bbl, prod as never, l, bid);
             else useStore.getState().closeDeal(bbl, prod, l);
           }}
         >
@@ -4406,20 +4534,24 @@ function creditWord(ci: number): string {
  * THE CITY, SIX CHARTS WIDE — the "general" card's detail view.
  *
  * The stat strips print today's numbers; these are the six city series with
- * their last twenty years attached, one per cell, because the level of a
- * demand series is nearly meaningless without the path it took to get there.
+ * their history attached, one per cell, because the level of a demand series
+ * is nearly meaningless without the path it took to get there.
  * Wages and output are REAL — already deflated by the price level in the
  * sixth chart — so a flat real wage across a decade of inflation is a city
  * treading water, not one getting richer.
+ *
+ * `spanYrs` is how much of the record the page's window switch has selected.
+ * The heading used to say "the last twenty years" in fixed text, which stopped
+ * being true the moment that switch existed.
  */
-function CityEconCharts({ tail }: { tail: EconHistoryPoint[] }) {
+function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; spanYrs: number }) {
   if (tail.length < 2) return <div className="hint">Not enough history yet — advance a few quarters.</div>;
   const x: [string, string] = [monthLabel(tail[0].q), monthLabel(tail[tail.length - 1].q)];
   const kFmt = (v: number) => `${v.toFixed(0)}k`;
   const idxFmt = (v: number) => v.toFixed(2);
   return (
     <>
-      <div className="page-section">The city — the last twenty years</div>
+      <div className="page-section">The city — the last {spanYrs} year{spanYrs === 1 ? "" : "s"}</div>
       <div className="hint">
         The demand behind every lease in the four markets above. Rents are downstream of jobs, and jobs are
         downstream of whether anybody wants to be here — none of these series reads as a level without the
@@ -4487,7 +4619,8 @@ function CityEconCharts({ tail }: { tail: EconHistoryPoint[] }) {
  * questions that decide whether to buy, hold, or build.
  *
  *   How tight is it?      vacancy against its natural rate
- *   Which way is it going? rents and vacancy over the last twenty years
+ *   Which way is it going? rents and vacancy over the last twenty years, or
+ *                          over the whole run — one switch, every chart
  *   What is coming?        the construction pipeline, by the year it lands
  *   Where does it end up?  vacancy projected forward if nobody else starts
  *
@@ -4557,8 +4690,33 @@ function EconomyPage() {
   })();
   const pipeJobsSf = pipeJobs.reduce((a, r) => a + r.sf, 0);
 
-  // history, monthly, trimmed to the last twenty years
-  const tail = hist.slice(-240);
+  // HOW MUCH OF THE RECORD THIS PAGE IS LOOKING AT.
+  //
+  // Twenty years was the only window there was, and twenty years is one and a
+  // half cycles — long enough to see the last glut and too short to see
+  // whether it was the biggest one. The owner asked for the whole run on the
+  // vacancy chart.
+  //
+  // The switch drives EVERY chart on the page that reads `tail`, not just
+  // vacancy, and that is deliberate: rent/cap, absorbed/delivered, the
+  // concession gap and the six city series are all fed by this one array and
+  // all sit inside one scroll. Moving one of them to a fifty-year axis while
+  // its neighbour stays on a twenty-year one invites reading a level off one
+  // chart and a date off the other, which is the specific mistake the page
+  // exists to prevent. `flowYears` is untouched — it is explicitly the last
+  // eight years of annual bars and slices `hist` itself.
+  //
+  // "All" really is all: recordHistory stamps one point a month and trims at
+  // 1260 (105 years), so nothing a run of this game can produce hits the cap.
+  const SPAN_M = 240;
+  const [span, setSpan] = useState<"20y" | "all">("20y");
+  const tail = span === "all" ? hist : hist.slice(-SPAN_M);
+  // Every x-axis on the page was computed as `game.month - <some length>`,
+  // which was right only while the window was exactly 240 long. The first
+  // point carries its own month; use it, and the labels follow the switch.
+  const xFrom = `${2000 + Math.floor((tail[0]?.q ?? game.month) / 12)}`;
+  const xTo = `${2000 + Math.floor(game.month / 12)}`;
+  const spanYrs = Math.max(1, Math.round(((tail[tail.length - 1]?.q ?? game.month) - (tail[0]?.q ?? game.month)) / 12));
   const vacSeries = tail.map((h) => (h.vac?.[focus] ?? NATURAL_VAC[focus]) * 100);
   const rentSeries = tail.map((h) => h.rent?.[focus] ?? e.rentIdx[focus]);
   // pre-v30 history has no effective series; fall back to asking so the two
@@ -4717,8 +4875,26 @@ function EconomyPage() {
         })}
       </div>
 
+      {/* THE WINDOW SWITCH, and it only exists when it can do something.
+          Below month 240 the whole record IS the last twenty years, and a
+          control that redraws the identical chart is worse than no control —
+          it teaches the player that the button does nothing. */}
+      {hist.length > SPAN_M && (
+        <div className="btn-row" style={{ marginTop: 10, alignItems: "baseline" }}>
+          <span className="hint" style={{ marginRight: 4 }}>Every chart below shows</span>
+          <button className={"btn" + (span === "20y" ? " btn-on" : "")} onClick={() => setSpan("20y")}
+            title="The last twenty years — about one and a half cycles.">
+            the last 20 years
+          </button>
+          <button className={"btn" + (span === "all" ? " btn-on" : "")} onClick={() => setSpan("all")}
+            title="Every month since the game began.">
+            all {Math.round((hist.length - 1) / 12)} years
+          </button>
+        </div>
+      )}
+
       {/* ---- the general view: the city's six series, or one class in depth ---- */}
-      {sel === "general" && <CityEconCharts tail={tail} />}
+      {sel === "general" && <CityEconCharts tail={tail} spanYrs={spanYrs} />}
       {sel !== "general" && <>
       <div className="page-section">{SECTOR_LABEL[focus]} — {bal.state}</div>
       <div className="hint">{bal.note}</div>
@@ -4756,13 +4932,19 @@ function EconomyPage() {
 
       <div className="chart-grid">
         <div className="chart-cell">
-          <div className="chart-title">Vacancy — twenty years back, three forward</div>
+          <div className="chart-title">Vacancy — {spanYrs} year{spanYrs === 1 ? "" : "s"} back, three forward</div>
+          {/* The projection is appended to whatever history is selected, and
+              `split` is where the record stops — so it stays the length of
+              vacSeries and the dotted join lands on the right month in both
+              windows. The left x-label is the first point's own month rather
+              than `game.month - 240`, which only agreed with the data while
+              the window was exactly 240 long. */}
           <LineChart
             series={[{ label: "vacancy", color: COLOR[focus], pts: vacWithProj }]}
             bands={[{ at: NATURAL_VAC[focus] * 100, label: "natural rate" }]}
             yFmt={pctFmt}
             split={vacSeries.length}
-            xLabels={[`${Math.max(2000, 2000 + Math.floor((game.month - 240) / 12))}`, `${2000 + Math.floor((game.month + 36) / 12)}`]}
+            xLabels={[xFrom, `${2000 + Math.floor((game.month + 36) / 12)}`]}
           />
           <div className="chart-note">
             Left of the dotted line is what happened. Right of it is where vacancy goes if NOBODY starts another
@@ -4818,9 +5000,9 @@ function EconomyPage() {
             { label: "asking", color: COLOR[focus], pts: rentSeries },
             { label: "effective", color: "#7d8a96", pts: effSeries, dashed: true },
           ]} yFmt={(v) => `$${v.toFixed(0)}`} height={92}
-            xLabels={[`${2000 + Math.max(0, Math.floor((game.month - rentSeries.length) / 12))}`, `${2000 + Math.floor(game.month / 12)}`]} />
+            xLabels={[xFrom, xTo]} />
           <LineChart series={[{ label: "cap", color: "#8a5620", pts: capSeries, dashed: true }]} yFmt={pctFmt} height={92}
-            xLabels={[`${2000 + Math.max(0, Math.floor((game.month - capSeries.length) / 12))}`, `${2000 + Math.floor(game.month / 12)}`]} />
+            xLabels={[xFrom, xTo]} />
           <div className="chart-note">
             Asking is the face rate landlords quote; effective is what deals actually strike after free rent and
             work — the gap between the two lines is the concessions market saying what asking will not admit.
@@ -4829,7 +5011,15 @@ function EconomyPage() {
           </div>
         </div>
         <div className="chart-cell">
-          <div className="chart-title">Demand met vs supply built, and the concession gap</div>
+          {/* TWO CHARTS, TWO CAPTIONS.
+              This cell had one title and one note covering both, and the note
+              gave the bottom chart a single compressed sentence. The owner
+              screenshotted the cell asking what it was — and what they had
+              screenshotted was the CONCESSION GAP, the line that sits at 14%,
+              collapses to nothing for twenty years and climbs back. Nothing on
+              the page said what a concession gap is. Each chart now carries its
+              own heading and its own note, directly above and below itself. */}
+          <div className="chart-title">Demand met vs supply built</div>
           {(() => {
             // The annual bars in the cell to the left show the FLOWS; this
             // pair shows the stocks. Running totals of the same abs/comp
@@ -4849,25 +5039,49 @@ function EconomyPage() {
               const ask = h.rent?.[focus] ?? 0;
               return ask > 0 ? Math.max(0, 1 - (h.effRent?.[focus] ?? ask) / ask) * 100 : 0;
             });
-            const xl: [string, string] = [
-              `${2000 + Math.max(0, Math.floor((game.month - tail.length) / 12))}`,
-              `${2000 + Math.floor(game.month / 12)}`,
-            ];
+            const xl: [string, string] = [xFrom, xTo];
             return (<>
               <LineChart height={92} series={[
                 { label: "absorbed", color: "#4a7d5a", pts: absCum },
                 { label: "delivered", color: "#a8562e", pts: compCum, dashed: true },
               ]} yFmt={sfFmt} zeroBase xLabels={xl} />
+              <div className="chart-note">
+                Both lines start at zero on the left edge and only ever go up: every square foot tenants have
+                taken since then (solid) against every square foot finished and handed over (dashed). What
+                matters is the space BETWEEN them. Dashed above solid means the city built more than it let,
+                and the gap is standing empty space that has to be absorbed before rents can move. Solid above
+                dashed means the opposite — demand arrived and nobody built for it, which is how a shortage,
+                and the rent spike that follows one, is made.
+              </div>
+              <div className="chart-title" style={{ marginTop: 12 }}>The concession gap</div>
               <LineChart height={92} series={[{ label: "concession gap", color: "#7d8a96", pts: gap }]}
                 yFmt={pctFmt} zeroBase xLabels={xl} />
+              {/* WHAT THE OWNER WAS LOOKING AT. This is the line that sits flat
+                  at 14, falls to nothing, and climbs back — and until now the
+                  page assumed the reader already knew what a concession is. */}
+              <div className="chart-note">
+                A landlord advertises a face rent — the number in the brochure. What a lease actually strikes
+                at is that number minus everything thrown in to get it signed: months of free rent at the
+                start, and the landlord's cash for fitting the space out. This line is the difference, as a
+                percentage off the advertised rent.
+              </div>
+              <div className="chart-note">
+                At <strong>0%</strong> nobody is discounting. Space lets at the quoted rate, the tenant pays
+                every month of the term, and asking rent means what it says. That is a landlord's market.
+                At <strong>14%</strong> — as wide as this market goes — the brochure is fiction: a year free
+                on a ten-year deal with the landlord buying the carpet, and a building whose asking rent has
+                not moved is earning a seventh less than it claims. That is a tenant's market.
+              </div>
+              <div className="chart-note">
+                It turns before asking rent does, in both directions, and that is not a quirk of the chart.
+                Free rent is reversible and a cut to the face rate is not — the quoted number is what the
+                building is valued and financed off, so a landlord will give away a year before touching it,
+                and will claw the giveaway back long before daring to raise the quote. So this line moves
+                within months of the market turning while asking sits still for half a year or more. Watch
+                this one; the rent chart is the confirmation, not the signal.
+              </div>
             </>);
           })()}
-          <div className="chart-note">
-            Top: every foot tenants have taken (solid) against every foot delivered (dashed), summed over
-            twenty years — the wedge between the lines is the structural over- or under-build. Below: deals
-            striking under asking, in per cent. That gap widens quarters before face rents give, which makes
-            it the earliest honest signal on this page.
-          </div>
         </div>
       </div>
 

@@ -552,8 +552,46 @@ export function locationRentMult(rec: ParcelRecord, econ?: Econ, use?: BuiltClas
   // hardest: the achieved spread between a demand-16 site and a demand-98 site
   // fell to 1.84x. That is not what the anchor is for. The exponent and the
   // ceiling are what price location, so they are what moves here.
-  return Math.min(2.15, Math.max(0.40, Math.pow(demandIdx(rec.demandScore) / pivot, 1.28)));
+  // ...AND THE SPREAD IS NOT THE SAME WIDTH IN EVERY MARKET.
+  //
+  // One exponent and one ceiling served all four classes, and combined with the
+  // per-class pivot above that produced a real fault: industrial's pivot sits
+  // low, because sheds stand on cheap fringe dirt, so a merely good corner was
+  // already at the 2.15 ceiling. Measured after land was repriced as a
+  // residual, a demand-68 lot paid $32.80/sf/yr for INDUSTRIAL against a
+  // citywide industrial median of $11.26 — and because a shed is the cheapest
+  // thing there is to build, all 337 vacant lots in New Alden then chose to be
+  // sheds at their highest and best use. A two-floor warehouse outbidding a
+  // tower for the best dirt in town is not a market.
+  //
+  // How far rent actually travels from fringe to prime is a fact about each
+  // business, and they are wildly different facts:
+  //
+  //   retail       the most location-sensitive real estate there is. A high
+  //                street pitch against a dead parade is many times over —
+  //                footfall is the product and it does not travel.
+  //   office       three to four times, CBD trophy against suburban commodity.
+  //   multifamily  two to two and a half. People will commute; they will not
+  //                pay four times for the same flat.
+  //   industrial   the narrowest of the four. A distribution tenant is cost
+  //                -driven and will happily drive another twenty minutes, so
+  //                infill carries a premium for the last mile and not much
+  //                more. This is also why industrial land is cheap, and the
+  //                land residual now depends on getting it right.
+  const shape = LOC_SPREAD[cls] ?? LOC_SPREAD.office;
+  return Math.min(shape.max, Math.max(shape.min, Math.pow(demandIdx(rec.demandScore) / pivot, shape.exp)));
 }
+
+/**
+ * The prime-to-fringe rent spread each class actually runs, as an exponent on
+ * the location index and a ceiling on the multiplier. See locationRentMult.
+ */
+const LOC_SPREAD: Record<BuiltClass, { exp: number; max: number; min: number }> = {
+  retail:      { exp: 1.45, max: 3.10, min: 0.34 },
+  office:      { exp: 1.28, max: 2.45, min: 0.40 },
+  multifamily: { exp: 1.10, max: 1.95, min: 0.52 },
+  industrial:  { exp: 0.82, max: 1.55, min: 0.62 },
+};
 
 export function marketRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition): number {
   if (rec.class === "land") return 0;

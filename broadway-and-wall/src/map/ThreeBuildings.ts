@@ -239,22 +239,29 @@ vec3 aces(vec3 x) {
 // filmic roll-off plus a gentle split-tone: cool in the shadows, warm in the
 // light. Keeps the pale architectural-model palette but stops it going chalky.
 vec3 grade(vec3 c) {
-  vec3 t = aces(c * 1.13);
-  t = mix(c * 0.92, t, 0.94);
+  c = max(c, vec3(0.0));
+
+  // CONTRAST BEFORE THE CURVE, NOT AFTER.
+  //
+  // The palette here is pale on purpose, and it was arriving inside about a
+  // third of a stop — sunlit stone, roadway, roof and open sea all within one
+  // value of each other. Geometry cannot rescue that; a model photographed in
+  // flat light reads as a model. But an S-curve applied to the OUTPUT of ACES
+  // pushes the top of the range straight into the clamp, and because the clamp
+  // is per-channel it takes the hue with it: a snow roof in January went to
+  // flat paper white with no blue left in it, and the shoulder that ACES exists
+  // to provide never got a chance to run.
+  //
+  // Doing it in linear, about middle grey, is the same contrast with none of
+  // that. Values under 0.18 fall, values over it rise, and then the filmic
+  // curve rolls the highlights off smoothly and keeps them coloured.
+  c = 0.18 * pow(c / 0.18 + 1e-5, vec3(1.24));
+
+  vec3 t = aces(c * 1.10);
   t = clamp(t, 0.0, 1.0);
 
-  // CONTRAST, ABOUT A MIDDLE PIVOT. The palette here is pale on purpose, and
-  // the curve above was landing the whole city inside about a third of a stop
-  // — sunlit stone, roadway, roof and open sea all within one value of each
-  // other. Geometry cannot rescue that: a model photographed in flat light
-  // reads as a model. An S-curve pivoted just under middle grey pushes the
-  // sunlit planes up and lets the shaded ones fall properly away, and because
-  // it pivots rather than scales, neither end clips.
-  t = clamp((t - 0.46) * 1.26 + 0.46, 0.0, 1.0);
-  t = mix(t, t * t * (3.0 - 2.0 * t), 0.22);   // and a little shoulder/toe on top
-
   float lum = dot(t, vec3(0.2126, 0.7152, 0.0722));
-  t = mix(vec3(lum), t, 1.34);                 // ACES eats chroma; put it back
+  t = mix(vec3(lum), t, 1.30);                 // ACES eats chroma; put it back
   t = clamp(t, 0.0, 1.0);
   lum = dot(t, vec3(0.2126, 0.7152, 0.0722));
   t *= mix(vec3(0.910, 0.958, 1.108), vec3(1.078, 1.010, 0.904), smoothstep(0.14, 0.86, lum));
@@ -289,9 +296,23 @@ vec3 snowOn(vec3 c, float up, float k) {
 // is scaled by how high the camera sits, so the effect reads the same whether
 // you are looking down a street or across the whole harbor.
 const HAZE_GLSL = /* glsl */ `
-const vec3 HAZE_COL = vec3(0.790, 0.845, 0.902);
+// AIR IS NOT ONE COLOUR, AND IT IS NOT EVENLY DISTRIBUTED.
+//
+// A single grey constant is haze; these two together are weather. Looking
+// along the sun's bearing you are looking INTO forward-scattered light and the
+// air goes warm, bright and low-contrast — the effect that makes the far end
+// of a sunlit street glow. Looking away from it you are seeing the sky's own
+// blue scattered back at you, which is cooler and darker. Every aerial
+// photograph of a city has both in the same frame, and a renderer that picks
+// one loses the single strongest cue that the city is sitting in atmosphere
+// rather than in front of a backdrop.
+const vec3 HAZE_COOL = vec3(0.742, 0.818, 0.900);   // the sky, scattered back
+const vec3 HAZE_WARM = vec3(0.952, 0.906, 0.826);   // the sun, scattered forward
+const vec3 HAZE_COL  = vec3(0.790, 0.845, 0.902);   // the average, for anything that wants one
+
 vec3 aerial(vec3 c, vec3 p, vec3 cam) {
-  float d = length(p - cam);
+  vec3 d3 = p - cam;
+  float d = length(d3);
   float k = max(cam.z, 140.0);
   // WEAKER, AND FURTHER OUT. At 0.47 the haze was doing the job of depth cue
   // and the job of a grey wash at the same time: by mid-frame it had eaten
@@ -300,7 +321,27 @@ vec3 aerial(vec3 c, vec3 p, vec3 cam) {
   // Depth reads better from a curve that stays clear up close and then falls
   // away hard, which is also what air actually does.
   float f = 1.0 - exp(-(d / k) * 0.056);
-  return mix(c, HAZE_COL, clamp(f, 0.0, 1.0) * 0.35);
+
+  // Which way am I looking, relative to where the sun is? Taken on the compass
+  // only: the elevation of the sun is the same everywhere in frame, so letting
+  // it into this term would just add a constant tilt top-to-bottom.
+  vec2 vdir = d3.xy;
+  vec2 sdir = SUN_DIR.xy;
+  float toSun = 0.5;
+  if (dot(vdir, vdir) > 1e-6 && dot(sdir, sdir) > 1e-6) {
+    toSun = clamp(dot(normalize(vdir), normalize(sdir)) * 0.5 + 0.5, 0.0, 1.0);
+  }
+  vec3 haze = mix(HAZE_COOL, HAZE_WARM, pow(toSun, 2.4));
+
+  // AND IT POOLS IN THE STREETS. Haze is densest where the air is thickest and
+  // dirtiest, which is at the bottom — so a distant street floor washes out
+  // while the towers standing in the same air keep their edges, and the city
+  // reads as rising out of something. A 46 m scale height puts the effect
+  // across the low fabric and leaves anything tall standing clear of it.
+  float lowFog = exp(-max(p.z, 0.0) / 46.0);
+  f = clamp(f * (1.0 + 0.44 * lowFog), 0.0, 1.0);
+
+  return mix(c, haze, f * 0.35);
 }`;
 
 /**
@@ -440,19 +481,70 @@ const float SHADOW_SPAN_M = 5999.0;   // the sun camera's far minus its near
 const float SHADOW_BIAS_M = 1.6;      // was 0.0028 NDC == 16.80 m
 const float SHADOW_NORMAL_M = 1.15;   // ~one texel, along the surface normal
 
-// 1.0 = fully sunlit, 0.0 = fully shadowed (4-tap PCF)
+// A SHADOW IS NOT ONE BLUR WIDE ALONG ITS WHOLE LENGTH.
+//
+// Four taps at a fixed 1.4-texel radius gives every shadow in the city the
+// same soft edge everywhere — the same at the foot of the wall that casts it
+// as at the far tip forty metres away. Real ones do the opposite of that, and
+// it is one of the most legible depth cues there is: the contact edge under a
+// parapet is nearly a hard line, and the same parapet's shadow across the
+// street has an edge you can put your thumb over. The sun is half a degree
+// wide, so the penumbra opens in proportion to how far the blocker stands
+// above what it lands on.
+//
+// So: find how deep the blockers are, take the gap, open the filter by it.
+// Sixteen taps total, laid out on a Vogel disk (golden angle, sqrt radius)
+// computed in the loop rather than read from a const array, because array
+// constructors are GLSL ES 3.00 and this shader still has to compile as 1.00.
+// The disk is rotated per fragment by a hash of world position, which turns
+// what would be sixteen visible banding rings into noise the eye reads as
+// grain.
+const float SHADOW_TEXEL = 1.0 / 3072.0;
+const float PENUMBRA_OPEN = 0.085;    // texels of blur per metre of blocker gap
+const float PENUMBRA_MAX = 9.0;       // and it stops opening here
+
+float shadowHash(vec2 v) {
+  return fract(sin(dot(v, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+// 1.0 = fully sunlit, 0.0 = fully shadowed
 float sunVis(vec3 p, vec3 n) {
   if (uShadowOn < 0.5) return 1.0;
   vec4 sc = uSunVP * vec4(p + n * SHADOW_NORMAL_M, 1.0);
   vec3 ndc = sc.xyz / sc.w * 0.5 + 0.5;
   if (ndc.x < 0.0 || ndc.x > 1.0 || ndc.y < 0.0 || ndc.y > 1.0 || ndc.z > 1.0) return 1.0;
-  float sum = 0.0;
-  for (int i = 0; i < 4; i++) {
-    vec2 off = vec2(float(i - (i / 2) * 2) - 0.5, float(i / 2) - 0.5) * (1.4 / 3072.0);
-    float d = unpackDepth(texture2D(uShadow, ndc.xy + off));
-    sum += step(ndc.z - SHADOW_BIAS_M / SHADOW_SPAN_M, d);
+  float recv = ndc.z - SHADOW_BIAS_M / SHADOW_SPAN_M;
+
+  float ang = shadowHash(floor(p.xy * 4.0)) * 6.2831853;
+  vec2 rc = vec2(cos(ang), sin(ang));
+
+  // ---- 1. how far above me is whatever is blocking the sun? ----------------
+  float bSum = 0.0, bHits = 0.0;
+  for (int i = 0; i < 6; i++) {
+    float a = float(i) * 2.39996323 + ang;
+    float r = sqrt((float(i) + 0.5) / 6.0) * 4.5 * SHADOW_TEXEL;
+    float d = unpackDepth(texture2D(uShadow, ndc.xy + vec2(cos(a), sin(a)) * r));
+    if (d < recv) { bSum += d; bHits += 1.0; }
   }
-  return sum * 0.25;
+  // Nothing between this fragment and the sun. Full light, and we are done in
+  // six taps rather than twenty-two — which is most of the frame, most of the
+  // time, and is what pays for the rest of this function.
+  if (bHits < 0.5) return 1.0;
+
+  float gapM = max(recv - bSum / bHits, 0.0) * SHADOW_SPAN_M;
+  float radius = min(1.1 + gapM * PENUMBRA_OPEN, PENUMBRA_MAX) * SHADOW_TEXEL;
+
+  // ---- 2. filter at that width --------------------------------------------
+  float sum = 0.0;
+  for (int i = 0; i < 16; i++) {
+    float a = float(i) * 2.39996323;
+    float r = sqrt((float(i) + 0.5) / 16.0) * radius;
+    vec2 o = vec2(cos(a), sin(a)) * r;
+    // rotate the whole disk by the per-fragment angle
+    o = vec2(o.x * rc.x - o.y * rc.y, o.x * rc.y + o.y * rc.x);
+    sum += step(recv, unpackDepth(texture2D(uShadow, ndc.xy + o)));
+  }
+  return sum * (1.0 / 16.0);
 }`;
 
 const FRAG = /* glsl */ `

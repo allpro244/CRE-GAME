@@ -449,7 +449,7 @@ export function refreshPool(s: GameState, force = false) {
  * tell you immediately whether the capacity model still binds: test A asserts
  * a 55k sf book does not slip and a 2.4M sf book does.
  */
-export const HIRING_UI_SHIPPED = false;
+export const HIRING_UI_SHIPPED = true;
 
 export function markStaff(s: GameState, parcels: ParcelTable) {
   const pm = roleState(s, parcels, "pm");

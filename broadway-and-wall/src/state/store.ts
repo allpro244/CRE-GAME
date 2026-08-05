@@ -13,6 +13,7 @@ import { fileVariance } from "@/engine/zoning";
 import { refinance, buyRateCap } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
 import { startDevelopment, startProgram, setStance, setOps, setOpsPolicy, demolish } from "@/engine/dev";
+import { hire, fire, refreshPool, POOL_REFRESH_M } from "@/engine/staff";
 import { normalizeParcels } from "@/engine/mix";
 import { netWorth } from "@/engine/value";
 import { loadGame, saveGame, listSaves, deleteSave, type SaveMeta } from "@/engine/save";
@@ -20,7 +21,7 @@ import { currentCity, currentSeed, setSeed, rerollCity } from "@/state/city";
 import { makeCity, type GeneratedCity } from "@/citygen/index.mjs";
 
 export type Lens = "none" | "land" | "demand" | "owners";
-export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "news" | "leasing" | "property" | "saves" | "notes" | "settings";
+export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "news" | "leasing" | "property" | "saves" | "notes" | "settings" | "staff";
 
 interface AppState {
   parcels: ParcelTable | null;
@@ -125,6 +126,15 @@ interface AppState {
   setAgent: (on: boolean) => void;
   drawCredit: (amt: number) => void;
   repayCredit: (amt: number) => void;
+  /**
+   * THE DESK. Hiring is an offer and a notice period, not a purchase — see
+   * engine/staff.ts. Nothing here moves money: the salary bills monthly
+   * through the G&A line in sim.ts and the severance is charged inside
+   * `fire`, which is where the ledger can see it.
+   */
+  hireStaff: (candidateId: number) => void;
+  fireStaff: (staffId: number) => void;
+  postJob: () => void;
   newRun: () => void;
   devGrant: () => void;
   saveTo: (slot: string) => Promise<void>;
@@ -743,6 +753,66 @@ export const useStore = create<AppState>((set, get) => ({
     set({ game: r.s });
     toast("Paid down.");
     void persist(r.s);
+  },
+
+  // THE PAYROLL. An offer is accepted on the spot and then nothing happens for
+  // two months while they work out a notice, which is why this toast talks
+  // about a start date rather than a hire.
+  hireStaff: (candidateId) => {
+    const { game } = get();
+    if (!game) return;
+    const r = hire(game, candidateId);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast("Offer accepted. They give notice first — the seat is empty until they walk in.");
+    void persist(r.s);
+  },
+
+  fireStaff: (staffId) => {
+    const { game } = get();
+    if (!game) return;
+    const r = fire(game, staffId);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    // Marked as a bad outcome deliberately, the way handing back keys is: it
+    // succeeded, and it cost you three months' pay and your coverage.
+    toast("Severance paid. Nobody is in that seat now.", "err");
+    void persist(r.s);
+  },
+
+  /**
+   * POST THE JOB.
+   *
+   * `refreshPool` is called every month by `tickStaff`, so in ordinary play
+   * this never has anything to do — which is the point. It is deliberately
+   * passed force=false so that a player cannot make the shortlist reshuffle
+   * on demand: a hiring market you can spin produces the decision "spin
+   * again" instead of "is this person worth $140,000 a year", and staff.ts
+   * says so in as many words.
+   *
+   * What it is actually for is the two moments the tick cannot cover: a brand
+   * new campaign, where the desk exists before the first month has been
+   * advanced and there is no pool at all, and a save written before any of
+   * this existed. In both, the pool is stale by construction and this posts
+   * the first one.
+   */
+  postJob: () => {
+    const { game } = get();
+    if (!game) return;
+    const age = game.month - (game.hirePool?.m ?? -999);
+    if (game.hirePool && age < POOL_REFRESH_M) {
+      const wait = POOL_REFRESH_M - age;
+      toast(`That list went up ${age} month${age === 1 ? "" : "s"} ago. The next one is ${wait} month${wait === 1 ? "" : "s"} out.`, "err");
+      return;
+    }
+    // refreshPool writes into the state it is handed, and zustand repaints on
+    // identity — editing the live object would change the pool and render
+    // nothing.
+    const next: GameState = JSON.parse(JSON.stringify(game));
+    refreshPool(next, false);
+    set({ game: next });
+    toast("The job is posted. Three names on each desk.");
+    void persist(next);
   },
 
   refreshSlots: async () => {

@@ -66,6 +66,7 @@ import { plateEfficiency } from "@/engine/value";
 import { varianceQuote } from "@/engine/zoning";
 import { usd, sf, pct } from "./format";
 import Slider from "./Slider";
+import StaffPage from "./StaffPage";
 
 // Appraisals are opinions with a range, not the true number.
 function band(bbl: string, value: number): string {
@@ -104,6 +105,7 @@ export default function GamePanels() {
     : page === "economy" ? "The Economy"
     : page === "research" ? "Research"
     : page === "notes" ? "The Note Desk"
+    : page === "staff" ? "The Desk"
     : page === "settings" ? "Settings"
     : "The Marketplace";
   return (
@@ -127,6 +129,7 @@ export default function GamePanels() {
             {page === "saves" && <SavesPage />}
             {page === "leasing" && <LeasingPage />}
             {page === "property" && <PropertyPage />}
+            {page === "staff" && <StaffPage />}
             {page === "settings" && <SettingsPage />}
           </div>
         </div>
@@ -6792,6 +6795,16 @@ function BooksPage() {
       </div>
       <NWChart data={game.nwHistory} />
       <CreditLine />
+      {/* THE WAY IN TO THE PAYROLL. Firm overhead is a line on the statement
+          below and, since the desk exists, half of it is people with names,
+          salaries and a notice period. The books are where you find out what
+          the office costs; this is where you find out who is in it. */}
+      <div className="btn-row">
+        <button className="btn" onClick={() => useStore.getState().setPage("staff")}
+          title="Property management and leasing — capacity, the shortlist, and what the slip is costing you">
+          The desk · {(game.staff ?? []).length} on the payroll →
+        </button>
+      </div>
       <IncomeStatement />
       <div className="page-section">
         <div className="page-section-head">The ledger, by year — every line, side by side</div>

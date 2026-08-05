@@ -776,3 +776,102 @@ body {
 .news-item { padding: 3px 0; line-height: 1.45; }
 .news-clickable { cursor: pointer; }
 .news-clickable:hover { color: var(--gold, #8a6d2b); }
+
+/* ---- the desk: capacity, the shortlist, and a read you cannot sharpen ----
+   Two shapes carry this page and both of them are arguments.
+
+   .desk-* is a LOAD bar, and it is scaled to whichever is larger of what a
+   role covers and what it is on the hook for — never to 100% — because a bar
+   pinned at full cannot tell 1.1x capacity from 3x, and those are completely
+   different businesses. The overrun is drawn past the capacity mark, in the
+   colour everything else in this game uses for a number that is hurting you.
+
+   .band-* is an INTERVAL, not a fill. Every attribute in engine/staff.ts is a
+   quantity the game itself does not claim to know: readAttr returns lo/mid/hi
+   and the width is ~44 points of 100 at the interview. A filled bar would
+   assert a value that does not exist, so the band is a shaded span on a fixed
+   1-100 track with a tick at the middle. As months of results accumulate the
+   span contracts on its own — the whole feedback loop of hiring is watching
+   that happen, so the track has to stay a constant width for the contraction
+   to read. */
+.desk-bar { margin: 8px 0 4px; }
+.desk-track {
+  position: relative; height: 12px; border-radius: 3px;
+  background: rgba(43, 37, 26, 0.10);
+}
+.desk-cover {
+  position: absolute; top: 0; bottom: 0; left: 0; border-radius: 3px 0 0 3px;
+  background: linear-gradient(to right, rgba(47,122,114,0.55), rgba(47,122,114,0.8));
+}
+.desk-over {
+  position: absolute; top: 0; bottom: 0; border-radius: 0 3px 3px 0;
+  background: repeating-linear-gradient(45deg, #a8402e, #a8402e 4px, #8e2c20 4px, #8e2c20 8px);
+  opacity: 0.85;
+}
+.desk-cap {
+  position: absolute; top: -3px; bottom: -3px; width: 2px;
+  background: var(--ink); opacity: 0.75; transform: translateX(-1px);
+}
+.desk-legend {
+  display: flex; justify-content: space-between;
+  font-size: 10.5px; color: var(--ink-dim); margin-top: 4px;
+}
+.desk-lines { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.desk-line {
+  font-size: 12.5px; line-height: 1.45; color: var(--ink);
+  border-left: 2px solid rgba(146,110,40,0.45); padding-left: 10px;
+}
+.desk-line-bad { border-left-color: #a8402e; color: #8e2c20; }
+
+.band-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px 18px; margin: 10px 0 4px;
+}
+.band-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.band-label { font-size: 11px; color: var(--ink-dim); }
+.band-range { font-size: 11px; color: var(--ink); }
+.band-track {
+  position: relative; height: 8px; border-radius: 4px; margin-top: 3px;
+  background: rgba(43, 37, 26, 0.10);
+}
+.band-span {
+  position: absolute; top: 0; bottom: 0; border-radius: 4px;
+  background: linear-gradient(to right, rgba(176,127,30,0.28), rgba(176,127,30,0.55), rgba(176,127,30,0.28));
+}
+.band-mid {
+  position: absolute; top: -2px; bottom: -2px; width: 2px;
+  background: var(--ink); opacity: 0.6; transform: translateX(-1px);
+}
+
+/* A person on the payroll: the read on the left, what it costs to undo on the
+   right. The severance note is not a tooltip on purpose — the two-month gap
+   after you fire somebody is the expensive half, and nobody hovers a button
+   they have already decided to press. */
+.staff-row {
+  display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap;
+  margin-top: 12px; padding: 12px 0 4px;
+  border-top: 1px solid rgba(146,110,40,0.22);
+}
+.staff-main { flex: 1 1 420px; min-width: 0; }
+.staff-name { font-family: var(--serif); font-size: 16px; color: var(--ink); }
+.staff-sub { font-size: 11.5px; color: var(--ink-dim); margin-top: 2px; }
+.staff-actions { flex: 0 1 300px; }
+.staff-cost { font-size: 11px; color: var(--ink-dim); line-height: 1.45; margin-top: 6px; font-style: italic; }
+.staff-pending { opacity: 0.75; }
+
+.cand-group { margin-top: 14px; }
+.cand-group-head {
+  font-family: var(--serif); font-size: 15px; color: var(--ink);
+  border-bottom: 1px solid rgba(146,110,40,0.25); padding-bottom: 4px; margin-bottom: 8px;
+}
+.cand-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.cand {
+  border: 1px solid var(--card-line); border-radius: 5px; padding: 12px 14px;
+  background: rgba(255, 253, 246, 0.5);
+}
+.cand-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.cand-name { font-family: var(--serif); font-size: 16px; color: var(--ink); }
+.cand-ask { font-size: 14px; color: var(--ink); }
+.cand-sub { font-size: 11px; color: var(--ink-dim); line-height: 1.45; margin-top: 4px; }
+.cand-cover { font-size: 11.5px; color: var(--ink); margin-top: 8px; }
+.cand-note { font-size: 11px; color: var(--ink-dim); font-style: italic; margin-top: 6px; }

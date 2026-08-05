@@ -51,6 +51,7 @@ export function LineChart({
   const py = (v: number) => PAD_T + (height - PAD_T - PAD_B) * (1 - (v - lo) / (hi - lo));
 
   return (
+    <>
     <svg viewBox={`0 0 ${W} ${height}`} style={{ width: "100%", display: "block", overflow: "visible" }}>
       {ys.map((v) => (
         <g key={v}>
@@ -86,6 +87,33 @@ export function LineChart({
         </>
       )}
     </svg>
+    {/* THE LEGEND THIS FILE'S OWN HEADER PROMISED.
+        "A CHART has a scale, a zero, gridlines you can read values off, and a
+        legend" — it had the first three. Every Series has carried a `label`
+        since the day this was written, and every one of them was collected and
+        thrown away: the economy page drew four coloured lines and told nobody
+        which was which. Fixed here rather than at the one call site that got
+        reported, because every chart in the game reads from this function and
+        every one of them had it.
+        Rendered as HTML beneath the SVG rather than as <text> inside it — the
+        chart scales to the panel through its viewBox, and type inside a scaled
+        viewBox does not stay the size you asked for. */}
+    {series.length > 1 && (
+      <div className="chart-legend">
+        {series.map((s) => (
+          <span key={s.label} className="chart-legend-item">
+            <span
+              className="chart-legend-swatch"
+              style={s.dashed
+                ? { background: "none", borderTop: `3px dashed ${s.color}` }
+                : { background: s.color }}
+            />
+            {s.label}
+          </span>
+        ))}
+      </div>
+    )}
+    </>
   );
 }
 

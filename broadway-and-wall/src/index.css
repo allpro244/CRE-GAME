@@ -727,3 +727,27 @@ body {
 }
 .alarm .neg { color: #8e2c20; font-weight: 600; }
 .tbl td.nowrap, .tbl th.nowrap { white-space: nowrap; }
+
+/* CHART LEGEND. Sits under the plot as HTML, not as <text> inside the scaled
+   viewBox, so the type stays the size it was asked for whatever width the
+   panel is. Only drawn when there is more than one series — a single line
+   needs no key. */
+.chart-legend {
+  display: flex; flex-wrap: wrap; gap: 4px 14px;
+  margin: 4px 0 2px 52px;                 /* line up with the plot, past the y axis */
+  font-size: 11px; color: var(--ink-dim); letter-spacing: 0.2px;
+}
+.chart-legend-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.chart-legend-swatch { width: 14px; height: 3px; border-radius: 1px; display: inline-block; }
+
+/* CHART LEGEND. Sits under the plot as HTML, not as <text> inside the scaled
+   viewBox, so the type stays the size it was asked for whatever width the
+   panel is. Only drawn when there is more than one series — a single line
+   needs no key. Indented to the plot's left edge, past the y-axis labels. */
+.chart-legend {
+  display: flex; flex-wrap: wrap; gap: 3px 14px;
+  margin: 3px 0 6px 52px;
+  font-size: 11px; color: var(--ink-dim); letter-spacing: 0.2px;
+}
+.chart-legend-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.chart-legend-swatch { width: 15px; height: 3px; border-radius: 1px; display: inline-block; flex: none; }

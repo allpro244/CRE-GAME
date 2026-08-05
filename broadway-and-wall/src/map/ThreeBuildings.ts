@@ -322,15 +322,35 @@ function stylePool(v: BuildingVolume): number[] {
   }
   if (y < 1905) {
     p.push(S_ROMANESQUE, S_ITALIANATE, S_PREWAR, S_BRICK);
+    // VERNACULAR LAGS FASHION BY A GENERATION, and in a small port it lags by
+    // two. New Alden's oldest recorded building is 1885 — the generator makes
+    // nothing before it — so the Federal and Second Empire families would be
+    // dead code gated to the dates the styles were invented. They are not dead
+    // in the world: a carpenter in an 1890s harbour town was still building the
+    // house he had been taught to build in 1850, which is the whole reason
+    // small-town stock reads as older than its dates.
+    p.push(S_FEDERAL, S_EMPIRE);
+    if (resi) p.push(S_FEDERAL, S_EMPIRE);
     if (!resi) p.push(S_CASTIRON, S_ROMANESQUE, S_MARKET);
+    // GOTHIC AT SMALL SCALE. Terra-cotta Gothic is a tall-office style and this
+    // town has two prewar offices over six storeys, so gated there it is worth
+    // 0.7 buildings and draws none. It is not only a tall-office style: the
+    // same pointed arch built every church, school and parish hall in the
+    // nineteenth century, at three storeys, and that is where a port town
+    // actually keeps it. The steeple rule reads this style too.
+    if (!resi) p.push(S_GOTHIC);
     if (resi) p.push(S_TENEMENT, S_TENEMENT, S_TENEMENT, S_BRICK);
-    if (office && f >= 8) p.push(S_CHICAGO, S_CHICAGO, S_BEAUX);
+    if (office && f >= 6) p.push(S_CHICAGO, S_CHICAGO, S_BEAUX);
     return p;
   }
   if (y < 1925) {
     p.push(S_PREWAR, S_BRICK);
+    if (!resi) p.push(S_GOTHIC);              // the parish hall, the school
     if (office) p.push(S_BEAUX, S_BEAUX, S_CHICAGO, S_CHICAGO, S_TERRACOTTA);
-    if (office && f >= 14) p.push(S_GOTHIC, S_GOTHIC, S_TERRACOTTA);
+    // Terra-cotta Gothic on six storeys is the small-city version of the
+    // type and there are hundreds of them; gated at eight it lost to the fact
+    // that this town has twenty buildings that tall in total.
+    if (office && f >= 6) p.push(S_GOTHIC, S_GOTHIC, S_GOTHIC, S_TERRACOTTA);
     if (shop) p.push(S_TERRACOTTA, S_BEAUX, S_CHICAGO, S_MARKET);
     if (resi) p.push(S_TENEMENT, S_TENEMENT, S_BRICK, S_PREWAR, S_BEAUX);
     return p;
@@ -338,7 +358,7 @@ function stylePool(v: BuildingVolume): number[] {
   if (y < 1945) {
     // The deco decades. Height decides whether a building got the tower
     // treatment or the low, wide, horizontal one.
-    if (f >= 11) p.push(S_ARTDECO, S_ARTDECO, S_ARTDECO, S_GOTHIC, S_TERRACOTTA);
+    if (f >= 7) p.push(S_ARTDECO, S_ARTDECO, S_ARTDECO, S_GOTHIC, S_TERRACOTTA);
     else p.push(S_MODERNE, S_MODERNE, S_ARTDECO, S_TERRACOTTA);
     p.push(S_CIVIC, S_PREWAR, S_BRICK);
     if (resi) p.push(S_BRICK, S_BRICK, S_PREWAR, S_TENEMENT);
@@ -347,15 +367,15 @@ function stylePool(v: BuildingVolume): number[] {
   }
   if (y < 1962) {
     p.push(S_RIBBON, S_RIBBON, S_BRICK, S_PROJECT, S_CIVIC);
-    if (office && f >= 10) p.push(S_INTL, S_INTL, S_INTL, S_RIBBON);
+    if (office && f >= 6) p.push(S_INTL, S_INTL, S_INTL, S_RIBBON);
     if (resi) p.push(S_PROJECT, S_PROJECT, S_WHITEBRICK, S_BRICK);
     if (shop) p.push(S_MODERNE, S_RIBBON, S_EIFS);
     return p;
   }
   if (y < 1980) {
     p.push(S_RIBBON, S_PRECAST, S_BRUTAL, S_PROJECT);
-    if (office && f >= 10) p.push(S_INTL, S_INTL, S_PRECAST, S_PRECAST, S_MIRROR, S_BRUTAL);
-    if (office && f >= 20) p.push(S_MIRROR, S_MIRROR, S_DARK);
+    if (office && f >= 6) p.push(S_INTL, S_INTL, S_PRECAST, S_PRECAST, S_MIRROR, S_BRUTAL);
+    if (office && f >= 9) p.push(S_MIRROR, S_MIRROR, S_DARK);
     if (resi) p.push(S_WHITEBRICK, S_WHITEBRICK, S_PROJECT, S_PRECAST, S_BRICK);
     if (shop) p.push(S_EIFS, S_PRECAST, S_METALPAN);
     if (f >= 4) p.push(S_GARAGE);
@@ -363,8 +383,8 @@ function stylePool(v: BuildingVolume): number[] {
   }
   if (y < 1998) {
     p.push(S_EIFS, S_GLASS, S_PMOD, S_BRICK);
-    if (office && f >= 10) p.push(S_PMOD, S_PMOD, S_MIRROR, S_MIRROR, S_GLASS, S_DARK);
-    if (office && f >= 22) p.push(S_PMOD, S_DARK);
+    if (office && f >= 6) p.push(S_PMOD, S_PMOD, S_MIRROR, S_MIRROR, S_GLASS, S_DARK);
+    if (office && f >= 10) p.push(S_PMOD, S_DARK);
     if (resi) p.push(S_BRICK, S_EIFS, S_WHITEBRICK, S_BALCONY);
     if (shop) p.push(S_EIFS, S_EIFS, S_BIGBOX, S_METALPAN);
     if (f >= 4) p.push(S_GARAGE);
@@ -372,18 +392,18 @@ function stylePool(v: BuildingVolume): number[] {
   }
   if (y < 2012) {
     p.push(S_GLASS, S_EIFS, S_BRICK);
-    if (office && f >= 10) p.push(S_CRYSTAL, S_CRYSTAL, S_GLASS, S_FRIT, S_SCREEN, S_DARK);
-    if (office && f >= 32) p.push(S_DIAGRID, S_CRYSTAL);
+    if (office && f >= 6) p.push(S_CRYSTAL, S_CRYSTAL, S_GLASS, S_FRIT, S_SCREEN, S_DARK);
+    if (office && f >= 24) p.push(S_DIAGRID, S_CRYSTAL);
     if (resi) p.push(S_BALCONY, S_BALCONY, S_GLASS, S_EIFS, S_BRICK);
-    if (resi && f >= 12) p.push(S_BALCONY, S_CRYSTAL);
+    if (resi && f >= 8) p.push(S_BALCONY, S_CRYSTAL);
     if (shop) p.push(S_EIFS, S_BIGBOX, S_SCREEN);
     if (f >= 4) p.push(S_GARAGE);
     return p;
   }
   // the present, which builds thinner walls and warmer ones at the same time
   p.push(S_CRYSTAL, S_FRIT, S_SCREEN, S_TIMBER);
-  if (office && f >= 10) p.push(S_CRYSTAL, S_CRYSTAL, S_FRIT, S_FRIT, S_SCREEN, S_SCREEN, S_TIMBER);
-  if (office && f >= 30) p.push(S_DIAGRID, S_CRYSTAL, S_DARK);
+  if (office && f >= 6) p.push(S_CRYSTAL, S_CRYSTAL, S_FRIT, S_FRIT, S_SCREEN, S_SCREEN, S_TIMBER);
+  if (office && f >= 22) p.push(S_DIAGRID, S_CRYSTAL, S_DARK);
   if (resi) p.push(S_BALCONY, S_BALCONY, S_BALCONY, S_SCREEN, S_TIMBER, S_FRIT, S_BRICK);
   if (shop) p.push(S_SCREEN, S_TIMBER, S_BIGBOX, S_EIFS);
   if (f >= 4) p.push(S_GARAGE);
@@ -2589,6 +2609,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // roof of that penthouse; where there is one, that is the polygon the
       // kit is laid out on, at the height its own cap was drawn.
       let mechDeck: { ring: [number, number][]; z: number } | null = null;
+      // WHERE THE TOP OF THIS BUILDING ACTUALLY IS. A landmark stands on the
+      // ridge of a pitched roof or on the deck of a penthouse, not on the
+      // eaves line — each roof branch below reports its own height here.
+      let roofZ = v.z1;
       extrudeWalls(W, ring, v.z0, v.z1, meta);
 
       // ---- gabled colonial roofs in the old fabric -------------------------
@@ -2607,6 +2631,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const [a0, a1, b0, b1] = [q[0], q[1], q[2], q[3]]; // eaves: a0→a1 and b0→b1
         const shortLen = Math.min(len(a1, b0), len(b1, a0));
         const rise = Math.min(3.4, Math.max(1.8, shortLen * 0.45));
+        roofZ = v.z1 + rise;
         const m1 = [(a1[0] + b0[0]) / 2, (a1[1] + b0[1]) / 2, v.z1 + rise];
         const m3 = [(b1[0] + a0[0]) / 2, (b1[1] + a0[1]) / 2, v.z1 + rise];
         const rMeta = [S_GABLE, rnd, varr, v.z1 + rise, fh];
@@ -2658,6 +2683,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const span = Math.sqrt(Math.abs(area) / 2);
         const rise = mansard ? Math.min(4.2, Math.max(2.6, span * 0.30)) : Math.min(3.4, Math.max(1.9, span * 0.34));
         const inset = mansard ? Math.min(2.4, span * 0.16) : Math.max(1.6, span * 0.34);
+        roofZ = v.z1 + rise;
         if (!pitchCap(ring, v.z1, rise, inset, rMeta)) capRoof(R, ring, v.z1, meta);
         else if (mansard) {
           // the cornice a mansard sits on — the eave line is the whole point
@@ -2735,6 +2761,28 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
             extrudeWalls(W, lip, z, zt, M(zt));
             capRoof(R, lip, zt, M(zt));
             z = zt; proj *= 0.55;
+          }
+          // BALUSTRADE URNS. On the good addresses the cornice carries cast
+          // stone at intervals along it, and it is the one ornament that
+          // breaks a parapet line against the sky — which is exactly where a
+          // roof is read from. These are placed ON the parapet rather than
+          // through fitRoofKit, because the kit's whole job is to keep things
+          // a metre INSIDE the edge and the edge is where an urn belongs.
+          if (stone && v.x && cs(16) < 0.30) {
+            for (let i = 0; i < ring.length; i++) {
+              const a2 = ring[i], b2 = ring[(i + 1) % ring.length];
+              const L = Math.hypot(b2[0] - a2[0], b2[1] - a2[1]);
+              if (L < 4) continue;
+              const n2 = Math.min(6, Math.max(1, Math.floor(L / 7.5)));
+              for (let k2 = 0; k2 < n2; k2++) {
+                const t = (k2 + 0.5) / n2;
+                props.push({
+                  kind: 39, b: v.b, rot: 0,
+                  x: a2[0] + (b2[0] - a2[0]) * t, y: a2[1] + (b2[1] - a2[1]) * t, z,
+                  s: 0.8 + 0.4 * cs(17 + k2),
+                });
+              }
+            }
           }
         } else if (crown === "corbel") {
           // CORBELLED BRICK — courses stepping OUT as they rise, under a
@@ -2887,6 +2935,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
             extrudeWalls(W, pent, v.z1 + 0.4, v.z1 + ph2, pm);
             capRoof(R, pent, v.z1 + ph2, [pm[0], rnd, varr, v.z1 + ph2, fh]);
             mechDeck = { ring: pent, z: v.z1 + ph2 };
+            roofZ = v.z1 + ph2;
           }
         }
       }
@@ -2908,6 +2957,66 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // a two-storey house; giving it a broadcast mast because the ground under
       // it is 90 m up put an antenna forest on every hill.
       const hgt = v.z1 - v.z0;
+
+      // ---- THE LANDMARKS ---------------------------------------------------
+      //
+      // A steeple, a dome, a cupola, a works chimney. These are not equipment
+      // and they do not queue with it: they ARE the building's silhouette, and
+      // they are how you know where you are from the far side of the water.
+      //
+      // They get their own pass because the machine deck below cannot reach
+      // them. That block is gated `hgt >= 12 && !gable && !hip`, which is
+      // exactly right for plant — you do not put a chiller on a cottage — and
+      // exactly wrong for these, because the buildings a steeple and a cupola
+      // belong on are SHORT and PITCHED. Measured: with the landmarks inside
+      // that gate the whole city produced one cupola, two clocks, and no
+      // steeple, no dome and no chimney at all.
+      //
+      // The thresholds are read off the stock rather than off Manhattan. New
+      // Alden's median building is 14.2 m and it has seven buildings over 34 m
+      // in the entire town, so "tall enough to end in a point" is 24 m here.
+      // A helipad still wants 55 m and there are none, which is correct — the
+      // town has not built one yet, and the player can.
+      if (v.b && !v.d && !v.k && v.x) {
+        const L = (k: number) => hash01(keyOf(v.b!) ^ Math.imul(k + 1, 0x7feb352d), this.citySeed ^ 0x1a2b3c4d);
+        const plateM = Math.sqrt(Math.max(1, Math.abs(area) / 2));
+        const oldStone = has(T_STONE, style);
+        const c = ring.reduce((a, p) => [a[0] + p[0] / ring.length, a[1] + p[1] / ring.length], [0, 0]);
+        const bearOf = () => Math.atan2(curBearY, curBearX);
+        const put = (kind: number, s: number, rot = 0) => {
+          // Room to stand on: half the plate has to clear the object's own
+          // footprint, or a dome ends up wider than the building under it.
+          if (plateM * 0.5 < (PROP_R[kind] ?? 2) * s * 0.9) return;
+          props.push({ kind, x: c[0], y: c[1], z: roofZ, s, rot, b: v.b });
+        };
+        // The works chimney: only where something was burning coal.
+        if (style === S_MILL && v.y < 1950 && hgt >= 7 && plateM > 11 && L(1) < 0.20) put(22, 0.75 + 0.5 * L(2));
+        // A steeple stands on a small, old, tall-for-its-plate building. A New
+        // England port town has half a dozen and they are its landmarks.
+        else if (v.y < 1920 && plateM < 24 && hgt >= 8 && hgt <= 28 &&
+          (style === S_FEDERAL || style === S_ITALIANATE || style === S_CIVIC ||
+            style === S_PREWAR || style === S_MARKET || style === S_GOTHIC) &&
+          L(3) < 0.10) put(27, 0.75 + 0.45 * L(4), bearOf());
+        // A dome wants a public building with a big room under it.
+        else if (oldStone && v.y < 1940 && plateM > 19 && hgt >= 12 && L(5) < 0.14) put(25, 0.75 + 0.5 * L(6));
+        // A clock stage on a tower narrow for its height — a campanile, which
+        // the plan families now actually build.
+        else if (oldStone && v.y < 1945 && hgt >= 18 && hgt > plateM * 1.35 && L(7) < 0.24) put(26, 0.7 + 0.45 * L(8), bearOf());
+        // A deco or Gothic tower ends in a point, and from across the harbour
+        // that point is the only part of it you can see.
+        else if ((style === S_ARTDECO || style === S_GOTHIC) && hgt >= 24 && L(9) < 0.45) put(24, 0.8 + 0.6 * L(10));
+        // A cupola is the cheap version of all of it: a market, a firehouse, a
+        // school, anything that wanted to look civic in 1890.
+        else if (v.y < 1930 && hgt >= 6 && hgt <= 22 &&
+          (style === S_MARKET || style === S_CIVIC || style === S_CARRIAGE ||
+            style === S_FEDERAL || style === S_CHICAGO) && L(11) < 0.24) put(23, 0.8 + 0.4 * L(12), bearOf());
+        // The tank on its own steel tower — a different object from the tank
+        // sitting on the deck, and visible from the street.
+        else if (v.y < 1975 && hgt >= 12 && plateM > 15 && L(13) < 0.20) put(38, 0.75 + 0.4 * L(14), bearOf());
+        // Sign letters on a frame: commercial, and high enough to be read.
+        else if (hgt >= 11 && !has(T_MODERN, style) && has(T_TRADE, style) && L(15) < 0.16) put(37, 0.7 + 0.5 * L(16), bearOf());
+      }
+
       if (v.b && hgt >= 12 && !gable && !hip) {
         const seed = Number(v.b) % 1000;
         const jit = (k: number, amp: number) => (((seed * (k + 3) * 2654435761) % 1000) / 1000 - 0.5) * amp;
@@ -2940,6 +3049,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           // everything else.
           if (hgt >= 95) wants.push({ kind: 4, s: 1 + (hgt - 95) / 60, rot: 0, keep: true });
           if (hgt >= 105 && v.y >= 1975) wants.push({ kind: 3, s: 1, rot: 0, keep: true });
+
           // Somebody has to be able to get out here. Every flat roof has a way
           // up, and it is the most characteristic silhouette on the deck —
           // unless the building already grew a penthouse, because that IS the
@@ -2971,6 +3081,47 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           if (hgt >= 12 && hgt <= 34 && R(17) < 0.30) wants.push({ kind: 18, s: 0.8 + 0.5 * R(19), rot: bear + 1.57 });
           // Nobody put panels on a roof before somebody was selling them.
           if (v.y >= 1996 && hgt >= 10 && R(21) < 0.34) wants.push({ kind: 19, s: 0.9 + 0.4 * R(23), rot: bear });
+          // ---- THE REST OF THE ROOFSCAPE -------------------------------------
+          const plateM = Math.sqrt(Math.max(1, Math.abs(area) / 2));
+          //
+          // Not landmarks, so these queue for deck space with the plant. Each
+          // still follows from what the building is: a chimney pot means
+          // fireplaces, a whirlybird means a shed with no other ventilation, a
+          // window-washing rig means a facade nobody can reach from a ladder.
+          // Chimney pots — a house with fireplaces in it, so old and low.
+          if (v.y < 1945 && hgt <= 24 && has(T_OLDROOF, style)) {
+            wants.push({ kind: 21, s: 0.85 + 0.4 * R(67), rot: bear });
+            if (plateM > 15 && R(68) < 0.5) wants.push({ kind: 21, s: 0.8 + 0.3 * R(69), rot: bear + 1.2 });
+          }
+          // A shed ventilates through its roof because it has no other way to.
+          if ((style === S_METALPAN || style === S_MILL) && hgt < 18 && R(70) < 0.45) {
+            wants.push({ kind: 32, s: 0.9 + 0.3 * R(71), rot: bear });
+          }
+          // A mast on a roof somebody rents to a carrier — post-war and up.
+          if (v.y >= 1958 && hgt >= 28 && R(72) < 0.30) wants.push({ kind: 34, s: 0.8 + 0.5 * R(73), rot: bear });
+          // Satellite dishes arrived with cable and never left.
+          if (v.y >= 1980 && hgt >= 19 && R(74) < 0.26) wants.push({ kind: 35, s: 0.85 + 0.35 * R(75), rot: bear + 0.9 });
+          // A facade too tall to reach off a ladder needs a rig on the roof.
+          if (v.y >= 1968 && hgt >= 38 && R(76) < 0.55) wants.push({ kind: 36, s: 1, rot: bear + 1.57 });
+          // A helipad wants a big deck and a client who wanted one.
+          if (v.y >= 1965 && hgt >= 55 && plateM > 24 && R(77) < 0.28) wants.push({ kind: 30, s: 1, rot: bear });
+          // The roof terrace: a deck, something to sit under, and planting.
+          if (v.y >= 1988 && hgt >= 12 && R(78) < 0.30) {
+            wants.push({ kind: 28, s: 0.9 + 0.3 * R(79), rot: bear + 0.6 });
+            wants.push({ kind: 29, s: 0.9 + 0.3 * R(80), rot: bear + 0.6 });
+          } else if (v.y >= 1996 && hgt >= 9 && R(81) < 0.22) {
+            wants.push({ kind: 29, s: 0.85 + 0.3 * R(82), rot: bear });
+          }
+          // Growing food up here is a recent idea and it looks like one.
+          if (v.y >= 2006 && hgt >= 9 && hgt <= 46 && R(83) < 0.14) {
+            wants.push({ kind: 31, s: 0.85 + 0.35 * R(84), rot: bear + 1.57 });
+          }
+          // A flagpole: civic buildings always, and anybody else who felt like it.
+          if ((style === S_CIVIC || style === S_BEAUX) && hgt >= 10 && R(85) < 0.55) {
+            wants.push({ kind: 33, s: 0.9 + 0.35 * R(86), rot: 0 });
+          } else if (hgt >= 16 && R(87) < 0.08) {
+            wants.push({ kind: 33, s: 0.85 + 0.3 * R(88), rot: 0 });
+          }
           // Condensers are the filler — they go on last, and only where a big
           // deck has room left over after the plant that matters.
           const nAc = hgt > 40 ? 3 : 1;
@@ -3179,6 +3330,26 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       { geom: skylightGeom(), color: 0xbfd0d6 },        // 18
       { geom: pvRowGeom(), color: 0x2b3550 },           // 19
       { geom: guardrailGeom(), color: 0x6f7377 },       // 20
+      // The roofscape proper — see the block by the geometry above.
+      { geom: chimneyPotsGeom(), color: 0x8c5f4c },     // 21 sooted brick
+      { geom: smokestackGeom(), color: 0x7d5748 },      // 22 works chimney
+      { geom: cupolaGeom(), color: 0xc9c3b4 },          // 23 painted timber
+      { geom: spireGeom(), color: 0x6f7a72 },           // 24 lead-grey
+      { geom: domeGeom(), color: 0x63a08a },            // 25 copper gone green
+      { geom: clockTowerGeom(), color: 0xbdb5a3 },      // 26 stone with pale faces
+      { geom: steepleGeom(), color: 0xd6d2c6 },         // 27 whitewashed timber
+      { geom: pergolaGeom(), color: 0x8b7355 },         // 28 weathered cedar
+      { geom: planterRowGeom(), color: 0x5f7a48 },      // 29 planting
+      { geom: helipadGeom(), color: 0x6a6f72 },         // 30 painted deck
+      { geom: greenhouseGeom(), color: 0xbcd2d6 },      // 31 glass
+      { geom: ventTurbineGeom(), color: 0x9aa0a0 },     // 32 galvanised
+      { geom: flagpoleGeom(), color: 0xcfcfc8 },        // 33 white pole
+      { geom: antennaArrayGeom(), color: 0x86898c },    // 34 galvanised lattice
+      { geom: dishFarmGeom(), color: 0xb3b6b3 },        // 35 grey dishes
+      { geom: davitGeom(), color: 0x767b7e },           // 36 machine grey
+      { geom: roofSignGeom(), color: 0xffffff },        // 37 painted — see SIGN_COLORS
+      { geom: tankTowerGeom(), color: 0x8a8f8c },       // 38 steel tank
+      { geom: urnGeom(), color: 0xa9a293 },             // 39 cast stone
     ];
     // painted signs come in painted-sign colours
     const SIGN_COLORS: [number, number, number][] = [
@@ -3189,8 +3360,13 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const items = props.filter((p) => p.kind === kind);
       if (!items.length) continue;
       const mesh = new THREE.InstancedMesh(propDefs[kind].geom, this.propMaterial(propDefs[kind].color), items.length);
+      // Which kit part this is, so a count of what actually reached the roofs
+      // can be taken from the scene rather than inferred from the placement
+      // rules. A part gated at a 9% roll on a rare style is exactly the kind
+      // of thing that silently never appears.
+      mesh.name = `prop:${kind}`;
       const icol = new Float32Array(items.length * 3).fill(1);
-      if (kind === 7) {
+      if (kind === 7 || kind === 37) {
         for (let i = 0; i < items.length; i++) {
           const c = SIGN_COLORS[(Math.round(items[i].x * 7 + items[i].y * 13) % SIGN_COLORS.length + SIGN_COLORS.length) % SIGN_COLORS.length];
           icol[i * 3] = c[0]; icol[i * 3 + 1] = c[1]; icol[i * 3 + 2] = c[2];
@@ -4674,6 +4850,25 @@ const PROP_R: Record<number, number> = {
   18: 3.3,  // ribbon skylight
   19: 4.4,  // PV rank — four rows at 2.1 m centres is 8.4 m deep
   20: 3.6,  // guardrail run
+  21: 1.1,  // chimney pots
+  22: 2.2,  // works smokestack — the base, not the shaft
+  23: 1.7,  // cupola
+  24: 1.6,  // spire finial
+  25: 3.9,  // dome on its drum
+  26: 3.2,  // clock stage
+  27: 2.5,  // steeple
+  28: 3.3,  // pergola
+  29: 3.0,  // planter run
+  30: 5.5,  // helipad — the deck is 10.8 m across
+  31: 3.6,  // greenhouse
+  32: 3.1,  // ventilator row
+  33: 0.7,  // flagpole
+  34: 2.2,  // lattice mast
+  35: 3.6,  // dish farm
+  36: 4.4,  // davit track
+  37: 4.6,  // roof sign
+  38: 2.6,  // tank on a steel tower
+  39: 0.8,  // parapet urn
 };
 
 /** A metre of walkway between anything and the parapet. Code, and it reads. */
@@ -4769,6 +4964,33 @@ function fitRoofKit(
     if (x < xlo) xlo = x; if (x > xhi) xhi = x;
     if (y < ylo) ylo = y; if (y > yhi) yhi = y;
   }
+  // WHAT A PART COSTS A DECK IS ITS FOOTPRINT, NOT ITS EXISTENCE.
+  //
+  // The budget above is right about how much plant a small roof carries and it
+  // was spending one unit per PART, so a flagpole 1.4 m across and a rank of PV
+  // 8.8 m across made the identical claim on the plate. That is fine while
+  // every part is a box of plant and wrong the moment the list also contains
+  // ornament: the small things all sit late in the list, behind the plant that
+  // has to be there, and they lost every time. Measured, that left the whole
+  // city with three flagpoles and two ventilator rows.
+  //
+  // Cost is the part's own plan area against a 2.4 m reference radius — the
+  // stair bulkhead, which still costs exactly 1 and keeps the steps above
+  // calibrated where they were measured. Floored at a quarter, because nothing
+  // is entirely free, and capped at three so one enormous part cannot eat a
+  // deck that could physically hold it.
+  //
+  // It reads the part's CATALOGUE radius and its requested scale, NOT the size
+  // it ends up drawn at. sizeK below shrinks everything on a small plate so a
+  // catalogue cooling tower does not span a 25-foot roof — that is a drawing
+  // decision, and charging against it would mean a small roof could afford
+  // MORE parts precisely because they had been shrunk to fit. Measured, that
+  // mistake put six pieces of plant on the median 291 m² roof, which is the
+  // exact pile the budget was written to stop.
+  const deckCost = (w: RoofWant) => {
+    const r = (PROP_R[w.kind] ?? 2) * (w.s ?? 1);
+    return Math.max(0.25, Math.min(3, (r * r) / (2.4 * 2.4)));
+  };
   let spent = 0;
   let seq = 0;
   for (const w of wants) {
@@ -4790,11 +5012,11 @@ function fitRoofKit(
         if (clash) continue;
         out.push({ kind: w.kind, x: px, y: py, z, s, rot: w.rot ?? 0 });
         placed = true;
+        if (!w.keep) spent += deckCost(w);
         break;
       }
     }
     seq++;
-    if (placed && !w.keep) spent++;
   }
   return out;
 }
@@ -4878,6 +5100,261 @@ function guardrailGeom(): THREE.BufferGeometry {
   parts.push(new THREE.BoxGeometry(7.0, 0.06, 0.06).translate(0, 0, 0.55));
   for (let i = 0; i < 5; i++) parts.push(new THREE.BoxGeometry(0.07, 0.07, 1.05).translate(i * 1.75 - 3.5, 0, 0.52));
   return mergeGeoms(parts);
+}
+
+// ---------------------------------------------------------------------------
+// THE THINGS THAT MAKE A ROOFSCAPE, AS OPPOSED TO A MACHINE DECK.
+//
+// The kit above is what keeps a building running: the way out, the lift, the
+// plant, a rail so nobody falls off. It is correct and it is completely
+// characterless, because none of it is what you actually look at from the air.
+// What you look at is the spire, the dome, the clock, the chimneys, the water
+// tank on its steel tower — the objects that give a skyline its LANDMARKS and
+// tell you which way you are facing.
+//
+// Every one of these obeys the same rule as the plant does: it is placed where
+// the real one would be. A steeple stands on a church, a smokestack on a
+// nineteenth-century works, a helipad on a tower late enough and tall enough to
+// have wanted one, chimney pots on a house with fireplaces in it.
+
+/** Domestic chimney pots — a brick stack with three pots on it. */
+function chimneyPotsGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [new THREE.BoxGeometry(1.9, 0.85, 1.7).translate(0, 0, 0.85)];
+  for (let i = 0; i < 3; i++) {
+    parts.push(new THREE.CylinderGeometry(0.19, 0.22, 0.62, 7).rotateX(Math.PI / 2).translate(i * 0.58 - 0.58, 0, 2.0));
+  }
+  return mergeGeoms(parts);
+}
+
+/** The works chimney: tapered brick, a corbelled cap, and the iron bands. */
+function smokestackGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [
+    new THREE.BoxGeometry(3.0, 3.0, 1.1).translate(0, 0, 0.55),
+    new THREE.CylinderGeometry(0.78, 1.35, 15.5, 12).rotateX(Math.PI / 2).translate(0, 0, 8.85),
+    new THREE.CylinderGeometry(1.0, 0.92, 0.9, 12).rotateX(Math.PI / 2).translate(0, 0, 17.0),
+  ];
+  for (let i = 0; i < 3; i++) {
+    parts.push(new THREE.TorusGeometry(0.98 - i * 0.05, 0.055, 4, 12).translate(0, 0, 5.2 + i * 3.6));
+  }
+  return mergeGeoms(parts);
+}
+
+/** An octagonal cupola: open drum on posts, a little dome, a finial. */
+function cupolaGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [
+    new THREE.CylinderGeometry(1.5, 1.6, 0.35, 8).rotateX(Math.PI / 2).translate(0, 0, 0.17),
+  ];
+  for (let i = 0; i < 8; i++) {
+    const th = (i / 8) * Math.PI * 2;
+    parts.push(new THREE.BoxGeometry(0.17, 0.17, 1.9).translate(Math.cos(th) * 1.25, Math.sin(th) * 1.25, 1.3));
+  }
+  parts.push(new THREE.CylinderGeometry(1.6, 1.5, 0.24, 8).rotateX(Math.PI / 2).translate(0, 0, 2.36));
+  parts.push(new THREE.SphereGeometry(1.42, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 1, 0.85).translate(0, 0, 2.45));
+  parts.push(new THREE.CylinderGeometry(0.05, 0.09, 1.5, 6).rotateX(Math.PI / 2).translate(0, 0, 4.0));
+  parts.push(new THREE.SphereGeometry(0.2, 8, 6).translate(0, 0, 3.75));
+  return mergeGeoms(parts);
+}
+
+/** A finial spire: a square base and a long thin cone with a ball on it. */
+function spireGeom(): THREE.BufferGeometry {
+  return mergeGeoms([
+    new THREE.BoxGeometry(2.1, 2.1, 1.5).translate(0, 0, 0.75),
+    new THREE.ConeGeometry(1.25, 9.0, 8).rotateX(Math.PI / 2).translate(0, 0, 6.0),
+    new THREE.SphereGeometry(0.28, 8, 6).translate(0, 0, 10.8),
+    new THREE.CylinderGeometry(0.045, 0.06, 2.2, 5).rotateX(Math.PI / 2).translate(0, 0, 11.9),
+  ]);
+}
+
+/** A dome on a drum, with a lantern — a bank, a courthouse, a capitol. */
+function domeGeom(): THREE.BufferGeometry {
+  return mergeGeoms([
+    new THREE.CylinderGeometry(3.5, 3.6, 2.2, 16).rotateX(Math.PI / 2).translate(0, 0, 1.1),
+    new THREE.CylinderGeometry(3.75, 3.75, 0.3, 16).rotateX(Math.PI / 2).translate(0, 0, 2.35),
+    new THREE.SphereGeometry(3.4, 16, 9, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 1, 1.1).translate(0, 0, 2.45),
+    new THREE.CylinderGeometry(0.85, 0.95, 1.5, 10).rotateX(Math.PI / 2).translate(0, 0, 6.4),
+    new THREE.SphereGeometry(0.8, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 0, 7.1),
+    new THREE.CylinderGeometry(0.05, 0.07, 1.4, 5).rotateX(Math.PI / 2).translate(0, 0, 8.3),
+  ]);
+}
+
+/** A clock stage: a square lantern with a face on each side, under a pyramid. */
+function clockTowerGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [
+    new THREE.BoxGeometry(4.4, 4.4, 0.4).translate(0, 0, 0.2),
+    new THREE.BoxGeometry(3.8, 3.8, 4.2).translate(0, 0, 2.4),
+    new THREE.BoxGeometry(4.5, 4.5, 0.35).translate(0, 0, 4.65),
+    new THREE.ConeGeometry(3.3, 3.6, 4).rotateX(Math.PI / 2).rotateZ(Math.PI / 4).translate(0, 0, 6.6),
+    new THREE.CylinderGeometry(0.04, 0.05, 1.6, 5).rotateX(Math.PI / 2).translate(0, 0, 9.0),
+  ];
+  // the four faces, standing just proud of the wall so they catch their own light
+  for (let i = 0; i < 4; i++) {
+    const th = (i / 4) * Math.PI * 2;
+    parts.push(new THREE.CylinderGeometry(1.25, 1.25, 0.16, 14)
+      .rotateZ(Math.PI / 2).rotateZ(th).translate(Math.cos(th) * 1.94, Math.sin(th) * 1.94, 2.6));
+  }
+  return mergeGeoms(parts);
+}
+
+/** A church steeple: an octagonal belfry and a tall broach spire over it. */
+function steepleGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [
+    new THREE.BoxGeometry(3.4, 3.4, 2.6).translate(0, 0, 1.3),
+    new THREE.CylinderGeometry(1.65, 1.85, 3.2, 8).rotateX(Math.PI / 2).translate(0, 0, 4.2),
+  ];
+  for (let i = 0; i < 4; i++) {
+    const th = (i / 4) * Math.PI * 2 + Math.PI / 8;
+    parts.push(new THREE.BoxGeometry(0.5, 0.16, 1.9).rotateZ(th).translate(Math.cos(th) * 1.6, Math.sin(th) * 1.6, 4.3));
+  }
+  parts.push(new THREE.ConeGeometry(1.9, 9.5, 8).rotateX(Math.PI / 2).translate(0, 0, 10.6));
+  parts.push(new THREE.CylinderGeometry(0.04, 0.055, 1.9, 5).rotateX(Math.PI / 2).translate(0, 0, 16.2));
+  return mergeGeoms(parts);
+}
+
+/** A pergola over a roof terrace: posts, beams, and slats across them. */
+function pergolaGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  for (const [x, y] of [[-2.6, -1.7], [2.6, -1.7], [-2.6, 1.7], [2.6, 1.7]]) {
+    parts.push(new THREE.BoxGeometry(0.16, 0.16, 2.5).translate(x, y, 1.25));
+  }
+  parts.push(new THREE.BoxGeometry(5.6, 0.14, 0.2).translate(0, -1.7, 2.55));
+  parts.push(new THREE.BoxGeometry(5.6, 0.14, 0.2).translate(0, 1.7, 2.55));
+  for (let i = 0; i < 8; i++) parts.push(new THREE.BoxGeometry(0.1, 3.7, 0.13).translate(i * 0.72 - 2.52, 0, 2.68));
+  return mergeGeoms(parts);
+}
+
+/** A run of roof planters, with the hedge in them. */
+function planterRowGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  for (let i = 0; i < 4; i++) {
+    parts.push(new THREE.BoxGeometry(1.5, 0.75, 0.55).translate(i * 1.7 - 2.55, 0, 0.27));
+    parts.push(new THREE.SphereGeometry(0.52, 7, 5).scale(1.25, 0.75, 0.72).translate(i * 1.7 - 2.55, 0, 0.88));
+  }
+  return mergeGeoms(parts);
+}
+
+/** A helipad: the deck, its perimeter kerb, and the H. */
+function helipadGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [
+    new THREE.CylinderGeometry(5.4, 5.4, 0.22, 22).rotateX(Math.PI / 2).translate(0, 0, 0.11),
+    new THREE.TorusGeometry(4.9, 0.09, 4, 24).translate(0, 0, 0.25),
+    new THREE.BoxGeometry(0.42, 3.0, 0.05).translate(-1.1, 0, 0.25),
+    new THREE.BoxGeometry(0.42, 3.0, 0.05).translate(1.1, 0, 0.25),
+    new THREE.BoxGeometry(2.2, 0.42, 0.05).translate(0, 0, 0.25),
+  ];
+  return mergeGeoms(parts);
+}
+
+/** A rooftop greenhouse: a low glazed gable on a kerb. */
+function greenhouseGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [
+    new THREE.BoxGeometry(6.2, 3.4, 0.3).translate(0, 0, 0.15),
+    new THREE.BoxGeometry(6.0, 3.2, 1.5).translate(0, 0, 1.05),
+  ];
+  parts.push(new THREE.BoxGeometry(6.0, 1.85, 0.14).rotateX(0.62).translate(0, -0.82, 2.16));
+  parts.push(new THREE.BoxGeometry(6.0, 1.85, 0.14).rotateX(-0.62).translate(0, 0.82, 2.16));
+  return mergeGeoms(parts);
+}
+
+/** A row of whirlybird ventilators on a shed roof. */
+function ventTurbineGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  for (let i = 0; i < 4; i++) {
+    const x = i * 1.85 - 2.77;
+    parts.push(new THREE.CylinderGeometry(0.30, 0.34, 0.5, 8).rotateX(Math.PI / 2).translate(x, 0, 0.25));
+    parts.push(new THREE.SphereGeometry(0.42, 9, 6).scale(1, 1, 0.78).translate(x, 0, 0.78));
+  }
+  return mergeGeoms(parts);
+}
+
+/** A flagpole, with the truck and a furled flag at the head. */
+function flagpoleGeom(): THREE.BufferGeometry {
+  return mergeGeoms([
+    new THREE.CylinderGeometry(0.5, 0.62, 0.4, 10).rotateX(Math.PI / 2).translate(0, 0, 0.2),
+    new THREE.CylinderGeometry(0.075, 0.13, 9.5, 7).rotateX(Math.PI / 2).translate(0, 0, 5.1),
+    new THREE.SphereGeometry(0.17, 8, 6).translate(0, 0, 9.95),
+    new THREE.BoxGeometry(0.05, 1.5, 0.9).translate(0, 0.78, 9.1),
+  ]);
+}
+
+/** A lattice communications mast with crossarms and a beacon. */
+function antennaArrayGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  for (const [x, y] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]) {
+    parts.push(new THREE.BoxGeometry(0.11, 0.11, 12.0).translate(x * 0.85, y * 0.85, 6.0));
+  }
+  for (let i = 0; i < 6; i++) {
+    parts.push(new THREE.BoxGeometry(1.5, 1.5, 0.07).translate(0, 0, 1.4 + i * 1.9));
+  }
+  for (let i = 0; i < 3; i++) {
+    const z = 6.2 + i * 2.1;
+    parts.push(new THREE.BoxGeometry(4.0, 0.09, 0.09).translate(0, 0, z));
+    parts.push(new THREE.BoxGeometry(0.16, 0.16, 1.0).translate(-1.85, 0, z + 0.5));
+    parts.push(new THREE.BoxGeometry(0.16, 0.16, 1.0).translate(1.85, 0, z + 0.5));
+  }
+  parts.push(new THREE.SphereGeometry(0.24, 8, 6).translate(0, 0, 12.3));
+  return mergeGeoms(parts);
+}
+
+/** Three satellite dishes on their frames, all looking the same way. */
+function dishFarmGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  for (let i = 0; i < 3; i++) {
+    const x = i * 2.4 - 2.4;
+    parts.push(new THREE.BoxGeometry(1.1, 1.1, 0.22).translate(x, 0, 0.11));
+    parts.push(new THREE.CylinderGeometry(0.13, 0.15, 1.2, 7).rotateX(Math.PI / 2).translate(x, 0, 0.8));
+    parts.push(new THREE.SphereGeometry(1.0, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2)
+      .scale(1, 1, 0.42).rotateX(-0.85).translate(x, 0, 1.7));
+  }
+  return mergeGeoms(parts);
+}
+
+/** The window-washing rig: a track along the parapet and the davit on it. */
+function davitGeom(): THREE.BufferGeometry {
+  return mergeGeoms([
+    new THREE.BoxGeometry(8.5, 0.2, 0.16).translate(0, 0, 0.08),
+    new THREE.BoxGeometry(1.5, 1.1, 0.55).translate(0, 0, 0.44),
+    new THREE.BoxGeometry(0.16, 0.16, 2.4).translate(0, 0, 1.9),
+    new THREE.BoxGeometry(0.14, 2.6, 0.14).translate(0, -1.1, 3.05),
+    new THREE.BoxGeometry(0.9, 0.5, 0.35).translate(0, -2.2, 2.7),
+  ]);
+}
+
+/** Rooftop sign letters on their steel frame, facing the long way. */
+function roofSignGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [
+    new THREE.BoxGeometry(9.0, 0.18, 2.3).translate(0, 0, 2.6),
+  ];
+  for (let i = 0; i < 4; i++) {
+    parts.push(new THREE.BoxGeometry(0.14, 0.14, 1.6).translate(i * 2.6 - 3.9, 0, 0.8));
+    parts.push(new THREE.BoxGeometry(0.12, 1.3, 0.12).rotateX(0.7).translate(i * 2.6 - 3.9, 0.5, 1.2));
+  }
+  return mergeGeoms(parts);
+}
+
+/** The steel water tank on its tower, with the ladder cage up one leg. */
+function tankTowerGeom(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  for (const [x, y] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5]]) {
+    parts.push(new THREE.BoxGeometry(0.19, 0.19, 6.2).translate(x, y, 3.1));
+  }
+  for (let i = 0; i < 2; i++) {
+    parts.push(new THREE.BoxGeometry(3.2, 0.1, 0.1).translate(0, -1.5, 2.0 + i * 2.2));
+    parts.push(new THREE.BoxGeometry(3.2, 0.1, 0.1).translate(0, 1.5, 2.0 + i * 2.2));
+  }
+  parts.push(new THREE.CylinderGeometry(2.3, 2.3, 3.4, 14).rotateX(Math.PI / 2).translate(0, 0, 7.9));
+  parts.push(new THREE.ConeGeometry(2.45, 1.3, 14).rotateX(Math.PI / 2).translate(0, 0, 10.2));
+  parts.push(new THREE.TorusGeometry(0.42, 0.05, 4, 8).rotateY(Math.PI / 2).translate(1.5, -1.5, 4.4));
+  return mergeGeoms(parts);
+}
+
+/** A parapet urn on its plinth — the cornice-level ornament of a good address. */
+function urnGeom(): THREE.BufferGeometry {
+  return mergeGeoms([
+    new THREE.BoxGeometry(1.0, 1.0, 0.55).translate(0, 0, 0.27),
+    new THREE.CylinderGeometry(0.30, 0.42, 0.35, 10).rotateX(Math.PI / 2).translate(0, 0, 0.72),
+    new THREE.SphereGeometry(0.52, 10, 7).scale(1, 1, 1.25).translate(0, 0, 1.36),
+    new THREE.CylinderGeometry(0.44, 0.30, 0.30, 10).rotateX(Math.PI / 2).translate(0, 0, 2.05),
+  ]);
 }
 
 function mergeGeoms(geoms: THREE.BufferGeometry[]): THREE.BufferGeometry {

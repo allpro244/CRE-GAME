@@ -62,21 +62,51 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   if (prod.minCondition === "good" && gradeOf(s, rec) !== "good") {
     return { principal: 0, ratePct: 0, equity: price + closing, capPremium: 0, bind: "condition" as const, ltvCap: prod.ltv, uwDscr: prod.uwDscr };
   }
-  const q = quote(s, prod, price, noiAfterTaxYr(rec, s.econ, gradeOf(s, rec), price), rec.class);
+  // THE LESSER OF COST OR VALUE — the single most important rule in
+  // acquisition underwriting, and it was entirely absent.
+  //
+  // This sized the loan on the PRICE PAID and nothing else, so overpaying by
+  // forty per cent borrowed forty per cent more. That is exactly backwards. A
+  // lender orders their OWN appraisal and advances against the LESSER of that
+  // appraisal and the purchase price, because their collateral is the
+  // building, not your enthusiasm for it. Every dollar above the appraisal is
+  // funded with equity — which is what makes overpaying hurt at the closing
+  // table rather than five years later, and is the reason a bidding war is a
+  // real decision instead of a free one.
+  //
+  // The NOI is underwritten off the same basis for the same reason: a
+  // coverage test struck against a price nobody but you believes in is not a
+  // test. And it cuts only one way — pay UNDER the appraisal and the lender
+  // still only lends against what you paid, because the deal is the best
+  // evidence of value there is. That asymmetry is the rule, not a penalty.
+  const appraised = assetValue(rec, s.econ, gradeOf(s, rec));
+  const uwBasis = appraised > 0 ? Math.min(price, appraised) : price;
+  const overpay = Math.max(0, price - uwBasis);
+  const q = quote(s, prod, uwBasis, noiAfterTaxYr(rec, s.econ, gradeOf(s, rec), uwBasis), rec.class);
   const principal = Math.round(q.principal * Math.max(0, Math.min(1, lev)));
   // WHAT ACTUALLY LIMITED THE LOAN. The desk sizes on three tests and takes
   // the smallest: the advance rate, the coverage ratio, and the debt yield.
   // The engine has always known which one bound and never told anybody, which
   // is why a 72% lender quoting 47% looked arbitrary rather than arithmetical.
-  const capped = prod.ltv * price;
+  const capped = prod.ltv * uwBasis;
   // Floating paper closes with a rate cap the lender insists on, and the
   // premium is part of the equity cheque — the cheaper coupon is not free.
   const prod2 = productById(product);
   const capPremium = prod2.floating ? Math.round(principal * 0.0125) : 0;
   return {
     principal, ratePct: q.ratePct, equity: price - principal + closing + capPremium, capPremium,
-    bind: q.dscrConstrained ? "dscr" : q.dyConstrained ? "dy" : q.principal < capped * 0.995 ? "credit" : "ltv",
+    // APPRAISAL OUTRANKS THE THREE UNDERWRITING TESTS when it is what bound,
+    // because it is not a fact about the building — it is a fact about what
+    // you agreed to pay. Telling somebody "advance rate" when the truth is
+    // "you are over the appraisal" sends them off to fix the wrong thing.
+    bind: overpay > price * 0.005 ? "appraisal"
+      : q.dscrConstrained ? "dscr"
+      : q.dyConstrained ? "dy"
+      : q.principal < capped * 0.995 ? "credit"
+      : "ltv",
     ltvCap: prod.ltv, uwDscr: prod.uwDscr,
+    /** What the lender underwrote, and how far over it you are going. */
+    appraised, uwBasis, overpay,
   };
 }
 

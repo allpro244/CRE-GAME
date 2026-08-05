@@ -2013,7 +2013,11 @@ function BuyButtons({ bbl, price, off, closeLabel }: { bbl: string; price: numbe
           with the index, which is exactly the thing worth understanding. */}
       {max.principal > 0 && (
         <div className="hint">
-          {max.bind === "ltv"
+          {max.bind === "appraisal"
+            ? `The lender underwrote ${usd(max.uwBasis ?? 0)}, not your ${usd(offerPrice)} — they ordered their own appraisal and it came back at ${usd(max.appraised ?? 0)}. `
+              + `They advance against the LESSER of that and what you agreed to pay, so the ${usd(max.overpay ?? 0)} above it is entirely yours. `
+              + `Their collateral is the building, not your enthusiasm for it.`
+            : max.bind === "ltv"
             ? `Sized at this lender's ${(max.ltvCap * 100).toFixed(0)}% advance rate — the ceiling, and the income clears it comfortably.`
             : max.bind === "dscr"
               ? `Their advance rate is ${(max.ltvCap * 100).toFixed(0)}%, but you are getting ${((max.principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% — COVERAGE is binding, not leverage. `

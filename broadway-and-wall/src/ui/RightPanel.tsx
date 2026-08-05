@@ -2331,9 +2331,10 @@ function DevelopSection({ bbl }: { bbl: string }) {
         <div className="grid" style={{ margin: "4px 0 2px" }}>
           <Row
             k="Equity required"
-            v={`${usd(equityRequired)} of ${usd(plan.costTotal)} all in`}
+            v={`${usd(equityRequired)} of ${usd(plan.basisTotal)} all in · $${(plan.basisTotal / Math.max(1, plan.sf)).toFixed(0)}/sf`}
             strong
             bad={!canFund}
+            title="All in is land, construction, contingency, the lease-up and interest reserves and the origination fee. The dirt is already paid for, so it is not part of the equity you still have to write — but it is part of what this building has cost you when it opens."
           />
         </div>
       )}
@@ -2507,13 +2508,36 @@ function DevelopSection({ bbl }: { bbl: string }) {
             {plan.demo > 0 && <Row k="Demolition" v={usd(plan.demo)} />}
             <Row k="Contingency" v={`${usd(plan.contingency)} · yours if unspent`} />
             <Row k="Lease-up reserve" v={`${usd(plan.leaseUp)} · fit-out, commissions and carry until it is full`} />
-            <Row k="All in" v={`${usd(plan.costTotal)} · $${(plan.costTotal / Math.max(1, plan.sf)).toFixed(0)}/sf`} strong />
+            {/* THE ROW LABELLED "ALL IN" WAS NOT ALL IN.
+                It showed costTotal — hard, soft, demolition, contingency and
+                the lease-up reserve — which leaves out the two largest things
+                a developer's all-in number exists to include: the dirt, and
+                the cost of financing it. The yield on cost three rows down was
+                already dividing by basisTotal, which has both. So the panel
+                was showing one number called "all in" and computing the
+                headline metric off a different, bigger one, and a player
+                checking the arithmetic could not make them meet. */}
+            <Row k="Cost to build" v={`${usd(plan.costTotal)} · $${(plan.costTotal / Math.max(1, plan.sf)).toFixed(0)}/sf`} />
             <Row
               k={`Construction loan (${Math.round(plan.ltc * 100)}% of cost)`}
               v={plan.commitment > 0 ? `${usd(plan.commitment)} @ ${pct(plan.ratePct)} · ${plan.lender} · ${(plan.points * 100).toFixed(1)} pts (${usd(plan.pointsCost)}) at close` : "none — nobody will fund it"}
               bad={plan.commitment === 0 && plan.ltcMax > 0 && ltcWant > 0}
             />
             <Row k="Interest reserve" v={plan.interestReserve > 0 ? `${usd(plan.interestReserve)} — the lender carries it, not you` : "—"} />
+            {/* The dirt is sunk — you already wrote that cheque — but it is the
+                first and least recoverable dollar in the deal and it is why a
+                corner that rents for twice as much does not build for twice
+                the profit. It belongs in the denominator, so it belongs on the
+                page. */}
+            <Row k="Land in the basis" v={`${usd(plan.landBasis)} · $${(plan.landBasis / Math.max(1, plan.sf)).toFixed(0)}/sf of building`} />
+            <Row
+              k="ALL IN"
+              v={`${usd(plan.basisTotal)} · $${(plan.basisTotal / Math.max(1, plan.sf)).toFixed(0)}/sf`}
+              strong
+              title={"Land, construction, contingency, the lease-up reserve, the interest reserve and the origination fee — everything that has to be spent before this building is worth what it is worth. "
+                + "This is the number the yield on cost below divides by, and the one to hold against what finished buildings on this street actually trade for per square foot: "
+                + `build at $${(plan.basisTotal / Math.max(1, plan.sf)).toFixed(0)}/sf into a market that pays less than that and the spread is negative before you start.`}
+            />
             {/* The two numbers that decide whether this is a development or a
                 donation: what it yields on what it costs, against what the
                 market will pay for it when it is finished. */}
@@ -2716,7 +2740,21 @@ function PropertyPage() {
           <div className="page-section-head">Under construction</div>
           <div className="grid">
             <Row k="Program" v={`${sf(dev.sf)} of ${dev.use} · ${dev.floors} floors`} strong />
+            {/* THE BUDGET MOVES, AND SO DOES THE NUMBER THAT MATTERS.
+                A job under way is not the job that was approved: change orders
+                and cost-plus escalation grow costTotal every month it runs.
+                Showing the budget alone made that invisible — the all-in per
+                foot is the number a developer watches drift, because it is the
+                one that decides whether the building is still worth finishing.
+                Land is included for the same reason it is in the plan: it is
+                in the basis the yield was underwritten against. */}
             <Row k="Budget" v={usd(dev.costTotal)} />
+            <Row
+              k="All in so far"
+              v={`${usd(dev.costTotal + (dev.landBasis ?? 0) + dev.interestReserve)} · $${((dev.costTotal + (dev.landBasis ?? 0) + dev.interestReserve) / Math.max(1, dev.sf)).toFixed(0)}/sf`}
+              strong
+              title="Land, construction as it stands today including every change order booked so far, and the interest reserve. Compare it to what finished buildings on this street trade for per square foot — if the budget has drifted past that, the building is worth less than it costs to finish."
+            />
             {/* Financed with the job, spent on tenants rather than steel, and
                 paid across as cash the day the building opens. */}
             {(dev.leaseUpReserve ?? 0) > 0 && (
@@ -3131,7 +3169,17 @@ function ResidualRead({ bbl }: { bbl: string }) {
     if (!p || p.sf < 2000) continue;
     const noi = (p.yieldOnCost / 100) * p.basisTotal;
     const val = noi / Math.max(0.02, p.exitCap / 100);
-    const buildAllIn = p.costTotal - p.landBasis;
+    // COST OF THE BUILDING, WITHOUT THE DIRT — which is basisTotal less the
+    // land, NOT costTotal less the land. costTotal never contained land in the
+    // first place, so subtracting it took the site out of a number it was
+    // never in and understated the build by the whole land basis. On an
+    // expensive corner it went NEGATIVE: this panel was reading "$-427/sf
+    // all-in to build" on a lot with $8.95M of dirt under it, which is how it
+    // was found. And because the residual is value less the build, every
+    // vacant lot in the game was quoting a residual to the dirt overstated by
+    // exactly what the dirt already cost — the one number on this card a
+    // player prices land from.
+    const buildAllIn = p.basisTotal - p.landBasis;
     const resid = val * (1 - PROFIT) - buildAllIn;
     const cand = { label: c.label, valPsf: val / p.sf, costPsf: buildAllIn / p.sf, resid };
     if (!best || cand.resid > best.resid) best = cand;
@@ -7183,11 +7231,11 @@ function Neighbourhood({ bbl, block }: { bbl: string; block: string }) {
   );
 }
 
-function Row({ k, v, strong, bad }: { k: string; v: string; strong?: boolean; bad?: boolean }) {
+function Row({ k, v, strong, bad, title }: { k: string; v: string; strong?: boolean; bad?: boolean; title?: string }) {
   return (
     <>
-      <div className="k">{k}</div>
-      <div className={"v mono" + (strong ? " v-strong" : "") + (bad ? " v-bad" : "")}>{v}</div>
+      <div className="k" title={title}>{k}</div>
+      <div className={"v mono" + (strong ? " v-strong" : "") + (bad ? " v-bad" : "")} title={title}>{v}</div>
     </>
   );
 }

@@ -438,6 +438,17 @@ export interface Development {
   // The loan does not land in your account on day one. Equity goes in first,
   // then the bank funds draws against work in place, and the interest on what
   // has been drawn is paid out of a reserve inside the loan until it runs dry.
+  /**
+   * WHAT THE DIRT COST, frozen at groundbreak.
+   *
+   * The plan underwrites yield on cost against land plus construction, and
+   * once the job is running the holding's costBasis is the only record of the
+   * land half — which stops being true the moment the building delivers and
+   * the construction cost is added to it. Carrying it on the job means the
+   * all-in figure on a half-built building is the same all-in figure the deal
+   * was approved on, plus whatever the budget has drifted since.
+   */
+  landBasis?: number;
   /** Which desk wrote the facility. Older saves carry none — the regional, the historical default. */
   lender?: string;
   /**

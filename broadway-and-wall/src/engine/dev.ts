@@ -788,7 +788,17 @@ export function planDevelopment(
   const stabOcc = overMix(mix, (u) => (u === "multifamily" ? 0.95 : 0.9));
   const opex = overMix(mix, (u) => opexPsf(u, s.econ, false));
   const recovery = overMix(mix, (u) => RECOVERY_RATE[u]);
-  const basisTotal = basisTotal0 + interestReserve;
+  // ORIGINATION IS A COST OF THE PROJECT, not a fee that happens next to it.
+  // The interest reserve was already in here for exactly this reason; the
+  // points are the same kind of money — a line in every development budget,
+  // paid in cash at close, capitalised into project cost by every developer
+  // who has ever filled one in. Leaving them out understated the basis by
+  // about a point of the loan and made yield on cost fractionally generous on
+  // every deal in the game. It is computed here rather than added to
+  // costTotal because the commitment is sized off costTotal — putting it
+  // upstream would be circular.
+  const pointsCost = commitment > 0 ? Math.round(commitment * cq.points) : 0;
+  const basisTotal = basisTotal0 + interestReserve + pointsCost;
   const taxLoad = basisTotal * TAX_RATE * (1 - recovery);
   const stabNoi = sf * (rentPsf * stabOcc - opex * (1 - recovery * stabOcc)) - taxLoad;
   // The exit is what THIS building will trade at — new, in good condition, on
@@ -809,7 +819,7 @@ export function planDevelopment(
     far: +(gsf / rec.lotArea).toFixed(1), farMax,
     hardCost, softCost, contingency, demo, leaseUp, costTotal, landBasis, basisTotal,
     ltc, ltcMax, commitment, interestReserve, ratePct,
-    lender: cq.lender, points: cq.points, pointsCost: commitment > 0 ? Math.round(commitment * cq.points) : 0,
+    lender: cq.lender, points: cq.points, pointsCost,
     equity: projectCost - commitment,
     // Equity funds FIRST. The bank does not release a dollar until yours are
     // in the ground, which is why a development eats your balance sheet at the
@@ -914,6 +924,7 @@ export function startDevelopment(
     bbl, use, mix: plan.mix, sf: plan.sf, floors: plan.floors,
     suites: custom?.suites,
     costTotal: plan.costTotal, hardCost: plan.hardCost, contract,
+    landBasis: plan.landBasis,
     contingency: plan.contingency, contingencyUsed: 0,
     lender: plan.lender,
     commitment: plan.commitment, drawn: 0, loanBalance: 0,
@@ -970,6 +981,8 @@ export function takeoverDevelopment(
   s.developments[bbl] = {
     bbl, use, mix: plan.mix, sf: half.sf, floors,
     costTotal: remaining, hardCost: Math.round(remaining * 0.8), contract: "gmp",
+    // A takeover buys the frame; what the buyer paid for the site IS their land basis.
+    landBasis: s.holdings[bbl]?.costBasis ?? plan.landBasis,
     contingency: Math.round(remaining * CONTINGENCY), contingencyUsed: 0,
     commitment, drawn: 0, loanBalance: 0,
     interestReserve: Math.round(commitment * 0.05), reserveUsed: 0,

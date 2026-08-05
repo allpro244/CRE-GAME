@@ -109,6 +109,22 @@ body {
   padding: 7px 10px; border: none; border-radius: 4px; background: none;
   cursor: pointer; text-align: left; font: inherit;
 }
+/* THE NEW-CITY MENU IS ANCHORED TO THE WINDOW, NOT TO ITS BUTTON.
+   Anchoring it to the button's right edge is only correct while the button is
+   on the right, and it is not: below about 1500px the control row wraps and
+   that button lands near the LEFT of a second row, which put a 300px menu at
+   x = -68 with its first two words off the screen. Fixed to the viewport's
+   right edge under the measured bar height, it is on screen at every width
+   this bar has. */
+.city-menu-right {
+  position: fixed; left: auto; right: 12px; top: calc(var(--topbar-h, 60px) + 4px);
+  min-width: 300px; max-width: min(360px, calc(100vw - 24px));
+}
+.city-menu-head {
+  padding: 4px 10px 6px; font-size: 10.5px; letter-spacing: 0.6px;
+  text-transform: uppercase; color: var(--ink-dim); border-bottom: 1px solid #ddd6c2; margin-bottom: 3px;
+}
+.city-locked { cursor: default; }
 .city-item:hover { background: rgba(176, 127, 30, 0.12); }
 .city-item-on { background: rgba(176, 127, 30, 0.18); }
 .city-item-name { font-size: 13px; font-weight: 600; color: var(--ink); letter-spacing: 0.3px; }
@@ -586,7 +602,11 @@ body {
    which meant that on any window under 1560px wide, which is most laptops,
    the only control that switches city simply was not there. A label is fair
    to drop for space. A control is not. */
-@media (max-width: 1900px) { .brand-sub:not(.city-pick-btn) { display: none; } .badge { display: none; } }
+/* ...and the town you are LOCKED INTO is not a decoration either. Once a game
+   starts the picker becomes a label, and that label is the only place the
+   answer to "which town is this" appears. Dropping it for width would leave
+   the permanent fact about a campaign invisible on every laptop. */
+@media (max-width: 1900px) { .brand-sub:not(.city-pick-btn):not(.city-locked) { display: none; } .badge { display: none; } }
 /* THE BAR SHEDS READOUTS, NEVER CONTROLS.
    .topbar-game is nowrap with eight readouts, six nav buttons, two lenses and
    three advance buttons in it. At 1280 — a MacBook, a 1366x768 laptop, any

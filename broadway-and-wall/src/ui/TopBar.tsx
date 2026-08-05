@@ -24,11 +24,13 @@ export default function TopBar() {
   // look, not a count of everything ever written.
   const unread = game ? game.news.filter((n) => n.q === game.month && (n.kind === "warn" || n.kind === "event")).length : 0;
 
-  // The city menu. Six towns ship side by side; each keeps its own autosave,
-  // so this is a switch between campaigns, not a reset of one.
+  // The islands that ship. This used to be a live switch between campaigns for
+  // the whole run; it is now the choice you make when a run begins, and the
+  // one you make again when you end one. See the two menus below.
   const [cities, setCities] = useState<CityInfo[]>([]);
   const [cityOpen, setCityOpen] = useState(false);
   const cityRef = useRef<HTMLDivElement>(null);
+  const newRunRef = useRef<HTMLDivElement>(null);
 
   /* THE BAR PUBLISHES ITS OWN HEIGHT.
      Everything that hangs below it — the parcel panel, the page overlays, the
@@ -60,6 +62,16 @@ export default function TopBar() {
     window.addEventListener("mousedown", close);
     return () => window.removeEventListener("mousedown", close);
   }, [cityOpen]);
+  // The armed New-city menu disarms the same way, so a click anywhere else is
+  // never one click away from erasing a campaign.
+  useEffect(() => {
+    if (!armNewRun) return;
+    const close = (e: MouseEvent) => {
+      if (newRunRef.current && !newRunRef.current.contains(e.target as Node)) setArmNewRun(false);
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [armNewRun]);
 
   return (
     <div className="topbar" ref={barRef}>
@@ -81,11 +93,21 @@ export default function TopBar() {
             })()}
           </span>
         )}
-        {cities.length > 1 ? (
+        {/* YOU DO NOT GET TO CHANGE TOWNS MID-CAMPAIGN.
+            The picker used to be live for the whole run, and every island kept
+            its own autosave, so a bad decade in one town was two clicks away
+            from a fresh start in another and the town you were "playing" was
+            never a commitment. A city you are stuck with is the premise of the
+            game: the submarket you misread is the submarket you have to trade
+            your way out of.
+            The choice does not disappear, it moves to where it belongs — the
+            start of a run. See the New city button, which already asks twice
+            before erasing anything. */}
+        {cities.length > 1 && !game ? (
           <div className="city-pick" ref={cityRef}>
             <button
               className="brand-sub city-pick-btn"
-              title={`Switch island — each keeps its own campaign and autosave.\nThis town was built from seed ${game?.citySeed ?? currentSeed()}; "New city" rolls another one on the same island.`}
+              title={`Choose an island. Once a game starts this is fixed for its life — changing towns means starting over.\nThis town was built from seed ${currentSeed()}.`}
               onClick={() => setCityOpen((v) => !v)}
             >
               {manifest?.city ?? currentCity()} ▾
@@ -105,6 +127,14 @@ export default function TopBar() {
               </div>
             )}
           </div>
+        ) : game ? (
+          <span
+            className="brand-sub city-locked"
+            title={`You are playing ${manifest?.city ?? currentCity()}, built from seed ${game.citySeed ?? currentSeed()}. `
+              + `A campaign belongs to its town — to play a different one, start a new game.`}
+          >
+            {manifest?.city ?? currentCity()}
+          </span>
         ) : (
           <span className="brand-sub">
             {manifest?.city ?? (manifest?.district === "MN" ? "Manhattan" : "Lower Manhattan · CD 1")}
@@ -252,17 +282,39 @@ export default function TopBar() {
             or "prevent this page from creating dialogs" ticked once) make
             confirm() return false silently and forever — the button reads as
             dead. A two-click arm-then-fire needs nothing from the browser. */}
-        <button
-          className={"lens-btn" + (armNewRun ? " lens-on" : "")}
-          title="Start over — and a brand new town on the same island: every block re-cut, every lot line new, every building somewhere else. No holdings, $6M cash."
-          onClick={() => {
-            if (!armNewRun) { setArmNewRun(true); setTimeout(() => setArmNewRun(false), 4000); return; }
-            setArmNewRun(false);
-            useStore.getState().newRun();
-          }}
-        >
-          {armNewRun ? "Erase this game?" : "↺ New city"}
-        </button>
+        {/* THE ISLAND IS CHOSEN HERE, because this is the only moment choosing
+            it is a decision rather than an escape hatch. Arming the button
+            offers the other towns alongside "yes, this one again" — the same
+            two-click safety as before, with the choice the top-left picker
+            used to hand out mid-campaign. */}
+        <div className="city-pick" ref={newRunRef}>
+          <button
+            className={"lens-btn" + (armNewRun ? " lens-on" : "")}
+            title="Start over. A brand new town — every block re-cut, every lot line new, every building somewhere else — and a chance to pick a different island. No holdings, $6M cash."
+            onClick={() => {
+              if (!armNewRun) { setArmNewRun(true); setTimeout(() => setArmNewRun(false), 8000); return; }
+              setArmNewRun(false);
+              useStore.getState().newRun();
+            }}
+          >
+            {armNewRun ? "Erase this game?" : "↺ New city"}
+          </button>
+          {armNewRun && cities.length > 1 && (
+            <div className="city-menu city-menu-right">
+              <div className="city-menu-head">or start over somewhere else</div>
+              {cities.filter((c) => c.id !== currentCity()).map((c) => (
+                <button
+                  key={c.id}
+                  className="city-item"
+                  onClick={() => { setArmNewRun(false); useStore.getState().newRun(c.id); }}
+                >
+                  <span className="city-item-name">{c.name}</span>
+                  <span className="city-item-tag">{c.tagline}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <span className={"stat mono " + (fps >= 55 ? "fps-good" : fps >= 30 ? "fps-ok" : "fps-bad")}>
           {fps} fps
         </span>

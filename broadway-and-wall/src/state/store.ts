@@ -17,7 +17,7 @@ import { hire, fire, refreshPool, POOL_REFRESH_M } from "@/engine/staff";
 import { normalizeParcels } from "@/engine/mix";
 import { netWorth } from "@/engine/value";
 import { loadGame, saveGame, listSaves, deleteSave, type SaveMeta } from "@/engine/save";
-import { currentCity, currentSeed, setSeed, rerollCity } from "@/state/city";
+import { currentCity, currentSeed, setSeed, rerollCity, setCity } from "@/state/city";
 import { makeCity, type GeneratedCity } from "@/citygen/index.mjs";
 
 export type Lens = "none" | "land" | "demand" | "owners";
@@ -135,7 +135,7 @@ interface AppState {
   hireStaff: (candidateId: number) => void;
   fireStaff: (staffId: number) => void;
   postJob: () => void;
-  newRun: () => void;
+  newRun: (island?: string) => void;
   devGrant: () => void;
   saveTo: (slot: string) => Promise<void>;
   loadFrom: (slot: string) => Promise<void>;
@@ -898,14 +898,25 @@ export const useStore = create<AppState>((set, get) => ({
    * parcel table, the adjacency graph, four map sources and the skyline
    * underneath a live game.
    */
-  newRun: () => {
+  newRun: (island?: string) => {
     // The autosave is the authority on which town you are in — it was played
     // there — so rolling a new seed without clearing it means the reload puts
     // you straight back in the old city. Erasing the game and rolling the town
     // are the same act, and the button already says so.
-    rerollCity();
-    void deleteSave(AUTO())
+    //
+    // AND THE ISLAND IS PART OF STARTING OVER, not something you change while
+    // playing. Picking one here clears THAT island's autosave before switching
+    // to it, because "start a new game in Havenport" has to mean a new game —
+    // switchCity on its own drops you into whatever campaign was left running
+    // there, which is the flipping-between-towns this whole change removes.
+    const from = AUTO();                                    // the game being erased
+    const target = island && island !== currentCity() ? island : undefined;
+    if (target) setCity(target);
+    const to = AUTO();                                      // where we are starting
+    rerollCity();                                           // rolls a town on `to`
+    void deleteSave(from)
       .catch(() => { /* nothing saved: nothing to clear */ })
+      .then(() => (to === from ? undefined : deleteSave(to).catch(() => {})))
       .then(() => location.reload());
   },
 }));

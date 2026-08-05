@@ -53,10 +53,23 @@ export function rerollCity(): number {
   return seed;
 }
 
-export function switchCity(id: string): void {
+/**
+ * Which island this browser is on, WITHOUT reloading.
+ *
+ * switchCity does this and then reloads, which is the only thing anyone needed
+ * while you could change towns mid-game. Starting a new run on a different
+ * island needs the two halves apart: set the island, clear its autosave, roll
+ * a town on it, and reload once at the end — not twice, and not into whatever
+ * campaign happened to be sitting there.
+ */
+export function setCity(id: string): void {
   try {
     localStorage.setItem(KEY, id);
   } catch { /* private mode: the reload just lands on the default city */ }
+}
+
+export function switchCity(id: string): void {
+  setCity(id);
   location.reload();
 }
 

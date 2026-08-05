@@ -254,6 +254,36 @@ export const S_SUBSTATION = 110;  // a wall combed with louvre from top to botto
 export const S_LIGHTHOUSE = 111;  // a shaft that narrows as it rises, shaded as a cylinder, black gallery
 
 // ---------------------------------------------------------------------------
+// WHAT IS BEING BUILT NOW.
+//
+// The modern end of this registry was still thin: a tall building after 2010
+// came out of a hat of five glass skins, and the ordinary modern mid-rise came
+// out of EIFS. Neither is what a city puts up today.
+//
+// The single largest omission was the PODIUM WRAP — five storeys of timber
+// frame over a concrete podium, clad in fibre-cement panels in blocks of three
+// or four colours. It is by a wide margin the most-built building type in
+// America since 2000, it is instantly recognisable, and the game had none.
+//
+// The tower skins below differ in how the glass MEETS THE AIR — folded,
+// shingled, doubled, braced, planted — because on a building with no windows
+// to speak of and no masonry at all, that is the only thing left to read.
+export const S_SKYGARDEN = 112;   // planted terraces at every level: the tower is half foliage
+export const S_PLEATED = 113;     // the glass is FOLDED in plan, so every bay has a lit and a shaded flank
+export const S_SHINGLED = 114;    // overlapping panels each leaning out, like scales on a fish
+export const S_DOUBLESKIN = 115;  // a second glass layer with a visible cavity and walkways inside it
+export const S_MEGABRACE = 116;   // one giant cross-brace spanning eight floors, not a fine diagrid
+export const S_CHEVRON = 117;     // facets alternating left and right up the building, a zigzag in plan
+export const S_MODULAR = 118;     // stacked prefab boxes: a visible joint round every single module
+export const S_PVCLAD = 119;      // photovoltaic spandrel — near-black, glossy, and gridded
+export const S_PODIUMWRAP = 120;  // 5-over-1: fibre cement in blocks of colour over a glazed podium
+export const S_LABBLDG = 121;     // life sciences: ribbon glass under an enormous mechanical penthouse
+export const S_CREATIVE = 122;    // creative office: exposed frame and industrial-scale glazing
+export const S_MICROUNIT = 123;   // micro-apartments: the tightest window rhythm in the city
+export const S_PASSIVE = 124;     // passive house: thick walls, small deep openings, dead flat render
+export const S_MEDIAFACE = 125;   // a corner podium with an LED media band wrapping it
+
+// ---------------------------------------------------------------------------
 // TRAITS, NOT NUMBERS.
 //
 // Downstream behaviour was keyed to the numeric VALUE of a style id — `s < 8`
@@ -271,7 +301,7 @@ export const S_LIGHTHOUSE = 111;  // a shaft that narrows as it rises, shaded as
 export const T_MASONRY = [
   S_PREWAR, S_BRICK, S_MILL, S_ROMANESQUE, S_BEAUX, S_EMPIRE, S_ITALIANATE,
   S_FEDERAL, S_TENEMENT, S_CIVIC, S_CARRIAGE, S_MARKET, S_GOTHIC, S_TERRACOTTA,
-  S_CHICAGO, S_PROJECT, S_WHITEBRICK, S_EIFS,
+  S_CHICAGO, S_PROJECT, S_WHITEBRICK, S_EIFS, S_PODIUMWRAP, S_MICROUNIT, S_PASSIVE,
   S_POWERHOUSE, S_COLDSTORE, S_BREWERY, S_TEXTILE, S_PUMPHOUSE, S_DEPOT,
   S_QUEENANNE, S_TUDOR, S_MISSION, S_FIREHOUSE, S_SCHOOL, S_LIBRARY,
   S_BANKTEMPLE, S_HOTEL, S_THEATRE,
@@ -286,6 +316,8 @@ export const T_GLASSY = [
   S_GLASS, S_DARK, S_RIBBON, S_CRYSTAL, S_DIAGRID, S_CASTIRON, S_INTL,
   S_MIRROR, S_FRIT, S_SCREEN, S_BALCONY, S_MODERNE,
   S_TERRAPIER, S_UNITGLASS, S_MEGAPANEL, S_STEELSHELF,
+  S_SKYGARDEN, S_PLEATED, S_SHINGLED, S_DOUBLESKIN, S_MEGABRACE, S_CHEVRON,
+  S_PVCLAD, S_CREATIVE, S_MEDIAFACE,
 ];
 
 /** Meets the pavement as shopfronts rather than as more wall. */
@@ -296,6 +328,7 @@ export const T_TRADE = [
   S_WHITEBRICK, S_TENEMENT,
   S_TERRAPIER, S_UNITGLASS, S_MEGAPANEL, S_STEELSHELF, S_DEEPFRAME,
   S_DEPOT, S_PUMPHOUSE,
+  S_PODIUMWRAP, S_CREATIVE, S_MEDIAFACE, S_LABBLDG,
   S_THEATRE, S_DINER, S_HOTEL, S_DEPTSTORE, S_STRIPMALL, S_MISSION, S_BANKTEMPLE,
   S_FLEX, S_TWOFLAT, S_ORIEL, S_MANSIONBLK, S_SRO,
 ];
@@ -307,6 +340,7 @@ export const T_FLOORLINE = [
   S_FEDERAL, S_TENEMENT, S_CHICAGO, S_TERRACOTTA, S_MODERNE, S_CIVIC,
   S_MARKET, S_INTL, S_PRECAST, S_PROJECT, S_WHITEBRICK, S_BALCONY, S_TIMBER,
   S_EIFS, S_FRIT, S_STEELSHELF, S_MEGAPANEL, S_DEEPFRAME,
+  S_PODIUMWRAP, S_MICROUNIT, S_PASSIVE, S_LABBLDG, S_CREATIVE, S_MODULAR,
   S_POWERHOUSE, S_BREWERY, S_TEXTILE, S_FOUNDRY, S_DEPOT,
   S_QUEENANNE, S_STICK, S_TUDOR, S_MISSION, S_SCHOOL, S_LIBRARY, S_HOTEL,
   S_DEPTSTORE, S_MOTEL, S_FIREHOUSE, S_BANKTEMPLE, S_TILTUP, S_FLEX,
@@ -325,6 +359,8 @@ export const T_CAPPED_PLAIN = [
   S_GRAINHOUSE, S_GASHOLDER, S_SHIPSHED, S_DINER, S_STRIPMALL, S_MOTEL,
   S_TILTUP, S_DISTCENTER, S_FLEX, S_QUONSET, S_TRUCKTERM, S_SELFSTOR, S_DATACENTER,
   S_HANGAR, S_SUBSTATION, S_CONTROLTWR, S_LIGHTHOUSE,
+  S_SKYGARDEN, S_PLEATED, S_SHINGLED, S_DOUBLESKIN, S_MEGABRACE, S_CHEVRON,
+  S_MODULAR, S_PVCLAD, S_PODIUMWRAP, S_LABBLDG, S_CREATIVE, S_MEDIAFACE,
 ];
 
 /** Reads as a modern building when a crown is being chosen for it. */
@@ -594,7 +630,8 @@ export function stylePool(v: BuildingVolume): number[] {
     p.push(S_EIFS, S_GLASS, S_PMOD, S_BRICK);
     if (office && f >= 6) p.push(S_PMOD, S_PMOD, S_MIRROR, S_MIRROR, S_GLASS, S_DARK, S_DEEPFRAME);
     if (office && f >= 10) p.push(S_PMOD, S_DARK);
-    if (resi) p.push(S_EIFS, S_WHITEBRICK, S_BALCONY, S_BALCONY);
+    if (resi) p.push(S_EIFS, S_WHITEBRICK, S_BALCONY, S_BALCONY, S_PODIUMWRAP);
+    if (office && f >= 4) p.push(S_LABBLDG, S_CREATIVE);
     if (shop) p.push(S_EIFS, S_BIGBOX, S_METALPAN, S_STRIPMALL, S_STRIPMALL, S_TILTUP);
     if (!resi) p.push(S_HOTEL);
     if (!resi) rare(0.40, 7, S_SCHOOL, S_MUSEUM, S_HOSPITAL);
@@ -604,8 +641,12 @@ export function stylePool(v: BuildingVolume): number[] {
   }
   if (y < 2012) {
     p.push(S_GLASS, S_EIFS, S_BRICK);
-    if (office && f >= 6) p.push(S_CRYSTAL, S_CRYSTAL, S_GLASS, S_FRIT, S_SCREEN, S_DARK,
-      S_UNITGLASS, S_UNITGLASS, S_DEEPFRAME, S_MEGAPANEL);
+    if (office && f >= 6) p.push(S_CRYSTAL, S_GLASS, S_FRIT, S_SCREEN, S_DARK,
+      S_UNITGLASS, S_UNITGLASS, S_DEEPFRAME, S_MEGAPANEL,
+      S_PLEATED, S_SHINGLED, S_DOUBLESKIN, S_CHEVRON, S_LABBLDG, S_CREATIVE);
+    if (office && f >= 12) p.push(S_MEGABRACE, S_PLEATED, S_DOUBLESKIN);
+    if (resi) p.push(S_PODIUMWRAP, S_PODIUMWRAP, S_MICROUNIT);
+    if (!resi) p.push(S_MEDIAFACE);
     if (office && f >= 14) p.push(S_TERRAPIER, S_MEGAPANEL);
     if (office && f >= 20) p.push(S_DIAGRID, S_CRYSTAL);
     if (resi) p.push(S_BALCONY, S_BALCONY, S_GLASS, S_EIFS, S_BRICK);
@@ -616,11 +657,17 @@ export function stylePool(v: BuildingVolume): number[] {
   }
   // the present, which builds thinner walls and warmer ones at the same time
   p.push(S_CRYSTAL, S_FRIT, S_SCREEN, S_TIMBER);
-  if (office && f >= 6) p.push(S_CRYSTAL, S_FRIT, S_FRIT, S_SCREEN, S_SCREEN, S_TIMBER,
-    S_UNITGLASS, S_UNITGLASS, S_TERRAPIER, S_TERRAPIER, S_MEGAPANEL, S_STEELSHELF);
+  if (office && f >= 6) p.push(S_CRYSTAL, S_FRIT, S_SCREEN, S_TIMBER,
+    S_UNITGLASS, S_TERRAPIER, S_TERRAPIER, S_MEGAPANEL, S_STEELSHELF,
+    S_PLEATED, S_PLEATED, S_SHINGLED, S_DOUBLESKIN, S_CHEVRON, S_PVCLAD,
+    S_LABBLDG, S_LABBLDG, S_CREATIVE, S_SKYGARDEN);
+  if (office && f >= 12) p.push(S_MEGABRACE, S_SKYGARDEN, S_PVCLAD, S_DOUBLESKIN);
+  if (!resi) p.push(S_MEDIAFACE, S_CREATIVE);
   if (office && f >= 14) p.push(S_TERRAPIER, S_STEELSHELF, S_DEEPFRAME);
   if (office && f >= 20) p.push(S_DIAGRID, S_CRYSTAL, S_DARK);
-  if (resi) p.push(S_BALCONY, S_BALCONY, S_BALCONY, S_SCREEN, S_TIMBER, S_FRIT, S_BRICK);
+  if (resi) p.push(S_BALCONY, S_BALCONY, S_SCREEN, S_TIMBER, S_FRIT, S_BRICK,
+    S_PODIUMWRAP, S_PODIUMWRAP, S_MICROUNIT, S_PASSIVE, S_MODULAR);
+  if (resi && f >= 10) p.push(S_SKYGARDEN, S_SKYGARDEN, S_MODULAR, S_PLEATED);
   if (shop) p.push(S_SCREEN, S_TIMBER, S_BIGBOX, S_EIFS, S_TILTUP);
   if (f >= 4) p.push(S_GARAGE);
   return p;

@@ -1594,6 +1594,9 @@ uniform float uFocus;      // where the plane of focus sits, 0..1 up the frame
 uniform float uBand;       // how much of the frame is sharp
 uniform float uDefocus;    // blur radius in pixels at the top and bottom
 uniform float uGrain;
+uniform vec3 uSunScreen;   // xy = where the sun is on screen, z = 1 if in front
+uniform vec3 uSunTint;
+uniform float uGlare;
 ` + AO_GLSL + /* glsl */ `
 
 // A MODEL CITY PHOTOGRAPHS LIKE A MODEL CITY.
@@ -1608,8 +1611,51 @@ uniform float uGrain;
 //
 // Here it is the honest description of what the thing IS, and it costs eight
 // taps on a disk whose radius is zero through the focus band.
+// EDGES, BECAUSE GOING OFFSCREEN THREW THE MSAA AWAY.
+//
+// The direct path rendered into MapLibre's own multisampled buffer and got
+// antialiasing for free. A render target does not come with that — and it
+// cannot simply be asked for one either, because a multisampled target cannot
+// also hand back the depth texture the occlusion pass reads. So the edges are
+// found and softened here instead.
+//
+// Run on RGBA rather than RGB. The most visible edge in the frame is the
+// city's silhouette against the basemap, and that is an edge in ALPHA: treat
+// only the colour and every roofline stays a staircase.
+vec4 fxaa(vec2 uv) {
+  vec3 L = vec3(0.299, 0.587, 0.114);
+  vec4 m  = texture2D(uScene, uv);
+  vec4 nw = texture2D(uScene, uv + vec2(-1.0, -1.0) * uTexel);
+  vec4 ne = texture2D(uScene, uv + vec2( 1.0, -1.0) * uTexel);
+  vec4 sw = texture2D(uScene, uv + vec2(-1.0,  1.0) * uTexel);
+  vec4 se = texture2D(uScene, uv + vec2( 1.0,  1.0) * uTexel);
+  // alpha counts toward luma so a silhouette registers as contrast
+  float lM  = dot(m.rgb,  L) + m.a  * 0.5;
+  float lNW = dot(nw.rgb, L) + nw.a * 0.5;
+  float lNE = dot(ne.rgb, L) + ne.a * 0.5;
+  float lSW = dot(sw.rgb, L) + sw.a * 0.5;
+  float lSE = dot(se.rgb, L) + se.a * 0.5;
+  float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));
+  float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
+  if (lMax - lMin < 0.028) return m;            // flat: nothing to do
+
+  vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), ((lNW + lSW) - (lNE + lSE)));
+  float red = max((lNW + lNE + lSW + lSE) * 0.25 * 0.125, 1.0 / 128.0);
+  dir = clamp(dir * (1.0 / (min(abs(dir.x), abs(dir.y)) + red)), -8.0, 8.0) * uTexel;
+
+  vec4 a = 0.5 * (texture2D(uScene, uv + dir * (1.0 / 3.0 - 0.5))
+                + texture2D(uScene, uv + dir * (2.0 / 3.0 - 0.5)));
+  vec4 b = a * 0.5 + 0.25 * (texture2D(uScene, uv + dir * -0.5)
+                           + texture2D(uScene, uv + dir *  0.5));
+  float lB = dot(b.rgb, L) + b.a * 0.5;
+  return (lB < lMin || lB > lMax) ? a : b;
+}
+
 vec4 defocused(vec2 uv, float r) {
-  if (r < 0.35) return texture2D(uScene, uv);
+  // Inside the focus band there is no blur to hide the stair-stepping, so this
+  // is where the edge work goes. Outside it the disk is already doing more
+  // smoothing than any edge filter would.
+  if (r < 0.35) return fxaa(uv);
   vec4 sum = texture2D(uScene, uv);
   for (int i = 0; i < 8; i++) {
     float a = float(i) * 2.39996323;
@@ -1630,6 +1676,27 @@ void main() {
   c.rgb *= mix(vec3(1.0), vec3(0.62, 0.68, 0.80), occlusion(vUv));
 
   c.rgb += texture2D(uBloom, vUv).rgb * uBloomAmt;
+
+  // THE SUN HAS BEEN LIGHTING THIS CITY AND HAS NEVER BEEN IN IT.
+  //
+  // The whole rig is built around a 28-degree sun — the shadows, the warm
+  // west faces, the forward-scattered haze along its bearing — and turn the
+  // camera to face it and there is nothing there. Real glass in front of a low
+  // sun veils: light scatters inside the lens and lifts the whole frame near
+  // it, with no visible disc needed.
+  //
+  // It has to be occluded, or the glare sits happily in front of the building
+  // between you and it. One depth tap where the sun is, so a tower crossing
+  // the sun cuts the flare — which is the moment the effect earns its place,
+  // because that is when a viewer reads the light as being IN the scene.
+  if (uSunScreen.z > 0.5 && uGlare > 0.001) {
+    // aspect-corrected, or the glare is an ellipse on any non-square window
+    vec2 d = (vUv - uSunScreen.xy) * vec2(uTexel.y / max(uTexel.x, 1e-6), 1.0);
+    float r = length(d);
+    float blocked = step(0.9999, texture2D(uDepth, uSunScreen.xy).x);
+    float veil = exp(-r * 4.2) * 0.55 + exp(-r * 13.0) * 0.45;
+    c.rgb += uSunTint * veil * uGlare * blocked;
+  }
 
   // A WHISPER OF GRAIN. Everything above is smooth gradients over smooth
   // gradients — bloom, defocus, aerial haze — and smooth gradients on an 8-bit
@@ -1963,6 +2030,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           // city one is actually looking at lives.
           uFocus: { value: 0.56 }, uBand: { value: 0.26 }, uDefocus: { value: 2.7 },
           uGrain: { value: 0.006 },
+          uSunScreen: { value: new THREE.Vector3() },
+          uSunTint: { value: new THREE.Vector3(1.0, 0.86, 0.66) },
+          uGlare: { value: 0.30 },
           ...aoUniforms(),
         },
       });
@@ -4294,6 +4364,22 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       (mat.uniforms.uAoTexel.value as THREE.Vector2).set(1 / this.postSize.x, 1 / this.postSize.y);
       (mat.uniforms.uAoCam.value as THREE.Vector3).copy(this.camUni.value);
     }
+    // Where the sun sits on screen. Projected on the CPU because it is one
+    // point per frame, and the fragment shader has no way to find it: the
+    // combined matrix MapLibre hands over is not decomposable into a camera
+    // the shader could reason about.
+    {
+      const sd = this.sunDirUni.value;
+      const p = new THREE.Vector3(
+        this.camUni.value.x + sd.x * 9000,
+        this.camUni.value.y + sd.y * 9000,
+        this.camUni.value.z + sd.z * 9000,
+      ).applyMatrix4(this.camera.projectionMatrix);
+      const inFront = p.z > -1 && p.z < 1;
+      const su = this.compMat.uniforms.uSunScreen.value as THREE.Vector3;
+      su.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5, inFront ? 1 : 0);
+    }
+
     this.renderer.setRenderTarget(prevTarget);
     this.blit(this.aoMultMat, prevTarget);
 

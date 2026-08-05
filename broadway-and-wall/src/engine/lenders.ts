@@ -68,6 +68,13 @@ export interface Lender {
   /** How much they want to lend right now, 0-1. Everything above decides it. */
   appetite: number;
   /** Out of the market entirely, and the month it happened. */
+  /**
+   * The panic surcharge on this desk's funding today, in points, while another
+   * desk in town is in receivership. Zero the rest of the time. Stored rather
+   * than recomputed so the Research page can show a player exactly what a
+   * neighbour's failure is costing the desk they borrow from.
+   */
+  panicBps?: number;
   failedM?: number;
   /** How many months the receiver takes to sell the franchise on. */
   reopenM?: number;
@@ -418,6 +425,51 @@ export function tickLenders(s: GameState) {
   const nat = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07 } as Record<string, number>;
   let stress = 0, n = 0;
   for (const k of Object.keys(nat)) { stress += Math.max(0, (vac[k as never] ?? nat[k]) - nat[k]); n++; }
+
+  // --- CONTAGION: WHAT ONE FRIDAY COSTS EVERYBODY ELSE ----------------------
+  //
+  // A seizure was a private event between a desk and its regulator. It is not.
+  // The morning after a regional property lender is closed, every OTHER
+  // regional property lender in the same market discovers that its brokered
+  // CDs, its repo and its bond investors have repriced it — not because rates
+  // moved, but because the counterparty risk they had been ignoring was just
+  // demonstrated on the front page. Comparable institutions paid roughly 50 to
+  // 150 basis points more for hot money after a failure nearby, and the ones
+  // that looked most like the deceased paid several hundred.
+  //
+  // Modelled through the two things that already exist and are already
+  // justified, rather than as a penalty:
+  //
+  //   `wholesale` — how much of this desk is hot money at all. First Harbor
+  //   funds itself with sleeping deposits and barely notices; the conduit IS
+  //   the bond market and closes with it. That distribution is not invented
+  //   here, it is the same table that makes a rate shock asymmetric.
+  //
+  //   capital against target — the market does not reprice everyone equally,
+  //   it reprices whoever resembles the failure. A fat desk pays a token; a
+  //   desk sitting on its own target pays real money.
+  //
+  // And it is a LIVE SURCHARGE, not a level fed through fundCost's slow
+  // adjustment. Funding reprices up fast and down slowly because depositors
+  // are like that; a panic reprices in a week, which is the entire difference
+  // between a panic and a trend. It decays with distance from the failure and
+  // holds a floor while the receiver is still selling the book, because a
+  // receiver liquidating into your market is itself a live signal.
+  //
+  // The loop this closes: the surcharge lands on net interest margin, nimFac
+  // cuts appetite the SAME month, and it eats capital every month it lasts —
+  // so a failure genuinely can take the next desk with it, without anything
+  // in the model being told to arrange that.
+  const PANIC_PEAK = 1.5;      // pp on hot money at the moment of a seizure
+  const PANIC_HALFLIFE = 9;    // months; spreads normalised inside a year or two
+  const down = s.lenders.filter((l) => l.failedM !== undefined);
+  let panic = 0;
+  if (down.length) {
+    const newest = Math.max(...down.map((l) => l.failedM ?? 0));
+    const since = Math.max(0, s.month - newest);
+    // A second name going down in the same crisis is worse than the first.
+    panic = Math.max(0.25, Math.exp(-since / PANIC_HALFLIFE)) * Math.min(1.6, 0.75 + 0.45 * down.length);
+  }
   stress = n ? stress / n : 0;
 
   for (const l of s.lenders) {
@@ -478,7 +530,15 @@ export function tickLenders(s: GameState) {
     const fundTarget = baseFund + hot * k.wholesale;
     if (l.fundCost === undefined) l.fundCost = baseFund;
     l.fundCost = +(l.fundCost + (fundTarget > l.fundCost ? 0.22 : 0.07) * (fundTarget - l.fundCost)).toFixed(4);
-    const funding = (l.book * Math.max(0, l.fundCost)) / 100 / 12;
+    // The panic surcharge, priced off how much this desk resembles the one in
+    // receivership. A desk at its capital target pays the base share; one at
+    // half its target pays nearly three times that. See the block above.
+    // The ratio the market can SEE — the one on the last statement, entering
+    // this month. It cannot price a number the desk has not booked yet.
+    const weak = Math.max(0, Math.min(1.5, 1 - capitalRatio(l) / Math.max(0.01, k.capitalRatio)));
+    l.panicBps = panic > 0 ? +(PANIC_PEAK * panic * k.wholesale * (0.35 + weak)).toFixed(3) : 0;
+    const allIn = Math.max(0, l.fundCost + (l.panicBps ?? 0));
+    const funding = (l.book * allIn) / 100 / 12;
 
     // --- and it goes bad -----------------------------------------------------
     // Delinquency follows the property cycle with a lag: buildings empty, then
@@ -525,7 +585,11 @@ export function tickLenders(s: GameState) {
     // funding that used to earn 4 does not write new loans at old advance
     // rates while it waits to find out which. At the normal ~4-point margin
     // this factor is 1 and nothing changes; it only exists for the squeeze.
-    const nim = (l.bookYield ?? e.indexRate + spread) - Math.max(0, l.fundCost ?? 0);
+    // ALL-IN, panic included — otherwise the surcharge eats capital for a year
+    // and the desk goes on quoting as if its funding were free. The margin is
+    // what it actually costs to hold the book this month, and that is the
+    // number a credit committee rations on.
+    const nim = (l.bookYield ?? e.indexRate + spread) - Math.max(0, (l.fundCost ?? 0) + (l.panicBps ?? 0));
     const nimFac = Math.max(0.25, Math.min(1, 0.35 + 0.65 * (nim - 0.8) / 2.8));
     l.appetite = Math.max(0, Math.min(1.15,
       (raw - 0.55) / 0.6 * nimFac * (l.kind === "conduit" ? Math.max(0.25, e.creditIdx ?? 1) : 1)));

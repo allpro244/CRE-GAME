@@ -1198,6 +1198,14 @@ export interface GameState {
    * not net worth you can spend; it is a certificate and a wait.
    */
   receivership?: { from: string; amount: number; payM: number }[];
+  /**
+   * The months a desk in this town was seized, most recent last, trimmed to
+   * the last three years. What the funding market prices contagion off — see
+   * the panic block in lenders.ts. It is a list of EVENTS rather than a count
+   * of desks currently in receivership, because a receivership lasts one to
+   * three years and a panic does not.
+   */
+  seizures?: number[];
   /** how many buildings the wrecking ball has taken — the stock turns over */
   demolished?: number;
   /** books on the market as one ticket — see engine/portfoliosale.ts */

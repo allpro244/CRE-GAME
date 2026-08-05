@@ -146,7 +146,33 @@ const vec3 SKY_COL = vec3(0.408, 0.502, 0.688);
 const vec3 GND_COL = vec3(0.372, 0.318, 0.248);
 
 vec3 hemiLight(vec3 n, float ao) {
-  vec3 amb = mix(GND_COL, SKY_COL, clamp(n.z * 0.5 + 0.5, 0.0, 1.0));
+  // THE GROUND HALF OF THIS IS A BOUNCE, AND IT WAS NOT LIT.
+  //
+  // GND_COL is a flat brown that has no idea whether the sun is out. But the
+  // downward half of an ambient term is not a light source in its own right —
+  // it is sunlight that has already hit the pavement and come back up, so it
+  // should carry the sun's own colour and its own strength. That is the light
+  // filling the underside of every cornice, every awning, every balcony, and
+  // the whole shaded lower half of a street canyon on a bright day.
+  //
+  // Warm, because it has bounced off warm stone, and stronger than the flat
+  // constant it replaces: pavement is a far better reflector than a brown
+  // constant implies, and getting it wrong is why undersides here have been
+  // reading as holes.
+  //
+  // This is the pavement's share of the indirect light. The buildings' share
+  // is done in screen space in the composite, off the blurred scene, because
+  // no analytic term can know that the wall opposite happens to be red.
+  // HUE, NOT AMPLITUDE. Multiplying straight by SUN_COL — which runs well
+  // above 1 so that lit faces expose correctly — made this term 1.6x brighter
+  // as a side effect, and since a vertical wall takes half its ambient from
+  // the ground half, every facade in the city lifted and the contrast bought
+  // by the light rig went straight back out. Normalising by the sun's own
+  // luminance keeps the strength exactly where it was and changes only the
+  // colour, which was the whole point.
+  vec3 sunTint = SUN_COL / max(dot(SUN_COL, vec3(0.2126, 0.7152, 0.0722)), 1e-3);
+  vec3 bounce = GND_COL * mix(vec3(1.0), sunTint, 0.85);
+  vec3 amb = mix(bounce, SKY_COL, clamp(n.z * 0.5 + 0.5, 0.0, 1.0));
   return amb * ao;
 }
 
@@ -3140,6 +3166,8 @@ uniform float uGlare;
 uniform sampler2D uShaft;
 uniform float uShaftAmt;
 uniform sampler2D uAoTex;
+uniform sampler2D uIrr;
+uniform float uBounce;
 // still needed here, though the occlusion moved out: the glare has to know
 // whether a building is standing between the camera and the sun
 uniform sampler2D uDepth;
@@ -3274,6 +3302,30 @@ void main() {
   vec2 aoc = texture2D(uAoTex, vUv).rg;
   c.rgb *= mix(vec3(1.0), vec3(0.62, 0.68, 0.80), aoc.r);
   c.rgb *= mix(vec3(1.0), vec3(0.55, 0.61, 0.76), aoc.g * 0.80);
+
+  // INDIRECT BOUNCE — light the occlusion took away, given back in the colour
+  // of whatever is standing next to it.
+  //
+  // This city is lit by two things: a sun, and a uniform blue sky dome. Real
+  // shaded surfaces are lit mostly by their NEIGHBOURS — sunlit pavement
+  // throwing warm light up under a cornice, a brick wall tinting the wall
+  // across the alley, a courtyard glowing with its own stone. None of that
+  // existed, and the occlusion pass made its absence worse: it subtracted
+  // light in precisely the places where, in life, bounced light is doing most
+  // of the lighting. That is why strong AO so often reads as dirt.
+  //
+  // The blurred scene is a serviceable estimate of local irradiance — at any
+  // pixel it holds the average colour of its surroundings, which is what
+  // bounced light is made of. Weighted by AO, so it arrives exactly where the
+  // occlusion removed something, and multiplied by the surface's own colour,
+  // because reflected light is albedo times irradiance and a wall only returns
+  // what it is able to reflect. A red wall in a grey courtyard stays red.
+  //
+  // Honest about its limits: the streets are drawn by MapLibre and are not in
+  // this buffer, so pavement bounce is not in here — that is the analytic
+  // ground term in the light rig, and the two are meant to be read together.
+  vec3 irr = texture2D(uIrr, vUv).rgb;
+  c.rgb += irr * c.rgb * (aoc.r + aoc.g * 0.6) * uBounce;
 
   c.rgb += texture2D(uBloom, vUv).rgb * uBloomAmt;
 
@@ -3619,6 +3671,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private bloomB: THREE.WebGLRenderTarget | null = null;
   private reflectRT: THREE.WebGLRenderTarget | null = null;
   private shaftRT: THREE.WebGLRenderTarget | null = null;
+  private irrA: THREE.WebGLRenderTarget | null = null;
+  private irrB: THREE.WebGLRenderTarget | null = null;
   private aoA: THREE.WebGLRenderTarget | null = null;
   private aoB: THREE.WebGLRenderTarget | null = null;
   private postScene = new THREE.Scene();
@@ -3802,6 +3856,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           uGlare: { value: 0.30 },
           uShaft: { value: null }, uShaftAmt: { value: 0.42 },
           uAoTex: { value: null }, uDepth: { value: null },
+          uIrr: { value: null }, uBounce: { value: 0.40 },
           uInvProj: { value: new THREE.Matrix4() }, uEye: { value: new THREE.Vector3() },
         },
       });
@@ -3852,6 +3907,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // The reflection runs at half resolution. It is about to be displaced by
       // a wave normal and then mixed in at a Fresnel weight; there is no
       // resolution in it left to see.
+      this.irrA?.dispose(); this.irrB?.dispose();
+      this.irrA = new THREE.WebGLRenderTarget(bw, bh, { ...opts, depthBuffer: false });
+      this.irrB = new THREE.WebGLRenderTarget(bw, bh, { ...opts, depthBuffer: false });
       this.aoA?.dispose(); this.aoB?.dispose();
       const aw = Math.max(2, size.x >> 1), ah = Math.max(2, size.y >> 1);
       this.aoA = new THREE.WebGLRenderTarget(aw, ah, { ...opts, depthBuffer: false });
@@ -6674,6 +6732,27 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const inFront = p.z > -1 && p.z < 1;
       const su = this.compMat.uniforms.uSunScreen.value as THREE.Vector3;
       su.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5, inFront ? 1 : 0);
+    }
+
+    // 3a. IRRADIANCE — what every surface's neighbours are throwing back at it.
+    //
+    // Three blurs of the scene at quarter resolution. A heavily blurred image
+    // is a crude but genuinely useful estimate of local incoming light: at a
+    // given pixel it holds the average colour of everything around it, which
+    // is exactly what bounced light IS. The first pass doubles as the
+    // downsample, so the whole thing costs three quarter-res blits.
+    if (this.irrA && this.irrB) {
+      const iw = this.irrA.width, ih = this.irrA.height;
+      this.blurMat.uniforms.uTex.value = this.sceneRT.texture;
+      (this.blurMat.uniforms.uDir.value as THREE.Vector2).set(2.2 / iw, 0);
+      this.blit(this.blurMat, this.irrA);
+      this.blurMat.uniforms.uTex.value = this.irrA.texture;
+      (this.blurMat.uniforms.uDir.value as THREE.Vector2).set(0, 2.2 / ih);
+      this.blit(this.blurMat, this.irrB);
+      this.blurMat.uniforms.uTex.value = this.irrB.texture;
+      (this.blurMat.uniforms.uDir.value as THREE.Vector2).set(2.2 / iw, 0);
+      this.blit(this.blurMat, this.irrA);
+      this.compMat.uniforms.uIrr.value = this.irrA.texture;
     }
 
     // 3b. light shafts, at quarter res, off the same depth and sun position.

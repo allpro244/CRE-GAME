@@ -1675,16 +1675,27 @@ function SaleSection({ bbl, value }: { bbl: string; value: number }) {
           costs a point more and three months, and puts every one of them in
           the same room on the same day. In a thin market the campaign finds
           nobody and you have paid for the privilege. */}
+      {/* THE OWNER ASKED WHETHER THE QUIET LISTING SHOULD EXIST AT ALL. It
+          should: selling off-market is a real and common way to trade a
+          building, and the trade the engine models is the right one — you pay
+          a point less in fees and you give up price discovery. What was wrong
+          was that the choice was described in a paragraph instead of priced.
+          A decision with two numbers on it is a decision; a decision with an
+          adjective on it is a paragraph. Both buttons now carry the fee in
+          dollars, and the ask is on both of them. */}
       <div className="btn-row">
         <button className="btn btn-buy" onClick={() => listSale(bbl, price, "marketed")}>
-          Run a process at {usd(price)}
+          Run a process · {usd(price)} less {usd(Math.round(price * 0.025))} fee
         </button>
-        <button className="btn" onClick={() => listSale(bbl, price)}>Quiet listing</button>
+        <button className="btn" onClick={() => listSale(bbl, price)}>
+          Sell it quietly · {usd(price)} less {usd(Math.round(price * 0.015))} fee
+        </button>
       </div>
       <div className="hint">
-        A campaign takes two to four months, costs 2.5% instead of 1.5%, and ends with every bid on your desk at
-        once — with the option to go back to the top of the list once. A quiet listing costs less and finds you one
-        buyer at a time, whoever happens to ring.
+        The campaign costs {usd(Math.round(price * 0.01))} more and two to four months, and ends with every bid on
+        your desk on the same day — plus one go back to the top of the list. That is what the extra point buys:
+        not a better building, a better-tested price. A quiet sale saves the fee and finds you one buyer at a
+        time, whoever happens to ring, and you never learn what the best buyer in the city would have paid.
       </div>
     </div>
   );

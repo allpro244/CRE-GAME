@@ -966,7 +966,14 @@ function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: Prop
               {!apt && <Row k="Expense recoveries" v={mo(os.recoveredOpex + os.recoveredTax)} />}
               <Row k="Revenue" v={mo(os.egi)} strong />
               <Row k="Operating expenses" v={"−" + mo(os.opex)} />
-              <Row k={apt ? "Reserves for turns and repairs" : "Management fee"} v={"−" + mo(os.mgmt)} />
+              {/* TWO LINES, NOT ONE. Apartments used to show a single 7% line
+                  doing two jobs. The fee goes to whoever runs the building;
+                  the reserve is capital for carpets, appliances and roofs.
+                  Different money, different people, different reasons. */}
+              <Row k="Management fee" v={"−" + mo(os.mgmt)} />
+              {apt && os.reserve !== undefined && (
+                <Row k="Replacement reserve" v={"−" + mo(os.reserve)} />
+              )}
               <Row k="Property tax" v={"−" + mo(os.tax)} />
               <Row k="NOI / mo" v={mo(os.noi)} strong bad={os.noi < 0} />
               {pmt > 0 && <Row k="Debt service / mo" v={"−" + usd(Math.round(pmt))} />}

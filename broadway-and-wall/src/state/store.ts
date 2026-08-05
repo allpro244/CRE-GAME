@@ -18,10 +18,39 @@ import { normalizeParcels } from "@/engine/mix";
 import { netWorth } from "@/engine/value";
 import { loadGame, saveGame, listSaves, deleteSave, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev } from "@/state/city";
-import { makeCity, type GeneratedCity } from "@/citygen/index.mjs";
+import { cityList, makeCity, type GeneratedCity } from "@/citygen/index.mjs";
 
 export type Lens = "none" | "land" | "demand" | "owners";
 export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "news" | "leasing" | "property" | "saves" | "notes" | "settings" | "staff";
+
+/**
+ * WHERE THE APP IS, and the reason this type exists at all.
+ *
+ * There was no start screen: mount generated a town and the player was in it
+ * before they had chosen anything. `boot` is the IndexedDB read that finds out
+ * whether there is a campaign to come back to, `menu` is the start screen,
+ * `generating` is the half-second to a second and a half `makeCity` spends
+ * holding the main thread, and only `playing` means a city and a game exist.
+ */
+export type Phase = "boot" | "menu" | "generating" | "playing";
+
+/**
+ * The campaign the start screen offers to continue, read out of the autosave
+ * rather than out of localStorage. The save is the authority on which town it
+ * was played in — island, seed, size and build-out all travel in it — so
+ * Continue can rebuild exactly that town even if this browser's last choice
+ * was a different one.
+ */
+export interface Resume {
+  slot: string;
+  island: string;
+  seed: number;
+  size: string;
+  dev: string;
+  month: number;
+  cash: number;
+  savedAt: number;
+}
 
 interface AppState {
   parcels: ParcelTable | null;
@@ -48,6 +77,12 @@ interface AppState {
   auctionOpen: boolean;
   fps: number;
   loadError: string | null;
+  /** boot → menu → generating → playing. See Phase. */
+  phase: Phase;
+  /** The campaign the start screen can go back to, or null if there is none. */
+  resume: Resume | null;
+  /** The town being generated right now, so the screen can say what it is doing. */
+  building: string | null;
   setData: (d: { parcels: ParcelTable; adjacency: Adjacency; manifest: DataManifest; city?: GeneratedCity }) => void;
   select: (bbl: string | null) => void;
   hover: (bbl: string | null) => void;
@@ -135,7 +170,11 @@ interface AppState {
   hireStaff: (candidateId: number) => void;
   fireStaff: (staffId: number) => void;
   postJob: () => void;
-  newRun: (island?: string, size?: string, dev?: string) => void;
+  /** Cut a brand new town on this island at this size and build-out, and play it. */
+  startRun: (island: string, size: string, dev: string) => Promise<void>;
+  /** Rebuild the town in the autosave and pick the campaign back up. */
+  continueRun: () => Promise<void>;
+  newRun: () => void;
   devGrant: () => void;
   saveTo: (slot: string) => Promise<void>;
   loadFrom: (slot: string) => Promise<void>;
@@ -151,6 +190,49 @@ function toast(text: string, kind: "ok" | "err" = "ok") {
 // Every city keeps its own autosave, so switching cities never clobbers the
 // campaign you were running in the other one.
 const AUTO = () => "auto@" + currentCity();
+
+// Set across a reload to say "this reload is finishing a load, do not stop at
+// the menu". Session-scoped on purpose: it must not survive the tab.
+const RESUME_FLAG = "bw:resume";
+
+/** What the islands are called, for the screen that has not built one yet. */
+function islandName(id: string): string {
+  return cityList().find((c) => c.id === id)?.name ?? id;
+}
+
+/**
+ * A FRAME ON THE SCREEN BEFORE THE MAIN THREAD GOES AWAY.
+ *
+ * `makeCity` is synchronous and holds the main thread for the whole build —
+ * measured in a headless Chromium on this machine: 120ms for a Hamlet (378
+ * lots), 265ms for the standard City (1,421 lots), 979ms for a Great City
+ * (5,791 lots), and the game and the map that follow it push a Great City to
+ * about six seconds end to end. Calling it in the same task as the click that
+ * asked for it means the button never repaints and the player is looking at a
+ * page that is, as far as they can tell, broken. Two animation frames put the
+ * "laying out the streets" state through layout and paint; the timeout hands
+ * the frame to the compositor before the generator takes the thread. Verified
+ * by screencast: seven composited frames of the waiting screen, its bar still
+ * sweeping, across the 1.1s the generator was holding the thread.
+ */
+function painted(): Promise<void> {
+  return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 0))));
+}
+
+/**
+ * BUILD THE TOWN, WITHOUT PUBLISHING IT.
+ *
+ * Handing the parcel table to the store is a separate act because a continue
+ * has to test the save against the town BEFORE the map mounts on it — a map
+ * built for a town the campaign does not fit is a worse failure than a refusal.
+ */
+function buildTown(island: string, seed: number, size: string, dev: string) {
+  const built = makeCity(island, seed, { size, density: dev });
+  // Any record the pipeline still files as "mixed" becomes its dominant use
+  // plus an explicit mix, once, at the door.
+  const parcels = normalizeParcels(built.parcels as ParcelTable);
+  return { built, parcels };
+}
 async function persist(game: GameState) {
   try { await saveGame(AUTO(), game); } catch { /* private-mode browsers: play on without saves */ }
 }
@@ -172,6 +254,9 @@ export const useStore = create<AppState>((set, get) => ({
   toast: null,
   fps: 0,
   loadError: null,
+  phase: "boot",
+  resume: null,
+  building: null,
   slots: [],
   setData: (d) => set({ ...d, bbls: Object.keys(d.parcels) }),
   select: (bbl) => set({ selectedBBL: bbl, page: bbl && get().page !== "property" ? "none" : get().page }),
@@ -851,6 +936,9 @@ export const useStore = create<AppState>((set, get) => ({
       toast(`Loading "${slot}" — rebuilding the town it was played in.`);
       setSeed(savedSeed >>> 0);
       try { await saveGame(AUTO(), saved); } catch { /* private mode: the reload will start fresh */ }
+      // Say why we are reloading, so the boot finishes the load instead of
+      // stopping at the start screen. See bootMenu.
+      try { sessionStorage.setItem(RESUME_FLAG, "1"); } catch { /* private mode: the menu, with Continue offered */ }
       location.reload();
       return;
     }
@@ -891,37 +979,108 @@ export const useStore = create<AppState>((set, get) => ({
    * same lot lines, the same buildings in the same places, so by the third
    * campaign you knew which corner was the good corner before you had bought
    * anything. Now the island stays and everything on it is re-cut — new
-   * blocks, new parcels, new building stock, new vacant ground. Roughly
-   * 300ms, which is why it happens on a page load rather than as a download.
+   * blocks, new parcels, new building stock, new vacant ground.
    *
-   * The whole thing rebuilds, so this reloads rather than hot-swapping the
-   * parcel table, the adjacency graph, four map sources and the skyline
-   * underneath a live game.
+   * Which island, how big and how built up are asked on the start screen now,
+   * so this no longer takes them: it ends the campaign and goes back there.
+   * The two-click "Erase this game?" on the button is what it says — the
+   * autosave for this town is gone before the screen changes.
    */
-  newRun: (island?: string, size?: string, dev?: string) => {
-    // The autosave is the authority on which town you are in — it was played
-    // there — so rolling a new seed without clearing it means the reload puts
-    // you straight back in the old city. Erasing the game and rolling the town
-    // are the same act, and the button already says so.
-    //
-    // AND THE ISLAND IS PART OF STARTING OVER, not something you change while
-    // playing. Picking one here clears THAT island's autosave before switching
-    // to it, because "start a new game in Havenport" has to mean a new game —
-    // switchCity on its own drops you into whatever campaign was left running
-    // there, which is the flipping-between-towns this whole change removes.
-    const from = AUTO();                                    // the game being erased
-    const target = island && island !== currentCity() ? island : undefined;
-    if (target) setCity(target);
-    const to = AUTO();                                      // where we are starting
-    // The island size is settled before the town is rolled, because the town
-    // is rolled AT that size. Omitted means keep whatever this island was on.
-    if (size) setSize(size);
-    if (dev) setDev(dev);
-    rerollCity();                                           // rolls a town on `to`
-    void deleteSave(from)
+  newRun: () => {
+    // Reload rather than swapping the city under a live map. The map's init
+    // effect builds its sources, its skyline and its opening camera from the
+    // city it mounted with, and a game that is already running has a parcel
+    // table, an adjacency graph and twenty years of state hanging off it. A
+    // reload with no city to build is instant — the generation happens when
+    // the player presses Break ground, not on the way to the menu.
+    void deleteSave(AUTO())
       .catch(() => { /* nothing saved: nothing to clear */ })
-      .then(() => (to === from ? undefined : deleteSave(to).catch(() => {})))
       .then(() => location.reload());
+  },
+
+  /**
+   * BREAK GROUND. The town does not exist until this runs.
+   *
+   * Everything that identifies a town is settled first — island, size,
+   * build-out, then the seed, in that order, because `rerollCity` and
+   * `setSize` both key off the current island and rolling a seed on the wrong
+   * one leaves the pair (island, seed) pointing at a town nobody asked for.
+   */
+  startRun: async (island, size, dev) => {
+    set({ phase: "generating", building: islandName(island), loadError: null });
+    await painted();
+    try {
+      setCity(island);
+      setSize(size, island);
+      setDev(dev);
+      const seed = rerollCity();
+      const { built, parcels } = buildTown(island, seed, size, dev);
+      get().setData({
+        parcels,
+        adjacency: built.adjacency as Adjacency,
+        manifest: built.manifest as DataManifest,
+        city: built,
+      });
+      const g = firstListings(newGame(seed, parcels), parcels, Object.keys(parcels));
+      g.citySeed = seed;
+      g.citySize = size;
+      g.cityDev = dev;
+      set({ game: g, phase: "playing", building: null, resume: null });
+      // This is the erase: the autosave for this island is the campaign that
+      // was being played on it, and the new one takes its slot.
+      void saveGame(AUTO(), g).catch(() => { /* private mode: play on unsaved */ });
+    } catch (e) {
+      set({ phase: "menu", building: null });
+      get().setLoadError(`The city would not build (${(e as Error).message}). This is a bug — please report it.`);
+    }
+  },
+
+  /**
+   * PICK IT BACK UP. The save carries its own town, so this rebuilds from the
+   * save's (island, seed, size, build-out) and not from whatever this browser
+   * last chose — the two disagree the moment you start a run on the other
+   * island and then come back.
+   */
+  continueRun: async () => {
+    const r = get().resume;
+    if (!r) return;
+    set({ phase: "generating", building: islandName(r.island), loadError: null });
+    await painted();
+    try {
+      const saved = await loadGame(r.slot);
+      if (!saved || saved.v !== 32) {
+        set({ phase: "menu", building: null, resume: null });
+        toast("That campaign is from an older build and can't be opened.", "err");
+        return;
+      }
+      setCity(r.island);
+      setSeed(r.seed, r.island);
+      setSize(r.size, r.island);
+      setDev(r.dev);
+      const { built, parcels } = buildTown(r.island, r.seed, r.size, r.dev);
+      // A save only fits if every deed in it exists in THIS town. It should,
+      // because the town was rebuilt from the save's own three fields — this
+      // catches a generator change that moved the lot lines under an old
+      // campaign, which is the one case where continuing would hand back a
+      // portfolio of parcels that are not there.
+      const fits = Object.keys(saved.holdings).every((b) => parcels[b])
+        && saved.listings.every((l) => parcels[l.bbl]);
+      if (!fits) {
+        set({ phase: "menu", building: null, resume: null });
+        toast("That campaign's town no longer builds the same way — it can't be continued.", "err");
+        return;
+      }
+      get().setData({
+        parcels,
+        adjacency: built.adjacency as Adjacency,
+        manifest: built.manifest as DataManifest,
+        city: built,
+      });
+      set({ game: saved, phase: "playing", building: null });
+    } catch (e) {
+      set({ phase: "menu", building: null });
+      get().setLoadError(`The city would not build (${(e as Error).message}). This is a bug — please report it.`);
+    }
   },
 }));
 
@@ -955,66 +1114,65 @@ export async function fetchGzJson(url: string) {
 }
 
 /**
- * BUILD THE CITY, THEN THE GAME.
+ * BOOT TO A MENU, NOT INTO A TOWN.
  *
- * Nothing is fetched. `makeCity` runs the same generator the build pipeline
- * runs — one copy of the code, so a city made here and a city made by
- * `pnpm cities` are byte-identical — and hands back the parcel table, the
- * adjacency graph, the map's own layers and the skyline in about a third of a
- * second. The seed is remembered per island, and a save carries its own, so a
- * refresh puts you back in YOUR town rather than a stranger's.
+ * This used to be `loadData`, and it generated a city on mount and dropped the
+ * player into it — so the first thing anyone saw was somebody else's town, and
+ * the only place to choose one was a dropdown hanging off the top bar. At
+ * 1280x720 that dropdown measured 973px tall in a 720px window with its
+ * "Build …" button 353px below the bottom edge and nothing to scroll it, so a
+ * custom city could not be started at all. Both faults are the same fault: the
+ * choice had nowhere to live.
+ *
+ * Booting now costs one IndexedDB read and generates nothing. All it works out
+ * is whether there is a campaign to come back to — and it reads that out of
+ * the autosaves themselves rather than out of localStorage, because a save
+ * carries its own town and this browser's last choice may be a different one.
  */
-export async function loadData() {
-  const island = currentCity();
+export async function bootMenu() {
+  let resume: Resume | null = null;
+  // A save store that will not open is a reason to offer a new town, never a
+  // reason to sit on "looking for a game in progress" forever. Private-mode
+  // browsers land here.
   try {
-    // The save is the authority on which town this is: it was played there.
-    const saved = (await loadGame(AUTO())) ?? (await loadGame("auto"));
-    const seed = (saved?.citySeed ?? currentSeed(island)) >>> 0;
-    setSeed(seed, island);
-    // The save is the authority on size too. A run played on a Great City has
-    // deeds that only exist on a Great City — rebuilding it at the standard
-    // size would not load a smaller town, it would throw every parcel in the
-    // save away. Older saves carry none, which means standard, which is what
-    // they were built at.
-    const size = saved?.citySize ?? currentSize(island);
-    setSize(size, island);
-    const dev = saved?.cityDev ?? currentDev();
-    setDev(dev);
-
-    // The density preset is a browser-local choice, not part of the save: the
-    // same seed renders the same town at whatever scale is set. Default is the
-    // shipped calibration until one is chosen.
-    const built = makeCity(island, seed, { size, density: dev });
-    // Any record the pipeline still files as "mixed" becomes its dominant use
-    // plus an explicit mix, once, at the door.
-    const parcels = normalizeParcels(built.parcels as ParcelTable);
-    useStore.getState().setData({
-      parcels,
-      adjacency: built.adjacency as Adjacency,
-      manifest: built.manifest as DataManifest,
-      city: built,
-    });
-
-    // A save only fits if every deed in it exists in THIS town. Across seeds
-    // it will not, and that is not a corrupt save — it is a save from a city
-    // that no longer exists, which is exactly what a reroll means.
-    const fits = saved && saved.v === 32 && saved.citySeed === seed && (saved.citySize ?? "city") === size && (saved.cityDev ?? "village") === dev
-      && Object.keys(saved.holdings).every((b) => parcels[b])
-      && saved.listings.every((l) => parcels[l.bbl]);
-    if (fits) {
-      useStore.setState({ game: saved });
-    } else {
-      const bbls = Object.keys(parcels);
-      const g = firstListings(newGame(seed, parcels), parcels, bbls);
-      g.citySeed = seed;
-      g.citySize = size;
-      g.cityDev = dev;
-      useStore.setState({ game: g });
-      void saveGame(AUTO(), g).catch(() => { /* private mode: play on unsaved */ });
+    const metas = await listSaves();
+    // Newest first: the campaign you were last in is the one Continue means.
+    const autos = metas
+      .filter((m) => m.slot === "auto" || m.slot.startsWith("auto@"))
+      .sort((a, b) => b.savedAt - a.savedAt);
+    for (const m of autos) {
+      const g = await loadGame(m.slot);
+      // A save from an older build cannot be opened, and one written before the
+      // city was generated at runtime has no town to rebuild — the seed IS the
+      // town, and without it "continue" would mean "generate a stranger's city
+      // and hope the deeds land on parcels". Neither is offered.
+      if (!g || g.v !== 32 || g.citySeed === undefined) continue;
+      resume = {
+        slot: m.slot,
+        island: m.slot.startsWith("auto@") ? m.slot.slice(5) : currentCity(),
+        seed: g.citySeed >>> 0,
+        // Older saves carry no size or build-out, which means the standard
+        // town, which is what they were built at.
+        size: g.citySize ?? currentSize(),
+        dev: g.cityDev ?? currentDev(),
+        month: g.month,
+        cash: g.cash,
+        savedAt: m.savedAt,
+      };
+      break;
     }
-  } catch (e) {
-    useStore.getState().setLoadError(
-      `The city would not build (${(e as Error).message}). This is a bug — please report the seed above.`,
-    );
-  }
+  } catch { /* no save store: there is nothing to continue, and that is fine */ }
+  useStore.setState({ resume, phase: "menu" });
+
+  // LOADING A NAMED SAVE FROM ANOTHER TOWN COMES BACK THROUGH HERE.
+  // `loadFrom` writes the save into the autosave slot and reloads, because
+  // rebuilding the town under a live map is what the reload is for. Without
+  // this flag that reload would land on the start screen and ask the player to
+  // press Continue to finish a load they already asked for.
+  let asked = false;
+  try {
+    asked = sessionStorage.getItem(RESUME_FLAG) === "1";
+    if (asked) sessionStorage.removeItem(RESUME_FLAG);
+  } catch { /* private mode: the menu is the honest place to land */ }
+  if (asked && resume) await useStore.getState().continueRun();
 }

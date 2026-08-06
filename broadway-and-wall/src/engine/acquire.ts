@@ -18,7 +18,7 @@
 // slowest. An offer is a price now, and agreeing one is buying the building.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, SellerKind, Talks } from "./types";
-import { monthLabel, START_YEAR } from "./types";
+import { logBooks, monthLabel, START_YEAR } from "./types";
 import { assetValue, resolveRec } from "./value";
 import { ownerOf, gradeOf, tie } from "./rivals";
 import { describeFirm } from "./firm";
@@ -188,6 +188,7 @@ function tickOne(s: GameState, parcels: ParcelTable, t: Talks) {
   if (t.agreed) {
     if (s.month >= (t.closeByM ?? t.openedM + CLOSE_WINDOW_M)) {
       drop();
+      forfeitDeposit(s, t);
       // It genuinely goes back on the market — the listing's own clock stopped
       // while the contract ran, so give it a fresh one rather than letting it
       // vanish the same month and make a liar of the news line.
@@ -539,6 +540,25 @@ export const MAX_TALKS = 4;
 export const DEPOSIT_PCT = 0.015;
 
 /**
+ * A DEAD DEAL IS AN EXPENSE, NOT AN ACQUISITION.
+ *
+ * When the seller keeps the earnest money there is no cash movement left to
+ * make — it went at the handshake — but the entry sitting in `bought` is now a
+ * lie: the acquisitions line would carry the price of a building that never
+ * arrived, and the player reading their own books would find $0.29M of
+ * purchases against no deed. So it is reclassified where the business puts it,
+ * under dead deal costs in firm overhead, which is what a forfeited deposit
+ * actually is. Both legs net to zero, so the conservation identity does not
+ * move; only the story the P&L tells does.
+ */
+function forfeitDeposit(s: GameState, t: Talks) {
+  const dep = t.deposit ?? 0;
+  if (dep <= 0) return;
+  logBooks(s, "bought", -dep);
+  logBooks(s, "ga", dep);
+}
+
+/**
  * The handshake. A price is a price and the building comes off everybody
  * else's tape, but nothing has moved: no deed, no cash, no loan. What you have
  * is three months and an obligation.
@@ -560,7 +580,20 @@ function strikeDeal(
         + `You cannot sign a contract you cannot put earnest money behind.`,
     };
   }
+  // AND IT GOES THROUGH THE BOOKS, because it is real money leaving on a real
+  // day. This wrote `cash` and told nobody: measured across five seeds, the
+  // handshake month came up short by exactly the deposit every time — $0.289M,
+  // $0.036M, $0.122M, $0.016M, $0.028M — a payment nobody booked. `conserve`
+  // never saw it because its bot buys with `executePurchase` and has never
+  // signed a contract in its life.
+  //
+  // It goes to `bought` on the way out and comes back off `bought` at the
+  // table, which is the same treatment the auction deposit already gets
+  // (auction.ts, registering bids) for the same instrument: hard money down,
+  // credited if you take the deed, gone if you do not. Same quantity, one
+  // answer.
   next.cash -= dep;
+  logBooks(next, "bought", dep);
   const prev = next.talks?.[bbl];
   next.talks = next.talks ?? {};
   next.talks[bbl] = {
@@ -603,6 +636,7 @@ export function walkAway(s: GameState, parcels: ParcelTable, bbl: string): { s: 
   if (!t) return { s };
   const next = clone(s);
   delete next.talks![t.bbl];
+  if (t.agreed) forfeitDeposit(next, t);
   const li = next.listings.find((l) => l.bbl === t.bbl);
   if (li && li.expiresM <= next.month) li.expiresM = next.month + 4;
   if (!Object.keys(next.talks ?? {}).length) delete next.talks;
@@ -662,6 +696,14 @@ function closeAgreed(
   const done = executePurchase(next, parcels, bbl, px, product as never, false, lev);
   if (done.err) { if (dep > 0) next.cash -= dep; return { s: next, err: done.err }; }
   const out = done.s;
+  // ...and the credit comes back off the acquisitions line, because
+  // `executePurchase` has just booked the WHOLE equity cheque and the earnest
+  // money is inside it. Without this the deposit is counted twice on the way
+  // out and once on the way in, and the closing month reconciles a deposit
+  // richer than it should — measured at exactly +$0.289M / +$0.036M / +$0.122M
+  // / +$0.016M / +$0.028M on the five seeds above, the mirror image of the
+  // handshake break. `bought` now totals what the building actually cost.
+  if (dep > 0) logBooks(out, "bought", -dep);
   out.listings = out.listings.filter((l: { bbl: string }) => l.bbl !== bbl);
   if (out.talks) { delete out.talks[bbl]; if (!Object.keys(out.talks).length) delete out.talks; }
   out.news.unshift({

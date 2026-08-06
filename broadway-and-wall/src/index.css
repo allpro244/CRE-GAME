@@ -706,6 +706,62 @@ body {
 .modal-actions .btn { font-size: 14px; padding: 8px 16px; }
 .modal-queue { font-size: 11px; color: var(--ink-dim); margin-top: 10px; font-style: italic; }
 
+/* ---- the interruptions the ENGINE raises: swans, a bank down, a book taken ----
+
+   These sit on the same backdrop and the same card as a letter of intent
+   because they are the same kind of object on the screen — one thing, centred,
+   with the world behind it — and the game only has one of those. What differs
+   is everything that says WHICH KIND of thing just happened, and it differs in
+   three places rather than one, because a single accent colour swapped from red
+   to green reads as the same card in a different mood and these are not the same
+   card. The rule down the left edge is the loudest signal on the modal; the
+   backdrop tints with it, so the whole screen knows before you have read a word;
+   and the body copy is set larger than a decision card's grid, because there is
+   no table here to scan, only a paragraph to read.
+
+   BLACK is #a8402e, the alarm red this file already gives a negative number and
+   a covenant breach. WHITE borrows --teal, which already marks the leasing agent
+   bar and the affirmative button — the colour this game uses for something going
+   right — rather than inventing a green nobody has seen here before. */
+.alert-back { background: rgba(28, 24, 16, 0.62); }
+.alert-back.alert-tint-bad { background: rgba(58, 20, 12, 0.62); }
+.alert-card {
+  border-left-width: 5px;
+  border-left-style: solid;
+  box-shadow: var(--lift-3);
+}
+.alert-bad  { border-left-color: #a8402e; }
+.alert-good { border-left-color: var(--teal); }
+.alert-kicker {
+  font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; font-weight: 700;
+}
+.alert-bad  .alert-kicker { color: #a8402e; }
+.alert-good .alert-kicker { color: var(--teal); }
+.alert-card .modal-title { margin-top: 5px; }
+.alert-card .modal-sub {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.4px;
+  text-transform: uppercase; margin-bottom: 14px;
+}
+/* The paragraph is the point of the card, so it is set two points above the
+   13px a decision card's grid uses — this is the one place in the game that is
+   prose rather than a table, and the 620px the modal is already capped at is
+   about the measure a paragraph wants anyway. */
+.alert-body {
+  font-size: 15px; line-height: 1.55; color: var(--ink);
+}
+/* THE ONE NUMBER THAT DECIDES WHAT YOU DO ABOUT IT (Alert.detail), pulled out
+   of the prose and set in the same monospace every other figure in this game is
+   set in, so it reads as a measurement and not as another sentence. */
+.alert-detail {
+  margin-top: 12px; padding: 9px 12px; border-radius: var(--r-sm);
+  font-family: var(--mono); font-size: 13px; line-height: 1.45;
+}
+.alert-bad  .alert-detail { background: rgba(168, 64, 46, 0.10); border: 1px solid rgba(168, 64, 46, 0.30); }
+.alert-good .alert-detail { background: rgba(47, 122, 114, 0.10); border: 1px solid rgba(47, 122, 114, 0.32); }
+.alert-foot {
+  margin-top: 14px; font-size: 12px; line-height: 1.5; color: var(--ink-dim); font-style: italic;
+}
+
 /* ---- the agent bar on the leasing page ---- */
 .agent-bar {
   display: flex; justify-content: space-between; align-items: center; gap: 18px;

@@ -171,7 +171,13 @@ export default function GamePanels() {
           </div>
         </div>
       )}
+      {/* THE INTERRUPTIONS THE ENGINE RAISES, ABOVE THE ONES IT SCHEDULES. An
+          alert and a letter of intent can land in the same month, and the order
+          matters: the bank that failed is the reason you would answer the letter
+          differently. Both render at the same z-index, so the one written last
+          is the one on top. */}
       <DecisionModal />
+      <AlertModal />
       <AuctionModal />
       <DefaultNoticeModal />
       {/* yield to the saves page — this used to paint over it at the same
@@ -401,6 +407,89 @@ function AuctionModal() {
   );
 }
 
+/**
+ * THE THREE THINGS THIS GAME STILL INTERRUPTS YOU FOR.
+ *
+ * A broker calling was moved off the modal and onto Marketplace last pass, and
+ * that was right: an off-market file runs for a year, it is a DECISION, and a
+ * decision with a twelve-month fuse belongs on a page. None of that argument
+ * applies to what this card carries. A bank going down, a level event in the
+ * real economy, and a lender taking three quarters of your book are not
+ * decisions and they are not waiting on you — they have already happened, there
+ * is no button that undoes them, and the only reason to put them on the screen
+ * is that a player who scrolls past one line of tape has not been told.
+ *
+ * WHAT THIS COMPONENT KNOWS ABOUT THE WORLD: nothing. The engine raises and the
+ * UI renders. `tone` is the only styling instruction it takes and it is an
+ * economic fact rather than a colour; the headline, the prose and the one
+ * number that matters are all written where the event fires, by the code that
+ * knows what happened. If the engine never pushes an alert, `game.alerts` is
+ * undefined, this returns null on the first line, and nothing anywhere breaks.
+ *
+ * A WHITE SWAN IS NOT A WARNING PAINTED GREEN. The good and bad cards differ in
+ * more than a colour, because they are read at different speeds: a black swan
+ * is something you have to survive and the card's job is to make you stop, and
+ * a white swan is something somebody is about to make a great deal of money on
+ * and the card's job is to make you want to be that somebody. Same shape, three
+ * differences — the rule down the side, the line under the button, and the fact
+ * that the good one's dismiss is the affirmative button rather than the plain
+ * one.
+ *
+ * IT IS NOT ON THE POP-UP SWITCH, and that is deliberate rather than an
+ * oversight. Settings turns off the DECISION cards, and the reason it costs
+ * nothing to turn them off is that every one of them also lives on a page with
+ * its own clock — the letters on the Deals desk, the offers on the Portfolio,
+ * the calls on Marketplace. These three do not live anywhere you can answer
+ * them, because there is nothing to answer. Suppressing one would either lose
+ * it outright or queue it up to ambush the player later, and a person who
+ * turned cards off to simulate twenty years is exactly the person a bank
+ * failure in year nine most needs to stop.
+ */
+function AlertModal() {
+  const game = useStore((s) => s.game)!;
+  const dismissAlert = useStore((s) => s.dismissAlert);
+  const a = game.alerts?.[0];
+  // A dead firm gets the game-over screen and nothing else on top of it.
+  if (!a || game.gameOver) return null;
+  const bad = a.tone !== "good";
+  const KICKER: Record<string, [string, string]> = {
+    // [what a bad one is called, what a good one is called]
+    swan: ["A black swan", "A white swan"],
+    bank: ["A desk has gone down", "The credit window"],
+    portfolio: ["The book has been taken", "Your portfolio"],
+  };
+  const kicker = (KICKER[a.kind] ?? ["Something has happened", "Something has happened"])[bad ? 0 : 1];
+  const queued = (game.alerts?.length ?? 1) - 1;
+  return (
+    <div className={"modal-backdrop alert-back" + (bad ? " alert-tint-bad" : "")}>
+      <div className={"modal alert-card " + (bad ? "alert-bad" : "alert-good")}>
+        <div className="alert-kicker">{kicker}</div>
+        <div className="modal-title">{a.title}</div>
+        <div className="modal-sub">{monthLabel(a.q)}</div>
+        <div className="alert-body">{a.body}</div>
+        {a.detail && <div className="alert-detail">{a.detail}</div>}
+        <div className="alert-foot">
+          {bad
+            ? "This is not a decision and there is nothing on this card to accept. It has happened; "
+              + "what it does to your rents, your lenders and your book is the rest of the game."
+            : "Nobody rings a bell for one of these either. It is on the tape and in the history, and the "
+              + "people who make money on it are the ones already standing where it lands."}
+        </div>
+        <div className="modal-actions">
+          <button className={"btn" + (bad ? "" : " btn-buy")} onClick={dismissAlert}>
+            {bad ? "Understood" : "Good."}
+          </button>
+        </div>
+        {queued > 0 && (
+          <div className="modal-queue">
+            {queued} more {queued === 1 ? "thing" : "things"} happened this month.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Some decisions don't wait their turn. A letter of intent and a live offer
 // on your building both take the screen until you answer — they expire, and
 // finding out later that one lapsed while you clicked past it is no fun.
@@ -415,10 +504,13 @@ function DecisionModal() {
   const [mcRent, setMcRent] = useState(0);
   const [mcTi, setMcTi] = useState(0);
   if (!parcels || game.gameOver) return null;
-  // THE MASTER SWITCH (Settings). Every one of these decisions also lives on
-  // a page — letters on the Deals desk, offers on the portfolio, calls on the
-  // Marketplace — so silencing the cards loses nothing but the interruption,
-  // which is the point when you are simulating twenty years at a stretch.
+  // THE MASTER SWITCH (Settings). Both of the decisions this component renders
+  // also live on a page — letters on the Deals desk, offers on the portfolio —
+  // so silencing the cards loses nothing but the interruption, which is the
+  // point when you are simulating twenty years at a stretch. (It used to say
+  // "calls on the Marketplace" as well; this component stopped rendering those
+  // the day they moved, and the list outlived them.) `AlertModal` is not on
+  // this switch and says why on itself.
   if (popupsOff) return null;
 
   const loi = game.agent ? undefined : game.lois.find((l) => !deferred.has(l.id));
@@ -780,7 +872,8 @@ function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: Prop
         }
         return (
           <div className="hint" style={{ cursor: "pointer" }}
-            onClick={() => { useStore.getState().setPage("research"); }}>
+            title="Open this firm's balance sheet on The street."
+            onClick={() => { openResearchOn("street"); useStore.getState().setPage("research"); }}>
             Owned by <strong>{own.name}</strong>
             {own.failedM !== undefined
               ? " — in receivership. The book is being sold down."
@@ -4755,8 +4848,12 @@ function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; spanYrs: 
               work: nominal reaches 4.5x over a campaign against real's 1.35x, so
               the shared scale flattens the series that matters into a rule along
               the bottom — which is the very "straight line" complaint this chart
-              exists to answer. The nominal figure is a Row on the Economy page
-              instead, where a number does the job a squashed line cannot. */}
+              exists to answer. The nominal figure is a Row instead, where a
+              number does the job a squashed line cannot: see `CityFigures`
+              directly below this grid. That sentence was written when the Row
+              did not exist anywhere in the game — the line was dropped for a
+              good reason and the number that was meant to replace it was never
+              written — and it is true now. */}
           <LineChart height={108} series={[{ label: "real wage", color: "#3a7d46", pts: tail.map((h) => real(h.wageIdx, h.cpi)) }]} yFmt={idxFmt} xLabels={x} />
           <div className="chart-note">
             What a paycheque buys, with inflation actually taken out. It gives ground about one year in six —
@@ -4781,6 +4878,64 @@ function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; spanYrs: 
             Every dollar elsewhere on this page is quoted in the money this chart is quietly shrinking.
           </div>
         </div>
+      </div>
+      <CityFigures />
+    </>
+  );
+}
+
+/**
+ * THE CITY'S NUMBERS, WHICH A CHART CANNOT GIVE YOU.
+ *
+ * These eight rows used to be printed under the land chart on Research. When
+ * Land moved onto the Economy page the two population/jobs charts above it came
+ * with it — they are the six cells in `CityEconCharts` — and the eight ROWS were
+ * deleted with the section rather than moved. Nothing asked for that, and it
+ * took real information out of the game: a chart says which way and how fast,
+ * and it cannot say how many people are in the town or what the price level has
+ * done since the year 2000 — and those are the figures a person quotes.
+ *
+ * The nominal wage is the sharpest case, because the comment on the real-wage
+ * chart above ASSERTS that it is "a Row on the Economy page instead, where a
+ * number does the job a squashed line cannot." It was not. It was nowhere in
+ * the game at all — the chart dropped the line for a good reason, and the Row
+ * that was supposed to catch it never got written. That prose is now true.
+ *
+ * Levels, not deltas, except where a level says nothing: "jobs added this year"
+ * is the one figure on this list that only exists as a change, and it is the
+ * first thing anybody underwriting a market looks up.
+ */
+function CityFigures() {
+  const game = useStore((s) => s.game)!;
+  const e = game.econ;
+  const h = e.history ?? [];
+  const n = h.length;
+  // Twelve months back, on the same series the chart above draws — not a
+  // separate estimate of the same growth rate.
+  const jobsYr = n > 12 && h[n - 13].jobs ? (h[n - 1].jobs! / h[n - 13].jobs! - 1) * 100 : 0;
+  return (
+    <>
+      <div className="page-section" style={{ marginTop: 14 }}>Where the city stands today</div>
+      <div className="grid">
+        <Row k="Population" v={(e.population ?? 0).toLocaleString()} strong />
+        <Row k="Jobs" v={(e.jobs ?? 0).toLocaleString()} />
+        <Row k="Jobs added this year" v={`${jobsYr >= 0 ? "+" : ""}${jobsYr.toFixed(1)}%`} bad={jobsYr < 0} strong />
+        {/* The 8.5% flag is the one these rows carried before they were
+            deleted, kept rather than re-picked: `initEcon` opens the city at
+            5.2% and `tickEcon` falls back to 5.5% wherever the field is
+            missing, so eight and a half is about three points of slack above
+            where this town sits when nothing is wrong. */}
+        <Row k="Unemployment" v={`${((e.unemployment ?? 0) * 100).toFixed(1)}%`} bad={(e.unemployment ?? 0) > 0.085} />
+        <Row k="Real wage" v={`${((real(e.wageIdx, e.cpi) - 1) * 100).toFixed(0)}% against the year 2000`} />
+        {/* THE ROW THE CHART ABOVE PROMISED. Its own note records why the line
+            was dropped — nominal measured at 4.5x over a campaign against
+            real's 1.35x, so a shared axis flattens the series that matters —
+            and that is exactly why the figure has to be said SOMEWHERE, or the
+            player has no way to see the gap between what they are paid and
+            what it buys. */}
+        <Row k="Nominal wage" v={`${(((e.wageIdx ?? 1) - 1) * 100).toFixed(0)}% against the year 2000`} />
+        <Row k="Real output" v={`${((real(e.outputIdx, e.cpi) - 1) * 100).toFixed(0)}% against the year 2000`} />
+        <Row k="Price level" v={`${(((e.cpi ?? 1) - 1) * 100).toFixed(0)}% of cumulative inflation`} />
       </div>
     </>
   );
@@ -5584,16 +5739,17 @@ const brokerCallsAside = new Set<string>();
  * This is the pop-up, whole. Every field the card printed is printed here —
  * their number, the spread to appraisal, in-place NOI, the going-in cap struck
  * on the disclosed roll, the stabilised pro-forma beside it, occupancy, demand
- * — and all three of its actions are here too. What the card could not do, and
- * a page can, is show you the four of them at once and tell you which one is
- * about to go away.
+ * — and all three of its actions are here too, plus the fourth the card never
+ * had room for. What the card could not do, and a page can, is show you the
+ * four of them at once and tell you which one is about to go away.
  *
  * THE CLOCK IS THE WHOLE POINT. An off-market file is worth something because
  * it is not on the tape and it will not be here next year: sim.ts drops the
- * approach twelve months after it arrives, and it drops it whether or not
- * anybody read this page. A list you can ignore forever at no cost is free
- * optionality wearing a deal's clothes, so the count rides on the tab and the
- * countdown rides on the row, both of them the engine's own number.
+ * approach `APPROACH_LIFE_M` months after it arrives — the engine's constant,
+ * imported at the top of this file rather than copied — and it drops it whether
+ * or not anybody read this page. A list you can ignore forever at no cost is
+ * free optionality wearing a deal's clothes, so the count rides on the tab and
+ * the countdown rides on the row, both of them the engine's own number.
  */
 function BrokerCalls() {
   const parcels = useStore((s) => s.parcels)!;
@@ -5623,7 +5779,11 @@ function BrokerCalls() {
     for (const b of [...brokerCallsAside]) if (!liveNow.has(b)) brokerCallsAside.delete(b);
   }, [calls]);
 
-  const freshCount = calls.filter((c) => !seenAtOpen.has(c.bbl)).length;
+  // ONE PREDICATE, TWO READERS. The header count and the chip on the row have
+  // to agree about what "new" means or the section says "2 new" over a list
+  // with one chip in it — the same fault the tab badge was written to avoid.
+  const isFresh = (bbl: string) => !seenAtOpen.has(bbl) && !brokerCallsAside.has(bbl);
+  const freshCount = calls.filter((c) => isFresh(c.bbl)).length;
   return (
     <>
       <div className="page-section">
@@ -5651,8 +5811,14 @@ function BrokerCalls() {
         const stab = proFormaNOIYr(rec, game.econ, ip.h?.condition ?? cond, a.ask);
         const over = v > 0 ? (a.ask / v - 1) * 100 : 0;
         const monthsLeft = lapseM - game.month;
-        const isNew = !seenAtOpen.has(bbl);
         const aside = brokerCallsAside.has(bbl);
+        // A FILE YOU PUT DOWN IS NOT A FILE YOU HAVE NOT SEEN. The comment on
+        // "Not now" below said the row "stops reading as new", and it did not:
+        // `seenAtOpen` is a snapshot taken when the page mounted, so setting a
+        // row aside left the NEW chip on it for the whole sitting. A prose
+        // claim about a chip is exactly the sort of thing nobody re-reads, so
+        // the code is the half that moved.
+        const isNew = isFresh(bbl);
         return (
           <div key={bbl} className="deal" style={{ marginBottom: 10, opacity: aside ? 0.62 : 1 }}>
             <div className="deal-head">
@@ -5698,10 +5864,7 @@ function BrokerCalls() {
                   which is what the Deals page comment about set-aside calls has
                   always said. It means exactly the same thing here: the row
                   dims and stops reading as new, the clock keeps running, and
-                  the offer is still openable until the month it dies. Making it
-                  hang up for real would need the engine — writing `refused` from
-                  the UI would tell acquire.ts that the OWNER refused YOU, which
-                  is a different fact and would poison a later cold approach. */}
+                  the offer is still openable until the month it dies. */}
               <button
                 className="btn"
                 title="Nothing happens to the file. It stays on this page, counting down, until their client stops listening."
@@ -5709,9 +5872,30 @@ function BrokerCalls() {
               >
                 {aside ? "Set aside" : "Not now"}
               </button>
+              {/* AND THE MOVE THAT WAS MISSING BETWEEN THEM. There were two
+                  buttons and three answers: "not now" changes nothing, "stop
+                  calling me" throws the whole switch, and the ordinary reply —
+                  this building is not for me, ring me about the next one — had
+                  nowhere to go. So a file you had already decided against sat on
+                  this page for up to a year and went on stopping auto-advance
+                  through `attentionItems` every month it lived.
+
+                  It is the engine's own lapse, taken early: see `hangUpOnCall`
+                  in sim.ts, which deletes the record exactly as the twelve-month
+                  sweep does and deliberately does NOT write `refused` — that
+                  flag means the OWNER turned YOU away, and acquire.ts reads it
+                  as such, so setting it from here would put a refusal on a
+                  conversation the owner never had. */}
               <button
                 className="btn"
-                title="Brokers stop ringing you entirely. The switch is at the top of this page."
+                title="Closes this file and nothing else. The owner is not told, the street is not told, and the phone still rings about other buildings."
+                onClick={() => useStore.getState().hangUpCall(bbl)}
+              >
+                Not for me
+              </button>
+              <button
+                className="btn"
+                title="Brokers stop ringing you entirely, about everything. The switch is in the strip at the top of this page, and in Settings."
                 onClick={() => {
                   const st = useStore.getState();
                   useStore.setState({ game: { ...st.game!, brokersOff: true } });
@@ -5967,15 +6151,51 @@ function LandValueChart() {
 
       {/* THE CITY'S OWN SERIES USED TO BE PRINTED HERE TOO — population, jobs,
           unemployment, the real wage — because on Research this was the only
-          place they appeared. On the Economy page they are the card next door:
-          "The city" draws all six with their deflation done and their notes
-          attached, on the same window switch as everything else. Two copies of
-          one series on one page is how a reader comes to take a level off one
-          chart and a date off the other, so this half is gone and the card is
-          one click away. */}
+          place they appeared. Two copies of one series on one page is how a
+          reader comes to take a level off one chart and a date off the other,
+          so the CHARTS are gone from here and live on the "The city" card one
+          click away, which draws all six with their deflation done and their
+          notes attached, on the same window switch as everything else.
+          The eight ROWS under those charts went with them and should not have:
+          a line says which way and how fast and cannot say how many people are
+          in the town this month. They are restored on that same card as
+          `CityFigures` — the correct destination, since the deltas are struck
+          off the history the charts there draw — and not duplicated here. */}
     </>
   );
 }
+
+/**
+ * WHICH RESEARCH TAB A LINK FROM SOMEWHERE ELSE WANTED.
+ *
+ * `rtab` is state inside `ResearchPage`, and `ResearchPage` does not exist
+ * until `setPage("research")` mounts it — so a caller cannot set the tab
+ * directly and there is nothing on the store to set either. This is the
+ * handoff: the link drops a tab name, the page reads it in its `useState`
+ * initialiser on the first render, and an effect clears it once that render has
+ * committed.
+ *
+ * READING AND CLEARING ARE TWO STEPS FOR A REASON, and the reason is
+ * StrictMode. `main.tsx` wraps the app in it, and StrictMode invokes a lazy
+ * `useState` initialiser TWICE — so a `take()` that cleared as it read would
+ * hand the tab to the first invocation and hand `null` to the second, which is
+ * the one React keeps. The link would have worked in a production build and
+ * silently done nothing in dev, which is the worst of the two directions.
+ * Reading is idempotent; the clear is in the effect, where being run twice is
+ * harmless.
+ *
+ * It clears at all because a deep link that permanently changes a page's home
+ * is not a deep link: without this, closing Research and reopening it from the
+ * nav would put you back on the street table for the rest of the session. One
+ * shot, and if nobody follows a link the page opens exactly as it did before
+ * this existed.
+ *
+ * Module scope for the same reason `brokerCallsSeen` above is: it is a fact
+ * about the click you just made in this browser, and it has no business
+ * travelling in a save.
+ */
+let pendingRTab: string | null = null;
+const openResearchOn = (tab: string) => { pendingRTab = tab; };
 
 // (The collapsible Fold component lived here. Research moved to sub-tabs —
 // one section on screen at a time instead of a scroll of drawers — and no
@@ -6001,10 +6221,18 @@ function ResearchPage() {
   // input to every appraisal on the Economy page and the banks are the other
   // half of a cap rate, so reading them on a different screen from the rent
   // and vacancy they price against is how a site comes to look like it pencils.
-  // Nothing links to either by name — `rtab` is local state with no deep link
-  // and the one cross-page jump in this file, from a parcel's owner line, goes
-  // to Research for the STREET tab, which has not moved.
-  const [rtab, setRtab] = useState<string>("sectors");
+  //
+  // THE ONE CROSS-PAGE JUMP INTO THIS PAGE now lands where it always claimed
+  // to. The comment here used to say it "goes to Research for the STREET tab,
+  // which has not moved", and it did not: `setPage("research")` opened Research
+  // and `rtab` initialised to "sectors", so clicking the owner's name on a
+  // parcel card put you on a grid of sector rents with no sign of that firm
+  // anywhere. Two tabs left this page in that pass and the tab this link wanted
+  // moved position with them, which is presumably how it went unnoticed.
+  // `pendingRTab` above is the fix — see the note on it for why the read and
+  // the clear are separate.
+  const [rtab, setRtab] = useState<string>(() => pendingRTab ?? "sectors");
+  useEffect(() => { pendingRTab = null; }, []);
   const RTABS: [string, string][] = [["sectors", "Sectors"], ["trades", "Trades"],
     ["street", "The street"], ["stock", "Properties"], ["comps", "Prints"]];
   return (
@@ -7221,7 +7449,12 @@ function SettingsPage() {
         on={!popupsOff}
         set={(v) => setPopupsOff(!v)}
         label="Pop-up cards"
-        detail="Letters of intent, offers on your buildings, broker calls and the auction card take the screen when they arrive. Off, they wait quietly where they live — letters and tenant asks on the Deals desk, offers on the Portfolio, off-market calls and the docket on Marketplace — and nothing is lost but the interruption. Turn this off to simulate long stretches."
+        detail={"Letters of intent, offers on your buildings and the auction card take the screen when they arrive. "
+          + "Off, they wait quietly where they live — letters and tenant asks on the Deals desk, offers on the "
+          + "Portfolio, off-market calls and the docket on Marketplace — and nothing is lost but the interruption. "
+          + "Turn this off to simulate long stretches. A bank going down, a level event in the wider economy and "
+          + "a book taken back by a lender are NOT on this switch: they are not decisions waiting on a page, they "
+          + "happen once, and being told is the whole of what they are."}
       />
       <Toggle
         on={!game.brokersOff}

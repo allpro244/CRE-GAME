@@ -1631,6 +1631,25 @@ export interface GameState {
   // Leasing agent on retainer: signs every LOI for you at a 6% commission
   // instead of the 4%/2% you'd pay doing it yourself.
   agent: boolean;
+  /**
+   * PROPERTY MANAGEMENT HAS THE RENEWALS, at the 2% the roll already pays.
+   *
+   * Narrower than `agent` above and deliberately so. The agent takes the whole
+   * book at 6% and signs everything, including the new leases — which is the
+   * interesting half, where you trade term for allowance and decide whether a
+   * covenant is worth a discount. This hands over only the RENEWALS: the sitting
+   * tenant, the paper that rolls whether you are paying attention or not.
+   *
+   * The 2% is not a new number. `leaseCosts` has always priced a renewal at 2%
+   * against a new lease's 4%, because a renewal is genuinely less work — no
+   * fit-out to negotiate, no tour, no covenant to underwrite. Engaging the desk
+   * does not change the commission; it changes who does the signing.
+   *
+   * The trade is a real one: a manager signs AT the market and never above it,
+   * so an owner who works their own renewals still beats one who does not — they
+   * just have to be there when the letter arrives.
+   */
+  renewalMgmt?: boolean;
   /** The player told the brokers to stop ringing. Nothing else changes. */
   brokersOff?: boolean;
   /**

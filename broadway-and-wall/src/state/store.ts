@@ -159,6 +159,7 @@ interface AppState {
   broker: (bbl: string, on: boolean) => void;
   rateCap: (bbl: string) => void;
   setAgent: (on: boolean) => void;
+  setRenewalMgmt: (on: boolean) => void;
   drawCredit: (amt: number) => void;
   repayCredit: (amt: number) => void;
   /**
@@ -809,6 +810,15 @@ export const useStore = create<AppState>((set, get) => ({
     set({ game: r.s });
     toast("Capped. Sleep better.");
     void persist(r.s);
+  },
+
+  setRenewalMgmt: (on) => {
+    const { game } = get();
+    if (!game) return;
+    set({ game: { ...game, renewalMgmt: on } });
+    toast(on
+      ? "Management has the renewals. 2% of lease value on what they sign; new leases still come to you."
+      : "You're handling your own renewals again.");
   },
 
   setAgent: (on) => {

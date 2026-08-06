@@ -1482,7 +1482,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     }
   }
 
+  // The agent takes everything at 6%; the management desk takes only the
+  // renewals at the 2% the roll already pays. Hiring the agent supersedes the
+  // desk, because the agent is already signing the renewals too.
   if (s.agent) runAgent(s, parcels);
+  else if (s.renewalMgmt) runRenewalDesk(s, parcels);
 }
 
 // The leasing agent works the whole book for you: every LOI that clears a
@@ -1682,6 +1686,40 @@ function runAgent(s: GameState, parcels: ParcelTable) {
     const cost = loiSigningCost(loi, AGENT_FEE);
     if (s.cash < cost) continue;   // can't fund the TI; the LOI keeps sitting
     signLoi(s, rec, h, loi, AGENT_FEE);
+    s.lois = s.lois.filter((l) => l.id !== loi.id);
+  }
+}
+
+/**
+ * PROPERTY MANAGEMENT SIGNS THE RENEWALS — see GameState.renewalMgmt.
+ *
+ * Only `kind: "renewal"`, and at whatever leaseCosts already charges for one,
+ * which is 2%. A new-lease letter still lands on the player's desk, because
+ * that is the decision worth having.
+ *
+ * The floor is the same 82% of market `runAgent` uses: a manager with a mandate
+ * still will not sign a renewal well under the market — they refer it back, and
+ * it becomes the owner's problem again, which is exactly what happens when the
+ * number is bad enough to need a principal.
+ */
+function runRenewalDesk(s: GameState, parcels: ParcelTable) {
+  for (const loi of [...s.lois]) {
+    if (loi.kind !== "renewal") continue;
+    const h = s.holdings[loi.bbl];
+    const rec = resolveRec(parcels, s, loi.bbl);
+    if (!h || !rec) continue;
+    const market = managedRentPsfYr(rec, s.econ, h);
+    if (loi.rentPsf < market * 0.82) {
+      s.lois = s.lois.filter((l) => l.id !== loi.id);
+      s.news.unshift({
+        q: s.month, kind: "info",
+        text: `Management referred ${loi.name}'s renewal at ${rec.address} back to you — the number is under the market and they will not sign it.`,
+      });
+      continue;
+    }
+    const cost = loiSigningCost(loi);          // renewals are 2% in leaseCosts
+    if (s.cash < cost) continue;               // cannot fund it; the letter sits
+    signLoi(s, rec, h, loi);
     s.lois = s.lois.filter((l) => l.id !== loi.id);
   }
 }

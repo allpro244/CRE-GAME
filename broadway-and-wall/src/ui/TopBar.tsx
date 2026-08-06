@@ -4,6 +4,7 @@ import { useStore, derivedNetWorth, derivedQuarterCF } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { currentCity, currentSeed } from "@/state/city";
 import { usd, pct } from "./format";
+import { liveBrokerCalls } from "./RightPanel";
 
 export default function TopBar() {
   const [armNewRun, setArmNewRun] = useState(false);
@@ -23,6 +24,18 @@ export default function TopBar() {
   // What happened THIS MONTH that was not routine — the badge is the reason to
   // look, not a count of everything ever written.
   const unread = game ? game.news.filter((n) => n.q === game.month && (n.kind === "warn" || n.kind === "event")).length : 0;
+  // OFF-MARKET FILES WAITING, AND HOW LONG THE NEAREST ONE HAS.
+  //
+  // These arrived as a full-screen card until this pass, which meant the player
+  // could not miss one and did not need a badge. On a page they can, and the
+  // engine drops an approach twelve months after it lands whether or not
+  // anybody read it — so a list with no signal would turn a file with a clock
+  // on it into free optionality, which is a difficulty dial wearing a UI
+  // change's clothes. Counted the same way News counts: what wants an answer,
+  // not what exists. The tooltip carries the soonest lapse, because "3" tells
+  // you there is something and not whether it is urgent.
+  const bcalls = game ? liveBrokerCalls(game) : [];
+  const bcallSoon = bcalls.length ? Math.max(0, bcalls[0].lapseM - game!.month) : 0;
 
   // WHICH TOWN IS NOT ASKED HERE ANY MORE. The island, the size and the
   // build-out used to hang off the New-city button as a three-section
@@ -171,8 +184,15 @@ export default function TopBar() {
               </button>
             );
           })()}
-          <button className={"nav-btn" + (page === "market" ? " nav-on" : "")} onClick={() => setPage(page === "market" ? "none" : "market")}>
-            Marketplace
+          <button
+            className={"nav-btn" + (page === "market" ? " nav-on" : "")}
+            title={bcalls.length
+              ? `${bcalls.length} off-market file${bcalls.length === 1 ? "" : "s"} on the phone. The soonest lapses in `
+                + `${bcallSoon} month${bcallSoon === 1 ? "" : "s"} — after that the broker's client has stopped listening.`
+              : "Everything for sale in town, and anything a broker is shopping you off-market."}
+            onClick={() => setPage(page === "market" ? "none" : "market")}
+          >
+            Marketplace{bcalls.length > 0 ? ` · ☎ ${bcalls.length}` : ""}
           </button>
           <button className={"nav-btn" + (page === "economy" ? " nav-on" : "")} onClick={() => setPage(page === "economy" ? "none" : "economy")}>
             Economy

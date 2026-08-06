@@ -403,15 +403,12 @@ function DecisionModal() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels);
   const popupsOff = useStore((s) => s.popupsOff);
-  const { respondLoi, acceptOffer, declineOffer, select: goTo, setPage: openPage } = useStore.getState();
+  const { respondLoi, acceptOffer, declineOffer } = useStore.getState();
   const [deferred, setDeferred] = useState<Set<number>>(new Set());
   // the modal's counter sliders
   const [modalCounter, setModalCounter] = useState(false);
   const [mcRent, setMcRent] = useState(0);
   const [mcTi, setMcTi] = useState(0);
-  // parcel ids are strings and do not fit in the numeric defer set; squeezing
-  // them in by hashing the last four digits would collide silently
-  const [dismissedCalls, setDismissedCalls] = useState<Set<string>>(new Set());
   if (!parcels || game.gameOver) return null;
   // THE MASTER SWITCH (Settings). Every one of these decisions also lives on
   // a page — letters on the Deals desk, offers on the portfolio, calls on the
@@ -421,75 +418,22 @@ function DecisionModal() {
 
   const loi = game.agent ? undefined : game.lois.find((l) => !deferred.has(l.id));
   const offerBbl = deferred.has(-1) ? undefined : Object.keys(game.holdings).find((b) => game.holdings[b].sale?.offer);
-  // an unsolicited call from a broker is a decision like any other
-  const callBbl = Object.entries(game.approaches).find(
-    ([b, a]) => a.inbound && !a.refused && a.ask && !dismissedCalls.has(b) && !game.holdings[b],
-  )?.[0];
-  if (!loi && !offerBbl && !callBbl) return null;
+  if (!loi && !offerBbl) return null;
 
-  if (!loi && callBbl) {
-    const rec = resolveRec(parcels, game, callBbl);
-    const a = game.approaches[callBbl];
-    if (rec && a?.ask) {
-      const cond = initialCondition(rec);
-      const v = assetValue(rec, game.econ, cond);
-      // A broker with a file has the file — the roll came over when the call
-      // did (Approach.roll). So this is in-place income off the actual leases,
-      // not the class model's opinion of a building like this one.
-      const ip = inPlace(rec, game, callBbl, a.ask);
-      const noi = ip.noi;
-      const goingInPct = a.ask > 0 ? (noi / a.ask) * 100 : 0;
-      const stab = proFormaNOIYr(rec, game.econ, ip.h?.condition ?? cond, a.ask);
-      const over = v > 0 ? (a.ask / v - 1) * 100 : 0;
-      return (
-        <div className="modal-backdrop">
-          <div className="modal">
-            <div className="modal-kicker">A broker is on the phone</div>
-            <div className="modal-title">{rec.address}</div>
-            <div className="modal-sub">
-              {useLabel(rec)} · {sf(rec.bldgArea)} · {rec.floors} fl · built {rec.yearBuilt}. Not on the market.
-            </div>
-            <div className="grid">
-              <Row k="Their number" v={usd(a.ask)} strong />
-              <Row k="vs appraisal" v={`${over >= 0 ? "+" : ""}${over.toFixed(0)}%`} bad={over > 8} />
-              <Row k="In-place NOI / yr" v={usd(noi)} />
-              <Row k="Going-in cap" v={`${goingInPct.toFixed(2)}%`} bad={goingInPct < game.econ.indexRate + 1.6} />
-              {/* THE OTHER HALF OF AN OFFERING MEMORANDUM, labelled so the two
-                  cannot be read as one number. The spread between them is the
-                  value-add trade: what it earns today, and what it would earn
-                  full — which is a forecast, and the seller's forecast at that. */}
-              <Row k="Stabilised pro-forma" v={`${usd(stab)} · ${a.ask > 0 ? ((stab / a.ask) * 100).toFixed(2) : "—"}%`} />
-              <Row k={ip.disclosed ? "Occupancy (in place)" : "Occupancy (mkt est.)"} v={`${(ip.occ * 100).toFixed(0)}%`} />
-              <Row k="Demand" v={`${rec.demandScore} / 100`} />
-            </div>
-            <div className="modal-actions">
-              <button className="btn btn-buy" onClick={() => { openPage("none"); goTo(callBbl); setDismissedCalls((d) => new Set(d).add(callBbl)); }}>
-                Open the file
-              </button>
-              <button className="btn" onClick={() => setDismissedCalls((d) => new Set(d).add(callBbl))}>
-                Not now
-              </button>
-              <button
-                className="btn"
-                title="Brokers stop ringing you entirely. Turn it back on from the Marketplace page."
-                onClick={() => {
-                  const st = useStore.getState();
-                  const g = { ...st.game!, brokersOff: true };
-                  useStore.setState({ game: g });
-                  setDismissedCalls((d) => new Set(d).add(callBbl));
-                }}
-              >
-                Stop calling me
-              </button>
-            </div>
-            <div className="modal-queue">
-              Their client will listen for a few months. It stays on your desk until it lapses.
-            </div>
-          </div>
-        </div>
-      );
-    }
-  }
+  // THE BROKER'S CALL IS NOT A CARD ANY MORE — it is a row on Marketplace.
+  //
+  // It used to render here, a full-screen backdrop over whatever page you were
+  // reading, and it was the only interruption in the game that was not a
+  // deadline: a letter of intent expires in weeks and an offer on your own
+  // building expires in weeks, but an off-market file runs for a YEAR (sim.ts
+  // deletes the approach at a.q + 12). A decision with a twelve-month fuse does
+  // not belong in front of the charts. The whole panel — their number, the
+  // spread to appraisal, in-place NOI, the going-in cap off the disclosed roll,
+  // the stabilised pro-forma, occupancy, demand — and all three of its actions
+  // moved verbatim onto the Marketplace page, where the rest of the tape lives.
+  // See BrokerCalls() below. The lapse is unchanged and still runs on the
+  // engine's clock whether or not anybody opens that page, so the tab carries a
+  // count and every row carries its own countdown.
 
   if (loi) {
     const rec = resolveRec(parcels, game, loi.bbl);
@@ -4523,10 +4467,17 @@ function DealsPage() {
   const expiring: { bbl: string; name: string; sf: number; endM: number }[] = [];
   const maturities: { bbl: string; matM: number; bal: number; sweep: boolean }[] = [];
   const sales: { bbl: string; ask: number; offer?: { price: number; expiresM: number } }[] = [];
+  // YOUR OWN KNOCKS, and only yours. This list used to carry the inbound calls
+  // too, which was right while their only other home was a pop-up. They have a
+  // page now — Marketplace prints the whole offering memorandum and the lapse
+  // clock for each one — and two lists of the same files is one list the player
+  // has to choose between. The desk keeps what the desk is for: the doors you
+  // knocked on yourself, where an owner has given you a number.
   const calls = Object.entries(game.approaches)
-    .filter(([bbl, a]) => !a.refused && a.ask && !game.holdings[bbl])
-    .map(([bbl, a]) => ({ bbl, ask: a.ask!, inbound: !!a.inbound, lapseM: a.q + 12 }))
+    .filter(([bbl, a]) => !a.refused && a.ask && !a.inbound && !game.holdings[bbl])
+    .map(([bbl, a]) => ({ bbl, ask: a.ask!, lapseM: a.q + APPROACH_LIFE_M }))
     .sort((a, b) => a.lapseM - b.lapseM);
+  const inbound = liveBrokerCalls(game);
   for (const h of Object.values(game.holdings)) {
     for (const t of h.tenants) if (t.endM - q <= 12 && t.endM > q) expiring.push({ bbl: h.bbl, name: t.name, sf: t.sf, endM: t.endM });
     if (h.loan && (h.loan.maturityM - q <= 24 || h.loan.sweep)) maturities.push({ bbl: h.bbl, matM: h.loan.maturityM, bal: h.loan.balance, sweep: h.loan.sweep });
@@ -4653,20 +4604,31 @@ function DealsPage() {
 
       <section>
         {/* An off-market approach that you set aside has to be findable, or
-            "Not now" is the same as "never" — and a call the broker made on
-            your behalf is a live deal whether or not you looked at it today. */}
-        <div className="page-section">Off-market · {calls.length}</div>
-        {calls.length === 0 && <div className="hint">No live approaches. Brokers call when you own enough for them to care.</div>}
+            "Not now" is the same as "never" — and a number an owner gave you is
+            a live deal whether or not you looked at it today. */}
+        <div className="page-section">Doors you knocked on · {calls.length}</div>
+        {calls.length === 0 && <div className="hint">Nothing open. Walk up to any building you do not own and ask.</div>}
         <div className="mini-list">
           {calls.map((c) => (
             <button key={c.bbl} className="neighbor" onClick={() => go(c.bbl)}>
-              <span className="neighbor-addr">{c.inbound ? "☎ " : ""}{parcels[c.bbl]?.address ?? c.bbl}</span>
+              <span className="neighbor-addr">{parcels[c.bbl]?.address ?? c.bbl}</span>
               <span className="neighbor-meta">
                 {usd(c.ask)} · lapses {monthLabel(c.lapseM)}
               </span>
             </button>
           ))}
         </div>
+        {/* The other direction of the same channel, and it is somebody else's
+            clock. One line, pointing at the page that holds the file — not a
+            second copy of it. */}
+        {inbound.length > 0 && (
+          <div className="hint" style={{ cursor: "pointer" }} onClick={() => useStore.getState().setPage("market")}>
+            <strong>{inbound.length}</strong> broker{inbound.length === 1 ? " is" : "s are"} shopping you something
+            off-market — the soonest lapses <b>{monthLabel(inbound[0].lapseM)}</b>, in{" "}
+            {Math.max(0, inbound[0].lapseM - game.month)} month
+            {Math.max(0, inbound[0].lapseM - game.month) === 1 ? "" : "s"}. The files are on Marketplace.
+          </div>
+        )}
 
         <div className="page-section" style={{ marginTop: 18 }}>Sales in progress · {sales.length}</div>
         {sales.length === 0 && <div className="hint">Nothing listed. Sell from any owned building's card.</div>}
@@ -4845,12 +4807,24 @@ function EconomyPage() {
   // A fifth stance joins the four classes: "general" swaps the class detail
   // for the city itself — the six series every rent in the game is downstream
   // of. It lands first because the class cards only make sense against it.
-  const [sel, setSel] = useState<BuiltClass | "general">("general");
+  //
+  // LAND AND THE BANKS ARE THE SIXTH AND SEVENTH, and they arrived here from
+  // Research by request. They were never research: research is the view you
+  // form before you shop, and these two are the market picture itself. Land is
+  // the input to every appraisal and every development budget on this page —
+  // reading the rent cycle on one screen and the land cycle on another is how
+  // you come to believe a site pencils. The banks are the other half of a cap
+  // rate: what a building is worth is what somebody can borrow against it, and
+  // the credit-window stat at the top of this page is a single number derived
+  // from those five balance sheets. Both are stances of the same page now, one
+  // on screen at a time, exactly like the four classes.
+  const [sel, setSel] = useState<BuiltClass | "general" | "land" | "banks">("general");
+  const isClass = sel !== "general" && sel !== "land" && sel !== "banks";
   // Every per-class computation below still wants a concrete class, and the
-  // cheapest way to keep "general" from breaking marketBalance(e, focus) and
-  // its neighbours is to let them run against office while the general grid
-  // is up — nothing they produce is rendered then.
-  const focus: BuiltClass = sel === "general" ? "office" : sel;
+  // cheapest way to keep the non-class stances from breaking marketBalance(e,
+  // focus) and its neighbours is to let them run against office while another
+  // grid is up — nothing they produce is rendered then.
+  const focus: BuiltClass = isClass ? (sel as BuiltClass) : "office";
   const CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
   const COLOR: Record<BuiltClass, string> = {
     office: "#3d6f9e", retail: "#a8562e", multifamily: "#4a7d5a", industrial: "#7a6a45",
@@ -5081,6 +5055,62 @@ function EconomyPage() {
             </button>
           );
         })}
+        {/* THE TWO MARKETS THAT ARE NOT SPACE MARKETS, on the same rail as the
+            four that are — because they are read the same way and at the same
+            moment. Land has no vacancy and no natural rate to gauge against;
+            the twelve-month move is its state. The banks have no rent; the
+            credit window IS their state, and it is the multiplier on the next
+            advance rate anybody in this town gets quoted. */}
+        {(() => {
+          const h = e.history ?? [];
+          const yoy = h.length > 12 ? e.landIdx / h[h.length - 13].landIdx - 1 : 0;
+          // DESKS THAT STILL QUOTE. A lender in receivership carries a capital
+          // ratio that has already gone through the floor — measured, one sat
+          // at −47% of book — and it is not a warning about anything, because
+          // nothing new is ever written there again. The number worth putting
+          // on a card is how close the WEAKEST LIVE desk is to the same fate.
+          const banks = (game.lenders ?? []).filter((l) => l.failedM === undefined);
+          const failed = (game.lenders ?? []).length - banks.length;
+          const worst = banks.length
+            ? banks.reduce((a, l) => Math.min(a, capitalRatio(l) / targetCapital(l.name)), Infinity) : 0;
+          return (
+            <>
+              <button className={"mkt-card" + (sel === "land" ? " mkt-card-on" : "")} onClick={() => setSel("land")}>
+                <div className="mkt-card-head">
+                  <span className="mkt-card-name">Land</span>
+                  <span className="mono">{e.landIdx.toFixed(2)}</span>
+                </div>
+                <div className={"mkt-card-state" + (yoy < -0.02 ? " neg" : "")}>
+                  {yoy > 0.06 ? "running hard" : yoy > 0.015 ? "rising" : yoy < -0.06 ? "falling hard"
+                    : yoy < -0.015 ? "easing" : "flat"}
+                </div>
+                <div className="mkt-card-sub mono">
+                  {yoy >= 0 ? "+" : ""}{(yoy * 100).toFixed(1)}% over 12m · the slowest cycle here
+                </div>
+              </button>
+              {/* The card exists while there is a lending market to read at
+                  all — including a street where every desk has been seized,
+                  which is the single most important thing the page could be
+                  telling you. Only the "weakest" figure skips the dead ones. */}
+              {(game.lenders ?? []).length > 0 && (
+                <button className={"mkt-card" + (sel === "banks" ? " mkt-card-on" : "")} onClick={() => setSel("banks")}>
+                  <div className="mkt-card-head">
+                    <span className="mkt-card-name">The banks</span>
+                    <span className="mono">{Math.round(e.creditIdx * 100)}%</span>
+                  </div>
+                  <div className={"mkt-card-state" + (e.creditIdx < 0.72 ? " neg" : "")}>
+                    credit is {creditWord(e.creditIdx ?? 1)}
+                  </div>
+                  <div className="mkt-card-sub mono">
+                    {banks.length} desk{banks.length === 1 ? "" : "s"} still quoting
+                    {failed ? ` · ${failed} gone` : ""}
+                    {banks.length ? ` · weakest at ${worst.toFixed(2)}× its capital target` : " · nobody is lending"}
+                  </div>
+                </button>
+              )}
+            </>
+          );
+        })()}
       </div>
 
       {/* THE WINDOW SWITCH, and it only exists when it can do something.
@@ -5103,7 +5133,9 @@ function EconomyPage() {
 
       {/* ---- the general view: the city's six series, or one class in depth ---- */}
       {sel === "general" && <CityEconCharts tail={tail} spanYrs={spanYrs} />}
-      {sel !== "general" && <>
+      {sel === "land" && <LandValueChart />}
+      {sel === "banks" && <TheBanks />}
+      {isClass && <>
       <div className="page-section">{SECTOR_LABEL[focus]} — {bal.state}</div>
       <div className="hint">{bal.note}</div>
       <div className="grid" style={{ marginTop: 6 }}>
@@ -5508,6 +5540,201 @@ function BuildingDatabase() {
   );
 }
 
+/**
+ * HOW LONG A BROKER'S FILE STAYS OPEN.
+ *
+ * The engine owns this: `sim.ts` deletes any approach the month after
+ * `s.month > a.q + 12`, and that sweep runs whether the player has ever opened
+ * this page or not. It is mirrored here because a countdown the player can read
+ * has to be the same twelve months the engine is counting — if these two ever
+ * disagree, the number on the row is a fake and the row is lying about a
+ * deadline. It is a mirror, not a second opinion; the right fix is for sim.ts
+ * to export it, which is a file this pass does not own. Flagged as a follow-up.
+ */
+const APPROACH_LIFE_M = 12;
+
+/**
+ * EVERY OFF-MARKET FILE A BROKER IS CURRENTLY SHOPPING TO YOU, soonest to
+ * lapse first — which is the order a principal works them in, because the one
+ * with two months left is the only one on this list that is actually a
+ * decision this quarter.
+ *
+ * Exported because the Marketplace tab carries the count and the tab lives in
+ * TopBar. One expression, two readers: a badge that disagreed with the list
+ * under it would be worse than no badge.
+ */
+export function liveBrokerCalls(game: GameState): { bbl: string; a: Approach; lapseM: number }[] {
+  return Object.entries(game.approaches)
+    .filter(([bbl, a]) => a.inbound && !a.refused && !!a.ask && !game.holdings[bbl])
+    .map(([bbl, a]) => ({ bbl, a, lapseM: a.q + APPROACH_LIFE_M }))
+    .sort((x, y) => x.lapseM - y.lapseM || (y.a.ask ?? 0) - (x.a.ask ?? 0));
+}
+
+/**
+ * WHAT THE PLAYER HAD ALREADY SEEN WHEN THEY OPENED THIS PAGE.
+ *
+ * The modal marked itself read by existing — you had it in front of you, so
+ * you had seen it. A list does not, so the "new since you last looked" mark has
+ * to be kept somewhere. It is module scope rather than game state on purpose:
+ * whether a card has been glanced at is a fact about this sitting at this
+ * browser, exactly like `popupsOff` and the auction card's `seenM`, and it has
+ * no business travelling inside a save that another machine will load. The cost
+ * is that a page reload re-marks everything live as new, which is the harmless
+ * direction to be wrong in — it shows you too much, not too little.
+ */
+const brokerCallsSeen = new Set<string>();
+/** Files the player has explicitly put down. Same scope, same reasoning. */
+const brokerCallsAside = new Set<string>();
+
+/**
+ * A BROKER'S CALL, AS A ROW ON THE TAPE.
+ *
+ * This is the pop-up, whole. Every field the card printed is printed here —
+ * their number, the spread to appraisal, in-place NOI, the going-in cap struck
+ * on the disclosed roll, the stabilised pro-forma beside it, occupancy, demand
+ * — and all three of its actions are here too. What the card could not do, and
+ * a page can, is show you the four of them at once and tell you which one is
+ * about to go away.
+ *
+ * THE CLOCK IS THE WHOLE POINT. An off-market file is worth something because
+ * it is not on the tape and it will not be here next year: sim.ts drops the
+ * approach twelve months after it arrives, and it drops it whether or not
+ * anybody read this page. A list you can ignore forever at no cost is free
+ * optionality wearing a deal's clothes, so the count rides on the tab and the
+ * countdown rides on the row, both of them the engine's own number.
+ */
+function BrokerCalls() {
+  const parcels = useStore((s) => s.parcels)!;
+  const game = useStore((s) => s.game)!;
+  const focus = useStore((s) => s.focus);
+  const setPage = useStore((s) => s.setPage);
+  // A re-render hook for the two module-scope sets above — they are not store
+  // state, so nothing else would notice when a row is set aside.
+  const [, bump] = useState(0);
+  const calls = liveBrokerCalls(game);
+  // WHAT HAD ALREADY BEEN SEEN WHEN THIS PAGE OPENED — a copy, taken once, of
+  // the set the effect below is about to fill in. Two things fall out of
+  // snapshotting the SEEN side rather than the NEW side: the marks survive the
+  // very render that clears them (otherwise the effect wipes every one before
+  // the player's eye reaches the row), and a call that lands while the page is
+  // sitting open is not in the snapshot either, so it arrives marked, which is
+  // the moment a mark is worth the most.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const seenAtOpen = useMemo(() => new Set(brokerCallsSeen), []);
+  useEffect(() => {
+    for (const c of calls) brokerCallsSeen.add(c.bbl);
+    // A file that has lapsed is not coming back, and its bbl must not sit in
+    // the seen set poisoning the mark if a broker ever rings about that same
+    // building again years later.
+    const liveNow = new Set(calls.map((c) => c.bbl));
+    for (const b of [...brokerCallsSeen]) if (!liveNow.has(b)) brokerCallsSeen.delete(b);
+    for (const b of [...brokerCallsAside]) if (!liveNow.has(b)) brokerCallsAside.delete(b);
+  }, [calls]);
+
+  const freshCount = calls.filter((c) => !seenAtOpen.has(c.bbl)).length;
+  return (
+    <>
+      <div className="page-section">
+        Brokers on the phone · {calls.length}{freshCount ? ` · ${freshCount} new` : ""}
+      </div>
+      {calls.length === 0 && (
+        <div className="hint">
+          {game.brokersOff
+            ? "You have told the street to stop ringing. Nothing off-market will reach you until you switch the brokers back on above."
+            : "Nobody is shopping you anything off-market today. Brokers ring a principal they have closed with, "
+              + "about a building that is not on the tape — it takes a couple of years of trading before the phone starts."}
+        </div>
+      )}
+      {calls.map(({ bbl, a, lapseM }) => {
+        const rec = resolveRec(parcels, game, bbl);
+        if (!rec || !a.ask) return null;
+        const cond = initialCondition(rec);
+        const v = assetValue(rec, game.econ, cond);
+        // A broker with a file has the file — the roll came over when the call
+        // did (Approach.roll). So this is in-place income off the actual
+        // leases, not the class model's opinion of a building like this one.
+        const ip = inPlace(rec, game, bbl, a.ask);
+        const noi = ip.noi;
+        const goingInPct = a.ask > 0 ? (noi / a.ask) * 100 : 0;
+        const stab = proFormaNOIYr(rec, game.econ, ip.h?.condition ?? cond, a.ask);
+        const over = v > 0 ? (a.ask / v - 1) * 100 : 0;
+        const monthsLeft = lapseM - game.month;
+        const isNew = !seenAtOpen.has(bbl);
+        const aside = brokerCallsAside.has(bbl);
+        return (
+          <div key={bbl} className="deal" style={{ marginBottom: 10, opacity: aside ? 0.62 : 1 }}>
+            <div className="deal-head">
+              {isNew && <span className="chip chip-distress" style={{ marginRight: 6 }}>NEW</span>}
+              ☎ {rec.address}
+              <span className="dim" style={{ fontWeight: 400 }}>
+                {" "}· {useLabel(rec)} · {sf(rec.bldgArea)} · {rec.floors} fl · built {rec.yearBuilt}. Not on the market.
+              </span>
+            </div>
+            <div className="grid">
+              <Row k="Their number" v={usd(a.ask)} strong />
+              <Row k="vs appraisal" v={`${over >= 0 ? "+" : ""}${over.toFixed(0)}%`} bad={over > 8} />
+              <Row k="In-place NOI / yr" v={usd(noi)} />
+              <Row k="Going-in cap" v={`${goingInPct.toFixed(2)}%`} bad={goingInPct < game.econ.indexRate + 1.6} />
+              {/* THE OTHER HALF OF AN OFFERING MEMORANDUM, labelled so the two
+                  cannot be read as one number. The spread between them is the
+                  value-add trade: what it earns today, and what it would earn
+                  full — which is a forecast, and the seller's forecast at that. */}
+              <Row k="Stabilised pro-forma" v={`${usd(stab)} · ${a.ask > 0 ? ((stab / a.ask) * 100).toFixed(2) : "—"}%`} />
+              <Row k={ip.disclosed ? "Occupancy (in place)" : "Occupancy (mkt est.)"} v={`${(ip.occ * 100).toFixed(0)}%`} />
+              {/* demandScore carries the generator's fractional score; the card
+                  printed it raw and produced "Demand 14.870000000000001 / 100". */}
+              <Row k="Demand" v={`${Math.round(rec.demandScore)} / 100`} />
+              {/* THE FIELD THE CARD DID NOT HAVE TO PRINT, because a card that
+                  is in your face cannot be forgotten and a row can. This is the
+                  engine's own sweep date, counted down. */}
+              <Row
+                k="Their client will listen"
+                v={monthsLeft <= 0
+                  ? "the file closes this month"
+                  : `for ${monthsLeft} more month${monthsLeft === 1 ? "" : "s"} — lapses ${monthLabel(lapseM)}`}
+                strong={monthsLeft <= 3}
+                bad={monthsLeft <= 3}
+              />
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-buy" onClick={() => { setPage("none"); focus(bbl, true); }}>
+                Open the file
+              </button>
+              {/* "NOT NOW" IS NOT "NEVER", AND IT NEVER WAS. On the card this
+                  button dismissed the interruption and did nothing to the
+                  approach — the file stayed live on the desk until it lapsed,
+                  which is what the Deals page comment about set-aside calls has
+                  always said. It means exactly the same thing here: the row
+                  dims and stops reading as new, the clock keeps running, and
+                  the offer is still openable until the month it dies. Making it
+                  hang up for real would need the engine — writing `refused` from
+                  the UI would tell acquire.ts that the OWNER refused YOU, which
+                  is a different fact and would poison a later cold approach. */}
+              <button
+                className="btn"
+                title="Nothing happens to the file. It stays on this page, counting down, until their client stops listening."
+                onClick={() => { brokerCallsAside.add(bbl); bump((n) => n + 1); }}
+              >
+                {aside ? "Set aside" : "Not now"}
+              </button>
+              <button
+                className="btn"
+                title="Brokers stop ringing you entirely. The switch is at the top of this page."
+                onClick={() => {
+                  const st = useStore.getState();
+                  useStore.setState({ game: { ...st.game!, brokersOff: true } });
+                }}
+              >
+                Stop calling me
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 function MarketPage() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
@@ -5582,9 +5809,13 @@ function MarketPage() {
           </button>
         </div>
       )}
+      {/* THE PHONE, ABOVE THE TAPE. An off-market file is the one thing on this
+          page that nobody else can bid on and the one thing that disappears on
+          a schedule; the listings will still be there next month. */}
+      <BrokerCalls />
       <div className="deals-grid">
         <section style={{ gridColumn: "1 / -1" }}>
-          <div className="page-section">On the market · {live}{mine.length ? ` · ${mine.length} of them yours` : ""}</div>
+          <div className="page-section" style={{ marginTop: 14 }}>On the market · {live}{mine.length ? ` · ${mine.length} of them yours` : ""}</div>
           <table className="tbl">
             <thead>
               <tr>
@@ -5742,44 +5973,14 @@ function LandValueChart() {
         />
       </div>
 
-      <div className="page-section" style={{ marginTop: 14 }}>The city</div>
-      <div className="hint">
-        Rents are downstream of jobs, and jobs are downstream of whether anybody wants to be here.
-        Unemployment lags the property cycle by a year or more — by the time it reads badly the rents
-        already have.
-      </div>
-      <LineChart
-        height={140}
-        series={[
-          { label: "Jobs (000s)", color: "#2f6f7a", pts: h.map((p) => (p.jobs ?? 0) / 1000) },
-          { label: "Population (000s)", color: "#7a5c1e", pts: h.map((p) => (p.population ?? 0) / 1000) },
-        ]}
-        yFmt={(v) => v.toFixed(0) + "k"}
-        xLabels={[monthLabel(h[0].q), monthLabel(h[h.length - 1].q)]}
-      />
-      <LineChart
-        height={130}
-        series={[
-          { label: "Unemployment %", color: "#a8402e", pts: h.map((p) => (p.unemployment ?? 0) * 100) },
-          { label: "Real wage (index x10)", color: "#3a7d46", pts: h.map((p) => real(p.wageIdx, p.cpi) * 10) },
-        ]}
-        yFmt={(v) => v.toFixed(1)}
-        xLabels={[monthLabel(h[0].q), monthLabel(h[h.length - 1].q)]}
-      />
-      <div className="grid">
-        <Row k="Population" v={(e.population ?? 0).toLocaleString()} strong />
-        <Row k="Jobs" v={(e.jobs ?? 0).toLocaleString()} />
-        <Row k="Unemployment" v={`${((e.unemployment ?? 0) * 100).toFixed(1)}%`} bad={(e.unemployment ?? 0) > 0.085} />
-        <Row k="Real wage" v={`${((real(e.wageIdx, e.cpi) - 1) * 100).toFixed(0)}% against the year 2000`} />
-        <Row k="Nominal wage" v={`${(((e.wageIdx ?? 1) - 1) * 100).toFixed(0)}% against the year 2000`} />
-        <Row k="Real output" v={`${((real(e.outputIdx, e.cpi) - 1) * 100).toFixed(0)}% against the year 2000`} />
-        <Row k="Price level" v={`${(((e.cpi ?? 1) - 1) * 100).toFixed(0)}% of cumulative inflation`} />
-        {(() => {
-          const n = h.length;
-          const jobsYr = n > 12 && h[n - 13].jobs ? (h[n - 1].jobs! / h[n - 13].jobs! - 1) * 100 : 0;
-          return <Row k="Jobs added this year" v={`${jobsYr >= 0 ? "+" : ""}${jobsYr.toFixed(1)}%`} bad={jobsYr < 0} strong />;
-        })()}
-      </div>
+      {/* THE CITY'S OWN SERIES USED TO BE PRINTED HERE TOO — population, jobs,
+          unemployment, the real wage — because on Research this was the only
+          place they appeared. On the Economy page they are the card next door:
+          "The city" draws all six with their deflation done and their notes
+          attached, on the same window switch as everything else. Two copies of
+          one series on one page is how a reader comes to take a level off one
+          chart and a date off the other, so this half is gone and the card is
+          one click away. */}
     </>
   );
 }
@@ -5802,9 +6003,18 @@ function ResearchPage() {
   // building stock and reads as equities; the `stock` key is left alone
   // because nothing persists it and renaming it would only give one tab two
   // names in one file.
+  // LAND AND BANKS LEFT THIS PAGE. They sit on the Economy page now, as two
+  // more stances beside the four space markets — asked for directly, and right
+  // for the same reason the tape left Research for Marketplace: land is an
+  // input to every appraisal on the Economy page and the banks are the other
+  // half of a cap rate, so reading them on a different screen from the rent
+  // and vacancy they price against is how a site comes to look like it pencils.
+  // Nothing links to either by name — `rtab` is local state with no deep link
+  // and the one cross-page jump in this file, from a parcel's owner line, goes
+  // to Research for the STREET tab, which has not moved.
   const [rtab, setRtab] = useState<string>("sectors");
-  const RTABS: [string, string][] = [["sectors", "Sectors"], ["trades", "Trades"], ["banks", "Banks"],
-    ["land", "Land"], ["street", "The street"], ["stock", "Properties"], ["comps", "Prints"]];
+  const RTABS: [string, string][] = [["sectors", "Sectors"], ["trades", "Trades"],
+    ["street", "The street"], ["stock", "Properties"], ["comps", "Prints"]];
   return (
     <div>
       <div className="stat-strip">
@@ -5951,12 +6161,6 @@ function ResearchPage() {
               })()}
             </tbody>
           </table>
-        </div>)}
-        {rtab === "banks" && (<div>
-          <TheBanks />
-        </div>)}
-        {rtab === "land" && (<div>
-          <LandValueChart />
         </div>)}
         {rtab === "street" && (<div>
           <TheStreet />
@@ -6656,6 +6860,16 @@ function CompsSheet() {
   );
 }
 
+/**
+ * WHAT A RIVAL IS WORTH, once — gross assets marked the way `markRival` marks
+ * them, less the debt against them, plus what is in the bank. It is the same
+ * arithmetic the player's own Books page calls net worth, which is the point:
+ * a league table is only a league table if both sides are measured the same
+ * way. Written down here because three places on this page print it and one
+ * quantity does not get three expressions.
+ */
+const rivalEquity = (m: { aum: number }, r: { debt: number; cash: number }) => m.aum - r.debt + r.cash;
+
 function TheStreet() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
@@ -6693,7 +6907,7 @@ function TheStreet() {
           const board = [
             { name: firmName(game), eq: playerEquity, me: true },
             ...marked.filter((x) => x.r.failedM === undefined)
-              .map((x) => ({ name: x.r.name, eq: x.m.aum - x.r.debt + x.r.cash, me: false })),
+              .map((x) => ({ name: x.r.name, eq: rivalEquity(x.m, x.r), me: false })),
           ].sort((a, b) => b.eq - a.eq);
           const rank = board.findIndex((b) => b.me) + 1;
           return (
@@ -6707,7 +6921,17 @@ function TheStreet() {
       <table className="tbl">
         <thead>
           <tr>
+            {/* NET EQUITY, ON THE TABLE. It was computed twice already — once
+                inside the league-table grid above, which ranks you against it,
+                and once inside each firm's drawer as "Net worth" — and the
+                column list did not carry it, so the one number that says who
+                is actually winning was two clicks deep. Gross assets less debt
+                plus cash, exactly as the drawer and the ranking compute it;
+                three expressions for one quantity is how a table comes to
+                disagree with the row it expands into, so all three now read
+                the same `eq` off `markRival` and the firm's own balance. */}
             <th>Firm</th><th>Style</th><th className="num">Buildings</th><th className="num">Gross assets</th>
+            <th className="num">Debt</th><th className="num">Net equity</th>
             <th className="num">Leverage</th><th className="num">Dry powder</th><th>Read</th>
           </tr>
         </thead>
@@ -6724,6 +6948,17 @@ function TheStreet() {
                 <td className="dim">{STYLE_WORD[r.style]}</td>
                 <td className="num">{dead ? (r.bbls.length ? `${r.bbls.length} in workout` : "—") : r.bbls.length}</td>
                 <td className="num">{dead ? "—" : usd(m.aum)}</td>
+                <td className={"num" + (!dead && r.debt > 0 ? " dim" : "")}>{dead ? "—" : usd(r.debt)}</td>
+                {/* THE NUMBER THE OWNER ASKED FOR. A firm running a billion of
+                    gross assets at 85% leverage has less of its own money in
+                    the game than a family trust with two hundred million
+                    unencumbered, and the first four columns could not tell you
+                    that. Negative is not a rounding artefact — it is a firm
+                    whose buildings no longer cover its paper, which is the
+                    condition that turns them into your seller. */}
+                <td className={"num" + (!dead && rivalEquity(m, r) < 0 ? " neg" : "")}>
+                  {dead ? "—" : usd(rivalEquity(m, r))}
+                </td>
                 {/* debt against no assets is not a ratio, it is a hole */}
                 <td className={"num" + (!dead && m.ltv > 0.8 ? " neg" : "")}>
                   {dead ? "—" : m.aum <= 0 ? (r.debt > 0 ? "no assets" : "—") : `${(m.ltv * 100).toFixed(0)}%`}
@@ -6742,7 +6977,7 @@ function TheStreet() {
               </tr>
               {isOpen && (
                 <tr>
-                  <td colSpan={7} style={{ background: "rgba(43,37,26,0.035)" }}>
+                  <td colSpan={9} style={{ background: "rgba(43,37,26,0.035)" }}>
                     {/* THE BALANCE SHEET, the same one you are judged on. Gross
                         assets less debt is their equity; NOI over assets is what
                         the book yields; distributions are what they have already
@@ -6755,7 +6990,7 @@ function TheStreet() {
                       <Row k="Cash" v={usd(r.cash)} bad={r.cash < 0} />
                       {/* the number the league table ranks on, and the same one
                           your own Books page calls net worth */}
-                      <Row k="Net worth" v={usd(m.aum - r.debt + r.cash)} strong bad={m.aum - r.debt + r.cash < 0} />
+                      <Row k="Net worth" v={usd(rivalEquity(m, r))} strong bad={rivalEquity(m, r) < 0} />
                       <Row k="Leverage" v={`${(m.ltv * 100).toFixed(0)}% LTV · they stop at ${(STYLE_MAX[r.style] * 100).toFixed(0)}%`} bad={m.ltv > STYLE_MAX[r.style]} />
                       <Row k="NOI / yr" v={usd(m.noiYr)} />
                       <Row k="Yield on assets" v={m.aum > 0 ? `${((m.noiYr / m.aum) * 100).toFixed(2)}%` : "—"} />

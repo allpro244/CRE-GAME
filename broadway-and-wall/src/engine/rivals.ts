@@ -918,6 +918,37 @@ const NEW_FIRMS: { name: string; style: RivalStyle }[] = [
   { name: "Okonkwo Holdings", style: "vulture" },
   { name: "Bridgewright Partners", style: "developer" },
 ];
+// AND THE TOWN DOES NOT RUN OUT OF NAMES.
+//
+// `NEW_FIRMS` is thirty-four of them, which is a supply and therefore a rail.
+// Measured over three unplayed centuries: 60.3 firms had ever existed by year
+// 100 against a stock of about sixty-four, so the last two decades of a long
+// career were entered by nobody — not because the market was crowded but
+// because the game had run out of nouns, and no amount of opportunity could
+// have brought a fund in. When the written list is spent the town coins one,
+// the way a town does. The style is drawn from the same mix `NEW_FIRMS` already
+// encodes rather than from a second table, so the composition of new capital is
+// one distribution and not two.
+const SURNAMES = [
+  "Ashby", "Beckwith", "Coyne", "Dunmore", "Everleigh", "Fenwick", "Garrity",
+  "Haverford", "Ingersoll", "Jessup", "Kilbride", "Lanterman", "Moresby",
+  "Norrington", "Ovington", "Prentiss", "Quimby", "Rothwell", "Selkirk",
+  "Thackeray", "Underhill", "Vance", "Wardlow", "Yarrow", "Ziegler",
+];
+const HOUSES = [
+  "Partners", "Capital", "Holdings", "& Sons", "Realty",
+  "Development Co.", "Trust", "Investors", "Property Group", "& Co.",
+];
+
+function coinFirm(s: GameState, used: Set<string>): { name: string; style: RivalStyle } | null {
+  for (let i = 0; i < 40; i++) {
+    const name = `${SURNAMES[Math.floor(rng(s) * SURNAMES.length)]} ${HOUSES[Math.floor(rng(s) * HOUSES.length)]}`;
+    if (used.has(name)) continue;
+    return { name, style: NEW_FIRMS[Math.floor(rng(s) * NEW_FIRMS.length)].style };
+  }
+  return null;
+}
+
 // HOW LONG A FIRST FUND TAKES TO RAISE, and it is the only clock in the entry
 // rule. Twelve to eighteen months from "there is money to be made in this town"
 // to a first close is what a first-time sponsor actually experiences: the
@@ -951,10 +982,20 @@ const RAISE_M = 14;
  *   expansion and peak, positive through recession and recovery, which is the
  *   right shape and is why the gate on the credit window was wrong.
  *
- *   NOBODY IS BIDDING. `marketAppetite` is the money in the room, normalised
- *   so an ordinary market reads 1.0. A thin market both makes the pitch and
- *   makes it true, and it is self-limiting: capital arriving thickens the bid,
- *   which closes the door behind it without a floor having to.
+ *   NOBODY IS BIDDING. `marketAppetite` is how hard the average firm is
+ *   leaning in, normalised so an ordinary market reads 1.0. A thin market both
+ *   makes the pitch and makes it true.
+ *
+ * WHAT CLOSES THE DOOR is not either of those terms directly, and it is worth
+ * being exact about it because a rule with no "no" in it is a rail: capital
+ * arriving BIDS, bidding lifts prices, and a lifted price is a compressed cap
+ * rate — so the spread the pitch was made on closes behind the fund that made
+ * it. Checked over three unplayed centuries with the name supply removed as a
+ * constraint: living firms run 30.7 · 29.0 · 29.7 · 34.0 · 34.3 · 37.3 · 36.0 ·
+ * 36.3 · 37.0 · 37.3 by decade — it settles at about 37 by year 60 and stays
+ * there for the next forty years, against a city whose floor area grows about a
+ * third over the same span. It plateaus, it is not held up, and 51.7 firms had
+ * ever existed by year 100 against no ceiling at all.
  */
 function maybeNewFirm(s: GameState) {
   const c = s.econ.capRate;
@@ -965,8 +1006,8 @@ function maybeNewFirm(s: GameState) {
   if (rng(s) > Math.min(0.5, opportunity / RAISE_M)) return;
   const used = new Set((s.rivals ?? []).map((r) => r.name));
   const pool = NEW_FIRMS.filter((f) => !used.has(f.name));
-  if (!pool.length) return;
-  const f = pool[Math.floor(rng(s) * pool.length)];
+  const f = pool.length ? pool[Math.floor(rng(s) * pool.length)] : coinFirm(s, used);
+  if (!f) return;
   // A NEW FUND IS A NEW FUND. This used to scale the raise by aggregate street
   // AUM — "sized to the era" — which sounds right and is not: once the twelve
   // incumbents crossed half a billion between them, every firm founded after
@@ -1316,6 +1357,13 @@ function callCapital(r: Rival, want: number): number {
  * — because the fault here was never what these buildings fetched, it was
  * which one went and how often.
  */
+// What a sponsor under duress gets for a building, unchanged from the path this
+// replaces. Written once because the decision reads its midpoint and the ask
+// draws from it, and a hardcoded 0.78 beside a `rrange(0.68, 0.88)` is the same
+// band written down twice.
+const DURESS_BAND: [number, number] = [0.68, 0.88];
+const DURESS_MID = (DURESS_BAND[0] + DURESS_BAND[1]) / 2;
+
 function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: number): boolean {
   const lev = (r.aum ?? 0) > 0 ? Math.min(1, Math.max(0, r.debt / (r.aum as number))) : r.targetLtv;
   let pick: { bbl: string; rec: ParcelRecord; net: number } | null = null;
@@ -1327,7 +1375,7 @@ function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: 
     // What the sale actually puts in the account: the price, less the debt it
     // retires — the same rule `debtReleasedOnSale` applies at the closing, so
     // the decision and the settlement agree.
-    const px = markAsset(s, r, rec).v * 0.78;   // the middle of the band it will be listed in
+    const px = markAsset(s, r, rec).v * DURESS_MID;
     const net = px * (1 - lev);
     if (!biggest || net > biggest.net) biggest = { bbl, rec, net };
     if (net >= need && (!pick || net < pick.net)) pick = { bbl, rec, net };
@@ -1335,7 +1383,7 @@ function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: 
   const sell = pick ?? biggest;
   if (!sell) return false;
   const v = markAsset(s, r, sell.rec).v;
-  const px = Math.round(v * rrange(s, 0.68, 0.88));
+  const px = Math.round(v * rrange(s, ...DURESS_BAND));
   r.dumped = (r.dumped ?? 0) + 1;
   // The deed stays with them until somebody buys it — a firm selling under
   // pressure is still the owner, and that is the whole point of the trade.

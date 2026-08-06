@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useStore } from "@/state/store";
-import { monthLabel } from "@/engine/types";
-import { currentCity, currentSize, currentDev } from "@/state/city";
+import { monthLabel, START_CASH_CHOICES } from "@/engine/types";
+import { currentCity, currentSize, currentDev, currentCash0 } from "@/state/city";
 import { cityList, cityName, sizeList, developmentList } from "@/citygen/index.mjs";
 import { usd } from "./format";
 
@@ -27,6 +27,18 @@ import { usd } from "./format";
  * of the fault: choosing an island used to mean living with whatever town the
  * boot had already built.
  */
+/**
+ * What each opening actually buys, in the game's own numbers rather than in
+ * adjectives. Measured: overhead starts at $57K/yr and reaches $131K by year
+ * seventeen, and an idle firm holding $6M went insolvent in year fifteen on
+ * overhead alone.
+ */
+const CASH_NOTE: Record<number, string> = {
+  1_000_000: "One small building outright, or two with debt, and almost no reserve. Overhead alone gives you about five years to find income.",
+  2_500_000: "The standard opening. Room for a couple of buildings and a reserve to carry a lease-up.",
+  5_000_000: "A real first fund. Enough to be wrong once and still be in business.",
+};
+
 export default function StartMenu() {
   const phase = useStore((s) => s.phase);
   const resume = useStore((s) => s.resume);
@@ -44,6 +56,7 @@ export default function StartMenu() {
   const [island, setIsland] = useState(currentCity());
   const [size, setSize] = useState(currentSize());
   const [dev, setDev] = useState(currentDev());
+  const [cash0, setCash0] = useState<number>(currentCash0());
 
   // Lot count goes as the square of the scale. The standard island is about
   // 1,420 lots measured, which is what this quotes off — it is a preview of a
@@ -182,6 +195,26 @@ export default function StartMenu() {
                     </button>
                   ))}
                 </div>
+
+                {/* WHAT YOU START WITH. Not a difficulty slider — the money does
+                    not scale anything, it decides how many mistakes you get
+                    before overhead eats you. Firm overhead runs $57K a year at
+                    the start and $131K by year seventeen, and a small building
+                    trades around $0.5-2.5M, so these are three different
+                    openings rather than three settings. */}
+                <div className="start-col">
+                  <div className="start-col-head">what you start with</div>
+                  {START_CASH_CHOICES.map((v) => (
+                    <button
+                      key={v}
+                      className={"start-opt" + (v === cash0 ? " start-opt-on" : "")}
+                      onClick={() => setCash0(v)}
+                    >
+                      <span className="start-opt-name">{usd(v)}</span>
+                      <span className="start-opt-note">{CASH_NOTE[v]}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </>
           )}
@@ -193,19 +226,19 @@ export default function StartMenu() {
           column in a 720px window and there was no way to reach it. */}
       <div className="start-foot">
         <div className="start-foot-sum">
-          <span className="start-foot-town">{islandName(island)} · {sizeName} · {devName}</span>
+          <span className="start-foot-town">{islandName(island)} · {sizeName} · {devName} · {usd(cash0)}</span>
           {overwrites ? (
             <span className="start-foot-warn">
               Erases the campaign in {townName(overwrites.island, overwrites.seed)} — {monthLabel(overwrites.month)}, year {Math.floor(overwrites.month / 12) + 1}.
             </span>
           ) : (
-            <span className="start-foot-note">$6M and no holdings. The town is generated when you press this.</span>
+            <span className="start-foot-note">{usd(cash0)} and no holdings. The town is generated when you press this.</span>
           )}
         </div>
         <button
           className="start-go"
           disabled={phase !== "menu"}
-          onClick={() => void startRun(island, size, dev)}
+          onClick={() => void startRun(island, size, dev, cash0)}
         >
           Break ground ▸
         </button>

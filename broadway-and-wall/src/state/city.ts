@@ -19,6 +19,7 @@
 // below should. That is what makes `somewhere` a third entry rather than a
 // second code path.
 import { randomSeed } from "@/citygen/index.mjs";
+import { START_CASH_CHOICES, DEFAULT_START_CASH } from "@/engine/types";
 
 export interface CityInfo { id: string; name: string; tagline: string; lots: number }
 
@@ -71,6 +72,28 @@ export function currentDev(): string {
 
 export function setDev(d: string): void {
   try { localStorage.setItem(DEV_KEY, d); } catch { /* private mode: the standard town, which is survivable */ }
+}
+
+/**
+ * THE OPENING BANKROLL, browser-local like the seed and the size.
+ *
+ * It is read once, when Break ground is pressed, and then it is history: the
+ * save carries the cash it actually has. Kept here rather than in the engine
+ * because it is a fact about what this browser last chose, not about any
+ * particular campaign — the same reason `currentSize` lives here.
+ */
+const CASH_KEY = "bw:cash0";
+
+export function currentCash0(): number {
+  try {
+    const n = Number(localStorage.getItem(CASH_KEY));
+    if (START_CASH_CHOICES.includes(n as never)) return n;
+  } catch { /* private mode: the default, which is survivable */ }
+  return DEFAULT_START_CASH;
+}
+
+export function setCash0(v: number): void {
+  try { localStorage.setItem(CASH_KEY, String(v)); } catch { /* private mode */ }
 }
 
 export function currentSize(city = currentCity()): string {

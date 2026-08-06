@@ -17,7 +17,7 @@ import { hire, fire, refreshPool, POOL_REFRESH_M } from "@/engine/staff";
 import { normalizeParcels } from "@/engine/mix";
 import { netWorth } from "@/engine/value";
 import { loadGame, saveGame, listSaves, deleteSave, type SaveMeta } from "@/engine/save";
-import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev } from "@/state/city";
+import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
 import { cityList, makeCity, type GeneratedCity } from "@/citygen/index.mjs";
 
 export type Lens = "none" | "land" | "demand" | "owners";
@@ -171,7 +171,7 @@ interface AppState {
   fireStaff: (staffId: number) => void;
   postJob: () => void;
   /** Cut a brand new town on this island at this size and build-out, and play it. */
-  startRun: (island: string, size: string, dev: string) => Promise<void>;
+  startRun: (island: string, size: string, dev: string, cash0?: number) => Promise<void>;
   /** Rebuild the town in the autosave and pick the campaign back up. */
   continueRun: () => Promise<void>;
   newRun: () => void;
@@ -1006,12 +1006,16 @@ export const useStore = create<AppState>((set, get) => ({
    * `setSize` both key off the current island and rolling a seed on the wrong
    * one leaves the pair (island, seed) pointing at a town nobody asked for.
    */
-  startRun: async (island, size, dev) => {
+  startRun: async (island, size, dev, cash0) => {
     set({ phase: "generating", building: islandName(island), loadError: null });
     await painted();
     try {
       setCity(island);
       setSize(size, island);
+      // The opening bankroll is settled here with the rest of the town's
+      // identity, before anything is generated — see START_CASH_CHOICES.
+      const money = cash0 ?? currentCash0();
+      setCash0(money);
       setDev(dev);
       const seed = rerollCity();
       const { built, parcels } = buildTown(island, seed, size, dev);
@@ -1021,7 +1025,7 @@ export const useStore = create<AppState>((set, get) => ({
         manifest: built.manifest as DataManifest,
         city: built,
       });
-      const g = firstListings(newGame(seed, parcels), parcels, Object.keys(parcels));
+      const g = firstListings(newGame(seed, parcels, money), parcels, Object.keys(parcels));
       g.citySeed = seed;
       g.citySize = size;
       g.cityDev = dev;

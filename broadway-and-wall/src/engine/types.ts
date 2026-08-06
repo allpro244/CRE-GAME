@@ -1715,7 +1715,26 @@ export interface Talks {
   deposit?: number;
 }
 
-export const START_CASH = 6_000_000;
+/**
+ * WHAT YOU START WITH, AND IT IS A CHOICE NOW.
+ *
+ * The game shipped one number, $6M, which made the opening the same opening
+ * every time. These three are different games rather than three difficulty
+ * settings, which is the distinction CLAUDE.md draws: the money does not scale
+ * anything, it decides how many mistakes you get before overhead eats you.
+ *
+ * The scale that makes them mean something: firm overhead measured $57K/yr at
+ * the start and $131K by year seventeen, and a small building trades around
+ * $0.5-2.5M. So $1M is one building outright or two levered with almost no
+ * reserve; $5M is a real first fund with room to be wrong once. An idle firm
+ * with $6M went insolvent in year fifteen on overhead alone — at $1M it has
+ * closer to five, which is why this is a starting choice and not a slider.
+ */
+export const START_CASH_CHOICES = [1_000_000, 2_500_000, 5_000_000] as const;
+export type StartCash = (typeof START_CASH_CHOICES)[number];
+export const DEFAULT_START_CASH: StartCash = 2_500_000;
+/** @deprecated the opening bankroll is chosen — see START_CASH_CHOICES. */
+export const START_CASH = DEFAULT_START_CASH;
 export const START_YEAR = 2000;
 /**
  * WHAT A BANK BALANCE EARNS. One per cent a year, on positive balances, for

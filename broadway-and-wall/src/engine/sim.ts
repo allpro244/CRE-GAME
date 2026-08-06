@@ -2,7 +2,7 @@
 // (state, parcels) in, state out. The UI is a lens on this.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
-import { START_CASH, CENTURY_MONTHS, CASH_APY, logBooks, monthLabel } from "./types";
+import { DEFAULT_START_CASH, CENTURY_MONTHS, CASH_APY, logBooks, monthLabel } from "./types";
 import { initEcon, rng, rrange, tickEcon, stockFromParcels } from "./market";
 import { assetValue, holdingNOIYr, holdingValue, monthlyNOI, netWorth, operatingStatement, physicalOcc, resolveRec } from "./value";
 import { recordComp, tickLandComps } from "./comps";
@@ -55,13 +55,18 @@ function targetListings(s: GameState, totalLots: number): number {
   return Math.max(4, Math.round(totalLots * base * (0.55 + 0.5 * ci)));
 }
 
-export function newGame(seed: number, parcels?: ParcelTable): GameState {
+/**
+ * A NEW FIRM. `cash0` is the opening bankroll the player chose on the start
+ * screen — see START_CASH_CHOICES. It defaults so every existing caller,
+ * harness and probe keeps working unchanged.
+ */
+export function newGame(seed: number, parcels?: ParcelTable, cash0: number = DEFAULT_START_CASH): GameState {
   const s: GameState = {
     v: 32,
     seed,
     rng: seed,
     month: 0,
-    cash: START_CASH,
+    cash: cash0,
     econ: null as never,
     holdings: {},
     listings: [],
@@ -99,7 +104,7 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
     agent: false,
     loc: { balance: 0, drawnTotal: 0, interestPaid: 0 },
     books: [],
-    nwHistory: [START_CASH],
+    nwHistory: [cash0],
     exits: [],
     milestones: {},
     news: [],

@@ -172,6 +172,7 @@ for (const r of rows) {
   for (const b of r.breaks) {
     console.log(`   m${String(b.m).padStart(3)}  unexplained ${M(b.resid)}${b.resid > 0 ? "   (money APPEARED — a liability released with no entry)" : "   (money VANISHED — a payment nobody booked)"}`);
     console.log(`         dCash ${b.dCash}  dLoc ${b.dLoc}  dDeposits ${b.dDep}  books ${JSON.stringify(b.parts)}`);
+    for (const n of b.news.slice(0, 4)) console.log(`         · ${n}`);
     for (const n of b.news) console.log(`        | ${n}`);
   }
 }

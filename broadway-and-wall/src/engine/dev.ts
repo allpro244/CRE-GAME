@@ -2055,6 +2055,15 @@ export function noteRecordPlan(
  * ground or not. Everything else is fair game, and what goes is what fails the
  * test worst: obsolete, old, and sitting on dirt that wants a better building.
  */
+/** HOW MANY JOBS THIS TOWN CAN HAVE IN THE GROUND AT ONCE. General
+ *  contractors, tower cranes and steel crews are finite and they are shared:
+ *  the teardown pipeline, the quota and a rival's tower all draw on the same
+ *  pool, which is why this lives in one place now instead of being spent by one
+ *  path and rationed by another. Scaled to the size of the town. */
+function crewCapacity(bbls: string[]): number {
+  return Math.max(4, Math.round(bbls.length / 165));
+}
+
 function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // A slow clock. Roughly one candidate examined a month, and only the worst
   // offender in a sample gets the notice — a city does not clear a block a
@@ -2066,6 +2075,21 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // mostly a museum.
   if (rng(s) > 0.85) return;
   const e = s.econ;
+  // A REPLACEMENT IS BUILT BY THE SAME CREWS AS EVERYTHING ELSE.
+  //
+  // This path is 96% of all the square footage this city builds, and it broke
+  // ground without ever asking whether there was a contractor free. The quota
+  // below it does ask — `Math.max(0, capacity - live)` — so teardowns were
+  // spending the town's construction capacity from OUTSIDE the budget that was
+  // supposed to ration it. Measured: capacity 9 against a mean of 16.1 live
+  // jobs, so the quota was clipped to zero in 60.7% of months. That is why the
+  // vacancy gate on starts, whose own comment calls it "the real control", was
+  // measurably inert — halving its gain produced byte-identical output over
+  // three seeds and fifty years, because the thing it controlled was already
+  // pinned at zero and the building was happening somewhere else.
+  //
+  // There is one crane pool in a town this size and every job queues in it.
+  if ((s.cityJobs ?? []).filter((j) => !j.orphaned).length >= crewCapacity(bbls)) return;
   let worst: { bbl: string; rec: ReturnType<typeof resolveRec>; ratio: number } | null = null;
   for (let i = 0; i < 26; i++) {
     const bbl = bbls[Math.floor(rng(s) * bbls.length)];
@@ -2198,6 +2222,17 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   for (const [u, share] of Object.entries(tprog)) {
     const usf = Math.round(nsf * (share as number));
     if (usf > 0) s.econ.cohorts[u as BuiltClass].push({ m: s.month + months, sf: usf, bbl });
+    // ...AND THE ORDER BOOK IS TOLD. `startOwed` is the square footage the space
+    // market has asked for and not yet seen broken ground on, and the quota
+    // block downstream spends it. A replacement that goes up on this path fills
+    // exactly the same order — it is the same crews, the same class, the same
+    // month — and it was never netted off, so the city carried a permanent
+    // phantom backlog and kept ordering cranes against demand it had already
+    // met. Every other start path in this file already does this; this one did
+    // not, and it is the biggest of them.
+    if (usf > 0 && s.econ.startOwed) {
+      s.econ.startOwed[u as BuiltClass] = Math.max(0, (s.econ.startOwed[u as BuiltClass] ?? 0) - usf);
+    }
   }
 
   if (rng(s) < 0.30) {
@@ -2347,7 +2382,7 @@ export function tickCityGrowth(
   // than as unlimited simultaneous starts.
   //
   // Scaled to the size of the place, so a bigger city carries more of them.
-  const capacity = Math.max(4, Math.round(bbls.length / 165));
+  const capacity = crewCapacity(bbls);
   const live = (s.cityJobs ?? []).filter((j) => !j.orphaned).length;
   let n = Math.min(wanted, ceiling, Math.max(0, capacity - live));
   n = Math.floor(n) + (rng(s) < n % 1 ? 1 : 0);

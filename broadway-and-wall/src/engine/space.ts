@@ -107,7 +107,12 @@ export function deliverySchedule(e: Econ, month: number, years = 4): Record<Buil
  */
 export function projectVacancy(e: Econ, k: BuiltClass, month: number, months = 36): number[] {
   let stock = e.stock?.[k] ?? CITY_STOCK[k];
-  let occ = e.occupied?.[k] ?? stock * (1 - NATURAL_VAC[k]);
+  // Standing sublet space is space to be absorbed like any other, so the line
+  // starts from availability. It is assumed to drain into the same absorption
+  // — which is the honest naive projection, because whether it comes back off
+  // the market or gets taken by a subtenant, it is a foot that has to be filled
+  // before a new building's first floor is.
+  let occ = (e.occupied?.[k] ?? stock * (1 - NATURAL_VAC[k])) - (e.sublet?.[k] ?? 0);
   // absorption decays toward zero over the horizon: assuming today's pace runs
   // forever is how every over-optimistic pro forma in the business is written
   const base = (e.absorb12?.[k] ?? 0) / 12;
@@ -126,9 +131,22 @@ export function projectVacancy(e: Econ, k: BuiltClass, month: number, months = 3
 
 export type Balance = "acute shortage" | "landlord's market" | "balanced" | "tenant's market" | "glut";
 
+/**
+ * WHAT A TENANT CAN ACTUALLY GO AND LEASE, as a share of the stock — direct
+ * vacancy plus everything sitting on the sublet market. This is the number a
+ * broker quotes and the number the rent equation in market.ts prices off, and
+ * it is not the vacancy rate: in a bad office market a quarter of what is
+ * available is somebody else's lease, and the two figures come apart by ten
+ * points at exactly the moment a player most needs to know which is which.
+ */
+export function availability(e: Econ, k: BuiltClass): number {
+  const stock = e.stock?.[k] ?? CITY_STOCK[k];
+  return (e.cityVac?.[k] ?? NATURAL_VAC[k]) + (e.sublet?.[k] ?? 0) / Math.max(1, stock);
+}
+
 /** The one-word verdict, and the sentence behind it. */
 export function marketBalance(e: Econ, k: BuiltClass): { state: Balance; gap: number; note: string } {
-  const vac = e.cityVac?.[k] ?? NATURAL_VAC[k];
+  const vac = availability(e, k);
   const gap = vac - NATURAL_VAC[k];
   const state: Balance =
     gap < -0.035 ? "acute shortage" :
@@ -151,7 +169,10 @@ export function marketBalance(e: Econ, k: BuiltClass): { state: Balance; gap: nu
  */
 export function monthsOfSupply(e: Econ, k: BuiltClass): number | null {
   const stock = e.stock?.[k] ?? CITY_STOCK[k];
-  const vacantSf = stock * (e.cityVac?.[k] ?? NATURAL_VAC[k]);
+  // Availability, not vacancy: a sublease is space your building is competing
+  // with, and leaving it out is how a market report tells a landlord the glut
+  // is half the size it is.
+  const vacantSf = stock * availability(e, k);
   const pipe = e.pipeline?.[k] ?? 0;
   const pace = (e.absorb12?.[k] ?? 0) / 12;
   if (pace <= 0) return null;      // space is coming BACK, not being taken

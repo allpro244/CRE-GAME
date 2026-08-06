@@ -8,15 +8,15 @@ import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec 
 import type { Approach, BuiltClass, Contract, DevUse, EconHistoryPoint, GameState, Holding } from "@/engine/types";
 import {
   assetValue, initialCondition, holdingValue, monthlyNOI, marketRentPsfYr, managedRentPsfYr,
-  occupancy, noiYr, holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr, useRentPsfYr,
-  rollQualitySpread, operatingStatement, recoveryOf, noiAfterTaxYr, netWorth, remainingAbatement, landPsfNow, landValue,
-  physicalOcc as physicalOccupancy,
+  holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr, useRentPsfYr,
+  rollQualitySpread, operatingStatement, recoveryOf, netWorth, remainingAbatement, landPsfNow, landValue,
+  physicalOcc as physicalOccupancy, inPlace, proFormaNOIYr, disclosureFor, asIfOwned,
 } from "@/engine/value";
 import { planDevelopment, constructionQuotes, devMix, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
 import { buyQuote, assemblagePressure, saleTaxQuote } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { MILESTONES } from "@/engine/sim";
-import { genRentRoll, isCommercial, vacantSf, walt, loiSigningCost, exclusiveFeeRate, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, buyoutQuote, depositsHeld, BUYOUT_PREMIUM } from "@/engine/leasing";
+import { isCommercial, vacantSf, walt, loiSigningCost, exclusiveFeeRate, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, buyoutQuote, depositsHeld, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
 import { lenderHealth, capitalRatio, lenderBlurb, targetCapital, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { noteBid, payoffQuote } from "@/engine/notes";
@@ -57,56 +57,35 @@ function physicalOcc(rec: never, h: { tenants: { sf: number }[]; occ?: number })
 }
 
 /**
- * WHAT THE SELLER HAS DISCLOSED, shaped like a holding so every reader that
- * already knows how to price a building you own can price one you are looking
- * at — using the SAME functions and therefore producing the SAME numbers.
+ * WHY THERE IS NO `disclosed()` HELPER HERE ANY MORE.
  *
- * The owner's complaint, exactly: "the market NOI and occupancy should be the
- * same after you close on the property." They were not. The tape quoted a
- * MARKET occupancy — the model's opinion of how full a building like this one
- * ought to be — and the deed handed over an actual rent roll. Two honest
- * numbers, and the one on screen while you were deciding was the wrong one,
- * which is why a building appeared to lose value the moment it became yours.
+ * There used to be one: it wrapped the seller's disclosure in the shape
+ * `holdingNOIYr` expects, so a building on the tape could be priced with the
+ * same functions as one you own. Three call sites used it and six did not, and
+ * the six went on quoting `noiAfterTaxYr` — the class model, which takes a
+ * ParcelRecord and structurally cannot see a rent roll. A helper that half the
+ * panel ignores is not a fix; it is a second opinion.
  *
- * The roll now travels with the listing (see Listing.roll and refreshListings),
- * so there is a real answer available before the bid. This wraps it in the
- * shape holdingNOIYr and physicalOcc expect, with `assessed` set to the price
- * you would actually pay, because that is what the tax bill would be struck on
- * once you owned it.
- *
- * Returns null when there is nothing disclosed — an off-market lot you cold
- * -called about has no offering memorandum, and finding out what is in the
- * building is exactly the risk you are taking.
+ * So it moved into the engine, where the lender and the comps sheet can reach
+ * it too: `disclosureFor` finds what the seller has shown, `asIfOwned` puts it
+ * in the shape of a holding, and `inPlace` returns the going-in NOI and the
+ * in-place occupancy together with a flag saying whether they are facts or an
+ * estimate. `goingIn` below is the thin panel wrapper that resolves the record.
  */
-function disclosed(game: GameState, bbl: string, price?: number): Holding | null {
+
+/**
+ * THE GOING-IN NUMBERS FOR A BUILDING THE PLAYER IS LOOKING AT, and the flag
+ * that says whether they are facts or an estimate.
+ *
+ * One call, so a panel cannot accidentally quote the market's read on income
+ * beside the roll's read on occupancy. `disclosed === false` means nobody has
+ * shown you anything, and every label that renders it says so.
+ */
+function goingIn(game: GameState, bbl: string, price: number) {
   const parcels = useStore.getState().parcels;
   const rec = parcels ? resolveRec(parcels, game, bbl) : null;
-  if (!rec || rec.class === "land" || !rec.bldgArea) return null;
-  const li = game.listings.find((l) => l.bbl === bbl);
-  const px = price ?? li?.ask ?? game.approaches[bbl]?.ask ?? assetValue(rec, game.econ, gradeOf(game, rec));
-  const distress = !!li?.distress;
-  const cond = li?.cond ?? (distress ? "worn" : gradeOf(game, rec));
-  const h = {
-    bbl, boughtM: game.month, costBasis: px, assessed: px,
-    loan: null, condition: cond, tenants: [] as never[], cfHistory: [],
-  } as unknown as Holding;
-  // A MARKETED BUILDING'S ROLL WAS WRITTEN THE DAY IT CAME TO MARKET, and that
-  // is the roll the deed conveys — so read it rather than writing a fresh one.
-  // Regenerating here looked identical and was not: genRentRoll stamps lease
-  // start and expiry dates off s.month, so a listing written in month 5 and
-  // previewed in month 40 produced a roll with the same tenants on different
-  // paper. Measured: 39 of 200 purchases differed on occupancy and 84 on NOI.
-  if (li?.roll) {
-    h.tenants = li.roll as never;
-    if (li.occ !== undefined) h.occ = li.occ;
-    return h;
-  }
-  // Nothing marketed, so this is a door you knocked on. Deterministic per
-  // building — see genRentRoll — with settle=false so looking at a building
-  // never moves money, drawn from a private stream so looking never re-rolls
-  // the world, and identical to what the deed will hand over.
-  genRentRoll(game, rec, h, distress, false);
-  return h;
+  if (!rec) return { noi: 0, occ: 0, disclosed: false, h: null, rec: null };
+  return { ...inPlace(rec, game, bbl, price), rec };
 }
 import { sponsorStanding } from "@/engine/sponsor";
 import { marketAppetite, markRival, ownerOf, rivalCondition, gradeOf, assetGrade } from "@/engine/rivals";
@@ -454,8 +433,13 @@ function DecisionModal() {
     if (rec && a?.ask) {
       const cond = initialCondition(rec);
       const v = assetValue(rec, game.econ, cond);
-      const noi = noiAfterTaxYr(rec, game.econ, cond, a.ask);
-      const goingIn = a.ask > 0 ? (noi / a.ask) * 100 : 0;
+      // A broker with a file has the file — the roll came over when the call
+      // did (Approach.roll). So this is in-place income off the actual leases,
+      // not the class model's opinion of a building like this one.
+      const ip = inPlace(rec, game, callBbl, a.ask);
+      const noi = ip.noi;
+      const goingInPct = a.ask > 0 ? (noi / a.ask) * 100 : 0;
+      const stab = proFormaNOIYr(rec, game.econ, ip.h?.condition ?? cond, a.ask);
       const over = v > 0 ? (a.ask / v - 1) * 100 : 0;
       return (
         <div className="modal-backdrop">
@@ -468,9 +452,14 @@ function DecisionModal() {
             <div className="grid">
               <Row k="Their number" v={usd(a.ask)} strong />
               <Row k="vs appraisal" v={`${over >= 0 ? "+" : ""}${over.toFixed(0)}%`} bad={over > 8} />
-              <Row k="NOI / yr" v={usd(noi)} />
-              <Row k="Going-in cap" v={`${goingIn.toFixed(2)}%`} bad={goingIn < game.econ.indexRate + 1.6} />
-              <Row k="Occupancy (mkt)" v={`${(occupancy(rec, game.econ) * 100).toFixed(0)}%`} />
+              <Row k="In-place NOI / yr" v={usd(noi)} />
+              <Row k="Going-in cap" v={`${goingInPct.toFixed(2)}%`} bad={goingInPct < game.econ.indexRate + 1.6} />
+              {/* THE OTHER HALF OF AN OFFERING MEMORANDUM, labelled so the two
+                  cannot be read as one number. The spread between them is the
+                  value-add trade: what it earns today, and what it would earn
+                  full — which is a forecast, and the seller's forecast at that. */}
+              <Row k="Stabilised pro-forma" v={`${usd(stab)} · ${a.ask > 0 ? ((stab / a.ask) * 100).toFixed(2) : "—"}%`} />
+              <Row k={ip.disclosed ? "Occupancy (in place)" : "Occupancy (mkt est.)"} v={`${(ip.occ * 100).toFixed(0)}%`} />
               <Row k="Demand" v={`${rec.demandScore} / 100`} />
             </div>
             <div className="modal-actions">
@@ -859,10 +848,9 @@ function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: Prop
         {/* DISCLOSED, not estimated, whenever the seller has shown a roll. The
             label drops "(mkt)" with it, because it is no longer an opinion. */}
         {isBuilt && !holding && (() => {
-          const d = disclosed(game, selectedBBL);
-          return d
-            ? <Row k="Occupancy" v={(physicalOcc(rec as never, d) * 100).toFixed(0) + "%"} bad={physicalOcc(rec as never, d) < 0.75} />
-            : <Row k="Occupancy (mkt)" v={(occupancy(rec, game.econ) * 100).toFixed(0) + "%"} />;
+          const ip = goingIn(game, selectedBBL, value);
+          return <Row k={ip.disclosed ? "Occupancy (in place)" : "Occupancy (mkt est.)"}
+            v={(ip.occ * 100).toFixed(0) + "%"} bad={ip.disclosed && ip.occ < 0.75} />;
         })()}
         {isBuilt && !holding && (
           isMixedUse(rec)
@@ -885,15 +873,22 @@ function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: Prop
           />
         ))}
         {holding && commercial && <Row k="WALT" v={walt(holding, game.month).toFixed(1) + " yrs"} />}
-        {/* One building must not quote two different NOIs on one panel. Owned
-            assets already net out the tax bill; an unowned one is estimated
-            against its own appraisal, which is the only price on offer until
-            somebody names one. */}
+        {/* One building must not quote two different NOIs on one panel. In
+            place off the roll — yours, or the one the seller disclosed — and
+            struck against the appraisal, which is the only price on offer
+            until somebody names one. The stabilised line sits beside it,
+            labelled, because the gap between them is the deal. */}
         {isBuilt && (() => {
-          const d = holding ?? disclosed(game, selectedBBL);
-          return <Row k="NOI / yr" v={usd(d
-            ? holdingNOIYr(rec, game.econ, d, game.month)
-            : noiAfterTaxYr(rec, game.econ, cond, value))} />;
+          const ip = goingIn(game, selectedBBL, value);
+          const stab = proFormaNOIYr(rec, game.econ, ip.h?.condition ?? cond, value);
+          return (
+            <>
+              <Row k={ip.disclosed ? "In-place NOI / yr" : "NOI / yr (mkt est.)"} v={usd(ip.noi)} />
+              {ip.disclosed && stab > ip.noi * 1.02 && (
+                <Row k="Stabilised pro-forma" v={usd(stab)} />
+              )}
+            </>
+          );
         })()}
         {holding && isBuilt && <Row k="Property tax / yr" v={usd(propertyTaxYr(rec, holding)) + (commercial ? " (your share)" : "")} />}
         <Row k="Lot area" v={sf(rec.lotArea)} />
@@ -1097,18 +1092,20 @@ function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: Prop
                   than the one a building of this type ought to trade at. */}
               {isBuilt && (() => {
                 const px = contract?.agreedPrice ?? listing.ask;
-                const d = disclosed(game, selectedBBL, px);
-                const n = d ? holdingNOIYr(rec, game.econ, d, game.month)
-                            : noiAfterTaxYr(rec, game.econ, cond, px);
+                const ip = goingIn(game, selectedBBL, px);
+                const stab = proFormaNOIYr(rec, game.econ, ip.h?.condition ?? cond, px);
                 return (
                   <>
-                    <Row k="NOI / yr" v={usd(n)} bad={n < 0} />
-                    <Row k="Cap rate" v={((n / Math.max(1, px)) * 100).toFixed(2) + "%"} strong />
+                    <Row k={ip.disclosed ? "In-place NOI / yr" : "NOI / yr (mkt est.)"} v={usd(ip.noi)} bad={ip.noi < 0} />
+                    <Row k="Going-in cap" v={((ip.noi / Math.max(1, px)) * 100).toFixed(2) + "%"} strong />
+                    {/* The seller's other number, and it is labelled as the
+                        forecast it is. What you buy is the line above. */}
+                    <Row k="Stabilised pro-forma" v={`${usd(stab)} · ${((stab / Math.max(1, px)) * 100).toFixed(2)}%`} />
                     <Row
-                      k={d ? "Occupancy" : "Occupancy (mkt)"}
-                      v={((d ? physicalOcc(rec as never, d) : occupancy(rec, game.econ)) * 100).toFixed(0) + "%"}
+                      k={ip.disclosed ? "Occupancy (in place)" : "Occupancy (mkt est.)"}
+                      v={(ip.occ * 100).toFixed(0) + "%"}
                     />
-                    {d && <Row k="In place" v={`${d.tenants.length} lease${d.tenants.length === 1 ? "" : "s"}`} />}
+                    {ip.h && <Row k="In place" v={`${ip.h.tenants.length} lease${ip.h.tenants.length === 1 ? "" : "s"}`} />}
                   </>
                 );
               })()}
@@ -1382,6 +1379,13 @@ function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: Prop
         );
       })()}
 
+      {/* THE OFFERING MEMORANDUM, ON THE PAGE WHERE YOU DECIDE. It is no use
+          for the engine to price the disclosed roll if the player cannot read
+          it: what is let, to whom, at what rent, expiring when. Renders on the
+          acquire tab for anything the seller has actually shown you — a tape
+          listing or an open off-market conversation — and on nothing else. */}
+      {on("deal") && !holding && isBuilt && <DisclosedRoll bbl={selectedBBL} />}
+
       {on("deal") && holding && <SaleSection bbl={selectedBBL} value={value} />}
 
       {on("summary") && holding && (
@@ -1501,6 +1505,113 @@ function VacantPossession({ bbl, onRaze }: { bbl: string; onRaze: () => void }) 
       {clearCost > game.cash && occupied && (
         <div className="hint">Short {usd(clearCost - game.cash)} of what it takes to clear it.</div>
       )}
+    </div>
+  );
+}
+
+/**
+ * THE RENT ROLL, BEFORE YOU BID.
+ *
+ * "There will be no hidden or guessing work in the noi or occupancy when
+ * buying a property. You need to know exactly what you are buying." The engine
+ * prices the disclosed roll now; this is the roll itself, on the page where
+ * the decision is taken — every lease, the tenant, the square feet, the
+ * contract rent, the recovery structure and the expiry date, plus what is
+ * vacant. It is the same object the deed conveys (Listing.roll, Approach.roll),
+ * so nothing here can disagree with what you own tomorrow morning.
+ *
+ * THE BOUNDARY IS DELIBERATE. Everything on this card is the PRESENT and it is
+ * exact. Whether any of these tenants renews when their date comes, what the
+ * vacant feet re-let for, and where the market goes are not on it and must not
+ * be — that risk is the business, and it is the only thing you are actually
+ * being asked to have a view about.
+ */
+function DisclosedRoll({ bbl }: { bbl: string }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const rec = resolveRec(parcels, game, bbl);
+  if (!rec || rec.class === "land" || !rec.bldgArea) return null;
+  const d = disclosureFor(game, bbl);
+  if (!d) {
+    return (
+      <div className="deal">
+        <div className="deal-head">No rent roll</div>
+        <div className="hint">
+          Nobody is selling this building and nobody has shown you anything. The occupancy and income
+          on this page are the class model's read on a building like this one, not a fact about this
+          one. Ring the owner and the paper comes over with the conversation.
+        </div>
+      </div>
+    );
+  }
+  const li = game.listings.find((l) => l.bbl === bbl);
+  const px = li?.ask ?? game.approaches[bbl]?.ask ?? assetValue(rec, game.econ, gradeOf(game, rec));
+  const h = asIfOwned(game, bbl, px, d, rec);
+  const st = operatingStatement(rec, game.econ, h, game.month);
+  const roll = [...(d.roll ?? [])].sort((a, b) => b.sf - a.sf);
+  const commSf = Math.round(rec.bldgArea * (1 - (mixOf(rec).multifamily ?? 0)));
+  const resSf = Math.round(useSf(rec, "multifamily"));
+  const vacant = Math.max(0, commSf - roll.reduce((a, t) => a + t.sf, 0));
+  return (
+    <div className="deal">
+      <div className="deal-head">
+        The rent roll, as disclosed · {(physicalOcc(rec as never, h) * 100).toFixed(0)}% let
+      </div>
+      <div className="hint">
+        {li ? "Off the offering memorandum." : "The owner's roll, sent over with the conversation."}{" "}
+        This is what the deed conveys — the same leases, the same rents, the same dates.
+        Whether any of them renews is not in here, and that is the deal you are being offered.
+      </div>
+      {roll.length > 0 && (
+        <div className="roll">
+          {roll.map((t, i) => {
+            const yrsLeft = (t.endM - game.month) / 12;
+            return (
+              <div key={i} className="roll-row">
+                <span className="roll-name">
+                  {t.name} <span className="roll-credit mono">{CREDIT_LABEL[t.credit]}</span>
+                </span>
+                <span className="roll-meta mono">
+                  {(t.sf / 1000).toFixed(1)}k sf · ${t.rentPsf.toFixed(0)} {recoveryOf(t).toUpperCase()} · exp {monthLabel(t.endM)}
+                  {yrsLeft < 2 && <> · <span className="warn">{yrsLeft <= 0 ? "holding over" : `${yrsLeft.toFixed(1)} yrs left`}</span></>}
+                </span>
+              </div>
+            );
+          })}
+          {vacant > 400 && (
+            <div className="roll-row roll-vacant">
+              <span className="roll-name">Vacant</span>
+              <span className="roll-meta mono">
+                {(vacant / 1000).toFixed(1)}k sf · ${useRentPsfYr(rec, game.econ, h.condition, (usesOf(rec).find((u) => u !== "multifamily") ?? "office") as BuiltClass).toFixed(0)}/sf market here
+              </span>
+            </div>
+          )}
+          {resSf > 0 && (
+            <div className="roll-row roll-group">
+              <span className="roll-name">apartments · {sf(resSf)}</span>
+              <span className="roll-meta mono">{((d.occ ?? 0) * 100).toFixed(0)}% let</span>
+            </div>
+          )}
+        </div>
+      )}
+      {roll.length === 0 && resSf === 0 && (
+        <div className="hint">Not one square foot of it is let. That is the whole of the disclosure.</div>
+      )}
+      {/* THE TRAILING TWELVE, LINE BY LINE. Same statement the engine runs on a
+          building you own — see operatingStatement — so the income you are
+          shown before the closing and the income you are shown after it are
+          one function, not two that agree. Property tax is struck at the price
+          on the table, because a sale reassesses. */}
+      <div className="grid" style={{ marginTop: 8 }}>
+        <Row k="Base rent" v={usd(st.baseRent)} />
+        {st.recoveredOpex + st.recoveredTax > 0 && <Row k="Recoveries" v={usd(st.recoveredOpex + st.recoveredTax)} />}
+        <Row k="Effective gross income" v={usd(st.egi)} />
+        <Row k="Operating expenses" v={"−" + usd(st.opex)} />
+        <Row k="Management" v={"−" + usd(st.mgmt)} />
+        <Row k={`Property tax at ${usd(px)}`} v={"−" + usd(st.tax)} />
+        <Row k="In-place NOI / yr" v={usd(st.noi)} strong bad={st.noi < 0} />
+        <Row k="Going-in cap at that price" v={px > 0 ? ((st.noi / px) * 100).toFixed(2) + "%" : "—"} strong />
+      </div>
     </div>
   );
 }
@@ -1741,8 +1852,17 @@ function SaleSection({ bbl, value }: { bbl: string; value: number }) {
   // What the ask means as a yield — the number the buyer converts it to.
   const saleRec = resolveRec(parcels, game, bbl);
   const saleClass = (saleRec && saleRec.class !== "land" ? saleRec.class : "office") as BuiltClass;
-  const saleNoi = saleRec && saleRec.class !== "land" && saleRec.bldgArea > 0
-    ? noiAfterTaxYr(saleRec, game.econ, initialCondition(saleRec), price) : 0;
+  // YOUR OWN ROLL, RE-ASSESSED AT YOUR ASK. This quoted the class model, so a
+  // principal pricing their own half-empty building was shown the yield a full
+  // one would offer — and every buyer in town was reading the real roll. The
+  // number a seller needs is what a buyer will compute: in-place income off
+  // the leases actually in place, against a tax bill struck at the new price.
+  const saleH = game.holdings[bbl];
+  const saleNoi = saleRec && saleRec.class !== "land" && saleRec.bldgArea > 0 && saleH
+    ? holdingNOIYr(saleRec, game.econ,
+        asIfOwned(game, bbl, price, { roll: saleH.tenants, occ: saleH.occ, cond: saleH.condition }, saleRec),
+        game.month)
+    : 0;
   const askCap = saleNoi > 0 && price > 0 ? (saleNoi / price) * 100 : null;
   return (
     <div className="deal">
@@ -1993,9 +2113,14 @@ function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
   // when you decide how hard to push on this one.
   const others = Object.values(game.talks ?? {}).filter((t) => t.bbl !== bbl);
   const atLimit = !talks && others.length >= MAX_TALKS;
-  const rec = parcels[bbl];
-  const noi = rec ? noiAfterTaxYr(rec, game.econ, initialCondition(rec), offerPrice) : 0;
-  const goingIn = offerPrice > 0 && noi > 0 ? (noi / offerPrice) * 100 : null;
+  // THE RESOLVED RECORD. `parcels[bbl]` is the lot as GENERATED — a delivered
+  // tower reads as the dirt it used to be, which is the same fault buyQuote
+  // fixed on the lender's side and left standing here.
+  const rec = resolveRec(parcels, game, bbl);
+  const ip = rec ? inPlace(rec, game, bbl, offerPrice) : null;
+  const noi = ip?.noi ?? 0;
+  const goingInPct = offerPrice > 0 && noi > 0 ? (noi / offerPrice) * 100 : null;
+  const stab = rec ? proFormaNOIYr(rec, game.econ, ip?.h?.condition ?? initialCondition(rec), offerPrice) : 0;
   return (
     <>
       <Slider
@@ -2017,10 +2142,14 @@ function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
           is the only thing you need to know to decide whether a price is a
           price — the capital stack changes what you earn on it, not whether it
           is worth owning. */}
-      {goingIn !== null && (
+      {goingInPct !== null && (
         <div className="grid">
-          <Row k="NOI / yr, after taxes" v={usd(noi)} />
-          <Row k="Going-in cap at your number" v={`${goingIn.toFixed(2)}%`} strong />
+          <Row k={ip?.disclosed ? "In-place NOI / yr, after taxes" : "NOI / yr (mkt est.)"} v={usd(noi)} />
+          <Row k="Going-in cap at your number" v={`${goingInPct.toFixed(2)}%`} strong />
+          {/* Stabilised beside it and never instead of it. If this line is far
+              above the one at the top, you are buying a leasing job. */}
+          <Row k="Stabilised pro-forma" v={`${usd(stab)} · ${offerPrice > 0 ? ((stab / offerPrice) * 100).toFixed(2) : "—"}%`} />
+          {ip?.disclosed && <Row k="Occupancy (in place)" v={`${(ip.occ * 100).toFixed(0)}%`} bad={ip.occ < 0.75} />}
           <Row k="What the market pays" v={`${game.econ.capRate[(rec!.class !== "land" ? rec!.class : "office") as BuiltClass].toFixed(2)}% for this class`} />
         </div>
       )}
@@ -2100,8 +2229,20 @@ function BuyButtons({ bbl, price, off, closeLabel, bid }: {
   const max = buyQuote(game, parcels, bbl, offerPrice, product, 1);
   const principal = Math.round(max.principal * lev);
   const equity = offerPrice - principal + Math.round(offerPrice * 0.02);
-  const rec = parcels[bbl];
-  const noi = rec ? noiAfterTaxYr(rec, game.econ, initialCondition(rec), offerPrice) : 0;
+  // THE RESOLVED RECORD, for the same reason buyQuote uses one: the static
+  // table is the lot at generation, not what is standing on it today.
+  const rec = resolveRec(parcels, game, bbl);
+  // IN PLACE, NOT ESTIMATED. This is the screen the deal is decided on —
+  // going-in cap, debt yield, year-one cash flow, cash-on-cash — and every one
+  // of those numbers was computed off `noiAfterTaxYr`, which cannot see a rent
+  // roll. Measured over 3,195 buildings that estimate ran 20 points of
+  // occupancy above the real roll, worst on the highest quoted yields, so the
+  // cash-on-cash on this panel was a forecast of income the building did not
+  // earn. It is the disclosed roll now — the same roll the lender sizes on and
+  // the same roll the deed conveys.
+  const ip = rec ? inPlace(rec, game, bbl, offerPrice) : null;
+  const noi = ip?.noi ?? 0;
+  const stab = rec ? proFormaNOIYr(rec, game.econ, ip?.h?.condition ?? initialCondition(rec), offerPrice) : 0;
   // ACTUAL first-year debt service — amortizing payment for amortizing paper,
   // coupon-only for IO periods — not the IO approximation for everything.
   const prodDef = PRODUCTS.find((pp) => pp.id === product);
@@ -2178,14 +2319,24 @@ function BuyButtons({ bbl, price, off, closeLabel, bid }: {
           upside, and you should have to see that you are. */}
       <div className="grid">
         {rec && rec.class !== "land" && rec.bldgArea > 0 && (() => {
-          const goingIn = offerPrice > 0 ? (noi / offerPrice) * 100 : 0;
+          const goingInPct = offerPrice > 0 ? (noi / offerPrice) * 100 : 0;
           const dy = principal > 0 ? (noi / principal) * 100 : 0;
           const cf = noi - annualDs;
           const coc = equity > 0 ? (cf / equity) * 100 : 0;
-          const negLev = principal > 0 && goingIn < max.ratePct;
+          const negLev = principal > 0 && goingInPct < max.ratePct;
+          const stabPct = offerPrice > 0 ? (stab / offerPrice) * 100 : 0;
           return (
             <>
-              <Row k="Going-in cap" v={`${goingIn.toFixed(2)}%`} bad={negLev} />
+              <Row k={ip?.disclosed ? "In-place NOI / yr" : "NOI / yr (mkt est.)"} v={usd(noi)} bad={noi < 0} />
+              {ip?.disclosed && <Row k="Occupancy (in place)" v={`${(ip.occ * 100).toFixed(0)}%`} bad={ip.occ < 0.75} />}
+              <Row k="Going-in cap" v={`${goingInPct.toFixed(2)}%`} bad={negLev} />
+              {/* THE VALUE-ADD SPREAD, ON ITS OWN LINE. Everything above is what
+                  the building earns today; this is what it would earn full, and
+                  the distance between them is the work you are buying. It is a
+                  forecast and it is labelled as one — the cash-on-cash below is
+                  struck on the in-place number, because that is the money that
+                  actually arrives in year one. */}
+              <Row k="Stabilised pro-forma" v={`${usd(stab)} · ${stabPct.toFixed(2)}%`} />
               <Row k="Coupon" v={`${max.ratePct.toFixed(2)}%${negLev ? " — negative leverage" : ""}`} bad={negLev} />
               {principal > 0 && <Row k="Debt yield" v={`${dy.toFixed(1)}%`} bad={dy < 8} />}
               {principal > 0 && <Row k="Annual debt service" v={`−${usd(annualDs)}${prodDef && prodDef.ioM > 0 ? " (interest-only)" : ` (${prodDef?.amortYears ?? 30}-yr am)`}`} />}
@@ -2747,8 +2898,13 @@ function PropertyPage() {
   const cond = h?.condition ?? initialCondition(rec);
   const value = h ? holdingValue(rec, game.econ, h, game.month) : assetValue(rec, game.econ, cond);
   const built = rec.class !== "land" && rec.bldgArea > 0;
-  const occ = h ? physicalOcc(rec as never, h) : occupancy(rec, game.econ);
-  const noi = built ? (h ? holdingNOIYr(rec, game.econ, h, game.month) : noiYr(rec, game.econ, cond)) : 0;
+  // IN PLACE OR NOTHING. The unowned branch here quoted `noiYr` — which is the
+  // class model AND is before property tax, so an unowned building's headline
+  // NOI was overstated twice over against the owned one right beside it. One
+  // accessor, both cases, and the tax comes off exactly once.
+  const ipHdr = inPlace(rec, game, bbl, value);
+  const occ = built ? ipHdr.occ : 0;
+  const noi = built ? ipHdr.noi : 0;
   const dsYr = (h?.loan?.monthlyPmt ?? 0) * 12;
   const dev = game.developments[bbl];
   // WHICH DESKS THIS BUILDING HAS. A tab that would open on an empty page is
@@ -5224,7 +5380,7 @@ function BuildingDatabase() {
   const [q, setQ] = useState("");
   const rows = useMemo(() => {
     const out: { bbl: string; addr: string; cls: string; sf: number; fl: number; yr: number;
-                 owner: string; occ: number; rent: number; noi: number; dmd: number; val: number; psf: number }[] = [];
+                 owner: string; occ: number; known: boolean; rent: number; noi: number; dmd: number; val: number; psf: number }[] = [];
     for (const bbl in parcels) {
       const rec = resolveRec(parcels, game, bbl);
       if (!rec || rec.class === "land" || !rec.bldgArea) continue;
@@ -5243,14 +5399,16 @@ function BuildingDatabase() {
       const rent = h && rollSf > 0
         ? h.tenants.reduce((a, t) => a + t.rentPsf * t.sf, 0) / rollSf
         : marketRentPsfYr(rec, game.econ, cond);
-      // NOI from the actual roll on owned buildings; for everyone else's the
-      // market model, net of the tax bill a buyer would carry at this value —
-      // the same number the tape and the deal card quote.
-      const noi = h ? holdingNOIYr(rec, game.econ, h, game.month) : noiAfterTaxYr(rec, game.econ, cond, val);
+      // NOI from the actual roll wherever there is one — yours, or the one the
+      // seller has disclosed on a building that is for sale. For the rest of
+      // the town's stock, which nobody has shown you and you cannot buy, it is
+      // the market model net of the tax a buyer would carry at this value.
+      const ip = inPlace(rec, game, bbl, val);
+      const noi = ip.noi;
       out.push({
         bbl, addr: rec.address, cls: rec.class, sf: rec.bldgArea, fl: rec.floors,
         yr: rec.yearBuilt, owner: own,
-        occ: h ? physicalOcc(rec as never, h) : occupancy(rec, game.econ),
+        occ: ip.occ, known: ip.disclosed,
         rent, noi,
         dmd: Math.round(rec.demandScore + (game.blockD?.[rec.block] ?? 0)),
         val, psf: val / Math.max(1, rec.bldgArea),
@@ -5316,7 +5474,14 @@ function BuildingDatabase() {
               <td className="num">{Math.round(r.sf).toLocaleString()}</td>
               <td className="num">{r.fl}</td>
               <td className="num">{r.yr || "—"}</td>
-              <td className="num">{(r.occ * 100).toFixed(0)}%</td>
+              {/* A tilde and a dimmed cell where the number is the class
+                  model's read rather than a roll somebody showed you. The two
+                  used to look identical in this column, which is how an
+                  estimate gets mistaken for a measurement. */}
+              <td className={"num" + (r.known ? "" : " dim")}
+                  title={r.known ? "Off the rent roll." : "The class average — nobody has shown you this building's roll."}>
+                {r.known ? "" : "~"}{(r.occ * 100).toFixed(0)}%
+              </td>
               <td className="num">${r.rent.toFixed(0)}</td>
               <td className={"num" + (r.noi < 0 ? " neg" : "")}>{usd(r.noi)}</td>
               <td className="num">{r.dmd}</td>
@@ -5428,7 +5593,7 @@ function MarketPage() {
                 const rec = resolveRec(parcels, game, li.bbl);
                 const built = !!rec && rec.class !== "land" && rec.bldgArea > 0;
                 const cap = built && li.ask > 0
-                  ? noiAfterTaxYr(rec!, game.econ, initialCondition(rec!), li.ask) / li.ask : -1;
+                  ? inPlace(rec!, game, li.bbl, li.ask).noi / li.ask : -1;
                 const psf = rec ? li.ask / Math.max(1, built ? rec.bldgArea : rec.lotArea) : Infinity;
                 return { li, built, cap, psf };
               }).sort((a, b) => (a.built === b.built
@@ -5438,7 +5603,17 @@ function MarketPage() {
                 if (!rec) return null;
                 const cond = initialCondition(rec);
                 const built = rec.class !== "land" && rec.bldgArea > 0;
-                const noi = built ? noiAfterTaxYr(rec, game.econ, cond, li.ask) : 0;
+                // THE TAPE SORTS ITSELF ON THIS NUMBER — "income first, best
+                // going-in" — so a quoted cap computed off a market estimate
+                // did not merely mislead, it RANKED. Measured over 3,195
+                // listings, the estimate was flat across cap-rate quartiles
+                // (93/90/87/87% occupancy) while the actual roll collapsed
+                // (83/80/67/46%): the quoted yield was high precisely BECAUSE
+                // the estimate was wrong, so the default view put the most
+                // overstated buildings at the top of the page. In place off
+                // the disclosed roll, the sort is now a sort on income.
+                const ip = built ? inPlace(rec, game, li.bbl, li.ask) : null;
+                const noi = ip?.noi ?? 0;
                 const goingIn = built && li.ask > 0 ? (noi / li.ask) * 100 : 0;
                 const yours = "mine" in li;
                 const h = yours ? game.holdings[li.bbl] : null;
@@ -5459,19 +5634,22 @@ function MarketPage() {
                     <td className="num">{built ? "$" + Math.round(li.ask / Math.max(1, rec.bldgArea)) : "$" + Math.round(li.ask / Math.max(1, rec.lotArea))}</td>
                     <td className="num">{built ? usd(noi) : "—"}</td>
                     <td className="num">{built ? goingIn.toFixed(2) + "%" : "—"}</td>
-                    {/* NOT THE BUILDING'S OCCUPANCY — THE CITY'S.
-                        occupancy(rec, econ) is the citywide model for this class,
-                        so every office on the tape read 83-99% let on the same
-                        afternoon the Economy page said office vacancy was 19.2%.
-                        And it sat in a column that LOOKS exactly like the
-                        Portfolio's Occ, which is the real thing. A number that
-                        cannot be true, styled as though it were measured, is
-                        worse than no number.
-                        You have not seen inside a building you do not own. What
-                        the tape can honestly tell you is what the class is
-                        running at, and it says so. */}
-                    <td className="num dim" title="The class average — you have not seen this building's rent roll. Buy it and you will.">
-                      {built ? "~" + (occupancy(rec, game.econ) * 100).toFixed(0) + "%" : "—"}
+                    {/* THE BUILDING'S OCCUPANCY, AND IT IS A FACT.
+                        This column used to be the CITY'S — occupancy(rec, econ),
+                        the class model — because "you have not seen inside a
+                        building you do not own". That was true of the old
+                        engine and it was never true of the business: a building
+                        on the market comes with a rent roll, it is the first
+                        page of the offering memorandum, and a buyer who is not
+                        given one walks. The roll is written the day the
+                        building is listed and it is the roll the deed conveys
+                        (Listing.roll), so the honest number was sitting on the
+                        listing object this cell was ignoring. Measured, the
+                        model read 89% where the rolls ran 69%. */}
+                    <td className={"num" + (ip?.disclosed ? "" : " dim")}
+                        title={ip?.disclosed ? "Off the disclosed rent roll — this is what the deed conveys."
+                          : "The class average — nobody has shown you this building's roll."}>
+                      {built ? (ip?.disclosed ? "" : "~") + ((ip?.occ ?? 0) * 100).toFixed(0) + "%" : "—"}
                     </td>
                     {(() => {
                       // A seller under no pressure holds last year's number. The gap

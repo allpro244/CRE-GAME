@@ -3,7 +3,7 @@
 // market against moving costs, and rollover risk that clusters.
 // Multifamily skips all of this and runs aggregate occupancy.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { BuiltClass, Credit, GameState, Holding, Listing, LOI, Sector } from "./types";
+import type { Approach, BuiltClass, Credit, GameState, Holding, Listing, LOI, Sector } from "./types";
 import { logBooks, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START } from "./types";
 import type { Tenant } from "./types";
 import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL } from "./market";
@@ -356,6 +356,59 @@ export function stampListing(s: GameState, rec: ParcelRecord, li: Listing): List
   return li;
 }
 
+/**
+ * STAMP AN OFF-MARKET CONVERSATION WITH THE ROLL THE DEED WILL CONVEY.
+ *
+ * The twin of `stampListing`, and it exists because an off-market deal is not
+ * a blind one. You ring the owner, they take the call, and the rent roll and
+ * the trailing twelve cross the table before anybody talks about price — that
+ * IS diligence, and no seller who actually wants to trade refuses to send them.
+ *
+ * The panel used to write this roll at PREVIEW time instead, which looked
+ * identical and was not: `genRentRoll` reads `s.month` for every lease start
+ * and expiry and `s.econ` for the target occupancy, so previewing a building
+ * in month 40 and closing it in month 43 handed over different paper against
+ * a different market. That is the same fault the listing path already fixed —
+ * 39 of 200 purchases differed on occupancy there and 84 on NOI — and it was
+ * still live on every door the player knocked on.
+ *
+ * A refusal is not stamped: there is no conversation, so there is nothing
+ * disclosed. Cheap to call, for the same reason `stampListing` is: the roll is
+ * deterministic per building and drawn from a private stream, so it costs the
+ * shared world PRNG nothing.
+ */
+export function stampApproach(s: GameState, rec: ParcelRecord, a: Approach): Approach {
+  if (a.refused) return a;
+  if (rec.class === "land" || !rec.bldgArea) return a;
+  if (a.roll !== undefined || a.occ !== undefined) return a;
+  // Nobody is in receivership on an off-market call — that building would be
+  // on the tape with a distress flag. This is an ordinary owner and an
+  // ordinary roll, which is why the `distressed` reading is not used here.
+  const cond = condGrade(initialCondIdx(rec, s.month));
+  const vessel = { bbl: rec.bbl, boughtM: s.month, costBasis: a.ask ?? 0, loan: null,
+    condition: cond, tenants: [], cfHistory: [] } as unknown as Holding;
+  genRentRoll(s, rec, vessel, false, false);   // no closing, no settlement
+  a.cond = cond;
+  a.roll = vessel.tenants;
+  if (vessel.occ !== undefined) a.occ = vessel.occ;
+  return a;
+}
+
+/**
+ * The sweep, so a path that opens a conversation cannot forget. `approachOwner`
+ * and the broker's call stamp at the moment they write the record; this catches
+ * the rest — rivals.ts rings the player about a corner they were beaten on, and
+ * that record is written deep inside tickRivals. Same shape and same reasoning
+ * as the listing sweep in sim.ts.
+ */
+export function stampApproaches(s: GameState, parcels: ParcelTable) {
+  for (const [bbl, a] of Object.entries(s.approaches ?? {})) {
+    if (a.refused || a.roll !== undefined || a.occ !== undefined) continue;
+    const rec = resolveRec(parcels, s, bbl);
+    if (rec) stampApproach(s, rec, a);
+  }
+}
+
 export function genRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distressed = false, settle = true) {
   // The private stream, keyed on the parcel and on whether this is the
   // distressed reading of it — a receiver's building is a different roll, and
@@ -671,6 +724,9 @@ function departureDestination(s: GameState, parcels: ParcelTable, from: ParcelRe
 
 export function tickLeasing(s: GameState, parcels: ParcelTable) {
   const q = s.month;
+  // The paper goes out on every open off-market conversation, including the
+  // ones tickRivals opened earlier in this same tick. See stampApproaches.
+  stampApproaches(s, parcels);
   // expire stale LOIs and LOIs on parcels no longer owned
   s.lois = s.lois.filter((l) => l.expiresM > q && s.holdings[l.bbl]);
 

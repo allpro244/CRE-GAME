@@ -17,7 +17,8 @@
 //     one that has printed four sales in a row is getting out.
 import type { ParcelRecord } from "@/data/types";
 import type { Condition, GameState, Sector } from "./types";
-import { initialCondition, noiAfterTaxYr, landPsfNow, resolveRec } from "./value";
+import type { Disclosure } from "./value";
+import { initialCondition, noiAfterTaxYr, holdingNOIYr, asIfOwned, disclosureFor, landPsfNow, resolveRec } from "./value";
 import { industryStress } from "./market";
 
 export interface Comp {
@@ -58,7 +59,26 @@ export function recordComp(
   if (!s.comps) s.comps = [];
   const built = rec.class !== "land" && rec.bldgArea > 0;
   const cond = condition ?? initialCondition(rec);
-  const noi = built ? noiAfterTaxYr(rec, s.econ, cond, price) : 0;
+  // A COMP IS A FACT, AND SO IS THE CAP RATE ON IT.
+  //
+  // "The going-in cap rate on the price actually paid" was half a promise: the
+  // price was real and the income was the class model's guess, computed from a
+  // ParcelRecord that cannot see a rent roll. Measured over 3,195 buildings,
+  // that guess ran 89% occupancy against real rolls at 69% — so the comps
+  // sheet, the only place in this game that reports facts rather than
+  // opinions, was printing a market whose yields nobody had earned.
+  //
+  // The roll comes from whichever side of the trade has it: the deed that just
+  // moved, or the offering memorandum it moved out of. Either way it is
+  // re-assessed at the price actually paid, because a sale reassesses — which
+  // is what makes this the GOING-IN cap and not the seller's in-place cap.
+  const h = s.holdings[rec.bbl];
+  const d: Disclosure | null = h
+    ? { roll: h.tenants, occ: h.occ, cond: condition ?? h.condition }
+    : disclosureFor(s, rec.bbl);
+  const noi = !built ? 0
+    : d ? holdingNOIYr(rec, s.econ, asIfOwned(s, rec.bbl, price, d, rec), s.month)
+    : noiAfterTaxYr(rec, s.econ, cond, price);
   s.comps.push({
     m: s.month,
     bbl: rec.bbl,

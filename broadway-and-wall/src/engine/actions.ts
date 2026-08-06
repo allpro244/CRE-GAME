@@ -7,10 +7,10 @@ import { logBooks, monthLabel, SVC_START } from "./types";
 import { recentLowballs } from "./acquire";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange } from "./market";
-import { assetValue, condGrade, initialCondition, initialCondIdx, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr, demandLinear, landPsfNow } from "./value";
+import { assetValue, condGrade, initialCondition, initialCondIdx, holdingValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow } from "./value";
 import { locAvailable } from "./credit";
 import { marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider } from "./rivals";
-import { genRentRoll, isCommercial, depositsOn } from "./leasing";
+import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
 import { takeoverDevelopment, cityValueToReplacement } from "./dev";
 import { demandNow } from "./demand";
@@ -82,7 +82,23 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   const appraised = assetValue(rec, s.econ, gradeOf(s, rec));
   const uwBasis = appraised > 0 ? Math.min(price, appraised) : price;
   const overpay = Math.max(0, price - uwBasis);
-  const q = quote(s, prod, uwBasis, noiAfterTaxYr(rec, s.econ, gradeOf(s, rec), uwBasis), rec.class);
+  // A LENDER UNDERWRITES THE INCOME THE BUILDING ACTUALLY EARNS.
+  //
+  // This sized coverage and debt yield off `noiAfterTaxYr` — the class model's
+  // opinion of what a building like this one ought to make, computed from a
+  // ParcelRecord that structurally cannot see a rent roll. Measured over 3,195
+  // listings, that estimate ran 89% occupancy against a real roll of 69%, and
+  // the gap was WIDEST on the highest quoted yields. So every credit committee
+  // in the city was advancing against income that did not exist, hardest on
+  // exactly the deals where it existed least.
+  //
+  // A real desk underwrites T-12 and in-place rent roll, takes the stabilised
+  // pro-forma as a separate schedule, and haircuts it. `inPlace` is the roll
+  // the seller disclosed — the same number the panel quotes and the same number
+  // the deed conveys. When nothing has been disclosed (a building nobody has
+  // listed and nobody has rung about) it falls back to the model, which is
+  // correct, because there is also no loan to size: you cannot buy it.
+  const q = quote(s, prod, uwBasis, inPlace(rec, s, bbl, uwBasis).noi, rec.class);
   const principal = Math.round(q.principal * Math.max(0, Math.min(1, lev)));
   // WHAT ACTUALLY LIMITED THE LOAN. The desk sizes on three tests and takes
   // the smallest: the advance rate, the coverage ratio, and the debt yield.
@@ -161,7 +177,12 @@ export function executePurchase(
   // closing statement; it appears eighteen months later as a roof.
   if (product !== "cash") {
     const prod = productById(product);
-    holding.loan = originate(next, prod, price, noiAfterTaxYr(rec, next.econ, holding.condition, price), lev, holding.condition, rec.class);
+    // The same in-place income buyQuote showed on the term sheet — the roll
+    // the seller disclosed, which is still on `next` at this point because the
+    // listing and the approach are not cleared until below. Sizing the loan
+    // that actually gets written off a different number from the one quoted is
+    // how a player ends up with paper they never agreed to.
+    holding.loan = originate(next, prod, price, inPlace(rec, next, bbl, price).noi, lev, holding.condition, rec.class);
   }
   // a live 1031: this purchase completes the exchange if it's big enough
   if (next.exchange && price >= next.exchange.minPrice * 0.8) {
@@ -191,17 +212,28 @@ export function executePurchase(
   // second I buy it" complaint.
   //
   // A marketed building now carries its roll from the day it is listed (see
-  // refreshListings), and the closing takes it over verbatim. Off-market and
-  // auction deeds still write one here, which is correct — there is no
-  // offering memorandum on a lot you cold-called about, and finding out what
-  // is actually in the building is exactly the risk you took.
-  if (wasListing?.roll) {
-    holding.tenants = wasListing.roll;
-    if (wasListing.occ !== undefined) holding.occ = wasListing.occ;
+  // refreshListings), and the closing takes it over verbatim.
+  //
+  // SO DOES AN OFF-MARKET ONE. That used to be the exception here — "there is
+  // no offering memorandum on a lot you cold-called about" — and it is not
+  // true of this business. An off-market approach is made subject to
+  // diligence: the roll and the operating statements arrive before anybody
+  // signs, and if they are not what you were told you retrade or you walk.
+  // Leaving it out meant the panel wrote a preview roll off today's `s.month`
+  // and today's `s.econ` and the deed wrote a different one three months later
+  // — the same fault the listing path fixed, still live on every door the
+  // player knocked on. See Approach.roll and stampApproach.
+  const wasApproach = next.approaches[bbl];
+  const paper = wasListing?.roll !== undefined || wasListing?.occ !== undefined ? wasListing
+    : wasApproach && !wasApproach.refused && (wasApproach.roll !== undefined || wasApproach.occ !== undefined) ? wasApproach
+    : null;
+  if (paper) {
+    holding.tenants = paper.roll ?? [];
+    if (paper.occ !== undefined) holding.occ = paper.occ;
     // ...and the grade the memorandum was priced at. The distress knock above
     // has already been applied to this value at listing time, so taking it
     // verbatim is what makes the NOI on the tape the NOI on the deed.
-    if (wasListing.cond) { holding.condition = wasListing.cond; holding.condIdx = initialCondIdx(rec); }
+    if (paper.cond) { holding.condition = paper.cond; holding.condIdx = initialCondIdx(rec); }
     // THE DEPOSITS SETTLE HERE INSTEAD. genRentRoll normally credits them as it
     // writes the roll, because that is a closing; a roll written for a listing
     // passes settle=false, so the money moves at the deed rather than at the
@@ -845,7 +877,10 @@ export function approachOwner(
     // above stays in their head and the player's only instrument is a bid. The
     // record deliberately carries no ask: everything downstream keys off that
     // absence, and there is nothing here for a panel to leak.
-    next.approaches[bbl] = { q: next.month, refused: false, mode: "offer", reserve: number };
+    // THE PAPER GOES OUT WITH THE CONVERSATION. An owner who will not name a
+    // price will still send the roll — refusing to anchor is a negotiating
+    // position, not a refusal of diligence. See stampApproach.
+    next.approaches[bbl] = stampApproach(next, rec, { q: next.month, refused: false, mode: "offer", reserve: number });
     next.news.unshift({
       q: next.month, kind: "info",
       text: `${rec.address}: ${owner ? owner.name + " will talk" : "the owner will talk"} — and will not put a number on it. `
@@ -855,7 +890,7 @@ export function approachOwner(
     });
     return { s: next, blind: true };
   }
-  next.approaches[bbl] = { q: next.month, refused: false, mode: "ask", ask: number };
+  next.approaches[bbl] = stampApproach(next, rec, { q: next.month, refused: false, mode: "ask", ask: number });
   next.news.unshift({
     q: next.month, kind: "info",
     text: `${rec.address}: ${owner ? owner.name + " would take" : "the owner would take"} $${(number / 1e6).toFixed(2)}M`
@@ -1724,7 +1759,10 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
   // to be worth the call.
   const cap = owner ? (owner.stressMs ? 0.97 : 1.34) : 0.92;
   if (ask > value * cap) return;
-  s.approaches[best.bbl] = { q: s.month, refused: false, ask, inbound: true };
+  // A broker with a file has the file. tickBrokerCalls runs AFTER tickLeasing,
+  // so the sweep there would not catch this record until next month — and the
+  // player can read it tonight. Stamped where it is written. See stampApproach.
+  s.approaches[best.bbl] = stampApproach(s, best, { q: s.month, refused: false, ask, inbound: true });
   s.news.unshift({
     q: s.month, kind: "deal",
     text: `A broker called about ${best.address} — ${best.bldgArea.toLocaleString()} sf, off market, whisper number $${(ask / 1e6).toFixed(2)}M against roughly $${(value / 1e6).toFixed(2)}M of value. ${who}`,

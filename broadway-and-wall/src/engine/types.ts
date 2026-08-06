@@ -713,6 +713,30 @@ export interface Approach {
   /** How this conversation opened. Absent on saves written before it existed. */
   mode?: "ask" | "offer";
   /**
+   * THE RENT ROLL, DISCLOSED WHEN THE CONVERSATION OPENS — the off-market twin
+   * of `Listing.roll`, and it exists for exactly the same reason.
+   *
+   * An off-market deal is not a blind one. You ring the owner, they take the
+   * call, and the first thing that crosses the table is the roll and the
+   * trailing twelve. Nobody in this business offers on a building without
+   * them, and no seller who actually wants to trade refuses to send them.
+   *
+   * Without this field the panel had to write a roll at PREVIEW time, and
+   * `genRentRoll` reads two things that move underneath it: `s.month`, which
+   * stamps every lease start and expiry, and `s.econ`, which sets the target
+   * occupancy. So the same building previewed in month 40 and closed in month
+   * 43 handed over different paper — the same fault the listing path already
+   * fixed, measured there at 39 of 200 purchases differing on occupancy and 84
+   * on NOI. Stamped once, when the owner agrees to talk, and conveyed verbatim.
+   *
+   * `occ` is the residential leg, which has no per-lease roll; `cond` is the
+   * grade the roll was priced against and the deed will convey. NOT set on a
+   * refusal — there is no conversation, and therefore no disclosure.
+   */
+  roll?: Tenant[];
+  occ?: number;
+  cond?: Condition;
+  /**
    * WHAT THEY WILL ACTUALLY TAKE, AND THE PLAYER MUST NEVER SEE IT.
    *
    * Only set while `mode === "offer"` and no `ask` has been drawn out yet. It

@@ -7343,7 +7343,7 @@ function LeasingPage() {
   const game = useStore((s) => s.game)!;
   const select = useStore((s) => s.select);
   const setPage = useStore((s) => s.setPage);
-  const { setAgent, broker } = useStore.getState();
+  const { setAgent, setRenewalMgmt, broker } = useStore.getState();
   const go = (bbl: string) => { setPage("none"); select(bbl); };
   const q = game.month;
 
@@ -7369,6 +7369,7 @@ function LeasingPage() {
     return (
       <div>
         <AgentBar />
+        <RenewalBar />
         <div className="hint">No buildings yet — occupancy starts when you own something with tenants in it.</div>
       </div>
     );
@@ -7396,9 +7397,47 @@ function LeasingPage() {
     );
   }
 
+  /**
+   * THE MIDDLE OPTION. The agent above takes the whole book at 6% and signs
+   * everything, including the new leases — which is the half worth doing
+   * yourself, where you trade term against allowance and decide whether a
+   * covenant is worth a discount. This hands over only the RENEWALS: the paper
+   * that rolls whether you are paying attention or not.
+   *
+   * The 2% is not a new charge. `leaseCosts` has always priced a renewal at 2%
+   * of rent x sf x term against a new lease's 4%, because a renewal genuinely
+   * is less work — no fit-out to negotiate, no tour, no covenant to underwrite.
+   * Engaging the desk changes who signs, not what it costs.
+   *
+   * Hidden while the agent has the book, because the agent is already signing
+   * the renewals and offering both would be offering the same thing twice.
+   */
+  function RenewalBar() {
+    if (game.agent) return null;
+    const on = !!game.renewalMgmt;
+    return (
+      <div className="agent-bar">
+        <div>
+          <div className="agent-title">
+            {on ? "Property management has your renewals." : "You are handling your own renewals."}
+          </div>
+          <div className="agent-sub">
+            {on
+              ? "Sitting tenants get signed at the market for 2% of lease value — the same 2% a renewal has always cost. Anything under the market comes back to you. New leases still land on your desk."
+              : "Every renewal letter comes to you six months before expiry. Hand them over and the routine ones stop asking — you keep the new leases, which are the ones worth arguing about."}
+          </div>
+        </div>
+        <button className={"btn" + (on ? "" : " btn-on")} onClick={() => setRenewalMgmt(!on)}>
+          {on ? "Take renewals back" : "Management takes renewals · 2%"}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div>
       <AgentBar />
+      <RenewalBar />
       <div className="stat-strip">
         <Big label="Portfolio occupancy" value={totSf ? ((100 * totLeased) / totSf).toFixed(1) + "%" : "—"} bad={totSf > 0 && totLeased / totSf < 0.8} />
         <Big label="Leased" value={sf(totLeased) + " of " + sf(totSf)} />

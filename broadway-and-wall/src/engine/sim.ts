@@ -29,6 +29,63 @@ import { tickPortfolio } from "./portfolio";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
 
+/**
+ * HOW LONG AN OFF-MARKET CONVERSATION STAYS ON THE BOOKS.
+ *
+ * Twelve months, and this is the ONLY place it is written down. The sweep in
+ * `advanceQuarter` below reads it; so does the countdown the panel prints on a
+ * broker's call. It used to be a literal `12` here and a second literal `12` in
+ * `RightPanel.tsx`, which is one quantity with two answers waiting to happen —
+ * the row would have gone on counting down to a date the engine had stopped
+ * using the moment anybody touched either number.
+ *
+ * The figure itself is the shelf life of an owner's willingness to talk, not of
+ * their price: the ask is repriced or withdrawn much sooner (see the sweep —
+ * six months on the number, and immediately if the ground under it moves). A
+ * year is how long a principal stays warm to a buyer they have already spoken
+ * to before the conversation has to start again from a cold call.
+ */
+export const APPROACH_LIFE_M = 12;
+
+/**
+ * HANG UP ON ONE FILE, without hanging up on the street.
+ *
+ * "Stop calling me" is a switch on the whole channel — `brokersOff` silences
+ * every phone in town — and "Not now" does nothing to the file at all. Neither
+ * of those is the ordinary move, which is telling a broker that THIS building
+ * is not for you and to ring again with the next one. Without it the only way
+ * to clear a call you have already decided against was to wait out the year, so
+ * the page carried dead rows and `attentionItems` kept stopping auto-advance on
+ * a decision the player had made months earlier.
+ *
+ * This is exactly the transition the clock performs — the same `delete` the
+ * lapse sweep does, up to twelve months early — which is why it needs no new
+ * state and no new field. Three things it deliberately does NOT do:
+ *
+ *   - It does not set `refused`. That flag means the OWNER turned YOU away, and
+ *     `acquire.ts` reads it as such. Writing it from a hang-up would put a
+ *     refusal on a conversation the owner never had.
+ *   - It does not touch `soured` or `insultedUntilM`, the two things that
+ *     actually damage a relationship. It cannot: `tickBrokerCalls` skips any
+ *     parcel that already carries an approach record, so a building the phone
+ *     rings about has no prior memory on it to lose.
+ *   - It does not reach past inbound calls. A number YOU went and asked for is
+ *     yours to keep until it lapses; there is no broker on the other end of it
+ *     to hang up on.
+ *
+ * The broker may ring about the same building again afterwards, on the same
+ * hazard as any other parcel, because the record that was suppressing that is
+ * the record you just closed. That is the honest consequence of an early lapse
+ * and not a leak: it is what a natural lapse does too.
+ */
+export function hangUpOnCall(s: GameState, bbl: string): GameState {
+  const a = s.approaches[bbl];
+  if (!a || !a.inbound || a.refused || !a.ask) return s;
+  const next = { ...s, approaches: { ...s.approaches } };
+  delete next.approaches[bbl];
+  return next;
+}
+
 // 0.5–1.5% of the city is on the market at any time: thin in expansions
 // (owners hold), heavier in recessions (distress shakes assets loose).
 /**
@@ -456,7 +513,7 @@ export function advanceQuarter(
   // a free option on a rezoning, and the ask could drift to a fraction of the
   // appraisal beside it — which is exactly what it looked like from the panel.
   for (const [bbl, a] of Object.entries(s.approaches)) {
-    if (s.month > a.q + 12) { delete s.approaches[bbl]; continue; }
+    if (s.month > a.q + APPROACH_LIFE_M) { delete s.approaches[bbl]; continue; }
     if (a.refused || !a.ask) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;

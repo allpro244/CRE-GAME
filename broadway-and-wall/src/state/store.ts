@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass } from "@/engine/types";
-import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfolioQuarterlyCF } from "@/engine/sim";
+import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfolioQuarterlyCF, hangUpOnCall } from "@/engine/sim";
 import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import { respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, type LOIAction } from "@/engine/leasing";
@@ -112,6 +112,25 @@ interface AppState {
    */
   popupsOff: boolean;
   setPopupsOff: (v: boolean) => void;
+  /**
+   * MARK THE OLDEST INTERRUPTION READ.
+   *
+   * The engine pushes onto `game.alerts` and the UI drains it one at a time —
+   * the whole of the contract, from this side. It is a `shift`, not a filter by
+   * id, because the modal shows the oldest and there is exactly one on screen:
+   * anything cleverer would be a second opinion about which alert the player is
+   * looking at, and the two could disagree.
+   *
+   * It goes through the store rather than `useStore.setState` at the call site
+   * because dismissing has to STICK — an alert read and then reloaded past is a
+   * bank failure the player is never told about again.
+   */
+  dismissAlert: () => void;
+  /**
+   * HANG UP ON ONE OFF-MARKET FILE. See `hangUpOnCall` in engine/sim.ts for
+   * what it does to the record and, more to the point, what it refuses to do.
+   */
+  hangUpCall: (bbl: string) => void;
   refi: (bbl: string, product: string, lev?: number) => void;
   develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>> }, lender?: string) => void;
   offer: (bbl: string, price: number, finalOffer?: boolean) => void;
@@ -359,6 +378,26 @@ export const useStore = create<AppState>((set, get) => ({
   setPopupsOff: (v) => {
     try { localStorage.setItem("bw:popups", v ? "off" : "on"); } catch { /* private mode */ }
     set({ popupsOff: v });
+  },
+
+  dismissAlert: () => {
+    const { game } = get();
+    if (!game?.alerts?.length) return;
+    const next = { ...game, alerts: game.alerts.slice(1) };
+    set({ game: next });
+    void persist(next);
+  },
+
+  hangUpCall: (bbl) => {
+    const { game } = get();
+    if (!game) return;
+    const next = hangUpOnCall(game, bbl);
+    // Nothing to hang up on — a stale click on a file that lapsed between the
+    // render and the press. Say nothing rather than toast a lie.
+    if (next === game) return;
+    set({ game: next });
+    toast("Told them it is not for you. The phone still works.");
+    void persist(next);
   },
 
   answerAsk: (id, action) => {

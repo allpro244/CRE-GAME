@@ -5,6 +5,7 @@ import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, MarketPhase, NewsItem, Sector } from "./types";
 import { BUILT_CLASSES } from "./types";
 import { applyEra, driftInflTarget } from "./regime";
+import { swanClassLevel, swanTradeWave, tickSwans } from "./swans";
 
 export function mulberry32Step(a: number): { state: number; value: number } {
   a |= 0; a = (a + 0x6d2b79f5) | 0;
@@ -194,15 +195,41 @@ export const INDUSTRY_LABEL: Record<Sector, string> = {
  * roll that depends on it.
  */
 export function industryStress(e: Econ, k: Sector): number {
-  const mom = e.industryMom?.[k] ?? 0;
+  const mom = (e.industryMom?.[k] ?? 0) + swanTradeWave(e, k);
   return clamp(-mom / 0.03, 0, 1);
 }
 
 /** …and how hard it is hiring, which is who walks through the door. */
 export function industryPull(e: Econ, k: Sector): number {
-  const mom = e.industryMom?.[k] ?? 0;
+  const mom = (e.industryMom?.[k] ?? 0) + swanTradeWave(e, k);
   return clamp(1 + mom * 22, 0.35, 1.9);
 }
+// THE CYCLE PLUS THE LEVEL EVENT, AND THESE TWO FUNCTIONS ARE THE ONLY JOIN.
+//
+// `industryMom` stays exactly what it was: a boom/steady/bust clock that turns
+// and comes back. What swans.ts adds is the ADJUSTMENT still working through a
+// trade whose level has permanently moved, in the same units, added here rather
+// than written into `industryMom` — because writing it in would be eaten within
+// months by the clock's own easing toward its phase aim, and because the two
+// really are different things that can happen at once. A trade can be leaving
+// town AND in a cyclical bust, and a landlord holding it feels both.
+//
+// Putting it at these two chokepoints is what makes a level event LAND WHERE IT
+// SHOULD without a line of code anywhere else knowing swans exist:
+// `renewalIntent`, tenant default and the renewal letter in leasing.ts all read
+// `industryStress`, so the damage arrives as move-outs from the buildings that
+// housed that trade — not as an index; `pickSector` reads `industryPull`, so
+// the prospects that turn up afterwards are permanently tilted away from a
+// trade that has gone and toward one that has arrived; and value.ts prices the
+// share of a rent roll that is stressed, so the appraisal and the lender see it
+// too. That is the whole transmission, and it is other people's code.
+//
+// ONE READER IS MISSED AND IT IS RECORDED HERE: `tickEmployment` in demand.ts
+// reads `e.industryMom` directly rather than through these getters, so a
+// block's employment advantage tracks the cycle but not the level event. It is
+// a real gap — the blocks full of a departing trade should lose desirability
+// faster than the city average — and it is a one-word fix in a file this
+// change does not own.
 
 // Rate target and rent drift per phase — the cycle is the game's weather.
 // monthly cadence: drifts are a third of the old quarterly values, phase
@@ -560,6 +587,12 @@ export function tickEcon(s: GameState) {
   // not the same asset as one that opened in 1928, and occupancy has to know.
   s.econ.m = s.month;
   const e = s.econ;
+  // THE LEVEL BEFORE THE CYCLE. Swans set the ground the rest of this function
+  // stands on — how much of each trade the city holds and how much of each kind
+  // of space it wants — so they move first and everything below reads one
+  // consistent level for the month. See swans.ts; it draws off the campaign
+  // seed rather than `s.rng`, so nothing in this file's stream shifts.
+  tickSwans(s);
   const cfg = PHASE_CFG[e.phase];
 
   // phase machine with rumors one or two quarters ahead of the turn
@@ -1117,8 +1150,17 @@ export function tickEcon(s: GameState) {
   // A national recession costs this city jobs whether or not the local property
   // cycle has caught up to it yet — payrolls are cut at head office.
   const natPull = (e.nat?.recM ?? 0) > 0 ? (e.nat?.deep ? -0.0026 : -0.0013) : 0.0002;
+  // ...AND THE PAYROLL A TRADE TAKES WITH IT WHEN IT GOES, or brings when it
+  // arrives. This is the only place a level event touches the aggregate
+  // economy, and it is the one that has to exist: without it a trade could
+  // leave town and the unemployment rate, migration, wages and the price level
+  // would never hear about it. Everything downstream — population following
+  // work, housing demand following population, the Phillips term — is the
+  // machinery that was already here, answering a shock it can now see.
+  // Zero in every month in which no level event is currently landing.
+  const swanPull = e.swanJobDrift ?? 0;
   e.employIdx = clamp(
-    e.employIdx * (1 + jobDrift + spacePull + natPull + rrange(s, -0.0012, 0.0012)), 0.55, 12);
+    e.employIdx * (1 + jobDrift + spacePull + natPull + swanPull + rrange(s, -0.0012, 0.0012)), 0.55, 12);
 
   // --- THE CITY UNDERNEATH THE PROPERTY MARKET -------------------------------
   //
@@ -1794,10 +1836,20 @@ export function tickEcon(s: GameState) {
     const driver = k === "multifamily" ? popIdx
       : k === "retail" ? Math.pow(popIdx, 0.68) * Math.pow(e.employIdx, 0.32)
       : e.employIdx;
+    // AND THE LEVEL EVENTS RIDE UNDERNEATH ALL OF IT. `swanClassLevel` is 1.0
+    // in a city nothing structural has happened to, and it is the permanent
+    // restatement of what this class is wanted for once something has: less
+    // office per job after remote work, fewer desks of any kind once the trade
+    // that sat at them has gone, more shed once the shopping moved into one.
+    // It multiplies rather than adding because it is a LEVEL, and it sits
+    // outside `sectorMom` and `affordEff` because neither of those ever stops
+    // reverting and this never reverts at all. See swans.ts.
+    const swanLvl = swanClassLevel(e, k);
     const targetRaw = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - NATURAL_VAC[k])
       * Math.pow(driver, elastic)
       * (1 + e.sectorMom[k] * MOM_DEMAND)
-      * e.affordEff[k];
+      * e.affordEff[k]
+      * swanLvl;
     // THE POOL. Demand takes about a year to form or dissolve, and demand
     // that cannot be housed here stops looking here within months — the
     // mainland takes it, exactly the fiction stockFromParcels already tells.
@@ -1855,10 +1907,39 @@ export function tickEcon(s: GameState) {
     // space is withdrawn inside a year, and availability tightens long before
     // a single lease expires — the fast floor.
     if (!e.sublet) e.sublet = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+    // …and the swan level is in here too, which is where the FAST half of a
+    // level event comes from and is the single most realistic thing about the
+    // way this lands. A firm that has decided it needs a third less office does
+    // not wait eight years for its lease to expire — it puts the floors on the
+    // sublet market inside two quarters and goes on paying rent to the end of
+    // the term. That is exactly what happened in 2020-23: US office sublease
+    // inventory tripled while direct vacancy was still barely moving, and San
+    // Francisco's went from about 1.5M sf to about 9M sf. Because the level
+    // enters `wantedNow` as well as `targetRaw`, availability moves within
+    // months of an announcement and direct vacancy takes years.
+    //
+    // MEASURED, and this is the claim I would least have trusted unmeasured.
+    // Five paired forks — warm the city up fifteen years, clone it, inject a
+    // finance exodus into ONE clone and nothing else, run both fifteen more
+    // years off the same stream. The office availability gap opens like this:
+    //
+    //   months  1-12   +0.16pp,  of which sublet 0.09 and direct 0.07
+    //   months 13-24   +1.02pp,  of which sublet 0.43 and direct 0.59
+    //   months 25-60   +3.10pp,  of which sublet 0.30 and direct 2.80
+    //   months 61-180  +3.22pp,  of which sublet -1.10 and direct 4.32
+    //
+    // The first year is more than half sublet and the fifth year is almost
+    // entirely direct, which is the observed order of events in 2020-23 rather
+    // than an asserted one. And the last row is the give-back's OTHER half
+    // doing its job: by then real office rent is 25% lower in the treated
+    // clone, the footprint firms want at that rent exceeds the one they hold,
+    // and the marketed space is withdrawn — a fast floor under a glut,
+    // arriving long before a single lease expires.
     const wantedNow = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - NATURAL_VAC[k])
       * Math.pow(driver, elastic)
       * (1 + e.sectorMom[k] * MOM_DEMAND)
-      * affordRaw;
+      * affordRaw
+      * swanLvl;
     const marketable = clamp(
       (e.occupied[k] - wantedNow) * DEMISABLE[k],
       0, e.occupied[k] * SUBLET_MAX[k],

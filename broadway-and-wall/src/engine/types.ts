@@ -823,6 +823,74 @@ export interface NewsItem {
   bbl?: string;
 }
 
+/**
+ * SOMETHING HAPPENED THAT THE TAPE IS NOT LOUD ENOUGH FOR.
+ *
+ * The news feed is a hundred and twenty rolling lines and most of them are
+ * weather. A few things a century are not weather — a trade leaving town, a
+ * bank going down, a book of buildings taken back at once — and a player who
+ * scrolls past those has been told nothing. An Alert is the engine saying THIS
+ * ONE, at the moment it fires.
+ *
+ * The engine RAISES and the UI RENDERS: `tone` is the only styling instruction
+ * and it is an economic fact rather than a colour, `title` is a headline and
+ * not a label, `body` is the two or three sentences a person would actually
+ * say, and `detail` is the one number that decides what you do about it. The
+ * UI shifts each alert off `game.alerts` as it shows it, so an engine that
+ * raises nothing costs the UI nothing.
+ */
+export interface Alert {
+  id: number;
+  q: number;                 // the month it fired
+  kind: "swan" | "bank" | "portfolio";
+  tone: "bad" | "good";      // a black swan or a white one
+  title: string;
+  body: string;
+  detail?: string;
+}
+
+/**
+ * WHICH KINDS OF SPACE EACH TRADE OCCUPIES.
+ *
+ * This is the same partition `leasing.ts` draws its prospects from — a shed is
+ * let to logistics, food and apparel; an office floor to the six trades that
+ * sit at desks — and it lives here because BOTH the leasing side and the swan
+ * side need it and neither owns the other. `leasing.ts` still holds a private
+ * copy called SECTORS_BY_CLASS; the two are identical today and the leasing
+ * one should be deleted in favour of this import the next time that file is
+ * open. Two lists with one meaning is exactly the third kind of fake number,
+ * and this comment is the only thing currently stopping it.
+ *
+ * Multifamily has no entry on purpose. Flats are let to HOUSEHOLDS, not to
+ * trades, so a trade leaving town reaches housing the way it reaches it in
+ * life — through the jobs, and then through the people — and not through a
+ * rent roll.
+ */
+export const SECTOR_CLASSES: Partial<Record<BuiltClass, Sector[]>> = {
+  office: ["finance", "law", "tech", "media", "insurance", "design"],
+  retail: ["apparel", "food", "medical"],
+  industrial: ["logistics", "food", "apparel"],
+};
+
+/**
+ * A LEVEL EVENT, written down so it can be read back.
+ *
+ * Not for the simulation — the simulation reads `Econ.swanTrade` and
+ * `Econ.swanUse` — but for the history panel, for the harnesses that count
+ * frequency, and for the player who wants to know what happened to this town
+ * in 2038 and why the office market never came back.
+ */
+export interface SwanRecord {
+  m: number;                       // the month it was announced
+  family: "trade" | "use";
+  key: string;                     // the sector, or the use class
+  dir: 1 | -1;                     // white or black
+  /** the level multiplier this event applied, once fully arrived */
+  mult: number;
+  glideM: number;                  // how long it takes to land
+  title: string;
+}
+
 export interface EconHistoryPoint {
   q: number;
   indexRate: number;
@@ -1090,6 +1158,31 @@ export interface Econ {
   industryMom?: Record<Sector, number>;
   industryPhase?: Record<Sector, "boom" | "steady" | "bust">;
   industryPhaseM?: Record<Sector, number>;
+  // ---------------------------------------------------------------------
+  // AND THE LEVEL THE CYCLE RIDES ON. See swans.ts.
+  //
+  // Everything above this line is a CYCLE: it turns, it comes back, and its
+  // long-run mean is the number it started at. A city's actual history is not
+  // made of cycles. Kodak leaving Rochester was not a bust in imaging, it was
+  // a permanent restatement of how much imaging Rochester holds, and it did
+  // not reverse when the next expansion arrived. So the trade level and the
+  // use level are separate terms, they only ever move on an event, and they
+  // never revert. `swanTradeRef` is a two-year memory of what normal was,
+  // which is what turns a moving level into felt distress and — crucially —
+  // what lets the distress END while the level stays where the event put it.
+  /** how much of each trade this city holds, 1.0 at the opening; never reverts */
+  swanTrade?: Record<Sector, number>;
+  /** where each trade level is heading, and the months left to get there */
+  swanTradeTo?: Record<Sector, number>;
+  swanTradeM?: Record<Sector, number>;
+  /** a two-year memory of each trade's level: the yardstick distress is felt against */
+  swanTradeRef?: Record<Sector, number>;
+  /** how much of each kind of space this city wants, 1.0 at the opening; never reverts */
+  swanUse?: Record<BuiltClass, number>;
+  swanUseTo?: Record<BuiltClass, number>;
+  swanUseM?: Record<BuiltClass, number>;
+  /** this month's employment consequence of the trade levels moving, as a drift */
+  swanJobDrift?: number;
   // Everything the rest of the market is building, by class, in square feet.
   // Starts respond to profit; deliveries land ~30 months later and take the
   // rent with them. This is the supply half of the cycle, and without it a
@@ -1668,6 +1761,16 @@ export interface GameState {
   // an appraisal is an opinion and a closed sale is a fact.
   comps?: Comp[];
   news: NewsItem[];
+  /**
+   * UNREAD interruptions. The engine pushes; the UI shifts them off as it
+   * shows them. Optional because a save written before any of this existed has
+   * to keep loading, and because a run in which nothing extraordinary happens
+   * should carry no field at all.
+   */
+  alerts?: Alert[];
+  nextAlertId?: number;
+  /** Every level event this city has had, oldest first. See SwanRecord. */
+  swanLog?: SwanRecord[];
   gameOver: { cause: string; complete?: boolean } | null;
   insolventMs: number;
   locOverMs?: number;

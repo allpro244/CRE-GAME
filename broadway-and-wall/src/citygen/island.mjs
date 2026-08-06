@@ -1503,7 +1503,59 @@ export function islandConfig(seed) {
    *
    * At most TWO: they are obstacles in the generator and every obstacle is
    * differenced out of every cell it meets, so this is a cost in land as well
-   * as in time. The two longest are the ones a city would have named.
+   * as in time. The two longest are the ones a city would have named. Note what
+   * that cap actually does: measured over 40 islands it BINDS on 38 of them, so
+   * "at most two" is in practice "exactly two" and the plan's own answer to how
+   * many places it has to reconcile is being discarded. That is a rail rather
+   * than a mechanism, and it is only tolerable because the seam below is now
+   * cheap; if it is ever widened again the cap goes first.
+   *
+   * ---------------------------------------------------------------------------
+   * WHAT `h` IS, AND WHY IT IS SO MUCH SMALLER THAN THE STREET IT MAKES.
+   *
+   * `h` is a RESERVATION, not a street width, and the difference is the whole
+   * of a fault that ran here unmeasured. citygen.mjs differences the rectangle
+   * out of every cell it meets, leaves DIAG_CLEAR (2 m) of kerb on each side,
+   * and THEN erodes the flanking cells by the ordinary streetW/2 they would
+   * have paid to each other anyway. So the street on the ground is
+   *
+   *     delivered  =  h + 2*DIAG_CLEAR + streetW
+   *
+   * and streetW is the flanking district's, 8 to 27 m depending on which one it
+   * runs through. Measured rather than derived — walk the centreline, take the
+   * median gap between the two building lines: over 21 grid-refusing streets on
+   * 8 islands, a seam declared at 15.1 m came out 35.6 m (ratio 2.32) and a
+   * boulevard declared at 25.5 m came out 51.4 m (ratio 2.02). An ordinary
+   * street on the same islands measures 11-27 m.
+   *
+   * A SEAM PAYS THAT TWICE OVER, because a seam sits ON a partition cut. The
+   * leaves either side of a cut are disjoint half-planes, so both grids are
+   * clipped at the line and both erode streetW/2 from it — there is already a
+   * street on every cut, drawn by nobody, whether or not a seam is reserved.
+   * Measured on 26 cuts that carry no seam: median 16 m, range 9-24, which is
+   * the streetW of whichever districts meet there. A 15 m reservation fits
+   * INSIDE that street and buys not one metre of it; all it does is push both
+   * building lines out another twenty. Two of them, a kilometre each, on every
+   * island: 6.9 ha of a 132 ha island. Controlled — the same configs with the
+   * diagonals array emptied, 24 islands — the seams and boulevards together
+   * were costing 98 lots per island and 4.7 points of the land's share in lots,
+   * which is the whole of the gap to the authored islands and more.
+   *
+   * So the reservation is only the WIDENING that turns the join's own street
+   * into one somebody named. Four to nine metres measures 26.5 m median between
+   * the building lines (10 seams, 5 islands), against the 16 m the bare join
+   * already gives and the 11-27 m of the streets around it: Greenwich Ave is
+   * 18 m, Boylston St about 24, Broadway and Sixth Avenue and Boston's
+   * Massachusetts Avenue about 30. It was 12-18 — 35.6 m measured, a six-lane
+   * arterial through a town of fourteen hundred lots, twice.
+   *
+   * THE REST OF THE DOUBLE CHARGE CANNOT BE FIXED FROM THIS FILE. Charging the
+   * setback once — an edge already fronting a diagonal's apron does not also
+   * pay streetW/2 — is the correct model and is worth another 35 lots an island
+   * (measured: 1297 -> 1332 over the 24-island sample). It lives in
+   * citygen.mjs's pushBlock, and it moves the authored islands too: New Alden
+   * +1 lot, Kestrel Point +13. Existing saves store three fields and rebuild
+   * the map, so that is a save-breaking change and it is not taken here.
    */
   const seams = [];
   {
@@ -1544,12 +1596,26 @@ export function islandConfig(seed) {
       found.push({
         cx: Math.round(p0[0] + dir[0] * (bestA + bestB) / 2),
         cy: Math.round(p0[1] + dir[1] * (bestA + bestB) / 2),
-        // A SEAM IS A STREET, NOT A BOULEVARD. At 15-23 m and three of them
-        // across a 1.4 km2 island the seams alone were taking 3.4% of the land
-        // as roadway on top of the boulevards, and the island's share of ground
-        // in lots fell from the authored 59% to 49%. Twelve to eighteen is an
-        // ordinary through street, which is what Greenwich Ave is.
-        w: Math.round(bestB - bestA), h: Math.round(Dsm.f(12, 18)),
+        // A SEAM IS A STREET, NOT A BOULEVARD — and `h` is the widening, not
+        // the street. See the note on the block above: the cut already carries
+        // 16 m of street on its own, the reservation adds h + 2*DIAG_CLEAR +
+        // streetW on top of it, so 4-9 here measures a 26.5 m avenue where
+        // 12-18 measured a 35.6 m arterial.
+        //
+        // THE MEASUREMENT THIS COMMENT USED TO CARRY DOES NOT REPRODUCE. It
+        // read: "At 15-23 m and three of them across a 1.4 km2 island the seams
+        // alone were taking 3.4% of the land as roadway on top of the
+        // boulevards, and the island's share of ground in lots fell from the
+        // authored 59% to 49%." Rebuilding exactly that state — Dsm.f(15, 23)
+        // and slice(0, 3) below — over 24 islands: the seams' own footprint is
+        // 4.45% of the land, not 3.4%, and the share of ground in lots is
+        // 52.4%, not 49%. The 12-18 that replaced it measures 53.5%, so the
+        // change the comment credits with recovering ten points of lot share
+        // recovered one. The authored 59% is right and was never reached; 4-9
+        // gets to 54.7%, and the rest of the way is the double charge above,
+        // which cannot be fixed from this file. Every number in this paragraph
+        // is from test runs on the 24-island sample, none of it from arithmetic.
+        w: Math.round(bestB - bestA), h: Math.round(Dsm.f(4, 9)),
         deg: +((Math.atan2(dir[1], dir[0]) * R2D + 360) % 360).toFixed(1),
       });
     };
@@ -1703,10 +1769,24 @@ export function islandConfig(seed) {
   // The seams come first: they are structural, they are where the plan
   // reconciles itself, and they are the ones a city names. Then the
   // boulevards — nought to three of them, drawn back in the plan — each the
-  // longest chord it can make on dry land through somewhere worth going. A
-  // baroque town's second and third avenues are aimed at the OTHER cores, not
-  // at the same one again, which is what makes them a system rather than a
-  // starburst.
+  // longest chord it can make on dry land through somewhere worth going. The
+  // somewhere is the ground BETWEEN two cores, which is what `from` and `to`
+  // are for and all they are for: the avenue is seeded on the midpoint of the
+  // pair and then driven across the grain at 26-62 degrees to the core
+  // district's own bearing. It is not aimed AT either core, and it should not
+  // be described as if it were — an avenue that lies down with the grid is a
+  // wide street, not an avenue, and the angle is the only thing that
+  // guarantees it refuses one. Successive avenues take successive pairs, so
+  // the second and third are laid between different cores rather than over the
+  // same ground, which is what makes them a system rather than a starburst.
+  //
+  // `h`, like the seam's, is a RESERVATION and not a width — see the long note
+  // on the seams. Measured on the ground, a boulevard declared at 25.5 m comes
+  // out 51.4 m between the building lines. That number is left alone because
+  // that number is right: Pennsylvania Avenue is 49 m building line to building
+  // line, the Ringstrasse 57, Unter den Linden 60, Commonwealth Avenue 73. It
+  // is only the LABEL that was wrong, and the authored islands declare 25 and
+  // 27 in the same units, so they are the same street.
   const Db = dice(stream(s, 0xb0d1e));
   const diagonals = [...seams];
   const coreBearing = districts[kCore].bearingDeg;

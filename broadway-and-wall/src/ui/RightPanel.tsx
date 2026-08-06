@@ -15,7 +15,12 @@ import {
 import { planDevelopment, constructionQuotes, devMix, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
 import { buyQuote, assemblagePressure, saleTaxQuote } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
-import { MILESTONES } from "@/engine/sim";
+// APPROACH_LIFE_M is the engine's own sweep date, imported rather than
+// mirrored. It was a literal 12 here and a literal 12 in sim.ts, which is one
+// quantity with two answers: the countdown on a broker's row would have gone on
+// counting to a deadline the engine had stopped keeping the moment anybody
+// touched either number. sim.ts owns it; this file reads it.
+import { MILESTONES, APPROACH_LIFE_M } from "@/engine/sim";
 import { isCommercial, vacantSf, walt, loiSigningCost, exclusiveFeeRate, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, buyoutQuote, depositsHeld, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
 import { lenderHealth, capitalRatio, lenderBlurb, targetCapital, CONSTRUCTION_LENDER } from "@/engine/lenders";
@@ -5539,19 +5544,6 @@ function BuildingDatabase() {
     </div>
   );
 }
-
-/**
- * HOW LONG A BROKER'S FILE STAYS OPEN.
- *
- * The engine owns this: `sim.ts` deletes any approach the month after
- * `s.month > a.q + 12`, and that sweep runs whether the player has ever opened
- * this page or not. It is mirrored here because a countdown the player can read
- * has to be the same twelve months the engine is counting — if these two ever
- * disagree, the number on the row is a fake and the row is lying about a
- * deadline. It is a mirror, not a second opinion; the right fix is for sim.ts
- * to export it, which is a file this pass does not own. Flagged as a follow-up.
- */
-const APPROACH_LIFE_M = 12;
 
 /**
  * EVERY OFF-MARKET FILE A BROKER IS CURRENTLY SHOPPING TO YOU, soonest to

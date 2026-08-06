@@ -94,7 +94,27 @@ Say which, in the comment, every time.
 
 The harnesses are the enforcement, and their job is to be adversarial:
 
-- `pnpm econ:accept` and `pnpm sim:accept` are the gate.
+- **`pnpm gate` is the gate.** It runs the two things that are IDENTITIES rather
+  than opinions: `conserve`, and the city invariants. It must pass before
+  anything is committed that moves money.
+- **`pnpm report` is a report, and it does not block.** The lettered acceptance
+  tests — `econ:accept` (A–E), `sim:accept` (F–I), `city:accept` (J–M) — print
+  what they measure and where it sits against its band, and a breach does not
+  fail the build. `pnpm report:strict` opts back in.
+
+  This was the owner's explicit decision, made twice: *"I don't know if I want
+  you to follow that rigorous economy testing anymore. The one with letters"*
+  and *"I think there's some of these policies the test that we can consider too
+  strict"*. They were right about several. Measured: test F needed its seeds
+  raised 7→20 before its estimator could distinguish a real breach from
+  sampling, test G needed 15→40 and a rewrite of what it measured, and test H
+  breached on 13 of 30 neutral seeds AT BASELINE — a test that fails on a
+  healthy economy is measuring its own noise.
+
+  A band is a matter of taste and a human narrowed it. An identity is not, which
+  is why `conserve` stayed a gate. Do not re-promote the lettered tests, and do
+  not weaken what any of them COMPUTES — loosening a band was a policy call;
+  falsifying a measurement is not.
 - `pnpm audit` asks whether a shock in one place moves the right things
   elsewhere, and reports BACKWARDS as worse than BROKEN — because a wire that
   transmits the wrong way is a fake that also lies.
@@ -134,6 +154,33 @@ measuring `g.comps.length`, which is capped at MAX_COMPS, so they reported the
 cap and their thresholds could never trip. The tournament's dominance number
 divided by a bankrupt strategy and read "116770360.0x". Check that a metric can
 move before trusting that it did.
+
+**And a test measuring the WRONG BUILD is the same fault in a disguise** — it
+can fail, just not about anything real, and it survives every check you make
+against it because the checks load the wrong build too. `test/.engine.mjs` is
+gitignored and built by hand. A container restart once left a bundle nineteen
+hours stale; `pnpm conserve` then reported seven months out of balance, and the
+seven were real faults in an engine that had since been rewritten. The obvious
+control — stash the change, re-run, see whether the failures persist — CONFIRMED
+THE WRONG CONCLUSION, because both runs loaded the same stale bundle. It could
+only ever have returned "unchanged". Three commits and a whole plausible-looking
+investigation came out of that. `test/fresh.mjs` now refuses to run a harness
+against a bundle older than `src/`, and it is wired into `pnpm gate`. Rebuild
+explicitly before any probe.
+
+**Watch for the frozen world.** `advanceQuarter` returns state UNCHANGED once
+`gameOver` is set, so an un-resurrected probe silently stops and every later
+month is a copy of the month it died in. A measured "plateau" in the number of
+firms a city supports turned out to be nothing but the game being over — the
+comment asserting the plateau cited a number that could not have moved. Any
+probe running past year ~30 without a player must resurrect:
+`if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };`
+
+**And measure on a constant cohort.** A trajectory sampled at fixed offsets
+before each firm's death changes population at every offset — only long-lived
+firms have 84 months of history, so the early columns are the survivors and the
+late ones are everybody. That artefact produced a dramatic "AUM collapse" that
+was half composition. Re-run on a fixed cohort before believing a shape.
 
 **Never tune a bot until the number looks good.** If a strategy loses money,
 find out whether the strategy is bad or the economy is broken, and say which.

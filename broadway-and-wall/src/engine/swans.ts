@@ -795,9 +795,41 @@ export function swanClassLevel(e: Econ, k: BuiltClass): number {
   if (!list || !e.swanTrade || w <= 0) return use;
   let a = 0;
   for (const j of list) a += e.swanTrade[j] ?? 1;
-  // 1.0 when no trade has moved; the deviation scaled by how much of this
-  // class's demand is actually the trade rather than the town. See TRADE_WEIGHT.
-  return use * (1 + w * (a / list.length - 1));
+  // AGAINST THE CITY, NOT AGAINST ONE — because the city mean has already
+  // arrived by another road.
+  //
+  // `swanJobDrift` is by construction the ratio of the MEAN trade level, and it
+  // multiplies `employIdx`, which is the office and industrial demand driver.
+  // So by the time this function is consulted, the citywide average is already
+  // inside `Math.pow(driver, elastic)`. Returning the class's ABSOLUTE mean
+  // multiplied that same target by the average a second time: office demand
+  // became mean x class where the right quantity is class alone.
+  //
+  // Measured with a shock carrying no compositional content at all — all ten
+  // trades to 0.90, where the honest answer is "ten per cent fewer jobs, so
+  // about ten per cent less office" — against an identical build with this term
+  // suppressed, 5 seeds, 15-year means: office availability gap +7.25pp against
+  // +3.52pp, industrial +7.72pp against +2.05pp, real office rent -43.4%
+  // against -30.6%. Double the office response and nearly four times the
+  // industrial one, for a shock that says nothing about which trade left.
+  //
+  // This is the exact fault TRADE_WEIGHT above was written to fix — "counted
+  // ONCE instead of twice" — diagnosed for retail and left standing for office
+  // and industrial. And the 0.32 retail weight does not cover it, because it
+  // answers a different question: how much of retail's driver is firms, not
+  // whether the mean has already been counted.
+  //
+  // The corrected shape is the one `tickEmployment` already uses in demand.ts,
+  // where a block's trade advantage is `m - city` — a deviation from the town's
+  // own average, precisely because the aggregate is carried elsewhere. So this
+  // is the class's mean relative to the city's, and it is exactly 1.0 when
+  // every trade has moved together, which is what leaves the aggregate to
+  // `employIdx` alone.
+  let cityTot = 0;
+  for (const j of SECTORS) cityTot += e.swanTrade[j] ?? 1;
+  const cityMean = SECTORS.length ? cityTot / SECTORS.length : 1;
+  const rel = cityMean > 0 ? (a / list.length) / cityMean : 1;
+  return use * (1 + w * (rel - 1));
 }
 
 /**

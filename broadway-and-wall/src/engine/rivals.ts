@@ -1653,7 +1653,9 @@ const DURESS_BAND: [number, number] = [0.68, 0.88];
 const DURESS_MID = (DURESS_BAND[0] + DURESS_BAND[1]) / 2;
 
 function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: number): boolean {
-  const lev = (r.aum ?? 0) > 0 ? Math.min(1, Math.max(0, r.debt / (r.aum as number))) : r.targetLtv;
+  // No local leverage figure here on purpose: the debt a sale retires is
+  // `debtReleasedOnSale`'s answer and nobody else's. A second copy is how the
+  // decision and the closing came to disagree on 134 of 135 sales.
   let pick: { bbl: string; rec: ParcelRecord; net: number } | null = null;
   let biggest: { bbl: string; rec: ParcelRecord; net: number } | null = null;
   for (const bbl of r.bbls) {
@@ -1661,10 +1663,26 @@ function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: 
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
     // What the sale actually puts in the account: the price, less the debt it
-    // retires — `debtReleasedOnSale`'s rule — less the tax on the gain,
-    // `gainsTaxOn`. Both are the functions the closing itself calls.
+    // retires, less the tax on the gain. Both legs CALL the functions the
+    // closing calls rather than restating them.
+    //
+    // The debt leg was `px * (1 - lev)`, which re-derives what
+    // `debtReleasedOnSale` decides and gets it wrong twice: it drops that
+    // function's `Math.min(r.debt, ...)` cap, so a firm whose debt is smaller
+    // than its implied share appears to net less than it will, and it reads a
+    // `lev` that is already months stale by settlement. Measured over 135
+    // forced sales, 134 of them disagreed with the closing by more than $1,000
+    // and the sponsor UNDER-wrote disposals by 56% — so `sell.net <= 0` refused
+    // sales that would in fact have covered the hole and the ladder fell
+    // through to handing back keys.
+    //
+    // This is the third kind of fake number twice over: one quantity with two
+    // answers, and a header claiming "there is now one expression for what a
+    // disposal nets and both ends read it" while two expressions stood. The
+    // agreement it reported (+0.01% over 291 sales) was the formula compared
+    // against itself — a test that cannot fail.
     const px = markAsset(s, r, rec).v * DURESS_MID;
-    const net = px * (1 - lev) - gainsTaxOn(r, px);
+    const net = px - debtReleasedOnSale(r, px) - gainsTaxOn(r, px);
     if (!biggest || net > biggest.net) biggest = { bbl, rec, net };
     if (net >= need && (!pick || net < pick.net)) pick = { bbl, rec, net };
   }

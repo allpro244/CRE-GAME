@@ -15,7 +15,7 @@ import { blendBy, commercialShare, dominantUse, mixOf, uses, useSf } from "./mix
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable } from "./credit";
 
-import { leasingOdds, drawRequirementSf, supportableOcc } from "./absorption";
+import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount } from "./absorption";
 
 /**
  * What a lease of this class looks like when it is signed. Office in this
@@ -1279,6 +1279,20 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
 
     // inbound demand for vacant, market-ready space
     const vac = vacantSf(rec, h) - notReadySf(h, q);
+    // THE CLOCK ON EMPTY SPACE. Anything material and unlet ages; a signature
+    // of any kind resets it, because a building that just did a deal is a
+    // building whose ask the market has just validated. Apartments are exempt
+    // and always have been — flats let themselves, and measured over 25 years
+    // of a wholly passive owner a 21,397 sf building sat at a stable 62% while
+    // the commercial ones went to zero. It is the commercial ask that never
+    // moved. Held on the holding rather than derived, because "how long has
+    // this been sitting" is a fact about the space and not about the roll:
+    // a tenant leaving does not tell you when the FLOOR came free.
+    if (vac >= PART_SUITE_MIN && !h.leasingHold && !renovating) {
+      h.darkMs = (h.darkMs ?? 0) + 1;
+    } else if (h.darkMs) {
+      h.darkMs = 0;
+    }
     // TOURS, NOT LETTERS. Two parties chasing the same suite is ONE decision,
     // not two, so the cap counts conversations rather than envelopes — which
     // keeps the number of live decisions per building exactly where it was.
@@ -1421,7 +1435,12 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // Turnkey space is worth a premium and asks for no allowance —
           // the fit-out is already standing there, paid for, in the suite the
           // tenant just walked through.
-          rentPsf: +(market * (specLive ? 1.05 : 1) * rentBias * (rng(s) < 0.3 ? rrange(s, 0.68, 0.86) : rrange(s, 0.9, 1.1))).toFixed(2),
+          // ...and space that has been sitting signs under the market, because
+          // the agent cut the ask to move it. See staleDiscount: the same
+          // markdown that brought this prospect through the door, seen from the
+          // other side, and the reason the arrival factor is not a gift.
+          rentPsf: +(market * (specLive ? 1.05 : 1) * rentBias * staleDiscount(h.darkMs)
+            * (rng(s) < 0.3 ? rrange(s, 0.68, 0.86) : rrange(s, 0.9, 1.1))).toFixed(2),
           // Term length is not random. A credit tenant taking a whole floor
           // signs long paper and expects to be paid for it; a small unrated
           // firm wants three years and an out. WALT is the thing a buyer

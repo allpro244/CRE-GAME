@@ -353,6 +353,28 @@ export interface Holding {
   occ?: number;        // multifamily aggregate occupancy
   stance?: -1 | 0 | 1; // rent posture: push / market / fill
   /**
+   * HOW LONG THIS SPACE HAS BEEN SITTING, in months, reset by any signature.
+   *
+   * The price of empty space falls until it clears. That is the oldest fact in
+   * leasing and the model did not have it: `stance` is a switch the PLAYER
+   * throws and nothing moved the ask on its own, so a building whose owner did
+   * nothing asked the same rent forever and never let another foot.
+   *
+   * Measured over 25 years with an owner who accepted nothing: an 8,195 sf
+   * office went 81% let to 0% and then drew FIVE prospects in twenty-five
+   * years; a retail building went 73% to 0% and the receiver took it. Every
+   * multiplier was individually defensible — condition 0.48 once it had gone
+   * obsolete, the dark-building factor 0.85, location cubed, and no broker or
+   * turnkey suites to offset any of it — and their product was a share of the
+   * city's requirement indistinguishable from zero. Apartments were fine at a
+   * stable 62%, because flats let themselves.
+   *
+   * So this is not a passivity penalty being softened. It is the missing half
+   * of the price mechanism, and it costs what it costs in life: the space lets,
+   * and it lets cheap, for the whole of a ten-year term.
+   */
+  darkMs?: number;
+  /**
    * STOP LETTING IT.
    *
    * You cannot knock a building down with people in it, and you cannot empty

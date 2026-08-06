@@ -120,26 +120,44 @@ function distToRing(p, ring) {
 // ---------------------------------------------------------------- THE COAST
 
 /**
- * Periodic value noise in θ: n control values around the circle, smoothstep
- * between them. Two of these at different n are the "couple of octaves" — the
- * coarse one makes lobes the size of a neighbourhood, the fine one makes the
- * coves and points between them. Value noise rather than a sum of sines
- * because a Fourier sum has a rotational symmetry you can see from the air.
+ * Periodic value noise in θ: n control values around the circle, interpolated.
+ * Two of these at different n are the "couple of octaves" — the coarse one
+ * makes lobes the size of a neighbourhood, the fine one makes the coves and
+ * points between them. Value noise rather than a sum of sines because a Fourier
+ * sum has a rotational symmetry you can see from the air.
+ *
+ * `kink` DECIDES WHETHER THIS IS A COAST OR A POTATO, and it took two rounds of
+ * screenshots to see it. Smoothstep interpolation is C1 everywhere, so every
+ * inch of the outline is a gentle curve, and an outline made only of gentle
+ * curves reads as a boulder however deep its bays are — which is exactly what
+ * the first two versions of this looked like on the map. A real shoreline is
+ * runs that are locally straight meeting at corners. Linear interpolation gives
+ * that: the coarse octave is kinked, the fine one is not, and crinkle and
+ * Chaikin round the corners afterwards by about as much as the sea would.
  */
-function valueRing(rand, n) {
+function valueRing(rand, n, kink) {
   const v = Array.from({ length: n }, () => rand() * 2 - 1);
   return (th) => {
     const t = ((th / TAU) % 1 + 1) % 1;
     const x = t * n, i = Math.floor(x), f = x - i;
-    const s = f * f * (3 - 2 * f);           // smoothstep: C1, so no kinks
+    const s = kink ? f : f * f * (3 - 2 * f);
     return v[i % n] * (1 - s) + v[(i + 1) % n] * s;
   };
 }
 
-/** A raised cosine centred on th0, half-width w. 1 at the middle, 0 at the edges, C1 throughout. */
-function lobe(th, th0, w) {
+/**
+ * A raised cosine centred on th0, reaching zero at wNeg behind and wPos ahead.
+ * 1 at the middle, 0 at both edges, and C1 throughout.
+ *
+ * The two half-widths are separate because a symmetric bay is a bite out of a
+ * biscuit. Every real bight on this coast has a long gentle arm on one side and
+ * a short blunt one on the other — that asymmetry is most of what makes a
+ * harbour look like a harbour instead of a semicircle.
+ */
+function lobe(th, th0, wNeg, wPos = wNeg) {
   let d = th - th0;
   d = Math.atan2(Math.sin(d), Math.cos(d));  // wrap into (-pi, pi]
+  const w = d < 0 ? wNeg : wPos;
   if (Math.abs(d) >= w) return 0;
   return 0.5 * (1 + Math.cos((Math.PI * d) / w));
 }
@@ -156,12 +174,14 @@ function lobe(th, th0, w) {
  * against the crinkle that gets added afterwards. Above about m = 6 the test
  * starts flipping vertex to vertex and the inset ring self-intersects.
  *
- * The profile is smoothed until it clears the bound. Measured across the twelve
- * verification islands: the repair fired 0 times, because the feature bounds
- * below already satisfy it. It stays as the guard that keeps a later change to
- * those bounds from shipping a folded coastline instead of a crash.
+ * The profile is smoothed on ln r until it clears the bound. This IS
+ * load-bearing, not a rail sitting unused: at the feature depths this settled
+ * on, the repair fires on roughly one island in twelve (10 passes on seed
+ * 1234567, 0 on the other eleven verification islands), and it is what keeps
+ * the two ladders below from having to soften a coast that only needed its one
+ * steepest wall easing.
  */
-const COAST_SLOPE_MAX = 3.2;
+const COAST_SLOPE_MAX = 4.6;
 
 /**
  * THE LANDMASS, at unit radius.
@@ -186,14 +206,20 @@ const COAST_SLOPE_MAX = 3.2;
  * between any two, so they never stack into one enormous dent.
  */
 function profile(D) {
-  const oct1 = valueRing(D.rand, D.i(5, 8));
-  const oct2 = valueRing(D.rand, D.i(13, 19));
-  const a1 = D.f(0.115, 0.165), a2 = D.f(0.040, 0.065);
+  const oct1 = valueRing(D.rand, D.i(5, 8), true);
+  const oct2 = valueRing(D.rand, D.i(13, 19), false);
+  // THE NOISE IS THE MINOR GEOGRAPHY, NOT THE SHAPE. It ran at 0.115-0.165 of
+  // the radius on the first cut, which is the same order as the features, and
+  // the result was that every island came out a lumpy potato: nothing in the
+  // outline was legible as a bay or a point because the noise was arguing with
+  // all four of them at once. It is the coves and points BETWEEN the named
+  // features, and it has to be quieter than they are.
+  const a1 = D.f(0.085, 0.135), a2 = D.f(0.028, 0.050);
 
-  // Four well-separated bearings. Three gaps drawn from [1.10, 1.60] leave the
-  // fourth at least TAU - 4.80 = 1.48 rad, so no pair is ever closer than 1.10.
+  // Four well-separated bearings. Three gaps drawn from [1.25, 1.62] leave the
+  // fourth at least TAU - 4.86 = 1.42 rad, so no pair is ever closer than 1.25.
   const base = D.f(0, TAU);
-  const g1 = D.f(1.10, 1.60), g2 = D.f(1.10, 1.60), g3 = D.f(1.10, 1.60);
+  const g1 = D.f(1.25, 1.62), g2 = D.f(1.25, 1.62), g3 = D.f(1.25, 1.62);
   const slots = [base, base + g1, base + g1 + g2, base + g1 + g2 + g3];
   // Which feature lands on which bearing is the seed's business.
   const order = [0, 1, 2, 3];
@@ -203,24 +229,40 @@ function profile(D) {
   }
   const th = { harbour: slots[order[0]], cove: slots[order[1]], headland: slots[order[2]], river: slots[order[3]] };
 
-  const dHarb = D.f(0.19, 0.27), wHarb = D.f(0.55, 0.78);
-  const dCove = D.f(0.09, 0.17), wCove = D.f(0.30, 0.46);
-  const dHead = D.f(0.17, 0.27), wHead = D.f(0.28, 0.42);
-  // The estuary. Its half-width is floored against its depth so the walls stay
-  // inside COAST_SLOPE_MAX: at the steepest point of a raised cosine the slope
-  // is d*pi / (2*w*(1 - d - slack)), and solving that for w at the bound is
-  // the line below. Deeper river, wider mouth — which is how rivers work.
-  const dRiv = D.f(0.26, 0.36);
-  const wRiv = Math.max(D.f(0.42, 0.58), (dRiv * Math.PI) / (2 * COAST_SLOPE_MAX * (1 - dRiv - 0.18)));
+  // HOW BIG A FEATURE HAS TO BE TO READ AS ONE. These started at roughly half
+  // these depths and the islands came out as discs — rendered on the map at the
+  // scale the game plays at, a bight 130 m deep across 500 m of shore is not a
+  // harbour, it is a dent. A quarter to a half of the radius is what makes an
+  // outline you can point at and name.
+  // `sk` is how lopsided a feature is: one arm long, the other short.
+  const sk = () => D.f(0.42, 0.78);
+  const dHarb = D.f(0.30, 0.42), wHarb = D.f(0.55, 0.80), kHarb = sk();
+  const dCove = D.f(0.15, 0.26), wCove = D.f(0.28, 0.44), kCove = sk();
+  const dHead = D.f(0.26, 0.40), wHead = D.f(0.26, 0.40), kHead = sk();
+  // The estuary, and the one feature whose width is not a free choice. Its
+  // half-width is floored against its depth so the walls stay inside
+  // COAST_SLOPE_MAX: at the steepest point of a raised cosine the slope is
+  // d*pi / (2*w*(1 - d - slack)), and the second term below is that solved for
+  // w at the bound. Deeper river, wider mouth — which is how rivers work, and
+  // which is why the thing that comes out is an estuary rather than a fjord.
+  const dRiv = D.f(0.38, 0.54);
+  const wRiv = Math.max(D.f(0.40, 0.62), (dRiv * Math.PI) / (2 * COAST_SLOPE_MAX * (1 - dRiv - 0.18)));
+  const kRiv = sk();
 
-  const r = (t) => 1
+  // `soft` scales the FEATURES and leaves the noise alone. Some shapes cannot
+  // carry an esplanade at every size the game builds them at — see the ladder
+  // in coastline() — and the answer to one of those is not a different random
+  // island, it is the same island with its bays taken in until the offset
+  // survives. Softening the noise too would give a smooth blob back, which is
+  // the failure this is trying to avoid.
+  const make = (soft) => (t) => 1
     + a1 * oct1(t) + a2 * oct2(t)
-    - dHarb * lobe(t, th.harbour, wHarb)
-    - dCove * lobe(t, th.cove, wCove)
-    - dRiv * lobe(t, th.river, wRiv)
-    + dHead * lobe(t, th.headland, wHead);
+    - soft * dHarb * lobe(t, th.harbour, wHarb * kHarb, wHarb)
+    - soft * dCove * lobe(t, th.cove, wCove, wCove * kCove)
+    - soft * dRiv * lobe(t, th.river, wRiv * kRiv, wRiv)
+    + soft * dHead * lobe(t, th.headland, wHead, wHead * kHead);
 
-  return { r, th, wHarb, wRiv };
+  return { make, th, wHarb, wRiv };
 }
 
 /** Circular moving average on ln r, until the profile clears the slope bound. */
@@ -315,6 +357,35 @@ function selfCrosses(ring) {
  * clean as a City is not thereby clean as a Hamlet.
  */
 const SPACING_LADDER = [1.00, 1.14, 1.30, 0.88, 1.48, 0.78, 1.70];
+/**
+ * AND WHEN NO SPACING WORKS, THE SHAPE IS THE PROBLEM.
+ *
+ * Coarsening the control polygon cannot save every island, because the deepest
+ * failure is not vertex spacing at all — it is that offsetInward() decides
+ * which way is inland by asking whether a vertex normal points at the ring's
+ * CENTROID, and on the wall of a deep narrow inlet that question has no answer.
+ * Measured: with the spacing ladder alone, 21 of 200 seeds — 10.5% — ran out of
+ * rungs and would have shipped a folded esplanade.
+ *
+ * So the second ladder takes the bays in. The features scale down together, the
+ * noise does not, and the first rung that survives is the island. Measured with
+ * both ladders: see the note in islandConfig.
+ *
+ * THE REAL FIX IS ONE LINE AND IS NOT MADE HERE. offsetInward should take its
+ * inward direction from the ring's WINDING — for a counter-clockwise ring the
+ * interior is to the left of every edge, full stop — instead of from the
+ * centroid, which is only a heuristic and is exactly the heuristic that fails
+ * on a concave coast. Measured on the two authored islands at all five sizes
+ * and six seeds: the two rules disagree on 1 to 3 vertices out of 128-168, and
+ * where they disagree the shipped rule puts the vertex 2 x esplanade on the
+ * WRONG SIDE — which is the source of the one bowtie Kestrel Point produces at
+ * seed 424242 today. It is a live bug in the shipped generator and it is not
+ * fixed in this change, because the inset ring feeds clipToShore and therefore
+ * every block boundary on both authored islands: correcting it moves their lot
+ * lines, and continueRun() refuses any save whose deeds no longer land on
+ * parcels that exist. That is a save-migration decision, not a coastline one.
+ */
+const DEPTH_LADDER = [1.00, 0.86, 0.72, 0.58, 0.44];
 /** The size multipliers in SIZES. Restated rather than imported: this is a list of what must hold. */
 const SIZE_KS = [0.55, 0.78, 1.0, 1.45, 2.0];
 
@@ -338,70 +409,77 @@ const SIZE_KS = [0.55, 0.78, 1.0, 1.45, 2.0];
  * they are kept wide.
  */
 function coastline(seed, D, areaTarget, coastAmp, esplanade, spacing0) {
-  const { r, th, wHarb, wRiv } = profile(D);
-
-  const N = 720;
-  const rs = new Array(N);
-  for (let i = 0; i < N; i++) rs[i] = Math.max(0.42, Math.min(1.45, r((i * TAU) / N)));
-  const smoothed = flattenSteep(rs);
+  const { make, th, wHarb, wRiv } = profile(D);
 
   // An island is not round. The affine below stretches one axis and squeezes
   // the other by the reciprocal, so it changes the SHAPE and not the area, and
   // it is a bijection, so a ring that did not cross itself still does not.
   // The authored two run 1.72:1 (New Alden, east-west) and 1:1.75 (Kestrel
   // Point, a north-south peninsula); this covers that ground.
-  const el = D.f(0.80, 1.26), psi = D.f(0, TAU);
+  const el = D.f(0.72, 1.40), psi = D.f(0, TAU);
   const co = Math.cos(psi), si = Math.sin(psi);
   const xform = ([x, y]) => {
     const sx = x * el, sy = y / el;
     return [sx * co - sy * si, sx * si + sy * co];
   };
-  const at0 = (t) => {
-    // the profile, read off the smoothed table so a feature point and the ring
-    // it sits on can never disagree
-    const x = (((t / TAU) % 1) + 1) % 1 * N;
-    const i = Math.floor(x), f = x - i;
-    const rr = rs[i % N] * (1 - f) + rs[(i + 1) % N] * f;
-    return xform([rr * Math.cos(t), rr * Math.sin(t)]);
-  };
 
-  const fine = [];
-  for (let i = 0; i < N; i++) fine.push(at0((i * TAU) / N));
-  const fineArea = Math.abs(ringArea(fine));
-  const finePerim = fine.reduce((s, p, i) => s + dist(p, fine[(i + 1) % fine.length]), 0);
+  const N = 720;
+  let best = null;
+  for (let depth = 0; depth < DEPTH_LADDER.length && !best; depth++) {
+    const r = make(DEPTH_LADDER[depth]);
+    const rs = new Array(N);
+    for (let i = 0; i < N; i++) rs[i] = Math.max(0.30, Math.min(1.55, r((i * TAU) / N)));
+    const smoothed = flattenSteep(rs);
 
-  let ring = null, built = null, scale = 1, rung = 0;
-  for (; rung < SPACING_LADDER.length; rung++) {
-    const spacing = spacing0 * SPACING_LADDER[rung];
-    // Size it. Three passes; the only nonlinearity is crinkle's fixed amplitude
-    // against an edge length that is scaling under it.
-    let g = Math.sqrt(areaTarget / fineArea);
-    for (let pass = 0; pass < 3; pass++) {
-      ring = evenSpaced(fine.map(([x, y]) => [x * g, y * g]), Math.max(16, Math.round((finePerim * g) / spacing)));
-      built = chaikin(crinkle(ring, mulberry32(seed >>> 0), coastAmp), 1);
-      const a = Math.abs(ringArea(built));
-      if (Math.abs(a / areaTarget - 1) < 0.004) break;
-      g *= Math.sqrt(areaTarget / a);
+    const at0 = (t) => {
+      // the profile, read off the smoothed table so a feature point and the
+      // ring it sits on can never disagree
+      const x = (((t / TAU) % 1) + 1) % 1 * N;
+      const i = Math.floor(x), f = x - i;
+      const rr = rs[i % N] * (1 - f) + rs[(i + 1) % N] * f;
+      return xform([rr * Math.cos(t), rr * Math.sin(t)]);
+    };
+    const fine = [];
+    for (let i = 0; i < N; i++) fine.push(at0((i * TAU) / N));
+    const fineArea = Math.abs(ringArea(fine));
+    const finePerim = fine.reduce((s, p, i) => s + dist(p, fine[(i + 1) % fine.length]), 0);
+
+    for (let rung = 0; rung < SPACING_LADDER.length; rung++) {
+      const spacing = spacing0 * SPACING_LADDER[rung];
+      // Size it. Three passes; the only nonlinearity is crinkle's fixed
+      // amplitude against an edge length that is scaling under it.
+      let g = Math.sqrt(areaTarget / fineArea), ring = null, built = null;
+      for (let pass = 0; pass < 3; pass++) {
+        // ROUNDED TO THE METRE HERE, not on the way out. The config coast ships
+        // as integers — an island is a list of numbers a person may one day
+        // read — and rounding after the acceptance test means testing a ring
+        // that is not the one the generator gets. Measured: it is not a
+        // theoretical gap, seed 424242 passed unrounded and shipped a bowtie.
+        ring = evenSpaced(fine.map(([x, y]) => [x * g, y * g]), Math.max(16, Math.round((finePerim * g) / spacing)))
+          .map(([x, y]) => [Math.round(x), Math.round(y)]);
+        built = chaikin(crinkle(ring, mulberry32(seed >>> 0), coastAmp), 1);
+        const a = Math.abs(ringArea(built));
+        if (Math.abs(a / areaTarget - 1) < 0.004) break;
+        g *= Math.sqrt(areaTarget / a);
+      }
+      // The acceptance test: the esplanade offset must be a simple ring at
+      // every size the player can ask for.
+      const ok = SIZE_KS.every((k) => {
+        const c = chaikin(crinkle(ring.map(([x, y]) => [x * k, y * k]), mulberry32(seed >>> 0), coastAmp * k), 1);
+        return !selfCrosses(offsetInward(c, esplanade * k));
+      });
+      // The last rung of the last ladder is taken whether it passed or not.
+      // There is no third thing to try and a coast with a bowtie in it is a far
+      // better outcome than a start button that does nothing, so `ok` is
+      // reported rather than thrown — the harness reads it off `plan`.
+      const last = depth === DEPTH_LADDER.length - 1 && rung === SPACING_LADDER.length - 1;
+      if (ok || last) {
+        best = { ring, built, smoothed, rung, depth, ok, scale: g, at: (t) => { const p = at0(t); return [p[0] * g, p[1] * g]; } };
+        break;
+      }
     }
-    scale = g;
-    // The acceptance test: the esplanade offset must be a simple ring at every
-    // size the player can ask for.
-    const ok = SIZE_KS.every((k) => {
-      const c = chaikin(crinkle(ring.map(([x, y]) => [x * k, y * k]), mulberry32(seed >>> 0), coastAmp * k), 1);
-      const inr = offsetInward(c, esplanade * k);
-      return !selfCrosses(inr);
-    });
-    if (ok) break;
   }
-
-  return {
-    ring,                                          // the config coast
-    built,                                         // what generateCity will actually cut against
-    smoothed,                                      // how many times the slope guard fired
-    rung,                                          // which rung of the spacing ladder it took
-    th, wHarb, wRiv,
-    at: (t) => { const p = at0(t); return [p[0] * scale, p[1] * scale]; },
-  };
+  return { ...best, th, wHarb, wRiv };
 }
 
 // ------------------------------------------------------------------- NAMES
@@ -1067,9 +1145,15 @@ export function islandConfig(seed) {
       mine.reduce((a, l) => a + l.p[1], 0) / mine.length,
     ];
   };
+  // A DISTRICT'S LABEL GOES ON ITS OWN GROUND. The mean of a leaf's land
+  // samples is not necessarily inside that leaf's land — a district wrapped
+  // round a bay has its centroid in the water, which is how "MILLSIDE" ended up
+  // floating offshore on seed 424242. So the mean is the target and the nearest
+  // dry sample IN THAT LEAF is the answer.
   const labelDistrict = (k, text) => {
     const c = leafCentre(k);
-    if (c) labels.push({ name: text.toUpperCase(), labelKind: "district", xy: [Math.round(c[0]), Math.round(c[1])] });
+    const at = c && (wants(c, k, 30) ?? wants(c, k, 0));
+    if (at) labels.push({ name: text.toUpperCase(), labelKind: "district", xy: [Math.round(at[0]), Math.round(at[1])] });
   };
   labelDistrict(kOld, disp.old);
   labelDistrict(kCore, disp.core);
@@ -1122,7 +1206,7 @@ export function islandConfig(seed) {
     seed: s,
     generated: true,
     center: [-70.9, 41.1],
-    coast: C.ring.map(([x, y]) => [Math.round(x), Math.round(y)]),
+    coast: C.ring,
     coastAmp: Math.round(coastAmp),
     esplanade: Math.round(esplanade),
     // The lighthouse goes on the headland the profile put there, not on
@@ -1154,6 +1238,8 @@ export function islandConfig(seed) {
       nDistricts,
       smoothed: C.smoothed,
       rung: C.rung,
+      depth: C.depth,
+      coastOK: C.ok,
       builtArea: Math.round(Math.abs(ringArea(COAST))),
     },
   };

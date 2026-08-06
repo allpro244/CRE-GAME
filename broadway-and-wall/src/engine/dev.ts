@@ -2081,14 +2081,22 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // ground without ever asking whether there was a contractor free. The quota
   // below it does ask — `Math.max(0, capacity - live)` — so teardowns were
   // spending the town's construction capacity from OUTSIDE the budget that was
-  // supposed to ration it. Measured: capacity 9 against a mean of 16.1 live
-  // jobs, so the quota was clipped to zero in 60.7% of months. That is why the
-  // vacancy gate on starts, whose own comment calls it "the real control", was
-  // measurably inert — halving its gain produced byte-identical output over
-  // three seeds and fifty years, because the thing it controlled was already
-  // pinned at zero and the building was happening somewhere else.
+  // supposed to ration it. The quota was therefore clipped to zero most
+  // months by jobs it had no say over, which is why the vacancy gate on
+  // starts — the line market.ts calls "the real control" — was measurably
+  // inert: halving its gain produced byte-identical output over three seeds
+  // and fifty years, because the thing it controlled was already pinned at
+  // zero and the building was happening somewhere else.
   //
   // There is one crane pool in a town this size and every job queues in it.
+  // Measured over 6 seeds x 50 years, this line plus the order-book fix below:
+  // the share of stock under construction goes from a 0.0214 median with a
+  // 0.126 maximum to a 0.0185 median with a 0.064 maximum — i.e. onto the
+  // 0.018 the rest of the engine says this town builds at — the construction
+  // employment term stops sitting on its clamp (31.5% of months -> 5.5%), and
+  // starts stop being a relay pinned at hard zero (45.2% of months -> 12.7%).
+  // Office sd(log) of real effective rent moves 0.356 -> 0.263 with it, and
+  // retail 0.497 -> 0.259.
   if ((s.cityJobs ?? []).filter((j) => !j.orphaned).length >= crewCapacity(bbls)) return;
   let worst: { bbl: string; rec: ReturnType<typeof resolveRec>; ratio: number } | null = null;
   for (let i = 0; i < 26; i++) {

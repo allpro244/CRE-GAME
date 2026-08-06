@@ -196,7 +196,10 @@ function nbTable(s: GameState, parcels: ParcelTable, use: BuiltClass): Map<strin
 }
 
 export interface LocalMarket {
-  /** the space market's citywide rate for this class */
+  /** the space market's citywide AVAILABILITY rate for this class — empty
+   *  floors plus everything standing on the sublet market, because this
+   *  number's whole job below is to count what a tenant could take instead of
+   *  yours, and a sublease is the cheapest of those there is */
   cityVac: number;
   /** the same class, in this building's own corner */
   localVac: number;
@@ -216,7 +219,16 @@ export interface LocalMarket {
  * engine and not two.
  */
 export function localMarket(s: GameState, parcels: ParcelTable, rec: ParcelRecord, use: BuiltClass): LocalMarket {
-  const cityVac = s.econ.cityVac?.[use] ?? NATURAL_VAC[use];
+  // AVAILABILITY, NOT VACANCY, and the difference is the whole argument. The
+  // rent index in market.ts prices off availability; if lease-up priced off
+  // direct vacancy the same city would be reporting two different market
+  // conditions to two different parts of the engine. In a bad office market a
+  // quarter of what a tenant can choose from is somebody else's lease, offered
+  // fitted out and at a discount by a firm that only wants to stop the
+  // bleeding — that is the toughest competition a landlord faces and it was
+  // invisible here.
+  const cityVac = (s.econ.cityVac?.[use] ?? NATURAL_VAC[use])
+    + (s.econ.sublet?.[use] ?? 0) / Math.max(1, s.econ.stock?.[use] ?? CITY_STOCK[use]);
   const t = nbTable(s, parcels, use);
   const mean = t.get(CITY_KEY)!;
   const here = t.get(rec.block);

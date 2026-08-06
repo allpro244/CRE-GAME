@@ -57,6 +57,27 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 // paid — that are on the market anyway. Rents, concessions and developers all
 // read AVAILABILITY (direct vacancy plus sublet), which is what a real market
 // report quotes and what a real tenant chooses from.
+//
+// MEASURED, 6 SEEDS x 50 YEARS, AND IT IS THE LARGEST SINGLE EFFECT IN THE
+// FILE. Turning this channel off and changing nothing else takes office
+// sd(log) of real effective rent from 0.263 back to 0.696 — a 156% return of
+// amplitude — peak-to-trough from 2.84x to 9.81x and the median career's
+// worst real drawdown from 47.6% back to 89.8%. Industrial +46%, retail +28%.
+// Housing is unaffected by design; its speed comes from its lease term.
+//
+// AND WHERE IT IS STILL WRONG, because the inventory is checkable. Office
+// sublet runs 0.23% of stock at the median here, 6.0% at the 95th and 8.9% at
+// the worst; the published figures are 1-1.5% of inventory in an ordinary US
+// office market, 2.7% at the national 2023 peak and about 10% at San
+// Francisco's. So the extreme is right and the ORDINARY LEVEL IS THREE TIMES
+// TOO LOW, because this give-back is driven by the aggregate: when the city as
+// a whole wants what it holds, nothing is marketed. In life the inventory
+// never empties, because firms merge, contract and relocate idiosyncratically
+// in every kind of market — it is the DISPERSION of firm outcomes, not the
+// net. Modelling that properly means a background floor on marketed space,
+// and a permanent floor cannot be added here without also restating
+// NATURAL_VAC as an availability rate rather than a direct-vacancy rate, which
+// is a much wider change than this one. Recorded, not fixed.
 declare module "./types" {
   interface Econ {
     /** SF under lease and on the sublet market, by class. Counted inside
@@ -126,13 +147,22 @@ const MOM_DEMAND = 4;
 /** WHAT PRICE IS ALLOWED TO DO TO THE SPACE ONE WORKER OCCUPIES. Affordability
  *  rations demand — dear space, firms take less of it — but it was unbounded,
  *  and unbounded it manufactured tenants out of cheapness: measured over three
- *  careers it reached 2.34, the model asserting that cheap rent conjures office
- *  demand equal to 134% of the city's entire employment base. Space per worker
+ *  careers it reached 2.34 — the model asserting that cheap rent, by itself,
+ *  more than doubles the space the city's existing headcount takes. Space per worker
  *  is set by headcount and by workplace design, not by rent. US office ran
  *  about 250 sf/worker in 1990 and about 190 in 2019 — a quarter, over THIRTY
  *  years, and driven by open plan and hot-desking rather than by price. A
  *  cyclical price response cannot be wider than that, so it is bounded inside
- *  it: plus or minus twelve per cent about the middle of the observed band. */
+ *  it: plus or minus twelve per cent about the middle of the observed band.
+ *
+ *  IT DID NOT DAMP THE CYCLE AND THAT IS RECORDED HERE. Removing the bound and
+ *  changing nothing else measured office sd(log) 0.263 -> 0.235, RETAIL 0.259
+ *  -> 0.224 — the unbounded version is calmer, because manufactured demand is a
+ *  stabiliser: a rent collapse conjures the tenants that stop it. It is a
+ *  stabiliser built on a fiction, so the bound stays and the model is a little
+ *  louder for it. What it did do is stop resting on its own rail: the clamp
+ *  bound 58.5% of class-months before and binds 16.7% now, because rent no
+ *  longer travels far enough to need it. */
 const AFFORD_BAND: [number, number] = [0.88, 1.12];
 
 /**
@@ -1459,7 +1489,7 @@ export function tickEcon(s: GameState) {
   // ratio: a generation of tightness buys a premium, a permanent glut spends it.
   //
   // AND IT IS FED OFF AVAILABILITY, BECAUSE DIRECT VACANCY IS PINNED. This
-  // read `cityVac.office`, which rests on its frictional rail 26.5% of all
+  // read `cityVac.office`, which rested on its frictional rail 26.9% of all
   // months in runs of five to eight years. While it is pinned the input to
   // this EMA is a CONSTANT — the city cannot report being any tighter than its
   // floor — so a town that merely touched the floor earned the full Manhattan
@@ -2121,7 +2151,12 @@ export function tickEcon(s: GameState) {
     // median pipeline share over 6 seeds x 50 years is 0.0175, and buildEma's
     // median is 0.0178. `REF_PIPE_SHARE` was right and this one was stale. It
     // is now the same symbol so the two cannot part company again. Measured
-    // after: the ceiling binds 9.2% of months instead of 45.3%.
+    // after: the ceiling binds 4.7% of months instead of 45.3%, and buildEma's
+    // median lands at 0.0189 against a pivot of 0.018 — the permanent drift is
+    // gone. The FLOOR is still never reached, and that is honest rather than
+    // broken: reaching it needs the pipeline at a dead stop, and the quietest
+    // 5% of months now run 0.0106 where they used to run 0.0002, because the
+    // teardown pipeline can no longer swing between everything and nothing.
     const HEAT_PIVOT = REF_PIPE_SHARE;
     const heat = clamp(((e.buildEma ?? HEAT_PIVOT) - HEAT_PIVOT) * 110, -1.9, 1.6);
     const slope = heat < 0 ? 0.0026 : 0.0016;

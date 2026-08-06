@@ -141,7 +141,20 @@ for (const seed of SEEDS) {
     if (Math.abs(resid) > TOL) {
       if (Math.abs(resid) > Math.abs(worst)) worst = resid;
       if (breaks.length < 6) {
-        breaks.push({ m, resid, news: (g.news ?? []).filter((n) => n.q === g.month).map((n) => n.text.slice(0, 90)) });
+        // WHICH COMPONENT MOVED. A residual says a dollar has no entry; it does
+        // not say which line it should have been on. These are the raw deltas
+        // for the failing month, so the next reader starts from evidence rather
+        // than from a hypothesis about deposits.
+        const parts = {};
+        for (const k of [...IN, ...OUT]) { const d = nb[k] - prev.books[k]; if (d) parts[k] = Math.round(d); }
+        breaks.push({
+          m, resid,
+          dCash: Math.round(g.cash - prev.cash),
+          dLoc: Math.round(nl - prev.loc),
+          dDep: Math.round(nd - prev.dep),
+          parts,
+          news: (g.news ?? []).filter((n) => n.q === g.month).map((n) => n.text.slice(0, 90)),
+        });
       }
     }
     prev = { cash: g.cash, books: nb, loc: nl, dep: nd };
@@ -158,6 +171,7 @@ for (const r of rows) {
   console.log(`${String(r.seed).padEnd(12)}${String(r.breaks.length ? ">=" + r.breaks.length : "none").padEnd(17)}${M(r.worst).padStart(14)}${M(r.cum).padStart(24)}`);
   for (const b of r.breaks) {
     console.log(`   m${String(b.m).padStart(3)}  unexplained ${M(b.resid)}${b.resid > 0 ? "   (money APPEARED — a liability released with no entry)" : "   (money VANISHED — a payment nobody booked)"}`);
+    console.log(`         dCash ${b.dCash}  dLoc ${b.dLoc}  dDeposits ${b.dDep}  books ${JSON.stringify(b.parts)}`);
     for (const n of b.news) console.log(`        | ${n}`);
   }
 }

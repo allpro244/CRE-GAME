@@ -27,6 +27,7 @@ import { rng, rrange } from "./market";
 import { assetValue, resolveRec } from "./value";
 import { livingRivals, gradeOf, ownerOf, STYLE_OF } from "./rivals";
 import { executePurchase } from "./actions";
+import { depositsOn } from "./leasing";
 
 const money = (n: number) =>
   Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${Math.round(n / 1000)}K`;
@@ -200,6 +201,13 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
             const share = p.ask * ((rec ? Math.max(1, assetValue(rec, s.econ, gradeOf(s, rec))) : 1) / totV);
             debtOff += h.loan?.balance ?? 0;
             toYou += share;
+            // The security deposits go with the deeds, the same as they do on a
+            // single-asset sale — they were the tenants' money and they are the
+            // buyer's obligation now. Selling a book as one ticket deleted every
+            // holding without handing them over, which released the liability
+            // with no entry behind it. See the identity in test/conserve.mjs:
+            // Ddeposits is part of it precisely so this cannot go unnoticed.
+            s.cash -= depositsOn(h);
             delete s.holdings[b];
           }
           toYou = Math.max(0, Math.round(toYou - debtOff - p.ask * 0.02));

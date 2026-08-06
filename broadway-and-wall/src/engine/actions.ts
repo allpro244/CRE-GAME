@@ -1523,6 +1523,14 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   for (const [child, parent] of Object.entries(next.merged ?? {})) {
     if (parent !== bbl) continue;
     delete next.merged![child];
+    // ...AND THEIR TENANTS' DEPOSITS GO WITH THEM. This deleted the child deed
+    // and left the deposits behind as a liability that simply stopped existing:
+    // money the player was holding for somebody else, released with no entry
+    // and no cash moving. `pnpm conserve` caught it as a positive residual —
+    // "money APPEARED" — on 7 of 3,267 reconciled months, $5K-$49K each, which
+    // is exactly the size of a small building's roll. The parent's deposits
+    // were handed over correctly a few lines below; the children's were not.
+    next.cash -= depositsOn(next.holdings[child]);
     delete next.holdings[child];
     if (next.workouts?.[child]) delete next.workouts[child];
   }

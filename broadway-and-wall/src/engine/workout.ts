@@ -39,9 +39,19 @@ import { depositsOn } from "./leasing";
 
 const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
 
-/** How long they let it run before the auction, by stage. */
-const NOTICE_M = 6;        // the cure period
-const FORECLOSE_M = 8;     // once they have filed
+/**
+ * How long they let it run before the auction, by stage.
+ *
+ * EXPORTED BECAUSE THE STREET RUNS ON THE SAME CALENDAR. A firm on this street
+ * that stops paying is not on a different clock from the player who stops
+ * paying — the notice period is a statute and the filing calendar is a court's,
+ * and neither one asks whose name is on the mortgage. `rivals.ts` reads the sum
+ * of these two as the months a delinquent firm gets before the desks take the
+ * book, so there is one answer to "how long from a missed payment to losing the
+ * building" rather than one for you and an invented one for them.
+ */
+export const NOTICE_M = 6;        // the cure period
+export const FORECLOSE_M = 8;     // once they have filed
 
 /**
  * IS THIS DESK IN A MOOD TO EXTEND ANYBODY — the borrower-independent half of

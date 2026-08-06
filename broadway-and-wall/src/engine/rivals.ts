@@ -33,9 +33,11 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from "./types";
 import { CASH_APY, monthLabel } from "./types";
 import { BUILD_MONTHS, rng, rrange, devPencils } from "./market";
-import { assetValue, initialCondition, landValue, noiAfterTaxYr, occupancy, resolveRec } from "./value";
+import { assetValue, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec } from "./value";
 import { cityInfillCap, devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retailWantsMixed, SOFT_COST, useForZone, noteRecordPlan, openConstructionDesks, pickConstructionDesk, capRetail, withStreetRetail } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss } from "./lenders";
+import { streetRefiProceeds, productById } from "./debt";
+import { deskWillExtend, NOTICE_M, FORECLOSE_M } from "./workout";
 import { recordComp } from "./comps";
 import { demandNow } from "./demand";
 
@@ -709,22 +711,40 @@ export function tie(s: GameState, firmId: string) {
  */
 export function markRival(s: GameState, parcels: ParcelTable, r: Rival): { aum: number; noiYr: number; ltv: number } {
   let aum = 0, noi = 0;
-  const bookMkt = Math.max(0.35, r.mktOcc ?? 0.88);
   for (const bbl of r.bbls) {
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
-    const cond = assetGrade(r, rec);
-    const v = assetValue(rec, s.econ, cond);
-    if (rec.class === "land" || !rec.bldgArea) { aum += v; noi += noiAfterTaxYr(rec, s.econ, cond, v); continue; }
-    // Against the book's OWN market occupancy, not this building's. `r.occ`
-    // is a portfolio average; dividing it by an individual building's
-    // occupancy handed a firm a 35% uplift on every troubled asset it owned —
-    // exactly the assets that should be dragging the mark down.
-    const ratio = Math.max(0.35, Math.min(1.2, (r.occ ?? bookMkt) / bookMkt));
-    aum += v * (0.42 + 0.58 * ratio);
-    noi += noiAfterTaxYr(rec, s.econ, cond, v) * ratio;
+    const a = markAsset(s, r, rec);
+    aum += a.v;
+    noi += a.noi;
   }
   return { aum, noiYr: noi, ltv: aum > 0 ? r.debt / aum : r.debt > 0 ? 9 : 0 };
+}
+
+/**
+ * ONE BUILDING OUT OF A FIRM'S BOOK, marked the way the book is marked.
+ *
+ * Lifted out of `markRival` unchanged, because the refinancing cliff below has
+ * to size a loan against a SINGLE asset and a second expression for "what is
+ * this building of theirs worth and what does it earn" would be the same
+ * quantity with two answers — the exact fault this file already documents in
+ * `debtReleasedOnSale`. The sum of these over `r.bbls` is `markRival`, by
+ * construction rather than by agreement.
+ */
+function markAsset(s: GameState, r: Rival, rec: ParcelRecord): { v: number; noi: number } {
+  const cond = assetGrade(r, rec);
+  const v = assetValue(rec, s.econ, cond);
+  if (rec.class === "land" || !rec.bldgArea) return { v, noi: noiAfterTaxYr(rec, s.econ, cond, v) };
+  // Against the book's OWN market occupancy, not this building's. `r.occ`
+  // is a portfolio average; dividing it by an individual building's
+  // occupancy handed a firm a 35% uplift on every troubled asset it owned —
+  // exactly the assets that should be dragging the mark down.
+  const bookMkt = Math.max(0.35, r.mktOcc ?? 0.88);
+  const ratio = Math.max(0.35, Math.min(1.2, (r.occ ?? bookMkt) / bookMkt));
+  return {
+    v: v * (0.42 + 0.58 * ratio),
+    noi: noiAfterTaxYr(rec, s.econ, cond, v) * ratio,
+  };
 }
 
 // How hard each kind of firm works its buildings. An institution runs a
@@ -898,18 +918,51 @@ const NEW_FIRMS: { name: string; style: RivalStyle }[] = [
   { name: "Okonkwo Holdings", style: "vulture" },
   { name: "Bridgewright Partners", style: "developer" },
 ];
-// The street refills toward a crowd, not toward four. A market with four firms
-// left in it is a market where nothing is contested — and a market that opened
-// with thirty-five and never replaces one is a slow liquidation. The floor sits
-// well below the opening roster on purpose: a bad enough decade SHOULD thin the
-// street, and the thinning should be visible and should take years to undo.
-const MIN_FIRMS = 24;
+// HOW LONG A FIRST FUND TAKES TO RAISE, and it is the only clock in the entry
+// rule. Twelve to eighteen months from "there is money to be made in this town"
+// to a first close is what a first-time sponsor actually experiences: the
+// meetings, the consultant, the legal, the first anchor. It sets the scale of
+// the hazard below — one full unit of opportunity brings one new fund in about
+// the time one new fund takes to raise — so the number is a fact about
+// fundraising rather than a dial pointed at a firm count.
+const RAISE_M = 14;
 
-function maybeNewFirm(s: GameState, ci: number) {
-  const living = livingRivals(s);
-  if (living.length >= MIN_FIRMS) return;
-  // capital returns when the window is open, not while it is shut
-  if (ci < 0.88 || rng(s) > 0.045) return;
+/**
+ * NEW CAPITAL ENTERS BECAUSE THERE IS MONEY TO BE MADE.
+ *
+ * The old rule was a floor and a window: refill only while fewer than 24 firms
+ * are standing, at 4.5% a month, and only when the credit index is above 0.88.
+ * Both halves are backwards. The floor is a rail holding the model up — a firm
+ * count is an OUTPUT of how good this business is, not an input — and the
+ * credit gate shut the door in precisely the years a first fund gets raised.
+ * Nobody raised a real estate fund in 1988. Everybody raised one in 1992.
+ * Measured on the old rule: the window is open 52.8% of months and the street
+ * still bled from 25 living firms to 18.3 across fifty years.
+ *
+ * What a first-time sponsor is actually pitching is two sentences, and both of
+ * them are numbers this engine already knows:
+ *
+ *   POSITIVE LEVERAGE. Buildings are trading at a going-in yield above the cost
+ *   of the money, so a levered dollar is accretive from day one. The comparison
+ *   is against the coupon rather than the mortgage constant because a first
+ *   fund buys on interest-only paper — see the constant discussion in debt.ts.
+ *   Measured across three fifty-year runs, the spread runs p25 −1.06, p50
+ *   −0.27, p75 +0.68 and is positive in 41% of months — negative through
+ *   expansion and peak, positive through recession and recovery, which is the
+ *   right shape and is why the gate on the credit window was wrong.
+ *
+ *   NOBODY IS BIDDING. `marketAppetite` is the money in the room, normalised
+ *   so an ordinary market reads 1.0. A thin market both makes the pitch and
+ *   makes it true, and it is self-limiting: capital arriving thickens the bid,
+ *   which closes the door behind it without a floor having to.
+ */
+function maybeNewFirm(s: GameState) {
+  const c = s.econ.capRate;
+  const cap = (c.office + c.retail + c.multifamily + c.industrial) / 4;
+  const spread = cap - (s.econ.indexRate + RATE_SPREAD);
+  if (spread <= 0) return;
+  const opportunity = spread / Math.max(0.2, marketAppetite(s));
+  if (rng(s) > Math.min(0.5, opportunity / RAISE_M)) return;
   const used = new Set((s.rivals ?? []).map((r) => r.name));
   const pool = NEW_FIRMS.filter((f) => !used.has(f.name));
   if (!pool.length) return;
@@ -1087,11 +1140,365 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   });
 }
 
+// ---------------------------------------------------------------- the cliff
+//
+// A NON-RECOURSE MORTGAGE DOES NOT ACCELERATE BECAUSE A VALUER MARKED THE
+// BUILDING DOWN.
+//
+// What this file used to do instead: `stressed = ltvNow > maxLtv + 0.05`, and
+// thirty months later the firm was dead. That is a mark-to-market solvency
+// test, and no commercial mortgage in the world contains one. A borrower who
+// makes every payment on time does not default because an appraiser's opinion
+// of the collateral changed, and a lender who accelerated on that basis would
+// be sued and would lose. Measured on the old test over four fifty-year runs:
+// 89 of 162 firms died, the median one aged 13.8 years, and the constant cohort
+// of the dying was HEALTHY five years out at 0.39 leverage with nine buildings
+// and money in the bank. What killed them was the city's own repricing — a
+// fixed basket of the same buildings at the same grade fell 44% across the same
+// window, which is the market, not the borrower.
+//
+// Leverage still has to bite, or the whole business becomes safe. It bites in
+// life at the REFINANCING CLIFF, which is a DATE and not a running appraisal:
+// the balloon lands, the new loan is sized against today's value and today's
+// lender appetite, and a sponsor who cannot cover the gap between the old
+// balance and the new proceeds has to find the difference or give the building
+// up. CLAUDE.md names it in the list of things that make this business hard.
+//
+// WHAT MATURITY MACHINERY THE STREET HAD: none. `r.debt` is a single number
+// with an amortisation share and no term at all, so nothing on this street has
+// ever come due. This is the smallest honest version of one.
+
+// THE LADDER IS DERIVED, NOT STORED, and this is the reason why.
+//
+// A rival deliberately carries no per-asset loan record — see the header of
+// this file — and inventing one would mean two numbers that both claim to be
+// what the firm owes. But an origination date is already known: `heldSince`
+// records the month each deed arrived, and a mortgage is written at the
+// closing. So a firm's balloons are its acquisition dates plus a term, which
+// gives a real, staggered ladder for nothing and cannot drift away from the
+// book.
+//
+// The three desks that write term paper on standing income property in this
+// town are the hometown bank, the regional and the conduit; the terms come
+// from their own sheets rather than being restated here. Which of the three
+// wrote any particular file is not recorded anywhere in this engine, so it is
+// drawn deterministically per building — stable across a save, staggered
+// across a book, and honest about being an allocation rather than a fact.
+const TERM_DESKS = ["harbor", "savings", "conduit"];
+
+function hash32(key: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
+/** The term of the paper on one building of one firm's, in months. */
+function loanTermM(r: Rival, bbl: string): number {
+  return productById(TERM_DESKS[hash32(r.id + "|" + bbl) % TERM_DESKS.length]).termM;
+}
+
+/**
+ * WHEN THE PAPER ON THIS BUILDING WAS WRITTEN.
+ *
+ * `heldSince` when the deed moved inside the sim. The opening roster has no
+ * such record — `initRivals` hands a firm nine buildings in month zero — and
+ * dating all of them to month zero would land every balloon on the street in
+ * the same month, which is an artefact of the setup and not a credit cycle. A
+ * firm that opens the game owning nine buildings did not buy them all in
+ * December: the opening book is spread back across the term it carries.
+ */
+function originM(r: Rival, bbl: string, term: number): number {
+  const since = r.heldSince?.[bbl];
+  if (since !== undefined) return since;
+  return -(hash32(r.id + "~" + bbl) % term);
+}
+
+/**
+ * WHICH DESK HOLDS THE PAPER ON ONE OF THEIR BUILDINGS.
+ *
+ * The engine does not know, and says so — the same admission
+ * `chargeSponsorFailure` already makes about a dead firm's term debt, and
+ * allocated by the same rule so there is one story about whose paper this is:
+ * a bigger book holds more of this town's mortgages. Deterministic per
+ * building so the desk that grants an extension is the desk that eats the loss
+ * if the extension is refused.
+ */
+function deskFor(s: GameState, r: Rival, bbl: string): string {
+  const live = (s.lenders ?? []).filter((l) => l.failedM === undefined);
+  if (!live.length) return CONSTRUCTION_LENDER;
+  const books = live.reduce((a, l) => a + l.book, 0);
+  if (books <= 0) return live[0].name;
+  let t = ((hash32(r.id + "@" + bbl) % 100_000) / 100_000) * books;
+  for (const l of live) { t -= l.book; if (t <= 0) return l.name; }
+  return live[live.length - 1].name;
+}
+
+/**
+ * RESCUE EQUITY, AND WHY IT IS RECALLED DISTRIBUTIONS.
+ *
+ * A capital call is the single most common outcome of a real workout and this
+ * street had no way to make one. It is also the thing that separates patient
+ * old money from a merchant builder: when the balloon lands, a family office
+ * writes a cheque and a builder who was paid out at his last delivery has
+ * nobody left to ring.
+ *
+ * The well is what the vehicle has already returned to its investors, because
+ * that is what an investor base will fund a protective call out of. It is not
+ * a metaphor — RECALLABLE DISTRIBUTIONS are a standing provision in nearly
+ * every limited partnership agreement in this business, normally capped at
+ * something near 100% of what has been distributed during the investment
+ * period, and this is exactly that clause. It needs no new bookkeeping because
+ * `distributed` is already tracked, and it is self-limiting by construction: a
+ * sponsor who has never returned a dollar cannot raise a rescue round, which
+ * is true and is why the youngest, most levered shops should be the ones that
+ * die rather than the ones that get bailed out.
+ *
+ * The share is a fact about the VEHICLE, not a dial. At the top are the ones
+ * with a standing pool and a partnership agreement that lets them recall it —
+ * committed funds and family capital. At the bottom are the ones with no
+ * vehicle at all: a merchant builder syndicates each job and dissolves it at
+ * the sale, so there is no fund to call.
+ *
+ * NOT MODELLED, AND IT MATTERS: a newly-raised fund's UNDRAWN commitment.
+ * `initRivals` and `maybeNewFirm` hand a firm its entire raise as cash on day
+ * one, so there is nothing behind it, and a young fund here is therefore more
+ * fragile than a young fund in life. Fixing that needs a field on `Rival`.
+ */
+const RECALL: Record<RivalStyle, number> = {
+  // it is their own money and always was; the point of the vehicle is to never
+  // be a forced seller
+  family: 1.0, owneruser: 1.0,
+  // offshore capital defending a trophy: it comes, and it comes slowly
+  foreign: 0.9,
+  // closed-end funds with the recall clause written into the LPA
+  opportunistic: 0.8, pe: 0.8, vulture: 0.75,
+  // an open-ended institutional vehicle goes back to a board, which protects an
+  // existing position but wants a paper on it first
+  core: 0.7,
+  // a listed company issues equity, which it can always do, never wants to, and
+  // is punished for
+  reit: 0.6,
+  // a deal-by-deal sponsor rings the investors who happen to be in THAT deal,
+  // and there is no fund behind them
+  developer: 0.45,
+  // built to sell: the investors were cashed out at the last delivery and the
+  // partnership was wound up with them
+  merchant: 0.25,
+  // the partners are the principal and his brother-in-law
+  slumlord: 0.2,
+};
+
+/** Ring the investors. Returns what actually arrived. */
+function callCapital(r: Rival, want: number): number {
+  if (want <= 0) return 0;
+  const well = Math.floor(Math.max(0, r.distributed ?? 0) * RECALL[r.style]);
+  const got = Math.min(Math.round(want), well);
+  if (got < 100_000) return 0;   // nobody convenes a partnership for pocket money
+  r.cash += got;
+  // The money goes back where it came from. `distributed` becomes cash NET
+  // returned to the partners, which is what it should always have meant, and
+  // the well cannot be drawn twice.
+  r.distributed = Math.round((r.distributed ?? 0) - got);
+  return got;
+}
+
+/**
+ * SELL THE ONE THAT COVERS THE HOLE, not a building drawn out of a hat.
+ *
+ * The old stress path picked `r.bbls[floor(rng * length)]` — a random asset,
+ * every other month, at a receiver's discount, forever. A sponsor working out
+ * of trouble does the opposite: he sells the SMALLEST thing that raises what
+ * he needs, because everything he sells is a building he wanted to keep and
+ * the core of the book is the reason the vehicle exists. Only when nothing on
+ * the list covers it does he put up the biggest one.
+ *
+ * The price band is unchanged — a seller with a deadline gets a seller's price
+ * — because the fault here was never what these buildings fetched, it was
+ * which one went and how often.
+ */
+function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: number): boolean {
+  const lev = (r.aum ?? 0) > 0 ? Math.min(1, Math.max(0, r.debt / (r.aum as number))) : r.targetLtv;
+  let pick: { bbl: string; rec: ParcelRecord; net: number } | null = null;
+  let biggest: { bbl: string; rec: ParcelRecord; net: number } | null = null;
+  for (const bbl of r.bbls) {
+    if (s.holdings[bbl] || s.listings.some((l) => l.bbl === bbl)) continue;
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec) continue;
+    // What the sale actually puts in the account: the price, less the debt it
+    // retires — the same rule `debtReleasedOnSale` applies at the closing, so
+    // the decision and the settlement agree.
+    const px = markAsset(s, r, rec).v * 0.78;   // the middle of the band it will be listed in
+    const net = px * (1 - lev);
+    if (!biggest || net > biggest.net) biggest = { bbl, rec, net };
+    if (net >= need && (!pick || net < pick.net)) pick = { bbl, rec, net };
+  }
+  const sell = pick ?? biggest;
+  if (!sell) return false;
+  const v = markAsset(s, r, sell.rec).v;
+  const px = Math.round(v * rrange(s, 0.68, 0.88));
+  r.dumped = (r.dumped ?? 0) + 1;
+  // The deed stays with them until somebody buys it — a firm selling under
+  // pressure is still the owner, and that is the whole point of the trade.
+  s.listings.push({ bbl: sell.bbl, ask: px, listedM: s.month, expiresM: s.month + 8, distress: true, sellerId: r.id });
+  s.news.unshift({
+    q: s.month, kind: "event",
+    text: (r.dumped ?? 1) <= 1
+      ? `${r.name} is selling. ${sell.rec.address} hits the tape at ${(px / 1e6).toFixed(2)}M — ${Math.round((1 - px / Math.max(1, v)) * 100)}% under appraisal. They are short of cash and the market knows it.`
+      : `${r.name}, again: ${sell.rec.address} at ${(px / 1e6).toFixed(2)}M. That is their ${r.dumped === 2 ? "second" : r.dumped === 3 ? "third" : `${r.dumped}th`} building on the tape this stretch.`,
+  });
+  return true;
+}
+
+/**
+ * HAND ONE BACK.
+ *
+ * The civilised exit, and the one thing a sponsor can always do that a forced
+ * sale cannot: it needs no buyer, no marketing period and no cash. The keys go
+ * to the desk that holds the paper, the loan goes with them, and because the
+ * debt is non-recourse whatever the building is short by is the LENDER'S loss
+ * — which is the entire economic content of non-recourse and was previously
+ * something only the player could do (workout.deedInLieu).
+ *
+ * WHICH BUILDING: the one the market likes least. A sponsor keeps what he can
+ * refinance and gives away what he cannot, so the choice is made on the ratio
+ * of what a desk will lend against the asset today to what the asset is
+ * marked at — the same `streetRefiProceeds` that decides the maturity itself,
+ * asked of every building on the list.
+ *
+ * The building goes on the tape as the bank's, not the firm's: no `sellerId`,
+ * because the firm no longer owns it and negotiating with them for it would be
+ * negotiating with somebody who has nothing to sell.
+ */
+function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string): boolean {
+  const lev = (r.aum ?? 0) > 0 ? Math.min(1.6, Math.max(0, r.debt / (r.aum as number))) : r.targetLtv;
+  const st = STYLE[r.style];
+  let worst: { bbl: string; rec: ParcelRecord; v: number; ratio: number } | null = null;
+  for (const bbl of r.bbls) {
+    if (s.holdings[bbl]) continue;
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec) continue;
+    const { v, noi } = markAsset(s, r, rec);
+    if (v <= 0) continue;
+    const ratio = streetRefiProceeds(s, v, noi, st.maxLtv).principal / v;
+    if (!worst || ratio < worst.ratio) worst = { bbl, rec, v, ratio };
+  }
+  if (!worst) return false;
+  const desk = deskFor(s, r, worst.bbl);
+  const owed = Math.min(r.debt, Math.round(worst.v * lev));
+
+  r.bbls = r.bbls.filter((b) => b !== worst!.bbl);
+  if (r.heldSince) delete r.heldSince[worst.bbl];
+  r.debt = Math.max(0, r.debt - owed);
+  // The book shrinks with it. Basis is aggregate, so it comes off by the share
+  // this building was — the same estimate `gainsTax` makes on a sale.
+  const basis = r.basis ?? 0;
+  r.basis = Math.max(0, Math.round(basis - basis / Math.max(1, r.bbls.length + 1)));
+  s.listings = s.listings.filter((l) => l.bbl !== worst!.bbl);
+  // What the desk will get for it, which is what a receiver gets for anything:
+  // the band this file already uses for a lender clearing a book.
+  const ask = Math.round(worst.v * rrange(s, 0.72, 0.88) / 1000) * 1000;
+  s.listings.push({
+    bbl: worst.bbl, ask, listedM: s.month,
+    expiresM: s.month + Math.round(rrange(s, 6, 12)), distress: true, receiverFor: desk,
+  });
+  chargeLenderLoss(s, desk, Math.max(0, owed - ask));
+  s.news.unshift({
+    q: s.month, kind: "warn",
+    text: `${r.name} has handed ${worst.rec.address} back to ${desk}. ${why} `
+      + `The paper was non-recourse, so the ${(Math.max(0, owed - ask) / 1e6).toFixed(2)}M it is short is the bank's problem, not theirs. `
+      + `They still own ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"}.`,
+  });
+  return true;
+}
+
+/**
+ * THE BALLOONS THAT LAND THIS MONTH.
+ *
+ * Every building whose paper comes due gets sized again from scratch, at the
+ * same three desks and on the same three tests the player's own balloon walks
+ * — `streetRefiProceeds`, which is `quote` with the two tests that are facts
+ * about the PLAYER lifted off. So when a bank is impaired the street cannot
+ * refinance either, which is the entire reason the banks were given books.
+ *
+ * The gap between what is owed and what the market will write is real money
+ * and it is due now. In the order a sponsor actually works it: pay it, ask the
+ * desk to extend, ring the investors, sell something, hand it back. Only the
+ * last of those loses a building, and none of them is a failure — a firm that
+ * shrinks at a maturity is a firm that survived one.
+ */
+function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: number) {
+  if (r.debt <= 0 || aum <= 0 || !r.bbls.length) return;
+  const st = STYLE[r.style];
+  // The mortgage on one asset is the leverage actually on the book — the same
+  // proxy `debtReleasedOnSale` uses at a closing, for the same reason, so a
+  // building's loan is one number rather than two.
+  const lev = Math.min(1.6, Math.max(0, r.debt / aum));
+  for (const bbl of [...r.bbls]) {
+    const term = loanTermM(r, bbl);
+    const held = s.month - originM(r, bbl, term);
+    if (held <= 0 || held % term !== 0) continue;
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec) continue;
+    const { v, noi } = markAsset(s, r, rec);
+    const due = Math.round(v * lev);
+    if (due <= 0) continue;
+    const refi = streetRefiProceeds(s, v, noi, st.maxLtv);
+    const gap = due - refi.principal;
+    if (gap <= 0) continue;                       // rolled, and nobody hears about it
+
+    // 1. WRITE THE CHEQUE. A balloon is paid before a reserve is kept.
+    if (r.cash >= gap) { r.cash -= gap; r.debt = Math.max(0, r.debt - gap); continue; }
+
+    // 2. ASK THE DESK. A bank with capital would far rather carry a performing
+    //    loan than own a building; one that is impaired has a regulator
+    //    reading the same balance sheet it is. That test is `deskWillExtend`
+    //    and it is the same test the player's forbearance request runs.
+    const desk = deskFor(s, r, bbl);
+    if (deskWillExtend(s, desk)) {
+      // Modification paper is not free. The fee is capitalised, which is what
+      // a desk does when the borrower plainly has no cash — it is why an
+      // extended loan comes back bigger than it went in.
+      r.debt = Math.round(r.debt + gap * 0.01);
+      // The runway is what it is for: sell something and pay it down.
+      if (r.cash < gap) marketAssetToRaise(s, parcels, r, gap - Math.max(0, r.cash));
+      if (rng(s) < 0.25) {
+        s.news.unshift({
+          q: s.month, kind: "event",
+          text: `${r.name} could not refinance ${rec.address} in full — ${desk} would write ${(refi.principal / 1e6).toFixed(1)}M against ${(due / 1e6).toFixed(1)}M outstanding, `
+            + `bound by ${refi.binding}. The desk extended rather than take the keys. They are ${(gap / 1e6).toFixed(1)}M short and they have bought time, not a solution.`,
+        });
+      }
+      continue;
+    }
+
+    // 3. RING THE INVESTORS.
+    const got = callCapital(r, gap - Math.max(0, r.cash));
+    if (got > 0 && r.cash >= gap) {
+      r.cash -= gap;
+      r.debt = Math.max(0, r.debt - gap);
+      if (rng(s) < 0.4) {
+        s.news.unshift({
+          q: s.month, kind: "event",
+          text: `${r.name} has called ${(got / 1e6).toFixed(1)}M from their partners to clear the balloon on ${rec.address}. `
+            + `The money that went out over the years is going back in. That is what an investor base is FOR, and it is why the old houses outlast the clever ones.`,
+        });
+      }
+      continue;
+    }
+
+    // 4. HAND IT BACK. No buyer needed, no cash needed, and the shortfall is
+    //    the bank's — which is what non-recourse means.
+    deedInLieu(s, parcels, r,
+      `The balloon came due and nobody would refinance it: ${(refi.principal / 1e6).toFixed(1)}M against ${(due / 1e6).toFixed(1)}M outstanding.`);
+    return;   // one workout at a time; the rest of the ladder is next month's problem
+  }
+}
+
 export function tickRivals(s: GameState, parcels: ParcelTable) {
   if (!s.rivals?.length) return;
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
   const rate = s.econ.indexRate + RATE_SPREAD;
-  maybeNewFirm(s, ci);
+  maybeNewFirm(s);
   // The jobs come first: a firm's construction draw is a call on this month's
   // cash, and it has to land before the solvency test reads that cash.
   fundJobs(s);
@@ -1136,7 +1543,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     const st = STYLE[r.style];
     tickAssetManagement(s, parcels, r);
     startOwnJob(s, parcels, r, ci);
-    const { aum, noiYr, ltv } = markRival(s, parcels, r);
+    const { aum, noiYr } = markRival(s, parcels, r);
     r.aum = Math.round(aum);
 
     // --- the money -------------------------------------------------------
@@ -1177,6 +1584,15 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       }
     }
 
+    // --- the refinancing cliff -------------------------------------------
+    // Before anything is paid out, because a balloon landing this month is a
+    // call on this month's cash and the partners are behind the bank.
+    tickMaturities(s, parcels, r, aum);
+    // Leverage as it stands after the maturities, which is what everything
+    // below has to read — a firm that just paid down a balloon or handed a
+    // building back is not the firm `markRival` marked at the top of the tick.
+    const lev = aum > 0 ? r.debt / aum : r.debt > 0 ? 9 : 0;
+
     // DISTRIBUTIONS. Every firm here answers to somebody — partners, a family,
     // a pension board — and none of them let a hundred years of free cash flow
     // sit in a bank account. A shop holds a working reserve and sends the rest
@@ -1207,8 +1623,8 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // Cheap money is a temptation and it is supposed to be taken. A firm that
     // refinances equity out at the top has more to buy with and less to lose
     // it with — which is exactly the trade that kills them two phases later.
-    if (st.cashOut > 0 && ci > 1.02 && ltv < st.maxLtv - 0.06 && rng(s) < 0.06 * st.cashOut) {
-      const room = Math.round((st.maxLtv - 0.04 - ltv) * aum);
+    if (st.cashOut > 0 && ci > 1.02 && lev < st.maxLtv - 0.06 && rng(s) < 0.06 * st.cashOut) {
+      const room = Math.round((st.maxLtv - 0.04 - lev) * aum);
       if (room > 1_000_000) {
         r.debt += room;
         r.cash += room;
@@ -1298,10 +1714,22 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     }
 
     // --- trouble ---------------------------------------------------------
-    // Two ways to die, and they are the same two ways anyone dies: the value
-    // fell through the debt, or the cash ran out. Neither is instant — a firm
-    // sells into it first, which is what puts the tape full of good buildings
-    // at bad prices exactly when nobody can finance them.
+    // ONE WAY TO DIE, AND IT IS THE ONLY ONE A LENDER CAN ACT ON: they stopped
+    // paying. The mark-to-market test that used to sit here — `ltvNow >
+    // maxLtv + 0.05` for thirty months and the firm was struck off — is not a
+    // term in any mortgage. A borrower current on debt service does not
+    // default because a valuer revised an opinion, and the measurement said
+    // that is exactly what was happening: the dying cohort was at 0.39
+    // leverage with money in the bank five years out and was killed by a 44%
+    // fall in the whole city's marks. See the block above `TERM_DESKS`.
+    //
+    // What is left is the honest test and it is severe enough on its own: NOI
+    // does not cover interest, the line has no room left on it, and nobody
+    // will put more equity in. That is a firm that cannot pay, and the clock
+    // that runs on it is the same statute and the same court calendar the
+    // player's own default runs on — NOTICE_M to cure, FORECLOSE_M once they
+    // have filed. There is not one foreclosure calendar for you and a
+    // different invented one for them.
     // A FIRM WITH NOTHING LEFT TO SELL AND MONEY STILL OWED IS FINISHED.
     //
     // The stress path only ran while there were buildings to sell, and the
@@ -1336,46 +1764,47 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       const draw = Math.min(Math.max(0, room), Math.round(-r.cash + aum * 0.004));
       if (draw > 0) { r.debt += draw; r.cash += draw; r.revolver = (r.revolver ?? 0) + draw; }
     }
-    // and the test reads the book as it stands after the month, not before it
-    const ltvNow = aum > 0 ? r.debt / aum : r.debt > 0 ? 9 : 0;
-    const stressed = ltvNow > st.maxLtv + 0.05 || r.cash < 0;
-    if (stressed && r.bbls.length) {
+    // A NEGATIVE BALANCE AFTER THE LINE IS A MISSED PAYMENT. Not a mark, not a
+    // covenant — money that was owed this month and did not go out. That is
+    // the only thing that starts a clock in this business.
+    if (r.cash < 0 && r.bbls.length) {
       r.stressMs = (r.stressMs ?? 0) + 1;
-      // sell something, at whatever the room will pay
-      if (r.stressMs % 2 === 0) {
-        const bbl = r.bbls[Math.floor(rng(s) * r.bbls.length)];
-        const rec = resolveRec(parcels, s, bbl);
-        if (rec) {
-          const v = assetValue(rec, s.econ, assetGrade(r, rec));
-          const px = Math.round(v * rrange(s, 0.68, 0.88));
-          // A FIRM SELLING ITS NINTH BUILDING IS NOT NINE PIECES OF NEWS.
-          //
-          // Measured: 161 identical "X is selling" paragraphs a run against
-          // seventeen purchases. The first one is the story — a name you know
-          // is in trouble and there is product coming. After that the number
-          // is the story, and it belongs on the end of the first line.
-          r.dumped = (r.dumped ?? 0) + 1;
-          // The deed stays with them until somebody buys it — a firm selling
-          // under pressure is still the owner, and that is the whole point of
-          // the trade. It is transferred at the closing table, not at the
-          // moment they decide to sell.
-          if (!s.listings.some((l) => l.bbl === bbl) && !s.holdings[bbl]) {
-            s.listings.push({ bbl, ask: px, listedM: s.month, expiresM: s.month + 8, distress: true, sellerId: r.id });
-            s.news.unshift({
-              q: s.month, kind: "event",
-              text: (r.dumped ?? 1) <= 1
-                ? `${r.name} is selling. ${rec.address} hits the tape at ${(px / 1e6).toFixed(2)}M — ${Math.round((1 - px / Math.max(1, v)) * 100)}% under appraisal. They have more where that came from.`
-                : `${r.name}, again: ${rec.address} at ${(px / 1e6).toFixed(2)}M. That is their ${r.dumped === 2 ? "second" : r.dumped === 3 ? "third" : `${r.dumped}th`} building on the tape this stretch.`,
-            });
-          }
-        }
+      // 1. RING THE INVESTORS FIRST, because a protective call is cheaper than
+      //    anything else on this list and it is what actually happens. A
+      //    sponsor with a record to trade on covers the arrears and a month or
+      //    two of running, and does not sell a building over a bad quarter.
+      const need = -r.cash + Math.round(aum * 0.004);
+      const got = callCapital(r, need);
+      if (got > 0 && r.cash >= 0 && rng(s) < 0.2) {
+        s.news.unshift({
+          q: s.month, kind: "event",
+          text: `${r.name} has called ${(got / 1e6).toFixed(1)}M from their partners. They were not going to sell a building over a bad year, and they did not have to.`,
+        });
       }
-      if (r.stressMs > 30 && (r.cash < 0 || ltvNow > st.maxLtv + 0.2)) {
+      // 2. SELL SOMETHING. The one that covers the hole, not one drawn out of a
+      //    hat — see marketAssetToRaise for what the old random pick cost.
+      if (r.cash < 0 && r.stressMs % 2 === 0) {
+        marketAssetToRaise(s, parcels, r, need);
+      }
+      // 3. HAND ONE BACK once the desks have filed. This is the move that stops
+      //    the spiral: a forced sale at seventy-eight cents retires debt at par
+      //    against a book marked at a hundred, so every one of them RAISED
+      //    leverage and cut the income that was servicing it — the firm could
+      //    only ever accelerate. Giving the keys back removes the asset AND the
+      //    loan AND the interest on it in one move, and on non-recourse paper
+      //    the shortfall stops being the borrower's problem at the door.
+      if (r.stressMs === NOTICE_M || r.stressMs === NOTICE_M * 2) {
+        deedInLieu(s, parcels, r, `They have missed ${r.stressMs} months of debt service and could not cure.`);
+      }
+      // 4. AND WHEN THE CALENDAR RUNS OUT, the desks stop taking assets one at
+      //    a time and take the relationship. Same clock as the player's.
+      if (r.stressMs > NOTICE_M + FORECLOSE_M) {
         r.failedM = s.month;
         chargeSponsorFailure(s, parcels, r);
         s.news.unshift({
           q: s.month, kind: "warn",
-          text: `${r.name} is finished — ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"} go to the lenders. A firm that was buying everything two years ago could not roll a single loan this month. The receiver will be selling for years.`,
+          text: `${r.name} is finished — ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"} go to the lenders. `
+            + `They have not made a payment in ${r.stressMs} months, the partners stopped answering and no desk would extend again. The receiver will be selling for years.`,
         });
       }
     } else if (r.stressMs) {
@@ -1405,13 +1834,13 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
 export function qualifiedBuyers(s: GameState, rec: ParcelRecord, price: number): number {
   const seller = ownerOf(s, rec.bbl);
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
+  const loan = acquisitionLoan(s, rec, price);
   let n = 0;
   for (const r of livingRivals(s)) {
     if (r === seller) continue;
     const st = STYLE[r.style];
     if (st.classes && !st.classes.includes(rec.class)) continue;
-    const ltvNow = Math.min(r.targetLtv, st.maxLtv) * (ci < 0.8 ? 0.82 : 1);
-    const equity = price * (1 - ltvNow);
+    const equity = price - loan(r, ci);
     if (r.cash < equity + Math.max(500_000, r.cash * 0.05)) continue;
     const aumAfter = (r.aum ?? 0) + price;
     const debtAfter = r.debt + (price - equity);
@@ -1419,6 +1848,43 @@ export function qualifiedBuyers(s: GameState, rec: ParcelRecord, price: number):
     n++;
   }
   return n;
+}
+
+/**
+ * WHAT A DESK WILL ACTUALLY LEND THIS FIRM AGAINST THIS BUILDING, TODAY.
+ *
+ * The street used to borrow `price * min(targetLtv, maxLtv)` — a number out of
+ * its own personality table, with no lender in the room at all. The player has
+ * never been able to do that: every acquisition loan is sized on the advance
+ * rate AND on coverage AND on debt yield, at a named desk with its own capital,
+ * and is routinely smaller than the LTV alone would suggest. So an opportunistic
+ * shop wrote itself 88% of the price of a building yielding 6.8% while paying
+ * the index plus 190bps — debt service of about 7% of the asset against income
+ * of 6.8%, structurally negative from the day of the closing, on paper no desk
+ * in this engine would have written for anybody. That is not a risk appetite,
+ * it is a credit market that only exists for one of the two borrowers, and it
+ * is most of why the styles with committed rescue capital were the ones dying.
+ *
+ * The income underwritten is `inPlace`: the disclosed rent roll where the
+ * building came to market with one, which is the same number the player's own
+ * lender reads off the same offering memorandum. Measured across 7,284
+ * rival-held buildings, the class model's estimate of a building's income runs
+ * 45% above what a roll on it actually produces — 84.4% occupancy against
+ * 72.6% — so underwriting the estimate is underwriting income nobody collects.
+ *
+ * Returned as a closure because the price and the roll are properties of the
+ * DEAL and want computing once, while the covenant is a property of the FIRM.
+ */
+function acquisitionLoan(s: GameState, rec: ParcelRecord, price: number): (r: Rival, ci: number) => number {
+  const noi = inPlace(rec, s, rec.bbl, price).noi;
+  return (r, ci) => {
+    const st = STYLE[r.style];
+    // In a shut credit market the loan is smaller, so the cheque is bigger —
+    // which is exactly why a downturn is when a disciplined buyer with cash
+    // gets to name their price.
+    const cap = Math.min(r.targetLtv, st.maxLtv) * (ci < 0.8 ? 0.82 : 1);
+    return Math.min(price, streetRefiProceeds(s, price, noi, cap).principal);
+  };
 }
 
 export function rivalBuys(s: GameState, rec: ParcelRecord, price: number): Rival | null {
@@ -1435,15 +1901,12 @@ export function rivalBuys(s: GameState, rec: ParcelRecord, price: number): Rival
   // a construction-era loan out of a shut credit market. Both are checks the
   // player has to pass on every deal; the street passes them now too.
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
+  const loan = acquisitionLoan(s, rec, price);
   const candidates = livingRivals(s).filter((r) => {
     if (r === seller) return false;
     const st = STYLE[r.style];
     if (st.classes && !st.classes.includes(rec.class)) return false;
-    // In a shut credit market the loan is smaller, so the cheque is bigger —
-    // which is exactly why a downturn is when a disciplined buyer with cash
-    // gets to name their price.
-    const ltvNow = Math.min(r.targetLtv, st.maxLtv) * (ci < 0.8 ? 0.82 : 1);
-    const equity = price * (1 - ltvNow);
+    const equity = price - loan(r, ci);
     // a working reserve is not dry powder: nobody spends their last dollar
     if (r.cash < equity + Math.max(500_000, r.cash * 0.05)) return false;
     // and the debt has to be lendable against the book they already carry
@@ -1482,8 +1945,7 @@ export function rivalBuys(s: GameState, rec: ParcelRecord, price: number): Rival
     seller.debt -= relief;
     seller.cash += price - relief - gainsTax(seller, price);
   }
-  const bestLtv = Math.min(best.targetLtv, STYLE[best.style].maxLtv) * (ci < 0.8 ? 0.82 : 1);
-  const equity = Math.round(price * (1 - bestLtv));
+  const equity = Math.round(price - loan(best, ci));
   // Closing costs. The player has always paid two points to get a deed across
   // a table; the street was getting them free, which over a century is most of
   // a firm.

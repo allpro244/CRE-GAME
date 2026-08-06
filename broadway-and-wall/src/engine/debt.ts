@@ -274,7 +274,14 @@ export function streetRefiProceeds(
   s: GameState, value: number, noiYr: number, maxLtv: number,
 ): { principal: number; binding: string; lender: string } {
   let best = 0, binding = "advance rate", lender = "";
-  for (const p of ["savings", "harbor", "cordage"].map(productById)) {
+  // WHICH DESKS EVEN LOOK AT IT. The three income desks — the regional, the
+  // hometown bank, then hard money — walk any building. A SITE has no income,
+  // so all three size it at zero on coverage, and the only money in this town
+  // that will look at dirt is the land loan: half leverage, short, recourse.
+  // That is not a special case invented for the street; it is the same split
+  // `quote` already makes on `uwDscr <= 0`, read from the same product sheet.
+  const desks = noiYr > 0 ? ["savings", "harbor", "cordage"] : ["land"];
+  for (const p of desks.map(productById)) {
     if (!windowOpen(s, p)) continue;
     const q = quote(s, p, value, noiYr, undefined, true);
     const pr = Math.min(q.principal, Math.round(maxLtv * value));

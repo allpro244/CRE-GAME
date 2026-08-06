@@ -33,6 +33,8 @@ import {
 
 // --- small helpers ----------------------------------------------------------
 
+const TAU_ = Math.PI * 2;
+
 export function chaikin(ring, iterations) {
   let r = ring;
   for (let it = 0; it < iterations; it++) {
@@ -480,63 +482,264 @@ export function generateCity(cfg) {
   // Turn a claimed cell into a block. A cell too thin to carry a full setback
   // still goes in — as pavement with no block on it, which reads as a wide
   // street rather than as a hole.
-  function pushBlock(cell, district, full, streetW, aveW, extra) {
+  function pushBlock(cell, district, full, streetW, aveW, extra, chamferAll = 0) {
     let inset = erode(cell, (_a, e) => (full && e % 2 === 1 ? aveW / 2 : streetW / 2))
       ?? erode(cell, streetW / 2)
       ?? erode(cell, streetW / 3);
-    if (inset && rand() < 0.18) inset = chamfer(inset, Math.floor(rand() * inset.length), rr(0.12, 0.3)) ?? inset;
+    // THE CHAFLÁN. Cerdà cut twenty metres off all four corners of every 113 m
+    // block in the Eixample so a cart could turn and so every crossing opened
+    // into a small square, and the result is the most instantly recognisable
+    // street plan in Europe from the air. It is a property of the SURVEY, not
+    // of the individual block, so a district that has it has it everywhere and
+    // does not also take the one-corner accident below — a chamfered grid with
+    // a random extra bite out of it is neither Barcelona nor anywhere else.
+    if (inset && chamferAll > 0 && inset.length <= 6) {
+      // Each cut turns one corner into two, so after k cuts the (k+1)th
+      // original corner has slid along to index 2k. A cut that collapses the
+      // ring stops the sequence rather than leaving a block chamfered on three
+      // sides — half a chaflán is worse than none.
+      const corners = inset.length;
+      for (let k = 0; k < corners; k++) {
+        const next = chamfer(inset, k * 2, chamferAll);
+        if (!next || next.length !== inset.length + 1) break;
+        inset = next;
+      }
+    } else if (inset && rand() < 0.18) {
+      inset = chamfer(inset, Math.floor(rand() * inset.length), rr(0.12, 0.3)) ?? inset;
+    }
     if (inset && polygonArea([inset]) < 150) inset = null;
     if (!inset) rej("no-inset");
     blocks.push({ ring: cell, inset, district, ...extra });
   }
 
-  // --- lattice districts ----------------------------------------------------
-  // The lattice is built ONCE per district over the whole land, then each of
-  // that district's leaves keeps its share. Two leaves of the same district
-  // therefore stay in register — the streets line up across the seam.
-  function latticeDistrict(name, d) {
+  // --- the layout kinds -----------------------------------------------------
+  //
+  // WHY THERE ARE SIX OF THESE AND NOT TWO.
+  //
+  // For as long as there were two — a lattice and one organic blob — every
+  // generated island came out the same city with different numbers: an
+  // irregular quarter on the waterfront and a grid over the rest of the land,
+  // with the seed moving only the pitch, the bearing and the widths inside
+  // narrow bands. Wider bands would not have fixed it. What makes two real
+  // cities different at street level is not the size of their blocks, it is
+  // that they were laid out under different ideas about what a street is for:
+  //
+  //   gridiron          Philadelphia 1682, the Commissioners' Plan of 1811 —
+  //                     a surveyor's instrument, sold by the lot.
+  //   organic           the City of London, Boston's North End — no plan at
+  //                     all, streets that are the paths people already walked.
+  //   radial / baroque  Karlsruhe 1715, L'Enfant's Washington, Haussmann's
+  //                     Paris — sightlines to a monument, a circus where they
+  //                     meet, and blocks that widen as they go out because an
+  //                     arc does.
+  //   chamfered grid    Cerdà's Eixample, 1859 — 113 m blocks with 20 m cut
+  //                     off every corner, on a grid that ignores the terrain.
+  //   curvilinear       Olmsted's Riverside 1869 and every streetcar suburb
+  //                     after it — roads that follow the contour instead of
+  //                     cutting it, because the selling point was the view.
+  //   superblock        the postwar estate — one arterial ring, no through
+  //                     streets, and whatever informal ways the plan allowed
+  //                     inside the ring.
+  //
+  // EVERY ONE OF THEM IS A QUAD GRID OVER A NODE FIELD, which is the whole
+  // reason they can be added without reopening the hole problem this file
+  // exists to close. A lattice is a grid in Cartesian (u, w); a radial plan is
+  // the same grid in polar (r, theta); a garden suburb is Cartesian with the
+  // lines bent by a bounded amount. In all three, four consecutive nodes bound
+  // a quad, the quads tile the field exactly, the field is built to overhang
+  // the island, and each of the district's leaves keeps the part that falls
+  // inside it. A kind that cannot be written as such a field does not go here.
+  function emitCell(quad, name, d, mine, opt, i, j) {
+    for (const leaf of mine) {
+      for (const cell of claimCell(quad, leaf.hp, KEEP)) {
+        const whole = cell.length === quad.length && cell.every((p, k) => p === quad[k]);
+        // A superblock is an arterial cell with its own ways inside it, and the
+        // ways are cut from the CLAIMED cell rather than from the grid quad —
+        // an estate that runs off the end of the island gets the part of its
+        // plan that is on dry ground, not a plan of its own in the water.
+        let pieces = [cell];
+        if (opt.split) {
+          pieces = [];
+          splitCells(cell, opt.split, opt.splitJitter ?? 12, 1500, pieces);
+        }
+        for (const pc of pieces) {
+          pushBlock(pc, name, whole && pieces.length === 1, d.streetW, d.aveW ?? d.streetW, {
+            numbered: opt.numbered ? opt.numbered(i, j) : undefined,
+            u: opt.uOf ? opt.uOf(i, j) : undefined,
+            uFifth: opt.uMid,
+          }, opt.chamferAll ?? 0);
+        }
+      }
+    }
+  }
+
+  /**
+   * A layout, emitted from its node field. `nodeAt(i, j)` returns the corner of
+   * cell (i, j); indices run 0..N and 0..M inclusive, so the caller hands over
+   * (N+1)x(M+1) nodes and gets N*M quads.
+   */
+  function emitQuads(name, d, N, M, nodeAt, opt = {}) {
+    const mine = leaves.filter((l) => l.district === name);
+    if (!mine.length) return;
+    const node = [];
+    for (let i = 0; i <= N; i++) {
+      const row = [];
+      for (let j = 0; j <= M; j++) row.push(nodeAt(i, j));
+      node.push(row);
+    }
+    for (let i = 0; i < N; i++) {
+      for (let j = 0; j < M; j++) {
+        const quad = cleanRing([node[i][j], node[i + 1][j], node[i + 1][j + 1], node[i][j + 1]]);
+        if (!quad || quad.length !== 4 || !isConvex(quad)) { rej("degenerate"); continue; }
+        emitCell(quad, name, d, mine, opt, i, j);
+      }
+    }
+  }
+
+  /** The district's own axes and how far the island reaches along them. */
+  function frameOf(d) {
     const th = (d.bearingDeg * Math.PI) / 180;
     const A = [Math.sin(th), Math.cos(th)];
     const S = [Math.cos(th), -Math.sin(th)];
-    const at = (u, w) => [u * S[0] + w * A[0], u * S[1] + w * A[1]];
     let wMin = Infinity, wMax = -Infinity, uMin = Infinity, uMax = -Infinity;
     for (const p of COAST_M) {
       const w = p[0] * A[0] + p[1] * A[1], u = p[0] * S[0] + p[1] * S[1];
       if (w < wMin) wMin = w; if (w > wMax) wMax = w;
       if (u < uMin) uMin = u; if (u > uMax) uMax = u;
     }
+    return { A, S, wMin, wMax, uMin, uMax, at: (u, w) => [u * S[0] + w * A[0], u * S[1] + w * A[1]] };
+  }
+
+  // --- lattice districts ----------------------------------------------------
+  // The lattice is built ONCE per district over the whole land, then each of
+  // that district's leaves keeps its share. Two leaves of the same district
+  // therefore stay in register — the streets line up across the seam.
+  //
+  // `regular` turns off the pitch and node jitter. A paced-out colonial grid
+  // wanders; a nineteenth-century engineer's grid does not, and the Eixample
+  // is the extreme case — 113 m, everywhere, for a hundred and fifty blocks.
+  function latticeDistrict(name, d) {
+    const F = frameOf(d);
+    const reg = d.regular === true;
     // pad past the coast so the lattice provably overhangs every leaf
-    wMin -= d.stPitch * 1.5; wMax += d.stPitch * 1.5;
-    uMin -= d.avePitch * 1.2; uMax += d.avePitch * 1.2;
+    const wMin = F.wMin - d.stPitch * 1.5, wMax = F.wMax + d.stPitch * 1.5;
+    const uMin = F.uMin - d.avePitch * 1.2, uMax = F.uMax + d.avePitch * 1.2;
 
     const W = [];
-    for (let w = wMin; w < wMax + d.stPitch; w += d.stPitch * rr(0.85, 1.18)) W.push(w);
+    for (let w = wMin; w < wMax + d.stPitch; w += d.stPitch * (reg ? 1 : rr(0.85, 1.18))) W.push(w);
     const U = [];
-    for (let u = uMin; u < uMax + d.avePitch; u += d.avePitch * rr(0.82, 1.22)) U.push(u);
+    for (let u = uMin; u < uMax + d.avePitch; u += d.avePitch * (reg ? 1 : rr(0.82, 1.22))) U.push(u);
 
-    const node = U.map((u) => W.map((w) => {
-      const base = at(u, w);
+    const jig = reg ? 0 : 1.8;
+    const nodeAt = (i, j) => {
+      const base = F.at(U[i], W[j]);
       const [dx, dy] = WARP(base[0], base[1], d.warpAmp);
-      return [base[0] + dx + rr(-1.8, 1.8), base[1] + dy + rr(-1.8, 1.8)];
-    }));
+      return [base[0] + dx + rr(-jig, jig), base[1] + dy + rr(-jig, jig)];
+    };
+    emitQuads(name, d, U.length - 1, W.length - 1, nodeAt, {
+      numbered: d.numbered ? (_i, j) => j + 1 : undefined,
+      uOf: (i) => (U[i] + U[i + 1]) / 2,
+      uMid: (uMin + uMax) / 2,
+      chamferAll: d.chamferAll ?? 0,
+      split: d.superCell ? () => rr(d.superCell[0], d.superCell[1]) : undefined,
+      splitJitter: d.superJitter,
+    });
+  }
 
+  // --- curvilinear districts ------------------------------------------------
+  //
+  // The garden suburb: the same two families of lines as a lattice, bent. Each
+  // avenue is displaced across the grid by e(w) and each street by d(u), so the
+  // node at (i, j) is at(U[i] + e(W[j]), W[j] + d(U[i])).
+  //
+  // WHY THAT PARTICULAR FORM AND NOT A GENERAL WARP. Written this way, the cell
+  // between four consecutive nodes has corner offsets (0,0), (du, Dd),
+  // (du+De, dw+Dd), (De, dw) — a PARALLELOGRAM, whatever the displacement is
+  // doing, so it is convex by construction and can never be rejected as
+  // degenerate. A displacement that depended on both u and w would not be, and
+  // the failures would land exactly where a curve gets interesting: as holes on
+  // the tightest bends. The amplitudes are clamped below so the parallelogram
+  // also never inverts (|Dd*De| < du*dw).
+  function curviDistrict(name, d) {
+    const F = frameOf(d);
+    const wMin = F.wMin - d.stPitch * 2.2, wMax = F.wMax + d.stPitch * 2.2;
+    const uMin = F.uMin - d.avePitch * 2.0, uMax = F.uMax + d.avePitch * 2.0;
+
+    const W = [];
+    for (let w = wMin; w < wMax + d.stPitch; w += d.stPitch * rr(0.9, 1.12)) W.push(w);
+    const U = [];
+    for (let u = uMin; u < uMax + d.avePitch; u += d.avePitch * rr(0.9, 1.12)) U.push(u);
+
+    // Two harmonics each, so a road bends back rather than tracing one sine.
+    const lamE = d.curveLen ?? 720, lamD = (d.curveLen ?? 720) * rr(1.2, 1.9);
+    const phE = rr(0, TAU_), phD = rr(0, TAU_);
+    // The clamp: the steepest step either displacement may take is half the
+    // pitch it is stepping across, which keeps the parallelogram's cross
+    // product positive with a factor of four in hand.
+    const capE = (0.5 * d.avePitch * lamE) / (TAU_ * d.stPitch * 1.12);
+    const capD = (0.5 * d.stPitch * lamD) / (TAU_ * d.avePitch * 1.12);
+    const ampE = Math.min(d.curveAmp ?? 60, capE);
+    const ampD = Math.min((d.curveAmp ?? 60) * 0.45, capD);
+    const eOf = (w) => ampE * (Math.sin((TAU_ * w) / lamE + phE) + 0.34 * Math.sin((TAU_ * w) / (lamE * 0.41) + phE * 1.7));
+    const dOf = (u) => ampD * (Math.cos((TAU_ * u) / lamD + phD) + 0.30 * Math.cos((TAU_ * u) / (lamD * 0.47) + phD * 2.3));
+
+    const nodeAt = (i, j) => {
+      const base = F.at(U[i] + eOf(W[j]), W[j] + dOf(U[i]));
+      return [base[0] + rr(-1.4, 1.4), base[1] + rr(-1.4, 1.4)];
+    };
+    emitQuads(name, d, U.length - 1, W.length - 1, nodeAt, {
+      uOf: (i) => (U[i] + U[i + 1]) / 2,
+      uMid: (uMin + uMax) / 2,
+    });
+  }
+
+  // --- radial districts -----------------------------------------------------
+  //
+  // Spokes from a focus and ring streets across them: Karlsruhe, L'Enfant,
+  // the Étoile. The focus is a real place — a palace, a capitol, a harbour
+  // mouth — so island.mjs hands one over rather than letting this invent it,
+  // and when the focus is off the district's own ground what comes out is a
+  // FAN converging on the water, which is the same plan seen from the side.
+  //
+  // THE SPOKE COUNT IS CONSTANT AND THE BLOCKS GET BIGGER OUTWARD, because
+  // that is what a radial plan actually does. An arc of fixed angle is longer
+  // further out, so the block on the third ring is twice the block on the
+  // first — true of every radial city ever built, and the reason they all have
+  // a dense middle and a coarse edge without anyone deciding it. The centre
+  // disc goes down as one cell: the circus the whole plan is aimed at.
+  function radialDistrict(name, d) {
     const mine = leaves.filter((l) => l.district === name);
-    for (let i = 0; i < U.length - 1; i++) {
-      for (let j = 0; j < W.length - 1; j++) {
-        const quad = cleanRing([node[i][j], node[i + 1][j], node[i + 1][j + 1], node[i][j + 1]]);
-        if (!quad || quad.length !== 4 || !isConvex(quad)) { rej("degenerate"); continue; }
-        for (const leaf of mine) {
-          for (const cell of claimCell(quad, leaf.hp, KEEP)) {
-            const full = cell.length === 4 && cell.every((p, k) => p === quad[k]);
-            pushBlock(cell, name, full, d.streetW, d.aveW, {
-              numbered: d.numbered ? j + 1 : undefined,
-              u: (U[i] + U[i + 1]) / 2,
-              uFifth: (uMin + uMax) / 2,
-            });
-          }
-        }
-      }
+    if (!mine.length) return;
+    const F = d.focus;
+    let rMax = 0;
+    for (const p of COAST_M) rMax = Math.max(rMax, Math.hypot(p[0] - F[0], p[1] - F[1]));
+    rMax += d.ringPitch * 2;
+    const r0 = d.circusR ?? 90;
+    const M = Math.max(8, Math.round(d.spokes ?? 18));
+    const N = Math.max(2, Math.ceil((rMax - r0) / d.ringPitch));
+    const th0 = ((d.bearingDeg ?? 0) * Math.PI) / 180;
+
+    // The ring radii wander a little — a ring road was surveyed once and then
+    // widened where the traffic was, and a set of perfectly concentric circles
+    // reads as a dartboard rather than as a town.
+    const R = [r0];
+    for (let i = 1; i <= N; i++) R.push(R[i - 1] + d.ringPitch * rr(0.86, 1.16));
+    const nodeAt = (i, j) => {
+      const a = th0 + (j / M) * TAU_;
+      return [F[0] + R[i] * Math.cos(a) + rr(-1.4, 1.4), F[1] + R[i] * Math.sin(a) + rr(-1.4, 1.4)];
+    };
+    emitQuads(name, d, N, M, nodeAt, {
+      uOf: (i) => (R[i] + R[i + 1]) / 2,
+      uMid: (r0 + R[N]) / 2,
+    });
+    // The circus itself. It is convex by construction (a regular polygon) and
+    // it is the one cell in the district that no lattice would ever produce.
+    const circus = [];
+    for (let j = 0; j < M; j++) {
+      const a = th0 + (j / M) * TAU_;
+      circus.push([F[0] + r0 * Math.cos(a), F[1] + r0 * Math.sin(a)]);
     }
+    emitCell(circus, name, d, mine, { uOf: () => r0 / 2, uMid: (r0 + R[N]) / 2 }, 0, 0);
   }
 
   // --- organic districts ----------------------------------------------------
@@ -579,8 +782,15 @@ export function generateCity(cfg) {
     }
   }
 
+  // "chamfer" and "superblock" are the lattice with its own options set —
+  // a regular grid with every corner cut, and a coarse grid whose cells are
+  // split from the inside — so they fall through to the same builder. The
+  // default is the lattice too, and deliberately: an unknown kind in a config
+  // has to come out as a surveyed grid rather than as bare ground.
   for (const [name, d] of Object.entries(cfg.districts)) {
     if (d.kind === "organic") organicDistrict(name, d);
+    else if (d.kind === "curvi") curviDistrict(name, d);
+    else if (d.kind === "radial") radialDistrict(name, d);
     else latticeDistrict(name, d);
   }
 
@@ -640,9 +850,24 @@ export function generateCity(cfg) {
    * the 25-footer survives next door to the assembled site, which is exactly
    * what a real downtown block looks like.
    */
+  /**
+   * A DISTRICT MAY CARRY ITS OWN LOT CONVENTION, which is the other half of the
+   * same fact. The flavour says what the ground is FOR — offices, housing,
+   * yards — and that is an economic statement the engine reads. How the ground
+   * was CUT UP is a separate one, and it is the one you can see from the
+   * pavement: a Baltimore rowhouse block is 5 m of frontage on a 30 m depth,
+   * a streetcar suburb is 15 m on 35, a 1960s estate is one parcel for the
+   * whole block. Two districts can be `resi` in the engine's sense and be
+   * completely different places to walk down, and until this override existed
+   * they could not be, because `lot` was a property of the flavour alone.
+   *
+   * `[t0, t1, min, maxDepth, jitter]`, exactly as FLAVOR.lot — the district's
+   * entry replaces the flavour's when it is present, and nothing else about
+   * the flavour moves.
+   */
   const lotOptOf = (name, heat = 0) => {
     const fl = flavorOf(name);
-    const [t0, t1, min, maxDepth, jitter] = fl.lot;
+    const [t0, t1, min, maxDepth, jitter] = cfg.districts[name]?.lot ?? fl.lot;
     const k = (fl.assemble ?? 1) * (0.45 + 0.75 * Math.max(0, Math.min(1, heat)));
     return {
       target: () => {

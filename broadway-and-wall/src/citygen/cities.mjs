@@ -302,6 +302,13 @@ function scaleCuts(node, k) {
   };
 }
 
+/** Positions inside a district config scale; everything else about it does not. */
+function scaleDistricts(ds, k) {
+  const out = {};
+  for (const [name, d] of Object.entries(ds ?? {})) out[name] = d.focus ? { ...d, focus: pt(d.focus, k) } : d;
+  return out;
+}
+
 export function scaleCity(cfg, k) {
   if (!isNum(k) || Math.abs(k - 1) < 1e-6) return cfg;
   const box = (o) => ({ ...o, cx: o.cx * k, cy: o.cy * k, w: o.w * k, h: o.h * k });
@@ -319,7 +326,14 @@ export function scaleCity(cfg, k) {
     // have stood half a mile inland with the town built around it.
     lighthouse: cfg.lighthouse ? pt(cfg.lighthouse, k) : cfg.lighthouse,
     partition: scaleCuts(cfg.partition, k),
-    // districts deliberately untouched — see the note above.
+    // A district's street DIMENSIONS are deliberately untouched — see the note
+    // above; a block is a block at any city size. A radial district's `focus`
+    // is not a dimension, it is a POSITION on the island: the palace or the
+    // harbour mouth the whole plan is aimed at. Left unscaled it stayed where a
+    // standard City put it while the island grew out from under it, which at
+    // Great City is a triumphal arch three quarters of a mile out to sea with
+    // the avenues of a landlocked town pointing at it.
+    districts: scaleDistricts(cfg.districts, k),
     parks: (cfg.parks ?? []).map(box),
     diagonals: (cfg.diagonals ?? []).map(box),
     piers: (cfg.piers ?? []).map((ring) => ring.map((p) => pt(p, k))),

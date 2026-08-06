@@ -690,12 +690,219 @@ export function islandConfig(seed) {
   const quantile = (q) => sSorted[Math.max(0, Math.min(sSorted.length - 1, Math.round(q * (sSorted.length - 1))))];
   const ptAt = (sc, cr = 0) => [mid[0] + u[0] * sc + v[0] * cr, mid[1] + u[1] * sc + v[1] * cr];
 
-  // --- 3. the district plan --------------------------------------------------
-  // Bands across the spine, harbour end first: the old town on the water, the
-  // Exchange behind it, the housing beyond that. This is the order every port
-  // on this coast grew in, and it is why the dear ground is never at the far
-  // end. The docks are cut off the flank of the middle band, on whichever side
-  // has the frontage for them.
+  // --- 3. the plan this town was laid out under ------------------------------
+  /**
+   * THE PLAN IS DRAWN, NOT FILLED IN.
+   *
+   * What used to be here was a TEMPLATE with numbers in it. The core got a
+   * lattice, the old quarter got the one organic blob, the yards and the
+   * housing got lattices, and the seed moved the pitch, the bearing and the
+   * street widths inside bands a few degrees and a few metres wide. Every
+   * island therefore came out the same city — an irregular quarter on the water
+   * and a grid over all the rest — and the fault was NOT that the bands were
+   * too narrow. Widening them gives the same city with different numbers, which
+   * is exactly what it was already giving.
+   *
+   * What differs between two real cities at street level is the plan itself:
+   * how many surveys were run and at what bearings, whether they were
+   * reconciled or simply collide, which idea about what a street is for each
+   * quarter was laid out under, how big a block is and how long, and how the
+   * ground under it was cut into lots. Those are the draws below, and
+   * everything after them is a consequence rather than a setting.
+   *
+   * WHAT IS NOT DRAWN is the mix of district ROLES. A district's flavour
+   * decides what may be built on it, how tall, and of what class; the share
+   * note under the bands below is measured against the two authored islands and
+   * the economy is calibrated against it. Rerolling the role mix would not make
+   * a different-looking city, it would make a different economy.
+   */
+  const Dpl = dice(stream(s, 0x91a4e5));
+  const Dg = dice(stream(s, 0x51d55));
+  // The avenues run down the island's long axis, which is what a surveyor does
+  // with a peninsula: the long streets go the long way. bearingDeg is the
+  // COMPASS bearing of the avenues, so it is 90 minus the spine's map angle,
+  // folded into (-90, 90].
+  const fold = (a) => ((((a + 90) % 180) + 180) % 180) - 90;
+  const spineBearing = fold(90 - phiDeg);
+
+  /**
+   * THE SURVEYS — how many times somebody laid this town out, and at what
+   * angles. This is the single most characterful thing a real city has and it
+   * was entirely absent: every district took the spine's bearing with a jitter
+   * on it, so the whole island was one grid that wobbled.
+   *
+   * A ONE-SURVEY town is Philadelphia: one instrument, one angle, the whole
+   * peninsula, and the only thing that breaks it is the river. A TWO-SURVEY
+   * town is Manhattan, where the Commissioners' grid of 1811 runs into the West
+   * Village's older lanes at about twenty-nine degrees and the seam has been a
+   * landmark ever since. A THREE-SURVEY town is Boston, where the Back Bay, the
+   * South End and the North End were each laid out by different people at
+   * different times with no intention whatever of agreeing.
+   *
+   * THE SEPARATIONS ARE DRAWN WIDE ENOUGH TO READ. Below about sixteen degrees
+   * two grids look like one grid with a surveying error in it, which is exactly
+   * the impression the old +/-22 degree jitter on the housing gave. The first
+   * offset is 20-62 degrees off the spine and the second is thrown the other
+   * way, so the three are never less than about forty degrees apart from each
+   * other after folding.
+   */
+  const nSurveys = Dpl.rand() < 0.28 ? 1 : Dpl.rand() < 0.62 ? 2 : 3;
+  const surveySgn = Dpl.sign();
+  const surveyOff = [0, surveySgn * Dpl.f(20, 62), -surveySgn * Dpl.f(22, 58)];
+  const SURVEY = [];
+  for (let k = 0; k < nSurveys; k++) {
+    /**
+     * BLOCK SIZE AND ASPECT, which are first-order visual facts and were fixed
+     * constants of the flavour before this. Manhattan's 200 x 800 ft blocks and
+     * Portland's 200 x 200 ft squares are the same city planted on the same
+     * grid spacing and they are completely different places to walk: one gives
+     * you a corner every sixty metres in one direction and every two hundred
+     * and fifty in the other, the other gives you a corner every sixty metres
+     * in both. The three modes below are those two and the ordinary American
+     * block between them.
+     *
+     * MEASURED against what this used to emit: the core was 66-76 x 190-215 m
+     * (aspect 2.8) on every island ever generated, the housing 56-63 x 144-160
+     * (aspect 2.5). Both sit inside the middle mode here, which is the point —
+     * the old numbers were not wrong, they were the only ones available.
+     */
+    const shape = Dpl.rand();
+    const aspect = shape < 0.40 ? Dpl.f(1.00, 1.55)     // Portland, Salt Lake City
+      : shape < 0.78 ? Dpl.f(1.90, 2.90)                 // the ordinary American block
+      : Dpl.f(3.20, 4.50);                               // the Commissioners' Plan
+    SURVEY.push({
+      bearing: fold(spineBearing + (k === 0 ? Dpl.f(-9, 9) : surveyOff[k])),
+      aspect,
+      pitch: Dpl.f(56, 92),
+      warp: Dpl.f(1, 9),
+    });
+  }
+  /**
+   * STREET WIDTH IS A FRACTION OF THE PITCH, not a free number, and it has to
+   * be or the lot budget moves with the block size.
+   *
+   * The ratios are read off what this file already emitted and the authored
+   * islands agree with it: side streets ran 14-16 m on a 66-76 m pitch (0.21)
+   * and avenues 25-28 m on 190-215 m (0.13). Holding those two ratios keeps the
+   * share of the island that is roadway between 0.63 and 0.75 across the whole
+   * range of block shapes above — measured — where a fixed 15 m street on a
+   * 56 m square block would have paved over 42% of the town and taken a fifth
+   * of its parcels with it.
+   */
+  const streetWOf = (p) => Math.round(Math.max(9, Math.min(22, p * 0.20)));
+  const aveWOf = (p) => Math.round(Math.max(14, Math.min(34, p * 0.13)));
+
+  /**
+   * WHICH IDEA ABOUT STREETS EACH QUARTER WAS LAID OUT UNDER.
+   *
+   * The vocabulary is six kinds now rather than two — see the long note over
+   * the layout kinds in citygen.mjs for what each one is and where it comes
+   * from. What matters here is that a ROLE does not imply a KIND. There is no
+   * law that says an old quarter is a medieval tangle: Savannah's old town is
+   * the most rigid grid in North America and Karlsruhe's is a fan of thirty-two
+   * avenues off a palace. There is no law that says downtown is a grid either —
+   * plenty of European ones never got one, and plenty of American ones were
+   * flattened and rebuilt as superblocks in the 1960s.
+   *
+   * So some of these islands have NO organic quarter anywhere on them, and
+   * about one in nine is organic almost throughout, which is the medieval town
+   * that never had a surveyor at all. That was the specific complaint: every
+   * city had exactly one irregular blob and grid everywhere else.
+   */
+  const organicTown = Dpl.chance(0.11);
+  const kindFor = (role) => {
+    if (organicTown) return role === "ind" ? (Dpl.chance(0.5) ? "organic" : "lattice") : "organic";
+    const r = Dpl.rand();
+    switch (role) {
+      case "old":                                        // the landing
+        return r < 0.50 ? "organic" : r < 0.70 ? "lattice" : r < 0.86 ? "radial" : "chamfer";
+      case "core":                                       // the Exchange
+        return r < 0.44 ? "lattice" : r < 0.60 ? "radial" : r < 0.74 ? "chamfer"
+          : r < 0.82 ? "superblock" : "organic";
+      case "ind":                                        // the yards
+        return r < 0.62 ? "lattice" : r < 0.86 ? "superblock" : "organic";
+      default:                                           // the housing
+        return r < 0.32 ? "lattice" : r < 0.58 ? "curvi" : r < 0.70 ? "chamfer"
+          : r < 0.84 ? "superblock" : "organic";
+    }
+  };
+
+  /**
+   * HOW THE GROUND WAS CUT UP — the half of this the complaint named out loud.
+   *
+   * The five numbers are FLAVOR.lot's: [t0, t1, min, maxDepth, jitter] in m2.
+   * The flavour says what the ground is FOR, which is an economic statement the
+   * engine reads; this says how the surveyor cut it, which is the one you can
+   * see from the pavement.
+   *
+   * WHAT IS REAL HERE AND WHAT IS CONSTRAINED, stated plainly. The SHAPE terms
+   * — maxDepth, which decides whether the splitter keeps cutting frontages off
+   * a deep strip or turns and cuts the depth in half, and jitter, which decides
+   * whether the side lines are parallel — are free and are drawn across the
+   * full real range: a burgage plot behind a market frontage is four times as
+   * deep as it is wide, a postwar suburban lot is half as deep as it is wide.
+   * The AREA terms are NOT free. A real Baltimore row lot is 130 m2 and a real
+   * Philadelphia one is 89, and dropping those in would have trebled the parcel
+   * count in any district that drew them — the size dial promises "about
+   * fourteen hundred lots" at City and a save's deeds are bbls in that table.
+   * So the areas stay inside a band around the flavour's own and the variety
+   * comes out of the shape. That is a game constraint wearing its own name and
+   * not an economic claim.
+   */
+  const LOTWAYS = {
+    row:     [300, 700, 140, 34, 7],    // narrow frontages on a deep strip
+    burgage: [300, 780, 140, 48, 15],   // deeper still, and nothing is parallel
+    fine:    [330, 820, 150, 26, 12],   // a nineteenth-century commercial street
+    villa:   [430, 1000, 200, 20, 5],   // shallow and wide: the streetcar suburb
+    estate:  [900, 2200, 420, 40, 5],   // the block laid out in one hand
+    yard:    [850, 2500, 360, 52, 5],   // a working waterfront parcel
+  };
+  const lotWayFor = (role, kind) => {
+    // A superblock estate was platted as a whole and an organic quarter was
+    // never platted at all, so those two answer before the role does.
+    if (kind === "superblock") return Dpl.chance(0.75) ? "estate" : null;
+    if (kind === "organic") return Dpl.chance(0.55) ? "burgage" : null;
+    const r = Dpl.rand();
+    switch (role) {
+      case "old":  return r < 0.34 ? "burgage" : r < 0.66 ? "fine" : r < 0.82 ? "row" : null;
+      case "core": return r < 0.30 ? "fine" : r < 0.44 ? "row" : null;
+      case "ind":  return r < 0.70 ? "yard" : null;
+      default:     return r < 0.30 ? "row" : r < 0.62 ? "villa" : r < 0.74 ? "fine" : null;
+    }
+  };
+
+  /**
+   * HOW THE TOWN IS ARRANGED, which is the other thing a template cannot vary.
+   *
+   * BANDS is the port that grew along its own spine: the landing on the water,
+   * the Exchange behind it, the housing beyond that, and the yards cut off the
+   * flank of the middle band on whichever side has the frontage. That is the
+   * order every real port on this coast grew in and it is why the dear ground
+   * is never at the far end. It was the only arrangement this file had.
+   *
+   * RINGS is the town that grew outward from its landing instead of along it —
+   * a dense old core, then the streetcar-era blocks, then whatever came after,
+   * in rings rather than in bands. A ring is not convex and the partition has
+   * to stay a BSP, so it is built as a PINWHEEL: cuts through the hub give
+   * wedges, and each wedge is cut once more at a radius measured off its own
+   * land. The union of the inner pieces is a polygon around downtown, which is
+   * a growth ring drawn with straight lines — which is what a growth ring is,
+   * on the ground, once streets are involved.
+   */
+  const arrangement = Dpl.chance(0.55) ? "bands" : "rings";
+
+  /**
+   * HOW MANY STREETS REFUSE THE GRID.
+   *
+   * There was always exactly one — "every town on this coast has one and it is
+   * always the oldest road on the map" — which is true of a small port and
+   * false of everywhere that ever had a plan drawn for it. Washington has
+   * fifteen state avenues, Paris has Haussmann's whole system, Philadelphia has
+   * none at all worth the name. A town with none is not missing anything; a
+   * town with three reads as one somebody thought about.
+   */
+  const nBoulevard = Dpl.rand() < 0.18 ? 0 : Dpl.rand() < 0.56 ? 1 : Dpl.rand() < 0.72 ? 2 : 3;
+
   const Dd = dice(stream(s, 0xd15701));
   const nDistricts = Dd.rand() < 0.16 ? 3 : Dd.rand() < 0.74 ? 4 : 5;
 
@@ -776,81 +983,420 @@ export function islandConfig(seed) {
   };
   const usedResi = new Set();
 
+  /**
+   * THE PARTITION IS BUILT OVER SLOTS AND THE SLOTS ARE MEASURED BEFORE THEY
+   * ARE NAMED.
+   *
+   * A pinwheel of wedges cannot promise that every one of them lands on real
+   * ground — a wedge pointing at a bay is mostly water, and one pointing along
+   * the tail of a peninsula can be a hundred metres wide. The old bands could
+   * promise it because every cut was placed at a quantile of the land on the
+   * far side, and that argument does not survive contact with an arrangement
+   * that cuts in two directions at once.
+   *
+   * So the tree is built with anonymous slot ids, the land samples are counted
+   * into them, and only then does each slot get a role. A slot holding less
+   * than 1.5% of the island is FOLDED into the largest slot of its own ring
+   * rather than being handed a district name it cannot fill: the invariant that
+   * no district may end up with zero blocks is then a property of the
+   * construction rather than something to hope about. Several slots may share
+   * one district key, which is what makes a ring a ring.
+   */
+  const slotTree = { node: null, slots: [] };
+  if (arrangement === "bands") {
+    if (nDistricts === 3) {
+      slotTree.node = branch(cutOld, oldSide, "old", branch(cutCore, coreSide, "core", "resiA"));
+    } else if (nDistricts === 4) {
+      slotTree.node = branch(cutOld, oldSide, "old",
+        branch(cutCore, coreSide, branch(cutDock, dockSide, "ind", "core"), "resiA"));
+    } else {
+      const fResi = fCore + (1 - fCore) * Dd.f(0.48, 0.60);
+      const cutResi = cut(...ptAt(quantile(fResi)), phiDeg + 90);
+      const nearFar = ptAt(quantile((fCore + fResi) / 2));
+      slotTree.node = branch(cutOld, oldSide, "old",
+        branch(cutCore, coreSide, branch(cutDock, dockSide, "ind", "core"),
+          branch(cutResi, nearFar, "resiA", "resiB")));
+    }
+  } else {
+    // THE HUB is the landing — where the ships came in and the town started —
+    // not the middle of the island. A town that grew outward grew outward from
+    // somewhere, and putting the hub at the centroid would give a bullseye
+    // rather than a port.
+    const hub = ptAt(quantile(Dd.f(0.20, 0.33)), across(exchSide) * Dd.f(0.15, 0.45));
+    const nCuts = Dd.rand() < 0.55 ? 2 : 3;         // 4 or 6 wedges
+    const a0 = Dd.f(0, 180);
+    const wedgeDegs = Array.from({ length: nCuts }, (_, i) => a0 + (i * 180) / nCuts + Dd.f(-13, 13));
+    // How much of each wedge's own land falls inside the first ring. The bands
+    // give the old quarter plus the Exchange 64-81% of the island between them
+    // and this aims at the same place from the other direction.
+    const fInner = Dd.f(0.56, 0.72);
+    let nSlot = 0;
+    const wedge = (k, hp) => {
+      if (k === nCuts) {
+        // The wedge's own bisector, found by asking which directions out of the
+        // hub are actually in this region rather than by unpicking the signs.
+        let sx = 0, sy = 0, n = 0;
+        for (let t = 0; t < 720; t++) {
+          const a = (t / 720) * TAU;
+          const p = [hub[0] + Math.cos(a) * 20, hub[1] + Math.sin(a) * 20];
+          if (!inLeaf(hp, p)) continue;
+          sx += Math.cos(a); sy += Math.sin(a); n++;
+        }
+        const id = nSlot++;
+        if (!n) return "dead" + id;                 // an empty sign combination
+        const L = Math.hypot(sx, sy) || 1;
+        const b = [sx / L, sy / L];
+        // The radius is a quantile of THIS wedge's dry ground, so a wedge over
+        // a bay gets a tight inner ring and one over the tail of the island
+        // gets a long one — which is what an equal share of land means.
+        const ds = land.filter((l) => inLeaf(hp, l.p))
+          .map((l) => dist(l.p, hub)).sort((x, y) => x - y);
+        if (ds.length < 12) return "dead" + id;      // no ground worth cutting
+        const R = ds[Math.max(0, Math.min(ds.length - 1, Math.round(fInner * (ds.length - 1))))];
+        const at = [hub[0] + b[0] * R, hub[1] + b[1] * R];
+        // A line through `at` perpendicular to the bisector. cut() takes a
+        // COMPASS bearing and a direction (dx, dy) has bearing atan2(dx, dy).
+        const cR = cut(at[0], at[1], Math.atan2(-b[1], b[0]) * R2D);
+        return branch(cR, hub, "in" + id, "out" + id);
+      }
+      const c = cut(hub[0], hub[1], wedgeDegs[k]);
+      return {
+        cut: c,
+        neg: wedge(k + 1, [...hp, [c[0], c[1], c[2]]]),
+        pos: wedge(k + 1, [...hp, [-c[0], -c[1], -c[2]]]),
+      };
+    };
+    slotTree.node = wedge(0, []);
+    slotTree.hub = hub;
+  }
+
+  // What each slot actually holds, and where it holds it.
+  const slotLeaves = leavesOf(slotTree.node);
+  const slotOf = (p) => slotLeaves.find((l) => inLeaf(l.hp, p))?.district ?? null;
+  const slotLand = new Map();
+  for (const l of land) {
+    const sl = slotOf(l.p);
+    if (!sl) continue;
+    const e = slotLand.get(sl) ?? { n: 0, x: 0, y: 0, coast: 0 };
+    e.n++; e.x += l.p[0]; e.y += l.p[1];
+    slotLand.set(sl, e);
+  }
+  for (const p of COAST) {
+    // A shoreline vertex belongs to whichever slot the dry ground just inside
+    // it belongs to; that is the frontage the yards want.
+    const q = [p[0] * 0.94 + mid[0] * 0.06, p[1] * 0.94 + mid[1] * 0.06];
+    const sl = slotOf(q);
+    if (sl && slotLand.has(sl)) slotLand.get(sl).coast++;
+  }
+  const slotMid = (id) => {
+    const e = slotLand.get(id);
+    return e && e.n ? [e.x / e.n, e.y / e.n] : mid;
+  };
+
+  /**
+   * THE ROLES, HANDED OUT ON THE EVIDENCE.
+   *
+   * Bands know their own roles by construction. Rings do not: the old quarter
+   * is whichever inner wedge faces the water the town came in from, the yards
+   * are whichever outer wedge has the most shoreline, and everything else
+   * inside the first ring is the Exchange and everything else outside it is
+   * housing. All three of those are questions about the ground, so all three
+   * are answered by measuring it.
+   */
+  const roleOf = new Map();
+  if (arrangement === "bands") {
+    // The bands ARE the roles: every cut was placed at a quantile of the land
+    // on the far side of it, so each slot is guaranteed its share by
+    // construction and there is nothing left to decide.
+    for (const l of slotLeaves) roleOf.set(l.district, l.district);
+  } else {
+    const live = [...slotLand.entries()].filter(([, e]) => e.n >= land.length * 0.015);
+    const ins = live.filter(([id]) => id.startsWith("in")).sort((a, b) => b[1].n - a[1].n);
+    const outs = live.filter(([id]) => id.startsWith("out")).sort((a, b) => b[1].n - a[1].n);
+    // The landing: the inner wedge whose ground lies nearest the harbour head.
+    let oldId = null, bd = Infinity;
+    for (const [id, e] of ins) {
+      const d = dist([e.x / e.n, e.y / e.n], harbourHead);
+      if (d < bd) { bd = d; oldId = id; }
+    }
+    // The yards: the outer wedge with the most shoreline. Falling back to the
+    // inner ring if the outer one has no frontage at all keeps a working port
+    // on the water rather than putting it up a hill.
+    const byCoast = [...live].sort((a, b) => b[1].coast - a[1].coast);
+    const indId = (outs.find(([id]) => id === byCoast.find(([j]) => j.startsWith("out"))?.[0])?.[0])
+      ?? outs[0]?.[0] ?? null;
+    let r = 0;
+    for (const [id] of live) {
+      if (id === oldId) roleOf.set(id, "old");
+      else if (id === indId && nDistricts >= 4) roleOf.set(id, "ind");
+      else if (id.startsWith("in")) roleOf.set(id, "core");
+      else roleOf.set(id, nDistricts >= 5 && r++ % 2 === 1 ? "resiB" : "resiA");
+    }
+    // Anything too small to be a district of its own joins the biggest slot in
+    // its own ring. Nothing is dropped from the plane — a BSP leaf still exists
+    // and still tiles; it simply answers to a neighbour's name.
+    const biggestIn = ins[0]?.[0], biggestOut = outs[0]?.[0] ?? ins[0]?.[0];
+    for (const l of slotLeaves) {
+      if (roleOf.has(l.district)) continue;
+      roleOf.set(l.district, roleOf.get(l.district.startsWith("in") ? biggestIn : biggestOut) ?? "core");
+    }
+  }
+  // A role with no ground at all is not a district. This can only fire on the
+  // ring arrangement, and it is why `nDistricts` is a request rather than a
+  // promise — the island has the last word on how many quarters fit on it.
+  const roleLand = {};
+  for (const [id, e] of slotLand) roleLand[roleOf.get(id)] = (roleLand[roleOf.get(id)] ?? 0) + e.n;
+  const hasRole = (r) => (roleLand[r] ?? 0) >= land.length * 0.015;
+
+  // Where each role sits, for the naming and for everything that has to point
+  // at it. Bands know these from their own geometry; rings measure them.
+  const roleMid = (r) => {
+    const ids = [...slotLand.keys()].filter((id) => roleOf.get(id) === r);
+    if (!ids.length) return mid;
+    let x = 0, y = 0, n = 0;
+    for (const id of ids) { const e = slotLand.get(id); x += e.x; y += e.y; n += e.n; }
+    return [x / n, y / n];
+  };
+  const dockAt = arrangement === "bands" ? dockSide : roleMid("ind");
+  const farAt = arrangement === "bands" ? farSide : roleMid("resiA");
+
   const disp = { old: Dn.pick(OLD_DISTRICT), core: Dn.pick(CORE_DISTRICT) };
   disp.ind = (() => {
-    const c = cardinal(dirOf(dockSide));
+    const c = cardinal(dirOf(dockAt));
     return Dn.pick([...IND_DISTRICT, ...(c ? [c + " Docks", c + " Yards"] : [])]);
   })();
-  disp.resi = resiName(farSide, usedResi); usedResi.add(disp.resi);
+  disp.resi = resiName(farAt, usedResi); usedResi.add(disp.resi);
+  if (hasRole("resiB")) {
+    disp.resi2 = resiName(roleMid("resiB"), usedResi);
+    usedResi.add(disp.resi2);
+  }
 
   const key = (t) => t.toLowerCase().replace(/[^a-z]+/g, "");
   const kOld = key(disp.old), kCore = key(disp.core), kInd = key(disp.ind), kResi = key(disp.resi);
+  const kResi2 = disp.resi2 ? key(disp.resi2) : null;
+  // A role that did not survive the measurement folds into the one next to it
+  // in the way a town actually works: no yards means the waterfront is part of
+  // downtown, no landing means downtown reaches the water itself.
+  const keyForRole = (r) =>
+    r === "old" ? (hasRole("old") ? kOld : kCore)
+      : r === "ind" ? (hasRole("ind") ? kInd : kCore)
+        : r === "resiB" ? (kResi2 ?? kResi)
+          : r === "resiA" ? kResi
+            : kCore;
 
-  let partition, districtKeys;
-  if (nDistricts === 3) {
-    partition = branch(cutOld, oldSide, kOld, branch(cutCore, coreSide, kCore, kResi));
-    districtKeys = { old: kOld, core: kCore, resi: [kResi] };
-  } else if (nDistricts === 4) {
-    partition = branch(cutOld, oldSide, kOld,
-      branch(cutCore, coreSide, branch(cutDock, dockSide, kInd, kCore), kResi));
-    districtKeys = { old: kOld, core: kCore, ind: kInd, resi: [kResi] };
-  } else {
-    disp.resi2 = resiName(ptAt(quantile((1 + Dd.f(0.80, 0.90)) / 2)), usedResi);
-    const kResi2 = key(disp.resi2);
-    const fResi = fCore + (1 - fCore) * Dd.f(0.48, 0.60);
-    const cutResi = cut(...ptAt(quantile(fResi)), phiDeg + 90);
-    const nearFar = ptAt(quantile((fCore + fResi) / 2));
-    partition = branch(cutOld, oldSide, kOld,
-      branch(cutCore, coreSide, branch(cutDock, dockSide, kInd, kCore),
-        branch(cutResi, nearFar, kResi, kResi2)));
-    districtKeys = { old: kOld, core: kCore, ind: kInd, resi: [kResi, kResi2] };
-  }
+  const relabel = (node) => (typeof node === "string"
+    ? keyForRole(roleOf.get(node) ?? "core")
+    : { cut: node.cut, neg: relabel(node.neg), pos: relabel(node.pos) });
+  const partition = relabel(slotTree.node);
+  const districtKeys = {
+    old: hasRole("old") ? kOld : kCore,
+    core: kCore,
+    ...(hasRole("ind") ? { ind: kInd } : {}),
+    resi: [kResi, ...(hasRole("resiB") && kResi2 ? [kResi2] : [])],
+  };
   const leaves = leavesOf(partition);
   const leafOf = (p) => leaves.find((l) => inLeaf(l.hp, p))?.district ?? null;
   for (const l of land) l.d = leafOf(l.p);
 
   // --- 4. the street grammars ------------------------------------------------
-  // The avenues run down the island's long axis, which is what a surveyor does
-  // with a peninsula: the long streets go the long way. bearingDeg is the
-  // COMPASS bearing of the avenues, so it is 90 minus the spine's map angle,
-  // folded into (-90, 90].
-  const Dg = dice(stream(s, 0x51d55));
-  const fold = (a) => ((((a + 90) % 180) + 180) % 180) - 90;
-  const spineBearing = fold(90 - phiDeg);
-  const coreBearing = fold(spineBearing + Dg.f(-6, 6));
+  /**
+   * A DISTRICT'S GRAMMAR IS ITS ROLE PLUS ITS SURVEY PLUS ITS LAYOUT KIND, and
+   * all three are already drawn. What is left here is arithmetic: turn a
+   * survey's pitch and aspect into the numbers the layout kind wants, and hand
+   * each district the lot convention its ground was cut under.
+   *
+   * WHICH SURVEY EACH QUARTER BELONGS TO is the decision that makes the seams.
+   * Downtown always gets the principal survey — it is the one the town was laid
+   * out from. The yards get another where there is one, because a working
+   * waterfront was laid to the WATER and not to the surveyor's line, which is
+   * true of every port on earth. The landing and the housing draw.
+   */
+  const surveyFor = (role) => {
+    if (nSurveys === 1) return SURVEY[0];
+    if (role === "core") return SURVEY[0];
+    if (role === "ind") return SURVEY[nSurveys - 1];
+    return SURVEY[Dg.i(0, nSurveys - 1)];
+  };
+  // Roles that get a bearing of their own even inside one survey: a couple of
+  // degrees, the way a grid laid in two sittings never quite closes.
+  const ROLE_SCALE = { old: 0.80, core: 1.00, ind: 1.34, resiA: 0.88, resiB: 0.86 };
 
+  /**
+   * One district's config, built from the plan rather than from a table.
+   *
+   * CERDÀ'S NUMBERS ARE HIS OWN. The Eixample is 113.3 m from façade to façade
+   * with 20 m streets and a 20 m chamfer off every corner, surveyed in 1859 and
+   * still exactly that; a "chamfered grid" with anything else in it is not the
+   * thing anybody recognises. Those three numbers are hardcoded and the only
+   * seeded part of that kind is which way it points.
+   */
   const districts = {};
-  districts[kCore] = {
-    kind: "lattice", flavor: "core", bearingDeg: +coreBearing.toFixed(1),
-    stPitch: Math.round(Dg.f(66, 76)), avePitch: Math.round(Dg.f(190, 215)),
-    streetW: Math.round(Dg.f(14, 16)), aveW: Math.round(Dg.f(25, 28)),
-    warpAmp: Math.round(Dg.f(1, 3)), numbered: true, fullBlockP: 0.05,
-  };
-  districts[kOld] = {
-    kind: "organic", flavor: "old",
-    cell: [Math.round(Dg.f(3050, 3600)), Math.round(Dg.f(7200, 8400))],
-    jitterDeg: Math.round(Dg.f(13, 19)), streetW: Math.round(Dg.f(9, 11)), fullBlockP: 0.02,
-  };
-  if (districtKeys.ind) {
-    districts[kInd] = {
-      kind: "lattice", flavor: "industrial",
-      // The yards never agreed to the surveyor's angle — they were laid to the
-      // water, which is a different line.
-      bearingDeg: +fold(coreBearing + Dg.f(-42, 42)).toFixed(1),
-      stPitch: Math.round(Dg.f(90, 100)), avePitch: Math.round(Dg.f(230, 260)),
-      streetW: Math.round(Dg.f(16, 18)), aveW: Math.round(Dg.f(26, 29)),
-      warpAmp: Math.round(Dg.f(8, 10)), fullBlockP: 0.11,
+  const districtRole = {};
+  const buildDistrict = (k, role, flavor) => {
+    if (districts[k]) return;                        // a folded role: already there
+    const sv = surveyFor(role);
+    const kind = kindFor(role);
+    const way = lotWayFor(role, kind);
+    const scale = ROLE_SCALE[role] ?? 1;
+    const stPitch = Math.round(sv.pitch * scale);
+    const avePitch = Math.round(stPitch * sv.aspect);
+    const bearing = +fold(sv.bearing + Dg.f(-3, 3)).toFixed(1);
+    const base = {
+      flavor,
+      bearingDeg: bearing,
+      fullBlockP: role === "ind" ? 0.11 : role === "core" ? 0.05 : 0.02,
+      ...(way ? { lot: LOTWAYS[way] } : {}),
     };
+    if (kind === "organic") {
+      // The colonial tangle. The cell range is the block AREA it splits down
+      // to, so it is set from the survey's pitch rather than from a constant —
+      // a town of small blocks has a small old quarter block too.
+      const a = stPitch * avePitch;
+      districts[k] = {
+        ...base, kind: "organic",
+        cell: [Math.round(a * 0.62), Math.round(a * 1.45)],
+        jitterDeg: Math.round(Dg.f(11, 22)),
+        streetW: Math.round(Math.max(8, streetWOf(stPitch) * 0.7)),
+      };
+    } else if (kind === "chamfer") {
+      districts[k] = {
+        ...base, kind: "chamfer", regular: true,
+        stPitch: 113, avePitch: 113, streetW: 20, aveW: 20,
+        // 20 m off a 113 m block, measured on the inset the block actually
+        // gets: (113 - 20) = 93 m of frontage, so the cut is 20/93.
+        chamferAll: 0.215, warpAmp: 0,
+      };
+    } else if (kind === "superblock") {
+      const cell = Math.round(stPitch * Dg.f(2.6, 3.8));
+      districts[k] = {
+        ...base, kind: "superblock",
+        stPitch: cell, avePitch: Math.round(cell * Math.min(1.7, sv.aspect)),
+        streetW: Math.round(Dg.f(22, 30)), aveW: Math.round(Dg.f(28, 38)),
+        warpAmp: Math.round(sv.warp * 0.5),
+        // The ways inside the ring. A postwar estate is two to five slabs on a
+        // block a real grid would have cut into a dozen.
+        superCell: [Math.round(cell * cell * 0.10), Math.round(cell * cell * 0.22)],
+        superJitter: Math.round(Dg.f(6, 26)),
+      };
+    } else if (kind === "curvi") {
+      districts[k] = {
+        ...base, kind: "curvi",
+        stPitch, avePitch,
+        streetW: streetWOf(stPitch), aveW: aveWOf(avePitch),
+        // The bend: a wavelength of three to six blocks and an amplitude that
+        // the emitter clamps to whatever keeps the cells convex.
+        curveLen: Math.round(avePitch * Dg.f(2.6, 5.2)),
+        curveAmp: Math.round(stPitch * Dg.f(0.7, 1.7)),
+      };
+    } else if (kind === "radial") {
+      districts[k] = {
+        ...base, kind: "radial",
+        // The focus is filled in below, once the cores are known — the whole
+        // point of a radial plan is that it is aimed at something.
+        focus: null, focusWant: role,
+        ringPitch: Math.round(stPitch * Dg.f(0.95, 1.35)),
+        spokes: Dg.i(11, 26),
+        circusR: Math.round(Dg.f(55, 110)),
+        streetW: streetWOf(stPitch), aveW: aveWOf(stPitch),
+      };
+    } else {
+      districts[k] = {
+        ...base, kind: "lattice",
+        stPitch, avePitch,
+        streetW: streetWOf(stPitch), aveW: aveWOf(avePitch),
+        warpAmp: Math.round(sv.warp),
+        numbered: role === "core" || (role === "resiA" && Dg.chance(0.4)),
+      };
+    }
+    districtRole[k] = role;
+  };
+  buildDistrict(kCore, "core", "core");
+  if (hasRole("old")) buildDistrict(kOld, "old", "old");
+  if (hasRole("ind")) buildDistrict(kInd, "ind", "industrial");
+  buildDistrict(kResi, "resiA", "resi");
+  if (hasRole("resiB") && kResi2) buildDistrict(kResi2, "resiB", "resi");
+
+  // --- 4b. the seams ---------------------------------------------------------
+  /**
+   * WHERE TWO SURVEYS MEET, SOMETHING HAS TO GIVE — and in a real city what
+   * gives is a street.
+   *
+   * This is the payoff of drawing the plan and it is also the direct answer to
+   * what the contrast used to look like. Two grids at different bearings run
+   * into each other along a line, and the blocks that straddle that line come
+   * out as wedges: triangles, trapezoids, the odd five-sided remnant. Left to
+   * itself the boundary is a ragged tear — which is what a "stark contrast"
+   * between a lattice and a blob is. Put a street on the join and the same
+   * geometry reads as a decision somebody made: the wedges are the blocks that
+   * reconcile the two surveys, and the street is where the reconciliation was
+   * agreed. Manhattan's Greenwich Ave, Boston's Massachusetts Ave and every
+   * "diagonal that makes no sense" in an American downtown is one of these.
+   *
+   * The seam is found on the partition itself rather than drawn by hand: every
+   * internal cut whose two sides do not share a grain gets one, clipped to the
+   * region the cut actually bounds and then to the longest run of it that is on
+   * dry ground. A cut between two districts of the same survey and the same
+   * kind gets nothing, because there is nothing there to reconcile — the grid
+   * runs straight through, which is also what really happens.
+   *
+   * At most three: they are obstacles in the generator and every obstacle is
+   * differenced out of every cell it meets, so this is a cost as well as a
+   * feature. The three longest are the ones a city would have named.
+   */
+  const seams = [];
+  {
+    const Dsm = dice(stream(s, 0x5ea115));
+    const sameGrain = (a, b) => {
+      const da = districts[a], db = districts[b];
+      if (!da || !db || a === b) return true;
+      if (da.kind !== db.kind) return false;
+      if (da.kind === "organic") return true;
+      return Math.abs(fold(da.bearingDeg - db.bearingDeg)) < 8;
+    };
+    const keysUnder = (node) => (typeof node === "string" ? [node] : [...keysUnder(node.neg), ...keysUnder(node.pos)]);
+    const found = [];
+    const addSeam = ([nx, ny, c], hp) => {
+      // The cut's line, parameterised from its own closest point to the origin.
+      const p0 = [nx * c, ny * c], dir = [-ny, nx];
+      let t0 = -6000, t1 = 6000;
+      for (const [ax, ay, ad] of hp) {
+        const den = ax * dir[0] + ay * dir[1];
+        const num = ad - (ax * p0[0] + ay * p0[1]);
+        if (Math.abs(den) < 1e-9) { if (num < 0) return; continue; }
+        const t = num / den;
+        if (den > 0) t1 = Math.min(t1, t); else t0 = Math.max(t0, t);
+      }
+      if (t1 - t0 < 200) return;
+      // Only the part of it that is on dry ground with room for a roadway.
+      let bestA = null, bestB = null, curA = null;
+      const close = (t) => {
+        if (curA !== null && (bestA === null || t - curA > bestB - bestA)) { bestA = curA; bestB = t; }
+        curA = null;
+      };
+      for (let t = t0; t <= t1; t += 10) {
+        const p = [p0[0] + dir[0] * t, p0[1] + dir[1] * t];
+        if (inRing(p, inner) && distToRing(p, inner) > 22) { if (curA === null) curA = t; } else close(t);
+      }
+      close(t1);
+      if (bestA === null || bestB - bestA < 240) return;
+      found.push({
+        cx: Math.round(p0[0] + dir[0] * (bestA + bestB) / 2),
+        cy: Math.round(p0[1] + dir[1] * (bestA + bestB) / 2),
+        w: Math.round(bestB - bestA), h: Math.round(Dsm.f(15, 23)),
+        deg: +((Math.atan2(dir[1], dir[0]) * R2D + 360) % 360).toFixed(1),
+      });
+    };
+    (function walk(node, hp) {
+      if (typeof node === "string") return;
+      const [nx, ny, c] = node.cut;
+      const A = keysUnder(node.neg), B = keysUnder(node.pos);
+      if (A.some((a) => B.some((b) => !sameGrain(a, b)))) addSeam(node.cut, hp);
+      walk(node.neg, [...hp, [nx, ny, c]]);
+      walk(node.pos, [...hp, [-nx, -ny, -c]]);
+    })(partition, []);
+    found.sort((a, b) => b.w - a.w);
+    seams.push(...found.slice(0, 3));
   }
-  districtKeys.resi.forEach((k, i) => {
-    districts[k] = {
-      kind: "lattice", flavor: "resi",
-      bearingDeg: +fold(coreBearing + Dg.f(-22, 22)).toFixed(1),
-      stPitch: Math.round(Dg.f(56, 63)), avePitch: Math.round(Dg.f(144, 160)),
-      streetW: Math.round(Dg.f(12, 14)), aveW: Math.round(Dg.f(19, 22)),
-      warpAmp: Math.round(Dg.f(3, 5)), numbered: i === 0 && Dg.chance(0.5), fullBlockP: 0.02,
-    };
-  });
 
   // --- 5. the cores ----------------------------------------------------------
   // A site is only a candidate if it is on dry ground with room around it, in
@@ -874,8 +1420,16 @@ export function islandConfig(seed) {
   // counting houses went: close enough to the ships to see them come in, far
   // enough back to be on a street a carriage could use.
   const seats = [];
-  const seatCore = wants(ptAt(quantile(fOld + (fCore - fOld) * 0.28), across(exchSide) * 0.35), kCore, 90)
-    ?? wants(ptAt(quantile(fOld + (fCore - fOld) * 0.28)), kCore, 40)
+  // WHERE DOWNTOWN IS depends on how the town is arranged. A banded port has it
+  // a fixed way up the spine from the water; a town that grew in rings has it
+  // at the hub the rings are drawn about, which is where its landing was. Both
+  // answers are then snapped to real ground inside the Exchange, so neither can
+  // put the counting houses at sea.
+  const downtownAt = arrangement === "bands"
+    ? ptAt(quantile(fOld + (fCore - fOld) * 0.28), across(exchSide) * 0.35)
+    : slotTree.hub;
+  const seatCore = wants(downtownAt, kCore, 90)
+    ?? wants(downtownAt, kCore, 40)
     ?? mid;
   seats.push({ xy: seatCore, r: Math.round(Dk.f(245, 300)) });
   // Midtown, then the far end.
@@ -883,7 +1437,7 @@ export function islandConfig(seed) {
   seats.push({ xy: wants(ptAt(quantile(Dk.f(0.84, 0.92))), null, 60) ?? ptAt(quantile(0.88)), r: Math.round(Dk.f(210, 270)) });
   // The docks, if there are any.
   if (districtKeys.ind) {
-    seats.push({ xy: wants(dockSide, kInd, 55) ?? dockSide, r: Math.round(Dk.f(160, 205)) });
+    seats.push({ xy: wants(dockAt, kInd, 55) ?? dockAt, r: Math.round(Dk.f(160, 205)) });
   }
   // WEIGHTS FALL OFF FROM THE SEAT, and that is arranged by construction rather
   // than asserted: rank the sites by how far they are from the dominant one and
@@ -894,6 +1448,28 @@ export function islandConfig(seed) {
     .map((c, i) => ({ ...c, d0: i === 0 ? -1 : dist(c.xy, seats[0].xy) }))
     .sort((a, b) => a.d0 - b.d0)
     .map((c, i) => ({ xy: [Math.round(c.xy[0]), Math.round(c.xy[1])], w: wLadder[i], r: c.r }));
+
+  /**
+   * A RADIAL PLAN IS AIMED AT SOMETHING, and that is the whole of what makes it
+   * one. Karlsruhe's thirty-two avenues converge on the Schloss; L'Enfant's on
+   * the Capitol and the President's house; the Étoile on a triumphal arch.
+   * Aiming the spokes at the middle of the district's bounding box would be a
+   * dartboard, not a plan, so each one is given a real place on this island:
+   * downtown gets its own seat, the landing gets the head of the harbour — an
+   * off-centre focus, which is what turns a wheel into a FAN opening on the
+   * water — and the housing gets the middle of its own ground, which is where
+   * a suburb's church and green usually are.
+   */
+  for (const [k, d] of Object.entries(districts)) {
+    if (d.kind !== "radial") continue;
+    const role = districtRole[k];
+    const aim = role === "core" ? cores[0].xy
+      : role === "old" ? harbourHead
+        : role === "ind" ? dockAt
+          : roleMid(role);
+    d.focus = [Math.round(aim[0]), Math.round(aim[1])];
+    delete d.focusWant;
+  }
 
   // The land-value surface generateCity will compute, reproduced here so the
   // things that go on top of it — the squares, the railway — can be put where
@@ -917,7 +1493,11 @@ export function islandConfig(seed) {
       return [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
     }), [cx, cy]];
     return probes.every((p) => inRing(p, inner) && distToRing(p, inner) > 14)
-      && parks.every((q) => dist([cx, cy], [q.cx, q.cy]) > (Math.max(w, h) + Math.max(q.w, q.h)) * 0.62);
+      && parks.every((q) => dist([cx, cy], [q.cx, q.cy]) > (Math.max(w, h) + Math.max(q.w, q.h)) * 0.62)
+      // Nor on top of a seam street. Both are obstacles the generator
+      // differences out of the same cells, so a common laid across one comes
+      // out as a green with a road through the middle of it and no way in.
+      && seams.every((q) => !probes.some((p) => inRing(p, rect(q.cx, q.cy, q.w, q.h + 26, q.deg))));
   };
   const placePark = (target, w0, h0, name, want) => {
     for (let shrink = 0; shrink < 4; shrink++) {
@@ -952,18 +1532,24 @@ export function islandConfig(seed) {
   );
   placePark(cores[2].xy, Dp.f(140, 168), Dp.f(84, 104), greenName, null);
 
-  // --- 7. the boulevard ------------------------------------------------------
-  // One street that refuses the grid. Every town on this coast has one and it
-  // is always the oldest road on the map — the track that was there before the
-  // surveyor, running to wherever people were already going. It is drawn as the
-  // longest chord it can make on dry land through the middle of town.
+  // --- 7. the streets that refuse the grid -----------------------------------
+  // The seams come first: they are structural, they are where the plan
+  // reconciles itself, and they are the ones a city names. Then the
+  // boulevards — nought to three of them, drawn back in the plan — each the
+  // longest chord it can make on dry land through somewhere worth going. A
+  // baroque town's second and third avenues are aimed at the OTHER cores, not
+  // at the same one again, which is what makes them a system rather than a
+  // starburst.
   const Db = dice(stream(s, 0xb0d1e));
-  const diagonals = [];
-  {
-    const ang = (coreBearing + Db.f(30, 55) * Db.sign()) * Math.PI / 180;
+  const diagonals = [...seams];
+  const coreBearing = districts[kCore].bearingDeg;
+  for (let b = 0; b < nBoulevard; b++) {
+    const from = cores[Math.min(cores.length - 1, b)].xy;
+    const to = cores[Math.min(cores.length - 1, b + 1)].xy;
+    const seed0 = [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2];
+    const ang = (coreBearing + Db.f(26, 62) * Db.sign()) * Math.PI / 180;
     // bearingDeg is a compass bearing; the map angle of the same line is 90 - it.
     const dir = [Math.cos(Math.PI / 2 - ang), Math.sin(Math.PI / 2 - ang)];
-    const seed0 = [(cores[0].xy[0] + cores[1].xy[0]) / 2, (cores[0].xy[1] + cores[1].xy[1]) / 2];
     const reach = (sgn) => {
       let t = 0;
       for (; t < 900; t += 10) {
@@ -973,14 +1559,18 @@ export function islandConfig(seed) {
       return t;
     };
     const rp = reach(1), rn = reach(-1);
-    if (rp + rn > 420) {
-      diagonals.push({
-        cx: Math.round(seed0[0] + dir[0] * (rp - rn) / 2),
-        cy: Math.round(seed0[1] + dir[1] * (rp - rn) / 2),
-        w: Math.round(rp + rn), h: Math.round(Db.f(24, 28)),
-        deg: +((Math.atan2(dir[1], dir[0]) * R2D + 360) % 360).toFixed(1),
-      });
-    }
+    if (rp + rn <= 420) continue;
+    const cand = {
+      cx: Math.round(seed0[0] + dir[0] * (rp - rn) / 2),
+      cy: Math.round(seed0[1] + dir[1] * (rp - rn) / 2),
+      w: Math.round(rp + rn), h: Math.round(Db.f(22, 30)),
+      deg: +((Math.atan2(dir[1], dir[0]) * R2D + 360) % 360).toFixed(1),
+    };
+    // Two boulevards a hundred metres apart at the same angle is one boulevard
+    // drawn twice; a crossing is what makes the pair read as a plan.
+    if (diagonals.some((q) => dist([q.cx, q.cy], [cand.cx, cand.cy]) < 200
+      && Math.abs(fold(q.deg - cand.deg)) < 18)) continue;
+    diagonals.push(cand);
   }
 
   // --- 8. the working waterfront ---------------------------------------------
@@ -1236,6 +1826,16 @@ export function islandConfig(seed) {
       keys: districtKeys,
       display: disp,
       nDistricts,
+      // WHAT THE PLAN ACTUALLY SAID, so a harness can ask the island what it
+      // thinks it is instead of inferring it from a picture. Nothing reads
+      // these; they exist to be measured across seeds.
+      arrangement,
+      surveys: SURVEY.map((v) => ({ bearing: +v.bearing.toFixed(1), aspect: +v.aspect.toFixed(2), pitch: Math.round(v.pitch) })),
+      kinds: Object.fromEntries(Object.entries(districts).map(([k, d]) => [k, d.kind])),
+      lotways: Object.fromEntries(Object.entries(districts).map(([k, d]) => [k, d.lot ? d.lot.join("/") : "flavour"])),
+      seams: seams.length,
+      boulevards: diagonals.length - seams.length,
+      organicTown,
       smoothed: C.smoothed,
       rung: C.rung,
       depth: C.depth,

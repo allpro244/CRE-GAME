@@ -41,6 +41,8 @@
 // There is no calibration in it to be too strict about — it is the same shape
 // as `pnpm conserve`, an identity rather than a band, and it is the only
 // letter that still fails a build. That is why `pnpm gate` runs this file.
+import { assertFreshBundle } from "./fresh.mjs";
+assertFreshBundle();
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeSuite } from "./accept-lib.mjs";

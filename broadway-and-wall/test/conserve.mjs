@@ -31,6 +31,8 @@
 // It is a MEASUREMENT, not a runtime assertion. It belongs in the harnesses
 // where it can run a hundred thousand months, not in the tick where it would
 // cost every player a reconciliation they did not ask for.
+import { assertFreshBundle } from "./fresh.mjs";
+assertFreshBundle();
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));

@@ -2076,10 +2076,30 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
         // time, and a third. See sellToOutsider.
         sellToOutsider(s, li.bbl, li.ask);
         recordComp(s, rec, li.ask, b, "a listed seller", li.distress, initialCondition(rec));
-        if (rng(s) < 0.5) {
+        // THE TAPE IS NOT NEWS. Measured over 25 years, "Sold: X went to a 1031
+        // buyer at $Y" was the single most common line in the paper — 23.6 news
+        // items a year and ordinary trades were the largest bucket of them,
+        // which buries the sector turn and the bank failure that actually
+        // matter. Nothing is lost by dropping them: `recordComp` above files
+        // every one of these on the comps tape, which is where a buyer reads
+        // closed prices anyway, and it is the tape that prices the market.
+        //
+        // Two kinds of trade stay news, and they are the two a principal would
+        // actually be told about. One you have a stake in: somebody just set a
+        // price in a submarket where you own something, which is the comp your
+        // own building will be marked against. And one that is a RECORD — the
+        // biggest number the market has seen lately, which is news in any town.
+        const mine = Object.keys(s.holdings).some((b2) => {
+          const r2 = resolveRec(parcels, s, b2);
+          return r2 && r2.district === rec.district;
+        });
+        const record = !(s.comps ?? []).some((c) => c.bbl !== li.bbl && c.price > li.ask);
+        if (mine || record) {
           s.news.unshift({
             q: s.month, kind: "info",
-            text: `Sold: ${rec.address} went to ${b} at $${(li.ask / 1e6).toFixed(2)}M.`,
+            text: record && !mine
+              ? `A record: ${rec.address} went to ${b} at $${(li.ask / 1e6).toFixed(2)}M, the largest trade on the tape.`
+              : `Sold in ${rec.district}: ${rec.address} went to ${b} at $${(li.ask / 1e6).toFixed(2)}M — a comp your own building will be read against.`,
           });
         }
       }

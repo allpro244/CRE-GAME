@@ -2295,12 +2295,23 @@ export function tickCityGrowth(
     // matures — counting them again on delivery would double the building.
     bumpLand(s, j.bbl, 1.05);
     for (const nb of adjacency?.[j.bbl] ?? []) bumpLand(s, nb, 1.03);
-    if (!j.firmId && rng(s) < 0.55) {
+    // AND AN ORDINARY BUILDING OPENING IS NOT NEWS EITHER. Same reasoning as
+    // the sale line in actions.ts: the city delivers 115-150 buildings in fifty
+    // years and printing every one of them crowds out the paper. What stays is
+    // what a principal would be told — supply landing in a submarket where you
+    // own something and will be competing with it for tenants, or a building
+    // tall enough to be the tallest thing anyone has put up lately.
+    const near = Object.keys(s.holdings).some((b2) => {
+      const r2 = resolveRec(parcels, s, b2);
+      return r2 && r2.district === rec.district;
+    });
+    const tall = j.floors >= 8 && !(s.cityJobs ?? []).some((o) => o.bbl !== j.bbl && (o.floors ?? 0) > j.floors);
+    if (!j.firmId && (near || tall)) {
       s.news.unshift({
         q: s.month, kind: "info",
-        text: j.floors >= 8
-          ? `A ${j.floors}-story ${j.use} building opened at ${rec.address}.`
-          : `New ${j.use} construction delivered at ${rec.address}.`,
+        text: near
+          ? `${j.floors} floors of ${j.use} opened at ${rec.address}, in ${rec.district} — that is space competing with yours.`
+          : `A ${j.floors}-story ${j.use} building opened at ${rec.address}, the tallest thing to top out in a while.`,
       });
     }
   }

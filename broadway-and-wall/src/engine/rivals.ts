@@ -1032,7 +1032,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   }
   if (!best) return;
   const { bbl, rec } = best;
-  let use = useForZone(rec.zoneDist, rec.demandScore, rng(s));
+  let use = useForZone(rec.zoneDist, rec.demandScore, rng(s), s.econ);
   // Shops do not stack, and a corner that carries twenty floors does not get a
   // two-storey shop on it — it gets shops at grade with something above.
   if (use === "retail" && retailWantsMixed(rec)) use = "mixed";

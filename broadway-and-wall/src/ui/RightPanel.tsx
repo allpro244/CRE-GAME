@@ -1890,9 +1890,16 @@ function BlindBidDesk({ bbl, appr, value }: { bbl: string; appr: Approach; value
   if (cold) {
     return (
       <>
+        {/* Which sentence is true depends on whether the player ever bid. It
+            says "you never put one in" only when probes is 0 — the record
+            knows, and a panel that told a player who bid four times that they
+            never bid would be reading the wrong field out loud. */}
         <div className="hint">
-          They asked you for a number and you never put one in. That conversation is cold — six months is
-          as long as anybody holds a door open for a buyer who is thinking about it.
+          {probes > 0
+            ? `You bid ${appr.lastBid ? usd(appr.lastBid) : "once"} and never went back.`
+            : "They asked you for a number and you never put one in."}
+          {" "}That conversation is cold — six months is as long as anybody holds a door open for a buyer
+          who is thinking about it.
         </div>
         <div className="btn-row">
           <button className="btn" onClick={() => useStore.getState().approach(bbl)}>Ring them again</button>

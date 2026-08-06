@@ -1100,6 +1100,15 @@ export interface Econ {
   // what was standing on day one — the anchor the demand target is measured
   // against, so a century of building does not drag the target along with it
   baseStock?: Record<BuiltClass, number>;
+  // ...and the same thing FROZEN, because baseStock is not frozen: the
+  // sector-exit ratchet in market.ts writes it down as tenants are priced out
+  // and never return. The difference between the two IS how much of a sector
+  // has left the city, and the city's zoning has to be able to read it — land
+  // zoned for an industry that is half gone does not stay zoned for it.
+  // Optional so a save written before this existed still loads; absent, no
+  // sector has left as far as the zoning is concerned, which is the old
+  // behaviour exactly.
+  baseStock0?: Record<BuiltClass, number>;
   occupied: Record<BuiltClass, number>;
   cityVac: Record<BuiltClass, number>;
   absorb12: Record<BuiltClass, number>;   // trailing 12-month net absorption, sf

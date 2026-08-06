@@ -6,7 +6,7 @@
 // loan, wait 4-6 quarters while the building rises on the map, then lease up
 // from empty. A modest random cost/schedule overrun keeps it honest.
 import type { ParcelTable } from "@/data/types";
-import type { BuiltClass, Contract, DevUse, Development, GameState, UseMix } from "./types";
+import type { BuiltClass, Contract, DevUse, Development, Econ, GameState, UseMix } from "./types";
 import { BUILT_CLASSES } from "./types";
 import { logBooks, monthLabel, serviceSpec, planSpec } from "./types";
 import { demandNow } from "./demand";
@@ -1912,12 +1912,71 @@ export function cityInfillCap(
   return Math.max(2, Math.min(Math.max(1, datum) + step, physicalMaxFloors(rec.lotArea * 0.62)));
 }
 
-export function useForZone(zone: string, demand: number, r: number): DevUse {
-  if (zone.startsWith("M")) return "industrial";
+/**
+ * WHAT GETS BUILT HERE — AND THE CITY REZONES WHEN A SECTOR LEAVES.
+ *
+ * This was five lines of pure zoning, and the first one, `M -> industrial`,
+ * was a life sentence: a cleared lot on M-zoned land rebuilt an industrial
+ * building forever, however much industry was left in the town.
+ *
+ * That is the missing half of the sector-exit ratchet in market.ts, and it was
+ * the expensive half. The ratchet models tenants being priced out and never
+ * coming back — measured over 50 years it takes the demand anchor to 0.63x for
+ * office, 0.62x for industrial and 0.78x for retail — while the buildings they
+ * left go on standing and the city goes on replacing them in kind. Office stock
+ * reached 1.38x against demand of 0.63x. A 2.2x permanent overhang impairs every
+ * landlord in the class for good, which is most of why 90% of rival firms died
+ * and the street fell from 31 firms to 9.
+ *
+ * The ratchet's own comment cites the right fact and the code implemented half
+ * of it: New York, San Francisco and London each lost more than half their
+ * manufacturing FLOOR SPACE between 1970 and 2010. The floor space left. It was
+ * converted and rebuilt — Long Island City, Williamsburg, the Brooklyn
+ * waterfront, SoMa, the Docklands — because when the industry went, the city
+ * rezoned the land it had been sitting on. None of it was kept zoned for
+ * manufacturing and held empty for forty years.
+ *
+ * SO THE REZONED SHARE IS THE SECTOR-EXIT SHARE. Not a new constant: the same
+ * quantity the ratchet already wrote down, read back. A sector that has lost a
+ * third of its demand has a third of its land rezoned as that land turns over.
+ * With nothing shed the weights below reduce to exactly the old thresholds, so
+ * this is a strict generalisation of what was here.
+ *
+ * WHERE THE REZONED LAND GOES is multifamily, and that is the mechanism being
+ * right rather than a preference. Housing is the one class the ratchet exempts,
+ * for the reason stated there: people priced out of a city's housing leave and
+ * the housing does not — demand for shelter in a place is not a footprint that
+ * can relocate. So it is the one demand still standing when a sector goes, and
+ * it is what the lofts, the warehouses and the emptied office floors became.
+ */
+export function useForZone(zone: string, demand: number, r: number, e?: Econ): DevUse {
+  // The share of a sector that has structurally left. Capped below 1 because a
+  // city never rezones the last of anything — somebody still needs a garage.
+  const gone = (k: BuiltClass) => {
+    const b0 = e?.baseStock0?.[k], b = e?.baseStock?.[k];
+    return b0 && b ? clamp(1 - b / b0, 0, 0.8) : 0;
+  };
+  const here = (k: BuiltClass) => 1 - gone(k);
+  // Weighted pick over [0,1), so a class's mass shrinks by exactly what has
+  // left and the remainder falls to housing. One draw, same as before.
+  const pick = (w: [DevUse, number][]): DevUse => {
+    const total = w.reduce((t, [, x]) => t + x, 0);
+    let acc = 0;
+    for (const [use, x] of w) { acc += x / total; if (r < acc) return use; }
+    return w[w.length - 1][0];
+  };
   if (zone.startsWith("R")) return "multifamily";
-  if (demand > 70) return r < 0.55 ? "office" : r < 0.85 ? "mixed" : "retail";
-  if (demand > 45) return r < 0.4 ? "mixed" : r < 0.8 ? "multifamily" : "retail";
-  return r < 0.7 ? "multifamily" : "retail";
+  if (zone.startsWith("M")) {
+    return pick([["industrial", here("industrial")], ["multifamily", gone("industrial")]]);
+  }
+  if (demand > 70) {
+    return pick([["office", 0.55 * here("office")], ["mixed", 0.30], ["retail", 0.15 * here("retail")],
+                 ["multifamily", 0.55 * gone("office") + 0.15 * gone("retail")]]);
+  }
+  if (demand > 45) {
+    return pick([["mixed", 0.40], ["multifamily", 0.40 + 0.20 * gone("retail")], ["retail", 0.20 * here("retail")]]);
+  }
+  return pick([["multifamily", 0.70 + 0.30 * gone("retail")], ["retail", 0.30 * here("retail")]]);
 }
 
 /**
@@ -2037,9 +2096,28 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     if (!worst || ratio > worst.ratio) worst = { bbl, rec, ratio };
   }
   if (!worst) return;
-  // ...and it only happens when somebody would actually build the replacement.
-  if (rng(s) > 0.62 * devPencils(e)) return;
   const { rec, ratio } = worst;
+  // WHAT WOULD GO UP HERE IS DECIDED BEFORE THE BUILDING COMES DOWN, because
+  // the only question that licenses a teardown is whether the REPLACEMENT
+  // pencils, and that is a question about the replacement's class.
+  //
+  // This read `devPencils(e)` — and the signature is `devPencils(e, k =
+  // "office")`, so the whole city's wrecking ball was gated on office
+  // economics by an accident of a default argument. A glut in one class
+  // therefore froze the recycling of every other, which is the wire running
+  // backwards: a glut should raise the pressure to clear obsolete space, not
+  // switch off the only mechanism that can clear it. Measured by decade over
+  // five seeds, teardowns tracked office pencilling and nothing else —
+  //
+  //   teardowns          66.2  24.6  37.8  66.6  12.2
+  //   devPencils(office)  1.22  0.48  0.72  1.38  0.22
+  //
+  // — while industrial demand fell to 0.62x with its stock sitting at 1.04x,
+  // untouched, because office happened to be soft at the time.
+  const yr0 = 2000 + Math.floor(s.month / 12);
+  const nextUse = useForZone(rec!.zoneDist ?? "C", rec!.demandScore, rng(s), e);
+  const lead = dominantOf(devMix(nextUse));
+  if (rng(s) > 0.62 * devPencils(e, lead)) return;
   const bbl = rec!.bbl;
   const sf = rec!.bldgArea;
   const cls = rec!.class as BuiltClass;
@@ -2067,9 +2145,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // the entire reason the old building came down — and it is bound by the same
   // cornice datum and per-use floor caps every other city job respects, so a
   // three-storey town does not sprout a tower on one cleared lot.
-  const yr = 2000 + Math.floor(s.month / 12);
-  const nextUse = useForZone(rec!.zoneDist ?? "C", rec!.demandScore, rng(s));
-  const lead = dominantOf(devMix(nextUse));
+  const yr = yr0;
   const farMax = farMaxFor(rec!);
   // A redevelopment goes bigger than what it replaced — that is the arithmetic
   // that condemned the old building — but HOW MUCH BIGGER IS A MARKET
@@ -2307,7 +2383,7 @@ export function tickCityGrowth(
     if (!best) continue;
     const { bbl, rec } = best;
     const dNow = demandNow(s, rec);
-    let use = useForZone(rec.zoneDist, dNow, rng(s));
+    let use = useForZone(rec.zoneDist, dNow, rng(s), s.econ);
     // A corner that carries twenty floors does not get a two-storey shop on
     // it: it gets shops at grade with something above them.
     if (use === "retail" && retailWantsMixed(rec)) use = "mixed";

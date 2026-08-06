@@ -293,6 +293,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     employIdx: 1,
     stock: { ...CITY },
     baseStock: { ...CITY },
+    baseStock0: { ...CITY },
     occupied: {
       office: CITY.office * (1 - NATURAL_VAC.office),
       retail: CITY.retail * (1 - NATURAL_VAC.retail),

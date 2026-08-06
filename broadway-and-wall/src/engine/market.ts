@@ -936,8 +936,38 @@ export function tickEcon(s: GameState) {
   // with people to spare, and nothing at all against the unemployment floor.
   const slack = clamp((((e.unemployment ?? 0.055) - 0.018) / 0.04), 0, 1);
   const overCost = Math.max(0, costOfSpace - 1);
+  // AND THE CHEAP SIDE IS FAR SMALLER THAN THE DEAR SIDE, because leaving is
+  // easier than arriving.
+  //
+  // This ran at (1 - costOfSpace) * 0.0022 capped at 0.0016/month — up to
+  // 1.9%/yr of employment growth, sustained, purely because rents were low.
+  // That is a whole city's trend growth rate arriving from a property glut,
+  // and it inverted the macro loop: a glut cut rents, cheap rents pulled firms
+  // in, employment rose, the labour market tightened, and the CENTRAL BANK
+  // RAISED INTO A PROPERTY BUST.
+  //
+  // Measured through sim:accept H over 30 seeds: glut-attributable drift in
+  // the loan index of +0.79pp against a +0.50 bar, of which the term premium
+  // accounted for -0.06pp and the policy rate for +1.24pp. The spread was
+  // innocent; the rate was doing it, and this is why.
+  //
+  // Two things are wrong with the old number and only one of them is size.
+  //
+  // SIZE: rent is roughly 7% of an office employer's cost base, so even a 50%
+  // rent collapse is a ~3.5% saving on total costs. The employment response to
+  // that is a few tenths of a per cent a year, not two per cent.
+  //
+  // SHAPE: relocation is ASYMMETRIC and well documented as such. A firm priced
+  // out of a city leaves on its own schedule; a firm tempted by cheap space
+  // has to want to be here for other reasons first, and mostly does not move
+  // at all. So the dear side keeps its magnitude and the cheap side gets about
+  // a fifth of it. Cheap space still ends a glut — that mechanism is real and
+  // stays — it just no longer ends it by turning a bust into a hiring boom.
+  //
+  // Houston in the 1980s and New York in the early 1990s both had office
+  // gluts AND job losses. Nowhere has had a glut-driven employment boom.
   const spacePull = costOfSpace <= 1
-    ? clamp((1 - costOfSpace) * 0.0022, 0, 0.0016) * slack
+    ? clamp((1 - costOfSpace) * 0.0005, 0, 0.00035) * slack
     : Math.max(-0.0035, -(overCost * 0.0012 + overCost * overCost * 0.0016));
   // A national recession costs this city jobs whether or not the local property
   // cycle has caught up to it yet — payrolls are cut at head office.

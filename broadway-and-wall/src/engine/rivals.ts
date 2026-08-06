@@ -1784,22 +1784,34 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // player's own default runs on — NOTICE_M to cure, FORECLOSE_M once they
     // have filed. There is not one foreclosure calendar for you and a
     // different invented one for them.
-    // A FIRM WITH NOTHING LEFT TO SELL AND MONEY STILL OWED IS FINISHED.
+    // AND A FIRM WITH NOTHING LEFT TO SELL GOES ON THE SAME CLOCK, NOT OFF A
+    // CLIFF.
     //
-    // The stress path only ran while there were buildings to sell, and the
-    // `else` reset the counter — so a firm that had sold its way down to zero
-    // assets and residual debt escaped the failure test forever. It sat on the
-    // street table at 900% leverage with no buildings, permanently one bad
-    // cycle from being a seller it could never be.
-    if (!r.bbls.length && r.debt > Math.max(0, r.cash)) {
-      r.failedM = s.month;
-      chargeSponsorFailure(s, parcels, r);
-      s.news.unshift({
-        q: s.month, kind: "warn",
-        text: `${r.name} is done. They sold the last building months ago and the debt outlived the portfolio — there is nothing for the receiver to take.`,
-      });
-      continue;
-    }
+    // This used to strike a firm off the month its book emptied and its debt
+    // exceeded its cash — no notice period, no cure, no missed payment. It was
+    // written to close a real hole (a bookless firm escaped the old stress test
+    // forever, because that test only ran while there were buildings to sell),
+    // and it closed it by inventing a second way to die that the paragraph
+    // above says does not exist.
+    //
+    // Measured, 6 seeds x 100 years with the world kept alive: 135 deaths, 75
+    // through the notice-and-foreclose calendar and 60 — 44% — through that
+    // line. THIRTY-THREE of those 60 had `stressMs === 0`: they had never
+    // missed a payment. The route was direct, because deed-in-lieu fires while
+    // a firm is current: 357 of 505 handbacks happened with cash at or above
+    // zero, 105 of them on a firm holding exactly one building. Give the last
+    // building back at a balloon and this line struck you off the same month.
+    //
+    // Swapping "your LTV got high" for "your book got small" is not what was
+    // asked for, and the old test at least gave thirty months.
+    //
+    // A borrower with no collateral and money still owed is not dead. He is
+    // unsecured, and unsecured debt is collected on a calendar: the same
+    // NOTICE_M to cure and FORECLOSE_M to file that everyone else gets. With no
+    // buildings there is no NOI, so interest and amortisation drain the account
+    // every month (see the debt service above, which is charged whether or not
+    // anything is standing) — the clock still runs out, and quickly. It is now
+    // legible as a wind-up rather than a disappearance.
     // THE REVOLVER.
     //
     // A cash shortfall is not a failure while there is room on the book, and
@@ -1821,7 +1833,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // A NEGATIVE BALANCE AFTER THE LINE IS A MISSED PAYMENT. Not a mark, not a
     // covenant — money that was owed this month and did not go out. That is
     // the only thing that starts a clock in this business.
-    if (r.cash < 0 && r.bbls.length) {
+    if (r.cash < 0) {
       r.stressMs = (r.stressMs ?? 0) + 1;
       // 1. RING THE INVESTORS FIRST, because a protective call is cheaper than
       //    anything else on this list and it is what actually happens. A
@@ -1837,7 +1849,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       }
       // 2. SELL SOMETHING. The one that covers the hole, not one drawn out of a
       //    hat — see marketAssetToRaise for what the old random pick cost.
-      if (r.cash < 0 && r.stressMs % 2 === 0) {
+      if (r.cash < 0 && r.stressMs % 2 === 0 && r.bbls.length) {
         marketAssetToRaise(s, parcels, r, need);
       }
       // 3. HAND ONE BACK once the desks have filed. This is the move that stops
@@ -1847,7 +1859,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       //    only ever accelerate. Giving the keys back removes the asset AND the
       //    loan AND the interest on it in one move, and on non-recourse paper
       //    the shortfall stops being the borrower's problem at the door.
-      if (r.stressMs === NOTICE_M || r.stressMs === NOTICE_M * 2) {
+      if ((r.stressMs === NOTICE_M || r.stressMs === NOTICE_M * 2) && r.bbls.length) {
         deedInLieu(s, parcels, r, `They have missed ${r.stressMs} months of debt service and could not cure.`);
       }
       // 4. AND WHEN THE CALENDAR RUNS OUT, the desks stop taking assets one at
@@ -1857,8 +1869,11 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         chargeSponsorFailure(s, parcels, r);
         s.news.unshift({
           q: s.month, kind: "warn",
-          text: `${r.name} is finished — ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"} go to the lenders. `
-            + `They have not made a payment in ${r.stressMs} months, the partners stopped answering and no desk would extend again. The receiver will be selling for years.`,
+          text: r.bbls.length
+            ? `${r.name} is finished — ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"} go to the lenders. `
+              + `They have not made a payment in ${r.stressMs} months, the partners stopped answering and no desk would extend again. The receiver will be selling for years.`
+            : `${r.name} is wound up. They handed back the last building months ago and went on paying interest on what was left until they could not — `
+              + `${r.stressMs} months in arrears with nothing behind it, and no collateral for the receiver to take.`,
         });
       }
     } else if (r.stressMs) {

@@ -1,17 +1,23 @@
 // WHICH CITY, AND WHICH ONE OF IT.
 //
-// Two islands ship — New Alden and Kestrel Point — and each one is a different
-// game: an open grid with a hinterland behind it, and a peninsula where
-// frontage is the scarce thing. That choice lives in localStorage and switching
-// reloads the page, because the map sources, the parcel table and the autosave
-// slot all key off it, and a clean reload is honest where hot-swapping five
-// data feeds is not.
+// Two islands are drawn — New Alden and Kestrel Point — and each one is a
+// different game: an open grid with a hinterland behind it, and a peninsula
+// where frontage is the scarce thing. The third, `somewhere`, is not drawn at
+// all: island.mjs generates its coast, its districts and its names from the
+// run's seed. That choice lives in localStorage and switching reloads the page,
+// because the map sources, the parcel table and the autosave slot all key off
+// it, and a clean reload is honest where hot-swapping five data feeds is not.
 //
-// THE SEED IS THE SECOND HALF OF THE ADDRESS. The island is fixed; the town on
-// it is generated from a number, and that number decides every block, every
-// lot line, every building. So a city is `(island, seed)` and both halves have
-// to be remembered — a browser refresh must land you back in YOUR city with
-// your campaign, and only starting a new run should roll a new one.
+// THE SEED IS THE SECOND HALF OF THE ADDRESS. On the drawn islands the island
+// is fixed and the seed decides every block, every lot line and every building
+// on it. On the generated one the seed decides the coastline as well — which
+// changes nothing about the bookkeeping here, and that is the point: a city is
+// `(island, seed, size)` either way, and every one of those has to survive a
+// reload or a deed in a save points at a parcel that no longer exists.
+//
+// Nothing below knows which kind of island it is holding an id for, and nothing
+// below should. That is what makes `somewhere` a third entry rather than a
+// second code path.
 import { randomSeed } from "@/citygen/index.mjs";
 
 export interface CityInfo { id: string; name: string; tagline: string; lots: number }

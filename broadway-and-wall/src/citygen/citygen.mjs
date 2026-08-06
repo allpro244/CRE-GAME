@@ -81,7 +81,11 @@ export function inRing(p, ring) {
   return inside;
 }
 
-function offsetInward(ring, d) {
+// Exported for island.mjs, which has to ask "is this core / park / station on
+// dry ground" against THE SAME inset ring the generator builds its blocks from.
+// Answering it with a private copy of this would be a second opinion, and two
+// answers to one question is how a station ends up in the water.
+export function offsetInward(ring, d) {
   const c = centroid(ring);
   return ring.map((p, i) => {
     const a = ring[(i - 1 + ring.length) % ring.length];

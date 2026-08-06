@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { currentCity, currentSize, currentDev } from "@/state/city";
-import { cityList, sizeList, developmentList } from "@/citygen/index.mjs";
+import { cityList, cityName, sizeList, developmentList } from "@/citygen/index.mjs";
 import { usd } from "./format";
 
 /**
@@ -54,6 +54,14 @@ export default function StartMenu() {
   };
 
   const islandName = (id: string) => islands.find((c) => c.id === id)?.name ?? id;
+  // A SAVED TOWN IS NAMED, even the generated one. The picker entry for a
+  // procedural island can only say "Somewhere else", because the seed is not
+  // rolled until Break ground is pressed and there is nothing yet to name. A
+  // campaign is different: it carries the seed it was built from, so the
+  // Continue row can say what the place is actually called rather than offering
+  // to resume "Somewhere else", which is not where anyone has spent twenty
+  // years.
+  const townName = (id: string, seed: number) => cityName(id, seed) || islandName(id);
   const sizeName = sizes.find((s) => s.id === size)?.name ?? "City";
   const devName = devs.find((d) => d.id === dev)?.name ?? "Young town";
   // Starting a run on an island takes that island's autosave slot. Say so
@@ -100,7 +108,7 @@ export default function StartMenu() {
                   <span className="start-continue-l">
                     <span className="start-continue-head">Continue</span>
                     <span className="start-continue-town">
-                      {islandName(resume.island)}
+                      {townName(resume.island, resume.seed)}
                       <span className="start-continue-dim">
                         {" · "}{sizes.find((s) => s.id === resume.size)?.name ?? resume.size}
                         {" · "}{devs.find((d) => d.id === resume.dev)?.name ?? resume.dev}
@@ -188,7 +196,7 @@ export default function StartMenu() {
           <span className="start-foot-town">{islandName(island)} · {sizeName} · {devName}</span>
           {overwrites ? (
             <span className="start-foot-warn">
-              Erases the campaign in {islandName(overwrites.island)} — {monthLabel(overwrites.month)}, year {Math.floor(overwrites.month / 12) + 1}.
+              Erases the campaign in {townName(overwrites.island, overwrites.seed)} — {monthLabel(overwrites.month)}, year {Math.floor(overwrites.month / 12) + 1}.
             </span>
           ) : (
             <span className="start-foot-note">$6M and no holdings. The town is generated when you press this.</span>

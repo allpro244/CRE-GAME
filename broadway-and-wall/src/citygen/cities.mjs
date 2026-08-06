@@ -11,7 +11,10 @@
 
 // A cut through (px, py) travelling at `deg` (0 = east, 90 = north).
 // `neg` is the LEFT-HAND side of that travel; `pos` is the right.
-const cut = (px, py, deg) => {
+// Exported because island.mjs writes its partitions with it too — a generated
+// island's district plan has to be the same kind of object as a hand-drawn
+// one's, and that starts with being cut by the same helper.
+export const cut = (px, py, deg) => {
   const t = (deg * Math.PI) / 180;
   const nx = Math.sin(t), ny = -Math.cos(t);
   return [nx, ny, px * nx + py * ny];
@@ -309,6 +312,12 @@ export function scaleCity(cfg, k) {
     esplanade: cfg.esplanade * k,
     // `w` on a core is a WEIGHT, not a width — it stays.
     cores: cfg.cores.map((c) => ({ ...c, xy: pt(c.xy, k), r: c.r * k })),
+    // A stated lighthouse is a POSITION on the coast, so it moves with the
+    // coast. Neither authored island sets one — generateCity falls back to the
+    // furthest coast vertex — so this had never been wrong in play; a
+    // generated island does set one, and at "Great City" it would otherwise
+    // have stood half a mile inland with the town built around it.
+    lighthouse: cfg.lighthouse ? pt(cfg.lighthouse, k) : cfg.lighthouse,
     partition: scaleCuts(cfg.partition, k),
     // districts deliberately untouched — see the note above.
     parks: (cfg.parks ?? []).map(box),

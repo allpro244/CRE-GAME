@@ -232,6 +232,62 @@ export const productById = (id: string): LoanProduct => PRODUCTS.find((p) => p.i
 
 const REFI_FEE = 0.01;
 
+/**
+ * WHAT TODAY'S MARKET DOES TO A DESK'S STATED ADVANCE RATE.
+ *
+ * Two things move it and they move together: the credit window (spreads widen,
+ * advance rates come down) and THIS desk's own capital, which is the reason a
+ * crunch has a name on it rather than being weather. Both were already in
+ * `quote`; they are lifted out here because the street's refinancings have to
+ * be underwritten by the same rule the player's are, and a second copy of this
+ * arithmetic living in rivals.ts would be the same quantity with two answers.
+ *
+ * `ease` is the hometown bank cutting a friend slack in a crunch — see the
+ * crunchEase term at the only call site that passes it.
+ */
+export function advanceFactor(s: GameState, lender: string, ease = 1): number {
+  const tight = Math.max(0, 1 - (s.econ.creditIdx ?? 1));
+  const app = lenderAppetite(s, lender);
+  return (1 - 0.30 * tight * ease) * Math.min(1.02, 0.55 + 0.45 * app);
+}
+
+/**
+ * WHAT THE MARKET WILL REFINANCE FOR A BORROWER WHO IS NOT YOU.
+ *
+ * A firm on this street with a balloon landing walks the same desks your own
+ * balloon walks — the regional, the hometown bank, then hard money — and is
+ * sized on the same three tests: advance rate against today's value, coverage
+ * against today's income, and debt yield. It reads the same live lender
+ * appetite, so when a desk is impaired the street cannot refinance either, and
+ * that is the whole point of giving the banks books.
+ *
+ * The two things it does NOT apply are the two that are facts about the PLAYER
+ * rather than about lending: `sponsorStanding`, which is your record and not
+ * theirs, and the single-name concentration test, which is measured against
+ * what this desk has lent to YOU. Hold size is skipped for the same reason — a
+ * firm's book is spread across desks and is not one asset.
+ *
+ * `maxLtv` is the borrower's own covenant, a ceiling on top of whatever the
+ * market would otherwise write.
+ */
+export function streetRefiProceeds(
+  s: GameState, value: number, noiYr: number, maxLtv: number,
+): { principal: number; binding: string; lender: string } {
+  let best = 0, binding = "advance rate", lender = "";
+  for (const p of ["savings", "harbor", "cordage"].map(productById)) {
+    if (!windowOpen(s, p)) continue;
+    const q = quote(s, p, value, noiYr, undefined, true);
+    const pr = Math.min(q.principal, Math.round(maxLtv * value));
+    if (pr > best) {
+      best = pr;
+      binding = pr < q.principal ? "their own covenant"
+        : q.dyConstrained ? "debt yield" : q.dscrConstrained ? "coverage" : "advance rate";
+      lender = p.lender;
+    }
+  }
+  return { principal: Math.round(Math.max(0, best)), binding, lender };
+}
+
 /** Whether this desk will look at you at all today. */
 export function productOpen(s: GameState, p: LoanProduct): boolean {
   if (sponsorStanding(s).institutional) return true;
@@ -278,7 +334,14 @@ export interface Quote {
   holdCapped?: boolean;
 }
 
-export function quote(s: GameState, product: LoanProduct, price: number, noiYr: number, klass?: string): Quote {
+/**
+ * `street` sizes the loan for a borrower who is not the player: the sponsor
+ * record and the single-name concentration test both drop out, because both
+ * are measured against YOU. See streetRefiProceeds, the only caller that sets
+ * it. Everything else — the window, the desk's appetite, the three tests — is
+ * the same arithmetic, because it is the same credit market.
+ */
+export function quote(s: GameState, product: LoanProduct, price: number, noiYr: number, klass?: string, street = false): Quote {
   // Capital availability moves the terms, not just the index. When the credit
   // window closes, spreads widen, advance rates come down and the desk
   // underwrites to a fatter coverage — all at once, which is what makes a
@@ -289,25 +352,26 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   // follows you everywhere) and the file at THIS desk — quiet, performing
   // paper with one lender is worth up to 40bps with that lender and nothing
   // anywhere else, which is why real borrowers go back to the same banks.
-  const st = sponsorStanding(s);
-  const rel = relDiscount(s, product);
+  const st = street ? { advanceCut: 0, spreadAdd: 0 } : sponsorStanding(s);
+  const rel = street ? 0 : relDiscount(s, product);
   // the hometown bank cuts its friends slack in a crunch instead of cutting them off
-  const crunchEase = product.id === "harbor" && lenderRelOf(s, product.lender) >= 55 ? 0.5 : 1;
+  const crunchEase = !street && product.id === "harbor" && lenderRelOf(s, product.lender) >= 55 ? 0.5 : 1;
   // THIS DESK'S OWN BALANCE SHEET, not the city's. A lender that has just
   // charged off a year of bad property loans rations everybody — including
   // the borrower who did nothing wrong — and a flush one stretches. Read it
   // on Research: the appetite number here is the same number shown there, a
   // quarter before it shows up in a quote.
   const app = lenderAppetite(s, product.lender);
-  const appMult = Math.min(1.02, 0.55 + 0.45 * app);
-  const conc = concentrationRoom(s, product, klass);
+  const conc = street ? { mult: 1, capRoom: Infinity, why: undefined as string | undefined } : concentrationRoom(s, product, klass);
   const ratePct = +(s.econ.indexRate + product.spread * (1 + 1.1 * tight * crunchEase) + 0.9 * tight * crunchEase
     + Math.max(0, 1 - app) * 0.8 + st.spreadAdd - rel).toFixed(2);
   const byLtv = Math.min(conc.capRoom,
-    product.ltv * (1 - 0.30 * tight * crunchEase) * (1 - st.advanceCut) * appMult * conc.mult * price);
+    product.ltv * advanceFactor(s, product.lender, crunchEase) * (1 - st.advanceCut) * conc.mult * price);
   // a desk that is not in the market for this deal quotes nothing at all
   if (!windowOpen(s, product)) return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why };
-  if (product.maxLoan && byLtv > product.maxLoan) {
+  // A HOLD SIZE IS A LIMIT ON ONE ASSET. The street's books are spread across
+  // desks and are not one asset, so the size tests are skipped for them.
+  if (!street && product.maxLoan && byLtv > product.maxLoan) {
     // they participate up to the hold size rather than walking — a smaller
     // check from a lender who wants the file is still a real quote.
     //
@@ -325,7 +389,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
       holdCapped: true,
     };
   }
-  if (product.minLoan && byLtv < product.minLoan) return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why };
+  if (!street && product.minLoan && byLtv < product.minLoan) return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why };
   // A site produces no income, so a coverage test would size every land loan
   // at zero. This one is underwritten on the dirt alone, which is why it is
   // half-leverage, short, and comes with a guarantee.

@@ -43,6 +43,30 @@ const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
 const NOTICE_M = 6;        // the cure period
 const FORECLOSE_M = 8;     // once they have filed
 
+/**
+ * IS THIS DESK IN A MOOD TO EXTEND ANYBODY — the borrower-independent half of
+ * `workoutMood`.
+ *
+ * A bank with capital would far rather carry a performing loan than own a
+ * building; one that is impaired has a regulator reading the same balance
+ * sheet it is. That test is about the LENDER, and it is the same test whether
+ * the borrower is the player or a firm on the street — so it lives here once
+ * and both callers read it. `rel` is the borrower's file with the desk, which
+ * only matters in the middle band where the desk is stretched but not broken.
+ *
+ * Measured before it had a second caller: over 24,000 lender-months the desks
+ * sit below their capital target 25.4% of the time and below 0.7x target 5.5%,
+ * so an extension is usually available and is not available in exactly the
+ * years everybody needs one. That is the shape a refinancing cliff needs.
+ */
+export function deskWillExtend(s: GameState, lenderName: string, rel = 20): boolean {
+  const l = lenderByName(s, lenderName);
+  if (!l || l.failedM !== undefined) return false;   // a receiver liquidates; it does not extend
+  const cr = capitalRatio(l);
+  const healthy = cr > 0.075 && l.delinquent < 0.06;
+  return healthy || (cr > 0.05 && rel > 45);
+}
+
 /** Is this lender in a mood to work with anybody? */
 export function workoutMood(s: GameState, lenderName: string): {
   willExtend: boolean; why: string; feePct: number; bumpPct: number; paydownPct: number;
@@ -74,8 +98,9 @@ export function workoutMood(s: GameState, lenderName: string): {
   const healthy = cr > 0.075 && l.delinquent < 0.06;
   const stretched = cr > 0.05;
   // A bank with capital would far rather extend than own a building. One that
-  // is impaired has a regulator reading the same balance sheet you are.
-  const willExtend = healthy || (stretched && rel > 45);
+  // is impaired has a regulator reading the same balance sheet you are. The
+  // test itself is `deskWillExtend` above — one answer, two borrowers.
+  const willExtend = deskWillExtend(s, lenderName, rel);
   return {
     willExtend,
     why: healthy

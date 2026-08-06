@@ -1875,12 +1875,46 @@ export function respondLOI(
     const askRent = counter?.rentPsf !== undefined ? +counter.rentPsf.toFixed(2) : +(loi.rentPsf * 1.06).toFixed(2);
     const askTi = counter?.tiPsf !== undefined ? Math.round(counter.tiPsf) : Math.round(loi.tiPsf * 0.7);
     const market = managedRentPsfYr(rec, next.econ, h, loi.use);
-    const f = askRent / Math.max(1, market);                 // aggression vs the market, not vs their offer
+    const openTi = loi.tiPsf;
+    // RENT AND FIT-OUT ARE ONE NUMBER, and this was pricing them as two.
+    //
+    // The old term charged a flat 0.14 of acceptance for taking the whole
+    // allowance away — the same 0.14 whether the allowance was $3/sf on a
+    // two-year renewal refresh or $90/sf on a twelve-year build-out, one
+    // constant standing in for a quantity that varies by twenty times. 0.14 is
+    // also exactly what a 10% rent cut buys at the -1.4 elasticity below, so a
+    // 10% discount bought off ANY fit-out cut and a 9% discount bought off none
+    // of it, at every rent level in the city.
+    //
+    // Measured over 2,366 counters: the asked allowance runs 3.7% of market
+    // rent per year of term on office and 1.6% on retail and industrial, so a
+    // full cut is worth about 2.7% of the deal and was being charged as 10%.
+    // Split by how big the allowance is, zeroing it cost 13.2 / 12.9 / 11.4
+    // points of acceptance across terciles — flat, when the whole point is that
+    // it should scale. And swapping the entire allowance for its exact rent
+    // equivalent, a deal identical on both sides of the table, cost 8.9 points
+    // one way and 3.0 the other. It is 0.0 both ways now.
+    //
+    // What a tenant is actually negotiating is NET EFFECTIVE — face rent less
+    // the allowance amortised across the term, which is the same convention
+    // TI_ASK is generated on ($/sf per YEAR of term, see the band above), so
+    // the quantity keeps one answer. The allowance delta converts to its rent
+    // equivalent and goes on the rent axis, where it earns the same elasticity
+    // and reaches pWalk through the same `f` — the fit-out used to have no
+    // bearing on walking at all, so a tenant offered nothing walked at the same
+    // rate as one offered everything. Cutting the fit-out is now forgiven
+    // exactly to the extent the rent is cut with it, and paying MORE fit-out
+    // buys rent: the reverse half of the trade, which the old max(0, ...) threw
+    // away. Straight-line and undiscounted on purpose — that is the net
+    // effective a leasing agent quotes, and it is the convention the allowance
+    // was generated on.
+    const years = Math.max(1, loi.termM / 12);
+    const tiRent = (openTi - askTi) / years;                 // + when you take fit-out away
+    const f = (askRent + tiRent) / Math.max(1, market);      // aggression vs the market, not vs their offer
     const vacHere = (next.econ.cityVac?.[loi.use ?? "office"] ?? 0.1);
     const natHere = loi.use === "multifamily" ? 0.045 : loi.use === "retail" ? 0.085 : loi.use === "industrial" ? 0.07 : 0.115;
     const tight = Math.max(-0.3, Math.min(0.35, (natHere - vacHere) * 3));
     const stick = loi.kind === "renewal" ? 0.14 : 0;         // moving is expensive; incumbents bend
-    const tiCut = loi.tiPsf > 0 ? Math.max(0, (loi.tiPsf - askTi) / Math.max(1, loi.tiPsf)) * 0.14 : 0;
     // BEST AND FINAL. Saying the number is firm is itself information: it
     // converts some hagglers, because a credible take-it-or-leave-it within
     // reach is easier to sign than to shop — and it hardens the rest, because
@@ -1888,11 +1922,10 @@ export function respondLOI(
     // one letter goes out, and the answer is a signature or an empty hallway.
     const bestFinal = counter?.bestFinal === true;
     const pAccept = Math.max(0.04, Math.min(0.95,
-      1.58 - f * 1.4 + loi.credit * 0.04 + tight + stick - tiCut
+      1.58 - f * 1.4 + loi.credit * 0.04 + tight + stick
       + (bestFinal ? 0.05 : 0)
       + (next.econ.phase === "expansion" ? 0.06 : next.econ.phase === "recession" ? -0.08 : 0)));
     const openedAt = loi.openRentPsf ?? loi.rentPsf;
-    const openTi = loi.tiPsf;
     loi.askedRentPsf = askRent;
     loi.askedTiPsf = askTi;
     loi.rentPsf = askRent;
@@ -1932,13 +1965,36 @@ export function respondLOI(
     if (rng(next) < pWalk) {
       next.lois = next.lois.filter((l) => l.id !== id);
       reply("walked", openedAt, openTi);
-      next.news.unshift({ q: next.month, kind: "warn", text: `${loi.name} walked on the counter at ${rec.address} — $${askRent.toFixed(2)}/sf was more than the space was worth to them (market ~$${market.toFixed(2)}). You had $${openedAt.toFixed(2)} on the table.` });
-      return { s: next, msg: `${loi.name} walked. You asked $${askRent.toFixed(2)} against a $${market.toFixed(2)} market.` };
+      // WHICH HALF OF THE DEAL PUSHED THEM OUT. The line used to blame the rent
+      // for every walk, including the ones where the rent was under market and
+      // the fit-out was what got cut — the player could not tell those apart, so
+      // they had no way to learn the trade. Say the net effective number, which
+      // is the one the tenant actually refused.
+      const neAsk = askRent + tiRent;
+      next.news.unshift({
+        q: next.month, kind: "warn",
+        text: `${loi.name} walked on the counter at ${rec.address} — $${askRent.toFixed(2)}/sf`
+          + (tiRent > 0.005
+            ? ` with ${money((openTi - askTi) * loi.sf)} less fit-out, $${neAsk.toFixed(2)}/sf net effective over ${years.toFixed(0)} years,`
+            : "")
+          + ` was more than the space was worth to them (market ~$${market.toFixed(2)}). `
+          + `You had $${openedAt.toFixed(2)} on the table.`,
+      });
+      return { s: next, msg: `${loi.name} walked. You asked $${neAsk.toFixed(2)}/sf net effective against a $${market.toFixed(2)} market.` };
     }
     // they counter back once — final
     loi.stage = "countered";
     loi.counterRentPsf = +Math.min(askRent, Math.max(loi.rentPsf * 0.94, market * (0.95 + 0.04 * rng(next)))).toFixed(2);
-    loi.counterTiPsf = Math.round((askTi + loi.tiPsf) / 2);
+    // SPLIT THE DIFFERENCE ON THE FIT-OUT TOO — this read `loi.tiPsf`, which
+    // twelve lines earlier had been overwritten with askTi, so the midpoint was
+    // between your number and your number. Measured over 1,240 counters: 543
+    // reached this branch and all 543 came back at EXACTLY the fit-out the
+    // player had offered — they opened asking $12.02/sf, were offered nothing,
+    // and "countered back" at nothing, while the rent line clawed back $2.11 of
+    // a $6.21 push. Cutting the allowance was free on 44% of counters, which is
+    // the hole the net-effective term above would otherwise have been priced
+    // around. openTi is the number they walked in with.
+    loi.counterTiPsf = Math.round((askTi + openTi) / 2);
     loi.rentPsf = loi.counterRentPsf;
     loi.tiPsf = loi.counterTiPsf;
     reply("countered", loi.counterRentPsf, loi.counterTiPsf);

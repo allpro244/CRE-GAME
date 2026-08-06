@@ -8441,9 +8441,51 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // street level you are looking at a building you are about to buy, and
     // there the blur is only in the way. Depth of field is decoration;
     // legibility is not.
+    //
+    // AND ONE RADIUS CANNOT SERVE BOTH CAMERAS, BECAUSE THEY HOLD DIFFERENT
+    // AMOUNTS OF DEPTH. The ease above did not start until z16.4, but
+    // MapView's two cameras are z14.6/pitch30 (the establishing frame) and
+    // z15.3/pitch55 (the core, where the game is actually played) — so every
+    // zoom anyone plays at sat at the full 3.1 px, and the ramp only ever
+    // fired once you were already down a street.
+    //
+    // How much that costs is not a matter of taste, because the two frames
+    // are not comparable. At a 18.43 deg half-FOV the camera height cancels
+    // and the ground runs 0.88..1.30 of the focus distance at pitch 30 and
+    // 0.71..2.01 of it at pitch 55: a relative depth spread of 0.42 against
+    // 1.30. Same lens over 3.08x the depth, and `rel` below saturates at
+    // 1.17x the subject distance — past that everything is at the SAME
+    // maximum. So the core frame was never "softer toward the back". It was
+    // one narrow sharp strip with the whole rest of the city — near
+    // foreground, far ground and sky alike — pinned at the aperture limit.
+    //
+    // Divide the radius by that 3.08 and the two frames fall away from their
+    // focus band by comparable amounts instead of one of them going off a
+    // cliff: 3.1 px at the establishing shot, 1.0 px at the core. 1.0 is the
+    // spread ratio, not a setting, and it lands about where `defocused` below
+    // stops mattering anyway — under 0.35 px it gives up and returns the edge
+    // filter instead.
+    //
+    // Measured as mean |Sobel| over an 800 px band on the far side of the
+    // island, against the same measure inside the focus band. Core camera:
+    // 81.5 vs 112.3 before (27% down), 94.8 vs 112.9 after (16% down). The
+    // establishing frame must not move, and does not: 108.4 vs 110.0 before,
+    // 106.5 vs 109.4 after. The near foreground — which is what actually
+    // carries the toy-model read — keeps its softening in both, 24% under the
+    // band at the core camera and 32% at the establishing one.
+    //
+    // The same measurement is why the aerial haze above was left alone:
+    // switching the haze off completely moves that far band from 81.5 only to
+    // 84.1, against 93.3 for switching the defocus off. The lens was 4.6x the
+    // haze and all of what read as "blurry".
+    //
+    // Zoom stands in for pitch here because the app's two cameras move both
+    // together. The driver underneath is the depth spread, which is a
+    // function of pitch alone.
     {
       const zoom = this.map.getZoom();
-      this.compMat.uniforms.uDefocus.value = 3.1 * (1 - smoothstep(16.4, 18.2, zoom));
+      const model = 3.1 + (1.0 - 3.1) * smoothstep(14.6, 15.3, zoom);
+      this.compMat.uniforms.uDefocus.value = model * (1 - smoothstep(16.4, 18.2, zoom));
     }
 
     // Where the sun sits on screen. Projected on the CPU because it is one

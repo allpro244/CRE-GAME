@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { headlineEpithet } from "@/engine/firm";
 import { useStore, derivedNetWorth, derivedQuarterCF } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { currentCity, currentSeed, currentSize, currentDev, listCities, switchCity, type CityInfo } from "@/state/city";
-import { sizeList, developmentList } from "@/citygen/index.mjs";
+import { currentCity, currentSeed } from "@/state/city";
 import { usd, pct } from "./format";
 
 export default function TopBar() {
@@ -25,27 +24,13 @@ export default function TopBar() {
   // look, not a count of everything ever written.
   const unread = game ? game.news.filter((n) => n.q === game.month && (n.kind === "warn" || n.kind === "event")).length : 0;
 
-  // The islands that ship. This used to be a live switch between campaigns for
-  // the whole run; it is now the choice you make when a run begins, and the
-  // one you make again when you end one. See the two menus below.
-  const [cities, setCities] = useState<CityInfo[]>([]);
-  const [cityOpen, setCityOpen] = useState(false);
-  const cityRef = useRef<HTMLDivElement>(null);
+  // WHICH TOWN IS NOT ASKED HERE ANY MORE. The island, the size and the
+  // build-out used to hang off the New-city button as a three-section
+  // dropdown, which measured 973px tall at 1280x720 with its confirm button
+  // 353px below the bottom of the window — fourteen options and no way to
+  // reach the end of them. They live on the start screen now, which has a
+  // scroller and a footer that cannot scroll away. See ui/StartMenu.tsx.
   const newRunRef = useRef<HTMLDivElement>(null);
-  // What the NEXT run will be built as. Held here rather than committed as it
-  // is clicked, so choosing a size is not the same act as erasing a campaign.
-  const sizes = sizeList();
-  const [newIsland, setNewIsland] = useState(currentCity());
-  const [newSize, setNewSize] = useState(currentSize());
-  const devs = developmentList();
-  const [newDev, setNewDev] = useState(currentDev());
-  // Lot count goes as the square of the scale. The standard island is about
-  // 1,420 lots measured, which is what this quotes off — it is a preview of a
-  // decision, not a promise, so it is rounded hard.
-  const lotsAt = (k: number) => {
-    const n = 1420 * k * k;
-    return n >= 1000 ? `${(n / 1000).toFixed(n < 3000 ? 1 : 0)}k` : `${Math.round(n / 50) * 50}`;
-  };
 
   /* THE BAR PUBLISHES ITS OWN HEIGHT.
      Everything that hangs below it — the parcel panel, the page overlays, the
@@ -68,17 +53,8 @@ export default function TopBar() {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  useEffect(() => { void listCities().then(setCities); }, []);
-  useEffect(() => {
-    if (!cityOpen) return;
-    const close = (e: MouseEvent) => {
-      if (cityRef.current && !cityRef.current.contains(e.target as Node)) setCityOpen(false);
-    };
-    window.addEventListener("mousedown", close);
-    return () => window.removeEventListener("mousedown", close);
-  }, [cityOpen]);
-  // The armed New-city menu disarms the same way, so a click anywhere else is
-  // never one click away from erasing a campaign.
+  // The armed New-city button disarms on a click anywhere else, so a campaign
+  // is never one click away from being erased.
   useEffect(() => {
     if (!armNewRun) return;
     const close = (e: MouseEvent) => {
@@ -116,33 +92,9 @@ export default function TopBar() {
             game: the submarket you misread is the submarket you have to trade
             your way out of.
             The choice does not disappear, it moves to where it belongs — the
-            start of a run. See the New city button, which already asks twice
-            before erasing anything. */}
-        {cities.length > 1 && !game ? (
-          <div className="city-pick" ref={cityRef}>
-            <button
-              className="brand-sub city-pick-btn"
-              title={`Choose an island. Once a game starts this is fixed for its life — changing towns means starting over.\nThis town was built from seed ${currentSeed()}.`}
-              onClick={() => setCityOpen((v) => !v)}
-            >
-              {manifest?.city ?? currentCity()} ▾
-            </button>
-            {cityOpen && (
-              <div className="city-menu">
-                {cities.map((c) => (
-                  <button
-                    key={c.id}
-                    className={"city-item" + (c.id === currentCity() ? " city-item-on" : "")}
-                    onClick={() => { if (c.id !== currentCity()) switchCity(c.id); else setCityOpen(false); }}
-                  >
-                    <span className="city-item-name">{c.name}</span>
-                    <span className="city-item-tag">{c.tagline}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : game ? (
+            start screen, which is where a run begins now. The New city button
+            still asks twice before erasing anything and then goes back there. */}
+        {game ? (
           <span
             className="brand-sub city-locked"
             title={`You are playing ${manifest?.city ?? currentCity()}, built from seed ${game.citySeed ?? currentSeed()}. `
@@ -297,87 +249,23 @@ export default function TopBar() {
             or "prevent this page from creating dialogs" ticked once) make
             confirm() return false silently and forever — the button reads as
             dead. A two-click arm-then-fire needs nothing from the browser. */}
-        {/* THE ISLAND IS CHOSEN HERE, because this is the only moment choosing
-            it is a decision rather than an escape hatch. Arming the button
-            offers the other towns alongside "yes, this one again" — the same
-            two-click safety as before, with the choice the top-left picker
-            used to hand out mid-campaign. */}
+        {/* ONE BUTTON, ONE PROMISE. It used to open the three menus that chose
+            the next town, which is how it grew taller than the window. It now
+            does what its label says and nothing else: erase this campaign and
+            go back to the start screen, where the next town is chosen with
+            room to read the options. */}
         <div className="city-pick" ref={newRunRef}>
           <button
             className={"lens-btn" + (armNewRun ? " lens-on" : "")}
-            title="Start over. A brand new town — every block re-cut, every lot line new, every building somewhere else — and a chance to pick a different island. No holdings, $6M cash."
+            title="End this campaign and go back to the start screen, where you pick the island, the size and how built up the town is. This town's autosave is erased. No holdings, $6M cash, a brand new town."
             onClick={() => {
               if (!armNewRun) { setArmNewRun(true); setTimeout(() => setArmNewRun(false), 12000); return; }
               setArmNewRun(false);
-              useStore.getState().newRun(newIsland, newSize, newDev);
+              useStore.getState().newRun();
             }}
           >
             {armNewRun ? "Erase this game?" : "↺ New city"}
           </button>
-          {armNewRun && (
-            <div className="city-menu city-menu-right">
-              {/* HOW BIG, which is a decision about what game you are playing
-                  rather than a graphics setting. Land area goes as the square
-                  of the scale, so this moves the lot count from a few hundred
-                  to a few thousand — and with it the standing stock, the size
-                  of the banks that lend against it, and how much of the town
-                  one firm can ever be. It can only be set here because the
-                  deeds in a save only exist on the island they were cut on. */}
-              <div className="city-menu-head">how big</div>
-              {sizes.map((s) => (
-                <button
-                  key={s.id}
-                  className={"city-item" + (s.id === newSize ? " city-item-on" : "")}
-                  onClick={() => setNewSize(s.id)}
-                >
-                  <span className="city-item-name">
-                    {s.name}
-                    <span className="city-size-lots"> · about {lotsAt(s.k)} lots</span>
-                  </span>
-                  <span className="city-item-tag">{s.note}</span>
-                </button>
-              ))}
-              {/* HOW MUCH OF IT IS ALREADY THERE. Not a graphics preset: it
-                  decides how many lots are still dirt and how tall what stands
-                  on the rest is, which is the difference between a game about
-                  building a city and a game about buying one. */}
-              <div className="city-menu-head" style={{ marginTop: 6 }}>how built up</div>
-              {devs.map((d) => (
-                <button
-                  key={d.id}
-                  className={"city-item" + (d.id === newDev ? " city-item-on" : "")}
-                  onClick={() => setNewDev(d.id)}
-                >
-                  <span className="city-item-name">{d.name}</span>
-                  <span className="city-item-tag">{d.note}</span>
-                </button>
-              ))}
-              {cities.length > 1 && (
-                <>
-                  <div className="city-menu-head" style={{ marginTop: 6 }}>which island</div>
-                  {cities.map((c) => (
-                    <button
-                      key={c.id}
-                      className={"city-item" + (c.id === newIsland ? " city-item-on" : "")}
-                      onClick={() => setNewIsland(c.id)}
-                    >
-                      <span className="city-item-name">{c.name}</span>
-                      <span className="city-item-tag">{c.tagline}</span>
-                    </button>
-                  ))}
-                </>
-              )}
-              <button
-                className="city-item city-item-go"
-                onClick={() => { setArmNewRun(false); useStore.getState().newRun(newIsland, newSize, newDev); }}
-              >
-                <span className="city-item-name">
-                  Build {cities.find((c) => c.id === newIsland)?.name ?? "it"} · {sizes.find((s) => s.id === newSize)?.name ?? "standard"} · {devs.find((d) => d.id === newDev)?.name ?? "young"}
-                </span>
-                <span className="city-item-tag">Erases the game you are playing.</span>
-              </button>
-            </div>
-          )}
         </div>
         <span className={"stat mono " + (fps >= 55 ? "fps-good" : fps >= 30 ? "fps-ok" : "fps-bad")}>
           {fps} fps

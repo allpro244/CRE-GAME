@@ -1549,10 +1549,39 @@ export function tickEcon(s: GameState) {
     // earns, versus where that ratio started. A sector paying its historical
     // share of income is fine at any nominal rent. The threshold is a fifth
     // above it, which is roughly the point at which relocation beats renewal
-    // once moving costs are counted; the pace, a tenth of the overshoot a
-    // year, is slow enough that a cyclical spike does nothing and a
-    // generation of pressure does most of it. Both are shape parameters and
-    // both are stated as such.
+    // once moving costs are counted.
+    //
+    // NOBODY MOVES OUT MID-LEASE, AND THE RATE HAS TO SAY SO.
+    //
+    // The pace was a bare `LEAVE_RATE * over`, a tenth of the overshoot a year,
+    // with nothing bounding it — and the comment asserted that was "slow enough
+    // that a cyclical spike does nothing", which is a claim about behaviour
+    // that nothing in the code guaranteed. The missing mechanism is that A
+    // SECTOR CAN ONLY LEAVE AT THE RATE ITS LEASES ROLL: a tenant priced out in
+    // March with four years to run is a tenant who is still there in March.
+    // Terms here and in life average something like eight years, so about an
+    // eighth of a footprint faces renew-or-go in a year and nothing else can
+    // move at all; how many of those at the table go scales with the overshoot
+    // and cannot exceed all of them. Structural exit is therefore bounded near
+    // 1.2%/yr — half a sector over forty years, which is the fact this exists
+    // to reproduce.
+    //
+    // AND IT CHANGED NOTHING MEASURABLE, WHICH IS RECORDED HERE BECAUSE IT
+    // MATTERS. `ROLL_YR * GO_RATE` is 0.125 * 0.80 = 0.10, exactly the old
+    // LEAVE_RATE, so below the cap the two are the same expression; and `over`
+    // does not reach the 1.25 where the cap starts to bind. Output was
+    // byte-identical across two seeds x 50 years — same rents, same vacancies,
+    // same demand anchors to the digit. The bound is kept because it is the
+    // honest form and it holds at extremes the calibration has not seen, but it
+    // is NOT a fix for anything, and the estimate that motivated it was wrong:
+    // `over` peaks near 0.45, not 1.2, so this ratchet sheds about 4.4%/yr at
+    // the top of a cycle rather than the 12% first claimed.
+    //
+    // What that rules out is the important part. The demand anchor walks down
+    // smoothly — 0.93, 0.87, 0.80, 0.71, 0.71 by decade for office — while real
+    // office rent swings $14 to $95 and back on a ~28-year period. A slow trend
+    // and a violent cycle are different timescales, so the oscillator is not
+    // here. It is in the supply-and-rent feedback, and that is where to look.
     //
     // HOUSING IS EXEMPT and that is not a special case, it is the mechanism
     // being right: people priced out of a city's housing leave, and the
@@ -1561,11 +1590,13 @@ export function tickEcon(s: GameState) {
     // that can relocate.
     if (k !== "multifamily") {
       const RELOCATE_AT = 1.20;    // a fifth above its historical rent-to-income
-      const LEAVE_RATE = 0.10;     // of the overshoot, per year
+      const ROLL_YR = 1 / 8;       // an eight-year term: an eighth comes up each year
+      const GO_RATE = 0.80;        // of those at renewal, per point of overshoot
       const burden = (e.rentIdx[k] / RENT_BASE[k]) / Math.max(0.35, e.wageIdx ?? 1);
       const over = Math.max(0, burden - RELOCATE_AT);
       if (over > 0 && e.baseStock) {
-        const shed = 1 - (LEAVE_RATE * over) / 12;
+        const leaving = Math.min(1, over * GO_RATE);      // cannot exceed everyone at the table
+        const shed = 1 - (ROLL_YR * leaving) / 12;
         e.baseStock[k] = Math.min(e.baseStock[k], e.baseStock[k] * shed);
       }
     }

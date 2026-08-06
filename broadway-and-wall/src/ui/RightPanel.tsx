@@ -1870,11 +1870,13 @@ function OffMarketCounter({ bbl, ask }: { bbl: string; ask: number }) {
  *
  * The dial is a multiple of that appraisal because the appraisal is the only
  * anchor in the room, and its endpoints are the SAME for every parcel in the
- * game — 0.5x to 4x — so where it stops says nothing about where this owner
- * is. Measured over 2,148 blind conversations across four seeds, reserves run
- * 0.56x to 7.4x appraisal with a median of 1.42x; 4x reaches about 95% of
- * them, and the ones past it are owners saying no in numbers, which is what
- * the named-ask path does at 3.94x too.
+ * game — 0.5x to 4x — so where it stops says nothing about where THIS owner
+ * is. The top end is a coverage number, not a taste: measured over 2,164 blind
+ * conversations across four seeds, reserves run 0.22x to 9.42x appraisal with
+ * a median of 1.26x, and a 4x ceiling can reach 97.2% of them (2x reaches only
+ * 81.1%, which would have made the dial itself the thing that lost deals). The
+ * ones past 4x are owners saying no in numbers, which is what the named-ask
+ * path already does out loud at up to 5.86x.
  */
 function BlindBidDesk({ bbl, appr, value }: { bbl: string; appr: Approach; value: number }) {
   const game = useStore((s) => s.game)!;

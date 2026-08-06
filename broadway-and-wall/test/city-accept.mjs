@@ -32,18 +32,23 @@
 //   M. THE MAP STAYS SANE   no NaN, no negative area, no building on no land
 //
 // Run: node test/city-accept.mjs (bundle first, like every other harness).
+//
+// J, K AND L ARE BANDS AND ARE NOW REPORTED RATHER THAN GATED — owner's
+// decision, 2026-08-06, see test/accept-lib.mjs and ECONOMY.md.
+//
+// M IS NOT, AND THIS IS THE ONE PLACE THE DECISION DOES NOT REACH. "No NaN,
+// no negative area, no building standing on no land" has a threshold of ZERO.
+// There is no calibration in it to be too strict about — it is the same shape
+// as `pnpm conserve`, an identity rather than a band, and it is the only
+// letter that still fails a build. That is why `pnpm gate` runs this file.
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { makeSuite } from "./accept-lib.mjs";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const E = await import(join(HERE, ".engine.mjs"));
 const { loadCity } = await import(join(HERE, "city.mjs"));
 
-const results = [];
-const report = (name, pass, detail) => {
-  results.push({ name, pass });
-  console.log(`\n${pass ? "PASS" : "FAIL"}  ${name}`);
-  for (const d of detail) console.log("      " + d);
-};
+const { report, verdict } = makeSuite();
 const med = (a) => [...a].sort((x, y) => x - y)[Math.floor((a.length - 1) / 2)];
 const pct = (n) => (n * 100).toFixed(1) + "%";
 
@@ -149,11 +154,33 @@ for (let i = 0; i < SEEDS; i++) {
   const m = med(ratio);
   const rate = runs.map((r) => r.demolished / Math.max(1, r.n0) / YEARS);
   const pass = m >= 0.6 && med(rate) > 0.001 && med(rate) < 0.015;
+  // TWO THINGS THIS BAND IS NOT TELLING YOU, MEASURED 2026-08-06 AND WORTH
+  // READING BEFORE ANYBODY TRUSTS THE 2.51x.
+  //
+  // 1. THE RATIO CONFLATES TWO TRADES. `delivered` is `cityBuilt.length`,
+  //    which counts every groundbreak the city ever completes — greenfield on
+  //    vacant land as much as a replacement on a cleared site. `demolished` is
+  //    teardowns only. So on this build 41 teardowns against 115 deliveries
+  //    reads 2.80x, and at least 74 of those deliveries never had a wrecking
+  //    ball anywhere near them. The clause would still catch the fault it was
+  //    written for — the delivery loop dropping every redevelopment — only if
+  //    greenfield were not covering the gap, and greenfield is most of it. The
+  //    honest version needs `cityBuilt` to record whether the site was cleared
+  //    first, which lives in dev.ts and is not this agent's file.
+  //
+  // 2. THE DEMOLITION RATE IS SITTING ON ITS LOWER RAIL. The band is 0.1-1.5%
+  //    with a stated real-world anchor of ~0.5%/yr, and the measured rates are
+  //    0.084, 0.101, 0.102, 0.110, 0.134 %/yr — median 0.105%, which clears
+  //    the floor by five per cent and undershoots the anchor the comment
+  //    itself cites by a factor of five. One of five seeds is already BELOW
+  //    the floor. Printed to three decimals now, because at one decimal every
+  //    seed reads "0.1%" and the rail is invisible.
   report("L. THE CRANES ANSWER — a teardown is a groundbreaking", pass, [
     `demolished: ${runs.map((r) => r.demolished).join("  ")}`,
-    `delivered:  ${runs.map((r) => r.delivered).join("  ")}`,
+    `delivered:  ${runs.map((r) => r.delivered).join("  ")}   (ALL city groundbreaks, greenfield included — see the note in this file)`,
     `delivered / demolished: ${ratio.map((x) => x.toFixed(2)).join("  ")}   median ${m.toFixed(2)}   (need >= 0.60)`,
-    `demolition rate: ${rate.map((x) => pct(x)).join("  ")}/yr   median ${pct(med(rate))}/yr   (real cities ~0.5%/yr; need 0.1-1.5%)`,
+    `demolition rate: ${rate.map((x) => (x * 100).toFixed(3) + "%").join("  ")}/yr   median ${(med(rate) * 100).toFixed(3)}%/yr   (need 0.100-1.500%)`,
+    `   the comment's own real-world anchor is ~0.5%/yr; this city runs a fifth of that and ${rate.filter((x) => x <= 0.001).length} of ${runs.length} seeds are under the floor`,
   ]);
 }
 
@@ -164,17 +191,13 @@ for (let i = 0; i < SEEDS; i++) {
   // because nothing had the job of noticing; geometry deserves the same guard.
   const bad = runs.reduce((a, r) => a + r.bad, 0);
   const pass = bad === 0;
+  // THE ONLY IDENTITY AMONG THE LETTERS. Threshold zero, and a zero is not a
+  // band — see the note at the top of this file.
   report("M. THE MAP STAYS SANE — no NaN, no negative area, no building on no land", pass, [
     `bad parcels across ${SEEDS} seeds x ${YEARS} years: ${runs.map((r) => r.bad).join("  ")}`,
     `total ${bad}   (need 0)`,
-  ]);
+  ], "identity");
 }
 
 // ------------------------------------------------------------------- verdict
-const passed = results.filter((r) => r.pass).length;
-console.log("\n" + "=".repeat(64));
-console.log(`\n${passed} of ${results.length} city tests pass`);
-if (passed < results.length) {
-  console.log(`failing: ${results.filter((r) => !r.pass).map((r) => r.name.split(".")[0]).join(", ")}`);
-  process.exitCode = 1;
-}
+verdict();

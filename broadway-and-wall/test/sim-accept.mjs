@@ -23,20 +23,24 @@
 //                      what makes a real supply cycle self-limiting.
 //
 // Run: node test/sim-accept.mjs (bundle first, like every other harness).
+//
+// EVERY BAND IN THIS FILE IS NOW REPORTED RATHER THAN GATED — owner's
+// decision, 2026-08-06. The arithmetic is untouched; see test/accept-lib.mjs
+// for what that means and why, and ECONOMY.md for who decided it. This file
+// is the one that earned the decision: F, G and H each had to have their
+// estimator rebuilt this session before they could tell a real breach from
+// their own sampling noise, and H breached on 13 of 30 NEUTRAL seeds while
+// doing it.
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { makeSuite } from "./accept-lib.mjs";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const E = await import(join(HERE, ".engine.mjs"));
 const { loadCity } = await import(join(HERE, "city.mjs"));
 
 const { parcels: P0, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 const clone = () => JSON.parse(JSON.stringify(P0));
-const results = [];
-const report = (name, pass, detail) => {
-  results.push({ name, pass });
-  console.log(`\n${pass ? "PASS" : "FAIL"}  ${name}`);
-  for (const d of detail) console.log("      " + d);
-};
+const { report, verdict } = makeSuite();
 // TWENTY SEEDS, NOT SEVEN, AND THE OLD NOTE HERE WAS WRONG.
 //
 // It used to say seven was "the smallest number where the median stopped
@@ -376,23 +380,40 @@ function macroRunRaw(seed, months) {
     const t = walk(g0, true), ctrl = walk(g0, false);
     const deep = t.filter((x) => x.vac > 0.25);
     const lying = deep.filter((x) => x.phase === "expansion" || x.phase === "peak").length;
+    // A SEED WITH NO DEEP MONTHS HAS NOTHING TO SAY ABOUT THE PHASE MACHINE,
+    // and it used to say the best possible thing. `share` was
+    // `deep.length ? lying / deep.length : 0`, so a glut that never pushed
+    // vacancy past 25% on that seed contributed a PERFECT 0% to the median of
+    // the clause about lying — the one seed with no evidence voting hardest
+    // for acquittal. The share is now `null` on those seeds and they are
+    // excluded from the median and counted in the print. (Measured on this
+    // build: 0 of 9 seeds land there, so this changes no number today. It is
+    // the shape that is wrong, not the reading.)
     const drift = med(t.slice(24, 96).map((x) => x.rate)) - t[0].rate;
     const ctrlDrift = med(ctrl.slice(24, 96).map((x) => x.rate)) - ctrl[0].rate;
     return {
       peakVac: Math.max(...t.map((x) => x.vac)),
-      share: deep.length ? lying / deep.length : 0,
+      deepMonths: deep.length,
+      share: deep.length ? lying / deep.length : null,
       drift: drift - ctrlDrift,
       raw: drift, ctrl: ctrlDrift,
       rentFall: 1 - Math.min(...t.map((x) => x.rent)) / t[0].rent,
     };
   });
   const peakVac = med(runs.map((r) => r.peakVac));
-  const share = med(runs.map((r) => r.share));
+  const scored = runs.filter((r) => r.share !== null);
+  const share = scored.length ? med(scored.map((r) => r.share)) : 1;
   const drift = med(runs.map((r) => r.drift));
+  // cityVac is clamped to 0.45 in market.ts. If the peak ever rests there the
+  // vacancy clause is reading a rail rather than the market, so print the
+  // headroom rather than trusting it.
+  const atRail = runs.filter((r) => r.peakVac >= 0.4495).length;
   report("H. THE GLUT IS SEEN — 4M sf of empty office dropped on the city, 9 seeds",
-    peakVac > 0.25 && share <= 0.15 && drift <= 0.5,
+    peakVac > 0.25 && scored.length >= 5 && share <= 0.15 && drift <= 0.5,
     [`office vacancy peaked at ${(peakVac * 100).toFixed(1)}% median   (per seed ${runs.map((r) => (r.peakVac * 100).toFixed(0) + "%").join(" ")})`,
-     `share of a >25%-vacant market called 'expansion' or 'peak': ${(share * 100).toFixed(0)}% median   (need <= 15%)`,
+     `   ${atRail} of ${runs.length} seeds peak ON the 45% cityVac clamp (market.ts) — at the clamp this number stops being a measurement`,
+     `share of a >25%-vacant market called 'expansion' or 'peak': ${(share * 100).toFixed(0)}% median of ${scored.length} seeds   (need <= 15%)`,
+     `   months above 25% vacancy per seed: ${runs.map((r) => r.deepMonths).join(" ")}   (a seed with none is excluded, not scored 0%)`,
      `loan index drift ATTRIBUTABLE TO THE GLUT: ${drift >= 0 ? "+" : ""}${drift.toFixed(2)}pp median   (need <= +0.50pp: a glut is a demand shock)`,
      `   glut ${runs.map((r) => (r.raw >= 0 ? "+" : "") + r.raw.toFixed(1)).join(" ")}`,
      `   control ${runs.map((r) => (r.ctrl >= 0 ? "+" : "") + r.ctrl.toFixed(1)).join(" ")}   — the same city without the 4M sf`,
@@ -436,7 +457,4 @@ function macroRunRaw(seed, months) {
 }
 
 // ---------------------------------------------------------------------------
-console.log("\n" + "=".repeat(64));
-const failed = results.filter((r) => !r.pass);
-console.log(`\n${results.length - failed.length} of ${results.length} simulation tests pass`);
-if (failed.length) { console.log("failing: " + failed.map((f) => f.name.split(".")[0]).join(", ")); process.exit(1); }
+verdict();

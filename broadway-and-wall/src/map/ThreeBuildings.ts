@@ -7695,7 +7695,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
   // Player construction and deliveries: a small dynamic mesh set rebuilt on
   // change (a handful of buildings — cheap), sharing the facade materials.
-  setPlayerBuildings(items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean }[]) {
+  /**
+   * `styleOverride` exists for the style board — a development view that puts
+   * every facade family on the map at once at identical height and plate. The
+   * distribution audit can prove a family is CHOSEN; only looking at it can
+   * prove it is distinguishable from the family beside it, which is a different
+   * question and one no counter can answer.
+   */
+  setPlayerBuildings(items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean; styleOverride?: number }[]) {
     this.dynGroup.clear();
     this.cranes.length = 0;
     for (const item of items) {
@@ -7733,7 +7740,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // Not every modern office is curtain wall. About half are; the rest are
       // dark glass, white precast with ribbon glazing, or stone-clad piers —
       // the actual spread of what has gone up since 2000.
-      const style = item.construction ? 5
+      const style = item.styleOverride !== undefined ? item.styleOverride
+        : item.construction ? 5
         : item.cls === "industrial" ? 3
         : item.cls === "multifamily" ? (item.floors >= 12 && sroll < 0.3 ? 0 : 2)
         : item.cls === "retail" ? 7

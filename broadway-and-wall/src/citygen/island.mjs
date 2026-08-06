@@ -765,15 +765,25 @@ export function islandConfig(seed) {
      * (aspect 2.8) on every island ever generated, the housing 56-63 x 144-160
      * (aspect 2.5). Both sit inside the middle mode here, which is the point —
      * the old numbers were not wrong, they were the only ones available.
+     *
+     * PITCH AND ASPECT ARE DRAWN TOGETHER, not independently, because in life
+     * they are not independent: the long block is long because its SHORT side
+     * is short. Manhattan is 200 x 800 ft — 61 x 244 m — so the aspect of four
+     * comes with a sixty-metre pitch, not a ninety-metre one. Drawing them
+     * separately allowed a 92 m pitch at aspect 4.5, which is a 414 m block,
+     * longer than anything in any gridiron ever surveyed, and it cost the small
+     * island sizes a quarter of their parcels because a Hamlet cannot fit many
+     * of them.
      */
     const shape = Dpl.rand();
-    const aspect = shape < 0.40 ? Dpl.f(1.00, 1.55)     // Portland, Salt Lake City
-      : shape < 0.78 ? Dpl.f(1.90, 2.90)                 // the ordinary American block
-      : Dpl.f(3.20, 4.50);                               // the Commissioners' Plan
+    const [aspect, pitch] = shape < 0.40
+      ? [Dpl.f(1.00, 1.55), Dpl.f(62, 95)]              // Portland's 200 ft squares
+      : shape < 0.78 ? [Dpl.f(1.90, 2.90), Dpl.f(58, 85)]  // the ordinary American block
+        : [Dpl.f(3.20, 4.50), Dpl.f(52, 68)];           // the Commissioners' Plan
     SURVEY.push({
       bearing: fold(spineBearing + (k === 0 ? Dpl.f(-9, 9) : surveyOff[k])),
       aspect,
-      pitch: Dpl.f(56, 92),
+      pitch,
       warp: Dpl.f(1, 9),
     });
   }
@@ -848,13 +858,22 @@ export function islandConfig(seed) {
    * So the areas stay inside a band around the flavour's own and the variety
    * comes out of the shape. That is a game constraint wearing its own name and
    * not an economic claim.
+   *
+   * The areas are CENTRED on the flavour means they replace, measured: core
+   * 715 m2, old 685, resi 650, industrial 1550. Row 590, burgage 630, fine 675
+   * and villa 825 straddle the first three; estate and yard sit above them
+   * because a block platted in one hand and a working wharf genuinely are
+   * bigger parcels, and those two are drawn rarely enough that the island's
+   * total stays in family. A first cut of this table ran 100-200 m2 low across
+   * the board and put the median island at 1,530 lots against the 1,376 it
+   * had been.
    */
   const LOTWAYS = {
-    row:     [300, 700, 140, 34, 7],    // narrow frontages on a deep strip
-    burgage: [300, 780, 140, 48, 15],   // deeper still, and nothing is parallel
-    fine:    [330, 820, 150, 26, 12],   // a nineteenth-century commercial street
-    villa:   [430, 1000, 200, 20, 5],   // shallow and wide: the streetcar suburb
-    estate:  [900, 2200, 420, 40, 5],   // the block laid out in one hand
+    row:     [360, 820, 165, 34, 7],    // narrow frontages on a deep strip
+    burgage: [360, 900, 165, 48, 15],   // deeper still, and nothing is parallel
+    fine:    [400, 950, 180, 26, 12],   // a nineteenth-century commercial street
+    villa:   [500, 1150, 230, 20, 5],   // shallow and wide: the streetcar suburb
+    estate:  [620, 1500, 290, 40, 5],   // the block laid out in one hand
     yard:    [850, 2500, 360, 52, 5],   // a working waterfront parcel
   };
   const lotWayFor = (role, kind) => {
@@ -1267,15 +1286,28 @@ export function islandConfig(seed) {
         chamferAll: 0.215, warpAmp: 0,
       };
     } else if (kind === "superblock") {
-      const cell = Math.round(stPitch * Dg.f(2.6, 3.8));
+      const cell = Math.round(stPitch * Dg.f(2.2, 3.2));
+      const long = Math.round(cell * Math.min(1.6, sv.aspect));
       districts[k] = {
         ...base, kind: "superblock",
-        stPitch: cell, avePitch: Math.round(cell * Math.min(1.7, sv.aspect)),
-        streetW: Math.round(Dg.f(22, 30)), aveW: Math.round(Dg.f(28, 38)),
+        stPitch: cell, avePitch: long,
+        streetW: Math.round(Dg.f(16, 22)), aveW: Math.round(Dg.f(24, 32)),
         warpAmp: Math.round(sv.warp * 0.5),
-        // The ways inside the ring. A postwar estate is two to five slabs on a
-        // block a real grid would have cut into a dozen.
-        superCell: [Math.round(cell * cell * 0.10), Math.round(cell * cell * 0.22)],
+        /**
+         * THE WAYS INSIDE THE RING, and the number that decides whether this is
+         * an estate or just a grid with fat streets.
+         *
+         * A superblock is one arterial cell with two to four slabs in it. The
+         * first cut of this asked for pieces a tenth to a fifth of the cell —
+         * eight to seventeen of them — and since every piece is then set back
+         * by the district's own street width, which on an arterial is twenty
+         * metres, the "estate" lost forty per cent of its ground to internal
+         * roadway and came out at 1.5 parcels per block. Seed 555 built 557
+         * lots on a 1,420-lot island because two of its four districts were
+         * that. Asking for a quarter to a half of the cell gives the two-to-
+         * four slabs the thing actually has.
+         */
+        superCell: [Math.round(cell * long * 0.26), Math.round(cell * long * 0.52)],
         superJitter: Math.round(Dg.f(6, 26)),
       };
     } else if (kind === "curvi") {

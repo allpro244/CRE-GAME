@@ -1740,7 +1740,13 @@ function SaleSection({ bbl, value }: { bbl: string; value: number }) {
             {(() => {
               const orec = resolveRec(parcels, game, bbl);
               if (!orec || orec.class === "land" || !orec.bldgArea) return null;
-              const noi = holdingNOIYr(orec, game.econ, holding, game.month);
+              // THE CAP THEY ARE BUYING AT, computed the way they compute it:
+              // your roll, re-assessed at THEIR price, because a sale
+              // reassesses. Struck against your old basis this quoted a
+              // different number from the one on the other side of the table.
+              const noi = holdingNOIYr(orec, game.econ,
+                asIfOwned(game, bbl, sale.offer!.price, { roll: holding.tenants, occ: holding.occ, cond: holding.condition }, orec),
+                game.month);
               const cap = sale.offer!.price > 0 ? (noi / sale.offer!.price) * 100 : 0;
               const mkt = game.econ.capRate[orec.class as BuiltClass] ?? cap;
               const occ = physicalOcc(orec as never, holding);
@@ -4445,7 +4451,10 @@ function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: (bbl: s
           const st = useStore.getState();
           const rec = st.parcels ? resolveRec(st.parcels, game, bbl) : null;
           if (!rec || !h || rec.class === "land" || !rec.bldgArea || ask <= 0) return null;
-          const noi = holdingNOIYr(rec, game.econ, h, game.month);
+          // Re-assessed at the ask, because that is what a buyer's going-in cap
+          // is struck on — see the offer card, which quotes the same way.
+          const noi = holdingNOIYr(rec, game.econ,
+            asIfOwned(game, bbl, ask, { roll: h.tenants, occ: h.occ, cond: h.condition }, rec), game.month);
           if (noi <= 0) return null;
           const cap = (noi / ask) * 100;
           const mkt = game.econ.capRate[(rec.class as BuiltClass)] ?? cap;

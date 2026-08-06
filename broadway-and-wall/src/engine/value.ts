@@ -1162,7 +1162,11 @@ export function asIfOwned(s: GameState, bbl: string, price: number, d: Disclosur
     // IT CLOSES ON THE HOUSE POLICY — the same two lines executePurchase
     // writes. They are not cosmetic: `opexPsf` reads `service`, so a vessel
     // without them prices the building at a different operating cost from the
-    // one it will be run at the day after the deed moves.
+    // one it will be run at the day after the deed moves. Measured on 37
+    // listings by dropping the field back out: worth nothing at the default
+    // stance, $5,909 of NOI a building on the high-service policy and $4,924
+    // on the lean one. Inert until the player touches the dial, and a silent
+    // gap at the closing table the moment they do.
     service: s.opsPolicy?.service ?? 0,
     plan: s.opsPolicy?.plan ?? 1,
     ...(d.occ !== undefined ? { occ: d.occ } : {}),

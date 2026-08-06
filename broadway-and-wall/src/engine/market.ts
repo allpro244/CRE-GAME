@@ -1972,6 +1972,14 @@ export function tickEcon(s: GameState) {
     const escalation = (e.inflExp ?? 0.02) / 12;
     const drift = c2.rentDrift * 0.55 + e.sectorMom[k] * 0.42 + vacTerm + scarcity
       + anchor + (jobDrift * 0.35) + escalation;
+    // THE HALF-OF-BASE FLOOR IS NOW A GUARD AGAIN, WHICH IS ALL IT WAS EVER
+    // MEANT TO BE. It used to be load-bearing and it used to be the reason the
+    // amplitude above looked survivable: removing it took office peak-to-trough
+    // from 12.5x to 94x, and it bound 9.5% of all months with 16 of 17 careers
+    // touching it — a rail holding up the model. Measured after the sublet
+    // channel: it binds 0.0% of months in every class over 6 seeds x 50 years,
+    // and deleting it entirely reproduces every statistic in this file to the
+    // digit. Left in place because a guard that never fires is a guard.
     e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.5, e.rentIdx[k] * (1 + drift + rrange(s, -vol, vol)));
     e.effRentIdx[k] = +(e.rentIdx[k] * (1 - 0.14 * e.concIdx[k])).toFixed(4);
   }
@@ -2096,7 +2104,25 @@ export function tickEcon(s: GameState) {
     // base while costs reached only 1.49x, yield on cost averaged 14.98%
     // against a 7.50% hurdle, and development ran flat out at its ceiling in
     // 83% of months. A margin that wide is not a decision, it is a formality.
-    const HEAT_PIVOT = 0.0124;
+    //
+    // AND IT IS THE SAME QUANTITY AS `REF_PIPE_SHARE`, WHICH SAID 0.018.
+    // Two constants, two hundred lines apart, both defined as "the share of
+    // stock this town has under construction in an ordinary year", with
+    // different answers — which is the third kind of fake number, and the
+    // symptom was exactly what a wrong pivot predicts: with the pipeline
+    // running hot of the pivot, heat sat at its +1.6 CEILING 45.3% of months
+    // and never once reached its floor, so real construction cost rose through
+    // every bust instead of falling about six per cent a year at idle, and the
+    // loop this whole block exists to close — the trades cutting their prices
+    // until development reopens — could not fire.
+    //
+    // Re-measured after the teardown pipeline was made to queue for the same
+    // crews as everything else (dev.ts), because that is what sets the number:
+    // median pipeline share over 6 seeds x 50 years is 0.0175, and buildEma's
+    // median is 0.0178. `REF_PIPE_SHARE` was right and this one was stale. It
+    // is now the same symbol so the two cannot part company again. Measured
+    // after: the ceiling binds 9.2% of months instead of 45.3%.
+    const HEAT_PIVOT = REF_PIPE_SHARE;
     const heat = clamp(((e.buildEma ?? HEAT_PIVOT) - HEAT_PIVOT) * 110, -1.9, 1.6);
     const slope = heat < 0 ? 0.0026 : 0.0016;
     const costDrift = (e.inflExp ?? 0.02) / 12 + heat * slope + (e.phase === "recession" ? -0.0004 : 0);

@@ -37,7 +37,7 @@ import { assetValue, initialCondition, inPlace, landValue, noiAfterTaxYr, occupa
 import { cityInfillCap, devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retailWantsMixed, SOFT_COST, useForZone, noteRecordPlan, openConstructionDesks, pickConstructionDesk, capRetail, withStreetRetail } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss } from "./lenders";
 import { streetRefiProceeds, productById } from "./debt";
-import { deskWillExtend, NOTICE_M, FORECLOSE_M } from "./workout";
+import { deskWillExtend, extensionFeePct, NOTICE_M, FORECLOSE_M } from "./workout";
 import { recordComp } from "./comps";
 import { demandNow } from "./demand";
 
@@ -1370,7 +1370,7 @@ function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: 
  * negotiating with somebody who has nothing to sell.
  */
 function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string): boolean {
-  const lev = (r.aum ?? 0) > 0 ? Math.min(1.6, Math.max(0, r.debt / (r.aum as number))) : r.targetLtv;
+  const lev = (r.aum ?? 0) > 0 ? Math.max(0, r.debt / (r.aum as number)) : r.targetLtv;
   const st = STYLE[r.style];
   let worst: { bbl: string; rec: ParcelRecord; v: number; ratio: number } | null = null;
   for (const bbl of r.bbls) {
@@ -1432,7 +1432,7 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
   // The mortgage on one asset is the leverage actually on the book — the same
   // proxy `debtReleasedOnSale` uses at a closing, for the same reason, so a
   // building's loan is one number rather than two.
-  const lev = Math.min(1.6, Math.max(0, r.debt / aum));
+  const lev = Math.max(0, r.debt / aum);
   for (const bbl of [...r.bbls]) {
     const term = loanTermM(r, bbl);
     const held = s.month - originM(r, bbl, term);
@@ -1440,7 +1440,11 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
     const { v, noi } = markAsset(s, r, rec);
-    const due = Math.round(v * lev);
+    // A firm cannot owe more on one building than it owes altogether. That is
+    // the only bound needed here — no cap on leverage, which would be a rail
+    // rather than a fact, because a book marked below its debt is a real
+    // condition and the whole point of this block is that it is survivable.
+    const due = Math.min(r.debt, Math.round(v * lev));
     if (due <= 0) continue;
     const refi = streetRefiProceeds(s, v, noi, st.maxLtv);
     const gap = due - refi.principal;
@@ -1455,10 +1459,12 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
     //    and it is the same test the player's forbearance request runs.
     const desk = deskFor(s, r, bbl);
     if (deskWillExtend(s, desk)) {
-      // Modification paper is not free. The fee is capitalised, which is what
-      // a desk does when the borrower plainly has no cash — it is why an
-      // extended loan comes back bigger than it went in.
-      r.debt = Math.round(r.debt + gap * 0.01);
+      // Modification paper is not free, and the point the desk charges is the
+      // point it charges the player — `extensionFeePct`, one answer for both
+      // borrowers. It is capitalised, which is what a desk does when the
+      // borrower plainly has no cash, and it is why an extended loan comes back
+      // bigger than it went in.
+      r.debt = Math.round(r.debt + due * extensionFeePct(s, desk));
       // The runway is what it is for: sell something and pay it down.
       if (r.cash < gap) marketAssetToRaise(s, parcels, r, gap - Math.max(0, r.cash));
       if (rng(s) < 0.25) {

@@ -482,8 +482,19 @@ export function generateCity(cfg) {
   // Turn a claimed cell into a block. A cell too thin to carry a full setback
   // still goes in — as pavement with no block on it, which reads as a wide
   // street rather than as a hole.
-  function pushBlock(cell, district, full, streetW, aveW, extra, chamferAll = 0) {
-    let inset = erode(cell, (_a, e) => (full && e % 2 === 1 ? aveW / 2 : streetW / 2))
+  /**
+   * `ways` is how a superblock gets an arterial round it and a service road
+   * through it. The pieces of a split cell are eroded EDGE BY EDGE: an edge
+   * that lies on the original cell's boundary is a piece of the arterial and
+   * gives away half of `streetW`, and an edge that does not is an internal way
+   * and gives away half of the much narrower `ways.innerW`. Without it the
+   * estate paid a twenty-metre arterial on every internal line as well, which
+   * took two-fifths of its ground and left it at a parcel and a half per block.
+   */
+  function pushBlock(cell, district, full, streetW, aveW, extra, chamferAll = 0, ways = null) {
+    let inset = (ways
+      ? erode(cell, (_a, e) => (ways.onRim(e) ? streetW / 2 : ways.innerW / 2))
+      : erode(cell, (_a, e) => (full && e % 2 === 1 ? aveW / 2 : streetW / 2)))
       ?? erode(cell, streetW / 2)
       ?? erode(cell, streetW / 3);
     // THE CHAFLÁN. Cerdà cut twenty metres off all four corners of every 113 m
@@ -550,24 +561,48 @@ export function generateCity(cfg) {
   // the island, and each of the district's leaves keeps the part that falls
   // inside it. A kind that cannot be written as such a field does not go here.
   function emitCell(quad, name, d, mine, opt, i, j) {
+    /**
+     * THE ESTATE'S OWN PLAN IS CUT FIRST AND CLIPPED AFTERWARDS, and the order
+     * is load-bearing.
+     *
+     * claimCell drops a piece whose CENTROID is outside the shoreline, which is
+     * the backstop that stops a block floating in a bay the shore clip could not
+     * reach. On an ordinary 70 x 200 m block that costs nothing. On a 300 x 330
+     * superblock it costs a hundred thousand square metres in one go, and
+     * measured across sixty islands the two worst-covered — 93.1% and 94.1%
+     * against a median of 98.3 — were losing four per cent of their whole land
+     * area to exactly two or three of these. Splitting the grid quad into the
+     * estate's slabs BEFORE claiming them means each piece is a third the size
+     * and answers the shoreline question on its own, and it is also what really
+     * happened: the plan was drawn over the whole site, and the part of it in
+     * the water was never built.
+     */
+    const plan = opt.split
+      ? (() => { const out = []; splitCells(quad, opt.split, opt.splitJitter ?? 12, 1500, out); return out; })()
+      : [quad];
     for (const leaf of mine) {
-      for (const cell of claimCell(quad, leaf.hp, KEEP)) {
-        const whole = cell.length === quad.length && cell.every((p, k) => p === quad[k]);
-        // A superblock is an arterial cell with its own ways inside it, and the
-        // ways are cut from the CLAIMED cell rather than from the grid quad —
-        // an estate that runs off the end of the island gets the part of its
-        // plan that is on dry ground, not a plan of its own in the water.
-        let pieces = [cell];
-        if (opt.split) {
-          pieces = [];
-          splitCells(cell, opt.split, opt.splitJitter ?? 12, 1500, pieces);
-        }
-        for (const pc of pieces) {
-          pushBlock(pc, name, whole && pieces.length === 1, d.streetW, d.aveW ?? d.streetW, {
+      for (const slab of plan) {
+        for (const cell of claimCell(slab, leaf.hp, KEEP)) {
+          const whole = cell.length === slab.length && cell.every((p, k) => p === slab[k]);
+          const ways = plan.length > 1 && opt.innerW
+            ? {
+              innerW: opt.innerW,
+              // An edge is on the arterial when its midpoint lies on the GRID
+              // QUAD's boundary — the ring road round the estate — rather than
+              // on a line the split drew inside it. Half a metre of tolerance:
+              // splitConvex reuses the quad's own vertices, so the only error
+              // here is the arithmetic of the cut points.
+              onRim: (e) => {
+                const a = cell[e], b = cell[(e + 1) % cell.length];
+                return distToRing([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], quad) < 0.5;
+              },
+            }
+            : null;
+          pushBlock(cell, name, whole && plan.length === 1, d.streetW, d.aveW ?? d.streetW, {
             numbered: opt.numbered ? opt.numbered(i, j) : undefined,
             u: opt.uOf ? opt.uOf(i, j) : undefined,
             uFifth: opt.uMid,
-          }, opt.chamferAll ?? 0);
+          }, opt.chamferAll ?? 0, ways);
         }
       }
     }
@@ -643,6 +678,7 @@ export function generateCity(cfg) {
       chamferAll: d.chamferAll ?? 0,
       split: d.superCell ? () => rr(d.superCell[0], d.superCell[1]) : undefined,
       splitJitter: d.superJitter,
+      innerW: d.wayW,
     });
   }
 
@@ -714,32 +750,41 @@ export function generateCity(cfg) {
     let rMax = 0;
     for (const p of COAST_M) rMax = Math.max(rMax, Math.hypot(p[0] - F[0], p[1] - F[1]));
     rMax += d.ringPitch * 2;
-    const r0 = d.circusR ?? 90;
+    // THE CIRCUS IS A RING OF BUILDINGS ROUND A ROUNDABOUT, not a disc.
+    // Emitting everything inside `circusR` as one cell made a 193 m circus into
+    // a single 117,000 m2 block on seed 1234567, and a block that big straddling
+    // a bay has its centroid in the water — where the generator drops it, taking
+    // a tenth of the district's ground with it. So the plinth in the middle is
+    // the monument island, small enough to be one, and the ground between it
+    // and the first ring street is the circus frontage: deep lots facing in,
+    // which is what stands round the Étoile and round Karlsruhe's Schlossplatz.
+    const plinth = Math.max(18, Math.min(42, (d.circusR ?? 90) * 0.22));
+    const r1 = Math.max(plinth + 40, d.circusR ?? 90);
     const M = Math.max(8, Math.round(d.spokes ?? 18));
-    const N = Math.max(2, Math.ceil((rMax - r0) / d.ringPitch));
+    const N = Math.max(3, 1 + Math.ceil((rMax - r1) / d.ringPitch));
     const th0 = ((d.bearingDeg ?? 0) * Math.PI) / 180;
 
     // The ring radii wander a little — a ring road was surveyed once and then
     // widened where the traffic was, and a set of perfectly concentric circles
     // reads as a dartboard rather than as a town.
-    const R = [r0];
-    for (let i = 1; i <= N; i++) R.push(R[i - 1] + d.ringPitch * rr(0.86, 1.16));
+    const R = [plinth, r1];
+    for (let i = 2; i <= N; i++) R.push(R[i - 1] + d.ringPitch * rr(0.86, 1.16));
     const nodeAt = (i, j) => {
       const a = th0 + (j / M) * TAU_;
       return [F[0] + R[i] * Math.cos(a) + rr(-1.4, 1.4), F[1] + R[i] * Math.sin(a) + rr(-1.4, 1.4)];
     };
     emitQuads(name, d, N, M, nodeAt, {
       uOf: (i) => (R[i] + R[i + 1]) / 2,
-      uMid: (r0 + R[N]) / 2,
+      uMid: (plinth + R[N]) / 2,
     });
-    // The circus itself. It is convex by construction (a regular polygon) and
-    // it is the one cell in the district that no lattice would ever produce.
-    const circus = [];
+    // The monument island in the middle. Convex by construction (a regular
+    // polygon) and the one cell in the district no lattice would ever produce.
+    const island = [];
     for (let j = 0; j < M; j++) {
       const a = th0 + (j / M) * TAU_;
-      circus.push([F[0] + r0 * Math.cos(a), F[1] + r0 * Math.sin(a)]);
+      island.push([F[0] + plinth * Math.cos(a), F[1] + plinth * Math.sin(a)]);
     }
-    emitCell(circus, name, d, mine, { uOf: () => r0 / 2, uMid: (r0 + R[N]) / 2 }, 0, 0);
+    emitCell(island, name, d, mine, { uOf: () => plinth / 2, uMid: (plinth + R[N]) / 2 }, 0, 0);
   }
 
   // --- organic districts ----------------------------------------------------

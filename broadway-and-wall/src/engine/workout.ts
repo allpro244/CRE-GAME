@@ -77,6 +77,25 @@ export function deskWillExtend(s: GameState, lenderName: string, rel = 20): bool
   return healthy || (cr > 0.05 && rel > 45);
 }
 
+/**
+ * WHAT AN EXTENSION COSTS, as a share of the balance being extended.
+ *
+ * The price of time, and it is not small. A desk with capital charges a point
+ * to re-paper a loan it was happy to have; a stretched one charges two, because
+ * it is being asked to carry something its regulator is already asking about.
+ * Both are ordinary modification fees on real term paper.
+ *
+ * Lifted out of `workoutMood` so the street pays the same point the player pays
+ * — a firm on this street rolling a balloon at First Harbor and a player asking
+ * First Harbor for six months are buying the same thing from the same desk, and
+ * two numbers for it would be two answers to one question.
+ */
+export function extensionFeePct(s: GameState, lenderName: string): number {
+  const l = lenderByName(s, lenderName);
+  if (!l) return 0.02;
+  return capitalRatio(l) > 0.075 && l.delinquent < 0.06 ? 0.01 : 0.02;
+}
+
 /** Is this lender in a mood to work with anybody? */
 export function workoutMood(s: GameState, lenderName: string): {
   willExtend: boolean; why: string; feePct: number; bumpPct: number; paydownPct: number;
@@ -119,8 +138,8 @@ export function workoutMood(s: GameState, lenderName: string): {
         ? `${lenderName} is stretched — ${(l.delinquent * 100).toFixed(1)}% of their book is not paying. `
           + (rel > 45 ? "Your record with them is the only reason this is a conversation." : "They have no reason to carry you.")
         : `${lenderName} is undercapitalised. They cannot carry a non-performing loan; the regulators are counting.`,
-    // The price of time, and it is not small.
-    feePct: healthy ? 0.01 : 0.02,
+    // The price of time, and it is not small. See extensionFeePct above.
+    feePct: extensionFeePct(s, lenderName),
     bumpPct: healthy ? 1.5 : 3.0,
     paydownPct: healthy ? 0.03 : 0.08,
   };

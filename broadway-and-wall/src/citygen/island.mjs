@@ -820,20 +820,100 @@ export function islandConfig(seed) {
    * city had exactly one irregular blob and grid everywhere else.
    */
   const organicTown = Dpl.chance(0.11);
-  const kindFor = (role) => {
-    if (organicTown) return role === "ind" ? (Dpl.chance(0.5) ? "organic" : "lattice") : "organic";
+  /**
+   * A RADIAL PLAN AND A SUPERBLOCK ESTATE ARE EACH ALLOWED ONCE.
+   *
+   * Not as a budget — because in life each of them is a single event. A radial
+   * plan is aimed at ONE thing: Karlsruhe has one palace, Washington one
+   * Capitol, and a town with two ceremonial foci a thousand metres apart has
+   * neither. The estates went up in one programme, on the ground one authority
+   * had, in one decade; a port whose downtown AND whose docks are both postwar
+   * slab estates did not grow, it was invented.
+   *
+   * It is also what was breaking the parcel budget. A superblock district
+   * genuinely carries about half the parcels the same ground would carry as a
+   * gridiron — correctly, that is what an estate is — so two of them plus a
+   * radial quarter put seed 555 at 744 lots on an island whose size dial
+   * promises about fourteen hundred. Once each, and the same seed builds a
+   * town.
+   */
+  let usedRadial = false, usedSuper = false;
+  /**
+   * AN EXTENSION IS AN EXTENSION. Cerdà's Eixample and every slab estate ever
+   * built are things that happened BESIDE a city, on ground somebody could
+   * assemble in one go, and neither has ever been most of a town. Barcelona's
+   * chamfered grid is about a fifth of Barcelona; the Gothic Quarter and
+   * Gràcia and Sants are the rest of it.
+   *
+   * It is also the last thing keeping the parcel budget honest. Both kinds
+   * carry markedly fewer parcels per hectare than a gridiron — the Eixample
+   * gives away 30% of its ground to roadway plus another 9% to the chamfers
+   * themselves, and an estate is two slabs where a grid would put twelve. On a
+   * district holding a fifth of the island that is a detail; on the ringed
+   * arrangement, where the Exchange can hold 55% of the land, seed 555 came out
+   * at 980 lots on an island whose size dial says about fourteen hundred. So a
+   * role that holds more than a third of the island cannot draw either, and the
+   * result reads as a city with an extension in it rather than as an extension.
+   *
+   * THE ESTATE'S LIMIT IS TIGHTER THAN THE EIXAMPLE'S, at a quarter rather than
+   * a third, and for a different reason. A chamfered grid is a normal density
+   * of parcels with a lot of roadway; an estate's parcel IS the slab's plot,
+   * about a thousand square metres against six hundred for a platted lot — and
+   * that is if anything generous, since a real slab stands on a fifth of a
+   * hectare. Measured over sixty islands, four of the five sparsest carried a
+   * superblock district, and the sparsest of all built 1,018 lots. Making the
+   * estate's parcels smaller would be a thumb on the scale; keeping the estate
+   * to a neighbourhood, which is what an estate is, is not.
+   */
+  const SPARSE_MAX = 0.34, ESTATE_MAX = 0.24;
+  const kindFor = (role, share = 0) => {
+    const once = (k) => {
+      if (k === "chamfer" && share > SPARSE_MAX) return null;
+      if (k === "superblock" && share > ESTATE_MAX) return null;
+      if (k === "radial") { if (usedRadial) return null; usedRadial = true; }
+      if (k === "superblock") { if (usedSuper) return null; usedSuper = true; }
+      return k;
+    };
+    /**
+     * THE TOWN THAT NEVER HAD A SURVEYOR, and the one honest limit on it.
+     *
+     * Siena and Bruges and the City of London are medieval to the middle and
+     * they still have a nineteenth-century periphery, because the periphery was
+     * built in the nineteenth century. So an organic town is organic where the
+     * town was: the landing and the Exchange always, the housing usually, the
+     * yards half the time — which is "organic nearly throughout" and not
+     * "organic including the parts that were fields until 1890".
+     *
+     * It is also the top of the parcel range. An unplanned mesh puts more of
+     * its ground inside blocks than a grid with avenues does, so an island that
+     * came out organic in every district built 1,803 lots where the size dial
+     * says about 1,420 — the widest miss in either direction across 24 seeds.
+     */
+    if (organicTown) {
+      if (role === "old" || role === "core") return "organic";
+      if (role === "ind") return Dpl.chance(0.5) ? "organic" : "lattice";
+      return Dpl.chance(0.6) ? "organic" : Dpl.chance(0.5) ? "curvi" : "lattice";
+    }
     const r = Dpl.rand();
     switch (role) {
       case "old":                                        // the landing
-        return r < 0.50 ? "organic" : r < 0.70 ? "lattice" : r < 0.86 ? "radial" : "chamfer";
-      case "core":                                       // the Exchange
-        return r < 0.44 ? "lattice" : r < 0.60 ? "radial" : r < 0.74 ? "chamfer"
-          : r < 0.82 ? "superblock" : "organic";
+        return (r < 0.50 ? "organic" : r < 0.70 ? "lattice" : r < 0.86 ? once("radial") : once("chamfer")) ?? "lattice";
+      case "core":
+        // THE EXCHANGE CANNOT BE A SUPERBLOCK ESTATE, and that is a fact about
+        // the world rather than a budget. Slab estates went up on cleared
+        // industrial land and on the periphery, on ground one authority could
+        // assemble; nowhere did a working port's whole commercial middle come
+        // down for them. It is also the district that carries most of the
+        // island — measured, the core takes 32-51% of a banded island and up to
+        // 60% of a ringed one — so letting it draw the kind that carries half
+        // the parcels per hectare put seed 555 at 786 lots against about 1,400.
+        return (r < 0.52 ? "lattice" : r < 0.68 ? once("radial") : r < 0.84 ? once("chamfer")
+          : "organic") ?? "lattice";
       case "ind":                                        // the yards
-        return r < 0.62 ? "lattice" : r < 0.86 ? "superblock" : "organic";
+        return (r < 0.62 ? "lattice" : r < 0.86 ? once("superblock") : "organic") ?? "lattice";
       default:                                           // the housing
-        return r < 0.32 ? "lattice" : r < 0.58 ? "curvi" : r < 0.70 ? "chamfer"
-          : r < 0.84 ? "superblock" : "organic";
+        return (r < 0.32 ? "lattice" : r < 0.58 ? "curvi" : r < 0.70 ? once("chamfer")
+          : r < 0.84 ? once("superblock") : "organic") ?? "curvi";
     }
   };
 
@@ -864,9 +944,10 @@ export function islandConfig(seed) {
    * and villa 825 straddle the first three; estate and yard sit above them
    * because a block platted in one hand and a working wharf genuinely are
    * bigger parcels, and those two are drawn rarely enough that the island's
-   * total stays in family. A first cut of this table ran 100-200 m2 low across
-   * the board and put the median island at 1,530 lots against the 1,376 it
-   * had been.
+   * total stays in family. A first cut of this table ran 60-100 m2 lower across
+   * the board and every district that drew from it came out at a 330-460 m2
+   * mean lot against the 650-715 of the flavour it was replacing — a fifth more
+   * parcels wherever it landed, which is not a lot convention, it is a thumb.
    */
   const LOTWAYS = {
     row:     [360, 820, 165, 34, 7],    // narrow frontages on a deep strip
@@ -1021,7 +1102,7 @@ export function islandConfig(seed) {
    * construction rather than something to hope about. Several slots may share
    * one district key, which is what makes a ring a ring.
    */
-  const slotTree = { node: null, slots: [] };
+  const slotTree = { node: null, hub: null };
   if (arrangement === "bands") {
     if (nDistricts === 3) {
       slotTree.node = branch(cutOld, oldSide, "old", branch(cutCore, coreSide, "core", "resiA"));
@@ -1107,11 +1188,6 @@ export function islandConfig(seed) {
     const sl = slotOf(q);
     if (sl && slotLand.has(sl)) slotLand.get(sl).coast++;
   }
-  const slotMid = (id) => {
-    const e = slotLand.get(id);
-    return e && e.n ? [e.x / e.n, e.y / e.n] : mid;
-  };
-
   /**
    * THE ROLES, HANDED OUT ON THE EVIDENCE.
    *
@@ -1138,12 +1214,12 @@ export function islandConfig(seed) {
       const d = dist([e.x / e.n, e.y / e.n], harbourHead);
       if (d < bd) { bd = d; oldId = id; }
     }
-    // The yards: the outer wedge with the most shoreline. Falling back to the
-    // inner ring if the outer one has no frontage at all keeps a working port
-    // on the water rather than putting it up a hill.
-    const byCoast = [...live].sort((a, b) => b[1].coast - a[1].coast);
-    const indId = (outs.find(([id]) => id === byCoast.find(([j]) => j.startsWith("out"))?.[0])?.[0])
-      ?? outs[0]?.[0] ?? null;
+    // The yards: the outer wedge with the most shoreline, exactly the question
+    // the banded arrangement asks. A wedge with NO frontage is not a candidate
+    // — there is no such thing as an inland dock — and if none of them has any,
+    // this island has no yards and the role folds into downtown below.
+    const indId = [...outs].sort((a, b) => b[1].coast - a[1].coast)
+      .filter(([, e]) => e.coast > 0)[0]?.[0] ?? null;
     let r = 0;
     for (const [id] of live) {
       if (id === oldId) roleOf.set(id, "old");
@@ -1254,7 +1330,7 @@ export function islandConfig(seed) {
   const buildDistrict = (k, role, flavor) => {
     if (districts[k]) return;                        // a folded role: already there
     const sv = surveyFor(role);
-    const kind = kindFor(role);
+    const kind = kindFor(role, (roleLand[role] ?? 0) / land.length);
     const way = lotWayFor(role, kind);
     const scale = ROLE_SCALE[role] ?? 1;
     const stPitch = Math.round(sv.pitch * scale);
@@ -1267,13 +1343,24 @@ export function islandConfig(seed) {
       ...(way ? { lot: LOTWAYS[way] } : {}),
     };
     if (kind === "organic") {
-      // The colonial tangle. The cell range is the block AREA it splits down
-      // to, so it is set from the survey's pitch rather than from a constant —
-      // a town of small blocks has a small old quarter block too.
+      /**
+       * The colonial tangle. The cell range is the block AREA it splits down
+       * to, so it is set from the survey's own pitch rather than from a
+       * constant — a town of small blocks has a small old quarter block too.
+       *
+       * A THIRD TO THREE QUARTERS of a surveyed block, not one to one and a
+       * half. An unplanned quarter is FINER than the grid beside it — that is
+       * most of what makes it look unplanned from above — and the numbers this
+       * replaced (3,050-8,400 m2 flat) say the same thing about the grid they
+       * sat next to. Set at one to one and a half, an island that came out
+       * organic nearly throughout built 1,949 lots against the 1,420 the size
+       * dial promises, because a fine mesh of eight-metre lanes puts far more
+       * of its ground inside blocks than a grid with avenues in it does.
+       */
       const a = stPitch * avePitch;
       districts[k] = {
         ...base, kind: "organic",
-        cell: [Math.round(a * 0.62), Math.round(a * 1.45)],
+        cell: [Math.round(a * 0.34), Math.round(a * 0.78)],
         jitterDeg: Math.round(Dg.f(11, 22)),
         streetW: Math.round(Math.max(8, streetWOf(stPitch) * 0.7)),
       };
@@ -1291,7 +1378,11 @@ export function islandConfig(seed) {
       districts[k] = {
         ...base, kind: "superblock",
         stPitch: cell, avePitch: long,
-        streetW: Math.round(Dg.f(16, 22)), aveW: Math.round(Dg.f(24, 32)),
+        // The arterial round the ring, and the service road inside it. They are
+        // different roads and the estate only works if they are different
+        // numbers — see the `ways` note in pushBlock.
+        streetW: Math.round(Dg.f(22, 30)), aveW: Math.round(Dg.f(28, 38)),
+        wayW: Math.round(Dg.f(8, 12)),
         warpAmp: Math.round(sv.warp * 0.5),
         /**
          * THE WAYS INSIDE THE RING, and the number that decides whether this is
@@ -1327,10 +1418,32 @@ export function islandConfig(seed) {
         // point of a radial plan is that it is aimed at something.
         focus: null, focusWant: role,
         ringPitch: Math.round(stPitch * Dg.f(0.95, 1.35)),
-        spokes: Dg.i(11, 26),
-        circusR: Math.round(Dg.f(55, 110)),
+        /**
+         * THE CIRCUS IS AS BIG AS THE SPOKE COUNT MAKES IT.
+         *
+         * An arc of fixed angle is shorter the closer to the focus you stand,
+         * so the first ring's blocks are as wide as 2*pi*R/spokes and no wider.
+         * With twenty-five spokes and a ninety-metre circus that is a
+         * twenty-three metre sliver — narrower than the street around it — and
+         * measured on seed 99991 eighteen of the radial district's thirty-nine
+         * cells came out as bare pavement with no block on them at all. So the
+         * circus radius is SOLVED from the spokes and the pitch rather than
+         * drawn: R = spokes * pitch / 2*pi puts the innermost block's frontage
+         * at the district's own street pitch, which is the width every ring
+         * further out will exceed.
+         */
+        spokes: Dg.i(9, 20),
+        circusR: 0,                                    // solved just below
         streetW: streetWOf(stPitch), aveW: aveWOf(stPitch),
       };
+      // 60 to 130 m of radius, which is 120 to 260 m across: the Étoile is 240,
+      // Piccadilly Circus is under 100, and there is no such thing as a
+      // six-hundred-metre one. Uncapped, the solve above put a 298 m circus on
+      // one island — a 256 m deep frontage band, which is not a circus, it is a
+      // quarter, and it cost that island two per cent of its coverage in cells
+      // too big for the shoreline test to handle.
+      districts[k].circusR = Math.max(60, Math.min(130,
+        Math.round((districts[k].spokes * stPitch * Dg.f(0.9, 1.35)) / TAU)));
     } else {
       districts[k] = {
         ...base, kind: "lattice",
@@ -1371,9 +1484,9 @@ export function islandConfig(seed) {
    * kind gets nothing, because there is nothing there to reconcile — the grid
    * runs straight through, which is also what really happens.
    *
-   * At most three: they are obstacles in the generator and every obstacle is
-   * differenced out of every cell it meets, so this is a cost as well as a
-   * feature. The three longest are the ones a city would have named.
+   * At most TWO: they are obstacles in the generator and every obstacle is
+   * differenced out of every cell it meets, so this is a cost in land as well
+   * as in time. The two longest are the ones a city would have named.
    */
   const seams = [];
   {
@@ -1414,7 +1527,12 @@ export function islandConfig(seed) {
       found.push({
         cx: Math.round(p0[0] + dir[0] * (bestA + bestB) / 2),
         cy: Math.round(p0[1] + dir[1] * (bestA + bestB) / 2),
-        w: Math.round(bestB - bestA), h: Math.round(Dsm.f(15, 23)),
+        // A SEAM IS A STREET, NOT A BOULEVARD. At 15-23 m and three of them
+        // across a 1.4 km2 island the seams alone were taking 3.4% of the land
+        // as roadway on top of the boulevards, and the island's share of ground
+        // in lots fell from the authored 59% to 49%. Twelve to eighteen is an
+        // ordinary through street, which is what Greenwich Ave is.
+        w: Math.round(bestB - bestA), h: Math.round(Dsm.f(12, 18)),
         deg: +((Math.atan2(dir[1], dir[0]) * R2D + 360) % 360).toFixed(1),
       });
     };
@@ -1427,7 +1545,7 @@ export function islandConfig(seed) {
       walk(node.pos, [...hp, [-nx, -ny, -c]]);
     })(partition, []);
     found.sort((a, b) => b.w - a.w);
-    seams.push(...found.slice(0, 3));
+    seams.push(...found.slice(0, 2));
   }
 
   // --- 5. the cores ----------------------------------------------------------

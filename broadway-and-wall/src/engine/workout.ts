@@ -54,6 +54,32 @@ export const NOTICE_M = 6;        // the cure period
 export const FORECLOSE_M = 8;     // once they have filed
 
 /**
+ * HOW MUCH TIME AN EXTENSION ACTUALLY BUYS, in months.
+ *
+ * A maturity-default extension is a short-dated instrument. The desk is not
+ * re-underwriting a ten-year mortgage on a borrower who has just failed to
+ * repay one; it is papering twelve to twenty-four months of forbearance against
+ * a fee, a rate bump and a cash sweep, and expecting to be back at this table
+ * inside two years. That is what the workout desks do and it is the reason the
+ * phrase for it is "extend and pretend" rather than "extend and forget".
+ *
+ * EXPORTED FOR THE SAME REASON `NOTICE_M` IS. The street was getting a
+ * different answer: `rivals.tickMaturities` had no way to record a new maturity
+ * date, so an extended firm simply fell back onto its term ladder and the next
+ * test came a FULL TERM later. Measured over 965 street extensions on six
+ * unplayed centuries: a mean 78.5 months and a maximum of 120 — six and a half
+ * years for a one-to-two-point fee, while the news line the same branch printed
+ * said "they have bought time, not a solution". At six and a half years it was
+ * a solution, and the tape was simply lying. One answer, two borrowers.
+ */
+export const EXTENSION_M: [number, number] = [18, 30];
+
+/** A drawn extension term, in months. */
+export function extensionMonths(s: GameState): number {
+  return Math.round(rrange(s, ...EXTENSION_M));
+}
+
+/**
  * IS THIS DESK IN A MOOD TO EXTEND ANYBODY — the borrower-independent half of
  * `workoutMood`.
  *
@@ -249,7 +275,7 @@ export function requestForbearance(
   const nh = next.holdings[bbl]!;
   nh.loan!.balance = Math.max(0, nh.loan!.balance - paydown);
   nh.loan!.ratePct = +(nh.loan!.ratePct + mood.bumpPct).toFixed(2);
-  nh.loan!.maturityM = next.month + Math.round(rrange(next, 18, 30));
+  nh.loan!.maturityM = next.month + extensionMonths(next);
   nh.loan!.sweep = true;                    // extended paper is swept paper
   nw.stage = "forbearance";
   nw.decideM = nh.loan!.maturityM;

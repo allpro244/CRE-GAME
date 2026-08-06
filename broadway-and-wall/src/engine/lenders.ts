@@ -16,7 +16,7 @@
 //
 // Which is the whole point: a credit crunch you can read a quarter early is a
 // decision. One that arrives as a number going down is weather.
-import type { GameState } from "./types";
+import type { Alert, GameState } from "./types";
 import { logBooks, BUILT_CLASSES } from "./types";
 import { PRODUCTS } from "./debt";
 import { rng, rrange, RENT_BASE, NATURAL_VAC, CAP_BASE } from "./market";
@@ -405,16 +405,58 @@ function repudiateCommitments(s: GameState, l: Lender) {
   });
 }
 
+/**
+ * THE ENGINE SAYING "THIS ONE".
+ *
+ * The news feed is a hundred and twenty rolling lines and most of them are
+ * weather. An `Alert` is the handful a century that are not — see the interface
+ * in types.ts. The UI shifts each one off `game.alerts` as it shows it, so an
+ * engine that raises nothing costs the UI nothing.
+ *
+ * IT LIVES HERE because two files that raise alerts — this one and rivals.ts —
+ * both import from this one and neither may edit types.ts, where the six-line
+ * push properly belongs. `swans.ts` carries a private copy of the same function
+ * under the name `raise`; the two are identical and should collapse into one
+ * exported helper next to the interface the next time that file is open. Two
+ * copies of one thing is the fault this codebase calls a fake number, and this
+ * comment is the only thing currently standing in for the fix.
+ */
+export function raiseAlert(s: GameState, a: Omit<Alert, "id" | "q">) {
+  const id = s.nextAlertId ?? 1;
+  s.nextAlertId = id + 1;
+  if (!s.alerts) s.alerts = [];
+  s.alerts.push({ id, q: s.month, ...a });
+  // A queue the UI never drained would otherwise grow for a century.
+  if (s.alerts.length > 8) s.alerts.splice(0, s.alerts.length - 8);
+}
+
 const usdShort = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}k`);
 
-/** The receiver pays out, eventually. Called once a month from tickLenders. */
+/**
+ * The receiver pays out, eventually. Called once a month from tickLenders.
+ *
+ * THE ENTRY IS THERE AND THE CATEGORY IS STILL WRONG, and that is worth saying
+ * plainly rather than leaving as a comfortable silence. Conservation holds:
+ * `seizeDeposits` books the WHOLE uninsured balance out as `ga` on the Friday
+ * and this books the dividend back as `interest` when it arrives, so the net
+ * expense across the episode is exactly the haircut and `pnpm conserve`
+ * reconciles. What it is not is true bookkeeping. A bank failure is not
+ * overhead and a receiver's dividend is not interest income; both are transfers
+ * on the balance sheet, and a player reading their own P&L sees a year of
+ * enormous G&A followed eighteen months later by a year of enormous interest.
+ *
+ * The honest fix is a ledger bucket for a balance-sheet movement — the same
+ * treatment `s.loc.balance` and tenant deposits already get in the identity —
+ * and that means a new key in `BooksYear`, which lives in types.ts. This change
+ * does not own that file. Flagged, not fixed.
+ */
 export function tickReceivership(s: GameState) {
   if (!s.receivership?.length) return;
   const due = s.receivership.filter((r) => s.month >= r.payM);
   if (!due.length) return;
   for (const r of due) {
     s.cash += r.amount;
-    logBooks(s, "interest", r.amount);          // money coming back, not income earned
+    logBooks(s, "interest", r.amount);          // money coming back, not income earned — see above
     s.news.unshift({
       q: s.month, kind: "deal",
       text: `The receiver for ${r.from} has finished selling the book. ${usdShort(r.amount)} of your money comes back — `
@@ -680,6 +722,27 @@ export function tickLenders(s: GameState) {
       if (wasOurs) seizeDeposits(s, l);
       // And whether or not you banked with them, their cranes stop.
       repudiateCommitments(s, l);
+      // A DESK GOING DOWN IS NOT A LINE IN THE PAPER. Whether or not the
+      // player banked here, this is the month their borrowing capacity in this
+      // town changed: a receiver does not lend, does not extend, and does not
+      // advance against work in place, and it is about to be selling a book at
+      // whatever clears. The detail line is the one number that decides what
+      // they do about it — what this desk was lending THEM.
+      raiseAlert(s, {
+        kind: "bank", tone: "bad",
+        title: `${l.name} has been closed`,
+        body: wasOurs
+          ? `The regulators walked in on a Friday and the firm's operating account is inside the padlock. `
+            + `Whatever was over the insurance limit is a claim on a receiver now, not money. `
+            + `Every loan they had outstanding went with them, and a receiver is not a lender.`
+          : `${l.kind === "conduit" ? "The securitisation market took them with it" : "The regulators walked in on a Friday afternoon"}. `
+            + `Every loan they had outstanding is with a receiver now, and a receiver does not extend, does not advance `
+            + `against work in place, and does not haggle when it sells. Watch the tape: the best buying in this business `
+            + `comes off a broken bank's books, and it is about to.`,
+        detail: l.yours > 0
+          ? `They held ${usdShort(l.yours)} of your debt. ${(l.delinquent * 100).toFixed(1)}% of their book had stopped paying.`
+          : `${(l.delinquent * 100).toFixed(1)}% of their book had stopped paying, against a ${(targetCapital(l.name) * 100).toFixed(1)}% capital target.`,
+      });
       s.news.unshift({
         q: s.month, kind: "warn",
         text: `${l.name} has failed. ${l.kind === "conduit" ? "The securitisation market took it with them" : "The regulators walked in on a Friday afternoon and the name on the door meant nothing by Monday"} — `

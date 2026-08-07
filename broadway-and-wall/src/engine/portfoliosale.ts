@@ -25,8 +25,10 @@ import type { GameState } from "./types";
 import type { ParcelTable } from "../data/types";
 import { rng, rrange } from "./market";
 import { assetValue, resolveRec } from "./value";
-import { livingRivals, gradeOf, ownerOf, STYLE_OF } from "./rivals";
+import { livingRivals, gradeOf, ownerOf, STYLE_OF, receiverDeskFor, forgetDeed } from "./rivals";
+import { lenderByName, lenderPressure, raiseAlert } from "./lenders";
 import { executePurchase } from "./actions";
+import { depositsOn } from "./leasing";
 
 const money = (n: number) =>
   Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${Math.round(n / 1000)}K`;
@@ -200,6 +202,13 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
             const share = p.ask * ((rec ? Math.max(1, assetValue(rec, s.econ, gradeOf(s, rec))) : 1) / totV);
             debtOff += h.loan?.balance ?? 0;
             toYou += share;
+            // The security deposits go with the deeds, the same as they do on a
+            // single-asset sale — they were the tenants' money and they are the
+            // buyer's obligation now. Selling a book as one ticket deleted every
+            // holding without handing them over, which released the liability
+            // with no entry behind it. See the identity in test/conserve.mjs:
+            // Ddeposits is part of it precisely so this cannot go unnoticed.
+            s.cash -= depositsOn(h);
             delete s.holdings[b];
           }
           toYou = Math.max(0, Math.round(toYou - debtOff - p.ask * 0.02));
@@ -209,7 +218,7 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
           const rec = resolveRec(parcels, s, b);
           if (!rec) continue;
           const prev = ownerOf(s, b);
-          if (prev) { prev.bbls = prev.bbls.filter((x) => x !== b); if (prev.heldSince) delete prev.heldSince[b]; }
+          if (prev) { prev.bbls = prev.bbls.filter((x) => x !== b); forgetDeed(prev, b); }
           if (!winner.bbls.includes(b)) winner.bbls.push(b);
           (winner.heldSince ??= {})[b] = s.month;
           s.lastTradeM ??= {}; s.lastTradeM[b] = s.month;
@@ -303,6 +312,49 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
     }
   }
 
+  // --- 3b. A COMPETITOR'S WHOLE RELATIONSHIP, TAKEN BACK IN ONE MONTH ------
+  //
+  // This is the supply the file's header promised and the game had no way to
+  // produce. A firm on this street that fails does not hand back a building —
+  // it hands back everything it still owns, in one Friday, to the desks that
+  // financed it, and the desk with the largest piece of it leads the workout.
+  // A bank does not want to be a landlord eleven times over, so the book goes
+  // out whole, priced at what clears the balance sheet rather than at what the
+  // buildings are worth: see `openReoPortfolio`. It then walks its own number
+  // down every quarter until somebody says yes, which is the whole of section 2
+  // above.
+  //
+  // Four buildings is the floor, because two is a pair of deals and the point
+  // of a package is that the list of people who can write the cheque is short.
+  for (const r of s.rivals ?? []) {
+    if (r.failedM !== s.month || r.bbls.length < 4) continue;
+    if (s.portfolios.some((pf) => pf.reoBorrower === r.name)) continue;
+    const { desk, owed } = receiverDeskFor(s, parcels, r);
+    if (!desk) continue;
+    const take = r.bbls.filter((b) => !s.holdings[b]);
+    if (take.length < 4) continue;
+    openReoPortfolio(s, parcels, desk, take, r.name, owed);
+    // AND IT IS AN ALERT, NOT A LINE IN THE PAPER. A failure takes one hundred
+    // per cent of what the firm still owned — everything left goes to the
+    // desks in the same month, which clears the ">=75% of a portfolio
+    // foreclosed" bar by construction — and it is simultaneously the single
+    // best buying window in this business and a warning about the desk that
+    // just ate the loss. Four buildings is the floor so a two-building shop
+    // winding up does not interrupt anybody.
+    const p = s.portfolios.find((x) => x.reoBorrower === r.name);
+    raiseAlert(s, {
+      kind: "portfolio", tone: "bad",
+      title: `${desk} has taken back the whole of ${r.name}`,
+      body: `${take.length} buildings went to the lenders this month — everything ${r.name} still owned. `
+        + `${desk} is not a landlord and does not want to be one, so the book is out whole rather than one at a time, `
+        + `and the number it opens at is the loan and not the value. `
+        + `If nobody bids it comes down every quarter until somebody does.`,
+      detail: p
+        ? `${money(p.ask)} for the package against ${money(p.gross)} of buildings — ${((1 - p.ask / Math.max(1, p.gross)) * 100).toFixed(0)}% back from the sum of the parts.`
+        : `${money(owed)} of debt against ${take.length} buildings.`,
+    });
+  }
+
   // --- 4. a rival winds a book down as one ticket --------------------------
   // Rare, and it is the other side of the hold clock: a fund at the end of its
   // life would rather do one closing than eleven.
@@ -342,14 +394,40 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
  */
 export function openReoPortfolio(
   s: GameState, parcels: ParcelTable, lender: string, bbls: string[], borrower?: string,
+  // WHAT THE DESK IS CARRYING THE BOOK AT. Supplied when the caller knows —
+  // a failed sponsor's remaining debt is exactly what the desks took the book
+  // against — and omitted when it does not, which is the player's own
+  // foreclosures coming off the July docket in auction.ts.
+  basis?: number,
 ) {
   const clean = bbls.filter((b) => !s.holdings[b]);
   if (clean.length < 2) return;
   const gross = grossOf(s, parcels, clean);
   if (gross <= 0) return;
-  // Priced at 80-100% of what the buildings are worth one at a time — a bank
-  // starts where a bank starts, and finds out from there.
-  const open = Math.round(gross * rrange(s, 0.80, 1.00) / 1000) * 1000;
+  // WHERE A BANK STARTS, and it depends on the bank.
+  //
+  // With a known basis this is the same rule the single-asset receiver listings
+  // use (rivals.reoAsk): a desk with capital markets the book properly and
+  // wants the mark; one with its regulator in the building wants the loan off
+  // the balance sheet at what it is carried at, and takes the market when the
+  // loan is above it. `lenderPressure` interpolates and is zero for a healthy
+  // desk, so there is no discount to be had from a bank that does not need one.
+  // Without a basis it opens at 80-100% of the parts and finds out from there,
+  // which is what it always did.
+  //
+  // AND ON A FAILED SPONSOR'S BOOK THE OPENING NUMBER IS USUALLY THE MARK, not
+  // a bargain: measured over 28 receivership packages on three unplayed
+  // centuries the opening discount off the sum of the parts is 0.0% at the
+  // median. That is the right answer and it is worth being explicit about it.
+  // A firm that failed is a firm whose debt had caught its buildings, so the
+  // desk's basis is ABOVE the market and there is nothing in the basis to give
+  // away. The discount on a dead borrower's book is not in the opening price,
+  // it is in section 2 — the quarterly walk down, which is the only thing that
+  // finds out what a book nobody wants is actually worth.
+  const p = basis !== undefined ? lenderPressure(lenderByName(s, lender)) : 0;
+  const open = basis !== undefined
+    ? Math.max(1000, Math.round((gross * (1 - p) + Math.min(gross, Math.max(0, basis)) * p) / 1000) * 1000)
+    : Math.round(gross * rrange(s, 0.80, 1.00) / 1000) * 1000;
   s.listings = s.listings.filter((l) => !clean.includes(l.bbl));
   s.portfolios ??= [];
   s.portfolios.push({

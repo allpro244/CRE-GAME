@@ -5,6 +5,7 @@ import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, MarketPhase, NewsItem, Sector } from "./types";
 import { BUILT_CLASSES } from "./types";
 import { applyEra, driftInflTarget } from "./regime";
+import { swanClassLevel, swanTradeWave, tickSwans } from "./swans";
 
 export function mulberry32Step(a: number): { state: number; value: number } {
   a |= 0; a = (a + 0x6d2b79f5) | 0;
@@ -20,6 +21,150 @@ export function rng(s: GameState): number {
 }
 export const rrange = (s: GameState, a: number, b: number) => a + (b - a) * rng(s);
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+
+// ---------------------------------------------------------------------------
+// SUBLET SPACE — THE FAST HALF OF THE TENANT'S PRICE RESPONSE, AND IT WAS NOT
+// IN THIS ENGINE AT ALL.
+//
+// The only tenant-side answer to price here was `affordEff`, an EMA whose
+// hundred-month time constant is the honest speed of LEASE ROLLOVER: an
+// eight-year office term rolls about one per cent of a footprint a month,
+// which is exactly what 0.010 says. Nothing else opposed a shortage, so
+// nothing opposed a shortage inside a year — and the measurement showed it.
+// Over 17 careers of fifty years, the median office owner watched real
+// effective rent draw down 92.4%, and did it TWICE, about nine years down and
+// nine years back. The worst national US office episode on record (1990-92)
+// was -35 to -40% real effective; the deepest episode anywhere in the American
+// record — Houston 1983-87, a one-industry town in an oil bust on top of a
+// tax-shelter overbuild — was about -65 to -70%, once, in one city, in eighty
+// years. This model's MEDIAN career was worse than Houston, twice.
+//
+// In life the space comes back long before the lease does. A firm that has
+// stopped hiring, or that is staring at a rent it can no longer justify, puts
+// floors on the sublet market within MONTHS and goes on paying its landlord to
+// the end of the term. That inventory is real, large, published and fast: San
+// Francisco office sublease space went from about 1.5M sf at the end of 2019
+// to about 9M sf by 2023 — roughly a tenth of the city's inventory and about a
+// quarter of everything available — with the bulk of the move inside four
+// quarters. It drains on the same clock: when space is cheap again a tenant
+// takes its floors back off the market rather than sublet them at a loss.
+//
+// That is a fast ceiling on a shortage and a fast floor under a glut, and it
+// is the one that can exist without falsifying lease physics, because the
+// sublet decision is not a lease decision. `affordEff` stays exactly where it
+// was for office. This runs alongside it, eleven times faster.
+//
+// `sublet[k]` is square feet INSIDE `occupied` — the landlord is still being
+// paid — that are on the market anyway. Rents, concessions and developers all
+// read AVAILABILITY (direct vacancy plus sublet), which is what a real market
+// report quotes and what a real tenant chooses from.
+//
+// MEASURED, 6 SEEDS x 50 YEARS, AND IT IS THE LARGEST SINGLE EFFECT IN THE
+// FILE. Turning this channel off and changing nothing else takes office
+// sd(log) of real effective rent from 0.263 back to 0.696 — a 156% return of
+// amplitude — peak-to-trough from 2.84x to 9.81x and the median career's
+// worst real drawdown from 47.6% back to 89.8%. Industrial +46%, retail +28%.
+// Housing is unaffected by design; its speed comes from its lease term.
+//
+// AND WHERE IT IS STILL WRONG, because the inventory is checkable. Office
+// sublet runs 0.23% of stock at the median here, 6.0% at the 95th and 8.9% at
+// the worst; the published figures are 1-1.5% of inventory in an ordinary US
+// office market, 2.7% at the national 2023 peak and about 10% at San
+// Francisco's. So the extreme is right and the ORDINARY LEVEL IS THREE TIMES
+// TOO LOW, because this give-back is driven by the aggregate: when the city as
+// a whole wants what it holds, nothing is marketed. In life the inventory
+// never empties, because firms merge, contract and relocate idiosyncratically
+// in every kind of market — it is the DISPERSION of firm outcomes, not the
+// net. Modelling that properly means a background floor on marketed space,
+// and a permanent floor cannot be added here without also restating
+// NATURAL_VAC as an availability rate rather than a direct-vacancy rate, which
+// is a much wider change than this one. Recorded, not fixed.
+declare module "./types" {
+  interface Econ {
+    /** SF under lease and on the sublet market, by class. Counted inside
+     *  `occupied`, counted again in availability — that double life is the
+     *  whole point of it. */
+    sublet?: Record<BuiltClass, number>;
+  }
+}
+
+/** How fast unwanted space reaches the market, and leaves it again, in months.
+ *  San Francisco's sublease inventory did the bulk of its 2020 move in four
+ *  quarters and drained on a similar clock after 2023; nine months puts ~74%
+ *  of the move inside a year, which is that. */
+const SUBLET_TAU = 9;
+
+/** Of the space a tenant no longer wants, the share it can actually MARKET.
+ *  This is a physical question about demising, not a preference. An office
+ *  floor is separable and the sublet market is the deepest there is. A
+ *  warehouse sublets whole or by bay — Amazon marketed something like 10M sf
+ *  of it in 2022 — but a small one cannot be cut up. A shop is format- and
+ *  location-specific and needs a landlord's consent, so assignments happen and
+ *  they happen slowly. There is NO sublet market in flats worth modelling: the
+ *  fast quantity response in housing is households doubling up, and that is a
+ *  DEMAND response, which is where it now sits — see AFFORD_ROLL, where
+ *  housing finally reprices at its own one-year lease term instead of an
+ *  office's eight. */
+const DEMISABLE: Record<BuiltClass, number> = {
+  office: 0.60, industrial: 0.50, retail: 0.25, multifamily: 0,
+};
+
+/** A GUARD, NOT A MECHANISM: the most sublet inventory any market has been
+ *  observed to carry, as a share of leased space. San Francisco's 2023 peak was
+ *  about a tenth of inventory and it is the deepest office sublet market on
+ *  record; industrial and retail have never come near it. How often this binds
+ *  is measured and reported — if it ever becomes load-bearing it is hiding a
+ *  fault rather than guarding against one. */
+const SUBLET_MAX: Record<BuiltClass, number> = {
+  office: 0.10, industrial: 0.06, retail: 0.04, multifamily: 0,
+};
+
+/** HOW FAST A TENANT'S FOOTPRINT CAN REPRICE — one over the lease term in
+ *  months, because that is the rate at which leases actually come up. The old
+ *  0.010 was right, and it is kept: an eight-year office term rolls about 1% a
+ *  month. What was wrong is that it was applied to all four classes, which is a
+ *  number measured in one place asserted everywhere. Retail and industrial run
+ *  five to ten year terms. AN APARTMENT LEASE IS TWELVE MONTHS — a housing
+ *  market reprices its entire footprint eight times faster than an office
+ *  market, and this model had it eight times too slow. */
+const AFFORD_ROLL: Record<BuiltClass, number> = {
+  office: 1 / 96,        // eight-year terms
+  retail: 1 / 84,        // seven
+  industrial: 1 / 72,    // six
+  multifamily: 1 / 12,   // one
+};
+
+/** HOW MUCH SPACE A SECTOR'S CYCLE ACTUALLY MOVES. Demand for space is
+ *  headcount times feet per head, so this multiplier is sized to the
+ *  EMPLOYMENT swing it stands for. Measured, `sectorMom` runs about -0.0117 to
+ *  +0.0131, so at the old 11 the sector clock ALONE swung demand for space 27%
+ *  peak to trough — against a natural vacancy of 11.5 points, a swing that big
+ *  is not an input to the cycle, it is the cycle. Real sector employment
+ *  cycles are far smaller: US financial-activities employment fell about 8%
+ *  peak to trough over 2008-10, information about 10% over 2001-03, and most
+ *  sectors less. At 4 the demand swing is about 10%, which is that. */
+const MOM_DEMAND = 4;
+
+/** WHAT PRICE IS ALLOWED TO DO TO THE SPACE ONE WORKER OCCUPIES. Affordability
+ *  rations demand — dear space, firms take less of it — but it was unbounded,
+ *  and unbounded it manufactured tenants out of cheapness: measured over three
+ *  careers it reached 2.34 — the model asserting that cheap rent, by itself,
+ *  more than doubles the space the city's existing headcount takes. Space per worker
+ *  is set by headcount and by workplace design, not by rent. US office ran
+ *  about 250 sf/worker in 1990 and about 190 in 2019 — a quarter, over THIRTY
+ *  years, and driven by open plan and hot-desking rather than by price. A
+ *  cyclical price response cannot be wider than that, so it is bounded inside
+ *  it: plus or minus twelve per cent about the middle of the observed band.
+ *
+ *  IT DID NOT DAMP THE CYCLE AND THAT IS RECORDED HERE. Removing the bound and
+ *  changing nothing else measured office sd(log) 0.263 -> 0.235, RETAIL 0.259
+ *  -> 0.224 — the unbounded version is calmer, because manufactured demand is a
+ *  stabiliser: a rent collapse conjures the tenants that stop it. It is a
+ *  stabiliser built on a fiction, so the bound stays and the model is a little
+ *  louder for it. What it did do is stop resting on its own rail: the clamp
+ *  bound 58.5% of class-months before and binds 16.7% now, because rent no
+ *  longer travels far enough to need it. */
+const AFFORD_BAND: [number, number] = [0.88, 1.12];
 
 /**
  * HOW HARD EACH TRADE SWINGS.
@@ -50,15 +195,41 @@ export const INDUSTRY_LABEL: Record<Sector, string> = {
  * roll that depends on it.
  */
 export function industryStress(e: Econ, k: Sector): number {
-  const mom = e.industryMom?.[k] ?? 0;
+  const mom = (e.industryMom?.[k] ?? 0) + swanTradeWave(e, k);
   return clamp(-mom / 0.03, 0, 1);
 }
 
 /** …and how hard it is hiring, which is who walks through the door. */
 export function industryPull(e: Econ, k: Sector): number {
-  const mom = e.industryMom?.[k] ?? 0;
+  const mom = (e.industryMom?.[k] ?? 0) + swanTradeWave(e, k);
   return clamp(1 + mom * 22, 0.35, 1.9);
 }
+// THE CYCLE PLUS THE LEVEL EVENT, AND THESE TWO FUNCTIONS ARE THE ONLY JOIN.
+//
+// `industryMom` stays exactly what it was: a boom/steady/bust clock that turns
+// and comes back. What swans.ts adds is the ADJUSTMENT still working through a
+// trade whose level has permanently moved, in the same units, added here rather
+// than written into `industryMom` — because writing it in would be eaten within
+// months by the clock's own easing toward its phase aim, and because the two
+// really are different things that can happen at once. A trade can be leaving
+// town AND in a cyclical bust, and a landlord holding it feels both.
+//
+// Putting it at these two chokepoints is what makes a level event LAND WHERE IT
+// SHOULD without a line of code anywhere else knowing swans exist:
+// `renewalIntent`, tenant default and the renewal letter in leasing.ts all read
+// `industryStress`, so the damage arrives as move-outs from the buildings that
+// housed that trade — not as an index; `pickSector` reads `industryPull`, so
+// the prospects that turn up afterwards are permanently tilted away from a
+// trade that has gone and toward one that has arrived; and value.ts prices the
+// share of a rent roll that is stressed, so the appraisal and the lender see it
+// too. That is the whole transmission, and it is other people's code.
+//
+// ONE READER IS MISSED AND IT IS RECORDED HERE: `tickEmployment` in demand.ts
+// reads `e.industryMom` directly rather than through these getters, so a
+// block's employment advantage tracks the cycle but not the level event. It is
+// a real gap — the blocks full of a departing trade should lose desirability
+// faster than the city average — and it is a one-word fix in a file this
+// change does not own.
 
 // Rate target and rent drift per phase — the cycle is the game's weather.
 // monthly cadence: drifts are a third of the old quarterly values, phase
@@ -274,8 +445,49 @@ export const REF_PIPE_SHARE = 0.018;
 // a start once the hole is dug.
 export const BUILD_MONTHS = { office: [30, 44], retail: [18, 28], multifamily: [22, 34], industrial: [12, 20] } as const;
 
+/**
+ * HOW MANY PEOPLE WORK IN THIS TOWN, from the buildings that are standing.
+ *
+ * Square feet per worker, and these are the SAME ratios `contribution()` in
+ * demand.ts uses — deliberately, because two files disagreeing about how many
+ * desks fit in an office building is the third kind of fake number and this
+ * game has been bitten by it before. An office floor is 230 sf a head, a shed
+ * is 550, a shop is 420. Flats employ nobody; they house people, and people
+ * arrive here through the labour force rather than through the roof.
+ */
+const SF_PER_JOB: Record<BuiltClass, number> = { office: 230, industrial: 550, retail: 420, multifamily: 0 };
+/** Share of the population in the labour force. See the note at the unemployment term. */
+const PARTICIPATION = 0.58;
+/** The rate the city opens at, which is what makes the opening state consistent. */
+const OPENING_UNEMP = 0.052;
+
+/**
+ * THE TOWN'S OPENING SIZE, derived rather than declared.
+ *
+ * `jobs0` is the stock over the ratios above. `pop0` is what a town with that
+ * many jobs has to contain for its own opening unemployment rate to be true:
+ * jobs / (1 - u) is the labour force, and the labour force over participation
+ * is the population. Feed it the standard island's stock and it returns very
+ * nearly the 132,000 / 240,000 the constants used to assert, because that pair
+ * WAS this arithmetic — done once, by hand, for one island size, and then left
+ * behind when the map became a choice.
+ */
+export function citySize(stock: Record<BuiltClass, number>): { jobs0: number; pop0: number } {
+  let jobs = 0;
+  for (const k of BUILT_CLASSES) {
+    const per = SF_PER_JOB[k];
+    if (per > 0) jobs += (stock[k] ?? 0) / per;
+  }
+  // A town with no commercial stock at all is still a town — the floor keeps
+  // every ratio downstream finite rather than pretending the place is empty.
+  jobs = Math.max(2_000, Math.round(jobs));
+  const pop0 = Math.round(jobs / (1 - OPENING_UNEMP) / PARTICIPATION);
+  return { jobs0: jobs, pop0 };
+}
+
 export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   const CITY = parcels ? stockFromParcels(parcels) : { ...CITY_STOCK };
+  const SIZE = citySize(CITY);
   const econ: Econ = {
     indexRate: 5.4,
     phase: "expansion",
@@ -293,6 +505,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     employIdx: 1,
     stock: { ...CITY },
     baseStock: { ...CITY },
+    baseStock0: { ...CITY },
     occupied: {
       office: CITY.office * (1 - NATURAL_VAC.office),
       retail: CITY.retail * (1 - NATURAL_VAC.retail),
@@ -367,7 +580,8 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // reported a population of `undefined` — which the stress harness caught as
   // a NaN in the year-zero column of the null-player table, and which anything
   // reading population before the first tick would have inherited.
-  econ.population = 240_000; econ.jobs = 132_000; econ.unemployment = 0.052;
+  econ.jobs0 = SIZE.jobs0; econ.pop0 = SIZE.pop0;
+  econ.population = SIZE.pop0; econ.jobs = SIZE.jobs0; econ.unemployment = OPENING_UNEMP;
   econ.wageIdx = 1; econ.outputIdx = 1; econ.cpi = 1;
   econ.nat = { infl: 0.021, inflExp: 0.02, unemp: 0.052, policy: 4.2,
                neutralReal: 0.019, shockM: 0, shockSev: 0, credibility: 0.8,
@@ -415,6 +629,12 @@ export function tickEcon(s: GameState) {
   // not the same asset as one that opened in 1928, and occupancy has to know.
   s.econ.m = s.month;
   const e = s.econ;
+  // THE LEVEL BEFORE THE CYCLE. Swans set the ground the rest of this function
+  // stands on — how much of each trade the city holds and how much of each kind
+  // of space it wants — so they move first and everything below reads one
+  // consistent level for the month. See swans.ts; it draws off the campaign
+  // seed rather than `s.rng`, so nothing in this file's stream shifts.
+  tickSwans(s);
   const cfg = PHASE_CFG[e.phase];
 
   // phase machine with rumors one or two quarters ahead of the turn
@@ -936,14 +1156,53 @@ export function tickEcon(s: GameState) {
   // with people to spare, and nothing at all against the unemployment floor.
   const slack = clamp((((e.unemployment ?? 0.055) - 0.018) / 0.04), 0, 1);
   const overCost = Math.max(0, costOfSpace - 1);
+  // AND THE CHEAP SIDE IS FAR SMALLER THAN THE DEAR SIDE, because leaving is
+  // easier than arriving.
+  //
+  // This ran at (1 - costOfSpace) * 0.0022 capped at 0.0016/month — up to
+  // 1.9%/yr of employment growth, sustained, purely because rents were low.
+  // That is a whole city's trend growth rate arriving from a property glut,
+  // and it inverted the macro loop: a glut cut rents, cheap rents pulled firms
+  // in, employment rose, the labour market tightened, and the CENTRAL BANK
+  // RAISED INTO A PROPERTY BUST.
+  //
+  // Measured through sim:accept H over 30 seeds: glut-attributable drift in
+  // the loan index of +0.79pp against a +0.50 bar, of which the term premium
+  // accounted for -0.06pp and the policy rate for +1.24pp. The spread was
+  // innocent; the rate was doing it, and this is why.
+  //
+  // Two things are wrong with the old number and only one of them is size.
+  //
+  // SIZE: rent is roughly 7% of an office employer's cost base, so even a 50%
+  // rent collapse is a ~3.5% saving on total costs. The employment response to
+  // that is a few tenths of a per cent a year, not two per cent.
+  //
+  // SHAPE: relocation is ASYMMETRIC and well documented as such. A firm priced
+  // out of a city leaves on its own schedule; a firm tempted by cheap space
+  // has to want to be here for other reasons first, and mostly does not move
+  // at all. So the dear side keeps its magnitude and the cheap side gets about
+  // a fifth of it. Cheap space still ends a glut — that mechanism is real and
+  // stays — it just no longer ends it by turning a bust into a hiring boom.
+  //
+  // Houston in the 1980s and New York in the early 1990s both had office
+  // gluts AND job losses. Nowhere has had a glut-driven employment boom.
   const spacePull = costOfSpace <= 1
-    ? clamp((1 - costOfSpace) * 0.0022, 0, 0.0016) * slack
+    ? clamp((1 - costOfSpace) * 0.0005, 0, 0.00035) * slack
     : Math.max(-0.0035, -(overCost * 0.0012 + overCost * overCost * 0.0016));
   // A national recession costs this city jobs whether or not the local property
   // cycle has caught up to it yet — payrolls are cut at head office.
   const natPull = (e.nat?.recM ?? 0) > 0 ? (e.nat?.deep ? -0.0026 : -0.0013) : 0.0002;
+  // ...AND THE PAYROLL A TRADE TAKES WITH IT WHEN IT GOES, or brings when it
+  // arrives. This is the only place a level event touches the aggregate
+  // economy, and it is the one that has to exist: without it a trade could
+  // leave town and the unemployment rate, migration, wages and the price level
+  // would never hear about it. Everything downstream — population following
+  // work, housing demand following population, the Phillips term — is the
+  // machinery that was already here, answering a shock it can now see.
+  // Zero in every month in which no level event is currently landing.
+  const swanPull = e.swanJobDrift ?? 0;
   e.employIdx = clamp(
-    e.employIdx * (1 + jobDrift + spacePull + natPull + rrange(s, -0.0012, 0.0012)), 0.55, 12);
+    e.employIdx * (1 + jobDrift + spacePull + natPull + swanPull + rrange(s, -0.0012, 0.0012)), 0.55, 12);
 
   // --- THE CITY UNDERNEATH THE PROPERTY MARKET -------------------------------
   //
@@ -954,7 +1213,7 @@ export function tickEcon(s: GameState) {
   // this game could not answer — is this town growing?
   {
     if (e.population === undefined) {
-      e.population = 240_000; e.jobs = 132_000; e.unemployment = 0.052;
+      e.population = e.pop0 ?? 240_000; e.jobs = e.jobs0 ?? 132_000; e.unemployment = OPENING_UNEMP;
       e.wageIdx = 1; e.outputIdx = 1; e.cpi = 1;
     }
     const prevJobs = e.jobs!;
@@ -987,7 +1246,7 @@ export function tickEcon(s: GameState) {
     }
     const pipeShare = stockSf > 0 ? pipeSf / stockSf : REF_PIPE_SHARE;
     const trades = clamp(CONSTRUCTION_JOB_SHARE * (pipeShare / REF_PIPE_SHARE), 0, 0.11);
-    e.jobs = Math.round(132_000 * e.employIdx * (1 - CONSTRUCTION_JOB_SHARE + trades));
+    e.jobs = Math.round((e.jobs0 ?? 132_000) * e.employIdx * (1 - CONSTRUCTION_JOB_SHARE + trades));
     const jobGrowth = prevJobs > 0 ? e.jobs / prevJobs - 1 : 0;
 
     // UNEMPLOYMENT IS A LAGGING NUMBER and a sticky one. The labour force does
@@ -1000,7 +1259,7 @@ export function tickEcon(s: GameState) {
     // 132,000 jobs — an 11.3% unemployment rate, while the same object
     // initialises `unemployment: 0.052`. The city was born with a number that
     // contradicted its own population. 0.58 makes the opening state true.
-    const labourForce = e.population! * 0.58;
+    const labourForce = e.population! * PARTICIPATION;
     const slackTarget = clamp(1 - e.jobs / Math.max(1, labourForce), 0.018, 0.24);
     e.unemployment = clamp(e.unemployment! + 0.18 * (slackTarget - e.unemployment!), 0.015, 0.26);
 
@@ -1021,8 +1280,60 @@ export function tickEcon(s: GameState) {
     // a labour market anchored, and it is now in the model.
     const pull = jobGrowth > 0 ? 0.35 : 0.09;
     const uGapPop = e.unemployment! - 0.055;
-    const migration = jobGrowth * pull - clamp(uGapPop * 0.020, -0.0010, 0.0030);
-    e.population = Math.round(clamp(e.population! * (1 + 0.00016 + migration), 60_000, 4_000_000));
+    let migration = jobGrowth * pull - clamp(uGapPop * 0.020, -0.0010, 0.0030);
+
+    // ...AND PEOPLE CANNOT MOVE INTO HOUSING THAT DOES NOT EXIST.
+    //
+    // This read the labour market and nothing else, so the city admitted
+    // everyone the jobs attracted regardless of whether there was a flat for
+    // them. Measured over sixty years on the shipped island: population +86%
+    // against a housing stock of +40%, housing per head down from 106 to 73 sf,
+    // multifamily vacancy driven through its frictional floor and PINNED at
+    // 1.35% for fifty of those sixty years, and real housing rent up 3.3x. A
+    // variable resting on its rail in normal play is the rail holding up the
+    // model — and since land is the residual after construction cost, rents
+    // that compound like that are what detonate land prices. This is the third
+    // and last mechanism behind that.
+    //
+    // The constraint is real and it is one-sided. A town with no empty flats
+    // does not stop being attractive; it stops being ENTERABLE, and the people
+    // who would have come go somewhere else or double up. So in-migration is
+    // choked as vacancy approaches the frictional floor and is untouched when
+    // there is slack. Out-migration is NOT gated: nothing about a housing
+    // shortage keeps anybody from leaving.
+    //
+    // It is also the loop that closes the system. Scarce housing slows the
+    // inflow, which lets the builders catch up, which lifts vacancy off the
+    // floor, which stops rent compounding — without anybody being told to stop
+    // it. Widening crewCapacity alone did not do this: more housing simply let
+    // more people in and the vacancy stayed on the rail.
+    if (migration > 0) {
+      const floor = NATURAL_VAC.multifamily * 0.30;         // the frictional rail in tickSpace
+      const slack = clamp(((e.cityVac?.multifamily ?? NATURAL_VAC.multifamily) - floor)
+        / Math.max(1e-6, NATURAL_VAC.multifamily - floor), 0, 1);
+      // At the floor a fifth of the inflow still arrives — people do double up,
+      // convert lofts and take the spare room, and a city with no vacancy has
+      // never had literally zero net in-migration.
+      migration *= 0.20 + 0.80 * slack;
+    }
+    // THE BOUNDS ARE A SHARE OF THIS TOWN, NOT A NUMBER OF PEOPLE, and that
+    // distinction was load-bearing the moment the town's size stopped being a
+    // constant. This read `clamp(…, 60_000, 4_000_000)`. The old hardcoded
+    // opening population was 240,000, so the floor sat a long way below and
+    // never bound — it was a guard. Deriving the population from the buildings
+    // actually standing put the standard island at 43,735, i.e. BELOW ITS OWN
+    // FLOOR: population pinned at 60,000 against 24,000 jobs, the labour force
+    // came out at 34,800, slack railed at its 24% ceiling, and the Phillips
+    // term died. Measured, that alone took the fifty-year price level from
+    // 2.015 to 1.147 — three quarters of the city's inflation, removed by a
+    // clamp nobody had looked at, in a change that was supposed to be neutral.
+    //
+    // A city can lose three quarters of its people over a century — Detroit
+    // did — and it can grow many times over. What it cannot do is go to zero,
+    // and that is all a bound here is for.
+    const popFloor = Math.max(1_000, (e.pop0 ?? 240_000) * 0.25);
+    const popCeil = Math.max(popFloor * 4, (e.pop0 ?? 240_000) * 16);
+    e.population = Math.round(clamp(e.population! * (1 + 0.00016 + migration), popFloor, popCeil));
 
     // --- THE WAGE-PRICE SYSTEM ---------------------------------------------
     //
@@ -1074,15 +1385,131 @@ export function tickEcon(s: GameState) {
     // actually comes from), plus what a tight or slack labour market does on
     // top. Real wage growth therefore lands near productivity, which is the
     // number a real economy delivers.
+    // PRODUCTIVITY IS NOT A CONSTANT, AND WHILE IT WAS ONE IT WAS A FLOOR
+    // UNDER REAL WAGES THAT NO REAL ECONOMY HAS.
+    //
+    // This was a flat 0.011 — 1.1%/yr real, forever, in every month of every
+    // run. Since expectations track realised inflation closely, real wage
+    // growth reduces to roughly PRODUCTIVITY + tight*0.012, which at 9%
+    // unemployment still comes out around +0.6%/yr. Real wages could only
+    // fall when inflation SURPRISED expectations, and expectations reset at
+    // 2%/month, so the fall was always brief and always shallow.
+    //
+    // MEASURED over 12 seeds x 50 years, 7,188 months: the nominal wage index
+    // fell in 0.0% of them — not once — and the worst twelve-month real wage
+    // change in any run was -3.35%. The nominal figure is defensible and
+    // should stay near zero: downward nominal wage rigidity is one of the most
+    // robust findings in macro and aggregate nominal wages essentially never
+    // fall. The real figure is not. US real average hourly earnings fell about
+    // 2.8% in 2022 alone, and real wages fell for three consecutive years
+    // through 1979-81 for a cumulative loss near 7%.
+    //
+    // What actually varies is productivity, on two timescales, and both are
+    // measured facts rather than shape parameters:
+    //
+    // BY ERA. US labour productivity grew ~2.8%/yr in 1947-73, ~1.4% in
+    // 1973-95, ~2.9% in 1995-2004 and ~1.3% since. That is a 2-point spread
+    // between regimes that each lasted twenty years, and it is the single
+    // largest fact about why one generation got richer faster than the next.
+    // Modelled as a slow wave keyed on the seed and the month so a run passes
+    // through regimes without needing a new field on the save — a productivity
+    // era is not a decision anybody makes, so it does not need to be stored,
+    // only to be the same every time this town is rebuilt.
+    //
+    // BY CYCLE. Productivity is procyclical, and the mechanism is labour
+    // hoarding: firms carry staff they cannot use into a downturn, so output
+    // per worker falls first and rebounds hard in the recovery. 2022 was
+    // -1.7%, the worst since 1947. That is where a genuinely negative
+    // productivity year comes from, and with it a real wage that gives back
+    // ground rather than merely growing more slowly.
+    // THE SPREAD IS THE NEW FACT. THE CENTRE WAS ALREADY CALIBRATED.
+    //
+    // First attempt centred this at 2.05%/yr, reading the era figures above as
+    // the thing to average. That was wrong and it broke the economy: real wage
+    // growth went to 2.78%/yr against a 0.0-2.5 band and dragged all four rent
+    // classes out with it (+1.86 office to +2.59 retail, against a -1.0/+1.5
+    // band). Raw productivity and real COMPENSATION are not the same series —
+    // they have diverged since the 1970s, which is the productivity-pay gap —
+    // and 1.1% was the figure this whole economy was balanced against.
+    //
+    // So the centre stays exactly where it was and only the variation is new.
+    // The amplitude is the measured era spread: roughly +/-0.8 points between
+    // the 1.3-1.4%/yr regimes and the 2.8-2.9% ones.
     const PRODUCTIVITY = 0.011;    // ~1.1%/yr real, the long-run US figure
-    e.wageIdx = clamp(
-      e.wageIdx! * (1 + e.inflExp / 12 + PRODUCTIVITY / 12 + tight * 0.012 + rrange(s, -0.0004, 0.0004)),
-      0.7, 400,
+    const prodEra = PRODUCTIVITY + 0.0075 * Math.sin(
+      (s.seed % 1000) / 159.1549 + s.month / 47.75,   // ~25-year regimes, seeded phase
     );
+    // Labour hoarding: firms carry staff they cannot use into a downturn, so
+    // output per worker falls first and rebounds in the recovery.
+    //
+    // KEYED ON THE RECESSION, NOT ON SLACK, and the first version got that
+    // wrong in a way worth recording. It read `tight * 0.55` — the same
+    // tightness the Phillips term below already uses at `tight * 0.012` — so
+    // the two were the same signal counted twice, and because `tight` is
+    // `0.055 - unemployment` against a city that averages below 5.5%, its mean
+    // is POSITIVE. A term meant to add cyclical texture was quietly adding
+    // about 0.275%/yr of permanent trend: real wage growth went 1.18% to
+    // 1.71%/yr and industrial real rent to +1.81% against a +1.5 band. That is
+    // a fake number nobody typed — it arrived as the mean of a term that was
+    // supposed to average out.
+    //
+    // A recession is an EVENT, so keying on it is mean-negative by
+    // construction and cannot smuggle in a trend. It is also the honest read:
+    // 2022's -1.7% was a labour-hoarding year, not a slack-labour-market year.
+    const hoarding = -((e.nat?.recM ?? 0) > 0 ? (e.nat?.deep ? 0.021 : 0.011) : 0);
+    const productivity = clamp(prodEra + hoarding, -0.028, 0.042);
+    // AND NOMINAL PAY DOES NOT GET CUT. It gets FROZEN, and inflation does the
+    // rest — which is the whole reason real wages fall while nominal ones do
+    // not, and the mechanism behind 1974-75 and 2021-22 alike.
+    //
+    // Downward nominal wage rigidity is one of the most heavily evidenced
+    // facts in labour economics: the distribution of annual nominal wage
+    // changes has a large spike sitting exactly at zero and almost no mass
+    // below it (Card & Hyslop; Kahn). Flooring the growth factor at zero
+    // reproduces that spike rather than approximating it.
+    //
+    // It also has to be here rather than left to the arithmetic. Letting
+    // productivity vary made the nominal index fall in 4.00% of twelve-month
+    // windows, worst -2.22% — a quarter of a century of runs producing an
+    // outright cut in average pay, which does not happen to real economies.
+    // With the floor the same variation lands entirely on the real wage, which
+    // is where it belongs and where it was missing.
+    // ...AND THE FREEZE IS PAID FOR LATER, WHICH IS WHAT MAKES IT RIGIDITY
+    // RATHER THAN A SUBSIDY.
+    //
+    // Flooring alone truncates the bottom of a noisy series and keeps the top,
+    // so it RAISES the mean — measured, trend real wage growth went from
+    // 1.18%/yr to 1.71% and industrial real rent to +1.77% against a +1.5
+    // band, purely as an artefact of the clamp. That is a fake number arriving
+    // through the back door: nobody typed it, and it was still a thumb on the
+    // scale.
+    //
+    // Pent-up wage deflation is the real mechanism and it fixes the bias
+    // mechanically. The cut a firm could not make is not forgiven, it is owed:
+    // the shortfall accumulates and is worked off by under-granting later
+    // raises. Pay plateaus for years instead of ratcheting, which is the shape
+    // rigidity actually has, and the trend ends up where it would have been.
+    //
+    // It is worked off at 12%/month rather than instantly, because a firm that
+    // has frozen pay through a bad year does not claw it all back in the first
+    // good month — it grants a thin raise for a while, which is the observed
+    // pattern after every freeze.
+    const growth = e.inflExp / 12 + productivity / 12 + tight * 0.012 + rrange(s, -0.0004, 0.0004);
+    if (e.wageDebt === undefined) e.wageDebt = 0;
+    if (growth < 0) {
+      e.wageDebt -= growth;          // the cut nobody took, owed
+      e.wageIdx = clamp(e.wageIdx!, 0.7, 400);   // frozen: no cut, no rise
+    } else {
+      // Later raises are thinned until the debt is worked off.
+      const repay = Math.min(e.wageDebt, growth * 0.12 + 0.00008);
+      e.wageDebt -= repay;
+      e.wageIdx = clamp(e.wageIdx! * (1 + growth - repay), 0.7, 400);
+    }
+    e.wageDebt = clamp(e.wageDebt, 0, 0.25);
 
     // Output is what the place makes: people working, times what each of them
     // produces. It is the broadest number in the game and the slowest to move.
-    e.outputIdx = +((e.jobs / 132_000) * e.wageIdx!).toFixed(4);
+    e.outputIdx = +((e.jobs / (e.jobs0 ?? 132_000)) * e.wageIdx!).toFixed(4);
   }
 
   // --- each class runs its own cycle -----------------------------------------
@@ -1196,15 +1623,39 @@ export function tickEcon(s: GameState) {
   // which is the timescale on which a place actually earns the right to be
   // expensive. Read by the income anchor as the sustainable rent-to-income
   // ratio: a generation of tightness buys a premium, a permanent glut spends it.
+  //
+  // AND IT IS FED OFF AVAILABILITY, BECAUSE DIRECT VACANCY IS PINNED. This
+  // read `cityVac.office`, which rested on its frictional rail 26.9% of all
+  // months in runs of five to eight years. While it is pinned the input to
+  // this EMA is a CONSTANT — the city cannot report being any tighter than its
+  // floor — so a town that merely touched the floor earned the full Manhattan
+  // premium on rent-to-income and then carried it two decades into the bust,
+  // defeating the income anchor at exactly the moment the anchor was needed.
+  // Availability does not pin: when a city is that tight, rent pressure puts
+  // sublet space on the market, and the market can report the difference
+  // between short of space and desperately short of it.
+  //
+  // Feeding it off `unmet` instead was tried and REJECTED on measurement.
+  // `unmet` carries a large structural positive offset — median 0.030 of
+  // stock, 26% of natural vacancy, because the demand pool always leads
+  // occupancy — so a balanced city would have read as chronically tight and
+  // been handed a permanent premium, which is the opposite of the intent.
   {
-    const tightNow = (NATURAL_VAC.office - (e.cityVac?.office ?? NATURAL_VAC.office)) / NATURAL_VAC.office;
+    const availNow = (e.cityVac?.office ?? NATURAL_VAC.office)
+      + (e.sublet?.office ?? 0) / Math.max(1, e.stock?.office ?? CITY_STOCK.office);
+    const tightNow = (NATURAL_VAC.office - availNow) / NATURAL_VAC.office;
     e.tightEma = (e.tightEma ?? 0) + 0.004 * (tightNow - (e.tightEma ?? 0));
   }
 
   const unmet: Record<string, number> = {};
   for (const k of BUILT_CLASSES) {
     const stk = e.stock?.[k] ?? CITY_STOCK[k];
-    const vacNow = e.cityVac?.[k] ?? NATURAL_VAC[k];
+    // A DEVELOPER COUNTS THE SUBLET SPACE. It is the cheapest competition a new
+    // building will ever face — already built, already fitted out, offered at a
+    // discount by somebody who only wants to stop the bleeding — and no lender
+    // sizes a construction loan without it in the availability figure.
+    const vacNow = (e.cityVac?.[k] ?? NATURAL_VAC[k])
+      + (e.sublet?.[k] ?? 0) / Math.max(1, e.stock?.[k] ?? CITY_STOCK[k]);
     // DEVELOPERS UNDERWRITE THE RENT THEY EXPECT, NOT THE RENT THAT EXISTS.
     // This read today's rent, so supply responded to the present and the
     // cycle had to be supplied by the phase clock. Every real overbuild is
@@ -1365,12 +1816,15 @@ export function tickEcon(s: GameState) {
     // unbounded rise in rent per square foot: more firms in town was read as
     // every firm being able to pay more. What rations space is what one
     // tenant earns, and that is the wage index.
-    const affordRaw = Math.pow(
+    // ...and it is BOUNDED, because feet per worker is a physical quantity with
+    // a known range and this had none. See AFFORD_BAND.
+    const affordRaw = clamp(Math.pow(
       (e.rentIdx[k] / RENT_BASE[k]) / Math.max(0.35, e.wageIdx ?? 1),
       k === "multifamily" ? -0.50 : -0.40,
-    );
+    ), AFFORD_BAND[0], AFFORD_BAND[1]);
     if (!e.affordEff) e.affordEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
-    e.affordEff[k] += 0.010 * (affordRaw - e.affordEff[k]);
+    // At the lease-rollover rate of THIS class, not of an office. See AFFORD_ROLL.
+    e.affordEff[k] += AFFORD_ROLL[k] * (affordRaw - e.affordEff[k]);
 
     // A SECTOR PRICED OUT OF A CITY DOES NOT PAY FOUR TIMES THE RENT. IT LEAVES.
     //
@@ -1402,10 +1856,39 @@ export function tickEcon(s: GameState) {
     // earns, versus where that ratio started. A sector paying its historical
     // share of income is fine at any nominal rent. The threshold is a fifth
     // above it, which is roughly the point at which relocation beats renewal
-    // once moving costs are counted; the pace, a tenth of the overshoot a
-    // year, is slow enough that a cyclical spike does nothing and a
-    // generation of pressure does most of it. Both are shape parameters and
-    // both are stated as such.
+    // once moving costs are counted.
+    //
+    // NOBODY MOVES OUT MID-LEASE, AND THE RATE HAS TO SAY SO.
+    //
+    // The pace was a bare `LEAVE_RATE * over`, a tenth of the overshoot a year,
+    // with nothing bounding it — and the comment asserted that was "slow enough
+    // that a cyclical spike does nothing", which is a claim about behaviour
+    // that nothing in the code guaranteed. The missing mechanism is that A
+    // SECTOR CAN ONLY LEAVE AT THE RATE ITS LEASES ROLL: a tenant priced out in
+    // March with four years to run is a tenant who is still there in March.
+    // Terms here and in life average something like eight years, so about an
+    // eighth of a footprint faces renew-or-go in a year and nothing else can
+    // move at all; how many of those at the table go scales with the overshoot
+    // and cannot exceed all of them. Structural exit is therefore bounded near
+    // 1.2%/yr — half a sector over forty years, which is the fact this exists
+    // to reproduce.
+    //
+    // AND IT CHANGED NOTHING MEASURABLE, WHICH IS RECORDED HERE BECAUSE IT
+    // MATTERS. `ROLL_YR * GO_RATE` is 0.125 * 0.80 = 0.10, exactly the old
+    // LEAVE_RATE, so below the cap the two are the same expression; and `over`
+    // does not reach the 1.25 where the cap starts to bind. Output was
+    // byte-identical across two seeds x 50 years — same rents, same vacancies,
+    // same demand anchors to the digit. The bound is kept because it is the
+    // honest form and it holds at extremes the calibration has not seen, but it
+    // is NOT a fix for anything, and the estimate that motivated it was wrong:
+    // `over` peaks near 0.45, not 1.2, so this ratchet sheds about 4.4%/yr at
+    // the top of a cycle rather than the 12% first claimed.
+    //
+    // What that rules out is the important part. The demand anchor walks down
+    // smoothly — 0.93, 0.87, 0.80, 0.71, 0.71 by decade for office — while real
+    // office rent swings $14 to $95 and back on a ~28-year period. A slow trend
+    // and a violent cycle are different timescales, so the oscillator is not
+    // here. It is in the supply-and-rent feedback, and that is where to look.
     //
     // HOUSING IS EXEMPT and that is not a special case, it is the mechanism
     // being right: people priced out of a city's housing leave, and the
@@ -1414,11 +1897,13 @@ export function tickEcon(s: GameState) {
     // that can relocate.
     if (k !== "multifamily") {
       const RELOCATE_AT = 1.20;    // a fifth above its historical rent-to-income
-      const LEAVE_RATE = 0.10;     // of the overshoot, per year
+      const ROLL_YR = 1 / 8;       // an eight-year term: an eighth comes up each year
+      const GO_RATE = 0.80;        // of those at renewal, per point of overshoot
       const burden = (e.rentIdx[k] / RENT_BASE[k]) / Math.max(0.35, e.wageIdx ?? 1);
       const over = Math.max(0, burden - RELOCATE_AT);
       if (over > 0 && e.baseStock) {
-        const shed = 1 - (LEAVE_RATE * over) / 12;
+        const leaving = Math.min(1, over * GO_RATE);      // cannot exceed everyone at the table
+        const shed = 1 - (ROLL_YR * leaving) / 12;
         e.baseStock[k] = Math.min(e.baseStock[k], e.baseStock[k] * shed);
       }
     }
@@ -1440,15 +1925,25 @@ export function tickEcon(s: GameState) {
     // rest is the daytime population of workers — which is why a retail
     // parade in a business district dies at six o'clock and one in a
     // residential quarter does not.
-    const pop0 = 240_000;   // the opening population, so popIdx opens at exactly 1
+    const pop0 = e.pop0 ?? 240_000;   // this town's opening population, so popIdx opens at exactly 1
     const popIdx = (e.population ?? pop0) / pop0;
     const driver = k === "multifamily" ? popIdx
       : k === "retail" ? Math.pow(popIdx, 0.68) * Math.pow(e.employIdx, 0.32)
       : e.employIdx;
+    // AND THE LEVEL EVENTS RIDE UNDERNEATH ALL OF IT. `swanClassLevel` is 1.0
+    // in a city nothing structural has happened to, and it is the permanent
+    // restatement of what this class is wanted for once something has: less
+    // office per job after remote work, fewer desks of any kind once the trade
+    // that sat at them has gone, more shed once the shopping moved into one.
+    // It multiplies rather than adding because it is a LEVEL, and it sits
+    // outside `sectorMom` and `affordEff` because neither of those ever stops
+    // reverting and this never reverts at all. See swans.ts.
+    const swanLvl = swanClassLevel(e, k);
     const targetRaw = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - NATURAL_VAC[k])
       * Math.pow(driver, elastic)
-      * (1 + e.sectorMom[k] * 11)
-      * e.affordEff[k];
+      * (1 + e.sectorMom[k] * MOM_DEMAND)
+      * e.affordEff[k]
+      * swanLvl;
     // THE POOL. Demand takes about a year to form or dissolve, and demand
     // that cannot be housed here stops looking here within months — the
     // mainland takes it, exactly the fiction stockFromParcels already tells.
@@ -1466,7 +1961,6 @@ export function tickEcon(s: GameState) {
     // city of tenants does.
     const absorb = clamp(0.055 * (e.pool[k] - e.occupied[k]), -0.006 * e.occupied[k], 0.010 * e.occupied[k])
       + e.occupied[k] * rrange(s, -0.0005, 0.0005);
-    unmet[k] = Math.max(0, (e.pool[k] - e.occupied[k]) / Math.max(1, e.stock[k]));
     // FRICTIONAL VACANCY IS A FLOOR, and it is not zero. Some share of every
     // market is empty purely because tenants are moving in and out of it —
     // roughly a third of the natural rate. A flat half-a-percent clamp was a
@@ -1484,24 +1978,108 @@ export function tickEcon(s: GameState) {
     // run. The honest floor on how fast a market can empty is the -0.006 x
     // occupied absorb bound above; the only hard floor is zero.
     e.occupied[k] = clamp(e.occupied[k] + absorb, 0, housable);
+
+    // THE GIVE-BACK. What a tenant would take AT TODAY'S RENT, against what it
+    // is contractually sitting in — and the difference goes on the market at
+    // sublet speed rather than at lease speed. Same demand equation as
+    // `targetRaw` above, same bounded affordability, but read off `affordRaw`
+    // instead of the hundred-month `affordEff`: the footprint a firm has
+    // LEASED can only reprice when the lease rolls, and the footprint it
+    // ADVERTISES reprices the month the board decides to.
+    //
+    // That single distinction is the mechanism. It gives price a channel with a
+    // nine-month lag where before it had only a hundred-month one, and a loop
+    // that oscillates because it is PHASE-limited — this one was, by the
+    // Barkhausen arithmetic and by measurement — is damped by shortening the
+    // lag, not by weakening the gain.
+    //
+    // Both directions matter and they are the same expression. In a boom
+    // `affordRaw` falls below `affordEff`, tenants want less than they hold,
+    // and inventory appears on the market while direct vacancy is still pinned
+    // at its frictional floor — which is the fast ceiling. In a bust the sign
+    // flips, the wanted footprint runs ahead of the leased one, the marketed
+    // space is withdrawn inside a year, and availability tightens long before
+    // a single lease expires — the fast floor.
+    if (!e.sublet) e.sublet = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+    // …and the swan level is in here too, which is where the FAST half of a
+    // level event comes from and is the single most realistic thing about the
+    // way this lands. A firm that has decided it needs a third less office does
+    // not wait eight years for its lease to expire — it puts the floors on the
+    // sublet market inside two quarters and goes on paying rent to the end of
+    // the term. That is exactly what happened in 2020-23: US office sublease
+    // inventory tripled while direct vacancy was still barely moving, and San
+    // Francisco's went from about 1.5M sf to about 9M sf. Because the level
+    // enters `wantedNow` as well as `targetRaw`, availability moves within
+    // months of an announcement and direct vacancy takes years.
+    //
+    // MEASURED, and this is the claim I would least have trusted unmeasured.
+    // Five paired forks — warm the city up fifteen years, clone it, inject a
+    // finance exodus into ONE clone and nothing else, run both fifteen more
+    // years off the same stream. The office availability gap opens like this:
+    //
+    //   months  1-12   +0.16pp,  of which sublet 0.09 and direct 0.07
+    //   months 13-24   +1.02pp,  of which sublet 0.43 and direct 0.59
+    //   months 25-60   +3.10pp,  of which sublet 0.30 and direct 2.80
+    //   months 61-180  +3.22pp,  of which sublet -1.10 and direct 4.32
+    //
+    // The first year is more than half sublet and the fifth year is almost
+    // entirely direct, which is the observed order of events in 2020-23 rather
+    // than an asserted one. And the last row is the give-back's OTHER half
+    // doing its job: by then real office rent is 25% lower in the treated
+    // clone, the footprint firms want at that rent exceeds the one they hold,
+    // and the marketed space is withdrawn — a fast floor under a glut,
+    // arriving long before a single lease expires.
+    const wantedNow = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - NATURAL_VAC[k])
+      * Math.pow(driver, elastic)
+      * (1 + e.sectorMom[k] * MOM_DEMAND)
+      * affordRaw
+      * swanLvl;
+    const marketable = clamp(
+      (e.occupied[k] - wantedNow) * DEMISABLE[k],
+      0, e.occupied[k] * SUBLET_MAX[k],
+    );
+    e.sublet[k] += (marketable - e.sublet[k]) / SUBLET_TAU;
+    e.sublet[k] = clamp(e.sublet[k], 0, e.occupied[k]);
+
     e.cityVac[k] = clamp(1 - e.occupied[k] / e.stock[k], friction, 0.45);
+    // Demand that cannot be housed nets off the sublet market first, because a
+    // tenant who needs space this year takes a sublease — that is what the
+    // sublet market is FOR, and it is why a shortage with sublet inventory
+    // standing in it is not the same shortage.
+    unmet[k] = Math.max(0, (e.pool[k] - e.occupied[k] - e.sublet[k]) / Math.max(1, e.stock[k]));
     e.absorb12[k] = e.absorb12[k] * (11 / 12) + absorb;
     monthAbs[k] = absorb;
     monthComp[k] = delivered;
   }
 
-  // RENTS MOVE ON VACANCY. The gap between where vacancy sits and its natural
-  // rate is the whole of the landlord-tenant power balance: five points of
-  // excess vacancy grinds rents down about three per cent a year until either
-  // demand absorbs it or nothing new gets built; five points of shortage does
-  // the opposite. Phase drift and sector momentum ride on top as sentiment.
+  // RENTS MOVE ON AVAILABILITY. The gap between the space a tenant can
+  // actually go and lease — empty floors plus everything on the sublet market
+  // — and the natural rate is the whole of the landlord-tenant power balance.
+  // Five points of shortage moves rents about 2.7% a year; five points of
+  // excess takes them down about 6.5% and nine points about 14.7%, because
+  // the glut branch is superlinear and a capitulation is not a straight line.
+  // Those are the figures the code below actually delivers, checked against
+  // 1990-92 and 2020-23; an earlier version of this paragraph asserted three
+  // per cent on both sides and neither branch obeyed it. Phase drift and
+  // sector momentum ride on top as sentiment.
   for (const k of BUILT_CLASSES) {
     const vol = k === "multifamily" ? 0.002 : k === "office" ? 0.004 : k === "industrial" ? 0.0024 : 0.003;
-    const gap = (e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
+    // ...AND ON AVAILABILITY, NOT ON DIRECT VACANCY. A prospective tenant does
+    // not choose from the space landlords have empty, it chooses from the space
+    // it can move into, and a quarter of that in a bad office market is
+    // somebody else's lease. Direct vacancy is the landlord's accounting;
+    // availability is the market. Quoting off the first is how the model ended
+    // up with real rent compounding at double digits for eight straight years
+    // while its vacancy sat welded to a frictional floor — the floor is a
+    // statement about DIRECT vacancy and it was never a statement about how
+    // much space you could go and lease.
+    const gap = (e.cityVac?.[k] ?? NATURAL_VAC[k])
+      + (e.sublet?.[k] ?? 0) / Math.max(1, e.stock?.[k] ?? CITY_STOCK[k])
+      - NATURAL_VAC[k];
     // The vacancy gap has to be able to OVERPOWER the cycle's sentiment, or a
     // glut politely coexists with rising rents forever. Six points of excess
-    // vacancy now takes rents down about five per cent a year, which is what a
-    // real oversupply does.
+    // availability takes rents down about 8.4% a year, which is what a real
+    // oversupply does.
     // STICKY ASKING, MOVING EFFECTIVE (ECONOMY.md). A shortage pushes asking
     // up immediately; cuts ramp in only after the landlord has stared at the
     // empty floor for half a year — the capitulation clock. Meanwhile the
@@ -1520,8 +2098,28 @@ export function tickEcon(s: GameState) {
     // most of why rents went flat at $31 through a depression instead of
     // collapsing. Superlinear now: the second ten points hurt more than the
     // first ten, the way a real capitulation works.
+    //
+    // THE SHORTAGE SIDE DISAGREED WITH THE PARAGRAPH ABOVE IT, and the
+    // paragraph was right. The header on this block says five points of
+    // shortage moves rents about three per cent a year; 0.090 delivered 5.5%,
+    // and it is on the shortage branch that the whole of this loop's gain sits
+    // — the glut coefficients were measured and halving either of them moved
+    // amplitude by nothing. So this is a correction to a calibration RECORD,
+    // not a new constant: the code now says what the comment always said it
+    // said. The clamp moves with it and remains what it was, a guard that has
+    // never bound (the deepest shortage this model can reach is the frictional
+    // floor, 7.8 points, which is 0.0035/month at this coefficient).
+    //
+    // The glut branch is left exactly as it was, and its arithmetic is written
+    // down here because it is NOT what the header claims either — at five
+    // points over it delivers -6.5%/yr, at nine points -14.7%/yr. Reality is
+    // closer to the code than to the comment on this side: US office 2020-23
+    // ran about seven points over natural and lost 10-15% of nominal effective
+    // rent in three years, and 1990-92 ran about nine points over and lost
+    // 35-40% real in three. The shallow end is a little hot and the deep end
+    // is right, which is not worth moving a coefficient over.
     const vacTerm = gap <= 0
-      ? clamp(-gap * 0.090, 0, 0.009)
+      ? clamp(-gap * 0.045, 0, 0.0045)
       : -(gap * 0.070 + gap * gap * 0.85) * Math.min(1, (e.vacOverM[k] ?? 0) / 6);
     const scarcity = clamp((unmet[k] ?? 0) * 0.10, 0, 0.016);
 
@@ -1579,6 +2177,14 @@ export function tickEcon(s: GameState) {
     const escalation = (e.inflExp ?? 0.02) / 12;
     const drift = c2.rentDrift * 0.55 + e.sectorMom[k] * 0.42 + vacTerm + scarcity
       + anchor + (jobDrift * 0.35) + escalation;
+    // THE HALF-OF-BASE FLOOR IS NOW A GUARD AGAIN, WHICH IS ALL IT WAS EVER
+    // MEANT TO BE. It used to be load-bearing and it used to be the reason the
+    // amplitude above looked survivable: removing it took office peak-to-trough
+    // from 12.5x to 94x, and it bound 9.5% of all months with 16 of 17 careers
+    // touching it — a rail holding up the model. Measured after the sublet
+    // channel: it binds 0.0% of months in every class over 6 seeds x 50 years,
+    // and deleting it entirely reproduces every statistic in this file to the
+    // digit. Left in place because a guard that never fires is a guard.
     e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.5, e.rentIdx[k] * (1 + drift + rrange(s, -vol, vol)));
     e.effRentIdx[k] = +(e.rentIdx[k] * (1 - 0.14 * e.concIdx[k])).toFixed(4);
   }
@@ -1703,7 +2309,30 @@ export function tickEcon(s: GameState) {
     // base while costs reached only 1.49x, yield on cost averaged 14.98%
     // against a 7.50% hurdle, and development ran flat out at its ceiling in
     // 83% of months. A margin that wide is not a decision, it is a formality.
-    const HEAT_PIVOT = 0.0124;
+    //
+    // AND IT IS THE SAME QUANTITY AS `REF_PIPE_SHARE`, WHICH SAID 0.018.
+    // Two constants, two hundred lines apart, both defined as "the share of
+    // stock this town has under construction in an ordinary year", with
+    // different answers — which is the third kind of fake number, and the
+    // symptom was exactly what a wrong pivot predicts: with the pipeline
+    // running hot of the pivot, heat sat at its +1.6 CEILING 45.3% of months
+    // and never once reached its floor, so real construction cost rose through
+    // every bust instead of falling about six per cent a year at idle, and the
+    // loop this whole block exists to close — the trades cutting their prices
+    // until development reopens — could not fire.
+    //
+    // Re-measured after the teardown pipeline was made to queue for the same
+    // crews as everything else (dev.ts), because that is what sets the number:
+    // median pipeline share over 6 seeds x 50 years is 0.0175, and buildEma's
+    // median is 0.0178. `REF_PIPE_SHARE` was right and this one was stale. It
+    // is now the same symbol so the two cannot part company again. Measured
+    // after: the ceiling binds 4.7% of months instead of 45.3%, and buildEma's
+    // median lands at 0.0189 against a pivot of 0.018 — the permanent drift is
+    // gone. The FLOOR is still never reached, and that is honest rather than
+    // broken: reaching it needs the pipeline at a dead stop, and the quietest
+    // 5% of months now run 0.0106 where they used to run 0.0002, because the
+    // teardown pipeline can no longer swing between everything and nothing.
+    const HEAT_PIVOT = REF_PIPE_SHARE;
     const heat = clamp(((e.buildEma ?? HEAT_PIVOT) - HEAT_PIVOT) * 110, -1.9, 1.6);
     const slope = heat < 0 ? 0.0026 : 0.0016;
     const costDrift = (e.inflExp ?? 0.02) / 12 + heat * slope + (e.phase === "recession" ? -0.0004 : 0);

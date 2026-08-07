@@ -18,21 +18,21 @@
 //   D. CONSERVATION — occupied SF is tenants, and tenants are finite. Adding
 //      buildings must not add occupied SF beyond a small induced factor.
 //      If building space manufactures tenants, everything else is cosmetic.
+//
+// EVERY BAND IN THIS FILE IS NOW REPORTED RATHER THAN GATED — owner's
+// decision, 2026-08-06. The arithmetic is untouched; see test/accept-lib.mjs
+// for what that means and why, and ECONOMY.md for who decided it.
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { makeSuite } from "./accept-lib.mjs";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const E = await import(join(HERE, ".engine.mjs"));
 const { loadCity } = await import(join(HERE, "city.mjs"));
 
 const { parcels: P0, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 const clone = () => JSON.parse(JSON.stringify(P0));
-const results = [];
-const report = (name, pass, detail) => {
-  results.push({ name, pass });
-  console.log(`\n${pass ? "PASS" : "FAIL"}  ${name}`);
-  for (const d of detail) console.log("      " + d);
-};
-const q = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(p * (s.length - 1))] ?? 0; };
+const { report, verdict } = makeSuite();
+const med = (a) => [...a].sort((x, y) => x - y)[Math.floor((a.length - 1) / 2)];
 
 // Answer every letter at asking — the least-skilled landlord there is, so the
 // numbers measure the MARKET, not the bot.
@@ -61,7 +61,6 @@ const rollOf = (g, bbl) => {
 // clauses now assert on the median across three seeds, so a single lucky or
 // unlucky draw can neither pass a broken market nor fail a working one.
 {
-  const med = (a) => [...a].sort((x, y) => x - y)[Math.floor((a.length - 1) / 2)];
   const runs = [];
   let loD = 0, hiD = 0;
   for (const seed of [910117, 411133, 87019]) {
@@ -179,17 +178,57 @@ const rollOf = (g, bbl) => {
     occAfter = Math.min(occAfter, occNow);
   }
   const rentCut = worstGap;
-  // The panel's upper bound, adopted: a building that NEVER leases should not
-  // pass a queue test. Ten years is the allowance — this is a prime site; if
-  // the market cannot absorb it in a decade the pool is broken the other way.
+  // TWO CLAUSES CAME OUT OF THIS TEST ON 2026-08-06, BOTH FOR THE SAME REASON:
+  // NEITHER COULD FAIL. CLAUDE.md's rule, applied to the file that enforces it.
+  //
+  // 1. `to80 <= 120` WAS A TAUTOLOGY. The lease-up clock is only ever set
+  //    inside the POST loop, which runs m = 0..119 and assigns `m + 1`, so
+  //    `to80` is drawn from [1, 120] by construction and the upper bound is
+  //    the horizon restating itself. Everything it was meant to say — a
+  //    building that never leases fails a queue test — is already carried by
+  //    `to80 !== null`, which is the honest way to write "not inside ten
+  //    years". The bound is gone and the horizon is named in the print.
+  //
+  // 2. THE NEIGHBOURS CLAUSE WAS THE VACANCY CLAUSE, TIMES 0.713. `occBefore`
+  //    and `occAfter` are `E.occupancy` summed over a set of building records
+  //    captured ONCE before the shock, so nothing varies between the two reads
+  //    except `econ` — and `useOccupancy` touches econ through exactly one
+  //    term, `(NATURAL_VAC - cityVac) * 0.85`, plus the vintage renormaliser.
+  //    That is an affine map. Measured, holding the same 183 buildings and
+  //    sweeping citywide office vacancy from 12.6% to 45%:
+  //
+  //        vacancy   12.6%  15.0%  17.0%  20.0%  24.0%  30.0%  40.0%  45.0%
+  //        occupancy 78.16  76.42  74.99  72.85  70.00  65.72  58.64  55.18
+  //        dOcc/dVac   —    0.713  0.713  0.713  0.713  0.713  0.711  0.708
+  //
+  //    A constant to three figures across the whole reachable range. So the
+  //    clause `occBefore - occAfter >= 0.03` binds at 3.00 / 0.713 = 4.21pp of
+  //    vacancy, and the clause above it already demands 5.00pp — and because
+  //    occupancy is monotone decreasing in vacancy, the occupancy trough falls
+  //    on exactly the month of the vacancy peak. Clause 1 is strictly stronger
+  //    than clause 5 at every point. Clause 5 could not fail while clause 1
+  //    passed; it was the same measurement wearing a second name, which is
+  //    CLAUDE.md's third kind of fake.
+  //
+  //    It is still PRINTED, because what it shows is worth seeing — the wire
+  //    from the citywide market to a single roll is the thing that took years
+  //    to exist at all. It is no longer asserted, because an assertion that
+  //    restates another assertion is decoration.
+  //
+  //    (One live caveat for whoever changes that wire: cityVac is clamped to
+  //    0.45 in market.ts, so above 45% vacancy this metric stops moving. No
+  //    clause here reaches it — the peak measured is 23.9% — but a future
+  //    test that asks about a deeper glut would be reading the rail.)
+  const implied = (occBefore - occAfter) / Math.max(1e-9, vacPeak - vac0);
   report("B. SUPPLY SHOCK (+10% of office stock in one building)",
-    (vacPeak - vac0) >= 0.05 && rentCut >= 0.10 && to80 !== null && to80 >= 24 && to80 <= 120 && (occBefore - occAfter) >= 0.03,
+    (vacPeak - vac0) >= 0.05 && rentCut >= 0.10 && to80 !== null && to80 >= 24,
     [`stock ${(stock0 / 1e6).toFixed(2)}M sf  + ${(addSf / 1e6).toFixed(2)}M sf delivered empty at demand ${site.demandScore}`,
      `citywide office vacancy ${(vac0 * 100).toFixed(1)}% -> peak ${(vacPeak * 100).toFixed(1)}%   (need +5pp)`,
      `office rents vs the same city WITHOUT the building: ${(rentCut * 100).toFixed(1)}% below the counterfactual at the worst   (need >= 10%)`,
      `   (nominal path ${rent0.toFixed(0)} -> trough ${rentTrough.toFixed(0)}; rents carry a wage-driven trend now, so the counterfactual is the only honest measure)`,
-     `new building to 80% let: ${to80 === null ? ">120 months" : to80 + " months"}   (need 24-120: years, not forever)`,
-     `standing office stock occupancy ${(occBefore * 100).toFixed(1)}% -> trough ${(occAfter * 100).toFixed(1)}%   (need -3pp: the shock must WOUND somebody)`]);
+     `new building to 80% let: ${to80 === null ? "never, inside the " + POST + "-month window" : to80 + " months"}   (need >= 24 and inside the window: years, not forever)`,
+     `standing office stock occupancy ${(occBefore * 100).toFixed(1)}% -> trough ${(occAfter * 100).toFixed(1)}%`,
+     `   = ${implied.toFixed(3)} x the vacancy move. NOT A CLAUSE — it is the vacancy line above through an affine wire; see the note in this file.`]);
 }
 
 // ---------------------------------------------------------------------------
@@ -299,40 +338,67 @@ const rollOf = (g, bbl) => {
   // actually played and where tuning quietly re-flattens things. Two identical
   // empty buildings on ~demand-30 and ~demand-70 blocks, letters counted for
   // four years, nothing signed: the better block must draw >= 2x the letters.
-  const parcels = clone();
-  const offices = bbls.map((b) => parcels[b])
-    .filter((r) => r && r.class === "office" && r.bldgArea > 30000 && r.bldgArea < 90000);
-  const near = (t) => offices.slice().sort((a, b) => Math.abs(a.demandScore - t) - Math.abs(b.demandScore - t))[0];
-  const mid30 = near(30);
-  const mid70 = offices.filter((r) => r.bbl !== mid30.bbl)
-    .sort((a, b) => Math.abs(a.demandScore - 70) - Math.abs(b.demandScore - 70))[0];
-  const TPL = { bldgArea: 60000, floors: 8, yearBuilt: 1988, unitsRes: 0 };
-  for (const r of [mid30, mid70]) Object.assign(parcels[r.bbl], TPL, { lotArea: 9000 });
-  let g = E.firstListings(E.newGame(777001, parcels), parcels, bbls);
-  g = { ...g, cash: 400_000_000 };
-  for (const bbl of [mid30.bbl, mid70.bbl]) {
-    const r = E.executePurchase(g, parcels, bbl, 5_000_000, "cash", false, 1);
-    if (r.err) { console.log("E: buy failed", bbl, r.err); process.exit(2); }
-    g = r.s;
-    g.holdings[bbl].tenants = [];
-    g.holdings[bbl].makeReady = [];
-    g.holdings[bbl].broker = true;
+  //
+  // FIVE SEEDS, AND THE INFINITY BRANCH IS GONE.
+  //
+  // This ran on ONE seed and read `ratio = n30 > 0 ? n70 / n30 : Infinity`.
+  // Both halves of that were wrong, and the second is the shape CLAUDE.md
+  // already names: the tournament's dominance number divided by a bankrupt
+  // strategy and reported 116770360.0x. Here, a demand-30 building that drew
+  // NO letters at all — the strongest possible evidence that something has
+  // gone wrong at the bottom of the gradient, or that the whole leasing pool
+  // has gone quiet — produced `Infinity`, and Infinity >= 2.0, so the test
+  // passed hardest exactly where it should have shouted. Measured over twelve
+  // seeds the branch was one letter away from live: the thinnest bottom seen
+  // was n30 = 1 (seed 94110, ratio 19.00x). It is now an explicit no-reading.
+  //
+  // And one seed could not resolve the bar it was checking. Over those twelve:
+  // ratios 1.67 to 19.00, mean 4.92, sd 4.62 — a standard deviation more than
+  // twice the 2.0x threshold, and 1 of 12 seeds below it. A single draw from
+  // that is a coin with a bias, not a measurement. Five seeds and a median.
+  const SEEDS_E = [777001, 550991, 12007, 73303, 11];
+  const rows = [];
+  for (const seed of SEEDS_E) {
+    const parcels = clone();
+    const offices = bbls.map((b) => parcels[b])
+      .filter((r) => r && r.class === "office" && r.bldgArea > 30000 && r.bldgArea < 90000);
+    const near = (t) => offices.slice().sort((a, b) => Math.abs(a.demandScore - t) - Math.abs(b.demandScore - t))[0];
+    const mid30 = near(30);
+    const mid70 = offices.filter((r) => r.bbl !== mid30.bbl)
+      .sort((a, b) => Math.abs(a.demandScore - 70) - Math.abs(b.demandScore - 70))[0];
+    const TPL = { bldgArea: 60000, floors: 8, yearBuilt: 1988, unitsRes: 0 };
+    for (const r of [mid30, mid70]) Object.assign(parcels[r.bbl], TPL, { lotArea: 9000 });
+    let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
+    g = { ...g, cash: 400_000_000 };
+    for (const bbl of [mid30.bbl, mid70.bbl]) {
+      const r = E.executePurchase(g, parcels, bbl, 5_000_000, "cash", false, 1);
+      if (r.err) { console.log("E: buy failed", bbl, r.err); process.exit(2); }
+      g = r.s;
+      g.holdings[bbl].tenants = [];
+      g.holdings[bbl].makeReady = [];
+      g.holdings[bbl].broker = true;
+    }
+    const seen = { [mid30.bbl]: new Set(), [mid70.bbl]: new Set() };
+    for (let m = 0; m < 48; m++) {
+      g = E.advanceQuarter(g, parcels, bbls, adjacency);
+      for (const l of g.lois) if (seen[l.bbl] && l.kind === "new") seen[l.bbl].add(l.id);
+    }
+    rows.push({ seed, d30: mid30.demandScore, d70: mid70.demandScore, n30: seen[mid30.bbl].size, n70: seen[mid70.bbl].size });
   }
-  const seen = { [mid30.bbl]: new Set(), [mid70.bbl]: new Set() };
-  for (let m = 0; m < 48; m++) {
-    g = E.advanceQuarter(g, parcels, bbls, adjacency);
-    for (const l of g.lois) if (seen[l.bbl] && l.kind === "new") seen[l.bbl].add(l.id);
-  }
-  const n30 = seen[mid30.bbl].size, n70 = seen[mid70.bbl].size;
-  const ratio = n30 > 0 ? n70 / n30 : Infinity;
-  report("E. MID-GRADIENT (letters at demand ~30 vs ~70, empty twins, 4 years)",
-    n70 >= 2 && ratio >= 2.0,
-    [`demand ${mid30.demandScore} drew ${n30} letters   demand ${mid70.demandScore} drew ${n70}`,
-     `ratio ${n30 > 0 ? ratio.toFixed(2) + "x" : "inf"}   (need >= 2x — the middle of the gradient must not flatten)`]);
+  // A seed where the poor block drew nothing is NOT a gradient measurement —
+  // it is a run with no denominator, and it is excluded and counted rather
+  // than scored as an infinite pass.
+  const scored = rows.filter((r) => r.n30 > 0);
+  const dead = rows.length - scored.length;
+  const ratio = scored.length ? med(scored.map((r) => r.n70 / r.n30)) : 0;
+  const minN70 = Math.min(...rows.map((r) => r.n70));
+  report(`E. MID-GRADIENT (letters at demand ~30 vs ~70, empty twins, 4 years, median of ${SEEDS_E.length})`,
+    scored.length >= 3 && minN70 >= 2 && ratio >= 2.0,
+    [`demand ${rows[0].d30} vs ${rows[0].d70}`,
+     `letters per seed: ${rows.map((r) => `${r.n30}/${r.n70}`).join("  ")}   (poor block / good block)`,
+     `ratio per seed: ${rows.map((r) => (r.n30 > 0 ? (r.n70 / r.n30).toFixed(2) + "x" : "no reading")).join("  ")}   median ${ratio.toFixed(2)}x   (need >= 2x — the middle of the gradient must not flatten)`,
+     `seeds with no denominator (poor block drew zero letters): ${dead} of ${rows.length}   (these are excluded, not counted as infinite)`]);
 }
 
 // ---------------------------------------------------------------------------
-console.log("\n" + "=".repeat(64));
-const failed = results.filter((r) => !r.pass);
-console.log(`\n${results.length - failed.length} of ${results.length} acceptance tests pass`);
-if (failed.length) { console.log("failing: " + failed.map((f) => f.name.split(".")[0]).join(", ")); process.exit(1); }
+verdict();

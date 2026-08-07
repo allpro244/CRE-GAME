@@ -2,7 +2,7 @@
 // (state, parcels) in, state out. The UI is a lens on this.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
-import { START_CASH, CENTURY_MONTHS, CASH_APY, logBooks, monthLabel } from "./types";
+import { DEFAULT_START_CASH, CENTURY_MONTHS, CASH_APY, logBooks, monthLabel } from "./types";
 import { initEcon, rng, rrange, tickEcon, stockFromParcels } from "./market";
 import { assetValue, holdingNOIYr, holdingValue, monthlyNOI, netWorth, operatingStatement, physicalOcc, resolveRec } from "./value";
 import { recordComp, tickLandComps } from "./comps";
@@ -28,6 +28,63 @@ import { tickAuction } from "./auction";
 import { tickPortfolio } from "./portfolio";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
+
+/**
+ * HOW LONG AN OFF-MARKET CONVERSATION STAYS ON THE BOOKS.
+ *
+ * Twelve months, and this is the ONLY place it is written down. The sweep in
+ * `advanceQuarter` below reads it; so does the countdown the panel prints on a
+ * broker's call. It used to be a literal `12` here and a second literal `12` in
+ * `RightPanel.tsx`, which is one quantity with two answers waiting to happen —
+ * the row would have gone on counting down to a date the engine had stopped
+ * using the moment anybody touched either number.
+ *
+ * The figure itself is the shelf life of an owner's willingness to talk, not of
+ * their price: the ask is repriced or withdrawn much sooner (see the sweep —
+ * six months on the number, and immediately if the ground under it moves). A
+ * year is how long a principal stays warm to a buyer they have already spoken
+ * to before the conversation has to start again from a cold call.
+ */
+export const APPROACH_LIFE_M = 12;
+
+/**
+ * HANG UP ON ONE FILE, without hanging up on the street.
+ *
+ * "Stop calling me" is a switch on the whole channel — `brokersOff` silences
+ * every phone in town — and "Not now" does nothing to the file at all. Neither
+ * of those is the ordinary move, which is telling a broker that THIS building
+ * is not for you and to ring again with the next one. Without it the only way
+ * to clear a call you have already decided against was to wait out the year, so
+ * the page carried dead rows and `attentionItems` kept stopping auto-advance on
+ * a decision the player had made months earlier.
+ *
+ * This is exactly the transition the clock performs — the same `delete` the
+ * lapse sweep does, up to twelve months early — which is why it needs no new
+ * state and no new field. Three things it deliberately does NOT do:
+ *
+ *   - It does not set `refused`. That flag means the OWNER turned YOU away, and
+ *     `acquire.ts` reads it as such. Writing it from a hang-up would put a
+ *     refusal on a conversation the owner never had.
+ *   - It does not touch `soured` or `insultedUntilM`, the two things that
+ *     actually damage a relationship. It cannot: `tickBrokerCalls` skips any
+ *     parcel that already carries an approach record, so a building the phone
+ *     rings about has no prior memory on it to lose.
+ *   - It does not reach past inbound calls. A number YOU went and asked for is
+ *     yours to keep until it lapses; there is no broker on the other end of it
+ *     to hang up on.
+ *
+ * The broker may ring about the same building again afterwards, on the same
+ * hazard as any other parcel, because the record that was suppressing that is
+ * the record you just closed. That is the honest consequence of an early lapse
+ * and not a leak: it is what a natural lapse does too.
+ */
+export function hangUpOnCall(s: GameState, bbl: string): GameState {
+  const a = s.approaches[bbl];
+  if (!a || !a.inbound || a.refused || !a.ask) return s;
+  const next = { ...s, approaches: { ...s.approaches } };
+  delete next.approaches[bbl];
+  return next;
+}
 
 // 0.5–1.5% of the city is on the market at any time: thin in expansions
 // (owners hold), heavier in recessions (distress shakes assets loose).
@@ -55,13 +112,18 @@ function targetListings(s: GameState, totalLots: number): number {
   return Math.max(4, Math.round(totalLots * base * (0.55 + 0.5 * ci)));
 }
 
-export function newGame(seed: number, parcels?: ParcelTable): GameState {
+/**
+ * A NEW FIRM. `cash0` is the opening bankroll the player chose on the start
+ * screen — see START_CASH_CHOICES. It defaults so every existing caller,
+ * harness and probe keeps working unchanged.
+ */
+export function newGame(seed: number, parcels?: ParcelTable, cash0: number = DEFAULT_START_CASH): GameState {
   const s: GameState = {
     v: 32,
     seed,
     rng: seed,
     month: 0,
-    cash: START_CASH,
+    cash: cash0,
     econ: null as never,
     holdings: {},
     listings: [],
@@ -99,7 +161,7 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
     agent: false,
     loc: { balance: 0, drawnTotal: 0, interestPaid: 0 },
     books: [],
-    nwHistory: [START_CASH],
+    nwHistory: [cash0],
     exits: [],
     milestones: {},
     news: [],
@@ -112,10 +174,34 @@ export function newGame(seed: number, parcels?: ParcelTable): GameState {
   // on a block is part of what makes that block valuable, and the generator's
   // gravity score did not know that. See reconcileDemand.
   if (parcels) reconcileDemand(s, parcels);
+  // THE FIRST SENTENCE OF THE CAMPAIGN, AND IT HAS TO BE TRUE OF THIS CAMPAIGN.
+  // It used to be a fixed string: "You arrive with $6M... Half this town is
+  // still empty lots." Both halves were wrong. The bankroll is a choice of
+  // $1M / $2.5M / $5M and there has been no $6M for some time, so the very
+  // first thing a player read contradicted the button they had just pressed.
+  // And "half" is right at no preset on the build-out ladder — it runs from
+  // 69% empty at Landing to 14% at Metropolis. Both numbers are read off the
+  // state now.
+  const emptyPct = (() => {
+    if (!parcels) return null;
+    let vacant = 0, n = 0;
+    for (const bbl of Object.keys(parcels)) {
+      const rec = parcels[bbl];
+      if (!rec) continue;
+      n++;
+      if (rec.class === "land" || !(rec.floors > 0)) vacant++;
+    }
+    return n ? Math.round((vacant / n) * 100) : null;
+  })();
+  const howEmpty = emptyPct === null ? "A good deal of this town is still empty lots"
+    : emptyPct >= 60 ? `Nearly ${emptyPct}% of the lots here are still empty`
+    : emptyPct >= 30 ? `${emptyPct}% of this town is still empty lots`
+    : `Only ${emptyPct}% of it is still empty lots`;
   s.news.push({
     q: 0,
     kind: "info",
-    text: `${monthLabel(0)}. You arrive with $6M and a hundred years. Half this town is still empty lots — the city will fill in around you, with or without your name on it.`,
+    text: `${monthLabel(0)}. You arrive with $${(s.cash / 1e6).toFixed(2).replace(/\.00$/, "")}M and a hundred years. `
+      + `${howEmpty} — the city will fill in around you, with or without your name on it.`,
   });
   return s;
 }
@@ -451,7 +537,7 @@ export function advanceQuarter(
   // a free option on a rezoning, and the ask could drift to a fraction of the
   // appraisal beside it — which is exactly what it looked like from the panel.
   for (const [bbl, a] of Object.entries(s.approaches)) {
-    if (s.month > a.q + 12) { delete s.approaches[bbl]; continue; }
+    if (s.month > a.q + APPROACH_LIFE_M) { delete s.approaches[bbl]; continue; }
     if (a.refused || !a.ask) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
@@ -649,9 +735,14 @@ export function advanceQuarter(
   if (!s.milestones.century && s.month >= CENTURY_MONTHS) {
     s.milestones.century = s.month;
     const built = Math.round((100 * (s.builtAtStart + Object.keys(s.built).length)) / Math.max(1, s.totalLots));
+    // WHAT IT WAS WHEN YOU GOT HERE, read off the town rather than asserted.
+    // This said "two-fifths empty lots" as a fixed phrase, which was true of
+    // one preset on a ladder that now runs from 69% empty to 14%. Same fault as
+    // the opening news item, one line apart in the same file.
+    const empty0 = Math.round(100 * (1 - s.builtAtStart / Math.max(1, s.totalLots)));
     s.news.unshift({
       q: s.month, kind: "event",
-      text: `◆ A hundred years. The place you arrived in was two-fifths empty lots; ${built}% of it stands built today, and ${Object.keys(s.holdings).length} of those buildings are yours. The clock keeps running.`,
+      text: `◆ A hundred years. The place you arrived in was ${empty0}% empty lots; ${built}% of it stands built today, and ${Object.keys(s.holdings).length} of those buildings are yours. The clock keeps running.`,
     });
   }
 

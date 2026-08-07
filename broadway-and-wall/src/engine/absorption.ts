@@ -196,7 +196,10 @@ function nbTable(s: GameState, parcels: ParcelTable, use: BuiltClass): Map<strin
 }
 
 export interface LocalMarket {
-  /** the space market's citywide rate for this class */
+  /** the space market's citywide AVAILABILITY rate for this class — empty
+   *  floors plus everything standing on the sublet market, because this
+   *  number's whole job below is to count what a tenant could take instead of
+   *  yours, and a sublease is the cheapest of those there is */
   cityVac: number;
   /** the same class, in this building's own corner */
   localVac: number;
@@ -216,7 +219,16 @@ export interface LocalMarket {
  * engine and not two.
  */
 export function localMarket(s: GameState, parcels: ParcelTable, rec: ParcelRecord, use: BuiltClass): LocalMarket {
-  const cityVac = s.econ.cityVac?.[use] ?? NATURAL_VAC[use];
+  // AVAILABILITY, NOT VACANCY, and the difference is the whole argument. The
+  // rent index in market.ts prices off availability; if lease-up priced off
+  // direct vacancy the same city would be reporting two different market
+  // conditions to two different parts of the engine. In a bad office market a
+  // quarter of what a tenant can choose from is somebody else's lease, offered
+  // fitted out and at a discount by a firm that only wants to stop the
+  // bleeding — that is the toughest competition a landlord faces and it was
+  // invisible here.
+  const cityVac = (s.econ.cityVac?.[use] ?? NATURAL_VAC[use])
+    + (s.econ.sublet?.[use] ?? 0) / Math.max(1, s.econ.stock?.[use] ?? CITY_STOCK[use]);
   const t = nbTable(s, parcels, use);
   const mean = t.get(CITY_KEY)!;
   const here = t.get(rec.block);
@@ -355,6 +367,43 @@ export function leaseFactors(s: GameState, rec: ParcelRecord, h: Holding, use: B
       mult: +Math.pow(1 + 0.08 * st, -1.9).toFixed(3),
     });
   }
+  // THE PRICE OF EMPTY SPACE FALLS UNTIL IT CLEARS, and until now it did not.
+  //
+  // `stance` above is a switch the PLAYER throws. Nothing moved the ask on its
+  // own, so a building whose owner did nothing asked the same rent forever.
+  // Measured over 25 years of an owner who accepted nothing: an 8,195 sf office
+  // went 81% let to 0% and then drew FIVE prospects in twenty-five years, and a
+  // retail building went 73% to 0% and was lost to the receiver. Each
+  // multiplier was individually defensible — condition 0.48 once obsolete, the
+  // dark-building factor 0.85, location cubed, and no broker or turnkey suites
+  // to offset any of it — and their PRODUCT was a share of the city's
+  // requirement indistinguishable from zero. That is not a market clearing
+  // slowly, it is a market that has stopped.
+  //
+  // What is missing is the managing agent marking stale space down, which is
+  // what the 4% fee buys and what every real owner of an empty floor does. The
+  // shape is a two-year half-life on the gap to a floor of about 1.85x, which
+  // is a shape parameter and is stated as one: it is anchored on the observed
+  // fact that space sitting three years or more clears roughly 15-30% under its
+  // original ask once free rent and allowances are counted, and 1.85 is what
+  // Math.pow(1 + 0.08*st, -1.9) returns at the equivalent of four notches under
+  // market — i.e. this reaches, slowly, where the player's own "fill" switch
+  // already reaches instantly. It cannot exceed it by more than the discount is
+  // worth.
+  //
+  // IT IS NOT A SOFTENED PENALTY. The discount is real money: `staleDiscount`
+  // below cuts the rent these deals sign at, for the whole of a ten-year term.
+  // Passivity still costs — it just costs the rent roll rather than costing the
+  // building's existence.
+  const dark = h.darkMs ?? 0;
+  if (dark >= 12 && use !== "multifamily") {
+    const yrs = dark / 12;
+    out.push({
+      label: "Stale space",
+      detail: `${yrs < 2 ? "a year" : `${Math.floor(yrs)} years`} on the market — the ask has been cut`,
+      mult: +(1 + 0.85 * (1 - Math.pow(0.5, (yrs - 1) / 2))).toFixed(3),
+    });
+  }
   // HOW THE BUILDING IS RUN. Not the switch — the three-year average of it, so
   // this row moves slowly and honestly and a player who cut the cleaning
   // contract in 2004 can see it here in 2007.
@@ -439,6 +488,26 @@ export interface LeasingOdds {
 
 /** The one cap on how fast one building can transact, whatever the arithmetic says. */
 export const LOI_ODDS_MAX = 0.85;
+
+/**
+ * WHAT STALE SPACE SIGNS AT — the other half of the "Stale space" factor in
+ * `leaseFactors`, and the half that makes it a cost rather than a gift.
+ *
+ * A floor that has been dark for years does not let at the same number as one
+ * that came free last quarter. The agent cut the ask to move it, and the tenant
+ * knows exactly how long that lobby has been empty. Same two-year half-life as
+ * the arrival factor, because it is the same markdown seen from the other side,
+ * bottoming a quarter under market — the observed 15-30% range for space that
+ * has sat three years or more once free rent and allowances are counted.
+ *
+ * This is where passivity is actually paid for: the building fills, and it
+ * fills at a rent it keeps for the whole of a ten-year term.
+ */
+export function staleDiscount(darkMs: number | undefined): number {
+  const yrs = (darkMs ?? 0) / 12;
+  if (yrs < 1) return 1;
+  return 1 - 0.25 * (1 - Math.pow(0.5, (yrs - 1) / 2));
+}
 
 export function leasingOdds(
   s: GameState, parcels: ParcelTable, rec: ParcelRecord, h: Holding, use: BuiltClass,

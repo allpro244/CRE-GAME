@@ -3,8 +3,8 @@
 // market against moving costs, and rollover risk that clusters.
 // Multifamily skips all of this and runs aggregate occupancy.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { BuiltClass, Credit, GameState, Holding, Listing, LOI, Sector } from "./types";
-import { logBooks, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START } from "./types";
+import type { Approach, BuiltClass, Credit, GameState, Holding, Listing, LOI, Sector } from "./types";
+import { logBooks, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES } from "./types";
 import type { Tenant } from "./types";
 import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL } from "./market";
 
@@ -15,7 +15,10 @@ import { blendBy, commercialShare, dominantUse, mixOf, uses, useSf } from "./mix
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable } from "./credit";
 
-import { leasingOdds, drawRequirementSf, supportableOcc } from "./absorption";
+import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount } from "./absorption";
+
+/** 0..1, for the net-effective trade in the prospect draw. */
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
 /**
  * What a lease of this class looks like when it is signed. Office in this
@@ -59,11 +62,6 @@ const POOL: Record<Sector, string[]> = {
   medical: ["Harbor Medical Group", "Northside Clinic", "Beacon Dental", "Alden Diagnostics"],
   design: ["Marsh & Vane Architects", "Cooper Lane Studio", "Pier Four Design", "Whitlow Drafting"],
 };
-const SECTORS_BY_CLASS: Record<string, Sector[]> = {
-  office: ["finance", "law", "tech", "media", "insurance", "design"],
-  retail: ["apparel", "food", "medical"],
-  industrial: ["logistics", "food", "apparel"],
-};
 
 /**
  * WHO IS ACTUALLY LOOKING FOR SPACE.
@@ -75,7 +73,8 @@ const SECTORS_BY_CLASS: Record<string, Sector[]> = {
  * deciding to be.
  */
 function pickSector(s: GameState, cls: string): Sector {
-  const arr = SECTORS_BY_CLASS[cls] ?? SECTORS_BY_CLASS.office;
+  // One partition, shared with the swan side — see SECTOR_CLASSES in types.ts.
+  const arr = SECTOR_CLASSES[cls as BuiltClass] ?? SECTOR_CLASSES.office!;
   const w = arr.map((k) => industryPull(s.econ, k));
   let roll = rng(s) * w.reduce((a, b) => a + b, 0);
   for (let i = 0; i < arr.length; i++) { roll -= w[i]; if (roll <= 0) return arr[i]; }
@@ -354,6 +353,59 @@ export function stampListing(s: GameState, rec: ParcelRecord, li: Listing): List
   li.roll = vessel.tenants;
   if (vessel.occ !== undefined) li.occ = vessel.occ;
   return li;
+}
+
+/**
+ * STAMP AN OFF-MARKET CONVERSATION WITH THE ROLL THE DEED WILL CONVEY.
+ *
+ * The twin of `stampListing`, and it exists because an off-market deal is not
+ * a blind one. You ring the owner, they take the call, and the rent roll and
+ * the trailing twelve cross the table before anybody talks about price — that
+ * IS diligence, and no seller who actually wants to trade refuses to send them.
+ *
+ * The panel used to write this roll at PREVIEW time instead, which looked
+ * identical and was not: `genRentRoll` reads `s.month` for every lease start
+ * and expiry and `s.econ` for the target occupancy, so previewing a building
+ * in month 40 and closing it in month 43 handed over different paper against
+ * a different market. That is the same fault the listing path already fixed —
+ * 39 of 200 purchases differed on occupancy there and 84 on NOI — and it was
+ * still live on every door the player knocked on.
+ *
+ * A refusal is not stamped: there is no conversation, so there is nothing
+ * disclosed. Cheap to call, for the same reason `stampListing` is: the roll is
+ * deterministic per building and drawn from a private stream, so it costs the
+ * shared world PRNG nothing.
+ */
+export function stampApproach(s: GameState, rec: ParcelRecord, a: Approach): Approach {
+  if (a.refused) return a;
+  if (rec.class === "land" || !rec.bldgArea) return a;
+  if (a.roll !== undefined || a.occ !== undefined) return a;
+  // Nobody is in receivership on an off-market call — that building would be
+  // on the tape with a distress flag. This is an ordinary owner and an
+  // ordinary roll, which is why the `distressed` reading is not used here.
+  const cond = condGrade(initialCondIdx(rec, s.month));
+  const vessel = { bbl: rec.bbl, boughtM: s.month, costBasis: a.ask ?? 0, loan: null,
+    condition: cond, tenants: [], cfHistory: [] } as unknown as Holding;
+  genRentRoll(s, rec, vessel, false, false);   // no closing, no settlement
+  a.cond = cond;
+  a.roll = vessel.tenants;
+  if (vessel.occ !== undefined) a.occ = vessel.occ;
+  return a;
+}
+
+/**
+ * The sweep, so a path that opens a conversation cannot forget. `approachOwner`
+ * and the broker's call stamp at the moment they write the record; this catches
+ * the rest — rivals.ts rings the player about a corner they were beaten on, and
+ * that record is written deep inside tickRivals. Same shape and same reasoning
+ * as the listing sweep in sim.ts.
+ */
+export function stampApproaches(s: GameState, parcels: ParcelTable) {
+  for (const [bbl, a] of Object.entries(s.approaches ?? {})) {
+    if (a.refused || a.roll !== undefined || a.occ !== undefined) continue;
+    const rec = resolveRec(parcels, s, bbl);
+    if (rec) stampApproach(s, rec, a);
+  }
 }
 
 export function genRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distressed = false, settle = true) {
@@ -671,6 +723,9 @@ function departureDestination(s: GameState, parcels: ParcelTable, from: ParcelRe
 
 export function tickLeasing(s: GameState, parcels: ParcelTable) {
   const q = s.month;
+  // The paper goes out on every open off-market conversation, including the
+  // ones tickRivals opened earlier in this same tick. See stampApproaches.
+  stampApproaches(s, parcels);
   // expire stale LOIs and LOIs on parcels no longer owned
   s.lois = s.lois.filter((l) => l.expiresM > q && s.holdings[l.bbl]);
 
@@ -1223,6 +1278,20 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
 
     // inbound demand for vacant, market-ready space
     const vac = vacantSf(rec, h) - notReadySf(h, q);
+    // THE CLOCK ON EMPTY SPACE. Anything material and unlet ages; a signature
+    // of any kind resets it, because a building that just did a deal is a
+    // building whose ask the market has just validated. Apartments are exempt
+    // and always have been — flats let themselves, and measured over 25 years
+    // of a wholly passive owner a 21,397 sf building sat at a stable 62% while
+    // the commercial ones went to zero. It is the commercial ask that never
+    // moved. Held on the holding rather than derived, because "how long has
+    // this been sitting" is a fact about the space and not about the roll:
+    // a tenant leaving does not tell you when the FLOOR came free.
+    if (vac >= PART_SUITE_MIN && !h.leasingHold && !renovating) {
+      h.darkMs = (h.darkMs ?? 0) + 1;
+    } else if (h.darkMs) {
+      h.darkMs = 0;
+    }
     // TOURS, NOT LETTERS. Two parties chasing the same suite is ONE decision,
     // not two, so the cap counts conversations rather than envelopes — which
     // keeps the number of live decisions per building exactly where it was.
@@ -1348,6 +1417,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           * (sf > useSuiteSf(rec, use) * 2.5 ? 1.15 : 1)
           * (s.econ.phase === "recession" ? 0.85 : 1) * termBias,
         );
+        // WHAT THIS TENANT IS OFFERING against a fair ask for this space. Drawn
+        // once because BOTH the rent and the allowance read it — a prospect
+        // that lowballs the rent and asks for a full fit-out anyway is not a
+        // negotiation, it is two independent dice. See tiPsf below.
+        const bid = rng(s) < 0.3 ? rrange(s, 0.68, 0.86) : rrange(s, 0.9, 1.1);
         s.lois.push({
           id: s.nextLoiId++,
           arrivedM: s.month,
@@ -1365,7 +1439,12 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // Turnkey space is worth a premium and asks for no allowance —
           // the fit-out is already standing there, paid for, in the suite the
           // tenant just walked through.
-          rentPsf: +(market * (specLive ? 1.05 : 1) * rentBias * (rng(s) < 0.3 ? rrange(s, 0.68, 0.86) : rrange(s, 0.9, 1.1))).toFixed(2),
+          // ...and space that has been sitting signs under the market, because
+          // the agent cut the ask to move it. See staleDiscount: the same
+          // markdown that brought this prospect through the door, seen from the
+          // other side, and the reason the arrival factor is not a gift.
+          rentPsf: +(market * (specLive ? 1.05 : 1) * rentBias * staleDiscount(h.darkMs)
+            * bid).toFixed(2),
           // Term length is not random. A credit tenant taking a whole floor
           // signs long paper and expects to be paid for it; a small unrated
           // firm wants three years and an out. WALT is the thing a buyer
@@ -1383,8 +1462,20 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // Per year of term, softened against the market, and with a narrower
           // credit spread now that term carries the work the credit multiplier
           // was doing badly.
+          // YOU DO NOT GET THE DISCOUNT AND THE FIT-OUT. `bid` is what this
+          // tenant is offering against a fair ask for THIS space — the ask
+          // already carries the stale markdown and the landlord's own bias, so
+          // this is the tenant's own discount and nothing else. A tenant taking
+          // space under the market is buying it cheap; the landlord is not also
+          // building it out for them. That is the net-effective trade every
+          // real negotiation is actually about, and the allowance was being
+          // handed over regardless of what was being paid for the space.
+          // Full allowance at the ask, nothing at 15% under it, straight line
+          // between — so a lowball costs the tenant the fit-out, which is
+          // usually the more expensive half of what they were asking for.
           tiPsf: Math.round(rrange(s, tiLo, tiHi) * (termM / 12) * tiPressure(concession)
-            * (credit === 2 ? 1.18 : credit === 1 ? 1.02 : 0.90) * (specLive ? 0.12 : 1)),
+            * (credit === 2 ? 1.18 : credit === 1 ? 1.02 : 0.90) * (specLive ? 0.12 : 1)
+            * clamp01((bid - 0.85) / 0.15)),
           // Free rent scales with the LENGTH of the deal, the way it does in
           // life — the rule of thumb is about a month a year, and it is the
           // concession a landlord gives before cutting the face rent. A flat
@@ -1407,7 +1498,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     }
   }
 
+  // The agent takes everything at 6%; the management desk takes only the
+  // renewals at the 2% the roll already pays. Hiring the agent supersedes the
+  // desk, because the agent is already signing the renewals too.
   if (s.agent) runAgent(s, parcels);
+  else if (s.renewalMgmt) runRenewalDesk(s, parcels);
 }
 
 // The leasing agent works the whole book for you: every LOI that clears a
@@ -1607,6 +1702,62 @@ function runAgent(s: GameState, parcels: ParcelTable) {
     const cost = loiSigningCost(loi, AGENT_FEE);
     if (s.cash < cost) continue;   // can't fund the TI; the LOI keeps sitting
     signLoi(s, rec, h, loi, AGENT_FEE);
+    s.lois = s.lois.filter((l) => l.id !== loi.id);
+  }
+}
+
+/**
+ * PROPERTY MANAGEMENT SIGNS THE RENEWALS — see GameState.renewalMgmt.
+ *
+ * Only `kind: "renewal"`. A new-lease letter still lands on the player's desk,
+ * because that is the decision worth having.
+ *
+ * WHAT IT COSTS, AND THE REASON THAT IS NOT ZERO. This handed the mandate over
+ * at `loiSigningCost(loi)` — the plain in-house rate — and the comment that
+ * used to be here said so approvingly: "at whatever leaseCosts already charges
+ * for one, which is 2%." So did the button in the UI: "the same 2% a renewal
+ * has always cost." Both were describing a service that was FREE. A desk that
+ * signs your at-market renewals for you at no incremental cost is not a choice,
+ * it is a strictly dominant one, and a dominant strategy is a thing this repo
+ * has a harness looking for.
+ *
+ * A manager is a SECOND party and gets paid like one. The letter still carries
+ * the ordinary renewal commission it has always carried, and the manager's
+ * mandate is `RENEWAL_MGMT_FEE` of total lease value on top — so handing them
+ * over costs exactly the 2% of lease value it says on the tin, and doing it
+ * yourself still costs what it always did. Same shape as `AGENT_FEE`: an
+ * exclusive that stacked six points on top of four would charge you twice for
+ * one transaction, and this does not, because there are two people here.
+ *
+ * The floor is the same 82% of market `runAgent` uses: a manager with a mandate
+ * still will not sign a renewal well under the market — they refer it back, and
+ * it becomes the owner's problem again, which is exactly what happens when the
+ * number is bad enough to need a principal.
+ */
+/** The manager's cut of a renewal they sign, on total lease value. */
+export const RENEWAL_MGMT_FEE = 0.02;
+/** What a renewal letter has always cost to sign — see leaseCosts. */
+const RENEWAL_SELF_FEE = 0.02;
+function runRenewalDesk(s: GameState, parcels: ParcelTable) {
+  for (const loi of [...s.lois]) {
+    if (loi.kind !== "renewal") continue;
+    const h = s.holdings[loi.bbl];
+    const rec = resolveRec(parcels, s, loi.bbl);
+    if (!h || !rec) continue;
+    const market = managedRentPsfYr(rec, s.econ, h);
+    if (loi.rentPsf < market * 0.82) {
+      s.lois = s.lois.filter((l) => l.id !== loi.id);
+      s.news.unshift({
+        q: s.month, kind: "info",
+        text: `Management referred ${loi.name}'s renewal at ${rec.address} back to you — the number is under the market and they will not sign it.`,
+      });
+      continue;
+    }
+    // The letter's own commission plus the manager's mandate — see above.
+    const rate = RENEWAL_SELF_FEE + RENEWAL_MGMT_FEE;
+    const cost = loiSigningCost(loi, rate);
+    if (s.cash < cost) continue;               // cannot fund it; the letter sits
+    signLoi(s, rec, h, loi, rate);
     s.lois = s.lois.filter((l) => l.id !== loi.id);
   }
 }
@@ -1875,12 +2026,46 @@ export function respondLOI(
     const askRent = counter?.rentPsf !== undefined ? +counter.rentPsf.toFixed(2) : +(loi.rentPsf * 1.06).toFixed(2);
     const askTi = counter?.tiPsf !== undefined ? Math.round(counter.tiPsf) : Math.round(loi.tiPsf * 0.7);
     const market = managedRentPsfYr(rec, next.econ, h, loi.use);
-    const f = askRent / Math.max(1, market);                 // aggression vs the market, not vs their offer
+    const openTi = loi.tiPsf;
+    // RENT AND FIT-OUT ARE ONE NUMBER, and this was pricing them as two.
+    //
+    // The old term charged a flat 0.14 of acceptance for taking the whole
+    // allowance away — the same 0.14 whether the allowance was $3/sf on a
+    // two-year renewal refresh or $90/sf on a twelve-year build-out, one
+    // constant standing in for a quantity that varies by twenty times. 0.14 is
+    // also exactly what a 10% rent cut buys at the -1.4 elasticity below, so a
+    // 10% discount bought off ANY fit-out cut and a 9% discount bought off none
+    // of it, at every rent level in the city.
+    //
+    // Measured over 2,366 counters: the asked allowance runs 3.7% of market
+    // rent per year of term on office and 1.6% on retail and industrial, so a
+    // full cut is worth about 2.7% of the deal and was being charged as 10%.
+    // Split by how big the allowance is, zeroing it cost 13.2 / 12.9 / 11.4
+    // points of acceptance across terciles — flat, when the whole point is that
+    // it should scale. And swapping the entire allowance for its exact rent
+    // equivalent, a deal identical on both sides of the table, cost 8.9 points
+    // one way and 3.0 the other. It is 0.0 both ways now.
+    //
+    // What a tenant is actually negotiating is NET EFFECTIVE — face rent less
+    // the allowance amortised across the term, which is the same convention
+    // TI_ASK is generated on ($/sf per YEAR of term, see the band above), so
+    // the quantity keeps one answer. The allowance delta converts to its rent
+    // equivalent and goes on the rent axis, where it earns the same elasticity
+    // and reaches pWalk through the same `f` — the fit-out used to have no
+    // bearing on walking at all, so a tenant offered nothing walked at the same
+    // rate as one offered everything. Cutting the fit-out is now forgiven
+    // exactly to the extent the rent is cut with it, and paying MORE fit-out
+    // buys rent: the reverse half of the trade, which the old max(0, ...) threw
+    // away. Straight-line and undiscounted on purpose — that is the net
+    // effective a leasing agent quotes, and it is the convention the allowance
+    // was generated on.
+    const years = Math.max(1, loi.termM / 12);
+    const tiRent = (openTi - askTi) / years;                 // + when you take fit-out away
+    const f = (askRent + tiRent) / Math.max(1, market);      // aggression vs the market, not vs their offer
     const vacHere = (next.econ.cityVac?.[loi.use ?? "office"] ?? 0.1);
     const natHere = loi.use === "multifamily" ? 0.045 : loi.use === "retail" ? 0.085 : loi.use === "industrial" ? 0.07 : 0.115;
     const tight = Math.max(-0.3, Math.min(0.35, (natHere - vacHere) * 3));
     const stick = loi.kind === "renewal" ? 0.14 : 0;         // moving is expensive; incumbents bend
-    const tiCut = loi.tiPsf > 0 ? Math.max(0, (loi.tiPsf - askTi) / Math.max(1, loi.tiPsf)) * 0.14 : 0;
     // BEST AND FINAL. Saying the number is firm is itself information: it
     // converts some hagglers, because a credible take-it-or-leave-it within
     // reach is easier to sign than to shop — and it hardens the rest, because
@@ -1888,11 +2073,10 @@ export function respondLOI(
     // one letter goes out, and the answer is a signature or an empty hallway.
     const bestFinal = counter?.bestFinal === true;
     const pAccept = Math.max(0.04, Math.min(0.95,
-      1.58 - f * 1.4 + loi.credit * 0.04 + tight + stick - tiCut
+      1.58 - f * 1.4 + loi.credit * 0.04 + tight + stick
       + (bestFinal ? 0.05 : 0)
       + (next.econ.phase === "expansion" ? 0.06 : next.econ.phase === "recession" ? -0.08 : 0)));
     const openedAt = loi.openRentPsf ?? loi.rentPsf;
-    const openTi = loi.tiPsf;
     loi.askedRentPsf = askRent;
     loi.askedTiPsf = askTi;
     loi.rentPsf = askRent;
@@ -1932,13 +2116,36 @@ export function respondLOI(
     if (rng(next) < pWalk) {
       next.lois = next.lois.filter((l) => l.id !== id);
       reply("walked", openedAt, openTi);
-      next.news.unshift({ q: next.month, kind: "warn", text: `${loi.name} walked on the counter at ${rec.address} — $${askRent.toFixed(2)}/sf was more than the space was worth to them (market ~$${market.toFixed(2)}). You had $${openedAt.toFixed(2)} on the table.` });
-      return { s: next, msg: `${loi.name} walked. You asked $${askRent.toFixed(2)} against a $${market.toFixed(2)} market.` };
+      // WHICH HALF OF THE DEAL PUSHED THEM OUT. The line used to blame the rent
+      // for every walk, including the ones where the rent was under market and
+      // the fit-out was what got cut — the player could not tell those apart, so
+      // they had no way to learn the trade. Say the net effective number, which
+      // is the one the tenant actually refused.
+      const neAsk = askRent + tiRent;
+      next.news.unshift({
+        q: next.month, kind: "warn",
+        text: `${loi.name} walked on the counter at ${rec.address} — $${askRent.toFixed(2)}/sf`
+          + (tiRent > 0.005
+            ? ` with ${money((openTi - askTi) * loi.sf)} less fit-out, $${neAsk.toFixed(2)}/sf net effective over ${years.toFixed(0)} years,`
+            : "")
+          + ` was more than the space was worth to them (market ~$${market.toFixed(2)}). `
+          + `You had $${openedAt.toFixed(2)} on the table.`,
+      });
+      return { s: next, msg: `${loi.name} walked. You asked $${neAsk.toFixed(2)}/sf net effective against a $${market.toFixed(2)} market.` };
     }
     // they counter back once — final
     loi.stage = "countered";
     loi.counterRentPsf = +Math.min(askRent, Math.max(loi.rentPsf * 0.94, market * (0.95 + 0.04 * rng(next)))).toFixed(2);
-    loi.counterTiPsf = Math.round((askTi + loi.tiPsf) / 2);
+    // SPLIT THE DIFFERENCE ON THE FIT-OUT TOO — this read `loi.tiPsf`, which
+    // twelve lines earlier had been overwritten with askTi, so the midpoint was
+    // between your number and your number. Measured over 1,240 counters: 543
+    // reached this branch and all 543 came back at EXACTLY the fit-out the
+    // player had offered — they opened asking $12.02/sf, were offered nothing,
+    // and "countered back" at nothing, while the rent line clawed back $2.11 of
+    // a $6.21 push. Cutting the allowance was free on 44% of counters, which is
+    // the hole the net-effective term above would otherwise have been priced
+    // around. openTi is the number they walked in with.
+    loi.counterTiPsf = Math.round((askTi + openTi) / 2);
     loi.rentPsf = loi.counterRentPsf;
     loi.tiPsf = loi.counterTiPsf;
     reply("countered", loi.counterRentPsf, loi.counterTiPsf);

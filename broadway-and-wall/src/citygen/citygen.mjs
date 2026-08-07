@@ -33,6 +33,8 @@ import {
 
 // --- small helpers ----------------------------------------------------------
 
+const TAU_ = Math.PI * 2;
+
 export function chaikin(ring, iterations) {
   let r = ring;
   for (let it = 0; it < iterations; it++) {
@@ -81,7 +83,11 @@ export function inRing(p, ring) {
   return inside;
 }
 
-function offsetInward(ring, d) {
+// Exported for island.mjs, which has to ask "is this core / park / station on
+// dry ground" against THE SAME inset ring the generator builds its blocks from.
+// Answering it with a private copy of this would be a second opinion, and two
+// answers to one question is how a station ends up in the water.
+export function offsetInward(ring, d) {
   const c = centroid(ring);
   return ring.map((p, i) => {
     const a = ring[(i - 1 + ring.length) % ring.length];
@@ -293,27 +299,58 @@ function classFor(flavor, heat, rand) {
 //
 // The floor on this matters more than the ceiling: unbuilt land is the game's
 // entire surface, so even the most built-out preset has to leave a player
-// somewhere to go. Measured rather than assumed — see the sweep in the commit.
-// VILLAGE IS THE ANCHOR AT 1.00, not `shipped`, because `village` is the
-// preset the game actually defaults to — the `mat` column is scaled against a
-// historical baseline that nothing has used for a long time. Setting the
-// ladder against `shipped` made the standard town 41% vacant instead of the
-// 27.5% it has always been, which is a change to everybody's game smuggled in
-// under an option nobody had switched on. An option has to leave the default
-// untouched or it is not an option.
+// somewhere to go. Measured rather than assumed — `node test/buildout.mjs`
+// prints the whole ladder and is where every number in these notes comes from.
+//
+// ---------------------------------------------------- `base`, AND WHY IT EXISTS
+//
+// `mat` was supposed to be the fabric dial and it could not reach the fabric.
+// Measured across the seven presets on the standard island, the MEDIAN BUILDING
+// was 3 or 4 floors at every single one of them — frontier and metropolis alike.
+// The ladder moved the tallest building from 9 floors to 60 and left the
+// ordinary building exactly where it was.
+//
+// The reason is in `blockDatum`: an ordinary building's height is 80% the
+// block's datum, and the datum is `(rr(2, 4.6) + heat² · mat · …) · ambition`.
+// That first term is a CONSTANT FLOOR that `mat` never multiplies. Drive `mat`
+// to zero and the median block still comes out around three storeys, because
+// three storeys is what the expression says a block is before dear ground adds
+// anything to it. So "less built up" could only ever mean "same town, shorter
+// towers", which is not what a young town is.
+//
+// `base` scales that floor. It is the storey count of an ORDINARY building
+// before any land value premium — and in life that is genuinely a function of
+// how old and how rich the town is. A frontier port is one and two storeys of
+// timber and sheds. A working nineteenth-century town is three and four of
+// brick. A capital's ordinary building is six or eight before you have looked
+// at a tower. That is the gradient this column carries, and without it the
+// bottom of the ladder was a metropolis with its towers filed down.
+//
+// THE DEFAULT MOVED, DELIBERATELY, AND IT IS THE OWNER'S CALL. There used to be
+// a rule written here that an option must leave the default untouched. The
+// owner has since asked for the opposite in as many words — "even in the lowest
+// setting the game feels too built up... this should be applied to every level"
+// — with the stated goal of watching a city go from nothing to big. So every
+// rung moved, including `village`, and the economy was re-measured at every one
+// of them rather than assumed to survive it. See test/buildout.mjs, which fails
+// if any preset produces a town the engine cannot run.
 export const DENSITY = {
-  // Below the default: a town that has barely happened yet. Whole blocks
-  // nobody has got to, and nothing above eight floors anywhere.
-  frontier:   { mat: 0.16, tower: 0.30, towerP: 0.30, peakCap: 8,  vac: 1.45 },
-  village:    { mat: 0.25, tower: 0.45, towerP: 0.50, peakCap: 14, vac: 1.00 },
-  town1900:   { mat: 0.45, tower: 0.60, towerP: 0.70, peakCap: 22, vac: 0.92 },
-  provincial: { mat: 0.62, tower: 0.75, towerP: 0.85, peakCap: 30, vac: 0.84 },
-  harbour:    { mat: 0.80, tower: 0.88, towerP: 0.90, peakCap: 40, vac: 0.76 },
-  shipped:    { mat: 1.00, tower: 1.00, towerP: 1.00, peakCap: 52, vac: 0.68 },
-  capital:    { mat: 1.20, tower: 1.12, towerP: 1.10, peakCap: 62, vac: 0.60 },
-  metropolis: { mat: 1.45, tower: 1.28, towerP: 1.25, peakCap: 75, vac: 0.50 },
+  // THE BOTTOM OF THE LADDER: a survey and a harbour and not much else. Two
+  // thirds of the plat is still grass, the ordinary building is a single storey,
+  // and nothing anywhere is above four. This is the "from nothing" end.
+  landing:    { mat: 0.06, base: 0.34, tower: 0.16, towerP: 0.10, peakCap: 4,  vac: 2.55 },
+  // A town that has begun. Whole blocks nobody has got to, two-storey fabric,
+  // and the tallest thing in it is a warehouse.
+  frontier:   { mat: 0.13, base: 0.52, tower: 0.24, towerP: 0.20, peakCap: 7,  vac: 2.00 },
+  village:    { mat: 0.25, base: 0.72, tower: 0.45, towerP: 0.50, peakCap: 14, vac: 1.42 },
+  town1900:   { mat: 0.45, base: 0.84, tower: 0.60, towerP: 0.70, peakCap: 22, vac: 1.22 },
+  provincial: { mat: 0.62, base: 0.92, tower: 0.75, towerP: 0.85, peakCap: 30, vac: 1.08 },
+  harbour:    { mat: 0.80, base: 1.00, tower: 0.88, towerP: 0.90, peakCap: 40, vac: 0.92 },
+  shipped:    { mat: 1.00, base: 1.06, tower: 1.00, towerP: 1.00, peakCap: 52, vac: 0.80 },
+  capital:    { mat: 1.20, base: 1.16, tower: 1.12, towerP: 1.10, peakCap: 62, vac: 0.68 },
+  metropolis: { mat: 1.45, base: 1.30, tower: 1.28, towerP: 1.25, peakCap: 75, vac: 0.54 },
   // low fabric with dramatic towers — the skyline of a town that boomed once
-  spiky:      { mat: 0.50, tower: 1.10, towerP: 1.15, peakCap: 48, vac: 0.95 },
+  spiky:      { mat: 0.50, base: 0.78, tower: 1.10, towerP: 1.15, peakCap: 48, vac: 1.20 },
 };
 
 export function generateCity(cfg) {
@@ -476,63 +513,309 @@ export function generateCity(cfg) {
   // Turn a claimed cell into a block. A cell too thin to carry a full setback
   // still goes in — as pavement with no block on it, which reads as a wide
   // street rather than as a hole.
-  function pushBlock(cell, district, full, streetW, aveW, extra) {
-    let inset = erode(cell, (_a, e) => (full && e % 2 === 1 ? aveW / 2 : streetW / 2))
+  /**
+   * `ways` is how a superblock gets an arterial round it and a service road
+   * through it. The pieces of a split cell are eroded EDGE BY EDGE: an edge
+   * that lies on the original cell's boundary is a piece of the arterial and
+   * gives away half of `streetW`, and an edge that does not is an internal way
+   * and gives away half of the much narrower `ways.innerW`. Without it the
+   * estate paid a twenty-metre arterial on every internal line as well, which
+   * took two-fifths of its ground and left it at a parcel and a half per block.
+   */
+  function pushBlock(cell, district, full, streetW, aveW, extra, chamferAll = 0, ways = null) {
+    let inset = (ways
+      ? erode(cell, (_a, e) => (ways.onRim(e) ? streetW / 2 : ways.innerW / 2))
+      : erode(cell, (_a, e) => (full && e % 2 === 1 ? aveW / 2 : streetW / 2)))
       ?? erode(cell, streetW / 2)
       ?? erode(cell, streetW / 3);
-    if (inset && rand() < 0.18) inset = chamfer(inset, Math.floor(rand() * inset.length), rr(0.12, 0.3)) ?? inset;
+    // THE CHAFLÁN. Cerdà cut twenty metres off all four corners of every 113 m
+    // block in the Eixample so a cart could turn and so every crossing opened
+    // into a small square, and the result is the most instantly recognisable
+    // street plan in Europe from the air. It is a property of the SURVEY, not
+    // of the individual block, so a district that has it has it everywhere and
+    // does not also take the one-corner accident below — a chamfered grid with
+    // a random extra bite out of it is neither Barcelona nor anywhere else.
+    if (inset && chamferAll > 0 && inset.length <= 6) {
+      // Each cut turns one corner into two, so after k cuts the (k+1)th
+      // original corner has slid along to index 2k. A cut that collapses the
+      // ring stops the sequence rather than leaving a block chamfered on three
+      // sides — half a chaflán is worse than none.
+      const corners = inset.length;
+      for (let k = 0; k < corners; k++) {
+        const next = chamfer(inset, k * 2, chamferAll);
+        if (!next || next.length !== inset.length + 1) break;
+        inset = next;
+      }
+    } else if (inset && rand() < 0.18) {
+      inset = chamfer(inset, Math.floor(rand() * inset.length), rr(0.12, 0.3)) ?? inset;
+    }
     if (inset && polygonArea([inset]) < 150) inset = null;
     if (!inset) rej("no-inset");
     blocks.push({ ring: cell, inset, district, ...extra });
   }
 
-  // --- lattice districts ----------------------------------------------------
-  // The lattice is built ONCE per district over the whole land, then each of
-  // that district's leaves keeps its share. Two leaves of the same district
-  // therefore stay in register — the streets line up across the seam.
-  function latticeDistrict(name, d) {
+  // --- the layout kinds -----------------------------------------------------
+  //
+  // WHY THERE ARE SIX OF THESE AND NOT TWO.
+  //
+  // For as long as there were two — a lattice and one organic blob — every
+  // generated island came out the same city with different numbers: an
+  // irregular quarter on the waterfront and a grid over the rest of the land,
+  // with the seed moving only the pitch, the bearing and the widths inside
+  // narrow bands. Wider bands would not have fixed it. What makes two real
+  // cities different at street level is not the size of their blocks, it is
+  // that they were laid out under different ideas about what a street is for:
+  //
+  //   gridiron          Philadelphia 1682, the Commissioners' Plan of 1811 —
+  //                     a surveyor's instrument, sold by the lot.
+  //   organic           the City of London, Boston's North End — no plan at
+  //                     all, streets that are the paths people already walked.
+  //   radial / baroque  Karlsruhe 1715, L'Enfant's Washington, Haussmann's
+  //                     Paris — sightlines to a monument, a circus where they
+  //                     meet, and blocks that widen as they go out because an
+  //                     arc does.
+  //   chamfered grid    Cerdà's Eixample, 1859 — 113 m blocks with 20 m cut
+  //                     off every corner, on a grid that ignores the terrain.
+  //   curvilinear       Olmsted's Riverside 1869 and every streetcar suburb
+  //                     after it — roads that follow the contour instead of
+  //                     cutting it, because the selling point was the view.
+  //   superblock        the postwar estate — one arterial ring, no through
+  //                     streets, and whatever informal ways the plan allowed
+  //                     inside the ring.
+  //
+  // EVERY ONE OF THEM IS A QUAD GRID OVER A NODE FIELD, which is the whole
+  // reason they can be added without reopening the hole problem this file
+  // exists to close. A lattice is a grid in Cartesian (u, w); a radial plan is
+  // the same grid in polar (r, theta); a garden suburb is Cartesian with the
+  // lines bent by a bounded amount. In all three, four consecutive nodes bound
+  // a quad, the quads tile the field exactly, the field is built to overhang
+  // the island, and each of the district's leaves keeps the part that falls
+  // inside it. A kind that cannot be written as such a field does not go here.
+  function emitCell(quad, name, d, mine, opt, i, j) {
+    /**
+     * THE ESTATE'S OWN PLAN IS CUT FIRST AND CLIPPED AFTERWARDS, and the order
+     * is load-bearing.
+     *
+     * claimCell drops a piece whose CENTROID is outside the shoreline, which is
+     * the backstop that stops a block floating in a bay the shore clip could not
+     * reach. On an ordinary 70 x 200 m block that costs nothing. On a 300 x 330
+     * superblock it costs a hundred thousand square metres in one go, and
+     * measured across sixty islands the two worst-covered — 93.1% and 94.1%
+     * against a median of 98.3 — were losing four per cent of their whole land
+     * area to exactly two or three of these. Splitting the grid quad into the
+     * estate's slabs BEFORE claiming them means each piece is a third the size
+     * and answers the shoreline question on its own, and it is also what really
+     * happened: the plan was drawn over the whole site, and the part of it in
+     * the water was never built.
+     */
+    const plan = opt.split
+      ? (() => { const out = []; splitCells(quad, opt.split, opt.splitJitter ?? 12, 1500, out); return out; })()
+      : [quad];
+    for (const leaf of mine) {
+      for (const slab of plan) {
+        for (const cell of claimCell(slab, leaf.hp, KEEP)) {
+          const whole = cell.length === slab.length && cell.every((p, k) => p === slab[k]);
+          const ways = plan.length > 1 && opt.innerW
+            ? {
+              innerW: opt.innerW,
+              // An edge is on the arterial when its midpoint lies on the GRID
+              // QUAD's boundary — the ring road round the estate — rather than
+              // on a line the split drew inside it. Half a metre of tolerance:
+              // splitConvex reuses the quad's own vertices, so the only error
+              // here is the arithmetic of the cut points.
+              onRim: (e) => {
+                const a = cell[e], b = cell[(e + 1) % cell.length];
+                return distToRing([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], quad) < 0.5;
+              },
+            }
+            : null;
+          pushBlock(cell, name, whole && plan.length === 1, d.streetW, d.aveW ?? d.streetW, {
+            numbered: opt.numbered ? opt.numbered(i, j) : undefined,
+            u: opt.uOf ? opt.uOf(i, j) : undefined,
+            uFifth: opt.uMid,
+          }, opt.chamferAll ?? 0, ways);
+        }
+      }
+    }
+  }
+
+  /**
+   * A layout, emitted from its node field. `nodeAt(i, j)` returns the corner of
+   * cell (i, j); indices run 0..N and 0..M inclusive, so the caller hands over
+   * (N+1)x(M+1) nodes and gets N*M quads.
+   */
+  function emitQuads(name, d, N, M, nodeAt, opt = {}) {
+    const mine = leaves.filter((l) => l.district === name);
+    if (!mine.length) return;
+    const node = [];
+    for (let i = 0; i <= N; i++) {
+      const row = [];
+      for (let j = 0; j <= M; j++) row.push(nodeAt(i, j));
+      node.push(row);
+    }
+    for (let i = 0; i < N; i++) {
+      for (let j = 0; j < M; j++) {
+        const quad = cleanRing([node[i][j], node[i + 1][j], node[i + 1][j + 1], node[i][j + 1]]);
+        if (!quad || quad.length !== 4 || !isConvex(quad)) { rej("degenerate"); continue; }
+        emitCell(quad, name, d, mine, opt, i, j);
+      }
+    }
+  }
+
+  /** The district's own axes and how far the island reaches along them. */
+  function frameOf(d) {
     const th = (d.bearingDeg * Math.PI) / 180;
     const A = [Math.sin(th), Math.cos(th)];
     const S = [Math.cos(th), -Math.sin(th)];
-    const at = (u, w) => [u * S[0] + w * A[0], u * S[1] + w * A[1]];
     let wMin = Infinity, wMax = -Infinity, uMin = Infinity, uMax = -Infinity;
     for (const p of COAST_M) {
       const w = p[0] * A[0] + p[1] * A[1], u = p[0] * S[0] + p[1] * S[1];
       if (w < wMin) wMin = w; if (w > wMax) wMax = w;
       if (u < uMin) uMin = u; if (u > uMax) uMax = u;
     }
+    return { A, S, wMin, wMax, uMin, uMax, at: (u, w) => [u * S[0] + w * A[0], u * S[1] + w * A[1]] };
+  }
+
+  // --- lattice districts ----------------------------------------------------
+  // The lattice is built ONCE per district over the whole land, then each of
+  // that district's leaves keeps its share. Two leaves of the same district
+  // therefore stay in register — the streets line up across the seam.
+  //
+  // `regular` turns off the pitch and node jitter. A paced-out colonial grid
+  // wanders; a nineteenth-century engineer's grid does not, and the Eixample
+  // is the extreme case — 113 m, everywhere, for a hundred and fifty blocks.
+  function latticeDistrict(name, d) {
+    const F = frameOf(d);
+    const reg = d.regular === true;
     // pad past the coast so the lattice provably overhangs every leaf
-    wMin -= d.stPitch * 1.5; wMax += d.stPitch * 1.5;
-    uMin -= d.avePitch * 1.2; uMax += d.avePitch * 1.2;
+    const wMin = F.wMin - d.stPitch * 1.5, wMax = F.wMax + d.stPitch * 1.5;
+    const uMin = F.uMin - d.avePitch * 1.2, uMax = F.uMax + d.avePitch * 1.2;
 
     const W = [];
-    for (let w = wMin; w < wMax + d.stPitch; w += d.stPitch * rr(0.85, 1.18)) W.push(w);
+    for (let w = wMin; w < wMax + d.stPitch; w += d.stPitch * (reg ? 1 : rr(0.85, 1.18))) W.push(w);
     const U = [];
-    for (let u = uMin; u < uMax + d.avePitch; u += d.avePitch * rr(0.82, 1.22)) U.push(u);
+    for (let u = uMin; u < uMax + d.avePitch; u += d.avePitch * (reg ? 1 : rr(0.82, 1.22))) U.push(u);
 
-    const node = U.map((u) => W.map((w) => {
-      const base = at(u, w);
+    const jig = reg ? 0 : 1.8;
+    const nodeAt = (i, j) => {
+      const base = F.at(U[i], W[j]);
       const [dx, dy] = WARP(base[0], base[1], d.warpAmp);
-      return [base[0] + dx + rr(-1.8, 1.8), base[1] + dy + rr(-1.8, 1.8)];
-    }));
+      return [base[0] + dx + rr(-jig, jig), base[1] + dy + rr(-jig, jig)];
+    };
+    emitQuads(name, d, U.length - 1, W.length - 1, nodeAt, {
+      numbered: d.numbered ? (_i, j) => j + 1 : undefined,
+      uOf: (i) => (U[i] + U[i + 1]) / 2,
+      uMid: (uMin + uMax) / 2,
+      chamferAll: d.chamferAll ?? 0,
+      split: d.superCell ? () => rr(d.superCell[0], d.superCell[1]) : undefined,
+      splitJitter: d.superJitter,
+      innerW: d.wayW,
+    });
+  }
 
+  // --- curvilinear districts ------------------------------------------------
+  //
+  // The garden suburb: the same two families of lines as a lattice, bent. Each
+  // avenue is displaced across the grid by e(w) and each street by d(u), so the
+  // node at (i, j) is at(U[i] + e(W[j]), W[j] + d(U[i])).
+  //
+  // WHY THAT PARTICULAR FORM AND NOT A GENERAL WARP. Written this way, the cell
+  // between four consecutive nodes has corner offsets (0,0), (du, Dd),
+  // (du+De, dw+Dd), (De, dw) — a PARALLELOGRAM, whatever the displacement is
+  // doing, so it is convex by construction and can never be rejected as
+  // degenerate. A displacement that depended on both u and w would not be, and
+  // the failures would land exactly where a curve gets interesting: as holes on
+  // the tightest bends. The amplitudes are clamped below so the parallelogram
+  // also never inverts (|Dd*De| < du*dw).
+  function curviDistrict(name, d) {
+    const F = frameOf(d);
+    const wMin = F.wMin - d.stPitch * 2.2, wMax = F.wMax + d.stPitch * 2.2;
+    const uMin = F.uMin - d.avePitch * 2.0, uMax = F.uMax + d.avePitch * 2.0;
+
+    const W = [];
+    for (let w = wMin; w < wMax + d.stPitch; w += d.stPitch * rr(0.9, 1.12)) W.push(w);
+    const U = [];
+    for (let u = uMin; u < uMax + d.avePitch; u += d.avePitch * rr(0.9, 1.12)) U.push(u);
+
+    // Two harmonics each, so a road bends back rather than tracing one sine.
+    const lamE = d.curveLen ?? 720, lamD = (d.curveLen ?? 720) * rr(1.2, 1.9);
+    const phE = rr(0, TAU_), phD = rr(0, TAU_);
+    // The clamp: the steepest step either displacement may take is half the
+    // pitch it is stepping across, which keeps the parallelogram's cross
+    // product positive with a factor of four in hand.
+    const capE = (0.5 * d.avePitch * lamE) / (TAU_ * d.stPitch * 1.12);
+    const capD = (0.5 * d.stPitch * lamD) / (TAU_ * d.avePitch * 1.12);
+    const ampE = Math.min(d.curveAmp ?? 60, capE);
+    const ampD = Math.min((d.curveAmp ?? 60) * 0.45, capD);
+    const eOf = (w) => ampE * (Math.sin((TAU_ * w) / lamE + phE) + 0.34 * Math.sin((TAU_ * w) / (lamE * 0.41) + phE * 1.7));
+    const dOf = (u) => ampD * (Math.cos((TAU_ * u) / lamD + phD) + 0.30 * Math.cos((TAU_ * u) / (lamD * 0.47) + phD * 2.3));
+
+    const nodeAt = (i, j) => {
+      const base = F.at(U[i] + eOf(W[j]), W[j] + dOf(U[i]));
+      return [base[0] + rr(-1.4, 1.4), base[1] + rr(-1.4, 1.4)];
+    };
+    emitQuads(name, d, U.length - 1, W.length - 1, nodeAt, {
+      uOf: (i) => (U[i] + U[i + 1]) / 2,
+      uMid: (uMin + uMax) / 2,
+    });
+  }
+
+  // --- radial districts -----------------------------------------------------
+  //
+  // Spokes from a focus and ring streets across them: Karlsruhe, L'Enfant,
+  // the Étoile. The focus is a real place — a palace, a capitol, a harbour
+  // mouth — so island.mjs hands one over rather than letting this invent it,
+  // and when the focus is off the district's own ground what comes out is a
+  // FAN converging on the water, which is the same plan seen from the side.
+  //
+  // THE SPOKE COUNT IS CONSTANT AND THE BLOCKS GET BIGGER OUTWARD, because
+  // that is what a radial plan actually does. An arc of fixed angle is longer
+  // further out, so the block on the third ring is twice the block on the
+  // first — true of every radial city ever built, and the reason they all have
+  // a dense middle and a coarse edge without anyone deciding it. The centre
+  // disc goes down as one cell: the circus the whole plan is aimed at.
+  function radialDistrict(name, d) {
     const mine = leaves.filter((l) => l.district === name);
-    for (let i = 0; i < U.length - 1; i++) {
-      for (let j = 0; j < W.length - 1; j++) {
-        const quad = cleanRing([node[i][j], node[i + 1][j], node[i + 1][j + 1], node[i][j + 1]]);
-        if (!quad || quad.length !== 4 || !isConvex(quad)) { rej("degenerate"); continue; }
-        for (const leaf of mine) {
-          for (const cell of claimCell(quad, leaf.hp, KEEP)) {
-            const full = cell.length === 4 && cell.every((p, k) => p === quad[k]);
-            pushBlock(cell, name, full, d.streetW, d.aveW, {
-              numbered: d.numbered ? j + 1 : undefined,
-              u: (U[i] + U[i + 1]) / 2,
-              uFifth: (uMin + uMax) / 2,
-            });
-          }
-        }
-      }
+    if (!mine.length) return;
+    const F = d.focus;
+    let rMax = 0;
+    for (const p of COAST_M) rMax = Math.max(rMax, Math.hypot(p[0] - F[0], p[1] - F[1]));
+    rMax += d.ringPitch * 2;
+    // THE CIRCUS IS A RING OF BUILDINGS ROUND A ROUNDABOUT, not a disc.
+    // Emitting everything inside `circusR` as one cell made a 193 m circus into
+    // a single 117,000 m2 block on seed 1234567, and a block that big straddling
+    // a bay has its centroid in the water — where the generator drops it, taking
+    // a tenth of the district's ground with it. So the plinth in the middle is
+    // the monument island, small enough to be one, and the ground between it
+    // and the first ring street is the circus frontage: deep lots facing in,
+    // which is what stands round the Étoile and round Karlsruhe's Schlossplatz.
+    const plinth = Math.max(18, Math.min(42, (d.circusR ?? 90) * 0.22));
+    const r1 = Math.max(plinth + 40, d.circusR ?? 90);
+    const M = Math.max(8, Math.round(d.spokes ?? 18));
+    const N = Math.max(3, 1 + Math.ceil((rMax - r1) / d.ringPitch));
+    const th0 = ((d.bearingDeg ?? 0) * Math.PI) / 180;
+
+    // The ring radii wander a little — a ring road was surveyed once and then
+    // widened where the traffic was, and a set of perfectly concentric circles
+    // reads as a dartboard rather than as a town.
+    const R = [plinth, r1];
+    for (let i = 2; i <= N; i++) R.push(R[i - 1] + d.ringPitch * rr(0.86, 1.16));
+    const nodeAt = (i, j) => {
+      const a = th0 + (j / M) * TAU_;
+      return [F[0] + R[i] * Math.cos(a) + rr(-1.4, 1.4), F[1] + R[i] * Math.sin(a) + rr(-1.4, 1.4)];
+    };
+    emitQuads(name, d, N, M, nodeAt, {
+      uOf: (i) => (R[i] + R[i + 1]) / 2,
+      uMid: (plinth + R[N]) / 2,
+    });
+    // The monument island in the middle. Convex by construction (a regular
+    // polygon) and the one cell in the district no lattice would ever produce.
+    const island = [];
+    for (let j = 0; j < M; j++) {
+      const a = th0 + (j / M) * TAU_;
+      island.push([F[0] + plinth * Math.cos(a), F[1] + plinth * Math.sin(a)]);
     }
+    emitCell(island, name, d, mine, { uOf: () => plinth / 2, uMid: (plinth + R[N]) / 2 }, 0, 0);
   }
 
   // --- organic districts ----------------------------------------------------
@@ -575,8 +858,15 @@ export function generateCity(cfg) {
     }
   }
 
+  // "chamfer" and "superblock" are the lattice with its own options set —
+  // a regular grid with every corner cut, and a coarse grid whose cells are
+  // split from the inside — so they fall through to the same builder. The
+  // default is the lattice too, and deliberately: an unknown kind in a config
+  // has to come out as a surveyed grid rather than as bare ground.
   for (const [name, d] of Object.entries(cfg.districts)) {
     if (d.kind === "organic") organicDistrict(name, d);
+    else if (d.kind === "curvi") curviDistrict(name, d);
+    else if (d.kind === "radial") radialDistrict(name, d);
     else latticeDistrict(name, d);
   }
 
@@ -636,9 +926,24 @@ export function generateCity(cfg) {
    * the 25-footer survives next door to the assembled site, which is exactly
    * what a real downtown block looks like.
    */
+  /**
+   * A DISTRICT MAY CARRY ITS OWN LOT CONVENTION, which is the other half of the
+   * same fact. The flavour says what the ground is FOR — offices, housing,
+   * yards — and that is an economic statement the engine reads. How the ground
+   * was CUT UP is a separate one, and it is the one you can see from the
+   * pavement: a Baltimore rowhouse block is 5 m of frontage on a 30 m depth,
+   * a streetcar suburb is 15 m on 35, a 1960s estate is one parcel for the
+   * whole block. Two districts can be `resi` in the engine's sense and be
+   * completely different places to walk down, and until this override existed
+   * they could not be, because `lot` was a property of the flavour alone.
+   *
+   * `[t0, t1, min, maxDepth, jitter]`, exactly as FLAVOR.lot — the district's
+   * entry replaces the flavour's when it is present, and nothing else about
+   * the flavour moves.
+   */
   const lotOptOf = (name, heat = 0) => {
     const fl = flavorOf(name);
-    const [t0, t1, min, maxDepth, jitter] = fl.lot;
+    const [t0, t1, min, maxDepth, jitter] = cfg.districts[name]?.lot ?? fl.lot;
     const k = (fl.assemble ?? 1) * (0.45 + 0.75 * Math.max(0, Math.min(1, heat)));
     return {
       target: () => {
@@ -669,9 +974,61 @@ export function generateCity(cfg) {
   // commercial, with the number carrying the bulk allowance. Emitting the
   // letter the district actually is costs nothing and turns two dead branches
   // of the engine back on.
+  // ---------------------------------------------------------------------
+  // THE BULK ALLOWANCE, AND WHY IT IS NOW DERIVED FROM THE FABRIC.
+  //
+  // This was `flavor.far + heat² · 22`, set independently of everything that
+  // decides what actually gets built. The two numbers had no relationship and
+  // drifted a very long way apart. Measured on the shipped island: the MEDIAN
+  // parcel was built to FAR 1.86 and zoned for FAR 16.5 — nine times what
+  // stands on it — and 99% of built parcels were zoned above three times their
+  // built form. For scale, New York's densest Midtown commercial districts run
+  // FAR 15-21; this island was handing that allowance to its median lot.
+  //
+  // That is not a cosmetic mismatch, because the LAND PRICE IS A RESIDUAL and
+  // the residual prices the envelope you are allowed to build, not the one that
+  // is there. So the model correctly concluded that essentially every parcel in
+  // the city was a teardown. Measured before this change: by year 10, 69% of
+  // built parcels were worth more as bare dirt than as standing buildings, the
+  // median parcel's land was 109% of its improved value, and real land went
+  // from $98/sf to $1,918/sf in a decade — reaching $4,000/sf, about $175M an
+  // acre, by year 20. Prime Manhattan is $1,000-2,000/sf. The residual was
+  // doing correct arithmetic on a fictional envelope.
+  //
+  // It also could not see the build-out preset at all, so a Landing town of
+  // one-storey sheds was zoned exactly like a Metropolis.
+  //
+  // So the allowance is anchored to the fabric the generator actually produces
+  // — the same expression that sets a block's typical height, read at this
+  // district's flavour and this heat — times a HEADROOM that widens toward the
+  // middle of town. That headroom is the real quantity: a city zones its centre
+  // for what it hopes to become and its edges for roughly what is there, and
+  // the gap between the two is where redevelopment lives. Making it a gradient
+  // rather than a constant is what turns "every lot is a teardown" into "some
+  // lots are, and finding them is the game".
+  const zoneFar = (name, heat) => {
+    const fl = flavorOf(name);
+    // The typical building this district puts up at this heat. Mirrors the
+    // block datum below: a base storey count the preset scales, plus what dear
+    // ground adds, at the mean of the `ambition` draw.
+    const typFloors = ((fl.maxFloors <= 5 ? 2.0 : 3.3) * (DZ.base ?? 1)
+      + heat * heat * 7.5 * (fl.matGain ?? 1) * DZ.mat) * 1.1;
+    // Coverage of an ordinary building; towers cover less and are the reason
+    // the core needs headroom rather than a bigger typical.
+    const typFar = Math.max(0.7, typFloors * 0.68);
+    // 1.5x at the fringe — a shop can add a floor — rising to ~4.7x downtown,
+    // which is what lets a tower be legal on a corner currently holding a
+    // four-storey walk-up. This is the whole redevelopment gradient.
+    const headroom = 1.5 + 3.2 * heat * heat;
+    // A civic ceiling, not a preset one: `peakCap` describes the town you are
+    // handed, and using it here would mean a Landing city could never grow a
+    // skyline, which is the opposite of the point.
+    return Math.round(Math.max(1.5, Math.min(34, typFar * headroom)) * 10) / 10;
+  };
+
   function zoningFor(name, heat) {
     const flavor = cfg.districts[name]?.flavor ?? "core";
-    const far = Math.round((flavorOf(name).far + heat * heat * 22) * 10) / 10;
+    const far = zoneFar(name, heat);
     let z;
     if (flavor === "industrial") {
       // M1 light manufacturing, M2 general, M3 heavy — bulk rises with the FAR
@@ -741,8 +1098,12 @@ export function generateCity(cfg) {
     // smooth function of distance from downtown.
     const blkFl = flavorOf(d);
     const ambition = rr(0.58, 1.62);
+    // `DZ.base` scales the pre-premium storey count — see the note on DENSITY.
+    // Without it this term was a constant, and it is 80% of what an ordinary
+    // building ends up being, so no preset could make a town low.
+    const bz = DZ.base ?? 1;
     const blockDatum = Math.max(1, Math.round(
-      ((blkFl.maxFloors <= 5 ? rr(1, 3) : rr(2, 4.6))
+      ((blkFl.maxFloors <= 5 ? rr(1, 3) : rr(2, 4.6)) * bz
        + heat * heat * 7.5 * (blkFl.matGain ?? 1) * DZ.mat * rr(0.45, 1.05)) * ambition,
     ));
 
@@ -805,11 +1166,11 @@ export function generateCity(cfg) {
           floors = Math.round((rr(7, 12) + h * h * rr(10, 23)) * DZ.tower * (0.86 + 0.20 * Math.min(2.4, plate)));
           coverage = rr(0.42, 0.58);
         } else if (fl.maxFloors > 5 && rand() < 0.18 + h * 0.34) {
-          floors = Math.round(rr(3, 6) + mat * rr(0.55, 1.25));
+          floors = Math.round(rr(3, 6) * (DZ.base ?? 1) + mat * rr(0.55, 1.25));
           floors = Math.max(1, Math.round(floors * 0.22 + blockDatum * 1.20 * 0.78 + rr(-0.7, 0.7)));
           coverage = rr(0.55, 0.72);
         } else {
-          floors = Math.round((fl.maxFloors <= 5 ? rr(1, 3) : rr(2, 4)) + mat * rr(0.22, 0.78));
+          floors = Math.round((fl.maxFloors <= 5 ? rr(1, 3) : rr(2, 4)) * (DZ.base ?? 1) + mat * rr(0.22, 0.78));
           floors = Math.max(1, Math.round(floors * 0.20 + blockDatum * 0.80 + rr(-0.6, 0.6)));
           coverage = rr(0.6, 0.78);
         }
@@ -817,6 +1178,16 @@ export function generateCity(cfg) {
         // core, the light and the setback all take plate off it as it climbs.
         if (floors > 6) coverage *= Math.max(0.72, 1.0 - (floors - 6) * 0.012);
         floors = Math.min(floors, fl.maxFloors);
+        // AND THE PRESET'S CEILING IS A CEILING. `peakCap` used to bind only on
+        // the landmark pass, so an ordinary tower roll could sail past it: the
+        // "low skyline" young town came out with an eighteen-floor building
+        // against a stated cap of fourteen, and the note describing the preset
+        // was wrong about the town it described. It is the town's tallest
+        // building now, which is what the name says and what the menu promises
+        // — and it is what makes the bottom of the ladder mean anything, since
+        // "nothing above four floors" is the whole read of a place that has
+        // barely been built.
+        if (DZ.peakCap) floors = Math.min(floors, DZ.peakCap);
         if (cls === "G1") floors = Math.min(floors, 4);
         // SHOPS DO NOT STACK. Pure retail is one or two storeys — the second
         // floor already trades at a discount to the first and there is no

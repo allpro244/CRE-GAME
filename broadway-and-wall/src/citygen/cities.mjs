@@ -11,7 +11,10 @@
 
 // A cut through (px, py) travelling at `deg` (0 = east, 90 = north).
 // `neg` is the LEFT-HAND side of that travel; `pos` is the right.
-const cut = (px, py, deg) => {
+// Exported because island.mjs writes its partitions with it too — a generated
+// island's district plan has to be the same kind of object as a hand-drawn
+// one's, and that starts with being cut by the same helper.
+export const cut = (px, py, deg) => {
   const t = (deg * Math.PI) / 180;
   const nx = Math.sin(t), ny = -Math.cos(t);
   return [nx, ny, px * nx + py * ny];
@@ -299,6 +302,13 @@ function scaleCuts(node, k) {
   };
 }
 
+/** Positions inside a district config scale; everything else about it does not. */
+function scaleDistricts(ds, k) {
+  const out = {};
+  for (const [name, d] of Object.entries(ds ?? {})) out[name] = d.focus ? { ...d, focus: pt(d.focus, k) } : d;
+  return out;
+}
+
 export function scaleCity(cfg, k) {
   if (!isNum(k) || Math.abs(k - 1) < 1e-6) return cfg;
   const box = (o) => ({ ...o, cx: o.cx * k, cy: o.cy * k, w: o.w * k, h: o.h * k });
@@ -309,8 +319,21 @@ export function scaleCity(cfg, k) {
     esplanade: cfg.esplanade * k,
     // `w` on a core is a WEIGHT, not a width — it stays.
     cores: cfg.cores.map((c) => ({ ...c, xy: pt(c.xy, k), r: c.r * k })),
+    // A stated lighthouse is a POSITION on the coast, so it moves with the
+    // coast. Neither authored island sets one — generateCity falls back to the
+    // furthest coast vertex — so this had never been wrong in play; a
+    // generated island does set one, and at "Great City" it would otherwise
+    // have stood half a mile inland with the town built around it.
+    lighthouse: cfg.lighthouse ? pt(cfg.lighthouse, k) : cfg.lighthouse,
     partition: scaleCuts(cfg.partition, k),
-    // districts deliberately untouched — see the note above.
+    // A district's street DIMENSIONS are deliberately untouched — see the note
+    // above; a block is a block at any city size. A radial district's `focus`
+    // is not a dimension, it is a POSITION on the island: the palace or the
+    // harbour mouth the whole plan is aimed at. Left unscaled it stayed where a
+    // standard City put it while the island grew out from under it, which at
+    // Great City is a triumphal arch three quarters of a mile out to sea with
+    // the avenues of a landlocked town pointing at it.
+    districts: scaleDistricts(cfg.districts, k),
     parks: (cfg.parks ?? []).map(box),
     diagonals: (cfg.diagonals ?? []).map(box),
     piers: (cfg.piers ?? []).map((ring) => ring.map((p) => pt(p, k))),

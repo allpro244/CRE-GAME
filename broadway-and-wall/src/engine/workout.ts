@@ -39,9 +39,88 @@ import { depositsOn } from "./leasing";
 
 const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
 
-/** How long they let it run before the auction, by stage. */
-const NOTICE_M = 6;        // the cure period
-const FORECLOSE_M = 8;     // once they have filed
+/**
+ * How long they let it run before the auction, by stage.
+ *
+ * EXPORTED BECAUSE THE STREET RUNS ON THE SAME CALENDAR. A firm on this street
+ * that stops paying is not on a different clock from the player who stops
+ * paying — the notice period is a statute and the filing calendar is a court's,
+ * and neither one asks whose name is on the mortgage. `rivals.ts` reads the sum
+ * of these two as the months a delinquent firm gets before the desks take the
+ * book, so there is one answer to "how long from a missed payment to losing the
+ * building" rather than one for you and an invented one for them.
+ */
+export const NOTICE_M = 6;        // the cure period
+export const FORECLOSE_M = 8;     // once they have filed
+
+/**
+ * HOW MUCH TIME AN EXTENSION ACTUALLY BUYS, in months.
+ *
+ * A maturity-default extension is a short-dated instrument. The desk is not
+ * re-underwriting a ten-year mortgage on a borrower who has just failed to
+ * repay one; it is papering twelve to twenty-four months of forbearance against
+ * a fee, a rate bump and a cash sweep, and expecting to be back at this table
+ * inside two years. That is what the workout desks do and it is the reason the
+ * phrase for it is "extend and pretend" rather than "extend and forget".
+ *
+ * EXPORTED FOR THE SAME REASON `NOTICE_M` IS. The street was getting a
+ * different answer: `rivals.tickMaturities` had no way to record a new maturity
+ * date, so an extended firm simply fell back onto its term ladder and the next
+ * test came a FULL TERM later. Measured over 965 street extensions on six
+ * unplayed centuries: a mean 78.5 months and a maximum of 120 — six and a half
+ * years for a one-to-two-point fee, while the news line the same branch printed
+ * said "they have bought time, not a solution". At six and a half years it was
+ * a solution, and the tape was simply lying. One answer, two borrowers.
+ */
+export const EXTENSION_M: [number, number] = [18, 30];
+
+/** A drawn extension term, in months. */
+export function extensionMonths(s: GameState): number {
+  return Math.round(rrange(s, ...EXTENSION_M));
+}
+
+/**
+ * IS THIS DESK IN A MOOD TO EXTEND ANYBODY — the borrower-independent half of
+ * `workoutMood`.
+ *
+ * A bank with capital would far rather carry a performing loan than own a
+ * building; one that is impaired has a regulator reading the same balance
+ * sheet it is. That test is about the LENDER, and it is the same test whether
+ * the borrower is the player or a firm on the street — so it lives here once
+ * and both callers read it. `rel` is the borrower's file with the desk, which
+ * only matters in the middle band where the desk is stretched but not broken.
+ *
+ * Measured before it had a second caller: over 24,000 lender-months the desks
+ * sit below their capital target 25.4% of the time and below 0.7x target 5.5%,
+ * so an extension is usually available and is not available in exactly the
+ * years everybody needs one. That is the shape a refinancing cliff needs.
+ */
+export function deskWillExtend(s: GameState, lenderName: string, rel = 20): boolean {
+  const l = lenderByName(s, lenderName);
+  if (!l || l.failedM !== undefined) return false;   // a receiver liquidates; it does not extend
+  const cr = capitalRatio(l);
+  const healthy = cr > 0.075 && l.delinquent < 0.06;
+  return healthy || (cr > 0.05 && rel > 45);
+}
+
+/**
+ * WHAT AN EXTENSION COSTS, as a share of the balance being extended.
+ *
+ * The price of time, and it is not small. A desk with capital charges a point
+ * to re-paper a loan it was happy to have; a stretched one charges two, because
+ * it is being asked to carry something its regulator is already asking about.
+ * Both are ordinary modification fees on real term paper.
+ *
+ * Lifted out of `workoutMood` so the street pays the same point the player pays
+ * — a firm on this street rolling a balloon at First Harbor and a player asking
+ * First Harbor for six months are buying the same thing from the same desk, and
+ * two numbers for it would be two answers to one question.
+ */
+export function extensionFeePct(s: GameState, lenderName: string): number {
+  const l = lenderByName(s, lenderName);
+  if (!l) return 0.02;
+  return capitalRatio(l) > 0.075 && l.delinquent < 0.06 ? 0.01 : 0.02;
+}
 
 /** Is this lender in a mood to work with anybody? */
 export function workoutMood(s: GameState, lenderName: string): {
@@ -74,8 +153,9 @@ export function workoutMood(s: GameState, lenderName: string): {
   const healthy = cr > 0.075 && l.delinquent < 0.06;
   const stretched = cr > 0.05;
   // A bank with capital would far rather extend than own a building. One that
-  // is impaired has a regulator reading the same balance sheet you are.
-  const willExtend = healthy || (stretched && rel > 45);
+  // is impaired has a regulator reading the same balance sheet you are. The
+  // test itself is `deskWillExtend` above — one answer, two borrowers.
+  const willExtend = deskWillExtend(s, lenderName, rel);
   return {
     willExtend,
     why: healthy
@@ -84,8 +164,8 @@ export function workoutMood(s: GameState, lenderName: string): {
         ? `${lenderName} is stretched — ${(l.delinquent * 100).toFixed(1)}% of their book is not paying. `
           + (rel > 45 ? "Your record with them is the only reason this is a conversation." : "They have no reason to carry you.")
         : `${lenderName} is undercapitalised. They cannot carry a non-performing loan; the regulators are counting.`,
-    // The price of time, and it is not small.
-    feePct: healthy ? 0.01 : 0.02,
+    // The price of time, and it is not small. See extensionFeePct above.
+    feePct: extensionFeePct(s, lenderName),
     bumpPct: healthy ? 1.5 : 3.0,
     paydownPct: healthy ? 0.03 : 0.08,
   };
@@ -195,7 +275,7 @@ export function requestForbearance(
   const nh = next.holdings[bbl]!;
   nh.loan!.balance = Math.max(0, nh.loan!.balance - paydown);
   nh.loan!.ratePct = +(nh.loan!.ratePct + mood.bumpPct).toFixed(2);
-  nh.loan!.maturityM = next.month + Math.round(rrange(next, 18, 30));
+  nh.loan!.maturityM = next.month + extensionMonths(next);
   nh.loan!.sweep = true;                    // extended paper is swept paper
   nw.stage = "forbearance";
   nw.decideM = nh.loan!.maturityM;

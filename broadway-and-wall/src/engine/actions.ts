@@ -2,15 +2,15 @@
 // approach owners with assemblage pressure, sell, renovate. Pure — each
 // returns a new state or an error string, never mutates the input.
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
-import type { Bid, GameState, Holding } from "./types";
+import type { Bid, Econ, GameState, Holding, RivalStyle } from "./types";
 import { logBooks, monthLabel, SVC_START } from "./types";
 import { recentLowballs } from "./acquire";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange } from "./market";
-import { assetValue, condGrade, initialCondition, initialCondIdx, holdingValue, renovationCost, RENO_MONTHS, resolveRec, noiAfterTaxYr, demandLinear, landPsfNow } from "./value";
+import { assetValue, condGrade, initialCondition, initialCondIdx, holdingValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow } from "./value";
 import { locAvailable } from "./credit";
-import { marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider } from "./rivals";
-import { genRentRoll, isCommercial, depositsOn } from "./leasing";
+import { marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed } from "./rivals";
+import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
 import { takeoverDevelopment, cityValueToReplacement } from "./dev";
 import { demandNow } from "./demand";
@@ -82,7 +82,23 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   const appraised = assetValue(rec, s.econ, gradeOf(s, rec));
   const uwBasis = appraised > 0 ? Math.min(price, appraised) : price;
   const overpay = Math.max(0, price - uwBasis);
-  const q = quote(s, prod, uwBasis, noiAfterTaxYr(rec, s.econ, gradeOf(s, rec), uwBasis), rec.class);
+  // A LENDER UNDERWRITES THE INCOME THE BUILDING ACTUALLY EARNS.
+  //
+  // This sized coverage and debt yield off `noiAfterTaxYr` — the class model's
+  // opinion of what a building like this one ought to make, computed from a
+  // ParcelRecord that structurally cannot see a rent roll. Measured over 3,195
+  // listings, that estimate ran 89% occupancy against a real roll of 69%, and
+  // the gap was WIDEST on the highest quoted yields. So every credit committee
+  // in the city was advancing against income that did not exist, hardest on
+  // exactly the deals where it existed least.
+  //
+  // A real desk underwrites T-12 and in-place rent roll, takes the stabilised
+  // pro-forma as a separate schedule, and haircuts it. `inPlace` is the roll
+  // the seller disclosed — the same number the panel quotes and the same number
+  // the deed conveys. When nothing has been disclosed (a building nobody has
+  // listed and nobody has rung about) it falls back to the model, which is
+  // correct, because there is also no loan to size: you cannot buy it.
+  const q = quote(s, prod, uwBasis, inPlace(rec, s, bbl, uwBasis).noi, rec.class);
   const principal = Math.round(q.principal * Math.max(0, Math.min(1, lev)));
   // WHAT ACTUALLY LIMITED THE LOAN. The desk sizes on three tests and takes
   // the smallest: the advance rate, the coverage ratio, and the debt yield.
@@ -129,6 +145,7 @@ export function executePurchase(
     const seller = ownerOf(next, bbl);
     if (seller) {
       seller.bbls = seller.bbls.filter((b) => b !== bbl);
+      forgetDeed(seller, bbl);
       const relief = Math.min(seller.debt, Math.round(price * seller.targetLtv));
       seller.debt -= relief;
       seller.cash += price - relief;
@@ -161,7 +178,12 @@ export function executePurchase(
   // closing statement; it appears eighteen months later as a roof.
   if (product !== "cash") {
     const prod = productById(product);
-    holding.loan = originate(next, prod, price, noiAfterTaxYr(rec, next.econ, holding.condition, price), lev, holding.condition, rec.class);
+    // The same in-place income buyQuote showed on the term sheet — the roll
+    // the seller disclosed, which is still on `next` at this point because the
+    // listing and the approach are not cleared until below. Sizing the loan
+    // that actually gets written off a different number from the one quoted is
+    // how a player ends up with paper they never agreed to.
+    holding.loan = originate(next, prod, price, inPlace(rec, next, bbl, price).noi, lev, holding.condition, rec.class);
   }
   // a live 1031: this purchase completes the exchange if it's big enough
   if (next.exchange && price >= next.exchange.minPrice * 0.8) {
@@ -191,17 +213,28 @@ export function executePurchase(
   // second I buy it" complaint.
   //
   // A marketed building now carries its roll from the day it is listed (see
-  // refreshListings), and the closing takes it over verbatim. Off-market and
-  // auction deeds still write one here, which is correct — there is no
-  // offering memorandum on a lot you cold-called about, and finding out what
-  // is actually in the building is exactly the risk you took.
-  if (wasListing?.roll) {
-    holding.tenants = wasListing.roll;
-    if (wasListing.occ !== undefined) holding.occ = wasListing.occ;
+  // refreshListings), and the closing takes it over verbatim.
+  //
+  // SO DOES AN OFF-MARKET ONE. That used to be the exception here — "there is
+  // no offering memorandum on a lot you cold-called about" — and it is not
+  // true of this business. An off-market approach is made subject to
+  // diligence: the roll and the operating statements arrive before anybody
+  // signs, and if they are not what you were told you retrade or you walk.
+  // Leaving it out meant the panel wrote a preview roll off today's `s.month`
+  // and today's `s.econ` and the deed wrote a different one three months later
+  // — the same fault the listing path fixed, still live on every door the
+  // player knocked on. See Approach.roll and stampApproach.
+  const wasApproach = next.approaches[bbl];
+  const paper = wasListing?.roll !== undefined || wasListing?.occ !== undefined ? wasListing
+    : wasApproach && !wasApproach.refused && (wasApproach.roll !== undefined || wasApproach.occ !== undefined) ? wasApproach
+    : null;
+  if (paper) {
+    holding.tenants = paper.roll ?? [];
+    if (paper.occ !== undefined) holding.occ = paper.occ;
     // ...and the grade the memorandum was priced at. The distress knock above
     // has already been applied to this value at listing time, so taking it
     // verbatim is what makes the NOI on the tape the NOI on the deed.
-    if (wasListing.cond) { holding.condition = wasListing.cond; holding.condIdx = initialCondIdx(rec); }
+    if (paper.cond) { holding.condition = paper.cond; holding.condIdx = initialCondIdx(rec); }
     // THE DEPOSITS SETTLE HERE INSTEAD. genRentRoll normally credits them as it
     // writes the roll, because that is a closing; a roll written for a listing
     // passes settle=false, so the money moves at the deed rather than at the
@@ -522,9 +555,188 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
   }
 }
 
+/**
+ * HOW OLD THE OWNER'S OPINION OF VALUE IS, in months, by who they are.
+ *
+ * One number, deciding both halves of an off-market conversation, and it is
+ * one number on purpose. An owner who marks their book has a figure to give
+ * you AND that figure is current. An owner who never has to value anything has
+ * neither: they ask YOU for a number, and the anchor in their head is whatever
+ * the building was worth the last time they had a reason to care. Rolling
+ * "do they quote" and "is the quote stale" separately would let a family trust
+ * hand you a crisp, current, defensible figure, which is the one thing that
+ * kind of owner never does.
+ *
+ * The means are the real valuation cycles. An open-end core fund and a listed
+ * REIT mark quarterly, because investors redeem at NAV and the auditors ask.
+ * A closed-end fund and offshore capital carry an annual third-party
+ * appraisal. Anyone whose business plan is an exit — opportunistic, merchant,
+ * developer, vulture — runs the model continuously, because the model IS the
+ * business. Against that: a family trust's last appraisal was written for an
+ * estate tax return, an owner-occupier's for the mortgage, and a slumlord has
+ * never commissioned one in his life.
+ */
+const VALUATION_AGE_M: Record<RivalStyle, number> = {
+  core: 3, reit: 3, pe: 12, foreign: 12,
+  opportunistic: 6, developer: 9, merchant: 6, vulture: 6,
+  family: 168, owneruser: 120, slumlord: 96,
+};
+/**
+ * And the owner with no name on this street — which is most of the map. A
+ * private holder of a small building is not an institution and does not behave
+ * like one: private and individual CRE owners hold for a decade and more, and
+ * the last time they had a professional opinion of value was the day they
+ * signed for it. Eleven years is the middle of the reported private-investor
+ * hold, and it is a MEAN, not a constant — the draw below is exponential,
+ * which is the right shape for "time since the last event" and puts plenty of
+ * owners at two years and a long tail at thirty.
+ */
+const PRIVATE_VALUATION_AGE_M = 132;
+
+/** Box-Muller, the same way demand.ts draws its normals. */
+function gauss(s: GameState): number {
+  const u1 = Math.max(1e-9, rng(s));
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * rng(s));
+}
+
+function valuationAgeM(s: GameState, style: RivalStyle | null, stressed: boolean): number {
+  // A firm in trouble has had a broker through the building THIS quarter,
+  // because that is what being in trouble looks like from the inside: you are
+  // getting opinions of value whether you want them or not.
+  const mean = stressed ? 2 : (style ? VALUATION_AGE_M[style] : PRIVATE_VALUATION_AGE_M);
+  return -mean * Math.log(Math.max(1e-9, rng(s)));
+}
+
+/**
+ * WHAT THE MARKET DID SINCE THEY LAST LOOKED, as a ratio of the value level
+ * then to the value level now. Above 1 means the market has FALLEN since —
+ * their memory is of a better day.
+ *
+ * Built stock reads rent over cap, which is the market half of every appraisal
+ * in this engine; dirt reads the land index. Both series are already recorded
+ * every month by recordHistory, so this is a reading of the city's own record
+ * rather than a second opinion about it.
+ *
+ * THE LIMIT, said out loud: the record starts at month zero and the buildings
+ * do not. An owner in year three cannot be anchored on year minus twelve
+ * because that year was never simulated, so staleness ramps in over the first
+ * decade of a run and the early game leans on the dispersion term below
+ * instead. Inventing a pre-game price series to fix that would be inventing
+ * prices, which is the thing this codebase does not do.
+ */
+function levelRatioSinceLooking(econ: Econ, rec: ParcelRecord, ageM: number): number {
+  const hist = econ.history;
+  if (!hist || hist.length < 13) return 1;
+  const now = hist.length - 1;
+  const then = Math.max(0, now - Math.round(ageM));
+  if (then >= now) return 1;
+  const level = (i: number): number => {
+    const h = hist[i];
+    if (!h) return NaN;
+    if (rec.class === "land" || !rec.bldgArea) return h.landIdx;
+    const rent = h.effRent?.[rec.class] ?? h.rent?.[rec.class];
+    const cap = h.cap?.[rec.class];
+    return rent && cap ? rent / cap : h.landIdx;
+  };
+  const a = level(then), b = level(now);
+  if (!(a > 0) || !(b > 0)) return 1;
+  return a / b;
+}
+
+/**
+ * WHAT THE OWNER PRIVATELY THINKS IT IS WORTH — before any premium for the
+ * trouble of selling it to you. Two things move it off the appraisal and both
+ * are documented behaviour rather than flavour.
+ *
+ * ANCHORING, ASYMMETRICALLY. An owner updates a stale opinion upward readily
+ * and downward barely: the neighbour's closing price and the assessor's notice
+ * both arrive uninvited when the market runs, and neither arrives when it
+ * falls. This engine already carries the same asymmetry one file over — sim.ts
+ * moves an assessment 32% of the way up and 9% of the way down each January.
+ *
+ * The DOWNWARD exponent is not a feel. Genesove & Mayer (QJE 2001) measured it
+ * on sellers carrying a nominal loss: they set asking prices 25-35% of that
+ * loss above market. Halve a market and the loss is the whole of today's
+ * value, so the ask lands near 1.30x — and 2^0.38 = 1.30, which is where the
+ * exponent comes from. At 0.55, where this first landed, the same halving
+ * produced 1.46x and the median named ask in a thirty-year run came out at
+ * 1.40x appraisal against 1.20x before the rewrite: the asymmetry was doing
+ * more work than the study it was borrowed from supports. Caveat worth
+ * knowing: G&M measured people who WERE selling, so the extra premium for an
+ * owner who was not selling at all lives in `markup` below, not in here.
+ *
+ * DISPERSION. An owner with no broker is not merely biased, they are noisy:
+ * self-assessed values run a few points above appraisal on average with a
+ * standard deviation in the mid-teens (Goodman & Ittner, JHE 1992, measured on
+ * owner-occupiers; the dispersion is the part that carries over). That noise
+ * is where a genuinely cheap number comes from, and it is why the man who
+ * names one is the man who does not know what he has.
+ *
+ * Note that staleness cuts both ways at once and is supposed to: an owner who
+ * has not looked in twenty years both thinks it is worth less than it is AND
+ * wants a bigger premium to part with it (see DREAM_MAX). Which of those wins
+ * depends on what the city did in the meantime, and that is the whole reason a
+ * below-market number is rare rather than impossible.
+ */
+const ANCHOR_STICKY_DOWN = 0.38;   // of a stale HIGH view survives the news
+const ANCHOR_STICKY_UP = 0.25;     // of a stale LOW view does
+const OPINION_SD = 0.16;           // lognormal sigma, from the self-assessment spread
+
+function ownersView(s: GameState, rec: ParcelRecord, value: number, ageM: number): number {
+  const r = levelRatioSinceLooking(s.econ, rec, ageM);
+  const anchored = value * Math.pow(r, r > 1 ? ANCHOR_STICKY_DOWN : ANCHOR_STICKY_UP);
+  return anchored * Math.exp(OPINION_SD * gauss(s));
+}
+
+/**
+ * WHETHER THEY SAY IT OUT LOUD. Same draw, other half: a number that came out
+ * of a file gets named, and a number that came out of somebody's head does
+ * not, because its owner knows it will not survive being written down. That is
+ * the whole difference between "we'd take nine-two" and "make me an offer",
+ * and it is why the two outcomes cannot be a coin flip layered on top — the
+ * kind of owner who deflects is the same kind whose private number is wild.
+ *
+ * The half-way point is five years of not having looked: an owner whose last
+ * opinion of value predates the last cycle is as likely to deflect as to
+ * quote. That is a judgement about how people negotiate when they cannot
+ * defend their figure, not a measurement, and it is stated as one.
+ */
+const QUOTE_HALF_M = 60;
+
+/**
+ * HOW FAR OFF A PROFESSIONAL LEASH THE NUMBER IS, 0 to 1.
+ *
+ * A figure that has to be justified to an investment committee, a lender or an
+ * auditor is disciplined by having to be justified. A figure nobody has ever
+ * asked about is disciplined by nothing, and this is the term that lets it run
+ * — mostly a little, occasionally to somewhere no buyer will follow. The cubed
+ * draw is the shape of a holdout price: negligible for most of the range and
+ * enormous in the tail, the same reason assemblage pressure is cubed sixty
+ * lines below.
+ */
+const DREAM_MAX = 1.5;
+/**
+ * And the extra rope an UNSAID number gets. Saying a figure to a professional
+ * is a discipline all by itself — you have to hear yourself say it, and a
+ * broker's face does the rest. Keep it in your head and nothing edits it. This
+ * is why the silly numbers in this game live behind "make me an offer" rather
+ * than being sprayed across both outcomes: it is a property of not having said
+ * it, so it belongs to the channel where nothing was said.
+ */
+const BLIND_LICENCE = 0.6;
+
+/**
+ * AND THE FLOOR UNDER ALL OF IT, which is the one this function had before and
+ * for the same reason. Nobody in this city is unaware to an unlimited degree:
+ * the tax bill arrives every January with the city's own opinion of value
+ * printed on it, and sim.ts moves that opinion a third of the way up to market
+ * every year. An owner can be years behind. They cannot be lost.
+ */
+const OWNER_FLOOR = 0.80;
+
 export function approachOwner(
   s: GameState, parcels: ParcelTable, adjacency: Adjacency, bbl: string,
-): { s: GameState; err?: string; refused?: boolean; ask?: number } {
+): { s: GameState; err?: string; refused?: boolean; ask?: number; blind?: boolean } {
   // THE LIVE RECORD. Pricing an owner's ask off the STATIC table is what
   // produced asks at a fraction of the appraisal on this panel: a lot that has
   // had a building delivered on it, or that was reclassified, was quoted as
@@ -535,7 +747,14 @@ export function approachOwner(
   if (s.listings.some((l) => l.bbl === bbl)) return { s, err: "It's already listed — hit the Market tab." };
   const prior = s.approaches[bbl];
   if (prior && s.month < prior.q + 6) {
-    return { s, err: prior.refused ? "You knocked recently — the owner hasn't changed their mind." : "You already have their number — it's good for a while." };
+    return {
+      s,
+      err: prior.refused ? "You knocked recently — the owner hasn't changed their mind."
+        // Ringing again does not get you a number they already declined to
+        // give. The conversation is open; the move is a bid, not another call.
+        : prior.ask === undefined ? "You already have them. They are waiting on YOUR number, not another call."
+        : "You already have their number — it's good for a while.",
+    };
   }
   const next = clone(s);
   const pressure = assemblagePressure(next, adjacency, bbl);
@@ -555,33 +774,63 @@ export function approachOwner(
   // because there are three ways out of it that already exist — build the
   // L-shaped site, wait for their cycle to break, or buy their whole position
   // as a bundle.
+  //
+  // The holdout since MOVED, from the gate to the number, and it is stronger
+  // for it. A family trust used to be a 96% refusal — a closed door with
+  // nothing behind it. Now they take your call 62% of the time, decline to
+  // name a price in 63% of those, and the figure they are sitting on runs a
+  // median 1.78x appraisal with three quarters of it over 1.35x. You get to
+  // have the conversation. You still do not get the building.
   const owner = ownerOf(next, bbl);
   const stressed = (owner?.stressMs ?? 0) > 4;
   const styleHold = owner
     ? (owner.style === "family" ? 0.30 : owner.style === "core" ? 0.14 : owner.style === "developer" ? 0.05 : -0.04)
     : 0;
-  // NOBODY IS SELLING, MOSTLY. The base refusal was 0.34 and measured across
-  // 8,682 cold approaches the player got through 67.3% of the time — you rang
-  // a stranger about a building that was not for sale and two times in three
-  // they named a price. Brokers who do this for a living report single digits
-  // to about 20%. At 0.78 the same measurement lands at 22%, which is the top
-  // of the real band and is what the owner asked for by feel ("land owners
-  // should accept your calls about 3x less often") before either of us had the
-  // number.
+  // ANSWERING THE PHONE AND NAMING A WORKABLE NUMBER ARE DIFFERENT EVENTS, and
+  // this gate was doing the work of both.
   //
-  // The modifiers matter more now than the base does, which is the point: a
-  // stressed owner still answers (-0.42), a firm with negative cash answers
-  // (-0.15), a recession opens doors (-0.10), and a family trust that knows
-  // what you are assembling does not open at any price. Getting through is now
-  // information about the OWNER rather than a coin you flip until it lands.
-  const refuseP = Math.min(0.96, Math.max(0.05,
-    0.78 + 0.35 * pressure + styleHold
+  // The history is worth keeping straight because it looks like a reversal and
+  // is not. The base was 0.34, measured at 67.3% get-through, and it went to
+  // 0.78 — a measured 23.2% get-through — against the industry figure that
+  // brokers get through on single digits to about 20% of cold approaches. It
+  // is now 0.26, which is a third of the refusals, and that is the same
+  // instruction the 0.78 came from, aimed at the right event this time.
+  //
+  // What the 0.78 bought was the RIGHT HEADLINE AND THE WRONG WORLD. Measured
+  // across 8,519 approaches over six seeds and thirty years each, 23.2% got
+  // through — and 0.3% of approaches ended with a number a rational buyer
+  // would take. Not 10%, not 5%: three in a thousand, because the ask could
+  // not be priced under 1.06x appraisal unless the owner was in distress. The
+  // gate was rationing conversations that were worthless anyway: two hundred
+  // cold calls bought you a hundred and fifty-four flat no's, forty-six
+  // numbers, and — on the measured rate — less than one number worth taking.
+  // Same six seeds after the rewrite: a hundred and fifty conversations, and
+  // eighteen numbers at or inside appraisal.
+  //
+  // So the door opens and the numbers behind it do the rationing, which is
+  // what happens in life: owners take the call, and most of them say something
+  // silly. Refusal is now the narrow case — someone who genuinely will not
+  // discuss it — and the useful-contact rate is measured downstream of the
+  // whole conversation rather than asserted at its door.
+  //
+  // THE MODIFIERS ARE RATIOS NOW, NOT POINTS. Each was calibrated as a
+  // probability shift against a 0.78 base; subtracting the same points from a
+  // 0.26 base drives half of them into the clamp, and a clamp that binds in
+  // normal play is holding up the model. Each multiplier below is the old
+  // additive term expressed as what it did to the old base — stressed took
+  // 0.78 to 0.36, so it is 0.46 — which preserves every modifier's meaning and
+  // makes all of them matter more against a smaller base, not less.
+  const REFUSE_BASE = 0.26;
+  const refuseP = Math.min(0.92, Math.max(0.02,
+    REFUSE_BASE
+    * (1 + 0.449 * pressure)                              // was +0.35 x pressure
+    * (1 + styleHold / 0.78)                              // was +0.30 family ... -0.04
     // A firm that needs money answers the phone. A firm that does not, does not.
-    - (stressed ? 0.42 : 0)
-    - (owner && owner.cash < 0 ? 0.15 : 0)
-    - (rec.class === "land" ? 0.12 : 0)
-    - (next.econ.phase === "recession" ? 0.10 : 0)
-    + (demandLinear(rec.demandScore) - 50) / 500,
+    * (stressed ? 0.46 : 1)                               // was -0.42
+    * (owner && owner.cash < 0 ? 0.81 : 1)                // was -0.15
+    * (rec.class === "land" ? 0.85 : 1)                   // was -0.12
+    * (next.econ.phase === "recession" ? 0.87 : 1)        // was -0.10
+    * (1 + (demandLinear(rec.demandScore) - 50) / 390),   // was +(d-50)/500
   ));
   if (rng(next) < refuseP) {
     next.approaches[bbl] = { q: next.month, refused: true };
@@ -595,36 +844,191 @@ export function approachOwner(
     });
     return { s: next, refused: true };
   }
-  // What they want for it, and who they are is most of it. A family firm that
-  // has finally decided to sell names a number that reflects two generations
-  // of not needing to; a stressed shop takes what clears the loan.
+  // THEY ARE WILLING TO TALK. Now: what is in their head, and will they say it.
+  //
+  // One draw decides both, because in life it is one fact about the owner. How
+  // long since anybody valued this building tells you how far their number has
+  // drifted from the market, how far off any professional leash it has run,
+  // and whether they have anything they are prepared to put a figure on.
+  const value = assetValue(rec, next.econ, initialCondition(rec));
+  const ageM = valuationAgeM(next, owner?.style ?? null, stressed);
+  const view = ownersView(next, rec, value, ageM);
+  // What they want ON TOP for the trouble, and who they are is most of it. A
+  // family firm that has finally decided to sell names a number that reflects
+  // two generations of not needing to; a stressed shop takes what clears the
+  // loan.
   const styleAsk = owner
     ? (owner.style === "family" ? 0.20 : owner.style === "core" ? 0.06 : owner.style === "opportunistic" ? 0.10 : 0.04)
     : 0;
-  const premium = Math.max(0.80,
+  const markup =
     // The LAST deed is the expensive one. A linear premium is a toll; a holdout
     // is a wall, and the difference is entirely in the tail. Cubed, this is
     // negligible while you are buying the first neighbours on a block and
     // ruinous on the one that completes the site — which is the only thing
     // stopping assemblage from being free money now that it pays.
     1.06 + 0.5 * Math.pow(rng(next), 2) + 0.22 * pressure + 0.55 * Math.pow(pressure, 3) + styleAsk
-    - (stressed ? rrange(next, 0.16, 0.30) : 0));
-  const ask = Math.round(assetValue(rec, next.econ, initialCondition(rec)) * premium / 1000) * 1000;
-  next.approaches[bbl] = { q: next.month, refused: false, ask };
+    - (stressed ? rrange(next, 0.16, 0.30) : 0);
+  const unadvised = 1 - 1 / (1 + ageM / 24);
+  const quotes = rng(next) < 1 / (1 + Math.pow(ageM / QUOTE_HALF_M, 1.2));
+  const dream = 1 + DREAM_MAX * unadvised * (quotes ? 1 : 1 + BLIND_LICENCE) * Math.pow(rng(next), 3);
+  const number = Math.round(Math.max(value * OWNER_FLOOR, view * markup * dream) / 1000) * 1000;
+
+  if (!quotes) {
+    // MAKE ME AN OFFER. They will trade and they will not anchor, so the number
+    // above stays in their head and the player's only instrument is a bid. The
+    // record deliberately carries no ask: everything downstream keys off that
+    // absence, and there is nothing here for a panel to leak.
+    // THE PAPER GOES OUT WITH THE CONVERSATION. An owner who will not name a
+    // price will still send the roll — refusing to anchor is a negotiating
+    // position, not a refusal of diligence. See stampApproach.
+    next.approaches[bbl] = stampApproach(next, rec, { q: next.month, refused: false, mode: "offer", reserve: number });
+    next.news.unshift({
+      q: next.month, kind: "info",
+      text: `${rec.address}: ${owner ? owner.name + " will talk" : "the owner will talk"} — and will not put a number on it. `
+        + `"Make me an offer." `
+        + (ageM > 120 ? "Nobody has valued that building in a very long time, which cuts both ways. " : "")
+        + `They will listen for six months.`,
+    });
+    return { s: next, blind: true };
+  }
+  next.approaches[bbl] = stampApproach(next, rec, { q: next.month, refused: false, mode: "ask", ask: number });
   next.news.unshift({
     q: next.month, kind: "info",
-    text: `${rec.address}: ${owner ? owner.name + " would take" : "the owner would take"} $${(ask / 1e6).toFixed(2)}M`
-      + (stressed ? " — they are under pressure and it shows in the number." : ".")
+    text: `${rec.address}: ${owner ? owner.name + " would take" : "the owner would take"} $${(number / 1e6).toFixed(2)}M`
+      + (stressed ? " — they are under pressure and it shows in the number."
+        : number > value * 1.5 ? " — which is not a price, it is a way of saying no politely."
+        : "")
       + " The number holds for six months.",
   });
-  return { s: next, ask };
+  return { s: next, ask: number };
+}
+
+/**
+ * BIDDING AGAINST A NUMBER YOU CANNOT SEE.
+ *
+ * The owner said "make me an offer", which means the only instrument the
+ * player has is the offer itself, and the only feedback is what the owner does
+ * with it. That is the mechanic, and it is worth being careful about what each
+ * outcome tells them:
+ *
+ *   OVER THE RESERVE  — done, at YOUR number, not theirs. This is the honest
+ *     cost of bidding blind and it is the reason the mechanic has teeth: bid
+ *     over a low reserve and you have overpaid and nobody will say so. What
+ *     the game gives you instead is the tell every buyer in this business
+ *     knows — an owner who takes the first number without a murmur was never
+ *     going to hold out — plus the comp, which recordComp files at the close
+ *     like any other trade, for you to look at against the ones beside it.
+ *
+ *   UNDER IT, CLOSE     — they name their figure. A bid that lands near the
+ *     reserve proves you are a real buyer, and at that point deflecting costs
+ *     them the deal. This is how the hidden number becomes a visible one, and
+ *     it is not free: they know now that you want it, and the figure that
+ *     comes back has that in it.
+ *
+ *   UNDER IT, WELL UNDER — they say no and do not say what yes is. You have
+ *     learned almost nothing and spent one of a small number of goes.
+ *
+ *   INSULTING            — they end the conversation, same as the named-ask
+ *     path has always done.
+ *
+ * Patience runs down with every bid, which is what stops the whole thing being
+ * a free binary search for the reserve. Measured over 1,403 blind
+ * conversations, a player who opens at 0.9x appraisal and escalates until
+ * something happens gets the number out of 13.5% of them, gets hung up on in
+ * 30.7%, and buys 28.1% — at a median of 1.60x appraisal, because escalating
+ * blind is how you find the top of somebody's range and then pay it. Against
+ * that, one honest bid at appraisal and no more buys 7.4% at exactly
+ * appraisal. The search works and it is not free, which is the whole design.
+ */
+function bidBlind(
+  s: GameState, parcels: ParcelTable, bbl: string, product: BuyProduct, lev: number, bid?: number,
+): { s: GameState; err?: string; msg?: string } {
+  const a = s.approaches[bbl]!;
+  const reserve = a.reserve!;
+  const price = Math.round(bid ?? 0);
+  if (!Number.isFinite(price) || price <= 0) return { s, err: "They asked you for a number. Name one." };
+  const q = buyQuote(s, parcels, bbl, price, product, lev);
+  if (s.cash < q.equity) return { s, err: `That bid needs $${(q.equity / 1e6).toFixed(2)}M of equity — you're short.` };
+  const next = clone(s);
+  const na = next.approaches[bbl];
+  na.lastBid = price;
+  na.probes = (na.probes ?? 0) + 1;
+  const addr = parcels[bbl]?.address ?? bbl;
+
+  if (price >= reserve) {
+    const done = executePurchase(next, parcels, bbl, price, product, true, lev);
+    if (done.err) return { s, err: done.err };
+    // THE TELL, NOT THE ANSWER. How fast they said yes is the only thing a
+    // buyer ever gets, and it is genuinely how this feels: no seller tells you
+    // that you were twenty points high, and everybody who has been twenty
+    // points high remembers how quickly the paperwork came back.
+    const eager = price >= reserve * 1.15;
+    done.s.news.unshift({
+      q: done.s.month, kind: eager ? "warn" : "deal",
+      text: eager
+        ? `${addr}: they took your number the same afternoon, without a counter and without a lawyer's argument. `
+          + `Nobody does that on a number that hurt.`
+        : `${addr}: they took it, after a week of thinking about it.`,
+    });
+    return { s: done.s, msg: `Done at $${(price / 1e6).toFixed(2)}M, off-market.` };
+  }
+
+  const gap = 1 - price / reserve;
+  const probes = na.probes;
+  // A serious bid draws the number out; each further attempt draws it less,
+  // because by the third number you have stopped being a buyer and started
+  // being a process.
+  //
+  // The slope is where a bid stops reading as a counterparty and starts
+  // reading as a tyre-kicker, and it runs out around a third under. The first
+  // cut of this was 3.4, dead by a quarter under — and since a blind reserve
+  // runs a median 1.57x appraisal, a player bidding a fair price for the
+  // building is 36% under it by construction. Measured on 1,403 blind
+  // conversations that left the "they finally name it" branch reachable 6-10%
+  // of the time no matter what the player did, which is not a mechanic, it is
+  // a rounding error with prose attached.
+  const pName = Math.max(0, Math.min(0.80, 0.86 - gap * 2.2)) * Math.pow(0.55, probes - 1);
+  // And the door: an insulting bid closes it at once, a merely low one wears
+  // the welcome through.
+  const pWalk = Math.min(0.85, 0.05 + Math.max(0, gap - 0.20) * 1.4 + 0.18 * (probes - 1));
+  const roll = rng(next);
+  if (roll < Math.min(pName, 1 - pWalk)) {
+    // THEY NAME IT. The premium on the way out is what showing your hand
+    // costs — they are answering a bid, not a survey.
+    na.ask = Math.round(reserve * rrange(next, 1.01, 1.05) / 1000) * 1000;
+    delete na.reserve;
+    na.countered = true;   // the bid WAS the counter; there is not a second one
+    next.news.unshift({
+      q: next.month, kind: "info",
+      text: `${addr}: your $${(price / 1e6).toFixed(2)}M got a real answer out of them at last — `
+        + `$${(na.ask / 1e6).toFixed(2)}M, and now they know you want it.`,
+    });
+    return { s: next, msg: "They finally named a number." };
+  }
+  if (roll < 1 - pWalk) {
+    next.news.unshift({
+      q: next.month, kind: "info",
+      text: `${addr}: no. They did not say what yes would be, either.`,
+    });
+    return { s: next, msg: "They said no, and nothing else." };
+  }
+  na.refused = true;
+  delete na.reserve;
+  delete na.ask;
+  next.news.unshift({ q: next.month, kind: "warn", text: `${addr}: the owner ended the conversation.` });
+  return { s: next, msg: "They ended the conversation." };
 }
 
 export function buyOffMarket(
   s: GameState, parcels: ParcelTable, bbl: string, product: BuyProduct, lev = 1, bid?: number,
 ): { s: GameState; err?: string; msg?: string } {
   const a = s.approaches[bbl];
-  if (!a || a.refused || !a.ask) return { s, err: "No live ask — approach the owner first." };
+  if (!a || a.refused) return { s, err: "No live ask — approach the owner first." };
+  if (a.ask === undefined && a.reserve !== undefined) {
+    if (s.month > a.q + 6) return { s, err: "That conversation has gone cold." };
+    return bidBlind(s, parcels, bbl, product, lev, bid);
+  }
+  if (!a.ask) return { s, err: "No live ask — approach the owner first." };
   if (s.month > a.q + 6) return { s, err: "That number expired." };
   const price = Math.round(bid ?? a.ask);
   if (price >= a.ask) return executePurchase(s, parcels, bbl, a.ask, product, true, lev);
@@ -660,6 +1064,12 @@ export function counterOffMarket(
 ): { s: GameState; err?: string; msg?: string } {
   const a = s.approaches[bbl];
   const rec = resolveRec(parcels, s, bbl);
+  // YOU CANNOT COUNTER A NUMBER NOBODY GAVE YOU. An owner who deflected is
+  // waiting for a bid, and the bid is the whole negotiation — routing them
+  // through here would quietly invent an ask for the counter to cut against.
+  if (a && !a.refused && a.ask === undefined && a.reserve !== undefined) {
+    return { s, err: "There is nothing to counter — they asked YOU for a number. Put a bid in." };
+  }
   if (!a || a.refused || !a.ask || !rec) return { s, err: "No live ask to counter." };
   if (a.countered) return { s, err: "You already countered — the number on the table is the number." };
   if (s.month > a.q + 6) return { s, err: "That number expired." };
@@ -1079,7 +1489,23 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   const breakFee = h.loan ? prepayPenalty(h.loan, next.month) : 0;
   const toSeller = net - (h.loan?.balance ?? 0) - kick - breakFee;
   next.cash += toSeller;
-  logBooks(next, "sold", toSeller);
+  // THE FEE COMES OUT OF THE PROCEEDS ONCE, NOT TWICE.
+  //
+  // The kicker and the break fee are already deducted from `toSeller` — they
+  // are settled at the closing table out of the sale price — and they were
+  // ALSO booked as debt service. So the ledger deducted them a second time and
+  // the conservation identity showed money APPEARING by exactly their amount.
+  // Measured at $0.027M on a sale whose news line read "$0.03M to break the
+  // loan early", which is the same number twice.
+  //
+  // Booking the proceeds GROSS of the fee and the fee as the expense it is
+  // balances the identity and is the better statement besides: a player who
+  // paid a prepayment penalty should see a prepayment penalty, not a smaller
+  // sale. The loan PRINCIPAL stays out of both — repaying a balance is a
+  // balance-sheet movement, not income and not expense.
+  //
+  // This survived because conserve's bot never sold anything. It sells now.
+  logBooks(next, "sold", toSeller + kick + breakFee);
   if (kick + breakFee > 0) logBooks(next, "debtSvc", kick + breakFee);
   if (exchange) {
     next.exchange = { deferredTax: tax, rolledGain: gain, minPrice: offer.price, deadlineM: next.month + EXCHANGE_WINDOW_M };
@@ -1098,6 +1524,14 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   for (const [child, parent] of Object.entries(next.merged ?? {})) {
     if (parent !== bbl) continue;
     delete next.merged![child];
+    // ...AND THEIR TENANTS' DEPOSITS GO WITH THEM. This deleted the child deed
+    // and left the deposits behind as a liability that simply stopped existing:
+    // money the player was holding for somebody else, released with no entry
+    // and no cash moving. `pnpm conserve` caught it as a positive residual —
+    // "money APPEARED" — on 7 of 3,267 reconciled months, $5K-$49K each, which
+    // is exactly the size of a small building's roll. The parent's deposits
+    // were handed over correctly a few lines below; the children's were not.
+    next.cash -= depositsOn(next.holdings[child]);
     delete next.holdings[child];
     if (next.workouts?.[child]) delete next.workouts[child];
   }
@@ -1334,7 +1768,10 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
   // to be worth the call.
   const cap = owner ? (owner.stressMs ? 0.97 : 1.34) : 0.92;
   if (ask > value * cap) return;
-  s.approaches[best.bbl] = { q: s.month, refused: false, ask, inbound: true };
+  // A broker with a file has the file. tickBrokerCalls runs AFTER tickLeasing,
+  // so the sweep there would not catch this record until next month — and the
+  // player can read it tonight. Stamped where it is written. See stampApproach.
+  s.approaches[best.bbl] = stampApproach(s, best, { q: s.month, refused: false, ask, inbound: true });
   s.news.unshift({
     q: s.month, kind: "deal",
     text: `A broker called about ${best.address} — ${best.bldgArea.toLocaleString()} sf, off market, whisper number $${(ask / 1e6).toFixed(2)}M against roughly $${(value / 1e6).toFixed(2)}M of value. ${who}`,
@@ -1648,10 +2085,30 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
         // time, and a third. See sellToOutsider.
         sellToOutsider(s, li.bbl, li.ask);
         recordComp(s, rec, li.ask, b, "a listed seller", li.distress, initialCondition(rec));
-        if (rng(s) < 0.5) {
+        // THE TAPE IS NOT NEWS. Measured over 25 years, "Sold: X went to a 1031
+        // buyer at $Y" was the single most common line in the paper — 23.6 news
+        // items a year and ordinary trades were the largest bucket of them,
+        // which buries the sector turn and the bank failure that actually
+        // matter. Nothing is lost by dropping them: `recordComp` above files
+        // every one of these on the comps tape, which is where a buyer reads
+        // closed prices anyway, and it is the tape that prices the market.
+        //
+        // Two kinds of trade stay news, and they are the two a principal would
+        // actually be told about. One you have a stake in: somebody just set a
+        // price in a submarket where you own something, which is the comp your
+        // own building will be marked against. And one that is a RECORD — the
+        // biggest number the market has seen lately, which is news in any town.
+        const mine = Object.keys(s.holdings).some((b2) => {
+          const r2 = resolveRec(parcels, s, b2);
+          return r2 && r2.district === rec.district;
+        });
+        const record = !(s.comps ?? []).some((c) => c.bbl !== li.bbl && c.price > li.ask);
+        if (mine || record) {
           s.news.unshift({
             q: s.month, kind: "info",
-            text: `Sold: ${rec.address} went to ${b} at $${(li.ask / 1e6).toFixed(2)}M.`,
+            text: record && !mine
+              ? `A record: ${rec.address} went to ${b} at $${(li.ask / 1e6).toFixed(2)}M, the largest trade on the tape.`
+              : `Sold in ${rec.district}: ${rec.address} went to ${b} at $${(li.ask / 1e6).toFixed(2)}M — a comp your own building will be read against.`,
           });
         }
       }

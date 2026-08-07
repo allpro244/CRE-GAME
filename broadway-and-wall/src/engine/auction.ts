@@ -40,6 +40,7 @@ import { genRentRoll, depositsOn } from "./leasing";
 import { bumpLenderRel } from "./debt";
 import { saleTaxQuote } from "./actions";
 import { takeDeed, FILE_COST } from "./notes";
+import { forgetDeed } from "./rivals";
 
 const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
 const money = (n: number) =>
@@ -254,6 +255,12 @@ function thirdPartyTakes(s: GameState, rec: ParcelRecord, px: number): string {
     r.cash -= equity;
     r.debt += px - equity;
     r.bbls.push(rec.bbl);
+    // WHEN THE DEED ARRIVED, and it arrived today. Without it the hold clock
+    // falls back to `r.bornM` and reads a building bought at the courthouse
+    // this morning as having been owned since the firm opened — older than
+    // anything the firm legitimately holds, so it always won the "oldest
+    // holding" contest and went straight back on the tape.
+    (r.heldSince ??= {})[rec.bbl] = s.month;
     r.basis = Math.round((r.basis ?? 0) + px);
     return r.name;
   }
@@ -357,6 +364,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         const buyer = thirdPartyTakes(s, rec, paid);
         if (r) {
           r.bbls = r.bbls.filter((b) => b !== n.bbl);
+          forgetDeed(r, n.bbl);
           r.debt = Math.max(0, r.debt - n.face);
           r.cash += surplus;           // the law hands the wiped borrower the rest
         }
@@ -441,6 +449,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       const occ = Math.max(0.15, Math.min(0.95, r?.occ ?? 0.4));
       if (r) {
         r.bbls = r.bbls.filter((b) => b !== lot.bbl);
+        forgetDeed(r, lot.bbl);
         r.debt = Math.max(0, r.debt - lot.debt);
         r.cash += Math.max(0, paid - lot.debt);
       }
@@ -461,6 +470,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       const buyer = thirdPartyTakes(s, rec, paid);
       if (r) {
         r.bbls = r.bbls.filter((b) => b !== lot.bbl);
+        forgetDeed(r, lot.bbl);
         r.debt = Math.max(0, r.debt - lot.debt);
         r.cash += Math.max(0, paid - lot.debt);
       }
@@ -481,6 +491,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         const f = (s.bankFcls ?? []).find((x) => x.bbl === lot.bbl);
         if (f && r) {
           r.bbls = r.bbls.filter((b) => b !== lot.bbl);
+          forgetDeed(r, lot.bbl);
           r.debt = Math.max(0, r.debt - lot.debt);
           s.bankFcls = s.bankFcls!.filter((x) => x.bbl !== lot.bbl);
           const lst = Math.round(lot.est * rrange(s, 0.78, 0.9) / 1000) * 1000;

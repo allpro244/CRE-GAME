@@ -37,6 +37,14 @@ declare module "@/citygen/index.mjs" {
   export const SIZES: Record<string, { k: number; name: string; note: string }>;
   export function randomSeed(): number;
   export function cityList(): { id: string; name: string; tagline: string }[];
+  /**
+   * What the island at (id, seed) is called, without building it. Constant for
+   * the authored islands; for the procedural one the name comes out of the seed
+   * the same way the coastline does.
+   */
+  export function cityName(cityId: string, seed: number): string;
+  /** The id of the island that is generated rather than drawn. */
+  export const PROCEDURAL: string;
   export const CITIES: Record<string, { name: string; district: string; seed: number }>;
   export const TAGLINES: Record<string, string>;
 }

@@ -49,7 +49,7 @@ import { logBooks, monthLabel, nextJulyAfter } from "./types";
 import { rng, rrange } from "./market";
 import { assetValue, collateralAsIs, holdingValue, resolveRec } from "./value";
 import { lenderByName, lenderPressure, chargeLenderLoss } from "./lenders";
-import { assetGrade } from "./rivals";
+import { assetGrade, forgetDeed } from "./rivals";
 import { genRentRoll } from "./leasing";
 import { recordComp } from "./comps";
 import { distressPrice, markSponsor } from "./sponsor";
@@ -338,6 +338,7 @@ export function takeDeed(s: GameState, parcels: ParcelTable, n: Note, how: "fore
   s.holdings[n.bbl] = h;
   if (r) {
     r.bbls = r.bbls.filter((b) => b !== n.bbl);
+    forgetDeed(r, n.bbl);
     r.debt = Math.max(0, r.debt - n.face);   // the debt went with the deed
   }
   s.listings = s.listings.filter((l) => l.bbl !== n.bbl);
@@ -434,8 +435,12 @@ function takeRivalNotes(s: GameState, parcels: ParcelTable) {
     const from = s.rivals?.find((x) => x.bbls.includes(rn.bbl));
     if (!from || from.id === to.id) continue;
     from.bbls = from.bbls.filter((b) => b !== rn.bbl);
+    forgetDeed(from, rn.bbl);
     from.debt = Math.max(0, from.debt - rn.face);
     to.bbls.push(rn.bbl);
+    // Taking title through the paper is still taking title today — see the
+    // same line in auction.ts for what an undated deed does to the hold clock.
+    (to.heldSince ??= {})[rn.bbl] = s.month;
     to.basis = Math.round((to.basis ?? 0) + rn.face * 0.7);
     s.lastTradeM = s.lastTradeM ?? {};
     s.lastTradeM[rn.bbl] = s.month;

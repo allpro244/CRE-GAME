@@ -32,22 +32,91 @@ export const FIRM_TINT: [number, number, number][] = [
 type CityFrame = { bbox: [number, number, number, number]; core: [number, number] };
 const FALLBACK: CityFrame = { bbox: [-70.912, 41.092, -70.888, 41.109], core: [-70.8966, 41.0997] };
 
-// zoom that fits a span of `deg` longitude into `px` of viewport
-function fitZoom(frame: CityFrame, px: number, fill: number) {
+/**
+ * THE ZOOM AT WHICH THE WHOLE ISLAND FITS THE WINDOW.
+ *
+ * Web Mercator puts 512 pixels across 360° of longitude at zoom 0 and doubles
+ * every level, so the zoom that lays `span` degrees across `px` pixels is
+ * log2(px·360 / (512·span)). The city has to fit in BOTH directions, so the
+ * binding constraint is whichever of the two is tighter — and it is not always
+ * the same one, which is why this used to get it wrong.
+ *
+ * It measured both spans and then compared them against the WIDTH: latitude
+ * span was converted to its longitude equivalent (the /cos term, which is the
+ * Mercator stretch) and then `max`'d with the longitude span, so a tall narrow
+ * island in a wide window was sized as though the window were square. On a
+ * 1500x1000 viewport that is a third of the height thrown away, and on a
+ * portrait window it overflows instead. Measured against the two spans, not
+ * against one of them twice.
+ */
+function fitZoom(frame: CityFrame, wpx: number, hpx: number) {
   const [w, s, e, n] = frame.bbox;
   const lonSpan = Math.max(1e-4, e - w);
+  // latitude degrees are worth more pixels than longitude degrees away from
+  // the equator; at 41°N the factor is about 1.33
   const latSpan = Math.max(1e-4, n - s) / Math.cos((((s + n) / 2) * Math.PI) / 180);
-  const span = Math.max(lonSpan, latSpan);
-  return Math.log2((px * 360) / (512 * span * fill));
+  const zFor = (span: number, px: number) => Math.log2((px * 360) / (512 * span));
+  return Math.min(zFor(lonSpan, wpx), zFor(latSpan, hpx));
 }
-const framesOf = (f: CityFrame, px: number) => {
+
+/**
+ * THE OPENING SHOT IS THE ISLAND'S OWN, WHATEVER SIZE IT IS.
+ *
+ * Both cameras used to carry a constant. The establishing shot was clamped at
+ * zoom 14.6 and the dive was hard-wired to 15.3, and the reason nobody noticed
+ * is that 15.3 happens to be almost exactly right for ONE island: measured on
+ * the standard City map (1,379 lots, bbox 0.0203° x 0.0085°) at 1500x1000, the
+ * whole island fits at zoom 15.66, so the shipped dive sat 0.36 of a level
+ * inside it — the town filling the frame with a little water around it, which
+ * is the shot the game has always opened on.
+ *
+ * That constant is a fact about one map, not about framing. A Great City is
+ * twice the island end to end (bbox 0.0411° x 0.0175°, 5,766 lots) and fits at
+ * 14.65, so the same 15.3 lands the camera A FULL ZOOM LEVEL inside it: the
+ * player opens looking at roughly a quarter of the town with the other
+ * three-quarters running off every edge — measured, and screenshotted, before
+ * this change. In the other direction a Hamlet fits at about 16.5 and the 14.6
+ * clamp opened it on four times more ocean than town.
+ *
+ * So both shots are now expressed as a distance from the island's OWN fit
+ * zoom, and the two offsets below are carried over from the standard map,
+ * which is the calibration: whatever the City map used to look like, every
+ * size looks like now.
+ */
+// How far OUTSIDE the island's fit zoom the dive lands — negative because a
+// smaller zoom is further away. 0.36 of a level is what the shipped 15.3
+// measured out to on the standard map (fit 15.66), so the island everybody has
+// already played opens on the same picture it always did, and every other size
+// opens on the same picture as it. A third of a level back from the fit shows
+// about 1.28x the island's longest span, which is the town filling the frame
+// with a strip of water around it.
+const DIVE_INSET = -0.36;
+// The establishing shot pulls back further, because it is the "here is a
+// place" frame and a coastline needs water around it to read as an island.
+// 0.9 of a level is 1.87x the island's span, which is where the standard map's
+// clamped 14.6 sat (fit 15.66, so 2.09x) less a little of the dead ocean.
+const WIDE_INSET = -0.9;
+const framesOf = (f: CityFrame, wpx: number, hpx: number) => {
   const [w, s, e, n] = f.bbox;
   const mid: [number, number] = [(w + e) / 2, (s + n) / 2];
+  const fit = fitZoom(f, wpx, hpx);
+  // WHERE THE DIVE LANDS. Not on the business district itself: `core` is the
+  // demand-weighted centre of gravity and on a big island it sits well off the
+  // geometric middle — on the Great City measured above it is 15% of the map's
+  // width east of centre, so pointing the camera straight at it would push the
+  // whole west side out of frame at the very moment the shot is supposed to be
+  // showing the player their town. Most of the way there: the CBD is clearly
+  // the subject, and the island still has both its ends.
+  const toward = 0.55;
+  const at: [number, number] = [
+    mid[0] + (f.core[0] - mid[0]) * toward,
+    mid[1] + (f.core[1] - mid[1]) * toward,
+  ];
   return {
     // the establishing shot: the whole city in frame, low pitch
-    wide: { center: mid, zoom: Math.min(14.6, fitZoom(f, px, 1.25)), pitch: 30, bearing: -8 },
-    // the dive: down onto the central business district
-    core: { center: f.core as [number, number], zoom: 15.3, pitch: 55, bearing: -12 },
+    wide: { center: mid, zoom: fit + WIDE_INSET, pitch: 30, bearing: -8 },
+    // the dive: down onto the central business district, still framing the town
+    core: { center: at, zoom: fit + DIVE_INSET, pitch: 55, bearing: -12 },
   };
 };
 
@@ -129,7 +198,10 @@ export default function MapView() {
       const frame = Array.isArray(m?.bbox) && Array.isArray(m?.core) ? m : FALLBACK;
       const base = await resolveBaseStyle(city.context);
       if (disposed || !el.current) return;
-      const shot = framesOf(frame, el.current.clientWidth || 1280);
+      // BOTH DIMENSIONS OF THE WINDOW, because the island has to fit in both.
+      // Only the width was ever read, and the height was assumed to be the
+      // width — see fitZoom.
+      const shot = framesOf(frame, el.current.clientWidth || 1280, el.current.clientHeight || 800);
       const map = new maplibregl.Map({
         container: el.current,
         style: composeStyle(base, city),

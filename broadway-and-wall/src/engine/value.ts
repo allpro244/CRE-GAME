@@ -2,7 +2,7 @@
 // land = lot area × evolved land $/sf. Every number here is traceable from
 // the parcel record and the market state — no hidden multipliers.
 import type { ParcelRecord } from "@/data/types";
-import type { Condition, Econ, GameState, Holding, Sector } from "./types";
+import type { Condition, Econ, GameState, Holding, Sector, Tenant } from "./types";
 import { serviceSpec } from "./types";
 import type { BuiltClass } from "./types";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
@@ -1089,6 +1089,140 @@ export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition, stabi
 export function noiAfterTaxYr(rec: ParcelRecord, econ: Econ, condition: Condition, price: number): number {
   if (rec.class === "land" || !rec.bldgArea) return noiYr(rec, econ, condition);
   return noiYr(rec, econ, condition) - price * TAX_RATE * taxBorneShare(rec);
+}
+
+/**
+ * THE STABILISED PRO-FORMA, AND IT IS NOT THE GOING-IN NUMBER.
+ *
+ * What this building earns once it is full — the same expense stack, the same
+ * recoveries, the same tax bill, run against the occupancy the market says an
+ * asset like this one settles at rather than the occupancy it has today. An
+ * offering memorandum shows it, and it should: the SPREAD between this and
+ * `inPlace().noi` below is the entire value-add trade, and a player who cannot
+ * see it cannot tell a bargain from a leasing problem.
+ *
+ * It must never be the headline. It is a forecast, it is the seller's forecast,
+ * and getting there costs money and years that this number does not carry.
+ */
+export function proFormaNOIYr(rec: ParcelRecord, econ: Econ, condition: Condition, price: number): number {
+  if (rec.class === "land" || !rec.bldgArea) return noiYr(rec, econ, condition, true);
+  return noiYr(rec, econ, condition, true) - price * TAX_RATE * taxBorneShare(rec);
+}
+
+/**
+ * WHAT THE SELLER HAS DISCLOSED: the rent roll, the residential occupancy, and
+ * the grade the deed will convey. This is a FACT about the building, not an
+ * estimate of one — see Listing.roll and Approach.roll for why it is written
+ * once, when the building comes to market or the conversation opens, and never
+ * regenerated.
+ */
+export interface Disclosure {
+  roll?: Tenant[];
+  occ?: number;
+  cond?: Condition;
+}
+
+/** The disclosure on a building the player could buy today, or null. */
+export function disclosureFor(s: GameState, bbl: string): Disclosure | null {
+  const li = s.listings?.find((l) => l.bbl === bbl);
+  if (li && (li.roll !== undefined || li.occ !== undefined)) return { roll: li.roll, occ: li.occ, cond: li.cond };
+  // A conversation that was refused is not a disclosure — there is no
+  // conversation. Everything else that is open has had the paper sent over.
+  const a = s.approaches?.[bbl];
+  if (a && !a.refused && (a.roll !== undefined || a.occ !== undefined)) return { roll: a.roll, occ: a.occ, cond: a.cond };
+  return null;
+}
+
+/**
+ * THE DISCLOSED BUILDING, SHAPED LIKE ONE YOU ALREADY OWN.
+ *
+ * Every function in this engine that prices a building you own — holdingNOIYr,
+ * operatingStatement, heldOccupancy, physicalOcc — walks a `Holding`. So the
+ * way to guarantee that the number on the screen before the closing is the
+ * number the deed hands over is not to write a second pricing path that agrees
+ * with the first; it is to put the disclosed facts in the shape the first one
+ * already reads. Two implementations of one quantity is how the gap opened in
+ * the first place.
+ *
+ * The vessel is built exactly the way `executePurchase` builds the real
+ * holding: `assessed` at the price you would pay, because a sale reassesses at
+ * the deal price; the ops policy you close on, because `opexPsf` reads it; and
+ * the grade the memorandum was priced at, distress knock already applied.
+ */
+export function asIfOwned(s: GameState, bbl: string, price: number, d: Disclosure, rec?: ParcelRecord): Holding {
+  return {
+    bbl,
+    boughtM: s.month,
+    costBasis: price,
+    assessed: price,
+    loan: null,
+    condition: d.cond ?? (rec ? initialCondition(rec) : "standard"),
+    tenants: (d.roll ?? []) as Tenant[],
+    cfHistory: [],
+    // IT CLOSES ON THE HOUSE POLICY — the same two lines executePurchase
+    // writes. They are not cosmetic: `opexPsf` reads `service`, so a vessel
+    // without them prices the building at a different operating cost from the
+    // one it will be run at the day after the deed moves. Measured on 37
+    // listings by dropping the field back out: worth nothing at the default
+    // stance, $5,909 of NOI a building on the high-service policy and $4,924
+    // on the lean one. Inert until the player touches the dial, and a silent
+    // gap at the closing table the moment they do.
+    service: s.opsPolicy?.service ?? 0,
+    plan: s.opsPolicy?.plan ?? 1,
+    ...(d.occ !== undefined ? { occ: d.occ } : {}),
+    ...(s.landmarks?.[bbl] !== undefined ? { landmarked: true } : {}),
+  } as unknown as Holding;
+}
+
+/**
+ * IN-PLACE INCOME AND IN-PLACE OCCUPANCY — the going-in numbers, off the
+ * disclosed roll, and there is nothing to guess.
+ *
+ * The owner's instruction, verbatim: "there will be no hidden or guessing work
+ * in the noi or occupancy when buying a property. You need to know exactly what
+ * you are buying." That is also how the business works — a seller hands over a
+ * rent roll and a trailing twelve, and in-place income is a disclosed fact.
+ *
+ * It was being guessed. Every going-in cap the player saw came out of
+ * `noiAfterTaxYr`, which takes a ParcelRecord and therefore STRUCTURALLY cannot
+ * see a rent roll; inside it, `useOccupancy` — documented as "the market read
+ * on a building" — stood in for the roll. Measured over 3,195 listings across
+ * twelve seeds: the read ran 89% median against an actual roll of 69%, and the
+ * roll was below the read in 88% of them. Worse, it was ADVERSELY SELECTED.
+ * Quartiled by the quoted going-in cap the read was flat — 93/90/87/87 — while
+ * the roll collapsed 83/80/67/46, because a quoted cap is high precisely when
+ * the estimate underneath it is wrong. A buyer screening the tape on yield
+ * bought a median 44%-let building against an 86% read and earned $35K where
+ * $152K was underwritten.
+ *
+ * `disclosed` is the flag a panel needs: TRUE means this is the offering
+ * memorandum and the number is a fact. FALSE means nobody has shown you
+ * anything — an unlisted building you have not rung about — and the number is
+ * the class model's estimate, which is honest as long as it is LABELLED as one.
+ * You cannot buy a building in that state, so it never prices a decision.
+ */
+export function inPlace(
+  rec: ParcelRecord, s: GameState, bbl: string, price: number,
+): { noi: number; occ: number; disclosed: boolean; h: Holding | null } {
+  const own = s.holdings?.[bbl];
+  if (own) {
+    // You own it. The roll IS the roll; nothing is disclosed to you because
+    // nothing is hidden from you.
+    // `physicalOcc`, not `heldOccupancy`: on a mixed-use building the latter
+    // divides the commercial roll by the WHOLE building and never sees the
+    // flats, so a full block of shops over full flats read as a third let.
+    return { noi: holdingNOIYr(rec, s.econ, own, s.month), occ: physicalOcc(rec, own), disclosed: true, h: own };
+  }
+  if (rec.class === "land" || !rec.bldgArea) {
+    return { noi: noiAfterTaxYr(rec, s.econ, "standard", price), occ: 0, disclosed: true, h: null };
+  }
+  const d = disclosureFor(s, bbl);
+  if (!d) {
+    const cond = initialCondition(rec);
+    return { noi: noiAfterTaxYr(rec, s.econ, cond, price), occ: occupancy(rec, s.econ), disclosed: false, h: null };
+  }
+  const h = asIfOwned(s, bbl, price, d, rec);
+  return { noi: holdingNOIYr(rec, s.econ, h, s.month), occ: physicalOcc(rec, h), disclosed: true, h };
 }
 
 // The landlord's share of the property-tax bill: net leases reimburse it,

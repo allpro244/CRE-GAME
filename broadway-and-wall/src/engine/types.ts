@@ -353,6 +353,28 @@ export interface Holding {
   occ?: number;        // multifamily aggregate occupancy
   stance?: -1 | 0 | 1; // rent posture: push / market / fill
   /**
+   * HOW LONG THIS SPACE HAS BEEN SITTING, in months, reset by any signature.
+   *
+   * The price of empty space falls until it clears. That is the oldest fact in
+   * leasing and the model did not have it: `stance` is a switch the PLAYER
+   * throws and nothing moved the ask on its own, so a building whose owner did
+   * nothing asked the same rent forever and never let another foot.
+   *
+   * Measured over 25 years with an owner who accepted nothing: an 8,195 sf
+   * office went 81% let to 0% and then drew FIVE prospects in twenty-five
+   * years; a retail building went 73% to 0% and the receiver took it. Every
+   * multiplier was individually defensible — condition 0.48 once it had gone
+   * obsolete, the dark-building factor 0.85, location cubed, and no broker or
+   * turnkey suites to offset any of it — and their product was a share of the
+   * city's requirement indistinguishable from zero. Apartments were fine at a
+   * stable 62%, because flats let themselves.
+   *
+   * So this is not a passivity penalty being softened. It is the missing half
+   * of the price mechanism, and it costs what it costs in life: the space lets,
+   * and it lets cheap, for the whole of a ten-year term.
+   */
+  darkMs?: number;
+  /**
    * STOP LETTING IT.
    *
    * You cannot knock a building down with people in it, and you cannot empty
@@ -676,12 +698,86 @@ export interface Bid {
   countered?: boolean;   // you have already been back to this one privately
 }
 
+/**
+ * ONE OFF-MARKET CONVERSATION, and there are exactly three ways it can be
+ * standing when the panel reads it. Everything a screen needs is in this
+ * comment; nothing downstream should have to open `approachOwner` to find out
+ * what state it is in.
+ *
+ *   1. `refused === true`      — they turned you away. The door is shut until
+ *                                `q + 6`; `approachOwner` enforces that itself
+ *                                and returns an error before then.
+ *   2. `ask !== undefined`     — there is a number on the table. Buy at it, or
+ *                                counter once (`countered` says whether that
+ *                                shot is spent). This is the old behaviour and
+ *                                the only state old saves can be in.
+ *   3. neither of those        — MAKE ME AN OFFER. The owner is willing to
+ *                                trade and has refused to name a price. There
+ *                                is nothing to display, because there is
+ *                                nothing they told you. The only move is
+ *                                `buyOffMarket(..., bid)` with a real number.
+ *
+ * `mode` records which kind of conversation it STARTED as and never changes;
+ * `ask` records where it is NOW. So `mode === "offer"` with an `ask` present
+ * means the owner finally named a figure after the player bid at them, which
+ * is worth saying out loud on the panel because it is the only way that number
+ * could have got there.
+ *
+ * Absent `mode` means the record predates this shape: treat it as `"ask"`, and
+ * every old save reads exactly as it did before.
+ */
 export interface Approach {
   q: number;           // when the owner was approached
   refused: boolean;
   ask?: number;        // if willing: their number, good for 4 quarters
   countered?: boolean; // you get one counter per approach
   inbound?: boolean;   // they called you, not the other way round
+  /** How this conversation opened. Absent on saves written before it existed. */
+  mode?: "ask" | "offer";
+  /**
+   * THE RENT ROLL, DISCLOSED WHEN THE CONVERSATION OPENS — the off-market twin
+   * of `Listing.roll`, and it exists for exactly the same reason.
+   *
+   * An off-market deal is not a blind one. You ring the owner, they take the
+   * call, and the first thing that crosses the table is the roll and the
+   * trailing twelve. Nobody in this business offers on a building without
+   * them, and no seller who actually wants to trade refuses to send them.
+   *
+   * Without this field the panel had to write a roll at PREVIEW time, and
+   * `genRentRoll` reads two things that move underneath it: `s.month`, which
+   * stamps every lease start and expiry, and `s.econ`, which sets the target
+   * occupancy. So the same building previewed in month 40 and closed in month
+   * 43 handed over different paper — the same fault the listing path already
+   * fixed, measured there at 39 of 200 purchases differing on occupancy and 84
+   * on NOI. Stamped once, when the owner agrees to talk, and conveyed verbatim.
+   *
+   * `occ` is the residential leg, which has no per-lease roll; `cond` is the
+   * grade the roll was priced against and the deed will convey. NOT set on a
+   * refusal — there is no conversation, and therefore no disclosure.
+   */
+  roll?: Tenant[];
+  occ?: number;
+  cond?: Condition;
+  /**
+   * WHAT THEY WILL ACTUALLY TAKE, AND THE PLAYER MUST NEVER SEE IT.
+   *
+   * Only set while `mode === "offer"` and no `ask` has been drawn out yet. It
+   * is the whole point of the mechanic that this number is private: an owner
+   * who says "make me an offer" is refusing to anchor the negotiation, and a
+   * panel that renders their floor — as a figure, a bar, a "you're close"
+   * hint, a disabled slider that stops at it, anything — hands back the exact
+   * information the refusal withheld. The player learns it by bidding and by
+   * nothing else. It lives on state only because a save has to survive being
+   * closed mid-negotiation.
+   */
+  reserve?: number;
+  /** Blind bids made against `reserve` so far. Their patience is finite and it
+   *  runs down with this — the panel may warn, and should not pretend to know
+   *  how much is left. */
+  probes?: number;
+  /** The last number the player put in, so the panel can show them their own
+   *  side of a conversation with no other numbers in it. */
+  lastBid?: number;
   /**
    * YOU INSULTED THEM, AND WHEN THEY WILL TAKE YOUR CALL AGAIN.
    *
@@ -725,6 +821,96 @@ export interface NewsItem {
   text: string;
   /** A story about a place can put the camera on the place. */
   bbl?: string;
+}
+
+/**
+ * SOMETHING HAPPENED THAT THE TAPE IS NOT LOUD ENOUGH FOR.
+ *
+ * The news feed is a hundred and twenty rolling lines and most of them are
+ * weather. A few things a century are not weather — a trade leaving town, a
+ * bank going down, a book of buildings taken back at once — and a player who
+ * scrolls past those has been told nothing. An Alert is the engine saying THIS
+ * ONE, at the moment it fires.
+ *
+ * The engine RAISES and the UI RENDERS: `tone` is the only styling instruction
+ * and it is an economic fact rather than a colour, `title` is a headline and
+ * not a label, `body` is the two or three sentences a person would actually
+ * say, and `detail` is the one number that decides what you do about it. The
+ * UI shifts each alert off `game.alerts` as it shows it, so an engine that
+ * raises nothing costs the UI nothing.
+ */
+export interface Alert {
+  id: number;
+  q: number;                 // the month it fired
+  kind: "swan" | "bank" | "portfolio";
+  tone: "bad" | "good";      // a black swan or a white one
+  title: string;
+  body: string;
+  detail?: string;
+}
+
+/**
+ * ...AND THE ONE WAY TO RAISE ONE. It lives here, beside the interface, because
+ * three files raise alerts and none of them owns the other two. There were two
+ * byte-identical copies of this — `lenders.raiseAlert` and a private `raise` in
+ * swans.ts — each with a comment saying the other should be deleted. Two copies
+ * of one thing is the third kind of fake number by this codebase's own
+ * definition, so this is the copy and the others are gone.
+ *
+ * A runtime function in a types file is not the usual thing. It is safe here
+ * for a checkable reason: every import in this file is `import type`, so the
+ * module has no runtime dependencies and cannot be part of a cycle.
+ */
+export function raiseAlert(s: GameState, a: Omit<Alert, "id" | "q">) {
+  const id = s.nextAlertId ?? 1;
+  s.nextAlertId = id + 1;
+  if (!s.alerts) s.alerts = [];
+  s.alerts.push({ id, q: s.month, ...a });
+  // A queue the UI never drained would otherwise grow for a century. Eight is
+  // more than anything realistic can raise between two renders.
+  if (s.alerts.length > 8) s.alerts.splice(0, s.alerts.length - 8);
+}
+
+/**
+ * WHICH KINDS OF SPACE EACH TRADE OCCUPIES.
+ *
+ * This is the same partition `leasing.ts` draws its prospects from — a shed is
+ * let to logistics, food and apparel; an office floor to the six trades that
+ * sit at desks — and it lives here because BOTH the leasing side and the swan
+ * side need it and neither owns the other. `leasing.ts` still holds a private
+ * copy called SECTORS_BY_CLASS; the two are identical today and the leasing
+ * one should be deleted in favour of this import the next time that file is
+ * open. Two lists with one meaning is exactly the third kind of fake number,
+ * and this comment is the only thing currently stopping it.
+ *
+ * Multifamily has no entry on purpose. Flats are let to HOUSEHOLDS, not to
+ * trades, so a trade leaving town reaches housing the way it reaches it in
+ * life — through the jobs, and then through the people — and not through a
+ * rent roll.
+ */
+export const SECTOR_CLASSES: Partial<Record<BuiltClass, Sector[]>> = {
+  office: ["finance", "law", "tech", "media", "insurance", "design"],
+  retail: ["apparel", "food", "medical"],
+  industrial: ["logistics", "food", "apparel"],
+};
+
+/**
+ * A LEVEL EVENT, written down so it can be read back.
+ *
+ * Not for the simulation — the simulation reads `Econ.swanTrade` and
+ * `Econ.swanUse` — but for the history panel, for the harnesses that count
+ * frequency, and for the player who wants to know what happened to this town
+ * in 2038 and why the office market never came back.
+ */
+export interface SwanRecord {
+  m: number;                       // the month it was announced
+  family: "trade" | "use";
+  key: string;                     // the sector, or the use class
+  dir: 1 | -1;                     // white or black
+  /** the level multiplier this event applied, once fully arrived */
+  mult: number;
+  glideM: number;                  // how long it takes to land
+  title: string;
 }
 
 export interface EconHistoryPoint {
@@ -921,6 +1107,24 @@ export interface Econ {
    */
   inflExp?: number;
   /**
+   * THE RAISE THAT WAS NOT GIVEN, CARRIED FORWARD.
+   *
+   * Nominal pay does not get cut, it gets frozen — see the wage block in
+   * market.ts. But a floor that simply discards the months when pay "should"
+   * have fallen is not rigidity, it is a subsidy: truncating the bottom of a
+   * noisy series and keeping the top raises its mean. Measured, that lifted
+   * trend real wage growth from 1.18%/yr to 1.71% and pushed industrial real
+   * rent to +1.77% against a +1.5 band, purely as an artefact of the clamp.
+   *
+   * What actually happens is pent-up wage deflation: the adjustment a firm
+   * could not make by cutting is made by under-granting the next increase, and
+   * it can sit unpaid for years. So the shortfall accumulates here and is
+   * worked off against later raises, which gives rigidity its real shape — pay
+   * that plateaus for a long time rather than pay that ratchets — without
+   * changing where the trend ends up.
+   */
+  wageDebt?: number;
+  /**
    * The loan index a developer actually underwrites to — smoothed over about a
    * year, because a groundbreak is a two-year decision and is neither killed
    * by one bad print nor rescued by one good one.
@@ -976,6 +1180,64 @@ export interface Econ {
   industryMom?: Record<Sector, number>;
   industryPhase?: Record<Sector, "boom" | "steady" | "bust">;
   industryPhaseM?: Record<Sector, number>;
+  // ---------------------------------------------------------------------
+  // AND THE LEVEL THE CYCLE RIDES ON. See swans.ts.
+  //
+  // Everything above this line is a CYCLE: it turns, it comes back, and its
+  // long-run mean is the number it started at. A city's actual history is not
+  // made of cycles. Kodak leaving Rochester was not a bust in imaging, it was
+  // a permanent restatement of how much imaging Rochester holds, and it did
+  // not reverse when the next expansion arrived. So the trade level and the
+  // use level are separate terms, they only ever move on an event, and they
+  // never revert. `swanTradeRef` is a two-year memory of what normal was,
+  // which is what turns a moving level into felt distress and — crucially —
+  // what lets the distress END while the level stays where the event put it.
+  /** how much of each trade this city holds, 1.0 at the opening; never reverts */
+  swanTrade?: Record<Sector, number>;
+  /** where each trade level is heading, and the months left to get there */
+  swanTradeTo?: Record<Sector, number>;
+  swanTradeM?: Record<Sector, number>;
+  /** a two-year memory of each trade's level: the yardstick distress is felt against */
+  swanTradeRef?: Record<Sector, number>;
+  /** how much of each kind of space this city wants, 1.0 at the opening; never reverts */
+  swanUse?: Record<BuiltClass, number>;
+  swanUseTo?: Record<BuiltClass, number>;
+  swanUseM?: Record<BuiltClass, number>;
+  /** this month's employment consequence of the trade levels moving, as a drift */
+  swanJobDrift?: number;
+  /**
+   * HOW BIG THIS TOWN IS AT MONTH ZERO — jobs and people, derived from the
+   * buildings actually standing on the map rather than asserted.
+   *
+   * These were the constants 132,000 and 240,000, written into `initEcon` and
+   * into four other expressions, and they did not move when the map did: a
+   * 393-lot Hamlet and a 5,897-lot Great City both told the player they had
+   * 240,000 residents. On a Hamlet that works out at about ten square feet of
+   * office space per office job.
+   *
+   * `jobs0` is the stock divided by the same square-feet-per-worker the demand
+   * model uses, so the two agree about what an office building is for. `pop0`
+   * follows from it through the participation rate and the opening
+   * unemployment, which is the relationship the old pair already encoded —
+   * 132,000 / 0.948 / 0.58 = 240,069 — except that it was solved by hand once
+   * and then frozen. Everything downstream runs on INDEXES against these, so
+   * the dynamics are unchanged and only the levels now describe the town.
+   */
+  jobs0?: number;
+  pop0?: number;
+  /**
+   * WHAT SHARE OF THE CITY'S PAYROLL EACH TRADE IS. Published by the demand
+   * model, which is the only thing that knows: a trade's size is its affinity
+   * for the classes this particular city actually built, so a warehouse town
+   * and a banking town do not have the same ten shares. Shares sum to 1.
+   *
+   * Two places used to assume a flat tenth each, and one of them said so in a
+   * comment that gave the reason as "nothing anywhere weights one trade above
+   * another" — which was not true when it was written. `TRADE_AFFINITY` in
+   * demand.ts weights every trade by building class and `EMP_CONC` raises the
+   * result to the 2.2, so the spread is structural and large.
+   */
+  sectorShare?: Partial<Record<Sector, number>>;
   // Everything the rest of the market is building, by class, in square feet.
   // Starts respond to profit; deliveries land ~30 months later and take the
   // rent with them. This is the supply half of the cycle, and without it a
@@ -1032,6 +1294,15 @@ export interface Econ {
   // what was standing on day one — the anchor the demand target is measured
   // against, so a century of building does not drag the target along with it
   baseStock?: Record<BuiltClass, number>;
+  // ...and the same thing FROZEN, because baseStock is not frozen: the
+  // sector-exit ratchet in market.ts writes it down as tenants are priced out
+  // and never return. The difference between the two IS how much of a sector
+  // has left the city, and the city's zoning has to be able to read it — land
+  // zoned for an industry that is half gone does not stay zoned for it.
+  // Optional so a save written before this existed still loads; absent, no
+  // sector has left as far as the zoning is concerned, which is the old
+  // behaviour exactly.
+  baseStock0?: Record<BuiltClass, number>;
   occupied: Record<BuiltClass, number>;
   cityVac: Record<BuiltClass, number>;
   absorb12: Record<BuiltClass, number>;   // trailing 12-month net absorption, sf
@@ -1123,6 +1394,21 @@ export interface Rival {
    * buildings, and the only thing that distinguishes them is this number.
    */
   heldSince?: Record<string, number>;
+  /**
+   * WHEN THE EXTENDED PAPER ON A BUILDING COMES BACK, by BBL. Present only for
+   * a building whose balloon the desk re-papered rather than took the keys on;
+   * absent is the ordinary case and means the loan sits on the term ladder.
+   *
+   * This used to live inside `heldSince` under an `ext|` prefix because this
+   * file was not open at the time. It is its own map now for a reason that
+   * cost something: the sweep test read "does this firm have ANY key with that
+   * prefix", eight sites take a deed off a rival and only three cleared the
+   * prefixed key, and a record left behind for a building the firm no longer
+   * owned went on stopping its distributions. Measured before the fix: 58.6%
+   * of extension records outlived their building, and 54% of all swept
+   * firm-months were held up by one of them.
+   */
+  extendedTo?: Record<string, number>;
   id: string;
   name: string;
   style: RivalStyle;
@@ -1365,6 +1651,14 @@ export interface GameState {
   // building went up" and "Alden Development Co. got to that corner first".
   cityJobs?: {
     bbl: string; use: string; sf: number; floors: number; startM: number; deliverM: number;
+    /**
+     * The programme, settled at groundbreak. Shops at grade depend on the final
+     * floor count and on the demand score of the day, and the pipeline books
+     * square feet by class the month the hole is dug — so the answer is decided
+     * once and carried, rather than recomputed at delivery against a city that
+     * has moved. Absent on jobs from older saves, which had no ground floor.
+     */
+    mix?: UseMix;
     firmId?: string;      // whose job it is; absent means the anonymous city
     cost?: number;        // the budget, for a firm's job
     spent?: number;       // work in place to date
@@ -1500,6 +1794,25 @@ export interface GameState {
   // Leasing agent on retainer: signs every LOI for you at a 6% commission
   // instead of the 4%/2% you'd pay doing it yourself.
   agent: boolean;
+  /**
+   * PROPERTY MANAGEMENT HAS THE RENEWALS, at the 2% the roll already pays.
+   *
+   * Narrower than `agent` above and deliberately so. The agent takes the whole
+   * book at 6% and signs everything, including the new leases — which is the
+   * interesting half, where you trade term for allowance and decide whether a
+   * covenant is worth a discount. This hands over only the RENEWALS: the sitting
+   * tenant, the paper that rolls whether you are paying attention or not.
+   *
+   * The 2% is not a new number. `leaseCosts` has always priced a renewal at 2%
+   * against a new lease's 4%, because a renewal is genuinely less work — no
+   * fit-out to negotiate, no tour, no covenant to underwrite. Engaging the desk
+   * does not change the commission; it changes who does the signing.
+   *
+   * The trade is a real one: a manager signs AT the market and never above it,
+   * so an owner who works their own renewals still beats one who does not — they
+   * just have to be there when the letter arrives.
+   */
+  renewalMgmt?: boolean;
   /** The player told the brokers to stop ringing. Nothing else changes. */
   brokersOff?: boolean;
   /**
@@ -1518,6 +1831,16 @@ export interface GameState {
   // an appraisal is an opinion and a closed sale is a fact.
   comps?: Comp[];
   news: NewsItem[];
+  /**
+   * UNREAD interruptions. The engine pushes; the UI shifts them off as it
+   * shows them. Optional because a save written before any of this existed has
+   * to keep loading, and because a run in which nothing extraordinary happens
+   * should carry no field at all.
+   */
+  alerts?: Alert[];
+  nextAlertId?: number;
+  /** Every level event this city has had, oldest first. See SwanRecord. */
+  swanLog?: SwanRecord[];
   gameOver: { cause: string; complete?: boolean } | null;
   insolventMs: number;
   locOverMs?: number;
@@ -1584,7 +1907,26 @@ export interface Talks {
   deposit?: number;
 }
 
-export const START_CASH = 6_000_000;
+/**
+ * WHAT YOU START WITH, AND IT IS A CHOICE NOW.
+ *
+ * The game shipped one number, $6M, which made the opening the same opening
+ * every time. These three are different games rather than three difficulty
+ * settings, which is the distinction CLAUDE.md draws: the money does not scale
+ * anything, it decides how many mistakes you get before overhead eats you.
+ *
+ * The scale that makes them mean something: firm overhead measured $57K/yr at
+ * the start and $131K by year seventeen, and a small building trades around
+ * $0.5-2.5M. So $1M is one building outright or two levered with almost no
+ * reserve; $5M is a real first fund with room to be wrong once. An idle firm
+ * with $6M went insolvent in year fifteen on overhead alone — at $1M it has
+ * closer to five, which is why this is a starting choice and not a slider.
+ */
+export const START_CASH_CHOICES = [1_000_000, 2_500_000, 5_000_000] as const;
+export type StartCash = (typeof START_CASH_CHOICES)[number];
+export const DEFAULT_START_CASH: StartCash = 2_500_000;
+/** @deprecated the opening bankroll is chosen — see START_CASH_CHOICES. */
+export const START_CASH = DEFAULT_START_CASH;
 export const START_YEAR = 2000;
 /**
  * WHAT A BANK BALANCE EARNS. One per cent a year, on positive balances, for

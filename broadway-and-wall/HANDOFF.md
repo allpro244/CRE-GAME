@@ -46,9 +46,18 @@ work in it. It was always safe on the remote. Push early and often.
 | `pnpm gate` | passing — 3/3 measurements in band, 1/1 identities hold |
 | `conserve` | clean, all ten ledger categories live |
 | A (location spread) | **breached — 1.94x against a 2.0x band, see below** |
-| B–F, G, H, I, J–M | in band |
+| F (income anchor) | **breached — industrial +1.99%/yr, retail −1.62%/yr, see item 2** |
+| B–E, G, H, I, J–M | in band |
 | `pnpm crews` | new — the construction market's own harness, see item 1 |
 | `pnpm vactails` | new — both vacancy tails: which end is a market and which is a clamp |
+| `pnpm sectorexit` | new — does the exit ratchet fire on exoduses or on shortages |
+
+**F's breach is exposed, not created.** Retail was already outside the band at
+`69de9bf` (−1.09%/yr). Industrial's is new and it is the point: the exit ratchet
+had been deleting a quarter of industrial demand during a permanent shortage,
+which held the number inside the band by removing the tenants rather than by
+housing them. Item 2 carries the full paired table and the anchor for the real
+fix. `pnpm gate` passes throughout.
 
 **A is the one breach and it is a real shift, not noise: it fell on all three
 seeds (2.31/3.15/2.46 → 1.94/2.82/1.69).** A city that can build compresses the
@@ -213,6 +222,46 @@ market that cannot clear on quantity clears on price, and industrial cannot
 clear on quantity at all.
 
 A real city facing quadrupled industrial rent rezones. Start here.
+
+**AND THE SECTOR-EXIT RATCHET WAS HIDING HOW BAD THIS IS.** `pnpm sectorexit`
+asks what vacancy was doing on the months the ratchet fired. Before the fix:
+below natural on **91.3%** of office firings, 84.7% of retail and **93.4%** of
+industrial — and industrial fired in 42.4% of all months with 43.4% of those at
+its absolute frictional floor, median vacancy 1.8% against a natural of 7.0%.
+
+Nine times in ten it was not modelling an exodus. It was modelling a shortage
+and calling it an exodus, and `useForZone` then converted M-zoned land to
+housing in proportion to how much had "gone" — one way, never back — removing
+the capacity that would have relieved the shortage. Exit is now NET OF THE
+QUEUE (you cannot have a waiting list and an exodus at once), which took
+industrial's fifty-year shedding from 25.4% to 3.1% while leaving office's
+mostly intact at 6.7%.
+
+**What that revealed is the real number, and it is worse than the backlog
+thought.** Test F, paired against `69de9bf`:
+
+| class | before the fix | after |
+|---|---|---|
+| office | −0.72%/yr | +0.71%/yr |
+| retail | −1.09%/yr ✗ | −1.62%/yr ✗ |
+| industrial | +1.02%/yr | **+1.99%/yr ✗** (2.2x real over the run) |
+
+Real wages grow 1.07%/yr. Industrial rent compounds at nearly twice that
+because its demand is tied to TOTAL employment (`driver = e.employIdx`) while
+its supply is zoning-locked — so a city that adds 50% more jobs is assumed to
+want 45% more warehouse and cannot build a foot of it. The ratchet was quietly
+deleting a quarter of that demand to keep the number down.
+
+**Do NOT fix this by picking a decline rate that puts F back in band.** The
+honest fix has an anchor and it is the one this codebase already cites in the
+ratchet's own comment: New York, San Francisco and London each lost more than
+half their manufacturing floor space between 1970 and 2010 — about −1.7%/yr —
+and that happened for reasons that have nothing to do with rent (containers,
+trade, productivity). It is a secular change in the COMPOSITION of employment,
+so it belongs in the driver, not in a rent-triggered ratchet: industrial demand
+should track industrial employment, and industrial's share of employment should
+fall. Whoever does it should size it from that record and then report where F
+lands, in that order — not the other way round.
 
 ### 3. G's unemployment clause — STALE ENTRY, and G passes
 Re-run on both arms of a paired A/B, this build and the build this list was

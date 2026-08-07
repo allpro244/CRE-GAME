@@ -1899,6 +1899,39 @@ export function tickEcon(s: GameState) {
     // housing does not. The building stays and somebody poorer or somebody
     // richer lives in it. Demand for shelter in a place is not a footprint
     // that can relocate.
+    // AND A DEPARTURE SOMEBODY IS QUEUING TO BACKFILL IS NOT A SECTOR LEAVING.
+    //
+    // The trigger above is a PRICE and nothing else, and high rent has two
+    // opposite causes that a price cannot tell apart:
+    //
+    //   priced out — firms go, hand the space back, and vacancy RISES
+    //   starved    — firms want more and cannot get it, vacancy sits on its FLOOR
+    //
+    // Measured over 12 seeds x 50 years, asking what vacancy was doing on the
+    // months this fired, it was BELOW natural for 91.3% of office firings, 84.7%
+    // of retail and 93.4% of industrial — and for industrial, 43.4% of firings
+    // happened with the class pinned at its absolute frictional floor, median
+    // vacancy 1.8% against a natural rate of 7.0%. Industrial fired in 42.4% of
+    // all months and had a quarter of its base demand removed by year fifty.
+    //
+    // So nine times in ten this was not modelling an exodus. It was modelling a
+    // shortage and calling it an exodus — and `useForZone` in dev.ts then
+    // converts M-zoned land to housing in proportion to how much has "gone",
+    // one way and never back, which removes the very capacity that would have
+    // relieved the shortage. Shortage, higher rent, less land for the starved
+    // use, deeper shortage. The paragraph at the top of this block names the
+    // supply constraint as the reason it was built; deleting the demand is not
+    // the fix for supply that cannot respond.
+    //
+    // The mechanism stays — New York, San Francisco and London really did each
+    // lose more than half their manufacturing floor space, and none came back.
+    // What changes is that exit is NET OF THE QUEUE. A tenant priced out at
+    // renewal whose floor is immediately taken by another firm of the same use
+    // that could not find space is a tenant swap, and the sector's footprint in
+    // the city has not moved. You cannot have a waiting list and an exodus at
+    // the same time. The queue is a level of demand that has nowhere to go and
+    // departures are drawn against it before any of them count as the sector
+    // leaving, which is why a monthly flow is differenced against a stock here.
     if (k !== "multifamily") {
       const RELOCATE_AT = 1.20;    // a fifth above its historical rent-to-income
       const ROLL_YR = 1 / 8;       // an eight-year term: an eighth comes up each year
@@ -1907,8 +1940,14 @@ export function tickEcon(s: GameState) {
       const over = Math.max(0, burden - RELOCATE_AT);
       if (over > 0 && e.baseStock) {
         const leaving = Math.min(1, over * GO_RATE);      // cannot exceed everyone at the table
-        const shed = 1 - (ROLL_YR * leaving) / 12;
-        e.baseStock[k] = Math.min(e.baseStock[k], e.baseStock[k] * shed);
+        const goes = (ROLL_YR * leaving) / 12;            // share of the footprint walking this month
+        // Last month's unhoused demand for this use — the same expression the
+        // rent block calls `unmet`, read a month stale because the pool has not
+        // been rolled forward yet, which is also what a landlord can see.
+        const stk = Math.max(1, e.stock?.[k] ?? CITY_STOCK[k]);
+        const queue = Math.max(0, ((e.pool?.[k] ?? 0) - (e.occupied?.[k] ?? 0) - (e.sublet?.[k] ?? 0)) / stk);
+        const net = Math.max(0, goes - queue);
+        if (net > 0) e.baseStock[k] = Math.min(e.baseStock[k], e.baseStock[k] * (1 - net));
       }
     }
     // WHAT EACH KIND OF SPACE IS ACTUALLY DEMANDED BY, and this was the single

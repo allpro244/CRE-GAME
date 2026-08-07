@@ -129,23 +129,53 @@ rail, and the numbers are not marginal:**
 | retail | 2.72% | 3.4% | 29 months |
 
 `p01 = p05 = the floor exactly` for three of four classes — that distribution is
-truncated, not sampled. `market.ts` clamps `cityVac` at `NATURAL_VAC[k] * 0.32`
-(0.30 multifamily, 0.22 industrial), and a comment in that file already records
-this rail binding 26.9% of months once before. The sublet channel was added to
-the AVAILABILITY measure to route around it, and that worked for rent — but
-**three things read `cityVac` raw and the sublet channel never reached them**:
-the cap rate's `vacRisk`, the land residual's `vacDisc`, and the demand pool's
-housable ceiling. Measured, office cap rates run 7.97% while pinned against
-8.56% off it.
+truncated, not sampled. The real constraint is not the `cityVac` clamp but the
+line above it, `occupied = clamp(occupied + absorb, 0, housable)` with
+`housable = stock * (1 - friction)`; the vacancy clamp is downstream of that
+and redundant.
 
-A market pinned at its floor for eight to eleven years manufactures the boom
-that the bust falls from, which is why this is the remaining drawdown story:
-median is 64.8% against a 50–60% anchor. Note the floor itself is not wrong —
-you cannot have less than frictional vacancy — so the fix is not to lower it.
-The fault is that the model spends a decade at a time in a state where demand
-exceeds what the stock can hold at frictional vacancy and the only signal
-anything downstream gets is a constant. `unmet` already measures that excess
-demand and only rent reads it. Start there.
+**A CORRECTION TO `801f844`, which overstated this.** That commit said the land
+residual's `vacDisc` reads `cityVac` raw and is pinned by this rail. It reads it
+raw and is NOT pinned by it: `vacDisc = 1 - 1.2 * Math.max(0, cityVac - natural)`
+is identically 1 for every vacancy below natural, so the tight rail cannot reach
+it. Only the glut side touches land. The claim was wrong and this is the record.
+
+**AND THE RAIL STACK IS REAL BUT IS MOSTLY NOT A FAULT.** `pnpm vactails` now
+measures where each tightness signal stops responding, and every threshold sits
+ABOVE the frictional floor:
+
+| class | capRate pins | leaseUp pins | vacancy pins | % months below the first |
+|---|---|---|---|---|
+| office | 6.50% | 6.38% | 3.68% | **28.5%** |
+| industrial | n/a | 3.88% | 1.54% | **54.7%** |
+| multifamily | n/a | 2.50% | 1.35% | 24.7% |
+| retail | 1.83% | 4.71% | 2.72% | 11.3% |
+
+Before changing any of these, read the comment above the cap rate's `-0.6`
+floor: *"Compression floors out at 60bp — nobody underwrites a shortage lasting
+forever."* That is a stated economic reason for a SATURATING response, and a
+saturating response is a mechanism, not a rail hiding a fault. It was left
+alone deliberately. Uncapping it would need a real-world anchor saying how much
+cap-rate compression a chronic shortage actually buys, and nobody has one here.
+`vacancyPull`'s 1.7 ceiling has no stated rationale and is the weaker of the
+two if somebody wants a target.
+
+**What IS a fault is the DURATION, and it is a supply story, not a pricing
+one.** Ten years unbroken at the absolute frictional floor is not a market. And
+the worst offender names its own cause:
+
+| class | 50y stock growth (6 seeds) | % months at the vacancy floor |
+|---|---|---|
+| office | +15% .. +85% | 11.7% |
+| retail | +49% .. +93% | 3.4% |
+| multifamily | +34% .. +102% | 9.8% |
+| **industrial** | **−7.9% .. +12.8%, negative in 4 of 6** | **33.4%** |
+
+Industrial is the one class whose stock SHRINKS over fifty years, and it is
+pinned against its vacancy floor a third of the time with a 131-month stretch.
+That is item 2 — the class that cannot be built is the class that is
+permanently short. Do item 2 next; it is no longer a separate cosmetic
+complaint about zoning, it is the remaining half of item 1.
 
 **Ruled out, and stays ruled out.** The sector-exit ratchet (wrong timescale).
 And now also: supply was not what set the PERIOD. The rent cycle ran 20.3 years
@@ -156,17 +186,33 @@ rent integrator contributes, and the measured 55-month rent-behind-vacancy lag
 is that integrator's signature. See the Barkhausen note already in `market.ts`
 above the sublet block; somebody worked this out once and it is the right frame.
 
-### 2. Zoning never changes in fifty years
-The city cannot rezone. Industrial can only be built on M-zoned land (61
-vacant lots on the standard island), retail is a minority roll on C-zoned
-land, and both are capped at two floors — correctly, a warehouse is
-single-storey. Result: retail stock grows **0.04%/yr** and industrial
-**0.12%/yr** over fifty years.
+### 2. Zoning never changes — HALF FIXED BY ACCIDENT, and the other half is now item 1's remainder
+The city cannot rezone. Industrial can only be built on M-zoned land (61 vacant
+lots on the standard island), retail is a minority roll on C-zoned land, and
+both are capped at two floors — correctly, a warehouse is single-storey.
 
-The sector-exit ratchet now stops the rent compounding this caused, but the
-underlying fact remains: a real city facing quadrupled industrial rent
-rezones, and this one cannot. This is also the honest fix for item 3's
-cousin — a city that loses its industry should look different.
+**The numbers in the original entry are stale and the two halves came apart.**
+Re-measured over 6 seeds x 50 years on the current build:
+
+| | original entry | now |
+|---|---|---|
+| retail stock | 0.04%/yr | **+49% to +93% over 50y** |
+| industrial stock | 0.12%/yr | **−7.9% to +12.8%, negative in 4 of 6 seeds** |
+
+Retail was never really a zoning problem — it was the crew wall, and fixing the
+construction market (`cdbd1bd`) fixed retail without anybody touching zoning.
+Industrial did not move, because its constraint really is the zoning: there is
+nowhere to put it and nothing taller than two floors to put there.
+
+**So industrial is now the standout fault in the whole engine.** It is the only
+class whose stock shrinks across a fifty-year run, and `pnpm vactails` has it
+pinned against its frictional vacancy floor 33.4% of months with a 131-month
+unbroken stretch — a class in permanent, unrelievable shortage. That is the
+remaining half of item 1's drawdown story arriving through a different door: a
+market that cannot clear on quantity clears on price, and industrial cannot
+clear on quantity at all.
+
+A real city facing quadrupled industrial rent rezones. Start here.
 
 ### 3. G's unemployment clause — STALE ENTRY, and G passes
 Re-run on both arms of a paired A/B, this build and the build this list was

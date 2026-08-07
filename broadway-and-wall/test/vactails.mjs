@@ -118,6 +118,36 @@ for (const k of CLASSES) {
 console.log("  (the -%/yr column is the rent decline the glut branch delivers AT that gap,");
 console.log("   before the capitulation clock; at 9pp it is -14.7%/yr, which matches 1990-92)");
 
+// ---- 2b. THE RAIL STACK -----------------------------------------------------
+// `cityVac` pinning is not the only saturation at the tight end, and it is not
+// even the first one reached. Three separate readers of citywide vacancy each
+// stop responding at their own threshold, and every one of those thresholds is
+// ABOVE the frictional floor — so the model loses the ability to tell "tight"
+// from "desperately tight" long before vacancy bottoms out:
+//
+//   cap rate    vacRisk = clamp(CAP_VAC_BETA * vacGap * 100, -0.6, 2.0)
+//               office pins at 11.5% - 0.6/(0.12*100) = 6.5% vacancy
+//   lease-up    vacancyPull = clamp(pow(NATURAL/vac, 0.9), 0.4, 1.7)
+//               office pins at 11.5% / 1.7^(1/0.9) = 6.33% vacancy
+//   vacancy     cityVac = clamp(1 - occupied/stock, friction, 0.45)
+//               office pins at 3.68%
+//
+// A market below the first threshold is one where an investor cannot pay up
+// any further for scarcity and a landlord's phone cannot ring any harder.
+const CAP_VAC_BETA = { office: 0.12, retail: 0.09, multifamily: 0.06, industrial: 0.08 };
+console.log("\nTHE RAIL STACK AT THE TIGHT END — where each tightness signal stops responding");
+console.log("  class        capRate pins   leaseUp pins   vacancy pins      %months below the FIRST rail");
+for (const k of CLASSES) {
+  const nat = E.NATURAL_VAC[k];
+  const capPin = nat - 0.6 / (CAP_VAC_BETA[k] * 100);
+  const pullPin = nat / Math.pow(1.7, 1 / 0.9);
+  const floor = nat * FRICTION_RATIO[k];
+  const first = Math.max(capPin, pullPin, floor);
+  const all = runs.flatMap(({ s }) => s.map((r) => r.vac[k]));
+  console.log(`  ${k.padEnd(12)} ${pct(capPin).padStart(9)} ${pct(pullPin).padStart(14)} ${pct(floor).padStart(14)}`
+    + ` ${pct(all.filter((v) => v <= first + 1e-9).length / all.length).padStart(33)}`);
+}
+
 // ---- 3. what does the rail do to the things that read cityVac raw? ---------
 // Cap rates read `cityVac - NATURAL_VAC` directly, not availability. If the
 // vacancy is pinned, so is the risk premium.

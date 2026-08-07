@@ -64,10 +64,19 @@ const depositsHeld = (g) => {
 
 const rows = [];
 let totalBreaks = 0, months = 0;
+// WHAT THE RUN ACTUALLY TOUCHED. An identity is only worth what it is asked
+// about: `Dcash == books + Dloc + Ddeposits` holds trivially for a player who
+// does nothing, and this file spent a stretch proving exactly that. Every
+// category the bot is supposed to exercise has to move, or the run is not a
+// test of anything and says so.
+const coverage = {};
+for (const k of [...IN, ...OUT]) coverage[k] = 0;
 
 for (const seed of SEEDS) {
   const parcels = JSON.parse(JSON.stringify(P0));
   let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
+  const START = g.cash;
+  let built = false;
   let prev = { cash: g.cash, books: bookTotals(g), loc: g.loc?.balance ?? 0, dep: depositsHeld(g) };
   const breaks = [];
   let worst = 0, cum = 0;
@@ -99,17 +108,57 @@ for (const seed of SEEDS) {
     // distinction: conserve tests the LEDGER IDENTITY, and it needs the bot
     // alive to test it over fifty years, not to prove the bot is any good.
     // Nothing here touches an engine number.
-    if (m % 9 === 0 && g.cash > 4_000_000) {
-      for (const li of [...g.listings].slice(0, 5)) {
+    // WHAT IT TAKES TO GET THIS BOT TO TRANSACT, and why it is a fraction of
+    // its own opening balance rather than a number of dollars.
+    //
+    // It used to be `g.cash > 4_000_000`, with a $2.5M working reserve behind
+    // it — both sized to a $6M opening bankroll. The opening bankroll became a
+    // choice of $1M / $2.5M / $5M, defaulting to $2.5M, and nobody came back
+    // here. The gate on which every money-moving change in this repo is
+    // validated then spent an unknown number of commits reconciling a player
+    // who never bought a building: 8 of the 10 ledger categories were dead,
+    // `interest` and `ga` were the only two that moved, and the identity had
+    // quietly become `Dcash == interest - ga`. See the coverage assertion at
+    // the bottom of this file, which exists so that cannot happen silently
+    // again.
+    if (m % 9 === 0 && g.cash > START * 0.6) {
+      for (const li of [...g.listings].slice(0, 8)) {
         const rec = E.resolveRec(parcels, g, li.bbl);
         if (!rec || g.holdings[li.bbl] || rec.class === "land") continue;
         if (li.ask > E.assetValue(rec, g.econ, E.initialCondition(rec))) continue;
         // Leave a working balance behind, the way anybody solvent does.
-        if (li.ask * 0.35 > g.cash - 2_500_000) continue;
+        const q = E.buyQuote(g, parcels, li.bbl, li.ask, "senior", 1);
+        if (q.equity > g.cash - START * 0.25) continue;
         const r = E.executePurchase(g, parcels, li.bbl, li.ask, "senior", false, 1);
         if (!r.err) { g = r.s; break; }
       }
     }
+    // AND IT PUTS A CRANE UP, ONCE. Development is the largest and lumpiest
+    // set of cash movements the player has — the draw schedule, the overrun,
+    // the capital call, the completion — and conserve found real faults in it
+    // before. A bot that never breaks ground leaves `dev` at zero and leaves
+    // that whole arm of the ledger unreconciled, so it buys one cheap lot and
+    // builds on it. One job, not a programme: the point is coverage, not a
+    // developer strategy.
+    if (!Object.keys(g.developments ?? {}).length && !built && g.cash > START * 0.8) {
+      const lot = [...g.listings].find((li) => {
+        const rec = E.resolveRec(parcels, g, li.bbl);
+        return rec && rec.class === "land" && !g.holdings[li.bbl] && li.ask < g.cash * 0.25;
+      });
+      if (lot) {
+        const r = E.executePurchase(g, parcels, lot.bbl, lot.ask, "cash", false, 1);
+        if (!r.err) g = r.s;
+      }
+      const dirt = Object.keys(g.holdings).find((b) => {
+        const rec = E.resolveRec(parcels, g, b);
+        return rec && rec.class === "land" && !g.developments[b] && !g.holdings[b].sale;
+      });
+      if (dirt) {
+        const d = E.startDevelopment(g, parcels, dirt, "office", 4);
+        if (!d.err) { g = d.s; built = true; }
+      }
+    }
+
     // A LANDLORD SHORT OF CASH SELLS SOMETHING. Without an exit the bot can
     // only ever accumulate, so one bad decade ends it no matter how much
     // equity it is sitting on — which is a fact about the bot, not the world.
@@ -163,6 +212,7 @@ for (const seed of SEEDS) {
     if (g.gameOver) break;
   }
   totalBreaks += breaks.length;
+  for (const k of [...IN, ...OUT]) coverage[k] += Math.abs(bookTotals(g)[k] ?? 0);
   rows.push({ seed, breaks, worst, cum });
 }
 
@@ -179,6 +229,22 @@ for (const r of rows) {
   }
 }
 console.log(`\n${"=".repeat(64)}`);
+
+// DID THE RUN ASK THE QUESTION. Before reporting that every dollar came from
+// somewhere, check that dollars went anywhere: an identity nothing exercises
+// reports a pass it did not earn. `sold` is exempt — the bot only lists when it
+// is short, so a run where it never had to is a healthy run, not a dead one.
+const REQUIRED = ["noi", "interest", "debtSvc", "leasing", "capex", "taxes", "bought", "dev", "ga"];
+const dead = REQUIRED.filter((k) => coverage[k] === 0);
+console.log(`ledger exercised: ${[...IN, ...OUT].map((k) => `${k} ${coverage[k] ? "yes" : "NO"}`).join("  ")}`);
+if (dead.length) {
+  console.log(`\nFAIL  the bot never moved ${dead.join(", ")} — this run proved nothing.`);
+  console.log(`      An identity holds trivially for a player who does not transact. Check the`);
+  console.log(`      bot's cash thresholds against the opening bankroll before reading anything`);
+  console.log(`      else in this file: that is exactly how it broke last time.`);
+  process.exit(1);
+}
+
 if (totalBreaks === 0) {
   console.log(`${months.toLocaleString()} months reconciled. Every dollar came from somewhere.`);
 } else {

@@ -7648,8 +7648,8 @@ function LeasingPage() {
           </div>
           <div className="agent-sub">
             {on
-              ? "Sitting tenants get signed at the market for 2% of lease value — the same 2% a renewal has always cost. Anything under the market comes back to you. New leases still land on your desk."
-              : "Every renewal letter comes to you six months before expiry. Hand them over and the routine ones stop asking — you keep the new leases, which are the ones worth arguing about."}
+              ? "Sitting tenants get signed at the market. The manager takes 2% of total lease value on top of the commission a renewal already pays, so a renewal you hand over costs 4% instead of 2%. Anything under the market comes back to you. New leases still land on your desk."
+              : "Every renewal letter comes to you six months before expiry, and signing one costs the 2% commission it always has. Hand them over and the routine ones stop asking, for a second 2% to the manager — you keep the new leases, which are the ones worth arguing about."}
           </div>
         </div>
         <button className={"btn" + (on ? "" : " btn-on")} onClick={() => setRenewalMgmt(!on)}>

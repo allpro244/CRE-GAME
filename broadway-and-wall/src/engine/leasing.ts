@@ -1689,15 +1689,35 @@ function runAgent(s: GameState, parcels: ParcelTable) {
 /**
  * PROPERTY MANAGEMENT SIGNS THE RENEWALS — see GameState.renewalMgmt.
  *
- * Only `kind: "renewal"`, and at whatever leaseCosts already charges for one,
- * which is 2%. A new-lease letter still lands on the player's desk, because
- * that is the decision worth having.
+ * Only `kind: "renewal"`. A new-lease letter still lands on the player's desk,
+ * because that is the decision worth having.
+ *
+ * WHAT IT COSTS, AND THE REASON THAT IS NOT ZERO. This handed the mandate over
+ * at `loiSigningCost(loi)` — the plain in-house rate — and the comment that
+ * used to be here said so approvingly: "at whatever leaseCosts already charges
+ * for one, which is 2%." So did the button in the UI: "the same 2% a renewal
+ * has always cost." Both were describing a service that was FREE. A desk that
+ * signs your at-market renewals for you at no incremental cost is not a choice,
+ * it is a strictly dominant one, and a dominant strategy is a thing this repo
+ * has a harness looking for.
+ *
+ * A manager is a SECOND party and gets paid like one. The letter still carries
+ * the ordinary renewal commission it has always carried, and the manager's
+ * mandate is `RENEWAL_MGMT_FEE` of total lease value on top — so handing them
+ * over costs exactly the 2% of lease value it says on the tin, and doing it
+ * yourself still costs what it always did. Same shape as `AGENT_FEE`: an
+ * exclusive that stacked six points on top of four would charge you twice for
+ * one transaction, and this does not, because there are two people here.
  *
  * The floor is the same 82% of market `runAgent` uses: a manager with a mandate
  * still will not sign a renewal well under the market — they refer it back, and
  * it becomes the owner's problem again, which is exactly what happens when the
  * number is bad enough to need a principal.
  */
+/** The manager's cut of a renewal they sign, on total lease value. */
+export const RENEWAL_MGMT_FEE = 0.02;
+/** What a renewal letter has always cost to sign — see leaseCosts. */
+const RENEWAL_SELF_FEE = 0.02;
 function runRenewalDesk(s: GameState, parcels: ParcelTable) {
   for (const loi of [...s.lois]) {
     if (loi.kind !== "renewal") continue;
@@ -1713,9 +1733,11 @@ function runRenewalDesk(s: GameState, parcels: ParcelTable) {
       });
       continue;
     }
-    const cost = loiSigningCost(loi);          // renewals are 2% in leaseCosts
+    // The letter's own commission plus the manager's mandate — see above.
+    const rate = RENEWAL_SELF_FEE + RENEWAL_MGMT_FEE;
+    const cost = loiSigningCost(loi, rate);
     if (s.cash < cost) continue;               // cannot fund it; the letter sits
-    signLoi(s, rec, h, loi);
+    signLoi(s, rec, h, loi, rate);
     s.lois = s.lois.filter((l) => l.id !== loi.id);
   }
 }

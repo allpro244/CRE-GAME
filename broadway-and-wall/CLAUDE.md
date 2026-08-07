@@ -155,6 +155,29 @@ cap and their thresholds could never trip. The tournament's dominance number
 divided by a bankrupt strategy and read "116770360.0x". Check that a metric can
 move before trusting that it did.
 
+**It happened to `conserve` itself, which is the gate.** The bot bought a
+building when `g.cash > 4_000_000` and kept a $2.5M reserve — both numbers sized
+to a $6M opening bankroll. The opening bankroll became a choice of $1M / $2.5M /
+$5M defaulting to $2.5M, and nobody came back to the bot. The threshold never
+fired again. For an unknown number of commits the repo's one hard identity was
+reconciling a player who owned nothing: 8 of the 10 ledger categories were flat
+zero, `interest` and `ga` were the only two that moved, and the identity had
+become `Dcash == interest - ga`. It printed "2,984 months reconciled. Every
+dollar came from somewhere" the whole time, and it was true, and it meant
+nothing.
+
+Two things came out of that and both are in `test/conserve.mjs`. The bot's
+thresholds are fractions of its own opening balance, so changing the start cash
+cannot starve it. And the run now asserts its own COVERAGE before it reports a
+pass — every ledger category the bot is meant to exercise must have moved, and
+the run exits 1 naming the dead ones if not. It prints the coverage line either
+way, so a category going quiet is visible rather than inferred.
+
+The general rule: **an identity is only worth the question it was asked.**
+`A == B` holds trivially when both sides are zero. Any harness whose subject is
+a bot has a second failure mode nothing else will catch — the bot stopping — and
+the harness is responsible for noticing.
+
 **And a test measuring the WRONG BUILD is the same fault in a disguise** — it
 can fail, just not about anything real, and it survives every check you make
 against it because the checks load the wrong build too. `test/.engine.mjs` is

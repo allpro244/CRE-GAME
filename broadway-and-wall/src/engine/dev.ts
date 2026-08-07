@@ -2055,13 +2055,45 @@ export function noteRecordPlan(
  * ground or not. Everything else is fair game, and what goes is what fails the
  * test worst: obsolete, old, and sitting on dirt that wants a better building.
  */
-/** HOW MANY JOBS THIS TOWN CAN HAVE IN THE GROUND AT ONCE. General
- *  contractors, tower cranes and steel crews are finite and they are shared:
- *  the teardown pipeline, the quota and a rival's tower all draw on the same
- *  pool, which is why this lives in one place now instead of being spent by one
- *  path and rationed by another. Scaled to the size of the town. */
-function crewCapacity(bbls: string[]): number {
-  return Math.max(4, Math.round(bbls.length / 165));
+/**
+ * HOW MANY JOBS THIS TOWN CAN HAVE IN THE GROUND AT ONCE. General contractors,
+ * tower cranes and steel crews are finite and they are shared: the teardown
+ * pipeline, the quota and a rival's tower all draw on the same pool.
+ *
+ * IT SCALES WITH THE TOWN, AND IT DID NOT BEFORE. This was `bbls.length / 165`
+ * and the comment claimed it was "scaled to the size of the town" — but the lot
+ * count is a property of the PLAT, fixed the day the map is drawn. A city that
+ * doubled its population and its built stock had exactly the same number of
+ * cranes it started with, for ever.
+ *
+ * That constant was the binding constraint on the whole city's construction,
+ * and it is the third mechanism behind the owner's report that land prices run
+ * away. Measured on the shipped island over sixty years, before this change:
+ *
+ *   cranes in the ground   8 -> 9      pinned at capacity for 55 of 60 years
+ *   population         43,451 -> 80,813   (+86%)
+ *   housing stock        4.62M -> 6.45M sf  (+40%)
+ *   housing sf a head      106 -> 73       (-31%)
+ *   multifamily vacancy   7.06% -> 1.35%   and pinned on its frictional floor
+ *                                          for 50 of those 60 years
+ *   real housing rent     24.8 -> 82.6     (3.3x)
+ *
+ * Unmet demand was NOT accumulating — `startOwed` sat flat at about 0.3M sf —
+ * so this was not a market that failed to ask for housing. It asked every
+ * month and the trade could not answer, because the trade was a constant. Rents
+ * then compounded, and since land is the residual after construction cost,
+ * compounding rents are what detonate land prices.
+ *
+ * A real construction industry grows with the economy it serves: more people
+ * and more buildings mean more firms, more crews and more equipment. So the
+ * plat sets the starting scale and the town's own growth carries it from there.
+ * The bounds are wide and are guards, not policy — a town cannot lose its
+ * builders entirely, and it cannot conjure a boomtown's worth of them overnight.
+ */
+function crewCapacity(bbls: string[], e?: Econ): number {
+  const plat = Math.max(4, Math.round(bbls.length / 165));
+  const grown = e?.pop0 && e.population ? clamp(e.population / e.pop0, 0.7, 4) : 1;
+  return Math.max(4, Math.round(plat * grown));
 }
 
 function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
@@ -2097,7 +2129,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // starts stop being a relay pinned at hard zero (45.2% of months -> 12.7%).
   // Office sd(log) of real effective rent moves 0.356 -> 0.263 with it, and
   // retail 0.497 -> 0.259.
-  if ((s.cityJobs ?? []).filter((j) => !j.orphaned).length >= crewCapacity(bbls)) return;
+  if ((s.cityJobs ?? []).filter((j) => !j.orphaned).length >= crewCapacity(bbls, s.econ)) return;
   let worst: { bbl: string; rec: ReturnType<typeof resolveRec>; ratio: number } | null = null;
   for (let i = 0; i < 26; i++) {
     const bbl = bbls[Math.floor(rng(s) * bbls.length)];
@@ -2401,7 +2433,7 @@ export function tickCityGrowth(
   // than as unlimited simultaneous starts.
   //
   // Scaled to the size of the place, so a bigger city carries more of them.
-  const capacity = crewCapacity(bbls);
+  const capacity = crewCapacity(bbls, s.econ);
   const live = (s.cityJobs ?? []).filter((j) => !j.orphaned).length;
   let n = Math.min(wanted, ceiling, Math.max(0, capacity - live));
   n = Math.floor(n) + (rng(s) < n % 1 ? 1 : 0);

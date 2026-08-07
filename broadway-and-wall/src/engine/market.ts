@@ -1280,7 +1280,42 @@ export function tickEcon(s: GameState) {
     // a labour market anchored, and it is now in the model.
     const pull = jobGrowth > 0 ? 0.35 : 0.09;
     const uGapPop = e.unemployment! - 0.055;
-    const migration = jobGrowth * pull - clamp(uGapPop * 0.020, -0.0010, 0.0030);
+    let migration = jobGrowth * pull - clamp(uGapPop * 0.020, -0.0010, 0.0030);
+
+    // ...AND PEOPLE CANNOT MOVE INTO HOUSING THAT DOES NOT EXIST.
+    //
+    // This read the labour market and nothing else, so the city admitted
+    // everyone the jobs attracted regardless of whether there was a flat for
+    // them. Measured over sixty years on the shipped island: population +86%
+    // against a housing stock of +40%, housing per head down from 106 to 73 sf,
+    // multifamily vacancy driven through its frictional floor and PINNED at
+    // 1.35% for fifty of those sixty years, and real housing rent up 3.3x. A
+    // variable resting on its rail in normal play is the rail holding up the
+    // model — and since land is the residual after construction cost, rents
+    // that compound like that are what detonate land prices. This is the third
+    // and last mechanism behind that.
+    //
+    // The constraint is real and it is one-sided. A town with no empty flats
+    // does not stop being attractive; it stops being ENTERABLE, and the people
+    // who would have come go somewhere else or double up. So in-migration is
+    // choked as vacancy approaches the frictional floor and is untouched when
+    // there is slack. Out-migration is NOT gated: nothing about a housing
+    // shortage keeps anybody from leaving.
+    //
+    // It is also the loop that closes the system. Scarce housing slows the
+    // inflow, which lets the builders catch up, which lifts vacancy off the
+    // floor, which stops rent compounding — without anybody being told to stop
+    // it. Widening crewCapacity alone did not do this: more housing simply let
+    // more people in and the vacancy stayed on the rail.
+    if (migration > 0) {
+      const floor = NATURAL_VAC.multifamily * 0.30;         // the frictional rail in tickSpace
+      const slack = clamp(((e.cityVac?.multifamily ?? NATURAL_VAC.multifamily) - floor)
+        / Math.max(1e-6, NATURAL_VAC.multifamily - floor), 0, 1);
+      // At the floor a fifth of the inflow still arrives — people do double up,
+      // convert lofts and take the spare room, and a city with no vacancy has
+      // never had literally zero net in-migration.
+      migration *= 0.20 + 0.80 * slack;
+    }
     // THE BOUNDS ARE A SHARE OF THIS TOWN, NOT A NUMBER OF PEOPLE, and that
     // distinction was load-bearing the moment the town's size stopped being a
     // constant. This read `clamp(…, 60_000, 4_000_000)`. The old hardcoded

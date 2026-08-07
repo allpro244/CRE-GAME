@@ -556,7 +556,14 @@ const KNOBS = [
   ["econ.slackEma (derived)", (g) => { g.econ.slackEma = 0.08; }, true],
   ["econ.inflExp", (g) => { g.econ.inflExp = 0.09; }],
   ["econ.rateEma", (g) => { g.econ.rateEma = (g.econ.rateEma ?? 5) * 2; }],
-  ["econ.buildEma", (g) => { g.econ.buildEma = 0.05; }],
+  // WAS `econ.buildEma`, WHICH IS NO LONGER THE WIRE. The cost of building
+  // used to price off the share of stock under construction; that quantity was
+  // rationed by a hard crew ceiling before it reached the price, so it could
+  // not tell a boom from an ordinary year. The trades now price off how booked
+  // they are, and these are the two knobs that carry it: how oversubscribed the
+  // order book is, and how many crews the town has attracted.
+  ["econ.crewUtil", (g) => { g.econ.crewUtil = 1.8; }],
+  ["econ.crewIdx", (g) => { g.econ.crewIdx = 2.0; }],
   ["econ.rentExp.office", (g) => { g.econ.rentExp.office *= 1.4; }],
   ["econ.sectorMom.office", (g) => { g.econ.sectorMom.office = -0.01; }],
   ["econ.concIdx.office", (g) => { g.econ.concIdx.office = 0.6; }],

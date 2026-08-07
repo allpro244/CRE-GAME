@@ -2091,10 +2091,130 @@ export function noteRecordPlan(
  * builders entirely, and it cannot conjure a boomtown's worth of them overnight.
  */
 function crewCapacity(bbls: string[], e?: Econ): number {
-  const plat = Math.max(4, Math.round(bbls.length / 165));
-  const grown = e?.pop0 && e.population ? clamp(e.population / e.pop0, 0.7, 4) : 1;
-  return Math.max(4, Math.round(plat * grown));
+  // WHAT A TOWN THIS SIZE CARRIES IN AN ORDINARY YEAR, IN SIMULTANEOUS JOBS.
+  //
+  // This was `lots / 165` scaled by population growth: a proxy for the size of
+  // the place, with no units and nothing real behind the divisor. The quantity
+  // it is trying to name has a definition. A city has some floor area standing
+  // and some share of it under construction at any moment, and that share is
+  // just how fast the stock turns over multiplied by how long a building takes:
+  // a growing US metro delivers on the order of 1.8% of its stock a year, and
+  // the stock-weighted build here runs about two and a half years (BUILD_MONTHS
+  // — office 30-44, retail 18-28, multifamily 22-34, industrial 12-20). So
+  // roughly four and a half per cent of a real city's floor area is in the air,
+  // and divided by what a building here weighs, that is the crew count.
+  //
+  // Measured, the difference is the whole of the fault: the lot-count base gave
+  // this town 8-10 crews and it wanted 26. `crewIdx` then ran to its ceiling
+  // and STAYED there in 26-57% of months — the same load-bearing rail one level
+  // up, which is what a base number that is wrong by a factor of three looks
+  // like from the inside.
+  let stock = 0;
+  for (const k of BUILT_CLASSES) stock += e?.stock?.[k] ?? 0;
+  // The lot count is the fallback before the first tick has set a stock, and
+  // the floor of 4 is a guard for the smallest island.
+  const base = stock > 0 ? (stock * NORMAL_PIPE_SHARE) / TYPICAL_SF : bbls.length / 165;
+  // ...AND THE TRADES FOLLOW THE WORK — see `tickCrews`. `crewIdx` is how far
+  // the town's construction workforce sits above or below ordinary because of
+  // how busy it has been.
+  return Math.max(4, Math.round(base * clamp(e?.crewIdx ?? 1, CREW_MIN, CREW_MAX)));
 }
+
+/**
+ * Share of a city's floor area under construction in an ordinary year — the
+ * delivery rate times the build duration, both measured above.
+ *
+ * NOT the same quantity as `REF_PIPE_SHARE` in market.ts, which is what THIS
+ * town's pipeline ran at under the old crew wall and is still the neutral point
+ * for the construction-employment term. One is an observation of the model, the
+ * other is an anchor from the world; they differed by about the factor the wall
+ * was suppressing, which is the reason this constant exists separately.
+ */
+const NORMAL_PIPE_SHARE = 0.045;
+
+/**
+ * Repair, renovation and fit-out as a share of all construction work — the part
+ * of the trades' order book that is not speculative new build and does not stop
+ * when the cranes do. Roughly 45% of US construction spend.
+ */
+const MAINTENANCE_SHARE = 0.45;
+
+// A town cannot lose its builders entirely and cannot conjure a boomtown's
+// worth of them overnight. These are guards on the workforce index, not
+// policy — `tickCrews` reports how often they bind and they are not meant to.
+const CREW_MIN = 0.5;
+const CREW_MAX = 3.0;
+
+/**
+ * THE BUILDING TRADES ARE A STOCK, AND IT ANSWERS THE ORDER BOOK.
+ *
+ * The crew count used to be a fixed function of lots and population, which
+ * made it a hard quantity ceiling on everything the city could build. That is
+ * a real constraint modelled as the wrong KIND of thing. There genuinely are
+ * only so many general contractors in a harbour town — but when they are all
+ * booked and there is a queue out the door, two things happen and this engine
+ * modelled neither: their price goes up, and more of them show up.
+ *
+ * What it cost, measured before this existed:
+ *
+ *   - the town wanted 1.5-2.8x the cranes it could run, in 69-97% of months,
+ *     with an order book of ~0.7M sf standing permanently unbuilt;
+ *   - stock grew 0.4-0.65%/yr for fifty years against a population growing
+ *     24-96%, so square feet per resident fell from 261 to as low as 170;
+ *   - and REAL construction cost FELL 0.3-2.2%/yr across half a century in a
+ *     town that was desperate to build, because the cost index reads how much
+ *     IS being built and the wall made that number nearly constant. Excess
+ *     demand accumulated in `startOwed`, sat at its 18-month cap, and was
+ *     thrown away without ever touching a price.
+ *
+ * A market that cannot clear on quantity clears on price, and the price it
+ * reached for was rent: real office rent ran a ~30-year cycle with a 40-70%
+ * drawdown, against a real office cycle of ~10-12 years. The rent oscillation
+ * was the symptom; this was the cause.
+ *
+ * So the trades migrate. The workforce grows toward the size that would clear
+ * the book and shrinks when there is nothing to do, at about a per cent a
+ * month per unit of excess utilisation — a workforce that doubles in six years
+ * under a sustained doubling of the order book, and sheds 6%/yr when half its
+ * men are idle. US construction employment rose 45% over 2011-2019 and fell
+ * 30% over 2006-2011, which is that order of speed.
+ */
+function tickCrews(s: GameState, bbls: string[]) {
+  const e = s.econ;
+  const owed = e.startOwed ? Object.values(e.startOwed).reduce((a, v) => a + Math.max(0, v), 0) : 0;
+  const live = (s.cityJobs ?? []).filter((j) => !j.orphaned).length;
+  const capacity = crewCapacity(bbls, e);
+  // Everything the town is trying to have built — the jobs running plus the
+  // floor area ordered and not yet broken ground on — against what it can
+  // carry at once. One means the trades are exactly fully employed.
+  //
+  // ...OVER A FLOOR OF WORK THAT IS NOT SPECULATIVE NEW BUILD. Measured
+  // against new construction alone this ran to 0.05 at the p05, which says a
+  // town's entire building industry stands idle in a downturn, and no town's
+  // does: repair, renovation and fit-out are about 45% of all construction
+  // work and they do not stop when the cranes do. Carrying that load means the
+  // trades bottom out around 45% employed rather than at nothing, which is
+  // both the real number and the reason construction costs do not swing as
+  // violently as new-build volume does.
+  const steady = capacity * (MAINTENANCE_SHARE / (1 - MAINTENANCE_SHARE));
+  const util = (live + owed / TYPICAL_SF + steady) / Math.max(1, capacity + steady);
+  // A year's memory: a contractor hires on a book, not on a month.
+  e.crewUtil = (e.crewUtil ?? util) + 0.08 * (util - (e.crewUtil ?? util));
+  // The workforce that WOULD clear the book is the current one times how
+  // oversubscribed it is; the industry walks toward it rather than jumping.
+  const idx = clamp(e.crewIdx ?? 1, CREW_MIN, CREW_MAX);
+  e.crewIdx = clamp(idx * (1 + 0.010 * ((e.crewUtil ?? 1) - 1)), CREW_MIN, CREW_MAX);
+}
+
+/**
+ * Floor area of a typical building here, so the order book converts to a crane
+ * count. 42,000 sf was right when infill was sized off the zoning envelope;
+ * under the cornice-datum cap the measured median city building is ~26,000 sf,
+ * and leaving the old figure in place silently halved the square footage the
+ * space market ordered. The market's demand arrives as more, smaller buildings
+ * now — which is what a low town growing visibly looks like.
+ */
+const TYPICAL_SF = 26_000;
 
 function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // A slow clock. Roughly one candidate examined a month, and only the worst
@@ -2290,6 +2410,9 @@ export function tickCityGrowth(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null,
 ) {
   if (!s.cityJobs) s.cityJobs = [];
+  // The trades read their own order book before the month's work is placed, so
+  // the crew count this month reflects the queue they have been staring at.
+  tickCrews(s, bbls);
   tickTeardowns(s, parcels, bbls);
 
   // ---- deliveries first: today's opening was somebody's decision years ago --
@@ -2406,13 +2529,7 @@ export function tickCityGrowth(
   // cranes appear, then a quiet stretch while it is absorbed.
   const owed = s.econ.startOwed
     ? Object.values(s.econ.startOwed).reduce((a, v) => a + Math.max(0, v), 0) : 0;
-  // a typical city building here, so the budget converts to a crane count.
-  // 42,000 sf was right when infill was sized off the zoning envelope; under
-  // the cornice-datum cap the measured median city building is ~26,000 sf, and
-  // leaving the old figure in place silently halved the square footage the
-  // space market ordered. The market's demand arrives as more, smaller
-  // buildings now — which is what a low town growing visibly looks like.
-  const TYPICAL_SF = 26_000;
+  // ...converted to a crane count at the size of a typical building here.
   const wanted = owed / TYPICAL_SF;
   // The phase rate now only shapes URGENCY — capacity and the replacement-cost
   // brake are the real constraints, because in reality the space market's

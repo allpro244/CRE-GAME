@@ -1139,11 +1139,27 @@ export interface Econ {
   /** When slack last forced a turn, so one glut cannot rattle the cycle. */
   forcedTurnM?: number;
   /**
-   * Share of citywide stock under construction, smoothed — how busy the
-   * trades are. Construction costs read it, which is what finally gives a
-   * building boom a brake that is not the calendar.
+   * Share of citywide stock under construction, smoothed. An observable, and
+   * no longer the input to anything: it is what the town MANAGED to build,
+   * which is the demand for construction after a hard crew ceiling has already
+   * rationed it. `crewUtil` is what the trades actually price off.
    */
   buildEma?: number;
+  /**
+   * HOW BOOKED THE BUILDING TRADES ARE — jobs running plus orders not yet
+   * started, over the crews available to take them, smoothed on about a year.
+   * One means exactly fully employed, which is why it is the pivot the cost
+   * of construction is priced around: unlike an observed equilibrium share it
+   * cannot go stale.
+   */
+  crewUtil?: number;
+  /**
+   * The size of the town's construction workforce against what a place this
+   * size carries in an ordinary year. Trades migrate to work: this grows while
+   * the order book is oversubscribed and shrinks while it is not. It is the
+   * reason the crew count is a market rather than a wall.
+   */
+  crewIdx?: number;
   /**
    * How chronically short of space this city has been, over about a
    * twenty-year memory. A city that has been tight for a generation earns a

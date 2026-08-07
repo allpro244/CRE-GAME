@@ -182,7 +182,7 @@ for (let i = 0; i < SEEDS; i++) {
     `delivered:  ${runs.map((r) => r.delivered).join("  ")}   (ALL city groundbreaks, greenfield included — see the note in this file)`,
     `delivered / demolished: ${ratio.map((x) => x.toFixed(2)).join("  ")}   median ${m.toFixed(2)}   (need >= 0.60)`,
     `demolition rate: ${rate.map((x) => (x * 100).toFixed(3) + "%").join("  ")}/yr   median ${(med(rate) * 100).toFixed(3)}%/yr   (need 0.100-1.500%)`,
-    `   the comment's own real-world anchor is ~0.5%/yr; this city runs a fifth of that and ${rate.filter((x) => x <= 0.001).length} of ${runs.length} seeds are under the floor`,
+    `   the real-world anchor is ~0.5%/yr; ${rate.filter((x) => x <= 0.001).length} of ${runs.length} seeds are under the floor`,
   ]);
 }
 

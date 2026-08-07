@@ -574,6 +574,10 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   econ.slackEma = 0;
   econ.tightEma = 0;
   econ.buildEma = 0.02;
+  // The trades open exactly fully employed and at their ordinary strength, so
+  // the cost of building starts neutral and the town discovers the rest.
+  econ.crewUtil = 1;
+  econ.crewIdx = 1;
   econ.rentExp = { ...econ.rentIdx };
   // THE CITY HAS PEOPLE IN IT ON DAY ONE. These were seeded lazily inside the
   // monthly tick, so between newGame and the first advanceQuarter the economy
@@ -2332,8 +2336,61 @@ export function tickEcon(s: GameState) {
     // broken: reaching it needs the pipeline at a dead stop, and the quietest
     // 5% of months now run 0.0106 where they used to run 0.0002, because the
     // teardown pipeline can no longer swing between everything and nothing.
-    const HEAT_PIVOT = REF_PIPE_SHARE;
-    const heat = clamp(((e.buildEma ?? HEAT_PIVOT) - HEAT_PIVOT) * 110, -1.9, 1.6);
+    // AND THE QUANTITY IT READ WAS RATIONED BEFORE IT GOT HERE.
+    //
+    // Every word of the paragraphs above is about what the trades CHARGE when
+    // they are busy, and the number it read — the share of stock under
+    // construction — is what the town MANAGED TO BUILD. Those are the same
+    // quantity only in a market that clears. This one did not: `crewCapacity`
+    // in dev.ts was a hard ceiling on simultaneous jobs, and measured over 6
+    // seeds x 50 years the town wanted a median 2.7 cranes for every one it
+    // could run, with headroom fully exhausted in 64-88% of months. So the
+    // pipeline was pinned near the wall whatever the market wanted, and the
+    // cost index could not tell a boom from an ordinary year:
+    //
+    //   corr(supplied quantity, next 12m real cost growth)   0.50 .. 0.83
+    //   corr(DEMANDED quantity, next 12m real cost growth)  -0.10 .. 0.59, median 0.13
+    //
+    // A price that tracks the rationed quantity and not the demand for it is
+    // not a price. The consequence was measurable and it ran the wrong way:
+    // real construction cost FELL 0.3-2.2%/yr across fifty years in a town
+    // with a permanent unbuilt order book, while real rent ROSE — so the
+    // pro forma got easier the more desperate the shortage, and the only thing
+    // left to ration space was rent. That is where the ~30-year rent cycle
+    // with its 40-70% real drawdown came from.
+    //
+    // So the trades price off HOW BOOKED THEY ARE: the jobs running plus the
+    // orders not yet started, against the crews available to take them. Both
+    // ends of the existing calibration are kept and both now sit at a
+    // utilisation that means something physically — the floor at about a third
+    // employed, which is the 2009-10 anchor of real costs falling ~6%/yr. The
+    // gain follows from that anchor rather than being chosen. `crewUtil` carries
+    // the trades' non-speculative load — repair and fit-out, about 45% of all
+    // construction work — so it bottoms out at 0.45 when there is no new build
+    // to be had rather than at nothing, and 1.9 / 0.55 ~= 3.5.
+    //
+    // AND THE PIVOT IS NOW DEFINITIONAL. It was `REF_PIPE_SHARE`, an observed
+    // equilibrium share that had to be re-measured twice and went stale twice —
+    // once at 0.014 against a true 0.018, which put a permanent downward drift
+    // on real costs. Full employment is 1.0 by construction. It cannot go
+    // stale, and it is what the header of this block always said it wanted:
+    // "THE PIVOT IS WHERE THE TRADES ARE FULLY EMPLOYED."
+    //
+    // BOTH ENDS OF THE CLAMP ARE THE REAL EXTREMES OF COST ESCALATION, and the
+    // ceiling was not. Each bound is an annual real cost move divided by the
+    // slope on that side, so the two are the same kind of statement:
+    //
+    //   floor    -6%/yr real / (0.0026 x 12) = -1.9     ENR/Turner, 2009-10
+    //   ceiling  +6%/yr real / (0.0016 x 12) = +3.1     ENR/Turner, 2005-07 and 2021-22
+    //
+    // At +1.6 the ceiling asserted that the hottest construction market this
+    // model can produce escalates at 3.1%/yr real — half of what a real boom
+    // does — and it BOUND in 9-25% of months once the crew wall stopped
+    // truncating utilisation upstream of it. That truncation was also a
+    // permanent downward drift on real cost, because it cut the top off every
+    // boom while leaving the busts intact, which is the same fault the stale
+    // pivot had and arriving through a different door.
+    const heat = clamp(((e.crewUtil ?? 1) - 1) * 3.5, -1.9, 3.1);
     const slope = heat < 0 ? 0.0026 : 0.0016;
     const costDrift = (e.inflExp ?? 0.02) / 12 + heat * slope + (e.phase === "recession" ? -0.0004 : 0);
     e.costIdx = clamp(e.costIdx * (1 + costDrift + rrange(s, -0.0012, 0.0012)), 0.6, 400);

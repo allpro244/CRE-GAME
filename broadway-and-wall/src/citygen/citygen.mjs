@@ -974,9 +974,61 @@ export function generateCity(cfg) {
   // commercial, with the number carrying the bulk allowance. Emitting the
   // letter the district actually is costs nothing and turns two dead branches
   // of the engine back on.
+  // ---------------------------------------------------------------------
+  // THE BULK ALLOWANCE, AND WHY IT IS NOW DERIVED FROM THE FABRIC.
+  //
+  // This was `flavor.far + heat² · 22`, set independently of everything that
+  // decides what actually gets built. The two numbers had no relationship and
+  // drifted a very long way apart. Measured on the shipped island: the MEDIAN
+  // parcel was built to FAR 1.86 and zoned for FAR 16.5 — nine times what
+  // stands on it — and 99% of built parcels were zoned above three times their
+  // built form. For scale, New York's densest Midtown commercial districts run
+  // FAR 15-21; this island was handing that allowance to its median lot.
+  //
+  // That is not a cosmetic mismatch, because the LAND PRICE IS A RESIDUAL and
+  // the residual prices the envelope you are allowed to build, not the one that
+  // is there. So the model correctly concluded that essentially every parcel in
+  // the city was a teardown. Measured before this change: by year 10, 69% of
+  // built parcels were worth more as bare dirt than as standing buildings, the
+  // median parcel's land was 109% of its improved value, and real land went
+  // from $98/sf to $1,918/sf in a decade — reaching $4,000/sf, about $175M an
+  // acre, by year 20. Prime Manhattan is $1,000-2,000/sf. The residual was
+  // doing correct arithmetic on a fictional envelope.
+  //
+  // It also could not see the build-out preset at all, so a Landing town of
+  // one-storey sheds was zoned exactly like a Metropolis.
+  //
+  // So the allowance is anchored to the fabric the generator actually produces
+  // — the same expression that sets a block's typical height, read at this
+  // district's flavour and this heat — times a HEADROOM that widens toward the
+  // middle of town. That headroom is the real quantity: a city zones its centre
+  // for what it hopes to become and its edges for roughly what is there, and
+  // the gap between the two is where redevelopment lives. Making it a gradient
+  // rather than a constant is what turns "every lot is a teardown" into "some
+  // lots are, and finding them is the game".
+  const zoneFar = (name, heat) => {
+    const fl = flavorOf(name);
+    // The typical building this district puts up at this heat. Mirrors the
+    // block datum below: a base storey count the preset scales, plus what dear
+    // ground adds, at the mean of the `ambition` draw.
+    const typFloors = ((fl.maxFloors <= 5 ? 2.0 : 3.3) * (DZ.base ?? 1)
+      + heat * heat * 7.5 * (fl.matGain ?? 1) * DZ.mat) * 1.1;
+    // Coverage of an ordinary building; towers cover less and are the reason
+    // the core needs headroom rather than a bigger typical.
+    const typFar = Math.max(0.7, typFloors * 0.68);
+    // 1.5x at the fringe — a shop can add a floor — rising to ~4.7x downtown,
+    // which is what lets a tower be legal on a corner currently holding a
+    // four-storey walk-up. This is the whole redevelopment gradient.
+    const headroom = 1.5 + 3.2 * heat * heat;
+    // A civic ceiling, not a preset one: `peakCap` describes the town you are
+    // handed, and using it here would mean a Landing city could never grow a
+    // skyline, which is the opposite of the point.
+    return Math.round(Math.max(1.5, Math.min(34, typFar * headroom)) * 10) / 10;
+  };
+
   function zoningFor(name, heat) {
     const flavor = cfg.districts[name]?.flavor ?? "core";
-    const far = Math.round((flavorOf(name).far + heat * heat * 22) * 10) / 10;
+    const far = zoneFar(name, heat);
     let z;
     if (flavor === "industrial") {
       // M1 light manufacturing, M2 general, M3 heavy — bulk rises with the FAR

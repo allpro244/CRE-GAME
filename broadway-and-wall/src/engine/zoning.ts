@@ -36,6 +36,14 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 // planning, it is demolition by paperwork.
 const FAR_FLOOR = 0.72;
 const FAR_CEIL = 2.6;
+/**
+ * The probability at which the rezoning walk neither grows nor shrinks the
+ * city's envelope, derived from the two step sizes rather than chosen:
+ * an up step averages x1.285, a down step x0.91, and
+ *     p·ln(1.285) + (1 - p)·ln(0.91) = 0  =>  p = 0.273.
+ * Change either step range and this number changes with it.
+ */
+const NEUTRAL_P = 0.273;
 
 // ------------------------------------------------------------------ rezoning
 
@@ -81,8 +89,17 @@ export function tickZoning(s: GameState, parcels: ParcelTable, bbls: string[]) {
     if (!live) continue;
     const d = rec.district || "—";
     const e = byDist.get(d) ?? { built: 0, envelope: 0, demand: 0, n: 0 };
-    e.built += live.bldgArea;
-    e.envelope += live.lotArea * Math.max(live.farMaxComm, live.farMaxRes, 2);
+    // COUNTED ON THE PARCELS THAT HAVE BUILDINGS, which is the question a
+    // planning board is actually asking: has this neighbourhood used the
+    // allowance it already has. The old ratio divided by the whole district
+    // INCLUDING its vacant lots — the comment below even said so, "a third of
+    // every district is vacant lots and the ratio is structurally low" — and
+    // the base probability was then raised to compensate for a denominator
+    // that was wrong. Fixing the ratio is what lets the base be honest.
+    if (live.bldgArea > 0) {
+      e.built += live.bldgArea;
+      e.envelope += live.lotArea * Math.max(live.farMaxComm, live.farMaxRes, 2);
+    }
     e.demand += live.demandScore;
     e.n++;
     byDist.set(d, e);
@@ -105,7 +122,34 @@ export function tickZoning(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // read `usedUp` straight and biased hard the other way, because a third of
   // every district is vacant lots and the ratio is structurally low: nine
   // districts were downzoned for every three upzoned across three centuries.
-  const up = clamp(0.42 + usedUp * 0.7 + (demand - 50) / 120 + scarcity, 0.12, 0.97);
+  // WHERE THIS PROCESS IS NEUTRAL, which nothing here had worked out.
+  //
+  // The walk is multiplicative: an up step averages x1.285 and a down step
+  // x0.91. So it is flat only where
+  //     p·ln(1.285) + (1-p)·ln(0.91) = 0   =>   p = 0.273
+  // and ANY base above that compounds without limit. The base was 0.42 before
+  // the other three terms were even added, so every district in every town
+  // drifted upward for ever, and the only thing stopping it was FAR_CEIL.
+  //
+  // Measured on the shipped island: 58.7% of the city was upzoned within TEN
+  // YEARS and 99.8% by year 50, with the median parcel's envelope pinned at
+  // exactly 2.6x its generated value — the ceiling, to the digit. A variable
+  // resting on its rail in normal play is the rail holding up the model.
+  //
+  // That mattered far beyond zoning, because LAND IS PRICED OFF THE ENVELOPE
+  // YOU ARE ALLOWED TO BUILD. With the whole city permanently upzoned 2.6x,
+  // the residual concluded that essentially every parcel was a teardown: by
+  // year 10, 69% of built parcels were worth more as bare dirt than as
+  // standing buildings, and real land ran from $98/sf to $1,918/sf in a decade.
+  // This is the mechanism behind the owner's report that land prices become
+  // "too inflated and deflated", and the compounding is the whole of it.
+  //
+  // So the probability is CENTRED on neutral and moves with the one thing a
+  // planning board actually responds to: whether the neighbourhood has used
+  // the allowance it already has. A district that has built out asks for more
+  // and gets it; a district sitting on unused envelope does not, which is what
+  // makes the process self-limiting instead of a ratchet.
+  const up = clamp(NEUTRAL_P + (usedUp - 0.45) * 1.1 + (demand - 50) / 150 + scarcity, 0.05, 0.95);
   const isUp = rng(s) < up;
   const step = isUp ? rrange(s, 1.12, 1.45) : rrange(s, 0.86, 0.96);
   const next = clamp(cur * step, FAR_FLOOR, FAR_CEIL);

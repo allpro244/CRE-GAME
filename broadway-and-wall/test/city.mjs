@@ -31,9 +31,17 @@ export function seedFor(runIndex = 0) {
 /** Build (or reuse) a city. Returns the substrate every harness needs. */
 export function loadCity(runIndex = 0, normalizeParcels) {
   const seed = seedFor(runIndex);
-  const key = DEFAULT_CITY + ":" + seed;
+  const key = [DEFAULT_CITY, seed, process.env.BW_SIZE ?? "", process.env.BW_DENSITY ?? ""].join(":");
   if (!cache.has(key)) {
-    const built = makeCity(DEFAULT_CITY, seed);
+    // BW_SIZE / BW_DENSITY so a harness can ask about a town other than the
+    // default one. Without them every test in this repo only ever saw one
+    // island at one size at one stage of its life, which is a narrow question
+    // to be asking of a generator with three islands, five sizes and nine
+    // build-out settings.
+    const built = makeCity(DEFAULT_CITY, seed, {
+      size: process.env.BW_SIZE || undefined,
+      density: process.env.BW_DENSITY || undefined,
+    });
     if (normalizeParcels) normalizeParcels(built.parcels);
     cache.set(key, {
       seed,

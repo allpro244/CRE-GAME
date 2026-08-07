@@ -358,6 +358,55 @@ const BASE_YOC = 0.073, DEV_SPREAD = 0.022;
  *
  * Points of cap rate added per 100bp of vacancy above natural.
  */
+/**
+ * A MARKET REPRICES ONCE PER GLUT, AND THEN IT IS DONE.
+ *
+ * `vacOverM` counts the months a class has been over natural. It used to enter
+ * the glut term as `min(1, over / 6)` — ramp the capitulation in over half a
+ * year and then hold it at FULL STRENGTH for as long as the glut lasts. So rent
+ * fell for the entire duration of the oversupply, and the duration of an
+ * oversupply is a decade.
+ *
+ * Measured, 12 seeds x 50 years, office:
+ *
+ *   glut episodes                     median 6.1 years, longest 17.5
+ *   longest unbroken real-rent fall   median 8.4 years, longest 18.5
+ *   vacOverM at its peak              median 116 months
+ *
+ * The first of those is RIGHT — US office vacancy took seven to ten years to
+ * clear after 1990, after 2001 and after 2008. The second is not. Rents fell
+ * 1990-92, 2001-03, 2008-10 and 2020-23: two to three years each time, and then
+ * they sat at the bottom for years while the vacancy ground down. Nothing
+ * repriced twice.
+ *
+ * The reason is not a mystery and it is not a coefficient. Rent stops falling
+ * when it reaches the number deals sign at. Below that a landlord would rather
+ * hold the floor empty than lock a fifteen-year lease at the bottom of a cycle
+ * — which is why shadow space exists — and space starts leaving the market
+ * altogether through conversion and mothballing. Meanwhile the tenants who were
+ * going to trade down have already trade down. The price adjustment is a
+ * FIXED TOTAL that a glut extracts, not a rate it applies forever; how long the
+ * glut then lasts decides how long the vacancy takes to clear, not how much
+ * further the rent falls.
+ *
+ * So the clock is a hump. It ramps in over the same six months, holds through
+ * the repricing, and then fades. The two numbers are the empirical shape of a
+ * capitulation rather than a fit: markets reprice over about two years, and the
+ * tail is worth about another fifteen months at full strength. Together that is
+ * 39 months of the calibrated rate — at nine points over natural, -40% real,
+ * which is Manhattan 1990-92 (-35 to -40%) as closely as this can be stated.
+ *
+ * And it RESETS when the market comes back inside 1.5 points, because a second
+ * glut is a second repricing. That is the mechanism, not an exception to it.
+ */
+const REPRICE_M = 24;    // how long a capitulation runs at full strength
+const REPRICE_TAU = 15;  // and the exponential tail after it
+function capitulation(over: number): number {
+  const rampIn = Math.min(1, over / 6);
+  const past = Math.max(0, over - REPRICE_M);
+  return rampIn * Math.exp(-past / REPRICE_TAU);
+}
+
 export const CAP_VAC_BETA: Record<BuiltClass, number> = {
   office: 0.12, retail: 0.09, multifamily: 0.06, industrial: 0.08,
 };
@@ -2219,7 +2268,7 @@ export function tickEcon(s: GameState) {
         ? glut(gap)
         // C1-continuous at FIT_MAX: same value, same slope, asymptote DEEP_RATE.
         : atFit + span * (1 - Math.exp(-SLOPE_AT_FIT * (gap - FIT_MAX) / span)))
-        * Math.min(1, (e.vacOverM[k] ?? 0) / 6);
+        * capitulation(e.vacOverM[k] ?? 0);
     const scarcity = clamp((unmet[k] ?? 0) * 0.10, 0, 0.016);
 
     // THE INCOME ANCHOR — the line that makes rent a by-product of the economy.

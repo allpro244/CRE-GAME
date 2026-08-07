@@ -480,11 +480,59 @@ export function negotiate(
     return { s: next, msg: "They ended it. That was an insult, not an offer." };
   }
 
+  // --- A BUYER WHO DOES NOT MOVE IS NOT NEGOTIATING -------------------------
+  //
+  // The concession machinery below converges on `max(px, reservation)` and
+  // gives up MORE of the remaining gap every round — `round * 0.06` — so
+  // resending the same number was strictly better than improving it: the
+  // seller walked down to you and paid you for the privilege of your patience.
+  // That is the one thing no seller does. Sitting on a number is a legitimate
+  // tactic and it has a cost, which is that the other side eventually decides
+  // you are not a buyer and goes back to the tape.
+  //
+  // So an unchanged offer is counted, and each repeat carries a rising chance
+  // the conversation ends. Patience is the whole of the modifier because it is
+  // already the seller's model of how long they will be strung along: an
+  // estate winding up an entailed building waits, a fund with a quarter to
+  // close does not. It is a RISK and not a rule — the last clause of the
+  // owner's own request — so a stubborn buyer facing a patient seller can
+  // still win by attrition, just not for free and not reliably.
+  //
+  // Half a per cent is the threshold for "the same number": below that you have
+  // moved by less than the rounding on the offer slider, which is not a
+  // concession, it is a gesture.
+  const stalled = !!existing && Math.abs(px - existing.yourPrice) < Math.max(1, existing.yourPrice * 0.005);
+  const stalls = stalled ? (existing?.stalls ?? 0) + 1 : 0;
+  if (stalls > 0) {
+    // 18% on the first repeat against a median seller, rising with each one and
+    // roughly halved for the most patient. A distressed seller has the least
+    // patience for it and the most reason to take the money anyway, which is
+    // why patience and not desperation is the axis.
+    const stallRisk = Math.min(0.72, 0.18 * stalls * (1.35 - prof.patience * 0.7));
+    if (rrange(next, 0, 1) < stallRisk) {
+      delete next.talks[bbl];
+      const prior = next.approaches[bbl];
+      next.approaches[bbl] = {
+        ...(prior ?? {}), q: next.month, refused: true,
+        // Not an insult — no shut-out, no reputation hit. They just stopped
+        // taking this particular conversation seriously.
+        soured: Math.min(0.10, (prior?.soured ?? 0) + 0.02),
+      };
+      next.news.unshift({
+        q: next.month, kind: "warn",
+        text: `${rec.address}: you came back at ${fmtM(px)} for the ${stalls === 1 ? "second" : "third"} time. `
+          + `${Cap(seller.name)} has stopped waiting for you to move — the conversation is over and the building `
+          + `is still on the tape.`,
+      });
+      return { s: next, msg: "They walked. You never moved off your number." };
+    }
+  }
+
   if (gap < 0.80 || round > maxRounds) {
     const theirs = Math.round(round > maxRounds ? reservation * 1.005 : ask * 0.985);
     next.talks[bbl] = {
       bbl, sellerKind: seller.kind, sellerName: seller.name,
-      yourPrice: px, theirPrice: theirs, round, maxRounds,
+      yourPrice: px, theirPrice: theirs, round, maxRounds, stalls,
       openedM: existing?.openedM ?? next.month, final: true,
       note: round > maxRounds
         ? `${Cap(seller.name)} is done moving. ${fmtM(theirs)} is the number; take it or leave it.`
@@ -496,13 +544,18 @@ export function negotiate(
   // --- they counter ---------------------------------------------------------
   // Converging: each round the seller gives up a share of the remaining gap,
   // and the impatient ones give up more to be finished.
+  //
+  // ...AND A REPEATED OFFER BUYS LESS OF IT. `round * 0.06` says a seller
+  // concedes faster the longer this goes on, which is true of a conversation
+  // that is actually moving and false of one that is not. A buyer who has said
+  // the same number twice gets the acceleration taken back off them.
   const prev = existing?.theirPrice ?? ask;
-  const give = 0.28 + prof.patience * 0.22 + round * 0.06;
+  const give = 0.28 + prof.patience * 0.22 + Math.max(0, round - stalls * 1.5) * 0.06;
   const theirs = Math.max(reservation, Math.round(prev - (prev - Math.max(px, reservation)) * Math.min(0.85, give)));
   const roundsLeft = maxRounds - round;
   next.talks[bbl] = {
     bbl, sellerKind: seller.kind, sellerName: seller.name,
-    yourPrice: px, theirPrice: theirs, round, maxRounds,
+    yourPrice: px, theirPrice: theirs, round, maxRounds, stalls,
     openedM: existing?.openedM ?? next.month,
     final: roundsLeft <= 0,
     note: roundsLeft <= 0

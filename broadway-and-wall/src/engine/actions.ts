@@ -7,7 +7,7 @@ import { logBooks, monthLabel, SVC_START } from "./types";
 import { recentLowballs } from "./acquire";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange } from "./market";
-import { assetValue, condGrade, initialCondition, initialCondIdx, holdingValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow } from "./value";
+import { assetValue, condGrade, initialCondition, initialCondIdx, holdingValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall } from "./value";
 import { locAvailable } from "./credit";
 import { marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
@@ -1771,7 +1771,26 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
   // A broker with a file has the file. tickBrokerCalls runs AFTER tickLeasing,
   // so the sweep there would not catch this record until next month — and the
   // player can read it tonight. Stamped where it is written. See stampApproach.
+  //
+  // ...AND THE STAMP HAS TO COME FIRST, which is the whole reason this is
+  // written in this order. The yield gate below underwrites the building, and
+  // `inPlace` reads the DISCLOSED rent roll when there is one and falls back to
+  // the class model when there is not. Testing before stamping meant the gate
+  // underwrote the class model — measured across 3,195 listings elsewhere in
+  // this file, the model reads ~89% occupancy where real rolls run ~69% — and
+  // then handed the player a file with the real roll on it. Same building, two
+  // answers, and the optimistic one doing the deciding. So the roll is
+  // generated, the pitch is judged on it, and a pitch that fails is withdrawn.
+  // `genRentRoll` runs on a private stream keyed to the parcel, so writing and
+  // withdrawing costs nothing and moves no other dice.
   s.approaches[best.bbl] = stampApproach(s, best, { q: s.month, refused: false, ask, inbound: true });
+  // IF IT IS OVER APPRAISAL IT HAS TO EARN THE CALL ON YIELD. The rule and the
+  // reason are in `worthTheCall`; it is shared with the grudge payoff in
+  // rivals.ts so the two channels that ring the player cannot drift apart.
+  if (!worthTheCall(s, parcels, best, best.bbl, ask, value)) {
+    delete s.approaches[best.bbl];
+    return;
+  }
   s.news.unshift({
     q: s.month, kind: "deal",
     text: `A broker called about ${best.address} — ${best.bldgArea.toLocaleString()} sf, off market, whisper number $${(ask / 1e6).toFixed(2)}M against roughly $${(value / 1e6).toFixed(2)}M of value. ${who}`,

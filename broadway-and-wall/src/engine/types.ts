@@ -1918,6 +1918,15 @@ export interface Talks {
   maxRounds: number;       // what this seller will tolerate
   openedM: number;
   final?: boolean;         // they have said take it or leave it
+  /**
+   * HOW MANY TIMES YOU HAVE COME BACK WITH THE SAME NUMBER.
+   *
+   * `round` counts the conversation; this counts the part of it where you said
+   * nothing new. A seller reads a repeated offer as what it is — a buyer who is
+   * not negotiating but waiting to be worn down — and the concession machinery
+   * has no way to notice that without it. See `stallRisk` in acquire.ts.
+   */
+  stalls?: number;
   note: string;            // what they said, in words
   // UNDER CONTRACT. A price is agreed and nothing has moved yet: the deed is
   // reserved, the property is off everybody else's tape, and you have until

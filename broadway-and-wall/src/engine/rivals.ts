@@ -33,10 +33,11 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from "./types";
 import { CASH_APY, monthLabel } from "./types";
 import { BUILD_MONTHS, rng, rrange, devPencils } from "./market";
-import { assetValue, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec } from "./value";
+import { assetValue, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall } from "./value";
 import { cityInfillCap, devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retailWantsMixed, SOFT_COST, useForZone, noteRecordPlan, openConstructionDesks, pickConstructionDesk, capRetail, withStreetRetail } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure } from "./lenders";
 import { streetRefiProceeds, productById } from "./debt";
+import { stampApproach } from "./leasing";
 import { deskWillExtend, extensionFeePct, extensionMonths, NOTICE_M, FORECLOSE_M } from "./workout";
 import { recordComp } from "./comps";
 import { demandNow } from "./demand";
@@ -2291,7 +2292,19 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         const beat = (s.beaten ?? []).find((b) => b.bbl === bbl && b.firmId === r.id);
         if (beat && !s.approaches[bbl]) {
           const ask = Math.round(v * rrange(s, 1.02, 1.16) / 1000) * 1000;
-          s.approaches[bbl] = { q: s.month, refused: false, ask, inbound: true };
+          // THE SAME RULE THE BROKER'S PHONE OBEYS. This channel always prices
+          // over appraisal — that is what the grudge is worth to them — so it
+          // is exactly the one the owner's rule is about: never pitch a
+          // principal above appraisal on an ordinary yield. If the number does
+          // not stand up against the tape they still sell it, they just sell it
+          // the ordinary way instead of ringing you first. See `worthTheCall`.
+          //
+          // Stamped before it is judged, for the reason written out in
+          // tickBrokerCalls: the gate reads the disclosed roll, and judging
+          // before stamping would underwrite the class model and then hand the
+          // player the real one.
+          s.approaches[bbl] = stampApproach(s, rec, { q: s.month, refused: false, ask, inbound: true });
+          if (!worthTheCall(s, parcels, rec, bbl, ask, v)) { delete s.approaches[bbl]; continue; }
           s.news.unshift({
             q: s.month, kind: "deal",
             text: `${r.name} is letting go of ${rec.address} — the corner they came over the top of you for in ${monthLabel(beat.m)}. `

@@ -1236,6 +1236,51 @@ export function asIfOwned(s: GameState, bbl: string, price: number, d: Disclosur
  * the class model's estimate, which is honest as long as it is LABELLED as one.
  * You cannot buy a building in that state, so it never prices a decision.
  */
+/**
+ * IS AN UNSOLICITED PITCH WORTH THE PHONE CALL?
+ *
+ * The owner's rule, and it is a rule about respect for the player's time:
+ * never ring a principal about a building priced ABOVE its own appraisal
+ * unless the yield is in the best quarter of what is publicly for sale. Paying
+ * up is allowed — an off-market building that never comes to market is worth
+ * hearing about — but paying up for an ordinary yield is not, and somebody who
+ * takes that call twice stops taking the call.
+ *
+ * It lives here, in one function, because TWO channels ring the player and they
+ * must not drift apart: `tickBrokerCalls` in actions.ts, and the grudge payoff
+ * in rivals.ts where a firm that beat you to a corner offers it back before the
+ * tape. Two copies of one rule is the third kind of fake number by this
+ * codebase's own definition.
+ *
+ * The comparison set is the LIVE TAPE because that is the alternative the
+ * player literally has — not a constant, not a class average. A tape too thin
+ * to support a quartile cannot refuse anything, and on a tape that thin an
+ * off-market file is worth hearing anyway.
+ */
+export function worthTheCall(
+  s: GameState, parcels: Record<string, ParcelRecord>, rec: ParcelRecord, bbl: string, ask: number, value: number,
+): boolean {
+  // A discount to appraisal needs no defence — the discount is the reason.
+  if (!(ask > value)) return true;
+  const yieldOf = (r: ParcelRecord, price: number, at: string): number => {
+    if (!(price > 0) || r.class === "land" || !r.bldgArea) return -1;
+    const noi = inPlace(r, s, at, price).noi;
+    return noi > 0 ? noi / price : -1;
+  };
+  const mine = yieldOf(rec, ask, bbl);
+  if (!(mine > 0)) return false;
+  const tape: number[] = [];
+  for (const l of s.listings ?? []) {
+    const r = resolveRec(parcels, s, l.bbl);
+    if (!r) continue;
+    const y = yieldOf(r, l.ask, l.bbl);
+    if (y > 0) tape.push(y);
+  }
+  if (tape.length < 6) return true;
+  tape.sort((a, b) => a - b);
+  return mine >= tape[Math.floor(0.75 * (tape.length - 1))];
+}
+
 export function inPlace(
   rec: ParcelRecord, s: GameState, bbl: string, price: number,
 ): { noi: number; occ: number; disclosed: boolean; h: Holding | null } {

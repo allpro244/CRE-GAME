@@ -57,13 +57,15 @@ export function sizeList() {
  * The numbers in the notes are measured on the standard island, seed 20261.
  */
 export const DEVELOPMENT = [
-  { id: "frontier",   name: "Frontier",   note: "43% of the lots are still empty and nothing stands above nine floors. Almost everything here is yours to build." },
-  { id: "village",    name: "Young town", note: "The standard opening. A quarter of it unbuilt, a low skyline, and somewhere to go." },
-  { id: "provincial", name: "Provincial", note: "A working town that has filled in. A quarter vacant still, and a few thirty-floor buildings." },
-  { id: "harbour",    name: "Established", note: "A real skyline and less dirt — 23% vacant, towers to forty floors." },
-  { id: "spiky",      name: "Boomtown",   note: "Low fabric, dramatic towers. A town that boomed once and stopped — plenty of gaps beside forty-eight floors." },
-  { id: "capital",    name: "Capital",    note: "Built up and tall. Under a fifth of it vacant; you will be redeveloping more than you build." },
-  { id: "metropolis", name: "Metropolis", note: "13% vacant and sixty floors. There is very little dirt left — this is a game about buying what exists." },
+  { id: "landing",    name: "Landing",     note: "Two thirds of the plat is still grass. One-storey fabric, nothing above four floors, and a harbour. You are not buying a city here — you are watching one start." },
+  { id: "frontier",   name: "Frontier",    note: "A town that has begun. Over half the lots are empty, the ordinary building is two storeys, and the tallest thing in it is a warehouse." },
+  { id: "village",    name: "Young town",  note: "The standard opening. Two fifths of it unbuilt, three-storey fabric, and nothing over fourteen floors yet." },
+  { id: "town1900",   name: "Working town", note: "It has filled in around the harbour. A third still vacant, and the first buildings over twenty floors." },
+  { id: "provincial", name: "Provincial",  note: "A working town that has grown up. Thirty per cent vacant, and a few thirty-floor buildings downtown." },
+  { id: "harbour",    name: "Established", note: "A real skyline and less dirt — 27% vacant, four-storey fabric, towers to forty floors." },
+  { id: "spiky",      name: "Boomtown",    note: "Low fabric, dramatic towers. A town that boomed once and stopped — a third of it still gaps, beside forty-seven floors." },
+  { id: "capital",    name: "Capital",     note: "Built up and tall. A fifth vacant, five-storey fabric; you will be redeveloping more than you build." },
+  { id: "metropolis", name: "Metropolis",  note: "14% vacant and towers past sixty floors. Very little dirt left — this is a game about buying what exists." },
 ];
 export const DEFAULT_DEVELOPMENT = "village";
 

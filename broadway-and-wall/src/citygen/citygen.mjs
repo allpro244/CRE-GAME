@@ -299,27 +299,58 @@ function classFor(flavor, heat, rand) {
 //
 // The floor on this matters more than the ceiling: unbuilt land is the game's
 // entire surface, so even the most built-out preset has to leave a player
-// somewhere to go. Measured rather than assumed — see the sweep in the commit.
-// VILLAGE IS THE ANCHOR AT 1.00, not `shipped`, because `village` is the
-// preset the game actually defaults to — the `mat` column is scaled against a
-// historical baseline that nothing has used for a long time. Setting the
-// ladder against `shipped` made the standard town 41% vacant instead of the
-// 27.5% it has always been, which is a change to everybody's game smuggled in
-// under an option nobody had switched on. An option has to leave the default
-// untouched or it is not an option.
+// somewhere to go. Measured rather than assumed — `node test/buildout.mjs`
+// prints the whole ladder and is where every number in these notes comes from.
+//
+// ---------------------------------------------------- `base`, AND WHY IT EXISTS
+//
+// `mat` was supposed to be the fabric dial and it could not reach the fabric.
+// Measured across the seven presets on the standard island, the MEDIAN BUILDING
+// was 3 or 4 floors at every single one of them — frontier and metropolis alike.
+// The ladder moved the tallest building from 9 floors to 60 and left the
+// ordinary building exactly where it was.
+//
+// The reason is in `blockDatum`: an ordinary building's height is 80% the
+// block's datum, and the datum is `(rr(2, 4.6) + heat² · mat · …) · ambition`.
+// That first term is a CONSTANT FLOOR that `mat` never multiplies. Drive `mat`
+// to zero and the median block still comes out around three storeys, because
+// three storeys is what the expression says a block is before dear ground adds
+// anything to it. So "less built up" could only ever mean "same town, shorter
+// towers", which is not what a young town is.
+//
+// `base` scales that floor. It is the storey count of an ORDINARY building
+// before any land value premium — and in life that is genuinely a function of
+// how old and how rich the town is. A frontier port is one and two storeys of
+// timber and sheds. A working nineteenth-century town is three and four of
+// brick. A capital's ordinary building is six or eight before you have looked
+// at a tower. That is the gradient this column carries, and without it the
+// bottom of the ladder was a metropolis with its towers filed down.
+//
+// THE DEFAULT MOVED, DELIBERATELY, AND IT IS THE OWNER'S CALL. There used to be
+// a rule written here that an option must leave the default untouched. The
+// owner has since asked for the opposite in as many words — "even in the lowest
+// setting the game feels too built up... this should be applied to every level"
+// — with the stated goal of watching a city go from nothing to big. So every
+// rung moved, including `village`, and the economy was re-measured at every one
+// of them rather than assumed to survive it. See test/buildout.mjs, which fails
+// if any preset produces a town the engine cannot run.
 export const DENSITY = {
-  // Below the default: a town that has barely happened yet. Whole blocks
-  // nobody has got to, and nothing above eight floors anywhere.
-  frontier:   { mat: 0.16, tower: 0.30, towerP: 0.30, peakCap: 8,  vac: 1.45 },
-  village:    { mat: 0.25, tower: 0.45, towerP: 0.50, peakCap: 14, vac: 1.00 },
-  town1900:   { mat: 0.45, tower: 0.60, towerP: 0.70, peakCap: 22, vac: 0.92 },
-  provincial: { mat: 0.62, tower: 0.75, towerP: 0.85, peakCap: 30, vac: 0.84 },
-  harbour:    { mat: 0.80, tower: 0.88, towerP: 0.90, peakCap: 40, vac: 0.76 },
-  shipped:    { mat: 1.00, tower: 1.00, towerP: 1.00, peakCap: 52, vac: 0.68 },
-  capital:    { mat: 1.20, tower: 1.12, towerP: 1.10, peakCap: 62, vac: 0.60 },
-  metropolis: { mat: 1.45, tower: 1.28, towerP: 1.25, peakCap: 75, vac: 0.50 },
+  // THE BOTTOM OF THE LADDER: a survey and a harbour and not much else. Two
+  // thirds of the plat is still grass, the ordinary building is a single storey,
+  // and nothing anywhere is above four. This is the "from nothing" end.
+  landing:    { mat: 0.06, base: 0.34, tower: 0.16, towerP: 0.10, peakCap: 4,  vac: 2.55 },
+  // A town that has begun. Whole blocks nobody has got to, two-storey fabric,
+  // and the tallest thing in it is a warehouse.
+  frontier:   { mat: 0.13, base: 0.52, tower: 0.24, towerP: 0.20, peakCap: 7,  vac: 2.00 },
+  village:    { mat: 0.25, base: 0.72, tower: 0.45, towerP: 0.50, peakCap: 14, vac: 1.42 },
+  town1900:   { mat: 0.45, base: 0.84, tower: 0.60, towerP: 0.70, peakCap: 22, vac: 1.22 },
+  provincial: { mat: 0.62, base: 0.92, tower: 0.75, towerP: 0.85, peakCap: 30, vac: 1.08 },
+  harbour:    { mat: 0.80, base: 1.00, tower: 0.88, towerP: 0.90, peakCap: 40, vac: 0.92 },
+  shipped:    { mat: 1.00, base: 1.06, tower: 1.00, towerP: 1.00, peakCap: 52, vac: 0.80 },
+  capital:    { mat: 1.20, base: 1.16, tower: 1.12, towerP: 1.10, peakCap: 62, vac: 0.68 },
+  metropolis: { mat: 1.45, base: 1.30, tower: 1.28, towerP: 1.25, peakCap: 75, vac: 0.54 },
   // low fabric with dramatic towers — the skyline of a town that boomed once
-  spiky:      { mat: 0.50, tower: 1.10, towerP: 1.15, peakCap: 48, vac: 0.95 },
+  spiky:      { mat: 0.50, base: 0.78, tower: 1.10, towerP: 1.15, peakCap: 48, vac: 1.20 },
 };
 
 export function generateCity(cfg) {
@@ -1015,8 +1046,12 @@ export function generateCity(cfg) {
     // smooth function of distance from downtown.
     const blkFl = flavorOf(d);
     const ambition = rr(0.58, 1.62);
+    // `DZ.base` scales the pre-premium storey count — see the note on DENSITY.
+    // Without it this term was a constant, and it is 80% of what an ordinary
+    // building ends up being, so no preset could make a town low.
+    const bz = DZ.base ?? 1;
     const blockDatum = Math.max(1, Math.round(
-      ((blkFl.maxFloors <= 5 ? rr(1, 3) : rr(2, 4.6))
+      ((blkFl.maxFloors <= 5 ? rr(1, 3) : rr(2, 4.6)) * bz
        + heat * heat * 7.5 * (blkFl.matGain ?? 1) * DZ.mat * rr(0.45, 1.05)) * ambition,
     ));
 
@@ -1079,11 +1114,11 @@ export function generateCity(cfg) {
           floors = Math.round((rr(7, 12) + h * h * rr(10, 23)) * DZ.tower * (0.86 + 0.20 * Math.min(2.4, plate)));
           coverage = rr(0.42, 0.58);
         } else if (fl.maxFloors > 5 && rand() < 0.18 + h * 0.34) {
-          floors = Math.round(rr(3, 6) + mat * rr(0.55, 1.25));
+          floors = Math.round(rr(3, 6) * (DZ.base ?? 1) + mat * rr(0.55, 1.25));
           floors = Math.max(1, Math.round(floors * 0.22 + blockDatum * 1.20 * 0.78 + rr(-0.7, 0.7)));
           coverage = rr(0.55, 0.72);
         } else {
-          floors = Math.round((fl.maxFloors <= 5 ? rr(1, 3) : rr(2, 4)) + mat * rr(0.22, 0.78));
+          floors = Math.round((fl.maxFloors <= 5 ? rr(1, 3) : rr(2, 4)) * (DZ.base ?? 1) + mat * rr(0.22, 0.78));
           floors = Math.max(1, Math.round(floors * 0.20 + blockDatum * 0.80 + rr(-0.6, 0.6)));
           coverage = rr(0.6, 0.78);
         }
@@ -1091,6 +1126,16 @@ export function generateCity(cfg) {
         // core, the light and the setback all take plate off it as it climbs.
         if (floors > 6) coverage *= Math.max(0.72, 1.0 - (floors - 6) * 0.012);
         floors = Math.min(floors, fl.maxFloors);
+        // AND THE PRESET'S CEILING IS A CEILING. `peakCap` used to bind only on
+        // the landmark pass, so an ordinary tower roll could sail past it: the
+        // "low skyline" young town came out with an eighteen-floor building
+        // against a stated cap of fourteen, and the note describing the preset
+        // was wrong about the town it described. It is the town's tallest
+        // building now, which is what the name says and what the menu promises
+        // — and it is what makes the bottom of the ladder mean anything, since
+        // "nothing above four floors" is the whole read of a place that has
+        // barely been built.
+        if (DZ.peakCap) floors = Math.min(floors, DZ.peakCap);
         if (cls === "G1") floors = Math.min(floors, 4);
         // SHOPS DO NOT STACK. Pure retail is one or two storeys — the second
         // floor already trades at a discount to the first and there is no

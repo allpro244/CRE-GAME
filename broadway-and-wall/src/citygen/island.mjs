@@ -1750,20 +1750,85 @@ export function islandConfig(seed) {
     }
     return false;
   };
-  // THE SQUARE GOES DOWN FIRST, on the dearest ground. generateCity ranks the
-  // squares by the heat under them and puts the town hall on the top one, so
-  // this is also the decision about where the seat of government stands.
-  const commonName = `${nm.words[0]} Common`;
-  const squareName = `${nm.stem} Square`;
-  const greenName = `${nm.words[1]} Green`;
-  placePark(cores[0].xy, Dp.f(80, 95), Dp.f(80, 95), squareName, null);
-  placePark(
-    // The Common sits between downtown and the housing, which is where a city
-    // puts the one piece of ground it agrees never to build on.
-    [(cores[0].xy[0] + cores[1].xy[0]) / 2, (cores[0].xy[1] + cores[1].xy[1]) / 2],
-    Dp.f(260, 340), Dp.f(185, 240), commonName, null,
-  );
-  placePark(cores[2].xy, Dp.f(140, 168), Dp.f(84, 104), greenName, null);
+  // WHAT KIND OF PARK CITY THIS IS — and it used to be only ever one kind.
+  //
+  // This laid down exactly three: a square on the core, a common between
+  // downtown and the housing, and a green on the third core. Measured across
+  // forty generated islands, all forty had exactly three parks and the largest
+  // was 71-79% of the total green in EVERY ONE of them. That is not forty
+  // cities, it is one park programme wearing forty seeds — and it is what the
+  // owner meant by "the parks are always the same size relative to the city".
+  //
+  // Real cities differ in this more than in almost anything else you can see
+  // from the air, and they differ in a way that is not noise — it is a decision
+  // some council took once and the town has lived with ever since:
+  //
+  //   one great park   Manhattan, San Francisco: a single enormous reservation
+  //                    and a handful of little squares round the edges
+  //   a set of squares Savannah has twenty-two, Bloomsbury a dozen garden
+  //                    squares — many small greens, no large one at all
+  //   commons          Boston and the Victorian park movement: four to seven
+  //                    mid-sized parks spread across the districts
+  //   a few greens     the old shape: two or three large, no dominant one
+  //   almost none      a dense port that never set the ground aside and now
+  //                    cannot afford to
+  //
+  // So the town draws a PROGRAMME and then places to it. `share` is the
+  // fraction of the largest park's area the rest are sized against, which is
+  // what makes "one great park" read differently from "a few greens" even when
+  // the total green is similar.
+  const PARK_PROGRAMMES = [
+    { key: "great", w: 0.20, n: [3, 5], big: [420, 560], rest: [70, 105] },
+    { key: "squares", w: 0.20, n: [8, 14], big: [95, 130], rest: [60, 100] },
+    { key: "commons", w: 0.24, n: [4, 7], big: [210, 265], rest: [130, 190] },
+    { key: "greens", w: 0.24, n: [2, 3], big: [300, 360], rest: [150, 230] },
+    { key: "sparse", w: 0.12, n: [1, 2], big: [110, 170], rest: [70, 95] },
+  ];
+  const programme = (() => {
+    let r = Dp.rand() * PARK_PROGRAMMES.reduce((a, p) => a + p.w, 0);
+    for (const p of PARK_PROGRAMMES) { r -= p.w; if (r <= 0) return p; }
+    return PARK_PROGRAMMES[PARK_PROGRAMMES.length - 1];
+  })();
+  const nPark = Math.round(Dp.f(programme.n[0], programme.n[1]));
+  // THE NAMES HAVE TO STRETCH TO FOURTEEN. Three hardcoded names were enough
+  // for three parks; a city of squares needs a supply of them, so they are
+  // drawn from the island's own word list with the suffix that matches what
+  // the programme is building. A "Common" is not a "Square" is not a "Green",
+  // and calling ten small greens "Commons" would be the map lying about what
+  // it is showing.
+  const SUFFIX = programme.key === "squares" ? ["Square", "Place", "Gardens"]
+    : programme.key === "great" ? ["Park", "Common", "Green"]
+      : programme.key === "commons" ? ["Common", "Park", "Green"]
+        : ["Green", "Common", "Park"];
+  const usedNames = new Set();
+  const parkName = (i) => {
+    for (let t = 0; t < 24; t++) {
+      const stem = t === 0 && i === 0 ? nm.stem : nm.words[(i + t) % nm.words.length];
+      const n = `${stem} ${SUFFIX[(i + Math.floor(t / nm.words.length)) % SUFFIX.length]}`;
+      if (!usedNames.has(n)) { usedNames.add(n); return n; }
+    }
+    return `${nm.words[i % nm.words.length]} Green ${i}`;
+  };
+  // THE BIGGEST GOES DOWN FIRST, on the ground between downtown and the
+  // housing, which is where a city puts the one piece of ground it agrees
+  // never to build on. generateCity ranks the squares by the heat under them
+  // and puts the town hall on the top one, so the order here is also the
+  // decision about where the seat of government stands.
+  const midCore = [(cores[0].xy[0] + cores[1].xy[0]) / 2, (cores[0].xy[1] + cores[1].xy[1]) / 2];
+  const bigW = Dp.f(programme.big[0], programme.big[1]);
+  placePark(midCore, bigW, bigW * Dp.f(0.62, 0.86), parkName(0), null);
+  // ...and the rest are scattered across the cores in turn, so a city of
+  // squares gets them spread through its districts rather than piled on
+  // downtown. Each takes the next core round the ring, which is what stops
+  // the set reading as a starburst.
+  for (let i = 1; i < nPark; i++) {
+    const target = cores[i % cores.length].xy;
+    const w = Dp.f(programme.rest[0], programme.rest[1]);
+    // A jittered aim point, or every park after the first lands on the same
+    // few cells and `fits` rejects it for sitting on its predecessor.
+    const aim = [target[0] + Dp.f(-260, 260), target[1] + Dp.f(-260, 260)];
+    placePark(aim, w, w * Dp.f(0.66, 1.0), parkName(i), null);
+  }
 
   // --- 7. the streets that refuse the grid -----------------------------------
   // The seams come first: they are structural, they are where the plan
@@ -1790,6 +1855,24 @@ export function islandConfig(seed) {
   const Db = dice(stream(s, 0xb0d1e));
   const diagonals = [...seams];
   const coreBearing = districts[kCore].bearingDeg;
+  // ...AND WHAT KIND OF STREET THEY ARE, which was never a question before.
+  //
+  // The count already varied nought to three. The WIDTH did not: every one of
+  // them was declared at 22-30 m, so a town with three got three grand
+  // boulevards and there was no such thing as a city with a network of ordinary
+  // wide roads. That is the commoner arrangement of the two. Paris and
+  // Washington built monuments you drive down; most cities that outgrew their
+  // grid just widened a few through-routes and called them avenues, and those
+  // come out around half the width.
+  //
+  // So a town draws a CHARACTER as well as a count, and the two are related the
+  // way they are in life: one refusal of the grid tends to be the grand one a
+  // city is known for, and a set of three is usually a traffic plan rather than
+  // three monuments. Declared width is a RESERVATION — see the note above; 25.5
+  // declared measures 51 m between building lines, which is Pennsylvania Avenue.
+  // An arterial at 15 measures about 30, which is a wide ordinary street.
+  const grand = nBoulevard <= 1 ? Db.chance(0.72) : Db.chance(0.30);
+  const boulevardW = () => (grand ? Db.f(23, 31) : Db.f(13, 19));
   for (let b = 0; b < nBoulevard; b++) {
     const from = cores[Math.min(cores.length - 1, b)].xy;
     const to = cores[Math.min(cores.length - 1, b + 1)].xy;
@@ -1810,7 +1893,7 @@ export function islandConfig(seed) {
     const cand = {
       cx: Math.round(seed0[0] + dir[0] * (rp - rn) / 2),
       cy: Math.round(seed0[1] + dir[1] * (rp - rn) / 2),
-      w: Math.round(rp + rn), h: Math.round(Db.f(22, 30)),
+      w: Math.round(rp + rn), h: Math.round(boulevardW()),
       deg: +((Math.atan2(dir[1], dir[0]) * R2D + 360) % 360).toFixed(1),
     };
     // Two boulevards a hundred metres apart at the same angle is one boulevard
@@ -1956,9 +2039,23 @@ export function islandConfig(seed) {
       weight: Math.round(22 + 54 * heat),
     });
   };
-  const parkByName = (n) => parks.find((p) => p.name === n);
-  const sq = parkByName(squareName), cm = parkByName(commonName), gr = parkByName(greenName);
-  addStation(cores[0].xy, sq ? sq.name : disp.core);
+  // THE RAILWAY STOPS AT THE PARKS THAT EXIST, whatever they turned out to be.
+  //
+  // This looked up three parks BY NAME — the square, the common and the green —
+  // which worked only while the generator always laid down exactly those three.
+  // A city of twelve squares has no "Common" and a sparse port may have one
+  // park in total, so the stops are chosen the way a railway chooses them: the
+  // one nearest downtown gives the downtown platform its name, and the largest
+  // greens elsewhere get a stop of their own because that is where the traffic
+  // is on a Sunday.
+  const parkArea = (p) => p.w * p.h;
+  const nearestPark = (xy) => parks.reduce(
+    (best, p) => (best === null || dist([p.cx, p.cy], xy) < dist([best.cx, best.cy], xy) ? p : best), null);
+  const byArea = [...parks].sort((a, b) => parkArea(b) - parkArea(a));
+  const sq = nearestPark(cores[0].xy);
+  // ...and the two biggest that are not already the downtown stop.
+  const [cm, gr] = byArea.filter((p) => p !== sq).slice(0, 2);
+  addStation(cores[0].xy, sq && dist([sq.cx, sq.cy], cores[0].xy) < 320 ? sq.name : disp.core);
   if (cm) addStation(wants([cm.cx, cm.cy], null, 30), cm.name);
   addStation(wants(ptAt(quantile(fOld * 0.5)), kOld, 45), "Custom House");
   addStation(cores[1].xy, "Midtown");
@@ -2082,6 +2179,8 @@ export function islandConfig(seed) {
       lotways: Object.fromEntries(Object.entries(districts).map(([k, d]) => [k, d.lot ? d.lot.join("/") : "flavour"])),
       seams: seams.length,
       boulevards: diagonals.length - seams.length,
+      boulevardKind: grand ? "grand" : "arterial",
+      parkProgramme: programme.key,
       organicTown,
       smoothed: C.smoothed,
       rung: C.rung,

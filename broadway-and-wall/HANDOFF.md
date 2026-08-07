@@ -48,6 +48,7 @@ work in it. It was always safe on the remote. Push early and often.
 | A (location spread) | **breached — 1.94x against a 2.0x band, see below** |
 | B–F, G, H, I, J–M | in band |
 | `pnpm crews` | new — the construction market's own harness, see item 1 |
+| `pnpm vactails` | new — both vacancy tails: which end is a market and which is a clamp |
 
 **A is the one breach and it is a real shift, not noise: it fell on all three
 seeds (2.31/3.15/2.46 → 1.94/2.82/1.69).** A city that can build compresses the
@@ -106,12 +107,45 @@ quadratic extrapolated 50% past its fit range is doing the damage: at 9pp it
 delivers −14.7%/yr, which matches 1990-92, and at 13.6pp it delivers −26%/yr,
 which matches nothing.
 
-**So the question is now which of these two, and it is answerable.** Either the
-vacancy swing is too wide (availability runs 3.7% to 25% against a real office
-range of roughly 8–20%, and BOTH tails were already too wide on the old build —
-the tight end is not something this change caused), or the glut branch should
-not be extrapolated past where it was fitted. Measure the tails first; the
-tight end at 3.7% availability is the more obviously unreal of the two.
+**Both tails were measured (`pnpm vactails`) and one of them is now fixed.**
+
+The GLUT tail was a fit evaluated 2.6x outside its own range — the quadratic
+carries every anchor between five and nine points over natural and was being
+asked for −76%/yr at 23.5 points. It now saturates on the Houston 1983-87 rate
+past the fit boundary, C1-continuous, nothing below nine points touched
+(`c34f8e8`). Paired over 24 seeds the drawdown fell on 18 and rose on 5,
+sign-test p=0.011, median −3.98pp; seeds carrying an 80%+ drawdown went 9/24 to
+5/24 and p75 went 84.3 → 72.8. A straight tangent was tried first and rejected
+on the record — it still reaches −45%/yr, and measured it was a coin flip.
+
+**The TIGHT tail is the bigger half and it is still open. It is a load-bearing
+rail, and the numbers are not marginal:**
+
+| class | floor | % of months ON it | longest stretch |
+|---|---|---|---|
+| office | 3.68% | 11.7% | **119 months** |
+| industrial | 1.54% | 33.4% | **131 months** |
+| multifamily | 1.35% | 9.8% | 73 months |
+| retail | 2.72% | 3.4% | 29 months |
+
+`p01 = p05 = the floor exactly` for three of four classes — that distribution is
+truncated, not sampled. `market.ts` clamps `cityVac` at `NATURAL_VAC[k] * 0.32`
+(0.30 multifamily, 0.22 industrial), and a comment in that file already records
+this rail binding 26.9% of months once before. The sublet channel was added to
+the AVAILABILITY measure to route around it, and that worked for rent — but
+**three things read `cityVac` raw and the sublet channel never reached them**:
+the cap rate's `vacRisk`, the land residual's `vacDisc`, and the demand pool's
+housable ceiling. Measured, office cap rates run 7.97% while pinned against
+8.56% off it.
+
+A market pinned at its floor for eight to eleven years manufactures the boom
+that the bust falls from, which is why this is the remaining drawdown story:
+median is 64.8% against a 50–60% anchor. Note the floor itself is not wrong —
+you cannot have less than frictional vacancy — so the fix is not to lower it.
+The fault is that the model spends a decade at a time in a state where demand
+exceeds what the stock can hold at frictional vacancy and the only signal
+anything downstream gets is a constant. `unmet` already measures that excess
+demand and only rent reads it. Start there.
 
 **Ruled out, and stays ruled out.** The sector-exit ratchet (wrong timescale).
 And now also: supply was not what set the PERIOD. The rent cycle ran 20.3 years

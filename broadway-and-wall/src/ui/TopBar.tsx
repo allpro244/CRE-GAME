@@ -146,7 +146,12 @@ export default function TopBar() {
           <Stat label={monthLabel(game.month)} value={`Yr ${Math.floor(game.month / 12) + 1}`} wide />
           <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} />
           <Stat label="Net worth" value={usd(nw)} drop={2} />
-          <Stat label="CF / mo" value={usd(cf)} bad={cf < 0} drop={2} />
+          {/* ANNUAL, BECAUSE EVERY OTHER NUMBER IN THIS BUSINESS IS. Cap rates,
+              NOI, debt service coverage and every quote on every page are
+              annual; a monthly cash flow in the header was the one figure the
+              player had to mentally multiply before it could be compared with
+              anything else on screen. */}
+          <Stat label="CF / yr" value={usd(cf * 12)} bad={cf < 0} drop={2} />
           <Stat
             label="Base rate"
             value={pct(game.econ.indexRate)}

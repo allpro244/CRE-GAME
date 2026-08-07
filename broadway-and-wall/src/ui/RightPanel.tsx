@@ -32,7 +32,7 @@ import { replacementCost, cityValueToReplacement } from "@/engine/dev";
 import { workoutMood } from "@/engine/workout";
 import { portfolioQuote } from "@/engine/portfolio";
 import { locLimit, locRate, locAvailable } from "@/engine/credit";
-import { blockReport } from "@/engine/demand";
+import { blockReport, demandNow } from "@/engine/demand";
 import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK } from "@/engine/market";
 import {
   submarkets, legVacancy, legRent, legDemand, deliverySchedule,
@@ -448,9 +448,14 @@ function AuctionModal() {
 function AlertModal() {
   const game = useStore((s) => s.game)!;
   const dismissAlert = useStore((s) => s.dismissAlert);
+  const alertsOff = useStore((s) => s.alertsOff);
   const a = game.alerts?.[0];
   // A dead firm gets the game-over screen and nothing else on top of it.
-  if (!a || game.gameOver) return null;
+  // ...and a player who has asked for total silence gets it. Every alert is
+  // filed in the news feed by `raiseAlert` as it fires, so this drops the
+  // interruption and not the event — which is the condition the paragraph
+  // above sets for a card being safe to turn off.
+  if (!a || game.gameOver || alertsOff) return null;
   const bad = a.tone !== "good";
   const KICKER: Record<string, [string, string]> = {
     // [what a bad one is called, what a good one is called]
@@ -2202,7 +2207,6 @@ function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
               above the one at the top, you are buying a leasing job. */}
           <Row k="Stabilised pro-forma" v={`${usd(stab)} · ${offerPrice > 0 ? ((stab / offerPrice) * 100).toFixed(2) : "—"}%`} />
           {ip?.disclosed && <Row k="Occupancy (in place)" v={`${(ip.occ * 100).toFixed(0)}%`} bad={ip.occ < 0.75} />}
-          <Row k="What the market pays" v={`${game.econ.capRate[(rec!.class !== "land" ? rec!.class : "office") as BuiltClass].toFixed(2)}% for this class`} />
         </div>
       )}
       <div className="hint" style={{ marginTop: 6 }}>
@@ -5915,11 +5919,90 @@ function BrokerCalls() {
   );
 }
 
+/**
+ * ADDRESSES IN THE PAPER ARE PLACES YOU CAN GO.
+ *
+ * `NewsItem.bbl` has existed all along, with a comment saying "a story about a
+ * place can put the camera on the place" — and nothing ever set it. Measured:
+ * 143 places in the engine push news and zero of them pass a bbl, so the whole
+ * feature was a field, a cursor style and a plane symbol that could never fire.
+ *
+ * Setting it at 143 call sites is the wrong repair. Every one of those lines
+ * already contains the address, spelled exactly the way the parcel record
+ * spells it, because that is where the string came from — so the link can be
+ * recovered at render time from the text itself, once, for every line the
+ * engine has ever written and every line it will write later.
+ *
+ * The match is longest-first: "30 Broad St" wins over "30 Broad" so a street
+ * with a shorter neighbour cannot swallow it, and a candidate that is not a
+ * real address in this town simply stays plain text.
+ */
+function NewsText({ text }: { text: string }) {
+  const parcels = useStore((s) => s.parcels);
+  const focus = useStore((s) => s.focus);
+  const index = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const [bbl, rec] of Object.entries(parcels ?? {})) {
+      if (rec?.address) m.set(rec.address, bbl);
+    }
+    return m;
+  }, [parcels]);
+
+  const out: React.ReactNode[] = [];
+  // A house number, then one to four words — the shape every address in this
+  // generator takes ("30 Salem Row", "36 W 12th St").
+  const re = /\d[\w'’.-]*(?:\s+[A-Za-z][\w'’.-]*){1,4}/g;
+  let last = 0;
+  for (let mt = re.exec(text); mt; mt = re.exec(text)) {
+    const words = mt[0].split(/\s+/);
+    let hit: string | null = null;
+    for (let n = words.length; n >= 2; n--) {
+      const s = words.slice(0, n).join(" ");
+      if (index.has(s)) { hit = s; break; }
+    }
+    if (!hit) continue;
+    if (mt.index > last) out.push(text.slice(last, mt.index));
+    const bbl = index.get(hit)!;
+    const label = hit;
+    out.push(
+      <button
+        key={`${mt.index}-${bbl}`}
+        className="news-link"
+        title="Go to it"
+        onClick={(ev) => { ev.stopPropagation(); focus(bbl, true); }}
+      >{label}</button>,
+    );
+    last = mt.index + hit.length;
+    re.lastIndex = last;
+  }
+  out.push(text.slice(last));
+  return <>{out}</>;
+}
+
+/**
+ * THE TAPE'S COLUMNS, IN ONE PLACE so the header and the comparator cannot
+ * disagree about what a column is. `desc` is the direction a column opens on
+ * when you first click it — the one a buyer wants first. Nobody sorts ascending
+ * by cap rate to find the best yield.
+ */
+const MARKET_COLS: { key: string; label: string; num?: boolean; desc?: boolean }[] = [
+  { key: "addr", label: "Property" },
+  { key: "cls", label: "Class" },
+  { key: "area", label: "Building", num: true, desc: true },
+  { key: "ask", label: "Ask", num: true, desc: true },
+  { key: "psf", label: "$/sf", num: true },
+  { key: "noi", label: "NOI / yr", num: true, desc: true },
+  { key: "cap", label: "Cap rate", num: true, desc: true },
+  { key: "occ", label: "Occupancy", num: true, desc: true },
+  { key: "dmd", label: "Demand", num: true, desc: true },
+];
+
 function MarketPage() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
   const focus = useStore((s) => s.focus);
   const go = (bbl: string) => focus(bbl, true);
+  const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   // YOUR OWN SIGN IN THE WINDOW. A building you have listed is for sale in the
   // same town, on the same tape, and leaving it off meant the one screen that
   // answers "what is on the market" was answering it incompletely — and you
@@ -5999,29 +6082,64 @@ function MarketPage() {
           <table className="tbl">
             <thead>
               <tr>
-                <th>Property</th><th>Class</th><th className="num">Building</th><th className="num">Ask</th>
-                <th className="num">$/sf</th><th className="num">NOI / yr</th><th className="num">Cap rate</th>
-                <th className="num">Occupancy</th><th className="num">vs appraisal</th>
+                {MARKET_COLS.map((c) => {
+                  const on = sort?.key === c.key;
+                  return (
+                    <th
+                      key={c.key}
+                      className={(c.num ? "num" : "") + " th-sort" + (on ? " th-sort-on" : "")}
+                      title={`Sort by ${c.label}`}
+                      onClick={() => setSort(
+                        on ? { key: c.key, dir: sort!.dir === 1 ? -1 : 1 } : { key: c.key, dir: c.desc ? -1 : 1 },
+                      )}
+                    >
+                      {c.label}{on ? (sort!.dir === 1 ? " ▲" : " ▼") : ""}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
-              {/* Sorted the way a buyer reads a tape: income first, best going-in
-                  yield at the top, then the dirt by price per foot. Sorting the
-                  whole thing by asking price buried every building that made
-                  money under fourteen rows of vacant lots. */}
+              {/* THE DEFAULT IS STILL THE WAY A BUYER READS A TAPE: income
+                  first, best going-in yield at the top, then the dirt by price
+                  per foot. Sorting the whole thing by asking price buried every
+                  building that made money under fourteen rows of vacant lots,
+                  which is why that default exists and why clicking a header
+                  REPLACES it rather than being the only order available. */}
               {[...game.listings, ...mine].map((li) => {
                 const rec = resolveRec(parcels, game, li.bbl);
                 const built = !!rec && rec.class !== "land" && rec.bldgArea > 0;
                 const cap = built && li.ask > 0
                   ? inPlace(rec!, game, li.bbl, li.ask).noi / li.ask : -1;
                 const psf = rec ? li.ask / Math.max(1, built ? rec.bldgArea : rec.lotArea) : Infinity;
-                return { li, built, cap, psf };
-              }).sort((a, b) => (a.built === b.built
-                ? (a.built ? b.cap - a.cap : a.psf - b.psf)
-                : (a.built ? -1 : 1))).map(({ li }) => {
+                // Every sortable value is computed ONCE here, so the comparator
+                // never recomputes an in-place roll and the column you sort on
+                // is the same number the cell prints.
+                const v: Record<string, number | string> = {
+                  addr: rec?.address ?? "",
+                  cls: rec ? useLabel(rec) : "",
+                  area: rec ? (built ? rec.bldgArea : rec.lotArea) : 0,
+                  ask: li.ask,
+                  psf,
+                  noi: built && rec ? inPlace(rec, game, li.bbl, li.ask).noi : -1,
+                  cap: built ? cap * 100 : -1,
+                  occ: built && rec ? (inPlace(rec, game, li.bbl, li.ask).occ ?? 0) : -1,
+                  dmd: rec ? demandNow(game, rec) : -1,
+                };
+                return { li, built, cap, psf, v };
+              }).sort((a, b) => {
+                if (sort) {
+                  const x = a.v[sort.key], y = b.v[sort.key];
+                  const c = typeof x === "string" || typeof y === "string"
+                    ? String(x).localeCompare(String(y)) : (x as number) - (y as number);
+                  if (c !== 0) return c * sort.dir;
+                }
+                return a.built === b.built
+                  ? (a.built ? b.cap - a.cap : a.psf - b.psf)
+                  : (a.built ? -1 : 1);
+              }).map(({ li }) => {
                 const rec = resolveRec(parcels, game, li.bbl);
                 if (!rec) return null;
-                const cond = initialCondition(rec);
                 const built = rec.class !== "land" && rec.bldgArea > 0;
                 // THE TAPE SORTS ITSELF ON THIS NUMBER — "income first, best
                 // going-in" — so a quoted cap computed off a market estimate
@@ -6071,14 +6189,16 @@ function MarketPage() {
                           : "The class average — nobody has shown you this building's roll."}>
                       {built ? (ip?.disclosed ? "" : "~") + ((ip?.occ ?? 0) * 100).toFixed(0) + "%" : "—"}
                     </td>
-                    {(() => {
-                      // A seller under no pressure holds last year's number. The gap
-                      // between an ask and an honest appraisal is the whole read on
-                      // whether a tape is worth working.
-                      const v = assetValue(rec, game.econ, cond);
-                      const d = v > 0 ? li.ask / v - 1 : 0;
-                      return <td className={"num" + (d > 0.08 ? " neg" : "")}>{(d * 100).toFixed(0)}%</td>;
-                    })()}
+                    {/* DEMAND, WHERE "vs appraisal" USED TO BE. The appraisal
+                        gap was a derived opinion about price sitting on a page
+                        whose whole job is prices — and the number a buyer
+                        actually cannot get anywhere else on this row is what
+                        the neighbourhood is doing. `demandNow` is the engine's
+                        own reader, the same one the parcel card and the
+                        building database use, so the three cannot drift. */}
+                    <td className="num" title="The block's demand score right now — the same number the parcel card shows.">
+                      {Math.round(demandNow(game, rec))}
+                    </td>
                   </tr>
                 );
               })}
@@ -7429,6 +7549,8 @@ function SettingsPage() {
   const game = useStore((s) => s.game)!;
   const popupsOff = useStore((s) => s.popupsOff);
   const setPopupsOff = useStore((s) => s.setPopupsOff);
+  const alertsOff = useStore((s) => s.alertsOff);
+  const setAlertsOff = useStore((s) => s.setAlertsOff);
   const fpsOn = useStore((s) => s.fpsOn);
   const setFpsOn = useStore((s) => s.setFpsOn);
   const flip = (patch: Partial<GameState>) => {
@@ -7459,8 +7581,18 @@ function SettingsPage() {
           + "Off, they wait quietly where they live — letters and tenant asks on the Deals desk, offers on the "
           + "Portfolio, off-market calls and the docket on Marketplace — and nothing is lost but the interruption. "
           + "Turn this off to simulate long stretches. A bank going down, a level event in the wider economy and "
-          + "a book taken back by a lender are NOT on this switch: they are not decisions waiting on a page, they "
-          + "happen once, and being told is the whole of what they are."}
+          + "a book taken back by a lender are not on this switch — they are not decisions waiting on a page. "
+          + "The switch below covers those."}
+      />
+      <Toggle
+        on={!alertsOff}
+        set={(v) => setAlertsOff(!v)}
+        label="Stop-everything cards"
+        detail={"A bank failing, a level event in the wider economy, a book of buildings taken back at once. "
+          + "These are not decisions and there is nothing to answer, which is why they used to take the screen "
+          + "no matter what. Every one of them is now written into the news feed the moment it fires, so turning "
+          + "this off loses the interruption and not the event — you will read it on the Research page instead. "
+          + "With both switches off nothing will ever take the screen again."}
       />
       <Toggle
         on={!game.brokersOff}
@@ -7962,7 +8094,7 @@ function BooksPage() {
               title={n.bbl ? "Fly to it" : undefined}
               onClick={n.bbl ? () => focus(n.bbl!, true) : undefined}
             >
-              <span className="news-q mono">{monthLabel(n.q)}</span> {n.text}{n.bbl ? " ✈" : ""}
+              <span className="news-q mono">{monthLabel(n.q)}</span> <NewsText text={n.text} />{n.bbl ? " ✈" : ""}
             </div>
           ))}
         </div>

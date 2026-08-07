@@ -113,6 +113,19 @@ interface AppState {
   popupsOff: boolean;
   setPopupsOff: (v: boolean) => void;
   /**
+   * SILENCE EVERYTHING, INCLUDING THE FAILURES.
+   *
+   * `popupsOff` covers the DECISION cards. This covers the alert cards on top
+   * of them — a bank going down, a swan, a book taken back — which were exempt
+   * because they had no page to live on. They do now: `raiseAlert` files every
+   * one of them in the news feed as it fires, so this loses the interruption
+   * and not the event. Off by default: a player who has not asked for silence
+   * should still be stopped by a bank failure.
+   * UI preference, not save state.
+   */
+  alertsOff: boolean;
+  setAlertsOff: (v: boolean) => void;
+  /**
    * THE FRAME COUNTER IS A QA INSTRUMENT AND IT WAS ALWAYS ON SCREEN.
    * It sat in the top-right corner of a shipped game reading "4 fps" at people
    * who had not asked. Off by default now, with a switch in Settings for when
@@ -279,6 +292,7 @@ export const useStore = create<AppState>((set, get) => ({
   page: "none",
   auctionOpen: false,
   popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups") === "off",
+  alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
   toast: null,
   fps: 0,
@@ -387,6 +401,11 @@ export const useStore = create<AppState>((set, get) => ({
   setPopupsOff: (v) => {
     try { localStorage.setItem("bw:popups", v ? "off" : "on"); } catch { /* private mode */ }
     set({ popupsOff: v });
+  },
+
+  setAlertsOff: (v) => {
+    try { localStorage.setItem("bw:alerts", v ? "off" : "on"); } catch { /* private mode */ }
+    set({ alertsOff: v });
   },
 
   setFpsOn: (v) => {

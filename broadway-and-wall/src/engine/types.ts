@@ -866,6 +866,20 @@ export function raiseAlert(s: GameState, a: Omit<Alert, "id" | "q">) {
   s.nextAlertId = id + 1;
   if (!s.alerts) s.alerts = [];
   s.alerts.push({ id, q: s.month, ...a });
+  // AND IT GOES IN THE PAPER TOO, WHICH IS WHAT MAKES THE CARD OPTIONAL.
+  //
+  // The alert card was deliberately exempt from the pop-up switch, and the
+  // reason given was exact: the decision cards are safe to silence because
+  // every one of them also lives on a page, and these three did not live
+  // anywhere, so suppressing one would either lose it outright or queue it to
+  // ambush the player later. That reasoning is right, and the answer to it is
+  // to give them a page rather than to refuse the switch. A bank going down is
+  // news by any definition, so it is filed as news at the moment it fires,
+  // whether or not anybody is shown a card. Now silencing the card costs
+  // exactly what silencing the others costs: the interruption, and nothing
+  // else.
+  if (!s.news) s.news = [];
+  s.news.unshift({ q: s.month, kind: a.tone === "bad" ? "warn" : "event", text: `${a.title} — ${a.body}` });
   // A queue the UI never drained would otherwise grow for a century. Eight is
   // more than anything realistic can raise between two renders.
   if (s.alerts.length > 8) s.alerts.splice(0, s.alerts.length - 8);

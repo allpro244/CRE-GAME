@@ -641,7 +641,7 @@ export function advanceQuarter(
         // the borrower — which on anything levered is nothing. What the sale
         // does not cover does not evaporate either: it is the lender's loss on
         // non-recourse paper and yours on paper you signed for.
-        const { net, tax } = saleTaxQuote(pick, gross);
+        const { net, tax } = saleTaxQuote(pick, gross, s);
         const lien = pick.loan?.balance ?? 0;
         const breakFee = pick.loan ? prepayPenalty(pick.loan, s.month) : 0;
         const proceeds = Math.max(0, net - lien - breakFee);

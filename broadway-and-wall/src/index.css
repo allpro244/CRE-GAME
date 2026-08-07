@@ -1319,3 +1319,15 @@ body {
   text-underline-offset: 2px;
 }
 .news-link:hover { color: var(--gold, #c8a24a); text-decoration-style: solid; }
+
+/* AN OFFER TO BUY FROM YOU IS NOT A LETTER YOU SENT. Both arrive in the same
+   modal shape and the money moves opposite ways, so the unsolicited ones — the
+   ones nothing on screen led up to — are marked in the alarm colour rather
+   than the quiet kicker grey. */
+.modal-kicker.kicker-inbound {
+  color: #b3402f;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  border-left: 3px solid #b3402f;
+  padding-left: 8px;
+}

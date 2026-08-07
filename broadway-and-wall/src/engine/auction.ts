@@ -406,7 +406,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       // table — more, if anything — and they come off the hammer price before
       // the mortgage sees a cent. The surplus the law hands the borrower is
       // what is left after all of it, which is why a surplus is so rare.
-      const { net } = saleTaxQuote(h, gross);
+      const { net } = saleTaxQuote(h, gross, s);
       const shortfall = Math.max(0, bal - net);
       const surplus = Math.max(0, net - bal);
       if (surplus > 0) { s.cash += surplus; logBooks(s, "sold", surplus); }

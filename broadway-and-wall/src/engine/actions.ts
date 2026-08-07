@@ -1174,11 +1174,58 @@ export function listForSale(
   return { s: next };
 }
 
-// The sell-side fee. A quiet listing costs a point and a half and gets you a
-// sign on the door; a run process costs a point more and gets you every buyer
-// in the city in the same room on the same day.
-export function saleFeeRate(h: Holding): number {
-  return h.sale?.mode === "marketed" ? 0.025 : SALE_BROKERAGE;
+/**
+ * THE SELL-SIDE FEE — and the quiet one is what your name is worth.
+ *
+ * A run process costs two and a half points and gets you every buyer in the
+ * city in the same room on the same day. That fee is a fact about the business
+ * and it does not move.
+ *
+ * The quiet sale is a different trade and it was priced as if it were the same
+ * one. Selling off-market means somebody already knew you had it and rang you,
+ * or you rang them — and if you are the one who found the buyer there is no
+ * broker in the room to pay. The owner asked for that to be free, and the
+ * condition they attached is exactly right: it should depend on your standing,
+ * because standing is the only thing that produces a buyer without a broker.
+ * A firm nobody has dealt with cannot sell a building off-market; they have no
+ * phone to pick up. They pay the point and a half and get a sign on the door.
+ *
+ * So the quiet fee runs from the full point and a half down to nothing, on two
+ * things that already exist and are already how this game keeps score:
+ *
+ *   `street`      the named firms who have traded with you. Every one of them
+ *                 is somebody who might take the call, and the share of the
+ *                 living firms who know you is the cleanest reading of reach
+ *                 this engine has.
+ *   `lowballs`    the market-wide bill for being the sixty-per-cent guy, which
+ *                 `repFloorMult` already charges on the buy side. A reputation
+ *                 that raises every seller's floor against you also means
+ *                 nobody takes your call when you are the one selling.
+ *
+ * This is deliberately a HOOK and not a system: when the reputation tab is
+ * built, it replaces the body of this function and nothing else changes,
+ * because every caller asks the same question — what does this sale cost.
+ */
+export function quietFeeRate(s: GameState): number {
+  const firms = livingRivals(s);
+  if (!firms.length) return SALE_BROKERAGE;
+  let known = 0;
+  for (const r of firms) if ((s.street?.[r.id]?.deals ?? 0) > 0) known++;
+  // Reach is the share of the street that has actually traded with you. Half
+  // the firms in town is a name that sells a building without a broker.
+  const reach = Math.min(1, (known / firms.length) / 0.5);
+  // ...and a lowballing reputation takes it straight back off. Three stories in
+  // three years is the threshold `repFloorMult` already uses.
+  const burnt = Math.min(1, recentLowballs(s) / 3);
+  // No reach: the full point and a half. Full reach and a clean name: nothing.
+  // Full reach and a burnt name: the full fee again, because the phone that
+  // would have saved it is the phone nobody is answering.
+  return SALE_BROKERAGE * (1 - reach * (1 - burnt));
+}
+
+export function saleFeeRate(h: Holding, s?: GameState): number {
+  if (h.sale?.mode === "marketed") return 0.025;
+  return s ? quietFeeRate(s) : SALE_BROKERAGE;
 }
 
 const BIDDER_NAMES = [
@@ -1453,10 +1500,10 @@ export function delist(s: GameState, bbl: string): GameState {
 
 // What a sale nets and owes. Friction first — sell-side brokerage, transfer
 // tax, legal and title all come off the top before anyone computes a gain.
-export function saleTaxQuote(h: Holding, price: number): { net: number; gain: number; tax: number; recapture: number; appreciation: number } {
+export function saleTaxQuote(h: Holding, price: number, s?: GameState): { net: number; gain: number; tax: number; recapture: number; appreciation: number } {
   // A run process costs a point more in fees than a sign on the door, and that
   // point is the price of finding out what the market would actually pay.
-  const net = Math.round(price * (1 - saleFeeRate(h) - TRANSFER_TAX - SALE_FRICTION));
+  const net = Math.round(price * (1 - saleFeeRate(h, s) - TRANSFER_TAX - SALE_FRICTION));
   const depr = h.deprTaken ?? 0;
   const adjBasis = h.costBasis - depr;
   const gain = net - adjBasis;
@@ -1477,7 +1524,7 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   if (s.month > offer.expiresM) return { s, err: "That offer lapsed." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
-  const { net, gain, tax } = saleTaxQuote(h, offer.price);
+  const { net, gain, tax } = saleTaxQuote(h, offer.price, s);
   if (exchange && s.exchange) return { s, err: "One exchange at a time — close the live 1031 first." };
   if (exchange && tax <= 0) return { s, err: "No gain to shelter — just take the cash." };
   const next = clone(s);

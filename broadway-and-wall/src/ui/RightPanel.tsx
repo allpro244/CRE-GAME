@@ -13,7 +13,7 @@ import {
   physicalOcc as physicalOccupancy, inPlace, proFormaNOIYr, disclosureFor, asIfOwned,
 } from "@/engine/value";
 import { planDevelopment, constructionQuotes, devMix, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
-import { buyQuote, assemblagePressure, saleTaxQuote } from "@/engine/actions";
+import { buyQuote, assemblagePressure, saleTaxQuote, quietFeeRate } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 // APPROACH_LIFE_M is the engine's own sweep date, imported rather than
 // mirrored. It was a literal 12 here and a literal 12 in sim.ts, which is one
@@ -686,7 +686,17 @@ function DecisionModal() {
   return (
     <div className="modal-backdrop">
       <div className="modal">
-        <div className="modal-kicker">Offer in hand</div>
+        {/* WHICH DIRECTION THIS DEAL POINTS, before anything else on the card.
+            An offer to buy YOUR building and a letter of intent you sent for
+            somebody else's arrive in the same modal shape, and the player has
+            to know inside a second which one they are looking at — the money
+            moves the opposite way. The unsolicited ones get the strongest form
+            of it because nothing on screen led up to them. */}
+        <div className={"modal-kicker" + (h.sale!.unsolicited ? " kicker-inbound" : "")}>
+          {h.sale!.unsolicited
+            ? "◆ SOMEBODY WANTS TO BUY THIS FROM YOU — you did not list it"
+            : "Offer in hand — they are buying, you are selling"}
+        </div>
         <div className="modal-title">{usd(offer.price)} for {rec.address}</div>
         <div className="modal-sub">Good until {monthLabel(offer.expiresM)}. Your ask is {usd(h.sale!.ask)}.</div>
         <div className="grid">
@@ -1976,14 +1986,18 @@ function SaleSection({ bbl, value }: { bbl: string; value: number }) {
           Run a process · {usd(price)} less {usd(Math.round(price * 0.025))} fee
         </button>
         <button className="btn" onClick={() => listSale(bbl, price)}>
-          Sell it quietly · {usd(price)} less {usd(Math.round(price * 0.015))} fee
+          Sell it quietly · {usd(price)}
+          {quietFeeRate(game) <= 0.0001 ? " · no fee" : ` less ${usd(Math.round(price * quietFeeRate(game)))} fee`}
         </button>
       </div>
       <div className="hint">
-        The campaign costs {usd(Math.round(price * 0.01))} more and two to four months, and ends with every bid on
-        your desk on the same day — plus one go back to the top of the list. That is what the extra point buys:
-        not a better building, a better-tested price. A quiet sale saves the fee and finds you one buyer at a
-        time, whoever happens to ring, and you never learn what the best buyer in the city would have paid.
+        The campaign costs {usd(Math.round(price * (0.025 - quietFeeRate(game))))} more and two to four months, and
+        ends with every bid on your desk on the same day — plus one go back to the top of the list. That is what
+        the extra buys: not a better building, a better-tested price. A quiet sale finds you one buyer at a time,
+        whoever happens to ring, and you never learn what the best buyer in the city would have paid.
+        {quietFeeRate(game) <= 0.0001
+          ? " It costs you nothing in fees today, because enough of the street has traded with you that you can find that buyer yourself."
+          : ` The quiet fee is ${(quietFeeRate(game) * 100).toFixed(2)}% and falls toward nothing as more of the named firms in town have actually dealt with you.`}
       </div>
     </div>
   );
@@ -2430,6 +2444,58 @@ function BuyButtons({ bbl, price, off, closeLabel, bid }: {
 
 // Refinancing is a market, not a button: two products, what each will
 // actually advance today, and a dial for how much of it you take.
+/**
+ * NAME YOUR ASK FROM THE ROW.
+ *
+ * The List button on the portfolio listed at appraisal plus two per cent and
+ * told you, in a tooltip, to open the record if you wanted your own number.
+ * That is the most consequential number in the transaction being chosen for
+ * you by a button — and the record it points at has the slider, so the machine
+ * to do this properly already existed one screen away.
+ *
+ * The two fees are on the two buttons, in dollars, for the same reason they are
+ * on the record: a decision with two numbers on it is a decision, and a
+ * decision with an adjective on it is a paragraph.
+ */
+function ListSection({ bbl, appraisal, onDone }: { bbl: string; appraisal: number; onDone: () => void }) {
+  const game = useStore((s) => s.game)!;
+  const listSale = useStore((s) => s.listSale);
+  const [ask, setAsk] = useState(Math.round(appraisal * 1.02));
+  const quiet = quietFeeRate(game);
+  const over = appraisal > 0 ? ask / appraisal - 1 : 0;
+  return (
+    <div style={{ padding: "8px 2px" }}>
+      <Slider
+        label="Your ask"
+        value={ask}
+        min={Math.round(appraisal * 0.7)}
+        max={Math.round(appraisal * 1.6)}
+        step={Math.max(1000, Math.round(appraisal / 400 / 1000) * 1000)}
+        onChange={setAsk}
+        format={(v) => `${usd(v)} · ${over >= 0 ? "+" : ""}${(over * 100).toFixed(0)}% vs appraisal`}
+        hint={over > 0.12
+          ? "Well over the appraisal. It can sit there a long time, and a listing that goes stale is read as a building nobody wanted."
+          : over < -0.06
+            ? "Under appraisal. It will go quickly, and every buyer in town will know why."
+            : "About where the market is."}
+      />
+      <div className="btn-row" style={{ marginTop: 6 }}>
+        <button className="btn btn-buy" onClick={() => { listSale(bbl, ask, "marketed"); onDone(); }}>
+          Run a process · less {usd(Math.round(ask * 0.025))} fee
+        </button>
+        <button className="btn" onClick={() => { listSale(bbl, ask); onDone(); }}>
+          Sell it quietly · {quiet <= 0.0001 ? "no fee" : `less ${usd(Math.round(ask * quiet))} fee`}
+        </button>
+      </div>
+      <div className="hint">
+        {quiet <= 0.0001
+          ? "Your name is worth the brokerage on this one: enough of the street has traded with you that you can sell it off-market yourself, and there is nobody in the room to pay."
+          : `A quiet sale costs ${(quiet * 100).toFixed(2)}% today. That falls as more of the named firms in town have actually traded with you — a building sold off-market is sold to somebody who already knew you had it — and it goes straight back up if the street decides you are a lowballer.`}
+      </div>
+    </div>
+  );
+}
+
 function RefiSection({ bbl }: { bbl: string }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
@@ -3832,7 +3898,7 @@ function PortfolioPage() {
   const select = useStore((s) => s.select);
   const setPage = useStore((s) => s.setPage);
   const holdings = Object.values(game.holdings);
-  const { listSale, delistSale, focus } = useStore.getState();
+  const { delistSale, focus } = useStore.getState();
   // Opening the record and finding the building are the same action now: the
   // panel changes AND the camera moves, so the thing you are reading about is
   // behind the page you are reading. A book of addresses was not a place.
@@ -3841,6 +3907,8 @@ function PortfolioPage() {
   // decision — you do it while looking at the maturity wall, not after opening
   // one building's record and scrolling past its rent roll.
   const [refiRow, setRefiRow] = useState<string | null>(null);
+  // The ask you are about to name, per row. See ListSection.
+  const [listRow, setListRow] = useState<string | null>(null);
   // Sort the book by value or by income. "By income" is the top-earners view:
   // the fifty best income producers, ranked — the question every owner asks
   // of a big book is "what is actually carrying this firm."
@@ -4152,8 +4220,9 @@ function PortfolioPage() {
                       Delist
                     </button>
                   ) : (
-                    <button className="btn btn-sm" onClick={(ev) => { ev.stopPropagation(); listSale(h.bbl, Math.round(v * 1.02)); }}
-                      title={`List at ${usd(Math.round(v * 1.02))} — appraisal plus a touch. Open the record to name your own number.`}>
+                    <button className={"btn btn-sm" + (listRow === h.bbl ? " btn-on" : "")}
+                      onClick={(ev) => { ev.stopPropagation(); setListRow(listRow === h.bbl ? null : h.bbl); }}
+                      title="Name your ask, then take it to market">
                       List
                     </button>
                   )}
@@ -4173,6 +4242,13 @@ function PortfolioPage() {
               <tr>
                 <td colSpan={sortBy === "income" ? 17 : 16} style={{ background: "rgba(43,37,26,0.035)" }}>
                   <RefiSection bbl={h.bbl} />
+                </td>
+              </tr>
+            )}
+            {listRow === h.bbl && (
+              <tr>
+                <td colSpan={sortBy === "income" ? 17 : 16} style={{ background: "rgba(43,37,26,0.035)" }}>
+                  <ListSection bbl={h.bbl} appraisal={v} onDone={() => setListRow(null)} />
                 </td>
               </tr>
             )}
@@ -4736,8 +4812,19 @@ function DealsPage() {
           </div>
         )}
 
-        <div className="page-section" style={{ marginTop: 18 }}>Sales in progress · {sales.length}</div>
-        {sales.length === 0 && <div className="hint">Nothing listed. Sell from any owned building's card.</div>}
+        {/* EVERYTHING YOU ARE SELLING, ON THE DESK YOU SELL FROM.
+            A book of buildings in the market was visible only on the Portfolio
+            page, behind the bundling tool that created it — so the one screen
+            called "Deals" could show you four individual listings and be
+            silent about the largest transaction you had open. A portfolio is a
+            sale in progress; it goes with the sales in progress, and the whole
+            desk comes with it so the bid can be answered from here. */}
+        <div className="page-section" style={{ marginTop: 18 }}>
+          Sales in progress · {sales.length + (game.portfolioSale ? 1 : 0)}
+        </div>
+        {sales.length === 0 && !game.portfolioSale
+          && <div className="hint">Nothing listed. Sell from any owned building's card.</div>}
+        {game.portfolioSale && <PortfolioSaleDesk bundle={game.portfolioSale.bbls} clear={() => { /* nothing to clear: not bundling here */ }} />}
         {sales.map((sl) => <SaleOfferCard key={sl.bbl} bbl={sl.bbl} ask={sl.ask} go={go} />)}
 
         <div className="page-section" style={{ marginTop: 18 }}>Rolling within a year · {expiring.length}</div>
@@ -6058,20 +6145,72 @@ function MarketPage() {
           one thing on the tape nobody chose to sell, and they are gone in a
           month — so they live at the TOP of the page while they are live, and
           the button opens the same bidding sheet the card shows. */}
-      {game.auction && game.month < game.auction.m && (
-        <div className="deal" style={{ marginBottom: 10 }}>
-          <div className="deal-head">
-            The county foreclosure docket · {game.auction.lots.length} lot{game.auction.lots.length === 1 ? "" : "s"} · the hammer falls {monthLabel(game.auction.m)}
+      {/* FORECLOSURES NEED A PLACE THAT IS ALWAYS THERE.
+          The docket is published in July and the hammer falls the month after,
+          so this block existed for ONE MONTH IN TWELVE and was invisible the
+          other eleven — which is why the answer to "where do I buy a
+          foreclosure" was that there was nowhere to look. Distress is not an
+          annual event, it is a pipeline: loans go on watch, then into workout,
+          then to the steps, and a buyer who wants the steps wants to have been
+          watching the pipeline. So the section is permanent. It shows the
+          docket when there is one and what is heading toward it when there is
+          not, and it always says when the next one is called. */}
+      {(() => {
+        const liveDocket = game.auction && game.month < game.auction.m;
+        // The county calls the list in July; the hammer falls the month after.
+        const nextDocket = game.month + ((6 - (game.month % 12)) + 12) % 12 || 12;
+        const loans = Object.values(game.cityLoans ?? {});
+        const inWorkout = loans.filter((l) => l.status === "workout");
+        const onWatch = loans.filter((l) => l.status === "watch");
+        return (
+          <div className="deal" style={{ marginBottom: 10 }}>
+            <div className="deal-head">
+              {liveDocket
+                ? `The county foreclosure docket · ${game.auction!.lots.length} lot${game.auction!.lots.length === 1 ? "" : "s"} · the hammer falls ${monthLabel(game.auction!.m)}`
+                : `Distress · ${inWorkout.length} in workout, ${onWatch.length} on watch · next docket called ${monthLabel(nextDocket)}`}
+            </div>
+            {liveDocket ? (
+              <>
+                <div className="hint">
+                  As-is, ten per cent down the day you register, no financing and no warranty. Nobody on this list
+                  chose to sell.
+                </div>
+                <button className="btn btn-buy" onClick={() => useStore.getState().setAuctionOpen(true)}>
+                  Open the docket
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="hint">
+                  Nothing is on the steps this month. The county calls its list every July and sells the month
+                  after — but a building does not arrive there suddenly, and these are the ones on their way:
+                  a loan goes on <b>watch</b> when the coverage slips, into <b>workout</b> when the desk has
+                  stopped pretending, and to the docket when the paperwork runs out. The lots that appear in
+                  July come off this list.
+                </div>
+                {inWorkout.length > 0 && (
+                  <div className="mini-list">
+                    {inWorkout.slice(0, 8).map((l) => {
+                      const rec = resolveRec(parcels, game, l.bbl);
+                      return (
+                        <button key={l.bbl} className="neighbor" onClick={() => go(l.bbl)}>
+                          <span className="neighbor-addr">{rec?.address ?? l.bbl}</span>
+                          <span className="neighbor-meta mono">
+                            {l.lender} · {usd(l.balance)} against {usd(l.origValue)} at origination
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {inWorkout.length === 0 && onWatch.length === 0 && (
+                  <div className="hint dim">Nothing in town is even on watch. That is what a good market looks like, and it does not last.</div>
+                )}
+              </>
+            )}
           </div>
-          <div className="hint">
-            As-is, ten per cent down the day you register, no financing and no warranty. Nobody on this list
-            chose to sell.
-          </div>
-          <button className="btn btn-buy" onClick={() => useStore.getState().setAuctionOpen(true)}>
-            Open the docket
-          </button>
-        </div>
-      )}
+        );
+      })()}
       {/* THE PHONE, ABOVE THE TAPE. An off-market file is the one thing on this
           page that nobody else can bid on and the one thing that disappears on
           a schedule; the listings will still be there next month. */}
@@ -6253,12 +6392,38 @@ function LandValueChart() {
         The only thing here you can own without operating it, and the slowest, largest cycle in the game.
         Every appraisal and every development budget is a function of this line.
       </div>
+      {/* NOMINAL AND REAL, ON THE SAME AXES, because the gap between them IS
+          the question a land owner is actually asking. A nominal index that
+          triples over fifty years of inflation has not made anybody richer,
+          and land is the one asset here bought to be held for decades — the
+          holding period over which the price level stops being a detail and
+          becomes most of the answer. `cpi` has always been on the history
+          record; nothing needed to be measured to draw this, it just was not
+          being drawn. */}
       <LineChart
         height={150}
-        series={[{ label: "Land index", color: "#b08d3f", pts: h.map((p) => p.landIdx) }]}
+        series={[
+          { label: "Land index (nominal)", color: "#b08d3f", pts: h.map((p) => p.landIdx) },
+          { label: "in today's money", color: "#6d8fa8",
+            pts: h.map((p) => p.landIdx / Math.max(0.01, (p.cpi ?? 1) / (h[h.length - 1].cpi ?? 1))) },
+        ]}
         yFmt={(v) => v.toFixed(2)}
         xLabels={[monthLabel(h[0].q), monthLabel(h[h.length - 1].q)]}
       />
+      {(() => {
+        // The one number that says whether holding dirt was worth doing.
+        const first = h[0], last = h[h.length - 1];
+        const yrsAll = Math.max(1, (last.q - first.q) / 12);
+        const realNow = last.landIdx, realThen = first.landIdx * ((last.cpi ?? 1) / (first.cpi ?? 1));
+        const realCagr = Math.pow(realNow / Math.max(0.01, realThen), 1 / yrsAll) - 1;
+        return (
+          <div className="hint">
+            Since {monthLabel(first.q)}, land is up {((last.landIdx / first.landIdx - 1) * 100).toFixed(0)}% in cash
+            and {realCagr >= 0 ? "up" : "down"} {Math.abs(realCagr * 100).toFixed(2)}% a year <b>after inflation</b>.
+            The second number is the one a fifty-year hold is actually paid in.
+          </div>
+        );
+      })()}
       <div className="grid">
         <Row k="Land index" v={e.landIdx.toFixed(2)} strong />
         <Row k="Over the last year" v={`${yrs(12) >= 0 ? "+" : ""}${(yrs(12) * 100).toFixed(1)}%`} bad={yrs(12) < 0} />
@@ -6833,7 +6998,8 @@ function TheBanks() {
         <thead>
           <tr>
             <th>Lender</th><th>Funded by</th><th className="num">Book</th><th className="num">Capital</th>
-            <th className="num">Cap ratio</th><th className="num">Delinquent</th><th className="num">Charge-offs yr</th>
+            <th className="num">Cap ratio</th><th className="num">Income / yr</th><th className="num">Delinquent</th>
+            <th className="num">Charge-offs yr</th>
             <th className="num">Appetite</th><th className="num">Your debt</th><th>Standing</th>
           </tr>
         </thead>
@@ -6853,6 +7019,18 @@ function TheBanks() {
                   <td className="num">{usd(l.book)}</td>
                   <td className={"num" + (l.capital <= 0 ? " neg" : "")}>{usd(l.capital)}</td>
                   <td className={"num" + (h.bad ? " neg" : "")}>{(cr * 100).toFixed(1)}%</td>
+                  {/* WHAT THE DESK IS ACTUALLY EARNING, which the engine has
+                      always computed and only ever showed inside the expanded
+                      statement. It is the number that decides everything else
+                      in this row: capital is last year's income, appetite is
+                      this year's, and a desk earning nothing is a desk about to
+                      stop quoting. Interest less funding cost less losses,
+                      year to date — so it resets each January and a desk read
+                      in February is showing you one month. */}
+                  <td className={"num" + (l.netIncomeYr < 0 ? " neg" : "")}
+                      title="Interest earned less funding cost less charge-offs, this calendar year to date. Resets each January.">
+                    {l.failedM !== undefined ? "—" : usd(l.netIncomeYr)}
+                  </td>
                   <td className={"num" + (l.delinquent > 0.045 ? " neg" : "")}>{(l.delinquent * 100).toFixed(2)}%</td>
                   <td className="num">{l.chargeOffsYr > 0 ? usd(l.chargeOffsYr) : "—"}</td>
                   <td className={"num" + (l.appetite < 0.5 ? " neg" : "")}>
@@ -6863,7 +7041,7 @@ function TheBanks() {
                 </tr>
                 {open === l.id && (
                   <tr>
-                    <td colSpan={10} className="dim" style={{ paddingBottom: 12 }}>
+                    <td colSpan={11} className="dim" style={{ paddingBottom: 12 }}>
                       <div style={{ marginBottom: 6 }}>{lenderBlurb(l.name)}</div>
                       <div>
                         Net income this year {usd(l.netIncomeYr)} · losses since inception {usd(l.chargeOffsTotal)}

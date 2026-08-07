@@ -507,7 +507,7 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
       let released = 0;
       for (const e of levied) {
         const h = prev.holdings[e.bbl]!;
-        released += Math.max(0, saleTaxQuote(h, e.price).net - (h.loan?.balance ?? 0));
+        released += Math.max(0, saleTaxQuote(h, e.price, s).net - (h.loan?.balance ?? 0));
       }
       // Rent still arrives in the month the bailiff does — gross, because an
       // over-estimate of the month's income is the safe direction here.

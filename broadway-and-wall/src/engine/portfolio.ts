@@ -25,7 +25,7 @@
 // months after everybody has worked that out.
 import type { ParcelTable } from "@/data/types";
 import type { GameState, Holding } from "./types";
-import { logBooks, monthLabel } from "./types";
+import { logBooks, monthLabel, raiseAlert } from "./types";
 import { firmShort } from "./firm";
 import { rng, rrange } from "./market";
 import { holdingValue, resolveRec } from "./value";
@@ -311,7 +311,7 @@ export function acceptPortfolioBid(
     // proportion to what it was worth, which is how the schedule gets written
     // and why one weak building drags the tax basis of every strong one.
     const price = Math.round(bid.price * (marks[i] / totalMark));
-    const { net, gain, tax } = saleTaxQuote(h, price);
+    const { net, gain, tax } = saleTaxQuote(h, price, s);
     const kick = h.loan?.kicker && gain > 0 ? Math.round(gain * h.loan.kicker) : 0;
     const breakFee = h.loan ? prepayPenalty(h.loan, next.month) : 0;
     proceeds += net - (h.loan?.balance ?? 0) - kick - breakFee;
@@ -399,8 +399,23 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
         if (pool.length) {
           const who = pool[Math.floor(rng(s) * pool.length)];
           const price = Math.round(Math.min(live.ask, q.indicative * who.patience * rrange(s, 0.88, 1.02)));
+          const first = live.bids.length === 0;
           live.bids.push({ name: who.name, price, expiresM: s.month + 3 });
           live.bids.sort((a, b) => b.price - a.price);
+          // The FIRST indication on a book you put in the market is the moment
+          // the process becomes a decision. Later ones are a list you go and
+          // read; this one is the answer to whether anybody wanted it at all.
+          if (first) {
+            raiseAlert(s, {
+              kind: "portfolio", tone: "good",
+              title: `${who.name} has indicated on your portfolio`,
+              body: `${money(price)} for the ${live.bbls.length}-building book, `
+                + `${((1 - price / Math.max(1, q.sumOfParts)) * 100).toFixed(0)}% inside the sum of the individual marks. `
+                + `That spread is what you are paying to clear ${live.bbls.length} buildings in one closing. `
+                + `It is on the Deals desk and it lapses ${monthLabel(s.month + 3)}.`,
+              detail: money(price),
+            });
+          }
           s.news.unshift({
             q: s.month, kind: "deal",
             text: `${who.name} indicated ${money(price)} on the portfolio — `
@@ -444,6 +459,23 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
           bbls, ask: price, listedM: s.month, sumOfParts: q.sumOfParts, unsolicited: true,
           bids: [{ name: buyer.name, price, expiresM: s.month + 4 }],
         };
+        // AN OFFER FOR A BOOK OF BUILDINGS IS NOT A NEWS LINE.
+        //
+        // This wrote to the feed and stopped, so the single largest unsolicited
+        // number the game can put in front of a player arrived as one of a
+        // hundred and twenty rolling lines and expired four months later
+        // whether or not it was ever read. The alert card already carries a
+        // `portfolio` kind — the lender's seizure raises one — and this is the
+        // other thing that happens to a book of buildings.
+        raiseAlert(s, {
+          kind: "portfolio", tone: "good",
+          title: `${buyer.name} wants ${bbls.length} of your buildings`,
+          body: `They rang unprompted with ${money(price)} for ${bbls.length} of your ${best[0]} buildings, `
+            + `${price >= q.sumOfParts ? "above" : `${((1 - price / q.sumOfParts) * 100).toFixed(0)}% inside`} the sum of the `
+            + `individual marks. Nobody offers on a portfolio they have not already underwritten. It is on the `
+            + `Deals desk, and it lapses ${monthLabel(s.month + 4)}.`,
+          detail: money(price),
+        });
         s.news.unshift({
           q: s.month, kind: "deal",
           text: `${buyer.name} rang unprompted with ${money(price)} for ${bbls.length} of your ${best[0]} buildings — `

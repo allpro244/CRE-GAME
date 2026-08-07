@@ -1168,6 +1168,17 @@ export interface Econ {
    */
   crewUtil?: number;
   /**
+   * THE WORST THIS GLUT HAS BEEN, per class, while it lasts.
+   *
+   * A capitulation is renewed when the market deteriorates materially past
+   * anything it has already repriced for. Without this the clock only knew how
+   * LONG a glut had run, and gluts build slowly — measured, the deepest gap
+   * arrives 43 to 117 months in, by which time the repricing window has closed
+   * and the market takes its worst quarter with no reaction at all. Cleared
+   * with `vacOverM` when the class comes back inside its threshold.
+   */
+  vacWorst?: Record<BuiltClass, number>;
+  /**
    * The size of the town's construction workforce against what a place this
    * size carries in an ordinary year. Trades migrate to work: this grows while
    * the order book is oversubscribed and shrinks while it is not. It is the

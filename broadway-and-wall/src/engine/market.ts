@@ -390,11 +390,24 @@ const BASE_YOC = 0.073, DEV_SPREAD = 0.022;
  * further the rent falls.
  *
  * So the clock is a hump. It ramps in over the same six months, holds through
- * the repricing, and then fades. The two numbers are the empirical shape of a
- * capitulation rather than a fit: markets reprice over about two years, and the
- * tail is worth about another fifteen months at full strength. Together that is
- * 39 months of the calibrated rate — at nine points over natural, -40% real,
- * which is Manhattan 1990-92 (-35 to -40%) as closely as this can be stated.
+ * the repricing, and then fades.
+ *
+ * The two numbers are the empirical shape of a capitulation rather than a fit:
+ * markets reprice over about two years, and the tail is worth about another
+ * fifteen months at full strength. Together that is 39 months of the calibrated
+ * rate — at nine points over natural, -40% real, which is Manhattan 1990-92
+ * (-35 to -40%) as closely as this can be stated.
+ *
+ * A DEPTH-SCALED WINDOW WAS TRIED HERE AND REMOVED, and the reason is worth
+ * keeping. The argument for it is sound — Houston repriced for five years
+ * because at the end of each one the surplus was still there — but it was added
+ * to reach a stated frequency of sixty-per-cent collapses, and measured, it
+ * pushed the MEDIAN city's worst fifty-year fall from 36.6% to 47.8% of real
+ * effective rent. The median town's worst crash in half a century should not be
+ * worse than the worst New York has ever had. It was a coefficient sized to an
+ * outcome, which is the thing this file is not allowed to contain, and the
+ * catastrophes it was reaching for belong in the swan machinery where a
+ * structural demand collapse can be modelled as what it is.
  *
  * And it RESETS when the market comes back inside 1.5 points, because a second
  * glut is a second repricing. That is the mechanism, not an exception to it.
@@ -2182,7 +2195,42 @@ export function tickEcon(s: GameState) {
     if (!e.vacOverM) e.vacOverM = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
     if (!e.concIdx) e.concIdx = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
     if (!e.effRentIdx) e.effRentIdx = { ...e.rentIdx };
-    e.vacOverM[k] = gap > 0.015 ? (e.vacOverM[k] ?? 0) + 1 : 0;
+    // ...AND A CAPITULATION IS RENEWED WHEN IT GETS WORSE.
+    //
+    // The clock only ever knew how LONG a glut had run, and it reset only when
+    // the market came back to balance. But gluts BUILD: measured over 10 seeds
+    // x 100 years, the deepest gap of an episode arrives 43 to 117 months in,
+    // by which time the repricing window has closed and the exponential tail
+    // has taken the term to nothing. So the market took its very worst quarter
+    // with no price reaction whatsoever, which is the opposite of what happens.
+    //
+    // Houston 1983-87 was not one slide. It was five successive rounds of cuts,
+    // each set off by the market being worse again than the last time anybody
+    // had repriced for. That is this: when availability makes a new high for
+    // this episode by a material margin — a point and a half, enough that it is
+    // a fresh shock and not drift — the capitulation starts again, past the
+    // ramp-in because the landlords have done this before and know the drill.
+    // A glut that builds to nine points and stabilises still reprices once.
+    if (!e.vacWorst) e.vacWorst = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+    if (gap > 0.015) {
+      // THREE POINTS, NOT ONE AND A HALF. Gluts build slowly, so a small
+      // threshold fires on the drift itself — a market walking from five points
+      // to fifteen over five years crosses a 1.5-point step six times and
+      // reprices six times, which is the fall-forever behaviour arriving by a
+      // new road. Three points is a step somebody notices: a wave of deliveries
+      // landing, a tenant of size leaving. Measured, it renews once or twice in
+      // an ordinary glut and more in a bad one, which is the shape Houston had.
+      if (gap > (e.vacWorst[k] ?? 0) + 0.03) {
+        e.vacWorst[k] = gap;
+        e.vacOverM[k] = Math.min(e.vacOverM[k] ?? 0, 6);
+      } else {
+        e.vacWorst[k] = Math.max(e.vacWorst[k] ?? 0, gap);
+        e.vacOverM[k] = (e.vacOverM[k] ?? 0) + 1;
+      }
+    } else {
+      e.vacOverM[k] = 0;
+      e.vacWorst[k] = 0;
+    }
     const phaseNudge = e.phase === "recession" ? 0.22 : e.phase === "recovery" ? 0.08 : e.phase === "peak" ? -0.04 : -0.10;
     const concTarget = clamp(gap * 11 + phaseNudge, 0, 1);
     e.concIdx[k] += 0.25 * (concTarget - e.concIdx[k]);

@@ -1,11 +1,19 @@
 # HANDOFF — the 21-item backlog
 
 State of the branch `claude/phase-1-implementation-v4c2az` as of commit
-`e89ac34`. Written to be picked up cold by a session with none of the
+`cdbd1bd`. Written to be picked up cold by a session with none of the
 conversation behind it.
 
 Read `CLAUDE.md` first — it is the standard everything here is measured
 against, and several items below exist only because it was applied.
+
+**Two things in the list below were WRONG when it was written, and both were
+wrong in the same way — they described a measurement nobody had re-run.** Item
+3 asserts test G is breaching; G passes, on this build and on the build the
+list was written against, because G had already been rewritten to measure the
+policy rate instead of the loan index. Item 1 attributes a 93.3% drawdown to
+the rent equation; the drawdown was 48% at the time and the cause was two files
+away. Re-measure before you believe anything here, including this sentence.
 
 ---
 
@@ -36,10 +44,22 @@ work in it. It was always safe on the remote. Push early and often.
 | | |
 |---|---|
 | `pnpm gate` | passing — 3/3 measurements in band, 1/1 identities hold |
-| `conserve` | clean |
-| F (income anchor) | in band on all four classes, 20 seeds |
-| G (policy responds) | **breached, deliberately — see item 3** |
-| H, I, J–M | in band |
+| `conserve` | clean, all ten ledger categories live |
+| A (location spread) | **breached — 1.94x against a 2.0x band, see below** |
+| B–F, G, H, I, J–M | in band |
+| `pnpm crews` | new — the construction market's own harness, see item 1 |
+
+**A is the one breach and it is a real shift, not noise: it fell on all three
+seeds (2.31/3.15/2.46 → 1.94/2.82/1.69).** A city that can build compresses the
+rent premium between its best and worst locations, which is what a supply
+response is supposed to do — Manhattan's spread is what it is because Manhattan
+cannot build. Left breaching and the measurement left unweakened. Whether 2.0x
+is the right band for a city with a working construction market is a policy
+call and belongs to the owner; prime-to-secondary office in a real metro runs
+about 2–3x, so it is close either way. Note also that A is a THREE-seed median
+with a per-seed spread of 1.1x against a 0.06x miss, so on its own it could not
+have told you anything — it is the paired per-seed comparison that makes it
+real.
 
 ---
 
@@ -48,20 +68,59 @@ work in it. It was always safe on the remote. Push early and often.
 Ordered by what I would do next, not by number. Items 1–4 are the ones I
 believe are load-bearing for everything else.
 
-### 1. The rent index oscillates violently and nobody knows why
-**Evidence.** Real office rent swings $14 to $95 and back on a ~28-year
-period. Worst peak-to-trough drawdown anywhere in a 50-year run is 93.3%;
-Manhattan office effective rents fell 50–60% in the 1990 bust, so 93% is not
-a market. Per-seed real rent CAGR spans −5.21% to +3.63%.
+### 1. The rent cycle — PART DONE, and the headline number got worse
+Half of this is fixed and the fix is committed (`cdbd1bd`, and see
+`pnpm crews`). The other half is now a much better-posed question. Read the
+commit message; it carries the full paired A/B.
 
-**What has been ruled out.** The sector-exit ratchet is not the oscillator —
-the demand anchor walks down smoothly (0.93, 0.87, 0.80, 0.71 by decade)
-while rent swings wildly. Different timescales.
+**What the original entry got wrong.** The 93.3% figure could not be
+reproduced. Measured on 24 paired seeds at the time the list was written, the
+worst real office drawdown ran p25/median/p75 of 40.3 / 48.4 / 59.0%, which
+straddles the 50–60% Manhattan anchor rather than blowing through it. The
+$14→$95 swing is a NOMINAL series over fifty years of inflation. Whatever
+produced 93.3% was measuring something else, and chasing it would have been
+chasing a number.
 
-**Where to look.** The supply-and-rent feedback loop. Suspect the interaction
-between `tickCityGrowth`'s start rate, the delivery cohorts, and the rent
-response to vacancy in `market.ts` around line 1529 (`drift`, `vacTerm`,
-`scarcity`).
+**What was actually wrong, and is now fixed.** Not the rent equation — the
+construction market two files away. `crewCapacity` in `dev.ts` was a hard
+ceiling on simultaneous jobs derived from lot count, and it was load-bearing:
+the town wanted a median 2.7 cranes for every one it could run and its headroom
+was exhausted in 64–88% of months. Worse, the cost of building priced off the
+share of stock *under construction* — the quantity AFTER that wall had rationed
+it — so the price channel could not see a boom (corr with demanded quantity
+0.13, against 0.50–0.83 with supplied quantity) and real construction cost FELL
+0.3–2.2%/yr for fifty years in a town desperate to build. Backwards, which
+`CLAUDE.md` rates worse than broken. The trades are a market now: a workforce
+that follows the work, priced off how booked it is, pivoted at full employment.
+Stock growth went 0.47 → 0.85%/yr and real cost is flat, which is the real
+ENR-against-CPI record.
+
+**And it made the drawdown deeper: 48% → 69% median.** Kept, not reverted, per
+`CLAUDE.md` — and it is the most useful thing measured this session, because it
+says what the wrong number was propping up. The wall had been suppressing this
+city's vacancy cycle by four points of swing (15.5 → 19.8pp peak-to-trough).
+The rent response in `market.ts` (~line 2121) has a superlinear glut branch
+calibrated at SEVEN TO NINE points over natural — that is what its own comment
+cites, 1990-92 and 2020-23 — and availability now reaches 13.6 points over. A
+quadratic extrapolated 50% past its fit range is doing the damage: at 9pp it
+delivers −14.7%/yr, which matches 1990-92, and at 13.6pp it delivers −26%/yr,
+which matches nothing.
+
+**So the question is now which of these two, and it is answerable.** Either the
+vacancy swing is too wide (availability runs 3.7% to 25% against a real office
+range of roughly 8–20%, and BOTH tails were already too wide on the old build —
+the tight end is not something this change caused), or the glut branch should
+not be extrapolated past where it was fitted. Measure the tails first; the
+tight end at 3.7% availability is the more obviously unreal of the two.
+
+**Ruled out, and stays ruled out.** The sector-exit ratchet (wrong timescale).
+And now also: supply was not what set the PERIOD. The rent cycle ran 20.3 years
+before and 19.3 after, while stock growth nearly doubled. The period is the sum
+of the loop's lags — developer belief (`rentExp`, ~22mo), construction (30–44mo),
+occupancy adjustment (~18mo), the capitulation clock (6mo) — plus the 90° the
+rent integrator contributes, and the measured 55-month rent-behind-vacancy lag
+is that integrator's signature. See the Barkhausen note already in `market.ts`
+above the sublet block; somebody worked this out once and it is the right frame.
 
 ### 2. Zoning never changes in fifty years
 The city cannot rezone. Industrial can only be built on M-zoned land (61
@@ -75,15 +134,26 @@ underlying fact remains: a real city facing quadrupled industrial rent
 rezones, and this one cannot. This is also the honest fix for item 3's
 cousin — a city that loses its industry should look different.
 
-### 3. G's unemployment clause asserts something the engine does not do
-`corr(unemployment, loan index)` over 30 independent seeds: median −0.05,
-p25–p75 of −0.36 to +0.17, **13 of 30 seeds with the wrong sign on a build
-that passes**. The clause tests `median <= 0` against a distribution centred
-on zero, so it passes or fails largely at random.
+### 3. G's unemployment clause — STALE ENTRY, and G passes
+Re-run on both arms of a paired A/B, this build and the build this list was
+written against:
 
-Deliberately left breaching rather than re-thresholded or padded with seeds.
-The fix is a rate rule that reads the labour market with enough weight to
-survive a fifty-year sample — not a bigger n.
+    baseline   eases into unemployment  26/40 runs, median r −0.071  (need 24/40)
+    after      eases into unemployment  28/40 runs, median r −0.056  (need 24/40)
+
+G passes, and it passed before this session touched anything. The entry above
+describes a version of the test that no longer exists: G had already been
+rewritten to measure 12-month changes in the POLICY RATE over 40 seeds, which
+is the direction the entry itself prescribes, and it reports what the BORROWER
+feels through the loan index (11/40 base, 14/40 after) separately and
+explicitly as non-gating. The handoff prompt's instruction to "leave G
+breaching" is therefore void — there is nothing to leave.
+
+**The estimator is still thin and that part of the entry was right.** 26/40 and
+28/40 sit barely above the 20/40 you would get from a coin, so a build can
+cross the 24/40 threshold in either direction without anything having changed.
+If you want G to mean something, the work is in the estimator, not the rate
+rule.
 
 ### 4. The panel's land residual disagrees with the engine's
 After fixing a sign error (`costTotal - landBasis`, where `costTotal` never
@@ -188,6 +258,17 @@ anything here, but it was asked for twice.
 
 ## THINGS THAT ARE DONE, so nobody redoes them
 
+- **The construction industry is a market, not a wall** (`cdbd1bd`). The crew
+  count follows the work, the trades price off how booked they are over a
+  non-speculative base load, and the crew base is derived from floor area and
+  turnover instead of `lots / 165`. `pnpm crews` is its harness and it asks the
+  four questions that were all false before: does demand reach the price, do
+  the two guards stay off their rails, and is real construction cost flat.
+- **Independent confirmation the city now renews at the real rate.** Nobody
+  touched test L; its demolition rate went 0.215%/yr → 0.536%/yr against its
+  own cited real-world anchor of ~0.5%/yr, and mean building age now rises 23
+  years over fifty instead of 36. That fell out of the construction market
+  working, and it is worth more than any number this session set out to move.
 - **Bank failure, end to end.** Deposits seized with era-correct insurance
   limits, receivership dividends, repudiated construction commitments,
   replacement facilities with a sources-and-uses test, and contagion priced
@@ -221,3 +302,14 @@ correctly by price.
 1.3pp on noise. G's threshold sits at exactly zero against a distribution
 centred on zero. If a test's per-seed spread is wider than the effect being
 measured, the test cannot see the effect.
+
+This one nearly cost a correct mechanism again. At six seeds the change in
+worst real-rent drawdown from the construction-market fix read −27pp to +39pp
+per seed against a +7pp median shift — unreadable, and it would have supported
+either conclusion. At twenty-four paired seeds the whole distribution moved
+(p25 40→52, median 48→69, p75 59→84) and it is unambiguous. **Build the paired
+A/B harness before forming the opinion, not after.** `git worktree add` a clean
+copy at HEAD, bundle it to `test/.engine-base.mjs` — the gitignore already
+allows suffixed bundles for exactly this — and run the same probe against both
+with `ENGINE=`. It takes ten minutes and it is the difference between a
+measurement and a guess.

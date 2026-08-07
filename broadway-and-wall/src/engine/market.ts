@@ -2122,9 +2122,63 @@ export function tickEcon(s: GameState) {
     // rent in three years, and 1990-92 ran about nine points over and lost
     // 35-40% real in three. The shallow end is a little hot and the deep end
     // is right, which is not worth moving a coefficient over.
+    // ...AND A FIT IS NOT A LAW OUTSIDE THE RANGE IT WAS FITTED ON.
+    //
+    // Every anchor in the paragraph above lives between five and nine points
+    // over natural, and the quadratic is right there — -14.7%/yr at nine points
+    // is 1990-92 to the digit. It was then being evaluated wherever the market
+    // went, and once the crew wall stopped truncating the supply cycle the
+    // market went a very long way: measured over 12 seeds x 50 years, office
+    // availability reaches 23.5 points over natural and spends 12.2% of all
+    // months past nine. At 23.5 points the quadratic asks for -76%/yr.
+    //
+    // Nothing has ever done that. The worst overbuilds on record are Houston
+    // 1983-87, which hit about thirty per cent office vacancy and lost 50-60%
+    // of real effective rent over four years, and Manhattan 1990-92 at 35-40%
+    // over three — call it -15 to -18%/yr at the very bottom of the worst
+    // markets anyone has measured. The quadratic term carries a fifth of the
+    // decline at nine points and three quarters of it at twenty-three, so past
+    // the fit it stops being a calibration and becomes an artefact of the
+    // curve's shape.
+    //
+    // WHAT THE RECORD ACTUALLY SAYS PAST NINE POINTS, and it is not a curve
+    // going anywhere. There are two deep overbuilds measured well enough to
+    // use, and between them the decline barely steepens:
+    //
+    //   Manhattan 1990-92   ~9pp over natural    -35 to -40% real over 3y   ~-14%/yr
+    //   Houston  1983-87    ~15-20pp over        -50 to -55% real over 5y   ~-16%/yr
+    //
+    // Twice the glut, a tenth more decline. A market that deep is not falling
+    // faster, it is falling for LONGER — which is a statement about duration
+    // and this term is a rate. So the honest shape saturates, and the quadratic
+    // asking for -76%/yr at 23.5 points is not a deep-end calibration, it is a
+    // curve evaluated 2.6x outside the range anything was measured on.
+    //
+    // Below nine points nothing moves: the fit is untouched where its anchors
+    // live, and the continuation leaves it at exactly the slope it already had,
+    // so there is no kink. Past that it approaches the Houston rate. The only
+    // new number is that rate, and it is a measurement with a source rather
+    // than a coefficient that made a median look better.
+    //
+    // A straight tangent past the fit was tried first and REJECTED on the
+    // record, not on the outcome — it reaches -45%/yr at 23.5 points, which is
+    // still nearly three times Houston. Measured paired over 24 seeds it also
+    // did nothing at all (drawdown delta median -1.07pp, 10 seeds up and 13
+    // down), because it only bites past twelve points and the drawdown
+    // accumulates between five and twelve.
+    const FIT_MAX = 0.09;                                  // the deepest anchor above
+    const glut = (gp: number) => gp * 0.070 + gp * gp * 0.85;
+    const SLOPE_AT_FIT = 0.070 + 2 * 0.85 * FIT_MAX;       // d/dgap of the same curve
+    const DEEP_RATE = 0.0155;   // -18.6%/yr, the Houston 1983-87 asymptote
+    const atFit = glut(FIT_MAX);
+    const span = DEEP_RATE - atFit;
     const vacTerm = gap <= 0
       ? clamp(-gap * 0.045, 0, 0.0045)
-      : -(gap * 0.070 + gap * gap * 0.85) * Math.min(1, (e.vacOverM[k] ?? 0) / 6);
+      : -(gap <= FIT_MAX
+        ? glut(gap)
+        // C1-continuous at FIT_MAX: same value, same slope, asymptote DEEP_RATE.
+        : atFit + span * (1 - Math.exp(-SLOPE_AT_FIT * (gap - FIT_MAX) / span)))
+        * Math.min(1, (e.vacOverM[k] ?? 0) / 6);
     const scarcity = clamp((unmet[k] ?? 0) * 0.10, 0, 0.016);
 
     // THE INCOME ANCHOR — the line that makes rent a by-product of the economy.

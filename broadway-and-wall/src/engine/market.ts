@@ -1371,6 +1371,57 @@ export function tickEcon(s: GameState) {
     );
     if (!e.affordEff) e.affordEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
     e.affordEff[k] += 0.010 * (affordRaw - e.affordEff[k]);
+
+    // A SECTOR PRICED OUT OF A CITY DOES NOT PAY FOUR TIMES THE RENT. IT LEAVES.
+    //
+    // affordEff above is a REVERSIBLE discount — dear space, firms take less
+    // of it; cheap space, they take more again. That is right for the cycle
+    // and it is not what happens to a sector over a generation. When the rent
+    // a use can pay is permanently beyond it, the use does not shrink its
+    // footprint and wait, it goes somewhere else, and the building it left
+    // becomes something else. Nobody reopens the foundry when rents dip.
+    //
+    // Without this the model had no exit at all. `baseStock` was frozen at
+    // month zero, so demand was forever a multiple of the city's ORIGINAL
+    // stock: a class the city cannot build more of — industrial, capped at two
+    // floors and confined to M-zoned land, of which this island has sixty-one
+    // vacant lots — met rising demand with a fixed supply and the only free
+    // variable left was price. Measured over fifty years, real rent growth by
+    // class: industrial +2.14%/yr and retail +1.52%/yr against office +1.11%
+    // and housing -0.47%. 2.3x real rent for a shed, and the tenants stayed
+    // and paid it, because there was nowhere in the model for them to go.
+    //
+    // This is the going. It is a RATCHET — `Math.min`, never recovering —
+    // because that is the asymmetry that makes it different from affordEff
+    // and it is the asymmetry real cities show: New York, San Francisco and
+    // London each lost more than half their manufacturing floor space between
+    // 1970 and 2010 and not one square foot of it came back when a recession
+    // made space cheap again.
+    //
+    // WHAT COUNTS AS PRICED OUT: rent per square foot against what the city
+    // earns, versus where that ratio started. A sector paying its historical
+    // share of income is fine at any nominal rent. The threshold is a fifth
+    // above it, which is roughly the point at which relocation beats renewal
+    // once moving costs are counted; the pace, a tenth of the overshoot a
+    // year, is slow enough that a cyclical spike does nothing and a
+    // generation of pressure does most of it. Both are shape parameters and
+    // both are stated as such.
+    //
+    // HOUSING IS EXEMPT and that is not a special case, it is the mechanism
+    // being right: people priced out of a city's housing leave, and the
+    // housing does not. The building stays and somebody poorer or somebody
+    // richer lives in it. Demand for shelter in a place is not a footprint
+    // that can relocate.
+    if (k !== "multifamily") {
+      const RELOCATE_AT = 1.20;    // a fifth above its historical rent-to-income
+      const LEAVE_RATE = 0.10;     // of the overshoot, per year
+      const burden = (e.rentIdx[k] / RENT_BASE[k]) / Math.max(0.35, e.wageIdx ?? 1);
+      const over = Math.max(0, burden - RELOCATE_AT);
+      if (over > 0 && e.baseStock) {
+        const shed = 1 - (LEAVE_RATE * over) / 12;
+        e.baseStock[k] = Math.min(e.baseStock[k], e.baseStock[k] * shed);
+      }
+    }
     // WHAT EACH KIND OF SPACE IS ACTUALLY DEMANDED BY, and this was the single
     // largest hole the economy audit found.
     //

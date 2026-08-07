@@ -37,12 +37,24 @@ const report = (name, pass, detail) => {
   console.log(`\n${pass ? "PASS" : "FAIL"}  ${name}`);
   for (const d of detail) console.log("      " + d);
 };
-// SEVEN SEEDS, NOT THREE. Both of these metrics have a genuinely wide
-// dispersion across a fifty-year run — rent-to-income came back 0.79x, 0.88x
-// and 1.89x from the SAME build — so a three-seed median is a coin flip
-// dressed up as a measurement, and it will report a regression that is not one
-// and hide a regression that is. Seven is the smallest number where the median
-// stopped moving when the unrelated parts of the RNG stream shifted.
+// TWENTY SEEDS, NOT SEVEN, AND THE OLD NOTE HERE WAS WRONG.
+//
+// It used to say seven was "the smallest number where the median stopped
+// moving when the unrelated parts of the RNG stream shifted". Measured, it
+// does not stop moving: office real rent came back +1.11%/yr, then +1.95%/yr
+// after an unrelated change, and +0.62%/yr on twenty seeds of the same build.
+// Its per-seed spread runs -5.21 to +3.63 and twelve of twenty seeds land
+// outside the band the MEDIAN passes comfortably. A seven-seed median of that
+// distribution is a coin flip, and it nearly cost a correct mechanism: the
+// sector-exit ratchet was measured as making office WORSE when what it had
+// actually done was resample the noise.
+//
+// The dispersion itself is not a fault — fifty-year rent paths in a cyclical
+// city genuinely do run that wide. It is a fact about what this metric needs
+// to be measured with.
+const CLASSES = ["office", "retail", "multifamily", "industrial"];
+const SEEDS_F = [550991, 12007, 73303, 11, 22, 33, 4242, 777, 90210, 31337, 8080, 60601,
+  10001, 4004, 5150, 271828, 161803, 99999, 123456, 2718];
 const med = (a) => [...a].sort((x, y) => x - y)[Math.floor((a.length - 1) / 2)];
 const CAGR = (a, b, yrs) => (Math.pow(b / a, 1 / yrs) - 1) * 100;
 const corr = (xs, ys) => {
@@ -99,6 +111,9 @@ function macroRun(seed, months = 600) {
     t.push({
       m: g.month,
       rent: e.rentIdx.office, eff: e.effRentIdx?.office ?? e.rentIdx.office,
+      // ALL FOUR MARKETS, because the anchor is a claim about rent and there
+      // are four rents. See F.
+      rents: { office: e.rentIdx.office, retail: e.rentIdx.retail, multifamily: e.rentIdx.multifamily, industrial: e.rentIdx.industrial },
       cpi: e.cpi ?? 1, wage: e.wageIdx ?? 1, cost: e.costIdx,
       rate: e.indexRate, unemp: e.unemployment ?? 0.05,
       vac: e.cityVac.office, phase: e.phase, jobs: e.jobs ?? 0,
@@ -117,8 +132,34 @@ function macroRun(seed, months = 600) {
 // Real-world anchor: long-run real commercial rent growth is ~0%/yr, and the
 // rent-to-income ratio is roughly trendless. We allow a dense, chronically
 // tight city to earn a premium, which is why the band has room on the upside.
+//
+// IT USED TO CHECK ONE MARKET OUT OF FOUR.
+//
+// The claim in the title is about RENT, and this city has four rents. It read
+// rentIdx.office and nothing else, so three quarters of the economy could
+// compound away unwatched — and it was. Measured over four seeds and fifty
+// years, real rent growth by class:
+//
+//   office       +2.03%/yr        retail       +2.62%/yr
+//   multifamily  +1.70%/yr        industrial   +2.88%/yr
+//
+// The two worst are exactly the two the city cannot build: retail stock grows
+// 0.04%/yr over fifty years and industrial 0.12%, because both are capped at
+// two floors (correctly — a warehouse is single-storey and a parade of shops
+// is not a tower) and industrial can only go on M-zoned land, of which this
+// island has sixty-one vacant lots. Demand keeps growing against a frozen
+// stock, and with a price elasticity of -0.4 the only variable left to move is
+// rent. +2.88%/yr real is a 4.1x real rent over the run.
+//
+// Which is arithmetically correct and economically wrong, and the reason is
+// the thing this test now exposes: a real city that cannot build industrial
+// LOSES THE INDUSTRY. It rezones, the sector leaves, and the demand goes with
+// it. This one's zoning never changes in fifty years, so the tenants stay and
+// pay four times the rent forever.
+//
+// This is expected to FAIL until that is fixed. It is failing at the truth.
 {
-  const runs = [550991, 12007, 73303, 11, 22, 33, 4242].map((seed) => {
+  const runs = SEEDS_F.map((seed) => {
     const t = macroRun(seed);
     // MEASURED FROM YEAR TEN, NOT FROM MONTH ZERO.
     //
@@ -133,23 +174,33 @@ function macroRun(seed, months = 600) {
     // it is a level, and a level is unaffected by where the measurement began.
     const a = t.find((x) => x.m >= 120) ?? t[0], b = t[t.length - 1];
     const yrs = (b.m - a.m) / 12;
-    const nom = CAGR(a.rent, b.rent, yrs);
     const infl = CAGR(a.cpi, b.cpi, yrs);
     const wageReal = CAGR(a.wage / a.cpi, b.wage / b.cpi, yrs);
+    const real = {};
+    for (const k of CLASSES) real[k] = CAGR(a.rents[k], b.rents[k], yrs) - infl;
     // the ratio that has to hold: real rent per sf against real income
     const r0 = (a.rent / a.cpi) / (a.wage / a.cpi);
     const r1 = (b.rent / b.cpi) / (b.wage / b.cpi);
-    return { seed, nom, infl, real: nom - infl, wageReal, ratio: r1 / r0, endRent: b.rent, endCpi: b.cpi };
+    return { seed, infl, real, wageReal, ratio: r1 / r0, endRent: b.rent, endCpi: b.cpi };
   });
-  const realRent = med(runs.map((r) => r.real));
+  const byClass = {};
+  for (const k of CLASSES) byClass[k] = med(runs.map((r) => r.real[k]));
   const ratio = med(runs.map((r) => r.ratio));
   const realWage = med(runs.map((r) => r.wageReal));
   const infl = med(runs.map((r) => r.infl));
+  // EVERY market has to hold the anchor, not the one that happens to be
+  // behaving. The worst class is the test.
+  const worst = CLASSES.reduce((w, k) => (Math.abs(byClass[k]) > Math.abs(byClass[w]) ? k : w), CLASSES[0]);
+  const allInBand = CLASSES.every((k) => byClass[k] >= -1.0 && byClass[k] <= 1.5);
   report("F. INCOME ANCHOR — can rents outrun the wages that pay them?",
-    realRent >= -1.0 && realRent <= 1.5 && ratio <= 1.8 && realWage >= 0.0 && realWage <= 2.5
+    allInBand && ratio <= 1.8 && realWage >= 0.0 && realWage <= 2.5
       && infl >= 0.8 && infl <= 4.5,
-    [`per seed real rent growth: ${runs.map((r) => r.real.toFixed(2) + "%").join("  ")}   median ${realRent.toFixed(2)}%/yr   (need -1.0 to +1.5)`,
-     `per seed rent-to-income over 50y: ${runs.map((r) => r.ratio.toFixed(2) + "x").join("  ")}   median ${ratio.toFixed(2)}x   (need <= 1.8x)`,
+    [`real rent growth by class, median of ${runs.length} seeds   (every one needs -1.0 to +1.5)`,
+     ...CLASSES.map((k) => `   ${k.padEnd(12)} ${byClass[k] >= 0 ? "+" : ""}${byClass[k].toFixed(2)}%/yr` +
+       (byClass[k] >= -1.0 && byClass[k] <= 1.5 ? "" : `   <-- ${Math.pow(1 + byClass[k] / 100, 40).toFixed(1)}x real over the run`)),
+     `   worst: ${worst}`,
+     `office per seed: ${runs.map((r) => r.real.office.toFixed(2) + "%").join("  ")}`,
+     `rent-to-income over 50y (office): ${runs.map((r) => r.ratio.toFixed(2) + "x").join("  ")}   median ${ratio.toFixed(2)}x   (need <= 1.8x)`,
      `real WAGE growth: ${runs.map((r) => r.wageReal.toFixed(2) + "%").join("  ")}   median ${realWage.toFixed(2)}%/yr   (need 0 to 2.5 — a city whose workers get poorer for 50 years is broken)`,
      `inflation: ${runs.map((r) => r.infl.toFixed(2) + "%").join("  ")}   median ${infl.toFixed(2)}%/yr   (need 0.8 to 4.5)`,
      `office asking at year 50: ${runs.map((r) => "$" + r.endRent.toFixed(0)).join("  ")} nominal (CPI ${runs.map((r) => r.endCpi.toFixed(1) + "x").join(" ")})`]);
@@ -169,8 +220,24 @@ function macroRun(seed, months = 600) {
 // so a median of seven sits well inside its own sampling error and this gate
 // used to pass by 0.03. The threshold has not moved.
 {
+  // THIRTY, FOR THE SAME REASON F IS TWENTY, AND THE UNEMPLOYMENT CLAUSE IS
+  // STILL NOT SAFELY MEASURABLE AT THIS SIZE.
+  //
+  // Measured over thirty independent seeds: corr(unemployment, loan index) has
+  // a median of -0.05 and a p25-p75 of -0.36 to +0.17, and thirteen of thirty
+  // seeds come back with the WRONG sign on a build that passes. The clause
+  // tests `median <= 0` against a distribution centred on zero, so whether it
+  // passes is close to a coin toss independent of the engine — a test that can
+  // fail for no reason will also pass for no reason.
+  //
+  // It is left failing rather than widened further or re-thresholded, because
+  // the honest reading is that this engine does NOT durably exhibit the
+  // property the clause asserts, and it never did — it was passing on the
+  // sample. See the handoff: the fix is a rate rule that reads the labour
+  // market with enough weight to survive a fifty-year sample, not a bigger n.
   const runs = [550991, 12007, 73303, 11, 22, 33, 4242, 90210, 313, 777,
-    2468, 60613, 10001, 94110, 2020].map((seed) => {
+    2468, 60613, 10001, 94110, 2020, 8080, 31337, 4004, 5150, 271828,
+    161803, 99999, 123456, 2718, 1618, 3141, 55555, 70707, 8128, 496].map((seed) => {
     const t = macroRun(seed);
     // year-on-year inflation and the rate, sampled annually after a burn-in
     const infl = [], rate = [], unemp = [];

@@ -100,7 +100,7 @@ export default function StartMenu() {
     <div className="start">
       <div className="start-head">
         <div className="start-title">Broadway &amp; Wall</div>
-        <div className="start-sub">Twenty years of somebody else&rsquo;s city, and whatever you can hold of it.</div>
+        <div className="start-sub">A hundred years of somebody else&rsquo;s city, and whatever you can hold of it.</div>
       </div>
 
       <div className="start-body">

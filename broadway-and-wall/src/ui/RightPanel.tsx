@@ -714,7 +714,6 @@ function DecisionModal() {
 
 function GameOverPage() {
   const game = useStore((s) => s.game)!;
-  const manifest = useStore((s) => s.manifest);
   const over = game.gameOver!;
   const peak = Math.max(...game.nwHistory);
   const finalNw = game.nwHistory[game.nwHistory.length - 1] ?? 0;
@@ -723,7 +722,12 @@ function GameOverPage() {
   return (
     <div className="page-backdrop">
       <div className="page gameover-page">
-        <div className="page-title">{over.complete ? `A Century of ${manifest?.city ?? "the Town"}` : "The run is over."}</div>
+        {/* `over.complete` was never assigned by anything — the century stopped
+            being an ending when it became a marker you pass (see the milestone
+            in sim.ts, "It used to set gameOver and stop the run cold"), and
+            this branch was left behind. The only way the run ends is
+            insolvency, so that is the only title there is. */}
+        <div className="page-title">The run is over.</div>
         <p style={{ maxWidth: 640, margin: "10px auto" }}>{over.cause}</p>
         <NWChart data={game.nwHistory} height={140} />
         <div className="stat-strip" style={{ justifyContent: "center", marginTop: 14 }}>
@@ -7425,6 +7429,8 @@ function SettingsPage() {
   const game = useStore((s) => s.game)!;
   const popupsOff = useStore((s) => s.popupsOff);
   const setPopupsOff = useStore((s) => s.setPopupsOff);
+  const fpsOn = useStore((s) => s.fpsOn);
+  const setFpsOn = useStore((s) => s.setFpsOn);
   const flip = (patch: Partial<GameState>) => {
     const st = useStore.getState();
     useStore.setState({ game: { ...st.game!, ...patch } });
@@ -7461,6 +7467,12 @@ function SettingsPage() {
         set={(v) => flip({ brokersOff: !v })}
         label="Brokers ring you"
         detail="Off-market deals arrive by phone a few times a year once the street knows your name. Off, the phones stay silent entirely — nothing arrives, on any page."
+      />
+      <Toggle
+        on={fpsOn}
+        set={setFpsOn}
+        label="Frame counter"
+        detail="A frames-per-second readout in the top bar. It is an instrument for looking at the renderer, not part of the game, and it is off unless you want it."
       />
       <Toggle
         on={!game.auctionQuiet}

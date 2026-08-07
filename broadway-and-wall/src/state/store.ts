@@ -113,6 +113,14 @@ interface AppState {
   popupsOff: boolean;
   setPopupsOff: (v: boolean) => void;
   /**
+   * THE FRAME COUNTER IS A QA INSTRUMENT AND IT WAS ALWAYS ON SCREEN.
+   * It sat in the top-right corner of a shipped game reading "4 fps" at people
+   * who had not asked. Off by default now, with a switch in Settings for when
+   * somebody actually wants it. UI preference, not save state.
+   */
+  fpsOn: boolean;
+  setFpsOn: (v: boolean) => void;
+  /**
    * MARK THE OLDEST INTERRUPTION READ.
    *
    * The engine pushes onto `game.alerts` and the UI drains it one at a time —
@@ -271,6 +279,7 @@ export const useStore = create<AppState>((set, get) => ({
   page: "none",
   auctionOpen: false,
   popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups") === "off",
+  fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
   toast: null,
   fps: 0,
   loadError: null,
@@ -378,6 +387,11 @@ export const useStore = create<AppState>((set, get) => ({
   setPopupsOff: (v) => {
     try { localStorage.setItem("bw:popups", v ? "off" : "on"); } catch { /* private mode */ }
     set({ popupsOff: v });
+  },
+
+  setFpsOn: (v) => {
+    try { localStorage.setItem("bw:fps", v ? "on" : "off"); } catch { /* private mode */ }
+    set({ fpsOn: v });
   },
 
   dismissAlert: () => {

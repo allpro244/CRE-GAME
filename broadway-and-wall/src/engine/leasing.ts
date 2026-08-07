@@ -17,6 +17,9 @@ import { drawLoc, locAvailable } from "./credit";
 
 import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount } from "./absorption";
 
+/** 0..1, for the net-effective trade in the prospect draw. */
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+
 /**
  * What a lease of this class looks like when it is signed. Office in this
  * market is mostly full-service with a base-year stop; retail and industrial
@@ -1414,6 +1417,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           * (sf > useSuiteSf(rec, use) * 2.5 ? 1.15 : 1)
           * (s.econ.phase === "recession" ? 0.85 : 1) * termBias,
         );
+        // WHAT THIS TENANT IS OFFERING against a fair ask for this space. Drawn
+        // once because BOTH the rent and the allowance read it — a prospect
+        // that lowballs the rent and asks for a full fit-out anyway is not a
+        // negotiation, it is two independent dice. See tiPsf below.
+        const bid = rng(s) < 0.3 ? rrange(s, 0.68, 0.86) : rrange(s, 0.9, 1.1);
         s.lois.push({
           id: s.nextLoiId++,
           arrivedM: s.month,
@@ -1436,7 +1444,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // markdown that brought this prospect through the door, seen from the
           // other side, and the reason the arrival factor is not a gift.
           rentPsf: +(market * (specLive ? 1.05 : 1) * rentBias * staleDiscount(h.darkMs)
-            * (rng(s) < 0.3 ? rrange(s, 0.68, 0.86) : rrange(s, 0.9, 1.1))).toFixed(2),
+            * bid).toFixed(2),
           // Term length is not random. A credit tenant taking a whole floor
           // signs long paper and expects to be paid for it; a small unrated
           // firm wants three years and an out. WALT is the thing a buyer
@@ -1454,8 +1462,20 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // Per year of term, softened against the market, and with a narrower
           // credit spread now that term carries the work the credit multiplier
           // was doing badly.
+          // YOU DO NOT GET THE DISCOUNT AND THE FIT-OUT. `bid` is what this
+          // tenant is offering against a fair ask for THIS space — the ask
+          // already carries the stale markdown and the landlord's own bias, so
+          // this is the tenant's own discount and nothing else. A tenant taking
+          // space under the market is buying it cheap; the landlord is not also
+          // building it out for them. That is the net-effective trade every
+          // real negotiation is actually about, and the allowance was being
+          // handed over regardless of what was being paid for the space.
+          // Full allowance at the ask, nothing at 15% under it, straight line
+          // between — so a lowball costs the tenant the fit-out, which is
+          // usually the more expensive half of what they were asking for.
           tiPsf: Math.round(rrange(s, tiLo, tiHi) * (termM / 12) * tiPressure(concession)
-            * (credit === 2 ? 1.18 : credit === 1 ? 1.02 : 0.90) * (specLive ? 0.12 : 1)),
+            * (credit === 2 ? 1.18 : credit === 1 ? 1.02 : 0.90) * (specLive ? 0.12 : 1)
+            * clamp01((bid - 0.85) / 0.15)),
           // Free rent scales with the LENGTH of the deal, the way it does in
           // life — the rule of thumb is about a month a year, and it is the
           // concession a landlord gives before cutting the face rent. A flat

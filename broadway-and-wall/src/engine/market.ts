@@ -445,8 +445,49 @@ export const REF_PIPE_SHARE = 0.018;
 // a start once the hole is dug.
 export const BUILD_MONTHS = { office: [30, 44], retail: [18, 28], multifamily: [22, 34], industrial: [12, 20] } as const;
 
+/**
+ * HOW MANY PEOPLE WORK IN THIS TOWN, from the buildings that are standing.
+ *
+ * Square feet per worker, and these are the SAME ratios `contribution()` in
+ * demand.ts uses — deliberately, because two files disagreeing about how many
+ * desks fit in an office building is the third kind of fake number and this
+ * game has been bitten by it before. An office floor is 230 sf a head, a shed
+ * is 550, a shop is 420. Flats employ nobody; they house people, and people
+ * arrive here through the labour force rather than through the roof.
+ */
+const SF_PER_JOB: Record<BuiltClass, number> = { office: 230, industrial: 550, retail: 420, multifamily: 0 };
+/** Share of the population in the labour force. See the note at the unemployment term. */
+const PARTICIPATION = 0.58;
+/** The rate the city opens at, which is what makes the opening state consistent. */
+const OPENING_UNEMP = 0.052;
+
+/**
+ * THE TOWN'S OPENING SIZE, derived rather than declared.
+ *
+ * `jobs0` is the stock over the ratios above. `pop0` is what a town with that
+ * many jobs has to contain for its own opening unemployment rate to be true:
+ * jobs / (1 - u) is the labour force, and the labour force over participation
+ * is the population. Feed it the standard island's stock and it returns very
+ * nearly the 132,000 / 240,000 the constants used to assert, because that pair
+ * WAS this arithmetic — done once, by hand, for one island size, and then left
+ * behind when the map became a choice.
+ */
+export function citySize(stock: Record<BuiltClass, number>): { jobs0: number; pop0: number } {
+  let jobs = 0;
+  for (const k of BUILT_CLASSES) {
+    const per = SF_PER_JOB[k];
+    if (per > 0) jobs += (stock[k] ?? 0) / per;
+  }
+  // A town with no commercial stock at all is still a town — the floor keeps
+  // every ratio downstream finite rather than pretending the place is empty.
+  jobs = Math.max(2_000, Math.round(jobs));
+  const pop0 = Math.round(jobs / (1 - OPENING_UNEMP) / PARTICIPATION);
+  return { jobs0: jobs, pop0 };
+}
+
 export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   const CITY = parcels ? stockFromParcels(parcels) : { ...CITY_STOCK };
+  const SIZE = citySize(CITY);
   const econ: Econ = {
     indexRate: 5.4,
     phase: "expansion",
@@ -539,7 +580,8 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // reported a population of `undefined` — which the stress harness caught as
   // a NaN in the year-zero column of the null-player table, and which anything
   // reading population before the first tick would have inherited.
-  econ.population = 240_000; econ.jobs = 132_000; econ.unemployment = 0.052;
+  econ.jobs0 = SIZE.jobs0; econ.pop0 = SIZE.pop0;
+  econ.population = SIZE.pop0; econ.jobs = SIZE.jobs0; econ.unemployment = OPENING_UNEMP;
   econ.wageIdx = 1; econ.outputIdx = 1; econ.cpi = 1;
   econ.nat = { infl: 0.021, inflExp: 0.02, unemp: 0.052, policy: 4.2,
                neutralReal: 0.019, shockM: 0, shockSev: 0, credibility: 0.8,
@@ -1171,7 +1213,7 @@ export function tickEcon(s: GameState) {
   // this game could not answer — is this town growing?
   {
     if (e.population === undefined) {
-      e.population = 240_000; e.jobs = 132_000; e.unemployment = 0.052;
+      e.population = e.pop0 ?? 240_000; e.jobs = e.jobs0 ?? 132_000; e.unemployment = OPENING_UNEMP;
       e.wageIdx = 1; e.outputIdx = 1; e.cpi = 1;
     }
     const prevJobs = e.jobs!;
@@ -1204,7 +1246,7 @@ export function tickEcon(s: GameState) {
     }
     const pipeShare = stockSf > 0 ? pipeSf / stockSf : REF_PIPE_SHARE;
     const trades = clamp(CONSTRUCTION_JOB_SHARE * (pipeShare / REF_PIPE_SHARE), 0, 0.11);
-    e.jobs = Math.round(132_000 * e.employIdx * (1 - CONSTRUCTION_JOB_SHARE + trades));
+    e.jobs = Math.round((e.jobs0 ?? 132_000) * e.employIdx * (1 - CONSTRUCTION_JOB_SHARE + trades));
     const jobGrowth = prevJobs > 0 ? e.jobs / prevJobs - 1 : 0;
 
     // UNEMPLOYMENT IS A LAGGING NUMBER and a sticky one. The labour force does
@@ -1217,7 +1259,7 @@ export function tickEcon(s: GameState) {
     // 132,000 jobs — an 11.3% unemployment rate, while the same object
     // initialises `unemployment: 0.052`. The city was born with a number that
     // contradicted its own population. 0.58 makes the opening state true.
-    const labourForce = e.population! * 0.58;
+    const labourForce = e.population! * PARTICIPATION;
     const slackTarget = clamp(1 - e.jobs / Math.max(1, labourForce), 0.018, 0.24);
     e.unemployment = clamp(e.unemployment! + 0.18 * (slackTarget - e.unemployment!), 0.015, 0.26);
 
@@ -1239,7 +1281,24 @@ export function tickEcon(s: GameState) {
     const pull = jobGrowth > 0 ? 0.35 : 0.09;
     const uGapPop = e.unemployment! - 0.055;
     const migration = jobGrowth * pull - clamp(uGapPop * 0.020, -0.0010, 0.0030);
-    e.population = Math.round(clamp(e.population! * (1 + 0.00016 + migration), 60_000, 4_000_000));
+    // THE BOUNDS ARE A SHARE OF THIS TOWN, NOT A NUMBER OF PEOPLE, and that
+    // distinction was load-bearing the moment the town's size stopped being a
+    // constant. This read `clamp(…, 60_000, 4_000_000)`. The old hardcoded
+    // opening population was 240,000, so the floor sat a long way below and
+    // never bound — it was a guard. Deriving the population from the buildings
+    // actually standing put the standard island at 43,735, i.e. BELOW ITS OWN
+    // FLOOR: population pinned at 60,000 against 24,000 jobs, the labour force
+    // came out at 34,800, slack railed at its 24% ceiling, and the Phillips
+    // term died. Measured, that alone took the fifty-year price level from
+    // 2.015 to 1.147 — three quarters of the city's inflation, removed by a
+    // clamp nobody had looked at, in a change that was supposed to be neutral.
+    //
+    // A city can lose three quarters of its people over a century — Detroit
+    // did — and it can grow many times over. What it cannot do is go to zero,
+    // and that is all a bound here is for.
+    const popFloor = Math.max(1_000, (e.pop0 ?? 240_000) * 0.25);
+    const popCeil = Math.max(popFloor * 4, (e.pop0 ?? 240_000) * 16);
+    e.population = Math.round(clamp(e.population! * (1 + 0.00016 + migration), popFloor, popCeil));
 
     // --- THE WAGE-PRICE SYSTEM ---------------------------------------------
     //
@@ -1415,7 +1474,7 @@ export function tickEcon(s: GameState) {
 
     // Output is what the place makes: people working, times what each of them
     // produces. It is the broadest number in the game and the slowest to move.
-    e.outputIdx = +((e.jobs / 132_000) * e.wageIdx!).toFixed(4);
+    e.outputIdx = +((e.jobs / (e.jobs0 ?? 132_000)) * e.wageIdx!).toFixed(4);
   }
 
   // --- each class runs its own cycle -----------------------------------------
@@ -1831,7 +1890,7 @@ export function tickEcon(s: GameState) {
     // rest is the daytime population of workers — which is why a retail
     // parade in a business district dies at six o'clock and one in a
     // residential quarter does not.
-    const pop0 = 240_000;   // the opening population, so popIdx opens at exactly 1
+    const pop0 = e.pop0 ?? 240_000;   // this town's opening population, so popIdx opens at exactly 1
     const popIdx = (e.population ?? pop0) / pop0;
     const driver = k === "multifamily" ? popIdx
       : k === "retail" ? Math.pow(popIdx, 0.68) * Math.pow(e.employIdx, 0.32)

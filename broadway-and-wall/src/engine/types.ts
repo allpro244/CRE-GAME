@@ -1206,6 +1206,26 @@ export interface Econ {
   /** this month's employment consequence of the trade levels moving, as a drift */
   swanJobDrift?: number;
   /**
+   * HOW BIG THIS TOWN IS AT MONTH ZERO — jobs and people, derived from the
+   * buildings actually standing on the map rather than asserted.
+   *
+   * These were the constants 132,000 and 240,000, written into `initEcon` and
+   * into four other expressions, and they did not move when the map did: a
+   * 393-lot Hamlet and a 5,897-lot Great City both told the player they had
+   * 240,000 residents. On a Hamlet that works out at about ten square feet of
+   * office space per office job.
+   *
+   * `jobs0` is the stock divided by the same square-feet-per-worker the demand
+   * model uses, so the two agree about what an office building is for. `pop0`
+   * follows from it through the participation rate and the opening
+   * unemployment, which is the relationship the old pair already encoded —
+   * 132,000 / 0.948 / 0.58 = 240,069 — except that it was solved by hand once
+   * and then frozen. Everything downstream runs on INDEXES against these, so
+   * the dynamics are unchanged and only the levels now describe the town.
+   */
+  jobs0?: number;
+  pop0?: number;
+  /**
    * WHAT SHARE OF THE CITY'S PAYROLL EACH TRADE IS. Published by the demand
    * model, which is the only thing that knows: a trade's size is its affinity
    * for the classes this particular city actually built, so a warehouse town

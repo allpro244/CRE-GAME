@@ -174,10 +174,34 @@ export function newGame(seed: number, parcels?: ParcelTable, cash0: number = DEF
   // on a block is part of what makes that block valuable, and the generator's
   // gravity score did not know that. See reconcileDemand.
   if (parcels) reconcileDemand(s, parcels);
+  // THE FIRST SENTENCE OF THE CAMPAIGN, AND IT HAS TO BE TRUE OF THIS CAMPAIGN.
+  // It used to be a fixed string: "You arrive with $6M... Half this town is
+  // still empty lots." Both halves were wrong. The bankroll is a choice of
+  // $1M / $2.5M / $5M and there has been no $6M for some time, so the very
+  // first thing a player read contradicted the button they had just pressed.
+  // And "half" is right at no preset on the build-out ladder — it runs from
+  // 69% empty at Landing to 14% at Metropolis. Both numbers are read off the
+  // state now.
+  const emptyPct = (() => {
+    if (!parcels) return null;
+    let vacant = 0, n = 0;
+    for (const bbl of Object.keys(parcels)) {
+      const rec = parcels[bbl];
+      if (!rec) continue;
+      n++;
+      if (rec.class === "land" || !(rec.floors > 0)) vacant++;
+    }
+    return n ? Math.round((vacant / n) * 100) : null;
+  })();
+  const howEmpty = emptyPct === null ? "A good deal of this town is still empty lots"
+    : emptyPct >= 60 ? `Nearly ${emptyPct}% of the lots here are still empty`
+    : emptyPct >= 30 ? `${emptyPct}% of this town is still empty lots`
+    : `Only ${emptyPct}% of it is still empty lots`;
   s.news.push({
     q: 0,
     kind: "info",
-    text: `${monthLabel(0)}. You arrive with $6M and a hundred years. Half this town is still empty lots — the city will fill in around you, with or without your name on it.`,
+    text: `${monthLabel(0)}. You arrive with $${(s.cash / 1e6).toFixed(2).replace(/\.00$/, "")}M and a hundred years. `
+      + `${howEmpty} — the city will fill in around you, with or without your name on it.`,
   });
   return s;
 }
@@ -711,9 +735,14 @@ export function advanceQuarter(
   if (!s.milestones.century && s.month >= CENTURY_MONTHS) {
     s.milestones.century = s.month;
     const built = Math.round((100 * (s.builtAtStart + Object.keys(s.built).length)) / Math.max(1, s.totalLots));
+    // WHAT IT WAS WHEN YOU GOT HERE, read off the town rather than asserted.
+    // This said "two-fifths empty lots" as a fixed phrase, which was true of
+    // one preset on a ladder that now runs from 69% empty to 14%. Same fault as
+    // the opening news item, one line apart in the same file.
+    const empty0 = Math.round(100 * (1 - s.builtAtStart / Math.max(1, s.totalLots)));
     s.news.unshift({
       q: s.month, kind: "event",
-      text: `◆ A hundred years. The place you arrived in was two-fifths empty lots; ${built}% of it stands built today, and ${Object.keys(s.holdings).length} of those buildings are yours. The clock keeps running.`,
+      text: `◆ A hundred years. The place you arrived in was ${empty0}% empty lots; ${built}% of it stands built today, and ${Object.keys(s.holdings).length} of those buildings are yours. The clock keeps running.`,
     });
   }
 

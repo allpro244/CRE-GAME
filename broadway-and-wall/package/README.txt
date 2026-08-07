@@ -1,7 +1,8 @@
 BROADWAY & WALL
-A commercial real estate game. Two harbour islands, a brand-new town built
-from scratch every time you start over — at whatever size and whatever stage
-of its life you choose — and no end date. One principal, one balance sheet,
+A commercial real estate game. Two drawn harbour islands and a third the
+generator invents, a brand-new town built from scratch every time you start
+over — at whatever size and whatever stage of its life you choose — and no
+end date. One principal, one balance sheet,
 and as long as you last.
 
 
@@ -29,7 +30,7 @@ loading their own modules, so the game needs the small server to run.
 
 THE CITIES
 ----------
-Two islands. You choose one when you start a game, and then you are stuck
+Three choices. You pick one when you start a game, and then you are stuck
 with it — the picker is a plain label for the rest of the run. That is
 deliberate: the submarket you misread is the submarket you have to trade your
 way out of, and a town you can walk away from in two clicks is not a town you
@@ -39,6 +40,9 @@ ever have to learn.
                   across both.
   Kestrel Point   A narrow peninsula. Frontage is scarce and the only cheap
                   land is out at the tip.
+  Somewhere else  An island nobody has drawn. The coast, the districts and
+                  every street name come out of your seed, so it is a town
+                  no one has played before — including whoever made this.
 
 They play differently on purpose. New Alden has a hinterland behind its
 harbour, so there is always somewhere cheaper to go. Kestrel Point does not —
@@ -95,8 +99,12 @@ campaign — only starting over rolls a new one.
 
 THE OPENING
 -----------
-January 2000. You have $6,000,000 and, on the standard settings, about
-twenty-eight per cent of the city is still vacant ground.
+January 2000. You start with $1M, $2.5M or $5M — your choice on the opening
+screen, and $2.5M unless you say otherwise. How much of the town is already
+built is also your choice, across nine settings: a Landing has barely begun
+and is about seventy per cent vacant ground with nothing above four floors,
+the standard Young town is about forty per cent vacant, and a Metropolis is
+down to fourteen per cent with towers past sixty floors.
 
 That is your opening and it is also everyone else's: thirty-two rival firms
 start alongside you, already owning buildings and holding working capital —

@@ -16,7 +16,7 @@
 //
 // Which is the whole point: a credit crunch you can read a quarter early is a
 // decision. One that arrives as a number going down is weather.
-import type { Alert, GameState } from "./types";
+import type { GameState } from "./types";
 import { logBooks, BUILT_CLASSES } from "./types";
 import { PRODUCTS } from "./debt";
 import { rng, rrange, RENT_BASE, NATURAL_VAC, CAP_BASE } from "./market";
@@ -406,29 +406,16 @@ function repudiateCommitments(s: GameState, l: Lender) {
 }
 
 /**
- * THE ENGINE SAYING "THIS ONE".
+ * THE ENGINE SAYING "THIS ONE" — re-exported, not reimplemented.
  *
- * The news feed is a hundred and twenty rolling lines and most of them are
- * weather. An `Alert` is the handful a century that are not — see the interface
- * in types.ts. The UI shifts each one off `game.alerts` as it shows it, so an
- * engine that raises nothing costs the UI nothing.
- *
- * IT LIVES HERE because two files that raise alerts — this one and rivals.ts —
- * both import from this one and neither may edit types.ts, where the six-line
- * push properly belongs. `swans.ts` carries a private copy of the same function
- * under the name `raise`; the two are identical and should collapse into one
- * exported helper next to the interface the next time that file is open. Two
- * copies of one thing is the fault this codebase calls a fake number, and this
- * comment is the only thing currently standing in for the fix.
+ * There used to be a copy of this here and a byte-identical private copy in
+ * swans.ts, each carrying a comment asking for the other to be deleted. The one
+ * implementation now sits next to the `Alert` interface in types.ts, which is
+ * where both comments said it belonged. This line keeps the existing importers
+ * working and is the only thing left of the duplicate.
  */
-export function raiseAlert(s: GameState, a: Omit<Alert, "id" | "q">) {
-  const id = s.nextAlertId ?? 1;
-  s.nextAlertId = id + 1;
-  if (!s.alerts) s.alerts = [];
-  s.alerts.push({ id, q: s.month, ...a });
-  // A queue the UI never drained would otherwise grow for a century.
-  if (s.alerts.length > 8) s.alerts.splice(0, s.alerts.length - 8);
-}
+export { raiseAlert } from "./types";
+import { raiseAlert } from "./types";
 
 const usdShort = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}k`);
 

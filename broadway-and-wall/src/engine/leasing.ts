@@ -4,7 +4,7 @@
 // Multifamily skips all of this and runs aggregate occupancy.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, BuiltClass, Credit, GameState, Holding, Listing, LOI, Sector } from "./types";
-import { logBooks, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START } from "./types";
+import { logBooks, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES } from "./types";
 import type { Tenant } from "./types";
 import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL } from "./market";
 
@@ -59,11 +59,6 @@ const POOL: Record<Sector, string[]> = {
   medical: ["Harbor Medical Group", "Northside Clinic", "Beacon Dental", "Alden Diagnostics"],
   design: ["Marsh & Vane Architects", "Cooper Lane Studio", "Pier Four Design", "Whitlow Drafting"],
 };
-const SECTORS_BY_CLASS: Record<string, Sector[]> = {
-  office: ["finance", "law", "tech", "media", "insurance", "design"],
-  retail: ["apparel", "food", "medical"],
-  industrial: ["logistics", "food", "apparel"],
-};
 
 /**
  * WHO IS ACTUALLY LOOKING FOR SPACE.
@@ -75,7 +70,8 @@ const SECTORS_BY_CLASS: Record<string, Sector[]> = {
  * deciding to be.
  */
 function pickSector(s: GameState, cls: string): Sector {
-  const arr = SECTORS_BY_CLASS[cls] ?? SECTORS_BY_CLASS.office;
+  // One partition, shared with the swan side — see SECTOR_CLASSES in types.ts.
+  const arr = SECTOR_CLASSES[cls as BuiltClass] ?? SECTOR_CLASSES.office!;
   const w = arr.map((k) => industryPull(s.econ, k));
   let roll = rng(s) * w.reduce((a, b) => a + b, 0);
   for (let i = 0; i < arr.length; i++) { roll -= w[i]; if (roll <= 0) return arr[i]; }

@@ -850,6 +850,28 @@ export interface Alert {
 }
 
 /**
+ * ...AND THE ONE WAY TO RAISE ONE. It lives here, beside the interface, because
+ * three files raise alerts and none of them owns the other two. There were two
+ * byte-identical copies of this — `lenders.raiseAlert` and a private `raise` in
+ * swans.ts — each with a comment saying the other should be deleted. Two copies
+ * of one thing is the third kind of fake number by this codebase's own
+ * definition, so this is the copy and the others are gone.
+ *
+ * A runtime function in a types file is not the usual thing. It is safe here
+ * for a checkable reason: every import in this file is `import type`, so the
+ * module has no runtime dependencies and cannot be part of a cycle.
+ */
+export function raiseAlert(s: GameState, a: Omit<Alert, "id" | "q">) {
+  const id = s.nextAlertId ?? 1;
+  s.nextAlertId = id + 1;
+  if (!s.alerts) s.alerts = [];
+  s.alerts.push({ id, q: s.month, ...a });
+  // A queue the UI never drained would otherwise grow for a century. Eight is
+  // more than anything realistic can raise between two renders.
+  if (s.alerts.length > 8) s.alerts.splice(0, s.alerts.length - 8);
+}
+
+/**
  * WHICH KINDS OF SPACE EACH TRADE OCCUPIES.
  *
  * This is the same partition `leasing.ts` draws its prospects from — a shed is
@@ -1183,6 +1205,19 @@ export interface Econ {
   swanUseM?: Record<BuiltClass, number>;
   /** this month's employment consequence of the trade levels moving, as a drift */
   swanJobDrift?: number;
+  /**
+   * WHAT SHARE OF THE CITY'S PAYROLL EACH TRADE IS. Published by the demand
+   * model, which is the only thing that knows: a trade's size is its affinity
+   * for the classes this particular city actually built, so a warehouse town
+   * and a banking town do not have the same ten shares. Shares sum to 1.
+   *
+   * Two places used to assume a flat tenth each, and one of them said so in a
+   * comment that gave the reason as "nothing anywhere weights one trade above
+   * another" — which was not true when it was written. `TRADE_AFFINITY` in
+   * demand.ts weights every trade by building class and `EMP_CONC` raises the
+   * result to the 2.2, so the spread is structural and large.
+   */
+  sectorShare?: Partial<Record<Sector, number>>;
   // Everything the rest of the market is building, by class, in square feet.
   // Starts respond to profit; deliveries land ~30 months later and take the
   // rent with them. This is the supply half of the cycle, and without it a

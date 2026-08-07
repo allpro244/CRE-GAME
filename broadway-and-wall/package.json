@@ -31,6 +31,7 @@
     "banks": "node test/run.mjs --banks",
     "gate": "node test/conserve.mjs && SEEDS=550991,12007 HZ=300 node test/extleak.mjs && CITY_SEEDS=1 node test/city-accept.mjs",
     "extleak": "node test/extleak.mjs",
+    "swanfork": "node test/swanfork.mjs",
     "conserve": "node test/conserve.mjs",
     "econ:report": "node test/econ-accept.mjs",
     "sim:report": "node test/sim-accept.mjs",

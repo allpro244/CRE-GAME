@@ -86,8 +86,8 @@
 // `TAX_RATE` is a `const` in value.ts read directly by value.ts, dev.ts and
 // leasing.ts; a reassessment or a millage change means turning it into a
 // function of the economy in three files this one does not own.
-import type { Alert, BuiltClass, Econ, GameState, Sector } from "./types";
-import { BUILT_CLASSES, SECTOR_CLASSES } from "./types";
+import type { BuiltClass, Econ, GameState, Sector } from "./types";
+import { BUILT_CLASSES, SECTOR_CLASSES, raiseAlert as raise } from "./types";
 import { INDUSTRY_LABEL, SECTORS } from "./market";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -363,50 +363,55 @@ const USE_PAIRS: { primary: BuiltClass; partner?: BuiltClass; spill: number }[] 
  * that, sustained, is a trade whose landlords are getting keys back, and that
  * is what saturation should mean.
  *
- * WHAT IT ACTUALLY DELIVERS, five paired forks — warm a city up fifteen years,
- * clone it, force finance to 0.65 over five years in one clone only, run both
- * fifteen more years off the same RNG stream, average everything:
+ * WHAT IT ACTUALLY DELIVERS. `test/swanfork.mjs` is this probe and it is a
+ * FILE now, because the table that used to sit here was hand-run once and had
+ * drifted a long way from the engine underneath it — a comment asserting
+ * numbers nothing can reproduce is a fake number with a citation. Run it:
  *
- *   industryStress, finance            0.067 -> 0.299
- *   industryStress, law (the control)  0.088 -> 0.073
- *   office availability               10.76% -> 13.60%   (+2.84pp)
- *   retail availability               10.08% -> 11.02%   (+0.94pp)
- *   industrial availability            6.04% ->  6.78%   (+0.74pp)
- *   multifamily availability           2.43% ->  3.13%   (+0.70pp)
- *   city jobs                        179,520 -> 172,958  (-3.7%)
- *   real office rent index             54.87 -> 41.30    (-24.7%)
+ *   node test/swanfork.mjs                  finance to 0.65
+ *   MULT=1.35 node test/swanfork.mjs        the white mirror
  *
- * That ordering is the whole point, and it is what says this is a mechanism
- * rather than an index shock. Stress in the trade that left goes up more than
- * fourfold while the trade next to it goes DOWN — finance leaving is not bad
- * news for the law firms — and the class finance sat in moves three to four
- * times as far as the three classes it did not. The small spillovers into
- * shops, sheds and flats are not leakage, they are the payroll arriving through
- * the labour market and then through the people, which is the route it takes in
- * life. -3.7% of the city's jobs is 35% of one trade in ten.
+ * Five paired forks: warm a city fifteen years, clone it, force the trade in
+ * one clone only over five years, run both fifteen more years off the same RNG
+ * stream, average the last ten. Finance is 17.8% of the shipped town's payroll.
  *
- * THE WHITE MIRROR, same probe, finance forced to 1.35 instead:
+ *                          BLACK (x0.65)          WHITE (x1.35)
+ *   industryStress finance  0.114 -> 0.261        0.114 -> 0.054
+ *   industryStress law      0.063 -> 0.080        0.063 -> 0.059
+ *   office availability    10.65% -> 15.29%      10.65% ->  8.60%
+ *   retail availability    10.23% -> 12.08%      10.23% ->  9.06%
+ *   industrial availability 4.89% ->  5.39%       4.89% ->  3.91%
+ *   multifamily            4.66% ->  6.31%        4.66% ->  3.42%
+ *   city jobs             163,703 -> 152,158    163,703 -> 180,124
+ *   real office rent       46.40 -> 27.29        46.40 -> 58.10
  *
- *   industryStress, finance            0.067 -> 0.047
- *   office availability               10.76% ->  8.97%   (-1.79pp)
- *   city jobs                        179,520 -> 181,545  (+1.1%)
- *   real office rent index             54.87 -> 57.63    (+5.0%)
+ * The ordering is what says this is a mechanism rather than an index shock: the
+ * class finance sat in moves furthest, and the spillovers into shops, sheds and
+ * flats are the payroll arriving through the labour market and then through the
+ * people, which is the route it takes in life. -7.1% of the city's jobs against
+ * a trade that is 17.8% of them shedding 35% — 6.2% by direct arithmetic, so
+ * the wire transmits about what it should and the rest is the multiplier.
  *
- * A LEVEL SHOCK SYMMETRIC IN THE DRAW COMES OUT ASYMMETRIC IN THE OUTCOME, and
- * that is not something this file does — it is two calibrations that were
- * already in market.ts, both of them argued from the record, both of them
- * finally being asked a question big enough to show what they say. Employment:
- * the return wire gives the cheap-space branch about a fifth of the dear-space
- * branch, because "a firm priced out of a city leaves on its own schedule; a
- * firm tempted by cheap space has to want to be here for other reasons first"
- * — so -35% of a trade costs 3.7% of the jobs and +35% only buys 1.1% back.
- * Rents: the glut branch of the vacancy term is superlinear and the shortage
- * branch is capped, calibrated against 1990-92 and 2020-23 — so the same shock
- * takes 24.7% off real office rent going out and puts 5.0% on coming in.
+ * TWO CLAIMS THAT USED TO BE HERE ARE GONE, and it matters which:
  *
- * Losing a trade is worse than gaining one is good. That is what the record
- * says, this file did not put it there, and it is the reason the distribution
- * of OUTCOMES is left-skewed while the distribution of EVENTS is not.
+ * "Finance leaving is not bad news for the law firms" was read off a law stress
+ * that FELL. It rises now, 0.063 -> 0.080. That is the better answer and the
+ * reason is legible: a shock big enough to take 7% of the city's jobs is a
+ * recession, and every trade's own two-year normal falls in a recession. The
+ * old reading came from a shock too small to be one.
+ *
+ * "Losing a trade is worse than gaining one is good" no longer holds in
+ * employment, and it had already stopped holding before the weighting fix in
+ * this file: on the engine as it stood that morning the same probe gave -1.1%
+ * against +4.4%, with the GAIN four times the loss. It survives in rents, much
+ * weakened — -41.2% against +25.2%, a ratio of 1.6 where the comment claimed
+ * 4.9 — and that part is real and is where the comment said it was, in the
+ * superlinear glut branch of the vacancy term against a capped shortage branch.
+ * Employment is now roughly symmetric in the shock with a mild upward skew from
+ * compounding, which is what a symmetric drift on a multiplicative index does.
+ *
+ * So the distribution of OUTCOMES is no longer left-skewed by this wire. If
+ * that skew is wanted it has to be argued for and built, not asserted here.
  */
 const REF_TAU_M = 24;
 const WAVE_GAIN = 0.03 / 0.18;
@@ -554,15 +559,6 @@ function ensure(e: Econ) {
   }
 }
 
-function raise(s: GameState, a: Omit<Alert, "id" | "q">) {
-  const id = s.nextAlertId ?? 1;
-  s.nextAlertId = id + 1;
-  if (!s.alerts) s.alerts = [];
-  s.alerts.push({ id, q: s.month, ...a });
-  // A queue the UI never drained would otherwise grow for a century. Eight is
-  // more than anything realistic can raise between two renders.
-  if (s.alerts.length > 8) s.alerts.splice(0, s.alerts.length - 8);
-}
 
 function news(s: GameState, kind: "event" | "warn", text: string) {
   s.news.unshift({ q: s.month, kind, text });
@@ -714,7 +710,12 @@ export function tickSwans(s: GameState) {
   // leases expire on dates — and an exponential approach would leave a tail
   // of the event running for decades, which would make the distress wave
   // never quite close and the level never quite arrive.
-  const tradeBefore = SECTORS.reduce((a, k) => a + (e.swanTrade![k] ?? 1), 0) / SECTORS.length;
+  // WEIGHTED BY HOW BIG EACH TRADE ACTUALLY IS HERE — see `sectorShare`, which
+  // the demand model publishes. A flat tenth is the fallback and it is only
+  // right for the first tick of a campaign, before the model has run once.
+  const share = (k: Sector) => e.sectorShare?.[k] ?? 1 / SECTORS.length;
+  const tradeMean = () => SECTORS.reduce((a, k) => a + share(k) * (e.swanTrade![k] ?? 1), 0);
+  const tradeBefore = tradeMean();
   for (const k of SECTORS) {
     const left = e.swanTradeM![k] ?? 0;
     if (left > 0) {
@@ -739,14 +740,26 @@ export function tickSwans(s: GameState) {
   // A trade leaving takes its payroll, and this is the wire that lets a level
   // event reach housing, retail, the unemployment rate, migration and — through
   // the Phillips term — the price level, without any of them being written to
-  // directly. Ten sectors, each an equal share of the city's employment: that
-  // is not a number chosen here, it is the share the rest of the engine already
-  // implies, since nothing anywhere weights one trade above another.
+  // directly.
+  //
+  // HOW BIG THE TRADE WAS. This used to average the ten flat, and said so: "each
+  // an equal share of the city's employment... nothing anywhere weights one
+  // trade above another." That was not true when it was written. `TRADE_AFFINITY`
+  // in demand.ts weights every trade by building class — finance 3 in an office,
+  // 0.2 in a warehouse; logistics the other way round — and `EMP_CONC` raises
+  // the result to the 2.2, so the spread is structural and large. Measured on
+  // the shipped town: finance 17.8%, tech 16.4%, law 15.4% down to medical 5.2%
+  // and logistics 2.5%, a 7.1x spread. Across four generated towns it runs 4.4x
+  // to 7.1x and the leader is not always the same trade — law leads one of
+  // them. The flat tenth made losing this city's logistics trade cost as many
+  // jobs as losing its finance trade, which is seven times the payroll.
   //
   // Sized: a trade shedding 30% of its local footprint over five years is 3% of
-  // the city's jobs over five years, about 0.05%/month. Rochester lost roughly
-  // a tenth of its employment over the twenty-five years of Kodak's decline.
-  const tradeAfter = SECTORS.reduce((a, k) => a + (e.swanTrade![k] ?? 1), 0) / SECTORS.length;
+  // the city's jobs over five years IF that trade is a tenth of the city — the
+  // big three now cost more than that and the small ones less, which is the
+  // point. Rochester lost roughly a tenth of its employment over the twenty-five
+  // years of Kodak's decline.
+  const tradeAfter = tradeMean();
   e.swanJobDrift = tradeBefore > 0 ? tradeAfter / tradeBefore - 1 : 0;
 
   // Halfway through a level event, when it has stopped being an announcement

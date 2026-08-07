@@ -265,6 +265,8 @@ export interface DemandModel {
   landWTot: number;
   /** the densities that count as "a lot", learned from the city itself */
   refJobs: number; refPop: number; refAmen: number;
+  /** what share of the city's payroll each trade is — see the block below `landWTot` */
+  sectorShare: Partial<Record<Sector, number>>;
 }
 
 /**
@@ -334,7 +336,7 @@ export function demandModel(parcels: ParcelTable): DemandModel {
 
   const bbls = Object.keys(parcels);
   if (!bbls.length) {
-    const empty: DemandModel = { blocks: new Map(), ofBbl: new Map(), baseStock: new Map(), e0: new Map(), mix0: new Map(), trades: new Map(), landW: new Map(), landWTot: 1, refJobs: 1, refPop: 1, refAmen: 1 };
+    const empty: DemandModel = { blocks: new Map(), ofBbl: new Map(), baseStock: new Map(), e0: new Map(), mix0: new Map(), trades: new Map(), landW: new Map(), landWTot: 1, refJobs: 1, refPop: 1, refAmen: 1, sectorShare: {} };
     CACHE.set(parcels, empty);
     return empty;
   }
@@ -394,7 +396,7 @@ export function demandModel(parcels: ParcelTable): DemandModel {
     b.nbLandArea = Math.max(1, nbArea);
   }
 
-  const model: DemandModel = { blocks, ofBbl, baseStock, e0: new Map(), mix0: new Map(), trades: new Map(), landW: new Map(), landWTot: 0, refJobs: 1, refPop: 1, refAmen: 1 };
+  const model: DemandModel = { blocks, ofBbl, baseStock, e0: new Map(), mix0: new Map(), trades: new Map(), landW: new Map(), landWTot: 0, refJobs: 1, refPop: 1, refAmen: 1, sectorShare: {} };
 
   // Calibrate the "a lot of this" densities off the city as generated, so the
   // model travels to any city the pipeline can produce without hand-tuning.
@@ -451,6 +453,36 @@ export function demandModel(parcels: ParcelTable): DemandModel {
     model.landWTot += lv;
   }
   model.landWTot = Math.max(1, model.landWTot);
+
+  // --- HOW BIG EACH TRADE IS IN THIS PARTICULAR CITY -----------------------
+  //
+  // Every block's trade mix, weighted by the payroll that block carries. A
+  // trade's size is not a property of the trade, it is a property of what this
+  // city built: `tradesOf` reads `TRADE_AFFINITY` per class and raises the
+  // result to `EMP_CONC`, so a warehouse town and a banking town get different
+  // tens. THIS IS THE QUANTITY TWO OTHER PLACES WERE ASSUMING WAS A FLAT 1/10 —
+  // `tickEmployment` below, which compared a trade-weighted block against an
+  // equal-weighted city, and `swanJobDrift` in swans.ts, which made losing the
+  // logistics trade cost the city as many jobs as losing finance.
+  //
+  // It rides on the model rather than the state because it is static geometry
+  // plus static stock, which is the same reason `trades` does.
+  {
+    const acc: Partial<Record<Sector, number>> = {};
+    let tot = 0;
+    for (const [id, w] of model.trades) {
+      const st = baseStock.get(id);
+      if (!st) continue;
+      let jobs = 0;
+      for (const c of Object.keys(st) as BuiltClass[]) jobs += contribution(c, st[c] ?? 0).j;
+      if (jobs <= 0) continue;
+      for (const k of SECTORS) { const v = jobs * (w[k] ?? 0); acc[k] = (acc[k] ?? 0) + v; tot += v; }
+    }
+    // A city with no employment at all — an all-residential test fixture — has
+    // no shares to report, and an equal tenth is the honest answer to a
+    // question with no evidence in it.
+    for (const k of SECTORS) model.sectorShare[k] = tot > 0 ? (acc[k] ?? 0) / tot : 1 / SECTORS.length;
+  }
 
   CACHE.set(parcels, model);
   return model;
@@ -654,9 +686,15 @@ export function reconcileDemand(s: GameState, parcels: ParcelTable) {
 function tickEmployment(s: GameState, model: DemandModel) {
   const mom = s.econ.industryMom;
   if (!mom) return;
+  // THE CITY, WEIGHTED THE SAME WAY THE BLOCK IS. `m` below is each block's own
+  // trade mix against the industry cycle; this is the number it is measured
+  // against, and for a long time it was the flat mean of the ten. That is a
+  // different weighting of the same quantity, so a block full of the city's
+  // BIG trades read as out-hiring a city that did not count them as big — a
+  // standing advantage to finance-and-law blocks that nothing had decided to
+  // give them. See `sectorShare`.
   let city = 0;
-  for (const k of SECTORS) city += mom[k] ?? 0;
-  city /= SECTORS.length;
+  for (const k of SECTORS) city += (model.sectorShare[k] ?? 1 / SECTORS.length) * (mom[k] ?? 0);
   s.blockJ = s.blockJ ?? {};
   for (const [id, w] of model.trades) {
     let m = 0;
@@ -712,6 +750,10 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
   const occ = occupiedStock(s, parcels, model);
   s.blockD = s.blockD ?? {};
   s.blockE = s.blockE ?? {};
+  // Published for the readers that do not get the parcel table — swans.ts is
+  // the one that matters, since how many jobs a departing trade takes with it
+  // depends entirely on how big that trade was here.
+  s.econ.sectorShare = model.sectorShare;
 
   tickEmployment(s, model);
   tickTransit(s, model, parcels);

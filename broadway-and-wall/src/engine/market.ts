@@ -579,6 +579,8 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   econ.crewUtil = 1;
   econ.crewIdx = 1;
   econ.rentExp = { ...econ.rentIdx };
+  // The exit cap opens equal to the going-in cap and drifts from there.
+  econ.capExp = { ...econ.capRate };
   // THE CITY HAS PEOPLE IN IT ON DAY ONE. These were seeded lazily inside the
   // monthly tick, so between newGame and the first advanceQuarter the economy
   // reported a population of `undefined` — which the stress harness caught as
@@ -2309,6 +2311,16 @@ export function tickEcon(s: GameState) {
     // makes it free — which is the trade the player is supposed to be reading.
     const target = CAP_BASE[k] + 0.55 * (e.indexRate - 5.4) - 0.25 * e.cycleDev + crunch + sector + vacRisk;
     e.capRate[k] = clamp(e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045), 3.4, 11);
+    // THE EXIT CAP A DEVELOPER UNDERWRITES, which is not this month's.
+    //
+    // Land is bought against a sale three or four years out, so the yield that
+    // prices it is a through-cycle one. Without this the land residual took a
+    // peak rent and capitalised it at a peak-compressed cap — the cycle counted
+    // twice inside a difference of large numbers, which is most of why land
+    // drew down 83-93% in every seed. A four-year memory, matching the horizon
+    // it is underwriting. See `residualLandPsf` in value.ts.
+    if (!e.capExp) e.capExp = { ...e.capRate };
+    e.capExp[k] += 0.021 * (e.capRate[k] - e.capExp[k]);
   }
 
   // Citywide land index TRACKS the rent level rather than compounding off it —

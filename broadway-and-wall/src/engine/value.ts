@@ -304,7 +304,33 @@ export function residualLandPsf(rec: ParcelRecord, econ: Econ, rentMult = 1): nu
 
     // Stabilised income per square foot of BUILDING, at the same occupancies
     // planDevelopment underwrites to, so the desk and the dirt agree.
-    const rent = useRentPsfYr(rec, econ, "good", use) * rentMult;
+    // ...AND STABILISED MEANS STABILISED, NOT THIS MONTH.
+    //
+    // This read spot rent, capitalised it at the spot cap rate, and subtracted
+    // spot cost — three cyclical numbers in a DIFFERENCE, which is the most
+    // geared expression in the engine. `landPsfNow` then multiplied the answer
+    // by (1 + 0.22 * demandBeta * cycleDev), counting the cycle a fourth time.
+    // Measured over 8 seeds x 50 years the result was not a land market: every
+    // seed drew down 83-93%, peak-to-trough ran 11x to 37x, and real land
+    // compounded at 4.9-7.5%/yr for half a century. Manhattan development sites
+    // fell 50-60% in 1989-93; Japan needed an actual asset bubble to lose 80%.
+    //
+    // Nobody underwrites dirt on a spot rent, and this codebase already knows
+    // it. `market.ts` made exactly this correction to the START decision and
+    // wrote down why: "DEVELOPERS UNDERWRITE THE RENT THEY EXPECT, NOT THE RENT
+    // THAT EXISTS. This read today's rent, so supply responded to the present."
+    // The land price never got the same treatment, which is the whole of this
+    // fault. Dirt bought today is let three or four years from now, so what it
+    // is worth is what it will earn then — and `rentExp`, the adaptive belief
+    // that already exists for the start decision, is that number. It sits below
+    // spot at a peak and above it in a slump, which is the damping a real land
+    // market has and this one did not.
+    //
+    // The bound is a guard on a ratio of two indices that track each other. It
+    // is not meant to bind; `pnpm land` reports it if it does.
+    const belief = econ.rentExp?.[use] && econ.rentIdx?.[use]
+      ? clamp(econ.rentExp[use] / econ.rentIdx[use], 0.55, 1.75) : 1;
+    const rent = useRentPsfYr(rec, econ, "good", use) * rentMult * belief;
     if (!(rent > 0)) continue;
     const occ = use === "multifamily" ? 0.95 : 0.90;
     const opex = opexPsf(use, econ, false);
@@ -319,7 +345,16 @@ export function residualLandPsf(rec: ParcelRecord, econ: Econ, rentMult = 1): nu
     // the class or mixOf hands back the parcel's existing stack and every use
     // gets the same cap rate — which would make the choice between them a
     // rent comparison with no yield in it.
-    const cap = capRateFor({ ...rec, class: use, mix: undefined } as ParcelRecord, econ, "good") / 100;
+    // AND THE EXIT CAP IS NOT THE GOING-IN CAP EITHER, for the same reason.
+    // A land buyer is underwriting a sale three or four years out; taking the
+    // spot cap means capitalising a peak rent at a peak-compressed yield and
+    // calling the product a land value. `capExp` is the through-cycle cap the
+    // desk would actually use, carried as a slow memory of the spot one, and
+    // applied here as a ratio so every per-parcel adjustment `capRateFor`
+    // makes — class, condition, corner — survives untouched.
+    const capBelief = econ.capExp?.[use] && econ.capRate?.[use]
+      ? clamp(econ.capExp[use] / econ.capRate[use], 0.6, 1.7) : 1;
+    const cap = (capRateFor({ ...rec, class: use, mix: undefined } as ParcelRecord, econ, "good") / 100) * capBelief;
     const denom = cap + TAX_RATE * (1 - recov);
     if (!(denom > 0)) continue;
     const valuePsf = noiPsf / denom;

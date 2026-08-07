@@ -1173,6 +1173,14 @@ export interface Econ {
    * which is what actually causes overbuilding in every real cycle.
    */
   rentExp?: Record<BuiltClass, number>;
+  /**
+   * THE EXIT CAP A DEVELOPER UNDERWRITES — a slow memory of the spot cap rate,
+   * on about a four-year clock because that is the horizon a land buyer is
+   * pricing. The land residual reads this rather than the spot yield, so a peak
+   * rent is not capitalised at a peak-compressed cap inside what is already a
+   * difference of two large numbers.
+   */
+  capExp?: Record<BuiltClass, number>;
   /** sf-weighted mean vintage factor, same job for the quality tilt. */
   vintageMean?: number;
   costIdx: number; // construction & operating cost inflation

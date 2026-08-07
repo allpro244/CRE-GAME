@@ -77,6 +77,18 @@ for (const seed of SEEDS) {
     agg.months++;
     if (e.landIdx <= 0.2501) agg.railLo++;
     if (e.landIdx >= 39.99) agg.railHi++;
+    // THE UNDERWRITING BELIEFS ARE RAILS TOO, and new ones. `residualLandPsf`
+    // prices dirt off the rent a developer EXPECTS and the cap they would exit
+    // at, each carried as a ratio to spot and each bounded. Neither bound is
+    // meant to bind — they are guards on ratios of two indices that track each
+    // other — and a guard that binds in normal play is holding up the model.
+    for (const k of ["office", "retail", "multifamily", "industrial"]) {
+      agg.beliefN = (agg.beliefN ?? 0) + 1;
+      const rb = (e.rentExp?.[k] ?? 0) / (e.rentIdx?.[k] || 1);
+      const cb = (e.capExp?.[k] ?? 0) / (e.capRate?.[k] || 1);
+      if (rb <= 0.5501 || rb >= 1.7499) agg.rentBeliefRail = (agg.rentBeliefRail ?? 0) + 1;
+      if (cb <= 0.6001 || cb >= 1.6999) agg.capBeliefRail = (agg.capBeliefRail ?? 0) + 1;
+    }
     // A standing building as the control: same city, same cycle, real terms.
     series.bldg.push((e.rentIdx.office / (e.capRate.office / 100)) / cpi);
     for (const [k, bbl] of Object.entries(lots)) {
@@ -108,6 +120,8 @@ console.log(`  worst drawdown      median ${pct(med(agg.idxDD))}   range ${pct(M
 console.log(`  biggest run-up      median ${pct(med(agg.idxRise))}   range ${pct(Math.min(...agg.idxRise))}..${pct(Math.max(...agg.idxRise))}`);
 console.log(`  end / start         median ${med(agg.idxEnd).toFixed(2)}x   range ${Math.min(...agg.idxEnd).toFixed(2)}..${Math.max(...agg.idxEnd).toFixed(2)}x`);
 console.log(`  rails              floor 0.25 bound ${pct(agg.railLo / agg.months)} of months, ceiling 40 bound ${pct(agg.railHi / agg.months)}`);
+console.log(`  underwriting rails rent belief bound ${pct((agg.rentBeliefRail ?? 0) / (agg.beliefN || 1))} of class-months,`
+  + ` exit cap belief bound ${pct((agg.capBeliefRail ?? 0) / (agg.beliefN || 1))}`);
 console.log(`\nA STANDING BUILDING, same cities (rent / cap, real) — the control`);
 console.log(`  worst drawdown      median ${pct(med(bldgDD))}`);
 console.log(`\nONE LOT, HELD THE WHOLE RUN (real $/sf)`);

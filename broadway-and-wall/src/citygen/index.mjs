@@ -147,6 +147,7 @@ export function makeCity(cityId, seed, opts) {
     rawStations: city.stations,
     manifest: { ...city.manifest, seed: seed >>> 0 },
     employment: city.employment ?? null,
+    parks: city.parks ?? [],
   });
   return {
     id: cityId,

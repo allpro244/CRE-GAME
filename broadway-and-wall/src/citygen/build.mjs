@@ -24,8 +24,35 @@ import {
  * @param {{rawParcels:object, rawBuildings:object, rawStations:object,
  *          manifest:object, employment:object|null}} src
  */
+/**
+ * WHAT A QUARTER IS WORTH BEYOND WHAT IT MEASURES.
+ *
+ * A stable hash of the district name and the town's seed, mapped into a modest
+ * band. Stable so a neighbourhood keeps its character for the life of the city
+ * — a cachet that moved would be weather, not a place — and seeded so the good
+ * address is somewhere different in the next town.
+ *
+ * The band is deliberately narrow. This is a thumb on a scale that already
+ * works, not a replacement for it: at the extremes it is worth about a fifth
+ * either way, which is the difference between a good address and an ordinary
+ * one and nothing like the difference between downtown and the marshes.
+ */
+function districtCachet(name, seed) {
+  let h = (seed >>> 0) ^ 0x9e3779b9;
+  const s = String(name);
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193) >>> 0;
+  const u = ((h >>> 8) & 0xffff) / 0xffff;          // 0..1, stable
+  // A business district is bought on its numbers and varies least; the places
+  // people live and the old quarters carry most of the intangible.
+  const n = s.toLowerCase();
+  const span = /exchange|financial|core|downtown|business/.test(n) ? 0.09
+    : /dock|industrial|works|yard|wharf/.test(n) ? 0.12
+      : 0.20;
+  return 1 + span * (u * 2 - 1);
+}
+
 export function buildCityData(src) {
-  const { rawParcels, rawBuildings, rawStations, manifest, employment } = src;
+  const { rawParcels, rawBuildings, rawStations, manifest, employment, parks } = src;
   const num = (v) => {
     const n = typeof v === "string" ? parseFloat(v) : v;
     return Number.isFinite(n) ? n : null;
@@ -187,13 +214,47 @@ export function buildCityData(src) {
   }
   const nearStations = bucketIndex(stationPts, 350);
   const nearJobs = bucketIndex(jobPts, 300);
+  // A THIRD REASON FOR GROUND TO BE GOOD, AND THE FIRST ONE THAT IS NOT JOBS.
+  //
+  // Demand was 45% transit gravity and 55% employment gravity, and the two were
+  // the same field wearing two hats: employment is proxied by built floor area,
+  // which is tallest downtown, and a station's ridership was `22 + 54 * heat`,
+  // where heat is proximity to downtown. Measured across six generated islands,
+  // the result had exactly ONE local peak and ONE top-decile cluster on every
+  // one, correlating 0.61 to 0.94 with distance from a single best point. That
+  // is the owner's "all the demand surrounding one specific place", measured.
+  //
+  // Green frontage is the oldest independent driver of urban land value there
+  // is, and it is independent in the way that matters here: it is somewhere
+  // else. The Fifth Avenue addresses face the park, not the exchange; Bloomsbury
+  // and Bath are worth what they are worth because of squares. It is also
+  // strongest for HOUSING rather than offices, which is exactly why it makes a
+  // different KIND of good neighbourhood rather than a second downtown.
+  //
+  // Big parks reach further than small ones — the pull scales with the square
+  // root of the area, which is the park's own radius — so this composes with the
+  // park programme rather than flattening it: a city of twelve squares gets
+  // twelve modest bumps spread through its districts, and a city with one great
+  // park gets one prestige quarter beside it.
+  const parkPts = (parks ?? []).map((pk) => ({
+    xy: pk.xy,
+    // the reach of a green, in metres: its own half-diagonal, floored so a
+    // pocket square still registers and capped so a great park is not the
+    // whole island.
+    r: Math.max(90, Math.min(520, Math.sqrt(Math.max(1, pk.w * pk.h)) * 0.8)),
+  }));
+  const nearParks = bucketIndex(parkPts, 300);
   const raws = lots.map((l) => ({
     transit: nearStations(l.c, 1050, (s, d) => s.w * gauss(d, 350)),
     emp: nearJobs(l.c, 900, (j, d) => j.jobs * gauss(d, 300)),
+    // Frontage, not proximity: the premium is on the blocks that FACE it and
+    // falls away fast behind them.
+    amen: nearParks(l.c, 900, (pk, d) => pk.r * gauss(d, pk.r * 0.75)),
   }));
   const p95 = (arr) => { const s = [...arr].sort((a, b) => a - b); return s[Math.floor(s.length * 0.95)] || 1; };
   const t95 = p95(raws.map((r) => r.transit));
   const e95 = p95(raws.map((r) => r.emp));
+  const a95 = p95(raws.map((r) => r.amen)) || 1;
 
   // --- adjacency: bbox grid index + shared boundary length --------------------
   const CELL = 60; // meters
@@ -278,8 +339,32 @@ export function buildCityData(src) {
     // The ORDER is untouched — the same ground is still the best ground — so
     // every district reads the same, it just stops flattering the fringe.
     const DEMAND_GAMMA = 1.9;
-    const rawDemand = Math.min(1,
-      (45 * Math.min(1, dem.transit / t95) + 55 * Math.min(1, dem.emp / e95)) / 100);
+    // 38 / 44 / 18 — the two original terms keep their ratio to each other, so
+    // the ground that was best is still best, and the amenity term is given the
+    // weight that changes the SHAPE without rewriting the order.
+    const blend = Math.min(1,
+      (38 * Math.min(1, dem.transit / t95)
+        + 44 * Math.min(1, dem.emp / e95)
+        + 18 * Math.min(1, dem.amen / a95)) / 100);
+    // AND SOME QUARTERS ARE SIMPLY BETTER ADDRESSES THAN THEIR NUMBERS SAY.
+    //
+    // Gravity fields cannot produce this and it is most of what a city actually
+    // feels like. Two districts equidistant from the same jobs and the same
+    // stations are not worth the same: one has the good school, the terraces
+    // and the name people say when they are showing off, and the other has none
+    // of that and a gasworks nobody has pulled down. Nothing measurable
+    // separates Islington from Holloway, and everybody knows which is which.
+    //
+    // So a district carries a CACHET, drawn once per town from its own name so
+    // it is stable for the life of the city and different between cities. It is
+    // applied to the blend BEFORE the gamma, so it moves a whole quarter up or
+    // down together rather than scattering — which is the difference between a
+    // neighbourhood and noise, and the thing the owner asked to be thoughtful
+    // about. Business districts vary least, because an office block is bought
+    // on its numbers; residential and old quarters vary most, because a home is
+    // not.
+    const cachet = districtCachet(p.district ?? p.cd ?? "—", manifest.seed ?? 1);
+    const rawDemand = Math.min(1, blend * cachet);
     const demandScore = Math.max(4, Math.min(100, Math.round(100 * Math.pow(rawDemand, DEMAND_GAMMA))));
     const assessedPsf = assessLand / lotArea;
     // assessed values run well below market; scale up, then blend with demand

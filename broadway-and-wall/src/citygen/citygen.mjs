@@ -2094,6 +2094,12 @@ export function generateCity(cfg) {
 
   return {
     parcels, buildings, stations, employment, context, manifest,
+    // THE GREEN, IN METRES, for the demand surface. `context` carries these as
+    // lon/lat polygons for the map to draw; build.mjs needs the centres and
+    // sizes in the same projected metres the lot centroids are in, and
+    // reprojecting a drawn polygon back is a second answer to a question the
+    // generator already knows.
+    parks: cfg.parks.map((pk) => ({ xy: [pk.cx, pk.cy], w: pk.w, h: pk.h, name: pk.name })),
     stats: {
       lots: parcels.features.length,
       blocks: blockNo - 1,

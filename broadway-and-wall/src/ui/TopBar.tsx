@@ -264,6 +264,16 @@ export default function TopBar() {
         >
           ⛁ Saves
         </button>
+        {/* THE ONE PAGE THAT ASSUMES YOU HAVE NEVER DONE THIS. Everything else
+            in this game is written for somebody who already knows what a cap
+            rate is. */}
+        <button
+          className={"lens-btn" + (page === "primer" ? " lens-on" : "")}
+          title="New to commercial real estate? Cap rates, NOI and appraisals, in plain words"
+          onClick={() => setPage(page === "primer" ? "none" : "primer")}
+        >
+          ? Primer
+        </button>
         <button
           className={"lens-btn" + (page === "settings" ? " lens-on" : "")}
           title="Settings — pop-up cards, broker calls, the auction card"

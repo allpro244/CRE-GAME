@@ -2033,10 +2033,29 @@ export function islandConfig(seed) {
     if (along(xy) > quantile(0.45)) lines.push("2");
     if (along(xy) < quantile(0.55)) lines.push("A");
     if (leafOf(xy) === kInd) lines.push("W");
+    // WHAT MAKES A STATION BUSY, and it was only ever one thing.
+    //
+    // Ridership was `22 + 54 * heat`, and heat is proximity to the core — so
+    // every station's weight was a restatement of the same downtown, and the
+    // transit half of the demand surface said exactly what the employment half
+    // said. Measured across six generated islands, demand came out with ONE
+    // local peak and ONE top-decile cluster on every single one, correlating
+    // 0.61 to 0.94 with distance from a single best point. That is the owner's
+    // "all the demand surrounding one specific place", and this is half its
+    // cause.
+    //
+    // An interchange is busy on its own account. Two lines crossing is a reason
+    // to change trains, a reason to open a shop, and a reason for an office
+    // that is not downtown — Shinjuku and Clapham Junction are not central and
+    // are not quiet. So lines served counts, and it counts most where the core
+    // heat is least, because an interchange in the middle of downtown adds
+    // nothing you did not already have.
+    const nLines = Math.max(1, (lines.length ? lines : ["1"]).length);
+    const junction = (nLines - 1) * 26 * (1 - 0.55 * heat);
     stations.push({
       name, lines: (lines.length ? lines : ["1"]).join(" "),
       xy: [Math.round(xy[0]), Math.round(xy[1])],
-      weight: Math.round(22 + 54 * heat),
+      weight: Math.round(22 + 54 * heat + junction),
     });
   };
   // THE RAILWAY STOPS AT THE PARKS THAT EXIST, whatever they turned out to be.

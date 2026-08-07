@@ -31,10 +31,33 @@ export async function saveGame(slot: string, state: GameState): Promise<void> {
   await tx("readwrite", (s) => s.put({ state, savedAt: Date.now() }, slot));
 }
 
+/**
+ * A save written before extended paper had a field of its own. The date used to
+ * be filed inside `heldSince` under an `ext|` prefix; it lives in `extendedTo`
+ * now (see the note on `Rival`). Move what is still about a building the firm
+ * owns, drop the rest — those were the leak, and a save is exactly where they
+ * accumulated.
+ */
+function migrateExtendedPaper(state: GameState) {
+  const EXT = "ext|";
+  for (const r of state.rivals ?? []) {
+    if (!r.heldSince) continue;
+    const own = new Set(r.bbls ?? []);
+    for (const k of Object.keys(r.heldSince)) {
+      if (!k.startsWith(EXT)) continue;
+      const bbl = k.slice(EXT.length);
+      if (own.has(bbl)) (r.extendedTo ??= {})[bbl] = r.heldSince[k];
+      delete r.heldSince[k];
+    }
+  }
+}
+
 export async function loadGame(slot: string): Promise<GameState | null> {
   try {
     const rec = await tx<{ state: GameState } | undefined>("readonly", (s) => s.get(slot) as IDBRequest<{ state: GameState } | undefined>);
-    return rec?.state ?? null;
+    if (!rec?.state) return null;
+    migrateExtendedPaper(rec.state);
+    return rec.state;
   } catch {
     return null;
   }

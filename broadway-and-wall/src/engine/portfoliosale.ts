@@ -25,7 +25,7 @@ import type { GameState } from "./types";
 import type { ParcelTable } from "../data/types";
 import { rng, rrange } from "./market";
 import { assetValue, resolveRec } from "./value";
-import { livingRivals, gradeOf, ownerOf, STYLE_OF, receiverDeskFor, EXT } from "./rivals";
+import { livingRivals, gradeOf, ownerOf, STYLE_OF, receiverDeskFor, forgetDeed } from "./rivals";
 import { lenderByName, lenderPressure, raiseAlert } from "./lenders";
 import { executePurchase } from "./actions";
 import { depositsOn } from "./leasing";
@@ -218,7 +218,7 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
           const rec = resolveRec(parcels, s, b);
           if (!rec) continue;
           const prev = ownerOf(s, b);
-          if (prev) { prev.bbls = prev.bbls.filter((x) => x !== b); if (prev.heldSince) { delete prev.heldSince[b]; delete prev.heldSince[EXT + b]; } }
+          if (prev) { prev.bbls = prev.bbls.filter((x) => x !== b); forgetDeed(prev, b); }
           if (!winner.bbls.includes(b)) winner.bbls.push(b);
           (winner.heldSince ??= {})[b] = s.month;
           s.lastTradeM ??= {}; s.lastTradeM[b] = s.month;

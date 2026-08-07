@@ -1339,6 +1339,21 @@ export interface Rival {
    * buildings, and the only thing that distinguishes them is this number.
    */
   heldSince?: Record<string, number>;
+  /**
+   * WHEN THE EXTENDED PAPER ON A BUILDING COMES BACK, by BBL. Present only for
+   * a building whose balloon the desk re-papered rather than took the keys on;
+   * absent is the ordinary case and means the loan sits on the term ladder.
+   *
+   * This used to live inside `heldSince` under an `ext|` prefix because this
+   * file was not open at the time. It is its own map now for a reason that
+   * cost something: the sweep test read "does this firm have ANY key with that
+   * prefix", eight sites take a deed off a rival and only three cleared the
+   * prefixed key, and a record left behind for a building the firm no longer
+   * owned went on stopping its distributions. Measured before the fix: 58.6%
+   * of extension records outlived their building, and 54% of all swept
+   * firm-months were held up by one of them.
+   */
+  extendedTo?: Record<string, number>;
   id: string;
   name: string;
   style: RivalStyle;

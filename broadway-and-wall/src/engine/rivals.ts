@@ -236,7 +236,7 @@ function transferDeed(s: GameState, bbl: string, to: Rival, price: number) {
     // The paper goes with the deed. Leaving a stale extension record behind
     // meant that if the same firm ever bought the same corner back, its first
     // month of ownership arrived with an expired forbearance already on file.
-    if (r.heldSince) { delete r.heldSince[bbl]; delete r.heldSince[EXT + bbl]; }
+    forgetDeed(r, bbl);
     if (price > 0) {
       const relief = Math.min(r.debt, Math.round(price * r.targetLtv));
       r.debt -= relief;
@@ -1412,17 +1412,19 @@ function originM(r: Rival, bbl: string, term: number): number {
 }
 
 /**
- * WHEN THE EXTENDED PAPER ON THIS BUILDING COMES BACK, and why it is filed
- * under a prefixed key rather than in a field of its own.
+ * WHEN THE EXTENDED PAPER ON THIS BUILDING COMES BACK.
  *
  * An extension has to be REMEMBERED or it buys a full term instead of two
  * years — that is the whole of F2 — and remembering it needs one number per
- * building on the firm. `Rival` lives in `engine/types.ts`, which this change
- * does not own, so the date goes into the map that already carries a per-BBL
- * month for a firm, under a key no BBL can collide with. Nothing iterates
- * `heldSince`; every reader indexes it. THIS SHOULD BE PROMOTED to a proper
- * `extendedTo?: Record<string, number>` on `Rival` the next time that file is
- * open, and this comment is the note asking for it.
+ * building on the firm. That number lives in `Rival.extendedTo`, keyed by BBL.
+ *
+ * IT USED TO LIVE INSIDE `heldSince` UNDER AN `ext|` PREFIX, and the note in
+ * types.ts records what that cost: the sweep test scanned the map for any
+ * prefixed key, and a record for a building the firm had since sold went on
+ * suppressing its distributions with nothing behind it. Both halves of that
+ * are fixed — the record has its own map, and the reader below derives the
+ * sweep from what the firm actually OWNS, so a record that outlives its
+ * building cannot be load-bearing even if some path forgets to clear it.
  *
  * The record also carries the "nobody extends twice" rule the player already
  * lives under (`workout.requestForbearance`: asks >= 1): once an entry exists
@@ -1431,10 +1433,54 @@ function originM(r: Rival, bbl: string, term: number): number {
  * is finally resolved — paid, called, or handed back — because that is new
  * paper and a new file.
  */
-export const EXT = "ext|";
-const extendedTo = (r: Rival, bbl: string): number | undefined => r.heldSince?.[EXT + bbl];
-const setExtended = (r: Rival, bbl: string, m: number) => { (r.heldSince ??= {})[EXT + bbl] = m; };
-const clearExtended = (r: Rival, bbl: string) => { if (r.heldSince) delete r.heldSince[EXT + bbl]; };
+const extendedTo = (r: Rival, bbl: string): number | undefined => r.extendedTo?.[bbl];
+const setExtended = (r: Rival, bbl: string, m: number) => { (r.extendedTo ??= {})[bbl] = m; };
+const clearExtended = (r: Rival, bbl: string) => { if (r.extendedTo) delete r.extendedTo[bbl]; };
+
+/**
+ * THE PAPER GOES WITH THE DEED — the one place that says so, called by every
+ * path that takes a building off a firm.
+ *
+ * Eight sites remove a BBL from a rival: a sale to the player, a sale to
+ * another firm, a sale to Hartford, a deed in lieu, a note holder taking title,
+ * four auction outcomes, and a portfolio trade. Three of them cleared the
+ * firm's per-BBL records and five did not, which is how a firm ended up with
+ * eleven files open on buildings it did not own. Chasing the five would have
+ * left the ninth to be written wrong later; this is the call all of them make
+ * now.
+ */
+export function forgetDeed(r: Rival, bbl: string) {
+  if (r.heldSince) delete r.heldSince[bbl];
+  if (r.extendedTo) delete r.extendedTo[bbl];
+}
+
+/**
+ * IS THIS FIRM'S CASH FLOW SWEPT — derived from the book, not from the file
+ * drawer. A desk that re-papers a maturity takes the cash flow with it and the
+ * borrower stops paying his partners until the file is closed; the question is
+ * therefore whether any building the firm STILL OWNS is under extended paper.
+ * Asking the record map instead let a ghost freeze a firm's distributions for
+ * the rest of the century.
+ */
+function sweptNow(r: Rival): boolean {
+  if (!r.extendedTo) return false;
+  for (const bbl of r.bbls) if (r.extendedTo[bbl] !== undefined) return true;
+  return false;
+}
+
+/**
+ * ...AND THE DRAWER IS TIDIED ANYWAY, because a map that only grows is a save
+ * file that only grows, and because a firm that owes nothing has no outstanding
+ * paper by definition — no balloon will ever come back to close those files, so
+ * nothing else would.
+ */
+function pruneExtensions(r: Rival) {
+  if (!r.extendedTo) return;
+  if (r.debt <= 0) { delete r.extendedTo; return; }
+  const own = new Set(r.bbls);
+  for (const bbl of Object.keys(r.extendedTo)) if (!own.has(bbl)) delete r.extendedTo[bbl];
+  if (!Object.keys(r.extendedTo).length) delete r.extendedTo;
+}
 
 /**
  * ROOM LEFT ON THE FIRM'S OWN LINE — what it can still borrow against the book.
@@ -1799,7 +1845,7 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string): 
   const owed = Math.min(r.debt, Math.round(worst.v * lev));
 
   r.bbls = r.bbls.filter((b) => b !== worst!.bbl);
-  if (r.heldSince) { delete r.heldSince[worst.bbl]; delete r.heldSince[EXT + worst.bbl]; }
+  forgetDeed(r, worst.bbl);
   r.debt = Math.max(0, r.debt - owed);
   // The book shrinks with it. Basis is aggregate, so it comes off by the share
   // this building was — the same estimate `gainsTax` makes on a sale.
@@ -2109,6 +2155,9 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // Before anything is paid out, because a balloon landing this month is a
     // call on this month's cash and the partners are behind the bank.
     tickMaturities(s, parcels, r, aum, noiYr, landV);
+    // The maturities are where a file gets closed; this closes the ones no
+    // maturity will ever reach, because the building left or the debt did.
+    pruneExtensions(r);
     // Leverage as it stands after the maturities, which is what everything
     // below has to read — a firm that just paid down a balloon or handed a
     // building back is not the firm `markRival` marked at the top of the tick.
@@ -2141,7 +2190,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // the file is closed. Without it an extension was time for nothing — the
     // firm went on distributing 35% of its surplus every month it was in
     // forbearance, which is not something a workout desk has ever allowed.
-    const swept = Object.keys(r.heldSince ?? {}).some((k) => k.startsWith(EXT));
+    const swept = sweptNow(r);
     if (r.cash > reserve && !r.stressMs && !building && !swept) {
       const out = Math.round((r.cash - reserve) * 0.35);
       r.cash -= out;
@@ -2183,6 +2232,16 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     if (stH.holdM > 0 && !r.stressMs) {
       let oldest = -1;
       for (const bbl of r.bbls) {
+        // TWO ANSWERS TO ONE QUESTION, and it is deliberate that only one of
+        // them is being fixed here. `originM` dates an undated opening-roster
+        // deed by spreading it back across the loan term; this reads `bornM`.
+        // Both are guesses at a history the game does not model, and they do
+        // not agree. Measured before leaving it: firm listings by year run
+        // 2/16/17/64/42/87/62/89 over the first eight years with no spike where
+        // the opening book crosses its hold clock, because this path lists one
+        // building per firm per month and self-limits. Undated MID-GAME deeds
+        // were the real fault — a courthouse purchase read as owned since the
+        // firm opened — and those are dated at the source now.
         const since = r.heldSince?.[bbl] ?? r.bornM ?? 0;
         const held = s.month - since;
         if (held >= stH.holdM && held > oldest && !s.holdings[bbl] && !s.listings.some((l) => l.bbl === bbl)) {
@@ -2512,6 +2571,7 @@ export function rivalBuys(s: GameState, rec: ParcelRecord, price: number): Rival
     // by exactly the amount that made the decision and the settlement disagree.
     const tax = gainsTax(seller, price);
     seller.bbls = seller.bbls.filter((b) => b !== rec.bbl);
+    forgetDeed(seller, rec.bbl);
     // Same event, same rule — a firm selling to another firm and a firm selling
     // to Hartford both retire the loan that was on the building. See
     // debtReleasedOnSale.
@@ -2560,7 +2620,7 @@ export function sellToOutsider(s: GameState, bbl: string, price: number): boolea
   if (!seller) return false;
   const tax = gainsTax(seller, price);      // struck before the deed moves; see basisShare
   seller.bbls = seller.bbls.filter((b) => b !== bbl);
-  if (seller.heldSince) { delete seller.heldSince[bbl]; delete seller.heldSince[EXT + bbl]; }
+  forgetDeed(seller, bbl);
   const relief = debtReleasedOnSale(seller, price);
   seller.debt -= relief;
   seller.cash += price - relief - tax;

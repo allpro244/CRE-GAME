@@ -9,7 +9,7 @@ import { firmShort, describeFirm } from "./firm";
 import { rng, rrange } from "./market";
 import { assetValue, condGrade, initialCondition, initialCondIdx, holdingValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow } from "./value";
 import { locAvailable } from "./credit";
-import { marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider } from "./rivals";
+import { marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
 import { takeoverDevelopment, cityValueToReplacement } from "./dev";
@@ -145,6 +145,7 @@ export function executePurchase(
     const seller = ownerOf(next, bbl);
     if (seller) {
       seller.bbls = seller.bbls.filter((b) => b !== bbl);
+      forgetDeed(seller, bbl);
       const relief = Math.min(seller.debt, Math.round(price * seller.targetLtv));
       seller.debt -= relief;
       seller.cash += price - relief;

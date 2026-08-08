@@ -41,6 +41,32 @@
 // YEARS, sampled annually. Only genuine stocks — buildings standing, floor
 // area, cumulative demolitions — are read at the end, because those are the
 // numbers a point-in-time reading actually describes.
+//
+// AND IT MUST NOT MEASURE THE SEED, which is the same fault one level up and
+// cost a whole investigation to find. Three seeds recorded a 49% fall in the
+// office rent index and a 72% fall in median land value against the previous
+// commit — the exact signature of a real regression, and the exact size of one
+// this file was written after. It was neither. The commit under suspicion
+// changed how a rival firm's opening debt is sized, which changed the NUMBER
+// of rng() draws, which re-rolls the century: same code, different world.
+//
+// Six seeds, measured either side of that commit, ten-year means:
+//
+//   before   219.3  178.2   80.7  169.0  276.5  117.6
+//   after     96.1  284.1   83.9   88.6  162.5   56.7
+//
+// Two seeds up, four down, individual moves of +60% to -56%, and a difference
+// in means of 26% against a cross-seed spread of 3.4x. The dispersion IS the
+// measurement: with a five-fold spread between cities, a three-seed median
+// cannot resolve anything smaller than a factor of two, so every re-roll
+// reads as a catastrophe and a genuine halving would read as one seed being
+// unlucky. Six seeds is the compromise the minute-long budget allows — still
+// noisy on rent and land, honest about it here, and enough that a real level
+// shift moves the median in the same direction as the mean.
+//
+// If you are chasing a move in rentIdx or land after a commit that touched
+// anything stochastic, RE-ROLL BEFORE YOU DIAGNOSE. Run both builds over a
+// wider seed set and compare the distributions, not the medians.
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,7 +86,7 @@ const pct = (a, p) => { const s = [...a].filter(Number.isFinite).sort((x, y) => 
 //
 // Each returns { key: value } and says, in its comment, what going wrong looks
 // like. `id` in the name marks an identity: it is not allowed to move at all.
-const CITY = "newalden", CITY_SEED = 1, SEEDS = [550991, 12007, 73303];
+const CITY = "newalden", CITY_SEED = 1, SEEDS = [550991, 12007, 73303, 4242, 91117, 20603];
 
 function freshCity() {
   const built = makeCity(CITY, CITY_SEED);

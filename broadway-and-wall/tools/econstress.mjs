@@ -20,6 +20,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { E, USES, MONTHS, run, city, med, mean, pct, districtsOf } from "./econaudit-core.mjs";
 import { makeCity, CITIES } from "../src/citygen/index.mjs";
+import { leaseAtMarket } from "../test/leasepolicy.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = join(HERE, "..", "ECONOMY_STRESS.md");
@@ -286,16 +287,29 @@ function playStrategy(name, ms, base = city(CITY_SEED)) {
   const parcels = JSON.parse(JSON.stringify(base.parcels));
   let g = E.firstListings(newGame(ms, parcels), parcels, base.bbls);
   let bought = 0, sold = 0, builtN = 0, peak = 0, trough = 1;
+  // THE BOT CAN DIE, AND FIVE CHECKS READ THE NUMBER IT DIES AT.
+  //
+  // advanceQuarter returns state UNCHANGED once gameOver is set, so a bankrupt
+  // strategy freezes and every later month is a copy of the month it failed.
+  // Its terminal `nw` is then not a fifty-year outcome at all — it is the
+  // INSOLVENCY EXIT CONDITION, a small negative number that barely varies with
+  // the seed because it is a threshold rather than a result. [G] was reading
+  // exactly that and dividing by it; 28 reports drawdowns "over 100%" out of
+  // it. Recording the month makes the death a finding instead of a silent
+  // freeze, and every caller can now say how long the strategy lasted rather
+  // than implying it lasted fifty years.
+  let deathM = 0;
   for (let m = 0; m < MONTHS; m++) {
     g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
+    if (g.gameOver && !deathM) deathM = m + 1;
     const e = g.econ;
     // ---- leasing: identical for everyone
     for (const loi of [...g.lois]) {
       const rec = E.resolveRec(parcels, g, loi.bbl);
       const h = g.holdings[loi.bbl];
       if (!rec || !h) continue;
-      const mkt = E.managedRentPsfYr(rec, e, h, loi.use);
-      const r = E.respondLOI(g, parcels, loi.id, loi.rentPsf >= mkt * 0.92 ? "accept" : "pass");
+      const ask = E.managedRentPsfYr(rec, e, h, loi.use) * E.staleDiscount(h.darkMs);
+      const r = E.respondLOI(g, parcels, loi.id, loi.rentPsf >= ask * 0.92 ? "accept" : "pass");
       if (!r.err) g = r.s;
     }
     // ---- take offers on anything we are selling
@@ -319,7 +333,25 @@ function playStrategy(name, ms, base = city(CITY_SEED)) {
     const busy = st.build
       && (Object.keys(g.developments).length > 0 || Object.keys(g.holdings).length > 0);
     if (st.buyWhen(e) && m > 2 && !busy) {
-      for (const li of [...g.listings].slice(0, 6)) {
+      // A DESK REVIEWS THE WHOLE TAPE, NOT THE FIRST SIX LINES OF IT.
+      //
+      // This read `[...g.listings].slice(0, 6)` — and `s.listings` is in
+      // insertion order, so those six are the STALEST inventory on the market,
+      // the lines nobody has taken. For a strategy that will buy any building
+      // that is enough to find something. For `merchant`, which needs a LAND
+      // listing that also clears a 1.5-point development spread, it is not:
+      // measured, 13.29% of land listings clear that hurdle (95 of 715 across
+      // three seeds and fifty years, about two a year), and the merchant bot
+      // bought ZERO of them in any run. Its row in the table was therefore not
+      // a finding about merchant development at all — it was the do-nothing arm
+      // with a crane painted on it, and it was being read as "building
+      // speculatively loses money".
+      //
+      // The window is gone rather than widened. `want` is cheap for everything
+      // it rejects on class, so the expensive underwriting only runs on the
+      // sites a merchant would actually price, and the bot is only in this loop
+      // at all when it has nothing on site.
+      for (const li of [...g.listings]) {
         const rec = E.resolveRec(parcels, g, li.bbl);
         if (!rec || g.holdings[li.bbl]) continue;
         if (!st.want(rec, g, parcels)) continue;
@@ -356,7 +388,22 @@ function playStrategy(name, ms, base = city(CITY_SEED)) {
         // while the lawyers worked is a job you do not start.
         const b = bestPlan(g, parcels, h.bbl);
         if (!b || b.spread < DEV_HURDLE_PP) break;
-        const r = E.startDevelopment(g, parcels, h.bbl, b.use, b.floors, 0.6);
+        // A MERCHANT BUILDER BORROWS TO BUILD. THAT IS THE BUSINESS — and this
+        // called startDevelopment with no LTC at all, funding construction out
+        // of a $2.5M fund when a building costs multiples of it. 65% is not a
+        // tuned number: it is the engine's own reference LTC, the divisor every
+        // other levered strategy here is expressed against (`st.ltv / 0.65`
+        // above), and it is the middle of the band a construction lender writes.
+        //
+        // IT DID NOT FIX THE BOT, AND I AM LEAVING THAT WRITTEN DOWN. I expected
+        // the equity test to be what refused the job; measured, merchant still
+        // buys 1 site and builds 0 across six seeds and fifty years, exactly as
+        // before. So the missing loan was real and was NOT the binding
+        // constraint, and whatever stops this bot breaking ground is still
+        // unfound. The `did each strategy actually trade?` line below exists to
+        // keep that visible instead of letting the row read as a verdict on
+        // speculative development.
+        const r = E.startDevelopment(g, parcels, h.bbl, b.use, b.floors, 0.6, "gmp", 0.65);
         if (!r.err) { g = r.s; builtN++; }
         break;
       }
@@ -391,7 +438,7 @@ function playStrategy(name, ms, base = city(CITY_SEED)) {
     if (m % 120 === 0) scan(`strat:${name}:${ms}`, g, parcels);
   }
   return { nw: E.netWorth(g, parcels), bought, sold, builtN, drawdown: 1 - trough,
-           holdings: Object.keys(g.holdings).length, cpi: g.econ.cpi };
+           holdings: Object.keys(g.holdings).length, cpi: g.econ.cpi, deathM };
 }
 
 if (want(28)) {
@@ -406,6 +453,7 @@ if (want(28)) {
       realMed: med(outs.map((o) => o.nw / Math.max(0.1, o.cpi))),
       dd: med(outs.map((o) => o.drawdown)), fails: outs.filter((o) => o.nw < 1e6).length,
       bought: med(outs.map((o) => o.bought)), sold: med(outs.map((o) => o.sold)), holds: med(outs.map((o) => o.holdings)),
+      builtN: med(outs.map((o) => o.builtN)), died: outs.filter((o) => o.deathM > 0).length, deathM: med(outs.filter((o) => o.deathM > 0).map((o) => o.deathM)),
     });
     log(`   ${name.padEnd(11)} median ${M(med(nws))}  worst ${M(nws[0])}  best ${M(nws[nws.length - 1])}`);
   }
@@ -443,6 +491,24 @@ if (want(28)) {
     `top strategy over the field: ${Number.isFinite(edge) ? edge.toFixed(2) + "x" : "unbounded — the median strategy loses money"}   (need <= 4x)`,
     `top strategy wins ${wins} of ${MARKET_SEEDS.length} worlds outright: ${pct(winRate)}   (need <= 70% — one right answer is a solved game)`,
     `strategies that end in the black: ${table.filter((t) => t.realMed > 1e6).length} of ${table.length}`,
+    ``,
+    // THE TOURNAMENT'S OWN COVERAGE — because a bot that stops is invisible.
+    //
+    // CLAUDE.md: "Any harness whose subject is a bot has a second failure mode
+    // nothing else will catch — the bot stopping — and the harness is
+    // responsible for noticing." conserve learned that when its buyer's cash
+    // threshold outlived the bankroll it was sized against, and reconciled a
+    // player who owned nothing for an unknown number of commits while printing
+    // a pass.
+    //
+    // The same thing is happening here in plain sight: `merchant` buys NOTHING
+    // and builds NOTHING across every seed, so its line in the table above is
+    // not a measurement of merchant development at all — it is a second copy of
+    // the do-nothing arm, priced in G&A, being read as "merchant loses money".
+    // A strategy that never acts is not evidence about strategy.
+    `did each strategy actually trade?`,
+    ...table.map((t) => `   ${t.name.padEnd(12)} bought ${String(t.bought).padStart(3)}  sold ${String(t.sold).padStart(3)}  built ${String(t.builtN ?? 0).padStart(3)}`
+      + `${(t.bought + t.sold + (t.builtN ?? 0)) === 0 ? "   <-- INERT: this row is not a finding about this strategy" : ""}`),
   ];
   const dominant = (edge > 4 ? 1 : 0) + (winRate > 0.7 ? 1 : 0);
   report(28, "STRATEGY TOURNAMENT", dominant === 2 ? "BROKEN" : dominant === 1 ? "WEAK" : "WIRED", lines);
@@ -471,17 +537,7 @@ const landPsf = (parcels, g, bbls) =>
   med(bbls.map((b) => { const r = E.resolveRec(parcels, g, b); return r?.lotArea ? E.landValue(r, g.econ) / r.lotArea : NaN; }));
 
 /** One shared leasing policy, so nothing below is measuring leasing skill. */
-function leaseAtMarket(g, parcels) {
-  for (const loi of [...g.lois]) {
-    const rec = E.resolveRec(parcels, g, loi.bbl);
-    const h = g.holdings[loi.bbl];
-    if (!rec || !h) continue;
-    const mkt = E.managedRentPsfYr(rec, g.econ, h, loi.use);
-    const r = E.respondLOI(g, parcels, loi.id, loi.rentPsf >= mkt * 0.92 ? "accept" : "pass");
-    if (!r.err) g = r.s;
-  }
-  return g;
-}
+// See test/leasepolicy.mjs — one rule, imported, not copied.
 
 // ===========================================================================
 // B. THE PLAYER EXISTS TO THE WORLD — the mirror of A
@@ -518,7 +574,7 @@ if (want("B")) {
       for (let m = 0; m < 300; m++) {
         g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
         if (!whale) continue;
-        g = leaseAtMarket(g, parcels);
+        g = leaseAtMarket(E, g, parcels);
         for (const li of [...g.listings]) {
           if (!dBbls.includes(li.bbl) || g.holdings[li.bbl]) continue;
           const rec = E.resolveRec(parcels, g, li.bbl);
@@ -687,7 +743,7 @@ if (want("E")) {
     const hit = { breach: false, sweep: false, workout: false, foreclosure: false, seized: false, cured: false };
     for (let m = 0; m < MONTHS && !g.gameOver; m++) {
       g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
-      g = leaseAtMarket(g, parcels);
+      g = leaseAtMarket(E, g, parcels);
       // buy anything, at the top of the market, with all the debt on offer
       for (const li of [...g.listings].slice(0, 4)) {
         const rec = E.resolveRec(parcels, g, li.bbl);
@@ -1164,7 +1220,7 @@ if (want(35)) {
       // leaseAtMarket has run counts the ones the bot failed to deal with,
       // which is the opposite of the question and reads as a flat zero.
       const hasLoi = g.lois.length > 0;
-      g = leaseAtMarket(g, parcels);
+      g = leaseAtMarket(E, g, parcels);
       // buy something occasionally so the run is a real portfolio, not an empty desk
       if (m % 18 === 0) {
         for (const li of [...g.listings].slice(0, 5)) {

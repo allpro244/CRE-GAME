@@ -23,6 +23,7 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { leaseAtMarket } from "../test/leasepolicy.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const E = await import(join(HERE, "..", "test", ".engine.mjs"));
@@ -71,8 +72,8 @@ function lease(g, parcels) {
   for (const loi of [...g.lois]) {
     const rec = E.resolveRec(parcels, g, loi.bbl), h = g.holdings[loi.bbl];
     if (!rec || !h) continue;
-    const mkt = E.managedRentPsfYr(rec, g.econ, h, loi.use);
-    const r = E.respondLOI(g, parcels, loi.id, loi.rentPsf >= mkt * 0.92 ? "accept" : "pass");
+    const ask = E.managedRentPsfYr(rec, g.econ, h, loi.use) * E.staleDiscount(h.darkMs);
+    const r = E.respondLOI(g, parcels, loi.id, loi.rentPsf >= ask * 0.92 ? "accept" : "pass");
     if (!r.err) g = r.s;
   }
   // No unsolicited sales. The protagonist is a holder — letting it take every

@@ -32,6 +32,7 @@
 // where it can run a hundred thousand months, not in the tick where it would
 // cost every player a reconciliation they did not ask for.
 import { assertFreshBundle } from "./fresh.mjs";
+import { leaseAtMarket } from "./leasepolicy.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -89,8 +90,8 @@ for (const seed of SEEDS) {
     for (const loi of [...g.lois]) {
       const rec = E.resolveRec(parcels, g, loi.bbl), h = g.holdings[loi.bbl];
       if (!rec || !h) continue;
-      const mkt = E.managedRentPsfYr(rec, g.econ, h, loi.use);
-      const r = E.respondLOI(g, parcels, loi.id, loi.rentPsf >= mkt * 0.92 ? "accept" : "pass");
+      const ask = E.managedRentPsfYr(rec, g.econ, h, loi.use) * E.staleDiscount(h.darkMs);
+      const r = E.respondLOI(g, parcels, loi.id, loi.rentPsf >= ask * 0.92 ? "accept" : "pass");
       if (!r.err) g = r.s;
     }
     // ...AND IT KEEPS A RESERVE, because a bot that buys on a clock regardless

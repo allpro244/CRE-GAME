@@ -13,9 +13,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ENTRY = join(HERE, ".entry.ts");
 const OUT = join(HERE, ".engine.mjs");
 
-const MODULES = ["sim", "leasing", "actions", "credit", "value", "dev", "debt", "demand", "invariants", "rivals", "sponsor", "mix", "acquire", "comps", "market", "zoning", "lenders", "workout", "portfolio"];
+const { writeEntry } = await import("./entry.mjs");
 const { writeFileSync } = await import("node:fs");
-writeFileSync(ENTRY, MODULES.map((m) => `export * from "../src/engine/${m}";`).join("\n") + "\n");
+writeFileSync(ENTRY, writeEntry());
 
 const build = spawnSync(
   join(HERE, "..", "node_modules", ".bin", "esbuild"),

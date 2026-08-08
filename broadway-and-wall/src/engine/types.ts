@@ -449,6 +449,10 @@ export interface Development {
   mix: UseMix;
   sf: number;
   floors: number;
+  /** Share of the lot the floorplate covers. Carried from the plan to delivery
+   *  and on to the built record, because the MAP draws the building from it —
+   *  see BuiltOverride.cov. */
+  coverage?: number;
   /** How you chose to demise it, sf per space per use. Carried to delivery. */
   suites?: Partial<Record<BuiltClass, number>>;
   costTotal: number;      // the budget as it stands today, escalation included
@@ -555,6 +559,16 @@ export interface BuiltOverride {
   yearBuilt: number;
   /** sf per leasable space, per use — the programming decision you made. */
   suites?: Partial<Record<BuiltClass, number>>;
+  /**
+   * SITE COVERAGE — the share of the lot the building actually stands on.
+   *
+   * Carried so the MAP can draw the building the player designed. Without it the
+   * renderer insets every lot by a constant 0.78 and draws the same footprint
+   * whatever coverage was chosen, so the only way coverage reaches the picture
+   * is through the floor count — backwards. Two buildings of identical square
+   * footage, one wide and one tall, were drawn with a 2:1 difference in volume.
+   */
+  cov?: number;
 }
 
 export interface Listing {
@@ -684,7 +698,17 @@ export interface PortfolioSale {
   listedM: number;
   /** What the buildings were worth one at a time on the day it was listed. */
   sumOfParts: number;
-  bids: { name: string; price: number; expiresM: number; countered?: boolean }[];
+  bids: {
+    name: string; price: number; expiresM: number; countered?: boolean;
+    /**
+     * HOW FAR PAST THEIR NUMBER THIS PARTICULAR BUYER WILL GO, as a multiple of
+     * their bid. Drawn per bidder rather than shared, because a single figure
+     * for every institution in the city makes countering a rule the player
+     * learns once instead of a judgement about the counterparty in front of
+     * them. See `counterPortfolio`.
+     */
+    limit?: number;
+  }[];
   /** They came to you. Those bids carry a premium and a short fuse. */
   unsolicited?: boolean;
 }

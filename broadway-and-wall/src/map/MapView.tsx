@@ -597,11 +597,11 @@ export default function MapView() {
   useEffect(() => {
     const layer = threeRef.current;
     if (!layer || !mapReady || !game) return;
-    const items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean }[] = [];
+    const items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean; cov?: number }[] = [];
     for (const d of Object.values(game.developments ?? {})) {
       const total = Math.max(1, d.deliverM - d.startM);
       const prog = Math.min(1, Math.max(0.15, (game.month - d.startM + 1) / total));
-      items.push({ bbl: d.bbl, cls: d.use, heightM: d.floors * 3.4 * prog, floors: d.floors, construction: true });
+      items.push({ bbl: d.bbl, cls: d.use, heightM: d.floors * 3.4 * prog, floors: d.floors, construction: true, cov: d.coverage });
     }
     // EVERYBODY ELSE'S CRANES. The city's pipeline was invisible until the day
     // it opened, so the supply you were reading about on the Economy page had
@@ -619,7 +619,7 @@ export default function MapView() {
       // bunting for the first three months after delivery — a grand opening
       const dM = game.holdings[bbl]?.deliveredM;
       const fresh = dM !== undefined && game.month - dM <= 3;
-      items.push({ bbl, cls: b.class, heightM: b.floors * 3.4, floors: b.floors, construction: false, fresh });
+      items.push({ bbl, cls: b.class, heightM: b.floors * 3.4, floors: b.floors, construction: false, fresh, cov: b.cov });
     }
     // AN ASSEMBLED SITE IS ONE BUILDING ON SEVERAL DEEDS. The massing lives on
     // the parent lot; without this a tower built on three merged lots rose out

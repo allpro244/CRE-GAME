@@ -1311,7 +1311,27 @@ export function generateCity(cfg) {
   // Everything here carries a `deco` kind so the renderer can COLOR it — a
   // navy hull, a white wheelhouse, an ochre crane — instead of the fleet of
   // uniform grey boxes the harbor used to be.
-  const PIERS_M = cfg.piers ?? [];
+  // THE HARBOUR FURNITURE IS GONE, BY REQUEST.
+  //
+  // Owner: "i am really not a fan of the 'dock' / 'harbor' looking like
+  // structures, we should remove them from the game."
+  //
+  // Emptied at the source rather than deleted emitter by emitter, because the
+  // piers are the root of all of it: the sheds sit on them (`slice(0, 4)`
+  // below), the piles and bollards dress their edges, the channel buoys are
+  // placed seaward of their tips, and the landscape layer draws them as
+  // `kind: "pier"` polygons. One empty array and every one of those loops
+  // produces nothing. The ships and the quay cranes are separately sourced and
+  // are switched off where they are read.
+  //
+  // NOTHING STRUCTURAL DEPENDS ON THEM, which is why this is safe: piers carry
+  // `base_bbl: ""` and are never parcelled, no block or lot is generated on
+  // one, and no demand, transit, zoning or employment term reads them. The
+  // coastline is its own feature and is untouched, so the harbour is still a
+  // harbour — it just has nothing industrial standing in it.
+  //
+  // The lighthouse stays. It is a landmark on a headland rather than a dock.
+  const PIERS_M = [];
   let decoN = 1;
   function addDeco(ringM, topM, baseM = 0, kind = "shed") {
     buildings.features.push({
@@ -1326,106 +1346,15 @@ export function generateCity(cfg) {
       },
     });
   }
-  // A SHIP IS A SHAPE, not a box: a hull that narrows to a bow, a white
-  // superstructure aft, a funnel — and on the cargo variant a spine of
-  // containers. `hue` picks the hull paint so the fleet isn't uniform.
-  function addShip(cx, cy, deg, len = 40, hue = 0, cargo = true) {
-    const t = (deg * Math.PI) / 180;
-    const R = ([x, y]) => [x * Math.cos(t) - y * Math.sin(t) + cx, x * Math.sin(t) + y * Math.cos(t) + cy];
-    const beam = len * 0.24;
-    const hull = [
-      [-len / 2, -beam / 2], [len * 0.24, -beam / 2], [len / 2, 0],
-      [len * 0.24, beam / 2], [-len / 2, beam / 2],
-    ].map(R);
-    addDeco(hull, 3.6, 0, "hull" + hue);
-    addDeco(rect(cx - (len * 0.34) * Math.cos(t), cy - (len * 0.34) * Math.sin(t), len * 0.17, beam * 0.8, deg), 8.6, 3.4, "super");
-    addDeco(rect(cx - (len * 0.40) * Math.cos(t), cy - (len * 0.40) * Math.sin(t), len * 0.05, beam * 0.3, deg), 11, 8.4, "funnel");
-    if (cargo) {
-      for (let k = 0; k < 3; k++) {
-        const u = (-0.12 + k * 0.16) * len;
-        addDeco(rect(cx + u * Math.cos(t), cy + u * Math.sin(t), len * 0.13, beam * 0.62, deg), 5.6, 3.4, "box" + ((hue + k) % 3));
-      }
-    }
-  }
-  // a small moored workboat or sloop — the clutter a real harbor floats on
-  function addBoat(cx, cy, deg, len = 9) {
-    const t = (deg * Math.PI) / 180;
-    const R = ([x, y]) => [x * Math.cos(t) - y * Math.sin(t) + cx, x * Math.sin(t) + y * Math.cos(t) + cy];
-    const beam = len * 0.34;
-    const hull = [
-      [-len / 2, -beam / 2], [len * 0.2, -beam / 2], [len / 2, 0], [len * 0.2, beam / 2], [-len / 2, beam / 2],
-    ].map(R);
-    addDeco(hull, 1.1, 0, "boat");
-    if (rand() < 0.6) addDeco(rect(cx, cy, 0.5, 0.5, deg), 7 + rand() * 3, 1, "mast");
-  }
-  for (const pier of PIERS_M.slice(0, 4)) {
-    const shed = insetRing(pier, 4);
-    if (shed) addDeco(shed, rr(5, 7), 0, "shed");
-  }
-  for (const [cx, cy, deg] of cfg.cranes ?? []) {
-    addDeco(rect(cx, cy, 5, 5, deg), 26, 0, "crane");
-    addDeco(rect(cx + 9 * Math.cos((deg * Math.PI) / 180), cy + 9 * Math.sin((deg * Math.PI) / 180), 24, 3, deg), 25, 22, "crane");
-  }
-  (cfg.ships ?? []).forEach(([cx, cy, deg], i) => {
-    addShip(cx, cy, deg, 38 + (i % 3) * 9, i % 3, i % 2 === 0);
-  });
-  const BREAKWATERS = (cfg.breakwaters ?? []).map(([cx, cy, w, h, deg]) => rect(cx, cy, w, h, deg));
+  // Quay cranes, moored ships and the breakwaters go with the piers — see the
+  // note at PIERS_M. `cfg.cranes`, `cfg.ships` and `cfg.breakwaters` are left
+  // in the city definitions so the shape of a town is still described in one
+  // place; nothing reads them.
+  const BREAKWATERS = [];
 
-  // --- piers dressed as piers ----------------------------------------------
-  // Piles marching down both edges, bollards on the deck, and a boat or two
-  // moored alongside. These are what made the old piers read as "weird docks":
-  // a bare rectangle floating on the water with nothing holding it up.
   const pileFeatures = [];
   const bollardFeatures = [];
-  for (const pier of PIERS_M) {
-    // the two LONG edges carry the piles
-    const edges = pier.map((a, i) => {
-      const b = pier[(i + 1) % pier.length];
-      return { a, b, len: Math.hypot(b[0] - a[0], b[1] - a[1]) };
-    }).sort((x, y2) => y2.len - x.len).slice(0, 2);
-    for (const e of edges) {
-      const n = Math.max(2, Math.floor(e.len / 6.5));
-      for (let k = 0; k <= n; k++) {
-        const t2 = k / n;
-        pileFeatures.push([e.a[0] + (e.b[0] - e.a[0]) * t2, e.a[1] + (e.b[1] - e.a[1]) * t2]);
-      }
-      const nb = Math.max(1, Math.floor(e.len / 22));
-      for (let k = 0; k < nb; k++) {
-        const t2 = (k + 0.5) / nb;
-        // bollards sit a step in from the edge
-        const cx2 = e.a[0] + (e.b[0] - e.a[0]) * t2, cy2 = e.a[1] + (e.b[1] - e.a[1]) * t2;
-        const c = centroid(pier);
-        const vx = c[0] - cx2, vy = c[1] - cy2;
-        const vl = Math.hypot(vx, vy) || 1;
-        bollardFeatures.push([cx2 + (vx / vl) * 1.1, cy2 + (vy / vl) * 1.1]);
-      }
-    }
-    // a boat moored on one side, most of the time
-    if (rand() < 0.75) {
-      const e = edges[0];
-      const t2 = rr(0.3, 0.7);
-      const mx = e.a[0] + (e.b[0] - e.a[0]) * t2, my = e.a[1] + (e.b[1] - e.a[1]) * t2;
-      const c = centroid(pier);
-      let nx2 = -(e.b[1] - e.a[1]) / e.len, ny2 = (e.b[0] - e.a[0]) / e.len;
-      if ((c[0] - mx) * nx2 + (c[1] - my) * ny2 > 0) { nx2 = -nx2; ny2 = -ny2; }   // seaward
-      const ang = (Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]) * 180) / Math.PI;
-      addBoat(mx + nx2 * 3.4, my + ny2 * 3.4, ang + rr(-6, 6), rr(7, 12));
-    }
-  }
-
-  // channel buoys: red-green pairs seaward of the pier tips, plus a few along
-  // the breakwater — the marks a real harbor steers by
   const buoyFeatures = [];
-  for (const pier of PIERS_M) {
-    const c = centroid(pier);
-    const away = Math.hypot(c[0], c[1]) || 1;
-    const dx2 = c[0] / away, dy2 = c[1] / away;
-    if (rand() < 0.7) buoyFeatures.push({ p: [c[0] + dx2 * rr(35, 70), c[1] + dy2 * rr(35, 70)], side: buoyFeatures.length % 2 });
-  }
-  for (const bw of BREAKWATERS) {
-    const c = centroid(bw);
-    for (let k = 0; k < 3; k++) buoyFeatures.push({ p: [c[0] + rr(-90, 90), c[1] + rr(-60, -20)], side: k % 2 });
-  }
 
   // --- the lighthouse --------------------------------------------------------
   // Every harbor town has one, on the headland the chart says it should be on:

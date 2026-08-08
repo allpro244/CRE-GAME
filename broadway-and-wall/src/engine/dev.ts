@@ -1087,6 +1087,7 @@ export function startDevelopment(
   next.developments[bbl] = {
     spec: plan.spec,
     bbl, use, mix: plan.mix, sf: plan.sf, floors: plan.floors,
+    coverage: plan.coverage,
     suites: custom?.suites,
     costTotal: plan.costTotal, hardCost: plan.hardCost, contract,
     landBasis: plan.landBasis,
@@ -1624,7 +1625,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // Buildings you have put up. The city notices a developer.
   s.delivered = (s.delivered ?? 0) + 1;
   const dmix = d.mix ?? devMix(d.use);
-  s.built[d.bbl] = { class: dominantOf(dmix), mix: dmix, bldgArea: d.sf, floors: d.floors, yearBuilt: 2000 + Math.floor(s.month / 12), suites: d.suites };
+  s.built[d.bbl] = { class: dominantOf(dmix), mix: dmix, bldgArea: d.sf, floors: d.floors, yearBuilt: 2000 + Math.floor(s.month / 12), suites: d.suites, cov: d.coverage };
   // YOUR BUILDING IS SUPPLY TOO. A tower you deliver competes with everybody
   // else's space, including your own — and if you build enough of one class
   // you will move its vacancy against yourself, which is the correct lesson.

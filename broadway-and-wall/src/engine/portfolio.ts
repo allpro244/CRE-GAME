@@ -249,27 +249,83 @@ export function repricePortfolio(s: GameState, ask: number): { s: GameState; err
 }
 
 /** Answer a bid with a number of your own. */
+/**
+ * HOW MUCH ROOM THIS BUYER HAS ABOVE ITS OWN BID.
+ *
+ * Every institution used to have the same one — an 11% ceiling, hardcoded and
+ * identical for all of them — which made countering a rule to be learnt once
+ * rather than a read on the counterparty. Committee-approved numbers are not
+ * all the same distance from the opening bid: some desks open near their limit
+ * because they want to look serious, some open low because they expect to be
+ * countered. Four to sixteen per cent is that spread.
+ */
+function bidderLimit(s: GameState): number {
+  return +(1 + rrange(s, 0.04, 0.16)).toFixed(3);
+}
+
+/**
+ * ANSWERING A BUNDLE BID, AND THE THREE THINGS A BUYER CAN DO.
+ *
+ * Reported by the owner: "when you get an offer on your portfolio you have
+ * listed, it seems if you counter it that they always reject the counter, no
+ * matter what." Confirmed, and it was worse than that. The odds were:
+ *
+ *     counter +1%    36% they walk        +8%    81% they walk
+ *     counter +5%    62% they walk       +11%   100% they walk
+ *     anything at or beyond +11%         100%, always, with no exception
+ *
+ * `give = max(0, 1 - (stretch - 1) / 0.11)` reaches zero at exactly 11% and
+ * stays there, so every counter past that point was a certainty rather than a
+ * risk. And there were only two outcomes — they move, or they WITHDRAW and the
+ * bid is deleted — so a failed counter did not fail, it destroyed the offer.
+ *
+ * That is not how a bid gets answered. A buyer who will not meet your number
+ * usually restates their own and waits; walking away entirely is what happens
+ * when you push far past their limit, not when you push past it at all. So
+ * there are three outcomes now, which is what the table actually has:
+ *
+ *   THEY MOVE   inside their limit, and they split the difference.
+ *   THEY HOLD   past it but not absurdly. Their number stands and stays on the
+ *               table; you have had your go and can still take it.
+ *   THEY WALK   far past it, or the bundle was never worth the trouble.
+ *
+ * And the limit is per-bidder now (see `bidderLimit`), so the question is what
+ * THIS buyer will bear rather than what the rule says.
+ */
 export function counterPortfolio(s: GameState, price: number): { s: GameState; err?: string; msg?: string } {
   const ps = s.portfolioSale;
   const best = ps?.bids?.[0];
   if (!ps || !best) return { s, err: "Nothing to answer." };
+  if (best.countered) return { s, err: "You have already been back to them once on this one." };
   const next = clone(s);
   const nb = next.portfolioSale!.bids[0];
   const stretch = price / Math.max(1, best.price);
   nb.countered = true;
-  // An institution has a committee-approved number. You can move them a little
-  // and only a little, and pushing hard on a bundle is how the whole thing
-  // falls apart — they have other portfolios to look at.
-  const give = Math.max(0, 1 - (stretch - 1) / 0.11);
   if (stretch <= 1.005) return { s, err: "That is their number. Take it or leave it." };
-  if (rng(next) < give * 0.7) {
-    const meet = Math.round(best.price + (price - best.price) * rrange(next, 0.4, 0.9));
+
+  const limit = best.limit ?? 1.11;
+  if (stretch <= limit) {
+    // Inside the committee's room. They still do not simply pay it — they split
+    // the difference, which is what the room was for.
+    const meet = Math.round(best.price + (price - best.price) * rrange(next, 0.45, 0.9));
     nb.price = meet;
     next.news.unshift({
       q: next.month, kind: "deal",
       text: `${best.name} came up to ${money(meet)} on the portfolio. That is their committee number and there is nothing behind it.`,
     });
     return { s: next, msg: "They moved." };
+  }
+
+  // Past the limit. How far past decides whether this is a no or a goodbye —
+  // a bundle is a discretionary purchase and there is always another one, but
+  // nobody abandons a live file over a few per cent.
+  const over = (stretch - limit) / Math.max(0.01, limit - 1);
+  if (over < 1 && rng(next) > 0.30) {
+    next.news.unshift({
+      q: next.month, kind: "warn",
+      text: `${best.name} would not chase ${money(price)}. Their ${money(best.price)} stands, and they have told you it is final.`,
+    });
+    return { s: next, msg: "They held their number." };
   }
   next.portfolioSale!.bids = next.portfolioSale!.bids.filter((b) => b.name !== best.name);
   next.news.unshift({
@@ -400,7 +456,7 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
           const who = pool[Math.floor(rng(s) * pool.length)];
           const price = Math.round(Math.min(live.ask, q.indicative * who.patience * rrange(s, 0.88, 1.02)));
           const first = live.bids.length === 0;
-          live.bids.push({ name: who.name, price, expiresM: s.month + 3 });
+          live.bids.push({ name: who.name, price, expiresM: s.month + 3, limit: bidderLimit(s) });
           live.bids.sort((a, b) => b.price - a.price);
           // The FIRST indication on a book you put in the market is the moment
           // the process becomes a decision. Later ones are a list you go and
@@ -457,7 +513,7 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
         const price = Math.round(q.indicative * rrange(s, 1.0, 1.09));
         s.portfolioSale = {
           bbls, ask: price, listedM: s.month, sumOfParts: q.sumOfParts, unsolicited: true,
-          bids: [{ name: buyer.name, price, expiresM: s.month + 4 }],
+          bids: [{ name: buyer.name, price, expiresM: s.month + 4, limit: bidderLimit(s) }],
         };
         // AN OFFER FOR A BOOK OF BUILDINGS IS NOT A NEWS LINE.
         //

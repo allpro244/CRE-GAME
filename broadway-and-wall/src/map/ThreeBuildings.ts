@@ -7702,7 +7702,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
    * prove it is distinguishable from the family beside it, which is a different
    * question and one no counter can answer.
    */
-  setPlayerBuildings(items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean; styleOverride?: number }[]) {
+  setPlayerBuildings(items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean; styleOverride?: number; cov?: number }[]) {
     this.dynGroup.clear();
     this.cranes.length = 0;
     for (const item of items) {
@@ -7754,7 +7754,30 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // slender point only exists where the floors justify the core.
       const mroll = hash01(k ^ 0x77aa11, this.citySeed ^ 0x1234);
       const inset = (f: number) => ring.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as [number, number]);
-      const B = 0.78;                                // the base plate the prism used
+      // THE BASE PLATE IS THE BUILDING'S OWN COVERAGE, NOT A CONSTANT.
+      //
+      // This was a flat 0.78 for every building the player or the city put up,
+      // which meant the drawn footprint never changed and site coverage reached
+      // the picture ONLY through the floor count — backwards, because covering
+      // more of the lot buys FEWER floors for the same square footage. Owner's
+      // report: "I have built some office buildings which are 2x the next
+      // largest by square footage and visually they look like they are not
+      // nearly the biggest." They were right. On a 10,000 sf lot at FAR 4,
+      // every one of these is the same 40,000 sf building:
+      //
+      //     coverage 0.40   10 floors   drawn volume 60,840
+      //     coverage 0.70    6 floors   drawn volume 36,504
+      //     coverage 0.90    5 floors   drawn volume 30,420
+      //
+      // A 2:1 spread in apparent size across buildings of identical area, and
+      // the wide ones — which is what a big floorplate office IS — lost.
+      //
+      // Coverage is an AREA ratio and the inset is a LINEAR one, so it enters
+      // as a square root: inset f gives a plate of f^2 of the lot. The old 0.78
+      // was implicitly claiming 61% coverage for everything. Buildings from
+      // before this field existed fall back to that same 0.78 so nothing in an
+      // old save moves.
+      const B = item.cov && item.cov > 0 ? Math.max(0.30, Math.min(0.97, Math.sqrt(item.cov))) : 0.78;
       let tiers: TowerTier[] = [];
       const fl = Math.max(1, item.floors);
       // ---- OVER TWENTY STOREYS IS ITS OWN PROBLEM --------------------------

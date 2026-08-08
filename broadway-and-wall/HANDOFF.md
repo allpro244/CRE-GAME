@@ -49,9 +49,53 @@ work in it. It was always safe on the remote. Push early and often.
 | A (location spread) | in band — was breached at 1.94x |
 | F (income anchor) | **breached on ONE leg — industrial +1.95%/yr.** Retail was the other leg at −1.62%/yr and now reads +0.68%, inside the band |
 | B–E, G, H, I, J–M | in band |
-| `pnpm crews` | new — the construction market's own harness, see item 1 |
-| `pnpm vactails` | new — both vacancy tails: which end is a market and which is a clamp |
-| `pnpm sectorexit` | new — does the exit ratchet fire on exoduses or on shortages |
+| `pnpm check` | **NEW, and start here — ~20s.** fresh + conserve + baseline:check |
+| `pnpm baseline:check` | **NEW — 31 standing numbers against BASELINE.json.** Read the section below before you touch it |
+| `pnpm engine` | **NEW** — rebuilds `test/.engine.mjs`. It was a 96-character esbuild line people were meant to type from memory |
+| `pnpm crews` | the construction market's own harness, see item 1 |
+| `pnpm vactails` | both vacancy tails: which end is a market and which is a clamp |
+| `pnpm sectorexit` | does the exit ratchet fire on exoduses or on shortages |
+
+### THE ONE THING TO READ IF YOU READ NOTHING ELSE HERE
+
+**Every check in this repo was green while the median land value fell 71%.**
+
+The commit that made the demand surface read each building's own occupancy —
+which is right — read it with lease-up applied, against a month-zero baseline
+that has no lease-up in it. So every building the city delivered depressed its
+own neighbourhood for three years against a baseline that had never contained
+one, and a working city is always building. One default argument.
+
+| | before | after |
+|---|---|---|
+| median land value | $288/sf | **$84/sf** |
+| builder's bid, median lot | $401/sf | **$0** |
+| holder's bid, median lot | $733/sf | **$0** |
+| office cap rate | 7.01% | **11.00%** — its clamp, exactly |
+| months on that rail | 1.8% | 7.0% |
+| lots a builder could afford | 2.42% | 0.61% |
+
+The land market had stopped having any income logic in it: both residual bids
+on the median lot were ZERO and the price was the texture floor, the
+generator's static memory of the map and nothing else. At year 50 all four cap
+rates sat at 10.4–11.0, which is not a market, it is four numbers resting on
+the same rail. `pnpm gate` passed. Every lettered test passed. `conserve`
+reconciled every dollar.
+
+It was caught by `pnpm baseline:check`, which did not exist that morning, in
+its first hour. That is the entire argument for it: a gate catches a violated
+identity and a report catches a breached band, and **neither can catch a number
+that is simply wrong, because there is nothing to compare it to.** Fixed in
+`375791f`; the rail counters went in at `36e15c5` and found a second one
+(multifamily sits on its 3.4% compression floor 5.3% of months — recorded, not
+changed, because I have no evidence it is wrong).
+
+Two habits follow, and they are cheap:
+
+- **Run `pnpm check` after anything that touches the engine.** Twenty seconds.
+- **When a baseline number moves, say in the commit message why.** Movement is
+  not failure — a fix that improves the world moves numbers. Movement nobody
+  can account for is the failure.
 
 > **Since this was written, retail came back inside the band on its own.** It
 > was never a rent-model fault. `COMMERCIAL_SUITE_MIN` was condemning every

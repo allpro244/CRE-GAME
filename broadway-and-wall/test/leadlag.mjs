@@ -86,7 +86,7 @@ function prep(a, isFlow) {
   const sd = Math.sqrt(d.reduce((x, y) => x + (y - m) ** 2, 0) / Math.max(1, d.length)) || 1;
   return d.map((v) => (v - m) / sd);
 }
-const IS_FLOW = { starts: true, deliv: true, vac: false, rent: false, value: false };
+const IS_FLOW = { orders: true, breaks: true, deliv: true, vac: false, rent: false, value: false };
 
 /** Correlation of x at time t with y at time t+lag. Positive lag = x LEADS y. */
 function xcorr(x, y, lag) {
@@ -119,31 +119,57 @@ function bestLag(x, y, sign = 1) {
   return { lag: at, r: best };
 }
 
-const series = { starts: [], deliv: [], vac: [], rent: [], value: [] };
+// THE CHAIN, AND "STARTS" IS TWO DIFFERENT THINGS.
+//
+// Using one series for both ends of it was the fifth thing this file got wrong.
+// The DECISION to build (the order book, `e.starts`) and the SHOVEL going in
+// (a job appearing in `cityJobs`) are separated by the queue, and they behave
+// differently: orders are a smooth quota, groundbreaks are lumpy. Measuring the
+// control leg off orders mixed in the teardown and rival paths that never touch
+// the order book and read 53 months against a 34-month build; measuring the
+// loop-closing leg off groundbreaks made it too sparse to identify at all
+// (r = 0.21, pinned at the search boundary). Both legs are real and they need
+// their own series.
+//
+// Deliveries are counted GROSS, off the job records, rather than as the change
+// in stock — net stock change subtracts demolitions, and a month where the
+// wrecking ball outpaced the cranes was being recorded as zero deliveries.
+const series = { orders: [], breaks: [], deliv: [], vac: [], rent: [], value: [] };
 for (let i = 0; i < N; i++) {
   const { parcels, adjacency, bbls } = loadCity(i, E.normalizeParcels);
   let g = E.firstListings(E.newGame(9001 + i, parcels), parcels, bbls);
-  const s = { starts: [], deliv: [], vac: [], rent: [], value: [] };
-  let lastStock = g.econ.stock[K];
+  const s = { orders: [], breaks: [], deliv: [], vac: [], rent: [], value: [] };
+  const seen = new Set();
+  const dueAt = new Map();
   for (let m = 0; m < HZ; m++) {
     if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };
     g = E.advanceQuarter(g, parcels, bbls, adjacency);
     const e = g.econ, cpi = e.cpi || 1;
-    // STARTS: square feet ordered this month, before anything is built.
-    s.starts.push(e.starts?.[K] ?? 0);
-    // DELIVERIES: the stock actually arriving, which is starts plus a build.
-    s.deliv.push(Math.max(0, e.stock[K] - lastStock));
-    lastStock = e.stock[K];
+    // ORDERS: square feet the market asked for this month, before a site is picked.
+    s.orders.push(e.starts?.[K] ?? 0);
+    // BREAKS: square feet that actually went into the ground this month, from
+    // every path — the anonymous city, the teardown replacements and the street.
+    let broke = 0;
+    for (const j of g.cityJobs ?? []) {
+      const key = j.bbl + "#" + j.startM;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const share = j.mix?.[K] ?? (j.use === K ? 1 : 0);
+      const sf = j.sf * share;
+      if (sf > 0) { broke += sf; dueAt.set(j.deliverM, (dueAt.get(j.deliverM) ?? 0) + sf); }
+    }
+    s.breaks.push(broke);
+    // DELIVERIES: gross, from those same jobs landing. Not the change in stock,
+    // which nets off demolition and reads zero in a month the wrecking ball won.
+    s.deliv.push(dueAt.get(g.month) ?? 0);
     s.vac.push(e.cityVac?.[K] ?? 0);
     s.rent.push((e.effRentIdx?.[K] ?? e.rentIdx[K]) / cpi);
     // THE ASSET MARKET HAS TO BE MEASURED BY SOMETHING RENT IS NOT MADE OF.
     // The first run of this used rentIdx / capRate and duly reported that rent
     // leads value by exactly zero months at r = 0.83 — which it must, because
-    // that series IS rent divided by a slow-moving number. A test that cannot
-    // return anything else is not a test. The cap rate is the asset market's
-    // own variable: it is what buyers do when the space market moves, and it is
-    // free to lag. Inverted so that "up" means "value up" and the sign of the
-    // correlation still reads the way the table says.
+    // that series IS rent divided by a slow-moving number. The cap rate is the
+    // asset market's own variable and is free to lag. Inverted so "up" means
+    // "value up" and the correlation signs still read as the table says.
     s.value.push(-e.capRate[K]);
   }
   for (const k of Object.keys(series)) series[k].push(prep(s[k], IS_FLOW[k]));
@@ -153,11 +179,12 @@ for (let i = 0; i < N; i++) {
 // bestLag. Vacancy against rent is the only negative one and getting it wrong
 // cost this file two runs.
 const PAIRS = [
-  ["starts", "deliv", 18, 40, +1, "the build period — this one is a clock, and it is the control"],
+  ["value", "orders", 6, 42, +1, "the asset market tells the space market to order more"],
+  ["orders", "breaks", 0, 18, +1, "the queue: entitlement, design, a site, a lender"],
+  ["breaks", "deliv", 20, 40, +1, "the build period — a literal clock, and the control"],
   ["deliv", "vac", 0, 18, +1, "space arrives empty, so simultaneous is CORRECT here"],
   ["vac", "rent", 3, 24, -1, "leases roll; landlords do not reprice on a vacancy print"],
   ["rent", "value", 0, 12, +1, "the cap rate moves with the tape"],
-  ["value", "starts", 6, 42, +1, "this closes the loop, and its length sets the period"],
 ];
 
 console.log(`\nDOES THE CYCLE RUN IN THE RIGHT ORDER — ${K}, ${N} towns x ${HZ / 12} years\n`);

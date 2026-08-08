@@ -484,13 +484,36 @@ read of the engine and each has a file:line; none is measured yet.
    The loop entered the real range as a consequence of fixing a valuation, not
    as a target. That is the single best piece of evidence in this repo so far.
 
-   **What it opened.** The control leg now reads `starts -> deliveries` at 53
-   months against a `BUILD_MONTHS` of 22-34. Either the harness's band is wrong
-   because it ignores the crane QUEUE — starts are ordered into `startOwed` and
-   then wait for capacity, so order-to-delivery legitimately exceeds the build
-   period — or something is holding the pipeline. Unresolved, and it is the
-   first thing to check next, because the control leg is what makes the other
-   four trustworthy.
+   **What it opened, and the answer.** The control leg jumped to 53 months
+   against a `BUILD_MONTHS` of 22-34, which would have made the other four legs
+   untrustworthy. Measured directly: the order book waits a median of 1.5 to 5.8
+   months by class and the build period runs 34, so order-to-delivery is about
+   38. The extra fifteen months were the HARNESS, not the engine — it correlated
+   `e.starts` (the anonymous quota's order book) against deliveries measured as
+   the change in stock, and those are not the same population. Deliveries include
+   the teardown-replacement path and every rival's own job, neither of which
+   passes through `e.starts`; and net stock change subtracts demolition, so a
+   month where the wrecking ball outpaced the cranes recorded zero deliveries.
+
+   `pnpm leadlag` now separates the two things "starts" was doing — the DECISION
+   to build (the order book) and the SHOVEL going in — because they are
+   separated by the queue and behave differently: orders are a smooth quota,
+   groundbreaks are lumpy. Deliveries are counted gross off the job records. The
+   full chain:
+
+       value    -> orders    35mo  r 0.40   6-42    ok
+       orders   -> breaks    20mo  r 0.50   0-18    2mo over
+       breaks   -> deliv     41mo  r 0.70   20-40   1mo over (build is 34)
+       deliv    -> vacancy   -1mo  r 0.68   0-18    ok
+       vacancy  -> rent       2mo  r 0.67   3-24    1mo short
+       rent     -> cap rate   1mo  r 0.49   0-12    ok
+       TOTAL LOOP            98 months = 8.2 years  (real: 7-12)
+
+   Three legs clean, three marginal by one or two months, and a loop period
+   inside the real range. The control's 7-month excess over the known 34-month
+   build is consistent with the 12-month centred smoothing broadening the peak;
+   the smoothing is needed for the slow legs and cannot be dropped for the fast
+   ones without splitting the harness.
 4. **DONE, and it found the real one underneath.** `claimJob` now applies the
    residual as its pro forma — a firm will not pay more for the dirt than a
    builder of that use can bear on that site — and `claimJob`'s loan-to-cost

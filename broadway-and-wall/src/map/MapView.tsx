@@ -268,6 +268,22 @@ export default function MapView() {
               land: landRing
                 ? ((landRing.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][]).slice(0, -1)
                 : undefined,
+              // THE DEEDS. The renderer had every building's outline and not a
+              // single lot's, so a redevelopment was drawn inside the footprint
+              // of whatever it replaced — see ThreeBuildings.parcelRings. The
+              // geometry was already in the room: this is the same collection
+              // MapLibre paints the parcel fill from.
+              lots: (() => {
+                const out: Record<string, [number, number][]> = {};
+                const fc = city.parcelFeatures as GeoJSON.FeatureCollection | undefined;
+                for (const f of fc?.features ?? []) {
+                  const bbl = f.properties?.bbl as string | undefined;
+                  if (!bbl || f.geometry?.type !== "Polygon") continue;
+                  const ring = (f.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][];
+                  if (ring?.length >= 4) out[bbl] = ring.slice(0, -1);
+                }
+                return out;
+              })(),
             }, (useStore.getState().game?.citySeed ?? 1) >>> 0);
             layer.setMonth(useStore.getState().game?.month ?? 0);
             // the foot-traffic gradient reads demand at plant time, so it has

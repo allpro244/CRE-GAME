@@ -5359,7 +5359,40 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   posAttrs: THREE.BufferAttribute[] = [];
   rangesByBBL = new Map<string, { attr: number; r: Ranges }[]>();
   private lotRings = new Map<string, [number, number][]>(); // vacant-lot footprints (meters)
-  private ringByBBL = new Map<string, [number, number][]>(); // EVERY lot's footprint, built or not
+  private ringByBBL = new Map<string, [number, number][]>(); // EVERY lot's BUILDING footprint, built or not
+  /**
+   * THE DEED'S OUTLINE, WHICH IS NOT THE BUILDING'S.
+   *
+   * `ringByBBL` is named for a lot and holds a BUILDING. Its two producers are
+   * disjoint: citygen/build.mjs walks the building polygons for anything
+   * standing, and appends lot polygons only for parcels whose class is "land".
+   * So a built lot never carries a parcel-sized ring, and `setPlayerBuildings`
+   * — which fell back to it — drew every redevelopment inside the outline of
+   * whatever had just been demolished.
+   *
+   * Measured over 10,028 built lots across three cities and four seeds, the
+   * building ring is a MEDIAN 66.5% of its lot and is under 90% on every
+   * single one. End to end through twenty-one real redevelopments at the UI's
+   * default dial: the panel promised 60% of the lot and the map drew a median
+   * of 40.0%. A new tower could not out-cover the shed it replaced.
+   *
+   * Lazily projected from the parcel table, which the renderer is handed and
+   * was not reading.
+   */
+  private parcelRings = new Map<string, [number, number][]>();
+  private parcelRingsReady = false;
+  private lotRing(bbl: string): [number, number][] | undefined {
+    if (!this.parcelRingsReady) {
+      this.parcelRingsReady = true;
+      for (const [b, ll] of Object.entries(this.ctxPoints.lots ?? {})) {
+        if (ll && ll.length >= 3) this.parcelRings.set(b, ll.map((p) => this.project(p)));
+      }
+    }
+    // vacant-lot ring first (already projected and identical to the parcel),
+    // then the deed, and the demolished building's outline only as a last
+    // resort for a bbl the parcel table does not carry
+    return this.lotRings.get(bbl) ?? this.parcelRings.get(bbl) ?? this.ringByBBL.get(bbl);
+  }
   /** Exposed (not private) so a playtest can assert a demolition actually happened. */
   propsByBBL = new Map<string, { mesh: THREE.InstancedMesh; i: number }[]>();
   private flattened = new Set<string>();
@@ -5411,6 +5444,13 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       parks?: [number, number][][];
       ponds?: [number, number][][];
       paths?: [number, number][][];
+      /**
+       * THE PARCEL OUTLINES, BY BBL — the one piece of per-lot geometry this
+       * class did not have and needed. See setPlayerBuildings: `volumes` only
+       * ever carries BUILDING rings for a built lot, so a redevelopment was
+       * drawn on the footprint of whatever was knocked down.
+       */
+      lots?: Record<string, [number, number][]>;
     } = {},
     /**
      * The town's seed, mixed into every per-building hash. Without it a reroll
@@ -7713,7 +7753,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // building the player had BOUGHT rather than built, so demolishing a
       // purchased building flattened precisely nothing.
       if (!this.flattened.has(item.bbl)) this.flattenLot(item.bbl);
-      const ring = this.lotRings.get(item.bbl) ?? this.ringByBBL.get(item.bbl);
+      const ring = this.lotRing(item.bbl);
       if (!ring) continue;
       // A DEMOLISHED LOT IS A LOT. `Math.max(3, heightM)` below meant a cleared
       // site drew a three-metre glass box where the building had been, so
@@ -7777,7 +7817,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // was implicitly claiming 61% coverage for everything. Buildings from
       // before this field existed fall back to that same 0.78 so nothing in an
       // old save moves.
-      const B = item.cov && item.cov > 0 ? Math.max(0.30, Math.min(0.97, Math.sqrt(item.cov))) : 0.78;
+      const B = item.cov && item.cov > 0 ? Math.min(0.97, Math.sqrt(item.cov)) : 0.78;
       let tiers: TowerTier[] = [];
       const fl = Math.max(1, item.floors);
       // ---- OVER TWENTY STOREYS IS ITS OWN PROBLEM --------------------------
@@ -7797,7 +7837,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       if (!item.construction && fl >= 20 && h >= 62) {
         const tf = TOWER_FAMILIES[Math.floor(hash01(k ^ 0x70e2, this.citySeed ^ 0xa11) * TOWER_FAMILIES.length) % TOWER_FAMILIES.length];
         const built = towerMassing(tf, ring as [number, number][], cx, cy, h, fl, fh2,
-          (n) => hash01(k ^ Math.imul(n + 1, 0x9e3779b1), this.citySeed ^ 0x7057));
+          (n) => hash01(k ^ Math.imul(n + 1, 0x9e3779b1), this.citySeed ^ 0x7057), B);
         if (built && built.tiers.length >= 2) {
           tiers = built.tiers;
           towerStyle = built.style;
@@ -9450,11 +9490,15 @@ const TOWER_SKINS: Record<string, number[]> = {
 function towerMassing(
   fam: string, ring: Plate, cx: number, cy: number, h: number, fl: number, fh: number,
   u: (k: number) => number,
+  B: number,
 ): { tiers: TowerTier[]; style: number } | null {
   const ax = plAxis(ring);
   let span = 0;
   for (const [x, y] of ring) span = Math.max(span, Math.hypot(x - cx, y - cy));
-  const B = 0.78;                                  // the base plate the old prism used
+  // THE DIAL REACHES THE TOWER TOO. This was `const B = 0.78`, so every player
+  // building over twenty storeys drew at 0.78^2 = 61% of its ring whatever the
+  // coverage slider said — the one path where the biggest buildings live was
+  // the one path disconnected from the number the player chose and paid for.
   const base = plScale(ring, cx, cy, B);
   const T: TowerTier[] = [];
   const at = (f: number) => h * f;

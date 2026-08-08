@@ -57,6 +57,8 @@
     "breakeven": "node test/breakeven.mjs",
     "leadlag": "node test/leadlag.mjs",
     "rails": "node tools/rails.mjs",
+    "engine": "esbuild test/.entry.ts --bundle --format=esm --platform=node --outfile=test/.engine.mjs",
+    "check": "node test/fresh.mjs && node test/conserve.mjs && node tools/baseline.mjs --check",
     "baseline": "node tools/baseline.mjs",
     "baseline:check": "node tools/baseline.mjs --check"
   },

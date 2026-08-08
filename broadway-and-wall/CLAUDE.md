@@ -92,7 +92,57 @@ Say which, in the comment, every time.
 
 ## How this is enforced
 
-The harnesses are the enforcement, and their job is to be adversarial:
+Four tiers, by what they can catch and what they cost. Run the cheap one
+constantly; the expensive ones exist for the faults the cheap one cannot see.
+
+| | cost | catches |
+|---|---|---|
+| `pnpm check` | ~20s | a moved standing number, a broken ledger, a stale bundle |
+| `pnpm gate` | minutes | a violated identity, a broken city invariant |
+| `pnpm report` · `pnpm stress` · `pnpm audit` | 10-30 min | a breached band, a dominant strategy, a backwards wire |
+| `pnpm test` | ~22 min | a state the engine should never be able to reach |
+
+`pnpm engine` rebuilds `test/.engine.mjs`. Do it before any probe; every
+harness refuses a stale one.
+
+### `pnpm check` and BASELINE.json — for the fault the other tiers cannot see
+
+**A gate catches a violated identity. A report catches a breached band. NEITHER
+CAN CATCH A NUMBER THAT IS SIMPLY WRONG, because there is nothing to compare it
+to.** That is not hypothetical and it is not rare — it is how 27% of the city's
+shopfronts stayed structurally unlettable for an unknown number of commits, and
+how the median land value fell 71% in a single commit with every check in the
+repo green. Nothing was out of balance. No band moved. The city was just quietly
+wrong, everywhere, and no harness in the repo was shaped to notice.
+
+So `BASELINE.json` is a committed record of ~31 standing numbers at a known
+commit, and `pnpm baseline:check` diffs the working tree against it. Seventeen
+seconds. It is a REPORT, not a gate: movement is not failure, because a fix that
+improves the world moves numbers. What it is for is making sure nobody moves one
+WITHOUT NOTICING. Regenerate with `pnpm baseline` when you have decided a move
+is correct — and say in the commit message why.
+
+Three rules for adding a metric, all learned the hard way and all in the file:
+
+- **It must be able to move.** A metric pinned at a cap measures the cap.
+- **It must not measure the clock.** The first cut sampled at month 300 and
+  reported lot affordability as ZERO, which looked catastrophic and was nothing:
+  affordability is cyclical — 8-12% mid-cycle, near zero at the turns — so a
+  one-month snapshot reports the phase of the cycle rather than the level of
+  anything. Cyclical quantities are ten-year means; only stocks are read at the
+  end.
+- **It must be CHEAP,** or it will not be run, and a check nobody runs is worse
+  than no check because it looks like coverage.
+
+**Count the rails.** Fake number five is a clamp that is load-bearing rather
+than a guard, and you cannot see one by reading — only by counting. Twelve
+rail-bind rates sit in the baseline for exactly this, sampled every month
+(a rail that binds for a quarter and lets go is what an annual sample misses),
+and every watched rail is reported even when it never binds, because a metric
+that only appears once it goes wrong is a metric nobody can see going wrong.
+
+The rest of the harnesses are the enforcement, and their job is to be
+adversarial:
 
 - **`pnpm gate` is the gate.** It runs the two things that are IDENTITIES rather
   than opinions: `conserve`, and the city invariants. It must pass before

@@ -37,7 +37,7 @@ export function assertFreshBundle() {
   try { bundle = statSync(join(HERE, ".engine.mjs")).mtimeMs; }
   catch {
     console.error("\nNo test/.engine.mjs. Build it:\n"
-      + "  ./node_modules/.bin/esbuild test/.entry.ts --bundle --format=esm --platform=node --outfile=test/.engine.mjs\n");
+      + "  pnpm engine\n");
     process.exit(1);
   }
   const src = newest(SRC);
@@ -45,7 +45,10 @@ export function assertFreshBundle() {
     const mins = Math.round((src - bundle) / 60000);
     console.error(`\nSTALE BUNDLE — test/.engine.mjs is ${mins} minute(s) older than src/.`
       + `\nWhatever this harness reported would be about an engine that no longer exists.`
-      + `\nRebuild it:\n  ./node_modules/.bin/esbuild test/.entry.ts --bundle --format=esm --platform=node --outfile=test/.engine.mjs\n`);
+      + `\nRebuild it:\n  pnpm engine\n`
+      + `\n(This scans ALL of src/, not just src/engine, so a UI-only edit trips it too.`
+      + `\n Deliberate: a false "stale" costs 33ms, and a false "fresh" cost a whole`
+      + `\n debugging session once. Erring on this side is the point.)\n`);
     process.exit(1);
   }
 }

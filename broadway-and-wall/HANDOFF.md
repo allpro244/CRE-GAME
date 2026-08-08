@@ -290,6 +290,8 @@ cost table was found to be wrong, and several entries are stale as a result.**
 
 Four harnesses now cover this ground and all four are new:
 
+    pnpm rails       every clamp() in the engine, and whether it is a guard or
+                     the model — CLAUDE.md fault #5, measured. See below.
     pnpm breakeven   the rent each class NEEDS against the rent it gets,
                      computed by inverting the engine's own residual
     pnpm pencils     who is the high bidder for dirt, and what they would build
@@ -599,6 +601,47 @@ read of the engine and each has a file:line; none is measured yet.
 7. **`tickZoning` (zoning.ts:73)** sets citywide FAR — and therefore every
    residual and every land price — from office vacancy and office ASKING rent
    alone. No cost term, no cap rate, no other class.
+
+**`pnpm rails` — CLAUDE.md's fault #5, measured for the first time.** The rule
+has always been written down: *"A clamp that stops a number going somewhere
+absurd is fine as a guard and is a bug when it is load-bearing. If a variable
+rests against its rail in normal play, the rail is holding up the model."*
+Nothing tested it. There are 118 `clamp()` callsites in the engine and from
+reading the code there is no way to tell a guard from the model — both look like
+`clamp(x, a, b)`. The tool instruments every one of them in a scratch copy and
+plays three towns for fifty years.
+
+    38 are LOAD-BEARING (a bound reached in >= 1% of calls)
+    55 are guards
+    25 were never called at all
+
+The worst of them, and each is its own open question:
+
+    market:1658   100.0% at floor   e.wageDebt = clamp(e.wageDebt, 0, 0.25)
+    market:2249    76.3% at floor   `marketable`
+    market:1039    69.6% at floor   clamp((realPolicy - 0.022) * 0.70, 0, 0.09)
+    market:1398    56.6% at ceiling `trades` — construction employment share
+    market:1462    50.4% at ceiling multifamily `slack`
+
+`wageDebt` sitting on zero in 100% of months is not a clamp problem, it is a
+mechanism that never runs — a state variable that has never once left its floor
+in fifty years across three towns. That is the first one to look at.
+
+**It caught its author within an hour of existing.** `devPencils` was rewritten
+this week into a real per-class pro forma, and the response curve wrapped around
+it — `clamp((yoc/required - 1) * 3.2 + 0.55, 0, 2.2)` — had been fitted when the
+inputs were index ratios hovering near 1. With real inputs read at the ninth
+decile of buildable sites, the ratio moved and the result sat on the 2.2 ceiling
+in **57.2%** of all calls. The pro forma was being computed and thrown away. It
+uses the same q-elasticity form as `buildClimate` now, neutral at parity,
+unbounded above, no rail carrying anything. Loop period 7.0 years, still in
+range; stock growth up a little in every class.
+
+**And its coverage is stated rather than assumed.** The tool only sees the bare
+`clamp()` helper — not `clampA` / `clampL` / `clampN` / `clamp01`, and not
+hand-written `Math.max(a, Math.min(b, x))`. Those are printed as UNINSTRUMENTED
+at the end of every run, because a tool that silently skips half its subject is
+the same fault it is looking for.
 
 **And the constant audit's answer to "is this simulated or arranged".** Of 263
 named constants perturbed +-15% with the engine rebuilt each time: **121 move a

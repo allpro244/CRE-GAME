@@ -595,8 +595,34 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
   const costPsf = HARD_COST_PSF[k] * e.costIdx * (1 + SOFT_COST) * (1 + CONTINGENCY);
   const yoc = noiPsf / Math.max(1, costPsf);
   const required = ((e.capRate?.[k] ?? CAP_BASE[k]) / 100) * (1 + DEV_MARGIN);
-  return clamp((yoc / required - 1) * 3.2 + 0.55, 0, 2.2);
+  // THE RESPONSE CURVE WAS CALIBRATED FOR INPUTS THIS FUNCTION NO LONGER HAS.
+  //
+  // It returned `clamp((yoc / required - 1) * 3.2 + 0.55, 0, 2.2)`, and that
+  // shape was fitted when the inputs were index ratios hovering near 1. Once
+  // this became a real pro forma read at the ninth decile of buildable sites,
+  // the ratio moved: `node tools/rails.mjs` measured the result sitting on the
+  // 2.2 ceiling in 57.2% of all calls. A signal that is pinned at its maximum
+  // in more than half of all months is a constant, and the pro forma underneath
+  // it was being computed and then thrown away.
+  //
+  // That is the same lesson as everything else this week — change the inputs
+  // and the thing downstream that was fitted to the old ones is now the model.
+  // So the response is the same elasticity form `buildClimate` uses, for the
+  // same reason and from the same literature: development responds to the ratio
+  // of what a finished building is worth to what it costs, with a supply
+  // elasticity around 1.2 for a land-constrained market. Neutral at parity by
+  // construction — a deal that exactly clears its hurdle gets built at the
+  // ordinary rate — positive without a floor, and unbounded above without a
+  // ceiling, so neither rail carries anything.
+  //
+  // The clamp that remains is a guard on a ratio, not a shape: `required` is a
+  // cap rate and cannot be zero, but a NaN upstream should not become infinite
+  // appetite.
+  const ratio = yoc / Math.max(1e-4, required);
+  return Math.min(3, Math.pow(Math.max(0, ratio), Q_ELASTICITY_DEV));
 }
+/** Same supply elasticity `buildClimate` uses; see the note there. */
+const Q_ELASTICITY_DEV = 1.2;
 
 export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
   return landRead(rec, econ).psf;

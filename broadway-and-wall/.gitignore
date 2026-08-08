@@ -21,3 +21,4 @@ probe*.mjs
 dbg*.mjs
 check*.mjs
 .audit/
+.audit-rails/

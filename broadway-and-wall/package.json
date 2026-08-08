@@ -55,7 +55,8 @@
     "repudiate": "node test/repudiate.mjs",
     "pencils": "node test/pencils.mjs",
     "breakeven": "node test/breakeven.mjs",
-    "leadlag": "node test/leadlag.mjs"
+    "leadlag": "node test/leadlag.mjs",
+    "rails": "node tools/rails.mjs"
   },
   "dependencies": {
     "@types/three": "^0.185.3",

@@ -184,6 +184,26 @@ function rails(g, acc) {
     // market.ts caps citywide vacancy at 45%; test H already notes that AT the
     // clamp this number stops being a measurement
     if (Number.isFinite(v) && v >= 0.4499) acc[`rail.vac.${k}.hi`] = (acc[`rail.vac.${k}.hi`] ?? 0) + 1;
+    // AND THE FLOOR, WHICH IS THE ONE THAT ACTUALLY BINDS.
+    //
+    // Twelve rails were watched here and the frictional vacancy floor was not
+    // among them — only the 45% ceiling, which never binds. So the file counted
+    // eleven rails that do nothing and missed the one holding up the model.
+    // Measured over 600 months, industrial vacancy takes 157 distinct values in
+    // town 0 and its minimum is 1.5400% in every town, which is
+    // `NATURAL_VAC.industrial * 0.22` to the digit. market.ts already carries
+    // the scars — line 1943 records office resting on this same rail 26.9% of
+    // all months, and line 2285 a class "pinned at its absolute frictional
+    // floor" — so this has been found by hand, twice, and then lost again
+    // because nothing counted it.
+    //
+    // The floor itself is defensible: some share of every market is empty
+    // because tenants are moving. A market that RESTS on it is not, because
+    // then the floor is setting the vacancy rather than bounding it, and every
+    // rent, cap rate and appraisal downstream is reading a constant.
+    // Read from the engine, never mirrored — see market.frictionFloor.
+    const fr = E.frictionFloor(k);
+    if (Number.isFinite(v) && v <= fr * 1.001) acc[`rail.vac.${k}.lo`] = (acc[`rail.vac.${k}.lo`] ?? 0) + 1;
   }
   acc.__n = (acc.__n ?? 0) + 1;
 }
@@ -230,6 +250,7 @@ function measure() {
       row[`rail.cap.${k}.hi`] = +((railAcc[`rail.cap.${k}.hi`] ?? 0) / n).toFixed(4);
       row[`rail.cap.${k}.lo`] = +((railAcc[`rail.cap.${k}.lo`] ?? 0) / n).toFixed(4);
       row[`rail.vac.${k}.hi`] = +((railAcc[`rail.vac.${k}.hi`] ?? 0) / n).toFixed(4);
+      row[`rail.vac.${k}.lo`] = +((railAcc[`rail.vac.${k}.lo`] ?? 0) / n).toFixed(4);
     }
     for (const [k, v] of Object.entries(row)) (out[k] ??= []).push(v);
   }

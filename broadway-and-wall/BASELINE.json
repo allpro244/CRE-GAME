@@ -1,5 +1,5 @@
 {
-  "commit": "a269c52",
+  "commit": "e385a45",
   "city": "newalden",
   "citySeed": 1,
   "seeds": [
@@ -31,14 +31,18 @@
     "rail.cap.office.hi": 0,
     "rail.cap.office.lo": 0,
     "rail.vac.office.hi": 0,
+    "rail.vac.office.lo": 0.06,
     "rail.cap.retail.hi": 0,
     "rail.cap.retail.lo": 0,
     "rail.vac.retail.hi": 0,
+    "rail.vac.retail.lo": 0.1567,
     "rail.cap.multifamily.hi": 0,
     "rail.cap.multifamily.lo": 0,
     "rail.vac.multifamily.hi": 0,
+    "rail.vac.multifamily.lo": 0.23,
     "rail.cap.industrial.hi": 0,
     "rail.cap.industrial.lo": 0,
-    "rail.vac.industrial.hi": 0
+    "rail.vac.industrial.hi": 0,
+    "rail.vac.industrial.lo": 0.7167
   }
 }

@@ -599,6 +599,26 @@ export const RENT_BASE = { office: 43.65, retail: 26.00, multifamily: 30.22, ind
 export const NATURAL_VAC = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07 } as const;
 
 /**
+ * THE FLOOR UNDER VACANCY, and the one rail in this engine that actually binds.
+ *
+ * Frictional vacancy is space empty purely because tenants are moving in and
+ * out, so it scales with how often that happens — and that is not the same in
+ * every class. A shed is let whole to one operator who stays a decade; an
+ * office floor is carved into suites that churn constantly. Roughly a third of
+ * the natural rate, less for industrial.
+ *
+ * EXPORTED BECAUSE IT IS WATCHED. `tools/baseline.mjs` counts how often each
+ * class rests on this floor, and a watcher that mirrors the number it is
+ * watching is the third kind of fake — two copies of one quantity, free to
+ * drift, with the drift invisible precisely because the watcher is the thing
+ * that would have caught it. One definition, two readers.
+ */
+export function frictionFloor(k: BuiltClass): number {
+  const ratio = k === "industrial" ? 0.22 : k === "multifamily" ? 0.30 : 0.32;
+  return NATURAL_VAC[k] * ratio;
+}
+
+/**
  * THE BUILDING TRADES, as a share of a city's payroll.
  *
  * Construction is about 5% of employment in a city of this kind and it is the
@@ -2364,8 +2384,7 @@ export function tickEcon(s: GameState) {
     // mainland takes it, exactly the fiction stockFromParcels already tells.
     // Note targetRaw reads baseStock, frozen at newGame: supply NEVER touches
     // the demand side. That sentence is the whole rebuild.
-    const frictionRatio = k === "industrial" ? 0.22 : k === "multifamily" ? 0.30 : 0.32;
-    const friction = NATURAL_VAC[k] * frictionRatio;
+    const friction = frictionFloor(k);
     const housable = e.stock[k] * (1 - friction);
     if (!e.pool) e.pool = { ...e.occupied };
     e.pool[k] += 0.10 * (targetRaw - e.pool[k]);

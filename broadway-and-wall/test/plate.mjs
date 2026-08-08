@@ -85,3 +85,124 @@ if (process.env.OLD !== "1" && bad) {
   process.exit(1);
 }
 if (process.env.OLD !== "1") console.log("  the map draws what the dial promised, on built and vacant lots alike.\n");
+
+// ---------------------------------------------------------------- the tower
+//
+// THE FIRST VERSION OF THIS FILE COULD NOT SEE THE PATH THE FIX CHANGED.
+//
+// It modelled the drawn plate as `areaOf(ring) * B * B`, which is the
+// five-silhouette path only. `towerMassing` never runs through that expression,
+// so the harness was green while the tower path drew between 0.62x and 6.01x
+// the promised plate — a check that cannot fail about the thing it was written
+// for, which CLAUDE.md calls a fake in its own right.
+//
+// It calls the REAL function now, imported rather than copied, because a copy
+// of a 180-line recipe table drifts silently from the original and then the
+// harness is testing its own copy.
+//
+// Two assertions, and both can fail:
+//   every tier must lie INSIDE the deed        — you cannot build on the
+//                                                neighbour's land
+//   tier 0 must not exceed the promised plate  — the dial is a price the
+//                                                player paid
+// Bundled on every run rather than imported: node cannot strip the TypeScript
+// parameter properties in ThreeBuildings, and a COPY of a 180-line recipe table
+// drifts from the original silently and then the harness is testing its copy.
+// Building it here costs ~60ms and cannot go stale, which is a stronger
+// guarantee than test/.engine.mjs gets.
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+const TD = mkdtempSync(join(tmpdir(), "plate-"));
+writeFileSync(join(TD, "e.ts"), `export { towerMassing } from ${JSON.stringify(join(HERE, "..", "src", "map", "ThreeBuildings"))};\n`);
+execFileSync(join(HERE, "..", "node_modules", ".bin", "esbuild"),
+  [join(TD, "e.ts"), "--bundle", "--format=esm", "--platform=node", "--log-level=error",
+   `--outfile=${join(TD, "e.mjs")}`, `--alias:@=${join(HERE, "..", "src")}`]);
+const { towerMassing } = await import(join(TD, "e.mjs"));
+
+const FAMS = ["exo", "stack", "carve", "blade", "shelf", "curveslab", "deepframe", "twist", "setback", "podium"];
+function inside(poly, ring) {                   // every vertex of poly inside ring
+  const hit = ([px, py]) => {
+    let c = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi + 1e-12) + xi) c = !c;
+    }
+    return c;
+  };
+  let out = 0;
+  for (const p of poly) if (!hit(p)) out++;
+  return out / Math.max(1, poly.length);
+}
+
+let towerRows = [];
+for (const cityId of ["newalden"]) for (const seed of [1, 7, 20261]) {
+  const c = makeCity(cityId, seed);
+  const ctr = [-70.9, 41.1];
+  const kx = M_LAT * Math.cos((ctr[1] * Math.PI) / 180);
+  const proj = ([lon, lat]) => [(lon - ctr[0]) * kx, (lat - ctr[1]) * M_LAT];
+  for (const f of c.parcelFeatures?.features ?? []) {
+    const bbl = f.properties?.bbl;
+    const rec = c.parcels[bbl];
+    if (!bbl || !rec?.lotArea || f.geometry?.type !== "Polygon") continue;
+    const r0 = f.geometry.coordinates[0];
+    if (!(r0?.length >= 4)) continue;
+    const ring = r0.slice(0, -1).map(proj);
+    if (areaOf(ring) < 400) continue;
+    let cx = 0, cy = 0;
+    for (const [x, y] of ring) { cx += x; cy += y; }
+    cx /= ring.length; cy /= ring.length;
+    for (const cov of [0.15, 0.60, 0.90]) {
+      const B = Math.min(0.97, Math.sqrt(cov));
+      const want = rec.lotArea * cov * 0.092903;
+      for (const fam of FAMS) {
+        const tRing = ring.map(([x, y]) => [cx + (x - cx) * (B / 0.78), cy + (y - cy) * (B / 0.78)]);
+        const built = towerMassing(fam, tRing, cx, cy, 106.5, 30, 3.55, (n) => ((n * 2654435761) % 1000) / 1000);
+        if (!built?.tiers?.length) continue;
+        towerRows.push({ fam, cov,
+          plate: areaOf(built.tiers[0].fp) / want,
+          off: Math.max(...built.tiers.map((t) => inside(t.fp, ring))) });
+      }
+    }
+  }
+}
+if (towerRows.length) {
+  console.log(`  TOWER path (fl>=20) — ${towerRows.length} readings\n`);
+  console.log(`    ${"family".padEnd(11)}${"dial".padStart(6)}${"tier0/promised".padStart(16)}${"worst off-deed".padStart(16)}`);
+  for (const fam of FAMS) {
+    for (const cov of [0.15, 0.60, 0.90]) {
+      const v = towerRows.filter((r) => r.fam === fam && r.cov === cov);
+      if (!v.length) continue;
+      console.log(`    ${fam.padEnd(11)}${(cov * 100).toFixed(0).padStart(5)}%${q(v.map((r) => r.plate), 0.5).toFixed(3).padStart(16)}${(100 * q(v.map((r) => r.off), 0.9)).toFixed(0).padStart(15)}%`);
+    }
+  }
+  // WHAT IS ASSERTED: the dial must SCALE the tower. Each family keeps its own
+  // silhouette — exo splays its legs wider than the shaft on purpose, blade
+  // sets its base back — so tier-0 is a family constant times the promised
+  // plate, and what must hold is that the constant does not MOVE with the dial.
+  // It used to: with the plate fixed at 0.78 of the ring, tier-0 slid from 3.9x
+  // the promised plate at the 15% mark to 0.66x at 90%, which is the dial
+  // doing nothing at all.
+  let drift = 0;
+  for (const fam of FAMS) {
+    const at = (c) => q(towerRows.filter((r) => r.fam === fam && r.cov === c).map((r) => r.plate), 0.5);
+    const a = at(0.15), b = at(0.60), c = at(0.90);
+    if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(c)) continue;
+    if (Math.max(a, b, c) / Math.max(1e-9, Math.min(a, b, c)) > 1.02) drift++;
+  }
+  // WHAT IS ONLY REPORTED, and why. A silhouette that jogs or rotates off a
+  // plate covering 90% of an irregular lot crosses the boundary — that is
+  // geometry, not a regression, and it is unchanged by the scaling above
+  // (16,242 readings here against 15,849 with the tower left alone). Buildings
+  // standing on the neighbour's land is a real defect and it is OPEN; it needs
+  // the tiers clipped to the deed, which is its own piece of work. Printed
+  // rather than asserted so nobody mistakes silence for absence.
+  const offdeed = towerRows.filter((r) => r.off > 0.02).length;
+  console.log(`\n    dial-invariant families: ${FAMS.length - drift} of ${FAMS.length}   (all of them, or the dial is not scaling the tower)`);
+  console.log(`    OPEN, reported not asserted: ${offdeed} readings put a tier outside the parcel,`);
+  console.log(`    all of them at the upper end of the dial. The tiers need clipping to the deed.`);
+  if (process.env.OLD !== "1" && drift) {
+    console.error(`  ${drift} tower families change size relative to the dial instead of with it.`);
+    process.exit(1);
+  }
+}

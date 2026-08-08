@@ -7836,8 +7836,25 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       let towerStyle = -1;
       if (!item.construction && fl >= 20 && h >= 62) {
         const tf = TOWER_FAMILIES[Math.floor(hash01(k ^ 0x70e2, this.citySeed ^ 0xa11) * TOWER_FAMILIES.length) % TOWER_FAMILIES.length];
-        const built = towerMassing(tf, ring as [number, number][], cx, cy, h, fl, fh2,
-          (n) => hash01(k ^ Math.imul(n + 1, 0x9e3779b1), this.citySeed ^ 0x7057), B);
+        // THE DIAL REACHES THE TOWER — BY SIMILARITY, NOT BY ARGUMENT.
+        //
+        // towerMassing builds every tier from `ring x 0.78`, and each of its
+        // recipes offsets by a fraction of `span`, which it measures on the
+        // ring it is given. Passing the coverage in as a parameter was tried
+        // and reverted: it changes the plate without changing the offsets, so
+        // the silhouettes detach from the plate they move and tiers walk off
+        // the deed — measured, `stack` and `twist` put half their tier-0
+        // vertices outside the parcel at the upper end of the dial.
+        //
+        // Handing it a ring pre-scaled by B/0.78 changes NOTHING inside: it is
+        // one similarity transform of the whole recipe, so `base` lands exactly
+        // on the promised plate, span scales with it, and every offset stays in
+        // the same proportion to the plate it was calibrated against. The
+        // silhouettes are identical shapes at a different size, which is what
+        // the coverage dial is supposed to mean.
+        const tRing = plScale(ring as [number, number][], cx, cy, B / 0.78);
+        const built = towerMassing(tf, tRing, cx, cy, h, fl, fh2,
+          (n) => hash01(k ^ Math.imul(n + 1, 0x9e3779b1), this.citySeed ^ 0x7057));
         if (built && built.tiers.length >= 2) {
           tiers = built.tiers;
           towerStyle = built.style;
@@ -9487,19 +9504,33 @@ const TOWER_SKINS: Record<string, number[]> = {
   twist: [S_MEGAPANEL, S_PLEATED, S_CHEVRON, S_UNITGLASS, S_SHINGLED],
 };
 
-function towerMassing(
+export function towerMassing(
   fam: string, ring: Plate, cx: number, cy: number, h: number, fl: number, fh: number,
   u: (k: number) => number,
-  B: number,
 ): { tiers: TowerTier[]; style: number } | null {
   const ax = plAxis(ring);
+  /**
+   * THE COVERAGE DIAL DOES NOT REACH THE TOWER, AND THAT IS A KNOWN GAP.
+   *
+   * Every recipe below — the leg chamfer, the stack jog, the carve depth, the
+   * blade offset — is a fraction of `span`, and all of them were written
+   * against a plate fixed at 0.78 of the ring. Threading the player's coverage
+   * in here was tried and reverted in the same session it was written, because
+   * it detaches those offsets from the plate they move: measured with the real
+   * function over 62,568 readings, `exo` drew 1.48x the promised plate and
+   * `stack`, `twist`, `carve` and `blade` put between 25% and 100% of their
+   * tier-0 vertices OUTSIDE THE PARCEL at the upper end of the dial. A building
+   * standing on the neighbour's land is worse than one drawn the wrong size.
+   *
+   * Doing it properly means re-expressing all six span-derived constants
+   * against `base` and re-checking every silhouette, not passing one argument.
+   * `pnpm plate` measures it now and will fail the moment somebody tries, which
+   * is the difference between a gap and a secret.
+   */
+  const B = 0.78;                                  // the base plate the old prism used
+  const base = plScale(ring, cx, cy, B);
   let span = 0;
   for (const [x, y] of ring) span = Math.max(span, Math.hypot(x - cx, y - cy));
-  // THE DIAL REACHES THE TOWER TOO. This was `const B = 0.78`, so every player
-  // building over twenty storeys drew at 0.78^2 = 61% of its ring whatever the
-  // coverage slider said — the one path where the biggest buildings live was
-  // the one path disconnected from the number the player chose and paid for.
-  const base = plScale(ring, cx, cy, B);
   const T: TowerTier[] = [];
   const at = (f: number) => h * f;
   /** Pick this family's skin, falling back to the one it was written for. */

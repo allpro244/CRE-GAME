@@ -1132,6 +1132,16 @@ if (HYGIENE.length || want(32)) {
     say("```");
     say(``);
   }
+  // A PARTIAL RUN MUST NOT OVERWRITE THE WHOLE REPORT. `--only=B` used to
+  // rewrite ECONOMY_STRESS.md containing section B and nothing else, so the
+  // committed report silently lost every other check — and since investigating
+  // one section is exactly when you reach for --only, the file was at its most
+  // misleading precisely when somebody was working on it. The report on disk
+  // is a record of a FULL battery or it is not a record.
+  if (only.length) {
+    log(`\n--only= run: ${OUT} left alone. Run \`pnpm stress\` for the full battery to rewrite it.`);
+    process.exit(0);
+  }
   writeFileSync(OUT, md.join("\n") + "\n");
   log(`\nwrote ${OUT}`);
 }

@@ -28,7 +28,7 @@ import type { GameState, Holding } from "./types";
 import { logBooks, monthLabel, raiseAlert } from "./types";
 import { firmShort } from "./firm";
 import { rng, rrange } from "./market";
-import { holdingValue, resolveRec } from "./value";
+import { holdingValue, resolveRec, holdingNOIYr, asIfOwned } from "./value";
 import { depositsOn } from "./leasing";
 import { useSf } from "./mix";
 import { prepayPenalty } from "./debt";
@@ -72,6 +72,26 @@ export interface PortfolioQuote {
   /** Roughly how many buyers in this city can write this cheque. */
   depth: number;
   count: number;
+  /**
+   * THE NUMBER THE BUYER CONVERTS THE ASK INTO, for the bundle as one ticket.
+   *
+   * A portfolio is quoted as a cap rate, not as a price — an institution's
+   * committee paper has one going-in yield on it and the price is whatever
+   * that yield implies. The desk was showing the ask in dollars and the spread
+   * against the sum of the parts, neither of which is the number the buyer is
+   * actually underwriting to, so a player could take a book to market with no
+   * idea whether they were asking a 5% or an 8%.
+   *
+   * Aggregate NOI, not an average of per-building cap rates: yields do not
+   * average, and blending them by anything other than income is one of the
+   * standard ways to be wrong about a portfolio. Struck the same way the
+   * single-building card strikes it — re-assessed AT THE ASK through
+   * `asIfOwned`, because the tax bill a buyer inherits is set by what they pay
+   * and not by what the seller paid.
+   */
+  noiYr: number;
+  /** The going-in cap the CURRENT ask implies, in percent. 0 when unknowable. */
+  capAtAsk(ask: number): number;
 }
 
 /**
@@ -89,7 +109,7 @@ export function portfolioQuote(s: GameState, parcels: ParcelTable, bbls: string[
   const sumOfParts = Math.round(vals.reduce((a, v) => a + v, 0));
   const why: { label: string; pct: number }[] = [];
   if (!rows.length || sumOfParts <= 0) {
-    return { sumOfParts: 0, indicative: 0, spreadPct: 0, why, depth: 0, count: 0 };
+    return { sumOfParts: 0, indicative: 0, spreadPct: 0, why, depth: 0, count: 0, noiYr: 0, capAtAsk: () => 0 };
   }
 
   // --- scale ---------------------------------------------------------------
@@ -191,7 +211,23 @@ export function portfolioQuote(s: GameState, parcels: ParcelTable, bbls: string[
   // rate in tickPortfolio already does.
   const total = Math.max(-0.40, why.reduce((a, x) => a + x.pct, 0));
   const indicative = Math.round(sumOfParts * (1 + total));
-  return { sumOfParts, indicative, spreadPct: total, why, depth: Math.max(1, depth), count: rows.length };
+  // Income for the bundle, each building re-assessed at its share of the ask.
+  // Land and anything unbuilt contributes nothing and is not an error: a site
+  // in a portfolio is sold on the dirt, and dividing by an ask that includes it
+  // is exactly what depresses a mixed book's quoted yield in life.
+  const noiAt = (ask: number) => rows.reduce((a, r, i) => {
+    if (r.rec.class === "land" || !r.rec.bldgArea) return a;
+    const share = sumOfParts > 0 ? vals[i] / sumOfParts : 1 / rows.length;
+    const px = Math.max(1, Math.round(ask * share));
+    const n = holdingNOIYr(r.rec, s.econ,
+      asIfOwned(s, r.bbl, px, { roll: r.h.tenants, occ: r.h.occ, cond: r.h.condition }, r.rec), s.month);
+    return a + Math.max(0, n);
+  }, 0);
+  return {
+    sumOfParts, indicative, spreadPct: total, why, depth: Math.max(1, depth), count: rows.length,
+    noiYr: Math.round(noiAt(indicative)),
+    capAtAsk: (ask: number) => (ask > 0 ? (noiAt(ask) / ask) * 100 : 0),
+  };
 }
 
 /** Take a bundle to market. */

@@ -30,7 +30,7 @@ import { collateralAsIs } from "@/engine/value";
 import { firmName, firmShort } from "@/engine/firm";
 import { replacementCost, cityValueToReplacement } from "@/engine/dev";
 import { workoutMood } from "@/engine/workout";
-import { portfolioQuote } from "@/engine/portfolio";
+import { portfolioQuote, type PortfolioQuote } from "@/engine/portfolio";
 import { locLimit, locRate, locAvailable } from "@/engine/credit";
 import { blockReport, demandNow } from "@/engine/demand";
 import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK } from "@/engine/market";
@@ -504,12 +504,19 @@ function DecisionModal() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels);
   const popupsOff = useStore((s) => s.popupsOff);
-  const { respondLoi, acceptOffer, declineOffer } = useStore.getState();
+  const { respondLoi, acceptOffer, declineOffer, counterSale } = useStore.getState();
   const [deferred, setDeferred] = useState<Set<number>>(new Set());
   // the modal's counter sliders
   const [modalCounter, setModalCounter] = useState(false);
   const [mcRent, setMcRent] = useState(0);
   const [mcTi, setMcTi] = useState(0);
+  // …and the same for an offer to buy one of yours. The card had Accept and
+  // Decline and nothing between them, so the one move every seller alive makes
+  // — pick up the phone once — could only be reached by dismissing the popup
+  // and going to find the building's own record. `counterSale` has always
+  // handled it, including the unsolicited case; nothing here ever called it.
+  const [saleCounter, setSaleCounter] = useState(false);
+  const [scPx, setScPx] = useState(0);
   if (!parcels || game.gameOver) return null;
   // THE MASTER SWITCH (Settings). Both of the decisions this component renders
   // also live on a page — letters on the Deals desk, offers on the portfolio —
@@ -719,11 +726,46 @@ function DecisionModal() {
               1031 · defer {usd(tq.tax)}
             </button>
           )}
+          {!offer.countered && !saleCounter && (
+            <button className="btn" onClick={() => { setScPx(Math.round(offer.price * 1.06)); setSaleCounter(true); }}>
+              Counter…
+            </button>
+          )}
           <button className="btn" onClick={() => declineOffer(offerBbl!)}>Decline</button>
           <button className="btn" title="Leave it — it stays live until it expires." onClick={() => setDeferred((d) => new Set(d).add(-1))}>
             Decide later
           </button>
         </div>
+        {offer.countered && (
+          <div className="modal-queue">You have been back to them once. This number is the number.</div>
+        )}
+        {saleCounter && !offer.countered && (
+          <>
+            <Slider
+              label="Counter"
+              value={scPx || Math.round(offer.price * 1.06)}
+              min={offer.price + 1000}
+              max={Math.round(Math.max(h.sale!.ask, offer.price * 1.3))}
+              step={Math.max(1000, Math.round(offer.price / 400))}
+              onChange={setScPx}
+              format={(v) => `${usd(v)} · +${((v / offer.price - 1) * 100).toFixed(1)}% on their bid`}
+              marks={[
+                { at: Math.round(offer.price * 1.03), label: "+3%" },
+                { at: Math.round(offer.price * 1.08), label: "+8%" },
+                { at: h.sale!.ask, label: "ask" },
+              ]}
+              hint={h.sale!.unsolicited
+                ? "Inside what the building is worth to them and they take it. A little over and they split it. Well over and they walk — and an unsolicited buyer takes the whole approach with them, because they were never on the market for it."
+                : "Inside what the building is worth to them and they take it. A little over and they split it. Well over and they walk."}
+            />
+            <div className="modal-actions">
+              <button className="btn" onClick={() => { counterSale(offerBbl!, scPx || Math.round(offer.price * 1.06)); setSaleCounter(false); }}>
+                Counter at {usd(scPx || Math.round(offer.price * 1.06))}
+              </button>
+              <button className="btn" onClick={() => setSaleCounter(false)}>Back</button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -4305,6 +4347,36 @@ function PortfolioPage() {
  * whether that is worth it depends entirely on what else you want to do with
  * the next three years.
  */
+/**
+ * WHAT CAP RATE YOU ARE ASKING, on a bundle.
+ *
+ * Weighted by income across the whole ticket rather than averaged across the
+ * buildings, because yields do not average — see `portfolioQuote.noiYr`. The
+ * market line beside it is the sf-weighted blend of the class cap rates the
+ * buildings actually sit in, so a book of sheds is not being judged against
+ * what offices trade at.
+ */
+function PortfolioCap({ q, ask, bbls }: { q: PortfolioQuote; ask: number; bbls: string[] }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const cap = q.capAtAsk(ask);
+  if (!(cap > 0)) return null;
+  let wsum = 0, w = 0;
+  for (const b of bbls) {
+    const rec = resolveRec(parcels, game, b);
+    if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+    const c = game.econ.capRate[rec.class as BuiltClass];
+    if (!c) continue;
+    wsum += c * rec.bldgArea; w += rec.bldgArea;
+  }
+  const mkt = w > 0 ? wsum / w : cap;
+  return (
+    <Row k="Asking a cap rate of" strong
+      v={`${cap.toFixed(2)}%  ·  market ${mkt.toFixed(2)}%`}
+      bad={cap < mkt - 0.4} />
+  );
+}
+
 function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: () => void }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
@@ -4326,6 +4398,11 @@ function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: () => v
         </div>
         <div className="grid">
           <Row k="Asking" v={usd(live.ask)} strong />
+          {/* THE NUMBER THE COMMITTEE ON THE OTHER SIDE IS ACTUALLY LOOKING AT.
+              A portfolio is quoted as a yield; the price is what the yield
+              implies. This desk showed dollars and a spread against the parts
+              and never once said what cap the ask was struck at. */}
+          <PortfolioCap q={q} ask={live.ask} bbls={live.bbls} />
           <Row k="Sum of the individual marks" v={usd(q.sumOfParts)} />
           <Row k="What a bundle is indicated at" v={`${usd(q.indicative)} · ${(q.spreadPct * 100).toFixed(1)}%`}
             bad={q.spreadPct < -0.06} />
@@ -4413,6 +4490,7 @@ function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: () => v
             ))}
             <Row k="What a bundle is worth" v={`${usd(q.indicative)} · ${(q.spreadPct * 100).toFixed(1)}% against the parts`}
               strong bad={q.spreadPct < 0} />
+            <PortfolioCap q={q} ask={ask} bbls={bundle} />
             <Row k="Buyers who can fund it" v={String(q.depth)} bad={q.depth <= 1} />
           </div>
           <div className="hint">

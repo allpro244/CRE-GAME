@@ -58,6 +58,7 @@
     "breakeven": "node test/breakeven.mjs",
     "leadlag": "node test/leadlag.mjs",
     "mixmatch": "node test/mixmatch.mjs",
+    "mortality": "node test/mortality.mjs",
     "rails": "node tools/rails.mjs",
     "engine": "node test/mkengine.mjs",
     "check": "node test/fresh.mjs && node test/conserve.mjs && node tools/baseline.mjs --check",

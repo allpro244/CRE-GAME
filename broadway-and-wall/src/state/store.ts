@@ -20,7 +20,7 @@ import { loadGame, saveGame, listSaves, deleteSave, type SaveMeta } from "@/engi
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
 import { cityList, makeCity, type GeneratedCity } from "@/citygen/index.mjs";
 
-export type Lens = "none" | "land" | "demand" | "owners";
+export type Lens = "none" | "land" | "demand" | "owners" | "zoning";
 export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "news" | "leasing" | "property" | "saves" | "notes" | "settings" | "staff" | "primer";
 
 /**

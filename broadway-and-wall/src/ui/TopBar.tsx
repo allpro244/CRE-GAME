@@ -236,6 +236,13 @@ export default function TopBar() {
             ◨ Demand
           </button>
           <button
+            className={"lens-btn" + (lens === "zoning" ? " lens-on" : "")}
+            onClick={() => setLens(lens === "zoning" ? "none" : "zoning")}
+            title="Zoning lens — how much of the allowed envelope is still unbuilt. Bright is room to build; dark is spent, and landmarked lots go black."
+          >
+            ◩ Zoning
+          </button>
+          <button
             className={"lens-btn" + (lens === "owners" ? " lens-on lens-on-teal" : "")}
             onClick={() => setLens(lens === "owners" ? "none" : "owners")}
             title="Owners lens — every building the other firms hold, one colour per firm. Yours stay gold."

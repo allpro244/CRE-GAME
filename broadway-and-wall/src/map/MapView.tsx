@@ -478,6 +478,47 @@ export default function MapView() {
     dmdRef.current = next;
   }, [game, parcels, mapReady, lens]);
 
+  // THE ZONING LENS PAINTS ROOM, NOT RULES.
+  //
+  // A map of zone districts tells you what the code says. It does not tell you
+  // anything you can act on, because the code is the same on the corner that
+  // was built out in 1912 and the one beside it carrying a parking lot. The
+  // question a developer actually asks is the DIFFERENCE between them: how
+  // much more could stand here than does?
+  //
+  // So this pushes the UNUSED SHARE OF THE ENVELOPE — one minus built FAR over
+  // allowed FAR — which is the redevelopment surface, and it moves. It moves
+  // when the board upzones a district, when a variance is won on one lot, when
+  // something is landmarked and its remaining envelope goes to zero, and when
+  // anybody finishes a building. Every one of those is a thing the player did
+  // or a thing that happened to them, and none of them is visible on a map of
+  // zone letters.
+  const zoneRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !game || !parcels) return;
+    if (lens !== "zoning") return;
+    const next = new Map<string, number>();
+    for (const bbl of Object.keys(parcels)) {
+      const rec = resolveRec(parcels, game, bbl);
+      if (!rec || !rec.lotArea) continue;
+      // The RESOLVED envelope: the district's multiplier, anything won at a
+      // hearing on this lot, and nothing at all if it has been landmarked.
+      const far = Math.max(rec.farMaxComm, rec.farMaxRes);
+      if (!(far > 0)) { next.set(bbl, 0); continue; }        // landmarked: no room, and that is the point
+      const used = rec.bldgArea / (rec.lotArea * far);
+      next.set(bbl, Math.round(100 * Math.max(0, Math.min(1, 1 - used))));
+    }
+    for (const [bbl, v] of next) {
+      if (zoneRef.current.get(bbl) === v) continue;
+      map.setFeatureState({ source: "bw-parcels", id: Number(bbl) }, { room: v });
+    }
+    for (const bbl of zoneRef.current.keys()) {
+      if (!next.has(bbl)) map.removeFeatureState({ source: "bw-parcels", id: Number(bbl) }, "room");
+    }
+    zoneRef.current = next;
+  }, [game, parcels, mapReady, lens]);
+
   // name labels: districts, parks, water — DOM markers, no glyph server needed
   useEffect(() => {
     const map = mapRef.current;
@@ -671,7 +712,7 @@ export default function MapView() {
     // the district names come up full-strength at every zoom (the CSS side of
     // the class below) and the seams between districts get a dashed line.
     // Both go away with the lens — the normal view keeps its clean model look.
-    const hoods = lens === "demand" || lens === "land";
+    const hoods = lens === "demand" || lens === "land" || lens === "zoning";
     map.getContainer().classList.toggle("bw-lens-hoods", hoods);
     if (hoods && !map.getLayer("bw-hood-line")) {
       const ctx = useStore.getState().city?.context as GeoJSON.FeatureCollection | null;
@@ -698,6 +739,20 @@ export default function MapView() {
       ] as never);
       map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.82 as never);
       map.setPaintProperty("bw-bldg-3d", "fill-extrusion-opacity", 0.18 as never);
+      return;
+    }
+    if (lens === "zoning" && game && parcels) {
+      ghostBuildings(true);
+      // Dark where the envelope is spent, bright where it is not. The ramp is
+      // deliberately steep at the bottom: the difference between a lot that is
+      // 95% built out and one that is 80% built out is the difference between
+      // nothing and a deal, and a linear ramp buries it.
+      map.setPaintProperty("bw-parcel-fill", "fill-color", [
+        "interpolate", ["linear"], ["coalesce", ["feature-state", "room"], 0],
+        0, "#3b3327", 10, "#6b5836", 25, "#9c7f3c", 50, "#c9a23f", 75, "#e3c766", 100, "#f5e6a8",
+      ] as never);
+      map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.85 as never);
+      map.setPaintProperty("bw-bldg-3d", "fill-extrusion-opacity", 0.16 as never);
       return;
     }
     if (lens === "land" && game && parcels) {

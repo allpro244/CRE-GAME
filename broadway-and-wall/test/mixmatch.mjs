@@ -32,51 +32,56 @@
 // the lead-lag r on `orders -> breaks` is a noisy shadow of it, because that
 // leg mixes composition and timing into one number and cannot say which failed.
 //
-// WHAT IT SAYS TODAY, and why this file exists rather than a fix:
+// WHAT IT FOUND, which is why the file exists:
 //
-//   office       r  0.09     ordered 28.4%   built 30.4%
-//   retail       r -0.03     ordered  6.0%   built 18.3%
-//   industrial   r -0.09     ordered 29.6%   built  2.0%
-//   multifamily  r -0.09     ordered 35.9%   built 49.2%
+//   BEFORE                                     AFTER (useForZone reads the book)
+//   office       r  0.09   ord 28.4  blt 30.4    r  0.42   ord 36.6  blt 31.9
+//   retail       r -0.03   ord  6.0  blt 18.3    r  0.22   ord  6.5  blt 17.3
+//   industrial   r -0.09   ord 29.6  blt  2.0    r  0.04   ord 33.5  blt  3.4
+//   multifamily  r -0.09   ord 35.9  blt 49.2    r  0.34   ord 23.3  blt 47.4
 //
-// Three of the four are NEGATIVE. A class being short this month does not make
-// the city more likely to build it, and industrial — a third of everything the
-// space market asks for — is two per cent of what goes in the ground. The order
-// book is decoration, and the lead-lag leg reads r 0.31 on a 27-month plateau
-// because the only thing linking orders to groundbreaks is the rent term that
-// drives both. That is the finding. It is real and it is not fixed here.
+// Three of four were NEGATIVE. A class being short did not make the city likelier
+// to build it, and industrial — a third of every order — was two per cent of every
+// groundbreak. `useForZone` now weights its draw by the order book's composition,
+// which is `econ.startOwed`, the same queue whose TOTAL already sizes the crane
+// count. No constant was added: `pick` normalises, so only ratios matter and the
+// ratios are the book's own.
 //
-// THE OBVIOUS FIX WAS TRIED AND REVERTED, and the reason is worth more than the
-// attempt. `useForZone` picks a use from the zone, a demand score and a die; the
-// patch weighted that draw by each class's share of the order book, bounded to
-// [0.33, 2.5] so zoning still won outright. Measured against this file it did
-// what it claimed — office r 0.09 -> 0.16, retail -0.03 -> 0.16, multifamily
-// -0.09 -> 0.10. It was still wrong, on three counts:
+// TWO EARLIER ATTEMPTS FAILED, and both failures are more instructive than the fix.
 //
-//   1. The pre-registered test failed. `orders -> breaks` went 0.31 -> 0.29.
-//   2. The blast radius was absurd for a mix nudge: median land value +72%,
-//      office rent index +61.5%, affordable lot share +327% — on 3.6% more
-//      floor area. A composition tweak that reprices the city is not a
-//      composition tweak.
-//   3. THE BOUNDS WERE LOAD-BEARING. Instrumented over 9,084 (month, class)
-//      draws, the clamp bound 52.7% of the time — retail sat on the low rail
-//      63.6% of the time and never once reached the high one. CLAUDE.md fake
-//      number five: a rail that rests against itself in normal play is holding
-//      up the model. The tilt was not reading the order book in half its draws,
-//      it was reading 0.33 and 2.5, two numbers with no source but me.
+//   Weighting by the book's share CLAMPED to [0.33, 2.5]. Instrumented over 9,084
+//   draws the clamp bound 52.7% of the time — retail sat on the low rail 63.6% of
+//   the time and never reached the high one. CLAUDE.md fake number five: in half
+//   the city's decisions the mechanism was the clamp, not the market. It bound
+//   because the book is spiky — office swings 1k to 298k sf across a cycle while
+//   industrial rests on a permanent ~40k floor it can never work off, M-zoned land
+//   being scarce enough that those orders are structurally unfillable. Any bounded
+//   ratio taken over that spends its life against a stop.
 //
-// The rails bound because the order book is spiky: office swings from 1k sf to
-// 298k sf across a cycle while industrial sits on a permanent ~40k floor it can
-// never work off (M-zoned land is scarce, so those orders are structurally
-// unfillable). Shares computed off that are mostly zero and occasionally
-// everything, so any bounded ratio spends its life against a stop.
+//   Weighting by `classAppetite` instead. This read BEST of the three on the
+//   headline numbers — office vacancy 22.0% -> 12.0%, dead lease legs -23%,
+//   volume-neutral — and it is a mirror, not a mechanism. `e.starts`, which FILLS
+//   the book, is `vacGate(vacancy) x credit x margin`; `classAppetite` is
+//   `tight(vacancy) x credit x devPencils`. Same formula. `orders -> breaks` duly
+//   went to r 0.39 and BACKWARDS at -17 months, which is two copies of one series
+//   arguing about phase. Shipping it on those numbers would have been fitting the
+//   test — and the test in question is the one that exists to catch exactly this.
 //
-// WHAT THE REAL FIX PROBABLY IS, for whoever picks this up: not a weight on the
-// die at all. A developer chooses a use because that use yields most on that
-// site net of what it costs to build — and the pro forma already computes
-// exactly that, per class, in `devPencils`. Picking the use by yield needs no
-// new constant, has no rails to bind, and gets the order book in through the
-// front door, because the orders are what moved the rents the yield is made of.
+// WHAT SHIPPING IT DID, measured paired on identical seeds. Total groundbreaks
+// 35.26M -> 41.00M sf, and the city ends bigger: 34,115 jobs against 32,331. Real
+// office rent and median land both rise sharply, and the reason is amplitude
+// rather than level — office vacancy now runs 3.8% to 21.1% across the cycle where
+// it used to sit in a permanently soft 11.5-18.3% band. Concentrating cranes on
+// whichever class is short means overshooting that class, and overshoot is what a
+// property cycle IS. A blind mix diversifies the cycle away, which is precisely
+// why the leg could not be identified before.
+//
+// STILL BROKEN, and now cleanly: `orders -> breaks` reads -5mo, r 0.48, BACKWARDS.
+// The queue has no DURATION. A groundbreak happens the month its order is booked
+// and drains the book on the way past, so the two series are contemporaneous and
+// the drain makes the residual correlation negative. In life, entitlement, design,
+// a site and a lender take six to eighteen months, which is what the expected band
+// on that leg is measuring. That lag does not exist in this engine yet.
 import { assertFreshBundle } from "./fresh.mjs";
 if (!process.env.ENGINE) assertFreshBundle();
 import { dirname, join } from "node:path";
@@ -110,6 +115,10 @@ function pearson(xs, ys) {
 // Per class: every (town, month) pair that had both an order book and a crane.
 const owedS = Object.fromEntries(CLASSES.map((k) => [k, []]));
 const brokeS = Object.fromEntries(CLASSES.map((k) => [k, []]));
+// Shares cannot tell you whether a class got MORE space or the others got less,
+// and that is the difference between a mix that moved and a city that grew. The
+// absolute square footage broken per class is the level behind the share.
+const brokeTot = Object.fromEntries(CLASSES.map((k) => [k, 0]));
 let months = 0, live = 0;
 
 for (let i = 0; i < N; i++) {
@@ -130,7 +139,7 @@ for (let i = 0; i < N; i++) {
       seen.add(key);
       for (const k of CLASSES) {
         const share = j.mix?.[k] ?? (j.use === k ? 1 : 0);
-        if (share > 0) broke[k] += j.sf * share;
+        if (share > 0) { broke[k] += j.sf * share; brokeTot[k] += j.sf * share; }
       }
     }
     hist.push(broke);
@@ -153,15 +162,16 @@ for (let i = 0; i < N; i++) {
 }
 
 console.log(`\nDOES THE CITY BUILD WHAT THE MARKET ORDERED — ${N} towns x ${HZ / 12} years, ${WIN}mo window\n`);
-console.log(`  ${pad("class", 14)}${rp("r", 8)}${rp("ordered", 10)}${rp("built", 10)}   share of the mix`);
+console.log(`  ${pad("class", 14)}${rp("r", 8)}${rp("ordered", 10)}${rp("built", 10)}${rp("sf broken", 14)}`);
 let pooledX = [], pooledY = [];
 for (const k of CLASSES) {
   const r = pearson(owedS[k], brokeS[k]);
   const mo = owedS[k].reduce((a, v) => a + v, 0) / Math.max(1, owedS[k].length);
   const mb = brokeS[k].reduce((a, v) => a + v, 0) / Math.max(1, brokeS[k].length);
   pooledX = pooledX.concat(owedS[k]); pooledY = pooledY.concat(brokeS[k]);
-  console.log(`  ${pad(k, 14)}${rp(Number.isFinite(r) ? r.toFixed(2) : "n/a", 8)}${rp((mo * 100).toFixed(1) + "%", 10)}${rp((mb * 100).toFixed(1) + "%", 10)}`);
+  console.log(`  ${pad(k, 14)}${rp(Number.isFinite(r) ? r.toFixed(2) : "n/a", 8)}${rp((mo * 100).toFixed(1) + "%", 10)}${rp((mb * 100).toFixed(1) + "%", 10)}${rp((brokeTot[k] / 1e6).toFixed(2) + "M sf", 14)}`);
 }
+console.log(`  ${pad("TOTAL", 14)}${rp("", 8)}${rp("", 10)}${rp("", 10)}${rp((CLASSES.reduce((a, k) => a + brokeTot[k], 0) / 1e6).toFixed(2) + "M sf", 14)}`);
 const pool = pearson(pooledX, pooledY);
 // The pooled number is across classes as well as time, so it also rewards a
 // city that merely gets the RANKING right — office is usually the biggest share

@@ -2059,9 +2059,56 @@ export function useForZone(zone: string, demand: number, r: number, e?: Econ): D
     return b0 && b ? clamp(1 - b / b0, 0, 0.8) : 0;
   };
   const here = (k: BuiltClass) => 1 - gone(k);
+  /**
+   * THE CRANE FILLS THE ORDER BOOK. Which is what an order book is for.
+   *
+   * The weights below are a programme mix — what a city of this demand level
+   * builds on average — and until now they were the whole decision. The draw
+   * never once asked which class the market was actually short of. Measured,
+   * `pnpm mixmatch` read three of four classes at a NEGATIVE correlation
+   * between what was ordered and what went in the ground, and industrial at a
+   * third of every order and two per cent of every groundbreak. The book was
+   * decoration, and the `orders -> breaks` leg of `pnpm leadlag` could only
+   * ever be identified through the rent term that drove both ends of it.
+   *
+   * `econ.startOwed` is the queue: square feet ordered by the space market, per
+   * class, expiring after eighteen months, decremented by every groundbreak.
+   * `tickCityDev` already reads its TOTAL to size the crane count. This reads
+   * its COMPOSITION to pick the use, which is the other half of the same
+   * sentence, and it makes the leg a genuine fill relationship — breaks respond
+   * to the book and then DRAIN it, so the feedback is negative and the lag is
+   * the queue's own.
+   *
+   * NO CONSTANT ENTERS HERE. `pick` normalises, so only the ratios matter, and
+   * the ratios are the order book's own. Two earlier attempts got that wrong in
+   * opposite directions and both are worth keeping in mind:
+   *
+   *   - Weighting by each class's share of the book CLAMPED to [0.33, 2.5].
+   *     Instrumented over 9,084 draws the clamp bound 52.7% of the time, so in
+   *     half the city's decisions the mechanism was the clamp — CLAUDE.md fake
+   *     number five, a rail that is load-bearing rather than a guard.
+   *   - Weighting by `classAppetite` instead. That reads far better on the
+   *     headline numbers and is still wrong, because `e.starts` — the thing
+   *     that FILLS the book — is itself `vacGate(vacancy) x credit x margin`
+   *     and `classAppetite` is `tight(vacancy) x credit x devPencils`. They are
+   *     the same formula. Wiring one to the other does not build a mechanism,
+   *     it builds a mirror: `orders -> breaks` duly went to r 0.39 and BACKWARDS
+   *     at -17 months, which is two copies of one series arguing about phase.
+   *     That is the exact fault this whole line of work exists to find.
+   */
+  const owed = (u: DevUse): number =>
+    Math.max(0, e?.startOwed?.[dominantOf(devMix(u))] ?? 0);
   // Weighted pick over [0,1), so a class's mass shrinks by exactly what has
   // left and the remainder falls to housing. One draw, same as before.
-  const pick = (w: [DevUse, number][]): DevUse => {
+  //
+  // If the book is empty of everything this zone permits there is nothing to
+  // normalise, and the programme weights stand alone. That is a guard rather
+  // than a rail — an empty book means the market has not asked for anything,
+  // and the appetite gate in the caller rejects the site a line later anyway,
+  // so what this returns in that case rarely reaches a shovel.
+  const pick = (w0: [DevUse, number][]): DevUse => {
+    const wo = w0.map(([u, x]) => [u, x * owed(u)] as [DevUse, number]);
+    const w = wo.reduce((t, [, x]) => t + x, 0) > 0 ? wo : w0;
     const total = w.reduce((t, [, x]) => t + x, 0);
     let acc = 0;
     for (const [use, x] of w) { acc += x / total; if (r < acc) return use; }
@@ -2091,8 +2138,10 @@ export function useForZone(zone: string, demand: number, r: number, e?: Econ): D
  */
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
-function classAppetite(s: GameState, k: BuiltClass): number {
-  const e = s.econ;
+// Split from `classAppetite` so `useForZone` can read it: the whole computation
+// only ever touched `s.econ`, and the use-picker has the Econ but not the state.
+// Same function, one caller deeper — nothing about the number changed.
+function classAppetiteE(e: Econ, k: BuiltClass): number {
   const vac = e.cityVac?.[k] ?? NATURAL_VAC[k];
   const gap = vac - NATURAL_VAC[k];
   const stk = e.stock?.[k] ?? CITY_STOCK[k];
@@ -2104,6 +2153,10 @@ function classAppetite(s: GameState, k: BuiltClass): number {
   // exactly the same rate. See market.devPencils: one hurdle, read by the
   // quota, by the street, and by the city.
   return tight * clamp(e.creditIdx ?? 1, 0.25, 1.25) * devPencils(e, k);
+}
+
+function classAppetite(s: GameState, k: BuiltClass): number {
+  return classAppetiteE(s.econ, k);
 }
 
 /**

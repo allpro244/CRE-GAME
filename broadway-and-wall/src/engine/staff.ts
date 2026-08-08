@@ -53,7 +53,7 @@ import { logBooks } from "./types";
 import { mulberry32Step } from "./market";
 import { resolveRec } from "./value";
 
-export type StaffRole = "pm" | "leasing";
+export type StaffRole = "pm" | "leasing" | "construction";
 
 /**
  * THE PAYROLL DRAWS FROM ITS OWN STREAM, AND THIS IS NOT A DETAIL.
@@ -102,14 +102,16 @@ export const GENERAL_ATTRS = ["judgment", "urgency", "diligence", "relationships
 export const ROLE_ATTRS: Record<StaffRole, readonly string[]> = {
   pm: ["costControl", "tenantCare"],
   leasing: ["marketKnowledge", "negotiation"],
+  construction: ["scheduling", "costControl"],
 };
 export const ATTR_LABEL: Record<string, string> = {
   judgment: "Judgment", urgency: "Sense of urgency", diligence: "Detail orientation",
   relationships: "Relationships", costControl: "Cost control", tenantCare: "Tenant care",
   marketKnowledge: "Market knowledge", negotiation: "Negotiation",
+  scheduling: "Scheduling",
 };
 export const ROLE_LABEL: Record<StaffRole, string> = {
-  pm: "Property Manager", leasing: "Leasing",
+  pm: "Property Manager", leasing: "Leasing", construction: "Construction Manager",
 };
 
 export interface Staff {
@@ -265,6 +267,26 @@ export const MF_WORK_WEIGHT = 2.4;
  */
 export const OWNER_SF = 150_000;
 
+/**
+ * AND THE SEAT THAT WATCHES THE JOBS, whose denominator is not the book.
+ *
+ * A property manager and a leasing agent are loaded by the standing portfolio.
+ * A construction manager is loaded by what is IN THE GROUND — a firm with
+ * thirty stabilised buildings and nothing under construction has no work for
+ * one, and a firm with one tower going up has a full-time job for somebody.
+ * Measuring this seat against the book would have made it a tax on owning
+ * buildings, which is the opposite of what it is.
+ *
+ * 350,000 sf of live construction is two or three concurrent mid-size jobs,
+ * which is what one owner's representative actually carries. The owner's own
+ * capacity is deliberately thin here — OWNER_CONSTRUCTION_SF, a single small
+ * job — because supervising a build is not something a principal does in the
+ * gaps between underwriting, and the game should say so before the change
+ * orders do.
+ */
+export const CONSTRUCTION_BASE_SF = 350_000;
+export const OWNER_CONSTRUCTION_SF = 60_000;
+
 function abilityMult(st: Staff, month: number, keys: string[]): number {
   // Uses TRUE ability. The player's uncertainty is about what they can see,
   // not about what is happening to their buildings.
@@ -274,11 +296,13 @@ function abilityMult(st: Staff, month: number, keys: string[]): number {
 }
 
 export function roleCapacitySf(s: GameState, role: StaffRole): number {
-  const base = role === "pm" ? PM_BASE_SF : LEASING_BASE_SF;
-  let cap = OWNER_SF;                                    // you are always working
+  const base = role === "pm" ? PM_BASE_SF : role === "construction" ? CONSTRUCTION_BASE_SF : LEASING_BASE_SF;
+  let cap = role === "construction" ? OWNER_CONSTRUCTION_SF : OWNER_SF;   // you are always working
   for (const st of s.staff ?? []) {
     if (st.role !== role) continue;
-    const keys = role === "pm" ? ["urgency", "diligence"] : ["urgency", "relationships"];
+    const keys = role === "pm" ? ["urgency", "diligence"]
+      : role === "construction" ? ["urgency", "diligence"]
+      : ["urgency", "relationships"];
     cap += base * abilityMult(st, s.month, keys);
   }
   return cap;
@@ -286,6 +310,14 @@ export function roleCapacitySf(s: GameState, role: StaffRole): number {
 
 /** Square feet each role is on the hook for. */
 export function coveredSf(s: GameState, parcels: ParcelTable, role: StaffRole): number {
+  // WHAT IS IN THE GROUND, not what is standing. See CONSTRUCTION_BASE_SF.
+  if (role === "construction") {
+    let live = 0;
+    for (const d of Object.values(s.developments ?? {})) {
+      if (d.deliverM > s.month) live += d.sf ?? 0;
+    }
+    return live;
+  }
   let sf = 0;
   for (const h of Object.values(s.holdings)) {
     const rec: ParcelRecord | null = resolveRec(parcels, s, h.bbl);
@@ -319,7 +351,9 @@ export function roleState(s: GameState, parcels: ParcelTable, role: StaffRole): 
   const capacity = roleCapacitySf(s, role);
   const covered = coveredSf(s, parcels, role);
   const load = capacity > 0 ? covered / capacity : 0;
-  const keys = role === "pm" ? ["costControl", "diligence"] : ["marketKnowledge", "negotiation"];
+  const keys = role === "pm" ? ["costControl", "diligence"]
+    : role === "construction" ? ["scheduling", "costControl"]
+    : ["marketKnowledge", "negotiation"];
   // Skill is the ability-weighted average across the people in the seat,
   // floored at the owner's own competence. An owner with no staff is not
   // incompetent, just ordinary and stretched.
@@ -367,6 +401,40 @@ export function pmRenewalMult(rs: RoleState): number {
 export function leasingOddsMult(rs: RoleState): number {
   const good = (rs.skill - 50) / 100 * 0.5;
   return Math.max(0.55, Math.min(1.35, 1 + good - rs.slip * 0.5));
+}
+
+/**
+ * WHAT AN OWNER'S REPRESENTATIVE IS WORTH, ON SITE RISK ONLY.
+ *
+ * Returns a multiplier on the monthly hazard of the three things that go wrong
+ * on a job — a change order, a weather-and-inspections slip, a subcontractor
+ * default — and on the size of the two that cost money. It multiplies nothing
+ * else. A construction manager does not make steel cheaper, does not shorten
+ * the base build period, and cannot help a job whose problem is that the market
+ * moved: cost escalation under cost-plus is the market repricing the unbuilt
+ * balance, and the instrument against that is a guaranteed maximum price, which
+ * is already in the game and already costs four points.
+ *
+ * WHAT THEY DO is the preconstruction work and the watching: scope the drawings
+ * so the change order was priced before it was an order, pre-qualify the subs
+ * so the one that goes under is not on your job, and be on site the week the
+ * inspection is failed rather than the month after. Owner-driven change orders
+ * run 5-10% of contract value on real jobs and good preconstruction is what
+ * moves that number; professional CM fees of 1-3% of construction cost are paid
+ * out of exactly this and nothing else.
+ *
+ * Range is the same register as the property manager's, and deliberately so:
+ * roughly a fifth either way on the controllable part, floored and capped so
+ * neither a brilliant hire nor a hopeless one can decide a project. Measured
+ * off this function rather than asserted about it: a skill-90 manager inside
+ * capacity runs site risk at 0.824 — about 18% fewer events and 18% smaller
+ * change orders — and an owner supervising 300,000 sf with nobody in the seat
+ * runs 1.287, about 29% more. The rails at 0.78 and 1.34 are guards on the
+ * tails and are not reachable by a plausible hire inside capacity.
+ */
+export function cmRiskMult(rs: RoleState): number {
+  const good = (rs.skill - 50) / 100 * 0.44;             // -0.22 .. +0.22
+  return Math.max(0.78, Math.min(1.34, 1 - good + rs.slip * 0.34));
 }
 
 /** What the leasing hire gets on the rent, against a market they know better. */

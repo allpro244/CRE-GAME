@@ -21,6 +21,10 @@ export const MODULES = [
   // on space that will not let, which the harness bots have to read rather than
   // guess at. space carries the submarket roll-up.
   "absorption", "space",
+  // staff carries roleState and the role multipliers. Without it a harness
+  // cannot ask what a hire is worth and has to re-derive the band — the exact
+  // drift this file exists to prevent.
+  "staff",
 ];
 
 export function writeEntry(path) {

@@ -11,6 +11,7 @@ import { BUILT_CLASSES } from "./types";
 import { logBooks, monthLabel, serviceSpec, planSpec } from "./types";
 import { demandNow } from "./demand";
 import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE } from "./market";
+import { roleState, cmRiskMult } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, landRead, assetValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling,
   HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE } from "./value";
@@ -1469,9 +1470,18 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
     if (progress > 0.04 && progress < 0.97) {
       const roll = rng(s);
       const gmpShield = d.contract === "gmp" ? 0.35 : 1;   // the GC eats most of it
-      if (roll < 0.028 * gmpShield) {
+      // AND WHETHER ANYBODY IS WATCHING THE JOB. `cmRiskMult` is the owner's
+      // representative: it scales the hazard of all three site events and the
+      // size of the two that cost money, and nothing else — see its comment for
+      // what a construction manager is and is not worth. Scaling the thresholds
+      // rather than the draw is deliberate: `rng` is called the same number of
+      // times whoever is on the payroll, so hiring somebody cannot re-roll the
+      // rest of the century. That fault is documented at the top of staff.ts
+      // and it cost an acceptance test once already.
+      const cm = cmRiskMult(roleState(s, parcels, "construction"));
+      if (roll < 0.028 * gmpShield * cm) {
         // change order
-        const bump = rrange(s, 0.015, 0.07);
+        const bump = rrange(s, 0.015, 0.07) * cm;
         const extra = Math.round(d.costTotal * bump);
         const fromContingency = Math.min(Math.max(0, d.contingency - d.contingencyUsed), extra);
         d.contingencyUsed += fromContingency;
@@ -1486,14 +1496,16 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
             ? `Change orders at ${rec.address}: $${(extra / 1e6).toFixed(2)}M, of which $${(overrun / 1e6).toFixed(2)}M is past the contingency and lands on you.`
             : `Change orders at ${rec.address}: $${(extra / 1e6).toFixed(2)}M, absorbed by the contingency.`,
         });
-      } else if (roll < 0.055) {
+      } else if (roll < 0.055 * cm) {
         d.deliverM += 1 + Math.round(rng(s));
         syncDevCohorts(s, d);
         d.events++;
         s.news.unshift({ q: s.month, kind: "warn", text: `Weather and inspections at ${rec.address} — delivery moves to ${monthLabel(d.deliverM)}.` });
-      } else if (roll < 0.062) {
-        // a sub goes under: time AND money, and the GMP does not help much
-        const extra = Math.round(d.costTotal * rrange(s, 0.03, 0.09));
+      } else if (roll < 0.062 * cm) {
+        // a sub goes under: time AND money, and the GMP does not help much.
+        // Pre-qualification is most of what stops this one, which is why the
+        // manager's multiplier reaches it where the GMP barely does.
+        const extra = Math.round(d.costTotal * rrange(s, 0.03, 0.09) * cm);
         const fromContingency = Math.min(Math.max(0, d.contingency - d.contingencyUsed), extra);
         d.contingencyUsed += fromContingency;
         const overrun = extra - fromContingency;

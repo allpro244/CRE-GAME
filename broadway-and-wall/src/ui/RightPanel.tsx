@@ -8488,7 +8488,7 @@ function BooksPage() {
           the office costs; this is where you find out who is in it. */}
       <div className="btn-row">
         <button className="btn" onClick={() => useStore.getState().setPage("staff")}
-          title="Property management and leasing — capacity, the shortlist, and what the slip is costing you">
+          title="Property management, leasing and construction — capacity, the shortlist, and what the slip is costing you">
           The desk · {(game.staff ?? []).length} on the payroll →
         </button>
       </div>

@@ -52,21 +52,22 @@ import type { GameState } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import {
   ATTR_LABEL, GENERAL_ATTRS, ROLE_ATTRS, ROLE_LABEL,
-  LEASING_BASE_SF, OWNER_SF, PM_BASE_SF, POOL_REFRESH_M, SEARCH_MONTHS,
+  LEASING_BASE_SF, OWNER_SF, PM_BASE_SF, CONSTRUCTION_BASE_SF, POOL_REFRESH_M, SEARCH_MONTHS,
   SEARCH_TIERS, SEVERANCE_MONTHS,
-  leasingOddsMult, leasingRentMult, payrollMonthly, pmOpexMult, pmRenewalMult,
+  leasingOddsMult, leasingRentMult, payrollMonthly, pmOpexMult, pmRenewalMult, cmRiskMult,
   readAttr, roleState, severanceFor,
   type Candidate, type RoleState, type Staff, type StaffRole,
 } from "@/engine/staff";
 import { operatingStatement, resolveRec } from "@/engine/value";
 import { sf, usd } from "./format";
 
-const ROLES: StaffRole[] = ["pm", "leasing"];
+const ROLES: StaffRole[] = ["pm", "leasing", "construction"];
 
 /** The two attributes each role's CAPACITY is actually a function of. */
 const CAPACITY_ATTRS: Record<StaffRole, string[]> = {
   pm: ["urgency", "diligence"],
   leasing: ["urgency", "relationships"],
+  construction: ["urgency", "diligence"],
 };
 
 /**
@@ -353,6 +354,37 @@ function RoleDesk({ role, rs, opexBase, staff, pending, month, onFire, armed, se
     } else if (renew > 1.005) {
       lines.push({ bad: false, text: `Tenants renew about ${((renew - 1) * 100).toFixed(0)}% more readily than standard — somebody is having the conversation early.` });
     }
+  } else if (role === "construction") {
+    // WHAT THE SEAT IS WORTH, in the only currency it deals in: the things
+    // that go wrong on a job. It buys nothing on a book that is not building,
+    // and the card says so rather than inventing a benefit.
+    const now = cmRiskMult(rs);
+    const kept = cmRiskMult(covered);
+    if (rs.covered <= 0) {
+      lines.push({
+        bad: false,
+        text: manned
+          ? `Nothing is under construction, so this seat is being paid to wait. That is a real decision and sometimes the right one — a manager you let go is a search and two months of nobody before the next job starts — but it is overhead against no work.`
+          : `Nothing under construction. There is no work for this seat until you break ground.`,
+      });
+    }
+    if (now - kept > 0.005) {
+      lines.push({
+        bad: true,
+        text: `At ${rs.load.toFixed(2)}× the line, jobs run ${((now / kept - 1) * 100).toFixed(0)}% more site risk than the same people would carry inside capacity — `
+          + `change orders nobody scoped, subs nobody pre-qualified, inspections failed in the week nobody was there.`,
+      });
+    }
+    if (Math.abs(kept - 1) > 0.005) {
+      lines.push({
+        bad: kept > 1,
+        text: kept < 1
+          ? `${who} ${runs} about ${((1 - kept) * 100).toFixed(0)}% fewer change orders, weather slips and subcontractor defaults than an ordinary job carries, and the ones that land are that much smaller. It is preconstruction and being on site — it does not make steel cheaper and it will not save a job the market has repriced. That is what a guaranteed maximum price is for.`
+          : manned
+            ? `${who} ${runs} about ${((kept - 1) * 100).toFixed(0)}% MORE site risk than an ordinary job carries. That is not the load; that is who is watching the work.`
+            : `Supervising your own jobs runs about ${((kept - 1) * 100).toFixed(0)}% more site risk than a competent owner's representative would. You are underwriting and financing at the same time, and the change orders arrive priced.`,
+      });
+    }
   } else {
     const odds = leasingOddsMult(rs);
     const oddsKept = leasingOddsMult(covered);
@@ -384,7 +416,7 @@ function RoleDesk({ role, rs, opexBase, staff, pending, month, onFire, armed, se
     }
   }
 
-  const base = role === "pm" ? PM_BASE_SF : LEASING_BASE_SF;
+  const base = role === "pm" ? PM_BASE_SF : role === "construction" ? CONSTRUCTION_BASE_SF : LEASING_BASE_SF;
 
   return (
     <div className="page-section">
@@ -396,7 +428,9 @@ function RoleDesk({ role, rs, opexBase, staff, pending, month, onFire, armed, se
       <div className="hint">
         {role === "pm"
           ? `A manager covers about ${sf(base)} of commercial at ordinary ability, and apartments eat that faster per foot than anything else — a hundred flats is a hundred tenancies where a hundred thousand feet of warehouse is one.`
-          : `A leasing desk covers about ${sf(base)} of commercial at ordinary ability. Flats are not on this list at all: multifamily lets itself, and the engine has always said so.`}
+          : role === "construction"
+            ? `An owner's representative carries about ${sf(base)} of LIVE CONSTRUCTION at ordinary ability — two or three concurrent jobs. This seat is loaded by what is in the ground and not by what is standing: a book of thirty stabilised buildings gives them nothing to do, and one tower going up is a full-time job. They cost what they cost either way, so this is a seat you fill when you are building and let go when you are not.`
+            : `A leasing desk covers about ${sf(base)} of commercial at ordinary ability. Flats are not on this list at all: multifamily lets itself, and the engine has always said so.`}
       </div>
       {lines.length > 0 && (
         <div className="desk-lines">
@@ -511,7 +545,7 @@ function CandidateCard({ c, costIdx, cash, month, onHire }: {
   const askToday = c.askSalary * costIdx;
   const firstMonth = Math.round(askToday / 12);
   const keys = [...GENERAL_ATTRS, ...ROLE_ATTRS[c.role]];
-  const base = c.role === "pm" ? PM_BASE_SF : LEASING_BASE_SF;
+  const base = c.role === "pm" ? PM_BASE_SF : c.role === "construction" ? CONSTRUCTION_BASE_SF : LEASING_BASE_SF;
   // The capacity a person adds is 0.6x-1.5x of the role's base, set by the two
   // attributes in CAPACITY_ATTRS — so the honest preview is that formula run
   // on the bottom and the top of what the interview can tell you.

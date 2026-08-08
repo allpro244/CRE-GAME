@@ -560,6 +560,47 @@ function ensure(e: Econ) {
 }
 
 
+/**
+ * IS THIS ACTUALLY A SWAN, OR IS IT JUST NEWS.
+ *
+ * Reported by the owner: "swans happen way too often, and a lot of these swans
+ * aren't actually swans, they are just news. A black swan or a white swan
+ * should be something with a major not a minor impact."
+ *
+ * The first half of that is not what the engine does. Measured over six careers
+ * of fifty years, a swan CARD came up a median of three times a career — one
+ * every seventeen years — which is rare. What the player is seeing constantly
+ * is the news tape: `event` and `warn` items land at 12.4 a year and the News
+ * badge lights in 57% of all months. That is a separate problem and it is not
+ * this file's.
+ *
+ * The second half is exactly right, and it is this file's. `TRADE_MAG` runs
+ * 0.12 to 0.42 — the top of that is Rochester losing imaging, and the bottom is
+ * a city holding twelve per cent less of one trade over eight years, which is
+ * roughly one per cent a year of one sector and is a thing no player will ever
+ * feel. Both were being announced with a full-screen card headed "A black
+ * swan". The card was making a promise the event could not keep, and a card
+ * that cries wolf teaches the player to dismiss the one that matters.
+ *
+ * So the LEVEL EVENT still happens at its calibrated rate and magnitude —
+ * nothing about the economics moves, the anchors in this file stand, and every
+ * one of them is still filed as news. What is earned rather than automatic is
+ * the INTERRUPTION.
+ *
+ * Two ways to earn it, because there are two ways for something to matter.
+ * Either it is large in absolute terms — a quarter of a trade or more, which is
+ * the Hartford-consolidation end of the anchors rather than the noise end — or
+ * it is smaller but lands on the player specifically, because a fifteen per
+ * cent move in the trade that fills their buildings is their swan even when it
+ * is not the city's. Exposure is already computed here for the detail line; it
+ * just was not being asked to decide anything.
+ */
+const CARD_MAG = 0.25;   // a quarter of a trade: Hartford's insurance, 1990s
+const CARD_EXPOSURE = 0.15;   // or a sixth of the player's own rent roll
+function worthACard(mag: number, exposure: number): boolean {
+  return mag >= CARD_MAG || exposure >= CARD_EXPOSURE;
+}
+
 function news(s: GameState, kind: "event" | "warn", text: string) {
   s.news.unshift({ q: s.month, kind, text });
   if (s.news.length > 120) s.news.length = 120;
@@ -589,6 +630,18 @@ function exposureToTrade(s: GameState, k: Sector): number {
  * one alert most likely to matter to them. Counted as buildings there, and said
  * as buildings.
  */
+/** The same share `exposureLine` describes, as a number the card gate can use. */
+function exposureToUse(s: GameState, k: BuiltClass): number {
+  let mine = 0, all = 0;
+  for (const bbl in s.holdings) {
+    for (const t of s.holdings[bbl]?.tenants ?? []) {
+      all += t.sf;
+      if ((t.use ?? "office") === k) mine += t.sf;
+    }
+  }
+  return all > 0 ? mine / all : 0;
+}
+
 function exposureLine(s: GameState, k: BuiltClass): string {
   if (k === "multifamily") {
     let n = 0;
@@ -638,7 +691,7 @@ function fireTrade(s: GameState, yr: number) {
     : `${cap(ARRIVING[k])}. Over the next ${yrs} years this city expects to hold about ${pct}% more of that trade than it does today. `
       + `The buildings that trade wants are the ones that will be bid for, and the ground under them reprices before the leases do.`;
 
-  raise(s, { kind: "swan", tone: dir < 0 ? "bad" : "good", title, body, detail });
+  if (worthACard(mag, exp)) raise(s, { kind: "swan", tone: dir < 0 ? "bad" : "good", title, body, detail });
   news(s, dir < 0 ? "warn" : "event", `${title}. ${detail}`);
   if (!s.swanLog) s.swanLog = [];
   s.swanLog.push({ m: s.month, family: "trade", key: k, dir, mult: +mult.toFixed(4), glideM: glide, title });
@@ -686,7 +739,14 @@ function fireUse(s: GameState, yr: number) {
   const detail = `About ${pct}% of this city's demand for ${USE_WORD[k]} over the next ${yrs} years`
     + exposureLine(s, k);
 
-  raise(s, { kind: "swan", tone: dir < 0 ? "bad" : "good", title: story.title, body: story.body + spilled, detail });
+  // A use event restructures a whole building type rather than one trade, so it
+  // reaches further per point than a trade event does and its bar sits lower.
+  // USE_MAG bands run 0.08-0.18 against the trade range's 0.12-0.42: a tenth of
+  // a city's demand for a building type is the high street losing the
+  // department store, and that is a card. Five per cent is a trend.
+  if (mag >= 0.10 || exposureToUse(s, k) >= CARD_EXPOSURE) {
+    raise(s, { kind: "swan", tone: dir < 0 ? "bad" : "good", title: story.title, body: story.body + spilled, detail });
+  }
   news(s, dir < 0 ? "warn" : "event", `${story.title}. ${detail}`);
   if (!s.swanLog) s.swanLog = [];
   s.swanLog.push({ m: s.month, family: "use", key: k, dir, mult: +mult.toFixed(4), glideM: glide, title: story.title });

@@ -738,6 +738,39 @@ end up STRADDLING 1.0 and every class should be buildable somewhere — the
 correct target is not "everything pencils", it is "the good corners pencil and
 the fringe does not".
 
+### 4b. Swans — HALF DONE, and the other half is the news tape
+Owner: *"swans happen way too often, and a lot of these swans arent actually
+swans, they are just news. A black swan or a white swan should be something with
+a major not a minor impact."*
+
+**The frequency half was not true of the swan system and the measurement says
+so.** Six careers of fifty years: a swan CARD came up a median of three times a
+career, one every seventeen years. What the player is actually seeing constantly
+is the NEWS TAPE — `event` and `warn` items land at **12.4 a year** and the News
+badge lights in **57% of all months**. That is the real "way too often" and it
+is not this file's; it is every system in the engine filing routine business as
+an event. Still open.
+
+**The magnitude half was exactly right and is fixed.** `TRADE_MAG` runs
+0.12–0.42. The top is Rochester losing imaging; the bottom is a city holding 12%
+less of one trade over eight years — about one per cent a year of one sector,
+which no player will ever feel. Both were announced with a full-screen card
+headed "A black swan", and a card that cries wolf teaches the player to dismiss
+the one that matters.
+
+The level event still fires at its calibrated rate and magnitude — no economics
+moved, every anchor in `swans.ts` stands, and **every event is still filed as
+news**. What is earned rather than automatic is the interruption: a card needs
+either ≥25% of a trade (the Hartford-consolidation end of the anchors) or ≥10%
+of a city's demand for a building type, or else ≥15% of the player's own rent
+roll, because a 15% move in the trade that fills their buildings is their swan
+even when it is not the city's.
+
+Measured over 20 careers: **mean 2.1 cards a career, median 2, p10 0, p90 4 —
+one every 23 years, and 15% of careers get none at all.** That last number is
+intended; `swans.ts` already says some cities have a quiet fifty years and some
+are rewritten twice.
+
 ### 5. Tenant bankruptcy and lease rejection
 Owner-requested. A credit tenant files, rejects the lease, and an asset goes
 from stabilised to a hole in one month. Currently unmodelled and unpriceable

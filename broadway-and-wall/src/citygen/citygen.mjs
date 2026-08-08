@@ -207,7 +207,7 @@ function chamfer(ring, i, cut) {
 //
 // These were 0.52 to 0.74, which after the edge multiplier left HALF the city
 // as vacant lots and the industrial fringe about three-quarters empty. That is
-// not a settled harbour town in the year 2000, it is a frontier survey — and
+// not a settled harbour town of the present day, it is a frontier survey — and
 // it is why whole districts read as a paved grid with a few buildings dropped
 // on it however carefully the ground was shaded.
 //

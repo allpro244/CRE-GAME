@@ -67,7 +67,8 @@ function run(seed) {
   const sales = [];                       // every completed round trip
   const listedAt = new Map();             // bbl -> { m, phase, ask }
   const boughtFor = new Map();            // bbl -> price paid
-  let listings = 0, withdrawn = 0, relists = 0;
+  let listings = 0, withdrawn = 0, relists = 0, episodes = 0;
+  const hazard = {}, offered = new Set();
 
   for (let m = 0; m < MONTHS; m++) {
     g = E.advanceQuarter(g, parcels, bbls, b.adjacency);
@@ -106,9 +107,42 @@ function run(seed) {
         // produced 163 sales and 18 still sitting; the missing 412 were the
         // same buildings being re-listed, and each re-listing was resetting the
         // clock this harness exists to read.
-        if (!listedAt.has(h.bbl)) listedAt.set(h.bbl, { m, phase: g.econ.phase, ask });
+        // AN EPISODE IS ONE ATTEMPT TO SELL, NOT ONE CALL TO listForSale. The
+        // engine clears `h.sale` on some paths, so this owner lists the same
+        // building again and again; counting those as separate episodes made
+        // "share that ever found a buyer" a ratio of closings to KEYSTROKES.
+        if (!listedAt.has(h.bbl)) { listedAt.set(h.bbl, { m, phase: g.econ.phase, ask }); episodes++; }
         relists++;
       }
+    }
+
+    // THE HAZARD — the only unbiased read of liquidity in here.
+    //
+    // Both tables above are conditioned on something. Attributing an episode to
+    // the phase it OPENED in is contaminated, because the median episode
+    // outlives its phase and a peak listing rides into the bust behind it.
+    // Attributing it to the phase it CLOSED in is worse: it conditions on
+    // SUCCESS, so a recession column contains only the buildings that managed
+    // to sell in a recession and the ones still stuck are invisible.
+    //
+    // This asks the question directly instead. For every building-month on the
+    // market, what phase was it, and did an offer arrive? That is the monthly
+    // arrival rate, with no survivorship in it and nothing outliving anything,
+    // and it is exactly the quantity `phaseAdj` scales.
+    //
+    // IT HAS TO RUN BEFORE THE ACCEPT LOOP. The first cut sat after it and
+    // counted ZERO offers over 9,661 building-months — every one had already
+    // been taken and the holding was gone by the time this looked. A hazard of
+    // exactly zero is not a finding, it is a harness reading a state its own
+    // bot had already consumed.
+    for (const bbl of listedAt.keys()) {
+      const h = g.holdings[bbl];
+      if (!h?.sale) continue;
+      const ph = g.econ.phase;
+      hazard[ph] ??= { months: 0, offers: 0 };
+      hazard[ph].months++;
+      if (h.sale.offer && !offered.has(bbl)) { hazard[ph].offers++; offered.add(bbl); }
+      if (!h.sale.offer) offered.delete(bbl);
     }
 
     // ---- take the best offer on the table, whatever it is
@@ -121,7 +155,7 @@ function run(seed) {
       if (r.err) continue;
       g = r.s;
       if (info) {
-        sales.push({ months: m - info.m, phase: info.phase, ask: info.ask, price, paid });
+        sales.push({ months: m - info.m, phase: info.phase, closePhase: g.econ.phase, ask: info.ask, price, paid });
         listedAt.delete(h.bbl);
       }
     }
@@ -136,21 +170,23 @@ function run(seed) {
   // expiry, so a building nobody bids on simply sits, and those are the most
   // illiquid assets in the game and were invisible.
   const stuck = [...listedAt.values()].map((info) => MONTHS - info.m);
-  return { sales, listings, withdrawn, stuck, relists };
+  return { sales, listings, withdrawn, stuck, relists, episodes, hazard };
 }
 
-const all = [], byPhase = {}, stuck = [];
-let listings = 0, withdrawn = 0;
+const all = [], byPhase = {}, byClose = {}, stuck = [], haz = {};
+let listings = 0, withdrawn = 0, episodes = 0, relists = 0;
 for (const s of SEEDS) {
   const r = run(s);
-  all.push(...r.sales); listings += r.listings; withdrawn += r.withdrawn; stuck.push(...r.stuck);
-  for (const x of r.sales) (byPhase[x.phase] ??= []).push(x.months);
+  all.push(...r.sales); listings += r.listings; withdrawn += r.withdrawn; stuck.push(...r.stuck); episodes += r.episodes; relists += r.relists;
+  for (const [k, v] of Object.entries(r.hazard)) { haz[k] ??= { months: 0, offers: 0 }; haz[k].months += v.months; haz[k].offers += v.offers; }
+  for (const x of r.sales) { (byPhase[x.phase] ??= []).push(x.months); (byClose[x.closePhase] ??= []).push(x.months); }
 }
 
 console.log(`\n  ILLIQUIDITY — ${SEEDS.length} seeds x ${MONTHS / 12} years, a patient owner who takes every bid\n`);
-console.log(`  ${listings} selling episodes, ${all.length} closed, ${withdrawn} left the book another way,`);
+console.log(`  ${episodes} selling episodes (${relists} listing actions — the engine clears the sale record and this owner re-lists),`);
+console.log(`  ${all.length} closed, ${withdrawn} left the book another way,`);
 console.log(`  ${stuck.length} STILL SITTING at the end — median ${q(stuck, 0.5)} months on the market, worst ${stuck.length ? Math.max(...stuck) : 0}`);
-console.log(`  so ${(100 * all.length / Math.max(1, listings)).toFixed(0)}% of everything listed ever found a buyer`);
+console.log(`  so ${(100 * all.length / Math.max(1, episodes)).toFixed(0)}% of selling episodes ever found a buyer`);
 console.log(`  (the sale record lapses and this owner re-lists — the clock below runs from the FIRST attempt)`);
 if (!all.length) { console.error("\n  NOTHING SOLD. The bot never got an offer — fix the harness before reading anything into that.\n"); process.exit(1); }
 
@@ -159,18 +195,42 @@ console.log(`\n  months from listing to closing`);
 console.log(`    p10 ${q(mo, 0.1)}   p25 ${q(mo, 0.25)}   MEDIAN ${q(mo, 0.5)}   p75 ${q(mo, 0.75)}   p90 ${q(mo, 0.9)}   max ${Math.max(...mo)}`);
 console.log(`    real marketing periods run 6-12 months to a closing`);
 
+// BY THE PHASE THE EPISODE OPENED IN — AND THAT IS NOT THE PHASE IT LIVED IN.
+//
+// This table looked like it had found a bug: peak episodes took 31 months
+// against 16 for expansion, which reads as "selling at the top is hard" and is
+// backwards. It is not backwards. The median episode runs 16 months and a peak
+// is immediately followed by a downturn, so an episode OPENED at the peak
+// spends nearly all of its life in the recession after it. Read down the
+// column and the sequence is exactly right: expansion 16 (rides into the
+// peak), peak 31 (rides into the bust), recession 31 (in it), recovery 17
+// (rides into the expansion). The label is the start of the wait, not the
+// weather during it.
 console.log(`\n  DOES IT GET WORSE IN A DOWNTURN — the one that matters`);
 for (const p of ["expansion", "peak", "recession", "recovery"]) {
   const v = byPhase[p];
   if (!v?.length) { console.log(`    ${p.padEnd(11)} no sales`); continue; }
   console.log(`    ${p.padEnd(11)} median ${String(q(v, 0.5)).padStart(3)}mo   p90 ${String(q(v, 0.9)).padStart(3)}mo   n=${v.length}`);
 }
-const boom = byPhase.expansion ?? [], bust = byPhase.recession ?? [];
-if (boom.length && bust.length) {
-  const ratio = q(bust, 0.5) / Math.max(1, q(boom, 0.5));
-  console.log(`\n    recession / expansion = ${ratio.toFixed(2)}x`);
-  console.log(`    liquidity is pro-cyclical: a downturn should take MEASURABLY longer to sell into.`);
-  console.log(`    A flat ratio is a market with no liquidity risk in it, whatever its mean.`);
+console.log(`\n  ...and by the phase it CLOSED in, which is the weather that actually sold it`);
+for (const p of ["expansion", "peak", "recession", "recovery"]) {
+  const v = byClose[p];
+  if (!v?.length) { console.log(`    ${p.padEnd(11)} no sales`); continue; }
+  console.log(`    ${p.padEnd(11)} median ${String(q(v, 0.5)).padStart(3)}mo   p90 ${String(q(v, 0.9)).padStart(3)}mo   n=${v.length}`);
+}
+console.log(`\n  THE HAZARD — offers arriving per building-month on the market, by that month's`);
+console.log(`  phase. No survivorship, nothing outliving its label; this is the real read.`);
+for (const p of ["expansion", "peak", "recession", "recovery"]) {
+  const v = haz[p];
+  if (!v?.months) { console.log(`    ${p.padEnd(11)} no listing-months`); continue; }
+  console.log(`    ${p.padEnd(11)} ${(100 * v.offers / v.months).toFixed(2)}% a month   (${v.offers} offers over ${v.months} building-months)`);
+}
+const hb = haz.expansion, hr = haz.recession;
+if (hb?.months && hr?.months) {
+  const rate = (x) => x.offers / x.months;
+  console.log(`\n    expansion / recession = ${(rate(hb) / Math.max(1e-9, rate(hr))).toFixed(2)}x on the arrival rate`);
+  console.log(`    liquidity is pro-cyclical: offers should be MEASURABLY scarcer in a downturn.`);
+  console.log(`    A flat rate is a market with no liquidity risk in it, whatever its mean.`);
 }
 
 const rt = all.filter((x) => x.paid > 0);

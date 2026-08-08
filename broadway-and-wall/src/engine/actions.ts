@@ -2062,7 +2062,44 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
     }
     const value = holdingValue(rec, s.econ, h, s.month);
     const ratio = sale.ask / Math.max(1, value);
-    const phaseAdj = s.econ.phase === "expansion" ? 1.3 : s.econ.phase === "recession" ? 0.5 : 1;
+    // WHO IS IN THE ROOM, NOT WHICH LABEL THE MONTH CARRIES.
+    //
+    // This read `expansion ? 1.3 : recession ? 0.5 : 1`, so PEAK AND RECOVERY
+    // both fell through to 1.0 — and a market peak is the moment of maximum
+    // liquidity in a real cycle, when capital is most abundant and most
+    // confident and volume is at its highest.
+    //
+    // Measured as a HAZARD — offers arriving per building-month on the market,
+    // bucketed by that month's phase, which is the only read with no
+    // survivorship in it and nothing outliving its own label:
+    //
+    //                  constants     derived
+    //   expansion         3.53%       4.09%   a month
+    //   peak              1.88%       3.95%
+    //   recession         0.90%       1.91%
+    //   recovery          2.45%       2.71%
+    //   expansion/recession  3.92x       2.14x
+    //
+    // Selling into the top of the market drew offers at HALF the rate of the
+    // expansion that led to it. And the cyclical swing was 3.92x, against a
+    // business where transaction volume roughly halves in a downturn.
+    //
+    // `marketAppetite` is the quantity this wanted all along: it aggregates who
+    // actually has dry powder, scaled by the credit window, normalised so a
+    // healthy street reads 1.0 — and `bidOdds` in this same file already uses
+    // it for exactly this judgement, which is how much competition a seller
+    // faces. Three hand-set constants become one number the engine already
+    // computes, the peak stops being punished, and the swing lands at 2.14x.
+    //
+    // A NOTE ON HOW THIS WAS FOUND, because the first two instruments lied.
+    // Timing episodes by the phase they OPENED in said peak was slow, and that
+    // is contaminated: the median wait is 16 months and a peak is followed by a
+    // bust, so a peak listing rides into it. Timing them by the phase they
+    // CLOSED in said every phase was identical, and that is worse — it
+    // conditions on success, so the recession column holds only the buildings
+    // that managed to sell in a recession. Only the hazard asks the question
+    // without answering part of it first. See test/liquidity.mjs.
+    const phaseAdj = marketAppetite(s);
     const staleness = Math.min(0.06, (s.month - sale.listedM) * 0.004); // word gets around
     const p = Math.max(0.01, Math.min(0.5, (0.55 - 0.42 * ratio) * phaseAdj + staleness));
     if (rng(s) < p) {

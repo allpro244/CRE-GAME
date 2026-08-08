@@ -2446,32 +2446,35 @@ export function tickEcon(s: GameState) {
      * 1,800.
      *
      * SO WHY IS THE LINE STILL AS CODED. Because switching it to `housable`
-     * was tried, here, and measured on `pnpm leadlag`:
+     * BREAKS THE LINK BETWEEN ORDERING A BUILDING AND BUILDING ONE. Measured on
+     * `pnpm leadlag` after its estimator was itself fixed — the first reading of
+     * this was taken with an argmax-per-town estimator that turned out to be
+     * medianing coin tosses, so these are the numbers that can bear the weight:
      *
-     *   TOTAL LOOP        91 months (7.6 yr)  ->  46 months (3.8 yr)
-     *   orders -> breaks  in band             ->  -34mo, BACKWARDS
+     *                     as coded            as documented
+     *   TOTAL LOOP        75mo (6.3 yr)       43mo (3.6 yr)
+     *   orders -> breaks  +7mo, r 0.31        -19mo, r 0.16  <-- NO SIGNAL
      *
-     * Real property cycles run 7-12 years. A correct term that halves the cycle
-     * and flips a leg is not a fix to ship — it is evidence that THE CYCLE
-     * LENGTH WAS PARTLY MANUFACTURED BY THE PHANTOM SHORTAGE. A near-permanent
-     * positive push on rent (79.7% of months) is a low-frequency forcing term,
-     * and taking it away leaves rent responding to the cycle alone, which
-     * couples rent, starts and vacancy far more tightly than a real market.
+     * The lag flipping is not the finding; r collapsing from 0.31 to 0.16 is.
+     * The order book stops predicting groundbreaks at all. The city goes on
+     * asking for buildings and the shovels no longer answer.
      *
-     * That is worth more than either shipping or hiding it, so it is written
-     * here rather than in a commit nobody will find. What is NOT yet known is
-     * whether `orders -> breaks` at -34mo is a real inversion or an estimator
-     * failing on a leg that is near-zero by construction — `e.starts[k]` is set
-     * and consumed in the same tick, so orders and groundbreaks may be two
-     * views of one event, and the file's own note at leadlag.mjs:127 says the
-     * two series have different shapes. Settle that first; if the leg is noise,
-     * the loop number inherits the noise and the whole comparison above needs
-     * re-reading.
+     * AND THE REASON IS VISIBLE IN THE SAME RUN: with the phantom shortage
+     * gone, the share of lots a builder could actually afford falls from 4.26%
+     * to 1.38% and median land falls 42%. Development stops pencilling. So the
+     * near-permanent rent push — present in 79.7% of months — had been holding
+     * rents high enough to keep the pipeline clearing, and the seven-year cycle
+     * was resting on it.
      *
-     * DO NOT swap this to `housable` without that answer and a re-measured
-     * cycle. DO NOT tune a coefficient to put the cycle back either — that
-     * would be a constant chosen to make an outcome look right, which is the
-     * first thing CLAUDE.md forbids.
+     * THAT is the real fault, and it is upstream of this line: at honest rents
+     * this city cannot build. Fixing `unmet` without fixing that trades a
+     * shortage that is not real for a construction industry that does not
+     * function, and the second is worse. The question to answer first is why
+     * the residual clears on only one lot in seventy — construction cost, the
+     * required yield, or the exit cap — and CLAUDE.md's rule applies to the
+     * answer: DO NOT tune a coefficient to put the cycle back. That would be a
+     * constant chosen to make an outcome look right, which is the first thing
+     * it forbids.
      */
     unmet[k] = Math.max(0, (e.pool[k] - e.occupied[k] - e.sublet[k]) / Math.max(1, e.stock[k]));
     e.absorb12[k] = e.absorb12[k] * (11 / 12) + absorb;

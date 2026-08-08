@@ -1,0 +1,32 @@
+{
+  "commit": "cbb92b4",
+  "city": "newalden",
+  "citySeed": 1,
+  "seeds": [
+    550991,
+    12007,
+    73303
+  ],
+  "months": 300,
+  "metrics": {
+    "roll.deadLegShare": 0.1249,
+    "roll.commercialOcc": 0.677,
+    "land.p10": 35.929,
+    "land.med": 393.629,
+    "land.p90": 7992.517,
+    "dev.affordableLotShare": 0.0426,
+    "vac.office": 0.2093,
+    "rentIdx.office": 123.9506,
+    "vac.retail": 0.0679,
+    "rentIdx.retail": 106.9888,
+    "vac.multifamily": 0.0581,
+    "rentIdx.multifamily": 122.7204,
+    "vac.industrial": 0.0154,
+    "rentIdx.industrial": 42.3963,
+    "city.buildings": 804,
+    "city.floorAreaM": 12.144,
+    "city.demolished": 154,
+    "city.employed": 24820,
+    "city.population": 44105
+  }
+}

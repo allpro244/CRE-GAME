@@ -56,7 +56,9 @@
     "pencils": "node test/pencils.mjs",
     "breakeven": "node test/breakeven.mjs",
     "leadlag": "node test/leadlag.mjs",
-    "rails": "node tools/rails.mjs"
+    "rails": "node tools/rails.mjs",
+    "baseline": "node tools/baseline.mjs",
+    "baseline:check": "node tools/baseline.mjs --check"
   },
   "dependencies": {
     "@types/three": "^0.185.3",

@@ -576,6 +576,26 @@ function tradesOf(id: string, sf: Partial<Record<BuiltClass, number>>): Partial<
  * buildings and a block of full ones were indistinguishable to a model whose
  * entire job is to tell those apart.
  *
+ * STABILISED, AND THE FLAG IS LOAD-BEARING. `mix0` — the month-zero baseline
+ * every block's drift is measured against — is a fixed snapshot with no
+ * lease-up in it. So if the live number applied `leaseUpFactor` and the
+ * baseline did not, every building the city delivered would depress its own
+ * neighbourhood for its first three years against a baseline that never had a
+ * lease-up in it, and since a working city is always building, the drag would
+ * be permanent. That is not a slow wire, it is the same quantity measured two
+ * different ways, and it cost 71% OF THE CITY'S MEDIAN LAND VALUE before
+ * `pnpm baseline` caught it: land fell $288/sf -> $84/sf, the office cap rate
+ * pinned against its 11% clamp in 7.0% of months against 1.8% before, and the
+ * builder's and holder's bids on the median lot both went to ZERO — the land
+ * market stopped having any income logic in it at all and sat on the texture
+ * floor.
+ *
+ * It is also the right statistic on its own terms. This surface moves at
+ * MOMENTUM = 0.055 a month; a district turns over years. A three-year lease-up
+ * is a transient on that timescale, and a desirability model that chases
+ * transients is measuring the calendar. What a neighbourhood IS made of is its
+ * standing, stabilised capacity — and that is what both sides now measure.
+ *
  * AND IT STAYS BLIND TO THE BLOCK'S LIVE DEMAND, which is what the class
  * average was protecting. `useOccupancy` reads `rec.demandScore`, and if that
  * were the DRIFTED score this loop would chase its own tail — a block that got
@@ -612,9 +632,9 @@ function occupiedStock(s: GameState, parcels: ParcelTable, model: DemandModel): 
       // be full while the offices above them are not
       const occ = h
         ? (cls === "multifamily"
-          ? (h.occ ?? useOccupancy(rec as ParcelRecord, s.econ, cls))
+          ? (h.occ ?? useOccupancy(rec as ParcelRecord, s.econ, cls, true))
           : Math.min(1, h.tenants.filter((tn) => (tn.use ?? cls) === cls).reduce((n, tn) => n + tn.sf, 0) / compSf))
-        : useOccupancy(rec as ParcelRecord, s.econ, cls);
+        : useOccupancy(rec as ParcelRecord, s.econ, cls, true);
       bump(id, cls, compSf * occ);
     }
   }

@@ -100,7 +100,7 @@ interface AppState {
   buy: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
   buyOff: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
   approach: (bbl: string) => void;
-  respondLoi: (id: number, action: LOIAction, fund?: boolean, counter?: { rentPsf?: number; tiPsf?: number; bestFinal?: boolean }) => void;
+  respondLoi: (id: number, action: LOIAction, fund?: boolean, counter?: { rentPsf?: number; tiPsf?: number; bestFinal?: boolean }) => { ok: boolean; msg: string };
   /** Answer a tenant's mid-lease relief letter. */
   answerAsk: (id: number, action: "grant" | "decline") => void;
   /**
@@ -386,16 +386,25 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
+  // RETURNS WHAT HAPPENED, because the caller needs to say it.
+  //
+  // The tenant answers a counter in the same tick — took it, came back once
+  // more, or walked — and the only place that answer appeared was a toast. So
+  // the card you were working in closed and you had to go and find a small
+  // notification somewhere else to learn the outcome of the thing you had just
+  // clicked. The toast stays for every other caller; the modal now reads the
+  // result and shows it in place.
   respondLoi: (id, action, fund, counter) => {
     const { game, parcels } = get();
-    if (!game || !parcels) return;
+    if (!game || !parcels) return { ok: false, msg: "" };
     const r = respondLOI(game, parcels, id, action, fund, counter);
     // An error can still carry a new state — a counter the tenant took but you
     // could not fund kills the deal, and that has to stick.
-    if (r.err) { toast(r.err, "err"); if (r.s !== game) { set({ game: r.s }); void persist(r.s); } return; }
+    if (r.err) { toast(r.err, "err"); if (r.s !== game) { set({ game: r.s }); void persist(r.s); } return { ok: false, msg: r.err }; }
     set({ game: r.s });
     if (r.msg) toast(r.msg);
     void persist(r.s);
+    return { ok: true, msg: r.msg };
   },
 
   setPopupsOff: (v) => {

@@ -206,7 +206,29 @@ export function fileVariance(
   if (s.landmarks?.[bbl] !== undefined) return { s, err: "It is landmarked. The envelope is the envelope." };
   if ((s.variance?.[bbl] ?? 0) > 0) return { s, err: "The board has already granted relief on this site. They will not do it twice." };
   const q = varianceQuote(s, parcels, bbl);
-  if (!q) return { s, err: "Nothing to apply for here." };
+  if (!q) {
+    // "NOTHING TO APPLY FOR HERE" WAS FOUR DIFFERENT ANSWERS WEARING ONE
+    // SENTENCE. varianceQuote returns null for an unknown parcel, a lot with no
+    // area, a landmark and an already-granted site, and the two of those the
+    // caller does not test for itself both LOOK like the button is broken —
+    // which is exactly how it was reported: "it wouldn't let me file a
+    // variance", with no way to find out why. A refusal that does not name its
+    // reason is indistinguishable from a bug, and one of these is a real fault
+    // upstream that this sentence was hiding.
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec) return { s, err: "There is no parcel there to apply about." };
+    if (!rec.lotArea) {
+      return {
+        s,
+        err: s.merged?.[bbl]
+          ? `${rec.address} is part of an assemblage — its land has moved into the site it was folded into. `
+            + "Apply on the parent lot, which is the one the board thinks exists."
+          : `${rec.address} has no lot area on record, so there is no site to grant relief on. `
+            + "That is a fault rather than a rule — please report the address.",
+      };
+    }
+    return { s, err: "Nothing to apply for here." };
+  }
   if (s.cash < q.cost) return { s, err: `The application runs $${(q.cost / 1e6).toFixed(2)}M in fees — you're short.` };
   const next: GameState = JSON.parse(JSON.stringify(s));
   next.cash -= q.cost;

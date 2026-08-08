@@ -23,7 +23,7 @@ import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquir
 import { MILESTONES, APPROACH_LIFE_M } from "@/engine/sim";
 import { isCommercial, vacantSf, walt, loiSigningCost, exclusiveFeeRate, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, buyoutQuote, depositsHeld, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
-import { lenderHealth, capitalRatio, lenderBlurb, targetCapital, CONSTRUCTION_LENDER } from "@/engine/lenders";
+import { lenderHealth, capitalRatio, lenderBlurb, targetCapital, lenderPressure, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { noteBid, payoffQuote } from "@/engine/notes";
 import { depositFor as auctionDepositFor } from "@/engine/auction";
 import { collateralAsIs } from "@/engine/value";
@@ -517,6 +517,11 @@ function DecisionModal() {
   // handled it, including the unsolicited case; nothing here ever called it.
   const [saleCounter, setSaleCounter] = useState(false);
   const [scPx, setScPx] = useState(0);
+  // WHAT THEY SAID, IN THE CARD YOU SAID IT FROM. A tenant answers a counter in
+  // the same tick, and the answer used to arrive only as a toast — so the modal
+  // closed and you went looking elsewhere for the result of the thing you had
+  // just clicked. `respondLoi` returns it now and this holds it until read.
+  const [outcome, setOutcome] = useState<{ text: string; ok: boolean } | null>(null);
   if (!parcels || game.gameOver) return null;
   // THE MASTER SWITCH (Settings). Both of the decisions this component renders
   // also live on a page — letters on the Deals desk, offers on the portfolio —
@@ -526,6 +531,26 @@ function DecisionModal() {
   // the day they moved, and the list outlived them.) `AlertModal` is not on
   // this switch and says why on itself.
   if (popupsOff) return null;
+
+  /* WHAT THEY SAID, BEFORE ANYTHING ELSE IS ASKED OF YOU.
+     This sits in front of the next letter on purpose: the answer to the thing
+     you just clicked is more urgent than the next decision, and burying it
+     under a fresh card is how it ended up being read off a toast in a corner. */
+  if (outcome) {
+    return (
+      <div className="modal-backdrop">
+        <div className="modal">
+          <div className={"modal-kicker" + (outcome.ok ? "" : " kicker-inbound")}>
+            {outcome.ok ? "Their answer" : "It did not go through"}
+          </div>
+          <div className="modal-title" style={{ fontSize: 20, lineHeight: 1.35 }}>{outcome.text}</div>
+          <div className="modal-actions">
+            <button className="btn btn-buy" onClick={() => setOutcome(null)}>Right</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const loi = game.agent ? undefined : game.lois.find((l) => !deferred.has(l.id));
   const offerBbl = deferred.has(-1) ? undefined : Object.keys(game.holdings).find((b) => game.holdings[b].sale?.offer);
@@ -562,7 +587,10 @@ function DecisionModal() {
     // from the desk, so a double click is harmless — and a latch that only
     // cleared when the state changed was locking the whole modal any time an
     // action came back with an error instead of a new state.
-    const act = (a: "accept" | "counter" | "decline") => respondLoi(loi.id, a, short > 0);
+    const act = (a: "accept" | "counter" | "decline") => {
+      const r = respondLoi(loi.id, a, short > 0);
+      if (r.msg) setOutcome({ text: r.msg, ok: r.ok });
+    };
     const prevRent = loi.kind === "renewal" && loi.tenantIdx !== undefined ? h.tenants[loi.tenantIdx]?.rentPsf : undefined;
     const isFinal = loi.stage === "countered";
     return (
@@ -662,13 +690,13 @@ function DecisionModal() {
                 />
               )}
               <div className="modal-actions">
-                <button className="btn btn-buy" onClick={() => { respondLoi(loi.id, "counter", short > 0, { rentPsf: mcRent || loi.rentPsf, tiPsf: mcTi }); setModalCounter(false); }}>
+                <button className="btn btn-buy" onClick={() => { const r = respondLoi(loi.id, "counter", short > 0, { rentPsf: mcRent || loi.rentPsf, tiPsf: mcTi }); if (r.msg) setOutcome({ text: r.msg, ok: r.ok }); setModalCounter(false); }}>
                   Send the counter · ${(mcRent || loi.rentPsf).toFixed(2)}/sf{loi.tiPsf > 0 ? ` · TI $${mcTi}` : ""}
                 </button>
                 <button
                   className="btn"
                   title="The number is firm and they know it. Firmer terms convert some hagglers — but nobody counters back a best and final: they sign it or they walk."
-                  onClick={() => { respondLoi(loi.id, "counter", short > 0, { rentPsf: mcRent || loi.rentPsf, tiPsf: mcTi, bestFinal: true }); setModalCounter(false); }}
+                  onClick={() => { const r = respondLoi(loi.id, "counter", short > 0, { rentPsf: mcRent || loi.rentPsf, tiPsf: mcTi, bestFinal: true }); if (r.msg) setOutcome({ text: r.msg, ok: r.ok }); setModalCounter(false); }}
                 >
                   Best &amp; final
                 </button>
@@ -3945,7 +3973,7 @@ function PortfolioPage() {
   // Sort the book by value or by income. "By income" is the top-earners view:
   // the fifty best income producers, ranked — the question every owner asks
   // of a big book is "what is actually carrying this firm."
-  const [sortBy, setSortBy] = useState<"value" | "income">("value");
+  const [sort, setSort] = useState<{ key: string; dir: 1 | -1 }>({ key: "v", dir: -1 });
   // THE BUNDLE. Ticking buildings here is how you assemble a portfolio trade;
   // see engine/portfolio.ts for why the sum of the parts is not the price.
   const [bundling, setBundling] = useState(false);
@@ -3968,9 +3996,59 @@ function PortfolioPage() {
     const cf = noi / 12 - (h.loan?.monthlyPmt ?? 0);
     const occ = rec ? physicalOcc(rec as never, h) : 0;
     totV += v; totD += h.loan?.balance ?? 0; totCF += cf;
-    return { h, rec, v, noi, cf, occ };
-  }).sort((a, b) => (sortBy === "income" ? b.noi - a.noi : b.v - a.v));
-  const shown = sortBy === "income" ? rows.slice(0, 50) : rows;
+    // EVERY COLUMN NEEDS A VALUE TO SORT ON, so the ones that used to be
+    // computed inside the cell are computed here instead. That is also why
+    // several of them were impossible to sort by: they did not exist until the
+    // row was already being drawn.
+    const leasedSf = h.tenants.reduce((a, t) => a + t.sf, 0);
+    const rollYr = h.tenants.reduce((a, t) => a + t.rentPsf * t.sf, 0);
+    const rentPsf = rec && rec.class !== "land"
+      ? (leasedSf > 0 ? rollYr / leasedSf : managedRentPsfYr(rec, game.econ, h)) : 0;
+    const u = rec && rec.bldgArea ? unitStatus(rec, h, game.month) : null;
+    return {
+      h, rec, v, noi, cf, occ,
+      addr: rec?.address ?? h.bbl,
+      cls: rec ? useLabel(rec) : "",
+      area: rec?.bldgArea ?? 0,
+      spaces: u ? u.leased : -1,
+      rentPsf,
+      cost: h.costBasis,
+      gain: v - h.costBasis,
+      debt: h.loan?.balance ?? 0,
+      equity: v - (h.loan?.balance ?? 0),
+      ds: h.loan?.monthlyPmt ?? 0,
+    };
+  });
+  type PRow = (typeof rows)[number];
+  // THE BOOK SORTS BY ITS OWN COLUMNS. It had two buttons — by value, by income
+  // — and a top-50 slice on one of them. Anything else you wanted to rank the
+  // book by (worst occupancy, biggest gain, heaviest debt service) meant reading
+  // sixteen columns by eye.
+  const dir = sort.dir;
+  const cmp = (a: PRow, b: PRow) => {
+    const k = sort.key as keyof PRow;
+    const av = a[k], bv = b[k];
+    if (typeof av === "string" || typeof bv === "string") {
+      return String(av).localeCompare(String(bv)) * dir;
+    }
+    return ((av as number) - (bv as number)) * dir;
+  };
+  rows.sort(cmp);
+  const shown = rows;
+  const ranked = sort.key === "noi" && sort.dir === -1;
+  // One header cell, the same idiom the Marketplace tape uses. `desc` is the
+  // direction a column WANTS on first click: money and area read biggest-first,
+  // an address reads A-Z.
+  const H = ({ k, label, num, desc = true, title }: { k: string; label: string; num?: boolean; desc?: boolean; title?: string }) => {
+    const on = sort.key === k;
+    return (
+      <th className={(num ? "num" : "") + " th-sort" + (on ? " th-sort-on" : "")}
+        title={title ?? `Sort by ${label}`}
+        onClick={() => setSort(on ? { key: k, dir: sort.dir === 1 ? -1 : 1 } : { key: k, dir: desc ? -1 : 1 })}>
+        {label}{on ? (sort.dir === 1 ? " ▲" : " ▼") : ""}
+      </th>
+    );
+  };
 
   // ---- exposure ------------------------------------------------------------
   // Concentration and the maturity wall are what actually end firms, and both
@@ -4105,9 +4183,13 @@ function PortfolioPage() {
       )}
       <PortfolioSaleDesk bundle={bundle} clear={() => { setBundle([]); setBundling(false); }} />
       <div className="btn-row" style={{ marginTop: 10 }}>
-        <button className={"btn" + (sortBy === "value" ? " btn-on" : "")} onClick={() => setSortBy("value")}>By value</button>
-        <button className={"btn" + (sortBy === "income" ? " btn-on" : "")} onClick={() => setSortBy("income")}
-          title="The top 50 income producers, ranked by NOI.">Top earners</button>
+        {/* Shortcuts, not modes. Every column sorts from its own header now;
+            these two are here because they are the two questions asked most. */}
+        <button className={"btn" + (sort.key === "v" ? " btn-on" : "")}
+          onClick={() => setSort({ key: "v", dir: -1 })}>By value</button>
+        <button className={"btn" + (ranked ? " btn-on" : "")}
+          onClick={() => setSort({ key: "noi", dir: -1 })}
+          title="Ranked by NOI, biggest earner first.">Top earners</button>
         {!game.portfolioSale && holdings.length >= 2 && (
           <button className={"btn" + (bundling ? " btn-on" : "")}
             onClick={() => { setBundling(!bundling); if (bundling) setBundle([]); }}
@@ -4128,15 +4210,25 @@ function PortfolioPage() {
         <thead>
           <tr>
             {bundling && <th></th>}
-            {sortBy === "income" && <th className="num">#</th>}
+            {ranked && <th className="num">#</th>}
             {/* Square feet is the denominator of every number to the right of
                 it — NOI, value and debt are all quoted per foot in this
                 business, and the book listed none of them against an area. */}
-            <th>Property</th><th>Class</th><th className="num">Building sf</th><th className="num">Spaces</th><th className="num">Occ</th><th className="num" title="Average contract rent across the rent roll, per square foot per year">Rent $/sf</th><th className="num">NOI / yr</th>
-            <th className="num">Value</th><th className="num" title="What you paid, including closing costs">Cost</th>
-            <th className="num" title="Appraisal against cost basis — unrealised, before tax and before the cost of selling">Gain</th>
-            <th className="num">Debt</th><th className="num">Equity</th>
-            <th className="num">Debt svc / mo</th><th className="num">CF / mo</th><th>Status</th><th></th>
+            <H k="addr" label="Property" desc={false} />
+            <H k="cls" label="Class" desc={false} />
+            <H k="area" label="Building sf" num />
+            <H k="spaces" label="Spaces" num title="Leased spaces. Sorts on how many are let." />
+            <H k="occ" label="Occ" num />
+            <H k="rentPsf" label="Rent $/sf" num title="Average contract rent across the rent roll, per square foot per year" />
+            <H k="noi" label="NOI / yr" num />
+            <H k="v" label="Value" num />
+            <H k="cost" label="Cost" num title="What you paid, including closing costs" />
+            <H k="gain" label="Gain" num title="Appraisal against cost basis — unrealised, before tax and before the cost of selling" />
+            <H k="debt" label="Debt" num />
+            <H k="equity" label="Equity" num />
+            <H k="ds" label="Debt svc / mo" num />
+            <H k="cf" label="CF / mo" num />
+            <th>Status</th><th></th>
           </tr>
         </thead>
         <tbody>
@@ -4156,7 +4248,7 @@ function PortfolioPage() {
                   {bundle.includes(h.bbl) ? "☑" : h.sale ? "·" : "☐"}
                 </td>
               )}
-              {sortBy === "income" && <td className="num dim">{i + 1}</td>}
+              {ranked && <td className="num dim">{i + 1}</td>}
               <td>{rec?.address ?? h.bbl}</td>
               <td>{rec ? useLabel(rec) : "—"}</td>
               <td className="num" title={rec && rec.bldgArea ? `${usd(v / rec.bldgArea)}/sf of value · ${usd(noi / rec.bldgArea)}/sf of NOI` : "vacant land"}>
@@ -4273,14 +4365,14 @@ function PortfolioPage() {
             </tr>
             {refiRow === h.bbl && (
               <tr>
-                <td colSpan={sortBy === "income" ? 17 : 16} style={{ background: "rgba(43,37,26,0.035)" }}>
+                <td colSpan={ranked ? 17 : 16} style={{ background: "rgba(43,37,26,0.035)" }}>
                   <RefiSection bbl={h.bbl} />
                 </td>
               </tr>
             )}
             {listRow === h.bbl && (
               <tr>
-                <td colSpan={sortBy === "income" ? 17 : 16} style={{ background: "rgba(43,37,26,0.035)" }}>
+                <td colSpan={ranked ? 17 : 16} style={{ background: "rgba(43,37,26,0.035)" }}>
                   <ListSection bbl={h.bbl} appraisal={v} onDone={() => setListRow(null)} />
                 </td>
               </tr>
@@ -4295,7 +4387,7 @@ function PortfolioPage() {
                under "Gain". A misaligned number is worse than a missing one. */
             <tr key={dv.bbl} onClick={() => go(dv.bbl)}>
               {bundling && <td className="dim">·</td>}
-              {sortBy === "income" && <td className="num dim">—</td>}
+              {ranked && <td className="num dim">—</td>}
               <td>{parcels[dv.bbl]?.address ?? dv.bbl}</td>
               <td>{devUseLabel(dv.use)}</td>
               <td className="num dim">{sf(dv.sf)}</td>
@@ -6159,6 +6251,8 @@ function MarketPage() {
   const focus = useStore((s) => s.focus);
   const go = (bbl: string) => focus(bbl, true);
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
+  // null = follow the docket (open when one is live), true/false = you decided.
+  const [distressOpen, setDistressOpen] = useState<boolean | null>(null);
   // YOUR OWN SIGN IN THE WINDOW. A building you have listed is for sale in the
   // same town, on the same tape, and leaving it off meant the one screen that
   // answers "what is on the market" was answering it incompletely — and you
@@ -6231,14 +6325,24 @@ function MarketPage() {
         const loans = Object.values(game.cityLoans ?? {});
         const inWorkout = loans.filter((l) => l.status === "workout");
         const onWatch = loans.filter((l) => l.status === "watch");
+        // COLLAPSIBLE, AND OPEN WHEN IT MATTERS. The section has to be
+        // permanent — see the note above, distress is a pipeline and not an
+        // annual event — but eleven months in twelve it is a watchlist, not a
+        // decision, and a watchlist does not deserve the top of the page every
+        // time you open the tape. It opens itself on the month there is a live
+        // docket, which is the month it is a decision.
+        const open = distressOpen ?? !!liveDocket;
         return (
           <div className="deal" style={{ marginBottom: 10 }}>
-            <div className="deal-head">
+            <div className="deal-head" style={{ cursor: "pointer", userSelect: "none" }}
+              title={open ? "Collapse" : "Expand"}
+              onClick={() => setDistressOpen(!open)}>
+              <span className="dim" style={{ marginRight: 6 }}>{open ? "▾" : "▸"}</span>
               {liveDocket
                 ? `The county foreclosure docket · ${game.auction!.lots.length} lot${game.auction!.lots.length === 1 ? "" : "s"} · the hammer falls ${monthLabel(game.auction!.m)}`
                 : `Distress · ${inWorkout.length} in workout, ${onWatch.length} on watch · next docket called ${monthLabel(nextDocket)}`}
             </div>
-            {liveDocket ? (
+            {!open ? null : liveDocket ? (
               <>
                 <div className="hint">
                   As-is, ten per cent down the day you register, no financing and no warranty. Nobody on this list
@@ -6868,6 +6972,54 @@ function CapSpark({ hist, target }: { hist?: number[]; target: number }) {
  * being asked to trust a percentage — they are being asked to disagree with
  * one, which is the only way a price can be a decision.
  */
+/**
+ * WHICH DESKS ARE CLOSE TO SELLING PAPER.
+ *
+ * `lenderPressure` is the exact quantity `tickNoteOffers` reads when it decides
+ * whether a desk is a forced seller — impaired capital against the target its
+ * own kind of institution runs at, or a receiver, which is a forced seller by
+ * definition. Reading it here is the engine's own number, not a second copy of
+ * it: a desk at the top of this table is where the next offer comes from.
+ */
+function NoteSellers() {
+  const game = useStore((s) => s.game)!;
+  const lenders = [...(game.lenders ?? [])]
+    .map((l) => ({ l, p: lenderPressure(l), cap: capitalRatio(l) }))
+    .sort((a, b) => b.p - a.p);
+  if (!lenders.length) return null;
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table className="tbl">
+        <thead>
+          <tr>
+            <th>Desk</th>
+            <th className="num" title="Capital over book — the one number that decides whether a desk is open">Capital</th>
+            <th className="num" title="How badly they need to sell something. This is the number the offer generator reads.">Pressure</th>
+            <th>What that means</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lenders.map(({ l, p, cap }) => (
+            <tr key={l.name}>
+              <td>{l.name}{l.failedM !== undefined ? <span className="neg"> · in receivership</span> : ""}</td>
+              <td className="num mono">{(100 * cap).toFixed(1)}%</td>
+              <td className={"num mono" + (p > 0.5 ? " neg" : "")}>{(100 * p).toFixed(0)}%</td>
+              <td className="dim">
+                {l.failedM !== undefined
+                  ? "A receiver is a forced seller. Everything they hold is for sale and none of it is priced by them."
+                  : p > 0.7 ? "Badly impaired. They will sell good paper cheap to raise capital, and that is when you want to be looking."
+                    : p > 0.35 ? "Under real pressure. Expect them to shop the weakest files first."
+                      : p > 0.1 ? "Comfortable. Anything they offer will be priced above fair and the right move is usually to pass."
+                        : "No reason to sell anything to anybody."}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function NotesPage() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
@@ -6889,10 +7041,20 @@ function NotesPage() {
       <div className="page-section">On the block</div>
       {offers.length === 0 && (
         <div className="hint">
-          Nobody is selling paper this month. Desks sell loans when they have stopped paying or when the desk needs
-          the capital more than the asset — watch the capital ratios on Research and you will see it coming.
+          Nobody is selling paper this month. A desk sells a loan for two reasons and neither of them is you: the
+          loan has stopped paying, or the desk needs the capital more than it needs the asset. Both are visible
+          before the offer is, which is what the table below is for.
         </div>
       )}
+      {/* WHO IS LIKELY TO SELL, ON THE DESK WHERE YOU WOULD BUY IT.
+          The page used to say "watch the capital ratios on Research" and leave
+          you to it — which is a fine sentence and a bad market. Nothing here is
+          generated for the player's benefit and offers are episodic by design,
+          so on most months this room is empty; a market that is empty and
+          silent is indistinguishable from a market that is broken. This is the
+          pressure the offer generator itself reads, so the player is watching
+          the same gauge the engine is. */}
+      <NoteSellers />
       {offers.map((o) => {
         const r = game.rivals?.find((x) => x.id === o.obligorId);
         const px = Math.round(o.face * o.askPct);

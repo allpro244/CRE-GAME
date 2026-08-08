@@ -185,7 +185,19 @@ export default function TopBar() {
             const live = (game.noteOffers?.length ?? 0)
               + (game.notes ?? []).filter((n) => n.perf === "nonperforming" && n.filedM === undefined).length;
             const held = game.notes?.length ?? 0;
-            if (!live && !held) return null;
+            // THE WHOLE DESK USED TO BE INVISIBLE UNTIL IT CAME TO YOU.
+            //
+            // `if (!live && !held) return null` hid an 804-line market — buying
+            // paper off pressured desks, servicing it, restructuring, filing,
+            // selling — behind the condition that the game had already offered
+            // you some. A player who was never offered a note had no way to
+            // learn the business exists, which is how it came to be reported as
+            // a mechanic that needed building. It was built; it was unreachable.
+            //
+            // The badge still counts only what wants an answer, so a book of
+            // performing notes does not nag. The button is simply always there,
+            // the way Marketplace is there on a month when nothing is listed.
+            void live; void held;
             return (
               <button className={"nav-btn" + (page === "notes" ? " nav-on" : "")} onClick={() => setPage(page === "notes" ? "none" : "notes")}>
                 Notes<Badge n={live} />

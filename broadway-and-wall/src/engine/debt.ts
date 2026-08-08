@@ -546,7 +546,81 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
   const holiday = q < (loan.holidayUntilM ?? loan.originM + 12);
   const d = dscr(rec, s, h);
   const l = ltv(rec, s, h);
-  const breached = !holiday && ((d !== null && d < loan.minDSCR) || (l !== null && l > loan.maxLTV));
+  let breached = !holiday && ((d !== null && d < loan.minDSCR) || (l !== null && l > loan.maxLTV));
+
+  /**
+   * THE EQUITY CURE — a sponsor with the money does not lose a building.
+   *
+   * The fault this fixes was the worst one in the game. A covenant breach on
+   * ONE property walked to the workout desk after 24 months and on to
+   * foreclosure, and nothing on that path ever looked at the firm. Measured
+   * before this existed: 21 of 21 workout files opened while the firm was
+   * holding more than $20M of cash, every one of them a covenant cause, and
+   * files sat at stage=foreclosure for 321 months with the money in the bank.
+   * The worst case was a firm with $221M losing a building whose loan payment
+   * was $6,741 a month over a $90,000 cure.
+   *
+   * That is not a hard game, it is a wrong one. The payment was being made
+   * every month — `cashOut` leaves whatever the covenants say — so the loan was
+   * CURRENT, and no lender forecloses a current loan. What a lender does with a
+   * technical default is trap the cash flow and demand a cure; what a sponsor
+   * with capital does is write the cheque. It is a named clause in commercial
+   * loan agreements — an equity cure right — and its absence here meant the
+   * game modelled the trap without modelling the obvious answer to it.
+   *
+   * So: pay down principal to the covenant, out of cash the firm actually has.
+   * It is not free and it is not a rail. It costs real money in the month it
+   * happens, it is bounded by the cash on hand, and a firm that cannot afford
+   * it breaches exactly as before — sweep, workout desk, foreclosure. The
+   * difficulty this removes is the difficulty of being punished for something
+   * you had the money to fix, which CLAUDE.md calls a wrong number rather than
+   * a hard one.
+   *
+   * NO NEW CONSTANT. The cure target is the covenant itself. Debt service is
+   * proportional to balance at a fixed rate and term — exactly so while
+   * interest-only — so scaling the balance by `d / minDSCR` scales the payment
+   * by the same factor and lands DSCR on its minimum; the LTV leg is
+   * `maxLTV x value` by definition. Whichever binds, binds.
+   */
+  if (breached && s.cash > 0) {
+    const value = holdingValue(rec, s.econ, h, s.month);
+    let target = loan.balance;
+    if (d !== null && d < loan.minDSCR) target = Math.min(target, loan.balance * (d / loan.minDSCR));
+    if (l !== null && l > loan.maxLTV && value > 0) target = Math.min(target, loan.maxLTV * value);
+    const need = Math.ceil(loan.balance - target);
+    // Bounded by the cash on hand, and taken immediately so that two breached
+    // buildings in the same month cannot both spend the same dollar.
+    const pay = Math.max(0, Math.min(need, Math.floor(s.cash)));
+    if (pay > 0) {
+      s.cash -= pay;
+      loan.balance = Math.max(0, loan.balance - pay);
+      logBooks(s, "debtSvc", pay);
+      const yearsLeft2 = Math.max(1, loan.amortYears - (q - loan.originM) / 12);
+      loan.monthlyPmt = io
+        ? Math.ceil((loan.balance * loan.ratePct) / 100 / 12)
+        : Math.round(monthlyPayment(loan.balance, loan.ratePct, yearsLeft2));
+      // Re-test against the loan as it now stands. A cure that covered the
+      // whole gap ends the breach this month; a partial one does not, and the
+      // sweep and the clock go on exactly as they did.
+      const d2 = dscr(rec, s, h);
+      const l2 = ltv(rec, s, h);
+      const still = (d2 !== null && d2 < loan.minDSCR) || (l2 !== null && l2 > loan.maxLTV);
+      if (!still) {
+        if (loan.sweep || (loan.breachMs ?? 0) > 0) {
+          s.news.unshift({
+            q, kind: "info",
+            text: `Covenant cured at ${rec.address} — ${pay >= 1e6 ? `$${(pay / 1e6).toFixed(2)}M` : `$${Math.round(pay / 1000)}K`} of equity into the loan, and the test passes again. `
+              + `A sponsor with the money does not hand back a building over a technical default.`,
+          });
+        }
+        loan.sweep = false;
+        loan.breachMs = 0;
+        loan.cleanQs = 0;
+        breached = false;
+      }
+    }
+  }
+
   if (breached) {
     if (!loan.sweep) {
       s.news.unshift({

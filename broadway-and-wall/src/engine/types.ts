@@ -1142,6 +1142,12 @@ export interface Econ {
    * changing where the trend ends up.
    */
   wageDebt?: number;
+  /** Unfilled positions as a share of the labour force — what employers wanted
+   *  and could not staff. Zero whenever the market is slack. Together with
+   *  `unemployment` this is the tightness the wage curve reads; on its own it is
+   *  the half that used to be thrown away when employment was allowed to exceed
+   *  the people available to do it. */
+  jobVac?: number;
   /**
    * The loan index a developer actually underwrites to — smoothed over about a
    * year, because a groundbreak is a two-year decision and is neither killed

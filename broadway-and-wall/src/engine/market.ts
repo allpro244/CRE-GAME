@@ -561,7 +561,30 @@ export const NATURAL_VAC = { office: 0.115, retail: 0.085, multifamily: 0.045, i
  * so it moves nothing about the existing calibration and only prices the swing.
  */
 export const CONSTRUCTION_JOB_SHARE = 0.048;
-export const REF_PIPE_SHARE = 0.018;
+/**
+ * ...AND THE NEUTRAL POINT WAS MEASURED OFF A BROKEN MODEL, THEN THE MODEL WAS
+ * FIXED AND THIS WAS NOT.
+ *
+ * This was 0.018, and `dev.ts` says in writing where that came from: "NOT the
+ * same quantity as `REF_PIPE_SHARE` in market.ts, which is what THIS town's
+ * pipeline ran at UNDER THE OLD CREW WALL... they differed by about the factor
+ * the wall was suppressing." The crew wall was removed — `crewCapacity` is a
+ * market now rather than a lot-count — so the pipeline runs at its true share
+ * and the reference it is divided by is still the suppressed one.
+ *
+ * The consequence was the loudest employment rail in the engine. With
+ * pipeShare/REF at about 0.045/0.018 = 2.5, `trades` came out at 0.048 x 2.5 =
+ * 0.12 against a 0.11 ceiling, so it sat ON that ceiling in 56.6% of all months
+ * — a permanent +11.6% step on the city's job count, which is most of why the
+ * city wanted more workers than it had people. `pnpm rails` found the ceiling;
+ * `dev.ts` had written down the reason years before anybody looked.
+ *
+ * So it is the anchor from the world now, and it is the SAME anchor `dev.ts`
+ * already carried for the same quantity: roughly 1.8% of stock delivered a year
+ * against a two-and-a-half year build is about 4.5% of the stock under
+ * construction at any moment. One number, one file, two readers.
+ */
+export const REF_PIPE_SHARE = 0.045;
 // How long the rest of the market takes to build each class, in months. This
 // is the lag that makes the cycle a cycle: the decision to start is taken in
 // one market and the building arrives in a different one, and nobody can undo
@@ -1396,7 +1419,53 @@ export function tickEcon(s: GameState) {
     }
     const pipeShare = stockSf > 0 ? pipeSf / stockSf : REF_PIPE_SHARE;
     const trades = clamp(CONSTRUCTION_JOB_SHARE * (pipeShare / REF_PIPE_SHARE), 0, 0.11);
-    e.jobs = Math.round((e.jobs0 ?? 132_000) * e.employIdx * (1 - CONSTRUCTION_JOB_SHARE + trades));
+    // A JOB NOBODY CAN FILL IS A VACANCY, NOT A JOB.
+    //
+    // This expression is labour DEMAND — what the city's employers want, driven
+    // by the employment index and the trades. It was being written straight
+    // into `e.jobs` and read everywhere as employment, and it never once looked
+    // at whether there was anybody to do the work.
+    //
+    // `pnpm rails` found it from the other end. `slackTarget` at line 1413 is
+    // `clamp(1 - jobs/labourForce, 0.018, 0.24)` and it sat on its floor in
+    // 47.7% of all months. Measured raw, before the clamp, over 4 towns x 50
+    // years:
+    //
+    //     months with slack below the 1.8% floor      37.0%
+    //     months with slack below ZERO                21.8%
+    //     worst reading                               jobs = 107% of the labour force
+    //
+    // For a fifth of its life this city employed more people than lived in it,
+    // and a clamp reported 1.8% unemployment while it happened. The cause is a
+    // speed mismatch that no floor can fix: jobs grow at a median 1.88%/yr and
+    // reach 9.6% in a boom, while population manages 0.89% and tops out at
+    // 3.2%, because people have to move house and hiring only has to sign a
+    // contract. Raising the floor would have hidden it again.
+    //
+    // So employment is what it is in life: the smaller of what employers want
+    // and what the town can staff. The frictional share is people between jobs
+    // at any instant and is why even the tightest real labour market has some —
+    // US metro unemployment bottomed near 3.4% in 1969 and 3.5% in 2019, and
+    // nothing sustained below about 2.5% has ever been recorded, so 2.8% is the
+    // floor of the observed range rather than a number picked to make this come
+    // out.
+    //
+    // The demand that cannot be met is not discarded, which is the part that
+    // makes this a mechanism rather than a rail: it becomes UNFILLED VACANCIES,
+    // and vacancies are how a labour market that has run out of people goes on
+    // transmitting pressure to wages and to migration. See `e.jobVac` at the
+    // Phillips term below.
+    // Written as `clamp` and not `Math.min` on purpose: `tools/rails.mjs` only
+    // instruments the `clamp` helper, so expressing this any other way would
+    // convert an instrumented rail into an invisible one and the successor to
+    // the 47.7% figure would be unmeasurable by the tool that found it.
+    const FRICTIONAL = 0.028;
+    const wanted = Math.round((e.jobs0 ?? 132_000) * e.employIdx * (1 - CONSTRUCTION_JOB_SHARE + trades));
+    const force = e.population! * PARTICIPATION;
+    e.jobs = Math.round(clamp(wanted, 0, force * (1 - FRICTIONAL)));
+    // Unfilled positions as a share of the labour force — the other half of
+    // labour-market tightness, and the half that was being thrown away.
+    e.jobVac = Math.max(0, (wanted - e.jobs) / Math.max(1, force));
     const jobGrowth = prevJobs > 0 ? e.jobs / prevJobs - 1 : 0;
 
     // UNEMPLOYMENT IS A LAGGING NUMBER and a sticky one. The labour force does
@@ -1503,7 +1572,22 @@ export function tickEcon(s: GameState) {
     // the builders and the utilities are charging). Slack damps all of it.
     // Nothing here is scripted to a phase; the phase is downstream.
     if (e.inflExp === undefined) e.inflExp = 0.02;
-    const tight = 0.055 - e.unemployment!;
+    // TIGHTNESS IS VACANCIES AGAINST UNEMPLOYMENT, not unemployment alone.
+    //
+    // This read `0.055 - unemployment`, and while employment could exceed the
+    // labour force that was a signal with a ceiling on it: the clamp on
+    // `slackTarget` pinned unemployment at 1.8% in nearly half of all months,
+    // so the hottest labour market this city can have looked exactly like the
+    // fourth-hottest. Now that employment stops at the people available, the
+    // pressure that used to disappear into impossible unemployment shows up as
+    // unfilled positions instead, and it has no ceiling.
+    //
+    // Summed rather than weighted, because the standard measure of labour
+    // market tightness is the vacancy-to-unemployment gap and an unfilled
+    // vacancy is worth about what a missing unemployed worker is worth: both
+    // say one job's worth of pressure on pay. `jobVac` is zero for the whole of
+    // a slack market, so nothing about the loose end of the curve moves.
+    const tight = 0.055 - e.unemployment! + (e.jobVac ?? 0);
     // realised inflation over the trailing year, straight off the history the
     // engine already keeps — expectations chase THIS, not a constant
     const h12 = e.history.length >= 12 ? e.history[e.history.length - 12] : undefined;

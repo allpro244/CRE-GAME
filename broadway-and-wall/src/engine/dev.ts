@@ -10,7 +10,7 @@ import type { BuiltClass, Contract, DevUse, Development, Econ, GameState, UseMix
 import { BUILT_CLASSES } from "./types";
 import { logBooks, monthLabel, serviceSpec, planSpec } from "./types";
 import { demandNow } from "./demand";
-import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock } from "./market";
+import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE } from "./market";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, landRead, assetValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling,
   HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE } from "./value";
@@ -2225,13 +2225,15 @@ function crewCapacity(bbls: string[], e?: Econ): number {
  * Share of a city's floor area under construction in an ordinary year — the
  * delivery rate times the build duration, both measured above.
  *
- * NOT the same quantity as `REF_PIPE_SHARE` in market.ts, which is what THIS
- * town's pipeline ran at under the old crew wall and is still the neutral point
- * for the construction-employment term. One is an observation of the model, the
- * other is an anchor from the world; they differed by about the factor the wall
- * was suppressing, which is the reason this constant exists separately.
+ * The same quantity `market.ts` calls `REF_PIPE_SHARE`, and it is imported from
+ * there rather than restated. These used to be two constants — 0.045 here from
+ * the world, 0.018 there measured off this model while the old crew wall was
+ * suppressing the pipeline — and the note that used to sit here explained the
+ * gap as "the factor the wall was suppressing". The wall is gone; the gap was a
+ * bug waiting for somebody to notice, and it was pinning the construction
+ * employment term on its ceiling in 56.6% of all months.
  */
-const NORMAL_PIPE_SHARE = 0.045;
+const NORMAL_PIPE_SHARE = REF_PIPE_SHARE;
 
 /**
  * Repair, renovation and fit-out as a share of all construction work — the part

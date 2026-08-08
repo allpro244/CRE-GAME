@@ -618,11 +618,56 @@ plays three towns for fifty years.
 The worst of them, and each is its own open question:
 
     market:1039    69.6% at floor    clamp((realPolicy - 0.022) * 0.70, 0, 0.09)
-    market:1398    56.6% at ceiling  `trades` — construction employment share
+    market:1398    56.6% at ceiling  `trades` — construction employment  [FIXED]
     market:2249    51.3% at floor    `marketable`
-    market:1462    50.4% at ceiling  multifamily `slack`
-    market:1413    47.7% at floor    slackTarget — the unemployment floor at 1.8%
+    market:1462    50.4% at ceiling  multifamily `slack`  (now 77.4%, top of the list)
+    market:1413    47.7% at floor    slackTarget — unemployment floor    [FIXED]
     market:2351    43.9% at floor    concTarget = clamp(gap * 11 + phaseNudge, 0, 1)
+
+**The two marked FIXED were one fault, and the tool found it from the wrong
+end.** The unemployment floor was the symptom; the construction-employment
+ceiling fifteen lines above it was most of the cause.
+
+`e.jobs` was labour DEMAND written straight in as employment — one expression,
+`jobs0 x employIdx x (1 - 0.048 + trades)`, that never once looked at whether
+there was anybody to do the work. Measured raw, before the clamp, over 4 towns
+x 50 years: **21.8% of months had more jobs than workers**, worst reading 107%
+of the labour force, and a clamp reported 1.8% unemployment throughout. No floor
+can fix that — jobs grew at a median 1.88%/yr against population's 0.89%,
+because hiring only has to sign a contract while people have to move house.
+
+And `trades = clamp(0.048 * (pipeShare / REF_PIPE_SHARE), 0, 0.11)` sat on its
+ceiling in 56.6% of months because `REF_PIPE_SHARE = 0.018` was **measured off
+this model while the old crew wall was suppressing the pipeline**. `dev.ts` said
+so in writing years before anybody looked — "what THIS town's pipeline ran at
+under the old crew wall... they differed by about the factor the wall was
+suppressing" — and carried the world anchor, 0.045, as a separate constant for
+the same quantity. The wall was removed; the reference was not. That pinned term
+was a permanent +11.6% step on the city's job count.
+
+Both fixed. One constant now, shared by both files. Employment is the smaller of
+what employers want and what the town can staff, at a 2.8% frictional share —
+the floor of the observed range, since US metro unemployment bottomed near 3.4%
+in 1969 and 3.5% in 2019. The demand that cannot be met is NOT discarded: it
+becomes `e.jobVac`, unfilled positions, and the wage curve reads `0.055 - u +
+jobVac` instead of unemployment alone.
+
+    months with more jobs than workers    21.8%  ->  0.0%
+    unemployment                    pinned 1.8%  ->  median 3.45%, p05 2.80%, p95 9.07%
+    tightness signal, sd                   1.83% ->  5.28%
+    tightness signal, p95                  2.70% ->  15.28%
+
+That last pair is the point. The old clamp meant the hottest labour market this
+city could have looked exactly like the fourth-hottest; the signal had a ceiling
+on it. Capping employment did not destroy the information, it recovered it.
+
+**Known and explained:** the new cap binds in 42.6% of months, which is high for
+a rail. It is an IDENTITY rather than a calibration — you cannot employ people
+who do not exist — and the excess is preserved rather than dropped, which is the
+difference. What it is telling you is that this city's growth is limited by
+housing: migration answers the labour market but cannot exceed the flats built
+for it. That is a real story and it belongs in the multifamily rent, but nobody
+has checked whether the magnitude is right.
 
 **AND THE FIRST VERSION OF THIS TOOL WAS WRONG, IN THE DIRECTION THAT MATTERS.**
 It counted `v <= a` as a bind, so its loudest finding was

@@ -20,3 +20,4 @@ test/.engine*.mjs
 probe*.mjs
 dbg*.mjs
 check*.mjs
+.audit/

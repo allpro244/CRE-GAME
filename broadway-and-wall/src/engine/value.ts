@@ -280,8 +280,55 @@ const USE_FLOORS_MAX: Partial<Record<BuiltClass, number>> = {
  */
 const TI_PSF: Record<BuiltClass, number> = { office: 32, retail: 22, industrial: 5, multifamily: 7 };
 
+/**
+ * THE WINNING SCHEME AND THE NUMBER IT PRODUCES, WHICH ARE THE SAME CALCULATION.
+ *
+ * The parcel card used to work this out again in the UI — its own envelope, its
+ * own margin algebra, its own cost path through `planDevelopment` — and got a
+ * different answer. Median −$0.08M on the card against $0.46M in the engine for
+ * the same lots. CLAUDE.md names that fault directly: the same quantity with two
+ * different answers means one of them is fiction and the player is being shown a
+ * decision that is not the decision they are taking.
+ *
+ * Four things differed and every one of them was defensible on its own. The card
+ * forced 0.6 site coverage and derived floors from FAR, so it never found the
+ * best scheme. It took the margin as `value·(1−m)` where the engine takes
+ * `value/(1+m)`. It skipped BUILD_DISCOUNT entirely, so it was pricing a
+ * completed building and calling it dirt. And it read spot rent where the engine
+ * reads `rentExp`. Agreeing on four numbers by hand is not a fix; there being
+ * only one number is.
+ *
+ * So the residual returns its working, `residualLandPsf` is the same call with
+ * the working thrown away, and the card renders what the engine decided. The two
+ * cannot drift again because there is no longer a second one to drift.
+ */
+export type ResidualScheme = {
+  /** $/sf of LAND, after the builder's margin and the wait. What the dirt is worth. */
+  psf: number;
+  use: BuiltClass;
+  /** $/sf of BUILDING: what it is worth finished, and what it costs all-in to build. */
+  valuePsf: number;
+  costPsf: number;
+  /** The envelope this use can actually reach here, as FAR, and the floors it implies. */
+  usable: number;
+  floors: number;
+  /**
+   * EVERY USE THAT WAS CONSIDERED, AND WHAT IT BID — including the ones that
+   * could not cover their own construction, which are reported as a negative
+   * bid rather than dropped. A residual that only reports its winner cannot be
+   * asked the one question worth asking of it, which is WHO ELSE WAS CLOSE.
+   * The first time it was asked, the answer was that industrial was the high
+   * bidder for nine lots in ten and office for none of them.
+   */
+  all: { use: BuiltClass; psf: number }[];
+};
+
 export function residualLandPsf(rec: ParcelRecord, econ: Econ, rentMult = 1): number {
-  if (!rec.lotArea) return 0;
+  return residualScheme(rec, econ, rentMult)?.psf ?? 0;
+}
+
+export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): ResidualScheme | null {
+  if (!rec.lotArea) return null;
   // The envelope you can actually reach, not the one the zoning text allows.
   // This is what siteQualityMult was reaching for and could not express as a
   // price multiplier: a narrow lot that cannot fit an efficient floor plate
@@ -289,9 +336,10 @@ export function residualLandPsf(rec: ParcelRecord, econ: Econ, rentMult = 1): nu
   // price. Folding three such lots into one site raises the realisation for
   // all three, which is the entire economics of assemblage.
   const far = farMaxForLocal(rec) * envelopeRealisation(rec);
-  if (!(far > 0)) return 0;
+  if (!(far > 0)) return null;
 
-  let best = 0;
+  let best: ResidualScheme | null = null;
+  const all: { use: BuiltClass; psf: number }[] = [];
   for (const use of RESIDUAL_USES) {
     // WHAT THIS USE CAN ACTUALLY BUILD HERE. Shops and sheds are two floor
     // plates, so on a high-FAR lot they leave most of the envelope on the
@@ -391,10 +439,14 @@ export function residualLandPsf(rec: ParcelRecord, econ: Econ, rentMult = 1): nu
     // This form guarantees a positive spread wherever the residual is
     // positive, because the margin is taken out before the land is priced.
     const surplus = (valuePsf * eff) / (1 + DEV_MARGIN) - (costPsf + fitPsf * eff);
+    const psf = surplus * usable * BUILD_DISCOUNT;
+    all.push({ use, psf });
     if (surplus <= 0) continue;
-    best = Math.max(best, surplus * usable);
+    if (!best || psf > best.psf) {
+      best = { psf, use, valuePsf: valuePsf * eff, costPsf: costPsf + fitPsf * eff, usable, floors: fl, all };
+    }
   }
-  return best * BUILD_DISCOUNT;
+  return best && { ...best, all };
 }
 
 /** farMaxFor lives in dev.ts, which cannot be imported here. Same expression. */
@@ -402,7 +454,30 @@ function farMaxForLocal(rec: { farMaxComm: number; farMaxRes: number }): number 
   return Math.max(rec.farMaxComm, rec.farMaxRes, 2);
 }
 
+/**
+ * WHY THE DIRT COSTS WHAT IT COSTS — the three bids, and which of them won.
+ *
+ * `landPsfNow` is this with the reasoning discarded. The panel wants the
+ * reasoning, and it must not go and work it out again: that is how the residual
+ * on the parcel card came to disagree with the residual in the engine.
+ */
+export type LandRead = {
+  /** The price, $/sf of land. Identical to `landPsfNow` by construction. */
+  psf: number;
+  /** The three bids, each already carrying its own discount, $/sf of land. */
+  builder: number;
+  holder: number;
+  texture: number;
+  /** Which bid set the price, and the scheme behind the builder's. */
+  winner: "builder" | "holder" | "texture";
+  scheme: ResidualScheme | null;
+};
+
 export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
+  return landRead(rec, econ).psf;
+}
+
+export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
   // DEMAND HAD NO LEVEL EFFECT ON LAND, ONLY A CYCLE EFFECT.
   //
   // The demand term was multiplied by `cycleDev`, which oscillates around zero
@@ -442,8 +517,9 @@ export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
   // the holder wins and the number is small but real; and the crossover between
   // them is exactly where redevelopment pressure starts, which is the most
   // important line in a city and the game could not draw it before.
-  const builder = residualLandPsf(rec, econ);
-  const holder = residualLandPsf(rec, econ, PEAK_RENT_MULT) * WAIT_DISCOUNT;
+  const scheme = residualScheme(rec, econ);
+  const builder = scheme?.psf ?? 0;
+  const holder = (residualScheme(rec, econ, PEAK_RENT_MULT)?.psf ?? 0) * WAIT_DISCOUNT;
 
   // AND WHAT THE CITY GENERATOR THOUGHT, which is not nothing.
   //
@@ -462,8 +538,45 @@ export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
   // it multiplies this whole expression downstream.
   const texture = rec.landPsf * econ.landIdx * level * envelopeRealisation(rec);
 
-  const base = Math.max(builder, holder, texture * 0.30) + texture * 0.14;
-  return base * (1 + 0.22 * d * econ.cycleDev);
+  // A BLEND IS A BLEND. THIS WAS A MAX PLUS A BONUS, AND THE BONUS WAS THE
+  // REASON NOTHING IN THIS CITY COULD BE BUILT.
+  //
+  // The paragraph above says the comparison memory is "a MINORITY term
+  // deliberately", weighted the way an appraiser weights sales comparison
+  // against a residual. The code did not do that. It took the best income bid,
+  // floored it, and then ADDED 14% of the comparison on top — so the price of
+  // every lot in the game was strictly greater than what any builder could pay
+  // for it, by construction, in every market, forever.
+  //
+  // Measured before this change, at year thirty across two towns: the land
+  // price ran 1.24x to 1.37x the best builder's residual, and the number of
+  // lots out of 1,109 where a builder could pay the asking price was ZERO.
+  // Not few. Zero. The residual is defined as the price at which a builder
+  // earns exactly DEV_MARGIN, so a market permanently above it is a market in
+  // which development never clears its hurdle — and `pnpm devyield` had been
+  // reporting exactly that from the other end the whole time: 0 office sites
+  // pencil of 1,363, 0 retail, 3 multifamily, 21 industrial.
+  //
+  // The city kept building anyway, about 1%/yr of office stock, because
+  // `devPencils` decides city supply from index ratios and never looks at what
+  // land costs. That is the same quantity with two answers: the city's supply
+  // model said build and the player's desk said it was impossible, and both
+  // were shipped.
+  //
+  // So the blend is written as the blend the comment already described. The
+  // floor stays — a lot with no income case still does not trade at nothing —
+  // and a good corner can still price above its own residual, because the
+  // comparison term can exceed the income term and that is a real thing that
+  // happens. What cannot happen any more is EVERY lot doing it.
+  const COMP_WEIGHT = 0.14;
+  const floor = texture * 0.30;
+  const base = Math.max(builder, holder, floor) * (1 - COMP_WEIGHT) + texture * COMP_WEIGHT;
+  return {
+    psf: base * (1 + 0.22 * d * econ.cycleDev),
+    builder, holder, texture: floor,
+    winner: builder >= holder && builder >= floor ? "builder" : holder >= floor ? "holder" : "texture",
+    scheme,
+  };
 }
 
 export function landValue(rec: ParcelRecord, econ: Econ): number {

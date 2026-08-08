@@ -9,7 +9,7 @@ import type { Approach, BuiltClass, Contract, DevUse, EconHistoryPoint, GameStat
 import {
   assetValue, initialCondition, holdingValue, monthlyNOI, marketRentPsfYr, managedRentPsfYr,
   holdingNOIYr, renovationCost, resolveRec, appraise, propertyTaxYr, useRentPsfYr,
-  rollQualitySpread, operatingStatement, recoveryOf, netWorth, remainingAbatement, landPsfNow, landValue,
+  rollQualitySpread, operatingStatement, recoveryOf, netWorth, remainingAbatement, landPsfNow, landRead, landValue,
   physicalOcc as physicalOccupancy, inPlace, proFormaNOIYr, disclosureFor, asIfOwned,
 } from "@/engine/value";
 import { planDevelopment, constructionQuotes, devMix, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
@@ -3555,63 +3555,52 @@ function LeasingDesk({ bbl }: { bbl: string }) {
 }
 
 /**
- * WHAT THE DIRT IS ACTUALLY WORTH (ECONOMY.md: land value is a residual).
- * The index prices the map; this prices THIS lot the way a builder would —
- * best scheme the envelope allows, today's rents against today's costs, and
- * the dirt is what is left over. When nothing is left over, that is said
- * too, because "nothing pencils" is the single most load-bearing fact about
- * a land market. Shown on any vacant lot, owned or not — the read matters
- * most BEFORE the money moves.
+ * WHY THIS DIRT COSTS WHAT IT COSTS (ECONOMY.md: land value is a residual).
+ *
+ * This card used to work the residual out for itself and got a different answer
+ * from the engine — median −$0.08M here against $0.46M there, on the same lots.
+ * It forced 0.6 site coverage, took the margin as `value·(1−m)` instead of
+ * `value/(1+m)`, skipped the discount for the years a site waits, and read spot
+ * rent where the engine reads the rent a developer expects. Four defensible
+ * choices adding up to a number the player could price land from that was not
+ * the price of the land.
+ *
+ * So it renders `landRead` now: the same three bids the engine ran, and which of
+ * them won. A builder bids what is left after the building pays for itself and
+ * pays him. A holder bids the option — the residual at the next peak's rents,
+ * discounted for the wait — which is why fringe dirt is cheap and not free. And
+ * the map's own texture puts a floor under both. Shown on any vacant lot, owned
+ * or not, because the read matters most BEFORE the money moves.
  */
 function ResidualRead({ bbl }: { bbl: string }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const rec = resolveRec(parcels, game, bbl);
   if (!rec || !rec.lotArea) return null;
-  const farMax = farMaxFor(rec);
-  const CAND: { u: DevUse; label: string }[] = [
-    { u: "office", label: "office" }, { u: "multifamily", label: "flats" },
-    { u: "mixed", label: "mixed use" }, { u: "retail", label: "shops" },
-    { u: "industrial", label: "industrial" },
-  ];
-  // A builder does not hand the whole surplus to the land — the job has to
-  // pay them too. The trade's rule of thumb is a required profit of ~18% of
-  // gross development value; what is left AFTER that margin is what a bidder
-  // can rationally pay for the dirt. Omit it and the line reads as free money.
-  const PROFIT = 0.18;
-  let best: { label: string; valPsf: number; costPsf: number; resid: number } | null = null;
-  for (const c of CAND) {
-    const fl = Math.max(2, Math.round(farMax / 0.6));
-    const p = planDevelopment(game, parcels, bbl, c.u, fl, 0.6);
-    if (!p || p.sf < 2000) continue;
-    const noi = (p.yieldOnCost / 100) * p.basisTotal;
-    const val = noi / Math.max(0.02, p.exitCap / 100);
-    // COST OF THE BUILDING, WITHOUT THE DIRT — which is basisTotal less the
-    // land, NOT costTotal less the land. costTotal never contained land in the
-    // first place, so subtracting it took the site out of a number it was
-    // never in and understated the build by the whole land basis. On an
-    // expensive corner it went NEGATIVE: this panel was reading "$-427/sf
-    // all-in to build" on a lot with $8.95M of dirt under it, which is how it
-    // was found. And because the residual is value less the build, every
-    // vacant lot in the game was quoting a residual to the dirt overstated by
-    // exactly what the dirt already cost — the one number on this card a
-    // player prices land from.
-    const buildAllIn = p.basisTotal - p.landBasis;
-    const resid = val * (1 - PROFIT) - buildAllIn;
-    const cand = { label: c.label, valPsf: val / p.sf, costPsf: buildAllIn / p.sf, resid };
-    if (!best || cand.resid > best.resid) best = cand;
-  }
-  if (!best) return null;
-  return best.resid > 0
-    ? <div className="grid">
-        <Row k="What pencils" v={`${best.label} — worth $${best.valPsf.toFixed(0)}/sf built against $${best.costPsf.toFixed(0)}/sf all-in to build`} strong />
-        <Row k="Residual to the dirt" v={`${usd(Math.round(best.resid))} · ${usd(Math.round(best.resid / Math.max(1, rec.lotArea)))}/sf of land, after the builder's margin`} />
+  const read = landRead(rec, game.econ);
+  const s = read.scheme;
+  const lot = Math.max(1, rec.lotArea);
+  const USE_LABEL: Record<string, string> = {
+    office: "office", multifamily: "flats", retail: "shops", industrial: "industrial",
+  };
+  if (read.winner === "builder" && s) {
+    return (
+      <div className="grid">
+        <Row k="What pencils" v={`${USE_LABEL[s.use] ?? s.use} at ${s.floors} floors — worth $${s.valuePsf.toFixed(0)}/sf built against $${s.costPsf.toFixed(0)}/sf all-in`} strong />
+        <Row k="Residual to the dirt" v={`${usd(Math.round(read.builder * lot))} · $${read.builder.toFixed(0)}/sf of land, after the builder's margin and the wait`} />
+        <Row k="What it trades at" v={`${usd(Math.round(read.psf * lot))} · $${read.psf.toFixed(0)}/sf — a builder is the high bidder here`} />
       </div>
-    : <div className="hint">
-        Nothing pencils here — the best scheme ({best.label}) is worth ${best.valPsf.toFixed(0)}/sf finished
-        against ${best.costPsf.toFixed(0)}/sf to build it, and a builder has to be paid to take the risk.
-        At today's rents and costs this dirt only has option value: you are buying the next cycle, not this one.
-      </div>;
+    );
+  }
+  return (
+    <div className="grid">
+      {s
+        ? <Row k="Nothing pencils today" v={`the best scheme (${USE_LABEL[s.use] ?? s.use}) is worth $${s.valuePsf.toFixed(0)}/sf finished against $${s.costPsf.toFixed(0)}/sf to build`} strong />
+        : <Row k="Nothing pencils today" v="no use covers its own construction at these rents" strong />}
+      <Row k="Held for the next cycle" v={`${usd(Math.round(read.holder * lot))} · $${read.holder.toFixed(0)}/sf — the residual at peak rents, discounted for the years of waiting`} />
+      <Row k="What it trades at" v={`${usd(Math.round(read.psf * lot))} · $${read.psf.toFixed(0)}/sf — ${read.winner === "holder" ? "a holder is the high bidder" : "the street sets it, not the income"}`} />
+    </div>
+  );
 }
 
 function LandDesk({ bbl }: { bbl: string }) {

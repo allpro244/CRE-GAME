@@ -284,16 +284,56 @@ cross the 24/40 threshold in either direction without anything having changed.
 If you want G to mean something, the work is in the estimator, not the rate
 rule.
 
-### 4. The panel's land residual disagrees with the engine's
-After fixing a sign error (`costTotal - landBasis`, where `costTotal` never
-contained land — it printed **−$427/sf all-in to build** on a lot with $8.95M
-of dirt under it), the parcel card's residual reads a median of −$0.08M
-against the engine's `landValue` of $0.46M for the same lots. Before the fix
-they agreed within $20k, which is why the bug survived.
+### 4. DONE — and pulling on it found something much bigger
+The card no longer computes anything. `residualScheme` returns the winning
+scheme *and* its working, `residualLandPsf` is the same call with the working
+discarded, `landRead` does the same for `landPsfNow`, and the parcel card
+renders what the engine decided. Verified neutral: 8,076 parcel-months, worst
+relative difference between old and new `landPsfNow` **0.00e+0%**.
 
-Same quantity, two answers. The card forces 0.6 coverage and derives floors
-from FAR, so it is a lower bound on the best scheme — have it optimise the
-way a builder would, then compare again.
+**What it uncovered is the open item now, and it is the biggest one in this
+file.** `pnpm pencils` is the harness; it measures three things.
+
+`landPsfNow` was `max(builder, holder, texture*0.30) + texture*0.14`. The
+comment beside it says the comparison memory is "a MINORITY term deliberately",
+weighted the way an appraiser weights sales comparison against a residual — but
+the code took the best income bid and then ADDED 14% of the comparison on top.
+So the price of every lot was strictly above what any builder could pay for it,
+by construction. Measured at year 30 across two towns: price ran **1.24x-1.37x**
+the best builder's residual and **0 of 1,109 lots** could be paid for. The
+residual is by definition the price at which a builder earns exactly
+`DEV_MARGIN`, so that is a city that cannot be built. Writing the blend as the
+blend the comment described takes it to 1.02x-1.20x and 10.7% of lots. `pnpm
+gate` passes.
+
+**That was one layer. The layer under it is an identity nobody had checked.**
+`HARD_COST_PSF` in value.ts carries, in its own comments, the net rent each
+class needs to justify its cost. `RENT_BASE` in market.ts carries what each
+class earns. They had never been put side by side:
+
+    office        $560/sf hard    needs net $62    earns $43.65    -30%
+    retail        $865/sf hard    needs net $97    earns $42.91    -56%
+    multifamily   $345/sf hard    needs net $37    earns $30.22    -18%
+    industrial    $140/sf hard    needs net $17    earns $18.00     +6%
+
+Industrial is the only class that earns what its own cost requires. So it bids
+positive for **100%** of vacant lots and is the best use on **81.9%** of them,
+while office bids positive on 5.6% and retail on 4.2% — and `pnpm devyield`
+reports **0 office sites pencil of 1,363, 0 retail**, in a city whose office
+stock grows ~1%/yr. It grows because `devPencils` decides city supply from
+index ratios and never looks at what a square foot costs or what land costs.
+The player's desk does look. Same quantity, two answers, and the player is
+shown the one that says no.
+
+Do NOT fix this by moving one number until the table looks right — that is the
+tune-until-it-passes move. The question is which side is miscalibrated, and the
+likely answer is the cost table: $865/sf is urban podium retail and $560/sf is
+CBD high-rise, both priced for a city this town is not, while the rents are
+priced for a mid-size harbour town. That is the Manhattan-anchor problem the
+owner named, sitting in the cost column. Whatever moves, `pnpm pencils` should
+end up STRADDLING 1.0 and every class should be buildable somewhere — the
+correct target is not "everything pencils", it is "the good corners pencil and
+the fringe does not".
 
 ### 5. Tenant bankruptcy and lease rejection
 Owner-requested. A credit tenant files, rejects the lease, and an asset goes

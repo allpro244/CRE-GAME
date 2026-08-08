@@ -25,7 +25,7 @@ import { resolveRec, holdingValue, holdingNOIYr, netWorth, assetValue, FAR_CEILI
 // building from the one being sold, and flags a correctly-cheap worn asset as a
 // mispriced one.
 import { gradeOf } from "./rivals";
-import { leasableUses, COMMERCIAL_SUITE_MIN, useVacantSf } from "./leasing";
+import { leasableUses, minTenancySf, useVacantSf } from "./leasing";
 import { mixOf, useSf } from "./mix";
 import { MAX_FLOORS_BY_USE } from "./dev";
 import { SECTORS } from "./market";
@@ -300,7 +300,7 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
     const h = s.holdings[l.bbl];
     if (!rec || !h) continue;
     const use = l.use ?? leasableUses(rec)[0] ?? "office";
-    const floor = use === "multifamily" ? 450 : COMMERCIAL_SUITE_MIN;
+    const floor = minTenancySf(rec, use);
     const vac = useVacantSf(rec, h, use, s.month);
     if (vac < floor) {
       bad("loi", `${l.bbl} ${l.name}`, `letter for ${Math.round(l.sf)} sf of ${use} is live, but only `

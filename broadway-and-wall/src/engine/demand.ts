@@ -92,6 +92,12 @@ const MOMENTUM = 0.055;
 const DRIFT_CAP = 34;
 /** Anchor plus drift, kept inside what the invariant sweep will allow. */
 const TOTAL_CAP = 36;
+/**
+ * The economy at mid-cycle, for the zero point only. `useOccupancy` reads
+ * cityVac and vintageMean and tolerates both being absent, which is what mid-
+ * cycle means: no boom, no slump, no flight to quality.
+ */
+const MID_CYCLE = { cycleDev: 0 } as unknown as Econ;
 
 // ------------------------------------------------- THE FORTUNES OF A CENTRE
 //
@@ -350,6 +356,8 @@ export function demandModel(parcels: ParcelTable): DemandModel {
   const blocks = new Map<string, BlockGeom>();
   const ofBbl = new Map<string, string>();
   const baseStock = new Map<string, Partial<Record<BuiltClass, number>>>();
+  // The same roll-up, OCCUPIED at each building's own mid-cycle occupancy.
+  const baseOcc = new Map<string, Partial<Record<BuiltClass, number>>>();
   const acc = new Map<string, { x: number; y: number; area: number; dw: number }>();
 
   for (const bbl of bbls) {
@@ -365,11 +373,20 @@ export function demandModel(parcels: ParcelTable): DemandModel {
     acc.set(id, a);
     if (r.class !== "land" && r.bldgArea > 0) {
       const st = baseStock.get(id) ?? {};
+      const so = baseOcc.get(id) ?? {};
       // by component: the shops under a block of flats are retail feet, and
       // the block only has street life because of them
       const m = mixOf(r);
-      for (const k of Object.keys(m) as BuiltClass[]) st[k] = (st[k] ?? 0) + r.bldgArea * (m[k] ?? 0);
+      for (const k of Object.keys(m) as BuiltClass[]) {
+        const sf = r.bldgArea * (m[k] ?? 0);
+        st[k] = (st[k] ?? 0) + sf;
+        // THIS BUILDING'S OCCUPANCY, NOT ITS CLASS'S. See occupiedStock — the
+        // zero point has to be measured the same way the live number is, and
+        // the live number is now per building.
+        so[k] = (so[k] ?? 0) + sf * useOccupancy(r, MID_CYCLE, k, true);
+      }
       baseStock.set(id, st);
+      baseOcc.set(id, so);
     }
   }
 
@@ -406,15 +423,20 @@ export function demandModel(parcels: ParcelTable): DemandModel {
   // the baseline counts occupied feet too — at mid-cycle occupancy, since the
   // cycle is the one part of it that genuinely should register: a city with
   // its buildings half empty is a worse neighbourhood, and should say so.
+  //
+  // Per BUILDING, matching occupiedStock. It was `st[k] * refOcc(k)` — every
+  // building in the city credited with its class average — so a block of
+  // troubled buildings and a block of full ones were indistinguishable to the
+  // surface that is supposed to be measuring exactly that difference.
   const dens = { j: [] as number[], r: [] as number[], a: [] as number[] };
   const raw = new Map<string, { j: number; r: number; a: number }>();
   for (const b of list) {
     let j = 0, r = 0, am = 0;
     for (const n of b.neighbours) {
-      const st = baseStock.get(n.id);
+      const st = baseOcc.get(n.id);
       if (!st) continue;
       for (const k of Object.keys(st) as BuiltClass[]) {
-        const c = contribution(k, (st[k] ?? 0) * n.w * refOcc(k));
+        const c = contribution(k, (st[k] ?? 0) * n.w);
         j += c.j; r += c.r; am += c.a;
       }
     }
@@ -525,16 +547,45 @@ function tradesOf(id: string, sf: Partial<Record<BuiltClass, number>>): Partial<
 }
 
 /** Occupied square feet by class in every block, this month. */
+/**
+ * EVERY BUILDING'S OWN OCCUPANCY, NOT ITS CLASS'S.
+ *
+ * This credited unowned stock with `class average x square feet` and the
+ * player's own buildings with their actual rent roll. Nothing about a building
+ * changes at a closing — the roll was written when it came to market, the
+ * tenants and the leases are the same on both sides of the signature — so
+ * every purchase moved the neighbourhood's occupied stock by the gap between
+ * one building's roll and its whole class's average.
+ *
+ * Measured at the instant of purchase, 261 closings with no month passing:
+ * the block lost 13.5% of the building's floor area the moment the deed moved,
+ * on 219 of them. That is the wire behind `pnpm stress --only=B` — buy up a
+ * district and its demand score falls about 11%, which drags the land under it
+ * down with it. The player's own money was making their neighbourhood worse by
+ * arriving.
+ *
+ * The engine already knows each building's occupancy: `useOccupancy` is a pure
+ * function of the parcel, and it is where the character hash, the trouble tail,
+ * the vintage and the city vacancy wire all live. So there is no reason to use
+ * a class average for anybody. Ownership now changes exactly one thing — an
+ * owned building reports the roll it actually has instead of the roll the
+ * model predicts for it — which is a real and much smaller difference, and one
+ * the player can move by leasing well.
+ *
+ * It is also a better demand surface on its own terms. A block of troubled
+ * buildings and a block of full ones were indistinguishable to a model whose
+ * entire job is to tell those apart.
+ *
+ * AND IT STAYS BLIND TO THE BLOCK'S LIVE DEMAND, which is what the class
+ * average was protecting. `useOccupancy` reads `rec.demandScore`, and if that
+ * were the DRIFTED score this loop would chase its own tail — a block that got
+ * better would get better because it got better. It reads `parcels[bbl]`
+ * directly rather than `resolveRec`, so the score here is the generated one and
+ * `s.blockD` never re-enters. Do not swap in a resolved record: the whole
+ * feedback structure of this file depends on that being the static number.
+ */
 function occupiedStock(s: GameState, parcels: ParcelTable, model: DemandModel): Map<string, Partial<Record<BuiltClass, number>>> {
   const out = new Map<string, Partial<Record<BuiltClass, number>>>();
-  const occFor = (cls: BuiltClass) => marketOcc(cls, s.econ);
-
-  // start from the static roll-up, occupied at market
-  for (const [id, st] of model.baseStock) {
-    const o: Partial<Record<BuiltClass, number>> = {};
-    for (const k of Object.keys(st) as BuiltClass[]) o[k] = (st[k] ?? 0) * occFor(k);
-    out.set(id, o);
-  }
   const bump = (id: string | undefined, cls: BuiltClass, sf: number) => {
     if (!id) return;
     const o = out.get(id) ?? {};
@@ -542,56 +593,34 @@ function occupiedStock(s: GameState, parcels: ParcelTable, model: DemandModel): 
     out.set(id, o);
   };
 
-  // anything redeveloped or demolished replaces its base contribution
-  for (const [bbl, b] of Object.entries(s.built ?? {})) {
+  for (const [bbl, id] of model.ofBbl) {
     const base = parcels[bbl];
-    const id = model.ofBbl.get(bbl);
-    if (!base || !id) continue;
-    if (base.class !== "land" && base.bldgArea > 0) {
-      const bm = mixOf(base);
-      for (const k of Object.keys(bm) as BuiltClass[]) bump(id, k, -base.bldgArea * (bm[k] ?? 0) * occFor(k));
-    }
-    if (b.bldgArea > 0 && (b.class as string) !== "land") {
-      const nm = b.mix ?? { [b.class]: 1 };
-      for (const k of Object.keys(nm) as BuiltClass[]) bump(id, k, b.bldgArea * (nm[k] ?? 0) * occFor(k));
-    }
-  }
-
-  // and your own buildings report their REAL occupancy, not the market's
-  for (const h of Object.values(s.holdings)) {
-    const base = s.built?.[h.bbl];
-    const rec = parcels[h.bbl];
-    if (!rec) continue;
-    const sf = base?.bldgArea ?? rec.bldgArea ?? 0;
-    if (!sf) continue;
-    const m = base?.mix ?? mixOf({ ...rec, class: base?.class ?? rec.class, mix: base?.mix });
+    if (!base) continue;
+    // whatever is standing there NOW: a redevelopment replaces what it replaced
+    const b = s.built?.[bbl];
+    const rec = b && b.bldgArea > 0
+      ? { ...base, class: b.class, bldgArea: b.bldgArea, floors: b.floors, yearBuilt: b.yearBuilt, mix: b.mix }
+      : base;
+    if ((rec.class as string) === "land" || !(rec.bldgArea > 0)) continue;
+    const h = s.holdings[bbl];
+    const m = mixOf(rec as ParcelRecord);
     for (const cls of Object.keys(m) as BuiltClass[]) {
-      const share = m[cls] ?? 0;
-      const compSf = sf * share;
+      const compSf = rec.bldgArea * (m[cls] ?? 0);
       if (compSf <= 0) continue;
       // your empty floors are empty for the neighbourhood too — and each part
       // of a mixed building reports its own occupancy, because the shops can
       // be full while the offices above them are not
-      const real = cls === "multifamily"
-        ? (h.occ ?? occFor(cls))
-        : Math.min(1, h.tenants.filter((tn) => (tn.use ?? cls) === cls).reduce((n, tn) => n + tn.sf, 0) / compSf);
-      bump(model.ofBbl.get(h.bbl), cls, (real - occFor(cls)) * compSf);
+      const occ = h
+        ? (cls === "multifamily"
+          ? (h.occ ?? useOccupancy(rec as ParcelRecord, s.econ, cls))
+          : Math.min(1, h.tenants.filter((tn) => (tn.use ?? cls) === cls).reduce((n, tn) => n + tn.sf, 0) / compSf))
+        : useOccupancy(rec as ParcelRecord, s.econ, cls);
+      bump(id, cls, compSf * occ);
     }
   }
   return out;
 }
 
-// Deliberately blind to the block's own demand: occupancy already rises with
-// demand elsewhere in the engine, and reading it back in here would make the
-// model chase its own tail — a block that got better would get better because
-// it got better. The cycle is the only thing this term is allowed to see.
-function marketOcc(cls: BuiltClass, econ: Econ): number {
-  return useOccupancy({ class: cls, demandScore: 55 } as unknown as ParcelRecord, econ, cls);
-}
-/** Occupancy at mid-cycle: the baseline the drift is measured against. */
-function refOcc(cls: BuiltClass): number {
-  return marketOcc(cls, { cycleDev: 0 } as unknown as Econ);
-}
 
 /**
  * One month of the neighbourhood. Every block's desirability walks toward what

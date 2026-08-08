@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "package": "tsc -b && vite build && node package/build-zip.mjs",
+    "package:onefile": "tsc -b && vite build && node package/build-onefile.mjs",
     "pipeline:fetch": "node pipeline/fetch.mjs",
     "pipeline:city": "node pipeline/city.mjs",
     "pipeline:synth": "node pipeline/synth.mjs",

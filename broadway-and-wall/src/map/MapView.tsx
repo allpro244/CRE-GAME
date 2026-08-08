@@ -597,11 +597,20 @@ export default function MapView() {
   useEffect(() => {
     const layer = threeRef.current;
     if (!layer || !mapReady || !game) return;
+    // ONE FLOOR-TO-FLOOR, BECAUSE A STOREY IS A STOREY.
+    //
+    // The player's buildings extruded at 3.4 m a floor and the generator's city
+    // at 3.55 (citygen.mjs:1250 and :1643), so the same twenty-storey building
+    // stood three metres shorter if the player put it up — the same quantity
+    // with two answers, in the one place the two populations stand next to each
+    // other and get compared by eye. 3.55 is the city's, and the city is the
+    // thing there is more of.
+    const FLOOR_M = 3.55;
     const items: { bbl: string; cls: string; heightM: number; floors: number; construction: boolean; fresh?: boolean; cov?: number }[] = [];
     for (const d of Object.values(game.developments ?? {})) {
       const total = Math.max(1, d.deliverM - d.startM);
       const prog = Math.min(1, Math.max(0.15, (game.month - d.startM + 1) / total));
-      items.push({ bbl: d.bbl, cls: d.use, heightM: d.floors * 3.4 * prog, floors: d.floors, construction: true, cov: d.coverage });
+      items.push({ bbl: d.bbl, cls: d.use, heightM: d.floors * FLOOR_M * prog, floors: d.floors, construction: true, cov: d.coverage });
     }
     // EVERYBODY ELSE'S CRANES. The city's pipeline was invisible until the day
     // it opened, so the supply you were reading about on the Economy page had
@@ -613,13 +622,13 @@ export default function MapView() {
       const total = Math.max(1, j.deliverM - j.startM);
       const raw = (game.month - j.startM + 1) / total;
       const prog = Math.min(1, Math.max(0.12, j.orphaned ? Math.min(raw, 0.75) : raw));
-      items.push({ bbl: j.bbl, cls: j.use, heightM: j.floors * 3.4 * prog, floors: j.floors, construction: true });
+      items.push({ bbl: j.bbl, cls: j.use, heightM: j.floors * FLOOR_M * prog, floors: j.floors, construction: true });
     }
     for (const [bbl, b] of Object.entries(game.built ?? {})) {
       // bunting for the first three months after delivery — a grand opening
       const dM = game.holdings[bbl]?.deliveredM;
       const fresh = dM !== undefined && game.month - dM <= 3;
-      items.push({ bbl, cls: b.class, heightM: b.floors * 3.4, floors: b.floors, construction: false, fresh, cov: b.cov });
+      items.push({ bbl, cls: b.class, heightM: b.floors * FLOOR_M, floors: b.floors, construction: false, fresh, cov: b.cov });
     }
     // AN ASSEMBLED SITE IS ONE BUILDING ON SEVERAL DEEDS. The massing lives on
     // the parent lot; without this a tower built on three merged lots rose out

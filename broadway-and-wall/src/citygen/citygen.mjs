@@ -1308,6 +1308,27 @@ export function generateCity(cfg) {
   }
 
   // --- decorative waterfront ------------------------------------------------
+  //
+  // ORNAMENT DRAWS FROM ITS OWN STREAM, and that is not tidiness, it is the fix
+  // for a bug this block already caused once.
+  //
+  // Removing the harbour furniture deleted about a dozen `rand()` sites from the
+  // ONE stream the whole generator shares, so every draw after it shifted — and
+  // what comes after it is not ornament. `citygen.mjs` picks the PEAK LANDMARK'S
+  // FLOOR COUNT at `tallest * rr(1.26, 1.46)` and its ASSESSED VALUE at
+  // `bldgarea * rr(200, 340)`, on a real tax lot, further down this same
+  // function. Taking some scenery off the water silently changed the tallest
+  // building in every existing save and what the assessor thinks it is worth.
+  //
+  // `swans.ts` had already worked this out and wrote down why: "drawing from the
+  // shared stream here would shift every downstream consumer of it... which
+  // turns 'this build added swans' into 'this build changed everything'." Same
+  // reasoning, same remedy. Decoration now has a stream of its own, derived from
+  // the city seed so it is still deterministic, and nothing that can be seen but
+  // not owned can move anything that can be owned. Adding or deleting a boat is
+  // free from here on.
+  const drand = mulberry32((cfg.seed ^ 0x5eaf00d) >>> 0);
+  const drr = (a, b) => a + (b - a) * drand();
   // Everything here carries a `deco` kind so the renderer can COLOR it — a
   // navy hull, a white wheelhouse, an ochre crane — instead of the fleet of
   // uniform grey boxes the harbor used to be.
@@ -1352,9 +1373,6 @@ export function generateCity(cfg) {
   // place; nothing reads them.
   const BREAKWATERS = [];
 
-  const pileFeatures = [];
-  const bollardFeatures = [];
-  const buoyFeatures = [];
 
   // --- the lighthouse --------------------------------------------------------
   // Every harbor town has one, on the headland the chart says it should be on:
@@ -1381,12 +1399,12 @@ export function generateCity(cfg) {
     // each a little narrower and each with its own step, then the gallery and
     // the lantern — and the keeper gets a house, because somebody lived there.
     const ring = (f) => oct.map(([x2, y2]) => [lx + (x2 - lx) * f, ly + (y2 - ly) * f]);
-    const hK = rr(4.6, 5.4);
+    const hK = drr(4.6, 5.4);
     for (let k = 0; k < 6; k++) addDeco(ring(1.34 - k * 0.13), hK * (k + 1), hK * k, "light");
     addDeco(ring(1.62), hK * 6 + 1.5, hK * 6, "lightcap");            // gallery
     addDeco(ring(0.92), hK * 6 + 4.6, hK * 6 + 1.5, "light");         // lantern room
     addDeco(ring(1.06), hK * 6 + 6.0, hK * 6 + 4.6, "lightcap");      // the roof over the lamp
-    const ka = rr(0, 30);
+    const ka = drr(0, 30);
     addDeco(rect(lx + 11, ly + 3, 11, 7, ka), 4.4, 0, "civic");       // keeper's house
     addDeco(rect(lx + 11, ly + 3, 12.2, 8.2, ka), 6.2, 4.4, "civicroof");
     addDeco(rect(lx + 3.5, ly + 3, 5.5, 4, ka), 3.0, 0, "shed");      // the oil store
@@ -1645,28 +1663,10 @@ export function generateCity(cfg) {
     // rank of cylinders, which the renderer draws as many-sided prisms. Grain
     // silos are the one industrial building that is taller than the district
     // around it, and a working harbour without them is a marina.
-    const ind = builtLots.filter((x) => x.cls === "F1" || x.cls === "F9" || x.cls === "E9");
-    const quay = ind.length
-      ? ind.sort((a, b) => Math.hypot(b.c[0] - gc[0], b.c[1] - gc[1]) - Math.hypot(a.c[0] - gc[0], a.c[1] - gc[1]))[0].c
-      : null;
-    if (quay) {
-      const qa = rr(0, 180), t = (qa * Math.PI) / 180;
-      const along = [Math.cos(t), Math.sin(t)];
-      const poly = (cx, cy, r, n) => {
-        const out = [];
-        for (let k = 0; k < n; k++) out.push([cx + r * Math.cos((k / n) * Math.PI * 2), cy + r * Math.sin((k / n) * Math.PI * 2)]);
-        return out;
-      };
-      const nSilo = Math.round(rr(6, 9));
-      for (let k = 0; k < nSilo; k++) {
-        const cx = quay[0] + along[0] * (k - nSilo / 2) * 9.4;
-        const cy = quay[1] + along[1] * (k - nSilo / 2) * 9.4;
-        addDeco(poly(cx, cy, 4.5, 10), rr(30, 34), 0, "silo");
-        addDeco(poly(cx, cy, 4.5, 10), rr(35, 37.5), rr(30, 34), "siloroof");
-      }
-      addDeco(rect(quay[0] - along[1] * 11, quay[1] + along[0] * 11, nSilo * 9.4, 11, qa), 14, 0, "shed");
-      addDeco(rect(quay[0] + along[0] * (nSilo / 2) * 9.4, quay[1] + along[1] * (nSilo / 2) * 9.4, 12, 12, qa), 46, 0, "silo");
-    }
+// THE GRAIN ELEVATORS GO WITH THE REST OF THE HARBOUR — see PIERS_M above.
+    // These were the tallest industrial structures on the waterfront at 30-37m,
+    // a rank of silos on the quay, and they are exactly the "dock-looking"
+    // thing that was asked to come off.
   }
 
 
@@ -1950,20 +1950,11 @@ export function generateCity(cfg) {
         geometry: { type: "LineString", coordinates: line.map(proj.toLL) },
         properties: { kind: "parkpath" },
       })),
-      ...pileFeatures.map((p) => ({
-        type: "Feature", geometry: { type: "Point", coordinates: proj.toLL(p) }, properties: { kind: "pile" },
-      })),
-      ...bollardFeatures.map((p) => ({
-        type: "Feature", geometry: { type: "Point", coordinates: proj.toLL(p) }, properties: { kind: "bollard" },
-      })),
       ...benchFeatures.map((b) => ({
         type: "Feature", geometry: { type: "Point", coordinates: proj.toLL(b.p) }, properties: { kind: "bench", rot: +b.r.toFixed(1) },
       })),
       ...railFeatures.map((b) => ({
         type: "Feature", geometry: { type: "Point", coordinates: proj.toLL(b.p) }, properties: { kind: "rail", rot: +b.r.toFixed(1) },
-      })),
-      ...buoyFeatures.map((b) => ({
-        type: "Feature", geometry: { type: "Point", coordinates: proj.toLL(b.p) }, properties: { kind: "buoy", side: b.side },
       })),
       ...treeFeatures.map((p) => ({
         type: "Feature", geometry: { type: "Point", coordinates: proj.toLL(p) }, properties: { kind: "tree" },

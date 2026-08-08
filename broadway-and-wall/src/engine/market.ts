@@ -2466,15 +2466,36 @@ export function tickEcon(s: GameState) {
      * rents high enough to keep the pipeline clearing, and the seven-year cycle
      * was resting on it.
      *
-     * THAT is the real fault, and it is upstream of this line: at honest rents
-     * this city cannot build. Fixing `unmet` without fixing that trades a
-     * shortage that is not real for a construction industry that does not
-     * function, and the second is worse. The question to answer first is why
-     * the residual clears on only one lot in seventy — construction cost, the
-     * required yield, or the exit cap — and CLAUDE.md's rule applies to the
-     * answer: DO NOT tune a coefficient to put the cycle back. That would be a
-     * constant chosen to make an outcome look right, which is the first thing
-     * it forbids.
+     * AND THE PRO FORMA IS NOT THE FAULT — I checked before blaming it, and an
+     * earlier version of this comment blamed it anyway. Measured on 609 vacant
+     * lots at year 25, best use each:
+     *
+     *                     p10     p50     p90
+     *   yield on cost    4.42%   5.94%   7.13%
+     *   exit cap         4.41%   6.44%   6.96%
+     *   spread          -1.54    0.06    1.28  pp
+     *
+     * Both levels sit inside the real band — merchant development underwrites
+     * 6-8% on cost against a 5-7% exit in a secondary metro — so construction
+     * cost, the required yield and the exit cap are all calibrated. And a
+     * MEDIAN SPREAD OF ZERO IS THE DESIGN, not a defect: most dirt does not
+     * pencil, which is why most dirt is still dirt, and econstress says so in
+     * writing where the hurdle is set. 6.7% of lots clear +1.5pp at year 25 and
+     * 13.3% across all months, so the cranes do move.
+     *
+     * So the open question is NARROWER than "the city cannot build", which is
+     * what this comment said before the measurement was taken. Development is
+     * meant to be thin; the phantom shortage was making it artificially less
+     * thin, and removing it thins it past the point where the ORDER BOOK still
+     * predicts groundbreaks at all. What to work out is why that correlation
+     * depends on the rent push rather than on the queue — `e.starts` is driven
+     * by `appetite`, which reads margin, so orders and shovels may be being
+     * driven by the same rent term instead of by one another, which would make
+     * that leg a mirror rather than a mechanism.
+     *
+     * CLAUDE.md's rule applies to whatever comes back: DO NOT tune a
+     * coefficient to put the cycle back. That would be a constant chosen to
+     * make an outcome look right, which is the first thing it forbids.
      */
     unmet[k] = Math.max(0, (e.pool[k] - e.occupied[k] - e.sublet[k]) / Math.max(1, e.stock[k]));
     e.absorb12[k] = e.absorb12[k] * (11 / 12) + absorb;

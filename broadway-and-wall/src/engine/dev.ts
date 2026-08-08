@@ -581,11 +581,37 @@ export function cityValueToReplacement(s: GameState): number {
   const e = s.econ;
   let vsum = 0, csum = 0;
   for (const k of BUILT_CLASSES) {
-    // stabilised NOI per foot: face rent less operating cost, at natural vacancy
+    // STABILISED NOI, COMPUTED THE WAY THIS ENGINE COMPUTES NOI.
+    //
+    // This was `rentIdx[k] * occ * 0.62` — one flat rent-to-NOI margin for four
+    // classes whose recovery rates are 0.88 / 0.92 / 0.50 / 0 and whose
+    // operating cost spans $0.80 to $8.22 a foot. Checked against the engine's
+    // own NOI expression at base rents, the flat margin understated every class
+    // and by wildly different amounts: office -32%, retail -37%, multifamily
+    // -13%, industrial -38%. The error is not a level shift that a centring
+    // constant can absorb, it is twenty-five points of spread ACROSS classes —
+    // and the ratio is stock-weighted, so the size of the mistake depended on
+    // what the town happened to be made of.
+    //
+    // It also read ASKING rent, where value.ts:757 states flatly that
+    // everything which prices a deal or values an asset reads what deals
+    // actually sign at; and it ignored the property tax entirely, which is a
+    // real claim on a real building and is capitalised into every other value
+    // in this engine.
+    const rent = e.effRentIdx?.[k] ?? e.rentIdx[k];
     const occ = 1 - NATURAL_VAC[k];
-    const noiPsf = e.rentIdx[k] * occ * 0.62;
+    const opex = opexPsf(k, e, false);
+    const recov = RECOVERY_RATE[k] ?? 0;
+    const egi = rent * occ + opex * recov * occ;
+    const noiPsf = egi - opex - egi * MGMT_FEE;
+    // Same tax solve as the land residual: value and the tax bill define each
+    // other, so V = NOI / (cap + t(1 - recovery)) rather than NOI / cap.
     const cap = Math.max(3, e.capRate[k]) / 100;
-    const valuePsf = noiPsf / cap;
+    const valuePsf = noiPsf / (cap + TAX_RATE * (1 - recov));
+    // The low-rise base, deliberately: this is a citywide average against a
+    // citywide stock, and weighting the height premium would need a height
+    // distribution nobody has measured. It biases the ratio UP for a tall town
+    // and that is worth knowing rather than papering over.
     const costPsf = HARD_COST_PSF[k] * e.costIdx * (1 + SOFT_COST) * (1 + CONTINGENCY);
     // weight by the class's share of citywide stock, so the blend reflects
     // what this town is actually made of
@@ -594,6 +620,47 @@ export function cityValueToReplacement(s: GameState): number {
     csum += costPsf * w;
   }
   return csum > 0 ? vsum / csum : 1;
+}
+
+/**
+ * HOW HARD THE CITY BUILDS, GIVEN WHAT FINISHED PRODUCT IS WORTH AGAINST WHAT
+ * IT COSTS TO MAKE. One copy, because there were two.
+ *
+ * This expression was written out twice — dev.ts, governing every start in the
+ * city, and actions.ts, governing how often somebody turns up wanting a ground
+ * lease. Two copies of one brake, free to drift, and neither knew about the
+ * other.
+ *
+ * It is Tobin's q for buildings, and the mechanism is the only thing that has
+ * ever ended a glut: when finished product trades below replacement cost,
+ * development stops at any interest rate in any phase, because you would be
+ * manufacturing a loss.
+ *
+ * THE OLD SHAPE WAS `(vtr - 0.55) / 0.45`, AND THE 0.55 IS A CONFESSION. Its
+ * own comment: "The first cut of this braked on (vtr - 0.80)/0.25, which reads
+ * fine until you measure where the ratio actually sits: median 0.71 across real
+ * runs, so the brake pinned at its 0.05 floor... centred where the game lives."
+ * That is a constant moved to make an outcome come out right, and it was moved
+ * to accommodate a valuation that was wrong by 13-38% by class. Fix the
+ * valuation and the ratio moves to a median of 1.13 — parity, which is where a
+ * value-to-replacement ratio belongs, because a market that persistently traded
+ * below its own replacement cost would never have been built.
+ *
+ * So the centring is gone; there is nothing left to centre. What remains is the
+ * ELASTICITY of construction to q, which is a measured quantity rather than a
+ * fitted one: the housing-supply literature puts it between about 0.6 and 5
+ * across metros with a central value near 1.5, and a land-constrained harbour
+ * peninsula sits at the low end of that. Expressed as a power, which is what an
+ * elasticity is, so a 10% move in q is a 12% move in starts.
+ *
+ * The rails are guards again rather than structure. Measured over 3 towns x 50
+ * years the floor binds in 0% of months and the cap in 3%, against the old
+ * form's floor binding whenever the market turned.
+ */
+const Q_ELASTICITY = 1.2;
+export function buildClimate(s: GameState): number {
+  const vtr = cityValueToReplacement(s);
+  return Math.max(0.10, Math.min(2.5, Math.pow(Math.max(0.05, vtr), Q_ELASTICITY)));
 }
 
 export function maxFloorsFor(
@@ -2488,14 +2555,7 @@ export function tickCityGrowth(
   // It is a smooth brake rather than a cliff: at parity the market builds at
   // its normal rate, at 0.85x it has nearly stopped, and above 1.15x it is a
   // boom, which is exactly the overshoot that creates the NEXT glut.
-  const vtr = cityValueToReplacement(s);
-  // RECENTRED. The first cut of this braked on (vtr - 0.80) / 0.25, which
-  // reads fine until you measure where the ratio actually sits: median 0.71
-  // across real runs, so the brake pinned at its 0.05 floor and shut the
-  // pipeline for good. A brake that is always fully on is not a brake, it is
-  // a wall — and it made the demand model's starvation worse. Same mechanism,
-  // same thirteen-fold swing across the cycle, centred where the game lives.
-  const brake = Math.max(0.12, Math.min(1.5, (vtr - 0.55) / 0.45));
+  const brake = buildClimate(s);
   const rate = (START_RATE[s.econ.phase] ?? 0.1) * brake;
   // THE STREET'S JOBS COME OUT OF THIS QUOTA, NOT ON TOP OF IT.
   //

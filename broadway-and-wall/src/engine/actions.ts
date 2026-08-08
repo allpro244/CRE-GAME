@@ -12,7 +12,7 @@ import { locAvailable } from "./credit";
 import { marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { originate, quote, productById, prepayPenalty } from "./debt";
-import { takeoverDevelopment, cityValueToReplacement } from "./dev";
+import { takeoverDevelopment, buildClimate } from "./dev";
 import { demandNow } from "./demand";
 import { recordComp } from "./comps";
 
@@ -504,7 +504,7 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
     // listing, groundbreak, assemblage, or something now standing on it.
     if (!rec || rec.class !== "land" || rec.bldgArea > 0 || s.developments[h.bbl]
       || s.merged?.[h.bbl] || h.sale || s.groundLeases?.[h.bbl]) { delete h.groundOffer; continue; }
-    const climate = Math.max(0.12, Math.min(1.5, (cityValueToReplacement(s) - 0.55) / 0.45));
+    const climate = buildClimate(s);
     const p = Math.min(0.14, 0.006 + 0.075 * (demandNow(s, rec) / 100) * climate);
     if (rng(s) >= p) continue;
     // Somebody wants it. The deal signs at the terms quoted TODAY — the offer

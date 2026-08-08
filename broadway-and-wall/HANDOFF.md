@@ -447,12 +447,50 @@ read of the engine and each has a file:line; none is measured yet.
    by class.** `devPencils` now uses cap x (1+DEV_MARGIN); `dev.ts:877` uses
    `exitCap + 0.75`; the residual uses `value/(1+DEV_MARGIN)`. Pick one.
    Note `dev.ts:877` gates NOTHING — it only sets an advisory string.
-3. **`cityValueToReplacement` (dev.ts:583)** — the brake on the entire city
-   pipeline — converts rent to NOI with a flat class-blind `0.62` for four
-   classes whose recovery rates are 0.88/0.92/0.50/0. Wrong by 13% to 38% by
-   class, and `dev.ts:2490` admits the brake's centring constant was moved from
-   0.80 to 0.55 to accommodate the resulting bias. Fake #1 sitting on fake #5.
-   The recentred expression is also hand-copied into `actions.ts:507`.
+3. **DONE — and the loop length moved into the real range on its own.**
+   `cityValueToReplacement` computed NOI as `rentIdx * occ * 0.62` — one flat
+   margin for four classes whose recovery rates are 0.88/0.92/0.50/0, reading
+   ASKING rent, ignoring the property tax. Understated every class and by
+   different amounts (office −32%, retail −37%, multifamily −13%, industrial
+   −38%), which is 25 points of spread ACROSS classes that no centring constant
+   can absorb. It now computes NOI the way the engine computes NOI, with the
+   same tax solve the land residual uses.
+
+   With that fixed, the ratio's median moved from 0.71 to parity — which is
+   where a value-to-replacement ratio belongs, since a market that persistently
+   traded below its own replacement cost would never have been built. So the
+   `(vtr - 0.55)/0.45` centring had nothing left to centre and is gone. What
+   replaces it is the ELASTICITY of construction to q, expressed as a power
+   because that is what an elasticity is: the housing-supply literature puts it
+   between 0.6 and 5 across metros, central value near 1.5, and a
+   land-constrained harbour peninsula sits low in that range. `Q_ELASTICITY =
+   1.2`.
+
+   The rails became guards again. Measured over 3 towns x 50 years the floor
+   binds **0.0%** of months and the cap 3.6%, against the old form whose floor
+   bound whenever the market turned — its own comment called that "a brake that
+   is always fully on... not a brake, it is a wall".
+
+   And the brake was written out TWICE, in dev.ts and actions.ts, free to drift.
+   One `buildClimate()` now.
+
+   **The unforced part.** `pnpm leadlag` measures the order the cycle runs in,
+   which no constant in this engine sets and which was not targeted by any of
+   the above:
+
+       TOTAL LOOP    5.8 years  ->  7.5 years     (real property cycles: 7-12)
+       vacancy -> rent    0mo   ->  2mo           (still short of the 3-24 band)
+
+   The loop entered the real range as a consequence of fixing a valuation, not
+   as a target. That is the single best piece of evidence in this repo so far.
+
+   **What it opened.** The control leg now reads `starts -> deliveries` at 53
+   months against a `BUILD_MONTHS` of 22-34. Either the harness's band is wrong
+   because it ignores the crane QUEUE — starts are ordered into `startOwed` and
+   then wait for capacity, so order-to-delivery legitimately exceeds the build
+   period — or something is holding the pipeline. Unresolved, and it is the
+   first thing to check next, because the control leg is what makes the other
+   four trustworthy.
 4. **DONE, and it found the real one underneath.** `claimJob` now applies the
    residual as its pro forma — a firm will not pay more for the dirt than a
    builder of that use can bear on that site — and `claimJob`'s loan-to-cost

@@ -13,7 +13,7 @@ import { demandNow } from "./demand";
 import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock } from "./market";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, assetValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling,
-  HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium } from "./value";
+  HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
@@ -860,7 +860,13 @@ export function planDevelopment(
   const pointsCost = commitment > 0 ? Math.round(commitment * cq.points) : 0;
   const basisTotal = basisTotal0 + interestReserve + pointsCost;
   const taxLoad = basisTotal * TAX_RATE * (1 - recovery);
-  const stabNoi = sf * (rentPsf * stabOcc - opex * (1 - recovery * stabOcc)) - taxLoad;
+  // The management fee, which this pro forma was not paying either. See the
+  // same correction in `residualScheme` — `noiYr` charges MGMT_FEE on EGI, so
+  // a desk that leaves it out is quoting a yield on cost the building will
+  // never earn, and quoting it against an exit cap derived from buildings that
+  // do pay it.
+  const egiPsf = rentPsf * stabOcc + opex * recovery * stabOcc;
+  const stabNoi = sf * (egiPsf - opex - egiPsf * MGMT_FEE) - taxLoad;
   // The exit is what THIS building will trade at — new, in good condition, on
   // this corner — not the citywide class average. Using the average understated
   // the spread by most of a point everywhere it mattered, which made every

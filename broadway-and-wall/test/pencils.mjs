@@ -32,12 +32,16 @@
 // PRICE/RESIDUAL the ratio, across every vacant lot. It should STRADDLE 1.0.
 //                All of it above 1.0 is a city that cannot be built; all of it
 //                below is a city where every lot is a development site.
-// RENT vs COST   the identity. `HARD_COST_PSF` carries, in its own comments,
-//                the net rent each class needs to justify its cost. `RENT_BASE`
-//                carries the rent each class actually gets. Nobody had ever put
-//                the two columns next to each other. Industrial is the only
-//                class that earns what its cost requires, which is why
-//                industrial outbids everybody for every lot in the city.
+// STOCK GROWTH   what each class actually added, per year.
+//
+// This file used to carry a third table comparing RENT_BASE against a
+// "needs net" column COPIED OUT OF THE COMMENTS beside HARD_COST_PSF. That
+// table found the original fault and then became the fault: the cost table was
+// replaced with observed numbers, the comments went with it, and this harness
+// carried on printing $62 / $97 / $37 / $17 as though they still meant
+// something. A number copied from a comment is a second answer with extra
+// steps. The break-even is COMPUTED now, by inverting the engine's own
+// residual — see `pnpm breakeven`.
 import { assertFreshBundle } from "./fresh.mjs";
 if (!process.env.ENGINE) assertFreshBundle();
 import { dirname, join } from "node:path";
@@ -49,12 +53,6 @@ const { loadCity } = await import(join(HERE, "city.mjs"));
 const N = Number(process.env.N ?? 2);
 const HZ = Number(process.env.HZ ?? 360);
 const USES = ["office", "retail", "multifamily", "industrial"];
-
-// The rent each class needs to cover its own construction, read off the
-// comments beside HARD_COST_PSF in value.ts. These are NET rents and they are
-// the point of the third table: they were written down when the cost table was
-// written and never checked against the rent table.
-const NEEDS_NET = { office: 62, retail: 97, multifamily: 37, industrial: 17 };
 
 const q = (a, p) => { const s = [...a].filter(Number.isFinite).sort((x, y) => x - y); return s.length ? s[Math.floor(p * (s.length - 1))] : NaN; };
 const pad = (s, n) => String(s).padEnd(n);
@@ -115,19 +113,13 @@ console.log(`\n  lots a builder could pay the asking price for: ${((100 * ratio.
 console.log(`  This should STRADDLE 1.0. At 0% the city cannot be built and the`);
 console.log(`  supply the player sees is coming from a model that never looks at cost.`);
 
-console.log(`\nTHE IDENTITY NOBODY HAD CHECKED — what a class earns against what its cost needs\n`);
-console.log(`  ${pad("use", 14)}${rp("hard $/sf", 11)}${rp("needs net", 11)}${rp("base rent", 11)}${rp("shortfall", 11)}   stock`);
+console.log(`\nWHAT THE CITY ACTUALLY ADDED\n`);
+console.log(`  ${pad("use", 14)}${rp("hard $/sf", 11)}${rp("base rent", 11)}${rp("stock", 11)}`);
 for (const u of USES) {
-  const need = NEEDS_NET[u];
-  const got = E.RENT_BASE[u];
-  const gap = got / need - 1;
-  console.log(`  ${pad(u, 14)}${rp(E.HARD_COST_PSF[u], 11)}${rp("$" + need, 11)}${rp("$" + got.toFixed(2), 11)}`
-    + `${rp((gap >= 0 ? "+" : "") + (100 * gap).toFixed(0) + "%", 11)}   ${(100 * q(grew[u], 0.5)).toFixed(2)}%/yr`);
+  console.log(`  ${pad(u, 14)}${rp(E.HARD_COST_PSF[u], 11)}${rp("$" + E.RENT_BASE[u].toFixed(2), 11)}`
+    + `${rp((100 * q(grew[u], 0.5)).toFixed(2) + "%/yr", 11)}`);
 }
-console.log(`\n  The "needs net" column is copied from the comments beside HARD_COST_PSF`);
-console.log(`  in value.ts, where it was written down when the cost table was set. The`);
-console.log(`  "base rent" column is RENT_BASE in market.ts. They were never compared.`);
-console.log(`  A class that earns less than its cost requires cannot be built at any`);
-console.log(`  land price, because the land is the LAST claim on the money, not the`);
-console.log(`  first — and the one class that clears its own bar outbids the others`);
-console.log(`  for every lot in the city, including the ones it has no business on.\n`);
+console.log(`\n  A class the residual says cannot be built anywhere, whose stock grows`);
+console.log(`  anyway, means city supply and the desk are still two different models.`);
+console.log(`  For the rent each class NEEDS against the rent it gets, run pnpm breakeven —`);
+console.log(`  it inverts this engine's own residual instead of quoting a comment at you.\n`);

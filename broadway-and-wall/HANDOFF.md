@@ -284,7 +284,136 @@ cross the 24/40 threshold in either direction without anything having changed.
 If you want G to mean something, the work is in the estimator, not the rate
 rule.
 
-### 4. DONE — and pulling on it found something much bigger
+### 4. DONE — and the thread it pulled ran through the whole engine
+**Read this entry first. Everything below it in this file was written before the
+cost table was found to be wrong, and several entries are stale as a result.**
+
+Four harnesses now cover this ground and all four are new:
+
+    pnpm breakeven   the rent each class NEEDS against the rent it gets,
+                     computed by inverting the engine's own residual
+    pnpm pencils     who is the high bidder for dirt, and what they would build
+    pnpm devyield    (existing) how many of the 1,363 sites clear their exit cap
+    node tools/constants.mjs   provenance x leverage over every named constant
+
+**The root cause, and it was not what it looked like.** `HARD_COST_PSF` said in
+its own comment that it was not observed — "SOLVED: the cost at which a new
+building on a median site yields about 150bp over its own exit cap". The exits
+it was solved at are named in the same comment: 5.3% office, 4.6% multifamily,
+6.6% industrial. `market.ts:292` records CAP_BASE being raised to 8.50 / 5.60 /
+7.00 and names those exact old numbers. **Nobody re-solved the costs.** Office's
+exit moved 320bp, multifamily's 84bp, industrial's 40bp — and that is precisely
+the order in which the classes failed. A cost solved at a 5.3% exit needs about
+8.50/5.30 = 1.60x the net rent to hold the same spread at 8.50.
+
+So the cost table is observed now, with sources, and observed numbers do not go
+stale when a cap moves. The comparison class is stated in the comment and it is
+**not Manhattan**: Providence / Charleston / Portland ME. Two independent
+methods agreed to within 15% — re-solving against the new caps, and reading
+RSMeans.
+
+**What fell out of it, with nothing instructed:**
+
+    highest and best use, by demand decile      before            after
+      top decile (FAR 14)               industrial 99%    office 87%, retail 13%
+      second and third                  industrial 99%    retail 74%, office 26%
+      middle                            industrial 99%    industrial 100%
+      bottom third                      industrial 99%    nothing bids
+
+    sites that pencil (pnpm devyield)   office 0/1363     office 59/1363
+                                        multifamily 3     multifamily 66
+
+Industrial moved to where industrial belongs. The spatial economics were never
+written down anywhere; they emerged once the cost table stopped lying.
+
+**Also fixed on the same thread, each one found by reading rather than
+measuring:**
+
+- The height ladder was written out FOUR times (value.ts, dev.ts twice,
+  rivals.ts). Four copies of one quantity that happened to agree — changing the
+  cost base alone would have moved one and left three, silently. One
+  `heightPremium()` now, and the curve is real (1.28 -> 1.85 at the top).
+- `devPencils` — the thing that decides CITY supply — read index ratios against
+  a single class-blind `BASE_YOC = 0.073` and a hurdle taken from a DEBT index.
+  It never touched `HARD_COST_PSF`, so a cost table wrong by a factor of two was
+  invisible to it, and one hurdle served office at CAP_BASE 8.50 and flats at
+  5.60 — 270bp too loose for one and 70bp too strict for the other at the same
+  time. It is a real pro forma now, in value.ts with the tables it needs, and it
+  underwrites at `locIdxDevP90` because a city builds on its good corners: asked
+  at the mean, multifamily yields 5.28% against a 6.55% hurdle and supply stops
+  dead while devyield finds 66 sites that clear.
+- `rivals.ts` gated every named firm's groundbreak on `devPencils(s.econ)` with
+  the default argument, so flats, sheds and shops were all gated on OFFICE
+  economics. `dev.ts:2288` found and fixed this identical bug on the teardown
+  path, measured it, wrote it down — and this path was left open. Sequencing
+  fault: the class was knowable thirteen lines later.
+- `startOwnJob` was the one of four groundbreak paths that never decremented
+  `econ.startOwed`, so the town carried a permanent phantom backlog for every
+  tower the street built — which then ordered an extra crane AND hired extra
+  trades, raising the cost index for everybody.
+- The management fee was missing from BOTH development pro formas. `noiYr`
+  charges `MGMT_FEE` on EGI; the land residual and `planDevelopment` computed
+  EGI minus opex and stopped, so a building earned 4% of EGI more while it was
+  being underwritten than the day it opened.
+
+**STILL OPEN on this thread, in severity order.** These came out of a seven-agent
+read of the engine and each has a file:line; none is measured yet.
+
+1. **The rent belief runs in OPPOSITE directions in the two models that read
+   `rentExp`.** `market.ts:1736` amplifies away from the lagging belief (up to
+   +45%); `value.ts:379` damps toward it (the exact reciprocal ratio). Both
+   carry a comment arguing its own direction is the realistic one. Both cannot
+   be right about the same month. A third model reads neither and a fourth reads
+   spot — four readings of "the rent a developer underwrites".
+2. **Three hurdles for the same building, 270bp apart, and the ordering inverts
+   by class.** `devPencils` now uses cap x (1+DEV_MARGIN); `dev.ts:877` uses
+   `exitCap + 0.75`; the residual uses `value/(1+DEV_MARGIN)`. Pick one.
+   Note `dev.ts:877` gates NOTHING — it only sets an advisory string.
+3. **`cityValueToReplacement` (dev.ts:583)** — the brake on the entire city
+   pipeline — converts rent to NOI with a flat class-blind `0.62` for four
+   classes whose recovery rates are 0.88/0.92/0.50/0. Wrong by 13% to 38% by
+   class, and `dev.ts:2490` admits the brake's centring constant was moved from
+   0.80 to 0.55 to accommodate the resulting bias. Fake #1 sitting on fake #5.
+   The recentred expression is also hand-copied into `actions.ts:507`.
+4. **`claimJob` (rivals.ts:308) runs no pro forma at all** — no yield, no cap,
+   no vacancy, no replacement cost — and then buys the dirt at `landValue x
+   rrange(1.02, 1.18)`, a premium over a price defined as break-even.
+5. **`planDevelopment` counts the cycle twice with opposite sign**: through-cycle
+   land in the denominator (the residual carries `capExp` and `rentExp`), spot
+   exit cap in the numerator (dev.ts:872).
+6. **`plateRentMult` is exactly 1.00 for every site in the residual**, because
+   `plateOf` returns the reference plate when `bldgArea` is 0 — so the rent
+   premium assemblage buys is invisible in the one place land is priced, while
+   `value.ts:159` claims the opposite.
+7. **`tickZoning` (zoning.ts:73)** sets citywide FAR — and therefore every
+   residual and every land price — from office vacancy and office ASKING rent
+   alone. No cost term, no cap rate, no other class.
+
+**And the constant audit's answer to "is this simulated or arranged".** Of 263
+named constants perturbed +-15% with the engine rebuilt each time: **121 move a
+headline output, 142 are INERT** (dead, or a clamp downstream is load-bearing),
+0 are unguarded. Of the 121 that matter: 12 cited, 40 claimed, 14 reasoned,
+**55 bare**. The highest-leverage bare ones, with elasticity:
+
+    PEAK_RENT_MULT      value.ts:217     1.25    5.15   the holder's option bid
+    PARTICIPATION       market.ts:522    0.58    5.72
+    LISTING_LIFE_M      sim.ts:30           6    5.69
+    COVERAGE_LADDER     value.ts:135     0.35    5.45   (four of its rungs are in the list)
+    OPEX_FIXED          value.ts:1046    0.30    5.04
+    MAINTENANCE_SHARE   dev.ts:2140      0.45    4.82
+    MOMENTUM            demand.ts:90    0.055    4.68
+    SOFT_COST           value.ts:187     0.16    4.16
+    RATE_SPREAD         rivals.ts:181     1.9    4.04
+
+The classifier is textual and deliberately under-credits: it looks in three
+places a reader would look and grades what it finds, so a real anchor written
+somewhere else reads as BARE. `M_PER_DEG_LAT = 111_320` is in the list and is a
+fact about the Earth. Read the comment the tool prints before acting on a row.
+**142 inert out of 263 is the other half of the finding** and nobody has looked
+at it yet.
+
+---
+
 The card no longer computes anything. `residualScheme` returns the winning
 scheme *and* its working, `residualLandPsf` is the same call with the working
 discarded, `landRead` does the same for `landPsfNow`, and the parcel card

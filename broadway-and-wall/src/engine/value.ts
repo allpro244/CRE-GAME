@@ -6,7 +6,7 @@ import type { Condition, Econ, GameState, Holding, Sector, Tenant } from "./type
 import { serviceSpec } from "./types";
 import type { BuiltClass } from "./types";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { industryStress, NATURAL_VAC } from "./market";
+import { industryStress, NATURAL_VAC, CAP_BASE } from "./market";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -438,7 +438,15 @@ export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): Res
     const occ = use === "multifamily" ? 0.95 : 0.90;
     const opex = opexPsf(use, econ, false);
     const recov = RECOVERY_RATE[use] ?? 0;
-    const noiPsf = rent * occ - opex * (1 - recov * occ);
+    // SOMEBODY HAS TO MANAGE THE BUILDING, AND THIS PRO FORMA WAS NOT PAYING
+    // THEM. `noiYr` — what the tape, the lender, `assetValue` and the player's
+    // own income statement all read — charges MGMT_FEE on effective gross
+    // income. The land residual computed EGI minus opex and stopped, so the
+    // same building earned 4% of EGI more while it was being underwritten than
+    // it did the day it opened, which flattered the price of every lot in the
+    // city by the capitalised value of a fee that gets charged anyway.
+    const egi = rent * occ + opex * recov * occ;
+    const noiPsf = egi - opex - egi * MGMT_FEE;
     if (!(noiPsf > 0)) continue;
 
     // Property tax is charged on the finished value, so value and tax define
@@ -526,6 +534,69 @@ export type LandRead = {
   winner: "builder" | "holder" | "texture";
   scheme: ResidualScheme | null;
 };
+
+/**
+ * DOES BUILDING PAY, CITY-WIDE, CLASS BY CLASS — one pro forma, read by
+ * everyone who can dig a hole.
+ *
+ * The distribution half of that sentence was fixed a while ago and the pro
+ * forma half was not. This used to live in market.ts and read nothing real:
+ *
+ *     underwritten = rentIdx[k] / RENT_BASE[k]
+ *     required     = rateEma/100 + DEV_SPREAD          // 7.25%, class-blind
+ *     yoc          = BASE_YOC * underwritten / costIdx // 7.3% base, class-blind
+ *
+ * Three faults in three lines. It never touched HARD_COST_PSF, so a cost table
+ * that was wrong by a factor of two was invisible to the thing deciding how
+ * much got built. It never touched the class's own cap rate, so one hurdle
+ * served office at CAP_BASE 8.50 and flats at 5.60 — about 270bp too loose for
+ * one and 70bp too strict for the other, in opposite directions, at the same
+ * time. And it measured the hurdle against a DEBT index, when what a developer
+ * needs to clear is the yield the finished building will trade at.
+ *
+ * So it is a pro forma now, built from the same tables the residual and the
+ * desk read: the class's own effective rent, its own opex, its own recovery,
+ * the management fee that `noiYr` charges, its own hard cost, and a hurdle of
+ * its own exit cap plus the developer's margin — the same DEV_MARGIN the land
+ * residual takes out before it prices dirt. When the three models disagree now
+ * it is because they are looking at different sites, not different worlds.
+ *
+ * WHERE it underwrites matters as much as what. A city builds on its good
+ * corners, so this asks the question at `locIdxDevP90` — the ninth decile of
+ * the town's buildable lots — through the same `locationRentMult` every other
+ * rent in the engine goes through, which is what gives each class its own
+ * prime-to-fringe spread. Asked at the mean instead, multifamily yields 5.28%
+ * against a 6.55% hurdle and city supply stops dead, while `pnpm devyield`
+ * finds 66 multifamily sites that clear. The mean site is not where anybody
+ * builds.
+ *
+ * The response curve is unchanged and it is a SHAPE PARAMETER, stated as such:
+ * appetite is a multiplier rather than a gate because a developer with a site
+ * and a conviction still builds into a thin margin — he just does it less
+ * often — and a negative margin stops him dead.
+ */
+export function devPencils(e: Econ, k: BuiltClass = "office"): number {
+  const pivot = e.locIdxMeanBy?.[k] ?? e.locIdxMean ?? 0.62;
+  const shape = LOC_SPREAD[k] ?? LOC_SPREAD.office;
+  const where = e.locIdxDevP90 ?? e.locIdxMean ?? 0.62;
+  const locMult = Math.min(shape.max, Math.max(shape.min, Math.pow(where / Math.max(0.01, pivot), shape.exp)));
+
+  const rent = (e.effRentIdx?.[k] ?? e.rentIdx?.[k] ?? 0) * locMult;
+  if (!(rent > 0)) return 0;
+  const occ = k === "multifamily" ? 0.95 : 0.90;
+  const opex = opexPsf(k, e, false);
+  const recov = RECOVERY_RATE[k] ?? 0;
+  const egi = rent * occ + opex * recov * occ;
+  const noiPsf = egi - opex - egi * MGMT_FEE;
+  if (!(noiPsf > 0)) return 0;
+
+  // A city's infill is low-rise; the tower is the exception and it prices
+  // itself through `heightPremium` where it is actually planned.
+  const costPsf = HARD_COST_PSF[k] * e.costIdx * (1 + SOFT_COST) * (1 + CONTINGENCY);
+  const yoc = noiPsf / Math.max(1, costPsf);
+  const required = ((e.capRate?.[k] ?? CAP_BASE[k]) / 100) * (1 + DEV_MARGIN);
+  return clamp((yoc / required - 1) * 3.2 + 0.55, 0, 2.2);
+}
 
 export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
   return landRead(rec, econ).psf;

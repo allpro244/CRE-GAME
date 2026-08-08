@@ -271,16 +271,13 @@ const RATE_FLOOR = 1.45, RATE_CEIL = 23.0;
  *
  * One pro forma, read by everyone who can dig a hole. That is the whole fix.
  */
-export function devPencils(e: Econ, k: BuiltClass = "office"): number {
-  const rentIdx = e.rentIdx?.[k] ?? RENT_BASE[k];
-  const underwritten = rentIdx / RENT_BASE[k];
-  const required = (e.rateEma ?? e.indexRate) / 100 + DEV_SPREAD;
-  const yoc = BASE_YOC * (underwritten / Math.max(0.2, e.costIdx));
-  // Expressed as a multiplier on appetite rather than a hard gate, because a
-  // developer with a site and a conviction still builds into a thin margin —
-  // he just does it less often, and a negative margin stops him dead.
-  return clamp((yoc / required - 1) * 3.2 + 0.55, 0, 2.2);
-}
+// The pro forma itself lives in value.ts, with the cost table, the opex table,
+// the recovery table and the management fee — the things a pro forma is made
+// of. This module cannot import them (value.ts imports this one), and the old
+// version's whole defect was that it did not need to: it worked from index
+// RATIOS against a single class-blind BASE_YOC and never touched a real
+// number. See `devPencils` in value.ts.
+export { devPencils } from "./value";
 
 // Each rebased DOWN by the average value of the new vacancy term below, so
 // CAP_BASE keeps meaning "the class's long-run average cap" rather than "its
@@ -634,8 +631,20 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     // stock's mean now, so "a good industrial location" means what a tenant
     // shopping for a shed means by it.
     const wBy: Record<string, number> = {}, dBy: Record<string, number> = {};
+    // ...AND WHERE A DEVELOPMENT SITE ACTUALLY IS, which is not the mean of
+    // anything. This walk skips land, and land is the only thing anybody
+    // builds on. `devPencils` used to underwrite the city's supply at an
+    // ordinary address and that is the wrong question: whether a class gets
+    // built is a fact about the TOP of the location distribution, not the
+    // middle. Measured at the mean, multifamily yields 5.28% against a 6.55%
+    // hurdle and city supply would have stopped dead — while `pnpm devyield`
+    // finds 66 multifamily sites that clear, all of them good ones.
+    const landIdx: number[] = [];
     for (const bbl in parcels) {
       const r = parcels[bbl];
+      if (r && r.class === "land" && r.lotArea > 1500) {
+        landIdx.push(Math.pow(Math.max(0, r.demandScore) / 100, 1 / 1.9));
+      }
       if (!r || r.class === "land" || !r.bldgArea) continue;
       const idx = Math.pow(Math.max(0, r.demandScore) / 100, 1 / 1.9);
       const vin = Math.min(1.7, Math.max(0.5, 0.5 + Math.max(0, 2000 - (r.yearBuilt || 1960)) / 80));
@@ -645,6 +654,15 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     }
     econ.locIdxMean = wSum > 0 ? +(dSum / wSum).toFixed(4) : 0.62;
     econ.vintageMean = wSum > 0 ? +(vSum / wSum).toFixed(4) : 1.0;
+    // The ninth decile of the buildable sites — "a good corner in this town",
+    // in the same units as locIdxMean, so the same locationRentMult expression
+    // reads it. A property of the MAP, computed once: the set of vacant lots
+    // shifts slowly and recomputing it every month for every class would cost
+    // more than the answer moves.
+    landIdx.sort((a, b) => a - b);
+    econ.locIdxDevP90 = landIdx.length
+      ? +landIdx[Math.floor(0.90 * (landIdx.length - 1))].toFixed(4)
+      : econ.locIdxMean;
     econ.locIdxMeanBy = {
       office: (wBy.office ?? 0) > 0 ? +(dBy.office / wBy.office).toFixed(4) : econ.locIdxMean,
       retail: (wBy.retail ?? 0) > 0 ? +(dBy.retail / wBy.retail).toFixed(4) : econ.locIdxMean,

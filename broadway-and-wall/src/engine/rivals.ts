@@ -1270,8 +1270,6 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   // same hurdle the anonymous quota reads — see market.devPencils — and wiring
   // the street to it is what makes a rate shock reach the skyline instead of
   // stopping at the one pro forma nobody on this street was reading.
-  if (rng(s) >= 0.011 * BUILD_APPETITE[r.style] * phaseMult * ci * devPencils(s.econ)) return;
-
   // the best lot they own, by what the neighbourhood has become
   let best: { bbl: string; rec: ParcelRecord } | null = null, bestScore = -1;
   for (const bbl of r.bbls) {
@@ -1288,6 +1286,16 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   // two-storey shop on it — it gets shops at grade with something above.
   if (use === "retail" && retailWantsMixed(rec)) use = "mixed";
   const lead = dominantOf(devMix(use));
+  // ...AND THE HURDLE IS THE HURDLE FOR THE THING THEY ARE ACTUALLY BUILDING.
+  // This test used to sit thirteen lines above, before the class was known, so
+  // it called `devPencils(s.econ)` and took the default argument: every named
+  // firm's decision to put up flats, sheds or shops was gated on OFFICE
+  // economics. dev.ts:2288 found and fixed exactly this bug on the teardown
+  // path — "the whole city's wrecking ball was gated on office economics by an
+  // accident of a default argument" — measured it, wrote it down, and this
+  // path was left open. It is a sequencing fault, not a modelling one: the
+  // class was always knowable, just thirteen lines too late.
+  if (rng(s) >= 0.011 * BUILD_APPETITE[r.style] * phaseMult * ci * devPencils(s.econ, lead)) return;
   const farMax = farMaxFor(rec);
   const frac = Math.min(0.95, 0.4 + rng(s) * 0.45);
   let sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
@@ -1330,6 +1338,21 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   for (const [u, share] of Object.entries(prog)) {
     const usf = Math.round(sf * (share as number));
     if (usf > 0) s.econ.cohorts[u as BuiltClass].push({ m: deliverM, sf: usf });
+    // ...AND OFF THE ORDER BOOK, WHICH THIS PATH ALONE WAS NOT DOING.
+    // Four paths break ground in this city. Three of them net the delivered
+    // square footage off `startOwed` so the space market stops asking for
+    // space it is about to get — the anonymous starts (dev.ts:2646), the
+    // teardown replacements (dev.ts:2393) and the player (dev.ts:978). A named
+    // firm building on its own land pushed the cohort and skipped this line,
+    // so the town carried a permanent phantom backlog for every tower the
+    // street put up. The leak is one-sided downstream and it compounds:
+    // `wanted = owed / TYPICAL_SF` orders an extra crane, and the same `owed`
+    // feeds crew utilisation, which hires extra trades and raises the
+    // construction cost index for everybody. dev.ts:2385 diagnosed this exact
+    // fault on the teardown path and called it "the biggest of them".
+    if (usf > 0 && s.econ.startOwed) {
+      s.econ.startOwed[u as BuiltClass] = Math.max(0, (s.econ.startOwed[u as BuiltClass] ?? 0) - usf);
+    }
   }
   s.news.unshift({
     q: s.month, kind: "event",

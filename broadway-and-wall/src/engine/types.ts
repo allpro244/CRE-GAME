@@ -1020,6 +1020,10 @@ export interface Econ {
   locIdxMean?: number;
   /** Per-class location pivots — a shed competes with sheds, not with towers. */
   locIdxMeanBy?: Record<BuiltClass, number>;
+  /** The ninth decile of the town's BUILDABLE lots by location — where a city
+   *  actually builds, as opposed to where its average building already is.
+   *  Set once from the parcel table; see `devPencils`. */
+  locIdxDevP90?: number;
 
   // --- THE CLOSED LOOPS -----------------------------------------------------
   // Everything below is derived state for an economy that pulls on itself.

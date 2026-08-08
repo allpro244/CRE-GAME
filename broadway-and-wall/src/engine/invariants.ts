@@ -272,17 +272,27 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
       bad("listing", `approach ${bbl}`, `owner asking ${(a.ask / 1e6).toFixed(2)}M against a ${(v / 1e6).toFixed(2)}M appraisal`);
     }
   }
-  // NOBODY LEASES A CLOSET.
+  // NOBODY LEASES A CLOSET — BUT A SMALL BUILDING IS NOT A CLOSET.
   //
   // The 2,000 sf commercial floor was enforced in four separate places in
   // leasing.ts and leaked through three of them, and no invariant ever looked
   // — so 30.5% of an inherited rent roll could sit under the floor and nothing
   // said a word. A rule worth having in four places is worth checking once.
+  //
+  // Once, and against the right number. This asserted the CITY-WIDE norm on
+  // every tenancy, including tenancies in buildings smaller than the norm —
+  // and the same rule was ALSO checked forty lines below at 2,000 rather than
+  // 1,900, which is the same quantity with two answers. A 692 sf office
+  // building let to one firm is not a closet, it is the whole building; see
+  // minTenancySf, which is what leasing.ts now enforces.
   for (const h of Object.values(s.holdings)) {
+    const rec = resolveRec(parcels, s, h.bbl);
+    if (!rec) continue;
     for (const t of h.tenants) {
-      const floor = t.use === "multifamily" ? 400 : 1_900;   // a little slack for rounding
+      const use = t.use ?? leasableUses(rec)[0] ?? "office";
+      const floor = minTenancySf(rec, use) - 1;    // a little slack for rounding
       if (t.sf > 0 && t.sf < floor) {
-        bad("tenancy", `${h.bbl} ${t.name}`, `${Math.round(t.sf)} sf tenancy, under the ${floor} sf floor for ${t.use ?? "commercial"}`);
+        bad("tenancy", `${h.bbl} ${t.name}`, `${Math.round(t.sf)} sf tenancy, under the ${floor} sf floor for ${use}`);
       }
     }
   }
@@ -318,15 +328,10 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
       if (monthly > 0 && d > monthly * 3.2) {
         bad("deposit", `${h.bbl} ${t.name}`, `deposit is ${(d / monthly).toFixed(1)} months of rent`);
       }
-      // NOBODY DEMISES A CLOSET. The 2,000 ft commercial floor was enforced in
-      // the development planner and in the UI slider and leaked in three
-      // separate places in the leasing code, so a third of every inherited
-      // rent roll sat below it and nothing noticed for weeks. A rule with no
-      // invariant behind it is a suggestion.
-      const cls = t.use ?? (parcels[h.bbl]?.class as never);
-      if (cls && cls !== "multifamily" && t.sf > 0 && t.sf < 2_000 - 1) {
-        bad("suite", `${h.bbl} ${t.name}`, `${Math.round(t.sf)} sf commercial tenancy, below the 2,000 sf floor`);
-      }
+      // The demise floor is checked ONCE, above, against the building's own
+      // smallest tenancy. A second copy lived here at 2,000 against the other
+      // one's 1,900 — one rule, two numbers, and whichever fired first was the
+      // rule. See the block that begins NOBODY LEASES A CLOSET.
     }
     // A building you have stopped letting must not be signing anybody.
     if (h.leasingHold && s.lois.some((l) => l.bbl === h.bbl)) {
@@ -348,6 +353,18 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
   for (const [bbl, b] of Object.entries(s.built ?? {})) {
     const at = `built ${bbl}`;
     if (!parcels[bbl]) { bad("built", at, "not a real parcel"); continue; }
+    // A CLEARED LOT IS A `built` RECORD, AND IT IS SUPPOSED TO BE EMPTY.
+    //
+    // A demolition writes `{ class: "land", bldgArea: 0, floors: 0,
+    // yearBuilt: 0 }` — see dev.ts, "the lot is dirt again" — because that is
+    // how every reader downstream learns the generator's building is gone.
+    // These three lines called each of those fields a fault, so ONE teardown
+    // printed three violations and every long run reported hundreds. A sweep
+    // whose findings are all false is a sweep nobody can read.
+    if ((b.class as string) === "land") {
+      if (b.bldgArea !== 0) bad("built", at, `cleared lot carrying ${b.bldgArea} sf`);
+      continue;
+    }
     if (!fin(b.bldgArea) || b.bldgArea <= 0) bad("built", at, `${b.bldgArea} sf`);
     if (!fin(b.floors) || b.floors < 1) bad("built", at, `${b.floors} floors`);
     if (b.yearBuilt < 1800 || b.yearBuilt > 2200) bad("built", at, `built in ${b.yearBuilt}`);

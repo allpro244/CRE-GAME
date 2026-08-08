@@ -45,12 +45,21 @@ work in it. It was always safe on the remote. Push early and often.
 |---|---|
 | `pnpm gate` | passing — 3/3 measurements in band, 1/1 identities hold |
 | `conserve` | clean, all ten ledger categories live |
-| A (location spread) | **breached — 1.94x against a 2.0x band, see below** |
-| F (income anchor) | **breached — industrial +1.99%/yr, retail −1.62%/yr, see item 2** |
+| `pnpm test` (invariants) | **clean — 5,959 months, 5 bots × 2 seeds, no violations.** It reported 239 the day before, and all 239 were the sweep being wrong |
+| A (location spread) | in band — was breached at 1.94x |
+| F (income anchor) | **breached on ONE leg — industrial +1.95%/yr.** Retail was the other leg at −1.62%/yr and now reads +0.68%, inside the band |
 | B–E, G, H, I, J–M | in band |
 | `pnpm crews` | new — the construction market's own harness, see item 1 |
 | `pnpm vactails` | new — both vacancy tails: which end is a market and which is a clamp |
 | `pnpm sectorexit` | new — does the exit ratchet fire on exoduses or on shortages |
+
+> **Since this was written, retail came back inside the band on its own.** It
+> was never a rent-model fault. `COMMERCIAL_SUITE_MIN` was condemning every
+> shopfront smaller than itself, so 27% of the city's commercial legs — mostly
+> retail bays at grade — could hold no tenant in any year. Retail rents were
+> being measured on a market a quarter of which was structurally dark. With the
+> shops lettable, retail reads +0.68%/yr. Industrial is unchanged at +1.95%
+> and the paragraph below still describes it. See commit `b2a47cb`.
 
 **F's breach is exposed, not created.** Retail was already outside the band at
 `69de9bf` (−1.09%/yr). Industrial's is new and it is the point: the exit ratchet
@@ -77,6 +86,62 @@ real.
 
 Ordered by what I would do next, not by number. Items 1–4 are the ones I
 believe are load-bearing for everything else.
+
+### 0. Stress [B] — THE WORST OF IT IS FIXED, and what is left may be the test
+
+Stress check [B] — "buying a district must move its ground" — read **−38.9%**,
+a wire running backwards, and chasing it properly cost most of a session and
+turned up four separate faults. It now reads **−17.6%**. Still negative, still
+WEAK, and here is exactly where it stands so nobody re-derives this.
+
+**What was wrong, in the order the evidence came out.**
+
+The comps wire was the obvious suspect and it was innocent — measured, the
+comp mark on a bought-out district moves 0.911→1.118, 0.980→1.027, 1.030→1.043
+against a control that drifts down. It runs forward. (It did have a real
+dating fault, fixed in `f784a5e`: it divided each print by TODAY'S appraisal
+against prints up to three years old, so the ratio carried the district's own
+growth, inverted.)
+
+Paired per-parcel attribution across four seeds named the real channel. Every
+landRead term was noisy except one: building area moved **0.0%** in every seed,
+and the district's **demand score moved −9%, −11%, −11%, −24%**. The player's
+own money was making their neighbourhood worse. `occupiedStock` credited an
+unowned building with its CLASS AVERAGE and an owned one with its ACTUAL RENT
+ROLL — measured at the instant of purchase with no month passing, the block
+lost 13.5% of the building's floor area the moment the deed moved, on 219 of
+261 closings. Fixed per building (`b2a47cb`).
+
+Under that, the thing worth the whole hunt: **27% of the city's commercial legs
+could never hold a tenant, in any year**. `COMMERCIAL_SUITE_MIN` was doing two
+jobs — how finely a tower demises, and whether a small building is lettable at
+all — and a 1,634 sf office building has no space above a 2,000 sf floor. Plus
+`toSuites` comparing an integer-rounded 1,397 against a float floor of
+1,397.186. Also `b2a47cb`. This is what put retail's rent growth back in F's
+band.
+
+**What is left, and the honest reading.**
+
+[B]'s estimator cannot resolve its own signal. Measured with no whale anywhere:
+the control gap alone ranges **1.12x to 4.46x across eight seeds** (sd 1.02) on
+the same city and the same district — so a ratio of medians on three seeds is
+mostly seed. A paired per-parcel estimator, which removes composition exactly
+because the same parcel exists in both arms, gives a median of **−14.8%** with
+a spread from −33% to +54%. So there IS a residual negative and it is smaller
+than the headline.
+
+Before fixing the estimator, settle whether the test's PREMISE is right, and I
+do not think anyone has. [B] demands land go UP when a buyer absorbs a
+district. That is the asset market's answer. The land residual's answer is not
+obviously the same: `dev.ts:2362` skips any lot the player owns — "never yours"
+— so a whale who buys 200 of 686 lots and never builds freezes 30% of the
+district out of renewal for twenty-five years, and a district that stops being
+redeveloped is worth less ground. That is land banking, it is real, and the
+test may be scoring it as a fault. Decide that question first; do not touch the
+estimator to make a number move.
+
+Two things [B] measures DO pass and are worth keeping: turnover falls to 0.38x
+the control (a whale is a sink) and the shelf empties, −7.0 listings.
 
 ### 1. The rent cycle — PART DONE, and the headline number got worse
 Half of this is fixed and the fix is committed (`cdbd1bd`, and see

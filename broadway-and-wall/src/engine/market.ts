@@ -2561,6 +2561,46 @@ export function tickEcon(s: GameState) {
      * CLAUDE.md's rule applies to whatever comes back: DO NOT tune a
      * coefficient to put the cycle back. That would be a constant chosen to
      * make an outcome look right, which is the first thing it forbids.
+     *
+     * ---------------------------------------------------------------------
+     * RE-TESTED after the order book was made real, and STILL PARKED — but the
+     * prop is measurably weaker and the reason it is still needed has a name.
+     *
+     * The diagnosis above was that `orders -> breaks` collapsed because the
+     * phantom rent push was the only thing tying the two series together. That
+     * implied a prediction: give the leg a mechanism of its own and the prop
+     * should come out. `useForZone` now picks the use from the order book's own
+     * composition and `econ.entitling` gives the queue a six-to-eighteen month
+     * duration, so the prediction was testable. Measured on EIGHT towns, which
+     * is the power this leg needs — four towns flattered it:
+     *
+     *                        as coded      as documented
+     *   orders -> breaks    +14mo r 0.37   +14mo r 0.25   <-- NO SIGNAL
+     *   legs out of order         2              4
+     *
+     * So the prop did weaken: r fell to 0.16 when this was last tried and only
+     * to 0.25 now, with the lag staying put at +14 instead of flipping to -19.
+     * Two mechanisms took most of the load off it. It is not off yet.
+     *
+     * THE LOOP LENGTH LOOKED LIKE A WIN AND IS NOT. It reads 116mo (9.7 years),
+     * inside the real 7-12 band where the current engine reads 6.8. But the
+     * loop is the SUM of the legs, and `value -> orders` lands at 57mo against
+     * a MAXLAG of 60 — three months off the search boundary, which is the
+     * file's own definition of unidentified. A leg whose argmax has run out of
+     * road is not a long lag, and a loop length built out of one is not a cycle.
+     *
+     * It also starts a rail that had never bound: `rail.cap.multifamily.lo`
+     * goes from 0 to 7.3% of months on the 3.4% cap-rate floor, with median
+     * land -10% and the dead-leg share up 5.9%.
+     *
+     * WHAT THE PHANTOM IS PROPPING UP IS UNDERWRITING, and that is the next
+     * piece of work rather than this line. The measurement was already here:
+     * with the phantom gone the share of lots a builder can afford falls 4.26%
+     * -> 1.38% and median land 42%. Development stops pencilling, so the cranes
+     * stop, so the order book stops predicting groundbreaks. The fault is that
+     * ground-up development in this engine does not pencil on honest rents and
+     * has been carried by a rent push that is wrong half the time. Fix that and
+     * this line changes itself.
      */
     unmet[k] = Math.max(0, (e.pool[k] - e.occupied[k] - e.sublet[k]) / Math.max(1, e.stock[k]));
     e.absorb12[k] = e.absorb12[k] * (11 / 12) + absorb;

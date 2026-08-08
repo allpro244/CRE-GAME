@@ -105,9 +105,37 @@ export const REF_LOT_SF = 4950;
 /** How much of a floor the core, the risers and the corridor take. */
 function coreLoss(plateSf: number): number { return 0.07 + 420 / Math.max(400, plateSf); }
 const REF_CORE_LOSS = coreLoss(REF_PLATE_SF);
-/** Rentable feet per gross foot built, against the median plate. */
+/**
+ * Rentable feet per gross foot built, against the median plate.
+ *
+ * THE CEILING WAS 1.14 AND THAT IS NOT A THING A RENTABLE RATIO CAN DO. The
+ * expression is normalised so the median 4,300 sf plate reads exactly 1.0,
+ * which makes it an INDEX of efficiency against that plate rather than the
+ * ratio its name and docstring promise — and above the median it went over one:
+ *
+ *     plate  8,000 sf   1.054        plate 20,000 sf   1.092
+ *     plate 12,000 sf   1.075        plate 30,000 sf   1.101
+ *
+ * `planDevelopment` then computes `sf = gsf * eff` and stores that as the
+ * building's area, so a big-plate office was recorded with up to 10% MORE
+ * rentable feet than the gross it was priced, costed and zoned against. Two
+ * things follow and both are visible in the game. The development card computes
+ * FAR on gross and reads inside the envelope; the parcel panel computes it on
+ * the stored figure and reads OVER it, so the player's own building appears to
+ * breach the zoning it was granted. And `invariants.ts` flags "overleased" at
+ * `leased > bldgArea`, which means those buildings could be let past their own
+ * gross area — core, stairs and risers included.
+ *
+ * Capped at 1.0 here rather than renormalised, deliberately. Removing the
+ * normalisation altogether is the correct end state — the true ratio is
+ * `1 - coreLoss(plate)`, which runs 0.72 to 0.92 and is exactly the range real
+ * office buildings run at — but that shrinks EVERY building's rentable area by
+ * about 17% and moves every rent, value and cap rate calibrated against it.
+ * That is a recalibration with its own A/B, not a bracket change. This cap is
+ * the part that is unambiguous: rentable cannot exceed gross.
+ */
 export function plateEfficiency(plateSf: number): number {
-  return clamp((1 - coreLoss(plateSf)) / (1 - REF_CORE_LOSS), 0.78, 1.14);
+  return clamp((1 - coreLoss(plateSf)) / (1 - REF_CORE_LOSS), 0.78, 1.0);
 }
 
 // Who cares about a big floor. A shed cares most — a clear-span box IS the

@@ -114,11 +114,11 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 const TD = mkdtempSync(join(tmpdir(), "plate-"));
-writeFileSync(join(TD, "e.ts"), `export { towerMassing } from ${JSON.stringify(join(HERE, "..", "src", "map", "ThreeBuildings"))};\n`);
+writeFileSync(join(TD, "e.ts"), `export { towerMassing, plClipToLot } from ${JSON.stringify(join(HERE, "..", "src", "map", "ThreeBuildings"))};\n`);
 execFileSync(join(HERE, "..", "node_modules", ".bin", "esbuild"),
   [join(TD, "e.ts"), "--bundle", "--format=esm", "--platform=node", "--log-level=error",
    `--outfile=${join(TD, "e.mjs")}`, `--alias:@=${join(HERE, "..", "src")}`]);
-const { towerMassing } = await import(join(TD, "e.mjs"));
+const { towerMassing, plClipToLot } = await import(join(TD, "e.mjs"));
 
 const FAMS = ["exo", "stack", "carve", "blade", "shelf", "curveslab", "deepframe", "twist", "setback", "podium"];
 function inside(poly, ring) {                   // every vertex of poly inside ring
@@ -159,6 +159,11 @@ for (const cityId of ["newalden"]) for (const seed of [1, 7, 20261]) {
         const tRing = ring.map(([x, y]) => [cx + (x - cx) * (B / 0.78), cy + (y - cy) * (B / 0.78)]);
         const built = towerMassing(fam, tRing, cx, cy, 106.5, 30, 3.55, (n) => ((n * 2654435761) % 1000) / 1000);
         if (!built?.tiers?.length) continue;
+        // THE HARNESS MUST TEST THE REAL COMPOSITION. setPlayerBuildings clips
+        // every tier to the deed after towerMassing returns; a harness that
+        // called only the recipe would be measuring a shape the game never
+        // draws, and would have gone on reporting a defect that was fixed.
+        for (const t of built.tiers) t.fp = plClipToLot(t.fp, ring, cx, cy);
         towerRows.push({ fam, cov,
           plate: areaOf(built.tiers[0].fp) / want,
           off: Math.max(...built.tiers.map((t) => inside(t.fp, ring))) });
@@ -176,33 +181,46 @@ if (towerRows.length) {
       console.log(`    ${fam.padEnd(11)}${(cov * 100).toFixed(0).padStart(5)}%${q(v.map((r) => r.plate), 0.5).toFixed(3).padStart(16)}${(100 * q(v.map((r) => r.off), 0.9)).toFixed(0).padStart(15)}%`);
     }
   }
-  // WHAT IS ASSERTED: the dial must SCALE the tower. Each family keeps its own
-  // silhouette — exo splays its legs wider than the shaft on purpose, blade
-  // sets its base back — so tier-0 is a family constant times the promised
-  // plate, and what must hold is that the constant does not MOVE with the dial.
-  // It used to: with the plate fixed at 0.78 of the ring, tier-0 slid from 3.9x
-  // the promised plate at the 15% mark to 0.66x at 90%, which is the dial
-  // doing nothing at all.
+  // TWO ASSERTIONS NOW, AND THE SECOND ONE USED TO BE A CONFESSION.
+  //
+  // THE DIAL MUST SCALE THE TOWER, where the lot is not the binding constraint.
+  // Each family keeps its own silhouette — exo splays its legs wider than the
+  // shaft on purpose, blade sets its base back — so tier-0 is a family constant
+  // times the promised plate, and what must hold is that the constant does not
+  // MOVE with the dial. It used to: with the plate fixed at 0.78 of the ring it
+  // slid from 3.9x the promised plate at the 15% mark to 0.66x at 90%, which is
+  // the dial doing nothing at all.
+  //
+  // Checked between the 15% and 60% marks only, because above that THE DEED IS
+  // SUPPOSED TO BIND. At the top of the dial the plate approaches the lot and a
+  // silhouette that jogs or splays runs out of land — exo goes 1.482 to 1.012,
+  // stack 1.000 to 0.922, carve 0.919 to 0.839. That is not the dial failing to
+  // scale, it is the lot winning, and it is correct: you cannot build past your
+  // own boundary however much coverage you paid for.
   let drift = 0;
   for (const fam of FAMS) {
     const at = (c) => q(towerRows.filter((r) => r.fam === fam && r.cov === c).map((r) => r.plate), 0.5);
-    const a = at(0.15), b = at(0.60), c = at(0.90);
-    if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(c)) continue;
-    if (Math.max(a, b, c) / Math.max(1e-9, Math.min(a, b, c)) > 1.02) drift++;
+    const a = at(0.15), b = at(0.60);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+    if (Math.max(a, b) / Math.max(1e-9, Math.min(a, b)) > 1.02) drift++;
   }
-  // WHAT IS ONLY REPORTED, and why. A silhouette that jogs or rotates off a
-  // plate covering 90% of an irregular lot crosses the boundary — that is
-  // geometry, not a regression, and it is unchanged by the scaling above
-  // (16,242 readings here against 15,849 with the tower left alone). Buildings
-  // standing on the neighbour's land is a real defect and it is OPEN; it needs
-  // the tiers clipped to the deed, which is its own piece of work. Printed
-  // rather than asserted so nobody mistakes silence for absence.
+  // NOTHING IS BUILT ON THE NEIGHBOUR'S LAND. This was printed and not asserted
+  // because it could not be met: 16,242 readings put a tier outside the parcel,
+  // every one of them a building overhanging somebody else's dirt. plClipToLot
+  // pulls each vertex back along its own ray, so the silhouette keeps every
+  // angle and loses only the reach that was never yours — and the number is now
+  // zero, so it is a rule rather than a note.
   const offdeed = towerRows.filter((r) => r.off > 0.02).length;
-  console.log(`\n    dial-invariant families: ${FAMS.length - drift} of ${FAMS.length}   (all of them, or the dial is not scaling the tower)`);
-  console.log(`    OPEN, reported not asserted: ${offdeed} readings put a tier outside the parcel,`);
-  console.log(`    all of them at the upper end of the dial. The tiers need clipping to the deed.`);
-  if (process.env.OLD !== "1" && drift) {
-    console.error(`  ${drift} tower families change size relative to the dial instead of with it.`);
+  const capped = FAMS.filter((fam) => {
+    const at = (c) => q(towerRows.filter((r) => r.fam === fam && r.cov === c).map((r) => r.plate), 0.5);
+    return Number.isFinite(at(0.9)) && at(0.9) < at(0.6) * 0.98;
+  });
+  console.log(`\n    dial-invariant between the 15% and 60% marks: ${FAMS.length - drift} of ${FAMS.length}`);
+  console.log(`    families the DEED caps at the 90% mark: ${capped.length ? capped.join(", ") : "none"}   (correct — the lot wins)`);
+  console.log(`    tiers outside the parcel: ${offdeed}   (must be 0 — nothing is built on the neighbour's land)`);
+  if (process.env.OLD !== "1" && (drift || offdeed)) {
+    if (drift) console.error(`  ${drift} tower families change size relative to the dial instead of with it.`);
+    if (offdeed) console.error(`  ${offdeed} readings put a tier outside the parcel.`);
     process.exit(1);
   }
 }

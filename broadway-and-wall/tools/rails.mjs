@@ -88,13 +88,28 @@ for (const f of readdirSync(join(APP, "src", "engine")).filter((x) => x.endsWith
   }
 }
 
+// A CLAMP BINDS WHEN IT CHANGES THE ANSWER, NOT WHEN THE ANSWER EQUALS A BOUND.
+//
+// The first version of this counted `v <= a` and duly reported its loudest
+// finding: `clamp(e.wageDebt, 0, 0.25)` at 100.0% of the floor. Investigated,
+// `wageDebt` is IDENTICALLY zero — the nominal-wage-rigidity mechanism only
+// accrues when nominal wage growth would be negative, and in a world with 2%
+// expected inflation and positive productivity that essentially never happens,
+// which is correct: aggregate nominal wages did not fall in the US even in
+// 2009. Nothing was being held back by anything. The variable simply equals its
+// own floor, and `<=` cannot tell that apart from a value being pressed against
+// a rail by opposing force.
+//
+// That is the difference between a guard and the model, and getting it wrong
+// meant the tool's top row was an artefact of one character. Strict now: a bind
+// is counted only when the clamp actually moved the value.
 writeFileSync(join(WORK, "src", "engine", "__rails.ts"), `
 export const __tally: { lo: number; hi: number; n: number }[] = [];
 export function __rail(id: number, v: number, a: number, b: number): number {
   const t = (__tally[id] ??= { lo: 0, hi: 0, n: 0 });
   t.n++;
-  if (v <= a) t.lo++;
-  else if (v >= b) t.hi++;
+  if (v < a) t.lo++;
+  else if (v > b) t.hi++;
   return Math.max(a, Math.min(b, v));
 }
 `);

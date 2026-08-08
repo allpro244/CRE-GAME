@@ -611,21 +611,41 @@ reading the code there is no way to tell a guard from the model — both look li
 `clamp(x, a, b)`. The tool instruments every one of them in a scratch copy and
 plays three towns for fifty years.
 
-    38 are LOAD-BEARING (a bound reached in >= 1% of calls)
-    55 are guards
+    34 are LOAD-BEARING (a bound reached in >= 1% of calls)
+    59 are guards
     25 were never called at all
 
 The worst of them, and each is its own open question:
 
-    market:1658   100.0% at floor   e.wageDebt = clamp(e.wageDebt, 0, 0.25)
-    market:2249    76.3% at floor   `marketable`
-    market:1039    69.6% at floor   clamp((realPolicy - 0.022) * 0.70, 0, 0.09)
-    market:1398    56.6% at ceiling `trades` — construction employment share
-    market:1462    50.4% at ceiling multifamily `slack`
+    market:1039    69.6% at floor    clamp((realPolicy - 0.022) * 0.70, 0, 0.09)
+    market:1398    56.6% at ceiling  `trades` — construction employment share
+    market:2249    51.3% at floor    `marketable`
+    market:1462    50.4% at ceiling  multifamily `slack`
+    market:1413    47.7% at floor    slackTarget — the unemployment floor at 1.8%
+    market:2351    43.9% at floor    concTarget = clamp(gap * 11 + phaseNudge, 0, 1)
 
-`wageDebt` sitting on zero in 100% of months is not a clamp problem, it is a
-mechanism that never runs — a state variable that has never once left its floor
-in fifty years across three towns. That is the first one to look at.
+**AND THE FIRST VERSION OF THIS TOOL WAS WRONG, IN THE DIRECTION THAT MATTERS.**
+It counted `v <= a` as a bind, so its loudest finding was
+`clamp(e.wageDebt, 0, 0.25)` at 100.0% of the floor — reported here as "a
+mechanism that has never once run in fifty years". Investigated: `wageDebt` is
+IDENTICALLY zero. It only accrues when NOMINAL wage growth would be negative,
+and measured over 4 towns x 100 years that happens in essentially no months —
+expected inflation runs a 2.08% median and goes below zero in 4.9% of months,
+but productivity growth still carries nominal pay upward. Which is CORRECT:
+aggregate nominal wages did not fall in the US even in 2009, and downward
+nominal rigidity is exactly the reason. Nothing was being held back by anything.
+
+A variable that equals its own floor is not the same as a variable being pressed
+against a rail by opposing force, and `<=` cannot tell them apart. Strict now —
+a bind is counted only when the clamp actually MOVED the value — which dropped
+the load-bearing count from 38 to 34 and removed every no-op clamp
+(`e.sublet`, `e.occupied`, `e.cityVac` and `wageDebt` were all floors that a
+naturally-zero quantity was merely equal to).
+
+The wage mechanism is therefore a guard that never fires, which CLAUDE.md says
+is fine and should be left alone. It is written up here because the *tool* was
+the thing that needed fixing, and because the next person to read a 100% row
+should know that one character of it was the whole finding.
 
 **It caught its author within an hour of existing.** `devPencils` was rewritten
 this week into a real per-class pro forma, and the response curve wrapped around

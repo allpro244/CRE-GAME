@@ -753,6 +753,21 @@ export interface Bid {
 export interface Approach {
   q: number;           // when the owner was approached
   refused: boolean;
+  /**
+   * HOW LONG THIS ONE IS SHUT FOR, and it is not the same for everybody.
+   *
+   * Every refusal used to expire on the same six-month clock, so a seller who
+   * had politely declined and a seller you had insulted were back on the phone
+   * in exactly the same month — which is how "you can keep coming back to the
+   * same seller" and "sometimes it correctly refuses" ended up being the same
+   * mechanism seen at two different points on one timer.
+   *
+   * The engine already knew how badly each conversation ended — how far under
+   * their reserve the bid was, and how many times you had been back — and threw
+   * both away at the moment of refusal. This carries it. Absent on saves written
+   * before it existed, and on those the old six-month rule still applies.
+   */
+  coldUntilM?: number;
   ask?: number;        // if willing: their number, good for 4 quarters
   countered?: boolean; // you get one counter per approach
   inbound?: boolean;   // they called you, not the other way round

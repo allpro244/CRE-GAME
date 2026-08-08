@@ -16,6 +16,14 @@ import { sponsorStanding } from "./sponsor";
 export type PrepayKind = "open" | "stepdown" | "yieldmaint";
 
 export interface LoanProduct {
+  /**
+   * A TRANSITIONAL LENDER. Sizes on the stabilised business plan as well as on
+   * the income in place, and takes the larger — see sizeRest. Only the debt
+   * fund carries it, which is what a debt fund IS: the life company needs
+   * stabilised income in hand and the conduit needs a rated pool, and neither
+   * of them writes a lease-up. "They will lend on anything, at a price."
+   */
+  bridge?: boolean;
   id: string;
   label: string;
   lender: string;      // the institution behind the sheet
@@ -117,7 +125,7 @@ export const PRODUCTS: LoanProduct[] = [
     blurb: "The debt fund. They will lend on anything, at a price, in any market. The price is the point.",
     ltv: 0.80, spread: 4.10, floating: true, ioM: 36, amortYears: 30, termM: 36,
     uwDscr: 0.90, debtYield: 0.055, points: 0.020, recourse: false, prepay: "open", prepayM: 0,
-    minDSCR: 0.90, maxLTV: 0.92,
+    minDSCR: 0.90, maxLTV: 0.92, bridge: true,
   },
   {
     id: "mezz", label: "Cordage mezzanine · behind the senior", lender: "Cordage Debt Partners",
@@ -339,7 +347,19 @@ export interface Quote {
   concWhy?: string;
   /** The advance was truncated by the DESK's limit, not by anything about the building. */
   holdCapped?: boolean;
+  /** Sized on the business plan rather than on the income the building earns today. */
+  stabConstrained?: boolean;
 }
+
+/**
+ * WHAT A TRANSITIONAL ASSET IS WORTH WHEN THE PLAN IS DONE.
+ *
+ * The caller computes this because it is the only one holding the ParcelRecord.
+ * `noiYr` is the pro-forma stabilised NOI — the engine's own `noiYr(stabilised)`
+ * at market rents and the class's natural occupancy — and `value` is that
+ * capitalised at the building's own cap rate.
+ */
+export interface StabView { noiYr: number; value: number }
 
 /**
  * `street` sizes the loan for a borrower who is not the player: the sponsor
@@ -348,7 +368,7 @@ export interface Quote {
  * it. Everything else — the window, the desk's appetite, the three tests — is
  * the same arithmetic, because it is the same credit market.
  */
-export function quote(s: GameState, product: LoanProduct, price: number, noiYr: number, klass?: string, street = false): Quote {
+export function quote(s: GameState, product: LoanProduct, price: number, noiYr: number, klass?: string, street = false, stab?: StabView): Quote {
   // Capital availability moves the terms, not just the index. When the credit
   // window closes, spreads widen, advance rates come down and the desk
   // underwrites to a fatter coverage — all at once, which is what makes a
@@ -391,7 +411,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
     // in", and that is the whole defect: a quote with no reason is a dead
     // button. `holdCapped` carries the fact up to the panel.
     return {
-      ...sizeRest(s, product, Math.min(byLtv, product.maxLoan), price, noiYr, ratePct, tight),
+      ...sizeRest(s, product, Math.min(byLtv, product.maxLoan), price, noiYr, ratePct, tight, product.bridge ? stab : undefined),
       concWhy: conc.why,
       holdCapped: true,
     };
@@ -403,10 +423,35 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   if (product.uwDscr <= 0) {
     return { principal: Math.max(0, Math.round(byLtv)), ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why };
   }
-  return { ...sizeRest(s, product, byLtv, price, noiYr, ratePct, tight), concWhy: conc.why };
+  return { ...sizeRest(s, product, byLtv, price, noiYr, ratePct, tight, product.bridge ? stab : undefined), concWhy: conc.why };
 }
 
-function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: number, noiYr: number, ratePct: number, tight: number) {
+/**
+ * A LENDER WHO SIZES A LEASE-UP ON ITS IN-PLACE INCOME IS NOT LENDING ON IT.
+ *
+ * Every desk here underwrote the rent roll the building has today, which is
+ * right for permanent debt and wrong for a transitional asset. A 40%-let block
+ * throws off almost no NOI, so coverage and debt yield both size to nearly
+ * nothing and the quote comes back at a fraction of the price — while in life
+ * that is precisely the deal a bridge lender writes, because they are lending
+ * against the BUSINESS PLAN and pricing the risk that it fails.
+ *
+ * So a `bridge` product sizes a second way and takes whichever is larger:
+ *
+ *   in place    min(advance x basis, DSCR, debt yield)     — what it earns now
+ *   stabilised  min(advance x basis, STAB_LTV x stab value) — what it will earn
+ *
+ * The larger of the two needs no occupancy threshold to decide which applies,
+ * and that is why it is written this way rather than with a test for "is this
+ * transitional": on a stabilised building the stabilised value is the value,
+ * STAB_LTV is below the advance rate, and the in-place leg wins on its own. The
+ * bridge leg can only ever bind on an asset whose income is below its potential,
+ * which is the definition of the thing it exists for.
+ *
+ * The as-is advance still caps it. A lender lends against the lesser of cost and
+ * appraisal whatever the plan says — you cannot borrow the upside twice.
+ */
+function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: number, noiYr: number, ratePct: number, tight: number, stab?: StabView) {
   void s; void price;
   // DSCR gate: size the loan so underwriting NOI covers debt service
   const maxAnnualDS = Math.max(0, noiYr) / (product.uwDscr + 0.25 * tight);
@@ -422,15 +467,42 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
   // constraint far more often than LTV is.
   const dyFloor = product.debtYield * (1 + 0.35 * tight);
   const byDebtYield = dyFloor > 0 ? Math.max(0, noiYr) / dyFloor : Infinity;
-  const principal = Math.max(0, Math.round(Math.min(byLtv, byDscr, byDebtYield)));
+  const inPlace = Math.max(0, Math.round(Math.min(byLtv, byDscr, byDebtYield)));
+  // THE STABILISED LEG. Capped by the as-is advance as well, because the
+  // collateral today is still the collateral.
+  const byStab = stab && stab.value > 0
+    ? Math.max(0, Math.round(Math.min(byLtv, STAB_LTV * stab.value)))
+    : 0;
+  const principal = Math.max(inPlace, byStab);
+  const onPlan = byStab > inPlace;
   return {
     principal: product.minLoan && principal < product.minLoan ? 0 : principal,
     ratePct,
-    dscrConstrained: byDscr < byLtv && byDscr <= byDebtYield,
-    dyConstrained: byDebtYield < byLtv && byDebtYield < byDscr,
+    // When the plan is what sized it, the in-place tests did not bind and
+    // saying they did would send the borrower off to fix the wrong thing.
+    dscrConstrained: !onPlan && byDscr < byLtv && byDscr <= byDebtYield,
+    dyConstrained: !onPlan && byDebtYield < byLtv && byDebtYield < byDscr,
+    stabConstrained: onPlan,
     debtYield: principal > 0 ? Math.max(0, noiYr) / principal : 0,
   };
 }
+
+/**
+ * HOW FAR A BRIDGE LENDER WILL GO AGAINST A STABILISED VALUE.
+ *
+ * Sixty to sixty-five per cent of the value the building reaches when the plan
+ * is done, against a pro forma struck at the class's natural occupancy. That is
+ * the transitional/bridge market as it is actually quoted, and it is the number
+ * a value-add borrower solves their equity cheque from. It sits BELOW the
+ * as-is advance rate on purpose and by fact: a lender advances less against a
+ * number that has not happened yet than against one that has.
+ *
+ * A fact about the business, in the same register as the advance rates above.
+ * The upside it buys is bought at a price the engine already models — floating,
+ * three years, interest-only, two points, and a balloon that lands whether or
+ * not the building ever let.
+ */
+const STAB_LTV = 0.65;
 
 
 // `lev` scales the loan down from the lender's maximum — the player's dial.

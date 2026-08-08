@@ -7,7 +7,7 @@ import { logBooks, monthLabel, SVC_START } from "./types";
 import { recentLowballs } from "./acquire";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange } from "./market";
-import { assetValue, condGrade, initialCondition, initialCondIdx, holdingValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall } from "./value";
+import { assetValue, condGrade, initialCondition, initialCondIdx, holdingValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, proFormaNOIYr, capRateFor } from "./value";
 import { locAvailable } from "./credit";
 import { marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
@@ -98,7 +98,18 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // the deed conveys. When nothing has been disclosed (a building nobody has
   // listed and nobody has rung about) it falls back to the model, which is
   // correct, because there is also no loan to size: you cannot buy it.
-  const q = quote(s, prod, uwBasis, inPlace(rec, s, bbl, uwBasis).noi, rec.class);
+  // AND THE PLAN, FOR THE ONE DESK THAT LENDS ON PLANS. The pro forma at the
+  // class's own natural occupancy — the engine's `noiYr(stabilised)`, not a
+  // second opinion about what this building could do — capitalised at the
+  // building's own cap rate. `quote` ignores it for every product but the debt
+  // fund, and even there it only binds when the income in place cannot support
+  // more, which is the definition of a lease-up. See sizeRest.
+  const stabNoi = proFormaNOIYr(rec, s.econ, gradeOf(s, rec), uwBasis);
+  const stabCap = capRateFor(rec, s.econ, gradeOf(s, rec));
+  const stab = stabCap > 0 && stabNoi > 0
+    ? { noiYr: stabNoi, value: (stabNoi / stabCap) * 100 }
+    : undefined;
+  const q = quote(s, prod, uwBasis, inPlace(rec, s, bbl, uwBasis).noi, rec.class, false, stab);
   const principal = Math.round(q.principal * Math.max(0, Math.min(1, lev)));
   // WHAT ACTUALLY LIMITED THE LOAN. The desk sizes on three tests and takes
   // the smallest: the advance rate, the coverage ratio, and the debt yield.
@@ -116,6 +127,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
     // you agreed to pay. Telling somebody "advance rate" when the truth is
     // "you are over the appraisal" sends them off to fix the wrong thing.
     bind: overpay > price * 0.005 ? "appraisal"
+      : q.stabConstrained ? "stab"
       : q.dscrConstrained ? "dscr"
       : q.dyConstrained ? "dy"
       : q.principal < capped * 0.995 ? "credit"
@@ -773,6 +785,31 @@ const BLIND_LICENCE = 0.6;
  */
 const OWNER_FLOOR = 0.80;
 
+/**
+ * HOW LONG A DOOR STAYS SHUT, by how it was shut.
+ *
+ * `offence` is 0 for a conversation that simply ended and 1 for one you blew
+ * up — the engine computes it at each refusal from what it already knows, and
+ * nothing new is measured to produce it.
+ *
+ * Six months is the floor and it is the number that was already here: the
+ * uniform cooldown every refusal used to get. Thirty months is the ceiling, and
+ * it is a shape parameter rather than a fact about the business — there is no
+ * industry figure for how long a seller stays annoyed. What is a fact is the
+ * SHAPE: a polite no is not a closed door and an insult is, and a model where
+ * both reopen on the same morning is wrong about the only thing that separates
+ * them. Calibrated so that a merely-low bid costs you a year and a genuinely
+ * insulting one costs you most of a cycle, which is when a seller's
+ * circumstances have changed enough for it not to be the same conversation.
+ */
+const DOOR_MIN_M = 6;
+const DOOR_MAX_M = 30;
+function shutDoor(na: { refused: boolean; coldUntilM?: number }, month: number, offence: number) {
+  const o = Math.max(0, Math.min(1, offence));
+  na.refused = true;
+  na.coldUntilM = month + Math.round(DOOR_MIN_M + (DOOR_MAX_M - DOOR_MIN_M) * o);
+}
+
 export function approachOwner(
   s: GameState, parcels: ParcelTable, adjacency: Adjacency, bbl: string,
 ): { s: GameState; err?: string; refused?: boolean; ask?: number; blind?: boolean } {
@@ -785,10 +822,17 @@ export function approachOwner(
   if (s.holdings[bbl]) return { s, err: "You own it." };
   if (s.listings.some((l) => l.bbl === bbl)) return { s, err: "It's already listed — hit the Market tab." };
   const prior = s.approaches[bbl];
-  if (prior && s.month < prior.q + 6) {
+  // A refusal runs its OWN clock when it recorded one; everything else, and
+  // every save written before doors had lengths, keeps the flat six months.
+  const shutUntil = prior?.refused && prior.coldUntilM !== undefined ? prior.coldUntilM : (prior?.q ?? 0) + 6;
+  if (prior && s.month < Math.max(shutUntil, prior.q + 6)) {
+    const yrs = (shutUntil - s.month) / 12;
     return {
       s,
-      err: prior.refused ? "You knocked recently — the owner hasn't changed their mind."
+      err: prior.refused
+        ? yrs > 1.5
+          ? "That conversation ended badly and they have not forgotten it. This one is shut for years, not months."
+          : "You knocked recently — the owner hasn't changed their mind."
         // Ringing again does not get you a number they already declined to
         // give. The conversation is open; the move is a bid, not another call.
         : prior.ask === undefined ? "You already have them. They are waiting on YOUR number, not another call."
@@ -1051,10 +1095,18 @@ function bidBlind(
     });
     return { s: next, msg: "They said no, and nothing else." };
   }
-  na.refused = true;
+  // HOW BADLY IT ENDED, out of the two numbers this branch already has: how
+  // far under their reserve the bid was, and how many times you had been back.
+  // A bid a fifth under closes the door for a year; one at half their number
+  // after three visits closes it for most of a cycle.
+  shutDoor(na, next.month, Math.max(0, gap - 0.10) * 2.0 + 0.15 * (probes - 1));
   delete na.reserve;
   delete na.ask;
-  next.news.unshift({ q: next.month, kind: "warn", text: `${addr}: the owner ended the conversation.` });
+  next.news.unshift({
+    q: next.month, kind: "warn",
+    text: `${addr}: the owner ended the conversation`
+      + ((na.coldUntilM ?? 0) - next.month > 18 ? ", and they will not be taking your call again for a long time." : "."),
+  });
   return { s: next, msg: "They ended the conversation." };
 }
 
@@ -1090,9 +1142,15 @@ export function buyOffMarket(
     return { s: next, msg: "They held their number." };
   }
   const na = next.approaches[bbl];
-  na.refused = true;
+  // `disc` is how far under their own stated number you came, which is the
+  // whole of the offence when they have already told you what they want.
+  shutDoor(na, next.month, Math.max(0, disc - 0.10) * 2.2);
   delete na.ask;
-  next.news.unshift({ q: next.month, kind: "warn", text: `${parcels[bbl]?.address}: the owner ended the conversation.` });
+  next.news.unshift({
+    q: next.month, kind: "warn",
+    text: `${parcels[bbl]?.address}: the owner ended the conversation`
+      + ((na.coldUntilM ?? 0) - next.month > 18 ? " and took the building off the table for good." : "."),
+  });
   return { s: next, msg: "They ended the conversation." };
 }
 
@@ -1135,9 +1193,18 @@ export function counterOffMarket(
     next.news.unshift({ q: next.month, kind: "info", text: `${rec.address}: the owner didn't move. $${(a.ask / 1e6).toFixed(2)}M stands.` });
     return { s: next, msg: "They held firm." };
   }
-  na.refused = true;
+  // `cut` is how deep the counter went off their own ask. A shave they will
+  // forgive; halving their number in a single counter they will not.
+  shutDoor(na, next.month, Math.max(0, cut - 0.12) * 2.4);
   delete na.ask;
-  next.news.unshift({ q: next.month, kind: "info", text: `${rec.address}: the owner hung up. The door is closed for a while.` });
+  const shutFor = (na.coldUntilM ?? 0) - next.month;
+  next.news.unshift({
+    q: next.month, kind: shutFor > 18 ? "warn" : "info",
+    text: `${rec.address}: the owner hung up. `
+      + (shutFor > 18
+        ? "That number insulted them and they will remember it — do not expect to be able to ring back."
+        : "The door is closed for a while."),
+  });
   return { s: next, msg: "They walked." };
 }
 

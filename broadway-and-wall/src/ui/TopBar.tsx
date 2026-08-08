@@ -143,25 +143,27 @@ export default function TopBar() {
               and the CONTROLS cannot, because a button you cannot reach is not
               a control. */}
           <div className="topbar-stats">
-          <Stat label={monthLabel(game.month)} value={`Yr ${Math.floor(game.month / 12) + 1}`} wide />
-          <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} />
-          <Stat label="Net worth" value={usd(nw)} drop={2} />
+          <Stat label={monthLabel(game.month)} value={`Yr ${Math.floor(game.month / 12) + 1}`} wide w={152} />
+          <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} w={98} />
+          <Stat label="Net worth" value={usd(nw)} drop={2} w={104} />
           {/* ANNUAL, BECAUSE EVERY OTHER NUMBER IN THIS BUSINESS IS. Cap rates,
               NOI, debt service coverage and every quote on every page are
               annual; a monthly cash flow in the header was the one figure the
               player had to mentally multiply before it could be compared with
               anything else on screen. */}
-          <Stat label="CF / yr" value={usd(cf * 12)} bad={cf < 0} drop={2} />
+          <Stat label="CF / yr" value={usd(cf * 12)} bad={cf < 0} drop={2} w={98} />
           <Stat
             label="Base rate"
             value={pct(game.econ.indexRate)}
             drop={3}
+            w={80}
             title="The benchmark every loan in town prices off. Your floating loans reprice to it monthly (through the cap strike, if you bought one), and any new quote — mortgage, construction loan, credit line — is this rate plus the lender's spread."
           />
-          {(game.loc?.balance ?? 0) > 0 && <Stat label="Line drawn" value={usd(game.loc.balance)} bad />}
-          <Stat label="Market" value={game.econ.phase} drop={3} />
+          {(game.loc?.balance ?? 0) > 0 && <Stat label="Line drawn" value={usd(game.loc.balance)} bad w={98} />}
+          <Stat label="Market" value={game.econ.phase} drop={3} w={84} />
           <Stat
             drop={3}
+            w={92}
             label="Vacant lots"
             value={String(Math.max(0, game.totalLots - game.builtAtStart - Object.keys(game.built).length))}
             title={`Empty lots left in ${manifest?.city ?? "town"}. Every one is a site someone can build on — as they run out, land gets scarce and prices climb. ${game.totalLots ? Math.round((100 * (game.builtAtStart + Object.keys(game.built).length)) / game.totalLots) : 0}% of the city is built.`}
@@ -172,7 +174,7 @@ export default function TopBar() {
             Portfolio
           </button>
           <button className={"nav-btn" + (page === "deals" ? " nav-on" : "")} onClick={() => setPage(page === "deals" ? "none" : "deals")}>
-            Deals{dealsCount > 0 ? ` · ${dealsCount}` : ""}
+            Deals<Badge n={dealsCount} />
           </button>
           <button className={"nav-btn" + (page === "research" ? " nav-on" : "")} onClick={() => setPage(page === "research" ? "none" : "research")}>
             Research
@@ -186,7 +188,7 @@ export default function TopBar() {
             if (!live && !held) return null;
             return (
               <button className={"nav-btn" + (page === "notes" ? " nav-on" : "")} onClick={() => setPage(page === "notes" ? "none" : "notes")}>
-                Notes{live > 0 ? ` · ${live}` : ""}
+                Notes<Badge n={live} />
               </button>
             );
           })()}
@@ -216,7 +218,7 @@ export default function TopBar() {
               destination now, for the same reason Saves was promoted out of
               that page: reading the news is not an accounting task. */}
           <button className={"nav-btn" + (page === "news" ? " nav-on" : "")} onClick={() => setPage(page === "news" ? "none" : "news")}>
-            News{unread > 0 ? ` · ${unread}` : ""}
+            News<Badge n={unread} />
           </button>
           <span className="topbar-sep" />
           <button
@@ -317,9 +319,42 @@ export default function TopBar() {
 // goes first, then 2, and anything unranked never goes. Every one of these
 // numbers is also on a page — Books, the Economy — so losing one costs a
 // glance, not information. The controls are not rankable: they stay.
-function Stat({ label, value, bad, wide, title, drop }: { label: string; value: string; bad?: boolean; wide?: boolean; title?: string; drop?: 2 | 3 }) {
+/**
+ * A COUNT THAT DOES NOT MOVE THE BUTTON IT IS ON.
+ *
+ * `Deals` becoming `Deals · 3` becoming `Deals · 12` widens the button and
+ * walks every control to its right along with it — and the deals count changes
+ * on almost every Advance, which is exactly when the player's cursor is parked
+ * over a button. The badge gets a fixed slot; the label never moves. It renders
+ * the slot even at zero so appearing and disappearing costs nothing either.
+ */
+function Badge({ n }: { n: number }) {
+  return <span className="nav-badge">{n > 0 ? `· ${n}` : ""}</span>;
+}
+
+/**
+ * A READOUT THAT KEEPS ITS PLACE.
+ *
+ * Every stat in this bar was a content-sized flex box, so the whole row moved
+ * whenever any value changed WIDTH — and the values change width constantly:
+ * `$2.5M` becomes `$12.4M`, `May 2000` becomes `September 2043`, `peak` becomes
+ * `recession`. Press Advance a few times and the nav buttons walk left and
+ * right under the cursor, which is the reported bug and is worst for exactly
+ * the player who presses Advance the most.
+ *
+ * The digits were already tabular so the glyphs lined up; what moved was the
+ * CHARACTER COUNT, which no font setting fixes. So each readout reserves the
+ * room its widest plausible value needs and grows inside its own box. `w` is
+ * that reservation in pixels — wide enough for the longest month name, the
+ * longest phase word, and a negative nine-figure number with a suffix.
+ */
+function Stat({ label, value, bad, wide, title, drop, w }: { label: string; value: string; bad?: boolean; wide?: boolean; title?: string; drop?: 2 | 3; w?: number }) {
   return (
-    <div className={"tstat" + (wide ? " tstat-wide" : "") + (drop ? ` tstat-d${drop}` : "")} title={title}>
+    <div
+      className={"tstat" + (wide ? " tstat-wide" : "") + (drop ? ` tstat-d${drop}` : "")}
+      title={title}
+      style={w ? { minWidth: w } : undefined}
+    >
       <span className="tstat-label">{label}</span>
       {value && <span className={"tstat-value mono" + (bad ? " neg" : "")}>{value}</span>}
     </div>

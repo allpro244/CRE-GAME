@@ -666,7 +666,32 @@ export function buildClimate(s: GameState): number {
 export function maxFloorsFor(
   rec: { farMaxComm: number; farMaxRes: number; lotArea?: number }, coverage: number, use?: DevUse,
 ): number {
-  const zoning = Math.max(1, Math.floor(farMaxFor(rec) / Math.max(0.08, coverage)));
+  // THE TOP FLOOR DOES NOT HAVE TO BE A FULL PLATE, AND ROUNDING IT AWAY MADE A
+  // BIGGER FOOTPRINT BUILD A SMALLER BUILDING.
+  //
+  // This was `floor(FAR / coverage)`, which discards the fractional top floor.
+  // The floor count then multiplies the footprint, so the loss lands on the
+  // area — and because the discarded fraction depends on how coverage divides
+  // into FAR, the area is not monotone in coverage at all. On a 10,000 sf lot
+  // at FAR 4 it went:
+  //
+  //     coverage 0.50  ->  8 floors  ->  40,000 sf
+  //     coverage 0.60  ->  6 floors  ->  36,000 sf
+  //     coverage 0.70  ->  5 floors  ->  35,000 sf
+  //     coverage 0.80  ->  5 floors  ->  40,000 sf
+  //
+  // Widening the footprint from half the lot to seven tenths cost 5,000 sf of
+  // building. That is not a trade-off anybody chose; it is a rounding artefact
+  // wearing the costume of a design decision, and it is what the owner reported
+  // as "the higher of a footprint you use, the smaller the building will be".
+  //
+  // Zoning caps AREA, not floors. A builder allowed 4.0 FAR who wants a plate
+  // covering 70% of the site puts up five full floors and a sixth that is
+  // partially set back — which is what the top of a real building looks like
+  // and why setbacks exist. So the storey allowance rounds UP, and
+  // `planDevelopment` caps the resulting area at the envelope, so the last
+  // floor is the part that gives way rather than the whole building.
+  const zoning = Math.max(1, Math.ceil(farMaxFor(rec) / Math.max(0.08, coverage)));
   const plate = (rec.lotArea ?? 0) * Math.max(0.08, coverage);
   const physical = rec.lotArea ? Math.max(1, Math.min(zoning, physicalMaxFloors(plate))) : zoning;
   const byUse = use ? MAX_FLOORS_BY_USE[use] : undefined;
@@ -743,7 +768,14 @@ export function planDevelopment(
   // plate gives up a tenth of itself and a narrow one gives up a third.
   const plate = rec.lotArea * cov;
   const eff = plateEfficiency(plate);
-  const gsf = Math.round((rec.lotArea * cov * fl) / 100) * 100;
+  // ...AND THE ENVELOPE IS THE CAP, so the partial top floor `maxFloorsFor` now
+  // allows cannot overrun the zoning. Coverage x floors can exceed the FAR by
+  // up to one storey's worth; this is where that comes back off, and it comes
+  // off the top floor rather than off the building. See the note on
+  // `maxFloorsFor`: together these make building area depend on the ENVELOPE
+  // and not on how neatly the coverage happened to divide into it.
+  const envelope = rec.lotArea * farMaxFor(rec);
+  const gsf = Math.round(Math.min(rec.lotArea * cov * fl, envelope) / 100) * 100;
   const sf = Math.round((gsf * eff) / 100) * 100;
   if (sf < 2000) return null;
 

@@ -1331,3 +1331,14 @@ body {
   border-left: 3px solid #b3402f;
   padding-left: 8px;
 }
+
+/* A BADGE IS A FIXED SLOT, NOT A SUFFIX.
+   `Deals` -> `Deals · 3` -> `Deals · 12` widened the button and walked every
+   control to its right, on almost every Advance — which is precisely when the
+   player's cursor is resting on one. The count now lives in a reserved box, so
+   the label keeps its place whether the number is absent, one digit or three.
+   Tabular figures so 11 and 33 are also the same width. */
+.nav-badge {
+  display: inline-block; min-width: 28px; text-align: left;
+  font-variant-numeric: tabular-nums;
+}

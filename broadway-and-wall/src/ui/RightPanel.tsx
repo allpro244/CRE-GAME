@@ -6705,7 +6705,6 @@ function ResearchPage() {
         <Big label="Phase" value={e.phase + (e.rumoredPhase ? " ⚠" : "")} />
         <Big label="Cap · office" value={pct(e.capRate.office)} />
         <Big label="Cap · multifam" value={pct(e.capRate.multifamily)} />
-        <Big label="Office rent" value={"$" + e.rentIdx.office.toFixed(0)} />
         <Big label="Land index" value={e.landIdx.toFixed(2)} />
         <Big label="Cost index" value={e.costIdx.toFixed(2)} />
         <Big label="Credit" value={creditWord(e.creditIdx ?? 1)} bad={(e.creditIdx ?? 1) < 0.72} />

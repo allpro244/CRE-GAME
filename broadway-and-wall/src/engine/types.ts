@@ -1348,6 +1348,25 @@ export interface Econ {
    * a real pipeline behaves.
    */
   startOwed?: Record<BuiltClass, number>;
+  /**
+   * WHAT HAS BEEN DECIDED ON BUT CANNOT BE DUG YET.
+   *
+   * `startOwed` is the order book a crane can actually be pointed at. It used
+   * to be written the same month the space market decided it wanted the space,
+   * and `tickCityGrowth` spent it that same month — so the entire distance
+   * between "this city needs four hundred thousand feet of office" and a hole
+   * in the ground was zero. Measured, that is exactly what `pnpm leadlag` saw:
+   * `orders -> breaks` came out CONTEMPORANEOUS, and negative once the draining
+   * of the book was accounted for, against a leg that should run 0-18 months.
+   *
+   * A decision to build is not a groundbreak. Site control, design, entitlement
+   * and a construction lender take six to eighteen months on a by-right
+   * commercial project in the United States, and considerably longer where the
+   * approval is discretionary. That is the queue this holds: dated orders that
+   * mature into `startOwed` when their pre-development is done. Same idiom as
+   * `cohorts`, one stage earlier in the pipeline.
+   */
+  entitling?: Record<BuiltClass, { m: number; sf: number }[]>;
   completions12?: Record<BuiltClass, number>;   // trailing 12-month deliveries
   // THE MONETARY ERA. The loan index used to mean-revert at 0.03/month toward
   // a phase target between 5.0 and 7.0, clamped to 4.2-9.2 — so over a whole

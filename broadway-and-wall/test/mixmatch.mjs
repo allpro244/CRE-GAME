@@ -93,6 +93,16 @@ const { loadCity } = await import(join(HERE, "city.mjs"));
 const N = +(process.env.N || 4);
 const HZ = +(process.env.HZ || 600);
 const WIN = +(process.env.WIN || 12);   // trailing months the break mix is read over
+// HOW FAR BACK THE BOOK IS READ, separately from how wide the break window is.
+// These were one number and should never have been: WIN is a smoothing width
+// set by how lumpy groundbreaks are, OFF is a causal lag set by how long the
+// engine takes to turn an order into a shovel. Tying them together meant that
+// adding the entitlement queue — which sits BEFORE the book, so `startOwed`
+// became the immediately-spendable queue rather than the raw order flow — made
+// the harness read the book a year too early and report a mechanism getting
+// worse when it had not moved. Contemporaneous is the right default now: the
+// waiting happens upstream of `startOwed`, not between it and the crane.
+const OFF = +(process.env.OFF ?? 0);
 const CLASSES = ["office", "retail", "industrial", "multifamily"];
 
 const pad = (s, n) => String(s).padEnd(n);
@@ -150,7 +160,7 @@ for (let i = 0; i < N; i++) {
     // existed when the site was chosen, not the one it just decremented.
     const win = hist.slice(-WIN);
     const bTot = CLASSES.reduce((a, k) => a + win.reduce((t, h) => t + h[k], 0), 0);
-    const o0 = owedAt[owedAt.length - WIN];
+    const o0 = owedAt[Math.max(0, owedAt.length - 1 - OFF)];
     const oTot = CLASSES.reduce((a, k) => a + o0[k], 0);
     if (!(bTot > 0) || !(oTot > 0)) continue;
     live++;
@@ -161,7 +171,7 @@ for (let i = 0; i < N; i++) {
   }
 }
 
-console.log(`\nDOES THE CITY BUILD WHAT THE MARKET ORDERED — ${N} towns x ${HZ / 12} years, ${WIN}mo window\n`);
+console.log(`\nDOES THE CITY BUILD WHAT THE MARKET ORDERED — ${N} towns x ${HZ / 12} years, ${WIN}mo window, book read ${OFF}mo back\n`);
 console.log(`  ${pad("class", 14)}${rp("r", 8)}${rp("ordered", 10)}${rp("built", 10)}${rp("sf broken", 14)}`);
 let pooledX = [], pooledY = [];
 for (const k of CLASSES) {

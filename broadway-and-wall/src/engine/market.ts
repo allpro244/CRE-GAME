@@ -638,6 +638,14 @@ export const REF_PIPE_SHARE = 0.045;
 // one market and the building arrives in a different one, and nobody can undo
 // a start once the hole is dug.
 export const BUILD_MONTHS = { office: [30, 44], retail: [18, 28], multifamily: [22, 34], industrial: [12, 20] } as const;
+// And how long it takes to be ALLOWED to dig, which is a different clock and
+// was missing entirely. Site control, design, entitlement and a construction
+// lender run six to eighteen months on a by-right commercial project in the
+// United States; discretionary approval runs longer, sometimes by years. A
+// measured fact about the business, in the same register as BUILD_MONTHS above
+// — not a shape parameter and not a tuning knob. It is not split by class
+// because the dominant term is the municipality, not the use.
+export const ENTITLE_MONTHS = [6, 18] as const;
 
 /**
  * HOW MANY PEOPLE WORK IN THIS TOWN, from the buildings that are standing.
@@ -2053,7 +2061,14 @@ export function tickEcon(s: GameState) {
     // which opens the gate, and supply comes back to the same fixed point.
     // Measured over many centuries, moving it 6% moved long-run overbuild by
     // nothing at all. The gate's SLOPE is the real control, not this.
-    const start = stk * 0.0016 * Math.min(2.4, appetite * 5) * (0.7 + 0.6 * rng(s));
+    // ONE DRAW, TWO JOBS. This month's noise sizes the order AND sets how long
+    // it will take to entitle, below. Capturing it rather than calling `rng`
+    // twice keeps the random stream byte-identical to before the entitlement
+    // queue existed, so an A/B on the same seed is a clean partial rather than
+    // a different world — and it carries a fact besides: a bigger programme
+    // takes longer to get through planning than a smaller one.
+    const jitter = rng(s);
+    const start = stk * 0.0016 * Math.min(2.4, appetite * 5) * (0.7 + 0.6 * jitter);
     e.starts[k] = Math.round(start);
 
     // THE QUEUE. A start becomes a dated cohort; it delivers when its month
@@ -2089,7 +2104,38 @@ export function tickEcon(s: GameState) {
     // foot — every calibration downstream is untouched. The supply just has an
     // address now.
     e.startOwed = e.startOwed ?? { office: 0, retail: 0, multifamily: 0, industrial: 0 };
-    if (start > 1) e.startOwed[k] += Math.round(start);
+    // A DECISION TO BUILD IS NOT A GROUNDBREAK, and until now it was.
+    //
+    // This line used to put the month's order straight into the book, and
+    // `tickCityGrowth` spent the book the same month — so the distance between
+    // the space market wanting four hundred thousand feet of office and a hole
+    // in the ground was zero. `pnpm leadlag` read the leg as contemporaneous,
+    // and negative once the draining of the book was allowed for, against a
+    // band of 0-18 months.
+    //
+    // ENTITLE_MONTHS is a fact about the business, not a shape parameter. Site
+    // control, design, entitlement and a construction lender run six to
+    // eighteen months on a by-right commercial project in the United States,
+    // and longer wherever the approval is discretionary. The harness's 0-18
+    // band was written from the same fact, so agreement with it is not an
+    // independent confirmation and is not claimed as one. The independent
+    // prediction is the TOTAL LOOP, which nothing in the engine sets: it read
+    // 5.3 years against real property cycles of 7-12, and a real
+    // pre-development lag should push it up.
+    e.entitling = e.entitling ?? { office: [], retail: [], multifamily: [], industrial: [] };
+    e.entitling[k] = e.entitling[k] ?? [];
+    if (start > 1) {
+      const [eLo, eHi] = ENTITLE_MONTHS;
+      const lag = Math.round(eLo + jitter * (eHi - eLo));
+      e.entitling[k].push({ m: s.month + lag, sf: Math.round(start) });
+    }
+    // …and what finished its entitlement this month joins the book a crane can
+    // be pointed at.
+    const ready = e.entitling[k];
+    e.entitling[k] = [];
+    for (const p of ready) {
+      if (p.m <= s.month) e.startOwed[k] += p.sf; else e.entitling[k].push(p);
+    }
     // A BACKLOG IS A BUFFER, NOT A LEDGER. Demand that has gone unmet for two
     // years has not been sitting there waiting — the tenants found space
     // somewhere else, or did not expand, and the market moved on. Left

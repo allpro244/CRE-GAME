@@ -730,12 +730,12 @@ export function tickLenders(s: GameState) {
           ? `They held ${usdShort(l.yours)} of your debt. ${(l.delinquent * 100).toFixed(1)}% of their book had stopped paying.`
           : `${(l.delinquent * 100).toFixed(1)}% of their book had stopped paying, against a ${(targetCapital(l.name) * 100).toFixed(1)}% capital target.`,
       });
-      s.news.unshift({
-        q: s.month, kind: "warn",
-        text: `${l.name} has failed. ${l.kind === "conduit" ? "The securitisation market took it with them" : "The regulators walked in on a Friday afternoon and the name on the door meant nothing by Monday"} — `
-          + `every loan they had outstanding is with a receiver now, and the receiver is not a lender. `
-          + `Watch the note desk: a receiver sells the book, and a receiver does not haggle.`,
-      });
+      // THE SAME FAILURE, FILED TWICE, IN THE SAME MONTH. `raiseAlert` above
+      // already unshifts a warn (types.ts:906) carrying this exact event in
+      // more detail — measured, the two counts were identical by construction
+      // and identical in fact, 58 and 58 over a passive run. A paper that says
+      // the same thing twice is not twice as informative; it is a paper the
+      // reader learns to skim.
     } else if (l.appetite < 0.15 && rng(s) < 0.04) {
       s.news.unshift({
         q: s.month, kind: "warn",

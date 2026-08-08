@@ -61,7 +61,8 @@
     "check": "node test/fresh.mjs && node test/conserve.mjs && node tools/baseline.mjs --check",
     "plate": "node test/plate.mjs",
     "baseline": "node tools/baseline.mjs",
-    "baseline:check": "node tools/baseline.mjs --check"
+    "baseline:check": "node tools/baseline.mjs --check",
+    "tape": "node test/tape.mjs"
   },
   "dependencies": {
     "@types/three": "^0.185.3",

@@ -608,7 +608,7 @@ function news(s: GameState, kind: "event" | "warn", text: string) {
 
 /** What share of the player's rent roll is let to this trade — the only number
  *  in the alert that is about them rather than about the city. */
-function exposureToTrade(s: GameState, k: Sector): number {
+export function exposureToTrade(s: GameState, k: Sector): number {
   let mine = 0, all = 0;
   for (const bbl in s.holdings) {
     for (const t of s.holdings[bbl]?.tenants ?? []) {

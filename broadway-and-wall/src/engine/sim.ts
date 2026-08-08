@@ -3,7 +3,7 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
 import { DEFAULT_START_CASH, CENTURY_MONTHS, CASH_APY, logBooks, monthLabel } from "./types";
-import { initEcon, rng, rrange, tickEcon, stockFromParcels } from "./market";
+import { initEcon, rng, newsChance, rrange, tickEcon, stockFromParcels } from "./market";
 import { assetValue, holdingNOIYr, holdingValue, monthlyNOI, netWorth, operatingStatement, physicalOcc, resolveRec } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
@@ -341,7 +341,7 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     }
     s.listings.push(listing);
     listed.add(bbl);
-    if (distress && rng(s) < 0.6) {
+    if (distress && newsChance(s, "motivated:" + bbl, 0.6)) {
       s.news.unshift({ q: s.month, kind: "event", text: `Motivated seller: ${rec.address} hits the tape at $${(ask / 1e6).toFixed(2)}M — well under appraisal. It won't last.` });
     }
   }

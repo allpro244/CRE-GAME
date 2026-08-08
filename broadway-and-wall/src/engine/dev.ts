@@ -2499,9 +2499,27 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     }
   }
 
-  if (rng(s) < 0.30) {
+  {
+    // A COIN FLIP IS NOT A RELEVANCE TEST, AND IT WAS STANDING IN FOR ONE.
+    //
+    // This read `rng(s) < 0.30`: file three teardowns in ten, chosen at random.
+    // That number is not a fact about the world — it is a volume dial, put here
+    // so the paper would not overflow, and it throttles the SIGNAL at exactly
+    // the same rate as the noise. The city tears down about 6.4 buildings a
+    // year and this printed a random 1.9 of them, which made it the single
+    // loudest line on the tape while still managing to miss two thirds of the
+    // demolitions on the player's own street.
+    //
+    // Every teardown is recorded now — the tape gets MORE complete, not less —
+    // and it interrupts only when the wrecking ball is on a block the player
+    // owns something on. Block, not district: the city has four districts, so
+    // "somewhere in your district" is true of half the parcels in town and gets
+    // truer as the player grows, which is why the paper was noisiest for the
+    // busiest players. A block is about 3% of the city and is what a person
+    // means by "near me".
+    const yoursHere = Object.keys(s.holdings).some((b) => parcels[b]?.block === rec!.block);
     s.news.unshift({
-      q: s.month, kind: "event",
+      q: s.month, kind: yoursHere ? "event" : "info",
       text: `${rec!.address} is coming down. It went up in ${rec!.yearBuilt}, and the land under it is worth `
         + `${ratio.toFixed(1)}x what the building is — which is the only calculation that has ever mattered `
         + `to a wrecking ball. ${(nsf / 1000).toFixed(0)}k sf of ${nextUse} replaces it, opening ${monthLabel(s.month + months)}.`,

@@ -32,7 +32,7 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from "./types";
 import { CASH_APY, monthLabel } from "./types";
-import { BUILD_MONTHS, rng, rrange, devPencils } from "./market";
+import { BUILD_MONTHS, rng, newsChance, rrange, devPencils } from "./market";
 import { assetValue, heightPremium, initialCondition, residualScheme, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall } from "./value";
 import { cityInfillCap, devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retailWantsMixed, SOFT_COST, useForZone, noteRecordPlan, openConstructionDesks, pickConstructionDesk, capRetail, withStreetRetail } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure } from "./lenders";
@@ -884,7 +884,7 @@ function tickAssetManagement(s: GameState, parcels: ParcelTable, r: Rival) {
   // a story rather than a number that tracks the index.
   if (rng(s) < 0.006 / Math.max(1, Math.sqrt(r.bbls.length) / 2)) {
     r.occ -= rrange(s, 0.05, 0.14);
-    if (rng(s) < 0.35) {
+    if (newsChance(s, "tenant:" + r.id, 0.35)) {
       s.news.unshift({
         q: s.month, kind: "event",
         text: `${r.name} has lost a major tenant. Their book is running at ${(Math.max(0, r.occ) * 100).toFixed(0)}% — somebody in this town is about to have space to fill.`,
@@ -1801,8 +1801,16 @@ function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: 
   // The deed stays with them until somebody buys it — a firm selling under
   // pressure is still the owner, and that is the whole point of the trade.
   s.listings.push({ bbl: sell.bbl, ask: px, listedM: s.month, expiresM: s.month + 8, distress: true, sellerId: r.id });
+  // A FIRM SELLING UNDER PRESSURE IS ALWAYS RECORDED, AND INTERRUPTS WHEN IT IS
+  // ABOUT YOU. This had no gate at all — every distress listing in the city
+  // filed as an `event`, 0.81 a year, most of them buildings the player had
+  // never looked at. The trade still goes on the tape, because a receiver's
+  // book is exactly where the buying is; it goes to the badge when the firm is
+  // one you have dealt with, or the building is on a block you own on.
+  const yourStreet = Object.keys(s.holdings).some((b) => parcels[b]?.block === sell.rec.block);
+  const known = !!s.street?.[r.id]?.deals;
   s.news.unshift({
-    q: s.month, kind: "event",
+    q: s.month, kind: (yourStreet || known) ? "event" : "info",
     text: (r.dumped ?? 1) <= 1
       ? `${r.name} is selling. ${sell.rec.address} hits the tape at ${(px / 1e6).toFixed(2)}M — ${Math.round((1 - px / Math.max(1, v)) * 100)}% under appraisal. They are short of cash and the market knows it.`
       : `${r.name}, again: ${sell.rec.address} at ${(px / 1e6).toFixed(2)}M. That is their ${r.dumped === 2 ? "second" : r.dumped === 3 ? "third" : `${r.dumped}th`} building on the tape this stretch.`,
@@ -2063,7 +2071,7 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
       // What an extension buys is TIME, and what a sponsor does with time is
       // sweep the cash flow — see the distribution test in tickRivals, which
       // stops paying the partners while any paper of theirs is extended.
-      if (rng(s) < 0.25) {
+      if (newsChance(s, "refi:" + r.id, 0.25)) {
         s.news.unshift({
           q: s.month, kind: "event",
           text: `${r.name} could not refinance ${rec.address} in full — ${desk} would write ${(refi.principal / 1e6).toFixed(1)}M against ${(due / 1e6).toFixed(1)}M outstanding, `
@@ -2084,7 +2092,7 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
         r.cash -= gap;
         r.debt = Math.max(0, r.debt - gap);
         clearExtended(r, bbl);
-        if (rng(s) < 0.4) {
+        if (newsChance(s, "balloon:" + bbl, 0.4)) {
           s.news.unshift({
             q: s.month, kind: "event",
             text: `${r.name} has called ${(got / 1e6).toFixed(1)}M from their partners to clear the balloon on ${rec.address}. `
@@ -2464,7 +2472,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       //    the shortfall itself — cover the missed payment or do not convene.
       const need = -r.cash + Math.round(aum * 0.004);
       const got = recallable(r) >= -r.cash ? callCapital(r, need) : 0;
-      if (got > 0 && r.cash >= 0 && rng(s) < 0.2) {
+      if (got > 0 && r.cash >= 0 && newsChance(s, "call:" + r.id, 0.2)) {
         s.news.unshift({
           q: s.month, kind: "event",
           text: `${r.name} has called ${(got / 1e6).toFixed(1)}M from their partners. They were not going to sell a building over a bad year, and they did not have to.`,

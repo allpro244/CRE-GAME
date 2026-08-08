@@ -5,7 +5,7 @@ import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, MarketPhase, NewsItem, Sector } from "./types";
 import { BUILT_CLASSES } from "./types";
 import { applyEra, driftInflTarget } from "./regime";
-import { swanClassLevel, swanTradeWave, tickSwans } from "./swans";
+import { swanClassLevel, swanTradeWave, tickSwans, exposureToTrade } from "./swans";
 
 export function mulberry32Step(a: number): { state: number; value: number } {
   a |= 0; a = (a + 0x6d2b79f5) | 0;
@@ -20,6 +20,54 @@ export function rng(s: GameState): number {
   return r.value;
 }
 export const rrange = (s: GameState, a: number, b: number) => a + (b - a) * rng(s);
+
+/**
+ * A DRAW THAT DECIDES ONLY WHAT GETS PRINTED — ON ITS OWN STREAM.
+ *
+ * News sites were calling `rng(s)` to decide whether to file a line. That is
+ * the SAME stream that decides which building sells, whose loan is called and
+ * where the crane goes, so a cosmetic decision consumed an economic draw and
+ * every later month in the run shifted. Measured: deleting ONE `rng(s) < 0.30`
+ * on a teardown notice moved 16 of the 31 numbers in BASELINE.json, none of it
+ * because the economy had changed. That makes every news change unverifiable —
+ * the baseline can no longer tell "you altered the city" from "you moved the
+ * dice" — and it silently couples the newspaper to the market.
+ *
+ * This is the same fix, and the same reason, as the decoration stream in
+ * citygen: removing pier furniture there shifted a landmark's height and an
+ * assessed value, because scenery was drawing from the stream the tax roll
+ * reads.
+ *
+ * Stateless and deterministic: hashed off the seed, the month and a caller's
+ * key, touching `s.rng` not at all. The key must carry whatever makes the
+ * decision distinct — a bbl, a firm id — or two questions in the same month
+ * get the same answer.
+ */
+export function newsChance(s: GameState, key: string, p: number): boolean {
+  let h = (2166136261 ^ (s.seed >>> 0) ^ Math.imul(s.month + 1, 0x9e3779b1)) >>> 0;
+  for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return ((h >>> 0) % 100000) / 100000 < p;
+}
+/**
+ * Does the player own any of this class? The stake test for anything filed
+ * about an ASSET CLASS, as against a trade — `exposureToTrade` in swans.ts
+ * answers the trade question and the two are not interchangeable.
+ *
+ * Read off the holdings rather than the parcel table, because this runs inside
+ * the market tick and there are no parcels here: a commercial leg announces
+ * itself through its tenants' `use`, and a residential one through `occ`, which
+ * only exists on a holding with flats in it.
+ */
+function ownsClass(s: GameState, k: BuiltClass): boolean {
+  for (const bbl in s.holdings) {
+    const h = s.holdings[bbl];
+    if (!h) continue;
+    if (k === "multifamily") { if ((h.occ ?? 0) > 0) return true; continue; }
+    for (const t of h.tenants ?? []) if ((t.use ?? "office") === k) return true;
+  }
+  return false;
+}
+
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
 // ---------------------------------------------------------------------------
@@ -1778,8 +1826,14 @@ export function tickEcon(s: GameState) {
           : nextPhase === "bust" ? rrange(s, 16, 42)
             : rrange(s, 26, 74),
       );
-      if (nextPhase !== "steady" && cur !== nextPhase) {
-        pushNews(s, nextPhase === "boom" ? "event" : "warn", nextPhase === "boom"
+      if (nextPhase !== "steady") {
+        // The same dead guard as the industry turn above, and the same fix at
+        // the grain this loop runs at: it is over ASSET CLASSES, not trades, so
+        // the stake is whether the player owns any of the class.
+        // `exposureToTrade` answers the trade question and is not
+        // interchangeable with this one.
+        const exposed = ownsClass(s, k);
+        pushNews(s, exposed ? (nextPhase === "boom" ? "event" : "warn") : "info", nextPhase === "boom"
           ? `${SECTOR_LABEL[k]} is turning. Tenants in that sector are expanding hard and every landlord in it knows.`
           : `${SECTOR_LABEL[k]} demand is rolling over. Brokers are quietly cutting asking rents.`);
       }
@@ -1827,8 +1881,27 @@ export function tickEcon(s: GameState) {
       // steady for the better part of a decade.
       const len = next === "boom" ? rrange(s, 18, 48) : next === "bust" ? rrange(s, 12, 36) : rrange(s, 30, 96);
       e.industryPhaseM![k] = Math.round(len / Math.max(0.6, vol));
-      if (next !== "steady" && cur !== next) {
-        pushNews(s, next === "boom" ? "event" : "warn", next === "boom"
+      if (next !== "steady") {
+        // A DEAD GUARD, REPLACED BY THE TEST IT WAS PRETENDING TO BE.
+        //
+        // This read `next !== "steady" && cur !== next`, which looks like a
+        // de-duplication filter and is not one: the transition table is
+        // steady->{boom,bust}, boom->{bust,steady}, bust->{steady,boom}, so
+        // `next !== "steady"` already implies `next !== cur`. Measured over
+        // 1,200 months: 437 phase changes, 280 ended non-steady, 280 news items
+        // fired, and the clause suppressed ZERO of them. Nought from->to
+        // repeats in 437 transitions.
+        //
+        // Ten trades on independent multi-year clocks made this the single
+        // loudest emitter on the tape, and 88% of the items concerned a trade
+        // the player had no lease to. The relevance test is not new either:
+        // `exposureToTrade` already exists and swans.ts already uses it for
+        // exactly this judgement, printing "You have nothing let to that trade
+        // today" when it is zero. A trade turning is still filed — a principal
+        // reads about the city — but it INTERRUPTS only when it is your rent
+        // roll turning. The 10% line is the same materiality swans.ts draws.
+        const exposed = exposureToTrade(s, k) > 0.10;
+        pushNews(s, exposed ? (next === "boom" ? "event" : "warn") : "info", next === "boom"
           ? `${INDUSTRY_LABEL[k]} is hiring hard. Anyone with space let to that trade is about to have a good few years.`
           : `${INDUSTRY_LABEL[k]} is in trouble. Look at how much of your rent roll depends on it before somebody hands you the keys.`);
       }

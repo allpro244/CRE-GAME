@@ -12,7 +12,7 @@ import { logBooks, monthLabel, serviceSpec, planSpec } from "./types";
 import { demandNow } from "./demand";
 import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock } from "./market";
 import { firmShort } from "./firm";
-import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, assetValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling,
+import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, landRead, assetValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling,
   HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
 // a lot can physically carry and value.ts cannot import this file. Re-exported
@@ -2580,9 +2580,41 @@ export function tickCityGrowth(
       // no longer vacant, and the static table still says it is.
       const rec = resolveRec(parcels, s, bbl);
       if (!rec || rec.class !== "land" || rec.lotArea < 1500) continue;
-      // the city builds where the neighbourhood has BECOME good, not where it
-      // started good — which is how your first tower pulls the market to you
-      const score = demandNow(s, rec) + rng(s) * 25;
+      // THE CITY PICKED THE MOST EXPENSIVE DIRT IN THE SAMPLE, EVERY TIME.
+      //
+      // This scored candidates on DEMAND — "the city builds where the
+      // neighbourhood has become good" — which is the numerator of a
+      // development decision with the denominator left out. A high-demand
+      // corner is also the dearest corner, and the dearest corners are exactly
+      // the ones where the option holder outbids the builder, so the city
+      // systematically broke ground on the sites where building pencils least.
+      //
+      // It showed up from two directions at once. The sites the city started
+      // had a median land value of $8.5M against a median firm cash balance of
+      // $0.8M, so the street could not fund a single one of them and named
+      // firms took 9 of 307 jobs in thirty years. And when `claimJob` was given
+      // the pro forma test it had never had, it refused 99.7% of what it was
+      // offered — correctly, because `landValue` exceeded what any builder
+      // could bear on essentially every site being offered.
+      //
+      // A developer does not chase demand, it chases SURPLUS: what the finished
+      // building is worth, less what it costs to build, less what the dirt
+      // costs, and the last of those three is what demand had been standing in
+      // for. `landRead` already computes both halves — the builder's residual
+      // and the price the market is asking — so this is the existing model
+      // being read rather than a new one being invented. Demand stays in the
+      // expression through the residual, which is where it belongs: a better
+      // corner earns more rent, and that is already why its residual is higher.
+      // PER SQUARE FOOT, not per site. Scoring TOTAL surplus was tried first
+      // and it selects for BIGNESS: surplus scales with lot area, so the
+      // biggest lots win regardless of whether they are the best deals, and
+      // the median site the city broke ground on went from $8.5M of land to
+      // $32.8M. That is the same fault as scoring on demand, reached from the
+      // other side. A developer comparing two sites compares the return on the
+      // dirt, which is scale-free, and then the firm-size filters in
+      // `claimJob` decide who can actually carry the job.
+      const read = landRead(rec, s.econ);
+      const score = read.builder - read.psf + rng(s) * 12;
       if (score > bestScore) { bestScore = score; best = { bbl, rec }; }
     }
     if (!best) continue;

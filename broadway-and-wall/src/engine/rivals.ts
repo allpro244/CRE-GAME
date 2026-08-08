@@ -33,7 +33,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from "./types";
 import { CASH_APY, monthLabel } from "./types";
 import { BUILD_MONTHS, rng, rrange, devPencils } from "./market";
-import { assetValue, heightPremium, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall } from "./value";
+import { assetValue, heightPremium, initialCondition, residualScheme, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall } from "./value";
 import { cityInfillCap, devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retailWantsMixed, SOFT_COST, useForZone, noteRecordPlan, openConstructionDesks, pickConstructionDesk, capRetail, withStreetRetail } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure } from "./lenders";
 import { streetRefiProceeds, productById } from "./debt";
@@ -320,7 +320,44 @@ export function claimJob(
   const cost = jobBudget(s, use, sf, floors);
   const land = Math.round(landValue(rec, s.econ) * rrange(s, 1.02, 1.18));
   const ltc = Math.max(0.4, Math.min(0.7, 0.7 * ci));
-  const equity = Math.round(cost * (1 - ltc)) + land;
+  // LOAN-TO-COST MEANS COST, AND COST INCLUDES THE SITE.
+  //
+  // This required the dirt to be bought outright, in cash, on top of the equity
+  // slice of the build — `cost * (1 - ltc) + land`. No construction lender
+  // works that way and no developer would survive one that did. A construction
+  // facility is sized against TOTAL project cost, land included; the sponsor
+  // puts up its share of the whole and the loan advances against the rest, with
+  // the site counted into the basis at what was paid for it.
+  //
+  // The old form was not a small conservatism, it was the reason the street
+  // does not build. Measured over two towns and thirty years, named firms broke
+  // ground on 9 of 307 jobs — 2.9% — while `claimJob`'s own docstring says the
+  // split should be "most construction... done by people you have never heard
+  // of, and the rest... by the four names you compete with every month". 2.9%
+  // is not the rest, it is noise. The arithmetic: the city breaks ground on
+  // sites whose median land is $8.5M, and the median firm holds $0.8M of cash.
+  // Requiring all of the first from all of the second failed by an order of
+  // magnitude, every time, for fifty years.
+  const equity = Math.round((cost + land) * (1 - ltc));
+
+  // ...AND IT HAS TO PENCIL AT THE PRICE THEY WOULD PAY FOR THE DIRT.
+  //
+  // This function tested affordability, appetite, the phase and the credit
+  // window, and never once asked whether the job made money. It then bought the
+  // site at `landValue x 1.02-1.18` — a premium over a number `value.ts` defines
+  // as exactly the price at which a builder earns DEV_MARGIN and no more.
+  //
+  // The test is the residual itself, so this adds no fifth underwriting model:
+  // what a builder of THIS use can bear on THIS site is already in
+  // `residualScheme(...).all`, and a firm paying more than that is buying a job
+  // it cannot earn its hurdle on. Declining is not a job lost — returning null
+  // hands it back to the anonymous city, which is the right outcome and the
+  // one this function was written around. The marginal sites get built by
+  // owner-occupiers and people nobody has heard of; the ones that pencil get a
+  // name on the crane.
+  const lead = dominantOf(devMix(use));
+  const bid = (residualScheme(rec, s.econ)?.all ?? []).find((c) => c.use === lead)?.psf ?? 0;
+  if (land > bid * (rec.lotArea || 0)) return null;
 
   const runners = livingRivals(s).filter((r) => {
     const want = BUILD_APPETITE[r.style];
@@ -332,11 +369,11 @@ export function claimJob(
     // sixty-million-dollar tower, and a shop that does it anyway is not a
     // developer, it is a casualty.
     if (cost > (r.aum ?? 0) * 0.75 + r.cash * 4) return false;
-    // The equity goes in over the build, not on day one — the site and the
-    // first year of it is what has to be in the bank to break ground. That is
-    // the actual test a developer applies, and requiring the whole cheque up
-    // front meant one job got started in fifty years.
-    const dayOne = land + Math.round(cost * (1 - ltc) * 0.45);
+    // The equity goes in over the build, not on day one — but it goes in FIRST,
+    // ahead of the loan, which is how a construction facility is drawn. So what
+    // has to be in the bank to break ground is the sponsor's share of the whole
+    // project, not the whole site plus a slice of the building.
+    const dayOne = Math.round(equity * 0.85);
     if (r.cash < dayOne + Math.max(1_000_000, r.cash * 0.06)) return false;
     // A DEVELOPER GOES WHERE SOMEBODY HAS ALREADY PROVED THE BLOCK. Your
     // building is the comp that makes their pro forma work, which is exactly

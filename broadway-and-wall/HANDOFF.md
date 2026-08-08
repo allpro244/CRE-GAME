@@ -453,9 +453,52 @@ read of the engine and each has a file:line; none is measured yet.
    class, and `dev.ts:2490` admits the brake's centring constant was moved from
    0.80 to 0.55 to accommodate the resulting bias. Fake #1 sitting on fake #5.
    The recentred expression is also hand-copied into `actions.ts:507`.
-4. **`claimJob` (rivals.ts:308) runs no pro forma at all** — no yield, no cap,
-   no vacancy, no replacement cost — and then buys the dirt at `landValue x
-   rrange(1.02, 1.18)`, a premium over a price defined as break-even.
+4. **DONE, and it found the real one underneath.** `claimJob` now applies the
+   residual as its pro forma — a firm will not pay more for the dirt than a
+   builder of that use can bear on that site — and `claimJob`'s loan-to-cost
+   arithmetic was wrong in a way that mattered more: it required the site to be
+   bought outright in CASH on top of the equity slice of the build
+   (`cost * (1 - ltc) + land`). No construction lender works that way. LTC is
+   sized on total project cost, land included.
+
+   **But the street still does not develop, and the reason is scale, not
+   underwriting.** This is now the open item and it is a big one:
+
+       median firm cash          $0.8M  ->  $1.8M over 30 years
+       median firm AUM           $4M    ->  $12M
+       median vacant lot land    $0.3M  ->  $0.8M
+       median site the city ACTUALLY BREAKS GROUND ON    $8.5M  ->  $34.6M
+       named firms' share of jobs broken   9 of 307 (2.9%)
+
+   The city builds on dirt costing ten to forty times what any firm in town
+   holds, so the street cannot fund a single one of the jobs it is offered.
+   `claimJob`'s own docstring says the split should be "most construction...
+   done by people you have never heard of, and the rest... by the four names
+   you compete with every month". 2.9% is not the rest, it is noise, and the
+   developer archetype is close to decorative.
+
+   Two things were tried against it and NEITHER FIXED IT, which is the useful
+   part. Scoring candidate sites by total builder surplus instead of by demand:
+   surplus scales with lot area, so it selects for bigness and the median site
+   went from $8.5M to $32.8M — the same fault as scoring on demand, reached
+   from the other side. Scoring by surplus PER SQUARE FOOT, which is scale-free
+   and is what a developer actually compares: median site $34.6M, claim rate
+   2.5% against a 2.9% baseline, i.e. unchanged. Prime dirt has both the
+   highest price and the highest residual, so no site-selection rule reaches
+   the cheap end.
+
+   The site-selection change was kept anyway, for a reason that is about
+   coherence rather than the headline number: with it, the pro forma gate is
+   free — identical results with the gate on and off — because the city now
+   only breaks ground where a builder could pay. Under the old demand-based
+   rule the same gate refused 99.7% of jobs. The city and the firm now ask the
+   same question and get the same answer, which is the whole point of one model.
+
+   **What is actually unresolved: are the firms too small, or is the city's
+   development too big?** Median AUM of $12M in a town with roughly $4B of
+   stock, across ~30 named firms, is 10% of the city — plausible in aggregate,
+   far too small individually to develop anything. Nothing has been tuned here
+   and nothing should be until somebody decides which side is wrong.
 5. **`planDevelopment` counts the cycle twice with opposite sign**: through-cycle
    land in the denominator (the residual carries `capExp` and `rentExp`), spot
    exit cap in the numerator (dev.ts:872).

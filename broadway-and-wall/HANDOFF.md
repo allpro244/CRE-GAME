@@ -293,8 +293,48 @@ Four harnesses now cover this ground and all four are new:
     pnpm breakeven   the rent each class NEEDS against the rent it gets,
                      computed by inverting the engine's own residual
     pnpm pencils     who is the high bidder for dirt, and what they would build
+    pnpm leadlag     does the cycle run in the right ORDER — see below
     pnpm devyield    (existing) how many of the 1,363 sites clear their exit cap
     node tools/constants.mjs   provenance x leverage over every named constant
+
+**`pnpm leadlag` is the best evidence in this repo that the economy is real,
+and it found one specific thing that is not.** Every other harness measures a
+LEVEL, and a level can be reached from a dozen directions by somebody who wants
+it to come out right. An ORDERING cannot: it falls out of the wiring, and no
+constant anywhere in the engine sets it. Measured over four towns and fifty
+years:
+
+    starts -> deliveries    36mo   r 0.53   expected 18-40    ok   (the control)
+    deliveries -> vacancy   -1mo   r 0.67   simultaneous      ok   (space arrives empty)
+    vacancy -> rent          0mo   r 0.63   expected 3-24     SIMULTANEOUS
+    rent -> cap rate         2mo   r 0.67   expected 0-12     ok
+    cap rate -> starts      32mo   r 0.58   expected 6-42     ok
+    TOTAL LOOP              69 months = 5.8 years             (real: 7-12)
+
+Four legs in the right order with the right gaps, none of them set anywhere.
+The broken one is precise: **rent reprices on vacancy in the same month.** Real
+rent cannot, because leases roll — a landlord watching vacancy rise cannot touch
+the rent on space that is already let, and the engine models the tenant side of
+that delay (`affordEff`, a ~100-month EMA) while the landlord side (`vacTerm` in
+market.ts) reads the current gap and moves the index immediately.
+
+That is a testable prediction rather than a tuning target: put a rollover lag on
+the landlord's response and the loop should go from 5.8 years to roughly 7,
+which is where real property cycles start. If it does not, the lag is not the
+missing piece and this entry is wrong.
+
+**And a warning about the harness, which is worth more than the result.** This
+file was wrong three times before it was right, and the control leg caught every
+one. First run: no smoothing, so a monthly difference of a multi-year cycle was
+pure noise and it reported vacancy leading rent by MINUS 58 months at r = 0.18.
+Second: `value` was defined as `rentIdx / capRate`, so "rent leads value by
+exactly 0 months at r = 0.83" was arithmetic, not a finding — a test that cannot
+return anything else. Third: flows were differenced like levels, which broke the
+control leg down to r = 0.12 on a leg that is a literal clock. Fourth: it
+searched for maximum POSITIVE correlation on a pair that is negatively related
+by definition, and pinned against the search boundary. A lag sitting at MAXLAG
+is never a measurement. Every one of those produced a confident, plausible,
+completely wrong table.
 
 **The root cause, and it was not what it looked like.** `HARD_COST_PSF` said in
 its own comment that it was not observed — "SOLVED: the cost at which a new

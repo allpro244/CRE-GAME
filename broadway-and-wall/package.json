@@ -54,7 +54,8 @@
     "styles": "node tools/styleaudit.mjs",
     "repudiate": "node test/repudiate.mjs",
     "pencils": "node test/pencils.mjs",
-    "breakeven": "node test/breakeven.mjs"
+    "breakeven": "node test/breakeven.mjs",
+    "leadlag": "node test/leadlag.mjs"
   },
   "dependencies": {
     "@types/three": "^0.185.3",

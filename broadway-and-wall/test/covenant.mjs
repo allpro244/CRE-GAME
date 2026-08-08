@@ -62,8 +62,16 @@ function run(rich) {
         if (bought >= 14) break;
         const rec = E.resolveRec(parcels, g, L.bbl);
         if (!rec || rec.class === "land" || !rec.bldgArea || g.holdings[L.bbl]) continue;
-        const r = E.executePurchase(g, parcels, L.bbl, L.ask, "savings", false, 1);
-        if (r && r.s && r.s.holdings[L.bbl]) { g = r.s; bought++; }
+        // WALK THE LADDER, THE WAY A BUYER NOW HAS TO. Alden's desk carries a
+        // $2.5M minimum since the lender restructure, so a cheap building
+        // financed "with savings" comes through all-cash and covenant-free —
+        // which silenced this test's thin arm the day the minimum landed. The
+        // subject here is covenants, so the harness borrows from whichever
+        // bank actually quotes the deal, exactly like the player.
+        const pid = ["savings", "harbor"].find((id) => E.buyQuote(g, parcels, L.bbl, L.ask, id, 1).principal > 0);
+        if (!pid) continue;
+        const r = E.executePurchase(g, parcels, L.bbl, L.ask, pid, false, 1);
+        if (r && r.s && r.s.holdings[L.bbl]?.loan) { g = r.s; bought++; }
       }
     }
     const seen = new Set();

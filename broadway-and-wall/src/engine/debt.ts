@@ -89,22 +89,57 @@ export const PRODUCTS: LoanProduct[] = [
     blurb: "The hometown bank. Small checks, honest spreads, recourse — and they answer the phone in a crunch, for their friends.",
     ltv: 0.68, spread: 1.55, floating: false, ioM: 12, amortYears: 25, termM: 60,
     uwDscr: 1.25, debtYield: 0.09, points: 0.006, recourse: true, prepay: "stepdown", prepayM: 36,
-    minDSCR: 1.25, maxLTV: 0.82, maxLoan: 6_000_000,
+    // The loose ongoing covenant is the community bank's real product: they do
+    // not re-appraise you every quarter, they watch the payment arrive. The
+    // sizing tests above are unchanged — this is the leash, not the cheque.
+    minDSCR: 1.15, maxLTV: 0.82, maxLoan: 6_000_000,
   },
+  /**
+   * WHY THE REGIONAL NO LONGER STRICTLY DOMINATES THE HOMETOWN BANK.
+   *
+   * Measured at game start over 1,464 real listings: First Harbor won the
+   * financing pick on ZERO of them, in every size band. The 25-year Alden
+   * sheet beat it on rate, interest-only, advance, term, hold size AND
+   * recourse simultaneously — a strictly dominated product, which is why the
+   * lender choice never felt like a choice. Two facts about the actual market
+   * were missing, and both are restored below rather than any number tuned:
+   *
+   * 1. BANK PAPER IS RECOURSE. A bank's portfolio CRE loan carries a personal
+   *    guarantee — community and regional alike. Non-recourse money is
+   *    institutional money: the life company, the conduit, the debt fund.
+   *    Alden was writing $2M non-recourse at 72%, which is a product that
+   *    does not exist anywhere. Now both banks sign you personally, and the
+   *    way to keep your name off the paper is the way it is in life — good
+   *    product to Pelican, $10M+ to the conduit, or Cordage's spread.
+   *
+   * 2. A REGIONAL'S CRE DESK HAS A MINIMUM. They will not get out of bed for
+   *    a loan under a couple of million — the underwriting costs the same and
+   *    the yield does not cover it. $1-3M minimums are standard; $2.5M is the
+   *    middle of that band. Under it, the hometown bank IS the market, which
+   *    is what "small checks" on its blurb has claimed all along.
+   *
+   * And the covenants now say what the blurb says. Alden was described as
+   * "covenant-happy" while carrying the same 1.25 ongoing DSCR trigger as
+   * Harbor; it now trips its sweep at 1.30. Harbor drops to 1.15 — a
+   * community bank does not mark you to market, it cares whether the payment
+   * arrives, and forbearance for its friends is already in the engine
+   * (crunchEase). So the bank choice is now the real one: more proceeds on a
+   * tighter leash, or fewer on a looser one.
+   */
   {
     id: "savings", label: "Alden Savings & Trust · 7 yr, 30-yr am", lender: "Alden Savings & Trust",
-    blurb: "The regional. Bigger checks, covenant-happy, and they tighten fast when the cycle turns.",
+    blurb: "The regional. Bigger checks, covenant-happy, recourse like every bank — and they tighten fast when the cycle turns.",
     ltv: 0.72, spread: 1.70, floating: false, ioM: 24, amortYears: 30, termM: 84,
-    uwDscr: 1.25, debtYield: 0.085, points: 0.008, recourse: false, prepay: "stepdown", prepayM: 48,
-    minDSCR: 1.25, maxLTV: 0.85, maxLoan: 25_000_000,
+    uwDscr: 1.25, debtYield: 0.085, points: 0.008, recourse: true, prepay: "stepdown", prepayM: 48,
+    minDSCR: 1.30, maxLTV: 0.85, minLoan: 2_500_000, maxLoan: 25_000_000,
   },
   {
     // the 25-year sheet: same desk, sharper rate, faster paydown
     id: "savings25", label: "Alden Savings & Trust · 7 yr, 25-yr am · −25bps", lender: "Alden Savings & Trust",
     blurb: "Faster paydown buys a sharper rate. Less cash flow, more equity, and the bank sleeps better than you do.",
     ltv: 0.72, spread: 1.45, floating: false, ioM: 36, amortYears: 25, termM: 84,
-    uwDscr: 1.25, debtYield: 0.085, points: 0.008, recourse: false, prepay: "stepdown", prepayM: 48,
-    minDSCR: 1.25, maxLTV: 0.85, maxLoan: 25_000_000,
+    uwDscr: 1.25, debtYield: 0.085, points: 0.008, recourse: true, prepay: "stepdown", prepayM: 48,
+    minDSCR: 1.30, maxLTV: 0.85, minLoan: 2_500_000, maxLoan: 25_000_000,
   },
   {
     id: "pelican", label: "Pelican Life Insurance · 15 yr, 30-yr am", lender: "Pelican Life Insurance",

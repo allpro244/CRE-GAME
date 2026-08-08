@@ -2234,6 +2234,17 @@ export function tickEcon(s: GameState) {
     const gap = (e.cityVac?.[k] ?? NATURAL_VAC[k])
       + (e.sublet?.[k] ?? 0) / Math.max(1, e.stock?.[k] ?? CITY_STOCK[k])
       - NATURAL_VAC[k];
+
+    // WHERE THE VACANCY-TO-RENT LAG IS NOT. `pnpm leadlag` says this leg runs
+    // SIMULTANEOUS (0 months) where a real one runs 3 to 24, and the obvious
+    // explanation — that a landlord cannot see this month's vacancy print, so
+    // `vacTerm` should read a trailing average — was built, measured and is
+    // WRONG. Identification test: driving the observation lag from 0 months to
+    // 24 moved the measured leg from 0mo to MINUS 3, not toward positive at
+    // all, while the total loop fell from 5.7 years to 4.7. If a 24-month lag
+    // on this term cannot move the leg, this term is not what carries the
+    // correlation. See HANDOFF.md; the live hypothesis is `scarcity` and the
+    // rollover-weighted index, not this.
     // The vacancy gap has to be able to OVERPOWER the cycle's sentiment, or a
     // glut politely coexists with rising rents forever. Six points of excess
     // availability takes rents down about 8.4% a year, which is what a real

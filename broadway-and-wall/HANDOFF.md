@@ -318,10 +318,48 @@ the rent on space that is already let, and the engine models the tenant side of
 that delay (`affordEff`, a ~100-month EMA) while the landlord side (`vacTerm` in
 market.ts) reads the current gap and moves the index immediately.
 
-That is a testable prediction rather than a tuning target: put a rollover lag on
-the landlord's response and the loop should go from 5.8 years to roughly 7,
-which is where real property cycles start. If it does not, the lag is not the
-missing piece and this entry is wrong.
+That was written as a testable prediction rather than a tuning target: put a
+rollover lag on the landlord's response and the loop should go from 5.8 years to
+roughly 7. **It was then built and measured, and THE PREDICTION FAILED.** The
+entry above is preserved as written because a prediction you quietly edit
+afterwards is not a prediction.
+
+What was built: an observation lag on the availability gap, `COMP_LAG_A = 1/7`,
+a six-month mean lag derived from the fact that commercial leases take three to
+nine months from tour to signature and vacancy statistics publish four to eight
+weeks after the quarter — so the availability a landlord responds to is a
+trailing average. Both branches of `vacTerm` read it.
+
+    vacancy -> rent      0mo -> 1mo      (predicted 3-24)
+    TOTAL LOOP           5.8y -> 3.9y    (predicted ~7)
+
+Worse, not better. So before believing anything, an IDENTIFICATION TEST: drive
+the lag from zero months to twenty-four and see whether the leg moves at all.
+
+    COMP_LAG_A = 1     (0mo lag)     vac -> rent   0mo    loop 5.7y
+    COMP_LAG_A = 0.04  (24mo lag)    vac -> rent  -3mo    loop 4.7y
+
+A twenty-four month lag on that term moves the measured leg AWAY from positive.
+**`vacTerm` is not the channel that carries the vacancy-to-rent correlation**,
+so no amount of lagging it was ever going to fix this leg. The change was
+reverted — the mechanism is defensible on its own terms, but it was introduced
+to fix a specific measured defect, it did not, and a constant that survives
+without a job is the thing this repo exists to refuse. Reverting restored the
+baseline to the digit (36 / 0 / 32 / 69 months).
+
+**The live hypothesis, untested.** If the correlation is not coming through
+`vacTerm`, the candidates are `scarcity` — `clamp(unmet[k] * 0.10, 0, 0.016)`,
+which is computed from the same absorption pass that sets vacancy, in the same
+month, and is therefore perfectly contemporaneous with it by construction — and
+the deeper structural point underneath it: **`rentIdx` is being used both as the
+market's asking rent and as what the standing stock earns.** Those are different
+quantities with different speeds. A new lease can be struck at the new number
+today; the index of achieved rent across the stock can only move as fast as
+leases roll, which is about 1% of the footprint a month on an eight-year term.
+The engine already distinguishes `rentIdx` from `effRentIdx`, but `effRentIdx`
+is only `rentIdx x (1 - 0.14 x concIdx)` — a concession haircut, not a
+rollover-weighted average. Making it one is the next thing to try, and it is a
+structural change rather than a coefficient.
 
 **And a warning about the harness, which is worth more than the result.** This
 file was wrong three times before it was right, and the control leg caught every

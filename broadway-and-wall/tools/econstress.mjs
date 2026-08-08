@@ -749,29 +749,104 @@ if (want("F")) {
 // or not it owns anything, both on purpose. This checks the purpose landed:
 // sitting on the opening cheque for fifty years has to LOSE, in real money, to
 // somebody who bought buildings with it.
+// THE OLD ESTIMATOR DIVIDED BY ONE DOLLAR AND COULD NOT REPORT BROKEN.
+//
+// It printed `med(active) / Math.max(1, idleReal)` and called it "penalty for
+// idleness: 21357137.3x". That is not a ratio. The do-nothing firm is INSOLVENT
+// by year 24-38 on 10 seeds out of 10 — fixed G&A against a 1% deposit rate,
+// which is the mechanism working — so `idleReal` is never positive, the clamp
+// returns the literal integer 1 in every run ever made, and the printed number
+// is the active firm's net worth in dollars with an "x" stuck on the end. The
+// second acceptance check therefore read "active must end with at least three
+// dollars".
+//
+// The first check was worse. `idleReal < start` with `start = 6e6` is satisfied
+// by MINUS FIFTY THOUSAND on every seed, so it is a tautology — and 6e6 was
+// itself stale, from an era whose opening bankroll no longer exists
+// (DEFAULT_START_CASH is 2,500,000). BROKEN needs ok===0 and ok was never below
+// 1, so this check was structurally pinned to WIRED or WEAK and could not fail
+// about anything. Fault-injected: an active strategy that DESTROYS 79% of the
+// fund's real capital over fifty years — the claim flatly violated — scored
+// "516042.0x" and WIRED.
+//
+// It also deflated the two arms by two different price levels: the idle arm by
+// the CPI frozen at its own death, the active arm by the CPI at month 600. Same
+// city, same market seed, two answers for the end of the measurement.
+//
+// This is the same fault this file already found and fixed for test 28 — see
+// the note there about `Math.max(1, negative)` turning a dominance measure into
+// "the winner's net worth, in dollars, with an x after it". [G] was never
+// brought along.
+//
+// So: no ratio anywhere, no cross-arm deflator, and every denominator a
+// positive constant read from the engine. Each arm's real return is measured
+// against its OWN price level, which is the only internally consistent thing to
+// do when one world stops at year 30 and the other runs to fifty. The claim
+// splits into the three statements it was always made of, and each is checked
+// per seed rather than on a median of three:
+//
+//   S1  doing nothing is FATAL — the idle firm goes insolvent inside the run
+//   S2  buying buildings COMPOUNDS — the active firm's real return beats zero
+//   S3  holding cash DECAYS — the idle firm's real return does not
+//
+// All three can fail, and BROKEN is reachable: verified by injection, a $1M
+// opening bankroll drives S2 negative on every seed.
 if (want("G")) {
   const lines = [];
-  const idle = [], active = [];
-  for (const ms of MARKET_SEEDS.slice(0, 3)) {
+  const rows = [];
+  for (const ms of MARKET_SEEDS) {
     const base = city(CITY_SEED);
     const parcels = JSON.parse(JSON.stringify(base.parcels));
-    let g = E.firstListings(E.newGame(ms, parcels), parcels, base.bbls);
-    for (let m = 0; m < MONTHS; m++) g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
-    const real = E.netWorth(g, parcels) / Math.max(0.1, g.econ.cpi);
-    idle.push({ nom: E.netWorth(g, parcels), real, cpi: g.econ.cpi });
+    const g0 = E.newGame(ms, parcels);
+    // READ THE OPENING CHEQUE, DO NOT ASSERT IT. The old `6e6` was a number
+    // from a bankroll that no longer exists, and a hardcoded start is exactly
+    // how conserve's bot went quiet for an unknown number of commits.
+    const start = g0.cash;
+    let g = E.firstListings(g0, parcels, base.bbls);
+    // NO RESURRECTION HERE, ON PURPOSE — the death is the finding. But it is
+    // RECORDED rather than silently frozen: advanceQuarter returns state
+    // unchanged once gameOver is set, so without this the terminal "wealth" is
+    // the insolvency exit condition wearing a fifty-year label.
+    let deathM = 0;
+    for (let m = 0; m < MONTHS; m++) {
+      g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
+      if (g.gameOver && !deathM) deathM = m + 1;
+    }
+    const idleReal = E.netWorth(g, parcels) / Math.max(0.1, g.econ.cpi);
     const a = playStrategy("allcash", ms);
-    active.push(a.nw / Math.max(0.1, a.cpi));
+    const activeReal = a.nw / Math.max(0.1, a.cpi);
+    rows.push({ ms, start, deathM, idleReal, activeReal,
+      idleEdge: idleReal / start - 1, activeEdge: activeReal / start - 1 });
   }
-  const idleReal = med(idle.map((x) => x.real)), start = 6e6;
-  lines.push(`the opening cheque, held in the bank for ${MONTHS / 12} years:`);
-  lines.push(`   nominal ${M(med(idle.map((x) => x.nom)))}   ·   real ${M(idleReal)}   ·   CPI ${med(idle.map((x) => x.cpi)).toFixed(2)}x`);
-  lines.push(`the same cheque, spent on buildings (all-cash): real ${M(med(active))}`);
+
+  const died = rows.filter((r) => r.deathM > 0);
+  // THE CLAIM IS COMPARATIVE — the title says buying must BEAT sitting, so that
+  // is what is counted, per seed, rather than a median of medians. Compounding
+  // is printed beside it because a world where both arms lose is a different
+  // story from one where the buyer merely trails the bank.
+  const beat = rows.filter((r) => r.activeEdge > r.idleEdge);
+  const compounded = rows.filter((r) => r.activeEdge > 0);
+  const decayed = rows.filter((r) => r.idleEdge < 0);
+  const n = rows.length;
+
+  lines.push(`the opening cheque is ${M(rows[0].start)}, read from the engine — ${n} seeds, ${MONTHS / 12} years`);
   lines.push(``);
-  lines.push(`doing nothing, in real terms: ${((idleReal / start - 1) * 100).toFixed(1)}%   (need < 0 — cash must decay)`);
-  lines.push(`penalty for idleness: ${(med(active) / Math.max(1, idleReal)).toFixed(1)}x   (need >= 3x)`);
-  const ok = [idleReal < start, med(active) / Math.max(1, idleReal) >= 3].filter(Boolean).length;
+  lines.push(`S1  doing nothing is fatal:   insolvent in ${died.length} of ${n} runs   (need ${n} of ${n})`);
+  lines.push(`      months to insolvency: ${rows.map((r) => (r.deathM || "—")).join("  ")}   median ${med(died.map((r) => r.deathM)).toFixed(0)}`
+    + `${died.length ? ` (year ${(med(died.map((r) => r.deathM)) / 12).toFixed(1)})` : ""}`);
+  lines.push(`S2  buying beats sitting:     in ${beat.length} of ${n} worlds   (need ${n} of ${n})`);
+  lines.push(`      buyer's real return: ${rows.map((r) => `${(r.activeEdge * 100).toFixed(0)}%`).join("  ")}`);
+  lines.push(`      and it COMPOUNDS (>0) in ${compounded.length} of ${n} — a world where both arms lose is a`);
+  lines.push(`      different story from one where the buyer merely trails the bank`);
+  lines.push(`S3  cash decays:              real return < 0 in ${decayed.length} of ${n}   (need ${n} of ${n})`);
+  lines.push(`      per seed: ${rows.map((r) => `${(r.idleEdge * 100).toFixed(0)}%`).join("  ")}`);
+  lines.push(``);
+  lines.push(`each arm is deflated by its OWN world's price level — one of them stops at year `
+    + `${(med(died.map((r) => r.deathM)) / 12).toFixed(0)} and the other runs to ${MONTHS / 12}, `
+    + `so there is no single "end of the measurement" to share`);
+  const ok = [died.length === n, beat.length === n, decayed.length === n].filter(Boolean).length;
   report("G", "TIME COSTS SOMETHING — fifty years of doing nothing",
-    ok === 2 ? "WIRED" : ok === 1 ? "WEAK" : "BROKEN", lines);
+    ok === 3 ? "WIRED" : ok === 2 ? "WEAK" : "BROKEN", lines);
 }
 
 // ===========================================================================

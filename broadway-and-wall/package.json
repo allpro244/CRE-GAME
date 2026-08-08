@@ -62,7 +62,8 @@
     "plate": "node test/plate.mjs",
     "baseline": "node tools/baseline.mjs",
     "baseline:check": "node tools/baseline.mjs --check",
-    "tape": "node test/tape.mjs"
+    "tape": "node test/tape.mjs",
+    "liquidity": "node test/liquidity.mjs"
   },
   "dependencies": {
     "@types/three": "^0.185.3",

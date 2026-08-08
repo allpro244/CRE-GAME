@@ -27,7 +27,7 @@
 // can read or ignore — passing costs nothing but the bargain, and nothing
 // here ever asks for a second click.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { AuctionLot, GameState, Holding } from "./types";
+import type { AuctionLot, AuctionResultRow, GameState, Holding } from "./types";
 import { logBooks, monthLabel, nextJulyAfter } from "./types";
 import { rng, rrange } from "./market";
 import { openReoPortfolio } from "./portfoliosale";
@@ -298,6 +298,22 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
   delete s.auction;
   let sold = 0, reo = 0, pulled = 0;
 
+  /**
+   * WHAT HAPPENED TO YOUR NUMBER, recorded rather than only narrated.
+   *
+   * Everything below already decided whether you won, were outbid, were paid
+   * off or could not close — and the only place any of it surfaced was the news
+   * tape. A player who registered a bid closed the sheet and then had to go
+   * reading the ticker to find out whether they owned a building. So each lot
+   * the player had a number on writes a row here, the panel shows it once, and
+   * `seenM` on the card retires it.
+   */
+  s.auctionResults = { m: s.month, rows: [] };
+  const said = (bbl: string, address: string, outcome: AuctionResultRow["outcome"],
+                yourBid: number, price: number, winner?: string, note?: string) => {
+    s.auctionResults!.rows.push({ bbl, address, outcome, yourBid, price, winner, note });
+  };
+
   for (const lot of a.lots) {
     const rec = resolveRec(parcels, s, lot.bbl);
     if (!rec) continue;
@@ -315,7 +331,11 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       : !s.holdings[lot.bbl] && !!s.rivals?.find((r) => r.id === lot.borrowerId)?.bbls.includes(lot.bbl);
     if (!live) {
       pulled++;
-      if (bid > 0) { s.cash += deposit; logBooks(s, "sold", deposit); } // deposit back
+      if (bid > 0) {
+        s.cash += deposit; logBooks(s, "sold", deposit); // deposit back
+        said(lot.bbl, lot.address, "pulled", bid, 0, undefined,
+          `The borrower reinstated before the hammer. Your ${money(deposit)} deposit came back.`);
+      }
       s.news.unshift({
         q: s.month, kind: "info",
         text: `Lot at ${lot.address} was pulled on the courthouse steps — the borrower reinstated, or the file died first. `
@@ -341,6 +361,8 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         text: `You could not close on ${lot.address} — the balance was due at the hammer and the cash was not there. `
           + `The referee kept your ${money(deposit)} deposit, which is what the deposit is for.`,
       });
+      said(lot.bbl, lot.address, "nocash", bid, 0, undefined,
+        `The balance was due at the hammer and the cash was not there. The referee kept your ${money(deposit)} deposit.`);
       yours = 0;
     } else if (yours > 0) {
       s.cash += deposit;               // roll the deposit back in; winners pay in full below
@@ -374,6 +396,8 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         recordComp(s, rec, paid, buyer, n.obligor, true, "worn");
         s.notes = s.notes!.filter((x) => x.id !== n.id);
         sold++;
+        said(lot.bbl, lot.address, "paidoff", bid, paid, buyer,
+          `Over your debt, so you were paid off in full — ${money(lot.debt)} against ${money(n.basis)} in.`);
         s.news.unshift({
           q: s.month, kind: "deal",
           text: `${buyer} took ${lot.address} on the steps at ${money(paid)} — over your debt, so you were paid off in full: `
@@ -387,6 +411,8 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
           s.cash -= over; logBooks(s, "bought", over);
           r.cash += over;
         }
+        said(lot.bbl, lot.address, "won", bid, Math.max(yours, lot.debt), undefined,
+          `The room stopped under your debt, so the credit bid took it. You did not buy a building at a discount; you bought a job.`);
         takeDeed(s, parcels, n, "foreclosure");
         s.notes = s.notes!.filter((x) => x.id !== n.id);
         sold++;
@@ -426,6 +452,11 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       delete s.holdings[lot.bbl];
       delete s.workouts![lot.bbl];
       s.lois = s.lois.filter((l) => l.bbl !== lot.bbl);
+      said(lot.bbl, lot.address, "lostyours", 0, gross, toREO ? lot.holder : "the room",
+        shortfall > 0
+          ? (recourse ? `You signed for this one — the ${money(shortfall)} shortfall came out of your account.`
+                      : `Non-recourse, so ${lot.holder} ate the ${money(shortfall)}.`)
+          : `It cleared the debt and ${money(surplus)} came back to you.`);
       markSponsor(s, shortfall > 0 && recourse ? "deficiency" : "seized", lot.address, shortfall);
       bumpLenderRel(s, lot.holder, -20);
       sold++;
@@ -456,6 +487,8 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       if (lot.kind === "bank") s.bankFcls = (s.bankFcls ?? []).filter((f) => f.bbl !== lot.bbl);
       playerTakes(s, parcels, lot, paid, occ);
       sold++;
+      said(lot.bbl, lot.address, "won", bid, paid, undefined,
+        `${heads} other head${heads === 1 ? "" : "s"} in the room. It is worn and nobody is coming to fix that but you.`);
       const leased = s.holdings[lot.bbl]!.tenants.reduce((x, t) => x + t.sf, 0);
       s.news.unshift({
         q: s.month, kind: "deal",
@@ -468,6 +501,8 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
     if (room > protect && room >= lot.upset) {
       const paid = room;
       const buyer = thirdPartyTakes(s, rec, paid);
+      if (bid > 0) said(lot.bbl, lot.address, "outbid", bid, paid, buyer,
+        `The room went past you. Your deposit came back.`);
       if (r) {
         r.bbls = r.bbls.filter((b) => b !== lot.bbl);
         forgetDeed(r, lot.bbl);

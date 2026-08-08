@@ -2346,6 +2346,40 @@ export function setBroker(s: GameState, parcels: ParcelTable, bbl: string, on: b
   return { s: next };
 }
 
+/**
+ * THE EXCLUSIVE, ACROSS THE WHOLE BOOK.
+ *
+ * The same argument as `setOpsPolicy`: whether the house works your phones is a
+ * standing decision about how you run buildings, and a principal with twenty
+ * deeds takes it once. Doing it per building meant twenty clicks for one policy,
+ * and it is the same fee on every one of them.
+ *
+ * Multifamily is skipped rather than refused, because a mixed book is the normal
+ * case and an error on the one apartment block should not stop the other
+ * nineteen — the engine already says a broker does not work flats.
+ */
+export function setBrokerAll(s: GameState, parcels: ParcelTable, on: boolean): { s: GameState; err?: string; msg?: string } {
+  const next = clone(s);
+  let n = 0, skipped = 0;
+  for (const h of Object.values(next.holdings)) {
+    const rec = resolveRec(parcels, next, h.bbl);
+    if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+    if (!isCommercial(rec)) { skipped++; continue; }
+    if (on === !!h.broker) continue;
+    if (on) h.broker = true; else delete h.broker;
+    n++;
+  }
+  if (!n) return { s, err: on ? "Every commercial building already has the house on it." : "Nobody is on an exclusive." };
+  next.news.unshift({
+    q: next.month, kind: "info",
+    text: on
+      ? `Leasing exclusive signed across the book — ${n} building${n === 1 ? "" : "s"} to the house, no retainer, 6% of the base rent over the term of everything they sign.`
+        + (skipped ? ` The ${skipped} residential building${skipped === 1 ? "" : "s"} ${skipped === 1 ? "is" : "are"} not on it: flats let themselves.` : "")
+      : `Exclusives ended on ${n} building${n === 1 ? "" : "s"}. What you sign from here costs the ordinary 4% on a new lease, 2% on a renewal.`,
+  });
+  return { s: next, msg: on ? `${n} building${n === 1 ? "" : "s"} on the house.` : `${n} exclusive${n === 1 ? "" : "s"} ended.` };
+}
+
 export function startRenovation(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string } {
   const h = s.holdings[bbl];
   if (!h) return { s, err: "You don't own that parcel." };

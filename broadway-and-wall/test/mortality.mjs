@@ -233,7 +233,11 @@ for (let seed = 0; seed < N; seed++) {
       const snap = {
         cash: r.cash ?? 0, debt: r.debt ?? 0, aum,
         n: (r.bbls ?? []).length, stress: r.stressMs ?? 0,
-        distributed: r.distributed ?? 0, revolver: r.revolver ?? 0,
+        // The well has two chambers since the uncalled-commitments fix:
+        // young funds burn LP commitments first, old ones claw distributions.
+        // A call is EITHER falling; watching only `distributed` went blind to
+        // every young firm's rescue the day the fix landed.
+        well: (r.uncalled ?? 0) + (r.distributed ?? 0), revolver: r.revolver ?? 0,
         lev: aum > 0 ? (r.debt ?? 0) / aum : 0,
       };
       const p = prev.get(r.id);
@@ -258,7 +262,7 @@ for (let seed = 0; seed < N; seed++) {
         bump(hazPhase, phase, "onsets");
         atOnset.push({ lev: snap.lev, n: snap.n, aum, style: r.style, phase,
                        cashToAum: aum > 0 ? snap.cash / aum : 0, yrs });
-        if (snap.distributed <= 0) onsetWithNoWell++;
+        if (snap.well <= 0) onsetWithNoWell++;
       } else if (snap.stress === 0 && p && p.stress > 0) {
         const ep = openEp.get(r.id);
         if (ep) { episodes.push({ ...ep, died: false, months: p.stress }); openEp.delete(r.id); }

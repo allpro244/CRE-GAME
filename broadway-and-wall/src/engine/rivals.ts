@@ -697,11 +697,36 @@ export function initRivals(s: GameState, parcels: ParcelTable, bbls: string[]): 
       if (v <= 0) continue;
       const styleOk = STYLE[f.style].classes === null || STYLE[f.style].classes!.includes(rec.class);
       if (!styleOk && rng(s) < 0.75) continue;
-      const equityIn = v * (1 - f.ltv);
+      /**
+       * THE ROSTER'S DEBT IS SIZED BY THE TOWN'S OWN DESKS, not asserted.
+       *
+       * This wrote `v * f.ltv` on every building — the whole street at its
+       * maximum leverage on day zero, against loans no lender ever tested.
+       * Measured over ten towns: 59 firms died inside five game-years and
+       * every one was an opening-roster firm (33 in year one alone; zero
+       * later-raised funds died young). A town that supported thirty firms
+       * yesterday does not bury a third of them the year you arrive — those
+       * books were fabricated insolvent, and the wave of failures every new
+       * game opened with was the init, not the market.
+       *
+       * `streetRefiProceeds` is the same advance/coverage/debt-yield walk the
+       * street already uses for its refis and purchases. Seeding through it
+       * means an incumbent's paper is paper this town's banks would actually
+       * write at today's rates — a dear-money era seeds a lightly levered
+       * street, which is who survives a dear-money era. The style's ltv is
+       * still the cap; coverage is now the floor under it. Same fix the
+       * player's side got in "devPencils must read what the desk reads".
+       */
+      const noi = noiAfterTaxYr(rec, s.econ, initialCondition(rec), v);
+      const sized = Math.min(
+        Math.round(v * f.ltv),
+        streetRefiProceeds(s, v, Math.max(0, noi), f.ltv).principal,
+      );
+      const equityIn = v - sized;
       if (equityIn > spend) { if (spend < f.equity * 0.08) break; else continue; }
       taken.add(bbl);
       r.bbls.push(bbl);
-      r.debt += Math.round(v * f.ltv);
+      r.debt += sized;
       r.basis = Math.round((r.basis ?? 0) + v);
       spend -= equityIn;
     }
@@ -1182,9 +1207,33 @@ function maybeNewFirm(s: GameState) {
   // become. They compound their way up like everybody else.
   const equity = Math.round(rrange(s, 4_000_000, 10_000_000));
   const ltv = STYLE[f.style].maxLtv * rrange(s, 0.68, 0.88);
+  /**
+   * A FIRST CLOSE IS COMMITMENTS, NOT CASH. The LPs sign for the fund; the
+   * GP calls it as it deploys, and what has not been called yet is the
+   * youngest firm's whole protection — a two-year-old fund has MORE dry
+   * powder than a twenty-year-old one, not none.
+   *
+   * `pnpm mortality` measured the opposite in this engine: 55% of all firm
+   * deaths were firms under five years old (hazard 3.74/100 firm-years
+   * against 0.21-0.69 for every mature bucket), and the mechanism was that
+   * `recallable()` read only recalled DISTRIBUTIONS — a well that is bone
+   * dry until a firm is old enough to have distributed. The median arrears
+   * episode that cured belonged to a 26.6-year-old firm; the median one that
+   * killed, to a 2.0-year-old. Age was the whole difference, and the model
+   * had the capital structure of a young fund exactly backwards.
+   *
+   * The reserve share is a shape parameter calibrated to practice, stated as
+   * such: closed-end vehicles hold back 30-50% of commitments for follow-ons
+   * and contingencies. It is drawn once at the raise, so no two funds carry
+   * the same cushion, and it can only fall — capital calls burn it and
+   * nothing refills it. When it is gone the firm is exactly where every firm
+   * was before this existed.
+   */
+  const uncalled = Math.round(equity * rrange(s, 0.30, 0.50));
   s.rivals.push({
     id: `r${s.rivals.length}`, name: f.name, style: f.style,
     cash: equity, debt: 0, bbls: [], targetLtv: +ltv.toFixed(2), bornM: s.month,
+    uncalled,
   });
   s.news.unshift({
     q: s.month, kind: "event",
@@ -1587,7 +1636,11 @@ function lineRoom(s: GameState, r: Rival, aum: number, noiYr: number, landV: num
 
 /** What the investor base could be asked for today — WITHOUT asking. */
 function recallable(r: Rival): number {
-  return Math.floor(Math.max(0, r.distributed ?? 0) * RECALL[r.style]);
+  // Uncalled commitments first — money the LPs already signed for. Recalled
+  // distributions second, at the style's clause. The opening roster carries no
+  // uncalled tranche (their vehicles are fully invested; that is what makes
+  // them the incumbents), so for them this is exactly the old expression.
+  return Math.floor((r.uncalled ?? 0) + Math.max(0, r.distributed ?? 0) * RECALL[r.style]);
 }
 
 /**
@@ -1709,10 +1762,16 @@ function callCapital(r: Rival, want: number): number {
   const got = Math.min(Math.round(want), recallable(r));
   if (got < 100_000) return 0;   // nobody convenes a partnership for pocket money
   r.cash += got;
-  // The money goes back where it came from. `distributed` becomes cash NET
+  // UNCALLED COMMITMENTS GO FIRST — calling capital the LPs signed for is a
+  // capital call; clawing back money already distributed is a lawyer's letter,
+  // and no GP sends the letter while the commitment line is open.
+  const fromUncalled = Math.min(got, r.uncalled ?? 0);
+  if (fromUncalled > 0) r.uncalled = Math.round((r.uncalled ?? 0) - fromUncalled);
+  const rest = got - fromUncalled;
+  // The clawback goes back where it came from. `distributed` becomes cash NET
   // returned to the partners, which is what it should always have meant, and
   // the well cannot be drawn twice.
-  r.distributed = Math.round((r.distributed ?? 0) - got);
+  if (rest > 0) r.distributed = Math.round((r.distributed ?? 0) - rest);
   return got;
 }
 

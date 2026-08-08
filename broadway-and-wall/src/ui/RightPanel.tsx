@@ -26,7 +26,7 @@ import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/e
 import { lenderHealth, capitalRatio, lenderBlurb, targetCapital, lenderPressure, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { noteBid, payoffQuote } from "@/engine/notes";
 import { depositFor as auctionDepositFor } from "@/engine/auction";
-import { collateralAsIs } from "@/engine/value";
+import { collateralAsIs, capRateFor } from "@/engine/value";
 import { firmName, firmShort } from "@/engine/firm";
 import { replacementCost, cityValueToReplacement } from "@/engine/dev";
 import { workoutMood } from "@/engine/workout";
@@ -311,7 +311,57 @@ function AuctionModal() {
   const setAuctionOpen = useStore((s) => s.setAuctionOpen);
   const { bidAuction } = useStore.getState();
   const [seenM, setSeenM] = useState(-1);
+  const [seenResM, setSeenResM] = useState(-1);
   const [bids, setBids] = useState<Record<string, string>>({});
+
+  /* WHAT THE HAMMER DID TO YOUR NUMBER. You registered a bid, the sheet
+     closed, and the only record of whether you owned a building was a line on
+     the news ticker. The engine decided won / outbid / paid-off / could-not-
+     close all along; this is that decision, said to the person who made it. */
+  const res = game.auctionResults;
+  if (res && res.rows.length && seenResM !== res.m && !popupsOff) {
+    const WORD: Record<string, [string, string]> = {
+      won: ["YOU TOOK IT", ""],
+      outbid: ["OUTBID", " neg"],
+      paidoff: ["PAID OFF IN FULL", ""],
+      nocash: ["YOU COULD NOT CLOSE", " neg"],
+      pulled: ["PULLED FROM THE DOCKET", ""],
+      lostyours: ["YOUR BUILDING WAS SOLD", " neg"],
+    };
+    return (
+      <div className="modal-backdrop">
+        <div className="modal" style={{ maxWidth: 660 }}>
+          <div className="modal-kicker">The hammer fell · {monthLabel(res.m)}</div>
+          <div className="modal-title">{res.rows.length} lot{res.rows.length === 1 ? "" : "s"} you had a number on</div>
+          <table className="tbl" style={{ marginTop: 8 }}>
+            <thead>
+              <tr><th>Lot</th><th>Outcome</th><th className="num">Your bid</th><th className="num">Hammer</th><th>Who took it</th></tr>
+            </thead>
+            <tbody>
+              {res.rows.map((r) => (
+                <tr key={r.bbl}>
+                  <td style={{ cursor: "pointer" }} onClick={() => focus(r.bbl, true)}>{r.address}</td>
+                  <td className={"mono" + (WORD[r.outcome]?.[1] ?? "")}>{WORD[r.outcome]?.[0] ?? r.outcome}</td>
+                  <td className="num">{r.yourBid > 0 ? usd(r.yourBid) : "—"}</td>
+                  <td className="num">{r.price > 0 ? usd(r.price) : "—"}</td>
+                  <td className="dim">{r.winner ?? (r.outcome === "won" ? "you" : "—")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {res.rows.map((r) => r.note && (
+            <div key={r.bbl} className="hint" style={{ marginTop: 6 }}><b>{r.address}</b> — {r.note}</div>
+          ))}
+          <div className="modal-actions">
+            <button className="btn btn-buy" onClick={() => { setSeenResM(res.m); useStore.setState({ game: { ...game, auctionResults: undefined } }); }}>
+              Right
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const a = game.auction;
   if (!parcels || game.gameOver || !a || game.month >= a.m) return null;
   // A player who has turned the card off still gets the auction — the docket
@@ -336,7 +386,13 @@ function AuctionModal() {
     <div className="modal-backdrop">
       <div className="modal" style={{ maxWidth: 720 }}>
         <div className="modal-kicker">The county foreclosure auction · {monthLabel(game.month)}</div>
-        <div className="modal-title">{a.lots.length} lot{a.lots.length === 1 ? "" : "s"} cross the block</div>
+        <div className="modal-title">
+          {a.lots.length} lot{a.lots.length === 1 ? "" : "s"} cross the block
+          {/* THE ONE NUMBER YOU BID AGAINST. It was buried under the table in a
+              dim line that only appeared once you had typed something, so the
+              sheet asked for a number while hiding the constraint on it. */}
+          <span className="mono dim" style={{ float: "right", fontSize: 15 }}>cash {usd(game.cash)}</span>
+        </div>
         <div className="modal-sub">
           As-is, where-is. Ten per cent down when you register, the balance at the hammer, no financing and no
           warranty. A lender's debt bids for it without cash — beat the debt and the lender is simply paid off,
@@ -344,7 +400,8 @@ function AuctionModal() {
         </div>
         <table className="tbl" style={{ marginTop: 8 }}>
           <thead>
-            <tr><th>Lot</th><th>What it is</th><th className="num">Debt / floor</th><th className="num">Flyer est.</th><th className="num">Your bid ($M)</th></tr>
+            <tr><th>Lot</th><th>What it is</th><th className="num">NOI / yr</th><th className="num">Occ</th>
+              <th className="num">Debt / floor</th><th className="num">Flyer est.</th><th className="num">Your bid ($M)</th></tr>
           </thead>
           <tbody>
             {a.lots.map((l) => (
@@ -353,6 +410,37 @@ function AuctionModal() {
                 <td className={l.kind === "yours" ? "neg" : "dim"}>
                   {kindWord(l.kind)} · {l.holder}{l.borrower && l.kind !== "yours" ? ` v. ${l.borrower}` : ""}
                 </td>
+                {/* WHAT YOU ARE ACTUALLY BUYING. The sheet quoted the debt and a
+                    flyer estimate — the seller's two numbers — and neither of
+                    the two a buyer underwrites. These are read off the same
+                    receiver's-condition basis `playerTakes` will hand you if you
+                    win: worn, at the borrower's occupancy, not the clean
+                    appraisal. Bidding blind on income was the whole complaint. */}
+                {(() => {
+                  const rec = resolveRec(parcels, game, l.bbl);
+                  if (!rec || rec.class === "land" || !rec.bldgArea) {
+                    return (<><td className="num dim">site</td><td className="num dim">—</td></>);
+                  }
+                  const borrower = game.rivals?.find((x) => x.id === l.borrowerId);
+                  const occ = l.kind === "yours"
+                    ? physicalOcc(rec as never, game.holdings[l.bbl]!)
+                    : Math.max(0.15, Math.min(0.95, borrower?.occ ?? 0.4));
+                  // The engine's own receiver basis: worn condition, scaled by
+                  // the borrower's occupancy. Capitalised back through the
+                  // building's cap rate so the row shows income rather than a
+                  // second opinion about value. One source, two readings.
+                  const asIs = collateralAsIs(rec, game.econ, occ);
+                  const cap = capRateFor(rec, game.econ, "worn");
+                  const noi = cap > 0 ? Math.round(asIs * cap / 100) : 0;
+                  return (
+                    <>
+                      <td className="num" title="Underwritten worn and at the borrower's occupancy — what a receiver's building actually earns, not the clean appraisal">
+                        {noi > 0 ? usd(noi) : <span className="neg">{usd(noi)}</span>}
+                      </td>
+                      <td className={"num" + (occ < 0.6 ? " neg" : "")}>{(occ * 100).toFixed(0)}%</td>
+                    </>
+                  );
+                })()}
                 <td className="num">{usd(l.kind === "receiver" ? l.upset : l.debt)}</td>
                 <td className="num">{usd(l.est)}</td>
                 <td className="num">
@@ -546,6 +634,56 @@ function DecisionModal() {
           <div className="modal-title" style={{ fontSize: 20, lineHeight: 1.35 }}>{outcome.text}</div>
           <div className="modal-actions">
             <button className="btn btn-buy" onClick={() => setOutcome(null)}>Right</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* AN INDICATION ON YOUR BOOK IS A DECISION, AND IT ARRIVED SILENTLY.
+     A bid on a single building throws this modal; a bid on a portfolio you
+     listed did not, so the one trade that moves the most money was the one you
+     had to go to Deals and hunt for. Same card, same three answers — the desk
+     on the portfolio page still holds the counter slider for a number you want
+     to set by hand. */
+  const pb = game.portfolioSale?.bids?.[0];
+  if (pb && !deferred.has(-2)) {
+    const live = game.portfolioSale!;
+    const q = portfolioQuote(game, parcels, live.bbls);
+    const inside = q.sumOfParts > 0 ? (1 - pb.price / q.sumOfParts) * 100 : 0;
+    return (
+      <div className="modal-backdrop">
+        <div className="modal">
+          <div className="modal-kicker">◆ AN INDICATION ON YOUR PORTFOLIO — {live.bbls.length} buildings, one ticket</div>
+          <div className="modal-title">{usd(pb.price)} from {pb.name}</div>
+          <div className="modal-sub">Good until {monthLabel(pb.expiresM)}. Your ask is {usd(live.ask)}.</div>
+          <div className="grid">
+            <Row k="Their number" v={usd(pb.price)} strong />
+            <Row k="vs. your ask" v={`${((pb.price / Math.max(1, live.ask) - 1) * 100).toFixed(1)}%`} />
+            <Row k="Sum of the individual marks" v={usd(q.sumOfParts)} />
+            <Row k="Inside the parts" v={`${inside.toFixed(1)}%`} bad={inside > 10} />
+            <PortfolioCap q={q} ask={pb.price} bbls={live.bbls} />
+            {pb.countered && <Row k="Rounds" v="you have been back to them once" bad />}
+          </div>
+          <div className="hint">
+            An institution has a committee number. You can push them a few points and no further, and pushing hard
+            on a bundle is how the whole thing goes away — there is another portfolio next quarter and they know it.
+          </div>
+          <div className="modal-actions">
+            <button className="btn btn-buy" onClick={() => { useStore.getState().acceptPortfolio(false); setDeferred((d) => new Set(d).add(-2)); }}>
+              Close it — {usd(pb.price)}
+            </button>
+            <button className="btn btn-buy" title="Roll the whole gain into a 1031 and redeploy inside six months, or the tax comes due"
+              onClick={() => { useStore.getState().acceptPortfolio(true); setDeferred((d) => new Set(d).add(-2)); }}>
+              Close into a 1031
+            </button>
+            {!pb.countered && (
+              <button className="btn" title="Set the number by hand on the portfolio desk"
+                onClick={() => { setDeferred((d) => new Set(d).add(-2)); useStore.getState().setPage("portfolio"); }}>
+                Counter…
+              </button>
+            )}
+            <button className="btn" onClick={() => setDeferred((d) => new Set(d).add(-2))}>Decide later</button>
           </div>
         </div>
       </div>
@@ -8246,6 +8384,12 @@ function HousePolicy() {
     return rec && rec.class !== "land";
   });
   const off = built.filter((h) => (h.stance ?? 0) !== stn || (h.service ?? 0) !== svc || (h.plan ?? 1) !== pln).length;
+  const commercial = built.filter((h) => {
+    const rec = useStore.getState().parcels?.[h.bbl];
+    return rec && isCommercial(rec);
+  });
+  const commercialN = commercial.length;
+  const onHouse = commercial.filter((h) => h.broker).length;
   const dirty = svc !== cur.service || pln !== cur.plan || stn !== (cur.stance ?? 0);
   const Seg = <T extends number>(
     { label, value, set, opts, hint }:
@@ -8289,6 +8433,30 @@ function HousePolicy() {
           onClick={() => opsPolicy({ service: svc, plan: pln, stance: stn })}>
           {off > 0 ? `Apply to all ${built.length} buildings` : "Applied"}
         </button>
+      </div>
+      {/* WHO WORKS THE PHONES, ALSO ONCE. Same argument as the three above: an
+          exclusive is a standing decision about how the book is run, and it was
+          twenty clicks for one policy. Flats are skipped rather than refused —
+          a mixed book is the normal case and the engine already says a broker
+          does not work multifamily. */}
+      <div className="grid" style={{ marginTop: 8 }}>
+        <Row k="Leasing exclusive" v={`${onHouse} of ${commercialN} commercial building${commercialN === 1 ? "" : "s"} with the house`} />
+      </div>
+      <div className="btn-row">
+        <button className="btn" disabled={commercialN === 0 || onHouse === commercialN}
+          onClick={() => useStore.getState().brokerAll(true)}>
+          Put the whole book on the house
+        </button>
+        <button className="btn" disabled={onHouse === 0}
+          onClick={() => useStore.getState().brokerAll(false)}>
+          End every exclusive
+        </button>
+      </div>
+      <div className="hint">
+        No retainer and nothing while the space sits — they are paid 6% of the base rent over the term of
+        everything they sign, at the signing, against the 4% on a new lease and 2% on a renewal your own people
+        cost. Cheap to hold, expensive when it works, and the right answer changes with how much of the book is
+        empty.
       </div>
       <div className="hint">
         {off === 0

@@ -1506,6 +1506,14 @@ export type RivalStyle =
  */
 export interface Rival {
   /**
+   * LP CAPITAL COMMITTED AND NOT YET CALLED — the young fund's cushion.
+   * Set once at the raise (30-50% of the first close, drawn per fund),
+   * burned by capital calls, never refilled. Absent on the opening roster
+   * and on saves written before it existed: both mean a fully-invested
+   * vehicle, which is what the old model assumed for everybody.
+   */
+  uncalled?: number;
+  /**
    * When each deed arrived, by BBL. The hold clock: a private-equity fund on
    * an IRR mandate and a family office holding for a generation both own
    * buildings, and the only thing that distinguishes them is this number.
@@ -1944,6 +1952,8 @@ export interface GameState {
    * card. The docket is on Marketplace either way, and so is the switch.
    */
   auctionQuiet?: boolean;
+  /** Last docket's outcomes on lots you bid on. Cleared once read. */
+  auctionResults?: { m: number; rows: AuctionResultRow[] };
   // Revolving line against the portfolio: 35% of net worth at index + 400bps.
   loc: { balance: number; drawnTotal: number; interestPaid: number };
   books: BooksYear[];                        // the ledger, one entry per year
@@ -2307,6 +2317,18 @@ export interface Workout {
  * full and take the building; anything above the debt goes to the borrower who
  * just lost it, because that is the law.
  */
+/** One line of what the hammer did to a number you registered. */
+export interface AuctionResultRow {
+  bbl: string;
+  address: string;
+  /** won · outbid · paidoff (your debt cleared) · nocash · pulled · lostyours */
+  outcome: "won" | "outbid" | "paidoff" | "nocash" | "pulled" | "lostyours";
+  yourBid: number;
+  price: number;
+  winner?: string;
+  note?: string;
+}
+
 export interface AuctionLot {
   id: string;
   bbl: string;

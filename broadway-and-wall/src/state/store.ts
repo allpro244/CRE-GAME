@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass } from "@/engine/types";
 import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfolioQuarterlyCF, hangUpOnCall } from "@/engine/sim";
-import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
+import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import { respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, type LOIAction } from "@/engine/leasing";
 import { cureWorkout, requestForbearance, deedInLieu, serviceWorkout } from "@/engine/workout";
@@ -163,6 +163,7 @@ interface AppState {
   stance: (bbl: string, v: -1 | 0 | 1) => void;
   ops: (bbl: string, v: { service?: -1 | 0 | 1; plan?: 0 | 1 | 2 }) => void;
   opsPolicy: (v: { service: -1 | 0 | 1; plan: 0 | 1 | 2; stance?: -1 | 0 | 1 }) => void;
+  brokerAll: (on: boolean) => void;
   listSale: (bbl: string, ask: number, mode?: "quiet" | "marketed") => void;
   runBestAndFinal: (bbl: string) => void;
   takeBid: (bbl: string, index: number) => void;
@@ -543,6 +544,16 @@ export const useStore = create<AppState>((set, get) => ({
     const next = setOps(game, bbl, v);
     set({ game: next });
     void persist(next);
+  },
+
+  brokerAll: (on) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = setBrokerAll(game, parcels, on);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    if (r.msg) toast(r.msg);
+    void persist(r.s);
   },
 
   opsPolicy: (v) => {

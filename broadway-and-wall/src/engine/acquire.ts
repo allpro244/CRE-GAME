@@ -392,20 +392,29 @@ export function negotiate(
   // every seller has been. The price of the instrument is that a no ends it —
   // for both sides.
   if (finalOffer && px < reservation) {
-    if (recentLowballs(next) >= 2) {
-      next.news.unshift({
-        q: next.month, kind: "info",
-        text: `You said best and final at ${rec.address}. ${Cap(seller.name)} has heard what your "final" means `
-          + `around town, and countered anyway.`,
-      });
-      // fall through to the ordinary machinery below — the flag bought nothing
-    } else if (px >= Math.round(reservation * 0.965)) {
+    // A FINAL IS ANSWERED, NOT NEGOTIATED. The word only has two replies in
+    // this business — they take it or the conversation is over — and this used
+    // to have a third: a buyer with a lowballing record fell through to the
+    // ordinary counter machinery, so saying "best and final" and then being
+    // countered was a reachable state. That is the one thing a final cannot do.
+    //
+    // The reputation still bites, and it bites where it belongs — on the PRICE
+    // of the instrument rather than on its existence. Certainty of a done deal
+    // is worth about three and a half per cent to a seller who has been
+    // retraded before; a seller who has heard what your "final" means around
+    // town does not pay for certainty you have not got, so the discount goes to
+    // zero and the number has to clear their reserve outright.
+    const credible = recentLowballs(next) < 2;
+    const bar = credible ? Math.round(reservation * 0.965) : reservation;
+    if (px >= bar) {
       const struck = strikeDeal(next, bbl, px, seller, rec.address);
       if (struck.err) return { s, err: struck.err };
       struck.s.news.unshift({
         q: struck.s.month, kind: "deal",
-        text: `Best and final at ${rec.address}: ${fmtM(px)}, and ${seller.name} took it. A number they can `
-          + `close on today beat the better number they might chase for a quarter.`,
+        text: `Best and final at ${rec.address}: ${fmtM(px)}, and ${seller.name} took it. `
+          + (credible
+            ? `A number they can close on today beat the better number they might chase for a quarter.`
+            : `They did not pay a penny for your certainty — that number simply cleared their reserve.`),
       });
       return { s: struck.s, msg: `They took your final at ${fmtM(px)}.` };
     } else {
@@ -413,7 +422,9 @@ export function negotiate(
       next.news.unshift({
         q: next.month, kind: "warn",
         text: `Best and final at ${rec.address}: ${fmtM(px)}. ${Cap(seller.name)} said no, and a final refused is `
-          + `finished — you cannot say "final" and then keep talking. The building is still on the tape.`,
+          + `finished — you cannot say "final" and then keep talking. `
+          + (credible ? "" : `They have heard what your "final" means around town, so it bought you no benefit of the doubt. `)
+          + `The building is still on the tape.`,
       });
       return { s: next, msg: "They said no. Final means it's over." };
     }

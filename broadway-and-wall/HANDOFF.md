@@ -437,12 +437,41 @@ measuring:**
 **STILL OPEN on this thread, in severity order.** These came out of a seven-agent
 read of the engine and each has a file:line; none is measured yet.
 
-1. **The rent belief runs in OPPOSITE directions in the two models that read
-   `rentExp`.** `market.ts:1736` amplifies away from the lagging belief (up to
-   +45%); `value.ts:379` damps toward it (the exact reciprocal ratio). Both
-   carry a comment arguing its own direction is the realistic one. Both cannot
-   be right about the same month. A third model reads neither and a fourth reads
-   spot — four readings of "the rent a developer underwrites".
+1. **RESOLVED, and it was not the bug it looked like — but it was hiding one.**
+   The two models are not the same quantity with two answers. `rentExp` is an
+   adaptive 21-month EMA; the quota extrapolates the gap between it and spot,
+   and the residual underwrites `rentExp` itself. Those are two institutions,
+   not two answers: a developer chases the trend, an appraiser prices off closed
+   comparables, and appraisal-based indices are famously smoother than
+   transaction-based ones for exactly that reason. The divergence is deliberate
+   and it is now written down in `developerOptimism`, which is the thing that
+   was missing — two reciprocal expressions of the same two variables with no
+   comment saying why they point opposite ways is how a deliberate divergence
+   gets mistaken for a fault.
+
+   **What the check found instead.** All four expectation clamps were measured
+   for binding over 3 towns x 50 years x 4 classes. Three are clean guards
+   (momentum 0.4%, both residual belief clamps 0.0%, and the residual's comment
+   had claimed exactly that: "it is not meant to bind"). The fourth was not:
+
+       clamp(momentum * 2.4, -0.28, 0.45)     bound in 11.3% of months
+                                              (4.9% floor, 6.4% ceiling)
+
+   Momentum is itself clamped to +-0.30, so the product spans +-0.72 against
+   limits of -0.28/+0.45 — the outer clamp bites long before the inner one, and
+   in one month in nine the underwritten rent was not "spot x 2.4 x momentum",
+   it was whichever bound the market was leaning on. The coefficient was quoted
+   as the elasticity while the rail did the work. CLAUDE.md fault #5.
+
+   It saturates now instead of clipping — slope 2.4 at the origin so the
+   elasticity means what it says where the market spends its time, asymptotes at
+   the same +0.45 / -0.28. Same treatment the glut branch of `vacTerm` already
+   got for the same problem. Measured after: every clamp binds 0.0-0.4%, and the
+   response sits at a median 43% of its own asymptote (p95 86%). The asymmetry
+   is kept and is the point — developers extrapolate good news further than bad,
+   which is why gluts get built and shortages persist.
+
+   Loop period held at 8.1 years through the change. `pnpm gate` passes.
 2. **Three hurdles for the same building, 270bp apart, and the ordering inverts
    by class.** `devPencils` now uses cap x (1+DEV_MARGIN); `dev.ts:877` uses
    `exitCap + 0.75`; the residual uses `value/(1+DEV_MARGIN)`. Pick one.

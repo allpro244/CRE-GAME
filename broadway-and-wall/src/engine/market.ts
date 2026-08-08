@@ -271,6 +271,37 @@ const RATE_FLOOR = 1.45, RATE_CEIL = 23.0;
  *
  * One pro forma, read by everyone who can dig a hole. That is the whole fix.
  */
+/**
+ * HOW FAR A DEVELOPER EXTRAPOLATES THE LAST GOOD YEAR, as a fraction added to
+ * the rent they underwrite. Exported because a harness that re-derives it is a
+ * second model of it, and this repo has spent a day removing those.
+ *
+ * `rentExp` is an adaptive lagging belief (a 21-month EMA of the rent index);
+ * the gap between it and today's rent is the momentum being extrapolated. Every
+ * real overbuild is built out of that gap: three good years become a pro forma,
+ * the pro forma becomes a crane, and the crane opens into the glut those pro
+ * formas created.
+ *
+ * NOTE that this deliberately DISAGREES with the land residual, which
+ * underwrites `rentExp` itself rather than extrapolating past it. That is not
+ * an inconsistency, it is two institutions: a developer chases the trend, and
+ * an appraiser prices off closed comparables. Appraisal-based indices are
+ * famously smoother than transaction-based ones for exactly this reason. The
+ * two were previously written as reciprocal expressions of the same two
+ * variables with no comment saying why they pointed opposite ways, which is how
+ * a deliberate divergence gets mistaken for a bug.
+ */
+export function developerOptimism(e: Econ, k: BuiltClass): number {
+  const momentum = clamp((e.rentIdx?.[k] ?? 0) / Math.max(1, e.rentExp?.[k] ?? 1) - 1, -0.30, 0.30);
+  // Slope at the origin, so the elasticity means what it says where the market
+  // spends its time; asymptotes where the old hard clamp used to clip. The
+  // asymmetry is the point — developers extrapolate good news further than bad,
+  // which is why gluts get built and shortages persist.
+  const EXTRAPOLATION = 2.4, OPTIMISM = 0.45, PESSIMISM = 0.28;
+  const cap = momentum >= 0 ? OPTIMISM : PESSIMISM;
+  return cap * Math.tanh(EXTRAPOLATION * momentum / cap);
+}
+
 // The pro forma itself lives in value.ts, with the cost table, the opex table,
 // the recovery table and the management fee — the things a pro forma is made
 // of. This module cannot import them (value.ts imports this one), and the old
@@ -1784,8 +1815,31 @@ export function tickEcon(s: GameState) {
     // between it and today's rent is the momentum being extrapolated.
     if (!e.rentExp) e.rentExp = { ...e.rentIdx };
     e.rentExp[k] += 0.045 * (e.rentIdx[k] - e.rentExp[k]);
-    const momentum = clamp(e.rentIdx[k] / Math.max(1, e.rentExp[k]) - 1, -0.30, 0.30);
-    const underwritten = (e.rentIdx[k] / RENT_BASE[k]) * (1 + clamp(momentum * 2.4, -0.28, 0.45));
+    // ...AND OPTIMISM SATURATES, IT DOES NOT HIT A WALL.
+    //
+    // This was `clamp(momentum * 2.4, -0.28, 0.45)`, and the clamp was the
+    // model rather than a guard on it. Momentum is itself clamped to +-0.30, so
+    // the product spans +-0.72 against limits of -0.28 and +0.45 — the outer
+    // clamp bites long before the inner one does. Measured over 3 towns x 50
+    // years x 4 classes it bound in 11.3% of all months (4.9% at the floor,
+    // 6.4% at the ceiling), which means that in one month in nine the
+    // underwritten rent was not "spot times 2.4 times momentum", it was
+    // whichever bound the market happened to be leaning on. The coefficient was
+    // being quoted as the elasticity while the rail did the work.
+    //
+    // The three other expectation clamps in this engine were measured at the
+    // same time and are all clean — the momentum clamp binds 0.4%, and both of
+    // the residual's belief clamps bind 0.0%, which is what a guard looks like.
+    // This one was the exception.
+    //
+    // So it saturates instead, the same way the glut branch of `vacTerm` was
+    // rewritten when it had the same problem: slope 2.4 at the origin, so the
+    // elasticity still means what it says where the market spends its time, and
+    // asymptotes at the same +0.45 / -0.28 it used to clip at, so the outer
+    // limits are unchanged. The asymmetry is deliberate and it is the point:
+    // developers extrapolate good news further than bad, which is why gluts get
+    // built and shortages persist.
+    const underwritten = (e.rentIdx[k] / RENT_BASE[k]) * (1 + developerOptimism(e, k));
 
     // THE COST OF CAPITAL — A DEVELOPER'S FIRST NUMBER, AND IT WAS NOT HERE.
     //

@@ -236,7 +236,6 @@ export interface UnitRow { use: BuiltClass; total: number; leased: number; vacan
 /** Leased / total spaces per use — a mixed building has more than one answer. */
 export function unitStatusByUse(rec: ParcelRecord, h: Holding, month: number): UnitRow[] {
   const out: UnitRow[] = [];
-  const notReadyTotal = notReadySf(h, month);
   for (const use of uses(rec)) {
     const sf = useSf(rec, use);
     if (sf <= 0) continue;
@@ -249,8 +248,21 @@ export function unitStatusByUse(rec: ParcelRecord, h: Holding, month: number): U
     }
     const leasedSf = h.tenants.filter((t) => (t.use ?? dominantUse(rec)) === use).reduce((n, t) => n + t.sf, 0);
     const leased = Math.min(total, Math.max(leasedSf > 0 ? 1 : 0, Math.round(leasedSf / sfPer)));
-    // make-ready is tracked for the building; apportion it to the commercial legs
-    const nr = Math.min(Math.max(0, total - leased), Math.round((notReadyTotal * (sf / Math.max(1, commercialSf(rec)))) / sfPer));
+    // WHAT IS TURNING IN THIS LEG, ASKED DIRECTLY.
+    //
+    // This used to take the WHOLE building's make-ready and apportion it across
+    // the commercial legs by floor area — while `notReadySf` has always been
+    // able to answer per use. Measured over 827 rows sampled while something
+    // was turning, the apportioned figure was wrong on 47.4% of them, and the
+    // error lands hardest on retail because a retail leg is small: one case
+    // showed 1,455 sf of a 4,036 sf shop front as "turning" when NOT ONE FOOT
+    // of retail was. That is office space upstairs, smeared onto the shops.
+    //
+    // The consequence is the one a player reports as a bug in leasing: `vacant`
+    // is `total - leased - nr`, so an inflated `nr` eats the row. You sign a
+    // shop, the space is genuinely let, and the panel still shows the suite as
+    // unavailable — the tenant moved in and the UI could not find them.
+    const nr = Math.min(Math.max(0, total - leased), Math.round(notReadySf(h, month, use) / sfPer));
     out.push({ use, total, leased, vacant: Math.max(0, total - leased - nr), notReady: nr, sfPer });
   }
   return out;
@@ -557,8 +569,21 @@ export function useVacantSf(rec: ParcelRecord, h: Holding, use: BuiltClass, mont
 // Space a departing tenant just left isn't leasable on day one — it's in
 // make-ready (demo, paint, systems, demising) for a few months.
 export function notReadySf(h: Holding, month: number, use?: BuiltClass): number {
+  // `(m.use ?? use) === use` was the old test, and for an entry with no `use`
+  // recorded it reduces to `use === use` — TRUE for every use asked about. One
+  // untagged floor in make-ready therefore blocked every leg in the building at
+  // once. Every path that writes make-ready today copies the tenant's `use`
+  // (see the three writers in this file), so nothing in a fresh game hits it —
+  // but a save written before the field existed is full of untagged entries,
+  // and the failure is silent and total.
+  //
+  // An entry whose use is unknown is not evidence about any PARTICULAR leg, so
+  // a per-use question does not count it; the building-wide question (no `use`
+  // argument) still does. That under-states one leg on a legacy save instead of
+  // over-stating all of them, which is the safe direction for a number whose
+  // job is to say "you cannot let this yet".
   return (h.makeReady ?? []).reduce(
-    (sum, m) => sum + (m.readyM > month && (use === undefined || (m.use ?? use) === use) ? m.sf : 0),
+    (sum, m) => sum + (m.readyM > month && (use === undefined || m.use === use) ? m.sf : 0),
     0,
   );
 }

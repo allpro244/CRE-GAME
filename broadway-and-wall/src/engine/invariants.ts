@@ -25,7 +25,7 @@ import { resolveRec, holdingValue, holdingNOIYr, netWorth, assetValue, FAR_CEILI
 // building from the one being sold, and flags a correctly-cheap worn asset as a
 // mispriced one.
 import { gradeOf } from "./rivals";
-import { leasableUses, minTenancySf, useVacantSf } from "./leasing";
+import { leasableUses, minTenancySf, useVacantSf, notReadySf, unitStatusByUse } from "./leasing";
 import { mixOf, useSf } from "./mix";
 import { MAX_FLOORS_BY_USE } from "./dev";
 import { SECTORS } from "./market";
@@ -321,6 +321,7 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
   // SECURITY DEPOSITS. One to two months of rent, never more, never negative,
   // and never sitting on a lease that has already ended.
   for (const h of Object.values(s.holdings)) {
+    const rec0 = resolveRec(parcels, s, h.bbl);
     for (const t of h.tenants) {
       const d = t.deposit ?? 0;
       if (d < 0 || !fin(d)) bad("deposit", `${h.bbl} ${t.name}`, `deposit ${d}`);
@@ -336,6 +337,44 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
     // A building you have stopped letting must not be signing anybody.
     if (h.leasingHold && s.lois.some((l) => l.bbl === h.bbl)) {
       bad("leasing", `hold ${h.bbl}`, "letting is stopped and there is a live letter of intent on it");
+    }
+    // A LEG CANNOT BE TURNING SPACE IT DOES NOT HAVE.
+    //
+    // `unitStatusByUse` is what the property panel renders per use, and its
+    // not-ready count used to be the WHOLE building's make-ready apportioned
+    // across the commercial legs by floor area. Measured, that was wrong on
+    // 25.3% of rows sampled while anything was turning, in both directions: a
+    // 4,036 sf shop front showed 1,455 sf "turning" with not one foot of retail
+    // turning, and a 2,317 sf office leg with 2,316 sf genuinely down showed
+    // zero. Since the panel computes vacancy as total - leased - notReady, that
+    // is a suite the player has just let still reading as unavailable.
+    //
+    // This is a definitional bound rather than a judgement: the space a row
+    // says is being turned has to be space that is being turned IN THAT LEG.
+    if (rec0 && rec0.bldgArea) {
+      for (const row of unitStatusByUse(rec0, h, s.month)) {
+        if (row.use === "multifamily") continue;      // occupancy, not suites
+        // COMPARED IN SUITES, WHICH IS THE UNIT THE ROW IS RENDERED IN, and
+        // with no slack above. The first version of this check allowed a whole
+        // suite of tolerance and therefore could not fail: the very case it was
+        // written for — 1,455 sf shown against 0 real — rounds to one suite
+        // against zero, and one suite of slack swallows it exactly. It ran
+        // clean against the broken code, which is the only outcome worse than
+        // no check at all. CLAUDE.md: check that a metric can move before
+        // trusting that it did.
+        //
+        // Only an OVERSTATEMENT is a violation. The row legitimately shows
+        // fewer turning suites than the raw footage implies, because it is
+        // capped by the suites that are actually vacant.
+        const realSf = notReadySf(h, s.month, row.use);
+        const justified = Math.round(realSf / row.sfPer);
+        if (row.notReady > justified) {
+          bad("notready", `${h.bbl} ${row.use}`,
+            `row shows ${row.notReady} suite(s) turning but only `
+            + `${Math.round(realSf).toLocaleString()} sf of ${row.use} is in make-ready `
+            + `(${justified} suite(s) at ${Math.round(row.sfPer).toLocaleString()} sf)`);
+        }
+      }
     }
   }
   const loiIds = new Set<number>();

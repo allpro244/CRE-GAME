@@ -2342,6 +2342,64 @@ export function tickEcon(s: GameState) {
     // tenant who needs space this year takes a sublease — that is what the
     // sublet market is FOR, and it is why a shortage with sublet inventory
     // standing in it is not the same shortage.
+    /**
+     * THIS IS THE ABSORPTION QUEUE WEARING THE WORD "SHORTAGE", AND FIXING IT
+     * NAIVELY HALVES THE PROPERTY CYCLE. Both halves of that are measured.
+     *
+     * `pool - occupied` IS the absorption queue: `absorb = 0.055 * (pool -
+     * occupied)` thirty lines up is this same expression, so it is a mechanical
+     * statement about how fast the queue clears and it is positive whenever
+     * demand grows at all. Demand that physically cannot be housed is demand
+     * against CAPACITY — `housable`, the quantity the pool is already trimmed
+     * to at line 2252.
+     *
+     * The engine had already caught this and written it down one screen up, in
+     * the tightness EMA: feeding that off `unmet` was "tried and REJECTED on
+     * measurement" because `unmet` "carries a large structural positive offset
+     * ... because the demand pool always leads occupancy". Judged unusable
+     * there, load-bearing here, with the reason on the page.
+     *
+     * Measured, office, 1,800 months over three seeds and fifty years:
+     *
+     *                        mean      > 0
+     *   as coded          0.01806    79.7%
+     *   as documented     0.00292    12.9%
+     *
+     * and the line that ought to settle it: the city is in GLUT — availability
+     * above natural — in 67.2% of months, and as coded it reports unhoused
+     * demand AT THE SAME TIME in 49.7% OF ALL MONTHS. Half the game, the model
+     * asserts tenants cannot be housed while 14.6% of the stock stands empty.
+     * As documented that contradiction happens in 0.0% of months, not once in
+     * 1,800.
+     *
+     * SO WHY IS THE LINE STILL AS CODED. Because switching it to `housable`
+     * was tried, here, and measured on `pnpm leadlag`:
+     *
+     *   TOTAL LOOP        91 months (7.6 yr)  ->  46 months (3.8 yr)
+     *   orders -> breaks  in band             ->  -34mo, BACKWARDS
+     *
+     * Real property cycles run 7-12 years. A correct term that halves the cycle
+     * and flips a leg is not a fix to ship — it is evidence that THE CYCLE
+     * LENGTH WAS PARTLY MANUFACTURED BY THE PHANTOM SHORTAGE. A near-permanent
+     * positive push on rent (79.7% of months) is a low-frequency forcing term,
+     * and taking it away leaves rent responding to the cycle alone, which
+     * couples rent, starts and vacancy far more tightly than a real market.
+     *
+     * That is worth more than either shipping or hiding it, so it is written
+     * here rather than in a commit nobody will find. What is NOT yet known is
+     * whether `orders -> breaks` at -34mo is a real inversion or an estimator
+     * failing on a leg that is near-zero by construction — `e.starts[k]` is set
+     * and consumed in the same tick, so orders and groundbreaks may be two
+     * views of one event, and the file's own note at leadlag.mjs:127 says the
+     * two series have different shapes. Settle that first; if the leg is noise,
+     * the loop number inherits the noise and the whole comparison above needs
+     * re-reading.
+     *
+     * DO NOT swap this to `housable` without that answer and a re-measured
+     * cycle. DO NOT tune a coefficient to put the cycle back either — that
+     * would be a constant chosen to make an outcome look right, which is the
+     * first thing CLAUDE.md forbids.
+     */
     unmet[k] = Math.max(0, (e.pool[k] - e.occupied[k] - e.sublet[k]) / Math.max(1, e.stock[k]));
     e.absorb12[k] = e.absorb12[k] * (11 / 12) + absorb;
     monthAbs[k] = absorb;

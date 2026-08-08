@@ -119,6 +119,43 @@ function bestLag(x, y, sign = 1) {
   return { lag: at, r: best };
 }
 
+/**
+ * THE LAG, POOLED ACROSS TOWNS — AND HOW SHARPLY IT IS IDENTIFIED AT ALL.
+ *
+ * This file used to take the argmax in EACH town and then median the four
+ * answers. That is only sound if each town's profile has a peak, and for at
+ * least one leg it does not. Measured, `orders -> breaks`: the pooled profile
+ * is a broad single hump from -24 to +36 months with r moving only between
+ * 0.25 and 0.31, and the four per-town argmaxes came out at 1, 22, 7 and -31
+ * months. Medianing four coin tosses is not an estimator, and it is why this
+ * leg once read "-34mo BACKWARDS" under a change that could not plausibly have
+ * inverted it — and why the TOTAL LOOP, which sums those same argmaxes,
+ * inherited the noise and halved.
+ *
+ * Averaging the correlation over towns FIRST and then taking the argmax uses
+ * every town to locate one peak, which is the ordinary way to estimate a lag
+ * from several realisations of the same process.
+ *
+ * And the WIDTH is reported, because a peak that is not a peak must say so. The
+ * plateau is every lag whose correlation is within `FLAT` of the maximum; when
+ * that plateau is wider than the band being tested, the argmax inside it
+ * carries no information and the verdict is UNIDENTIFIED rather than a number.
+ */
+const FLAT = 0.02;
+function pooledLag(xs, ys, sign = 1) {
+  let best = -Infinity, at = 0;
+  const prof = [];
+  for (let l = -MAXLAG; l <= MAXLAG; l++) {
+    let s = 0;
+    for (let i = 0; i < xs.length; i++) s += xcorr(xs[i], ys[i], l) * sign;
+    const r = s / xs.length;
+    prof.push([l, r]);
+    if (r > best) { best = r; at = l; }
+  }
+  const plateau = prof.filter(([, r]) => r >= best - FLAT).map(([l]) => l);
+  return { lag: at, r: best, width: plateau.length ? Math.max(...plateau) - Math.min(...plateau) : 0 };
+}
+
 // THE CHAIN, AND "STARTS" IS TWO DIFFERENT THINGS.
 //
 // Using one series for both ends of it was the fifth thing this file got wrong.
@@ -191,30 +228,25 @@ console.log(`\nDOES THE CYCLE RUN IN THE RIGHT ORDER — ${K}, ${N} towns x ${HZ
 console.log(`  ${pad("x leads y", 22)}${rp("lag", 7)}${rp("r", 8)}${rp("expected", 12)}   verdict`);
 let bad = 0;
 for (const [a, b, lo, hi, sign, why] of PAIRS) {
-  const lags = [], rs = [];
-  for (let i = 0; i < N; i++) { const { lag, r } = bestLag(series[a][i], series[b][i], sign); lags.push(lag); rs.push(r); }
-  lags.sort((x, y) => x - y);
-  const med = lags[Math.floor(lags.length / 2)];
-  const r = rs.reduce((x, y) => x + y, 0) / rs.length;
+  const { lag: med, r, width } = pooledLag(series[a], series[b], sign);
   // A weak correlation means the lag is not identified at all, and reporting a
   // number for it would be reporting the largest of sixty noise peaks.
   const verdict = Math.abs(r) < 0.25 ? "NO SIGNAL"
     : Math.abs(med) >= MAXLAG ? "UNIDENTIFIED"
+    // A plateau wider than the band it is being judged against means the
+    // argmax inside it is arbitrary. Report that rather than a number.
+    : width > (hi - lo) + 12 ? "UNIDENTIFIED"
     : med < -1 ? "BACKWARDS"
     : Math.abs(med) <= 1 ? (lo === 0 ? "ok" : "SIMULTANEOUS")
     : med < lo ? "too fast" : med > hi ? "too slow" : "ok";
   if (verdict !== "ok") bad++;
-  console.log(`  ${pad(a + " -> " + b, 22)}${rp(med + "mo", 7)}${rp(r.toFixed(2), 8)}${rp(lo + "-" + hi + "mo", 12)}   ${verdict}`);
+  console.log(`  ${pad(a + " -> " + b, 22)}${rp(med + "mo", 7)}${rp(r.toFixed(2), 8)}${rp(lo + "-" + hi + "mo", 12)}   ${verdict}${width > 24 ? `   (plateau ${width}mo wide — weakly identified)` : ""}`);
   console.log(`  ${pad("", 22)}${pad("", 27)}   ${why}`);
 }
 
 // The loop length is the sum of the legs, and it is what sets the period of the
 // whole cycle. Nothing in the engine states it; it can only be added up.
-const loop = PAIRS.reduce((a, [x, y, , , sg]) => {
-  const l = []; for (let i = 0; i < N; i++) l.push(bestLag(series[x][i], series[y][i], sg).lag);
-  l.sort((p, q) => p - q);
-  return a + l[Math.floor(l.length / 2)];
-}, 0);
+const loop = PAIRS.reduce((a, [x, y, , , sg]) => a + pooledLag(series[x], series[y], sg).lag, 0);
 console.log(`\n  TOTAL LOOP: ${loop} months (${(loop / 12).toFixed(1)} years) from a start to its effect on the`);
 console.log(`  decision to start again. Real property cycles run 7-12 years and the loop`);
 console.log(`  length is why. No constant in this engine sets this number.`);

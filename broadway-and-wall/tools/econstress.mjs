@@ -27,6 +27,16 @@ const CITY_SEED = Number(process.env.CITY_SEED ?? 20261);
 const SEEDS = Number(process.env.SEEDS ?? 6);
 const MARKET_SEEDS = [550991, 12007, 73303, 11, 22, 4242, 90210, 313, 777, 2468].slice(0, SEEDS);
 const only = (process.argv.find((a) => a.startsWith("--only=")) ?? "").slice(7).split(",").filter(Boolean);
+/**
+ * THE OPENING BANKROLL, OVERRIDABLE — so a claim about a broken world can be
+ * RE-RUN rather than believed. START_CASH_CHOICES offers 1M / 2.5M / 5M and the
+ * engine defaults to 2.5M; every check here goes through `newGame` below, so
+ * `START_CASH=1000000 node tools/econstress.mjs --only=G` plays the whole
+ * battery on a real, choosable opening cheque. It is how the assertion in [G]
+ * that BROKEN is reachable is earned instead of asserted.
+ */
+const START_CASH = Number(process.env.START_CASH || 0) || undefined;
+const newGame = (seed, parcels) => E.newGame(seed, parcels, START_CASH);
 const want = (k) => !only.length || only.includes(String(k));
 const md = [];
 const say = (s) => md.push(s);
@@ -106,7 +116,7 @@ if (want(33)) {
   {
     const base = city(CITY_SEED);
     const parcels = JSON.parse(JSON.stringify(base.parcels));
-    let g = E.firstListings(E.newGame(MARKET_SEEDS[0], parcels), parcels, base.bbls);
+    let g = E.firstListings(newGame(MARKET_SEEDS[0], parcels), parcels, base.bbls);
     for (let m = 0; m < 180; m++) g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
     const snapshot = JSON.parse(JSON.stringify(g));
     const pSnap = JSON.parse(JSON.stringify(parcels));
@@ -161,7 +171,7 @@ if (want("A")) {
   for (const ms of MARKET_SEEDS.slice(0, 3)) {
     const base = city(CITY_SEED);
     const parcels = JSON.parse(JSON.stringify(base.parcels));
-    let g = E.firstListings(E.newGame(ms, parcels), parcels, base.bbls);
+    let g = E.firstListings(newGame(ms, parcels), parcels, base.bbls);
     const snaps = [snapshotCity(g, parcels, base)];
     for (let m = 0; m < MONTHS; m++) {
       g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
@@ -274,7 +284,7 @@ const STRATS = {
 function playStrategy(name, ms, base = city(CITY_SEED)) {
   const st = STRATS[name];
   const parcels = JSON.parse(JSON.stringify(base.parcels));
-  let g = E.firstListings(E.newGame(ms, parcels), parcels, base.bbls);
+  let g = E.firstListings(newGame(ms, parcels), parcels, base.bbls);
   let bought = 0, sold = 0, builtN = 0, peak = 0, trough = 1;
   for (let m = 0; m < MONTHS; m++) {
     g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
@@ -502,7 +512,7 @@ if (want("B")) {
     const rest = base.bbls.filter((b) => !dBbls.includes(b));
     const arm = (whale) => {
       const parcels = JSON.parse(JSON.stringify(base.parcels));
-      let g = E.firstListings(E.newGame(ms, parcels), parcels, base.bbls);
+      let g = E.firstListings(newGame(ms, parcels), parcels, base.bbls);
       if (whale) { g = JSON.parse(JSON.stringify(g)); g.cash = 400e6; }
       let bought = 0;
       for (let m = 0; m < 300; m++) {
@@ -567,7 +577,7 @@ if (want("C")) {
   for (const ms of MARKET_SEEDS.slice(0, 3)) {
     const base = city(CITY_SEED);
     const parcels = JSON.parse(JSON.stringify(base.parcels));
-    let g = E.firstListings(E.newGame(ms, parcels), parcels, base.bbls);
+    let g = E.firstListings(newGame(ms, parcels), parcels, base.bbls);
     const open = new Map();      // bbl -> the month it was listed
     let gone = 0, ran = 0, lost = 0;
     const startAum = (g.rivals ?? []).reduce((a, r) => a + (r.bbls?.length ?? 0), 0);
@@ -622,7 +632,7 @@ if (want("D")) {
   const arm = (ms, credit) => {
     const base = city(CITY_SEED);
     const parcels = JSON.parse(JSON.stringify(base.parcels));
-    let g = E.firstListings(E.newGame(ms, parcels), parcels, base.bbls);
+    let g = E.firstListings(newGame(ms, parcels), parcels, base.bbls);
     let trades = 0;
     for (let m = 0; m < MONTHS; m++) {
       g.econ.creditIdx = credit;                      // a plain write; draws no random numbers
@@ -673,7 +683,7 @@ if (want("E")) {
     seeds++;
     const base = city(CITY_SEED);
     const parcels = JSON.parse(JSON.stringify(base.parcels));
-    let g = E.firstListings(E.newGame(ms, parcels), parcels, base.bbls);
+    let g = E.firstListings(newGame(ms, parcels), parcels, base.bbls);
     const hit = { breach: false, sweep: false, workout: false, foreclosure: false, seized: false, cured: false };
     for (let m = 0; m < MONTHS && !g.gameOver; m++) {
       g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
@@ -789,15 +799,31 @@ if (want("F")) {
 //   S2  buying buildings COMPOUNDS — the active firm's real return beats zero
 //   S3  holding cash DECAYS — the idle firm's real return does not
 //
-// All three can fail, and BROKEN is reachable: verified by injection, a $1M
-// opening bankroll drives S2 negative on every seed.
+// EACH STATEMENT CAN FAIL, AND HERE IS THE MEASUREMENT RATHER THAN THE CLAIM.
+// The first version of this comment asserted "BROKEN is reachable: verified by
+// injection", which I had not run. It is false as written, and an unearned
+// claim in a test is the same species of fault the test was fixing.
+//
+//   START_CASH=1000000 node tools/econstress.mjs --only=G
+//     S1  6 of 6   insolvent, median year 14.6 (against 30.7 at $2.5M)
+//     S2  2 of 6   buyer's real return -105% -106% -115% -113% -110% +413%
+//     S3  6 of 6   -106% every seed
+//     -> WEAK
+//
+// So a real, choosable opening cheque breaks S2 and the verdict moves. BROKEN
+// needs two of the three to fail, and S1 and S3 are the same mechanism seen
+// twice — fixed overhead against a dull deposit rate — so they fall TOGETHER
+// if that carry is ever removed, which is precisely the fault this check
+// exists to catch. That is the design, not a gap: the verdict is severe when
+// the thing being tested is actually gone, and merely WEAK when the world is
+// simply hard.
 if (want("G")) {
   const lines = [];
   const rows = [];
   for (const ms of MARKET_SEEDS) {
     const base = city(CITY_SEED);
     const parcels = JSON.parse(JSON.stringify(base.parcels));
-    const g0 = E.newGame(ms, parcels);
+    const g0 = newGame(ms, parcels);
     // READ THE OPENING CHEQUE, DO NOT ASSERT IT. The old `6e6` was a number
     // from a bankroll that no longer exists, and a hardcoded start is exactly
     // how conserve's bot went quiet for an unknown number of commits.
@@ -867,7 +893,7 @@ if (want(29)) {
   const loops = [];
   const fresh = (cash = 120e6) => {
     const parcels = JSON.parse(JSON.stringify(base.parcels));
-    let g = E.firstListings(E.newGame(MARKET_SEEDS[0], parcels), parcels, base.bbls);
+    let g = E.firstListings(newGame(MARKET_SEEDS[0], parcels), parcels, base.bbls);
     for (let m = 0; m < 24; m++) g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
     g = JSON.parse(JSON.stringify(g)); g.cash = cash;
     return { g, parcels };
@@ -999,7 +1025,7 @@ if (want(30)) {
   let broke = 0;
   for (const [label, inject] of EXTREMES) {
     const parcels = JSON.parse(JSON.stringify(base.parcels));
-    let g = E.firstListings(E.newGame(MARKET_SEEDS[0], parcels), parcels, base.bbls);
+    let g = E.firstListings(newGame(MARKET_SEEDS[0], parcels), parcels, base.bbls);
     for (let m = 0; m < 12; m++) g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
     let err = null, bad = 0;
     try {
@@ -1032,7 +1058,7 @@ if (want(31)) {
   const lines = [];
   const base = city(CITY_SEED);
   const parcels = JSON.parse(JSON.stringify(base.parcels));
-  let g = E.firstListings(E.newGame(MARKET_SEEDS[0], parcels), parcels, base.bbls);
+  let g = E.firstListings(newGame(MARKET_SEEDS[0], parcels), parcels, base.bbls);
   for (let m = 0; m < 120; m++) g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);
   const pairs = [], overAdvance = [], binds = {};
   let n = 0;
@@ -1130,7 +1156,7 @@ if (want(35)) {
   for (const ms of MARKET_SEEDS.slice(0, 3)) {
     const base = city(CITY_SEED);
     const parcels = JSON.parse(JSON.stringify(base.parcels));
-    let g = E.firstListings(E.newGame(ms, parcels), parcels, base.bbls);
+    let g = E.firstListings(newGame(ms, parcels), parcels, base.bbls);
     let live = 0, lois = 0, buys = 0, sites = 0, dead = 0, run = 0, worstRun = 0;
     for (let m = 0; m < MONTHS; m++) {
       g = E.advanceQuarter(g, parcels, base.bbls, base.adjacency);

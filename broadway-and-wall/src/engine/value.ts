@@ -167,23 +167,78 @@ export function siteQualityMult(rec: { lotArea: number; farMaxComm: number; farM
 }
 
 /**
- * WHAT IT COSTS TO PUT UP A BUILDING. These live here, below dev.ts, because
- * land is priced as a residual and a residual cannot be computed without them.
- * dev.ts re-exports them, so every existing caller is untouched.
+ * WHAT IT COSTS TO PUT UP A BUILDING — THE LOW-RISE BASE. These live here,
+ * below dev.ts, because land is priced as a residual and a residual cannot be
+ * computed without them. dev.ts re-exports them, so every caller is untouched.
  *
- * These are not observed averages. They are SOLVED: the cost at which a new
- * building on a median site yields about 150bp over its own exit cap, after
- * operating cost, after what a typical lease bills back, and after the
- * property tax the owner carries. A better corner still beats the hurdle
- * comfortably; a poor one does not pencil, which is why most land in a real
- * city stays empty.
+ * THESE USED TO BE SOLVED BACKWARDS AND THE COMMENT SAID SO: "not observed
+ * averages... SOLVED: the cost at which a new building on a median site yields
+ * about 150bp over its own exit cap." That is CLAUDE.md's fake number #1 stated
+ * out loud — a constant chosen to make an outcome come out right — and it had
+ * stopped producing even the outcome it was solved for. Measured by
+ * `pnpm breakeven`, which inverts the engine's own residual: office on a median
+ * site needed 171% MORE rent than it earned, retail 121% more, multifamily 51%
+ * more. Not 150bp over. Underwater, by multiples, on three classes out of four.
+ *
+ * And the fourth was the tell. Industrial was the only class whose cost had
+ * never been inflated to match, so it was the only one that cleared its own
+ * bar — which meant a two-floor shed outbid every other use for 82% of the
+ * sites in the city, `pnpm devyield` reported 0 office sites pencilling of
+ * 1,363 and 0 retail, and the city kept building office anyway because
+ * `devPencils` never looked at any of this.
+ *
+ * So these are observed now, and they are the LOW-RISE BASE — `heightPremium`
+ * takes them up a real cost curve from there, which is the structure the old
+ * table did not have. Sources are 2024 US, secondary-market (the comparison
+ * class is Providence / Charleston / Portland ME, NOT Manhattan — a 250,000
+ * -person harbour town does not build at CBD trophy prices, and calibrating to
+ * the famous markets is what put $865/sf on a two-storey shop):
+ *
+ *   office       RSMeans 2025 office range $202-574/sf, single-storey average
+ *                $313; secondary-market low-rise clusters $240-350.
+ *   retail       RSMeans 2024 retail store national average $214/sf. Strip
+ *                centres run $309-371 but carry sitework and parking fields
+ *                this game's two-storey street shops do not.
+ *   multifamily  mid-rise $210-310/sf, secondary markets $300-350. This is the
+ *                low-rise base, so it sits under the mid-rise figure.
+ *   industrial   modern warehouse / flex, $90-150/sf. The one number that was
+ *                already right, which is exactly why it broke everything else.
  */
 export const HARD_COST_PSF: Record<BuiltClass, number> = {
-  office: 560,        // net $62/sf against a 5.3% exit
-  multifamily: 345,   // net $37/sf against a 4.6% exit — the thinnest margin in the book
-  retail: 865,        // net $97/sf; podium retail is expensive and earns it
-  industrial: 140,    // net $17/sf against a 6.6% exit
+  office: 295,        // RSMeans single-storey office $313; secondary low-rise $240-350
+  multifamily: 300,   // low-rise base under the $310 mid-rise national average
+  retail: 245,        // RSMeans retail store $214, above it for two-storey urban shell
+  industrial: 125,    // modern warehouse/flex $90-150
 };
+
+/**
+ * HEIGHT COSTS MONEY, AND IT COSTS MORE THAN THIS LADDER USED TO SAY.
+ *
+ * The same square foot on floor forty needs more structure, more lift, more
+ * hoisting and more time than it does on floor two. The old ladder topped out
+ * at 1.28 and was WRITTEN OUT FOUR TIMES — value.ts:421, dev.ts:563, dev.ts:690
+ * and rivals.ts:260 — four copies of one quantity that happened to agree. They
+ * would not have agreed for long: this change alone would have moved one and
+ * left three, silently, which is how CLAUDE.md's fault #3 gets created rather
+ * than found. One function now, four callers.
+ *
+ * The old table hid the ladder's weakness because its BASE was already a
+ * high-rise number: $560/sf office meant a two-storey building was priced like
+ * a tower and a tower was priced like a two-storey building with a 28% tip. On
+ * an honest low-rise base the premium has to do real work, and the real curve
+ * is much steeper — roughly +15% at 5-8 storeys, +45-50% at 19-30, and +80-100%
+ * above that, against low-rise. Checked against the source range: 295 * 1.85 =
+ * $546/sf for a forty-storey tower, which lands inside RSMeans' $202-574 office
+ * band at the top where a tower belongs.
+ *
+ * This is also what stops every lot becoming a tower. A ladder that is too flat
+ * makes floor area nearly free above the eighth storey, and then the only thing
+ * limiting height is the zoning — which is a rule, not an economy.
+ */
+export function heightPremium(floors: number): number {
+  const fl = Math.max(1, floors || 1);
+  return fl > 30 ? 1.85 : fl > 18 ? 1.48 : fl > 8 ? 1.16 : 1;
+}
 export const SOFT_COST = 0.16;    // design, legal, permits, insurance, financing fees
 export const CONTINGENCY = 0.06;  // held against change orders; unspent is yours
 
@@ -418,8 +473,7 @@ export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): Res
     // it were is how a 34-FAR lot gets valued as thirty-four cheap floors.
     // Same ladder replacementCostPsf and planDevelopment use.
     const fl = Math.max(1, Math.round(usable / 0.7));
-    const heightPrem = fl > 30 ? 1.28 : fl > 18 ? 1.18 : fl > 8 ? 1.07 : 1;
-    const costPsf = HARD_COST_PSF[use] * econ.costIdx * heightPrem * (1 + SOFT_COST) * (1 + CONTINGENCY);
+    const costPsf = HARD_COST_PSF[use] * econ.costIdx * heightPremium(fl) * (1 + SOFT_COST) * (1 + CONTINGENCY);
     // ...AND FILLING IT COSTS MONEY TOO. Fit-out and commissions are charged
     // on the rentable feet, which is where the income is.
     const fitPsf = (TI_PSF[use] + (use === "multifamily" ? 0 : rent * 6 * 0.045)) * econ.costIdx;

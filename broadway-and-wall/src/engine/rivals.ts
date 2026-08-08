@@ -33,7 +33,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from "./types";
 import { CASH_APY, monthLabel } from "./types";
 import { BUILD_MONTHS, rng, rrange, devPencils } from "./market";
-import { assetValue, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall } from "./value";
+import { assetValue, heightPremium, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall } from "./value";
 import { cityInfillCap, devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retailWantsMixed, SOFT_COST, useForZone, noteRecordPlan, openConstructionDesks, pickConstructionDesk, capRetail, withStreetRetail } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure } from "./lenders";
 import { streetRefiProceeds, productById } from "./debt";
@@ -257,8 +257,7 @@ function jobBudget(s: GameState, use: DevUse, sf: number, floors: number): numbe
   let psf = 0, w = 0;
   for (const u of Object.keys(mix) as BuiltClass[]) { const sh = mix[u] ?? 0; psf += HARD_COST_PSF[u] * sh; w += sh; }
   psf = w > 0 ? psf / w : HARD_COST_PSF.office;
-  const heightPrem = floors > 30 ? 1.28 : floors > 18 ? 1.18 : floors > 8 ? 1.07 : 1;
-  const hard = sf * psf * s.econ.costIdx * heightPrem * 1.04;
+  const hard = sf * psf * s.econ.costIdx * heightPremium(floors) * 1.04;
   return Math.round(hard * (1 + SOFT_COST) * 1.06);
 }
 

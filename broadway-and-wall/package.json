@@ -53,7 +53,8 @@
     "stress": "node tools/econstress.mjs",
     "styles": "node tools/styleaudit.mjs",
     "repudiate": "node test/repudiate.mjs",
-    "pencils": "node test/pencils.mjs"
+    "pencils": "node test/pencils.mjs",
+    "breakeven": "node test/breakeven.mjs"
   },
   "dependencies": {
     "@types/three": "^0.185.3",

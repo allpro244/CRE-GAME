@@ -13,7 +13,7 @@ import { demandNow } from "./demand";
 import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock } from "./market";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, assetValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling,
-  HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX } from "./value";
+  HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
@@ -557,11 +557,8 @@ export function capRetail(mix: UseMix, floors: number): UseMix {
 export function replacementCostPsf(rec: { class: string; mix?: UseMix; floors: number }, econ: GameState["econ"]): number {
   const mix = rec.mix && Object.keys(rec.mix).length ? rec.mix : ({ [rec.class]: 1 } as UseMix);
   const base = overMix(mix, (u) => HARD_COST_PSF[u]);
-  // Height costs money: the same square foot on floor forty needs more
-  // structure, more lift and more time than it does on floor two.
   const fl = Math.max(1, rec.floors || 1);
-  const heightPrem = fl > 30 ? 1.28 : fl > 18 ? 1.18 : fl > 8 ? 1.07 : 1;
-  const hard = base * econ.costIdx * heightPrem;
+  const hard = base * econ.costIdx * heightPremium(fl);
   return Math.round(hard * (1 + SOFT_COST) * (1 + CONTINGENCY));
 }
 
@@ -687,11 +684,10 @@ export function planDevelopment(
   // Applied before the cap, so the cap still has the last word.
   const mix = capRetail(withStreetRetail(raw, fl, rec.demandScore ?? 50), fl);
 
-  const heightPrem = fl > 30 ? 1.28 : fl > 18 ? 1.18 : fl > 8 ? 1.07 : 1;
   // the budget is the sum of the jobs, not a number attached to a label
   // ...priced on GROSS. You pay for the core; you do not let it.
   const specK = specCostMult(spec);
-  const hardCost = Math.round(gsf * overMix(mix, (u) => HARD_COST_PSF[u]) * s.econ.costIdx * heightPrem * (1 + CONTRACT_PREMIUM[contract]) * specK);
+  const hardCost = Math.round(gsf * overMix(mix, (u) => HARD_COST_PSF[u]) * s.econ.costIdx * heightPremium(fl) * (1 + CONTRACT_PREMIUM[contract]) * specK);
   const softCost = Math.round(hardCost * SOFT_COST);
   const demo = rec.bldgArea > 0 ? Math.round(rec.bldgArea * 12 * s.econ.costIdx) : 0;
   const contingency = Math.round((hardCost + softCost) * CONTINGENCY);

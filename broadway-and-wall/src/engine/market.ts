@@ -483,7 +483,40 @@ export function stockFromParcels(parcels: ParcelTable): Record<BuiltClass, numbe
   return out;
 }
 export const SECTOR_LABEL = { office: "Office", retail: "Retail", multifamily: "Apartments", industrial: "Industrial" } as const;
-export const RENT_BASE = { office: 43.65, retail: 42.91, multifamily: 30.22, industrial: 18.00 } as const; // $/sf/yr
+/**
+ * WHAT A SQUARE FOOT RENTS FOR AT AN ORDINARY ADDRESS, $/sf/yr. The location
+ * multiplier (`locationRentMult` in value.ts) takes it from here — up to 2.45x
+ * for prime office and 3.10x for a prime retail pitch, down to 0.40x and 0.34x
+ * on the fringe.
+ *
+ * INDUSTRIAL WAS THE OUTLIER AND IT BROKE THE LAND MARKET. At $18.00 it earned
+ * roughly what an office did in the same town, and since industrial hard cost
+ * was the one number nobody had inflated, a two-floor shed was the only use in
+ * the game that could pay for dirt. Measured: industrial bid positive for 100%
+ * of vacant lots and was the highest and best use on 82% of them, including
+ * prime downtown corners a warehouse has no business on.
+ *
+ * Real industrial rent is nothing like office rent. Rhode Island bulk warehouse
+ * runs $5.00-6.00/sf NNN, general-purpose industrial $6.50-7.50, flex about
+ * $10; the US national average was $9.90 NNN in Q3 2024. This city's industrial
+ * is urban infill on a harbour, which is the dearer end of that, so $8.50 —
+ * still less than half what it was, and the correction is a factor of two on
+ * the one class that had never been checked.
+ *
+ * Retail comes down for the same kind of reason. The JLL 2024 national median
+ * retail rent is $23.10/sf NNN and strip centres run $18-35; $42.91 was a prime
+ * high-street pitch being charged as the city-wide ordinary rate, and then the
+ * 3.10x location multiplier was applied ON TOP of it.
+ *
+ * Office and multifamily stay. Providence Class A asks $26.71-33.51 and the
+ * market averages $29.80; this table's ordinary-address office at $43.65 is
+ * above that, but it is a GROSS rent in a harbour city with a constrained
+ * peninsula, and the measured median-lot achieved rent lands inside the band
+ * once the location multiplier has pushed the fringe down. Multifamily at
+ * $30.22/sf/yr is $2.52/sf/month, against Providence's ~$2.24 — close enough
+ * that moving it would be tuning, not correcting.
+ */
+export const RENT_BASE = { office: 43.65, retail: 26.00, multifamily: 30.22, industrial: 8.50 } as const; // $/sf/yr
 // The natural (frictional) vacancy per class — the rate at which neither side
 // of the table has the upper hand. Below it landlords push rents; above it
 // tenants extract concessions. Office runs structurally looser than housing.

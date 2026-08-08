@@ -162,7 +162,7 @@ interface AppState {
   program: (bbl: string, id: string) => void;
   stance: (bbl: string, v: -1 | 0 | 1) => void;
   ops: (bbl: string, v: { service?: -1 | 0 | 1; plan?: 0 | 1 | 2 }) => void;
-  opsPolicy: (v: { service: -1 | 0 | 1; plan: 0 | 1 | 2 }) => void;
+  opsPolicy: (v: { service: -1 | 0 | 1; plan: 0 | 1 | 2; stance?: -1 | 0 | 1 }) => void;
   listSale: (bbl: string, ask: number, mode?: "quiet" | "marketed") => void;
   runBestAndFinal: (bbl: string) => void;
   takeBid: (bbl: string, index: number) => void;

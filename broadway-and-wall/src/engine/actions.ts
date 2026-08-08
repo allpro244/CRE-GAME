@@ -167,6 +167,7 @@ export function executePurchase(
     // IT CLOSES ON THE HOUSE POLICY. A principal decides how they run buildings
     // once; a building that needs different treatment gets it on the panel.
     service: s.opsPolicy?.service ?? 0,
+    stance: s.opsPolicy?.stance ?? 0,
     plan: s.opsPolicy?.plan ?? 1,
     svcIdx: SVC_START,
     tenants: [],

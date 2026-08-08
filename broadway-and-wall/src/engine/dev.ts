@@ -1649,6 +1649,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   if (built) built.buildSpec = d.spec ?? 0.5;
   h.condIdx = Math.min(condCeiling(built ?? { yearBuilt: 2000 }, s.month), 0.90 + 0.09 * ((d.spec ?? 0.5)));
   h.service = s.opsPolicy?.service ?? 0;
+  h.stance = s.opsPolicy?.stance ?? 0;
   h.plan = s.opsPolicy?.plan ?? 1;
   h.svcIdx = 0.70;   // a building that opens this year opens well run
   h.lastCapM = s.month;
@@ -1885,15 +1886,23 @@ export function setOps(
  * running its buildings properly does not do it one address at a time.
  */
 export function setOpsPolicy(
-  s: GameState, ops: { service: -1 | 0 | 1; plan: 0 | 1 | 2 }, applyToBook = true,
+  s: GameState, ops: { service: -1 | 0 | 1; plan: 0 | 1 | 2; stance?: -1 | 0 | 1 }, applyToBook = true,
 ): GameState {
   const next = clone(s);
   next.opsPolicy = ops;
   if (applyToBook) {
-    for (const h of Object.values(next.holdings)) { h.service = ops.service; h.plan = ops.plan; }
+    const st = ops.stance ?? 0;
+    for (const h of Object.values(next.holdings)) { h.service = ops.service; h.plan = ops.plan; h.stance = st; }
+    // THE ASK IS PART OF HOW YOU RUN A BUILDING, and it was the one standing
+    // decision this policy did not carry — so a principal could set service and
+    // the capital plan for the whole book in one move and still had to open
+    // twenty buildings to say "push rents". It is the same kind of decision as
+    // the other two: taken once, lived with for years, overridden per asset
+    // where one building needs different treatment.
     next.news.unshift({
       q: next.month, kind: "info",
-      text: `House policy: buildings run ${serviceSpec(ops.service).label.toLowerCase()}, capital plan ${planSpec(ops.plan).label.toLowerCase()}. `
+      text: `House policy: ${st > 0 ? "push rents" : st < 0 ? "fill space" : "ask the market"}, `
+        + `buildings run ${serviceSpec(ops.service).label.toLowerCase()}, capital plan ${planSpec(ops.plan).label.toLowerCase()}. `
         + `It applies to everything on the book from this month.`,
     });
   }

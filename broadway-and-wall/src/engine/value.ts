@@ -1495,6 +1495,7 @@ export function asIfOwned(s: GameState, bbl: string, price: number, d: Disclosur
     // on the lean one. Inert until the player touches the dial, and a silent
     // gap at the closing table the moment they do.
     service: s.opsPolicy?.service ?? 0,
+    stance: s.opsPolicy?.stance ?? 0,
     plan: s.opsPolicy?.plan ?? 1,
     ...(d.occ !== undefined ? { occ: d.occ } : {}),
     ...(s.landmarks?.[bbl] !== undefined ? { landmarked: true } : {}),

@@ -1689,7 +1689,13 @@ export interface GameState {
    * than thirty times. Per-building overrides live on the Holding, and are
    * what you reach for when one asset needs different treatment.
    */
-  opsPolicy?: { service: -1 | 0 | 1; plan: 0 | 1 | 2 };
+  /**
+   * `stance` is optional because saves written before it existed do not carry
+   * one, and a missing house posture means "market" — which is what every
+   * building in those saves is already doing. Widening it is free; defaulting
+   * it to anything else would silently reprice somebody's whole book on load.
+   */
+  opsPolicy?: { service: -1 | 0 | 1; plan: 0 | 1 | 2; stance?: -1 | 0 | 1 };
   /**
    * WHEN EACH BUILDING LAST CHANGED HANDS.
    *

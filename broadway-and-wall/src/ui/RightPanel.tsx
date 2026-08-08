@@ -8052,6 +8052,92 @@ function SaveSlots() {
   );
 }
 
+/**
+ * HOW THE HOUSE RUNS BUILDINGS — one decision, the whole book.
+ *
+ * Three standing choices have always existed per building: the ask, the service
+ * level and the capital plan. `setOpsPolicy` has always been able to set them
+ * across the entire book at once, and its own comment says why — "a firm that
+ * decides to start running its buildings properly does not do it one address at
+ * a time." Nothing in the UI ever called it. So a principal with twenty deeds
+ * who wanted to push rents opened twenty buildings and pressed the same button
+ * twenty times, which is not a decision, it is data entry.
+ *
+ * This is that engine call, on the screen. It sets the house default for every
+ * deed you close from here on AND rewrites the book you already own. The
+ * per-building card is still there and still wins — you reach for it when one
+ * asset needs different treatment, which is the point of a default.
+ *
+ * The divergence line is the part that keeps this honest. Once a house policy
+ * exists, the interesting question is which buildings are NOT on it, so the
+ * section says how many differ and the by-building table below carries the
+ * three settings as columns.
+ */
+function HousePolicy() {
+  const game = useStore((s) => s.game)!;
+  const { opsPolicy } = useStore.getState();
+  const cur = game.opsPolicy ?? { service: 0 as const, plan: 1 as const, stance: 0 as const };
+  const [svc, setSvc] = useState<-1 | 0 | 1>(cur.service);
+  const [pln, setPln] = useState<0 | 1 | 2>(cur.plan);
+  const [stn, setStn] = useState<-1 | 0 | 1>(cur.stance ?? 0);
+  const built = Object.values(game.holdings).filter((h) => {
+    const rec = useStore.getState().parcels?.[h.bbl];
+    return rec && rec.class !== "land";
+  });
+  const off = built.filter((h) => (h.stance ?? 0) !== stn || (h.service ?? 0) !== svc || (h.plan ?? 1) !== pln).length;
+  const dirty = svc !== cur.service || pln !== cur.plan || stn !== (cur.stance ?? 0);
+  const Seg = <T extends number>(
+    { label, value, set, opts, hint }:
+    { label: string; value: T; set: (v: T) => void; opts: { k: T; label: string; title: string }[]; hint: string },
+  ) => (
+    <>
+      <div className="grid"><Row k={label} v={opts.find((o) => o.k === value)?.label ?? "—"} /></div>
+      <div className="btn-row">
+        {opts.map((o) => (
+          <button key={String(o.k)} className={"btn" + (value === o.k ? " btn-on" : "")}
+            title={o.title} onClick={() => set(o.k)}>{o.label}</button>
+        ))}
+      </div>
+      <div className="hint">{hint}</div>
+    </>
+  );
+  return (
+    <div className="page-section">
+      <div className="page-section-head">
+        How the house runs buildings · {built.length} propert{built.length === 1 ? "y" : "ies"}
+      </div>
+      <div className="hint" style={{ marginTop: 0 }}>
+        Set it once. It applies to every deed you close from here on, and to the book you already own.
+        A building that needs different treatment is still set on its own card, and that override stands.
+      </div>
+      <Seg label="The ask on new leases" value={stn} set={setStn}
+        opts={[
+          { k: -1 as const, label: "Fill space", title: "−8% asking rents, and the letters come faster" },
+          { k: 0 as const, label: "Market", title: "ask what the market is asking" },
+          { k: 1 as const, label: "Push rents", title: "+8% asking rents, and fewer letters arrive" },
+        ]}
+        hint="Eight per cent either way on the ask, and the traffic moves against you harder than the rent moves for you — that is the trade, and it is why pushing rents into a soft market empties a building." />
+      <Seg label="Service" value={svc} set={setSvc}
+        opts={OPS_SERVICE.map((o) => ({ k: o.key, label: o.label, title: o.blurb }))}
+        hint="Free to change and slow to matter: the saving lands next month and the tenants have not noticed for three years — which is exactly why cutting it is a trap rather than a lever." />
+      <Seg label="Capital plan" value={pln} set={setPln}
+        opts={OPS_PLAN.map((o) => ({ k: o.key, label: o.label, title: o.blurb }))}
+        hint="Deferring is free today and ruinous over a twenty-year hold. It is sometimes right — for a flip, or for a building you are emptying to knock down." />
+      <div className="btn-row">
+        <button className="btn btn-buy" disabled={!dirty && off === 0}
+          onClick={() => opsPolicy({ service: svc, plan: pln, stance: stn })}>
+          {off > 0 ? `Apply to all ${built.length} buildings` : "Applied"}
+        </button>
+      </div>
+      <div className="hint">
+        {off === 0
+          ? "Every building on the book is running this policy."
+          : `${off} of ${built.length} ${off === 1 ? "building is" : "buildings are"} running something else — either an override you set deliberately, or a policy you changed after you bought them.`}
+      </div>
+    </div>
+  );
+}
+
 // Everything about who is paying you rent, in one room: occupancy by
 // building, the whole rent roll, what rolls when, and the agent switch.
 function LeasingPage() {
@@ -8087,6 +8173,11 @@ function LeasingPage() {
         <AgentBar />
         <RenewalBar />
         <div className="hint">No buildings yet — occupancy starts when you own something with tenants in it.</div>
+        {/* …but the house policy belongs here even with an empty book, because
+            its other half is the deeds you have not closed yet: set it now and
+            everything you buy arrives configured instead of being corrected
+            afterwards. That is the whole argument for a default. */}
+        <HousePolicy />
       </div>
     );
   }
@@ -8203,6 +8294,8 @@ function LeasingPage() {
         </div>
       )}
 
+      <HousePolicy />
+
       <div className="page-section">
         <div className="page-section-head">By building</div>
         <div style={{ overflowX: "auto" }}>
@@ -8211,7 +8304,7 @@ function LeasingPage() {
               <tr>
                 <th>Property</th><th>Class</th><th className="num">Size</th><th className="num">Occupancy</th>
                 <th className="num">Rent roll / yr</th><th className="num">Avg rent</th><th className="num">WALT</th>
-                <th className="num">Rolling 12mo</th><th>Leasing</th>
+                <th className="num">Rolling 12mo</th><th>Ask</th><th>Service</th><th>Plan</th><th>Leasing</th>
               </tr>
             </thead>
             <tbody>
@@ -8225,6 +8318,17 @@ function LeasingPage() {
                   <td className="num">{r.leased ? "$" + (r.rentRoll / r.leased).toFixed(0) : "—"}</td>
                   <td className="num">{r.commercial ? walt(r.h, q).toFixed(1) + "y" : "—"}</td>
                   <td className={"num" + (r.rolling > r.leased * 0.3 ? " neg" : "")}>{r.rolling ? sf(r.rolling) : "—"}</td>
+                  {/* THE THREE STANDING DECISIONS, so a book that has drifted off
+                      the house policy shows it here rather than one card at a time. */}
+                  <td className={(r.h.stance ?? 0) !== (game.opsPolicy?.stance ?? 0) ? "" : "dim"}>
+                    {(r.h.stance ?? 0) > 0 ? "Push" : (r.h.stance ?? 0) < 0 ? "Fill" : "Market"}
+                  </td>
+                  <td className={(r.h.service ?? 0) !== (game.opsPolicy?.service ?? 0) ? "" : "dim"}>
+                    {serviceSpec(r.h.service).label}
+                  </td>
+                  <td className={(r.h.plan ?? 1) !== (game.opsPolicy?.plan ?? 1) ? "" : "dim"}>
+                    {planSpec(r.h.plan).label}
+                  </td>
                   <td className="dim">
                     {[r.h.broker ? "BROKER" : null, r.notReady ? "TURNING" : null,
                       r.h.deliveredM !== undefined && q - r.h.deliveredM <= 30 ? "LEASE-UP" : null]

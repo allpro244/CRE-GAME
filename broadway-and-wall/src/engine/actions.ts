@@ -270,15 +270,53 @@ export function executePurchase(
 // the asking price; the seller weighs it against how motivated they are and
 // how hot the market is. Push too far and the deal dies rather than merely
 // being refused — a listing you blew up goes to somebody else.
+/**
+ * WILL THEY TAKE IT. A SELLER HAS A NUMBER, AND YOU CANNOT SEE IT.
+ *
+ * This was linear in the discount with a floor: `max(0.02, 1.02 - disc*6.2 + …)`.
+ * The floor is the fault. Past about 80% of the ask the linear term has gone
+ * negative and every offer below it — 70%, half, ONE DOLLAR — comes out at the
+ * same 2%. So a bid of $1 on a $5M building closed one time in fifty, and the
+ * dominant play was to put a dollar on every listing in town every month and
+ * wait. That is a money pump, and it is the textbook shape of a rail holding
+ * up a model: the floor was there so there would "always be a chance", and it
+ * ended up deciding the whole lowball range.
+ *
+ * A seller does not roll dice against the discount. They have a reservation
+ * price they will not go under, it is private, and it is not the same number
+ * from one owner to the next. So the honest object is the CDF of that
+ * reservation: the chance the person on the other side of this particular
+ * table happens to be at or below what you offered. Logistic rather than
+ * normal, because the tail is real — somewhere in a city there is always an
+ * estate that wants it done this week — but it is a TAIL and it thins, instead
+ * of levelling off into a free option.
+ *
+ * Calibrated on sale-to-list: commercial deals close at a median near 95% of
+ * ask, so a bid at 95% is close to a coin flip, and that is where the centre
+ * goes. The curve that comes out tracks the old one from full ask down to
+ * ~80% — 0.57 vs 0.71 at 95%, 0.018 vs 0.020 at 80% — and then keeps falling
+ * where the old one flattened: 1-in-950 at 70% of ask, and effectively never
+ * for a dollar.
+ */
+const RESERVE_MID = 0.94;      // the median seller's reservation, as a share of their own ask
+const RESERVE_SD = 0.035;      // spread across owners; distress widens it, below
 export function bidOdds(s: GameState, listing: { ask: number; distress?: boolean }, bid: number): number {
-  const disc = 1 - bid / Math.max(1, listing.ask);        // 0 at full ask
-  const phase = s.econ.phase === "recession" ? 0.16 : s.econ.phase === "expansion" ? -0.12 : 0;
-  const motivated = listing.distress ? 0.18 : 0;
+  const r = bid / Math.max(1, listing.ask);               // 1 at full ask
+  // The same three forces as before, moved from the probability onto the
+  // seller's NUMBER, which is where they act. A recession does not make a
+  // seller likelier to accept a given discount by some fixed amount of luck —
+  // it lowers what they will settle for.
+  const phase = s.econ.phase === "recession" ? -0.035 : s.econ.phase === "expansion" ? +0.025 : 0;
+  const motivated = listing.distress ? -0.055 : 0;
   // A seller refuses a lowball because somebody else will pay more. How much
   // that is true depends on who else has money today — which is the whole
   // reason to know what the other firms on the street are doing.
-  const room = (marketAppetite(s) - 1) * 0.22;
-  return Math.max(0.02, Math.min(0.98, 1.02 - disc * 6.2 + phase + motivated - room));
+  const room = (marketAppetite(s) - 1) * 0.05;
+  const mid = RESERVE_MID + phase + motivated + room;
+  // A forced sale is not just cheaper, it is less predictable: a receiver with
+  // a deadline and an estate with a lawyer settle in very different places.
+  const sd = listing.distress ? 0.060 : RESERVE_SD;
+  return Math.max(0, Math.min(0.98, 1 / (1 + Math.exp(-(r - mid) / sd))));
 }
 
 export function buyListing(

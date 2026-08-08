@@ -41,6 +41,14 @@ export interface Comp {
    * because it is still somebody's money. See `tickLandComps`.
    */
   offMarket?: boolean;
+  /**
+   * THE APPRAISAL THIS LOT CARRIED ON THE DAY IT CLOSED — dirt only.
+   *
+   * A comp is a price at a date. Comparing it to an appraisal at a DIFFERENT
+   * date measures the months in between and calls the answer location. See
+   * `tickLandComps`, which divided by it and got the sign backwards for it.
+   */
+  mark?: number;
 }
 
 const MAX_COMPS = 240;
@@ -91,6 +99,11 @@ export function recordComp(
     buyer, seller,
     distress: distress || undefined,
     offMarket: offMarket || undefined,
+    // Stamped here because here is the only place that knows the date. Every
+    // one of the twelve callers hands in a resolveRec'd record, so this is
+    // bit-for-bit the number `tickLandComps` would have computed for this lot
+    // this month — and unlike that one, it does not keep moving afterwards.
+    mark: built ? undefined : landPsfNow(rec, s.econ) || undefined,
   });
   if (s.comps.length > MAX_COMPS) s.comps.splice(0, s.comps.length - MAX_COMPS);
 }
@@ -210,14 +223,21 @@ export function portfolioIndustries(s: GameState) {
  * which is the sign it moves, backwards.
  *
  * How it works, and why it converges rather than running away: every land
- * print is compared to what this engine would have appraised that same lot at,
- * and the ratio is the market telling the appraiser it is wrong. Aggregated to
- * the district, because that is the submarket an appraiser actually pulls
- * comps from, and only when there are enough prints to be a market rather than
- * an anecdote. The mark then moves a fraction of the way each quarter — and as
- * it moves, the appraisal rises toward the prints and the ratio returns to
- * one, which is what stops it. A district that keeps clearing above its
- * appraisal keeps getting marked up, exactly as long as it keeps doing it.
+ * print is compared to what this engine appraised that same lot at ON THE DAY
+ * IT CLOSED, and the ratio is the market telling the appraiser it is wrong.
+ * Aggregated to the district, because that is the submarket an appraiser
+ * actually pulls comps from, and only when there are enough prints to be a
+ * market rather than an anecdote. The mark then moves a fraction of the way
+ * each quarter.
+ *
+ * What stops it is the NEXT print, not this one. A raised mark raises the
+ * appraisal, the appraisal is what the next seller writes their ask off, and a
+ * lot that clears at the ordinary denial band over the RAISED number scores a
+ * ratio of one — no further push. A district that keeps clearing stronger than
+ * the town keeps getting marked up, exactly as long as it keeps doing it, and
+ * the day it stops it simply stops, without a correction it never earned. The
+ * older arrangement compared against a moving mark and got that braking for
+ * free, at the price of the sign: see the note at the ratio.
  *
  * It draws no random numbers, so every paired run in both audits stays in step.
  */
@@ -238,7 +258,23 @@ export function tickLandComps(s: GameState, parcels: Record<string, ParcelRecord
     if (c.m < since || c.sf !== 0) continue;
     const rec = resolveRec(parcels, s, c.bbl);
     if (!rec?.lotArea) continue;
-    const appraised = landPsfNow(rec, s.econ);
+    // A PRICE AND ITS MARK MUST CARRY THE SAME DATE.
+    //
+    // This divided by `landPsfNow(rec, s.econ)` — TODAY'S appraisal — against
+    // prints up to three years old. Write out what that measures. A print at
+    // month t clears at roughly the mark on that date times the seller's denial
+    // band; the denominator is the mark on THIS date. So the ratio is
+    // `denial * (mark_then / mark_now)`, and the district term in it is not
+    // location, it is the district's own growth over the window, INVERTED. A
+    // district being marked up therefore read cheap, and the wire marked it
+    // back down — which is why `pnpm stress --only=B` had a whale buying out a
+    // district and moving its ground -34%. The comp sheet was measuring the
+    // clock.
+    //
+    // Stamped at the closing, the ratio is `denial` and nothing else, which is
+    // the one thing a comp is evidence about: did this lot clear over or under
+    // what the book said it was worth, on the day.
+    const appraised = c.mark ?? landPsfNow(rec, s.econ);
     if (!(appraised > 0) || !(c.psf > 0)) continue;
     const d = rec.district ?? "—";
     if (!byDist.has(d)) byDist.set(d, []);

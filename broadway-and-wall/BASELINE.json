@@ -1,5 +1,5 @@
 {
-  "commit": "cbb92b4",
+  "commit": "7a8d419",
   "city": "newalden",
   "citySeed": 1,
   "seeds": [
@@ -27,6 +27,18 @@
     "city.floorAreaM": 12.144,
     "city.demolished": 154,
     "city.employed": 24820,
-    "city.population": 44105
+    "city.population": 44105,
+    "rail.cap.office.hi": 0,
+    "rail.cap.office.lo": 0,
+    "rail.vac.office.hi": 0,
+    "rail.cap.retail.hi": 0,
+    "rail.cap.retail.lo": 0,
+    "rail.vac.retail.hi": 0,
+    "rail.cap.multifamily.hi": 0,
+    "rail.cap.multifamily.lo": 0.0533,
+    "rail.vac.multifamily.hi": 0,
+    "rail.cap.industrial.hi": 0,
+    "rail.cap.industrial.lo": 0,
+    "rail.vac.industrial.hi": 0
   }
 }

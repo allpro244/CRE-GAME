@@ -155,6 +155,39 @@ function city(g, base) {
   };
 }
 
+/**
+ * HOW OFTEN THE MODEL IS RESTING ON A RAIL.
+ *
+ * CLAUDE.md, fault five: "A clamp that stops a number going somewhere absurd
+ * is fine as a guard and is a bug when it is LOAD-BEARING. If a variable rests
+ * against its rail in normal play, the rail is holding up the model."
+ *
+ * That is not something you notice by reading. It is something you notice by
+ * counting, and until this existed nobody counted. The regression that made
+ * this file necessary ended at exactly such a rail: the office cap rate went
+ * from binding its 11% ceiling in 1.8% of months to 7.0%, and once it was
+ * pinned there the land residual collapsed to zero and the entire land market
+ * came to rest on the generator's static texture. Every gate in the repo was
+ * green the whole time, because nothing had ever asked the question.
+ *
+ * These are the rails that carry prices. A number here climbing is the model
+ * losing a degree of freedom, whatever else the run looks like.
+ */
+function rails(g, acc) {
+  for (const k of ["office", "retail", "multifamily", "industrial"]) {
+    const c = g.econ.capRate?.[k];
+    if (Number.isFinite(c)) {
+      if (c >= 10.999) acc[`rail.cap.${k}.hi`] = (acc[`rail.cap.${k}.hi`] ?? 0) + 1;   // the 11% ceiling
+      if (c <= 3.401) acc[`rail.cap.${k}.lo`] = (acc[`rail.cap.${k}.lo`] ?? 0) + 1;    // the 3.4% floor
+    }
+    const v = g.econ.cityVac?.[k];
+    // market.ts caps citywide vacancy at 45%; test H already notes that AT the
+    // clamp this number stops being a measurement
+    if (Number.isFinite(v) && v >= 0.4499) acc[`rail.vac.${k}.hi`] = (acc[`rail.vac.${k}.hi`] ?? 0) + 1;
+  }
+  acc.__n = (acc.__n ?? 0) + 1;
+}
+
 // ---------------------------------------------------------------- run it
 const MONTHS = 300;          // twenty-five years
 const WINDOW = 120;          // the last ten of them, which is more than a cycle
@@ -165,8 +198,12 @@ function measure() {
     const base = freshCity();
     let g = E.firstListings(E.newGame(seed, base.parcels), base.parcels, base.bbls);
     const samples = {};
+    const railAcc = {};
     for (let m = 0; m < MONTHS; m++) {
       g = E.advanceQuarter(g, base.parcels, base.bbls, base.adjacency);
+      // every month, not annually — a rail that binds for a quarter and lets go
+      // is exactly the thing an annual sample would miss
+      rails(g, railAcc);
       // The frozen world: advanceQuarter returns state UNCHANGED once gameOver
       // is set, so an un-resurrected probe silently stops and every later month
       // is a copy of the month it died in. See CLAUDE.md.
@@ -185,6 +222,15 @@ function measure() {
       row[k] = vals.reduce((a, b) => a + b, 0) / Math.max(1, vals.length);
     }
     Object.assign(row, city(g, base));
+    // rails as a SHARE OF MONTHS, and every rail we watch is reported even when
+    // it never bound — a metric that only appears once it goes wrong is a
+    // metric nobody can see going wrong.
+    const n = railAcc.__n || 1;
+    for (const k of ["office", "retail", "multifamily", "industrial"]) {
+      row[`rail.cap.${k}.hi`] = +((railAcc[`rail.cap.${k}.hi`] ?? 0) / n).toFixed(4);
+      row[`rail.cap.${k}.lo`] = +((railAcc[`rail.cap.${k}.lo`] ?? 0) / n).toFixed(4);
+      row[`rail.vac.${k}.hi`] = +((railAcc[`rail.vac.${k}.hi`] ?? 0) / n).toFixed(4);
+    }
     for (const [k, v] of Object.entries(row)) (out[k] ??= []).push(v);
   }
   // the median across seeds, so one unlucky city cannot move the record

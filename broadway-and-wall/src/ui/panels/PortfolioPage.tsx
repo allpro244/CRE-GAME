@@ -17,7 +17,9 @@ export function PortfolioPage() {
   const game = useStore((s) => s.game)!;
   const select = useStore((s) => s.select);
   const setPage = useStore((s) => s.setPage);
-  const holdings = Object.values(game.holdings);
+  // Child deeds of an assemblage keep a $0 holding for title — they are not
+  // separate assets. Show the site once, under the parent.
+  const holdings = Object.values(game.holdings).filter((h) => !game.merged?.[h.bbl]);
   const { delistSale, focus } = useStore.getState();
   // Opening the record and finding the building are the same action now: the
   // panel changes AND the camera moves, so the thing you are reading about is

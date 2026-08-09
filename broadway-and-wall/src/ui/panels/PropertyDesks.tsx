@@ -8,7 +8,10 @@ import { LineChart } from "@/ui/Chart";
 import { USE_WORD } from "@/engine/mix";
 import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses } from "@/engine/leasing";
 import { leasingOdds } from "@/engine/absorption";
-import { groundLeaseQuote, mergeCost } from "@/engine/actions";
+import {
+  groundLeaseQuote, mergeCost, siteNeighborRoots, siteDeeds, siteLotArea,
+  contiguousOwnedRoots,
+} from "@/engine/actions";
 import { varianceQuote } from "@/engine/zoning";
 import { usd, sf } from "@/ui/format";
 import { useLabel, Row } from "@/ui/panels/shared";
@@ -417,6 +420,8 @@ export function LandDesk({ bbl }: { bbl: string }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const adjacency = useStore((s) => s.adjacency);
+  const select = useStore((s) => s.select);
+  const focus = useStore((s) => s.focus);
   const { assemble, groundLease, pullGroundOffer, applyVariance } = useStore.getState();
   const [picked, setPicked] = useState<string[]>([]);
   const [years, setYears] = useState(60);
@@ -456,6 +461,12 @@ export function LandDesk({ bbl }: { bbl: string }) {
           This deed has been folded into {parent?.address ?? isChild}. Its land, its envelope and its value all sit
           with the site now — build there, not here.
         </div>
+        <button
+          className="btn"
+          onClick={() => { select(isChild); focus(isChild, true); }}
+        >
+          Open the site · {parent?.address ?? isChild}
+        </button>
       </div>
     );
   }
@@ -525,36 +536,51 @@ export function LandDesk({ bbl }: { bbl: string }) {
     </>
   );
 
-  // NEIGHBOURS YOU ALREADY OWN.
+  // CONTIGUOUS OWNED SITES, not just the deeds that share a line with this
+  // one. A strip of three lots is assemblable from either end; a neighbour
+  // that only touches a child of an already-folded site still joins. Every
+  // site that cannot be folded in yet keeps its reason on the list — an empty
+  // panel taught nobody anything.
   //
-  // This used to require the lot AND every neighbour to be vacant, and the
-  // whole desk only rendered on vacant ground — so two adjacent lots you had
-  // spent years buying could not be put together if either one had so much as
-  // a shed on it, and you were never told why. Assembling is a deed exercise,
-  // not a demolition one: fold them together first, knock down what is standing
-  // when you are ready to build. What you cannot fold in is a lot that is
-  // mid-construction, ground-leased to somebody else, already part of another
-  // assemblage, or listed for sale.
-  // Every adjacent deed you own, with the reason it cannot be folded in yet —
-  // an empty panel taught nobody anything.
-  const adjacentMine = (adjacency?.[bbl] ?? [])
-    .filter((n) => game.holdings[n])
+  // THE SITE HAS TO BE CLEAR. Folding deeds moves the dirt into one parcel;
+  // a building left standing on a child would be standing on nothing. Clear
+  // first, then assemble — the desk says so next to every blocked deed.
+  const adj = adjacency ?? {};
+  const component = adjacency
+    ? contiguousOwnedRoots(game, adj, bbl).filter((r) => r !== bbl)
+    : [];
+  const candidates = component.map((n) => {
+    const r = resolveRec(parcels, game, n);
+    const area = siteLotArea(game, parcels, n);
+    const deeds = siteDeeds(game, n).length;
+    const why = !r ? "unknown parcel"
+      : game.developments[n] ? "under construction"
+      : game.groundLeases?.[n] ? "ground-leased to somebody else"
+      : game.holdings[n]?.sale ? "on the market — pull the listing"
+      : game.landmarks?.[n] !== undefined ? "landmarked"
+      : game.holdings[n]?.loan ? "mortgage outstanding — pay it off first"
+      : game.facility?.bbls?.includes(n) ? "in the portfolio facility — release it first"
+      : r.class !== "land" || r.bldgArea > 0 ? `${useLabel(r)} standing — clear it first`
+      : null;
+    return { bbl: n, rec: r, why, area, deeds };
+  });
+  // Also surface owned lots that touch THIS site but failed for some other
+  // reason and are not in the BFS set (should be rare — BFS includes them).
+  const touchBlocked = (adjacency ? siteNeighborRoots(game, adj, bbl) : [])
+    .filter((n) => n !== bbl && !component.includes(n))
     .map((n) => {
       const r = resolveRec(parcels, game, n);
-      const why = !r ? "unknown parcel"
-        : game.merged?.[n] ? "already part of another assemblage"
-        : game.developments[n] ? "under construction"
-        : game.groundLeases?.[n] ? "ground-leased to somebody else"
-        : game.holdings[n].sale ? "on the market — pull the listing"
-        : game.landmarks?.[n] !== undefined ? "landmarked"
-        : r.class !== "land" || r.bldgArea > 0 ? `${useLabel(r)} standing — clear it first`
-        : null;
-      return { bbl: n, rec: r, why };
+      return { bbl: n, rec: r, why: "does not connect through land you own", area: siteLotArea(game, parcels, n), deeds: 1 };
     });
-  const nbrs = adjacentMine.filter((x) => !x.why).map((x) => x.bbl);
-  const blocked = adjacentMine.filter((x) => x.why);
+  const eligible = candidates.filter((x) => !x.why);
+  const blocked = [...candidates.filter((x) => x.why), ...touchBlocked];
+  const selfBlocked = !vacant
+    ? `${useLabel(rec)} standing — clear this site before folding anything in`
+    : game.holdings[bbl].loan ? "mortgage outstanding on this site — pay it off first"
+    : game.facility?.bbls?.includes(bbl) ? "this site is in the portfolio facility — release it first"
+    : null;
 
-  if (!vacant && !adjacentMine.length) {
+  if (!vacant && !candidates.length && !blocked.length) {
     return app || vq || landmarked
       ? <div className="deal"><div className="deal-head">The planning board</div>{planning}</div>
       : null;
@@ -566,46 +592,63 @@ export function LandDesk({ bbl }: { bbl: string }) {
   const offer = h.groundOffer;
   const oq = offer && vacant ? groundLeaseQuote(game, parcels, bbl, offer.years) : null;
   const q = vacant && !offer ? groundLeaseQuote(game, parcels, bbl, years) : null;
-  const cost = mergeCost(game, picked.length + 1);
-  const addedArea = picked.reduce((a, b) => a + (parcels[b]?.lotArea ?? 0), 0);
   const farMax = Math.max(rec.farMaxComm, rec.farMaxRes);
+  // Drop picks that stopped being eligible after a demolish / sale / advance.
+  const livePicked = picked.filter((n) => eligible.some((x) => x.bbl === n));
+  const pickedDeeds = livePicked.reduce((a, n) => a + siteDeeds(game, n).length, 0);
+  const cost = mergeCost(game, siteDeeds(game, bbl).length + pickedDeeds);
+  const addedArea = livePicked.reduce((a, n) => a + siteLotArea(game, parcels, n), 0);
 
   return (
     <div className="deal">
       <div className="deal-head">The land desk</div>
       {planning}
       {vacant && <ResidualRead bbl={bbl} />}
-      {!vacant && adjacentMine.length > 0 && (
+      {selfBlocked && (eligible.length > 0 || blocked.length > 0) && (
         <div className="hint">
-          You own {adjacentMine.length} deed{adjacentMine.length === 1 ? "" : "s"} next to this one. A site has to be
-          clear before the deeds can be folded together — the land moves into one parcel and there is nowhere left
-          for a building to stand on the others.
+          You own contiguous dirt next to this parcel, but {selfBlocked.toLowerCase()}. Assembling moves the land into
+          one site — every deed in the filing has to be clear vacant ground.
         </div>
       )}
       {children.length > 0 && (
         <div className="hint">
           Assembled site — {children.length + 1} deeds, {sf(rec.lotArea)} of land, {sf(Math.round(rec.lotArea * farMax))} buildable.
+          Fold in more contiguous lots below to grow it.
         </div>
       )}
-      {adjacentMine.length > 0 && (
+      {(eligible.length > 0 || blocked.length > 0) && (
         <>
-          <div className="page-section" style={{ marginTop: 2 }}>Fold in the neighbours</div>
+          <div className="page-section" style={{ marginTop: 2 }}>
+            Assemble contiguous lots
+            {eligible.length > 1 && vacant && !selfBlocked && (
+              <button
+                className="btn btn-sm"
+                style={{ marginLeft: 8 }}
+                onClick={() => setPicked(eligible.map((x) => x.bbl))}
+              >
+                Select all clear ({eligible.length})
+              </button>
+            )}
+          </div>
+          <div className="hint">
+            Own two or more lots that touch — including through a lot you already folded in — and you can turn them
+            into one site: one plate, one envelope, one address.
+          </div>
           <div className="mini-list">
-            {nbrs.map((n) => {
-              const r = resolveRec(parcels, game, n);
-              const on = picked.includes(n);
+            {eligible.map((x) => {
+              const on = livePicked.includes(x.bbl);
               return (
-                <button key={n} className={"neighbor" + (on ? " neighbor-on" : "")}
-                  onClick={() => setPicked(on ? picked.filter((x) => x !== n) : [...picked, n])}>
-                  <span className="neighbor-addr">{on ? "✓ " : ""}{r?.address ?? n}</span>
+                <button key={x.bbl} className={"neighbor" + (on ? " neighbor-on" : "")}
+                  disabled={!!selfBlocked}
+                  onClick={() => setPicked(on ? livePicked.filter((n) => n !== x.bbl) : [...livePicked, x.bbl])}>
+                  <span className="neighbor-addr">{on ? "✓ " : ""}{x.rec?.address ?? x.bbl}</span>
                   <span className="neighbor-meta">
-                    {sf(r?.lotArea ?? 0)} of land
-                    {r && r.class !== "land" && r.bldgArea > 0 ? ` · ${useLabel(r)} standing` : " · vacant"}
+                    {sf(x.area)} of land
+                    {x.deeds > 1 ? ` · ${x.deeds} deeds already assembled` : " · vacant"}
                   </span>
                 </button>
               );
             })}
-            {/* WHY THE OTHERS ARE NOT ON THE LIST. */}
             {blocked.map((x) => (
               <div key={x.bbl} className="neighbor" style={{ opacity: 0.55, cursor: "default" }}>
                 <span className="neighbor-addr">{x.rec?.address ?? x.bbl}</span>
@@ -613,16 +656,11 @@ export function LandDesk({ bbl }: { bbl: string }) {
               </div>
             ))}
           </div>
-          {picked.length > 0 && (
+          {livePicked.length > 0 && !selfBlocked && (
             <>
               <div className="grid">
                 <Row k="Site after merger" v={`${sf(rec.lotArea + addedArea)} · ${sf(Math.round((rec.lotArea + addedArea) * farMax))} buildable`} strong />
                 <Row k="Was" v={`${sf(rec.lotArea)} · ${sf(Math.round(rec.lotArea * farMax))} buildable`} />
-                {/* THE REASON TO MERGE, IN TWO NUMBERS. A site is not just the
-                    sum of its deeds any more: one core serving a bigger plate
-                    returns rentable feet the small lots were losing, and the
-                    dirt itself reprices as a development site. Show both, so
-                    the button is a decision and not an act of faith. */}
                 {(() => {
                   const before = plateEfficiency(rec.lotArea * 0.62);
                   const after = plateEfficiency((rec.lotArea + addedArea) * 0.62);
@@ -642,8 +680,8 @@ export function LandDesk({ bbl }: { bbl: string }) {
                 })()}
                 <Row k="Survey, title and lawyers" v={usd(cost)} />
               </div>
-              <button className="btn" onClick={() => { assemble([bbl, ...picked]); setPicked([]); }}>
-                Assemble {picked.length + 1} lots · {sf(rec.lotArea + addedArea)}
+              <button className="btn" onClick={() => { assemble([bbl, ...livePicked]); setPicked([]); }}>
+                Assemble into one site · {sf(rec.lotArea + addedArea)}
               </button>
             </>
           )}

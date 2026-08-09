@@ -402,74 +402,172 @@ export function mergeCost(s: GameState, lots: number): number {
   return Math.round((45_000 + 30_000 * lots) * s.econ.costIdx);
 }
 
+/** The parent of an assemblage, or the deed itself if it stands alone. */
+export function siteRoot(s: GameState, bbl: string): string {
+  return s.merged?.[bbl] ?? bbl;
+}
+
+/** Every deed in a site — the root plus every child folded into it. */
+export function siteDeeds(s: GameState, bbl: string): string[] {
+  const root = siteRoot(s, bbl);
+  const kids: string[] = [];
+  for (const [child, parent] of Object.entries(s.merged ?? {})) {
+    if (parent === root) kids.push(child);
+  }
+  return [root, ...kids];
+}
+
+/** Static lot area of an entire site (root + every child's original dirt). */
+export function siteLotArea(s: GameState, parcels: ParcelTable, bbl: string): number {
+  return siteDeeds(s, bbl).reduce((a, d) => a + (parcels[d]?.lotArea ?? 0), 0);
+}
+
+/**
+ * Site roots that share a property line with this site — adjacency walks
+ * every deed in the assemblage, so a neighbour that only touches a folded
+ * child still counts as contiguous. Roots, not children, so the caller can
+ * treat already-assembled sites as single nodes.
+ */
+export function siteNeighborRoots(
+  s: GameState, adjacency: Adjacency, bbl: string,
+): string[] {
+  const mine = new Set(siteDeeds(s, bbl));
+  const roots = new Set<string>();
+  for (const d of mine) {
+    for (const n of adjacency[d] ?? []) {
+      if (mine.has(n)) continue;
+      if (!s.holdings[n]) continue;
+      roots.add(siteRoot(s, n));
+    }
+  }
+  return [...roots];
+}
+
+/**
+ * Owned contiguous sites reachable from `bbl` — the whole block of dirt you
+ * can legally fold into one assemblage from this corner, as site roots.
+ */
+export function contiguousOwnedRoots(
+  s: GameState, adjacency: Adjacency, bbl: string,
+): string[] {
+  if (!s.holdings[bbl]) return [];
+  const start = siteRoot(s, bbl);
+  const seen = new Set([start]);
+  const queue = [start];
+  while (queue.length) {
+    const cur = queue.shift()!;
+    for (const n of siteNeighborRoots(s, adjacency, cur)) {
+      if (seen.has(n)) continue;
+      seen.add(n);
+      queue.push(n);
+    }
+  }
+  return [...seen];
+}
+
+function assembleBlocker(
+  s: GameState, parcels: ParcelTable, bbl: string,
+): string | null {
+  const root = siteRoot(s, bbl);
+  for (const d of siteDeeds(s, root)) {
+    if (!s.holdings[d]) return "You have to own every lot in the assemblage.";
+    const rec = resolveRec(parcels, s, d);
+    // Children already have lotArea 0 on the resolved record — vacancy is
+    // judged on the ROOT of each site being folded in. A child of another
+    // assemblage is reached via its root, never alone.
+    if (d !== root) continue;
+    if (!rec) return "Unknown parcel.";
+    if (rec.class !== "land" || rec.bldgArea > 0) {
+      return `${rec.address} still has a building on it. Clear the site before folding the deeds together.`;
+    }
+    if (s.landmarks?.[d] !== undefined) {
+      return `${rec.address} is landmarked. Its envelope is frozen and it cannot be folded into a bigger site.`;
+    }
+    if (s.developments[d]) return `Construction is already underway at ${rec.address}.`;
+    if (s.holdings[d].sale) return `${rec.address} is on the market — pull the listing first.`;
+    if (s.groundLeases?.[d]) return `${rec.address} is under a ground lease. It is not yours to build on.`;
+    if (s.holdings[d].loan) {
+      return `${rec.address} still has a mortgage. Pay it off before you fold the title.`;
+    }
+    if (s.facility?.bbls?.includes(d)) {
+      return `${rec.address} is in the portfolio facility. Release it before assembling.`;
+    }
+  }
+  return null;
+}
+
 export function assembleLots(
   s: GameState, parcels: ParcelTable, adjacency: Adjacency, bbls: string[],
 ): { s: GameState; err?: string; msg?: string } {
-  const list = [...new Set(bbls)];
-  if (list.length < 2) return { s, err: "Assemblage takes at least two lots." };
-  for (const b of list) {
-    if (!s.holdings[b]) return { s, err: "You have to own every lot in the assemblage." };
-    if (s.merged?.[b]) return { s, err: "One of those is already part of an assemblage." };
-    const rec = resolveRec(parcels, s, b);
-    if (!rec) return { s, err: "Unknown parcel." };
-    // THE SITE HAS TO BE CLEAR.
-    //
-    // A merged lot's land moves into the parent and the child becomes a deed
-    // with no area left in it — which is coherent for dirt and incoherent for
-    // a building, because the building would then be standing on nothing. So
-    // this stays a rule, and what changed is that the panel now SAYS so: it
-    // lists every adjacent deed you own and names what is stopping each one,
-    // instead of rendering nothing at all and leaving you to guess.
-    if (rec.class !== "land" || rec.bldgArea > 0) {
-      return { s, err: `${rec.address} still has a building on it. Clear the site before folding the deeds together.` };
-    }
-    if (s.landmarks?.[b] !== undefined) return { s, err: "One of those is landmarked. Its envelope is frozen and it cannot be folded into a bigger site." };
-    if (s.developments[b]) return { s, err: "Construction is already underway on one of those." };
-    if (s.holdings[b].sale) return { s, err: "One of those is on the market — pull the listing first." };
-    if (s.groundLeases?.[b]) return { s, err: "One of those is under a ground lease. It is not yours to build on." };
+  // Normalise to site roots. Passing a child, or the same site twice, or two
+  // already-assembled parents that touch, all collapse to one node per site.
+  const roots = [...new Set(bbls.map((b) => siteRoot(s, b)))];
+  if (roots.length < 2) return { s, err: "Assemblage takes at least two lots." };
+  for (const r of roots) {
+    if (!s.holdings[r]) return { s, err: "You have to own every lot in the assemblage." };
+    const why = assembleBlocker(s, parcels, r);
+    if (why) return { s, err: why };
   }
-  // CONTIGUOUS, or it is not a site — it is two sites. Walk the adjacency
-  // graph from the first lot and every lot has to be reachable through the
-  // set, which is exactly what "one site" means to a surveyor.
-  const set = new Set(list);
-  const seen = new Set([list[0]]);
-  const queue = [list[0]];
+
+  // CONTIGUOUS across site footprints — a neighbour that only touches a
+  // folded child of an existing assemblage still joins the site. Walk the
+  // root graph with site-aware adjacency.
+  const set = new Set(roots);
+  const seen = new Set([roots[0]]);
+  const queue = [roots[0]];
   while (queue.length) {
     const cur = queue.shift()!;
-    for (const n of adjacency[cur] ?? []) {
+    for (const n of siteNeighborRoots(s, adjacency, cur)) {
       if (set.has(n) && !seen.has(n)) { seen.add(n); queue.push(n); }
     }
   }
-  if (seen.size !== list.length) return { s, err: "Those lots do not touch. An assemblage has to be one contiguous site." };
+  if (seen.size !== roots.length) {
+    return { s, err: "Those lots do not touch. An assemblage has to be one contiguous site." };
+  }
 
-  const cost = mergeCost(s, list.length);
-  if (s.cash < cost) return { s, err: `The survey, the title work and the lawyers run $${(cost / 1e3).toFixed(0)}k — you're short.` };
+  // Fee is on the number of DEEDS changing hands in the filing, not just the
+  // number of already-assembled sites — three lots already folded once still
+  // cost three when you pull in a fourth.
+  const allDeeds = roots.flatMap((r) => siteDeeds(s, r));
+  const cost = mergeCost(s, allDeeds.length);
+  if (s.cash < cost) {
+    return { s, err: `The survey, the title work and the lawyers run $${(cost / 1e3).toFixed(0)}k — you're short.` };
+  }
 
-  // the parent is the biggest lot; it keeps the address
-  const sorted = [...list].sort((a, b) => (parcels[b]?.lotArea ?? 0) - (parcels[a]?.lotArea ?? 0));
+  // Parent = largest site by total dirt (not just the root's original lot),
+  // so growing a strip does not keep demoting a carefully built assemblage
+  // to a child of a newly attached scrap.
+  const sorted = [...roots].sort((a, b) => siteLotArea(s, parcels, b) - siteLotArea(s, parcels, a));
   const parent = sorted[0];
   const next = clone(s);
   next.cash -= cost;
   logBooks(next, "dev", cost);
   if (!next.merged) next.merged = {};
-  let area = parcels[parent]?.lotArea ?? 0;
-  for (const b of sorted.slice(1)) {
-    next.merged[b] = parent;
-    area += parcels[b]?.lotArea ?? 0;
-    // the child's basis folds into the site it is now part of
-    next.holdings[parent].costBasis += next.holdings[b].costBasis;
-    next.holdings[b].costBasis = 0;
+
+  for (const root of sorted.slice(1)) {
+    // Fold every deed of the demoted site onto the new parent — including
+    // the root itself and any children it already had. Leaving children
+    // pointed at a demoted parent was the chain-merge bug: invariants
+    // forbade parent-of-parent, and resolveRec dropped the orphaned area.
+    for (const d of siteDeeds(next, root)) {
+      if (d === parent) continue;
+      next.merged[d] = parent;
+      next.holdings[parent].costBasis += next.holdings[d].costBasis;
+      next.holdings[d].costBasis = 0;
+    }
   }
+
   const rec = resolveRec(parcels, next, parent)!;
+  const deedsN = siteDeeds(next, parent).length;
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Assembled: ${list.length} lots at ${rec.address} are now one site of ${Math.round(area).toLocaleString()} sf, `
+    text: `Assembled: ${deedsN} lots at ${rec.address} are now one site of ${Math.round(rec.lotArea).toLocaleString()} sf, `
       + `${(rec.lotArea * Math.max(rec.farMaxComm, rec.farMaxRes) / 1000).toFixed(0)}k sf buildable on a `
       + `${Math.round(rec.lotArea * 0.7).toLocaleString()} sf plate. One core, one lobby, and a floor somebody will take `
       + `a whole of. The dirt underneath reprices this morning at ${landPsfNow(rec, next.econ).toFixed(0)}/sf. `
       + `That is what all those premiums were for.`,
   });
-  return { s: next, msg: `${list.length} lots merged into one site.` };
+  return { s: next, msg: `${deedsN} lots merged into one site at ${rec.address}.` };
 }
 
 /**

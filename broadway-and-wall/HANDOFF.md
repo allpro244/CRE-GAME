@@ -179,16 +179,20 @@ another. Grep before you add another.
 
 ## 6. OPEN FAULTS, RANKED
 
-**1. The industrial vacancy floor is load-bearing.** `rail.vac.industrial.lo`
-binds ~46% of months (was 68% before the inflation fix, 32% before the calendar
-change). CLAUDE.md fake #5: a clamp the model rests on is holding up the model.
-This is the loudest open defect. Start at `frictionFloor` in `market.ts` and ask
-why industrial demand cannot clear at any price.
+**1. ~~The industrial vacancy floor is load-bearing~~ — CLOSED.** Shed demand
+tracked total `jobIdx` while manufacturing's share of employment/floor space
+falls secularly. `econ.industComp` now declines at the NY/SF/London rate (~half
+over ~40y ≈ −1.72%/yr), floor 0.35 for residual logistics; industrial driver is
+`jobIdx * industComp`. Measured after: `rail.vac.industrial.lo` 0.44 → **0**,
+`vactails` months on floor ~69% → **8.9%**, median industrial vac **9.7%**
+(was pinned at 1.54%), sector-exit firing 74% → **5.7%** of months. Sized from
+the historical record; where F landed is the measurement.
 
-**2. Development still barely pencils.** `dev.affordableLotShare` is 1.9% —
-better than the 0.2% it was, but the honest number is 8–12% mid-cycle. Land is
-the residual; if nothing pencils, either rents are too low, costs too high, or
-land prices are not answering the builder's number. #47.
+**2. Development still barely pencils.** `dev.affordableLotShare` is ~2.0%
+(was 1.7% before industComp; industrial falsely winning 66% of best-use bids
+fell to 22%). Honest mid-cycle is still 8–12%. Land is the residual; if nothing
+pencils, either rents are too low, costs too high, or land prices are not
+answering the builder's number. #47.
 
 **3. ~~The conservation identity's debt gap~~ — CLOSED.** Cash-out refinance and
 facility draws book to `borrowed`; voluntary paydowns to `debtSvc`; conserve's
@@ -222,18 +226,11 @@ is the obvious next move on that feature.
 
 ## 7. WHAT I WOULD DO NEXT, IN ORDER
 
-1. **The industrial floor** (#1 above). It is a rail holding up a model, it has
-   been visible in the baseline for months, and everything downstream of
-   industrial demand is wrong while it binds.
-2. **Make development pencil** (#2). These two are probably the same
-   investigation: both are about whether supply can answer demand.
-3. **Close the ledger's debt gap** (#3), and make `conserve`'s bot refinance so
-   the new identity is actually exercised. An identity is only worth the
-   question it was asked.
-4. **Give the street the bridge leg and the facility** (#5, #6). The player
-   should not have instruments the competition lacks.
-5. **Then the four quadrants** (#31/#39) — the deepest remaining structural
+1. **Make development pencil** (#2). Industrial land bids no longer dominate
+   the residual falsely; the remaining gap is land price / rent / cost.
+2. **Then the four quadrants** (#31/#39) — the deepest remaining structural
    question and the one most likely to move everything at once.
+3. CPI non-monotonic (#4), holder memory beyond approaches, zoning depth.
 
 ---
 

@@ -2316,8 +2316,20 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
       for (const b of r.bbls) insidePool.push(b);
     }
   }
-  const inside = insidePool.length > 0 && rng(s, "sales") < 0.55;
-  const pool = inside ? insidePool : bbls;
+  // PRIVATE RELATIONSHIPS ARE AN ASSET TOO. A family or partnership you have
+  // closed with before is exactly who gives your broker the first look at the
+  // next deed in their book. The register and relationship memory already
+  // existed; broker calls ignored both and made decades of clean closings
+  // irrelevant outside the original approach.
+  const related: string[] = [];
+  for (const bbl of bbls) {
+    const held = holderOf(s, parcels, bbl);
+    if (!held || isCold(s, held.id) || (relOf(s, held.id).deals ?? 0) <= 0) continue;
+    related.push(bbl);
+  }
+  const relationshipPool = [...new Set([...insidePool, ...related])];
+  const inside = relationshipPool.length > 0 && rng(s, "sales") < 0.65;
+  const pool = inside ? relationshipPool : bbls;
   let best: ParcelRecord | null = null;
   for (let i = 0; i < 90; i++) {
     const bbl = pool[Math.floor(rng(s, "sales") * pool.length)];
@@ -2356,6 +2368,7 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
   // the cash. If today's file has nothing under 92 cents on the dollar, the
   // phone stays quiet.
   const owner = ownerOf(s, best.bbl);
+  const held = owner ? null : holderOf(s, parcels, best.bbl);
   const value = assetValue(best, s.econ, gradeOf(s, best));
   let ask: number;
   let who: string;
@@ -2374,7 +2387,9 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
     const idle = (s.quietMs ?? 0) > 2 ? 0.07 : 0;
     const motivated = (s.econ.phase === "recession" ? rrange(s, 0.78, 0.90, "sales") : rrange(s, 0.84, 0.92, "sales")) + idle;
     ask = Math.round(value * motivated / 1000) * 1000;
-    who = "Their client needs it done this quarter — that is why you are hearing about it.";
+    who = held && (relOf(s, held.id).deals ?? 0) > 0
+      ? `${held.name} gave your broker the first look because you have closed together before.`
+      : "Their client needs it done this quarter — that is why you are hearing about it.";
   }
   // A GATE THAT REJECTED EVERYTHING. This asked for a price under 92% of
   // appraisal, and measured across 150 live rival-owned buildings the asks

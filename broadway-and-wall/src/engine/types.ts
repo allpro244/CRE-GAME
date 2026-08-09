@@ -1720,6 +1720,8 @@ export interface Rival {
    * buildings, and the only thing that distinguishes them is this number.
    */
   heldSince?: Record<string, number>;
+  /** Delivery month of buildings this firm constructed, for merchant exits. */
+  deliveredM?: Record<string, number>;
   /**
    * WHEN THE EXTENDED PAPER ON A BUILDING COMES BACK, by BBL. Present only for
    * a building whose balloon the desk re-papered rather than took the keys on;

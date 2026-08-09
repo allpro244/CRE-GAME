@@ -551,6 +551,7 @@ export function jobDelivered(s: GameState, parcels: ParcelTable, bbl: string, fi
   if (!r) return;
   transferDeed(s, bbl, r, 0);
   r.basis = Math.round((r.basis ?? 0) + cost);
+  (r.deliveredM ??= {})[bbl] = s.month;
   const rec = resolveRec(parcels, s, bbl);
   // A ROUTINE OPENING IS NOT NEWS. "It is competing with you tomorrow" is only
   // true if it is anywhere near you — see stakeIn. The square feet reach the
@@ -914,6 +915,15 @@ function tickAssetManagement(s: GameState, parcels: ParcelTable, r: Rival) {
 /** Firms still standing. */
 export function livingRivals(s: GameState): Rival[] {
   return (s.rivals ?? []).filter((r) => r.failedM === undefined);
+}
+
+export const MERCHANT_MIN_LEASE_M = 18;
+export const MERCHANT_MAX_HOLD_M = 42;
+export function merchantExitReady(r: Rival, bbl: string, month: number): boolean {
+  if (r.style !== "merchant" || r.deliveredM?.[bbl] === undefined) return false;
+  const held = month - (r.deliveredM[bbl] ?? month);
+  return held >= MERCHANT_MIN_LEASE_M
+    && ((r.occ ?? 0) >= 0.80 || held >= MERCHANT_MAX_HOLD_M);
 }
 
 /**
@@ -1531,6 +1541,7 @@ const clearExtended = (r: Rival, bbl: string) => { if (r.extendedTo) delete r.ex
 export function forgetDeed(r: Rival, bbl: string) {
   if (r.heldSince) delete r.heldSince[bbl];
   if (r.extendedTo) delete r.extendedTo[bbl];
+  if (r.deliveredM) delete r.deliveredM[bbl];
 }
 
 /**
@@ -2362,7 +2373,16 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         // firm opened — and those are dated at the source now.
         const since = r.heldSince?.[bbl] ?? r.bornM ?? 0;
         const held = s.month - since;
-        if (held >= stH.holdM && held > oldest && !s.holdings[bbl] && !s.listings.some((l) => l.bbl === bbl)) {
+        const delivered = r.deliveredM?.[bbl];
+        // Merchant-built product is sold when it has seasoned and the book is
+        // stabilised, not on an arbitrary birthday. Eighteen months is the
+        // minimum marketing/lease-up proof; 42 months remains the fund's hard
+        // deadline if occupancy never reaches 80%. Acquired assets and every
+        // other style keep their ordinary hold clocks.
+        const mandateReady = r.style === "merchant" && delivered !== undefined
+          ? merchantExitReady(r, bbl, s.month)
+          : held >= stH.holdM;
+        if (mandateReady && held > oldest && !s.holdings[bbl] && !s.listings.some((l) => l.bbl === bbl)) {
           oldest = held; forcedBbl = bbl;
         }
       }

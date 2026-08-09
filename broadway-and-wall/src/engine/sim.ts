@@ -380,7 +380,9 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
       listedM: s.month,
       expiresM: s.month + Math.round(rrange(s, ...LISTING_LIFE_M)),
       distress: distress || undefined,
-      reason: distress ? undefined : "voluntary",
+      // Anonymous tape inventory is not a named firm's voluntary trim —
+      // `reason: "voluntary"` is reserved for rival mandate/trim exits that
+      // carry a sellerId. Leaving reason unset keeps the two markets distinct.
     };
     if (rec.class !== "land" && rec.bldgArea > 0) {
       // The grade the deed will convey: today's grade, less the notch a

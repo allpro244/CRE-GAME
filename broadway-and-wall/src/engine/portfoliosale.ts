@@ -24,9 +24,10 @@
 import type { GameState } from "./types";
 import type { ParcelTable } from "../data/types";
 import { rng, rrange } from "./market";
-import { assetValue, resolveRec } from "./value";
+import { assetValue, inPlace, resolveRec } from "./value";
 import { livingRivals, gradeOf, ownerOf, STYLE_OF, receiverDeskFor, forgetDeed } from "./rivals";
 import { lenderByName, lenderPressure, raiseAlert } from "./lenders";
+import { streetRefiProceeds } from "./debt";
 import { executePurchase } from "./actions";
 import { depositsOn } from "./leasing";
 
@@ -166,14 +167,28 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
     // the sum of its parts is that this list is short: the buyer needs the
     // equity for the entire package at once, and the debt has to be lendable
     // against a book that just grew by eleven buildings.
+    // Package NOI — what a desk would underwrite against the ticket, not a
+    // personality LTV. Same hole acquisitionLoan closed for single assets.
+    let packageNoi = 0;
+    for (const b of p.bbls) {
+      const rec = resolveRec(parcels, s, b);
+      if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+      const share = p.ask / Math.max(1, p.bbls.length); // price allocation for inPlace
+      packageNoi += Math.max(0, inPlace(rec, s, b, share).noi);
+    }
+    const packageDebt = (r: ReturnType<typeof livingRivals>[number]) => {
+      const st = STYLE_OF(r.style);
+      const cap = Math.min(r.targetLtv, st.maxLtv) * (ci < 0.8 ? 0.82 : 1);
+      return Math.min(p.ask, streetRefiProceeds(s, p.ask, packageNoi, cap).principal);
+    };
     const buyers = livingRivals(s).filter((r) => {
       if (r.id === p.sellerId) return false;
       const st = STYLE_OF(r.style);
-      const ltv = Math.min(r.targetLtv, st.maxLtv) * (ci < 0.8 ? 0.82 : 1);
-      const equity = p.ask * (1 - ltv);
+      const debt = packageDebt(r);
+      const equity = p.ask - debt;
       if (r.cash < equity + Math.max(1_000_000, r.cash * 0.05)) return false;
       const aumAfter = (r.aum ?? 0) + p.ask;
-      if (aumAfter > 0 && (r.debt + (p.ask - equity)) / aumAfter > st.maxLtv) return false;
+      if (aumAfter > 0 && (r.debt + debt) / aumAfter > st.maxLtv) return false;
       return true;
     });
     if (buyers.length) {
@@ -186,6 +201,8 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
       // they take it when it is cheap enough relative to the parts
       if (rng(s) < 0.09 * hunger[0].w * (under < 0.86 ? 1.8 : under < 0.95 ? 1 : 0.35)) {
         const winner = hunger[0].r;
+        const winDebt = packageDebt(winner);
+        const winEq = p.ask - winDebt;
         // YOUR OWN PACKAGE CLEARING. The debt on every building in it is repaid
         // out of the proceeds at close, exactly as it would be one at a time,
         // and what is left is yours.
@@ -230,17 +247,23 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
               + `${money(debtOff)} of debt retired out of the proceeds, ${money(toYou)} net to you. `
               + `You will not see those buildings on the tape again for a while.`,
           });
-          const eqP = Math.round(p.ask * (1 - Math.min(winner.targetLtv, STYLE_OF(winner.style).maxLtv)));
-          winner.cash -= eqP; winner.debt += p.ask - eqP;
+          winner.cash -= winEq; winner.debt += winDebt;
           winner.aum = Math.round((winner.aum ?? 0) + p.ask);
           s.portfolios = s.portfolios.filter((x) => x.id !== p.id);
           continue;
         }
-        const eq = Math.round(p.ask * (1 - Math.min(winner.targetLtv, STYLE_OF(winner.style).maxLtv)));
-        winner.cash -= eq; winner.debt += p.ask - eq;
+        winner.cash -= winEq; winner.debt += winDebt;
         winner.aum = Math.round((winner.aum ?? 0) + p.ask);
         const seller = p.sellerId ? (s.rivals ?? []).find((r) => r.id === p.sellerId) : null;
-        if (seller) { const relief = Math.min(seller.debt, Math.round(p.ask * seller.targetLtv)); seller.debt -= relief; seller.cash += p.ask - relief; }
+        // Retire what the book was actually carrying, not personality LTV.
+        if (seller) {
+          const lev = (seller.aum ?? 0) > 0
+            ? Math.min(1, Math.max(0, seller.debt / (seller.aum as number)))
+            : seller.targetLtv;
+          const relief = Math.min(seller.debt, Math.round(p.ask * lev));
+          seller.debt -= relief;
+          seller.cash += p.ask - relief;
+        }
         s.portfolios = s.portfolios.filter((x) => x.id !== p.id);
         s.news.unshift({
           q: s.month, kind: "event",

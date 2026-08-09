@@ -33,7 +33,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from "./types";
 import { CASH_APY, monthLabel, START_YEAR } from "./types";
 import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC } from "./market";
-import { assetValue, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall } from "./value";
+import { assetValue, demandLinear, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall } from "./value";
 import type { DevPlan } from "./dev";
 import { cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure } from "./lenders";
@@ -1014,6 +1014,18 @@ const CARE: Record<RivalStyle, { lease: number; capex: number }> = {
 };
 
 /**
+ * MINIMUM GOING-IN SPREAD OVER THE STREET COUPON (index + RATE_SPREAD), in
+ * percentage points. Closers used to fight over every ask by appetite alone —
+ * junk and prime at the same weight. Core/family need a real spread; vultures
+ * and distress buyers will cross below the coupon for a cheap ticket.
+ */
+const YIELD_OVER_COUPON: Record<RivalStyle, number> = {
+  family: 1.40, core: 1.10, reit: 0.95, foreign: 0.85, owneruser: 0.40,
+  pe: 0.70, opportunistic: 0.45, developer: 0.50, merchant: 0.30,
+  slumlord: 1.60, vulture: -0.80,
+};
+
+/**
  * A YEAR IN THE LIFE OF A PORTFOLIO.
  *
  * Occupancy walks toward what the market is doing, but never arrives cleanly:
@@ -1054,8 +1066,19 @@ function tickAssetManagement(s: GameState, parcels: ParcelTable, r: Rival) {
   if (r.condIdx === undefined) r.condIdx = 0.72;
   // Buildings age faster than anyone budgets for, which is why 'well kept'
   // tops out just short of new rather than at it.
-  r.condIdx -= 0.0024 * (s.econ.phase === "recession" ? 1.25 : 1);
+  r.condIdx -= 0.0024 * (s.econ.phase === "recession" || s.econ.phase === "depression" ? 1.25 : 1);
   const aum = r.aum ?? 0;
+  // LEASING BEFORE BRICKS when the book is behind the market. Capex alone
+  // could not fill empty floors — Wrenfield's century tutorial was a giant
+  // that sat dark. A firm that is short of tenants spends on leasing first.
+  const lag = (r.mktOcc ?? 0) - (r.occ ?? 0);
+  if (lag > 0.03 && !r.stressMs && aum > 0) {
+    const leaseSpend = Math.round((0.0018 * aum * care.lease * Math.min(1.2, lag / 0.08)) / 12);
+    if (leaseSpend > 0 && r.cash > leaseSpend * 4) {
+      r.cash -= leaseSpend;
+      r.occ = Math.min(0.99, r.occ + 0.005 * care.lease * Math.min(1.5, lag / 0.06));
+    }
+  }
   // a capital plan is roughly 30bps of gross assets a year, and it is the
   // first line cut when a firm is short
   const want = Math.round((0.003 * aum * care.capex) / 12);
@@ -1371,9 +1394,12 @@ function maybeNewFirm(s: GameState) {
    * was before this existed.
    */
   const uncalled = Math.round(equity * rrange(s, 0.30, 0.50, "rivals"));
+  // Cash is what has been CALLED. Uncalled is the reserve the LPs signed for —
+  // it becomes cash only through callCapital. Handing both as spendable money
+  // made every new fund 30–50% overcapitalised on day one.
   s.rivals.push({
     id: `r${s.rivals.length}`, name: f.name, style: f.style,
-    cash: equity, debt: 0, bbls: [], targetLtv: +ltv.toFixed(2), bornM: s.month,
+    cash: equity - uncalled, debt: 0, bbls: [], targetLtv: +ltv.toFixed(2), bornM: s.month,
     uncalled,
   });
   s.news.unshift({
@@ -1869,10 +1895,8 @@ export function receiverDeskFor(s: GameState, parcels: ParcelTable, r: Rival): {
  * vehicle at all: a merchant builder syndicates each job and dissolves it at
  * the sale, so there is no fund to call.
  *
- * NOT MODELLED, AND IT MATTERS: a newly-raised fund's UNDRAWN commitment.
- * `initRivals` and `maybeNewFirm` hand a firm its entire raise as cash on day
- * one, so there is nothing behind it, and a young fund here is therefore more
- * fragile than a young fund in life. Fixing that needs a field on `Rival`.
+ * Uncalled commitments live on `Rival.uncalled` and are drawn through
+ * `callCapital` before recalled distributions.
  */
 const RECALL: Record<RivalStyle, number> = {
   // it is their own money and always was; the point of the vehicle is to never
@@ -2494,8 +2518,17 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // Cheap money is a temptation and it is supposed to be taken. A firm that
     // refinances equity out at the top has more to buy with and less to lose
     // it with — which is exactly the trade that kills them two phases later.
+    //
+    // AND THE DESK HAS TO WRITE THE CHEQUE. This used to invent
+    // `(maxLtv − lev) × aum` of debt with no lender — the same "personality
+    // LTV, no coverage" bug acquisitionLoan already fixed for purchases.
+    // Opportunistic/PE shops printed boom powder no desk would have funded,
+    // then died on the coupon. Cap the cash-out at what `lineRoom` will still
+    // advance against the book's own income.
     if (st.cashOut > 0 && ci > 1.02 && lev < st.maxLtv - 0.06 && rng(s, "rivals") < 0.06 * st.cashOut) {
-      const room = Math.round((st.maxLtv - 0.04 - lev) * aum);
+      const styleRoom = Math.round((st.maxLtv - 0.04 - lev) * aum);
+      const deskRoom = Math.max(0, lineRoom(s, r, aum, noiYr, landV));
+      const room = Math.min(styleRoom, deskRoom);
       if (room > 1_000_000) {
         r.debt += room;
         r.cash += room;
@@ -2611,8 +2644,29 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         }
       }
     }
-    if (r.bbls.length > 6 && !r.stressMs && rng(s, "rivals") < (hot ? 0.055 : 0.012) * (r.style === "family" || r.style === "owneruser" || r.style === "foreign" ? 0.25 : 1)) {
-      const bbl = r.bbls[Math.floor(rng(s, "rivals") * r.bbls.length)];
+    // Soft books trim harder — empty floors are a reason to sell, not a
+    // reason to sit on 65 buildings like Wrenfield in the century report.
+    const softBook = (r.occ ?? 1) < (r.mktOcc ?? 1) - 0.05;
+    const trimBase = (hot ? 0.055 : 0.012) * (softBook ? 1.85 : 1)
+      * (r.style === "family" || r.style === "owneruser" || r.style === "foreign" ? 0.25 : 1);
+    if (r.bbls.length > 6 && !r.stressMs && rng(s, "rivals") < trimBase) {
+      // Sell the WEAKEST ticket, not a random one: lowest mark yield, and
+      // off-mandate classes first. Random trim put good assets on the tape
+      // while dogs stayed on the book.
+      let bbl: string | null = null;
+      let worst = Infinity;
+      for (const b of r.bbls) {
+        if (s.holdings[b] || s.listings.some((l) => l.bbl === b)) continue;
+        const recB = resolveRec(parcels, s, b);
+        if (!recB || recB.class === "land" || !recB.bldgArea) continue;
+        const vB = Math.max(1, assetValue(recB, s.econ, assetGrade(r, recB)));
+        const noiB = Math.max(0, noiAfterTaxYr(recB, s.econ, assetGrade(r, recB), vB));
+        const yld = noiB / vB;
+        const offMandate = st.classes && !st.classes.includes(recB.class) ? -0.04 : 0;
+        const score = yld + offMandate;
+        if (score < worst) { worst = score; bbl = b; }
+      }
+      if (!bbl) bbl = r.bbls[Math.floor(rng(s, "rivals") * r.bbls.length)];
       const rec = resolveRec(parcels, s, bbl);
       if (rec && !s.holdings[bbl] && !s.listings.some((l) => l.bbl === bbl)) {
         const v = assetValue(rec, s.econ, assetGrade(r, rec));
@@ -2644,10 +2698,12 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
           });
           continue;
         }
-        // a willing seller asks a willing seller's price
+        // a willing seller asks a willing seller's price — and puts their name
+        // on the listing, the same as a fund-life exit does.
         s.listings.push({
           bbl, ask: Math.round(v * rrange(s, 1.00, 1.14, "rivals") / 1000) * 1000,
           listedM: s.month, expiresM: s.month + Math.round(rrange(s, 6, 12, "rivals")),
+          sellerId: r.id,
           reason: "voluntary",
         });
       }
@@ -2940,26 +2996,35 @@ export function rivalBuys(s: GameState, parcels: ParcelTable, rec: ParcelRecord,
     return true;
   });
   if (!candidates.length) return null;
-  // the hungriest firm with the money wins
-  // WHO ACTUALLY WANTS IT, and the two terms below are what stop every deal
-  // going to whoever has the most leverage.
-  //
-  // `contra` inverts the credit cycle for the firms that live on the other
-  // side of it. Almost everyone bids harder when money is cheap; a vulture
-  // bids hardest when money is GONE, which is the only reason a receiver's
-  // book is contested in the year it comes to market. `distressBias` is the
-  // same idea applied to the individual asset — a distressed listing is what
-  // one firm exists for and what another's committee will not look at.
+  // WHO ACTUALLY WANTS IT — appetite and cycle still matter, but closers used
+  // to fight over junk and prime at the same weight. Going-in yield vs the
+  // street coupon, and where the building sits on the demand map, now decide
+  // who raises their hand. `contra` / `distressBias` keep their jobs.
   const shut = 1 - (s.econ.creditIdx ?? 1);
   const isDistress = !!s.listings.find((l) => l.bbl === rec.bbl)?.distress;
+  const goingInNoi = inPlace(rec, s, rec.bbl, price).noi;
+  const goingInYld = price > 0 ? goingInNoi / price : 0;
+  const coupon = (s.econ.indexRate + RATE_SPREAD) / 100;
+  const spreadPp = (goingInYld - coupon) * 100;
+  const loc = Math.max(0, Math.min(1, demandLinear(rec.demandScore) / 100));
   let best = candidates[0], bestW = -Infinity;
   for (const r of candidates) {
     const st = STYLE[r.style];
+    const need = YIELD_OVER_COUPON[r.style] ?? 0.8;
+    // Soft refuse: ordinary stock below the style's hurdle is not a deal for
+    // this committee. Distress and vultures still clear below the coupon.
+    if (!isDistress && spreadPp + 0.15 < need) continue;
     const cyc = 1 + st.procyclical * ((s.econ.creditIdx ?? 1) - 1) + st.contra * shut;
+    const yieldFit = Math.max(0.15, 0.55 + (spreadPp - need) * 0.18);
+    const locFit = 0.55 + 0.90 * loc;
     const w = st.appetite * Math.max(0.05, cyc)
-      * (isDistress ? st.distressBias : 1) * (0.6 + rng(s, "rivals") * 0.8);
+      * (isDistress ? st.distressBias : 1)
+      * yieldFit * locFit
+      * (0.65 + rng(s, "rivals") * 0.7);
     if (w > bestW) { bestW = w; best = r; }
   }
+  // Every closer soft-refused the yield — leave it on the tape.
+  if (!Number.isFinite(bestW) || bestW === -Infinity) return null;
   if (seller) {
     // The tax is struck while the building is still one of theirs — see
     // basisShare. Taking the deed off first made the remaining book one

@@ -334,7 +334,8 @@ export default function MapView() {
         });
       });
 
-      // fps meter — the spec's 60fps budget, made visible
+      // fps meter — only write the store when the readout is on. An unconditional
+      // setFps every second used to re-render TopBar (and re-walk net worth) forever.
       let frames = 0;
       let last = performance.now();
       const tick = () => {
@@ -342,7 +343,9 @@ export default function MapView() {
         frames++;
         const now = performance.now();
         if (now - last >= 1000) {
-          setFps(Math.round((frames * 1000) / (now - last)));
+          if (useStore.getState().fpsOn) {
+            setFps(Math.round((frames * 1000) / (now - last)));
+          }
           frames = 0;
           last = now;
         }
@@ -463,7 +466,7 @@ export default function MapView() {
         };
       }),
     });
-  }, [game, parcels, mapReady]);
+  }, [game?.holdings, game?.listings, parcels, mapReady]);
 
   const lens = useStore((s) => s.lens);
 
@@ -596,7 +599,7 @@ export default function MapView() {
     }
     if (hoveredBBL && hoveredBBL !== selectedBBL) tints.set(hoveredBBL, [1.14, 1.08, 0.92]);
     layer.setTints(tints);
-  }, [selectedBBL, hoveredBBL, adjacency, game, mapReady, lens]);
+  }, [selectedBBL, hoveredBBL, adjacency, game?.holdings, game?.listings, game?.rivals, mapReady, lens]);
 
   // THE CITY'S VACANCY, ON THE CITY.
   //
@@ -647,7 +650,10 @@ export default function MapView() {
     for (const l of game.auction?.lots ?? []) if (game.month < (game.auction?.m ?? 0)) notices.add(l.bbl);
     for (const f of game.bankFcls ?? []) notices.add(f.bbl);
     layer.setNotices([...notices]);
-  }, [game?.month, game?.holdings, mapReady, parcels, game, city]);
+    // Depend on the fields that change the picture — not every `game` write
+    // (cash, news, approaches), which used to re-walk every building on clicks
+    // that only mutated those bags.
+  }, [game?.month, game?.holdings, game?.econ, game?.auction, game?.bankFcls, mapReady, parcels, city]);
 
   // player construction and city growth onto the skyline
   const dynSigRef = useRef("");

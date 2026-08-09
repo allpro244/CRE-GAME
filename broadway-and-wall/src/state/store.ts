@@ -1,3 +1,4 @@
+import { startTransition } from "react";
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass } from "@/engine/types";
@@ -378,8 +379,20 @@ export const useStore = create<AppState>((set, get) => ({
   building: null,
   slots: [],
   setData: (d) => set({ ...d, bbls: Object.keys(d.parcels) }),
-  select: (bbl) => set({ selectedBBL: bbl, page: bbl && get().page !== "property" ? "none" : get().page }),
-  hover: (bbl) => set({ hoveredBBL: bbl }),
+  select: (bbl) => {
+    // Keep the map click snappy: close overlays immediately, paint the heavy
+    // parcel desk as a transition so React can yield to the pointer first.
+    const page = bbl && get().page !== "property" ? "none" as const : get().page;
+    if (bbl !== get().selectedBBL) {
+      startTransition(() => set({ selectedBBL: bbl, page }));
+    } else {
+      set({ selectedBBL: bbl, page });
+    }
+  },
+  hover: (bbl) => {
+    if (bbl === get().hoveredBBL) return;
+    set({ hoveredBBL: bbl });
+  },
   // Reading about a building and finding it are two different things, and a
   // list of addresses in a panel is not a place. Every row that names a
   // property can put the camera on it.
@@ -390,7 +403,11 @@ export const useStore = create<AppState>((set, get) => ({
     ...(closePanel ? { page: "none" as Page } : {}),
   })),
   setLens: (lens) => set({ lens }),
-  setPage: (page) => set({ page }),
+  setPage: (page) => {
+    // Heavy pages (Books, Debt, Market) mount big trees — yield so the nav
+    // highlight paints before the page body.
+    startTransition(() => set({ page }));
+  },
   setFps: (fps) => set({ fps }),
   setLoadError: (loadError) => set({ loadError }),
 

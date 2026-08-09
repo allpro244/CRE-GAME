@@ -1,16 +1,20 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { headlineEpithet } from "@/engine/firm";
-import { useStore, derivedNetWorth, derivedQuarterCF } from "@/state/store";
+import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { currentCity, currentSeed } from "@/state/city";
 import { locLimit } from "@/engine/credit";
+import { netWorth } from "@/engine/value";
+import { portfolioQuarterlyCF } from "@/engine/sim";
 import { usd, pct } from "./format";
 import { liveBrokerCalls } from "./RightPanel";
 
 export default function TopBar() {
   const [armNewRun, setArmNewRun] = useState(false);
-  const fps = useStore((s) => s.fps);
   const fpsOn = useStore((s) => s.fpsOn);
+  // When the meter is off, this selector is a constant 0 — so the once-a-second
+  // MapView fps write cannot re-render the whole bar (and re-walk the book).
+  const fps = useStore((s) => (s.fpsOn ? s.fps : 0));
   const manifest = useStore((s) => s.manifest);
   const game = useStore((s) => s.game);
   const lens = useStore((s) => s.lens);
@@ -20,24 +24,56 @@ export default function TopBar() {
   const advanceUntil = useStore((s) => s.advanceUntil);
   const page = useStore((s) => s.page);
   const setPage = useStore((s) => s.setPage);
-  const nw = derivedNetWorth();
-  const cf = derivedQuarterCF();
-  const dealsCount = game ? game.lois.length + Object.values(game.holdings).filter((h) => h.sale?.offer).length : 0;
-  // What happened THIS MONTH that was not routine — the badge is the reason to
-  // look, not a count of everything ever written.
-  const unread = game ? game.news.filter((n) => n.q === game.month && (n.kind === "warn" || n.kind === "event")).length : 0;
-  // OFF-MARKET FILES WAITING, AND HOW LONG THE NEAREST ONE HAS.
-  //
-  // These arrived as a full-screen card until this pass, which meant the player
-  // could not miss one and did not need a badge. On a page they can, and the
-  // engine drops an approach twelve months after it lands whether or not
-  // anybody read it — so a list with no signal would turn a file with a clock
-  // on it into free optionality, which is a difficulty dial wearing a UI
-  // change's clothes. Counted the same way News counts: what wants an answer,
-  // not what exists. The tooltip carries the soonest lapse, because "3" tells
-  // you there is something and not whether it is urgent.
-  const bcalls = game ? liveBrokerCalls(game) : [];
-  const bcallSoon = bcalls.length ? Math.max(0, bcalls[0].lapseM - game!.month) : 0;
+  // Portfolio walks (net worth, CF, line) only when `game` changes — not on
+  // every Portfolio/Books/News click, which used to recompute them for free.
+  const vitals = useMemo(() => {
+    if (!game) {
+      return {
+        nw: 0, cf: 0, line: 0, dealsCount: 0, unread: 0,
+        bcalls: [] as ReturnType<typeof liveBrokerCalls>, bcallSoon: 0,
+        notesLive: 0, debtHot: false, debtSwept: false, debtBal: 0, debtWall: 0,
+      };
+    }
+    const parcels = useStore.getState().parcels;
+    const nw = parcels ? netWorth(game, parcels) : 0;
+    const cf = parcels ? portfolioQuarterlyCF(game, parcels) : 0;
+    const line = parcels ? locLimit(game, parcels, nw) : 0;
+    const dealsCount = game.lois.length + Object.values(game.holdings).filter((h) => h.sale?.offer).length;
+    // What happened THIS MONTH that was not routine — the badge is the reason to
+    // look, not a count of everything ever written.
+    const unread = game.news.filter((n) => n.q === game.month && (n.kind === "warn" || n.kind === "event")).length;
+    // OFF-MARKET FILES WAITING, AND HOW LONG THE NEAREST ONE HAS.
+    //
+    // These arrived as a full-screen card until this pass, which meant the player
+    // could not miss one and did not need a badge. On a page they can, and the
+    // engine drops an approach twelve months after it lands whether or not
+    // anybody read it — so a list with no signal would turn a file with a clock
+    // on it into free optionality, which is a difficulty dial wearing a UI
+    // change's clothes. Counted the same way News counts: what wants an answer,
+    // not what exists. The tooltip carries the soonest lapse, because "3" tells
+    // you there is something and not whether it is urgent.
+    const bcalls = liveBrokerCalls(game);
+    const bcallSoon = bcalls.length ? Math.max(0, bcalls[0].lapseM - game.month) : 0;
+    const notesLive = (game.noteOffers?.length ?? 0)
+      + (game.notes ?? []).filter((n) => n.perf === "nonperforming" && n.filedM === undefined).length;
+    let debtBal = 0, debtWall = 0;
+    for (const h of Object.values(game.holdings)) {
+      if (!h.loan) continue;
+      debtBal += h.loan.balance;
+      if (h.loan.maturityM - game.month <= 36) debtWall += h.loan.balance;
+    }
+    if (game.facility) {
+      debtBal += game.facility.balance;
+      if (game.facility.maturityM - game.month <= 36) debtWall += game.facility.balance;
+    }
+    return {
+      nw, cf, line, dealsCount, unread, bcalls, bcallSoon, notesLive,
+      debtHot: debtBal > 0 && debtWall / debtBal > 0.35,
+      debtSwept: !!game.facility?.breachedSince,
+      debtBal, debtWall,
+    };
+  }, [game]);
+  const { nw, cf, line, dealsCount, unread, bcalls, bcallSoon, notesLive, debtHot, debtSwept, debtBal, debtWall } = vitals;
 
   // WHICH TOWN IS NOT ASKED HERE ANY MORE. The island, the size and the
   // build-out used to hang off the New-city button as a three-section
@@ -149,13 +185,11 @@ export default function TopBar() {
             <Stat label={monthLabel(game.month)} value={`Yr ${Math.floor(game.month / 12) + 1}`} wide w={118} keep />
             <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} w={88} keep />
             {(() => {
-              const parcels = useStore.getState().parcels;
-              const limit = parcels ? locLimit(game, parcels) : 0;
               const drawn = game.loc?.balance ?? 0;
               const label = drawn > 0 ? "Line drawn" : "Line";
               const value = drawn > 0
-                ? `${usd(drawn)} / ${usd(limit)}`
-                : limit > 0 ? usd(limit) : "—";
+                ? `${usd(drawn)} / ${usd(line)}`
+                : line > 0 ? usd(line) : "—";
               return (
                 <Stat
                   label={label}
@@ -164,8 +198,8 @@ export default function TopBar() {
                   keep
                   w={drawn > 0 ? 148 : 96}
                   title={drawn > 0
-                    ? `Revolver drawn ${usd(drawn)} of ${usd(limit)} available against net worth. Full controls are on Books → Balance sheet.`
-                    : `Undrawn line capacity ${usd(limit)}. Opens against net worth; draw and repay on Books → Balance sheet.`}
+                    ? `Revolver drawn ${usd(drawn)} of ${usd(line)} available against net worth. Full controls are on Books → Balance sheet.`
+                    : `Undrawn line capacity ${usd(line)}. Opens against net worth; draw and repay on Books → Balance sheet.`}
                 />
               );
             })()}
@@ -213,31 +247,14 @@ export default function TopBar() {
           <button className={"nav-btn" + (page === "research" ? " nav-on" : "")} onClick={() => setPage(page === "research" ? "none" : "research")}>
             Research
           </button>
-          {(() => {
-            // The badge counts what wants an answer, not what you own — a book
-            // of performing notes is not a to-do list and must not look like one.
-            const live = (game.noteOffers?.length ?? 0)
-              + (game.notes ?? []).filter((n) => n.perf === "nonperforming" && n.filedM === undefined).length;
-            const held = game.notes?.length ?? 0;
-            // THE WHOLE DESK USED TO BE INVISIBLE UNTIL IT CAME TO YOU.
-            //
-            // `if (!live && !held) return null` hid an 804-line market — buying
-            // paper off pressured desks, servicing it, restructuring, filing,
-            // selling — behind the condition that the game had already offered
-            // you some. A player who was never offered a note had no way to
-            // learn the business exists, which is how it came to be reported as
-            // a mechanic that needed building. It was built; it was unreachable.
-            //
-            // The badge still counts only what wants an answer, so a book of
-            // performing notes does not nag. The button is simply always there,
-            // the way Marketplace is there on a month when nothing is listed.
-            void live; void held;
-            return (
-              <button className={"nav-btn" + (page === "notes" ? " nav-on" : "")} onClick={() => setPage(page === "notes" ? "none" : "notes")}>
-                Notes<Badge n={live} />
-              </button>
-            );
-          })()}
+          {/* THE WHOLE DESK USED TO BE INVISIBLE UNTIL IT CAME TO YOU.
+              `if (!live && !held) return null` hid an 804-line market behind
+              the condition that the game had already offered you some. The
+              badge still counts only what wants an answer; the button is
+              always there, the way Marketplace is on a quiet month. */}
+          <button className={"nav-btn" + (page === "notes" ? " nav-on" : "")} onClick={() => setPage(page === "notes" ? "none" : "notes")}>
+            Notes<Badge n={notesLive} />
+          </button>
           <button
             className={"nav-btn" + (page === "market" ? " nav-on" : "")}
             title={bcalls.length
@@ -261,32 +278,15 @@ export default function TopBar() {
               get by opening thirty buildings and doing arithmetic. A red dot
               when a third of the book matures inside three years, because that
               is the number that ends firms. */}
-          {(() => {
-            const g = game;
-            let bal = 0, wall = 0;
-            for (const h of Object.values(g?.holdings ?? {})) {
-              if (!h.loan) continue;
-              bal += h.loan.balance;
-              if (h.loan.maturityM - (g?.month ?? 0) <= 36) wall += h.loan.balance;
-            }
-            if (g?.facility) {
-              bal += g.facility.balance;
-              if (g.facility.maturityM - g.month <= 36) wall += g.facility.balance;
-            }
-            const hot = bal > 0 && wall / bal > 0.35;
-            const swept = !!g?.facility?.breachedSince;
-            return (
-              <button
-                className={"nav-btn" + (page === "debt" ? " nav-on" : "")}
-                title={bal > 0
-                  ? `${(bal / 1e6).toFixed(1)}M outstanding${hot ? ` — ${((wall / bal) * 100).toFixed(0)}% of it matures inside three years` : ""}`
-                  : "Everything you own is owned outright."}
-                onClick={() => setPage(page === "debt" ? "none" : "debt")}
-              >
-                Debt{swept ? " · ⚠" : hot ? " · !" : ""}
-              </button>
-            );
-          })()}
+          <button
+            className={"nav-btn" + (page === "debt" ? " nav-on" : "")}
+            title={debtBal > 0
+              ? `${(debtBal / 1e6).toFixed(1)}M outstanding${debtHot ? ` — ${((debtWall / debtBal) * 100).toFixed(0)}% of it matures inside three years` : ""}`
+              : "Everything you own is owned outright."}
+            onClick={() => setPage(page === "debt" ? "none" : "debt")}
+          >
+            Debt{debtSwept ? " · ⚠" : debtHot ? " · !" : ""}
+          </button>
           <button className={"nav-btn" + (page === "books" ? " nav-on" : "")} onClick={() => setPage(page === "books" ? "none" : "books")}>
             Books
           </button>

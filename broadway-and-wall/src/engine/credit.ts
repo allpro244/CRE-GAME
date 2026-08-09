@@ -40,8 +40,12 @@ export function locRate(s: GameState): number {
  * This is the single most important thing a levered owner has to survive, and
  * without it the whole game had no way to lose.
  */
-export function locLimit(s: GameState, parcels: ParcelTable): number {
-  const nw = netWorth(s, parcels);
+export function locLimit(s: GameState, parcels: ParcelTable, nwPre?: number): number {
+  // Optional precomputed net worth — the top bar used to call netWorth here
+  // and again for the Net-worth readout on every render (including every nav
+  // click and every FPS tick), which is what made ordinary UI clicks feel
+  // heavy once the book grew.
+  const nw = nwPre ?? netWorth(s, parcels);
   const ci = s.econ.creditIdx ?? 1;
   // The revolver is the most relationship-dependent money on the balance
   // sheet, so it is the first thing a bank pulls when your name goes bad —

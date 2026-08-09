@@ -23,7 +23,10 @@ import {
 export { liveBrokerCalls } from "@/ui/panels/broker";
 
 export default function GamePanels() {
-  const game = useStore((s) => s.game);
+  // Subscribe narrowly: a full `game` subscription re-rendered this shell (and
+  // used to re-render the docked ParcelPanel) on every Advance/cash write.
+  const gameOver = useStore((s) => !!s.game?.gameOver);
+  const hasGame = useStore((s) => !!s.game);
   const page = useStore((s) => s.page);
   const setPage = useStore((s) => s.setPage);
   useEffect(() => {
@@ -39,7 +42,7 @@ export default function GamePanels() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [setPage]);
-  if (!game) return null;
+  if (!hasGame) return null;
   const title = page === "portfolio" ? "Portfolio"
     : page === "deals" ? "The Deals Desk"
     : page === "books" ? "The Books"
@@ -94,7 +97,7 @@ export default function GamePanels() {
       <DefaultNoticeModal />
       {/* yield to the saves page — this used to paint over it at the same
           z-index, leaving every control on it visible and dead */}
-      {game.gameOver && page !== "saves" && <GameOverPage />}
+      {gameOver && page !== "saves" && <GameOverPage />}
     </>
   );
 }

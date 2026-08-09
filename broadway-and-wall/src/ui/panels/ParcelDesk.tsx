@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
@@ -6,7 +6,7 @@ import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec,
 import type { Approach, BuiltClass, Contract, DevUse } from "@/engine/types";
 import { assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, holdingNOIYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, recoveryOf, landValue, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, remainingAbatement } from "@/engine/value";
 import { planDevelopment, constructionQuotes, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
-import { buyQuote, assemblagePressure, saleTaxQuote, quietFeeRate } from "@/engine/actions";
+import { buyQuote, assemblagePressure, saleTaxQuote, quietFeeRate, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { isCommercial, vacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, buyoutQuote, BUYOUT_PREMIUM, leasableUses, renewalIntent } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
@@ -20,7 +20,7 @@ import { LettingOdds, LeasingDesk, ResidualRead, LandDesk } from "@/ui/panels/Pr
 import { useLabel, devUseLabel, physicalOcc, goingIn, band, apMid, PropTab, annualPayment, openResearchOn, Neighbourhood, Row } from "@/ui/panels/shared";
 
 
-export function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: PropTab } = {}) {
+function ParcelPanelInner({ embedded = false, tab }: { embedded?: boolean; tab?: PropTab } = {}) {
   const parcels = useStore((s) => s.parcels);
   const adjacency = useStore((s) => s.adjacency);
   const selectedBBL = useStore((s) => s.selectedBBL);
@@ -52,6 +52,15 @@ export function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab
   const l = holding ? ltv(rec, game, holding) : null;
   // No tab means the docked card, which shows the whole file as it always has.
   const on = (t: PropTab) => tab === undefined || tab === t;
+  // Land desk: property-page Build tab always; docked card only when the lot
+  // can assemble / is land / is already folded — not on every leased tower.
+  const showLandDesk = !!holding && on("build") && (
+    tab === "build"
+    || rec.class === "land"
+    || !!game.merged?.[selectedBBL]
+    || siteDeeds(game, selectedBBL).length > 1
+    || !!(adjacency && hasOwnedSiteNeighbor(game, adjacency, selectedBBL))
+  );
 
   return (
     <div className={embedded ? "panel-embed" : "panel"}>
@@ -598,7 +607,7 @@ export function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab
           folded in), clear them, and fold the deeds together: one plate, one
           envelope, one address. LandDesk lists every reachable site and why
           a blocked one cannot join yet. */}
-      {on("build") && holding && <LandDesk bbl={selectedBBL} />}
+      {showLandDesk && <LandDesk bbl={selectedBBL} />}
 
       {on("leasing") && holding && isBuilt && !renovating && <LeasingDesk bbl={selectedBBL} />}
 
@@ -788,6 +797,9 @@ export function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab
     </div>
   );
 }
+
+/** Memo: GamePanels re-renders on every page toggle; the docked card must not. */
+export const ParcelPanel = memo(ParcelPanelInner);
 
 /**
  * EMPTYING A BUILDING. Lifted out of the leasing desk so the three moves sit

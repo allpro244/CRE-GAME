@@ -220,6 +220,39 @@ export default function TopBar() {
           <button className={"nav-btn" + (page === "leasing" ? " nav-on" : "")} onClick={() => setPage(page === "leasing" ? "none" : "leasing")}>
             Leasing
           </button>
+          {/* WHAT THE FIRM OWES, IN ONE PLACE. Every debt number in the game
+              existed on some building's record and nowhere in aggregate, so
+              the weighted coupon, the fixed/floating split, the maturity wall
+              and the portfolio coverage ratio were things a player could only
+              get by opening thirty buildings and doing arithmetic. A red dot
+              when a third of the book matures inside three years, because that
+              is the number that ends firms. */}
+          {(() => {
+            const g = game;
+            let bal = 0, wall = 0;
+            for (const h of Object.values(g?.holdings ?? {})) {
+              if (!h.loan) continue;
+              bal += h.loan.balance;
+              if (h.loan.maturityM - (g?.month ?? 0) <= 36) wall += h.loan.balance;
+            }
+            if (g?.facility) {
+              bal += g.facility.balance;
+              if (g.facility.maturityM - g.month <= 36) wall += g.facility.balance;
+            }
+            const hot = bal > 0 && wall / bal > 0.35;
+            const swept = !!g?.facility?.breachedSince;
+            return (
+              <button
+                className={"nav-btn" + (page === "debt" ? " nav-on" : "")}
+                title={bal > 0
+                  ? `${(bal / 1e6).toFixed(1)}M outstanding${hot ? ` — ${((wall / bal) * 100).toFixed(0)}% of it matures inside three years` : ""}`
+                  : "Everything you own is owned outright."}
+                onClick={() => setPage(page === "debt" ? "none" : "debt")}
+              >
+                Debt{swept ? " · ⚠" : hot ? " · !" : ""}
+              </button>
+            );
+          })()}
           <button className={"nav-btn" + (page === "books" ? " nav-on" : "")} onClick={() => setPage(page === "books" ? "none" : "books")}>
             Books
           </button>

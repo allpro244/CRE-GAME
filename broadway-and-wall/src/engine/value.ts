@@ -2125,6 +2125,12 @@ export function collateralAsIs(rec: ParcelRecord, econ: Econ, occ: number): numb
 
 export function netWorth(s: GameState, parcels: Record<string, ParcelRecord>): number {
   let nw = s.cash;
+  // ONE LOAN AGAINST MANY DEEDS IS STILL A LOAN. Every building's own mortgage
+  // is netted off its value below; a facility has no single building to be
+  // netted against, so it comes off here or it does not come off at all — and
+  // a borrower whose net worth ignores their largest liability is being shown
+  // a number that would let them borrow against it twice.
+  nw -= s.facility?.balance ?? 0;
   for (const h of Object.values(s.holdings)) {
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;

@@ -43,6 +43,17 @@
  *                      of the proceeds, prepayment penalties and all. On paper
  *                      that is often what kills the deal, and it should.
  *
+ * WHERE THE MONEY IS BOOKED. Fees, points and prepayment penalties are an
+ * expense and go to `debtSvc` like every other financing cost. The PRINCIPAL —
+ * drawn at closing, paid to the old lenders, amortised monthly, repaid at
+ * maturity — is a balance-sheet movement and is not booked, which is the same
+ * convention `refinance` and `executePurchase` already follow: this repo's
+ * ledger is a statement of CASH, and `conserve`'s identity does not track
+ * mortgage principal on either side. A cash-out draw is therefore outside that
+ * identity exactly as a cash-out refinance already is. If the identity is ever
+ * extended to carry debt balances, this and `refinance` and the purchase path
+ * all have to move together, because they share the convention.
+ *
  * SO THE DECISION IS A REAL ONE. More proceeds, a lower coupon, one maturity
  * and one payment — against illiquidity, a single point of failure and your
  * own signature. That is the trade every owner who has ever signed one has

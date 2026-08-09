@@ -13,6 +13,7 @@ import { tickTalks } from "./acquire";
 import { tickLoan, prepayPenalty, productById } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
 import { tickLoc, locRate } from "./credit";
+import { tickFacility } from "./facility";
 import { tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing } from "./dev";
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
 import { tickDemand } from "./demand";
@@ -450,6 +451,18 @@ export function advanceQuarter(
     }
   }
   s.cash += monthCF;
+
+  // THE FACILITY, AFTER THE BUILDINGS AND BEFORE THE OVERHEAD.
+  //
+  // It runs here rather than inside the loop above because it is not a fact
+  // about any one building: one payment, one covenant test struck on the whole
+  // pool, one cure. It takes its own cash — the same way `tickLoan` does — and
+  // reports what it took so the ledger can carry it on the same line as every
+  // other piece of debt service, because that is what it is.
+  {
+    const facCash = tickFacility(s, parcels);
+    if (facCash !== 0) logBooks(s, "debtSvc", facCash);
+  }
 
   // --- the firm's own overhead ----------------------------------------------
   // Every cost in this game so far has been charged to a building. Real
@@ -920,6 +933,9 @@ export function portfolioQuarterlyCF(s: GameState, parcels: ParcelTable): number
   for (const d of Object.values(s.developments ?? {})) {
     cf -= (d.loanBalance * d.ratePct) / 100 / 12; // construction interest
   }
+  // ...and the facility, which is one payment against many buildings and
+  // therefore belongs to none of their rows. See engine/facility.ts.
+  if (s.facility) cf -= s.facility.monthlyPmt;
   // THE LINE IS DEBT, AND ITS INTEREST IS DEBT SERVICE.
   //
   // This walked every mortgage and every construction facility and then

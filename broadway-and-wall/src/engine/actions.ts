@@ -11,6 +11,7 @@ import { assetValue, condGrade, initialCondition, initialCondIdx, holdingValue, 
 import { locAvailable } from "./credit";
 import { marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
+import { releaseCost, RELEASE_PREMIUM } from "./facility";
 import { originate, quote, productById, prepayPenalty } from "./debt";
 import { takeoverDevelopment, buildClimate } from "./dev";
 import { demandNow } from "./demand";
@@ -1664,7 +1665,18 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   const kick = h.loan?.kicker && gain > 0 ? Math.round(gain * h.loan.kicker) : 0;
   // Leaving a loan inside its lockout costs the same on a sale as on a refi.
   const breakFee = h.loan ? prepayPenalty(h.loan, next.month) : 0;
-  const toSeller = net - (h.loan?.balance ?? 0) - kick - breakFee;
+  // THE RELEASE PRICE. A building inside a portfolio facility cannot simply be
+  // sold out from under the lien — the lender is released only against payment
+  // of the building's allocated share of the balance at a premium, and that
+  // payment comes off the top at the closing table like any other payoff.
+  //
+  // Without this the facility would be a money pump: borrow against twelve
+  // deeds, sell all twelve, keep the proceeds and the loan. It is also the
+  // cost that makes the instrument a decision — your book has become harder to
+  // take apart than it was to assemble, and you find that out on the day you
+  // want to sell one thing.
+  const release = releaseCost(next, parcels, bbl);
+  const toSeller = net - (h.loan?.balance ?? 0) - kick - breakFee - release;
   next.cash += toSeller;
   // THE FEE COMES OUT OF THE PROCEEDS ONCE, NOT TWICE.
   //
@@ -1684,6 +1696,19 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   // This survived because conserve's bot never sold anything. It sells now.
   logBooks(next, "sold", toSeller + kick + breakFee);
   if (kick + breakFee > 0) logBooks(next, "debtSvc", kick + breakFee);
+  // The release is a repayment of principal, not an expense — it comes out of
+  // the proceeds and goes against the balance, so `sold` is struck net of it
+  // for the same reason it is struck net of the mortgage payoff.
+  if (release > 0 && next.facility) {
+    next.facility.balance = Math.max(0, next.facility.balance - release);
+    next.facility.bbls = next.facility.bbls.filter((b: string) => b !== bbl);
+    next.news.unshift({
+      q: next.month, kind: "info",
+      text: `$${(release / 1e6).toFixed(2)}M of the sale went to release ${rec.address} from the facility — `
+        + `its allocated share at ${Math.round((RELEASE_PREMIUM - 1) * 100)}% over. Balance $${(next.facility.balance / 1e6).toFixed(1)}M.`,
+    });
+    if (next.facility.balance <= 0) delete next.facility;
+  }
   if (exchange) {
     next.exchange = { deferredTax: tax, rolledGain: gain, minPrice: offer.price, deadlineM: next.month + EXCHANGE_WINDOW_M };
   } else if (tax > 0) {

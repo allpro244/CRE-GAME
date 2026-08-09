@@ -962,7 +962,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const plan = planSpec(h.plan);
       const gav = holdingValue(rec, s.econ, h, q);
       const want = Math.round((CAP_PLAN_RATE * plan.mult * gav * (wear / COND_WEAR_REF)) / 12);
-      if (want > 0 && s.cash > want * 4 && !h.loan?.sweep) {
+      // A SWEPT BUILDING DOES NOT GET THE PLAN, and a facility sweeps every
+      // deed in its pool at once — which is the whole difference between a
+      // covenant on one building and a covenant on a book.
+      const swept = h.loan?.sweep === true || (s.facility?.sweep === true && s.facility.bbls.includes(h.bbl));
+      if (want > 0 && s.cash > want * 4 && !swept) {
         s.cash -= want;
         logBooks(s, "capex", want);
         h.condIdx += wear * plan.lift;

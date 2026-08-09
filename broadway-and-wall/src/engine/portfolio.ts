@@ -240,6 +240,16 @@ export function listPortfolio(
   if (clean.some((b) => s.workouts?.[b])) {
     return { s, err: "One of these is in default. A lender in a workout controls that deed — clear the file first." };
   }
+  // A CROSSED DEED CANNOT BE SOLD IN A BUNDLE. The facility is released one
+  // building at a time against payment of its allocated share at a premium —
+  // see engine/facility.ts — and a bundle sale settles as one trade with no
+  // room for twelve separate release calculations at the same closing. Sell it
+  // out of the pool first, or sell it on its own where the release is
+  // collected at the table.
+  const crossed = clean.filter((b) => s.facility?.bbls.includes(b));
+  if (crossed.length > 0) {
+    return { s, err: `${crossed.length} of these are pledged to your facility. Release them first, or sell them individually.` };
+  }
   const q = portfolioQuote(s, parcels, clean);
   if (ask <= 0) return { s, err: "Name a price." };
   const next = clone(s);

@@ -13,6 +13,7 @@ import { listPortfolio, repricePortfolio, counterPortfolio, acceptPortfolioBid, 
 import { fileVariance } from "@/engine/zoning";
 import { refinance, buyRateCap } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
+import { openFacility, repayFacility, releaseFromFacility } from "@/engine/facility";
 import { startDevelopment, startProgram, setStance, setOps, setOpsPolicy, demolish } from "@/engine/dev";
 import { hire, fire, refreshPool, POOL_REFRESH_M } from "@/engine/staff";
 import { normalizeParcels } from "@/engine/mix";
@@ -22,7 +23,7 @@ import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, se
 import { cityList, makeCity, type GeneratedCity } from "@/citygen/index.mjs";
 
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning";
-export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "news" | "leasing" | "property" | "saves" | "notes" | "settings" | "staff" | "primer";
+export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "staff" | "primer";
 
 /**
  * WHERE THE APP IS, and the reason this type exists at all.
@@ -204,6 +205,12 @@ interface AppState {
   setRenewalMgmt: (on: boolean) => void;
   /** The mandate you give a hired desk: the lowest share of market rent they may sign at. */
   setAgentFloor: (f: number) => void;
+  /** Paper a cross-collateralised facility over a pool of buildings. */
+  openFacility: (bbls: string[], productId: string, lev: number) => void;
+  /** Pay the facility down out of cash. */
+  repayFacility: (amount: number) => void;
+  /** Buy one deed back out of the pool at the release price. */
+  releaseFacility: (bbl: string) => void;
   drawCredit: (amt: number) => void;
   repayCredit: (amt: number) => void;
   /**
@@ -949,6 +956,34 @@ export const useStore = create<AppState>((set, get) => ({
     toast(on
       ? "Management has the renewals. 2% of lease value on what they sign; new leases still come to you."
       : "You're handling your own renewals again.");
+  },
+
+  openFacility: (bbls, productId, lev) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = openFacility(game, parcels, bbls, productId, lev);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast("The facility is papered.");
+    void persist(r.s);
+  },
+
+  repayFacility: (amount) => {
+    const { game } = get();
+    if (!game) return;
+    const r = repayFacility(game, amount);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    void persist(r.s);
+  },
+
+  releaseFacility: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = releaseFromFacility(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    void persist(r.s);
   },
 
   setAgentFloor: (f) => {

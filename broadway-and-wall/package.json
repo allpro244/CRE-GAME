@@ -59,6 +59,7 @@
     "leadlag": "node test/leadlag.mjs",
     "legmatch": "node test/legmatch.mjs",
     "inflation": "node test/inflation.mjs",
+    "facility": "node test/facility.mjs",
     "mixmatch": "node test/mixmatch.mjs",
     "mortality": "node test/mortality.mjs",
     "covenant": "node test/covenant.mjs",

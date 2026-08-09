@@ -46,7 +46,7 @@ function play(seed, verbose) {
         const r = E.respondLOI(g, parcels, loi.id, "accept");
         if (!r.err) { g = r.s; stat.leases++; }
       } else if (!loi.countered && loi.stage !== "countered") {
-        const r = E.respondLOI(g, parcels, loi.id, "counter", { rentPsf: +(market * 0.99).toFixed(2), tiPsf: Math.round(loi.tiPsf * 0.7) });
+        const r = E.respondLOI(g, parcels, loi.id, "counter", false, { rentPsf: +(market * 0.99).toFixed(2), tiPsf: Math.round(loi.tiPsf * 0.7) });
         if (!r.err) g = r.s;
       } else {
         const r = E.respondLOI(g, parcels, loi.id, "pass");

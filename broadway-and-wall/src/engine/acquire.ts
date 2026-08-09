@@ -570,8 +570,11 @@ export function negotiate(
   // that is actually moving and false of one that is not. A buyer who has said
   // the same number twice gets the acceleration taken back off them.
   const prev = existing?.theirPrice ?? ask;
-  const give = 0.28 + prof.patience * 0.22 + Math.max(0, round - stalls * 1.5) * 0.06;
-  const theirs = Math.max(reservation, Math.round(prev - (prev - Math.max(px, reservation)) * Math.min(0.85, give)));
+  // Early rounds used to concede ~40% of the gap on a median seller — too
+  // soft for a first answer. Real talks move in smaller steps; impatience and
+  // later rounds still accelerate, just from a tighter base.
+  const give = 0.18 + prof.patience * 0.20 + Math.max(0, round - stalls * 1.5) * 0.055;
+  const theirs = Math.max(reservation, Math.round(prev - (prev - Math.max(px, reservation)) * Math.min(0.80, give)));
   const roundsLeft = maxRounds - round;
   next.talks[bbl] = {
     bbl, sellerKind: seller.kind, sellerName: seller.name,

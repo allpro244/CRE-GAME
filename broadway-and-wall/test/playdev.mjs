@@ -62,7 +62,7 @@ function play(seed, verbose) {
       // not negotiating, it is holding the tenant hostage until the paper
       // expires — 140 counters and one signature.
       if (!loi.countered && loi.stage !== "countered") {
-        const r = E.respondLOI(g, parcels, loi.id, "counter", { rentPsf: +(market * 0.96).toFixed(2), tiPsf: Math.round(loi.tiPsf * 0.8) });
+        const r = E.respondLOI(g, parcels, loi.id, "counter", true, { rentPsf: +(market * 0.96).toFixed(2), tiPsf: Math.round(loi.tiPsf * 0.8) });
         if (!r.err) { st.countered++; g = r.s; continue; }
       }
       // A developer with a mini-perm clock does not walk away from a tenant

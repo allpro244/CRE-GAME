@@ -139,7 +139,7 @@ export interface LOI {
   rentPsf: number;
   termM: number;
   tiPsf: number;       // tenant-improvement allowance, $/sf at signing
-  freeM: number;       // free-rent quarters
+  freeM: number;       // free-rent months (not quarters)
   net: boolean;
   recovery?: "nnn" | "base" | "gross";
   expiresM: number;
@@ -149,17 +149,21 @@ export interface LOI {
   // is free does not count it as one.
   arrivedM?: number;
   countered?: boolean;
-  // The negotiation, Groundwork-style: you counter with a rent and a TI
-  // number; they take it, walk, or counter back ONCE — and that one is final.
+  // The negotiation: you counter with rent, TI and free rent; they take it,
+  // walk, or counter back ONCE — and that one is final.
   stage?: "open" | "countered";
   counterRentPsf?: number;
   counterTiPsf?: number;
+  counterFreeM?: number;
   tenantIdx?: number;  // renewals: index into holding.tenants
   // What YOU asked for, kept so the card can show the conversation rather than
   // silently overwriting the opening terms with the answer.
   askedRentPsf?: number;
   askedTiPsf?: number;
+  askedFreeM?: number;
   openRentPsf?: number;   // their original number, before any of this
+  openTiPsf?: number;
+  openFreeM?: number;
   /**
    * WHICH TOUR THIS PARTY IS ON.
    *
@@ -192,6 +196,8 @@ export interface LeaseReply {
   theirRentPsf: number;   // what they had offered, or came back with
   askedTiPsf: number;
   theirTiPsf: number;
+  askedFreeM?: number;
+  theirFreeM?: number;
   sf: number;
   marketPsf: number;
 }

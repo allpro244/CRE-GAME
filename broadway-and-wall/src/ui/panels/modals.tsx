@@ -510,6 +510,7 @@ function DecisionBody({
   const [modalCounter, setModalCounter] = useState(false);
   const [mcRent, setMcRent] = useState(0);
   const [mcTi, setMcTi] = useState(0);
+  const [mcFree, setMcFree] = useState(0);
   // …and the same for an offer to buy one of yours. The card had Accept and
   // Decline and nothing between them, so the one move every seller alive makes
   // — pick up the phone once — could only be reached by dismissing the popup
@@ -592,7 +593,10 @@ function DecisionBody({
     const rec = resolveRec(parcels, game, loi.bbl);
     const h = game.holdings[loi.bbl];
     if (!rec || !h) return null;
-    const market = managedRentPsfYr(rec, game.econ, h);
+    // Market for THIS letter's use — not the blended building ask. A shop LOI
+    // judged against the tower's office blend looked absurdly cheap and the
+    // opposite mistake was just as common on office letters in mixed stock.
+    const market = managedRentPsfYr(rec, game.econ, h, loi.use);
     const cost = loiSigningCost(loi, exclusiveFeeRate(h));
     const annual = loi.rentPsf * loi.sf;
     const live = game.lois.filter((l) => !deferred.has(l.id));
@@ -600,6 +604,8 @@ function DecisionBody({
     const short = Math.max(0, Math.ceil((cost - game.cash) / 1000) * 1000);
     const line = locAvailable(game, parcels);
     const fundable = short > 0 && short <= line;
+    const tiCap = Math.max(loi.tiPsf, Math.round(loi.tiPsf * 1.4), loi.tiPsf > 0 ? 0 : Math.round(market * 0.35 * Math.max(1, loi.termM / 12)));
+    const freeCap = Math.max(loi.freeM, Math.min(Math.round(loi.termM * 0.2), loi.kind === "renewal" ? 6 : 12));
     // No latch here on purpose. Every branch of respondLOI removes the letter
     // from the desk, so a double click is harmless — and a latch that only
     // cleared when the state changed was locking the whole modal any time an
@@ -664,8 +670,12 @@ function DecisionBody({
               {short > 0 && fundable ? `Draw ${usd(short)} and sign` : `Sign the lease · ${usd(cost)}`}
             </button>
             {!isFinal && !loi.countered && (
-              <button className="btn" title="Name your own rent and TI." onClick={() => {
-                if (!modalCounter) { setMcRent(+(loi.rentPsf * 1.05).toFixed(2)); setMcTi(loi.tiPsf); }
+              <button className="btn" title="Name your own rent, TI and free months." onClick={() => {
+                if (!modalCounter) {
+                  setMcRent(+(loi.rentPsf * 1.05).toFixed(2));
+                  setMcTi(loi.tiPsf);
+                  setMcFree(loi.freeM);
+                }
                 setModalCounter((v) => !v);
               }}>
                 Counter…
@@ -699,36 +709,50 @@ function DecisionBody({
                 marks={[{ at: loi.rentPsf, label: "their offer" }, { at: +market.toFixed(2), label: "market" }]}
                 hint={loi.kind === "renewal" ? "Moving is expensive — an incumbent bends further than a prospect." : "They read your number against the market, not against their own opener."}
               />
-              {loi.tiPsf > 0 && (
+              {tiCap > 0 && (
                 <Slider
                   label="TI allowance"
                   value={mcTi}
                   min={0}
-                  max={loi.tiPsf}
+                  max={tiCap}
                   step={1}
                   onChange={setMcTi}
                   format={(v) => `$${v}/sf · ${usd(v * loi.sf)}`}
-                  marks={[{ at: loi.tiPsf, label: "they asked" }]}
-                  hint="Cutting the fit-out money costs you odds — but rent buys it back, and it buys more than the allowance is worth to them."
+                  marks={loi.tiPsf > 0 ? [{ at: loi.tiPsf, label: "they asked" }] : []}
+                  hint="Cut fit-out to save cash, or offer more of it to buy a higher face rent — both move net effective."
                 />
               )}
-              {/* THE NUMBER THEY ARE ACTUALLY DECIDING ON, which was nowhere on
-                  this card. Rent and fit-out are one deal, and a landlord
-                  trading one for the other could not see the total they were
-                  offering. */}
+              {freeCap > 0 && (
+                <Slider
+                  label="Free rent"
+                  value={mcFree}
+                  min={0}
+                  max={freeCap}
+                  step={1}
+                  onChange={setMcFree}
+                  format={(v) => v === 0 ? "none" : `${v} month${v === 1 ? "" : "s"}`}
+                  marks={[
+                    ...(loi.freeM > 0 ? [{ at: loi.freeM, label: "they asked" }] : []),
+                    { at: 0, label: "none" },
+                  ]}
+                  hint="Free months are rent by another name — cutting them raises net effective the same way a face-rent push does."
+                />
+              )}
+              {/* THE NUMBER THEY ARE ACTUALLY DECIDING ON. Rent, fit-out and
+                  free months are one deal. */}
               <div className="hint">
-                Net effective ${netEffectivePsf(loi, mcRent || loi.rentPsf, mcTi).toFixed(2)}/sf over {Math.max(1, Math.round(loi.termM / 12))} years —
-                {" "}{((netEffectivePsf(loi, mcRent || loi.rentPsf, mcTi) / market - 1) * 100).toFixed(0)}% against the market for this space.
+                Net effective ${netEffectivePsf(loi, mcRent || loi.rentPsf, mcTi, mcFree).toFixed(2)}/sf over {Math.max(1, Math.round(loi.termM / 12))} years —
+                {" "}{((netEffectivePsf(loi, mcRent || loi.rentPsf, mcTi, mcFree) / market - 1) * 100).toFixed(0)}% against the market for this space.
                 That is what they judge, not the face rent.
               </div>
               <div className="modal-actions">
-                <button className="btn btn-buy" onClick={() => { const r = respondLoi(loi.id, "counter", short > 0, { rentPsf: mcRent || loi.rentPsf, tiPsf: mcTi }); if (r.msg) setOutcome({ text: r.msg, ok: r.ok }); setModalCounter(false); }}>
-                  Send the counter · ${(mcRent || loi.rentPsf).toFixed(2)}/sf{loi.tiPsf > 0 ? ` · TI $${mcTi}` : ""}
+                <button className="btn btn-buy" onClick={() => { const r = respondLoi(loi.id, "counter", short > 0, { rentPsf: mcRent || loi.rentPsf, tiPsf: mcTi, freeM: mcFree }); if (r.msg) setOutcome({ text: r.msg, ok: r.ok }); setModalCounter(false); }}>
+                  Send the counter · ${(mcRent || loi.rentPsf).toFixed(2)}/sf{mcTi > 0 ? ` · TI $${mcTi}` : ""}{mcFree > 0 ? ` · ${mcFree}mo free` : ""}
                 </button>
                 <button
                   className="btn"
                   title="The number is firm and they know it. Firmer terms convert some hagglers — but nobody counters back a best and final: they sign it or they walk."
-                  onClick={() => { const r = respondLoi(loi.id, "counter", short > 0, { rentPsf: mcRent || loi.rentPsf, tiPsf: mcTi, bestFinal: true }); if (r.msg) setOutcome({ text: r.msg, ok: r.ok }); setModalCounter(false); }}
+                  onClick={() => { const r = respondLoi(loi.id, "counter", short > 0, { rentPsf: mcRent || loi.rentPsf, tiPsf: mcTi, freeM: mcFree, bestFinal: true }); if (r.msg) setOutcome({ text: r.msg, ok: r.ok }); setModalCounter(false); }}
                 >
                   Best &amp; final
                 </button>

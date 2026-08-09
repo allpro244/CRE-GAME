@@ -20,9 +20,12 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
   const [countering, setCountering] = useState(false);
   const [cRent, setCRent] = useState(+(loi.rentPsf * 1.05).toFixed(2));
   const [cTi, setCTi] = useState(loi.tiPsf);
+  const [cFree, setCFree] = useState(loi.freeM);
   const h = game.holdings[loi.bbl];
   const liveRec = rec ? resolveRec(parcels, game, loi.bbl) : null;
   const market = liveRec && h ? managedRentPsfYr(liveRec, game.econ, h, loi.use) : loi.rentPsf;
+  const tiCap = Math.max(loi.tiPsf, Math.round(loi.tiPsf * 1.4), loi.tiPsf > 0 ? 0 : Math.round(market * 0.35 * Math.max(1, loi.termM / 12)));
+  const freeCap = Math.max(loi.freeM, Math.min(Math.round(loi.termM * 0.2), loi.kind === "renewal" ? 6 : 12));
   const prevRent = loi.kind === "renewal" && loi.tenantIdx !== undefined ? h?.tenants[loi.tenantIdx]?.rentPsf : undefined;
   const final = loi.stage === "countered";
   // WHO ELSE IS CHASING THIS SPACE. The entire point of a tour is that you can
@@ -57,6 +60,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
           {loi.askedTiPsf !== undefined && loi.openRentPsf !== undefined ? ` (they opened at $${loi.openRentPsf.toFixed(2)})` : ""}
           {" "}→ their final ${(loi.counterRentPsf ?? loi.rentPsf).toFixed(2)}/sf
           {loi.counterTiPsf !== undefined ? ` · TI $${loi.counterTiPsf}` : ""}
+          {loi.counterFreeM !== undefined && loi.counterFreeM > 0 ? ` · ${loi.counterFreeM}mo free` : ""}
         </div>
       )}
       <div className="loi-line mono dim">
@@ -76,22 +80,41 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
             marks={[{ at: loi.rentPsf, label: "their offer" }, { at: +market.toFixed(2), label: "market" }]}
             hint={cRent > market * 1.08 ? "Past market they walk fast — the space is only worth what the market says." : "Incumbents bend a little; new tenants don't."}
           />
-          {loi.tiPsf > 0 && (
+          {tiCap > 0 && (
             <Slider
               label="TI allowance"
               value={cTi}
               min={0}
-              max={loi.tiPsf}
+              max={tiCap}
               step={1}
               onChange={setCTi}
               format={(v) => `$${v}/sf · ${usd(v * loi.sf)}`}
-              marks={[{ at: loi.tiPsf, label: "they asked" }, { at: Math.round(loi.tiPsf / 2), label: "half" }]}
-              hint="Cutting their fit-out money costs you odds — but cheaper rent buys it back, and buys more than the allowance is worth to them."
+              marks={[
+                ...(loi.tiPsf > 0 ? [{ at: loi.tiPsf, label: "they asked" }] : []),
+                ...(loi.tiPsf > 2 ? [{ at: Math.round(loi.tiPsf / 2), label: "half" }] : []),
+              ]}
+              hint="Cut fit-out to save cash, or offer more of it to buy a higher face rent — both move net effective."
+            />
+          )}
+          {freeCap > 0 && (
+            <Slider
+              label="Free rent"
+              value={cFree}
+              min={0}
+              max={freeCap}
+              step={1}
+              onChange={setCFree}
+              format={(v) => v === 0 ? "none" : `${v} month${v === 1 ? "" : "s"}`}
+              marks={[
+                ...(loi.freeM > 0 ? [{ at: loi.freeM, label: "they asked" }] : []),
+                { at: 0, label: "none" },
+              ]}
+              hint="Free months are rent by another name — cutting them raises net effective the same way a face-rent push does."
             />
           )}
           <div className="hint">
-            Net effective ${netEffectivePsf(loi, cRent, cTi).toFixed(2)}/sf over {Math.max(1, Math.round(loi.termM / 12))} years —
-            {" "}{((netEffectivePsf(loi, cRent, cTi) / market - 1) * 100).toFixed(0)}% against the market for this space.
+            Net effective ${netEffectivePsf(loi, cRent, cTi, cFree).toFixed(2)}/sf over {Math.max(1, Math.round(loi.termM / 12))} years —
+            {" "}{((netEffectivePsf(loi, cRent, cTi, cFree) / market - 1) * 100).toFixed(0)}% against the market for this space.
           </div>
         </>
       )}
@@ -100,14 +123,14 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
           {final ? "Take their final" : "Accept"}
         </button>
         {!loi.countered && !final && !countering && (
-          <button className="btn" onClick={() => setCountering(true)}>Counter…</button>
+          <button className="btn" onClick={() => { setCRent(+(loi.rentPsf * 1.05).toFixed(2)); setCTi(loi.tiPsf); setCFree(loi.freeM); setCountering(true); }}>Counter…</button>
         )}
         {countering && !final && !loi.countered && (
           <>
-            <button className="btn" onClick={() => { respondLoi(loi.id, "counter", true, { rentPsf: cRent, tiPsf: cTi }); setCountering(false); }}>
-              Send · ${cRent.toFixed(2)}/sf{loi.tiPsf > 0 ? ` · TI $${cTi}` : ""}
+            <button className="btn" onClick={() => { respondLoi(loi.id, "counter", true, { rentPsf: cRent, tiPsf: cTi, freeM: cFree }); setCountering(false); }}>
+              Send · ${cRent.toFixed(2)}/sf{cTi > 0 ? ` · TI $${cTi}` : ""}{cFree > 0 ? ` · ${cFree}mo free` : ""}
             </button>
-            <button className="btn" title="Sign it or walk — nobody counters back a best and final." onClick={() => { respondLoi(loi.id, "counter", true, { rentPsf: cRent, tiPsf: cTi, bestFinal: true }); setCountering(false); }}>
+            <button className="btn" title="Sign it or walk — nobody counters back a best and final." onClick={() => { respondLoi(loi.id, "counter", true, { rentPsf: cRent, tiPsf: cTi, freeM: cFree, bestFinal: true }); setCountering(false); }}>
               Best &amp; final
             </button>
           </>

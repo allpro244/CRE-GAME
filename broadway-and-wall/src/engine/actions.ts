@@ -1500,13 +1500,36 @@ export function counterOffMarket(
     + (next.econ.phase === "recession" ? 0.18 : 0)             // fear is your friend
     - (next.econ.phase === "expansion" ? 0.08 : 0),
   ));
+  // Split the old "hold firm" mass into a real soft counter and a true hold.
+  // Owners who will not take your number still often move a little — that is
+  // what a counter is. Binary take/hold/hang-up made every refusal read as
+  // stubbornness and hid the only information a counter is for.
+  const pSoft = Math.max(0.12, Math.min(0.40, 0.34 - (cut - ref) * 0.9 - (named ? 0.06 : 0)));
+  const pHold = Math.max(0.10, 0.45 - pSoft);
   const roll = rng(next);
   if (roll < pTake) {
     na.ask = Math.round(px / 1000) * 1000;
     next.news.unshift({ q: next.month, kind: "deal", text: `${rec.address}: the owner grumbled and took your number — $${(na.ask / 1e6).toFixed(2)}M.` });
     return { s: next, msg: "They took it." };
   }
-  if (roll < pTake + 0.45) {
+  if (roll < pTake + pSoft) {
+    // Meet partway: more of the gap on an open ask, less once they have already
+    // named a number under pressure. Never go below your offer or above ask.
+    const give = (named ? 0.22 : 0.38) * (0.55 + 0.45 * rng(next));
+    const mid = Math.round(a.ask - (a.ask - px) * give);
+    const softened = Math.round(Math.min(a.ask - 1000, Math.max(px + 1000, mid)) / 1000) * 1000;
+    if (softened < a.ask && softened > px) {
+      na.ask = softened;
+      next.news.unshift({
+        q: next.month, kind: "info",
+        text: `${rec.address}: the owner came off $${(a.ask / 1e6).toFixed(2)}M to $${(softened / 1e6).toFixed(2)}M. `
+          + `That is their number now — one counter is all you get.`,
+      });
+      return { s: next, msg: `They came down to $${(softened / 1e6).toFixed(2)}M.` };
+    }
+    // Degenerate gap (you were already a rounding error under) — fall through to hold.
+  }
+  if (roll < pTake + pSoft + pHold) {
     next.news.unshift({ q: next.month, kind: "info", text: `${rec.address}: the owner didn't move. $${(a.ask / 1e6).toFixed(2)}M stands.` });
     return { s: next, msg: "They held firm." };
   }

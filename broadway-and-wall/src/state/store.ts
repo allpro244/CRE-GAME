@@ -286,35 +286,35 @@ function buildTown(island: string, seed: number, size: string, dev: string) {
   return { built, parcels };
 }
 /**
- * TWICE A YEAR, A SAVE YOU CAN GO BACK TO.
+ * ONCE A YEAR, A SAVE YOU CAN GO BACK TO.
  *
- * The continuous autosave overwrites itself every month, which makes it a
- * crash guard and not a rollback: by the time you know a decision was wrong,
- * the only save that ever existed is the one that contains it. These are dated
- * copies kept alongside it, written in January and July, four years of them.
+ * The continuous autosave slot still overwrites itself as you play (crash
+ * guard). Dated rollback copies used to fire every half-year; the owner asked
+ * for yearly — eight years of January-ish snapshots, named for the month they
+ * actually hold.
  *
- * WHY A BUCKET AND NOT `month % 6 === 0`. Advancing a year at a time runs
+ * WHY A BUCKET AND NOT `month % 12 === 0`. Advancing a year at a time runs
  * twelve months inside the engine and hands the store one state at the end, so
  * a test on the exact month would silently never fire for anyone who uses the
- * skip buttons — a save feature that works only if you click one month at a
- * time is worse than none, because it looks like coverage. The bucket fires on
- * the first persist after each half-year boundary is crossed, so a player who
- * jumps a year gets one snapshot at the state they actually arrived in, and
- * the slot is named for the month it really holds rather than the month it was
- * meant to be.
+ * skip buttons. The bucket fires on the first persist after each year boundary
+ * is crossed.
  */
 const SNAP_PREFIX = "Auto · ";
-const SNAP_KEEP = 8;                 // four years of half-years
+const SNAP_KEEP = 8;                 // eight years of annual rollbacks
 let lastSnapBucket = -1;
 /** In-memory rotation of auto-snapshot slot names — avoids `listSaves()`, which
- *  deserialises every save in IndexedDB just to read month/cash. Spamming Year
- *  used to pay that tax every half-year boundary. */
+ *  deserialises every save in IndexedDB just to read month/cash. */
 const snapSlots: string[] = [];
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let persistPending: GameState | null = null;
+/** Crash-guard slot: coalesce writes, but only flush the continuous autosave
+ *  when a year boundary is crossed (plus the dated snapshot). Intra-year
+ *  advances keep state in memory; a refresh mid-year still has the last
+ *  year-end slot. */
+let lastPersistBucket = -1;
 
 async function snapshot(game: GameState) {
-  const bucket = Math.floor(game.month / 6);
+  const bucket = Math.floor(game.month / 12);
   if (bucket === lastSnapBucket) return;
   lastSnapBucket = bucket;
   const slot = SNAP_PREFIX + monthLabel(game.month);
@@ -324,15 +324,13 @@ async function snapshot(game: GameState) {
     const old = snapSlots.shift();
     if (old) await deleteSave(old);
   }
-  // Refresh the Saves page off the critical path — Year spam must not wait on it.
   queueMicrotask(() => { void useStore.getState().refreshSlots(); });
 }
 
 /**
- * Coalesce autosaves. Year / Skip fire many times a second when the player is
- * rolling decades; writing IndexedDB on every click (and scanning every save
- * for snapshot rotation) was a large share of the perceived lag. Keep only the
- * latest state and flush on the next macrotask.
+ * Coalesce persists. Year / Skip fire many times a second; IndexedDB on every
+ * click was a large share of the lag. The continuous autosave and the dated
+ * yearly snapshot both write at most once per game-year bucket.
  */
 function persist(game: GameState) {
   persistPending = game;
@@ -342,6 +340,11 @@ function persist(game: GameState) {
     const g = persistPending;
     persistPending = null;
     if (!g) return;
+    const bucket = Math.floor(g.month / 12);
+    // Always keep the crash-guard slot current when the year ticks; also write
+    // on the very first persist of a session (lastPersistBucket < 0).
+    if (bucket === lastPersistBucket && lastPersistBucket >= 0) return;
+    lastPersistBucket = bucket;
     void (async () => {
       try {
         await saveGame(AUTO(), g);

@@ -3,6 +3,7 @@ import { headlineEpithet } from "@/engine/firm";
 import { useStore, derivedNetWorth, derivedQuarterCF } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { currentCity, currentSeed } from "@/state/city";
+import { locLimit } from "@/engine/credit";
 import { usd, pct } from "./format";
 import { liveBrokerCalls } from "./RightPanel";
 
@@ -142,24 +143,48 @@ export default function TopBar() {
               can shrink and clip because every one of them is also on a page,
               and the CONTROLS cannot, because a button you cannot reach is not
               a control. */}
+          {/* Vital money/time — outside the clip box. A full nav used to push
+              Line into overflow:hidden and show "$5.." for a multi-million limit. */}
+          <div className="topbar-vital">
+            <Stat label={monthLabel(game.month)} value={`Yr ${Math.floor(game.month / 12) + 1}`} wide w={118} keep />
+            <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} w={88} keep />
+            {(() => {
+              const parcels = useStore.getState().parcels;
+              const limit = parcels ? locLimit(game, parcels) : 0;
+              const drawn = game.loc?.balance ?? 0;
+              const label = drawn > 0 ? "Line drawn" : "Line";
+              const value = drawn > 0
+                ? `${usd(drawn)} / ${usd(limit)}`
+                : limit > 0 ? usd(limit) : "—";
+              return (
+                <Stat
+                  label={label}
+                  value={value}
+                  bad={drawn > 0}
+                  keep
+                  w={drawn > 0 ? 148 : 96}
+                  title={drawn > 0
+                    ? `Revolver drawn ${usd(drawn)} of ${usd(limit)} available against net worth. Full controls are on Books → Balance sheet.`
+                    : `Undrawn line capacity ${usd(limit)}. Opens against net worth; draw and repay on Books → Balance sheet.`}
+                />
+              );
+            })()}
+          </div>
           <div className="topbar-stats">
-          <Stat label={monthLabel(game.month)} value={`Yr ${Math.floor(game.month / 12) + 1}`} wide w={152} />
-          <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} w={98} />
-          <Stat label="Net worth" value={usd(nw)} drop={2} w={104} />
+          <Stat label="Net worth" value={usd(nw)} drop={2} w={96} />
           {/* ANNUAL, BECAUSE EVERY OTHER NUMBER IN THIS BUSINESS IS. Cap rates,
               NOI, debt service coverage and every quote on every page are
               annual; a monthly cash flow in the header was the one figure the
               player had to mentally multiply before it could be compared with
               anything else on screen. */}
-          <Stat label="CF / yr" value={usd(cf * 12)} bad={cf < 0} drop={2} w={98} />
+          <Stat label="CF / yr" value={usd(cf * 12)} bad={cf < 0} drop={2} w={88} />
           <Stat
             label="Base rate"
             value={pct(game.econ.indexRate)}
             drop={3}
-            w={80}
+            w={72}
             title="The benchmark every loan in town prices off. Your floating loans reprice to it monthly (through the cap strike, if you bought one), and any new quote — mortgage, construction loan, credit line — is this rate plus the lender's spread."
           />
-          {(game.loc?.balance ?? 0) > 0 && <Stat label="Line drawn" value={usd(game.loc.balance)} bad w={98} />}
           <Stat label="Market" value={game.econ.phase} drop={3} w={84} />
           <Stat
             drop={3}
@@ -400,12 +425,14 @@ function Badge({ n }: { n: number }) {
  * that reservation in pixels — wide enough for the longest month name, the
  * longest phase word, and a negative nine-figure number with a suffix.
  */
-function Stat({ label, value, bad, wide, title, drop, w }: { label: string; value: string; bad?: boolean; wide?: boolean; title?: string; drop?: 2 | 3; w?: number }) {
+function Stat({ label, value, bad, wide, title, drop, w, keep }: {
+  label: string; value: string; bad?: boolean; wide?: boolean; title?: string; drop?: 2 | 3; w?: number; keep?: boolean;
+}) {
   return (
     <div
-      className={"tstat" + (wide ? " tstat-wide" : "") + (drop ? ` tstat-d${drop}` : "")}
+      className={"tstat" + (wide ? " tstat-wide" : "") + (drop ? ` tstat-d${drop}` : "") + (keep ? " tstat-keep" : "")}
       title={title}
-      style={w ? { minWidth: w } : undefined}
+      style={w ? { minWidth: w, maxWidth: keep ? undefined : w } : undefined}
     >
       <span className="tstat-label">{label}</span>
       {value && <span className={"tstat-value mono" + (bad ? " neg" : "")}>{value}</span>}

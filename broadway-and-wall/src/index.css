@@ -241,8 +241,15 @@ body {
    readout in it is also on a page. Everything else in the bar is flex-shrink:0
    so the controls keep their size and the right-hand island keeps its place,
    which is what stops Advance/Yr/skip landing on top of Saves and Settings. */
+/* Vital readouts (date, cash, line) sit outside the clip box so a crowded
+   nav row cannot truncate "$5.2M / $12.0M" into "$5..". Droppable stats still
+   live in .topbar-stats and may clip / shed via media queries. */
+.topbar-vital {
+  display: flex; align-items: center; gap: 12px;
+  flex: 0 0 auto; overflow: visible;
+}
 .topbar-stats {
-  display: flex; align-items: center; gap: 16px;
+  display: flex; align-items: center; gap: 12px;
   /* SHRINK, NEVER GROW. flex-grow:1 here made the readouts expand to fill the
      bar and shove the right-hand island onto a second line at EVERY width —
      the bar measured 122px tall at 1920px, where there was room to spare. */
@@ -250,7 +257,9 @@ body {
 }
 .topbar-game > :not(.topbar-stats) { flex: 0 0 auto; }
 .topbar-right { flex: 0 0 auto; }
-.tstat { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15; }
+.tstat { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15; min-width: 0; }
+.tstat-keep { flex: 0 0 auto; overflow: visible; }
+.tstat-keep .tstat-value { overflow: visible; text-overflow: clip; white-space: nowrap; }
 .tstat-wide .tstat-label { font-family: var(--serif); font-size: 16px; color: var(--ink); letter-spacing: 0.4px; }
 .tstat-label { font-size: 10px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 1px; }
 .tstat-value { font-size: 13px; color: var(--ink); }

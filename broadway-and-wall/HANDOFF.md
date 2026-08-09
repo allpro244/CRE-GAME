@@ -201,10 +201,11 @@ roughly 8–12%. #47.
 facility draws book to `borrowed`; voluntary paydowns to `debtSvc`; conserve's
 bot refinances so the identity is exercised.
 
-**4. CPI is non-monotonic.** Three of six seeds ran 127–218 deflation months,
-worst ten-year stretch −10.8%, because monthly inflation is clamped to
-[−0.35%, +1.15%] and the lower bound is reachable. Filed, not fixed. Pushes
-rents the other way from the complaint that surfaced it.
+**4. ~~CPI is non-monotonic~~ — CLOSED (floor).** Monthly CPI change floors at
+−0.05%/mo (~−0.6%/yr) while national inflation is non-negative; only a national
+deflation regime re-opens the old −0.35%/mo bound. Does not invent a positive
+floor — it stops the local Phillips path from manufacturing multi-year CPI
+declines the national path never authorised.
 
 **5. ~~Rivals cannot underwrite a lease-up~~ — CLOSED.** `streetRefiProceeds`
 takes the same `stabViewFor` plan the player's bridge desk reads.
@@ -214,11 +215,18 @@ corporate line (`lineRoom`) now funds the equity cheque on a purchase the way
 it already plugs a balloon — not the player's exact `facility` instrument, but
 the same balance-sheet move.
 
-**7. #39 — rent reprices on vacancy in the same month.** A simultaneity where a
-lag belongs. The four-quadrant identity checks (#31) are the same subject.
+**7. ~~#39 — rent reprices on vacancy in the same month~~ — CLOSED.** Vacancy /
+scarcity pressure still observes instantly; application into `rentIdx` runs
+through a per-class EMA (`rentPress`, τ≈4 months). Same-month vac→rent leadlag
+clears; the four-quadrant checks (#31) still want a longer campaign sample.
 
 **8. #33 seller predictability, #36 zoning depth, #48/#49 firm entry and exit.**
 Longstanding, lower priority.
+
+**Thin-sponsor covenant immortality — CLOSED.** Equity cures and covenant
+paydowns are cash-only (`fundCashNeed` / `fundableNow` with `{ allowLoc: false }`).
+Debt service may still draw the revolver; curing a breach with the revolver was
+the immortality path.
 
 **Holder relationships are wired to approaches only.** A holder who will not
 take your call still lists buildings to you on the open tape and still bids
@@ -229,9 +237,12 @@ is the obvious next move on that feature.
 
 ## 7. WHAT I WOULD DO NEXT, IN ORDER
 
-1. **The four quadrants** (#31/#39) — rent repricing vacancy in the same month;
-   the deepest remaining structural question.
-2. CPI non-monotonic (#4), holder memory beyond approaches, zoning depth.
+1. **Unify city-supply vs desk delivery** — `breaks→deliv` lag and dual pencils
+   / city-supply models still fight each other; a single delivery queue is the
+   mechanism, not another clamp.
+2. **Retire load-bearing rails** (`vacGate`, `cycleDev`, jobs ceiling) once the
+   dual-supply and retail-glut mechanisms stand on their own.
+3. Holder memory beyond approaches; zoning depth (#36).
 
 ---
 

@@ -1,19 +1,23 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import { MILESTONES } from "@/engine/sim";
 import { depositsHeld } from "@/engine/leasing";
-import { usd } from "@/ui/format";
+import { collateralAsIs, holdingValue, netWorth, resolveRec } from "@/engine/value";
+import { locLimit, locRate } from "@/engine/credit";
+import { usd, pct } from "@/ui/format";
 import { CreditLine } from "@/ui/panels/DebtPage";
 import { NewsText } from "@/ui/panels/MarketPage";
 import { NWChart, Big } from "@/ui/panels/shared";
 
+type BooksTab = "balance" | "income";
+
 export function BooksPage() {
   const game = useStore((s) => s.game)!;
   const focus = useStore((s) => s.focus);
+  const [tab, setTab] = useState<BooksTab>("balance");
   const nw = game.nwHistory[game.nwHistory.length - 1] ?? 0;
   const realized = game.exits.reduce((a, e) => a + e.gain, 0);
-  const years = [...(game.books ?? [])].reverse().slice(0, 15);
   const exits = [...(game.exits ?? [])].reverse().slice(0, 12);
   const achieved = MILESTONES.filter((m) => game.milestones?.[m.id] !== undefined);
   const pending = MILESTONES.filter((m) => game.milestones?.[m.id] === undefined);
@@ -22,9 +26,6 @@ export function BooksPage() {
       <div className="stat-strip">
         <Big label="Net worth" value={usd(nw)} bad={nw < 0} />
         <Big label="Cash" value={usd(game.cash)} bad={game.cash < 0} />
-        {/* NOT YOURS. Deposits arrive as cash at signing and look exactly like
-            equity until the tenant leaves and takes them back. Net worth above
-            is quoted net of this; the cash figure beside it is not. */}
         {depositsHeld(game) > 0 && (
           <Big label="Deposits held" value={"−" + usd(depositsHeld(game))} />
         )}
@@ -33,64 +34,26 @@ export function BooksPage() {
         <Big label="Exits" value={String(game.exits.length)} />
       </div>
       <NWChart data={game.nwHistory} />
-      <CreditLine />
-      {/* THE WAY IN TO THE PAYROLL. Firm overhead is a line on the statement
-          below and, since the desk exists, half of it is people with names,
-          salaries and a notice period. The books are where you find out what
-          the office costs; this is where you find out who is in it. */}
-      <div className="btn-row">
+
+      <div className="btn-row" style={{ marginBottom: 12 }}>
+        <button className={"btn" + (tab === "balance" ? " btn-on" : "")} onClick={() => setTab("balance")}>
+          Balance sheet
+        </button>
+        <button className={"btn" + (tab === "income" ? " btn-on" : "")} onClick={() => setTab("income")}>
+          Income statement
+        </button>
         <button className="btn" onClick={() => useStore.getState().setPage("staff")}
           title="Property management, leasing and construction — capacity, the shortlist, and what the slip is costing you">
           The desk · {(game.staff ?? []).length} on the payroll →
         </button>
       </div>
-      <IncomeStatement />
-      <div className="page-section">
-        <div className="page-section-head">The ledger, by year — every line, side by side</div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Year</th><th className="num">NOI</th><th className="num">Bank interest</th><th className="num">Borrowed</th><th className="num">Debt svc</th><th className="num">Leasing</th>
-                <th className="num">Capex</th><th className="num">G&amp;A</th><th className="num">Development</th><th className="num">Taxes</th>
-                <th className="num">Acquisitions</th><th className="num">Dispositions</th><th className="num">Net</th>
-              </tr>
-            </thead>
-            <tbody>
-              {years.map((b) => {
-                const net = b.noi + (b.interest ?? 0) + (b.borrowed ?? 0) - b.debtSvc - b.leasing - b.capex - (b.ga ?? 0) - b.dev - b.taxes - b.bought + b.sold;
-                return (
-                  <tr key={b.yr} style={{ cursor: "default" }}>
-                    <td className="mono">{START_YEAR + b.yr}</td>
-                    <td className="num">{usd(b.noi)}</td>
-                    {/* Booked apart from NOI on purpose: 1% on a bank balance is
-                        not property income, and folding it in overstated the
-                        yield on every building you own. */}
-                    <td className="num dim" title="1.0% a year on positive cash balances">{b.interest ? usd(b.interest) : "—"}</td>
-                    <td className="num dim" title="Cash-out refinance and facility draws">{b.borrowed ? usd(b.borrowed) : "—"}</td>
-                    <td className="num">{b.debtSvc ? "−" + usd(b.debtSvc) : "—"}</td>
-                    <td className="num">{b.leasing ? "−" + usd(b.leasing) : "—"}</td>
-                    <td className="num">{b.capex ? "−" + usd(b.capex) : "—"}</td>
-                    <td className="num">{b.ga ? "−" + usd(b.ga) : "—"}</td>
-                    <td className="num">{b.dev ? "−" + usd(b.dev) : "—"}</td>
-                    <td className="num">{b.taxes ? "−" + usd(b.taxes) : "—"}</td>
-                    <td className="num">{b.bought ? "−" + usd(b.bought) : "—"}</td>
-                    <td className="num">{b.sold ? usd(b.sold) : "—"}</td>
-                    <td className={"num" + (net < 0 ? " neg" : "")}>{usd(net)}</td>
-                  </tr>
-                );
-              })}
-              {!years.length && <tr><td colSpan={13} className="dim">Nothing on the books yet — advance a month.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </div>
+
+      {tab === "balance" ? <BalanceSheet /> : <IncomeStatementTab />}
+
       <div className="page-section">
         <div className="page-section-head">The tape</div>
         <div className="news" style={{ maxHeight: 260, overflowY: "auto" }}>
           {game.news.slice(0, 60).map((n, i) => (
-            // A story about a place can put the camera on the place: a record
-            // groundbreaking is only worth reading if you can go look at it.
             <div
               key={i}
               className={"news-item news-" + n.kind}
@@ -140,6 +103,277 @@ export function BooksPage() {
   );
 }
 
+/** One statement line: label, amount, optional note. */
+function Row({ k, v, sub, strong, rule, note, bad }: {
+  k: string; v: number; sub?: boolean; strong?: boolean; rule?: boolean; note?: string; bad?: boolean;
+}) {
+  const neg = bad ?? v < 0;
+  return (
+    <tr className={rule ? "is-rule" : undefined}>
+      <td style={{ paddingLeft: sub ? 22 : 0, fontWeight: strong ? 600 : undefined }}>
+        {k}{note && <span className="dim" style={{ fontWeight: 400 }}> · {note}</span>}
+      </td>
+      <td className={"num" + (neg ? " neg" : "") + (strong ? " is-strong" : "")}>
+        {v === 0 ? "—" : (v < 0 ? "(" : "") + usd(Math.abs(v)) + (v < 0 ? ")" : "")}
+      </td>
+    </tr>
+  );
+}
+
+/**
+ * BALANCE SHEET — what you own, what you owe, what is left.
+ *
+ * Built from the same `netWorth` / `holdingValue` the rest of the engine reads,
+ * so the Books page cannot disagree with the TopBar or the lender's sizing.
+ */
+function BalanceSheet() {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const focus = useStore((s) => s.focus);
+
+  const sheet = useMemo(() => {
+    let propGross = 0, mortgages = 0, landOnly = 0, bldgCount = 0, landCount = 0;
+    const byClass: Record<string, { n: number; gross: number; debt: number }> = {};
+    for (const h of Object.values(game.holdings)) {
+      const rec = resolveRec(parcels, game, h.bbl);
+      if (!rec) continue;
+      const v = holdingValue(rec, game.econ, h, game.month);
+      const debt = h.loan?.balance ?? 0;
+      propGross += v;
+      mortgages += debt;
+      const cls = rec.class === "land" || !(rec.floors > 0) ? "land" : (rec.class ?? "other");
+      if (cls === "land") { landOnly += v; landCount++; }
+      else { bldgCount++; }
+      if (!byClass[cls]) byClass[cls] = { n: 0, gross: 0, debt: 0 };
+      byClass[cls].n++;
+      byClass[cls].gross += v;
+      byClass[cls].debt += debt;
+    }
+
+    let cip = 0, cipDebt = 0, cipN = 0;
+    for (const d of Object.values(game.developments ?? {})) {
+      const sunk = (d.equitySpent ?? 0) + (d.drawn ?? 0) - (d.reserveUsed ?? 0);
+      cip += Math.max(0, sunk);
+      cipDebt += d.loanBalance ?? 0;
+      cipN++;
+    }
+
+    let notesVal = 0;
+    for (const n of game.notes ?? []) {
+      if (n.perf === "performing") { notesVal += n.basis; continue; }
+      const rec = resolveRec(parcels, game, n.bbl);
+      if (!rec) continue;
+      const r = game.rivals?.find((x) => x.id === n.obligorId);
+      notesVal += Math.min(n.basis, Math.round(collateralAsIs(rec, game.econ, r?.occ ?? 0.5)));
+    }
+
+    const deposits = depositsHeld(game);
+    const locBal = game.loc?.balance ?? 0;
+    const locLim = locLimit(game, parcels);
+    const facility = game.facility?.balance ?? 0;
+    const cash = game.cash;
+    // Operating cash for the sheet: deposits are a liability against cash.
+    const cashOwn = cash; // deposits are still in cash; liability line nets them
+    const totalAssets = cashOwn + propGross + Math.max(0, cip - 0) + notesVal;
+    // CIP shown gross; construction loan is a liability (cipDebt may already
+    // be inside developments — netWorth nets sunk - loanBalance).
+    const totalLiab = mortgages + cipDebt + facility + locBal + deposits;
+    const equity = totalAssets - totalLiab;
+    const nwEngine = netWorth(game, parcels);
+
+    return {
+      cash, deposits, propGross, mortgages, landOnly, bldgCount, landCount,
+      byClass, cip, cipDebt, cipN, notesVal, noteCount: (game.notes ?? []).length,
+      locBal, locLim, facility, totalAssets, totalLiab, equity, nwEngine,
+      rate: locRate(game),
+    };
+  }, [game, parcels]);
+
+  const holdings = Object.values(game.holdings);
+
+  return (
+    <div>
+      <div className="page-section">
+        <div className="page-section-head">Balance sheet · {monthLabel(game.month)}</div>
+        <div className="hint">
+          Assets at the same values the TopBar, the lender and the desk use — not a second set of books.
+          Engine net worth is {usd(sheet.nwEngine)}; the equity line below is assets minus liabilities from the same marks.
+        </div>
+        <table className="tbl tbl-stmt">
+          <thead>
+            <tr><th>Assets</th><th className="num">Amount</th></tr>
+          </thead>
+          <tbody>
+            <Row k="Cash" v={sheet.cash} note={sheet.cash < 0 ? "overdrawn — the line should have covered this" : "operating account"} bad={sheet.cash < 0} />
+            <Row k="Real estate — gross value" v={sheet.propGross} note={`${sheet.bldgCount} building${sheet.bldgCount === 1 ? "" : "s"}, ${sheet.landCount} land parcel${sheet.landCount === 1 ? "" : "s"}`} />
+            {Object.entries(sheet.byClass).sort((a, b) => b[1].gross - a[1].gross).map(([cls, x]) => (
+              <Row key={cls} k={cls === "land" ? " Land / sites" : ` ${cls}`} v={x.gross} sub note={`${x.n} deed${x.n === 1 ? "" : "s"} · ${usd(x.debt)} mortgaged`} />
+            ))}
+            {sheet.cipN > 0 && (
+              <Row k="Construction in progress" v={sheet.cip} note={`${sheet.cipN} job${sheet.cipN === 1 ? "" : "s"} — money sunk, not the full budget`} />
+            )}
+            {sheet.noteCount > 0 && (
+              <Row k="Notes receivable" v={sheet.notesVal} note={`${sheet.noteCount} note${sheet.noteCount === 1 ? "" : "s"} · lower of cost and collateral`} />
+            )}
+            <Row k="Total assets" v={sheet.totalAssets} strong rule />
+          </tbody>
+        </table>
+        <table className="tbl tbl-stmt" style={{ marginTop: 16 }}>
+          <thead>
+            <tr><th>Liabilities</th><th className="num">Amount</th></tr>
+          </thead>
+          <tbody>
+            <Row k="Mortgages" v={sheet.mortgages} note="secured by individual deeds" bad={sheet.mortgages > sheet.propGross * 0.85} />
+            {sheet.cipDebt > 0 && <Row k="Construction loans" v={sheet.cipDebt} sub />}
+            {sheet.facility > 0 && <Row k="Cross-collateral facility" v={sheet.facility} note="one loan, many deeds" bad />}
+            <Row k="Line of credit drawn" v={sheet.locBal} note={`limit ${usd(sheet.locLim)} · ${pct(sheet.rate)}`} bad={sheet.locBal > 0} />
+            {sheet.deposits > 0 && (
+              <Row k="Tenant deposits held" v={sheet.deposits} note="not yours — due when they leave" />
+            )}
+            <Row k="Total liabilities" v={sheet.totalLiab} strong rule />
+            <Row k="Equity (assets − liabilities)" v={sheet.equity} strong rule bad={sheet.equity < 0} />
+          </tbody>
+        </table>
+        {sheet.propGross > 0 && (
+          <div className="hint">
+            Loan-to-value on the real-estate book: {((sheet.mortgages / sheet.propGross) * 100).toFixed(0)}%
+            {sheet.locBal > 0 ? ` · Line is ${((sheet.locBal / Math.max(1, sheet.locLim)) * 100).toFixed(0)}% drawn` : ""}.
+          </div>
+        )}
+      </div>
+
+      <CreditLine />
+
+      {sheet.cipN > 0 && (
+        <div className="page-section">
+          <div className="page-section-head">Construction in progress · {sheet.cipN} job{sheet.cipN === 1 ? "" : "s"}</div>
+          <div style={{ overflowX: "auto" }}>
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Site</th>
+                  <th>Use</th>
+                  <th className="num">Sunk</th>
+                  <th className="num">Loan bal</th>
+                  <th className="num">Budget</th>
+                  <th className="num">Drawn / commit</th>
+                  <th className="num">Delivery</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.values(game.developments ?? {}).map((d) => {
+                  const rec = resolveRec(parcels, game, d.bbl);
+                  const sunk = Math.max(0, (d.equitySpent ?? 0) + (d.drawn ?? 0) - (d.reserveUsed ?? 0));
+                  return (
+                    <tr key={d.bbl} style={{ cursor: "pointer" }} onClick={() => focus(d.bbl, true)}>
+                      <td>{rec?.address ?? d.bbl}</td>
+                      <td className="dim">{d.use}</td>
+                      <td className="num">{usd(sunk)}</td>
+                      <td className="num">{d.loanBalance ? usd(d.loanBalance) : "—"}</td>
+                      <td className="num dim">{usd(d.costTotal)}</td>
+                      <td className="num dim">{usd(d.drawn)} / {usd(d.commitment)}</td>
+                      <td className="num dim">{monthLabel(d.deliverM)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <div className="page-section">
+        <div className="page-section-head">Holdings detail · {holdings.length} deed{holdings.length === 1 ? "" : "s"}</div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Address</th>
+                <th>Class</th>
+                <th className="num">Value</th>
+                <th className="num">Debt</th>
+                <th className="num">Equity</th>
+                <th className="num">LTV</th>
+                <th className="num">Basis</th>
+              </tr>
+            </thead>
+            <tbody>
+              {holdings.map((h) => {
+                const rec = resolveRec(parcels, game, h.bbl);
+                if (!rec) return null;
+                const v = holdingValue(rec, game.econ, h, game.month);
+                const debt = h.loan?.balance ?? 0;
+                const eq = v - debt;
+                const ltv = v > 0 ? debt / v : 0;
+                return (
+                  <tr key={h.bbl} style={{ cursor: "pointer" }} onClick={() => focus(h.bbl, true)}>
+                    <td>{rec.address ?? h.bbl}</td>
+                    <td className="dim">{rec.class}</td>
+                    <td className="num">{usd(v)}</td>
+                    <td className="num">{debt ? usd(debt) : "—"}</td>
+                    <td className={"num" + (eq < 0 ? " neg" : "")}>{usd(eq)}</td>
+                    <td className={"num" + (ltv > 0.75 ? " neg" : "")}>{debt ? (ltv * 100).toFixed(0) + "%" : "—"}</td>
+                    <td className="num dim">{usd(h.costBasis ?? 0)}</td>
+                  </tr>
+                );
+              })}
+              {!holdings.length && (
+                <tr><td colSpan={7} className="dim">No deeds yet — the balance sheet is cash and whatever the line says.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IncomeStatementTab() {
+  const years = [...(useStore((s) => s.game)!.books ?? [])].reverse().slice(0, 15);
+  return (
+    <div>
+      <IncomeStatement />
+      <div className="page-section">
+        <div className="page-section-head">The ledger, by year — every line, side by side</div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Year</th><th className="num">NOI</th><th className="num">Bank interest</th><th className="num">Borrowed</th><th className="num">Debt svc</th><th className="num">Leasing</th>
+                <th className="num">Capex</th><th className="num">G&amp;A</th><th className="num">Development</th><th className="num">Taxes</th>
+                <th className="num">Acquisitions</th><th className="num">Dispositions</th><th className="num">Net</th>
+              </tr>
+            </thead>
+            <tbody>
+              {years.map((b) => {
+                const net = b.noi + (b.interest ?? 0) + (b.borrowed ?? 0) - b.debtSvc - b.leasing - b.capex - (b.ga ?? 0) - b.dev - b.taxes - b.bought + b.sold;
+                return (
+                  <tr key={b.yr} style={{ cursor: "default" }}>
+                    <td className="mono">{START_YEAR + b.yr}</td>
+                    <td className="num">{usd(b.noi)}</td>
+                    <td className="num dim" title="1.0% a year on positive cash balances">{b.interest ? usd(b.interest) : "—"}</td>
+                    <td className="num dim" title="Cash-out refinance and facility draws">{b.borrowed ? usd(b.borrowed) : "—"}</td>
+                    <td className="num">{b.debtSvc ? "−" + usd(b.debtSvc) : "—"}</td>
+                    <td className="num">{b.leasing ? "−" + usd(b.leasing) : "—"}</td>
+                    <td className="num">{b.capex ? "−" + usd(b.capex) : "—"}</td>
+                    <td className="num">{b.ga ? "−" + usd(b.ga) : "—"}</td>
+                    <td className="num">{b.dev ? "−" + usd(b.dev) : "—"}</td>
+                    <td className="num">{b.taxes ? "−" + usd(b.taxes) : "—"}</td>
+                    <td className="num">{b.bought ? "−" + usd(b.bought) : "—"}</td>
+                    <td className="num">{b.sold ? usd(b.sold) : "—"}</td>
+                    <td className={"num" + (net < 0 ? " neg" : "")}>{usd(net)}</td>
+                  </tr>
+                );
+              })}
+              {!years.length && <tr><td colSpan={13} className="dim">Nothing on the books yet — advance a month.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * THE INCOME STATEMENT.
  *
@@ -147,19 +381,19 @@ export function BooksPage() {
  * columns wide, operating flows sitting next to investing flows, no subtotals,
  * and no way to answer the two questions anybody actually asks — did the
  * BUILDINGS make money this year, and did the FIRM?
- *
- * Those are different questions and the difference is the entire craft. A
- * portfolio can throw off eleven million of property cash flow and still burn
- * cash, because development ate fourteen. A year that looks catastrophic on
- * the bottom line can be the best year you have had, because the money went
- * into the ground and comes back as a building. So this reads down, the way a
- * statement reads, with the subtotals that separate the two.
  */
 export function IncomeStatement() {
   const game = useStore((s) => s.game)!;
   const books = game.books ?? [];
   const [yr, setYr] = useState<number | null>(null);
-  if (!books.length) return null;
+  if (!books.length) {
+    return (
+      <div className="page-section">
+        <div className="page-section-head">Income statement</div>
+        <div className="hint">Nothing on the books yet — advance a month and the year opens.</div>
+      </div>
+    );
+  }
   const cur = books.find((b) => b.yr === yr) ?? books[books.length - 1];
   const prior = books.find((b) => b.yr === cur.yr - 1);
   const partial = cur.yr === Math.floor(game.month / 12) && game.month % 12 !== 0;
@@ -255,4 +489,3 @@ export function IncomeStatement() {
     </div>
   );
 }
-

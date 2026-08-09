@@ -198,7 +198,7 @@ export function SaveSlots() {
   return (
     <div className="page-section">
       <div className="page-section-head">Saved games</div>
-      <div className="hint">The game autosaves every month. These are named copies you can come back to.</div>
+      <div className="hint">The game autosaves once a year (keeps 8). These are named copies you can come back to.</div>
       <div className="btn-row" style={{ marginTop: 8 }}>
         <input
           className="ask-input mono"

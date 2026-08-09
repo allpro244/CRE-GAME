@@ -77,11 +77,6 @@ export default function StartMenu() {
   const townName = (id: string, seed: number) => cityName(id, seed) || islandName(id);
   const sizeName = sizes.find((s) => s.id === size)?.name ?? "City";
   const devName = devs.find((d) => d.id === dev)?.name ?? "Young town";
-  // Starting a run on an island takes that island's autosave slot. Say so
-  // before the click, not after it — this is the same warning the old confirm
-  // row carried, and it is only true when the campaign is on THIS island.
-  const overwrites = resume && resume.island === island ? resume : null;
-
   if (phase === "generating") {
     return (
       <div className="start" aria-busy="true">
@@ -227,13 +222,10 @@ export default function StartMenu() {
       <div className="start-foot">
         <div className="start-foot-sum">
           <span className="start-foot-town">{islandName(island)} · {sizeName} · {devName} · {usd(cash0)}</span>
-          {overwrites ? (
-            <span className="start-foot-warn">
-              Erases the campaign in {townName(overwrites.island, overwrites.seed)} — {monthLabel(overwrites.month)}, year {Math.floor(overwrites.month / 12) + 1}.
-            </span>
-          ) : (
-            <span className="start-foot-note">{usd(cash0)} and no holdings. The town is generated when you press this.</span>
-          )}
+          <span className="start-foot-note">
+            {usd(cash0)} and no holdings. The town is generated when you press this.
+            {resume ? " Named saves stay on the Saves page." : ""}
+          </span>
         </div>
         <button
           className="start-go"

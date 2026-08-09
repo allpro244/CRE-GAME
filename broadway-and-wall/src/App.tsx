@@ -8,7 +8,7 @@ import { bootMenu, useStore } from "@/state/store";
 export default function App() {
   const loadError = useStore((s) => s.loadError);
   // THE GAME NO LONGER STARTS ITSELF. Mounting used to generate a city and
-  // drop the player into it; it now reads the autosaves and stops, and the
+  // drop the player into it; it now checks for a named save and stops, and the
   // start screen decides what gets built. MapView stays mounted throughout —
   // it waits on `city`, which is null until somebody breaks ground.
   const playing = useStore((s) => s.phase === "playing");

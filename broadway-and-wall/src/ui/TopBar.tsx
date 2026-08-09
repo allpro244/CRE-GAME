@@ -387,7 +387,7 @@ export default function TopBar() {
         <div className="city-pick" ref={newRunRef}>
           <button
             className={"lens-btn" + (armNewRun ? " lens-on" : "")}
-            title="End this campaign and go back to the start screen, where you pick the island, the size and how built up the town is. This town's autosave is erased. No holdings, the opening bankroll you choose, a brand new town."
+            title="End this campaign and go back to the start screen, where you pick the island, the size and how built up the town is. Named saves are left alone. No holdings, the opening bankroll you choose, a brand new town."
             onClick={() => {
               if (!armNewRun) { setArmNewRun(true); setTimeout(() => setArmNewRun(false), 12000); return; }
               setArmNewRun(false);

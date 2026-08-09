@@ -2,7 +2,6 @@ import { startTransition } from "react";
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass } from "@/engine/types";
-import { monthLabel } from "@/engine/types";
 import { newGame, advanceMonth, advanceUntilAttentionAsync, firstListings, portfolioQuarterlyCF, hangUpOnCall } from "@/engine/sim";
 import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
@@ -38,11 +37,10 @@ export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "eco
 export type Phase = "boot" | "menu" | "generating" | "playing";
 
 /**
- * The campaign the start screen offers to continue, read out of the autosave
- * rather than out of localStorage. The save is the authority on which town it
- * was played in — island, seed, size and build-out all travel in it — so
- * Continue can rebuild exactly that town even if this browser's last choice
- * was a different one.
+ * The campaign the start screen offers to continue — the newest named save.
+ * There is no autosave; if you did not write a slot on Saves, there is nothing
+ * to resume. The save carries island/seed/size/build-out so Continue rebuilds
+ * the right town even when this browser last chose a different one.
  */
 export interface Resume {
   slot: string;
@@ -227,7 +225,7 @@ interface AppState {
   postJob: () => void;
   /** Cut a brand new town on this island at this size and build-out, and play it. */
   startRun: (island: string, size: string, dev: string, cash0?: number) => Promise<void>;
-  /** Rebuild the town in the autosave and pick the campaign back up. */
+  /** Rebuild the town in a named save and pick the campaign back up. */
   continueRun: () => Promise<void>;
   newRun: () => void;
   devGrant: () => void;
@@ -242,13 +240,16 @@ function toast(text: string, kind: "ok" | "err" = "ok") {
   useStore.setState({ toast: { text, kind, at: Date.now() } });
 }
 
-// Every city keeps its own autosave, so switching cities never clobbers the
-// campaign you were running in the other one.
-const AUTO = () => "auto@" + currentCity();
+/** Leftover crash-guard / yearly slots from builds that still autosaved. */
+function isAutoSlot(slot: string): boolean {
+  return slot === "auto" || slot.startsWith("auto@") || slot.startsWith("Auto · ");
+}
 
 // Set across a reload to say "this reload is finishing a load, do not stop at
 // the menu". Session-scoped on purpose: it must not survive the tab.
 const RESUME_FLAG = "bw:resume";
+/** Named slot to finish loading after a town rebuild reload. */
+const RESUME_SLOT = "bw:resumeSlot";
 
 /** What the islands are called, for the screen that has not built one yet. */
 function islandName(id: string): string {
@@ -289,72 +290,12 @@ function buildTown(island: string, seed: number, size: string, dev: string) {
   return { built, parcels };
 }
 /**
- * ONCE A YEAR, A SAVE YOU CAN GO BACK TO.
- *
- * The continuous autosave slot still overwrites itself as you play (crash
- * guard). Dated rollback copies used to fire every half-year; the owner asked
- * for yearly — eight years of January-ish snapshots, named for the month they
- * actually hold.
- *
- * WHY A BUCKET AND NOT `month % 12 === 0`. Advancing a year at a time runs
- * twelve months inside the engine and hands the store one state at the end, so
- * a test on the exact month would silently never fire for anyone who uses the
- * skip buttons. The bucket fires on the first persist after each year boundary
- * is crossed.
+ * No autosave. Call sites still say `persist(next)` after mutations; that used
+ * to flush IndexedDB and was a real share of click lag. Progress survives only
+ * when the player writes a named slot on Saves.
  */
-const SNAP_PREFIX = "Auto · ";
-const SNAP_KEEP = 8;                 // eight years of annual rollbacks
-let lastSnapBucket = -1;
-/** In-memory rotation of auto-snapshot slot names — avoids `listSaves()`, which
- *  deserialises every save in IndexedDB just to read month/cash. */
-const snapSlots: string[] = [];
-let persistTimer: ReturnType<typeof setTimeout> | null = null;
-let persistPending: GameState | null = null;
-/** Crash-guard slot: coalesce writes, but only flush the continuous autosave
- *  when a year boundary is crossed (plus the dated snapshot). Intra-year
- *  advances keep state in memory; a refresh mid-year still has the last
- *  year-end slot. */
-let lastPersistBucket = -1;
-
-async function snapshot(game: GameState) {
-  const bucket = Math.floor(game.month / 12);
-  if (bucket === lastSnapBucket) return;
-  lastSnapBucket = bucket;
-  const slot = SNAP_PREFIX + monthLabel(game.month);
-  await saveGame(slot, game);
-  snapSlots.push(slot);
-  while (snapSlots.length > SNAP_KEEP) {
-    const old = snapSlots.shift();
-    if (old) await deleteSave(old);
-  }
-  queueMicrotask(() => { void useStore.getState().refreshSlots(); });
-}
-
-/**
- * Coalesce persists. Year / Skip fire many times a second; IndexedDB on every
- * click was a large share of the lag. The continuous autosave and the dated
- * yearly snapshot both write at most once per game-year bucket.
- */
-function persist(game: GameState) {
-  persistPending = game;
-  if (persistTimer != null) return;
-  persistTimer = setTimeout(() => {
-    persistTimer = null;
-    const g = persistPending;
-    persistPending = null;
-    if (!g) return;
-    const bucket = Math.floor(g.month / 12);
-    // Always keep the crash-guard slot current when the year ticks; also write
-    // on the very first persist of a session (lastPersistBucket < 0).
-    if (bucket === lastPersistBucket && lastPersistBucket >= 0) return;
-    lastPersistBucket = bucket;
-    void (async () => {
-      try {
-        await saveGame(AUTO(), g);
-        await snapshot(g);
-      } catch { /* private-mode browsers: play on without saves */ }
-    })();
-  }, 0);
+function persist(_game: GameState) {
+  /* intentionally empty */
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -1151,13 +1092,22 @@ export const useStore = create<AppState>((set, get) => ({
 
   refreshSlots: async () => {
     const all = await listSaves();
-    set({ slots: all.filter((m) => m.slot !== "auto" && !m.slot.startsWith("auto@")).sort((a, b) => b.savedAt - a.savedAt) });
+    set({ slots: all.filter((m) => !isAutoSlot(m.slot)).sort((a, b) => b.savedAt - a.savedAt) });
   },
 
   saveTo: async (slot) => {
     const { game } = get();
     if (!game) return;
-    await saveGame(slot, game);
+    // Stamp the island so Continue / a later load can rebuild the right coast.
+    const stamped: GameState = {
+      ...game,
+      cityIsland: game.cityIsland ?? currentCity(),
+      citySeed: game.citySeed ?? currentSeed(),
+      citySize: game.citySize ?? currentSize(),
+      cityDev: game.cityDev ?? currentDev(),
+    };
+    await saveGame(slot, stamped);
+    set({ game: stamped });
     await get().refreshSlots();
     toast(`Saved to “${slot}”.`);
   },
@@ -1170,24 +1120,21 @@ export const useStore = create<AppState>((set, get) => ({
 
     // A SAVE CARRIES ITS OWN TOWN.
     //
-    // Every save has written a citySeed since the city started being generated
-    // at runtime, and exactly one code path ever read it — the autosave, at
-    // boot. Loading a NAMED slot tested it against whatever town happened to
-    // be in memory and refused when they differed, which meant that after a
-    // bankruptcy (the one moment you actually want an earlier save) the button
-    // said "that save was made on a different city" about YOUR OWN save of
-    // YOUR OWN city. The seed was sitting in the object the whole time.
-    //
-    // Rebuild the town it was played in, the same choreography newRun uses.
+    // Rebuild the town it was played in when the seed (or island) does not
+    // match what is live — same reload choreography as Continue.
     const savedSeed = saved.citySeed;
+    const savedIsland = saved.cityIsland ?? currentCity();
     const here = get().game?.citySeed ?? currentSeed();
-    if (savedSeed !== undefined && savedSeed !== here) {
+    const hereIsland = currentCity();
+    if (
+      (savedSeed !== undefined && savedSeed !== here)
+      || savedIsland !== hereIsland
+    ) {
       toast(`Loading "${slot}" — rebuilding the town it was played in.`);
-      setSeed(savedSeed >>> 0);
-      try { await saveGame(AUTO(), saved); } catch { /* private mode: the reload will start fresh */ }
-      // Say why we are reloading, so the boot finishes the load instead of
-      // stopping at the start screen. See bootMenu.
-      try { sessionStorage.setItem(RESUME_FLAG, "1"); } catch { /* private mode: the menu, with Continue offered */ }
+      try {
+        sessionStorage.setItem(RESUME_FLAG, "1");
+        sessionStorage.setItem(RESUME_SLOT, slot);
+      } catch { /* private mode: the menu, with Continue offered */ }
       location.reload();
       return;
     }
@@ -1200,7 +1147,6 @@ export const useStore = create<AppState>((set, get) => ({
       if (!fits) { toast("That save was made on a different city — it can't be loaded here.", "err"); return; }
     }
     set({ game: saved, selectedBBL: null, page: "none" });
-    void persist(saved);
     toast(`Loaded “${slot}”.`);
   },
 
@@ -1232,8 +1178,7 @@ export const useStore = create<AppState>((set, get) => ({
    *
    * Which island, how big and how built up are asked on the start screen now,
    * so this no longer takes them: it ends the campaign and goes back there.
-   * The two-click "Erase this game?" on the button is what it says — the
-   * autosave for this town is gone before the screen changes.
+   * Named saves are left alone — erase those on the Saves page if you mean to.
    */
   newRun: () => {
     // Reload rather than swapping the city under a live map. The map's init
@@ -1242,9 +1187,7 @@ export const useStore = create<AppState>((set, get) => ({
     // table, an adjacency graph and twenty years of state hanging off it. A
     // reload with no city to build is instant — the generation happens when
     // the player presses Break ground, not on the way to the menu.
-    void deleteSave(AUTO())
-      .catch(() => { /* nothing saved: nothing to clear */ })
-      .then(() => location.reload());
+    location.reload();
   },
 
   /**
@@ -1275,13 +1218,11 @@ export const useStore = create<AppState>((set, get) => ({
         city: built,
       });
       const g = firstListings(newGame(seed, parcels, money), parcels, Object.keys(parcels));
+      g.cityIsland = island;
       g.citySeed = seed;
       g.citySize = size;
       g.cityDev = dev;
       set({ game: g, phase: "playing", building: null, resume: null });
-      // This is the erase: the autosave for this island is the campaign that
-      // was being played on it, and the new one takes its slot.
-      void saveGame(AUTO(), g).catch(() => { /* private mode: play on unsaved */ });
     } catch (e) {
       set({ phase: "menu", building: null });
       get().setLoadError(`The city would not build (${(e as Error).message}). This is a bug — please report it.`);
@@ -1369,18 +1310,8 @@ export async function fetchGzJson(url: string) {
 /**
  * BOOT TO A MENU, NOT INTO A TOWN.
  *
- * This used to be `loadData`, and it generated a city on mount and dropped the
- * player into it — so the first thing anyone saw was somebody else's town, and
- * the only place to choose one was a dropdown hanging off the top bar. At
- * 1280x720 that dropdown measured 973px tall in a 720px window with its
- * "Build …" button 353px below the bottom edge and nothing to scroll it, so a
- * custom city could not be started at all. Both faults are the same fault: the
- * choice had nowhere to live.
- *
- * Booting now costs one IndexedDB read and generates nothing. All it works out
- * is whether there is a campaign to come back to — and it reads that out of
- * the autosaves themselves rather than out of localStorage, because a save
- * carries its own town and this browser's last choice may be a different one.
+ * Booting costs one IndexedDB read and generates nothing. Continue is offered
+ * only when a named save exists — there is no autosave.
  */
 const SAVE_GEN_KEY = "bw:saveGen";
 
@@ -1388,10 +1319,9 @@ const SAVE_GEN_KEY = "bw:saveGen";
  * EACH PLAYABLE BUILD RETIRES THE PREVIOUS CAMPAIGN.
  *
  * `pnpm package` writes `build.json` with a fresh `saveGen`. Same origin
- * (localhost from the launcher) would otherwise keep IndexedDB autosaves from
- * the last zip, and Continue would reopen a game written under different
- * rules. When the stamp changes, wipe every slot once and remember the new
- * stamp. Dev servers with no `build.json` leave saves alone.
+ * (localhost from the launcher) would otherwise keep IndexedDB saves from the
+ * last zip under different rules. When the stamp changes, wipe every slot once
+ * and remember the new stamp. Dev servers with no `build.json` leave saves alone.
  */
 async function retireSavesIfNewBuild(): Promise<void> {
   try {
@@ -1409,8 +1339,34 @@ async function retireSavesIfNewBuild(): Promise<void> {
   }
 }
 
+/** Drop leftover auto@ / Auto · slots from builds that still wrote them. */
+async function purgeAutoSlots(): Promise<void> {
+  try {
+    const metas = await listSaves();
+    for (const m of metas) {
+      if (isAutoSlot(m.slot)) await deleteSave(m.slot);
+    }
+  } catch { /* private mode */ }
+}
+
+async function resumeFromSlot(slot: string): Promise<Resume | null> {
+  const g = await loadGame(slot);
+  if (!g || g.v !== 32 || g.citySeed === undefined) return null;
+  return {
+    slot,
+    island: g.cityIsland ?? currentCity(),
+    seed: g.citySeed >>> 0,
+    size: g.citySize ?? currentSize(),
+    dev: g.cityDev ?? currentDev(),
+    month: g.month,
+    cash: g.cash,
+    savedAt: Date.now(),
+  };
+}
+
 export async function bootMenu() {
   await retireSavesIfNewBuild();
+  await purgeAutoSlots();
 
   let resume: Resume | null = null;
   // A save store that will not open is a reason to offer a new town, never a
@@ -1418,43 +1374,36 @@ export async function bootMenu() {
   // browsers land here.
   try {
     const metas = await listSaves();
-    // Newest first: the campaign you were last in is the one Continue means.
-    const autos = metas
-      .filter((m) => m.slot === "auto" || m.slot.startsWith("auto@"))
+    // Newest named save first — Continue means the campaign you last wrote.
+    const named = metas
+      .filter((m) => !isAutoSlot(m.slot))
       .sort((a, b) => b.savedAt - a.savedAt);
-    for (const m of autos) {
-      const g = await loadGame(m.slot);
-      // A save from an older build cannot be opened, and one written before the
-      // city was generated at runtime has no town to rebuild — the seed IS the
-      // town, and without it "continue" would mean "generate a stranger's city
-      // and hope the deeds land on parcels". Neither is offered.
-      if (!g || g.v !== 32 || g.citySeed === undefined) continue;
-      resume = {
-        slot: m.slot,
-        island: m.slot.startsWith("auto@") ? m.slot.slice(5) : currentCity(),
-        seed: g.citySeed >>> 0,
-        // Older saves carry no size or build-out, which means the standard
-        // town, which is what they were built at.
-        size: g.citySize ?? currentSize(),
-        dev: g.cityDev ?? currentDev(),
-        month: g.month,
-        cash: g.cash,
-        savedAt: m.savedAt,
-      };
+    for (const m of named) {
+      const r = await resumeFromSlot(m.slot);
+      if (!r) continue;
+      resume = { ...r, savedAt: m.savedAt };
       break;
     }
   } catch { /* no save store: there is nothing to continue, and that is fine */ }
   useStore.setState({ resume, phase: "menu" });
 
   // LOADING A NAMED SAVE FROM ANOTHER TOWN COMES BACK THROUGH HERE.
-  // `loadFrom` writes the save into the autosave slot and reloads, because
-  // rebuilding the town under a live map is what the reload is for. Without
-  // this flag that reload would land on the start screen and ask the player to
-  // press Continue to finish a load they already asked for.
+  // `loadFrom` stashes the slot and reloads so the town can rebuild cleanly.
   let asked = false;
+  let askedSlot: string | null = null;
   try {
     asked = sessionStorage.getItem(RESUME_FLAG) === "1";
+    askedSlot = sessionStorage.getItem(RESUME_SLOT);
     if (asked) sessionStorage.removeItem(RESUME_FLAG);
+    if (askedSlot) sessionStorage.removeItem(RESUME_SLOT);
   } catch { /* private mode: the menu is the honest place to land */ }
-  if (asked && resume) await useStore.getState().continueRun();
+  if (asked && askedSlot) {
+    const r = await resumeFromSlot(askedSlot);
+    if (r) {
+      useStore.setState({ resume: r });
+      await useStore.getState().continueRun();
+    }
+  } else if (asked && resume) {
+    await useStore.getState().continueRun();
+  }
 }

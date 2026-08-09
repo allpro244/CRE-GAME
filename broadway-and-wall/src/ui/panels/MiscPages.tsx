@@ -186,7 +186,7 @@ export function SavesPage() {
   );
 }
 
-// Named saves alongside the autosave, so a run can be branched or rolled back.
+// Named saves only — there is no autosave. Write a slot when you want one.
 export function SaveSlots() {
   const slots = useStore((s) => s.slots);
   const { saveTo, loadFrom, dropSave, refreshSlots } = useStore.getState();
@@ -198,7 +198,7 @@ export function SaveSlots() {
   return (
     <div className="page-section">
       <div className="page-section-head">Saved games</div>
-      <div className="hint">The game autosaves once a year (keeps 8). These are named copies you can come back to.</div>
+      <div className="hint">Nothing writes itself. Name a slot when you want to keep a copy — that is also what Continue opens on the start screen.</div>
       <div className="btn-row" style={{ marginTop: 8 }}>
         <input
           className="ask-input mono"

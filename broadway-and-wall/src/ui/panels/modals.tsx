@@ -859,9 +859,9 @@ export function GameOverPage() {
         </div>
         {/* THE RUN IS OVER IS NOT THE SAME AS THE CITY IS OVER.
             The only way out of this screen was "Start a new run", which rerolls
-            the seed and deletes the autosave — so the town you had just spent
-            forty years in stopped existing at the exact moment you wanted to go
-            back three years and do it differently. Worse, the Saves page opened
+            the seed — so the town you had just spent forty years in stopped
+            existing at the exact moment you wanted to go back three years and
+            do it differently. Worse, the Saves page opened
             correctly UNDERNEATH this card and every button on it was
             unclickable, so it looked like the game had simply eaten your
             saves. */}

@@ -1729,6 +1729,13 @@ export interface GameState {
    */
   citySeed?: number;
   /**
+   * Which island the town was cut on. Named saves need this to Continue after
+   * a reload — the seed alone is not an address without the coast it was
+   * rolled against. Absent on older saves; those fall back to this browser's
+   * last island choice.
+   */
+  cityIsland?: string;
+  /**
    * How big the island was built. The seed alone does not identify a town any
    * more — the same seed at Hamlet and at Great City are different places with
    * different deeds — so this travels with the game for the same reason the

@@ -1,5 +1,5 @@
-// IndexedDB saves: an autosave written every quarter plus named slots.
-// A save is just the GameState — parcels/adjacency are static data.
+// IndexedDB saves: named slots only (no autosave). A save is just the
+// GameState — parcels/adjacency are static data.
 import type { GameState } from "./types";
 
 const DB = "broadway-and-wall";

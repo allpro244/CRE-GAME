@@ -32,15 +32,15 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from "./types";
 import { CASH_APY, monthLabel, START_YEAR } from "./types";
-import { BUILD_MONTHS, rng, newsChance, rrange, devPencils } from "./market";
-import { assetValue, heightPremium, initialCondition, residualScheme, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall } from "./value";
-import { cityInfillCap, devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retailWantsMixed, SOFT_COST, useForZone, noteRecordPlan, openConstructionDesks, pickConstructionDesk, capRetail, withStreetRetail } from "./dev";
+import { rng, newsChance, rrange } from "./market";
+import { assetValue, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall } from "./value";
+import type { DevPlan } from "./dev";
+import { cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure } from "./lenders";
 import { streetRefiProceeds, productById, stabViewFor } from "./debt";
 import { stampApproach } from "./leasing";
 import { deskWillExtend, extensionFeePct, extensionMonths, NOTICE_M, FORECLOSE_M } from "./workout";
 import { recordComp } from "./comps";
-import { demandNow } from "./demand";
 import { programmeSf, queueSupplyProject } from "./supply";
 
 // Ashport is an old port town; its money has old-port-town names.
@@ -252,16 +252,6 @@ function transferDeed(s: GameState, bbl: string, to: Rival, price: number) {
   (to.heldSince ??= {})[bbl] = s.month;
 }
 
-/** The all-in budget a firm underwrites for a job, on the same basis the player does. */
-function jobBudget(s: GameState, use: DevUse, sf: number, floors: number): number {
-  const mix = devMix(use);
-  let psf = 0, w = 0;
-  for (const u of Object.keys(mix) as BuiltClass[]) { const sh = mix[u] ?? 0; psf += HARD_COST_PSF[u] * sh; w += sh; }
-  psf = w > 0 ? psf / w : HARD_COST_PSF.office;
-  const hard = sf * psf * s.econ.costIdx * heightPremium(floors) * 1.04;
-  return Math.round(hard * (1 + SOFT_COST) * 1.06);
-}
-
 /**
  * IS THIS ABOUT THE PLAYER AT ALL?
  *
@@ -311,16 +301,19 @@ export function claimJob(
   // WHETHER THIS CORNER IS NEXT DOOR TO SOMETHING YOU OWN. Computed at the
   // call site, where the adjacency table is already in scope.
   nearPlayer = false,
+  underwriting?: DevPlan,
 ): Rival | null {
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return null;
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
-  // Construction debt is the first thing to disappear when the window shuts.
-  const phaseMult = s.econ.phase === "peak" ? 1.5 : s.econ.phase === "expansion" ? 1.2
-    : s.econ.phase === "recovery" ? 0.6 : 0.15;
-  const cost = jobBudget(s, use, sf, floors);
-  const land = Math.round(landValue(rec, s.econ) * rrange(s, 1.02, 1.18, "rivals"));
-  const ltc = Math.max(0.4, Math.min(0.7, 0.7 * ci));
+  const shared = underwriting
+    ? { plan: underwriting, clears: underwriting.hurdleRatio >= 1 && underwriting.ltcMax > 0 }
+    : underwriteDevelopment(s, parcels, bbl, use, floors, 0.62);
+  if (!shared?.clears) return null;
+  const plan = shared.plan;
+  const cost = plan.costTotal;
+  const land = plan.landBasis;
+  const ltc = plan.ltc;
   // LOAN-TO-COST MEANS COST, AND COST INCLUDES THE SITE.
   //
   // This required the dirt to be bought outright, in cash, on top of the equity
@@ -341,25 +334,6 @@ export function claimJob(
   // magnitude, every time, for fifty years.
   const equity = Math.round((cost + land) * (1 - ltc));
 
-  // ...AND IT HAS TO PENCIL AT THE PRICE THEY WOULD PAY FOR THE DIRT.
-  //
-  // This function tested affordability, appetite, the phase and the credit
-  // window, and never once asked whether the job made money. It then bought the
-  // site at `landValue x 1.02-1.18` — a premium over a number `value.ts` defines
-  // as exactly the price at which a builder earns DEV_MARGIN and no more.
-  //
-  // The test is the residual itself, so this adds no fifth underwriting model:
-  // what a builder of THIS use can bear on THIS site is already in
-  // `residualScheme(...).all`, and a firm paying more than that is buying a job
-  // it cannot earn its hurdle on. Declining is not a job lost — returning null
-  // hands it back to the anonymous city, which is the right outcome and the
-  // one this function was written around. The marginal sites get built by
-  // owner-occupiers and people nobody has heard of; the ones that pencil get a
-  // name on the crane.
-  const lead = dominantOf(devMix(use));
-  const bid = (residualScheme(rec, s.econ)?.all ?? []).find((c) => c.use === lead)?.psf ?? 0;
-  if (land > bid * (rec.lotArea || 0)) return null;
-
   const runners = livingRivals(s).filter((r) => {
     const want = BUILD_APPETITE[r.style];
     if (want <= 0) return false;
@@ -379,7 +353,7 @@ export function claimJob(
     // A DEVELOPER GOES WHERE SOMEBODY HAS ALREADY PROVED THE BLOCK. Your
     // building is the comp that makes their pro forma work, which is exactly
     // why the crane goes up across the street from the last one that worked.
-    return rng(s, "rivals") < 0.5 * want * phaseMult * ci * (nearPlayer ? 3 : 1);
+    return rng(s, "rivals") < 0.5 * want * ci * (nearPlayer ? 3 : 1);
   });
   if (!runners.length) return null;
 
@@ -400,7 +374,7 @@ export function claimJob(
     job.spent = 0;
     job.equityLeft = Math.round(cost * (1 - ltc));
     job.debt = 0;
-    job.ratePct = +(s.econ.indexRate + CONSTR_SPREAD_R).toFixed(2);
+    job.ratePct = plan.ratePct;
   }
   s.news.unshift({
     q: s.month, kind: "event",
@@ -1346,17 +1320,6 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   if (BUILD_APPETITE[r.style] <= 0) return;
   const live = (s.cityJobs ?? []).filter((j) => j.firmId === r.id).length;
   if (live >= (r.style === "developer" ? 2 : 1)) return;
-  const phaseMult = s.econ.phase === "peak" ? 1.4 : s.econ.phase === "expansion" ? 1.2
-    : s.econ.phase === "recovery" ? 0.6 : 0.12;
-  // Trimmed with the city's own rate: once the anonymous quota came down by
-  // three quarters the street's own groundbreakings were most of the cranes
-  // in town, and the point was fewer cranes, not different ones.
-  // AND THE PRO FORMA. A developer does not break ground because the phase is
-  // "expansion"; he breaks ground because the yield on cost clears what the
-  // capital stack needs, and when it does not he sits on the dirt. This is the
-  // same hurdle the anonymous quota reads — see market.devPencils — and wiring
-  // the street to it is what makes a rate shock reach the skyline instead of
-  // stopping at the one pro forma nobody on this street was reading.
   // the best lot they own, by what the neighbourhood has become
   let best: { bbl: string; rec: ParcelRecord } | null = null, bestScore = -1;
   for (const bbl of r.bbls) {
@@ -1373,16 +1336,9 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   // two-storey shop on it — it gets shops at grade with something above.
   if (use === "retail" && retailWantsMixed(rec)) use = "mixed";
   const lead = dominantOf(devMix(use));
-  // ...AND THE HURDLE IS THE HURDLE FOR THE THING THEY ARE ACTUALLY BUILDING.
-  // This test used to sit thirteen lines above, before the class was known, so
-  // it called `devPencils(s.econ)` and took the default argument: every named
-  // firm's decision to put up flats, sheds or shops was gated on OFFICE
-  // economics. dev.ts:2288 found and fixed exactly this bug on the teardown
-  // path — "the whole city's wrecking ball was gated on office economics by an
-  // accident of a default argument" — measured it, wrote it down, and this
-  // path was left open. It is a sequencing fault, not a modelling one: the
-  // class was always knowable, just thirteen lines too late.
-  if (rng(s, "rivals") >= 0.011 * BUILD_APPETITE[r.style] * phaseMult * ci * devPencils(s.econ, lead)) return;
+  // Preserve the draw order; apply it after this actual site has gone through
+  // the shared parcel pro forma.
+  const startsRoll = rng(s, "rivals");
   const farMax = farMaxFor(rec);
   const frac = Math.min(0.95, 0.4 + rng(s, "rivals") * 0.45);
   let sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
@@ -1399,25 +1355,32 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
     floors = cap;
     sf = Math.max(3000, Math.round((rec.lotArea * 0.62 * floors) / 100) * 100);
   }
-  const cost = jobBudget(s, use, sf, floors);
+  const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62);
+  if (!underwriting?.clears) return;
+  if (startsRoll >= 0.011 * BUILD_APPETITE[r.style] * ci * underwriting.appetite) return;
+  const plan = underwriting.plan;
+  sf = plan.sf;
+  floors = plan.floors;
+  const cost = plan.costTotal;
   if (cost > (r.aum ?? 0) * 0.75 + r.cash * 4) return;
-  const ltc = Math.max(0.4, Math.min(0.7, 0.7 * ci));
+  const ltc = plan.ltc;
   // the dirt is already theirs, so only the build equity has to be in the bank
-  if (r.cash < Math.round(cost * (1 - ltc) * 0.45) + Math.max(1_000_000, r.cash * 0.06)) return;
-  const [bLo, bHi] = BUILD_MONTHS[lead];
-  const months = Math.round(bLo + rng(s, "rivals") * (bHi - bLo));
+  if (r.cash < Math.round(plan.equity * 0.45) + Math.max(1_000_000, r.cash * 0.06)) return;
+  const formerDurationRoll = rng(s, "rivals");
+  void formerDurationRoll;
+  const months = plan.months;
   const deliverM = s.month + months;
   if (!s.cityJobs) s.cityJobs = [];
   // A NAMED FIRM BUILDS THE SAME BUILDING THE CITY DOES — shops at grade where
   // the street carries them. Settled here and carried on the job so the
   // pipeline below and the delivery record cannot disagree.
-  const prog = capRetail(withStreetRetail(devMix(use), floors, demandNow(s, rec)), floors);
+  const prog = plan.mix;
   s.cityJobs.push({
     bbl, use, sf, floors, startM: s.month, deliverM, mix: prog,
     firmId: r.id, cost, spent: 0,
-    equityLeft: Math.round(cost * (1 - ltc)), debt: 0,
-    ratePct: +(s.econ.indexRate + CONSTR_SPREAD_R).toFixed(2),
-    lender: pickConstructionDesk(s, bbl + "#" + s.month) ?? CONSTRUCTION_LENDER,
+    equityLeft: plan.equity, debt: 0,
+    ratePct: plan.ratePct,
+    lender: plan.lender,
   });
   noteRecordPlan(s, parcels, bbl, lead, sf, floors, r.name);
   // Into the one delivery queue the day the hole is dug, exactly like the city.

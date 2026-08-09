@@ -445,36 +445,9 @@ export { devPencils } from "./value";
 // that borrowing is free money.
 export const CAP_BASE = { office: 8.50, retail: 7.00, multifamily: 5.60, industrial: 7.00 } as const;
 
-// WHAT A NEW BUILDING YIELDS ON ITS COST when rents and costs are both at their
-// opening index, and what the capital stack behind it needs on top of the debt
-// index to be worth two years of construction risk. Together they are the
-// hurdle every groundbreak in this city has to clear. 8.5% over debt + 220bps
-// is the ordinary merchant-build test: at a 5% loan index it pencils
-// comfortably, at 12% it does not pencil at all until rents have risen by two
-// thirds, and at the zero bound everything pencils — which is why 2021 looked
-// the way it did.
-// Deliberately set so that at the century's MEDIAN loan index the hurdle is
-// exactly neutral: this change was meant to make development ANSWER the rate,
-// not to make development harder, and a level shift smuggled in alongside a
-// structural one is how a calibration gets quietly lost. Measured before the
-// level-match, real office rent growth ran 2.08%/yr against wages at 1.06%.
-// WHAT A NEW BUILDING YIELDS ON ITS COST when rents and costs are both at their
-// opening index, and what the capital stack needs on top of the debt index to
-// be worth two years of construction risk.
-//
-// THIS IS NOT A CAPITAL-MARKETS NUMBER and briefly it was, which was a
-// category error: it was scaled off CAP_BASE so that raising cap rates would
-// not choke development. But a yield on cost is a fact about RENTS AGAINST
-// CONSTRUCTION COSTS — what the building earns over what it took to put up —
-// and it has nothing to do with what buyers are paying for stabilised income.
-// Tying them made the numerator of the pro forma a function of the discount
-// rate, which is not how a builder's economics work in any market.
-//
-// What actually reopens development after a hurdle rises is the SUPPLY side of
-// the construction industry: the cranes stop, the trades go idle, and idle
-// trades cut their prices until the deal pencils again. That loop lives in the
-// cost drift below, where it belongs.
-const BASE_YOC = 0.073, DEV_SPREAD = 0.022;
+// Development underwriting lives in value.ts (`devPencils`) and dev.ts
+// (`planDevelopment` / `underwriteDevelopment`). There is intentionally no
+// class-blind BASE_YOC or debt-index hurdle in the market loop anymore.
 
 /**
  * VACANCY IS THE RISK, AND THE RISK IS PRICED.
@@ -2198,102 +2171,29 @@ export function tickEcon(s: GameState) {
   const monthDeliveries = settleSupplyDeliveries(s);
   for (const k of BUILT_CLASSES) {
     const stk = e.stock?.[k] ?? CITY_STOCK[k];
-    // A DEVELOPER COUNTS THE SUBLET SPACE. It is the cheapest competition a new
-    // building will ever face — already built, already fitted out, offered at a
-    // discount by somebody who only wants to stop the bleeding — and no lender
-    // sizes a construction loan without it in the availability figure.
-    const vacNow = (e.cityVac?.[k] ?? NATURAL_VAC[k])
-      + (e.sublet?.[k] ?? 0) / Math.max(1, e.stock?.[k] ?? CITY_STOCK[k]);
-    // DEVELOPERS UNDERWRITE THE RENT THEY EXPECT, NOT THE RENT THAT EXISTS.
-    // This read today's rent, so supply responded to the present and the
-    // cycle had to be supplied by the phase clock. Every real overbuild is
-    // built out of extrapolation: three good years become a pro forma, the
-    // pro forma becomes a crane, and the crane opens into the glut those
-    // pro formas created. rentExp is an adaptive, lagging belief; the gap
-    // between it and today's rent is the momentum being extrapolated.
+    // Keep the adaptive rent belief for the residual/land market. The decision
+    // to order construction below now reads the same effective-rent pro forma
+    // as the actual parcel desk, rather than a second optimism formula.
     if (!e.rentExp) e.rentExp = { ...e.rentIdx };
     e.rentExp[k] += 0.045 * (e.rentIdx[k] - e.rentExp[k]);
-    // ...AND OPTIMISM SATURATES, IT DOES NOT HIT A WALL.
-    //
-    // This was `clamp(momentum * 2.4, -0.28, 0.45)`, and the clamp was the
-    // model rather than a guard on it. Momentum is itself clamped to +-0.30, so
-    // the product spans +-0.72 against limits of -0.28 and +0.45 — the outer
-    // clamp bites long before the inner one does. Measured over 3 towns x 50
-    // years x 4 classes it bound in 11.3% of all months (4.9% at the floor,
-    // 6.4% at the ceiling), which means that in one month in nine the
-    // underwritten rent was not "spot times 2.4 times momentum", it was
-    // whichever bound the market happened to be leaning on. The coefficient was
-    // being quoted as the elasticity while the rail did the work.
-    //
-    // The three other expectation clamps in this engine were measured at the
-    // same time and are all clean — the momentum clamp binds 0.4%, and both of
-    // the residual's belief clamps bind 0.0%, which is what a guard looks like.
-    // This one was the exception.
-    //
-    // So it saturates instead, the same way the glut branch of `vacTerm` was
-    // rewritten when it had the same problem: slope 2.4 at the origin, so the
-    // elasticity still means what it says where the market spends its time, and
-    // asymptotes at the same +0.45 / -0.28 it used to clip at, so the outer
-    // limits are unchanged. The asymmetry is deliberate and it is the point:
-    // developers extrapolate good news further than bad, which is why gluts get
-    // built and shortages persist.
-    const underwritten = (e.rentIdx[k] / RENT_BASE[k]) * (1 + developerOptimism(e, k));
-
-    // THE COST OF CAPITAL — A DEVELOPER'S FIRST NUMBER, AND IT WAS NOT HERE.
-    //
-    // This compared the rent a developer expects to what it costs to build,
-    // and then stopped, which means the single most important input to every
-    // real development decision — what money costs — had no vote. The stress
-    // test made it unmissable: pinned at a permanent SIXTEEN per cent for
-    // fifty years, this city built 31% more office than it did at five, which
-    // is not a simulation of anything. The real 1981 answer is that nothing
-    // gets built at all, for years, and then rents explode because nothing
-    // got built.
-    //
-    // So the pro forma reads like a pro forma. A project makes a yield on
-    // cost; the capital stack behind it requires a return, which is what debt
-    // costs plus the spread a merchant builder needs to be paid for two years
-    // of risk. Build when the first exceeds the second. Everything else in
-    // this block — the extrapolated rent, the vacancy gate, the credit index —
-    // is unchanged, and it still self-corrects: fewer starts mean lower
-    // vacancy, which means higher rents, which eventually pencils even at
-    // twelve per cent. It just takes a decade and a much higher rent to get
-    // there, which is precisely what happened.
-    //
-    // The rate is smoothed over about a year because a developer underwrites
-    // a two-year construction period, not a single month's print — a project
-    // is not killed by one bad meeting and not saved by one good one.
+    // The rate EMA remains a published market belief used by reports and old
+    // saves, but it no longer supplies a second, class-blind development
+    // hurdle. devPencils reads the shared class pro forma in value.ts.
     e.rateEma = (e.rateEma ?? e.indexRate) + 0.085 * (e.indexRate - (e.rateEma ?? e.indexRate));
-    const required = e.rateEma / 100 + DEV_SPREAD;
-    const yieldOnCost = BASE_YOC * (underwritten / e.costIdx);
-    const margin = yieldOnCost / required - 1;           // profit signal, as BELIEVED
-    // Nobody starts a building into a glut, whatever the pro forma says —
-    // vacancy above natural chokes starts long before the margin math does.
-    // The shortage signal has to be strong enough to actually pull supply
-    // through. Housing gets the sharpest response of the four, because a
-    // housing shortage is the most profitable thing that can happen to a
-    // builder and the model should behave like builders notice.
-    // HOW HARD OVERSUPPLY SHUTS THE CRANES DOWN.
+
+    // ONE ORDER HURDLE. The class-level pro forma reads effective rent (and
+    // therefore vacancy/concessions), operating cost, recoveries, hard and
+    // soft cost, management, exit cap and the same developer margin as the
+    // land residual and parcel desk. Credit availability remains a separate
+    // real constraint on how much of a clearing pipeline gets financed.
     //
-    // At gain 7, a class sitting two and a half points over its natural rate
-    // still broke ground at 83% of full pace, and six points over — a real
-    // glut — still ran at 58%. So the market kept feeding a market that was
-    // already full, and the statistics showed it: every class spent a MEDIAN
-    // of eight to ten years at a stretch above natural, which is not a cycle,
-    // it is a permanent condition with a wobble.
-    //
-    // Lenders and boards are far less patient than that. Two points over and
-    // the pace halves; five points over and almost nothing starts, which lets
-    // absorption actually catch up and turns the glut back into a phase.
-    const gain = k === "multifamily" ? 22 : 17;
-    const ceiling = k === "multifamily" ? 2.3 : 1.7;
-    const vacGate = clamp(1 - gain * (vacNow - NATURAL_VAC[k]), 0.08, ceiling);
-    const appetite = Math.max(0, margin + 0.06 * e.cycleDev) * e.creditIdx * vacGate;
-    // This coefficient is not the knob it looks like. Starts are gated on
-    // vacancy, so the loop is self-correcting: halve this and vacancy falls,
-    // which opens the gate, and supply comes back to the same fixed point.
-    // Measured over many centuries, moving it 6% moved long-run overbuild by
-    // nothing at all. The gate's SLOPE is the real control, not this.
+    // `vacGate` and the `cycleDev` start nudge are gone. They were duplicate
+    // verdicts layered on top of economics: one said "do not build because
+    // vacancy is high" after effective rent and exit cap had already priced
+    // that vacancy; the other ordered cranes because a phase label said boom
+    // even when the common pro forma said the project destroyed value.
+    const credit = clamp(e.creditIdx ?? 1, 0.25, 1.25);
+    const appetite = devPencils(e, k) * credit;
     // ONE DRAW, TWO JOBS. This month's noise sizes the order AND sets how long
     // it will take to entitle, below. Capturing it rather than calling `rng`
     // twice keeps the random stream byte-identical to before the entitlement
@@ -2301,7 +2201,7 @@ export function tickEcon(s: GameState) {
     // a different world — and it carries a fact besides: a bigger programme
     // takes longer to get through planning than a smaller one.
     const jitter = rng(s);
-    const start = stk * 0.0016 * Math.min(2.4, appetite * 5) * (0.7 + 0.6 * jitter);
+    const start = stk * 0.0016 * Math.min(2.4, appetite) * (0.7 + 0.6 * jitter);
     e.starts[k] = Math.round(start);
 
     // THE QUEUE. A start becomes a dated cohort; it delivers when its month

@@ -14,7 +14,7 @@ import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_L
 import { roleState, cmRiskMult } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, landRead, assetValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling,
-  HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE } from "./value";
+  developmentHurdle, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
@@ -320,6 +320,10 @@ export interface DevPlan {
   months: number;
   yieldOnCost: number;    // stabilised NOI ÷ total cost — the developer's number
   exitCap: number;
+  /** Exit yield grossed up by the same developer margin the land residual uses. */
+  requiredYield: number;
+  /** YoC / requiredYield. Below 1 destroys value; above 1 clears the hurdle. */
+  hurdleRatio: number;
   /** 0..1, 0.5 = market standard. What you chose to build to. */
   spec: number;
   lenderNote?: string;
@@ -983,11 +987,16 @@ export function planDevelopment(
   // development on the map look like a losing trade.
   const exitCap = capRateFor(asBuilt, s.econ, "good");
   const yieldOnCost = basisTotal > 0 ? (stabNoi / basisTotal) * 100 : 0;
+  // ONE HURDLE. The land residual, city, rivals and player desk all require
+  // the finished yield to clear the exit yield by DEV_MARGIN. A fixed 75bp
+  // spread here used to approve a project the residual correctly rejected.
+  const { requiredYield, hurdleRatio } = developmentHurdle(yieldOnCost, exitCap);
 
   const lenderNote = ltc === 0
     ? "No construction lender will touch spec commercial in a recession. Pre-lease it, or fund the whole thing yourself."
-    : yieldOnCost < exitCap + 0.75
-      ? `Yield on cost is ${yieldOnCost.toFixed(2)}% against a ${exitCap.toFixed(2)}% exit. That is not a development spread — it is a way to build a building for more than it is worth.`
+    : hurdleRatio < 1
+      ? `Yield on cost is ${yieldOnCost.toFixed(2)}% against a ${requiredYield.toFixed(2)}% required yield `
+        + `(${exitCap.toFixed(2)}% exit plus the developer margin). That is a way to build a building for more than it is worth.`
       : undefined;
 
   const plan: DevPlan = {
@@ -1001,7 +1010,7 @@ export function planDevelopment(
     // in the ground, which is why a development eats your balance sheet at the
     // start rather than in even slices.
     equityAtClose: Math.round((projectCost - commitment) * 0.55),
-    months, yieldOnCost, exitCap, spec: clamp01(spec), lenderNote,
+    months, yieldOnCost, exitCap, requiredYield, hurdleRatio, spec: clamp01(spec), lenderNote,
   };
   // The second half of the NaN gate above. Bad inputs are one way to get a
   // plan full of nonsense; a divide by a zero lot, a mix that sums to nothing,
@@ -1012,6 +1021,49 @@ export function planDevelopment(
     if (typeof v === "number" && !Number.isFinite(v)) return null;
   }
   return plan;
+}
+
+export interface DevelopmentUnderwriting {
+  plan: DevPlan;
+  clears: boolean;
+  financeable: boolean;
+  appetite: number;
+  why?: string;
+}
+
+/**
+ * THE SAME SITE-LEVEL UNDERWRITING FOR EVERY NON-PLAYER BUILDER.
+ *
+ * `planDevelopment` is the complete pro forma: site rent and vacancy, hard and
+ * soft cost, demolition, lease-up, land basis, construction rate, points,
+ * interest reserve, stabilized NOI and exit cap. The player sees it directly;
+ * city and rival starts used to substitute class indices and phase labels.
+ *
+ * The player may deliberately build a bad or all-cash project. Autonomous
+ * builders may not: they require both the common economic hurdle and an open
+ * construction desk.
+ */
+export function underwriteDevelopment(
+  s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
+  floors: number, coverage = 0.62,
+): DevelopmentUnderwriting | null {
+  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, "gmp");
+  if (!plan) return null;
+  const financeable = plan.ltcMax > 0 && plan.commitment > 0;
+  const clears = financeable && plan.hurdleRatio >= 1;
+  return {
+    plan,
+    clears,
+    financeable,
+    // Same land-constrained supply elasticity used by devPencils. No floor:
+    // a project below its required yield has zero autonomous appetite.
+    appetite: clears ? Math.min(3, Math.pow(plan.hurdleRatio, 1.2)) : 0,
+    why: !financeable
+      ? "No construction desk is open."
+      : plan.hurdleRatio < 1
+        ? `${plan.yieldOnCost.toFixed(2)}% yield on cost is below the ${plan.requiredYield.toFixed(2)}% required yield.`
+        : undefined,
+  };
 }
 
 export function startDevelopment(
@@ -1977,30 +2029,9 @@ export function setOpsPolicy(
 // bottom. Now a city start is a hole in the ground with a delivery date, its
 // space enters the pipeline the day it starts, and it competes with you only
 // when it opens.
-// HOW OFTEN ANYBODY BREAKS GROUND, by phase.
-//
-// Cut to a quarter of what it was. The old rate put 3.7 cranes up across the
-// town at any given moment and peaked at ten, in a city of 1,600 lots — a
-// skyline permanently under scaffolding, which is not what a real town looks
-// like even in a boom. A building is a three-year commitment somebody makes a
-// handful of times a decade, and it should read that way on the map.
-// THE CITY HAS TO BUILD, OR NOTHING EVER CHANGES.
-//
-// These were cut hard once, correctly, because the town was a forest of
-// cranes. They were cut too far: measured over fifty years the city started
-// THIRTEEN buildings, and forty of those fifty years had zero starts, on a map
-// with 476 vacant lots. That is not a quiet market, it is a stopped one — and
-// it starved the demand model, which can only move when the built environment
-// moves. Median parcel demand drifted 0.5 points in fifty years and not one
-// parcel of 1,662 moved more than five. The scenic backdrop the player
-// complained about was this, not the model behind it.
-//
-// Roughly 2.5x, still well under where it started, and now with the
-// replacement-cost brake underneath it so the rate is high in a boom and near
-// zero in a glut rather than flat.
-const START_RATE: Record<string, number> = {
-  expansion: 0.14, peak: 0.09, recovery: 0.065, recession: 0.012,
-};
+// How often anybody breaks ground now falls out of the economic order book and
+// the physical crew pool. There is no phase-specific start rate here: adding
+// one would be a second answer layered over the common pro forma.
 
 /**
  * THE BLOCK'S CORNICE DATUM, ENGINE SIDE.
@@ -2145,7 +2176,8 @@ export function useForZone(zone: string, demand: number, r: number, e?: Econ): D
    *     number five, a rail that is load-bearing rather than a guard.
    *   - Weighting by `classAppetite` instead. That reads far better on the
    *     headline numbers and is still wrong, because `e.starts` — the thing
-   *     that FILLS the book — is itself `vacGate(vacancy) x credit x margin`
+   *     that FILLED the book in that experiment — was itself
+   *     `vacGate(vacancy) x credit x margin`
    *     and `classAppetite` is `tight(vacancy) x credit x devPencils`. They are
    *     the same formula. Wiring one to the other does not build a mechanism,
    *     it builds a mirror: `orders -> breaks` duly went to r 0.39 and BACKWARDS
@@ -2514,17 +2546,10 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   const yr0 = START_YEAR + Math.floor(s.month / 12);
   const nextUse = useForZone(rec!.zoneDist ?? "C", rec!.demandScore, rng(s, "dev"), e);
   const lead = dominantOf(devMix(nextUse));
-  if (rng(s, "dev") > 0.62 * devPencils(e, lead)) return;
+  const teardownRoll = rng(s, "dev");
   const bbl = rec!.bbl;
-  const sf = rec!.bldgArea;
+  const oldSf = rec!.bldgArea;
   const cls = rec!.class as BuiltClass;
-  // Off the record, off the stock, and the lot is dirt again — the existing
-  // city and street builders will find it like any other site.
-  s.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
-  if (cls && (CITY_STOCK as Record<string, number>)[cls] !== undefined) {
-    addStock(e, cls as keyof typeof CITY_STOCK, -sf);
-  }
-  s.demolished = (s.demolished ?? 0) + 1;
 
   // NOBODY DEMOLISHES A BUILDING AND LEAVES A HOLE.
   //
@@ -2578,16 +2603,30 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   if (nfl > infill) { nfl = infill; nsf = Math.max(3000, Math.round((rec!.lotArea * 0.62 * nfl) / 100) * 100); }
   const ucap = MAX_FLOORS_BY_USE[nextUse];
   if (ucap !== undefined && nfl > ucap) { nfl = ucap; nsf = Math.max(3000, Math.round((rec!.lotArea * 0.62 * nfl) / 100) * 100); }
-  // Demolition, permits and mobilisation before a spade goes in — a
-  // redevelopment opens later than a job on clean dirt, and that lag is why a
-  // block can look derelict for two years in the middle of a boom.
-  const [bLo, bHi] = BUILD_MONTHS[lead];
-  const months = Math.round(bLo + rng(s, "dev") * (bHi - bLo)) + 4 + Math.round(rng(s, "dev") * 5);
-  // A REDEVELOPMENT GETS ITS GROUND FLOOR TOO. This is the teardown path — the
-  // replacement that goes up where something was knocked down — and it is most
-  // of what a mature city builds, so a shops-at-grade rule that skipped it
-  // would apply to almost nothing.
-  const tprog = capRetail(withStreetRetail(devMix(nextUse), nfl, demandNow(s, rec!)), nfl);
+
+  // The wrecking ball does not move until the replacement clears the same full
+  // site-level pro forma as every other builder. Because the existing building
+  // is still resolved here, the shared plan includes demolition cost.
+  const underwriting = underwriteDevelopment(s, parcels, bbl, nextUse, nfl, 0.62);
+  if (!underwriting?.clears || teardownRoll > 0.62 * underwriting.appetite) return;
+  const plan = underwriting.plan;
+  nsf = plan.sf;
+  nfl = plan.floors;
+  const tprog = plan.mix;
+  // Preserve both historical duration draws. The date itself now comes from
+  // the common schedule rather than a teardown-only clock.
+  const formerBuildRoll = rng(s, "dev");
+  const formerDemoRoll = rng(s, "dev");
+  void formerBuildRoll; void formerDemoRoll;
+  const months = plan.months;
+
+  // Off the record and off the stock only AFTER the replacement is funded.
+  s.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
+  if (cls && (CITY_STOCK as Record<string, number>)[cls] !== undefined) {
+    addStock(e, cls as keyof typeof CITY_STOCK, -oldSf);
+  }
+  s.demolished = (s.demolished ?? 0) + 1;
+
   (s.cityJobs ??= []).push({ bbl, use: nextUse, sf: nsf, floors: nfl, startM: s.month, deliverM: s.month + months, mix: tprog });
   // ...and the one delivery queue carries that same programme, whole.
   const teardownProgramme = programmeSf(nsf, tprog);
@@ -2726,40 +2765,6 @@ export function tickCityGrowth(
   s.cityJobs = still;
 
   // ---- starts --------------------------------------------------------------
-  // NOBODY BUILDS BELOW REPLACEMENT COST.
-  //
-  // The pipeline was governed by the phase of the cycle and nothing else, so a
-  // class could sit at twenty-five per cent vacancy with buildings trading at
-  // two thirds of what it costs to put them up, and the cranes kept turning.
-  // That is not a thing that happens. When finished product trades under
-  // replacement cost, development stops — at any interest rate, in any phase —
-  // because you would be manufacturing a loss, and that is the only mechanism
-  // that has ever ended a glut.
-  //
-  // It is a smooth brake rather than a cliff: at parity the market builds at
-  // its normal rate, at 0.85x it has nearly stopped, and above 1.15x it is a
-  // boom, which is exactly the overshoot that creates the NEXT glut.
-  const brake = buildClimate(s);
-  const rate = (START_RATE[s.econ.phase] ?? 0.1) * brake;
-  // THE STREET'S JOBS COME OUT OF THIS QUOTA, NOT ON TOP OF IT.
-  //
-  // A firm that broke ground on its own land this month has already added that
-  // building to the city. Counting it and then building the full anonymous
-  // quota as well put roughly half again as much construction into a town
-  // whose start rate was calibrated against its vacancy — every extra delivery
-  // bumped its own land and its neighbours', the whole map inflated, and both
-  // the player and the street ended a century four times richer for no reason
-  // anyone earned. The city grows at the rate the market supports; who owns
-  // the cranes is a different question.
-  // Named starts are banked against the quota rather than merely netted off
-  // the month they happen: the rate is a third of a building a month, so a
-  // month in which two firms broke ground cannot absorb them, and clamping at
-  // zero silently let the overflow through. The debt is worked off over the
-  // following months, which is also how a real pipeline behaves — a burst of
-  // starts is followed by a quiet stretch.
-  const named = (s.cityJobs ?? []).filter((j) => j.startM === s.month && j.firmId).length;
-  s.startDebt = Math.min(24, (s.startDebt ?? 0) + named);
-
   // WHAT THE MARKET ASKED FOR, SPENT ON ACTUAL LOTS.
   //
   // The rate above used to be the whole story, and it had nothing to do with
@@ -2768,23 +2773,10 @@ export function tickCityGrowth(
   // where it gets worked off: enough cranes to cover the floor area the market
   // has demanded, at whatever size the sites around here actually carry.
   //
-  // The phase rate and the replacement-cost brake still matter — they cap how
-  // fast the debt can be worked off, so a boom cannot break ground on five
-  // years of demand in one month, and a market below replacement cost stops
-  // building even with a backlog. That is the whole cycle: demand accumulates,
-  // cranes appear, then a quiet stretch while it is absorbed.
   const owed = s.econ.startOwed
     ? Object.values(s.econ.startOwed).reduce((a, v) => a + Math.max(0, v), 0) : 0;
   // ...converted to a crane count at the size of a typical building here.
   const wanted = owed / TYPICAL_SF;
-  // The phase rate now only shapes URGENCY — capacity and the replacement-cost
-  // brake are the real constraints, because in reality the space market's
-  // appetite is what drives construction and there is no separate metronome
-  // sitting above it. Left as a hard ceiling it throttled the pipeline below
-  // what the economics justified and the unbuilt backlog grew in 87% of
-  // months, reaching 8.1M sf — sixty per cent of the entire city, permanently
-  // demanded and never built.
-  const ceiling = Math.max(0.6, rate * 8);
   // AND THE TOWN ONLY HAS SO MANY CONTRACTORS.
   //
   // A backlog cleared at full speed put twenty-nine cranes up at once, which
@@ -2798,11 +2790,13 @@ export function tickCityGrowth(
   // Scaled to the size of the place, so a bigger city carries more of them.
   const capacity = crewCapacity(bbls, s.econ);
   const live = (s.cityJobs ?? []).filter((j) => !j.orphaned).length;
-  let n = Math.min(wanted, ceiling, Math.max(0, capacity - live));
+  // No phase metronome and no second replacement-cost brake. The order book
+  // was written by the shared pro forma; actual sites are checked against the
+  // full parcel pro forma below. Physical crew capacity is the only separate
+  // quantity constraint. Named rival starts already occupy a live crew slot,
+  // so `startDebt` would subtract them twice.
+  let n = Math.min(wanted, Math.max(0, capacity - live));
   n = Math.floor(n) + (rng(s, "dev") < n % 1 ? 1 : 0);
-  const paid = Math.min(n, s.startDebt ?? 0);
-  s.startDebt = (s.startDebt ?? 0) - paid;
-  n -= paid;
   // the town matures: later buildings are bigger than the first ones
   const maturity = Math.min(1, s.month / 780);
 
@@ -2869,11 +2863,12 @@ export function tickCityGrowth(
     // it: it gets shops at grade with something above them.
     if (use === "retail" && retailWantsMixed(rec)) use = "mixed";
     const cmix = devMix(use);
-    // Nobody builds into a glut. The class this site would be has to want the
-    // space before a shovel moves, which is the single link that turns the
-    // supply side from a metronome into a market.
     const lead = dominantOf(cmix);
-    if (rng(s, "dev") > Math.min(1, classAppetite(s, lead) * 0.85)) continue;
+    // Preserve the established RNG draw count while retiring the duplicate
+    // classAppetite verdict. The order book has already passed the class-level
+    // pro forma; the actual parcel gets the full shared underwriting below.
+    const formerAppetiteRoll = rng(s, "dev");
+    void formerAppetiteRoll;
 
     const farMax = farMaxFor(rec);
     // young town builds small; a mature one builds to the envelope
@@ -2896,17 +2891,19 @@ export function tickCityGrowth(
       floors = cap;
       sf = Math.max(3000, Math.round((rec.lotArea * 0.62 * floors) / 100) * 100);
     }
-    // THE PROGRAMME IS SETTLED ONCE, HERE, AND TRAVELS WITH THE JOB.
-    //
-    // The ground-floor retail share depends on the final floor count, which is
-    // only known after the infill and use caps above have had their say — and
-    // the pipeline below registers square feet BY CLASS the day the hole is
-    // dug, while delivery builds the record fifty months later. Recomputing it
-    // at the far end from a demand score that has moved in the meantime would
-    // let the market absorb one building and receive a different one.
-    const prog = capRetail(withStreetRetail(cmix, floors, dNow), floors);
-    const [bLo, bHi] = BUILD_MONTHS[lead];
-    const months = Math.round(bLo + rng(s, "dev") * (bHi - bLo));
+    // THE ACTUAL SITE GETS THE ACTUAL DESK. Same rent, vacancy, cost, land,
+    // financing, lease-up reserve, NOI and required margin the player sees.
+    const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62);
+    if (!underwriting?.clears) continue;
+    const plan = underwriting.plan;
+    sf = plan.sf;
+    floors = plan.floors;
+    const prog = plan.mix;
+    // Preserve the old duration draw count. Duration itself now comes from the
+    // same massing/schedule calculation as the player's project.
+    const formerDurationRoll = rng(s, "dev");
+    void formerDurationRoll;
+    const months = plan.months;
     const deliverM = s.month + months;
     s.cityJobs.push({ bbl, use, sf, floors, startM: s.month, deliverM, mix: prog });
     noteRecordPlan(s, parcels, bbl, lead, sf, floors, "The city");
@@ -2932,7 +2929,7 @@ export function tickCityGrowth(
     // the dry powder buys the dirt and puts their name on the crane; if
     // nobody takes it, the city builds it the way it always did.
     const nearPlayer = (adjacency?.[bbl] ?? []).some((a) => !!s.holdings[a]);
-    const claimed = claimJob(s, parcels, bbl, use, sf, floors, deliverM, nearPlayer);
+    const claimed = claimJob(s, parcels, bbl, use, sf, floors, deliverM, nearPlayer, plan);
     if (!claimed && rng(s, "dev") < 0.4) {
       s.news.unshift({
         q: s.month, kind: "info",

@@ -55,6 +55,7 @@ for (let i = 0; i <= plan.months; i++) {
   g.cash = Math.max(g.cash, 500_000_000);
 }
 const after = E.resolveRec(parcels, g, bbl);
+console.log("  delivered programme", after.class, JSON.stringify(after.mix ?? {}));
 check(!g.developments[bbl], "conversion completes");
 check((after.mix?.multifamily ?? (after.class === "multifamily" ? 1 : 0)) > 0.5, "delivered shell is housing-dominant");
 check(g.econ.stock.multifamily > beforeMf, "new housing enters city stock at delivery");

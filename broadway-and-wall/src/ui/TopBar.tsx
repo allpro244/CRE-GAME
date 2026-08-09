@@ -178,14 +178,23 @@ export default function TopBar() {
               player had to mentally multiply before it could be compared with
               anything else on screen. */}
           <Stat label="CF / yr" value={usd(cf * 12)} bad={cf < 0} drop={2} w={88} />
+          {/* Base rate rides with NW/CF (drop 2). Market phase and vacant-lot
+              counts are drop 3 — only on very wide screens — so they cannot
+              clip into "MA" under the Portfolio button on a normal desktop. */}
           <Stat
             label="Base rate"
             value={pct(game.econ.indexRate)}
-            drop={3}
+            drop={2}
             w={72}
             title="The benchmark every loan in town prices off. Your floating loans reprice to it monthly (through the cap strike, if you bought one), and any new quote — mortgage, construction loan, credit line — is this rate plus the lender's spread."
           />
-          <Stat label="Market" value={game.econ.phase} drop={3} w={84} />
+          <Stat
+            label="Market"
+            value={game.econ.phase}
+            drop={3}
+            w={84}
+            title="Cycle phase — also on the Economy page."
+          />
           <Stat
             drop={3}
             w={92}

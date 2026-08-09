@@ -258,6 +258,18 @@ body {
 .topbar-game > :not(.topbar-stats) { flex: 0 0 auto; }
 .topbar-right { flex: 0 0 auto; }
 .tstat { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15; min-width: 0; }
+/* Droppable stats must not compress into "MA" / "re" under Portfolio. They
+   keep their full width or the media queries remove the whole readout. */
+.topbar-stats .tstat:not(.tstat-keep) {
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+.topbar-stats .tstat:not(.tstat-keep) .tstat-value,
+.topbar-stats .tstat:not(.tstat-keep) .tstat-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+}
 .tstat-keep { flex: 0 0 auto; overflow: visible; }
 .tstat-keep .tstat-value { overflow: visible; text-overflow: clip; white-space: nowrap; }
 .tstat-wide .tstat-label { font-family: var(--serif); font-size: 16px; color: var(--ink); letter-spacing: 0.4px; }
@@ -587,23 +599,16 @@ body {
    to drop for space; the identity of the city is not. */
 @media (max-width: 1900px) { .brand-sub:not(.city-locked) { display: none; } .badge { display: none; } }
 /* THE BAR SHEDS READOUTS, NEVER CONTROLS.
-   .topbar-game is nowrap with eight readouts, six nav buttons, two lenses and
-   three advance buttons in it. At 1280 — a MacBook, a 1366x768 laptop, any
-   half-screen window — that overflowed the viewport and took Advance with it
-   off the right edge: the single button the game cannot be played without.
-   Now the expendable readouts go first, in ranked order, and the controls
-   always fit. Every number dropped here is still on a page. */
+   Extras are OFF by default and only appear when the viewport is wide enough.
+   The old max-width:1900 hide rule assumed a shorter nav — Notes is always
+   visible now, and with date/cash/line locked in the vital row a 1920px window
+   still clipped "Market" into "MA" under Portfolio. Inverted: show when there
+   is room. Every dropped number is still on Economy / the property desk. */
 .topbar-game { min-width: 0; }
-/* The Owners lens added a third control to this row and the bar ran the
-   Advance button off the edge at 1600. The thresholds move with the contents:
-   the expendable readouts go earlier now, and every one of them is still on a
-   page. */
-/* Breakpoints pulled forward: with the bar now WRAPPING instead of
-   overlapping, a readout kept one pixel too long costs a whole second row of
-   chrome rather than a collision. Measured across ten widths with a headless
-   browser until the bar sat on one line through the common range. */
-@media (max-width: 1900px) { .tstat-d3 { display: none; } }
-@media (max-width: 1680px) { .tstat-d2 { display: none; } }
+.tstat-d3 { display: none; }
+.tstat-d2 { display: none; }
+@media (min-width: 1680px) { .tstat-d2 { display: flex; } }
+@media (min-width: 2200px) { .tstat-d3 { display: flex; } }
 @media (max-width: 1360px) {
   .brand-name { font-size: 18px; }
   .topbar-right .stat { display: none; }

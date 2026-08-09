@@ -22,6 +22,7 @@ import { logBooks, monthLabel, START_YEAR } from "./types";
 import { assetValue, resolveRec } from "./value";
 import { ownerOf, gradeOf, tie } from "./rivals";
 import { describeFirm } from "./firm";
+import { holderOf } from "./owners";
 import { rrange } from "./market";
 import { executePurchase } from "./actions";
 
@@ -140,7 +141,7 @@ export function anonymousOwner(rec: ParcelRecord | null, month: number, r: numbe
 }
 
 /** Who owns this building — a fact about the building, not about the listing. */
-export function sellerOf(s: GameState, parcels: ParcelTable, bbl: string): { kind: SellerKind; name: string } {
+export function sellerOf(s: GameState, parcels: ParcelTable, bbl: string): { kind: SellerKind; name: string; holderId?: string } {
   const rival = ownerOf(s, bbl);
   // A RECEIVER WINDING UP A NAMED FIRM IS STILL A NAMED FIRM'S BUILDING.
   // Losing a bidding war to a receiver is nothing; buying Kestrel Capital's
@@ -162,6 +163,14 @@ export function sellerOf(s: GameState, parcels: ParcelTable, bbl: string): { kin
   for (const ch of bbl) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
   const r = ((h >>> 0) % 1000) / 1000;
   if (li?.distress) return { kind: r < 0.45 ? "lender" : r < 0.8 ? "estate" : "partnership", name: SELLERS[r < 0.45 ? "lender" : r < 0.8 ? "estate" : "partnership"].label };
+  // AND THE NINE BUILDINGS IN TEN HAVE NAMES NOW. `anonymousOwner` derived a
+  // correct archetype off the record and left it anonymous, so the fifty
+  // biggest buildings in town were owned by fifty copies of the same sentence.
+  // The register holds the same distribution of archetypes — the tier bands in
+  // owners.ts are the thresholds this function used — attached to people who
+  // own more than one building and remember what you did on the last one.
+  const held = holderOf(s, parcels, bbl);
+  if (held) return { kind: held.kind, name: held.name, holderId: held.id };
   const kind = anonymousOwner(resolveRec(parcels, s, bbl), s.month, r);
   return { kind, name: SELLERS[kind].label };
 }

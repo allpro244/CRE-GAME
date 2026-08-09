@@ -12,6 +12,7 @@ import { locAvailable } from "./credit";
 import { marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM } from "./facility";
+import { holderOf, offend, credit, isCold, relOf, relMult } from "./owners";
 import { originate, quote, productById, prepayPenalty } from "./debt";
 import { takeoverDevelopment, buildClimate } from "./dev";
 import { demandNow } from "./demand";
@@ -238,6 +239,15 @@ export function executePurchase(
   // and today's `s.econ` and the deed wrote a different one three months later
   // — the same fault the listing path fixed, still live on every door the
   // player knocked on. See Approach.roll and stampApproach.
+  // A CLOSED DEAL IS THE OTHER HALF OF THE RELATIONSHIP, and it is filed
+  // against the person you bought from before the deed changes hands and they
+  // stop being that person. See owners.credit: a holder who has sold to you
+  // once picks up the phone the next time, which is most of what a track
+  // record buys anybody in this business.
+  {
+    const held = holderOf(next, parcels, bbl);
+    if (held) credit(next, held.id);
+  }
   const wasApproach = next.approaches[bbl];
   const paper = wasListing?.roll !== undefined || wasListing?.occ !== undefined ? wasListing
     : wasApproach && !wasApproach.refused && (wasApproach.roll !== undefined || wasApproach.occ !== undefined) ? wasApproach
@@ -811,6 +821,28 @@ function shutDoor(na: { refused: boolean; coldUntilM?: number }, month: number, 
   na.coldUntilM = month + Math.round(DOOR_MIN_M + (DOOR_MAX_M - DOOR_MIN_M) * o);
 }
 
+/**
+ * ...AND THE PERSON REMEMBERS IT, NOT JUST THE BUILDING.
+ *
+ * `shutDoor` closes one conversation about one address. A family that has just
+ * been lowballed does not carefully file that opinion under the street number:
+ * they have a view about YOU now, and it applies to the other three corners
+ * they own. This is what the register in owners.ts is for, and it is the
+ * difference between a market of buildings and a market of people.
+ *
+ * Both are recorded because both are real and they run on different clocks: the
+ * building is shut for a stated period, and the relationship is a standing fact
+ * that hardens with repetition and softens with deals closed.
+ */
+function shutDoorWithOwner(
+  s: GameState, parcels: ParcelTable, bbl: string,
+  na: { refused: boolean; coldUntilM?: number }, offence: number,
+) {
+  shutDoor(na, s.month, offence);
+  const held = holderOf(s, parcels, bbl);
+  if (held) offend(s, held.id, Math.round(DOOR_MIN_M + (DOOR_MAX_M - DOOR_MIN_M) * Math.max(0, Math.min(1, offence))));
+}
+
 export function approachOwner(
   s: GameState, parcels: ParcelTable, adjacency: Adjacency, bbl: string,
 ): { s: GameState; err?: string; refused?: boolean; ask?: number; blind?: boolean } {
@@ -867,6 +899,23 @@ export function approachOwner(
   // have the conversation. You still do not get the building.
   const owner = ownerOf(next, bbl);
   const stressed = (owner?.stressMs ?? 0) > 4;
+  // WHERE YOU STAND WITH THESE PEOPLE, which until the register existed was
+  // nowhere: every approach was a cold call to a stranger, however many of
+  // their buildings you had already been thrown out of. A holder you have
+  // insulted will not take the call at all while the memory is fresh, and one
+  // who has sold to you cleanly is materially easier to reach — which is what
+  // a track record is actually worth in this business, and the reason a
+  // careful buyer works a relationship instead of a listing.
+  const held = holderOf(next, parcels, bbl);
+  if (held && isCold(next, held.id)) {
+    const yrs = ((relOf(next, held.id).coldUntilM ?? 0) - next.month) / 12;
+    return {
+      s,
+      err: yrs > 1.5
+        ? `${held.name} will not take your call. Whatever happened between you, they own more than this one building and they have not forgotten it.`
+        : `${held.name} are not taking your call at the moment.`,
+    };
+  }
   const styleHold = owner
     ? (owner.style === "family" ? 0.30 : owner.style === "core" ? 0.14 : owner.style === "developer" ? 0.05 : -0.04)
     : 0;
@@ -914,7 +963,11 @@ export function approachOwner(
     * (owner && owner.cash < 0 ? 0.81 : 1)                // was -0.15
     * (rec.class === "land" ? 0.85 : 1)                   // was -0.12
     * (next.econ.phase === "recession" ? 0.87 : 1)        // was -0.10
-    * (1 + (demandLinear(rec.demandScore) - 50) / 390),   // was +(d-50)/500
+    * (1 + (demandLinear(rec.demandScore) - 50) / 390)    // was +(d-50)/500
+    // ...and who you are to THEM. Above 1 is harder. See owners.relMult: it
+    // takes several clean closings to undo one bad conversation, which is the
+    // honest exchange rate and the reason the register has a memory at all.
+    * (held ? relMult(next, held.id) : 1),
   ));
   if (rng(next) < refuseP) {
     next.approaches[bbl] = { q: next.month, refused: true };
@@ -924,7 +977,11 @@ export function approachOwner(
         ? `${rec.address}: ${owner.name} is not selling`
           + (pressure > 0.4 ? " — and they know exactly what you are assembling." : ".")
           + (owner.style === "family" ? " They have owned it for two generations and do not need the money." : "")
-        : `${rec.address}: the owner isn't selling${pressure > 0.4 ? " — they know what you're assembling" : ""}.`,
+        : held
+          ? `${rec.address}: ${held.name} is not selling`
+            + (pressure > 0.4 ? " — and they know exactly what you are assembling." : ".")
+            + (held.kind === "local" ? ` They have been on this side of town since ${held.since} and do not need the money.` : "")
+          : `${rec.address}: the owner isn't selling${pressure > 0.4 ? " — they know what you're assembling" : ""}.`,
     });
     return { s: next, refused: true };
   }
@@ -941,8 +998,19 @@ export function approachOwner(
   // family firm that has finally decided to sell names a number that reflects
   // two generations of not needing to; a stressed shop takes what clears the
   // loan.
+  // WHAT THEY WANT ON TOP, AND WHO THEY ARE IS MOST OF IT. A named firm's
+  // style did this and a private holder's got a flat zero, because there was
+  // no private holder — only an archetype re-derived per building. There is
+  // one now, with a nature that does not change between their four corners, so
+  // the premium is theirs: a family that does not need the money asks for two
+  // generations of not needing it, and an estate with executors and a clock
+  // asks for less than the market because what they want is a closing date.
+  const HOLDER_ASK: Record<string, number> = {
+    local: 0.13, estate: -0.08, institution: 0.05, partnership: 0.07, developer: 0.02, lender: -0.04,
+  };
   const styleAsk = owner
     ? (owner.style === "family" ? 0.20 : owner.style === "core" ? 0.06 : owner.style === "opportunistic" ? 0.10 : 0.04)
+    : held ? (HOLDER_ASK[held.kind] ?? 0)
     : 0;
   const markup =
     // The LAST deed is the expensive one. A linear premium is a toll; a holdout
@@ -968,7 +1036,7 @@ export function approachOwner(
     next.approaches[bbl] = stampApproach(next, rec, { q: next.month, refused: false, mode: "offer", reserve: number });
     next.news.unshift({
       q: next.month, kind: "info",
-      text: `${rec.address}: ${owner ? owner.name + " will talk" : "the owner will talk"} — and will not put a number on it. `
+      text: `${rec.address}: ${(owner?.name ?? held?.name ?? "the owner")} will talk — and will not put a number on it. `
         + `"Make me an offer." `
         + (ageM > 120 ? "Nobody has valued that building in a very long time, which cuts both ways. " : "")
         + `They will listen for six months.`,
@@ -978,7 +1046,7 @@ export function approachOwner(
   next.approaches[bbl] = stampApproach(next, rec, { q: next.month, refused: false, mode: "ask", ask: number });
   next.news.unshift({
     q: next.month, kind: "info",
-    text: `${rec.address}: ${owner ? owner.name + " would take" : "the owner would take"} $${(number / 1e6).toFixed(2)}M`
+    text: `${rec.address}: ${(owner?.name ?? held?.name ?? "the owner")} would take $${(number / 1e6).toFixed(2)}M`
       + (stressed ? " — they are under pressure and it shows in the number."
         : number > value * 1.5 ? " — which is not a price, it is a way of saying no politely."
         : "")
@@ -1112,7 +1180,7 @@ function bidBlind(
   // far under their reserve the bid was, and how many times you had been back.
   // A bid a fifth under closes the door for a year; one at half their number
   // after three visits closes it for most of a cycle.
-  shutDoor(na, next.month, Math.max(0, gap - 0.10) * 2.0 + 0.15 * (probes - 1));
+  shutDoorWithOwner(next, parcels, bbl, na, Math.max(0, gap - 0.10) * 2.0 + 0.15 * (probes - 1));
   delete na.reserve;
   delete na.ask;
   next.news.unshift({
@@ -1157,7 +1225,7 @@ export function buyOffMarket(
   const na = next.approaches[bbl];
   // `disc` is how far under their own stated number you came, which is the
   // whole of the offence when they have already told you what they want.
-  shutDoor(na, next.month, Math.max(0, disc - 0.10) * 2.2);
+  shutDoorWithOwner(next, parcels, bbl, na, Math.max(0, disc - 0.10) * 2.2);
   delete na.ask;
   next.news.unshift({
     q: next.month, kind: "warn",
@@ -1220,7 +1288,7 @@ export function counterOffMarket(
   }
   // `cut` is how deep the counter went off their own ask. A shave they will
   // forgive; halving their number in a single counter they will not.
-  shutDoor(na, next.month, Math.max(0, cut - 0.12) * 2.4);
+  shutDoorWithOwner(next, parcels, bbl, na, Math.max(0, cut - 0.12) * 2.4);
   delete na.ask;
   const shutFor = (na.coldUntilM ?? 0) - next.month;
   next.news.unshift({

@@ -24,6 +24,7 @@ import { MILESTONES, APPROACH_LIFE_M } from "@/engine/sim";
 import { isCommercial, vacantSf, walt, loiSigningCost, exclusiveFeeRate, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, buyoutQuote, depositsHeld, agentFloor, AGENT_FLOOR_MIN, AGENT_FLOOR_MAX, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty, productById } from "@/engine/debt";
 import { facilityQuotes, facilityMetrics, facilityStatus, pledgeable, pledged, releaseCost, allocatedAmount, FACILITY_MIN_ASSETS, RELEASE_PREMIUM } from "@/engine/facility";
+import { holderOf, holdingsOf, relOf, isCold, standingWith } from "@/engine/owners";
 import { lenderHealth, capitalRatio, lenderBlurb, targetCapital, lenderPressure, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { noteBid, payoffQuote } from "@/engine/notes";
 import { depositFor as auctionDepositFor } from "@/engine/auction";
@@ -1114,8 +1115,40 @@ function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: Prop
         // about how hard the door is to open, which is why it belongs up here
         // beside the address and not inside a negotiation you have not opened.
         if (!own) {
+          // ...AND MOST OF THE TIME THERE IS A NAME ON IT NOW. The archetype is
+          // still what a broker leads with — it is the first thing you learn
+          // about how hard the door is — but it belongs to somebody, that
+          // somebody owns other buildings, and how you have treated them
+          // before is the most important fact in the room. See engine/owners.ts.
+          const held = holderOf(game, parcels, selectedBBL);
           const kind = sellerOf(game, parcels, selectedBBL).kind;
-          return <div className="hint">{sellerProfile(kind).holds}</div>;
+          if (!held) return <div className="hint">{sellerProfile(kind).holds}</div>;
+          const book = holdingsOf(game, parcels, held.id);
+          const rel = relOf(game, held.id);
+          const cold = isCold(game, held.id);
+          return (
+            <div className="hint">
+              Owned by <strong>{held.name}</strong>
+              {book.length > 1 && <span> — {book.length} buildings in town</span>}.
+              <div style={{ marginTop: 3 }}>{held.note}</div>
+              <div style={{ marginTop: 3 }} className={cold ? "neg" : (rel.deals ?? 0) > 0 ? "" : "dim"}>
+                {standingWith(game, held.id)}
+              </div>
+              {book.length > 1 && (
+                <div className="dim" style={{ marginTop: 3 }}>
+                  {book.filter((b) => b !== selectedBBL).slice(0, 4).map((b) => (
+                    <span key={b}>
+                      <a className="lnk" onClick={(e) => { e.stopPropagation(); useStore.getState().focus(b, true); }}>
+                        {parcels[b]?.address ?? b}
+                      </a>
+                      {" · "}
+                    </span>
+                  ))}
+                  {book.length > 5 ? `and ${book.length - 5} more` : ""}
+                </div>
+              )}
+            </div>
+          );
         }
         return (
           <div className="hint" style={{ cursor: "pointer" }}
@@ -6140,7 +6173,11 @@ function BuildingDatabase() {
       const rec = resolveRec(parcels, game, bbl);
       if (!rec || rec.class === "land" || !rec.bldgArea) continue;
       const h = game.holdings[bbl];
-      const own = h ? "You" : (ownerOf(game, bbl)?.name ?? "private");
+      // NOBODY IS CALLED "PRIVATE". Rival firms have names and so, now, does
+      // every private holder in the register — which is the whole point of it:
+      // a list of the fifty biggest buildings in town used to be fifty rows of
+      // the same word.
+      const own = h ? "You" : (ownerOf(game, bbl)?.name ?? holderOf(game, parcels, bbl)?.name ?? "private");
       // Your own buildings price on the condition you have actually let them
       // drift to; everyone else's on the street's grade, as before.
       const cond = h?.condition ?? gradeOf(game, rec);
@@ -6994,7 +7031,7 @@ function ResearchPage() {
   const [rtab, setRtab] = useState<string>(() => pendingRTab ?? "sectors");
   useEffect(() => { pendingRTab = null; }, []);
   const RTABS: [string, string][] = [["sectors", "Sectors"], ["trades", "Trades"],
-    ["street", "The street"], ["stock", "Properties"], ["comps", "Prints"]];
+    ["street", "The street"], ["landlords", "Landlords"], ["stock", "Properties"], ["comps", "Prints"]];
   return (
     <div>
       <div className="stat-strip">
@@ -7143,6 +7180,9 @@ function ResearchPage() {
         </div>)}
         {rtab === "street" && (<div>
           <TheStreet />
+        </div>)}
+        {rtab === "landlords" && (<div>
+          <Landlords />
         </div>)}
         {rtab === "stock" && (<div>
           <BuildingDatabase />
@@ -8642,6 +8682,85 @@ function HousePolicy() {
  * The order is the order a lender's credit memo puts them in: what you owe,
  * what it costs, what covers it, when it comes due, and what could go wrong.
  */
+/**
+ * THE LANDLORDS — the names behind the nine buildings in ten that no firm owns.
+ *
+ * The complaint that produced this was that the owners of the fifty biggest
+ * buildings in town all read "private", which is not a fact about a city, it is
+ * a missing one. `The street` lists the operating firms you compete with; this
+ * lists the people you BUY FROM, which in any real market is a different and
+ * much larger set. Sorted by square footage, because that is the order in which
+ * they matter to you.
+ *
+ * Every column is a fact you can act on: how much they hold, how long they have
+ * been here, what kind of counterparty they are — and where you stand with
+ * them, which is the one that decides whether the phone gets answered.
+ */
+function Landlords() {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const rows = useMemo(() => {
+    const by = new Map<string, { h: ReturnType<typeof holderOf>; n: number; sf: number; val: number }>();
+    for (const bbl of Object.keys(parcels)) {
+      const held = holderOf(game, parcels, bbl);
+      if (!held) continue;
+      const rec = resolveRec(parcels, game, bbl);
+      if (!rec) continue;
+      const e = by.get(held.id) ?? { h: held, n: 0, sf: 0, val: 0 };
+      e.n++;
+      e.sf += rec.bldgArea ?? 0;
+      e.val += assetValue(rec, game.econ, gradeOf(game, rec));
+      by.set(held.id, e);
+    }
+    return [...by.values()].sort((a, b) => b.sf - a.sf);
+  }, [game, parcels]);
+  const totSf = rows.reduce((a, r) => a + r.sf, 0);
+  const top10 = rows.slice(0, 10).reduce((a, r) => a + r.sf, 0);
+
+  return (
+    <div>
+      <div className="hint">
+        {rows.length} private holders own {sf(totSf)} between them — the ten biggest hold{" "}
+        {totSf > 0 ? ((top10 / totSf) * 100).toFixed(0) : 0}% of it. These are not your competitors;
+        they are who you buy from, and most of them have been here longer than you have.
+      </div>
+      <div className="scroll-x">
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>Holder</th><th>Kind</th><th className="num">Buildings</th><th className="num">Square feet</th>
+              <th className="num">Est. value</th><th className="num">Since</th><th>Where you stand</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.slice(0, 40).map((r) => {
+              const cold = isCold(game, r.h!.id);
+              const rel = relOf(game, r.h!.id);
+              return (
+                <tr key={r.h!.id} title={r.h!.note}>
+                  <td>{r.h!.name}</td>
+                  <td className="dim">{r.h!.kind}</td>
+                  <td className="num">{r.n}</td>
+                  <td className="num">{sf(r.sf)}</td>
+                  <td className="num">{usd(r.val)}</td>
+                  <td className="num dim">{r.h!.since}</td>
+                  <td className={cold ? "neg" : (rel.deals ?? 0) > 0 ? "" : "dim"}>
+                    {standingWith(game, r.h!.id)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="hint">
+        An offer somebody finds insulting is not filed against the building — it is filed against THEM, and
+        they own the other four. That is what the last column is for.
+      </div>
+    </div>
+  );
+}
+
 function DebtPage() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;

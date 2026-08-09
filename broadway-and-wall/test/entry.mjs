@@ -29,6 +29,9 @@ export const MODULES = [
   // price and the tick. A harness that cannot reach it cannot test the one
   // instrument in the game that can take the whole book at once.
   "facility",
+  // owners carries the register of named private holders: who owns what, what
+  // they think of you, and when they leave the market.
+  "owners",
 ];
 
 export function writeEntry(path) {

@@ -14,6 +14,7 @@ import { tickLoan, prepayPenalty, productById } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
 import { tickLoc, locRate } from "./credit";
 import { tickFacility } from "./facility";
+import { tickHolders } from "./owners";
 import { tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing } from "./dev";
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
 import { tickDemand } from "./demand";
@@ -211,7 +212,38 @@ export function newGame(seed: number, parcels?: ParcelTable, cash0: number = DEF
 // occasional trophy so the skyline stays aspirational. Some sellers are
 // MOTIVATED — estates, margin calls, partnership blowups — and price to move.
 // That's where a sharp buyer makes their money.
+/**
+ * A NAMED HOLDER LEAVING THE MARKET, listed on the seller's own terms.
+ *
+ * `tickHolders` decides WHO is selling and why; this prices it, because there
+ * is one place in this engine that knows how to write an ask and it is the
+ * function below. An estate and a split partnership want it done and take the
+ * distress mark; a fund with a committee and a builder recycling do not have to
+ * and will not.
+ */
+function listHolderExit(s: GameState, parcels: ParcelTable) {
+  const { bbls, distress } = tickHolders(s, parcels, rng);
+  for (const bbl of bbls) {
+    if (s.listings.some((l) => l.bbl === bbl) || s.holdings[bbl]) continue;
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec) continue;
+    const value = assetValue(rec, s.econ, gradeOf(s, rec));
+    if (value <= 0) continue;
+    const ask = Math.round(value * (distress ? rrange(s, 0.78, 0.93) : rrange(s, 0.96, 1.08)) / 1000) * 1000;
+    const listing: Listing = {
+      bbl, ask, listedM: s.month,
+      expiresM: s.month + Math.round(rrange(s, ...LISTING_LIFE_M)),
+      distress: distress || undefined,
+    };
+    if (rec.class !== "land" && rec.bldgArea > 0) stampListing(s, rec, listing);
+    s.listings.push(listing);
+  }
+}
+
 export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string[]) {
+  // The register's own life runs first, so a book that came to market this
+  // month is on the tape the player reads this month.
+  listHolderExit(s, parcels);
   // STALE LISTINGS REPRICE DOWN — TO A FLOOR, NOT TO ZERO.
   //
   // A monthly 1.5% cut compounded for the life of a listing, and the market

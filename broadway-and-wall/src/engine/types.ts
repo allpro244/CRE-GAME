@@ -1935,6 +1935,18 @@ export interface GameState {
   /** Loans in default and what is being done about them. See engine/workout.ts. */
   workouts?: Record<string, Workout>;
   /**
+   * WHAT THE NAMED PRIVATE HOLDERS THINK OF YOU. An insult is filed against the
+   * HOLDER, not the building, so a family with four corners closes all four.
+   * This is the half that must be saved, because it is the only part of the
+   * register that is not a pure function of the deeds.
+   */
+  holderRel?: Record<string, import("./owners").HolderRel>;
+  /**
+   * The month a named holder left the market, so nobody's estate is settled
+   * twice. See tickHolders.
+   */
+  holderExit?: Record<string, number>;
+  /**
    * ONE LOAN, MANY DEEDS. Absent until the player papers one, and there is at
    * most one at a time — a second facility would be a second first lien on the
    * same collateral, which is not a thing. See engine/facility.ts.

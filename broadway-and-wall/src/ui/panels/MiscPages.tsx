@@ -186,7 +186,8 @@ export function SavesPage() {
   );
 }
 
-// Named saves only — there is no autosave. Write a slot when you want one.
+// Named saves are deliberate snapshots; the live campaign is also protected by
+// a debounced idle autosave that stays out of this list.
 export function SaveSlots() {
   const slots = useStore((s) => s.slots);
   const { saveTo, loadFrom, dropSave, refreshSlots } = useStore.getState();
@@ -198,7 +199,10 @@ export function SaveSlots() {
   return (
     <div className="page-section">
       <div className="page-section-head">Saved games</div>
-      <div className="hint">Nothing writes itself. Name a slot when you want to keep a copy — that is also what Continue opens on the start screen.</div>
+      <div className="hint">
+        Your live campaign autosaves after changes and Continue opens the newest state. Name a slot when you want
+        a permanent snapshot you can return to without overwriting it.
+      </div>
       <div className="btn-row" style={{ marginTop: 8 }}>
         <input
           className="ask-input mono"

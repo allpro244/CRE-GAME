@@ -43,9 +43,8 @@ export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "eco
 export type Phase = "boot" | "menu" | "generating" | "playing";
 
 /**
- * The campaign the start screen offers to continue — the newest named save.
- * There is no autosave; if you did not write a slot on Saves, there is nothing
- * to resume. The save carries island/seed/size/build-out so Continue rebuilds
+ * The campaign the start screen offers to continue — the newest autosave or
+ * named snapshot. The save carries island/seed/size/build-out so Continue rebuilds
  * the right town even when this browser last chose a different one.
  */
 export interface Resume {
@@ -251,7 +250,7 @@ function toast(text: string, kind: "ok" | "err" = "ok") {
   useStore.setState({ toast: { text, kind, at: Date.now() } });
 }
 
-/** Leftover crash-guard / yearly slots from builds that still autosaved. */
+/** The live crash-protection slot and legacy auto-slot names. */
 function isAutoSlot(slot: string): boolean {
   return slot === "auto" || slot.startsWith("auto@") || slot.startsWith("Auto · ");
 }
@@ -301,12 +300,33 @@ function buildTown(island: string, seed: number, size: string, dev: string) {
   return { built, parcels };
 }
 /**
- * No autosave. Call sites still say `persist(next)` after mutations; that used
- * to flush IndexedDB and was a real share of click lag. Progress survives only
- * when the player writes a named slot on Saves.
+ * AUTOSAVE WITHOUT PUTTING INDEXEDDB BACK ON THE CLICK PATH.
+ *
+ * The original autosave cloned the entire campaign into IDB after every click
+ * and was removed because that synchronous structured-clone work was a visible
+ * share of interaction latency. Removing it fixed a symptom by making a
+ * hundred-year campaign depend on the player remembering to name a slot.
+ *
+ * Mutations now coalesce for 1.5 seconds, then write during browser idle time.
+ * A sequence token prevents an older queued write from landing after a newer
+ * one. Named slots remain deliberate snapshots; `auto` is crash protection and
+ * the campaign Continue opens when it is newest.
  */
-function persist(_game: GameState) {
-  /* intentionally empty */
+const AUTO_SLOT = "auto";
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+let persistSeq = 0;
+function persist(game: GameState) {
+  const seq = ++persistSeq;
+  if (persistTimer !== null) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    const write = () => {
+      if (seq !== persistSeq) return;
+      void saveGame(AUTO_SLOT, game).catch(() => { /* private mode / quota: named save UI reports failures */ });
+    };
+    if (typeof requestIdleCallback === "function") requestIdleCallback(write, { timeout: 3000 });
+    else setTimeout(write, 0);
+  }, 1500);
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -1246,7 +1266,8 @@ export const useStore = create<AppState>((set, get) => ({
     // table, an adjacency graph and twenty years of state hanging off it. A
     // reload with no city to build is instant — the generation happens when
     // the player presses Break ground, not on the way to the menu.
-    location.reload();
+    // Do not offer the campaign the player just chose to end as Continue.
+    void deleteSave(AUTO_SLOT).finally(() => location.reload());
   },
 
   /**
@@ -1282,6 +1303,7 @@ export const useStore = create<AppState>((set, get) => ({
       g.citySize = size;
       g.cityDev = dev;
       set({ game: g, phase: "playing", building: null, resume: null });
+      persist(g);
     } catch (e) {
       set({ phase: "menu", building: null });
       get().setLoadError(`The city would not build (${(e as Error).message}). This is a bug — please report it.`);
@@ -1370,7 +1392,7 @@ export async function fetchGzJson(url: string) {
  * BOOT TO A MENU, NOT INTO A TOWN.
  *
  * Booting costs one IndexedDB read and generates nothing. Continue is offered
- * only when a named save exists — there is no autosave.
+ * from the newest autosave or named snapshot.
  */
 const SAVE_GEN_KEY = "bw:saveGen";
 
@@ -1398,16 +1420,6 @@ async function retireSavesIfNewBuild(): Promise<void> {
   }
 }
 
-/** Drop leftover auto@ / Auto · slots from builds that still wrote them. */
-async function purgeAutoSlots(): Promise<void> {
-  try {
-    const metas = await listSaves();
-    for (const m of metas) {
-      if (isAutoSlot(m.slot)) await deleteSave(m.slot);
-    }
-  } catch { /* private mode */ }
-}
-
 async function resumeFromSlot(slot: string): Promise<Resume | null> {
   const g = await loadGame(slot);
   if (!g || g.v !== 32 || g.citySeed === undefined) return null;
@@ -1425,7 +1437,6 @@ async function resumeFromSlot(slot: string): Promise<Resume | null> {
 
 export async function bootMenu() {
   await retireSavesIfNewBuild();
-  await purgeAutoSlots();
 
   let resume: Resume | null = null;
   // A save store that will not open is a reason to offer a new town, never a
@@ -1433,11 +1444,10 @@ export async function bootMenu() {
   // browsers land here.
   try {
     const metas = await listSaves();
-    // Newest named save first — Continue means the campaign you last wrote.
-    const named = metas
-      .filter((m) => !isAutoSlot(m.slot))
-      .sort((a, b) => b.savedAt - a.savedAt);
-    for (const m of named) {
+    // Newest state first: usually the debounced autosave, but a named snapshot
+    // written later is equally valid. Continue means "where I last left off."
+    const latest = metas.sort((a, b) => b.savedAt - a.savedAt);
+    for (const m of latest) {
       const r = await resumeFromSlot(m.slot);
       if (!r) continue;
       resume = { ...r, savedAt: m.savedAt };

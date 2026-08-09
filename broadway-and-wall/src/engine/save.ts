@@ -1,5 +1,5 @@
-// IndexedDB saves: named slots only (no autosave). A save is just the
-// GameState — parcels/adjacency are static data.
+// IndexedDB saves: named snapshots plus one debounced `auto` crash-protection
+// slot. A save is just GameState — parcels/adjacency are deterministic city data.
 import type { GameState } from "./types";
 
 const DB = "broadway-and-wall";

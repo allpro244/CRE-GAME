@@ -1,4 +1,5 @@
 import { useStore } from "@/state/store";
+import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_LABEL } from "@/data/types";
 import type { ParcelRecord } from "@/data/types";
 import type { GameState, Holding } from "@/engine/types";
@@ -175,9 +176,11 @@ export const WANTS_LABEL: Record<string, string> = {
   mixed: "Per square foot, mixed use would lift this block further than any other use.",
 };
 export function Neighbourhood({ bbl, block }: { bbl: string; block: string }) {
-  const game = useStore((s) => s.game);
+  const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels);
-  if (!game || !parcels) return null;
+  // block drift moves without touching the holding — keep this readout live
+  useStore((s) => s.game?.blockD?.[block] ?? 0);
+  if (!parcels) return null;
   const r = blockReport(game, parcels, block);
   if (!r) return null;
   const n = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v));

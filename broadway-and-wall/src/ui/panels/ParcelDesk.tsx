@@ -1,6 +1,7 @@
 import { memo, useState } from "react";
 import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
+import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, START_YEAR } from "@/engine/types";
 import type { Approach, BuiltClass, Contract, DevUse } from "@/engine/types";
@@ -20,19 +21,28 @@ import { LettingOdds, LeasingDesk, ResidualRead, LandDesk } from "@/ui/panels/Pr
 import { useLabel, devUseLabel, physicalOcc, goingIn, band, apMid, PropTab, annualPayment, openResearchOn, Neighbourhood, Row } from "@/ui/panels/shared";
 
 
-function ParcelPanelInner({ embedded = false, tab }: { embedded?: boolean; tab?: PropTab } = {}) {
+function ParcelPanelShell({ embedded = false, tab }: { embedded?: boolean; tab?: PropTab } = {}) {
+  // Closed card: do not subscribe to `game` at all — every LOI/cash write used
+  // to rebuild this whole file for a panel that was not on screen.
+  const selectedBBL = useStore((s) => s.selectedBBL);
+  if (!selectedBBL) return null;
+  return <ParcelPanelInner embedded={embedded} tab={tab} selectedBBL={selectedBBL} />;
+}
+
+function ParcelPanelInner({
+  embedded = false, tab, selectedBBL,
+}: { embedded?: boolean; tab?: PropTab; selectedBBL: string }) {
   const parcels = useStore((s) => s.parcels);
   const adjacency = useStore((s) => s.adjacency);
-  const selectedBBL = useStore((s) => s.selectedBBL);
   const select = useStore((s) => s.select);
-  const game = useStore((s) => s.game)!;
+  const game = useHeldGame(selectedBBL);
   const { renovate, approach } = useStore.getState();
   // Which parcel has a demolition order waiting for a signature. Keyed by BBL
   // rather than a bare boolean so selecting a different building simply
   // dismisses the question instead of asking it about the wrong address.
   const [razeAsk, setRazeAsk] = useState<string | null>(null);
 
-  if (!selectedBBL || !parcels) return null;
+  if (!parcels) return null;
   const rec = resolveRec(parcels, game, selectedBBL);
   if (!rec) return null;
   const dev = game.developments[selectedBBL];
@@ -799,7 +809,7 @@ function ParcelPanelInner({ embedded = false, tab }: { embedded?: boolean; tab?:
 }
 
 /** Memo: GamePanels re-renders on every page toggle; the docked card must not. */
-export const ParcelPanel = memo(ParcelPanelInner);
+export const ParcelPanel = memo(ParcelPanelShell);
 
 /**
  * EMPTYING A BUILDING. Lifted out of the leasing desk so the three moves sit
@@ -810,7 +820,7 @@ export const ParcelPanel = memo(ParcelPanelInner);
  * the site under a half-empty one.
  */
 export function VacantPossession({ bbl, onRaze }: { bbl: string; onRaze: () => void }) {
-  const game = useStore((s) => s.game)!;
+  const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   const h = game.holdings[bbl];
   const rec = h ? resolveRec(parcels, game, bbl) : null;
@@ -907,7 +917,7 @@ export function VacantPossession({ bbl, onRaze }: { bbl: string; onRaze: () => v
  * being asked to have a view about.
  */
 export function DisclosedRoll({ bbl }: { bbl: string }) {
-  const game = useStore((s) => s.game)!;
+  const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   const rec = resolveRec(parcels, game, bbl);
   if (!rec || rec.class === "land" || !rec.bldgArea) return null;
@@ -997,7 +1007,7 @@ export function DisclosedRoll({ bbl }: { bbl: string }) {
 }
 
 export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
-  const game = useStore((s) => s.game)!;
+  const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   const { listSale, delistSale, acceptOffer, declineOffer, counterSale, runBestAndFinal, takeBid } = useStore.getState();
   const holding = game.holdings[bbl]!;
@@ -1381,7 +1391,7 @@ export function OffMarketCounter({ bbl, ask }: { bbl: string; ask: number }) {
  * path already does out loud at up to 5.86x.
  */
 export function BlindBidDesk({ bbl, appr, value }: { bbl: string; appr: Approach; value: number }) {
-  const game = useStore((s) => s.game)!;
+  const game = useHeldGame(bbl);
   const ap = apMid(bbl, value);
   const [mult, setMult] = useState(1);
   // Round to the thousand the way approachOwner rounds its own number, so the
@@ -1475,7 +1485,7 @@ export function BlindBidDesk({ bbl, appr, value }: { bbl: string; appr: Approach
  * The capital stack does not appear until there is something to fund.
  */
 export function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
-  const game = useStore((s) => s.game)!;
+  const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   // The dial runs on a fraction of the ask, not on dollars: a dollar-valued
   // range with a rounded step can leave the top end unreachable, which meant
@@ -1600,7 +1610,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
    *  invent. */
   bid?: number;
 }) {
-  const game = useStore((s) => s.game)!;
+  const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   const { buyOff } = useStore.getState();
   const isLand = parcels[bbl]?.class === "land";
@@ -1799,7 +1809,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
  * decision with an adjective on it is a paragraph.
  */
 export function ListSection({ bbl, appraisal, onDone }: { bbl: string; appraisal: number; onDone: () => void }) {
-  const game = useStore((s) => s.game)!;
+  const game = useHeldGame(bbl);
   const listSale = useStore((s) => s.listSale);
   const [ask, setAsk] = useState(Math.round(appraisal * 1.02));
   const quiet = quietFeeRate(game);
@@ -1838,7 +1848,7 @@ export function ListSection({ bbl, appraisal, onDone }: { bbl: string; appraisal
 }
 
 export function RefiSection({ bbl }: { bbl: string }) {
-  const game = useStore((s) => s.game)!;
+  const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   const { refi } = useStore.getState();
   const isLand = resolveRec(parcels, game, bbl)?.class === "land";
@@ -2134,7 +2144,7 @@ export function capStack(p: Stack, retailMaxPct: number): Stack {
 }
 
 export function DevelopSection({ bbl }: { bbl: string }) {
-  const game = useStore((s) => s.game)!;
+  const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   // The LIVE record: an upzoning, a variance you won, or lots you folded
   // together all change the envelope, and planning against the static table

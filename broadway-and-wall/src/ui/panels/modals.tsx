@@ -40,16 +40,33 @@ import { physicalOcc, apMid, NWChart, Big, Row } from "@/ui/panels/shared";
  * opt-out is honoured, because a player who has turned cards off has said what
  * they want.
  */
+function workoutAwake(g: ReturnType<typeof useStore.getState>["game"], popupsOff: boolean): boolean {
+  if (!g || g.gameOver || popupsOff) return false;
+  return Object.keys(g.workouts ?? {}).length > 0;
+}
+
 export function DefaultNoticeModal() {
+  // Idle: do not subscribe to full `game` — walking the book for "rest of CF"
+  // on every Advance was one of the click-lag culprits.
+  const awake = useStore((s) => workoutAwake(s.game, s.popupsOff));
+  const [seen, setSeen] = useState<Record<string, boolean>>({});
+  if (!awake) return null;
+  return <DefaultNoticeBody seen={seen} setSeen={setSeen} />;
+}
+
+function DefaultNoticeBody({
+  seen, setSeen,
+}: {
+  seen: Record<string, boolean>;
+  setSeen: (s: Record<string, boolean>) => void;
+}) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels);
-  const popupsOff = useStore((s) => s.popupsOff);
   const setPage = useStore((s) => s.setPage);
   const select = useStore((s) => s.select);
   const focus = useStore((s) => s.focus);
   const { serviceWorkout } = useStore.getState();
-  const [seen, setSeen] = useState<Record<string, boolean>>({});
-  if (!parcels || game.gameOver || popupsOff) return null;
+  if (!parcels || game.gameOver) return null;
   const open = Object.values(game.workouts ?? {})
     .filter((w) => !seen[`${w.bbl}:${w.stage}`])
     .sort((a, b) => (a.saleM ?? a.decideM) - (b.saleM ?? b.decideM))[0];
@@ -126,7 +143,39 @@ export function DefaultNoticeModal() {
   );
 }
 
+function auctionAwake(s: ReturnType<typeof useStore.getState>): boolean {
+  const g = s.game;
+  if (!g || g.gameOver) return false;
+  if (g.auctionResults?.rows?.length) return true;
+  const a = g.auction;
+  if (!a || g.month >= a.m) return false;
+  // Keep the subscriber alive when they asked for the sheet, or when the card
+  // would still auto-open. Quiet/popups-off with no request stays cold.
+  return s.auctionOpen || (!s.popupsOff && !g.auctionQuiet);
+}
+
 export function AuctionModal() {
+  const awake = useStore(auctionAwake);
+  const [seenM, setSeenM] = useState(-1);
+  const [seenResM, setSeenResM] = useState(-1);
+  const [bids, setBids] = useState<Record<string, string>>({});
+  if (!awake) return null;
+  return (
+    <AuctionBody
+      seenM={seenM} setSeenM={setSeenM}
+      seenResM={seenResM} setSeenResM={setSeenResM}
+      bids={bids} setBids={setBids}
+    />
+  );
+}
+
+function AuctionBody({
+  seenM, setSeenM, seenResM, setSeenResM, bids, setBids,
+}: {
+  seenM: number; setSeenM: (n: number) => void;
+  seenResM: number; setSeenResM: (n: number) => void;
+  bids: Record<string, string>; setBids: (b: Record<string, string>) => void;
+}) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels);
   const focus = useStore((s) => s.focus);
@@ -134,9 +183,6 @@ export function AuctionModal() {
   const popupsOff = useStore((s) => s.popupsOff);
   const setAuctionOpen = useStore((s) => s.setAuctionOpen);
   const { bidAuction } = useStore.getState();
-  const [seenM, setSeenM] = useState(-1);
-  const [seenResM, setSeenResM] = useState(-1);
-  const [bids, setBids] = useState<Record<string, string>>({});
 
   /* WHAT THE HAMMER DID TO YOUR NUMBER. You registered a bid, the sheet
      closed, and the only record of whether you owned a building was a line on
@@ -360,16 +406,22 @@ export function AuctionModal() {
  * failure in year nine most needs to stop.
  */
 export function AlertModal() {
+  const awake = useStore((s) =>
+    !s.alertsOff && !s.game?.gameOver && (s.game?.alerts?.length ?? 0) > 0);
+  if (!awake) return null;
+  return <AlertBody />;
+}
+
+function AlertBody() {
   const game = useStore((s) => s.game)!;
   const dismissAlert = useStore((s) => s.dismissAlert);
-  const alertsOff = useStore((s) => s.alertsOff);
   const a = game.alerts?.[0];
   // A dead firm gets the game-over screen and nothing else on top of it.
   // ...and a player who has asked for total silence gets it. Every alert is
   // filed in the news feed by `raiseAlert` as it fires, so this drops the
   // interruption and not the event — which is the condition the paragraph
   // above sets for a card being safe to turn off.
-  if (!a || game.gameOver || alertsOff) return null;
+  if (!a || game.gameOver) return null;
   const bad = a.tone !== "good";
   const KICKER: Record<string, [string, string]> = {
     // [what a bad one is called, what a good one is called]
@@ -412,42 +464,21 @@ export function AlertModal() {
 // Some decisions don't wait their turn. A letter of intent and a live offer
 // on your building both take the screen until you answer — they expire, and
 // finding out later that one lapsed while you clicked past it is no fun.
-export function DecisionModal() {
-  const game = useStore((s) => s.game)!;
-  const parcels = useStore((s) => s.parcels);
-  const popupsOff = useStore((s) => s.popupsOff);
-  const { respondLoi, acceptOffer, declineOffer, counterSale } = useStore.getState();
-  const [deferred, setDeferred] = useState<Set<number>>(new Set());
-  // the modal's counter sliders
-  const [modalCounter, setModalCounter] = useState(false);
-  const [mcRent, setMcRent] = useState(0);
-  const [mcTi, setMcTi] = useState(0);
-  // …and the same for an offer to buy one of yours. The card had Accept and
-  // Decline and nothing between them, so the one move every seller alive makes
-  // — pick up the phone once — could only be reached by dismissing the popup
-  // and going to find the building's own record. `counterSale` has always
-  // handled it, including the unsolicited case; nothing here ever called it.
-  const [saleCounter, setSaleCounter] = useState(false);
-  const [scPx, setScPx] = useState(0);
-  // WHAT THEY SAID, IN THE CARD YOU SAID IT FROM. A tenant answers a counter in
-  // the same tick, and the answer used to arrive only as a toast — so the modal
-  // closed and you went looking elsewhere for the result of the thing you had
-  // just clicked. `respondLoi` returns it now and this holds it until read.
-  const [outcome, setOutcome] = useState<{ text: string; ok: boolean } | null>(null);
-  if (!parcels || game.gameOver) return null;
-  // THE MASTER SWITCH (Settings). Both of the decisions this component renders
-  // also live on a page — letters on the Deals desk, offers on the portfolio —
-  // so silencing the cards loses nothing but the interruption, which is the
-  // point when you are simulating twenty years at a stretch. (It used to say
-  // "calls on the Marketplace" as well; this component stopped rendering those
-  // the day they moved, and the list outlived them.) `AlertModal` is not on
-  // this switch and says why on itself.
-  if (popupsOff) return null;
+function decisionAwake(g: ReturnType<typeof useStore.getState>["game"], popupsOff: boolean): boolean {
+  if (!g || g.gameOver || popupsOff) return false;
+  if (g.portfolioSale?.bids?.[0]) return true;
+  if (!g.agent && g.lois.length > 0) return true;
+  for (const h of Object.values(g.holdings)) {
+    if (h.sale?.offer) return true;
+  }
+  return false;
+}
 
-  /* WHAT THEY SAID, BEFORE ANYTHING ELSE IS ASKED OF YOU.
-     This sits in front of the next letter on purpose: the answer to the thing
-     you just clicked is more urgent than the next decision, and burying it
-     under a fresh card is how it ended up being read off a toast in a corner. */
+export function DecisionModal() {
+  // Keep local outcome mounted after a counter resolves (lois may be empty).
+  const [outcome, setOutcome] = useState<{ text: string; ok: boolean } | null>(null);
+  const awake = useStore((s) => decisionAwake(s.game, s.popupsOff));
+  if (!awake && !outcome) return null;
   if (outcome) {
     return (
       <div className="modal-backdrop">
@@ -463,6 +494,30 @@ export function DecisionModal() {
       </div>
     );
   }
+  return <DecisionBody setOutcome={setOutcome} />;
+}
+
+function DecisionBody({
+  setOutcome,
+}: {
+  setOutcome: (o: { text: string; ok: boolean } | null) => void;
+}) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels);
+  const { respondLoi, acceptOffer, declineOffer, counterSale } = useStore.getState();
+  const [deferred, setDeferred] = useState<Set<number>>(new Set());
+  // the modal's counter sliders
+  const [modalCounter, setModalCounter] = useState(false);
+  const [mcRent, setMcRent] = useState(0);
+  const [mcTi, setMcTi] = useState(0);
+  // …and the same for an offer to buy one of yours. The card had Accept and
+  // Decline and nothing between them, so the one move every seller alive makes
+  // — pick up the phone once — could only be reached by dismissing the popup
+  // and going to find the building's own record. `counterSale` has always
+  // handled it, including the unsolicited case; nothing here ever called it.
+  const [saleCounter, setSaleCounter] = useState(false);
+  const [scPx, setScPx] = useState(0);
+  if (!parcels || game.gameOver) return null;
 
   /* AN INDICATION ON YOUR BOOK IS A DECISION, AND IT ARRIVED SILENTLY.
      A bid on a single building throws this modal; a bid on a portfolio you

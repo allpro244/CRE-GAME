@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useStore } from "@/state/store";
+import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel } from "@/engine/types";
 import type { GameState } from "@/engine/types";
 import type { ParcelTable, Adjacency } from "@/data/types";
@@ -80,7 +81,7 @@ function useAssembleCandidates(
  * and the cash statement can never disagree about a month that has happened.
  */
 export function AssetHistory({ bbl }: { bbl: string }) {
-  const game = useStore((s) => s.game)!;
+  const game = useHeldGame(bbl);
   const h = game.holdings[bbl];
   const rows = h?.hist ?? [];
   if (!h) return null;
@@ -173,7 +174,7 @@ export function AssetHistory({ bbl }: { bbl: string }) {
  * Doing nothing is also a choice, and it is the most expensive one.
  */
 export function WorkoutDesk({ bbl }: { bbl: string }) {
-  const game = useStore((s) => s.game)!;
+  const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   const { cureDefault, askForbearance, handBackKeys } = useStore.getState();
   const w = game.workouts?.[bbl];
@@ -260,7 +261,7 @@ export function WorkoutDesk({ bbl }: { bbl: string }) {
  * a capital programme, pre-built suites, or coming off your asking rent.
  */
 export function LettingOdds({ bbl }: { bbl: string }) {
-  const game = useStore((s) => s.game)!;
+  const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   const h = game.holdings[bbl];
   const rec = h ? resolveRec(parcels, game, bbl) : null;
@@ -320,7 +321,7 @@ export function LettingOdds({ bbl }: { bbl: string }) {
 }
 
 export function LeasingDesk({ bbl }: { bbl: string }) {
-  const game = useStore((s) => s.game)!;
+  const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   const { prebuild, extendLease } = useStore.getState();
   const [size, setSize] = useState(0);
@@ -434,7 +435,7 @@ export function LeasingDesk({ bbl }: { bbl: string }) {
  * or not, because the read matters most BEFORE the money moves.
  */
 export function ResidualRead({ bbl }: { bbl: string }) {
-  const game = useStore((s) => s.game)!;
+  const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   const rec = resolveRec(parcels, game, bbl);
   if (!rec || !rec.lotArea) return null;
@@ -465,7 +466,7 @@ export function ResidualRead({ bbl }: { bbl: string }) {
 }
 
 export function LandDesk({ bbl }: { bbl: string }) {
-  const game = useStore((s) => s.game)!;
+  const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   const adjacency = useStore((s) => s.adjacency);
   const select = useStore((s) => s.select);

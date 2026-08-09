@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { headlineEpithet } from "@/engine/firm";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
@@ -17,6 +17,9 @@ export default function TopBar() {
   const fps = useStore((s) => (s.fpsOn ? s.fps : 0));
   const manifest = useStore((s) => s.manifest);
   const game = useStore((s) => s.game);
+  // Cash/date stay on the live game; portfolio walks (NW/CF/line) lag one
+  // paint so a counter click is not blocked on walking the whole book.
+  const deferredGame = useDeferredValue(game);
   const lens = useStore((s) => s.lens);
   const setLens = useStore((s) => s.setLens);
   const advance = useStore((s) => s.advance);
@@ -28,7 +31,7 @@ export default function TopBar() {
   // Portfolio walks (net worth, CF, line) only when `game` changes — not on
   // every Portfolio/Books/News click, which used to recompute them for free.
   const vitals = useMemo(() => {
-    if (!game) {
+    if (!deferredGame) {
       return {
         nw: 0, cf: 0, line: 0, dealsCount: 0, unread: 0,
         bcalls: [] as ReturnType<typeof liveBrokerCalls>, bcallSoon: 0,
@@ -36,13 +39,15 @@ export default function TopBar() {
       };
     }
     const parcels = useStore.getState().parcels;
-    const nw = parcels ? netWorth(game, parcels) : 0;
-    const cf = parcels ? portfolioQuarterlyCF(game, parcels) : 0;
-    const line = parcels ? locLimit(game, parcels, nw) : 0;
-    const dealsCount = game.lois.length + Object.values(game.holdings).filter((h) => h.sale?.offer).length;
+    const nw = parcels ? netWorth(deferredGame, parcels) : 0;
+    const cf = parcels ? portfolioQuarterlyCF(deferredGame, parcels) : 0;
+    const line = parcels ? locLimit(deferredGame, parcels, nw) : 0;
+    const dealsCount = deferredGame.lois.length
+      + Object.values(deferredGame.holdings).filter((h) => h.sale?.offer).length;
     // What happened THIS MONTH that was not routine — the badge is the reason to
     // look, not a count of everything ever written.
-    const unread = game.news.filter((n) => n.q === game.month && (n.kind === "warn" || n.kind === "event")).length;
+    const unread = deferredGame.news.filter((n) =>
+      n.q === deferredGame.month && (n.kind === "warn" || n.kind === "event")).length;
     // OFF-MARKET FILES WAITING, AND HOW LONG THE NEAREST ONE HAS.
     //
     // These arrived as a full-screen card until this pass, which meant the player
@@ -53,27 +58,27 @@ export default function TopBar() {
     // change's clothes. Counted the same way News counts: what wants an answer,
     // not what exists. The tooltip carries the soonest lapse, because "3" tells
     // you there is something and not whether it is urgent.
-    const bcalls = liveBrokerCalls(game);
-    const bcallSoon = bcalls.length ? Math.max(0, bcalls[0].lapseM - game.month) : 0;
-    const notesLive = (game.noteOffers?.length ?? 0)
-      + (game.notes ?? []).filter((n) => n.perf === "nonperforming" && n.filedM === undefined).length;
+    const bcalls = liveBrokerCalls(deferredGame);
+    const bcallSoon = bcalls.length ? Math.max(0, bcalls[0].lapseM - deferredGame.month) : 0;
+    const notesLive = (deferredGame.noteOffers?.length ?? 0)
+      + (deferredGame.notes ?? []).filter((n) => n.perf === "nonperforming" && n.filedM === undefined).length;
     let debtBal = 0, debtWall = 0;
-    for (const h of Object.values(game.holdings)) {
+    for (const h of Object.values(deferredGame.holdings)) {
       if (!h.loan) continue;
       debtBal += h.loan.balance;
-      if (h.loan.maturityM - game.month <= 36) debtWall += h.loan.balance;
+      if (h.loan.maturityM - deferredGame.month <= 36) debtWall += h.loan.balance;
     }
-    if (game.facility) {
-      debtBal += game.facility.balance;
-      if (game.facility.maturityM - game.month <= 36) debtWall += game.facility.balance;
+    if (deferredGame.facility) {
+      debtBal += deferredGame.facility.balance;
+      if (deferredGame.facility.maturityM - deferredGame.month <= 36) debtWall += deferredGame.facility.balance;
     }
     return {
       nw, cf, line, dealsCount, unread, bcalls, bcallSoon, notesLive,
       debtHot: debtBal > 0 && debtWall / debtBal > 0.35,
-      debtSwept: !!game.facility?.breachedSince,
+      debtSwept: !!deferredGame.facility?.breachedSince,
       debtBal, debtWall,
     };
-  }, [game]);
+  }, [deferredGame]);
   const { nw, cf, line, dealsCount, unread, bcalls, bcallSoon, notesLive, debtHot, debtSwept, debtBal, debtWall } = vitals;
 
   // WHICH TOWN IS NOT ASKED HERE ANY MORE. The island, the size and the

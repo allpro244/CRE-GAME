@@ -7,6 +7,35 @@ import { ThreeBuildings, type BuildingVolume } from "./ThreeBuildings";
 import { occupancy, resolveRec, useOccupancy } from "@/engine/value";
 import { useSf } from "@/engine/mix";
 import { monthLabel } from "@/engine/types";
+import type { GameState } from "@/engine/types";
+
+/**
+ * What the map actually paints. LOI counters, cash draws and news writes clone
+ * a new `game` every click; subscribing to that identity re-rendered the whole
+ * MapView (and re-ran skyline/occupancy work) on every desk action. This
+ * signature stays stable unless the picture changed.
+ */
+function mapPaintSig(g: GameState | null | undefined): string {
+  if (!g) return "";
+  let leased = 0;
+  for (const h of Object.values(g.holdings)) {
+    for (const t of h.tenants) leased += t.sf;
+  }
+  return [
+    g.month,
+    Object.keys(g.holdings).join(","),
+    g.listings.map((l) => l.bbl).join(","),
+    Object.keys(g.developments ?? {}).join(","),
+    Object.keys(g.built ?? {}).length,
+    (g.cityJobs ?? []).length,
+    Object.keys(g.merged ?? {}).length,
+    leased,
+    g.econ.phase,
+    g.auction?.m ?? "",
+    (g.bankFcls ?? []).length,
+    Object.keys(g.blockD ?? {}).length,
+  ].join("|");
+}
 
 const CITY_CENTER: [number, number] = [-70.9, 41.1];
 
@@ -418,8 +447,10 @@ export default function MapView() {
   }, [flyTo, parcels]);
 
   // ownership + listings → feature-state and rooftop markers
-  const game = useStore((s) => s.game);
+  // Subscribe to a paint signature, not `game` identity — see mapPaintSig.
+  const paintSig = useStore((s) => mapPaintSig(s.game));
   useEffect(() => {
+    const game = useStore.getState().game;
     const map = mapRef.current;
     if (!map || !mapReady || !game || !parcels) return;
     const setState = (bbl: string, state: Record<string, boolean>) => {
@@ -466,7 +497,7 @@ export default function MapView() {
         };
       }),
     });
-  }, [game?.holdings, game?.listings, parcels, mapReady]);
+  }, [paintSig, parcels, mapReady]);
 
   const lens = useStore((s) => s.lens);
 
@@ -476,6 +507,7 @@ export default function MapView() {
   // parcels, written once per month and only while a lens is open.
   const dmdRef = useRef<Map<string, number>>(new Map());
   useEffect(() => {
+    const game = useStore.getState().game;
     const map = mapRef.current;
     if (!map || !mapReady || !game || !parcels) return;
     if (lens !== "demand" && lens !== "land") return;
@@ -495,7 +527,7 @@ export default function MapView() {
       if (!next.has(bbl)) map.removeFeatureState({ source: "bw-parcels", id: Number(bbl) }, "dmd");
     }
     dmdRef.current = next;
-  }, [game, parcels, mapReady, lens]);
+  }, [paintSig, parcels, mapReady, lens]);
 
   // THE ZONING LENS PAINTS ROOM, NOT RULES.
   //
@@ -514,6 +546,7 @@ export default function MapView() {
   // zone letters.
   const zoneRef = useRef<Map<string, number>>(new Map());
   useEffect(() => {
+    const game = useStore.getState().game;
     const map = mapRef.current;
     if (!map || !mapReady || !game || !parcels) return;
     if (lens !== "zoning") return;
@@ -536,7 +569,7 @@ export default function MapView() {
       if (!next.has(bbl)) map.removeFeatureState({ source: "bw-parcels", id: Number(bbl) }, "room");
     }
     zoneRef.current = next;
-  }, [game, parcels, mapReady, lens]);
+  }, [paintSig, parcels, mapReady, lens]);
 
   // name labels: districts, parks, water — DOM markers, no glyph server needed
   useEffect(() => {
@@ -579,6 +612,7 @@ export default function MapView() {
   // mesh tints: gold selection/ownership, teal neighbors, warm hover
   const hoveredBBL = useStore((s) => s.hoveredBBL);
   useEffect(() => {
+    const game = useStore.getState().game;
     const layer = threeRef.current;
     if (!layer || !mapReady) return;
     const tints = new Map<string, [number, number, number]>();
@@ -599,7 +633,7 @@ export default function MapView() {
     }
     if (hoveredBBL && hoveredBBL !== selectedBBL) tints.set(hoveredBBL, [1.14, 1.08, 0.92]);
     layer.setTints(tints);
-  }, [selectedBBL, hoveredBBL, adjacency, game?.holdings, game?.listings, game?.rivals, mapReady, lens]);
+  }, [selectedBBL, hoveredBBL, adjacency, paintSig, mapReady, lens]);
 
   // THE CITY'S VACANCY, ON THE CITY.
   //
@@ -617,6 +651,7 @@ export default function MapView() {
   // moves with the cycle, so a glut arrives on the map as the city going dark
   // a district at a time, and you can watch it happen from the air.
   useEffect(() => {
+    const game = useStore.getState().game;
     const layer = threeRef.current;
     if (!layer || !mapReady || !game || !parcels) return;
     const occ = new Map<string, number>();
@@ -650,14 +685,12 @@ export default function MapView() {
     for (const l of game.auction?.lots ?? []) if (game.month < (game.auction?.m ?? 0)) notices.add(l.bbl);
     for (const f of game.bankFcls ?? []) notices.add(f.bbl);
     layer.setNotices([...notices]);
-    // Depend on the fields that change the picture — not every `game` write
-    // (cash, news, approaches), which used to re-walk every building on clicks
-    // that only mutated those bags.
-  }, [game?.month, game?.holdings, game?.econ, game?.auction, game?.bankFcls, mapReady, parcels, city]);
+  }, [paintSig, mapReady, parcels, city]);
 
   // player construction and city growth onto the skyline
   const dynSigRef = useRef("");
   useEffect(() => {
+    const game = useStore.getState().game;
     const layer = threeRef.current;
     if (!layer || !mapReady || !game) return;
     // ONE FLOOR-TO-FLOOR, BECAUSE A STOREY IS A STOREY.
@@ -710,7 +743,7 @@ export default function MapView() {
     if (sig === dynSigRef.current) return;
     dynSigRef.current = sig;
     layer.setPlayerBuildings(items);
-  }, [game, mapReady]);
+  }, [paintSig, mapReady]);
 
   const gameMonth = useStore((s) => s.game?.month ?? 0);
   useEffect(() => {
@@ -720,6 +753,7 @@ export default function MapView() {
 
   // lenses — repaint when toggled and as the market moves
   useEffect(() => {
+    const game = useStore.getState().game;
     const map = mapRef.current;
     if (!map || !mapReady) return;
     const ghostBuildings = (on: boolean) => {
@@ -807,7 +841,7 @@ export default function MapView() {
         map.setPaintProperty("bw-bldg-3d", "fill-extrusion-opacity", (bldg.paint as Record<string, unknown>)["fill-extrusion-opacity"] as never);
       }
     }
-  }, [lens, game, parcels, mapReady]);
+  }, [lens, paintSig, parcels, mapReady]);
 
   // hover tooltip: address before you commit to a click
   const tipRef = useRef<HTMLDivElement>(null);

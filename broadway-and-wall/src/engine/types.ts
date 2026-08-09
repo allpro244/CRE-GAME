@@ -979,7 +979,7 @@ export interface NewsItem {
 export interface Alert {
   id: number;
   q: number;                 // the month it fired
-  kind: "swan" | "bank" | "portfolio";
+  kind: "swan" | "bank" | "portfolio" | "ground";
   tone: "bad" | "good";      // a black swan or a white one
   title: string;
   body: string;

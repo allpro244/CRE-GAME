@@ -13,7 +13,7 @@ import { USE_WORD } from "@/engine/mix";
 import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses } from "@/engine/leasing";
 import { leasingOdds } from "@/engine/absorption";
 import {
-  groundLeaseQuote, GROUND_REVIEW_LABEL, mergeCost, siteDeeds, siteLotArea,
+  groundLeaseExpenseBreakdown, groundLeaseQuote, GROUND_REVIEW_LABEL, mergeCost, siteDeeds, siteLotArea,
   contiguousOwnedRoots, hasOwnedSiteNeighbor,
 } from "@/engine/actions";
 import type { GroundReview } from "@/engine/types";
@@ -501,6 +501,7 @@ export function LandDesk({ bbl }: { bbl: string }) {
     const rev: GroundReview = gl.review ?? "fixed";
     const bare = bareLandRec(parcels, game, bbl);
     const fee = bare ? leasedFeeValue(gl, bare, game.econ, game.month, gl.sf ?? game.built?.[bbl]?.bldgArea ?? 0) : 0;
+    const cashFlow = groundLeaseExpenseBreakdown(gl.rentYr);
     const job = (game.cityJobs ?? []).find((j) => j.bbl === bbl && j.groundLease);
     const nextReview = rev === "fixed"
       ? `${monthLabel(gl.lastStepM + gl.stepEveryM)} · +${gl.stepPct}%`
@@ -512,7 +513,12 @@ export function LandDesk({ bbl }: { bbl: string }) {
         <div className="deal-head">Ground-leased · leased fee</div>
         <div className="grid">
           <Row k="Lessee" v={gl.tenant} />
-          <Row k="Ground rent" v={`${usd(gl.rentYr)} / yr`} strong />
+          <Row k="Gross ground rent" v={`${usd(cashFlow.grossRentYr)} / yr`} />
+          <Row k="Property tax" v="$0 to you · lessee pays" />
+          <Row k="Insurance + operating" v="$0 to you · lessee pays" />
+          <Row k="TI / building work" v="$0 to you · lessee pays" />
+          <Row k="Brokerage + legal at signing" v="$0 to you · lessee pays" />
+          <Row k="Net cash income" v={`${usd(cashFlow.netRentYr)} / yr`} strong />
           <Row k="Review" v={`${GROUND_REVIEW_LABEL[rev]} · ${nextReview}`} />
           <Row k="Leased-fee mark" v={usd(fee)} strong />
           <Row k="Reverts" v={`${monthLabel(gl.endM)} · ${yrsLeft.toFixed(0)} years to run`} />
@@ -524,8 +530,9 @@ export function LandDesk({ bbl }: { bbl: string }) {
           )}
         </div>
         <div className="hint">
-          No tenants of yours, no roof, no vacancy — the coupon is the whole of the income. The leased fee
-          can be sold on the sale desk; the dirt and the bones come back to you when the term ends.
+          Absolutely net: gross rent equals net rent. No tenants of yours, no roof, no vacancy and no signing
+          cheque. The leased fee can be sold on the sale desk; the dirt and the bones come back at expiry or
+          immediately after an uncured tenant default.
         </div>
       </div>
     );
@@ -735,6 +742,8 @@ export function LandDesk({ bbl }: { bbl: string }) {
             <Row k="Terms as of today" v={oq
               ? `${usd(oq.rentYr)} / yr · ${offer.years} years · ${oq.reviewNote}`
               : "—"} strong />
+            {oq && <Row k="Owner expenses" v="$0 tax · $0 insurance/opex · $0 TI · $0 signing costs" />}
+            {oq && <Row k="Net cash income" v={`${usd(oq.cashFlow.netRentYr)} / yr`} strong />}
           </div>
           <div className="hint">
             Ground lessees are scarce — and an FMV reset is scarcer still, because their lender has to underwrite
@@ -764,14 +773,19 @@ export function LandDesk({ bbl }: { bbl: string }) {
               onChange={(e) => setYears(Number(e.target.value))} />
           </div>
           <div className="grid">
-            <Row k="Ground rent" v={`${usd(q.rentYr)} / yr · ${q.capPct}% of land value`} strong />
+            <Row k="Gross ground rent" v={`${usd(q.cashFlow.grossRentYr)} / yr · ${q.capPct}% of land value`} />
+            <Row k="Property tax" v="$0 to you · lessee pays" />
+            <Row k="Insurance + operating" v="$0 to you · lessee pays" />
+            <Row k="TI / construction" v="$0 to you · lessee pays" />
+            <Row k="Brokerage + legal at signing" v="$0 to you · lessee pays" />
+            <Row k="Net cash income" v={`${usd(q.cashFlow.netRentYr)} / yr`} strong />
             <Row k="Reviews" v={q.reviewNote} />
             <Row k="Land + bones back" v={monthLabel(game.month + years * 12)} />
           </div>
           <div className="hint">
-            No operating risk — and you do not build on this corner for {years} years. FMV opens cheaper and
-            places slower; fixed opens dearer and places faster. Offering is a listing: the lessee turns up,
-            then builds, and the dirt costs carry while you wait.
+            This desk offers an absolutely-net form: no owner signing cheque and no property-level expenses after
+            closing. You do not build on this corner for {years} years. FMV opens cheaper and places slower; fixed
+            opens dearer and places faster. The dirt costs carry only while the offer is waiting.
           </div>
           <button className="btn" onClick={() => groundLease(bbl, years, review)}>
             Offer a {years}-year {GROUND_REVIEW_LABEL[review].toLowerCase()} ground lease

@@ -1606,7 +1606,14 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
   // A ground-leased lot does not carry: the lessee pays the taxes and the
   // insurance, which is what "absolutely net" means. Its income arrives
   // separately as ground rent, so charging carry here would bill it twice.
-  if (rec.class === "land" || !rec.bldgArea) return h.groundLeased ? 0 : -landValue(rec, econ) * 0.012;
+  //
+  // This must be checked BEFORE the resolved parcel class. Once the lessee's
+  // improvement opened, resolveRec correctly returned a building instead of
+  // land — and this function then charged the fee owner that building's tax,
+  // insurance, operating cost and vacancy despite the ground lease explicitly
+  // putting every one of them on the lessee.
+  if (h.groundLeased) return 0;
+  if (rec.class === "land" || !rec.bldgArea) return -landValue(rec, econ) * 0.012;
   const cls = rec.class as BuiltClass;
   if (cls === "multifamily") {
     // units turn over and things break: a 7% reserve off collections for

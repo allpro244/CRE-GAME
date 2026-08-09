@@ -3,10 +3,10 @@
 // returns a new state or an error string, never mutates the input.
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import type { Bid, BuiltClass, Econ, GameState, GroundReview, Holding, RivalStyle } from "./types";
-import { logBooks, monthLabel, SVC_START, cloneState} from "./types";
+import { logBooks, monthLabel, raiseAlert, SVC_START, cloneState} from "./types";
 import { recentLowballs } from "./acquire";
 import { firmShort, describeFirm } from "./firm";
-import { rng, rrange, BUILD_MONTHS } from "./market";
+import { rng, rrange, newsChance, BUILD_MONTHS } from "./market";
 import { assetValue, condGrade, initialCondition, initialCondIdx, holdingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, bareLandRec } from "./value";
 import { locAvailable } from "./credit";
 import { marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed } from "./rivals";
@@ -624,6 +624,28 @@ export const GROUND_REVIEW_LABEL: Record<GroundReview, string> = {
   fmv: "FMV reappraisal",
 };
 
+/**
+ * THE FEE OWNER'S CASH FLOW ON AN ABSOLUTELY-NET GROUND LEASE.
+ *
+ * This game's form puts every property-level and transaction-level obligation
+ * on the lessee: taxes, insurance, operation, construction, TI and the brokers
+ * and lawyers who paper their leasehold. That is a specific deal structure,
+ * not a claim that every ground lease in the world closes for free. It is the
+ * structure quoted by this desk, and the player must be able to audit it.
+ */
+export function groundLeaseExpenseBreakdown(rentYr: number) {
+  return {
+    grossRentYr: Math.max(0, Math.round(rentYr)),
+    propertyTaxYr: 0,
+    insuranceYr: 0,
+    operatingYr: 0,
+    tiAtSigning: 0,
+    brokerageAtSigning: 0,
+    legalAtSigning: 0,
+    netRentYr: Math.max(0, Math.round(rentYr)),
+  };
+}
+
 export function groundLeaseQuote(
   s: GameState, parcels: ParcelTable, bbl: string, years: number, review: GroundReview = "fixed",
 ) {
@@ -647,6 +669,7 @@ export function groundLeaseQuote(
   return {
     land, rentYr, capPct: +capPct.toFixed(2), years, review,
     stepPct, stepEveryM, takeMult, fmvCapPct: 3.5,
+    cashFlow: groundLeaseExpenseBreakdown(rentYr),
     reviewNote: review === "fixed"
       ? `+${stepPct}% every ten years — the leasehold lender's favourite`
       : review === "cpi"
@@ -727,6 +750,63 @@ function startLesseeJob(s: GameState, bbl: string, use: BuiltClass, sf: number, 
     deliverM,
     sfByUse: { [use]: sf },
   });
+}
+
+/**
+ * TERMINATE A DEFAULTED GROUND LEASE AND HAND THE WHOLE PROPERTY BACK.
+ *
+ * A ground lease is secured by the leasehold improvement. On an uncured
+ * default the fee owner does not become a partial landlord: the lease ends,
+ * the ground rent stops, and the dirt plus every standing improvement reverts.
+ * The building arrives vacant because the operator — not the fee owner — had
+ * the occupancy contracts.
+ */
+export function defaultGroundLease(
+  s: GameState, parcels: ParcelTable, bbl: string,
+): boolean {
+  const gl = s.groundLeases?.[bbl];
+  const h = s.holdings[bbl];
+  if (!gl || !h) return false;
+  const raw = parcels[bbl];
+  const standing = s.built?.[bbl];
+  const address = raw?.address ?? bbl;
+
+  delete s.groundLeases![bbl];
+  delete h.groundLeased;
+  // A default after opening should have no live frame, but cancelling here
+  // makes the ownership transition correct for old saves and edge cases too.
+  s.cityJobs = (s.cityJobs ?? []).filter((j) => !(j.bbl === bbl && j.groundLease));
+  cancelSupplyProject(s, bbl);
+
+  if (standing && standing.bldgArea > 0) {
+    const asRec = { ...(raw!), ...standing, yearBuilt: standing.yearBuilt };
+    h.condIdx = initialCondIdx(asRec, s.month);
+    h.condition = condGrade(h.condIdx);
+    h.deliveredM = s.month;
+    h.tenants = [];
+    h.occ = 0;
+    h.service = h.service ?? 0;
+    h.stance = h.stance ?? 0;
+    h.plan = h.plan ?? 1;
+    raiseAlert(s, {
+      kind: "ground",
+      tone: "bad",
+      title: `${gl.tenant} defaulted at ${address}`,
+      body: `The ground rent has stopped and the lease has terminated. You now control the land and the `
+        + `${standing.floors}-floor ${standing.class} building standing on it — no consent, buyout or waiting period.`,
+      detail: `${Math.round(standing.bldgArea).toLocaleString()} sf reverted vacant. It is now yours to operate, lease, finance, sell or redevelop.`,
+    });
+  } else {
+    if (s.built?.[bbl]) delete s.built[bbl];
+    raiseAlert(s, {
+      kind: "ground",
+      tone: "bad",
+      title: `${gl.tenant} defaulted at ${address}`,
+      body: "The ground rent has stopped and the lease has terminated. Full control of the site is back with you.",
+      detail: "No completed improvement stood on the land. The vacant site is yours to lease, sell or develop.",
+    });
+  }
+  return true;
 }
 
 /**
@@ -812,6 +892,25 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
         });
       }
       continue;
+    }
+
+    // LEASEHOLD DEFAULT. Long ground leases are exceptionally durable because
+    // the improvement is the tenant's collateral and losing it is catastrophic.
+    // Investment-grade corporate default frequencies ordinarily sit below one
+    // per cent a year and rise into the low single digits in recessions. This
+    // uses 0.6% in an ordinary year, scaled by the credit window and cycle,
+    // and only after the improvement has operated for a year. Hash randomness
+    // (`newsChance`) avoids changing any economic RNG stream.
+    if (gl.builtM !== undefined && s.month - gl.builtM >= 12) {
+      const cycle = s.econ.phase === "recession" ? 3.5
+        : s.econ.phase === "recovery" ? 1.4
+          : s.econ.phase === "peak" ? 0.75 : 1;
+      const credit = Math.max(0.75, Math.min(2, 1 / Math.max(0.5, s.econ.creditIdx ?? 1)));
+      const monthlyDefault = (0.006 * cycle * credit) / 12;
+      if (newsChance(s, `ground-default:${bbl}`, monthlyDefault)) {
+        defaultGroundLease(s, parcels, bbl);
+        continue;
+      }
     }
 
     if (s.month - gl.lastStepM >= gl.stepEveryM) {

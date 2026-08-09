@@ -333,6 +333,17 @@ export interface Holding {
   costBasis: number;
   deprTaken?: number;  // accumulated depreciation — reduces basis on sale
   assessed?: number;   // property-tax assessed value; steps up on reassessment
+  /** A property-tax challenge pending before the assessor. */
+  taxAppeal?: {
+    filedM: number;
+    decideM: number;
+    assessedAtFile: number;
+    target: number;
+    fee: number;
+    odds: number;
+  };
+  /** Month the last challenge was decided; another requires a later cycle. */
+  lastTaxAppealM?: number;
   loan: Loan | null;
   /**
    * The label. It is a READING of condIdx below, recomputed every month — see

@@ -4,6 +4,7 @@ import { monthLabel } from "@/engine/types";
 import { assetValue, initialCondition, ownedHoldingValue, resolveRec, rollQualitySpread, operatingStatement, remainingAbatement, inPlace } from "@/engine/value";
 import { farMaxFor, maxFloorsFor, replacementCost } from "@/engine/dev";
 import { walt, unitStatus } from "@/engine/leasing";
+import { taxAppealQuote } from "@/engine/tax";
 import { usd, sf } from "@/ui/format";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { AssetHistory, WorkoutDesk, LandDesk } from "@/ui/panels/PropertyDesks";
@@ -37,6 +38,7 @@ export function PropertyPage() {
   const noi = built ? ipHdr.noi : 0;
   const dsYr = (h?.loan?.monthlyPmt ?? 0) * 12;
   const dev = game.developments[bbl];
+  const taxAppeal = h ? taxAppealQuote(game, parcels, bbl) : null;
   // WHICH DESKS THIS BUILDING HAS. A tab that would open on an empty page is
   // worse than no tab: it teaches the player that the page lies about where
   // things are. Assembly is the awkward one — the Land desk hides itself when
@@ -143,6 +145,36 @@ export function PropertyPage() {
       {/* A default is not a tab. It is the only thing on the page that matters
           while it is running, so it stays above the tab bar on every one. */}
       <WorkoutDesk bbl={bbl} />
+      {h?.taxAppeal ? (
+        <div className="page-section">
+          <div className="page-section-head">Assessment under appeal</div>
+          <div className="grid">
+            <Row k="Tax roll" v={usd(h.taxAppeal.assessedAtFile)} />
+            <Row k="Market evidence filed" v={usd(h.taxAppeal.target)} strong />
+            <Row k="Board sits" v={monthLabel(h.taxAppeal.decideM)} />
+            <Row k="Odds as filed" v={`${(h.taxAppeal.odds * 100).toFixed(0)}%`} />
+          </div>
+        </div>
+      ) : taxAppeal ? (
+        <div className="page-section">
+          <div className="page-section-head">Property-tax appeal</div>
+          <div className="grid">
+            <Row k="Tax assessment" v={usd(taxAppeal.assessed)} bad />
+            <Row k="Current market evidence" v={usd(taxAppeal.target)} strong />
+            <Row k="Potential annual saving" v={usd(taxAppeal.annualSavings)} />
+            <Row k="Appraisal + counsel" v={usd(taxAppeal.fee)} />
+            <Row k="Board timing / odds" v={`${taxAppeal.months} months · ${(taxAppeal.odds * 100).toFixed(0)}%`} />
+          </div>
+          <button className="btn" disabled={game.cash < taxAppeal.fee}
+            onClick={() => useStore.getState().appealTax(bbl)}>
+            Appeal the assessment · {usd(taxAppeal.fee)}
+          </button>
+          <div className="hint">
+            The assessor follows markets up quickly and down slowly. You are paying for independent evidence;
+            losing leaves the roll unchanged, and another challenge must wait three years.
+          </div>
+        </div>
+      ) : null}
 
       <div className="prop-tabs">
         {shown.map((t) => (

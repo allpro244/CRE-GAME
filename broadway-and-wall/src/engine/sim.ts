@@ -32,6 +32,7 @@ import { tickNotes, maybeSellYourLoan } from "./notes";
 import { tickAuction } from "./auction";
 import { tickPortfolio } from "./portfolio";
 import { reconcileSupplyQueue } from "./supply";
+import { tickTaxAppeals } from "./tax";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
 
@@ -668,6 +669,9 @@ function tickMonth(
       s.news.unshift({ q: s.month, kind: "info", text: `Tax season: $${(tax / 1e6).toFixed(2)}M due on last year's portfolio income (after interest and depreciation).` });
     }
   }
+  // Appeal decisions follow the annual roll so a successful challenge is not
+  // immediately partly undone by the same January reassessment.
+  tickTaxAppeals(s, parcels);
 
   // insolvency: after a year underwater the creditors don't end you — they
   // start taking things. One asset a month, sold at a 15% haircut, until the

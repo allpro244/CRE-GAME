@@ -34,6 +34,8 @@ export const MODULES = [
   "owners",
   // supply is the one project queue shared by map deliveries and the economy.
   "supply",
+  // tax carries property-assessment appeals and board decisions.
+  "tax",
 ];
 
 export function writeEntry(path) {

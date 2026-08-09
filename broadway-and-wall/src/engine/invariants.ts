@@ -188,6 +188,11 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
     if (!fin(h.costBasis) || h.costBasis < 0) bad("basis", at, `cost basis ${h.costBasis}`);
     if (h.boughtM > s.month) bad("time", at, `bought in month ${h.boughtM}, it is month ${s.month}`);
     if (h.deprTaken !== undefined && (!fin(h.deprTaken) || h.deprTaken < -1)) bad("depr", at, `accumulated depreciation ${h.deprTaken}`);
+    if (h.taxAppeal) {
+      if (h.taxAppeal.decideM < h.taxAppeal.filedM) bad("tax", at, "appeal decides before filing");
+      if (!fin(h.taxAppeal.odds) || h.taxAppeal.odds < 0 || h.taxAppeal.odds > 1) bad("tax", at, `appeal odds ${h.taxAppeal.odds}`);
+      if (!fin(h.taxAppeal.target) || h.taxAppeal.target <= 0) bad("tax", at, `appeal target ${h.taxAppeal.target}`);
+    }
 
     const val = ownedHoldingValue(s, parcels, h);
     if (!fin(val) || val < 0) bad("value", at, `holding value ${val}`);

@@ -13,6 +13,7 @@ import {
 } from "@/engine/leasing";
 import type { Credit } from "@/engine/types";
 import { cureWorkout, requestForbearance, deedInLieu, serviceWorkout } from "@/engine/workout";
+import { fileTaxAppeal } from "@/engine/tax";
 import { buyNote, modifyNote, fileOnNote, sellNote, discountedPayoff } from "@/engine/notes";
 import { registerAuctionBids } from "@/engine/auction";
 import { listPortfolio, repricePortfolio, counterPortfolio, acceptPortfolioBid, delistPortfolio } from "@/engine/portfolio";
@@ -176,6 +177,7 @@ interface AppState {
   runBestAndFinal: (bbl: string) => void;
   takeBid: (bbl: string, index: number) => void;
   applyVariance: (bbl: string, targetFar?: number) => void;
+  appealTax: (bbl: string) => void;
   prebuild: (bbl: string, use: string, sf: number) => void;
   extendLease: (bbl: string, idx: number) => void;
   cureDefault: (bbl: string) => void;
@@ -881,6 +883,16 @@ export const useStore = create<AppState>((set, get) => ({
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Filed.");
+    void persist(r.s);
+  },
+
+  appealTax: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = fileTaxAppeal(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Assessment appealed.");
     void persist(r.s);
   },
 

@@ -15,9 +15,12 @@ export function PropertyPage() {
   const adjacency = useStore((s) => s.adjacency);
   const bbl = useStore((s) => s.selectedBBL);
   const [tab, setTab] = useState<PropTab>("summary");
+  const fundingDue = !!bbl && !game.holdings[bbl] && !!game.talks?.[bbl]?.agreed;
   // A different building is a different file. Opening one and landing on the
-  // last building's mortgage tab is how you misread a balance.
-  useEffect(() => { setTab("summary"); }, [bbl]);
+  // last building's mortgage tab is how you misread a balance. The exception
+  // is a signed purchase contract: opening it from Deals should show the
+  // financing choices immediately, not hide them behind an Overview tab.
+  useEffect(() => { setTab(fundingDue ? "deal" : "summary"); }, [bbl, fundingDue]);
   if (!bbl) return <div className="hint">Nothing selected.</div>;
   const rec = resolveRec(parcels, game, bbl);
   if (!rec) return <div className="hint">Unknown parcel.</div>;

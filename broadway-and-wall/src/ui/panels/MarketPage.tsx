@@ -14,6 +14,8 @@ export function BuildingDatabase() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
   const focus = useStore((s) => s.focus);
+  const setPage = useStore((s) => s.setPage);
+  const open = (bbl: string) => { focus(bbl); setPage("property"); };
   const [sortK, setSortK] = useState<string>("sf");
   const [dir, setDir] = useState<-1 | 1>(-1);
   const [cls, setCls] = useState<string>("all");
@@ -112,8 +114,9 @@ export function BuildingDatabase() {
         </thead>
         <tbody>
           {shown.slice(0, CAP).map((r: (typeof rows)[number]) => (
-            <tr key={r.bbl} onClick={() => focus(r.bbl, true)} style={{ cursor: "pointer" }}>
-              <td>{r.addr}</td>
+            <tr key={r.bbl} onClick={() => open(r.bbl)} onKeyDown={(e) => { if (e.key === "Enter") open(r.bbl); }}
+              tabIndex={0} title={`Open the property file for ${r.addr}`} style={{ cursor: "pointer" }}>
+              <td>{r.addr} <span className="dim">· Open →</span></td>
               <td className="dim">{r.cls}</td>
               <td className="num">{Math.round(r.sf).toLocaleString()}</td>
               <td className="num">{r.fl}</td>
@@ -208,7 +211,8 @@ export function MarketPage() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
   const focus = useStore((s) => s.focus);
-  const go = (bbl: string) => focus(bbl, true);
+  const setPage = useStore((s) => s.setPage);
+  const go = (bbl: string) => { focus(bbl); setPage("property"); };
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   // null = follow the docket (open when one is live), true/false = you decided.
   const [distressOpen, setDistressOpen] = useState<boolean | null>(null);
@@ -427,11 +431,15 @@ export function MarketPage() {
                 const yours = "mine" in li;
                 const h = yours ? game.holdings[li.bbl] : null;
                 return (
-                  <tr key={li.bbl} onClick={() => go(li.bbl)} className={yours ? "row-mine" : undefined}>
+                  <tr key={li.bbl} onClick={() => go(li.bbl)}
+                    onKeyDown={(e) => { if (e.key === "Enter") go(li.bbl); }}
+                    tabIndex={0} title={`Open the property file for ${rec.address}`}
+                    className={yours ? "row-mine" : undefined}>
                     <td>
                       {li.distress && <span className="chip chip-distress" style={{ marginRight: 6 }}>HOT</span>}
                       {yours && <span className="chip" style={{ marginRight: 6 }}>YOURS</span>}
                       {rec.address}
+                      <span className="dim"> · Open →</span>
                       {yours && h?.sale?.offer && (
                         <span className="dim mono"> · {usd(h.sale.offer.price)} offered</span>
                       )}

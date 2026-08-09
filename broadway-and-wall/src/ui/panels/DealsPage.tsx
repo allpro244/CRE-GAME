@@ -200,8 +200,9 @@ export function DealsPage() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
   const focus = useStore((s) => s.focus);
+  const setPage = useStore((s) => s.setPage);
   const q = game.month;
-  const go = (bbl: string) => focus(bbl, true);
+  const go = (bbl: string) => { focus(bbl); setPage("property"); };
 
   const expiring: { bbl: string; name: string; sf: number; endM: number }[] = [];
   const maturities: { bbl: string; matM: number; bal: number; sweep: boolean }[] = [];

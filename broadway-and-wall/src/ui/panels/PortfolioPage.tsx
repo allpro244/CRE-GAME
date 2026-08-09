@@ -41,7 +41,13 @@ export function PortfolioPage() {
   const [bundling, setBundling] = useState(false);
   const [bundle, setBundle] = useState<string[]>([]);
   if (!holdings.length && !Object.keys(game.developments).length) {
-    return <div className="hint">You own nothing yet. The Marketplace page has the tape; the map has everything else.</div>;
+    return (
+      <div className="deal">
+        <div className="deal-head">Your book is empty</div>
+        <div className="hint">Start with the public tape: compare real rent rolls, agree a price, then choose the debt only after the seller says yes.</div>
+        <button className="btn btn-buy" onClick={() => setPage("market")}>Browse properties in Marketplace →</button>
+      </div>
+    );
   }
   let totV = 0, totD = 0, totCF = 0;
   const rows = holdings.map((h) => {

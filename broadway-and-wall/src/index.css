@@ -52,9 +52,13 @@ body {
   z-index: 2;
   overflow: hidden;
   pointer-events: none;
-  /* Cloud is a change in daylight, not a grey curtain over the interface. */
-  background: rgba(115, 132, 143, calc(var(--weather-overcast) * 0.12));
-  mix-blend-mode: multiply;
+  /*
+   * Cloud is a small loss of contrast, not blue ink in the shadow map.
+   * `multiply` made the baked shadow polygons absorb the old blue-grey veil
+   * far more strongly than sunlit pavement, exposing them as dark navy shapes.
+   * A neutral, normally composited veil changes the daylight evenly instead.
+   */
+  background: rgba(112, 112, 108, calc(var(--weather-overcast) * 0.055));
 }
 .map-weather-rain::before,
 .map-weather-snow::before {

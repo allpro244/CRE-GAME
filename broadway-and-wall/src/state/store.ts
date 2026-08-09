@@ -8,6 +8,7 @@ import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire"
 import {
   respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold,
   AGENT_FLOOR_MIN, AGENT_FLOOR_MAX, AGENT_PASS_MIN, AGENT_TI_MONTHS_MIN, AGENT_TI_MONTHS_MAX,
+  AGENT_SIGNING_MONTHS_MIN, AGENT_SIGNING_MONTHS_MAX,
   agentFloor, agentPassBelow, type LOIAction,
 } from "@/engine/leasing";
 import type { Credit } from "@/engine/types";
@@ -215,6 +216,7 @@ interface AppState {
   setAgentPassBelow: (f: number) => void;
   setAgentMinCredit: (c: Credit) => void;
   setAgentMaxTiMonths: (m: number) => void;
+  setAgentMaxSigningMonths: (m: number) => void;
   /** Paper a cross-collateralised facility over a pool of buildings. */
   openFacility: (bbls: string[], productId: string, lev: number) => void;
   /** Pay the facility down out of cash. */
@@ -1037,6 +1039,20 @@ export const useStore = create<AppState>((set, get) => ({
     const next = {
       ...game,
       agentMaxTiMonths: Math.min(AGENT_TI_MONTHS_MAX, Math.max(AGENT_TI_MONTHS_MIN, Math.round(m))),
+    };
+    set({ game: next });
+    void persist(next);
+  },
+
+  setAgentMaxSigningMonths: (m) => {
+    const { game } = get();
+    if (!game) return;
+    const next = {
+      ...game,
+      agentMaxSigningMonths: Math.min(
+        AGENT_SIGNING_MONTHS_MAX,
+        Math.max(AGENT_SIGNING_MONTHS_MIN, Math.round(m)),
+      ),
     };
     set({ game: next });
     void persist(next);

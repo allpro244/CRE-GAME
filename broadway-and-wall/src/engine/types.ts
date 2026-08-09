@@ -2148,6 +2148,12 @@ export interface GameState {
    * (`tiPsf / rentPsf * 12`). Undefined = generous default in leasing.ts.
    */
   agentMaxTiMonths?: number;
+  /**
+   * Cap on total upfront leasing cash (TI + commission), expressed as months
+   * of the letter's face rent. Prevents long-term commission plus TI packages
+   * from clearing a TI-only mandate.
+   */
+  agentMaxSigningMonths?: number;
   /** The player told the brokers to stop ringing. Nothing else changes. */
   brokersOff?: boolean;
   /**

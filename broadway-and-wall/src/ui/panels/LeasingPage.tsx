@@ -4,9 +4,10 @@ import { monthLabel, CREDIT_LABEL, serviceSpec, planSpec } from "@/engine/types"
 import { marketRentPsfYr, resolveRec, useRentPsfYr, recoveryOf } from "@/engine/value";
 import {
   isCommercial, walt, notReadySf,
-  agentFloor, agentPassBelow, agentMinCredit, agentMaxTiMonths,
+  agentFloor, agentPassBelow, agentMinCredit, agentMaxTiMonths, agentMaxSigningMonths, agentCashReserve,
   AGENT_FLOOR_MIN, AGENT_FLOOR_MAX, AGENT_PASS_MIN,
   AGENT_TI_MONTHS_MIN, AGENT_TI_MONTHS_MAX,
+  AGENT_SIGNING_MONTHS_MIN, AGENT_SIGNING_MONTHS_MAX,
 } from "@/engine/leasing";
 import { useSf } from "@/engine/mix";
 import { portfolioIndustries } from "@/engine/comps";
@@ -23,7 +24,7 @@ export function LeasingPage() {
   const setPage = useStore((s) => s.setPage);
   const {
     setAgent, setRenewalMgmt, setAgentFloor, setAgentPassBelow,
-    setAgentMinCredit, setAgentMaxTiMonths, broker,
+    setAgentMinCredit, setAgentMaxTiMonths, setAgentMaxSigningMonths, broker,
   } = useStore.getState();
   const go = (bbl: string) => { setPage("none"); select(bbl); };
   const q = game.month;
@@ -135,6 +136,8 @@ export function LeasingPage() {
     const pass = agentPassBelow(game);
     const minCred = agentMinCredit(game);
     const tiM = agentMaxTiMonths(game);
+    const signingM = agentMaxSigningMonths(game);
+    const cashReserve = agentCashReserve(game);
     const creditLabel = (c: Credit) => (c === 2 ? "A only" : c === 1 ? "B or better" : "any credit");
     return (
       <div className="agent-bar" style={{ display: "block" }}>
@@ -182,6 +185,17 @@ export function LeasingPage() {
           marks={[{ at: 0, label: "none" }, { at: 6, label: "6 mo" }, { at: 9, label: "usual" }, { at: 12, label: "12 mo" }]}
           format={(v) => v === 0 ? "no TI without you" : `${v} months of face rent`}
           hint="Letters over the cap come back even if the rent clears — capital is a principal decision."
+        />
+        <Slider
+          label="Maximum upfront signing cash"
+          value={signingM}
+          min={AGENT_SIGNING_MONTHS_MIN}
+          max={AGENT_SIGNING_MONTHS_MAX}
+          step={1}
+          onChange={(v) => setAgentMaxSigningMonths(v)}
+          marks={[{ at: 6, label: "6 mo" }, { at: 12, label: "usual" }, { at: 18, label: "18 mo" }]}
+          format={(v) => `${v} months of face rent · TI + commission`}
+          hint={`The desk also preserves ${usd(cashReserve)} of treasury reserve (six months of debt service, minimum $250K). Anything that breaches either limit comes back to you.`}
         />
         <div style={{ marginTop: 10 }}>
           <div className="slider-label" style={{ marginBottom: 4 }}>Minimum credit to auto-sign</div>

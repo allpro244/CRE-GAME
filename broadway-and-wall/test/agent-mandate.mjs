@@ -37,6 +37,36 @@ console.log("\nLEASING MANDATE\n");
   else ok(`default pass band ${(pass * 100).toFixed(0)}%–${(floor * 100).toFixed(0)}% is referred`);
 }
 
+// Total upfront cash includes commission, not only the line labelled TI.
+{
+  const loi = {
+    id: 2, bbl: "x", kind: "new", name: "Long Paper", sector: "tech", credit: 2,
+    sf: 10_000, rentPsf: 40, termM: 120, tiPsf: 20, freeM: 0, net: true,
+  };
+  const tiM = E.loiTiMonths(loi);
+  const allM = E.loiSigningMonths(loi, E.AGENT_FEE);
+  if (Math.abs(tiM - 6) > 0.01) fail(`TI should be 6.0 months (got ${tiM.toFixed(1)})`);
+  else ok("TI is measured proportionately to face rent");
+  if (!(allM > E.agentMaxSigningMonths({}) && allM > tiM)) {
+    fail(`TI + commission should breach the default total cap (${allM.toFixed(1)} months)`);
+  } else ok(`total upfront cash catches what TI-only misses (${allM.toFixed(1)} months)`);
+}
+
+// The desk protects operating liquidity even when one lease is individually fundable.
+{
+  const reserve = E.agentCashReserve({
+    holdings: {
+      a: { loan: { monthlyPmt: 40_000 } },
+      b: { loan: { monthlyPmt: 20_000 } },
+    },
+    facility: null,
+    loc: { balance: 0 },
+    econ: { indexRate: 5 },
+  });
+  if (reserve !== 360_000) fail(`six months of $60K debt service should reserve $360K (got ${reserve})`);
+  else ok("delegated desk protects six months of debt service");
+}
+
 // Refer leaves the letter; pass deletes it.
 {
   const { loadCity } = await import(join(HERE, "city.mjs"));

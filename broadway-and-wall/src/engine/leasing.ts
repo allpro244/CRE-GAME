@@ -1782,8 +1782,8 @@ export function blendExtend(
  * instruction (an agent with a broad mandate signs a few points under asking
  * and refers anything materially worse) but it is not the PLAYER'S number, and
  * the whole point of hiring the desk is that you set the terms of the mandate
- * and they exercise judgement inside it. The default is still 0.82, so a game
- * that never touches the dial behaves exactly as it did.
+ * and they exercise judgement inside it. The default is now 0.90 on net
+ * effective economics; older saves inherit that policy when the field is absent.
  *
  * The band is what a mandate can sensibly be. Above par the desk would refuse
  * everything the market offers and the mandate would be a way of not leasing;
@@ -1841,6 +1841,10 @@ export const AGENT_PASS_MIN = 0.55;
 export const AGENT_TI_MONTHS_DEFAULT = 9;
 export const AGENT_TI_MONTHS_MIN = 0;
 export const AGENT_TI_MONTHS_MAX = 18;
+/** TI plus commission, expressed as months of the lease's face rent. */
+export const AGENT_SIGNING_MONTHS_DEFAULT = 12;
+export const AGENT_SIGNING_MONTHS_MIN = 3;
+export const AGENT_SIGNING_MONTHS_MAX = 24;
 
 export function agentFloor(s: GameState): number {
   const f = s.agentFloor;
@@ -1876,6 +1880,36 @@ export function loiTiMonths(loi: LOI): number {
   return (loi.tiPsf / loi.rentPsf) * 12;
 }
 
+export function agentMaxSigningMonths(s: GameState): number {
+  const m = s.agentMaxSigningMonths;
+  return m === undefined || !Number.isFinite(m)
+    ? AGENT_SIGNING_MONTHS_DEFAULT
+    : Math.min(AGENT_SIGNING_MONTHS_MAX, Math.max(AGENT_SIGNING_MONTHS_MIN, m));
+}
+
+/** Upfront TI + commission as months of this lease's annual face rent. */
+export function loiSigningMonths(loi: LOI, feeRate: number): number {
+  if (!(loi.rentPsf > 0) || !(loi.sf > 0)) return Infinity;
+  const years = Math.max(1, loi.termM / 12);
+  return ((loi.tiPsf / loi.rentPsf) + years * feeRate) * 12;
+}
+
+/**
+ * Cash the delegated desk may not spend. Six months of contractual debt
+ * service, with a $250k operating floor. This is not a concession rule; it is
+ * the elementary treasury control that stops a leasing agent from signing a
+ * good lease and bankrupting the firm that owns it.
+ */
+export function agentCashReserve(s: GameState): number {
+  const mortgages = Object.values(s.holdings)
+    .reduce((a, h) => a + (h.loan?.monthlyPmt ?? 0), 0);
+  const facility = s.facility
+    ? (s.facility.balance * s.facility.ratePct) / 100 / 12
+    : 0;
+  const line = ((s.loc?.balance ?? 0) * ((s.econ.indexRate ?? 0) + 4)) / 100 / 12;
+  return Math.max(250_000, Math.round(6 * (mortgages + facility + line)));
+}
+
 /**
  * Landlord-side score vs market: face after free rent, minus amortised TI.
  * Positive concessions pull the score down so a "market" face with a fat
@@ -1906,7 +1940,7 @@ function loiMarket(s: GameState, rec: ParcelRecord, h: Holding, loi: LOI): numbe
 
 type DeskVerdict = "sign" | "refer" | "pass";
 
-function deskVerdict(s: GameState, loi: LOI, market: number): {
+function deskVerdict(s: GameState, loi: LOI, market: number, feeRate: number): {
   verdict: DeskVerdict; score: number; floor: number; pass: number; why?: string;
 } {
   const floor = agentFloor(s);
@@ -1915,6 +1949,8 @@ function deskVerdict(s: GameState, loi: LOI, market: number): {
   const minCred = agentMinCredit(s);
   const maxTiM = agentMaxTiMonths(s);
   const tiM = loiTiMonths(loi);
+  const maxSigningM = agentMaxSigningMonths(s);
+  const signingM = loiSigningMonths(loi, feeRate);
 
   if (loi.credit < minCred) {
     return { verdict: "refer", score, floor, pass, why: `credit below your ${CREDIT_LABEL[minCred]} minimum` };
@@ -1931,6 +1967,12 @@ function deskVerdict(s: GameState, loi: LOI, market: number): {
   if (tiM > maxTiM + 0.05) {
     return { verdict: "refer", score, floor, pass, why: `fit-out is ${tiM.toFixed(1)} months of rent against your ${maxTiM}-month cap` };
   }
+  if (signingM > maxSigningM + 0.05) {
+    return {
+      verdict: "refer", score, floor, pass,
+      why: `TI plus commission is ${signingM.toFixed(1)} months of rent against your ${maxSigningM}-month upfront-cost cap`,
+    };
+  }
   return { verdict: "sign", score, floor, pass };
 }
 
@@ -1942,7 +1984,7 @@ function runAgent(s: GameState, parcels: ParcelTable) {
     const rec = resolveRec(parcels, s, loi.bbl);
     if (!h || !rec) continue;
     const market = loiMarket(s, rec, h, loi);
-    const { verdict, score, floor, pass, why } = deskVerdict(s, loi, market);
+    const { verdict, score, floor, pass, why } = deskVerdict(s, loi, market, AGENT_FEE);
     if (verdict === "pass") {
       s.lois = s.lois.filter((l) => l.id !== loi.id);
       s.news.unshift({
@@ -1963,14 +2005,15 @@ function runAgent(s: GameState, parcels: ParcelTable) {
       continue;
     }
     const cost = loiSigningCost(loi, AGENT_FEE);
-    if (s.cash < cost) {
+    const reserve = agentCashReserve(s);
+    if (s.cash - cost < reserve) {
       // Cannot fund — leave it, marked referred so it surfaces instead of
       // sitting invisible under an agent who will never afford it.
       loi.referred = true;
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `Your agent would sign ${loi.name} at ${rec.address}, but the fit-out `
-          + `needs ${money(cost)} and cash is short. Referred back to you.`,
+        text: `Your agent would sign ${loi.name} at ${rec.address}, but signing needs `
+          + `${money(cost)} and would leave less than the ${money(reserve)} treasury reserve. Referred back to you.`,
       });
       continue;
     }
@@ -2019,7 +2062,8 @@ function runRenewalDesk(s: GameState, parcels: ParcelTable) {
     const rec = resolveRec(parcels, s, loi.bbl);
     if (!h || !rec) continue;
     const market = loiMarket(s, rec, h, loi);
-    const { verdict, score, floor, pass, why } = deskVerdict(s, loi, market);
+    const rate = RENEWAL_SELF_FEE + RENEWAL_MGMT_FEE;
+    const { verdict, score, floor, pass, why } = deskVerdict(s, loi, market, rate);
     if (verdict === "pass") {
       s.lois = s.lois.filter((l) => l.id !== loi.id);
       s.news.unshift({
@@ -2040,14 +2084,14 @@ function runRenewalDesk(s: GameState, parcels: ParcelTable) {
       continue;
     }
     // The letter's own commission plus the manager's mandate — see above.
-    const rate = RENEWAL_SELF_FEE + RENEWAL_MGMT_FEE;
     const cost = loiSigningCost(loi, rate);
-    if (s.cash < cost) {
+    const reserve = agentCashReserve(s);
+    if (s.cash - cost < reserve) {
       loi.referred = true;
       s.news.unshift({
         q: s.month, kind: "warn",
         text: `Management would renew ${loi.name} at ${rec.address}, but signing needs `
-          + `${money(cost)} and cash is short. Back on your desk.`,
+          + `${money(cost)} and would breach the ${money(reserve)} treasury reserve. Back on your desk.`,
       });
       continue;
     }

@@ -1415,16 +1415,33 @@ export function generateCity(cfg) {
   }
 
   // --- context --------------------------------------------------------------
+  // Districts already differ in block geometry, density and building stock.
+  // A small, stable material shift lets that identity survive at map scale
+  // without turning neighbourhoods into a colour-coded board game.
+  const districtTone = (name) => {
+    let h = 2166136261;
+    for (let i = 0; i < name.length; i++) {
+      h ^= name.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0) % 5;
+  };
   const drawn = blocks.filter((b) => b.inset);
   const pavementFeatures = blocks.map((b) => ({
     type: "Feature",
     geometry: { type: "Polygon", coordinates: [[...b.ring.map(proj.toLL), proj.toLL(b.ring[0])]] },
-    properties: { kind: "pavement", solo: b.inset ? 0 : 1, d: b.district, org: b.u === undefined ? 1 : 0 },
+    properties: {
+      kind: "pavement", solo: b.inset ? 0 : 1, d: b.district,
+      dt: districtTone(b.district), org: b.u === undefined ? 1 : 0,
+    },
   }));
   const blockFeatures = drawn.map((b) => ({
     type: "Feature",
     geometry: { type: "Polygon", coordinates: [[...b.inset.map(proj.toLL), proj.toLL(b.inset[0])]] },
-    properties: { kind: "block", org: b.u === undefined ? 1 : 0 },
+    properties: {
+      kind: "block", d: b.district,
+      dt: districtTone(b.district), org: b.u === undefined ? 1 : 0,
+    },
   }));
   // CROSSWALKS. A striped bar across the roadway at every corner of the
   // gridded blocks — laid out from the block's own kerb, spanning the full
@@ -1468,7 +1485,10 @@ export function generateCity(cfg) {
   const streetFeatures = drawn.map((b) => ({
     type: "Feature",
     geometry: { type: "LineString", coordinates: [...b.inset.map(proj.toLL), proj.toLL(b.inset[0])] },
-    properties: { kind: "street", cls: b.u !== undefined ? "grid" : "lane" },
+    properties: {
+      kind: "street", cls: b.u !== undefined ? "grid" : "lane", d: b.district,
+      dt: districtTone(b.district), org: b.u === undefined ? 1 : 0,
+    },
   }));
   const shoreRoad = {
     type: "Feature",

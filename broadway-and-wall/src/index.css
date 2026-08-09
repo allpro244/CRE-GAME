@@ -44,6 +44,54 @@ body {
 
 .app { position: relative; height: 100%; }
 .map-root { position: absolute; inset: 0; }
+.map-weather {
+  --weather-strength: 0;
+  --weather-overcast: 0;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+  /* Cloud is a change in daylight, not a grey curtain over the interface. */
+  background: rgba(115, 132, 143, calc(var(--weather-overcast) * 0.12));
+  mix-blend-mode: multiply;
+}
+.map-weather-rain::before,
+.map-weather-snow::before {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  opacity: calc(var(--weather-strength) * 0.2);
+  will-change: transform;
+}
+.map-weather-rain::before {
+  background-image: repeating-linear-gradient(
+    104deg,
+    transparent 0 14px,
+    rgba(218, 230, 236, 0.78) 15px,
+    transparent 16px 31px
+  );
+  background-size: 42px 42px;
+  animation: weather-rain 0.7s linear infinite;
+}
+.map-weather-snow::before {
+  background-image:
+    radial-gradient(circle, rgba(248, 250, 252, 0.9) 0 1px, transparent 1.6px),
+    radial-gradient(circle, rgba(235, 242, 247, 0.72) 0 1.3px, transparent 1.9px);
+  background-position: 0 0, 19px 13px;
+  background-size: 37px 43px, 53px 61px;
+  animation: weather-snow 8s linear infinite;
+}
+@keyframes weather-rain {
+  to { transform: translate3d(-3%, 18%, 0); }
+}
+@keyframes weather-snow {
+  to { transform: translate3d(3%, 16%, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .map-weather-rain::before,
+  .map-weather-snow::before { animation: none; }
+}
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
 /* ---- top bar ---- */

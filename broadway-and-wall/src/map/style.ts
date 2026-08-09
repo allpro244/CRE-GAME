@@ -350,7 +350,15 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         // with buildings on it and no street grid at all. A carriageway is the
         // darkest thing on the ground in any real city, and once it is, the
         // grid draws itself and the crossings and centrelines finally read.
-        paint: { "fill-color": ["match", ["get", "org"], 1, "#8e8375", "#918e88"] as never },
+        paint: {
+          "fill-color": [
+            "case",
+            ["==", ["get", "org"], 1], "#8e8375",
+            ["match", ["coalesce", ["get", "dt"], 0],
+              0, "#918e88", 1, "#8d8d89", 2, "#938e86", 3, "#8e908b", 4, "#928b87",
+              "#918e88"],
+          ] as never,
+        },
       },
       {
         // painted crossings at the gridded corners
@@ -371,7 +379,15 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "block"],
-        paint: { "fill-color": ["match", ["get", "org"], 1, "#eae5d3", "#e9e6dc"] as never },
+        paint: {
+          "fill-color": [
+            "case",
+            ["==", ["get", "org"], 1], "#eae5d3",
+            ["match", ["coalesce", ["get", "dt"], 0],
+              0, "#e9e6dc", 1, "#e6e6df", 2, "#ebe6d9", 3, "#e6e8df", 4, "#eae3dc",
+              "#e9e6dc"],
+          ] as never,
+        },
       },
       {
         // SIDEWALK: a pale band hugging the block, inside the curb line
@@ -380,7 +396,13 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         source: "bw-context",
         filter: ["==", ["get", "kind"], "street"],
         paint: {
-          "line-color": "#dedbd1",
+          "line-color": [
+            "case",
+            ["==", ["get", "org"], 1], "#ded6c8",
+            ["match", ["coalesce", ["get", "dt"], 0],
+              0, "#dedbd1", 1, "#d9dcda", 2, "#e0dacd", 3, "#daddd5", 4, "#dfd7d1",
+              "#dedbd1"],
+          ] as never,
           "line-width": ["interpolate", ["linear"], ["zoom"], 13, 1.1, 15, 3.4, 18, 15] as never,
         },
         layout: { "line-join": "round" },

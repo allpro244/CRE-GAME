@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useStore } from "@/state/store";
@@ -8,6 +8,7 @@ import { occupancy, resolveRec, useOccupancy } from "@/engine/value";
 import { useSf } from "@/engine/mix";
 import { monthLabel } from "@/engine/types";
 import type { GameState } from "@/engine/types";
+import { cityVisualState } from "./cityVisuals";
 
 /**
  * What the map actually paints. LOI counters, cash draws and news writes clone
@@ -747,10 +748,18 @@ export default function MapView() {
   }, [paintSig, mapReady]);
 
   const gameMonth = useStore((s) => s.game?.month ?? 0);
+  const visualGame = useStore.getState().game;
+  const cityVisual = visualGame
+    ? cityVisualState(visualGame)
+    : { weather: "clear" as const, precipitation: 0, overcast: 0, activity: 1 };
   useEffect(() => {
     if (!mapReady) return;
     threeRef.current?.setMonth(gameMonth);
   }, [gameMonth, mapReady]);
+  useEffect(() => {
+    if (!mapReady) return;
+    threeRef.current?.setActivity(cityVisual.activity);
+  }, [cityVisual.activity, mapReady]);
 
   // lenses — repaint when toggled and as the market moves
   useEffect(() => {
@@ -884,6 +893,14 @@ export default function MapView() {
   return (
     <>
       <div ref={el} className="map-root" />
+      <div
+        aria-hidden="true"
+        className={`map-weather map-weather-${cityVisual.weather}`}
+        style={{
+          "--weather-strength": cityVisual.precipitation.toFixed(3),
+          "--weather-overcast": cityVisual.overcast.toFixed(3),
+        } as CSSProperties}
+      />
       <div ref={tipRef} className="hover-tip" style={{ display: "none" }} />
     </>
   );

@@ -446,6 +446,7 @@ const WALKER_VERT = /* glsl */ `
 uniform vec4 uSeason;
 uniform float uFoliage;
 uniform float uTime;
+uniform float uActivity;
 attribute vec4 aWalk;    // street dir x, y · patrol length m · speed m/s
 attribute vec2 aWalk2;   // phase 0..1 · breath threshold 0..1
 varying vec3 vN;
@@ -453,7 +454,10 @@ varying vec3 vW;
 varying vec3 vC;
 void main() {
   float breath = 0.62 + 0.38 * sin(uTime * 0.018 + 1.7);
-  float alive = step(aWalk2.y, breath);
+  // The slow breath keeps the pavement moving; the simulation decides how
+  // many people are there to move. A weak labour market or empty buildings
+  // visibly thins the crowd, while rain and snow trim it further upstream.
+  float alive = step(aWalk2.y, clamp(breath * uActivity, 0.0, 1.0));
   vec3 p = position * alive;
   float travel = mod(aWalk2.x * aWalk.z + uTime * aWalk.w, aWalk.z) - aWalk.z * 0.5;
   vec4 wp = instanceMatrix * vec4(p, 1.0);
@@ -5332,6 +5336,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   // have to haze against the same eye point or the city separates into layers.
   private camUni = { value: new THREE.Vector3(0, 0, 800) };
   private timeUni = { value: 0 };
+  private activityUni = { value: 1 };
   private waterMat: THREE.ShaderMaterial | null = null;
   private lastFrame = 0;
   // ---- post stage ----
@@ -7032,6 +7037,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const mat = this.propMaterial(0xffffff);
       mat.vertexShader = WALKER_VERT;
       mat.uniforms.uTime = this.timeUni;
+      mat.uniforms.uActivity = this.activityUni;
       const mesh = new THREE.InstancedMesh(g, mat, items.length);
       const m = new THREE.Matrix4();
       items.forEach((p, i) => {
@@ -8305,6 +8311,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     }
     for (const a of this.retAttrs) a.needsUpdate = true;
     this.map.triggerRepaint();
+  }
+
+  /** Economy and weather only change visibility; the instanced crowd is never rebuilt. */
+  setActivity(activity: number) {
+    const next = Math.max(0.25, Math.min(1.05, Number.isFinite(activity) ? activity : 1));
+    if (Math.abs(next - this.activityUni.value) < 0.005) return;
+    this.activityUni.value = next;
+    this.map?.triggerRepaint();
   }
 
   setMonth(m: number) {

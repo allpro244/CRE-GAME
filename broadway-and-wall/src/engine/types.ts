@@ -2245,11 +2245,19 @@ export interface Talks {
  * The scale that makes them mean something: firm overhead measured $57K/yr at
  * the start and $131K by year seventeen, and a small building trades around
  * $0.5-2.5M. So $1M is one building outright or two levered with almost no
- * reserve; $5M is a real first fund with room to be wrong once. An idle firm
- * with $6M went insolvent in year fifteen on overhead alone — at $1M it has
- * closer to five, which is why this is a starting choice and not a slider.
+ * reserve; $5M is a real first fund with room to be wrong once. $10M and $20M
+ * are institutional openings: enough to begin with a diversified book, but
+ * still finite capital rather than a sandbox. An idle firm with $6M went
+ * insolvent in year fifteen on overhead alone — at $1M it has closer to five,
+ * which is why this is a starting choice and not a slider.
  */
-export const START_CASH_CHOICES = [1_000_000, 2_500_000, 5_000_000] as const;
+export const START_CASH_CHOICES = [
+  1_000_000,
+  2_500_000,
+  5_000_000,
+  10_000_000,
+  20_000_000,
+] as const;
 export type StartCash = (typeof START_CASH_CHOICES)[number];
 export const DEFAULT_START_CASH: StartCash = 2_500_000;
 /** @deprecated the opening bankroll is chosen — see START_CASH_CHOICES. */

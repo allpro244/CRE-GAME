@@ -37,6 +37,8 @@ const CASH_NOTE: Record<number, string> = {
   1_000_000: "One small building outright, or two with debt, and almost no reserve. Overhead alone gives you about five years to find income.",
   2_500_000: "The standard opening. Room for a couple of buildings and a reserve to carry a lease-up.",
   5_000_000: "A real first fund. Enough to be wrong once and still be in business.",
+  10_000_000: "A small institutional platform. Build a diversified first book without making capital irrelevant.",
+  20_000_000: "A serious acquisition fund. Enough to shape a portfolio early, while leverage and bad cycles can still hurt.",
 };
 
 export default function StartMenu() {
@@ -195,7 +197,7 @@ export default function StartMenu() {
                     not scale anything, it decides how many mistakes you get
                     before overhead eats you. Firm overhead runs $57K a year at
                     the start and $131K by year seventeen, and a small building
-                    trades around $0.5-2.5M, so these are three different
+                    trades around $0.5-2.5M, so these are five different
                     openings rather than three settings. */}
                 <div className="start-col">
                   <div className="start-col-head">what you start with</div>

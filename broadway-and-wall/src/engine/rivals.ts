@@ -432,9 +432,16 @@ export function fundJobs(s: GameState) {
       // is done, and only if its advance rate on the whole cost clears what is
       // already owed to the receiver.
       if (s.month >= (j.replaceM ?? 0)) {
+        const progress = curve(t1);
+        const toComplete = Math.max(0, (j.cost ?? 0) * (1 - progress));
+        const equityLeft = Math.max(0, j.equityLeft ?? 0);
         const desk = openConstructionDesks(s)
           .filter((d) => d.name !== (j.lender ?? CONSTRUCTION_LENDER))
-          .find((d) => d.cap * (j.cost ?? 0) > (j.debt ?? 0));
+          .find((d) => {
+            const gross = d.cap * (j.cost ?? 0);
+            const newMoney = gross - (j.debt ?? 0);
+            return newMoney > 0 && newMoney + equityLeft + Math.max(0, r.cash) >= toComplete;
+          });
         if (desk) {
           j.lender = desk.name;
           // The premium a desk charges to step into a receiver's shoes — the
@@ -848,16 +855,18 @@ export function markRival(s: GameState, parcels: ParcelTable, r: Rival): { aum: 
  * `debtReleasedOnSale`. The sum of these over `r.bbls` is `markRival`, by
  * construction rather than by agreement.
  */
-function markAsset(s: GameState, r: Rival, rec: ParcelRecord): { v: number; noi: number } {
+export function markAsset(s: GameState, r: Rival, rec: ParcelRecord): { v: number; noi: number } {
   const cond = assetGrade(r, rec);
   const v = assetValue(rec, s.econ, cond);
   if (rec.class === "land" || !rec.bldgArea) return { v, noi: noiAfterTaxYr(rec, s.econ, cond, v) };
-  // Against the book's OWN market occupancy, not this building's. `r.occ`
-  // is a portfolio average; dividing it by an individual building's
-  // occupancy handed a firm a 35% uplift on every troubled asset it owned —
-  // exactly the assets that should be dragging the mark down.
+  // Start with THIS building's modeled occupancy, then carry only the firm's
+  // portfolio-wide operating delta onto it. A weak location stays weak even
+  // when the rest of the book is full; a good operator can still outperform
+  // the market by a few points across the portfolio.
   const bookMkt = Math.max(0.35, r.mktOcc ?? 0.88);
-  const ratio = Math.max(0.35, Math.min(1.2, (r.occ ?? bookMkt) / bookMkt));
+  const localMkt = Math.max(0.20, occupancy(rec, s.econ));
+  const actual = Math.max(0.15, Math.min(0.995, localMkt + (r.occ ?? bookMkt) - bookMkt));
+  const ratio = Math.max(0.35, Math.min(1.2, actual / localMkt));
   return {
     v: v * (0.42 + 0.58 * ratio),
     noi: noiAfterTaxYr(rec, s.econ, cond, v) * ratio,

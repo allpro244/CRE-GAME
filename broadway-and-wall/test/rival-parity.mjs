@@ -53,5 +53,41 @@ console.log("\nRIVAL ECONOMIC PARITY\n");
   check(before - r.cash === 80_000, "rival actually pays the 8% cure rather than winning a free lottery");
 }
 
+{
+  const g = E.newGame(98213, parcels);
+  const r = g.rivals[0];
+  r.cash = 20_000_000;
+  r.debt = 1_000_000;
+  g.month = 1;
+  g.cityJobs = [{
+    bbl: r.bbls[0] ?? Object.keys(parcels)[0],
+    use: "office", sf: 200_000, floors: 20, startM: 0, deliverM: 10,
+    firmId: r.id, cost: 100_000_000, spent: 0, equityLeft: 0,
+    debt: 1_000_000, commitment: 70_000_000, ratePct: 8,
+    lender: "Regional Bank", repudiatedM: 0, replaceM: 0,
+  }];
+  E.fundJobs(g);
+  check(g.cityJobs[0].repudiatedM !== undefined,
+    "replacement lender refuses a facility whose total sources cannot finish the rival job");
+}
+
+{
+  const g = E.newGame(98214, parcels);
+  const r = g.rivals[0];
+  r.mktOcc = 0.88;
+  r.occ = 0.72;
+  const source = Object.values(parcels).find((x) => x.class !== "land" && x.bldgArea > 0);
+  const low = { ...source, demandScore: 12 };
+  const high = { ...source, demandScore: 92 };
+  const markedLow = E.markAsset(g, r, low);
+  const markedHigh = E.markAsset(g, r, high);
+  const baseLow = E.assetValue(low, g.econ, E.assetGrade(r, low));
+  const baseHigh = E.assetValue(high, g.econ, E.assetGrade(r, high));
+  const lowScale = markedLow.v / Math.max(1, baseLow);
+  const highScale = markedHigh.v / Math.max(1, baseHigh);
+  check(lowScale < highScale,
+    "portfolio stress penalizes a weak rival asset more than a strong one");
+}
+
 console.log("");
 process.exit(bad ? 1 : 0);

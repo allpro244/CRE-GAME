@@ -21,6 +21,7 @@ export function holdingDeskSig(g: GameState | null | undefined, bbl: string): st
     .join(",");
   const listing = g.listings.find((l) => l.bbl === bbl);
   const ap = g.approaches[bbl];
+  const talk = g.talks?.[bbl];
   const dev = g.developments[bbl];
   const w = g.workouts?.[bbl];
   const gl = g.groundLeases?.[bbl];
@@ -65,6 +66,16 @@ export function holdingDeskSig(g: GameState | null | undefined, bbl: string): st
     listing?.ask ?? "",
     ap?.ask ?? "",
     ap?.q ?? "",
+    // Purchase negotiation state. This was missing from the parcel signature,
+    // so a seller's counter updated GameState without re-rendering the offer
+    // desk. Moving the slider changed local React state and accidentally made
+    // the counter appear, which is why the slider seemed required.
+    talk?.theirPrice ?? "",
+    talk?.yourPrice ?? "",
+    talk?.round ?? "",
+    talk?.final ? 1 : 0,
+    talk?.agreed ? 1 : 0,
+    talk?.agreedPrice ?? "",
     dev?.deliverM ?? "",
     dev?.startM ?? "",
     w?.stage ?? "",

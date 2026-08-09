@@ -238,22 +238,25 @@ const MOM_DEMAND = 4;
  *  rations demand — dear space, firms take less of it — but it was unbounded,
  *  and unbounded it manufactured tenants out of cheapness: measured over three
  *  careers it reached 2.34 — the model asserting that cheap rent, by itself,
- *  more than doubles the space the city's existing headcount takes. Space per worker
- *  is set by headcount and by workplace design, not by rent. US office ran
- *  about 250 sf/worker in 1990 and about 190 in 2019 — a quarter, over THIRTY
- *  years, and driven by open plan and hot-desking rather than by price. A
- *  cyclical price response cannot be wider than that, so it is bounded inside
- *  it: plus or minus twelve per cent about the middle of the observed band.
+ *  more than doubles the space the city's existing headcount takes. Space per
+ *  worker is set by headcount and by workplace design, not by rent. US office
+ *  ran about 250 sf/worker in 1990 and about 190 in 2019 — a quarter, over
+ *  THIRTY years.
  *
- *  IT DID NOT DAMP THE CYCLE AND THAT IS RECORDED HERE. Removing the bound and
- *  changing nothing else measured office sd(log) 0.263 -> 0.235, RETAIL 0.259
- *  -> 0.224 — the unbounded version is calmer, because manufactured demand is a
- *  stabiliser: a rent collapse conjures the tenants that stop it. It is a
- *  stabiliser built on a fiction, so the bound stays and the model is a little
- *  louder for it. What it did do is stop resting on its own rail: the clamp
- *  bound 58.5% of class-months before and binds 16.7% now, because rent no
- *  longer travels far enough to need it. */
-const AFFORD_BAND: [number, number] = [0.88, 1.12];
+ *  ASYMMETRIC ON PURPOSE. Cheapness still cannot manufacture tenants: the
+ *  upper rail stays at +12%. Dearness may compress toward that observed
+ *  secular densification floor (190/250 ≈ 0.76) — a century of elevated
+ *  rent-to-income with the old ±12% band left affordEff glued near 0.88 while
+ *  a permanent unhousable search queue minted scarcity rent (see pool search
+ *  fringe below). The lower rail is that densification floor, not a CAGR dial:
+ *  firms can end up as dense as the historical record, and no denser from
+ *  price alone.
+ *
+ *  Symmetric ±12% DID NOT DAMP THE CYCLE AND THAT IS RECORDED HERE. Removing
+ *  the bound entirely measured office sd(log) 0.263 -> 0.235 — calmer because
+ *  manufactured demand is a stabiliser built on a fiction. The cheap-side rail
+ *  stays; only the dear side opens to the densification floor. */
+const AFFORD_BAND: [number, number] = [0.76, 1.12];
 
 /**
  * INDUSTRIAL EMPLOYMENT SHARE — SECULAR DECLINE.
@@ -2540,11 +2543,38 @@ export function tickEcon(s: GameState) {
     // mainland takes it, exactly the fiction stockFromParcels already tells.
     // Note targetRaw reads baseStock, frozen at newGame: supply NEVER touches
     // the demand side. That sentence is the whole rebuild.
+    //
+    // SEARCH FRINGE. Tenants looking for space are real; a permanent queue of
+    // 8% of stock that can never be housed is not. Measured on century seeds
+    // after the rent-rail fixes: with vacancy pinned, `pool` chased a job-driven
+    // `targetRaw` far above `housable` every month, the 25% drain lost to the
+    // 10% formation chase, and `unmet` grew to ~0.08 — minting scarcity rent
+    // of nearly a point a month from tenants who do not exist as occupants and
+    // never will. Real asking rents compounded to ~5× real over a century.
+    //
+    // Desired demand may still be huge (jobs outran floors). The LOOKING pool
+    // only holds what the city can house plus a normal fringe of active
+    // searchers — about a quarter of natural vacancy, the share between leases.
+    // Beyond that, unhousable demand has already left for the mainland; it does
+    // not keep refilling from a headcount that assumes infinite floors.
     const friction = frictionFloor(k);
     const housable = e.stock[k] * (1 - friction);
+    const searchFringe = e.stock[k] * NATURAL_VAC[k] * 0.25;
+    const poolTarget = Math.min(targetRaw, housable + searchFringe);
     if (!e.pool) e.pool = { ...e.occupied };
-    e.pool[k] += 0.10 * (targetRaw - e.pool[k]);
+    e.pool[k] += 0.10 * (poolTarget - e.pool[k]);
     e.pool[k] -= 0.25 * Math.max(0, e.pool[k] - housable * 1.02);
+    // SPACE CAPS PAYROLL DESIRE. Jobs drove the looking pool with no return
+    // wire from "there is no floor left" — only from rent via spacePull. So a
+    // city could staff 2× the desks it can house, keep those jobs on the books,
+    // and have the truncated pool still press rents while headcount marched on.
+    // Desired demand that exceeds the housable search fringe is firms that will
+    // not grow payroll here; bleed that excess out of employIdx at lease-plan
+    // speed (capped — not the uncapped spacePull disaster at 1.8× RTI).
+    if (k === "office" && targetRaw > housable + searchFringe) {
+      const excess = (targetRaw - housable - searchFringe) / Math.max(1, targetRaw);
+      e.employIdx = Math.max(0.55, (e.employIdx ?? 1) * (1 - Math.min(0.0015, excess * 0.004)));
+    }
     // ABSORPTION IS FINITE, and it is a property of TENANTS, not buildings.
     // The clamps and the noise used to scale with stock — a bigger city of
     // buildings signed leases faster. Now they scale with occupied: a bigger

@@ -19,7 +19,7 @@ import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, 
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
 export { physicalMaxFloors, plateEfficiency } from "./value";
-import { genAnchorTenant } from "./leasing";
+import { genAnchorTenant, COMMERCIAL_SUITE_MIN, minTenancySf, useVacantSf } from "./leasing";
 import { claimJob, jobDelivered, ownerOf, gradeOf } from "./rivals";
 import { locAvailable } from "./credit";
 import { useSf } from "./mix";
@@ -111,8 +111,12 @@ function overMix(mix: UseMix, f: (u: BuiltClass) => number): number {
   return w > 0 ? sum / w : 0;
 }
 /** How much of a programme carries genuine leasing risk before it is built. */
+/** Share of the job that can take a named commercial pre-let. Industrial is
+ *  named-tenant space too — excluding it made every shed open empty no matter
+ *  how tight the market was while the shell went up. Flats still lease after
+ *  C of O, not off a hole in the ground. */
 function specShare(mix: UseMix): number {
-  return (mix.office ?? 0) + (mix.retail ?? 0);
+  return (mix.office ?? 0) + (mix.retail ?? 0) + (mix.industrial ?? 0);
 }
 const CONSTR_SPREAD = 2.4;     // over the index, interest-only
 
@@ -1596,7 +1600,12 @@ export function tickConstructionLeasing(s: GameState, parcels: ParcelTable) {
     // risk the developer is being paid to carry, and the thing this model
     // exists to make real.
     const openSf = Math.round(leasable * pre.ceiling) - takenSf;
-    if (openSf < 1500) continue;
+    // Same floor delivery uses when it converts `signed` into a rent-roll row.
+    // This used to accept 1,500 sf deals that genAnchorTenant then silently
+    // dropped at C of O (commercial minimum 2,000) — news said the building
+    // was spoken for, the roll opened empty.
+    const floor = COMMERCIAL_SUITE_MIN;
+    if (openSf < floor) continue;
 
     // a tight market lets a building before it opens; a glut does not
     const appetite = classAppetite(s, lead);
@@ -1608,7 +1617,7 @@ export function tickConstructionLeasing(s: GameState, parcels: ParcelTable) {
     if (rng(s, "dev") >= p) continue;
 
     const want = Math.round(openSf * rrange(s, 0.16, 0.5, "dev"));
-    if (want < 1500) continue;
+    if (want < floor) continue;
     // The delivery-risk discount: steep when the building is a frame and a
     // promise, nearly gone by the time the scaffolding comes down.
     const discount = clamp(1 - (0.16 * (months / Math.max(1, span))), 0.86, 0.99);
@@ -1728,9 +1737,31 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // and they move in. A job that let well during construction opens part-full
   // and covers its mini-perm; one that let nothing opens empty, which is the
   // developer's real risk and always was.
+  //
+  // Conversion used to call genAnchorTenant and ignore a void return — any
+  // pre-let under the commercial floor, or against a leg that would not
+  // demise, vanished without a word. Surface it, and try the floor size when
+  // the vacancy can still take a real suite.
+  let placed = 0, lostSf = 0;
   for (const sg of d.signed ?? []) {
     const built = resolveRec(parcels, s, d.bbl);
-    if (built) genAnchorTenant(s, built, h, sg.sf, sg.discount, sg.use as BuiltClass);
+    if (!built) { lostSf += sg.sf; continue; }
+    const use = sg.use as BuiltClass;
+    if (genAnchorTenant(s, built, h, sg.sf, sg.discount, use)) { placed++; continue; }
+    const floor = minTenancySf(built, use);
+    const vac = useVacantSf(built, h, use, s.month);
+    if (vac >= floor && genAnchorTenant(s, built, h, Math.min(vac, Math.max(floor, sg.sf)), sg.discount, use)) {
+      placed++;
+      continue;
+    }
+    lostSf += sg.sf;
+  }
+  if (lostSf > 0) {
+    s.news.unshift({
+      q: s.month, kind: "warn",
+      text: `${rec.address} opened with ${(lostSf / 1000).toFixed(1)}k sf of construction pre-lets that could not take possession — `
+        + `the space will not demise under the floor. ${placed} pre-let${placed === 1 ? "" : "s"} did move in.`,
+    });
   }
 
   // THE TAKEOUT. The construction loan does not evaporate — it rolls into a

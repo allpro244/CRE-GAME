@@ -481,7 +481,10 @@ function tickMonth(
       const occNow = physicalOcc(rec, h);
       const os = operatingStatement(rec, s.econ, h, s.month);
       const letSf = occNow * rec.bldgArea;
-      const rentPsf = letSf > 0 ? os.baseRent / letSf : 0;
+      // Contract rent on LET space — include free-rent concessions. Dividing
+      // only collecting base rent by physical occupancy made a newly signed
+      // abated lease look like the building had let at $0/sf.
+      const rentPsf = letSf > 0 ? (os.baseRent + os.freeRent) / letSf : 0;
       (h.hist ??= []).push([
         s.month,
         Math.round(occNow * 1000),

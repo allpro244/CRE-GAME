@@ -597,8 +597,12 @@ export const MAKE_READY_PSF = 3.9; // turn cost, $/sf before cost inflation
  * and they priced it — `discount` is what that cost you, and it is locked in
  * for a decade and a half.
  */
-export function genAnchorTenant(s: GameState, rec: ParcelRecord, h: Holding, sfWanted: number, discount = 1, forUse?: BuiltClass) {
-  if (!isCommercial(rec)) return;
+/** Place a construction pre-let onto the rent roll. Returns false when the
+ *  space will not demise — callers must not treat silence as success. */
+export function genAnchorTenant(
+  s: GameState, rec: ParcelRecord, h: Holding, sfWanted: number, discount = 1, forUse?: BuiltClass,
+): boolean {
+  if (!isCommercial(rec)) return false;
   // An anchor pre-lets COMMERCIAL space. In a stacked building the flats above
   // are not part of the deal, and letting the anchor take the whole building
   // put more square feet under lease than the building had.
@@ -607,7 +611,7 @@ export function genAnchorTenant(s: GameState, rec: ParcelRecord, h: Holding, sfW
   // The same floor every other tenancy obeys. This said 1,000 while the rest
   // of the engine says a commercial tenancy under 2,000 ft is not one — and
   // the invariant sweep caught a 1,634 ft anchor signed at a delivery.
-  if (sfAnchor < minTenancySf(rec, use)) return;
+  if (sfAnchor < minTenancySf(rec, use)) return false;
   const sector = pickSector(s, use);
   const market = useRentPsfYr(rec, s.econ, h.condition, use) * discount;
   h.tenants.push({
@@ -622,6 +626,7 @@ export function genAnchorTenant(s: GameState, rec: ParcelRecord, h: Holding, sfW
     startM: s.month,
     endM: s.month + Math.round(rrange(s, 120, 180, "leasing")),
   });
+  return true;
 }
 
 export function walt(h: Holding, q: number): number {
@@ -2063,9 +2068,18 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
       deposit,
     });
   }
+  // Say what the roll looks like NOW. "Lease signed" with a free-rent period
+  // and unchanged NOI was reading as a no-op — the tenant is on the roll and
+  // the building is more full, even when the cheque has not started.
+  const leasedSf = h.tenants.reduce((a, t) => a + t.sf, 0);
+  const occPct = rec.bldgArea > 0 ? Math.min(100, (100 * leasedSf) / rec.bldgArea) : 0;
+  const freeNote = l.kind === "new" && l.freeM
+    ? ` Free rent through ${monthLabel(s.month + l.freeM)} — base rent is on the roll but not yet in NOI.`
+    : "";
   s.news.unshift({
     q: s.month, kind: "deal",
-    text: `Signed${feeRate === AGENT_FEE ? " by your agent" : ""}: ${l.name} — ${l.sf.toLocaleString()} sf at ${rec.address}, $${l.rentPsf.toFixed(0)}/sf, ${(l.termM / 12).toFixed(0)} yrs${l.kind === "renewal" ? " (renewal)" : ""}.`,
+    text: `Signed${feeRate === AGENT_FEE ? " by your agent" : ""}: ${l.name} — ${l.sf.toLocaleString()} sf at ${rec.address}, $${l.rentPsf.toFixed(0)}/sf, ${(l.termM / 12).toFixed(0)} yrs${l.kind === "renewal" ? " (renewal)" : ""}. `
+      + `Building is ${occPct.toFixed(0)}% let.${freeNote}`,
   });
 }
 
@@ -2145,7 +2159,15 @@ export function respondLOI(
     if (err) return { s, msg: "", err };
     sweepTour(loi);
     next.lois = next.lois.filter((l) => l.id !== id);
-    return { s: next, msg: "Lease signed." + drawNote() };
+    const leasedSf = h.tenants.reduce((a, t) => a + t.sf, 0);
+    const occPct = rec.bldgArea > 0 ? Math.min(100, (100 * leasedSf) / rec.bldgArea) : 0;
+    const freeBit = loi.kind === "new" && loi.freeM
+      ? ` Free rent for ${loi.freeM} month${loi.freeM === 1 ? "" : "s"} — occupancy is up; cash flow waits.`
+      : "";
+    return {
+      s: next,
+      msg: `Lease signed — ${rec.address} is ${occPct.toFixed(0)}% let.${freeBit}` + drawNote(),
+    };
   }
 
   if (action === "counter") {

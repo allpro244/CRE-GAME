@@ -358,7 +358,18 @@ export function PortfolioPage() {
                 )}
               </td>
               <td className="num">{rec && rec.bldgArea ? (() => { const u = unitStatus(rec, h, game.month); return `${u.leased} / ${u.total}`; })() : "—"}</td>
-              <td className="num">{rec?.class === "land" ? "—" : (occ * 100).toFixed(0) + "%"}</td>
+              <td
+                className="num"
+                title={dv
+                  ? ((dv.signed?.length ?? 0)
+                    ? `${dv.signed!.length} construction pre-let${dv.signed!.length === 1 ? "" : "s"} · ${dv.signed!.reduce((a, x) => a + x.sf, 0).toLocaleString()} sf spoken for — land on the rent roll at delivery`
+                    : "Under construction — no rent roll until it delivers")
+                  : undefined}
+              >
+                {dv
+                  ? ((dv.signed?.length ?? 0) ? `${((dv.signed!.reduce((a, x) => a + x.sf, 0) / Math.max(1, dv.sf)) * 100).toFixed(0)}% pre` : "—")
+                  : rec?.class === "land" ? "—" : (occ * 100).toFixed(0) + "%"}
+              </td>
               {/* WHAT THE ROLL ACTUALLY COLLECTS, per foot. The rent every
                   decision in the game is denominated in, and the book quoted
                   NOI and value per foot but never the rent underneath them. */}

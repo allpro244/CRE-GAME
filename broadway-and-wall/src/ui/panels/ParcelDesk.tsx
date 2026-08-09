@@ -4,7 +4,7 @@ import { useStore } from "@/state/store";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, START_YEAR } from "@/engine/types";
 import type { Approach, BuiltClass, Contract, DevUse } from "@/engine/types";
-import { assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, holdingNOIYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, recoveryOf, landValue, inPlace, proFormaNOIYr, disclosureFor, asIfOwned } from "@/engine/value";
+import { assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, holdingNOIYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, recoveryOf, landValue, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, remainingAbatement } from "@/engine/value";
 import { planDevelopment, constructionQuotes, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
 import { buyQuote, assemblagePressure, saleTaxQuote, quietFeeRate } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
@@ -201,6 +201,12 @@ export function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab
             bad={u.leased < u.total * 0.6}
           />
         ))}
+        {holding && commercial && holding.tenants.length > 0 && (
+          <Row
+            k="On the rent roll"
+            v={`${holding.tenants.length} lease${holding.tenants.length === 1 ? "" : "s"} · ${sf(holding.tenants.reduce((a, t) => a + t.sf, 0))}`}
+          />
+        )}
         {holding && commercial && <Row k="WALT" v={walt(holding, game.month).toFixed(1) + " yrs"} />}
         {/* One building must not quote two different NOIs on one panel. In
             place off the roll — yours, or the one the seller disclosed — and
@@ -210,9 +216,19 @@ export function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab
         {isBuilt && (() => {
           const ip = goingIn(game, selectedBBL, value);
           const stab = proFormaNOIYr(rec, game.econ, ip.h?.condition ?? cond, value);
+          const os = holding ? operatingStatement(rec, game.econ, holding, game.month) : null;
+          const abate = holding ? remainingAbatement(holding, game.month) : 0;
           return (
             <>
               <Row k={ip.disclosed ? "In-place NOI / yr" : "NOI / yr (mkt est.)"} v={usd(ip.noi)} />
+              {os && os.freeRent > 0 && (
+                <Row
+                  k="Scheduled rent (abated)"
+                  v={usd(os.baseRent + os.freeRent) + "/yr"}
+                  title={`${usd(os.freeRent)}/yr is free rent still burning — occupancy is up; this NOI has not caught it yet`}
+                />
+              )}
+              {abate > 0 && <Row k="Free rent still owed" v={"−" + usd(abate)} bad />}
               {ip.disclosed && stab > ip.noi * 1.02 && (
                 <Row k="Stabilised pro-forma" v={usd(stab)} />
               )}
@@ -554,7 +570,24 @@ export function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab
             <Row k="Budget" v={usd(dev.costTotal)} />
             <Row k="Constr. loan" v={usd(dev.loanBalance) + " @ " + pct(dev.ratePct)} />
             <Row k="Delivers" v={monthLabel(dev.deliverM)} strong />
+            <Row
+              k="Pre-let"
+              v={(dev.signed?.length ?? 0)
+                ? `${dev.signed!.length} deal${dev.signed!.length === 1 ? "" : "s"} · ${sf(dev.signed!.reduce((a, x) => a + x.sf, 0))} spoken for`
+                : "None yet — tenants who take delivery risk show up here"}
+              strong={(dev.signed?.length ?? 0) > 0}
+            />
           </div>
+          {(dev.signed?.length ?? 0) > 0 && (
+            <div className="mini-list" style={{ marginTop: 8 }}>
+              {dev.signed!.map((sg, i) => (
+                <div key={i} className="mini-row" style={{ cursor: "default" }}>
+                  <span>{(sg.use || "space")} · {sf(sg.sf)}</span>
+                  <span className="mono dim">{((1 - sg.discount) * 100).toFixed(0)}% under market for delivery risk</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

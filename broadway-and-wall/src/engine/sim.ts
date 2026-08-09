@@ -7,7 +7,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
 import { DEFAULT_START_CASH, CENTURY_MONTHS, CASH_APY, cloneState, logBooks, monthLabel } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels } from "./market";
-import { assetValue, holdingNOIYr, holdingValue, monthlyNOI, portfolioMark, operatingStatement, physicalOcc, resolveRec } from "./value";
+import { assetValue, holdingNOIYr, ownedHoldingValue, monthlyNOI, portfolioMark, operatingStatement, physicalOcc, resolveRec } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLeasing, depositsOn, stampListing } from "./leasing";
@@ -641,7 +641,7 @@ function tickMonth(
       // asymmetry is most of what makes a downturn expensive for an owner with
       // no debt — the mortgage is the levered owner's problem, and a 1.1% bill
       // on a value that no longer exists is everybody's.
-      const v = holdingValue(rec, s.econ, h, s.month);
+      const v = ownedHoldingValue(s, parcels, h);
       const prior = h.assessed ?? h.costBasis;
       h.assessed = Math.round(prior + (v > prior ? 0.32 : 0.09) * (v - prior));
       // taxable income: NOI less interest less straight-line depreciation
@@ -693,7 +693,7 @@ function tickMonth(
         let pick = owned[0], pickV = -Infinity;
         for (const h of owned) {
           const rec = resolveRec(parcels, s, h.bbl);
-          const v = rec ? holdingValue(rec, s.econ, h, s.month) : 0;
+          const v = rec ? ownedHoldingValue(s, parcels, h) : 0;
           if (v > pickV) { pickV = v; pick = h; }
         }
         const rec = resolveRec(parcels, s, pick.bbl)!;

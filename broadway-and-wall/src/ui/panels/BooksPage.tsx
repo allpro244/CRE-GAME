@@ -3,7 +3,7 @@ import { useStore } from "@/state/store";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import { MILESTONES } from "@/engine/sim";
 import { depositsHeld } from "@/engine/leasing";
-import { collateralAsIs, holdingValue, netWorth, resolveRec } from "@/engine/value";
+import { collateralAsIs, ownedHoldingValue, netWorth, resolveRec } from "@/engine/value";
 import { locLimit, locRate } from "@/engine/credit";
 import { usd, pct } from "@/ui/format";
 import { NewsText } from "@/ui/panels/MarketPage";
@@ -136,7 +136,7 @@ function BalanceSheet() {
     for (const h of Object.values(game.holdings)) {
       const rec = resolveRec(parcels, game, h.bbl);
       if (!rec) continue;
-      const v = holdingValue(rec, game.econ, h, game.month);
+      const v = ownedHoldingValue(game, parcels, h);
       const debt = h.loan?.balance ?? 0;
       propGross += v;
       mortgages += debt;
@@ -299,7 +299,7 @@ function BalanceSheet() {
               {holdings.map((h) => {
                 const rec = resolveRec(parcels, game, h.bbl);
                 if (!rec) return null;
-                const v = holdingValue(rec, game.econ, h, game.month);
+                const v = ownedHoldingValue(game, parcels, h);
                 const debt = h.loan?.balance ?? 0;
                 const eq = v - debt;
                 const ltv = v > 0 ? debt / v : 0;

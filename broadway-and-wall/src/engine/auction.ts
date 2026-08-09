@@ -31,7 +31,7 @@ import type { AuctionLot, AuctionResultRow, GameState, Holding } from "./types";
 import { logBooks, monthLabel, nextJulyAfter, cloneState} from "./types";
 import { rng, rrange } from "./market";
 import { openReoPortfolio } from "./portfoliosale";
-import { collateralAsIs, holdingValue, resolveRec } from "./value";
+import { collateralAsIs, ownedHoldingValue, resolveRec } from "./value";
 import { lenderPressure, lenderByName, chargeLenderLoss } from "./lenders";
 import { distressPrice, markSponsor } from "./sponsor";
 import { recordComp } from "./comps";
@@ -175,7 +175,7 @@ function buildDocket(s: GameState, parcels: ParcelTable) {
       id: `A${july}-${w.bbl}`, bbl: w.bbl, address: rec.address, kind: "yours",
       debt: owed, holder: w.lender,
       borrower: firmShort(s), upset: owed,
-      est: estimate(s, holdingValue(rec, s.econ, h, s.month)),
+      est: estimate(s, ownedHoldingValue(s, parcels, h)),
     });
   }
 

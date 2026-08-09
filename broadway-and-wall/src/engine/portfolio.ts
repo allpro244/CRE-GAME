@@ -28,7 +28,7 @@ import type { GameState, Holding } from "./types";
 import { logBooks, monthLabel, raiseAlert, cloneState} from "./types";
 import { firmShort } from "./firm";
 import { rng, rrange } from "./market";
-import { holdingValue, resolveRec, holdingNOIYr, asIfOwned } from "./value";
+import { ownedHoldingValue, resolveRec, holdingNOIYr, asIfOwned } from "./value";
 import { depositsOn } from "./leasing";
 import { useSf } from "./mix";
 import { prepayPenalty } from "./debt";
@@ -105,7 +105,7 @@ export function portfolioQuote(s: GameState, parcels: ParcelTable, bbls: string[
   const rows = bbls
     .map((b) => ({ bbl: b, h: s.holdings[b], rec: resolveRec(parcels, s, b) }))
     .filter((r) => r.h && r.rec) as { bbl: string; h: Holding; rec: NonNullable<ReturnType<typeof resolveRec>> }[];
-  const vals = rows.map((r) => holdingValue(r.rec, s.econ, r.h, s.month));
+  const vals = rows.map((r) => ownedHoldingValue(s, parcels, r.h));
   const sumOfParts = Math.round(vals.reduce((a, v) => a + v, 0));
   const why: { label: string; pct: number }[] = [];
   if (!rows.length || sumOfParts <= 0) {
@@ -195,7 +195,7 @@ export function portfolioQuote(s: GameState, parcels: ParcelTable, bbls: string[
   // charges you for telling it.
   const bookShare = sumOfParts / Math.max(1, Object.keys(s.holdings).reduce((a, b) => {
     const rec = resolveRec(parcels, s, b); const h = s.holdings[b];
-    return a + (rec && h ? holdingValue(rec, s.econ, h, s.month) : 0);
+    return a + (rec && h ? ownedHoldingValue(s, parcels, h) : 0);
   }, 0));
   if (bookShare > 0.75 && rows.length >= 3) {
     why.push({ label: "This is essentially your whole book — everybody knows why you are selling", pct: -0.02 });
@@ -400,7 +400,7 @@ export function acceptPortfolioBid(
   const live = ps.bbls.filter((b) => next.holdings[b]);
   const marks = live.map((b) => {
     const rec = resolveRec(parcels, next, b)!;
-    return holdingValue(rec, next.econ, next.holdings[b], next.month);
+    return ownedHoldingValue(next, parcels, next.holdings[b]);
   });
   const totalMark = marks.reduce((a, v) => a + v, 0);
   if (totalMark <= 0) return { s, err: "There is nothing left in that portfolio." };

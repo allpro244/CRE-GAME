@@ -22,7 +22,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { Epithet, GameState } from "./types";
 import { START_YEAR } from "./types";
-import { resolveRec, holdingValue } from "./value";
+import { resolveRec, ownedHoldingValue } from "./value";
 import { INDUSTRY_LABEL } from "./market";
 
 // ---------------------------------------------------------------- the name
@@ -88,7 +88,7 @@ function claimsNow(s: GameState, parcels: ParcelTable): Claim[] {
   for (const h of holds) {
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
-    const v = holdingValue(rec, s.econ, h, s.month);
+    const v = ownedHoldingValue(s, parcels, h);
     total += v;
     if (rec.class !== "land" && rec.bldgArea > 0) builtSf += rec.bldgArea;
     const d = rec.district ?? "";

@@ -10,7 +10,7 @@ import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, IN
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf, demandLinear,
-  condGrade, initialCondIdx, condCeiling, COND_DECAY, COND_WEAR_REF, CONDITION_RENT_MULT, holdingValue, demandIdx } from "./value";
+  condGrade, initialCondIdx, condCeiling, COND_DECAY, COND_WEAR_REF, CONDITION_RENT_MULT, ownedHoldingValue, demandIdx } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses, useSf } from "./mix";
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable } from "./credit";
@@ -965,7 +965,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // is not the same as being unable to, and the annual warning in sim.ts
       // is about the second thing.
       const plan = planSpec(h.plan);
-      const gav = holdingValue(rec, s.econ, h, q);
+      const gav = ownedHoldingValue(s, parcels, h);
       const want = Math.round((CAP_PLAN_RATE * plan.mult * gav * (wear / COND_WEAR_REF)) / 12);
       // A SWEPT BUILDING DOES NOT GET THE PLAN, and a facility sweeps every
       // deed in its pool at once — which is the whole difference between a

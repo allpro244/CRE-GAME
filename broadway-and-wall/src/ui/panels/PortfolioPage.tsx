@@ -3,7 +3,7 @@ import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import type { BuiltClass } from "@/engine/types";
-import { holdingValue, managedRentPsfYr, holdingNOIYr, resolveRec } from "@/engine/value";
+import { ownedHoldingValue, managedRentPsfYr, holdingNOIYr, resolveRec } from "@/engine/value";
 import { unitStatus, avgUnitSf } from "@/engine/leasing";
 import { payoffQuote } from "@/engine/notes";
 import { fundableNow } from "@/engine/credit";
@@ -46,7 +46,7 @@ export function PortfolioPage() {
   let totV = 0, totD = 0, totCF = 0;
   const rows = holdings.map((h) => {
     const rec = resolveRec(parcels, game, h.bbl);
-    const v = rec ? holdingValue(rec, game.econ, h, game.month) : 0;
+    const v = rec ? ownedHoldingValue(game, parcels, h) : 0;
     // A LET GROUND LEASE IS A POSITION. The engine wires the ground rent to
     // cash separately (tickGroundLeases) precisely so the lot itself carries
     // nothing — and that correctness left the leased fee printing zero income

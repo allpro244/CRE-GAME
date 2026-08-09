@@ -4,7 +4,7 @@ import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel } from "@/engine/types";
 import type { GameState } from "@/engine/types";
 import type { ParcelTable, Adjacency } from "@/data/types";
-import { holdingValue, resolveRec, landPsfNow, landRead, plateEfficiency } from "@/engine/value";
+import { ownedHoldingValue, resolveRec, landPsfNow, landRead, plateEfficiency } from "@/engine/value";
 import { workoutMood } from "@/engine/workout";
 import { fundableNow, locAvailable } from "@/engine/credit";
 import { SECTOR_LABEL } from "@/engine/market";
@@ -187,7 +187,7 @@ export function WorkoutDesk({ bbl }: { bbl: string }) {
   const rec = resolveRec(parcels, game, bbl);
   if (!rec) return null;
   const mood = workoutMood(game, w.lender);
-  const value = holdingValue(rec, game.econ, h, game.month);
+  const value = ownedHoldingValue(game, parcels, h);
   const bal = h.loan.balance;
   const monthsLeft = Math.max(0, w.decideM - game.month);
   const fee = Math.round(bal * mood.feePct);

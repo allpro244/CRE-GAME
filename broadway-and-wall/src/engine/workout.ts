@@ -30,7 +30,7 @@ import type { GameState, Workout } from "./types";
 import { logBooks, monthLabel, nextJulyAfter, cloneState} from "./types";
 import { firmShort } from "./firm";
 import { rrange } from "./market";
-import { holdingValue, resolveRec } from "./value";
+import { ownedHoldingValue, resolveRec } from "./value";
 import { productById, bumpLenderRel, equityCureNeed, monthlyPayment } from "./debt";
 import { capitalRatio, chargeLenderLoss, lenderByName } from "./lenders";
 import { markSponsor } from "./sponsor";
@@ -415,7 +415,7 @@ export function deedInLieu(
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const next = clone(s);
-  const value = holdingValue(rec, next.econ, h, next.month);
+  const value = ownedHoldingValue(next, parcels, h);
   const bal = h.loan.balance;
   const loss = Math.max(0, bal - value * 0.88);
   // A deed in lieu settles the debt in full — that is the entire consideration

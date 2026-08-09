@@ -7,7 +7,7 @@ import { logBooks, monthLabel, raiseAlert, SVC_START, cloneState} from "./types"
 import { recentLowballs } from "./acquire";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange, newsChance, BUILD_MONTHS } from "./market";
-import { assetValue, condGrade, initialCondition, initialCondIdx, holdingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, bareLandRec } from "./value";
+import { assetValue, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, bareLandRec } from "./value";
 import { locAvailable } from "./credit";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
@@ -1802,7 +1802,7 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
   const rec = resolveRec(parcels, s, h.bbl);
   const sale = h.sale;
   if (!rec || !sale) return;
-  const value = holdingValue(rec, s.econ, h, s.month);
+  const value = ownedHoldingValue(s, parcels, h);
   const ratio = sale.ask / Math.max(1, value);
   const appetite = marketAppetite(s);
   const phase = s.econ.phase === "peak" ? 1.5 : s.econ.phase === "expansion" ? 1.25
@@ -2275,7 +2275,7 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
   for (const h of Object.values(s.holdings)) {
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
-    power += Math.max(0, holdingValue(rec, s.econ, h, s.month) - (h.loan?.balance ?? 0)) * 0.14;
+    power += Math.max(0, ownedHoldingValue(s, parcels, h) - (h.loan?.balance ?? 0)) * 0.14;
   }
   const dry = power > 2_000_000 ? 1 : 0.3;
   // A BROKER RINGS THE BUYER WHO CLOSES. Serial lowballing is the one story
@@ -2457,7 +2457,7 @@ export function counterSale(
   const offer = sale.offer!;
   if (px <= offer.price) return { s, err: "That is not a counter — it is an acceptance at a worse price." };
 
-  const value = holdingValue(rec, next.econ, h, next.month);
+  const value = ownedHoldingValue(next, parcels, h);
   // how far a buyer will stretch past appraisal: a boom with open credit buys
   // aggressively, a downturn with shut credit does not buy at all
   const hot = next.econ.phase === "expansion" || next.econ.phase === "peak";
@@ -2526,7 +2526,7 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
         const p = (hot ? 0.0020 : 0.0006) * money * (1 + rec0.demandScore / 140);
         if (rng(s, "sales") < p) {
           s.lastUnsolicitedM = s.month;
-          const v = holdingValue(rec0, s.econ, h, s.month);
+          const v = ownedHoldingValue(s, parcels, h);
           // WHO IS CALLING, AND WHY.
           //
           // "An unsolicited offer" arrived from nobody, for no reason, at a
@@ -2584,7 +2584,7 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
     if (sale.offer) {
-      const value = holdingValue(rec, s.econ, h, s.month);
+      const value = ownedHoldingValue(s, parcels, h);
       if (sale.offer.price < sale.ask && sale.ask / Math.max(1, value) < 1.1 && rng(s, "sales") < 0.12) {
         const bumped = Math.min(sale.ask, Math.round(sale.offer.price * rrange(s, 1.02, 1.06, "sales")));
         if (bumped > sale.offer.price) {
@@ -2597,7 +2597,7 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
       }
       continue;
     }
-    const value = holdingValue(rec, s.econ, h, s.month);
+    const value = ownedHoldingValue(s, parcels, h);
     const ratio = sale.ask / Math.max(1, value);
     // WHO IS IN THE ROOM, NOT WHICH LABEL THE MONTH CARRIES.
     //
@@ -2915,7 +2915,7 @@ export function counterBid(
   // How far this buyer will actually stretch. Credibility is the whole read:
   // the institution that bid with a committee behind it has room, and the
   // syndicate that bid to be in the running does not.
-  const value = holdingValue(rec, next.econ, next.holdings[bbl]!, next.month);
+  const value = ownedHoldingValue(next, parcels, next.holdings[bbl]!);
   const hot = next.econ.phase === "expansion" || next.econ.phase === "peak";
   const headroom = (0.02 + b0.credibility * 0.09) * (hot ? 1.25 : 0.85);
   const limit = Math.round(Math.max(b0.price, Math.min(value * 1.18, b0.price * (1 + headroom))));

@@ -61,7 +61,7 @@ import type { ParcelTable } from "@/data/types";
 import type { ParcelRecord } from "@/data/types";
 import type { BuiltClass, GameState, Holding } from "./types";
 import { logBooks, monthLabel, cloneState} from "./types";
-import { holdingNOIYr, holdingValue, resolveRec } from "./value";
+import { holdingNOIYr, ownedHoldingValue, resolveRec } from "./value";
 import { PRODUCTS, prepayPenalty, productById, bumpLenderRel, windowOpen, quote, advanceFactor } from "./debt";
 import { distressPrice, sponsorStanding } from "./sponsor";
 import { recordComp } from "./comps";
@@ -119,7 +119,7 @@ export function poolQuality(
     const h = s.holdings[bbl];
     const rec = resolveRec(parcels, s, bbl);
     if (!h || !rec) continue;
-    const v = holdingValue(rec, s.econ, h, s.month);
+    const v = ownedHoldingValue(s, parcels, h);
     if (v <= 0) continue;
     value += v;
     noi += holdingNOIYr(rec, s.econ, h, s.month);
@@ -351,7 +351,7 @@ export function allocatedAmount(s: GameState, parcels: ParcelTable, bbl: string)
     const h = s.holdings[b];
     const rec = resolveRec(parcels, s, b);
     if (!h || !rec) continue;
-    const v = holdingValue(rec, s.econ, h, s.month);
+    const v = ownedHoldingValue(s, parcels, h);
     tot += v;
     if (b === bbl) mine = v;
   }
@@ -427,7 +427,7 @@ export function facilityMetrics(s: GameState, parcels: ParcelTable): {
     const h = s.holdings[bbl];
     const rec = resolveRec(parcels, s, bbl);
     if (!h || !rec) continue;
-    value += holdingValue(rec, s.econ, h, s.month);
+    value += ownedHoldingValue(s, parcels, h);
     noi += holdingNOIYr(rec, s.econ, h, s.month);
   }
   const annualDs = f.monthlyPmt * 12;
@@ -579,7 +579,7 @@ function accelerate(s: GameState, parcels: ParcelTable): number {
     const h = s.holdings[bbl];
     const rec = resolveRec(parcels, s, bbl);
     if (!h || !rec) continue;
-    const px = Math.round(holdingValue(rec, s.econ, h, s.month) * distressPrice(s));
+    const px = Math.round(ownedHoldingValue(s, parcels, h) * distressPrice(s));
     gross += px;
     taken.push(rec.address);
     recordComp(s, rec, px, "a receiver", firmShort(s), true, h.condition);
@@ -626,7 +626,7 @@ export function pledgeable(s: GameState, parcels: ParcelTable): { bbl: string; r
     if (h.sale) continue;
     out.push({
       bbl: h.bbl, rec, h,
-      value: holdingValue(rec, s.econ, h, s.month),
+      value: ownedHoldingValue(s, parcels, h),
       loan: h.loan?.balance ?? 0,
     });
   }

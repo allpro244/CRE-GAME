@@ -47,7 +47,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Holding, Note, Rival } from "./types";
 import { logBooks, monthLabel, nextJulyAfter, cloneState} from "./types";
 import { rng, rrange } from "./market";
-import { assetValue, collateralAsIs, holdingValue, resolveRec } from "./value";
+import { assetValue, collateralAsIs, holdingValue, ownedHoldingValue, resolveRec } from "./value";
 import { lenderByName, lenderPressure, chargeLenderLoss } from "./lenders";
 import { assetGrade, clearRivalClaims, forgetDeed } from "./rivals";
 import { genRentRoll } from "./leasing";
@@ -733,7 +733,7 @@ export function payoffQuote(
   const l = lenderByName(s, lender);
   const p = lenderPressure(l);
   const bal = Math.round(h.loan.balance);
-  const value = holdingValue(rec, s.econ, h, s.month);
+  const value = ownedHoldingValue(s, parcels, h);
   const auction = value * distressPrice(s) * 0.86;
   const under = auction < bal;
   const open = p > 0.25 || under;

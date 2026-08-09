@@ -8,7 +8,7 @@ import type { Condition, Econ, GameState, Holding, Loan } from "./types";
 import { logBooks, monthLabel, cloneState} from "./types";
 import { openWorkout } from "./workout";
 import { lenderAppetite } from "./lenders";
-import { holdingNOIYr, holdingValue, assetValue, noiAfterTaxYr, proFormaNOIYr, capRateFor } from "./value";
+import { holdingNOIYr, ownedHoldingValue, assetValue, noiAfterTaxYr, proFormaNOIYr, capRateFor } from "./value";
 import { walt } from "./leasing";
 import { INDUSTRY_LABEL } from "./market";
 import { sponsorStanding } from "./sponsor";
@@ -614,7 +614,7 @@ export function dscr(rec: ParcelRecord, s: GameState, h: Holding): number | null
 
 export function ltv(rec: ParcelRecord, s: GameState, h: Holding): number | null {
   if (!h.loan) return null;
-  const v = holdingValue(rec, s.econ, h, s.month);
+  const v = ownedHoldingValue(s, parcels, h);
   return v > 0 ? h.loan.balance / v : null;
 }
 
@@ -629,7 +629,7 @@ export function equityCureNeed(rec: ParcelRecord, s: GameState, h: Holding): num
   if (!loan) return 0;
   const d = dscr(rec, s, h);
   const l = ltv(rec, s, h);
-  const value = holdingValue(rec, s.econ, h, s.month);
+  const value = ownedHoldingValue(s, parcels, h);
   let target = loan.balance;
   if (d !== null && d < loan.minDSCR && d > 0) {
     target = Math.min(target, loan.balance * (d / loan.minDSCR));
@@ -855,7 +855,7 @@ export function tickLoan(
   // the process now; the refinancing ladder does not get to run again every
   // month underneath it.
   if (q >= loan.maturityM && !s.workouts?.[h.bbl]) {
-    const value = holdingValue(rec, s.econ, h, s.month);
+    const value = ownedHoldingValue(s, parcels, h);
     const noi = holdingNOIYr(rec, s.econ, h, q);
     // A takeout is underwritten on the roll you actually have on the day the
     // balloon lands — which for a building that delivered empty and never
@@ -1071,7 +1071,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
   const leaseUpM = h.deliveredM !== undefined ? s.month - h.deliveredM : Infinity;
   const inLeaseUp = leaseUpM <= 48;
   const actualNoi = holdingNOIYr(rec, s.econ, h, s.month);
-  const actualValue = holdingValue(rec, s.econ, h, s.month);
+  const actualValue = ownedHoldingValue(s, parcels, h);
   let value = actualValue, noi = actualNoi;
   if (inLeaseUp && rec.class !== "land" && rec.bldgArea > 0) {
     const stabValue = assetValue(rec, s.econ, "good");
@@ -1163,7 +1163,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   if (!productOpen(next, product)) {
     return { s, err: `${product.label} won't quote you — ${sponsorStanding(next).label}. Bridge and mezzanine money will still talk.` };
   }
-  const value = holdingValue(rec, next.econ, h, next.month);
+  const value = ownedHoldingValue(next, parcels, h);
   const noi = holdingNOIYr(rec, next.econ, h, next.month);
   // The quote screen already told you the desk was cutting proceeds for a
   // concentrated or fast-rolling rent roll. The close has to agree with it.

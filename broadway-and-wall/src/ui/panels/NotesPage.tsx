@@ -2,7 +2,7 @@ import { useStore } from "@/state/store";
 import type { ParcelTable } from "@/data/types";
 import { monthLabel } from "@/engine/types";
 import type { GameState } from "@/engine/types";
-import { assetValue, holdingValue, resolveRec, collateralAsIs } from "@/engine/value";
+import { assetValue, ownedHoldingValue, resolveRec, collateralAsIs } from "@/engine/value";
 import { PRODUCTS } from "@/engine/debt";
 import { capitalRatio, lenderPressure, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { noteBid } from "@/engine/notes";
@@ -26,7 +26,7 @@ export function bankStatement(game: GameState, parcels: ParcelTable, lenderName:
     if (holder !== lenderName) continue;
     const rec = resolveRec(parcels, game, h.bbl);
     if (!rec) continue;
-    const v = holdingValue(rec, game.econ, h, game.month);
+    const v = ownedHoldingValue(game, parcels, h);
     const w = game.workouts?.[h.bbl];
     rows.push({
       bbl: h.bbl, borrower: firmShort(game), yours: true, dev: false,

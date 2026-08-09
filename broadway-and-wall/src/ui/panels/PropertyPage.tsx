@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { assetValue, initialCondition, holdingValue, resolveRec, rollQualitySpread, operatingStatement, remainingAbatement, inPlace } from "@/engine/value";
+import { assetValue, initialCondition, ownedHoldingValue, resolveRec, rollQualitySpread, operatingStatement, remainingAbatement, inPlace } from "@/engine/value";
 import { farMaxFor, maxFloorsFor, replacementCost } from "@/engine/dev";
 import { walt, unitStatus } from "@/engine/leasing";
 import { usd, sf } from "@/ui/format";
@@ -23,7 +23,7 @@ export function PropertyPage() {
   if (!rec) return <div className="hint">Unknown parcel.</div>;
   const h = game.holdings[bbl];
   const cond = h?.condition ?? initialCondition(rec);
-  const value = h ? holdingValue(rec, game.econ, h, game.month) : assetValue(rec, game.econ, cond);
+  const value = h ? ownedHoldingValue(game, parcels, h) : assetValue(rec, game.econ, cond);
   const built = rec.class !== "land" && rec.bldgArea > 0;
   // IN PLACE OR NOTHING. The unowned branch here quoted `noiYr` — which is the
   // class model AND is before property tax, so an unowned building's headline

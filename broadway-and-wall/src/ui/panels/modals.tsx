@@ -2,7 +2,7 @@ import { useState } from "react";
 import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
-import { holdingValue, monthlyNOI, resolveRec, collateralAsIs, capRateFor } from "@/engine/value";
+import { ownedHoldingValue, monthlyNOI, resolveRec, collateralAsIs, capRateFor } from "@/engine/value";
 import { saleTaxQuote } from "@/engine/actions";
 import { MILESTONES } from "@/engine/sim";
 import { loiSigningCost, exclusiveFeeRate } from "@/engine/leasing";
@@ -79,7 +79,7 @@ function DefaultNoticeBody({
   const filed = open.stage === "foreclosure";
   const deadline = open.saleM ?? open.decideM;
   const monthsLeft = Math.max(0, deadline - game.month);
-  const value = holdingValue(rec, game.econ, h, game.month);
+  const value = ownedHoldingValue(game, parcels, h);
   const equity = value - open.cure;
   const monthly = Math.round(h.loan.monthlyPmt * 1.15);
   const allowLoc = open.cause !== "covenant";
@@ -690,7 +690,7 @@ function DecisionBody({
   const offer = h.sale!.offer!;
   if (!rec) return null;
   const tq = saleTaxQuote(h, offer.price);
-  const value = holdingValue(rec, game.econ, h, game.month);
+  const value = ownedHoldingValue(game, parcels, h);
   return (
     <div className="modal-backdrop">
       <div className="modal">

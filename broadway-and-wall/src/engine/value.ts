@@ -2074,6 +2074,27 @@ export function leasedFeeValue(
   return Math.max(Math.round(land * 0.55), Math.round(income + reversion));
 }
 
+/**
+ * ONE VALUE FOR A DEED THE PLAYER OWNS.
+ *
+ * A ground-leased parcel is the leased fee (coupon + reversion), not bare dirt
+ * and not the lessee's building. Every balance sheet, lender and player-facing
+ * panel should call this when GameState is available.
+ */
+export function ownedHoldingValue(
+  s: GameState, parcels: Record<string, ParcelRecord>, h: Holding,
+): number {
+  const rec = resolveRec(parcels, s, h.bbl);
+  if (!rec) return 0;
+  const gl = s.groundLeases?.[h.bbl];
+  if (h.groundLeased && gl) {
+    const bare = bareLandRec(parcels, s, h.bbl)
+      ?? { ...rec, class: "land" as const, bldgArea: 0, floors: 0, unitsRes: 0, mix: undefined };
+    return leasedFeeValue(gl, bare, s.econ, s.month, gl.sf ?? s.built?.[h.bbl]?.bldgArea ?? 0);
+  }
+  return holdingValue(rec, s.econ, h, s.month);
+}
+
 export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: number): number {
   // Ground-leased fee: callers with the lease record should use leasedFeeValue.
   // Without it, never appraise the lessee's building as if it were yours.
@@ -2183,16 +2204,7 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
   // a number that would let them borrow against it twice.
   nw -= s.facility?.balance ?? 0;
   for (const h of Object.values(s.holdings)) {
-    const rec = resolveRec(parcels, s, h.bbl);
-    if (!rec) continue;
-    const gl = s.groundLeases?.[h.bbl];
-    let v: number;
-    if (h.groundLeased && gl) {
-      const bare = bareLandRec(parcels, s, h.bbl) ?? { ...rec, class: "land" as const, bldgArea: 0, floors: 0 };
-      v = leasedFeeValue(gl, bare, s.econ, s.month, gl.sf ?? s.built?.[h.bbl]?.bldgArea ?? 0);
-    } else {
-      v = holdingValue(rec, s.econ, h, s.month);
-    }
+    const v = ownedHoldingValue(s, parcels, h);
     gav += v;
     nw += v - (h.loan?.balance ?? 0);
   }

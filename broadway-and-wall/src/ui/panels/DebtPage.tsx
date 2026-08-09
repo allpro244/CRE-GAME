@@ -3,7 +3,7 @@ import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { CLASS_LABEL } from "@/data/types";
 import { monthLabel, OPS_SERVICE, OPS_PLAN, START_YEAR } from "@/engine/types";
-import { assetValue, initialCondition, holdingValue, holdingNOIYr, resolveRec, netWorth } from "@/engine/value";
+import { assetValue, initialCondition, ownedHoldingValue, holdingNOIYr, resolveRec, netWorth } from "@/engine/value";
 import { isCommercial } from "@/engine/leasing";
 import { PRODUCTS, productById } from "@/engine/debt";
 import { facilityQuotes, facilityMetrics, facilityStatus, pledgeable, pledged, releaseCost, allocatedAmount, FACILITY_MIN_ASSETS, RELEASE_PREMIUM } from "@/engine/facility";
@@ -488,7 +488,7 @@ export function TheStreet() {
     let v = game.cash;
     for (const h of Object.values(game.holdings)) {
       const rec = resolveRec(parcels, game, h.bbl);
-      if (rec) v += holdingValue(rec, game.econ, h, game.month) - (h.loan?.balance ?? 0);
+      if (rec) v += ownedHoldingValue(game, parcels, h) - (h.loan?.balance ?? 0);
     }
     return v;
   })();
@@ -1031,7 +1031,7 @@ export function DebtPage() {
       const rec = resolveRec(parcels, game, h.bbl);
       return {
         h, rec,
-        v: rec ? holdingValue(rec, game.econ, h, game.month) : 0,
+        v: rec ? ownedHoldingValue(game, parcels, h) : 0,
         noi: rec ? holdingNOIYr(rec, game.econ, h, game.month) : 0,
       };
     })
@@ -1208,7 +1208,7 @@ export function DebtPage() {
                   return (
                     <tr key={b}>
                       <td>{rec.address}</td>
-                      <td className="num">{usd(holdingValue(rec, game.econ, h, game.month))}</td>
+                      <td className="num">{usd(ownedHoldingValue(game, parcels, h))}</td>
                       <td className="num">{usd(allocatedAmount(game, parcels, b))}</td>
                       <td className="num">{usd(rel)}</td>
                       <td>

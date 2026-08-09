@@ -18,7 +18,7 @@
 // prose. If a check is arguable, it does not belong in this file.
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, DevUse, GameState } from "./types";
-import { resolveRec, holdingValue, holdingNOIYr, netWorth, assetValue, FAR_CEILING } from "./value";
+import { resolveRec, ownedHoldingValue, holdingNOIYr, netWorth, assetValue, FAR_CEILING } from "./value";
 // ONE FUNCTION, ONE MEANING. Every price in the game now appraises at the grade
 // the building is actually IN — its year, moved by whoever has been running it —
 // so an invariant that appraises at its BIRTH grade is measuring a different
@@ -189,7 +189,7 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
     if (h.boughtM > s.month) bad("time", at, `bought in month ${h.boughtM}, it is month ${s.month}`);
     if (h.deprTaken !== undefined && (!fin(h.deprTaken) || h.deprTaken < -1)) bad("depr", at, `accumulated depreciation ${h.deprTaken}`);
 
-    const val = holdingValue(rec, s.econ, h, s.month);
+    const val = ownedHoldingValue(s, parcels, h);
     if (!fin(val) || val < 0) bad("value", at, `holding value ${val}`);
     const noi = holdingNOIYr(rec, s.econ, h, s.month);
     if (!fin(noi)) bad("nan", at, "NOI is not a number");

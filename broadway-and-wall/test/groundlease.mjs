@@ -53,6 +53,9 @@ check(cashFlow.propertyTaxYr === 0 && cashFlow.insuranceYr === 0
   && cashFlow.operatingYr === 0 && cashFlow.tiAtSigning === 0
   && cashFlow.brokerageAtSigning === 0 && cashFlow.legalAtSigning === 0,
   "expense breakdown is zero to the fee owner");
+const deedValue = E.ownedHoldingValue(g, parcels, g.holdings[bbl]);
+check(deedValue === E.netWorth(g, parcels) - g.cash,
+  "Portfolio, lenders and net worth use the same leased-fee value");
 
 check(E.defaultGroundLease(g, parcels, bbl), "tenant default terminates the lease");
 check(!g.groundLeases[bbl] && !g.holdings[bbl].groundLeased,

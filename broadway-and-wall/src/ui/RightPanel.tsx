@@ -3006,6 +3006,88 @@ function RefiSection({ bbl }: { bbl: string }) {
         hint={`${usd(annualDs)} a year of debt service against ${usd(Math.round(q.noiUw))} of NOI. `
           + `${toYou >= 0 ? `Cash out ${usd(toYou)} after the ${usd(fee)} fee.` : `You'd write a cheque for ${usd(-toYou)}.`}`}
       />
+      {/* THE WHOLE DEAL AT WHATEVER THE DIAL SAYS, SIDE BY SIDE WITH THE ONE
+          YOU HAVE.
+          A refinance is not a question about proceeds, it is a question about
+          what the building looks like AFTERWARDS — and the panel answered the
+          first one on a slider and the second one nowhere. Every number here
+          recomputes as the dial moves, and each is paired with what it is
+          today, because the only useful form of "your coverage would be 1.34x"
+          is "your coverage would be 1.34x, against 1.71x now".
+          The cash flow line is the one that decides it. A cash-out refinance
+          that leaves the building running at a deficit is a loan you service
+          out of your other buildings, and that is the single most common way a
+          good portfolio is lost — so it is on the screen in dollars, before
+          you sign, with the sign it will actually have. */}
+      {(() => {
+        const cur = game.holdings[bbl]?.loan;
+        const curDs = cur
+          ? (game.month < cur.ioUntilM
+            ? (cur.balance * cur.ratePct) / 100
+            : cur.monthlyPmt * 12)
+          : 0;
+        const noi = q.noiUw;
+        const cfNow = noi - curDs;
+        const cfAfter = noi - annualDs;
+        const ltvNow = value > 0 && cur ? cur.balance / value : 0;
+        const dscrNow = curDs > 0 ? noi / curDs : null;
+        const dscrAfter = annualDs > 0 ? noi / annualDs : null;
+        const dyAfter = proceeds > 0 ? noi / proceeds : null;
+        const cell = (k: string, now: string, after: string, bad?: boolean) => (
+          <tr>
+            <td>{k}</td>
+            <td className="num dim">{now}</td>
+            <td className={"num" + (bad ? " neg" : "")}><strong>{after}</strong></td>
+          </tr>
+        );
+        return (
+          <div className="scroll-x" style={{ marginTop: 6 }}>
+            <table className="tbl">
+              <thead>
+                <tr><th>At {usd(proceeds)}</th><th className="num">Today</th><th className="num">After</th></tr>
+              </thead>
+              <tbody>
+                {cell("Debt on the building", cur ? usd(cur.balance) : "none", usd(proceeds))}
+                {cell("LTV", cur ? `${(ltvNow * 100).toFixed(0)}%` : "0%",
+                  `${((proceeds / Math.max(1, value)) * 100).toFixed(0)}%`,
+                  proceeds / Math.max(1, value) > 0.75)}
+                {cell("Coverage (DSCR)", dscrNow !== null ? `${dscrNow.toFixed(2)}x` : "—",
+                  dscrAfter !== null ? `${dscrAfter.toFixed(2)}x` : "—",
+                  dscrAfter !== null && dscrAfter < 1.25)}
+                {cell("Debt yield", cur && cur.balance > 0 ? `${((noi / cur.balance) * 100).toFixed(1)}%` : "—",
+                  dyAfter !== null ? `${(dyAfter * 100).toFixed(1)}%` : "—",
+                  dyAfter !== null && dyAfter < 0.08)}
+                {cell("Debt service / yr", cur ? `−${usd(Math.round(curDs))}` : "—", `−${usd(Math.round(annualDs))}`)}
+                {cell("Cash flow after debt / yr", `${cfNow < 0 ? "−" : ""}${usd(Math.abs(Math.round(cfNow)))}`,
+                  `${cfAfter < 0 ? "−" : ""}${usd(Math.abs(Math.round(cfAfter)))}`, cfAfter < 0)}
+                {cell("...per month", `${cfNow < 0 ? "−" : ""}${usd(Math.abs(Math.round(cfNow / 12)))}`,
+                  `${cfAfter < 0 ? "−" : ""}${usd(Math.abs(Math.round(cfAfter / 12)))}`, cfAfter < 0)}
+              </tbody>
+            </table>
+          </div>
+        );
+      })()}
+      <div className="hint">
+        {(() => {
+          const noi = q.noiUw;
+          const cfAfter = noi - annualDs;
+          const dscrAfter = annualDs > 0 ? noi / annualDs : null;
+          if (proceeds <= 0) return "Nothing drawn.";
+          if (cfAfter < 0) {
+            return `At this number the building does not cover its own debt service — ${usd(Math.abs(Math.round(cfAfter / 12)))} a month `
+              + `has to come from somewhere else, every month, until something changes. That is a decision, not an accident.`;
+          }
+          if (dscrAfter !== null && dscrAfter < q.minDSCR) {
+            return `Coverage lands at ${dscrAfter.toFixed(2)}x against this desk's ${q.minDSCR.toFixed(2)}x covenant. `
+              + `You would be signing a loan that is in breach the day it funds — they sweep the cash flow and start the clock.`;
+          }
+          if (dscrAfter !== null && dscrAfter < q.minDSCR * 1.15) {
+            return `Coverage lands at ${dscrAfter.toFixed(2)}x against a ${q.minDSCR.toFixed(2)}x covenant. That is not much room: `
+              + `one tenant leaving takes you through it.`;
+          }
+          return `Coverage at ${dscrAfter?.toFixed(2)}x with the covenant at ${q.minDSCR.toFixed(2)}x — room to lose a tenant.`;
+        })()}
+      </div>
       <div className="btn-row">
         <button className="btn btn-buy" disabled={proceeds < 100_000} onClick={() => refi(bbl, product, lev)}>
           {toYou >= 0 ? `Refinance · take ${usd(toYou)}` : `Refinance · pay in ${usd(-toYou)}`}
@@ -4414,6 +4496,32 @@ function PortfolioPage() {
         <Big label="Debt" value={usd(totD)} />
         <Big label="Equity" value={usd(totV - totD)} />
         <Big label="Cash flow / mo" value={usd(totCF)} bad={totCF < 0} />
+        {/* HOW BIG YOU ACTUALLY ARE, AND WHAT IT COST YOU A FOOT.
+            Dollars of assets is a number about the market as much as about the
+            book — the same buildings are worth half as much at the bottom of a
+            cycle — and square feet is not. It is the one measure of a portfolio
+            that does not move when the cap rate does, which is why every
+            operator in this business quotes it first. The basis beside it is
+            what you paid across all of it, per foot: the number to hold against
+            the rent you collect, what a building is worth today, and what it
+            would cost to put one up. Land is excluded from both, because a lot
+            has no square footage of building to average. */}
+        {(() => {
+          const built = rows.filter((r) => r.rec && r.rec.class !== "land" && (r.rec.bldgArea ?? 0) > 0);
+          const area = built.reduce((a, r) => a + (r.rec!.bldgArea ?? 0), 0);
+          const basis = built.reduce((a, r) => a + r.h.costBasis, 0);
+          const val = built.reduce((a, r) => a + r.v, 0);
+          return (
+            <>
+              <Big label="Square feet" value={area > 0 ? sf(area) : "—"}
+                title={`${built.length} building${built.length === 1 ? "" : "s"}${rows.length > built.length ? ` and ${rows.length - built.length} lot${rows.length - built.length === 1 ? "" : "s"} of land` : ""}. Square footage is the one measure of a book that does not move with the cap rate.`} />
+              <Big label="Basis / psf" value={area > 0 ? `$${(basis / area).toFixed(0)}` : "—"}
+                title={area > 0
+                  ? `What you paid per foot across the whole book, including closing costs. Worth $${(val / area).toFixed(0)}/sf today.`
+                  : "No buildings yet."} />
+            </>
+          );
+        })()}
         {(() => {
           const cost = rows.reduce((a, r) => a + r.h.costBasis, 0);
           const g = totV - cost;
@@ -8765,6 +8873,11 @@ function DebtPage() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const { releaseFacility, repayFacility: payFac } = useStore.getState();
+  // WHICH LOAN HAS ITS REFINANCING OPEN. The debt page is where a borrower
+  // decides what to do about their debt, and until now the only door to the
+  // refinance desk was the property record or a row on the portfolio — two
+  // screens away from the maturity ladder that tells you which loan needs it.
+  const [refiRow, setRefiRow] = useState<string | null>(null);
   const [pool, setPool] = useState<string[]>([]);
   const [prod, setProd] = useState<string>("savings");
   const [lev, setLev] = useState(1);
@@ -9063,7 +9176,7 @@ function DebtPage() {
             <tr>
               <th>Building</th><th>Desk</th><th className="num">Balance</th><th className="num">Rate</th>
               <th className="num">LTV</th><th className="num">DSCR</th><th className="num">Payment</th>
-              <th>Matures</th><th>Terms</th>
+              <th>Matures</th><th>Terms</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -9075,8 +9188,12 @@ function DebtPage() {
               const lv = v > 0 ? l.balance / v : null;
               const near = l.maturityM - game.month <= 24;
               return (
-                <tr key={h.bbl}>
-                  <td>{rec!.address}{pledged(game, h.bbl) ? <span className="dim"> · pledged</span> : null}</td>
+                <Fragment key={h.bbl}>
+                <tr>
+                  <td>
+                    <a className="lnk" onClick={() => useStore.getState().focus(h.bbl, true)}>{rec!.address}</a>
+                    {pledged(game, h.bbl) ? <span className="dim"> · pledged</span> : null}
+                  </td>
                   <td className="dim">{p.lender}</td>
                   <td className="num">{usd(l.balance)}</td>
                   <td className="num">{l.ratePct.toFixed(2)}%{(l.floating ?? l.product === "float") ? " fl" : ""}</td>
@@ -9088,7 +9205,26 @@ function DebtPage() {
                     {[l.sweep ? "SWEPT" : null, game.month < l.ioUntilM ? "IO" : null, p.recourse ? "recourse" : null,
                       l.prepay === "yieldmaint" ? "YM" : null].filter(Boolean).join(" · ")}
                   </td>
+                  <td>
+                    <button
+                      className={"btn btn-sm" + (refiRow === h.bbl ? " btn-on" : "")}
+                      title={near
+                        ? "This one matures inside two years. Refinance it while somebody is still lending."
+                        : "What the desks would write against this building today."}
+                      onClick={() => setRefiRow(refiRow === h.bbl ? null : h.bbl)}
+                    >
+                      Refi
+                    </button>
+                  </td>
                 </tr>
+                {refiRow === h.bbl && (
+                  <tr>
+                    <td colSpan={10} style={{ background: "rgba(43,37,26,0.035)" }}>
+                      <RefiSection bbl={h.bbl} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
             {fac && (
@@ -9102,10 +9238,11 @@ function DebtPage() {
                 <td className="num">{usd(fac.monthlyPmt)}</td>
                 <td className={fac.maturityM - game.month <= 24 ? "neg" : ""}>{monthLabel(fac.maturityM)}</td>
                 <td className="dim">{[fac.sweep ? "SWEPT" : null, game.month < fac.ioUntilM ? "IO" : null, "recourse", "crossed"].filter(Boolean).join(" · ")}</td>
+                <td className="dim">—</td>
               </tr>
             )}
             {!rows.some((r) => r.h.loan) && !fac && (
-              <tr><td colSpan={9} className="dim">No debt. Every building here is owned outright.</td></tr>
+              <tr><td colSpan={10} className="dim">No debt. Every building here is owned outright.</td></tr>
             )}
           </tbody>
         </table>

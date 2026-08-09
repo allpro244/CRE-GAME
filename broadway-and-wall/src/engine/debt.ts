@@ -928,6 +928,8 @@ export interface RefiQuote {
    */
   maxLTV: number;
   noiUw: number;
+  /** The coverage covenant this paper carries — what the ratio has to stay above. */
+  minDSCR: number;
   binding: string;      // which of the three tests actually capped the loan
   ioM: number;
   termM: number;
@@ -1037,6 +1039,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       debtYieldAtMax: q.principal > 0 ? noi / q.principal : 0,
       maxLTV: p.maxLTV,
       noiUw: noi,
+      minDSCR: p.minDSCR,
       // HOLD SIZE OUTRANKS THE THREE UNDERWRITING TESTS, because it is not one
       // of them. DSCR, debt yield and advance rate are all things about the
       // BUILDING; a hold size is a thing about the LENDER, and telling a

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
+import { NewsText } from "@/ui/panels/MarketPage";
 
 export const NEWS_KINDS = [
   { k: "all", label: "Everything" },
@@ -51,7 +52,7 @@ export function NewsPage() {
                 className={"news-item news-" + n.kind + (n.bbl ? " news-clickable" : "")}
                 onClick={n.bbl ? () => { useStore.getState().focus(n.bbl!, true); } : undefined}
               >
-                {n.text}{n.bbl ? " ✈" : ""}
+                <NewsText text={n.text} />{n.bbl ? " ✈" : ""}
               </div>
             ))}
           </div>

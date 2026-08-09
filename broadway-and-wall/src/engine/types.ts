@@ -1370,6 +1370,20 @@ export interface Econ {
   jobs0?: number;
   pop0?: number;
   /**
+   * INDUSTRIAL SHARE OF EMPLOYMENT, indexed to 1.0 at game start.
+   *
+   * Shed demand used to track total `jobIdx`. That is the wrong wire: total
+   * employment rises with the city while manufacturing's SHARE of employment
+   * (and of floor space) falls secularly. Measured before this field existed,
+   * industrial vacancy sat on its frictional floor most months and
+   * `AFFORD_BAND`'s lower rail was load-bearing for the class — CLAUDE.md fake
+   * #5. See `INDUST_COMP_MONTH` in market.ts for the historical sizing.
+   *
+   * Optional so an old save loads at 1.0 and then declines from the month it
+   * is opened, which is the least surprising migration.
+   */
+  industComp?: number;
+  /**
    * WHAT SHARE OF THE CITY'S PAYROLL EACH TRADE IS. Published by the demand
    * model, which is the only thing that knows: a trade's size is its affinity
    * for the classes this particular city actually built, so a warehouse town

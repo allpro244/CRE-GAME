@@ -255,6 +255,25 @@ const MOM_DEMAND = 4;
 const AFFORD_BAND: [number, number] = [0.88, 1.12];
 
 /**
+ * INDUSTRIAL EMPLOYMENT SHARE — SECULAR DECLINE.
+ *
+ * New York, San Francisco and London each lost roughly half their manufacturing
+ * floor space between 1970 and 2010. That is ≈ −1.72%/yr, or a monthly factor of
+ * 0.5^(1/480). The demand driver for sheds reads `jobIdx * industComp`, so total
+ * jobs can still grow while the industrial claim on them shrinks.
+ *
+ * Sized from that historical record, not from a vacancy target. Where test F
+ * (industrial vacancy rails) lands after this is a MEASUREMENT, not a knob.
+ *
+ * The floor is the residual logistics / last-mile / food-distribution share a
+ * dense city keeps after manufacturing has left — not a balance rail. Without
+ * it the index drifts toward zero over a long century and the class vanishes
+ * as a modelling artefact rather than as a city that still needs warehouses.
+ */
+const INDUST_COMP_MONTH = Math.pow(0.5, 1 / (40 * 12));
+const INDUST_COMP_FLOOR = 0.35;
+
+/**
  * HOW HARD EACH TRADE SWINGS.
  *
  * Not every industry has the same cycle. Technology and media boom and bust on
@@ -872,6 +891,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   econ.jobs0 = SIZE.jobs0; econ.pop0 = SIZE.pop0;
   econ.population = SIZE.pop0; econ.jobs = SIZE.jobs0; econ.unemployment = OPENING_UNEMP;
   econ.wageIdx = 1; econ.outputIdx = 1; econ.cpi = 1;
+  econ.industComp = 1;
   econ.nat = { infl: 0.021, inflExp: 0.02, unemp: 0.052, policy: 4.2,
                neutralReal: 0.019, shockM: 0, shockSev: 0, credibility: 0.8,
                recM: 0, expM: 0, deep: false, pressureM: 0 };
@@ -2072,6 +2092,16 @@ export function tickEcon(s: GameState) {
     e.tightEma = (e.tightEma ?? 0) + 0.004 * (tightNow - (e.tightEma ?? 0));
   }
 
+  // INDUSTRIAL DEMAND TRACKS INDUSTRIAL EMPLOYMENT, NOT TOTAL JOBS.
+  //
+  // Before this walk, sheds read bare `jobIdx`. Total employment rose with the
+  // city; industrial land and floors could not answer (M-zoning, two-storey
+  // cap); vacancy pinned at the frictional floor and `AFFORD_BAND` held the
+  // class up. The composition index declines at the NY/SF/London manufacturing
+  // floor-space rate — see INDUST_COMP_MONTH — so rising jobs no longer mint
+  // shed tenants that the map cannot house.
+  e.industComp = Math.max(INDUST_COMP_FLOOR, (e.industComp ?? 1) * INDUST_COMP_MONTH);
+
   const unmet: Record<string, number> = {};
   for (const k of BUILT_CLASSES) {
     const stk = e.stock?.[k] ?? CITY_STOCK[k];
@@ -2470,8 +2500,14 @@ export function tickEcon(s: GameState) {
     // number. One quantity, one answer.
     const jobs0 = e.jobs0 ?? 132_000;
     const jobIdx = (e.jobs ?? jobs0) / jobs0;
+    // Sheds are leased by industrial firms. Total jobs is the right scale for
+    // office; for industrial it has to be multiplied by the secular share of
+    // employment that still wants a shed — see `industComp` / INDUST_COMP_MONTH.
+    // Without that factor, a growing services city manufactures warehouse
+    // demand it cannot supply and the vacancy floor becomes load-bearing.
     const driver = k === "multifamily" ? popIdx
       : k === "retail" ? Math.pow(popIdx, 0.68) * Math.pow(jobIdx, 0.32)
+      : k === "industrial" ? jobIdx * (e.industComp ?? 1)
       : jobIdx;
     // AND THE LEVEL EVENTS RIDE UNDERNEATH ALL OF IT. `swanClassLevel` is 1.0
     // in a city nothing structural has happened to, and it is the permanent

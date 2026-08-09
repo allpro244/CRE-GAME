@@ -675,6 +675,8 @@ export interface Listing {
   listedM: number;
   expiresM: number;
   distress?: boolean;  // motivated seller — priced under appraisal, goes fast
+  /** Why ordinary product reached the tape; makes turnover legible. */
+  reason?: "fund-life" | "merchant" | "estate" | "voluntary" | "receiver";
   // A SITE WITH A FRAME ON IT. The sponsor could not finish, the receiver is
   // clearing it, and whoever buys inherits the steel that is already up and
   // the bill for the rest. Buying one starts a development at that progress

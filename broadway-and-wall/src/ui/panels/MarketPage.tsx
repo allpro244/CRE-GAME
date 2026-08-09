@@ -437,6 +437,14 @@ export function MarketPage() {
                     className={yours ? "row-mine" : undefined}>
                     <td>
                       {li.distress && <span className="chip chip-distress" style={{ marginRight: 6 }}>HOT</span>}
+                      {li.reason && (
+                        <span className="chip" style={{ marginRight: 6 }}>
+                          {li.reason === "merchant" ? "MERCHANT EXIT"
+                            : li.reason === "fund-life" ? "FUND CLOCK"
+                              : li.reason === "estate" ? "ESTATE"
+                                : li.reason === "receiver" ? "RECEIVER" : "VOLUNTARY"}
+                        </span>
+                      )}
                       {yours && <span className="chip" style={{ marginRight: 6 }}>YOURS</span>}
                       {rec.address}
                       <span className="dim"> · Open →</span>

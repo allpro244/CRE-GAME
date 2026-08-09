@@ -240,6 +240,7 @@ function listHolderExit(s: GameState, parcels: ParcelTable) {
       bbl, ask, listedM: s.month,
       expiresM: s.month + Math.round(rrange(s, ...LISTING_LIFE_M)),
       distress: distress || undefined,
+      reason: "estate",
     };
     if (rec.class !== "land" && rec.bldgArea > 0) stampListing(s, rec, listing);
     s.listings.push(listing);
@@ -376,6 +377,7 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
       listedM: s.month,
       expiresM: s.month + Math.round(rrange(s, ...LISTING_LIFE_M)),
       distress: distress || undefined,
+      reason: distress ? undefined : "voluntary",
     };
     if (rec.class !== "land" && rec.bldgArea > 0) {
       // The grade the deed will convey: today's grade, less the notch a

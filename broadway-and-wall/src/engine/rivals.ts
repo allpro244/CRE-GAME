@@ -1982,7 +1982,7 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string): 
   const ask = reoAsk(s, worst.v, owed, desk);
   s.listings.push({
     bbl: worst.bbl, ask, listedM: s.month,
-    expiresM: s.month + reoWindow(s, desk), distress: true, receiverFor: desk,
+    expiresM: s.month + reoWindow(s, desk), distress: true, receiverFor: desk, reason: "receiver",
   });
   chargeLenderLoss(s, desk, Math.max(0, owed - ask));
   const off = Math.max(0, 1 - ask / Math.max(1, worst.v));
@@ -2227,6 +2227,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
           bbl, ask: reoAsk(s, v, basis, desk),
           listedM: s.month, expiresM: s.month + reoWindow(s, desk), distress: true,
           sellerId: r.id, receiverFor: r.name,
+          reason: "receiver",
         });
       }
       continue;
@@ -2397,6 +2398,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
           ask: Math.round(v * rrange(s, 0.94, 1.04, "rivals") / 1000) * 1000,
           listedM: s.month, expiresM: s.month + Math.round(rrange(s, 9, 16, "rivals")),
           sellerId: r.id,
+          reason: r.style === "merchant" ? "merchant" : "fund-life",
         });
         // AND A ROUTINE LISTING IS NOT NEWS EITHER. A fund reaching the end of
         // its hold and putting a building up is the most ordinary thing on this
@@ -2453,6 +2455,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         s.listings.push({
           bbl, ask: Math.round(v * rrange(s, 1.00, 1.14, "rivals") / 1000) * 1000,
           listedM: s.month, expiresM: s.month + Math.round(rrange(s, 6, 12, "rivals")),
+          reason: "voluntary",
         });
       }
     }

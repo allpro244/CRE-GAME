@@ -16,8 +16,10 @@ engine, or anything that moves money. Short version:
 - `pnpm check` (~20s) after engine work; if a baseline metric moves, say why
   in the commit message.
 
-Also read **`HANDOFF.md`** for the current backlog and what is already done.
-Do not re-open pull requests unless the owner asks.
+Also read **`HANDOFF.md`** before engine work — traps first (RNG re-roll,
+stale bundle, frozen world, conservation blind spot, one-quantity-two-answers),
+then open faults. Re-measure before believing anything in it.
+Do not open pull requests unless the owner asks.
 
 ## Harness (gitignored — rebuild on every fresh clone)
 
@@ -30,8 +32,9 @@ pnpm check           # fresh + conserve + baseline:check
 
 Never probe with a stale `test/.engine.mjs`. `test/fresh.mjs` guards this.
 
-## Parallel work
+## Ownership
 
-Claude Code often works on `claude/phase-1-implementation-v4c2az`, mostly
-`src/engine/` and `src/ui/RightPanel.tsx`. Prefer a feature branch off that tip
-and stay out of those files unless coordinating. Fetch before merging.
+Cursor owns the working tree. Claude Code handed off at
+`claude/phase-1-implementation-v4c2az` @ `8480967` (handoff rewrite at
+`e91fd6d`). Active work continues on `cursor/cre-game-handoff-462d` (or later
+`cursor/*-462d` branches) off that tip.

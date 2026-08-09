@@ -1348,7 +1348,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   let floors = Math.max(1, Math.round(sf / (rec.lotArea * 0.62)));
   // A named developer reads the same comps the anonymous city does: one
   // increment above the block's cornice datum, not the zoning envelope.
-  const infill = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780));
+  const infill = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), lead);
   if (floors > infill) {
     floors = infill;
     sf = Math.max(3000, Math.round((rec.lotArea * 0.62 * floors) / 100) * 100);

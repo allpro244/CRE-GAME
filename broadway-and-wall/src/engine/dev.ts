@@ -2107,6 +2107,7 @@ export function blockDatumFloors(s: GameState, parcels: ParcelTable, block: stri
 /** How high the market will speculatively build on this lot TODAY. */
 export function cityInfillCap(
   s: GameState, parcels: ParcelTable, rec: { block: string; lotArea: number }, maturity: number,
+  use: BuiltClass = "office",
 ): number {
   const datum = blockDatumFloors(s, parcels, rec.block);
   // one increment above the datum; the increment itself grows as the town
@@ -2132,10 +2133,17 @@ export function cityInfillCap(
   // Neutral by construction: at natural vacancy with rent at parity to income
   // the push is zero and nothing about the old calibration moves.
   const ez = s.econ;
+  // THE PROJECT'S MARKET, not office by default. Apartment supply was reading
+  // office vacancy and office rent here, so a housing shortage raised the
+  // number of apartment orders but never the size of an apartment building.
+  // The result was multifamily vacancy sitting on its frictional floor for
+  // more than a third of measured months while perfectly usable FAR went
+  // untouched.
+  const natural = NATURAL_VAC[use];
   const tight = clamp(
-    (NATURAL_VAC.office - (ez.cityVac?.office ?? NATURAL_VAC.office)) / NATURAL_VAC.office, -1, 1);
+    (natural - (ez.cityVac?.[use] ?? natural)) / natural, -1, 1);
   const rentPress = clamp(
-    (ez.rentIdx.office / RENT_BASE.office) / Math.max(0.35, ez.wageIdx ?? 1) - 1, -0.5, 1.5);
+    (ez.rentIdx[use] / RENT_BASE[use]) / Math.max(0.35, ez.wageIdx ?? 1) - 1, -0.5, 1.5);
   const push = clamp(tight * 0.9 + rentPress * 0.5, -0.35, 1.6);
   const step = Math.max(1, Math.round((2 + maturity * 4) * (1 + push)));
   return Math.max(2, Math.min(Math.max(1, datum) + step, physicalMaxFloors(rec.lotArea * 0.62)));
@@ -2642,7 +2650,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   const share = 0.30 + 0.50 * appetite * (0.75 + rng(s, "dev") * 0.5);
   let nsf = Math.max(3000, Math.round((rec!.lotArea * farMax * Math.min(0.92, share)) / 100) * 100);
   let nfl = Math.max(1, Math.round(nsf / (rec!.lotArea * 0.62)));
-  const infill = cityInfillCap(s, parcels, rec!, 1);
+  const infill = cityInfillCap(s, parcels, rec!, 1, lead);
   if (nfl > infill) { nfl = infill; nsf = Math.max(3000, Math.round((rec!.lotArea * 0.62 * nfl) / 100) * 100); }
   const ucap = MAX_FLOORS_BY_USE[nextUse];
   if (ucap !== undefined && nfl > ucap) { nfl = ucap; nsf = Math.max(3000, Math.round((rec!.lotArea * 0.62 * nfl) / 100) * 100); }
@@ -2921,7 +2929,7 @@ export function tickCityGrowth(
     // THE CITY BUILDS TO ITS OWN CORNICE LINE. Sized off the envelope alone, a
     // three-storey town broke ground at a median of fifteen floors. The datum
     // cap is what makes twenty years of growth read like twenty years.
-    const infill = cityInfillCap(s, parcels, rec, maturity);
+    const infill = cityInfillCap(s, parcels, rec, maturity, lead);
     if (floors > infill) {
       floors = infill;
       sf = Math.max(3000, Math.round((rec.lotArea * 0.62 * floors) / 100) * 100);

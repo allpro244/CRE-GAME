@@ -28,6 +28,7 @@ const checks = [
   ["seller counters", "loi-counter.mjs"],
   ["development underwriting", "underwriting.mjs"],
   ["multi-strategy invariant smoke", "invariants.mjs", { HORIZON: "240", SEEDS: "2" }],
+  ["great city sim latency", "giant-perf.mjs", { BW_SIZE: "giant" }],
 ];
 
 const results = [];

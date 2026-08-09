@@ -314,7 +314,16 @@ export function DealsPage() {
           </>
         )}
         <div className="page-section">Letters of intent · {game.lois.length}</div>
-        {game.lois.length === 0 && <div className="hint">No live negotiations. Vacant space in high-demand buildings draws tenants.</div>}
+        {game.lois.length === 0 && (
+          <>
+            <div className="hint">No live negotiations. Vacant space in high-demand buildings draws tenants.</div>
+            {Object.keys(game.holdings).length === 0 && (
+              <button className="btn btn-buy" style={{ marginTop: 8 }} onClick={() => useStore.getState().setPage("market")}>
+                Browse buildings in Marketplace →
+              </button>
+            )}
+          </>
+        )}
         <div className="loi-grid">
           {[...game.lois]
             .sort((a, b) => (b.referred ? 1 : 0) - (a.referred ? 1 : 0)

@@ -196,6 +196,43 @@ export interface LeaseReply {
   marketPsf: number;
 }
 
+/**
+ * THE PORTFOLIO FACILITY — one loan against a pool of deeds. See
+ * engine/facility.ts, which is where all of its behaviour lives; this is the
+ * record it keeps.
+ *
+ * It is deliberately shaped like `Loan`, field for field where the fields
+ * mean the same thing, because it IS a loan and a borrower reading the two
+ * should not have to translate. What it adds is the pool (`bbls`), the
+ * cross-default clock (`breachedSince`, `accelM`) and the fact that it is
+ * signed personally.
+ */
+export interface Facility {
+  /** Every deed the lender has a lien on. Sell one and the release price falls due. */
+  bbls: string[];
+  balance: number;
+  /** What was drawn at closing, kept so the page can show how far it has amortised. */
+  drawn: number;
+  ratePct: number;
+  lender: string;
+  productId: string;
+  originM: number;
+  maturityM: number;
+  ioUntilM: number;
+  amortYears: number;
+  monthlyPmt: number;
+  /** The covenants, tested on the POOL rather than on any one building. */
+  minDSCR: number;
+  maxLTV: number;
+  recourse: boolean;
+  /** Set the month a pool-wide covenant test first failed; cleared when cured. */
+  breachedSince?: number;
+  /** The lender is trapping the cash flow of every building in the pool. */
+  sweep?: boolean;
+  /** The month they accelerated. A receiver sells the whole pool three months later. */
+  accelM?: number;
+}
+
 export interface Loan {
   /** The appraisal the desk lent against at closing — "LTV then" on the bank statement. */
   origValue?: number;
@@ -1897,6 +1934,12 @@ export interface GameState {
   bankApp?: number;
   /** Loans in default and what is being done about them. See engine/workout.ts. */
   workouts?: Record<string, Workout>;
+  /**
+   * ONE LOAN, MANY DEEDS. Absent until the player papers one, and there is at
+   * most one at a time — a second facility would be a second first lien on the
+   * same collateral, which is not a thing. See engine/facility.ts.
+   */
+  facility?: Facility;
   /** Loans you have bought. Servicing is automatic. See engine/notes.ts. */
   notes?: Note[];
   /** Paper on the market this month. Three at most, and they expire. */

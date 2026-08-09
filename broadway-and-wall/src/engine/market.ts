@@ -1450,8 +1450,26 @@ export function tickEcon(s: GameState) {
   // machinery that was already here, answering a shock it can now see.
   // Zero in every month in which no level event is currently landing.
   const swanPull = e.swanJobDrift ?? 0;
+  // A FIRM THAT CANNOT STAFF A CITY STOPS TRYING TO GROW IN IT.
+  //
+  // `employIdx` is desire and it had no idea whether the desire was being met.
+  // The labour block caps hiring at what the town can staff and files the
+  // remainder as `jobVac`, and nothing anywhere reduced the desire — so
+  // unfilled demand accumulated month after month, for decades, to a quarter
+  // of the labour force. No labour market does that. What happens in life is
+  // that the second distribution centre opens in the next state, the back
+  // office goes where the graduates are, and the expansion that could not be
+  // staffed here simply happens somewhere else.
+  //
+  // So sustained unfilled demand is a drag on further growth, proportional to
+  // how bad the shortage is. It is not a cap and it does not reverse anything
+  // already hired: at a 2% vacancy gap it removes a fifth of a point of annual
+  // job growth, and at 10% it removes most of what a boom was adding. That is
+  // the negative feedback the block was missing, and with it `jobVac`
+  // equilibrates instead of compounding.
+  const staffDrag = 0.55 * (e.jobVac ?? 0) * Math.abs(jobDrift + spacePull > 0 ? jobDrift + spacePull : 0);
   e.employIdx = clamp(
-    e.employIdx * (1 + jobDrift + spacePull + natPull + swanPull + rrange(s, -0.0012, 0.0012)), 0.55, 12);
+    e.employIdx * (1 + jobDrift + spacePull + natPull + swanPull - staffDrag + rrange(s, -0.0012, 0.0012)), 0.55, 12);
 
   // --- THE CITY UNDERNEATH THE PROPERTY MARKET -------------------------------
   //
@@ -1575,7 +1593,21 @@ export function tickEcon(s: GameState) {
     // a labour market anchored, and it is now in the model.
     const pull = jobGrowth > 0 ? 0.35 : 0.09;
     const uGapPop = e.unemployment! - 0.055;
-    let migration = jobGrowth * pull - clamp(uGapPop * 0.020, -0.0010, 0.0030);
+    // PEOPLE MOVE TO WHERE THE UNFILLED JOBS ARE, and this was the wire the
+    // block above already claimed to have — "vacancies are how a labour market
+    // that has run out of people goes on transmitting pressure to wages and to
+    // migration" — while `jobVac` was in fact read in exactly one place, the
+    // Phillips term, and never touched population at all.
+    //
+    // It matters because `jobGrowth` is measured on FILLED jobs, and filled
+    // jobs are pinned to the labour force the moment the town runs out of
+    // people. So in the one situation where a city most needs to attract
+    // workers, the only signal pulling them in had gone flat: the shortage
+    // could not call anybody. A tenth of the vacancy gap a year is a slow
+    // answer, which is right — moving house takes a year — and it is enough to
+    // close a shortage over a decade instead of never.
+    const vacPull = Math.min(0.04, (e.jobVac ?? 0)) * 0.10 / 12;
+    let migration = jobGrowth * pull + vacPull - clamp(uGapPop * 0.020, -0.0010, 0.0030);
 
     // ...AND PEOPLE CANNOT MOVE INTO HOUSING THAT DOES NOT EXIST.
     //
@@ -1663,7 +1695,25 @@ export function tickEcon(s: GameState) {
     // vacancy is worth about what a missing unemployed worker is worth: both
     // say one job's worth of pressure on pay. `jobVac` is zero for the whole of
     // a slack market, so nothing about the loose end of the curve moves.
-    const tight = 0.055 - e.unemployment! + (e.jobVac ?? 0);
+    // HOW TIGHT THIS TOWN'S LABOUR MARKET IS, in units a labour market can
+    // actually reach.
+    //
+    // This was `0.055 - unemployment + jobVac` with no bound on the second
+    // term, and it went to 0.27 — a claim that unfilled positions equalled a
+    // QUARTER of everybody available to work. The US vacancy rate has never
+    // exceeded about 7.4%, at the tightest moment ever recorded, and the
+    // vacancy-to-unemployment gap has never exceeded about four points. So the
+    // signal is expressed as the real one: unfilled positions as a share of
+    // all positions, against the unemployment rate, saturating where the
+    // observed series does.
+    //
+    // The saturation is not a rail hiding the fault — the fault is fixed
+    // upstream, where demand for staff now answers whether staff exist. It is
+    // here because a tightness measure that can read 27% is not a measure of
+    // anything, and because the term it feeds is multiplied by a coefficient
+    // calibrated for a gap of a point or two.
+    const vacRate = Math.min(0.075, (e.jobVac ?? 0) / (1 + (e.jobVac ?? 0)));
+    const tight = Math.max(-0.06, Math.min(0.055, 0.055 - e.unemployment! + vacRate));
     // realised inflation over the trailing year, straight off the history the
     // engine already keeps — expectations chase THIS, not a constant
     const h12 = e.history.length >= 12 ? e.history[e.history.length - 12] : undefined;
@@ -2362,9 +2412,27 @@ export function tickEcon(s: GameState) {
     // residential quarter does not.
     const pop0 = e.pop0 ?? 240_000;   // this town's opening population, so popIdx opens at exactly 1
     const popIdx = (e.population ?? pop0) / pop0;
+    // ...AND IT IS THE JOBS THAT EXIST, NOT THE JOBS SOMEBODY WANTED.
+    //
+    // This read `employIdx`, which is what employers WANT to hire. Since the
+    // labour block above caps actual employment at what the town can staff,
+    // the two numbers separate the moment a boom outruns the population — and
+    // they separated permanently. Measured over the first ten years on three
+    // seeds, unfilled positions ran from nothing to 8-24% OF THE LABOUR FORCE
+    // and never came back, which means a fifth of the office demand pricing
+    // this city's rents was demand from desks that had nobody to sit at them.
+    // Office vacancy fell to 3.7% by year five, rents went 2.4x in ten years
+    // and the median lot went 4.8x.
+    //
+    // A firm does not lease a floor for a headcount it cannot hire. Demand for
+    // space is demand from people who turned up, and `e.jobs` — the same
+    // number the unemployment rate and the wage bill are struck on — is that
+    // number. One quantity, one answer.
+    const jobs0 = e.jobs0 ?? 132_000;
+    const jobIdx = (e.jobs ?? jobs0) / jobs0;
     const driver = k === "multifamily" ? popIdx
-      : k === "retail" ? Math.pow(popIdx, 0.68) * Math.pow(e.employIdx, 0.32)
-      : e.employIdx;
+      : k === "retail" ? Math.pow(popIdx, 0.68) * Math.pow(jobIdx, 0.32)
+      : jobIdx;
     // AND THE LEVEL EVENTS RIDE UNDERNEATH ALL OF IT. `swanClassLevel` is 1.0
     // in a city nothing structural has happened to, and it is the permanent
     // restatement of what this class is wanted for once something has: less

@@ -404,6 +404,14 @@ export const useStore = create<AppState>((set, get) => ({
       set({ advancing: true });
       try {
         const r = await advanceUntilAttentionAsync(game, parcels, bbls, adjacency, 12, 1);
+        // The async tick yields between months. If the player acted while it
+        // was yielding, the store now holds a different state descended from
+        // the same starting snapshot. Never overwrite that real action with
+        // the simulated branch; discard the advance instead.
+        if (get().game !== game) {
+          toast("Year advance stopped because you made another decision.");
+          return;
+        }
         set({ game: r.s });
         toast(r.reason ? `Stopped after ${r.months} mo: ${r.reason}` : "A year passes.");
         void persist(r.s);
@@ -421,6 +429,10 @@ export const useStore = create<AppState>((set, get) => ({
       set({ advancing: true });
       try {
         const r = await advanceUntilAttentionAsync(game, parcels, bbls, adjacency, 36, 1);
+        if (get().game !== game) {
+          toast("Skip stopped because you made another decision.");
+          return;
+        }
         set({ game: r.s });
         toast(r.reason ? `${r.months} mo later: ${r.reason}` : "Three quiet years. New Alden hums along.");
         void persist(r.s);

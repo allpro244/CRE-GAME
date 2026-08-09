@@ -14,7 +14,10 @@ export function holdingDeskSig(g: GameState | null | undefined, bbl: string): st
   if (!g || !bbl) return "";
   const h = g.holdings[bbl];
   const sale = h?.sale;
+  const bids = sale?.bids?.map((b) =>
+    `${b.name}:${b.price}:${b.countered ? 1 : 0}:${b.dropped ? 1 : 0}`).join(";") ?? "";
   const tenants = h?.tenants?.map((t) => `${t.sf}:${t.rentPsf}:${t.endM}:${t.credit}`).join(";") ?? "";
+  const makeReady = h?.makeReady?.map((m) => `${m.sf}:${m.readyM}:${m.use}`).join(";") ?? "";
   const lois = g.lois
     .filter((l) => l.bbl === bbl)
     .map((l) => `${l.id}:${l.rentPsf}:${l.tiPsf}:${l.stage}:${l.expiresM}`)
@@ -55,6 +58,7 @@ export function holdingDeskSig(g: GameState | null | undefined, bbl: string): st
     h?.loan?.balance,
     h?.loan?.ratePct,
     h?.loan?.maturityM,
+    h?.loan?.sweep ? 1 : 0,
     h?.renovatingUntilM,
     h?.broker ? 1 : 0,
     h?.leasingHold ? 1 : 0,
@@ -64,11 +68,19 @@ export function holdingDeskSig(g: GameState | null | undefined, bbl: string): st
     sale?.offer?.price,
     sale?.offer?.expiresM,
     sale?.unsolicited ? 1 : 0,
+    sale?.round ?? "",
+    sale?.callM ?? "",
+    bids,
+    h?.occ ?? "",
+    makeReady,
     tenants,
     lois,
     listing?.ask ?? "",
     ap?.ask ?? "",
     ap?.q ?? "",
+    ap?.inbound ? 1 : 0,
+    ap?.refused ? 1 : 0,
+    ap?.sinceM ?? "",
     // Purchase negotiation state. This was missing from the parcel signature,
     // so a seller's counter updated GameState without re-rendering the offer
     // desk. Moving the slider changed local React state and accidentally made
@@ -81,8 +93,16 @@ export function holdingDeskSig(g: GameState | null | undefined, bbl: string): st
     talk?.agreedPrice ?? "",
     dev?.deliverM ?? "",
     dev?.startM ?? "",
+    dev?.drawn ?? "",
+    dev?.loanBalance ?? "",
+    dev?.costTotal ?? "",
+    dev?.equitySpent ?? "",
+    dev?.repudiatedM ?? "",
     w?.stage ?? "",
     w?.cure ?? "",
+    w?.servicing ? 1 : 0,
+    w?.decideM ?? "",
+    w?.saleM ?? "",
     gl ? `${gl.endM}:${gl.rentYr}:${gl.review ?? "fixed"}:${gl.builtM ?? ""}:${gl.floors ?? ""}` : "",
     varianceApp ? `${varianceApp.filedM}:${varianceApp.decideM}:${varianceApp.grant}:${varianceApp.odds}` : "",
     varianceLog ? `${varianceLog.m}:${varianceLog.granted ? 1 : 0}:${varianceLog.far}` : "",

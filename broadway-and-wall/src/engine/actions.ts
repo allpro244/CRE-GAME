@@ -407,19 +407,54 @@ export function siteRoot(s: GameState, bbl: string): string {
   return s.merged?.[bbl] ?? bbl;
 }
 
-/** Every deed in a site — the root plus every child folded into it. */
-export function siteDeeds(s: GameState, bbl: string): string[] {
-  const root = siteRoot(s, bbl);
-  const kids: string[] = [];
+/** Children folded into each parent — one scan of `merged`, not per call. */
+function childrenIndex(s: GameState): Map<string, string[]> {
+  const idx = new Map<string, string[]>();
   for (const [child, parent] of Object.entries(s.merged ?? {})) {
-    if (parent === root) kids.push(child);
+    const arr = idx.get(parent);
+    if (arr) arr.push(child);
+    else idx.set(parent, [child]);
   }
-  return [root, ...kids];
+  return idx;
+}
+
+/** Every deed in a site — the root plus every child folded into it. */
+export function siteDeeds(s: GameState, bbl: string, kids?: Map<string, string[]>): string[] {
+  const root = siteRoot(s, bbl);
+  return [root, ...(kids ?? childrenIndex(s)).get(root) ?? []];
 }
 
 /** Static lot area of an entire site (root + every child's original dirt). */
-export function siteLotArea(s: GameState, parcels: ParcelTable, bbl: string): number {
-  return siteDeeds(s, bbl).reduce((a, d) => a + (parcels[d]?.lotArea ?? 0), 0);
+export function siteLotArea(
+  s: GameState, parcels: ParcelTable, bbl: string, kids?: Map<string, string[]>,
+): number {
+  return siteDeeds(s, bbl, kids).reduce((a, d) => a + (parcels[d]?.lotArea ?? 0), 0);
+}
+
+/**
+ * Cheap gate for the land desk: is there ANY owned site touching this one?
+ * O(neighbours of this site), not a walk of the whole owned block. The desk
+ * used to BFS the contiguous component on every render of every selected
+ * parcel — including buildings with nothing to assemble — and every click
+ * hitching on that walk is what the player felt.
+ */
+export function hasOwnedSiteNeighbor(
+  s: GameState, adjacency: Adjacency, bbl: string,
+): boolean {
+  if (!s.holdings[bbl]) return false;
+  const root = siteRoot(s, bbl);
+  const touch = (d: string): boolean => {
+    for (const n of adjacency[d] ?? []) {
+      if (!s.holdings[n]) continue;
+      if ((s.merged?.[n] ?? n) !== root) return true;
+    }
+    return false;
+  };
+  if (touch(root)) return true;
+  for (const [child, parent] of Object.entries(s.merged ?? {})) {
+    if (parent === root && touch(child)) return true;
+  }
+  return false;
 }
 
 /**
@@ -429,9 +464,10 @@ export function siteLotArea(s: GameState, parcels: ParcelTable, bbl: string): nu
  * treat already-assembled sites as single nodes.
  */
 export function siteNeighborRoots(
-  s: GameState, adjacency: Adjacency, bbl: string,
+  s: GameState, adjacency: Adjacency, bbl: string, kids?: Map<string, string[]>,
 ): string[] {
-  const mine = new Set(siteDeeds(s, bbl));
+  const index = kids ?? childrenIndex(s);
+  const mine = new Set(siteDeeds(s, bbl, index));
   const roots = new Set<string>();
   for (const d of mine) {
     for (const n of adjacency[d] ?? []) {
@@ -451,12 +487,13 @@ export function contiguousOwnedRoots(
   s: GameState, adjacency: Adjacency, bbl: string,
 ): string[] {
   if (!s.holdings[bbl]) return [];
+  const kids = childrenIndex(s);
   const start = siteRoot(s, bbl);
   const seen = new Set([start]);
   const queue = [start];
   while (queue.length) {
     const cur = queue.shift()!;
-    for (const n of siteNeighborRoots(s, adjacency, cur)) {
+    for (const n of siteNeighborRoots(s, adjacency, cur, kids)) {
       if (seen.has(n)) continue;
       seen.add(n);
       queue.push(n);

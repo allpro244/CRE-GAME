@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
+import type { GameState } from "@/engine/types";
+import type { ParcelTable, Adjacency } from "@/data/types";
 import { holdingValue, resolveRec, landPsfNow, landRead, plateEfficiency } from "@/engine/value";
 import { workoutMood } from "@/engine/workout";
 import { SECTOR_LABEL } from "@/engine/market";
@@ -9,12 +11,58 @@ import { USE_WORD } from "@/engine/mix";
 import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses } from "@/engine/leasing";
 import { leasingOdds } from "@/engine/absorption";
 import {
-  groundLeaseQuote, mergeCost, siteNeighborRoots, siteDeeds, siteLotArea,
-  contiguousOwnedRoots,
+  groundLeaseQuote, mergeCost, siteDeeds, siteLotArea,
+  contiguousOwnedRoots, hasOwnedSiteNeighbor,
 } from "@/engine/actions";
 import { varianceQuote } from "@/engine/zoning";
 import { usd, sf } from "@/ui/format";
 import { useLabel, Row } from "@/ui/panels/shared";
+
+type AssembleCand = {
+  bbl: string;
+  rec: ReturnType<typeof resolveRec>;
+  why: string | null;
+  area: number;
+  deeds: number;
+};
+
+const EMPTY_ASSEMBLE: { eligible: AssembleCand[]; blocked: AssembleCand[] } = {
+  eligible: [], blocked: [],
+};
+
+/** Assemble candidates for one site. Cheap neighbour gate first — the desk is
+ *  mounted on every selected holding, and walking the contiguous owned block
+ *  on every click was the lag. */
+function useAssembleCandidates(
+  game: GameState, parcels: ParcelTable, adjacency: Adjacency | null, bbl: string,
+) {
+  const touch = !!(adjacency && hasOwnedSiteNeighbor(game, adjacency, bbl));
+  return useMemo(() => {
+    if (!touch || !adjacency) return EMPTY_ASSEMBLE;
+    const component = contiguousOwnedRoots(game, adjacency, bbl).filter((r) => r !== bbl);
+    const candidates = component.map((n) => {
+      const r = resolveRec(parcels, game, n);
+      const area = siteLotArea(game, parcels, n);
+      const deeds = siteDeeds(game, n).length;
+      const why = !r ? "unknown parcel"
+        : game.developments[n] ? "under construction"
+        : game.groundLeases?.[n] ? "ground-leased to somebody else"
+        : game.holdings[n]?.sale ? "on the market — pull the listing"
+        : game.landmarks?.[n] !== undefined ? "landmarked"
+        : game.holdings[n]?.loan ? "mortgage outstanding — pay it off first"
+        : game.facility?.bbls?.includes(n) ? "in the portfolio facility — release it first"
+        : r.class !== "land" || r.bldgArea > 0 ? `${useLabel(r)} standing — clear it first`
+        : null;
+      return { bbl: n, rec: r, why, area, deeds };
+    });
+    return {
+      eligible: candidates.filter((x) => !x.why),
+      blocked: candidates.filter((x) => x.why),
+    };
+    // When there is nothing to assemble, `touch` is false and `game` is not a
+    // dependency — Advance/news/cash must not rewalk. When there is, `game` is.
+  }, [touch, touch ? game : null, adjacency, bbl, parcels]);
+}
 
 /**
  * THE ASSET'S OWN TRACK RECORD.
@@ -425,6 +473,9 @@ export function LandDesk({ bbl }: { bbl: string }) {
   const { assemble, groundLease, pullGroundOffer, applyVariance } = useStore.getState();
   const [picked, setPicked] = useState<string[]>([]);
   const [years, setYears] = useState(60);
+  // Hooks before any return — assemble candidates are gated to a cheap
+  // neighbour check so ordinary parcel clicks do not walk the land book.
+  const { eligible, blocked } = useAssembleCandidates(game, parcels, adjacency, bbl);
   const h = game.holdings[bbl];
   const rec = h ? resolveRec(parcels, game, bbl) : null;
   if (!h || !rec) return null;
@@ -449,8 +500,7 @@ export function LandDesk({ bbl }: { bbl: string }) {
     );
   }
 
-  // an assembled parent: say what it now is
-  const children = Object.entries(game.merged ?? {}).filter(([, p]) => p === bbl).map(([c]) => c);
+  const children = siteDeeds(game, bbl).slice(1);
   const isChild = game.merged?.[bbl];
   if (isChild) {
     const parent = resolveRec(parcels, game, isChild);
@@ -493,10 +543,6 @@ export function LandDesk({ bbl }: { bbl: string }) {
           <Row k="Odds as filed" v={`${(app.odds * 100).toFixed(0)}%`} />
         </div>
       )}
-      {/* WHAT THE BOARD SAID. A hearing is a year and several hundred thousand
-          dollars, and the answer used to be one line of news that scrolled
-          away in a quarter. It sits on the site for a decade now — which is
-          also how long a refusal really hangs over a property. */}
       {(() => {
         const v = game.varianceLog?.[bbl];
         if (!v || game.month - v.m > 120) return null;
@@ -536,51 +582,13 @@ export function LandDesk({ bbl }: { bbl: string }) {
     </>
   );
 
-  // CONTIGUOUS OWNED SITES, not just the deeds that share a line with this
-  // one. A strip of three lots is assemblable from either end; a neighbour
-  // that only touches a child of an already-folded site still joins. Every
-  // site that cannot be folded in yet keeps its reason on the list — an empty
-  // panel taught nobody anything.
-  //
-  // THE SITE HAS TO BE CLEAR. Folding deeds moves the dirt into one parcel;
-  // a building left standing on a child would be standing on nothing. Clear
-  // first, then assemble — the desk says so next to every blocked deed.
-  const adj = adjacency ?? {};
-  const component = adjacency
-    ? contiguousOwnedRoots(game, adj, bbl).filter((r) => r !== bbl)
-    : [];
-  const candidates = component.map((n) => {
-    const r = resolveRec(parcels, game, n);
-    const area = siteLotArea(game, parcels, n);
-    const deeds = siteDeeds(game, n).length;
-    const why = !r ? "unknown parcel"
-      : game.developments[n] ? "under construction"
-      : game.groundLeases?.[n] ? "ground-leased to somebody else"
-      : game.holdings[n]?.sale ? "on the market — pull the listing"
-      : game.landmarks?.[n] !== undefined ? "landmarked"
-      : game.holdings[n]?.loan ? "mortgage outstanding — pay it off first"
-      : game.facility?.bbls?.includes(n) ? "in the portfolio facility — release it first"
-      : r.class !== "land" || r.bldgArea > 0 ? `${useLabel(r)} standing — clear it first`
-      : null;
-    return { bbl: n, rec: r, why, area, deeds };
-  });
-  // Also surface owned lots that touch THIS site but failed for some other
-  // reason and are not in the BFS set (should be rare — BFS includes them).
-  const touchBlocked = (adjacency ? siteNeighborRoots(game, adj, bbl) : [])
-    .filter((n) => n !== bbl && !component.includes(n))
-    .map((n) => {
-      const r = resolveRec(parcels, game, n);
-      return { bbl: n, rec: r, why: "does not connect through land you own", area: siteLotArea(game, parcels, n), deeds: 1 };
-    });
-  const eligible = candidates.filter((x) => !x.why);
-  const blocked = [...candidates.filter((x) => x.why), ...touchBlocked];
   const selfBlocked = !vacant
     ? `${useLabel(rec)} standing — clear this site before folding anything in`
-    : game.holdings[bbl].loan ? "mortgage outstanding on this site — pay it off first"
+    : h.loan ? "mortgage outstanding on this site — pay it off first"
     : game.facility?.bbls?.includes(bbl) ? "this site is in the portfolio facility — release it first"
     : null;
 
-  if (!vacant && !candidates.length && !blocked.length) {
+  if (!vacant && !eligible.length && !blocked.length) {
     return app || vq || landmarked
       ? <div className="deal"><div className="deal-head">The planning board</div>{planning}</div>
       : null;
@@ -593,7 +601,6 @@ export function LandDesk({ bbl }: { bbl: string }) {
   const oq = offer && vacant ? groundLeaseQuote(game, parcels, bbl, offer.years) : null;
   const q = vacant && !offer ? groundLeaseQuote(game, parcels, bbl, years) : null;
   const farMax = Math.max(rec.farMaxComm, rec.farMaxRes);
-  // Drop picks that stopped being eligible after a demolish / sale / advance.
   const livePicked = picked.filter((n) => eligible.some((x) => x.bbl === n));
   const pickedDeeds = livePicked.reduce((a, n) => a + siteDeeds(game, n).length, 0);
   const cost = mergeCost(game, siteDeeds(game, bbl).length + pickedDeeds);

@@ -204,8 +204,8 @@ export default function TopBar() {
                   keep
                   w={drawn > 0 ? 148 : 96}
                   title={drawn > 0
-                    ? `Revolver drawn ${usd(drawn)} of ${usd(line)} available against net worth. Full controls are on Books → Balance sheet.`
-                    : `Undrawn line capacity ${usd(line)}. Opens against net worth; draw and repay on Books → Balance sheet.`}
+                    ? `Revolver drawn ${usd(drawn)} of ${usd(line)} available against net worth. Draw and repay on Debt.`
+                    : `Undrawn line capacity ${usd(line)}. Opens against net worth; draw and repay on Debt.`}
                 />
               );
             })()}

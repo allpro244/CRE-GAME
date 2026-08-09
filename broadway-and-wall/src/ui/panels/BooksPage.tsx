@@ -6,7 +6,6 @@ import { depositsHeld } from "@/engine/leasing";
 import { collateralAsIs, holdingValue, netWorth, resolveRec } from "@/engine/value";
 import { locLimit, locRate } from "@/engine/credit";
 import { usd, pct } from "@/ui/format";
-import { CreditLine } from "@/ui/panels/DebtPage";
 import { NewsText } from "@/ui/panels/MarketPage";
 import { NWChart, Big } from "@/ui/panels/shared";
 
@@ -238,11 +237,10 @@ function BalanceSheet() {
           <div className="hint">
             Loan-to-value on the real-estate book: {((sheet.mortgages / sheet.propGross) * 100).toFixed(0)}%
             {sheet.locBal > 0 ? ` · Line is ${((sheet.locBal / Math.max(1, sheet.locLim)) * 100).toFixed(0)}% drawn` : ""}.
+            {" "}Draw and repay the line on Debt.
           </div>
         )}
       </div>
-
-      <CreditLine />
 
       {sheet.cipN > 0 && (
         <div className="page-section">

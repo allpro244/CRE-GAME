@@ -1788,7 +1788,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
           </button>
         )}
       </div>
-      {equity > game.cash && <div className="hint">Short {usd(equity - game.cash)} — the line of credit is on the Books page.</div>}
+      {equity > game.cash && <div className="hint">Short {usd(equity - game.cash)} — the line of credit is on the Debt page.</div>}
     </>
   );
 }

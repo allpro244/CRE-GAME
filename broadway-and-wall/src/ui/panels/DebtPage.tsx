@@ -1134,6 +1134,11 @@ export function DebtPage() {
         <Row k="NOI against it" v={`${usd(Math.round(agg.noi))} — ${usd(Math.round(agg.noi - agg.ds))} after debt service`} bad={agg.noi - agg.ds < 0} />
       </div>
 
+      {/* THE REVOLVER BELONGS WITH THE REST OF THE DEBT, not under the ledger.
+          Books still shows the drawn balance as a liability; draw and repay live
+          here with the mortgages and the facility. */}
+      <CreditLine />
+
       {/* THE THREE THINGS THAT ACTUALLY END FIRMS, and none of them is the
           coupon: how much of the book reprices, how much of it is due soon,
           and how much of it you signed for personally. */}

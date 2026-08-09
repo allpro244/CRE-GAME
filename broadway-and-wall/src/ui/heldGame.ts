@@ -80,7 +80,6 @@ export function holdingDeskSig(g: GameState | null | undefined, bbl: string): st
     ap?.q ?? "",
     ap?.inbound ? 1 : 0,
     ap?.refused ? 1 : 0,
-    ap?.sinceM ?? "",
     // Purchase negotiation state. This was missing from the parcel signature,
     // so a seller's counter updated GameState without re-rendering the offer
     // desk. Moving the slider changed local React state and accidentally made

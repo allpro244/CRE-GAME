@@ -8,7 +8,7 @@ import type { Condition, Econ, GameState, Holding, Loan } from "./types";
 import { logBooks, monthLabel, cloneState} from "./types";
 import { openWorkout } from "./workout";
 import { lenderAppetite } from "./lenders";
-import { holdingNOIYr, ownedHoldingValue, assetValue, noiAfterTaxYr, proFormaNOIYr, capRateFor } from "./value";
+import { holdingNOIYr, ownedHoldingValue, ownedHoldingValueFromRec, assetValue, noiAfterTaxYr, proFormaNOIYr, capRateFor } from "./value";
 import { walt } from "./leasing";
 import { INDUSTRY_LABEL } from "./market";
 import { sponsorStanding } from "./sponsor";
@@ -614,7 +614,7 @@ export function dscr(rec: ParcelRecord, s: GameState, h: Holding): number | null
 
 export function ltv(rec: ParcelRecord, s: GameState, h: Holding): number | null {
   if (!h.loan) return null;
-  const v = ownedHoldingValue(s, parcels, h);
+  const v = ownedHoldingValueFromRec(s, rec, h);
   return v > 0 ? h.loan.balance / v : null;
 }
 
@@ -629,7 +629,7 @@ export function equityCureNeed(rec: ParcelRecord, s: GameState, h: Holding): num
   if (!loan) return 0;
   const d = dscr(rec, s, h);
   const l = ltv(rec, s, h);
-  const value = ownedHoldingValue(s, parcels, h);
+  const value = ownedHoldingValueFromRec(s, rec, h);
   let target = loan.balance;
   if (d !== null && d < loan.minDSCR && d > 0) {
     target = Math.min(target, loan.balance * (d / loan.minDSCR));

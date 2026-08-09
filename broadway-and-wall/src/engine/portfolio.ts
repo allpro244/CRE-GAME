@@ -398,10 +398,7 @@ export function acceptPortfolioBid(
   if (exchange && s.exchange) return { s, err: "One exchange at a time — close the live 1031 first." };
   const next = clone(s);
   const live = ps.bbls.filter((b) => next.holdings[b]);
-  const marks = live.map((b) => {
-    const rec = resolveRec(parcels, next, b)!;
-    return ownedHoldingValue(next, parcels, next.holdings[b]);
-  });
+  const marks = live.map((b) => ownedHoldingValue(next, parcels, next.holdings[b]));
   const totalMark = marks.reduce((a, v) => a + v, 0);
   if (totalMark <= 0) return { s, err: "There is nothing left in that portfolio." };
 

@@ -2086,10 +2086,18 @@ export function ownedHoldingValue(
 ): number {
   const rec = resolveRec(parcels, s, h.bbl);
   if (!rec) return 0;
+  return ownedHoldingValueFromRec(s, rec, h);
+}
+
+/** Same canonical deed value when the caller already resolved the parcel. */
+export function ownedHoldingValueFromRec(
+  s: GameState, rec: ParcelRecord, h: Holding,
+): number {
   const gl = s.groundLeases?.[h.bbl];
   if (h.groundLeased && gl) {
-    const bare = bareLandRec(parcels, s, h.bbl)
-      ?? { ...rec, class: "land" as const, bldgArea: 0, floors: 0, unitsRes: 0, mix: undefined };
+    const bare = {
+      ...rec, class: "land" as const, bldgArea: 0, floors: 0, unitsRes: 0, mix: undefined,
+    };
     return leasedFeeValue(gl, bare, s.econ, s.month, gl.sf ?? s.built?.[h.bbl]?.bldgArea ?? 0);
   }
   return holdingValue(rec, s.econ, h, s.month);

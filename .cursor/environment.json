@@ -1,0 +1,14 @@
+{
+  "name": "Broadway & Wall (CRE Game)",
+  "install": "pnpm install && pnpm engine",
+  "terminals": [
+    {
+      "name": "vite-dev",
+      "command": "pnpm dev --host 0.0.0.0 --port 5173",
+      "description": "Vite dev server for Broadway & Wall (open http://localhost:5173)."
+    }
+  ],
+  "ports": [
+    { "name": "vite", "port": 5173 }
+  ]
+}

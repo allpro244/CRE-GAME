@@ -222,7 +222,7 @@ export function MarketPage() {
   // could not see your own ask sitting next to the competition's.
   const mine = Object.values(game.holdings)
     .filter((h) => h.sale)
-    .map((h) => ({ bbl: h.bbl, ask: h.sale!.ask, mine: true as const, distress: false, sale: h.sale! }));
+    .map((h) => ({ bbl: h.bbl, ask: h.sale!.ask, mine: true as const, distress: false, reason: undefined, sale: h.sale! }));
   const live = game.listings.length + mine.length;
   const distress = game.listings.filter((l) => l.distress).length;
   const frames = game.listings.filter((l) => l.halfBuilt).length;

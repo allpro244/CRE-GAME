@@ -72,7 +72,7 @@ export function depositFor(lot: AuctionLot, amt: number): number {
  * QUIETLY DIES, which is what most foreclosures do. The docket in July is the
  * residue of the year's failures, not its scares.
  */
-function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
+export function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
   if (!s.bankFcls) s.bankFcls = [];
 
   // reinstatements and washouts first
@@ -89,12 +89,14 @@ function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
     // And a firm STILL in the squeeze protects the building with a date on it
     // first — reinstating one mortgage is cheaper than losing one building,
     // and any borrower with the arrears in hand does exactly that.
-    const canFund = r.cash > f.debt * 0.08;
-    if (((r.stressMs ?? 0) === 0 && r.cash > 0) || (canFund && rng(s) < 0.09)) {
+    const cure = Math.max(1, Math.round(f.debt * 0.08));
+    const canFund = r.cash >= cure;
+    if (canFund && ((r.stressMs ?? 0) === 0 || rng(s) < 0.09)) {
+      r.cash -= cure;
       s.bankFcls.splice(i, 1);
       s.news.unshift({
         q: s.month, kind: "info",
-        text: `${r.name} has reinstated at ${rec.address} — the arrears are paid and ${f.lender} has withdrawn the sale. `
+        text: `${r.name} paid $${(cure / 1000).toFixed(0)}K to reinstate at ${rec.address}; ${f.lender} has withdrawn the sale. `
           + `Most of the foreclosures this town starts end exactly like this, which is worth remembering in July.`,
       });
     }

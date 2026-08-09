@@ -2037,6 +2037,7 @@ export interface GameState {
     spent?: number;       // work in place to date
     equityLeft?: number;  // their equity still to go in
     debt?: number;        // construction balance, drawn plus capitalised interest
+    commitment?: number;  // hard construction-loan ceiling
     ratePct?: number;
     /** Which desk wrote it. See pickConstructionDesk — they borrow where you do. */
     lender?: string;

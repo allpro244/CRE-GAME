@@ -15,6 +15,7 @@ const checks = [
   ["save migration", "save-migration.mjs"],
   ["fundable foreclosure protection", "foreclose-funded.mjs"],
   ["atomic title transfer", "title-transfer.mjs"],
+  ["rival construction and cure parity", "rival-parity.mjs"],
   ["delegated leasing mandate", "agent-mandate.mjs"],
   ["ground leases", "groundlease.mjs"],
   ["concurrent variances", "variance.mjs"],

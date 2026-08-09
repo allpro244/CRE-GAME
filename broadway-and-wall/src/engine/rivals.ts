@@ -374,6 +374,7 @@ export function claimJob(
     job.spent = 0;
     job.equityLeft = Math.round(cost * (1 - ltc));
     job.debt = 0;
+    job.commitment = Math.round(cost * ltc);
     job.ratePct = plan.ratePct;
   }
   s.news.unshift({
@@ -394,7 +395,7 @@ export function claimJob(
  * towers at the peak is carrying three towers' worth of debt against three
  * pieces of dirt when the market turns.
  */
-function fundJobs(s: GameState) {
+export function fundJobs(s: GameState) {
   for (const j of s.cityJobs ?? []) {
     if (!j.firmId || j.orphaned) continue;
     const r = s.rivals.find((x) => x.id === j.firmId);
@@ -449,16 +450,46 @@ function fundJobs(s: GameState) {
 
     if (spend > 0) {
       const fromEquity = Math.min(spend, Math.max(0, j.equityLeft ?? 0));
-      r.cash -= fromEquity;
+      const afterEquity = spend - fromEquity;
+      const commitment = Math.max(j.debt ?? 0, j.commitment ?? (j.cost ?? 0));
+      const debtRoom = Math.max(0, commitment - (j.debt ?? 0));
+      const fromDebt = Math.min(afterEquity, debtRoom);
+      const capitalCall = afterEquity - fromDebt;
+      const cashNeed = fromEquity + capitalCall;
+      if (r.cash < cashNeed) {
+        j.orphaned = true;
+        s.news.unshift({
+          q: s.month, kind: "event",
+          text: `${r.name} has stopped work with the construction facility fully drawn. `
+            + `The remaining $${(cashNeed / 1e6).toFixed(2)}M call was more than the sponsor could fund.`,
+        });
+        continue;
+      }
+      r.cash -= cashNeed;
       j.equityLeft = Math.max(0, (j.equityLeft ?? 0) - fromEquity);
-      const fromDebt = spend - fromEquity;
       j.debt = (j.debt ?? 0) + fromDebt;
       r.debt += fromDebt;
       j.spent = (j.spent ?? 0) + spend;
     }
     // capitalised, the way construction interest actually works
     const cap = Math.round(((j.debt ?? 0) * (j.ratePct ?? 8)) / 100 / 12);
-    if (cap > 0) { j.debt = (j.debt ?? 0) + cap; r.debt += cap; }
+    if (cap > 0) {
+      const commitment = Math.max(j.debt ?? 0, j.commitment ?? (j.cost ?? 0));
+      const capitalised = Math.min(cap, Math.max(0, commitment - (j.debt ?? 0)));
+      const cashInterest = cap - capitalised;
+      if (cashInterest > r.cash) {
+        j.orphaned = true;
+        s.news.unshift({
+          q: s.month, kind: "event",
+          text: `${r.name} has stopped work after exhausting the construction interest reserve. `
+            + `They could not carry the $${(cashInterest / 1000).toFixed(0)}K monthly interest bill.`,
+        });
+        continue;
+      }
+      j.debt = (j.debt ?? 0) + capitalised;
+      r.debt += capitalised;
+      r.cash -= cashInterest;
+    }
   }
 }
 
@@ -1391,6 +1422,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
     bbl, use, sf, floors, startM: s.month, deliverM, mix: prog,
     firmId: r.id, cost, spent: 0,
     equityLeft: plan.equity, debt: 0,
+    commitment: Math.round(cost * plan.ltc),
     ratePct: plan.ratePct,
     lender: plan.lender,
   });

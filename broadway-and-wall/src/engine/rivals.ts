@@ -42,6 +42,7 @@ import { stampApproach } from "./leasing";
 import { deskWillExtend, extensionFeePct, extensionMonths, NOTICE_M, FORECLOSE_M } from "./workout";
 import { recordComp } from "./comps";
 import { programmeSf, queueSupplyProject } from "./supply";
+import { recordPropertyEvent } from "./history";
 
 // Ashport is an old port town; its money has old-port-town names.
 // A DOZEN FIRMS, NOT SIX. Six was enough to have somebody to lose a deal to;
@@ -2036,6 +2037,12 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string): 
           + `They are not pricing the building, they are clearing the balance sheet. `
         : `${desk} has the capital to market it properly, so it goes out at ${(ask / 1e6).toFixed(2)}M and there is no bargain in it. `)
       + `They still own ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"}.`,
+  });
+  recordPropertyEvent(s, worst.bbl, {
+    kind: "default",
+    party: `${r.name} / ${desk}`,
+    amount: owed,
+    outcome: `deed in lieu; ${desk} took title`,
   });
   return true;
 }

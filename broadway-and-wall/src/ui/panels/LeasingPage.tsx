@@ -53,6 +53,9 @@ export function LeasingPage() {
         <AgentBar />
         <RenewalBar />
         <div className="hint">No buildings yet — occupancy starts when you own something with tenants in it.</div>
+        <button className="btn btn-buy" onClick={() => setPage("market")}>
+          Browse buildings in Marketplace →
+        </button>
         {/* …but the house policy belongs here even with an empty book, because
             its other half is the deeds you have not closed yet: set it now and
             everything you buy arrives configured instead of being corrected

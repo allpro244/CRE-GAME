@@ -1103,10 +1103,26 @@ export function refreshDevelopmentFeasibility(
   const scores: Record<BuiltClass, number[]> = {
     office: [], retail: [], multifamily: [], industrial: [],
   };
-  for (const bbl of bbls) {
+  // DO NOT WALK THE WHOLE CITY WITH A FULL PRO FORMA. A Great City has nearly
+  // six thousand lots; four plans per lot blocked the browser's main thread
+  // for seconds on every annual advance. The actual city examines 36 lots for
+  // one crane. Four independent crane samples (144 valid sites) estimate its
+  // P97 tail without making map size a UI-latency multiplier.
+  //
+  // Local LCG, not the game's RNG stream: measuring feasibility must not
+  // re-roll the economy. Month changes the sample each annual refresh.
+  const SAMPLE = 144;
+  const chosen = new Set<string>();
+  let x = (s.seed ^ Math.imul(s.month + 1, 0x9e3779b1)) >>> 0;
+  const maxAttempts = Math.min(bbls.length * 2, SAMPLE * 16);
+  for (let attempt = 0; attempt < maxAttempts && chosen.size < SAMPLE; attempt++) {
+    x = (Math.imul(x, 1664525) + 1013904223) >>> 0;
+    const bbl = bbls[x % bbls.length];
+    if (!bbl || chosen.has(bbl)) continue;
     if (s.holdings[bbl] || s.developments[bbl] || (s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class !== "land" || rec.lotArea < 1_500 || ownerOf(s, bbl)) continue;
+    chosen.add(bbl);
     for (const use of BUILT_CLASSES) {
       const floors = Math.min(14, maxFloorsFor(rec, 0.62, use));
       const u = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62);

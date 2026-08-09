@@ -2196,7 +2196,8 @@ export function tickEcon(s: GameState) {
     // that vacancy; the other ordered cranes because a phase label said boom
     // even when the common pro forma said the project destroyed value.
     const credit = clamp(e.creditIdx ?? 1, 0.25, 1.25);
-    const appetite = devPencils(e, k) * credit;
+    const sites = e.sitePencil?.[k] ?? 1;
+    const appetite = devPencils(e, k) * credit * sites;
     // ONE DRAW, TWO JOBS. This month's noise sizes the order AND sets how long
     // it will take to entitle, below. Capturing it rather than calling `rng`
     // twice keeps the random stream byte-identical to before the entitlement

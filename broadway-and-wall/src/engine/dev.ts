@@ -1072,6 +1072,40 @@ export function underwriteDevelopment(
   };
 }
 
+/**
+ * Publish what the order desk can actually build on real parcels.
+ *
+ * The city examines 36 candidate lots for each crane and takes the best.
+ * The expected best observation is therefore about the 36/37 = 97th
+ * percentile, so this is not a tuned percentile. It closes the last dual-pencil
+ * seam: macro orders now know whether the same full parcel pro forma that will
+ * judge the eventual groundbreak clears anywhere the city is likely to find.
+ */
+export function refreshDevelopmentFeasibility(
+  s: GameState, parcels: ParcelTable, bbls: string[],
+): void {
+  if (s.econ.sitePencil && s.month % 12 !== 0) return;
+  const scores: Record<BuiltClass, number[]> = {
+    office: [], retail: [], multifamily: [], industrial: [],
+  };
+  for (const bbl of bbls) {
+    if (s.holdings[bbl] || s.developments[bbl] || (s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec || rec.class !== "land" || rec.lotArea < 1_500 || ownerOf(s, bbl)) continue;
+    for (const use of BUILT_CLASSES) {
+      const floors = Math.min(14, maxFloorsFor(rec, 0.62, use));
+      const u = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62);
+      if (u) scores[use].push(u.appetite);
+    }
+  }
+  s.econ.sitePencil = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+  for (const use of BUILT_CLASSES) {
+    const xs = scores[use].sort((a, b) => a - b);
+    const at = xs.length ? Math.floor((xs.length - 1) * (36 / 37)) : 0;
+    s.econ.sitePencil[use] = xs[at] ?? 0;
+  }
+}
+
 export function startDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.6,

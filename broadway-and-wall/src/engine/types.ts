@@ -1466,6 +1466,12 @@ export interface Econ {
   pipeline: Record<BuiltClass, number>;
   starts: Record<BuiltClass, number>;
   supplyPress?: Partial<Record<BuiltClass, number>>;
+  /**
+   * P97 site-level underwriting appetite by class, refreshed annually from
+   * actual vacant parcels. P97 is the expected best site in the 36-lot sample
+   * the city examines for each crane (36/37 ≈ 97th percentile).
+   */
+  sitePencil?: Record<BuiltClass, number>;
   // THE PIPELINE AS A QUEUE, not a number. Every start is a cohort with a
   // month it will deliver in, so the game can answer the question every
   // developer actually asks — "what is coming, and when" — instead of only

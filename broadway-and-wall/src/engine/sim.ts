@@ -18,7 +18,7 @@ import { distressPrice, markSponsor } from "./sponsor";
 import { tickLoc, coverCashShortfall, locRate } from "./credit";
 import { tickFacility } from "./facility";
 import { tickHolders } from "./owners";
-import { tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing } from "./dev";
+import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing } from "./dev";
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
 import { tickDemand } from "./demand";
 import { initRivals, tickRivals, gradeOf } from "./rivals";
@@ -406,6 +406,7 @@ function tickMonth(
   // Otherwise an orphaned frame or a job whose site changed hands can add
   // ghost square feet to vacancy before its map-side record is rejected.
   reconcileSupplyQueue(s, parcels);
+  refreshDevelopmentFeasibility(s, parcels, bbls);
   tickEcon(s);
   // The neighbourhood settles before anyone acts on it: last month's
   // deliveries and lettings are now standing, so the city, the tenants and

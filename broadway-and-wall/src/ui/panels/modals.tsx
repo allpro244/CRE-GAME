@@ -569,7 +569,9 @@ function DecisionBody({
     );
   }
 
-  const loi = game.agent ? undefined : game.lois.find((l) => !deferred.has(l.id));
+  // With an agent, only REFERRED letters interrupt — the desk already signed
+  // or killed the rest. Without an agent, every letter is yours.
+  const loi = game.lois.find((l) => !deferred.has(l.id) && (!game.agent || l.referred));
   const offerBbl = deferred.has(-1) ? undefined : Object.keys(game.holdings).find((b) => game.holdings[b].sale?.offer);
   if (!loi && !offerBbl) return null;
 
@@ -614,7 +616,11 @@ function DecisionBody({
     return (
       <div className="modal-backdrop">
         <div className="modal">
-          <div className="modal-kicker">{loi.kind === "renewal" ? "Renewal on the table" : "Letter of intent"}{isFinal ? " · their final answer" : ""}</div>
+          <div className="modal-kicker">
+            {loi.referred ? "Referred by your desk · " : ""}
+            {loi.kind === "renewal" ? "Renewal on the table" : "Letter of intent"}
+            {isFinal ? " · their final answer" : ""}
+          </div>
           <div className="modal-title">{loi.name}</div>
           <div className="modal-sub">
             {loi.sector} · credit {CREDIT_LABEL[loi.credit]} · wants {sf(loi.sf)} at {rec.address}

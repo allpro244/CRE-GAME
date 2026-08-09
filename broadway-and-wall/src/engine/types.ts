@@ -175,6 +175,12 @@ export interface LOI {
    * written before this existed.
    */
   tourId?: number;
+  /**
+   * THE DESK SENT THIS BACK. Agent / renewal management left it on your desk
+   * because it missed the auto-sign mandate but cleared the pass line. The
+   * interrupt modal shows these even while the agent holds the book.
+   */
+  referred?: boolean;
 }
 
 /**
@@ -2093,16 +2099,23 @@ export interface GameState {
    */
   renewalMgmt?: boolean;
   /**
-   * THE MANDATE YOU GAVE THE DESK: the lowest share of the market rent they may
-   * sign at without referring it back. See agentFloor in leasing.ts, which
-   * clamps and defaults it — undefined is the 0.82 both desks used to hardcode,
-   * so a save written before the dial existed keeps the behaviour it had.
+   * THE MANDATE YOU GAVE THE DESK — see agentPolicy in leasing.ts.
    *
-   * This is the whole of the delegation. The desk still exercises judgement on
-   * everything else — which letters to work, what to sign, when to refer — and
-   * this is the one number a principal actually hands them.
+   * `agentFloor` is the lowest net-effective share of market they may AUTO-
+   * SIGN. Below that and above `agentPassBelow` they refer the letter back to
+   * you; under the pass line they kill it. Undefined fields keep the defaults
+   * in leasing.ts so older saves stay coherent.
    */
   agentFloor?: number;
+  /** Auto-pass (kill) letters scoring under this share of market. */
+  agentPassBelow?: number;
+  /** Minimum tenant credit the desk may auto-sign (0 any · 1 solid · 2 strong). */
+  agentMinCredit?: Credit;
+  /**
+   * Cap on fit-out the desk may fund, as months of face rent
+   * (`tiPsf / rentPsf * 12`). Undefined = generous default in leasing.ts.
+   */
+  agentMaxTiMonths?: number;
   /** The player told the brokers to stop ringing. Nothing else changes. */
   brokersOff?: boolean;
   /**

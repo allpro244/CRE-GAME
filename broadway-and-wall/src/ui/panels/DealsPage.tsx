@@ -36,6 +36,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
       <div className="loi-line">
         <b>{loi.name}</b> <span className="mono">{CREDIT_LABEL[loi.credit]}</span> · {loi.sector}
         {loi.kind === "renewal" && <span className="chip chip-renewal">RENEWAL</span>}
+        {loi.referred && <span className="chip" title="Your agent or renewal desk sent this back — it missed the auto-sign mandate.">REFERRED</span>}
         {rivalsOnTour > 0 && <span className="chip" title="Competing for the same square feet — you can take only one, and countering one makes the others impatient.">{rivalsOnTour + 1} FOR THE SAME SPACE</span>}
         {final && <span className="chip">FINAL</span>}
       </div>
@@ -304,7 +305,8 @@ export function DealsPage() {
         {game.lois.length === 0 && <div className="hint">No live negotiations. Vacant space in high-demand buildings draws tenants.</div>}
         <div className="loi-grid">
           {[...game.lois]
-            .sort((a, b) => (a.tourId ?? -a.id) - (b.tourId ?? -b.id) || a.id - b.id)
+            .sort((a, b) => (b.referred ? 1 : 0) - (a.referred ? 1 : 0)
+              || (a.tourId ?? -a.id) - (b.tourId ?? -b.id) || a.id - b.id)
             .map((loi) => <LoiCard key={loi.id} loi={loi} go={go} />)}
         </div>
         {/* HOW THEY ANSWERED. A counter used to resolve into a toast that was

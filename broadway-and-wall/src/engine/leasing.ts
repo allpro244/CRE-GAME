@@ -4,7 +4,7 @@
 // Multifamily skips all of this and runs aggregate occupancy.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, BuiltClass, Credit, GameState, Holding, Listing, LOI, Sector } from "./types";
-import { logBooks, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, START_YEAR, cloneState} from "./types";
+import { logBooks, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, START_YEAR, cloneState, CREDIT_LABEL } from "./types";
 import type { Tenant } from "./types";
 import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL } from "./market";
 
@@ -1820,12 +1820,72 @@ export function netEffectivePsf(
   return rentPsf * paid + (TI_VALUE * (openTi - tiPsf)) / years;
 }
 
-export const AGENT_FLOOR_DEFAULT = 0.82;
-export const AGENT_FLOOR_MIN = 0.65;
+/**
+ * LEASING MANDATE — what you hand a desk when you stop reading every letter.
+ *
+ * Three bands, the way a real exclusive works:
+ *   ≥ floor          auto-sign (within credit / TI caps)
+ *   pass…floor       refer back to the principal (letter stays on the desk)
+ *   < pass           kill it — not worth anyone's afternoon
+ *
+ * The score is NET EFFECTIVE to the landlord (face after free months, less
+ * amortised TI), against the market for THAT use. Face-only at 82% was how a
+ * desk quietly filled buildings 18–20% under market while the principal thought
+ * they had hired a professional. Default floor is now 90%.
+ */
+export const AGENT_FLOOR_DEFAULT = 0.90;
+export const AGENT_FLOOR_MIN = 0.70;
 export const AGENT_FLOOR_MAX = 1.00;
+export const AGENT_PASS_DEFAULT = 0.78;
+export const AGENT_PASS_MIN = 0.55;
+export const AGENT_TI_MONTHS_DEFAULT = 9;
+export const AGENT_TI_MONTHS_MIN = 0;
+export const AGENT_TI_MONTHS_MAX = 18;
+
 export function agentFloor(s: GameState): number {
   const f = s.agentFloor;
-  return f === undefined || !Number.isFinite(f) ? AGENT_FLOOR_DEFAULT : Math.min(AGENT_FLOOR_MAX, Math.max(AGENT_FLOOR_MIN, f));
+  return f === undefined || !Number.isFinite(f)
+    ? AGENT_FLOOR_DEFAULT
+    : Math.min(AGENT_FLOOR_MAX, Math.max(AGENT_FLOOR_MIN, f));
+}
+
+export function agentPassBelow(s: GameState): number {
+  const floor = agentFloor(s);
+  const p = s.agentPassBelow;
+  const raw = p === undefined || !Number.isFinite(p) ? AGENT_PASS_DEFAULT : p;
+  // Pass line always sits strictly under the sign line.
+  return Math.min(floor - 0.02, Math.max(AGENT_PASS_MIN, raw));
+}
+
+export function agentMinCredit(s: GameState): Credit {
+  const c = s.agentMinCredit;
+  if (c !== 0 && c !== 1 && c !== 2) return 0;
+  return c;
+}
+
+export function agentMaxTiMonths(s: GameState): number {
+  const m = s.agentMaxTiMonths;
+  return m === undefined || !Number.isFinite(m)
+    ? AGENT_TI_MONTHS_DEFAULT
+    : Math.min(AGENT_TI_MONTHS_MAX, Math.max(AGENT_TI_MONTHS_MIN, m));
+}
+
+/** Fit-out expressed as months of the letter's face rent. */
+export function loiTiMonths(loi: LOI): number {
+  if (loi.rentPsf <= 0) return 0;
+  return (loi.tiPsf / loi.rentPsf) * 12;
+}
+
+/**
+ * Landlord-side score vs market: face after free rent, minus amortised TI.
+ * Positive concessions pull the score down so a "market" face with a fat
+ * allowance does not clear a tight mandate.
+ */
+export function loiMandateScore(loi: LOI, market: number): number {
+  const years = Math.max(1, loi.termM / 12);
+  const paid = 1 - Math.min(0.45, (loi.freeM ?? 0) / Math.max(1, loi.termM));
+  const ne = loi.rentPsf * paid - (TI_VALUE * (loi.tiPsf ?? 0)) / years;
+  return ne / Math.max(1, market);
 }
 
 /**
@@ -1844,24 +1904,76 @@ function loiMarket(s: GameState, rec: ParcelRecord, h: Holding, loi: LOI): numbe
   return managedRentPsfYr(rec, s.econ, h, loi.use ?? leasableUses(rec)[0]);
 }
 
-function runAgent(s: GameState, parcels: ParcelTable) {
+type DeskVerdict = "sign" | "refer" | "pass";
+
+function deskVerdict(s: GameState, loi: LOI, market: number): {
+  verdict: DeskVerdict; score: number; floor: number; pass: number; why?: string;
+} {
   const floor = agentFloor(s);
+  const pass = agentPassBelow(s);
+  const score = loiMandateScore(loi, market);
+  const minCred = agentMinCredit(s);
+  const maxTiM = agentMaxTiMonths(s);
+  const tiM = loiTiMonths(loi);
+
+  if (loi.credit < minCred) {
+    return { verdict: "refer", score, floor, pass, why: `credit below your ${CREDIT_LABEL[minCred]} minimum` };
+  }
+  if (tiM > maxTiM + 0.05) {
+    // Fat TI: refer if the rent score is otherwise fine; pass if the letter is
+    // also cheap — a desk does not auto-sign a capital hole.
+    if (score >= floor) {
+      return { verdict: "refer", score, floor, pass, why: `fit-out is ${tiM.toFixed(1)} months of rent against your ${maxTiM}-month cap` };
+    }
+  }
+  if (score < pass) return { verdict: "pass", score, floor, pass };
+  if (score < floor) return { verdict: "refer", score, floor, pass };
+  if (tiM > maxTiM + 0.05) {
+    return { verdict: "refer", score, floor, pass, why: `fit-out is ${tiM.toFixed(1)} months of rent against your ${maxTiM}-month cap` };
+  }
+  return { verdict: "sign", score, floor, pass };
+}
+
+function runAgent(s: GameState, parcels: ParcelTable) {
   for (const loi of [...s.lois]) {
+    // Already on your desk — do not re-litigate until you answer.
+    if (loi.referred) continue;
     const h = s.holdings[loi.bbl];
     const rec = resolveRec(parcels, s, loi.bbl);
     if (!h || !rec) continue;
     const market = loiMarket(s, rec, h, loi);
-    if (loi.rentPsf < market * floor) {
+    const { verdict, score, floor, pass, why } = deskVerdict(s, loi, market);
+    if (verdict === "pass") {
       s.lois = s.lois.filter((l) => l.id !== loi.id);
       s.news.unshift({
         q: s.month, kind: "info",
-        text: `Your agent passed on ${loi.name} at ${rec.address} — $${loi.rentPsf.toFixed(2)}/sf against a `
-          + `$${market.toFixed(2)} market, and your mandate is ${Math.round(floor * 100)}%.`,
+        text: `Your agent passed on ${loi.name} at ${rec.address} — net effective `
+          + `${(score * 100).toFixed(0)}% of a $${market.toFixed(2)} market (pass below ${Math.round(pass * 100)}%).`,
+      });
+      continue;
+    }
+    if (verdict === "refer") {
+      loi.referred = true;
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `Your agent referred ${loi.name} at ${rec.address} back to you — `
+          + (why ?? `net effective ${(score * 100).toFixed(0)}% of market, under your ${Math.round(floor * 100)}% sign line`)
+          + `. It is on your desk.`,
       });
       continue;
     }
     const cost = loiSigningCost(loi, AGENT_FEE);
-    if (s.cash < cost) continue;   // can't fund the TI; the LOI keeps sitting
+    if (s.cash < cost) {
+      // Cannot fund — leave it, marked referred so it surfaces instead of
+      // sitting invisible under an agent who will never afford it.
+      loi.referred = true;
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `Your agent would sign ${loi.name} at ${rec.address}, but the fit-out `
+          + `needs ${money(cost)} and cash is short. Referred back to you.`,
+      });
+      continue;
+    }
     signLoi(s, rec, h, loi, AGENT_FEE);
     s.lois = s.lois.filter((l) => l.id !== loi.id);
   }
@@ -1900,26 +2012,45 @@ export const RENEWAL_MGMT_FEE = 0.02;
 /** What a renewal letter has always cost to sign — see leaseCosts. */
 const RENEWAL_SELF_FEE = 0.02;
 function runRenewalDesk(s: GameState, parcels: ParcelTable) {
-  const floor = agentFloor(s);
   for (const loi of [...s.lois]) {
     if (loi.kind !== "renewal") continue;
+    if (loi.referred) continue;
     const h = s.holdings[loi.bbl];
     const rec = resolveRec(parcels, s, loi.bbl);
     if (!h || !rec) continue;
     const market = loiMarket(s, rec, h, loi);
-    if (loi.rentPsf < market * floor) {
+    const { verdict, score, floor, pass, why } = deskVerdict(s, loi, market);
+    if (verdict === "pass") {
       s.lois = s.lois.filter((l) => l.id !== loi.id);
       s.news.unshift({
         q: s.month, kind: "info",
-        text: `Management referred ${loi.name}'s renewal at ${rec.address} back to you — $${loi.rentPsf.toFixed(2)}/sf `
-          + `against a $${market.toFixed(2)} market, under the ${Math.round(floor * 100)}% mandate you set.`,
+        text: `Management passed on ${loi.name}'s renewal at ${rec.address} — net effective `
+          + `${(score * 100).toFixed(0)}% of market (pass below ${Math.round(pass * 100)}%).`,
+      });
+      continue;
+    }
+    if (verdict === "refer") {
+      loi.referred = true;
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `Management referred ${loi.name}'s renewal at ${rec.address} back to you — `
+          + (why ?? `net effective ${(score * 100).toFixed(0)}% of market, under your ${Math.round(floor * 100)}% sign line`)
+          + `.`,
       });
       continue;
     }
     // The letter's own commission plus the manager's mandate — see above.
     const rate = RENEWAL_SELF_FEE + RENEWAL_MGMT_FEE;
     const cost = loiSigningCost(loi, rate);
-    if (s.cash < cost) continue;               // cannot fund it; the letter sits
+    if (s.cash < cost) {
+      loi.referred = true;
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `Management would renew ${loi.name} at ${rec.address}, but signing needs `
+          + `${money(cost)} and cash is short. Back on your desk.`,
+      });
+      continue;
+    }
     signLoi(s, rec, h, loi, rate);
     s.lois = s.lois.filter((l) => l.id !== loi.id);
   }

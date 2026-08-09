@@ -5,7 +5,12 @@ import type { GameState, Contract, DevUse, UseMix, BuiltClass } from "@/engine/t
 import { newGame, advanceMonth, advanceUntilAttentionAsync, firstListings, portfolioQuarterlyCF, hangUpOnCall } from "@/engine/sim";
 import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
-import { respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, AGENT_FLOOR_MIN, AGENT_FLOOR_MAX, type LOIAction } from "@/engine/leasing";
+import {
+  respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold,
+  AGENT_FLOOR_MIN, AGENT_FLOOR_MAX, AGENT_PASS_MIN, AGENT_TI_MONTHS_MIN, AGENT_TI_MONTHS_MAX,
+  agentFloor, agentPassBelow, type LOIAction,
+} from "@/engine/leasing";
+import type { Credit } from "@/engine/types";
 import { cureWorkout, requestForbearance, deedInLieu, serviceWorkout } from "@/engine/workout";
 import { buyNote, modifyNote, fileOnNote, sellNote, discountedPayoff } from "@/engine/notes";
 import { registerAuctionBids } from "@/engine/auction";
@@ -204,8 +209,12 @@ interface AppState {
   rateCap: (bbl: string) => void;
   setAgent: (on: boolean) => void;
   setRenewalMgmt: (on: boolean) => void;
-  /** The mandate you give a hired desk: the lowest share of market rent they may sign at. */
+  /** Auto-sign at or above this share of market (net effective). */
   setAgentFloor: (f: number) => void;
+  /** Auto-pass below this share; between pass and floor is referred back. */
+  setAgentPassBelow: (f: number) => void;
+  setAgentMinCredit: (c: Credit) => void;
+  setAgentMaxTiMonths: (m: number) => void;
   /** Paper a cross-collateralised facility over a pool of buildings. */
   openFacility: (bbls: string[], productId: string, lev: number) => void;
   /** Pay the facility down out of cash. */
@@ -996,7 +1005,39 @@ export const useStore = create<AppState>((set, get) => ({
   setAgentFloor: (f) => {
     const { game } = get();
     if (!game) return;
-    const next = { ...game, agentFloor: Math.min(AGENT_FLOOR_MAX, Math.max(AGENT_FLOOR_MIN, f)) };
+    const floor = Math.min(AGENT_FLOOR_MAX, Math.max(AGENT_FLOOR_MIN, f));
+    // Keep the pass line under the sign line when the principal tightens up.
+    const pass = Math.min(agentPassBelow({ ...game, agentFloor: floor }), floor - 0.02);
+    const next = { ...game, agentFloor: floor, agentPassBelow: pass };
+    set({ game: next });
+    void persist(next);
+  },
+
+  setAgentPassBelow: (f) => {
+    const { game } = get();
+    if (!game) return;
+    const floor = agentFloor(game);
+    const pass = Math.min(floor - 0.02, Math.max(AGENT_PASS_MIN, f));
+    const next = { ...game, agentPassBelow: pass };
+    set({ game: next });
+    void persist(next);
+  },
+
+  setAgentMinCredit: (c) => {
+    const { game } = get();
+    if (!game) return;
+    const next = { ...game, agentMinCredit: c };
+    set({ game: next });
+    void persist(next);
+  },
+
+  setAgentMaxTiMonths: (m) => {
+    const { game } = get();
+    if (!game) return;
+    const next = {
+      ...game,
+      agentMaxTiMonths: Math.min(AGENT_TI_MONTHS_MAX, Math.max(AGENT_TI_MONTHS_MIN, Math.round(m))),
+    };
     set({ game: next });
     void persist(next);
   },
@@ -1006,7 +1047,9 @@ export const useStore = create<AppState>((set, get) => ({
     if (!game) return;
     const next = { ...game, agent: on };
     set({ game: next });
-    toast(on ? "Your agent has the book. 6% on everything they sign." : "You're handling leasing yourself again.");
+    toast(on
+      ? "Your agent has the book. They sign inside your mandate, refer the middle, pass the junk — 6% on what they sign."
+      : "You're handling leasing yourself again.");
     void persist(next);
   },
 

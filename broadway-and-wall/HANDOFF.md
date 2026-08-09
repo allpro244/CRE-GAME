@@ -1,1074 +1,274 @@
-# HANDOFF — the 21-item backlog
+# HANDOFF
 
-State of the branch `claude/phase-1-implementation-v4c2az` as of commit
-`cdbd1bd`. Written to be picked up cold by a session with none of the
-conversation behind it.
+State of `claude/phase-1-implementation-v4c2az` at commit `8480967`. Written to
+be picked up cold, by a person or a model with none of the conversation behind
+it.
 
-Read `CLAUDE.md` first — it is the standard everything here is measured
-against, and several items below exist only because it was applied.
+**Read `CLAUDE.md` first.** It is the standard everything here is measured
+against, it is short, and most of the items below exist only because it was
+applied. This file is the practical companion: what is where, what will bite
+you, and what I would do next.
 
-**Two things in the list below were WRONG when it was written, and both were
-wrong in the same way — they described a measurement nobody had re-run.** Item
-3 asserts test G is breaching; G passes, on this build and on the build the
-list was written against, because G had already been rewritten to measure the
-policy rate instead of the loan index. Item 1 attributes a 93.3% drawdown to
-the rent equation; the drawdown was 48% at the time and the cause was two files
-away. Re-measure before you believe anything here, including this sentence.
+One rule that governs this document as much as the code: **re-measure before
+you believe anything written here, including this sentence.** The previous
+version of this file asserted two things that were false at the time it was
+written, both because they described a measurement nobody had re-run.
 
 ---
 
-## HOW TO START
+## 1. RUNNING IT
 
-```
-cd broadway-and-wall
+```bash
+cd broadway-and-wall          # the game is HERE, not at the repo root
 pnpm install
-# the harness bundle is gitignored and MUST be rebuilt before any probe:
-./node_modules/.bin/esbuild test/.entry.ts --bundle --format=esm \
-  --platform=node --outfile=test/.engine.mjs
-pnpm gate          # conserve + extleak + city invariants. The real gate.
-pnpm report        # the lettered tests. Reports, does not block (owner's call).
+pnpm dev                      # vite, localhost:5173
+pnpm package:onefile          # dist/broadway-and-wall.html — self-contained, opens from file://
 ```
 
-`test/.entry.ts` is also gitignored and does not survive a fresh clone.
-If it is missing, recreate it as 22 `export * from "../src/engine/<mod>"`
-lines — see the header comment in any harness for the list.
+Node 22, pnpm 10. The repo root has an older scaffold beside `broadway-and-wall/`;
+point your editor at `broadway-and-wall/` or it will read both.
 
-**The container in this project has been reclaimed three times mid-session.**
-Every time, the working tree came back on the wrong branch with none of the
-work in it. It was always safe on the remote. Push early and often.
+The city is **generated at runtime** (`src/citygen/`) from a seed — there is no
+data pipeline to run for normal development. `pipeline/` is audit material and
+its outputs are gitignored.
 
 ---
 
-## THE STATE OF THE GATES
+## 2. THE SHAPE OF THE CODE
 
-| | |
-|---|---|
-| `pnpm gate` | passing — 3/3 measurements in band, 1/1 identities hold |
-| `conserve` | clean, all ten ledger categories live |
-| `pnpm test` (invariants) | **clean — 5,959 months, 5 bots × 2 seeds, no violations.** It reported 239 the day before, and all 239 were the sweep being wrong |
-| A (location spread) | in band — was breached at 1.94x |
-| F (income anchor) | **breached on ONE leg — industrial +1.95%/yr.** Retail was the other leg at −1.62%/yr and now reads +0.68%, inside the band |
-| B–E, G, H, I, J–M | in band |
-| `pnpm check` | **NEW, and start here — ~20s.** fresh + conserve + baseline:check |
-| `pnpm baseline:check` | **NEW — 31 standing numbers against BASELINE.json.** Read the section below before you touch it |
-| `pnpm engine` | **NEW** — rebuilds `test/.engine.mjs`. It was a 96-character esbuild line people were meant to type from memory |
-| `pnpm crews` | the construction market's own harness, see item 1 |
-| `pnpm vactails` | both vacancy tails: which end is a market and which is a clamp |
-| `pnpm sectorexit` | does the exit ratchet fire on exoduses or on shortages |
+```
+src/engine/     pure functions over JSON state. No DOM, no store.
+                advanceQuarter(g, parcels, bbls, adjacency) is the monthly tick.
+src/citygen/    generates the town from a seed. Deterministic.
+src/state/      zustand store. The only mutable thing in the app.
+src/ui/         RightPanel.tsx is ~9,400 lines and holds nearly every page.
+                TopBar.tsx has the tab bar. StaffPage/StartMenu/Chart/Slider are separate.
+test/           harnesses. Each is a standalone node script behind a pnpm script.
+tools/          baseline, rails, audits, stress.
+```
 
-### THE ONE THING TO READ IF YOU READ NOTHING ELSE HERE
+**The engine is pure and must stay pure.** Functions take state and return
+state; nothing in `src/engine` may touch the DOM, the store, or `Date.now()`.
+A reader that mutates the state it was handed is a bug even when it works —
+see §4, the register memo.
 
-**Every check in this repo was green while the median land value fell 71%.**
+Key files by weight: `market.ts` (3.1k lines — the economy, the cycle, the
+national block, the labour market), `dev.ts` (development and the capital
+programme), `rivals.ts` (competing firms), `value.ts` (every valuation and rent
+function), `leasing.ts`, `debt.ts`, `actions.ts` (buy/sell/approach).
 
-The commit that made the demand surface read each building's own occupancy —
-which is right — read it with lease-up applied, against a month-zero baseline
-that has no lease-up in it. So every building the city delivered depressed its
-own neighbourhood for three years against a baseline that had never contained
-one, and a working city is always building. One default argument.
+Recent additions worth knowing about:
+- `facility.ts` — the portfolio loan (cross-collateralised, one loan many deeds).
+- `owners.ts` — the register of named private holders.
+- `notes.ts`, `auction.ts`, `workout.ts` — distress machinery.
 
-| | before | after |
+---
+
+## 3. THE HARNESSES, IN COST ORDER
+
+| command | cost | catches |
 |---|---|---|
-| median land value | $288/sf | **$84/sf** |
-| builder's bid, median lot | $401/sf | **$0** |
-| holder's bid, median lot | $733/sf | **$0** |
-| office cap rate | 7.01% | **11.00%** — its clamp, exactly |
-| months on that rail | 1.8% | 7.0% |
-| lots a builder could afford | 2.42% | 0.61% |
+| `pnpm check` | ~20s | a moved standing number, a broken ledger, a stale bundle |
+| `pnpm gate` | ~3 min | a violated identity, a broken city invariant. **Must pass before committing anything that moves money.** |
+| `pnpm baseline:check` | ~50s | a standing number that moved without anybody noticing |
+| `pnpm report` | 10–30 min | the lettered tests A–M. Report, not gate — the owner's explicit call, twice. Do not re-promote them. |
+| `pnpm inflation` | ~2 min | the price level and real rent growth against observed bands |
+| `pnpm facility` | ~2 min | the portfolio loan, both sides — it must work AND it must bite |
+| `pnpm covenant` | ~2 min | a rich sponsor must never lose a building; a thin one still must |
+| `pnpm legmatch` | ~10s | per-leg vs blended rent — one quantity, two answers |
+| `pnpm test` | ~22 min | states the engine should never reach |
 
-The land market had stopped having any income logic in it: both residual bids
-on the median lot were ZERO and the price was the texture floor, the
-generator's static memory of the map and nothing else. At year 50 all four cap
-rates sat at 10.4–11.0, which is not a market, it is four numbers resting on
-the same rail. `pnpm gate` passed. Every lettered test passed. `conserve`
-reconciled every dollar.
-
-It was caught by `pnpm baseline:check`, which did not exist that morning, in
-its first hour. That is the entire argument for it: a gate catches a violated
-identity and a report catches a breached band, and **neither can catch a number
-that is simply wrong, because there is nothing to compare it to.** Fixed in
-`375791f`; the rail counters went in at `36e15c5` and found a second one
-(multifamily sits on its 3.4% compression floor 5.3% of months — recorded, not
-changed, because I have no evidence it is wrong).
-
-Two habits follow, and they are cheap:
-
-- **Run `pnpm check` after anything that touches the engine.** Twenty seconds.
-- **When a baseline number moves, say in the commit message why.** Movement is
-  not failure — a fix that improves the world moves numbers. Movement nobody
-  can account for is the failure.
-
-> **Since this was written, retail came back inside the band on its own.** It
-> was never a rent-model fault. `COMMERCIAL_SUITE_MIN` was condemning every
-> shopfront smaller than itself, so 27% of the city's commercial legs — mostly
-> retail bays at grade — could hold no tenant in any year. Retail rents were
-> being measured on a market a quarter of which was structurally dark. With the
-> shops lettable, retail reads +0.68%/yr. Industrial is unchanged at +1.95%
-> and the paragraph below still describes it. See commit `b2a47cb`.
-
-**F's breach is exposed, not created.** Retail was already outside the band at
-`69de9bf` (−1.09%/yr). Industrial's is new and it is the point: the exit ratchet
-had been deleting a quarter of industrial demand during a permanent shortage,
-which held the number inside the band by removing the tenants rather than by
-housing them. Item 2 carries the full paired table and the anchor for the real
-fix. `pnpm gate` passes throughout.
-
-**A is the one breach and it is a real shift, not noise: it fell on all three
-seeds (2.31/3.15/2.46 → 1.94/2.82/1.69).** A city that can build compresses the
-rent premium between its best and worst locations, which is what a supply
-response is supposed to do — Manhattan's spread is what it is because Manhattan
-cannot build. Left breaching and the measurement left unweakened. Whether 2.0x
-is the right band for a city with a working construction market is a policy
-call and belongs to the owner; prime-to-secondary office in a real metro runs
-about 2–3x, so it is close either way. Note also that A is a THREE-seed median
-with a per-seed spread of 1.1x against a 0.06x miss, so on its own it could not
-have told you anything — it is the paired per-seed comparison that makes it
-real.
+`pnpm engine` rebuilds `test/.engine.mjs`. **Do it before every probe.**
 
 ---
 
-## THE LIST
-
-Ordered by what I would do next, not by number. Items 1–4 are the ones I
-believe are load-bearing for everything else.
-
-### 0. Stress [B] — THE WORST OF IT IS FIXED, and what is left may be the test
-
-Stress check [B] — "buying a district must move its ground" — read **−38.9%**,
-a wire running backwards, and chasing it properly cost most of a session and
-turned up four separate faults. It now reads **−17.6%**. Still negative, still
-WEAK, and here is exactly where it stands so nobody re-derives this.
-
-**What was wrong, in the order the evidence came out.**
-
-The comps wire was the obvious suspect and it was innocent — measured, the
-comp mark on a bought-out district moves 0.911→1.118, 0.980→1.027, 1.030→1.043
-against a control that drifts down. It runs forward. (It did have a real
-dating fault, fixed in `f784a5e`: it divided each print by TODAY'S appraisal
-against prints up to three years old, so the ratio carried the district's own
-growth, inverted.)
-
-Paired per-parcel attribution across four seeds named the real channel. Every
-landRead term was noisy except one: building area moved **0.0%** in every seed,
-and the district's **demand score moved −9%, −11%, −11%, −24%**. The player's
-own money was making their neighbourhood worse. `occupiedStock` credited an
-unowned building with its CLASS AVERAGE and an owned one with its ACTUAL RENT
-ROLL — measured at the instant of purchase with no month passing, the block
-lost 13.5% of the building's floor area the moment the deed moved, on 219 of
-261 closings. Fixed per building (`b2a47cb`).
-
-Under that, the thing worth the whole hunt: **27% of the city's commercial legs
-could never hold a tenant, in any year**. `COMMERCIAL_SUITE_MIN` was doing two
-jobs — how finely a tower demises, and whether a small building is lettable at
-all — and a 1,634 sf office building has no space above a 2,000 sf floor. Plus
-`toSuites` comparing an integer-rounded 1,397 against a float floor of
-1,397.186. Also `b2a47cb`. This is what put retail's rent growth back in F's
-band.
-
-**What is left, and the honest reading.**
-
-[B]'s estimator cannot resolve its own signal. Measured with no whale anywhere:
-the control gap alone ranges **1.12x to 4.46x across eight seeds** (sd 1.02) on
-the same city and the same district — so a ratio of medians on three seeds is
-mostly seed. A paired per-parcel estimator, which removes composition exactly
-because the same parcel exists in both arms, gives a median of **−14.8%** with
-a spread from −33% to +54%. So there IS a residual negative and it is smaller
-than the headline.
-
-Before fixing the estimator, settle whether the test's PREMISE is right, and I
-do not think anyone has. [B] demands land go UP when a buyer absorbs a
-district. That is the asset market's answer. The land residual's answer is not
-obviously the same: `dev.ts:2362` skips any lot the player owns — "never yours"
-— so a whale who buys 200 of 686 lots and never builds freezes 30% of the
-district out of renewal for twenty-five years, and a district that stops being
-redeveloped is worth less ground. That is land banking, it is real, and the
-test may be scoring it as a fault. Decide that question first; do not touch the
-estimator to make a number move.
-
-Two things [B] measures DO pass and are worth keeping: turnover falls to 0.38x
-the control (a whale is a sink) and the shelf empties, −7.0 listings.
-
-### 1. The rent cycle — PART DONE, and the headline number got worse
-Half of this is fixed and the fix is committed (`cdbd1bd`, and see
-`pnpm crews`). The other half is now a much better-posed question. Read the
-commit message; it carries the full paired A/B.
-
-**What the original entry got wrong.** The 93.3% figure could not be
-reproduced. Measured on 24 paired seeds at the time the list was written, the
-worst real office drawdown ran p25/median/p75 of 40.3 / 48.4 / 59.0%, which
-straddles the 50–60% Manhattan anchor rather than blowing through it. The
-$14→$95 swing is a NOMINAL series over fifty years of inflation. Whatever
-produced 93.3% was measuring something else, and chasing it would have been
-chasing a number.
-
-**What was actually wrong, and is now fixed.** Not the rent equation — the
-construction market two files away. `crewCapacity` in `dev.ts` was a hard
-ceiling on simultaneous jobs derived from lot count, and it was load-bearing:
-the town wanted a median 2.7 cranes for every one it could run and its headroom
-was exhausted in 64–88% of months. Worse, the cost of building priced off the
-share of stock *under construction* — the quantity AFTER that wall had rationed
-it — so the price channel could not see a boom (corr with demanded quantity
-0.13, against 0.50–0.83 with supplied quantity) and real construction cost FELL
-0.3–2.2%/yr for fifty years in a town desperate to build. Backwards, which
-`CLAUDE.md` rates worse than broken. The trades are a market now: a workforce
-that follows the work, priced off how booked it is, pivoted at full employment.
-Stock growth went 0.47 → 0.85%/yr and real cost is flat, which is the real
-ENR-against-CPI record.
-
-**And it made the drawdown deeper: 48% → 69% median.** Kept, not reverted, per
-`CLAUDE.md` — and it is the most useful thing measured this session, because it
-says what the wrong number was propping up. The wall had been suppressing this
-city's vacancy cycle by four points of swing (15.5 → 19.8pp peak-to-trough).
-The rent response in `market.ts` (~line 2121) has a superlinear glut branch
-calibrated at SEVEN TO NINE points over natural — that is what its own comment
-cites, 1990-92 and 2020-23 — and availability now reaches 13.6 points over. A
-quadratic extrapolated 50% past its fit range is doing the damage: at 9pp it
-delivers −14.7%/yr, which matches 1990-92, and at 13.6pp it delivers −26%/yr,
-which matches nothing.
-
-**Both tails were measured (`pnpm vactails`) and one of them is now fixed.**
-
-The GLUT tail was a fit evaluated 2.6x outside its own range — the quadratic
-carries every anchor between five and nine points over natural and was being
-asked for −76%/yr at 23.5 points. It now saturates on the Houston 1983-87 rate
-past the fit boundary, C1-continuous, nothing below nine points touched
-(`c34f8e8`). Paired over 24 seeds the drawdown fell on 18 and rose on 5,
-sign-test p=0.011, median −3.98pp; seeds carrying an 80%+ drawdown went 9/24 to
-5/24 and p75 went 84.3 → 72.8. A straight tangent was tried first and rejected
-on the record — it still reaches −45%/yr, and measured it was a coin flip.
-
-**The TIGHT tail is the bigger half and it is still open. It is a load-bearing
-rail, and the numbers are not marginal:**
-
-| class | floor | % of months ON it | longest stretch |
-|---|---|---|---|
-| office | 3.68% | 11.7% | **119 months** |
-| industrial | 1.54% | 33.4% | **131 months** |
-| multifamily | 1.35% | 9.8% | 73 months |
-| retail | 2.72% | 3.4% | 29 months |
-
-`p01 = p05 = the floor exactly` for three of four classes — that distribution is
-truncated, not sampled. The real constraint is not the `cityVac` clamp but the
-line above it, `occupied = clamp(occupied + absorb, 0, housable)` with
-`housable = stock * (1 - friction)`; the vacancy clamp is downstream of that
-and redundant.
-
-**A CORRECTION TO `801f844`, which overstated this.** That commit said the land
-residual's `vacDisc` reads `cityVac` raw and is pinned by this rail. It reads it
-raw and is NOT pinned by it: `vacDisc = 1 - 1.2 * Math.max(0, cityVac - natural)`
-is identically 1 for every vacancy below natural, so the tight rail cannot reach
-it. Only the glut side touches land. The claim was wrong and this is the record.
-
-**AND THE RAIL STACK IS REAL BUT IS MOSTLY NOT A FAULT.** `pnpm vactails` now
-measures where each tightness signal stops responding, and every threshold sits
-ABOVE the frictional floor:
-
-| class | capRate pins | leaseUp pins | vacancy pins | % months below the first |
-|---|---|---|---|---|
-| office | 6.50% | 6.38% | 3.68% | **28.5%** |
-| industrial | n/a | 3.88% | 1.54% | **54.7%** |
-| multifamily | n/a | 2.50% | 1.35% | 24.7% |
-| retail | 1.83% | 4.71% | 2.72% | 11.3% |
-
-Before changing any of these, read the comment above the cap rate's `-0.6`
-floor: *"Compression floors out at 60bp — nobody underwrites a shortage lasting
-forever."* That is a stated economic reason for a SATURATING response, and a
-saturating response is a mechanism, not a rail hiding a fault. It was left
-alone deliberately. Uncapping it would need a real-world anchor saying how much
-cap-rate compression a chronic shortage actually buys, and nobody has one here.
-`vacancyPull`'s 1.7 ceiling has no stated rationale and is the weaker of the
-two if somebody wants a target.
-
-**What IS a fault is the DURATION, and it is a supply story, not a pricing
-one.** Ten years unbroken at the absolute frictional floor is not a market. And
-the worst offender names its own cause:
-
-| class | 50y stock growth (6 seeds) | % months at the vacancy floor |
-|---|---|---|
-| office | +15% .. +85% | 11.7% |
-| retail | +49% .. +93% | 3.4% |
-| multifamily | +34% .. +102% | 9.8% |
-| **industrial** | **−7.9% .. +12.8%, negative in 4 of 6** | **33.4%** |
-
-Industrial is the one class whose stock SHRINKS over fifty years, and it is
-pinned against its vacancy floor a third of the time with a 131-month stretch.
-That is item 2 — the class that cannot be built is the class that is
-permanently short. Do item 2 next; it is no longer a separate cosmetic
-complaint about zoning, it is the remaining half of item 1.
-
-**Ruled out, and stays ruled out.** The sector-exit ratchet (wrong timescale).
-And now also: supply was not what set the PERIOD. The rent cycle ran 20.3 years
-before and 19.3 after, while stock growth nearly doubled. The period is the sum
-of the loop's lags — developer belief (`rentExp`, ~22mo), construction (30–44mo),
-occupancy adjustment (~18mo), the capitulation clock (6mo) — plus the 90° the
-rent integrator contributes, and the measured 55-month rent-behind-vacancy lag
-is that integrator's signature. See the Barkhausen note already in `market.ts`
-above the sublet block; somebody worked this out once and it is the right frame.
-
-### 2. Zoning never changes — HALF FIXED BY ACCIDENT, and the other half is now item 1's remainder
-The city cannot rezone. Industrial can only be built on M-zoned land (61 vacant
-lots on the standard island), retail is a minority roll on C-zoned land, and
-both are capped at two floors — correctly, a warehouse is single-storey.
-
-**The numbers in the original entry are stale and the two halves came apart.**
-Re-measured over 6 seeds x 50 years on the current build:
-
-| | original entry | now |
-|---|---|---|
-| retail stock | 0.04%/yr | **+49% to +93% over 50y** |
-| industrial stock | 0.12%/yr | **−7.9% to +12.8%, negative in 4 of 6 seeds** |
-
-Retail was never really a zoning problem — it was the crew wall, and fixing the
-construction market (`cdbd1bd`) fixed retail without anybody touching zoning.
-Industrial did not move, because its constraint really is the zoning: there is
-nowhere to put it and nothing taller than two floors to put there.
-
-**So industrial is now the standout fault in the whole engine.** It is the only
-class whose stock shrinks across a fifty-year run, and `pnpm vactails` has it
-pinned against its frictional vacancy floor 33.4% of months with a 131-month
-unbroken stretch — a class in permanent, unrelievable shortage. That is the
-remaining half of item 1's drawdown story arriving through a different door: a
-market that cannot clear on quantity clears on price, and industrial cannot
-clear on quantity at all.
-
-A real city facing quadrupled industrial rent rezones. Start here.
-
-**AND THE SECTOR-EXIT RATCHET WAS HIDING HOW BAD THIS IS.** `pnpm sectorexit`
-asks what vacancy was doing on the months the ratchet fired. Before the fix:
-below natural on **91.3%** of office firings, 84.7% of retail and **93.4%** of
-industrial — and industrial fired in 42.4% of all months with 43.4% of those at
-its absolute frictional floor, median vacancy 1.8% against a natural of 7.0%.
-
-Nine times in ten it was not modelling an exodus. It was modelling a shortage
-and calling it an exodus, and `useForZone` then converted M-zoned land to
-housing in proportion to how much had "gone" — one way, never back — removing
-the capacity that would have relieved the shortage. Exit is now NET OF THE
-QUEUE (you cannot have a waiting list and an exodus at once), which took
-industrial's fifty-year shedding from 25.4% to 3.1% while leaving office's
-mostly intact at 6.7%.
-
-**What that revealed is the real number, and it is worse than the backlog
-thought.** Test F, paired against `69de9bf`:
-
-| class | before the fix | after |
-|---|---|---|
-| office | −0.72%/yr | +0.71%/yr |
-| retail | −1.09%/yr ✗ | −1.62%/yr ✗ |
-| industrial | +1.02%/yr | **+1.99%/yr ✗** (2.2x real over the run) |
-
-Real wages grow 1.07%/yr. Industrial rent compounds at nearly twice that
-because its demand is tied to TOTAL employment (`driver = e.employIdx`) while
-its supply is zoning-locked — so a city that adds 50% more jobs is assumed to
-want 45% more warehouse and cannot build a foot of it. The ratchet was quietly
-deleting a quarter of that demand to keep the number down.
-
-**Do NOT fix this by picking a decline rate that puts F back in band.** The
-honest fix has an anchor and it is the one this codebase already cites in the
-ratchet's own comment: New York, San Francisco and London each lost more than
-half their manufacturing floor space between 1970 and 2010 — about −1.7%/yr —
-and that happened for reasons that have nothing to do with rent (containers,
-trade, productivity). It is a secular change in the COMPOSITION of employment,
-so it belongs in the driver, not in a rent-triggered ratchet: industrial demand
-should track industrial employment, and industrial's share of employment should
-fall. Whoever does it should size it from that record and then report where F
-lands, in that order — not the other way round.
-
-### 3. G's unemployment clause — STALE ENTRY, and G passes
-Re-run on both arms of a paired A/B, this build and the build this list was
-written against:
-
-    baseline   eases into unemployment  26/40 runs, median r −0.071  (need 24/40)
-    after      eases into unemployment  28/40 runs, median r −0.056  (need 24/40)
-
-G passes, and it passed before this session touched anything. The entry above
-describes a version of the test that no longer exists: G had already been
-rewritten to measure 12-month changes in the POLICY RATE over 40 seeds, which
-is the direction the entry itself prescribes, and it reports what the BORROWER
-feels through the loan index (11/40 base, 14/40 after) separately and
-explicitly as non-gating. The handoff prompt's instruction to "leave G
-breaching" is therefore void — there is nothing to leave.
-
-**The estimator is still thin and that part of the entry was right.** 26/40 and
-28/40 sit barely above the 20/40 you would get from a coin, so a build can
-cross the 24/40 threshold in either direction without anything having changed.
-If you want G to mean something, the work is in the estimator, not the rate
-rule.
-
-### 4. DONE — and the thread it pulled ran through the whole engine
-**Read this entry first. Everything below it in this file was written before the
-cost table was found to be wrong, and several entries are stale as a result.**
-
-Four harnesses now cover this ground and all four are new:
-
-    pnpm rails       every clamp() in the engine, and whether it is a guard or
-                     the model — CLAUDE.md fault #5, measured. See below.
-    pnpm breakeven   the rent each class NEEDS against the rent it gets,
-                     computed by inverting the engine's own residual
-    pnpm pencils     who is the high bidder for dirt, and what they would build
-    pnpm leadlag     does the cycle run in the right ORDER — see below
-    pnpm devyield    (existing) how many of the 1,363 sites clear their exit cap
-    node tools/constants.mjs   provenance x leverage over every named constant
-
-**`pnpm leadlag` is the best evidence in this repo that the economy is real,
-and it found one specific thing that is not.** Every other harness measures a
-LEVEL, and a level can be reached from a dozen directions by somebody who wants
-it to come out right. An ORDERING cannot: it falls out of the wiring, and no
-constant anywhere in the engine sets it. Measured over four towns and fifty
-years:
-
-    starts -> deliveries    36mo   r 0.53   expected 18-40    ok   (the control)
-    deliveries -> vacancy   -1mo   r 0.67   simultaneous      ok   (space arrives empty)
-    vacancy -> rent          0mo   r 0.63   expected 3-24     SIMULTANEOUS
-    rent -> cap rate         2mo   r 0.67   expected 0-12     ok
-    cap rate -> starts      32mo   r 0.58   expected 6-42     ok
-    TOTAL LOOP              69 months = 5.8 years             (real: 7-12)
-
-Four legs in the right order with the right gaps, none of them set anywhere.
-The broken one is precise: **rent reprices on vacancy in the same month.** Real
-rent cannot, because leases roll — a landlord watching vacancy rise cannot touch
-the rent on space that is already let, and the engine models the tenant side of
-that delay (`affordEff`, a ~100-month EMA) while the landlord side (`vacTerm` in
-market.ts) reads the current gap and moves the index immediately.
-
-That was written as a testable prediction rather than a tuning target: put a
-rollover lag on the landlord's response and the loop should go from 5.8 years to
-roughly 7. **It was then built and measured, and THE PREDICTION FAILED.** The
-entry above is preserved as written because a prediction you quietly edit
-afterwards is not a prediction.
-
-What was built: an observation lag on the availability gap, `COMP_LAG_A = 1/7`,
-a six-month mean lag derived from the fact that commercial leases take three to
-nine months from tour to signature and vacancy statistics publish four to eight
-weeks after the quarter — so the availability a landlord responds to is a
-trailing average. Both branches of `vacTerm` read it.
-
-    vacancy -> rent      0mo -> 1mo      (predicted 3-24)
-    TOTAL LOOP           5.8y -> 3.9y    (predicted ~7)
-
-Worse, not better. So before believing anything, an IDENTIFICATION TEST: drive
-the lag from zero months to twenty-four and see whether the leg moves at all.
-
-    COMP_LAG_A = 1     (0mo lag)     vac -> rent   0mo    loop 5.7y
-    COMP_LAG_A = 0.04  (24mo lag)    vac -> rent  -3mo    loop 4.7y
-
-A twenty-four month lag on that term moves the measured leg AWAY from positive.
-**`vacTerm` is not the channel that carries the vacancy-to-rent correlation**,
-so no amount of lagging it was ever going to fix this leg. The change was
-reverted — the mechanism is defensible on its own terms, but it was introduced
-to fix a specific measured defect, it did not, and a constant that survives
-without a job is the thing this repo exists to refuse. Reverting restored the
-baseline to the digit (36 / 0 / 32 / 69 months).
-
-**The live hypothesis, untested.** If the correlation is not coming through
-`vacTerm`, the candidates are `scarcity` — `clamp(unmet[k] * 0.10, 0, 0.016)`,
-which is computed from the same absorption pass that sets vacancy, in the same
-month, and is therefore perfectly contemporaneous with it by construction — and
-the deeper structural point underneath it: **`rentIdx` is being used both as the
-market's asking rent and as what the standing stock earns.** Those are different
-quantities with different speeds. A new lease can be struck at the new number
-today; the index of achieved rent across the stock can only move as fast as
-leases roll, which is about 1% of the footprint a month on an eight-year term.
-The engine already distinguishes `rentIdx` from `effRentIdx`, but `effRentIdx`
-is only `rentIdx x (1 - 0.14 x concIdx)` — a concession haircut, not a
-rollover-weighted average. Making it one is the next thing to try, and it is a
-structural change rather than a coefficient.
-
-**And a warning about the harness, which is worth more than the result.** This
-file was wrong three times before it was right, and the control leg caught every
-one. First run: no smoothing, so a monthly difference of a multi-year cycle was
-pure noise and it reported vacancy leading rent by MINUS 58 months at r = 0.18.
-Second: `value` was defined as `rentIdx / capRate`, so "rent leads value by
-exactly 0 months at r = 0.83" was arithmetic, not a finding — a test that cannot
-return anything else. Third: flows were differenced like levels, which broke the
-control leg down to r = 0.12 on a leg that is a literal clock. Fourth: it
-searched for maximum POSITIVE correlation on a pair that is negatively related
-by definition, and pinned against the search boundary. A lag sitting at MAXLAG
-is never a measurement. Every one of those produced a confident, plausible,
-completely wrong table.
-
-**The root cause, and it was not what it looked like.** `HARD_COST_PSF` said in
-its own comment that it was not observed — "SOLVED: the cost at which a new
-building on a median site yields about 150bp over its own exit cap". The exits
-it was solved at are named in the same comment: 5.3% office, 4.6% multifamily,
-6.6% industrial. `market.ts:292` records CAP_BASE being raised to 8.50 / 5.60 /
-7.00 and names those exact old numbers. **Nobody re-solved the costs.** Office's
-exit moved 320bp, multifamily's 84bp, industrial's 40bp — and that is precisely
-the order in which the classes failed. A cost solved at a 5.3% exit needs about
-8.50/5.30 = 1.60x the net rent to hold the same spread at 8.50.
-
-So the cost table is observed now, with sources, and observed numbers do not go
-stale when a cap moves. The comparison class is stated in the comment and it is
-**not Manhattan**: Providence / Charleston / Portland ME. Two independent
-methods agreed to within 15% — re-solving against the new caps, and reading
-RSMeans.
-
-**What fell out of it, with nothing instructed:**
-
-    highest and best use, by demand decile      before            after
-      top decile (FAR 14)               industrial 99%    office 87%, retail 13%
-      second and third                  industrial 99%    retail 74%, office 26%
-      middle                            industrial 99%    industrial 100%
-      bottom third                      industrial 99%    nothing bids
-
-    sites that pencil (pnpm devyield)   office 0/1363     office 59/1363
-                                        multifamily 3     multifamily 66
-
-Industrial moved to where industrial belongs. The spatial economics were never
-written down anywhere; they emerged once the cost table stopped lying.
-
-**Also fixed on the same thread, each one found by reading rather than
-measuring:**
-
-- The height ladder was written out FOUR times (value.ts, dev.ts twice,
-  rivals.ts). Four copies of one quantity that happened to agree — changing the
-  cost base alone would have moved one and left three, silently. One
-  `heightPremium()` now, and the curve is real (1.28 -> 1.85 at the top).
-- `devPencils` — the thing that decides CITY supply — read index ratios against
-  a single class-blind `BASE_YOC = 0.073` and a hurdle taken from a DEBT index.
-  It never touched `HARD_COST_PSF`, so a cost table wrong by a factor of two was
-  invisible to it, and one hurdle served office at CAP_BASE 8.50 and flats at
-  5.60 — 270bp too loose for one and 70bp too strict for the other at the same
-  time. It is a real pro forma now, in value.ts with the tables it needs, and it
-  underwrites at `locIdxDevP90` because a city builds on its good corners: asked
-  at the mean, multifamily yields 5.28% against a 6.55% hurdle and supply stops
-  dead while devyield finds 66 sites that clear.
-- `rivals.ts` gated every named firm's groundbreak on `devPencils(s.econ)` with
-  the default argument, so flats, sheds and shops were all gated on OFFICE
-  economics. `dev.ts:2288` found and fixed this identical bug on the teardown
-  path, measured it, wrote it down — and this path was left open. Sequencing
-  fault: the class was knowable thirteen lines later.
-- `startOwnJob` was the one of four groundbreak paths that never decremented
-  `econ.startOwed`, so the town carried a permanent phantom backlog for every
-  tower the street built — which then ordered an extra crane AND hired extra
-  trades, raising the cost index for everybody.
-- The management fee was missing from BOTH development pro formas. `noiYr`
-  charges `MGMT_FEE` on EGI; the land residual and `planDevelopment` computed
-  EGI minus opex and stopped, so a building earned 4% of EGI more while it was
-  being underwritten than the day it opened.
-
-**STILL OPEN on this thread, in severity order.** These came out of a seven-agent
-read of the engine and each has a file:line; none is measured yet.
-
-1. **RESOLVED, and it was not the bug it looked like — but it was hiding one.**
-   The two models are not the same quantity with two answers. `rentExp` is an
-   adaptive 21-month EMA; the quota extrapolates the gap between it and spot,
-   and the residual underwrites `rentExp` itself. Those are two institutions,
-   not two answers: a developer chases the trend, an appraiser prices off closed
-   comparables, and appraisal-based indices are famously smoother than
-   transaction-based ones for exactly that reason. The divergence is deliberate
-   and it is now written down in `developerOptimism`, which is the thing that
-   was missing — two reciprocal expressions of the same two variables with no
-   comment saying why they point opposite ways is how a deliberate divergence
-   gets mistaken for a fault.
-
-   **What the check found instead.** All four expectation clamps were measured
-   for binding over 3 towns x 50 years x 4 classes. Three are clean guards
-   (momentum 0.4%, both residual belief clamps 0.0%, and the residual's comment
-   had claimed exactly that: "it is not meant to bind"). The fourth was not:
-
-       clamp(momentum * 2.4, -0.28, 0.45)     bound in 11.3% of months
-                                              (4.9% floor, 6.4% ceiling)
-
-   Momentum is itself clamped to +-0.30, so the product spans +-0.72 against
-   limits of -0.28/+0.45 — the outer clamp bites long before the inner one, and
-   in one month in nine the underwritten rent was not "spot x 2.4 x momentum",
-   it was whichever bound the market was leaning on. The coefficient was quoted
-   as the elasticity while the rail did the work. CLAUDE.md fault #5.
-
-   It saturates now instead of clipping — slope 2.4 at the origin so the
-   elasticity means what it says where the market spends its time, asymptotes at
-   the same +0.45 / -0.28. Same treatment the glut branch of `vacTerm` already
-   got for the same problem. Measured after: every clamp binds 0.0-0.4%, and the
-   response sits at a median 43% of its own asymptote (p95 86%). The asymmetry
-   is kept and is the point — developers extrapolate good news further than bad,
-   which is why gluts get built and shortages persist.
-
-   Loop period held at 8.1 years through the change. `pnpm gate` passes.
-2. **Three hurdles for the same building, 270bp apart, and the ordering inverts
-   by class.** `devPencils` now uses cap x (1+DEV_MARGIN); `dev.ts:877` uses
-   `exitCap + 0.75`; the residual uses `value/(1+DEV_MARGIN)`. Pick one.
-   Note `dev.ts:877` gates NOTHING — it only sets an advisory string.
-3. **DONE — and the loop length moved into the real range on its own.**
-   `cityValueToReplacement` computed NOI as `rentIdx * occ * 0.62` — one flat
-   margin for four classes whose recovery rates are 0.88/0.92/0.50/0, reading
-   ASKING rent, ignoring the property tax. Understated every class and by
-   different amounts (office −32%, retail −37%, multifamily −13%, industrial
-   −38%), which is 25 points of spread ACROSS classes that no centring constant
-   can absorb. It now computes NOI the way the engine computes NOI, with the
-   same tax solve the land residual uses.
-
-   With that fixed, the ratio's median moved from 0.71 to parity — which is
-   where a value-to-replacement ratio belongs, since a market that persistently
-   traded below its own replacement cost would never have been built. So the
-   `(vtr - 0.55)/0.45` centring had nothing left to centre and is gone. What
-   replaces it is the ELASTICITY of construction to q, expressed as a power
-   because that is what an elasticity is: the housing-supply literature puts it
-   between 0.6 and 5 across metros, central value near 1.5, and a
-   land-constrained harbour peninsula sits low in that range. `Q_ELASTICITY =
-   1.2`.
-
-   The rails became guards again. Measured over 3 towns x 50 years the floor
-   binds **0.0%** of months and the cap 3.6%, against the old form whose floor
-   bound whenever the market turned — its own comment called that "a brake that
-   is always fully on... not a brake, it is a wall".
-
-   And the brake was written out TWICE, in dev.ts and actions.ts, free to drift.
-   One `buildClimate()` now.
-
-   **The unforced part.** `pnpm leadlag` measures the order the cycle runs in,
-   which no constant in this engine sets and which was not targeted by any of
-   the above:
-
-       TOTAL LOOP    5.8 years  ->  7.5 years     (real property cycles: 7-12)
-       vacancy -> rent    0mo   ->  2mo           (still short of the 3-24 band)
-
-   The loop entered the real range as a consequence of fixing a valuation, not
-   as a target. That is the single best piece of evidence in this repo so far.
-
-   **What it opened, and the answer.** The control leg jumped to 53 months
-   against a `BUILD_MONTHS` of 22-34, which would have made the other four legs
-   untrustworthy. Measured directly: the order book waits a median of 1.5 to 5.8
-   months by class and the build period runs 34, so order-to-delivery is about
-   38. The extra fifteen months were the HARNESS, not the engine — it correlated
-   `e.starts` (the anonymous quota's order book) against deliveries measured as
-   the change in stock, and those are not the same population. Deliveries include
-   the teardown-replacement path and every rival's own job, neither of which
-   passes through `e.starts`; and net stock change subtracts demolition, so a
-   month where the wrecking ball outpaced the cranes recorded zero deliveries.
-
-   `pnpm leadlag` now separates the two things "starts" was doing — the DECISION
-   to build (the order book) and the SHOVEL going in — because they are
-   separated by the queue and behave differently: orders are a smooth quota,
-   groundbreaks are lumpy. Deliveries are counted gross off the job records. The
-   full chain:
-
-       value    -> orders    35mo  r 0.40   6-42    ok
-       orders   -> breaks    20mo  r 0.50   0-18    2mo over
-       breaks   -> deliv     41mo  r 0.70   20-40   1mo over (build is 34)
-       deliv    -> vacancy   -1mo  r 0.68   0-18    ok
-       vacancy  -> rent       2mo  r 0.67   3-24    1mo short
-       rent     -> cap rate   1mo  r 0.49   0-12    ok
-       TOTAL LOOP            98 months = 8.2 years  (real: 7-12)
-
-   Three legs clean, three marginal by one or two months, and a loop period
-   inside the real range. The control's 7-month excess over the known 34-month
-   build is consistent with the 12-month centred smoothing broadening the peak;
-   the smoothing is needed for the slow legs and cannot be dropped for the fast
-   ones without splitting the harness.
-4. **DONE, and it found the real one underneath.** `claimJob` now applies the
-   residual as its pro forma — a firm will not pay more for the dirt than a
-   builder of that use can bear on that site — and `claimJob`'s loan-to-cost
-   arithmetic was wrong in a way that mattered more: it required the site to be
-   bought outright in CASH on top of the equity slice of the build
-   (`cost * (1 - ltc) + land`). No construction lender works that way. LTC is
-   sized on total project cost, land included.
-
-   **But the street still does not develop, and the reason is scale, not
-   underwriting.** This is now the open item and it is a big one:
-
-       median firm cash          $0.8M  ->  $1.8M over 30 years
-       median firm AUM           $4M    ->  $12M
-       median vacant lot land    $0.3M  ->  $0.8M
-       median site the city ACTUALLY BREAKS GROUND ON    $8.5M  ->  $34.6M
-       named firms' share of jobs broken   9 of 307 (2.9%)
-
-   The city builds on dirt costing ten to forty times what any firm in town
-   holds, so the street cannot fund a single one of the jobs it is offered.
-   `claimJob`'s own docstring says the split should be "most construction...
-   done by people you have never heard of, and the rest... by the four names
-   you compete with every month". 2.9% is not the rest, it is noise, and the
-   developer archetype is close to decorative.
-
-   Two things were tried against it and NEITHER FIXED IT, which is the useful
-   part. Scoring candidate sites by total builder surplus instead of by demand:
-   surplus scales with lot area, so it selects for bigness and the median site
-   went from $8.5M to $32.8M — the same fault as scoring on demand, reached
-   from the other side. Scoring by surplus PER SQUARE FOOT, which is scale-free
-   and is what a developer actually compares: median site $34.6M, claim rate
-   2.5% against a 2.9% baseline, i.e. unchanged. Prime dirt has both the
-   highest price and the highest residual, so no site-selection rule reaches
-   the cheap end.
-
-   The site-selection change was kept anyway, for a reason that is about
-   coherence rather than the headline number: with it, the pro forma gate is
-   free — identical results with the gate on and off — because the city now
-   only breaks ground where a builder could pay. Under the old demand-based
-   rule the same gate refused 99.7% of jobs. The city and the firm now ask the
-   same question and get the same answer, which is the whole point of one model.
-
-   **What is actually unresolved: are the firms too small, or is the city's
-   development too big?** Median AUM of $12M in a town with roughly $4B of
-   stock, across ~30 named firms, is 10% of the city — plausible in aggregate,
-   far too small individually to develop anything. Nothing has been tuned here
-   and nothing should be until somebody decides which side is wrong.
-5. **`planDevelopment` counts the cycle twice with opposite sign**: through-cycle
-   land in the denominator (the residual carries `capExp` and `rentExp`), spot
-   exit cap in the numerator (dev.ts:872).
-6. **`plateRentMult` is exactly 1.00 for every site in the residual**, because
-   `plateOf` returns the reference plate when `bldgArea` is 0 — so the rent
-   premium assemblage buys is invisible in the one place land is priced, while
-   `value.ts:159` claims the opposite.
-7. **`tickZoning` (zoning.ts:73)** sets citywide FAR — and therefore every
-   residual and every land price — from office vacancy and office ASKING rent
-   alone. No cost term, no cap rate, no other class.
-
-**`pnpm rails` — CLAUDE.md's fault #5, measured for the first time.** The rule
-has always been written down: *"A clamp that stops a number going somewhere
-absurd is fine as a guard and is a bug when it is load-bearing. If a variable
-rests against its rail in normal play, the rail is holding up the model."*
-Nothing tested it. There are 118 `clamp()` callsites in the engine and from
-reading the code there is no way to tell a guard from the model — both look like
-`clamp(x, a, b)`. The tool instruments every one of them in a scratch copy and
-plays three towns for fifty years.
-
-    34 are LOAD-BEARING (a bound reached in >= 1% of calls)
-    59 are guards
-    25 were never called at all
-
-The worst of them, and each is its own open question:
-
-    market:1039    69.6% at floor    clamp((realPolicy - 0.022) * 0.70, 0, 0.09)
-    market:1398    56.6% at ceiling  `trades` — construction employment  [FIXED]
-    market:2249    51.3% at floor    `marketable`
-    market:1462    50.4% at ceiling  multifamily `slack`  (now 77.4%, top of the list)
-    market:1413    47.7% at floor    slackTarget — unemployment floor    [FIXED]
-    market:2351    43.9% at floor    concTarget = clamp(gap * 11 + phaseNudge, 0, 1)
-
-**The two marked FIXED were one fault, and the tool found it from the wrong
-end.** The unemployment floor was the symptom; the construction-employment
-ceiling fifteen lines above it was most of the cause.
-
-`e.jobs` was labour DEMAND written straight in as employment — one expression,
-`jobs0 x employIdx x (1 - 0.048 + trades)`, that never once looked at whether
-there was anybody to do the work. Measured raw, before the clamp, over 4 towns
-x 50 years: **21.8% of months had more jobs than workers**, worst reading 107%
-of the labour force, and a clamp reported 1.8% unemployment throughout. No floor
-can fix that — jobs grew at a median 1.88%/yr against population's 0.89%,
-because hiring only has to sign a contract while people have to move house.
-
-And `trades = clamp(0.048 * (pipeShare / REF_PIPE_SHARE), 0, 0.11)` sat on its
-ceiling in 56.6% of months because `REF_PIPE_SHARE = 0.018` was **measured off
-this model while the old crew wall was suppressing the pipeline**. `dev.ts` said
-so in writing years before anybody looked — "what THIS town's pipeline ran at
-under the old crew wall... they differed by about the factor the wall was
-suppressing" — and carried the world anchor, 0.045, as a separate constant for
-the same quantity. The wall was removed; the reference was not. That pinned term
-was a permanent +11.6% step on the city's job count.
-
-Both fixed. One constant now, shared by both files. Employment is the smaller of
-what employers want and what the town can staff, at a 2.8% frictional share —
-the floor of the observed range, since US metro unemployment bottomed near 3.4%
-in 1969 and 3.5% in 2019. The demand that cannot be met is NOT discarded: it
-becomes `e.jobVac`, unfilled positions, and the wage curve reads `0.055 - u +
-jobVac` instead of unemployment alone.
-
-    months with more jobs than workers    21.8%  ->  0.0%
-    unemployment                    pinned 1.8%  ->  median 3.45%, p05 2.80%, p95 9.07%
-    tightness signal, sd                   1.83% ->  5.28%
-    tightness signal, p95                  2.70% ->  15.28%
-
-That last pair is the point. The old clamp meant the hottest labour market this
-city could have looked exactly like the fourth-hottest; the signal had a ceiling
-on it. Capping employment did not destroy the information, it recovered it.
-
-**Known and explained:** the new cap binds in 42.6% of months, which is high for
-a rail. It is an IDENTITY rather than a calibration — you cannot employ people
-who do not exist — and the excess is preserved rather than dropped, which is the
-difference. What it is telling you is that this city's growth is limited by
-housing: migration answers the labour market but cannot exceed the flats built
-for it. That is a real story and it belongs in the multifamily rent, but nobody
-has checked whether the magnitude is right.
-
-**AND THE FIRST VERSION OF THIS TOOL WAS WRONG, IN THE DIRECTION THAT MATTERS.**
-It counted `v <= a` as a bind, so its loudest finding was
-`clamp(e.wageDebt, 0, 0.25)` at 100.0% of the floor — reported here as "a
-mechanism that has never once run in fifty years". Investigated: `wageDebt` is
-IDENTICALLY zero. It only accrues when NOMINAL wage growth would be negative,
-and measured over 4 towns x 100 years that happens in essentially no months —
-expected inflation runs a 2.08% median and goes below zero in 4.9% of months,
-but productivity growth still carries nominal pay upward. Which is CORRECT:
-aggregate nominal wages did not fall in the US even in 2009, and downward
-nominal rigidity is exactly the reason. Nothing was being held back by anything.
-
-A variable that equals its own floor is not the same as a variable being pressed
-against a rail by opposing force, and `<=` cannot tell them apart. Strict now —
-a bind is counted only when the clamp actually MOVED the value — which dropped
-the load-bearing count from 38 to 34 and removed every no-op clamp
-(`e.sublet`, `e.occupied`, `e.cityVac` and `wageDebt` were all floors that a
-naturally-zero quantity was merely equal to).
-
-The wage mechanism is therefore a guard that never fires, which CLAUDE.md says
-is fine and should be left alone. It is written up here because the *tool* was
-the thing that needed fixing, and because the next person to read a 100% row
-should know that one character of it was the whole finding.
-
-**It caught its author within an hour of existing.** `devPencils` was rewritten
-this week into a real per-class pro forma, and the response curve wrapped around
-it — `clamp((yoc/required - 1) * 3.2 + 0.55, 0, 2.2)` — had been fitted when the
-inputs were index ratios hovering near 1. With real inputs read at the ninth
-decile of buildable sites, the ratio moved and the result sat on the 2.2 ceiling
-in **57.2%** of all calls. The pro forma was being computed and thrown away. It
-uses the same q-elasticity form as `buildClimate` now, neutral at parity,
-unbounded above, no rail carrying anything. Loop period 7.0 years, still in
-range; stock growth up a little in every class.
-
-**And its coverage is stated rather than assumed.** The tool only sees the bare
-`clamp()` helper — not `clampA` / `clampL` / `clampN` / `clamp01`, and not
-hand-written `Math.max(a, Math.min(b, x))`. Those are printed as UNINSTRUMENTED
-at the end of every run, because a tool that silently skips half its subject is
-the same fault it is looking for.
-
-**And the constant audit's answer to "is this simulated or arranged".** Of 263
-named constants perturbed +-15% with the engine rebuilt each time: **121 move a
-headline output, 142 are INERT** (dead, or a clamp downstream is load-bearing),
-0 are unguarded. Of the 121 that matter: 12 cited, 40 claimed, 14 reasoned,
-**55 bare**. The highest-leverage bare ones, with elasticity:
-
-    PEAK_RENT_MULT      value.ts:217     1.25    5.15   the holder's option bid
-    PARTICIPATION       market.ts:522    0.58    5.72
-    LISTING_LIFE_M      sim.ts:30           6    5.69
-    COVERAGE_LADDER     value.ts:135     0.35    5.45   (four of its rungs are in the list)
-    OPEX_FIXED          value.ts:1046    0.30    5.04
-    MAINTENANCE_SHARE   dev.ts:2140      0.45    4.82
-    MOMENTUM            demand.ts:90    0.055    4.68
-    SOFT_COST           value.ts:187     0.16    4.16
-    RATE_SPREAD         rivals.ts:181     1.9    4.04
-
-The classifier is textual and deliberately under-credits: it looks in three
-places a reader would look and grades what it finds, so a real anchor written
-somewhere else reads as BARE. `M_PER_DEG_LAT = 111_320` is in the list and is a
-fact about the Earth. Read the comment the tool prints before acting on a row.
-**142 inert out of 263 is the other half of the finding** and nobody has looked
-at it yet.
+## 4. THE TRAPS. THIS IS THE SECTION THAT SAVES YOU DAYS
+
+**The stale bundle.** `test/.engine.mjs` is gitignored and built by hand. A
+container restart once left one nineteen hours stale; the obvious control —
+stash, re-run, compare — CONFIRMED THE WRONG CONCLUSION because both runs
+loaded the same stale bundle. `test/fresh.mjs` now refuses, but rebuild
+explicitly anyway.
+
+**The RNG stream re-roll. This is the big one.** Changing the NUMBER of `rng()`
+calls anywhere re-rolls the entire century. Same code, different world. It
+looks exactly like a catastrophic regression: I chased a "49% fall in the
+office rent index and 72% fall in land" that was entirely a re-roll from a
+commit that changed how a rival's opening debt was sized. Measured either side
+over six seeds, individual moves ran +60% to −56% in both directions with a
+26% difference in means. **Scale thresholds; never change the draw count** — and
+if you must, re-roll before you diagnose. Rule of thumb: `rentIdx` and `land`
+have a 3.4× spread ACROSS SEEDS, so a six-seed median cannot resolve anything
+smaller than a factor of two.
+
+**The frozen world.** `advanceQuarter` returns state UNCHANGED once `gameOver`
+is set. Any probe running past ~year 30 without a player must resurrect:
+`if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };` A measured "plateau"
+in how many firms a city supports turned out to be the game being over.
+
+**The conservation identity does not track debt principal.** `pnpm conserve`
+asserts `Δcash == books + Δloc.balance + Δdeposits`. Mortgage principal is
+outside it by convention — `bought` books the EQUITY cheque, not the price, and
+the loan goes straight to the seller at closing. Consequence: **a cash-out
+refinance and a facility draw are unbooked cash inflows that the identity
+cannot see.** It stays quiet only because conserve's bot does neither. If you
+ever extend the identity to carry debt balances, `refinance`, `executePurchase`
+and `facility` must all move together — they share the convention. This is
+written up at the top of `facility.ts`.
+
+**One quantity, two answers.** The most productive bug class in this repo.
+`managedRentPsfYr(rec, econ, h)` with no `use` returns the area-weighted BLEND
+of every market in a building; with a `use` it returns that leg. Four places
+asked the blended question and judged a one-leg answer against it, which is why
+retail "signed 30% under market" for an unknown number of commits. `pnpm
+legmatch` exists to catch the next one. Before adding a metric, ask what else
+computes the same quantity.
+
+**A test that cannot fail is itself a fake.** Three tests once measured
+`g.comps.length`, which is capped, so they reported the cap. My own not-ready
+invariant ran clean against the broken engine. Check that a metric can MOVE
+before trusting that it did.
+
+**And a harness whose subject is a bot has a second failure mode: the bot
+stopping.** `conserve` spent an unknown number of commits reconciling a player
+who owned nothing, printing "every dollar came from somewhere" the whole time.
+It asserts its own coverage now.
+
+**Measure on a constant cohort.** A trajectory sampled at fixed offsets before
+each firm's death changes population at every offset. That artefact produced a
+dramatic "AUM collapse" that was half composition.
+
+**`test/entry.mjs` MODULES.** Harnesses import from a bundle built off this
+list. A module missing from it is invisible to every probe, silently. `staff`
+was missing once; `facility` and `owners` are in it now.
+
+**The register memo is module-level on purpose.** `owners.register()` caches in
+a module `Map`, not on `s`. The first cut cached to `s.holders`, which meant
+`holderOf` — called from `sellerOf` and six render paths — mutated the state it
+was handed. Keep readers pure.
+
+**START_YEAR is 2024 and there are no stray copies of it.** There were
+seventeen hardcoded `2000 + Math.floor(month/12)` in seven files while the
+constant said 2024, so the game printed one year and aged its stock from
+another. Grep before you add another.
 
 ---
 
-The card no longer computes anything. `residualScheme` returns the winning
-scheme *and* its working, `residualLandPsf` is the same call with the working
-discarded, `landRead` does the same for `landPsfNow`, and the parcel card
-renders what the engine decided. Verified neutral: 8,076 parcel-months, worst
-relative difference between old and new `landPsfNow` **0.00e+0%**.
+## 5. WHAT SHIPPED RECENTLY (last ten commits)
 
-**What it uncovered is the open item now, and it is the biggest one in this
-file.** `pnpm pencils` is the harness; it measures three things.
-
-`landPsfNow` was `max(builder, holder, texture*0.30) + texture*0.14`. The
-comment beside it says the comparison memory is "a MINORITY term deliberately",
-weighted the way an appraiser weights sales comparison against a residual — but
-the code took the best income bid and then ADDED 14% of the comparison on top.
-So the price of every lot was strictly above what any builder could pay for it,
-by construction. Measured at year 30 across two towns: price ran **1.24x-1.37x**
-the best builder's residual and **0 of 1,109 lots** could be paid for. The
-residual is by definition the price at which a builder earns exactly
-`DEV_MARGIN`, so that is a city that cannot be built. Writing the blend as the
-blend the comment described takes it to 1.02x-1.20x and 10.7% of lots. `pnpm
-gate` passes.
-
-**That was one layer. The layer under it is an identity nobody had checked.**
-`HARD_COST_PSF` in value.ts carries, in its own comments, the net rent each
-class needs to justify its cost. `RENT_BASE` in market.ts carries what each
-class earns. They had never been put side by side:
-
-    office        $560/sf hard    needs net $62    earns $43.65    -30%
-    retail        $865/sf hard    needs net $97    earns $42.91    -56%
-    multifamily   $345/sf hard    needs net $37    earns $30.22    -18%
-    industrial    $140/sf hard    needs net $17    earns $18.00     +6%
-
-Industrial is the only class that earns what its own cost requires. So it bids
-positive for **100%** of vacant lots and is the best use on **81.9%** of them,
-while office bids positive on 5.6% and retail on 4.2% — and `pnpm devyield`
-reports **0 office sites pencil of 1,363, 0 retail**, in a city whose office
-stock grows ~1%/yr. It grows because `devPencils` decides city supply from
-index ratios and never looks at what a square foot costs or what land costs.
-The player's desk does look. Same quantity, two answers, and the player is
-shown the one that says no.
-
-Do NOT fix this by moving one number until the table looks right — that is the
-tune-until-it-passes move. The question is which side is miscalibrated, and the
-likely answer is the cost table: $865/sf is urban podium retail and $560/sf is
-CBD high-rise, both priced for a city this town is not, while the rents are
-priced for a mid-size harbour town. That is the Manhattan-anchor problem the
-owner named, sitting in the cost column. Whatever moves, `pnpm pencils` should
-end up STRADDLING 1.0 and every class should be buildable somewhere — the
-correct target is not "everything pencils", it is "the good corners pencil and
-the fringe does not".
-
-### 4b. Swans — HALF DONE, and the other half is the news tape
-Owner: *"swans happen way too often, and a lot of these swans arent actually
-swans, they are just news. A black swan or a white swan should be something with
-a major not a minor impact."*
-
-**The frequency half was not true of the swan system and the measurement says
-so.** Six careers of fifty years: a swan CARD came up a median of three times a
-career, one every seventeen years. What the player is actually seeing constantly
-is the NEWS TAPE — `event` and `warn` items land at **12.4 a year** and the News
-badge lights in **57% of all months**. That is the real "way too often" and it
-is not this file's; it is every system in the engine filing routine business as
-an event. Still open.
-
-**The magnitude half was exactly right and is fixed.** `TRADE_MAG` runs
-0.12–0.42. The top is Rochester losing imaging; the bottom is a city holding 12%
-less of one trade over eight years — about one per cent a year of one sector,
-which no player will ever feel. Both were announced with a full-screen card
-headed "A black swan", and a card that cries wolf teaches the player to dismiss
-the one that matters.
-
-The level event still fires at its calibrated rate and magnitude — no economics
-moved, every anchor in `swans.ts` stands, and **every event is still filed as
-news**. What is earned rather than automatic is the interruption: a card needs
-either ≥25% of a trade (the Hartford-consolidation end of the anchors) or ≥10%
-of a city's demand for a building type, or else ≥15% of the player's own rent
-roll, because a 15% move in the trade that fills their buildings is their swan
-even when it is not the city's.
-
-Measured over 20 careers: **mean 2.1 cards a career, median 2, p10 0, p90 4 —
-one every 23 years, and 15% of careers get none at all.** That last number is
-intended; `swans.ts` already says some cities have a quiet fifty years and some
-are rewritten twice.
-
-### 5. Tenant bankruptcy and lease rejection
-Owner-requested. A credit tenant files, rejects the lease, and an asset goes
-from stabilised to a hole in one month. Currently unmodelled and unpriceable
-by the player. This is the biggest single unmodelled real risk left.
-
-### 6. Recourse that bites
-Owner-requested, pairs with 5. A bad deal currently costs you the building,
-never the firm. Personal guarantees, completion guarantees, bad-boy carve-outs.
-
-### 7. Cross-collateralisation (#22)
-Owner-requested early and still open. Pledging a portfolio against one
-facility, and what happens to the whole stack when one asset breaches.
-
-### 8. JV equity and the promote (#31)
-Owner-requested. Outside equity, waterfalls, and the promote — the thing that
-makes a developer's return different from a building's return.
-
-### 9. Industrial rents against industrial build cost (#36)
-$18/sf net rent against $140/sf hard cost. Flagged as an inconsistency
-long ago; the all-in measurement now says industrial lands at ~$269/sf all-in
-with a 5.89% yield on cost against a 6.86% exit cap, i.e. it does not pencil
-anywhere. Worth deciding whether that is right (it may be — most dirt should
-not pencil) or whether the rent level is wrong.
-
-### 10. Information asymmetry (#38)
-Owner-requested. The player should not have perfect information. NOTE: an
-earlier framing of this was wrong and the owner corrected it — *"in real life
-you would never offer on a building you don't know the tenancy and NOI about,
-even if it's off market"*. Preview and close must agree; that is now enforced.
-Asymmetry belongs in what the MARKET knows that you do not, not in hiding the
-rent roll of a building you are underwriting.
-
-### 11. The appraiser is treated as the Bible (#39)
-Owner-requested. Net worth is marked at appraisal rather than at what is
-realisable. The ask → comp → appraisal loop needs to be a loop, not an
-oracle.
-
-### 12. Infrastructure (#41)
-Owner-requested: *"the city never builds anything that isn't a building"*.
-Transit, roads, parks, seawalls — things that move the demand surface.
-
-### 13. NNN lease structures surfaced (#13)
-Triple-net vs gross is modelled in the recovery rate but never shown or
-chosen.
-
-### 14. Player name and firm identity (#20)
-Partially done — the firm has a generated name and epithets. The player still
-cannot name themselves or their firm.
-
-### 15. Memory and continuity (#33)
-Owner-requested: *"nobody remembers you"*. Rivals, brokers and lenders should
-carry a history of dealing with you that outlives one transaction.
-`lenderRel` exists and is the model to copy.
-
-### 16. Trouble visible on the street
-Owner-requested: *"can't see trouble on the street"*. Distress should be
-legible on the map before it is legible in a table.
-
-### 17. 84-year trading
-Owner-requested. The endgame length and what a multi-generational hold looks
-like.
-
-### 18. A frame-budget counter for the renderer
-The graphics work built `pnpm styles` to enforce building variety and nothing
-to enforce cost. `ThreeBuildings.ts` is 8,020 lines with ~20 shader programs
-and a post stage, and the 60fps budget is currently a number in the corner
-that nobody has checked. **This is a requirement to hand the graphics agent,
-not something to build in their territory.**
-
-### 19. Performance at large island sizes is unverified
-Great City is ~4,150 buildings against ~1,030 standard. Only ever rendered
-here under SwiftShader software rasterisation, which cannot answer the
-question. Do not ship Metropolis or Great City as a default until somebody
-measures on real hardware.
-
-### 20. Bank failure frequency
-Now that borrower losses reach lender capital, desks fail ~1.8 times per 50
-years each. Defensible for five pure-CRE lenders in a town with 30% office
-vacancy cycles, and hot. **Do not tune the failure roll** — if it needs
-changing the fix is upstream in loss severity or recovery rate. Peak bank
-delinquency of 9.5–9.9% matches the real 1990 peak (~12%), so the loss
-magnitude is the validated part.
-
-### 21. UI declutter and chart quality
-Owner-requested. Graphs can be improved, clutter can be reduced. The top bar
-sheds readouts under 1900px and the parcel panel is long. Lowest urgency of
-anything here, but it was asked for twice.
+- **The inflation fix** (`4034910`) — the most consequential. Labour demand was
+  not constrained by labour supply: `employIdx` (jobs WANTED) grew unbounded,
+  unfilled positions reached 8–24% of the labour force and never came back, and
+  two wires took that number seriously — space demand was driven by jobs wanted
+  rather than jobs filled, and the local Phillips term multiplied the same
+  unbounded number into the price level. Result was 4.8%/yr CPI and office
+  rents 2.4–2.7× in the first decade. Now 2.5–2.9%/yr and 0.75%/yr REAL rent
+  growth. `pnpm inflation` guards it.
+- **The portfolio facility** (`3ec2471`) — cross-collateralised term loan over a
+  pool of deeds, with a computed pooling benefit (Herfindahls over value and
+  class), a 115% release premium, cross-default, recourse, and a receiver that
+  sells the whole pool. Plus the **Debt page**.
+- **The owners register** (`f1da4f8`) — ~217 named private holders per town,
+  assigned by hash, power-law distributed, with a memory of the player and
+  demographic exit events.
+- **The calendar** (`c91405e`, `e4c7dc1`) — START_YEAR 2000 → 2024 to match a
+  rent table calibrated on JLL 2024 data, then the seventeen stray copies.
+- **Per-leg rents** (`e4c7dc1`) — the retail-signs-under-market fault.
+- **The baseline widened to six seeds** (`eb96bac`) after it reported a re-roll
+  as a regression.
 
 ---
 
-## THINGS THAT ARE DONE, so nobody redoes them
+## 6. OPEN FAULTS, RANKED
 
-- **The construction industry is a market, not a wall** (`cdbd1bd`). The crew
-  count follows the work, the trades price off how booked they are over a
-  non-speculative base load, and the crew base is derived from floor area and
-  turnover instead of `lots / 165`. `pnpm crews` is its harness and it asks the
-  four questions that were all false before: does demand reach the price, do
-  the two guards stay off their rails, and is real construction cost flat.
-- **Independent confirmation the city now renews at the real rate.** Nobody
-  touched test L; its demolition rate went 0.215%/yr → 0.536%/yr against its
-  own cited real-world anchor of ~0.5%/yr, and mean building age now rises 23
-  years over fifty instead of 36. That fell out of the construction market
-  working, and it is worth more than any number this session set out to move.
-- **Bank failure, end to end.** Deposits seized with era-correct insurance
-  limits, receivership dividends, repudiated construction commitments,
-  replacement facilities with a sources-and-uses test, and contagion priced
-  off wholesale funding share and capital-against-target.
-- **Borrower losses reach lender capital.** A rival firm failing used to cost
-  its lenders nothing. This was the wire that made the whole bank-failure
-  system able to fire at all.
-- **Island size and how built-up it starts.** Five sizes (378 to 5,791 lots),
-  seven development levels. Both travel with the save. The street grid does
-  NOT scale — more blocks, not bigger blocks.
-- **The banks derive their size from the city** rather than scaling off a
-  reference island.
-- **The city is locked once a game starts.**
-- **All-in cost psf on the development panel**, reconciling with the yield.
-- **The frozen-world harness bug**: `advanceQuarter` returns state unchanged
-  once `gameOver` is set, and 15 of 20 macro seeds died before month 600.
-  Every long-running probe must resurrect.
+**1. The industrial vacancy floor is load-bearing.** `rail.vac.industrial.lo`
+binds ~46% of months (was 68% before the inflation fix, 32% before the calendar
+change). CLAUDE.md fake #5: a clamp the model rests on is holding up the model.
+This is the loudest open defect. Start at `frictionFloor` in `market.ts` and ask
+why industrial demand cannot clear at any price.
+
+**2. Development still barely pencils.** `dev.affordableLotShare` is 1.9% —
+better than the 0.2% it was, but the honest number is 8–12% mid-cycle. Land is
+the residual; if nothing pencils, either rents are too low, costs too high, or
+land prices are not answering the builder's number. #47.
+
+**3. The conservation identity's debt gap** (see §4). Real correctness work,
+touching three call sites and one convention. Would close the last place money
+can move without being seen.
+
+**4. CPI is non-monotonic.** Three of six seeds ran 127–218 deflation months,
+worst ten-year stretch −10.8%, because monthly inflation is clamped to
+[−0.35%, +1.15%] and the lower bound is reachable. Filed, not fixed. Pushes
+rents the other way from the complaint that surfaced it.
+
+**5. Rivals cannot underwrite a lease-up.** The stabilised bridge leg is fed
+only from `buyQuote`, so the player can finance a 30%-let building on stabilised
+value and the street cannot. An asymmetry in the player's favour.
+
+**6. Rivals never use the facility.** Only the player can borrow against a book.
+That is a real competitive advantage nobody asked for.
+
+**7. #39 — rent reprices on vacancy in the same month.** A simultaneity where a
+lag belongs. The four-quadrant identity checks (#31) are the same subject.
+
+**8. #33 seller predictability, #36 zoning depth, #48/#49 firm entry and exit.**
+Longstanding, lower priority.
+
+**Holder relationships are wired to approaches only.** A holder who will not
+take your call still lists buildings to you on the open tape and still bids
+against you at auction. Extending the memory to listings and the broker's calls
+is the obvious next move on that feature.
 
 ---
 
-## TWO HABITS THAT PAID OFF REPEATEDLY
+## 7. WHAT I WOULD DO NEXT, IN ORDER
 
-**A/B every mechanism against itself.** Three separate conclusions in this
-session were wrong until the counterfactual was run: bank-failure clustering
-looked like contagion and was common cause (43% without it, 37% with); the
-sector-exit ratchet looked like it made office rent worse and had resampled
-noise; and a "load-bearing vacancy rail" turned out to be a market clearing
-correctly by price.
+1. **The industrial floor** (#1 above). It is a rail holding up a model, it has
+   been visible in the baseline for months, and everything downstream of
+   industrial demand is wrong while it binds.
+2. **Make development pencil** (#2). These two are probably the same
+   investigation: both are about whether supply can answer demand.
+3. **Close the ledger's debt gap** (#3), and make `conserve`'s bot refinance so
+   the new identity is actually exercised. An identity is only worth the
+   question it was asked.
+4. **Give the street the bridge leg and the facility** (#5, #6). The player
+   should not have instruments the competition lacks.
+5. **Then the four quadrants** (#31/#39) — the deepest remaining structural
+   question and the one most likely to move everything at once.
 
-**Check the estimator before believing the number.** F's 7-seed median moved
-1.3pp on noise. G's threshold sits at exactly zero against a distribution
-centred on zero. If a test's per-seed spread is wider than the effect being
-measured, the test cannot see the effect.
+---
 
-This one nearly cost a correct mechanism again. At six seeds the change in
-worst real-rent drawdown from the construction-market fix read −27pp to +39pp
-per seed against a +7pp median shift — unreadable, and it would have supported
-either conclusion. At twenty-four paired seeds the whole distribution moved
-(p25 40→52, median 48→69, p75 59→84) and it is unambiguous. **Build the paired
-A/B harness before forming the opinion, not after.** `git worktree add` a clean
-copy at HEAD, bundle it to `test/.engine-base.mjs` — the gitignore already
-allows suffixed bundles for exactly this — and run the same probe against both
-with `ENGINE=`. It takes ten minutes and it is the difference between a
-measurement and a guess.
+## 8. THINGS I WOULD WANT TO KNOW
+
+**The owner's standing instructions.** Realism outranks his stated preferences,
+including about difficulty — he said so explicitly. Difficulty is an OUTPUT. If
+the game is too easy the question is never "what should we make worse", it is
+"which real risk is not modelled yet".
+
+**Calibrated industry constants are the opposite of a fake.** A 4% management
+fee, a 6% brokerage, a 39-year depreciable life: hardcode them, cite them in a
+comment. The test is not "is it a constant", it is "is it a fact about the world
+or a thumb on the scale". Shape parameters sit in between — say which, in the
+comment, every time.
+
+**When a fix makes a headline number worse, keep the fix and write down the
+measurement.** A correct model scoring worse than an incorrect one is
+information about the rest of the model. But it IS a reason to find what the
+wrong number was propping up.
+
+**The comments are load-bearing documentation.** Most non-obvious code carries a
+comment saying what was wrong before and what was measured. They are long on
+purpose — several of them are the only record of a fault that took a day to
+find. If you change the code, change the comment; if you find the comment
+lying, that is a bug report.
+
+**Commit messages here are the changelog.** They carry the measurements. `git
+log` is genuinely the best way to understand why something is the way it is.
+
+**Never tune a bot until the number looks good.** If a strategy loses money,
+find out whether the strategy is bad or the economy is broken, and say which.
+
+**The owner plays in long saves** — sixty to a hundred years. Faults that
+compound slowly (a 1%/yr drift, a rail that binds a third of the time) matter
+more here than in most games, because he will run them out to the point where
+they dominate. Two of the last three fault reports were exactly that.

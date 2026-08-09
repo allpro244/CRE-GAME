@@ -95,7 +95,10 @@ function snap(g, parcels, extras = {}) {
     buildings: builtLots.length,
     vacantLots,
     builtSf,
-    comps: (g.comps ?? []).length,
+    // Cumulative lifetime prints — not the rolling MAX_COMPS sheet buffer.
+    comps: g.compsTotal ?? (g.comps ?? []).length,
+    compsSheet: (g.comps ?? []).length,
+    compsVolume: g.compsVolume ?? 0,
     listings: (g.listings ?? []).length,
     distressListings: (g.listings ?? []).filter((l) => l.distress).length,
     cityJobs: (g.cityJobs ?? []).filter((j) => !j.orphaned).length,
@@ -386,14 +389,24 @@ const stories = [];
 
   const aumEnd = med(runs.map((r) => r.end.rivalAum / r.end.cpi));
   stories.push(`Rival AUM at Y100 is **${money(med(runs.map((r) => r.end.rivalAum)))}** nominal (≈${money(aumEnd)} in Y0 dollars, median) — the street compounds without you. (Opening AUM is ~$0 before the roster books assets, so CAGR is not meaningful.)`);
-  stories.push(`Comps ledger is capped at **240** prints (\`MAX_COMPS\`) — the decade table’s “Trades” column saturates and is not cumulative century volume.`);
-  const landPinned = runs.filter((r) => r.end.landIdx >= 39.99).length;
+  const sheetMed = med(runs.map((r) => r.end.compsSheet ?? Math.min(240, r.end.comps)));
+  if (Number.isFinite(tradeMed) && tradeMed > 240.5) {
+    stories.push(`Comps sheet keeps a rolling **${Math.round(sheetMed)}**-print window; cumulative century volume is **${Math.round(tradeMed)}** median (no longer clipped by \`MAX_COMPS\`).`);
+  } else {
+    stories.push(`Comps ledger reports cumulative closed prints (sheet buffer still rolls at \`MAX_COMPS\`).`);
+  }
+  const landPinned = runs.filter((r) => r.end.landIdx >= 79.99).length;
   if (landPinned) {
-    stories.push(`Land index hit its hard rail (**40**) in **${landPinned}/${runs.length}** seeds by Y100 — late-century land growth is mechanically clipped (\`market.ts\` clamp).`);
+    stories.push(`Land index hit its hard rail (**80**) in **${landPinned}/${runs.length}** seeds by Y100 — late-century land growth is mechanically clipped (\`market.ts\` clamp).`);
+  } else {
+    const landHi = med(runs.map((r) => r.end.landIdx));
+    stories.push(`Land index ends at **${fmt(landHi, 2)}** median — residual is rent/cost (degree 0 under pure CPI), so ordinary inflation no longer drives the rail.`);
   }
   const vacFloorish = med(runs.map((r) => r.end.vac.office));
   if (vacFloorish < 0.045) {
-    stories.push(`Office vacancy ends at the frictional floor in the median seed (**${pct(vacFloorish)}**) — late centuries look chronically tight once supply lags the compounded rent/income path.`);
+    stories.push(`Office vacancy ends at the frictional floor in the median seed (**${pct(vacFloorish)}**) — late centuries still look tight when stock cannot clear the employment path.`);
+  } else {
+    stories.push(`Office vacancy ends at **${pct(vacFloorish)}** median — not glued to the frictional floor across the board.`);
   }
 }
 

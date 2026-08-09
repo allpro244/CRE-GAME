@@ -95,12 +95,13 @@ export function recordComp(
   const noi = !built ? 0
     : d ? holdingNOIYr(rec, s.econ, asIfOwned(s, rec.bbl, price, d, rec), s.month)
     : noiAfterTaxYr(rec, s.econ, cond, price);
+  const px = Math.round(price);
   s.comps.push({
     m: s.month,
     bbl: rec.bbl,
     address: rec.address,
     cls: rec.class,
-    price: Math.round(price),
+    price: px,
     sf: built ? rec.bldgArea : 0,
     psf: built ? price / Math.max(1, rec.bldgArea) : price / Math.max(1, rec.lotArea),
     capRate: built && price > 0 ? +((noi / price) * 100).toFixed(2) : 0,
@@ -113,6 +114,11 @@ export function recordComp(
     // this month — and unlike that one, it does not keep moving afterwards.
     mark: built ? undefined : landPsfNow(rec, s.econ) || undefined,
   });
+  // Rolling sheet vs century volume. The buffer stays short for the UI; the
+  // counters keep every print that ever closed so a long-horizon report is not
+  // capped at MAX_COMPS (a fake ceiling on street activity — CLAUDE.md).
+  s.compsTotal = (s.compsTotal ?? 0) + 1;
+  s.compsVolume = (s.compsVolume ?? 0) + px;
   if (s.comps.length > MAX_COMPS) s.comps.splice(0, s.comps.length - MAX_COMPS);
 }
 

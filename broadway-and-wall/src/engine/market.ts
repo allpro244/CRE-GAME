@@ -951,9 +951,10 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // density scale alone — same identity the monthly landIdx step chases.
   {
     const rentLevel = (econ.effRentIdx?.office ?? econ.rentIdx.office) / RENT_BASE.office;
+    const costLevel = Math.max(0.35, econ.costIdx ?? 1);
     econ.landIdx = clamp(
-      Math.pow(rentLevel / Math.pow(Math.max(0.35, econ.costIdx), 0.35), 1.15),
-      0.25, 40,
+      Math.pow(rentLevel / costLevel, 1.15),
+      0.05, 80,
     );
   }
   // Era rewrote vacancy; occupied has to match or month-zero vacancy is a lie.
@@ -2152,10 +2153,26 @@ export function tickEcon(s: GameState) {
   // occupancy — so a balanced city would have read as chronically tight and
   // been handed a permanent premium, which is the opposite of the intent.
   {
+    // A MANHATTAN PREMIUM IS EARNED BY DEMAND, NOT BY A SUPPLY FAILURE.
+    //
+    // Vacancy pinned at the frictional floor for decades used to mint a
+    // permanent `tightEma` premium — the income anchor then defended a rising
+    // rent-to-wage ratio because, by its own measure, the city was "genuinely
+    // tight." That is backwards when the floor is binding because stock cannot
+    // keep up with jobs (ECONOMY.md §F). Chronic rail-binding without a
+    // responding pipeline is a supply failure; fade the premium rather than
+    // compounding it.
+    const stock = Math.max(1, e.stock?.office ?? CITY_STOCK.office);
     const availNow = (e.cityVac?.office ?? NATURAL_VAC.office)
-      + (e.sublet?.office ?? 0) / Math.max(1, e.stock?.office ?? CITY_STOCK.office);
+      + (e.sublet?.office ?? 0) / stock;
     const tightNow = (NATURAL_VAC.office - availNow) / NATURAL_VAC.office;
-    e.tightEma = (e.tightEma ?? 0) + 0.004 * (tightNow - (e.tightEma ?? 0));
+    const friction = frictionFloor("office");
+    const pinned = (e.cityVac?.office ?? NATURAL_VAC.office) <= friction + 1e-6;
+    const pipeShare = (e.pipeline?.office ?? 0) / stock;
+    const startShare = (e.starts?.office ?? 0) / stock;
+    const supplyAnswering = pipeShare > 0.008 || startShare > 0.0004;
+    const target = (pinned && !supplyAnswering) ? 0 : tightNow;
+    e.tightEma = (e.tightEma ?? 0) + 0.004 * (target - (e.tightEma ?? 0));
   }
 
   // INDUSTRIAL DEMAND TRACKS INDUSTRIAL EMPLOYMENT, NOT TOTAL JOBS.
@@ -2904,8 +2921,16 @@ export function tickEcon(s: GameState) {
     const DEEP_RATE = 0.0155;   // -18.6%/yr, the Houston 1983-87 asymptote
     const atFit = glut(FIT_MAX);
     const span = DEEP_RATE - atFit;
+    // PINNED FLOOR ⇒ MUTE THE GAP. Direct vacancy cannot go below friction, so
+    // once it rests on that rail the gap is a constant (~−7.8pp for office) and
+    // a linear shortage term becomes a permanent monthly rent tax — the mirror
+    // of the saturating-glut bug, and the named fault in ECONOMY.md §F. When
+    // the rail is binding, pressure has to come from growing unmet demand
+    // (`scarcity` below), not from a gap that cannot move.
+    const friction = frictionFloor(k);
+    const pinned = (e.cityVac?.[k] ?? NATURAL_VAC[k]) <= friction + 1e-6;
     const vacTerm = gap <= 0
-      ? clamp(-gap * 0.045, 0, 0.0045)
+      ? (pinned ? 0 : clamp(-gap * 0.045, 0, 0.0045))
       : -(gap <= FIT_MAX
         ? glut(gap)
         // C1-continuous at FIT_MAX: same value, same slope, asymptote DEEP_RATE.
@@ -3059,9 +3084,15 @@ export function tickEcon(s: GameState) {
   // dirt. EFFECTIVE rents, because a builder underwrites what deals sign at,
   // not what landlords quote.
   const rentLevel = (e.effRentIdx?.office ?? e.rentIdx.office) / RENT_BASE.office;
+  const costLevel = Math.max(0.35, e.costIdx ?? 1);
   const vacDisc = 1 - 1.2 * Math.max(0, (e.cityVac?.office ?? NATURAL_VAC.office) - NATURAL_VAC.office);
-  const target = Math.pow(rentLevel / Math.pow(e.costIdx, 0.35), 1.15) * (1 + 0.16 * e.cycleDev) * Math.max(0.25, vacDisc);
-  e.landIdx = clamp(e.landIdx + 0.024 * (target - e.landIdx) + e.landIdx * rrange(s, -0.003, 0.003), 0.25, 40);
+  // Homogeneous of degree 0 under a pure nominal scale: rent and cost both ×λ
+  // leave the ratio unchanged. The old cost^0.35 form grew as λ^0.75 under
+  // inflation alone, so a century of ordinary CPI pinned the landIdx rail at
+  // 40 even before real rents overheated — a load-bearing clamp, which is a
+  // fake (CLAUDE.md). The residual is rent against construction cost.
+  const target = Math.pow(rentLevel / costLevel, 1.15) * (1 + 0.16 * e.cycleDev) * Math.max(0.25, vacDisc);
+  e.landIdx = clamp(e.landIdx + 0.024 * (target - e.landIdx) + e.landIdx * rrange(s, -0.003, 0.003), 0.05, 80);
 
   // COSTS INFLATE AT LEAST AS FAST AS RENTS.
   //

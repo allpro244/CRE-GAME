@@ -2268,6 +2268,14 @@ export interface GameState {
   // Every deed that has moved in this city, with the price. See comps.ts —
   // an appraisal is an opinion and a closed sale is a fact.
   comps?: Comp[];
+  /**
+   * Lifetime closed-print count. The rolling `comps` buffer is capped for the
+   * sheet UI; this counter is not, so a century report can tell cumulative
+   * trade volume from the last 240 stamps.
+   */
+  compsTotal?: number;
+  /** Lifetime closed consideration (nominal $). Same reason as `compsTotal`. */
+  compsVolume?: number;
   news: NewsItem[];
   /**
    * UNREAD interruptions. The engine pushes; the UI shifts them off as it

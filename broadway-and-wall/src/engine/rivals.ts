@@ -32,7 +32,7 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from "./types";
 import { CASH_APY, monthLabel, START_YEAR } from "./types";
-import { rng, newsChance, rrange } from "./market";
+import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC } from "./market";
 import { assetValue, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall } from "./value";
 import type { DevPlan } from "./dev";
 import { cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
@@ -41,7 +41,7 @@ import { streetRefiProceeds, productById, stabViewFor } from "./debt";
 import { stampApproach } from "./leasing";
 import { deskWillExtend, extensionFeePct, extensionMonths, NOTICE_M, FORECLOSE_M } from "./workout";
 import { recordComp } from "./comps";
-import { programmeSf, queueSupplyProject } from "./supply";
+import { programmeSf, queueSupplyProject, rescheduleSupplyProject } from "./supply";
 import { recordPropertyEvent } from "./history";
 
 // Ashport is an old port town; its money has old-port-town names.
@@ -403,7 +403,20 @@ function replenishCityBuildPool(s: GameState) {
   // ~$90 per employed resident per month of construction capacity. Generous
   // enough that a normal pipeline finishes; tight enough that a credit crunch
   // with many simultaneous frames can orphan work — the point of a pool.
-  const monthly = Math.max(8_000_000, Math.round(jobs * 90 * credit));
+  let monthly = Math.max(8_000_000, Math.round(jobs * 90 * credit));
+  // SUPPLY MUST ANSWER EMPLOYMENT (ECONOMY.md §F #2). When office vacancy is
+  // already on the frictional rail, the space market has asked for more stock.
+  // Orphaning those frames because the pool was sized for a quiet year is how
+  // stock CAGR falls behind jobs — and how the rent rail stays permanently
+  // pinned. Service the live anonymous burn when the book is binding.
+  let anonBurn = 0;
+  for (const j of s.cityJobs ?? []) {
+    if (j.orphaned || j.firmId || !(j.cost ?? 0)) continue;
+    anonBurn += monthJobSpend(j, s.month);
+  }
+  const officeVac = s.econ.cityVac?.office ?? NATURAL_VAC.office;
+  const pinned = officeVac <= frictionFloor("office") + 1e-6;
+  if (pinned && anonBurn > monthly) monthly = anonBurn;
   const cap = monthly * 48;
   s.econ.cityBuildCash = Math.min(cap, (s.econ.cityBuildCash ?? monthly * 24) + monthly);
 }
@@ -414,6 +427,17 @@ function monthJobSpend(j: { cost?: number; startM: number; deliverM: number }, m
   const t0 = Math.min(1, (month - j.startM) / span);
   const curve = (t: number) => t * t * (3 - 2 * t);
   return Math.round((j.cost ?? 0) * Math.max(0, curve(t1) - curve(t0)));
+}
+
+/** True when a thin pool should kill the job rather than slip the schedule. */
+function anonShouldOrphan(s: GameState, j: NonNullable<GameState["cityJobs"]>[number]): boolean {
+  const progress = (j.spent ?? 0) / Math.max(1, j.cost ?? 1);
+  // A frame already in the air waits a month when the pool is thin — that is
+  // schedule slippage, and it is how real jobs survive a funding pinch. Only
+  // greenfield work with almost nothing spent orphans into a standing skeleton,
+  // and only when credit is already frightened. Otherwise the pool was merely
+  // short for a month and next month's replenishment covers the call.
+  return progress < 0.12 && (s.econ.creditIdx ?? 1) < 0.70;
 }
 
 /** Anonymous city jobs draw equity + capital calls from the city pool. */
@@ -430,12 +454,20 @@ function fundAnonymousCityJob(s: GameState, j: NonNullable<GameState["cityJobs"]
   const cashNeed = fromEquity + (afterEquity - fromDebt);
   const pool = s.econ.cityBuildCash ?? 0;
   if (pool < cashNeed) {
-    j.orphaned = true;
-    s.news.unshift({
-      q: s.month, kind: "event",
-      text: `Merchant builders have stopped work — the city's construction pool could not fund `
-        + `the remaining $${(cashNeed / 1e6).toFixed(2)}M call on an anonymous job.`,
-    });
+    if (anonShouldOrphan(s, j)) {
+      j.orphaned = true;
+      s.news.unshift({
+        q: s.month, kind: "event",
+        text: `Merchant builders have stopped work — the city's construction pool could not fund `
+          + `the remaining $${(cashNeed / 1e6).toFixed(2)}M call on an anonymous job.`,
+      });
+    } else {
+      // Schedule slips with the funding month — otherwise a deferred job would
+      // still "open" on the original deliverM with work unpaid, and the space
+      // market would book stock that never topped out.
+      j.deliverM = (j.deliverM ?? s.month) + 1;
+      if (j.bbl) rescheduleSupplyProject(s, j.bbl, j.deliverM);
+    }
     return;
   }
   s.econ.cityBuildCash = pool - cashNeed;
@@ -448,11 +480,18 @@ function fundAnonymousCityJob(s: GameState, j: NonNullable<GameState["cityJobs"]
     const capitalised = Math.min(cap, room);
     const cashInterest = cap - capitalised;
     if (cashInterest > (s.econ.cityBuildCash ?? 0)) {
-      j.orphaned = true;
-      s.news.unshift({
-        q: s.month, kind: "event",
-        text: `An anonymous frame has stalled after exhausting interest carry in the city construction pool.`,
-      });
+      // Capitalise what fits the commitment; forbear unpaid cash interest unless
+      // this is a greenfield credit-crunch skeleton (same rule as a missed draw).
+      j.debt = (j.debt ?? 0) + capitalised;
+      const pay = Math.min(cashInterest, s.econ.cityBuildCash ?? 0);
+      s.econ.cityBuildCash = (s.econ.cityBuildCash ?? 0) - pay;
+      if (anonShouldOrphan(s, j)) {
+        j.orphaned = true;
+        s.news.unshift({
+          q: s.month, kind: "event",
+          text: `An anonymous frame has stalled after exhausting interest carry in the city construction pool.`,
+        });
+      }
       return;
     }
     j.debt = (j.debt ?? 0) + capitalised;
@@ -462,7 +501,15 @@ function fundAnonymousCityJob(s: GameState, j: NonNullable<GameState["cityJobs"]
 
 export function fundJobs(s: GameState) {
   replenishCityBuildPool(s);
-  for (const j of s.cityJobs ?? []) {
+  // Near-delivery anonymous work takes the pool before greenfield claims can
+  // starve it — otherwise a wave of starts orphans the frames closest to
+  // adding stock, which is the opposite of how a thin capital pool behaves.
+  const ordered = [...(s.cityJobs ?? [])].sort((a, b) => {
+    const ap = (a.spent ?? 0) / Math.max(1, a.cost ?? 1);
+    const bp = (b.spent ?? 0) / Math.max(1, b.cost ?? 1);
+    return bp - ap;
+  });
+  for (const j of ordered) {
     if (j.orphaned) continue;
     if (!j.firmId) {
       fundAnonymousCityJob(s, j);

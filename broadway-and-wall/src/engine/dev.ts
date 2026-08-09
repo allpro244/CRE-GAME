@@ -837,9 +837,24 @@ export function planDevelopment(
   // apartments have no fit-out, but they do have concessions and marketing
   const tiPsf = overMix(mix, (u) => (u === "office" ? 32 : u === "retail" ? 22 : u === "industrial" ? 5 : 7));
   const asBuilt0 = asBuiltRec(rec, use, sf, fl);
-  const rentPsf0 = marketRentPsfYr(asBuilt0, s.econ, "good");
+  // Underwrite the rent tenants are actually paying after market-wide
+  // concessions, not the asking-rent headline. This is the same effective-rent
+  // index the class order pro forma reads.
+  const effectiveRentFactor = overMix(mix, (u) =>
+    (s.econ.effRentIdx?.[u] ?? s.econ.rentIdx[u]) / Math.max(1, s.econ.rentIdx[u]));
+  const rentPsf0 = marketRentPsfYr(asBuilt0, s.econ, "good") * effectiveRentFactor;
   const lcPsf = overMix(mix, (u) => (u === "multifamily" ? 0 : 1)) * rentPsf0 * 6 * 0.045;
-  const carryMonths = overMix(mix, (u) => (u === "multifamily" ? 19 : 38));
+  // LEASE-UP DURATION IS A MARKET NUMBER. The old reserve assumed 19 months
+  // for every apartment project and 38 for every commercial project, whether
+  // vacancy was 2% or 20%. Scale that observed base duration by availability
+  // against natural vacancy: tight markets fill faster; gluts take longer.
+  const baseCarryMonths = overMix(mix, (u) => (u === "multifamily" ? 19 : 38));
+  const availability = overMix(mix, (u) =>
+    (s.econ.cityVac?.[u] ?? NATURAL_VAC[u])
+      + (s.econ.sublet?.[u] ?? 0) / Math.max(1, s.econ.stock?.[u] ?? CITY_STOCK[u]));
+  const naturalAvailability = overMix(mix, (u) => NATURAL_VAC[u]);
+  const leaseUpMarket = clamp(availability / Math.max(0.001, naturalAvailability), 0.5, 2);
+  const carryMonths = Math.round(baseCarryMonths * leaseUpMarket);
   const opex0 = overMix(mix, (u) => opexPsf(u, s.econ, false));
   const recovery0 = overMix(mix, (u) => RECOVERY_RATE[u]);
   const stabOcc0 = overMix(mix, (u) => (u === "multifamily" ? 0.95 : 0.9));
@@ -964,7 +979,7 @@ export function planDevelopment(
   // Yield on cost against today's stabilised rents — the number a developer
   // actually lives by, and the spread to the exit cap is the whole margin.
   const asBuilt = asBuiltRec(rec, use, sf, fl);
-  const rentPsf = marketRentPsfYr(asBuilt, s.econ, "good");
+  const rentPsf = marketRentPsfYr(asBuilt, s.econ, "good") * effectiveRentFactor;
   const stabOcc = overMix(mix, (u) => (u === "multifamily" ? 0.95 : 0.9));
   const opex = overMix(mix, (u) => opexPsf(u, s.econ, false));
   const recovery = overMix(mix, (u) => RECOVERY_RATE[u]);

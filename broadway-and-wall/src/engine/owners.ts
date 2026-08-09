@@ -307,19 +307,24 @@ function tierOf(rec: ParcelRecord, r: number): HolderTier {
  * never needs to be stored at all. Only the HOLDERS' MEMORY of the player is
  * saved, because that is the only part that is not derivable.
  */
-const REGISTRY = new Map<string, Holder[]>();
+// Key by the parcel table itself. `register()` used to COUNT every built parcel
+// on every lookup merely to construct `${seed}:${built}` as a cache key.
+// holderOf is called inside map renders, negotiations and holdingsOf; on a
+// 5,900-lot Great City that turned common clicks into an O(N²) walk and
+// produced measured 3.3–3.6 second main-thread stalls. A city's parcel table
+// is immutable and identity-stable for the run, so a WeakMap is the exact key
+// and lets abandoned towns be collected without a manual size cap.
+const REGISTRY = new WeakMap<ParcelTable, Map<number, Holder[]>>();
 export function register(s: GameState, parcels: ParcelTable): Holder[] {
-  let built = 0;
-  for (const p of Object.values(parcels)) if (p.class !== "land" && p.bldgArea > 0) built++;
-  const key = `${s.seed}:${built}`;
-  let reg = REGISTRY.get(key);
+  let bySeed = REGISTRY.get(parcels);
+  if (!bySeed) {
+    bySeed = new Map<number, Holder[]>();
+    REGISTRY.set(parcels, bySeed);
+  }
+  let reg = bySeed.get(s.seed);
   if (!reg) {
     reg = buildRegister(parcels, s.seed);
-    // A town is one entry; a session that has opened a few is a few. The cap
-    // exists so a long session cannot accumulate registers for towns nobody is
-    // playing any more.
-    if (REGISTRY.size > 8) REGISTRY.clear();
-    REGISTRY.set(key, reg);
+    bySeed.set(s.seed, reg);
   }
   return reg;
 }

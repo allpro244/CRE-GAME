@@ -218,7 +218,8 @@ for (let i = 0; i < N; i++) {
 const [buildLo, buildHi] = E.BUILD_MONTHS[K];
 const PAIRS = [
   ["value", "orders", 6, 42, +1, "the asset market tells the space market to order more"],
-  ["orders", "breaks", 0, 18, +1, "the queue: entitlement, design, a site, a lender"],
+  ["orders", "breaks", 0, E.ENTITLE_MONTHS[1] + E.CONSTRUCTION_CLOSE_M, +1,
+    "the queue: entitlement, design, a site, a lender, then closing"],
   // This is a literal clock, not a calibration band. Read the engine's
   // class-specific construction schedule so the harness cannot claim that a
   // 44-month office job is "too slow" while BUILD_MONTHS explicitly permits it.

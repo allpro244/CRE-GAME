@@ -700,6 +700,8 @@ export const BUILD_MONTHS = { office: [30, 44], retail: [18, 28], multifamily: [
 // — not a shape parameter and not a tuning knob. It is not split by class
 // because the dominant term is the municipality, not the use.
 export const ENTITLE_MONTHS = [6, 18] as const;
+/** Loan documents, final permits and mobilization after approvals are in hand. */
+export const CONSTRUCTION_CLOSE_M = 2;
 
 /**
  * HOW MANY PEOPLE WORK IN THIS TOWN, from the buildings that are standing.
@@ -2259,7 +2261,7 @@ export function tickEcon(s: GameState) {
     if (start > 1) {
       const [eLo, eHi] = ENTITLE_MONTHS;
       const lag = Math.round(eLo + jitter * (eHi - eLo));
-      e.entitling[k].push({ m: s.month + lag, sf: Math.round(start) });
+      e.entitling[k].push({ m: s.month + lag + CONSTRUCTION_CLOSE_M, sf: Math.round(start) });
     }
     // An entitled order has an eighteen-month expected shelf life. Decay the
     // existing book by 1/18 each month before newly-ready work joins it. The

@@ -1872,7 +1872,12 @@ export function tickEcon(s: GameState) {
     const natInfl = e.nat?.infl ?? e.inflExp;
     const inflM = (0.72 * natInfl + 0.28 * e.inflExp) / 12
       + tight * 0.014 + 0.14 * (cost12 - e.inflExp) / 12;
-    e.cpi = clamp(e.cpi! * (1 + clamp(inflM, -0.0035, 0.0115)), 0.8, 400);
+    // HANDOFF fault: -0.0035/mo (~-4.2%/yr) as the ordinary floor let ordinary
+    // slack months stack into multi-year deflation stretches. Reserve that deep
+    // floor for genuine national deflation; otherwise cap monthly decline at
+    // ~-0.0005 (~-0.6%/yr).
+    const inflFloor = natInfl < 0 ? -0.0035 : -0.0005;
+    e.cpi = clamp(e.cpi! * (1 + clamp(inflM, inflFloor, 0.0115)), 0.8, 400);
     // ...and expectations follow realised inflation slowly. This is the anchor
     // that keeps the spiral from either exploding or dying: fast enough that a
     // decade of 6% becomes the new normal, slow enough that one bad year is
@@ -2858,16 +2863,18 @@ export function tickEcon(s: GameState) {
       + (e.sublet?.[k] ?? 0) / Math.max(1, e.stock?.[k] ?? CITY_STOCK[k])
       - NATURAL_VAC[k];
 
-    // WHERE THE VACANCY-TO-RENT LAG IS NOT. `pnpm leadlag` says this leg runs
-    // SIMULTANEOUS (0 months) where a real one runs 3 to 24, and the obvious
-    // explanation — that a landlord cannot see this month's vacancy print, so
-    // `vacTerm` should read a trailing average — was built, measured and is
-    // WRONG. Identification test: driving the observation lag from 0 months to
-    // 24 moved the measured leg from 0mo to MINUS 3, not toward positive at
-    // all, while the total loop fell from 5.7 years to 4.7. If a 24-month lag
-    // on this term cannot move the leg, this term is not what carries the
-    // correlation. See HANDOFF.md; the live hypothesis is `scarcity` and the
-    // rollover-weighted index, not this.
+    // WHERE THE VACANCY-TO-RENT LAG IS NOT (OBSERVATION). `pnpm leadlag` says
+    // this leg runs SIMULTANEOUS (0 months) where a real one runs 3 to 24, and
+    // lagging the vacancy OBSERVATION — feeding `vacTerm` a trailing average
+    // instead of this month's gap — was built, measured and is WRONG.
+    // Identification test: driving the observation lag from 0 months to 24
+    // moved the measured leg from 0mo to MINUS 3, not toward positive at all,
+    // while the total loop fell from 5.7 years to 4.7. If a 24-month lag on
+    // what landlords SEE cannot move the leg, the lag is not in the print — it
+    // is in the APPLICATION of pressure into rentIdx. See `rentPress` below:
+    // vacTerm+scarcity form instantly; asking rents move only after that
+    // pressure has sat on the quote sheet for months (lease-quote lag, not
+    // capitulation and not a data delay).
     // The vacancy gap has to be able to OVERPOWER the cycle's sentiment, or a
     // glut politely coexists with rising rents forever. Six points of excess
     // availability takes rents down about 8.4% a year, which is what a real
@@ -3004,6 +3011,18 @@ export function tickEcon(s: GameState) {
         * capitulation(e.vacOverM[k] ?? 0);
     const scarcity = clamp((unmet[k] ?? 0) * 0.10, 0, 0.016);
 
+    // Lease-quote lag: market pressure (vacancy gap + unmet demand) forms this
+    // month; landlords adjust asking rents only after it has sat on the quote
+    // sheet. Not the rejected observation lag above — that delayed the INPUT;
+    // this delays the OUTPUT into rentIdx.
+    if (!e.rentPress) e.rentPress = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+    const RENT_PRESS_TAU: Record<BuiltClass, number> = {
+      office: 8, retail: 6, multifamily: 5, industrial: 10,
+    };
+    const instant = vacTerm + scarcity;
+    const tau = RENT_PRESS_TAU[k];
+    e.rentPress[k] += (instant - e.rentPress[k]) / tau;
+
     // THE INCOME ANCHOR — the line that makes rent a by-product of the economy.
     //
     // Every other term here is a FLOW: sentiment, momentum, vacancy, jobs.
@@ -3056,7 +3075,7 @@ export function tickEcon(s: GameState) {
     // for — policing the REAL relationship between rent and pay — instead of
     // being asked to carry the whole price level on a spring.
     const escalation = (e.inflExp ?? 0.02) / 12;
-    const drift = c2.rentDrift * 0.55 + e.sectorMom[k] * 0.42 + vacTerm + scarcity
+    const drift = c2.rentDrift * 0.55 + e.sectorMom[k] * 0.42 + e.rentPress[k]
       + anchor + (jobDrift * 0.35) + escalation;
     // THE HALF-OF-BASE FLOOR IS NOW A GUARD AGAIN, WHICH IS ALL IT WAS EVER
     // MEANT TO BE. It used to be load-bearing and it used to be the reason the

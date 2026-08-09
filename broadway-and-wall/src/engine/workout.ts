@@ -223,11 +223,12 @@ export function cureWorkout(s: GameState, parcels: ParcelTable, bbl: string): { 
   if (!w || !h?.loan) return { s, err: "There is nothing in default there." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
-  if (fundableNow(s, parcels) < w.cure) {
-    return { s, err: `Curing it takes ${money(w.cure)} — cash and the line together are short ${money(w.cure - fundableNow(s, parcels))}.` };
+  // Equity cure: sponsor cheque only — not a revolver draw (see credit.ts).
+  if (fundableNow(s, parcels, { allowLoc: false }) < w.cure) {
+    return { s, err: `Curing it takes ${money(w.cure)} — cash is short ${money(w.cure - fundableNow(s, parcels, { allowLoc: false }))}.` };
   }
   const next = clone(s);
-  const paid = fundCashNeed(next, parcels, w.cure);
+  const paid = fundCashNeed(next, parcels, w.cure, { allowLoc: false });
   logBooks(next, "debtSvc", paid);
   const nh = next.holdings[bbl]!;
   if (w.cause === "balloon") { nh.loan = null; }
@@ -256,8 +257,8 @@ function autoCureIfFunded(s: GameState, parcels: ParcelTable, w: Workout): boole
   const h = s.holdings[w.bbl];
   const rec = resolveRec(parcels, s, w.bbl);
   if (!h?.loan || !rec) return false;
-  if (fundableNow(s, parcels) < w.cure) return false;
-  const paid = fundCashNeed(s, parcels, w.cure);
+  if (fundableNow(s, parcels, { allowLoc: false }) < w.cure) return false;
+  const paid = fundCashNeed(s, parcels, w.cure, { allowLoc: false });
   logBooks(s, "debtSvc", paid);
   if (w.cause === "balloon") h.loan = null;
   else {
@@ -270,8 +271,7 @@ function autoCureIfFunded(s: GameState, parcels: ParcelTable, w: Workout): boole
   bumpLenderRel(s, w.lender, 4);
   s.news.unshift({
     q: s.month, kind: "deal",
-    text: `Cured the default at ${rec.address} — ${money(w.cure)} to ${w.lender} out of the rest of the book`
-      + `${paid > 0 && s.loc && s.loc.balance > 0 ? " (and the line, where cash was short)" : ""}. `
+    text: `Cured the default at ${rec.address} — ${money(w.cure)} to ${w.lender} out of firm cash. `
       + `A funded sponsor does not lose a building to a calendar.`,
   });
   return true;

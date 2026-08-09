@@ -703,13 +703,14 @@ export function tickLoan(
    * loan agreements — an equity cure right — and its absence here meant the
    * game modelled the trap without modelling the obvious answer to it.
    *
-   * So: pay down principal to the covenant, out of cash the firm actually has
-   * — and out of the undrawn line when cash is short. It is not free and it is
-   * not a rail. It costs real money in the month it happens, it is bounded by
-   * fundable liquidity, and a firm that cannot afford it breaches exactly as
-   * before — sweep, workout desk, foreclosure. The difficulty this removes is
-   * the difficulty of being punished for something you had the money (or the
-   * line) to fix, which CLAUDE.md calls a wrong number rather than a hard one.
+   * So: pay down principal to the covenant out of cash the firm actually has.
+   * An equity cure is a sponsor cheque — paid-in capital, not a revolver draw;
+   * the line is for operations and keeping other loans current, and cross-
+   * default freezes using it to paper over a mortgage covenant. Rich firms
+   * with cash still cure; thin levered firms must feel leverage. It is not free
+   * and it is not a rail. It costs real money in the month it happens, it is
+   * bounded by fundable cash, and a firm that cannot afford it breaches
+   * exactly as before — sweep, workout desk, foreclosure.
    *
    * NO NEW CONSTANT. The cure target is the covenant itself. Debt service is
    * proportional to balance at a fixed rate and term — exactly so while
@@ -717,15 +718,15 @@ export function tickLoan(
    * by the same factor and lands DSCR on its minimum; the LTV leg is
    * `maxLTV x value` by definition. Whichever binds, binds.
    */
-  if (breached && fundableNow(s, parcels) > 0) {
+  if (breached && fundableNow(s, parcels, { allowLoc: false }) > 0) {
     const value = holdingValue(rec, s.econ, h, s.month);
     let target = loan.balance;
     if (d !== null && d < loan.minDSCR) target = Math.min(target, loan.balance * (d / loan.minDSCR));
     if (l !== null && l > loan.maxLTV && value > 0) target = Math.min(target, loan.maxLTV * value);
     const need = Math.ceil(loan.balance - target);
-    // Cash first, then the line — taken immediately so two breached buildings
-    // in the same month cannot both spend the same dollar or the same draw.
-    const pay = fundCashNeed(s, parcels, need);
+    // Cash only — sponsor cheque, not a line draw. Taken immediately so two
+    // breached buildings in the same month cannot both spend the same dollar.
+    const pay = fundCashNeed(s, parcels, need, { allowLoc: false });
     if (pay > 0) {
       loan.balance = Math.max(0, loan.balance - pay);
       logBooks(s, "debtSvc", pay);

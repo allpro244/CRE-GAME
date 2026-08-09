@@ -75,24 +75,30 @@ export function locAvailable(s: GameState, parcels: ParcelTable): number {
 /**
  * DRAW THE LINE TO COVER A CASH NEED, THEN TAKE THE MONEY.
  *
- * Debt service, equity cures and workout cures used to look only at `s.cash`.
- * A firm with an undrawn revolver and a weak building therefore walked into
- * foreclosure with the line sitting unused — the exact wrong-number the
- * owner reported (huge cash flow / liquidity, one property filed on over a
- * payment the firm could trivially fund).
+ * Debt service and shortfalls used to look only at `s.cash`. A firm with an
+ * undrawn revolver and a weak building therefore walked into foreclosure with
+ * the line sitting unused — the exact wrong-number the owner reported (huge
+ * cash flow / liquidity, one property filed on over a payment the firm could
+ * trivially fund).
  *
- * Order is the real one: operating cash first, then the line, then whatever
- * is still unpaid is unpaid. LOC draws are NOT booked to `borrowed` — that
- * bucket is mortgage/facility principal; conserve already sees the revolver
- * through `Δloc.balance`. Returns the dollars successfully funded (and
- * already deducted from cash).
+ * Order is the real one: operating cash first, then the line (when allowed),
+ * then whatever is still unpaid is unpaid. Equity cures pass `allowLoc: false`
+ * — a sponsor cheque / paid-in capital clause, not a revolver draw; the line
+ * is for operations and keeping other loans current. LOC draws are NOT booked
+ * to `borrowed` — that bucket is mortgage/facility principal; conserve already
+ * sees the revolver through `Δloc.balance`. Returns the dollars successfully
+ * funded (and already deducted from cash).
  */
-export function fundCashNeed(s: GameState, parcels: ParcelTable, amount: number): number {
+export function fundCashNeed(
+  s: GameState, parcels: ParcelTable, amount: number,
+  opts?: { allowLoc?: boolean },
+): number {
+  const allowLoc = opts?.allowLoc ?? true;
   const need = Math.max(0, Math.ceil(amount));
   if (need <= 0) return 0;
   if (!s.loc) s.loc = { balance: 0, drawnTotal: 0, interestPaid: 0 };
   const short = Math.max(0, need - Math.max(0, Math.floor(s.cash)));
-  if (short > 0) {
+  if (short > 0 && allowLoc) {
     const draw = Math.min(short, locAvailable(s, parcels));
     if (draw > 0) {
       s.loc.balance += draw;
@@ -109,9 +115,13 @@ export function fundCashNeed(s: GameState, parcels: ParcelTable, amount: number)
   return pay;
 }
 
-/** How much of `amount` the firm can fund right now (cash + undrawn line). */
-export function fundableNow(s: GameState, parcels: ParcelTable): number {
-  return Math.max(0, Math.floor(s.cash)) + locAvailable(s, parcels);
+/** How much the firm can fund right now (cash, plus undrawn line when allowed). */
+export function fundableNow(
+  s: GameState, parcels: ParcelTable,
+  opts?: { allowLoc?: boolean },
+): number {
+  const allowLoc = opts?.allowLoc ?? true;
+  return Math.max(0, Math.floor(s.cash)) + (allowLoc ? locAvailable(s, parcels) : 0);
 }
 
 /** Cover a negative cash balance from the line — same draw tickLoc used to do alone at month-end. */

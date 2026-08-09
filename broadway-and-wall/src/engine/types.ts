@@ -1092,6 +1092,10 @@ export interface Econ {
    *  Asking rents do not fall until the landlord has stared at the empty
    *  floor for half a year. */
   vacOverM?: Record<BuiltClass, number>;
+  /** EMA of vacTerm+scarcity that feeds the rent index — lease-quote lag.
+   *  Market pressure forms instantly; landlords adjust asking rents only after
+   *  trailing vacancy and unmet demand have sat on the quote sheet for months. */
+  rentPress?: Record<BuiltClass, number>;
   /** EFFECTIVE rent = asking x (1 - 0.14 x concIdx). Everything that PRICES a
    *  deal or VALUES an asset reads this; everything that reports the market
    *  headline reads rentIdx. */

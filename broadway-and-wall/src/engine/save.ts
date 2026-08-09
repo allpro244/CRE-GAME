@@ -52,12 +52,24 @@ function migrateExtendedPaper(state: GameState) {
   }
 }
 
+/** Pure save-shape migrations, also exported for a fast round-trip harness. */
+export function migrateSaveState(state: GameState): GameState {
+  migrateExtendedPaper(state);
+  if (state.varianceApp) {
+    state.varianceApps = {
+      ...(state.varianceApps ?? {}),
+      [state.varianceApp.bbl]: state.varianceApp,
+    };
+    delete state.varianceApp;
+  }
+  return state;
+}
+
 export async function loadGame(slot: string): Promise<GameState | null> {
   try {
     const rec = await tx<{ state: GameState } | undefined>("readonly", (s) => s.get(slot) as IDBRequest<{ state: GameState } | undefined>);
     if (!rec?.state) return null;
-    migrateExtendedPaper(rec.state);
-    return rec.state;
+    return migrateSaveState(rec.state);
   } catch {
     return null;
   }

@@ -315,6 +315,7 @@ function tierOf(rec: ParcelRecord, r: number): HolderTier {
 // is immutable and identity-stable for the run, so a WeakMap is the exact key
 // and lets abandoned towns be collected without a manual size cap.
 const REGISTRY = new WeakMap<ParcelTable, Map<number, Holder[]>>();
+const TIER_POOLS = new WeakMap<Holder[], Record<HolderTier, Holder[]>>();
 export function register(s: GameState, parcels: ParcelTable): Holder[] {
   let bySeed = REGISTRY.get(parcels);
   if (!bySeed) {
@@ -342,7 +343,13 @@ export function holderOf(s: GameState, parcels: ParcelTable, bbl: string): Holde
   if (!reg.length) return null;
   const r = hash01(bbl + ":t");
   const tier = tierOf(rec, r);
-  const pool = reg.filter((h) => h.tier === tier);
+  let pools = TIER_POOLS.get(reg);
+  if (!pools) {
+    pools = { major: [], middle: [], small: [] };
+    for (const h of reg) pools[h.tier].push(h);
+    TIER_POOLS.set(reg, pools);
+  }
+  const pool = pools[tier];
   if (!pool.length) return reg[Math.floor(hash01(bbl) * reg.length)];
   // AND CONCENTRATED WITHIN THE TIER TOO. A uniform pick makes every holder in
   // a band the same size, which is the one shape ownership never has: inside

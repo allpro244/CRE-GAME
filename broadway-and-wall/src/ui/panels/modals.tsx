@@ -96,8 +96,8 @@ function DefaultNoticeBody({
   const dismiss = () => setSeen({ ...seen, [`${open.bbl}:${open.stage}`]: true });
 
   return (
-    <div className="modal-backdrop">
-      <div className="modal" style={{ maxWidth: 660 }}>
+    <div className="modal-backdrop modal-layer-default">
+      <div className="modal" role="dialog" aria-modal="true" style={{ maxWidth: 660 }}>
         <div className="modal-kicker">{open.lender} · {monthLabel(game.month)}</div>
         <div className="modal-title">
           {filed ? `They have filed on ${rec.address}` : `Notice of default — ${rec.address}`}
@@ -208,8 +208,8 @@ function AuctionBody({
       lostyours: ["YOUR BUILDING WAS SOLD", " neg"],
     };
     return (
-      <div className="modal-backdrop">
-        <div className="modal" style={{ maxWidth: 660 }}>
+      <div className="modal-backdrop modal-layer-auction">
+        <div className="modal" role="dialog" aria-modal="true" style={{ maxWidth: 660 }}>
           <div className="modal-kicker">The hammer fell · {monthLabel(res.m)}</div>
           <div className="modal-title">{res.rows.length} lot{res.rows.length === 1 ? "" : "s"} you had a number on</div>
           <table className="tbl" style={{ marginTop: 8 }}>
@@ -262,8 +262,8 @@ function AuctionBody({
   const kindWord = (k: string) =>
     k === "note" ? "your foreclosure" : k === "yours" ? "YOUR BUILDING" : k === "bank" ? "bank foreclosure" : "receiver's lot";
   return (
-    <div className="modal-backdrop">
-      <div className="modal" style={{ maxWidth: 720 }}>
+    <div className="modal-backdrop modal-layer-auction">
+      <div className="modal" role="dialog" aria-modal="true" style={{ maxWidth: 720 }}>
         <div className="modal-kicker">The county foreclosure auction · {monthLabel(game.month)}</div>
         <div className="modal-title">
           {a.lots.length} lot{a.lots.length === 1 ? "" : "s"} cross the block
@@ -443,7 +443,7 @@ function AlertBody() {
   const queued = (game.alerts?.length ?? 1) - 1;
   return (
     <div className={"modal-backdrop alert-back" + (bad ? " alert-tint-bad" : "")}>
-      <div className={"modal alert-card " + (bad ? "alert-bad" : "alert-good")}>
+      <div className={"modal alert-card " + (bad ? "alert-bad" : "alert-good")} role="dialog" aria-modal="true">
         <div className="alert-kicker">{kicker}</div>
         <div className="modal-title">{a.title}</div>
         <div className="modal-sub">{monthLabel(a.q)}</div>
@@ -491,8 +491,8 @@ export function DecisionModal() {
   if (!awake && !outcome) return null;
   if (outcome) {
     return (
-      <div className="modal-backdrop">
-        <div className="modal">
+      <div className="modal-backdrop modal-layer-decision">
+        <div className="modal" role="dialog" aria-modal="true">
           <div className={"modal-kicker" + (outcome.ok ? "" : " kicker-inbound")}>
             {outcome.ok ? "Their answer" : "It did not go through"}
           </div>
@@ -540,8 +540,8 @@ function DecisionBody({
     const q = portfolioQuote(game, parcels, live.bbls);
     const inside = q.sumOfParts > 0 ? (1 - pb.price / q.sumOfParts) * 100 : 0;
     return (
-      <div className="modal-backdrop">
-        <div className="modal">
+      <div className="modal-backdrop modal-layer-decision">
+        <div className="modal" role="dialog" aria-modal="true">
           <div className="modal-kicker">◆ AN INDICATION ON YOUR PORTFOLIO — {live.bbls.length} buildings, one ticket</div>
           <div className="modal-title">{usd(pb.price)} from {pb.name}</div>
           <div className="modal-sub">Good until {monthLabel(pb.expiresM)}. Your ask is {usd(live.ask)}.</div>
@@ -623,8 +623,8 @@ function DecisionBody({
     };
     const isFinal = loi.stage === "countered";
     return (
-      <div className="modal-backdrop">
-        <div className="modal">
+      <div className="modal-backdrop modal-layer-decision">
+        <div className="modal" role="dialog" aria-modal="true">
           <div className="modal-kicker">
             {loi.referred ? "Referred by your desk · " : ""}
             {loi.kind === "renewal" ? "Renewal on the table" : "Letter of intent"}
@@ -692,8 +692,8 @@ function DecisionBody({
   const tq = saleTaxQuote(h, offer.price);
   const value = ownedHoldingValue(game, parcels, h);
   return (
-    <div className="modal-backdrop">
-      <div className="modal">
+    <div className="modal-backdrop modal-layer-decision">
+      <div className="modal" role="dialog" aria-modal="true">
         {/* WHICH DIRECTION THIS DEAL POINTS, before anything else on the card.
             An offer to buy YOUR building and a letter of intent you sent for
             somebody else's arrive in the same modal shape, and the player has

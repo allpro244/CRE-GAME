@@ -38,6 +38,8 @@ export const MODULES = [
   "tax",
   // history carries permanent sparse property chronicles.
   "history",
+  // save exposes pure migration steps for round-trip coverage.
+  "save",
 ];
 
 export function writeEntry(path) {

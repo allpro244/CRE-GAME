@@ -176,6 +176,19 @@ body {
   z-index: 20;
   box-shadow: var(--edge-top), var(--lift-3);
 }
+@media (max-width: 900px) {
+  .panel {
+    top: auto;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    width: auto;
+    max-height: 46vh;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+  }
+  .modal-backdrop { padding: 12px; align-items: flex-end; }
+  .modal { max-height: 88vh; overflow-y: auto; }
+}
 .panel-head { display: flex; justify-content: space-between; align-items: flex-start; }
 .panel-address {
   font-family: var(--serif); font-size: 20px; color: var(--ink);
@@ -711,6 +724,12 @@ body {
   display: flex; align-items: center; justify-content: center;
   padding: 28px;
 }
+/* One deterministic interruption stack. Several economic events can land in
+   the same month; priority must not depend on component render order. */
+.modal-layer-auction { z-index: 81; }
+.modal-layer-decision { z-index: 82; }
+.modal-layer-default { z-index: 83; }
+.alert-back { z-index: 84; }
 .modal {
   width: min(620px, 100%);
   background: var(--card);

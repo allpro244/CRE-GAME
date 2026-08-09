@@ -33,7 +33,15 @@ export default function GamePanels() {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
-      if (e.key === "Escape") { setPage("none"); return; }
+      if (e.key === "Escape") {
+        if (document.querySelector(".modal-backdrop")) {
+          useStore.setState({
+            toast: { text: "Use the card’s action or defer button before closing it.", kind: "err", at: Date.now() },
+          });
+        } else if (page !== "none") setPage("none");
+        else useStore.getState().select(null);
+        return;
+      }
       const st = useStore.getState();
       if (st.advancing) return;
       const wantsTime = e.code === "Space" || e.code === "KeyY" || e.code === "KeyN";
@@ -50,7 +58,7 @@ export default function GamePanels() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setPage]);
+  }, [page, setPage]);
   if (!hasGame) return null;
   const title = page === "portfolio" ? "Portfolio"
     : page === "deals" ? "The Deals Desk"

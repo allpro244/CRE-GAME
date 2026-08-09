@@ -198,7 +198,7 @@ export default function StartMenu() {
                     before overhead eats you. Firm overhead runs $57K a year at
                     the start and $131K by year seventeen, and a small building
                     trades around $0.5-2.5M, so these are five different
-                    openings rather than three settings. */}
+                    openings rather than difficulty settings. */}
                 <div className="start-col">
                   <div className="start-col-head">what you start with</div>
                   {START_CASH_CHOICES.map((v) => (

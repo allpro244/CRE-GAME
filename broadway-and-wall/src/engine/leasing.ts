@@ -2060,7 +2060,8 @@ function runAgent(s: GameState, parcels: ParcelTable) {
  * exclusive that stacked six points on top of four would charge you twice for
  * one transaction, and this does not, because there are two people here.
  *
- * The floor is the same 82% of market `runAgent` uses: a manager with a mandate
+ * The floor is the same player-set net-effective sign line `runAgent` uses
+ * (90% by default): a manager with a mandate
  * still will not sign a renewal well under the market — they refer it back, and
  * it becomes the owner's problem again, which is exactly what happens when the
  * number is bad enough to need a principal.

@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const checks = [
   ["attention and deadlines", "attention.mjs"],
+  ["interruption load", "attention-load.mjs", { HZ: "240" }],
   ["deterministic save and resume", "stress/33-determinism.mjs", { SEEDS: "550991", HZ: "120" }],
   ["save migration", "save-migration.mjs"],
   ["fundable foreclosure protection", "foreclose-funded.mjs"],
@@ -25,7 +26,7 @@ const checks = [
   ["tax appeals", "tax-appeal.mjs"],
   ["seller counters", "loi-counter.mjs"],
   ["development underwriting", "underwriting.mjs"],
-  ["multi-strategy invariant smoke", "invariants.mjs", { HORIZON: "120", SEEDS: "1" }],
+  ["multi-strategy invariant smoke", "invariants.mjs", { HORIZON: "240", SEEDS: "2" }],
 ];
 
 const results = [];

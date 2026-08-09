@@ -331,15 +331,6 @@ body {
   border-color: #1f544f;
 }
 
-/* ---- tabs ---- */
-.tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid rgba(146,110,40,0.25); }
-.tab {
-  font-family: var(--serif); font-size: 14px; background: none; border: none;
-  color: var(--ink-dim); padding: 4px 10px 7px; cursor: pointer;
-  border-bottom: 2px solid transparent; margin-bottom: -1px;
-}
-.tab-on { color: var(--ink); border-bottom-color: var(--gold); }
-
 /* ---- deal section ---- */
 .deal { margin-top: 14px; border-top: 1px solid rgba(146,110,40,0.25); padding-top: 10px; }
 .deal-head { font-family: var(--serif); font-size: 14px; color: var(--ink); margin-bottom: 8px; }
@@ -397,10 +388,6 @@ body {
   animation: stamp 0.25s ease-out;
 }
 .toast-err { border-color: #a8402e; color: #a8402e; font-family: system-ui, sans-serif; font-size: 13px; }
-@keyframes stamp {
-  from { transform: translateX(-50%) scale(1.25); opacity: 0; }
-  to { transform: translateX(-50%) scale(1); opacity: 1; }
-}
 
 /* ---- game over ---- */
 .gameover {
@@ -883,26 +870,6 @@ body {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* ---- foldable sections: the density stays, you choose what to look at ---- */
-.fold { margin-top: 20px; }
-.fold-head {
-  display: flex; align-items: baseline; gap: 8px; cursor: pointer;
-  border-bottom: 1px solid rgba(146,110,40,0.28); padding-bottom: 5px;
-  user-select: none;
-}
-.fold-head:hover { border-bottom-color: rgba(146,110,40,0.6); }
-.fold-caret { color: var(--gold); font-size: 11px; width: 10px; flex: none; }
-.fold-title {
-  font-family: var(--serif); font-size: 16px; color: var(--ink);
-  font-variant: small-caps; letter-spacing: 0.03em;
-}
-.fold-sub { font-size: 11.5px; color: var(--ink-dim); font-style: italic; }
-.fold-right { margin-left: auto; }
-.fold-body { padding-top: 4px; }
-/* a shut section should read as a closed drawer, not a missing one */
-.fold:not(.fold-open) .fold-head { border-bottom-color: rgba(146,110,40,0.14); }
-.fold:not(.fold-open) .fold-title { color: var(--ink-dim); }
-
 /* ---- the most urgent sentence in the run should not be a footnote ---- */
 .alarm {
   border-left: 3px solid #8e2c20;
@@ -995,21 +962,18 @@ body {
    The panels are parchment and the scrollbars were stock Chrome grey, which
    is the single loudest un-designed element on the screen the moment a list
    is long enough to scroll. */
-.panel, .neighbors-list, .page-body, .news {
+.panel, .neighbors-list, .news {
   scrollbar-width: thin;
   scrollbar-color: rgba(146, 110, 40, 0.42) transparent;
 }
 .panel::-webkit-scrollbar,
 .neighbors-list::-webkit-scrollbar,
-.page-body::-webkit-scrollbar,
 .news::-webkit-scrollbar { width: 9px; height: 9px; }
 .panel::-webkit-scrollbar-track,
 .neighbors-list::-webkit-scrollbar-track,
-.page-body::-webkit-scrollbar-track,
 .news::-webkit-scrollbar-track { background: transparent; }
 .panel::-webkit-scrollbar-thumb,
 .neighbors-list::-webkit-scrollbar-thumb,
-.page-body::-webkit-scrollbar-thumb,
 .news::-webkit-scrollbar-thumb {
   background: rgba(146, 110, 40, 0.36);
   border-radius: 6px;
@@ -1018,7 +982,6 @@ body {
 }
 .panel::-webkit-scrollbar-thumb:hover,
 .neighbors-list::-webkit-scrollbar-thumb:hover,
-.page-body::-webkit-scrollbar-thumb:hover,
 .news::-webkit-scrollbar-thumb:hover { background: rgba(146, 110, 40, 0.62); background-clip: content-box; }
 
 /* ---- map chrome ---------------------------------------------------------

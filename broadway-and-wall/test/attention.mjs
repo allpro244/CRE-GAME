@@ -103,6 +103,8 @@ base.month = 24;
     "500": { bbl: "500", lastCapitalCallM: g.month, lastCapitalCall: 750_000 },
   };
   g.locOverMs = 1;
+  g.cash = -25_000;
+  g.insolventMs = 4;
   const a = E.attentionItems(g);
   const k = new Set(a.map((x) => x.key));
   check([...k].some((x) => x.startsWith("nonrenew:400:")),
@@ -114,6 +116,12 @@ base.month = 24;
   check(k.has("line-over"), "over-advanced credit line stops the clock");
   check(a.some((x) => x.key.startsWith("nonrenew:") && x.label.includes("headcount")),
     "non-renewal stop preserves the economic reason");
+  check(a.some((x) => x.key.startsWith("capital-call:") && x.label.includes("$750K")),
+    "capital-call stop states the cash amount");
+  check(a.some((x) => x.key === "cash" && x.label.includes("month 4 of 12")),
+    "negative-cash stop explains the lender-seizure timeline");
+  check(new Set(a.map((x) => x.key)).size === a.length,
+    "simultaneous risks have unique attention keys");
 }
 
 console.log("");

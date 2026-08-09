@@ -215,10 +215,14 @@ for (let i = 0; i < N; i++) {
 // [x, y, lo, hi, sign, why]. `sign` is which way the pair moves together — see
 // bestLag. Vacancy against rent is the only negative one and getting it wrong
 // cost this file two runs.
+const [buildLo, buildHi] = E.BUILD_MONTHS[K];
 const PAIRS = [
   ["value", "orders", 6, 42, +1, "the asset market tells the space market to order more"],
   ["orders", "breaks", 0, 18, +1, "the queue: entitlement, design, a site, a lender"],
-  ["breaks", "deliv", 20, 40, +1, "the build period — a literal clock, and the control"],
+  // This is a literal clock, not a calibration band. Read the engine's
+  // class-specific construction schedule so the harness cannot claim that a
+  // 44-month office job is "too slow" while BUILD_MONTHS explicitly permits it.
+  ["breaks", "deliv", buildLo, buildHi, +1, "the build period — a literal clock, and the control"],
   ["deliv", "vac", 0, 18, +1, "space arrives empty, so simultaneous is CORRECT here"],
   ["vac", "rent", 3, 24, -1, "leases roll; landlords do not reprice on a vacancy print"],
   ["rent", "value", 0, 12, +1, "the cap rate moves with the tape"],

@@ -2,16 +2,17 @@ import { useState } from "react";
 import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
-import { holdingValue, monthlyNOI, managedRentPsfYr, resolveRec, collateralAsIs, capRateFor } from "@/engine/value";
+import { holdingValue, monthlyNOI, resolveRec, collateralAsIs, capRateFor } from "@/engine/value";
 import { saleTaxQuote } from "@/engine/actions";
 import { MILESTONES } from "@/engine/sim";
-import { loiSigningCost, exclusiveFeeRate, netEffectivePsf } from "@/engine/leasing";
+import { loiSigningCost, exclusiveFeeRate } from "@/engine/leasing";
 import { depositFor as auctionDepositFor } from "@/engine/auction";
 import { portfolioQuote } from "@/engine/portfolio";
 import { locAvailable } from "@/engine/credit";
 import { usd, sf } from "@/ui/format";
 import { PortfolioCap } from "@/ui/panels/PortfolioPage";
 import { physicalOcc, apMid, NWChart, Big, Row } from "@/ui/panels/shared";
+import { LoiCounterDraft, LoiTermsGrid, loiMarketPsf } from "@/ui/panels/LoiNegotiate";
 
 /**
  * THE JULY AUCTION — one card, once a year.
@@ -506,11 +507,9 @@ function DecisionBody({
   const parcels = useStore((s) => s.parcels);
   const { respondLoi, acceptOffer, declineOffer, counterSale } = useStore.getState();
   const [deferred, setDeferred] = useState<Set<number>>(new Set());
-  // the modal's counter sliders
+  // Lease counter draft — sliders live in LoiCounterDraft so the modal and
+  // the Deals page cannot drift apart.
   const [modalCounter, setModalCounter] = useState(false);
-  const [mcRent, setMcRent] = useState(0);
-  const [mcTi, setMcTi] = useState(0);
-  const [mcFree, setMcFree] = useState(0);
   // …and the same for an offer to buy one of yours. The card had Accept and
   // Decline and nothing between them, so the one move every seller alive makes
   // — pick up the phone once — could only be reached by dismissing the popup
@@ -593,28 +592,24 @@ function DecisionBody({
     const rec = resolveRec(parcels, game, loi.bbl);
     const h = game.holdings[loi.bbl];
     if (!rec || !h) return null;
-    // Market for THIS letter's use — not the blended building ask. A shop LOI
-    // judged against the tower's office blend looked absurdly cheap and the
-    // opposite mistake was just as common on office letters in mixed stock.
-    const market = managedRentPsfYr(rec, game.econ, h, loi.use);
-    const cost = loiSigningCost(loi, exclusiveFeeRate(h));
-    const annual = loi.rentPsf * loi.sf;
+    // Market for THIS letter's use — not the blended building ask. Same desk
+    // as DealsPage (LoiNegotiate), so the modal and the page never disagree.
+    const market = loiMarketPsf(game, parcels, loi);
+    const fee = exclusiveFeeRate(h);
+    const cost = loiSigningCost(loi, fee);
     const live = game.lois.filter((l) => !deferred.has(l.id));
     const idx = live.findIndex((l) => l.id === loi.id) + 1;
     const short = Math.max(0, Math.ceil((cost - game.cash) / 1000) * 1000);
     const line = locAvailable(game, parcels);
     const fundable = short > 0 && short <= line;
-    const tiCap = Math.max(loi.tiPsf, Math.round(loi.tiPsf * 1.4), loi.tiPsf > 0 ? 0 : Math.round(market * 0.35 * Math.max(1, loi.termM / 12)));
-    const freeCap = Math.max(loi.freeM, Math.min(Math.round(loi.termM * 0.2), loi.kind === "renewal" ? 6 : 12));
     // No latch here on purpose. Every branch of respondLOI removes the letter
     // from the desk, so a double click is harmless — and a latch that only
     // cleared when the state changed was locking the whole modal any time an
     // action came back with an error instead of a new state.
-    const act = (a: "accept" | "counter" | "decline") => {
+    const act = (a: "accept" | "decline") => {
       const r = respondLoi(loi.id, a, short > 0);
       if (r.msg) setOutcome({ text: r.msg, ok: r.ok });
     };
-    const prevRent = loi.kind === "renewal" && loi.tenantIdx !== undefined ? h.tenants[loi.tenantIdx]?.rentPsf : undefined;
     const isFinal = loi.stage === "countered";
     return (
       <div className="modal-backdrop">
@@ -624,140 +619,45 @@ function DecisionBody({
           <div className="modal-sub">
             {loi.sector} · credit {CREDIT_LABEL[loi.credit]} · wants {sf(loi.sf)} at {rec.address}
           </div>
-          <div className="grid">
-            {prevRent !== undefined && (
-              <Row
-                k="They pay today"
-                v={`$${prevRent.toFixed(2)}/sf → offering $${loi.rentPsf.toFixed(2)} (${loi.rentPsf >= prevRent ? "+" : ""}${(((loi.rentPsf / prevRent) - 1) * 100).toFixed(1)}%)`}
-                strong
-                bad={loi.rentPsf < prevRent}
-              />
-            )}
-            <Row k="Rent" v={`$${loi.rentPsf.toFixed(2)}/sf`} strong />
-            <Row
-              k="Recovery"
-              v={(loi.recovery ?? (loi.net ? "nnn" : "gross")) === "nnn" ? "triple net — they pay opex and taxes"
-                : (loi.recovery ?? "gross") === "base" ? "base-year stop — you keep today's expense level"
-                : "full gross — every expense is yours"}
-              bad={(loi.recovery ?? (loi.net ? "nnn" : "gross")) === "gross"}
-            />
-            <Row k="vs. your asking" v={`${((loi.rentPsf / market - 1) * 100).toFixed(1)}%`} bad={loi.rentPsf < market * 0.9} />
-            <Row k="Term" v={`${(loi.termM / 12).toFixed(1)} yrs, to ${monthLabel(game.month + loi.termM)}`} />
-            <Row k="Annual rent" v={usd(annual)} />
-            <Row k="TI allowance" v={`$${loi.tiPsf}/sf · ${usd(loi.tiPsf * loi.sf)}`} />
-            {loi.freeM > 0 && <Row k="Free rent" v={`${loi.freeM} months`} />}
-            <Row k="Cash to sign" v={usd(cost)} bad={cost > game.cash} strong />
-            {/* The exclusive is the one line item on this letter the player
-                signed up for months ago and will have forgotten, and it is the
-                only place the game ever says out loud what "the lease" is worth
-                — base rent over the whole term, which is what a commission is
-                struck on. Depth read rather than clicked. */}
-            {h.broker && (
-              <Row
-                k="Your exclusive"
-                v={`6% of ${usd(annual * (loi.termM / 12))} of base rent over the term — ${usd(Math.round(annual * (loi.termM / 12) * 0.06))}, inside the number above`}
-              />
-            )}
-            <Row k="Answer by" v={monthLabel(loi.expiresM)} />
-          </div>
-          <div className="modal-actions">
-            <button
-              className="btn btn-buy"
-              disabled={short > 0 && !fundable}
-              title={short > 0 ? (fundable ? `Draws ${usd(short)} on your line to cover the fit-out` : `You are short ${usd(short)} and the line only has ${usd(line)} left`) : undefined}
-              onClick={() => act("accept")}
-            >
-              {short > 0 && fundable ? `Draw ${usd(short)} and sign` : `Sign the lease · ${usd(cost)}`}
-            </button>
-            {!isFinal && !loi.countered && (
-              <button className="btn" title="Name your own rent, TI and free months." onClick={() => {
-                if (!modalCounter) {
-                  setMcRent(+(loi.rentPsf * 1.05).toFixed(2));
-                  setMcTi(loi.tiPsf);
-                  setMcFree(loi.freeM);
-                }
-                setModalCounter((v) => !v);
-              }}>
-                Counter…
+          <LoiTermsGrid loi={loi} game={game} market={market} feeRate={fee} />
+          {!modalCounter && (
+            <div className="modal-actions">
+              <button
+                className="btn btn-buy"
+                disabled={short > 0 && !fundable}
+                title={short > 0 ? (fundable ? `Draws ${usd(short)} on your line to cover the fit-out` : `You are short ${usd(short)} and the line only has ${usd(line)} left`) : undefined}
+                onClick={() => act("accept")}
+              >
+                {short > 0 && fundable ? `Draw ${usd(short)} and sign` : isFinal ? `Take their final · ${usd(cost)}` : `Sign the lease · ${usd(cost)}`}
               </button>
-            )}
-            <button className="btn" onClick={() => act("decline")}>Pass</button>
-            <button
-              className="btn"
-              title="Leave it on the desk and get back to it — it stays on the Deals page until it expires."
-              onClick={() => setDeferred((d) => new Set(d).add(loi.id))}
-            >
-              Decide later
-            </button>
-          </div>
+              {!isFinal && !loi.countered && (
+                <button className="btn" title="Name your own rent, TI and free months." onClick={() => setModalCounter(true)}>
+                  Counter…
+                </button>
+              )}
+              <button className="btn" onClick={() => act("decline")}>Pass</button>
+              <button
+                className="btn"
+                title="Leave it on the desk and get back to it — it stays on the Deals page until it expires."
+                onClick={() => setDeferred((d) => new Set(d).add(loi.id))}
+              >
+                Decide later
+              </button>
+            </div>
+          )}
           {modalCounter && !isFinal && !loi.countered && (
-            <>
-              {/* A COUNTER GOES DOWN AS WELL AS UP.
-                  The floor here was 90% of what the tenant had already
-                  offered, so the one move available to a landlord with vacant
-                  space and no money for a fit-out — cheap rent, no allowance —
-                  could not be typed into the game. It is the oldest trade in
-                  leasing and it belongs on the dial. */}
-              <Slider
-                label="Your rent"
-                value={mcRent || loi.rentPsf}
-                min={+(Math.min(loi.rentPsf, market) * 0.70).toFixed(2)}
-                max={+(Math.max(loi.rentPsf * 1.3, market * 1.2)).toFixed(2)}
-                step={0.25}
-                onChange={setMcRent}
-                format={(v) => `$${v.toFixed(2)}/sf · ${((v / market - 1) * 100).toFixed(0)}% vs market`}
-                marks={[{ at: loi.rentPsf, label: "their offer" }, { at: +market.toFixed(2), label: "market" }]}
-                hint={loi.kind === "renewal" ? "Moving is expensive — an incumbent bends further than a prospect." : "They read your number against the market, not against their own opener."}
-              />
-              {tiCap > 0 && (
-                <Slider
-                  label="TI allowance"
-                  value={mcTi}
-                  min={0}
-                  max={tiCap}
-                  step={1}
-                  onChange={setMcTi}
-                  format={(v) => `$${v}/sf · ${usd(v * loi.sf)}`}
-                  marks={loi.tiPsf > 0 ? [{ at: loi.tiPsf, label: "they asked" }] : []}
-                  hint="Cut fit-out to save cash, or offer more of it to buy a higher face rent — both move net effective."
-                />
-              )}
-              {freeCap > 0 && (
-                <Slider
-                  label="Free rent"
-                  value={mcFree}
-                  min={0}
-                  max={freeCap}
-                  step={1}
-                  onChange={setMcFree}
-                  format={(v) => v === 0 ? "none" : `${v} month${v === 1 ? "" : "s"}`}
-                  marks={[
-                    ...(loi.freeM > 0 ? [{ at: loi.freeM, label: "they asked" }] : []),
-                    { at: 0, label: "none" },
-                  ]}
-                  hint="Free months are rent by another name — cutting them raises net effective the same way a face-rent push does."
-                />
-              )}
-              {/* THE NUMBER THEY ARE ACTUALLY DECIDING ON. Rent, fit-out and
-                  free months are one deal. */}
-              <div className="hint">
-                Net effective ${netEffectivePsf(loi, mcRent || loi.rentPsf, mcTi, mcFree).toFixed(2)}/sf over {Math.max(1, Math.round(loi.termM / 12))} years —
-                {" "}{((netEffectivePsf(loi, mcRent || loi.rentPsf, mcTi, mcFree) / market - 1) * 100).toFixed(0)}% against the market for this space.
-                That is what they judge, not the face rent.
-              </div>
-              <div className="modal-actions">
-                <button className="btn btn-buy" onClick={() => { const r = respondLoi(loi.id, "counter", short > 0, { rentPsf: mcRent || loi.rentPsf, tiPsf: mcTi, freeM: mcFree }); if (r.msg) setOutcome({ text: r.msg, ok: r.ok }); setModalCounter(false); }}>
-                  Send the counter · ${(mcRent || loi.rentPsf).toFixed(2)}/sf{mcTi > 0 ? ` · TI $${mcTi}` : ""}{mcFree > 0 ? ` · ${mcFree}mo free` : ""}
-                </button>
-                <button
-                  className="btn"
-                  title="The number is firm and they know it. Firmer terms convert some hagglers — but nobody counters back a best and final: they sign it or they walk."
-                  onClick={() => { const r = respondLoi(loi.id, "counter", short > 0, { rentPsf: mcRent || loi.rentPsf, tiPsf: mcTi, freeM: mcFree, bestFinal: true }); if (r.msg) setOutcome({ text: r.msg, ok: r.ok }); setModalCounter(false); }}
-                >
-                  Best &amp; final
-                </button>
-              </div>
-            </>
+            <LoiCounterDraft
+              loi={loi}
+              market={market}
+              feeRate={fee}
+              fundShort={short > 0}
+              onSend={(c) => {
+                const r = respondLoi(loi.id, "counter", short > 0, c);
+                if (r.msg) setOutcome({ text: r.msg, ok: r.ok });
+                setModalCounter(false);
+              }}
+              onBack={() => setModalCounter(false)}
+            />
           )}
           <div className="modal-queue">
             {idx} of {live.length} on the desk

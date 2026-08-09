@@ -1364,7 +1364,7 @@ export function OffMarketCounter({ bbl, ask }: { bbl: string; ask: number }) {
         onChange={setFrac}
         format={() => `${usd(px)} · ${((frac - 1) * 100).toFixed(0)}%`}
         marks={[{ at: 0.88, label: "−12%" }, { at: 0.95, label: "−5%" }]}
-        hint="One shot. A shallow cut often lands or draws a softer ask; a deep one gets the phone hung up on you."
+        hint="One shot. Shallow cuts often land, or they come off their number a little. Deep cuts get the phone hung up."
       />
       <div className="btn-row">
         <button className="btn" onClick={() => useStore.getState().counterOff(bbl, px)}>

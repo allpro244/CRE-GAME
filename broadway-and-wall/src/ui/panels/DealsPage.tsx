@@ -3,7 +3,7 @@ import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import type { BuiltClass } from "@/engine/types";
-import { managedRentPsfYr, holdingNOIYr, resolveRec, asIfOwned } from "@/engine/value";
+import { holdingNOIYr, resolveRec, asIfOwned } from "@/engine/value";
 import { MAX_TALKS } from "@/engine/acquire";
 import { APPROACH_LIFE_M } from "@/engine/sim";
 import { loiSigningCost, exclusiveFeeRate, netEffectivePsf } from "@/engine/leasing";
@@ -11,6 +11,7 @@ import { usd, sf } from "@/ui/format";
 import { PortfolioSaleDesk } from "@/ui/panels/PortfolioPage";
 import { liveBrokerCalls } from "@/ui/panels/broker";
 import { Row } from "@/ui/panels/shared";
+import { LoiCounterDraft, loiMarketPsf, openingNe } from "@/ui/panels/LoiNegotiate";
 
 export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (bbl: string) => void }) {
   const game = useStore((s) => s.game)!;
@@ -18,16 +19,13 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
   const { respondLoi } = useStore.getState();
   const rec = parcels[loi.bbl];
   const [countering, setCountering] = useState(false);
-  const [cRent, setCRent] = useState(+(loi.rentPsf * 1.05).toFixed(2));
-  const [cTi, setCTi] = useState(loi.tiPsf);
-  const [cFree, setCFree] = useState(loi.freeM);
   const h = game.holdings[loi.bbl];
-  const liveRec = rec ? resolveRec(parcels, game, loi.bbl) : null;
-  const market = liveRec && h ? managedRentPsfYr(liveRec, game.econ, h, loi.use) : loi.rentPsf;
-  const tiCap = Math.max(loi.tiPsf, Math.round(loi.tiPsf * 1.4), loi.tiPsf > 0 ? 0 : Math.round(market * 0.35 * Math.max(1, loi.termM / 12)));
-  const freeCap = Math.max(loi.freeM, Math.min(Math.round(loi.termM * 0.2), loi.kind === "renewal" ? 6 : 12));
+  const market = loiMarketPsf(game, parcels, loi);
+  const fee = exclusiveFeeRate(h);
   const prevRent = loi.kind === "renewal" && loi.tenantIdx !== undefined ? h?.tenants[loi.tenantIdx]?.rentPsf : undefined;
   const final = loi.stage === "countered";
+  const theirNe = openingNe(loi);
+  const nowNe = netEffectivePsf(loi, loi.rentPsf, loi.tiPsf, loi.freeM);
   // WHO ELSE IS CHASING THIS SPACE. The entire point of a tour is that you can
   // only have one of them, so the card has to say so before you press Accept.
   const rivalsOnTour = loi.tourId === undefined ? 0
@@ -43,12 +41,13 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
       </div>
       <div className="loi-line mono">
         {(loi.sf / 1000).toFixed(1)}k sf · ${loi.rentPsf.toFixed(2)}/sf {loi.net ? "NNN" : "gross"} · {(loi.termM / 12).toFixed(0)} yrs
-        {loi.tiPsf > 0 && ` · TI $${loi.tiPsf}`}{loi.freeM > 0 && ` · ${loi.freeM}mo free`}
+        {loi.tiPsf > 0 ? ` · TI $${loi.tiPsf}` : " · no TI"}
+        {` · ${loi.freeM > 0 ? `${loi.freeM}mo free` : "no free rent"}`}
       </div>
       {prevRent !== undefined && (
-        <div className="loi-line mono" style={{ color: loi.rentPsf >= prevRent ? "#3a7d46" : "#a8402e" }}>
-          paying ${prevRent.toFixed(2)} today → offering ${loi.rentPsf.toFixed(2)}
-          {" "}({loi.rentPsf >= prevRent ? "+" : ""}{(((loi.rentPsf / prevRent) - 1) * 100).toFixed(1)}%)
+        <div className="loi-line mono" style={{ color: (loi.openRentPsf ?? loi.rentPsf) >= prevRent ? "#3a7d46" : "#a8402e" }}>
+          paying ${prevRent.toFixed(2)} today → offering ${(loi.openRentPsf ?? loi.rentPsf).toFixed(2)}
+          {" "}({(loi.openRentPsf ?? loi.rentPsf) >= prevRent ? "+" : ""}{((((loi.openRentPsf ?? loi.rentPsf) / prevRent) - 1) * 100).toFixed(1)}%)
         </div>
       )}
       {/* THE CONVERSATION, on the card. When they come back at you the card
@@ -57,86 +56,45 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
       {final && loi.askedRentPsf !== undefined && (
         <div className="loi-line mono" style={{ color: "#7a5c1e" }}>
           you asked ${loi.askedRentPsf.toFixed(2)}
-          {loi.askedTiPsf !== undefined && loi.openRentPsf !== undefined ? ` (they opened at $${loi.openRentPsf.toFixed(2)})` : ""}
+          {loi.askedTiPsf !== undefined ? ` · TI $${loi.askedTiPsf}` : ""}
+          {loi.askedFreeM ? ` · ${loi.askedFreeM}mo free` : ""}
+          {loi.openRentPsf !== undefined ? ` (opened $${loi.openRentPsf.toFixed(2)})` : ""}
           {" "}→ their final ${(loi.counterRentPsf ?? loi.rentPsf).toFixed(2)}/sf
           {loi.counterTiPsf !== undefined ? ` · TI $${loi.counterTiPsf}` : ""}
-          {loi.counterFreeM !== undefined && loi.counterFreeM > 0 ? ` · ${loi.counterFreeM}mo free` : ""}
+          {(loi.counterFreeM ?? 0) > 0 ? ` · ${loi.counterFreeM}mo free` : ""}
         </div>
       )}
+      {/* NE on the card BEFORE you open Counter — otherwise Accept is a blind
+          click against a face rent the tenant is not even judging. */}
+      <div className="loi-line mono">
+        NE ${nowNe.toFixed(2)}/sf
+        {" "}({((nowNe / market - 1) * 100).toFixed(0)}% vs market ~${market.toFixed(2)})
+        {!final && Math.abs(theirNe - nowNe) > 0.05 ? ` · opened NE $${theirNe.toFixed(2)}` : ""}
+      </div>
       <div className="loi-line mono dim">
-        market ~${market.toFixed(2)}/sf · signing costs {usd(loiSigningCost(loi, exclusiveFeeRate(h)))}{h?.broker ? " incl. the 6% exclusive" : ""} · answer by {monthLabel(loi.expiresM)}
+        signing costs {usd(loiSigningCost(loi, fee))}{h?.broker ? " incl. the 6% exclusive" : ""} · answer by {monthLabel(loi.expiresM)}
       </div>
       {countering && !final && !loi.countered && (
-        <>
-          {/* Down as well as up — see the note on the same slider in the card. */}
-          <Slider
-            label="Your rent"
-            value={cRent}
-            min={+(Math.min(loi.rentPsf, market) * 0.70).toFixed(2)}
-            max={+(Math.max(loi.rentPsf * 1.3, market * 1.2)).toFixed(2)}
-            step={0.25}
-            onChange={setCRent}
-            format={(v) => `$${v.toFixed(2)}/sf · ${((v / market - 1) * 100).toFixed(0)}% vs market`}
-            marks={[{ at: loi.rentPsf, label: "their offer" }, { at: +market.toFixed(2), label: "market" }]}
-            hint={cRent > market * 1.08 ? "Past market they walk fast — the space is only worth what the market says." : "Incumbents bend a little; new tenants don't."}
-          />
-          {tiCap > 0 && (
-            <Slider
-              label="TI allowance"
-              value={cTi}
-              min={0}
-              max={tiCap}
-              step={1}
-              onChange={setCTi}
-              format={(v) => `$${v}/sf · ${usd(v * loi.sf)}`}
-              marks={[
-                ...(loi.tiPsf > 0 ? [{ at: loi.tiPsf, label: "they asked" }] : []),
-                ...(loi.tiPsf > 2 ? [{ at: Math.round(loi.tiPsf / 2), label: "half" }] : []),
-              ]}
-              hint="Cut fit-out to save cash, or offer more of it to buy a higher face rent — both move net effective."
-            />
-          )}
-          {freeCap > 0 && (
-            <Slider
-              label="Free rent"
-              value={cFree}
-              min={0}
-              max={freeCap}
-              step={1}
-              onChange={setCFree}
-              format={(v) => v === 0 ? "none" : `${v} month${v === 1 ? "" : "s"}`}
-              marks={[
-                ...(loi.freeM > 0 ? [{ at: loi.freeM, label: "they asked" }] : []),
-                { at: 0, label: "none" },
-              ]}
-              hint="Free months are rent by another name — cutting them raises net effective the same way a face-rent push does."
-            />
-          )}
-          <div className="hint">
-            Net effective ${netEffectivePsf(loi, cRent, cTi, cFree).toFixed(2)}/sf over {Math.max(1, Math.round(loi.termM / 12))} years —
-            {" "}{((netEffectivePsf(loi, cRent, cTi, cFree) / market - 1) * 100).toFixed(0)}% against the market for this space.
-          </div>
-        </>
+        <LoiCounterDraft
+          loi={loi}
+          market={market}
+          feeRate={fee}
+          fundShort={loiSigningCost(loi, fee) > game.cash}
+          onSend={(c) => { respondLoi(loi.id, "counter", true, c); setCountering(false); }}
+          onBack={() => setCountering(false)}
+        />
       )}
-      <div className="btn-row">
-        <button className="btn btn-buy" onClick={() => respondLoi(loi.id, "accept", true)}>
-          {final ? "Take their final" : "Accept"}
-        </button>
-        {!loi.countered && !final && !countering && (
-          <button className="btn" onClick={() => { setCRent(+(loi.rentPsf * 1.05).toFixed(2)); setCTi(loi.tiPsf); setCFree(loi.freeM); setCountering(true); }}>Counter…</button>
-        )}
-        {countering && !final && !loi.countered && (
-          <>
-            <button className="btn" onClick={() => { respondLoi(loi.id, "counter", true, { rentPsf: cRent, tiPsf: cTi, freeM: cFree }); setCountering(false); }}>
-              Send · ${cRent.toFixed(2)}/sf{cTi > 0 ? ` · TI $${cTi}` : ""}{cFree > 0 ? ` · ${cFree}mo free` : ""}
-            </button>
-            <button className="btn" title="Sign it or walk — nobody counters back a best and final." onClick={() => { respondLoi(loi.id, "counter", true, { rentPsf: cRent, tiPsf: cTi, freeM: cFree, bestFinal: true }); setCountering(false); }}>
-              Best &amp; final
-            </button>
-          </>
-        )}
-        <button className="btn" onClick={() => respondLoi(loi.id, "decline")}>Pass</button>
-      </div>
+      {!countering && (
+        <div className="btn-row">
+          <button className="btn btn-buy" onClick={() => respondLoi(loi.id, "accept", true)}>
+            {final ? "Take their final" : "Accept"}
+          </button>
+          {!loi.countered && !final && (
+            <button className="btn" onClick={() => setCountering(true)}>Counter…</button>
+          )}
+          <button className="btn" onClick={() => respondLoi(loi.id, "decline")}>Pass</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -153,6 +111,7 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
   const game = useStore((s) => s.game)!;
   const { acceptOffer, declineOffer, counterSale } = useStore.getState();
   const [counter, setCounter] = useState(0);
+  const [countering, setCountering] = useState(false);
   const h = game.holdings[bbl];
   const offer = h?.sale?.offer;
   const suggested = offer ? Math.round(offer.price * 1.06) : 0;
@@ -189,11 +148,16 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
             <b>{usd(offer.price)}</b> offered{offer.from ? ` by ${offer.from}` : ""} · good until {monthLabel(offer.expiresM)}
             {" "}· {((offer.price / Math.max(1, ask) - 1) * 100).toFixed(1)}% against your ask
           </div>
-          <div className="btn-row">
-            <button className="btn btn-buy" onClick={() => acceptOffer(bbl)}>Accept {usd(offer.price)}</button>
-            <button className="btn" onClick={() => declineOffer(bbl)}>Decline</button>
-          </div>
-          {!offer.countered && (
+          {!countering && (
+            <div className="btn-row">
+              <button className="btn btn-buy" onClick={() => acceptOffer(bbl)}>Accept {usd(offer.price)}</button>
+              <button className="btn" onClick={() => declineOffer(bbl)}>Decline</button>
+              {!offer.countered && (
+                <button className="btn" onClick={() => { setCounter(suggested); setCountering(true); }}>Counter…</button>
+              )}
+            </div>
+          )}
+          {countering && !offer.countered && (
             <>
               <Slider
                 label="Counter"
@@ -211,9 +175,10 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
                 hint="Inside what the building is worth to them and they take it. A little over and they split it. Well over and they walk — and an unsolicited buyer takes the whole approach with them."
               />
               <div className="btn-row">
-                <button className="btn" onClick={() => counterSale(bbl, counter || suggested)}>
+                <button className="btn btn-buy" onClick={() => { counterSale(bbl, counter || suggested); setCountering(false); }}>
                   Counter at {usd(counter || suggested)}
                 </button>
+                <button className="btn" onClick={() => setCountering(false)}>Back</button>
               </div>
             </>
           )}
@@ -352,6 +317,10 @@ export function DealsPage() {
             <div className="mini-list">
               {game.leaseReplies.map((r, i) => {
                 const delta = (r.theirRentPsf - r.askedRentPsf) * r.sf;
+                const freeBit = (asked?: number, got?: number) =>
+                  asked || got
+                    ? ` · free ${asked ?? 0}→${got ?? asked ?? 0}mo`
+                    : "";
                 return (
                   <button key={i} className="neighbor" onClick={() => go(r.bbl)}>
                     <span className="neighbor-addr">
@@ -361,10 +330,10 @@ export function DealsPage() {
                     </span>
                     <span className="neighbor-meta mono">
                       {r.outcome === "took"
-                        ? `took your $${r.askedRentPsf.toFixed(2)}/sf — ${usd(r.askedRentPsf * r.sf)} a year on ${sf(r.sf)}`
+                        ? `took your $${r.askedRentPsf.toFixed(2)}/sf${r.askedFreeM ? ` / ${r.askedFreeM}mo free` : ""} — ${usd(r.askedRentPsf * r.sf)} a year on ${sf(r.sf)}`
                         : r.outcome === "walked"
                           ? `walked. You asked $${r.askedRentPsf.toFixed(2)} into a $${r.marketPsf.toFixed(2)} market — ${sf(r.sf)} still empty`
-                          : `came back at $${r.theirRentPsf.toFixed(2)} against your $${r.askedRentPsf.toFixed(2)} · ${delta >= 0 ? "+" : "−"}${usd(Math.abs(delta))} a year`}
+                          : `came back at $${r.theirRentPsf.toFixed(2)} against your $${r.askedRentPsf.toFixed(2)}${freeBit(r.askedFreeM, r.theirFreeM)} · ${delta >= 0 ? "+" : "−"}${usd(Math.abs(delta))} a year`}
                       {" · "}{monthLabel(r.m)}
                     </span>
                   </button>

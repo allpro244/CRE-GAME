@@ -2212,8 +2212,6 @@ export function tickEcon(s: GameState) {
     // MUCH.
     if (!e.cohorts) e.cohorts = { office: [], retail: [], multifamily: [], industrial: [] };
     if (!e.completions12) e.completions12 = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
-    const [bLo, bHi] = BUILD_MONTHS[k];
-
     // TWO SUPPLY UNIVERSES THAT NEVER MET, and this was the seam.
     //
     // This line pushed the month's construction into an anonymous cohort
@@ -2263,6 +2261,12 @@ export function tickEcon(s: GameState) {
       const lag = Math.round(eLo + jitter * (eHi - eLo));
       e.entitling[k].push({ m: s.month + lag, sf: Math.round(start) });
     }
+    // An entitled order has an eighteen-month expected shelf life. Decay the
+    // existing book by 1/18 each month before newly-ready work joins it. The
+    // old `min(book, thisMonthOrder * 18)` was not expiry: one weak month could
+    // erase years of already-entitled projects instantly, which made observed
+    // groundbreaks lead the orders that supposedly created them.
+    e.startOwed[k] *= 17 / 18;
     // …and what finished its entitlement this month joins the book a crane can
     // be pointed at.
     const ready = e.entitling[k];
@@ -2270,14 +2274,6 @@ export function tickEcon(s: GameState) {
     for (const p of ready) {
       if (p.m <= s.month) e.startOwed[k] += p.sf; else e.entitling[k].push(p);
     }
-    // A BACKLOG IS A BUFFER, NOT A LEDGER. Demand that has gone unmet for two
-    // years has not been sitting there waiting — the tenants found space
-    // somewhere else, or did not expand, and the market moved on. Left
-    // uncapped it accumulated forever: 8.1M square feet of permanently
-    // demanded, permanently unbuilt city by year fifty. Eighteen months of
-    // orders is a real order book; anything older has expired.
-    e.startOwed[k] = Math.min(e.startOwed[k], Math.round(start * 18) || 0);
-    void bLo; void bHi;
     const delivered = monthDeliveries[k];
     e.completions12[k] = e.completions12[k] * (11 / 12) + delivered;
     e.supplyPress = e.supplyPress ?? {};

@@ -18,6 +18,7 @@ import { takeoverDevelopment, buildClimate, farMaxFor } from "./dev";
 import { demandNow } from "./demand";
 import { recordComp } from "./comps";
 import { cancelSupplyProject, queueSupplyProject } from "./supply";
+import { recordPropertyEvent } from "./history";
 
 /**
  * WHO BUYS THE BUILDINGS THE PLAYER DOES NOT.
@@ -789,6 +790,11 @@ export function defaultGroundLease(
     h.service = h.service ?? 0;
     h.stance = h.stance ?? 0;
     h.plan = h.plan ?? 1;
+    recordPropertyEvent(s, bbl, {
+      kind: "default",
+      party: gl.tenant,
+      outcome: `Ground lease terminated; ${Math.round(standing.bldgArea).toLocaleString()} sf improvement reverted vacant`,
+    });
     raiseAlert(s, {
       kind: "ground",
       tone: "bad",
@@ -799,6 +805,11 @@ export function defaultGroundLease(
     });
   } else {
     if (s.built?.[bbl]) delete s.built[bbl];
+    recordPropertyEvent(s, bbl, {
+      kind: "default",
+      party: gl.tenant,
+      outcome: "Ground lease terminated; vacant land returned to fee-owner control",
+    });
     raiseAlert(s, {
       kind: "ground",
       tone: "bad",

@@ -980,6 +980,28 @@ export interface NewsItem {
   bbl?: string;
 }
 
+export type PropertyEventKind =
+  | "trade"
+  | "build-start"
+  | "delivered"
+  | "demolished"
+  | "default"
+  | "major-lease"
+  | "planning";
+
+/** Sparse permanent deed history; rolling news remains prose and may expire. */
+export interface PropertyEvent {
+  m: number;
+  kind: PropertyEventKind;
+  use?: string;
+  sf?: number;
+  floors?: number;
+  party?: string;
+  otherParty?: string;
+  amount?: number;
+  outcome?: string;
+}
+
 /**
  * SOMETHING HAPPENED THAT THE TAPE IS NOT LOUD ENOUGH FOR.
  *
@@ -2195,6 +2217,8 @@ export interface GameState {
   prevGav?: number;
   exits: Exit[];                             // every disposition, forced or chosen
   milestones: Record<string, number>;        // milestone id -> month achieved
+  /** Permanent per-deed events, capped per BBL by engine/history.ts. */
+  propertyLog?: Record<string, PropertyEvent[]>;
   // Every deed that has moved in this city, with the price. See comps.ts —
   // an appraisal is an opinion and a closed sale is a fact.
   comps?: Comp[];

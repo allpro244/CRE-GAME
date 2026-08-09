@@ -5,6 +5,7 @@ import { assetValue, initialCondition, ownedHoldingValue, resolveRec, rollQualit
 import { farMaxFor, maxFloorsFor, replacementCost } from "@/engine/dev";
 import { walt, unitStatus } from "@/engine/leasing";
 import { taxAppealQuote } from "@/engine/tax";
+import { describePropertyEvent, propertyTimeline } from "@/engine/history";
 import { usd, sf } from "@/ui/format";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { AssetHistory, WorkoutDesk, LandDesk } from "@/ui/panels/PropertyDesks";
@@ -39,6 +40,7 @@ export function PropertyPage() {
   const dsYr = (h?.loan?.monthlyPmt ?? 0) * 12;
   const dev = game.developments[bbl];
   const taxAppeal = h ? taxAppealQuote(game, parcels, bbl) : null;
+  const timeline = propertyTimeline(game, bbl);
   // WHICH DESKS THIS BUILDING HAS. A tab that would open on an empty page is
   // worse than no tab: it teaches the player that the page lies about where
   // things are. Assembly is the awkward one — the Land desk hides itself when
@@ -52,6 +54,7 @@ export function PropertyPage() {
     { key: "ops", label: "Operations", show: !!h && built },
     { key: "deal", label: h ? "Sell" : "Acquire", show: true },
     { key: "build", label: "Build", show: !!h && (rec.class === "land" || !!dev || ownsNeighbour) },
+    { key: "history", label: "Deed history", show: timeline.length > 0 },
   ];
   const shown = TABS.filter((t) => t.show);
   // A tab can disappear under you — you sell the neighbouring lot and Build
@@ -189,6 +192,29 @@ export function PropertyPage() {
       </div>
 
       {active === "money" && <AssetHistory bbl={bbl} />}
+      {active === "history" && (
+        <div className="page-section">
+          <div className="page-section-head">What has happened on this deed</div>
+          <div className="mini-list">
+            {timeline.map((event, i) => {
+              const row = describePropertyEvent(event);
+              return (
+                <div className="mini-row" key={`${event.m}:${event.kind}:${i}`}>
+                  <span>
+                    <strong>{row.title}</strong>
+                    <span className="dim"> · {row.detail}</span>
+                  </span>
+                  <span className="mono dim">{row.when}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="hint">
+            Trades, major leases, construction, planning decisions and enforcement stay with the property,
+            whoever owns it next. Your operating charts on Money cover only your own hold period.
+          </div>
+        </div>
+      )}
       {active === "build" && <LandDesk bbl={bbl} />}
       {active === "build" && dev && (
         <div className="page-section">

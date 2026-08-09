@@ -20,6 +20,7 @@ import type { Condition, GameState, Sector } from "./types";
 import type { Disclosure } from "./value";
 import { initialCondition, noiAfterTaxYr, holdingNOIYr, asIfOwned, disclosureFor, landPsfNow, resolveRec } from "./value";
 import { industryStress } from "./market";
+import { recordPropertyEvent } from "./history";
 
 export interface Comp {
   m: number;            // month it closed
@@ -64,6 +65,13 @@ export function recordComp(
   offMarket?: boolean,
 ) {
   if (!rec || price <= 0) return;
+  recordPropertyEvent(s, rec.bbl, {
+    kind: "trade",
+    party: buyer,
+    otherParty: seller,
+    amount: Math.round(price),
+    outcome: distress ? "distress sale" : offMarket ? "off-market" : "marketed",
+  });
   if (!s.comps) s.comps = [];
   const built = rec.class !== "land" && rec.bldgArea > 0;
   const cond = condition ?? initialCondition(rec);

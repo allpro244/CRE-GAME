@@ -10,6 +10,7 @@ import type { GameState } from "./types";
 import { cloneState, logBooks } from "./types";
 import { rng } from "./market";
 import { ownedHoldingValue, TAX_RATE } from "./value";
+import { recordPropertyEvent } from "./history";
 
 const COOLDOWN_M = 36;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -90,10 +91,20 @@ export function tickTaxAppeals(s: GameState, parcels: ParcelTable): void {
         text: `Tax appeal won: ${money(before)} assessment reduced to ${money(h.assessed)}. `
           + `About ${money(annual)} a year comes off the property-tax bill.`,
       });
+      recordPropertyEvent(s, h.bbl, {
+        kind: "planning",
+        amount: h.assessed,
+        outcome: `Tax appeal won; assessment reduced from ${money(before)} to ${money(h.assessed)}`,
+      });
     } else {
       s.news.unshift({
         q: s.month, kind: "warn", bbl: h.bbl,
         text: `Tax appeal denied. The ${money(h.assessed ?? app.assessedAtFile)} assessment stands and the filing cost is spent.`,
+      });
+      recordPropertyEvent(s, h.bbl, {
+        kind: "planning",
+        amount: h.assessed ?? app.assessedAtFile,
+        outcome: "Tax appeal denied; assessment stands",
       });
     }
   }

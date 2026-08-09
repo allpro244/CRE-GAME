@@ -31,6 +31,7 @@ import {
   queueSupplyProject,
   rescheduleSupplyProject,
 } from "./supply";
+import { recordPropertyEvent } from "./history";
 
 const clone = (s: GameState): GameState => cloneState(s);
 
@@ -1248,6 +1249,13 @@ export function startDevelopment(
     signed: [],
     events: 0,
   } satisfies Development;
+  recordPropertyEvent(next, bbl, {
+    kind: "build-start",
+    use,
+    sf: plan.sf,
+    floors: plan.floors,
+    party: firmShort(next),
+  });
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `Ground broken at ${rec.address}: ${plan.floors} floors, ${(plan.sf / 1000).toFixed(0)}k sf of ${use === "mixed" ? "mixed-use" : use} at ${plan.far} FAR on a ${contract === "gmp" ? "guaranteed max price" : "cost-plus"} contract. $${(plan.costTotal / 1e6).toFixed(1)}M budget, ${(plan.ltc * 100).toFixed(0)}% funded by ${plan.lender}, on spec. Delivery ${monthLabel(next.month + plan.months)}.`,
@@ -1780,6 +1788,13 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   s.delivered = (s.delivered ?? 0) + 1;
   const dmix = d.mix ?? devMix(d.use);
   s.built[d.bbl] = { class: dominantOf(dmix), mix: dmix, bldgArea: d.sf, floors: d.floors, yearBuilt: START_YEAR + Math.floor(s.month / 12), suites: d.suites, cov: d.coverage };
+  recordPropertyEvent(s, d.bbl, {
+    kind: "delivered",
+    use: dominantOf(dmix),
+    sf: d.sf,
+    floors: d.floors,
+    party: firmShort(s),
+  });
   // YOUR BUILDING IS SUPPLY TOO. A tower you deliver competes with everybody
   // else's space, including your own — and if you build enough of one class
   // you will move its vacancy against yourself, which is the correct lesson.
@@ -2724,8 +2739,21 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     addStock(e, cls as keyof typeof CITY_STOCK, -oldSf);
   }
   s.demolished = (s.demolished ?? 0) + 1;
+  recordPropertyEvent(s, bbl, {
+    kind: "demolished",
+    sf: oldSf,
+    use: cls,
+    outcome: `${rec!.yearBuilt || "Older"} building cleared for ${nextUse}`,
+  });
 
   (s.cityJobs ??= []).push({ bbl, use: nextUse, sf: nsf, floors: nfl, startM: s.month, deliverM: s.month + months, mix: tprog });
+  recordPropertyEvent(s, bbl, {
+    kind: "build-start",
+    use: nextUse,
+    sf: nsf,
+    floors: nfl,
+    party: "The city",
+  });
   // ...and the one delivery queue carries that same programme, whole.
   const teardownProgramme = programmeSf(nsf, tprog);
   queueSupplyProject(s, {
@@ -2818,6 +2846,17 @@ export function tickCityGrowth(
       class: dominantOf(cmix), mix: cmix, bldgArea: j.sf, floors: j.floors,
       yearBuilt: START_YEAR + Math.floor(s.month / 12),
     };
+    recordPropertyEvent(s, j.bbl, {
+      kind: "delivered",
+      use: dominantOf(cmix),
+      sf: j.sf,
+      floors: j.floors,
+      party: j.groundLease
+        ? (s.groundLeases?.[j.bbl]?.tenant ?? "Ground lessee")
+        : j.firmId
+          ? (s.rivals.find((r) => r.id === j.firmId)?.name ?? "Developer")
+          : "The city",
+    });
     s.cityBuilt.push(j.bbl);
     if (j.groundLease) {
       const gl = s.groundLeases?.[j.bbl];
@@ -3030,6 +3069,13 @@ export function tickCityGrowth(
     // nobody takes it, the city builds it the way it always did.
     const nearPlayer = (adjacency?.[bbl] ?? []).some((a) => !!s.holdings[a]);
     const claimed = claimJob(s, parcels, bbl, use, sf, floors, deliverM, nearPlayer, plan);
+    recordPropertyEvent(s, bbl, {
+      kind: "build-start",
+      use,
+      sf,
+      floors,
+      party: claimed?.name ?? "The city",
+    });
     if (!claimed && rng(s, "dev") < 0.4) {
       s.news.unshift({
         q: s.month, kind: "info",

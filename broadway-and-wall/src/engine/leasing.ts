@@ -14,6 +14,7 @@ import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_
 import { blendBy, commercialShare, dominantUse, mixOf, uses, useSf } from "./mix";
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable } from "./credit";
+import { recordPropertyEvent } from "./history";
 
 import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount } from "./absorption";
 
@@ -2286,6 +2287,15 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     text: `Signed${feeRate === AGENT_FEE ? " by your agent" : ""}: ${l.name} — ${l.sf.toLocaleString()} sf at ${rec.address}, $${l.rentPsf.toFixed(0)}/sf, ${(l.termM / 12).toFixed(0)} yrs${l.kind === "renewal" ? " (renewal)" : ""}. `
       + `Building is ${occPct.toFixed(0)}% let.${freeNote}`,
   });
+  if (l.sf >= Math.max(25_000, rec.bldgArea * 0.15)) {
+    recordPropertyEvent(s, l.bbl, {
+      kind: "major-lease",
+      party: l.name,
+      sf: l.sf,
+      amount: Math.round(l.rentPsf * l.sf),
+      outcome: `${Math.round(l.termM / 12)}-year ${l.kind}`,
+    });
+  }
 }
 
 export type LOIAction = "accept" | "counter" | "decline";

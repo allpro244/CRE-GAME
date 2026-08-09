@@ -36,6 +36,8 @@ export const MODULES = [
   "supply",
   // tax carries property-assessment appeals and board decisions.
   "tax",
+  // history carries permanent sparse property chronicles.
+  "history",
 ];
 
 export function writeEntry(path) {

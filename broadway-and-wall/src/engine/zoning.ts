@@ -27,6 +27,7 @@ import type { GameState, VarianceApplication } from "./types";
 import { logBooks, monthLabel, cloneState} from "./types";
 import { rng, rrange, NATURAL_VAC, RENT_BASE } from "./market";
 import { resolveRec, landValue, demandLinear, FAR_CEILING } from "./value";
+import { recordPropertyEvent } from "./history";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -291,6 +292,13 @@ function decideVariance(s: GameState, parcels: ParcelTable) {
   // years and everybody in the neighbourhood knows about it.
     if (!s.varianceLog) s.varianceLog = {};
     s.varianceLog[app.bbl] = { m: s.month, granted, far: app.grant, cost: app.cost };
+    recordPropertyEvent(s, app.bbl, {
+      kind: "planning",
+      amount: app.cost,
+      outcome: granted
+        ? `Variance granted: +${app.grant.toFixed(1)} FAR`
+        : `Variance refused: +${app.grant.toFixed(1)} FAR requested`,
+    });
     if (granted) {
       if (!s.variance) s.variance = {};
       s.variance[app.bbl] = +((s.variance[app.bbl] ?? 0) + app.grant).toFixed(2);

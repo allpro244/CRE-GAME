@@ -30,6 +30,7 @@ import { mixOf, useSf } from "./mix";
 import { MAX_FLOORS_BY_USE } from "./dev";
 import { SECTORS } from "./market";
 import { saleTaxQuote } from "./actions";
+import { PROPERTY_HISTORY_CAP } from "./history";
 
 export interface Violation {
   code: string;
@@ -163,6 +164,13 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
     if (!s.holdings[bbl]) bad("ground", at, "a ground lease on land you do not own");
     if (!fin(gl.rentYr) || gl.rentYr < 0) bad("ground", at, `ground rent ${gl.rentYr}`);
     if (gl.endM <= gl.startM) bad("ground", at, "a lease that ends before it starts");
+  }
+  for (const [bbl, events] of Object.entries(s.propertyLog ?? {})) {
+    if (!parcels[bbl]) bad("history", `property ${bbl}`, "history attached to a parcel that does not exist");
+    if (events.length > PROPERTY_HISTORY_CAP) bad("history", `property ${bbl}`, `${events.length} events exceed cap`);
+    for (const e of events) {
+      if (!fin(e.m) || e.m < 0 || e.m > s.month) bad("history", `property ${bbl}`, `event month ${e.m}`);
+    }
   }
 
   // ------------------------------------------------------------- the economy

@@ -99,7 +99,7 @@ export function NWChart({ data, height = 120 }: { data: number[]; height?: numbe
  * the lot, because there you are glancing rather than working.
  */
 
-export type PropTab = "summary" | "leasing" | "money" | "ops" | "deal" | "build";
+export type PropTab = "summary" | "leasing" | "money" | "ops" | "deal" | "build" | "history";
 
 export function annualPayment(principal: number, ratePct: number, years: number): number {
   const r = ratePct / 100 / 12;

@@ -283,9 +283,13 @@ function classFor(flavor, heat, rand) {
 // same streets read as a fishing village or a metropolis depending on four
 // numbers: how hard dear ground raises the ORDINARY building (mat), how tall a
 // tower roll comes out (tower), how often one fires (towerP), and where the
-// landmark peak is capped (peakCap, in floors). Everything downstream — stock,
-// the space market, land value — self-normalises off the parcels, so any
-// preset is a playable economy, not just a picture.
+// landmark peak is capped (peakCap, in floors). Stock, jobs and demand indexes
+// scale with what is standing so every preset stays a playable economy; the
+// PRICE LEVEL does not self-normalise — `initEcon` reads citywide floor
+// intensity off these parcels and opens wages, rents, costs and land from the
+// Ahlfeldt–Pietrostefani density elasticities (see market.ts). A Metropolis
+// is dearer than a Frontier town on the same island because the map is denser,
+// not because a menu label said so.
 // `vac` MULTIPLIES HOW MUCH OF THE TOWN IS STILL A HOLE IN THE GROUND, and it
 // belongs on this ladder because in life it is the same ladder. A town that has
 // not been built up yet is not merely shorter — it has gaps in it, whole

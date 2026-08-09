@@ -766,19 +766,81 @@ export function citySize(stock: Record<BuiltClass, number>): { jobs0: number; po
   return { jobs0: jobs, pop0 };
 }
 
+/**
+ * HOW BUILT-UP THE MAP IS, as floor area over lot area.
+ *
+ * Vacant lots count in the denominator with zero building, so a Frontier town
+ * (half the plat still dirt) reads lower than a Metropolis on the same island
+ * even before anyone looks at tower heights. This is the morphological density
+ * the space market was not reading — stock, jobs and population all scale with
+ * the build-out ladder, but demand indexes them to their own opening values, so
+ * the LEVEL of rents and wages never moved. Measured at seed 20261 on New
+ * Alden: Landing ~0.26, Frontier ~0.65, Young town ~1.25, Metropolis ~3.34.
+ */
+export function cityFloorIntensity(parcels: ParcelTable): number {
+  let lot = 0, bldg = 0;
+  for (const bbl in parcels) {
+    const r = parcels[bbl];
+    if (!r) continue;
+    lot += r.lotArea || 0;
+    if (r.class === "land" || !(r.floors > 0) || !(r.bldgArea > 0)) continue;
+    bldg += r.bldgArea;
+  }
+  return lot > 0 ? bldg / lot : 0;
+}
+
+/**
+ * OPENING PRICE LEVEL FROM MAP DENSITY — not a build-out dial.
+ *
+ * Ahlfeldt & Pietrostefani, "The economic effects of density: a synthesis"
+ * (Journal of Urban Economics, 2019), Table 6 recommended elasticities for
+ * high-income cities: wages 0.04, rents 0.15, with respect to a log-point of
+ * density. Construction-cost elasticity in that paper (0.55) bundles a
+ * STRUCTURE effect (taller buildings cost more per sf) that this engine
+ * already prices through `heightPremium` in value.ts — applying it again on
+ * `costIdx` would double-count. Local construction wages track the urban wage
+ * premium, so cost opens with the wage scale.
+ *
+ * The reference intensity is the fabric `RENT_BASE` was written for: a harbour
+ * young-town on the standard island (~1.25 citywide FAR including vacant
+ * lots). Intensity 1 leaves every index at 1; denser maps open dearer, emptier
+ * ones cheaper. Land opens at the same residual-shaped target the monthly
+ * landIdx tracker chases, so dirt is not a year behind the rents that price it.
+ */
+export const REF_CITY_FAR = 1.25;
+export const DENSITY_WAGE_ELAST = 0.04;
+export const DENSITY_RENT_ELAST = 0.15;
+
+export function densityPriceScales(cityFar: number): {
+  intensity: number; wage: number; rent: number; cost: number; land: number;
+} {
+  const intensity = clamp(cityFar / REF_CITY_FAR, 0.15, 6);
+  const wage = Math.pow(intensity, DENSITY_WAGE_ELAST);
+  const rent = Math.pow(intensity, DENSITY_RENT_ELAST);
+  const cost = wage;
+  const land = Math.pow(rent / Math.pow(cost, 0.35), 1.15);
+  return { intensity, wage, rent, cost, land };
+}
+
 export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   const CITY = parcels ? stockFromParcels(parcels) : { ...CITY_STOCK };
   const SIZE = citySize(CITY);
+  const dens = parcels ? densityPriceScales(cityFloorIntensity(parcels)) : densityPriceScales(REF_CITY_FAR);
   const econ: Econ = {
     indexRate: 5.4,
     phase: "expansion",
     phaseMLeft: 0,
     rumoredPhase: null,
     cycleDev: 0.1,
-    landIdx: 1.0,
+    landIdx: dens.land,
     capRate: { office: CAP_BASE.office, retail: CAP_BASE.retail, multifamily: CAP_BASE.multifamily, industrial: CAP_BASE.industrial },
-    rentIdx: { office: RENT_BASE.office, retail: RENT_BASE.retail, multifamily: RENT_BASE.multifamily, industrial: RENT_BASE.industrial },
-    costIdx: 1,
+    rentIdx: {
+      office: RENT_BASE.office * dens.rent,
+      retail: RENT_BASE.retail * dens.rent,
+      multifamily: RENT_BASE.multifamily * dens.rent,
+      industrial: RENT_BASE.industrial * dens.rent,
+    },
+    costIdx: dens.cost,
     sectorMom: { office: 0, retail: 0, multifamily: 0, industrial: 0 },
     pipeline: { office: 0, retail: 0, multifamily: 0, industrial: 0 },
     starts: { office: 0, retail: 0, multifamily: 0, industrial: 0 },
@@ -890,7 +952,8 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // reading population before the first tick would have inherited.
   econ.jobs0 = SIZE.jobs0; econ.pop0 = SIZE.pop0;
   econ.population = SIZE.pop0; econ.jobs = SIZE.jobs0; econ.unemployment = OPENING_UNEMP;
-  econ.wageIdx = 1; econ.outputIdx = 1; econ.cpi = 1;
+  // Wage (and cost) open at the density premium; output follows jobs × wage.
+  econ.wageIdx = dens.wage; econ.outputIdx = dens.wage; econ.cpi = 1;
   econ.industComp = 1;
   econ.nat = { infl: 0.021, inflExp: 0.02, unemp: 0.052, policy: 4.2,
                neutralReal: 0.019, shockM: 0, shockSev: 0, credibility: 0.8,
@@ -901,10 +964,28 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // WHICH DECADE YOU WALKED INTO. Applied last, so everything above is the
   // long-run baseline and this is the deliberate departure from it. Drawn from
   // the run seed on a private generator — see regime.ts for why that matters.
+  // Density sets the LEVEL; the era still multiplies rents and vacancy on top.
   {
     const era = applyEra(econ, s.seed, NATURAL_VAC as unknown as Record<string, number>);
     econ.eraKey = era.key; econ.eraLabel = era.label; econ.eraBlurb = era.blurb;
   }
+  // Land tracks the rent that actually opened (era-adjusted), not the pre-era
+  // density scale alone — same identity the monthly landIdx step chases.
+  {
+    const rentLevel = (econ.effRentIdx?.office ?? econ.rentIdx.office) / RENT_BASE.office;
+    econ.landIdx = clamp(
+      Math.pow(rentLevel / Math.pow(Math.max(0.35, econ.costIdx), 0.35), 1.15),
+      0.25, 40,
+    );
+  }
+  // Era rewrote vacancy; occupied has to match or month-zero vacancy is a lie.
+  for (const k of BUILT_CLASSES) {
+    const vac = econ.cityVac[k] ?? NATURAL_VAC[k];
+    econ.occupied[k] = econ.stock[k] * (1 - vac);
+    econ.pool[k] = econ.occupied[k];
+  }
+  econ.rentExp = { ...econ.rentIdx };
+  econ.effRentIdx = { ...econ.rentIdx };
   recordHistory(econ, 0);
   return econ;
 }

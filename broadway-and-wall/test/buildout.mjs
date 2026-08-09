@@ -15,6 +15,10 @@
 // exactly that stock. An emptier preset is only a legitimate option if the
 // engine still produces a city with jobs in it, rents on the board and firms
 // trading, rather than a division by something near zero.
+//
+// And it watches the opening PRICE LEVEL. Demand indexes cancel town size, so
+// without density→price in initEcon a Frontier town and a Metropolis open at
+// the same rent. That is the fault the gap check at the bottom catches.
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -32,9 +36,12 @@ const fin = (v) => Number.isFinite(v);
 console.log(`build-out ladder — ${CITY} seed ${SEED}, size ${SIZE}, economy run ${MONTHS}m\n`);
 console.log(
   "preset".padEnd(12) + "vacant".padStart(8) + "bldgs".padStart(8) + "medFl".padStart(7) +
-  "maxFl".padStart(7) + "M sf".padStart(9) + "  |" + "jobs".padStart(10) + "off rent".padStart(10) +
+  "maxFl".padStart(7) + "M sf".padStart(9) + "  |" + "m0 rent".padStart(9) + "m0 land".padStart(9) +
+  "wage".padStart(7) + "  |" + "jobs".padStart(10) + "off rent".padStart(10) +
   "vac".padStart(8) + "firms".padStart(7) + "listings".padStart(9) + "  health",
 );
+
+const openings = {};
 
 for (const d of DEVELOPMENT) {
   const built = makeCity(CITY, SEED, { size: SIZE, density: d.id });
@@ -58,6 +65,11 @@ for (const d of DEVELOPMENT) {
 
   // ...and now the half that matters: does a town this empty have an economy.
   let g = E.firstListings(E.newGame(SEED, parcels), parcels, bbls);
+  const e0 = g.econ;
+  const m0Rent = e0.rentIdx?.office ?? NaN;
+  const m0Land = e0.landIdx ?? NaN;
+  const m0Wage = e0.wageIdx ?? NaN;
+  openings[d.id] = { rent: m0Rent, land: m0Land, wage: m0Wage };
   const problems = [];
   for (let m = 0; m < MONTHS; m++) {
     if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };
@@ -86,10 +98,31 @@ for (const d of DEVELOPMENT) {
   console.log(
     d.id.padEnd(12) + pct(vacant, bbls.length).padStart(8) + String(bldgs).padStart(8) +
     String(medFl).padStart(7) + String(maxFl).padStart(7) + (sf / 1e6).toFixed(1).padStart(9) + "  |" +
+    (fin(m0Rent) ? m0Rent.toFixed(1) : "NaN").padStart(9) +
+    (fin(m0Land) ? m0Land.toFixed(2) : "NaN").padStart(9) +
+    (fin(m0Wage) ? m0Wage.toFixed(2) : "NaN").padStart(7) + "  |" +
     (fin(jobs) ? Math.round(jobs).toLocaleString() : "NaN").padStart(10) +
     (fin(offRent) ? offRent.toFixed(1) : "NaN").padStart(10) +
     (fin(offVac) ? (offVac * 100).toFixed(1) + "%" : "NaN").padStart(8) +
     String(firms).padStart(7) + String(listings).padStart(9) + "  " +
     (problems.length ? "BROKEN: " + problems.join("; ") : "ok"),
   );
+}
+
+// Frontier dirt and Metropolis towers are not the same city. Opening office
+// rent and landIdx must separate them — not by a menu coefficient, but because
+// citywide floor intensity fed the Ahlfeldt elasticities in initEcon.
+if (openings.frontier && openings.metropolis) {
+  const fr = openings.frontier, mt = openings.metropolis;
+  const rentGap = mt.rent / fr.rent;
+  const landGap = mt.land / fr.land;
+  console.log(`\nopening price ladder — Metropolis / Frontier: rent ×${rentGap.toFixed(2)}, landIdx ×${landGap.toFixed(2)}, wage ×${(mt.wage / fr.wage).toFixed(2)}`);
+  if (!(rentGap > 1.15)) {
+    console.error(`FAIL: Metropolis office rent must open materially above Frontier (got ×${rentGap.toFixed(3)})`);
+    process.exitCode = 1;
+  }
+  if (!(landGap > 1.15)) {
+    console.error(`FAIL: Metropolis landIdx must open materially above Frontier (got ×${landGap.toFixed(3)})`);
+    process.exitCode = 1;
+  }
 }

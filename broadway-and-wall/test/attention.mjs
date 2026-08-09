@@ -88,5 +88,33 @@ base.month = 24;
     "open foreclosure remains visible to auto-advance");
 }
 
+{
+  const g = structuredClone(base);
+  g.holdings["400"] = {
+    bbl: "400",
+    planCutM: g.month,
+    tenants: [{
+      name: "Longstanding Tenant", sector: "finance", credit: 2,
+      sf: 20_000, rentPsf: 40, net: true, startM: 0, endM: 30,
+      nonRenewM: g.month, nonRenewWhy: "their headcount no longer fits",
+    }],
+  };
+  g.developments = {
+    "500": { bbl: "500", lastCapitalCallM: g.month, lastCapitalCall: 750_000 },
+  };
+  g.locOverMs = 1;
+  const a = E.attentionItems(g);
+  const k = new Set(a.map((x) => x.key));
+  check([...k].some((x) => x.startsWith("nonrenew:400:")),
+    "tenant non-renewal notice stops the clock six months ahead");
+  check(k.has(`capital-plan:400:${g.month}`),
+    "unfunded property capital plan stops the clock");
+  check(k.has(`capital-call:500:${g.month}`),
+    "construction capital call stops the clock");
+  check(k.has("line-over"), "over-advanced credit line stops the clock");
+  check(a.some((x) => x.key.startsWith("nonrenew:") && x.label.includes("headcount")),
+    "non-renewal stop preserves the economic reason");
+}
+
 console.log("");
 process.exit(bad ? 1 : 0);

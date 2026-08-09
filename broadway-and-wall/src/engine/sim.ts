@@ -925,6 +925,20 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
   }
   for (const h of Object.values(s.holdings)) {
     if (h.sale?.offer) out.push({ key: `offer:${h.bbl}:${h.sale.offer.price}`, label: `Offer in hand — good until ${monthLabel(h.sale.offer.expiresM)}` });
+    for (const t of h.tenants) {
+      if (t.nonRenewM === s.month) {
+        out.push({
+          key: `nonrenew:${h.bbl}:${t.name}:${t.startM}:${t.nonRenewM}`,
+          label: `${t.name} will leave ${h.bbl} in six months — ${t.nonRenewWhy ?? "renewal declined"}`,
+        });
+      }
+    }
+    if (h.planCutM === s.month) {
+      out.push({
+        key: `capital-plan:${h.bbl}:${h.planCutM}`,
+        label: `${h.bbl} capital plan went unfunded — condition will deteriorate`,
+      });
+    }
     // A YEAR, NOT A QUARTER. Three months' notice on a balloon is not notice —
     // it is barely time to get an appraisal, let alone market a building. Real
     // lenders send a maturity letter six to twelve months out and real
@@ -956,6 +970,17 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
       out.push({
         key: "facility-sweep",
         label: `${s.facility.lender} facility covenant breach — portfolio cash flow at risk`,
+      });
+    }
+  }
+  for (const d of Object.values(s.developments ?? {})) {
+    if (d.lastCapitalCallM === s.month && (d.lastCapitalCall ?? 0) > 0) {
+      const n = d.lastCapitalCall ?? 0;
+      out.push({
+        key: `capital-call:${d.bbl}:${d.lastCapitalCallM}`,
+        label: `${d.bbl} construction capital call — ${n >= 1_000_000
+          ? `$${(n / 1_000_000).toFixed(2)}M`
+          : `$${Math.round(n / 1000)}K`} funded from cash`,
       });
     }
   }
@@ -1002,7 +1027,18 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
       out.push({ key: `npl:${n.id}:${n.toldM}`, label: `${n.obligor} has stopped paying on ${n.address}` });
     }
   }
-  if (s.cash < 0) out.push({ key: "cash", label: "Cash is negative" });
+  if ((s.locOverMs ?? 0) > 0) {
+    out.push({ key: "line-over", label: "Credit line is over-advanced — the lender requires a paydown" });
+  }
+  if (s.cash < 0) {
+    const ms = s.insolventMs ?? 0;
+    out.push({
+      key: "cash",
+      label: ms > 0
+        ? `Cash is negative — insolvency month ${ms} of 12 before lender seizure`
+        : "Cash is negative — the insolvency clock has started",
+    });
+  }
   for (const [id] of Object.entries(s.milestones)) {
     if (s.milestones[id] === s.month) out.push({ key: `mile:${id}`, label: "Milestone reached" });
   }

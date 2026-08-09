@@ -223,6 +223,10 @@ export function DealsPage() {
     if (h.loan && (h.loan.maturityM - q <= 24 || h.loan.sweep)) maturities.push({ bbl: h.bbl, matM: h.loan.maturityM, bal: h.loan.balance, sweep: h.loan.sweep });
     if (h.sale) sales.push({ bbl: h.bbl, ask: h.sale.ask, offer: h.sale.offer });
   }
+  const facilityWatch = game.facility
+    && (game.facility.maturityM - q <= 24 || game.facility.sweep || game.facility.breachedSince !== undefined)
+    ? game.facility
+    : null;
 
   return (
     <div>
@@ -408,15 +412,27 @@ export function DealsPage() {
           {expiring.length === 0 && <div className="hint">No near-term expirations.</div>}
         </div>
 
-        <div className="page-section" style={{ marginTop: 18 }}>Debt watch · {maturities.length}</div>
+        <div className="page-section" style={{ marginTop: 18 }}>Debt watch · {maturities.length + (facilityWatch ? 1 : 0)}</div>
         <div className="mini-list">
+          {facilityWatch && (
+            <button className="neighbor" onClick={() => setPage("debt")}>
+              <span className="neighbor-addr">
+                {facilityWatch.sweep || facilityWatch.breachedSince !== undefined ? "⚠ " : ""}
+                Portfolio facility · {facilityWatch.lender}
+              </span>
+              <span className="neighbor-meta mono">
+                {usd(facilityWatch.balance)} · balloon {monthLabel(facilityWatch.maturityM)}
+                {facilityWatch.sweep || facilityWatch.breachedSince !== undefined ? " · BREACH" : ""}
+              </span>
+            </button>
+          )}
           {maturities.map((m, i) => (
             <button key={i} className="neighbor" onClick={() => go(m.bbl)}>
               <span className="neighbor-addr">{m.sweep ? "⚠ " : ""}{parcels[m.bbl]?.address}</span>
               <span className="neighbor-meta mono">{usd(m.bal)} · balloon {monthLabel(m.matM)}{m.sweep ? " · SWEEP" : ""}</span>
             </button>
           ))}
-          {maturities.length === 0 && <div className="hint">No balloons or breaches on the radar.</div>}
+          {maturities.length === 0 && !facilityWatch && <div className="hint">No balloons or breaches on the radar.</div>}
         </div>
       </section>
       </div>

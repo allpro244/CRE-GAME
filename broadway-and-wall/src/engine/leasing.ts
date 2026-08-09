@@ -1286,6 +1286,8 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // fits them. And the notice says which of those it was.
       const ri = renewalIntent(s, rec, h, t);
       if (rng(s, "leasing") > ri.p) {
+        t.nonRenewM = q;
+        t.nonRenewWhy = ri.why[0];
         // WHERE THEY WENT. A tenant who leaves you does not evaporate — they
         // take space in somebody else's building, and knowing WHOSE turns
         // churn into rivalry. The destination is a plausible same-class
@@ -2286,7 +2288,7 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
   s.news.unshift({
     q: s.month, kind: "deal",
     text: `Signed${feeRate === AGENT_FEE ? " by your agent" : ""}: ${l.name} — ${l.sf.toLocaleString()} sf at ${rec.address}, $${l.rentPsf.toFixed(0)}/sf, ${(l.termM / 12).toFixed(0)} yrs${l.kind === "renewal" ? " (renewal)" : ""}. `
-      + `Building is ${occPct.toFixed(0)}% let.${freeNote}`,
+      + `Building is ${occPct.toFixed(0)}% let. Upfront TI and commission: ${money(cost)}.${freeNote}`,
   });
   if (l.sf >= Math.max(25_000, rec.bldgArea * 0.15)) {
     recordPropertyEvent(s, l.bbl, {

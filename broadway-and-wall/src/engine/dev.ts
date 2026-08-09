@@ -1790,7 +1790,19 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
       // capital call is actually for.
       s.cash -= fromEquity + unfunded;
       logBooks(s, "dev", fromEquity + unfunded);
-      if (unfunded > 0) d.equitySpent += unfunded;
+      if (unfunded > 0) {
+        d.equitySpent += unfunded;
+        d.lastCapitalCall = unfunded;
+        d.lastCapitalCallM = s.month;
+        s.news.unshift({
+          q: s.month,
+          kind: "warn",
+          text: `${rec.address} called ${unfunded >= 1_000_000
+            ? `$${(unfunded / 1_000_000).toFixed(2)}M`
+            : `$${Math.round(unfunded / 1000)}K`} of additional equity this month. `
+            + `The construction budget has outrun its remaining equity and loan commitment; cash funded the gap.`,
+        });
+      }
     }
 
     // INTEREST, AND WHO PAYS IT BEFORE THE BUILDING OPENS. Nobody. It accrues

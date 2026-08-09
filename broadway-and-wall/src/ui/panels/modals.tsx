@@ -477,7 +477,9 @@ function AlertBody() {
 function decisionAwake(g: ReturnType<typeof useStore.getState>["game"], popupsOff: boolean): boolean {
   if (!g || g.gameOver || popupsOff) return false;
   if (g.portfolioSale?.bids?.[0]) return true;
-  if (!g.agent && g.lois.length > 0) return true;
+  // An agent suppresses routine letters, not the ones it explicitly referred
+  // back to the principal. Those still expire and still require a decision.
+  if (g.lois.some((l) => !g.agent || l.referred)) return true;
   for (const h of Object.values(g.holdings)) {
     if (h.sale?.offer) return true;
   }

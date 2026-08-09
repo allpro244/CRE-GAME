@@ -105,6 +105,10 @@ export interface Tenant {
   askedM?: number;
   /** When they last asked for rent relief — nobody re-opens a lease twice in four years. */
   reliefAskedM?: number;
+  /** Month the tenant gave notice that it will not renew. */
+  nonRenewM?: number;
+  /** The principal economic reason given with that notice. */
+  nonRenewWhy?: string;
   /**
    * THE MONTH YOU TURNED THEM DOWN. A tenant who asked for relief and did not
    * get it does not forget it: they run leaner, they fail more (see pFail),
@@ -607,6 +611,9 @@ export interface Development {
   leaseUpReserve?: number;
   equityBudget: number;   // your share of the budget
   equitySpent: number;
+  /** Most recent borrower capital call caused by a construction funding gap. */
+  lastCapitalCall?: number;
+  lastCapitalCallM?: number;
   /**
    * THE DAY-ONE CHEQUE, STILL SITTING IN THE JOB.
    *

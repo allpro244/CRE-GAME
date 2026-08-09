@@ -6,6 +6,7 @@ import type { GameState } from "@/engine/types";
 import type { ParcelTable, Adjacency } from "@/data/types";
 import { holdingValue, resolveRec, landPsfNow, landRead, plateEfficiency } from "@/engine/value";
 import { workoutMood } from "@/engine/workout";
+import { fundableNow, locAvailable } from "@/engine/credit";
 import { SECTOR_LABEL } from "@/engine/market";
 import { LineChart } from "@/ui/Chart";
 import { USE_WORD } from "@/engine/mix";
@@ -192,6 +193,13 @@ export function WorkoutDesk({ bbl }: { bbl: string }) {
   const paydown = Math.round(bal * mood.paydownPct);
   const equity = value - bal;
   const filed = w.stage === "foreclosure";
+  // Equity cures are cash-only; arrears/balloon catch-ups may draw the line —
+  // the Cure button used to look at cash alone and tell a funded sponsor they
+  // were short while the revolver sat open.
+  const allowLoc = w.cause !== "covenant";
+  const liquidity = Math.max(0, Math.floor(game.cash)) + (allowLoc ? locAvailable(game, parcels) : 0);
+  const canCure = liquidity >= w.cure;
+  const couponOk = fundableNow(game, parcels) >= h.loan.monthlyPmt;
   return (
     <div className="page-section">
       <div className="page-section-head neg">
@@ -206,7 +214,9 @@ export function WorkoutDesk({ bbl }: { bbl: string }) {
             : "The payments stopped."}{" "}
         {filed
           ? `They have filed. The auction is set for ${monthLabel(w.decideM)} — ${monthsLeft} month${monthsLeft === 1 ? "" : "s"} from now — and an auction fetches less than a distress sale does, because everybody bidding knows the seller has no choice at all.`
-          : `You have until ${monthLabel(w.decideM)}, ${monthsLeft} month${monthsLeft === 1 ? "" : "s"}, before they file.`}
+          : couponOk
+            ? `The coupon is fundable — they will not file while you keep it current. Cure it outright, refinance, or sell before that changes.`
+            : `You have until ${monthLabel(w.decideM)}, ${monthsLeft} month${monthsLeft === 1 ? "" : "s"}, before they file.`}
       </div>
       <div className="grid" style={{ marginBottom: 10 }}>
         <Row k="Balance owed" v={usd(bal)} strong />
@@ -214,12 +224,13 @@ export function WorkoutDesk({ bbl }: { bbl: string }) {
         <Row k="Equity behind it" v={usd(equity)} bad={equity < 0} strong={equity > 0} />
         <Row k="Paper" v={h.loan.recourse ? "recourse — a shortfall follows you" : "non-recourse — the keys are the answer"}
           bad={h.loan.recourse} />
-        <Row k="To cure it outright" v={usd(w.cure)} bad={game.cash < w.cure} />
+        <Row k="To cure it outright" v={usd(w.cure)} bad={!canCure} />
+        <Row k={allowLoc ? "Liquidity (cash + line)" : "Cash on hand"} v={usd(liquidity)} bad={!canCure} />
       </div>
       <div className="hint" style={{ marginBottom: 8 }}>{mood.why}</div>
       <div className="btn-row">
-        <button className="btn" disabled={game.cash < w.cure} onClick={() => cureDefault(bbl)}
-          title={game.cash < w.cure ? `You are ${usd(w.cure - game.cash)} short` : "Pay it and the file closes"}>
+        <button className="btn" disabled={!canCure} onClick={() => cureDefault(bbl)}
+          title={!canCure ? `You are ${usd(w.cure - liquidity)} short` : "Pay it and the file closes"}>
           Cure — {usd(w.cure)}
         </button>
         {!filed && w.asks < 1 && (

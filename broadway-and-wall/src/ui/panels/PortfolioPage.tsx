@@ -6,6 +6,7 @@ import type { BuiltClass } from "@/engine/types";
 import { holdingValue, managedRentPsfYr, holdingNOIYr, resolveRec } from "@/engine/value";
 import { unitStatus, avgUnitSf } from "@/engine/leasing";
 import { payoffQuote } from "@/engine/notes";
+import { fundableNow } from "@/engine/credit";
 import { portfolioQuote } from "@/engine/portfolio";
 import type { PortfolioQuote } from "@/engine/portfolio";
 import { usd, sf } from "@/ui/format";
@@ -212,6 +213,8 @@ export function PortfolioPage() {
         <div className="alarm" style={{ marginTop: 10 }}>
           {Object.values(game.workouts!).map((w) => {
             const r = resolveRec(parcels, game, w.bbl);
+            const loan = game.holdings[w.bbl]?.loan;
+            const couponOk = !!loan && fundableNow(game, parcels) >= loan.monthlyPmt;
             return (
               <div key={w.bbl} className="neg" style={{ cursor: "pointer" }} onClick={() => go(w.bbl)}>
                 {(() => {
@@ -231,7 +234,9 @@ export function PortfolioPage() {
                   ? `has filed. Auction ${monthLabel(w.decideM)}.`
                   : w.stage === "forbearance"
                     ? `extended it to ${monthLabel(w.decideM)}.`
-                    : `opened a file. They can file from ${monthLabel(w.decideM)}.`} Curing it takes {usd(w.cure)}.
+                    : couponOk
+                      ? `opened a file. The coupon is current — they will not file while it stays that way.`
+                      : `opened a file. They can file from ${monthLabel(w.decideM)}.`} Curing it takes {usd(w.cure)}.
               </div>
             );
           })}
@@ -441,7 +446,10 @@ export function PortfolioPage() {
                   thirty-building book that is not a warning, it is a scavenger
                   hunt with a foreclosure at the end of it. */}
               <td className={wk ? "neg" : "dim"}>
-                {[wk ? (wk.stage === "foreclosure" ? "⚠ FORECLOSURE" : wk.stage === "forbearance" ? "⚠ EXTENDED" : "⚠ DEFAULT") : null,
+                {[wk ? (wk.stage === "foreclosure" ? "⚠ FORECLOSURE"
+                  : wk.stage === "forbearance" ? "⚠ EXTENDED"
+                  : (h.loan && fundableNow(game, parcels) >= h.loan.monthlyPmt) ? "⚠ DEFAULT · CURRENT"
+                  : "⚠ DEFAULT") : null,
                   dv ? "UNDER CONSTRUCTION" : null,
                   h.loan?.sweep ? "SWEEP" : null, h.sale ? "LISTED" : null,
                   h.renovatingUntilM !== undefined && game.month < h.renovatingUntilM ? "RENO" : null,
@@ -452,7 +460,11 @@ export function PortfolioPage() {
                   return g ? <div className="mono" style={{ fontSize: 11 }}>{g.tenant} · reverts {monthLabel(g.endM)}</div> : null;
                 })()}
                 {wk && <div className="mono" style={{ fontSize: 11 }}>
-                  {wk.stage === "foreclosure" ? "auction" : "they file"} {monthLabel(wk.decideM)}
+                  {wk.stage === "foreclosure"
+                    ? `auction ${monthLabel(wk.decideM)}`
+                    : (h.loan && fundableNow(game, parcels) >= h.loan.monthlyPmt)
+                      ? "coupon current — will not file"
+                      : `they file ${monthLabel(wk.decideM)}`}
                 </div>}
                 {dv && <div className="mono" style={{ fontSize: 11 }}>
                   {(dv.sf / 1000).toFixed(0)}k sf · delivers {monthLabel(dv.deliverM)}

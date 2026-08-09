@@ -277,10 +277,28 @@ function refreshCureAmount(s: GameState, parcels: ParcelTable, w: Workout): void
   if (w.cause === "covenant") {
     w.cure = Math.max(equityCureNeed(rec, s, h), Math.round(h.loan.balance * 0.03));
   } else if (w.cause === "balloon") {
-    w.cure = Math.round(h.loan.balance * 1.01);
+    // Once filed, default interest has been running against the collateral —
+    // reinstatement is principal plus what the meter added, not last quarter's
+    // notice number.
+    w.cure = Math.round(h.loan.balance * 1.01 + (w.accrued ?? 0));
   } else if (w.cause === "arrears") {
-    w.cure = Math.round(h.loan.monthlyPmt * Math.max(3, h.loan.arrearsMs ?? 3));
+    const months = Math.max(3, h.loan.arrearsMs ?? 3);
+    w.cure = Math.round(h.loan.monthlyPmt * months + (w.accrued ?? 0));
   }
+}
+
+/**
+ * Can the firm write this month's coupon out of cash and the line?
+ *
+ * The owner's standing rule: a property in default is NOT at risk of
+ * foreclosure while the sponsor can fund the monthly debt service (and, when
+ * a catch-up is sitting on the file, the accumulated principal and interest).
+ * Lenders trap cash and demand a cure; they do not auction a note that is
+ * being paid. monthCF already books the coupon — this only asks whether the
+ * cheque can clear.
+ */
+function couponFundable(s: GameState, parcels: ParcelTable, h: { loan: { monthlyPmt: number } | null }): boolean {
+  return !!h.loan && fundableNow(s, parcels) >= h.loan.monthlyPmt;
 }
 
 export function cureWorkout(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string; msg?: string } {
@@ -323,6 +341,19 @@ function autoCureIfFunded(s: GameState, parcels: ParcelTable, w: Workout): boole
   if (paid < w.cure) return false;
   applyCurePayment(s, w, paid, rec.address);
   return true;
+}
+
+/**
+ * Pull every foreclosure the firm can reinstate off the docket — called
+ * BEFORE the August hammer, because the county used to settle the sale in
+ * the same tick the cure cheque would have cleared after NOI hit.
+ */
+export function reinstateFundedForeclosures(s: GameState, parcels: ParcelTable): void {
+  if (!s.workouts) return;
+  for (const w of Object.values(s.workouts)) {
+    if (w.stage !== "foreclosure") continue;
+    autoCureIfFunded(s, parcels, w);
+  }
 }
 
 /** Ask them to wait. */
@@ -463,16 +494,16 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
       });
     }
 
-    // ARREARS KEEP-ALIVE — without a second coupon. monthCF already took the
+    // FUNDED KEEP-ALIVE — without a second coupon. monthCF already took the
     // note payment; if the firm can still fund that payment from cash/line,
-    // the notice clock does not run into a filing. Solvent books do not lose
-    // buildings over a calendar while the cheque can clear.
-    if (
-      w.cause === "arrears" && w.stage !== "foreclosure" && h.loan
-      && fundableNow(s, parcels) >= h.loan.monthlyPmt
-    ) {
+    // the notice clock does not run into a filing. This is the owner's rule
+    // in one line: DS fundable ⇒ not at risk of foreclosure. Applies to
+    // arrears, balloons (maturity default while the coupon still clears), and
+    // every other cause — a maturity default where the borrower keeps paying
+    // is the commonest CRE workout and almost never goes to the steps.
+    if (w.stage !== "foreclosure" && couponFundable(s, parcels, h)) {
       w.decideM = Math.max(w.decideM, s.month + 1);
-      h.loan.arrearsMs = 0;
+      if (h.loan) h.loan.arrearsMs = 0;
     }
 
     if (s.month < w.decideM) continue;
@@ -481,34 +512,35 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
       // Last look: take a funded cure rather than file.
       if (autoCureIfFunded(s, parcels, w)) continue;
 
-      // A TECHNICAL DEFAULT ON A CURRENT LOAN IS NOT A FORECLOSURE.
+      // A LOAN THE SPONSOR CAN KEEP CURRENT IS NOT A FORECLOSURE.
       //
-      // Covenant files used to roll into filing on the notice calendar while
-      // monthCF kept sending the coupon — the exact "I can pay the debt
-      // service, why did they take my building?" report. Lenders trap cash and
-      // demand an equity cure; they do not auction a note that is current.
-      // Roll the cure window and keep asking for the cheque.
-      if (w.cause === "covenant" && fundableNow(s, parcels) >= h.loan.monthlyPmt) {
-        w.decideM = s.month + NOTICE_M;
-        if ((s.month - w.startM) % 6 === 0) {
+      // Covenant, arrears, AND balloon files used to roll into filing on the
+      // notice calendar while the firm could still write the monthly cheque —
+      // the exact "I can pay the debt service and the arrears, why did they
+      // take my building?" report, repeated. Lenders trap cash and demand a
+      // cure (or a takeout on a balloon); they do not auction a note that is
+      // being paid. Roll the window and keep asking for the cheque.
+      if (couponFundable(s, parcels, h)) {
+        w.decideM = w.cause === "covenant" ? s.month + NOTICE_M : s.month + 1;
+        if (h.loan) h.loan.arrearsMs = 0;
+        if (w.cause === "covenant" && (s.month - w.startM) % 6 === 0) {
           s.news.unshift({
             q: s.month, kind: "warn",
             text: `${w.lender} is still waiting on the equity cure at ${rec.address} (${money(w.cure)}). `
               + `The note is current, so they have not filed — but the sweep stays on until the covenant clears.`,
           });
+        } else if (w.cause === "balloon" && (s.month - w.startM) % 6 === 0) {
+          s.news.unshift({
+            q: s.month, kind: "warn",
+            text: `${w.lender} is still waiting on a takeout at ${rec.address}. `
+              + `The coupon is clearing, so they have not filed — find a refinancing, sell it, or retire the note.`,
+          });
         }
         continue;
       }
 
-      // Arrears: liquidity still covers the coupon — push the decision, do not file.
-      if (w.cause === "arrears" && fundableNow(s, parcels) >= h.loan.monthlyPmt) {
-        w.decideM = s.month + 1;
-        h.loan.arrearsMs = 0;
-        continue;
-      }
-
-      // The clock ran out and the firm cannot fund. They file — filing is not
-      // a sale; the July auction is. See engine/auction.ts.
+      // The clock ran out and the firm cannot fund the coupon. They file —
+      // filing is not a sale; the July auction is. See engine/auction.ts.
       w.stage = "foreclosure";
       w.saleM = nextJulyAfter(s.month, FORECLOSE_M);
       w.decideM = w.saleM;

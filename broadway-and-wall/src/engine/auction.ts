@@ -41,6 +41,7 @@ import { bumpLenderRel } from "./debt";
 import { saleTaxQuote } from "./actions";
 import { takeDeed, FILE_COST } from "./notes";
 import { forgetDeed } from "./rivals";
+import { reinstateFundedForeclosures } from "./workout";
 
 const clone = (s: GameState): GameState => cloneState(s);
 const money = (n: number) =>
@@ -594,6 +595,11 @@ export const FIRST_DOCKET_M = 30;
 
 export function tickAuction(s: GameState, parcels: ParcelTable) {
   tickBankForeclosures(s, parcels);
+  // A funded reinstate pulls your building off the docket BEFORE the hammer.
+  // The county used to settle first and let the workout desk run after NOI —
+  // so a sponsor with the arrears in hand lost the building on the same tick
+  // the cure cheque would have cleared.
+  reinstateFundedForeclosures(s, parcels);
   // the hammer first — an auction resolved before July's docket is built
   if (s.auction && s.month >= s.auction.m) resolveAuction(s, parcels);
   if (s.month >= FIRST_DOCKET_M && s.month % 12 === 6 && !s.auction) buildDocket(s, parcels);

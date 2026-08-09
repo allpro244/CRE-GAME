@@ -8,7 +8,7 @@ import { MILESTONES } from "@/engine/sim";
 import { loiSigningCost, exclusiveFeeRate } from "@/engine/leasing";
 import { depositFor as auctionDepositFor } from "@/engine/auction";
 import { portfolioQuote } from "@/engine/portfolio";
-import { locAvailable } from "@/engine/credit";
+import { fundableNow, locAvailable } from "@/engine/credit";
 import { usd, sf } from "@/ui/format";
 import { PortfolioCap } from "@/ui/panels/PortfolioPage";
 import { physicalOcc, apMid, NWChart, Big, Row } from "@/ui/panels/shared";
@@ -82,6 +82,9 @@ function DefaultNoticeBody({
   const value = holdingValue(rec, game.econ, h, game.month);
   const equity = value - open.cure;
   const monthly = Math.round(h.loan.monthlyPmt * 1.15);
+  const allowLoc = open.cause !== "covenant";
+  const liquidity = Math.max(0, Math.floor(game.cash)) + (allowLoc ? locAvailable(game, parcels) : 0);
+  const couponOk = !filed && fundableNow(game, parcels) >= h.loan.monthlyPmt;
   // What the REST of the book throws off, which is the whole question the
   // owner asked: can the other buildings carry this one while you sell it?
   const otherCF = Object.values(game.holdings)
@@ -103,16 +106,21 @@ function DefaultNoticeBody({
           {filed
             ? `It is down for the ${monthLabel(deadline)} auction. From here a payment is not a cure — it takes the
                arrears in full, a deed in lieu, or the hammer.`
-            : `${open.cause === "balloon" ? "The loan has matured and there is nothing to repay it with."
-               : open.cause === "covenant" ? "The building has breached its covenants."
-               : "The payments have stopped."} You have ${monthsLeft} month${monthsLeft === 1 ? "" : "s"} before
-               ${open.lender} can file. A building takes six to nine months to sell properly, so this is the window.`}
+            : couponOk
+              ? `${open.cause === "balloon" ? "The loan has matured without a takeout."
+                 : open.cause === "covenant" ? "The building has breached its covenants."
+                 : "The payments have been late."} The monthly coupon is fundable — they will not file
+                 while you keep it current. Cure it, refinance, or sell in this window.`
+              : `${open.cause === "balloon" ? "The loan has matured and there is nothing to repay it with."
+                 : open.cause === "covenant" ? "The building has breached its covenants."
+                 : "The payments have stopped."} You have ${monthsLeft} month${monthsLeft === 1 ? "" : "s"} before
+                 ${open.lender} can file. A building takes six to nine months to sell properly, so this is the window.`}
         </div>
         <div className="grid" style={{ marginTop: 10 }}>
           <Row k="What they want" v={usd(open.cure)} strong />
           <Row k="The building is worth" v={usd(value)} />
           <Row k={equity >= 0 ? "Your equity in it" : "It is under water by"} v={usd(Math.abs(equity))} bad={equity < 0} />
-          <Row k="Cash on hand" v={usd(game.cash)} bad={game.cash < open.cure} />
+          <Row k={allowLoc ? "Liquidity (cash + line)" : "Cash on hand"} v={usd(liquidity)} bad={liquidity < open.cure} />
           <Row k="The rest of the book earns" v={`${usd(otherCF)} / mo`} />
           <Row k="Keeping this one current costs" v={`${usd(monthly)} / mo at the default rate`}
                bad={monthly > otherCF} />

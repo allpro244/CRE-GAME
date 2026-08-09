@@ -2,10 +2,13 @@
 //
 //   pnpm exec node test/foreclose-funded.mjs
 //
-// Three shapes of the bug the owner keeps reporting:
+// The shapes of the bug the owner keeps reporting:
 //   1. Covenant file + current coupon → notice calendar must NOT file
 //   2. Balloon cure fundable from cash + line → auto-cure, no filing
 //   3. Arrears file + coupon fundable → clock rolls, no filing
+//   4. Balloon + coupon fundable but NOT the payoff → must NOT file
+//      (maturity default while the cheque clears — the commonest CRE workout)
+//   5. Already filed + reinstate fundable → auto-cure pulls it off the docket
 import { assertFreshBundle } from "./fresh.mjs";
 if (!process.env.ENGINE) assertFreshBundle();
 import { dirname, join } from "node:path";
@@ -121,6 +124,70 @@ console.log(`\nFUNDED SPONSOR vs FORECLOSURE CALENDAR — ${bought}\n`);
     console.log("  FAIL  arrears file filed while the coupon was fundable");
   } else {
     console.log("  OK    arrears file did not file while the coupon was fundable");
+  }
+}
+
+// --- 4. Balloon + coupon fundable, payoff NOT fundable → must NOT file.
+//     This was the hole: maturity default with a maxed line still walked to
+//     foreclosure on the notice calendar while the monthly cheque cleared.
+{
+  let s = clone(g);
+  const cure = Math.round(bal * 1.01);
+  s.cash = Math.max(pmt * 4, 50_000);
+  const lim = E.locLimit(s, parcels);
+  s.loc = { balance: Math.max(0, lim - 500), drawnTotal: lim, interestPaid: 0 };
+  const fundable = E.fundableNow(s, parcels);
+  if (fundable >= cure) {
+    console.log("  SKIP  balloon DS-only case — book still funds the payoff");
+  } else if (fundable < pmt) {
+    console.log("  SKIP  balloon DS-only case — could not fund the coupon either");
+  } else {
+    s.workouts = {
+      [bought]: {
+        bbl: bought, lender: "Test Desk", startM: s.month - 8,
+        stage: "notice", cause: "balloon",
+        cure, decideM: s.month - 1, asks: 0, missedMs: 0,
+      },
+    };
+    E.tickWorkouts(s, parcels);
+    const w = s.workouts?.[bought];
+    if (w?.stage === "foreclosure") {
+      bad++;
+      console.log("  FAIL  balloon filed while the monthly coupon was fundable "
+        + `(cash $${s.cash}, fundable $${fundable}, cure $${cure})`);
+    } else if (!w) {
+      bad++;
+      console.log("  FAIL  balloon file vanished without a funded payoff");
+    } else {
+      console.log("  OK    balloon stayed in notice while the coupon was fundable");
+    }
+  }
+}
+
+// --- 5. Already filed + reinstate fundable → pulled off the docket.
+{
+  let s = clone(g);
+  const accrued = Math.round(bal * 0.04);
+  const owed = Math.round(bal * 1.01 + accrued);
+  s.cash = owed + 25_000;
+  s.loc = { balance: 0, drawnTotal: 0, interestPaid: 0 };
+  s.workouts = {
+    [bought]: {
+      bbl: bought, lender: "Test Desk", startM: s.month - 20,
+      stage: "foreclosure", cause: "balloon",
+      cure: Math.round(bal * 1.01), decideM: s.month + 2, saleM: s.month + 2,
+      asks: 1, missedMs: 0, accrued,
+    },
+  };
+  E.reinstateFundedForeclosures(s, parcels);
+  if (s.workouts?.[bought]) {
+    bad++;
+    console.log("  FAIL  filed balloon still open after funded reinstate");
+  } else if (s.holdings[bought]?.loan) {
+    bad++;
+    console.log("  FAIL  reinstate closed the file but left the balloon on title");
+  } else {
+    console.log("  OK    filed balloon reinstated before the hammer");
   }
 }
 

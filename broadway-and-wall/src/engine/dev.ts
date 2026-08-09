@@ -1117,9 +1117,15 @@ export function planAdaptiveReuse(
   const coverage = Math.max(0.08, Math.min(0.9,
     rec.bldgArea / Math.max(1, rec.lotArea * rec.floors)));
   const opportunity = ownedHoldingValue(s, parcels, s.holdings[bbl]);
+  // A housing conversion keeps a small active ground-floor allowance but does
+  // not let the generic new-build rule turn a two-storey shell into mostly
+  // shops (its 1.25-floor retail assumption is for ground-up podium design).
+  const reuseMix = customMix ?? (target === "multifamily"
+    ? { multifamily: 0.95, retail: 0.05 }
+    : { multifamily: 0.70, office: 0.20, retail: 0.10 });
   const base = planDevelopment(
     s, parcels, bbl, target, rec.floors, coverage, "gmp",
-    undefined, { mix: customMix }, undefined, 0.5, opportunity,
+    undefined, { mix: reuseMix }, undefined, 0.5, opportunity,
   );
   if (!base) return null;
   // Reuse keeps structure and much of the envelope, but replaces interiors,

@@ -1123,8 +1123,9 @@ export function planAdaptiveReuse(
   const reuseMix = customMix ?? (target === "multifamily"
     ? { multifamily: 0.95, retail: 0.05 }
     : { multifamily: 0.70, office: 0.20, retail: 0.10 });
+  const planUse: DevUse = "mixed"; // custom programme must travel through devMix
   const base = planDevelopment(
-    s, parcels, bbl, target, rec.floors, coverage, "gmp",
+    s, parcels, bbl, planUse, rec.floors, coverage, "gmp",
     undefined, { mix: reuseMix }, undefined, 0.5, opportunity,
   );
   if (!base) return null;

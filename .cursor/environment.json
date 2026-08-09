@@ -1,6 +1,6 @@
 {
   "name": "Broadway & Wall (CRE Game)",
-  "install": "pnpm install",
+  "install": "pnpm install && pnpm engine",
   "start": "pnpm engine",
   "terminals": [
     {

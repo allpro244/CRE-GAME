@@ -25,7 +25,7 @@
 // months after everybody has worked that out.
 import type { ParcelTable } from "@/data/types";
 import type { GameState, Holding } from "./types";
-import { logBooks, monthLabel, raiseAlert } from "./types";
+import { logBooks, monthLabel, raiseAlert, cloneState} from "./types";
 import { firmShort } from "./firm";
 import { rng, rrange } from "./market";
 import { holdingValue, resolveRec, holdingNOIYr, asIfOwned } from "./value";
@@ -36,7 +36,7 @@ import { recordComp } from "./comps";
 import { saleTaxQuote, EXCHANGE_WINDOW_M } from "./actions";
 import { sponsorStanding } from "./sponsor";
 
-const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
+const clone = (s: GameState): GameState => cloneState(s);
 
 /** How full a building physically is, counting flats and commercial together. */
 function occOf(rec: { bldgArea: number }, h: Holding): number {

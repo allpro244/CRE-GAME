@@ -27,7 +27,7 @@
 // entire reason engine/lenders.ts exists.
 import type { ParcelTable } from "@/data/types";
 import type { GameState, Workout } from "./types";
-import { logBooks, monthLabel, nextJulyAfter } from "./types";
+import { logBooks, monthLabel, nextJulyAfter, cloneState} from "./types";
 import { firmShort } from "./firm";
 import { rrange } from "./market";
 import { holdingValue, resolveRec } from "./value";
@@ -37,7 +37,7 @@ import { markSponsor } from "./sponsor";
 import { recordComp } from "./comps";
 import { depositsOn } from "./leasing";
 
-const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
+const clone = (s: GameState): GameState => cloneState(s);
 
 /**
  * How long they let it run before the auction, by stage.

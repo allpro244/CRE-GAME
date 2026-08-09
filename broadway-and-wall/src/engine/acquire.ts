@@ -18,7 +18,7 @@
 // slowest. An offer is a price now, and agreeing one is buying the building.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, SellerKind, Talks } from "./types";
-import { logBooks, monthLabel, START_YEAR } from "./types";
+import { logBooks, monthLabel, START_YEAR, cloneState} from "./types";
 import { assetValue, resolveRec } from "./value";
 import { ownerOf, gradeOf, tie } from "./rivals";
 import { describeFirm } from "./firm";
@@ -26,7 +26,7 @@ import { holderOf } from "./owners";
 import { rrange } from "./market";
 import { executePurchase } from "./actions";
 
-const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
+const clone = (s: GameState): GameState => cloneState(s);
 
 /**
  * Who is on the other side, and what they actually want.

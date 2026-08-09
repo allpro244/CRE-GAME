@@ -538,6 +538,8 @@ export function tickHolders(
   // aggregate: E[h x N] over a uniform draw is the sum of the hazards, which
   // is the number of exits a year the demography actually implies. Two draws a
   // month, whatever the town's size.
+  // `rng` here is a CALLBACK the caller passes — usually `s => marketRng(s, "owners")`.
+  // It is not market.rng; do not add a channel argument.
   const h = reg[Math.floor(rng(s) * reg.length)];
   if (!h) return { bbls: [], distress: false };
   // A holder who has already been through this does not do it twice.

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useStore } from "@/state/store";
-import { monthLabel } from "@/engine/types";
+import { monthLabel, START_YEAR } from "@/engine/types";
 import { MILESTONES } from "@/engine/sim";
 import { depositsHeld } from "@/engine/leasing";
 import { usd } from "@/ui/format";
@@ -51,22 +51,23 @@ export function BooksPage() {
           <table className="tbl">
             <thead>
               <tr>
-                <th>Year</th><th className="num">NOI</th><th className="num">Bank interest</th><th className="num">Debt svc</th><th className="num">Leasing</th>
+                <th>Year</th><th className="num">NOI</th><th className="num">Bank interest</th><th className="num">Borrowed</th><th className="num">Debt svc</th><th className="num">Leasing</th>
                 <th className="num">Capex</th><th className="num">G&amp;A</th><th className="num">Development</th><th className="num">Taxes</th>
                 <th className="num">Acquisitions</th><th className="num">Dispositions</th><th className="num">Net</th>
               </tr>
             </thead>
             <tbody>
               {years.map((b) => {
-                const net = b.noi + (b.interest ?? 0) - b.debtSvc - b.leasing - b.capex - (b.ga ?? 0) - b.dev - b.taxes - b.bought + b.sold;
+                const net = b.noi + (b.interest ?? 0) + (b.borrowed ?? 0) - b.debtSvc - b.leasing - b.capex - (b.ga ?? 0) - b.dev - b.taxes - b.bought + b.sold;
                 return (
                   <tr key={b.yr} style={{ cursor: "default" }}>
-                    <td className="mono">{2000 + b.yr}</td>
+                    <td className="mono">{START_YEAR + b.yr}</td>
                     <td className="num">{usd(b.noi)}</td>
                     {/* Booked apart from NOI on purpose: 1% on a bank balance is
                         not property income, and folding it in overstated the
                         yield on every building you own. */}
                     <td className="num dim" title="1.0% a year on positive cash balances">{b.interest ? usd(b.interest) : "—"}</td>
+                    <td className="num dim" title="Cash-out refinance and facility draws">{b.borrowed ? usd(b.borrowed) : "—"}</td>
                     <td className="num">{b.debtSvc ? "−" + usd(b.debtSvc) : "—"}</td>
                     <td className="num">{b.leasing ? "−" + usd(b.leasing) : "—"}</td>
                     <td className="num">{b.capex ? "−" + usd(b.capex) : "—"}</td>
@@ -79,7 +80,7 @@ export function BooksPage() {
                   </tr>
                 );
               })}
-              {!years.length && <tr><td colSpan={12} className="dim">Nothing on the books yet — advance a month.</td></tr>}
+              {!years.length && <tr><td colSpan={13} className="dim">Nothing on the books yet — advance a month.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -165,7 +166,7 @@ export function IncomeStatement() {
   const monthsIn = partial ? game.month % 12 : 12;
 
   const opCf = (b: typeof cur) => b.noi - b.leasing - b.capex - b.ga;
-  const afterDebt = (b: typeof cur) => opCf(b) - b.debtSvc + (b.interest ?? 0);
+  const afterDebt = (b: typeof cur) => opCf(b) - b.debtSvc + (b.interest ?? 0) + (b.borrowed ?? 0);
   const investing = (b: typeof cur) => b.sold - b.bought - b.dev;
   const bottom = (b: typeof cur) => afterDebt(b) + investing(b) - b.taxes;
 
@@ -185,7 +186,7 @@ export function IncomeStatement() {
             "Net operating income": prior.noi, "Leasing costs": -prior.leasing,
             "Capital expenditure": -prior.capex, "Firm overhead": -prior.ga,
             "Property cash flow": opCf(prior), "Debt service": -prior.debtSvc,
-            "Interest on cash": prior.interest ?? 0, "Cash flow after debt": afterDebt(prior),
+            "Interest on cash": prior.interest ?? 0, "Debt drawn": prior.borrowed ?? 0, "Cash flow after debt": afterDebt(prior),
             "Development": -prior.dev, "Acquisitions": -prior.bought,
             "Disposition proceeds": prior.sold, "Taxes": -prior.taxes,
             "Change in cash": bottom(prior),
@@ -202,7 +203,7 @@ export function IncomeStatement() {
   return (
     <div className="page-section">
       <div className="page-section-head">
-        Income statement · {2000 + cur.yr}{partial && ` · ${monthsIn} month${monthsIn === 1 ? "" : "s"} in, not a full year`}
+        Income statement · {START_YEAR + cur.yr}{partial && ` · ${monthsIn} month${monthsIn === 1 ? "" : "s"} in, not a full year`}
       </div>
       <div className="hint">
         The buildings and the firm are two different businesses. Everything above <em>property cash flow</em> is
@@ -212,13 +213,13 @@ export function IncomeStatement() {
       <div className="btn-row">
         {books.slice(-8).map((b) => (
           <button key={b.yr} className={"btn btn-sm" + (b.yr === cur.yr ? " btn-on" : "")} onClick={() => setYr(b.yr)}>
-            {2000 + b.yr}
+            {START_YEAR + b.yr}
           </button>
         ))}
       </div>
       <table className="tbl tbl-stmt">
         <thead>
-          <tr><th>{2000 + cur.yr}</th><th className="num">Amount</th><th className="num">vs {prior ? 1999 + cur.yr : "—"}</th></tr>
+          <tr><th>{START_YEAR + cur.yr}</th><th className="num">Amount</th><th className="num">vs {prior ? START_YEAR - 1 + cur.yr : "—"}</th></tr>
         </thead>
         <tbody>
           <L k="Net operating income" v={cur.noi} note="rent collected, less operating costs and property tax" />
@@ -226,8 +227,9 @@ export function IncomeStatement() {
           <L k="Capital expenditure" v={-cur.capex} sub note="roofs, systems, make-ready" />
           <L k="Firm overhead" v={-cur.ga} sub note="asset management, accounting, legal" />
           <L k="Property cash flow" v={opCf(cur)} strong rule />
-          <L k="Debt service" v={-cur.debtSvc} sub note="interest, amortisation, fees" />
+          <L k="Debt service" v={-cur.debtSvc} sub note="interest, amortisation, fees, voluntary paydowns" />
           <L k="Interest on cash" v={cur.interest ?? 0} sub note="1.0% on idle balances" />
+          <L k="Debt drawn" v={cur.borrowed ?? 0} sub note="cash-out refinance and facility draws" />
           <L k="Cash flow after debt" v={afterDebt(cur)} strong rule />
           <L k="Development" v={-cur.dev} sub note="equity into the ground, construction carry, overruns" />
           <L k="Acquisitions" v={-cur.bought} sub note="equity out the door at closing" />

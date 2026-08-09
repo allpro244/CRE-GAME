@@ -24,7 +24,7 @@
 //                are no longer allowed to knock down.
 import type { ParcelTable } from "@/data/types";
 import type { GameState } from "./types";
-import { logBooks, monthLabel } from "./types";
+import { logBooks, monthLabel, cloneState} from "./types";
 import { rng, rrange, NATURAL_VAC, RENT_BASE } from "./market";
 import { resolveRec, landValue, demandLinear } from "./value";
 
@@ -230,7 +230,7 @@ export function fileVariance(
     return { s, err: "Nothing to apply for here." };
   }
   if (s.cash < q.cost) return { s, err: `The application runs $${(q.cost / 1e6).toFixed(2)}M in fees — you're short.` };
-  const next: GameState = JSON.parse(JSON.stringify(s));
+  const next: GameState = cloneState(s);
   next.cash -= q.cost;
   logBooks(next, "dev", q.cost);
   next.varianceApp = { bbl, filedM: next.month, decideM: next.month + q.months, cost: q.cost, grant: q.grant, odds: q.odds };

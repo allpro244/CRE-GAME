@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass } from "@/engine/types";
 import { monthLabel } from "@/engine/types";
-import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfolioQuarterlyCF, hangUpOnCall } from "@/engine/sim";
+import { newGame, advanceMonth, advanceUntilAttention, firstListings, portfolioQuarterlyCF, hangUpOnCall } from "@/engine/sim";
 import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import { respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, AGENT_FLOOR_MIN, AGENT_FLOOR_MAX, type LOIAction } from "@/engine/leasing";
@@ -367,7 +367,7 @@ export const useStore = create<AppState>((set, get) => ({
   advance: () => {
     const { game, parcels, bbls, adjacency } = get();
     if (!game || !parcels || game.gameOver) return;
-    const next = advanceQuarter(game, parcels, bbls, adjacency);
+    const next = advanceMonth(game, parcels, bbls, adjacency);
     set({ game: next });
     void persist(next);
   },

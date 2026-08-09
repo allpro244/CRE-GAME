@@ -14,12 +14,52 @@ export function mulberry32Step(a: number): { state: number; value: number } {
   return { state: a, value: ((t ^ (t >>> 14)) >>> 0) / 4294967296 };
 }
 
-export function rng(s: GameState): number {
-  const r = mulberry32Step(s.rng);
-  s.rng = r.state;
+/**
+ * Named channels for the economic RNG. Cosmetics already use `newsChance`
+ * (a separate hash stream). These isolate the load-bearing subsystems from
+ * each other so editing how often leasing draws does not reshuffle rival
+ * acquisitions and look like a catastrophic rent crash in the baseline.
+ *
+ * `econ` is the default and mirrors `s.rng` for save/harness compatibility.
+ */
+export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners";
+export const RNG_CHANNELS: RngChannel[] = ["econ", "leasing", "rivals", "sales", "dev", "lenders", "owners"];
+
+/** Seed independent streams from the campaign seed. Called from newGame. */
+export function initStreams(seed: number): Record<RngChannel, number> {
+  const out = {} as Record<RngChannel, number>;
+  for (const ch of RNG_CHANNELS) {
+    let h = (2166136261 ^ (seed >>> 0)) >>> 0;
+    for (let i = 0; i < ch.length; i++) { h ^= ch.charCodeAt(i); h = Math.imul(h, 16777619); }
+    out[ch] = (h >>> 0) || 1;
+  }
+  // econ channel starts as the historical single-stream seed so a fresh game
+  // that only ever calls rng(s) still matches the old opening walk until
+  // other channels are drawn.
+  out.econ = seed || 1;
+  return out;
+}
+
+/**
+ * Draw from a named stream. Old saves without `streams` keep the single
+ * `s.rng` walk — one quantity, no silent re-roll of a mid-campaign save.
+ * New games initialize streams in `newGame`; pass a channel when the draw
+ * belongs to a subsystem that should not reshuffle the others.
+ */
+export function rng(s: GameState, channel: RngChannel = "econ"): number {
+  if (!s.streams) {
+    const r = mulberry32Step(s.rng);
+    s.rng = r.state;
+    return r.value;
+  }
+  const cur = s.streams[channel] ?? s.rng;
+  const r = mulberry32Step(cur);
+  s.streams[channel] = r.state;
+  if (channel === "econ") s.rng = r.state;
   return r.value;
 }
-export const rrange = (s: GameState, a: number, b: number) => a + (b - a) * rng(s);
+export const rrange = (s: GameState, a: number, b: number, channel: RngChannel = "econ") =>
+  a + (b - a) * rng(s, channel);
 
 /**
  * A DRAW THAT DECIDES ONLY WHAT GETS PRINTED — ON ITS OWN STREAM.

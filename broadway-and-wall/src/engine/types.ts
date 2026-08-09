@@ -1485,7 +1485,7 @@ export interface Econ {
 export interface BooksYear {
   yr: number;       // 0-based game year
   noi: number;      // property NOI collected (pre-debt)
-  debtSvc: number;  // debt service + refi fees + cap premiums
+  debtSvc: number;  // debt service + refi fees + cap premiums + voluntary principal paydowns
   leasing: number;  // TI and leasing commissions, including the 6% an exclusive takes
   capex: number;    // programs, renovations, make-ready turns
   dev: number;      // development equity, construction interest, overruns
@@ -1494,6 +1494,14 @@ export interface BooksYear {
   sold: number;     // net proceeds in from dispositions
   ga: number;       // firm overhead — asset management, accounting, legal
   interest: number; // what the bank paid you on idle cash — never property income
+  /**
+   * Net new mortgage / facility principal drawn into cash (cash-out refinance,
+   * facility proceeds above the mortgages they repay). The conservation
+   * identity used to be blind to these — they raised cash with no books entry.
+   * Monthly amortisation still travels through `debtSvc`; this bucket is only
+   * the balance-sheet draws that land in the operating account.
+   */
+  borrowed?: number;
 }
 
 export interface Exit {
@@ -1706,6 +1714,13 @@ export interface GameState {
    */
   cityDev?: string;
   rng: number;
+  /**
+   * Named RNG streams so a change in how often leasing rolls the dice does not
+   * re-roll the century's rival bids, sales, and construction. Absent on old
+   * saves — those keep the single `rng` stream. Keys are RngChannel strings
+   * from market.ts (`econ` | `leasing` | `rivals` | `sales` | `dev` | …).
+   */
+  streams?: Partial<Record<string, number>>;
   month: number;
   cash: number;
   econ: Econ;
@@ -2060,10 +2075,21 @@ export function logBooks(s: GameState, key: keyof Omit<BooksYear, "yr">, amt: nu
   const yr = Math.floor(s.month / 12);
   let e = s.books[s.books.length - 1];
   if (!e || e.yr !== yr) {
-    e = { yr, noi: 0, debtSvc: 0, leasing: 0, capex: 0, dev: 0, taxes: 0, bought: 0, sold: 0, ga: 0, interest: 0 };
+    e = { yr, noi: 0, debtSvc: 0, leasing: 0, capex: 0, dev: 0, taxes: 0, bought: 0, sold: 0, ga: 0, interest: 0, borrowed: 0 };
     s.books.push(e);
   }
-  e[key] = (e[key] ?? 0) + amt;
+  e[key] = ((e[key] as number) ?? 0) + amt;
+}
+
+/**
+ * DEEP-CLONE GAME STATE. Prefer `structuredClone` (same semantics, faster than
+ * JSON round-trip). Falls back so older hosts still work. Every action path
+ * that used to say `JSON.parse(JSON.stringify(s))` should call this instead —
+ * one quantity, one implementation.
+ */
+export function cloneState<T>(s: T): T {
+  if (typeof structuredClone === "function") return structuredClone(s);
+  return JSON.parse(JSON.stringify(s)) as T;
 }
 
 /**

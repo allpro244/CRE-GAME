@@ -298,7 +298,7 @@ function seizeDeposits(s: GameState, l: Lender) {
   }
   // The receiver's advance dividend lands with the insured money; the rest is
   // a certificate and a wait. Recovery drawn from the real range.
-  const recovery = clamp(0.60 + rng(s) * 0.30, 0.60, 0.90);
+  const recovery = clamp(0.60 + rng(s, "lenders") * 0.30, 0.60, 0.90);
   const eventual = Math.round(exposed * recovery);
   const lost = exposed - eventual;
   s.cash = insured;
@@ -311,7 +311,7 @@ function seizeDeposits(s: GameState, l: Lender) {
   // as it arrives in tickReceivership, so the net expense over the whole
   // episode is exactly the haircut.
   logBooks(s, "ga", exposed);
-  (s.receivership ??= []).push({ from: l.name, amount: eventual, payM: s.month + Math.round(rrange(s, 12, 36)) });
+  (s.receivership ??= []).push({ from: l.name, amount: eventual, payM: s.month + Math.round(rrange(s, 12, 36, "lenders")) });
   s.news.unshift({
     q: s.month, kind: "warn",
     text: `YOUR BANK HAS FAILED. ${usdShort(here)} of the firm's money was at ${l.name}. `
@@ -364,7 +364,7 @@ function repudiateCommitments(s: GameState, l: Lender) {
     const room = Math.max(0, d.commitment - d.drawn);
     if (room <= 0) continue;
     d.repudiatedM = s.month;
-    d.replaceM = s.month + Math.round(rrange(s, 3, 9));
+    d.replaceM = s.month + Math.round(rrange(s, 3, 9, "lenders"));
     jobs++;
     exposed += room;
     if (s.holdings[d.bbl]) mine++;
@@ -379,7 +379,7 @@ function repudiateCommitments(s: GameState, l: Lender) {
     if (!j.firmId || j.orphaned || j.repudiatedM !== undefined) continue;
     if ((j.lender ?? CONSTRUCTION_LENDER) !== l.name) continue;
     j.repudiatedM = s.month;
-    j.replaceM = s.month + Math.round(rrange(s, 3, 9));
+    j.replaceM = s.month + Math.round(rrange(s, 3, 9, "lenders"));
     street++;
   }
   if (street) {
@@ -636,7 +636,7 @@ export function tickLenders(s: GameState) {
     const badTarget = 0.006 + stress * 0.55 * k.brittle
       + (e.phase === "recession" ? 0.018 : e.phase === "recovery" ? 0.008 : 0) * k.brittle
       + Math.max(0, 1 - (e.creditIdx ?? 1)) * 0.03 * k.brittle;
-    l.delinquent = Math.max(0.002, Math.min(0.35, l.delinquent + 0.10 * (badTarget - l.delinquent) + rrange(s, -0.0015, 0.0015)));
+    l.delinquent = Math.max(0.002, Math.min(0.35, l.delinquent + 0.10 * (badTarget - l.delinquent) + rrange(s, -0.0015, 0.0015, "lenders")));
 
     // A third of what is delinquent is eventually written off, spread over a
     // year. That is the number that eats capital.
@@ -696,7 +696,7 @@ export function tickLenders(s: GameState) {
     // cliff you can watch a desk walking toward on Research rather than an
     // asymptote it can hug forever.
     const seizable = l.kind === "bank" || l.kind === "life";   // the conduit dies by market, not by regulator
-    if ((l.capital <= 0 && rng(s) < 0.35) || (seizable && cr < target * 0.22 && rng(s) < 0.09)) {
+    if ((l.capital <= 0 && rng(s, "lenders") < 0.35) || (seizable && cr < target * 0.22 && rng(s, "lenders") < 0.09)) {
       // ASK WHOSE BANK THIS IS BEFORE YOU CLOSE IT. bankOf() only considers
       // LIVE desks, so calling seizeDeposits after failedM was set meant the
       // failing bank had already been filtered out of its own question and the
@@ -704,7 +704,7 @@ export function tickLenders(s: GameState) {
       // runs and not one cut. Establish it first, then padlock the door.
       const wasOurs = bankOf(s)?.id === l.id;
       l.failedM = s.month;
-      l.reopenM = Math.round(rrange(s, 12, 30));
+      l.reopenM = Math.round(rrange(s, 12, 30, "lenders"));
       l.appetite = 0;
       if (wasOurs) seizeDeposits(s, l);
       // And whether or not you banked with them, their cranes stop.
@@ -736,7 +736,7 @@ export function tickLenders(s: GameState) {
       // and identical in fact, 58 and 58 over a passive run. A paper that says
       // the same thing twice is not twice as informative; it is a paper the
       // reader learns to skim.
-    } else if (l.appetite < 0.15 && rng(s) < 0.04) {
+    } else if (l.appetite < 0.15 && rng(s, "lenders") < 0.04) {
       s.news.unshift({
         q: s.month, kind: "warn",
         text: `${l.name} has stopped quoting. ${(l.delinquent * 100).toFixed(1)}% of their book is not paying and their capital will not carry new loans.`,

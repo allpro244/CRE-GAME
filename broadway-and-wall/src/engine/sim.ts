@@ -1,9 +1,12 @@
-// newGame + advanceQuarter — the pure heart of the game. No DOM, no store:
+// newGame + advanceMonth — the pure heart of the game. No DOM, no store:
 // (state, parcels) in, state out. The UI is a lens on this.
+//
+// Historical name `advanceQuarter` is kept as an alias: the tick has always
+// been monthly; the name was a lie that trained the wrong instinct.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
-import { DEFAULT_START_CASH, CENTURY_MONTHS, CASH_APY, logBooks, monthLabel } from "./types";
-import { initEcon, rng, newsChance, rrange, tickEcon, stockFromParcels } from "./market";
+import { DEFAULT_START_CASH, CENTURY_MONTHS, CASH_APY, cloneState, logBooks, monthLabel } from "./types";
+import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels } from "./market";
 import { assetValue, holdingNOIYr, holdingValue, monthlyNOI, netWorth, operatingStatement, physicalOcc, resolveRec } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
@@ -35,9 +38,9 @@ const LISTING_LIFE_M: [number, number] = [6, 12];
  * HOW LONG AN OFF-MARKET CONVERSATION STAYS ON THE BOOKS.
  *
  * Twelve months, and this is the ONLY place it is written down. The sweep in
- * `advanceQuarter` below reads it; so does the countdown the panel prints on a
+ * `advanceMonth` below reads it; so does the countdown the panel prints on a
  * broker's call. It used to be a literal `12` here and a second literal `12` in
- * `RightPanel.tsx`, which is one quantity with two answers waiting to happen —
+ * the parcel panel, which is one quantity with two answers waiting to happen —
  * the row would have gone on counting down to a date the engine had stopped
  * using the moment anybody touched either number.
  *
@@ -124,6 +127,7 @@ export function newGame(seed: number, parcels?: ParcelTable, cash0: number = DEF
     v: 32,
     seed,
     rng: seed,
+    streams: initStreams(seed),
     month: 0,
     cash: cash0,
     econ: null as never,
@@ -222,7 +226,7 @@ export function newGame(seed: number, parcels?: ParcelTable, cash0: number = DEF
  * and will not.
  */
 function listHolderExit(s: GameState, parcels: ParcelTable) {
-  const { bbls, distress } = tickHolders(s, parcels, rng);
+  const { bbls, distress } = tickHolders(s, parcels, (gs) => rng(gs, "owners"));
   for (const bbl of bbls) {
     if (s.listings.some((l) => l.bbl === bbl) || s.holdings[bbl]) continue;
     const rec = resolveRec(parcels, s, bbl);
@@ -380,11 +384,11 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   }
 }
 
-export function advanceQuarter(
+export function advanceMonth(
   prev: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null = null,
 ): GameState {
   if (prev.gameOver) return prev;
-  const s: GameState = JSON.parse(JSON.stringify(prev));
+  const s: GameState = cloneState(prev);
   s.month++;
 
   tickEcon(s);
@@ -945,7 +949,7 @@ export function advanceUntilAttention(
   const before = new Set(attentionItems(s).map((a) => a.key));
   let cur = s;
   for (let i = 1; i <= cap; i++) {
-    cur = advanceQuarter(cur, parcels, bbls, adjacency);
+    cur = advanceMonth(cur, parcels, bbls, adjacency);
     const now = attentionItems(cur);
     const fresh = now.find((a) => !before.has(a.key));
     if (fresh) return { s: cur, months: i, reason: fresh.label };
@@ -981,8 +985,11 @@ export function portfolioQuarterlyCF(s: GameState, parcels: ParcelTable): number
   return cf;
 }
 
+/** @deprecated Name lied — the tick is monthly. Prefer `advanceMonth`. */
+export const advanceQuarter = advanceMonth;
+
 export function firstListings(s: GameState, parcels: ParcelTable, bbls: string[]): GameState {
-  const next = JSON.parse(JSON.stringify(s)) as GameState;
+  const next = cloneState(s);
   refreshListings(next, parcels, bbls);
   return next;
 }

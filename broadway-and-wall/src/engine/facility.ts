@@ -44,15 +44,12 @@
  *                      that is often what kills the deal, and it should.
  *
  * WHERE THE MONEY IS BOOKED. Fees, points and prepayment penalties are an
- * expense and go to `debtSvc` like every other financing cost. The PRINCIPAL —
- * drawn at closing, paid to the old lenders, amortised monthly, repaid at
- * maturity — is a balance-sheet movement and is not booked, which is the same
- * convention `refinance` and `executePurchase` already follow: this repo's
- * ledger is a statement of CASH, and `conserve`'s identity does not track
- * mortgage principal on either side. A cash-out draw is therefore outside that
- * identity exactly as a cash-out refinance already is. If the identity is ever
- * extended to carry debt balances, this and `refinance` and the purchase path
- * all have to move together, because they share the convention.
+ * expense and go to `debtSvc` like every other financing cost. Principal that
+ * merely replaces the mortgages paid off at the table is a wash. Principal
+ * that lands in the operating account (a cash-out draw) is booked to
+ * `borrowed`, the same inflow bucket a cash-out refinance uses — so
+ * conserve's identity can see it. Voluntary paydowns (release, repay) go to
+ * `debtSvc`. Monthly amortisation already did.
  *
  * SO THE DECISION IS A REAL ONE. More proceeds, a lower coupon, one maturity
  * and one payment — against illiquidity, a single point of failure and your
@@ -63,7 +60,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { ParcelRecord } from "@/data/types";
 import type { BuiltClass, GameState, Holding } from "./types";
-import { logBooks, monthLabel } from "./types";
+import { logBooks, monthLabel, cloneState} from "./types";
 import { holdingNOIYr, holdingValue, resolveRec } from "./value";
 import { PRODUCTS, prepayPenalty, productById, bumpLenderRel, windowOpen, quote, advanceFactor } from "./debt";
 import { distressPrice, sponsorStanding } from "./sponsor";
@@ -290,7 +287,7 @@ export function openFacility(
   if (draw + s.cash < cost) {
     return { s, err: `The proceeds do not clear the existing paper — $${((cost - draw) / 1e6).toFixed(2)}M short after $${(qt.penalties / 1e6).toFixed(2)}M of prepayment penalties.` };
   }
-  const next: GameState = JSON.parse(JSON.stringify(s));
+  const next: GameState = cloneState(s);
   // Clear the deeds. The mortgages are repaid at the closing table out of the
   // facility's proceeds, which is why the principal does not touch the ledger:
   // it is one lender's balance replacing another's, and no expense happens.
@@ -325,10 +322,15 @@ export function openFacility(
     drawn: draw,
   };
   next.cash += draw - cost;
-  // The fees and the penalties are an expense and are booked as one. The
-  // principal — drawn, and repaid to the old lenders — is a balance-sheet
-  // movement, exactly as it is on a refinance of a single building.
+  // Fees and prepayment penalties are an expense. Principal that replaces
+  // old mortgages is a wash on cash once those mortgages are paid off at the
+  // table; any surplus that lands in the operating account is a cash-out
+  // draw and belongs in `borrowed`, the same bucket a cash-out refinance uses.
+  // conserve's identity used to be blind to both.
   logBooks(next, "debtSvc", fees + qt.penalties);
+  const cashOut = draw - qt.payoff;
+  if (cashOut > 0) logBooks(next, "borrowed", cashOut);
+  else if (cashOut < 0) logBooks(next, "debtSvc", -cashOut);
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `${qt.lender} has papered a $${(draw / 1e6).toFixed(1)}M facility across ${pool.length} buildings at `
@@ -377,9 +379,10 @@ export function releaseFromFacility(s: GameState, parcels: ParcelTable, bbl: str
   }
   const price = releaseCost(s, parcels, bbl);
   if (s.cash < price) return { s, err: `The release price is $${(price / 1e6).toFixed(2)}M and you are short.` };
-  const next: GameState = JSON.parse(JSON.stringify(s));
+  const next: GameState = cloneState(s);
   const nf = next.facility!;
   next.cash -= price;
+  logBooks(next, "debtSvc", price);
   nf.balance = Math.max(0, nf.balance - price);
   nf.bbls = nf.bbls.filter((b) => b !== bbl);
   const rec = resolveRec(parcels, next, bbl);
@@ -401,8 +404,9 @@ export function repayFacility(s: GameState, amount: number): { s: GameState; err
   if (!f) return { s, err: "No facility." };
   const pay = Math.min(Math.floor(Math.max(0, amount)), f.balance, Math.floor(Math.max(0, s.cash)));
   if (pay <= 0) return { s, err: "Nothing to pay with." };
-  const next: GameState = JSON.parse(JSON.stringify(s));
+  const next: GameState = cloneState(s);
   next.cash -= pay;
+  logBooks(next, "debtSvc", pay);
   next.facility!.balance -= pay;
   if (next.facility!.balance <= 0) {
     delete next.facility;

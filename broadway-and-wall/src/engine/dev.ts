@@ -7,7 +7,7 @@
 // from empty. A modest random cost/schedule overrun keeps it honest.
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Contract, DevUse, Development, Econ, GameState, UseMix } from "./types";
-import { BUILT_CLASSES } from "./types";
+import { BUILT_CLASSES, cloneState} from "./types";
 import { logBooks, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow } from "./demand";
 import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE } from "./market";
@@ -26,7 +26,7 @@ import { useSf } from "./mix";
 import { lenderAppetite, lenderByName, CONSTRUCTION_LENDER } from "./lenders";
 import { lenderRelOf, bumpLenderRel } from "./debt";
 
-const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
+const clone = (s: GameState): GameState => cloneState(s);
 
 // hard cost $/sf by use, before the height premium and soft costs.
 // Sized so stabilized yield-on-cost lands ~150-250bps over the exit cap —
@@ -1459,7 +1459,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
     // is what the four-point premium bought.
     if (d.contract === "costplus" && s.month > d.startM) {
       const remaining = Math.max(0, d.hardCost * (1 - curve(t1)));
-      const drift = s.econ.phase === "expansion" || s.econ.phase === "peak" ? rrange(s, 0.0012, 0.0038) : rrange(s, -0.001, 0.0016);
+      const drift = s.econ.phase === "expansion" || s.econ.phase === "peak" ? rrange(s, 0.0012, 0.0038, "dev") : rrange(s, -0.001, 0.0016, "dev");
       const escal = Math.round(remaining * drift);
       if (escal > 0) { d.costTotal += escal; d.hardCost += escal; d.equityBudget += escal; }
     }
@@ -1468,7 +1468,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
     // twenty-odd times, which is why schedules slip and budgets grow.
     const progress = curve(t1);
     if (progress > 0.04 && progress < 0.97) {
-      const roll = rng(s);
+      const roll = rng(s, "dev");
       const gmpShield = d.contract === "gmp" ? 0.35 : 1;   // the GC eats most of it
       // AND WHETHER ANYBODY IS WATCHING THE JOB. `cmRiskMult` is the owner's
       // representative: it scales the hazard of all three site events and the
@@ -1481,7 +1481,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
       const cm = cmRiskMult(roleState(s, parcels, "construction"));
       if (roll < 0.028 * gmpShield * cm) {
         // change order
-        const bump = rrange(s, 0.015, 0.07) * cm;
+        const bump = rrange(s, 0.015, 0.07, "dev") * cm;
         const extra = Math.round(d.costTotal * bump);
         const fromContingency = Math.min(Math.max(0, d.contingency - d.contingencyUsed), extra);
         d.contingencyUsed += fromContingency;
@@ -1497,7 +1497,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
             : `Change orders at ${rec.address}: $${(extra / 1e6).toFixed(2)}M, absorbed by the contingency.`,
         });
       } else if (roll < 0.055 * cm) {
-        d.deliverM += 1 + Math.round(rng(s));
+        d.deliverM += 1 + Math.round(rng(s, "dev"));
         syncDevCohorts(s, d);
         d.events++;
         s.news.unshift({ q: s.month, kind: "warn", text: `Weather and inspections at ${rec.address} — delivery moves to ${monthLabel(d.deliverM)}.` });
@@ -1505,12 +1505,12 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
         // a sub goes under: time AND money, and the GMP does not help much.
         // Pre-qualification is most of what stops this one, which is why the
         // manager's multiplier reaches it where the GMP barely does.
-        const extra = Math.round(d.costTotal * rrange(s, 0.03, 0.09) * cm);
+        const extra = Math.round(d.costTotal * rrange(s, 0.03, 0.09, "dev") * cm);
         const fromContingency = Math.min(Math.max(0, d.contingency - d.contingencyUsed), extra);
         d.contingencyUsed += fromContingency;
         const overrun = extra - fromContingency;
         d.costTotal += overrun; d.hardCost += overrun; d.equityBudget += overrun;
-        d.deliverM += 2 + Math.round(rng(s) * 3);
+        d.deliverM += 2 + Math.round(rng(s, "dev") * 3);
         syncDevCohorts(s, d);
         d.events++;
         s.news.unshift({
@@ -1605,9 +1605,9 @@ export function tickConstructionLeasing(s: GameState, parcels: ParcelTable) {
     // shrinks, and so does what they will hold out for
     const near = clamp(1.35 - months / 18, 0.35, 1.35);
     const p = clamp(0.055 * pre.rate * appetite * near * (0.55 + demandLinear(rec.demandScore) / 130), 0, 0.42);
-    if (rng(s) >= p) continue;
+    if (rng(s, "dev") >= p) continue;
 
-    const want = Math.round(openSf * rrange(s, 0.16, 0.5));
+    const want = Math.round(openSf * rrange(s, 0.16, 0.5, "dev"));
     if (want < 1500) continue;
     // The delivery-risk discount: steep when the building is a frame and a
     // promise, nearly gone by the time the scaffolding comes down.
@@ -1676,7 +1676,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // away entirely — see the note there.
   if ((dmix.multifamily ?? 0) > 0) {
     const slack = Math.max(0, (s.econ.cityVac.multifamily ?? 0.06) - NATURAL_VAC.multifamily);
-    h.occ = Math.max(0.01, Math.min(0.22, 0.17 - 1.4 * slack + rrange(s, -0.04, 0.04)));
+    h.occ = Math.max(0.01, Math.min(0.22, 0.17 - 1.4 * slack + rrange(s, -0.04, 0.04, "dev")));
   }
   h.costBasis += d.costTotal;
   h.assessed = (h.assessed ?? h.costBasis - d.costTotal) + d.costTotal;
@@ -2403,7 +2403,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // numbers the mean building age still rose forty-one years over fifty, which
   // is a town that replaces a tenth of itself in half a century and is still
   // mostly a museum.
-  if (rng(s) > 0.85) return;
+  if (rng(s, "dev") > 0.85) return;
   const e = s.econ;
   // A REPLACEMENT IS BUILT BY THE SAME CREWS AS EVERYTHING ELSE.
   //
@@ -2430,7 +2430,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   if ((s.cityJobs ?? []).filter((j) => !j.orphaned).length >= crewCapacity(bbls, s.econ)) return;
   let worst: { bbl: string; rec: ReturnType<typeof resolveRec>; ratio: number } | null = null;
   for (let i = 0; i < 26; i++) {
-    const bbl = bbls[Math.floor(rng(s) * bbls.length)];
+    const bbl = bbls[Math.floor(rng(s, "dev") * bbls.length)];
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class === "land" || !rec.bldgArea) continue;
     if (s.holdings[bbl] || s.developments[bbl]) continue;        // never yours
@@ -2477,9 +2477,9 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // — while industrial demand fell to 0.62x with its stock sitting at 1.04x,
   // untouched, because office happened to be soft at the time.
   const yr0 = START_YEAR + Math.floor(s.month / 12);
-  const nextUse = useForZone(rec!.zoneDist ?? "C", rec!.demandScore, rng(s), e);
+  const nextUse = useForZone(rec!.zoneDist ?? "C", rec!.demandScore, rng(s, "dev"), e);
   const lead = dominantOf(devMix(nextUse));
-  if (rng(s) > 0.62 * devPencils(e, lead)) return;
+  if (rng(s, "dev") > 0.62 * devPencils(e, lead)) return;
   const bbl = rec!.bbl;
   const sf = rec!.bldgArea;
   const cls = rec!.class as BuiltClass;
@@ -2536,7 +2536,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // was wrong, and the evidence is in the paragraph above.
   const slack = Math.max(0, (e.cityVac[lead] ?? NATURAL_VAC[lead]) - NATURAL_VAC[lead]);
   const appetite = Math.max(0.18, Math.min(1, 1 - slack * 7));
-  const share = 0.30 + 0.50 * appetite * (0.75 + rng(s) * 0.5);
+  const share = 0.30 + 0.50 * appetite * (0.75 + rng(s, "dev") * 0.5);
   let nsf = Math.max(3000, Math.round((rec!.lotArea * farMax * Math.min(0.92, share)) / 100) * 100);
   let nfl = Math.max(1, Math.round(nsf / (rec!.lotArea * 0.62)));
   const infill = cityInfillCap(s, parcels, rec!, 1);
@@ -2547,7 +2547,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // redevelopment opens later than a job on clean dirt, and that lag is why a
   // block can look derelict for two years in the middle of a boom.
   const [bLo, bHi] = BUILD_MONTHS[lead];
-  const months = Math.round(bLo + rng(s) * (bHi - bLo)) + 4 + Math.round(rng(s) * 5);
+  const months = Math.round(bLo + rng(s, "dev") * (bHi - bLo)) + 4 + Math.round(rng(s, "dev") * 5);
   // A REDEVELOPMENT GETS ITS GROUND FLOOR TOO. This is the teardown path — the
   // replacement that goes up where something was knocked down — and it is most
   // of what a mature city builds, so a shops-at-grade rule that skipped it
@@ -2576,7 +2576,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   {
     // A COIN FLIP IS NOT A RELEVANCE TEST, AND IT WAS STANDING IN FOR ONE.
     //
-    // This read `rng(s) < 0.30`: file three teardowns in ten, chosen at random.
+    // This read `rng(s, "dev") < 0.30`: file three teardowns in ten, chosen at random.
     // That number is not a fact about the world — it is a volume dial, put here
     // so the paper would not overflow, and it throttles the SIGNAL at exactly
     // the same rate as the noise. The city tears down about 6.4 buildings a
@@ -2742,7 +2742,7 @@ export function tickCityGrowth(
   const capacity = crewCapacity(bbls, s.econ);
   const live = (s.cityJobs ?? []).filter((j) => !j.orphaned).length;
   let n = Math.min(wanted, ceiling, Math.max(0, capacity - live));
-  n = Math.floor(n) + (rng(s) < n % 1 ? 1 : 0);
+  n = Math.floor(n) + (rng(s, "dev") < n % 1 ? 1 : 0);
   const paid = Math.min(n, s.startDebt ?? 0);
   s.startDebt = (s.startDebt ?? 0) - paid;
   n -= paid;
@@ -2754,7 +2754,7 @@ export function tickCityGrowth(
     let best: { bbl: string; rec: (typeof parcels)[string] } | null = null;
     let bestScore = -1;
     for (let i = 0; i < 36; i++) {
-      const bbl = bbls[Math.floor(rng(s) * bbls.length)];
+      const bbl = bbls[Math.floor(rng(s, "dev") * bbls.length)];
       if (s.holdings[bbl] || s.built[bbl] || s.developments[bbl]) continue;
       if (s.cityJobs.some((j) => j.bbl === bbl)) continue;
       // A NAMED FIRM'S DIRT IS NOT THE CITY'S TO BUILD ON. Two owners on one
@@ -2801,13 +2801,13 @@ export function tickCityGrowth(
       // dirt, which is scale-free, and then the firm-size filters in
       // `claimJob` decide who can actually carry the job.
       const read = landRead(rec, s.econ);
-      const score = read.builder - read.psf + rng(s) * 12;
+      const score = read.builder - read.psf + rng(s, "dev") * 12;
       if (score > bestScore) { bestScore = score; best = { bbl, rec }; }
     }
     if (!best) continue;
     const { bbl, rec } = best;
     const dNow = demandNow(s, rec);
-    let use = useForZone(rec.zoneDist, dNow, rng(s), s.econ);
+    let use = useForZone(rec.zoneDist, dNow, rng(s, "dev"), s.econ);
     // A corner that carries twenty floors does not get a two-storey shop on
     // it: it gets shops at grade with something above them.
     if (use === "retail" && retailWantsMixed(rec)) use = "mixed";
@@ -2816,11 +2816,11 @@ export function tickCityGrowth(
     // space before a shovel moves, which is the single link that turns the
     // supply side from a metronome into a market.
     const lead = dominantOf(cmix);
-    if (rng(s) > Math.min(1, classAppetite(s, lead) * 0.85)) continue;
+    if (rng(s, "dev") > Math.min(1, classAppetite(s, lead) * 0.85)) continue;
 
     const farMax = farMaxFor(rec);
     // young town builds small; a mature one builds to the envelope
-    const frac = Math.min(0.95, 0.22 + 0.45 * maturity + 0.3 * (dNow / 100) * maturity + rng(s) * 0.15);
+    const frac = Math.min(0.95, 0.22 + 0.45 * maturity + 0.3 * (dNow / 100) * maturity + rng(s, "dev") * 0.15);
     let sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
     let floors = Math.max(1, Math.round(sf / (rec.lotArea * 0.62)));
     // THE CITY BUILDS TO ITS OWN CORNICE LINE. Sized off the envelope alone, a
@@ -2849,7 +2849,7 @@ export function tickCityGrowth(
     // let the market absorb one building and receive a different one.
     const prog = capRetail(withStreetRetail(cmix, floors, dNow), floors);
     const [bLo, bHi] = BUILD_MONTHS[lead];
-    const months = Math.round(bLo + rng(s) * (bHi - bLo));
+    const months = Math.round(bLo + rng(s, "dev") * (bHi - bLo));
     const deliverM = s.month + months;
     s.cityJobs.push({ bbl, use, sf, floors, startM: s.month, deliverM, mix: prog });
     noteRecordPlan(s, parcels, bbl, lead, sf, floors, "The city");
@@ -2874,7 +2874,7 @@ export function tickCityGrowth(
     // nobody takes it, the city builds it the way it always did.
     const nearPlayer = (adjacency?.[bbl] ?? []).some((a) => !!s.holdings[a]);
     const claimed = claimJob(s, parcels, bbl, use, sf, floors, deliverM, nearPlayer);
-    if (!claimed && rng(s) < 0.4) {
+    if (!claimed && rng(s, "dev") < 0.4) {
       s.news.unshift({
         q: s.month, kind: "info",
         text: `Ground broken at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, due ${monthLabel(deliverM)}.`,

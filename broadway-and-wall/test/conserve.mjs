@@ -47,7 +47,10 @@ const HZ = Number(process.env.HZ ?? 600);
 // does at the edges of a cent, not to give a real leak somewhere to hide.
 const TOL = 1000;
 
-const IN = ["noi", "sold", "interest"];
+// `borrowed` is net new mortgage/facility principal drawn into cash — the
+// bucket that closes conserve's old blind spot on cash-out refinance and
+// facility draws. See BooksYear.borrowed and engine/debt.ts / facility.ts.
+const IN = ["noi", "sold", "interest", "borrowed"];
 const OUT = ["debtSvc", "leasing", "capex", "dev", "taxes", "bought", "ga"];
 const M = (n) => `$${(n / 1e6).toFixed(3)}M`;
 
@@ -179,6 +182,19 @@ for (const seed of SEEDS) {
       if (off && g.cash < 3_000_000) {
         const r = E.acceptSaleOffer(g, parcels, bbl);
         if (!r.err) g = r.s;
+      }
+    }
+    // A CASH-OUT REFINANCE, so `borrowed` is actually exercised. An identity
+    // that never sees a principal draw cannot claim the debt gap is closed.
+    // Once every few years on a stabilised income asset with room to lever.
+    if (m > 36 && m % 48 === 0) {
+      for (const bbl of Object.keys(g.holdings)) {
+        const h = g.holdings[bbl];
+        const rec = E.resolveRec(parcels, g, bbl);
+        if (!h || !rec || rec.class === "land" || h.sale) continue;
+        if ((h.tenants?.length ?? 0) < 1) continue;
+        const r = E.refinance(g, parcels, bbl, "savings", 1);
+        if (!r.err) { g = r.s; break; }
       }
     }
 

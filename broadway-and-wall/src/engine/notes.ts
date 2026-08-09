@@ -45,7 +45,7 @@
 // selling ends it. Nothing here can turn into a monthly rhythm of clicks.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Holding, Note, Rival } from "./types";
-import { logBooks, monthLabel, nextJulyAfter } from "./types";
+import { logBooks, monthLabel, nextJulyAfter, cloneState} from "./types";
 import { rng, rrange } from "./market";
 import { assetValue, collateralAsIs, holdingValue, resolveRec } from "./value";
 import { lenderByName, lenderPressure, chargeLenderLoss } from "./lenders";
@@ -56,7 +56,7 @@ import { distressPrice, markSponsor } from "./sponsor";
 import { firmShort } from "./firm";
 import { productById, bumpLenderRel } from "./debt";
 
-const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s));
+const clone = (s: GameState): GameState => cloneState(s);
 const money = (n: number) =>
   Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}K`;
 const cl = (lo: number, hi: number, x: number) => Math.max(lo, Math.min(hi, x));

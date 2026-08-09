@@ -39,7 +39,8 @@ its outputs are gitignored.
 
 ```
 src/engine/     pure functions over JSON state. No DOM, no store.
-                advanceQuarter(g, parcels, bbls, adjacency) is the monthly tick.
+                advanceMonth(g, parcels, bbls, adjacency) is the monthly tick
+                (advanceQuarter is a deprecated alias — the name always lied).
 src/citygen/    generates the town from a seed. Deterministic.
 src/state/      zustand store. The only mutable thing in the app.
 src/ui/         RightPanel.tsx is ~9,400 lines and holds nearly every page.
@@ -102,20 +103,16 @@ if you must, re-roll before you diagnose. Rule of thumb: `rentIdx` and `land`
 have a 3.4× spread ACROSS SEEDS, so a six-seed median cannot resolve anything
 smaller than a factor of two.
 
-**The frozen world.** `advanceQuarter` returns state UNCHANGED once `gameOver`
+**The frozen world.** `advanceMonth` returns state UNCHANGED once `gameOver`
 is set. Any probe running past ~year 30 without a player must resurrect:
 `if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };` A measured "plateau"
 in how many firms a city supports turned out to be the game being over.
 
-**The conservation identity does not track debt principal.** `pnpm conserve`
-asserts `Δcash == books + Δloc.balance + Δdeposits`. Mortgage principal is
-outside it by convention — `bought` books the EQUITY cheque, not the price, and
-the loan goes straight to the seller at closing. Consequence: **a cash-out
-refinance and a facility draw are unbooked cash inflows that the identity
-cannot see.** It stays quiet only because conserve's bot does neither. If you
-ever extend the identity to carry debt balances, `refinance`, `executePurchase`
-and `facility` must all move together — they share the convention. This is
-written up at the top of `facility.ts`.
+**The conservation identity and debt principal.** `pnpm conserve` asserts
+`Δcash == books + Δloc.balance + Δdeposits`, and `borrowed` is now a books
+inflow for cash-out refinance and facility draws. Voluntary paydowns book to
+`debtSvc`. The conserve bot refinances so the bucket is exercised. Purchase
+still books equity only (`bought`) — the loan goes to the seller at closing.
 
 **One quantity, two answers.** The most productive bug class in this repo.
 `managedRentPsfYr(rec, econ, h)` with no `use` returns the area-weighted BLEND
@@ -193,21 +190,22 @@ better than the 0.2% it was, but the honest number is 8–12% mid-cycle. Land is
 the residual; if nothing pencils, either rents are too low, costs too high, or
 land prices are not answering the builder's number. #47.
 
-**3. The conservation identity's debt gap** (see §4). Real correctness work,
-touching three call sites and one convention. Would close the last place money
-can move without being seen.
+**3. ~~The conservation identity's debt gap~~ — CLOSED.** Cash-out refinance and
+facility draws book to `borrowed`; voluntary paydowns to `debtSvc`; conserve's
+bot refinances so the identity is exercised.
 
 **4. CPI is non-monotonic.** Three of six seeds ran 127–218 deflation months,
 worst ten-year stretch −10.8%, because monthly inflation is clamped to
 [−0.35%, +1.15%] and the lower bound is reachable. Filed, not fixed. Pushes
 rents the other way from the complaint that surfaced it.
 
-**5. Rivals cannot underwrite a lease-up.** The stabilised bridge leg is fed
-only from `buyQuote`, so the player can finance a 30%-let building on stabilised
-value and the street cannot. An asymmetry in the player's favour.
+**5. ~~Rivals cannot underwrite a lease-up~~ — CLOSED.** `streetRefiProceeds`
+takes the same `stabViewFor` plan the player's bridge desk reads.
 
-**6. Rivals never use the facility.** Only the player can borrow against a book.
-That is a real competitive advantage nobody asked for.
+**6. ~~Rivals never use the facility~~ — CLOSED for acquisitions.** The street's
+corporate line (`lineRoom`) now funds the equity cheque on a purchase the way
+it already plugs a balloon — not the player's exact `facility` instrument, but
+the same balance-sheet move.
 
 **7. #39 — rent reprices on vacancy in the same month.** A simultaneity where a
 lag belongs. The four-quadrant identity checks (#31) are the same subject.

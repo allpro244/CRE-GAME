@@ -3,17 +3,17 @@
 // returns a new state or an error string, never mutates the input.
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import type { Bid, Econ, GameState, Holding, RivalStyle } from "./types";
-import { logBooks, monthLabel, SVC_START } from "./types";
+import { logBooks, monthLabel, SVC_START, cloneState} from "./types";
 import { recentLowballs } from "./acquire";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange } from "./market";
-import { assetValue, condGrade, initialCondition, initialCondIdx, holdingValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, proFormaNOIYr, capRateFor } from "./value";
+import { assetValue, condGrade, initialCondition, initialCondIdx, holdingValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall } from "./value";
 import { locAvailable } from "./credit";
 import { marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult } from "./owners";
-import { originate, quote, productById, prepayPenalty } from "./debt";
+import { originate, quote, productById, prepayPenalty, stabViewFor } from "./debt";
 import { takeoverDevelopment, buildClimate } from "./dev";
 import { demandNow } from "./demand";
 import { recordComp } from "./comps";
@@ -47,7 +47,7 @@ export const EXCHANGE_WINDOW_M = 6;  // 1031: redeploy within six months or the 
 export type BuyProduct = string;   // "cash", or any id from debt.PRODUCTS
 
 function clone(s: GameState): GameState {
-  return JSON.parse(JSON.stringify(s));
+  return cloneState(s);
 }
 
 export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price: number, product: BuyProduct, lev = 1) {
@@ -106,11 +106,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // building's own cap rate. `quote` ignores it for every product but the debt
   // fund, and even there it only binds when the income in place cannot support
   // more, which is the definition of a lease-up. See sizeRest.
-  const stabNoi = proFormaNOIYr(rec, s.econ, gradeOf(s, rec), uwBasis);
-  const stabCap = capRateFor(rec, s.econ, gradeOf(s, rec));
-  const stab = stabCap > 0 && stabNoi > 0
-    ? { noiYr: stabNoi, value: (stabNoi / stabCap) * 100 }
-    : undefined;
+  const stab = stabViewFor(rec, s.econ, gradeOf(s, rec), uwBasis);
   const q = quote(s, prod, uwBasis, inPlace(rec, s, bbl, uwBasis).noi, rec.class, false, stab);
   const principal = Math.round(q.principal * Math.max(0, Math.min(1, lev)));
   // WHAT ACTUALLY LIMITED THE LOAN. The desk sizes on three tests and takes
@@ -540,7 +536,7 @@ const GROUND_TENANTS = [
   "a car dealership group", "a data-centre developer", "a church", "a university",
 ];
 function groundTenant(s: GameState): string {
-  return GROUND_TENANTS[Math.floor(rng(s) * GROUND_TENANTS.length)];
+  return GROUND_TENANTS[Math.floor(rng(s, "sales") * GROUND_TENANTS.length)];
 }
 
 /**
@@ -568,7 +564,7 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
       || s.merged?.[h.bbl] || h.sale || s.groundLeases?.[h.bbl]) { delete h.groundOffer; continue; }
     const climate = buildClimate(s);
     const p = Math.min(0.14, 0.006 + 0.075 * (demandNow(s, rec) / 100) * climate);
-    if (rng(s) >= p) continue;
+    if (rng(s, "sales") >= p) continue;
     // Somebody wants it. The deal signs at the terms quoted TODAY — the offer
     // was an intention, not a price lock, and land that repriced under it
     // reprices the coupon too.
@@ -657,8 +653,8 @@ const PRIVATE_VALUATION_AGE_M = 132;
 
 /** Box-Muller, the same way demand.ts draws its normals. */
 function gauss(s: GameState): number {
-  const u1 = Math.max(1e-9, rng(s));
-  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * rng(s));
+  const u1 = Math.max(1e-9, rng(s, "sales"));
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * rng(s, "sales"));
 }
 
 function valuationAgeM(s: GameState, style: RivalStyle | null, stressed: boolean): number {
@@ -666,7 +662,7 @@ function valuationAgeM(s: GameState, style: RivalStyle | null, stressed: boolean
   // because that is what being in trouble looks like from the inside: you are
   // getting opinions of value whether you want them or not.
   const mean = stressed ? 2 : (style ? VALUATION_AGE_M[style] : PRIVATE_VALUATION_AGE_M);
-  return -mean * Math.log(Math.max(1e-9, rng(s)));
+  return -mean * Math.log(Math.max(1e-9, rng(s, "sales")));
 }
 
 /**
@@ -1457,7 +1453,7 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
     : s.econ.phase === "recovery" ? 0.8 : 0.35;
   // how many people actually turned up
   const expected = Math.max(0, 3.4 * phase * Math.max(0.3, appetite) * Math.max(0.25, 2.1 - ratio));
-  let n = Math.floor(expected) + (rng(s) < expected % 1 ? 1 : 0);
+  let n = Math.floor(expected) + (rng(s, "sales") < expected % 1 ? 1 : 0);
   n = Math.min(6, n);
   const bids: Bid[] = [];
   const used = new Set<string>();
@@ -1475,13 +1471,13 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
   const live = livingRivals(s).filter((r) => !r.stressMs && r.cash > value * 0.22);
   for (let i = 0; i < n; i++) {
     // roughly half the room is the street, by name, when the street is liquid
-    const firm = live.length && rng(s) < 0.55
-      ? live[Math.floor(rng(s) * live.length)] : null;
+    const firm = live.length && rng(s, "sales") < 0.55
+      ? live[Math.floor(rng(s, "sales") * live.length)] : null;
     let name = firm && !used.has(firm.name)
       ? firm.name
-      : BIDDER_NAMES[Math.floor(rng(s) * BIDDER_NAMES.length)];
+      : BIDDER_NAMES[Math.floor(rng(s, "sales") * BIDDER_NAMES.length)];
     let guard = 0;
-    while (used.has(name) && guard++ < 12) name = BIDDER_NAMES[Math.floor(rng(s) * BIDDER_NAMES.length)];
+    while (used.has(name) && guard++ < 12) name = BIDDER_NAMES[Math.floor(rng(s, "sales") * BIDDER_NAMES.length)];
     used.add(name);
     // Bids cluster around value with a real tail. The outlier at the top of a
     // good list is the whole reason to run a process.
@@ -1491,7 +1487,7 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
     // is the entire reason anyone runs a campaign. Calibrated so a normal
     // three-bid list clears a per cent or two above appraisal and a thin
     // one-bid market clears just under it, which is the honest trade.
-    const enthusiasm = rng(s);
+    const enthusiasm = rng(s, "sales");
     // CENTRED ON APPRAISAL, NOT ABOVE IT.
     //
     // This ran [0.90, 1.251] at the top of the cycle: the mean single bid was
@@ -1509,7 +1505,7 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
     const price = Math.round(value * (0.86 + 0.20 * enthusiasm * Math.max(0.55, Math.min(1.15, phase))));
     // A buyer stretching past the pack is the one most likely to find a reason
     // to come back to you about it later.
-    const credibility = Math.max(0.2, Math.min(0.97, 1.0 - 0.55 * enthusiasm + (rng(s) - 0.5) * 0.3));
+    const credibility = Math.max(0.2, Math.min(0.97, 1.0 - 0.55 * enthusiasm + (rng(s, "sales") - 0.5) * 0.3));
     bids.push({
       name, price, credibility,
       note: credibility > 0.75 ? "Cash to close, no financing condition."
@@ -1651,7 +1647,7 @@ function unsolicitedBidder(
       name: neighbour.name,
       why: `They own ${neighbour.bbls.filter((b) => nbrs.has(b)).length} of the lots around it and they are assembling a site. `
         + `This is the number somebody pays when your dirt is the last piece.`,
-      mult: rrange(s, 1.22, 1.55),
+      mult: rrange(s, 1.22, 1.55, "sales"),
     };
   }
   if (neighbour) {
@@ -1659,7 +1655,7 @@ function unsolicitedBidder(
       name: neighbour.name,
       why: `They have the deeds either side. A building on the corner of somebody else's assemblage is worth more to `
         + `them than it is to the market, and they have just told you how much more.`,
-      mult: rrange(s, 1.12, 1.34),
+      mult: rrange(s, 1.12, 1.34, "sales"),
     };
   }
   // Somebody accumulating this asset class, who would rather not bid against
@@ -1670,20 +1666,20 @@ function unsolicitedBidder(
     }))
     .filter((x) => x.n >= 3)
     .sort((a, b) => b.n - a.n)[0];
-  if (collector && rng(s) < 0.7) {
+  if (collector && rng(s, "sales") < 0.7) {
     return {
       name: collector.r.name,
       why: `They already own ${collector.n} like it and would rather buy yours quietly than bid against the city for the next one.`,
-      mult: rrange(s, 1.04, 1.16),
+      mult: rrange(s, 1.04, 1.16, "sales"),
     };
   }
   // The opportunist. Reads the rent roll, notices the vacancy, and prices it.
   const occ = rec.bldgArea > 0
     ? Math.min(1, h.tenants.reduce((a, t) => a + t.sf, 0) / rec.bldgArea + (h.occ ?? 0) * 0.5) : 1;
-  const who = firms.length ? firms[Math.floor(rng(s) * firms.length)].name : "An out-of-town buyer";
+  const who = firms.length ? firms[Math.floor(rng(s, "sales") * firms.length)].name : "An out-of-town buyer";
   return occ < 0.7
-    ? { name: who, why: "They have read the rent roll and they are pricing the empty floors, not the building.", mult: rrange(s, 0.84, 0.96) }
-    : { name: who, why: "No particular reason beyond wanting it. Those are the ones worth listening to.", mult: rrange(s, 0.98, 1.14) };
+    ? { name: who, why: "They have read the rent roll and they are pricing the empty floors, not the building.", mult: rrange(s, 0.84, 0.96, "sales") }
+    : { name: who, why: "No particular reason beyond wanting it. Those are the ones worth listening to.", mult: rrange(s, 0.98, 1.14, "sales") };
 }
 
 export function delist(s: GameState, bbl: string): GameState {
@@ -1940,13 +1936,13 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
   const p = (quiet > 0
     ? Math.min(0.85, Math.max(base, 0.12 * (1 + quiet / 1.6)) * dry)
     : base) * rep * QUIETER;
-  const roll = rng(s);
+  const roll = rng(s, "sales");
   if (s.brokersOff) return;
   if (roll >= p) return;
 
   // they pitch near what you already buy: same class, similar size, better corner
   const ref = Object.values(s.holdings).map((h) => resolveRec(parcels, s, h.bbl)).filter(Boolean) as ParcelRecord[];
-  const wantClass = ref.length && rng(s) < 0.65 ? ref[Math.floor(rng(s) * ref.length) % ref.length].class : null;
+  const wantClass = ref.length && rng(s, "sales") < 0.65 ? ref[Math.floor(rng(s, "sales") * ref.length) % ref.length].class : null;
   // WHOSE BUILDINGS THE PHONE RINGS ABOUT.
   //
   // Measured: sixteen off-market calls a fifty-year run and 2% of them on a
@@ -1964,15 +1960,15 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
       for (const b of r.bbls) insidePool.push(b);
     }
   }
-  const inside = insidePool.length > 0 && rng(s) < 0.55;
+  const inside = insidePool.length > 0 && rng(s, "sales") < 0.55;
   const pool = inside ? insidePool : bbls;
   let best: ParcelRecord | null = null;
   for (let i = 0; i < 90; i++) {
-    const bbl = pool[Math.floor(rng(s) * pool.length)];
+    const bbl = pool[Math.floor(rng(s, "sales") * pool.length)];
     if (s.holdings[bbl] || s.approaches[bbl] || s.listings.some((l) => l.bbl === bbl)) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class === "land" || !rec.bldgArea) continue;
-    if (wantClass && rec.class !== wantClass && rng(s) < 0.7) continue;
+    if (wantClass && rec.class !== wantClass && rng(s, "sales") < 0.7) continue;
     const v = assetValue(rec, s.econ, gradeOf(s, rec));
     // THE FLOOR MOVES WITH YOUR BOOK.
     //
@@ -2020,7 +2016,7 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
     // the quiet-desk hazard would be a free seven-point discount handed to
     // whoever does the least.
     const idle = (s.quietMs ?? 0) > 2 ? 0.07 : 0;
-    const motivated = (s.econ.phase === "recession" ? rrange(s, 0.78, 0.90) : rrange(s, 0.84, 0.92)) + idle;
+    const motivated = (s.econ.phase === "recession" ? rrange(s, 0.78, 0.90, "sales") : rrange(s, 0.84, 0.92, "sales")) + idle;
     ask = Math.round(value * motivated / 1000) * 1000;
     who = "Their client needs it done this quarter — that is why you are hearing about it.";
   }
@@ -2172,7 +2168,7 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
         const hot = s.econ.phase === "expansion" || s.econ.phase === "peak";
         const money = Math.max(0.4, s.econ.creditIdx ?? 1);
         const p = (hot ? 0.0020 : 0.0006) * money * (1 + rec0.demandScore / 140);
-        if (rng(s) < p) {
+        if (rng(s, "sales") < p) {
           s.lastUnsolicitedM = s.month;
           const v = holdingValue(rec0, s.econ, h, s.month);
           // WHO IS CALLING, AND WHY.
@@ -2185,7 +2181,7 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
           // same number as a fund rebalancing into your asset class, because
           // they are not buying the same thing. They are buying the block.
           const bidder = unsolicitedBidder(s, parcels, adjacency, rec0, h);
-          const px = Math.round(v * bidder.mult * (hot ? rrange(s, 1.00, 1.10) : rrange(s, 0.86, 0.98)));
+          const px = Math.round(v * bidder.mult * (hot ? rrange(s, 1.00, 1.10, "sales") : rrange(s, 0.86, 0.98, "sales")));
           h.sale = { ask: px, listedM: s.month, unsolicited: true };
           h.sale.offer = { price: px, expiresM: s.month + 2, from: bidder.name };
           s.news.unshift({
@@ -2233,8 +2229,8 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
     if (!rec) continue;
     if (sale.offer) {
       const value = holdingValue(rec, s.econ, h, s.month);
-      if (sale.offer.price < sale.ask && sale.ask / Math.max(1, value) < 1.1 && rng(s) < 0.12) {
-        const bumped = Math.min(sale.ask, Math.round(sale.offer.price * rrange(s, 1.02, 1.06)));
+      if (sale.offer.price < sale.ask && sale.ask / Math.max(1, value) < 1.1 && rng(s, "sales") < 0.12) {
+        const bumped = Math.min(sale.ask, Math.round(sale.offer.price * rrange(s, 1.02, 1.06, "sales")));
         if (bumped > sale.offer.price) {
           sale.offer = { price: bumped, expiresM: s.month + 2 };
           s.news.unshift({
@@ -2287,8 +2283,8 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
     const phaseAdj = marketAppetite(s);
     const staleness = Math.min(0.06, (s.month - sale.listedM) * 0.004); // word gets around
     const p = Math.max(0.01, Math.min(0.5, (0.55 - 0.42 * ratio) * phaseAdj + staleness));
-    if (rng(s) < p) {
-      const bid = Math.min(sale.ask, value * (0.9 + rng(s) * 0.13));
+    if (rng(s, "sales") < p) {
+      const bid = Math.min(sale.ask, value * (0.9 + rng(s, "sales") * 0.13));
       sale.offer = { price: Math.round(bid), expiresM: s.month + 2 };
       s.news.unshift({
         q: s.month, kind: "deal",
@@ -2341,9 +2337,9 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
     // receiver likes them; it is that they are the only cheque in the room.
     const depth = li.distress ? qualifiedBuyers(s, rec, li.ask) : 0;
     const contested = li.distress && depth > 1 ? 1 + 0.22 * Math.min(4, depth - 1) : 1;
-    if (rng(s) < base * priceFactor * contested * Math.max(0.25, marketAppetite(s)) * (talk ? 1.7 : 1)) {
+    if (rng(s, "sales") < base * priceFactor * contested * Math.max(0.25, marketAppetite(s)) * (talk ? 1.7 : 1)) {
       // And whoever comes over the top pays for the privilege of ending it.
-      let px = talk ? Math.max(li.ask, Math.round(talk.yourPrice * rrange(s, 1.04, 1.12))) : li.ask;
+      let px = talk ? Math.max(li.ask, Math.round(talk.yourPrice * rrange(s, 1.04, 1.12, "sales"))) : li.ask;
       if (!talk && li.distress && depth > 1) {
         // Each additional real bidder closes part of the gap between the
         // receiver's number and what the building is worth. Five serious
@@ -2353,7 +2349,7 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
       }
       // Somebody takes it, and somebody has a name. Losing the same corner to
       // the same firm twice in a year is information; "another buyer" was not.
-      const buyer = rivalBuys(s, rec, px);
+      const buyer = rivalBuys(s, parcels, rec, px);
       if (talk && buyer) {
         delete s.talks![li.bbl];
         if (!Object.keys(s.talks!).length) delete s.talks;
@@ -2404,7 +2400,7 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
         // with an address, and the trade goes on the comps sheet like any
         // other, which is what makes an anonymous market legible instead of
         // just noisy.
-        const b = OUT_OF_TOWN[Math.floor(rng(s) * OUT_OF_TOWN.length)];
+        const b = OUT_OF_TOWN[Math.floor(rng(s, "sales") * OUT_OF_TOWN.length)];
         // AND THE SELLER LOSES THE BUILDING. Recording the comp without
         // conveying the deed left the seller owning a building they had just
         // sold, free to list it again next quarter and print the sale a second

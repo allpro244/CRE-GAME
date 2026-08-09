@@ -5,7 +5,7 @@
 // undrawn line sits on the desk.
 import type { ParcelTable } from "@/data/types";
 import type { GameState } from "./types";
-import { logBooks } from "./types";
+import { logBooks, cloneState} from "./types";
 import { netWorth } from "./value";
 import { sponsorStanding } from "./sponsor";
 
@@ -56,7 +56,7 @@ export function locAvailable(s: GameState, parcels: ParcelTable): number {
 }
 
 export function drawLoc(s: GameState, parcels: ParcelTable, amount: number): { s: GameState; err?: string } {
-  const next: GameState = JSON.parse(JSON.stringify(s));
+  const next: GameState = cloneState(s);
   if (!next.loc) next.loc = { balance: 0, drawnTotal: 0, interestPaid: 0 };
   const avail = locAvailable(next, parcels);
   const amt = Math.round(amount);
@@ -80,7 +80,7 @@ export function drawLoc(s: GameState, parcels: ParcelTable, amount: number): { s
 }
 
 export function repayLoc(s: GameState, amount: number): { s: GameState; err?: string } {
-  const next: GameState = JSON.parse(JSON.stringify(s));
+  const next: GameState = cloneState(s);
   if (!next.loc?.balance) return { s, err: "Nothing drawn." };
   const amt = Math.min(Math.round(amount), next.loc.balance, Math.max(0, next.cash));
   if (amt <= 0) return { s, err: "No cash to pay it down with." };

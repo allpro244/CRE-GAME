@@ -4,11 +4,11 @@
 // not just LTV — a lender lends against income, not hope.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import { resolveRec, concentration, industryConcentration } from "./value";
-import type { Econ, GameState, Holding, Loan } from "./types";
-import { logBooks, monthLabel } from "./types";
+import type { Condition, Econ, GameState, Holding, Loan } from "./types";
+import { logBooks, monthLabel, cloneState} from "./types";
 import { openWorkout } from "./workout";
 import { lenderAppetite } from "./lenders";
-import { holdingNOIYr, holdingValue, assetValue, noiAfterTaxYr } from "./value";
+import { holdingNOIYr, holdingValue, assetValue, noiAfterTaxYr, proFormaNOIYr, capRateFor } from "./value";
 import { walt } from "./leasing";
 import { INDUSTRY_LABEL } from "./market";
 import { sponsorStanding } from "./sponsor";
@@ -314,7 +314,7 @@ export function advanceFactor(s: GameState, lender: string, ease = 1): number {
  * market would otherwise write.
  */
 export function streetRefiProceeds(
-  s: GameState, value: number, noiYr: number, maxLtv: number,
+  s: GameState, value: number, noiYr: number, maxLtv: number, stab?: StabView,
 ): { principal: number; binding: string; lender: string } {
   let best = 0, binding = "advance rate", lender = "";
   // WHICH DESKS EVEN LOOK AT IT. The three income desks — the regional, the
@@ -323,14 +323,20 @@ export function streetRefiProceeds(
   // that will look at dirt is the land loan: half leverage, short, recourse.
   // That is not a special case invented for the street; it is the same split
   // `quote` already makes on `uwDscr <= 0`, read from the same product sheet.
+  //
+  // `stab` is the bridge leg the player's buyQuote already feeds Cordage. The
+  // street used to call quote() without it, so a lease-up sized to nearly
+  // nothing on in-place income while the player could finance the plan — an
+  // asymmetry in the player's favour that nobody asked for.
   const desks = noiYr > 0 ? ["savings", "harbor", "cordage"] : ["land"];
   for (const p of desks.map(productById)) {
     if (!windowOpen(s, p)) continue;
-    const q = quote(s, p, value, noiYr, undefined, true);
+    const q = quote(s, p, value, noiYr, undefined, true, p.bridge ? stab : undefined);
     const pr = Math.min(q.principal, Math.round(maxLtv * value));
     if (pr > best) {
       best = pr;
       binding = pr < q.principal ? "their own covenant"
+        : q.stabConstrained ? "stab"
         : q.dyConstrained ? "debt yield" : q.dscrConstrained ? "coverage" : "advance rate";
       lender = p.lender;
     }
@@ -395,6 +401,19 @@ export interface Quote {
  * capitalised at the building's own cap rate.
  */
 export interface StabView { noiYr: number; value: number }
+
+/**
+ * THE STABILISED VIEW a bridge desk underwrites — one place, so buyQuote and
+ * the street's acquisition loan cannot invent two answers for the plan.
+ */
+export function stabViewFor(
+  rec: ParcelRecord, econ: Econ, condition: Condition, basis: number,
+): StabView | undefined {
+  const stabNoi = proFormaNOIYr(rec, econ, condition, basis);
+  const stabCap = capRateFor(rec, econ, condition);
+  if (!(stabCap > 0 && stabNoi > 0)) return undefined;
+  return { noiYr: stabNoi, value: (stabNoi / stabCap) * 100 };
+}
 
 /**
  * `street` sizes the loan for a borrower who is not the player: the sponsor
@@ -885,7 +904,7 @@ export function rateCapCost(loan: Loan): number {
 }
 
 export function buyRateCap(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string } {
-  const next: GameState = JSON.parse(JSON.stringify(s));
+  const next: GameState = cloneState(s);
   const h = next.holdings[bbl];
   const rec = resolveRec(parcels, next, bbl);
   if (!h || !rec) return { s, err: "You don't own that." };
@@ -1093,7 +1112,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
 // Player-initiated refinance at current rates and value. `lev` scales the new
 // loan down from the lender's maximum — the dial on the refinance screen.
 export function refinance(s: GameState, parcels: ParcelTable, bbl: string, productId: string, lev = 1): { s: GameState; err?: string } {
-  const next: GameState = JSON.parse(JSON.stringify(s));
+  const next: GameState = cloneState(s);
   const h = next.holdings[bbl];
   const rec = resolveRec(parcels, next, bbl);
   if (!h || !rec) return { s, err: "You don't own that." };
@@ -1124,8 +1143,15 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   }
   const newLoan = originate(next, product, value, noi, lev * hair.mult, undefined, rec.class);
   if (!newLoan) return { s, err: "No lender will size a loan against this income." };
-  next.cash += qd.principal - oldBal - fee;
+  // PRINCIPAL INTO CASH IS A LEDGER EVENT. Fees stay in debtSvc; net new
+  // principal that lands in the operating account is `borrowed` — the bucket
+  // conserve needs to see cash-out refinances. Paying the old balance down
+  // with cash (negative net draw) is principal repayment and goes to debtSvc.
+  const netDraw = qd.principal - oldBal;
+  next.cash += netDraw - fee;
   logBooks(next, "debtSvc", fee);
+  if (netDraw > 0) logBooks(next, "borrowed", netDraw);
+  else if (netDraw < 0) logBooks(next, "debtSvc", -netDraw);
   h.loan = newLoan;
   next.news.unshift({
     q: next.month, kind: "deal",

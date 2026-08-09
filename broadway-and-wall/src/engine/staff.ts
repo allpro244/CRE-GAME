@@ -49,7 +49,7 @@
  */
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState } from "./types";
-import { logBooks } from "./types";
+import { logBooks, cloneState} from "./types";
 import { mulberry32Step } from "./market";
 import { resolveRec } from "./value";
 
@@ -563,7 +563,7 @@ export function hire(s: GameState, candidateId: number): { s: GameState; err?: s
   if (!c) return { s, err: "That candidate is no longer available." };
   const first = Math.round(c.askSalary * (s.econ.costIdx ?? 1) / 12);
   if (s.cash < first) return { s, err: "You cannot cover the first month's salary." };
-  const next: GameState = JSON.parse(JSON.stringify(s));
+  const next: GameState = cloneState(s);
   next.pendingHires = next.pendingHires ?? [];
   next.pendingHires.push({ staff: { ...c, salary: c.askSalary, hiredM: -1 }, startM: next.month + SEARCH_MONTHS });
   next.hirePool!.list = (next.hirePool!.list ?? []).filter((x) => x.id !== candidateId);
@@ -580,7 +580,7 @@ export function fire(s: GameState, staffId: number): { s: GameState; err?: strin
   if (!st) return { s, err: "Nobody by that name works here." };
   const pay = severanceFor(s, st);
   if (s.cash < pay) return { s, err: `Severance is $${Math.round(pay / 1000)}k and you do not have it.` };
-  const next: GameState = JSON.parse(JSON.stringify(s));
+  const next: GameState = cloneState(s);
   next.staff = (next.staff ?? []).filter((x) => x.id !== staffId);
   // MONEY MOVES THROUGH THE LEDGER OR IT DOES NOT MOVE. This wrote severance
   // straight off the balance with no entry behind it — the only unbooked

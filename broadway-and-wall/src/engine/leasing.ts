@@ -4,7 +4,7 @@
 // Multifamily skips all of this and runs aggregate occupancy.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, BuiltClass, Credit, GameState, Holding, Listing, LOI, Sector } from "./types";
-import { logBooks, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, START_YEAR } from "./types";
+import { logBooks, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, START_YEAR, cloneState} from "./types";
 import type { Tenant } from "./types";
 import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL } from "./market";
 
@@ -26,7 +26,7 @@ const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
  * are triple-net; a minority of everything is flat gross.
  */
 function rollRecovery(s: GameState, cls: string): Recovery {
-  const r = rng(s);
+  const r = rng(s, "leasing");
   switch (cls) {
     case "retail":     return r < 0.86 ? "nnn" : r < 0.95 ? "base" : "gross";
     case "industrial": return r < 0.92 ? "nnn" : "base";
@@ -76,16 +76,16 @@ function pickSector(s: GameState, cls: string): Sector {
   // One partition, shared with the swan side — see SECTOR_CLASSES in types.ts.
   const arr = SECTOR_CLASSES[cls as BuiltClass] ?? SECTOR_CLASSES.office!;
   const w = arr.map((k) => industryPull(s.econ, k));
-  let roll = rng(s) * w.reduce((a, b) => a + b, 0);
+  let roll = rng(s, "leasing") * w.reduce((a, b) => a + b, 0);
   for (let i = 0; i < arr.length; i++) { roll -= w[i]; if (roll <= 0) return arr[i]; }
   return arr[arr.length - 1];
 }
 function pickName(s: GameState, sector: Sector): string {
   const arr = POOL[sector];
-  return arr[Math.floor(rng(s) * arr.length) % arr.length];
+  return arr[Math.floor(rng(s, "leasing") * arr.length) % arr.length];
 }
 function rollCredit(s: GameState, demand: number): Credit {
-  const r = rng(s) + demand / 250;
+  const r = rng(s, "leasing") + demand / 250;
   return r > 0.95 ? 2 : r > 0.55 ? 1 : 0;
 }
 
@@ -478,15 +478,15 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
     // It is not zero because a building with nobody in it at all is not a
     // going concern being sold, it is a shell — and that is a different deal.
     holding.occ = Math.min(0.99, Math.max(0.12,
-      useOccupancy(rec, s.econ, "multifamily") + (distressed ? rrange(s, -0.38, -0.16) : rrange(s, -0.05, 0.04))));
+      useOccupancy(rec, s.econ, "multifamily") + (distressed ? rrange(s, -0.38, -0.16, "leasing") : rrange(s, -0.05, 0.04, "leasing"))));
   }
   if (!isCommercial(rec)) return;
   // A building in place has a rent roll per component: the shops at grade were
   // let to shopkeepers at retail rents on retail terms, and the floors above
   // to firms at office rents. One blended roll described neither.
   const anchors = [
-    s.month + Math.round(rrange(s, 9, 36)),
-    s.month + Math.round(rrange(s, 39, 90)),
+    s.month + Math.round(rrange(s, 9, 36, "leasing")),
+    s.month + Math.round(rrange(s, 39, 90, "leasing")),
   ];
   for (const use of leasableUses(rec)) {
   const legSf = useSf(rec, use);
@@ -494,7 +494,7 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
   // wider than the market model on the downside: a building coming to market
   // is disproportionately one with a leasing problem
   const targetOcc = Math.max(0, Math.min(0.98,
-    useOccupancy(rec, s.econ, use) + (distressed ? rrange(s, -0.52, -0.24) : rrange(s, -0.14, 0.05))));
+    useOccupancy(rec, s.econ, use) + (distressed ? rrange(s, -0.52, -0.24, "leasing") : rrange(s, -0.14, 0.05, "leasing"))));
   const market = useRentPsfYr(rec, s.econ, holding.condition, use);
   // A LEG THAT IS ONE SPACE IS LET, OR IT IS NOT.
   //
@@ -509,32 +509,32 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
   // — and it gives a small building the honest binary outcome a small building
   // has, instead of an average nothing in the class can actually be.
   const whole = legSf < useSuiteSf(rec, use) * 1.5;
-  const target = whole ? (rng(s) < targetOcc ? legSf : 0) : legSf * targetOcc;
+  const target = whole ? (rng(s, "leasing") < targetOcc ? legSf : 0) : legSf * targetOcc;
   let leased = 0;
   let guard = 0;
   while (leased < target && guard++ < 40) {
     // whole suites only: a tenant takes one space, or knocks a few together
     const free = target - leased;
-    const want = useSuiteSf(rec, use) * Math.max(1, Math.round(rrange(s, 1, use === "industrial" ? 1.6 : 2.8)));
+    const want = useSuiteSf(rec, use) * Math.max(1, Math.round(rrange(s, 1, use === "industrial" ? 1.6 : 2.8, "leasing")));
     const sf = toSuites(rec, want, free, use);
     if (!sf) break;
     const sector = pickSector(s, use);
-    const endM = rng(s) < 0.6
-      ? anchors[Math.floor(rng(s) * anchors.length) % anchors.length] + Math.round(rrange(s, -3, 3))
-      : s.month + Math.round(rrange(s, 6, 96));
+    const endM = rng(s, "leasing") < 0.6
+      ? anchors[Math.floor(rng(s, "leasing") * anchors.length) % anchors.length] + Math.round(rrange(s, -3, 3, "leasing"))
+      : s.month + Math.round(rrange(s, 6, 96, "leasing"));
     holding.tenants.push({
       name: pickName(s, sector),
       use,
       sector,
       credit: rollCredit(s, demandLinear(rec.demandScore)),
       sf,
-      rentPsf: +(market * rrange(s, 0.82, 1.04)).toFixed(2),
-      net: use === "office" ? rng(s) < 0.75 : rng(s) < 0.4,
+      rentPsf: +(market * rrange(s, 0.82, 1.04, "leasing")).toFixed(2),
+      net: use === "office" ? rng(s, "leasing") < 0.75 : rng(s, "leasing") < 0.4,
       recovery: rollRecovery(s, use),
       // Signed in the past, so the stop is frozen at the cheaper expense level
       // of that year — the older the lease, the bigger the gap the owner eats.
-      baseStopPsf: +(stopPsfNow(rec, s.econ, holding, use) * rrange(s, 0.72, 0.98)).toFixed(2),
-      startM: s.month - Math.round(rrange(s, 0, 48)),
+      baseStopPsf: +(stopPsfNow(rec, s.econ, holding, use) * rrange(s, 0.72, 0.98, "leasing")).toFixed(2),
+      startM: s.month - Math.round(rrange(s, 0, 48, "leasing")),
       endM: Math.max(s.month + 1, endM),
       // The in-place deposits come across on the settlement statement — cash
       // in, liability up, no effect on net worth. What it does mean is that
@@ -614,13 +614,13 @@ export function genAnchorTenant(s: GameState, rec: ParcelRecord, h: Holding, sfW
     name: pickName(s, sector),
     use,
     sector,
-    credit: rng(s) > 0.4 ? 2 : 1, // anchors are credit tenants
+    credit: rng(s, "leasing") > 0.4 ? 2 : 1, // anchors are credit tenants
     sf: Math.round(sfAnchor),
-    rentPsf: +(market * rrange(s, 0.9, 0.97)).toFixed(2),
+    rentPsf: +(market * rrange(s, 0.9, 0.97, "leasing")).toFixed(2),
     net: true,
     recovery: "nnn",
     startM: s.month,
-    endM: s.month + Math.round(rrange(s, 120, 180)),
+    endM: s.month + Math.round(rrange(s, 120, 180, "leasing")),
   });
 }
 
@@ -696,7 +696,7 @@ export function tiPressure(concession: number): number {
 /**
  * WHETHER THEY STAY, AND WHY.
  *
- * The renewal gate was one line — `rng(s) < industryStress * 0.55` — and
+ * The renewal gate was one line — `rng(s, "leasing") < industryStress * 0.55` — and
  * industryStress is zero most of the time, so measured over four fifty-year
  * runs a renewal letter arrived essentially every time a lease rolled. 71% of
  * tenants renewed and the other 29% were the player declining. Nothing the
@@ -779,8 +779,8 @@ function departureDestination(s: GameState, parcels: ParcelTable, from: ParcelRe
   const live = (s.rivals ?? []).filter((r) => r.failedM === undefined && r.bbls.length);
   // sample a handful of candidates rather than scanning every deed in town
   for (let tries = 0; tries < 14 && live.length; tries++) {
-    const r = live[Math.floor(rng(s) * live.length) % live.length];
-    const bbl = r.bbls[Math.floor(rng(s) * r.bbls.length) % r.bbls.length];
+    const r = live[Math.floor(rng(s, "leasing") * live.length) % live.length];
+    const bbl = r.bbls[Math.floor(rng(s, "leasing") * r.bbls.length) % r.bbls.length];
     if (bbl === from.bbl) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class !== use || !rec.bldgArea) continue;
@@ -788,7 +788,7 @@ function departureDestination(s: GameState, parcels: ParcelTable, from: ParcelRe
   }
   // a third of unmatched departures leave the market entirely; the rest go
   // somewhere too small to name, and saying nothing is better than inventing
-  return rng(s) < 0.35 ? "smaller space outside the city" : null;
+  return rng(s, "leasing") < 0.35 ? "smaller space outside the city" : null;
 }
 
 export function tickLeasing(s: GameState, parcels: ParcelTable) {
@@ -894,7 +894,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const slack = Math.max(0, (s.econ.cityVac.multifamily ?? 0.06) - NATURAL_VAC.multifamily);
       const pace = Math.max(0.030, 0.090 - 0.75 * slack);
       const now = h.occ ?? target;
-      h.occ = Math.min(0.99, Math.max(0, now + (target - now) * pace + rrange(s, -0.006, 0.006)));
+      h.occ = Math.min(0.99, Math.max(0, now + (target - now) * pace + rrange(s, -0.006, 0.006, "leasing")));
     }
     const renovating = h.renovatingUntilM !== undefined && q < h.renovatingUntilM;
 
@@ -1018,7 +1018,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const entries = movedOut.map((mo) => ({
         sf: mo.sf,
         use: mo.use,
-        readyM: q + Math.max(1, Math.round(lagFor(mo.use ?? dominantUse(rec)) * soft * rrange(s, 0.7, 1.4))),
+        readyM: q + Math.max(1, Math.round(lagFor(mo.use ?? dominantUse(rec)) * soft * rrange(s, 0.7, 1.4, "leasing"))),
       }));
       const down = Math.max(...entries.map((e) => e.readyM - q));
       h.makeReady = [...(h.makeReady ?? []), ...entries];
@@ -1089,7 +1089,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // covenant risk you chose.
       const strain = t.strainedM !== undefined && q - t.strainedM < 24 ? 3 : 1;
       const pFail = 0.00035 * cycle * grade * strain * (1 + sectorStress + trade);
-      if (rng(s) >= pFail) continue;
+      if (rng(s, "leasing") >= pFail) continue;
       // FORFEITING A DEPOSIT IS NOT A CASH RECEIPT. It was collected at
       // signing and has been sitting in your account ever since as somebody
       // else's money; what changes on a default is that you stop owing it
@@ -1113,7 +1113,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // and it shows up as money APPEARING, which is the tell for a liability
       // being released rather than an asset arriving.
       if (kept > 0) logBooks(s, "noi", kept);
-      const down = Math.max(2, Math.round((rec.class === "office" ? 6 : 4) * rrange(s, 0.8, 1.5)));
+      const down = Math.max(2, Math.round((rec.class === "office" ? 6 : 4) * rrange(s, 0.8, 1.5, "leasing")));
       h.makeReady = [...(h.makeReady ?? []), { sf: t.sf, readyM: q + down, use: t.use }];
       // TENURE IS THE STORY. "A tenant failed" is a statistic; "the firm that
       // has been on your fourth floor since 2004 failed" is a month you
@@ -1165,7 +1165,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         const shrinking = (t.staff ?? 1) < 0.85 ? 0.5 : 0;
         const squeeze = stress * 3 + (s.econ.phase === "recession" ? 0.7 : 0) + shrinking + Math.max(0, over - 1) * 2;
         if (squeeze <= 0.65) continue;                      // healthy trades honour their paper
-        if (rng(s) >= Math.min(0.07, 0.022 * squeeze * (t.credit === 0 ? 1.6 : 1))) continue;
+        if (rng(s, "leasing") >= Math.min(0.07, 0.022 * squeeze * (t.credit === 0 ? 1.6 : 1))) continue;
         t.reliefAskedM = q;
         askIssued = true;
         // The ask is a cut off the rent they PAY — their problem is the
@@ -1207,12 +1207,12 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // It already drives default odds, deposit size, the renewal discount
         // and the quality spread a buyer pays. This is the only wire missing.
         const ph = s.econ.industryPhase?.[t.sector];
-        if (ph === "boom" && t.credit < 2 && rng(s) < 0.055) t.credit = (t.credit + 1) as Credit;
-        else if (ph === "bust" && t.credit > 0 && rng(s) < 0.075) t.credit = (t.credit - 1) as Credit;
+        if (ph === "boom" && t.credit < 2 && rng(s, "leasing") < 0.055) t.credit = (t.credit + 1) as Credit;
+        else if (ph === "bust" && t.credit > 0 && rng(s, "leasing") < 0.075) t.credit = (t.credit - 1) as Credit;
       }
       // HEADCOUNT. Measured, a p95 boom compounds this to 1.65x over two years
       // and a bust runs it back down. Everything else in this block reads it.
-      t.staff = clampL((t.staff ?? 1) * (1 + (s.econ.industryMom?.[t.sector] ?? 0) * 1.6 + rrange(s, -0.004, 0.004)), 0.40, 2.6);
+      t.staff = clampL((t.staff ?? 1) * (1 + (s.econ.industryMom?.[t.sector] ?? 0) * 1.6 + rrange(s, -0.004, 0.004, "leasing")), 0.40, 2.6);
     }
 
     // --- the roll grows -----------------------------------------------------
@@ -1246,15 +1246,15 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       if (room < minTenancySf(rec, use)) continue;
       const wantSf = toSuites(rec, Math.min(free, room, need - t.sf), free, use);
       if (!wantSf || wantSf > room + useSuiteSf(rec, use) * 0.15) continue;
-      if (rng(s) > 0.16) continue;                // they get round to it
+      if (rng(s, "leasing") > 0.16) continue;                // they get round to it
       t.askedM = q;
       const market = managedRentPsfYr(rec, s.econ, h, use);
       s.lois.push({
         id: s.nextLoiId++, arrivedM: q, bbl: h.bbl, kind: "expansion", use,
         name: t.name, sector: t.sector, credit: t.credit, sf: wantSf,
-        rentPsf: +(market * rrange(s, 0.96, 1.06)).toFixed(2),
+        rentPsf: +(market * rrange(s, 0.96, 1.06, "leasing")).toFixed(2),
         termM: Math.max(24, t.endM - q),          // coterminous with what they hold
-        tiPsf: Math.round(rrange(s, 1, 5) * concessionPressure(s.econ, use)),
+        tiPsf: Math.round(rrange(s, 1, 5, "leasing") * concessionPressure(s.econ, use)),
         freeM: 0, net: t.net, recovery: recoveryOf(t),
         expiresM: q + 3, tenantIdx: i,
       });
@@ -1272,14 +1272,14 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const t = h.tenants[i];
       if (t.endM !== q + 6) continue;
       if (s.lois.some((l) => l.bbl === h.bbl && l.tenantIdx === i)) continue;
-      // WHETHER THEY EVEN WRITE. This was `rng(s) < industryStress * 0.55` and
+      // WHETHER THEY EVEN WRITE. This was `rng(s, "leasing") < industryStress * 0.55` and
       // industryStress is zero most months, so a renewal letter arrived every
       // time a lease rolled and nothing the owner did to the building had any
       // bearing on it. See renewalIntent: how it is run, what state it is in,
       // what you are charging, what their trade is doing, whether it still
       // fits them. And the notice says which of those it was.
       const ri = renewalIntent(s, rec, h, t);
-      if (rng(s) > ri.p) {
+      if (rng(s, "leasing") > ri.p) {
         // WHERE THEY WENT. A tenant who leaves you does not evaporate — they
         // take space in somebody else's building, and knowing WHOSE turns
         // churn into rivalry. The destination is a plausible same-class
@@ -1343,12 +1343,12 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           return Math.max(minTenancySf(rec, t.use ?? "office"), toSuites(rec, need, t.sf, t.use ?? "office") || t.sf);
         })(),
         rentPsf: +Math.max(market * 0.6, ask).toFixed(2),
-        termM: Math.round(rrange(s, 36, 84)),
+        termM: Math.round(rrange(s, 36, 84, "leasing")),
         // A sitting tenant asks for less than a new one — no fit-out, no
         // moving costs to cover — but the same market decides how far they get.
-        tiPsf: Math.round(rrange(s, 2, 9) * concessionPressure(s.econ, t.use ?? "office")),
-        freeM: rng(s) < 0.25 * concessionPressure(s.econ, t.use ?? "office")
-          ? Math.round(rrange(s, 1, 3) * concessionPressure(s.econ, t.use ?? "office")) : 0,
+        tiPsf: Math.round(rrange(s, 2, 9, "leasing") * concessionPressure(s.econ, t.use ?? "office")),
+        freeM: rng(s, "leasing") < 0.25 * concessionPressure(s.econ, t.use ?? "office")
+          ? Math.round(rrange(s, 1, 3, "leasing") * concessionPressure(s.econ, t.use ?? "office")) : 0,
         net: t.net,
         recovery: recoveryOf(t),
         expiresM: t.endM,
@@ -1399,7 +1399,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         .map((u) => ({ u, free: useVacantSf(rec, h, u, q) }))
         .filter((x) => x.free > 400);
       if (!openLegs.length) continue;
-      let pickWeight = rng(s) * openLegs.reduce((a, x) => a + x.free, 0);
+      let pickWeight = rng(s, "leasing") * openLegs.reduce((a, x) => a + x.free, 0);
       let leg = openLegs[0];
       for (const x of openLegs) { pickWeight -= x.free; if (pickWeight <= 0) { leg = x; break; } }
       const use = leg.u;
@@ -1412,7 +1412,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const odds = leasingOdds(s, parcels, rec, h, use);
       if (!odds) continue;
       const p = odds.loiOdds;
-      if (rng(s) < p) {
+      if (rng(s, "leasing") < p) {
         const [tiLo, tiHi] = TI_ASK[use] ?? TI_ASK.office;
         const concession = concessionPressure(s.econ, use);
         // ...and at the rent THAT market pays, not a blend of markets the
@@ -1473,7 +1473,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // this particular building drew.
         const marketPull = vacancyPull(s.econ, use);
         const pTwo = Math.max(0.05, Math.min(0.72, (marketPull - 0.55) * 0.62));
-        const nTour = 1 + (rng(s) < pTwo ? 1 : 0) + (rng(s) < pTwo * 0.45 ? 1 : 0);
+        const nTour = 1 + (rng(s, "leasing") < pTwo ? 1 : 0) + (rng(s, "leasing") < pTwo * 0.45 ? 1 : 0);
         const tourId = s.nextTourId ?? 1;
         s.nextTourId = tourId + 1;
         for (let k = 0; k < nTour; k++) {
@@ -1489,11 +1489,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         const drawnCredit = rollCredit(s, demandLinear(rec.demandScore));
         const credit: Credit = k === 1 ? (Math.min(2, drawnCredit + 1) as Credit)
           : k === 2 ? 0 : drawnCredit;
-        const rentBias = k === 1 ? rrange(s, 0.86, 0.95) : k === 2 ? rrange(s, 1.04, 1.16) : 1;
+        const rentBias = k === 1 ? rrange(s, 0.86, 0.95, "leasing") : k === 2 ? rrange(s, 1.04, 1.16, "leasing") : 1;
         const termBias = k === 1 ? 1.35 : k === 2 ? 0.6 : 1;
         // term first: the free-rent ask is a function of how long they sign for
         const termM = Math.round(
-          (credit === 2 ? rrange(s, 84, 144) : credit === 1 ? rrange(s, 60, 108) : rrange(s, 36, 60))
+          (credit === 2 ? rrange(s, 84, 144, "leasing") : credit === 1 ? rrange(s, 60, 108, "leasing") : rrange(s, 36, 60, "leasing"))
           * (sf > useSuiteSf(rec, use) * 2.5 ? 1.15 : 1)
           * (s.econ.phase === "recession" ? 0.85 : 1) * termBias,
         );
@@ -1501,7 +1501,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // once because BOTH the rent and the allowance read it — a prospect
         // that lowballs the rent and asks for a full fit-out anyway is not a
         // negotiation, it is two independent dice. See tiPsf below.
-        const bid = rng(s) < 0.3 ? rrange(s, 0.68, 0.86) : rrange(s, 0.9, 1.1);
+        const bid = rng(s, "leasing") < 0.3 ? rrange(s, 0.68, 0.86, "leasing") : rrange(s, 0.9, 1.1, "leasing");
         s.lois.push({
           id: s.nextLoiId++,
           arrivedM: s.month,
@@ -1553,7 +1553,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // Full allowance at the ask, nothing at 15% under it, straight line
           // between — so a lowball costs the tenant the fit-out, which is
           // usually the more expensive half of what they were asking for.
-          tiPsf: Math.round(rrange(s, tiLo, tiHi) * (termM / 12) * tiPressure(concession)
+          tiPsf: Math.round(rrange(s, tiLo, tiHi, "leasing") * (termM / 12) * tiPressure(concession)
             * (credit === 2 ? 1.18 : credit === 1 ? 1.02 : 0.90) * (specLive ? 0.12 : 1)
             * clamp01((bid - 0.85) / 0.15)),
           // Free rent scales with the LENGTH of the deal, the way it does in
@@ -1562,8 +1562,8 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // nought-to-six-and-a-half band handed a three-year tenant the same
           // holiday as a twelve-year one, and handed both of them one in a
           // market where nobody had to give anything away.
-          freeM: Math.max(0, Math.round((termM / 12) * rrange(s, 0.25, 0.85) * concession)),
-          net: use === "office" ? rng(s) < 0.8 : rng(s) < 0.4,
+          freeM: Math.max(0, Math.round((termM / 12) * rrange(s, 0.25, 0.85, "leasing") * concession)),
+          net: use === "office" ? rng(s, "leasing") < 0.8 : rng(s, "leasing") < 0.4,
           recovery: rollRecovery(s, use),
           expiresM: q + 3,
         });
@@ -1650,7 +1650,7 @@ export function buildSpecSuites(
   const q = specSuiteQuote(s, rec, h, use, sf);
   if (!q) return { s, err: "There is not enough open space to pre-build, or this class does not fit out." };
   if (s.cash < q.cost) return { s, err: `Pre-building that runs $${(q.cost / 1e6).toFixed(2)}M — you're short.` };
-  const next: GameState = JSON.parse(JSON.stringify(s));
+  const next: GameState = cloneState(s);
   next.cash -= q.cost;
   logBooks(next, "leasing", q.cost);
   next.holdings[bbl].specSuites = { sf: q.sf, readyM: q.readyM, use };
@@ -1684,7 +1684,7 @@ export function buildSpecSuites(
 export function answerAsk(
   s: GameState, parcels: ParcelTable, id: number, action: "grant" | "decline",
 ): { s: GameState; msg: string; err?: string } {
-  const next: GameState = JSON.parse(JSON.stringify(s));
+  const next: GameState = cloneState(s);
   const a = next.asks?.find((x) => x.id === id);
   if (!a) return { s, msg: "", err: "That letter is gone." };
   next.asks = next.asks!.filter((x) => x.id !== id);
@@ -1754,7 +1754,7 @@ export function blendExtend(
   const q = blendExtendQuote(s, rec, h, idx);
   if (!q) return { s, err: "There is no deal to do with that tenant right now." };
   if (s.cash < q.cost) return { s, err: "You cannot cover the commission on that." };
-  const next: GameState = JSON.parse(JSON.stringify(s));
+  const next: GameState = cloneState(s);
   const t = next.holdings[bbl].tenants[idx];
   next.cash -= q.cost;
   logBooks(next, "leasing", q.cost);
@@ -1933,7 +1933,7 @@ export function loiSigningCost(loi: LOI, feeRate?: number): number {
  */
 export function depositFor(s: GameState, rentPsf: number, sf: number, credit: Credit): number {
   const monthly = (rentPsf * sf) / 12;
-  const months = credit === 2 ? 1.0 : credit === 1 ? rrange(s, 1.2, 1.6) : rrange(s, 1.6, 2.0);
+  const months = credit === 2 ? 1.0 : credit === 1 ? rrange(s, 1.2, 1.6, "leasing") : rrange(s, 1.6, 2.0, "leasing");
   return Math.round(monthly * months);
 }
 
@@ -2083,7 +2083,7 @@ export function respondLOI(
   s: GameState, parcels: ParcelTable, id: number, action: LOIAction, fund = false,
   counter?: { rentPsf?: number; tiPsf?: number; bestFinal?: boolean },
 ): { s: GameState; msg: string; err?: string } {
-  const next: GameState = JSON.parse(JSON.stringify(s));
+  const next: GameState = cloneState(s);
   const loi = next.lois.find((l) => l.id === id);
   if (!loi) return { s, msg: "", err: "That LOI is gone." };
   const h = next.holdings[loi.bbl];
@@ -2412,7 +2412,7 @@ export function buyOutTenants(
   if (s.cash < total) {
     return { s, err: `Clearing the building costs ${money(total)} — you're short ${money(total - s.cash)}.` };
   }
-  const next: GameState = JSON.parse(JSON.stringify(s));
+  const next: GameState = cloneState(s);
   const h = next.holdings[bbl]!;
   next.cash -= total;
   // The deposits go back with them; they were never yours.
@@ -2439,7 +2439,7 @@ export function buyOutTenants(
 export function setLeasingHold(s: GameState, bbl: string, on: boolean): GameState {
   const h = s.holdings[bbl];
   if (!h) return s;
-  const next: GameState = JSON.parse(JSON.stringify(s));
+  const next: GameState = cloneState(s);
   next.holdings[bbl].leasingHold = on || undefined;
   if (on) next.lois = next.lois.filter((l) => l.bbl !== bbl);
   return next;

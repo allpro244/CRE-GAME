@@ -1534,6 +1534,22 @@ export function forgetDeed(r: Rival, bbl: string) {
 }
 
 /**
+ * A PLAYER DEED EXTINGUISHES EVERY STREET CLAIM.
+ *
+ * Legitimate settlement code pays the actual seller before calling this. This
+ * is the title-office backstop: if an earlier path left a stale duplicate in a
+ * second rival's book, recording the player's deed removes that impossible
+ * claim rather than letting two firms finance and sell the same property.
+ */
+export function clearRivalClaims(s: GameState, bbl: string): void {
+  for (const r of s.rivals ?? []) {
+    if (!r.bbls.includes(bbl)) continue;
+    r.bbls = r.bbls.filter((b) => b !== bbl);
+    forgetDeed(r, bbl);
+  }
+}
+
+/**
  * IS THIS FIRM'S CASH FLOW SWEPT — derived from the book, not from the file
  * drawer. A desk that re-papers a maturity takes the cash flow with it and the
  * borrower stops paying his partners until the file is closed; the question is

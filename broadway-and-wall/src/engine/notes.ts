@@ -49,7 +49,7 @@ import { logBooks, monthLabel, nextJulyAfter, cloneState} from "./types";
 import { rng, rrange } from "./market";
 import { assetValue, collateralAsIs, holdingValue, resolveRec } from "./value";
 import { lenderByName, lenderPressure, chargeLenderLoss } from "./lenders";
-import { assetGrade, forgetDeed } from "./rivals";
+import { assetGrade, clearRivalClaims, forgetDeed } from "./rivals";
 import { genRentRoll } from "./leasing";
 import { recordComp } from "./comps";
 import { distressPrice, markSponsor } from "./sponsor";
@@ -341,6 +341,7 @@ export function takeDeed(s: GameState, parcels: ParcelTable, n: Note, how: "fore
     forgetDeed(r, n.bbl);
     r.debt = Math.max(0, r.debt - n.face);   // the debt went with the deed
   }
+  clearRivalClaims(s, n.bbl);
   s.listings = s.listings.filter((l) => l.bbl !== n.bbl);
   delete s.approaches[n.bbl];
   if (s.talks?.[n.bbl]) { delete s.talks[n.bbl]; if (!Object.keys(s.talks).length) delete s.talks; }

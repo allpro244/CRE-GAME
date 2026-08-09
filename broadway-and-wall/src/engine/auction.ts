@@ -40,7 +40,7 @@ import { genRentRoll, depositsOn } from "./leasing";
 import { bumpLenderRel } from "./debt";
 import { saleTaxQuote } from "./actions";
 import { takeDeed, FILE_COST } from "./notes";
-import { forgetDeed } from "./rivals";
+import { clearRivalClaims, forgetDeed } from "./rivals";
 import { reinstateFundedForeclosures } from "./workout";
 
 const clone = (s: GameState): GameState => cloneState(s);
@@ -286,6 +286,7 @@ function playerTakes(s: GameState, parcels: ParcelTable, lot: AuctionLot, paid: 
     s.cash -= gone.deposit ?? 0;      // never handed across at a courthouse sale
   }
   if (h.occ !== undefined) h.occ = Math.min(h.occ, occ);
+  clearRivalClaims(s, lot.bbl);
   s.holdings[lot.bbl] = h;
   s.listings = s.listings.filter((l) => l.bbl !== lot.bbl);
   delete s.approaches[lot.bbl];

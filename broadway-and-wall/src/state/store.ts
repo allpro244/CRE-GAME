@@ -19,7 +19,7 @@ import { startDevelopment, startProgram, setStance, setOps, setOpsPolicy, demoli
 import { hire, fire, refreshPool, POOL_REFRESH_M } from "@/engine/staff";
 import { normalizeParcels } from "@/engine/mix";
 import { netWorth } from "@/engine/value";
-import { loadGame, saveGame, listSaves, deleteSave, type SaveMeta } from "@/engine/save";
+import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
 import { cityList, makeCity, type GeneratedCity } from "@/citygen/index.mjs";
 
@@ -1363,7 +1363,36 @@ export async function fetchGzJson(url: string) {
  * the autosaves themselves rather than out of localStorage, because a save
  * carries its own town and this browser's last choice may be a different one.
  */
+const SAVE_GEN_KEY = "bw:saveGen";
+
+/**
+ * EACH PLAYABLE BUILD RETIRES THE PREVIOUS CAMPAIGN.
+ *
+ * `pnpm package` writes `build.json` with a fresh `saveGen`. Same origin
+ * (localhost from the launcher) would otherwise keep IndexedDB autosaves from
+ * the last zip, and Continue would reopen a game written under different
+ * rules. When the stamp changes, wipe every slot once and remember the new
+ * stamp. Dev servers with no `build.json` leave saves alone.
+ */
+async function retireSavesIfNewBuild(): Promise<void> {
+  try {
+    const r = await fetch(new URL("build.json", document.baseURI), { cache: "no-store" });
+    if (!r.ok) return;
+    const body = (await r.json()) as { saveGen?: string };
+    if (!body.saveGen) return;
+    let prev: string | null = null;
+    try { prev = localStorage.getItem(SAVE_GEN_KEY); } catch { /* private mode */ }
+    if (prev === body.saveGen) return;
+    await clearAllSaves();
+    try { localStorage.setItem(SAVE_GEN_KEY, body.saveGen); } catch { /* private mode */ }
+  } catch {
+    /* no stamp or no IDB: keep whatever is there */
+  }
+}
+
 export async function bootMenu() {
+  await retireSavesIfNewBuild();
+
   let resume: Resume | null = null;
   // A save store that will not open is a reason to offer a new town, never a
   // reason to sit on "looking for a game in progress" forever. Private-mode

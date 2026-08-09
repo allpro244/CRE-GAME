@@ -16,3 +16,6 @@ Requires Python 3 (already on most Macs; Windows: python.org — tick "Add to PA
 Do NOT use the old single-file .html build — antivirus often false-flags a
 3MB HTML file with the whole game inlined as a script. This zip is the normal
 website layout plus a tiny local server.
+
+Each new zip clears saves from the previous build the first time you open it
+(same browser / same local server). Start a new campaign after updating.

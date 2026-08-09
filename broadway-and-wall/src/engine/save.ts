@@ -88,3 +88,15 @@ export async function listSaves(): Promise<SaveMeta[]> {
 export async function deleteSave(slot: string): Promise<void> {
   await tx("readwrite", (s) => s.delete(slot));
 }
+
+/** Drop the whole save database — used when a new playable build lands so
+ *  campaigns from a previous zip cannot resume against changed rules. */
+export async function clearAllSaves(): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const req = indexedDB.deleteDatabase(DB);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error ?? new Error("clearAllSaves failed"));
+    // Another tab holding the DB open — treat as best-effort; boot continues.
+    req.onblocked = () => resolve();
+  });
+}

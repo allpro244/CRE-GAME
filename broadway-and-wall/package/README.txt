@@ -202,6 +202,8 @@ a turn a quarter or two before it lands. Rumours are real information. They are
 not promises.
 
 Your game autosaves to the browser every month, per browser and per city.
+Each new playable zip clears those saves the first time you open it, so a
+campaign from the previous build is never Continued under new rules.
 
 
 SOURCE

@@ -1,6 +1,6 @@
 // Assemble the distributable zip: the built site plus the launchers.
 // Run via `pnpm package` (which builds first). Output: dist-zip/broadway-and-wall-playable.zip
-import { cpSync, existsSync, mkdirSync, rmSync, chmodSync, readdirSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, rmSync, chmodSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +21,11 @@ mkdirSync(STAGE, { recursive: true });
 
 // the built site
 cpSync(DIST, STAGE, { recursive: true });
+
+// Fresh stamp per packaged build. The game wipes IndexedDB saves when this
+// changes, so a new zip never Continues a campaign from the previous one.
+const saveGen = `${Date.now().toString(36)}-${process.pid.toString(36)}`;
+writeFileSync(join(STAGE, "build.json"), JSON.stringify({ saveGen, builtAt: new Date().toISOString() }) + "\n");
 
 // the launchers
 for (const f of ["serve.py", "play.command", "play.sh", "play.cmd", "README.txt"]) {

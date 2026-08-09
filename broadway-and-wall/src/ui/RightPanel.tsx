@@ -2593,10 +2593,21 @@ function BuyButtons({ bbl, price, off, closeLabel, bid }: {
         {PRODUCTS.filter((p) => !p.mezz && (isLand ? p.id === "land" : p.id !== "land")).map((p) => {
           const pq = buyQuote(game, parcels, bbl, offerPrice, p.id, 1);
           return (
+            /* A DESK THAT WILL NOT QUOTE IS NOT A CHOICE. These read "won't
+               quote" and stayed live, dark and clickable, so the only way to
+               find out that clicking one did nothing was to click it — and a
+               button that answers a decision with silence is the same defect
+               as a dead one. Disabled and dimmed, with the reason on the
+               hover, so the row reads as what it is: three desks and one that
+               is shut. */
             <button
               key={p.id}
               className={"btn" + (product === p.id ? " btn-on" : "")}
-              title={`${p.blurb}\n${(p.maxLTV * 100).toFixed(0)}% max LTV · ${p.amortYears}-yr amort · ${Math.round(p.termM / 12)}-yr term`}
+              disabled={pq.principal <= 0}
+              style={pq.principal <= 0 ? { opacity: 0.42, cursor: "not-allowed" } : undefined}
+              title={pq.principal <= 0
+                ? `${p.label} will not lend against this building today — ${p.blurb}`
+                : `${p.blurb}\n${(p.maxLTV * 100).toFixed(0)}% max LTV · ${p.amortYears}-yr amort · ${Math.round(p.termM / 12)}-yr term`}
               onClick={() => setProduct(p.id)}
             >
               {p.label}{pq.principal > 0 ? ` · ${pq.ratePct.toFixed(2)}% · ${(p.maxLTV * 100).toFixed(0)}% LTV` : " · won't quote"}
@@ -2807,7 +2818,13 @@ function RefiSection({ bbl }: { bbl: string }) {
   // was lit up, the table had no selected row, and the panel was reporting one
   // desk's terms with another desk's name nowhere. The selection is whatever
   // quote is being read, and everything on the card keys off that.
-  const q = quotes.find((x) => x.id === product) ?? quotes[0];
+  // ...and the fallback is a desk that will actually write, not merely the
+  // first one in the list. Falling through to quotes[0] could land the card on
+  // a lender quoting nothing, which is the same "describing a desk you are not
+  // using" fault one step further along.
+  const q = quotes.find((x) => x.id === product)
+    ?? quotes.find((x) => x.available && x.maxProceeds > 0)
+    ?? quotes[0];
   const picked = q.id;
   const proceeds = Math.round(q.maxProceeds * lev);
   const fee = Math.round(Math.max(proceeds, payoff) * 0.01) + Math.round(proceeds * q.points) + existing;
@@ -2831,11 +2848,12 @@ function RefiSection({ bbl }: { bbl: string }) {
           <button
             key={x.id}
             className={"btn" + (picked === x.id ? " btn-on" : "")}
-            disabled={!x.available}
+            disabled={!x.available || x.maxProceeds <= 0}
+            style={!x.available || x.maxProceeds <= 0 ? { opacity: 0.42, cursor: "not-allowed" } : undefined}
             title={x.why ?? x.blurb}
             onClick={() => setProduct(x.id)}
           >
-            {x.label} · {pct(x.ratePct)}
+            {x.label} · {x.available && x.maxProceeds > 0 ? pct(x.ratePct) : "won't quote"}
           </button>
         ))}
       </div>
@@ -2870,7 +2888,8 @@ function RefiSection({ bbl }: { bbl: string }) {
                   key={x.id}
                   className={x.id === picked ? "" : "dim"}
                   style={{
-                    cursor: x.available ? "pointer" : "default",
+                    cursor: x.available && x.maxProceeds > 0 ? "pointer" : "not-allowed",
+                    opacity: x.available && x.maxProceeds > 0 ? undefined : 0.5,
                     // The selected desk was distinguished only by NOT being
                     // dimmed, which on a four-row table reads as nothing at
                     // all. This is the row whose terms the rest of the card is
@@ -2878,7 +2897,7 @@ function RefiSection({ bbl }: { bbl: string }) {
                     background: x.id === picked ? "rgba(120,160,255,0.14)" : undefined,
                     fontWeight: x.id === picked ? 600 : undefined,
                   }}
-                  onClick={() => x.available && setProduct(x.id)}
+                  onClick={() => x.available && x.maxProceeds > 0 && setProduct(x.id)}
                 >
                   <td>{x.id === picked ? "▸ " : ""}{x.label}</td>
                   <td className="num">{x.available ? pct(x.ratePct) : "—"}</td>
@@ -4260,6 +4279,12 @@ function PortfolioPage() {
       spaces: u ? u.leased : -1,
       rentPsf,
       cost: h.costBasis,
+      // WHAT YOU PAID, PER FOOT. Every other price in this business is quoted
+      // per square foot — rent, NOI, value, replacement cost — and the one
+      // number the book kept in whole dollars was the one you compare all of
+      // them against. Land has no building to divide by, and a lot bought for
+      // its dirt does not have a basis per foot of anything; it sorts last.
+      basisPsf: rec && rec.bldgArea > 0 ? h.costBasis / rec.bldgArea : 0,
       gain: v - h.costBasis,
       debt: h.loan?.balance ?? 0,
       equity: v - (h.loan?.balance ?? 0),
@@ -4470,6 +4495,7 @@ function PortfolioPage() {
             <H k="noi" label="NOI / yr" num />
             <H k="v" label="Value" num />
             <H k="cost" label="Cost" num title="What you paid, including closing costs" />
+            <H k="basisPsf" label="Basis / psf" num title="What you paid per square foot of building, including closing costs — the number to hold against rent, value and what it would cost to build" />
             <H k="gain" label="Gain" num title="Appraisal against cost basis — unrealised, before tax and before the cost of selling" />
             <H k="debt" label="Debt" num />
             <H k="equity" label="Equity" num />
@@ -4556,6 +4582,9 @@ function PortfolioPage() {
                   one this book never showed. Unrealised, before tax and before
                   the cost of getting out, which is why it is not net worth. */}
               <td className="num dim">{usd(h.costBasis)}</td>
+              <td className="num dim">
+                {rec && rec.bldgArea > 0 ? `$${(h.costBasis / rec.bldgArea).toFixed(0)}` : "—"}
+              </td>
               {(() => {
                 const g = v - h.costBasis;
                 const pctG = h.costBasis > 0 ? (g / h.costBasis) * 100 : 0;
@@ -4626,14 +4655,14 @@ function PortfolioPage() {
             </tr>
             {refiRow === h.bbl && (
               <tr>
-                <td colSpan={ranked ? 17 : 16} style={{ background: "rgba(43,37,26,0.035)" }}>
+                <td colSpan={ranked ? 18 : 17} style={{ background: "rgba(43,37,26,0.035)" }}>
                   <RefiSection bbl={h.bbl} />
                 </td>
               </tr>
             )}
             {listRow === h.bbl && (
               <tr>
-                <td colSpan={ranked ? 17 : 16} style={{ background: "rgba(43,37,26,0.035)" }}>
+                <td colSpan={ranked ? 18 : 17} style={{ background: "rgba(43,37,26,0.035)" }}>
                   <ListSection bbl={h.bbl} appraisal={v} onDone={() => setListRow(null)} />
                 </td>
               </tr>

@@ -2281,19 +2281,19 @@ export function tickEcon(s: GameState) {
       const lag = Math.round(eLo + jitter * (eHi - eLo));
       e.entitling[k].push({ m: s.month + lag + CONSTRUCTION_CLOSE_M, sf: Math.round(start) });
     }
-    // An entitled order has an eighteen-month expected shelf life in a balanced
-    // market. Decay the existing book before newly-ready work joins it. The old
-    // `min(book, thisMonthOrder * 18)` was not expiry: one weak month could erase
-    // years of already-entitled projects instantly, which made observed
+    // An entitled order has an eighteen-month expected shelf life. Decay the
+    // existing book by 1/18 each month before newly-ready work joins it. The
+    // old `min(book, thisMonthOrder * 18)` was not expiry: one weak month could
+    // erase years of already-entitled projects instantly, which made observed
     // groundbreaks lead the orders that supposedly created them.
     //
-    // When vacancy is already on the frictional rail the shortage is not a soft
-    // book — builders hold options longer rather than abandoning entitled
-    // square feet the city still needs (ECONOMY.md §F #2). Throwing the book
-    // away on an 18-month clock while the floor is binding is how stock CAGR
-    // permanently lags jobs.
-    const shelfM = (e.cityVac?.[k] ?? NATURAL_VAC[k]) <= frictionFloor(k) + 1e-6 ? 36 : 18;
-    e.startOwed[k] *= (shelfM - 1) / shelfM;
+    // Lengthening the shelf while the frictional floor binds was tried and
+    // REJECTED on measurement: a sticky book raised `wanted` cranes that then
+    // burned crew slots on sites that would not underwrite, and median office
+    // stock CAGR fell (0.52% → 0.37% over six century seeds) — the opposite of
+    // ECONOMY.md §F #2. The pool-service fix in rivals.ts is the supply answer
+    // that measured forward; the shelf stays an eighteen-month fact.
+    e.startOwed[k] *= 17 / 18;
     // …and what finished its entitlement this month joins the book a crane can
     // be pointed at.
     const ready = e.entitling[k];

@@ -1,7 +1,7 @@
 # Century Report — Broadway & Wall
 
 Null-player simulations · **6 market seeds** × **100 years** · city seed `20261` (1363 parcels).
-Generated 2026-08-09T20:53:14.240Z · wall time 139.8s.
+Generated 2026-08-09T20:58:42.530Z · wall time 140.9s.
 
 ## Headline (median across seeds at year 100)
 

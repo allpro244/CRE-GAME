@@ -986,6 +986,8 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   }
   econ.rentExp = { ...econ.rentIdx };
   econ.effRentIdx = { ...econ.rentIdx };
+  // Income-anchor parity is this opening print, not the global RENT_BASE table.
+  econ.rentAnchor = { ...econ.rentIdx };
   recordHistory(econ, 0);
   return econ;
 }
@@ -3022,6 +3024,8 @@ export function tickEcon(s: GameState) {
     const instant = vacTerm + scarcity;
     const tau = RENT_PRESS_TAU[k];
     e.rentPress[k] += (instant - e.rentPress[k]) / tau;
+    // Hard rail on the EMA itself — see the press clamp at the drift line.
+    e.rentPress[k] = clamp(e.rentPress[k], -0.008, 0.0075);
 
     // THE INCOME ANCHOR — the line that makes rent a by-product of the economy.
     //
@@ -3039,26 +3043,22 @@ export function tickEcon(s: GameState) {
     // tightEma is a twenty-year memory of having genuinely been tight rather
     // than a constant somebody typed. A city with a permanent glut loses it.
     const income = Math.max(0.35, e.wageIdx ?? 1);
-    const rentToIncome = (e.rentIdx[k] / RENT_BASE[k]) / income;
-    // HOW MUCH OF A PREMIUM A CHRONICALLY TIGHT CITY IS ALLOWED TO EARN. At
-    // 0.80 this let a tight market sustain a rent-to-income ratio 44% above
-    // parity, which is most of a Manhattan premium granted to any town that
-    // spent twenty years mildly short of space — and it is the slack that let
-    // real rents grow 1.72%/yr against real wages at 1.03%. Measured, rents
-    // reached 3.18x their base while construction costs reached 1.79x, and
-    // costs were the ones tracking inflation correctly. A premium is still
-    // earned here; it is just a quarter rather than a half.
-    const sustain = 1 + 0.45 * clamp(e.tightEma ?? 0, -0.30, 0.55);
+    // Parity is the town's OWN opening print (rentAnchor), not RENT_BASE.
+    // Density-scaled openings sit well below the global table; measuring
+    // against RENT_BASE made every young town look "cheap" and the under-
+    // shoot term HELPED rents compound until they hit the table — measured
+    // as hot seeds at +3–4%/yr real and land residuals from $50 to $3,000/sf.
+    const base = e.rentAnchor?.[k] ?? RENT_BASE[k];
+    const rentToIncome = (e.rentIdx[k] / Math.max(1e-6, base)) / income;
+    // HOW MUCH OF A PREMIUM A CHRONICALLY TIGHT CITY IS ALLOWED TO EARN.
+    // Long-run US CRE real rent is roughly flat to +1%/yr (CBRE/NCREIF).
+    const sustain = 1 + 0.28 * clamp(e.tightEma ?? 0, -0.30, 0.55);
     const dev = rentToIncome / sustain - 1;
-    // Tightened from 0.0080 when housing and retail demand were rewired onto
-    // population: giving those two classes their real driver let real rent
-    // growth run at 1.97%/yr against real wages at 1.01%, which is the same
-    // failure the anchor was built to prevent, arriving through a new door.
-    // This is the correct place to absorb it — the anchor's whole job is to
-    // police the real relationship between rent and pay, whatever pushed it.
+    // Pull hard when rent outruns pay; barely nudge when rent is cheap —
+    // cheap space is what supply is for, not a reason to reprice the city up.
     const anchor = dev > 0
-      ? -0.0124 * Math.min(1.6, dev)          // outrunning incomes: pulled down hard
-      : -0.0028 * Math.max(-0.65, dev);       // cheap against incomes: drifts back up
+      ? -0.018 * Math.min(2.0, dev)           // outrunning incomes: pulled down hard
+      : -0.0007 * Math.max(-0.65, dev);       // cheap against incomes: weak drift up
 
     // AND RENT CARRIES THE PRICE LEVEL. Every other term above is REAL — a
     // sentiment, a vacancy, a job — and none of them knows what a dollar is
@@ -3075,8 +3075,11 @@ export function tickEcon(s: GameState) {
     // for — policing the REAL relationship between rent and pay — instead of
     // being asked to carry the whole price level on a spring.
     const escalation = (e.inflExp ?? 0.02) / 12;
-    const drift = c2.rentDrift * 0.55 + e.sectorMom[k] * 0.42 + e.rentPress[k]
-      + anchor + (jobDrift * 0.35) + escalation;
+    // Cap the lagged pressure term: chronic shortage was holding ~+1.6%/mo of
+    // scarcity in rentPress and overpowering the income anchor for a decade.
+    const press = clamp(e.rentPress[k], -0.008, 0.0075);
+    const drift = c2.rentDrift * 0.48 + e.sectorMom[k] * 0.42 + press
+      + anchor + (jobDrift * 0.28) + escalation;
     // THE HALF-OF-BASE FLOOR IS NOW A GUARD AGAIN, WHICH IS ALL IT WAS EVER
     // MEANT TO BE. It used to be load-bearing and it used to be the reason the
     // amplitude above looked survivable: removing it took office peak-to-trough
@@ -3299,7 +3302,14 @@ export function tickEcon(s: GameState) {
     const heat = clamp(((e.crewUtil ?? 1) - 1) * 3.5, -1.9, 3.1);
     const slope = heat < 0 ? 0.0026 : 0.0016;
     const costDrift = (e.inflExp ?? 0.02) / 12 + heat * slope + (e.phase === "recession" ? -0.0004 : 0);
-    e.costIdx = clamp(e.costIdx * (1 + costDrift + rrange(s, -0.0012, 0.0012)), 0.6, 400);
+    // When asking rents outrun construction cost, the land residual (rent −
+    // cost) explodes and vacant lots print absurd $/sf. Catch costIdx up
+    // toward the rent level once the stretch is past a quarter — same
+    // identity landIdx already chases, applied to the cost denominator.
+    const rentLvl = (e.effRentIdx?.office ?? e.rentIdx.office) / RENT_BASE.office;
+    const stretch = rentLvl / Math.max(0.5, e.costIdx) - 1;
+    const catchUp = stretch > 0.25 ? Math.min(0.0045, 0.012 * (stretch - 0.25)) : 0;
+    e.costIdx = clamp(e.costIdx * (1 + costDrift + catchUp + rrange(s, -0.0012, 0.0012)), 0.6, 400);
   }
 
   recordHistory(e, s.month, monthAbs, monthComp);

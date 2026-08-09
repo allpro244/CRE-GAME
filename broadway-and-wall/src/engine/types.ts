@@ -1074,6 +1074,13 @@ export interface Econ {
   /** THE ASKING INDEX — the sticky face rate landlords quote. See effRentIdx. */
   rentIdx: Record<BuiltClass, number>;
   /**
+   * Structural asking at campaign open (density + era). The income anchor
+   * measures rent-to-wage against THIS, not the global RENT_BASE table —
+   * otherwise a town that opens at $28 office against a $44 table looks
+   * "cheap" and the anchor HELPS rents double before it ever pulls down.
+   */
+  rentAnchor?: Record<BuiltClass, number>;
+  /**
    * THE MARKET REBUILD (ECONOMY.md). Tenants are finite and supply cannot
    * mint them; location has teeth in both rent and pace; asking rents are
    * sticky while effective rents move through concessions.

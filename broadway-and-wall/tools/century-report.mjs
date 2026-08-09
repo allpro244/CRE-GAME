@@ -423,11 +423,12 @@ push(`- If you re-run: \`YEARS=100 SEEDS=6 CITY_SEED=20261 node tools/century-re
 push(``);
 
 const text = md.join("\n");
-const localOut = join(HERE, "..", "CENTURY_REPORT.md");
+// Null-player measurement only — do not overwrite the narrative CENTURY_REPORT.md.
+const localOut = join(HERE, "..", "CENTURY_NULLS_100Y.md");
 writeFileSync(localOut, text);
 try {
   mkdirSync("/opt/cursor/artifacts", { recursive: true });
-  writeFileSync("/opt/cursor/artifacts/CENTURY_REPORT.md", text);
+  writeFileSync("/opt/cursor/artifacts/CENTURY_NULLS_100Y.md", text);
 } catch { /* optional */ }
 
 console.log(`\nWrote ${localOut}`);

@@ -28,6 +28,7 @@ const checks = [
   ["property history", "property-history.mjs"],
   ["tax appeals", "tax-appeal.mjs"],
   ["rent causality", "rent-why.mjs"],
+  ["finite demand", "demand-finite.mjs"],
   ["seller counters", "loi-counter.mjs"],
   ["development underwriting", "underwriting.mjs"],
   ["economy plausibility", "economy-plausibility.mjs", { HZ: "120", SEEDS: "3", CITY_SEEDS: "1" }],

@@ -4,7 +4,8 @@ import { monthLabel, START_YEAR } from "@/engine/types";
 import type { BuiltClass, DevUse, EconHistoryPoint } from "@/engine/types";
 import { devMix } from "@/engine/dev";
 import { capitalRatio, targetCapital } from "@/engine/lenders";
-import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK } from "@/engine/market";
+import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor } from "@/engine/market";
+import { marketRequirement } from "@/engine/absorption";
 import { submarkets, legVacancy, legRent, legDemand, deliverySchedule, projectVacancy, marketBalance, monthsOfSupply } from "@/engine/space";
 import { LineChart, BarChart, Gauge } from "@/ui/Chart";
 import type { BarGroup } from "@/ui/Chart";
@@ -567,6 +568,38 @@ export function EconomyPage() {
       <div className="grid" style={{ marginTop: 6 }}>
         <Row k="Inventory" v={`${(stock / 1e6).toFixed(1)}M sf standing`} />
         <Row k="Vacant space" v={`${((stock * vacNow) / 1e6).toFixed(2)}M sf · ${(vacNow * 100).toFixed(1)}% against a ${(NATURAL_VAC[focus] * 100).toFixed(1)}% natural rate`} bad={bal.gap > 0.025} strong />
+        {/* THE DEMAND LEDGER — proof that letters come from a finite looking
+            book, not from empty floors. Occupied + looking pool + this month's
+            requirement are the same quantities leasingOdds reads on the desk. */}
+        {(() => {
+          const occ = e.occupied?.[focus] ?? stock * (1 - vacNow);
+          const pool = e.pool?.[focus] ?? occ;
+          const housable = stock * (1 - frictionFloor(focus));
+          const req = marketRequirement(e, focus);
+          const looking = Math.max(0, pool - occ);
+          const struct = e.structTight?.[focus] ?? 0;
+          return (
+            <>
+              <Row k="Occupied" v={`${(occ / 1e6).toFixed(2)}M sf let`} />
+              <Row
+                k="Looking for space"
+                v={`${(looking / 1e6).toFixed(2)}M sf in the search pool · pool capped at housable ${(housable / 1e6).toFixed(2)}M`}
+                strong={looking > stock * 0.02}
+              />
+              <Row
+                k="City needs this month"
+                v={`${(req / 1_000).toFixed(0)}k sf of requirement · every LOI competes for a share of this`}
+              />
+              {struct > 0.02 && (
+                <Row
+                  k="Unmet structural demand"
+                  v={`${(struct * 100).toFixed(1)}% of stock — jobs want more floors than the city can house`}
+                  bad
+                />
+              )}
+            </>
+          );
+        })()}
         <Row k="Under construction" v={`${((e.pipeline?.[focus] ?? 0) / 1e6).toFixed(2)}M sf · ${(((e.pipeline?.[focus] ?? 0) / stock) * 100).toFixed(1)}% of stock`} bad={(e.pipeline?.[focus] ?? 0) / stock > 0.05} />
         <Row k="Net absorption (12m)" v={`${(e.absorb12?.[focus] ?? 0) >= 0 ? "+" : ""}${((e.absorb12?.[focus] ?? 0) / 1e6).toFixed(2)}M sf`} bad={(e.absorb12?.[focus] ?? 0) < 0} />
         <Row k="Completions (12m)" v={`${((e.completions12?.[focus] ?? 0) / 1e6).toFixed(2)}M sf`} />

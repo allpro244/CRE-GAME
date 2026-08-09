@@ -32,6 +32,8 @@ export const MODULES = [
   // owners carries the register of named private holders: who owns what, what
   // they think of you, and when they leave the market.
   "owners",
+  // supply is the one project queue shared by map deliveries and the economy.
+  "supply",
 ];
 
 export function writeEntry(path) {

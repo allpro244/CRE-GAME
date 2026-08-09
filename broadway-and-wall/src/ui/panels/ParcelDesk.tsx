@@ -2448,9 +2448,10 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                 market will pay for it when it is finished. */}
             <Row
               k="Yield on cost"
-              v={`${plan.yieldOnCost.toFixed(2)}% vs ${plan.exitCap.toFixed(2)}% exit · ${(plan.yieldOnCost - plan.exitCap) >= 0 ? "+" : ""}${((plan.yieldOnCost - plan.exitCap) * 100).toFixed(0)} bps`}
+              v={`${plan.yieldOnCost.toFixed(2)}% vs ${plan.requiredYield.toFixed(2)}% required · `
+                + `${plan.exitCap.toFixed(2)}% exit × developer margin · ${(plan.hurdleRatio * 100).toFixed(0)}% of hurdle`}
               strong
-              bad={plan.yieldOnCost - plan.exitCap < 0.75}
+              bad={plan.hurdleRatio < 1}
             />
             {/* WHAT THIS ACTUALLY COSTS YOU, in the order it leaves your
                 account. The total led with "equity at close" and buried the

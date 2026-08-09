@@ -437,6 +437,7 @@ function AlertBody() {
     swan: ["A black swan", "A white swan"],
     bank: ["A desk has gone down", "The credit window"],
     portfolio: ["The book has been taken", "Your portfolio"],
+    ground: ["Ground-lease default", "Your leased fee"],
   };
   const kicker = (KICKER[a.kind] ?? ["Something has happened", "Something has happened"])[bad ? 0 : 1];
   const queued = (game.alerts?.length ?? 1) - 1;

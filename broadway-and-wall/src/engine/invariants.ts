@@ -114,6 +114,37 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
     }
   }
 
+  // ------------------------------------------------------- the supply queue
+  // One physical project, one economic delivery. Cohorts are a derived view;
+  // if they disagree, vacancy and the map are about to receive different
+  // buildings again.
+  if (s.econ.deliveryQueue) {
+    const seen = new Set<string>();
+    for (const p of s.econ.deliveryQueue) {
+      const at = `supply ${p.id}`;
+      if (!fin(p.deliverM) || !fin(p.startM) || p.deliverM < p.startM) {
+        bad("supply", at, `bad dates ${p.startM}->${p.deliverM}`);
+      }
+      const sf = Object.values(p.sfByUse).reduce((a, v) => a + (v ?? 0), 0);
+      if (!fin(sf) || sf <= 0) bad("supply", at, `non-positive programme ${sf}`);
+      if (p.bbl && p.source !== "legacy") {
+        if (seen.has(p.bbl)) bad("supply", at, `duplicate live project on ${p.bbl}`);
+        seen.add(p.bbl);
+        const physical = !!s.developments[p.bbl] || (s.cityJobs ?? []).some((j) => j.bbl === p.bbl);
+        if (!physical) bad("supply", at, "economic delivery has no physical project");
+      }
+    }
+    for (const k of ["office", "retail", "multifamily", "industrial"] as BuiltClass[]) {
+      const queued = s.econ.deliveryQueue
+        .filter((p) => p.status === "active")
+        .reduce((a, p) => a + Math.max(0, Math.round(p.sfByUse[k] ?? 0)), 0);
+      const scheduled = (s.econ.cohorts?.[k] ?? []).reduce((a, c) => a + c.sf, 0);
+      if (queued !== scheduled) {
+        bad("supply", `${k} queue`, `${queued} sf in projects but ${scheduled} sf on schedule`);
+      }
+    }
+  }
+
   // ------------------------------------------------------------- assemblage
   // A merged deed's land has moved somewhere. If the parent is gone, or the
   // child is itself a parent, the land has either vanished or been counted in

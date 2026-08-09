@@ -6,6 +6,25 @@ import type { Lender } from "./lenders";
 export type MarketPhase = "recovery" | "expansion" | "peak" | "recession";
 
 export type BuiltClass = Exclude<AssetClass, "land">;
+
+export type SupplySource =
+  | "city"
+  | "teardown"
+  | "rival"
+  | "player"
+  | "ground-lease"
+  | "legacy";
+
+/** One physical project in the city's authoritative delivery queue. */
+export interface SupplyProject {
+  id: string;
+  bbl?: string;
+  source: SupplySource;
+  startM: number;
+  deliverM: number;
+  sfByUse: Partial<Record<BuiltClass, number>>;
+  status: "active" | "stalled" | "cancelled";
+}
 export const BUILT_CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
 
 /**
@@ -960,7 +979,7 @@ export interface NewsItem {
 export interface Alert {
   id: number;
   q: number;                 // the month it fired
-  kind: "swan" | "bank" | "portfolio";
+  kind: "swan" | "bank" | "portfolio" | "ground";
   tone: "bad" | "good";      // a black swan or a white one
   title: string;
   body: string;
@@ -1447,12 +1466,25 @@ export interface Econ {
   pipeline: Record<BuiltClass, number>;
   starts: Record<BuiltClass, number>;
   supplyPress?: Partial<Record<BuiltClass, number>>;
+  /**
+   * P97 site-level underwriting appetite by class, refreshed annually from
+   * actual vacant parcels. P97 is the expected best site in the 36-lot sample
+   * the city examines for each crane (36/37 ≈ 97th percentile).
+   */
+  sitePencil?: Record<BuiltClass, number>;
   // THE PIPELINE AS A QUEUE, not a number. Every start is a cohort with a
   // month it will deliver in, so the game can answer the question every
   // developer actually asks — "what is coming, and when" — instead of only
   // "how much is out there somewhere". This is what makes the supply side
   // legible: you can see the wave before it lands on you.
   cohorts?: Record<BuiltClass, { m: number; sf: number; bbl?: string }[]>;
+  /**
+   * THE AUTHORITATIVE CONSTRUCTION QUEUE. One row per physical project, with
+   * every use leg and one delivery date. `cohorts` and `pipeline` are derived
+   * views retained for charts and old saves; starts write here through
+   * engine/supply.ts.
+   */
+  deliveryQueue?: SupplyProject[];
   /**
    * SQUARE FEET THE SPACE MARKET HAS ASKED FOR AND THE MAP HAS NOT YET BUILT.
    *

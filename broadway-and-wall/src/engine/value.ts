@@ -275,7 +275,18 @@ export const CONTINGENCY = 0.06;  // held against change orders; unspent is your
  * share of cost. 15-20% on cost is the standard hurdle a lender underwrites
  * to and a developer will not go below; below it, nobody breaks ground.
  */
-const DEV_MARGIN = 0.17;
+export const DEV_MARGIN = 0.17;
+
+/** One mathematical hurdle for class orders, parcel plans and land residuals. */
+export function developmentHurdle(yieldOnCost: number, exitCap: number): {
+  requiredYield: number;
+  hurdleRatio: number;
+  clears: boolean;
+} {
+  const requiredYield = exitCap * (1 + DEV_MARGIN);
+  const hurdleRatio = yieldOnCost / Math.max(1e-6, requiredYield);
+  return { requiredYield, hurdleRatio, clears: hurdleRatio >= 1 };
+}
 /**
  * A RESIDUAL IS A FUTURE NUMBER AND LAND IS BOUGHT TODAY. Two to three years
  * of entitlement and construction at a land discount rate of about 12% — the
@@ -622,7 +633,7 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
   // itself through `heightPremium` where it is actually planned.
   const costPsf = HARD_COST_PSF[k] * e.costIdx * (1 + SOFT_COST) * (1 + CONTINGENCY);
   const yoc = noiPsf / Math.max(1, costPsf);
-  const required = ((e.capRate?.[k] ?? CAP_BASE[k]) / 100) * (1 + DEV_MARGIN);
+  const hurdle = developmentHurdle(yoc, (e.capRate?.[k] ?? CAP_BASE[k]) / 100);
   // THE RESPONSE CURVE WAS CALIBRATED FOR INPUTS THIS FUNCTION NO LONGER HAS.
   //
   // It returned `clamp((yoc / required - 1) * 3.2 + 0.55, 0, 2.2)`, and that
@@ -646,8 +657,7 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
   // The clamp that remains is a guard on a ratio, not a shape: `required` is a
   // cap rate and cannot be zero, but a NaN upstream should not become infinite
   // appetite.
-  const ratio = yoc / Math.max(1e-4, required);
-  return Math.min(3, Math.pow(Math.max(0, ratio), Q_ELASTICITY_DEV));
+  return Math.min(3, Math.pow(Math.max(0, hurdle.hurdleRatio), Q_ELASTICITY_DEV));
 }
 /** Same supply elasticity `buildClimate` uses; see the note there. */
 const Q_ELASTICITY_DEV = 1.2;
@@ -1606,7 +1616,14 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
   // A ground-leased lot does not carry: the lessee pays the taxes and the
   // insurance, which is what "absolutely net" means. Its income arrives
   // separately as ground rent, so charging carry here would bill it twice.
-  if (rec.class === "land" || !rec.bldgArea) return h.groundLeased ? 0 : -landValue(rec, econ) * 0.012;
+  //
+  // This must be checked BEFORE the resolved parcel class. Once the lessee's
+  // improvement opened, resolveRec correctly returned a building instead of
+  // land — and this function then charged the fee owner that building's tax,
+  // insurance, operating cost and vacancy despite the ground lease explicitly
+  // putting every one of them on the lessee.
+  if (h.groundLeased) return 0;
+  if (rec.class === "land" || !rec.bldgArea) return -landValue(rec, econ) * 0.012;
   const cls = rec.class as BuiltClass;
   if (cls === "multifamily") {
     // units turn over and things break: a 7% reserve off collections for

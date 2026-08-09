@@ -57,6 +57,7 @@
     "pencils": "node test/pencils.mjs",
     "breakeven": "node test/breakeven.mjs",
     "leadlag": "node test/leadlag.mjs",
+    "legmatch": "node test/legmatch.mjs",
     "mixmatch": "node test/mixmatch.mjs",
     "mortality": "node test/mortality.mjs",
     "covenant": "node test/covenant.mjs",

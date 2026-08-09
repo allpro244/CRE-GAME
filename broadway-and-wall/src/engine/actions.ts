@@ -1080,7 +1080,19 @@ function bidBlind(
     // costs — they are answering a bid, not a survey.
     na.ask = Math.round(reserve * rrange(next, 1.01, 1.05) / 1000) * 1000;
     delete na.reserve;
-    na.countered = true;   // the bid WAS the counter; there is not a second one
+    // A NUMBER IS A NUMBER, AND YOU MAY ANSWER IT.
+    //
+    // This set `countered`, with the note "the bid WAS the counter; there is
+    // not a second one", and that closed the negotiation the moment it finally
+    // opened: the owner names a figure in answer to your bid and the only
+    // moves left are pay it or walk. No buyer in this business takes the first
+    // number a seller finally says out loud, and nothing about having bid
+    // blind makes the figure that came back a final one.
+    //
+    // What bidding blind actually cost you is INFORMATION, and that is priced
+    // where it belongs — in counterOffMarket, off this flag. They know you
+    // want it, and the figure they named already has that in it.
+    na.named = true;
     next.news.unshift({
       q: next.month, kind: "info",
       text: `${addr}: your $${(price / 1e6).toFixed(2)}M got a real answer out of them at last — `
@@ -1176,9 +1188,21 @@ export function counterOffMarket(
   const px = Math.round(offerPx ?? a.ask * 0.88);
   const cut = Math.max(0, 1 - px / a.ask);                     // how deep you went
   const pressure = assemblagePressure(next, adjacency, bbl);
+  // A NUMBER DRAGGED OUT OF THEM BY A BID IS NOT AN OPENING ASK.
+  //
+  // Two things are different about it and they pull opposite ways. It is close
+  // to their floor already — bidBlind names it at 1.01-1.05x the reserve — so
+  // the room underneath is a few per cent, not the twelve an opening ask
+  // carries; and they know you want the building, because you asked first and
+  // then bid. So the reference cut tightens and the whole curve comes down.
+  // Cutting three per cent off a number they named under pressure is a real
+  // negotiation; cutting fifteen is asking them to forget the last six months.
+  const named = a.named === true;
+  const ref = named ? 0.03 : 0.12;
   const pTake = Math.max(0.05, Math.min(0.8,
     0.48
-    - (cut - 0.12) * 2.6                                       // 12% under is the reference cut
+    - (named ? 0.10 : 0)                                       // they know you want it
+    - (cut - ref) * 2.6                                        // the reference cut
     - 0.35 * pressure                                          // holdouts don't blink
     + (next.econ.phase === "recession" ? 0.18 : 0)             // fear is your friend
     - (next.econ.phase === "expansion" ? 0.08 : 0),

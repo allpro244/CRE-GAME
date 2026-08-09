@@ -3,7 +3,7 @@
 // the parcel record and the market state — no hidden multipliers.
 import type { ParcelRecord } from "@/data/types";
 import type { Condition, Econ, GameState, Holding, Sector, Tenant } from "./types";
-import { serviceSpec } from "./types";
+import { serviceSpec, START_YEAR } from "./types";
 import type { BuiltClass } from "./types";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 import { industryStress, NATURAL_VAC, CAP_BASE } from "./market";
@@ -806,7 +806,7 @@ export function condGrade(condIdx: number): Condition {
  * are the only bones that start at the top of the scale.
  */
 export function condCeiling(rec: { yearBuilt: number; buildSpec?: number }, month = 0): number {
-  const age = 2000 + Math.floor(month / 12) - rec.yearBuilt;
+  const age = START_YEAR + Math.floor(month / 12) - rec.yearBuilt;
   // HOW WELL IT WAS BUILT IS PERMANENT, and this is the line that makes the
   // specification slider worth paying for. Anyone can renovate a building; what
   // nobody can retrofit is a floor-to-floor height, a curtain wall that does
@@ -829,7 +829,7 @@ export function condCeiling(rec: { yearBuilt: number; buildSpec?: number }, mont
  * levered shop that deferred the roof. Nothing starts obsolete.
  */
 export function initialCondIdx(rec: ParcelRecord, month = 0, grade?: Condition): number {
-  const age = 2000 + Math.floor(month / 12) - rec.yearBuilt;
+  const age = START_YEAR + Math.floor(month / 12) - rec.yearBuilt;
   const notch = grade === "good" ? 0.10 : grade === "worn" ? -0.08 : 0;
   return clamp(0.95 - age * 0.0072 + notch, 0.42, condCeiling(rec, month));
 }

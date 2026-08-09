@@ -8,7 +8,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Contract, DevUse, Development, Econ, GameState, UseMix } from "./types";
 import { BUILT_CLASSES } from "./types";
-import { logBooks, monthLabel, serviceSpec, planSpec } from "./types";
+import { logBooks, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow } from "./demand";
 import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE } from "./market";
 import { roleState, cmRiskMult } from "./staff";
@@ -1637,7 +1637,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // Buildings you have put up. The city notices a developer.
   s.delivered = (s.delivered ?? 0) + 1;
   const dmix = d.mix ?? devMix(d.use);
-  s.built[d.bbl] = { class: dominantOf(dmix), mix: dmix, bldgArea: d.sf, floors: d.floors, yearBuilt: 2000 + Math.floor(s.month / 12), suites: d.suites, cov: d.coverage };
+  s.built[d.bbl] = { class: dominantOf(dmix), mix: dmix, bldgArea: d.sf, floors: d.floors, yearBuilt: START_YEAR + Math.floor(s.month / 12), suites: d.suites, cov: d.coverage };
   // YOUR BUILDING IS SUPPLY TOO. A tower you deliver competes with everybody
   // else's space, including your own — and if you build enough of one class
   // you will move its vacancy against yourself, which is the correct lesson.
@@ -2436,7 +2436,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     if (s.holdings[bbl] || s.developments[bbl]) continue;        // never yours
     if (s.landmarks?.[bbl] !== undefined) continue;              // and never a landmark
     if ((s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
-    const age = 2000 + Math.floor(s.month / 12) - (rec.yearBuilt || 1900);
+    const age = START_YEAR + Math.floor(s.month / 12) - (rec.yearBuilt || 1900);
     if (age < 45) continue;                                      // nobody knocks down a young building
     // `gradeOf` is the OWNER'S stewardship, not the building's birthday — a
     // shed a slumlord has milked for thirty years is a teardown at sixty and
@@ -2476,7 +2476,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   //
   // — while industrial demand fell to 0.62x with its stock sitting at 1.04x,
   // untouched, because office happened to be soft at the time.
-  const yr0 = 2000 + Math.floor(s.month / 12);
+  const yr0 = START_YEAR + Math.floor(s.month / 12);
   const nextUse = useForZone(rec!.zoneDist ?? "C", rec!.demandScore, rng(s), e);
   const lead = dominantOf(devMix(nextUse));
   if (rng(s) > 0.62 * devPencils(e, lead)) return;
@@ -2636,7 +2636,7 @@ export function tickCityGrowth(
       withStreetRetail(devMix(j.use as DevUse), j.floors, rec.demandScore ?? 50), j.floors);
     s.built[j.bbl] = {
       class: dominantOf(cmix), mix: cmix, bldgArea: j.sf, floors: j.floors,
-      yearBuilt: 2000 + Math.floor(s.month / 12),
+      yearBuilt: START_YEAR + Math.floor(s.month / 12),
     };
     s.cityBuilt.push(j.bbl);
     // If it had a name on it, the name now owns a building.

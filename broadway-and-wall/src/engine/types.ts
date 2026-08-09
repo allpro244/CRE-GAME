@@ -770,6 +770,15 @@ export interface Approach {
   coldUntilM?: number;
   ask?: number;        // if willing: their number, good for 4 quarters
   countered?: boolean; // you get one counter per approach
+  /**
+   * They would not name a price, you bid, and the bid drew the number out of
+   * them. You may still counter it — see counterOffMarket, where the cost of
+   * having shown your hand is priced — but the room is a few per cent, because
+   * the figure they named is already within a whisker of their reserve.
+   * Absent on saves written before it existed, where such a conversation was
+   * closed with `countered` and stays closed.
+   */
+  named?: boolean;
   inbound?: boolean;   // they called you, not the other way round
   /** How this conversation opened. Absent on saves written before it existed. */
   mode?: "ask" | "offer";
@@ -1944,6 +1953,17 @@ export interface GameState {
    * just have to be there when the letter arrives.
    */
   renewalMgmt?: boolean;
+  /**
+   * THE MANDATE YOU GAVE THE DESK: the lowest share of the market rent they may
+   * sign at without referring it back. See agentFloor in leasing.ts, which
+   * clamps and defaults it — undefined is the 0.82 both desks used to hardcode,
+   * so a save written before the dial existed keeps the behaviour it had.
+   *
+   * This is the whole of the delegation. The desk still exercises judgement on
+   * everything else — which letters to work, what to sign, when to refer — and
+   * this is the one number a principal actually hands them.
+   */
+  agentFloor?: number;
   /** The player told the brokers to stop ringing. Nothing else changes. */
   brokersOff?: boolean;
   /**

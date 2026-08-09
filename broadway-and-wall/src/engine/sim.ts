@@ -12,7 +12,7 @@ import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, sa
 import { tickTalks } from "./acquire";
 import { tickLoan, prepayPenalty, productById } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
-import { tickLoc } from "./credit";
+import { tickLoc, locRate } from "./credit";
 import { tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing } from "./dev";
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
 import { tickDemand } from "./demand";
@@ -920,6 +920,16 @@ export function portfolioQuarterlyCF(s: GameState, parcels: ParcelTable): number
   for (const d of Object.values(s.developments ?? {})) {
     cf -= (d.loanBalance * d.ratePct) / 100 / 12; // construction interest
   }
+  // THE LINE IS DEBT, AND ITS INTEREST IS DEBT SERVICE.
+  //
+  // This walked every mortgage and every construction facility and then
+  // stopped, so the one borrowing that is easiest to run up and hardest to see
+  // — the revolver — was the one piece of interest the headline cash flow
+  // pretended did not exist. A player sitting on a drawn line was shown a
+  // cash flow that could not be reconciled with the money leaving the account,
+  // and the gap grew precisely as the line got fuller, which is exactly when
+  // it matters. Same rate `tickCredit` charges, same monthly convention.
+  if (s.loc && s.loc.balance > 0) cf -= (s.loc.balance * locRate(s)) / 100 / 12;
   return cf;
 }
 

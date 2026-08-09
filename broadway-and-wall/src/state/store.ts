@@ -1,10 +1,11 @@
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass } from "@/engine/types";
+import { monthLabel } from "@/engine/types";
 import { newGame, advanceQuarter, advanceUntilAttention, firstListings, portfolioQuarterlyCF, hangUpOnCall } from "@/engine/sim";
 import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
-import { respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, type LOIAction } from "@/engine/leasing";
+import { respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, AGENT_FLOOR_MIN, AGENT_FLOOR_MAX, type LOIAction } from "@/engine/leasing";
 import { cureWorkout, requestForbearance, deedInLieu, serviceWorkout } from "@/engine/workout";
 import { buyNote, modifyNote, fileOnNote, sellNote, discountedPayoff } from "@/engine/notes";
 import { registerAuctionBids } from "@/engine/auction";
@@ -201,6 +202,8 @@ interface AppState {
   rateCap: (bbl: string) => void;
   setAgent: (on: boolean) => void;
   setRenewalMgmt: (on: boolean) => void;
+  /** The mandate you give a hired desk: the lowest share of market rent they may sign at. */
+  setAgentFloor: (f: number) => void;
   drawCredit: (amt: number) => void;
   repayCredit: (amt: number) => void;
   /**
@@ -275,8 +278,43 @@ function buildTown(island: string, seed: number, size: string, dev: string) {
   const parcels = normalizeParcels(built.parcels as ParcelTable);
   return { built, parcels };
 }
+/**
+ * TWICE A YEAR, A SAVE YOU CAN GO BACK TO.
+ *
+ * The continuous autosave overwrites itself every month, which makes it a
+ * crash guard and not a rollback: by the time you know a decision was wrong,
+ * the only save that ever existed is the one that contains it. These are dated
+ * copies kept alongside it, written in January and July, four years of them.
+ *
+ * WHY A BUCKET AND NOT `month % 6 === 0`. Advancing a year at a time runs
+ * twelve months inside the engine and hands the store one state at the end, so
+ * a test on the exact month would silently never fire for anyone who uses the
+ * skip buttons — a save feature that works only if you click one month at a
+ * time is worse than none, because it looks like coverage. The bucket fires on
+ * the first persist after each half-year boundary is crossed, so a player who
+ * jumps a year gets one snapshot at the state they actually arrived in, and
+ * the slot is named for the month it really holds rather than the month it was
+ * meant to be.
+ */
+const SNAP_PREFIX = "Auto · ";
+const SNAP_KEEP = 8;                 // four years of half-years
+let lastSnapBucket = -1;
+async function snapshot(game: GameState) {
+  const bucket = Math.floor(game.month / 6);
+  if (bucket === lastSnapBucket) return;
+  lastSnapBucket = bucket;
+  await saveGame(SNAP_PREFIX + monthLabel(game.month), game);
+  const mine = (await listSaves())
+    .filter((m) => m.slot.startsWith(SNAP_PREFIX))
+    .sort((a, b) => b.month - a.month);
+  for (const old of mine.slice(SNAP_KEEP)) await deleteSave(old.slot);
+  await useStore.getState().refreshSlots();
+}
 async function persist(game: GameState) {
-  try { await saveGame(AUTO(), game); } catch { /* private-mode browsers: play on without saves */ }
+  try {
+    await saveGame(AUTO(), game);
+    await snapshot(game);
+  } catch { /* private-mode browsers: play on without saves */ }
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -911,6 +949,14 @@ export const useStore = create<AppState>((set, get) => ({
     toast(on
       ? "Management has the renewals. 2% of lease value on what they sign; new leases still come to you."
       : "You're handling your own renewals again.");
+  },
+
+  setAgentFloor: (f) => {
+    const { game } = get();
+    if (!game) return;
+    const next = { ...game, agentFloor: Math.min(AGENT_FLOOR_MAX, Math.max(AGENT_FLOOR_MIN, f)) };
+    set({ game: next });
+    void persist(next);
   },
 
   setAgent: (on) => {

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, Fragment} from "react";
 import { useStore } from "@/state/store";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec } from "@/engine/types";
+import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, START_YEAR } from "@/engine/types";
 import type { Approach, BuiltClass, Contract, DevUse, EconHistoryPoint, GameState, Holding } from "@/engine/types";
 import {
   assetValue, initialCondition, holdingValue, monthlyNOI, marketRentPsfYr, managedRentPsfYr,
@@ -21,7 +21,7 @@ import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquir
 // counting to a deadline the engine had stopped keeping the moment anybody
 // touched either number. sim.ts owns it; this file reads it.
 import { MILESTONES, APPROACH_LIFE_M } from "@/engine/sim";
-import { isCommercial, vacantSf, walt, loiSigningCost, exclusiveFeeRate, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, buyoutQuote, depositsHeld, BUYOUT_PREMIUM } from "@/engine/leasing";
+import { isCommercial, vacantSf, walt, loiSigningCost, exclusiveFeeRate, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, buyoutQuote, depositsHeld, agentFloor, AGENT_FLOOR_MIN, AGENT_FLOOR_MAX, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
 import { lenderHealth, capitalRatio, lenderBlurb, targetCapital, lenderPressure, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { noteBid, payoffQuote } from "@/engine/notes";
@@ -96,7 +96,7 @@ import { sponsorStanding } from "@/engine/sponsor";
 import { marketAppetite, markRival, ownerOf, rivalCondition, gradeOf, assetGrade } from "@/engine/rivals";
 import { compFlows, compStats, portfolioIndustries } from "@/engine/comps";
 import { INDUSTRY_LABEL, SECTORS } from "@/engine/market";
-import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses, renewalIntent } from "@/engine/leasing";
+import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses, renewalIntent, netEffectivePsf } from "@/engine/leasing";
 import { leasingOdds } from "@/engine/absorption";
 import { groundLeaseQuote, mergeCost } from "@/engine/actions";
 import { plateEfficiency } from "@/engine/value";
@@ -803,10 +803,16 @@ function DecisionModal() {
           </div>
           {modalCounter && !isFinal && !loi.countered && (
             <>
+              {/* A COUNTER GOES DOWN AS WELL AS UP.
+                  The floor here was 90% of what the tenant had already
+                  offered, so the one move available to a landlord with vacant
+                  space and no money for a fit-out — cheap rent, no allowance —
+                  could not be typed into the game. It is the oldest trade in
+                  leasing and it belongs on the dial. */}
               <Slider
                 label="Your rent"
                 value={mcRent || loi.rentPsf}
-                min={+(loi.rentPsf * 0.9).toFixed(2)}
+                min={+(Math.min(loi.rentPsf, market) * 0.70).toFixed(2)}
                 max={+(Math.max(loi.rentPsf * 1.3, market * 1.2)).toFixed(2)}
                 step={0.25}
                 onChange={setMcRent}
@@ -824,9 +830,18 @@ function DecisionModal() {
                   onChange={setMcTi}
                   format={(v) => `$${v}/sf · ${usd(v * loi.sf)}`}
                   marks={[{ at: loi.tiPsf, label: "they asked" }]}
-                  hint="Cutting the fit-out money costs you odds."
+                  hint="Cutting the fit-out money costs you odds — but rent buys it back, and it buys more than the allowance is worth to them."
                 />
               )}
+              {/* THE NUMBER THEY ARE ACTUALLY DECIDING ON, which was nowhere on
+                  this card. Rent and fit-out are one deal, and a landlord
+                  trading one for the other could not see the total they were
+                  offering. */}
+              <div className="hint">
+                Net effective ${netEffectivePsf(loi, mcRent || loi.rentPsf, mcTi).toFixed(2)}/sf over {Math.max(1, Math.round(loi.termM / 12))} years —
+                {" "}{((netEffectivePsf(loi, mcRent || loi.rentPsf, mcTi) / market - 1) * 100).toFixed(0)}% against the market for this space.
+                That is what they judge, not the face rent.
+              </div>
               <div className="modal-actions">
                 <button className="btn btn-buy" onClick={() => { const r = respondLoi(loi.id, "counter", short > 0, { rentPsf: mcRent || loi.rentPsf, tiPsf: mcTi }); if (r.msg) setOutcome({ text: r.msg, ok: r.ok }); setModalCounter(false); }}>
                   Send the counter · ${(mcRent || loi.rentPsf).toFixed(2)}/sf{loi.tiPsf > 0 ? ` · TI $${mcTi}` : ""}
@@ -1115,7 +1130,31 @@ function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: Prop
 
       {on("summary") && <div className="grid">
         <Row k="Appraisal" v={band(selectedBBL, value)} strong />
-        {isBuilt && <Row k="Market rent" v={"$" + marketRentPsfYr(rec, game.econ, cond).toFixed(0) + " /sf/yr"} />}
+        {/* ONE LINE PER MARKET, because a building with shops under offices is
+            in two of them and the average of the two is a rent nobody signs.
+            The blend is the right number for an appraisal and the wrong one
+            for a lease — see managedRentPsfYr — and this row was the blend
+            with "market rent" written next to it, which is where the sense
+            that shops lease miles under the market came from: they were being
+            compared against a number that was mostly office. */}
+        {isBuilt && (() => {
+          const legs = leasableUses(rec);
+          if (legs.length <= 1) {
+            return <Row k="Market rent" v={"$" + marketRentPsfYr(rec, game.econ, cond).toFixed(0) + " /sf/yr"} />;
+          }
+          return (
+            <>
+              {legs.map((u) => (
+                <Row
+                  key={u}
+                  k={`Market rent · ${CLASS_LABEL[u] ?? u}`}
+                  v={"$" + useRentPsfYr(rec, game.econ, cond, u).toFixed(0) + " /sf/yr"}
+                />
+              ))}
+              <Row k="Blended" v={"$" + marketRentPsfYr(rec, game.econ, cond).toFixed(0) + " /sf/yr"} />
+            </>
+          );
+        })()}
         {/* DISCLOSED, not estimated, whenever the seller has shown a roll. The
             label drops "(mkt)" with it, because it is no longer an opinion. */}
         {isBuilt && !holding && (() => {
@@ -1237,7 +1276,7 @@ function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: Prop
                   return (
                   <div key={i} className="roll-row">
                     <span className="roll-name">{t.name} <span className="roll-credit mono">{CREDIT_LABEL[t.credit]}</span>
-                      {yrsIn >= 5 && <span className="dim"> · since {2000 + Math.floor(t.startM / 12)}</span>}
+                      {yrsIn >= 5 && <span className="dim"> · since {START_YEAR + Math.floor(t.startM / 12)}</span>}
                     </span>
                     <span className="roll-meta mono">
                       {(t.sf / 1000).toFixed(1)}k sf · ${t.rentPsf.toFixed(0)} {t.net ? "NNN" : "G"} · exp {monthLabel(t.endM)}
@@ -1429,7 +1468,9 @@ function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: Prop
               <div className="hint" style={{ marginTop: 6 }}>
                 {appr.countered
                   ? `Their number is ${usd(appr.ask)} and that is where it stays. Fund it or leave it.`
-                  : "Counter once if you want to, then place the debt against whatever number you end up with."}
+                  : appr.named
+                    ? "You can counter it — but they named this figure in answer to your bid, so it is already close to their floor and they know you want the building. A few per cent is a negotiation; fifteen is an insult."
+                    : "Counter once if you want to, then place the debt against whatever number you end up with."}
               </div>
               <BuyButtons bbl={selectedBBL} price={appr.ask} off closeLabel={`Buy at ${usd(appr.ask)}`} />
             </>
@@ -1531,7 +1572,18 @@ function ParcelPanel({ embedded = false, tab }: { embedded?: boolean; tab?: Prop
         <div className="deal">
           <div className="deal-head">Management</div>
           <div className="grid">
-            <Row k="Asking rent" v={"$" + managedRentPsfYr(rec, game.econ, holding).toFixed(0) + " /sf on new leases"} />
+            {/* WHAT A LETTER WILL ACTUALLY BE MEASURED AGAINST. The desk, the
+                renewal manager and every arriving prospect price one LEG of
+                this building at a time; this row averaged the legs together
+                and called the result the asking rent, so on a mixed building
+                the number on the screen was one nobody was ever quoted. */}
+            {leasableUses(rec).map((u) => (
+              <Row
+                key={u}
+                k={leasableUses(rec).length > 1 ? `Asking · ${CLASS_LABEL[u] ?? u}` : "Asking rent"}
+                v={"$" + managedRentPsfYr(rec, game.econ, holding, u).toFixed(2) + " /sf on new leases"}
+              />
+            ))}
           </div>
           <div className="btn-row">
             {([-1, 0, 1] as const).map((v) => (
@@ -2541,8 +2593,13 @@ function BuyButtons({ bbl, price, off, closeLabel, bid }: {
         {PRODUCTS.filter((p) => !p.mezz && (isLand ? p.id === "land" : p.id !== "land")).map((p) => {
           const pq = buyQuote(game, parcels, bbl, offerPrice, p.id, 1);
           return (
-            <button key={p.id} className={"btn" + (product === p.id ? " btn-on" : "")} title={p.blurb} onClick={() => setProduct(p.id)}>
-              {p.label}{pq.principal > 0 ? ` · ${pq.ratePct.toFixed(2)}%` : " · won't quote"}
+            <button
+              key={p.id}
+              className={"btn" + (product === p.id ? " btn-on" : "")}
+              title={`${p.blurb}\n${(p.maxLTV * 100).toFixed(0)}% max LTV · ${p.amortYears}-yr amort · ${Math.round(p.termM / 12)}-yr term`}
+              onClick={() => setProduct(p.id)}
+            >
+              {p.label}{pq.principal > 0 ? ` · ${pq.ratePct.toFixed(2)}% · ${(p.maxLTV * 100).toFixed(0)}% LTV` : " · won't quote"}
             </button>
           );
         })}
@@ -2620,6 +2677,20 @@ function BuyButtons({ bbl, price, off, closeLabel, bid }: {
               <Row k="Coupon" v={`${max.ratePct.toFixed(2)}%${negLev ? " — negative leverage" : ""}`} bad={negLev} />
               {principal > 0 && <Row k="Debt yield" v={`${dy.toFixed(1)}%`} bad={dy < 8} />}
               {principal > 0 && <Row k="Annual debt service" v={`−${usd(annualDs)}${prodDef && prodDef.ioM > 0 ? " (interest-only)" : ` (${prodDef?.amortYears ?? 30}-yr am)`}`} />}
+              {/* THE ADVANCE RATE BELONGS WITH THE OTHER STANDING TERMS. The
+                  term sheet named the maturity, the amortisation and the
+                  coupon and left out the one number that decides how much of
+                  the price this desk will actually cover — so the way to find
+                  out which bank levered highest was to click all four and
+                  watch the slider's ceiling move. It is a fact about the
+                  product, like the others, and it reads with them. */}
+              {prodDef && (
+                <Row
+                  k="Terms"
+                  v={`${prodDef.ioM ? `${Math.round(prodDef.ioM / 12)}-yr IO, ` : ""}${prodDef.amortYears}-yr amort, `
+                    + `${Math.round(prodDef.termM / 12)}-yr term, ${(prodDef.maxLTV * 100).toFixed(0)}% max LTV`}
+                />
+              )}
               <Row k="Year-1 cash flow" v={usd(cf)} bad={cf < 0} />
               <Row k="Cash-on-cash" v={`${coc.toFixed(1)}%`} bad={coc < 0} />
             </>
@@ -2727,7 +2798,17 @@ function RefiSection({ bbl }: { bbl: string }) {
       </div>
     );
   }
+  // WHICH DESK YOU ARE ACTUALLY LOOKING AT.
+  //
+  // `product` opened at "savings" whether or not the savings bank quoted this
+  // building, and every highlight on the screen was drawn off `product` while
+  // every number was drawn off `quotes[0]`. So on any building the regional
+  // did not quote — which since their $2.5M minimum is a great many — nothing
+  // was lit up, the table had no selected row, and the panel was reporting one
+  // desk's terms with another desk's name nowhere. The selection is whatever
+  // quote is being read, and everything on the card keys off that.
   const q = quotes.find((x) => x.id === product) ?? quotes[0];
+  const picked = q.id;
   const proceeds = Math.round(q.maxProceeds * lev);
   const fee = Math.round(Math.max(proceeds, payoff) * 0.01) + Math.round(proceeds * q.points) + existing;
   const toYou = proceeds - payoff - fee;
@@ -2749,7 +2830,7 @@ function RefiSection({ bbl }: { bbl: string }) {
         {quotes.map((x) => (
           <button
             key={x.id}
-            className={"btn" + (product === x.id ? " btn-on" : "")}
+            className={"btn" + (picked === x.id ? " btn-on" : "")}
             disabled={!x.available}
             title={x.why ?? x.blurb}
             onClick={() => setProduct(x.id)}
@@ -2774,7 +2855,7 @@ function RefiSection({ bbl }: { bbl: string }) {
       <div className="scroll-x">
         <table className="tbl">
           <thead>
-            <tr><th>Desk</th><th className="num">Rate</th><th className="num">Most they'll write</th><th className="num">To you</th><th>What stops them</th></tr>
+            <tr><th>Desk</th><th className="num">Rate</th><th className="num">Max LTV</th><th className="num">Most they'll write</th><th className="num">To you</th><th>What stops them</th></tr>
           </thead>
           <tbody>
             {[...quotes]
@@ -2787,12 +2868,21 @@ function RefiSection({ bbl }: { bbl: string }) {
               .map(({ x, px, net }) => (
                 <tr
                   key={x.id}
-                  className={x.id === product ? "" : "dim"}
-                  style={{ cursor: x.available ? "pointer" : "default" }}
+                  className={x.id === picked ? "" : "dim"}
+                  style={{
+                    cursor: x.available ? "pointer" : "default",
+                    // The selected desk was distinguished only by NOT being
+                    // dimmed, which on a four-row table reads as nothing at
+                    // all. This is the row whose terms the rest of the card is
+                    // describing, and it says so.
+                    background: x.id === picked ? "rgba(120,160,255,0.14)" : undefined,
+                    fontWeight: x.id === picked ? 600 : undefined,
+                  }}
                   onClick={() => x.available && setProduct(x.id)}
                 >
-                  <td>{x.label}</td>
+                  <td>{x.id === picked ? "▸ " : ""}{x.label}</td>
                   <td className="num">{x.available ? pct(x.ratePct) : "—"}</td>
+                  <td className="num">{(x.maxLTV * 100).toFixed(0)}%</td>
                   <td className="num">{px > 0 ? usd(px) : "—"}</td>
                   <td className="num" style={{ color: net > 0 ? undefined : "#a8402e" }}>
                     {px > 0 ? (net >= 0 ? usd(net) : "−" + usd(-net)) : "—"}
@@ -2808,18 +2898,35 @@ function RefiSection({ bbl }: { bbl: string }) {
         </table>
       </div>
       <div className="grid">
-        <Row k="Lender's maximum" v={`${usd(q.maxProceeds)} · ${(q.ltvAtMax * 100).toFixed(0)}% LTV`} />
-        {/* A vacant site has no income, so a coverage ratio computed against it
-            is not a small number — it is nonsense, and it was being printed
-            six digits wide in front of the player. */}
+        <Row k="Desk" v={`${q.label} · ${pct(q.ratePct)}`} strong />
+        <Row k="Lender's maximum" v={`${usd(q.maxProceeds)} · ${(q.ltvAtMax * 100).toFixed(0)}% LTV against a ${(q.maxLTV * 100).toFixed(0)}% advance rate`} />
+        {/* THE THREE NUMBERS THE COVERAGE RATIO IS MADE OF, at the amount the
+            dial is actually set to.
+            This row printed `dscrAtMax` — the coverage at the LENDER'S maximum
+            — and never moved, so a player halving the draw watched the ratio
+            they were halving it to fix sit perfectly still. And the two inputs
+            were nowhere on the screen at all: a borrower cannot check a
+            coverage ratio they cannot see the numerator of. `noiUw` is the
+            income the desk sized against, which inside a lease-up is
+            stabilised-less-holdback rather than what the building earns today,
+            and that distinction belongs in front of the person signing. */}
+        <Row
+          k="Income underwritten"
+          v={q.noiUw > 0 ? `${usd(Math.round(q.noiUw))} NOI a year` : "— no income to lend against"}
+        />
+        <Row
+          k="Debt service"
+          v={proceeds > 0 ? `${usd(Math.round(annualDs))} a year on ${usd(proceeds)}` : "—"}
+        />
         <Row
           k="Coverage / debt yield"
-          v={q.maxProceeds > 0 && Number.isFinite(q.dscrAtMax) && q.dscrAtMax > 0
-            ? `DSCR ${q.dscrAtMax.toFixed(2)} · DY ${(q.debtYieldAtMax * 100).toFixed(1)}%`
+          v={proceeds > 0 && annualDs > 0 && q.noiUw > 0
+            ? `DSCR ${(q.noiUw / annualDs).toFixed(2)} · DY ${((q.noiUw / proceeds) * 100).toFixed(1)}%`
             : "— no income to cover it"}
+          bad={proceeds > 0 && annualDs > 0 && q.noiUw > 0 && q.noiUw / annualDs < 1.20}
         />
         <Row k="What caps it" v={q.maxProceeds > 0 ? q.binding : "nothing to lend against"} bad={q.binding === "debt yield" && q.maxProceeds > 0} />
-        <Row k="Structure" v={`${q.ioM ? `${Math.round(q.ioM / 12)}-yr IO, ` : ""}${q.amortYears}-yr amort, ${q.termM / 12}-yr term, ${q.floating ? "floating" : "fixed"}`} />
+        <Row k="Structure" v={`${q.ioM ? `${Math.round(q.ioM / 12)}-yr IO, ` : ""}${q.amortYears}-yr amort, ${q.termM / 12}-yr term, ${(q.maxLTV * 100).toFixed(0)}% max LTV, ${q.floating ? "floating" : "fixed"}`} />
         <Row k="Origination" v={`${(q.points * 100).toFixed(1)} pts · ${usd(Math.round(proceeds * q.points))}`} />
         <Row
           k="Prepayment"
@@ -2838,9 +2945,11 @@ function RefiSection({ bbl }: { bbl: string }) {
         max={1}
         step={0.02}
         onChange={setLev}
-        format={() => `${usd(proceeds)} · ${((proceeds / Math.max(1, value)) * 100).toFixed(0)}% LTV`}
+        format={() => `${usd(proceeds)} · ${((proceeds / Math.max(1, value)) * 100).toFixed(0)}% LTV`
+          + (proceeds > 0 && annualDs > 0 && q.noiUw > 0 ? ` · DSCR ${(q.noiUw / annualDs).toFixed(2)}` : "")}
         marks={[{ at: 0.5, label: "half" }, { at: 0.8, label: "80%" }, { at: 1, label: "max" }]}
-        hint={`${usd(annualDs)} a year of debt service. ${toYou >= 0 ? `Cash out ${usd(toYou)} after the ${usd(fee)} fee.` : `You'd write a cheque for ${usd(-toYou)}.`}`}
+        hint={`${usd(annualDs)} a year of debt service against ${usd(Math.round(q.noiUw))} of NOI. `
+          + `${toYou >= 0 ? `Cash out ${usd(toYou)} after the ${usd(fee)} fee.` : `You'd write a cheque for ${usd(-toYou)}.`}`}
       />
       <div className="btn-row">
         <button className="btn btn-buy" disabled={proceeds < 100_000} onClick={() => refi(bbl, product, lev)}>
@@ -4413,9 +4522,23 @@ function PortfolioPage() {
                 const roll = h.tenants.reduce((a, t) => a + t.rentPsf * t.sf, 0);
                 if (!rec || rec.class === "land") return <td className="num">—</td>;
                 if (leased > 0) {
-                  const mkt = managedRentPsfYr(rec, game.econ, h);
+                  // THE BENCHMARK HAS TO BE WEIGHTED THE WAY THE ROLL IS.
+                  //
+                  // The rent on the left is the average across the tenants who
+                  // are actually in the building. The market it was compared
+                  // against was the area-weighted blend of the building's
+                  // markets — weighted by FLOOR AREA, not by who is in it. On
+                  // anything mixed those are different numbers about different
+                  // buildings: a tower whose shops are full and whose offices
+                  // are half empty has a retail-heavy roll being marked
+                  // against an office-heavy market, and it prints as a rent
+                  // roll 30-40% under market when every lease in it was signed
+                  // at the going rate for the space it is in. Same tenants,
+                  // same weights, one quantity, one answer.
+                  const mkt = h.tenants.reduce(
+                    (a, t) => a + t.sf * managedRentPsfYr(rec, game.econ, h, t.use ?? (rec.class as BuiltClass)), 0) / leased;
                   return (
-                    <td className="num" title={`Market is about $${mkt.toFixed(2)}/sf for this building today`}>
+                    <td className="num" title={`Market for the space these tenants occupy is about $${mkt.toFixed(2)}/sf today`}>
                       ${(roll / leased).toFixed(2)}
                       <span className={"dim" + ((roll / leased) < mkt * 0.92 ? " neg" : "")}>
                         {" "}({(roll / leased) >= mkt ? "+" : ""}{(((roll / leased) / Math.max(1, mkt) - 1) * 100).toFixed(0)}%)
@@ -4800,10 +4923,11 @@ function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (bbl: str
       </div>
       {countering && !final && !loi.countered && (
         <>
+          {/* Down as well as up — see the note on the same slider in the card. */}
           <Slider
             label="Your rent"
             value={cRent}
-            min={+(loi.rentPsf * 0.9).toFixed(2)}
+            min={+(Math.min(loi.rentPsf, market) * 0.70).toFixed(2)}
             max={+(Math.max(loi.rentPsf * 1.3, market * 1.2)).toFixed(2)}
             step={0.25}
             onChange={setCRent}
@@ -4821,9 +4945,13 @@ function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (bbl: str
               onChange={setCTi}
               format={(v) => `$${v}/sf · ${usd(v * loi.sf)}`}
               marks={[{ at: loi.tiPsf, label: "they asked" }, { at: Math.round(loi.tiPsf / 2), label: "half" }]}
-              hint="Cutting their fit-out money costs you odds — it is real dollars to them."
+              hint="Cutting their fit-out money costs you odds — but cheaper rent buys it back, and buys more than the allowance is worth to them."
             />
           )}
+          <div className="hint">
+            Net effective ${netEffectivePsf(loi, cRent, cTi).toFixed(2)}/sf over {Math.max(1, Math.round(loi.termM / 12))} years —
+            {" "}{((netEffectivePsf(loi, cRent, cTi) / market - 1) * 100).toFixed(0)}% against the market for this space.
+          </div>
         </>
       )}
       <div className="btn-row">
@@ -5450,8 +5578,8 @@ function EconomyPage() {
   // Every x-axis on the page was computed as `game.month - <some length>`,
   // which was right only while the window was exactly 240 long. The first
   // point carries its own month; use it, and the labels follow the switch.
-  const xFrom = `${2000 + Math.floor((tail[0]?.q ?? game.month) / 12)}`;
-  const xTo = `${2000 + Math.floor(game.month / 12)}`;
+  const xFrom = `${START_YEAR + Math.floor((tail[0]?.q ?? game.month) / 12)}`;
+  const xTo = `${START_YEAR + Math.floor(game.month / 12)}`;
   const spanYrs = Math.max(1, Math.round(((tail[tail.length - 1]?.q ?? game.month) - (tail[0]?.q ?? game.month)) / 12));
   const vacSeries = tail.map((h) => (h.vac?.[focus] ?? NATURAL_VAC[focus]) * 100);
   const rentSeries = tail.map((h) => h.rent?.[focus] ?? e.rentIdx[focus]);
@@ -5738,7 +5866,7 @@ function EconomyPage() {
             bands={[{ at: NATURAL_VAC[focus] * 100, label: "natural rate" }]}
             yFmt={pctFmt}
             split={vacSeries.length}
-            xLabels={[xFrom, `${2000 + Math.floor((game.month + 36) / 12)}`]}
+            xLabels={[xFrom, `${START_YEAR + Math.floor((game.month + 36) / 12)}`]}
           />
           <div className="chart-note">
             Left of the dotted line is what happened. Right of it is where vacancy goes if NOBODY starts another
@@ -8474,7 +8602,7 @@ function LeasingPage() {
   const game = useStore((s) => s.game)!;
   const select = useStore((s) => s.select);
   const setPage = useStore((s) => s.setPage);
-  const { setAgent, setRenewalMgmt, broker } = useStore.getState();
+  const { setAgent, setRenewalMgmt, setAgentFloor, broker } = useStore.getState();
   const go = (bbl: string) => { setPage("none"); select(bbl); };
   const q = game.month;
 
@@ -8570,10 +8698,55 @@ function LeasingPage() {
     );
   }
 
+  /**
+   * THE ONE INSTRUCTION YOU GIVE A DESK YOU HAVE HIRED.
+   *
+   * Delegating leasing is not an all-or-nothing act in life. You hand over the
+   * book and you set the terms of the mandate: sign at the market, refer
+   * anything materially under it, come and find me if it is worse than X. The
+   * game had the mandate — a hardcoded 82% of market, in two places — and just
+   * did not let the principal set it, which is the half of the decision that
+   * makes delegation a decision at all.
+   *
+   * Only shown when somebody else is holding the pen. Working your own letters,
+   * you ARE the floor.
+   */
+  function MandateBar() {
+    if (!game.agent && !game.renewalMgmt) return null;
+    const floor = agentFloor(game);
+    return (
+      <div className="agent-bar" style={{ display: "block" }}>
+        <div className="agent-title">Your mandate to the desk</div>
+        <Slider
+          label="Sign at no less than"
+          value={Math.round(floor * 100)}
+          min={Math.round(AGENT_FLOOR_MIN * 100)}
+          max={Math.round(AGENT_FLOOR_MAX * 100)}
+          step={1}
+          onChange={(v) => setAgentFloor(v / 100)}
+          marks={[{ at: 75, label: "75%" }, { at: 82, label: "usual" }, { at: 95, label: "95%" }]}
+          format={(v) => `${v}% of the market rent for that space`}
+          hint={floor >= 0.97
+            ? "At the market or nothing. They will refer almost everything back to you, which is a way of not letting space — and every month a suite sits empty costs more than the discount you refused."
+            : floor >= 0.88
+              ? "A tight mandate. They will sign the good letters and bring you the rest."
+              : floor <= 0.72
+                ? "A wide mandate. They will fill the building, and some of what they sign will be cheap paper you are stuck with for a decade."
+                : "About what a broad leasing mandate looks like: a few points under asking is theirs to sign, worse than that comes back to you."}
+        />
+        <div className="hint">
+          Measured against the market for THAT space — the shop rent for a shop, the office rent for an office —
+          not the building's blended average.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <AgentBar />
       <RenewalBar />
+      <MandateBar />
       <div className="stat-strip">
         <Big label="Portfolio occupancy" value={totSf ? ((100 * totLeased) / totSf).toFixed(1) + "%" : "—"} bad={totSf > 0 && totLeased / totSf < 0.8} />
         <Big label="Leased" value={sf(totLeased) + " of " + sf(totSf)} />

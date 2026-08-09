@@ -52,6 +52,7 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState } from "./types";
 import { useOccupancy } from "./value";
+import { START_YEAR } from "./types";
 import { mixOf, type UseMix } from "./mix";
 import { SECTORS, INDUSTRY_LABEL } from "./market";
 import { BUILT_CLASSES, type Sector } from "./types";
@@ -886,7 +887,7 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
   for (const l of s.lines ?? []) {
     if (s.month !== l.openM) continue;
     s.news.unshift({ q: s.month, kind: "event",
-      text: `The ${l.name} station opened this morning. Six years of hoardings, and the ground around it is not the ground it was in ${2000 + Math.floor(l.annM / 12)}.` });
+      text: `The ${l.name} station opened this morning. Six years of hoardings, and the ground around it is not the ground it was in ${START_YEAR + Math.floor(l.annM / 12)}.` });
   }
 }
 

@@ -915,6 +915,19 @@ export interface RefiQuote {
   ltvAtMax: number;
   dscrAtMax: number;
   debtYieldAtMax: number;
+  /**
+   * The two numbers a borrower compares desks on that the screen could not
+   * show, because they were only ever computed at the lender's maximum.
+   *
+   * `maxLTV` is the desk's advance rate — a standing term of the product, like
+   * the rate and the amortisation, and it belongs beside them. `noiUw` is the
+   * income this quote was actually sized against, which is NOT always the
+   * building's current NOI: inside the lease-up window the desk underwrites to
+   * stabilised income less a holdback (see above), and a borrower reading a
+   * coverage ratio has a right to know which number is under it.
+   */
+  maxLTV: number;
+  noiUw: number;
   binding: string;      // which of the three tests actually capped the loan
   ioM: number;
   termM: number;
@@ -1022,6 +1035,8 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       ltvAtMax: value > 0 ? q.principal / value : 0,
       dscrAtMax: annualDs > 0 ? noi / annualDs : 0,
       debtYieldAtMax: q.principal > 0 ? noi / q.principal : 0,
+      maxLTV: p.maxLTV,
+      noiUw: noi,
       // HOLD SIZE OUTRANKS THE THREE UNDERWRITING TESTS, because it is not one
       // of them. DSCR, debt yield and advance rate are all things about the
       // BUILDING; a hold size is a thing about the LENDER, and telling a

@@ -31,7 +31,7 @@
 // the end of it or hands a frame to a receiver.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from "./types";
-import { CASH_APY, monthLabel } from "./types";
+import { CASH_APY, monthLabel, START_YEAR } from "./types";
 import { BUILD_MONTHS, rng, newsChance, rrange, devPencils } from "./market";
 import { assetValue, heightPremium, initialCondition, residualScheme, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall } from "./value";
 import { cityInfillCap, devMix, dominantOf, farMaxFor, HARD_COST_PSF, MAX_FLOORS_BY_USE, retailWantsMixed, SOFT_COST, useForZone, noteRecordPlan, openConstructionDesks, pickConstructionDesk, capRetail, withStreetRetail } from "./dev";
@@ -405,9 +405,9 @@ export function claimJob(
     q: s.month, kind: "event",
     text: nearPlayer
       ? `${best.name} has broken ground at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, ${(cost / 1e6).toFixed(1)}M, `
-        + `due ${2000 + Math.floor(deliverM / 12)}. That is next door to yours. Your corner is worth more the day it tops out and your tenants have somewhere else to go the day it opens.`
+        + `due ${START_YEAR + Math.floor(deliverM / 12)}. That is next door to yours. Your corner is worth more the day it tops out and your tenants have somewhere else to go the day it opens.`
       : `${best.name} has broken ground at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, `
-        + `${(cost / 1e6).toFixed(1)}M, due ${2000 + Math.floor(deliverM / 12)}. That space is coming whether you want it or not.`,
+        + `${(cost / 1e6).toFixed(1)}M, due ${START_YEAR + Math.floor(deliverM / 12)}. That space is coming whether you want it or not.`,
   });
   return best;
 }

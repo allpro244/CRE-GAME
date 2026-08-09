@@ -21,6 +21,7 @@
 // which is the whole difference between characterisation and flattery.
 import type { ParcelTable } from "@/data/types";
 import type { Epithet, GameState } from "./types";
+import { START_YEAR } from "./types";
 import { resolveRec, holdingValue } from "./value";
 import { INDUSTRY_LABEL } from "./market";
 
@@ -137,7 +138,7 @@ function claimsNow(s: GameState, parcels: ParcelTable): Claim[] {
     } else if (s.month - lastSale >= 96) {
       out.push({
         id: "no-sales-since",
-        text: `who has not sold a building since ${2000 + Math.floor(lastSale / 12)}`,
+        text: `who has not sold a building since ${START_YEAR + Math.floor(lastSale / 12)}`,
         weight: 0.8,
       });
     }

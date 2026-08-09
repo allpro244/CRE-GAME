@@ -10,7 +10,7 @@ import type { BuiltClass, Contract, DevUse, Development, Econ, GameState, UseMix
 import { BUILT_CLASSES, cloneState} from "./types";
 import { logBooks, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow } from "./demand";
-import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE } from "./market";
+import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE } from "./market";
 import { roleState, cmRiskMult } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, landRead, assetValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling,
@@ -914,10 +914,16 @@ export function planDevelopment(
   const costTotal = buildCost;
   const basisTotal0 = buildCost + landBasis;
 
-  // Foundations, core, a floor every couple of weeks, then facade and fit-out:
-  // a mid-rise is a two-year job and a real tower is three to four. Nothing
-  // was taking longer than 30 months, which made towers feel like sheds.
-  const months = Math.min(54, 10 + Math.round(fl * 0.85));
+  // Foundations, core, facade and fit-out: use the same class schedule the
+  // market's delivery controls are calibrated to, then move toward its slow
+  // end as height rises. The old player-only `10 + floors*0.85` made a
+  // fourteen-storey office a 22-month job while every other office builder
+  // took 30–44; after unifying the hurdle that split showed up immediately as
+  // a 21-month breaks→deliveries cycle.
+  const scheduleClass = dominantOf(mix);
+  const [monthsLo, monthsHi] = BUILD_MONTHS[scheduleClass];
+  const heightShare = Math.max(0, Math.min(1, (fl - 1) / 20));
+  const months = Math.round(monthsLo + (monthsHi - monthsLo) * heightShare);
 
   // THE INTEREST RESERVE, SIZED TO ACTUALLY DO ITS JOB.
   //

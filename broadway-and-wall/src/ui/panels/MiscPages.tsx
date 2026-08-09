@@ -161,6 +161,16 @@ export function SettingsPage() {
         Pop-up cards is a preference of this browser and applies to every campaign. The broker and auction
         switches are decisions of this firm and travel with the save.
       </div>
+      <div className="page-section" style={{ marginTop: 18 }}>Keyboard</div>
+      <div className="grid">
+        <Row k="Space" v="Advance one month" />
+        <Row k="Y" v="Advance up to one year, stopping when a decision arrives" />
+        <Row k="N" v="Skip to the next decision, up to three years" />
+        <Row k="Escape" v="Close the open page" />
+      </div>
+      <div className="hint">
+        Time shortcuts are disabled while a blocking decision card is on screen; answer or dismiss the card first.
+      </div>
     </div>
   );
 }

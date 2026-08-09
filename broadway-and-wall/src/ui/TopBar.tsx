@@ -370,7 +370,7 @@ export default function TopBar() {
             control now, because loading a game is not an accounting task. */}
         <button
           className={"lens-btn" + (page === "saves" ? " lens-on" : "")}
-          title="Save this run under a name, or load one back"
+          title="The live campaign autosaves; create or load named snapshots here"
           onClick={() => setPage(page === "saves" ? "none" : "saves")}
         >
           ⛁ Saves

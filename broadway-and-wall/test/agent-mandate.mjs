@@ -117,6 +117,43 @@ console.log("\nLEASING MANDATE\n");
       if (/referred|passed/i.test(news)) ok(`desk acted on soft letter (${/referred/i.test(news) ? "referred" : "passed"})`);
       else console.log("  SKIP  letter resolved before mandate could refer (market/score moved)");
     } else fail("mid-band letter neither referred nor removed");
+
+    // Even a permissive mandate may not choose between mutually-exclusive
+    // tenants or commit adjacent space to an incumbent expansion.
+    const choice = structuredClone(g);
+    const base = choice.lois.find((l) => l.id === loi.id);
+    base.tourId = 999;
+    base.rentPsf *= 1.1;
+    base.tiPsf = 0;
+    base.freeM = 0;
+    base.referred = false;
+    const rival = { ...structuredClone(base), id: Math.max(...choice.lois.map((l) => l.id)) + 1, name: "Competing Tenant" };
+    choice.lois = [base, rival];
+    choice.agent = true;
+    choice.agentFloor = 0.70;
+    choice.agentPassBelow = 0.55;
+    choice.agentMaxTiMonths = 18;
+    choice.agentMaxSigningMonths = 24;
+    const afterChoice = E.advanceQuarter(choice, parcels, bbls, null);
+    const decided = afterChoice.lois.filter((l) => l.id === base.id || l.id === rival.id);
+    if (decided.length === 2 && decided.every((l) => l.referred)) {
+      ok("competitive tour is referred so the principal chooses the tenant");
+    } else fail("agent chose a winner from a competitive tour");
+
+    const expansion = structuredClone(g);
+    const ex = expansion.lois.find((l) => l.id === loi.id);
+    ex.kind = "expansion";
+    ex.referred = false;
+    ex.rentPsf *= 1.1;
+    ex.tiPsf = 0;
+    expansion.lois = [ex];
+    expansion.agent = true;
+    expansion.agentFloor = 0.70;
+    expansion.agentPassBelow = 0.55;
+    expansion.agentMaxSigningMonths = 24;
+    const afterExpansion = E.advanceQuarter(expansion, parcels, bbls, null);
+    if (afterExpansion.lois[0]?.referred) ok("incumbent expansion is referred to the principal");
+    else fail("agent auto-signed an incumbent expansion");
   }
 }
 

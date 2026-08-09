@@ -1952,6 +1952,20 @@ function deskVerdict(s: GameState, loi: LOI, market: number, feeRate: number): {
   const maxSigningM = agentMaxSigningMonths(s);
   const signingM = loiSigningMonths(loi, feeRate);
 
+  // A mandate may price routine paper; it cannot make the two operating
+  // decisions that define a building. An expansion trades known covenant and
+  // coterminous term against preserving the adjacent suite. A live tour asks
+  // which of several mutually-exclusive tenants gets the same space. Both come
+  // back to the principal even when every candidate clears the numeric policy.
+  if (loi.kind === "expansion") {
+    return { verdict: "refer", score, floor, pass, why: "an incumbent expansion changes how you program the building" };
+  }
+  if (
+    loi.tourId !== undefined
+    && s.lois.filter((x) => x.tourId === loi.tourId).length > 1
+  ) {
+    return { verdict: "refer", score, floor, pass, why: "multiple tenants are competing for the same space; you choose the winner" };
+  }
   if (loi.credit < minCred) {
     return { verdict: "refer", score, floor, pass, why: `credit below your ${CREDIT_LABEL[minCred]} minimum` };
   }

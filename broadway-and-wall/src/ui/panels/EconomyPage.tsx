@@ -429,6 +429,16 @@ export function EconomyPage() {
         {CLASSES.map((k) => {
           const b = marketBalance(e, k);
           const v = e.cityVac?.[k] ?? NATURAL_VAC[k];
+          const history = e.history ?? [];
+          const yearAgo = history.length > 12 ? history[history.length - 13] : undefined;
+          const realEffNow = (e.effRentIdx?.[k] ?? e.rentIdx[k]) / Math.max(0.01, e.cpi ?? 1);
+          const realEffThen = yearAgo
+            ? (yearAgo.effRent?.[k] ?? yearAgo.rent?.[k] ?? e.rentIdx[k]) / Math.max(0.01, yearAgo.cpi ?? 1)
+            : realEffNow;
+          const rentYoy = realEffNow / Math.max(0.01, realEffThen) - 1;
+          const rentWord = rentYoy > 0.025 ? "rising"
+            : rentYoy < -0.025 ? "falling"
+              : "flat";
           // The stock has always been the denominator under the pipeline
           // percentage on this card and the card never printed it, which made
           // the four classes unreadable against each other: a 6% pipeline on
@@ -448,6 +458,9 @@ export function EconomyPage() {
               </div>
               <Gauge value={v} natural={NATURAL_VAC[k]} lo={0} hi={0.28} fmt={(x) => `${(x * 100).toFixed(1)}%`} />
               <div className="mkt-card-state">{b.state}</div>
+              <div className={"mkt-card-sub" + (rentYoy < -0.025 ? " neg" : "")}>
+                effective rents {rentWord} · {rentYoy >= 0 ? "+" : ""}{(rentYoy * 100).toFixed(1)}% real / 12m
+              </div>
               {/* Each class runs its own cycle now, and which part of it you
                   are standing in is the single most useful thing on this card:
                   the same vacancy means opposite things on the way up and on
@@ -565,6 +578,22 @@ export function EconomyPage() {
           const d = ((e.rentIdx[focus] / RENT_BASE[focus]) - 1) * 100;
           return `$${e.rentIdx[focus].toFixed(2)}/sf · ${Math.abs(d).toFixed(0)}% ${d >= 0 ? "above" : "below"} its long-run base`;
         })()} />
+        {(() => {
+          const history = e.history ?? [];
+          const yearAgo = history.length > 12 ? history[history.length - 13] : undefined;
+          const now = (e.effRentIdx?.[focus] ?? e.rentIdx[focus]) / Math.max(0.01, e.cpi ?? 1);
+          const then = yearAgo
+            ? (yearAgo.effRent?.[focus] ?? yearAgo.rent?.[focus] ?? e.rentIdx[focus]) / Math.max(0.01, yearAgo.cpi ?? 1)
+            : now;
+          const move = now / Math.max(0.01, then) - 1;
+          return <Row
+            k="Effective rent trend"
+            v={`${move >= 0 ? "+" : ""}${(move * 100).toFixed(1)}% real over 12 months · `
+              + (move > 0.025 ? "rising" : move < -0.025 ? "falling" : "flat")}
+            bad={move < -0.025}
+            strong
+          />;
+        })()}
         {/* The concession dial, read out loud. Face rates are sticky by design
             (ECONOMY.md §2c) — this row is where the market tells the truth
             before asking admits it. */}

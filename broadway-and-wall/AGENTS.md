@@ -1,7 +1,7 @@
 # Broadway & Wall — agent brief
 
-This directory is the game. The repo root holds an older Groundwork scaffold;
-work here, not there.
+This directory is the game. The older Groundwork scaffold is archived under
+`legacy/groundwork/` (outside the pnpm workspace); work here, not there.
 
 ## Standing rules (required reading)
 

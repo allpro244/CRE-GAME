@@ -1,223 +1,26 @@
-# Groundwork
+# CRE Game
 
-A commercial real estate development simulator. You start with $600,000 in New Amsterdam and try to build a portfolio without going broke.
+This repo contains one game: **Broadway & Wall**.
 
-Single-page React + TypeScript app, bundled to one self-contained HTML file.
+| Path | What it is |
+|---|---|
+| [`broadway-and-wall/`](broadway-and-wall/) | The game — engine, UI, pipeline, harness |
+| [`legacy/groundwork/`](legacy/groundwork/) | Archived Groundwork scaffold (not in the workspace) |
 
-One city: **New Amsterdam** — an island between two rivers with a narrow canal wandering
-down its middle (waterfront premium included), twin cores, a central park, avenues, bridges,
-and a shoreline expressway. The city starts YOUNG: roughly half its eventual density stands
-at day one — the rest gets built during the campaign, by you and the rival firms. (The
-Meridian generator survives in the engine but is no longer reachable from the menu.)
-
----
-
-## Running it
+## Start here
 
 ```bash
 pnpm install
-pnpm dev            # vite dev server with hot reload — the good feedback loop
-pnpm build          # production build to dist/
+pnpm dev            # vite for broadway-and-wall
+pnpm check          # engine harness
+pnpm gate           # conservation / invariant gates
 ```
 
-To produce the single-file playable artifact, use any single-file Vite plugin
-(e.g. `vite-plugin-singlefile`): one HTML file with JS and CSS inlined. The chat
-environment used its own `bundle-artifact.sh` for this.
+Docs for the game live under `broadway-and-wall/`:
 
----
+- [`broadway-and-wall/README.md`](broadway-and-wall/README.md) — how to run and package
+- [`broadway-and-wall/HANDOFF.md`](broadway-and-wall/HANDOFF.md) — traps, open faults, current state
+- [`broadway-and-wall/CLAUDE.md`](broadway-and-wall/CLAUDE.md) — economy / engine rules
+- [`broadway-and-wall/AGENTS.md`](broadway-and-wall/AGENTS.md) — agent brief
 
-## Architecture
-
-| File | What it is |
-|---|---|
-| `src/engine.ts` | The entire simulation. Pure functions, no React. Every game rule lives here. |
-| `src/views2.tsx` | Deal board (+auctions, build-to-suit), deal drawer/modal, LOI negotiation, portfolio, refi, debt tab (lenders, hedging), Books tab |
-| `src/mapview.tsx` | Isometric + flat city map, street network rendering, memoized layers, parcel selection, block panel |
-| `src/buildingArt.ts` | Procedural facades & construction sites. Pure: params + prism geometry in, element descriptors out. No React, no engine imports. Also owns the shared massing truth (story caps, coverage). |
-| `src/portrait.tsx` | Building portraits: painted front elevations at dusk for the deal memo, asset cards, stock inspector, and the development desk (proposed + under-construction scenes). Same seed and archetype dice as the map, honest ft-per-px scale. |
-| `src/App.tsx` | Shell, dashboard, economy tab, modals, save/load |
-| `src/charts.tsx` | Minimal SVG line/bar charts |
-| `src/index.css` | Dark "surveyor terminal" theme (amber #d9a648 on #0e1216) |
-
-**The engine is the product.** It's deliberately pure: `advanceMonth(state) -> state`, no side effects,
-no DOM. That's what makes the headless test harness possible, and it's why balance changes are safe to
-make — you can simulate 30 years in milliseconds before touching the UI.
-
-### Core state model
-
-- `GameState.tiles` — 20x14 city blocks. Each tile's desirability is **anchor + emergence**:
-  `baseD` (geography and street access, fixed at generation except for permanent
-  infrastructure like transit) plus a quarterly **mix term** — occupied SF within ~2 blocks
-  scored as jobs/residents/amenity by a geometric mean (monoculture ≈ 0, balance compounds),
-  scaled with diminishing returns, weighted by average product quality, damped by heavy
-  industrial presence. `pop` and `emp` are likewise anchored (`popBase`/`empBase`) plus
-  endogenous: occupied residential space attracts residents, occupied business space
-  attracts jobs, and demand factors read those. **The game never forecasts** — the map
-  shows what is, the player forms the thesis.
-- **Terrain forms** — each seed rolls a landform over the base city (a bay biting one
-  shore, the north river widening into a sound, an inland lake, or the classic cut) plus
-  unbuildable marsh fringes (`Tile.marsh`). Same block grid underneath — the silhouette is
-  what varies. Cores, parks and the port are protected from the carve.
-- `GameState.roads` — the per-seed street network on block boundaries (local / collector /
-  arterial / highway / rail). Arterials jog, Broadway staircases toward uptown (half of
-  cities roll a second southeast diagonal), locals prune into superblocks with distance
-  from the cores, bridges are scarce. Access is economic: each tile carries `acc`
-  (arterial frontage, highway/rail proximity, quiet) feeding rents, demand and land
-  value — retail wants frontage, industrial wants the highway and the rail spur, housing
-  pays for quiet.
-- **Center-out genesis** — generation fills the core (~85-90% of day-one SF on D≥62 land)
-  and leaves ~a quarter of fringe blocks empty; rival firms weight site selection by
-  desirability, so the city visibly grows outward over a campaign.
-- Each block is a **4x4 grid of quarter-acre parcels** (`PGRID`, `PARCEL_AC`). Footprints are cell-index
-  sets (`cells: number[]`), so buildings can be L-shaped. Edge-sharing (not corner) defines one site —
-  see `isContiguous()`.
-- `GameState.stock` — ~250 standing buildings at generation (the city is young and grows),
-  every one real and owned. Listings are drawn *from* stock.
-- `GameState.assets` — what you own. `GameState.land` — banked vacant parcels.
-- Save format is versioned (`version: 32`); `deserialize()` rejects mismatches rather than crashing.
-
-### Century systems
-
-The simulation is calibrated for playthroughs up to ~100 years (city population starts
-around 300K). Six long-run mechanisms keep a late-game city alive instead of frozen:
-
-- **Feasibility gravity** — sector rents can't diverge from replacement cost forever; the
-  rent-index bounds scale with the cost index, and a gravity term (with per-sector anchors
-  that phase in as costs drift) pulls each sector toward feasibility, so development still
-  pencils in year 90 and no index pins to a clamp.
-- **Era rotation** — the secular sector tilt re-rolls every 15–25 years and blends in over
-  three years, with news beats at the turn and at arrival. No sector stays the darling for
-  a whole century.
-- **Demographic tides** — multi-decade regimes (boom / steady / stagnation / decline) move
-  population growth, business demand, and each block's resting population anchor.
-- **Renewal** — firms scrape underbuilt vintage stock when developer's residual math clears
-  a margin and rebuild to current zoning; private owners renovate when the market pays them
-  to (strong blocks stay current, weak blocks rot into a genuine class strata).
-- **Decline with teeth** — concentrated decayed stock drags its neighborhood (`rot`), and
-  major employers can leave, scarring a district's employment and baseD.
-- **Fresh capital** — entrant firms replace collapsed rivals (sized to the era's cost
-  index), and the transit authority draws a new corridor each generation, upzoning as it
-  goes.
-
-### Major systems
-
-Economy phases · tenant-level rent rolls with LOI/RFP/renewal negotiation · NNN vs gross leases ·
-retail percentage rent (tenant sales from neighborhood traffic; overage past a market-anchored
-breakpoint — where the trade outruns the rents) · off-market land friction (unlisted parcels have
-owners: ~a third won't sell at any price, most want 50-100% over market, one in ten is quietly
-motivated; dispositions are seeded per parcel so reloads can't re-roll an owner, hot blocks
-harden, recessions soften, refusals are remembered 24 months — listed land on the deal board is
-the pressure valve) ·
-multifamily as an aggregate-occupancy asset class · structured debt with balloons, covenants and cash
-sweeps · credit facilities · JV equity with 8% pref and 20% promote · depreciation, recapture, capital
-gains and 1031 exchanges · 10 AI firms that buy *and* develop · rivals play the land game (firms
-cold-call parcel owners, assemble contiguous sites lot by lot — visible on the map as claret pads —
-break ground when the mass is there, give up on stale assemblies after a holdout wins, and
-occasionally close on an off-market lead you priced but didn't tie up) · lease escalations and
-tenant renewal options (negotiated in the LOI, exercised only when they're in the tenant's favor) ·
-construction pipeline · land banking · demolition · office-to-multifamily conversion · reputation ·
-zoning (every block carries a use class R/C/MU/M and an intensity tier 1-3 generated with the city;
-use gates the product, tier caps density, existing violations are grandfathered; land prices what
-the paper allows, so upzoning is land value — rezoning applications cost real fees, take 5-9 months,
-and live or die at a hearing where neighborhood opposition, spot-zoning coherence, the economic
-phase and your reputation all vote; the council upzones its own transit corridors; AI firms obey
-the same paper) · construction-to-perm takeout (construction loans reprice +150bps and start
-amortizing when their IO runway ends — the takeout is your job) · retail co-tenancy (lose an
-anchor ≥35% of the building and the inline tenants pull their clauses: some leave within the
-quarter, some take a 15% abatement) · insured casualty (fire/storm/burst mains: deductible now,
-that share of the rent offline for months, expenses running on all of it — worse mid
-insurance-crisis) · a How-to-play primer that opens once on a fresh campaign ·
-rivals with REAL BALANCE SHEETS (cash, debt, and a portfolio marked to market quarterly —
-rent comes in, debt service goes out, acquisitions are 65% financed, sale proceeds cross the
-table, distress means deleveraging fire sales you can buy from, insolvency means collapse; they
-file their own rezonings, and the dashboard shows every firm's net worth, debt and leverage —
-click through to their full balance sheet and holdings) ·
-a cycle-records panel (each game's actual economic history: rate peaks and troughs with dates,
-inflation records, prime cap range, per-sector rent run-ups and drawdowns, recessions endured) ·
-land dispositions as a market (you list your dirt, then field scattered offers — lowball
-assemblers to deadline-rich 1031 money — over months, not clicks) · turn costs (1-3 months
-of rent to make vacated space showable) · per-deal IO pricing (interest-only money quotes
-75-150bps over the 25-year sheet, seeded per listing) ·
-FIVE NAMED LENDERS with personalities and relationships (the hometown bank, the regional,
-the life company, the debt fund, the CMBS desk — each with its own leverage, spread, minimum
-check and crunch behavior; performing loans build a relationship worth up to 50bps, defaults
-burn it) · foreclosure AUCTIONS on the courthouse steps (collapsed rivals' best buildings go
-to a live room — outbid the deepest pocket and settle in cash or hard money) · BUILD-TO-SUIT
-RFPs (credit tenants offer 15-year NNN leases above market for purpose-built product,
-delivered on time — rivals compete for the same paper, late delivery reads the penalty
-clause) · STAFF & G&A (an analyst, a property manager, a leasing director, a construction
-manager — monthly payroll, real engine levers) · RATE HEDGING (swap fixed to floating,
-fix a floater, buy a rate cap priced off the era's volatility) · a PLAYER INCOME STATEMENT
-(every dollar in or out lands categorized in the Books tab — rent, opex, debt service,
-leasing costs, G&A, taxes, capital events; the mystery cash hit is now a line item) ·
-MIXED-USE AS A MIXTURE (a mixed building is ground-floor retail, office above, apartments over
-both — you pick the program at groundbreaking; each slice earns its own market's rent, retail
-and office suites tour separately, the homes fill monthly as one living block, and every square
-foot counts in its component sector's vacancy — there is no separate "mixed market" or tab) ·
-LAND LOANS (banks front ~55% on dirt, interest-only at a hot spread on a 36-month fuse —
-retired at sale or groundbreaking, extended at +150bps if you can't) · desirability with
-MOMENTUM and BLIGHT (rising blocks overshoot their fundamentals, high vacancy nearby drags a
-block down until somebody fills it) · construction SCALE ECONOMIES (a 70K SF building runs
-~25% cheaper per foot than a 5K one) · capital programs that AGE OUT (redoable after 5-8
-years, priced off the building they're swung at) · a land price tape in the Economy tab ·
-a CITY REGISTRY tab (every standing building with its metrics — sortable, filterable,
-click-through) · map banners (FOR SALE / OFF-MARKET / UNDER CONSTRUCTION over the
-buildings themselves) · office with a real cycle (remote-work waves are episodes with
-cooldowns and a return-to-office rebound, and cheap space actually refills — office is
-cyclical now, not cursed) · roofs on a 20-30 year clock per property ·
-a REAL leasing market: citywide vacancy per asset class is measured from the actual standing
-stock building by building (overbuild industrial and those exact square feet sit empty), rents
-follow the vacancy gap with momentum and a price-elasticity stabilizer (cheap space fills, dear
-space empties — soft decades find bottoms), tile rents carry a local supply/demand balance term,
-leasing velocity/concessions/renewals all swing with per-type tightness (landlord's vs tenant's
-market), land is priced as a RESIDUAL (achievable rent → NOI → value at today's cap, minus
-today's construction cost, times zoned density, anchored to the location curve), cap rates widen
-in soft sectors, and the Economy tab reports it all like a broker's market report.
-
----
-
-## Testing
-
-```bash
-npx esbuild src/engine.ts --bundle --format=esm --outfile=/tmp/engine.mjs
-
-node tools/simtest.mjs    # 6 seeds x 30 years, auto-player, asserts invariants
-node tools/probe.mjs      # expense ratios, cap rate distribution, dev spreads
-```
-
-`simtest.mjs` is the safety net. It asserts things like: no parcel is ever double-occupied, every
-listing points at a real stock building, `listedId` and listings stay in bijection, no NaN in net
-worth, the street network is well-formed with no landlocked blocks, desirability stays in bounds,
-and — the strictest one — **the per-tile supply ledger always equals the standing stock** (this
-invariant has already caught three real bookkeeping bugs; keep it).
-**Run it after any engine change.** Balance regressions show up as wild swings in the reported 30-year
-net worth range (healthy is roughly $1M–$40M across seeds, with occasional bankruptcies).
-
-`probe.mjs` prints the numbers you tune against: net expense ratios by asset class, going-in cap rate
-percentiles vs borrowing cost, and development yield spreads.
-
----
-
-## Working on this
-
-A few things learned the hard way:
-
-- **Change the engine, then probe, then touch the UI.** Several times a UI-motivated tweak (relieving
-  management fees, cutting CAM) quietly moved valuations 15% and needed a cap rate recalibration.
-- **Bump `version` in `newGame()` and `deserialize()` whenever `GameState`'s shape changes.** Old saves
-  loading into new code is the one bug class that silently corrupts a campaign.
-- The map is split into layers memoized on *stable identities* (`tilesGeom`, `grids`, `tileVals`,
-  road runs) with handlers reading a `live` ref — hover/pan/zoom re-render a tooltip, not the city.
-  If you add per-frame state to a layer path, profile it. Buildings render one prism per footprint
-  rectangle (see `cellRects`), with a zoom-bucketed LOD: flat prisms far out, `buildingArt` facades
-  (lit windows track occupancy) past ~1.6×.
-- `useIsoBuildings`' memo stamp tracks counts + construction progress + coarse occupancy. If you
-  add a new way for geometry to change, add it to the stamp or the map won't update.
-- Copy is part of the design. News items, error messages, and hints are written in a dry practitioner's
-  voice; keep it.
-
-## Ideas not yet built
-
-Rival firms bidding against you on *land* · entitlement/rezoning as a play · percentage rent for retail ·
-lease options and fixed-rate renewal caps · corporate G&A and staff · rate caps and hedging ·
-tenant sales volumes driving retail health · a proper tutorial.
+The design spec at the repo root (`broadway-and-wall-spec-v2.md`) is reference material for Broadway & Wall.

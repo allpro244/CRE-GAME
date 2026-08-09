@@ -1,6 +1,6 @@
 # Broadway & Wall
 
-A commercial real estate tycoon game set in **Ashport** — a compact fictional harbor city (~1,800 lots) that starts young and gets built out over the campaign. Spec: `broadway-and-wall-spec-v2.md` (originally NYC-targeted; the map pivoted to a small fictional city for play density — the NYC pipeline below still works). Inherits Groundwork's engine philosophy (pure-function simulation, honest economics); Groundwork itself lives at the repo root.
+A commercial real estate tycoon game set in **Ashport** — a compact fictional harbor city (~1,800 lots) that starts young and gets built out over the campaign. Spec: `broadway-and-wall-spec-v2.md` (originally NYC-targeted; the map pivoted to a small fictional city for play density — the NYC pipeline below still works). Inherits Groundwork's engine philosophy (pure-function simulation, honest economics); Groundwork itself is archived under `legacy/groundwork/`.
 
 **Ashport's districts:** Old Harbor (irregular colonial core), the Exchange (office grid + height core), Northside (brownstones), Millside (industrial, ripe for redevelopment), the Point (waterfront tower pads), plus Founders Park, squares, piers, and a 13-station transit net that drives the demand map.
 

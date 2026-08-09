@@ -25,8 +25,9 @@ pnpm dev                      # vite, localhost:5173
 pnpm package:onefile          # dist/broadway-and-wall.html — self-contained, opens from file://
 ```
 
-Node 22, pnpm 10. The repo root has an older scaffold beside `broadway-and-wall/`;
-point your editor at `broadway-and-wall/` or it will read both.
+Node 22, pnpm 10. The older Groundwork scaffold is archived under
+`legacy/groundwork/` (outside the pnpm workspace); point your editor at
+`broadway-and-wall/`.
 
 The city is **generated at runtime** (`src/citygen/`) from a seed — there is no
 data pipeline to run for normal development. `pipeline/` is audit material and

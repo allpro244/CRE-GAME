@@ -6,3 +6,7 @@ groundwork.html
 
 # agent worktrees — never part of the repo
 .claude/worktrees/
+
+# legacy Groundwork local artifacts (if run from archive)
+legacy/groundwork/dist/
+legacy/groundwork/bundle.html

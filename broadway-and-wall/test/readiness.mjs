@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const checks = [
   ["attention and deadlines", "attention.mjs"],
+  ["deterministic save and resume", "stress/33-determinism.mjs", { SEEDS: "550991", HZ: "120" }],
   ["save migration", "save-migration.mjs"],
   ["fundable foreclosure protection", "foreclose-funded.mjs"],
   ["atomic title transfer", "title-transfer.mjs"],

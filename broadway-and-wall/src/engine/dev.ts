@@ -744,6 +744,7 @@ export function planDevelopment(
   custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>> },
   lender?: string,
   spec = 0.5,
+  landBasisOverride?: number,
 ): DevPlan | null {
   // THE ENVELOPE YOU ACTUALLY HAVE. Zoning moves, variances are won and lots
   // are assembled — all of which live on the resolved record. Planning against
@@ -924,7 +925,9 @@ export function planDevelopment(
   // It is NOT charged as cash — you already paid for it, and charging twice
   // would be its own lie — but it belongs in the denominator, because that is
   // what yield on cost means.
-  const landBasis = Math.round(s.holdings[bbl]?.costBasis ?? landValue(rec, s.econ));
+  const landBasis = Math.round(
+    landBasisOverride ?? s.holdings[bbl]?.costBasis ?? landValue(rec, s.econ),
+  );
   const buildCost = hardCost + softCost + demo + contingency + leaseUp;
   const costTotal = buildCost;
   const basisTotal0 = buildCost + landBasis;
@@ -1066,9 +1069,12 @@ export interface DevelopmentUnderwriting {
  */
 export function underwriteDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
-  floors: number, coverage = 0.62,
+  floors: number, coverage = 0.62, landBasisOverride?: number,
 ): DevelopmentUnderwriting | null {
-  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, "gmp");
+  const plan = planDevelopment(
+    s, parcels, bbl, use, floors, coverage, "gmp",
+    undefined, undefined, undefined, 0.5, landBasisOverride,
+  );
   if (!plan) return null;
   const financeable = plan.ltcMax > 0 && plan.commitment > 0;
   const clears = financeable && plan.hurdleRatio >= 1;
@@ -2600,7 +2606,6 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     const land = landValue(rec, e);
     const built = Math.max(1, assetValue(rec, e, cond));
     const ratio = land / built;
-    if (ratio < 0.85) continue;
     if (!worst || ratio > worst.ratio) worst = { bbl, rec, ratio };
   }
   if (!worst) return;
@@ -2689,7 +2694,18 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // The wrecking ball does not move until the replacement clears the same full
   // site-level pro forma as every other builder. Because the existing building
   // is still resolved here, the shared plan includes demolition cost.
-  const underwriting = underwriteDevelopment(s, parcels, bbl, nextUse, nfl, 0.62);
+  // The owner gives up whichever is worth more: the dirt or the standing
+  // income building. The old gate required land/building >= 0.85 but then put
+  // only LAND in the project basis, so the prefilter and the actual pro forma
+  // answered different questions. Let the complete opportunity-cost hurdle be
+  // the gate instead.
+  const opportunityCost = Math.max(
+    landValue(rec!, e),
+    assetValue(rec!, e, gradeOf(s, rec!)),
+  );
+  const underwriting = underwriteDevelopment(
+    s, parcels, bbl, nextUse, nfl, 0.62, opportunityCost,
+  );
   if (!underwriting?.clears || teardownRoll > 0.62 * underwriting.appetite) return;
   const plan = underwriting.plan;
   nsf = plan.sf;
@@ -2751,11 +2767,13 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     // busiest players. A block is about 3% of the city and is what a person
     // means by "near me".
     const yoursHere = Object.keys(s.holdings).some((b) => parcels[b]?.block === rec!.block);
+    const why = ratio >= 0.85
+      ? `the land under it is worth ${ratio.toFixed(1)}x the standing building`
+      : `the replacement clears its full hurdle after charging $${(opportunityCost / 1e6).toFixed(1)}M for the building being sacrificed`;
     s.news.unshift({
       q: s.month, kind: yoursHere ? "event" : "info",
-      text: `${rec!.address} is coming down. It went up in ${rec!.yearBuilt}, and the land under it is worth `
-        + `${ratio.toFixed(1)}x what the building is — which is the only calculation that has ever mattered `
-        + `to a wrecking ball. ${(nsf / 1000).toFixed(0)}k sf of ${nextUse} replaces it, opening ${monthLabel(s.month + months)}.`,
+      text: `${rec!.address} is coming down. It went up in ${rec!.yearBuilt}, and ${why}. `
+        + `${(nsf / 1000).toFixed(0)}k sf of ${nextUse} replaces it, opening ${monthLabel(s.month + months)}.`,
     });
   }
   void yr;

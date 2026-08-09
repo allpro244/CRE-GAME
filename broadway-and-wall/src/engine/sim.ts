@@ -384,11 +384,16 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   }
 }
 
-export function advanceMonth(
-  prev: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null = null,
-): GameState {
-  if (prev.gameOver) return prev;
-  const s: GameState = cloneState(prev);
+/**
+ * One month, mutating `s` in place. The public `advanceMonth` clones first;
+ * `advanceUntilAttention` clones once and then ticks many months on the copy
+ * — otherwise a year click paid for twelve deep-clones of a growing save, which
+ * is most of why advancing decades felt like the UI had locked up.
+ */
+function tickMonth(
+  s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null,
+): void {
+  if (s.gameOver) return;
   s.month++;
 
   tickEcon(s);
@@ -824,7 +829,14 @@ export function advanceMonth(
   for (const bbl of Object.keys(s.workouts ?? {})) {
     if (!s.holdings[bbl]?.loan) delete s.workouts![bbl];
   }
+}
 
+export function advanceMonth(
+  prev: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null = null,
+): GameState {
+  if (prev.gameOver) return prev;
+  const s: GameState = cloneState(prev);
+  tickMonth(s, parcels, bbls, adjacency);
   return s;
 }
 
@@ -952,13 +964,19 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
 
 // Run up to `cap` months, stopping when something new needs the player.
 // Returns the state plus why it stopped — the UI toasts the reason.
+//
+// ONE CLONE for the whole run. Re-cloning every month was correct and also
+// twelve times the structuredClone cost on every Year click; a thirty-year
+// skip paid for 360 deep copies of the save. The tick mutates the copy; the
+// caller's state is untouched until they adopt the returned one.
 export function advanceUntilAttention(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null, cap: number,
 ): { s: GameState; months: number; reason: string | null } {
+  if (s.gameOver || cap <= 0) return { s, months: 0, reason: null };
   const before = new Set(attentionItems(s).map((a) => a.key));
-  let cur = s;
+  const cur = cloneState(s);
   for (let i = 1; i <= cap; i++) {
-    cur = advanceMonth(cur, parcels, bbls, adjacency);
+    tickMonth(cur, parcels, bbls, adjacency);
     const now = attentionItems(cur);
     const fresh = now.find((a) => !before.has(a.key));
     if (fresh) return { s: cur, months: i, reason: fresh.label };

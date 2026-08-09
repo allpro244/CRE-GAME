@@ -51,8 +51,25 @@ export function locLimit(s: GameState, parcels: ParcelTable): number {
   return Math.max(0, Math.round(nw * advance));
 }
 
+/**
+ * Undrawn room on the line. Cached for the current (state, month, cash, drawn)
+ * tuple because `fundableNow` / `fundCashNeed` can be asked once per loan per
+ * month and each call used to re-walk the whole book through `netWorth`.
+ */
+let _locAvailCache: {
+  s: GameState; month: number; cash: number; locBal: number; avail: number;
+} | null = null;
+
 export function locAvailable(s: GameState, parcels: ParcelTable): number {
-  return Math.max(0, locLimit(s, parcels) - (s.loc?.balance ?? 0));
+  const locBal = s.loc?.balance ?? 0;
+  const hit = _locAvailCache;
+  if (
+    hit && hit.s === s && hit.month === s.month
+    && hit.cash === s.cash && hit.locBal === locBal
+  ) return hit.avail;
+  const avail = Math.max(0, locLimit(s, parcels) - locBal);
+  _locAvailCache = { s, month: s.month, cash: s.cash, locBal, avail };
+  return avail;
 }
 
 /**
@@ -81,10 +98,14 @@ export function fundCashNeed(s: GameState, parcels: ParcelTable, amount: number)
       s.loc.balance += draw;
       s.loc.drawnTotal += draw;
       s.cash += draw;
+      _locAvailCache = null; // cash and drawn both moved
     }
   }
   const pay = Math.min(need, Math.max(0, Math.floor(s.cash)));
-  if (pay > 0) s.cash -= pay;
+  if (pay > 0) {
+    s.cash -= pay;
+    _locAvailCache = null;
+  }
   return pay;
 }
 
@@ -103,6 +124,7 @@ export function coverCashShortfall(s: GameState, parcels: ParcelTable): number {
   s.loc.balance += draw;
   s.loc.drawnTotal += draw;
   s.cash += draw;
+  _locAvailCache = null;
   s.news.unshift({
     q: s.month, kind: "warn",
     text: `Short $${(need / 1e6).toFixed(2)}M — the line covered $${(draw / 1e6).toFixed(2)}M at ${locRate(s).toFixed(2)}%.`,

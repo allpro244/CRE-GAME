@@ -306,22 +306,49 @@ function buildTown(island: string, seed: number, size: string, dev: string) {
 const SNAP_PREFIX = "Auto · ";
 const SNAP_KEEP = 8;                 // four years of half-years
 let lastSnapBucket = -1;
+/** In-memory rotation of auto-snapshot slot names — avoids `listSaves()`, which
+ *  deserialises every save in IndexedDB just to read month/cash. Spamming Year
+ *  used to pay that tax every half-year boundary. */
+const snapSlots: string[] = [];
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+let persistPending: GameState | null = null;
+
 async function snapshot(game: GameState) {
   const bucket = Math.floor(game.month / 6);
   if (bucket === lastSnapBucket) return;
   lastSnapBucket = bucket;
-  await saveGame(SNAP_PREFIX + monthLabel(game.month), game);
-  const mine = (await listSaves())
-    .filter((m) => m.slot.startsWith(SNAP_PREFIX))
-    .sort((a, b) => b.month - a.month);
-  for (const old of mine.slice(SNAP_KEEP)) await deleteSave(old.slot);
-  await useStore.getState().refreshSlots();
+  const slot = SNAP_PREFIX + monthLabel(game.month);
+  await saveGame(slot, game);
+  snapSlots.push(slot);
+  while (snapSlots.length > SNAP_KEEP) {
+    const old = snapSlots.shift();
+    if (old) await deleteSave(old);
+  }
+  // Refresh the Saves page off the critical path — Year spam must not wait on it.
+  queueMicrotask(() => { void useStore.getState().refreshSlots(); });
 }
-async function persist(game: GameState) {
-  try {
-    await saveGame(AUTO(), game);
-    await snapshot(game);
-  } catch { /* private-mode browsers: play on without saves */ }
+
+/**
+ * Coalesce autosaves. Year / Skip fire many times a second when the player is
+ * rolling decades; writing IndexedDB on every click (and scanning every save
+ * for snapshot rotation) was a large share of the perceived lag. Keep only the
+ * latest state and flush on the next macrotask.
+ */
+function persist(game: GameState) {
+  persistPending = game;
+  if (persistTimer != null) return;
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    const g = persistPending;
+    persistPending = null;
+    if (!g) return;
+    void (async () => {
+      try {
+        await saveGame(AUTO(), g);
+        await snapshot(g);
+      } catch { /* private-mode browsers: play on without saves */ }
+    })();
+  }, 0);
 }
 
 export const useStore = create<AppState>((set, get) => ({

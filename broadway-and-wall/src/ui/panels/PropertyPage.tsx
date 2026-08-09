@@ -53,7 +53,9 @@ export function PropertyPage() {
     { key: "money", label: "Money", show: !!h && (built || !!h.loan) },
     { key: "ops", label: "Operations", show: !!h && built },
     { key: "deal", label: h ? "Sell" : "Acquire", show: true },
-    { key: "build", label: "Build", show: !!h && (rec.class === "land" || !!dev || ownsNeighbour) },
+    { key: "build", label: built ? "Convert / Build" : "Build",
+      show: !!h && (rec.class === "land" || !!dev || ownsNeighbour
+        || (!h.groundLeased && rec.class !== "multifamily")) },
     { key: "history", label: "Deed history", show: timeline.length > 0 },
   ];
   const shown = TABS.filter((t) => t.show);
@@ -218,7 +220,7 @@ export function PropertyPage() {
       {active === "build" && <LandDesk bbl={bbl} />}
       {active === "build" && dev && (
         <div className="page-section">
-          <div className="page-section-head">Under construction</div>
+          <div className="page-section-head">{dev.mode === "reuse" ? "Conversion under way" : "Under construction"}</div>
           <div className="grid">
             <Row k="Program" v={`${sf(dev.sf)} of ${dev.use} · ${dev.floors} floors`} strong />
             {dev.bts && (

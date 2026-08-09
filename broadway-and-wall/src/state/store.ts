@@ -21,7 +21,7 @@ import { fileVariance } from "@/engine/zoning";
 import { refinance, buyRateCap } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
 import { openFacility, repayFacility, releaseFromFacility } from "@/engine/facility";
-import { clearBuildToSuit, proposeBuildToSuit, startDevelopment, startProgram, setStance, setOps, setOpsPolicy, demolish } from "@/engine/dev";
+import { clearBuildToSuit, proposeBuildToSuit, startAdaptiveReuse, startDevelopment, startProgram, setStance, setOps, setOpsPolicy, demolish } from "@/engine/dev";
 import { hire, fire, refreshPool, POOL_REFRESH_M } from "@/engine/staff";
 import { normalizeParcels } from "@/engine/mix";
 import { netWorth } from "@/engine/value";
@@ -165,6 +165,7 @@ interface AppState {
   develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment }, lender?: string) => void;
   proposeBts: (bbl: string, use: DevUse, floors: number, coverage: number) => void;
   clearBts: (bbl: string) => void;
+  convertUse: (bbl: string, target: "multifamily" | "mixed", mix?: UseMix) => void;
   offer: (bbl: string, price: number, finalOffer?: boolean) => void;
   closeDeal: (bbl: string, product: string, lev: number) => void;
   acceptCounter: (bbl: string) => void;
@@ -588,6 +589,16 @@ export const useStore = create<AppState>((set, get) => ({
     const next = clearBuildToSuit(game, bbl);
     set({ game: next });
     void persist(next);
+  },
+
+  convertUse: (bbl, target, mix) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = startAdaptiveReuse(game, parcels, bbl, target, mix);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Conversion started.");
+    void persist(r.s);
   },
 
   // Buying is a conversation now: the same call opens it and answers their

@@ -13,16 +13,16 @@ import { demandNow } from "./demand";
 import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE } from "./market";
 import { roleState, cmRiskMult } from "./staff";
 import { firmShort } from "./firm";
-import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, landRead, assetValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling,
+import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling,
   developmentHurdle, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
 export { physicalMaxFloors, plateEfficiency } from "./value";
-import { depositFor, genAnchorTenant, COMMERCIAL_SUITE_MIN, minTenancySf, useVacantSf } from "./leasing";
+import { depositFor, depositsOn, genAnchorTenant, COMMERCIAL_SUITE_MIN, minTenancySf, useVacantSf } from "./leasing";
 import { claimJob, jobDelivered, ownerOf, gradeOf } from "./rivals";
 import { locAvailable } from "./credit";
-import { useSf } from "./mix";
+import { mixOf, useSf } from "./mix";
 import { lenderAppetite, lenderByName, CONSTRUCTION_LENDER } from "./lenders";
 import { lenderRelOf, bumpLenderRel } from "./debt";
 import {
@@ -1080,6 +1080,137 @@ export interface DevelopmentUnderwriting {
   why?: string;
 }
 
+export function adaptiveReuseEligibility(
+  s: GameState, parcels: ParcelTable, bbl: string,
+): { ok: boolean; why?: string; occupancy?: number } {
+  const h = s.holdings[bbl];
+  const rec = h ? resolveRec(parcels, s, bbl) : null;
+  if (!h || !rec) return { ok: false, why: "You do not own that building." };
+  if (rec.class === "land" || !rec.bldgArea) return { ok: false, why: "There is no shell to convert." };
+  if (rec.class === "multifamily" || (mixOf(rec).multifamily ?? 0) > 0.5) {
+    return { ok: false, why: "This is already predominantly housing." };
+  }
+  if (s.landmarks?.[bbl] !== undefined) return { ok: false, why: "Landmark controls do not permit this conversion." };
+  if (s.developments[bbl]) return { ok: false, why: "A project is already under way." };
+  if (h.groundLeased || s.groundLeases?.[bbl]) return { ok: false, why: "The ground lessee controls the improvement." };
+  if (h.sale) return { ok: false, why: "Pull the sale process before starting a conversion." };
+  if (h.loan || s.facility?.bbls.includes(bbl)) {
+    return { ok: false, why: "Existing secured debt must be paid off or released before a conversion loan closes." };
+  }
+  const occupied = h.tenants.reduce((a, t) => a + t.sf, 0)
+    + (h.occ ?? 0) * useSf(rec, "multifamily");
+  const occupancy = occupied / Math.max(1, rec.bldgArea);
+  if (occupancy > 0.20) {
+    return { ok: false, why: `The building is ${(occupancy * 100).toFixed(0)}% occupied. Stop leasing and obtain vacant possession first.`, occupancy };
+  }
+  return { ok: true, occupancy };
+}
+
+export function planAdaptiveReuse(
+  s: GameState, parcels: ParcelTable, bbl: string,
+  target: "multifamily" | "mixed" = "multifamily",
+  customMix?: UseMix,
+): DevPlan | null {
+  const eligible = adaptiveReuseEligibility(s, parcels, bbl);
+  if (!eligible.ok) return null;
+  const rec = resolveRec(parcels, s, bbl)!;
+  const coverage = Math.max(0.08, Math.min(0.9,
+    rec.bldgArea / Math.max(1, rec.lotArea * rec.floors)));
+  const opportunity = ownedHoldingValue(s, parcels, s.holdings[bbl]);
+  const base = planDevelopment(
+    s, parcels, bbl, target, rec.floors, coverage, "gmp",
+    undefined, { mix: customMix }, undefined, 0.5, opportunity,
+  );
+  if (!base) return null;
+  // Reuse keeps structure and much of the envelope, but replaces interiors,
+  // risers, services and life-safety systems. Cost and time are materially
+  // below demolition/new-build; lease-up remains the target programme's risk.
+  const hardCost = Math.round(base.hardCost * 0.58);
+  const softCost = Math.round(base.softCost * 0.70);
+  const demo = Math.round(base.demo * 0.30);
+  const contingency = Math.round((hardCost + softCost) * CONTINGENCY);
+  const costTotal = hardCost + softCost + demo + contingency + base.leaseUp;
+  const scale = costTotal / Math.max(1, base.costTotal);
+  const commitment = Math.round(base.commitment * scale);
+  const interestReserve = Math.round(base.interestReserve * scale);
+  const pointsCost = Math.round(base.pointsCost * scale);
+  const equity = Math.max(0, costTotal + interestReserve - commitment);
+  const basisTotal = opportunity + costTotal + interestReserve + pointsCost;
+  const stabilizedNoi = base.yieldOnCost / 100 * base.basisTotal;
+  const yieldOnCost = stabilizedNoi / Math.max(1, basisTotal) * 100;
+  const { requiredYield, hurdleRatio } = developmentHurdle(yieldOnCost, base.exitCap);
+  return {
+    ...base,
+    hardCost, softCost, demo, contingency, costTotal,
+    commitment, interestReserve, pointsCost,
+    equity, equityAtClose: Math.round(equity * 0.55),
+    basisTotal, yieldOnCost, requiredYield, hurdleRatio,
+    months: Math.max(9, Math.round(base.months * 0.70)),
+    lenderNote: hurdleRatio < 1
+      ? `Conversion yield is ${yieldOnCost.toFixed(2)}% against ${requiredYield.toFixed(2)}% required.`
+      : base.lenderNote,
+  };
+}
+
+export function startAdaptiveReuse(
+  s: GameState, parcels: ParcelTable, bbl: string,
+  target: "multifamily" | "mixed" = "multifamily", customMix?: UseMix,
+): { s: GameState; err?: string; msg?: string } {
+  const eligible = adaptiveReuseEligibility(s, parcels, bbl);
+  if (!eligible.ok) return { s, err: eligible.why };
+  const rec = resolveRec(parcels, s, bbl)!;
+  const plan = planAdaptiveReuse(s, parcels, bbl, target, customMix);
+  if (!plan) return { s, err: "That conversion cannot be planned." };
+  if (plan.hurdleRatio < 1) return { s, err: plan.lenderNote ?? "The conversion does not clear its economic hurdle." };
+  const margin = Math.round(plan.costTotal * 0.06);
+  if (s.cash + locAvailable(s, parcels) < plan.equity + plan.pointsCost + margin) {
+    return { s, err: `The conversion requires $${(plan.equity / 1e6).toFixed(2)}M of equity plus a change-order margin.` };
+  }
+  if (s.cash < plan.equityAtClose + plan.pointsCost) {
+    return { s, err: `$${((plan.equityAtClose + plan.pointsCost) / 1e6).toFixed(2)}M is due at closing.` };
+  }
+  const next = clone(s);
+  const nh = next.holdings[bbl];
+  next.cash -= plan.equityAtClose + plan.pointsCost;
+  logBooks(next, "dev", plan.equityAtClose + plan.pointsCost);
+  const oldMix = mixOf(rec);
+  for (const use of BUILT_CLASSES) {
+    const oldSf = useSf(rec, use);
+    if (oldSf > 0) addStock(next.econ, use, -oldSf);
+  }
+  next.cash -= depositsOn(nh);
+  nh.tenants = [];
+  nh.occ = 0;
+  queueSupplyProject(next, {
+    bbl, source: "reuse", deliverM: next.month + plan.months,
+    sfByUse: programmeSf(plan.sf, plan.mix),
+  });
+  next.developments[bbl] = {
+    bbl, use: target, mix: plan.mix, sf: plan.sf, floors: plan.floors,
+    coverage: plan.coverage, costTotal: plan.costTotal, hardCost: plan.hardCost,
+    contract: "gmp", landBasis: plan.landBasis,
+    contingency: plan.contingency, contingencyUsed: 0,
+    lender: plan.lender, commitment: plan.commitment, drawn: 0, loanBalance: 0,
+    interestReserve: plan.interestReserve, reserveUsed: 0,
+    leaseUpReserve: plan.leaseUp, equityBudget: plan.equity,
+    equitySpent: plan.equityAtClose, equityPrefunded: plan.equityAtClose,
+    ratePct: plan.ratePct, startM: next.month, deliverM: next.month + plan.months,
+    baseMonths: plan.months, piped: true, signed: [], events: 0,
+    mode: "reuse", reuseFrom: oldMix,
+    reuseOldSf: rec.bldgArea,
+  };
+  recordPropertyEvent(next, bbl, {
+    kind: "build-start", use: target, sf: plan.sf, floors: plan.floors,
+    party: firmShort(next), outcome: `Adaptive reuse from ${rec.class}`,
+  });
+  next.news.unshift({
+    q: next.month, kind: "deal", bbl,
+    text: `Conversion underway at ${rec.address}: ${rec.class} shell to ${target}, `
+      + `${Math.round(plan.sf).toLocaleString()} sf, delivery ${monthLabel(next.month + plan.months)}.`,
+  });
+  return { s: next, msg: "Conversion started." };
+}
+
 /**
  * THE SAME SITE-LEVEL UNDERWRITING FOR EVERY NON-PLAYER BUILDER.
  *
@@ -1571,6 +1702,14 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
       // The job dies with the deed — pull its square feet back out of the
       // pipeline too, or the market absorbs a building nobody is building.
       cancelSupplyProject(s, d.bbl);
+      // A conversion retires the old shell from economic stock at start. If
+      // the project dies before delivery, that standing shell still exists and
+      // must return to the market rather than vanish with the cancelled queue.
+      if (d.mode === "reuse" && d.reuseFrom && d.reuseOldSf) {
+        for (const [use, share] of Object.entries(d.reuseFrom)) {
+          if ((share ?? 0) > 0) addStock(s.econ, use as BuiltClass, d.reuseOldSf * (share ?? 0));
+        }
+      }
       delete s.developments[d.bbl];
       continue;
     }
@@ -1584,7 +1723,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
       d.piped = true;
       queueSupplyProject(s, {
         bbl: d.bbl,
-        source: "player",
+        source: d.mode === "reuse" ? "reuse" : "player",
         startM: d.startM,
         deliverM: d.deliverM,
         sfByUse: programmeSf(d.sf, d.mix ?? devMix(d.use)),

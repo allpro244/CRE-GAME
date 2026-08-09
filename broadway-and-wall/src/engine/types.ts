@@ -10,6 +10,7 @@ export type BuiltClass = Exclude<AssetClass, "land">;
 export type SupplySource =
   | "city"
   | "teardown"
+  | "reuse"
   | "rival"
   | "player"
   | "ground-lease"
@@ -641,6 +642,9 @@ export interface Development {
   signed?: { sf: number; use: string; discount: number; name: string }[];
   /** Named tenant committed before groundbreak; absent means ordinary spec. */
   bts?: BtsCommitment;
+  mode?: "ground" | "reuse";
+  reuseFrom?: UseMix;
+  reuseOldSf?: number;
   events: number;         // how many things have gone wrong
 }
 

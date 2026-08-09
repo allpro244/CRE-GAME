@@ -721,6 +721,7 @@ export default function MapView() {
       items.push({ bbl: j.bbl, cls: j.use, heightM: j.floors * FLOOR_M * prog, floors: j.floors, construction: true });
     }
     for (const [bbl, b] of Object.entries(game.built ?? {})) {
+      if (game.developments?.[bbl]) continue; // conversion shell is represented by the construction massing
       // bunting for the first three months after delivery — a grand opening
       const dM = game.holdings[bbl]?.deliveredM;
       const fresh = dM !== undefined && game.month - dM <= 3;

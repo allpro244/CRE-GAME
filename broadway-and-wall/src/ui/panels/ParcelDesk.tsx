@@ -6,7 +6,7 @@ import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, START_YEAR } from "@/engine/types";
 import type { Approach, BuiltClass, Contract, DevUse } from "@/engine/types";
 import { assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, holdingNOIYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, recoveryOf, landValue, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, remainingAbatement, bareLandRec, leasedFeeValue } from "@/engine/value";
-import { planDevelopment, constructionQuotes, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
+import { adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, constructionQuotes, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
 import { buyQuote, assemblagePressure, saleTaxQuote, quietFeeRate, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { isCommercial, vacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, buyoutQuote, BUYOUT_PREMIUM, leasableUses, renewalIntent } from "@/engine/leasing";
@@ -621,6 +621,7 @@ function ParcelPanelInner({
       )}
 
       {on("build") && holding && !dev && rec.class === "land" && <DevelopSection bbl={selectedBBL} />}
+      {on("build") && holding && !dev && isBuilt && <ReuseSection bbl={selectedBBL} />}
 
       {/* THE LAND DESK — assemble contiguous owned lots into one site.
           Own two or more parcels that touch (including through a lot already
@@ -2157,6 +2158,58 @@ export function capStack(p: Stack, retailMaxPct: number): Stack {
     ? Math.round((p.office * (100 - retailMaxPct)) / rest)
     : Math.round((100 - retailMaxPct) / 2);
   return { retail: retailMaxPct, office, multifamily: 100 - retailMaxPct - office };
+}
+
+export function ReuseSection({ bbl }: { bbl: string }) {
+  const game = useHeldGame(bbl);
+  const parcels = useStore((s) => s.parcels)!;
+  const rec = resolveRec(parcels, game, bbl);
+  const [target, setTarget] = useState<"multifamily" | "mixed">("multifamily");
+  if (!rec) return null;
+  const eligibility = adaptiveReuseEligibility(game, parcels, bbl);
+  const mixed = target === "mixed"
+    ? { multifamily: 0.70, office: 0.20, retail: 0.10 }
+    : undefined;
+  const plan = eligibility.ok ? planAdaptiveReuse(game, parcels, bbl, target, mixed) : null;
+  const equity = (plan?.equity ?? 0) + (plan?.pointsCost ?? 0);
+  return (
+    <div className="deal">
+      <div className="deal-head">Adaptive reuse</div>
+      <div className="hint">
+        Keep the shell and convert the interior. The old building comes out of its space market when work starts;
+        the new housing arrives only at delivery. Opportunity cost includes the income building you give up.
+      </div>
+      <div className="btn-row">
+        <button className={"btn" + (target === "multifamily" ? " btn-on" : "")}
+          onClick={() => setTarget("multifamily")}>Apartments</button>
+        <button className={"btn" + (target === "mixed" ? " btn-on" : "")}
+          onClick={() => setTarget("mixed")}>Mixed · 70% housing</button>
+      </div>
+      {!eligibility.ok ? (
+        <div className="hint alarm">{eligibility.why}</div>
+      ) : plan ? (
+        <>
+          <div className="grid">
+            <Row k="Existing shell" v={`${sf(rec.bldgArea)} · ${rec.floors} floors · ${useLabel(rec)}`} />
+            <Row k="After conversion" v={`${sf(plan.sf)} · ${target}`} strong />
+            <Row k="Conversion budget" v={usd(plan.costTotal)} />
+            <Row k="Opportunity cost in basis" v={usd(plan.landBasis)} />
+            <Row k="Equity required" v={usd(equity)} strong bad={equity > game.cash + locAvailable(game, parcels)} />
+            <Row k="Delivery" v={`${plan.months} months`} />
+            <Row k="Yield / hurdle" v={`${plan.yieldOnCost.toFixed(2)}% / ${plan.requiredYield.toFixed(2)}%`}
+              strong bad={plan.hurdleRatio < 1} />
+          </div>
+          <button className="btn btn-buy"
+            disabled={plan.hurdleRatio < 1 || equity > game.cash + locAvailable(game, parcels)}
+            onClick={() => useStore.getState().convertUse(bbl, target, mixed)}>
+            Convert to {target === "multifamily" ? "apartments" : "mixed use"} · {usd(equity)}
+          </button>
+        </>
+      ) : (
+        <div className="hint">This shell cannot carry the target programme.</div>
+      )}
+    </div>
+  );
 }
 
 export function DevelopSection({ bbl }: { bbl: string }) {

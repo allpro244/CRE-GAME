@@ -562,7 +562,8 @@ export function LandDesk({ bbl }: { bbl: string }) {
   const vacant = rec.class === "land" && rec.bldgArea === 0;
   const landmarked = game.landmarks?.[bbl] !== undefined;
   const vq = landmarked ? null : varianceQuote(game, parcels, bbl);
-  const app = game.varianceApp?.bbl === bbl ? game.varianceApp : null;
+  const app = game.varianceApps?.[bbl]
+    ?? (game.varianceApp?.bbl === bbl ? game.varianceApp : null);
 
   // THE PLANNING BOARD. Available on anything you own, built or not — the
   // envelope is worth asking about whether or not there is already something

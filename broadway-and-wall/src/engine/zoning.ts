@@ -23,7 +23,7 @@
 //                is a building people care about, at a rent premium, that you
 //                are no longer allowed to knock down.
 import type { ParcelTable } from "@/data/types";
-import type { GameState } from "./types";
+import type { GameState, VarianceApplication } from "./types";
 import { logBooks, monthLabel, cloneState} from "./types";
 import { rng, rrange, NATURAL_VAC, RENT_BASE } from "./market";
 import { resolveRec, landValue, demandLinear } from "./value";
@@ -174,6 +174,11 @@ export function tickZoning(s: GameState, parcels: ParcelTable, bbls: string[]) {
 
 // ------------------------------------------------------------------ variance
 
+function pendingVariances(s: GameState): Record<string, VarianceApplication> {
+  if (s.varianceApps) return s.varianceApps;
+  return s.varianceApp ? { [s.varianceApp.bbl]: s.varianceApp } : {};
+}
+
 /** What it costs to try, and what the odds actually are. */
 export function varianceQuote(s: GameState, parcels: ParcelTable, bbl: string) {
   const rec = resolveRec(parcels, s, bbl);
@@ -202,7 +207,7 @@ export function fileVariance(
   s: GameState, parcels: ParcelTable, bbl: string,
 ): { s: GameState; err?: string; msg?: string } {
   if (!s.holdings[bbl]) return { s, err: "You have to own it to ask for anything." };
-  if (s.varianceApp) return { s, err: "You already have an application in front of the board. One at a time." };
+  if (pendingVariances(s)[bbl]) return { s, err: "This site already has an application in front of the board." };
   if (s.landmarks?.[bbl] !== undefined) return { s, err: "It is landmarked. The envelope is the envelope." };
   if ((s.variance?.[bbl] ?? 0) > 0) return { s, err: "The board has already granted relief on this site. They will not do it twice." };
   const q = varianceQuote(s, parcels, bbl);
@@ -233,7 +238,11 @@ export function fileVariance(
   const next: GameState = cloneState(s);
   next.cash -= q.cost;
   logBooks(next, "dev", q.cost);
-  next.varianceApp = { bbl, filedM: next.month, decideM: next.month + q.months, cost: q.cost, grant: q.grant, odds: q.odds };
+  next.varianceApps = {
+    ...pendingVariances(next),
+    [bbl]: { bbl, filedM: next.month, decideM: next.month + q.months, cost: q.cost, grant: q.grant, odds: q.odds },
+  };
+  delete next.varianceApp;
   const rec = resolveRec(parcels, next, bbl);
   next.news.unshift({
     q: next.month, kind: "info",
@@ -244,31 +253,39 @@ export function fileVariance(
 }
 
 function decideVariance(s: GameState, parcels: ParcelTable) {
-  const app = s.varianceApp;
-  if (!app || s.month < app.decideM) return;
-  const rec = resolveRec(parcels, s, app.bbl);
+  const apps = pendingVariances(s);
+  if (!Object.keys(apps).length) return;
+  // Migrate the old singular field even when none of the hearings is due yet.
+  s.varianceApps = { ...apps };
   delete s.varianceApp;
-  if (!s.holdings[app.bbl]) return;      // sold it while they deliberated
-  const granted = rng(s) < app.odds;
+  const due = Object.values(apps)
+    .filter((app) => s.month >= app.decideM)
+    .sort((a, b) => a.decideM - b.decideM || a.bbl.localeCompare(b.bbl));
+  for (const app of due) {
+    const rec = resolveRec(parcels, s, app.bbl);
+    delete s.varianceApps[app.bbl];
+    if (!s.holdings[app.bbl]) continue;      // sold it while they deliberated
+    const granted = rng(s) < app.odds;
   // THE DECISION IS A FACT ABOUT THE SITE. Recorded on the parcel, not just
   // announced once and scrolled away — a refusal sits over a property for
   // years and everybody in the neighbourhood knows about it.
-  if (!s.varianceLog) s.varianceLog = {};
-  s.varianceLog[app.bbl] = { m: s.month, granted, far: app.grant, cost: app.cost };
-  if (granted) {
-    if (!s.variance) s.variance = {};
-    s.variance[app.bbl] = +((s.variance[app.bbl] ?? 0) + app.grant).toFixed(2);
-    s.landAdj[app.bbl] = Math.min(4, (s.landAdj[app.bbl] ?? 1) * 1.22);
-    s.news.unshift({
-      q: s.month, kind: "deal",
-      text: `The board approved the variance at ${rec?.address ?? app.bbl}. `
-        + `${app.grant.toFixed(1)} FAR of extra envelope, and the dirt underneath it just repriced.`,
-    });
-  } else {
-    s.news.unshift({
-      q: s.month, kind: "warn",
-      text: `The board refused the variance at ${rec?.address ?? app.bbl}. The fees are spent and the envelope is what it always was.`,
-    });
+    if (!s.varianceLog) s.varianceLog = {};
+    s.varianceLog[app.bbl] = { m: s.month, granted, far: app.grant, cost: app.cost };
+    if (granted) {
+      if (!s.variance) s.variance = {};
+      s.variance[app.bbl] = +((s.variance[app.bbl] ?? 0) + app.grant).toFixed(2);
+      s.landAdj[app.bbl] = Math.min(4, (s.landAdj[app.bbl] ?? 1) * 1.22);
+      s.news.unshift({
+        q: s.month, kind: "deal",
+        text: `The board approved the variance at ${rec?.address ?? app.bbl}. `
+          + `${app.grant.toFixed(1)} FAR of extra envelope, and the dirt underneath it just repriced.`,
+      });
+    } else {
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `The board refused the variance at ${rec?.address ?? app.bbl}. The fees are spent and the envelope is what it always was.`,
+      });
+    }
   }
 }
 

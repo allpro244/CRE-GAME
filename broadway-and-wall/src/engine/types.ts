@@ -767,6 +767,15 @@ export interface GroundLease {
   builtM?: number;
 }
 
+export interface VarianceApplication {
+  bbl: string;
+  filedM: number;
+  decideM: number;
+  cost: number;
+  grant: number;
+  odds: number;
+}
+
 /**
  * One name on a bid list. `credibility` is the thing a seller is actually
  * judging: an aggressive number from a buyer who cannot fund it, or who reads
@@ -2003,7 +2012,10 @@ export interface GameState {
    * over a property while everybody waits for the board to change its mind.
    */
   varianceLog?: Record<string, { m: number; granted: boolean; far: number; cost: number }>;
-  varianceApp?: { bbl: string; filedM: number; decideM: number; cost: number; grant: number; odds: number };
+  /** Pending hearings keyed by property; separate sites may run concurrently. */
+  varianceApps?: Record<string, VarianceApplication>;
+  /** @deprecated legacy single-application save; migrated on the next filing/tick. */
+  varianceApp?: VarianceApplication;
   landmarks?: Record<string, number>;        // bbl -> month designated
   landAdj: Record<string, number>;           // per-parcel land value multiplier
   // THE DEMAND SURFACE. `blockD` is the live offset every economic reader uses;

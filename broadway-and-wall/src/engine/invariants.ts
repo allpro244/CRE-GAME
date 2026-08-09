@@ -67,10 +67,12 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
   for (const [bbl, x] of Object.entries(s.variance ?? {})) {
     if (!fin(x) || x < 0 || x > FAR_CEILING * 0.4) bad("zoning", `variance ${bbl}`, `granted ${x} FAR`);
   }
-  if (s.varianceApp) {
-    const a = s.varianceApp;
-    if (a.decideM < a.filedM) bad("zoning", "variance", "a hearing that decided before it was filed");
-    if (!fin(a.odds) || a.odds < 0 || a.odds > 1) bad("zoning", "variance", `odds ${a.odds}`);
+  const pendingVariance = s.varianceApps
+    ?? (s.varianceApp ? { [s.varianceApp.bbl]: s.varianceApp } : {});
+  for (const [bbl, a] of Object.entries(pendingVariance)) {
+    if (a.bbl !== bbl) bad("zoning", `variance ${bbl}`, `application points at ${a.bbl}`);
+    if (a.decideM < a.filedM) bad("zoning", `variance ${bbl}`, "a hearing that decided before it was filed");
+    if (!fin(a.odds) || a.odds < 0 || a.odds > 1) bad("zoning", `variance ${bbl}`, `odds ${a.odds}`);
   }
   // A landmark cannot also be under construction — nobody builds on one.
   for (const bbl of Object.keys(s.landmarks ?? {})) {

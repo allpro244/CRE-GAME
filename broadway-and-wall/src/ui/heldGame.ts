@@ -25,6 +25,9 @@ export function holdingDeskSig(g: GameState | null | undefined, bbl: string): st
   const dev = g.developments[bbl];
   const w = g.workouts?.[bbl];
   const gl = g.groundLeases?.[bbl];
+  const varianceApp = g.varianceApps?.[bbl]
+    ?? (g.varianceApp?.bbl === bbl ? g.varianceApp : undefined);
+  const varianceLog = g.varianceLog?.[bbl];
   return [
     g.month,
     g.cash,
@@ -81,6 +84,8 @@ export function holdingDeskSig(g: GameState | null | undefined, bbl: string): st
     w?.stage ?? "",
     w?.cure ?? "",
     gl ? `${gl.endM}:${gl.rentYr}:${gl.review ?? "fixed"}:${gl.builtM ?? ""}:${gl.floors ?? ""}` : "",
+    varianceApp ? `${varianceApp.filedM}:${varianceApp.decideM}:${varianceApp.grant}:${varianceApp.odds}` : "",
+    varianceLog ? `${varianceLog.m}:${varianceLog.granted ? 1 : 0}:${varianceLog.far}` : "",
     h?.groundOffer ? `${h.groundOffer.years}:${h.groundOffer.review ?? "fixed"}:${h.groundOffer.sinceM}` : "",
     g.merged?.[bbl] ?? "",
     g.built?.[bbl] ? 1 : 0,

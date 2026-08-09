@@ -15,7 +15,7 @@ import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, sa
 import { tickTalks } from "./acquire";
 import { tickLoan, prepayPenalty, productById } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
-import { tickLoc, locRate } from "./credit";
+import { tickLoc, coverCashShortfall, locRate } from "./credit";
 import { tickFacility } from "./facility";
 import { tickHolders } from "./owners";
 import { tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing } from "./dev";
@@ -398,7 +398,10 @@ export function advanceMonth(
   tickDemand(s, parcels);
   tickStaff(s, parcels);
   tickLenders(s);
-  tickWorkouts(s, parcels);
+  // Workouts run AFTER the holdings debt pass below: equity cures and this
+  // month's NOI have to land before the desk decides whether to file. Running
+  // them first was how a funded firm watched a foreclosure notice print in the
+  // same month the cure cheque would have cleared.
   tickPortfolio(s, parcels);
   tickFirm(s, parcels);
   tickRivals(s, parcels);
@@ -455,7 +458,7 @@ export function advanceMonth(
       s.news.unshift({ q: s.month, kind: "deal", text: `Renovation complete at ${rec.address} — space re-opens at the new rent.` });
     }
     const noiQ = monthlyNOI(rec, s.econ, h, s.month);
-    const debtCash = tickLoan(s, rec, h, noiQ); // may refi, sweep, or force a sale
+    const debtCash = tickLoan(s, parcels, rec, h, noiQ); // may refi, sweep, or force a sale
     logBooks(s, "noi", noiQ);
     logBooks(s, "debtSvc", debtCash);
     if (!s.holdings[h.bbl]) continue; // forced sale removed it
@@ -499,6 +502,12 @@ export function advanceMonth(
     const facCash = tickFacility(s, parcels);
     if (facCash !== 0) logBooks(s, "debtSvc", facCash);
   }
+
+  // DEBT HAS FIRST CLAIM ON LIQUIDITY. Cover a negative balance from the line
+  // before the workout desk looks at anybody, then let that desk auto-cure any
+  // file the firm can fund. Order matters: NOI → debt → line → workouts.
+  coverCashShortfall(s, parcels);
+  tickWorkouts(s, parcels);
 
   // --- the firm's own overhead ----------------------------------------------
   // Every cost in this game so far has been charged to a building. Real

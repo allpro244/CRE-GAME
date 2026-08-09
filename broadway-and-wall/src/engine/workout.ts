@@ -36,6 +36,7 @@ import { capitalRatio, chargeLenderLoss, lenderByName } from "./lenders";
 import { markSponsor } from "./sponsor";
 import { recordComp } from "./comps";
 import { depositsOn } from "./leasing";
+import { fundCashNeed, fundableNow } from "./credit";
 
 const clone = (s: GameState): GameState => cloneState(s);
 
@@ -222,13 +223,15 @@ export function cureWorkout(s: GameState, parcels: ParcelTable, bbl: string): { 
   if (!w || !h?.loan) return { s, err: "There is nothing in default there." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
-  if (s.cash < w.cure) return { s, err: `Curing it takes ${money(w.cure)} — you are short ${money(w.cure - s.cash)}.` };
+  if (fundableNow(s, parcels) < w.cure) {
+    return { s, err: `Curing it takes ${money(w.cure)} — cash and the line together are short ${money(w.cure - fundableNow(s, parcels))}.` };
+  }
   const next = clone(s);
-  next.cash -= w.cure;
-  logBooks(next, "debtSvc", w.cure);
+  const paid = fundCashNeed(next, parcels, w.cure);
+  logBooks(next, "debtSvc", paid);
   const nh = next.holdings[bbl]!;
   if (w.cause === "balloon") { nh.loan = null; }
-  else { nh.loan!.sweep = false; nh.loan!.cleanQs = 0; }
+  else { nh.loan!.sweep = false; nh.loan!.cleanQs = 0; nh.loan!.breachMs = 0; nh.loan!.arrearsMs = 0; }
   delete next.workouts![bbl];
   bumpLenderRel(next, w.lender, 4);
   next.news.unshift({
@@ -237,6 +240,41 @@ export function cureWorkout(s: GameState, parcels: ParcelTable, bbl: string): { 
       + `They will remember that you found it, which is most of what a relationship is.`,
   });
   return { s: next, msg: "Cured." };
+}
+
+/**
+ * A SPONSOR WHO CAN PAY DOES PAY — without waiting for the modal.
+ *
+ * The foreclosure-with-cash-in-the-bank bug survived the equity-cure patch in
+ * one shape: an open workout file advanced on its calendar while the player
+ * (or the bot) never clicked Cure, even though firm cash or the line could
+ * clear the arrears in a single cheque. Lenders do not file on a current
+ * borrower who is funded; the desk takes the money. Returns true if the file
+ * closed.
+ */
+function autoCureIfFunded(s: GameState, parcels: ParcelTable, w: Workout): boolean {
+  const h = s.holdings[w.bbl];
+  const rec = resolveRec(parcels, s, w.bbl);
+  if (!h?.loan || !rec) return false;
+  if (fundableNow(s, parcels) < w.cure) return false;
+  const paid = fundCashNeed(s, parcels, w.cure);
+  logBooks(s, "debtSvc", paid);
+  if (w.cause === "balloon") h.loan = null;
+  else {
+    h.loan.sweep = false;
+    h.loan.cleanQs = 0;
+    h.loan.breachMs = 0;
+    h.loan.arrearsMs = 0;
+  }
+  delete s.workouts![w.bbl];
+  bumpLenderRel(s, w.lender, 4);
+  s.news.unshift({
+    q: s.month, kind: "deal",
+    text: `Cured the default at ${rec.address} — ${money(w.cure)} to ${w.lender} out of the rest of the book`
+      + `${paid > 0 && s.loc && s.loc.balance > 0 ? " (and the line, where cash was short)" : ""}. `
+      + `A funded sponsor does not lose a building to a calendar.`,
+  });
+  return true;
 }
 
 /** Ask them to wait. */
@@ -341,21 +379,28 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
       s.news.unshift({ q: s.month, kind: "info", text: `${rec.address} is performing again — ${w.lender} has closed the file.` });
       continue;
     }
+
+    // FUNDED AUTO-CURE — cash first, then the line. Runs before the clock can
+    // file, and again while a foreclosure is pending, because a cheque that
+    // clears is the end of the conversation at every stage short of the hammer.
+    if (autoCureIfFunded(s, parcels, w)) continue;
+
     // KEEPING IT CURRENT. See Workout.servicing. While the lender has not
     // filed, a borrower who goes on paying is a borrower the lender would
     // rather keep — so every month the cheque clears, the clock moves with it
     // and nothing is decided. The payment is the ordinary one plus the default
     // spread, because a loan in default does not accrue at the note rate.
+    // Funded from cash first, then the line — same stack as every other debt
+    // cheque. (Auto-cure above is what closes a file the sponsor can clear in
+    // one payment; this is the opt-in drip that holds the clock.)
     if (w.servicing && w.stage !== "foreclosure" && h.loan) {
       const due = Math.round(h.loan.monthlyPmt * 1.15);
-      if (s.cash >= due) {
-        s.cash -= due;
-        logBooks(s, "debtSvc", due);
+      if (fundableNow(s, parcels) >= due) {
+        const paid = fundCashNeed(s, parcels, due);
+        logBooks(s, "debtSvc", paid);
         w.servicedMs = (w.servicedMs ?? 0) + 1;
         w.decideM = s.month + 1;
         h.loan.arrearsMs = 0;
-        // A file that has been performing for a year stops being a file. The
-        // lender has what they wanted and no reason to spend money on lawyers.
         if ((w.servicedMs ?? 0) >= 12 && w.cause !== "balloon") {
           delete s.workouts[w.bbl];
           bumpLenderRel(s, w.lender, 6);
@@ -378,6 +423,10 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
     if (s.month < w.decideM) continue;
 
     if (w.stage === "notice" || w.stage === "forbearance") {
+      // Last look: if the firm can fund the cure on the day the clock runs
+      // out, take the money rather than file. Filing on a funded borrower is
+      // the bug this desk exists to prevent.
+      if (autoCureIfFunded(s, parcels, w)) continue;
       // The clock ran out. They file — and a filing is not a sale. The sale
       // is the county's, once a year, in July, on the courthouse steps with
       // everything else that finished the process. See engine/auction.ts.
@@ -395,6 +444,7 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
     }
     // stage === "foreclosure": the hammer belongs to the July docket now —
     // engine/auction.ts settles it, credit bid, surplus, deficiency and all.
+    // Auto-cure above still runs each month until the sale.
   }
 }
 

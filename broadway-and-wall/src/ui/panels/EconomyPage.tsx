@@ -328,7 +328,7 @@ export function EconomyPage() {
       byYear.set(yr, cur);
     }
     return [...byYear.entries()].slice(-8).map(([yr, v]) => ({
-      label: String((2000 + yr) % 100).padStart(2, "0"),
+      label: String((START_YEAR + yr) % 100).padStart(2, "0"),
       bars: [{ v: v.abs, color: "#4a7d5a" }, { v: -v.comp, color: "#a8562e" }],
     }));
   })();

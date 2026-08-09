@@ -66,6 +66,7 @@ import { PRODUCTS, prepayPenalty, productById, bumpLenderRel, windowOpen, quote,
 import { distressPrice, sponsorStanding } from "./sponsor";
 import { recordComp } from "./comps";
 import { firmShort } from "./firm";
+import { fundCashNeed, fundableNow } from "./credit";
 
 /** Standard annuity payment, monthly, on a level-pay loan. */
 function monthlyPayment(principal: number, ratePct: number, years: number): number {
@@ -466,27 +467,29 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
   const principalPay = io ? 0 : Math.max(0, Math.min(f.balance, f.monthlyPmt - interest));
   f.balance = Math.max(0, f.balance - principalPay);
   let out = f.monthlyPmt;
-  s.cash -= out;
+  // Cash first, then the line — same stack as a single-asset loan. Going
+  // straight to `s.cash -=` left the revolver unused while the facility
+  // breached on a temporary cash hole.
+  fundCashNeed(s, parcels, out);
 
   const m = facilityMetrics(s, parcels);
   const holiday = q < f.originM + 12;
   let breached = !holiday && ((m.dscr !== null && m.dscr < f.minDSCR) || (m.ltv !== null && m.ltv > f.maxLTV));
 
   // THE EQUITY CURE, POOL-WIDE. Identical in kind to the one on a single loan —
-  // pay principal down to the covenant out of cash you actually have — because
-  // it is the same clause in the same kind of agreement, and a sponsor who can
-  // write the cheque writes it here too. What is different is the SIZE: a
-  // covenant struck against a whole book needs a whole book's worth of cure,
-  // and that is the honest reason a facility is dangerous. There is no cure
-  // small enough to be painless.
-  if (breached && s.cash > 0) {
+  // pay principal down to the covenant out of cash you actually have (and the
+  // undrawn line when cash is short) — because it is the same clause in the
+  // same kind of agreement, and a sponsor who can write the cheque writes it
+  // here too. What is different is the SIZE: a covenant struck against a whole
+  // book needs a whole book's worth of cure, and that is the honest reason a
+  // facility is dangerous. There is no cure small enough to be painless.
+  if (breached && fundableNow(s, parcels) > 0) {
     let target = f.balance;
     if (m.dscr !== null && m.dscr < f.minDSCR) target = Math.min(target, f.balance * (m.dscr / f.minDSCR));
     if (m.ltv !== null && m.ltv > f.maxLTV && m.value > 0) target = Math.min(target, f.maxLTV * m.value);
     const need = Math.ceil(f.balance - target);
-    const pay = Math.max(0, Math.min(need, Math.floor(s.cash)));
+    const pay = fundCashNeed(s, parcels, need);
     if (pay > 0) {
-      s.cash -= pay;
       f.balance -= pay;
       out += pay;
       if (pay >= need) {
@@ -534,9 +537,9 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
   // single maturity to refinance in whatever market happens to be open that
   // year. Pay it, refinance it, or it is accelerated.
   if (q >= f.maturityM && f.balance > 0) {
-    if (s.cash >= f.balance) {
-      s.cash -= f.balance;
-      out += f.balance;
+    if (fundableNow(s, parcels) >= f.balance) {
+      const paid = fundCashNeed(s, parcels, f.balance);
+      out += paid;
       f.balance = 0;
       delete s.facility;
       s.news.unshift({ q, kind: "deal", text: "The facility matured and you paid it off. The deeds are clear." });

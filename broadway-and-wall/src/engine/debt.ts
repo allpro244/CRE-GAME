@@ -12,6 +12,7 @@ import { holdingNOIYr, holdingValue, assetValue, noiAfterTaxYr, proFormaNOIYr, c
 import { walt } from "./leasing";
 import { INDUSTRY_LABEL } from "./market";
 import { sponsorStanding } from "./sponsor";
+import { fundCashNeed, fundableNow } from "./credit";
 
 export type PrepayKind = "open" | "stepdown" | "yieldmaint";
 
@@ -619,7 +620,9 @@ export function ltv(rec: ParcelRecord, s: GameState, h: Holding): number | null 
 
 // One quarter of debt life for a holding. Returns the cash the loan takes
 // this quarter (debt service, plus any sweep of surplus cash flow).
-export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, assetCF: number): number {
+export function tickLoan(
+  s: GameState, parcels: ParcelTable, rec: ParcelRecord | null, h: Holding, assetCF: number,
+): number {
   const loan = h.loan;
   if (!loan || !rec) return 0;
   const q = s.month;
@@ -629,6 +632,12 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
   // runs at the default rate against the COLLATERAL instead, which is why the
   // credit bid at the July sale is always bigger than the balance you
   // remember. Cash stops leaving; the hole grows where the building is.
+  //
+  // …unless the firm can still write the cure cheque. A foreclosure filing is
+  // not a deed: until the hammer falls the arrears are payable, and a sponsor
+  // with cash or an open line does not sit on both while the auction calendar
+  // runs. Auto-cure lives in tickWorkouts; here we only accrue when the file
+  // is still open after that desk has had its chance.
   const wFcl = s.workouts?.[h.bbl];
   if (wFcl?.stage === "foreclosure") {
     wFcl.accrued = Math.round((wFcl.accrued ?? 0) + (loan.balance * (loan.ratePct + 2)) / 100 / 12);
@@ -694,13 +703,13 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
    * loan agreements — an equity cure right — and its absence here meant the
    * game modelled the trap without modelling the obvious answer to it.
    *
-   * So: pay down principal to the covenant, out of cash the firm actually has.
-   * It is not free and it is not a rail. It costs real money in the month it
-   * happens, it is bounded by the cash on hand, and a firm that cannot afford
-   * it breaches exactly as before — sweep, workout desk, foreclosure. The
-   * difficulty this removes is the difficulty of being punished for something
-   * you had the money to fix, which CLAUDE.md calls a wrong number rather than
-   * a hard one.
+   * So: pay down principal to the covenant, out of cash the firm actually has
+   * — and out of the undrawn line when cash is short. It is not free and it is
+   * not a rail. It costs real money in the month it happens, it is bounded by
+   * fundable liquidity, and a firm that cannot afford it breaches exactly as
+   * before — sweep, workout desk, foreclosure. The difficulty this removes is
+   * the difficulty of being punished for something you had the money (or the
+   * line) to fix, which CLAUDE.md calls a wrong number rather than a hard one.
    *
    * NO NEW CONSTANT. The cure target is the covenant itself. Debt service is
    * proportional to balance at a fixed rate and term — exactly so while
@@ -708,17 +717,16 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
    * by the same factor and lands DSCR on its minimum; the LTV leg is
    * `maxLTV x value` by definition. Whichever binds, binds.
    */
-  if (breached && s.cash > 0) {
+  if (breached && fundableNow(s, parcels) > 0) {
     const value = holdingValue(rec, s.econ, h, s.month);
     let target = loan.balance;
     if (d !== null && d < loan.minDSCR) target = Math.min(target, loan.balance * (d / loan.minDSCR));
     if (l !== null && l > loan.maxLTV && value > 0) target = Math.min(target, loan.maxLTV * value);
     const need = Math.ceil(loan.balance - target);
-    // Bounded by the cash on hand, and taken immediately so that two breached
-    // buildings in the same month cannot both spend the same dollar.
-    const pay = Math.max(0, Math.min(need, Math.floor(s.cash)));
+    // Cash first, then the line — taken immediately so two breached buildings
+    // in the same month cannot both spend the same dollar or the same draw.
+    const pay = fundCashNeed(s, parcels, need);
     if (pay > 0) {
-      s.cash -= pay;
       loan.balance = Math.max(0, loan.balance - pay);
       logBooks(s, "debtSvc", pay);
       const yearsLeft2 = Math.max(1, loan.amortYears - (q - loan.originM) / 12);
@@ -792,10 +800,13 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
       cashOut += surplus;
     }
   }
-  // ARREARS. The building does not cover its own debt service and there is no
-  // cash behind it to make up the difference — so the payment did not arrive.
-  // One bad month is a timing problem; a quarter of them is a file.
-  const short = assetCF < loan.monthlyPmt && s.cash < 0;
+  // ARREARS. The building does not cover its own debt service and the firm
+  // cannot make up the difference from cash OR the undrawn line — so the
+  // payment will not arrive. The monthly cheque still leaves via monthCF
+  // (portfolio accounting); this clock only asks whether the sponsor could
+  // fund it. One bad month is a timing problem; a quarter of them is a file.
+  const gap = Math.max(0, Math.ceil(loan.monthlyPmt - assetCF));
+  const short = gap > 0 && s.cash < 0 && fundableNow(s, parcels) < gap;
   loan.arrearsMs = short ? (loan.arrearsMs ?? 0) + 1 : 0;
   if ((loan.arrearsMs ?? 0) >= 3 && !s.workouts?.[h.bbl]) {
     openWorkout(s, h.bbl, "arrears", Math.round(loan.monthlyPmt * (loan.arrearsMs ?? 3)));
@@ -847,16 +858,16 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
         h.loan.balance = h.loan.principal = rolled;
         h.loan.monthlyPmt = Math.round(monthlyPayment(rolled, h.loan.ratePct, h.loan.amortYears));
       }
-      s.cash -= fee;
-      logBooks(s, "debtSvc", fee);
+      const feePaid = fundCashNeed(s, parcels, fee);
+      logBooks(s, "debtSvc", feePaid);
       s.news.unshift({
         q, kind: "deal",
         text: `Balloon at ${rec.address} rolled into new paper at ${qd.ratePct.toFixed(2)}% (fee $${(fee / 1000).toFixed(0)}K). Want equity out? That's a refi you choose.`,
       });
     } else {
       const shortfall = loan.balance + fee - qd.principal;
-      if (s.cash >= shortfall) {
-        s.cash -= shortfall;
+      if (fundableNow(s, parcels) >= shortfall) {
+        const paid = fundCashNeed(s, parcels, shortfall);
         // AND IT GOES ON THE BOOKS. The branch above books its fee; this one
         // took the money and said nothing, so the largest single cheque a
         // levered owner ever writes — the gap at a balloon, when the market
@@ -865,7 +876,7 @@ export function tickLoan(s: GameState, rec: ParcelRecord | null, h: Holding, ass
         // ledger month by month over fifty years: three of the four
         // unexplained movements in the sample were this line, matching the
         // news item to the penny, and it cost one seed $1.17M of silence.
-        logBooks(s, "debtSvc", shortfall);
+        logBooks(s, "debtSvc", paid);
         h.loan = qd.principal > 100_000 ? originate(s, product, value, noi, 1, undefined, rec.class) : null;
         s.news.unshift({
           q, kind: "warn",

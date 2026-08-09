@@ -2197,26 +2197,20 @@ export const START_CASH = DEFAULT_START_CASH;
  * is exactly where prime office sits in life. Real growth is about 1.2% a year
  * and inflation is 2-3%. Neither is aggressive; sixty years of compounding is.
  *
- * WHAT WAS ACTUALLY WRONG IS THE YEAR ON THE LABEL. Every constant in this
- * engine is calibrated against OBSERVED 2024 data and says so — RENT_BASE cites
- * JLL 2024 and Providence Class A asks, HARD_COST cites current build costs, the
- * industrial correction cites a Q3 2024 national average. That is the right way
- * to calibrate. But the clock started at 2000 with `cpi = 1`, so the game opened
- * at 2024 prices wearing a 2000 date, and by "2060" the player was looking at
- * 2084 money on a 2060 calendar — a twenty-four year gap between the two, and
- * the whole of the reported surprise.
+ * Every constant in this engine is calibrated against OBSERVED 2024 data and
+ * says so — RENT_BASE cites JLL 2024 and Providence Class A asks, HARD_COST
+ * cites current build costs. The campaign clock nevertheless opens in January
+ * 2000: that is the fiction the game is written in (a century from the
+ * millennium, the package README, the century harnesses). Nominal dollars are
+ * therefore today's market wearing a 2000 date — a known labelling tension,
+ * kept because the owner wants the century to read 2000→2100 and every stray
+ * `2000 + month/12` copy in the tree agrees. Age maths and the month label
+ * both read this single constant.
  *
- * So the calendar moves to meet the constants rather than the constants being
- * deflated to meet the calendar. Deflating them would throw away every citation
- * above and replace measured facts with a fudge; moving the year costs nothing
- * and makes the two agree. Sixty years from 2024 is 2084, and $700-1,100/sf
- * nominal in 2084 against a $43.65 base in 2024 is about 2.4% a year.
- *
- * Only two things read this: the month label and the age of a building at
- * acquisition. Saved games carry a month index, not a year, so they reopen
- * fine — the same month simply prints a later year.
+ * Saved games carry a month index, not a year, so they reopen fine — the same
+ * month simply prints against whatever START_YEAR is now.
  */
-export const START_YEAR = 2024;
+export const START_YEAR = 2000;
 /**
  * WHAT A BANK BALANCE EARNS. One per cent a year, on positive balances, for
  * everybody in this city — you and every firm on the street.

@@ -1099,7 +1099,7 @@ export const LEASE_UP_YEARS = (apt: boolean) => (apt ? 1.6 : 3.2);
 
 function leaseUpFactor(rec: ParcelRecord, econ: Econ, apt: boolean): number {
   if (!rec.yearBuilt || econ.m === undefined) return 1;
-  const nowYr = 2000 + econ.m / 12;
+  const nowYr = START_YEAR + econ.m / 12;
   const age = nowYr - rec.yearBuilt;
   if (age < 0 || age > 4) return 1;
   const span = LEASE_UP_YEARS(apt);
@@ -1782,7 +1782,7 @@ export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition):
   // getting there, which is both lower than a full building and higher than a
   // hole in the ground.
   const sinceM = rec.yearBuilt && econ.m !== undefined
-    ? Math.round((2000 + econ.m / 12 - rec.yearBuilt) * 12) : 999;
+    ? Math.round((START_YEAR + econ.m / 12 - rec.yearBuilt) * 12) : 999;
   const asIs = leaseUpMarkAt(
     rec, econ, condition, sinceM, occupancy(rec, econ),
     clamp(capRateFor(rec, econ, condition), 2.8, 13) / 100,

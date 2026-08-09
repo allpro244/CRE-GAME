@@ -55,6 +55,61 @@ export function locAvailable(s: GameState, parcels: ParcelTable): number {
   return Math.max(0, locLimit(s, parcels) - (s.loc?.balance ?? 0));
 }
 
+/**
+ * DRAW THE LINE TO COVER A CASH NEED, THEN TAKE THE MONEY.
+ *
+ * Debt service, equity cures and workout cures used to look only at `s.cash`.
+ * A firm with an undrawn revolver and a weak building therefore walked into
+ * foreclosure with the line sitting unused — the exact wrong-number the
+ * owner reported (huge cash flow / liquidity, one property filed on over a
+ * payment the firm could trivially fund).
+ *
+ * Order is the real one: operating cash first, then the line, then whatever
+ * is still unpaid is unpaid. LOC draws are NOT booked to `borrowed` — that
+ * bucket is mortgage/facility principal; conserve already sees the revolver
+ * through `Δloc.balance`. Returns the dollars successfully funded (and
+ * already deducted from cash).
+ */
+export function fundCashNeed(s: GameState, parcels: ParcelTable, amount: number): number {
+  const need = Math.max(0, Math.ceil(amount));
+  if (need <= 0) return 0;
+  if (!s.loc) s.loc = { balance: 0, drawnTotal: 0, interestPaid: 0 };
+  const short = Math.max(0, need - Math.max(0, Math.floor(s.cash)));
+  if (short > 0) {
+    const draw = Math.min(short, locAvailable(s, parcels));
+    if (draw > 0) {
+      s.loc.balance += draw;
+      s.loc.drawnTotal += draw;
+      s.cash += draw;
+    }
+  }
+  const pay = Math.min(need, Math.max(0, Math.floor(s.cash)));
+  if (pay > 0) s.cash -= pay;
+  return pay;
+}
+
+/** How much of `amount` the firm can fund right now (cash + undrawn line). */
+export function fundableNow(s: GameState, parcels: ParcelTable): number {
+  return Math.max(0, Math.floor(s.cash)) + locAvailable(s, parcels);
+}
+
+/** Cover a negative cash balance from the line — same draw tickLoc used to do alone at month-end. */
+export function coverCashShortfall(s: GameState, parcels: ParcelTable): number {
+  if (s.cash >= 0) return 0;
+  if (!s.loc) s.loc = { balance: 0, drawnTotal: 0, interestPaid: 0 };
+  const need = Math.ceil(-s.cash);
+  const draw = Math.min(need, locAvailable(s, parcels));
+  if (draw <= 0) return 0;
+  s.loc.balance += draw;
+  s.loc.drawnTotal += draw;
+  s.cash += draw;
+  s.news.unshift({
+    q: s.month, kind: "warn",
+    text: `Short $${(need / 1e6).toFixed(2)}M — the line covered $${(draw / 1e6).toFixed(2)}M at ${locRate(s).toFixed(2)}%.`,
+  });
+  return draw;
+}
+
 export function drawLoc(s: GameState, parcels: ParcelTable, amount: number): { s: GameState; err?: string } {
   const next: GameState = cloneState(s);
   if (!next.loc) next.loc = { balance: 0, drawnTotal: 0, interestPaid: 0 };
@@ -106,21 +161,10 @@ export function tickLoc(s: GameState, parcels: ParcelTable) {
     logBooks(s, "debtSvc", interest);
   }
 
-  // a shortfall draws the line before it becomes insolvency
-  if (s.cash < 0) {
-    const need = Math.ceil(-s.cash);
-    const avail = locAvailable(s, parcels);
-    const draw = Math.min(need, avail);
-    if (draw > 0) {
-      s.loc.balance += draw;
-      s.loc.drawnTotal += draw;
-      s.cash += draw;
-      s.news.unshift({
-        q: s.month, kind: "warn",
-        text: `Short $${(need / 1e6).toFixed(2)}M — the line covered $${(draw / 1e6).toFixed(2)}M at ${rate.toFixed(2)}%.`,
-      });
-    }
-  } else if (s.loc.balance > 0 && s.cash > 250_000) {
+  // a shortfall draws the line before it becomes insolvency (also called
+  // earlier in the month, before workouts escalate — idempotent if already covered)
+  coverCashShortfall(s, parcels);
+  if (s.loc.balance > 0 && s.cash > 250_000) {
     // idle cash pays the most expensive money down first
     const sweep = Math.min(s.loc.balance, Math.floor(s.cash - 250_000));
     if (sweep > 0) { s.loc.balance -= sweep; s.cash -= sweep; }

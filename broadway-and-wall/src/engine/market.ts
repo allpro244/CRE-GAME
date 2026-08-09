@@ -416,7 +416,8 @@ export function developerOptimism(e: Econ, k: BuiltClass): number {
 // version's whole defect was that it did not need to: it worked from index
 // RATIOS against a single class-blind BASE_YOC and never touched a real
 // number. See `devPencils` in value.ts.
-export { devPencils } from "./value";
+import { devPencils } from "./value";
+export { devPencils };
 
 // Each rebased DOWN by the average value of the new vacancy term below, so
 // CAP_BASE keeps meaning "the class's long-run average cap" rather than "its

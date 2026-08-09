@@ -10,7 +10,7 @@ import type { BuiltClass, Contract, DevUse, Development, Econ, GameState, UseMix
 import { BUILT_CLASSES, cloneState} from "./types";
 import { logBooks, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow } from "./demand";
-import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE } from "./market";
+import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE } from "./market";
 import { roleState, cmRiskMult } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, landRead, assetValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling,

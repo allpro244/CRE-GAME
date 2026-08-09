@@ -1363,7 +1363,6 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   floors = plan.floors;
   const cost = plan.costTotal;
   if (cost > (r.aum ?? 0) * 0.75 + r.cash * 4) return;
-  const ltc = plan.ltc;
   // the dirt is already theirs, so only the build equity has to be in the bank
   if (r.cash < Math.round(plan.equity * 0.45) + Math.max(1_000_000, r.cash * 0.06)) return;
   const formerDurationRoll = rng(s, "rivals");

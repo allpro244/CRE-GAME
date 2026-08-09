@@ -248,15 +248,22 @@ export function DealsPage() {
                 <div className="hint">Nothing on the table. Open a negotiation from any listing — you can run {MAX_TALKS} at once.</div>
               )}
               {live.map((t) => (
-                <div key={t.bbl} className="hint" style={{ cursor: "pointer" }} onClick={() => go(t.bbl)}>
-                  <strong>{parcels[t.bbl]?.address ?? t.bbl}</strong>
-                  {t.agreed ? (
-                    <> — agreed at <b className="mono">{usd(t.agreedPrice ?? t.theirPrice)}</b> with {t.sellerName},{" "}
-                      {usd(t.deposit ?? 0)} down. Fund it by <b>{monthLabel(t.closeByM ?? game.month)}</b> or the deposit is theirs.</>
-                  ) : (
-                    <> — {t.sellerName} is at <b className="mono">{usd(t.theirPrice)}</b>, you are at {usd(t.yourPrice)}.{" "}
-                      {t.final ? "Their final word." : `Round ${t.round} of ${t.maxRounds}.`}</>
-                  )}
+                <div key={t.bbl} className="hint" style={{ cursor: "pointer", marginBottom: 6 }} onClick={() => go(t.bbl)}>
+                  <div>
+                    <strong>{parcels[t.bbl]?.address ?? t.bbl}</strong>
+                    {t.agreed ? (
+                      <> — agreed at <b className="mono">{usd(t.agreedPrice ?? t.theirPrice)}</b> with {t.sellerName},{" "}
+                        {usd(t.deposit ?? 0)} down. Fund it by <b>{monthLabel(t.closeByM ?? game.month)}</b> or the deposit is theirs.</>
+                    ) : (
+                      <> — {t.sellerName} is at <b className="mono">{usd(t.theirPrice)}</b>, you are at {usd(t.yourPrice)}.{" "}
+                        {t.final ? "Their final word." : `Round ${t.round} of ${t.maxRounds}.`}</>
+                    )}
+                  </div>
+                  <button className={"btn btn-sm" + (t.agreed ? " btn-buy" : "")}
+                    style={{ marginTop: 5 }}
+                    onClick={(e) => { e.stopPropagation(); go(t.bbl); }}>
+                    {t.agreed ? "Fund this acquisition →" : "Open negotiation →"}
+                  </button>
                 </div>
               ))}
               {committed > 0 && (

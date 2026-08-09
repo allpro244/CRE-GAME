@@ -40,11 +40,20 @@ if (js.length !== 1 || css.length !== 1) {
 const jsSrc = readFileSync(join(ASSETS, js[0]), "utf8");
 const cssSrc = readFileSync(join(ASSETS, css[0]), "utf8");
 
+// Vite's single chunk is already a closed IIFE (no import/export). Ship it as a
+// classic script — not type=module — so double-clicking the file works in
+// Chromium/Safari/Firefox. Module scripts from file:// are what made the zip
+// launchers necessary in the first place; this file exists to avoid that.
+if (/\b(?:import|export)\b/.test(jsSrc.slice(0, 2000)) || /\bexport\b/.test(jsSrc.slice(-500))) {
+  console.error("JS chunk still has import/export; cannot inline as a classic script.");
+  process.exit(1);
+}
+
 let html = readFileSync(join(DIST, "index.html"), "utf8");
 html = html.replace(/<script type="module"[^>]*src="[^"]*"><\/script>/, "");
 html = html.replace(/<link rel="stylesheet"[^>]*>/, () => `<style>${cssSrc}</style>`);
-// The module goes last, after #root exists in the document.
-html = html.replace("</body>", () => `<script type="module">${jsSrc}</script></body>`);
+// The script goes last, after #root exists in the document.
+html = html.replace("</body>", () => `<script>${jsSrc}</script></body>`);
 
 // Nothing may still be pointing at /assets — that is the whole point of the file.
 if (/(?:src|href)="\/assets\//.test(html)) {

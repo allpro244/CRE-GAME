@@ -52,12 +52,12 @@ function ensureQueue(e: Econ): SupplyProject[] {
     }
   }
   e.deliveryQueue = [...grouped.values()];
-  syncSupplyViews(e);
+  syncSupplyViews(e, true);
   return e.deliveryQueue;
 }
 
 /** Rebuild the old per-class views from the one project queue. */
-export function syncSupplyViews(e: Econ): void {
+export function syncSupplyViews(e: Econ, refreshPipeline = false): void {
   const cohorts = emptyByClass<Array<{ m: number; sf: number; bbl?: string }>>(() => []);
   const pipeline = emptyByClass(() => 0);
   for (const p of e.deliveryQueue ?? []) {
@@ -70,7 +70,14 @@ export function syncSupplyViews(e: Econ): void {
     }
   }
   e.cohorts = cohorts;
-  e.pipeline = pipeline;
+  // Starts made later in a monthly tick must not change the hurdle for jobs
+  // considered later in that same tick. The old cohort queue — correctly —
+  // exposed them to the market on the next monthly underwriting pass. Updating
+  // pipeline eagerly made construction depend on iteration order: a teardown
+  // selected near the top of `tickCityGrowth` could suppress an otherwise
+  // identical start selected near the bottom. Settlement/reconciliation ask
+  // explicitly for a refreshed monthly snapshot.
+  if (refreshPipeline) e.pipeline = pipeline;
 }
 
 export function programmeSf(sf: number, mix: UseMix): Partial<Record<BuiltClass, number>> {
@@ -171,7 +178,7 @@ export function reconcileSupplyQueue(s: GameState, parcels: ParcelTable): void {
   }
 
   s.econ.deliveryQueue = q.filter((p) => p.status !== "cancelled");
-  syncSupplyViews(s.econ);
+  syncSupplyViews(s.econ, true);
 }
 
 /**
@@ -191,6 +198,6 @@ export function settleSupplyDeliveries(
     for (const k of CLASSES) delivered[k] += Math.max(0, Math.round(p.sfByUse[k] ?? 0));
   }
   s.econ.deliveryQueue = still;
-  syncSupplyViews(s.econ);
+  syncSupplyViews(s.econ, true);
   return delivered;
 }

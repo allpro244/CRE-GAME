@@ -35,8 +35,8 @@ E.queueSupplyProject(g, {
   sfByUse: { office: 80_000, retail: 20_000 },
 });
 check(g.econ.deliveryQueue.length === 1, "mixed-use start creates one project row");
-check(g.econ.pipeline.office === 80_000 && g.econ.pipeline.retail === 20_000,
-  "derived pipeline carries both use legs");
+check(g.econ.cohorts.office[0]?.sf === 80_000 && g.econ.cohorts.retail[0]?.sf === 20_000,
+  "derived delivery schedule carries both use legs");
 
 E.rescheduleSupplyProject(g, bbl, g.month + 30);
 check(g.econ.cohorts.office[0]?.m === g.month + 30

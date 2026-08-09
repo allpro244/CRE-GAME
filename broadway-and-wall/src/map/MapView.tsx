@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useStore } from "@/state/store";
@@ -39,6 +39,12 @@ function mapPaintSig(g: GameState | null | undefined): string {
 }
 
 const CITY_CENTER: [number, number] = [-70.9, 41.1];
+
+const mixRgb = (a: [number, number, number], b: [number, number, number], t: number) => {
+  const k = Math.max(0, Math.min(1, t));
+  const c = a.map((v, i) => Math.round(v + (b[i] - v) * k));
+  return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+};
 
 // One colour per firm, in the order the street was founded, so a rival's book
 // reads as a shape on the map under the Owners lens. Muted on purpose — these
@@ -108,19 +114,18 @@ function fitZoom(frame: CityFrame, wpx: number, hpx: number) {
  * this change. In the other direction a Hamlet fits at about 16.5 and the 14.6
  * clamp opened it on four times more ocean than town.
  *
- * So both shots are now expressed as a distance from the island's OWN fit
- * zoom, and the two offsets below are carried over from the standard map,
- * which is the calibration: whatever the City map used to look like, every
- * size looks like now.
+ * So both shots are expressed as a distance from the island's OWN fit zoom.
+ * The establishing frame preserves the old calibration; the gameplay frame
+ * deliberately comes closer so the renderer's architectural detail survives
+ * at the camera where the game is actually played.
  */
 // How far OUTSIDE the island's fit zoom the dive lands — negative because a
-// smaller zoom is further away. 0.36 of a level is what the shipped 15.3
-// measured out to on the standard map (fit 15.66), so the island everybody has
-// already played opens on the same picture it always did, and every other size
-// opens on the same picture as it. A third of a level back from the fit shows
-// about 1.28x the island's longest span, which is the town filling the frame
-// with a strip of water around it.
-const DIVE_INSET = -0.36;
+// smaller zoom is further away.
+// The gameplay camera should be a city view, not an island diagram. Six per
+// cent of breathing room keeps the shoreline in frame while making roofs,
+// streets and construction readable without the player's first action being
+// a zoom gesture.
+const DIVE_INSET = -0.08;
 // The establishing shot pulls back further, because it is the "here is a
 // place" frame and a coastline needs water around it to read as an island.
 // 0.9 of a level is 1.87x the island's span, which is where the standard map's
@@ -760,6 +765,33 @@ export default function MapView() {
     if (!mapReady) return;
     threeRef.current?.setActivity(cityVisual.activity);
   }, [cityVisual.activity, mapReady]);
+  useEffect(() => {
+    if (!mapReady) return;
+    threeRef.current?.setWeather(
+      cityVisual.weather,
+      cityVisual.precipitation,
+      cityVisual.overcast,
+    );
+    const map = mapRef.current;
+    if (map) {
+      const cloud = cityVisual.overcast;
+      map.setSky({
+        "sky-color": mixRgb([79, 147, 207], [112, 132, 145], cloud),
+        "sky-horizon-blend": 0.52,
+        "horizon-color": mixRgb([223, 233, 238], [190, 202, 207], cloud),
+        "horizon-fog-blend": 0.72,
+        "fog-color": mixRgb([195, 216, 230], [164, 177, 184], cloud),
+        "fog-ground-blend": 0.8,
+        "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 12, 0.72, 15.5, 0.52, 18, 0.32],
+      });
+      map.setLight({
+        anchor: "map",
+        color: mixRgb([255, 255, 255], [205, 211, 214], cloud),
+        intensity: 0.42 - cloud * 0.12,
+        position: [1.15, 135, 55],
+      });
+    }
+  }, [cityVisual.weather, cityVisual.precipitation, cityVisual.overcast, mapReady]);
 
   // lenses — repaint when toggled and as the market moves
   useEffect(() => {
@@ -893,14 +925,6 @@ export default function MapView() {
   return (
     <>
       <div ref={el} className="map-root" />
-      <div
-        aria-hidden="true"
-        className={`map-weather map-weather-${cityVisual.weather}`}
-        style={{
-          "--weather-strength": cityVisual.precipitation.toFixed(3),
-          "--weather-overcast": cityVisual.overcast.toFixed(3),
-        } as CSSProperties}
-      />
       <div ref={tipRef} className="hover-tip" style={{ display: "none" }} />
     </>
   );

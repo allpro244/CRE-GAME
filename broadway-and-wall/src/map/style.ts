@@ -225,7 +225,7 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "land"],
-        paint: { "fill-color": "#e6e3d9" },
+        paint: { "fill-color": "#e2ddd0" },
       },
       {
         // The waterline itself. This was a near-white stroke at 70% with more
@@ -249,7 +249,7 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "esplanade"],
-        paint: { "fill-color": "#e9ebe0" },
+        paint: { "fill-color": "#dcded2" },
       },
       {
         // THE PAVED CITY. Everything inside the shoreline, laid down before a
@@ -262,7 +262,7 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "paveland"],
-        paint: { "fill-color": "#d7d4ca" },
+        paint: { "fill-color": "#cbc7bb" },
       },
       {
         // the carriageway that rings a park — under the green, not over it
@@ -296,7 +296,7 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "park"],
-        paint: { "fill-color": "#cde3c6" },
+        paint: { "fill-color": "#b7d29f" },
       },
       {
         id: "park-outline",
@@ -353,10 +353,10 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         paint: {
           "fill-color": [
             "case",
-            ["==", ["get", "org"], 1], "#8e8375",
+            ["==", ["get", "org"], 1], "#746b60",
             ["match", ["coalesce", ["get", "dt"], 0],
-              0, "#918e88", 1, "#8d8d89", 2, "#938e86", 3, "#8e908b", 4, "#928b87",
-              "#918e88"],
+              0, "#797875", 1, "#747774", 2, "#7d776e", 3, "#757a76", 4, "#7c726f",
+              "#797875"],
           ] as never,
         },
       },
@@ -382,10 +382,10 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         paint: {
           "fill-color": [
             "case",
-            ["==", ["get", "org"], 1], "#eae5d3",
+            ["==", ["get", "org"], 1], "#e5dcc6",
             ["match", ["coalesce", ["get", "dt"], 0],
-              0, "#e9e6dc", 1, "#e6e6df", 2, "#ebe6d9", 3, "#e6e8df", 4, "#eae3dc",
-              "#e9e6dc"],
+              0, "#e3ded2", 1, "#dedfd8", 2, "#e5ddcc", 3, "#dde1d7", 4, "#e4d8d1",
+              "#e3ded2"],
           ] as never,
         },
       },
@@ -398,10 +398,10 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         paint: {
           "line-color": [
             "case",
-            ["==", ["get", "org"], 1], "#ded6c8",
+            ["==", ["get", "org"], 1], "#d3c8b6",
             ["match", ["coalesce", ["get", "dt"], 0],
-              0, "#dedbd1", 1, "#d9dcda", 2, "#e0dacd", 3, "#daddd5", 4, "#dfd7d1",
-              "#dedbd1"],
+              0, "#d3d0c6", 1, "#cdd2cf", 2, "#d6cfc1", 3, "#ced4cb", 4, "#d5cbc6",
+              "#d3d0c6"],
           ] as never,
           "line-width": ["interpolate", ["linear"], ["zoom"], 13, 1.1, 15, 3.4, 18, 15] as never,
         },
@@ -415,7 +415,7 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         filter: ["==", ["get", "kind"], "street"],
         minzoom: 14,
         paint: {
-          "line-color": "#7d7a73",
+          "line-color": "#66645f",
           "line-width": ["interpolate", ["linear"], ["zoom"], 14, 0.4, 18, 1.4] as never,
           "line-offset": ["interpolate", ["linear"], ["zoom"], 14, -0.5, 18, -5.5] as never,
         },

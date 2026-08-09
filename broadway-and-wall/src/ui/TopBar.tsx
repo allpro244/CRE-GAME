@@ -11,6 +11,7 @@ import { liveBrokerCalls } from "./RightPanel";
 
 export default function TopBar() {
   const [armNewRun, setArmNewRun] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const fpsOn = useStore((s) => s.fpsOn);
   // When the meter is off, this selector is a constant 0 — so the once-a-second
   // MapView fps write cannot re-render the whole bar (and re-walk the book).
@@ -94,6 +95,7 @@ export default function TopBar() {
   // reach the end of them. They live on the start screen now, which has a
   // scroller and a footer that cannot scroll away. See ui/StartMenu.tsx.
   const newRunRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLDivElement>(null);
 
   /* THE BAR PUBLISHES ITS OWN HEIGHT.
      Everything that hangs below it — the parcel panel, the page overlays, the
@@ -126,6 +128,14 @@ export default function TopBar() {
     window.addEventListener("mousedown", close);
     return () => window.removeEventListener("mousedown", close);
   }, [armNewRun]);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const close = (e: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [moreOpen]);
 
   return (
     <div className="topbar" ref={barRef}>
@@ -264,7 +274,7 @@ export default function TopBar() {
           >
             Deals<Badge n={dealsCount} />
           </button>
-          <button className={"nav-btn" + (page === "research" ? " nav-on" : "")} onClick={() => setPage(page === "research" ? "none" : "research")}>
+          <button className={"nav-btn nav-secondary" + (page === "research" ? " nav-on" : "")} onClick={() => setPage(page === "research" ? "none" : "research")}>
             Research
           </button>
           {/* THE WHOLE DESK USED TO BE INVISIBLE UNTIL IT CAME TO YOU.
@@ -272,7 +282,7 @@ export default function TopBar() {
               the condition that the game had already offered you some. The
               badge still counts only what wants an answer; the button is
               always there, the way Marketplace is on a quiet month. */}
-          <button className={"nav-btn" + (page === "notes" ? " nav-on" : "")} onClick={() => setPage(page === "notes" ? "none" : "notes")}>
+          <button className={"nav-btn nav-secondary" + (page === "notes" ? " nav-on" : "")} onClick={() => setPage(page === "notes" ? "none" : "notes")}>
             Notes<Badge n={notesLive} />
           </button>
           <button
@@ -292,7 +302,7 @@ export default function TopBar() {
             Leasing
           </button>
           <button
-            className={"nav-btn" + (page === "staff" ? " nav-on" : "")}
+            className={"nav-btn nav-secondary" + (page === "staff" ? " nav-on" : "")}
             title="Hire and manage the people running leasing, property management and construction"
             onClick={() => setPage(page === "staff" ? "none" : "staff")}
           >
@@ -314,7 +324,7 @@ export default function TopBar() {
           >
             Debt{debtSwept ? " · ⚠" : debtHot ? " · !" : ""}
           </button>
-          <button className={"nav-btn" + (page === "books" ? " nav-on" : "")} onClick={() => setPage(page === "books" ? "none" : "books")}>
+          <button className={"nav-btn nav-secondary" + (page === "books" ? " nav-on" : "")} onClick={() => setPage(page === "books" ? "none" : "books")}>
             Books
           </button>
           {/* THE TAPE HAD NOWHERE TO LIVE. Every headline this economy writes
@@ -323,10 +333,44 @@ export default function TopBar() {
               page, and the owner asked where it was. It is a top-level
               destination now, for the same reason Saves was promoted out of
               that page: reading the news is not an accounting task. */}
-          <button className={"nav-btn" + (page === "news" ? " nav-on" : "")} onClick={() => setPage(page === "news" ? "none" : "news")}>
+          <button className={"nav-btn nav-secondary" + (page === "news" ? " nav-on" : "")} onClick={() => setPage(page === "news" ? "none" : "news")}>
             News<Badge n={unread} />
           </button>
           </nav>
+          <div className="nav-more" ref={moreRef}>
+            <button
+              className={"nav-btn" + (["research", "notes", "staff", "books", "news"].includes(page) ? " nav-on" : "")}
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              onClick={() => setMoreOpen((v) => !v)}
+            >
+              More <span aria-hidden="true">▾</span>
+            </button>
+            {moreOpen && (
+              <div className="nav-menu" role="menu">
+                {([
+                  ["research", "Research", "Underwriting, comps and submarkets"],
+                  ["notes", "Notes", "Loans and distressed paper"],
+                  ["staff", "Staff", "People, capacity and mandates"],
+                  ["books", "Books", "Cash movement and operating results"],
+                  ["news", "News", "The city’s market tape"],
+                ] as const).map(([id, label, note]) => (
+                  <button
+                    key={id}
+                    role="menuitem"
+                    className={"nav-menu-item" + (page === id ? " on" : "")}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      setPage(page === id ? "none" : id);
+                    }}
+                  >
+                    <span>{label}</span>
+                    <small>{note}</small>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="nav-cluster nav-cluster-map" role="group" aria-label="Map lenses">
           <span className="topbar-sep" />
           <button

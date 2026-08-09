@@ -135,8 +135,11 @@ const LIGHT_GLSL = /* glsl */ `
 // legible instead of going black.
 uniform vec3 uSunDir;
 uniform vec3 uSunCol;
+uniform vec2 uWeather; // rain, overcast
+#define RAIN uWeather.x
+#define OVERCAST uWeather.y
 #define SUN_DIR uSunDir
-#define SUN_COL uSunCol
+#define SUN_COL (uSunCol * mix(1.0, 0.46, OVERCAST))
 // THE FILL WAS DOING THE SUN'S JOB. A sky term this bright lands about
 // two-thirds of full illumination on a surface the sun cannot see at all,
 // which is why a city lit at 28 degrees — an angle chosen precisely so the
@@ -175,8 +178,9 @@ vec3 hemiLight(vec3 n, float ao) {
   // colour, which was the whole point.
   vec3 sunTint = SUN_COL / max(dot(SUN_COL, vec3(0.2126, 0.7152, 0.0722)), 1e-3);
   vec3 bounce = GND_COL * mix(vec3(1.0), sunTint, 0.85);
-  vec3 amb = mix(bounce, SKY_COL, clamp(n.z * 0.5 + 0.5, 0.0, 1.0));
-  return amb * ao;
+  vec3 sky = mix(SKY_COL, vec3(0.430, 0.466, 0.500), OVERCAST * 0.72);
+  vec3 amb = mix(bounce, sky, clamp(n.z * 0.5 + 0.5, 0.0, 1.0));
+  return amb * ao * mix(1.0, 0.84, OVERCAST);
 }
 
 vec3 aces(vec3 x) {
@@ -208,7 +212,7 @@ vec3 grade(vec3 c) {
   t = clamp(t, 0.0, 1.0);
 
   float lum = dot(t, vec3(0.2126, 0.7152, 0.0722));
-  t = mix(vec3(lum), t, 1.30);                 // ACES eats chroma; put it back
+  t = mix(vec3(lum), t, 1.40);                 // ACES eats chroma; put it back
   t = clamp(t, 0.0, 1.0);
   lum = dot(t, vec3(0.2126, 0.7152, 0.0722));
   t *= mix(vec3(0.910, 0.958, 1.108), vec3(1.078, 1.010, 0.904), smoothstep(0.14, 0.86, lum));
@@ -323,6 +327,7 @@ vec3 aerial(vec3 c, vec3 p, vec3 cam) {
     toSun = clamp(dot(normalize(vdir), normalize(sdir)) * 0.5 + 0.5, 0.0, 1.0);
   }
   vec3 haze = mix(HAZE_COOL, HAZE_WARM, pow(toSun, 2.4));
+  haze = mix(haze, vec3(0.680, 0.710, 0.730), OVERCAST * 0.58);
 
   // AND IT POOLS IN THE STREETS. Haze is densest where the air is thickest and
   // dirtiest, which is at the bottom — so a distant street floor washes out
@@ -351,7 +356,7 @@ vec3 aerial(vec3 c, vec3 p, vec3 cam) {
   // atmosphere at all. Real aerial photography from that height has a lot.
   float alt = smoothstep(1100.0, 4200.0, cam.z) * 0.20 * (1.0 - exp(-d / 1200.0));
 
-  return mix(c, haze, clamp(f * 0.35 * clarity + alt, 0.0, 1.0));
+  return mix(c, haze, clamp(f * (0.25 + OVERCAST * 0.13) * clarity + alt, 0.0, 1.0));
 }`;
 
 /**
@@ -3946,7 +3951,7 @@ void main() {
     float let_ = smoothstep(roll - 0.14, roll + 0.14, clamp(vLit + low * 0.22, 0.0, 1.0));
     float dark = 1.0 - let_;
     // flatter, cooler, dimmer where nobody is
-    col = mix(col, vec3(dot(col, vec3(0.34, 0.38, 0.28))) * vec3(0.92, 0.97, 1.08) * 0.78, dark * 0.80);
+    col = mix(col, vec3(dot(col, vec3(0.34, 0.38, 0.28))) * vec3(0.90, 0.96, 1.10) * 0.68, dark * 0.90);
     // and warm behind the glass where somebody is, hardest when the sun is low
     float dusk = 1.0 - smoothstep(0.10, 0.42, SUN_DIR.z);
     col += vec3(0.085, 0.058, 0.022) * let_ * dusk * (0.35 + 0.65 * winMask);
@@ -3975,6 +3980,9 @@ void main() {
     col *= 1.0 + age * 0.22 * (wash - 0.5);
   }
 
+  // Rain belongs to the material, not to a blue screen laid over the city.
+  // Masonry absorbs and deepens; glass changes much less.
+  col *= mix(1.0, glassy ? 0.96 : 0.88, RAIN);
 
   // ---- light --------------------------------------------------------------
   float ndl = max(dot(n, SUN_DIR), 0.0);
@@ -4355,6 +4363,9 @@ void main() {
   if (s == 9) roof = seasonGreen(roof);
   if (s == 12 || (s == 10 && vVar > 0.62)) roof = seasonTurf(roof);
   vec3 n = normalize(vNormal);
+  // Wet horizontal surfaces darken and gain a broad sun sheen. This survives
+  // the gameplay camera as material contrast without drawing rain over the UI.
+  roof *= mix(1.0, 0.80, RAIN * smoothstep(0.20, 0.85, n.z));
   if (SNOW > 0.001) {
     float up = smoothstep(0.28, 0.80, n.z);
     float drift = 0.62 + 0.55 * rnoise(wp * 0.22) + 0.20 * rnoise(wp * 1.3);
@@ -4437,7 +4448,7 @@ void main() {
   // where the sun can actually see the roof.
   vec3 Hr = normalize(SUN_DIR + Vr);
   float sheen = pow(max(dot(n, Hr), 0.0), 26.0);
-  outc += SUN_COL * sheen * 0.13 * vis;
+  outc += SUN_COL * sheen * (0.13 + RAIN * 0.34) * vis;
 
   // and the glitter, on whatever snow is lying up here
   if (SNOW > 0.001) {
@@ -5252,6 +5263,7 @@ void main() {
     base = mix(base, base * vec3(0.82, 0.90, 0.94), (1.0 - VIGOUR) * 0.45);
   }
   if (SNOW > 0.001) base = snowOn(base, smoothstep(0.30, 0.85, n.z), 0.85);
+  base *= mix(1.0, 0.84, RAIN * smoothstep(0.18, 0.88, n.z));
   float vis = sunVis(vW, n);
   float ao = mix(0.62, 1.0, clamp(vW.z / 5.0, 0.0, 1.0));
   vec3 light;
@@ -5417,6 +5429,9 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private sunDirUni = { value: new THREE.Vector3(0.762, -0.541, 0.496) };
   private sunColUni = { value: new THREE.Vector3(1.26, 1.09, 0.82) };
   private seasonUni = { value: new THREE.Vector4(0, 0, 0, 1) };
+  private seasonBase = new THREE.Vector4(0, 0, 0, 1);
+  private weatherUni = { value: new THREE.Vector2(0, 0) };
+  private weatherSnow = 0;
   private simMonth = -1;
   private sunDirty = false;
   /** demandScore by bbl, pushed by MapView before the layer is added — the
@@ -6669,6 +6684,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       uSunDir: this.sunDirUni,
       uSunCol: this.sunColUni,
       uSeason: this.seasonUni,
+      uWeather: this.weatherUni,
       uShadow: { value: null as THREE.Texture | null },
       uSunVP: { value: new THREE.Matrix4() },
       uShadowOn: { value: 0 },
@@ -7519,7 +7535,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       uniforms: {
         uTime: this.timeUni, uCam: this.camUni, uSunDir: this.sunDirUni, uSunCol: this.sunColUni,
         uReflect: { value: null }, uResolution: { value: new THREE.Vector2(1, 1) },
-        uReflectOn: { value: 0 }, uSeason: this.seasonUni,
+        uReflectOn: { value: 0 }, uSeason: this.seasonUni, uWeather: this.weatherUni,
       },
       side: THREE.DoubleSide,
     });
@@ -7546,6 +7562,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         uSunDir: this.sunDirUni,
         uSunCol: this.sunColUni,
         uSeason: this.seasonUni,
+        uWeather: this.weatherUni,
         uFoliage: { value: foliage },
         uCamP: this.camUni,
         uFade: { value: new THREE.Vector2(fade[0], fade[1]) },
@@ -7683,7 +7700,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           uniforms: {
             uShadow: { value: target.texture }, uSunVP: { value: sunVP },
             uShadowOn: { value: 1 }, uShadowSpan: { value: this.shadowSpan },
-            uSeason: this.seasonUni,
+            uSeason: this.seasonUni, uWeather: this.weatherUni,
           },
           transparent: true,
           depthWrite: false,
@@ -7699,7 +7716,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
             uShadow: { value: target.texture }, uSunVP: { value: sunVP },
             uShadowOn: { value: 1 }, uShadowSpan: { value: this.shadowSpan },
             uSeason: this.seasonUni, uCam: this.camUni,
-            uSunDir: this.sunDirUni, uSunCol: this.sunColUni,
+            uSunDir: this.sunDirUni, uSunCol: this.sunColUni, uWeather: this.weatherUni,
           },
           transparent: true,
           depthWrite: false,
@@ -8321,6 +8338,24 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.map?.triggerRepaint();
   }
 
+  private applySeason() {
+    // Snow cover is weather, not a five-month paint scheme. A clear January
+    // keeps only a trace in sheltered places; an active snow month carries a
+    // real cover. The old table still controls foliage and dormancy.
+    const residual = this.seasonBase.x * 0.07;
+    const snow = Math.max(residual, this.weatherSnow);
+    this.seasonUni.value.set(snow, this.seasonBase.y, this.seasonBase.z, this.seasonBase.w);
+  }
+
+  setWeather(kind: "clear" | "overcast" | "rain" | "snow", precipitation: number, overcast: number) {
+    const p = Math.max(0, Math.min(1, Number.isFinite(precipitation) ? precipitation : 0));
+    const cloud = Math.max(0, Math.min(1, Number.isFinite(overcast) ? overcast : 0));
+    this.weatherUni.value.set(kind === "rain" ? p : 0, cloud);
+    this.weatherSnow = kind === "snow" ? 0.32 + p * 0.62 : 0;
+    this.applySeason();
+    this.map?.triggerRepaint();
+  }
+
   setMonth(m: number) {
     if (!Number.isFinite(m) || m === this.simMonth) return;
     this.simMonth = m;
@@ -8339,7 +8374,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       lerp(SUN_COL_SUMMER[i], lerp(SUN_COL_WINTER[i], SUN_COL_SUMMER[i], w), SUN_WARMTH);
     this.sunColUni.value.set(sc(0), sc(1), sc(2));
     const [snow, turn, bare, vigour] = SEASON_TABLE[mo];
-    this.seasonUni.value.set(snow, turn, bare, vigour);
+    this.seasonBase.set(snow, turn, bare, vigour);
+    this.applySeason();
     this.sunDirty = true;
     if (this.map) this.map.triggerRepaint();
   }
@@ -8540,49 +8576,21 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // there the blur is only in the way. Depth of field is decoration;
     // legibility is not.
     //
-    // AND ONE RADIUS CANNOT SERVE BOTH CAMERAS, BECAUSE THEY HOLD DIFFERENT
-    // AMOUNTS OF DEPTH. The ease above did not start until z16.4, but
-    // MapView's two cameras are z14.6/pitch30 (the establishing frame) and
-    // z15.3/pitch55 (the core, where the game is actually played) — so every
-    // zoom anyone plays at sat at the full 3.1 px, and the ramp only ever
-    // fired once you were already down a street.
-    //
-    // How much that costs is not a matter of taste, because the two frames
-    // are not comparable. At a 18.43 deg half-FOV the camera height cancels
-    // and the ground runs 0.88..1.30 of the focus distance at pitch 30 and
-    // 0.71..2.01 of it at pitch 55: a relative depth spread of 0.42 against
-    // 1.30. Same lens over 3.08x the depth, and `rel` below saturates at
-    // 1.17x the subject distance — past that everything is at the SAME
-    // maximum. So the core frame was never "softer toward the back". It was
-    // one narrow sharp strip with the whole rest of the city — near
-    // foreground, far ground and sky alike — pinned at the aperture limit.
-    //
-    // Divide the radius by that 3.08 and the two frames fall away from their
-    // focus band by comparable amounts instead of one of them going off a
-    // cliff: 3.1 px at the establishing shot, 1.0 px at the core. 1.0 is the
-    // spread ratio, not a setting, and it lands about where `defocused` below
-    // stops mattering anyway — under 0.35 px it gives up and returns the edge
-    // filter instead.
-    //
-    // Measured as mean |Sobel| over an 800 px band on the far side of the
-    // island, against the same measure inside the focus band. Core camera:
-    // 81.5 vs 112.3 before (27% down), 94.8 vs 112.9 after (16% down). The
-    // establishing frame must not move, and does not: 108.4 vs 110.0 before,
-    // 106.5 vs 109.4 after. The near foreground — which is what actually
-    // carries the toy-model read — keeps its softening in both, 24% under the
-    // band at the core camera and 32% at the establishing one.
-    //
-    // The same measurement is why the aerial haze above was left alone:
-    // switching the haze off completely moves that far band from 81.5 only to
-    // 84.1, against 93.3 for switching the defocus off. The lens was 4.6x the
-    // haze and all of what read as "blurry".
+    // ONE RADIUS CANNOT SERVE BOTH CAMERAS. The establishing frame may carry a
+    // model-photograph softness; the closer gameplay frame has to preserve
+    // windows, cornices, occupancy bands and construction detail. The old
+    // 3.1-to-1.0px range still erased too much of that work, so the gameplay
+    // end now falls below half a pixel while the wide shot retains a restrained
+    // photographic falloff.
     //
     // Zoom stands in for pitch here because the app's two cameras move both
     // together. The driver underneath is the depth spread, which is a
     // function of pitch alone.
     {
       const zoom = this.map.getZoom();
-      const model = 3.1 + (1.0 - 3.1) * smoothstep(14.6, 15.3, zoom);
+      // Keep the establishing shot photographic, but do not blur away the
+      // facade and roof work at the camera where decisions are made.
+      const model = 2.25 + (0.42 - 2.25) * smoothstep(14.6, 15.3, zoom);
       this.compMat.uniforms.uDefocus.value = model * (1 - smoothstep(16.4, 18.2, zoom));
     }
 

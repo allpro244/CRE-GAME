@@ -2098,8 +2098,16 @@ export function collateralAsIs(rec: ParcelRecord, econ: Econ, occ: number): numb
   return assetValue(rec, econ, "worn") * Math.max(0.18, Math.min(0.72, 0.18 + 0.74 * o));
 }
 
-export function netWorth(s: GameState, parcels: Record<string, ParcelRecord>): number {
+/**
+ * One walk of the book: net worth AND gross asset value.
+ *
+ * The month tick used to call `holdingValue` once for overhead (GAV) and again
+ * inside `netWorth` — two full appraisals of every deed, every month. Year
+ * advance pays that twelve times.
+ */
+export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord>): { nw: number; gav: number } {
   let nw = s.cash;
+  let gav = 0;
   // ONE LOAN AGAINST MANY DEEDS IS STILL A LOAN. Every building's own mortgage
   // is netted off its value below; a facility has no single building to be
   // netted against, so it comes off here or it does not come off at all — and
@@ -2109,7 +2117,9 @@ export function netWorth(s: GameState, parcels: Record<string, ParcelRecord>): n
   for (const h of Object.values(s.holdings)) {
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
-    nw += holdingValue(rec, s.econ, h, s.month) - (h.loan?.balance ?? 0);
+    const v = holdingValue(rec, s.econ, h, s.month);
+    gav += v;
+    nw += v - (h.loan?.balance ?? 0);
   }
   // CONSTRUCTION IN PROGRESS CARRIES AT MONEY SUNK, NOT AT THE BUDGET.
   //
@@ -2127,6 +2137,8 @@ export function netWorth(s: GameState, parcels: Record<string, ParcelRecord>): n
   for (const d of Object.values(s.developments ?? {})) {
     const sunk = (d.equitySpent ?? 0) + (d.drawn ?? 0) - (d.reserveUsed ?? 0);
     nw += Math.max(0, sunk - d.loanBalance);
+    // Overhead still sizes against the committed budget — same as before.
+    gav += d.costTotal;
   }
   // PAPER YOU OWN, AT THE LOWER OF COST AND COLLATERAL.
   //
@@ -2151,5 +2163,9 @@ export function netWorth(s: GameState, parcels: Record<string, ParcelRecord>): n
   for (const h of Object.values(s.holdings)) {
     for (const t of h.tenants) nw -= t.deposit ?? 0;
   }
-  return nw;
+  return { nw, gav };
+}
+
+export function netWorth(s: GameState, parcels: Record<string, ParcelRecord>): number {
+  return portfolioMark(s, parcels).nw;
 }

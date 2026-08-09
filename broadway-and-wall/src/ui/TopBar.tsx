@@ -22,6 +22,7 @@ export default function TopBar() {
   const advance = useStore((s) => s.advance);
   const advanceYear = useStore((s) => s.advanceYear);
   const advanceUntil = useStore((s) => s.advanceUntil);
+  const advancing = useStore((s) => s.advancing);
   const page = useStore((s) => s.page);
   const setPage = useStore((s) => s.setPage);
   // Portfolio walks (net worth, CF, line) only when `game` changes — not on
@@ -328,14 +329,14 @@ export default function TopBar() {
           >
             ◫ Owners
           </button>
-          <button className="advance-btn" onClick={advance} disabled={!!game.gameOver} title="One month (Space)">
+          <button className="advance-btn" onClick={advance} disabled={!!game.gameOver || advancing} title="One month (Space)">
             Advance ▸
           </button>
-          <button className="advance-btn advance-fast" onClick={advanceYear} disabled={!!game.gameOver} title="A year, stopping if something needs you (Y)">
-            Yr ▸▸
+          <button className="advance-btn advance-fast" onClick={advanceYear} disabled={!!game.gameOver || advancing} title="A year, stopping if something needs you (Y)">
+            {advancing ? "…" : "Yr ▸▸"}
           </button>
-          <button className="advance-btn advance-fast" onClick={advanceUntil} disabled={!!game.gameOver} title="Skip to the next thing that needs a decision, up to 3 years (N)">
-            ⏭
+          <button className="advance-btn advance-fast" onClick={advanceUntil} disabled={!!game.gameOver || advancing} title="Skip to the next thing that needs a decision, up to 3 years (N)">
+            {advancing ? "…" : "⏭"}
           </button>
         </div>
       )}

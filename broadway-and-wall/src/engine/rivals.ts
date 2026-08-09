@@ -2239,6 +2239,11 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     startOwnJob(s, parcels, r, ci);
     const { aum, noiYr, landV } = markRival(s, parcels, r);
     r.aum = Math.round(aum);
+    // Absorption / rivalBuys used to call markRival again for every bidder on
+    // every trade the same month — a second full walk of the street's book.
+    // Publish the mark here; buyers read it off the firm.
+    r.markNoi = noiYr;
+    r.markLand = landV;
 
     // --- the money -------------------------------------------------------
     // NOI in, interest and amortisation out. A firm this size amortises on a
@@ -2683,10 +2688,16 @@ export function rivalBuys(s: GameState, parcels: ParcelTable, rec: ParcelRecord,
     const debt = loan(r, ci);
     const equity = price - debt;
     const reserve = Math.max(500_000, Math.max(0, r.cash) * 0.05);
-    const m = markRival(s, parcels, r);
-    const room = Math.max(0, lineRoom(s, r, m.aum, m.noiYr, m.landV));
+    // Prefer this month's tickRivals mark. Remaking the whole book here was
+    // the cost of every contested sale and the main spike inside a Year click.
+    let aum = r.aum, noiYr = r.markNoi, landV = r.markLand;
+    if (aum === undefined || noiYr === undefined || landV === undefined) {
+      const m = markRival(s, parcels, r);
+      aum = m.aum; noiYr = m.noiYr; landV = m.landV;
+    }
+    const room = Math.max(0, lineRoom(s, r, aum, noiYr, landV));
     const need = equity + reserve + closing;
-    return { debt, equity, reserve, need, draw: Math.max(0, Math.min(room, need - r.cash)), aum: m.aum };
+    return { debt, equity, reserve, need, draw: Math.max(0, Math.min(room, need - r.cash)), aum };
   };
   const candidates = livingRivals(s).filter((r) => {
     if (r === seller) return false;

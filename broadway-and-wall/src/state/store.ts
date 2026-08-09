@@ -3,7 +3,7 @@ import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass } from "@/engine/types";
 import { monthLabel } from "@/engine/types";
-import { newGame, advanceMonth, advanceUntilAttention, firstListings, portfolioQuarterlyCF, hangUpOnCall } from "@/engine/sim";
+import { newGame, advanceMonth, advanceUntilAttentionAsync, firstListings, portfolioQuarterlyCF, hangUpOnCall } from "@/engine/sim";
 import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import { respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, AGENT_FLOOR_MIN, AGENT_FLOOR_MAX, type LOIAction } from "@/engine/leasing";
@@ -99,6 +99,8 @@ interface AppState {
   advance: () => void;
   advanceYear: () => void;
   advanceUntil: () => void;
+  /** True while Year / Skip is ticking months — advance buttons disable. */
+  advancing: boolean;
   counterOff: (bbl: string, px?: number) => void;
   buy: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
   buyOff: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
@@ -367,6 +369,7 @@ export const useStore = create<AppState>((set, get) => ({
   flyTo: null,
   lens: "none",
   page: "none",
+  advancing: false,
   auctionOpen: false,
   popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups") === "off",
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
@@ -412,31 +415,47 @@ export const useStore = create<AppState>((set, get) => ({
   setLoadError: (loadError) => set({ loadError }),
 
   advance: () => {
-    const { game, parcels, bbls, adjacency } = get();
-    if (!game || !parcels || game.gameOver) return;
+    const { game, parcels, bbls, adjacency, advancing } = get();
+    if (!game || !parcels || game.gameOver || advancing) return;
     const next = advanceMonth(game, parcels, bbls, adjacency);
     set({ game: next });
     void persist(next);
   },
 
   // A year in one click — but stop early the moment something new needs you.
+  // Ticks yield between months so the tab stays responsive (the sync form used
+  // to freeze the UI for the whole run once the street's book got large).
   advanceYear: () => {
-    const { game, parcels, bbls, adjacency } = get();
-    if (!game || !parcels || game.gameOver) return;
-    const r = advanceUntilAttention(game, parcels, bbls, adjacency, 12);
-    set({ game: r.s });
-    toast(r.reason ? `Stopped after ${r.months} mo: ${r.reason}` : "A year passes.");
-    void persist(r.s);
+    void (async () => {
+      const { game, parcels, bbls, adjacency, advancing } = get();
+      if (!game || !parcels || game.gameOver || advancing) return;
+      set({ advancing: true });
+      try {
+        const r = await advanceUntilAttentionAsync(game, parcels, bbls, adjacency, 12, 1);
+        set({ game: r.s });
+        toast(r.reason ? `Stopped after ${r.months} mo: ${r.reason}` : "A year passes.");
+        void persist(r.s);
+      } finally {
+        set({ advancing: false });
+      }
+    })();
   },
 
   // Skip ahead until the game needs a decision (up to 3 years).
   advanceUntil: () => {
-    const { game, parcels, bbls, adjacency } = get();
-    if (!game || !parcels || game.gameOver) return;
-    const r = advanceUntilAttention(game, parcels, bbls, adjacency, 36);
-    set({ game: r.s });
-    toast(r.reason ? `${r.months} mo later: ${r.reason}` : "Three quiet years. New Alden hums along.");
-    void persist(r.s);
+    void (async () => {
+      const { game, parcels, bbls, adjacency, advancing } = get();
+      if (!game || !parcels || game.gameOver || advancing) return;
+      set({ advancing: true });
+      try {
+        const r = await advanceUntilAttentionAsync(game, parcels, bbls, adjacency, 36, 1);
+        set({ game: r.s });
+        toast(r.reason ? `${r.months} mo later: ${r.reason}` : "Three quiet years. New Alden hums along.");
+        void persist(r.s);
+      } finally {
+        set({ advancing: false });
+      }
+    })();
   },
 
   counterOff: (bbl, px) => {

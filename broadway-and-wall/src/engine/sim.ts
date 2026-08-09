@@ -7,7 +7,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
 import { DEFAULT_START_CASH, CENTURY_MONTHS, CASH_APY, cloneState, logBooks, monthLabel } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels } from "./market";
-import { assetValue, holdingNOIYr, holdingValue, monthlyNOI, netWorth, operatingStatement, physicalOcc, resolveRec } from "./value";
+import { assetValue, holdingNOIYr, holdingValue, monthlyNOI, portfolioMark, operatingStatement, physicalOcc, resolveRec } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLeasing, depositsOn, stampListing } from "./leasing";
@@ -323,9 +323,13 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   const target = targetListings(s, bbls.length);
   const pDistress = s.econ.phase === "recession" ? 0.42 : s.econ.phase === "recovery" ? 0.18 : 0.03;
   let guard = 0;
-  while (s.listings.length < target && guard++ < 4000) {
+  // Cap consecutive rejects so a city whose deeds are mostly on hold clocks
+  // does not burn thousands of assetValue calls filling a short tape — that
+  // was a multi-tens-of-ms spike inside otherwise quiet Year advances.
+  let rejects = 0;
+  while (s.listings.length < target && guard++ < 4000 && rejects < 250) {
     const bbl = bbls[Math.floor(rng(s) * bbls.length)];
-    if (listed.has(bbl) || s.holdings[bbl]) continue;
+    if (listed.has(bbl) || s.holdings[bbl]) { rejects++; continue; }
     // A BUILDING THAT SOLD LAST YEAR IS NOT FOR SALE THIS YEAR.
     //
     // This picked a parcel at random with no memory of what had just traded,
@@ -342,13 +346,14 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
       let h = 2166136261;
       for (let i = 0; i < bbl.length; i++) { h ^= bbl.charCodeAt(i); h = Math.imul(h, 16777619); }
       const hold = 34 + ((h >>> 0) % 122);          // 34 to 155 months
-      if (s.month - traded < hold) continue;
+      if (s.month - traded < hold) { rejects++; continue; }
     }
     const rec = resolveRec(parcels, s, bbl);
-    if (!rec) continue;
+    if (!rec) { rejects++; continue; }
     const value = assetValue(rec, s.econ, gradeOf(s, rec));
-    if (value <= 0) continue;
-    if (value > 60_000_000 && rng(s) > 0.12) continue;
+    if (value <= 0) { rejects++; continue; }
+    if (value > 60_000_000 && rng(s) > 0.12) { rejects++; continue; }
+    rejects = 0;
     const distress = rng(s) < pDistress;
     // THE BID-ASK GAP. A seller under no pressure does not mark their building
     // to the new cap rate; they hold last year's number and wait. So in a
@@ -541,12 +546,11 @@ function tickMonth(
     // The fixed base is small and it never goes away, which is the point: an
     // office with no buildings in it is a cost, not a strategy.
     {
-      let gav = 0;
-      for (const h of Object.values(s.holdings)) {
-        const rec = resolveRec(parcels, s, h.bbl);
-        if (rec) gav += holdingValue(rec, s.econ, h, s.month);
-      }
-      for (const d of Object.values(s.developments ?? {})) gav += d.costTotal;
+      // Last month's GAV (stamped at the portfolioMark below). Re-appraising
+      // the book here AND again for net worth was two full walks per tick —
+      // twelve redundant appraisals on every Year click. Month-one / old saves
+      // with no stamp fall back to a single mark.
+      const gav = s.prevGav ?? portfolioMark(s, parcels).gav;
       // ~30bps of gross asset value a year at scale, over a small fixed base.
       //
       // THE PEOPLE CAME OUT OF THIS NUMBER. This line used to carry the whole
@@ -760,8 +764,9 @@ function tickMonth(
 
   tickLoc(s, parcels);   // interest, sweeps, and the safety draw
 
-  // the record book
-  const nw = netWorth(s, parcels);
+  // the record book — one appraisal for NW history, milestones, and next month's overhead base
+  const { nw, gav } = portfolioMark(s, parcels);
+  s.prevGav = Math.round(gav);
   s.nwHistory.push(Math.round(nw));
   checkMilestones(s, nw);
 
@@ -984,6 +989,31 @@ export function advanceUntilAttention(
     const fresh = now.find((a) => !before.has(a.key));
     if (fresh) return { s: cur, months: i, reason: fresh.label };
     if (cur.gameOver) return { s: cur, months: i, reason: null };
+  }
+  return { s: cur, months: cap, reason: null };
+}
+
+/**
+ * Same as `advanceUntilAttention`, but yields to the browser between months so
+ * a Year / Skip click cannot freeze the tab for the whole run. Harnesses keep
+ * using the sync form.
+ */
+export async function advanceUntilAttentionAsync(
+  s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null, cap: number,
+  yieldEvery = 1,
+): Promise<{ s: GameState; months: number; reason: string | null }> {
+  if (s.gameOver || cap <= 0) return { s, months: 0, reason: null };
+  const before = new Set(attentionItems(s).map((a) => a.key));
+  const cur = cloneState(s);
+  for (let i = 1; i <= cap; i++) {
+    tickMonth(cur, parcels, bbls, adjacency);
+    const now = attentionItems(cur);
+    const fresh = now.find((a) => !before.has(a.key));
+    if (fresh) return { s: cur, months: i, reason: fresh.label };
+    if (cur.gameOver) return { s: cur, months: i, reason: null };
+    if (yieldEvery > 0 && i % yieldEvery === 0 && i < cap) {
+      await new Promise<void>((r) => setTimeout(r, 0));
+    }
   }
   return { s: cur, months: cap, reason: null };
 }

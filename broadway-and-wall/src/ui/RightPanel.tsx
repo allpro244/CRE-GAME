@@ -35,6 +35,7 @@ export default function GamePanels() {
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       if (e.key === "Escape") { setPage("none"); return; }
       const st = useStore.getState();
+      if (st.advancing) return;
       if (e.code === "Space") { e.preventDefault(); st.advance(); }
       else if (e.code === "KeyY") st.advanceYear();
       else if (e.code === "KeyN") st.advanceUntil();

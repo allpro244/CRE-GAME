@@ -1615,6 +1615,10 @@ export interface Rival {
   targetLtv: number;
   bornM: number;
   aum?: number;          // marked each month, for display
+  /** Last mark's annual NOI — kept so absorption can size a line without re-walking the book. */
+  markNoi?: number;
+  /** Last mark's vacant-land value — same reason as markNoi. */
+  markLand?: number;
   stressMs?: number;     // consecutive months in trouble
   // Cost basis of the book, in aggregate. Not per building — that is the one
   // thing about a rival's accounts nobody needs to see — but enough to tax a
@@ -2066,6 +2070,8 @@ export interface GameState {
   loc: { balance: number; drawnTotal: number; interestPaid: number };
   books: BooksYear[];                        // the ledger, one entry per year
   nwHistory: number[];                       // net worth at each month, for the chart
+  /** Last month's gross asset value — overhead sizes off this so the tick does not appraise twice. */
+  prevGav?: number;
   exits: Exit[];                             // every disposition, forced or chosen
   milestones: Record<string, number>;        // milestone id -> month achieved
   // Every deed that has moved in this city, with the price. See comps.ts —

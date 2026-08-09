@@ -1336,6 +1336,9 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   // two-storey shop on it — it gets shops at grade with something above.
   if (use === "retail" && retailWantsMixed(rec)) use = "mixed";
   const lead = dominantOf(devMix(use));
+  // Owning the dirt does not manufacture tenant demand. A named start drains
+  // the same class order book as an anonymous one and cannot precede it.
+  if ((s.econ.startOwed?.[lead] ?? 0) <= 0) return;
   // Preserve the draw order; apply it after this actual site has gone through
   // the shared parcel pro forma.
   const startsRoll = rng(s, "rivals");

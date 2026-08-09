@@ -2587,6 +2587,9 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   const nextUse = useForZone(rec!.zoneDist ?? "C", rec!.demandScore, rng(s, "dev"), e);
   const lead = dominantOf(devMix(nextUse));
   const teardownRoll = rng(s, "dev");
+  // A replacement is still supply. It may satisfy an existing order, but it
+  // cannot create a class of space the market has not ordered at all.
+  if ((e.startOwed?.[lead] ?? 0) <= 0) return;
   const bbl = rec!.bbl;
   const oldSf = rec!.bldgArea;
   const cls = rec!.class as BuiltClass;

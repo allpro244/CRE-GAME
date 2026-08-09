@@ -26,7 +26,7 @@ import type { ParcelTable } from "@/data/types";
 import type { GameState, VarianceApplication } from "./types";
 import { logBooks, monthLabel, cloneState} from "./types";
 import { rng, rrange, NATURAL_VAC, RENT_BASE } from "./market";
-import { resolveRec, landValue, demandLinear } from "./value";
+import { resolveRec, landValue, demandLinear, FAR_CEILING } from "./value";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -180,37 +180,57 @@ function pendingVariances(s: GameState): Record<string, VarianceApplication> {
 }
 
 /** What it costs to try, and what the odds actually are. */
-export function varianceQuote(s: GameState, parcels: ParcelTable, bbl: string) {
+export function varianceQuote(
+  s: GameState, parcels: ParcelTable, bbl: string, targetFar?: number,
+) {
   const rec = resolveRec(parcels, s, bbl);
   if (!rec || !rec.lotArea) return null;
   if (s.landmarks?.[bbl] !== undefined) return null;
   const land = landValue(rec, s.econ);
+  const current = Math.max(rec.farMaxComm, rec.farMaxRes, 2);
+  const maxTarget = Math.min(FAR_CEILING, current * 3);
+  if (maxTarget <= current + 0.05) return null;
+  const target = clamp(
+    Number.isFinite(targetFar as number) ? (targetFar as number) : current * 1.34,
+    current * 1.10,
+    maxTarget,
+  );
+  const askShare = target / current - 1;
   // Lawyers, an architect, an expediter, and a year of hearings. It scales
   // with what is at stake, because so do the objectors.
-  const cost = Math.round(Math.max(120_000, land * 0.035) * s.econ.costIdx);
-  const months = Math.round(rrange(s, 9, 18));
+  const baseCost = Math.max(120_000, land * 0.035) * s.econ.costIdx;
+  // Bigger asks draw more design work, opposition and hearing time, but not
+  // linearly: the same survey, counsel and environmental record serve the
+  // whole application. The old +34% request is the pivot and prices exactly as
+  // before.
+  const scale = Math.sqrt(askShare / 0.34);
+  const cost = Math.round(baseCost * scale);
+  const months = Math.round(9 + 6 * scale);
   // ONE EXCEPTION PER LOT. A board that has already granted you relief on this
   // site does not entertain a second application for more of the same, and
   // decaying the odds instead let a patient bot refile its way to forty-one
   // FAR on a single parcel — which the invariant sweep caught immediately.
   if ((s.variance?.[bbl] ?? 0) > 0) return null;
-  // The ask: a third more envelope.
-  const grant = +(Math.max(rec.farMaxComm, rec.farMaxRes, 2) * 0.34).toFixed(2);
+  const grant = +(target - current).toFixed(2);
   // A site the neighbourhood already accepts as dense is an easier hearing
   // than one on a quiet street.
   const dense = clamp(demandLinear(rec.demandScore) / 130, 0.1, 0.75);
-  const odds = clamp(0.30 + dense - (s.econ.phase === "recession" ? 0.08 : 0), 0.08, 0.82);
-  return { cost, months, grant, odds };
+  const ordinaryOdds = clamp(0.30 + dense - (s.econ.phase === "recession" ? 0.08 : 0), 0.08, 0.82);
+  // Asking beyond the old one-third request is possible, not free. Opposition
+  // compounds with the magnitude of relief; a 2× envelope has roughly half
+  // the ordinary odds and a 3× ask is a genuine long shot.
+  const odds = clamp(ordinaryOdds * Math.exp(-1.1 * Math.max(0, askShare - 0.34)), 0.03, 0.82);
+  return { cost, months, grant, targetFar: +target.toFixed(2), currentFar: current, odds };
 }
 
 export function fileVariance(
-  s: GameState, parcels: ParcelTable, bbl: string,
+  s: GameState, parcels: ParcelTable, bbl: string, targetFar?: number,
 ): { s: GameState; err?: string; msg?: string } {
   if (!s.holdings[bbl]) return { s, err: "You have to own it to ask for anything." };
   if (pendingVariances(s)[bbl]) return { s, err: "This site already has an application in front of the board." };
   if (s.landmarks?.[bbl] !== undefined) return { s, err: "It is landmarked. The envelope is the envelope." };
   if ((s.variance?.[bbl] ?? 0) > 0) return { s, err: "The board has already granted relief on this site. They will not do it twice." };
-  const q = varianceQuote(s, parcels, bbl);
+  const q = varianceQuote(s, parcels, bbl, targetFar);
   if (!q) {
     // "NOTHING TO APPLY FOR HERE" WAS FOUR DIFFERENT ANSWERS WEARING ONE
     // SENTENCE. varianceQuote returns null for an unknown parcel, a lot with no

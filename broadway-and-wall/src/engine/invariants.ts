@@ -65,7 +65,7 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
     if (!fin(x) || x < 0.4 || x > 3) bad("zoning", `district ${d}`, `envelope multiplier ${x}`);
   }
   for (const [bbl, x] of Object.entries(s.variance ?? {})) {
-    if (!fin(x) || x < 0 || x > FAR_CEILING * 0.4) bad("zoning", `variance ${bbl}`, `granted ${x} FAR`);
+    if (!fin(x) || x < 0 || x > FAR_CEILING) bad("zoning", `variance ${bbl}`, `granted ${x} FAR`);
   }
   const pendingVariance = s.varianceApps
     ?? (s.varianceApp ? { [s.varianceApp.bbl]: s.varianceApp } : {});

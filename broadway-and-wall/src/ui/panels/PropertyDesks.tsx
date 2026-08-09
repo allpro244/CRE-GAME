@@ -9,6 +9,7 @@ import { workoutMood } from "@/engine/workout";
 import { fundableNow, locAvailable } from "@/engine/credit";
 import { SECTOR_LABEL } from "@/engine/market";
 import { LineChart } from "@/ui/Chart";
+import Slider from "@/ui/Slider";
 import { USE_WORD } from "@/engine/mix";
 import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses } from "@/engine/leasing";
 import { leasingOdds } from "@/engine/absorption";
@@ -488,6 +489,7 @@ export function LandDesk({ bbl }: { bbl: string }) {
   const [picked, setPicked] = useState<string[]>([]);
   const [years, setYears] = useState(60);
   const [review, setReview] = useState<GroundReview>("fixed");
+  const [farMultiple, setFarMultiple] = useState(1.5);
   // Hooks before any return — assemble candidates are gated to a cheap
   // neighbour check so ordinary parcel clicks do not walk the land book.
   const { eligible, blocked } = useAssembleCandidates(game, parcels, adjacency, bbl);
@@ -561,7 +563,9 @@ export function LandDesk({ bbl }: { bbl: string }) {
 
   const vacant = rec.class === "land" && rec.bldgArea === 0;
   const landmarked = game.landmarks?.[bbl] !== undefined;
-  const vq = landmarked ? null : varianceQuote(game, parcels, bbl);
+  const currentFar = Math.max(rec.farMaxComm, rec.farMaxRes, 2);
+  const targetFar = currentFar * farMultiple;
+  const vq = landmarked ? null : varianceQuote(game, parcels, bbl, targetFar);
   const app = game.varianceApps?.[bbl]
     ?? (game.varianceApp?.bbl === bbl ? game.varianceApp : null);
 
@@ -603,14 +607,25 @@ export function LandDesk({ bbl }: { bbl: string }) {
       })()}
       {!app && vq && (
         <>
+          <Slider
+            label="FAR to request"
+            value={farMultiple}
+            min={1.1}
+            max={3}
+            step={0.05}
+            onChange={setFarMultiple}
+            format={() => `${vq.targetFar.toFixed(1)} FAR · ${farMultiple.toFixed(2)}× current · ${sf(Math.round(rec.lotArea * vq.targetFar))} gross envelope`}
+            marks={[{ at: 1.34, label: "ordinary" }, { at: 2, label: "2×" }, { at: 3, label: "3×" }]}
+            hint="You may ask for a much taller envelope. Larger requests cost more, take longer and are harder to approve; engineering and the 40-FAR city ceiling still apply."
+          />
           <div className="grid">
             <Row k="District envelope" v={`${Math.max(rec.farMaxComm, rec.farMaxRes).toFixed(1)} FAR${game.zoneAdj?.[rec.district] ? ` · rezoned to ${((game.zoneAdj[rec.district]) * 100).toFixed(0)}%` : ""}`} />
             {(game.variance?.[bbl] ?? 0) > 0 && <Row k="Variance already won" v={`+${game.variance![bbl].toFixed(1)} FAR`} />}
-            <Row k="Ask the board for" v={`+${vq.grant.toFixed(1)} FAR`} strong />
+            <Row k="Ask the board for" v={`${vq.targetFar.toFixed(1)} FAR total · +${vq.grant.toFixed(1)}`} strong />
             <Row k="Fees" v={usd(vq.cost)} />
             <Row k="They decide in" v={`${vq.months} months · ${(vq.odds * 100).toFixed(0)}% say yes`} bad={vq.odds < 0.3} />
           </div>
-          <button className="btn" onClick={() => applyVariance(bbl)}>File for a variance · {usd(vq.cost)}</button>
+          <button className="btn" onClick={() => applyVariance(bbl, vq.targetFar)}>File for {vq.targetFar.toFixed(1)} FAR · {usd(vq.cost)}</button>
           <div className="hint">
             Lawyers, an architect and a year of hearings, spent whether they say yes or not. On a site you have just
             assembled this is the other half of the trade — the lots are worth putting together because of what you

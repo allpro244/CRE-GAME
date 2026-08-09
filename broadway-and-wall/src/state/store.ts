@@ -176,7 +176,7 @@ interface AppState {
   listSale: (bbl: string, ask: number, mode?: "quiet" | "marketed") => void;
   runBestAndFinal: (bbl: string) => void;
   takeBid: (bbl: string, index: number) => void;
-  applyVariance: (bbl: string) => void;
+  applyVariance: (bbl: string, targetFar?: number) => void;
   prebuild: (bbl: string, use: string, sf: number) => void;
   extendLease: (bbl: string, idx: number) => void;
   cureDefault: (bbl: string) => void;
@@ -842,10 +842,10 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
 
-  applyVariance: (bbl) => {
+  applyVariance: (bbl, targetFar) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = fileVariance(game, parcels, bbl);
+    const r = fileVariance(game, parcels, bbl, targetFar);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Filed.");

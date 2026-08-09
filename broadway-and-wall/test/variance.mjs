@@ -33,10 +33,19 @@ const check = (ok, msg) => {
 
 console.log("\nCONCURRENT VARIANCE APPLICATIONS\n");
 
-const first = E.fileVariance(g, parcels, lots[0]);
+const baseFar0 = Math.max(parcels[lots[0]].farMaxComm, parcels[lots[0]].farMaxRes, 2);
+const ordinary = E.varianceQuote(g, parcels, lots[0], baseFar0 * 1.34);
+const tall = E.varianceQuote(g, parcels, lots[0], baseFar0 * 3);
+check(tall.grant > ordinary.grant, "player can request materially more than the old one-third allowance");
+check(tall.cost > ordinary.cost && tall.months > ordinary.months,
+  "larger FAR asks cost more and take longer");
+check(tall.odds < ordinary.odds, "larger FAR asks are harder to approve");
+
+const first = E.fileVariance(g, parcels, lots[0], baseFar0 * 2);
 check(!first.err, "first site files");
 g = first.s;
-const second = E.fileVariance(g, parcels, lots[1]);
+const baseFar1 = Math.max(parcels[lots[1]].farMaxComm, parcels[lots[1]].farMaxRes, 2);
+const second = E.fileVariance(g, parcels, lots[1], baseFar1 * 3);
 check(!second.err, "second site files while the first is pending");
 g = second.s;
 check(Object.keys(g.varianceApps ?? {}).length === 2, "both hearings remain independently pending");

@@ -2195,7 +2195,8 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const customMix = use === "mixed"
     ? { retail: stack.retail / 100, office: stack.office / 100, multifamily: stack.multifamily / 100 }
     : undefined;
-  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix }, bank);
+  const bts = game.btsProspects?.[bbl]?.use === use ? game.btsProspects[bbl] : undefined;
+  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts }, bank);
   // Turn the chosen unit counts into sf-per-space, against the programme that
   // is actually going to be built.
   const suiteChoice: Partial<Record<BuiltClass, number>> = {};
@@ -2207,7 +2208,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
     }
   }
   const plan = planDevelopment(game, parcels, bbl, use, fl, cov, contract,
-    planMax ? planMax.ltcMax * ltcWant : undefined, { mix: customMix, suites: suiteChoice }, bank);
+    planMax ? planMax.ltcMax * ltcWant : undefined, { mix: customMix, suites: suiteChoice, bts }, bank);
   // ONE NUMBER, WHEREVER IT IS ASKED FOR. The equity figure on the dials and
   // the equity figure on the groundbreak button are the same decision — what
   // this design costs you in your own money, all in — and two call sites that
@@ -2228,6 +2229,32 @@ export function DevelopSection({ bbl }: { bbl: string }) {
           <button key={u} className={"btn" + (use === u ? " btn-on" : "")} onClick={() => setUse(u)}>{devUseLabel(u)}</button>
         ))}
       </div>
+      {(use === "office" || use === "retail" || use === "industrial") && (
+        <div className="page-section" style={{ marginTop: 8 }}>
+          <div className="page-section-head">Delivery strategy</div>
+          {bts ? (
+            <>
+              <div className="grid">
+                <Row k="Build-to-suit tenant" v={`${bts.name} · credit ${CREDIT_LABEL[bts.credit]}`} strong />
+                <Row k="Commitment" v={`${sf(bts.sf)} · ${(bts.termM / 12).toFixed(0)} years`} />
+                <Row k="Rent" v={`$${bts.rentPsf.toFixed(2)}/sf · below market for certainty`} />
+                <Row k="Tenant work" v={`$${bts.tiPsf}/sf · ${bts.recovery.toUpperCase()}`} />
+              </div>
+              <button className="btn" onClick={() => useStore.getState().clearBts(bbl)}>Return to spec</button>
+            </>
+          ) : (
+            <>
+              <div className="hint">
+                Build on spec for market rent and lease-up risk, or find one credit tenant before groundbreak:
+                lower rent and concentration risk in exchange for long term, day-one occupancy and stronger financing.
+              </div>
+              <button className="btn" onClick={() => useStore.getState().proposeBts(bbl, use, fl, cov)}>
+                Find build-to-suit tenant
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {/* THE CHEQUE, WHERE THE DIALS ARE. The all-in equity lived at the bottom
           of the card, under the cost stack — so you moved the storeys slider
           blind and scrolled down to learn what the design you just made costs.
@@ -2483,7 +2510,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
             <button
               className="btn btn-buy"
               disabled={plan.equityAtClose + plan.pointsCost > game.cash || !canFund}
-              onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, suites: suiteChoice }, plan.lender)}
+              onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, suites: suiteChoice, bts }, plan.lender)}
               title={`${usd(plan.equityAtClose)} leaves your account today and ${usd(plan.equity - plan.equityAtClose)} more is drawn as the building rises.`}
             >
               Break ground · {usd(equityRequired)} of equity required

@@ -520,6 +520,19 @@ export interface Holding {
 // over 4-6 quarters, then leases up from empty.
 export type Contract = "gmp" | "costplus";
 
+export interface BtsCommitment {
+  name: string;
+  sector: Sector;
+  credit: Credit;
+  use: BuiltClass;
+  sf: number;
+  rentPsf: number;
+  termM: number;
+  tiPsf: number;
+  recovery: "nnn" | "base" | "gross";
+  signedM: number;
+}
+
 export interface Development {
   bbl: string;
   /** what it is being built to, 0..1 with 0.5 as market standard */
@@ -626,6 +639,8 @@ export interface Development {
   // building that lets well on the way up opens covering its mini-perm, and
   // the one that lets nothing opens empty.
   signed?: { sf: number; use: string; discount: number; name: string }[];
+  /** Named tenant committed before groundbreak; absent means ordinary spec. */
+  bts?: BtsCommitment;
   events: number;         // how many things have gone wrong
 }
 
@@ -1954,6 +1969,8 @@ export interface GameState {
    */
   lowballMs?: number[];
   developments: Record<string, Development>;
+  /** Proposed/accepted build-to-suit tenant terms on owned land. */
+  btsProspects?: Record<string, BtsCommitment>;
   built: Record<string, BuiltOverride>;      // delivered buildings, yours and the city's
   cityBuilt: string[];                       // bbls the market built, not you
   lastUnsolicitedM?: number;                 // when somebody last rang unbidden

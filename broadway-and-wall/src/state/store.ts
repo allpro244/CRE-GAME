@@ -1,7 +1,7 @@
 import { startTransition } from "react";
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
-import type { GameState, Contract, DevUse, UseMix, BuiltClass } from "@/engine/types";
+import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment } from "@/engine/types";
 import { newGame, advanceMonth, advanceUntilAttentionAsync, firstListings, portfolioQuarterlyCF, hangUpOnCall } from "@/engine/sim";
 import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
@@ -21,7 +21,7 @@ import { fileVariance } from "@/engine/zoning";
 import { refinance, buyRateCap } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
 import { openFacility, repayFacility, releaseFromFacility } from "@/engine/facility";
-import { startDevelopment, startProgram, setStance, setOps, setOpsPolicy, demolish } from "@/engine/dev";
+import { clearBuildToSuit, proposeBuildToSuit, startDevelopment, startProgram, setStance, setOps, setOpsPolicy, demolish } from "@/engine/dev";
 import { hire, fire, refreshPool, POOL_REFRESH_M } from "@/engine/staff";
 import { normalizeParcels } from "@/engine/mix";
 import { netWorth } from "@/engine/value";
@@ -162,7 +162,9 @@ interface AppState {
    */
   hangUpCall: (bbl: string) => void;
   refi: (bbl: string, product: string, lev?: number) => void;
-  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>> }, lender?: string) => void;
+  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment }, lender?: string) => void;
+  proposeBts: (bbl: string, use: DevUse, floors: number, coverage: number) => void;
+  clearBts: (bbl: string) => void;
   offer: (bbl: string, price: number, finalOffer?: boolean) => void;
   closeDeal: (bbl: string, product: string, lev: number) => void;
   acceptCounter: (bbl: string) => void;
@@ -568,6 +570,24 @@ export const useStore = create<AppState>((set, get) => ({
     set({ game: r.s });
     toast("Ground broken. Watch it rise.");
     void persist(r.s);
+  },
+
+  proposeBts: (bbl, use, floors, coverage) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = proposeBuildToSuit(game, parcels, bbl, use, floors, coverage);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Anchor terms received.");
+    void persist(r.s);
+  },
+
+  clearBts: (bbl) => {
+    const { game } = get();
+    if (!game) return;
+    const next = clearBuildToSuit(game, bbl);
+    set({ game: next });
+    void persist(next);
   },
 
   // Buying is a conversation now: the same call opens it and answers their

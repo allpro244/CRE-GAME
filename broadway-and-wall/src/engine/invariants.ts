@@ -115,6 +115,15 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
     if (cap !== undefined && d.floors > cap) {
       bad("massing", `development ${d.bbl}`, `${d.floors}-storey ${d.use} — the cap is ${cap}`);
     }
+    if (d.bts) {
+      const at = `BTS ${d.bbl}`;
+      const available = d.sf * (d.mix[d.bts.use] ?? 0);
+      if (!fin(d.bts.sf) || d.bts.sf <= 0 || d.bts.sf > available + 1) {
+        bad("dev", at, `${d.bts.sf} sf committed against ${available} sf programmed`);
+      }
+      if (d.bts.credit < 1 || d.bts.credit > 2) bad("dev", at, `unbankable credit ${d.bts.credit}`);
+      if (!fin(d.bts.rentPsf) || d.bts.rentPsf <= 0) bad("dev", at, `rent ${d.bts.rentPsf}`);
+    }
   }
 
   // ------------------------------------------------------- the supply queue

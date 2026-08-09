@@ -6,7 +6,7 @@
 // loan, wait 4-6 quarters while the building rises on the map, then lease up
 // from empty. A modest random cost/schedule overrun keeps it honest.
 import type { ParcelTable } from "@/data/types";
-import type { BuiltClass, Contract, DevUse, Development, Econ, GameState, UseMix } from "./types";
+import type { BtsCommitment, BuiltClass, Contract, DevUse, Development, Econ, GameState, UseMix } from "./types";
 import { BUILT_CLASSES, cloneState} from "./types";
 import { logBooks, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow } from "./demand";
@@ -19,7 +19,7 @@ import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, 
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
 export { physicalMaxFloors, plateEfficiency } from "./value";
-import { genAnchorTenant, COMMERCIAL_SUITE_MIN, minTenancySf, useVacantSf } from "./leasing";
+import { depositFor, genAnchorTenant, COMMERCIAL_SUITE_MIN, minTenancySf, useVacantSf } from "./leasing";
 import { claimJob, jobDelivered, ownerOf, gradeOf } from "./rivals";
 import { locAvailable } from "./credit";
 import { useSf } from "./mix";
@@ -327,6 +327,8 @@ export interface DevPlan {
   hurdleRatio: number;
   /** 0..1, 0.5 = market standard. What you chose to build to. */
   spec: number;
+  bts?: BtsCommitment;
+  btsShare?: number;
   lenderNote?: string;
 }
 
@@ -742,7 +744,7 @@ export function planDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.6,
   contract: Contract = "gmp", ltcWanted?: number,
-  custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>> },
+  custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment },
   lender?: string,
   spec = 0.5,
   landBasisOverride?: number,
@@ -799,6 +801,14 @@ export function planDevelopment(
   // Shops at grade wherever the street will carry them — see withStreetRetail.
   // Applied before the cap, so the cap still has the last word.
   const mix = capRetail(withStreetRetail(raw, fl, rec.demandScore ?? 50), fl);
+  const proposedBts = custom?.bts;
+  const bts = proposedBts
+    && proposedBts.use !== "multifamily"
+    && proposedBts.use in mix
+    && proposedBts.sf > 0
+    ? { ...proposedBts, sf: Math.min(sf * (mix[proposedBts.use] ?? 0), proposedBts.sf) }
+    : undefined;
+  const btsShare = bts ? Math.max(0, Math.min(1, bts.sf / Math.max(1, sf))) : 0;
 
   // the budget is the sum of the jobs, not a number attached to a label
   // ...priced on GROSS. You pay for the core; you do not let it.
@@ -884,7 +894,14 @@ export function planDevelopment(
   // the borrower of getting the reserve wrong is the building.
   const cqs = constructionQuotes(s, mix, preReserve);
   const cq = cqs.find((q) => q.lender === lender) ?? cqs.find((q) => q.lender === CONSTRUCTION_LENDER)!;
-  const ltcMax = cq.open ? cq.ltcMax : 0;
+  let ltcMax = cq.open ? cq.ltcMax : 0;
+  // A bankable lease turns speculative construction into contracted credit.
+  // The boost is bounded by anchor share and covenant; it cannot exceed an
+  // ordinary senior construction advance.
+  if (bts && bts.credit >= 1) {
+    const btsAdvance = (bts.credit === 2 ? 0.68 : 0.58) * btsShare;
+    ltcMax = Math.max(ltcMax, btsAdvance);
+  }
   // Math.min(x, undefined) is NaN, and a NaN here does not throw — it becomes
   // the commitment, then the equity, then the firm's cash, and the first thing
   // anyone sees is a balance sheet reading NaN twenty months later. Anything
@@ -912,7 +929,12 @@ export function planDevelopment(
   }
   deficit = Math.round(deficit);
   const carry = Math.round(openSf * opex0 * (1 - fillOcc) * (carryMonths / 12));
-  const leaseUp = Math.round(openSf * (tiPsf + lcPsf) * s.econ.costIdx) + carry + deficit;
+  const specLeaseUp = Math.round(openSf * (tiPsf + lcPsf) * s.econ.costIdx) + carry + deficit;
+  const anchorCost = bts
+    ? Math.round(bts.sf * bts.tiPsf * s.econ.costIdx
+      + bts.rentPsf * bts.sf * (bts.termM / 12) * 0.02)
+    : 0;
+  const leaseUp = Math.round(specLeaseUp * (1 - btsShare));
 
   // THE DIRT IS PART OF THE DEAL.
   //
@@ -929,7 +951,7 @@ export function planDevelopment(
   const landBasis = Math.round(
     landBasisOverride ?? s.holdings[bbl]?.costBasis ?? landValue(rec, s.econ),
   );
-  const buildCost = hardCost + softCost + demo + contingency + leaseUp;
+  const buildCost = hardCost + softCost + demo + contingency + leaseUp + anchorCost;
   const costTotal = buildCost;
   const basisTotal0 = buildCost + landBasis;
 
@@ -983,8 +1005,10 @@ export function planDevelopment(
   // Yield on cost against today's stabilised rents — the number a developer
   // actually lives by, and the spread to the exit cap is the whole margin.
   const asBuilt = asBuiltRec(rec, use, sf, fl);
-  const rentPsf = marketRentPsfYr(asBuilt, s.econ, "good") * effectiveRentFactor;
-  const stabOcc = overMix(mix, (u) => (u === "multifamily" ? 0.95 : 0.9));
+  const marketRent = marketRentPsfYr(asBuilt, s.econ, "good") * effectiveRentFactor;
+  const rentPsf = marketRent * (1 - btsShare) + (bts?.rentPsf ?? marketRent) * btsShare;
+  const baseStabOcc = overMix(mix, (u) => (u === "multifamily" ? 0.95 : 0.9));
+  const stabOcc = baseStabOcc * (1 - btsShare) + btsShare;
   const opex = overMix(mix, (u) => opexPsf(u, s.econ, false));
   const recovery = overMix(mix, (u) => RECOVERY_RATE[u]);
   // ORIGINATION IS A COST OF THE PROJECT, not a fee that happens next to it.
@@ -1035,7 +1059,7 @@ export function planDevelopment(
     // in the ground, which is why a development eats your balance sheet at the
     // start rather than in even slices.
     equityAtClose: Math.round((projectCost - commitment) * 0.55),
-    months, yieldOnCost, exitCap, requiredYield, hurdleRatio, spec: clamp01(spec), lenderNote,
+    months, yieldOnCost, exitCap, requiredYield, hurdleRatio, spec: clamp01(spec), bts, btsShare, lenderNote,
   };
   // The second half of the NaN gate above. Bad inputs are one way to get a
   // plan full of nonsense; a divide by a zero lot, a mix that sums to nothing,
@@ -1144,11 +1168,68 @@ export function refreshDevelopmentFeasibility(
   }
 }
 
+const BTS_NAMES = [
+  "Northstar Logistics", "Harbour Medical", "Alden Foods", "Copperline Data",
+  "Mariner Components", "Union Market", "Beacon Systems", "Drydock Supply",
+];
+
+/** Find one bankable tenant willing to commit before groundbreak. */
+export function proposeBuildToSuit(
+  s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
+  floors: number, coverage = 0.62,
+): { s: GameState; err?: string; msg?: string } {
+  if (use !== "office" && use !== "retail" && use !== "industrial") {
+    return { s, err: "Build-to-suit is for an office headquarters, anchor retail or an industrial user." };
+  }
+  if (!s.holdings[bbl]) return { s, err: "Buy the site before shopping it to an occupier." };
+  if (s.developments[bbl]) return { s, err: "Construction is already under way." };
+  const rec = resolveRec(parcels, s, bbl);
+  if (!rec || rec.class !== "land") return { s, err: "Build-to-suit starts on clear land." };
+  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, "gmp");
+  if (!plan) return { s, err: "That programme cannot be built on this site." };
+  const next = clone(s);
+  const credit = (rng(next, "leasing") < 0.58 ? 2 : 1) as 1 | 2;
+  const sector = (use === "industrial" ? "logistics"
+    : use === "retail" ? "food" : rng(next, "leasing") < 0.5 ? "tech" : "finance") as import("./types").Sector;
+  const name = BTS_NAMES[Math.floor(rng(next, "leasing") * BTS_NAMES.length)];
+  const built = {
+    ...rec, class: use, mix: { [use]: 1 }, bldgArea: plan.sf, floors: plan.floors,
+  } as never;
+  const market = marketRentPsfYr(built, next.econ, "good");
+  const discount = credit === 2 ? rrange(next, 0.82, 0.88, "leasing") : rrange(next, 0.78, 0.85, "leasing");
+  const useSfArea = plan.sf * (plan.mix[use] ?? 1);
+  const bts: BtsCommitment = {
+    name,
+    sector,
+    credit,
+    use,
+    sf: Math.round(useSfArea),
+    rentPsf: +(market * discount).toFixed(2),
+    termM: credit === 2 ? 240 : 180,
+    tiPsf: use === "office" ? 35 : use === "retail" ? 24 : 8,
+    recovery: use === "office" ? "base" : "nnn",
+    signedM: next.month,
+  };
+  if (!next.btsProspects) next.btsProspects = {};
+  next.btsProspects[bbl] = bts;
+  return {
+    s: next,
+    msg: `${name} will take ${Math.round(bts.sf).toLocaleString()} sf for ${Math.round(bts.termM / 12)} years at $${bts.rentPsf.toFixed(2)}/sf.`,
+  };
+}
+
+export function clearBuildToSuit(s: GameState, bbl: string): GameState {
+  if (!s.btsProspects?.[bbl]) return s;
+  const next = clone(s);
+  delete next.btsProspects![bbl];
+  return next;
+}
+
 export function startDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.6,
   contract: Contract = "gmp", ltcWanted?: number,
-  custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>> },
+  custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment },
   lender?: string,
   spec = 0.5,
 ): { s: GameState; err?: string } {
@@ -1247,8 +1328,10 @@ export function startDevelopment(
     startM: next.month, deliverM: next.month + plan.months, baseMonths: plan.months,
     piped: true,   // its cohort is in the market's queue, pushed above
     signed: [],
+    bts: plan.bts,
     events: 0,
   } satisfies Development;
+  if (next.btsProspects?.[bbl]) delete next.btsProspects[bbl];
   recordPropertyEvent(next, bbl, {
     kind: "build-start",
     use,
@@ -1258,7 +1341,7 @@ export function startDevelopment(
   });
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Ground broken at ${rec.address}: ${plan.floors} floors, ${(plan.sf / 1000).toFixed(0)}k sf of ${use === "mixed" ? "mixed-use" : use} at ${plan.far} FAR on a ${contract === "gmp" ? "guaranteed max price" : "cost-plus"} contract. $${(plan.costTotal / 1e6).toFixed(1)}M budget, ${(plan.ltc * 100).toFixed(0)}% funded by ${plan.lender}, on spec. Delivery ${monthLabel(next.month + plan.months)}.`,
+    text: `Ground broken at ${rec.address}: ${plan.floors} floors, ${(plan.sf / 1000).toFixed(0)}k sf of ${use === "mixed" ? "mixed-use" : use} at ${plan.far} FAR on a ${contract === "gmp" ? "guaranteed max price" : "cost-plus"} contract. $${(plan.costTotal / 1e6).toFixed(1)}M budget, ${(plan.ltc * 100).toFixed(0)}% funded by ${plan.lender}, ${plan.bts ? `for ${plan.bts.name} on a ${Math.round(plan.bts.termM / 12)}-year build-to-suit` : "on spec"}. Delivery ${monthLabel(next.month + plan.months)}.`,
   });
   return { s: next };
 }
@@ -1727,6 +1810,7 @@ const PRELET: Record<BuiltClass, { rate: number; ceiling: number }> = {
 
 export function tickConstructionLeasing(s: GameState, parcels: ParcelTable) {
   for (const d of Object.values(s.developments)) {
+    if (d.bts) continue; // named anchor already committed the building
     const rec = parcels[d.bbl];
     if (!rec) continue;
     const span = Math.max(1, d.deliverM - d.startM);
@@ -1824,6 +1908,31 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   h.lastCapM = s.month;
   h.tenants = [];
   h.deliveredM = s.month;
+  if (d.bts) {
+    const deposit = depositFor(s, d.bts.rentPsf, d.bts.sf, d.bts.credit);
+    s.cash += deposit;
+    h.tenants.push({
+      name: d.bts.name,
+      use: d.bts.use,
+      sector: d.bts.sector,
+      credit: d.bts.credit,
+      sf: d.bts.sf,
+      rentPsf: d.bts.rentPsf,
+      net: d.bts.recovery === "nnn",
+      recovery: d.bts.recovery,
+      startM: s.month,
+      endM: s.month + d.bts.termM,
+      deposit,
+      staff: 1,
+    });
+    recordPropertyEvent(s, d.bbl, {
+      kind: "major-lease",
+      party: d.bts.name,
+      sf: d.bts.sf,
+      amount: Math.round(d.bts.rentPsf * d.bts.sf),
+      outcome: `${Math.round(d.bts.termM / 12)}-year build-to-suit`,
+    });
+  }
   // FLATS LEASE FROM A TRAILER. A block of flats does not pre-let the way an
   // office does — there are no leases signed against a hole in the ground —
   // but a leasing office opens thirty to sixty days before the certificate of

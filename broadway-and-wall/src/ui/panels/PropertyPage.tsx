@@ -221,6 +221,11 @@ export function PropertyPage() {
           <div className="page-section-head">Under construction</div>
           <div className="grid">
             <Row k="Program" v={`${sf(dev.sf)} of ${dev.use} · ${dev.floors} floors`} strong />
+            {dev.bts && (
+              <Row k="Build-to-suit"
+                v={`${dev.bts.name} · ${sf(dev.bts.sf)} @ $${dev.bts.rentPsf.toFixed(2)}/sf · ${Math.round(dev.bts.termM / 12)} yrs`}
+                strong />
+            )}
             {/* THE BUDGET MOVES, AND SO DOES THE NUMBER THAT MATTERS.
                 A job under way is not the job that was approved: change orders
                 and cost-plus escalation grow costTotal every month it runs.

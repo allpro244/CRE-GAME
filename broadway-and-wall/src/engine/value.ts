@@ -734,11 +734,26 @@ export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
   // which is where a through-cycle underwriter actually puts it. Location still
   // enters the texture floor through `level` above.
   const floor = texture * 0.30;
-  const base = Math.max(builder, holder, floor);
+  // COMPS ON BUILDER-CLEARING SITES. landAdj already lifts texture (via
+  // resolveRec). When the builder wins, the ask must stay at residual or the
+  // desk and the land market are two worlds (DEV_MARGIN is earned exactly at
+  // residual). Relative district heat still matters on the WEAK side: a
+  // district clearing below the town median lets the ask sit a little under
+  // residual — that is the comps sheet talking down fringe dirt. Hot districts
+  // raise the texture/holder bids (and landAdj), so they win the auction when
+  // the street is ahead of the residual, which is the right order.
+  const heat = econ.districtHeat?.[rec.district ?? "—"] ?? 1;
+  const softDiscount = heat < 1 ? clamp((heat - 1) * 0.5, -0.06, 0) : 0;
+  let base = Math.max(builder, holder, floor);
+  const winner: LandRead["winner"] = builder >= holder && builder >= floor ? "builder"
+    : holder >= floor ? "holder" : "texture";
+  if (winner === "builder" && builder > 0 && softDiscount < 0) {
+    base = builder * (1 + softDiscount);
+  }
   return {
     psf: base,
     builder, holder, texture: floor,
-    winner: builder >= holder && builder >= floor ? "builder" : holder >= floor ? "holder" : "texture",
+    winner,
     scheme,
   };
 }

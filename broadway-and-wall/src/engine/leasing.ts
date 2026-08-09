@@ -6,7 +6,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, BuiltClass, Credit, GameState, Holding, Listing, LOI, Sector } from "./types";
 import { logBooks, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, START_YEAR, cloneState, CREDIT_LABEL } from "./types";
 import type { Tenant } from "./types";
-import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL } from "./market";
+import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange } from "./market";
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, TAX_RATE, recoveryOf, demandLinear,
@@ -1028,6 +1028,10 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       }));
       const down = Math.max(...entries.map((e) => e.readyM - q));
       h.makeReady = [...(h.makeReady ?? []), ...entries];
+      // City pool: material departures become searchers (or leave-town noise).
+      for (const mo of movedOut) {
+        noteTenantSfChange(s, (mo.use ?? dominantUse(rec)) as BuiltClass, mo.sf);
+      }
       // THE ONE WORTH NAMING. Most departures leave through this aggregate
       // line, not the earlier "is not renewing" notice — a letter that sat
       // unanswered, a term that just ran out. The square footage is a
@@ -1121,6 +1125,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       if (kept > 0) logBooks(s, "noi", kept);
       const down = Math.max(2, Math.round((rec.class === "office" ? 6 : 4) * rrange(s, 0.8, 1.5, "leasing")));
       h.makeReady = [...(h.makeReady ?? []), { sf: t.sf, readyM: q + down, use: t.use }];
+      noteTenantSfChange(s, (t.use ?? dominantUse(rec)) as BuiltClass, t.sf);
       // TENURE IS THE STORY. "A tenant failed" is a statistic; "the firm that
       // has been on your fourth floor since 2004 failed" is a month you
       // remember. The engine has always known how long they were there — it
@@ -2201,6 +2206,7 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     t.rentPsf = +(((t.rentPsf * t.sf) + (l.rentPsf * add)) / (t.sf + add)).toFixed(2);
     t.sf += add;
     t.staff = Math.min(t.staff ?? 1, 1.05);
+    noteTenantSfChange(s, use, -add);
     const top = depositFor(s, t.rentPsf, t.sf, t.credit) - (t.deposit ?? 0);
     s.cash += top;
     t.deposit = (t.deposit ?? 0) + top;
@@ -2209,7 +2215,9 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     // THEY ARE RENEWING FOR LESS. The space they hand back is space, and it
     // turns like any other giveback before anybody can be shown it.
     if (l.sf < t.sf) {
-      h.makeReady = [...(h.makeReady ?? []), { sf: t.sf - l.sf, readyM: s.month + 3, use: t.use }];
+      const freed = t.sf - l.sf;
+      h.makeReady = [...(h.makeReady ?? []), { sf: freed, readyM: s.month + 3, use: t.use }];
+      noteTenantSfChange(s, (t.use ?? dominantUse(rec)) as BuiltClass, freed);
       t.sf = l.sf;
       t.staff = Math.min(t.staff ?? 1, 1);
     }
@@ -2276,6 +2284,7 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
       freeUntilM: l.freeM ? s.month + l.freeM : undefined,
       deposit,
     });
+    noteTenantSfChange(s, use, -sf);
   }
   // Say what the roll looks like NOW. "Lease signed" with a free-rent period
   // and unchanged NOI was reading as a no-op — the tenant is on the roll and

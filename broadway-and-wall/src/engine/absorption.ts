@@ -124,11 +124,20 @@ export function marketRequirement(e: Econ, use: BuiltClass): number {
   // pool absorbs at — so the letters on your desk and the absorption chart
   // are one number.
   const pool = e.pool?.[use] ?? occ;
-  const growth = Math.max(0, (pool - occ) * 0.055);
+  // Matching friction: empty stock beside a looking queue is often the wrong
+  // suite. Same shape as macro absorb — letters and the chart stay one number.
+  const vac = e.cityVac?.[use] ?? NATURAL_VAC[use];
+  const match = (vac > NATURAL_VAC[use] && pool > occ)
+    ? Math.max(0.55, Math.min(1, 1 - (vac - NATURAL_VAC[use]) * 2.2))
+    : 1;
+  const growth = Math.max(0, (pool - occ) * 0.055 * match);
   // The old `mood` multiplier died here: sectorMom is already inside the
   // pool and the phase is already inside employment. It was counting the
   // cycle twice.
-  return Math.max(0, churn + growth);
+  // Structural tightness (jobs vs floors) adds touring volume when the city
+  // is short of space even if the looking fringe is capped.
+  const struct = Math.max(0, (e.structTight?.[use] ?? 0)) * (e.stock?.[use] ?? 0) * 0.02;
+  return Math.max(0, churn + growth + struct);
 }
 
 // ------------------------------------------------------------- the submarket

@@ -366,6 +366,10 @@ export function tickLandComps(s: GameState, parcels: Record<string, ParcelRecord
   }
   if (!pull.size) return;
 
+  // Publish relative district heat for the residual land auction — builder-
+  // clearing sites read this so comps discover dirt, not only the texture floor.
+  s.econ.districtHeat = Object.fromEntries([...pull.entries()].map(([d, f]) => [d, +f.toFixed(4)]));
+
   for (const bbl of Object.keys(parcels)) {
     const p = parcels[bbl];
     const f = p ? pull.get(p.district ?? "—") : undefined;

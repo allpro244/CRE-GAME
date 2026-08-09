@@ -2463,7 +2463,10 @@ export function cityInfillCap(
     (natural - (ez.cityVac?.[use] ?? natural)) / natural, -1, 1);
   const rentPress = clamp(
     (ez.rentIdx[use] / RENT_BASE[use]) / Math.max(0.35, ez.wageIdx ?? 1) - 1, -0.5, 1.5);
-  const push = clamp(tight * 0.9 + rentPress * 0.5, -0.35, 1.6);
+  // When vacancy is pinned, vacancy-tightness alone saturates — structural
+  // capacity shortage (desired demand vs housable) still says "build taller."
+  const struct = clamp(ez.structTight?.[use] ?? 0, 0, 0.45);
+  const push = clamp(tight * 0.9 + rentPress * 0.5 + struct * 1.1, -0.35, 2.0);
   const step = Math.max(1, Math.round((2 + maturity * 4) * (1 + push)));
   return Math.max(2, Math.min(Math.max(1, datum) + step, physicalMaxFloors(rec.lotArea * 0.62)));
 }

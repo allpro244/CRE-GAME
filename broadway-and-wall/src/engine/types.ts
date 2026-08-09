@@ -1211,6 +1211,18 @@ export interface Econ {
    *  never touches it — demand forms from employment, sectors and (slowly)
    *  price, and unhousable demand stops looking within months. */
   pool?: Record<BuiltClass, number>;
+  /**
+   * Capacity shortage: (desired demand − housable) / stock. Distinct from the
+   * absorption queue. Honest rent scarcity reads this; `unmet` is physical
+   * unhousable looking demand only.
+   */
+  structTight?: Record<BuiltClass, number>;
+  /**
+   * District land heat from comps (relative to town median). Written by
+   * tickLandComps; read by landRead so builder-clearing sites still discover
+   * street prints.
+   */
+  districtHeat?: Record<string, number>;
   /** Damped affordability multiplier (half-life ~6y). A three-year rent swing
    *  cannot conjure or destroy a fifth of the tenant base. */
   affordEff?: Record<BuiltClass, number>;

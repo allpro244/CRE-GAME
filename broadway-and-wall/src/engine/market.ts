@@ -3,7 +3,7 @@
 // Randomness creates situations, never verdicts.
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, MarketPhase, NewsItem, Sector } from "./types";
-import { BUILT_CLASSES } from "./types";
+import { BUILT_CLASSES, SECTOR_CLASSES } from "./types";
 import { applyEra, driftInflTarget } from "./regime";
 import { swanClassLevel, swanTradeWave, tickSwans, exposureToTrade } from "./swans";
 import { settleSupplyDeliveries } from "./supply";
@@ -653,6 +653,27 @@ export const NATURAL_VAC = { office: 0.115, retail: 0.085, multifamily: 0.045, i
 export function frictionFloor(k: BuiltClass): number {
   const ratio = k === "industrial" ? 0.22 : k === "multifamily" ? 0.30 : 0.32;
   return NATURAL_VAC[k] * ratio;
+}
+
+/**
+ * NAMED TENANTS TOUCH THE CITY POOL. Micro lease events used to live in a
+ * separate universe from `econ.pool` / absorption — a 20k sf default on your
+ * floor never showed up in the city looking queue. Material signed changes
+ * (±2,000 sf) adjust the pool: space freed becomes searchers (briefly); space
+ * taken comes out of the looking book. Occupied still walks via absorb.
+ */
+export function noteTenantSfChange(s: GameState, use: BuiltClass, deltaSf: number) {
+  if (!Number.isFinite(deltaSf) || Math.abs(deltaSf) < 2_000) return;
+  if (use === "multifamily") return; // flats are aggregate, not named suites
+  const e = s.econ;
+  if (!e.pool) e.pool = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+  const stk = Math.max(1, e.stock?.[use] ?? 1);
+  const housable = stk * (1 - frictionFloor(use));
+  const fringe = stk * (NATURAL_VAC[use] ?? 0.1) * 0.25;
+  const cap = housable + fringe;
+  const occ = e.occupied?.[use] ?? 0;
+  // +deltaSf = space returned to market (departure); −deltaSf = space taken.
+  e.pool[use] = clamp((e.pool[use] ?? occ) + deltaSf, occ * 0.85, cap);
 }
 
 /**
@@ -1768,6 +1789,18 @@ export function tickEcon(s: GameState) {
       // never had literally zero net in-migration.
       migration *= 0.20 + 0.80 * slack;
     }
+    // OUT-MIGRATION WHEN RENT BURDENS AND NOTHING IS EMPTY. In-migration was
+    // already choked by the housing floor; the other direction was open only
+    // through the labour market. Households priced out of a tight flat market
+    // leave — that is how a city sheds people when builders cannot catch up.
+    {
+      const mfBurden = (e.rentIdx.multifamily / RENT_BASE.multifamily) / Math.max(0.35, e.wageIdx ?? 1);
+      const mfVac = e.cityVac?.multifamily ?? NATURAL_VAC.multifamily;
+      const mfTight = mfVac <= NATURAL_VAC.multifamily * 0.55;
+      if (mfBurden > 1.25 && mfTight) {
+        migration -= Math.min(0.0025, (mfBurden - 1.25) * 0.005);
+      }
+    }
     // THE BOUNDS ARE A SHARE OF THIS TOWN, NOT A NUMBER OF PEOPLE, and that
     // distinction was load-bearing the moment the town's size stopped being a
     // constant. This read `clamp(…, 60_000, 4_000_000)`. The old hardcoded
@@ -2349,10 +2382,23 @@ export function tickEcon(s: GameState) {
     // tenant earns, and that is the wage index.
     // ...and it is BOUNDED, because feet per worker is a physical quantity with
     // a known range and this had none. See AFFORD_BAND.
-    const affordRaw = clamp(Math.pow(
-      (e.rentIdx[k] / RENT_BASE[k]) / Math.max(0.35, e.wageIdx ?? 1),
-      k === "multifamily" ? -0.50 : -0.40,
-    ), AFFORD_BAND[0], AFFORD_BAND[1]);
+    // Housing is households at different incomes, not one citywide elasticity.
+    // Lower-income share rises with unemployment (who is exposed); each tier
+    // densifies / doubles up at its own rate. Commercial stays a single firm
+    // footprint response.
+    const burden = (e.rentIdx[k] / RENT_BASE[k]) / Math.max(0.35, e.wageIdx ?? 1);
+    let affordRaw: number;
+    if (k === "multifamily") {
+      const u = e.unemployment ?? 0.055;
+      const low = clamp(0.30 + (u - 0.05) * 1.5, 0.22, 0.48);
+      const hi = clamp(0.28 - (u - 0.05) * 0.8, 0.15, 0.35);
+      const mid = Math.max(0.15, 1 - low - hi);
+      affordRaw = low * clamp(Math.pow(burden, -0.70), AFFORD_BAND[0], AFFORD_BAND[1])
+        + mid * clamp(Math.pow(burden, -0.50), AFFORD_BAND[0], AFFORD_BAND[1])
+        + hi * clamp(Math.pow(burden, -0.35), AFFORD_BAND[0], AFFORD_BAND[1]);
+    } else {
+      affordRaw = clamp(Math.pow(burden, -0.40), AFFORD_BAND[0], AFFORD_BAND[1]);
+    }
     if (!e.affordEff) e.affordEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
     // At the lease-rollover rate of THIS class, not of an office. See AFFORD_ROLL.
     e.affordEff[k] += AFFORD_ROLL[k] * (affordRaw - e.affordEff[k]);
@@ -2472,7 +2518,9 @@ export function tickEcon(s: GameState) {
         // rent block calls `unmet`, read a month stale because the pool has not
         // been rolled forward yet, which is also what a landlord can see.
         const stk = Math.max(1, e.stock?.[k] ?? CITY_STOCK[k]);
-        const queue = Math.max(0, ((e.pool?.[k] ?? 0) - (e.occupied?.[k] ?? 0) - (e.sublet?.[k] ?? 0)) / stk);
+        // Physical unhousable looking demand — not the absorption queue.
+        const house = stk * (1 - frictionFloor(k));
+        const queue = Math.max(0, ((e.pool?.[k] ?? 0) - house - (e.sublet?.[k] ?? 0)) / stk);
         const net = Math.max(0, goes - queue);
         if (net > 0) e.baseStock[k] = Math.min(e.baseStock[k], e.baseStock[k] * (1 - net));
       }
@@ -2520,6 +2568,21 @@ export function tickEcon(s: GameState) {
     // employment that still wants a shed — see `industComp` / INDUST_COMP_MONTH.
     // Without that factor, a growing services city manufactures warehouse
     // demand it cannot supply and the vacancy floor becomes load-bearing.
+    // Office demand is the city's TRADE MIX, not a single jobs blob. Finance
+    // and tech do not take the same desks in the same months; industryMom and
+    // sectorShare already exist — demand reads them. No new RNG: pure function
+    // of published clocks (stream-safe).
+    const officeComp = (() => {
+      if (k !== "office") return 1;
+      const trades = SECTOR_CLASSES.office ?? [];
+      let w = 0, acc = 0;
+      for (const sec of trades) {
+        const share = e.sectorShare?.[sec] ?? (1 / Math.max(1, trades.length));
+        acc += share * (1 + (e.industryMom?.[sec] ?? 0) * MOM_DEMAND);
+        w += share;
+      }
+      return w > 0 ? acc / w : 1;
+    })();
     const driver = k === "multifamily" ? popIdx
       : k === "retail" ? Math.pow(popIdx, 0.68) * Math.pow(jobIdx, 0.32)
       : k === "industrial" ? jobIdx * (e.industComp ?? 1)
@@ -2533,9 +2596,12 @@ export function tickEcon(s: GameState) {
     // outside `sectorMom` and `affordEff` because neither of those ever stops
     // reverting and this never reverts at all. See swans.ts.
     const swanLvl = swanClassLevel(e, k);
+    // Office uses trade composition instead of the class sectorMom term so the
+    // cycle is not counted twice.
+    const cycleTerm = k === "office" ? officeComp : (1 + e.sectorMom[k] * MOM_DEMAND);
     const targetRaw = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - NATURAL_VAC[k])
       * Math.pow(driver, elastic)
-      * (1 + e.sectorMom[k] * MOM_DEMAND)
+      * cycleTerm
       * e.affordEff[k]
       * swanLvl;
     // THE POOL. Demand takes about a year to form or dissolve, and demand
@@ -2579,7 +2645,16 @@ export function tickEcon(s: GameState) {
     // The clamps and the noise used to scale with stock — a bigger city of
     // buildings signed leases faster. Now they scale with occupied: a bigger
     // city of tenants does.
-    const absorb = clamp(0.055 * (e.pool[k] - e.occupied[k]), -0.006 * e.occupied[k], 0.010 * e.occupied[k])
+    //
+    // MATCHING FRICTION. When empty floors sit beside a looking queue, some of
+    // that queue is the wrong class, size or district — search, not clearing.
+    // Slow the absorb rate with the excess vacancy rather than pretending every
+    // searcher can take every empty suite this month.
+    const vacNow = e.cityVac?.[k] ?? NATURAL_VAC[k];
+    const matchFrict = (vacNow > NATURAL_VAC[k] && e.pool[k] > e.occupied[k])
+      ? clamp(1 - (vacNow - NATURAL_VAC[k]) * 2.2, 0.55, 1)
+      : 1;
+    const absorb = clamp(0.055 * matchFrict * (e.pool[k] - e.occupied[k]), -0.006 * e.occupied[k], 0.010 * e.occupied[k])
       + e.occupied[k] * rrange(s, -0.0005, 0.0005);
     // FRICTIONAL VACANCY IS A FLOOR, and it is not zero. Some share of every
     // market is empty purely because tenants are moving in and out of it —
@@ -2779,16 +2854,15 @@ export function tickEcon(s: GameState) {
      * goes from 0 to 7.3% of months on the 3.4% cap-rate floor, with median
      * land -10% and the dead-leg share up 5.9%.
      *
-     * WHAT THE PHANTOM IS PROPPING UP IS UNDERWRITING, and that is the next
-     * piece of work rather than this line. The measurement was already here:
-     * with the phantom gone the share of lots a builder can afford falls 4.26%
-     * -> 1.38% and median land 42%. Development stops pencilling, so the cranes
-     * stop, so the order book stops predicting groundbreaks. The fault is that
-     * ground-up development in this engine does not pencil on honest rents and
-     * has been carried by a rent push that is wrong half the time. Fix that and
-     * this line changes itself.
+     * FIX (demand depth): unmet is now physical capacity shortage of the
+     * LOOKING pool against housable. Rent scarcity reads `structTight` —
+     * desired demand (targetRaw) against housable — so true job/floor imbalance
+     * still presses rents and keeps underwriting alive when the city is short
+     * of space, without minting pressure from a mere absorption queue in a glut.
      */
-    unmet[k] = Math.max(0, (e.pool[k] - e.occupied[k] - e.sublet[k]) / Math.max(1, e.stock[k]));
+    unmet[k] = Math.max(0, (e.pool[k] - housable - (e.sublet[k] ?? 0)) / Math.max(1, e.stock[k]));
+    if (!e.structTight) e.structTight = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+    e.structTight[k] = Math.max(0, (targetRaw - housable) / Math.max(1, e.stock[k]));
     e.absorb12[k] = e.absorb12[k] * (11 / 12) + absorb;
     monthAbs[k] = absorb;
     monthComp[k] = delivered;
@@ -2973,7 +3047,10 @@ export function tickEcon(s: GameState) {
         // C1-continuous at FIT_MAX: same value, same slope, asymptote DEEP_RATE.
         : atFit + span * (1 - Math.exp(-SLOPE_AT_FIT * (gap - FIT_MAX) / span)))
         * capitulation(e.vacOverM[k] ?? 0);
-    const scarcity = clamp((unmet[k] ?? 0) * 0.10, 0, 0.016);
+    // Scarcity from CAPACITY shortage (jobs/floors), not the absorption queue.
+    // structTight is large only when desired demand outruns housable stock —
+    // the honest signal the phantom unmet had been faking in a glut.
+    const scarcity = clamp((e.structTight?.[k] ?? unmet[k] ?? 0) * 0.08, 0, 0.014);
 
     // Lease-quote lag: market pressure (vacancy gap + unmet demand) forms this
     // month; landlords adjust asking rents only after it has sat on the quote

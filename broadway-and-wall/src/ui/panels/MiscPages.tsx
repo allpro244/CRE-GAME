@@ -263,25 +263,3 @@ export function SaveSlots() {
     </div>
   );
 }
-
-/**
- * HOW THE HOUSE RUNS BUILDINGS — one decision, the whole book.
- *
- * Three standing choices have always existed per building: the ask, the service
- * level and the capital plan. `setOpsPolicy` has always been able to set them
- * across the entire book at once, and its own comment says why — "a firm that
- * decides to start running its buildings properly does not do it one address at
- * a time." Nothing in the UI ever called it. So a principal with twenty deeds
- * who wanted to push rents opened twenty buildings and pressed the same button
- * twenty times, which is not a decision, it is data entry.
- *
- * This is that engine call, on the screen. It sets the house default for every
- * deed you close from here on AND rewrites the book you already own. The
- * per-building card is still there and still wins — you reach for it when one
- * asset needs different treatment, which is the point of a default.
- *
- * The divergence line is the part that keeps this honest. Once a house policy
- * exists, the interesting question is which buildings are NOT on it, so the
- * section says how many differ and the by-building table below carries the
- * three settings as columns.
- */

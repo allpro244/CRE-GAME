@@ -1570,6 +1570,19 @@ export interface Econ {
    */
   startOwed?: Record<BuiltClass, number>;
   /**
+   * Working capital for anonymous merchant construction. Named rivals fund
+   * jobs from their own cash; unclaimed city jobs draw from this pool and
+   * orphan when it cannot carry the month's spend. Replenished each month in
+   * `fundJobs` from city employment and credit conditions.
+   */
+  cityBuildCash?: number;
+  /**
+   * One-line causal read for the latest material asking-rent move per class —
+   * vacancy pressure, income anchor, jobs, or supply. Written by `tickEcon`
+   * and shown on the Economy class cards.
+   */
+  rentWhy?: Partial<Record<BuiltClass, string>>;
+  /**
    * WHAT HAS BEEN DECIDED ON BUT CANNOT BE DUG YET.
    *
    * `startOwed` is the order book a crane can actually be pointed at. It used

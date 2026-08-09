@@ -6,6 +6,7 @@ import { depositsHeld } from "@/engine/leasing";
 import { collateralAsIs, ownedHoldingValue, netWorth, resolveRec } from "@/engine/value";
 import { locLimit, locRate } from "@/engine/credit";
 import { taxAppealQuote } from "@/engine/tax";
+import { compFlows } from "@/engine/comps";
 import { usd, pct } from "@/ui/format";
 import { NWChart, Big } from "@/ui/panels/shared";
 
@@ -103,6 +104,75 @@ export function BooksPage() {
         <div className="hint">Market and firm news now lives on its own desk — the last {(game.news ?? []).length} items, filterable by kind.</div>
         <button className="btn" onClick={() => setPage("news")}>Open News →</button>
       </div>
+
+      {(() => {
+        const peak = Math.max(0, ...(game.nwHistory ?? [0]));
+        const peakAt = (game.nwHistory ?? []).lastIndexOf(peak);
+        const flows = compFlows(game, 120).slice(0, 5);
+        const failed = (game.rivals ?? [])
+          .filter((r) => r.failedM !== undefined)
+          .sort((a, b) => (b.failedM ?? 0) - (a.failedM ?? 0))
+          .slice(0, 4);
+        const decadePrints = [...(game.comps ?? [])]
+          .filter((c) => c.sf > 0)
+          .sort((a, b) => b.price - a.price)
+          .slice(0, 3);
+        if (!flows.length && !failed.length && !decadePrints.length && peak <= 0) return null;
+        return (
+          <div className="page-section">
+            <div className="page-section-head">City census</div>
+            <div className="hint">
+              Who has been buying, who failed, and where your firm peaked — the campaign read that used to be scattered across Research and the game-over screen.
+            </div>
+            {peak > 0 && (
+              <div className="mini-list" style={{ marginBottom: 8 }}>
+                <div className="mini-row" style={{ cursor: "default" }}>
+                  <span>Firm peak net worth</span>
+                  <span className="mono">{usd(peak)}{peakAt >= 0 ? ` · ${monthLabel(peakAt)}` : ""}</span>
+                </div>
+                <div className="mini-row" style={{ cursor: "default" }}>
+                  <span>Now</span>
+                  <span className={"mono" + (nw < peak * 0.7 ? " neg" : "")}>{usd(nw)}</span>
+                </div>
+              </div>
+            )}
+            {decadePrints.length > 0 && (
+              <div className="mini-list" style={{ marginBottom: 8 }}>
+                {decadePrints.map((c) => (
+                  <div key={`${c.m}:${c.bbl}`} className="mini-row" style={{ cursor: "default" }}>
+                    <span>{c.address} · {c.buyer}</span>
+                    <span className="mono">{usd(c.price)} · {monthLabel(c.m)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {flows.length > 0 && (
+              <div className="mini-list" style={{ marginBottom: 8 }}>
+                {flows.map((f) => (
+                  <div key={f.name} className="mini-row" style={{ cursor: "default" }}>
+                    <span>{f.name}</span>
+                    <span className="mono">
+                      bought {usd(f.bought)} · sold {usd(f.sold)} · net {f.net >= 0 ? "+" : "−"}{usd(Math.abs(f.net))}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {failed.length > 0 && (
+              <div className="mini-list">
+                {failed.map((r) => (
+                  <div key={r.id} className="mini-row" style={{ cursor: "default" }}>
+                    <span>Failed · {r.name}</span>
+                    <span className="mono">{monthLabel(r.failedM!)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button className="btn" onClick={() => setPage("research")}>Open Research for the full prints →</button>
+          </div>
+        );
+      })()}
+
       <div className="deals-grid">
         <section className="page-section">
           <div className="page-section-head">Dispositions</div>

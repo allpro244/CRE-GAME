@@ -10,7 +10,7 @@ import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParc
 import { assetValue, holdingNOIYr, ownedHoldingValue, monthlyNOI, portfolioMark, operatingStatement, physicalOcc, resolveRec } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
-import { tickLeasing, depositsOn, stampListing } from "./leasing";
+import { tickLeasing, depositsOn, stampListing, loiSigningCost, exclusiveFeeRate, agentCashReserve } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote } from "./actions";
 import { tickTalks } from "./acquire";
 import { tickLoan, prepayPenalty, productById } from "./debt";
@@ -921,7 +921,20 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
     out.push({ key: `portfolio-bid:${b.name}:${b.price}`, label: `${b.name} bid on your portfolio` });
   }
   for (const [bbl, a] of Object.entries(s.approaches)) {
-    if (a.inbound && !a.refused && a.ask) out.push({ key: `broker:${bbl}`, label: "A broker has something off-market for you" });
+    // Marketplace already lists live broker calls. Stopping Skip every month
+    // a file sits on the phone is noise — stop only when the conversation is
+    // about to lapse and a decision is actually required.
+    if (a.inbound && !a.refused && a.ask) {
+      const left = a.q + APPROACH_LIFE_M - s.month;
+      if (left <= 2) {
+        out.push({
+          key: `broker:${bbl}:${a.q}`,
+          label: left <= 0
+            ? "A broker's off-market file is lapsing this month"
+            : `A broker's off-market file lapses in ${left} month${left === 1 ? "" : "s"}`,
+        });
+      }
+    }
   }
   for (const h of Object.values(s.holdings)) {
     if (h.sale?.offer) out.push({ key: `offer:${h.bbl}:${h.sale.offer.price}`, label: `Offer in hand — good until ${monthLabel(h.sale.offer.expiresM)}` });
@@ -931,6 +944,19 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
           key: `nonrenew:${h.bbl}:${t.name}:${t.startM}:${t.nonRenewM}`,
           label: `${t.name} will leave ${h.bbl} in six months — ${t.nonRenewWhy ?? "renewal declined"}`,
         });
+      }
+      // Near-term rolls without a live LOI or non-renewal notice still need a
+      // principal's eyes — otherwise Year runs past empty space forming.
+      const moLeft = t.endM - s.month;
+      if (moLeft > 0 && moLeft <= 6 && t.nonRenewM === undefined) {
+        const covered = (s.lois ?? []).some((l) =>
+          l.bbl === h.bbl && (l.kind === "renewal" ? l.tenantIdx !== undefined && h.tenants[l.tenantIdx]?.name === t.name : false));
+        if (!covered) {
+          out.push({
+            key: `lease-roll:${h.bbl}:${t.name}:${t.endM}`,
+            label: `${t.name} lease ends ${monthLabel(t.endM)} — ${moLeft} month${moLeft === 1 ? "" : "s"}`,
+          });
+        }
       }
     }
     if (h.planCutM === s.month) {
@@ -1038,10 +1064,36 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
         ? `Cash is negative — insolvency month ${ms} of 12 before lender seizure`
         : "Cash is negative — the insolvency clock has started",
     });
+  } else {
+    // Forward runway: cash still positive but less than three months of
+    // contractual debt service. Waiting for cash < 0 is waiting for the clock.
+    const monthlyDebt = Object.values(s.holdings).reduce((a, h) => a + (h.loan?.monthlyPmt ?? 0), 0)
+      + (s.facility ? (s.facility.balance * s.facility.ratePct) / 100 / 12 : 0)
+      + ((s.loc?.balance ?? 0) * ((s.econ.indexRate ?? 0) + 4)) / 100 / 12;
+    if (monthlyDebt > 0 && s.cash < monthlyDebt * 3) {
+      out.push({
+        key: "cash-runway",
+        label: `Cash covers less than three months of debt service`,
+      });
+    }
   }
-  for (const [id] of Object.entries(s.milestones)) {
-    if (s.milestones[id] === s.month) out.push({ key: `mile:${id}`, label: "Milestone reached" });
+  // Open LOI signing costs vs the treasury reserve the agent itself respects.
+  {
+    const committed = (s.lois ?? []).reduce((a, l) => {
+      const fee = exclusiveFeeRate(s.holdings[l.bbl]);
+      return a + loiSigningCost(l, fee);
+    }, 0);
+    if (committed > 0 && s.cash - committed < agentCashReserve(s)) {
+      const n = committed >= 1_000_000
+        ? `$${(committed / 1_000_000).toFixed(2)}M`
+        : `$${Math.round(committed / 1000)}K`;
+      out.push({
+        key: "ti-book",
+        label: `Open lease signing costs ${n} would breach the cash reserve`,
+      });
+    }
   }
+  // Milestones stay in the news tape; they are not decisions that should stop Skip.
   if (s.gameOver) out.push({ key: "over", label: "The run is over" });
   return out;
 }

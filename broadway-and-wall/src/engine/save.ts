@@ -52,6 +52,8 @@ function migrateExtendedPaper(state: GameState) {
   }
 }
 
+export const SAVE_VERSION = 32 as const;
+
 /** Pure save-shape migrations, also exported for a fast round-trip harness. */
 export function migrateSaveState(state: GameState): GameState {
   migrateExtendedPaper(state);
@@ -62,7 +64,29 @@ export function migrateSaveState(state: GameState): GameState {
     };
     delete state.varianceApp;
   }
+  // Older campaigns bump forward once shape migrations have run. A future
+  // hard break should refuse here rather than silently inventing fields.
+  if (typeof state.v === "number" && state.v < SAVE_VERSION) {
+    state.v = SAVE_VERSION;
+  }
   return state;
+}
+
+/**
+ * PURE CONTINUE PREP — migrate, version-gate, require a rebuildable town.
+ * The store and the harness both call this so IndexedDB is not the only path
+ * that proves a campaign can be resumed.
+ */
+export function prepareSaveForResume(state: GameState):
+  { ok: true; state: GameState } | { ok: false; reason: string } {
+  const migrated = migrateSaveState(structuredClone(state));
+  if (migrated.v !== SAVE_VERSION) {
+    return { ok: false, reason: "unsupported save version" };
+  }
+  if (migrated.citySeed === undefined) {
+    return { ok: false, reason: "save has no city seed" };
+  }
+  return { ok: true, state: migrated };
 }
 
 export async function loadGame(slot: string): Promise<GameState | null> {

@@ -3336,6 +3336,21 @@ export function tickCityGrowth(
     // nobody takes it, the city builds it the way it always did.
     const nearPlayer = (adjacency?.[bbl] ?? []).some((a) => !!s.holdings[a]);
     const claimed = claimJob(s, parcels, bbl, use, sf, floors, deliverM, nearPlayer, plan);
+    // ANONYMOUS IS NOT FREE. Named firms already stamp cost/equity/commitment
+    // in claimJob. An unclaimed job used to deliver on schedule with no capital
+    // at all — the largest remaining competitor asymmetry. Stamp the same
+    // underwriting ledger; fundJobs draws it from the city construction pool.
+    if (!claimed) {
+      const job = (s.cityJobs ?? []).find((j) => j.bbl === bbl);
+      if (job && !(job.cost ?? 0)) {
+        job.cost = plan.costTotal;
+        job.spent = 0;
+        job.equityLeft = Math.round(plan.costTotal * (1 - plan.ltc));
+        job.commitment = plan.commitment;
+        job.ratePct = plan.ratePct;
+        job.lender = "Merchant builders";
+      }
+    }
     recordPropertyEvent(s, bbl, {
       kind: "build-start",
       use,

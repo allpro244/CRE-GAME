@@ -124,5 +124,28 @@ base.month = 24;
     "simultaneous risks have unique attention keys");
 }
 
+{
+  const g = E.newGame(55012, parcels);
+  const bbl = Object.keys(parcels).find((b) => parcels[b].class !== "land" && parcels[b].bldgArea > 0)
+    ?? Object.keys(parcels)[0];
+  g.holdings[bbl] = {
+    bbl, boughtM: 0, costBasis: 1_000_000, condition: 0.8,
+    tenants: [{
+      name: "Northwind LLC", sector: "tech", credit: "bb", sf: 10_000,
+      rentPsf: 40, startM: 0, endM: g.month + 4, use: "office",
+    }],
+    loan: { balance: 800_000, ratePct: 6, monthlyPmt: 6_000, maturityM: g.month + 60, product: "fixed" },
+  };
+  g.cash = 10_000;
+  g.milestones = { firstDeal: g.month };
+  const a = E.attentionItems(g);
+  const k = new Set(a.map((x) => x.key));
+  check([...k].some((x) => x.startsWith("lease-roll:")),
+    "near-term lease roll without an LOI stops the clock");
+  check(k.has("cash-runway"), "thin cash vs debt service warns before insolvency");
+  check(![...k].some((x) => x.startsWith("mile:")),
+    "milestones do not stop Skip — they stay on the news tape");
+}
+
 console.log("");
 process.exit(bad ? 1 : 0);

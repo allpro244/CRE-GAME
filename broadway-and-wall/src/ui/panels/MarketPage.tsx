@@ -236,30 +236,15 @@ export function MarketPage() {
           marketAppetite(game) < 0.6 ? "gone" : marketAppetite(game) < 0.9 ? "thin"
             : marketAppetite(game) > 1.15 ? "everywhere" : "normal"} />
         <button
-          className={"btn" + (game.brokersOff ? "" : " btn-on")}
+          className="btn"
           style={{ alignSelf: "center" }}
-          title={game.brokersOff
-            ? "Brokers are not calling you. Click to let them ring again."
-            : "Brokers ring you with off-market deals now and then. Click to stop the calls entirely."}
-          onClick={() => {
-            const st = useStore.getState();
-            useStore.setState({ game: { ...st.game!, brokersOff: !st.game!.brokersOff } });
-          }}
+          title="Broker calls and the July auction card are firm settings — change them under Settings."
+          onClick={() => useStore.getState().setPage("settings")}
         >
           {game.brokersOff ? "Brokers: off" : "Brokers: on"}
-        </button>
-        <button
-          className={"btn" + (game.auctionQuiet ? "" : " btn-on")}
-          style={{ alignSelf: "center" }}
-          title={game.auctionQuiet
-            ? "The July docket runs without interrupting you. Click to have the card come up again."
-            : "The July docket comes up as a card when it is published. Click to read it here instead."}
-          onClick={() => {
-            const st = useStore.getState();
-            useStore.setState({ game: { ...st.game!, auctionQuiet: !st.game!.auctionQuiet } });
-          }}
-        >
+          {" · "}
           {game.auctionQuiet ? "Auction card: off" : "Auction card: on"}
+          {" →"}
         </button>
       </div>
       <div className="hint">

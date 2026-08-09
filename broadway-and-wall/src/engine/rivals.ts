@@ -396,16 +396,81 @@ export function claimJob(
  * towers at the peak is carrying three towers' worth of debt against three
  * pieces of dirt when the market turns.
  */
+/** Monthly capacity for anonymous merchant construction, from employment × credit. */
+function replenishCityBuildPool(s: GameState) {
+  const jobs = Math.max(20_000, s.econ.jobs ?? 100_000);
+  const credit = Math.max(0.35, s.econ.creditIdx ?? 1);
+  // ~$90 per employed resident per month of construction capacity. Generous
+  // enough that a normal pipeline finishes; tight enough that a credit crunch
+  // with many simultaneous frames can orphan work — the point of a pool.
+  const monthly = Math.max(8_000_000, Math.round(jobs * 90 * credit));
+  const cap = monthly * 48;
+  s.econ.cityBuildCash = Math.min(cap, (s.econ.cityBuildCash ?? monthly * 24) + monthly);
+}
+
+function monthJobSpend(j: { cost?: number; startM: number; deliverM: number }, month: number): number {
+  const span = Math.max(1, j.deliverM - j.startM);
+  const t1 = Math.min(1, (month - j.startM + 1) / span);
+  const t0 = Math.min(1, (month - j.startM) / span);
+  const curve = (t: number) => t * t * (3 - 2 * t);
+  return Math.round((j.cost ?? 0) * Math.max(0, curve(t1) - curve(t0)));
+}
+
+/** Anonymous city jobs draw equity + capital calls from the city pool. */
+function fundAnonymousCityJob(s: GameState, j: NonNullable<GameState["cityJobs"]>[number]) {
+  // Legacy unstamped jobs keep the old free path so old saves do not mass-orphan.
+  if (!(j.cost ?? 0)) return;
+  const spend = monthJobSpend(j, s.month);
+  if (spend <= 0) return;
+  const fromEquity = Math.min(spend, Math.max(0, j.equityLeft ?? 0));
+  const afterEquity = spend - fromEquity;
+  const commitment = Math.max(j.debt ?? 0, j.commitment ?? (j.cost ?? 0));
+  const debtRoom = Math.max(0, commitment - (j.debt ?? 0));
+  const fromDebt = Math.min(afterEquity, debtRoom);
+  const cashNeed = fromEquity + (afterEquity - fromDebt);
+  const pool = s.econ.cityBuildCash ?? 0;
+  if (pool < cashNeed) {
+    j.orphaned = true;
+    s.news.unshift({
+      q: s.month, kind: "event",
+      text: `Merchant builders have stopped work — the city's construction pool could not fund `
+        + `the remaining $${(cashNeed / 1e6).toFixed(2)}M call on an anonymous job.`,
+    });
+    return;
+  }
+  s.econ.cityBuildCash = pool - cashNeed;
+  j.equityLeft = Math.max(0, (j.equityLeft ?? 0) - fromEquity);
+  j.debt = (j.debt ?? 0) + fromDebt;
+  j.spent = (j.spent ?? 0) + spend;
+  const cap = Math.round(((j.debt ?? 0) * (j.ratePct ?? 8)) / 100 / 12);
+  if (cap > 0) {
+    const room = Math.max(0, commitment - (j.debt ?? 0));
+    const capitalised = Math.min(cap, room);
+    const cashInterest = cap - capitalised;
+    if (cashInterest > (s.econ.cityBuildCash ?? 0)) {
+      j.orphaned = true;
+      s.news.unshift({
+        q: s.month, kind: "event",
+        text: `An anonymous frame has stalled after exhausting interest carry in the city construction pool.`,
+      });
+      return;
+    }
+    j.debt = (j.debt ?? 0) + capitalised;
+    s.econ.cityBuildCash = (s.econ.cityBuildCash ?? 0) - cashInterest;
+  }
+}
+
 export function fundJobs(s: GameState) {
+  replenishCityBuildPool(s);
   for (const j of s.cityJobs ?? []) {
-    if (!j.firmId || j.orphaned) continue;
+    if (j.orphaned) continue;
+    if (!j.firmId) {
+      fundAnonymousCityJob(s, j);
+      continue;
+    }
     const r = s.rivals.find((x) => x.id === j.firmId);
     if (!r || r.failedM !== undefined) { j.orphaned = true; continue; }
-    const span = Math.max(1, j.deliverM - j.startM);
-    const t1 = Math.min(1, (s.month - j.startM + 1) / span);
-    const t0 = Math.min(1, (s.month - j.startM) / span);
-    const curve = (t: number) => t * t * (3 - 2 * t);
-    const spend = Math.round((j.cost ?? 0) * Math.max(0, curve(t1) - curve(t0)));
+    const spend = monthJobSpend(j, s.month);
 
     // THEIR BANK FAILED TOO. No draws, so the month's work in place comes out
     // of the sponsor's own account, and the receiver's interest comes out of
@@ -433,7 +498,9 @@ export function fundJobs(s: GameState) {
       // is done, and only if its advance rate on the whole cost clears what is
       // already owed to the receiver.
       if (s.month >= (j.replaceM ?? 0)) {
-        const progress = curve(t1);
+        const span = Math.max(1, j.deliverM - j.startM);
+        const t1 = Math.min(1, (s.month - j.startM + 1) / span);
+        const progress = t1 * t1 * (3 - 2 * t1);
         const toComplete = Math.max(0, (j.cost ?? 0) * (1 - progress));
         const equityLeft = Math.max(0, j.equityLeft ?? 0);
         const desk = openConstructionDesks(s)

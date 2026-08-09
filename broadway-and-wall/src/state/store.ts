@@ -25,7 +25,7 @@ import { clearBuildToSuit, proposeBuildToSuit, startAdaptiveReuse, startDevelopm
 import { hire, fire, refreshPool, POOL_REFRESH_M } from "@/engine/staff";
 import { normalizeParcels } from "@/engine/mix";
 import { netWorth } from "@/engine/value";
-import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, type SaveMeta } from "@/engine/save";
+import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
 import { cityList, makeCity, type GeneratedCity } from "@/citygen/index.mjs";
 
@@ -1248,9 +1248,11 @@ export const useStore = create<AppState>((set, get) => ({
 
   loadFrom: async (slot) => {
     const { parcels } = get();
-    const saved = await loadGame(slot);
-    if (!saved || !parcels) { toast("That save wouldn't open.", "err"); return; }
-    if (saved.v !== 32) { toast("That save is from an older build and can't be opened.", "err"); return; }
+    const raw = await loadGame(slot);
+    if (!raw || !parcels) { toast("That save wouldn't open.", "err"); return; }
+    const prepared = prepareSaveForResume(raw);
+    if (!prepared.ok) { toast("That save is from an older build and can't be opened.", "err"); return; }
+    const saved = prepared.state;
 
     // A SAVE CARRIES ITS OWN TOWN.
     //
@@ -1377,12 +1379,14 @@ export const useStore = create<AppState>((set, get) => ({
     set({ phase: "generating", building: islandName(r.island), loadError: null });
     await painted();
     try {
-      const saved = await loadGame(r.slot);
-      if (!saved || saved.v !== 32) {
+      const raw = await loadGame(r.slot);
+      const prepared = raw ? prepareSaveForResume(raw) : null;
+      if (!prepared?.ok) {
         set({ phase: "menu", building: null, resume: null });
         toast("That campaign is from an older build and can't be opened.", "err");
         return;
       }
+      const saved = prepared.state;
       setCity(r.island);
       setSeed(r.seed, r.island);
       setSize(r.size, r.island);
@@ -1476,12 +1480,15 @@ async function retireSavesIfNewBuild(): Promise<void> {
 }
 
 async function resumeFromSlot(slot: string): Promise<Resume | null> {
-  const g = await loadGame(slot);
-  if (!g || g.v !== 32 || g.citySeed === undefined) return null;
+  const raw = await loadGame(slot);
+  if (!raw) return null;
+  const prepared = prepareSaveForResume(raw);
+  if (!prepared.ok) return null;
+  const g = prepared.state;
   return {
     slot,
     island: g.cityIsland ?? currentCity(),
-    seed: g.citySeed >>> 0,
+    seed: g.citySeed! >>> 0,
     size: g.citySize ?? currentSize(),
     dev: g.cityDev ?? currentDev(),
     month: g.month,

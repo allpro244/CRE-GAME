@@ -315,14 +315,18 @@ export function DealsPage() {
         )}
         <div className="page-section">Letters of intent · {game.lois.length}</div>
         {game.lois.length === 0 && (
-          <>
+          <div className="deal">
             <div className="hint">No live negotiations. Vacant space in high-demand buildings draws tenants.</div>
-            {Object.keys(game.holdings).length === 0 && (
-              <button className="btn btn-buy" style={{ marginTop: 8 }} onClick={() => useStore.getState().setPage("market")}>
+            {Object.keys(game.holdings).length === 0 ? (
+              <button className="btn btn-buy" onClick={() => useStore.getState().setPage("market")}>
                 Browse buildings in Marketplace →
               </button>
+            ) : (
+              <button className="btn" onClick={() => useStore.getState().setPage("leasing")}>
+                Open Leasing mandate →
+              </button>
             )}
-          </>
+          </div>
         )}
         <div className="loi-grid">
           {[...game.lois]
@@ -418,7 +422,14 @@ export function DealsPage() {
               <span className="neighbor-meta mono">{parcels[e.bbl]?.address} · exp {monthLabel(e.endM)}</span>
             </button>
           ))}
-          {expiring.length === 0 && <div className="hint">No near-term expirations.</div>}
+          {expiring.length === 0 && (
+            <div className="deal">
+              <div className="hint">No near-term expirations.</div>
+              <button className="btn" onClick={() => useStore.getState().setPage("leasing")}>
+                Review the rent roll →
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="page-section" style={{ marginTop: 18 }}>Debt watch · {maturities.length + (facilityWatch ? 1 : 0)}</div>
@@ -441,7 +452,14 @@ export function DealsPage() {
               <span className="neighbor-meta mono">{usd(m.bal)} · balloon {monthLabel(m.matM)}{m.sweep ? " · SWEEP" : ""}</span>
             </button>
           ))}
-          {maturities.length === 0 && !facilityWatch && <div className="hint">No balloons or breaches on the radar.</div>}
+          {maturities.length === 0 && !facilityWatch && (
+            <div className="deal">
+              <div className="hint">No balloons or breaches on the radar.</div>
+              <button className="btn" onClick={() => useStore.getState().setPage("debt")}>
+                Open Debt →
+              </button>
+            </div>
+          )}
         </div>
       </section>
       </div>

@@ -473,6 +473,11 @@ export function EconomyPage() {
               <div className="mkt-card-sub mono">
                 ${e.rentIdx[k].toFixed(0)}/sf · {e.capRate[k].toFixed(2)}% cap · {sfFmt(stockSf)} sf · pipeline {(pipe * 100).toFixed(1)}%
               </div>
+              {e.rentWhy?.[k] && (
+                <div className="mkt-card-sub" title={e.rentWhy[k]}>
+                  {e.rentWhy[k]}
+                </div>
+              )}
             </button>
           );
         })}

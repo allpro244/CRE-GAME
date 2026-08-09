@@ -2988,8 +2988,30 @@ export function tickEcon(s: GameState) {
     // channel: it binds 0.0% of months in every class over 6 seeds x 50 years,
     // and deleting it entirely reproduces every statistic in this file to the
     // digit. Left in place because a guard that never fires is a guard.
+    const beforeRent = e.rentIdx[k];
     e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.5, e.rentIdx[k] * (1 + drift + rrange(s, -vol, vol)));
     e.effRentIdx[k] = +(e.rentIdx[k] * (1 - 0.14 * e.concIdx[k])).toFixed(4);
+    // EXPLAIN THE MOVE. Defaults, tenant exits and district shifts already
+    // write a cause. Asking rent did not — the Economy page showed a chart
+    // with no sentence tying the month's move to vacancy, incomes or jobs.
+    const pctMove = beforeRent > 0 ? (e.rentIdx[k] - beforeRent) / beforeRent : 0;
+    if (Math.abs(pctMove) >= 0.006) {
+      const supply = e.supplyPress?.[k] ?? 0;
+      const candidates: { w: number; why: string }[] = [
+        { w: Math.abs(press), why: press < 0 ? "vacancy and soft absorption" : "tight space and unmet demand" },
+        { w: Math.abs(anchor), why: anchor < 0 ? "rents outrunning local incomes" : "rents cheap against local pay" },
+        { w: Math.abs(jobDrift) * 0.28, why: jobDrift < 0 ? "employment slipping in the tenant base" : "employment supporting tenant demand" },
+        { w: Math.abs(supply) * 0.5, why: supply > 0.004 ? "new deliveries pressing the market" : "a thin delivery calendar" },
+      ];
+      candidates.sort((a, b) => b.w - a.w);
+      const dir = pctMove < 0 ? "fell" : "rose";
+      const line = `${SECTOR_LABEL[k]} asking rents ${dir} this month — ${candidates[0].why}.`;
+      e.rentWhy = { ...(e.rentWhy ?? {}), [k]: line };
+      // Sparse news: material moves, or a coin that does not touch the RNG stream.
+      if (Math.abs(pctMove) >= 0.012 || (ownsClass(s, k) && newsChance(s, `rentwhy:${k}`, 0.22))) {
+        s.news.unshift({ q: s.month, kind: pctMove < 0 ? "warn" : "info", text: line });
+      }
+    }
   }
 
   // cap rates: class base, dragged by the loan index and the cycle, and gapped

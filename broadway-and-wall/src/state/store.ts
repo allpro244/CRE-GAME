@@ -191,7 +191,7 @@ interface AppState {
   buyOutLeases: (bbl: string) => void;
   holdLeasing: (bbl: string, on: boolean) => void;
   assemble: (bbls: string[]) => void;
-  groundLease: (bbl: string, years: number) => void;
+  groundLease: (bbl: string, years: number, review?: import("@/engine/types").GroundReview) => void;
   pullGroundOffer: (bbl: string) => void;
   delistSale: (bbl: string) => void;
   acceptOffer: (bbl: string, exchange?: boolean) => void;
@@ -851,10 +851,10 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  groundLease: (bbl, years) => {
+  groundLease: (bbl, years, review = "fixed") => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = offerGroundLease(game, parcels, bbl, years);
+    const r = offerGroundLease(game, parcels, bbl, years, review);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Offered.");

@@ -12,10 +12,12 @@ import { USE_WORD } from "@/engine/mix";
 import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses } from "@/engine/leasing";
 import { leasingOdds } from "@/engine/absorption";
 import {
-  groundLeaseQuote, mergeCost, siteDeeds, siteLotArea,
+  groundLeaseQuote, GROUND_REVIEW_LABEL, mergeCost, siteDeeds, siteLotArea,
   contiguousOwnedRoots, hasOwnedSiteNeighbor,
 } from "@/engine/actions";
+import type { GroundReview } from "@/engine/types";
 import { varianceQuote } from "@/engine/zoning";
+import { bareLandRec, leasedFeeValue } from "@/engine/value";
 import { usd, sf } from "@/ui/format";
 import { useLabel, Row } from "@/ui/panels/shared";
 
@@ -474,6 +476,7 @@ export function LandDesk({ bbl }: { bbl: string }) {
   const { assemble, groundLease, pullGroundOffer, applyVariance } = useStore.getState();
   const [picked, setPicked] = useState<string[]>([]);
   const [years, setYears] = useState(60);
+  const [review, setReview] = useState<GroundReview>("fixed");
   // Hooks before any return — assemble candidates are gated to a cheap
   // neighbour check so ordinary parcel clicks do not walk the land book.
   const { eligible, blocked } = useAssembleCandidates(game, parcels, adjacency, bbl);
@@ -484,18 +487,34 @@ export function LandDesk({ bbl }: { bbl: string }) {
   const gl = game.groundLeases?.[bbl];
   if (gl) {
     const yrsLeft = Math.max(0, (gl.endM - game.month) / 12);
+    const rev: GroundReview = gl.review ?? "fixed";
+    const bare = bareLandRec(parcels, game, bbl);
+    const fee = bare ? leasedFeeValue(gl, bare, game.econ, game.month, gl.sf ?? game.built?.[bbl]?.bldgArea ?? 0) : 0;
+    const job = (game.cityJobs ?? []).find((j) => j.bbl === bbl && j.groundLease);
+    const nextReview = rev === "fixed"
+      ? `${monthLabel(gl.lastStepM + gl.stepEveryM)} · +${gl.stepPct}%`
+      : rev === "cpi"
+        ? `${monthLabel(gl.lastStepM + gl.stepEveryM)} · CPI (2–4%)`
+        : `${monthLabel(gl.lastStepM + gl.stepEveryM)} · FMV, capped ${(gl.fmvCapPct ?? 3.5).toFixed(1)}%/yr`;
     return (
       <div className="deal">
-        <div className="deal-head">Ground-leased</div>
+        <div className="deal-head">Ground-leased · leased fee</div>
         <div className="grid">
           <Row k="Lessee" v={gl.tenant} />
           <Row k="Ground rent" v={`${usd(gl.rentYr)} / yr`} strong />
-          <Row k="Next review" v={`${monthLabel(gl.lastStepM + gl.stepEveryM)} · +${gl.stepPct}%`} />
+          <Row k="Review" v={`${GROUND_REVIEW_LABEL[rev]} · ${nextReview}`} />
+          <Row k="Leased-fee mark" v={usd(fee)} strong />
           <Row k="Reverts" v={`${monthLabel(gl.endM)} · ${yrsLeft.toFixed(0)} years to run`} />
+          {job && !gl.builtM && (
+            <Row k="Their frame" v={`${job.floors} fl of ${job.use} · opens ${monthLabel(job.deliverM)}`} />
+          )}
+          {gl.builtM !== undefined && (
+            <Row k="Standing on it" v={`${gl.floors ?? "?"} fl of ${gl.use ?? "—"} · opened ${monthLabel(gl.builtM)}`} />
+          )}
         </div>
         <div className="hint">
-          No tenants, no roof, no vacancy — and no building on it until the term is up. Whatever they put up
-          reverts to you with the land.
+          No tenants of yours, no roof, no vacancy — the coupon is the whole of the income. The leased fee
+          can be sold on the sale desk; the dirt and the bones come back to you when the term ends.
         </div>
       </div>
     );
@@ -599,8 +618,9 @@ export function LandDesk({ bbl }: { bbl: string }) {
   // today's land value because the offer is an intention, not a price lock —
   // the panel shows what a lessee arriving THIS month would actually sign.
   const offer = h.groundOffer;
-  const oq = offer && vacant ? groundLeaseQuote(game, parcels, bbl, offer.years) : null;
-  const q = vacant && !offer ? groundLeaseQuote(game, parcels, bbl, years) : null;
+  const oq = offer && vacant
+    ? groundLeaseQuote(game, parcels, bbl, offer.years, offer.review ?? "fixed") : null;
+  const q = vacant && !offer ? groundLeaseQuote(game, parcels, bbl, years, review) : null;
   const farMax = Math.max(rec.farMaxComm, rec.farMaxRes);
   const livePicked = picked.filter((n) => eligible.some((x) => x.bbl === n));
   const pickedDeeds = livePicked.reduce((a, n) => a + siteDeeds(game, n).length, 0);
@@ -700,12 +720,15 @@ export function LandDesk({ bbl }: { bbl: string }) {
           <div className="page-section" style={{ marginTop: 10 }}>Offered for ground lease</div>
           <div className="grid">
             <Row k="On the book since" v={`${monthLabel(offer.sinceM)}${game.month - offer.sinceM > 0 ? ` · ${game.month - offer.sinceM} month${game.month - offer.sinceM === 1 ? "" : "s"} waiting` : ""}`} />
-            <Row k="Terms as of today" v={oq ? `${usd(oq.rentYr)} / yr · ${offer.years} years · +${oq.stepPct}% every ten` : "—"} strong />
+            <Row k="Structure" v={GROUND_REVIEW_LABEL[offer.review ?? "fixed"]} />
+            <Row k="Terms as of today" v={oq
+              ? `${usd(oq.rentYr)} / yr · ${offer.years} years · ${oq.reviewNote}`
+              : "—"} strong />
           </div>
           <div className="hint">
-            Ground lessees are scarce — nobody plans a hospital or a hotel around your corner on your schedule.
-            One turns up when the corner's demand and the building climate say so: months on prime dirt in a
-            building year, years out on the fringe. The deal signs at the terms quoted the month they arrive.
+            Ground lessees are scarce — and an FMV reset is scarcer still, because their lender has to underwrite
+            a coupon that can jump. One turns up when demand, the build climate and the structure say so.
+            The deal signs at the terms quoted the month they arrive; they break ground after that.
           </div>
           <button className="btn" onClick={() => pullGroundOffer(bbl)}>Pull the offer</button>
         </>
@@ -713,6 +736,13 @@ export function LandDesk({ bbl }: { bbl: string }) {
       {q && (
         <>
           <div className="page-section" style={{ marginTop: 10 }}>Or ground-lease it</div>
+          <div className="btn-row" style={{ marginBottom: 8 }}>
+            {(["fixed", "cpi", "fmv"] as GroundReview[]).map((r) => (
+              <button key={r} className={"btn" + (review === r ? " btn-on" : "")} onClick={() => setReview(r)}>
+                {GROUND_REVIEW_LABEL[r]}
+              </button>
+            ))}
+          </div>
           <div className="slider">
             <div className="slider-head">
               <span className="slider-label">Term</span>
@@ -724,15 +754,17 @@ export function LandDesk({ bbl }: { bbl: string }) {
           </div>
           <div className="grid">
             <Row k="Ground rent" v={`${usd(q.rentYr)} / yr · ${q.capPct}% of land value`} strong />
-            <Row k="Reviews" v={`+${q.stepPct}% every ten years`} />
-            <Row k="Land back" v={monthLabel(game.month + years * 12)} />
+            <Row k="Reviews" v={q.reviewNote} />
+            <Row k="Land + bones back" v={monthLabel(game.month + years * 12)} />
           </div>
           <div className="hint">
-            No tenants and no operating risk, and you do not build on this corner again for {years} years — including
-            the one cycle where you would have wanted to. Offering is a listing, not a closing: the lessee turns up
-            when one wants this corner, and the dirt costs carry while you wait.
+            No operating risk — and you do not build on this corner for {years} years. FMV opens cheaper and
+            places slower; fixed opens dearer and places faster. Offering is a listing: the lessee turns up,
+            then builds, and the dirt costs carry while you wait.
           </div>
-          <button className="btn" onClick={() => groundLease(bbl, years)}>Offer a {years}-year ground lease</button>
+          <button className="btn" onClick={() => groundLease(bbl, years, review)}>
+            Offer a {years}-year {GROUND_REVIEW_LABEL[review].toLowerCase()} ground lease
+          </button>
         </>
       )}
     </div>

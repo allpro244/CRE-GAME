@@ -5,7 +5,7 @@ import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, START_YEAR } from "@/engine/types";
 import type { Approach, BuiltClass, Contract, DevUse } from "@/engine/types";
-import { assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, holdingNOIYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, recoveryOf, landValue, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, remainingAbatement } from "@/engine/value";
+import { assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, holdingNOIYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, recoveryOf, landValue, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, remainingAbatement, bareLandRec, leasedFeeValue } from "@/engine/value";
 import { planDevelopment, constructionQuotes, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
 import { buyQuote, assemblagePressure, saleTaxQuote, quietFeeRate, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
@@ -51,10 +51,17 @@ function ParcelPanelInner({
   const listing = game.listings.find((l) => l.bbl === selectedBBL);
   const appr = game.approaches[selectedBBL];
   const cond = holding?.condition ?? initialCondition(rec);
-  const value = holding ? holdingValue(rec, game.econ, holding, game.month) : assetValue(rec, game.econ, cond);
+  const glLive = holding ? game.groundLeases?.[selectedBBL] : undefined;
+  const value = holding
+    ? (holding.groundLeased && glLive
+      ? leasedFeeValue(glLive, bareLandRec(parcels, game, selectedBBL) ?? rec, game.econ, game.month,
+        glLive.sf ?? game.built?.[selectedBBL]?.bldgArea ?? 0)
+      : holdingValue(rec, game.econ, holding, game.month))
+    : assetValue(rec, game.econ, cond);
   const builtFar = rec.lotArea > 0 ? rec.bldgArea / rec.lotArea : 0;
   const farMax = Math.max(rec.farMaxComm, rec.farMaxRes);
-  const isBuilt = rec.class !== "land" && rec.bldgArea > 0;
+  // A ground lessee's building stands on your deed — it is not yours to let.
+  const isBuilt = rec.class !== "land" && rec.bldgArea > 0 && !holding?.groundLeased;
   const renovating = holding?.renovatingUntilM !== undefined && game.month < (holding.renovatingUntilM ?? 0);
   const commercial = isCommercial(rec);
   const leasedSf = holding && commercial ? holding.tenants.reduce((s2, t) => s2 + t.sf, 0) : 0;
@@ -64,9 +71,12 @@ function ParcelPanelInner({
   const on = (t: PropTab) => tab === undefined || tab === t;
   // Land desk: property-page Build tab always; docked card only when the lot
   // can assemble / is land / is already folded — not on every leased tower.
+  // Ground-leased lots stay on this desk even after the lessee's frame rises.
   const showLandDesk = !!holding && on("build") && (
     tab === "build"
     || rec.class === "land"
+    || !!holding.groundLeased
+    || !!holding.groundOffer
     || !!game.merged?.[selectedBBL]
     || siteDeeds(game, selectedBBL).length > 1
     || !!(adjacency && hasOwnedSiteNeighbor(game, adjacency, selectedBBL))
@@ -1814,8 +1824,14 @@ export function ListSection({ bbl, appraisal, onDone }: { bbl: string; appraisal
   const [ask, setAsk] = useState(Math.round(appraisal * 1.02));
   const quiet = quietFeeRate(game);
   const over = appraisal > 0 ? ask / appraisal - 1 : 0;
+  const leasedFee = !!game.groundLeases?.[bbl];
   return (
     <div style={{ padding: "8px 2px" }}>
+      {leasedFee && (
+        <div className="hint" style={{ marginBottom: 8 }}>
+          This is the leased fee — the coupon and the reversion, not free-and-clear dirt. Buyers underwrite it as a bond.
+        </div>
+      )}
       <Slider
         label="Your ask"
         value={ask}

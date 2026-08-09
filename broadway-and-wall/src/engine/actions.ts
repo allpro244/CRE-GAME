@@ -2,19 +2,19 @@
 // approach owners with assemblage pressure, sell, renovate. Pure — each
 // returns a new state or an error string, never mutates the input.
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
-import type { Bid, Econ, GameState, Holding, RivalStyle } from "./types";
+import type { Bid, BuiltClass, Econ, GameState, GroundReview, Holding, RivalStyle } from "./types";
 import { logBooks, monthLabel, SVC_START, cloneState} from "./types";
 import { recentLowballs } from "./acquire";
 import { firmShort, describeFirm } from "./firm";
-import { rng, rrange } from "./market";
-import { assetValue, condGrade, initialCondition, initialCondIdx, holdingValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall } from "./value";
+import { rng, rrange, BUILD_MONTHS } from "./market";
+import { assetValue, condGrade, initialCondition, initialCondIdx, holdingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, bareLandRec } from "./value";
 import { locAvailable } from "./credit";
 import { marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult } from "./owners";
 import { originate, quote, productById, prepayPenalty, stabViewFor } from "./debt";
-import { takeoverDevelopment, buildClimate } from "./dev";
+import { takeoverDevelopment, buildClimate, farMaxFor } from "./dev";
 import { demandNow } from "./demand";
 import { recordComp } from "./comps";
 
@@ -610,40 +610,57 @@ export function assembleLots(
 /**
  * GRANT A GROUND LEASE ON A LOT YOU ARE NOT GOING TO BUILD ON.
  *
- * Land in this game cost 1.2% a year to hold and did nothing else, which makes
- * a land bank a parking meter rather than a position. A ground lease is the
- * real answer: somebody else puts a building on your dirt, you take a coupon
- * with fixed reviews and no operating risk whatsoever, and you do not get the
- * site back for a very long time. The trade is income now against every cycle
- * you will sit through unable to build on it.
+ * Land costs 1.2% a year to hold vacant. A ground lease is the real answer:
+ * somebody else puts a building on your dirt, you take a coupon with a chosen
+ * review structure and no operating risk, and you do not get the site back
+ * for a very long time. The trade is income now against every cycle you will
+ * sit through unable to build on it — and against the improvement reverting
+ * to you at the end, aged.
  */
-export function groundLeaseQuote(s: GameState, parcels: ParcelTable, bbl: string, years: number) {
-  const rec = resolveRec(parcels, s, bbl);
-  if (!rec || rec.class !== "land" || !rec.lotArea) return null;
-  const land = assetValue(rec, s.econ, "standard");
-  // A ground lessee prices against the risk-free plus a spread, and pays less
-  // for a longer term because a longer term is worth more to them.
-  const capPct = Math.max(3.4, s.econ.indexRate * 0.62 + 2.5) * (years >= 75 ? 0.9 : years >= 50 ? 0.96 : 1.04);
+export const GROUND_REVIEW_LABEL: Record<GroundReview, string> = {
+  fixed: "Fixed bumps",
+  cpi: "CPI indexed",
+  fmv: "FMV reappraisal",
+};
+
+export function groundLeaseQuote(
+  s: GameState, parcels: ParcelTable, bbl: string, years: number, review: GroundReview = "fixed",
+) {
+  const raw = parcels[bbl];
+  if (!raw || raw.class !== "land" || (raw.bldgArea ?? 0) > 0) return null;
+  if ((s.built?.[bbl]?.bldgArea ?? 0) > 0) return null;
+  const bare = bareLandRec(parcels, s, bbl);
+  if (!bare || !bare.lotArea) return null;
+  const land = landValue(bare, s.econ);
+  // Base land yield: risk-free-ish plus a property spread. Longer terms pay
+  // less starting rent (more optionality for the lessee). Review structure
+  // moves the opening coupon the way the market does: FMV is cheapest to the
+  // lessee up front (and hardest to place), fixed is dearest.
+  const termMult = years >= 75 ? 0.9 : years >= 50 ? 0.96 : 1.04;
+  const reviewMult = review === "fmv" ? 0.88 : review === "cpi" ? 0.95 : 1.0;
+  const takeMult = review === "fmv" ? 0.55 : review === "cpi" ? 0.85 : 1.0;
+  const capPct = Math.max(3.2, s.econ.indexRate * 0.62 + 2.5) * termMult * reviewMult;
   const rentYr = Math.round(land * (capPct / 100));
+  const stepPct = review === "fixed" ? (years >= 75 ? 12 : 10) : 0;
+  const stepEveryM = review === "fixed" ? 120 : review === "cpi" ? 12 : 240;
   return {
-    land, rentYr, capPct: +capPct.toFixed(2), years,
-    stepPct: +(years >= 75 ? 12 : 10).toFixed(0),
-    stepEveryM: 120,
+    land, rentYr, capPct: +capPct.toFixed(2), years, review,
+    stepPct, stepEveryM, takeMult, fmvCapPct: 3.5,
+    reviewNote: review === "fixed"
+      ? `+${stepPct}% every ten years — the leasehold lender's favourite`
+      : review === "cpi"
+        ? "Annual CPI (2% floor, 4% cap) — you keep up with inflation, not with the corner"
+        : "FMV reset every 20 years, capped at 3.5%/yr compounded from day one — you share the land's appreciation",
   };
 }
 
 /**
- * OFFERING IS A LISTING, NOT A CLOSING. This used to sign a lessee the moment
- * the button was pressed, which is the one thing a ground lease never does:
- * nobody is standing on the sidewalk waiting to take a 60-year absolutely-net
- * position on your particular corner. The offer now sits on the holding as a
- * flag, and the counterparty arrives — or does not — through tickGroundLeases,
- * at odds set by the corner's live demand and the same development climate the
- * city's own starts run on. The lot keeps costing its 1.2% carry while it
- * waits, which is the price of the option.
+ * OFFERING IS A LISTING, NOT A CLOSING. The offer sits on the holding; the
+ * counterparty arrives through tickGroundLeases at odds set by demand, the
+ * build climate, and how hard the review structure is to underwrite.
  */
 export function offerGroundLease(
-  s: GameState, parcels: ParcelTable, bbl: string, years: number,
+  s: GameState, parcels: ParcelTable, bbl: string, years: number, review: GroundReview = "fixed",
 ): { s: GameState; err?: string; msg?: string } {
   if (!s.holdings[bbl]) return { s, err: "You don't own that." };
   if (s.groundLeases?.[bbl]) return { s, err: "It is already ground-leased." };
@@ -651,11 +668,14 @@ export function offerGroundLease(
   if (s.holdings[bbl].sale) return { s, err: "It's on the market — pull the listing before you encumber it." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
   if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage — lease the whole site or none of it." };
-  const q = groundLeaseQuote(s, parcels, bbl, years);
+  const q = groundLeaseQuote(s, parcels, bbl, years, review);
   if (!q || q.rentYr <= 0) return { s, err: "Nobody will ground-lease that." };
   const next = clone(s);
-  next.holdings[bbl].groundOffer = { years, sinceM: next.month };
-  return { s: next, msg: `Offered for a ${years}-year ground lease. Now you wait for somebody who wants this corner that badly.` };
+  next.holdings[bbl].groundOffer = { years, sinceM: next.month, review };
+  return {
+    s: next,
+    msg: `Offered a ${years}-year ground lease (${GROUND_REVIEW_LABEL[review]}). Now you wait for somebody who wants this corner that badly.`,
+  };
 }
 
 /** Withdraw the offer. Nothing has signed, so nothing unwinds. */
@@ -666,82 +686,155 @@ export function pullGroundOffer(s: GameState, bbl: string): { s: GameState; err?
   return { s: next, msg: "Offer withdrawn. The dirt goes back to plain carry." };
 }
 
-const GROUND_TENANTS = [
-  "a hotel operator", "a grocery chain", "a self-storage operator", "a hospital system",
-  "a car dealership group", "a data-centre developer", "a church", "a university",
+const GROUND_TENANTS: { name: string; use: BuiltClass; lead: "fast" | "mid" | "slow" }[] = [
+  { name: "a hotel operator", use: "multifamily", lead: "mid" },
+  { name: "a grocery chain", use: "retail", lead: "fast" },
+  { name: "a self-storage operator", use: "industrial", lead: "fast" },
+  { name: "a hospital system", use: "office", lead: "slow" },
+  { name: "a car dealership group", use: "retail", lead: "fast" },
+  { name: "a data-centre developer", use: "industrial", lead: "mid" },
+  { name: "a church", use: "office", lead: "mid" },
+  { name: "a university", use: "office", lead: "slow" },
 ];
-function groundTenant(s: GameState): string {
-  return GROUND_TENANTS[Math.floor(rng(s, "sales") * GROUND_TENANTS.length)];
+function pickGroundTenant(s: GameState) {
+  return GROUND_TENANTS[Math.floor(rng(s, "sales") * GROUND_TENANTS.length)]!;
+}
+
+function lesseeProgram(s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass, lead: "fast" | "mid" | "slow") {
+  const bare = bareLandRec(parcels, s, bbl);
+  if (!bare || !bare.lotArea) return null;
+  const far = farMaxFor(bare);
+  const cov = use === "industrial" ? 0.72 : use === "retail" ? 0.55 : 0.62;
+  const floors = Math.max(1, Math.min(use === "retail" ? 2 : use === "industrial" ? 4 : 18,
+    Math.ceil(far / Math.max(0.08, cov))));
+  const sf = Math.max(4000, Math.round((bare.lotArea * cov * floors) / 100) * 100);
+  const [bLo, bHi] = BUILD_MONTHS[use];
+  const stretch = lead === "slow" ? 1.2 : lead === "mid" ? 1.05 : 1;
+  const months = Math.round((bLo + rng(s, "dev") * (bHi - bLo)) * stretch);
+  return { sf, floors, months, use };
+}
+
+function startLesseeJob(s: GameState, bbl: string, use: BuiltClass, sf: number, floors: number, months: number) {
+  const deliverM = s.month + months;
+  (s.cityJobs ??= []).push({
+    bbl, use, sf, floors, startM: s.month, deliverM, groundLease: true,
+    mix: { [use]: 1 } as never,
+  });
+  if (!s.econ.cohorts) s.econ.cohorts = { office: [], retail: [], multifamily: [], industrial: [] };
+  s.econ.cohorts[use].push({ m: deliverM, sf, bbl });
 }
 
 /**
- * The offer book, then the rent: does a ground lessee turn up this month, and
- * then the coupons and ten-year reviews on everything already signed. Called
- * once a month.
+ * Offer book, then construction, then coupons and reviews. Called once a month.
  */
 export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
-  // WHO WANTS YOUR DIRT THIS MONTH. The monthly odds ride on two things a
-  // ground lessee actually cares about: how good the corner has become
-  // (demandNow, so a block your own tower lifted finds its lessee sooner) and
-  // whether anybody in this town is starting buildings at all — the same
-  // value-to-replacement brake that throttles tickCityGrowth, because a hotel
-  // operator who will not build on their own account will not build on yours.
-  // Measured on a generated city after thirty simulated years: median-demand
-  // dirt waits about 18 months, the p90 corner about 8, and the dead fringe
-  // (demand ~2) seven-plus years — which is what fringe dirt does.
   for (const h of Object.values(s.holdings)) {
     const offer = h.groundOffer;
     if (!offer) continue;
-    const rec = resolveRec(parcels, s, h.bbl);
-    // The offer dies quietly when the lot stops being offerable — sold-side
-    // listing, groundbreak, assemblage, or something now standing on it.
+    const rec = parcels[h.bbl];
+    // The offer dies quietly when the lot stops being offerable.
     if (!rec || rec.class !== "land" || rec.bldgArea > 0 || s.developments[h.bbl]
-      || s.merged?.[h.bbl] || h.sale || s.groundLeases?.[h.bbl]) { delete h.groundOffer; continue; }
+      || s.merged?.[h.bbl] || h.sale || s.groundLeases?.[h.bbl]
+      || (s.built?.[h.bbl]?.bldgArea ?? 0) > 0) { delete h.groundOffer; continue; }
+    const review: GroundReview = offer.review ?? "fixed";
+    const q = groundLeaseQuote(s, parcels, h.bbl, offer.years, review);
+    if (!q) { delete h.groundOffer; continue; }
     const climate = buildClimate(s);
-    const p = Math.min(0.14, 0.006 + 0.075 * (demandNow(s, rec) / 100) * climate);
+    const p = Math.min(0.14, (0.006 + 0.075 * (demandNow(s, rec) / 100) * climate) * q.takeMult);
     if (rng(s, "sales") >= p) continue;
-    // Somebody wants it. The deal signs at the terms quoted TODAY — the offer
-    // was an intention, not a price lock, and land that repriced under it
-    // reprices the coupon too.
-    const q = groundLeaseQuote(s, parcels, h.bbl, offer.years);
-    if (!q || q.rentYr <= 0) continue;
+    const who = pickGroundTenant(s);
+    const prog = lesseeProgram(s, parcels, h.bbl, who.use, who.lead);
+    if (!prog) continue;
     delete h.groundOffer;
     h.groundLeased = true;
     if (!s.groundLeases) s.groundLeases = {};
     s.groundLeases[h.bbl] = {
       bbl: h.bbl, startM: s.month, endM: s.month + offer.years * 12,
-      rentYr: q.rentYr, stepPct: q.stepPct, stepEveryM: q.stepEveryM, lastStepM: s.month,
-      tenant: groundTenant(s),
+      rentYr: q.rentYr, openRentYr: q.rentYr,
+      stepPct: q.stepPct, stepEveryM: q.stepEveryM, lastStepM: s.month,
+      tenant: who.name, review, fmvCapPct: q.fmvCapPct,
+      use: prog.use, sf: prog.sf, floors: prog.floors,
     };
+    startLesseeJob(s, h.bbl, prog.use, prog.sf, prog.floors, prog.months);
     const waited = Math.max(1, s.month - offer.sinceM);
+    const revWord = review === "fixed" ? `+${q.stepPct}% every ten`
+      : review === "cpi" ? "CPI each year (2–4%)"
+      : "FMV every twenty, capped";
     s.news.unshift({
       q: s.month, kind: "deal",
-      text: `A ground lessee at last: ${s.groundLeases[h.bbl].tenant} signs at ${rec.address} — `
-        + `$${(q.rentYr / 1e6).toFixed(2)}M a year for ${offer.years} years, ${q.stepPct}% every ten, `
+      text: `A ground lessee at last: ${who.name} signs at ${rec.address} — `
+        + `$${(q.rentYr / 1e6).toFixed(2)}M a year for ${offer.years} years (${revWord}), `
         + `after ${waited >= 24 ? `${Math.round(waited / 12)} years` : `${waited} month${waited === 1 ? "" : "s"}`} on the offer book. `
-        + `You do not touch the dirt again until ${monthLabel(s.month + offer.years * 12)}.`,
+        + `They break ground on ${prog.floors} fl of ${prog.use} (${Math.round(prog.sf).toLocaleString()} sf); `
+        + `you do not touch the dirt again until ${monthLabel(s.month + offer.years * 12)}.`,
     });
   }
+
   for (const [bbl, gl] of Object.entries(s.groundLeases ?? {})) {
     if (!s.holdings[bbl]) { delete s.groundLeases![bbl]; continue; }
+    if (gl.openRentYr === undefined) gl.openRentYr = gl.rentYr;
+    const review: GroundReview = gl.review ?? "fixed";
+
     if (s.month >= gl.endM) {
-      const rec = resolveRec(parcels, s, bbl);
+      const rec = parcels[bbl];
+      const h = s.holdings[bbl]!;
       delete s.groundLeases![bbl];
-      delete s.holdings[bbl].groundLeased;
-      s.news.unshift({
-        q: s.month, kind: "event",
-        text: `The ground lease at ${rec?.address ?? bbl} has run out. The land is yours again, and whatever they built on it is yours too.`,
-      });
+      delete h.groundLeased;
+      // Cancel any unfinished lessee frame — the term ran out on a hole.
+      s.cityJobs = (s.cityJobs ?? []).filter((j) => !(j.bbl === bbl && j.groundLease));
+      const standing = s.built?.[bbl];
+      if (standing && standing.bldgArea > 0) {
+        // REVERSION WITH IMPROVEMENTS. The bones are yours, vacant, and the
+        // lease-up mark treats them as a delivery so an empty shell is not
+        // marked as a failed building.
+        const asRec = { ...(parcels[bbl]!), ...standing, yearBuilt: standing.yearBuilt };
+        h.condIdx = initialCondIdx(asRec, s.month);
+        h.condition = condGrade(h.condIdx);
+        h.deliveredM = s.month;
+        h.tenants = [];
+        h.occ = 0;
+        s.news.unshift({
+          q: s.month, kind: "event",
+          text: `The ground lease at ${rec?.address ?? bbl} has run out. `
+            + `${standing.floors} floors of ${standing.class} (${Math.round(standing.bldgArea).toLocaleString()} sf) revert with the land — vacant, and yours to let.`,
+        });
+      } else {
+        if (s.built?.[bbl]) delete s.built[bbl];
+        s.news.unshift({
+          q: s.month, kind: "event",
+          text: `The ground lease at ${rec?.address ?? bbl} has run out. The land is yours again — they never finished a building on it.`,
+        });
+      }
       continue;
     }
+
     if (s.month - gl.lastStepM >= gl.stepEveryM) {
-      gl.rentYr = Math.round(gl.rentYr * (1 + gl.stepPct / 100));
+      const prev = gl.rentYr;
+      if (review === "cpi") {
+        const infl = Math.max(0.02, Math.min(0.04, s.econ.inflExp ?? s.econ.nat?.inflExp ?? 0.025));
+        gl.rentYr = Math.round(gl.rentYr * (1 + infl));
+      } else if (review === "fmv") {
+        const bare = bareLandRec(parcels, s, bbl);
+        const land = bare ? landValue(bare, s.econ) : 0;
+        const yld = Math.max(3.2, s.econ.indexRate * 0.62 + 2.5) * 0.88;
+        const uncapped = Math.round(land * (yld / 100));
+        const yrs = (s.month - gl.startM) / 12;
+        const cap = Math.round((gl.openRentYr ?? gl.rentYr) * Math.pow(1 + (gl.fmvCapPct ?? 3.5) / 100, yrs));
+        // Ratchet: FMV can lift the coupon, never cut a performing lease.
+        gl.rentYr = Math.max(gl.rentYr, Math.min(uncapped, cap));
+      } else {
+        gl.rentYr = Math.round(gl.rentYr * (1 + gl.stepPct / 100));
+      }
       gl.lastStepM = s.month;
-      const rec = resolveRec(parcels, s, bbl);
-      s.news.unshift({
-        q: s.month, kind: "info",
-        text: `Rent review at ${rec?.address ?? bbl}: the ground rent steps to $${(gl.rentYr / 1e6).toFixed(2)}M.`,
-      });
+      if (gl.rentYr !== prev) {
+        const rec = parcels[bbl];
+        const word = review === "cpi" ? "CPI review" : review === "fmv" ? "FMV reappraisal" : "Rent review";
+        s.news.unshift({
+          q: s.month, kind: "info",
+          text: `${word} at ${rec?.address ?? bbl}: the ground rent moves to $${(gl.rentYr / 1e6).toFixed(2)}M`
+            + (gl.rentYr > prev ? ` (+${(((gl.rentYr / prev) - 1) * 100).toFixed(1)}%)` : "") + `.`,
+        });
+      }
     }
     s.cash += gl.rentYr / 12;
     logBooks(s, "noi", gl.rentYr / 12);
@@ -1440,9 +1533,8 @@ export function listForSale(
   // A merged deed has no land left in it — selling it alone would hand over a
   // piece of paper and keep the dirt. The site sells as a site.
   if (s.merged?.[bbl]) return { s, err: "That deed is part of an assemblage. Sell the site, not the piece." };
-  // The leased fee is a bond with a deed attached and this desk does not trade
-  // it. Granting the lease was the decision; living with it is the rest of it.
-  if (s.groundLeases?.[bbl]) return { s, err: "It is ground-leased. You do not get that corner back until the term runs out." };
+  // The leased fee trades — it is a bond with a deed attached. What you cannot
+  // do is pretend the lot is free and clear; the ask is against leasedFeeValue.
   const h = s.holdings[bbl];
   if (!h) return { s, err: "You don't own that parcel." };
   if (h.renovatingUntilM !== undefined && s.month < h.renovatingUntilM) {

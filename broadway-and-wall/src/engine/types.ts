@@ -379,7 +379,7 @@ export interface Holding {
   // tickGroundLeases, at odds set by the corner's live demand and the same
   // development climate that governs the city's own starts. Optional, with
   // fallbacks everywhere it is read, so old saves load untouched.
-  groundOffer?: { years: number; sinceM: number };
+  groundOffer?: { years: number; sinceM: number; review?: GroundReview };
   // Designated. No demolition, no bigger building, a rent premium forever.
   landmarked?: boolean;
   // PRE-BUILT SPACE. Suites fitted out speculatively, before anyone has signed
@@ -695,24 +695,45 @@ export interface PortfolioListing {
 import type { Comp } from "./comps";
 
 /**
+ * HOW THE COUPON KEEPS UP WITH THE WORLD.
+ *
+ * A fixed schedule is predictable for the leasehold lender; CPI indexing keeps
+ * the landlord whole in inflation; an FMV reappraisal lets the landlord share
+ * land appreciation — and is the structure lessees and their lenders fight,
+ * which is why it opens at a lower coupon and takes longer to place.
+ */
+export type GroundReview = "fixed" | "cpi" | "fmv";
+
+/**
  * A GROUND LEASE YOU HAVE GRANTED.
  *
  * Somebody else's building on your land, for a very long time. You take a
- * coupon on the land value with fixed step-ups and no operating risk at all —
- * no tenants, no roof, no vacancy — and in exchange the site is not yours to
- * build on or to sell unencumbered until the term runs out. It is the one way
- * to make a land bank earn its carry, and the one way to be certain you will
- * miss the cycle that would have made it worth building on.
+ * coupon with reviews and no operating risk — and the site is not yours to
+ * build on until the term runs out. The leased fee CAN trade (it is a bond
+ * with a deed attached). The lessee actually builds; the improvement sits in
+ * `built` until reversion hands you the bones with the dirt.
  */
 export interface GroundLease {
   bbl: string;
   startM: number;
   endM: number;
   rentYr: number;       // today's ground rent, before the next step
-  stepPct: number;      // the review, every `stepEveryM` months
+  /** Opening rent — FMV cumulative caps compound from this number. */
+  openRentYr?: number;
+  stepPct: number;      // fixed bump %; unused for cpi/fmv annual path
   stepEveryM: number;
   lastStepM: number;
   tenant: string;
+  /** Review structure. Absent on old saves → treated as fixed. */
+  review?: GroundReview;
+  /** Annualised ceiling on FMV resets from openRentYr (e.g. 3.5). */
+  fmvCapPct?: number;
+  /** What they are putting up / put up. */
+  use?: BuiltClass;
+  sf?: number;
+  floors?: number;
+  /** Month the improvement opened. Absent while the frame is still rising. */
+  builtM?: number;
 }
 
 /**
@@ -1887,6 +1908,12 @@ export interface GameState {
      * has moved. Absent on jobs from older saves, which had no ground floor.
      */
     mix?: UseMix;
+    /**
+     * A ground lessee's frame on YOUR deed. Ordinary city jobs refuse to
+     * deliver onto a holding; this one must, because the fee is yours and the
+     * leasehold improvement is theirs until reversion.
+     */
+    groundLease?: boolean;
     firmId?: string;      // whose job it is; absent means the anonymous city
     cost?: number;        // the budget, for a firm's job
     spent?: number;       // work in place to date

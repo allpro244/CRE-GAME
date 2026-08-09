@@ -2012,7 +2012,58 @@ export function leaseUpMarkAt(
   return stab - fill - forgone - risk;
 }
 
+/**
+ * The lot under a ground lease, stripped of the lessee's improvement so land
+ * value is the dirt — not an empty building's failed NOI.
+ */
+export function bareLandRec(
+  parcels: Record<string, ParcelRecord>, s: GameState, bbl: string,
+): ParcelRecord | null {
+  const base = parcels[bbl];
+  if (!base) return null;
+  const r = resolveRec(parcels, s, bbl);
+  if (!r) return null;
+  return { ...r, class: "land", bldgArea: 0, floors: 0, unitsRes: 0, mix: undefined };
+}
+
+/**
+ * THE LEASED FEE — a bond with a deed attached.
+ *
+ * Cap the coupon at a ground-lease yield (tighter than a building cap), then
+ * add the discounted reversion of the dirt (and, near term, a haircut on the
+ * improvements that come back with it). This is what trades when you sell a
+ * ground-leased lot, and what net worth must read while you hold one — not
+ * landValue (which ignores the coupon) and not an empty-building appraisal
+ * (which pretends the lessee's tower is yours to let).
+ */
+export function leasedFeeValue(
+  gl: import("./types").GroundLease,
+  bare: ParcelRecord,
+  econ: Econ,
+  month: number,
+  improvementSf = 0,
+): number {
+  const yld = Math.max(3.2, econ.indexRate * 0.55 + 2.1);
+  const yearsLeft = Math.max(0.25, (gl.endM - month) / 12);
+  const disc = Math.pow(1 + yld / 100, yearsLeft);
+  const annuity = 1 - 1 / disc;
+  const income = (gl.rentYr / (yld / 100)) * annuity;
+  const land = landValue(bare, econ);
+  // Near reversion the bones start to matter; far out they are a rounding error.
+  const bldgShare = improvementSf > 0 && yearsLeft < 30
+    ? Math.max(0, (30 - yearsLeft) / 30) * 0.35 * land
+    : 0;
+  const reversion = (land + bldgShare) / disc;
+  return Math.max(Math.round(land * 0.55), Math.round(income + reversion));
+}
+
 export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: number): number {
+  // Ground-leased fee: callers with the lease record should use leasedFeeValue.
+  // Without it, never appraise the lessee's building as if it were yours.
+  if (h.groundLeased) {
+    const bare = { ...rec, class: "land" as const, bldgArea: 0, floors: 0, unitsRes: 0, mix: undefined };
+    return landValue(bare, econ);
+  }
   if (rec.class === "land" || !rec.bldgArea) return landValue(rec, econ);
   const quality = month === undefined ? 0 : rollQualitySpread(rec, h, month, econ);
   const capNoRoll = clamp(capRateFor(rec, econ, h.condition), 2.8, 13) / 100;
@@ -2117,7 +2168,14 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
   for (const h of Object.values(s.holdings)) {
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
-    const v = holdingValue(rec, s.econ, h, s.month);
+    const gl = s.groundLeases?.[h.bbl];
+    let v: number;
+    if (h.groundLeased && gl) {
+      const bare = bareLandRec(parcels, s, h.bbl) ?? { ...rec, class: "land" as const, bldgArea: 0, floors: 0 };
+      v = leasedFeeValue(gl, bare, s.econ, s.month, gl.sf ?? s.built?.[h.bbl]?.bldgArea ?? 0);
+    } else {
+      v = holdingValue(rec, s.econ, h, s.month);
+    }
     gav += v;
     nw += v - (h.loan?.balance ?? 0);
   }

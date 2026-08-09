@@ -2658,7 +2658,10 @@ export function tickCityGrowth(
     // over fifty years and delivered eight. Test the square footage, not the
     // presence of a key.
     const standing = s.built[j.bbl];
-    if (!rec || s.holdings[j.bbl] || (standing && standing.bldgArea > 0)) continue;
+    // A ground lessee builds on YOUR deed — the holding stays; the improvement
+    // is theirs until reversion. Ordinary city jobs still refuse to deliver
+    // onto a holding (that would gift the player a free building).
+    if (!rec || (s.holdings[j.bbl] && !j.groundLease) || (standing && standing.bldgArea > 0)) continue;
     // THE CITY'S BUILDINGS GET THEIR GROUND FLOOR TOO. This is where the
     // volume is — the street starts 250-odd jobs a century against the
     // player's handful — so a shops-at-grade rule the city did not follow
@@ -2670,8 +2673,23 @@ export function tickCityGrowth(
       yearBuilt: START_YEAR + Math.floor(s.month / 12),
     };
     s.cityBuilt.push(j.bbl);
-    // If it had a name on it, the name now owns a building.
-    if (j.firmId) jobDelivered(s, parcels, j.bbl, j.firmId, j.cost ?? 0);
+    if (j.groundLease) {
+      const gl = s.groundLeases?.[j.bbl];
+      if (gl) {
+        gl.builtM = s.month;
+        gl.sf = j.sf;
+        gl.floors = j.floors;
+        gl.use = dominantOf(cmix);
+      }
+      s.news.unshift({
+        q: s.month, kind: "info",
+        text: `Your ground lessee topped out at ${rec.address}: ${j.floors} fl of ${dominantOf(cmix)} `
+          + `(${Math.round(j.sf).toLocaleString()} sf). The coupon does not change — the bones revert with the land.`,
+      });
+    } else if (j.firmId) {
+      // If it had a name on it, the name now owns a building.
+      jobDelivered(s, parcels, j.bbl, j.firmId, j.cost ?? 0);
+    }
     // NOTE: no addStock here. The square feet went into the econ pipeline the
     // month the job STARTED and land in the citywide stock when its cohort
     // matures — counting them again on delivery would double the building.
@@ -2688,7 +2706,8 @@ export function tickCityGrowth(
       return r2 && r2.district === rec.district;
     });
     const tall = j.floors >= 8 && !(s.cityJobs ?? []).some((o) => o.bbl !== j.bbl && (o.floors ?? 0) > j.floors);
-    if (!j.firmId && (near || tall)) {
+    // Ground-lessee toppings already filed their own line above.
+    if (!j.firmId && !j.groundLease && (near || tall)) {
       s.news.unshift({
         q: s.month, kind: "info",
         text: near

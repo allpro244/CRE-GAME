@@ -3048,9 +3048,12 @@ export function tickEcon(s: GameState) {
         : atFit + span * (1 - Math.exp(-SLOPE_AT_FIT * (gap - FIT_MAX) / span)))
         * capitulation(e.vacOverM[k] ?? 0);
     // Scarcity from CAPACITY shortage (jobs/floors), not the absorption queue.
-    // structTight is large only when desired demand outruns housable stock —
-    // the honest signal the phantom unmet had been faking in a glut.
-    const scarcity = clamp((e.structTight?.[k] ?? unmet[k] ?? 0) * 0.08, 0, 0.014);
+    // structTight is (desired − housable)/stock — often 0.2–0.4 when jobs have
+    // outrun floors — whereas the old queue unmet sat near 0.02–0.08. Same
+    // 0.10 gain on the new units minted ~1.5%/mo of rent press and reheated
+    // late centuries. Gain is sized so ~5pp of capacity shortage moves rent in
+    // the same band as five points of vacancy shortage (~2–3%/yr), capped.
+    const scarcity = clamp((e.structTight?.[k] ?? 0) * 0.045, 0, 0.006);
 
     // Lease-quote lag: market pressure (vacancy gap + unmet demand) forms this
     // month; landlords adjust asking rents only after it has sat on the quote

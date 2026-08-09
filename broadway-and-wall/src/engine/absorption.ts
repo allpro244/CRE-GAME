@@ -134,9 +134,9 @@ export function marketRequirement(e: Econ, use: BuiltClass): number {
   // The old `mood` multiplier died here: sectorMom is already inside the
   // pool and the phase is already inside employment. It was counting the
   // cycle twice.
-  // Structural tightness (jobs vs floors) adds touring volume when the city
-  // is short of space even if the looking fringe is capped.
-  const struct = Math.max(0, (e.structTight?.[use] ?? 0)) * (e.stock?.[use] ?? 0) * 0.02;
+  // Structural tightness adds a thin touring leg when the city is short of
+  // floors even if the looking fringe is capped — not a second boom channel.
+  const struct = Math.max(0, (e.structTight?.[use] ?? 0)) * (e.stock?.[use] ?? 0) * 0.008;
   return Math.max(0, churn + growth + struct);
 }
 

@@ -41,6 +41,7 @@ import { stampApproach } from "./leasing";
 import { deskWillExtend, extensionFeePct, extensionMonths, NOTICE_M, FORECLOSE_M } from "./workout";
 import { recordComp } from "./comps";
 import { demandNow } from "./demand";
+import { programmeSf, queueSupplyProject } from "./supply";
 
 // Ashport is an old port town; its money has old-port-town names.
 // A DOZEN FIRMS, NOT SIX. Six was enough to have somebody to lose a deal to;
@@ -1419,11 +1420,15 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
     lender: pickConstructionDesk(s, bbl + "#" + s.month) ?? CONSTRUCTION_LENDER,
   });
   noteRecordPlan(s, parcels, bbl, lead, sf, floors, r.name);
-  // into the delivery pipeline the day the hole is dug, exactly like the city's
-  if (!s.econ.cohorts) s.econ.cohorts = { office: [], retail: [], multifamily: [], industrial: [] };
-  for (const [u, share] of Object.entries(prog)) {
-    const usf = Math.round(sf * (share as number));
-    if (usf > 0) s.econ.cohorts[u as BuiltClass].push({ m: deliverM, sf: usf });
+  // Into the one delivery queue the day the hole is dug, exactly like the city.
+  const rivalProgramme = programmeSf(sf, prog);
+  queueSupplyProject(s, {
+    bbl,
+    source: "rival",
+    deliverM,
+    sfByUse: rivalProgramme,
+  });
+  for (const [u, usf] of Object.entries(rivalProgramme)) {
     // ...AND OFF THE ORDER BOOK, WHICH THIS PATH ALONE WAS NOT DOING.
     // Four paths break ground in this city. Three of them net the delivered
     // square footage off `startOwed` so the space market stops asking for
@@ -1436,7 +1441,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
     // feeds crew utilisation, which hires extra trades and raises the
     // construction cost index for everybody. dev.ts:2385 diagnosed this exact
     // fault on the teardown path and called it "the biggest of them".
-    if (usf > 0 && s.econ.startOwed) {
+    if (s.econ.startOwed) {
       s.econ.startOwed[u as BuiltClass] = Math.max(0, (s.econ.startOwed[u as BuiltClass] ?? 0) - usf);
     }
   }

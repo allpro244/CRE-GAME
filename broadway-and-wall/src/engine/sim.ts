@@ -31,6 +31,7 @@ import { tickLedger } from "./ledger";
 import { tickNotes, maybeSellYourLoan } from "./notes";
 import { tickAuction } from "./auction";
 import { tickPortfolio } from "./portfolio";
+import { reconcileSupplyQueue } from "./supply";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
 
@@ -401,6 +402,10 @@ function tickMonth(
   if (s.gameOver) return;
   s.month++;
 
+  // Reconcile physical projects before the space market settles deliveries.
+  // Otherwise an orphaned frame or a job whose site changed hands can add
+  // ghost square feet to vacancy before its map-side record is rejected.
+  reconcileSupplyQueue(s, parcels);
   tickEcon(s);
   // The neighbourhood settles before anyone acts on it: last month's
   // deliveries and lettings are now standing, so the city, the tenants and

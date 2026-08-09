@@ -17,6 +17,7 @@ import { originate, quote, productById, prepayPenalty, stabViewFor } from "./deb
 import { takeoverDevelopment, buildClimate, farMaxFor } from "./dev";
 import { demandNow } from "./demand";
 import { recordComp } from "./comps";
+import { cancelSupplyProject, queueSupplyProject } from "./supply";
 
 /**
  * WHO BUYS THE BUILDINGS THE PLAYER DOES NOT.
@@ -720,8 +721,12 @@ function startLesseeJob(s: GameState, bbl: string, use: BuiltClass, sf: number, 
     bbl, use, sf, floors, startM: s.month, deliverM, groundLease: true,
     mix: { [use]: 1 } as never,
   });
-  if (!s.econ.cohorts) s.econ.cohorts = { office: [], retail: [], multifamily: [], industrial: [] };
-  s.econ.cohorts[use].push({ m: deliverM, sf, bbl });
+  queueSupplyProject(s, {
+    bbl,
+    source: "ground-lease",
+    deliverM,
+    sfByUse: { [use]: sf },
+  });
 }
 
 /**
@@ -782,6 +787,7 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
       delete h.groundLeased;
       // Cancel any unfinished lessee frame — the term ran out on a hole.
       s.cityJobs = (s.cityJobs ?? []).filter((j) => !(j.bbl === bbl && j.groundLease));
+      cancelSupplyProject(s, bbl);
       const standing = s.built?.[bbl];
       if (standing && standing.bldgArea > 0) {
         // REVERSION WITH IMPROVEMENTS. The bones are yours, vacant, and the

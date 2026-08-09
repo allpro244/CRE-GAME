@@ -25,6 +25,12 @@ import { locAvailable } from "./credit";
 import { useSf } from "./mix";
 import { lenderAppetite, lenderByName, CONSTRUCTION_LENDER } from "./lenders";
 import { lenderRelOf, bumpLenderRel } from "./debt";
+import {
+  cancelSupplyProject,
+  programmeSf,
+  queueSupplyProject,
+  rescheduleSupplyProject,
+} from "./supply";
 
 const clone = (s: GameState): GameState => cloneState(s);
 
@@ -1080,11 +1086,14 @@ export function startDevelopment(
   // schedule slip can move it and an abandoned job can pull it back out; and
   // it fills part of the order the space market has already placed
   // (startOwed), exactly as an anonymous start on the same corner would have.
-  if (!next.econ.cohorts) next.econ.cohorts = { office: [], retail: [], multifamily: [], industrial: [] };
-  for (const [u, share] of Object.entries(plan.mix)) {
-    const usf = Math.round(plan.sf * (share as number));
-    if (usf <= 0) continue;
-    next.econ.cohorts[u as BuiltClass].push({ m: next.month + plan.months, sf: usf, bbl });
+  const playerProgramme = programmeSf(plan.sf, plan.mix);
+  queueSupplyProject(next, {
+    bbl,
+    source: "player",
+    deliverM: next.month + plan.months,
+    sfByUse: playerProgramme,
+  });
+  for (const [u, usf] of Object.entries(playerProgramme)) {
     if (next.econ.startOwed) {
       next.econ.startOwed[u as BuiltClass] = Math.max(0, (next.econ.startOwed[u as BuiltClass] ?? 0) - usf);
     }
@@ -1341,11 +1350,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
     if (!rec || !s.holdings[d.bbl]) {
       // The job dies with the deed — pull its square feet back out of the
       // pipeline too, or the market absorbs a building nobody is building.
-      if (s.econ.cohorts) {
-        for (const k of Object.keys(s.econ.cohorts) as BuiltClass[]) {
-          s.econ.cohorts[k] = s.econ.cohorts[k].filter((c) => c.bbl !== d.bbl);
-        }
-      }
+      cancelSupplyProject(s, d.bbl);
       delete s.developments[d.bbl];
       continue;
     }
@@ -1357,11 +1362,13 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
     // longer adds stock itself, so it still lands exactly once.
     if (!d.piped) {
       d.piped = true;
-      if (!s.econ.cohorts) s.econ.cohorts = { office: [], retail: [], multifamily: [], industrial: [] };
-      for (const [u, share] of Object.entries(d.mix ?? devMix(d.use))) {
-        const usf = Math.round(d.sf * (share as number));
-        if (usf > 0) s.econ.cohorts[u as BuiltClass].push({ m: d.deliverM, sf: usf, bbl: d.bbl });
-      }
+      queueSupplyProject(s, {
+        bbl: d.bbl,
+        source: "player",
+        startM: d.startM,
+        deliverM: d.deliverM,
+        sfByUse: programmeSf(d.sf, d.mix ?? devMix(d.use)),
+      });
     }
     const span = Math.max(1, d.deliverM - d.startM);
     const t0 = Math.max(0, Math.min(1, (s.month - 1 - d.startM) / span));
@@ -1636,10 +1643,7 @@ export function tickConstructionLeasing(s: GameState, parcels: ParcelTable) {
  * subcontractor moves deliverM, the pipeline's date moves with it.
  */
 function syncDevCohorts(s: GameState, d: Development) {
-  if (!s.econ.cohorts) return;
-  for (const arr of Object.values(s.econ.cohorts)) {
-    for (const c of arr) if (c.bbl === d.bbl) c.m = d.deliverM;
-  }
+  rescheduleSupplyProject(s, d.bbl, d.deliverM);
 }
 
 function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { address: string }) {
@@ -2585,12 +2589,15 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // would apply to almost nothing.
   const tprog = capRetail(withStreetRetail(devMix(nextUse), nfl, demandNow(s, rec!)), nfl);
   (s.cityJobs ??= []).push({ bbl, use: nextUse, sf: nsf, floors: nfl, startM: s.month, deliverM: s.month + months, mix: tprog });
-  // ...and the pipeline is booked against the same programme, class by class,
-  // or the market absorbs one building and receives another.
-  if (!s.econ.cohorts) s.econ.cohorts = { office: [], retail: [], multifamily: [], industrial: [] };
-  for (const [u, share] of Object.entries(tprog)) {
-    const usf = Math.round(nsf * (share as number));
-    if (usf > 0) s.econ.cohorts[u as BuiltClass].push({ m: s.month + months, sf: usf, bbl });
+  // ...and the one delivery queue carries that same programme, whole.
+  const teardownProgramme = programmeSf(nsf, tprog);
+  queueSupplyProject(s, {
+    bbl,
+    source: "teardown",
+    deliverM: s.month + months,
+    sfByUse: teardownProgramme,
+  });
+  for (const [u, usf] of Object.entries(teardownProgramme)) {
     // ...AND THE ORDER BOOK IS TOLD. `startOwed` is the square footage the space
     // market has asked for and not yet seen broken ground on, and the quota
     // block downstream spends it. A replacement that goes up on this path fills
@@ -2599,7 +2606,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     // phantom backlog and kept ordering cranes against demand it had already
     // met. Every other start path in this file already does this; this one did
     // not, and it is the biggest of them.
-    if (usf > 0 && s.econ.startOwed) {
+    if (s.econ.startOwed) {
       s.econ.startOwed[u as BuiltClass] = Math.max(0, (s.econ.startOwed[u as BuiltClass] ?? 0) - usf);
     }
   }
@@ -2907,15 +2914,17 @@ export function tickCityGrowth(
     // Into the pipeline the day the hole is dug: the Economy page's delivery
     // schedule and forward vacancy are reading this queue, so what is coming
     // is visible for years before it lands.
-    if (!s.econ.cohorts) s.econ.cohorts = { office: [], retail: [], multifamily: [], industrial: [] };
-    for (const [u, share] of Object.entries(prog)) {
-      const usf = Math.round(sf * (share as number));
-      if (usf > 0) {
-        s.econ.cohorts[u as BuiltClass].push({ m: deliverM, sf: usf });
-        // and the market's order is that much closer to filled
-        if (s.econ.startOwed) {
-          s.econ.startOwed[u as BuiltClass] = Math.max(0, (s.econ.startOwed[u as BuiltClass] ?? 0) - usf);
-        }
+    const cityProgramme = programmeSf(sf, prog);
+    queueSupplyProject(s, {
+      bbl,
+      source: "city",
+      deliverM,
+      sfByUse: cityProgramme,
+    });
+    for (const [u, usf] of Object.entries(cityProgramme)) {
+      // and the market's order is that much closer to filled
+      if (s.econ.startOwed) {
+        s.econ.startOwed[u as BuiltClass] = Math.max(0, (s.econ.startOwed[u as BuiltClass] ?? 0) - usf);
       }
     }
 

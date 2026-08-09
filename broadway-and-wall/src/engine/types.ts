@@ -6,6 +6,25 @@ import type { Lender } from "./lenders";
 export type MarketPhase = "recovery" | "expansion" | "peak" | "recession";
 
 export type BuiltClass = Exclude<AssetClass, "land">;
+
+export type SupplySource =
+  | "city"
+  | "teardown"
+  | "rival"
+  | "player"
+  | "ground-lease"
+  | "legacy";
+
+/** One physical project in the city's authoritative delivery queue. */
+export interface SupplyProject {
+  id: string;
+  bbl?: string;
+  source: SupplySource;
+  startM: number;
+  deliverM: number;
+  sfByUse: Partial<Record<BuiltClass, number>>;
+  status: "active" | "stalled" | "cancelled";
+}
 export const BUILT_CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
 
 /**
@@ -1453,6 +1472,13 @@ export interface Econ {
   // "how much is out there somewhere". This is what makes the supply side
   // legible: you can see the wave before it lands on you.
   cohorts?: Record<BuiltClass, { m: number; sf: number; bbl?: string }[]>;
+  /**
+   * THE AUTHORITATIVE CONSTRUCTION QUEUE. One row per physical project, with
+   * every use leg and one delivery date. `cohorts` and `pipeline` are derived
+   * views retained for charts and old saves; starts write here through
+   * engine/supply.ts.
+   */
+  deliveryQueue?: SupplyProject[];
   /**
    * SQUARE FEET THE SPACE MARKET HAS ASKED FOR AND THE MAP HAS NOT YET BUILT.
    *

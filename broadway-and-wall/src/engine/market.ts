@@ -6,6 +6,7 @@ import type { BuiltClass, Econ, GameState, MarketPhase, NewsItem, Sector } from 
 import { BUILT_CLASSES } from "./types";
 import { applyEra, driftInflTarget } from "./regime";
 import { swanClassLevel, swanTradeWave, tickSwans, exposureToTrade } from "./swans";
+import { settleSupplyDeliveries } from "./supply";
 
 export function mulberry32Step(a: number): { state: number; value: number } {
   a |= 0; a = (a + 0x6d2b79f5) | 0;
@@ -857,6 +858,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     },
     cityVac: { ...NATURAL_VAC },
     absorb12: { office: 0, retail: 0, multifamily: 0, industrial: 0 },
+    deliveryQueue: [],
     cohorts: { office: [], retail: [], multifamily: [], industrial: [] },
     completions12: { office: 0, retail: 0, multifamily: 0, industrial: 0 },
     history: [],
@@ -2191,6 +2193,9 @@ export function tickEcon(s: GameState) {
   e.industComp = Math.max(INDUST_COMP_FLOOR, (e.industComp ?? 1) * INDUST_COMP_MONTH);
 
   const unmet: Record<string, number> = {};
+  // ONE QUEUE SETTLES ONCE. Mixed-use projects arrive atomically and a stalled
+  // or cancelled physical job cannot leak an anonymous leg into stock.
+  const monthDeliveries = settleSupplyDeliveries(s);
   for (const k of BUILT_CLASSES) {
     const stk = e.stock?.[k] ?? CITY_STOCK[k];
     // A DEVELOPER COUNTS THE SUBLET SPACE. It is the cheapest competition a new
@@ -2372,12 +2377,7 @@ export function tickEcon(s: GameState) {
     // orders is a real order book; anything older has expired.
     e.startOwed[k] = Math.min(e.startOwed[k], Math.round(start * 18) || 0);
     void bLo; void bHi;
-    let delivered = 0;
-    e.cohorts[k] = e.cohorts[k].filter((c) => {
-      if (c.m <= s.month) { delivered += c.sf; return false; }
-      return true;
-    });
-    e.pipeline[k] = e.cohorts[k].reduce((a, c) => a + c.sf, 0);
+    const delivered = monthDeliveries[k];
     e.completions12[k] = e.completions12[k] * (11 / 12) + delivered;
     e.supplyPress = e.supplyPress ?? {};
     e.supplyPress[k] = delivered / stk;

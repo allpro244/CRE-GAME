@@ -42,7 +42,13 @@ export default function TopBar() {
     const nw = parcels ? netWorth(deferredGame, parcels) : 0;
     const cf = parcels ? portfolioQuarterlyCF(deferredGame, parcels) : 0;
     const line = parcels ? locLimit(deferredGame, parcels, nw) : 0;
+    // Count every decision that actually lives on Deals. The badge used to
+    // count only LOIs and single-building offers, so tenant relief, purchase
+    // counters, contracts and portfolio bids could expire behind a clean tab.
     const dealsCount = deferredGame.lois.length
+      + (deferredGame.asks?.length ?? 0)
+      + Object.keys(deferredGame.talks ?? {}).length
+      + (deferredGame.portfolioSale?.bids?.length ?? 0)
       + Object.values(deferredGame.holdings).filter((h) => h.sale?.offer).length;
     // What happened THIS MONTH that was not routine — the badge is the reason to
     // look, not a count of everything ever written.
@@ -247,7 +253,11 @@ export default function TopBar() {
           <button className={"nav-btn" + (page === "portfolio" ? " nav-on" : "")} onClick={() => setPage(page === "portfolio" ? "none" : "portfolio")}>
             Portfolio
           </button>
-          <button className={"nav-btn" + (page === "deals" ? " nav-on" : "")} onClick={() => setPage(page === "deals" ? "none" : "deals")}>
+          <button
+            className={"nav-btn" + (page === "deals" ? " nav-on" : "")}
+            title={dealsCount ? `${dealsCount} live decision${dealsCount === 1 ? "" : "s"} on the desk` : "Letters, negotiations, contracts and offers"}
+            onClick={() => setPage(page === "deals" ? "none" : "deals")}
+          >
             Deals<Badge n={dealsCount} />
           </button>
           <button className={"nav-btn" + (page === "research" ? " nav-on" : "")} onClick={() => setPage(page === "research" ? "none" : "research")}>

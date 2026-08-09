@@ -904,6 +904,16 @@ function checkMilestones(s: GameState, nw: number) {
 export function attentionItems(s: GameState): { key: string; label: string }[] {
   const out: { key: string; label: string }[] = [];
   for (const l of s.lois) out.push({ key: `loi:${l.id}`, label: `LOI from ${l.name} — answer by ${monthLabel(l.expiresM)}` });
+  // Tenant-relief letters expire in three months and a lapse is a refusal.
+  // They lived on Deals but not in the attention list, so Year/Skip could run
+  // straight past a decision the player had explicitly asked the game to stop
+  // for. Each letter gets its own key because several tenants can ask together.
+  for (const a of s.asks ?? []) {
+    out.push({ key: `tenant-ask:${a.id}`, label: `${a.name} is asking for rent relief — answer by ${monthLabel(a.expiresM)}` });
+  }
+  for (const b of s.portfolioSale?.bids ?? []) {
+    out.push({ key: `portfolio-bid:${b.name}:${b.price}`, label: `${b.name} bid on your portfolio` });
+  }
   for (const [bbl, a] of Object.entries(s.approaches)) {
     if (a.inbound && !a.refused && a.ask) out.push({ key: `broker:${bbl}`, label: "A broker has something off-market for you" });
   }

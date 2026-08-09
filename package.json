@@ -6,6 +6,7 @@
     "build": "pnpm --dir broadway-and-wall build",
     "check": "pnpm --dir broadway-and-wall check",
     "gate": "pnpm --dir broadway-and-wall gate",
+    "readiness": "pnpm --dir broadway-and-wall readiness",
     "engine": "pnpm --dir broadway-and-wall engine"
   }
 }

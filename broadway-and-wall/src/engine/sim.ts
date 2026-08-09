@@ -941,6 +941,24 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
     }
     if (h.loan?.sweep) out.push({ key: `sweep:${h.bbl}`, label: "Covenant breach — cash flow swept" });
   }
+  // A portfolio facility is one loan against many deeds, so it never appears
+  // in the holding loop above. Its balloon and covenant sweep are at least as
+  // dangerous as a single-asset loan and must stop Skip on the same notice.
+  if (s.facility) {
+    const mo = s.facility.maturityM - s.month;
+    if (mo <= 12 && mo > 0) {
+      out.push({
+        key: `facility-balloon:${mo > 6 ? "far" : "near"}`,
+        label: `${s.facility.lender} facility due ${monthLabel(s.facility.maturityM)} — ${mo} month${mo === 1 ? "" : "s"}`,
+      });
+    }
+    if (s.facility.sweep || s.facility.breachedSince !== undefined) {
+      out.push({
+        key: "facility-sweep",
+        label: `${s.facility.lender} facility covenant breach — portfolio cash flow at risk`,
+      });
+    }
+  }
   // A FILE IS OPEN AND THE CLOCK IS RUNNING. Nothing in this list said so,
   // which meant auto-advance would run straight past a foreclosure and the
   // only trace was one line of news six months earlier.

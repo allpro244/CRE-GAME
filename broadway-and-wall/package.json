@@ -38,6 +38,7 @@
     "demandshape": "node test/demandshape.mjs",
     "drawdown": "node test/drawdown.mjs",
     "gate": "node test/conserve.mjs && SEEDS=550991,12007 HZ=300 node test/extleak.mjs && CITY_SEEDS=1 node test/city-accept.mjs && HORIZON=120 SEEDS=1 node test/invariants.mjs",
+    "readiness": "pnpm engine && node test/readiness.mjs",
     "extleak": "node test/extleak.mjs",
     "swanfork": "node test/swanfork.mjs",
     "conserve": "node test/conserve.mjs",

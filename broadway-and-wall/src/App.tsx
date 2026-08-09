@@ -37,5 +37,14 @@ function Toast() {
     return () => clearTimeout(t);
   }, [toast]);
   if (!toast) return null;
-  return <div className={"toast toast-" + toast.kind}>{toast.text}</div>;
+  return (
+    <div
+      className={"toast toast-" + toast.kind}
+      role={toast.kind === "err" ? "alert" : "status"}
+      aria-live={toast.kind === "err" ? "assertive" : "polite"}
+      aria-atomic="true"
+    >
+      {toast.text}
+    </div>
+  );
 }

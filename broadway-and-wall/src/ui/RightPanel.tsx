@@ -36,6 +36,14 @@ export default function GamePanels() {
       if (e.key === "Escape") { setPage("none"); return; }
       const st = useStore.getState();
       if (st.advancing) return;
+      const wantsTime = e.code === "Space" || e.code === "KeyY" || e.code === "KeyN";
+      if (wantsTime && document.querySelector(".modal-backdrop")) {
+        e.preventDefault();
+        useStore.setState({
+          toast: { text: "Answer or dismiss the card on your desk before advancing time.", kind: "err", at: Date.now() },
+        });
+        return;
+      }
       if (e.code === "Space") { e.preventDefault(); st.advance(); }
       else if (e.code === "KeyY") st.advanceYear();
       else if (e.code === "KeyN") st.advanceUntil();

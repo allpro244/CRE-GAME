@@ -287,6 +287,13 @@ export default function TopBar() {
           <button className={"nav-btn" + (page === "leasing" ? " nav-on" : "")} onClick={() => setPage(page === "leasing" ? "none" : "leasing")}>
             Leasing
           </button>
+          <button
+            className={"nav-btn" + (page === "staff" ? " nav-on" : "")}
+            title="Hire and manage the people running leasing, property management and construction"
+            onClick={() => setPage(page === "staff" ? "none" : "staff")}
+          >
+            Staff
+          </button>
           {/* WHAT THE FIRM OWES, IN ONE PLACE. Every debt number in the game
               existed on some building's record and nowhere in aggregate, so
               the weighted coupon, the fixed/floating split, the maturity wall

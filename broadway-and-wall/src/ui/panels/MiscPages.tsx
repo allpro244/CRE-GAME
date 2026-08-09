@@ -136,7 +136,7 @@ export function SettingsPage() {
         detail={"A bank failing, a level event in the wider economy, a book of buildings taken back at once. "
           + "These are not decisions and there is nothing to answer, which is why they used to take the screen "
           + "no matter what. Every one of them is now written into the news feed the moment it fires, so turning "
-          + "this off loses the interruption and not the event — you will read it on the Research page instead. "
+          + "this off loses the interruption and not the event — you will read it on News / The Tape instead. "
           + "With both switches off nothing will ever take the screen again."}
       />
       <Toggle

@@ -3,7 +3,15 @@
 import type { AssetClass } from "@/data/types";
 import type { Lender } from "./lenders";
 
-export type MarketPhase = "recovery" | "expansion" | "peak" | "recession";
+/**
+ * THE CYCLE THE PLAYER READS ON THE HUD.
+ *
+ * `depression` is not a synonym for recovery. Recovery is the healing phase
+ * after a recession; depression is what the machine used to mis-label as
+ * recovery when slack was still a year of empty space and rents were still
+ * falling — see CENTURY_REPORT.md §VIII.
+ */
+export type MarketPhase = "recovery" | "expansion" | "peak" | "recession" | "depression";
 
 export type BuiltClass = Exclude<AssetClass, "land">;
 
@@ -1789,6 +1797,13 @@ export interface Rival {
   /** Last mark's vacant-land value — same reason as markNoi. */
   markLand?: number;
   stressMs?: number;     // consecutive months in trouble
+  /**
+   * Months with an empty book while solvent. A firm that sells its last
+   * building and still has cash used to sit on the leaderboard forever as a
+   * husk — half the "alive" firms at year 100 in the century report. The
+   * clock retires them once they have had a fair window to redeploy.
+   */
+  emptyMs?: number;
   // Cost basis of the book, in aggregate. Not per building — that is the one
   // thing about a rival's accounts nobody needs to see — but enough to tax a
   // gain honestly when they sell, which is a cost the player has always paid

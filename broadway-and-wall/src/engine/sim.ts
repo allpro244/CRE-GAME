@@ -113,6 +113,7 @@ function targetListings(s: GameState, totalLots: number): number {
   const base = s.econ.phase === "peak" ? 0.013
     : s.econ.phase === "expansion" ? 0.010
     : s.econ.phase === "recovery" ? 0.006
+    : s.econ.phase === "depression" ? 0.004
     : 0.004;                                  // recession: the market goes quiet
   // and the credit window gates it further — no debt, no buyers, no listings
   const ci = Math.max(0.4, Math.min(1.15, s.econ.creditIdx ?? 1));
@@ -324,7 +325,8 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     (l.expiresM > s.month || s.talks?.[l.bbl]?.agreed) && !s.holdings[l.bbl]);
   const listed = new Set(s.listings.map((l) => l.bbl));
   const target = targetListings(s, bbls.length);
-  const pDistress = s.econ.phase === "recession" ? 0.42 : s.econ.phase === "recovery" ? 0.18 : 0.03;
+  const pDistress = s.econ.phase === "recession" ? 0.42 : s.econ.phase === "depression" ? 0.32
+    : s.econ.phase === "recovery" ? 0.18 : 0.03;
   let guard = 0;
   // Cap consecutive rejects so a city whose deeds are mostly on hold clocks
   // does not burn thousands of assetValue calls filling a short tape — that
@@ -363,6 +365,7 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     // downturn the honest asks vanish and the tape fills with either dreamers
     // or people who have run out of road — and telling those apart is the job.
     const denial = s.econ.phase === "recession" ? rrange(s, 1.10, 1.28)
+      : s.econ.phase === "depression" ? rrange(s, 1.06, 1.20)
       : s.econ.phase === "recovery" ? rrange(s, 1.02, 1.14)
       : rrange(s, 0.94, 1.10);
     const ask = Math.round(value * (distress ? rrange(s, 0.72, 0.90) : denial) / 1000) * 1000;

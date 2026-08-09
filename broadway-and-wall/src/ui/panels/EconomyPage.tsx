@@ -344,6 +344,7 @@ export function EconomyPage() {
     peak: "Priced to perfection. Every deal works on paper and none has margin for the turn.",
     recession: "Tenants retrench and lenders retreat. Cheap buildings and expensive money.",
     recovery: "The bleeding has stopped. Concessions burn off before face rents move.",
+    depression: "Empty space is still winning. This is not healing — it is a glut that has not cleared.",
   }[e.phase];
 
   const pctFmt = (v: number) => `${v.toFixed(1)}%`;

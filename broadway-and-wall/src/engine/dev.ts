@@ -14,7 +14,8 @@ import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_L
 import { roleState, cmRiskMult } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling,
-  developmentHurdle, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE } from "./value";
+  developmentHurdle, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, MGMT_FEE,
+  noiYr, taxBorneShare } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
@@ -169,7 +170,7 @@ function constructionLtc(mix: UseMix, phase: string, creditIdx: number, appetite
   const safeLtc = 0.70;
   const specLtc = 0.70;
   const base = specLtc * spec + safeLtc * (1 - spec);
-  const tight = phase === "recession" ? 0.72 : phase === "peak" ? 0.94 : 1;
+  const tight = phase === "recession" || phase === "depression" ? 0.72 : phase === "peak" ? 0.94 : 1;
   // Construction paper in this town is written by the regional bank, and the
   // regional bank has a balance sheet you can read on Research. When it is
   // eating losses it does not tighten the market's terms — it tightens YOURS,
@@ -1005,12 +1006,6 @@ export function planDevelopment(
   // Yield on cost against today's stabilised rents — the number a developer
   // actually lives by, and the spread to the exit cap is the whole margin.
   const asBuilt = asBuiltRec(rec, use, sf, fl);
-  const marketRent = marketRentPsfYr(asBuilt, s.econ, "good") * effectiveRentFactor;
-  const rentPsf = marketRent * (1 - btsShare) + (bts?.rentPsf ?? marketRent) * btsShare;
-  const baseStabOcc = overMix(mix, (u) => (u === "multifamily" ? 0.95 : 0.9));
-  const stabOcc = baseStabOcc * (1 - btsShare) + btsShare;
-  const opex = overMix(mix, (u) => opexPsf(u, s.econ, false));
-  const recovery = overMix(mix, (u) => RECOVERY_RATE[u]);
   // ORIGINATION IS A COST OF THE PROJECT, not a fee that happens next to it.
   // The interest reserve was already in here for exactly this reason; the
   // points are the same kind of money — a line in every development budget,
@@ -1022,30 +1017,35 @@ export function planDevelopment(
   // upstream would be circular.
   const pointsCost = commitment > 0 ? Math.round(commitment * cq.points) : 0;
   const basisTotal = basisTotal0 + interestReserve + pointsCost;
-  const taxLoad = basisTotal * TAX_RATE * (1 - recovery);
-  // The management fee, which this pro forma was not paying either. See the
-  // same correction in `residualScheme` — `noiYr` charges MGMT_FEE on EGI, so
-  // a desk that leaves it out is quoting a yield on cost the building will
-  // never earn, and quoting it against an exit cap derived from buildings that
-  // do pay it.
-  const egiPsf = rentPsf * stabOcc + opex * recovery * stabOcc;
-  const stabNoi = sf * (egiPsf - opex - egiPsf * MGMT_FEE) - taxLoad;
-  // The exit is what THIS building will trade at — new, in good condition, on
-  // this corner — not the citywide class average. Using the average understated
-  // the spread by most of a point everywhere it mattered, which made every
-  // development on the map look like a losing trade.
+  // ONE VALUATION IDENTITY. The pro forma used to invent a parallel NOI
+  // (flat 90% occ, tax stripped off basis, capitalised at a bare exit cap)
+  // while `assetValue` / `holdingValue` marked the same finished building a
+  // third lower — ECONOMY.md open finding #3. Stabilised NOI is now the same
+  // stack the street marks with (`noiYr(..., true)`), and the exit yield is
+  // the same tax-loaded capitalisation `assetValue` uses. BTS overlays the
+  // committed share on top of that market read.
+  const marketStabNoi = noiYr(asBuilt, s.econ, "good", true);
+  let stabNoi = marketStabNoi;
+  if (btsShare > 0 && bts) {
+    const opex = overMix(mix, (u) => opexPsf(u, s.econ, false));
+    const recovery = overMix(mix, (u) => RECOVERY_RATE[u]);
+    const egiPsf = bts.rentPsf + opex * recovery;
+    const btsNoi = sf * (egiPsf - opex - egiPsf * MGMT_FEE);
+    stabNoi = marketStabNoi * (1 - btsShare) + btsNoi * btsShare;
+  }
   const exitCap = capRateFor(asBuilt, s.econ, "good");
+  const exitYieldPct = exitCap + TAX_RATE * 100 * taxBorneShare(asBuilt);
   const yieldOnCost = basisTotal > 0 ? (stabNoi / basisTotal) * 100 : 0;
-  // ONE HURDLE. The land residual, city, rivals and player desk all require
-  // the finished yield to clear the exit yield by DEV_MARGIN. A fixed 75bp
-  // spread here used to approve a project the residual correctly rejected.
-  const { requiredYield, hurdleRatio } = developmentHurdle(yieldOnCost, exitCap);
+  // Hurdle against the tax-loaded exit the mark will actually use — not a
+  // bare cap that made every tower look like 1.78x on a job that marks at 1.03x.
+  const { requiredYield, hurdleRatio } = developmentHurdle(yieldOnCost, exitYieldPct);
 
   const lenderNote = ltc === 0
     ? "No construction lender will touch spec commercial in a recession. Pre-lease it, or fund the whole thing yourself."
     : hurdleRatio < 1
       ? `Yield on cost is ${yieldOnCost.toFixed(2)}% against a ${requiredYield.toFixed(2)}% required yield `
-        + `(${exitCap.toFixed(2)}% exit plus the developer margin). That is a way to build a building for more than it is worth.`
+        + `(${exitCap.toFixed(2)}% exit, tax-loaded to ${exitYieldPct.toFixed(2)}%, plus the developer margin). `
+        + `That is a way to build a building for more than it is worth.`
       : undefined;
 
   const plan: DevPlan = {
@@ -1059,7 +1059,10 @@ export function planDevelopment(
     // in the ground, which is why a development eats your balance sheet at the
     // start rather than in even slices.
     equityAtClose: Math.round((projectCost - commitment) * 0.55),
-    months, yieldOnCost, exitCap, requiredYield, hurdleRatio, spec: clamp01(spec), bts, btsShare, lenderNote,
+    // `exitCap` on the plan is the tax-loaded exit yield the hurdle uses —
+    // the same capitalisation `assetValue` applies — so reuse / residual
+    // readers that call developmentHurdle(yoc, plan.exitCap) stay consistent.
+    months, yieldOnCost, exitCap: exitYieldPct, requiredYield, hurdleRatio, spec: clamp01(spec), bts, btsShare, lenderNote,
   };
   // The second half of the NaN gate above. Bad inputs are one way to get a
   // plan full of nonsense; a divide by a zero lot, a mix that sums to nothing,

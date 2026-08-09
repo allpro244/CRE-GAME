@@ -155,19 +155,14 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 // worst real drawdown from 47.6% back to 89.8%. Industrial +46%, retail +28%.
 // Housing is unaffected by design; its speed comes from its lease term.
 //
-// AND WHERE IT IS STILL WRONG, because the inventory is checkable. Office
-// sublet runs 0.23% of stock at the median here, 6.0% at the 95th and 8.9% at
-// the worst; the published figures are 1-1.5% of inventory in an ordinary US
-// office market, 2.7% at the national 2023 peak and about 10% at San
-// Francisco's. So the extreme is right and the ORDINARY LEVEL IS THREE TIMES
-// TOO LOW, because this give-back is driven by the aggregate: when the city as
-// a whole wants what it holds, nothing is marketed. In life the inventory
-// never empties, because firms merge, contract and relocate idiosyncratically
-// in every kind of market — it is the DISPERSION of firm outcomes, not the
-// net. Modelling that properly means a background floor on marketed space,
-// and a permanent floor cannot be added here without also restating
-// NATURAL_VAC as an availability rate rather than a direct-vacancy rate, which
-// is a much wider change than this one. Recorded, not fixed.
+// Ordinary inventory used to run ~0.23% of stock at the median against 1–1.5%
+// in a calm US office market, because give-back was only the AGGREGATE mismatch
+// and emptied whenever the city wanted what it held. The extremes were right
+// (dispersion shows up in busts); the ordinary level was not. Background
+// marketed space below is the idiosyncratic floor — mergers, relocations,
+// contractions in every kind of market — as a share of occupied. Direct
+// vacancy (cityVac) is unchanged; availability = direct + sublet/stock, which
+// is already what rent tightness reads.
 declare module "./types" {
   interface Econ {
     /** SF under lease and on the sublet market, by class. Counted inside
@@ -206,6 +201,16 @@ const DEMISABLE: Record<BuiltClass, number> = {
  *  fault rather than guarding against one. */
 const SUBLET_MAX: Record<BuiltClass, number> = {
   office: 0.10, industrial: 0.06, retail: 0.04, multifamily: 0,
+};
+
+/**
+ * IDIOSYNCRATIC MARKETED FLOOR — share of occupied that is on the sublet
+ * market even when the city as a whole wants the footprint it holds.
+ * Calibrated to ordinary US availability: office ~1.2% of stock ≈ ~1.3% of
+ * occupied at natural vacancy; retail/industrial thinner; flats none.
+ */
+const SUBLET_BG: Record<BuiltClass, number> = {
+  office: 0.013, industrial: 0.006, retail: 0.004, multifamily: 0,
 };
 
 /** HOW FAST A TENANT'S FOOTPRINT CAN REPRICE — one over the lease term in
@@ -353,6 +358,9 @@ const PHASE_CFG: Record<MarketPhase, { rateGap: number; rentDrift: number; devDr
   expansion: { rateGap: +0.35, rentDrift: 0.0037, devDrift: +0.027, nextM: [24, 54], next: "peak" },
   peak: { rateGap: +1.95, rentDrift: 0.0014, devDrift: +0.014, nextM: [6, 15], next: "recession" },
   recession: { rateGap: -1.05, rentDrift: -0.0047, devDrift: -0.054, nextM: [12, 24], next: "recovery" },
+  // A glut that will not clear: rents still soft, capital still out, and the
+  // HUD no longer pretends this is the healing phase.
+  depression: { rateGap: -0.95, rentDrift: -0.0022, devDrift: -0.028, nextM: [18, 36], next: "recovery" },
 };
 
 // How far the loan index may travel. A century of property covers eras that
@@ -1017,6 +1025,10 @@ const RUMORS: Record<MarketPhase, string[]> = {
     "Distressed buyers are circling — the smart money smells a bottom.",
     "First green shoots: concessions burning off in the best buildings.",
   ],
+  depression: [
+    "Empty floors are still coming to market — nobody is calling this a recovery.",
+    "The brokers have stopped scheduling tours for the secondary stock.",
+  ],
 };
 
 export function tickEcon(s: GameState) {
@@ -1068,7 +1080,13 @@ export function tickEcon(s: GameState) {
     }
     // ...and the other way: a market that has eaten its slack cannot stay in
     // recession forever on a timer. Absorption ends a downturn, not patience.
-    if ((e.phase === "recession" || e.phase === "recovery") && slack < -0.01) e.phaseMLeft -= 1;
+    if ((e.phase === "recession" || e.phase === "recovery" || e.phase === "depression") && slack < -0.01) {
+      e.phaseMLeft -= e.phase === "depression" ? 2 : 1;
+    }
+    // A depression that is STILL carrying a year of empty space does not get
+    // to walk into expansion on a calendar. Stretch the clock while the glut
+    // is load-bearing — the label stays honest for as long as the market is.
+    if (e.phase === "depression" && slack > 0.08) e.phaseMLeft = Math.max(e.phaseMLeft, 6);
 
     // AND THE NATION OUTRANKS THE CITY. No local property cycle survives a
     // national recession on its own schedule — 1990, 2001 and 2008 each ended
@@ -1095,8 +1113,18 @@ export function tickEcon(s: GameState) {
     // and slack is the market's answer. The recovery simply continues — which
     // is what a long depression actually looks like from inside.
     let nextPhase = cfg.next;
-    if ((nextPhase === "expansion" || nextPhase === "peak") && (e.slackEma ?? 0) > 0.055) {
-      nextPhase = "recovery";
+    const slackNow = e.slackEma ?? 0;
+    // A boom cannot start on a glut — and the honest name for that stuck state
+    // is depression, not recovery. Recovery is what happens AFTER the bleeding
+    // has stopped; century measurement had rents still falling in 61% of
+    // months labelled recovery because this branch lied about the market.
+    if ((nextPhase === "expansion" || nextPhase === "peak") && slackNow > 0.055) {
+      nextPhase = "depression";
+    }
+    // Leaving depression into recovery while slack is still catastrophic just
+    // relabels the same market. Stay down until the glut has actually eased.
+    if (e.phase === "depression" && nextPhase === "recovery" && slackNow > 0.09) {
+      nextPhase = "depression";
     }
     e.phase = nextPhase;
     e.rumoredPhase = null;
@@ -1107,6 +1135,7 @@ export function tickEcon(s: GameState) {
       peak: "The market has topped out. Everything is priced to perfection.",
       recession: "The turn is here: tenants retrench, lenders retreat.",
       recovery: "The bleeding has stopped. Recovery begins at the bottom of the stack.",
+      depression: "This is not a recovery — empty space is still winning and capital has left the floor.",
     };
     pushNews(s, "event", label[e.phase]);
   }
@@ -1473,7 +1502,7 @@ export function tickEcon(s: GameState) {
   // balance sheet that has to absorb the loss is the same balance sheet in
   // every city at once.
   const creditTarget = clamp((e.phase === "expansion" ? 1.12 : e.phase === "peak" ? 1.0
-    : e.phase === "recession" ? 0.54 : 0.88)
+    : e.phase === "recession" ? 0.54 : e.phase === "depression" ? 0.62 : 0.88)
     - ((e.nat?.recM ?? 0) > 0 ? (e.nat?.deep ? 0.26 : 0.13) : 0), 0.4, 1.25);
   const creditSpeed = creditTarget < e.creditIdx ? 0.16 : 0.055;   // slams shut, reopens slowly
   e.creditIdx = clamp(e.creditIdx + creditSpeed * (creditTarget - e.creditIdx) + rrange(s, -0.012, 0.012), 0.4, 1.25);
@@ -1483,7 +1512,7 @@ export function tickEcon(s: GameState) {
 
   // --- employment: the demand behind every lease -----------------------------
   const jobDrift = e.phase === "expansion" ? 0.0026 : e.phase === "peak" ? 0.0008
-    : e.phase === "recession" ? -0.0031 : 0.0015;
+    : e.phase === "recession" ? -0.0031 : e.phase === "depression" ? -0.0010 : 0.0015;
   // THE RETURN WIRE. Jobs drove rents and rents drove nothing back, so the
   // causal graph had a dead end where its most important feedback belongs: a
   // city that becomes ruinously expensive relative to what it pays its
@@ -2110,8 +2139,8 @@ export function tickEcon(s: GameState) {
       // Industries lean on the macro cycle without being it: a recession makes
       // a bust likelier everywhere, and an expansion makes a boom likelier,
       // but each one still turns on its own schedule.
-      const macro = e.phase === "recession" ? -0.22 : e.phase === "recovery" ? 0.06
-        : e.phase === "expansion" ? 0.14 : -0.06;
+      const macro = e.phase === "recession" ? -0.22 : e.phase === "depression" ? -0.14
+        : e.phase === "recovery" ? 0.06 : e.phase === "expansion" ? 0.14 : -0.06;
       const up = clamp(0.45 + macro, 0.12, 0.85);
       let next: "boom" | "steady" | "bust";
       if (cur === "steady") next = rng(s) < up ? "boom" : "bust";
@@ -2729,10 +2758,9 @@ export function tickEcon(s: GameState) {
       * (1 + e.sectorMom[k] * MOM_DEMAND)
       * affordRaw
       * swanLvl;
-    const marketable = clamp(
-      (e.occupied[k] - wantedNow) * DEMISABLE[k],
-      0, e.occupied[k] * SUBLET_MAX[k],
-    );
+    const cyclical = Math.max(0, (e.occupied[k] - wantedNow) * DEMISABLE[k]);
+    const background = e.occupied[k] * (SUBLET_BG[k] ?? 0);
+    const marketable = clamp(cyclical + background, 0, e.occupied[k] * SUBLET_MAX[k]);
     e.sublet[k] += (marketable - e.sublet[k]) / SUBLET_TAU;
     e.sublet[k] = clamp(e.sublet[k], 0, e.occupied[k]);
 
@@ -2953,7 +2981,8 @@ export function tickEcon(s: GameState) {
       e.vacOverM[k] = 0;
       e.vacWorst[k] = 0;
     }
-    const phaseNudge = e.phase === "recession" ? 0.22 : e.phase === "recovery" ? 0.08 : e.phase === "peak" ? -0.04 : -0.10;
+    const phaseNudge = e.phase === "recession" ? 0.22 : e.phase === "depression" ? 0.16
+      : e.phase === "recovery" ? 0.08 : e.phase === "peak" ? -0.04 : -0.10;
     const concTarget = clamp(gap * 11 + phaseNudge, 0, 1);
     e.concIdx[k] += 0.25 * (concTarget - e.concIdx[k]);
     // EMPTY SPACE IS NEVER FREE. This term was capped at -0.9%/month, so at
@@ -3371,7 +3400,8 @@ export function tickEcon(s: GameState) {
     // pivot had and arriving through a different door.
     const heat = clamp(((e.crewUtil ?? 1) - 1) * 3.5, -1.9, 3.1);
     const slope = heat < 0 ? 0.0026 : 0.0016;
-    const costDrift = (e.inflExp ?? 0.02) / 12 + heat * slope + (e.phase === "recession" ? -0.0004 : 0);
+    const costDrift = (e.inflExp ?? 0.02) / 12 + heat * slope
+      + (e.phase === "recession" || e.phase === "depression" ? -0.0004 : 0);
     // When asking rents outrun construction cost, the land residual (rent −
     // cost) explodes and vacant lots print absurd $/sf. Catch costIdx up
     // toward the rent level once the stretch is past a quarter — same

@@ -135,8 +135,10 @@ const STYLE: Record<RivalStyle, {
   /** how far they will chase a DISTRESSED listing specifically */
   distressBias: number;
 }> = {
-  // sold their soul to nobody; buys quality, holds forever, sleeps at night
-  family:        { appetite: 0.30, procyclical: 0.5, maxLtv: 0.50, cashOut: 0.00, classes: null, patience: 1.02, holdM: 0, contra: 0.25, distressBias: 1.1 },
+  // Family money holds for a generation, not forever — estate, divorce, and
+  // rebalancing put deeds on the tape. holdM: 0 used to mean "never sells",
+  // and the century tape implied an 84-year average hold.
+  family:        { appetite: 0.30, procyclical: 0.5, maxLtv: 0.50, cashOut: 0.00, classes: null, patience: 1.02, holdM: 300, contra: 0.25, distressBias: 1.1 },
   // institutional money: steady, disciplined, buys stabilised income
   core:          { appetite: 0.75, procyclical: 1.0, maxLtv: 0.65, cashOut: 0.20, classes: ["office", "multifamily"], patience: 1.06, holdM: 168, contra: 0, distressBias: 0.7 },
   // the ones who win the last three years of every cycle and lose the next one
@@ -168,13 +170,12 @@ const STYLE: Record<RivalStyle, {
   // the market permanently — which is exactly what a corporate headquarters
   // purchase does to a submarket's available stock.
   owneruser:     { appetite: 0.35, procyclical: 0.7, maxLtv: 0.55, cashOut: 0.00, classes: ["office", "industrial"], patience: 1.20, holdM: 0, contra: 0.2, distressBias: 0.5 },
-  // OFFSHORE CAPITAL buying safety rather than yield. Pays up for the trophy,
-  // uses almost no debt, and turns up when the city is fashionable.
-  foreign:       { appetite: 0.50, procyclical: 1.3, maxLtv: 0.35, cashOut: 0.05, classes: ["office", "multifamily"], patience: 1.28, holdM: 0, contra: 0, distressBias: 0.4 },
+  // Offshore capital repatriates on a long clock — not never.
+  foreign:       { appetite: 0.50, procyclical: 1.3, maxLtv: 0.35, cashOut: 0.05, classes: ["office", "multifamily"], patience: 1.28, holdM: 216, contra: 0, distressBias: 0.4 },
   // THE MILKER. Buys the worst stock at the worst prices and spends nothing on
-  // it, which works for years and then does not. Its buildings are where the
-  // city's obsolescence accumulates.
-  slumlord:      { appetite: 0.70, procyclical: 0.9, maxLtv: 0.72, cashOut: 0.60, classes: ["multifamily", "retail", "industrial"], patience: 0.96, holdM: 0, contra: 0.3, distressBias: 1.8 },
+  // it, which works for years and then does not. When the milking stops they
+  // dump — a twelve-year hold, not a forever husk.
+  slumlord:      { appetite: 0.70, procyclical: 0.9, maxLtv: 0.72, cashOut: 0.60, classes: ["multifamily", "retail", "industrial"], patience: 0.96, holdM: 144, contra: 0.3, distressBias: 1.8 },
 };
 
 /** The style table, for modules that need to read a firm's temperament. */
@@ -2554,29 +2555,59 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       const rec = resolveRec(parcels, s, forcedBbl);
       if (rec) {
         const v = assetValue(rec, s.econ, assetGrade(r, rec));
-        // A seller against a deadline does not get to hold out for a number.
-        s.listings.push({
-          bbl: forcedBbl,
-          ask: Math.round(v * rrange(s, 0.94, 1.04, "rivals") / 1000) * 1000,
-          listedM: s.month, expiresM: s.month + Math.round(rrange(s, 9, 16, "rivals")),
-          sellerId: r.id,
-          reason: r.style === "merchant" ? "merchant" : "fund-life",
-        });
-        // AND A ROUTINE LISTING IS NOT NEWS EITHER. A fund reaching the end of
-        // its hold and putting a building up is the most ordinary thing on this
-        // street; it was running at 3.1 items a year, every one of them about a
-        // corner the player had never looked at. Same rule as the trades — see
-        // stakeIn. The listing itself still appears on the tape, which is where
-        // a buyer looks for buildings.
-        if (stakeIn(s, parcels, rec, r.id) && rng(s, "rivals") < 0.30) {
-          s.news.unshift({
-            q: s.month, kind: "deal",
-            text: `${r.name} has put ${rec.address} on the market. `
-              + (r.style === "merchant"
-                ? "They build to sell; they were never going to keep it."
-                : `The fund is ${Math.round((s.month - (r.heldSince?.[forcedBbl] ?? 0)) / 12)} years into this one and the clock has run out — `
-                  + `they are selling into ${s.econ.phase === "recession" ? "a market that does not want it" : "this market"} because the mandate says so.`),
+        // QUIET TREATY. Patient capital and offshore money often sell without
+        // ever hitting the tape — the century report found 0/57k deeds flagged
+        // off-market while the weighting branch sat dead. About two in five
+        // mandate exits for those styles close privately to another firm.
+        const quietStyle = r.style === "family" || r.style === "foreign" || r.style === "core";
+        if (quietStyle && rng(s, "rivals") < 0.40) {
+          const price = Math.round(v * rrange(s, 0.96, 1.06, "rivals") / 1000) * 1000;
+          const buyer = rivalBuys(s, parcels, rec, price);
+          if (buyer) {
+            // rivalBuys already recorded a marketed comp — restamp the flag.
+            const c = s.comps?.[s.comps.length - 1];
+            if (c && c.bbl === rec.bbl && c.m === s.month) c.offMarket = true;
+            if (stakeIn(s, parcels, rec, r.id) && rng(s, "rivals") < 0.25) {
+              s.news.unshift({
+                q: s.month, kind: "deal",
+                text: `${r.name} sold ${rec.address} quietly to ${buyer.name} — never listed.`,
+              });
+            }
+          } else {
+            // Nobody would take it privately; fall through to the open tape.
+            s.listings.push({
+              bbl: forcedBbl,
+              ask: Math.round(v * rrange(s, 0.94, 1.04, "rivals") / 1000) * 1000,
+              listedM: s.month, expiresM: s.month + Math.round(rrange(s, 9, 16, "rivals")),
+              sellerId: r.id,
+              reason: "fund-life",
+            });
+          }
+        } else {
+          // A seller against a deadline does not get to hold out for a number.
+          s.listings.push({
+            bbl: forcedBbl,
+            ask: Math.round(v * rrange(s, 0.94, 1.04, "rivals") / 1000) * 1000,
+            listedM: s.month, expiresM: s.month + Math.round(rrange(s, 9, 16, "rivals")),
+            sellerId: r.id,
+            reason: r.style === "merchant" ? "merchant" : "fund-life",
           });
+          // AND A ROUTINE LISTING IS NOT NEWS EITHER. A fund reaching the end of
+          // its hold and putting a building up is the most ordinary thing on this
+          // street; it was running at 3.1 items a year, every one of them about a
+          // corner the player had never looked at. Same rule as the trades — see
+          // stakeIn. The listing itself still appears on the tape, which is where
+          // a buyer looks for buildings.
+          if (stakeIn(s, parcels, rec, r.id) && rng(s, "rivals") < 0.30) {
+            s.news.unshift({
+              q: s.month, kind: "deal",
+              text: `${r.name} has put ${rec.address} on the market. `
+                + (r.style === "merchant"
+                  ? "They build to sell; they were never going to keep it."
+                  : `The fund is ${Math.round((s.month - (r.heldSince?.[forcedBbl] ?? 0)) / 12)} years into this one and the clock has run out — `
+                    + `they are selling into ${s.econ.phase === "recession" || s.econ.phase === "depression" ? "a market that does not want it" : "this market"} because the mandate says so.`),
+            });
+          }
         }
       }
     }
@@ -2752,6 +2783,33 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       // The branch that did that is gone; this is the belt to its braces.
       r.stressMs = 0;
       r.dumped = 0;
+    }
+
+    // SOLVENT HUSKS RETIRE. A firm that has sold its last building, cleared
+    // its debt, and is not in arrears used to sit on the leaderboard forever —
+    // 52% of "alive" firms at year 100 in the century report. Failure only
+    // ran through the notice calendar; solvent emptiness fell between both
+    // tests. Give them two years to redeploy (or burn remaining dry powder),
+    // then wind the vehicle up. New funds start empty: they are exempt until
+    // they have either held a deed or exhausted their uncalled capital.
+    if (r.failedM === undefined && r.bbls.length === 0 && (r.debt ?? 0) <= 0 && (r.cash ?? 0) >= 0 && !(r.stressMs)) {
+      const everDeployed = (r.basis ?? 0) > 0 || (r.distributed ?? 0) > 0 || (r.aum ?? 0) > 0;
+      const dryPowderGone = (r.uncalled ?? 0) <= 0 && (s.month - (r.bornM ?? 0)) > 36;
+      if (everDeployed || dryPowderGone) {
+        r.emptyMs = (r.emptyMs ?? 0) + 1;
+        if (r.emptyMs > 24) {
+          r.failedM = s.month;
+          s.news.unshift({
+            q: s.month, kind: "event",
+            text: `${r.name} has wound up. The last building is gone, the debt is clear, `
+              + `and after two years with nothing left to buy they returned what remained to their partners.`,
+          });
+        }
+      } else {
+        r.emptyMs = 0;
+      }
+    } else if (r.bbls.length > 0) {
+      r.emptyMs = 0;
     }
   }
 }

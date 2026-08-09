@@ -125,6 +125,15 @@ if (rich.richFiles > 0) {
 } else {
   console.log("\n  OK    no file opened on a firm that had the cash to cure it.");
 }
+// SIDE ONE-B — filing. Even a file that somehow opened must not advance to
+// foreclosure while the firm is holding the cash to stay current.
+if (rich.fclMonths > 0) {
+  bad++;
+  console.log(`  FAIL  ${rich.fclMonths} foreclosure-month(s) on a firm holding over $20M.`);
+  console.log("        The notice calendar is not a deed. A funded, current note does not get filed on.");
+} else {
+  console.log("  OK    no foreclosure filing while the firm had the cash to stay current.");
+}
 // SIDE TWO — the over-correction, which is the easier mistake to make.
 const thinCauses = Object.keys(thin.causes).length;
 if (thin.files === 0) {

@@ -31,7 +31,7 @@ import { logBooks, monthLabel, nextJulyAfter, cloneState} from "./types";
 import { firmShort } from "./firm";
 import { rrange } from "./market";
 import { holdingValue, resolveRec } from "./value";
-import { productById, bumpLenderRel } from "./debt";
+import { productById, bumpLenderRel, equityCureNeed, monthlyPayment } from "./debt";
 import { capitalRatio, chargeLenderLoss, lenderByName } from "./lenders";
 import { markSponsor } from "./sponsor";
 import { recordComp } from "./comps";
@@ -39,6 +39,16 @@ import { depositsOn } from "./leasing";
 import { fundCashNeed, fundableNow } from "./credit";
 
 const clone = (s: GameState): GameState => cloneState(s);
+
+/**
+ * Equity cures are sponsor cheques (cash only). Arrears catch-ups and balloon
+ * payoffs are debt-stack money — cash first, then the revolver — the same way
+ * every other debt cheque clears. Using cash-only for those was how a firm
+ * with an open line lost buildings it could have paid for.
+ */
+function cureAllowsLoc(cause: Workout["cause"]): boolean {
+  return cause !== "covenant";
+}
 
 /**
  * How long they let it run before the auction, by stage.
@@ -217,51 +227,34 @@ export function serviceWorkout(s: GameState, bbl: string, on: boolean): { s: Gam
   return { s: next, msg: on ? "The lender will wait while you pay." : "Stopped." };
 }
 
-export function cureWorkout(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string; msg?: string } {
-  const w = s.workouts?.[bbl];
-  const h = s.holdings[bbl];
-  if (!w || !h?.loan) return { s, err: "There is nothing in default there." };
-  const rec = resolveRec(parcels, s, bbl);
-  if (!rec) return { s, err: "Unknown parcel." };
-  // Equity cure: sponsor cheque only — not a revolver draw (see credit.ts).
-  if (fundableNow(s, parcels, { allowLoc: false }) < w.cure) {
-    return { s, err: `Curing it takes ${money(w.cure)} — cash is short ${money(w.cure - fundableNow(s, parcels, { allowLoc: false }))}.` };
-  }
-  const next = clone(s);
-  const paid = fundCashNeed(next, parcels, w.cure, { allowLoc: false });
-  logBooks(next, "debtSvc", paid);
-  const nh = next.holdings[bbl]!;
-  if (w.cause === "balloon") { nh.loan = null; }
-  else { nh.loan!.sweep = false; nh.loan!.cleanQs = 0; nh.loan!.breachMs = 0; nh.loan!.arrearsMs = 0; }
-  delete next.workouts![bbl];
-  bumpLenderRel(next, w.lender, 4);
-  next.news.unshift({
-    q: next.month, kind: "deal",
-    text: `Cured the default at ${rec.address} — ${money(w.cure)} to ${w.lender}. `
-      + `They will remember that you found it, which is most of what a relationship is.`,
-  });
-  return { s: next, msg: "Cured." };
-}
-
 /**
- * A SPONSOR WHO CAN PAY DOES PAY — without waiting for the modal.
- *
- * The foreclosure-with-cash-in-the-bank bug survived the equity-cure patch in
- * one shape: an open workout file advanced on its calendar while the player
- * (or the bot) never clicked Cure, even though firm cash or the line could
- * clear the arrears in a single cheque. Lenders do not file on a current
- * borrower who is funded; the desk takes the money. Returns true if the file
- * closed.
+ * Apply a funded cure to the loan and close the file. Caller has already
+ * verified the dollars are fundable under the right allowLoc rule.
  */
-function autoCureIfFunded(s: GameState, parcels: ParcelTable, w: Workout): boolean {
-  const h = s.holdings[w.bbl];
-  const rec = resolveRec(parcels, s, w.bbl);
-  if (!h?.loan || !rec) return false;
-  if (fundableNow(s, parcels, { allowLoc: false }) < w.cure) return false;
-  const paid = fundCashNeed(s, parcels, w.cure, { allowLoc: false });
+function applyCurePayment(
+  s: GameState, w: Workout, paid: number, recAddress: string,
+): void {
+  const h = s.holdings[w.bbl]!;
   logBooks(s, "debtSvc", paid);
-  if (w.cause === "balloon") h.loan = null;
-  else {
+  if (w.cause === "balloon") {
+    h.loan = null;
+  } else if (w.cause === "covenant" && h.loan) {
+    // An equity cure is a principal paydown — burning cash without touching
+    // the balance was how "cured" files reopened the next month.
+    h.loan.balance = Math.max(0, h.loan.balance - paid);
+    if (h.loan.balance <= 0) h.loan = null;
+    else {
+      const io = s.month < h.loan.ioUntilM;
+      const yearsLeft = Math.max(1, h.loan.amortYears - (s.month - h.loan.originM) / 12);
+      h.loan.monthlyPmt = io
+        ? Math.ceil((h.loan.balance * h.loan.ratePct) / 100 / 12)
+        : Math.round(monthlyPayment(h.loan.balance, h.loan.ratePct, yearsLeft));
+      h.loan.sweep = false;
+      h.loan.cleanQs = 0;
+      h.loan.breachMs = 0;
+      h.loan.arrearsMs = 0;
+    }
+  } else if (h.loan) {
     h.loan.sweep = false;
     h.loan.cleanQs = 0;
     h.loan.breachMs = 0;
@@ -271,9 +264,64 @@ function autoCureIfFunded(s: GameState, parcels: ParcelTable, w: Workout): boole
   bumpLenderRel(s, w.lender, 4);
   s.news.unshift({
     q: s.month, kind: "deal",
-    text: `Cured the default at ${rec.address} — ${money(w.cure)} to ${w.lender} out of firm cash. `
+    text: `Cured the default at ${recAddress} — ${money(paid)} to ${w.lender}. `
       + `A funded sponsor does not lose a building to a calendar.`,
   });
+}
+
+/** Refresh the cure dollars on an open file so the desk asks for today's gap. */
+function refreshCureAmount(s: GameState, parcels: ParcelTable, w: Workout): void {
+  const h = s.holdings[w.bbl];
+  const rec = resolveRec(parcels, s, w.bbl);
+  if (!h?.loan || !rec) return;
+  if (w.cause === "covenant") {
+    w.cure = Math.max(equityCureNeed(rec, s, h), Math.round(h.loan.balance * 0.03));
+  } else if (w.cause === "balloon") {
+    w.cure = Math.round(h.loan.balance * 1.01);
+  } else if (w.cause === "arrears") {
+    w.cure = Math.round(h.loan.monthlyPmt * Math.max(3, h.loan.arrearsMs ?? 3));
+  }
+}
+
+export function cureWorkout(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string; msg?: string } {
+  const w = s.workouts?.[bbl];
+  const h = s.holdings[bbl];
+  if (!w || !h?.loan) return { s, err: "There is nothing in default there." };
+  const rec = resolveRec(parcels, s, bbl);
+  if (!rec) return { s, err: "Unknown parcel." };
+  const next = clone(s);
+  const nw = next.workouts![bbl];
+  refreshCureAmount(next, parcels, nw);
+  const allowLoc = cureAllowsLoc(nw.cause);
+  const have = fundableNow(next, parcels, { allowLoc });
+  if (have < nw.cure) {
+    return {
+      s,
+      err: `Curing it takes ${money(nw.cure)} — ${allowLoc ? "liquidity" : "cash"} is short ${money(nw.cure - have)}.`,
+    };
+  }
+  const paid = fundCashNeed(next, parcels, nw.cure, { allowLoc });
+  applyCurePayment(next, nw, paid, rec.address);
+  return { s: next, msg: "Cured." };
+}
+
+/**
+ * A SPONSOR WHO CAN PAY DOES PAY — without waiting for the modal.
+ *
+ * Lenders do not file on a borrower who can clear the arrears or retire the
+ * balloon; the desk takes the money. Covenant equity cures stay cash-only;
+ * arrears and balloons may draw the line. Returns true if the file closed.
+ */
+function autoCureIfFunded(s: GameState, parcels: ParcelTable, w: Workout): boolean {
+  const h = s.holdings[w.bbl];
+  const rec = resolveRec(parcels, s, w.bbl);
+  if (!h?.loan || !rec) return false;
+  refreshCureAmount(s, parcels, w);
+  const allowLoc = cureAllowsLoc(w.cause);
+  if (fundableNow(s, parcels, { allowLoc }) < w.cure) return false;
+  const paid = fundCashNeed(s, parcels, w.cure, { allowLoc });
+  if (paid < w.cure) return false;
+  applyCurePayment(s, w, paid, rec.address);
   return true;
 }
 
@@ -380,21 +428,16 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
       continue;
     }
 
-    // FUNDED AUTO-CURE — cash first, then the line. Runs before the clock can
-    // file, and again while a foreclosure is pending, because a cheque that
-    // clears is the end of the conversation at every stage short of the hammer.
+    // FUNDED AUTO-CURE — equity cures cash-only; arrears/balloons cash then
+    // line. Runs before the clock can file, and again while foreclosure is
+    // pending, because a cheque that clears ends the conversation.
     if (autoCureIfFunded(s, parcels, w)) continue;
 
-    // KEEPING IT CURRENT. See Workout.servicing. While the lender has not
-    // filed, a borrower who goes on paying is a borrower the lender would
-    // rather keep — so every month the cheque clears, the clock moves with it
-    // and nothing is decided. The payment is the ordinary one plus the default
-    // spread, because a loan in default does not accrue at the note rate.
-    // Funded from cash first, then the line — same stack as every other debt
-    // cheque. (Auto-cure above is what closes a file the sponsor can clear in
-    // one payment; this is the opt-in drip that holds the clock.)
+    // KEEPING IT CURRENT (opt-in). Charged here at the default rate; monthCF
+    // still books the note coupon while the file is in notice — that premium
+    // is the price of asking the desk to wait. See Workout.servicing.
+    const due = Math.round(h.loan.monthlyPmt * 1.15);
     if (w.servicing && w.stage !== "foreclosure" && h.loan) {
-      const due = Math.round(h.loan.monthlyPmt * 1.15);
       if (fundableNow(s, parcels) >= due) {
         const paid = fundCashNeed(s, parcels, due);
         logBooks(s, "debtSvc", paid);
@@ -412,7 +455,6 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
         }
         continue;
       }
-      // The cheque did not clear. That is the end of the arrangement.
       w.servicing = false;
       s.news.unshift({
         q: s.month, kind: "warn",
@@ -420,16 +462,53 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
           + `${w.lender} is no longer waiting.`,
       });
     }
+
+    // ARREARS KEEP-ALIVE — without a second coupon. monthCF already took the
+    // note payment; if the firm can still fund that payment from cash/line,
+    // the notice clock does not run into a filing. Solvent books do not lose
+    // buildings over a calendar while the cheque can clear.
+    if (
+      w.cause === "arrears" && w.stage !== "foreclosure" && h.loan
+      && fundableNow(s, parcels) >= h.loan.monthlyPmt
+    ) {
+      w.decideM = Math.max(w.decideM, s.month + 1);
+      h.loan.arrearsMs = 0;
+    }
+
     if (s.month < w.decideM) continue;
 
     if (w.stage === "notice" || w.stage === "forbearance") {
-      // Last look: if the firm can fund the cure on the day the clock runs
-      // out, take the money rather than file. Filing on a funded borrower is
-      // the bug this desk exists to prevent.
+      // Last look: take a funded cure rather than file.
       if (autoCureIfFunded(s, parcels, w)) continue;
-      // The clock ran out. They file — and a filing is not a sale. The sale
-      // is the county's, once a year, in July, on the courthouse steps with
-      // everything else that finished the process. See engine/auction.ts.
+
+      // A TECHNICAL DEFAULT ON A CURRENT LOAN IS NOT A FORECLOSURE.
+      //
+      // Covenant files used to roll into filing on the notice calendar while
+      // monthCF kept sending the coupon — the exact "I can pay the debt
+      // service, why did they take my building?" report. Lenders trap cash and
+      // demand an equity cure; they do not auction a note that is current.
+      // Roll the cure window and keep asking for the cheque.
+      if (w.cause === "covenant" && fundableNow(s, parcels) >= h.loan.monthlyPmt) {
+        w.decideM = s.month + NOTICE_M;
+        if ((s.month - w.startM) % 6 === 0) {
+          s.news.unshift({
+            q: s.month, kind: "warn",
+            text: `${w.lender} is still waiting on the equity cure at ${rec.address} (${money(w.cure)}). `
+              + `The note is current, so they have not filed — but the sweep stays on until the covenant clears.`,
+          });
+        }
+        continue;
+      }
+
+      // Arrears: liquidity still covers the coupon — push the decision, do not file.
+      if (w.cause === "arrears" && fundableNow(s, parcels) >= h.loan.monthlyPmt) {
+        w.decideM = s.month + 1;
+        h.loan.arrearsMs = 0;
+        continue;
+      }
+
+      // The clock ran out and the firm cannot fund. They file — filing is not
+      // a sale; the July auction is. See engine/auction.ts.
       w.stage = "foreclosure";
       w.saleM = nextJulyAfter(s.month, FORECLOSE_M);
       w.decideM = w.saleM;

@@ -373,7 +373,7 @@ export function prepayPenalty(loan: Loan, month: number): number {
   return Math.round(loan.balance * (loan.ratePct / 100) * yrs * 0.62);
 }
 
-function monthlyPayment(principal: number, ratePct: number, years: number): number {
+export function monthlyPayment(principal: number, ratePct: number, years: number): number {
   const i = ratePct / 100 / 12;
   const n = years * 12;
   return (principal * i) / (1 - Math.pow(1 + i, -n));
@@ -618,6 +618,32 @@ export function ltv(rec: ParcelRecord, s: GameState, h: Holding): number | null 
   return v > 0 ? h.loan.balance / v : null;
 }
 
+/**
+ * Principal a sponsor must inject to put covenants back onside — the named
+ * equity-cure amount. Same maths the monthly cure cheque uses, so a workout
+ * file never asks for a flat "12% of balance" when the real gap is smaller
+ * (or larger).
+ */
+export function equityCureNeed(rec: ParcelRecord, s: GameState, h: Holding): number {
+  const loan = h.loan;
+  if (!loan) return 0;
+  const d = dscr(rec, s, h);
+  const l = ltv(rec, s, h);
+  const value = holdingValue(rec, s.econ, h, s.month);
+  let target = loan.balance;
+  if (d !== null && d < loan.minDSCR && d > 0) {
+    target = Math.min(target, loan.balance * (d / loan.minDSCR));
+  } else if (d !== null && d <= 0) {
+    // No income against the test — cure is not a rounding error; demand a
+    // meaningful paydown so the desk has something to underwrite against.
+    target = Math.min(target, loan.balance * 0.88);
+  }
+  if (l !== null && l > loan.maxLTV && value > 0) {
+    target = Math.min(target, loan.maxLTV * value);
+  }
+  return Math.max(0, Math.ceil(loan.balance - target));
+}
+
 // One quarter of debt life for a holding. Returns the cash the loan takes
 // this quarter (debt service, plus any sweep of surplus cash flow).
 export function tickLoan(
@@ -719,11 +745,7 @@ export function tickLoan(
    * `maxLTV x value` by definition. Whichever binds, binds.
    */
   if (breached && fundableNow(s, parcels, { allowLoc: false }) > 0) {
-    const value = holdingValue(rec, s.econ, h, s.month);
-    let target = loan.balance;
-    if (d !== null && d < loan.minDSCR) target = Math.min(target, loan.balance * (d / loan.minDSCR));
-    if (l !== null && l > loan.maxLTV && value > 0) target = Math.min(target, loan.maxLTV * value);
-    const need = Math.ceil(loan.balance - target);
+    const need = equityCureNeed(rec, s, h);
     // Cash only — sponsor cheque, not a line draw. Taken immediately so two
     // breached buildings in the same month cannot both spend the same dollar.
     const pay = fundCashNeed(s, parcels, need, { allowLoc: false });
@@ -776,12 +798,17 @@ export function tickLoan(
     // file goes to the workout desk, which is where the covenant cause
     // declared in types.ts was always supposed to come from.
     if ((loan.breachMs ?? 0) >= 24 && !s.workouts?.[h.bbl]) {
-      openWorkout(s, h.bbl, "covenant", Math.round(loan.balance * 0.12));
+      // Ask for the real equity-cure dollars, not a flat 12% of balance — a
+      // file that demanded more cash than the covenant gap is how solvent
+      // books were walked to foreclosure over a technical default.
+      const cure = Math.max(equityCureNeed(rec, s, h), Math.round(loan.balance * 0.03));
+      openWorkout(s, h.bbl, "covenant", cure);
       s.news.unshift({
         q, kind: "warn",
         text: `Two years of broken covenants at ${rec.address} and no sign of a cure. `
-          + `${productById(loan.product).lender} has moved it to their workout desk — pay down the loan, ask them `
-          + `to restructure, or hand back the deed before they file.`,
+          + `${productById(loan.product).lender} has moved it to their workout desk — inject `
+          + `${cure >= 1e6 ? `$${(cure / 1e6).toFixed(2)}M` : `$${Math.round(cure / 1000)}K`} of equity, ask them `
+          + `to restructure, or hand back the deed. They will not file while the note stays current.`,
       });
     }
   } else if (loan.sweep) {
@@ -866,8 +893,21 @@ export function tickLoan(
         text: `Balloon at ${rec.address} rolled into new paper at ${qd.ratePct.toFixed(2)}% (fee $${(fee / 1000).toFixed(0)}K). Want equity out? That's a refi you choose.`,
       });
     } else {
-      const shortfall = loan.balance + fee - qd.principal;
-      if (fundableNow(s, parcels) >= shortfall) {
+      const payoff = loan.balance + fee;
+      const shortfall = payoff - qd.principal;
+      // Prefer retiring the note when liquidity covers the whole balloon —
+      // cleaner than papering a scrap takeout. Then bridge a partial refi.
+      // Only open a workout file when the firm cannot fund either path.
+      if (fundableNow(s, parcels) >= payoff) {
+        const paid = fundCashNeed(s, parcels, payoff);
+        logBooks(s, "debtSvc", paid);
+        h.loan = null;
+        s.news.unshift({
+          q, kind: "deal",
+          text: `Balloon at ${rec.address}: no clean refinancing, so you retired the `
+            + `$${(payoff / 1e6).toFixed(2)}M note out of firm liquidity. The building is free and clear.`,
+        });
+      } else if (fundableNow(s, parcels) >= shortfall) {
         const paid = fundCashNeed(s, parcels, shortfall);
         // AND IT GOES ON THE BOOKS. The branch above books its fee; this one
         // took the money and said nothing, so the largest single cheque a
@@ -885,16 +925,7 @@ export function tickLoan(
         });
       } else {
         // NOT A SALE — A DEFAULT, WHICH IS A CONVERSATION.
-        //
-        // This used to liquidate the building inside the same tick: balloon
-        // due, no refi, no cash, sold at a distress price, black mark, done.
-        // That is what the END of a foreclosure looks like. What actually
-        // happens on the day a balloon is missed is that somebody at the
-        // lender opens a file, and for the next fourteen-odd months you and
-        // they have options — cure it, buy time at their price, hand back the
-        // keys, or let them take it at auction. Which of those is on the table
-        // is decided by THEIR balance sheet, not yours.
-        openWorkout(s, h.bbl, "balloon", loan.balance + fee);
+        openWorkout(s, h.bbl, "balloon", payoff);
         s.news.unshift({
           q, kind: "warn",
           text: `The balloon came due at ${rec.address} and there is no refinancing — today's market writes `

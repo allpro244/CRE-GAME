@@ -16,6 +16,7 @@ import { lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { locAvailable } from "@/engine/credit";
 import { isMixedUse, mixLabel, mixOf, uses as usesOf, useSf, USE_WORD } from "@/engine/mix";
 import { ownerOf, gradeOf } from "@/engine/rivals";
+import { taxAppealQuote } from "@/engine/tax";
 import { usd, sf, pct } from "@/ui/format";
 import { LettingOdds, LeasingDesk, ResidualRead, LandDesk } from "@/ui/panels/PropertyDesks";
 import { useLabel, devUseLabel, physicalOcc, goingIn, band, apMid, PropTab, annualPayment, openResearchOn, Neighbourhood, Row } from "@/ui/panels/shared";
@@ -67,6 +68,7 @@ function ParcelPanelInner({
   const leasedSf = holding && commercial ? holding.tenants.reduce((s2, t) => s2 + t.sf, 0) : 0;
   const d = holding ? dscr(rec, game, holding) : null;
   const l = holding ? ltv(rec, game, holding) : null;
+  const taxAppeal = holding ? taxAppealQuote(game, parcels, selectedBBL) : null;
   // No tab means the docked card, which shows the whole file as it always has.
   const on = (t: PropTab) => tab === undefined || tab === t;
   // Land desk: property-page Build tab always; docked card only when the lot
@@ -795,6 +797,23 @@ function ParcelPanelInner({
             <Row k="Assessed (tax)" v={usd(holding.assessed ?? holding.costBasis)} />
             <Row k="Equity" v={usd(value - (holding.loan?.balance ?? 0))} strong />
           </div>
+        </div>
+      )}
+      {!embedded && on("summary") && holding && taxAppeal && (
+        <div className="deal">
+          <div className="deal-head">Assessment watch</div>
+          <div className="grid">
+            <Row k="Tax roll" v={usd(taxAppeal.assessed)} bad />
+            <Row k="Market evidence" v={usd(taxAppeal.target)} />
+            <Row k="Potential annual saving" v={usd(taxAppeal.annualSavings)} strong />
+          </div>
+          <button
+            className="btn"
+            disabled={game.cash < taxAppeal.fee}
+            onClick={() => useStore.getState().appealTax(selectedBBL)}
+          >
+            Appeal assessment · {usd(taxAppeal.fee)}
+          </button>
         </div>
       )}
 

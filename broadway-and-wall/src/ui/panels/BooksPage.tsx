@@ -5,21 +5,35 @@ import { MILESTONES } from "@/engine/sim";
 import { depositsHeld } from "@/engine/leasing";
 import { collateralAsIs, ownedHoldingValue, netWorth, resolveRec } from "@/engine/value";
 import { locLimit, locRate } from "@/engine/credit";
+import { taxAppealQuote } from "@/engine/tax";
 import { usd, pct } from "@/ui/format";
-import { NewsText } from "@/ui/panels/MarketPage";
 import { NWChart, Big } from "@/ui/panels/shared";
 
 type BooksTab = "balance" | "income";
 
 export function BooksPage() {
+  const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
   const focus = useStore((s) => s.focus);
+  const setPage = useStore((s) => s.setPage);
+  const select = useStore((s) => s.select);
   const [tab, setTab] = useState<BooksTab>("balance");
   const nw = game.nwHistory[game.nwHistory.length - 1] ?? 0;
   const realized = game.exits.reduce((a, e) => a + e.gain, 0);
   const exits = [...(game.exits ?? [])].reverse().slice(0, 12);
   const achieved = MILESTONES.filter((m) => game.milestones?.[m.id] !== undefined);
   const pending = MILESTONES.filter((m) => game.milestones?.[m.id] === undefined);
+  const holdings = Object.values(game.holdings).filter((h) => !game.merged?.[h.bbl]);
+  const pendingAppeals = holdings.flatMap((h) => {
+    const rec = resolveRec(parcels, game, h.bbl);
+    return h.taxAppeal && rec ? [{ bbl: h.bbl, address: rec.address, appeal: h.taxAppeal }] : [];
+  });
+  const appealable = holdings.flatMap((h) => {
+    const q = taxAppealQuote(game, parcels, h.bbl);
+    const rec = resolveRec(parcels, game, h.bbl);
+    return q && rec ? [{ bbl: h.bbl, address: rec.address, ...q }] : [];
+  }).sort((a, b) => b.annualSavings - a.annualSavings);
+  const goProperty = (bbl: string) => { select(bbl); focus(bbl); setPage("property"); };
   return (
     <div>
       <div className="stat-strip">
@@ -49,21 +63,45 @@ export function BooksPage() {
 
       {tab === "balance" ? <BalanceSheet /> : <IncomeStatementTab />}
 
-      <div className="page-section">
-        <div className="page-section-head">The tape</div>
-        <div className="news" style={{ maxHeight: 260, overflowY: "auto" }}>
-          {game.news.slice(0, 60).map((n, i) => (
-            <div
-              key={i}
-              className={"news-item news-" + n.kind}
-              style={n.bbl ? { cursor: "pointer" } : undefined}
-              title={n.bbl ? "Fly to it" : undefined}
-              onClick={n.bbl ? () => focus(n.bbl!, true) : undefined}
-            >
-              <span className="news-q mono">{monthLabel(n.q)}</span> <NewsText text={n.text} />{n.bbl ? " ✈" : ""}
+      {(pendingAppeals.length > 0 || appealable.length > 0) && (
+        <div className="page-section">
+          <div className="page-section-head">Property-tax desk</div>
+          {pendingAppeals.length > 0 && (
+            <div className="mini-list" style={{ marginBottom: 10 }}>
+              {pendingAppeals.map(({ bbl, address, appeal }) => (
+                <button key={bbl} className="neighbor" onClick={() => goProperty(bbl)}>
+                  <span className="neighbor-addr">{address}</span>
+                  <span className="neighbor-meta mono">
+                    Board sits {monthLabel(appeal.decideM)} · {(appeal.odds * 100).toFixed(0)}% as filed
+                  </span>
+                </button>
+              ))}
             </div>
-          ))}
+          )}
+          {appealable.length > 0 && (
+            <>
+              <div className="hint">
+                {appealable.length} building{appealable.length === 1 ? "" : "s"} carry assessments materially above today&apos;s market evidence.
+              </div>
+              <div className="mini-list">
+                {appealable.slice(0, 4).map((a) => (
+                  <button key={a.bbl} className="neighbor" onClick={() => goProperty(a.bbl)}>
+                    <span className="neighbor-addr">{a.address}</span>
+                    <span className="neighbor-meta mono">
+                      {usd(a.annualSavings)} / yr potential saving · file for {usd(a.fee)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
+      )}
+
+      <div className="page-section">
+        <div className="page-section-head">The wire</div>
+        <div className="hint">Market and firm news now lives on its own desk — the last {(game.news ?? []).length} items, filterable by kind.</div>
+        <button className="btn" onClick={() => setPage("news")}>Open News →</button>
       </div>
       <div className="deals-grid">
         <section className="page-section">

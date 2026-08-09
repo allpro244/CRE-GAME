@@ -8,7 +8,7 @@ import { taxAppealQuote } from "@/engine/tax";
 import { describePropertyEvent, propertyTimeline } from "@/engine/history";
 import { usd, sf } from "@/ui/format";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
-import { AssetHistory, WorkoutDesk, LandDesk } from "@/ui/panels/PropertyDesks";
+import { AssetHistory, WorkoutDesk } from "@/ui/panels/PropertyDesks";
 import { useLabel, band, PropTab, Big, Row } from "@/ui/panels/shared";
 
 export function PropertyPage() {
@@ -217,7 +217,6 @@ export function PropertyPage() {
           </div>
         </div>
       )}
-      {active === "build" && <LandDesk bbl={bbl} />}
       {active === "build" && dev && (
         <div className="page-section">
           <div className="page-section-head">{dev.mode === "reuse" ? "Conversion under way" : "Under construction"}</div>

@@ -8,6 +8,7 @@ import { unitStatus, avgUnitSf } from "@/engine/leasing";
 import { payoffQuote } from "@/engine/notes";
 import { fundableNow } from "@/engine/credit";
 import { portfolioQuote } from "@/engine/portfolio";
+import { taxAppealQuote } from "@/engine/tax";
 import type { PortfolioQuote } from "@/engine/portfolio";
 import { usd, sf } from "@/ui/format";
 import { ListSection, RefiSection } from "@/ui/panels/ParcelDesk";
@@ -110,6 +111,11 @@ export function PortfolioPage() {
   rows.sort(cmp);
   const shown = rows;
   const ranked = sort.key === "noi" && sort.dir === -1;
+  const assessmentWatch = holdings.flatMap((h) => {
+    const q = taxAppealQuote(game, parcels, h.bbl);
+    const rec = resolveRec(parcels, game, h.bbl);
+    return q && rec ? [{ bbl: h.bbl, address: rec.address, ...q }] : [];
+  }).sort((a, b) => b.annualSavings - a.annualSavings);
   // One header cell, the same idiom the Marketplace tape uses. `desc` is the
   // direction a column WANTS on first click: money and area read biggest-first,
   // an address reads A-Z.
@@ -168,6 +174,22 @@ export function PortfolioPage() {
 
   return (
     <div>
+      {assessmentWatch.length > 0 && (
+        <div className="deal" style={{ marginTop: 0, marginBottom: 12 }}>
+          <div className="deal-head">Assessment watch · {assessmentWatch.length} appealable</div>
+          <div className="mini-list">
+            {assessmentWatch.slice(0, 5).map((a) => (
+              <button key={a.bbl} className="neighbor" onClick={() => go(a.bbl)}>
+                <span className="neighbor-addr">{a.address}</span>
+                <span className="neighbor-meta mono">
+                  {usd(a.annualSavings)} / yr potential saving · file for {usd(a.fee)}
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="hint">Open a property to review the evidence and file the appeal.</div>
+        </div>
+      )}
       <div className="stat-strip">
         {/* FIRST, NOT LAST. This sat rightmost, after "Buildings", in the same
             20px mono as every other stat — the only number in the game that can

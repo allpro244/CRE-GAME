@@ -41,7 +41,14 @@ export function NewsPage() {
           </button>
         ))}
       </div>
-      {!items.length && <div className="hint">Nothing under that heading yet.</div>}
+      {!items.length && (
+        <div className="deal">
+          <div className="hint">Nothing under that heading yet.</div>
+          {kind !== "all" && (
+            <button className="btn" onClick={() => setKind("all")}>Show everything →</button>
+          )}
+        </div>
+      )}
       {byMonth.map((g) => (
         <div key={g.q} className="page-section" style={{ marginTop: 6 }}>
           <div className="page-section-head">{monthLabel(g.q)}</div>

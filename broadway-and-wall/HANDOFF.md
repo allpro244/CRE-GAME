@@ -188,11 +188,14 @@ over ~40y ≈ −1.72%/yr), floor 0.35 for residual logistics; industrial driver
 (was pinned at 1.54%), sector-exit firing 74% → **5.7%** of months. Sized from
 the historical record; where F landed is the measurement.
 
-**2. Development still barely pencils.** `dev.affordableLotShare` is ~2.0%
-(was 1.7% before industComp; industrial falsely winning 66% of best-use bids
-fell to 22%). Honest mid-cycle is still 8–12%. Land is the residual; if nothing
-pencils, either rents are too low, costs too high, or land prices are not
-answering the builder's number. #47.
+**2. ~~Development still barely pencils~~ — CLOSED.** Land ask was above the
+builder residual by construction: a 14% texture blend on top of the winning
+bid, then ×(1 + 0.22·demandBeta·cycleDev) on a residual that already
+underwrites through-cycle `rentExp`/`capExp`. `landRead` is a pure auction
+again — `max(builder, holder, textureFloor)`. Measured: builder-won lots ask
+exactly the residual; ten-year mean `affordableLotShare` moves from ~1–2% into
+the mid-teens (seed-dependent, cyclical), against an honest mid-cycle band of
+roughly 8–12%. #47.
 
 **3. ~~The conservation identity's debt gap~~ — CLOSED.** Cash-out refinance and
 facility draws book to `borrowed`; voluntary paydowns to `debtSvc`; conserve's
@@ -226,11 +229,9 @@ is the obvious next move on that feature.
 
 ## 7. WHAT I WOULD DO NEXT, IN ORDER
 
-1. **Make development pencil** (#2). Industrial land bids no longer dominate
-   the residual falsely; the remaining gap is land price / rent / cost.
-2. **Then the four quadrants** (#31/#39) — the deepest remaining structural
-   question and the one most likely to move everything at once.
-3. CPI non-monotonic (#4), holder memory beyond approaches, zoning depth.
+1. **The four quadrants** (#31/#39) — rent repricing vacancy in the same month;
+   the deepest remaining structural question.
+2. CPI non-monotonic (#4), holder memory beyond approaches, zoning depth.
 
 ---
 

@@ -657,27 +657,15 @@ export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
 }
 
 export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
-  // DEMAND HAD NO LEVEL EFFECT ON LAND, ONLY A CYCLE EFFECT.
+  // LOCATION PRICES DIRT AT THE LEVEL, NOT ONLY IN THE CYCLE.
   //
-  // The demand term was multiplied by `cycleDev`, which oscillates around zero
-  // — so a location's demand changed how hard its land value SWUNG with the
-  // cycle and did not change what the land was worth. The audit put a number
-  // on it: force a major employer onto a block, raise demand by 26 points
-  // across 400 metres, and land value in every distance ring came back
-  // "never moved". Land that does not reprice when the demand for the space on
-  // it changes is not land, it is a decoration on the parcel record.
-  //
-  // So the level term is here now and the cycle term stays: a better location
-  // is worth more dirt ALWAYS, and it also swings harder. `demandBeta` is
-  // centred so an ordinary location is 1.0 and neither gains nor loses.
-  // Centred on the CITY'S OWN mean location index, so this reprices land
-  // relative to its neighbours without moving the aggregate — a better corner
-  // gains exactly what a worse one gives up. Centring on a typed constant
-  // would have quietly cut every land value in the game by a sixth, because
-  // demandBeta reads 0.70 at an ordinary location and not 1.0.
+  // Demand used to enter only as a multiplier on `cycleDev`, so a block that
+  // gained thirty points of desirability put nothing on its land value in a
+  // flat market. The level term is centred on the CITY'S OWN mean location
+  // index: a better corner gains what a worse one gives up, and the aggregate
+  // is not silently shifted by the choice of pivot.
   const mean = econ.locIdxMean ?? 0.62;
   const level = Math.max(0.35, 1 + 0.85 * (demandIdx(rec.demandScore) - mean));
-  const d = demandBeta(rec.demandScore);
 
   // THE PRICE OF DIRT IS THE BETTER OF TWO OFFERS, WHICH IS WHAT AN AUCTION IS.
   //
@@ -706,52 +694,39 @@ export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
   // was the ENTIRE price before this change and that was the fault; it is not
   // therefore worthless. It carries the map's own texture — the waterfront,
   // the park frontage, the corner, everything about a location that no income
-  // model can see because it is not in the rent yet. Kept as a minority term
-  // so a residual of zero does not erase a street, and so two lots with the
-  // same envelope on different corners are still different lots.
-  //
-  // It is a MINORITY term deliberately: appraisal practice weights the
-  // residual heavily on a site whose value is in its development potential,
-  // and the sales-comparison memory lightly when it cannot be tested. The
-  // comp wire (tickLandComps -> s.landAdj) is the part that gets tested, and
-  // it multiplies this whole expression downstream.
+  // model can see because it is not in the rent yet. It is a FLOOR under the
+  // auction, not a weight in it: a lot with no income case still does not
+  // trade at nothing. The comp wire (tickLandComps → s.landAdj) is what gets
+  // tested against sales and multiplies this texture downstream via resolveRec.
   const texture = rec.landPsf * econ.landIdx * level * envelopeRealisation(rec);
 
-  // A BLEND IS A BLEND. THIS WAS A MAX PLUS A BONUS, AND THE BONUS WAS THE
-  // REASON NOTHING IN THIS CITY COULD BE BUILT.
+  // THE PRICE IS THE WINNING BID. That is what an auction is.
   //
-  // The paragraph above says the comparison memory is "a MINORITY term
-  // deliberately", weighted the way an appraiser weights sales comparison
-  // against a residual. The code did not do that. It took the best income bid,
-  // floored it, and then ADDED 14% of the comparison on top — so the price of
-  // every lot in the game was strictly greater than what any builder could pay
-  // for it, by construction, in every market, forever.
+  // Two earlier forms both priced dirt STRICTLY ABOVE the builder's residual
+  // on every lot that pencilled, by construction:
   //
-  // Measured before this change, at year thirty across two towns: the land
-  // price ran 1.24x to 1.37x the best builder's residual, and the number of
-  // lots out of 1,109 where a builder could pay the asking price was ZERO.
-  // Not few. Zero. The residual is defined as the price at which a builder
-  // earns exactly DEV_MARGIN, so a market permanently above it is a market in
-  // which development never clears its hurdle — and `pnpm devyield` had been
-  // reporting exactly that from the other end the whole time: 0 office sites
-  // pencil of 1,363, 0 retail, 3 multifamily, 21 industrial.
+  //   1. max(income, floor) + 14% of full texture — a "minority comp weight"
+  //      that was in fact a permanent premium over the winning bid whenever
+  //      texture exceeded the residual (the common case on a good corner).
+  //   2. Then × (1 + 0.22 · demandBeta · cycleDev) on top — while the residual
+  //      itself already underwrites through-cycle rentExp / capExp. Measured
+  //      at year thirty with cycleDev pinned at its rail: every builder-won
+  //      lot asked 1.09–1.11× what the builder could pay. Mid-cycle
+  //      affordableLotShare sat at ~1–2% against an honest 8–12%.
   //
-  // The city kept building anyway, about 1%/yr of office stock, because
-  // `devPencils` decides city supply from index ratios and never looks at what
-  // land costs. That is the same quantity with two answers: the city's supply
-  // model said build and the player's desk said it was impossible, and both
-  // were shipped.
+  // The residual IS the price at which a builder earns exactly DEV_MARGIN. When
+  // the builder is the high bidder, the ask has to be that number or the desk
+  // and the land market are two different worlds. Holder and texture can still
+  // win — and when they do, today's builder correctly cannot pay — but they
+  // win by bidding more, not by a coefficient applied after the auction.
   //
-  // So the blend is written as the blend the comment already described. The
-  // floor stays — a lot with no income case still does not trade at nothing —
-  // and a good corner can still price above its own residual, because the
-  // comparison term can exceed the income term and that is a real thing that
-  // happens. What cannot happen any more is EVERY lot doing it.
-  const COMP_WEIGHT = 0.14;
+  // Cycle reaches land through rentExp (builder) and PEAK_RENT_MULT (holder),
+  // which is where a through-cycle underwriter actually puts it. Location still
+  // enters the texture floor through `level` above.
   const floor = texture * 0.30;
-  const base = Math.max(builder, holder, floor) * (1 - COMP_WEIGHT) + texture * COMP_WEIGHT;
+  const base = Math.max(builder, holder, floor);
   return {
-    psf: base * (1 + 0.22 * d * econ.cycleDev),
+    psf: base,
     builder, holder, texture: floor,
     winner: builder >= holder && builder >= floor ? "builder" : holder >= floor ? "holder" : "texture",
     scheme,

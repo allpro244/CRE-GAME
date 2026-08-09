@@ -193,6 +193,7 @@ export default function TopBar() {
               a control. */}
           {/* Vital money/time — outside the clip box. A full nav used to push
               Line into overflow:hidden and show "$5.." for a multi-million limit. */}
+          <div className="topbar-summary">
           <div className="topbar-vital">
             <Stat label={monthLabel(game.month)} value={`Yr ${Math.floor(game.month / 12) + 1}`} wide w={118} keep />
             <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} w={88} keep />
@@ -249,6 +250,9 @@ export default function TopBar() {
             title={`Empty lots left in ${manifest?.city ?? "town"}. Every one is a site someone can build on — as they run out, land gets scarce and prices climb. ${game.totalLots ? Math.round((100 * (game.builtAtStart + Object.keys(game.built).length)) / game.totalLots) : 0}% of the city is built.`}
           />
           </div>
+          </div>
+          <div className="topbar-workspace">
+          <nav className="nav-cluster nav-cluster-desks" aria-label="Firm desks">
           <span className="topbar-sep" />
           <button className={"nav-btn" + (page === "portfolio" ? " nav-on" : "")} onClick={() => setPage(page === "portfolio" ? "none" : "portfolio")}>
             Portfolio
@@ -322,6 +326,8 @@ export default function TopBar() {
           <button className={"nav-btn" + (page === "news" ? " nav-on" : "")} onClick={() => setPage(page === "news" ? "none" : "news")}>
             News<Badge n={unread} />
           </button>
+          </nav>
+          <div className="nav-cluster nav-cluster-map" role="group" aria-label="Map lenses">
           <span className="topbar-sep" />
           <button
             className={"lens-btn" + (lens === "land" ? " lens-on" : "")}
@@ -351,6 +357,8 @@ export default function TopBar() {
           >
             ◫ Owners
           </button>
+          </div>
+          <div className="nav-cluster nav-cluster-time" role="group" aria-label="Time controls">
           <button className="advance-btn" onClick={advance} disabled={!!game.gameOver || advancing} title="One month (Space)">
             Advance ▸
           </button>
@@ -360,6 +368,8 @@ export default function TopBar() {
           <button className="advance-btn advance-fast" onClick={advanceUntil} disabled={!!game.gameOver || advancing} title="Skip to the next thing that needs a decision, up to 3 years (N)">
             {advancing ? "…" : "⏭"}
           </button>
+          </div>
+          </div>
         </div>
       )}
 

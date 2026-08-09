@@ -75,15 +75,49 @@ export default function GamePanels() {
     : page === "settings" ? "Settings"
     : page === "primer" ? "How this business works"
     : "The Marketplace";
+  const kicker = page === "portfolio" ? "The firm"
+    : page === "deals" ? "Live execution"
+    : page === "books" ? "The ledger"
+    : page === "news" ? "Market intelligence"
+    : page === "leasing" ? "Asset management"
+    : page === "debt" ? "Capital structure"
+    : page === "property" ? "Asset file"
+    : page === "saves" ? "Campaign"
+    : page === "economy" ? "City & markets"
+    : page === "research" ? "Underwriting"
+    : page === "notes" ? "Credit"
+    : page === "staff" ? "The organization"
+    : page === "settings" ? "Preferences"
+    : page === "primer" ? "Primer"
+    : "Acquisitions";
+  const subtitle = page === "portfolio" ? "Value, income, concentration and the shape of what you own."
+    : page === "deals" ? "Every live negotiation, bid, contract and clock on your desk."
+    : page === "books" ? "Cash movement, operating results and the record of the firm."
+    : page === "news" ? "What changed in the city, and what may change next."
+    : page === "leasing" ? "Occupancy, expirations and the mandate you have delegated."
+    : page === "debt" ? "Coverage, maturities, pricing and refinancing risk across the book."
+    : page === "property" ? "The complete operating, financing and development record."
+    : page === "saves" ? "Autosave status and named points you can return to."
+    : page === "economy" ? "The real economy, space markets and construction cycle beneath every deal."
+    : page === "research" ? "Comparable evidence, submarkets and the assumptions behind value."
+    : page === "notes" ? "Loans and distressed paper available away from the deed market."
+    : page === "staff" ? "Capacity, judgment and the people carrying your mandates."
+    : page === "settings" ? "Display, interruption and simulation controls."
+    : page === "primer" ? "The quantities this game expects you to reason with."
+    : "On-market listings, off-market calls and motivated sellers.";
   return (
     <>
       <ParcelPanel />
       {page !== "none" && (
         <div className="page-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setPage("none"); }}>
-          <div className="page">
+          <div className={`page page-${page}`}>
             <div className="page-head">
-              <div className="page-title">{title}</div>
-              <button className="panel-close" onClick={() => setPage("none")}>×</button>
+              <div className="page-heading">
+                <div className="page-kicker">{kicker}</div>
+                <div className="page-title">{title}</div>
+                <div className="page-subtitle">{subtitle}</div>
+              </div>
+              <button className="panel-close page-close" aria-label={`Close ${title}`} onClick={() => setPage("none")}>×</button>
             </div>
             {page === "portfolio" && <PortfolioPage />}
             {page === "deals" && <DealsPage />}

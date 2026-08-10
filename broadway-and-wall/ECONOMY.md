@@ -431,22 +431,28 @@ and is why it stays in.
 
 **What to fix, in order.**
 
-1. The shortage side of `vacTerm` should be superlinear and uncapped the way
+1. ~~The shortage side of `vacTerm` should be superlinear and uncapped the way
    the glut side already is, so a market that cannot get any tighter stops
-   pretending the pressure is constant.
-2. Supply has to answer employment. +20% stock against +46% jobs over fifty
+   pretending the pressure is constant.~~ **Done** in `market.ts`: pinned
+   `vacTerm` is 0; near-floor shortage saturates by room above friction;
+   on-rail scarcity weights `structTight` *flow* plus a reduced level (full
+   level off-rail). Flow-only was tried and rejected — it killed price
+   rationing and regressed supply-answers. Harness: `test/rent-anchor.mjs`.
+2. ~~Supply has to answer employment. +20% stock against +46% jobs over fifty
    years is the imbalance underneath everything else here; the rent term is
-   only how it surfaces.
-3. `tightEma` should distinguish a market that is tight because demand is
+   only how it surfaces.~~ **Done** via densify/delivery (`test/supply-answers.mjs`).
+3. ~~`tightEma` should distinguish a market that is tight because demand is
    strong from one that is tight because nothing can be built. The second is
    not a Manhattan premium, it is a supply failure, and it should not earn a
-   permanently rising rent-to-income.
+   permanently rising rent-to-income.~~ **Done**: while vacancy is pinned,
+   `tightEma` targets 0 (faster fade). Availability on the rail is saturated;
+   it cannot mint Manhattan from “can’t build.” Measured: avg TE while pinned
+   now sits *below* overall avg (was above); median max TE ~0.17 (was ~0.53).
 
-**This blocks the land work.** `landIdx` is derived from effective rents over
-construction cost. A rent series that outruns income by a point a year
-compounds directly into the price of dirt, so wiring comparable sales into land
-value on top of it would be building a new mechanism on a broken input. Fix the
-anchor first.
+**Land work is unblocked on the rent input.** Median rent−wage is ~0.20 pp/yr
+and RTI ~1.03× on the rent-anchor seeds — no longer a point-a-year runaway.
+Remaining soft-market nominal escalator and marketplace-vs-develop softness
+are separate OPEN items, not this rail fault.
 
 # H IS THE LAST ONE, AND I THINK IT IS THE TEST — your call, not mine
 
@@ -749,12 +755,12 @@ failed one run in four for no reason, and cost an afternoon proving nothing had
 moved. Induced demand is an expectation, so it now takes the MEAN over twelve
 pairs and reports its own standard error. The 15% budget is untouched.
 
-**F. INCOME ANCHOR — the model, and it is not fixed.** The seven-seed median of
-1.51%/yr looked like a hair over the rail. It was a lucky draw: over sixteen
-seeds the median is **1.96%/yr** and 69% of seeds breach. See the section above
-for the trace — the market is pinned on its frictional vacancy floor, supply
-grows at less than half the rate of employment, and the shortage side of the
-rent term is linear where the glut side is superlinear.
+**F. INCOME ANCHOR — the model faults named above are fixed.** §F #1/#3
+(vacTerm / tightEma) and #2 (supply answering) are closed; see the struck
+items and `test/rent-anchor.mjs` / `test/supply-answers.mjs`. The historical
+seven-seed median of 1.51%/yr and sixteen-seed 1.96%/yr were the *pre-fix*
+reading of the rail tax. Post-fix medians: real office ~1.43%/yr, rent−wage
+~0.20 pp/yr, RTI ~1.03×, TE-while-pinned below overall TE.
 
 `heldOccupancy` was the other suspect and is exonerated: it has no consumers in
 `src/engine` at all.

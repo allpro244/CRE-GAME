@@ -1226,6 +1226,12 @@ export interface Econ {
    */
   structTight?: Record<BuiltClass, number>;
   /**
+   * Prior-month `structTight`, so rent scarcity can price the FLOW of a
+   * capacity shortfall (worsening unmet demand) rather than a permanent tax
+   * on a pinned vacancy rail. See market.ts rent formation / ECONOMY.md §F.
+   */
+  structTightPrev?: Record<BuiltClass, number>;
+  /**
    * District land heat from comps (relative to town median). Written by
    * tickLandComps; read by landRead so builder-clearing sites still discover
    * street prints.

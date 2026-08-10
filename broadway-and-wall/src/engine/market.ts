@@ -2224,20 +2224,28 @@ export function tickEcon(s: GameState) {
     // permanent `tightEma` premium — the income anchor then defended a rising
     // rent-to-wage ratio because, by its own measure, the city was "genuinely
     // tight." That is backwards when the floor is binding because stock cannot
-    // keep up with jobs (ECONOMY.md §F). Chronic rail-binding without a
-    // responding pipeline is a supply failure; fade the premium rather than
-    // compounding it.
+    // keep up with jobs (ECONOMY.md §F #3).
+    //
+    // A first cut faded only when `!supplyAnswering`. That bar is low (any
+    // thin pipeline), so a town glued to the rail with a few cranes still
+    // fed saturated `tightNow` into the EMA — measured avg tightEma WHILE
+    // pinned sat ABOVE the unconditional average, and seeds spent half a
+    // century on the rail at maxTE ≈ 0.53. The availability instrument is
+    // saturated on the rail; it cannot tell "desperately short" from "at
+    // the floor." Refuse to mint or renew premium from it. Growing unmet
+    // demand still prices through scarcity → rentPress; this EMA only stores
+    // chronic tightness read from an UNPINNED availability signal. Fade
+    // faster on the rail so a decade of supply failure does not defend a
+    // Manhattan ratio into the next cycle.
     const stock = Math.max(1, e.stock?.office ?? CITY_STOCK.office);
     const availNow = (e.cityVac?.office ?? NATURAL_VAC.office)
       + (e.sublet?.office ?? 0) / stock;
     const tightNow = (NATURAL_VAC.office - availNow) / NATURAL_VAC.office;
     const friction = frictionFloor("office");
     const pinned = (e.cityVac?.office ?? NATURAL_VAC.office) <= friction + 1e-6;
-    const pipeShare = (e.pipeline?.office ?? 0) / stock;
-    const startShare = (e.starts?.office ?? 0) / stock;
-    const supplyAnswering = pipeShare > 0.008 || startShare > 0.0004;
-    const target = (pinned && !supplyAnswering) ? 0 : tightNow;
-    e.tightEma = (e.tightEma ?? 0) + 0.004 * (target - (e.tightEma ?? 0));
+    const target = pinned ? 0 : tightNow;
+    const gain = pinned ? 0.012 : 0.004;
+    e.tightEma = (e.tightEma ?? 0) + gain * (target - (e.tightEma ?? 0));
   }
 
   // INDUSTRIAL DEMAND TRACKS INDUSTRIAL EMPLOYMENT, NOT TOTAL JOBS.
@@ -3080,25 +3088,44 @@ export function tickEcon(s: GameState) {
     // PINNED FLOOR ⇒ MUTE THE GAP. Direct vacancy cannot go below friction, so
     // once it rests on that rail the gap is a constant (~−7.8pp for office) and
     // a linear shortage term becomes a permanent monthly rent tax — the mirror
-    // of the saturating-glut bug, and the named fault in ECONOMY.md §F. When
-    // the rail is binding, pressure has to come from growing unmet demand
-    // (`scarcity` below), not from a gap that cannot move.
+    // of the saturating-glut bug, and the named fault in ECONOMY.md §F #1.
+    // Near the floor, saturation also bites: the last points of tightening
+    // cannot pretend to add the same pressure as the first — a market that
+    // cannot get any tighter stops minting a constant shortage tax.
     const friction = frictionFloor(k);
-    const pinned = (e.cityVac?.[k] ?? NATURAL_VAC[k]) <= friction + 1e-6;
+    const vacNow = e.cityVac?.[k] ?? NATURAL_VAC[k];
+    const pinned = vacNow <= friction + 1e-6;
     const vacTerm = gap <= 0
-      ? (pinned ? 0 : clamp(-gap * 0.045, 0, 0.0045))
+      ? (pinned ? 0 : (() => {
+          const depth = -gap;
+          const room = Math.max(0, vacNow - friction);
+          const nearFloor = room / (room + 0.025);
+          return clamp(depth * 0.045 * nearFloor, 0, 0.0045);
+        })())
       : -(gap <= FIT_MAX
         ? glut(gap)
         // C1-continuous at FIT_MAX: same value, same slope, asymptote DEEP_RATE.
         : atFit + span * (1 - Math.exp(-SLOPE_AT_FIT * (gap - FIT_MAX) / span)))
         * capitulation(e.vacOverM[k] ?? 0);
     // Scarcity from CAPACITY shortage (jobs/floors), not the absorption queue.
-    // structTight is (desired − housable)/stock — often 0.2–0.4 when jobs have
-    // outrun floors — whereas the old queue unmet sat near 0.02–0.08. Same
-    // 0.10 gain on the new units minted ~1.5%/mo of rent press and reheated
-    // late centuries. Gain is sized so ~5pp of capacity shortage moves rent in
-    // the same band as five points of vacancy shortage (~2–3%/yr), capped.
-    const scarcity = clamp((e.structTight?.[k] ?? 0) * 0.045, 0, 0.006);
+    //
+    // Full level→rent while pinned recreated the constant-gap tax (ECONOMY.md
+    // §F #1). Zeroing the level (flow-only) was tried and REJECTED: without
+    // any price rationing on the rail, affordEff stayed high, demand did not
+    // give way, and supply-answers regresssed (stock/jobs 0.73→0.56, pin
+    // 23%→48%). On the rail: weight the FLOW of a worsening shortfall, plus a
+    // reduced level so a stable capacity gap still rations without minting
+    // the old ~1.5%/mo tax. Off the rail the full level stands.
+    if (!e.structTightPrev) {
+      e.structTightPrev = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+    }
+    const st = e.structTight?.[k] ?? 0;
+    const stPrev = e.structTightPrev[k] ?? st;
+    const dSt = st - stPrev;
+    e.structTightPrev[k] = st;
+    const scarcity = pinned
+      ? clamp(Math.max(0, dSt) * 1.5 + st * 0.018, 0, 0.0045)
+      : clamp(st * 0.045, 0, 0.006);
 
     // Lease-quote lag: market pressure (vacancy gap + unmet demand) forms this
     // month; landlords adjust asking rents only after it has sat on the quote
@@ -3111,6 +3138,13 @@ export function tickEcon(s: GameState) {
     const instant = vacTerm + scarcity;
     const tau = RENT_PRESS_TAU[k];
     e.rentPress[k] += (instant - e.rentPress[k]) / tau;
+    // On the frictional rail, gently bleed stored POSITIVE shortage pressure
+    // so the lag EMA cannot pay out a year of scarcity after the gap has
+    // stopped moving. Soft-side (negative) press is left to the ordinary tau
+    // chase so gluts still clear through the quote sheet.
+    if (pinned && (e.rentPress[k] ?? 0) > 0) {
+      e.rentPress[k] *= 0.97;
+    }
     // Hard rail on the EMA itself — see the press clamp at the drift line.
     e.rentPress[k] = clamp(e.rentPress[k], -0.008, 0.0075);
 

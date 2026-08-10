@@ -2996,13 +2996,13 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   const teardownRoll = rng(s, "dev");
   const bbl = rec.bbl;
   const oldSf = rec.bldgArea;
-  const cls = rec.class as BuiltClass;
   // When the standing class is itself chronically short of housable floor and
   // still has orders on the book, densify IN KIND. useForZone's programme mix
   // was converting short office into multifamily while office structTight
   // stayed elevated — supply answering the wrong demand.
-  if (cls !== "land" && (CITY_STOCK as Record<string, number>)[cls] !== undefined) {
-    const standing = cls as BuiltClass;
+  // BuiltClass is office|retail|multifamily|industrial — land is not in it.
+  if (rec.class !== "land" && (CITY_STOCK as Record<string, number>)[rec.class] !== undefined) {
+    const standing = rec.class as BuiltClass;
     const stStand = e.structTight?.[standing] ?? 0;
     const owedStand = e.startOwed?.[standing] ?? 0;
     if (stStand > 0.06 && owedStand > 0
@@ -3129,14 +3129,15 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
 
   // Off the record and off the stock only AFTER the replacement is funded.
   s.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
-  if (cls && (CITY_STOCK as Record<string, number>)[cls] !== undefined) {
-    addStock(e, cls as keyof typeof CITY_STOCK, -oldSf);
+  const stoodAs = rec.class !== "land" ? (rec.class as BuiltClass) : null;
+  if (stoodAs && (CITY_STOCK as Record<string, number>)[stoodAs] !== undefined) {
+    addStock(e, stoodAs as keyof typeof CITY_STOCK, -oldSf);
   }
   s.demolished = (s.demolished ?? 0) + 1;
   recordPropertyEvent(s, bbl, {
     kind: "demolished",
     sf: oldSf,
-    use: cls,
+    use: stoodAs ?? undefined,
     outcome: `${rec.yearBuilt || "Older"} building cleared for ${nextUse}`,
   });
 

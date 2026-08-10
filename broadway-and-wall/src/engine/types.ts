@@ -1077,7 +1077,7 @@ export interface PropertyEvent {
 export interface Alert {
   id: number;
   q: number;                 // the month it fired
-  kind: "swan" | "bank" | "portfolio" | "ground";
+  kind: "swan" | "bank" | "portfolio" | "ground" | "sale";
   tone: "bad" | "good";      // a black swan or a white one
   title: string;
   body: string;

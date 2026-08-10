@@ -438,6 +438,7 @@ function AlertBody() {
     bank: ["A desk has gone down", "The credit window"],
     portfolio: ["The book has been taken", "Your portfolio"],
     ground: ["Ground-lease default", "Your leased fee"],
+    sale: ["A sale fell apart", "Bids are in"],
   };
   const kicker = (KICKER[a.kind] ?? ["Something has happened", "Something has happened"])[bad ? 0 : 1];
   const queued = (game.alerts?.length ?? 1) - 1;
@@ -482,6 +483,9 @@ function decisionAwake(g: ReturnType<typeof useStore.getState>["game"], popupsOf
   if (g.lois.some((l) => !g.agent || l.referred)) return true;
   for (const h of Object.values(g.holdings)) {
     if (h.sale?.offer) return true;
+    // Marketed bid lists used to be invisible here — only quiet `sale.offer`
+    // woke the modal, so a campaign's whole point could expire unread.
+    if (h.sale?.bids?.length) return true;
   }
   return false;
 }
@@ -516,7 +520,7 @@ function DecisionBody({
 }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels);
-  const { respondLoi, acceptOffer, declineOffer, counterSale } = useStore.getState();
+  const { respondLoi, acceptOffer, declineOffer, counterSale, takeBid, setPage, focus } = useStore.getState();
   const [deferred, setDeferred] = useState<Set<number>>(new Set());
   // Lease counter draft — sliders live in LoiCounterDraft so the modal and
   // the Deals page cannot drift apart.
@@ -574,6 +578,54 @@ function DecisionBody({
               </button>
             )}
             <button className="btn" onClick={() => setDeferred((d) => new Set(d).add(-2))}>Decide later</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // A MARKETED BID LIST — the campaign's whole reason for existing.
+  const bidBbl = deferred.has(-3)
+    ? undefined
+    : Object.keys(game.holdings).find((b) => (game.holdings[b].sale?.bids?.length ?? 0) > 0);
+  if (bidBbl) {
+    const h = game.holdings[bidBbl];
+    const sale = h.sale!;
+    const bids = sale.bids!;
+    const top = bids[0];
+    const rec = resolveRec(parcels, game, bidBbl);
+    return (
+      <div className="modal-backdrop modal-layer-decision">
+        <div className="modal" role="dialog" aria-modal="true">
+          <div className="modal-kicker">◆ BIDS ARE IN — {bids.length} name{bids.length === 1 ? "" : "s"} on the list</div>
+          <div className="modal-title">{usd(top.price)} from {top.name}</div>
+          <div className="modal-sub">
+            {rec?.address ?? bidBbl} · your whisper {usd(sale.ask)}
+            {bids.length > 1 ? ` · second ${usd(bids[1].price)}` : ""}
+          </div>
+          <div className="grid">
+            <Row k="Best bid" v={usd(top.price)} strong />
+            <Row k="vs. whisper" v={`${((top.price / Math.max(1, sale.ask) - 1) * 100).toFixed(1)}%`}
+              bad={top.price < sale.ask} />
+            <Row k="On the list" v={`${bids.length} bidder${bids.length === 1 ? "" : "s"}`} />
+            {top.note && <Row k="Their paper" v={top.note} />}
+          </div>
+          <div className="hint">
+            A bid list lives on the property desk — take the top number, go back for best-and-final, or work a lower name.
+            Sitting on it too long is how the whole campaign dies.
+          </div>
+          <div className="modal-actions">
+            <button className="btn btn-buy" onClick={() => { takeBid(bidBbl, 0); setDeferred((d) => new Set(d).add(-3)); }}>
+              Take {top.name} · {usd(top.price)}
+            </button>
+            <button className="btn" onClick={() => {
+              setDeferred((d) => new Set(d).add(-3));
+              focus(bidBbl, true);
+              setPage("property");
+            }}>
+              Open the list…
+            </button>
+            <button className="btn" onClick={() => setDeferred((d) => new Set(d).add(-3))}>Decide later</button>
           </div>
         </div>
       </div>

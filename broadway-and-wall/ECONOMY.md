@@ -794,3 +794,20 @@ Glut transmission to labour / credit / NOI / concessions is wired (see
 `test/glut-transmission.mjs`). `sim:accept` H now asserts policy must not
 tighten into the glut and the term premium must widen — not loan-index drift,
 which correctly rises when spreads blow out.
+
+# LEASE COMMISSIONS WERE COST-INDEXED TWICE — fixed
+
+`planDevelopment` sized the lease-up reserve as `(TI + LC) × costIdx`. TI is a
+construction number and belongs under `costIdx`. LC is already `rent × months ×
+rate` — today's rent, already carrying a century of inflation. Multiplying it
+by `costIdx` again made late-century lease-up reserves larger than hard cost
+(measured: ~$770M lease-up on a $418M office job at costIdx≈21), so densify
+could not clear a structural office short even when stabilised NOI / build cost
+cleared the hurdle. `leaseUpValue`'s vacant-building fill cheque already used
+the correct split (`TI×costIdx + LC`); the residual land fit cost did not.
+
+**Shipped:** same identity in `planDevelopment` and the land residual; densify
+in-kind / extra teardown passes gate on frictional pin + `startOwed`, not only
+`structTight` (seeds with a full office book but moderate employment gap were
+still freezing the wrecking ball). Harnesses: `test/lease-up-cost.mjs`,
+`test/late-densify.mjs`.

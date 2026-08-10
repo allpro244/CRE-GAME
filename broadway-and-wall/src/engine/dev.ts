@@ -930,7 +930,13 @@ export function planDevelopment(
   }
   deficit = Math.round(deficit);
   const carry = Math.round(openSf * opex0 * (1 - fillOcc) * (carryMonths / 12));
-  const specLeaseUp = Math.round(openSf * (tiPsf + lcPsf) * s.econ.costIdx) + carry + deficit;
+  // TI tracks construction cost. Lease commissions are already a fraction of
+  // today's rent (months × rate) — multiplying them by costIdx double-counts
+  // a century of rent inflation and made lease-up reserves larger than hard
+  // cost late-century, so densify could not clear a structural office short
+  // even when stab NOI / build cost cleared the hurdle. Same split
+  // `leaseUpValue` already uses for the vacant-building fill cheque.
+  const specLeaseUp = Math.round(openSf * (tiPsf * s.econ.costIdx + lcPsf)) + carry + deficit;
   const anchorCost = bts
     ? Math.round(bts.sf * bts.tiPsf * s.econ.costIdx
       + bts.rentPsf * bts.sf * (bts.termM / 12) * 0.02)
@@ -2910,6 +2916,17 @@ function tickCrews(s: GameState, bbls: string[]) {
  */
 const TYPICAL_SF = 26_000;
 
+/**
+ * Frictional rail binding AND the order book still wants floor of this class.
+ * `structTight` alone missed seeds where vacancy sat on the rail with a full
+ * startOwed book but employment-gap stayed under the old 0.06 gate — densify
+ * cleared underwriting and still never broke ground.
+ */
+function classPinnedOwed(e: Econ, k: BuiltClass, slack = 0.02): boolean {
+  const vac = e.cityVac?.[k] ?? NATURAL_VAC[k];
+  return vac <= frictionFloor(k) + slack && (e.startOwed?.[k] ?? 0) > 0;
+}
+
 function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // A slow clock. Roughly one candidate examined a month, and only the worst
   // offender in a sample gets the notice — a city does not clear a block a
@@ -2920,11 +2937,13 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // is a town that replaces a tenth of itself in half a century and is still
   // mostly a museum.
   const e = s.econ;
-  // Chronic employment shortage: examine more often. Not a vac-coefficient
-  // hike — the space market has already asked for housable floor via
-  // `structTight`, and the wrecking ball is how a built-out city answers.
-  const chronicShort = BUILT_CLASSES.some((k) => (e.structTight?.[k] ?? 0) > 0.08
-    && (e.cityVac?.[k] ?? NATURAL_VAC[k]) <= frictionFloor(k) + 0.015);
+  // Chronic shortage: examine more often. Employment gap (`structTight`) OR
+  // a pinned class with unpaid orders — both mean the wrecking ball is how a
+  // built-out city answers. Not a vac-coefficient hike.
+  const chronicShort = BUILT_CLASSES.some((k) => {
+    const pinned = (e.cityVac?.[k] ?? NATURAL_VAC[k]) <= frictionFloor(k) + 0.015;
+    return pinned && ((e.structTight?.[k] ?? 0) > 0.08 || (e.startOwed?.[k] ?? 0) > 0);
+  });
   if (rng(s, "dev") > (chronicShort ? 0.50 : 0.85)) return;
   // A REPLACEMENT IS BUILT BY THE SAME CREWS AS EVERYTHING ELSE.
   //
@@ -3017,17 +3036,16 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   const bbl = rec.bbl;
   const oldSf = rec.bldgArea;
   const cls = rec.class as BuiltClass;
-  // When the standing class is itself chronically short of housable floor and
-  // still has orders on the book, densify IN KIND. useForZone's programme mix
-  // was converting short office into multifamily while office structTight
-  // stayed elevated — supply answering the wrong demand.
+  // When the standing class is pinned with unpaid orders, densify IN KIND.
+  // useForZone's programme mix was converting short office into multifamily
+  // while the office book stayed full — supply answering the wrong demand.
+  // Gate on the rail + startOwed, not only structTight: moderate employment
+  // gaps still leave vacancy on the frictional floor with a live order book.
   if (cls !== "land" && (CITY_STOCK as Record<string, number>)[cls] !== undefined) {
     const standing = cls as BuiltClass;
     const stStand = e.structTight?.[standing] ?? 0;
-    const owedStand = e.startOwed?.[standing] ?? 0;
-    if (stStand > 0.06 && owedStand > 0
-        && (e.cityVac?.[standing] ?? NATURAL_VAC[standing]) <= frictionFloor(standing) + 0.02) {
-      if (rng(s, "dev") < Math.min(0.85, 0.45 + stStand * 1.5)) {
+    if (classPinnedOwed(e, standing)) {
+      if (rng(s, "dev") < Math.min(0.85, 0.50 + stStand * 1.5)) {
         nextUse = standing;
         lead = standing;
       }
@@ -3036,8 +3054,9 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // A replacement is still supply. It may satisfy an existing order, but it
   // cannot create a class of space the market has not ordered at all.
   if ((e.startOwed?.[lead] ?? 0) <= 0) return;
-  const leadShort = (e.structTight?.[lead] ?? 0) > 0.06
-    && (e.cityVac?.[lead] ?? NATURAL_VAC[lead]) <= frictionFloor(lead) + 0.02;
+  const leadShort = classPinnedOwed(e, lead)
+    || ((e.structTight?.[lead] ?? 0) > 0.06
+      && (e.cityVac?.[lead] ?? NATURAL_VAC[lead]) <= frictionFloor(lead) + 0.02);
 
   // NOBODY DEMOLISHES A BUILDING AND LEAVES A HOLE.
   //
@@ -3334,13 +3353,14 @@ export function tickCityGrowth(
   tickCrews(s, bbls);
   tickIndustrialExit(s, parcels, bbls);
   tickTeardowns(s, parcels, bbls);
-  // Extra densify passes when employment still exceeds housable floor — one
-  // wrecking ball a month cannot catch a multi-decade capacity shortfall.
+  // Extra densify passes when the book is pinned short — one wrecking ball a
+  // month cannot catch a multi-decade capacity shortfall.
   {
     const e2 = s.econ;
+    const bookShort = BUILT_CLASSES.some((k) => classPinnedOwed(e2, k, 0.015));
     const shortOf = (th: number) => BUILT_CLASSES.some((k) => (e2.structTight?.[k] ?? 0) > th
       && (e2.cityVac?.[k] ?? NATURAL_VAC[k]) <= frictionFloor(k) + 0.015);
-    if (shortOf(0.08)) tickTeardowns(s, parcels, bbls);
+    if (bookShort || shortOf(0.08)) tickTeardowns(s, parcels, bbls);
     if (shortOf(0.16)) tickTeardowns(s, parcels, bbls);
   }
 

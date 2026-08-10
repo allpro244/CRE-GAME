@@ -827,3 +827,21 @@ only when rent is already cheap against pay); stronger cheap-side income
 anchor on the rail so RTI cannot death-spiral. Measured: median pin-month real
 ~−0.2%/yr (was ~+1.2%); century median real office ~0.9%/yr (was ~1.3–1.5%);
 supply-answers still green. Harness: `test/rent-anchor.mjs` pin-real clause.
+
+# FIRM-NEAR-RAIL SCARCITY WAS THE HOCKEY STICK — fixed
+
+Pin-only mute left the climb in months with vacancy just above friction
+(`vac ∈ (friction, friction+2pp)`): full `st×0.045` level scarcity plus full
+CPI asking printed **+4–5%/yr real** in that band (~20% of months) and late
+soft share on hot seeds was ~0%. Same saturation economics as the pin.
+
+**Shipped:** (1) scarcity *level* scales with room above friction (`railSat`,
+same shape as vacTerm); near the rail → mostly flow; (2) rail-bound escalator /
+press bleed / lift gate extend to friction+1.2pp; (3) cheap-side pull on the
+rail targets an RTI *floor* (~0.65), not earned sustain — hard enough to track
+wages when under the floor, then stops; (4) real `costIdx` mean-reverts toward
+a ~0.4%/yr-above-CPI fair path so construction cannot compound a century boom
+from one-way rent catch-up. Measured: median rail-bound real ~+0.3%/yr (was
+firm-near +4–5%); century real office ~0.85%/yr; real construction cost
+~+0.5%/yr (was ~+0.8–1.1%). Harness: `test/rent-anchor.mjs` rail-real +
+cost-real clauses.

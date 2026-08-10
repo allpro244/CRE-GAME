@@ -3095,12 +3095,20 @@ export function tickEcon(s: GameState) {
     const friction = frictionFloor(k);
     const vacNow = e.cityVac?.[k] ?? NATURAL_VAC[k];
     const pinned = vacNow <= friction + 1e-6;
+    // Room above the frictional rail — 0 on the pin, rising as the market has
+    // somewhere left to tighten. Same saturation the vacTerm shortage branch
+    // already uses; scarcity level must share it (below).
+    const roomAboveFriction = Math.max(0, vacNow - friction);
+    const railSat = roomAboveFriction / (roomAboveFriction + 0.025);
+    // Within ~1.2pp of the rail, availability is practically saturated — the
+    // same economics as pinned for asking escalators / stored press. Measured
+    // after pin-only mute: "firm" months at vac∈(friction, friction+2pp) still
+    // printed +4–5%/yr real and were the late-century hockey stick.
+    const railBound = vacNow <= friction + 0.012;
     const vacTerm = gap <= 0
       ? (pinned ? 0 : (() => {
           const depth = -gap;
-          const room = Math.max(0, vacNow - friction);
-          const nearFloor = room / (room + 0.025);
-          return clamp(depth * 0.045 * nearFloor, 0, 0.0045);
+          return clamp(depth * 0.045 * railSat, 0, 0.0045);
         })())
       : -(gap <= FIT_MAX
         ? glut(gap)
@@ -3108,14 +3116,6 @@ export function tickEcon(s: GameState) {
         : atFit + span * (1 - Math.exp(-SLOPE_AT_FIT * (gap - FIT_MAX) / span)))
         * capitulation(e.vacOverM[k] ?? 0);
     // Scarcity from CAPACITY shortage (jobs/floors), not the absorption queue.
-    //
-    // Full level→rent while pinned recreated the constant-gap tax (ECONOMY.md
-    // §F #1). Zeroing the level (flow-only) was tried and REJECTED: without
-    // any price rationing on the rail, affordEff stayed high, demand did not
-    // give way, and supply-answers regresssed (stock/jobs 0.73→0.56, pin
-    // 23%→48%). On the rail: weight the FLOW of a worsening shortfall, plus a
-    // reduced level so a stable capacity gap still rations without minting
-    // the old ~1.5%/mo tax. Off the rail the full level stands.
     if (!e.structTightPrev) {
       e.structTightPrev = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
     }
@@ -3123,17 +3123,14 @@ export function tickEcon(s: GameState) {
     const stPrev = e.structTightPrev[k] ?? st;
     const dSt = st - stPrev;
     e.structTightPrev[k] = st;
-    // On the frictional rail, availability cannot get tighter. A stable
-    // capacity-gap LEVEL used to pay into rent every month on top of a full
-    // CPI asking escalator — measured pin-month real office +1%/yr for half
-    // the century, the twin of the soft-market escalator bug. Flow still
-    // presses when the shortfall is worsening (jobs outrunning floors this
-    // month). Off-rail the full level stands; on the journey to the rail,
-    // firm-but-unpinned months still ration. Flow-only on the rail was
-    // rejected once before densify answered employment; re-measured after.
+    // Level scarcity scales with room above friction (`railSat`). On the pin,
+    // sat=0 → flow only. Near the pin, sat is small → mostly flow. Far from
+    // the rail (still tight vs natural), full level rations. Paying full
+    // `st×0.045` in the last points above the floor was the firm-near-rail
+    // hockey stick: +5%/yr real while vacancy sat at 4–5%.
     const scarcity = pinned
       ? clamp(Math.max(0, dSt) * 1.8, 0, 0.0045)
-      : clamp(st * 0.045, 0, 0.006);
+      : clamp(st * 0.045 * railSat + Math.max(0, dSt) * 1.8 * (1 - railSat), 0, 0.006);
 
     // Lease-quote lag: market pressure (vacancy gap + unmet demand) forms this
     // month; landlords adjust asking rents only after it has sat on the quote
@@ -3146,11 +3143,11 @@ export function tickEcon(s: GameState) {
     const instant = vacTerm + scarcity;
     const tau = RENT_PRESS_TAU[k];
     e.rentPress[k] += (instant - e.rentPress[k]) / tau;
-    // On the frictional rail, bleed stored POSITIVE shortage pressure so the
-    // lag EMA cannot keep paying real rent after availability has saturated.
-    // Soft-side (negative) press is left to the ordinary tau chase so gluts
-    // still clear through the quote sheet.
-    if (pinned && (e.rentPress[k] ?? 0) > 0) {
+    // Near/on the frictional rail, bleed stored POSITIVE shortage pressure so
+    // the lag EMA cannot keep paying real rent after availability has
+    // saturated. Soft-side (negative) press is left to the ordinary tau chase
+    // so gluts still clear through the quote sheet.
+    if (railBound && (e.rentPress[k] ?? 0) > 0) {
       e.rentPress[k] *= 0.90;
     }
     // Hard rail on the EMA itself — see the press clamp at the drift line.
@@ -3193,13 +3190,17 @@ export function tickEcon(s: GameState) {
     const softW = clamp(gap / 0.03, 0, 1);   // 0 at natural, 1 by +3pp soft
     const firmW = 1 - softW;
     // Cheap-side pull is weak off-rail (supply is what clears a glut of cheap
-    // space). On the frictional rail, asking cannot use vacancy to reprice, so
-    // a deeper undershoot against pay must be able to lift face rates or RTI
-    // death-spirals (measured: seed 22 → 0.29× after the pinned escalator
-    // mute with only the ordinary −0.0007 coefficient).
+    // space). Near/on the rail, do NOT pull all the way to earned sustain —
+    // that reminted pin-month real growth once scarcity was muted. Pull only
+    // toward a floor RTI, hard enough to track wages (partial CPI alone
+    // cannot hold a ratio against ~1.4%/yr real pay), then stop once there.
+    const rtiFloor = 0.65;
+    const belowFloor = rentToIncome / rtiFloor - 1; // negative when under the floor
     const anchor = dev > 0
       ? -0.018 * Math.min(2.0, dev)           // outrunning incomes: pulled down hard
-      : -(pinned ? 0.0035 : 0.0007) * Math.max(-0.65, dev);
+      : railBound
+        ? (belowFloor < 0 ? 0.008 * Math.min(0.55, -belowFloor) : 0)
+        : -0.0007 * Math.max(-0.65, dev);
 
     // AND RENT CARRIES THE PRICE LEVEL — BUT ONLY WHEN THE MARKET IS FIRM.
     //
@@ -3222,32 +3223,32 @@ export function tickEcon(s: GameState) {
     // some seeds (~0.2x RTI) — asking cannot forget the price level entirely
     // once it has already under-shot wages by that much.
     const cheapFloor = dev < 0 ? clamp(-dev / 0.30, 0, 0.75) : 0;
-    // PINNED ESCALATOR. Soft markets already refuse full CPI in asking
-    // (below). The shortage rail was the mirror fault: vacTerm is 0, tightEma
-    // targets 0, and asking still compounded full inflExp every month because
-    // firmW=1 whenever gap≤0. In-place leases keep escalating in leasing.ts;
-    // the asking index on a saturated availability signal carries only a
-    // lease-roll fraction of CPI — more if rent is already cheap against pay,
-    // so RTI cannot death-spiral. Measured before: pin-month real ~+1.2%/yr
-    // with soft months almost absent on hot seeds.
-    // Floor 25% of CPI on the rail; restore full carry only when rent is
-    // already badly cheap against pay (cheapFloor→1 ⇒ pinEscal→1).
-    const pinEscal = pinned ? Math.max(0.25, 0.25 + 0.75 * cheapFloor) : 1;
-    const escalGate = Math.max(firmW, cheapFloor) * pinEscal;
+    // RAIL-BOUND ESCALATOR. Soft markets already refuse full CPI in asking.
+    // On/near the frictional rail, firmW=1 (gap≤0) used to keep full inflExp
+    // forever on practically saturated availability. In-place leases keep
+    // escalating in leasing.ts; the asking index carries only a lease-roll
+    // fraction of CPI — more if rent is already cheap against pay.
+    // On the rail at/above the RTI floor: lease-roll fraction of CPI only.
+    // Below the floor: track the price level (and a bit more) so the floor is
+    // reachable against rising wages; once restored, the mute returns.
+    const underFloor = belowFloor < 0 ? clamp(-belowFloor / 0.25, 0, 1) : 0;
+    const railEscal = railBound
+      ? (belowFloor < 0 ? 0.85 + 0.35 * underFloor : 0.35)
+      : 1;
+    const escalGate = Math.max(firmW, cheapFloor) * railEscal;
     const escalation = ((e.inflExp ?? 0.02) / 12) * escalGate;
     // Cap the lagged pressure term: chronic shortage was holding ~+1.6%/mo of
     // scarcity in rentPress and overpowering the income anchor for a decade.
     const press = clamp(e.rentPress[k], -0.008, 0.0075);
-    // Phase / job / sector sentiment must not LIFT asking while soft, on the
-    // frictional rail, or once rent is already near earned pay. Soft: empty
-    // floors on the shelf. Pinned: availability is saturated (same reason
-    // tightEma refuses to mint Manhattan from "can't build"). Near parity:
-    // further weather lift is what made every sim compound ~1.4%+ real on top
-    // of CPI even after the soft escalator died — cycle may help a CHEAP
-    // market recover, not keep marking up a clearing one. Growing unmet
-    // demand still prices through scarcity → rentPress. Negative cycle terms
-    // still cut in every state.
-    const liftGate = (pinned || softW > 0 || dev > -0.08) ? 0 : 1;
+    // Phase / job / sector sentiment must not LIFT asking while soft, on/near
+    // the frictional rail, or once rent is already near earned pay. Soft:
+    // empty floors on the shelf. Rail-bound: availability is saturated (same
+    // reason tightEma refuses to mint Manhattan from "can't build"). Near
+    // parity: further weather lift is what made every sim compound ~1.4%+
+    // real on top of CPI — cycle may help a CHEAP market recover, not keep
+    // marking up a clearing one. Growing unmet demand still prices through
+    // scarcity → rentPress. Negative cycle terms still cut in every state.
+    const liftGate = (railBound || softW > 0 || dev > -0.08) ? 0 : 1;
     const cycleRent = c2.rentDrift * 0.48 * (c2.rentDrift > 0 ? liftGate : 1);
     const cycleJobs = jobDrift * 0.28 * (jobDrift > 0 ? liftGate : 1);
     const cycleMom = e.sectorMom[k] * 0.42 * (e.sectorMom[k] > 0 ? liftGate : 1);
@@ -3510,7 +3511,24 @@ export function tickEcon(s: GameState) {
     const rentLvl = (e.effRentIdx?.office ?? e.rentIdx.office) / RENT_BASE.office;
     const stretch = rentLvl / Math.max(0.5, e.costIdx) - 1;
     const catchUp = stretch > 0.25 ? Math.min(0.0045, 0.012 * (stretch - 0.25)) : 0;
-    e.costIdx = clamp(e.costIdx * (1 + costDrift + catchUp + rrange(s, -0.0012, 0.0012)), 0.6, 400);
+    // Real construction cost mean-reverts toward a slow productivity path
+    // (~0.4%/yr above CPI — long-run structure, code, and wage mix). Boom heat
+    // still moves the index at ENR extremes; what it must not do is compound
+    // ~+0.8%/yr real for a century from one-way rent catch-up. Measured before:
+    // costIdx/cpi ~2.3× by y100 against a ~1.5× fair path.
+    const yrs = Math.max(0, (s.month ?? 0) / 12);
+    const fairRealCost = Math.pow(1.004, yrs);
+    const realCostNow = e.costIdx / Math.max(0.35, e.cpi ?? 1);
+    const realStretch = realCostNow / Math.max(0.5, fairRealCost) - 1;
+    const realPull = realStretch > 0.20
+      ? -Math.min(0.0020, 0.005 * (realStretch - 0.20))
+      : realStretch < -0.25
+        ? Math.min(0.0012, 0.003 * (-realStretch - 0.25))
+        : 0;
+    e.costIdx = clamp(
+      e.costIdx * (1 + costDrift + catchUp + realPull + rrange(s, -0.0012, 0.0012)),
+      0.6, 400,
+    );
   }
 
   recordHistory(e, s.month, monthAbs, monthComp);

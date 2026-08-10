@@ -3,7 +3,8 @@ import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import type { BuiltClass } from "@/engine/types";
-import { ownedHoldingValue, managedRentPsfYr, holdingNOIYr, resolveRec } from "@/engine/value";
+import { ownedHoldingValue, ownedHoldingNoiYr, managedRentPsfYr, resolveRec } from "@/engine/value";
+import { portfolioPropertyMonthlyCF } from "@/engine/sim";
 import { unitStatus, avgUnitSf } from "@/engine/leasing";
 import { payoffQuote } from "@/engine/notes";
 import { fundableNow } from "@/engine/credit";
@@ -50,21 +51,16 @@ export function PortfolioPage() {
       </div>
     );
   }
-  let totV = 0, totD = 0, totCF = 0;
+  let totV = 0, totD = 0;
   const rows = holdings.map((h) => {
     const rec = resolveRec(parcels, game, h.bbl);
     const v = rec ? ownedHoldingValue(game, parcels, h) : 0;
-    // A LET GROUND LEASE IS A POSITION. The engine wires the ground rent to
-    // cash separately (tickGroundLeases) precisely so the lot itself carries
-    // nothing — and that correctness left the leased fee printing zero income
-    // in this book, indistinguishable from dead dirt and sliced out of the
-    // top-earners view entirely. The coupon belongs on the row: it is the
-    // whole reason the position exists.
-    const glRentYr = game.groundLeases?.[h.bbl]?.rentYr ?? 0;
-    const noi = (rec ? holdingNOIYr(rec, game.econ, h, game.month) : 0) + glRentYr;
+    // Deed NOI — building roll or ground coupon. Same number the header CF
+    // annualises (before firm-level construction / facility / revolver).
+    const noi = ownedHoldingNoiYr(game, parcels, h);
     const cf = noi / 12 - (h.loan?.monthlyPmt ?? 0);
     const occ = rec ? physicalOcc(rec as never, h) : 0;
-    totV += v; totD += h.loan?.balance ?? 0; totCF += cf;
+    totV += v; totD += h.loan?.balance ?? 0;
     // EVERY COLUMN NEEDS A VALUE TO SORT ON, so the ones that used to be
     // computed inside the cell are computed here instead. That is also why
     // several of them were impossible to sort by: they did not exist until the
@@ -110,6 +106,7 @@ export function PortfolioPage() {
   };
   rows.sort(cmp);
   const shown = rows;
+  const totCF = portfolioPropertyMonthlyCF(game, parcels);
   const ranked = sort.key === "noi" && sort.dir === -1;
   const assessmentWatch = holdings.flatMap((h) => {
     const q = taxAppealQuote(game, parcels, h.bbl);
@@ -201,7 +198,12 @@ export function PortfolioPage() {
         <Big label="Assets" value={usd(totV)} />
         <Big label="Debt" value={usd(totD)} />
         <Big label="Equity" value={usd(totV - totD)} />
-        <Big label="Cash flow / mo" value={usd(totCF)} bad={totCF < 0} />
+        <Big
+          label="Cash flow / mo"
+          value={usd(totCF)}
+          bad={totCF < 0}
+          title="Deed cash flow only — NOI (including ground rent) less mortgages. The header CF / yr also subtracts construction interest, facility and the revolver, then annualises."
+        />
         {/* HOW BIG YOU ACTUALLY ARE, AND WHAT IT COST YOU A FOOT.
             Dollars of assets is a number about the market as much as about the
             book — the same buildings are worth half as much at the bottom of a
@@ -660,7 +662,15 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
           <Row k="Sum of the individual marks" v={usd(q.sumOfParts)} />
           <Row k="What a bundle is indicated at" v={`${usd(q.indicative)} · ${(q.spreadPct * 100).toFixed(1)}%`}
             bad={q.spreadPct < -0.06} />
-          <Row k="On the market" v={`${age} month${age === 1 ? "" : "s"}`} bad={age > 6} />
+          <Row k="On the market" v={`${age} month${age === 1 ? "" : "s"} · stale at 9`} bad={age > 6} />
+          <Row k="Buyers who can fund it" v={String(q.depth)} bad={q.depth <= 1} />
+          <Row k="Ask vs indication"
+            v={live.ask > q.indicative
+              ? `${((live.ask / Math.max(1, q.indicative) - 1) * 100).toFixed(0)}% above · interest thins fast`
+              : live.ask < q.indicative * 0.98
+                ? `${((1 - live.ask / Math.max(1, q.indicative)) * 100).toFixed(0)}% under · priced to move`
+                : "at the indication"}
+            bad={live.ask > q.indicative * 1.05} />
           <Row k="Indications in hand" v={String(live.bids?.length ?? 0)} />
         </div>
         <div className="mini-list" style={{ marginTop: 8 }}>
@@ -711,9 +721,14 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
         ) : (
           <>
             <div className="hint" style={{ marginTop: 10 }}>
-              No indications yet. {age > 5
-                ? "Six months of silence on a portfolio is the market pricing the weakest building in it. Cut the number or take them out and sell them one at a time."
-                : "Institutional buyers underwrite a bundle for a quarter before they call."}
+              No indications yet.
+              {q.depth <= 0
+                ? " Nobody in this city can fund a book this small as a portfolio — pull it and sell the deeds one at a time."
+                : live.ask > q.indicative * 1.05
+                  ? " Your ask sits above what a bundle is indicated at. Cut the number or wait out a thin room — nine months and the process goes stale."
+                  : age > 5
+                    ? " Half a year of silence on a portfolio is the market pricing the weakest building in it. Cut the number or take them out and sell them one at a time."
+                    : " Institutional buyers underwrite a bundle for a quarter before they call. A live indication also lands on News and as a stop-everything card (unless you turned those off in Settings)."}
             </div>
             <div className="btn-row">
               <Slider min={Math.round(q.indicative * 0.8)} max={Math.round(q.sumOfParts * 1.05)} step={250_000}
@@ -748,7 +763,9 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
             <Row k="Buyers who can fund it" v={String(q.depth)} bad={q.depth <= 1} />
           </div>
           <div className="hint">
-            {q.spreadPct < -0.10
+            {q.depth <= 0
+              ? "No desk in this city will underwrite a portfolio this small. Sell them one at a time — a bundle sale with an empty room is nine months of silence, not a process."
+              : q.spreadPct < -0.10
               ? "That is a serious discount, and it is being driven by the buildings at the bottom of this list. Take them out and the blend improves — but those are the ones with no bid of their own, which is the entire reason to bundle."
               : q.spreadPct < -0.03
                 ? "A few points inside the parts, which is what a clean portfolio costs. You are buying a single closing and a clean exit with it."
@@ -762,7 +779,12 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
             it and passed, and that is a fact about your portfolio that does not go away.
           </div>
           <div className="btn-row">
-            <button className="btn btn-buy" onClick={() => { sellPortfolio(bundle, ask); clear(); }}>
+            <button
+              className="btn btn-buy"
+              disabled={q.depth <= 0}
+              title={q.depth <= 0 ? "No buyer can fund this book as a portfolio" : undefined}
+              onClick={() => { sellPortfolio(bundle, ask); clear(); }}
+            >
               Take it to market at {usd(ask)}
             </button>
           </div>

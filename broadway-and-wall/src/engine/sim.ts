@@ -7,7 +7,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
 import { DEFAULT_START_CASH, CENTURY_MONTHS, CASH_APY, cloneState, logBooks, monthLabel } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels } from "./market";
-import { assetValue, holdingNOIYr, ownedHoldingValue, monthlyNOI, portfolioMark, operatingStatement, physicalOcc, resolveRec } from "./value";
+import { assetValue, holdingNOIYr, ownedHoldingValue, ownedMonthlyNoi, monthlyNOI, portfolioMark, operatingStatement, physicalOcc, resolveRec } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLeasing, depositsOn, stampListing, loiSigningCost, exclusiveFeeRate, agentCashReserve } from "./leasing";
@@ -20,6 +20,7 @@ import { tickFacility } from "./facility";
 import { tickHolders } from "./owners";
 import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing } from "./dev";
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
+import { maybeStampYearEndBalance } from "./books";
 import { tickDemand } from "./demand";
 import { initRivals, tickRivals, gradeOf } from "./rivals";
 import { initLenders, tickLenders, chargeLenderLoss } from "./lenders";
@@ -785,6 +786,9 @@ function tickMonth(
   const { nw, gav } = portfolioMark(s, parcels);
   s.prevGav = Math.round(gav);
   s.nwHistory.push(Math.round(nw));
+  // DECEMBER CLOSE. The live sheet is always "today"; this freezes the same
+  // marks at year-end so Books can reopen last December without a second model.
+  maybeStampYearEndBalance(s, parcels);
   checkMilestones(s, nw);
 
   // THE QUIET DESK — how long since anybody was at the door.
@@ -914,7 +918,13 @@ function checkMilestones(s: GameState, nw: number) {
 // Auto-advance stops when a NEW item appears on this list.
 export function attentionItems(s: GameState): { key: string; label: string }[] {
   const out: { key: string; label: string }[] = [];
-  for (const l of s.lois) out.push({ key: `loi:${l.id}`, label: `LOI from ${l.name} — answer by ${monthLabel(l.expiresM)}` });
+  // With an agent, only referred letters need the principal — the desk has
+  // already signed or killed the rest. Counting every LOI here is why Year/Skip
+  // kept stopping for paper the player had hired someone to handle.
+  for (const l of s.lois) {
+    if (s.agent && !l.referred) continue;
+    out.push({ key: `loi:${l.id}`, label: `LOI from ${l.name} — answer by ${monthLabel(l.expiresM)}` });
+  }
   // Tenant-relief letters expire in three months and a lapse is a refusal.
   // They lived on Deals but not in the attention list, so Year/Skip could run
   // straight past a decision the player had explicitly asked the game to stop
@@ -943,6 +953,16 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
   }
   for (const h of Object.values(s.holdings)) {
     if (h.sale?.offer) out.push({ key: `offer:${h.bbl}:${h.sale.offer.price}`, label: `Offer in hand — good until ${monthLabel(h.sale.offer.expiresM)}` });
+    // A marketed bid list is the same kind of decision as a quiet offer — it
+    // expires, and Year/Skip used to run straight past it because only
+    // `sale.offer` was on this list.
+    if (h.sale?.bids?.length) {
+      const top = h.sale.bids[0];
+      out.push({
+        key: `sale-bids:${h.bbl}:${top.name}:${top.price}:${h.sale.bids.length}`,
+        label: `${h.sale.bids.length} bid${h.sale.bids.length === 1 ? "" : "s"} on ${h.bbl} — best ${top.name}`,
+      });
+    }
     for (const t of h.tenants) {
       if (t.nonRenewM === s.month) {
         out.push({
@@ -1151,14 +1171,29 @@ export async function advanceUntilAttentionAsync(
   return { s: cur, months: cap, reason: null };
 }
 
-// Convenience for the UI: total quarterly cash flow at current state.
-export function portfolioQuarterlyCF(s: GameState, parcels: ParcelTable): number {
+/**
+ * PROPERTY CASH FLOW / MONTH — deeds only.
+ *
+ * Ground rent on a leased fee is deed income (see `ownedMonthlyNoi`). Mortgages
+ * on those deeds are deducted. Construction interest, the portfolio facility
+ * and the revolver are firm capital costs and live in `portfolioMonthlyCF`.
+ */
+export function portfolioPropertyMonthlyCF(s: GameState, parcels: ParcelTable): number {
   let cf = 0;
   for (const h of Object.values(s.holdings)) {
-    const rec = resolveRec(parcels, s, h.bbl);
-    if (!rec) continue;
-    cf += monthlyNOI(rec, s.econ, h, s.month) - (h.loan?.monthlyPmt ?? 0);
+    if (!resolveRec(parcels, s, h.bbl)) continue;
+    cf += ownedMonthlyNoi(s, parcels, h) - (h.loan?.monthlyPmt ?? 0);
   }
+  return cf;
+}
+
+/**
+ * FIRM CASH FLOW / MONTH — property CF less construction interest, facility
+ * and the revolver. The header annualises this. Name used to say "quarterly";
+ * the tick has always been monthly.
+ */
+export function portfolioMonthlyCF(s: GameState, parcels: ParcelTable): number {
+  let cf = portfolioPropertyMonthlyCF(s, parcels);
   for (const d of Object.values(s.developments ?? {})) {
     cf -= (d.loanBalance * d.ratePct) / 100 / 12; // construction interest
   }
@@ -1177,6 +1212,9 @@ export function portfolioQuarterlyCF(s: GameState, parcels: ParcelTable): number
   if (s.loc && s.loc.balance > 0) cf -= (s.loc.balance * locRate(s)) / 100 / 12;
   return cf;
 }
+
+/** @deprecated Name lied — returns a monthly figure. Prefer `portfolioMonthlyCF`. */
+export const portfolioQuarterlyCF = portfolioMonthlyCF;
 
 /** @deprecated Name lied — the tick is monthly. Prefer `advanceMonth`. */
 export const advanceQuarter = advanceMonth;

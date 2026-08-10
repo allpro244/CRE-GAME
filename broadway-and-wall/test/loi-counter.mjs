@@ -24,18 +24,36 @@ console.log("\nLOI COUNTER — what moves the needle\n");
 {
   const loi = {
     id: 1, bbl: "x", kind: "new", name: "Acme", sector: "tech", credit: 2,
-    sf: 10000, rentPsf: 40, termM: 120, tiPsf: 40, freeM: 6, net: true,
+    sf: 10000, rentPsf: 40, termM: 120, tiPsf: 40, freeM: 6, bumpPct: 2.5, net: true,
   };
-  const base = E.netEffectivePsf(loi, 40, 40, 6);
-  const cutFree = E.netEffectivePsf(loi, 40, 40, 0);
-  const cutTi = E.netEffectivePsf(loi, 40, 0, 6);
-  const addTi = E.netEffectivePsf(loi, 40, 60, 6);
+  const base = E.netEffectivePsf(loi, 40, 40, 6, 2.5);
+  const cutFree = E.netEffectivePsf(loi, 40, 40, 0, 2.5);
+  const cutTi = E.netEffectivePsf(loi, 40, 0, 6, 2.5);
+  const addTi = E.netEffectivePsf(loi, 40, 60, 6, 2.5);
   if (!(cutFree > base + 1.5)) fail(`cutting 6mo free should lift NE (base ${base.toFixed(2)} → ${cutFree.toFixed(2)})`);
   else ok(`free rent moves NE (${base.toFixed(2)} → ${cutFree.toFixed(2)} with free cut)`);
   if (!(cutTi > base + 2)) fail(`cutting TI should lift NE (${base.toFixed(2)} → ${cutTi.toFixed(2)})`);
   else ok(`TI cut moves NE (${base.toFixed(2)} → ${cutTi.toFixed(2)})`);
   if (!(addTi < base - 1)) fail(`adding TI should lower NE (${base.toFixed(2)} → ${addTi.toFixed(2)})`);
   else ok(`extra TI buys rent (${base.toFixed(2)} → ${addTi.toFixed(2)})`);
+}
+
+// --- 2b. Annual bump vs the 2.5% standard moves NE -------------------
+{
+  const loi = {
+    id: 2, bbl: "x", kind: "new", name: "Acme", sector: "tech", credit: 2,
+    sf: 10000, rentPsf: 40, termM: 120, tiPsf: 0, freeM: 0, bumpPct: 2.5, net: true,
+    openTiPsf: 0,
+  };
+  const atStd = E.netEffectivePsf(loi, 40, 0, 0, 2.5);
+  const steeper = E.netEffectivePsf(loi, 40, 0, 0, 3.5);
+  const flatter = E.netEffectivePsf(loi, 40, 0, 0, 1.5);
+  if (!(Math.abs(atStd - 40) < 0.05)) fail(`standard 2.5% bump should not move NE off face (got ${atStd.toFixed(2)})`);
+  else ok(`2.5% bump is NE-neutral vs face (${atStd.toFixed(2)})`);
+  if (!(steeper > atStd + 1)) fail(`3.5% bump should lift NE (${atStd.toFixed(2)} → ${steeper.toFixed(2)})`);
+  else ok(`steeper bump lifts NE (${atStd.toFixed(2)} → ${steeper.toFixed(2)})`);
+  if (!(flatter < atStd - 1)) fail(`1.5% bump should cut NE (${atStd.toFixed(2)} → ${flatter.toFixed(2)})`);
+  else ok(`flatter bump cuts NE (${atStd.toFixed(2)} → ${flatter.toFixed(2)})`);
 }
 
 // --- 3. Counter-back rent claws from the opener, not ask × 0.94 -------

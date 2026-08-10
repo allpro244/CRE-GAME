@@ -5,7 +5,7 @@ import { monthLabel } from "@/engine/types";
 import { currentCity, currentSeed } from "@/state/city";
 import { locLimit } from "@/engine/credit";
 import { netWorth } from "@/engine/value";
-import { portfolioQuarterlyCF } from "@/engine/sim";
+import { portfolioMonthlyCF } from "@/engine/sim";
 import { usd, pct } from "./format";
 import { liveBrokerCalls } from "./RightPanel";
 
@@ -85,16 +85,19 @@ export default function TopBar() {
     }
     const parcels = useStore.getState().parcels;
     const nw = parcels ? netWorth(deferredGame, parcels) : 0;
-    const cf = parcels ? portfolioQuarterlyCF(deferredGame, parcels) : 0;
+    const cf = parcels ? portfolioMonthlyCF(deferredGame, parcels) : 0;
     const line = parcels ? locLimit(deferredGame, parcels, nw) : 0;
     // Count every decision that actually lives on Deals. The badge used to
     // count only LOIs and single-building offers, so tenant relief, purchase
     // counters, contracts and portfolio bids could expire behind a clean tab.
-    const dealsCount = deferredGame.lois.length
+    const loisOnDesk = deferredGame.agent
+      ? deferredGame.lois.filter((l) => l.referred).length
+      : deferredGame.lois.length;
+    const dealsCount = loisOnDesk
       + (deferredGame.asks?.length ?? 0)
       + Object.keys(deferredGame.talks ?? {}).length
       + (deferredGame.portfolioSale?.bids?.length ?? 0)
-      + Object.values(deferredGame.holdings).filter((h) => h.sale?.offer).length;
+      + Object.values(deferredGame.holdings).filter((h) => h.sale?.offer || (h.sale?.bids?.length ?? 0) > 0).length;
     // What happened THIS MONTH that was not routine — the badge is the reason to
     // look, not a count of everything ever written.
     const unread = deferredGame.news.filter((n) =>
@@ -277,8 +280,17 @@ export default function TopBar() {
               NOI, debt service coverage and every quote on every page are
               annual; a monthly cash flow in the header was the one figure the
               player had to mentally multiply before it could be compared with
-              anything else on screen. */}
-          <Stat label="CF / yr" value={usd(cf * 12)} bad={cf < 0} drop={2} w={88} />
+              anything else on screen. Includes ground rent on leased fees, and
+              subtracts construction interest, facility and the revolver — so it
+              can read worse than Portfolio's deed-only "Cash flow / mo". */}
+          <Stat
+            label="CF / yr"
+            value={usd(cf * 12)}
+            bad={cf < 0}
+            drop={2}
+            w={88}
+            title={`Firm cash flow annualised: deed NOI (including ground rent) less mortgages, construction interest, facility and the revolver. ${usd(cf)} / mo. Portfolio "Cash flow / mo" is deeds only.`}
+          />
           {/* Base rate rides with NW/CF (drop 2). Market phase and vacant-lot
               counts are drop 3 — only on very wide screens — so they cannot
               clip into "MA" under the Portfolio button on a normal desktop. */}

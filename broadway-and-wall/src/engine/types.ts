@@ -76,6 +76,12 @@ export interface Tenant {
   credit: Credit;
   sf: number;
   rentPsf: number;     // $/sf/yr
+  /**
+   * ANNUAL CONTRACTUAL BUMP, percent. Applied on each lease anniversary.
+   * Optional on old saves — the engine treats a missing field as 2.5%, which
+   * is what every lease used to get in silence.
+   */
+  bumpPct?: number;
   net: boolean;        // legacy flag; `recovery` is the real answer
   recovery?: "nnn" | "base" | "gross";
   baseStopPsf?: number;   // base-year expense stop, $/sf — frozen at signing
@@ -172,6 +178,11 @@ export interface LOI {
   termM: number;
   tiPsf: number;       // tenant-improvement allowance, $/sf at signing
   freeM: number;       // free-rent months (not quarters)
+  /**
+   * ANNUAL RENT BUMP on the paper, percent. Negotiable with rent / TI / free
+   * months. Missing on old letters — treated as the market standard 2.5%.
+   */
+  bumpPct?: number;
   net: boolean;
   recovery?: "nnn" | "base" | "gross";
   expiresM: number;
@@ -181,21 +192,24 @@ export interface LOI {
   // is free does not count it as one.
   arrivedM?: number;
   countered?: boolean;
-  // The negotiation: you counter with rent, TI and free rent; they take it,
-  // walk, or counter back ONCE — and that one is final.
+  // The negotiation: you counter with rent, TI, free rent and the bump; they
+  // take it, walk, or counter back ONCE — and that one is final.
   stage?: "open" | "countered";
   counterRentPsf?: number;
   counterTiPsf?: number;
   counterFreeM?: number;
+  counterBumpPct?: number;
   tenantIdx?: number;  // renewals: index into holding.tenants
   // What YOU asked for, kept so the card can show the conversation rather than
   // silently overwriting the opening terms with the answer.
   askedRentPsf?: number;
   askedTiPsf?: number;
   askedFreeM?: number;
+  askedBumpPct?: number;
   openRentPsf?: number;   // their original number, before any of this
   openTiPsf?: number;
   openFreeM?: number;
+  openBumpPct?: number;
   /**
    * WHICH TOUR THIS PARTY IS ON.
    *
@@ -236,6 +250,8 @@ export interface LeaseReply {
   theirTiPsf: number;
   askedFreeM?: number;
   theirFreeM?: number;
+  askedBumpPct?: number;
+  theirBumpPct?: number;
   sf: number;
   marketPsf: number;
 }
@@ -1061,7 +1077,7 @@ export interface PropertyEvent {
 export interface Alert {
   id: number;
   q: number;                 // the month it fired
-  kind: "swan" | "bank" | "portfolio" | "ground";
+  kind: "swan" | "bank" | "portfolio" | "ground" | "sale";
   tone: "bad" | "good";      // a black swan or a white one
   title: string;
   body: string;
@@ -1718,6 +1734,51 @@ export interface BooksYear {
   borrowed?: number;
 }
 
+/** Same flow buckets as BooksYear, stamped once per game month for the monthly statement. */
+export interface BooksMonth {
+  m: number;
+  noi: number;
+  debtSvc: number;
+  leasing: number;
+  capex: number;
+  dev: number;
+  taxes: number;
+  bought: number;
+  sold: number;
+  ga: number;
+  interest: number;
+  borrowed?: number;
+}
+
+/**
+ * A December close of the balance sheet. Enough to re-open last year's sheet
+ * without keeping every deed's rent roll forever.
+ */
+export interface BalanceSnapshot {
+  m: number;
+  cash: number;
+  deposits: number;
+  propGross: number;
+  mortgages: number;
+  landOnly: number;
+  bldgCount: number;
+  landCount: number;
+  byClass: Record<string, { n: number; gross: number; debt: number }>;
+  cip: number;
+  cipDebt: number;
+  cipN: number;
+  notesVal: number;
+  noteCount: number;
+  locBal: number;
+  locLim: number;
+  facility: number;
+  totalAssets: number;
+  totalLiab: number;
+  equity: number;
+  nwEngine: number;
+  rate: number;
+}
+
 export interface Exit {
   bbl: string;
   address: string;
@@ -2314,6 +2375,10 @@ export interface GameState {
   // Revolving line against the portfolio: 35% of net worth at index + 400bps.
   loc: { balance: number; drawnTotal: number; interestPaid: number };
   books: BooksYear[];                        // the ledger, one entry per year
+  /** Monthly flow buckets for the income statement's month view. Optional for old saves. */
+  booksMonthly?: BooksMonth[];
+  /** December balance-sheet stamps — one per game year. Optional for old saves. */
+  balanceHistory?: BalanceSnapshot[];
   nwHistory: number[];                       // net worth at each month, for the chart
   /** Last month's gross asset value — overhead sizes off this so the tick does not appraise twice. */
   prevGav?: number;
@@ -2348,7 +2413,7 @@ export interface GameState {
   locOverMs?: number;
 }
 
-// Write a cash flow into the current year's ledger bucket.
+// Write a cash flow into the current year's ledger bucket — and the month's.
 export function logBooks(s: GameState, key: keyof Omit<BooksYear, "yr">, amt: number) {
   if (!s.books) s.books = [];
   const yr = Math.floor(s.month / 12);
@@ -2358,6 +2423,20 @@ export function logBooks(s: GameState, key: keyof Omit<BooksYear, "yr">, amt: nu
     s.books.push(e);
   }
   e[key] = ((e[key] as number) ?? 0) + amt;
+  // MONTHLY TOO. The year bucket answers "how did the firm do this year"; the
+  // month bucket answers "what just happened". Dual-write keeps them on the
+  // same dollars without a second call site at every cheque.
+  if (!s.booksMonthly) s.booksMonthly = [];
+  let me = s.booksMonthly[s.booksMonthly.length - 1];
+  if (!me || me.m !== s.month) {
+    me = {
+      m: s.month, noi: 0, debtSvc: 0, leasing: 0, capex: 0, dev: 0, taxes: 0,
+      bought: 0, sold: 0, ga: 0, interest: 0, borrowed: 0,
+    };
+    s.booksMonthly.push(me);
+    while (s.booksMonthly.length > 48) s.booksMonthly.shift();
+  }
+  me[key] = ((me[key] as number) ?? 0) + amt;
 }
 
 /**

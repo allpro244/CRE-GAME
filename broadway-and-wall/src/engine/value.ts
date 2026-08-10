@@ -2121,10 +2121,11 @@ export function ownedHoldingValue(
  * ONE NOI FOR A DEED THE PLAYER OWNS.
  *
  * `holdingNOIYr` correctly returns 0 on a ground-leased fee so the fee owner
- * is not billed the lessee's tax, insurance and vacancy. Debt and DSCR must
- * still underwrite the absolutely-net ground rent — otherwise a performing
- * leased fee is treated as vacant dirt and only First Harbor's land loan
- * will look at it. Mirrors `ownedHoldingValue`.
+ * is not billed the lessee's tax, insurance and vacancy. Cash still arrives as
+ * the absolutely-net ground coupon (`tickGroundLeases`). Debt, DSCR and every
+ * player-facing cash-flow figure have to count that coupon — otherwise a
+ * performing leased fee is vacant dirt to First Harbor and the header CF / yr
+ * pretends the income does not exist. Mirrors `ownedHoldingValue`.
  */
 export function ownedHoldingNoiYr(
   s: GameState, parcels: Record<string, ParcelRecord>, h: Holding,
@@ -2143,6 +2144,13 @@ export function ownedHoldingNoiYrFromRec(
     return gl ? Math.max(0, gl.rentYr) : 0;
   }
   return holdingNOIYr(rec, s.econ, h, s.month);
+}
+
+/** Monthly deed NOI — ground coupon or building NOI, never vacant-dirt zero on a leased fee. */
+export function ownedMonthlyNoi(
+  s: GameState, parcels: Record<string, ParcelRecord>, h: Holding,
+): number {
+  return ownedHoldingNoiYr(s, parcels, h) / 12;
 }
 
 /**

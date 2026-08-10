@@ -6,12 +6,12 @@ import type { BuiltClass } from "@/engine/types";
 import { holdingNOIYr, resolveRec, asIfOwned } from "@/engine/value";
 import { MAX_TALKS } from "@/engine/acquire";
 import { APPROACH_LIFE_M } from "@/engine/sim";
-import { loiSigningCost, exclusiveFeeRate, netEffectivePsf } from "@/engine/leasing";
+import { bumpOf, loiSigningCost, exclusiveFeeRate, netEffectivePsf } from "@/engine/leasing";
 import { usd, sf } from "@/ui/format";
 import { PortfolioSaleDesk } from "@/ui/panels/PortfolioPage";
 import { liveBrokerCalls } from "@/ui/panels/broker";
 import { Row } from "@/ui/panels/shared";
-import { LoiCounterDraft, loiMarketPsf, openingNe } from "@/ui/panels/LoiNegotiate";
+import { LoiCounterDraft, LoiHero, loiMarketPsf, openingNe } from "@/ui/panels/LoiNegotiate";
 
 export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (bbl: string) => void }) {
   const game = useStore((s) => s.game)!;
@@ -25,7 +25,8 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
   const prevRent = loi.kind === "renewal" && loi.tenantIdx !== undefined ? h?.tenants[loi.tenantIdx]?.rentPsf : undefined;
   const final = loi.stage === "countered";
   const theirNe = openingNe(loi);
-  const nowNe = netEffectivePsf(loi, loi.rentPsf, loi.tiPsf, loi.freeM);
+  const bump = bumpOf(loi);
+  const nowNe = netEffectivePsf(loi, loi.rentPsf, loi.tiPsf, loi.freeM, bump);
   // WHO ELSE IS CHASING THIS SPACE. The entire point of a tour is that you can
   // only have one of them, so the card has to say so before you press Accept.
   const rivalsOnTour = loi.tourId === undefined ? 0
@@ -33,6 +34,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
   return (
     <div className="loi">
       <button className="loi-addr" onClick={() => go(loi.bbl)}>{rec?.address ?? loi.bbl}</button>
+      <LoiHero loi={loi} />
       <div className="loi-line">
         <b>{loi.name}</b> <span className="mono">{CREDIT_LABEL[loi.credit]}</span> · {loi.sector}
         {loi.kind === "renewal" && <span className="chip chip-renewal">RENEWAL</span>}
@@ -41,7 +43,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
         {final && <span className="chip">FINAL</span>}
       </div>
       <div className="loi-line mono">
-        {(loi.sf / 1000).toFixed(1)}k sf · ${loi.rentPsf.toFixed(2)}/sf {loi.net ? "NNN" : "gross"} · {(loi.termM / 12).toFixed(0)} yrs
+        ${loi.rentPsf.toFixed(2)}/sf {loi.net ? "NNN" : "gross"} · {bump.toFixed(2)}%/yr
         {loi.tiPsf > 0 ? ` · TI $${loi.tiPsf}` : " · no TI"}
         {` · ${loi.freeM > 0 ? `${loi.freeM}mo free` : "no free rent"}`}
       </div>
@@ -59,10 +61,12 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
           you asked ${loi.askedRentPsf.toFixed(2)}
           {loi.askedTiPsf !== undefined ? ` · TI $${loi.askedTiPsf}` : ""}
           {loi.askedFreeM ? ` · ${loi.askedFreeM}mo free` : ""}
+          {loi.askedBumpPct !== undefined ? ` · ${loi.askedBumpPct.toFixed(2)}%/yr` : ""}
           {loi.openRentPsf !== undefined ? ` (opened $${loi.openRentPsf.toFixed(2)})` : ""}
           {" "}→ their final ${(loi.counterRentPsf ?? loi.rentPsf).toFixed(2)}/sf
           {loi.counterTiPsf !== undefined ? ` · TI $${loi.counterTiPsf}` : ""}
           {(loi.counterFreeM ?? 0) > 0 ? ` · ${loi.counterFreeM}mo free` : ""}
+          {loi.counterBumpPct !== undefined ? ` · ${loi.counterBumpPct.toFixed(2)}%/yr` : ""}
         </div>
       )}
       {/* NE on the card BEFORE you open Counter — otherwise Accept is a blind
@@ -110,11 +114,12 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
  */
 export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: (bbl: string) => void }) {
   const game = useStore((s) => s.game)!;
-  const { acceptOffer, declineOffer, counterSale } = useStore.getState();
+  const { acceptOffer, declineOffer, counterSale, takeBid } = useStore.getState();
   const [counter, setCounter] = useState(0);
   const [countering, setCountering] = useState(false);
   const h = game.holdings[bbl];
   const offer = h?.sale?.offer;
+  const bids = h?.sale?.bids;
   const suggested = offer ? Math.round(offer.price * 1.06) : 0;
   return (
     <div className="loi">
@@ -142,7 +147,24 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
           );
         })()}
       </div>
-      {offer ? (
+      {bids && bids.length > 0 ? (
+        <>
+          <div className="loi-line mono">
+            <b>{bids.length} bid{bids.length === 1 ? "" : "s"}</b>
+            {" "}· best <b>{usd(bids[0].price)}</b> from {bids[0].name}
+            {bids.length > 1 ? ` · second ${usd(bids[1].price)}` : ""}
+            {" "}· {((bids[0].price / Math.max(1, ask) - 1) * 100).toFixed(1)}% against your whisper
+          </div>
+          <div className="btn-row">
+            <button className="btn btn-buy" onClick={() => takeBid(bbl, 0)}>
+              Take {bids[0].name} · {usd(bids[0].price)}
+            </button>
+            <button className="btn" onClick={() => go(bbl)} title="Best-and-final, counters and the full list live on the property">
+              Open the list…
+            </button>
+          </div>
+        </>
+      ) : offer ? (
         <>
           <div className="loi-line mono">
             {offer.retrade ? <b className="neg">retraded — </b> : null}
@@ -313,10 +335,23 @@ export function DealsPage() {
             </div>
           </>
         )}
-        <div className="page-section">Letters of intent · {game.lois.length}</div>
-        {game.lois.length === 0 && (
+        {(() => {
+          // When the agent holds the book, only referred letters are yours —
+          // the rest are mid-tick paper that should not look like a queue.
+          const desk = game.agent ? game.lois.filter((l) => l.referred) : game.lois;
+          return (
+            <>
+        <div className="page-section">
+          Letters of intent · {desk.length}
+          {game.agent ? " · referred by your desk" : ""}
+        </div>
+        {desk.length === 0 && (
           <div className="deal">
-            <div className="hint">No live negotiations. Vacant space in high-demand buildings draws tenants.</div>
+            <div className="hint">
+              {game.agent
+                ? "Your agent has the book — nothing referred back right now. They sign inside the mandate on Leasing."
+                : "No live negotiations. Vacant space in high-demand buildings draws tenants."}
+            </div>
             {Object.keys(game.holdings).length === 0 ? (
               <button className="btn btn-buy" onClick={() => useStore.getState().setPage("market")}>
                 Browse buildings in Marketplace →
@@ -329,11 +364,14 @@ export function DealsPage() {
           </div>
         )}
         <div className="loi-grid">
-          {[...game.lois]
+          {[...desk]
             .sort((a, b) => (b.referred ? 1 : 0) - (a.referred ? 1 : 0)
               || (a.tourId ?? -a.id) - (b.tourId ?? -b.id) || a.id - b.id)
             .map((loi) => <LoiCard key={loi.id} loi={loi} go={go} />)}
         </div>
+            </>
+          );
+        })()}
         {/* HOW THEY ANSWERED. A counter used to resolve into a toast that was
             gone in three seconds and a card that vanished off the grid — so the
             most consequential leasing decision in the game left no account of

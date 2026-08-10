@@ -46,7 +46,11 @@ check(rec?.class === "office", "lessee improvement resolves as a standing buildi
 check(E.holdingNOIYr(rec, g.econ, g.holdings[bbl], g.month) === 0,
   "fee owner pays no tax, insurance, vacancy or operating expense after opening");
 check(E.ownedHoldingNoiYr(g, parcels, g.holdings[bbl]) === 600_000,
-  "debt underwrites the ground coupon, not vacant-dirt zero");
+  "deed NOI is the ground coupon, not vacant-dirt zero");
+check(E.portfolioPropertyMonthlyCF(g, parcels) === 600_000 / 12,
+  "portfolio property CF counts the ground rent");
+check(E.portfolioMonthlyCF(g, parcels) === 600_000 / 12,
+  "header CF / yr annualises the same coupon (no other firm debt here)");
 check(!E.isVacantLandLoanCollateral(g, g.holdings[bbl], rec),
   "a performing leased fee is not vacant land-loan collateral");
 

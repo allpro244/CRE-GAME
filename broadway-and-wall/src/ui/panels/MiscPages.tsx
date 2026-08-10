@@ -124,22 +124,38 @@ export function SettingsPage() {
         on={!popupsOff}
         set={(v) => setPopupsOff(!v)}
         label="Pop-up cards"
-        detail={"Letters of intent, offers on your buildings and the auction card take the screen when they arrive. "
-          + "Off, they wait quietly where they live — letters and tenant asks on the Deals desk, offers on the "
-          + "Portfolio, off-market calls and the docket on Marketplace — and nothing is lost but the interruption. "
-          + "Turn this off to simulate long stretches. A bank going down, a level event in the wider economy and "
-          + "a book taken back by a lender are not on this switch — they are not decisions waiting on a page. "
-          + "The switch below covers those."}
+<<<<<<< HEAD
+        detail={"Letters of intent, single-building offers, portfolio indications on the Deals desk, and the auction card take the screen when they arrive. "
+          + "Off, they wait quietly where they live — letters and tenant asks on Deals, single-building offers on "
+          + "Portfolio, portfolio bids also on Deals (watch the badge), off-market calls and the docket on Marketplace — "
+          + "and nothing is lost but the interruption. Turn this off to simulate long stretches. "
+          + "A bank going down, a level event, a lender taking a book back, and a portfolio indication also raise "
+=======
+        detail={"Letters of intent, quiet offers and marketed bid lists on buildings you are selling, portfolio indications, and the auction card take the screen when they arrive. "
+          + "Off, they wait on Deals (watch the badge) and on the property desk — not on Portfolio, which only shows that a deed is listed. "
+          + "Nothing is lost but the interruption. Turn this off to simulate long stretches. "
+          + "A bank going down, a level event, a lender taking a book back, and a bid list landing also raise "
+>>>>>>> origin/cursor/single-sale-offers-9786
+          + "stop-everything cards on the switch below."}
       />
       <Toggle
         on={!alertsOff}
         set={(v) => setAlertsOff(!v)}
         label="Stop-everything cards"
-        detail={"A bank failing, a level event in the wider economy, a book of buildings taken back at once. "
-          + "These are not decisions and there is nothing to answer, which is why they used to take the screen "
-          + "no matter what. Every one of them is now written into the news feed the moment it fires, so turning "
+        detail={"A bank failing, a level event in the wider economy, a book of buildings taken back at once, "
+<<<<<<< HEAD
+          + "and an institution indicating on a portfolio you put in the market. "
+          + "Every one of them is written into the news feed the moment it fires, so turning "
           + "this off loses the interruption and not the event — you will read it on News / The Tape instead. "
-          + "With both switches off nothing will ever take the screen again."}
+          + "With both switches off a portfolio bid still lands on Deals (and stops Year/Skip) but will not take the screen — "
+          + "and it lapses in three months if you never open the desk."}
+=======
+          + "and bids landing on a marketed sale. "
+          + "Every one of them is written into the news feed the moment it fires, so turning "
+          + "this off loses the interruption and not the event — you will read it on News / The Tape instead. "
+          + "With both switches off a sale still stops Year/Skip and badges Deals, but will not take the screen — "
+          + "and a quiet offer lapses in two months, a bid list in fourteen, if you never open the desk."}
+>>>>>>> origin/cursor/single-sale-offers-9786
       />
       <Toggle
         on={!game.brokersOff}

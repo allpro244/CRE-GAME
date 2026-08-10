@@ -3,7 +3,7 @@
 // returns a new state or an error string, never mutates the input.
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import type { Bid, BuiltClass, Econ, GameState, GroundReview, Holding, RivalStyle } from "./types";
-import { logBooks, monthLabel, raiseAlert, SVC_START, cloneState} from "./types";
+import { logBooks, monthLabel, raiseAlert, SVC_START, cloneState } from "./types";
 import { recentLowballs } from "./acquire";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange, newsChance, BUILD_MONTHS } from "./market";
@@ -1895,12 +1895,19 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
     return;
   }
   const top = bids[0].price;
-  s.news.unshift({
-    q: s.month, kind: "deal",
-    text: `${bids.length} bid${bids.length === 1 ? "" : "s"} in at ${rec.address}. `
-      + `Best is $${(top / 1e6).toFixed(2)}M from ${bids[0].name}`
+  // A BID LIST IS A DECISION WITH A FUSE. It used to arrive as news only —
+  // attention, the Deals badge and the interrupt modal all keyed off quiet
+  // `sale.offer`, so a marketed campaign could land three names, sit unread
+  // on the property card, and wipe the listing at month 14 with the player
+  // still thinking nothing had happened.
+  raiseAlert(s, {
+    kind: "sale", tone: "good",
+    title: `${bids.length} bid${bids.length === 1 ? "" : "s"} in at ${rec.address}`,
+    body: `Best is $${(top / 1e6).toFixed(2)}M from ${bids[0].name}`
       + (bids.length > 1 ? `, against $${(bids[1].price / 1e6).toFixed(2)}M second` : "")
-      + `. ${top >= sale.ask ? "Over the whisper." : `${Math.round((1 - top / Math.max(1, sale.ask)) * 100)}% under the whisper.`}`,
+      + `. ${top >= sale.ask ? "Over the whisper." : `${Math.round((1 - top / Math.max(1, sale.ask)) * 100)}% under the whisper.`} `
+      + `The list is on Deals and on the property — it will not wait forever.`,
+    detail: `$${(top / 1e6).toFixed(2)}M`,
   });
 }
 
@@ -2606,8 +2613,20 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
       continue;
     }
     if (sale.offer && s.month > sale.offer.expiresM) {
+      const rec0 = resolveRec(parcels, s, h.bbl);
+      const px = sale.offer.price;
       delete sale.offer;
       if (sale.unsolicited) delete h.sale;      // they were never on the market
+      // A LAPSE USED TO BE SILENT. Deferred the card, or pop-ups off, and the
+      // offer vanished with no tape line — so "I never got an offer" and
+      // "I got one and it expired unread" were the same experience.
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `The $${(px / 1e6).toFixed(2)}M offer on ${rec0?.address ?? h.bbl} lapsed unanswered.`
+          + (sale.unsolicited || !h.sale
+            ? " They were never on the market for it."
+            : " The listing is still live — cut the ask or wait for the next call."),
+      });
       continue;
     }
     if (sale.unsolicited && !sale.offer) { delete h.sale; continue; }
@@ -2627,6 +2646,10 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
       }
       continue;
     }
+    // THE BOOK IS STILL OUT. ParcelDesk promises nothing happens until offers
+    // are due — and a quiet offer landing mid-campaign used to leave both a
+    // frozen phone call and a bid list on the same building.
+    if (sale.callM !== undefined && s.month < sale.callM) continue;
     const value = ownedHoldingValue(s, parcels, h);
     const ratio = sale.ask / Math.max(1, value);
     // WHO IS IN THE ROOM, NOT WHICH LABEL THE MONTH CARRIES.

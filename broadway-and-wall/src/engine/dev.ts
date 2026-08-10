@@ -1917,6 +1917,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
       // rest of the century. That fault is documented at the top of staff.ts
       // and it cost an acceptance test once already.
       const cm = cmRiskMult(roleState(s, parcels, "construction"));
+      const cmNote = cm > 1.08 ? " The construction desk was underwater and the job went unsupervised." : "";
       if (roll < 0.028 * gmpShield * cm) {
         // change order
         const bump = rrange(s, 0.015, 0.07, "dev") * cm;
@@ -1931,14 +1932,14 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
         s.news.unshift({
           q: s.month, kind: overrun > 0 ? "warn" : "info",
           text: overrun > 0
-            ? `Change orders at ${rec.address}: $${(extra / 1e6).toFixed(2)}M, of which $${(overrun / 1e6).toFixed(2)}M is past the contingency and lands on you.`
-            : `Change orders at ${rec.address}: $${(extra / 1e6).toFixed(2)}M, absorbed by the contingency.`,
+            ? `Change orders at ${rec.address}: $${(extra / 1e6).toFixed(2)}M, of which $${(overrun / 1e6).toFixed(2)}M is past the contingency and lands on you.${cmNote}`
+            : `Change orders at ${rec.address}: $${(extra / 1e6).toFixed(2)}M, absorbed by the contingency.${cmNote}`,
         });
       } else if (roll < 0.055 * cm) {
         d.deliverM += 1 + Math.round(rng(s, "dev"));
         syncDevCohorts(s, d);
         d.events++;
-        s.news.unshift({ q: s.month, kind: "warn", text: `Weather and inspections at ${rec.address} — delivery moves to ${monthLabel(d.deliverM)}.` });
+        s.news.unshift({ q: s.month, kind: "warn", text: `Weather and inspections at ${rec.address} — delivery moves to ${monthLabel(d.deliverM)}.${cmNote}` });
       } else if (roll < 0.062 * cm) {
         // a sub goes under: time AND money, and the GMP does not help much.
         // Pre-qualification is most of what stops this one, which is why the
@@ -1953,7 +1954,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
         d.events++;
         s.news.unshift({
           q: s.month, kind: "warn",
-          text: `A subcontractor at ${rec.address} defaulted. Re-tendering costs $${(extra / 1e6).toFixed(2)}M and pushes delivery to ${monthLabel(d.deliverM)}.`,
+          text: `A subcontractor at ${rec.address} defaulted. Re-tendering costs $${(extra / 1e6).toFixed(2)}M and pushes delivery to ${monthLabel(d.deliverM)}.${cmNote}`,
         });
       }
     }

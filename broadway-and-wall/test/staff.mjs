@@ -161,6 +161,56 @@ const report = (name, ok, lines) => {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 5. THE HALF-BUILT WIRES NOW BIND
+// ---------------------------------------------------------------------------
+{
+  const parcels = clone();
+  let g = E.firstListings(E.newGame(91, parcels), parcels, bbls);
+  E.refreshPool(g, true);
+  const roles = new Set(g.hirePool.list.map((c) => c.role));
+  const hasCm = roles.has("construction");
+  const tier = E.setSearchTier(g, "recruiter");
+  const bandOk = !tier.err && tier.s.hirePool.band === 11;
+  // A performing PM desk must move renewal probability — stamp + intent.
+  const officeBbl = bbls.find((b) => {
+    const r = E.resolveRec(parcels, g, b);
+    return r && r.class === "office" && r.bldgArea > 20_000;
+  });
+  let renewOk = false;
+  if (officeBbl) {
+    g.holdings[officeBbl] = {
+      bbl: officeBbl, boughtM: 0, costBasis: 1, condition: "average",
+      tenants: [{
+        name: "Acme", sf: 10_000, rentPsf: 30, startM: 0, endM: 60,
+        credit: 1, sector: "professional", use: "office", staff: 1, net: false,
+      }],
+      loan: null, assessed: 1, condIdx: 0.7, svcIdx: 0.7,
+      service: 0, stance: 0, plan: 1, cfHistory: [],
+      pmRenewalMult: 0.75,
+    };
+    g.pmDeskSlip = 0.4;
+    g.staff = [{
+      id: 1, name: "Pat", role: "pm", hiredM: 0, salary: 100_000, band0: 26,
+      attrs: { judgment: 40, urgency: 40, diligence: 40, relationships: 40, costControl: 40, tenantCare: 30 },
+      obs: {},
+    }];
+    const rec = E.resolveRec(parcels, g, officeBbl);
+    const ri = E.renewalIntent(g, rec, g.holdings[officeBbl], g.holdings[officeBbl].tenants[0]);
+    renewOk = ri.p < 0.85;
+  }
+  const jSharp = E.deskJudgment({ staff: [{ role: "leasing", attrs: { judgment: 90 } }] }, "leasing");
+  const jEmpty = E.deskJudgment({ staff: [] }, "leasing");
+  report("E. HALF-BUILT STAFF WIRES BIND — CM hire, search tier, renewals, judgment",
+    hasCm && bandOk && renewOk && jSharp > 80 && jEmpty === 42,
+    [
+      `construction on shortlist: ${hasCm}`,
+      `recruiter sets band 11: ${bandOk}${tier.err ? ` (${tier.err})` : ""}`,
+      `weak PM desk cuts renewal intent: ${renewOk}`,
+      `deskJudgment sharp=${jSharp.toFixed(0)} empty=${jEmpty}`,
+    ]);
+}
+
 console.log(`\n${"=".repeat(64)}`);
-console.log(fails === 0 ? "4 of 4 payroll tests pass" : `${fails} payroll test(s) failed`);
+console.log(fails === 0 ? "5 of 5 payroll tests pass" : `${fails} payroll test(s) failed`);
 process.exit(fails === 0 ? 0 : 1);

@@ -421,6 +421,10 @@ export interface Holding {
    * between this and the same-quantity-two-answers fault in `holdingValue`.
    */
   pmOpexMult?: number;
+  /** Stamped by markStaff — assigned PM skill on this building's renewals. */
+  pmRenewalMult?: number;
+  /** Stamped by markStaff — assigned leasing skill on rent at this building. */
+  leasingRentMult?: number;
   // A leasing exclusive. The house works the phones for nothing and is paid
   // 6% of the base rent over the term of every lease signed while they hold
   // the file, in place of the 4%/2% you pay doing it yourself — see
@@ -1978,6 +1982,14 @@ export interface GameState {
   leasingOddsMult?: number;
   pmRenewalMult?: number;
   leasingRentMult?: number;
+  /** PM desk overload, stamped by markStaff for tenant-care reads without parcels. */
+  pmDeskSlip?: number;
+  /** How the market reads your hiring history — 0..1, default 0.55. */
+  hireReputation?: number;
+  /** handsOn: you cover more sf yourself; delegated: you need staff sooner. */
+  ownerStyle?: "handsOn" | "delegated";
+  /** boutique: wider star spread; platform: flatter, reliable mid. */
+  benchStyle?: "boutique" | "platform";
   pendingHires?: { staff: import("./staff").Staff; startM: number }[];
   hirePool?: { m: number; band: number; list: import("./staff").Candidate[] };
   nextStaffId?: number;

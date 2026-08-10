@@ -8562,12 +8562,13 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     }
 
     const prevTarget = this.renderer.getRenderTarget();
-    // Budget flags. Still frames on a machine that is keeping up run every
-    // pass. Motion and overruns only defer the second city draw and the lens
-    // extras — bloom, AO contact and the composite stay, so the skyline never
-    // goes flat.
+    // Budget flags. Still frames keep the full photograph — bloom, AO, bounce,
+    // shafts, tilt-shift. While the camera is moving those lens extras are
+    // deferred (the eye cannot read them on a moving frame anyway). A sustained
+    // overrun only lengthens the harbour-reflection interval, never strips the
+    // still image.
     const heavy = this.frameEma > (this.preferFps ? 26 : 36);
-    const skipExtras = this.camMoving || heavy;
+    const skipExtras = this.camMoving;
 
     // 0. THE CITY, UPSIDE DOWN, for the harbour to carry.
     //

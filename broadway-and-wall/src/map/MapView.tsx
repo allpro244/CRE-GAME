@@ -777,7 +777,7 @@ export default function MapView() {
     if (!mapReady) return;
     const map = mapRef.current;
     const dpr = typeof window !== "undefined" ? (window.devicePixelRatio || 1) : 1;
-    map?.setPixelRatio(Math.min(dpr, preferFps ? 1.25 : 1.5));
+    map?.setPixelRatio(preferFps ? Math.min(dpr, 1.25) : dpr);
     threeRef.current?.setPreferFps(preferFps);
   }, [preferFps, mapReady]);
   useEffect(() => {

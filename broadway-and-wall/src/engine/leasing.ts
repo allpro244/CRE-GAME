@@ -959,8 +959,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       h.condIdx -= wear;
 
       // THE CAPITAL PLAN. 34bps of gross asset value a year, spent without being
-      // asked. It is the first thing that goes when the money is short, and a
-      // building whose cash flow the lender has swept does not get it at all.
+      // asked. It is the first thing that goes when the money is short.
       // HOW THE BUILDING IS RUN, as the tenants experience it — which is not
       // the switch, it is the average of the switch over about three years. A
       // service cut shows up in NOI next month and in the rent roll in 2007.
@@ -981,11 +980,16 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const plan = planSpec(h.plan);
       const gav = ownedHoldingValue(s, parcels, h);
       const want = Math.round((CAP_PLAN_RATE * plan.mult * gav * (wear / COND_WEAR_REF)) / 12);
-      // A SWEPT BUILDING DOES NOT GET THE PLAN, and a facility sweeps every
-      // deed in its pool at once — which is the whole difference between a
-      // covenant on one building and a covenant on a book.
-      const swept = h.loan?.sweep === true || (s.facility?.sweep === true && s.facility.bbls.includes(h.bbl));
-      if (want > 0 && s.cash > want * 4 && !swept) {
+      // A SWEEP TRAPS PROPERTY CASH FLOW — it does not freeze the firm's
+      // chequebook. Charging the plan from firm cash while a deed is swept used
+      // to be refused outright, which printed "capital plan went unfunded" on a
+      // sponsor sitting on millions and left the bricks to rot for no reason a
+      // lender would recognise. The sweep still takes surplus NOI to principal
+      // in debt.ts; the reserve cheque is sponsor equity, same as a cure.
+      // Fund this month when the firm can pay this month's bill — a 4× cash
+      // buffer used to cut the plan while three months of runway were still in
+      // the account, which read the same way to the player.
+      if (want > 0 && s.cash >= want) {
         s.cash -= want;
         logBooks(s, "capex", want);
         h.condIdx += wear * plan.lift;

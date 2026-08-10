@@ -987,7 +987,7 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
     if (h.planCutM === s.month) {
       out.push({
         key: `capital-plan:${h.bbl}:${h.planCutM}`,
-        label: `${h.bbl} capital plan went unfunded — condition will deteriorate`,
+        label: `${h.bbl} capital plan could not be funded from cash — condition will deteriorate`,
       });
     }
     // A YEAR, NOT A QUARTER. Three months' notice on a balloon is not notice —

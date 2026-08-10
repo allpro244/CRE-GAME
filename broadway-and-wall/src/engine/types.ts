@@ -389,7 +389,7 @@ export interface Holding {
    * the way the player is". They were not. Now they are.
    */
   condIdx?: number;
-  /** Last month the capital plan went unfunded, because the money was short. */
+  /** Last month the capital plan went unfunded — firm cash could not cover the bill. */
   planCutM?: number;
   /**
    * HOW YOU HAVE DECIDED TO RUN IT — the two standing decisions, taken once

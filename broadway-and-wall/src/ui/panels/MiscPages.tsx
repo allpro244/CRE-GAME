@@ -98,6 +98,8 @@ export function SettingsPage() {
   const setAlertsOff = useStore((s) => s.setAlertsOff);
   const fpsOn = useStore((s) => s.fpsOn);
   const setFpsOn = useStore((s) => s.setFpsOn);
+  const preferFps = useStore((s) => s.preferFps);
+  const setPreferFps = useStore((s) => s.setPreferFps);
   const flip = (patch: Partial<GameState>) => {
     const st = useStore.getState();
     useStore.setState({ game: { ...st.game!, ...patch } });
@@ -150,6 +152,15 @@ export function SettingsPage() {
         set={setFpsOn}
         label="Frame counter"
         detail="A frames-per-second readout in the top bar. It is an instrument for looking at the renderer, not part of the game, and it is off unless you want it."
+      />
+      <Toggle
+        on={preferFps}
+        set={setPreferFps}
+        label="Prefer smoother frames"
+        detail={"For machines without a discrete GPU. Off by default — a fast machine keeps native "
+          + "sharpness and the full photograph. On, it spends less fill rate on pixel density and "
+          + "multisampling so the map stays nearer sixty frames. Facades, occupancy, weather and "
+          + "the sim are unchanged either way."}
       />
       <Toggle
         on={!game.auctionQuiet}

@@ -237,6 +237,11 @@ export default function MapView() {
       // Only the width was ever read, and the height was assumed to be the
       // width — see fitZoom.
       const shot = framesOf(frame, el.current.clientWidth || 1280, el.current.clientHeight || 800);
+      // Native pixel density by default — a capable machine keeps the same
+      // sharpness it had before. Prefer-FPS is the only path that caps DPR,
+      // and only when the player asks for it on a weak GPU.
+      const dpr = typeof window !== "undefined" ? (window.devicePixelRatio || 1) : 1;
+      const preferFps = useStore.getState().preferFps;
       const map = new maplibregl.Map({
         container: el.current,
         style: composeStyle(base, city),
@@ -245,6 +250,7 @@ export default function MapView() {
         maxPitch: 70,
         attributionControl: { compact: true },
         canvasContextAttributes: { antialias: true },
+        pixelRatio: preferFps ? Math.min(dpr, 1.25) : dpr,
       });
       mapRef.current = map;
       // handle for automated playtests and screenshots
@@ -331,6 +337,7 @@ export default function MapView() {
                 layer.setDemandMap(dm);
               }
             }
+            layer.setPreferFps(useStore.getState().preferFps);
             threeRef.current = layer;
             // A handle for automated playtests, same as window.__map. The 3D
             // layer is the one part of this game whose correctness cannot be
@@ -765,6 +772,14 @@ export default function MapView() {
     if (!mapReady) return;
     threeRef.current?.setActivity(cityVisual.activity);
   }, [cityVisual.activity, mapReady]);
+  const preferFps = useStore((s) => s.preferFps);
+  useEffect(() => {
+    if (!mapReady) return;
+    const map = mapRef.current;
+    const dpr = typeof window !== "undefined" ? (window.devicePixelRatio || 1) : 1;
+    map?.setPixelRatio(preferFps ? Math.min(dpr, 1.25) : dpr);
+    threeRef.current?.setPreferFps(preferFps);
+  }, [preferFps, mapReady]);
   useEffect(() => {
     if (!mapReady) return;
     threeRef.current?.setWeather(

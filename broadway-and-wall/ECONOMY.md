@@ -811,3 +811,19 @@ in-kind / extra teardown passes gate on frictional pin + `startOwed`, not only
 `structTight` (seeds with a full office book but moderate employment gap were
 still freezing the wrecking ball). Harnesses: `test/lease-up-cost.mjs`,
 `test/late-densify.mjs`.
+
+# PINNED ASKING STILL COMPOUNDED FULL CPI — fixed
+
+After soft-market mute and tightEma fade-on-rail, hot seeds still printed
+~+1.2%/yr **real** office rent in months vacancy sat on the frictional floor
+(soft months almost absent). `vacTerm` was already 0 on the rail; the twin of
+the soft escalator was still live: `firmW=1` whenever `gap≤0`, so asking kept
+full `inflExp` forever on saturated availability, and a stable `structTight`
+level term paid on top.
+
+**Shipped:** on-rail scarcity is flow-only (shortfall *worsening*); asking
+carries a lease-roll fraction of CPI while pinned (restored toward full carry
+only when rent is already cheap against pay); stronger cheap-side income
+anchor on the rail so RTI cannot death-spiral. Measured: median pin-month real
+~−0.2%/yr (was ~+1.2%); century median real office ~0.9%/yr (was ~1.3–1.5%);
+supply-answers still green. Harness: `test/rent-anchor.mjs` pin-real clause.

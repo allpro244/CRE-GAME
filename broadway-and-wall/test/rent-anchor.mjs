@@ -44,6 +44,7 @@ for (const seed of SEEDS) {
   const w0 = g.econ.wageIdx || 1;
   let pin = 0, sumTE = 0, pinTE = 0, pinN = 0, maxTE = 0;
   let softN = 0, softNom = 0, softReal = 0;
+  let pinNom = 0, pinReal = 0;
   for (let m = 0; m < HZ; m++) {
     if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };
     const rBefore = g.econ.rentIdx.office;
@@ -56,16 +57,20 @@ for (const seed of SEEDS) {
     const te = g.econ.tightEma ?? 0;
     sumTE += te;
     maxTE = Math.max(maxTE, te);
+    const dNom = Math.log(g.econ.rentIdx.office / Math.max(1e-9, rBefore));
+    const dReal = Math.log((g.econ.rentIdx.office / g.econ.cpi) / Math.max(1e-9, rBefore / cBefore));
     if (pinned) {
       pin++;
       pinTE += te;
       pinN++;
+      pinNom += dNom;
+      pinReal += dReal;
     }
     // Soft-month growth: accumulate log returns while gap > 0 after the tick.
     if (gap > 0) {
       softN++;
-      softNom += Math.log(g.econ.rentIdx.office / Math.max(1e-9, rBefore));
-      softReal += Math.log((g.econ.rentIdx.office / g.econ.cpi) / Math.max(1e-9, rBefore / cBefore));
+      softNom += dNom;
+      softReal += dReal;
     }
   }
   const yrs = HZ / 12;
@@ -76,15 +81,18 @@ for (const seed of SEEDS) {
   // Annualize soft-month log returns (softN months → per-year rate).
   const softNomYr = softN > 24 ? Math.expm1(softNom * (12 / softN)) : 0;
   const softRealYr = softN > 24 ? Math.expm1(softReal * (12 / softN)) : 0;
+  const pinRealYr = pinN > 24 ? Math.expm1(pinReal * (12 / pinN)) : 0;
+  const pinNomYr = pinN > 24 ? Math.expm1(pinNom * (12 / pinN)) : 0;
   rows.push({
     seed, realC, rentLessWage, rti, pinPct: pin / HZ,
     avgTE: sumTE / HZ, avgTEpin: pinN ? pinTE / pinN : 0, maxTE,
-    softPct: softN / HZ, softNomYr, softRealYr,
+    softPct: softN / HZ, softNomYr, softRealYr, pinRealYr, pinNomYr,
   });
   console.log(
     `  seed ${seed}: real ${(realC * 100).toFixed(2)}%/yr  rent−wage ${(rentLessWage * 100).toFixed(2)}pp  `
     + `RTI ${rti.toFixed(2)}x  TEpin ${(pinN ? pinTE / pinN : 0).toFixed(3)}  `
     + `maxTE ${maxTE.toFixed(3)}  pin ${(pin / HZ * 100).toFixed(0)}%  `
+    + `pinReal ${(pinRealYr * 100).toFixed(2)}%/yr  `
     + `soft ${(softN / HZ * 100).toFixed(0)}%  softReal ${(softRealYr * 100).toFixed(2)}%/yr`,
   );
 }
@@ -97,10 +105,12 @@ const medTE = med(rows.map((r) => r.avgTE));
 const medMaxTE = med(rows.map((r) => r.maxTE));
 const medSoftReal = med(rows.map((r) => r.softRealYr));
 const medSoftNom = med(rows.map((r) => r.softNomYr));
+const medPinReal = med(rows.map((r) => r.pinRealYr));
 
 // Before rail fix: avgTEpin sat ABOVE avgTE, maxTE ~0.53, RTI ~1.13x.
 // Before soft-escalator mute: real office ~1.43%/yr with soft months still
 // compounding nominally near CPI.
+// Before on-rail scarcity mute: pin-month real ~+1.2%/yr from st×level.
 check(medTEpin <= medTE + 0.02,
   `tightEma while pinned (${medTEpin.toFixed(3)}) is not above overall avg (${medTE.toFixed(3)}) — no rail-minted premium`);
 check(medMaxTE <= 0.35,
@@ -115,11 +125,11 @@ check(minRti >= 0.40,
 check(medRlw <= 0.0035,
   `median rent−wage ${(medRlw * 100).toFixed(2)}pp/yr (need ≤ 0.35)`);
 // Long-run US CRE real rent is roughly flat to +1%/yr (CBRE/NCREIF).
-// Pre-soft-mute medians sat ~1.43%/yr with soft months still compounding
-// near CPI; post-fix ~1.2%/yr with soft real negative. Band allows a
-// dense town to track real wages without reopening the soft escalator.
-check(medReal >= -0.010 && medReal <= 0.0135,
-  `median real office rent ${(medReal * 100).toFixed(2)}%/yr (need −1.0…+1.35)`);
+// A saturated frictional rail must not mint ~+1%/yr real on top of CPI.
+check(medPinReal <= 0.0035,
+  `median REAL office rent while pinned ${(medPinReal * 100).toFixed(2)}%/yr (need ≤ +0.35 — rail is saturated availability)`);
+check(medReal >= -0.010 && medReal <= 0.010,
+  `median real office rent ${(medReal * 100).toFixed(2)}%/yr (need −1.0…+1.0)`);
 check(medSoftReal <= 0.0015,
   `median REAL office rent while soft ${(medSoftReal * 100).toFixed(2)}%/yr (need ≤ +0.15 — empty floors do not earn real growth)`);
 check(medSoftNom <= 0.008,

@@ -347,6 +347,9 @@ export function coveredSf(s: GameState, parcels: ParcelTable, role: StaffRole): 
   }
   let sf = 0;
   for (const h of Object.values(s.holdings)) {
+    // A ground-leased tower is the lessee's operating job, not yours — counting
+    // it here made the staff desk look overloaded while you only collect rent.
+    if (h.groundLeased) continue;
     const rec: ParcelRecord | null = resolveRec(parcels, s, h.bbl);
     if (!rec || !rec.bldgArea) continue;
     const mix = rec.mix;
@@ -762,6 +765,9 @@ export function assignStaff(s: GameState, staffId: number, bbl: string): { s: Ga
   if (!st) return { s, err: "Nobody by that name works here." };
   if (st.role === "construction") return { s, err: "Construction managers are not assigned to buildings yet." };
   if (!s.holdings[bbl]) return { s, err: "You do not own that building." };
+  if (s.holdings[bbl].groundLeased) {
+    return { s, err: "That fee is ground-leased — the lessee runs the building, not your desk." };
+  }
   const next: GameState = cloneState(s);
   for (const other of next.staff ?? []) {
     if (other.role === st.role && other.id !== staffId && other.assignedBbls?.length) {

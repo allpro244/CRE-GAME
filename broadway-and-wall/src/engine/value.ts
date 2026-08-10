@@ -1605,6 +1605,11 @@ export function inPlace(
     // `physicalOcc`, not `heldOccupancy`: on a mixed-use building the latter
     // divides the commercial roll by the WHOLE building and never sees the
     // flats, so a full block of shops over full flats read as a third let.
+    // A leased fee has no roll of yours — the going-in figure is the ground
+    // coupon, not a vacant shell's zero NOI.
+    if (own.groundLeased) {
+      return { noi: ownedHoldingNoiYrFromRec(s, rec, own), occ: 1, disclosed: true, h: own };
+    }
     return { noi: holdingNOIYr(rec, s.econ, own, s.month), occ: physicalOcc(rec, own), disclosed: true, h: own };
   }
   if (rec.class === "land" || !rec.bldgArea) {
@@ -2115,6 +2120,19 @@ export function ownedHoldingValue(
   const rec = resolveRec(parcels, s, h.bbl);
   if (!rec) return 0;
   return ownedHoldingValueFromRec(s, rec, h);
+}
+
+/**
+ * THE FEE OWNER IS NOT THE LANDLORD.
+ *
+ * Once a ground lease is live the improvement — LOIs, renewals, capital plan,
+ * demolish, renovation, staff load — belongs to the lessee. `resolveRec` still
+ * overlays `s.built` so the parcel reads as a building (correct for appraisal
+ * of the bones / neighbour competition); every landlord path has to ask this
+ * before treating the holding like one you operate.
+ */
+export function isLeasedFee(h: Holding | null | undefined): boolean {
+  return !!h?.groundLeased;
 }
 
 /**

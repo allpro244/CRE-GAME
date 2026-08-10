@@ -217,8 +217,8 @@ function ParcelPanelInner({
             ? <Row k="Leasable spaces" v={usesOf(rec).map((u) => `${Math.max(1, Math.round(useSf(rec, u) / useSuiteSf(rec, u)))} ${USE_WORD[u]}`).join(" · ")} />
             : <Row k="Leasable spaces" v={`${unitCount(rec)} · ${sf(Math.round(suiteSf(rec)))} each`} />
         )}
-        {holding && rec.bldgArea > 0 && <Row k="Occupancy" v={(physicalOcc(rec as never, holding) * 100).toFixed(0) + "%"} />}
-        {holding && rec.bldgArea > 0 && unitStatus(rec, holding, game.month).byUse.map((u) => (
+        {holding && isBuilt && <Row k="Occupancy" v={(physicalOcc(rec as never, holding) * 100).toFixed(0) + "%"} />}
+        {holding && isBuilt && unitStatus(rec, holding, game.month).byUse.map((u) => (
           <Row
             key={u.use}
             k={u.use === "multifamily" ? "Apartments let" : `${USE_WORD[u.use][0].toUpperCase()}${USE_WORD[u.use].slice(1)} spaces let`}
@@ -232,13 +232,13 @@ function ParcelPanelInner({
             bad={u.leased < u.total * 0.6}
           />
         ))}
-        {holding && commercial && holding.tenants.length > 0 && (
+        {holding && isBuilt && commercial && holding.tenants.length > 0 && (
           <Row
             k="On the rent roll"
             v={`${holding.tenants.length} lease${holding.tenants.length === 1 ? "" : "s"} · ${sf(holding.tenants.reduce((a, t) => a + t.sf, 0))}`}
           />
         )}
-        {holding && commercial && <Row k="WALT" v={walt(holding, game.month).toFixed(1) + " yrs"} />}
+        {holding && isBuilt && commercial && <Row k="WALT" v={walt(holding, game.month).toFixed(1) + " yrs"} />}
         {/* One building must not quote two different NOIs on one panel. In
             place off the roll — yours, or the one the seller disclosed — and
             struck against the appraisal, which is the only price on offer

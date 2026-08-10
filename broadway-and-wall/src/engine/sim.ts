@@ -933,6 +933,9 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
   // kept stopping for paper the player had hired someone to handle.
   for (const l of s.lois) {
     if (s.agent && !l.referred) continue;
+    // Stray paper on a ground-leased fee is not a principal decision — the
+    // lessee is the landlord. (tickLeasing now strips these; belt and braces.)
+    if (s.holdings[l.bbl]?.groundLeased) continue;
     out.push({ key: `loi:${l.id}`, label: `LOI from ${l.name} — answer by ${monthLabel(l.expiresM)}` });
   }
   // Tenant-relief letters expire in three months and a lapse is a refusal.
@@ -940,6 +943,7 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
   // straight past a decision the player had explicitly asked the game to stop
   // for. Each letter gets its own key because several tenants can ask together.
   for (const a of s.asks ?? []) {
+    if (s.holdings[a.bbl]?.groundLeased) continue;
     out.push({ key: `tenant-ask:${a.id}`, label: `${a.name} is asking for rent relief — answer by ${monthLabel(a.expiresM)}` });
   }
   for (const b of s.portfolioSale?.bids ?? []) {
@@ -973,32 +977,37 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
         label: `${h.sale.bids.length} bid${h.sale.bids.length === 1 ? "" : "s"} on ${h.bbl} — best ${top.name}`,
       });
     }
-    for (const t of h.tenants) {
-      if (t.nonRenewM === s.month) {
-        out.push({
-          key: `nonrenew:${h.bbl}:${t.name}:${t.startM}:${t.nonRenewM}`,
-          label: `${t.name} will leave ${h.bbl} in six months — ${t.nonRenewWhy ?? "renewal declined"}`,
-        });
-      }
-      // Near-term rolls without a live LOI or non-renewal notice still need a
-      // principal's eyes — otherwise Year runs past empty space forming.
-      const moLeft = t.endM - s.month;
-      if (moLeft > 0 && moLeft <= 6 && t.nonRenewM === undefined) {
-        const covered = (s.lois ?? []).some((l) =>
-          l.bbl === h.bbl && (l.kind === "renewal" ? l.tenantIdx !== undefined && h.tenants[l.tenantIdx]?.name === t.name : false));
-        if (!covered) {
+    // Lease rolls, renewals and capital-plan alarms are landlord business —
+    // not the fee owner's when a ground lessee runs the building. Debt on the
+    // leased fee still belongs to you and must keep stopping Skip below.
+    if (!h.groundLeased) {
+      for (const t of h.tenants) {
+        if (t.nonRenewM === s.month) {
           out.push({
-            key: `lease-roll:${h.bbl}:${t.name}:${t.endM}`,
-            label: `${t.name} lease ends ${monthLabel(t.endM)} — ${moLeft} month${moLeft === 1 ? "" : "s"}`,
+            key: `nonrenew:${h.bbl}:${t.name}:${t.startM}:${t.nonRenewM}`,
+            label: `${t.name} will leave ${h.bbl} in six months — ${t.nonRenewWhy ?? "renewal declined"}`,
           });
         }
+        // Near-term rolls without a live LOI or non-renewal notice still need a
+        // principal's eyes — otherwise Year runs past empty space forming.
+        const moLeft = t.endM - s.month;
+        if (moLeft > 0 && moLeft <= 6 && t.nonRenewM === undefined) {
+          const covered = (s.lois ?? []).some((l) =>
+            l.bbl === h.bbl && (l.kind === "renewal" ? l.tenantIdx !== undefined && h.tenants[l.tenantIdx]?.name === t.name : false));
+          if (!covered) {
+            out.push({
+              key: `lease-roll:${h.bbl}:${t.name}:${t.endM}`,
+              label: `${t.name} lease ends ${monthLabel(t.endM)} — ${moLeft} month${moLeft === 1 ? "" : "s"}`,
+            });
+          }
+        }
       }
-    }
-    if (h.planCutM === s.month) {
-      out.push({
-        key: `capital-plan:${h.bbl}:${h.planCutM}`,
-        label: `${h.bbl} capital plan could not be funded from cash — condition will deteriorate`,
-      });
+      if (h.planCutM === s.month) {
+        out.push({
+          key: `capital-plan:${h.bbl}:${h.planCutM}`,
+          label: `${h.bbl} capital plan could not be funded from cash — condition will deteriorate`,
+        });
+      }
     }
     // A YEAR, NOT A QUARTER. Three months' notice on a balloon is not notice —
     // it is barely time to get an appraisal, let alone market a building. Real

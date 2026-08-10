@@ -169,5 +169,53 @@ console.log("\nDEFAULT STILL REVERTS CONTROL\n");
   check(g5.alerts?.[0]?.kind === "ground", "default raises a player-facing popup");
 }
 
+console.log("\nFEE OWNER IS NOT THE LANDLORD\n");
+{
+  // After the lessee's tower is standing, resolveRec reads as a building —
+  // and every landlord path used to treat the fee owner as the operator.
+  let g6 = structuredClone(g);
+  g6.holdings[bbl].broker = true;
+  g6.lois = [{
+    id: 1, bbl, name: "Fake Tenant LLC", kind: "new", use: "office",
+    sf: 10_000, rentPsf: 40, tiPsf: 60, freeM: 3, termM: 120,
+    expiresM: g6.month + 3, credit: 1, stage: "open",
+  }];
+  g6.asks = [{
+    id: 1, bbl, name: "Nobody", tenantStartM: 0, askPsf: 30, currentPsf: 40,
+    addM: 36, expiresM: g6.month + 3,
+  }];
+  const cashBefore = g6.cash;
+  // Advance several months — LOIs must not regenerate, capital plan must not
+  // debit the fee owner, and attention must not stop Skip for landlord paper.
+  for (let i = 0; i < 6; i++) {
+    g6 = E.advanceMonth(g6, parcels, bbls, {});
+  }
+  check(!(g6.lois ?? []).some((l) => l.bbl === bbl),
+    "no LOIs land on a ground-leased fee after the lessee opens");
+  check(!(g6.asks ?? []).some((a) => a.bbl === bbl),
+    "no tenant-relief asks on a ground-leased fee");
+  check(!g6.holdings[bbl].broker, "leasing exclusive is cleared / not kept on a leased fee");
+  check(g6.holdings[bbl].tenants.length === 0, "fee owner has no rent roll of their own");
+  const attn = E.attentionItems(g6).filter((a) =>
+    a.key.startsWith("loi:") || a.key.startsWith("tenant-ask:")
+    || a.key.startsWith("lease-roll:") || a.key.startsWith("capital-plan:"));
+  check(attn.length === 0, "attention list has no landlord chores for the leased fee");
+  // Capital plan used to debit fee cash against the lessee's SF.
+  // Allow ordinary GA / overhead; forbid a large unexplained capex hole.
+  check(g6.cash > cashBefore - 50_000,
+    "fee owner is not drained by the lessee building's capital plan");
+
+  const demo = E.demolish(g6, parcels, bbl);
+  check(!!demo.err && /lessee/i.test(demo.err), "demolish refused while ground lease is live");
+  const reno = E.startRenovation(g6, parcels, bbl);
+  check(!!reno.err && /lessee/i.test(reno.err), "renovation refused while ground lease is live");
+  const prog = E.startProgram(g6, parcels, bbl, "lobby");
+  check(!!prog.err && /lessee/i.test(prog.err), "capital program refused while ground lease is live");
+  const brok = E.setBroker(g6, parcels, bbl, true);
+  check(!!brok.err && /lessee/i.test(brok.err), "leasing exclusive refused on a leased fee");
+  const spec = E.buildSpecSuites(g6, parcels, bbl, "office", 5_000);
+  check(!!spec.err && /lessee/i.test(spec.err), "spec suites refused on a leased fee");
+}
+
 console.log("");
 process.exit(bad ? 1 : 0);

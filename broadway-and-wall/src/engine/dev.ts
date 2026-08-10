@@ -1604,6 +1604,9 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
   const h = s.holdings[bbl];
   const rec = resolveRec(parcels, s, bbl);
   if (!h || !rec) return { s, err: "You don't own that." };
+  if (h.groundLeased || s.groundLeases?.[bbl]) {
+    return { s, err: "The ground lessee controls the improvement. You cannot demolish their building." };
+  }
   if (rec.class === "land" || !rec.bldgArea) return { s, err: "There's nothing standing on it." };
   if (s.landmarks?.[bbl] !== undefined) return { s, err: "It is landmarked. Nobody knocks that down, including you." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
@@ -2321,6 +2324,9 @@ export function startProgram(s: GameState, parcels: ParcelTable, bbl: string, pr
   const rec = resolveRec(parcels, s, bbl);
   const p = PROGRAMS.find((x) => x.id === programId);
   if (!h || !rec || !p) return { s, err: "No such program." };
+  if (h.groundLeased || s.groundLeases?.[bbl]) {
+    return { s, err: "The ground lessee controls the improvement — their capital plan, not yours." };
+  }
   if (rec.class === "land" || !rec.bldgArea) return { s, err: "Nothing to improve on a vacant lot." };
   if (h.program) return { s, err: "A capital program is already running." };
   // A PROGRAMME COMES ROUND AGAIN. These were once-per-building-forever, which
@@ -2400,7 +2406,12 @@ export function setOpsPolicy(
   next.opsPolicy = ops;
   if (applyToBook) {
     const st = ops.stance ?? 0;
-    for (const h of Object.values(next.holdings)) { h.service = ops.service; h.plan = ops.plan; h.stance = st; }
+    for (const h of Object.values(next.holdings)) {
+      // Lessee runs the bricks — stamping your capital plan onto a leased fee
+      // used to charge YOUR cash for THEIR building once resolveRec showed SF.
+      if (h.groundLeased) continue;
+      h.service = ops.service; h.plan = ops.plan; h.stance = st;
+    }
     // THE ASK IS PART OF HOW YOU RUN A BUILDING, and it was the one standing
     // decision this policy did not carry — so a principal could set service and
     // the capital plan for the whole book in one move and still had to open

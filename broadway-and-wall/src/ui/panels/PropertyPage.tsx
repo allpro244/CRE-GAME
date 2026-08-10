@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { assetValue, initialCondition, ownedHoldingValue, resolveRec, rollQualitySpread, operatingStatement, remainingAbatement, inPlace } from "@/engine/value";
+import { assetValue, initialCondition, ownedHoldingValue, ownedHoldingNoiYr, resolveRec, rollQualitySpread, operatingStatement, remainingAbatement, inPlace } from "@/engine/value";
 import { farMaxFor, maxFloorsFor, replacementCost } from "@/engine/dev";
 import { walt, unitStatus } from "@/engine/leasing";
 import { taxAppealQuote } from "@/engine/tax";
@@ -29,14 +29,20 @@ export function PropertyPage() {
   const h = game.holdings[bbl];
   const cond = h?.condition ?? initialCondition(rec);
   const value = h ? ownedHoldingValue(game, parcels, h) : assetValue(rec, game.econ, cond);
-  const built = rec.class !== "land" && rec.bldgArea > 0;
+  // A ground-leased fee can resolve as a standing tower (the lessee's). That
+  // is not a building YOU operate — Rent roll / Operations stay off, and the
+  // headline NOI is the ground coupon, not a vacant shell.
+  const leasedFee = !!h?.groundLeased;
+  const built = rec.class !== "land" && rec.bldgArea > 0 && !leasedFee;
   // IN PLACE OR NOTHING. The unowned branch here quoted `noiYr` — which is the
   // class model AND is before property tax, so an unowned building's headline
   // NOI was overstated twice over against the owned one right beside it. One
   // accessor, both cases, and the tax comes off exactly once.
   const ipHdr = inPlace(rec, game, bbl, value);
   const occ = built ? ipHdr.occ : 0;
-  const noi = built ? ipHdr.noi : 0;
+  const noi = leasedFee && h
+    ? ownedHoldingNoiYr(game, parcels, h)
+    : (built ? ipHdr.noi : 0);
   const dsYr = (h?.loan?.monthlyPmt ?? 0) * 12;
   const dev = game.developments[bbl];
   const taxAppeal = h ? taxAppealQuote(game, parcels, bbl) : null;
@@ -50,11 +56,11 @@ export function PropertyPage() {
   const TABS: { key: PropTab; label: string; show: boolean }[] = [
     { key: "summary", label: "Overview", show: true },
     { key: "leasing", label: "Rent roll", show: !!h && built },
-    { key: "money", label: "Money", show: !!h && (built || !!h.loan) },
+    { key: "money", label: "Money", show: !!h && (built || leasedFee || !!h.loan) },
     { key: "ops", label: "Operations", show: !!h && built },
     { key: "deal", label: h ? "Sell" : "Acquire", show: true },
     { key: "build", label: built ? "Convert / Build" : "Build",
-      show: !!h && (rec.class === "land" || !!dev || ownsNeighbour
+      show: !!h && (leasedFee || rec.class === "land" || !!dev || ownsNeighbour
         || (!h.groundLeased && rec.class !== "multifamily")) },
     { key: "history", label: "Deed history", show: timeline.length > 0 },
   ];
@@ -66,10 +72,18 @@ export function PropertyPage() {
     <div>
       <div className="stat-strip">
         <Big label="Appraisal" value={band(bbl, value)} />
-        <Big label="NOI / yr" value={built ? usd(noi) : "—"} bad={noi < 0} />
+        <Big
+          label={leasedFee ? "Ground rent / yr" : "NOI / yr"}
+          value={(built || leasedFee) ? usd(noi) : "—"}
+          bad={noi < 0}
+        />
         <Big label="Debt service / yr" value={dsYr ? "−" + usd(dsYr) : "—"} />
         <Big label="Cash flow / yr" value={usd(noi - dsYr)} bad={noi - dsYr < 0} />
-        <Big label="Occupancy" value={built ? (occ * 100).toFixed(0) + "%" : "—"} bad={built && occ < 0.75} />
+        {leasedFee ? (
+          <Big label="Your role" value="leased fee" />
+        ) : (
+          <Big label="Occupancy" value={built ? (occ * 100).toFixed(0) + "%" : "—"} bad={built && occ < 0.75} />
+        )}
         {built && h && (() => {
           const u = unitStatus(rec, h, game.month);
           return <Big label="Spaces leased" value={`${u.leased} / ${u.total}`} bad={u.leased < u.total * 0.6} />;
@@ -129,7 +143,9 @@ export function PropertyPage() {
             {h && (
               <button className="btn btn-sell" onClick={() => setTab("deal")}
                 title={h.sale ? "Your listing, the bids and the offers" : "Take it to market — quietly or as a campaign"}>
-                {h.sale ? "◆ On the market — open the file" : "Sell this building"}
+                {h.sale
+                  ? "◆ On the market — open the file"
+                  : (leasedFee ? "Sell this leased fee" : "Sell this building")}
               </button>
             )}
             <button className="btn" onClick={() => useStore.getState().focus(bbl, true)}

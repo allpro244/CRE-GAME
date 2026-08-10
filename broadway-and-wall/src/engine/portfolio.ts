@@ -28,6 +28,7 @@ import type { GameState, Holding } from "./types";
 import { logBooks, monthLabel, raiseAlert, cloneState} from "./types";
 import { firmShort } from "./firm";
 import { rng, rrange } from "./market";
+import { sweepLocIdleCash } from "./credit";
 import { ownedHoldingValue, resolveRec, holdingNOIYr, asIfOwned } from "./value";
 import { depositsOn } from "./leasing";
 import { useSf } from "./mix";
@@ -507,6 +508,7 @@ export function acceptPortfolioBid(
         ? `1031 clock running — redeploy ${money(bid.price * 0.8)} by ${monthLabel(next.month + EXCHANGE_WINDOW_M)} or ${money(taxTotal)} of tax comes due.`
         : taxTotal > 0 ? `${money(taxTotal)} of tax withheld.` : "No gain, no tax."),
   });
+  sweepLocIdleCash(next, { announce: true });
   return { s: next, msg: "Portfolio closed." };
 }
 

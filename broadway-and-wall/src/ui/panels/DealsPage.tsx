@@ -236,8 +236,13 @@ export function DealsPage() {
   // has to choose between. The desk keeps what the desk is for: the doors you
   // knocked on yourself, where an owner has given you a number.
   const calls = Object.entries(game.approaches)
-    .filter(([bbl, a]) => !a.refused && a.ask && !a.inbound && !game.holdings[bbl])
-    .map(([bbl, a]) => ({ bbl, ask: a.ask!, lapseM: a.q + APPROACH_LIFE_M }))
+    .filter(([bbl, a]) => !a.refused && !a.inbound && !game.holdings[bbl] && (a.ask || a.reserve))
+    .map(([bbl, a]) => ({
+      bbl,
+      ask: a.ask,
+      blind: a.ask === undefined && a.reserve !== undefined,
+      lapseM: a.q + APPROACH_LIFE_M,
+    }))
     .sort((a, b) => a.lapseM - b.lapseM);
   const inbound = liveBrokerCalls(game);
   for (const h of Object.values(game.holdings)) {
@@ -420,7 +425,7 @@ export function DealsPage() {
             <button key={c.bbl} className="neighbor" onClick={() => go(c.bbl)}>
               <span className="neighbor-addr">{parcels[c.bbl]?.address ?? c.bbl}</span>
               <span className="neighbor-meta">
-                {usd(c.ask)} · lapses {monthLabel(c.lapseM)}
+                {c.blind ? "make me an offer" : usd(c.ask!)} · lapses {monthLabel(c.lapseM)}
               </span>
             </button>
           ))}

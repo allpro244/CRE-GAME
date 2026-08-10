@@ -16,7 +16,7 @@ import {
 import { walt } from "./leasing";
 import { INDUSTRY_LABEL } from "./market";
 import { sponsorStanding } from "./sponsor";
-import { fundCashNeed, fundableNow } from "./credit";
+import { fundCashNeed, fundableNow, sweepLocIdleCash } from "./credit";
 
 export type PrepayKind = "open" | "stepdown" | "yieldmaint";
 
@@ -1228,5 +1228,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
     text: `Refinanced ${rec.address}: $${(qd.principal / 1e6).toFixed(2)}M at ${qd.ratePct.toFixed(2)}% (${product.label})`
       + (penalty > 0 ? `, after $${(penalty / 1e6).toFixed(2)}M to break the old paper.` : "."),
   });
+  // Cash-out proceeds pay the revolver before they sit idle.
+  sweepLocIdleCash(next, { announce: true });
   return { s: next };
 }

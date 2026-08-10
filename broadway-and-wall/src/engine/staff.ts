@@ -790,6 +790,18 @@ export function deskJudgment(s: GameState, role: "leasing" | "pm"): number {
   return hired.reduce((a, st) => a + (st.attrs.judgment ?? 50), 0) / hired.length;
 }
 
+/**
+ * Mean negotiation skill on the leasing desk.
+ * A toggle-only firm agent (nobody hired) works at mid competence (50) — they
+ * counter, but they do not magic a soft letter into a hard close. A strong
+ * hire accepts a wider band of tenant counter-backs without waking you.
+ */
+export function deskNegotiation(s: GameState): number {
+  const hired = (s.staff ?? []).filter((x) => x.role === "leasing");
+  if (!hired.length) return 50;
+  return hired.reduce((a, st) => a + (st.attrs.negotiation ?? 50), 0) / hired.length;
+}
+
 /** Tenant-care multiplier from the PM on this building or the firm desk. */
 export function pmTenantCareMult(s: GameState, bbl?: string): number {
   let care: number;

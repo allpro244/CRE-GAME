@@ -22,9 +22,45 @@ import { sponsorStanding } from "./sponsor";
  */
 export const LOC_LTV = 0.60;      // against net worth
 export const LOC_SPREAD = 4.0;    // prime + 400bps
+/**
+ * Operating float left on hand when idle cash pays the revolver.
+ * Everything above this goes to the most expensive money first.
+ */
+export const LOC_CASH_RESERVE = 250_000;
 
 export function locRate(s: GameState): number {
   return +(s.econ.indexRate + LOC_SPREAD).toFixed(2);
+}
+
+/**
+ * Pay the revolver with idle cash above {@link LOC_CASH_RESERVE}.
+ *
+ * Month-end already did this inside `tickLoc`, but a sale (or any other cash
+ * inflow) used to leave the line drawn until the next Advance — millions in
+ * the account, index+400 still running. Call this whenever firm cash jumps.
+ * Returns dollars repaid.
+ */
+export function sweepLocIdleCash(
+  s: GameState,
+  opts?: { announce?: boolean },
+): number {
+  if (!s.loc || s.loc.balance <= 0) return 0;
+  if (s.cash <= LOC_CASH_RESERVE) return 0;
+  const sweep = Math.min(s.loc.balance, Math.floor(s.cash - LOC_CASH_RESERVE));
+  if (sweep <= 0) return 0;
+  s.loc.balance -= sweep;
+  s.cash -= sweep;
+  _locAvailCache = null;
+  if (opts?.announce && sweep >= 25_000) {
+    s.news.unshift({
+      q: s.month, kind: "info",
+      text: `Idle cash paid $${(sweep / 1e6).toFixed(2)}M down on the line`
+        + (s.loc.balance > 0
+          ? `. Balance $${(s.loc.balance / 1e6).toFixed(2)}M.`
+          : " — clear."),
+    });
+  }
+  return sweep;
 }
 
 // The lender re-sizes the line off your net worth — which includes what you've
@@ -200,17 +236,18 @@ export function tickLoc(s: GameState, parcels: ParcelTable) {
   // a shortfall draws the line before it becomes insolvency (also called
   // earlier in the month, before workouts escalate — idempotent if already covered)
   coverCashShortfall(s, parcels);
-  if (s.loc.balance > 0 && s.cash > 250_000) {
-    // idle cash pays the most expensive money down first
-    const sweep = Math.min(s.loc.balance, Math.floor(s.cash - 250_000));
-    if (sweep > 0) { s.loc.balance -= sweep; s.cash -= sweep; }
-  }
+  // idle cash pays the most expensive money down first
+  sweepLocIdleCash(s);
 
   // a shrinking portfolio can put you over the line; the lender wants it back
   const over = s.loc.balance - locLimit(s, parcels);
   if (over > 0) {
     const pay = Math.min(over, Math.max(0, s.cash));
-    if (pay > 0) { s.loc.balance -= pay; s.cash -= pay; }
+    if (pay > 0) {
+      s.loc.balance -= pay;
+      s.cash -= pay;
+      _locAvailCache = null;
+    }
     const stillOver = s.loc.balance - locLimit(s, parcels);
     if (stillOver > 1000) {
       // The bank does not accept "I'll pay you when a building sells." An

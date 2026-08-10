@@ -788,7 +788,8 @@ export function CreditLine() {
         <div className="hint">Build some net worth and the bank will open a line against it.</div>
       )}
       <div className="hint">
-        The line covers a shortfall automatically before it can sink the run, and idle cash above $250K pays it back down.
+        The line covers a shortfall automatically before it can sink the run. Idle cash above $250K pays it back down
+        the same month — and the moment a sale, refinance or portfolio close puts cash in the account.
       </div>
     </div>
   );

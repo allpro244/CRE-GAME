@@ -8,7 +8,11 @@ import type { Condition, Econ, GameState, Holding, Loan } from "./types";
 import { logBooks, monthLabel, cloneState} from "./types";
 import { openWorkout } from "./workout";
 import { lenderAppetite } from "./lenders";
-import { holdingNOIYr, ownedHoldingValue, ownedHoldingValueFromRec, assetValue, noiAfterTaxYr, proFormaNOIYr, capRateFor } from "./value";
+import {
+  ownedHoldingNoiYr, ownedHoldingNoiYrFromRec, ownedHoldingValue,
+  ownedHoldingValueFromRec, assetValue, noiAfterTaxYr, proFormaNOIYr, capRateFor,
+  isVacantLandLoanCollateral,
+} from "./value";
 import { walt } from "./leasing";
 import { INDUSTRY_LABEL } from "./market";
 import { sponsorStanding } from "./sponsor";
@@ -609,7 +613,7 @@ export function dscr(rec: ParcelRecord, s: GameState, h: Holding): number | null
   if (!h.loan) return null;
   const ds = h.loan.monthlyPmt * 12;
   if (ds <= 0) return null;
-  return holdingNOIYr(rec, s.econ, h, s.month) / ds;
+  return ownedHoldingNoiYrFromRec(s, rec, h) / ds;
 }
 
 export function ltv(rec: ParcelRecord, s: GameState, h: Holding): number | null {
@@ -856,7 +860,9 @@ export function tickLoan(
   // month underneath it.
   if (q >= loan.maturityM && !s.workouts?.[h.bbl]) {
     const value = ownedHoldingValue(s, parcels, h);
-    const noi = holdingNOIYr(rec, s.econ, h, q);
+    const noi = ownedHoldingNoiYr(s, parcels, h);
+    const vacantDirt = isVacantLandLoanCollateral(s, h, rec);
+    const quoteClass = vacantDirt ? "land" as const : (rec.class === "land" ? "office" as const : rec.class);
     // A takeout is underwritten on the roll you actually have on the day the
     // balloon lands — which for a building that delivered empty and never
     // stabilised is exactly the moment the concentration and rollover
@@ -868,20 +874,22 @@ export function tickLoan(
     // it is a coupon that eats the building's cash flow — but it is what
     // actually happens, and it turns "you got unlucky at the balloon" into
     // "you are now paying for how you financed this".
-    const ladder = ["savings", "harbor", "cordage"].map(productById)
+    // A leased fee with a coupon walks the income desks; vacant dirt keeps
+    // the land loan as its only takeout.
+    const ladder = (vacantDirt ? ["land"] : ["savings", "harbor", "cordage"]).map(productById)
       .filter((p) => productOpen(s, p) && windowOpen(s, p));
     let product = ladder[ladder.length - 1] ?? PRODUCTS[0];
-    let qd = { ...quote(s, product, value, noi, rec.class), principal: 0 };
+    let qd = { ...quote(s, product, value, noi, quoteClass), principal: 0 };
     const fee = Math.round(loan.balance * REFI_FEE);
     for (const cand of ladder) {
-      const raw = quote(s, cand, value, noi, rec.class);
+      const raw = quote(s, cand, value, noi, quoteClass);
       const sized = { ...raw, principal: Math.round(raw.principal * hair.mult) };
       product = cand; qd = sized;
       if (sized.principal >= loan.balance + fee) break;
     }
     if (qd.principal >= loan.balance + fee) {
       const rolled = loan.balance;
-      h.loan = originate(s, product, value, noi, hair.mult, undefined, rec.class);
+      h.loan = originate(s, product, value, noi, hair.mult, undefined, quoteClass);
       if (h.loan) {
         h.loan.balance = h.loan.principal = rolled;
         h.loan.monthlyPmt = Math.round(monthlyPayment(rolled, h.loan.ratePct, h.loan.amortYears));
@@ -1070,10 +1078,11 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
   // lease-up window that is what they do here, at a 25% holdback.
   const leaseUpM = h.deliveredM !== undefined ? s.month - h.deliveredM : Infinity;
   const inLeaseUp = leaseUpM <= 48;
-  const actualNoi = holdingNOIYr(rec, s.econ, h, s.month);
+  // Leased-fee NOI is the ground coupon — never the lessee's building stab.
+  const actualNoi = ownedHoldingNoiYr(s, parcels, h);
   const actualValue = ownedHoldingValue(s, parcels, h);
   let value = actualValue, noi = actualNoi;
-  if (inLeaseUp && rec.class !== "land" && rec.bldgArea > 0) {
+  if (inLeaseUp && !h.groundLeased && rec.class !== "land" && rec.bldgArea > 0) {
     const stabValue = assetValue(rec, s.econ, "good");
     const stabNoi = noiAfterTaxYr(rec, s.econ, "good", stabValue);
     // the holdback tightens as the window runs out — a building still empty
@@ -1082,9 +1091,12 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
     value = Math.max(actualValue, stabValue * trust);
     noi = Math.max(actualNoi, stabNoi * trust);
   }
+  // Land money is for vacant dirt. A leased fee with a coupon is income paper,
+  // even when resolveRec still says "land" before the lessee tops out.
+  const vacantDirt = isVacantLandLoanCollateral(s, h, rec);
   const hair = collateralHaircut(h, s.month, s.econ);
   const quotes = PRODUCTS.map((p) => {
-    const raw = quote(s, p, value, noi, rec.class);
+    const raw = quote(s, p, value, noi, vacantDirt ? "land" : (rec.class === "land" ? "office" : rec.class));
     const q = { ...raw, principal: Math.round(raw.principal * hair.mult) };
     const annualDs = p.ioM > 0
       ? (q.principal * q.ratePct) / 100
@@ -1122,14 +1134,16 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       floating: p.floating,
       available: !productOpen(s, p) || !windowOpen(s, p) ? false
         : p.minCondition === "good" && h.condition !== "good" ? false
-        : p.mezz ? !!senior : p.uwDscr <= 0 ? rec.class === "land" : rec.class !== "land" && q.principal > 0,
+        : p.mezz ? !!senior
+        : p.uwDscr <= 0 ? vacantDirt
+        : !vacantDirt && q.principal > 0,
       why: !productOpen(s, p)
         ? `This desk won't look at you — ${sponsorStanding(s).label}. It recovers with clean payments; bridge and mezzanine money will still talk in the meantime.`
         : !windowOpen(s, p)
         ? "The securitization window is closed — nobody is buying the bonds until markets reopen. Nothing about this building will change that."
         : p.minCondition === "good" && h.condition !== "good"
         ? "Life-company money wants a well-kept building. Renovate first."
-        : p.minLoan && q.principal === 0 && rec.class !== "land"
+        : p.minLoan && q.principal === 0 && !vacantDirt
         ? `Below their minimum check — ${p.lender} doesn't underwrite anything under $${((p.minLoan) / 1e6).toFixed(0)}M.`
         /* THE WALL THAT USED TO BE INVISIBLE. A desk's hold size is the most
            common reason a large, perfectly good building gets a small quote,
@@ -1144,8 +1158,11 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
         : hair.why && hair.mult < 0.95 && !p.mezz
         ? `Proceeds cut ${((1 - hair.mult) * 100).toFixed(0)}% — ${hair.why}.`
         : p.mezz && !senior ? "Mezzanine sits behind a senior loan — put one on first."
-        : p.uwDscr <= 0 && rec.class !== "land" ? "Land money is for dirt. This one has a building on it."
-        : p.uwDscr > 0 && rec.class === "land" ? "No income to underwrite — a vacant site only gets a land loan."
+        : p.uwDscr <= 0 && !vacantDirt
+        ? (h.groundLeased
+          ? "Land money is for vacant dirt. This fee has a ground rent to underwrite — use an income desk."
+          : "Land money is for dirt. This one has a building on it.")
+        : p.uwDscr > 0 && vacantDirt ? "No income to underwrite — a vacant site only gets a land loan."
         : undefined,
     } satisfies RefiQuote;
   });
@@ -1164,11 +1181,21 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
     return { s, err: `${product.label} won't quote you — ${sponsorStanding(next).label}. Bridge and mezzanine money will still talk.` };
   }
   const value = ownedHoldingValue(next, parcels, h);
-  const noi = holdingNOIYr(rec, next.econ, h, next.month);
+  const noi = ownedHoldingNoiYr(next, parcels, h);
+  const vacantDirt = isVacantLandLoanCollateral(next, h, rec);
+  if (product.uwDscr <= 0 && !vacantDirt) {
+    return { s, err: h.groundLeased
+      ? "Land money is for vacant dirt. This fee has a ground rent — take it to an income desk."
+      : "Land money is for dirt. This one has a building on it." };
+  }
+  if (product.uwDscr > 0 && vacantDirt) {
+    return { s, err: "No income to underwrite — a vacant site only gets a land loan." };
+  }
   // The quote screen already told you the desk was cutting proceeds for a
   // concentrated or fast-rolling rent roll. The close has to agree with it.
   const hair = collateralHaircut(h, next.month, next.econ);
-  const full = quote(next, product, value, noi, rec.class);
+  const quoteClass = vacantDirt ? "land" as const : (rec.class === "land" ? "office" as const : rec.class);
+  const full = quote(next, product, value, noi, quoteClass);
   const qd = { ...full, principal: Math.round(full.principal * hair.mult * Math.max(0, Math.min(1, lev))) };
   if (product.mezz && !h.loan) return { s, err: "Mezzanine sits behind a senior loan — put one on first." };
   const oldBal = h.loan?.balance ?? 0;
@@ -1184,7 +1211,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
         : "Proceeds don't cover the payoff — you're underwater on this refi.",
     };
   }
-  const newLoan = originate(next, product, value, noi, lev * hair.mult, undefined, rec.class);
+  const newLoan = originate(next, product, value, noi, lev * hair.mult, undefined, quoteClass);
   if (!newLoan) return { s, err: "No lender will size a loan against this income." };
   // PRINCIPAL INTO CASH IS A LEDGER EVENT. Fees stay in debtSvc; net new
   // principal that lands in the operating account is `borrowed` — the bucket

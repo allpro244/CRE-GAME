@@ -88,3 +88,13 @@ worst $1.86B · median $5.87B · best **$17.55B** (189 buildings, street rank
    leverage priced?": survivors compound too easily once past the first
    decade — concentration, covenant, and refinance risk may still be thin
    on a diversified book.
+
+---
+
+## Follow-up: secondary markets as the rule of thumb
+
+Procedural islands now open ordinary office near Providence Class A
+(`RENT_BASE.office` $35.50) and scale primary-market rent machinery by
+morphological density (`cityClassFactor`). Measured after: Village fabric
+ends a century around ~$60/sf real citywide (was ~$114); Metropolis can
+still run hotter. See `pnpm cityclass`.

@@ -1,7 +1,1 @@
-commit=gl-landlord-2
-gitTip=b48fbd3
-builtAt=2026-08-10T2327Z
-branch=cursor/ground-lease-landlord-9786
-rentBaseOffice=35.50
-includes=ground-lease fee-owner-is-not-landlord + leasing/portfolio UI gates
-verifyInGame=start screen footer should say: build gl-landlord-2 · office base $35.5
+tonight-1

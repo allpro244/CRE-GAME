@@ -78,9 +78,9 @@ export default function GamePanels() {
     : page === "primer" ? "How this business works"
     : "The Marketplace";
   const kicker = page === "portfolio" || page === "leasing" || page === "staff" || page === "property" ? "Assets"
-    : page === "deals" || page === "market" || page === "notes" || page === "research" ? "Acquire"
+    : page === "deals" || page === "market" || page === "notes" ? "Acquire"
     : page === "debt" || page === "books" ? "Capital"
-    : page === "economy" || page === "news" ? "World"
+    : page === "economy" || page === "research" || page === "news" ? "World"
     : page === "saves" ? "Campaign"
     : page === "settings" ? "Preferences"
     : page === "primer" ? "Primer"

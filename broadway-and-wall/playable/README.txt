@@ -1,14 +1,17 @@
-BROADWAY & WALL — PLAYABLE (gl-landlord-2)
-==========================================
-Build id:  gl-landlord-2
+BROADWAY & WALL — PLAYABLE (tonight-1)
+======================================
+Build id:  tonight-1
 Office:    $35.50 base (secondary market)
-Branch tip includes: ground-lease landlord boundary (fee owner is not the landlord)
+Branch tip includes: consolidate tonight — ground-lease landlord boundary,
+quiet leasing desk scorecard, REO books on Marketplace, Research under World.
 
 HOW TO KNOW YOU HAVE THIS BUILD
   On the start screen footer you should see:
-    build gl-landlord-2 · office base $35.5
+    build tonight-1 · office base $35.5
+  Research sits under World (with Economy / News), not Acquire.
   Ground-leased lots should NOT appear on Leasing as empty buildings to hire
   a broker for — they show under "Leased fees · coupon only".
+  Seized rival books show on Marketplace → Books for sale.
 
 DOWNLOAD
   Prefer: Broadway-and-Wall-playable.zip

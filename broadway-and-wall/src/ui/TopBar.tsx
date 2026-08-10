@@ -24,7 +24,6 @@ const JOBS: {
       { id: "market", label: "Marketplace", note: "Listings, receiver books, auctions and off-market calls" },
       { id: "deals", label: "Deals", note: "LOIs, negotiations and contracts" },
       { id: "notes", label: "Notes", note: "Distressed paper — claims on buildings, not the deed" },
-      { id: "research", label: "Research", note: "Comps, submarkets and underwriting" },
     ],
   },
   {
@@ -49,6 +48,7 @@ const JOBS: {
     label: "World",
     pages: [
       { id: "economy", label: "Economy", note: "Cycle, space markets and construction" },
+      { id: "research", label: "Research", note: "Comps, submarkets and underwriting" },
       { id: "news", label: "News", note: "What the city wrote this month" },
     ],
   },

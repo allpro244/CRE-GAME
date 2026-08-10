@@ -48,7 +48,7 @@
  * exactly the kind of number this project does not ship.
  */
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { GameState } from "./types";
+import type { GameState, Holding } from "./types";
 import { logBooks, cloneState} from "./types";
 import { mulberry32Step } from "./market";
 import { resolveRec } from "./value";
@@ -127,6 +127,8 @@ export interface Staff {
   hiredM: number;
   /** How wide the initial read was — narrowed at hire by paying for a search. */
   band0: number;
+  /** Holdings this person is assigned to — pm and leasing only. */
+  assignedBbls?: string[];
 }
 
 export interface Candidate extends Staff {
@@ -155,17 +157,21 @@ const LAST = ["Halloran", "Buckley", "Ferreira", "Okonkwo", "Vance", "Delacroix"
 function askFor(s: GameState, attrs: Record<string, number>, role: StaffRole): number {
   const keys = [...GENERAL_ATTRS, ...ROLE_ATTRS[role]];
   const mean = keys.reduce((a, k) => a + (attrs[k] ?? 50), 0) / keys.length;
+  const rep = s.hireReputation ?? 0.55;
   const base = 55_000 + Math.pow(mean / 100, 1.9) * 155_000;
-  return Math.round(base * srrange(s, 0.9, 1.12) / 1000) * 1000;
+  const repAsk = base * (1 + (0.55 - rep) * 0.08);
+  return Math.round(repAsk * srrange(s, 0.9, 1.12) / 1000) * 1000;
 }
 
 function drawAttrs(s: GameState, role: StaffRole): Record<string, number> {
+  const rep = s.hireReputation ?? 0.55;
+  const bias = (0.55 - rep) * 10;
   const out: Record<string, number> = {};
   for (const k of [...GENERAL_ATTRS, ...ROLE_ATTRS[role]]) {
     // Triangular-ish: most people are ordinary, a few are not. Averaging three
     // uniforms gives a believable middle without a normal-distribution import.
     const v = (srng(s) + srng(s) + srng(s)) / 3;
-    out[k] = Math.round(8 + v * 88);
+    out[k] = Math.round(Math.max(8, Math.min(96, 8 + v * 88 - bias)));
   }
   return out;
 }
@@ -189,9 +195,11 @@ const OBS_HARDNESS: Record<string, number> = {
 };
 
 function observe(s: GameState, attrs: Record<string, number>, band0: number): Record<string, number> {
+  const rep = s.hireReputation ?? 0.55;
+  const band = band0 * (1 + (0.55 - rep) * 0.35);
   const out: Record<string, number> = {};
   for (const [k, v] of Object.entries(attrs)) {
-    const w = band0 * (OBS_HARDNESS[k] ?? 1);
+    const w = band * (OBS_HARDNESS[k] ?? 1);
     out[k] = Math.round(Math.max(1, Math.min(100, v + srrange(s, -w, w))));
   }
   return out;
@@ -287,23 +295,42 @@ export const OWNER_SF = 150_000;
 export const CONSTRUCTION_BASE_SF = 350_000;
 export const OWNER_CONSTRUCTION_SF = 60_000;
 
-function abilityMult(st: Staff, month: number, keys: string[]): number {
+export type OwnerStyle = "handsOn" | "delegated";
+export type BenchStyle = "boutique" | "platform";
+
+/**
+ * Owner desk capacity before hires. Undefined style keeps the original
+ * OWNER_SF / OWNER_CONSTRUCTION_SF constants so old saves and the payroll
+ * harness do not silently move the capacity line.
+ */
+export function ownerCapacitySf(s: GameState, role: StaffRole): number {
+  const style = s.ownerStyle;
+  const base = role === "construction" ? OWNER_CONSTRUCTION_SF : OWNER_SF;
+  if (style === "handsOn") return base * (role === "construction" ? 1.25 : 1.35);
+  if (style === "delegated") return base * (role === "construction" ? 0.65 : 0.72);
+  return base;
+}
+
+function abilityMult(s: GameState, st: Staff, month: number, keys: string[]): number {
   // Uses TRUE ability. The player's uncertainty is about what they can see,
   // not about what is happening to their buildings.
   void month;
   const mean = keys.reduce((a, k) => a + (st.attrs[k] ?? 50), 0) / keys.length;
-  return 0.6 + (mean / 100) * 0.9;                       // 0.6x .. 1.5x
+  const bench = s.benchStyle;
+  if (bench === "boutique") return 0.55 + (mean / 100) * 1.05;   // star spread
+  if (bench === "platform") return 0.75 + (mean / 100) * 0.65;   // flatter mid
+  return 0.6 + (mean / 100) * 0.9;                               // original curve
 }
 
 export function roleCapacitySf(s: GameState, role: StaffRole): number {
   const base = role === "pm" ? PM_BASE_SF : role === "construction" ? CONSTRUCTION_BASE_SF : LEASING_BASE_SF;
-  let cap = role === "construction" ? OWNER_CONSTRUCTION_SF : OWNER_SF;   // you are always working
+  let cap = ownerCapacitySf(s, role);
   for (const st of s.staff ?? []) {
     if (st.role !== role) continue;
     const keys = role === "pm" ? ["urgency", "diligence"]
       : role === "construction" ? ["urgency", "diligence"]
       : ["urgency", "relationships"];
-    cap += base * abilityMult(st, s.month, keys);
+    cap += base * abilityMult(s, st, s.month, keys);
   }
   return cap;
 }
@@ -482,7 +509,7 @@ export function refreshPool(s: GameState, force = false) {
   if (!force && s.month - s.hirePool.m < POOL_REFRESH_M) return;
   s.nextStaffId = s.nextStaffId ?? 1;
   const list: Candidate[] = [];
-  for (const role of ["pm", "leasing"] as StaffRole[]) {
+  for (const role of ["pm", "leasing", "construction"] as StaffRole[]) {
     for (let i = 0; i < POOL_SIZE; i++) {
       const c = generateCandidate(s, role, s.hirePool.band);
       c.id = s.nextStaffId++;
@@ -501,38 +528,49 @@ export function refreshPool(s: GameState, force = false) {
  * differently, and a single stamped number cannot do that.
  */
 /**
- * DORMANT UNTIL YOU CAN ACTUALLY HIRE SOMEBODY.
- *
- * The capacity model is finished and measured and the hiring screen is not, so
- * a player past 150,000 sf was being charged for management they had no way to
- * buy. A penalty with no counterplay is not a modelled risk — it is half a
- * feature showing through — and this project's rule is that difficulty is an
- * output of something real, not a cost with no decision attached to it.
- *
- * So while there is no way to hire, the capacity effects are held at neutral:
- * the pool still turns over, salaries still bill if staff somehow exist, every
- * measurement in `pnpm staff` still runs against the live functions. Only the
- * multipliers the player feels are pinned to 1.
- *
- * Delete this the day the hiring UI lands. It is one flag and the harness will
- * tell you immediately whether the capacity model still binds: test A asserts
- * a 55k sf book does not slip and a 2.4M sf book does.
+ * UI shipped — capacity multipliers bind. Neutral pin kept when flag is false
+ * and the desk is empty so saves without staff do not slip silently.
  */
 export const HIRING_UI_SHIPPED = true;
+
+function roleSkill(st: Staff, role: StaffRole): number {
+  const keys = role === "pm" ? ["costControl", "diligence"]
+    : role === "construction" ? ["scheduling", "costControl"]
+    : ["marketKnowledge", "negotiation"];
+  return keys.reduce((b, k) => b + (st.attrs[k] ?? 50), 0) / keys.length;
+}
+
+function assignedForBbl(s: GameState, bbl: string, role: "pm" | "leasing"): Staff | undefined {
+  return (s.staff ?? []).find((st) => st.role === role && st.assignedBbls?.includes(bbl));
+}
 
 export function markStaff(s: GameState, parcels: ParcelTable) {
   const pm = roleState(s, parcels, "pm");
   const lease = roleState(s, parcels, "leasing");
   if (!HIRING_UI_SHIPPED && !(s.staff ?? []).length) {
-    for (const h of Object.values(s.holdings)) delete h.pmOpexMult;
+    for (const h of Object.values(s.holdings)) {
+      delete h.pmOpexMult;
+      delete h.pmRenewalMult;
+      delete h.leasingRentMult;
+    }
     delete s.leasingOddsMult; delete s.pmRenewalMult; delete s.leasingRentMult;
+    delete s.pmDeskSlip;
     return;
   }
-  const opex = pmOpexMult(pm);
-  for (const h of Object.values(s.holdings)) h.pmOpexMult = +opex.toFixed(4);
+  s.pmDeskSlip = +pm.slip.toFixed(4);
   s.leasingOddsMult = +leasingOddsMult(lease).toFixed(4);
   s.pmRenewalMult = +pmRenewalMult(pm).toFixed(4);
   s.leasingRentMult = +leasingRentMult(lease).toFixed(4);
+  for (const h of Object.values(s.holdings)) {
+    const assignedPm = assignedForBbl(s, h.bbl, "pm");
+    const pmSkill = assignedPm ? roleSkill(assignedPm, "pm") : pm.skill;
+    const pmRs = { ...pm, skill: pmSkill };
+    h.pmOpexMult = +pmOpexMult(pmRs).toFixed(4);
+    h.pmRenewalMult = +pmRenewalMult(pmRs).toFixed(4);
+    const assignedLease = assignedForBbl(s, h.bbl, "leasing");
+    const leaseSkill = assignedLease ? roleSkill(assignedLease, "leasing") : lease.skill;
+    h.leasingRentMult = +leasingRentMult({ ...lease, skill: leaseSkill }).toFixed(4);
+  }
 }
 
 export function tickStaff(s: GameState, parcels: ParcelTable) {
@@ -554,6 +592,71 @@ export function tickStaff(s: GameState, parcels: ParcelTable) {
       }
       s.pendingHires = s.pendingHires.filter((p) => s.month < p.startM);
     }
+  }
+  // Poaching — strong hires with tenure get called away; worse when your name
+  // is mud. ALWAYS draw once per seat so a star on the payroll cannot change
+  // how many staffRng steps the month takes (see the stream comment above).
+  const poached: Staff[] = [];
+  for (const st of s.staff ?? []) {
+    const roll = srng(s);
+    const keys = [...GENERAL_ATTRS, ...ROLE_ATTRS[st.role]];
+    const mean = keys.reduce((a, k) => a + (st.attrs[k] ?? 50), 0) / keys.length;
+    const tenure = st.hiredM < 0 ? 0 : s.month - st.hiredM;
+    if (mean < 72 || tenure < 24) continue;
+    const rep = s.hireReputation ?? 0.55;
+    const chance = 0.012 * (1 + (0.55 - rep) * 1.5);
+    if (roll < chance) poached.push(st);
+  }
+  if (poached.length) {
+    const ids = new Set(poached.map((x) => x.id));
+    s.staff = (s.staff ?? []).filter((x) => !ids.has(x.id));
+    for (const st of poached) {
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `A rival poached ${st.name} — your ${ROLE_LABEL[st.role]} desk is empty again, and there is no severance when they choose to leave.`,
+      });
+    }
+  }
+  // Burnout under overload; slow improvement when the desk has room.
+  for (const st of s.staff ?? []) {
+    const roll = srng(s);
+    const tenure = st.hiredM < 0 ? 0 : s.month - st.hiredM;
+    const rs = roleState(s, parcels, st.role);
+    if (rs.slip > 0.25 && roll < 0.07) {
+      st.attrs.diligence = Math.max(8, (st.attrs.diligence ?? 50) - 1);
+      st.attrs.urgency = Math.max(8, (st.attrs.urgency ?? 50) - 1);
+    } else if (rs.slip === 0 && tenure > 12 && roll < 0.05) {
+      st.attrs.judgment = Math.min(96, (st.attrs.judgment ?? 50) + 1);
+      for (const k of ROLE_ATTRS[st.role]) {
+        st.attrs[k] = Math.min(96, (st.attrs[k] ?? 50) + 1);
+      }
+    }
+  }
+  // Overload stories — once a month, if any desk is underwater.
+  const pmRs = roleState(s, parcels, "pm");
+  const leaseRs = roleState(s, parcels, "leasing");
+  const cmRs = roleState(s, parcels, "construction");
+  const slips: { role: StaffRole; slip: number }[] = [
+    { role: "pm", slip: pmRs.slip },
+    { role: "leasing", slip: leaseRs.slip },
+    { role: "construction", slip: cmRs.slip },
+  ];
+  const worst = slips.reduce((a, b) => (b.slip > a.slip ? b : a));
+  if (worst.slip > 0.2 && srng(s) < 0.12) {
+    let addr = "your portfolio";
+    for (const h of Object.values(s.holdings)) {
+      const rec = resolveRec(parcels, s, h.bbl);
+      if (rec?.address) { addr = rec.address; break; }
+    }
+    const slipText = worst.role === "pm"
+      ? "renewals are being postponed"
+      : worst.role === "leasing"
+        ? "prospect calls are going unanswered"
+        : "active jobs are going unsupervised";
+    s.news.unshift({
+      q: s.month, kind: "warn",
+      text: `The ${ROLE_LABEL[worst.role]} desk is overloaded — at ${addr}, ${slipText}.`,
+    });
   }
 }
 
@@ -591,9 +694,128 @@ export function fire(s: GameState, staffId: number): { s: GameState; err?: strin
   // overhead, so it books where the rest of the office does.
   next.cash -= pay;
   logBooks(next, "ga", pay);
+  const tenure = st.hiredM < 0 ? 0 : s.month - st.hiredM;
+  const repHit = tenure < 12 ? 0.12 : 0.04;
+  const rep = (next.hireReputation ?? 0.55) - repHit;
+  next.hireReputation = Math.max(0.15, Math.min(0.95, rep));
+  let repNote = "";
+  if (repHit >= 0.12) repNote = " The market remembers a messy departure.";
   next.news.unshift({
     q: next.month, kind: "warn",
-    text: `${st.name} is out. Severance $${Math.round(pay / 1000)}k, and the desk is empty until you fill it.`,
+    text: `${st.name} is out. Severance $${Math.round(pay / 1000)}k, and the desk is empty until you fill it.${repNote}`,
   });
   return { s: next };
+}
+
+export function setSearchTier(
+  s: GameState,
+  key: typeof SEARCH_TIERS[number]["key"],
+): { s: GameState; err?: string } {
+  const tier = SEARCH_TIERS.find((t) => t.key === key);
+  if (!tier) return { s, err: "That search tier does not exist." };
+  // Same quality while the list is still fresh is a slot pull — refuse it.
+  // Changing quality (or waiting out the half-year) is a real search.
+  if (
+    s.hirePool
+    && s.hirePool.band === tier.band
+    && s.month - s.hirePool.m < POOL_REFRESH_M
+  ) {
+    const wait = POOL_REFRESH_M - (s.month - s.hirePool.m);
+    return { s, err: `That list is still up. ${wait} month${wait === 1 ? "" : "s"} until it ages out, or pay for a sharper search.` };
+  }
+  const cost = Math.round(tier.cost * (s.econ.costIdx ?? 1));
+  if (cost > 0 && s.cash < cost) {
+    return { s, err: `Search costs $${Math.round(cost / 1000)}k and you do not have it.` };
+  }
+  const next: GameState = cloneState(s);
+  if (cost > 0) {
+    next.cash -= cost;
+    logBooks(next, "ga", cost);
+  }
+  if (!next.hirePool) next.hirePool = { m: -999, band: tier.band, list: [] };
+  next.hirePool.band = tier.band;
+  refreshPool(next, true);
+  const quality = tier.band <= 12 ? "sharp reads on who is actually in the pool"
+    : tier.band <= 20 ? "decent first impressions"
+      : "rough interviews — you will learn more after they start";
+  next.news.unshift({
+    q: next.month, kind: "info",
+    text: `${tier.label}. The candidate pool refreshes with ${quality}.`,
+  });
+  return { s: next };
+}
+
+export function setOwnerStyle(s: GameState, style: OwnerStyle): { s: GameState } {
+  const next: GameState = cloneState(s);
+  next.ownerStyle = style;
+  return { s: next };
+}
+
+export function setBenchStyle(s: GameState, style: BenchStyle): { s: GameState } {
+  const next: GameState = cloneState(s);
+  next.benchStyle = style;
+  return { s: next };
+}
+
+export function assignStaff(s: GameState, staffId: number, bbl: string): { s: GameState; err?: string } {
+  const st = (s.staff ?? []).find((x) => x.id === staffId);
+  if (!st) return { s, err: "Nobody by that name works here." };
+  if (st.role === "construction") return { s, err: "Construction managers are not assigned to buildings yet." };
+  if (!s.holdings[bbl]) return { s, err: "You do not own that building." };
+  const next: GameState = cloneState(s);
+  for (const other of next.staff ?? []) {
+    if (other.role === st.role && other.id !== staffId && other.assignedBbls?.length) {
+      other.assignedBbls = other.assignedBbls.filter((x) => x !== bbl);
+    }
+  }
+  const target = (next.staff ?? []).find((x) => x.id === staffId)!;
+  target.assignedBbls = [...(target.assignedBbls ?? []).filter((x) => x !== bbl), bbl];
+  return { s: next };
+}
+
+export function unassignStaff(s: GameState, staffId: number, bbl: string): { s: GameState; err?: string } {
+  const st = (s.staff ?? []).find((x) => x.id === staffId);
+  if (!st) return { s, err: "Nobody by that name works here." };
+  if (!st.assignedBbls?.includes(bbl)) return { s, err: "They were not assigned to that building." };
+  const next: GameState = cloneState(s);
+  const target = (next.staff ?? []).find((x) => x.id === staffId)!;
+  target.assignedBbls = target.assignedBbls!.filter((x) => x !== bbl);
+  return { s: next };
+}
+
+/** Mean true judgment of hired staff in a role, or 42 if the desk is empty. */
+export function deskJudgment(s: GameState, role: "leasing" | "pm"): number {
+  const hired = (s.staff ?? []).filter((x) => x.role === role);
+  if (!hired.length) return 42;
+  return hired.reduce((a, st) => a + (st.attrs.judgment ?? 50), 0) / hired.length;
+}
+
+/** Tenant-care multiplier from the PM on this building or the firm desk. */
+export function pmTenantCareMult(s: GameState, bbl?: string): number {
+  let care: number;
+  if (bbl) {
+    const assigned = assignedForBbl(s, bbl, "pm");
+    if (assigned) care = assigned.attrs.tenantCare ?? 50;
+    else {
+      const hired = (s.staff ?? []).filter((x) => x.role === "pm");
+      care = hired.length
+        ? hired.reduce((a, st) => a + (st.attrs.tenantCare ?? 50), 0) / hired.length
+        : 42;
+    }
+  } else {
+    const hired = (s.staff ?? []).filter((x) => x.role === "pm");
+    care = hired.length
+      ? hired.reduce((a, st) => a + (st.attrs.tenantCare ?? 50), 0) / hired.length
+      : 42;
+  }
+  const slip = s.pmDeskSlip ?? 0;
+  return Math.max(0.90, Math.min(1.12, 1 + (care - 50) / 100 * 0.22 - slip * 0.12));
+}
+
+export function renewalMultFor(s: GameState, h: Holding): number {
+  return h.pmRenewalMult ?? s.pmRenewalMult ?? 1;
+}
+
+export function rentMultFor(s: GameState, h: Holding): number {
+  return h.leasingRentMult ?? s.leasingRentMult ?? 1;
 }

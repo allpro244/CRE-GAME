@@ -17,6 +17,7 @@ import { drawLoc, locAvailable } from "./credit";
 import { recordPropertyEvent } from "./history";
 
 import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount } from "./absorption";
+import { deskJudgment, pmTenantCareMult, rentMultFor } from "./staff";
 
 /** 0..1, for the net-effective trade in the prospect draw. */
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -777,8 +778,19 @@ export function renewalIntent(s: GameState, rec: ParcelRecord, h: Holding, t: Te
   if (fFit < 0.95) why.push({ s: need > t.sf ? "they have outgrown the space and there is nothing to give them" : "they are paying for space they no longer use", w: 1 - fFit });
   if (fLoc < 0.97) why.push({ s: "a better building across town made them an offer", w: 1 - fLoc });
   why.sort((a, b) => b.w - a.w);
-  const p = clampL(0.94 * fSvc * fCond * fRent * fInd * fFit * fCred * fTen * fLoc, 0.10, 0.96);
-  return { p, why: why.length ? why.map((x) => x.s) : ["they simply moved"] };
+  let p = clampL(0.94 * fSvc * fCond * fRent * fInd * fFit * fCred * fTen * fLoc, 0.10, 0.96);
+  const pBefore = p;
+  const renewMult = s.holdings[rec.bbl]?.pmRenewalMult ?? s.pmRenewalMult ?? 1;
+  const careMult = pmTenantCareMult(s, rec.bbl);
+  p = clampL(p * renewMult * careMult, 0.10, 0.96);
+  const whyLines = why.length ? why.map((x) => x.s) : ["they simply moved"];
+  if (renewMult < 0.98 && p < pBefore - 0.03) {
+    whyLines.push("renewals are slipping — the PM desk is behind");
+  }
+  if (careMult < 0.96 && p < pBefore - 0.03) {
+    whyLines.push("tenant relationships are fraying at this building");
+  }
+  return { p, why: whyLines };
 }
 
 /** A plausible building the departing tenant is moving to, or null for "left town". */
@@ -1361,7 +1373,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           if (need >= t.sf * 0.78) return t.sf;
           return Math.max(minTenancySf(rec, t.use ?? "office"), toSuites(rec, need, t.sf, t.use ?? "office") || t.sf);
         })(),
-        rentPsf: +Math.max(market * 0.6, ask).toFixed(2),
+        rentPsf: +(Math.max(market * 0.6, ask) * rentMultFor(s, h)).toFixed(2),
         termM: Math.round(rrange(s, 36, 84, "leasing")),
         // A sitting tenant asks for less than a new one — no fit-out, no
         // moving costs to cover — but the same market decides how far they get.
@@ -1543,7 +1555,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // markdown that brought this prospect through the door, seen from the
           // other side, and the reason the arrival factor is not a gift.
           rentPsf: +(market * (specLive ? 1.05 : 1) * rentBias * staleDiscount(h.darkMs)
-            * bid).toFixed(2),
+            * bid * rentMultFor(s, h)).toFixed(2),
           // Term length is not random. A credit tenant taking a whole floor
           // signs long paper and expects to be paid for it; a small unrated
           // firm wants three years and an out. WALT is the thing a buyer
@@ -1959,6 +1971,10 @@ function deskVerdict(s: GameState, loi: LOI, market: number, feeRate: number): {
 } {
   const floor = agentFloor(s);
   const pass = agentPassBelow(s);
+  const judgment = deskJudgment(s, "leasing");
+  const slack = ((judgment - 50) / 100) * 0.06;
+  const adjFloor = Math.max(0.5, floor - slack);
+  const adjPass = Math.max(0.35, pass - slack * 0.5);
   const score = loiMandateScore(loi, market);
   const minCred = agentMinCredit(s);
   const maxTiM = agentMaxTiMonths(s);
@@ -1986,12 +2002,12 @@ function deskVerdict(s: GameState, loi: LOI, market: number, feeRate: number): {
   if (tiM > maxTiM + 0.05) {
     // Fat TI: refer if the rent score is otherwise fine; pass if the letter is
     // also cheap — a desk does not auto-sign a capital hole.
-    if (score >= floor) {
+    if (score >= adjFloor) {
       return { verdict: "refer", score, floor, pass, why: `fit-out is ${tiM.toFixed(1)} months of rent against your ${maxTiM}-month cap` };
     }
   }
-  if (score < pass) return { verdict: "pass", score, floor, pass };
-  if (score < floor) return { verdict: "refer", score, floor, pass };
+  if (score < adjPass) return { verdict: "pass", score, floor, pass };
+  if (score < adjFloor) return { verdict: "refer", score, floor, pass };
   if (tiM > maxTiM + 0.05) {
     return { verdict: "refer", score, floor, pass, why: `fit-out is ${tiM.toFixed(1)} months of rent against your ${maxTiM}-month cap` };
   }

@@ -88,5 +88,51 @@ check(!E.attentionItems(g).some((a) => a.key.startsWith("loi:")),
     "attention only tracks referred letters while the agent holds the book");
 }
 
+// Mid-band single letter: desk counters instead of dumping it on you.
+{
+  g.agent = true;
+  g.agentFloor = 0.90;
+  g.agentPassBelow = 0.78;
+  g.holdings[boughtBbl].tenants = [];
+  g.lois = [{
+    id: 301, bbl: boughtBbl, kind: "new", use, name: "Soft But Close LLC",
+    sector: "tech", credit: 1, sf: suite, rentPsf: +(market * 0.84).toFixed(2),
+    termM: 84, tiPsf: 8, freeM: 2, net: true, expiresM: g.month + 3, arrivedM: g.month,
+  }];
+  g.cash = Math.max(g.cash, 20_000_000);
+  const score0 = E.loiMandateScore(g.lois[0], market);
+  check(score0 >= 0.78 && score0 < 0.90, `fixture sits in the counter band (score ${score0.toFixed(3)})`);
+  E.runLeasingAgent(g, parcels);
+  const still = g.lois.find((l) => l.id === 301);
+  const signed = g.holdings[boughtBbl].tenants.some((t) => t.name === "Soft But Close LLC");
+  const news = (g.news ?? []).slice(0, 12).map((n) => n.text).join(" ");
+  const negotiated = signed
+    || /countered|walked|came back|took .* final/i.test(news)
+    || (still?.referred && /counter/i.test(news));
+  check(negotiated, "mid-band letter was negotiated (signed, walked, or referred only after a counter)");
+  check(!(still && !still.referred && !still.countered),
+    "soft letter did not sit untouched on the open pile");
+}
+
+// Exclusive broker covers a building without the firm-wide agent toggle.
+{
+  g.agent = false;
+  g.holdings[boughtBbl].broker = { name: "Street & Co", hiredM: g.month };
+  g.holdings[boughtBbl].tenants = [];
+  g.lois = [{
+    id: 401, bbl: boughtBbl, kind: "new", use, name: "Exclusive Soft Co",
+    sector: "tech", credit: 1, sf: suite, rentPsf: +(market * 0.84).toFixed(2),
+    termM: 84, tiPsf: 8, freeM: 2, net: true, expiresM: g.month + 3, arrivedM: g.month,
+  }];
+  E.runLeasingAgent(g, parcels, { onlyDelegated: true });
+  const still = g.lois.find((l) => l.id === 401);
+  const news = (g.news ?? []).slice(0, 12).map((n) => n.text).join(" ");
+  check(
+    !still || still.referred || still.countered || /exclusive|countered|walked/i.test(news),
+    "exclusive broker works soft paper without the firm agent toggle",
+  );
+  delete g.holdings[boughtBbl].broker;
+}
+
 console.log("");
 process.exit(bad ? 1 : 0);

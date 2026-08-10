@@ -532,12 +532,15 @@ export const useStore = create<AppState>((set, get) => ({
     const r = approachOwner(game, parcels, adjacency, bbl);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
+    // Match the panel: a "make me an offer" conversation has no ask on the
+    // record. The old toast always said "They named a number" on any get-through,
+    // so the next line of UI ("no asking price") looked like a bug.
     const ap = r.s.approaches[bbl];
     const toastMsg = r.refused
       ? "The owner isn't selling."
-      : ap?.ask !== undefined
-        ? "They named a number."
-        : "They took the call — make them an offer.";
+      : r.blind || ap?.ask === undefined
+        ? "They took the call — make them an offer."
+        : "They named a number.";
     toast(toastMsg, r.refused ? "err" : "ok");
     void persist(r.s);
   },

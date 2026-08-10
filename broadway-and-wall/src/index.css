@@ -722,7 +722,7 @@ body {
 
 /* The top bar stays above the page overlay: a page is a room you can read
    while the clock runs, not a wall between you and the Advance button. */
-.topbar { z-index: 60; }
+.topbar { z-index: 60; overflow: visible; }
 
 /* ---- blocking decisions: LOIs and offers take the screen ---- */
 .modal-backdrop {
@@ -1389,10 +1389,15 @@ body {
   display: flex; align-items: center; gap: 10px;
   padding-top: 7px;
   border-top: 1px solid rgba(96, 76, 34, 0.14);
+  /* display:contents on .topbar-game drops this onto a pointer-events:none
+     bar — restore hit-testing so job menus and Advance stay clickable. */
+  pointer-events: auto;
+  overflow: visible;
 }
 .nav-cluster {
   min-width: 0;
   display: flex; align-items: center; gap: 3px;
+  overflow: visible;
 }
 .nav-cluster::before {
   flex: none;
@@ -1405,12 +1410,11 @@ body {
 }
 .nav-cluster-desks {
   flex: 1 1 auto;
-  overflow-x: auto;
-  scrollbar-width: none;
-  mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 16px), transparent 100%);
+  /* Job menus hang below this row. overflow-x:auto + a fade mask used to
+     clip every dropdown into invisibility. Four jobs do not need to scroll. */
+  overflow: visible;
 }
-.nav-cluster-desks::-webkit-scrollbar { display: none; }
-.nav-cluster-desks::before { content: "DESKS"; position: sticky; left: 0; z-index: 2; }
+.nav-cluster-desks::before { content: "JOBS"; }
 .nav-cluster-map {
   flex: none;
   padding-left: 10px;
@@ -1449,7 +1453,7 @@ body {
   box-shadow: inset 0 1px 0 rgba(255, 246, 222, 0.13), var(--lift-1);
 }
 .nav-secondary { display: none !important; }
-.nav-job { position: relative; flex: none; }
+.nav-job { position: relative; flex: none; overflow: visible; }
 .nav-caret { margin-left: 4px; font-size: 10px; opacity: 0.7; }
 .nav-menu {
   position: absolute;
@@ -1463,7 +1467,7 @@ body {
   box-shadow: var(--edge-top), var(--lift-3);
   backdrop-filter: blur(14px) saturate(1.1);
   -webkit-backdrop-filter: blur(14px) saturate(1.1);
-  z-index: 70;
+  z-index: 80;
 }
 .nav-job-menu { left: 0; right: auto; }
 .nav-menu-item {

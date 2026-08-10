@@ -403,7 +403,8 @@ export const useStore = create<AppState>((set, get) => ({
     // cash movement, and the first thing waiting — short enough to read once.
     const dCash = next.cash - cash0;
     const attn = attentionItems(next)[0];
-    const cashBit = dCash === 0 ? ""
+    // Ignore sub-$1k noise so a quiet month does not stamp "−$0.00M".
+    const cashBit = Math.abs(dCash) < 1000 ? ""
       : dCash > 0 ? ` · +$${(dCash / 1e6).toFixed(2)}M`
       : ` · −$${(Math.abs(dCash) / 1e6).toFixed(2)}M`;
     toast(`${monthLabel(next.month)}${cashBit}${attn ? ` · ${attn.label}` : ""}`);

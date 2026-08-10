@@ -3035,25 +3035,15 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   const teardownRoll = rng(s, "dev");
   const bbl = rec.bbl;
   const oldSf = rec.bldgArea;
-<<<<<<< HEAD
   // Standing use before teardown — BuiltClass excludes "land", so keep the
-  // raw class for the stock-removal path below.
+  // raw class for the stock-removal path below. Candidates above already skip
+  // vacant lots; the `!== "land"` check also narrows AssetClass → BuiltClass.
   const cls = rec.class;
   // When the standing class is pinned with unpaid orders, densify IN KIND.
   // useForZone's programme mix was converting short office into multifamily
   // while the office book stayed full — supply answering the wrong demand.
   // Gate on the rail + startOwed, not only structTight: moderate employment
   // gaps still leave vacancy on the frictional floor with a live order book.
-=======
-  // When the standing class is itself chronically short of housable floor and
-  // still has orders on the book, densify IN KIND. useForZone's programme mix
-  // was converting short office into multifamily while office structTight
-  // stayed elevated — supply answering the wrong demand.
-  //
-  // Candidates above already skip vacant lots; the `!== "land"` check is kept
-  // so TypeScript narrows AssetClass → BuiltClass for the densify path.
-  const cls = rec.class;
->>>>>>> origin/cursor/perf-smoother-frames-529c
   if (cls !== "land" && (CITY_STOCK as Record<string, number>)[cls] !== undefined) {
     const standing = cls;
     const stStand = e.structTight?.[standing] ?? 0;

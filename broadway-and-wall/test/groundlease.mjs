@@ -45,6 +45,12 @@ const rec = E.resolveRec(parcels, g, bbl);
 check(rec?.class === "office", "lessee improvement resolves as a standing building");
 check(E.holdingNOIYr(rec, g.econ, g.holdings[bbl], g.month) === 0,
   "fee owner pays no tax, insurance, vacancy or operating expense after opening");
+check(E.ownedHoldingNoiYr(g, parcels, g.holdings[bbl]) === 600_000,
+  "deed NOI is the ground coupon, not vacant-dirt zero");
+check(E.portfolioPropertyMonthlyCF(g, parcels) === 600_000 / 12,
+  "portfolio property CF counts the ground rent");
+check(E.portfolioMonthlyCF(g, parcels) === 600_000 / 12,
+  "header CF / yr annualises the same coupon (no other firm debt here)");
 
 const cashFlow = E.groundLeaseExpenseBreakdown(600_000);
 check(cashFlow.grossRentYr === 600_000 && cashFlow.netRentYr === 600_000,

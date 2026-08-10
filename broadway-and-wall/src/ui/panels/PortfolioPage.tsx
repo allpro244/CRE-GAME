@@ -3,7 +3,8 @@ import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import type { BuiltClass } from "@/engine/types";
-import { ownedHoldingValue, managedRentPsfYr, holdingNOIYr, resolveRec } from "@/engine/value";
+import { ownedHoldingValue, ownedHoldingNoiYr, managedRentPsfYr, resolveRec } from "@/engine/value";
+import { portfolioPropertyMonthlyCF } from "@/engine/sim";
 import { unitStatus, avgUnitSf } from "@/engine/leasing";
 import { payoffQuote } from "@/engine/notes";
 import { fundableNow } from "@/engine/credit";
@@ -50,21 +51,16 @@ export function PortfolioPage() {
       </div>
     );
   }
-  let totV = 0, totD = 0, totCF = 0;
+  let totV = 0, totD = 0;
   const rows = holdings.map((h) => {
     const rec = resolveRec(parcels, game, h.bbl);
     const v = rec ? ownedHoldingValue(game, parcels, h) : 0;
-    // A LET GROUND LEASE IS A POSITION. The engine wires the ground rent to
-    // cash separately (tickGroundLeases) precisely so the lot itself carries
-    // nothing — and that correctness left the leased fee printing zero income
-    // in this book, indistinguishable from dead dirt and sliced out of the
-    // top-earners view entirely. The coupon belongs on the row: it is the
-    // whole reason the position exists.
-    const glRentYr = game.groundLeases?.[h.bbl]?.rentYr ?? 0;
-    const noi = (rec ? holdingNOIYr(rec, game.econ, h, game.month) : 0) + glRentYr;
+    // Deed NOI — building roll or ground coupon. Same number the header CF
+    // annualises (before firm-level construction / facility / revolver).
+    const noi = ownedHoldingNoiYr(game, parcels, h);
     const cf = noi / 12 - (h.loan?.monthlyPmt ?? 0);
     const occ = rec ? physicalOcc(rec as never, h) : 0;
-    totV += v; totD += h.loan?.balance ?? 0; totCF += cf;
+    totV += v; totD += h.loan?.balance ?? 0;
     // EVERY COLUMN NEEDS A VALUE TO SORT ON, so the ones that used to be
     // computed inside the cell are computed here instead. That is also why
     // several of them were impossible to sort by: they did not exist until the
@@ -110,6 +106,7 @@ export function PortfolioPage() {
   };
   rows.sort(cmp);
   const shown = rows;
+  const totCF = portfolioPropertyMonthlyCF(game, parcels);
   const ranked = sort.key === "noi" && sort.dir === -1;
   const assessmentWatch = holdings.flatMap((h) => {
     const q = taxAppealQuote(game, parcels, h.bbl);
@@ -201,7 +198,12 @@ export function PortfolioPage() {
         <Big label="Assets" value={usd(totV)} />
         <Big label="Debt" value={usd(totD)} />
         <Big label="Equity" value={usd(totV - totD)} />
-        <Big label="Cash flow / mo" value={usd(totCF)} bad={totCF < 0} />
+        <Big
+          label="Cash flow / mo"
+          value={usd(totCF)}
+          bad={totCF < 0}
+          title="Deed cash flow only — NOI (including ground rent) less mortgages. The header CF / yr also subtracts construction interest, facility and the revolver, then annualises."
+        />
         {/* HOW BIG YOU ACTUALLY ARE, AND WHAT IT COST YOU A FOOT.
             Dollars of assets is a number about the market as much as about the
             book — the same buildings are worth half as much at the bottom of a

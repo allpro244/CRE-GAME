@@ -7,7 +7,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
 import { DEFAULT_START_CASH, CENTURY_MONTHS, CASH_APY, cloneState, logBooks, monthLabel } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels } from "./market";
-import { assetValue, holdingNOIYr, ownedHoldingValue, monthlyNOI, portfolioMark, operatingStatement, physicalOcc, resolveRec } from "./value";
+import { assetValue, holdingNOIYr, ownedHoldingValue, ownedMonthlyNoi, monthlyNOI, portfolioMark, operatingStatement, physicalOcc, resolveRec } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLeasing, depositsOn, stampListing, loiSigningCost, exclusiveFeeRate, agentCashReserve } from "./leasing";
@@ -1151,14 +1151,29 @@ export async function advanceUntilAttentionAsync(
   return { s: cur, months: cap, reason: null };
 }
 
-// Convenience for the UI: total quarterly cash flow at current state.
-export function portfolioQuarterlyCF(s: GameState, parcels: ParcelTable): number {
+/**
+ * PROPERTY CASH FLOW / MONTH — deeds only.
+ *
+ * Ground rent on a leased fee is deed income (see `ownedMonthlyNoi`). Mortgages
+ * on those deeds are deducted. Construction interest, the portfolio facility
+ * and the revolver are firm capital costs and live in `portfolioMonthlyCF`.
+ */
+export function portfolioPropertyMonthlyCF(s: GameState, parcels: ParcelTable): number {
   let cf = 0;
   for (const h of Object.values(s.holdings)) {
-    const rec = resolveRec(parcels, s, h.bbl);
-    if (!rec) continue;
-    cf += monthlyNOI(rec, s.econ, h, s.month) - (h.loan?.monthlyPmt ?? 0);
+    if (!resolveRec(parcels, s, h.bbl)) continue;
+    cf += ownedMonthlyNoi(s, parcels, h) - (h.loan?.monthlyPmt ?? 0);
   }
+  return cf;
+}
+
+/**
+ * FIRM CASH FLOW / MONTH — property CF less construction interest, facility
+ * and the revolver. The header annualises this. Name used to say "quarterly";
+ * the tick has always been monthly.
+ */
+export function portfolioMonthlyCF(s: GameState, parcels: ParcelTable): number {
+  let cf = portfolioPropertyMonthlyCF(s, parcels);
   for (const d of Object.values(s.developments ?? {})) {
     cf -= (d.loanBalance * d.ratePct) / 100 / 12; // construction interest
   }
@@ -1177,6 +1192,9 @@ export function portfolioQuarterlyCF(s: GameState, parcels: ParcelTable): number
   if (s.loc && s.loc.balance > 0) cf -= (s.loc.balance * locRate(s)) / 100 / 12;
   return cf;
 }
+
+/** @deprecated Name lied — returns a monthly figure. Prefer `portfolioMonthlyCF`. */
+export const portfolioQuarterlyCF = portfolioMonthlyCF;
 
 /** @deprecated Name lied — the tick is monthly. Prefer `advanceMonth`. */
 export const advanceQuarter = advanceMonth;

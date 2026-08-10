@@ -2,7 +2,7 @@ import { startTransition } from "react";
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment } from "@/engine/types";
-import { newGame, advanceMonth, advanceUntilAttentionAsync, attentionItems, firstListings, portfolioQuarterlyCF, hangUpOnCall } from "@/engine/sim";
+import { newGame, advanceMonth, advanceUntilAttentionAsync, attentionItems, firstListings, portfolioMonthlyCF, hangUpOnCall } from "@/engine/sim";
 import { monthLabel } from "@/engine/types";
 import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
@@ -1464,7 +1464,7 @@ export function derivedNetWorth(): number {
 export function derivedQuarterCF(): number {
   const { game, parcels } = useStore.getState();
   if (!game || !parcels) return 0;
-  return portfolioQuarterlyCF(game, parcels);
+  return portfolioMonthlyCF(game, parcels);
 }
 
 export async function fetchGzJson(url: string) {

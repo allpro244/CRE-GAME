@@ -2112,6 +2112,42 @@ export function ownedHoldingValue(
   return ownedHoldingValueFromRec(s, rec, h);
 }
 
+/**
+ * ONE NOI FOR A DEED THE PLAYER OWNS.
+ *
+ * `holdingNOIYr` correctly returns 0 on a ground-leased fee so the fee owner
+ * is not billed the lessee's tax, insurance and vacancy. Cash still arrives as
+ * the absolutely-net ground coupon (`tickGroundLeases`), and every player-
+ * facing cash-flow figure has to count that coupon — otherwise Portfolio can
+ * show a performing leased fee while the header CF / yr pretends the income
+ * does not exist. Mirrors `ownedHoldingValue`.
+ */
+export function ownedHoldingNoiYr(
+  s: GameState, parcels: Record<string, ParcelRecord>, h: Holding,
+): number {
+  const rec = resolveRec(parcels, s, h.bbl);
+  if (!rec) return 0;
+  return ownedHoldingNoiYrFromRec(s, rec, h);
+}
+
+/** Same canonical deed NOI when the caller already resolved the parcel. */
+export function ownedHoldingNoiYrFromRec(
+  s: GameState, rec: ParcelRecord, h: Holding,
+): number {
+  if (h.groundLeased) {
+    const gl = s.groundLeases?.[h.bbl];
+    return gl ? Math.max(0, gl.rentYr) : 0;
+  }
+  return holdingNOIYr(rec, s.econ, h, s.month);
+}
+
+/** Monthly deed NOI — ground coupon or building NOI, never vacant-dirt zero on a leased fee. */
+export function ownedMonthlyNoi(
+  s: GameState, parcels: Record<string, ParcelRecord>, h: Holding,
+): number {
+  return ownedHoldingNoiYr(s, parcels, h) / 12;
+}
+
 /** Same canonical deed value when the caller already resolved the parcel. */
 export function ownedHoldingValueFromRec(
   s: GameState, rec: ParcelRecord, h: Holding,

@@ -61,7 +61,7 @@ import type { ParcelTable } from "@/data/types";
 import type { ParcelRecord } from "@/data/types";
 import type { BuiltClass, GameState, Holding } from "./types";
 import { logBooks, monthLabel, cloneState} from "./types";
-import { holdingNOIYr, ownedHoldingValue, resolveRec } from "./value";
+import { ownedHoldingNoiYr, ownedHoldingValue, resolveRec } from "./value";
 import { PRODUCTS, prepayPenalty, productById, bumpLenderRel, windowOpen, quote, advanceFactor } from "./debt";
 import { distressPrice, sponsorStanding } from "./sponsor";
 import { recordComp } from "./comps";
@@ -122,7 +122,7 @@ export function poolQuality(
     const v = ownedHoldingValue(s, parcels, h);
     if (v <= 0) continue;
     value += v;
-    noi += holdingNOIYr(rec, s.econ, h, s.month);
+    noi += ownedHoldingNoiYr(s, parcels, h);
     byBldg.push(v);
     const cls = (rec.class as BuiltClass) ?? "office";
     byClass.set(cls, (byClass.get(cls) ?? 0) + v);
@@ -428,7 +428,7 @@ export function facilityMetrics(s: GameState, parcels: ParcelTable): {
     const rec = resolveRec(parcels, s, bbl);
     if (!h || !rec) continue;
     value += ownedHoldingValue(s, parcels, h);
-    noi += holdingNOIYr(rec, s.econ, h, s.month);
+    noi += ownedHoldingNoiYr(s, parcels, h);
   }
   const annualDs = f.monthlyPmt * 12;
   return {
@@ -621,7 +621,10 @@ export function pledgeable(s: GameState, parcels: ParcelTable): { bbl: string; r
   const out: { bbl: string; rec: ParcelRecord; h: Holding; value: number; loan: number }[] = [];
   for (const h of Object.values(s.holdings)) {
     const rec = resolveRec(parcels, s, h.bbl);
-    if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+    // A performing leased fee is income collateral — not vacant dirt — even
+    // when resolveRec still says "land" before the lessee tops out.
+    const glIncome = h.groundLeased && (s.groundLeases?.[h.bbl]?.rentYr ?? 0) > 0;
+    if (!rec || (!glIncome && (rec.class === "land" || !rec.bldgArea))) continue;
     if (s.workouts?.[h.bbl]) continue;
     if (h.sale) continue;
     out.push({

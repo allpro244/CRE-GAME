@@ -2112,6 +2112,46 @@ export function ownedHoldingValue(
   return ownedHoldingValueFromRec(s, rec, h);
 }
 
+/**
+ * ONE NOI FOR A DEED THE PLAYER OWNS.
+ *
+ * `holdingNOIYr` correctly returns 0 on a ground-leased fee so the fee owner
+ * is not billed the lessee's tax, insurance and vacancy. Debt and DSCR must
+ * still underwrite the absolutely-net ground rent — otherwise a performing
+ * leased fee is treated as vacant dirt and only First Harbor's land loan
+ * will look at it. Mirrors `ownedHoldingValue`.
+ */
+export function ownedHoldingNoiYr(
+  s: GameState, parcels: Record<string, ParcelRecord>, h: Holding,
+): number {
+  const rec = resolveRec(parcels, s, h.bbl);
+  if (!rec) return 0;
+  return ownedHoldingNoiYrFromRec(s, rec, h);
+}
+
+/** Same canonical deed NOI when the caller already resolved the parcel. */
+export function ownedHoldingNoiYrFromRec(
+  s: GameState, rec: ParcelRecord, h: Holding,
+): number {
+  if (h.groundLeased) {
+    const gl = s.groundLeases?.[h.bbl];
+    return gl ? Math.max(0, gl.rentYr) : 0;
+  }
+  return holdingNOIYr(rec, s.econ, h, s.month);
+}
+
+/**
+ * Vacant dirt with no income — the only collateral First Harbor's land loan
+ * is for. A leased fee with a coupon is not vacant dirt, even when the
+ * resolved class is still "land" before the lessee tops out.
+ */
+export function isVacantLandLoanCollateral(
+  s: GameState, h: Holding, rec: ParcelRecord,
+): boolean {
+  if (h.groundLeased && (s.groundLeases?.[h.bbl]?.rentYr ?? 0) > 0) return false;
+  return rec.class === "land" || !rec.bldgArea;
+}
+
 /** Same canonical deed value when the caller already resolved the parcel. */
 export function ownedHoldingValueFromRec(
   s: GameState, rec: ParcelRecord, h: Holding,

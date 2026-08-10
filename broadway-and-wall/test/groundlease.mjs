@@ -45,6 +45,20 @@ const rec = E.resolveRec(parcels, g, bbl);
 check(rec?.class === "office", "lessee improvement resolves as a standing building");
 check(E.holdingNOIYr(rec, g.econ, g.holdings[bbl], g.month) === 0,
   "fee owner pays no tax, insurance, vacancy or operating expense after opening");
+check(E.ownedHoldingNoiYr(g, parcels, g.holdings[bbl]) === 600_000,
+  "debt underwrites the ground coupon, not vacant-dirt zero");
+check(!E.isVacantLandLoanCollateral(g, g.holdings[bbl], rec),
+  "a performing leased fee is not vacant land-loan collateral");
+
+const { quotes } = E.refiQuotes(g, parcels, bbl);
+const landDesk = quotes.find((q) => q.id === "land");
+const incomeOk = quotes.some((q) => q.id !== "land" && q.available && q.maxProceeds > 0);
+check(incomeOk, "an income desk will quote traditional debt against the ground rent");
+check(landDesk && !landDesk.available, "land money refuses a fee that has income to underwrite");
+check(quotes.find((q) => q.id === "savings")?.noiUw === 600_000
+  || quotes.find((q) => q.id === "harbor")?.noiUw === 600_000
+  || quotes.find((q) => q.id === "cordage")?.noiUw === 600_000,
+  "refi underwriting NOI is the ground rent");
 
 const cashFlow = E.groundLeaseExpenseBreakdown(600_000);
 check(cashFlow.grossRentYr === 600_000 && cashFlow.netRentYr === 600_000,

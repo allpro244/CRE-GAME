@@ -1646,6 +1646,9 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
   const isLand = parcels[bbl]?.class === "land";
   const [product, setProduct] = useState<string>(isLand ? "land" : "savings");
   const [lev, setLev] = useState(1);
+  // Thesis → Structure → Commit: one job per stage so the close cheque is not
+  // competing with product chips and the underwriting grid on the same scroll.
+  const [stage, setStage] = useState<"thesis" | "structure" | "commit">("thesis");
   const offerPrice = Math.round(price);
   const max = buyQuote(game, parcels, bbl, offerPrice, product, 1);
   const principal = Math.round(max.principal * lev);
@@ -1673,153 +1676,169 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
       : annualPayment(principal, max.ratePct, prodDef?.amortYears ?? 30))
     : 0;
   const dscrNow = annualDs > 0 ? noi / annualDs : null;
+  const goingInPct = offerPrice > 0 ? (noi / offerPrice) * 100 : 0;
+  const dy = principal > 0 ? (noi / principal) * 100 : 0;
+  const cf = noi - annualDs;
+  const coc = equity > 0 ? (cf / equity) * 100 : 0;
+  const negLev = principal > 0 && goingInPct < max.ratePct;
+  const stabPct = offerPrice > 0 ? (stab / offerPrice) * 100 : 0;
   return (
-    <>
-      <div className="btn-row" style={{ marginTop: 8 }}>
-        {/* dirt has its own desk; income paper won't look at a vacant lot.
-            Every card quotes its rate LIVE — the coupon belongs on the term
-            sheet, not two clicks behind it. */}
-        {PRODUCTS.filter((p) => !p.mezz && (isLand ? p.id === "land" : p.id !== "land")).map((p) => {
-          const pq = buyQuote(game, parcels, bbl, offerPrice, p.id, 1);
-          return (
-            /* A DESK THAT WILL NOT QUOTE IS NOT A CHOICE. These read "won't
-               quote" and stayed live, dark and clickable, so the only way to
-               find out that clicking one did nothing was to click it — and a
-               button that answers a decision with silence is the same defect
-               as a dead one. Disabled and dimmed, with the reason on the
-               hover, so the row reads as what it is: three desks and one that
-               is shut. */
-            <button
-              key={p.id}
-              className={"btn" + (product === p.id ? " btn-on" : "")}
-              disabled={pq.principal <= 0}
-              style={pq.principal <= 0 ? { opacity: 0.42, cursor: "not-allowed" } : undefined}
-              title={pq.principal <= 0
-                ? `${p.label} will not lend against this building today — ${p.blurb}`
-                : `${p.blurb}\n${(p.maxLTV * 100).toFixed(0)}% max LTV · ${p.amortYears}-yr amort · ${Math.round(p.termM / 12)}-yr term`}
-              onClick={() => setProduct(p.id)}
-            >
-              {p.label}{pq.principal > 0 ? ` · ${pq.ratePct.toFixed(2)}% · ${(p.maxLTV * 100).toFixed(0)}% LTV` : " · won't quote"}
-            </button>
-          );
-        })}
-        <button className={"btn" + (product === "cash" ? " btn-on" : "")} title="No debt at all." onClick={() => setProduct("cash")}>
-          All cash
-        </button>
+    <div className="deal-stages">
+      <div className="deal-stage-tabs" role="tablist" aria-label="Close the deal">
+        {([
+          ["thesis", "Thesis"],
+          ["structure", "Structure"],
+          ["commit", "Commit"],
+        ] as const).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={stage === id}
+            className={"deal-stage-tab" + (stage === id ? " on" : "")}
+            onClick={() => setStage(id)}
+          >
+            {label}
+          </button>
+        ))}
       </div>
-      {max.principal > 0 ? (
-        <Slider
-          label="Leverage"
-          value={lev}
-          min={0}
-          max={1}
-          step={0.02}
-          onChange={setLev}
-          format={() => (principal > 0 ? `${usd(principal)} · ${((principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% LTV` : "all cash")}
-          marks={[{ at: 0, label: "cash" }, { at: 0.5, label: "half" }, { at: 1, label: "max" }]}
-          hint={`${max.ratePct}% coupon${dscrNow ? ` · DSCR ${dscrNow.toFixed(2)}` : ""}`}
-        />
-      ) : null}
-      {/* WHY THE LOAN IS THE SIZE IT IS.
-          A desk sizes on three tests and takes the smallest: the advance rate,
-          the coverage ratio, and the debt yield. Which one bound was computed
-          and never shown, so a lender with a 72% advance rate quoting 47%
-          looked arbitrary instead of arithmetical — and the answer changes
-          with the index, which is exactly the thing worth understanding. */}
-      {max.principal > 0 && (
-        <div className="hint">
-          {max.bind === "appraisal"
-            ? `The lender underwrote ${usd(max.uwBasis ?? 0)}, not your ${usd(offerPrice)} — they ordered their own appraisal and it came back at ${usd(max.appraised ?? 0)}. `
-              + `They advance against the LESSER of that and what you agreed to pay, so the ${usd(max.overpay ?? 0)} above it is entirely yours. `
-              + `Their collateral is the building, not your enthusiasm for it.`
-            : max.bind === "ltv"
-            ? `Sized at this lender's ${(max.ltvCap * 100).toFixed(0)}% advance rate — the ceiling, and the income clears it comfortably.`
-            : max.bind === "dscr"
-              ? `Their advance rate is ${(max.ltvCap * 100).toFixed(0)}%, but you are getting ${((max.principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% — COVERAGE is binding, not leverage. `
-                + `At a ${max.ratePct}% coupon the income only services ${(max.principal / Math.max(1, offerPrice) * 100).toFixed(0)}% of the price at ${max.uwDscr.toFixed(2)}x. `
-                + `That is what a high index does: the cap rate you buy at has to carry the coupon you borrow at, and when it cannot, the loan shrinks.`
-              : max.bind === "dy"
-                ? `Their advance rate is ${(max.ltvCap * 100).toFixed(0)}%, but the DEBT YIELD test is binding — the income is too thin against the loan for this desk, regardless of what the building is worth.`
-                : `Their advance rate is ${(max.ltvCap * 100).toFixed(0)}%, cut back by the credit window and your own record. Leverage comes back when money does.`}
+
+      {stage === "thesis" && (
+        <div className="deal-stage" role="tabpanel">
+          <div className="hint">What you are buying at {usd(offerPrice)} — income first, leverage later.</div>
+          <div className="grid">
+            {rec && rec.class !== "land" && rec.bldgArea > 0 ? (
+              <>
+                <Row k={ip?.disclosed ? "In-place NOI / yr" : "NOI / yr (mkt est.)"} v={usd(noi)} bad={noi < 0} />
+                {ip?.disclosed && <Row k="Occupancy (in place)" v={`${(ip.occ * 100).toFixed(0)}%`} bad={ip.occ < 0.75} />}
+                <Row k="Going-in cap" v={`${goingInPct.toFixed(2)}%`} strong />
+                <Row k="Stabilised pro-forma" v={`${usd(stab)} · ${stabPct.toFixed(2)}%`} />
+              </>
+            ) : (
+              <Row k="Price" v={usd(offerPrice)} strong />
+            )}
+          </div>
+          <div className="btn-row" style={{ marginTop: 10 }}>
+            <button type="button" className="btn btn-buy" onClick={() => setStage("structure")}>
+              Structure the stack ▸
+            </button>
+          </div>
         </div>
       )}
-      {max.principal > 0 ? (
-        <div style={{ display: "none" }} />
-      ) : (
-        <div className="hint">{product === "cash" ? "Buying it outright." : "No lender will size a loan against this income — all cash or nothing."}</div>
+
+      {stage === "structure" && (
+        <div className="deal-stage" role="tabpanel">
+          <div className="btn-row" style={{ marginTop: 4 }}>
+            {PRODUCTS.filter((p) => !p.mezz && (isLand ? p.id === "land" : p.id !== "land")).map((p) => {
+              const pq = buyQuote(game, parcels, bbl, offerPrice, p.id, 1);
+              return (
+                <button
+                  key={p.id}
+                  className={"btn" + (product === p.id ? " btn-on" : "")}
+                  disabled={pq.principal <= 0}
+                  style={pq.principal <= 0 ? { opacity: 0.42, cursor: "not-allowed" } : undefined}
+                  title={pq.principal <= 0
+                    ? `${p.label} will not lend against this building today — ${p.blurb}`
+                    : `${p.blurb}\n${(p.maxLTV * 100).toFixed(0)}% max LTV · ${p.amortYears}-yr amort · ${Math.round(p.termM / 12)}-yr term`}
+                  onClick={() => setProduct(p.id)}
+                >
+                  {p.label}{pq.principal > 0 ? ` · ${pq.ratePct.toFixed(2)}% · ${(p.maxLTV * 100).toFixed(0)}% LTV` : " · won't quote"}
+                </button>
+              );
+            })}
+            <button className={"btn" + (product === "cash" ? " btn-on" : "")} title="No debt at all." onClick={() => setProduct("cash")}>
+              All cash
+            </button>
+          </div>
+          {max.principal > 0 ? (
+            <Slider
+              label="Leverage"
+              value={lev}
+              min={0}
+              max={1}
+              step={0.02}
+              onChange={setLev}
+              format={() => (principal > 0 ? `${usd(principal)} · ${((principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% LTV` : "all cash")}
+              marks={[{ at: 0, label: "cash" }, { at: 0.5, label: "half" }, { at: 1, label: "max" }]}
+              hint={`${max.ratePct}% coupon${dscrNow ? ` · DSCR ${dscrNow.toFixed(2)}` : ""}`}
+            />
+          ) : null}
+          {max.principal > 0 && (
+            <div className="hint">
+              {max.bind === "appraisal"
+                ? `The lender underwrote ${usd(max.uwBasis ?? 0)}, not your ${usd(offerPrice)} — they ordered their own appraisal and it came back at ${usd(max.appraised ?? 0)}. `
+                  + `They advance against the LESSER of that and what you agreed to pay, so the ${usd(max.overpay ?? 0)} above it is entirely yours. `
+                  + `Their collateral is the building, not your enthusiasm for it.`
+                : max.bind === "ltv"
+                ? `Sized at this lender's ${(max.ltvCap * 100).toFixed(0)}% advance rate — the ceiling, and the income clears it comfortably.`
+                : max.bind === "dscr"
+                  ? `Their advance rate is ${(max.ltvCap * 100).toFixed(0)}%, but you are getting ${((max.principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% — COVERAGE is binding, not leverage. `
+                    + `At a ${max.ratePct}% coupon the income only services ${(max.principal / Math.max(1, offerPrice) * 100).toFixed(0)}% of the price at ${max.uwDscr.toFixed(2)}x. `
+                    + `That is what a high index does: the cap rate you buy at has to carry the coupon you borrow at, and when it cannot, the loan shrinks.`
+                  : max.bind === "dy"
+                    ? `Their advance rate is ${(max.ltvCap * 100).toFixed(0)}%, but the DEBT YIELD test is binding — the income is too thin against the loan for this desk, regardless of what the building is worth.`
+                    : `Their advance rate is ${(max.ltvCap * 100).toFixed(0)}%, cut back by the credit window and your own record. Leverage comes back when money does.`}
+            </div>
+          )}
+          {max.principal <= 0 && (
+            <div className="hint">{product === "cash" ? "Buying it outright." : "No lender will size a loan against this income — all cash or nothing."}</div>
+          )}
+          <div className="btn-row" style={{ marginTop: 10 }}>
+            <button type="button" className="btn" onClick={() => setStage("thesis")}>◂ Thesis</button>
+            <button type="button" className="btn btn-buy" onClick={() => setStage("commit")}>
+              Review &amp; commit ▸
+            </button>
+          </div>
+        </div>
       )}
-      {/* The underwriting, before you commit. Going-in cap is what you are
-          paying for the income; debt yield is what the lender thinks of it;
-          cash-on-cash is what actually lands in your account in year one. A
-          deal where the going-in cap sits below the coupon is negative
-          leverage — it can still be right, but only if you are buying the
-          upside, and you should have to see that you are. */}
-      <div className="grid">
-        {rec && rec.class !== "land" && rec.bldgArea > 0 && (() => {
-          const goingInPct = offerPrice > 0 ? (noi / offerPrice) * 100 : 0;
-          const dy = principal > 0 ? (noi / principal) * 100 : 0;
-          const cf = noi - annualDs;
-          const coc = equity > 0 ? (cf / equity) * 100 : 0;
-          const negLev = principal > 0 && goingInPct < max.ratePct;
-          const stabPct = offerPrice > 0 ? (stab / offerPrice) * 100 : 0;
-          return (
-            <>
-              <Row k={ip?.disclosed ? "In-place NOI / yr" : "NOI / yr (mkt est.)"} v={usd(noi)} bad={noi < 0} />
-              {ip?.disclosed && <Row k="Occupancy (in place)" v={`${(ip.occ * 100).toFixed(0)}%`} bad={ip.occ < 0.75} />}
-              <Row k="Going-in cap" v={`${goingInPct.toFixed(2)}%`} bad={negLev} />
-              {/* THE VALUE-ADD SPREAD, ON ITS OWN LINE. Everything above is what
-                  the building earns today; this is what it would earn full, and
-                  the distance between them is the work you are buying. It is a
-                  forecast and it is labelled as one — the cash-on-cash below is
-                  struck on the in-place number, because that is the money that
-                  actually arrives in year one. */}
-              <Row k="Stabilised pro-forma" v={`${usd(stab)} · ${stabPct.toFixed(2)}%`} />
-              <Row k="Coupon" v={`${max.ratePct.toFixed(2)}%${negLev ? " — negative leverage" : ""}`} bad={negLev} />
-              {principal > 0 && <Row k="Debt yield" v={`${dy.toFixed(1)}%`} bad={dy < 8} />}
-              {principal > 0 && <Row k="Annual debt service" v={`−${usd(annualDs)}${prodDef && prodDef.ioM > 0 ? " (interest-only)" : ` (${prodDef?.amortYears ?? 30}-yr am)`}`} />}
-              {/* THE ADVANCE RATE BELONGS WITH THE OTHER STANDING TERMS. The
-                  term sheet named the maturity, the amortisation and the
-                  coupon and left out the one number that decides how much of
-                  the price this desk will actually cover — so the way to find
-                  out which bank levered highest was to click all four and
-                  watch the slider's ceiling move. It is a fact about the
-                  product, like the others, and it reads with them. */}
-              {prodDef && (
-                <Row
-                  k="Terms"
-                  v={`${prodDef.ioM ? `${Math.round(prodDef.ioM / 12)}-yr IO, ` : ""}${prodDef.amortYears}-yr amort, `
-                    + `${Math.round(prodDef.termM / 12)}-yr term, ${(prodDef.maxLTV * 100).toFixed(0)}% max LTV`}
-                />
-              )}
-              <Row k="Year-1 cash flow" v={usd(cf)} bad={cf < 0} />
-              <Row k="Cash-on-cash" v={`${coc.toFixed(1)}%`} bad={coc < 0} />
-            </>
-          );
-        })()}
-        <Row k="Equity to close" v={usd(equity)} strong bad={equity > game.cash} />
-      </div>
-      <div className="btn-row">
-        <button
-          className="btn btn-buy"
-          disabled={equity > game.cash}
-          onClick={() => {
-            const prod = principal <= 0 ? "cash" : product;
-            const l = principal <= 0 ? 1 : lev;
-            if (off) buyOff(bbl, prod as never, l, bid);
-            else useStore.getState().closeDeal(bbl, prod, l);
-          }}
-        >
-          {closeLabel ?? `Close at ${usd(offerPrice)}`} · eq {usd(equity)}
-        </button>
-        {!off && (
-          <button className="btn" onClick={() => useStore.getState().walkAway(bbl)}
-            title="Tear up the contract. The building goes back on the market and the seller keeps the deposit.">
-            Tear it up
-          </button>
-        )}
-      </div>
-      {equity > game.cash && <div className="hint">Short {usd(equity - game.cash)} — the line of credit is on the Debt page.</div>}
-    </>
+
+      {stage === "commit" && (
+        <div className="deal-stage" role="tabpanel">
+          <div className="grid">
+            {rec && rec.class !== "land" && rec.bldgArea > 0 && (
+              <>
+                <Row k="Going-in cap" v={`${goingInPct.toFixed(2)}%`} bad={negLev} />
+                <Row k="Coupon" v={`${max.ratePct.toFixed(2)}%${negLev ? " — negative leverage" : ""}`} bad={negLev} />
+                {principal > 0 && <Row k="Debt yield" v={`${dy.toFixed(1)}%`} bad={dy < 8} />}
+                {principal > 0 && <Row k="Annual debt service" v={`−${usd(annualDs)}${prodDef && prodDef.ioM > 0 ? " (interest-only)" : ` (${prodDef?.amortYears ?? 30}-yr am)`}`} />}
+                {prodDef && (
+                  <Row
+                    k="Terms"
+                    v={`${prodDef.ioM ? `${Math.round(prodDef.ioM / 12)}-yr IO, ` : ""}${prodDef.amortYears}-yr amort, `
+                      + `${Math.round(prodDef.termM / 12)}-yr term, ${(prodDef.maxLTV * 100).toFixed(0)}% max LTV`}
+                  />
+                )}
+                <Row k="Year-1 cash flow" v={usd(cf)} bad={cf < 0} />
+                <Row k="Cash-on-cash" v={`${coc.toFixed(1)}%`} bad={coc < 0} />
+              </>
+            )}
+            <Row k="Equity to close" v={usd(equity)} strong bad={equity > game.cash} />
+          </div>
+          <div className="btn-row">
+            <button type="button" className="btn" onClick={() => setStage("structure")}>◂ Structure</button>
+            <button
+              className="btn btn-buy"
+              disabled={equity > game.cash}
+              onClick={() => {
+                const prod = principal <= 0 ? "cash" : product;
+                const l = principal <= 0 ? 1 : lev;
+                if (off) buyOff(bbl, prod as never, l, bid);
+                else useStore.getState().closeDeal(bbl, prod, l);
+              }}
+            >
+              {closeLabel ?? `Close at ${usd(offerPrice)}`} · eq {usd(equity)}
+            </button>
+            {!off && (
+              <button className="btn" onClick={() => useStore.getState().walkAway(bbl)}
+                title="Tear up the contract. The building goes back on the market and the seller keeps the deposit.">
+                Tear it up
+              </button>
+            )}
+          </div>
+          {equity > game.cash && <div className="hint">Short {usd(equity - game.cash)} — the line of credit is on Capital → Debt.</div>}
+        </div>
+      )}
+    </div>
   );
 }
 

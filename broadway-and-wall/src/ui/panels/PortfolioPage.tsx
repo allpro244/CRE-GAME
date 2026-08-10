@@ -660,7 +660,15 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
           <Row k="Sum of the individual marks" v={usd(q.sumOfParts)} />
           <Row k="What a bundle is indicated at" v={`${usd(q.indicative)} · ${(q.spreadPct * 100).toFixed(1)}%`}
             bad={q.spreadPct < -0.06} />
-          <Row k="On the market" v={`${age} month${age === 1 ? "" : "s"}`} bad={age > 6} />
+          <Row k="On the market" v={`${age} month${age === 1 ? "" : "s"} · stale at 9`} bad={age > 6} />
+          <Row k="Buyers who can fund it" v={String(q.depth)} bad={q.depth <= 1} />
+          <Row k="Ask vs indication"
+            v={live.ask > q.indicative
+              ? `${((live.ask / Math.max(1, q.indicative) - 1) * 100).toFixed(0)}% above · interest thins fast`
+              : live.ask < q.indicative * 0.98
+                ? `${((1 - live.ask / Math.max(1, q.indicative)) * 100).toFixed(0)}% under · priced to move`
+                : "at the indication"}
+            bad={live.ask > q.indicative * 1.05} />
           <Row k="Indications in hand" v={String(live.bids?.length ?? 0)} />
         </div>
         <div className="mini-list" style={{ marginTop: 8 }}>
@@ -711,9 +719,14 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
         ) : (
           <>
             <div className="hint" style={{ marginTop: 10 }}>
-              No indications yet. {age > 5
-                ? "Six months of silence on a portfolio is the market pricing the weakest building in it. Cut the number or take them out and sell them one at a time."
-                : "Institutional buyers underwrite a bundle for a quarter before they call."}
+              No indications yet.
+              {q.depth <= 0
+                ? " Nobody in this city can fund a book this small as a portfolio — pull it and sell the deeds one at a time."
+                : live.ask > q.indicative * 1.05
+                  ? " Your ask sits above what a bundle is indicated at. Cut the number or wait out a thin room — nine months and the process goes stale."
+                  : age > 5
+                    ? " Half a year of silence on a portfolio is the market pricing the weakest building in it. Cut the number or take them out and sell them one at a time."
+                    : " Institutional buyers underwrite a bundle for a quarter before they call. A live indication also lands on News and as a stop-everything card (unless you turned those off in Settings)."}
             </div>
             <div className="btn-row">
               <Slider min={Math.round(q.indicative * 0.8)} max={Math.round(q.sumOfParts * 1.05)} step={250_000}
@@ -748,7 +761,9 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
             <Row k="Buyers who can fund it" v={String(q.depth)} bad={q.depth <= 1} />
           </div>
           <div className="hint">
-            {q.spreadPct < -0.10
+            {q.depth <= 0
+              ? "No desk in this city will underwrite a portfolio this small. Sell them one at a time — a bundle sale with an empty room is nine months of silence, not a process."
+              : q.spreadPct < -0.10
               ? "That is a serious discount, and it is being driven by the buildings at the bottom of this list. Take them out and the blend improves — but those are the ones with no bid of their own, which is the entire reason to bundle."
               : q.spreadPct < -0.03
                 ? "A few points inside the parts, which is what a clean portfolio costs. You are buying a single closing and a clean exit with it."
@@ -762,7 +777,12 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
             it and passed, and that is a fact about your portfolio that does not go away.
           </div>
           <div className="btn-row">
-            <button className="btn btn-buy" onClick={() => { sellPortfolio(bundle, ask); clear(); }}>
+            <button
+              className="btn btn-buy"
+              disabled={q.depth <= 0}
+              title={q.depth <= 0 ? "No buyer can fund this book as a portfolio" : undefined}
+              onClick={() => { sellPortfolio(bundle, ask); clear(); }}
+            >
               Take it to market at {usd(ask)}
             </button>
           </div>

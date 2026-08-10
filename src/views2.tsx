@@ -25,7 +25,39 @@ export function Modal({ children, close, wide, variant = 'dialog' }: {
     </div>
   );
 }
-export function Hint({ text }: { text: string }) { return <span className="tooltip-hint" title={text}>ⓘ</span>; }
+export function Hint({ text }: { text: string }) {
+  return <span className="tooltip-hint" data-tip={text} tabIndex={0} aria-label={text}>ⓘ</span>;
+}
+
+/** Deal desk stages — one decision layer at a time. */
+export type DealStep = 'thesis' | 'structure' | 'commit';
+export function DealSteps({ step, setStep, lockStructure, lockCommit }: {
+  step: DealStep;
+  setStep: (s: DealStep) => void;
+  lockStructure?: boolean;
+  lockCommit?: boolean;
+}) {
+  const steps: { id: DealStep; label: string; n: string }[] = [
+    { id: 'thesis', label: 'Thesis', n: '1' },
+    { id: 'structure', label: 'Structure', n: '2' },
+    { id: 'commit', label: 'Commit', n: '3' },
+  ];
+  return (
+    <div className="deal-steps" role="tablist" aria-label="Deal desk steps">
+      {steps.map(s => {
+        const locked = (s.id === 'structure' && lockStructure) || (s.id === 'commit' && lockCommit);
+        return (
+          <button key={s.id} type="button" role="tab" aria-selected={step === s.id}
+            className={'deal-step' + (step === s.id ? ' active' : '') + (locked ? ' locked' : '')}
+            disabled={locked}
+            onClick={() => setStep(s.id)}>
+            <span className="deal-step-n">{s.n}</span>{s.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export function RentRollTable({ state, tenants, sf, retailOf }: {
   state: GameState; tenants: E.Tenant[]; sf: number;
@@ -316,6 +348,7 @@ function DealIndex({ state, listings, openDeal }: {
   state: GameState; listings: Listing[]; openDeal: (id: number) => void;
 }) {
   const [sort, setSort] = useState<{ by: string; asc: boolean }>({ by: 'cap', asc: false });
+  const [fullSheet, setFullSheet] = useState(false);
   const rate = state.econ.rate + E.CONFIG.acqSpread;
   const rows = listings.map(l => {
     const t = state.tiles[l.tileI];
@@ -344,15 +377,25 @@ function DealIndex({ state, listings, openDeal }: {
   );
   return (
     <div className="panel" style={{ padding: '6px 10px' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+        <button type="button" className={'btn btn-sm' + (fullSheet ? ' btn-amber' : '')} onClick={() => setFullSheet(f => !f)}>
+          {fullSheet ? 'Simple list' : 'Full sheet'}
+        </button>
+      </div>
       <table className="sc">
         <thead><tr>
-          <th style={{ textAlign: 'left' }}>Type</th><th style={{ textAlign: 'left' }}>Property</th><th style={{ textAlign: 'left' }}>Block</th>
+          <th style={{ textAlign: 'left' }}>Type</th><th style={{ textAlign: 'left' }}>Property</th>
+          <Th id="price" label="Price" />
+          <Th id="cap" label="Cap" />
+          <th>Leased</th>
+          {fullSheet && <><th style={{ textAlign: 'left' }}>Block</th>
           <th style={{ textAlign: 'left' }}>Zoned</th>
-          <Th id="price" label="Price" /><Th id="sf" label="SF" /><Th id="psf" label="$/SF" />
-          <th>Units · leased</th>
+          <Th id="sf" label="SF" /><Th id="psf" label="$/SF" />
+          <th>Units</th>
           <Th id="q" label="Quality" />
-          <Th id="cap" label="Cap" /><Th id="noi" label="NOI /yr" />
-          <th style={{ textAlign: 'left' }}>Notes</th>
+          <Th id="noi" label="NOI /yr" />
+          <th style={{ textAlign: 'left' }}>Notes</th></>}
+          {!fullSheet && <th style={{ textAlign: 'left' }}>Signal</th>}
         </tr></thead>
         <tbody>
           {rows.map(({ l, t, land, psf, cap, noi, q, note }) => (
@@ -370,16 +413,23 @@ function DealIndex({ state, listings, openDeal }: {
                 const stk = l.stockId !== undefined ? state.stock.find(sb => sb.id === l.stockId) : undefined;
                 return stk ? E.stockName(state, stk) : <span className="dim">—</span>;
               })()}</td>
+              <td className="num">{E.fmtMoney(l.price)}</td>
+              <td className={'num ' + (cap === null ? 'dim' : cap > rate ? 'pos' : 'neg')}>{cap === null ? '—' : cap.toFixed(2) + '%'}</td>
+              <td className="num dim">{land ? '—' : pct(l.occ ?? 0)}</td>
+              {!fullSheet && <td className="dim" style={{ textAlign: 'left', fontSize: 11.5 }}>
+                {l.hot ? 'Won\'t wait' : l.distressed ? 'Priced to move' : land ? note : (cap !== null && cap > rate ? 'Beats debt cost' : note)}
+                <span className="faint"> · {blockName(t)}</span>
+              </td>}
+              {fullSheet && <>
               <td className="num dim">{blockName(t)} <span className="faint" style={{ fontSize: 9 }}>▸ map</span></td>
               <td className="num dim">{E.zoneCode(t.zone)}</td>
-              <td className="num">{E.fmtMoney(l.price)}</td>
               <td className="num">{land ? `${l.acres} ac` : `${((l.sf ?? 0) / 1000).toFixed(0)}K`}</td>
               <td className="num">{psf !== null ? '$' + psf.toFixed(0) : '—'}</td>
-              <td className="num dim">{land ? '—' : `${l.units ?? 1} · ${pct(l.occ ?? 0)}`}</td>
+              <td className="num dim">{land ? '—' : `${l.units ?? 1}`}</td>
               <td className="num dim">{q !== null ? `${Math.round(q)} · ${E.QLABEL[E.qGrade(q)]}` : '—'}</td>
-              <td className={'num ' + (cap !== null && cap > rate ? 'pos' : 'dim')}>{cap !== null ? cap.toFixed(2) + '%' : '—'}</td>
               <td className={'num ' + (noi === null ? 'dim' : noi >= 0 ? 'pos' : 'neg')}>{noi !== null ? E.fmtMoney(noi) : '—'}</td>
               <td className="dim" style={{ textAlign: 'left', fontSize: 11 }}>{note}{l.feasDone ? ' · feas ✓' : ''}{l.declinedYou ? <span className="neg"> · won't deal</span> : ''} <span className="faint">to {E.monthName(l.expiresMonth)}</span></td>
+              </>}
             </tr>
           ))}
         </tbody>
@@ -400,6 +450,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
 }) {
   const t = state.tiles[listing.tileI];
   const [err, setErr] = useState<string | null>(null);
+  const [step, setStep] = useState<DealStep>('thesis');
   const [downPct, setDownPct] = useState(0.35);
   const [lenderPick, setLenderPick] = useState<string | null>(null);
   const [offerAmt, setOfferAmt] = useState(() => listing.kind === 'land' ? 0
@@ -408,6 +459,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
   const [omOk, setOmOk] = useState(false);   // green when the seller just said yes
   const [landFin, setLandFin] = useState(false);   // finance the dirt with a land loan
   const [useJV, setUseJV] = useState(false);
+  useEffect(() => { setStep('thesis'); setErr(null); }, [listing.id]);
   const firstConstr = CONSTR0(listing, state);
   const [dev, setDev] = useState<DevChoice>(() => ({
     type: firstConstr.type, sf: Math.min(10000, E.maxBuildableSF(state, listing, firstConstr.type) || 10000),
@@ -474,6 +526,8 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
           {((listing.sf ?? 0) / 1000).toFixed(0)}K SF on {listing.acres} acres · {listing.units} unit{(listing.units ?? 1) > 1 ? 's' : ''} · {E.QLABEL[E.qGrade(listing.quality ?? 75)]}-grade {E.constrSpec(sketch).label.toLowerCase()} · built {2026 - (listing.age ?? 10)}
           {listing.distressed && <span className="amber"> · distressed — priced to move</span>}
         </div>
+        <DealSteps step={step} setStep={setStep} lockStructure={!canBuy} lockCommit={!canBuy} />
+        {step === 'thesis' && <>
         <Portrait b={{ ...sketch, age: listing.age, occ: listing.occ, month: state.month, seed: mapSeed(state.seed, listing.tileI),
           siteCells: Math.max(1, Math.round((listing.acres ?? E.PARCEL_AC) / E.PARCEL_AC)), tenants: signTenants(listing.tenants) }} w={460} h={200} />
         {listing.type === 'mixed' && (() => {
@@ -571,7 +625,15 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
             </div>
           ) : <RentRollTable state={state} tenants={listing.tenants ?? []} sf={listing.sf!} retailOf={listing.type === 'retail' ? { tileI: listing.tileI, quality: listing.quality ?? 75 } : undefined} />}
         </>)}
-        {canBuy && (<>
+        {err && <div className="alert-strip red" style={{ marginBottom: 10 }}>{err}</div>}
+        <div className="deal-step-nav">
+          <button className="btn" onClick={close}>{canBuy ? 'Pass' : 'Step away'}</button>
+          {canBuy
+            ? <button className="btn btn-amber" onClick={() => setStep('structure')}>Next: Structure ▸</button>
+            : <span className="faint" style={{ fontSize: 12 }}>Agree a price (or buy at ask) before structuring debt.</span>}
+        </div>
+        </>}
+        {step === 'structure' && canBuy && (<>
           <label className="f" style={{ marginTop: 10 }}>Down payment — {pct(dpEff)} ({E.fmtMoney(effPrice * dpEff)}) <span className="faint">at {listing.agreed ? `the ${E.fmtMoney(effPrice)} agreed price` : effPrice !== txPrice ? `your ${E.fmtMoney(effPrice)} offer — buying now still pays the ${E.fmtMoney(txPrice)} ask` : `the ${E.fmtMoney(txPrice)} ask`}</span>
             <input type="range" min={Math.ceil((1 - ltvMax) * 100)} max={100} value={Math.round(dpEff * 100)}
               onChange={e => setDownPct(Number(e.target.value) / 100)} />
@@ -623,15 +685,36 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
               <span className={'num ' + (state.cash >= (useJV && jvOk ? Math.round(effPrice * dpEff * 0.3) + 15000 : cashNeeded) ? '' : 'neg')}>{E.fmtMoney(useJV && jvOk ? Math.round(effPrice * dpEff * 0.3) + 15000 : cashNeeded)}</span></div>
           </div>
           {(listing.type === 'retail' || listing.type === 'industrial') && <div className="faint" style={{ fontSize: 10.5, margin: '-4px 0 8px' }}>NNN leases: tenants reimburse taxes, insurance, and CAM on their occupied share. Vacancy eats those costs raw.</div>}
+          <div className="deal-step-nav">
+            <button className="btn" onClick={() => setStep('thesis')}>◂ Thesis</button>
+            <button className="btn btn-amber" disabled={dpEff < 1 && !selQuote} onClick={() => setStep('commit')}>Next: Commit ▸</button>
+          </div>
         </>)}
-        {err && <div className="alert-strip red" style={{ marginBottom: 10 }}>{err}</div>}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button className="btn" onClick={close}>{canBuy ? 'Pass' : 'Step away'}</button>
-          {canBuy && <button className="btn btn-amber" disabled={dpEff < 1 && !selQuote} onClick={() => {
-            const r = E.buyBuilding(state, listing.id, dpEff, useJV && jvOk, 'std', dpEff < 1 ? selQuote?.lenderId : undefined);
-            if (r.err) setErr(r.err); else { setState(r.s); close(); }
-          }}>Buy at {E.fmtMoney(txPrice)}{useJV && jvOk ? ' (JV)' : ''}{!listing.agreed && effPrice !== txPrice ? ' (ask)' : ''}</button>}
-        </div>
+        {step === 'commit' && canBuy && (<>
+          <div className="memo" style={{ borderLeftColor: 'var(--amber)' }}>
+            <div className="eyebrow" style={{ fontSize: 9, marginBottom: 6 }}>Closing sheet</div>
+            <div className="memo-row"><span className="lbl">Purchase price</span><b className="num">{E.fmtMoney(txPrice)}</b></div>
+            <div className="memo-row"><span className="lbl">Equity / down</span><span className="num">{pct(dpEff)} · {E.fmtMoney(effPrice * dpEff)}</span></div>
+            <div className="memo-row"><span className="lbl">Debt</span><span className="num">{dpEff >= 1 ? 'All cash' : `${selQuote?.lenderId ? (E.LENDERS.find(x => x.id === selQuote.lenderId)?.short ?? 'Lender') : '—'} · ${E.fmtMoney(loan)}`}</span></div>
+            <div className="memo-row"><span className="lbl">Going-in cap</span><span className={'num ' + (capEff > rate ? 'pos' : 'neg')}>{capEff.toFixed(2)}%</span></div>
+            <div className="memo-row"><span className="lbl">DSCR</span><span className={'num ' + (dscr === null ? '' : dscr >= (selQuote?.minDSCR ?? 1.25) ? 'pos' : 'neg')}>{dscr === null ? '—' : dscr.toFixed(2) + '×'}</span></div>
+            {useJV && jvOk && <div className="memo-row"><span className="lbl">JV</span><span className="num">LP wires 70% of equity</span></div>}
+            <div className="memo-row total"><span className="lbl">Cash at closing</span>
+              <span className={'num ' + (state.cash >= (useJV && jvOk ? Math.round(effPrice * dpEff * 0.3) + 15000 : cashNeeded) ? '' : 'neg')}>{E.fmtMoney(useJV && jvOk ? Math.round(effPrice * dpEff * 0.3) + 15000 : cashNeeded)}</span></div>
+          </div>
+          {dscr !== null && dscr < (selQuote?.minDSCR ?? 1.25) && dpEff < 1 && (
+            <div className="alert-strip red">Coverage is thin for this desk — they may still fund, but a rent dip bites first.</div>
+          )}
+          {err && <div className="alert-strip red" style={{ marginBottom: 10 }}>{err}</div>}
+          <div className="deal-step-nav">
+            <button className="btn" onClick={() => setStep('structure')}>◂ Structure</button>
+            <button className="btn" onClick={close}>Pass</button>
+            <button className="btn btn-amber" disabled={dpEff < 1 && !selQuote} onClick={() => {
+              const r = E.buyBuilding(state, listing.id, dpEff, useJV && jvOk, 'std', dpEff < 1 ? selQuote?.lenderId : undefined);
+              if (r.err) setErr(r.err); else { setState(r.s); close(); }
+            }}>Buy at {E.fmtMoney(txPrice)}{useJV && jvOk ? ' (JV)' : ''}{!listing.agreed && effPrice !== txPrice ? ' (ask)' : ''}</button>
+          </div>
+        </>)}
       </Modal>
     );
   }
@@ -695,6 +778,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
         </div>
       )}
       {listing.agreed && <div className="alert-strip" style={{ marginBottom: 10, borderColor: 'var(--green)', color: 'var(--green)' }}>✓ SELLER AGREED at {E.fmtMoney(listing.price)} — close before {E.monthName(listing.expiresMonth)} or they re-list.</div>}
+      {isBuildFlow && <DealSteps step={step} setStep={setStep} />}
       {!isBuildFlow && (() => {
         const uc = listing.underContract;
         const deposit = Math.max(10_000, Math.round(listing.price * 0.03 / 1000) * 1000);
@@ -757,15 +841,27 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
         );
       })()}
       {isBuildFlow && <>
-      {isBuildFlow && bMax < E.MIN_BUILD_SF && (
+      {step === 'thesis' && <>
+      {bMax < E.MIN_BUILD_SF && (
         <div className="alert-strip red" style={{ marginBottom: 10 }}>
           Zoned density at {E.zoneCode(t.zone)} won't carry any {E.PLABEL[dev.type].toLowerCase()} building on this site — the paper tops out at {(bMax / 1000).toFixed(1)}K SF and nothing under {(E.MIN_BUILD_SF / 1000).toFixed(1)}K SF passes code. Assemble more lots, pick another product, or upzone the block.
         </div>
       )}
-      {isBuildFlow && <div className="dim" style={{ fontSize: 11.5, marginBottom: 10 }}>
+      <div className="dim" style={{ fontSize: 11.5, marginBottom: 10 }}>
         Zoned <b style={{ color: 'var(--ink)' }}>{E.zoneCode(t.zone)}</b> ({E.ZONE_LABEL[t.zone.use].toLowerCase()}, {E.zoneTierMult(t.zone.tier)}× density) — permits {E.ZONE_ALLOWS[t.zone.use].map(ty => E.PLABEL[ty].toLowerCase()).join(', ')}.
         At that density a {E.PLABEL[dev.type].toLowerCase()} building here tops out at <b className="num" style={{ color: 'var(--ink)' }}>{(E.maxBuildableSF(state, listing, dev.type) / 1000).toFixed(0)}K SF</b>. Your tier caps projects at {E.CONFIG.tiers[state.tier].maxSF / 1000}K SF.
-      </div>}
+      </div>
+      <div className="memo">
+        <div className="memo-row"><span className="lbl">Land basis</span><span className="num">{E.fmtMoney(listing.price)}</span></div>
+        <div className="memo-row"><span className="lbl">Site</span><span className="num">{listing.acres} acres · desirability {t.D.toFixed(0)}</span></div>
+        <div className="memo-row"><span className="lbl">Demand fit</span><span className="num">Ind {suitTxt('industrial')} · Retail {suitTxt('retail')} · Office {suitTxt('office')} · MF {suitTxt('multifamily')}</span></div>
+      </div>
+      <div className="deal-step-nav">
+        <button className="btn" onClick={close}>Pass</button>
+        <button className="btn btn-amber" onClick={() => setStep('structure')}>Next: Structure ▸</button>
+      </div>
+      </>}
+      {step === 'structure' && <>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
         <label className="f">Product type
           <select value={dev.type} onChange={e => setType(e.target.value as PType)}>
@@ -935,8 +1031,24 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
         </div>
       )}
       {vErr && <div className="faint" style={{ fontSize: 11.5, color: 'var(--amber)', marginBottom: 8 }}>◈ {vErr}</div>}
+      <div className="deal-step-nav">
+        <button className="btn" onClick={() => setStep('thesis')}>◂ Thesis</button>
+        <button className="btn btn-amber" disabled={!!vErr} onClick={() => setStep('commit')}>Next: Commit ▸</button>
+      </div>
+      </>}
+      {step === 'commit' && <>
+      <div className="memo" style={{ borderLeftColor: 'var(--amber)' }}>
+        <div className="eyebrow" style={{ fontSize: 9, marginBottom: 6 }}>Groundbreaking sheet</div>
+        <div className="memo-row"><span className="lbl">Program</span><b className="num">{E.PLABEL[dev.type]} · {(dev.sf / 1000).toFixed(0)}K SF · {spec.label}</b></div>
+        <div className="memo-row"><span className="lbl">Total cost</span><span className="num">{E.fmtMoney(bd.total + (bd as any).designFee)}</span></div>
+        <div className="memo-row"><span className="lbl">Your equity</span><span className="num">{E.fmtMoney(equity + (bd as any).designFee)}</span></div>
+        {pf && <div className="memo-row"><span className="lbl">Base-case profit</span>
+          <span className={'num ' + (pf.profit > 0 ? 'pos' : 'neg')}>{E.fmtMoney(pf.profit)} ({pf.spread >= 0 ? '+' : ''}{pf.spread.toFixed(1)} pt)</span></div>}
+        {pf && pf.spread < 1 && <div className="alert-strip red" style={{ marginTop: 8 }}>Thin spread — lease-up and construction risk for a margin the market could erase.</div>}
+      </div>
       {err && <div className="alert-strip red" style={{ marginBottom: 10 }}>{err}</div>}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+      <div className="deal-step-nav">
+        <button className="btn" onClick={() => setStep('structure')}>◂ Structure</button>
         <button className="btn" onClick={close}>Pass</button>
         {E.canJV(state, equity).ok && (
           <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--dim)' }}>
@@ -949,6 +1061,7 @@ export function DealModal({ state, listing, setState, close, variant = 'dialog',
           if (r.err) setErr(r.err); else { setState(r.s); close(); }
         }}>Break ground{useJV && E.canJV(state, equity).ok ? ' (JV)' : ''}</button>
       </div>
+      </>}
       </>}
     </Modal>
   );
@@ -1094,6 +1207,7 @@ export function PortfolioView2({ state, setState, onSell, onRefi, onLOI, goDeals
   openDeal: (id: number) => void; onSold: (pm: E.PostMortem) => void; onShowOnMap?: (id: number) => void;
   onShowTile?: (tileI: number) => void;
 }) {
+  const [deskErr, setDeskErr] = useState<string | null>(null);
   if (state.assets.length === 0 && state.land.length === 0) {
     return <div className="panel dim" style={{ fontSize: 13.5, lineHeight: 1.6 }}>
       No assets yet. An empty balance sheet is just potential energy — <button className="btn btn-sm btn-amber" onClick={goDeals}>open the marketplace</button>
@@ -1101,6 +1215,7 @@ export function PortfolioView2({ state, setState, onSell, onRefi, onLOI, goDeals
   }
   return (
     <div>
+      {deskErr && <div className="alert-strip red"><span>{deskErr}</span><button className="btn btn-sm" onClick={() => setDeskErr(null)}>✕</button></div>}
       <div className="panel" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 240 }}>
           <h3 style={{ marginBottom: 2 }}>Lease negotiations</h3>
@@ -1136,7 +1251,8 @@ export function PortfolioView2({ state, setState, onSell, onRefi, onLOI, goDeals
                       : <button className="btn btn-sm" title="Land sells slowly — list it and field scattered offers as they come" onClick={() => setState(E.listLandForSale(state, h.id).s)}>List for sale</button>}
                     <button className="btn btn-sm btn-amber" onClick={() => {
                       const r = E.developLand(state, h.id);
-                      if (r.err) { alert(r.err); return; }
+                      if (r.err) { setDeskErr(r.err); return; }
+                      setDeskErr(null);
                       setState(r.s);
                       if (r.listingId) openDeal(r.listingId);
                     }}>Build ▸</button>
@@ -1200,6 +1316,7 @@ function avgRentPSF(state: GameState, a: Asset): number | null {
 // The portfolio as a ledger: sortable one-line-per-asset, rows fly to the map.
 export function PortfolioLedger({ state, onShowOnMap }: { state: GameState; onShowOnMap?: (id: number) => void }) {
   const [sort, setSort] = useState<{ by: string; asc: boolean }>({ by: 'value', asc: false });
+  const [fullSheet, setFullSheet] = useState(false);
   const rows = state.assets.map(a => {
     const uc = a.mode === 'construction';
     const val = E.assetValue(state, a);
@@ -1221,10 +1338,16 @@ export function PortfolioLedger({ state, onShowOnMap }: { state: GameState; onSh
   const tot = rows.reduce((acc, r) => ({ val: acc.val + r.val, debt: acc.debt + r.debt, eq: acc.eq + r.eq, noi: acc.noi + r.noi, cf: acc.cf + r.cf }), { val: 0, debt: 0, eq: 0, noi: 0, cf: 0 });
   return (
     <div className="panel" style={{ marginBottom: 12, padding: '8px 12px' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+        <button type="button" className={'btn btn-sm' + (fullSheet ? ' btn-amber' : '')} onClick={() => setFullSheet(f => !f)}>
+          {fullSheet ? 'Simple list' : 'Full sheet'}
+        </button>
+      </div>
       <table className="sc">
         <thead><tr><th style={{ textAlign: 'left' }}>Asset</th><th style={{ textAlign: 'left' }}>Type</th>
-          <Th id="occ" label="Occ" /><Th id="value" label="Value" /><Th id="debt" label="Debt" /><Th id="eq" label="Equity" />
-          <Th id="noi" label="NOI /mo" /><Th id="cf" label="CF /mo" /><Th id="rent" label="Avg rent PSF" /></tr></thead>
+          <Th id="occ" label="Occ" /><Th id="value" label="Value" /><Th id="cf" label="CF /mo" />
+          {fullSheet && <><Th id="debt" label="Debt" /><Th id="eq" label="Equity" />
+          <Th id="noi" label="NOI /mo" /><Th id="rent" label="Avg rent PSF" /></>}</tr></thead>
         <tbody>
           {rows.map(({ a, uc, val: v, debt, eq, noi, cf, rent }) => (
             <tr key={a.id} style={{ cursor: onShowOnMap ? 'pointer' : undefined }} onClick={() => onShowOnMap?.(a.id)}
@@ -1234,18 +1357,19 @@ export function PortfolioLedger({ state, onShowOnMap }: { state: GameState; onSh
               <td className="dim">{E.PLABEL[a.type]}</td>
               <td className="num">{uc ? '—' : pct(a.occ)}</td>
               <td className="num">{E.fmtMoney(v)}</td>
-              <td className="num">{E.fmtMoney(debt)}</td>
+              <td className={'num ' + (cf >= 0 ? 'pos' : 'neg')}>{uc ? '—' : E.fmtMoney(cf)}</td>
+              {fullSheet && <><td className="num">{E.fmtMoney(debt)}</td>
               <td className={'num ' + (eq < 0 ? 'neg' : '')}>{E.fmtMoney(eq)}</td>
               <td className="num">{uc ? '—' : E.fmtMoney(noi)}</td>
-              <td className={'num ' + (cf >= 0 ? 'pos' : 'neg')}>{uc ? '—' : E.fmtMoney(cf)}</td>
-              <td className={'num ' + (rent === null ? 'dim' : '')}>{rent === null ? '—' : '$' + rent.toFixed(2)}</td>
+              <td className={'num ' + (rent === null ? 'dim' : '')}>{rent === null ? '—' : '$' + rent.toFixed(2)}</td></>}
             </tr>
           ))}
           <tr style={{ borderTop: '1px solid var(--line)', fontWeight: 700 }}>
             <td>Portfolio</td><td></td><td></td>
-            <td className="num">{E.fmtMoney(tot.val)}</td><td className="num">{E.fmtMoney(tot.debt)}</td>
-            <td className="num">{E.fmtMoney(tot.eq)}</td><td className="num">{E.fmtMoney(tot.noi)}</td>
-            <td className={'num ' + (tot.cf >= 0 ? 'pos' : 'neg')}>{E.fmtMoney(tot.cf)}</td><td></td>
+            <td className="num">{E.fmtMoney(tot.val)}</td>
+            <td className={'num ' + (tot.cf >= 0 ? 'pos' : 'neg')}>{E.fmtMoney(tot.cf)}</td>
+            {fullSheet && <><td className="num">{E.fmtMoney(tot.debt)}</td>
+            <td className="num">{E.fmtMoney(tot.eq)}</td><td className="num">{E.fmtMoney(tot.noi)}</td><td></td></>}
           </tr>
         </tbody>
       </table>

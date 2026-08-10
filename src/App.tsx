@@ -57,7 +57,10 @@ async function storageGet(key: string): Promise<string | null> {
   try { return localStorage.getItem(key); } catch { return null; }
 }
 
-type TabId = 'dashboard' | 'map' | 'deals' | 'portfolio' | 'books' | 'debt' | 'economy' | 'registry';
+/** Primary hubs — the city is the desk; secondary ledgers hang off Capital. */
+type HubId = 'map' | 'desk' | 'capital';
+type DeskPane = 'marketplace' | 'briefing';
+type CapitalPane = 'portfolio' | 'debt' | 'books' | 'economy' | 'registry';
 
 // The title card: a procedural dusk skyline in the game's own palette — towers,
 // a crane still working, the river in front. Deterministic; no assets.
@@ -164,7 +167,10 @@ export default function App() {
 function Game({ state, setState, toMenu }: {
   state: GameState; setState: (s: GameState) => void; toMenu: () => void;
 }) {
-  const [tab, setTab] = useState<TabId>('dashboard');
+  // Map is the stage. Desk = marketplace + briefing. Capital = ledgers.
+  const [hub, setHub] = useState<HubId>('map');
+  const [deskPane, setDeskPane] = useState<DeskPane>('marketplace');
+  const [capitalPane, setCapitalPane] = useState<CapitalPane>('portfolio');
   const [selTile, setSelTile] = useState<number | null>(null);
   const [stockCardId, setStockCardId] = useState<number | null>(null);
   const [dealId, setDealId] = useState<number | null>(null);
@@ -176,6 +182,9 @@ function Game({ state, setState, toMenu }: {
   const [firmShort, setFirmShort] = useState<string | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [advanceOpen, setAdvanceOpen] = useState(false);
+  const [monthTick, setMonthTick] = useState(false);
   // outcome of the decision you just made: the news lines the resolution generated,
   // shown in your face instead of buried in the feed
   const [evtResult, setEvtResult] = useState<{ kind: string; text: string }[] | null>(null);
@@ -185,11 +194,16 @@ function Game({ state, setState, toMenu }: {
   // live ghost of the building being configured in the dev memo, shown on the map
   const [devGhost, setDevGhost] = useState<{ tileI: number; cells?: number[]; parcel?: { px: number; py: number; pw: number; ph: number }; type: E.PType; construction: string; sf: number } | null>(null);
   const [assetId, setAssetId] = useState<number | null>(null);
-  const flyTo = (tileI: number) => { setFocusTile(tileI); setTab('map'); setTimeout(() => setFocusTile(null), 60); };
+  const goMap = () => setHub('map');
+  const goDesk = (pane: DeskPane = 'marketplace') => { setDeskPane(pane); setHub('desk'); };
+  const goCapital = (pane: CapitalPane = 'portfolio') => { setCapitalPane(pane); setHub('capital'); };
+  const flyTo = (tileI: number) => { setFocusTile(tileI); setHub('map'); setTimeout(() => setFocusTile(null), 60); };
   const seenLOIs = useRef<Set<number>>(new Set());
+  const moreRef = useRef<HTMLDivElement | null>(null);
+  const advanceRef = useRef<HTMLDivElement | null>(null);
 
   // Detail opened from the map rides in as a slide-over so the city stays put behind it.
-  const detailVariant = tab === 'map' ? 'drawer' : 'dialog';
+  const detailVariant = hub === 'map' ? 'drawer' : 'dialog';
   // The drawer starts below the top bar + nav; that chrome wraps, so measure it.
   const chromeRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -201,6 +215,21 @@ function Game({ state, setState, toMenu }: {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+  // Close overflow menus on outside click / Escape
+  useEffect(() => {
+    if (!moreOpen && !advanceOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (moreOpen && moreRef.current && !moreRef.current.contains(t)) setMoreOpen(false);
+      if (advanceOpen && advanceRef.current && !advanceRef.current.contains(t)) setAdvanceOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setMoreOpen(false); setAdvanceOpen(false); }
+    };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey); };
+  }, [moreOpen, advanceOpen]);
   // From an index (deal board, dashboard), fly to the building first — then open it on the map.
   const openDealOnMap = useCallback((id: number, tileI?: number) => {
     const t = tileI ?? state.listings.find(l => l.id === id)?.tileI;
@@ -256,8 +285,13 @@ function Game({ state, setState, toMenu }: {
 
   // the clock stops when a tenant shows interest — a 2-month LOI must never expire
   // unseen inside a +6mo skip
+  const pulseMonth = () => {
+    setMonthTick(true);
+    window.setTimeout(() => setMonthTick(false), 560);
+  };
   const advance = useCallback((n: number) => {
     SFX.tick();
+    pulseMonth();
     let s = state;
     const lois0 = new Set(s.lois.map(l => l.id));
     for (let i = 0; i < n; i++) {
@@ -266,11 +300,12 @@ function Game({ state, setState, toMenu }: {
       if (!s.autoLease && s.lois.some(l => !lois0.has(l.id))) break;
     }
     setState(s);
-  }, [state, setState]);
+  }, [state, setState]); // eslint-disable-line
 
   // run the clock until the game needs you: an event, a proposal, or an offer
   const advanceUntil = useCallback(() => {
     SFX.tick();
+    pulseMonth();
     let s = state;
     const lois0 = new Set(s.lois.map(l => l.id));
     const offers0 = new Set(s.saleOffers.map(o => o.id));
@@ -281,7 +316,7 @@ function Game({ state, setState, toMenu }: {
       if (s.saleOffers.some(o => !offers0.has(o.id))) break;
     }
     setState(s);
-  }, [state, setState]);
+  }, [state, setState]); // eslint-disable-line
 
   useEffect(() => {
     if (state.month > 0 && state.month % 3 === 0) storageSet('groundwork:auto', E.serialize(state));
@@ -326,8 +361,15 @@ function Game({ state, setState, toMenu }: {
   };
   const projCount = state.assets.filter(a => a.mode === 'construction').length;
 
+  const advanceBlocked = state.pending.length > 0 || state.gameOver;
+  const blockerLabel = state.gameOver ? 'Campaign over'
+    : state.pending[0]?.type === 'constrEvent' ? 'Construction decision waiting'
+    : state.pending[0]?.type === 'assetEvent' ? 'Asset event waiting'
+    : state.lois.length > 0 ? 'Lease proposal waiting'
+    : null;
+
   return (
-    <div className="app">
+    <div className={'app' + (monthTick ? ' month-tick' : '')}>
       <div ref={chromeRef} className="chrome">
       <div className="topbar">
         <div className="brand"><b>GROUNDWORK</b><span>{state.city === 'island' ? 'New Amsterdam' : 'Meridian City'}</span></div>
@@ -337,49 +379,109 @@ function Game({ state, setState, toMenu }: {
           <Spark data={state.nwHistory.slice(-12).map(x => x.cash)} color="auto" /></div>
         <div className="tb-stat"><span className="eyebrow">Net worth</span><RollNum value={nw} fmt={v => E.fmtMoney(Math.round(v))} className="v num" />
           <Spark data={state.nwHistory.slice(-12).map(x => x.nw)} color="auto" /></div>
-        <div className="tb-stat"><span className="eyebrow">CF /mo</span><span className={'v num ' + (state.lastMonthCF >= 0 ? 'pos' : 'neg')}>{E.fmtMoney(state.lastMonthCF)}</span></div>
-        <div className="tb-stat"><span className="eyebrow">Prime rate <Hint text="Base rate + 3.0%. Your actual loan spreads price off the base rate; prime is the pulse you watch." /></span><span className="v num">{E.primeRate(state).toFixed(2)}%</span></div>
-        <div className="tb-stat"><span className="eyebrow">DSCR</span><span className={'v num ' + (dscr !== null && dscr < 1.2 ? 'neg' : '')}>{dscr === null ? '—' : dscr.toFixed(2) + '×'}</span></div>
-        {state.exchange && <div className="tb-stat"><span className="eyebrow">1031 clock</span><span className="v num" style={{ color: 'var(--amber)' }}>{state.exchange.deadlineM - state.month} mo</span></div>}
         {state.sandbox && <div className="phase-chip" style={{ background: '#241d10', color: 'var(--amber)', borderColor: 'var(--amber-dim)' }}>sandbox</div>}
-        <div className={'phase-chip phase-' + state.econ.phase}>{state.econ.phase}</div>
+        <div className={'phase-chip phase-' + state.econ.phase} title={`CF ${E.fmtMoney(state.lastMonthCF)}/mo · Prime ${E.primeRate(state).toFixed(2)}% · DSCR ${dscr === null ? '—' : dscr.toFixed(2) + '×'}${state.exchange ? ` · 1031 ${state.exchange.deadlineM - state.month} mo` : ''}`}>{state.econ.phase}</div>
+        {state.exchange && <div className="tb-stat tb-urgent"><span className="eyebrow">1031</span><span className="v num" style={{ color: 'var(--amber)' }}>{state.exchange.deadlineM - state.month} mo</span></div>}
         <div style={{ flex: 1 }} />
-        <button className="btn btn-amber" onClick={() => advance(1)} disabled={state.pending.length > 0 || state.gameOver}>Advance month ▸</button>
-        <button className="btn" onClick={() => advance(6)} disabled={state.pending.length > 0 || state.gameOver}>+6 mo ▸▸</button>
-        <button className="btn" title="Advance until an event, proposal, or offer needs your attention (max 12 months)" onClick={advanceUntil} disabled={state.pending.length > 0 || state.gameOver}>Until event ⏭</button>
-        <button className="btn btn-ghost" title="The game loop, in one page" onClick={() => setHowTo(true)}>How to play</button>
-        <button className="btn btn-ghost" onClick={manualSave}>{saved ? 'Saved ✓' : 'Save'}</button>
-        <button className="btn btn-ghost" onClick={() => setSaveOpen(true)}>Slots</button>
-        <button className="btn btn-ghost" title={mute ? 'Sound is off' : 'Sound is on'} onClick={() => setMute(toggleMute())}>{mute ? '🔇' : '🔊'}</button>
-        <button className="btn btn-ghost" onClick={async () => { await storageSet('groundwork:auto', E.serialize(state)); toMenu(); }}>Menu</button>
+        <div className="advance-split" ref={advanceRef}>
+          <button className="btn btn-amber" onClick={() => advance(1)} disabled={advanceBlocked}
+            title={advanceBlocked && blockerLabel ? blockerLabel : 'Advance one month (Space)'}>Advance month ▸</button>
+          <button className="btn btn-amber advance-caret" onClick={() => setAdvanceOpen(o => !o)} disabled={advanceBlocked}
+            aria-label="More advance options" aria-expanded={advanceOpen}>▾</button>
+          {advanceOpen && (
+            <div className="menu-pop">
+              <button type="button" onClick={() => { setAdvanceOpen(false); advance(6); }}>+6 months</button>
+              <button type="button" title="Advance until an event, proposal, or offer needs you (max 12 months)"
+                onClick={() => { setAdvanceOpen(false); advanceUntil(); }}>Until event</button>
+            </div>
+          )}
+        </div>
+        <div className="more-wrap" ref={moreRef}>
+          <button className="btn btn-ghost" onClick={() => setMoreOpen(o => !o)} aria-expanded={moreOpen} title="Status & settings">More ▾</button>
+          {moreOpen && (
+            <div className="menu-pop menu-pop-right">
+              <div className="menu-pop-stats">
+                <div><span className="eyebrow">CF /mo</span><span className={'num ' + (state.lastMonthCF >= 0 ? 'pos' : 'neg')}>{E.fmtMoney(state.lastMonthCF)}</span></div>
+                <div><span className="eyebrow">Prime <Hint text="Base rate + 3.0%. Your actual loan spreads price off the base rate; prime is the pulse you watch." /></span><span className="num">{E.primeRate(state).toFixed(2)}%</span></div>
+                <div><span className="eyebrow">DSCR</span><span className={'num ' + (dscr !== null && dscr < 1.2 ? 'neg' : '')}>{dscr === null ? '—' : dscr.toFixed(2) + '×'}</span></div>
+              </div>
+              <button type="button" onClick={() => { setMoreOpen(false); setHowTo(true); }}>How to play</button>
+              <button type="button" onClick={() => { setMoreOpen(false); manualSave(); }}>{saved ? 'Saved ✓' : 'Save'}</button>
+              <button type="button" onClick={() => { setMoreOpen(false); setSaveOpen(true); }}>Slots</button>
+              <button type="button" onClick={() => setMute(toggleMute())}>{mute ? 'Sound: off' : 'Sound: on'}</button>
+              <button type="button" onClick={async () => { setMoreOpen(false); await storageSet('groundwork:auto', E.serialize(state)); toMenu(); }}>Main menu</button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="nav">
-        {(['dashboard', 'map', 'deals', 'portfolio', 'books', 'debt', 'economy', 'registry'] as TabId[]).map(t => (
-          <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
-            {t === 'dashboard' ? 'Dashboard' : t === 'map' ? 'City map' : t === 'deals' ? 'Marketplace' : t === 'portfolio' ? 'Portfolio' : t === 'books' ? 'Books' : t === 'debt' ? 'Debt' : t === 'economy' ? 'Economy' : 'Registry'}
-            {t === 'deals' && state.listings.length > 0 && <span className="badge" style={{ background: 'var(--panel3)', color: 'var(--dim)' }}>{state.listings.length}</span>}
-            {t === 'portfolio' && (projCount > 0 || state.lois.length > 0) && <span className="badge">{state.lois.length > 0 ? '✉' + state.lois.length : projCount}</span>}
-          </button>
-        ))}
+        <button className={hub === 'map' ? 'active' : ''} onClick={goMap}>Map</button>
+        <button className={hub === 'desk' ? 'active' : ''} onClick={() => goDesk(deskPane)}>
+          Desk
+          {state.listings.length > 0 && <span className="badge" style={{ background: 'var(--panel3)', color: 'var(--dim)' }}>{state.listings.length}</span>}
+        </button>
+        <button className={hub === 'capital' ? 'active' : ''} onClick={() => goCapital(capitalPane)}>
+          Capital
+          {(projCount > 0 || state.lois.length > 0) && <span className="badge">{state.lois.length > 0 ? '✉' + state.lois.length : projCount}</span>}
+        </button>
+        {hub === 'desk' && (
+          <div className="nav-sub">
+            <button className={deskPane === 'marketplace' ? 'active' : ''} onClick={() => setDeskPane('marketplace')}>Marketplace</button>
+            <button className={deskPane === 'briefing' ? 'active' : ''} onClick={() => setDeskPane('briefing')}>Briefing</button>
+          </div>
+        )}
+        {hub === 'capital' && (
+          <div className="nav-sub">
+            {([
+              ['portfolio', 'Portfolio'],
+              ['debt', 'Debt'],
+              ['books', 'Books'],
+              ['economy', 'Economy'],
+              ['registry', 'Registry'],
+            ] as [CapitalPane, string][]).map(([id, label]) => (
+              <button key={id} className={capitalPane === id ? 'active' : ''} onClick={() => setCapitalPane(id)}>{label}</button>
+            ))}
+          </div>
+        )}
       </div>
       </div>
 
-      <div className="main">
+      {advanceBlocked && blockerLabel && !state.gameOver && (
+        <div className="blocker-focus" role="status">
+          <span>⏱ Clock paused — {blockerLabel}. Resolve it before the month can move.</span>
+        </div>
+      )}
+
+      <div className={'main' + (hub === 'map' ? ' main-map' : '')}>
         {state.forcedSaleNotice && <div className="alert-strip red"><span>⚠ {state.forcedSaleNotice}</span></div>}
-        {tab === 'dashboard' && <Dashboard state={state} goDeals={() => setTab('deals')} openLOI={id => setLoiId(id)} openFirm={s => setFirmShort(s)} flyTo={flyTo} />}
-        {tab === 'map' && <MapView state={state} setState={setState} focusTile={focusTile} selTile={selTile} setSelTile={setSelTile}
-          advance={advance} advanceUntil={advanceUntil} devGhost={devGhost}
-          openDeal={id => { setStockCardId(null); setAssetId(null); setDealId(id); }}
-          openStock={id => { setAssetId(null); setStockCardId(id); }}
-          openAsset={id => { setStockCardId(null); setAssetId(id); }} />}
-        {tab === 'deals' && <DealsView2 state={state} setState={setState} openDeal={openDealOnMap} />}
-        {tab === 'portfolio' && <PortfolioView2 state={state} setState={setState} onSell={setSellId} onRefi={setRefiId} onLOI={setLoiId} goDeals={() => setTab('deals')}
+        {hub === 'map' && <>
+          <MapView state={state} setState={setState} focusTile={focusTile} selTile={selTile} setSelTile={setSelTile}
+            advance={advance} advanceUntil={advanceUntil} devGhost={devGhost}
+            openDeal={id => { setStockCardId(null); setAssetId(null); setDealId(id); }}
+            openStock={id => { setAssetId(null); setStockCardId(id); }}
+            openAsset={id => { setStockCardId(null); setAssetId(id); }} />
+          {state.assets.length === 0 && state.land.length === 0 && state.month < 18 && !state.sandbox && (
+            <div className="goal-rail">
+              <div className="eyebrow">First moves</div>
+              <ol>
+                <li className={selTile !== null || state.month > 0 ? 'done' : ''}>Read the map — lenses show where rents actually live</li>
+                <li className={state.listings.some(l => l.feasDone) ? 'done' : ''}>
+                  <button type="button" className="link-name" onClick={() => goDesk('marketplace')}>Open the Desk</button> and underwrite one deal
+                </li>
+                <li>Close, lease, then Advance — cash flow is the thesis test</li>
+              </ol>
+            </div>
+          )}
+        </>}
+        {hub === 'desk' && deskPane === 'briefing' && <Dashboard state={state} goDeals={() => goDesk('marketplace')} openLOI={id => setLoiId(id)} openFirm={s => setFirmShort(s)} flyTo={flyTo} />}
+        {hub === 'desk' && deskPane === 'marketplace' && <DealsView2 state={state} setState={setState} openDeal={openDealOnMap} />}
+        {hub === 'capital' && capitalPane === 'portfolio' && <PortfolioView2 state={state} setState={setState} onSell={setSellId} onRefi={setRefiId} onLOI={setLoiId} goDeals={() => goDesk('marketplace')}
           openDeal={openDealOnMap} onSold={p => setPm(p)} onShowOnMap={openAssetOnMap} onShowTile={flyTo} />}
-        {tab === 'books' && <BooksView state={state} setState={setState} />}
-        {tab === 'debt' && <DebtView state={state} setState={setState} />}
-        {tab === 'economy' && <EconomyView state={state} />}
-        {tab === 'registry' && <CityRegistryView state={state}
+        {hub === 'capital' && capitalPane === 'books' && <BooksView state={state} setState={setState} />}
+        {hub === 'capital' && capitalPane === 'debt' && <DebtView state={state} setState={setState} />}
+        {hub === 'capital' && capitalPane === 'economy' && <EconomyView state={state} />}
+        {hub === 'capital' && capitalPane === 'registry' && <CityRegistryView state={state}
           openStock={id => { setAssetId(null); setStockCardId(id); }}
           openAsset={id => { setStockCardId(null); setAssetId(id); }} />}
       </div>

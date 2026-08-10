@@ -8,7 +8,7 @@ import { recentLowballs } from "./acquire";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange, newsChance, BUILD_MONTHS } from "./market";
 import { assetValue, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, bareLandRec } from "./value";
-import { locAvailable } from "./credit";
+import { locAvailable, sweepLocIdleCash } from "./credit";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM } from "./facility";
@@ -2340,6 +2340,8 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
       + (exchange ? `. 1031 clock running: buy for ≥ $${(offer.price * 0.8 / 1e6).toFixed(1)}M by ${monthLabel(next.month + EXCHANGE_WINDOW_M)} or $${(tax / 1e6).toFixed(2)}M of tax comes due.`
         : tax > 0 ? ` ($${(tax / 1e6).toFixed(2)}M capital-gains tax withheld).` : "."),
   });
+  // Sale proceeds pay the revolver now — not on the next Advance.
+  sweepLocIdleCash(next, { announce: true });
   return { s: next };
 }
 

@@ -30,6 +30,7 @@ import { lenderByName, lenderPressure, raiseAlert } from "./lenders";
 import { streetRefiProceeds } from "./debt";
 import { executePurchase } from "./actions";
 import { depositsOn } from "./leasing";
+import { sweepLocIdleCash } from "./credit";
 
 const money = (n: number) =>
   Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${Math.round(n / 1000)}K`;
@@ -230,6 +231,7 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
           }
           toYou = Math.max(0, Math.round(toYou - debtOff - p.ask * 0.02));
           s.cash += toYou;
+          sweepLocIdleCash(s, { announce: true });
         }
         for (const b of p.bbls) {
           const rec = resolveRec(parcels, s, b);

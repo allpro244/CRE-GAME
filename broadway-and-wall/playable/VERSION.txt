@@ -1,5 +1,5 @@
 commit=rooms-1
-gitTip=7fb4641
+gitTip=12af70a
 builtAt=2026-08-10T21:32Z
 branch=cursor/refresh-playable-ui-9786
 rentBaseOffice=35.50

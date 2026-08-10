@@ -2996,7 +2996,9 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   const teardownRoll = rng(s, "dev");
   const bbl = rec.bbl;
   const oldSf = rec.bldgArea;
-  const cls = rec.class as BuiltClass;
+  // Standing use before teardown — BuiltClass excludes "land", so keep the
+  // raw class for the stock-removal path below.
+  const cls = rec.class;
   // When the standing class is itself chronically short of housable floor and
   // still has orders on the book, densify IN KIND. useForZone's programme mix
   // was converting short office into multifamily while office structTight

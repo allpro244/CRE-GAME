@@ -38,6 +38,7 @@ import { recordComp } from "./comps";
 import { depositsOn } from "./leasing";
 import { fundCashNeed, fundableNow } from "./credit";
 import { recordPropertyEvent } from "./history";
+import { transferGroundLeaseOffBook } from "./actions";
 
 const clone = (s: GameState): GameState => cloneState(s);
 
@@ -435,7 +436,7 @@ export function deedInLieu(
     outcome: "Deed in lieu; debt settled and control transferred to lender",
   });
   recordComp(next, rec, Math.round(bal), w.lender, firmShort(next), true, h.condition);
-  if (next.groundLeases?.[bbl]) delete next.groundLeases[bbl];
+  if (next.groundLeases?.[bbl]) transferGroundLeaseOffBook(next, bbl);
   next.cash -= depositsOn(next.holdings[bbl]!);
   next.lastTradeM = next.lastTradeM ?? {};
   next.lastTradeM[bbl] = next.month;

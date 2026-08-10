@@ -2,8 +2,8 @@
 // approach owners with assemblage pressure, sell, renovate. Pure — each
 // returns a new state or an error string, never mutates the input.
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
-import type { Bid, BuiltClass, Econ, GameState, GroundReview, Holding, RivalStyle } from "./types";
-import { logBooks, monthLabel, raiseAlert, SVC_START, cloneState } from "./types";
+import type { Bid, BuiltClass, Econ, GameState, GroundLease, GroundReview, Holding, RivalStyle } from "./types";
+import { logBooks, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState } from "./types";
 import { recentLowballs } from "./acquire";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange, newsChance, BUILD_MONTHS } from "./market";
@@ -141,6 +141,9 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
 export function executePurchase(
   s: GameState, parcels: ParcelTable, bbl: string, price: number, product: BuyProduct, offMarket: boolean, lev = 1,
 ): { s: GameState; err?: string } {
+  if (s.cityGroundLeases?.[bbl]) {
+    return { s, err: "That fee is still subject to a ground lease. It is not freehold inventory." };
+  }
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   if (s.holdings[bbl]) return { s, err: "You already own it." };
@@ -698,6 +701,15 @@ export function offerGroundLease(
   if (s.holdings[bbl].sale) return { s, err: "It's on the market — pull the listing before you encumber it." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
   if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage — lease the whole site or none of it." };
+  // A land loan and a ground lease cannot share the same dirt: the land desk
+  // underwrites vacant carry, and the moment a coupon appears the collateral
+  // is income paper. Clear the lien before you encumber the fee.
+  if (s.holdings[bbl].loan) {
+    return { s, err: "Pay off the mortgage first — a land lender will not sit under a ground lease." };
+  }
+  if (s.facility?.bbls?.includes(bbl)) {
+    return { s, err: "Release it from the facility first — the line is secured by vacant dirt, not a leased fee." };
+  }
   const q = groundLeaseQuote(s, parcels, bbl, years, review);
   if (!q || q.rentYr <= 0) return { s, err: "Nobody will ground-lease that." };
   const next = clone(s);
@@ -706,6 +718,29 @@ export function offerGroundLease(
     s: next,
     msg: `Offered a ${years}-year ground lease (${GROUND_REVIEW_LABEL[review]}). Now you wait for somebody who wants this corner that badly.`,
   };
+}
+
+/**
+ * THE LEASED FEE LEFT YOUR BOOK.
+ *
+ * Selling or losing a leased fee does not cancel the lease. The coupon and
+ * the reversion go with the deed. We keep the encumbrance on
+ * `cityGroundLeases` so the site cannot reappear as freehold inventory (or get
+ * torn down under the lessee) until the term ends.
+ */
+export function transferGroundLeaseOffBook(s: GameState, bbl: string): void {
+  const gl = s.groundLeases?.[bbl];
+  if (!gl) return;
+  (s.cityGroundLeases ??= {})[bbl] = { ...gl };
+  delete s.groundLeases![bbl];
+  if (s.groundLeases && !Object.keys(s.groundLeases).length) delete s.groundLeases;
+  const h = s.holdings[bbl];
+  if (h) delete h.groundLeased;
+}
+
+/** Live ground lease on a parcel — yours, or one that left with a sold fee. */
+export function liveGroundLease(s: GameState, bbl: string): GroundLease | undefined {
+  return s.groundLeases?.[bbl] ?? s.cityGroundLeases?.[bbl];
 }
 
 /** Withdraw the offer. Nothing has signed, so nothing unwinds. */
@@ -726,8 +761,31 @@ const GROUND_TENANTS: { name: string; use: BuiltClass; lead: "fast" | "mid" | "s
   { name: "a church", use: "office", lead: "mid" },
   { name: "a university", use: "office", lead: "slow" },
 ];
-function pickGroundTenant(s: GameState) {
-  return GROUND_TENANTS[Math.floor(rng(s, "sales") * GROUND_TENANTS.length)]!;
+
+/** Weight lessees by whether their product fits the envelope, not a flat draw. */
+function pickGroundTenant(s: GameState, parcels: ParcelTable, bbl: string) {
+  const bare = bareLandRec(parcels, s, bbl);
+  const far = bare ? farMaxFor(bare) : 3;
+  const demand = parcels[bbl]?.demandScore ?? 50;
+  let total = 0;
+  const weights = GROUND_TENANTS.map((t) => {
+    let w = 1;
+    if (t.use === "industrial") w *= far > 6 ? 0.25 : far > 3.5 ? 0.55 : 1.15;
+    if (t.use === "retail") w *= far > 8 ? 0.35 : demand < 35 ? 0.55 : 1.1;
+    if (t.use === "office") w *= far < 2 ? 0.35 : far >= 4 ? 1.15 : 0.9;
+    if (t.use === "multifamily") w *= far < 2.5 ? 0.4 : far >= 4 ? 1.2 : 1;
+    if (t.name.includes("hotel")) w *= far < 3 || demand < 40 ? 0.25 : 1.1;
+    if (t.name.includes("church")) w *= far > 5 || demand > 70 ? 0.3 : 1;
+    if (t.name.includes("university") || t.name.includes("hospital")) w *= far < 2.5 ? 0.4 : 1;
+    total += w;
+    return w;
+  });
+  let r = rng(s, "sales") * Math.max(1e-9, total);
+  for (let i = 0; i < GROUND_TENANTS.length; i++) {
+    r -= weights[i]!;
+    if (r <= 0) return GROUND_TENANTS[i]!;
+  }
+  return GROUND_TENANTS[GROUND_TENANTS.length - 1]!;
 }
 
 function lesseeProgram(s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass, lead: "fast" | "mid" | "slow") {
@@ -759,6 +817,29 @@ function startLesseeJob(s: GameState, bbl: string, use: BuiltClass, sf: number, 
 }
 
 /**
+ * Hand a standing lessee improvement back to the fee owner — vacant, aged from
+ * when it actually opened, not marked as a delivery that just topped out.
+ */
+function revertLesseeImprovement(
+  s: GameState, parcels: ParcelTable, bbl: string, h: Holding,
+  standing: { class: BuiltClass; bldgArea: number; floors: number; yearBuilt: number; mix?: ParcelRecord["mix"] },
+  gl: GroundLease,
+) {
+  const raw = parcels[bbl];
+  const asRec = { ...(raw!), ...standing, yearBuilt: standing.yearBuilt };
+  h.condIdx = initialCondIdx(asRec, s.month);
+  h.condition = condGrade(h.condIdx);
+  // Opened when the lessee topped out — not today. An aged shell is vacant
+  // work, not a brand-new delivery with a four-year lease-up mark.
+  h.deliveredM = gl.builtM ?? Math.max(0, (standing.yearBuilt - START_YEAR) * 12);
+  h.tenants = [];
+  h.occ = 0;
+  h.service = h.service ?? 0;
+  h.stance = h.stance ?? 0;
+  h.plan = h.plan ?? 1;
+}
+
+/**
  * TERMINATE A DEFAULTED GROUND LEASE AND HAND THE WHOLE PROPERTY BACK.
  *
  * A ground lease is secured by the leasehold improvement. On an uncured
@@ -773,11 +854,13 @@ export function defaultGroundLease(
   const gl = s.groundLeases?.[bbl];
   const h = s.holdings[bbl];
   if (!gl || !h) return false;
-  const raw = parcels[bbl];
   const standing = s.built?.[bbl];
-  const address = raw?.address ?? bbl;
+  const address = parcels[bbl]?.address ?? bbl;
+  const duringBuild = gl.builtM === undefined
+    && (s.cityJobs ?? []).some((j) => j.bbl === bbl && j.groundLease);
 
   delete s.groundLeases![bbl];
+  if (s.groundLeases && !Object.keys(s.groundLeases).length) delete s.groundLeases;
   delete h.groundLeased;
   // A default after opening should have no live frame, but cancelling here
   // makes the ownership transition correct for old saves and edge cases too.
@@ -785,15 +868,7 @@ export function defaultGroundLease(
   cancelSupplyProject(s, bbl);
 
   if (standing && standing.bldgArea > 0) {
-    const asRec = { ...(raw!), ...standing, yearBuilt: standing.yearBuilt };
-    h.condIdx = initialCondIdx(asRec, s.month);
-    h.condition = condGrade(h.condIdx);
-    h.deliveredM = s.month;
-    h.tenants = [];
-    h.occ = 0;
-    h.service = h.service ?? 0;
-    h.stance = h.stance ?? 0;
-    h.plan = h.plan ?? 1;
+    revertLesseeImprovement(s, parcels, bbl, h, standing, gl);
     recordPropertyEvent(s, bbl, {
       kind: "default",
       party: gl.tenant,
@@ -805,24 +880,93 @@ export function defaultGroundLease(
       title: `${gl.tenant} defaulted at ${address}`,
       body: `The ground rent has stopped and the lease has terminated. You now control the land and the `
         + `${standing.floors}-floor ${standing.class} building standing on it — no consent, buyout or waiting period.`,
-      detail: `${Math.round(standing.bldgArea).toLocaleString()} sf reverted vacant. It is now yours to operate, lease, finance, sell or redevelop.`,
+      detail: `${Math.round(standing.bldgArea).toLocaleString()} sf reverted vacant`
+        + ` (${standing.yearBuilt} building). It is now yours to operate, lease, finance, sell or redevelop.`,
     });
   } else {
     if (s.built?.[bbl]) delete s.built[bbl];
     recordPropertyEvent(s, bbl, {
       kind: "default",
       party: gl.tenant,
-      outcome: "Ground lease terminated; vacant land returned to fee-owner control",
+      outcome: duringBuild
+        ? "Ground lease terminated mid-build; vacant land returned to fee-owner control"
+        : "Ground lease terminated; vacant land returned to fee-owner control",
     });
     raiseAlert(s, {
       kind: "ground",
       tone: "bad",
       title: `${gl.tenant} defaulted at ${address}`,
-      body: "The ground rent has stopped and the lease has terminated. Full control of the site is back with you.",
-      detail: "No completed improvement stood on the land. The vacant site is yours to lease, sell or develop.",
+      body: duringBuild
+        ? "They walked the job. The ground rent has stopped, the frame is cancelled, and full control of the site is back with you."
+        : "The ground rent has stopped and the lease has terminated. Full control of the site is back with you.",
+      detail: duringBuild
+        ? "No completed improvement stood on the land. The vacant site is yours again — carry resumes."
+        : "No completed improvement stood on the land. The vacant site is yours to lease, sell or develop.",
     });
   }
   return true;
+}
+
+/** End a city-held ground lease (fee sold off-book). Building stays as city fabric. */
+function defaultCityGroundLease(s: GameState, bbl: string, gl: GroundLease): void {
+  delete s.cityGroundLeases![bbl];
+  if (s.cityGroundLeases && !Object.keys(s.cityGroundLeases).length) delete s.cityGroundLeases;
+  s.cityJobs = (s.cityJobs ?? []).filter((j) => !(j.bbl === bbl && j.groundLease));
+  cancelSupplyProject(s, bbl);
+  const standing = s.built?.[bbl];
+  if (!(standing && standing.bldgArea > 0)) {
+    if (s.built?.[bbl]) delete s.built[bbl];
+  }
+  recordPropertyEvent(s, bbl, {
+    kind: "default",
+    party: gl.tenant,
+    outcome: standing && standing.bldgArea > 0
+      ? "Off-book ground lease terminated; improvement remains as city fabric"
+      : "Off-book ground lease terminated mid-build; site cleared",
+  });
+}
+
+function groundDefaultOdds(s: GameState, duringBuild: boolean): number {
+  const cycle = s.econ.phase === "recession" ? 3.5
+    : s.econ.phase === "recovery" ? 1.4
+      : s.econ.phase === "peak" ? 0.75 : 1;
+  const credit = Math.max(0.75, Math.min(2, 1 / Math.max(0.5, s.econ.creditIdx ?? 1)));
+  // Construction is riskier than a stabilised leasehold; operating defaults
+  // stay rare because losing the improvement is catastrophic for the lessee.
+  const annual = duringBuild ? 0.018 : 0.006;
+  return (annual * cycle * credit) / 12;
+}
+
+function stepGroundRent(s: GameState, parcels: ParcelTable, bbl: string, gl: GroundLease, announce: boolean) {
+  if (gl.openRentYr === undefined) gl.openRentYr = gl.rentYr;
+  const review: GroundReview = gl.review ?? "fixed";
+  if (s.month - gl.lastStepM < gl.stepEveryM) return;
+  const prev = gl.rentYr;
+  if (review === "cpi") {
+    const infl = Math.max(0.02, Math.min(0.04, s.econ.inflExp ?? s.econ.nat?.inflExp ?? 0.025));
+    gl.rentYr = Math.round(gl.rentYr * (1 + infl));
+  } else if (review === "fmv") {
+    const bare = bareLandRec(parcels, s, bbl);
+    const land = bare ? landValue(bare, s.econ) : 0;
+    const yld = Math.max(3.2, s.econ.indexRate * 0.62 + 2.5) * 0.88;
+    const uncapped = Math.round(land * (yld / 100));
+    const yrs = (s.month - gl.startM) / 12;
+    const cap = Math.round((gl.openRentYr ?? gl.rentYr) * Math.pow(1 + (gl.fmvCapPct ?? 3.5) / 100, yrs));
+    // Ratchet: FMV can lift the coupon, never cut a performing lease.
+    gl.rentYr = Math.max(gl.rentYr, Math.min(uncapped, cap));
+  } else {
+    gl.rentYr = Math.round(gl.rentYr * (1 + gl.stepPct / 100));
+  }
+  gl.lastStepM = s.month;
+  if (announce && gl.rentYr !== prev) {
+    const rec = parcels[bbl];
+    const word = review === "cpi" ? "CPI review" : review === "fmv" ? "FMV reappraisal" : "Rent review";
+    s.news.unshift({
+      q: s.month, kind: "info",
+      text: `${word} at ${rec?.address ?? bbl}: the ground rent moves to $${(gl.rentYr / 1e6).toFixed(2)}M`
+        + (gl.rentYr > prev ? ` (+${(((gl.rentYr / prev) - 1) * 100).toFixed(1)}%)` : "") + `.`,
+    });
+  }
 }
 
 /**
@@ -835,7 +979,8 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
     const rec = parcels[h.bbl];
     // The offer dies quietly when the lot stops being offerable.
     if (!rec || rec.class !== "land" || rec.bldgArea > 0 || s.developments[h.bbl]
-      || s.merged?.[h.bbl] || h.sale || s.groundLeases?.[h.bbl]
+      || s.merged?.[h.bbl] || h.sale || s.groundLeases?.[h.bbl] || h.loan
+      || s.facility?.bbls?.includes(h.bbl)
       || (s.built?.[h.bbl]?.bldgArea ?? 0) > 0) { delete h.groundOffer; continue; }
     const review: GroundReview = offer.review ?? "fixed";
     const q = groundLeaseQuote(s, parcels, h.bbl, offer.years, review);
@@ -843,7 +988,7 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
     const climate = buildClimate(s);
     const p = Math.min(0.14, (0.006 + 0.075 * (demandNow(s, rec) / 100) * climate) * q.takeMult);
     if (rng(s, "sales") >= p) continue;
-    const who = pickGroundTenant(s);
+    const who = pickGroundTenant(s, parcels, h.bbl);
     const prog = lesseeProgram(s, parcels, h.bbl, who.use, who.lead);
     if (!prog) continue;
     delete h.groundOffer;
@@ -872,33 +1017,32 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
   }
 
   for (const [bbl, gl] of Object.entries(s.groundLeases ?? {})) {
-    if (!s.holdings[bbl]) { delete s.groundLeases![bbl]; continue; }
-    if (gl.openRentYr === undefined) gl.openRentYr = gl.rentYr;
-    const review: GroundReview = gl.review ?? "fixed";
+    if (!s.holdings[bbl]) {
+      // Safety net: a deed that left without going through the sale helper
+      // still carries its encumbrance off-book instead of vanishing.
+      transferGroundLeaseOffBook(s, bbl);
+      continue;
+    }
+    const h = s.holdings[bbl]!;
 
     if (s.month >= gl.endM) {
       const rec = parcels[bbl];
-      const h = s.holdings[bbl]!;
       delete s.groundLeases![bbl];
+      if (s.groundLeases && !Object.keys(s.groundLeases).length) delete s.groundLeases;
       delete h.groundLeased;
       // Cancel any unfinished lessee frame — the term ran out on a hole.
       s.cityJobs = (s.cityJobs ?? []).filter((j) => !(j.bbl === bbl && j.groundLease));
       cancelSupplyProject(s, bbl);
       const standing = s.built?.[bbl];
       if (standing && standing.bldgArea > 0) {
-        // REVERSION WITH IMPROVEMENTS. The bones are yours, vacant, and the
-        // lease-up mark treats them as a delivery so an empty shell is not
-        // marked as a failed building.
-        const asRec = { ...(parcels[bbl]!), ...standing, yearBuilt: standing.yearBuilt };
-        h.condIdx = initialCondIdx(asRec, s.month);
-        h.condition = condGrade(h.condIdx);
-        h.deliveredM = s.month;
-        h.tenants = [];
-        h.occ = 0;
+        revertLesseeImprovement(s, parcels, bbl, h, standing, gl);
+        const ageYrs = Math.max(0, START_YEAR + Math.floor(s.month / 12) - standing.yearBuilt);
         s.news.unshift({
           q: s.month, kind: "event",
           text: `The ground lease at ${rec?.address ?? bbl} has run out. `
-            + `${standing.floors} floors of ${standing.class} (${Math.round(standing.bldgArea).toLocaleString()} sf) revert with the land — vacant, and yours to let.`,
+            + `${standing.floors} floors of ${standing.class} (${Math.round(standing.bldgArea).toLocaleString()} sf`
+            + (ageYrs >= 1 ? `, ${ageYrs}-year-old` : "")
+            + `) revert with the land — vacant, and yours to let.`,
         });
       } else {
         if (s.built?.[bbl]) delete s.built[bbl];
@@ -910,56 +1054,46 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
       continue;
     }
 
-    // LEASEHOLD DEFAULT. Long ground leases are exceptionally durable because
-    // the improvement is the tenant's collateral and losing it is catastrophic.
-    // Investment-grade corporate default frequencies ordinarily sit below one
-    // per cent a year and rise into the low single digits in recessions. This
-    // uses 0.6% in an ordinary year, scaled by the credit window and cycle,
-    // and only after the improvement has operated for a year. Hash randomness
+    // LEASEHOLD DEFAULT — mid-build walkaways, then rare operating defaults
+    // after the improvement has been open a year. Hash randomness
     // (`newsChance`) avoids changing any economic RNG stream.
-    if (gl.builtM !== undefined && s.month - gl.builtM >= 12) {
-      const cycle = s.econ.phase === "recession" ? 3.5
-        : s.econ.phase === "recovery" ? 1.4
-          : s.econ.phase === "peak" ? 0.75 : 1;
-      const credit = Math.max(0.75, Math.min(2, 1 / Math.max(0.5, s.econ.creditIdx ?? 1)));
-      const monthlyDefault = (0.006 * cycle * credit) / 12;
-      if (newsChance(s, `ground-default:${bbl}`, monthlyDefault)) {
-        defaultGroundLease(s, parcels, bbl);
-        continue;
-      }
+    const duringBuild = gl.builtM === undefined;
+    const canDefault = duringBuild || (gl.builtM !== undefined && s.month - gl.builtM >= 12);
+    if (canDefault && newsChance(s, `ground-default:${bbl}`, groundDefaultOdds(s, duringBuild))) {
+      defaultGroundLease(s, parcels, bbl);
+      continue;
     }
 
-    if (s.month - gl.lastStepM >= gl.stepEveryM) {
-      const prev = gl.rentYr;
-      if (review === "cpi") {
-        const infl = Math.max(0.02, Math.min(0.04, s.econ.inflExp ?? s.econ.nat?.inflExp ?? 0.025));
-        gl.rentYr = Math.round(gl.rentYr * (1 + infl));
-      } else if (review === "fmv") {
-        const bare = bareLandRec(parcels, s, bbl);
-        const land = bare ? landValue(bare, s.econ) : 0;
-        const yld = Math.max(3.2, s.econ.indexRate * 0.62 + 2.5) * 0.88;
-        const uncapped = Math.round(land * (yld / 100));
-        const yrs = (s.month - gl.startM) / 12;
-        const cap = Math.round((gl.openRentYr ?? gl.rentYr) * Math.pow(1 + (gl.fmvCapPct ?? 3.5) / 100, yrs));
-        // Ratchet: FMV can lift the coupon, never cut a performing lease.
-        gl.rentYr = Math.max(gl.rentYr, Math.min(uncapped, cap));
-      } else {
-        gl.rentYr = Math.round(gl.rentYr * (1 + gl.stepPct / 100));
-      }
-      gl.lastStepM = s.month;
-      if (gl.rentYr !== prev) {
-        const rec = parcels[bbl];
-        const word = review === "cpi" ? "CPI review" : review === "fmv" ? "FMV reappraisal" : "Rent review";
-        s.news.unshift({
-          q: s.month, kind: "info",
-          text: `${word} at ${rec?.address ?? bbl}: the ground rent moves to $${(gl.rentYr / 1e6).toFixed(2)}M`
-            + (gl.rentYr > prev ? ` (+${(((gl.rentYr / prev) - 1) * 100).toFixed(1)}%)` : "") + `.`,
-        });
-      }
-    }
+    stepGroundRent(s, parcels, bbl, gl, true);
     s.cash += gl.rentYr / 12;
     logBooks(s, "noi", gl.rentYr / 12);
   }
+
+  // Off-book leased fees: no cash to you, but the encumbrance and the lessee
+  // keep running until term, default, or (if you somehow reacquire) reattach.
+  for (const [bbl, gl] of Object.entries(s.cityGroundLeases ?? {})) {
+    if (s.holdings[bbl]) {
+      (s.groundLeases ??= {})[bbl] = gl;
+      s.holdings[bbl].groundLeased = true;
+      delete s.cityGroundLeases![bbl];
+      continue;
+    }
+    if (s.month >= gl.endM) {
+      delete s.cityGroundLeases![bbl];
+      s.cityJobs = (s.cityJobs ?? []).filter((j) => !(j.bbl === bbl && j.groundLease));
+      cancelSupplyProject(s, bbl);
+      // Improvement stays as ordinary city fabric once the fee term ends.
+      continue;
+    }
+    const duringBuild = gl.builtM === undefined;
+    const canDefault = duringBuild || (gl.builtM !== undefined && s.month - gl.builtM >= 12);
+    if (canDefault && newsChance(s, `city-ground-default:${bbl}`, groundDefaultOdds(s, duringBuild))) {
+      defaultCityGroundLease(s, bbl, gl);
+      continue;
+    }
+    stepGroundRent(s, parcels, bbl, gl, false);
+  }
+  if (s.cityGroundLeases && !Object.keys(s.cityGroundLeases).length) delete s.cityGroundLeases;
 }
 
 /**
@@ -2179,11 +2313,11 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
     delete next.holdings[child];
     if (next.workouts?.[child]) delete next.workouts[child];
   }
-  // The encumbrances leave with the deed, HERE, not on the next tick. The
-  // invariant sweep reads the state the moment the sale returns, and a lease
-  // that outlives its land for even one call is a lease on somebody else's
-  // property.
-  if (next.groundLeases?.[bbl]) delete next.groundLeases[bbl];
+  // The leased fee leaves with the deed, HERE, not on the next tick. The
+  // invariant sweep reads the state the moment the sale returns — the lease
+  // must not still be keyed as yours for even one call. It continues off-book
+  // as the buyer's encumbrance (see transferGroundLeaseOffBook).
+  if (next.groundLeases?.[bbl]) transferGroundLeaseOffBook(next, bbl);
   // The security deposits go with the deed — they were the tenants' money and
   // they are the buyer's obligation now.
   next.cash -= depositsOn(next.holdings[bbl]);

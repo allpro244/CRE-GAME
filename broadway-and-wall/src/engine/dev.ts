@@ -2564,6 +2564,17 @@ export function cityInfillCap(
  * With nothing shed the weights below reduce to exactly the old thresholds, so
  * this is a strict generalisation of what was here.
  *
+ * INDUSTRIAL HAS A SECOND EXIT CHANNEL — and this used to be blind to it.
+ * Manufacturing's secular decline is carried by `industComp` in market.ts
+ * (NY/SF/London floor-space half-life), not by the price ratchet. Measured on
+ * null-player centuries before this wire: `industComp` fell to ~0.42 while
+ * `baseStock` stayed at 1.0× forever, because falling demand MADE space cheap
+ * and the price ratchet only fires on dear space. `gone()` read only
+ * baseStock, so M-land stayed a life sentence, sheds sat at 20–35% vacancy
+ * for decades, and real industrial rent ran about −2%/yr. The composition
+ * index IS the sector-exit share for sheds; rezoning must read it. Cap and
+ * residual floor unchanged — somebody still needs a last-mile bay.
+ *
  * WHERE THE REZONED LAND GOES is multifamily, and that is the mechanism being
  * right rather than a preference. Housing is the one class the ratchet exempts,
  * for the reason stated there: people priced out of a city's housing leave and
@@ -2576,7 +2587,12 @@ export function useForZone(zone: string, demand: number, r: number, e?: Econ): D
   // city never rezones the last of anything — somebody still needs a garage.
   const gone = (k: BuiltClass) => {
     const b0 = e?.baseStock0?.[k], b = e?.baseStock?.[k];
-    return b0 && b ? clamp(1 - b / b0, 0, 0.8) : 0;
+    const fromBase = b0 && b ? clamp(1 - b / b0, 0, 0.8) : 0;
+    // Composition decline is sector exit for sheds — see block comment above.
+    const fromComp = k === "industrial"
+      ? clamp(1 - (e?.industComp ?? 1), 0, 0.8)
+      : 0;
+    return Math.max(fromBase, fromComp);
   };
   const here = (k: BuiltClass) => 1 - gone(k);
   /**
@@ -2968,6 +2984,10 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     const condW = cond === "obsolete" ? 1.35 : cond === "worn" ? 1.15 : 1.0;
     // Land/built still matters (option value of dirt), but unused legal FAR
     // under a chronic short is the densify pressure the century was missing.
+    // Structural manufacturing exit is NOT scored here — boosting soft sheds
+    // into this sample wasted densify months on fringe sites whose MF/office
+    // replacement does not pencil (measured: office pin and structTight
+    // regressed). Surplus empty sheds clear via tickIndustrialExit instead.
     const score = (0.35 + Math.max(0, ratio)) * densify * condW * (1 + 2.2 * st);
     if (!worst || score > worst.score) worst = { bbl, rec, ratio, score };
   }
@@ -3204,6 +3224,107 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   void yr;
 }
 
+/**
+ * STRUCTURAL INDUSTRIAL EXIT — the mothballing half of manufacturing's leave.
+ *
+ * `industComp` (market.ts) declines at the NY/SF/London manufacturing
+ * floor-space half-life. Rezoning via `useForZone` reads that decline, but
+ * conversion still requires a replacement that pencils — and on this island's
+ * M-land fringe, multifamily often does not. Measured before this path, on
+ * five of six century seeds: industComp → 0.42, baseStock stuck at 1.0×,
+ * physical stock −0.1%/yr, industrial vacancy soft 84% of months, real rent
+ * ≈ −2.2%/yr. The composition index said the floor space had left; the map
+ * kept every shed.
+ *
+ * Real cities did not wait for a midrise pro forma on every bay. Surplus empty
+ * manufacturing stock was cleared to land (and later rebuilt when housing
+ * penciled) — LIC, Williamsburg, Docklands. This retires EMPTY surplus toward
+ * the composition envelope at the same historical rate industComp already
+ * uses. It does not touch occupied space, player/rival holdings, or require a
+ * replacement project. Teardown-for-replacement remains the conversion path
+ * when a project clears.
+ */
+function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) {
+  const e = s.econ;
+  const ic = e.industComp ?? 1;
+  if (ic > 0.92) return;
+  // DEFER TO EMPLOYMENT SHORTAGE, DON'T FREEZE. Clearing sheds onto the plat
+  // while office cannot house its jobs hands vacant M-lots to multifamily
+  // (useForZone reads industComp) and the shared crane pool follows them —
+  // measured office structTight and real rent both worsened under a full-rate
+  // clear. A hard freeze while office is pinned (~half a century) left
+  // industrial soft 61% of months. Trickle clearance (~1/8 the ordinary rate)
+  // still retires surplus floor space; densify keeps the crane priority.
+  const officeShort = (e.structTight?.office ?? 0) > 0.08
+    && (e.cityVac?.office ?? NATURAL_VAC.office) <= frictionFloor("office") + 0.015;
+  const stock = e.stock?.industrial ?? 0;
+  const occ = e.occupied?.industrial ?? 0;
+  const vac = e.cityVac?.industrial ?? NATURAL_VAC.industrial;
+  if (vac <= NATURAL_VAC.industrial + 0.015) return;
+  // Envelope from OCCUPIED demand: stock that would put vacancy at natural
+  // given today's tenants. Composition has already cut the looking pool;
+  // what remains empty above natural is the surplus floor space that left
+  // with manufacturing. (An absolute `stock0 × industComp` envelope ignored
+  // job growth and aimed at a level the residual logistics market still
+  // needed — clearance then either stalled or overshot.)
+  const need = occ / Math.max(0.5, 1 - NATURAL_VAC.industrial);
+  const empty = Math.max(0, stock - occ);
+  const surplus = Math.min(Math.max(0, stock - need * 1.03), empty);
+  if (surplus < 4000) return;
+  // Clearance is lumpy (one building). Own RNG channel — must not steal
+  // draws from teardown densify (`dev`).
+  if (rng(s, "indust") > (officeShort ? 0.12 : 0.70)) return;
+
+  // Pick the worst empty-ish anon shed: old, worn, low demand, preferably M.
+  let worst: { bbl: string; rec: NonNullable<ReturnType<typeof resolveRec>>; score: number } | null = null;
+  for (let i = 0; i < 36; i++) {
+    const bbl = bbls[Math.floor(rng(s, "indust") * bbls.length)];
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec || rec.class !== "industrial" || !rec.bldgArea) continue;
+    // Never scrap more empty surplus than exists — a single large bay can
+    // overshoot; skip if it would cut into occupied stock.
+    if (rec.bldgArea > surplus * 1.05) continue;
+    if (s.holdings[bbl] || s.developments[bbl]) continue;
+    if (s.landmarks?.[bbl] !== undefined) continue;
+    if ((s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
+    if (ownerOf(s, bbl)) continue;
+    const age = START_YEAR + Math.floor(s.month / 12) - (rec.yearBuilt || 1900);
+    if (age < 35) continue;
+    const cond = gradeOf(s, rec);
+    if (cond !== "obsolete" && cond !== "worn" && cond !== "standard") continue;
+    const condW = cond === "obsolete" ? 1.4 : cond === "worn" ? 1.15 : 1.0;
+    const mZone = (rec.zoneDist ?? "").startsWith("M") ? 1.25 : 1.0;
+    const score = condW * mZone * age * (1.15 - Math.min(1, rec.demandScore / 80));
+    if (!worst || score > worst.score) worst = { bbl, rec, score };
+  }
+  if (!worst) return;
+  const { bbl, rec } = worst;
+  const oldSf = rec.bldgArea;
+  s.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
+  addStock(e, "industrial", -oldSf);
+  // Vacancy accounting: we cleared empty surplus. Keep occupied; next market
+  // tick recomputes cityVac from occ/stock. Clamp occupied into housable if
+  // a large shed somehow overshot (guard only).
+  const house = (e.stock.industrial ?? 0) * (1 - frictionFloor("industrial"));
+  if ((e.occupied?.industrial ?? 0) > house) {
+    e.occupied!.industrial = house;
+  }
+  s.demolished = (s.demolished ?? 0) + 1;
+  recordPropertyEvent(s, bbl, {
+    kind: "demolished",
+    sf: oldSf,
+    use: "industrial",
+    outcome: `${rec.yearBuilt || "Older"} industrial cleared — manufacturing footprint has left`,
+  });
+  if (rng(s, "indust") < 0.18) {
+    s.news.unshift({
+      q: s.month, kind: "info",
+      text: `${rec.address} is coming down empty. The manufacturing that filled it is gone, `
+        + `and nothing has taken the bay. The lot waits.`,
+    });
+  }
+}
+
 export function tickCityGrowth(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null,
 ) {
@@ -3211,6 +3332,7 @@ export function tickCityGrowth(
   // The trades read their own order book before the month's work is placed, so
   // the crew count this month reflects the queue they have been staring at.
   tickCrews(s, bbls);
+  tickIndustrialExit(s, parcels, bbls);
   tickTeardowns(s, parcels, bbls);
   // Extra densify passes when employment still exceeds housable floor — one
   // wrecking ball a month cannot catch a multi-decade capacity shortfall.

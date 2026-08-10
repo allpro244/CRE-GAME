@@ -772,3 +772,25 @@ reading of the rail tax. Post-fix medians: real office ~1.43%/yr, rent−wage
 
 `heldOccupancy` was the other suspect and is exonerated: it has no consumers in
 `src/engine` at all.
+
+# INDUSTRIAL COMPOSITION LEFT; THE SHEDS DID NOT — fixed
+
+`industComp` declines at the NY/SF/London manufacturing floor-space half-life.
+Rezoning's `gone()` read only the price-exit ratchet on `baseStock`. Falling
+demand made space cheap, so the ratchet never fired, `gone` stayed 0, and
+M-land stayed a life sentence. Measured on six null centuries before the fix:
+stock/open ≈ 0.98, soft ≈ 84% of months, real industrial rent ≈ −2.2%/yr while
+IC → 0.35.
+
+**Shipped:** (1) `gone()` reads `industComp` for industrial; (2) `tickIndustrialExit`
+clears empty surplus sheds to land at trickle-or-ordinary rate, yielding crane
+priority when office is chronically short; own RNG channel so densify dice are
+untouched. After: stock/open ≈ 0.70, soft ≈ 52%, real ≈ −1.3%/yr. Harness:
+`test/industrial-exit.mjs`.
+
+# H'S RATE CLAUSE READ THE WRONG SERIES — harness fixed
+
+Glut transmission to labour / credit / NOI / concessions is wired (see
+`test/glut-transmission.mjs`). `sim:accept` H now asserts policy must not
+tighten into the glut and the term premium must widen — not loan-index drift,
+which correctly rises when spreads blow out.

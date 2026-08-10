@@ -3123,8 +3123,14 @@ export function tickEcon(s: GameState) {
     const stPrev = e.structTightPrev[k] ?? st;
     const dSt = st - stPrev;
     e.structTightPrev[k] = st;
+    // On-rail level gain kept below the off-rail rate so a stable capacity
+    // gap rations demand without a permanent ~1%/yr real escalator on top of
+    // CPI. Flow still dominates when the shortfall is worsening. Walked
+    // 0.018→0.008 against rent-anchor + supply-answers: 0.008 let avg
+    // structTight drift to 0.083 (rations too little); ~0.010 holds both
+    // with century real office near +1%/yr.
     const scarcity = pinned
-      ? clamp(Math.max(0, dSt) * 1.5 + st * 0.018, 0, 0.0045)
+      ? clamp(Math.max(0, dSt) * 1.8 + st * 0.010, 0, 0.0045)
       : clamp(st * 0.045, 0, 0.006);
 
     // Lease-quote lag: market pressure (vacancy gap + unmet demand) forms this
@@ -3177,30 +3183,57 @@ export function tickEcon(s: GameState) {
     const dev = rentToIncome / sustain - 1;
     // Pull hard when rent outruns pay; barely nudge when rent is cheap —
     // cheap space is what supply is for, not a reason to reprice the city up.
+    // Soft weight fades asking's CPI/cycle lift over the first ~3pp of surplus
+    // availability (ECONOMY.md soft-market escalator). Keep the cheap-side
+    // undershoot nudge even while soft — muting it trapped some seeds at
+    // absurdly low rent-to-income because vacTerm's hump dies and nothing
+    // reconstituted a clearing face rate.
+    const softW = clamp(gap / 0.03, 0, 1);   // 0 at natural, 1 by +3pp soft
+    const firmW = 1 - softW;
     const anchor = dev > 0
       ? -0.018 * Math.min(2.0, dev)           // outrunning incomes: pulled down hard
       : -0.0007 * Math.max(-0.65, dev);       // cheap against incomes: weak drift up
 
-    // AND RENT CARRIES THE PRICE LEVEL. Every other term above is REAL — a
-    // sentiment, a vacancy, a job — and none of them knows what a dollar is
-    // worth. That was survivable only while inflation happened to be a
-    // by-product of the same city drivers that moved rent; the moment the
-    // price level became a national object, the two came apart and the failure
-    // was immediate and measurable: inflation fell from 2.77% to 2.18%, wages
-    // fell with it because wages are indexed to expectations, and rent did not
-    // fall with either, so rent outran the incomes paying it by a point a year
-    // for fifty years. A landlord does not re-let at last decade's number in a
-    // world where everything else has repriced, and every lease in this game
-    // already contains an escalation. So the nominal escalation is explicit
-    // here, and the income anchor above is left to do the job it is actually
-    // for — policing the REAL relationship between rent and pay — instead of
-    // being asked to carry the whole price level on a spring.
-    const escalation = (e.inflExp ?? 0.02) / 12;
+    // AND RENT CARRIES THE PRICE LEVEL — BUT ONLY WHEN THE MARKET IS FIRM.
+    //
+    // Every other term above is REAL — a sentiment, a vacancy, a job — and
+    // none of them knows what a dollar is worth. The moment the price level
+    // became a national object, rent had to carry CPI explicitly or it
+    // outran wages by a point a year for fifty years. That escalation stays.
+    //
+    // What it must NOT do is escalate ASKING while availability is soft
+    // (ECONOMY.md §F remainder / soft-market escalator). In-place leases
+    // already step in leasing.ts; putting inflExp into the asking index on
+    // a soft sheet is a fake escalator — capitulation dies after ~24 months,
+    // press→0, and asking then compounds at ~CPI forever with empty floors
+    // still on the shelf. Real CRE asking sits flat-to-down in a soft market;
+    // CPI keeps rising, so REAL rents fall until space clears.
+    //
+    // Exception: when rent is already far below earned pay (dev deeply
+    // negative), keep a partial CPI carry even while soft. Full soft-mute
+    // plus the vacTerm hump dying produced a rent-to-income death spiral on
+    // some seeds (~0.2x RTI) — asking cannot forget the price level entirely
+    // once it has already under-shot wages by that much.
+    const cheapFloor = dev < 0 ? clamp(-dev / 0.30, 0, 0.75) : 0;
+    const escalGate = Math.max(firmW, cheapFloor);
+    const escalation = ((e.inflExp ?? 0.02) / 12) * escalGate;
     // Cap the lagged pressure term: chronic shortage was holding ~+1.6%/mo of
     // scarcity in rentPress and overpowering the income anchor for a decade.
     const press = clamp(e.rentPress[k], -0.008, 0.0075);
-    const drift = c2.rentDrift * 0.48 + e.sectorMom[k] * 0.42 + press
-      + anchor + (jobDrift * 0.28) + escalation;
+    // Phase / job / sector sentiment must not LIFT asking while soft, on the
+    // frictional rail, or once rent is already near earned pay. Soft: empty
+    // floors on the shelf. Pinned: availability is saturated (same reason
+    // tightEma refuses to mint Manhattan from "can't build"). Near parity:
+    // further weather lift is what made every sim compound ~1.4%+ real on top
+    // of CPI even after the soft escalator died — cycle may help a CHEAP
+    // market recover, not keep marking up a clearing one. Growing unmet
+    // demand still prices through scarcity → rentPress. Negative cycle terms
+    // still cut in every state.
+    const liftGate = (pinned || softW > 0 || dev > -0.08) ? 0 : 1;
+    const cycleRent = c2.rentDrift * 0.48 * (c2.rentDrift > 0 ? liftGate : 1);
+    const cycleJobs = jobDrift * 0.28 * (jobDrift > 0 ? liftGate : 1);
+    const cycleMom = e.sectorMom[k] * 0.42 * (e.sectorMom[k] > 0 ? liftGate : 1);
+    const drift = cycleRent + cycleMom + press + anchor + cycleJobs + escalation;
     // THE HALF-OF-BASE FLOOR IS NOW A GUARD AGAIN, WHICH IS ALL IT WAS EVER
     // MEANT TO BE. It used to be load-bearing and it used to be the reason the
     // amplitude above looked survivable: removing it took office peak-to-trough
@@ -3221,7 +3254,7 @@ export function tickEcon(s: GameState) {
       const candidates: { w: number; why: string }[] = [
         { w: Math.abs(press), why: press < 0 ? "vacancy and soft absorption" : "tight space and unmet demand" },
         { w: Math.abs(anchor), why: anchor < 0 ? "rents outrunning local incomes" : "rents cheap against local pay" },
-        { w: Math.abs(jobDrift) * 0.28, why: jobDrift < 0 ? "employment slipping in the tenant base" : "employment supporting tenant demand" },
+        { w: Math.abs(cycleJobs), why: cycleJobs < 0 ? "employment slipping in the tenant base" : "employment supporting tenant demand" },
         { w: Math.abs(supply) * 0.5, why: supply > 0.004 ? "new deliveries pressing the market" : "a thin delivery calendar" },
       ];
       candidates.sort((a, b) => b.w - a.w);

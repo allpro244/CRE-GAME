@@ -451,8 +451,16 @@ and is why it stays in.
 
 **Land work is unblocked on the rent input.** Median rent−wage is ~0.20 pp/yr
 and RTI ~1.03× on the rent-anchor seeds — no longer a point-a-year runaway.
-Remaining soft-market nominal escalator and marketplace-vs-develop softness
-are separate OPEN items, not this rail fault.
+
+**Soft-market asking escalator — also done.** While availability sits above
+natural, asking no longer compounds full `inflExp` or positive phase/job/sector
+sentiment (and positive cycle lift is refused on the frictional rail too).
+In-place leases still escalate in `leasing.ts`; the asking index stays
+flat-to-down on a soft sheet so REAL rents fall with CPI until space clears.
+A partial CPI carry returns only when rent has already under-shot wages badly
+(prevents an RTI death spiral). Measured: soft-month real office ~−3%/yr;
+century median real ~1.2%/yr (was ~1.43%) with rent−wage ~0. Marketplace-vs-
+develop softness remains a separate OPEN item.
 
 # H IS THE LAST ONE, AND I THINK IT IS THE TEST — your call, not mine
 

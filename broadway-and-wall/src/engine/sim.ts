@@ -15,7 +15,7 @@ import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, sa
 import { tickTalks } from "./acquire";
 import { tickLoan, prepayPenalty, productById } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
-import { tickLoc, coverCashShortfall, locRate } from "./credit";
+import { tickLoc, coverCashShortfall, locAvailable, locRate } from "./credit";
 import { tickFacility } from "./facility";
 import { tickHolders } from "./owners";
 import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing } from "./dev";
@@ -691,9 +691,20 @@ function tickMonth(
   // immediately partly undone by the same January reassessment.
   tickTaxAppeals(s, parcels);
 
+  // THE LINE BEFORE THE BAILIFF.
+  //
+  // G&A and January tax can leave cash briefly negative with undrawn revolver
+  // capacity still on the desk. This used to run the insolvency clock first and
+  // only then call tickLoc — so a firm that covered every month-end from the
+  // line still racked up twelve "insolvent" months, lost buildings to seizure,
+  // and could end the run while credit remained. Real sponsors draw the
+  // revolver before they are insolvent; the month has to do the same.
+  tickLoc(s, parcels);   // interest, sweeps, over-advance call, and the safety draw
+
   // insolvency: after a year underwater the creditors don't end you — they
-  // start taking things. One asset a month, sold at a 15% haircut, until the
-  // balance is square. You only lose when there's nothing left to take.
+  // start taking things. One asset a month, sold at a distressed bid, until the
+  // balance is square. You only lose when the line is exhausted and there is
+  // nothing left to take.
   if (s.cash < 0) {
     s.insolventMs++;
     if (s.insolventMs === 6) {
@@ -768,6 +779,10 @@ function tickMonth(
         if (s.workouts?.[pick.bbl]) delete s.workouts[pick.bbl];
         markSponsor(s, shortfall > 0 && pick.loan?.recourse ? "deficiency" : "seized", rec.address, shortfall);
         s.lois = s.lois.filter((l) => l.bbl !== pick.bbl);
+        // A seizure can leave cash still short while the revolver still has
+        // room (the sale waterfall took the deed; the line was never asked).
+        // Draw before the next month's clock reads the balance.
+        coverCashShortfall(s, parcels);
         s.news.unshift({
           q: s.month, kind: "warn",
           text: `The creditors took ${rec.address} — sold at $${(gross / 1e6).toFixed(2)}M, ${(100 * (1 - gross / Math.max(1, pickV))).toFixed(0)}% under the mark. `
@@ -778,7 +793,12 @@ function tickMonth(
               : `$${(proceeds / 1e6).toFixed(2)}M reached you after the costs of the sale${tax > 0 ? ` and $${(tax / 1e6).toFixed(2)}M of tax on the gain` : ``}. `)
             + `${s.cash < 0 ? "They're not done." : "The balance is square, barely."}`,
         });
-        s.insolventMs = 8; // still on the hook until cash goes positive
+        s.insolventMs = s.cash < 0 ? 8 : 0;
+      } else if (locAvailable(s, parcels) > 0) {
+        // Book empty of seizable deeds (or everything is in workout /
+        // development) but the revolver still advances — keep the run alive.
+        coverCashShortfall(s, parcels);
+        if (s.cash >= 0) s.insolventMs = 0;
       } else {
         s.gameOver = {
           cause: "Insolvency: the creditors took everything, and it wasn't enough. A hundred-year town remembers a bankruptcy.",
@@ -789,8 +809,6 @@ function tickMonth(
   } else {
     s.insolventMs = 0;
   }
-
-  tickLoc(s, parcels);   // interest, sweeps, and the safety draw
 
   // the record book — one appraisal for NW history, milestones, and next month's overhead base
   const { nw, gav } = portfolioMark(s, parcels);

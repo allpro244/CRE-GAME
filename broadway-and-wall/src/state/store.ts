@@ -2,7 +2,8 @@ import { startTransition } from "react";
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment } from "@/engine/types";
-import { newGame, advanceMonth, advanceUntilAttentionAsync, firstListings, portfolioQuarterlyCF, hangUpOnCall } from "@/engine/sim";
+import { newGame, advanceMonth, advanceUntilAttentionAsync, attentionItems, firstListings, portfolioQuarterlyCF, hangUpOnCall } from "@/engine/sim";
+import { monthLabel } from "@/engine/types";
 import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import {
@@ -394,8 +395,18 @@ export const useStore = create<AppState>((set, get) => ({
   advance: () => {
     const { game, parcels, bbls, adjacency, advancing } = get();
     if (!game || !parcels || game.gameOver || advancing) return;
+    const cash0 = game.cash;
     const next = advanceMonth(game, parcels, bbls, adjacency);
     set({ game: next });
+    // Month-close feedback: the single-month Advance used to be silent, so
+    // Yr/Skip felt like the only clock that answered. Stamp the new month,
+    // cash movement, and the first thing waiting — short enough to read once.
+    const dCash = next.cash - cash0;
+    const attn = attentionItems(next)[0];
+    const cashBit = dCash === 0 ? ""
+      : dCash > 0 ? ` · +$${(dCash / 1e6).toFixed(2)}M`
+      : ` · −$${(Math.abs(dCash) / 1e6).toFixed(2)}M`;
+    toast(`${monthLabel(next.month)}${cashBit}${attn ? ` · ${attn.label}` : ""}`);
     void persist(next);
   },
 

@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { headlineEpithet } from "@/engine/firm";
-import { useStore } from "@/state/store";
+import { useStore, type Page } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { currentCity, currentSeed } from "@/state/city";
 import { locLimit } from "@/engine/credit";
@@ -9,9 +9,53 @@ import { portfolioQuarterlyCF } from "@/engine/sim";
 import { usd, pct } from "./format";
 import { liveBrokerCalls } from "./RightPanel";
 
+type JobId = "acquire" | "assets" | "capital" | "world";
+
+const JOBS: {
+  id: JobId;
+  label: string;
+  pages: readonly { id: Page; label: string; note: string }[];
+}[] = [
+  {
+    id: "acquire",
+    label: "Acquire",
+    pages: [
+      { id: "market", label: "Marketplace", note: "Listings, auctions and off-market calls" },
+      { id: "deals", label: "Deals", note: "LOIs, negotiations and contracts" },
+      { id: "notes", label: "Notes", note: "Distressed paper away from the deed" },
+      { id: "research", label: "Research", note: "Comps, submarkets and underwriting" },
+    ],
+  },
+  {
+    id: "assets",
+    label: "Assets",
+    pages: [
+      { id: "portfolio", label: "Portfolio", note: "Holdings, income and concentration" },
+      { id: "leasing", label: "Leasing", note: "Occupancy, expirations and mandate" },
+      { id: "staff", label: "Staff", note: "People, capacity and judgment" },
+    ],
+  },
+  {
+    id: "capital",
+    label: "Capital",
+    pages: [
+      { id: "debt", label: "Debt", note: "Loans, line and the maturity wall" },
+      { id: "books", label: "Books", note: "Cash movement and the ledger" },
+    ],
+  },
+  {
+    id: "world",
+    label: "World",
+    pages: [
+      { id: "economy", label: "Economy", note: "Cycle, space markets and construction" },
+      { id: "news", label: "News", note: "What the city wrote this month" },
+    ],
+  },
+];
+
 export default function TopBar() {
   const [armNewRun, setArmNewRun] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [jobOpen, setJobOpen] = useState<JobId | null>(null);
   const fpsOn = useStore((s) => s.fpsOn);
   // When the meter is off, this selector is a constant 0 — so the once-a-second
   // MapView fps write cannot re-render the whole bar (and re-walk the book).
@@ -95,7 +139,7 @@ export default function TopBar() {
   // reach the end of them. They live on the start screen now, which has a
   // scroller and a footer that cannot scroll away. See ui/StartMenu.tsx.
   const newRunRef = useRef<HTMLDivElement>(null);
-  const moreRef = useRef<HTMLDivElement>(null);
+  const jobsRef = useRef<HTMLDivElement>(null);
 
   /* THE BAR PUBLISHES ITS OWN HEIGHT.
      Everything that hangs below it — the parcel panel, the page overlays, the
@@ -129,13 +173,13 @@ export default function TopBar() {
     return () => window.removeEventListener("mousedown", close);
   }, [armNewRun]);
   useEffect(() => {
-    if (!moreOpen) return;
+    if (!jobOpen) return;
     const close = (e: MouseEvent) => {
-      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
+      if (jobsRef.current && !jobsRef.current.contains(e.target as Node)) setJobOpen(null);
     };
     window.addEventListener("mousedown", close);
     return () => window.removeEventListener("mousedown", close);
-  }, [moreOpen]);
+  }, [jobOpen]);
 
   return (
     <div className="topbar" ref={barRef}>
@@ -262,115 +306,61 @@ export default function TopBar() {
           </div>
           </div>
           <div className="topbar-workspace">
-          <nav className="nav-cluster nav-cluster-desks" aria-label="Firm desks">
+          <nav className="nav-cluster nav-cluster-desks" aria-label="Firm jobs" ref={jobsRef}>
           <span className="topbar-sep" />
-          <button className={"nav-btn" + (page === "portfolio" ? " nav-on" : "")} onClick={() => setPage(page === "portfolio" ? "none" : "portfolio")}>
-            Portfolio
-          </button>
-          <button
-            className={"nav-btn" + (page === "deals" ? " nav-on" : "")}
-            title={dealsCount ? `${dealsCount} live decision${dealsCount === 1 ? "" : "s"} on the desk` : "Letters, negotiations, contracts and offers"}
-            onClick={() => setPage(page === "deals" ? "none" : "deals")}
-          >
-            Deals<Badge n={dealsCount} />
-          </button>
-          <button className={"nav-btn nav-secondary" + (page === "research" ? " nav-on" : "")} onClick={() => setPage(page === "research" ? "none" : "research")}>
-            Research
-          </button>
-          {/* THE WHOLE DESK USED TO BE INVISIBLE UNTIL IT CAME TO YOU.
-              `if (!live && !held) return null` hid an 804-line market behind
-              the condition that the game had already offered you some. The
-              badge still counts only what wants an answer; the button is
-              always there, the way Marketplace is on a quiet month. */}
-          <button className={"nav-btn nav-secondary" + (page === "notes" ? " nav-on" : "")} onClick={() => setPage(page === "notes" ? "none" : "notes")}>
-            Notes<Badge n={notesLive} />
-          </button>
-          <button
-            className={"nav-btn" + (page === "market" ? " nav-on" : "")}
-            title={bcalls.length
-              ? `${bcalls.length} off-market file${bcalls.length === 1 ? "" : "s"} on the phone. The soonest lapses in `
-                + `${bcallSoon} month${bcallSoon === 1 ? "" : "s"} — after that the broker's client has stopped listening.`
-              : "Everything for sale in town, and anything a broker is shopping you off-market."}
-            onClick={() => setPage(page === "market" ? "none" : "market")}
-          >
-            Marketplace{bcalls.length > 0 ? ` · ☎ ${bcalls.length}` : ""}
-          </button>
-          <button className={"nav-btn" + (page === "economy" ? " nav-on" : "")} onClick={() => setPage(page === "economy" ? "none" : "economy")}>
-            Economy
-          </button>
-          <button className={"nav-btn" + (page === "leasing" ? " nav-on" : "")} onClick={() => setPage(page === "leasing" ? "none" : "leasing")}>
-            Leasing
-          </button>
-          <button
-            className={"nav-btn nav-secondary" + (page === "staff" ? " nav-on" : "")}
-            title="Hire and manage the people running leasing, property management and construction"
-            onClick={() => setPage(page === "staff" ? "none" : "staff")}
-          >
-            Staff
-          </button>
-          {/* WHAT THE FIRM OWES, IN ONE PLACE. Every debt number in the game
-              existed on some building's record and nowhere in aggregate, so
-              the weighted coupon, the fixed/floating split, the maturity wall
-              and the portfolio coverage ratio were things a player could only
-              get by opening thirty buildings and doing arithmetic. A red dot
-              when a third of the book matures inside three years, because that
-              is the number that ends firms. */}
-          <button
-            className={"nav-btn" + (page === "debt" ? " nav-on" : "")}
-            title={debtBal > 0
-              ? `${(debtBal / 1e6).toFixed(1)}M outstanding${debtHot ? ` — ${((debtWall / debtBal) * 100).toFixed(0)}% of it matures inside three years` : ""}`
-              : "Everything you own is owned outright."}
-            onClick={() => setPage(page === "debt" ? "none" : "debt")}
-          >
-            Debt{debtSwept ? " · ⚠" : debtHot ? " · !" : ""}
-          </button>
-          <button className={"nav-btn nav-secondary" + (page === "books" ? " nav-on" : "")} onClick={() => setPage(page === "books" ? "none" : "books")}>
-            Books
-          </button>
-          {/* THE TAPE HAD NOWHERE TO LIVE. Every headline this economy writes
-              was rendered into a 260px scroll box at the BOTTOM of the Books
-              page, under the ledger — which is the same as not having a news
-              page, and the owner asked where it was. It is a top-level
-              destination now, for the same reason Saves was promoted out of
-              that page: reading the news is not an accounting task. */}
-          <button className={"nav-btn nav-secondary" + (page === "news" ? " nav-on" : "")} onClick={() => setPage(page === "news" ? "none" : "news")}>
-            News<Badge n={unread} />
-          </button>
-          </nav>
-          <div className="nav-more" ref={moreRef}>
-            <button
-              className={"nav-btn" + (["research", "notes", "staff", "books", "news"].includes(page) ? " nav-on" : "")}
-              aria-haspopup="menu"
-              aria-expanded={moreOpen}
-              onClick={() => setMoreOpen((v) => !v)}
-            >
-              More <span aria-hidden="true">▾</span>
-            </button>
-            {moreOpen && (
-              <div className="nav-menu" role="menu">
-                {([
-                  ["research", "Research", "Underwriting, comps and submarkets"],
-                  ["notes", "Notes", "Loans and distressed paper"],
-                  ["staff", "Staff", "People, capacity and mandates"],
-                  ["books", "Books", "Cash movement and operating results"],
-                  ["news", "News", "The city’s market tape"],
-                ] as const).map(([id, label, note]) => (
-                  <button
-                    key={id}
-                    role="menuitem"
-                    className={"nav-menu-item" + (page === id ? " on" : "")}
-                    onClick={() => {
-                      setMoreOpen(false);
-                      setPage(page === id ? "none" : id);
-                    }}
-                  >
-                    <span>{label}</span>
-                    <small>{note}</small>
-                  </button>
-                ))}
+          {/* Job-based IA: four verbs instead of a peer strip of desks. Each
+              job opens its rooms; badges still sit on the job that owns them. */}
+          {JOBS.map((job) => {
+            const on = job.pages.some((p) => p.id === page);
+            const badge = job.id === "acquire"
+              ? dealsCount + notesLive + bcalls.length
+              : job.id === "capital" && (debtSwept || debtHot) ? 1
+              : job.id === "world" ? unread
+              : 0;
+            const title = job.id === "acquire" && bcalls.length
+              ? `${bcalls.length} off-market file${bcalls.length === 1 ? "" : "s"}; soonest lapses in ${bcallSoon} mo`
+              : job.id === "capital" && debtBal > 0
+                ? `${(debtBal / 1e6).toFixed(1)}M outstanding${debtHot ? ` — ${((debtWall / debtBal) * 100).toFixed(0)}% matures inside 3y` : ""}`
+                : undefined;
+            return (
+              <div key={job.id} className="nav-job">
+                <button
+                  type="button"
+                  className={"nav-btn" + (on || jobOpen === job.id ? " nav-on" : "")}
+                  aria-haspopup="menu"
+                  aria-expanded={jobOpen === job.id}
+                  title={title}
+                  onClick={() => setJobOpen((v) => (v === job.id ? null : job.id))}
+                >
+                  {job.label}
+                  {job.id === "acquire" ? <Badge n={badge} /> : null}
+                  {job.id === "capital" && debtSwept ? " · ⚠" : job.id === "capital" && debtHot ? " · !" : ""}
+                  {job.id === "world" ? <Badge n={unread} /> : null}
+                  <span className="nav-caret" aria-hidden="true">▾</span>
+                </button>
+                {jobOpen === job.id && (
+                  <div className="nav-menu nav-job-menu" role="menu">
+                    {job.pages.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        role="menuitem"
+                        className={"nav-menu-item" + (page === p.id ? " on" : "")}
+                        onClick={() => {
+                          setJobOpen(null);
+                          setPage(page === p.id ? "none" : p.id);
+                        }}
+                      >
+                        <span>{p.label}</span>
+                        <small>{p.note}</small>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            );
+          })}
+          </nav>
           <div className="nav-cluster nav-cluster-map" role="group" aria-label="Map lenses">
           <span className="topbar-sep" />
           <button
@@ -403,13 +393,13 @@ export default function TopBar() {
           </button>
           </div>
           <div className="nav-cluster nav-cluster-time" role="group" aria-label="Time controls">
-          <button className="advance-btn" onClick={advance} disabled={!!game.gameOver || advancing} title="One month (Space)">
+          <button className={"advance-btn" + (advancing ? " advance-pulse" : "")} onClick={advance} disabled={!!game.gameOver || advancing} title="One month (Space)">
             Advance ▸
           </button>
-          <button className="advance-btn advance-fast" onClick={advanceYear} disabled={!!game.gameOver || advancing} title="A year, stopping if something needs you (Y)">
+          <button className={"advance-btn advance-fast" + (advancing ? " advance-pulse" : "")} onClick={advanceYear} disabled={!!game.gameOver || advancing} title="A year, stopping if something needs you (Y)">
             {advancing ? "…" : "Yr ▸▸"}
           </button>
-          <button className="advance-btn advance-fast" onClick={advanceUntil} disabled={!!game.gameOver || advancing} title="Skip to the next thing that needs a decision, up to 3 years (N)">
+          <button className={"advance-btn advance-fast" + (advancing ? " advance-pulse" : "")} onClick={advanceUntil} disabled={!!game.gameOver || advancing} title="Skip to the next thing that needs a decision, up to 3 years (N)">
             {advancing ? "…" : "⏭"}
           </button>
           </div>

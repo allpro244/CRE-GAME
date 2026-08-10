@@ -23,8 +23,8 @@ export function mulberry32Step(a: number): { state: number; value: number } {
  *
  * `econ` is the default and mirrors `s.rng` for save/harness compatibility.
  */
-export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners";
-export const RNG_CHANNELS: RngChannel[] = ["econ", "leasing", "rivals", "sales", "dev", "lenders", "owners"];
+export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners" | "indust";
+export const RNG_CHANNELS: RngChannel[] = ["econ", "leasing", "rivals", "sales", "dev", "lenders", "owners", "indust"];
 
 /** Seed independent streams from the campaign seed. Called from newGame. */
 export function initStreams(seed: number): Record<RngChannel, number> {
@@ -606,9 +606,23 @@ export function stockFromParcels(parcels: ParcelTable): Record<BuiltClass, numbe
 export const SECTOR_LABEL = { office: "Office", retail: "Retail", multifamily: "Apartments", industrial: "Industrial" } as const;
 /**
  * WHAT A SQUARE FOOT RENTS FOR AT AN ORDINARY ADDRESS, $/sf/yr. The location
- * multiplier (`locationRentMult` in value.ts) takes it from here — up to 2.45x
- * for prime office and 3.10x for a prime retail pitch, down to 0.40x and 0.34x
- * on the fringe.
+ * multiplier (`locationRentMult` in value.ts) takes it from here — up to 2.20x
+ * for a secondary CBD office and 3.10x for a prime retail pitch, down to 0.40x
+ * and 0.34x on the fringe. Density scaling (`densityPriceScales`) then lifts
+ * or lowers the whole table for how built-up the generated map is.
+ *
+ * THE RULE OF THUMB IS A SECONDARY MARKET. Procedural islands are harbour
+ * towns and working cities, not a primary CBD. Ordinary office follows
+ * Providence Class A asks ($26.71–33.51, market avg ~$29.80 JLL/local 2024)
+ * as GROSS rent on a constrained peninsula — $35.50, not a Midtown face rate.
+ * Denser build-outs (Harbour / Metropolis) and prime parcels earn more through
+ * morphology and location; they do not inherit a primary-city base.
+ *
+ * Was $43.65: the comment admitted that sat above the Providence band, and a
+ * century of wage-tracking then minted ~$110–140/sf real citywide office on
+ * mid-rung procedural maps — primary levels on secondary fabric. The level
+ * belongs in the opening table; the century path belongs in supply and in
+ * `cityClassFactor` (how much chronic-tightness premium a fabric can earn).
  *
  * INDUSTRIAL WAS THE OUTLIER AND IT BROKE THE LAND MARKET. At $18.00 it earned
  * roughly what an office did in the same town, and since industrial hard cost
@@ -629,15 +643,10 @@ export const SECTOR_LABEL = { office: "Office", retail: "Retail", multifamily: "
  * high-street pitch being charged as the city-wide ordinary rate, and then the
  * 3.10x location multiplier was applied ON TOP of it.
  *
- * Office and multifamily stay. Providence Class A asks $26.71-33.51 and the
- * market averages $29.80; this table's ordinary-address office at $43.65 is
- * above that, but it is a GROSS rent in a harbour city with a constrained
- * peninsula, and the measured median-lot achieved rent lands inside the band
- * once the location multiplier has pushed the fringe down. Multifamily at
- * $30.22/sf/yr is $2.52/sf/month, against Providence's ~$2.24 — close enough
- * that moving it would be tuning, not correcting.
+ * Multifamily at $30.22/sf/yr is $2.52/sf/month, against Providence's ~$2.24 —
+ * close enough that moving it would be tuning, not correcting.
  */
-export const RENT_BASE = { office: 43.65, retail: 26.00, multifamily: 30.22, industrial: 8.50 } as const; // $/sf/yr
+export const RENT_BASE = { office: 35.50, retail: 26.00, multifamily: 30.22, industrial: 8.50 } as const; // $/sf/yr
 // The natural (frictional) vacancy per class — the rate at which neither side
 // of the table has the upper hand. Below it landlords push rents; above it
 // tenants extract concessions. Office runs structurally looser than housing.
@@ -831,6 +840,24 @@ export function densityPriceScales(cityFar: number): {
   return { intensity, wage, rent, cost, land };
 }
 
+/**
+ * HOW MUCH PRIMARY-MARKET RENT MACHINERY THIS FABRIC HAS EARNED.
+ *
+ * Morphological intensity (`cityFloorIntensity / REF_CITY_FAR`): Landing ~0.25,
+ * Village ~1, Metropolis ~2.5–3. Secondary harbour towns are the rule of thumb
+ * for procedural islands; only dense fabric should fully earn the chronic
+ * tightness premium and the on-rail scarcity level tax that price a primary
+ * CBD. A mid-rung town can still boom and pin vacancy — it must not mint
+ * Midtown rent-to-wage from "can't build" alone (ECONOMY.md §F).
+ *
+ * Returns 0.30..1.00. Not a difficulty dial: it is the same density signal
+ * already used to open wages and rents, read again where century compounding
+ * used to erase the secondary/primary distinction.
+ */
+export function cityClassFactor(intensity: number): number {
+  return clamp(0.30 + 0.70 * clamp((intensity - 0.35) / 2.4, 0, 1), 0.30, 1);
+}
+
 export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   const CITY = parcels ? stockFromParcels(parcels) : { ...CITY_STOCK };
   const SIZE = citySize(CITY);
@@ -965,6 +992,10 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // Wage (and cost) open at the density premium; output follows jobs × wage.
   econ.wageIdx = dens.wage; econ.outputIdx = dens.wage; econ.cpi = 1;
   econ.industComp = 1;
+  // City class for rent machinery — updated as stock grows (see rent formation).
+  econ.cityIntensity = dens.intensity;
+  econ.cityIntensity0 = dens.intensity;
+  econ.builtSf0 = BUILT_CLASSES.reduce((a, k) => a + (econ.stock[k] ?? 0), 0);
   econ.nat = { infl: 0.021, inflExp: 0.02, unemp: 0.052, policy: 4.2,
                neutralReal: 0.019, shockM: 0, shockSev: 0, credibility: 0.8,
                recM: 0, expM: 0, deep: false, pressureM: 0 };
@@ -2930,6 +2961,16 @@ export function tickEcon(s: GameState) {
   // 1990-92 and 2020-23; an earlier version of this paragraph asserted three
   // per cent on both sides and neither branch obeyed it. Phase drift and
   // sector momentum ride on top as sentiment.
+  //
+  // City class tracks build-out: a Landing that fills in earns more of the
+  // primary rent channel; intensity is morphological FAR / REF at open,
+  // scaled by stock growth so a century of cranes can graduate the town.
+  {
+    const built0 = Math.max(1, e.builtSf0 ?? 1);
+    const built = BUILT_CLASSES.reduce((a, k) => a + (e.stock?.[k] ?? 0), 0);
+    const i0 = e.cityIntensity0 ?? e.cityIntensity ?? 1;
+    e.cityIntensity = clamp(i0 * (built / built0), 0.15, 6);
+  }
   for (const k of BUILT_CLASSES) {
     const vol = k === "multifamily" ? 0.002 : k === "office" ? 0.004 : k === "industrial" ? 0.0024 : 0.003;
     // ...AND ON AVAILABILITY, NOT ON DIRECT VACANCY. A prospective tenant does
@@ -3095,12 +3136,20 @@ export function tickEcon(s: GameState) {
     const friction = frictionFloor(k);
     const vacNow = e.cityVac?.[k] ?? NATURAL_VAC[k];
     const pinned = vacNow <= friction + 1e-6;
+    // Room above the frictional rail — 0 on the pin, rising as the market has
+    // somewhere left to tighten. Same saturation the vacTerm shortage branch
+    // already uses; scarcity level must share it (below).
+    const roomAboveFriction = Math.max(0, vacNow - friction);
+    const railSat = roomAboveFriction / (roomAboveFriction + 0.025);
+    // Within ~1.2pp of the rail, availability is practically saturated — the
+    // same economics as pinned for asking escalators / stored press. Measured
+    // after pin-only mute: "firm" months at vac∈(friction, friction+2pp) still
+    // printed +4–5%/yr real and were the late-century hockey stick.
+    const railBound = vacNow <= friction + 0.012;
     const vacTerm = gap <= 0
       ? (pinned ? 0 : (() => {
           const depth = -gap;
-          const room = Math.max(0, vacNow - friction);
-          const nearFloor = room / (room + 0.025);
-          return clamp(depth * 0.045 * nearFloor, 0, 0.0045);
+          return clamp(depth * 0.045 * railSat, 0, 0.0045);
         })())
       : -(gap <= FIT_MAX
         ? glut(gap)
@@ -3108,14 +3157,6 @@ export function tickEcon(s: GameState) {
         : atFit + span * (1 - Math.exp(-SLOPE_AT_FIT * (gap - FIT_MAX) / span)))
         * capitulation(e.vacOverM[k] ?? 0);
     // Scarcity from CAPACITY shortage (jobs/floors), not the absorption queue.
-    //
-    // Full level→rent while pinned recreated the constant-gap tax (ECONOMY.md
-    // §F #1). Zeroing the level (flow-only) was tried and REJECTED: without
-    // any price rationing on the rail, affordEff stayed high, demand did not
-    // give way, and supply-answers regresssed (stock/jobs 0.73→0.56, pin
-    // 23%→48%). On the rail: weight the FLOW of a worsening shortfall, plus a
-    // reduced level so a stable capacity gap still rations without minting
-    // the old ~1.5%/mo tax. Off the rail the full level stands.
     if (!e.structTightPrev) {
       e.structTightPrev = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
     }
@@ -3123,15 +3164,21 @@ export function tickEcon(s: GameState) {
     const stPrev = e.structTightPrev[k] ?? st;
     const dSt = st - stPrev;
     e.structTightPrev[k] = st;
-    // On-rail level gain kept below the off-rail rate so a stable capacity
-    // gap rations demand without a permanent ~1%/yr real escalator on top of
-    // CPI. Flow still dominates when the shortfall is worsening. Walked
-    // 0.018→0.008 against rent-anchor + supply-answers: 0.008 let avg
-    // structTight drift to 0.083 (rations too little); ~0.010 holds both
-    // with century real office near +1%/yr.
+    // Level scarcity scales with room above friction (`railSat`). On the pin,
+    // sat=0 → mostly flow plus a thin city-class level tax. Near the pin, sat
+    // is small → mostly flow. Far from the rail (still tight vs natural),
+    // full level rations. Paying full `st×0.045` in the last points above the
+    // floor was the firm-near-rail hockey stick: +5%/yr real at 4–5% vac.
+    //
+    // SECONDARY FABRIC GETS A THINNER ON-RAIL LEVEL TAX. The same 0.010 on
+    // every map let mid-rung procedural towns spend half a century on the rail
+    // and graduate into primary real $/sf. Dense cities still ration at the
+    // full rate; Landing/Village ration enough to clear without minting Midtown.
+    const classF = cityClassFactor(e.cityIntensity ?? e.cityIntensity0 ?? 1);
+    const onRailLevel = 0.0035 + 0.0065 * classF;
     const scarcity = pinned
-      ? clamp(Math.max(0, dSt) * 1.8 + st * 0.010, 0, 0.0045)
-      : clamp(st * 0.045, 0, 0.006);
+      ? clamp(Math.max(0, dSt) * 1.8 + st * onRailLevel, 0, 0.0045)
+      : clamp(st * 0.045 * railSat + Math.max(0, dSt) * 1.8 * (1 - railSat), 0, 0.006);
 
     // Lease-quote lag: market pressure (vacancy gap + unmet demand) forms this
     // month; landlords adjust asking rents only after it has sat on the quote
@@ -3144,12 +3191,12 @@ export function tickEcon(s: GameState) {
     const instant = vacTerm + scarcity;
     const tau = RENT_PRESS_TAU[k];
     e.rentPress[k] += (instant - e.rentPress[k]) / tau;
-    // On the frictional rail, gently bleed stored POSITIVE shortage pressure
-    // so the lag EMA cannot pay out a year of scarcity after the gap has
-    // stopped moving. Soft-side (negative) press is left to the ordinary tau
-    // chase so gluts still clear through the quote sheet.
-    if (pinned && (e.rentPress[k] ?? 0) > 0) {
-      e.rentPress[k] *= 0.97;
+    // Near/on the frictional rail, bleed stored POSITIVE shortage pressure so
+    // the lag EMA cannot keep paying real rent after availability has
+    // saturated. Soft-side (negative) press is left to the ordinary tau chase
+    // so gluts still clear through the quote sheet.
+    if (railBound && (e.rentPress[k] ?? 0) > 0) {
+      e.rentPress[k] *= 0.90;
     }
     // Hard rail on the EMA itself — see the press clamp at the drift line.
     e.rentPress[k] = clamp(e.rentPress[k], -0.008, 0.0075);
@@ -3179,7 +3226,11 @@ export function tickEcon(s: GameState) {
     const rentToIncome = (e.rentIdx[k] / Math.max(1e-6, base)) / income;
     // HOW MUCH OF A PREMIUM A CHRONICALLY TIGHT CITY IS ALLOWED TO EARN.
     // Long-run US CRE real rent is roughly flat to +1%/yr (CBRE/NCREIF).
-    const sustain = 1 + 0.28 * clamp(e.tightEma ?? 0, -0.30, 0.55);
+    // The full 0.28 loading is a primary-CBD earn; secondary fabric
+    // (`cityClassFactor`) keeps a smaller sustainable RTI premium so a
+    // harbour town that runs tight does not quietly become Manhattan.
+    const classFAnchor = cityClassFactor(e.cityIntensity ?? e.cityIntensity0 ?? 1);
+    const sustain = 1 + 0.28 * classFAnchor * clamp(e.tightEma ?? 0, -0.30, 0.55);
     const dev = rentToIncome / sustain - 1;
     // Pull hard when rent outruns pay; barely nudge when rent is cheap —
     // cheap space is what supply is for, not a reason to reprice the city up.
@@ -3190,9 +3241,18 @@ export function tickEcon(s: GameState) {
     // reconstituted a clearing face rate.
     const softW = clamp(gap / 0.03, 0, 1);   // 0 at natural, 1 by +3pp soft
     const firmW = 1 - softW;
+    // Cheap-side pull is weak off-rail (supply is what clears a glut of cheap
+    // space). Near/on the rail, do NOT pull all the way to earned sustain —
+    // that reminted pin-month real growth once scarcity was muted. Pull only
+    // toward a floor RTI, hard enough to track wages (partial CPI alone
+    // cannot hold a ratio against ~1.4%/yr real pay), then stop once there.
+    const rtiFloor = 0.65;
+    const belowFloor = rentToIncome / rtiFloor - 1; // negative when under the floor
     const anchor = dev > 0
       ? -0.018 * Math.min(2.0, dev)           // outrunning incomes: pulled down hard
-      : -0.0007 * Math.max(-0.65, dev);       // cheap against incomes: weak drift up
+      : railBound
+        ? (belowFloor < 0 ? 0.008 * Math.min(0.55, -belowFloor) : 0)
+        : -0.0007 * Math.max(-0.65, dev);
 
     // AND RENT CARRIES THE PRICE LEVEL — BUT ONLY WHEN THE MARKET IS FIRM.
     //
@@ -3215,21 +3275,32 @@ export function tickEcon(s: GameState) {
     // some seeds (~0.2x RTI) — asking cannot forget the price level entirely
     // once it has already under-shot wages by that much.
     const cheapFloor = dev < 0 ? clamp(-dev / 0.30, 0, 0.75) : 0;
-    const escalGate = Math.max(firmW, cheapFloor);
+    // RAIL-BOUND ESCALATOR. Soft markets already refuse full CPI in asking.
+    // On/near the frictional rail, firmW=1 (gap≤0) used to keep full inflExp
+    // forever on practically saturated availability. In-place leases keep
+    // escalating in leasing.ts; the asking index carries only a lease-roll
+    // fraction of CPI — more if rent is already cheap against pay.
+    // On the rail at/above the RTI floor: lease-roll fraction of CPI only.
+    // Below the floor: track the price level (and a bit more) so the floor is
+    // reachable against rising wages; once restored, the mute returns.
+    const underFloor = belowFloor < 0 ? clamp(-belowFloor / 0.25, 0, 1) : 0;
+    const railEscal = railBound
+      ? (belowFloor < 0 ? 0.85 + 0.35 * underFloor : 0.35)
+      : 1;
+    const escalGate = Math.max(firmW, cheapFloor) * railEscal;
     const escalation = ((e.inflExp ?? 0.02) / 12) * escalGate;
     // Cap the lagged pressure term: chronic shortage was holding ~+1.6%/mo of
     // scarcity in rentPress and overpowering the income anchor for a decade.
     const press = clamp(e.rentPress[k], -0.008, 0.0075);
-    // Phase / job / sector sentiment must not LIFT asking while soft, on the
-    // frictional rail, or once rent is already near earned pay. Soft: empty
-    // floors on the shelf. Pinned: availability is saturated (same reason
-    // tightEma refuses to mint Manhattan from "can't build"). Near parity:
-    // further weather lift is what made every sim compound ~1.4%+ real on top
-    // of CPI even after the soft escalator died — cycle may help a CHEAP
-    // market recover, not keep marking up a clearing one. Growing unmet
-    // demand still prices through scarcity → rentPress. Negative cycle terms
-    // still cut in every state.
-    const liftGate = (pinned || softW > 0 || dev > -0.08) ? 0 : 1;
+    // Phase / job / sector sentiment must not LIFT asking while soft, on/near
+    // the frictional rail, or once rent is already near earned pay. Soft:
+    // empty floors on the shelf. Rail-bound: availability is saturated (same
+    // reason tightEma refuses to mint Manhattan from "can't build"). Near
+    // parity: further weather lift is what made every sim compound ~1.4%+
+    // real on top of CPI — cycle may help a CHEAP market recover, not keep
+    // marking up a clearing one. Growing unmet demand still prices through
+    // scarcity → rentPress. Negative cycle terms still cut in every state.
+    const liftGate = (railBound || softW > 0 || dev > -0.08) ? 0 : 1;
     const cycleRent = c2.rentDrift * 0.48 * (c2.rentDrift > 0 ? liftGate : 1);
     const cycleJobs = jobDrift * 0.28 * (jobDrift > 0 ? liftGate : 1);
     const cycleMom = e.sectorMom[k] * 0.42 * (e.sectorMom[k] > 0 ? liftGate : 1);
@@ -3492,7 +3563,24 @@ export function tickEcon(s: GameState) {
     const rentLvl = (e.effRentIdx?.office ?? e.rentIdx.office) / RENT_BASE.office;
     const stretch = rentLvl / Math.max(0.5, e.costIdx) - 1;
     const catchUp = stretch > 0.25 ? Math.min(0.0045, 0.012 * (stretch - 0.25)) : 0;
-    e.costIdx = clamp(e.costIdx * (1 + costDrift + catchUp + rrange(s, -0.0012, 0.0012)), 0.6, 400);
+    // Real construction cost mean-reverts toward a slow productivity path
+    // (~0.4%/yr above CPI — long-run structure, code, and wage mix). Boom heat
+    // still moves the index at ENR extremes; what it must not do is compound
+    // ~+0.8%/yr real for a century from one-way rent catch-up. Measured before:
+    // costIdx/cpi ~2.3× by y100 against a ~1.5× fair path.
+    const yrs = Math.max(0, (s.month ?? 0) / 12);
+    const fairRealCost = Math.pow(1.004, yrs);
+    const realCostNow = e.costIdx / Math.max(0.35, e.cpi ?? 1);
+    const realStretch = realCostNow / Math.max(0.5, fairRealCost) - 1;
+    const realPull = realStretch > 0.20
+      ? -Math.min(0.0020, 0.005 * (realStretch - 0.20))
+      : realStretch < -0.25
+        ? Math.min(0.0012, 0.003 * (-realStretch - 0.25))
+        : 0;
+    e.costIdx = clamp(
+      e.costIdx * (1 + costDrift + catchUp + realPull + rrange(s, -0.0012, 0.0012)),
+      0.6, 400,
+    );
   }
 
   recordHistory(e, s.month, monthAbs, monthComp);

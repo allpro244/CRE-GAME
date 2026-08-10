@@ -1,0 +1,7 @@
+commit=consolid-1
+gitTip=337a4d1
+builtAt=2026-08-10T20:43Z
+branch=cursor/consolidate-todays-work-9786
+rentBaseOffice=35.50
+includes=economy-#3-#5,ui-#7,prefer-smoother-frames-#8,secondary-rents-#9
+verifyInGame=start screen footer should say: build consolid-1 · office base $35.5

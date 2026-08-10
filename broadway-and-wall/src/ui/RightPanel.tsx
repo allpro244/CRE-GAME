@@ -1,8 +1,9 @@
-// The game's chrome: a parcel card docked to the map, and full-page views
-// for Portfolio / Deals / Market — big rooms, not side-panel squints.
+// The game's chrome: a parcel card on the map, and firm desks docked beside
+// the city — rooms you work in without burying New Alden under a wash.
 import { useEffect } from "react";
 import { useStore } from "@/state/store";
 import StaffPage from "@/ui/StaffPage";
+import YearRail from "@/ui/YearRail";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { PortfolioPage } from "@/ui/panels/PortfolioPage";
 import { DealsPage } from "@/ui/panels/DealsPage";
@@ -29,6 +30,7 @@ export default function GamePanels() {
   const hasGame = useStore((s) => !!s.game);
   const page = useStore((s) => s.page);
   const setPage = useStore((s) => s.setPage);
+  const selectedBBL = useStore((s) => s.selectedBBL);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
@@ -75,21 +77,14 @@ export default function GamePanels() {
     : page === "settings" ? "Settings"
     : page === "primer" ? "How this business works"
     : "The Marketplace";
-  const kicker = page === "portfolio" ? "The firm"
-    : page === "deals" ? "Live execution"
-    : page === "books" ? "The ledger"
-    : page === "news" ? "Market intelligence"
-    : page === "leasing" ? "Asset management"
-    : page === "debt" ? "Capital structure"
-    : page === "property" ? "Asset file"
+  const kicker = page === "portfolio" || page === "leasing" || page === "staff" || page === "property" ? "Assets"
+    : page === "deals" || page === "market" || page === "notes" || page === "research" ? "Acquire"
+    : page === "debt" || page === "books" ? "Capital"
+    : page === "economy" || page === "news" ? "World"
     : page === "saves" ? "Campaign"
-    : page === "economy" ? "City & markets"
-    : page === "research" ? "Underwriting"
-    : page === "notes" ? "Credit"
-    : page === "staff" ? "The organization"
     : page === "settings" ? "Preferences"
     : page === "primer" ? "Primer"
-    : "Acquisitions";
+    : "Acquire";
   const subtitle = page === "portfolio" ? "Value, income, concentration and the shape of what you own."
     : page === "deals" ? "Every live negotiation, bid, contract and clock on your desk."
     : page === "books" ? "Cash movement, operating results and the record of the firm."
@@ -105,11 +100,14 @@ export default function GamePanels() {
     : page === "settings" ? "Display, interruption and simulation controls."
     : page === "primer" ? "The quantities this game expects you to reason with."
     : "On-market listings, off-market calls and motivated sellers.";
+  // Map stays the workplace. Firm desks dock beside the city; the parcel card
+  // yields while a desk is open so two right-hand sheets do not fight.
   return (
     <>
-      <ParcelPanel />
+      <YearRail />
+      {page === "none" && <ParcelPanel />}
       {page !== "none" && (
-        <div className="page-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setPage("none"); }}>
+        <div className={"page-dock" + (page === "property" && selectedBBL ? " page-dock-wide" : "")}>
           <div className={`page page-${page}`}>
             <div className="page-head">
               <div className="page-heading">

@@ -8,5 +8,10 @@
     "gate": "pnpm --dir broadway-and-wall gate",
     "readiness": "pnpm --dir broadway-and-wall readiness",
     "engine": "pnpm --dir broadway-and-wall engine"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }

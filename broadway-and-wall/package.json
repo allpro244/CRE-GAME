@@ -60,6 +60,7 @@
     "leadlag": "node test/leadlag.mjs",
     "legmatch": "node test/legmatch.mjs",
     "inflation": "node test/inflation.mjs",
+    "cityclass": "node test/cityclass-rents.mjs",
     "facility": "node test/facility.mjs",
     "mixmatch": "node test/mixmatch.mjs",
     "mortality": "node test/mortality.mjs",

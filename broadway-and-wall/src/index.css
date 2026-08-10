@@ -3,6 +3,8 @@
 
 :root {
   --paper: #f6f1e2;
+  --paper-deep: #ebe3cf;
+  --paper-wash: rgba(246, 241, 226, 0.88);
   /* the start screen's chart table — see .start */
   --chart-ink: #e6eef2;
   --chart-dim: #93aab6;
@@ -10,6 +12,7 @@
   --ink: #2b251a;
   --ink-dim: #7a7260;
   --gold: #b07f1e;
+  --gold-soft: rgba(176, 127, 30, 0.14);
   --teal: #2f7a72;
   --danger: #a8402e;
   --success: #3a7d46;
@@ -18,6 +21,8 @@
   --card-line: rgba(146, 110, 40, 0.4);
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --dock-w: min(560px, calc(100vw - 28px));
+  --dock-w-wide: min(760px, calc(100vw - 28px));
 
   /* ELEVATION, AS A SCALE RATHER THAN A GUESS. Every card in here had its own
      hand-written box-shadow, all of them a single soft blur, which is why the
@@ -83,8 +88,10 @@ body {
 }
 .brand-name {
   font-family: var(--serif);
-  font-size: 22px; letter-spacing: 0.5px;
+  font-size: 23px; letter-spacing: 0.4px;
   color: var(--ink);
+  font-weight: 600;
+  text-shadow: 0 1px 0 rgba(255, 252, 242, 0.65);
 }
 .brand-sub {
   margin-left: 12px; font-size: 12px; color: var(--ink-dim);
@@ -495,19 +502,40 @@ body {
 }
 .nav-btn.nav-on:hover { background: linear-gradient(to bottom, #4a4130, #2e2718); }
 
-/* ---- full-page overlays: Portfolio / Deals / Market ---- */
-/* The city stays visible behind a page, but only as a mood — a flat 35% wash
-   over a 3px blur left it legible enough to compete with the numbers in front
-   of it. More blur and a slight desaturation push it fully into the
-   background, where it belongs while you are reading a rent roll. */
-.page-backdrop {
-  position: fixed; inset: 0; z-index: 50;
-  background: radial-gradient(120% 100% at 50% 0%, rgba(43, 37, 26, 0.34), rgba(24, 20, 12, 0.52));
-  backdrop-filter: blur(9px) saturate(0.82);
-  -webkit-backdrop-filter: blur(9px) saturate(0.82);
-  overflow-y: auto;
-  padding: 56px 24px 40px;
+/* ---- firm desks: docked beside the map, not a full-screen wash ---- */
+/* The city is the workplace. Desks used to bury it under blur; they now slide
+   in as a parchment sheet on the right so Land/Demand lenses and parcel picks
+   stay live while you read a rent roll. */
+.page-dock {
+  position: absolute;
+  top: calc(var(--topbar-h, 91px) + 10px);
+  right: 14px;
+  bottom: 14px;
+  width: var(--dock-w);
+  z-index: 50;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
 }
+.page-dock-wide { width: var(--dock-w-wide); }
+.page-dock .page {
+  pointer-events: auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  background:
+    linear-gradient(165deg, rgba(255, 252, 244, 0.55), transparent 42%),
+    linear-gradient(to bottom, rgba(249, 245, 235, 0.97), rgba(243, 237, 221, 0.95));
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--edge-top), var(--lift-3);
+  padding: 20px 22px 26px;
+  animation: dock-arrive 0.22s var(--ease);
+}
+/* legacy class kept so older selectors still resolve during the transition */
+.page-backdrop { display: none; }
 .page {
   max-width: 1060px; margin: 0 auto;
   background: linear-gradient(to bottom, rgba(249, 245, 235, 0.97), rgba(243, 237, 221, 0.95));
@@ -694,9 +722,7 @@ body {
 
 /* The top bar stays above the page overlay: a page is a room you can read
    while the clock runs, not a wall between you and the Advance button. */
-.topbar { z-index: 60; }
-.page-backdrop { padding-top: calc(var(--topbar-h, 91px) + 12px); }
-.page-backdrop { pointer-events: auto; }
+.topbar { z-index: 60; overflow: visible; }
 
 /* ---- blocking decisions: LOIs and offers take the screen ---- */
 .modal-backdrop {
@@ -1363,10 +1389,15 @@ body {
   display: flex; align-items: center; gap: 10px;
   padding-top: 7px;
   border-top: 1px solid rgba(96, 76, 34, 0.14);
+  /* display:contents on .topbar-game drops this onto a pointer-events:none
+     bar — restore hit-testing so job menus and Advance stay clickable. */
+  pointer-events: auto;
+  overflow: visible;
 }
 .nav-cluster {
   min-width: 0;
   display: flex; align-items: center; gap: 3px;
+  overflow: visible;
 }
 .nav-cluster::before {
   flex: none;
@@ -1379,12 +1410,11 @@ body {
 }
 .nav-cluster-desks {
   flex: 1 1 auto;
-  overflow-x: auto;
-  scrollbar-width: none;
-  mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 16px), transparent 100%);
+  /* Job menus hang below this row. overflow-x:auto + a fade mask used to
+     clip every dropdown into invisibility. Four jobs do not need to scroll. */
+  overflow: visible;
 }
-.nav-cluster-desks::-webkit-scrollbar { display: none; }
-.nav-cluster-desks::before { content: "DESKS"; position: sticky; left: 0; z-index: 2; }
+.nav-cluster-desks::before { content: "JOBS"; }
 .nav-cluster-map {
   flex: none;
   padding-left: 10px;
@@ -1423,13 +1453,13 @@ body {
   box-shadow: inset 0 1px 0 rgba(255, 246, 222, 0.13), var(--lift-1);
 }
 .nav-secondary { display: none !important; }
-.nav-more { position: relative; flex: none; }
-.nav-more > .nav-btn { padding: 6px 10px; font-size: 12px; }
+.nav-job { position: relative; flex: none; overflow: visible; }
+.nav-caret { margin-left: 4px; font-size: 10px; opacity: 0.7; }
 .nav-menu {
   position: absolute;
   top: calc(100% + 9px);
-  right: 0;
-  width: 252px;
+  left: 0;
+  width: 268px;
   padding: 6px;
   border: 1px solid var(--card-line);
   border-radius: var(--r-md);
@@ -1437,7 +1467,9 @@ body {
   box-shadow: var(--edge-top), var(--lift-3);
   backdrop-filter: blur(14px) saturate(1.1);
   -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  z-index: 80;
 }
+.nav-job-menu { left: 0; right: auto; }
 .nav-menu-item {
   width: 100%;
   display: grid;
@@ -1468,6 +1500,9 @@ body {
 
 /* Page headers now answer three questions before the table starts: which part
    of the firm, which desk, and what decision the room is for. */
+.page-dock .page {
+  border-top: 3px solid rgba(176, 127, 30, 0.78);
+}
 .page {
   max-width: 1160px;
   border-top: 3px solid rgba(176, 127, 30, 0.78);
@@ -1619,11 +1654,126 @@ body {
   .nav-cluster-map .lens-btn::first-letter { font-size: 13px; }
   .nav-cluster-time { padding-left: 6px; }
   .nav-cluster-time .advance-fast { display: none; }
-  .page-backdrop { padding-inline: 10px; padding-bottom: 10px; }
-  .page { padding: 18px 16px 22px; }
-  .page-title { font-size: 27px; }
+  .page-dock {
+    left: 10px; right: 10px; bottom: 10px;
+    top: auto;
+    width: auto;
+    max-height: 52vh;
+  }
+  .page-dock .page { padding: 16px 14px 20px; }
+  .page-title { font-size: 24px; }
   .page-subtitle { font-size: 12px; }
+  .year-rail { left: 10px; right: 10px; width: auto; }
 }
+
+/* Year-one rails — a single next step, not a dashboard of goals. */
+.year-rail {
+  position: absolute;
+  top: calc(var(--topbar-h, 91px) + 10px);
+  left: 14px;
+  width: min(340px, calc(100vw - 28px));
+  z-index: 25;
+  padding: 10px 12px 11px;
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-md);
+  background:
+    linear-gradient(135deg, var(--gold-soft), transparent 55%),
+    linear-gradient(to bottom, rgba(250, 246, 236, 0.94), rgba(243, 236, 218, 0.9));
+  box-shadow: var(--edge-top), var(--lift-2);
+  backdrop-filter: blur(12px) saturate(1.1);
+  -webkit-backdrop-filter: blur(12px) saturate(1.1);
+  animation: rail-arrive 0.28s var(--ease);
+}
+.year-rail-kicker {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 4px;
+}
+.year-rail-body {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+}
+.year-rail-label {
+  font-family: var(--serif);
+  font-size: 13px;
+  color: var(--ink);
+}
+.year-rail-text {
+  font-size: 12px;
+  color: var(--ink-dim);
+  line-height: 1.35;
+  min-width: 0;
+}
+.year-rail-go {
+  border: 1px solid rgba(96, 76, 34, 0.28);
+  background: rgba(255, 253, 246, 0.7);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 12px;
+  padding: 4px 9px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.year-rail-go:hover {
+  border-color: rgba(96, 76, 34, 0.5);
+  background: #fffdf6;
+}
+
+/* Deal close staging */
+.deal-stages { margin-top: 8px; }
+.deal-stage-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid rgba(146, 110, 40, 0.22);
+}
+.deal-stage-tab {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--ink-dim);
+  font-family: var(--serif);
+  font-size: 13px;
+  padding: 7px 6px 8px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.deal-stage-tab:hover { color: var(--ink); }
+.deal-stage-tab.on {
+  color: var(--ink);
+  border-bottom-color: var(--gold);
+}
+.deal-stage { animation: stage-fade 0.16s var(--ease); }
+
+.advance-pulse {
+  animation: advance-glow 0.9s var(--ease) infinite;
+}
+
+@keyframes dock-arrive {
+  from { opacity: 0; transform: translateX(14px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes rail-arrive {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes stage-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes advance-glow {
+  0%, 100% { box-shadow: var(--edge-top), var(--lift-1); }
+  50% { box-shadow: 0 0 0 1px rgba(176, 127, 30, 0.45), var(--lift-2); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .page, .panel { animation: none; }
+  .page, .panel, .page-dock .page, .year-rail, .deal-stage { animation: none; }
+  .advance-pulse { animation: none; }
 }

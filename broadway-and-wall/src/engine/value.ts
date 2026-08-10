@@ -521,9 +521,11 @@ export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): Res
     // Same ladder replacementCostPsf and planDevelopment use.
     const fl = Math.max(1, Math.round(usable / 0.7));
     const costPsf = HARD_COST_PSF[use] * econ.costIdx * heightPremium(fl) * (1 + SOFT_COST) * (1 + CONTINGENCY);
-    // ...AND FILLING IT COSTS MONEY TOO. Fit-out and commissions are charged
-    // on the rentable feet, which is where the income is.
-    const fitPsf = (TI_PSF[use] + (use === "multifamily" ? 0 : rent * 6 * 0.045)) * econ.costIdx;
+    // ...AND FILLING IT COSTS MONEY TOO. Fit-out tracks construction cost;
+    // commissions are already a cut of today's rent and must not be scaled by
+    // costIdx a second time (same identity as leaseUpValue / planDevelopment).
+    const lcPsf = use === "multifamily" ? 0 : rent * 6 * 0.045;
+    const fitPsf = TI_PSF[use] * econ.costIdx + lcPsf;
 
     // THE MARGIN IS EARNED ON ALL THE MONEY, INCLUDING THE LAND.
     //
@@ -897,7 +899,8 @@ export function locationRentMult(rec: ParcelRecord, econ?: Econ, use?: BuiltClas
   //   retail       the most location-sensitive real estate there is. A high
   //                street pitch against a dead parade is many times over —
   //                footfall is the product and it does not travel.
-  //   office       three to four times, CBD trophy against suburban commodity.
+  //   office       about two to two-and-a-half times in a secondary city
+  //                (CBD against fringe); primary trophy markets run wider.
   //   multifamily  two to two and a half. People will commute; they will not
   //                pay four times for the same flat.
   //   industrial   the narrowest of the four. A distribution tenant is cost
@@ -915,7 +918,12 @@ export function locationRentMult(rec: ParcelRecord, econ?: Econ, use?: BuiltClas
  */
 const LOC_SPREAD: Record<BuiltClass, { exp: number; max: number; min: number }> = {
   retail:      { exp: 1.45, max: 3.10, min: 0.34 },
-  office:      { exp: 1.28, max: 2.45, min: 0.40 },
+  // Office ceiling was 2.45 — primary CBD trophy vs suburban commodity.
+  // Procedural islands are secondary markets as a rule of thumb; ~2.2× is
+  // CBD-vs-fringe for a harbour / working city. Density scaling lifts the
+  // citywide index on Metropolis fabric; location should not also mint
+  // Midtown on every seed's best block.
+  office:      { exp: 1.28, max: 2.20, min: 0.40 },
   multifamily: { exp: 1.10, max: 1.95, min: 0.52 },
   industrial:  { exp: 0.82, max: 1.55, min: 0.62 },
 };

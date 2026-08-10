@@ -2,7 +2,8 @@ import { startTransition } from "react";
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment } from "@/engine/types";
-import { newGame, advanceMonth, advanceUntilAttentionAsync, firstListings, portfolioQuarterlyCF, hangUpOnCall } from "@/engine/sim";
+import { newGame, advanceMonth, advanceUntilAttentionAsync, attentionItems, firstListings, portfolioQuarterlyCF, hangUpOnCall } from "@/engine/sim";
+import { monthLabel } from "@/engine/types";
 import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import {
@@ -142,6 +143,16 @@ interface AppState {
    */
   fpsOn: boolean;
   setFpsOn: (v: boolean) => void;
+  /**
+   * PREFER SMOOTHER FRAMES ON WEAK GPUS.
+   * Off by default: a capable machine keeps native pixel density and 4× MSAA,
+   * same as before this dial existed. On, it caps DPR, drops MSAA to 2×, and
+   * reuses the harbour reflection a frame more often. Skyline, facades,
+   * economy and sim depth are untouched — fill-rate only. UI preference, not
+   * save state.
+   */
+  preferFps: boolean;
+  setPreferFps: (v: boolean) => void;
   /**
    * MARK THE OLDEST INTERRUPTION READ.
    *
@@ -351,6 +362,7 @@ export const useStore = create<AppState>((set, get) => ({
   popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups") === "off",
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
+  preferFps: typeof localStorage !== "undefined" && localStorage.getItem("bw:prefer-fps") === "on",
   toast: null,
   fps: 0,
   loadError: null,
@@ -394,8 +406,19 @@ export const useStore = create<AppState>((set, get) => ({
   advance: () => {
     const { game, parcels, bbls, adjacency, advancing } = get();
     if (!game || !parcels || game.gameOver || advancing) return;
+    const cash0 = game.cash;
     const next = advanceMonth(game, parcels, bbls, adjacency);
     set({ game: next });
+    // Month-close feedback: the single-month Advance used to be silent, so
+    // Yr/Skip felt like the only clock that answered. Stamp the new month,
+    // cash movement, and the first thing waiting — short enough to read once.
+    const dCash = next.cash - cash0;
+    const attn = attentionItems(next)[0];
+    // Ignore sub-$1k noise so a quiet month does not stamp "−$0.00M".
+    const cashBit = Math.abs(dCash) < 1000 ? ""
+      : dCash > 0 ? ` · +$${(dCash / 1e6).toFixed(2)}M`
+      : ` · −$${(Math.abs(dCash) / 1e6).toFixed(2)}M`;
+    toast(`${monthLabel(next.month)}${cashBit}${attn ? ` · ${attn.label}` : ""}`);
     void persist(next);
   },
 
@@ -463,7 +486,12 @@ export const useStore = create<AppState>((set, get) => ({
     const r = buyListing(game, parcels, bbl, product, lev, bid);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
-    toast(r.msg ?? "Deed recorded. The block knows your name now.");
+    // A lowball can update the tape (news, a pulled listing) without a deed.
+    // Do not congratulate the player for a closing that did not happen.
+    toast(
+      r.msg ?? "Deed recorded. The block knows your name now.",
+      r.refused ? "err" : "ok",
+    );
     void persist(r.s);
   },
 
@@ -521,6 +549,11 @@ export const useStore = create<AppState>((set, get) => ({
   setFpsOn: (v) => {
     try { localStorage.setItem("bw:fps", v ? "on" : "off"); } catch { /* private mode */ }
     set({ fpsOn: v });
+  },
+
+  setPreferFps: (v) => {
+    try { localStorage.setItem("bw:prefer-fps", v ? "on" : "off"); } catch { /* private mode */ }
+    set({ preferFps: v });
   },
 
   dismissAlert: () => {

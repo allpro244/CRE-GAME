@@ -389,7 +389,7 @@ export interface Holding {
    * the way the player is". They were not. Now they are.
    */
   condIdx?: number;
-  /** Last month the capital plan went unfunded, because the money was short. */
+  /** Last month the capital plan went unfunded — firm cash could not cover the bill. */
   planCutM?: number;
   /**
    * HOW YOU HAVE DECIDED TO RUN IT — the two standing decisions, taken once
@@ -803,13 +803,15 @@ import type { Comp } from "./comps";
 export type GroundReview = "fixed" | "cpi" | "fmv";
 
 /**
- * A GROUND LEASE YOU HAVE GRANTED.
+ * A GROUND LEASE ON A FEE.
  *
- * Somebody else's building on your land, for a very long time. You take a
- * coupon with reviews and no operating risk — and the site is not yours to
- * build on until the term runs out. The leased fee CAN trade (it is a bond
- * with a deed attached). The lessee actually builds; the improvement sits in
- * `built` until reversion hands you the bones with the dirt.
+ * Somebody else's building on the dirt, for a very long time. The fee owner
+ * takes a coupon with reviews and no operating risk — and the site is not
+ * theirs to build on until the term runs out. The leased fee CAN trade (it is
+ * a bond with a deed attached): when it leaves your book the lease moves to
+ * `cityGroundLeases` so the encumbrance survives the closing. The lessee
+ * builds; the improvement sits in `built` until reversion hands the bones
+ * back with the dirt.
  */
 export interface GroundLease {
   bbl: string;
@@ -2193,6 +2195,15 @@ export interface GameState {
   merged?: Record<string, string>;
   // GROUND LEASES you have granted on your own dirt, by parcel.
   groundLeases?: Record<string, GroundLease>;
+  /**
+   * GROUND LEASES ON FEES YOU NO LONGER OWN.
+   *
+   * Selling (or losing) a leased fee does not cancel the lease — the buyer
+   * takes the coupon and the reversion. We do not simulate the NPC fee owner's
+   * cash, but the encumbrance stays here so the site cannot reappear as
+   * freehold inventory or get torn down under the lessee until the term ends.
+   */
+  cityGroundLeases?: Record<string, GroundLease>;
   // ZONING MOVES. A district's envelope multiplier, an extra FAR you won at a
   // hearing on one site, an application waiting on the board, and the
   // buildings nobody is allowed to knock down. See engine/zoning.ts.

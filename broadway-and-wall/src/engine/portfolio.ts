@@ -33,7 +33,7 @@ import { depositsOn } from "./leasing";
 import { useSf } from "./mix";
 import { prepayPenalty } from "./debt";
 import { recordComp } from "./comps";
-import { saleTaxQuote, EXCHANGE_WINDOW_M } from "./actions";
+import { saleTaxQuote, EXCHANGE_WINDOW_M, transferGroundLeaseOffBook } from "./actions";
 import { sponsorStanding } from "./sponsor";
 
 const clone = (s: GameState): GameState => cloneState(s);
@@ -472,7 +472,7 @@ export function acceptPortfolioBid(
       price, basis: h.costBasis, gain,
     });
     recordComp(next, rec, price, bid.name, firmShort(next), undefined, h.condition);
-    if (next.groundLeases?.[bbl]) delete next.groundLeases[bbl];
+    if (next.groundLeases?.[bbl]) transferGroundLeaseOffBook(next, bbl);
     next.cash -= depositsOn(h);
     for (const [child, parent] of Object.entries(next.merged ?? {})) {
       if (parent !== bbl) continue;

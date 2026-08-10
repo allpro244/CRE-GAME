@@ -959,8 +959,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       h.condIdx -= wear;
 
       // THE CAPITAL PLAN. 34bps of gross asset value a year, spent without being
-      // asked. It is the first thing that goes when the money is short, and a
-      // building whose cash flow the lender has swept does not get it at all.
+      // asked. It is the first thing that goes when the money is short.
       // HOW THE BUILDING IS RUN, as the tenants experience it — which is not
       // the switch, it is the average of the switch over about three years. A
       // service cut shows up in NOI next month and in the rent roll in 2007.
@@ -981,11 +980,16 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const plan = planSpec(h.plan);
       const gav = ownedHoldingValue(s, parcels, h);
       const want = Math.round((CAP_PLAN_RATE * plan.mult * gav * (wear / COND_WEAR_REF)) / 12);
-      // A SWEPT BUILDING DOES NOT GET THE PLAN, and a facility sweeps every
-      // deed in its pool at once — which is the whole difference between a
-      // covenant on one building and a covenant on a book.
-      const swept = h.loan?.sweep === true || (s.facility?.sweep === true && s.facility.bbls.includes(h.bbl));
-      if (want > 0 && s.cash > want * 4 && !swept) {
+      // A SWEEP TRAPS PROPERTY CASH FLOW — it does not freeze the firm's
+      // chequebook. Charging the plan from firm cash while a deed is swept used
+      // to be refused outright, which printed "capital plan went unfunded" on a
+      // sponsor sitting on millions and left the bricks to rot for no reason a
+      // lender would recognise. The sweep still takes surplus NOI to principal
+      // in debt.ts; the reserve cheque is sponsor equity, same as a cure.
+      // Fund this month when the firm can pay this month's bill — a 4× cash
+      // buffer used to cut the plan while three months of runway were still in
+      // the account, which read the same way to the player.
+      if (want > 0 && s.cash >= want) {
         s.cash -= want;
         logBooks(s, "capex", want);
         h.condIdx += wear * plan.lift;
@@ -2535,12 +2539,19 @@ export function respondLOI(
       }
       const d = drawLoc(next, parcels, short);
       if (d.err) return d.err;
+      // drawLoc returns a fresh clone. Assigning it over `next` replaces every
+      // holding object — any `h` captured before this line is an orphan. The
+      // playtester failure mode: Accept / "they took your counter" toasted a
+      // signed lease (signLoi mutated the orphan, occ% was read off it) while
+      // the real rent roll stayed empty and new letters kept arriving.
       Object.assign(next, d.s);
       drawn = short;
     }
+    const holding = next.holdings[l.bbl];
+    if (!holding) return "You no longer control that building.";
     const flagged = next as GameState & { _signFailed?: string };
     delete flagged._signFailed;
-    signLoi(next, rec, h, l, fee);
+    signLoi(next, rec, holding, l, fee);
     // signLoi has one path that legitimately signs nothing — the space it was
     // written against went while the letter sat on the desk. That has to come
     // back as an ERROR the player sees, not as silence.
@@ -2574,7 +2585,8 @@ export function respondLOI(
     if (err) return { s, msg: "", err };
     sweepTour(loi);
     next.lois = next.lois.filter((l) => l.id !== id);
-    const leasedSf = h.tenants.reduce((a, t) => a + t.sf, 0);
+    const roll = next.holdings[loi.bbl] ?? h;
+    const leasedSf = roll.tenants.reduce((a, t) => a + t.sf, 0);
     const occPct = rec.bldgArea > 0 ? Math.min(100, (100 * leasedSf) / rec.bldgArea) : 0;
     const freeBit = loi.freeM
       ? ` Free rent for ${loi.freeM} month${loi.freeM === 1 ? "" : "s"} — occupancy is up; cash flow waits.`
@@ -2688,6 +2700,12 @@ export function respondLOI(
     if (rng(next) < pAccept) {
       const err = sign(loi);
       if (err) {
+        // They said yes — a funding shortfall kills the deal. A same-month
+        // space race is not a funding failure; keep the letter (and any LOC
+        // draw already on `next`) out of a false "could not fund" funeral.
+        if (/lost the space|demise|lost the expansion|no longer control/i.test(err)) {
+          return { s: next, msg: "", err };
+        }
         next.lois = next.lois.filter((l) => l.id !== id);
         next.news.unshift({ q: next.month, kind: "warn", text: `${loi.name} took your counter at ${rec.address} and you could not fund the fit-out. The deal died.` });
         return { s: next, msg: "", err };

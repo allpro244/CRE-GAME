@@ -38,7 +38,7 @@ import { recordComp } from "./comps";
 import { firmShort } from "./firm";
 import { genRentRoll, depositsOn } from "./leasing";
 import { bumpLenderRel } from "./debt";
-import { saleTaxQuote } from "./actions";
+import { saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { takeDeed, FILE_COST } from "./notes";
 import { clearRivalClaims, forgetDeed } from "./rivals";
 import { reinstateFundedForeclosures } from "./workout";
@@ -449,7 +449,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         price: gross, basis: h.costBasis, gain: gross - h.costBasis, forced: true,
       });
       recordComp(s, rec, gross, toREO ? lot.holder : "the courthouse steps", firmShort(s), true, h.condition);
-      if (s.groundLeases?.[lot.bbl]) delete s.groundLeases[lot.bbl];
+      if (s.groundLeases?.[lot.bbl]) transferGroundLeaseOffBook(s, lot.bbl);
       s.cash -= depositsOn(h);
       s.lastTradeM = s.lastTradeM ?? {};
       s.lastTradeM[lot.bbl] = s.month;

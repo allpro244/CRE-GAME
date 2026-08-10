@@ -171,6 +171,13 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
   for (const [bbl, gl] of Object.entries(s.groundLeases ?? {})) {
     const at = `ground lease ${bbl}`;
     if (!s.holdings[bbl]) bad("ground", at, "a ground lease on land you do not own");
+    if (s.cityGroundLeases?.[bbl]) bad("ground", at, "same parcel also keyed as an off-book leased fee");
+    if (!fin(gl.rentYr) || gl.rentYr < 0) bad("ground", at, `ground rent ${gl.rentYr}`);
+    if (gl.endM <= gl.startM) bad("ground", at, "a lease that ends before it starts");
+  }
+  for (const [bbl, gl] of Object.entries(s.cityGroundLeases ?? {})) {
+    const at = `city ground lease ${bbl}`;
+    if (s.holdings[bbl]) bad("ground", at, "off-book lease on a parcel you still own — should be on groundLeases");
     if (!fin(gl.rentYr) || gl.rentYr < 0) bad("ground", at, `ground rent ${gl.rentYr}`);
     if (gl.endM <= gl.startM) bad("ground", at, "a lease that ends before it starts");
   }

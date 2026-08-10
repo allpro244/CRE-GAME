@@ -533,8 +533,9 @@ export function LandDesk({ bbl }: { bbl: string }) {
         </div>
         <div className="hint">
           Absolutely net: gross rent equals net rent. No tenants of yours, no roof, no vacancy and no signing
-          cheque. The leased fee can be sold on the sale desk; the dirt and the bones come back at expiry or
-          immediately after an uncured tenant default.
+          cheque. Selling assigns the leased fee — the buyer takes the coupon and the reversion; the lease does
+          not evaporate. The dirt and the bones come back to whoever holds the fee at expiry, or immediately
+          after an uncured tenant default.
         </div>
       </div>
     );
@@ -654,7 +655,13 @@ export function LandDesk({ bbl }: { bbl: string }) {
   const offer = h.groundOffer;
   const oq = offer && vacant
     ? groundLeaseQuote(game, parcels, bbl, offer.years, offer.review ?? "fixed") : null;
-  const q = vacant && !offer ? groundLeaseQuote(game, parcels, bbl, years, review) : null;
+  const glBlocked = h.loan
+    ? "Pay off the mortgage first — a land lender will not sit under a ground lease."
+    : game.facility?.bbls?.includes(bbl)
+      ? "Release it from the facility first — the line is secured by vacant dirt, not a leased fee."
+      : null;
+  const q = vacant && !offer && !glBlocked
+    ? groundLeaseQuote(game, parcels, bbl, years, review) : null;
   const farMax = Math.max(rec.farMaxComm, rec.farMaxRes);
   const livePicked = picked.filter((n) => eligible.some((x) => x.bbl === n));
   const pickedDeeds = livePicked.reduce((a, n) => a + siteDeeds(game, n).length, 0);
@@ -767,6 +774,12 @@ export function LandDesk({ bbl }: { bbl: string }) {
             The deal signs at the terms quoted the month they arrive; they break ground after that.
           </div>
           <button className="btn" onClick={() => pullGroundOffer(bbl)}>Pull the offer</button>
+        </>
+      )}
+      {vacant && !offer && glBlocked && (
+        <>
+          <div className="page-section" style={{ marginTop: 10 }}>Or ground-lease it</div>
+          <div className="hint">{glBlocked}</div>
         </>
       )}
       {q && (

@@ -454,8 +454,23 @@ body {
   font-family: var(--serif); font-size: 14px; color: var(--ink);
 }
 .loi-addr:hover { color: var(--gold); }
+.loi-hero {
+  margin-top: 6px;
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--ink);
+}
+.loi-hero-sep { margin: 0 0.35em; color: var(--ink-dim); font-weight: 400; }
+.loi-hero-block { margin: 4px 0 8px; }
+.loi-hero-sub { margin-top: 2px; font-size: 11px; }
+.modal .loi-hero { margin-top: 4px; margin-bottom: 2px; }
 .loi-line { margin-top: 3px; line-height: 1.4; }
 .loi .btn-row { margin-top: 8px; }
+.loi-counter { margin-top: 8px; }
+.loi-ne { margin: 8px 0 4px; font-family: var(--mono, ui-monospace, monospace); font-size: 12px; }
 .dim { color: var(--ink-dim); }
 .chip-renewal { background: #7a5f9e; color: #fdfbf4; margin-left: 6px; font-size: 9px; padding: 2px 6px; }
 .chip-sweep { background: #a8402e; color: #fdfbf4; }

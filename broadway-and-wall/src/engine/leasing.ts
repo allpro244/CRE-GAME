@@ -1224,11 +1224,12 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       }
     }
 
-    // contractual escalations: rents step up ~2.5% on each lease anniversary
+    // contractual escalations — the bump on the paper, defaulting to the old
+    // silent 2.5% so pre-negotiation leases keep compounding the same way.
     for (const t of h.tenants) {
       const age = q - t.startM;
       if (age > 0 && age % 12 === 0) {
-        t.rentPsf = +(t.rentPsf * 1.025).toFixed(2);
+        t.rentPsf = +(t.rentPsf * (1 + bumpOf(t) / 100)).toFixed(2);
         // AND THE COVENANT MIGRATES. Credit was frozen at signing, so a decade
         // of technology boom never improved a roll and a five-year bust never
         // degraded one — measured at zero credit changes across 163 tenancies.
@@ -1283,7 +1284,10 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         rentPsf: +(market * rrange(s, 0.96, 1.06, "leasing")).toFixed(2),
         termM: Math.max(24, t.endM - q),          // coterminous with what they hold
         tiPsf: Math.round(rrange(s, 1, 5, "leasing") * concessionPressure(s.econ, use)),
-        freeM: 0, net: t.net, recovery: recoveryOf(t),
+        freeM: 0,
+        // Coterminous paper keeps the escalator they already live under.
+        bumpPct: bumpOf(t),
+        net: t.net, recovery: recoveryOf(t),
         expiresM: q + 3, tenantIdx: i,
       });
       s.news.unshift({
@@ -1380,6 +1384,13 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         tiPsf: Math.round(rrange(s, 2, 9, "leasing") * concessionPressure(s.econ, t.use ?? "office")),
         freeM: rng(s, "leasing") < 0.25 * concessionPressure(s.econ, t.use ?? "office")
           ? Math.round(rrange(s, 1, 3, "leasing") * concessionPressure(s.econ, t.use ?? "office")) : 0,
+        // Renewals reopen the escalator a notch — incumbents usually ask to
+        // flatten; a soft market helps them.
+        bumpPct: Math.round(clampL(
+          bumpOf(t) + rrange(s, -0.5, 0.25, "leasing")
+            + (s.econ.phase === "recession" || s.econ.phase === "depression" ? -0.25 : 0),
+          0, 5,
+        ) * 4) / 4,
         net: t.net,
         recovery: recoveryOf(t),
         expiresM: t.endM,
@@ -1594,6 +1605,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // holiday as a twelve-year one, and handed both of them one in a
           // market where nobody had to give anything away.
           freeM: Math.max(0, Math.round((termM / 12) * rrange(s, 0.25, 0.85, "leasing") * concession)),
+          bumpPct: rollBumpPct(s, credit),
           net: use === "office" ? rng(s, "leasing") < 0.8 : rng(s, "leasing") < 0.4,
           recovery: rollRecovery(s, use),
           expiresM: q + 3,
@@ -1825,25 +1837,73 @@ export function blendExtend(
 export const TI_VALUE = 0.75;
 
 /**
+ * MARKET-STANDARD ANNUAL BUMP. Every lease used to escalate at this rate in
+ * silence. It stays the baseline so putting bumps on the letter does not
+ * rewrite every mandate score overnight — only a bump ABOVE or BELOW 2.5%
+ * moves net effective.
+ */
+export const DEFAULT_BUMP_PCT = 2.5;
+
+export function bumpOf(t: { bumpPct?: number } | null | undefined): number {
+  const b = t?.bumpPct;
+  return b === undefined || !Number.isFinite(b) ? DEFAULT_BUMP_PCT : b;
+}
+
+/** Average contractual face over the term at a constant annual bump. */
+export function avgRentWithBump(startPsf: number, bumpPct: number, termM: number): number {
+  const years = Math.max(1, termM / 12);
+  const r = bumpPct / 100;
+  if (Math.abs(r) < 1e-9) return startPsf;
+  const full = Math.floor(years + 1e-9);
+  const frac = years - full;
+  let sum = 0;
+  for (let i = 0; i < full; i++) sum += startPsf * Math.pow(1 + r, i);
+  if (frac > 0.001) sum += startPsf * Math.pow(1 + r, full) * frac;
+  return sum / years;
+}
+
+/**
+ * What the negotiated bump is worth vs the market-standard 2.5% — positive
+ * when the landlord got a steeper escalator, negative when they gave it away.
+ */
+export function bumpPremiumPsf(rentPsf: number, bumpPct: number, termM: number): number {
+  return avgRentWithBump(rentPsf, bumpPct, termM)
+    - avgRentWithBump(rentPsf, DEFAULT_BUMP_PCT, termM);
+}
+
+/** What a prospect opens at — credit tenants push for flatter paper. */
+function rollBumpPct(s: GameState, credit: Credit): number {
+  const soft = s.econ.phase === "recession" || s.econ.phase === "depression" ? -0.35
+    : s.econ.phase === "recovery" ? -0.15 : 0;
+  const base = credit === 2 ? rrange(s, 1.5, 2.5, "leasing")
+    : credit === 1 ? rrange(s, 2.0, 3.0, "leasing")
+    : rrange(s, 2.25, 3.5, "leasing");
+  // Quarter-point steps so the counter dial and the letter agree.
+  return Math.round(clampL(base + soft, 0, 5) * 4) / 4;
+}
+
+/**
  * THE NUMBER THE TENANT IS ACTUALLY DECIDING ON.
  *
  * Face rent paid over the term (free months take a straight-line bite), plus
  * the rent equivalent of whatever allowance you took off them (or added),
- * amortised over the term. Free rent and TI are the same trade as face rent —
- * a dollar of concession is a dollar of net effective — and the counter desk
- * used to leave free months as a display-only number while pricing only rent
- * and TI. That is how a landlord could cut six months of free rent and see no
- * change in the odds.
+ * amortised over the term, plus whatever the annual bump is worth against the
+ * market-standard 2.5%. Free rent, TI and the escalator are the same trade as
+ * face rent — and the counter desk used to leave free months (and bumps) as
+ * display-only while pricing only rent and TI.
  */
 export function netEffectivePsf(
-  loi: LOI, rentPsf: number, tiPsf: number, freeM?: number,
+  loi: LOI, rentPsf: number, tiPsf: number, freeM?: number, bumpPct?: number,
 ): number {
   const years = Math.max(1, loi.termM / 12);
   const free = Math.max(0, freeM ?? loi.freeM ?? 0);
   // Cap the free-rent bite so a pathological letter cannot invert the axis.
   const paid = 1 - Math.min(0.45, free / Math.max(1, loi.termM));
   const openTi = loi.openTiPsf ?? loi.tiPsf ?? 0;
-  return rentPsf * paid + (TI_VALUE * (openTi - tiPsf)) / years;
+  const bump = bumpPct ?? bumpOf(loi);
+  return rentPsf * paid
+    + (TI_VALUE * (openTi - tiPsf)) / years
+    + bumpPremiumPsf(rentPsf, bump, loi.termM);
 }
 
 /**
@@ -1944,7 +2004,9 @@ export function agentCashReserve(s: GameState): number {
 export function loiMandateScore(loi: LOI, market: number): number {
   const years = Math.max(1, loi.termM / 12);
   const paid = 1 - Math.min(0.45, (loi.freeM ?? 0) / Math.max(1, loi.termM));
-  const ne = loi.rentPsf * paid - (TI_VALUE * (loi.tiPsf ?? 0)) / years;
+  const ne = loi.rentPsf * paid
+    - (TI_VALUE * (loi.tiPsf ?? 0)) / years
+    + bumpPremiumPsf(loi.rentPsf, bumpOf(loi), loi.termM);
   return ne / Math.max(1, market);
 }
 
@@ -2228,6 +2290,8 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     t.rentPsf = +(((t.rentPsf * t.sf) + (l.rentPsf * add)) / (t.sf + add)).toFixed(2);
     t.sf += add;
     t.staff = Math.min(t.staff ?? 1, 1.05);
+    // Expansion keeps one escalator on the blended lease — the letter's rate.
+    t.bumpPct = bumpOf(l);
     noteTenantSfChange(s, use, -add);
     const top = depositFor(s, t.rentPsf, t.sf, t.credit) - (t.deposit ?? 0);
     s.cash += top;
@@ -2245,6 +2309,7 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     }
     t.rentPsf = l.rentPsf;
     t.endM = s.month + l.termM;
+    t.bumpPct = bumpOf(l);
     // FREE MONTHS ON A RENEWAL ARE REAL. Letters were generating them and the
     // signing path only stamped freeUntilM on new leases, so a renewal that
     // "won" three months of free rent paid from day one. Same clock as a new
@@ -2299,7 +2364,7 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     s.cash += deposit;
     h.tenants.push({
       name: l.name, use, sector: l.sector, credit: l.credit,
-      sf, rentPsf: l.rentPsf, net: l.net,
+      sf, rentPsf: l.rentPsf, bumpPct: bumpOf(l), net: l.net,
       recovery: l.recovery ?? (l.net ? "nnn" : "gross"),
       baseStopPsf: +stopPsfNow(rec, s.econ, h, use).toFixed(2),
       startM: s.month, endM: s.month + l.termM,
@@ -2318,7 +2383,7 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     : "";
   s.news.unshift({
     q: s.month, kind: "deal",
-    text: `Signed${feeRate === AGENT_FEE ? " by your agent" : ""}: ${l.name} — ${l.sf.toLocaleString()} sf at ${rec.address}, $${l.rentPsf.toFixed(0)}/sf, ${(l.termM / 12).toFixed(0)} yrs${l.kind === "renewal" ? " (renewal)" : ""}. `
+    text: `Signed${feeRate === AGENT_FEE ? " by your agent" : ""}: ${l.name} — ${l.sf.toLocaleString()} sf at ${rec.address}, $${l.rentPsf.toFixed(0)}/sf, ${(l.termM / 12).toFixed(0)} yrs, ${bumpOf(l).toFixed(2)}%/yr${l.kind === "renewal" ? " (renewal)" : ""}. `
       + `Building is ${occPct.toFixed(0)}% let. Upfront TI and commission: ${money(cost)}.${freeNote}`,
   });
   if (l.sf >= Math.max(25_000, rec.bldgArea * 0.15)) {
@@ -2344,7 +2409,7 @@ export type LOIAction = "accept" | "counter" | "decline";
  */
 export function respondLOI(
   s: GameState, parcels: ParcelTable, id: number, action: LOIAction, fund = false,
-  counter?: { rentPsf?: number; tiPsf?: number; freeM?: number; bestFinal?: boolean },
+  counter?: { rentPsf?: number; tiPsf?: number; freeM?: number; bumpPct?: number; bestFinal?: boolean },
 ): { s: GameState; msg: string; err?: string } {
   const next: GameState = cloneState(s);
   const loi = next.lois.find((l) => l.id === id);
@@ -2440,25 +2505,28 @@ export function respondLOI(
     if (loi.openRentPsf === undefined) loi.openRentPsf = loi.rentPsf;
     if (loi.openTiPsf === undefined) loi.openTiPsf = loi.tiPsf;
     if (loi.openFreeM === undefined) loi.openFreeM = loi.freeM;
-    // YOUR terms off the sliders — rent, TI and free months. Defaults keep the
-    // old harness shape (+6% rent / −30% TI / free unchanged).
+    if (loi.openBumpPct === undefined) loi.openBumpPct = bumpOf(loi);
+    // YOUR terms off the sliders — rent, TI, free months and the bump.
+    // Defaults keep the old harness shape (+6% rent / −30% TI / free unchanged).
     const askRent = counter?.rentPsf !== undefined ? +counter.rentPsf.toFixed(2) : +(loi.rentPsf * 1.06).toFixed(2);
     const askTi = counter?.tiPsf !== undefined ? Math.round(counter.tiPsf) : Math.round(loi.tiPsf * 0.7);
     const askFree = counter?.freeM !== undefined
       ? Math.max(0, Math.round(counter.freeM))
       : loi.freeM;
+    const askBump = counter?.bumpPct !== undefined
+      ? Math.round(clampL(counter.bumpPct, 0, 5) * 4) / 4
+      : bumpOf(loi);
     const market = managedRentPsfYr(rec, next.econ, h, loi.use);
     const openTi = loi.openTiPsf;
     const openFree = loi.openFreeM;
+    const openBump = loi.openBumpPct;
     const openedAt = loi.openRentPsf;
-    // NET EFFECTIVE — face rent after free months, plus the rent-equivalent of
-    // the TI delta. Free rent used to be cosmetic on the counter card; cutting
-    // it now moves `f` the same way a rent push does, which is how brokers
-    // actually quote the deal.
+    // NET EFFECTIVE — face after free months, TI delta, and bump vs the 2.5%
+    // standard. Same quantity the counter card shows.
     const years = Math.max(1, loi.termM / 12);
     const paidFrac = 1 - Math.min(0.45, askFree / Math.max(1, loi.termM));
     const tiRent = (TI_VALUE * (openTi - askTi)) / years;    // + when you take fit-out away
-    const neAsk = askRent * paidFrac + tiRent;
+    const neAsk = askRent * paidFrac + tiRent + bumpPremiumPsf(askRent, askBump, loi.termM);
     const f = neAsk / Math.max(1, market);                   // aggression vs the market
     const vacHere = (next.econ.cityVac?.[loi.use ?? "office"] ?? 0.1);
     const natHere = loi.use === "multifamily" ? 0.045 : loi.use === "retail" ? 0.085 : loi.use === "industrial" ? 0.07 : 0.115;
@@ -2495,13 +2563,15 @@ export function respondLOI(
     loi.askedRentPsf = askRent;
     loi.askedTiPsf = askTi;
     loi.askedFreeM = askFree;
+    loi.askedBumpPct = askBump;
     loi.rentPsf = askRent;
     loi.tiPsf = askTi;
     loi.freeM = askFree;
+    loi.bumpPct = askBump;
     // WHAT THEY SAID BACK, kept where you can read it after the card is gone.
     const reply = (
       outcome: "took" | "walked" | "countered",
-      theirRent: number, theirTi: number, theirFree: number,
+      theirRent: number, theirTi: number, theirFree: number, theirBump: number,
     ) => {
       if (!next.leaseReplies) next.leaseReplies = [];
       next.leaseReplies.unshift({
@@ -2509,6 +2579,7 @@ export function respondLOI(
         askedRentPsf: askRent, theirRentPsf: +theirRent.toFixed(2),
         askedTiPsf: askTi, theirTiPsf: theirTi,
         askedFreeM: askFree, theirFreeM: theirFree,
+        askedBumpPct: askBump, theirBumpPct: theirBump,
         sf: loi.sf, marketPsf: +market.toFixed(2),
       });
       next.leaseReplies = next.leaseReplies.slice(0, 8);
@@ -2522,15 +2593,17 @@ export function respondLOI(
       }
       next.lois = next.lois.filter((l) => l.id !== id);
       sweepTour(loi);
-      reply("took", askRent, askTi, askFree);
+      reply("took", askRent, askTi, askFree, askBump);
       const bits: string[] = [];
       if (askRent !== openedAt) bits.push(`${money((askRent - openedAt) * loi.sf)} a year ${askRent > openedAt ? "more" : "less"} face rent`);
       if (openTi !== askTi) bits.push(`${money(Math.abs(openTi - askTi) * loi.sf)} ${askTi < openTi ? "less" : "more"} fit-out`);
       if (openFree !== askFree) bits.push(`${Math.abs(openFree - askFree)} mo ${askFree < openFree ? "less" : "more"} free rent`);
+      if (openBump !== askBump) bits.push(`${Math.abs(askBump - openBump).toFixed(2)} pts ${askBump > openBump ? "steeper" : "flatter"} bump`);
       next.news.unshift({
         q: next.month, kind: "deal",
         text: `${loi.name} took your counter at ${rec.address}: $${askRent.toFixed(2)}/sf`
           + (askFree > 0 ? ` with ${askFree} mo free` : "")
+          + `, ${askBump.toFixed(2)}%/yr`
           + ` ($${neAsk.toFixed(2)}/sf net effective)`
           + (bits.length ? ` — ${bits.join(", ")}` : ".")
           + `.`,
@@ -2543,11 +2616,11 @@ export function respondLOI(
     const pWalk = bestFinal ? 1 : Math.max(0.15, Math.min(0.92, 0.24 + (f - 1.0) * 2.2));
     if (rng(next) < pWalk) {
       next.lois = next.lois.filter((l) => l.id !== id);
-      reply("walked", openedAt, openTi, openFree);
+      reply("walked", openedAt, openTi, openFree, openBump);
       next.news.unshift({
         q: next.month, kind: "warn",
         text: `${loi.name} walked on the counter at ${rec.address} — $${askRent.toFixed(2)}/sf`
-          + (askFree !== openFree || tiRent > 0.005
+          + (askFree !== openFree || tiRent > 0.005 || askBump !== openBump
             ? ` ($${neAsk.toFixed(2)}/sf net effective over ${years.toFixed(0)} years)`
             : "")
           + ` was more than the space was worth to them (market ~$${market.toFixed(2)}). `
@@ -2569,16 +2642,21 @@ export function respondLOI(
     // Free months split the same way — cutting them was previously free on
     // the counter-back branch because free rent was never part of the reply.
     loi.counterFreeM = Math.round((askFree + openFree) / 2);
+    // Bump splits the same way: landlord pushes steeper, tenant pulls flatter.
+    loi.counterBumpPct = Math.round(((askBump + openBump) / 2) * 4) / 4;
     loi.rentPsf = loi.counterRentPsf;
     loi.tiPsf = loi.counterTiPsf;
     loi.freeM = loi.counterFreeM;
-    reply("countered", loi.counterRentPsf, loi.counterTiPsf, loi.counterFreeM);
+    loi.bumpPct = loi.counterBumpPct;
+    reply("countered", loi.counterRentPsf, loi.counterTiPsf, loi.counterFreeM, loi.counterBumpPct);
     next.news.unshift({
       q: next.month, kind: "info",
       text: `${loi.name} countered at ${rec.address}: you asked $${askRent.toFixed(2)}/sf`
         + (askFree > 0 || openFree > 0 ? ` / ${askFree} mo free` : "")
+        + ` / ${askBump.toFixed(2)}%/yr`
         + `, they came back at $${loi.counterRentPsf.toFixed(2)}/sf with $${loi.counterTiPsf}/sf of TI`
         + (loi.counterFreeM > 0 ? ` and ${loi.counterFreeM} mo free` : "")
+        + ` and ${loi.counterBumpPct.toFixed(2)}%/yr`
         + `. Final answer — take it or lose them.`,
     });
     return { s: next, msg: `${loi.name} came back at $${loi.counterRentPsf.toFixed(2)}/sf — final.` };

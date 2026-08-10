@@ -2028,7 +2028,10 @@ function loiMarket(s: GameState, rec: ParcelRecord, h: Holding, loi: LOI): numbe
 
 type DeskVerdict = "sign" | "refer" | "pass";
 
-function deskVerdict(s: GameState, loi: LOI, market: number, feeRate: number): {
+function deskVerdict(
+  s: GameState, loi: LOI, market: number, feeRate: number,
+  opts?: { ignoreTour?: boolean },
+): {
   verdict: DeskVerdict; score: number; floor: number; pass: number; why?: string;
 } {
   const floor = agentFloor(s);
@@ -2044,16 +2047,16 @@ function deskVerdict(s: GameState, loi: LOI, market: number, feeRate: number): {
   const maxSigningM = agentMaxSigningMonths(s);
   const signingM = loiSigningMonths(loi, feeRate);
 
-  // A mandate may price routine paper; it cannot make the two operating
-  // decisions that define a building. An expansion trades known covenant and
-  // coterminous term against preserving the adjacent suite. A live tour asks
-  // which of several mutually-exclusive tenants gets the same space. Both come
-  // back to the principal even when every candidate clears the numeric policy.
+  // A mandate may price routine paper; it cannot make the programming call on
+  // an incumbent expansion. Tours are handled in runLeasingAgent as a group —
+  // forcing every party back used to mean "hire the agent" still filled the
+  // screen with every competing letter.
   if (loi.kind === "expansion") {
     return { verdict: "refer", score, floor, pass, why: "an incumbent expansion changes how you program the building" };
   }
   if (
-    loi.tourId !== undefined
+    !opts?.ignoreTour
+    && loi.tourId !== undefined
     && s.lois.filter((x) => x.tourId === loi.tourId).length > 1
   ) {
     return { verdict: "refer", score, floor, pass, why: "multiple tenants are competing for the same space; you choose the winner" };
@@ -2082,50 +2085,148 @@ function deskVerdict(s: GameState, loi: LOI, market: number, feeRate: number): {
   return { verdict: "sign", score, floor, pass };
 }
 
-function runAgent(s: GameState, parcels: ParcelTable) {
+function agentCanFund(s: GameState, loi: LOI): boolean {
+  return s.cash - loiSigningCost(loi, AGENT_FEE) >= agentCashReserve(s);
+}
+
+function agentPassLoi(
+  s: GameState, loi: LOI, rec: { address?: string }, score: number, market: number, pass: number,
+) {
+  s.lois = s.lois.filter((l) => l.id !== loi.id);
+  s.news.unshift({
+    q: s.month, kind: "info",
+    text: `Your agent passed on ${loi.name} at ${rec.address} — net effective `
+      + `${(score * 100).toFixed(0)}% of a $${market.toFixed(2)} market (pass below ${Math.round(pass * 100)}%).`,
+  });
+}
+
+function agentReferLoi(
+  s: GameState, loi: LOI, rec: { address?: string }, why: string,
+) {
+  loi.referred = true;
+  s.news.unshift({
+    q: s.month, kind: "warn",
+    text: `Your agent referred ${loi.name} at ${rec.address} back to you — ${why}. It is on your desk.`,
+  });
+}
+
+/**
+ * Work the live letters under the player's mandate. Exported so hiring the
+ * desk clears the open pile immediately — waiting until next month left every
+ * existing LOI still popping.
+ */
+export function runLeasingAgent(s: GameState, parcels: ParcelTable) {
+  // --- TOURS FIRST ----------------------------------------------------------
+  // Several parties on one suite is one decision, not N popups. If exactly one
+  // letter clears the sign line and the cheque, the desk takes it and the rest
+  // go elsewhere. Only a true dead heat comes back to you.
+  const tourIds = [...new Set(
+    s.lois.filter((l) => !l.referred && l.tourId !== undefined).map((l) => l.tourId!),
+  )];
+  for (const tid of tourIds) {
+    const party = s.lois.filter((l) => l.tourId === tid && !l.referred);
+    if (party.length <= 1) continue;
+    const scored = party.map((loi) => {
+      const h = s.holdings[loi.bbl];
+      const rec = resolveRec(parcels, s, loi.bbl);
+      if (!h || !rec) return null;
+      const market = loiMarket(s, rec, h, loi);
+      const v = deskVerdict(s, loi, market, AGENT_FEE, { ignoreTour: true });
+      return { loi, h, rec, market, ...v, fundable: v.verdict === "sign" && agentCanFund(s, loi) };
+    }).filter((x): x is NonNullable<typeof x> => !!x);
+
+    const winners = scored.filter((x) => x.fundable);
+    if (winners.length === 1) {
+      const w = winners[0];
+      const before = w.h.tenants.length;
+      delete (s as GameState & { _signFailed?: string })._signFailed;
+      signLoi(s, w.rec, w.h, w.loi, AGENT_FEE);
+      const failed = (s as GameState & { _signFailed?: string })._signFailed
+        || w.h.tenants.length <= before;
+      delete (s as GameState & { _signFailed?: string })._signFailed;
+      if (failed) {
+        // Space gone or demise failed — do not erase the tour in silence.
+        agentReferLoi(s, w.loi, w.rec, "the desk tried to sign the clear winner and could not demise the space");
+        for (const x of scored) {
+          if (x.loi.id === w.loi.id) continue;
+          if (x.verdict === "pass") agentPassLoi(s, x.loi, x.rec, x.score, x.market, x.pass);
+          else agentReferLoi(s, x.loi, x.rec,
+            x.why ?? `net effective ${(x.score * 100).toFixed(0)}% of market, under your ${Math.round(x.floor * 100)}% sign line`);
+        }
+        continue;
+      }
+      const lost = party.filter((l) => l.id !== w.loi.id);
+      s.lois = s.lois.filter((l) => l.tourId !== tid);
+      if (lost.length) {
+        s.news.unshift({
+          q: s.month, kind: "info",
+          text: `Your agent took ${w.loi.name} for the contested space at ${w.rec.address}; `
+            + `${lost.map((l) => l.name).join(" and ")} ${lost.length > 1 ? "have" : "has"} gone elsewhere.`,
+        });
+      }
+      continue;
+    }
+    if (winners.length > 1) {
+      // Dead heat inside the mandate — principal picks. Junk on the same tour
+      // is killed so it does not also take the screen.
+      for (const x of scored) {
+        if (x.fundable) {
+          agentReferLoi(s, x.loi, x.rec,
+            `clears your mandate with ${x.score >= 1 ? "par-or-better" : `${(x.score * 100).toFixed(0)}% of market`} net effective, and so does another party on the same suite — you choose`);
+        } else if (x.verdict === "pass") {
+          agentPassLoi(s, x.loi, x.rec, x.score, x.market, x.pass);
+        } else {
+          agentReferLoi(s, x.loi, x.rec,
+            x.why ?? `net effective ${(x.score * 100).toFixed(0)}% of market, under your ${Math.round(x.floor * 100)}% sign line`);
+        }
+      }
+      continue;
+    }
+    // Nobody clears a sign — apply ordinary pass/refer per letter.
+    for (const x of scored) {
+      if (x.verdict === "pass") agentPassLoi(s, x.loi, x.rec, x.score, x.market, x.pass);
+      else agentReferLoi(s, x.loi, x.rec,
+        x.why ?? `net effective ${(x.score * 100).toFixed(0)}% of market, under your ${Math.round(x.floor * 100)}% sign line`);
+    }
+  }
+
   for (const loi of [...s.lois]) {
     // Already on your desk — do not re-litigate until you answer.
     if (loi.referred) continue;
+    // Still on a multi-party tour that was referred above — leave them.
+    if (
+      loi.tourId !== undefined
+      && s.lois.filter((x) => x.tourId === loi.tourId).length > 1
+    ) continue;
     const h = s.holdings[loi.bbl];
     const rec = resolveRec(parcels, s, loi.bbl);
     if (!h || !rec) continue;
     const market = loiMarket(s, rec, h, loi);
     const { verdict, score, floor, pass, why } = deskVerdict(s, loi, market, AGENT_FEE);
     if (verdict === "pass") {
-      s.lois = s.lois.filter((l) => l.id !== loi.id);
-      s.news.unshift({
-        q: s.month, kind: "info",
-        text: `Your agent passed on ${loi.name} at ${rec.address} — net effective `
-          + `${(score * 100).toFixed(0)}% of a $${market.toFixed(2)} market (pass below ${Math.round(pass * 100)}%).`,
-      });
+      agentPassLoi(s, loi, rec, score, market, pass);
       continue;
     }
     if (verdict === "refer") {
-      loi.referred = true;
-      s.news.unshift({
-        q: s.month, kind: "warn",
-        text: `Your agent referred ${loi.name} at ${rec.address} back to you — `
-          + (why ?? `net effective ${(score * 100).toFixed(0)}% of market, under your ${Math.round(floor * 100)}% sign line`)
-          + `. It is on your desk.`,
-      });
+      agentReferLoi(s, loi, rec,
+        why ?? `net effective ${(score * 100).toFixed(0)}% of market, under your ${Math.round(floor * 100)}% sign line`);
       continue;
     }
-    const cost = loiSigningCost(loi, AGENT_FEE);
-    const reserve = agentCashReserve(s);
-    if (s.cash - cost < reserve) {
+    if (!agentCanFund(s, loi)) {
       // Cannot fund — leave it, marked referred so it surfaces instead of
       // sitting invisible under an agent who will never afford it.
-      loi.referred = true;
-      s.news.unshift({
-        q: s.month, kind: "warn",
-        text: `Your agent would sign ${loi.name} at ${rec.address}, but signing needs `
-          + `${money(cost)} and would leave less than the ${money(reserve)} treasury reserve. Referred back to you.`,
-      });
+      agentReferLoi(s, loi, rec,
+        `signing needs ${money(loiSigningCost(loi, AGENT_FEE))} and would leave less than the ${money(agentCashReserve(s))} treasury reserve`);
       continue;
     }
     signLoi(s, rec, h, loi, AGENT_FEE);
     s.lois = s.lois.filter((l) => l.id !== loi.id);
   }
+}
+
+/** @deprecated Prefer runLeasingAgent — kept as the tick's private name. */
+function runAgent(s: GameState, parcels: ParcelTable) {
+  runLeasingAgent(s, parcels);
 }
 
 /**

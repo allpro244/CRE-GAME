@@ -335,10 +335,23 @@ export function DealsPage() {
             </div>
           </>
         )}
-        <div className="page-section">Letters of intent · {game.lois.length}</div>
-        {game.lois.length === 0 && (
+        {(() => {
+          // When the agent holds the book, only referred letters are yours —
+          // the rest are mid-tick paper that should not look like a queue.
+          const desk = game.agent ? game.lois.filter((l) => l.referred) : game.lois;
+          return (
+            <>
+        <div className="page-section">
+          Letters of intent · {desk.length}
+          {game.agent ? " · referred by your desk" : ""}
+        </div>
+        {desk.length === 0 && (
           <div className="deal">
-            <div className="hint">No live negotiations. Vacant space in high-demand buildings draws tenants.</div>
+            <div className="hint">
+              {game.agent
+                ? "Your agent has the book — nothing referred back right now. They sign inside the mandate on Leasing."
+                : "No live negotiations. Vacant space in high-demand buildings draws tenants."}
+            </div>
             {Object.keys(game.holdings).length === 0 ? (
               <button className="btn btn-buy" onClick={() => useStore.getState().setPage("market")}>
                 Browse buildings in Marketplace →
@@ -351,11 +364,14 @@ export function DealsPage() {
           </div>
         )}
         <div className="loi-grid">
-          {[...game.lois]
+          {[...desk]
             .sort((a, b) => (b.referred ? 1 : 0) - (a.referred ? 1 : 0)
               || (a.tourId ?? -a.id) - (b.tourId ?? -b.id) || a.id - b.id)
             .map((loi) => <LoiCard key={loi.id} loi={loi} go={go} />)}
         </div>
+            </>
+          );
+        })()}
         {/* HOW THEY ANSWERED. A counter used to resolve into a toast that was
             gone in three seconds and a card that vanished off the grid — so the
             most consequential leasing decision in the game left no account of

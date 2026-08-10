@@ -486,7 +486,12 @@ export const useStore = create<AppState>((set, get) => ({
     const r = buyListing(game, parcels, bbl, product, lev, bid);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
-    toast(r.msg ?? "Deed recorded. The block knows your name now.");
+    // A lowball can update the tape (news, a pulled listing) without a deed.
+    // Do not congratulate the player for a closing that did not happen.
+    toast(
+      r.msg ?? "Deed recorded. The block knows your name now.",
+      r.refused ? "err" : "ok",
+    );
     void persist(r.s);
   },
 

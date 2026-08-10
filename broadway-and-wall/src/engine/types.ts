@@ -1206,10 +1206,21 @@ export interface Econ {
   /**
    * Structural asking at campaign open (density + era). The income anchor
    * measures rent-to-wage against THIS, not the global RENT_BASE table —
-   * otherwise a town that opens at $28 office against a $44 table looks
-   * "cheap" and the anchor HELPS rents double before it ever pulls down.
+   * otherwise a town that opens soft against the table looks "cheap" and
+   * the anchor HELPS rents double before it ever pulls down.
    */
   rentAnchor?: Record<BuiltClass, number>;
+  /**
+   * Morphological density intensity (city FAR / REF_CITY_FAR), updated as
+   * built stock grows. Feeds `cityClassFactor` — how much primary-market rent
+   * machinery this fabric has earned. Secondary harbour towns stay the rule
+   * of thumb; Metropolis fabric can earn the full chronic-tightness channel.
+   */
+  cityIntensity?: number;
+  /** Opening `cityIntensity`, so stock growth can scale the live reading. */
+  cityIntensity0?: number;
+  /** Sum of opening stock by use — denominator for intensity growth. */
+  builtSf0?: number;
   /**
    * THE MARKET REBUILD (ECONOMY.md). Tenants are finite and supply cannot
    * mint them; location has teeth in both rent and pace; asking rents are

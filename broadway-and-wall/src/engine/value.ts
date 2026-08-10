@@ -899,7 +899,8 @@ export function locationRentMult(rec: ParcelRecord, econ?: Econ, use?: BuiltClas
   //   retail       the most location-sensitive real estate there is. A high
   //                street pitch against a dead parade is many times over —
   //                footfall is the product and it does not travel.
-  //   office       three to four times, CBD trophy against suburban commodity.
+  //   office       about two to two-and-a-half times in a secondary city
+  //                (CBD against fringe); primary trophy markets run wider.
   //   multifamily  two to two and a half. People will commute; they will not
   //                pay four times for the same flat.
   //   industrial   the narrowest of the four. A distribution tenant is cost
@@ -917,7 +918,12 @@ export function locationRentMult(rec: ParcelRecord, econ?: Econ, use?: BuiltClas
  */
 const LOC_SPREAD: Record<BuiltClass, { exp: number; max: number; min: number }> = {
   retail:      { exp: 1.45, max: 3.10, min: 0.34 },
-  office:      { exp: 1.28, max: 2.45, min: 0.40 },
+  // Office ceiling was 2.45 — primary CBD trophy vs suburban commodity.
+  // Procedural islands are secondary markets as a rule of thumb; ~2.2× is
+  // CBD-vs-fringe for a harbour / working city. Density scaling lifts the
+  // citywide index on Metropolis fabric; location should not also mint
+  // Midtown on every seed's best block.
+  office:      { exp: 1.28, max: 2.20, min: 0.40 },
   multifamily: { exp: 1.10, max: 1.95, min: 0.52 },
   industrial:  { exp: 0.82, max: 1.55, min: 0.62 },
 };

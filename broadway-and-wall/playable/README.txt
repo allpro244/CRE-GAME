@@ -1,21 +1,22 @@
-BROADWAY & WALL — playable download
-===================================
+BROADWAY & WALL — CURRENT PLAYABLE
+==================================
+Build id:  sec-rents-1
+Office:    $35.50 base (secondary market)
+When:      2026-08-10T20:33Z
+Branch:    cursor/century-playthroughs-9786
 
-1. Download Broadway-and-Wall-playable.zip
-2. Unzip it
-3. Open the broadway-and-wall folder and double-click:
+HOW TO KNOW YOU HAVE THIS BUILD
+  On the start screen footer you should see:
+    build sec-rents-1 · office base $35.5
+  If you do not see that line, you are on an older download. Delete it and
+  get a fresh zip from this folder.
 
-     macOS    play.command
-     Windows  play.cmd
-     Linux    play.sh
+DOWNLOAD
+  Prefer: Broadway-and-Wall-playable.zip
+  1. Unzip
+  2. Double-click play.command (Mac) / play.cmd (Windows) / play.sh (Linux)
+  3. Leave the small terminal open while you play (needs Python 3)
 
-Your browser opens the game. Leave the small terminal window open while you play.
+  Alternate: broadway-and-wall.html — double-click (some antivirus false-flags this)
 
-Requires Python 3 (already on most Macs; Windows: python.org — tick "Add to PATH").
-
-Do NOT use the old single-file .html build — antivirus often false-flags a
-3MB HTML file with the whole game inlined as a script. This zip is the normal
-website layout plus a tiny local server.
-
-Each new zip clears saves from the previous build the first time you open it
-(same browser / same local server). Start a new campaign after updating.
+Start a NEW campaign. Pick "Somewhere else" for a procedural island.

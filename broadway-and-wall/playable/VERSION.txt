@@ -1,0 +1,7 @@
+commit=sec-rents-1
+gitTip=79a899f
+builtAt=2026-08-10T20:33Z
+branch=cursor/century-playthroughs-9786
+rentBaseOffice=35.50
+includes=secondary-rents,cityClassFactor,buyListing-refused,play50-reserve-fix
+verifyInGame=start screen footer should say: build sec-rents-1 · office base $35.5

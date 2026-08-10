@@ -606,9 +606,23 @@ export function stockFromParcels(parcels: ParcelTable): Record<BuiltClass, numbe
 export const SECTOR_LABEL = { office: "Office", retail: "Retail", multifamily: "Apartments", industrial: "Industrial" } as const;
 /**
  * WHAT A SQUARE FOOT RENTS FOR AT AN ORDINARY ADDRESS, $/sf/yr. The location
- * multiplier (`locationRentMult` in value.ts) takes it from here — up to 2.45x
- * for prime office and 3.10x for a prime retail pitch, down to 0.40x and 0.34x
- * on the fringe.
+ * multiplier (`locationRentMult` in value.ts) takes it from here — up to 2.20x
+ * for a secondary CBD office and 3.10x for a prime retail pitch, down to 0.40x
+ * and 0.34x on the fringe. Density scaling (`densityPriceScales`) then lifts
+ * or lowers the whole table for how built-up the generated map is.
+ *
+ * THE RULE OF THUMB IS A SECONDARY MARKET. Procedural islands are harbour
+ * towns and working cities, not a primary CBD. Ordinary office follows
+ * Providence Class A asks ($26.71–33.51, market avg ~$29.80 JLL/local 2024)
+ * as GROSS rent on a constrained peninsula — $35.50, not a Midtown face rate.
+ * Denser build-outs (Harbour / Metropolis) and prime parcels earn more through
+ * morphology and location; they do not inherit a primary-city base.
+ *
+ * Was $43.65: the comment admitted that sat above the Providence band, and a
+ * century of wage-tracking then minted ~$110–140/sf real citywide office on
+ * mid-rung procedural maps — primary levels on secondary fabric. The level
+ * belongs in the opening table; the century path belongs in supply and in
+ * `cityClassFactor` (how much chronic-tightness premium a fabric can earn).
  *
  * INDUSTRIAL WAS THE OUTLIER AND IT BROKE THE LAND MARKET. At $18.00 it earned
  * roughly what an office did in the same town, and since industrial hard cost
@@ -629,15 +643,10 @@ export const SECTOR_LABEL = { office: "Office", retail: "Retail", multifamily: "
  * high-street pitch being charged as the city-wide ordinary rate, and then the
  * 3.10x location multiplier was applied ON TOP of it.
  *
- * Office and multifamily stay. Providence Class A asks $26.71-33.51 and the
- * market averages $29.80; this table's ordinary-address office at $43.65 is
- * above that, but it is a GROSS rent in a harbour city with a constrained
- * peninsula, and the measured median-lot achieved rent lands inside the band
- * once the location multiplier has pushed the fringe down. Multifamily at
- * $30.22/sf/yr is $2.52/sf/month, against Providence's ~$2.24 — close enough
- * that moving it would be tuning, not correcting.
+ * Multifamily at $30.22/sf/yr is $2.52/sf/month, against Providence's ~$2.24 —
+ * close enough that moving it would be tuning, not correcting.
  */
-export const RENT_BASE = { office: 43.65, retail: 26.00, multifamily: 30.22, industrial: 8.50 } as const; // $/sf/yr
+export const RENT_BASE = { office: 35.50, retail: 26.00, multifamily: 30.22, industrial: 8.50 } as const; // $/sf/yr
 // The natural (frictional) vacancy per class — the rate at which neither side
 // of the table has the upper hand. Below it landlords push rents; above it
 // tenants extract concessions. Office runs structurally looser than housing.
@@ -831,6 +840,24 @@ export function densityPriceScales(cityFar: number): {
   return { intensity, wage, rent, cost, land };
 }
 
+/**
+ * HOW MUCH PRIMARY-MARKET RENT MACHINERY THIS FABRIC HAS EARNED.
+ *
+ * Morphological intensity (`cityFloorIntensity / REF_CITY_FAR`): Landing ~0.25,
+ * Village ~1, Metropolis ~2.5–3. Secondary harbour towns are the rule of thumb
+ * for procedural islands; only dense fabric should fully earn the chronic
+ * tightness premium and the on-rail scarcity level tax that price a primary
+ * CBD. A mid-rung town can still boom and pin vacancy — it must not mint
+ * Midtown rent-to-wage from "can't build" alone (ECONOMY.md §F).
+ *
+ * Returns 0.30..1.00. Not a difficulty dial: it is the same density signal
+ * already used to open wages and rents, read again where century compounding
+ * used to erase the secondary/primary distinction.
+ */
+export function cityClassFactor(intensity: number): number {
+  return clamp(0.30 + 0.70 * clamp((intensity - 0.35) / 2.4, 0, 1), 0.30, 1);
+}
+
 export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   const CITY = parcels ? stockFromParcels(parcels) : { ...CITY_STOCK };
   const SIZE = citySize(CITY);
@@ -965,6 +992,10 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // Wage (and cost) open at the density premium; output follows jobs × wage.
   econ.wageIdx = dens.wage; econ.outputIdx = dens.wage; econ.cpi = 1;
   econ.industComp = 1;
+  // City class for rent machinery — updated as stock grows (see rent formation).
+  econ.cityIntensity = dens.intensity;
+  econ.cityIntensity0 = dens.intensity;
+  econ.builtSf0 = BUILT_CLASSES.reduce((a, k) => a + (econ.stock[k] ?? 0), 0);
   econ.nat = { infl: 0.021, inflExp: 0.02, unemp: 0.052, policy: 4.2,
                neutralReal: 0.019, shockM: 0, shockSev: 0, credibility: 0.8,
                recM: 0, expM: 0, deep: false, pressureM: 0 };
@@ -2930,6 +2961,16 @@ export function tickEcon(s: GameState) {
   // 1990-92 and 2020-23; an earlier version of this paragraph asserted three
   // per cent on both sides and neither branch obeyed it. Phase drift and
   // sector momentum ride on top as sentiment.
+  //
+  // City class tracks build-out: a Landing that fills in earns more of the
+  // primary rent channel; intensity is morphological FAR / REF at open,
+  // scaled by stock growth so a century of cranes can graduate the town.
+  {
+    const built0 = Math.max(1, e.builtSf0 ?? 1);
+    const built = BUILT_CLASSES.reduce((a, k) => a + (e.stock?.[k] ?? 0), 0);
+    const i0 = e.cityIntensity0 ?? e.cityIntensity ?? 1;
+    e.cityIntensity = clamp(i0 * (built / built0), 0.15, 6);
+  }
   for (const k of BUILT_CLASSES) {
     const vol = k === "multifamily" ? 0.002 : k === "office" ? 0.004 : k === "industrial" ? 0.0024 : 0.003;
     // ...AND ON AVAILABILITY, NOT ON DIRECT VACANCY. A prospective tenant does
@@ -3123,6 +3164,7 @@ export function tickEcon(s: GameState) {
     const stPrev = e.structTightPrev[k] ?? st;
     const dSt = st - stPrev;
     e.structTightPrev[k] = st;
+<<<<<<< HEAD
     // Level scarcity scales with room above friction (`railSat`). On the pin,
     // sat=0 → flow only. Near the pin, sat is small → mostly flow. Far from
     // the rail (still tight vs natural), full level rations. Paying full
@@ -3131,6 +3173,24 @@ export function tickEcon(s: GameState) {
     const scarcity = pinned
       ? clamp(Math.max(0, dSt) * 1.8, 0, 0.0045)
       : clamp(st * 0.045 * railSat + Math.max(0, dSt) * 1.8 * (1 - railSat), 0, 0.006);
+=======
+    // On-rail level gain kept below the off-rail rate so a stable capacity
+    // gap rations demand without a permanent ~1%/yr real escalator on top of
+    // CPI. Flow still dominates when the shortfall is worsening. Walked
+    // 0.018→0.008 against rent-anchor + supply-answers: 0.008 let avg
+    // structTight drift to 0.083 (rations too little); ~0.010 holds both
+    // with century real office near +1%/yr on dense fabric.
+    //
+    // SECONDARY FABRIC GETS A THINNER LEVEL TAX. The same 0.010 on every map
+    // let mid-rung procedural towns spend half a century on the rail and
+    // graduate into primary real $/sf. Dense cities still ration at the full
+    // rate; Landing/Village ration enough to clear without minting Midtown.
+    const classF = cityClassFactor(e.cityIntensity ?? e.cityIntensity0 ?? 1);
+    const onRailLevel = 0.0035 + 0.0065 * classF;
+    const scarcity = pinned
+      ? clamp(Math.max(0, dSt) * 1.8 + st * onRailLevel, 0, 0.0045)
+      : clamp(st * 0.045, 0, 0.006);
+>>>>>>> origin/cursor/century-playthroughs-9786
 
     // Lease-quote lag: market pressure (vacancy gap + unmet demand) forms this
     // month; landlords adjust asking rents only after it has sat on the quote
@@ -3178,7 +3238,11 @@ export function tickEcon(s: GameState) {
     const rentToIncome = (e.rentIdx[k] / Math.max(1e-6, base)) / income;
     // HOW MUCH OF A PREMIUM A CHRONICALLY TIGHT CITY IS ALLOWED TO EARN.
     // Long-run US CRE real rent is roughly flat to +1%/yr (CBRE/NCREIF).
-    const sustain = 1 + 0.28 * clamp(e.tightEma ?? 0, -0.30, 0.55);
+    // The full 0.28 loading is a primary-CBD earn; secondary fabric
+    // (`cityClassFactor`) keeps a smaller sustainable RTI premium so a
+    // harbour town that runs tight does not quietly become Manhattan.
+    const classFAnchor = cityClassFactor(e.cityIntensity ?? e.cityIntensity0 ?? 1);
+    const sustain = 1 + 0.28 * classFAnchor * clamp(e.tightEma ?? 0, -0.30, 0.55);
     const dev = rentToIncome / sustain - 1;
     // Pull hard when rent outruns pay; barely nudge when rent is cheap —
     // cheap space is what supply is for, not a reason to reprice the city up.

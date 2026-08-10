@@ -23,7 +23,11 @@ import { refinance, buyRateCap } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
 import { openFacility, repayFacility, releaseFromFacility } from "@/engine/facility";
 import { clearBuildToSuit, proposeBuildToSuit, startAdaptiveReuse, startDevelopment, startProgram, setStance, setOps, setOpsPolicy, demolish } from "@/engine/dev";
-import { hire, fire, refreshPool, POOL_REFRESH_M } from "@/engine/staff";
+import {
+  hire, fire, refreshPool, POOL_REFRESH_M,
+  setSearchTier, setOwnerStyle, setBenchStyle, assignStaff, unassignStaff,
+  type OwnerStyle, type BenchStyle,
+} from "@/engine/staff";
 import { normalizeParcels } from "@/engine/mix";
 import { netWorth } from "@/engine/value";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
@@ -249,6 +253,11 @@ interface AppState {
   hireStaff: (candidateId: number) => void;
   fireStaff: (staffId: number) => void;
   postJob: () => void;
+  setStaffSearchTier: (key: "post" | "network" | "recruiter") => void;
+  setStaffOwnerStyle: (style: OwnerStyle) => void;
+  setStaffBenchStyle: (style: BenchStyle) => void;
+  assignStaffBuilding: (staffId: number, bbl: string) => void;
+  unassignStaffBuilding: (staffId: number, bbl: string) => void;
   /** Cut a brand new town on this island at this size and build-out, and play it. */
   startRun: (island: string, size: string, dev: string, cash0?: number) => Promise<void>;
   /** Rebuild the town in a named save and pick the campaign back up. */
@@ -1253,8 +1262,62 @@ export const useStore = create<AppState>((set, get) => ({
     const next: GameState = JSON.parse(JSON.stringify(game));
     refreshPool(next, false);
     set({ game: next });
-    toast("The job is posted. Three names on each desk.");
+    toast("The job is posted. Three names on each desk — property, leasing and construction.");
     void persist(next);
+  },
+
+  setStaffSearchTier: (key) => {
+    const { game } = get();
+    if (!game) return;
+    const r = setSearchTier(game, key);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(key === "post" ? "Posted. Cheap looks, wide bands."
+      : key === "network" ? "Working the network — tighter first impressions."
+        : "Recruiter retained. You paid for a sharper read.");
+    void persist(r.s);
+  },
+
+  setStaffOwnerStyle: (style) => {
+    const { game } = get();
+    if (!game) return;
+    const r = setOwnerStyle(game, style);
+    set({ game: r.s });
+    toast(style === "handsOn"
+      ? "Hands-on: you keep more cover yourself."
+      : "Delegated: you need staff sooner.");
+    void persist(r.s);
+  },
+
+  setStaffBenchStyle: (style) => {
+    const { game } = get();
+    if (!game) return;
+    const r = setBenchStyle(game, style);
+    set({ game: r.s });
+    toast(style === "boutique"
+      ? "Boutique: fewer stars move the needle more."
+      : "Platform: a deeper mid-tier bench.");
+    void persist(r.s);
+  },
+
+  assignStaffBuilding: (staffId, bbl) => {
+    const { game } = get();
+    if (!game) return;
+    const r = assignStaff(game, staffId, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast("Assigned.");
+    void persist(r.s);
+  },
+
+  unassignStaffBuilding: (staffId, bbl) => {
+    const { game } = get();
+    if (!game) return;
+    const r = unassignStaff(game, staffId, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast("Cleared off that building.");
+    void persist(r.s);
   },
 
   refreshSlots: async () => {

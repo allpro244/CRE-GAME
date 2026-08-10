@@ -5,7 +5,7 @@ import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, START_YEAR } from "@/engine/types";
 import type { Approach, BuiltClass, Contract, DevUse } from "@/engine/types";
-import { assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, holdingNOIYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, recoveryOf, landValue, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, remainingAbatement, bareLandRec, leasedFeeValue } from "@/engine/value";
+import { assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, holdingNOIYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, recoveryOf, landValue, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, remainingAbatement, bareLandRec, leasedFeeValue, isVacantLandLoanCollateral } from "@/engine/value";
 import { adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, constructionQuotes, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
 import { buyQuote, assemblagePressure, saleTaxQuote, quietFeeRate, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
@@ -1906,8 +1906,12 @@ export function RefiSection({ bbl }: { bbl: string }) {
   const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   const { refi } = useStore.getState();
-  const isLand = resolveRec(parcels, game, bbl)?.class === "land";
-  const [product, setProduct] = useState<string>(isLand ? "land" : "savings");
+  const holding = game.holdings[bbl];
+  // A leased fee with a ground rent is income paper, not vacant dirt — open
+  // on an income desk even when the resolved class is still "land".
+  const refiRec = resolveRec(parcels, game, bbl);
+  const vacantDirt = !!holding && !!refiRec && isVacantLandLoanCollateral(game, holding, refiRec);
+  const [product, setProduct] = useState<string>(vacantDirt ? "land" : "savings");
   const [lev, setLev] = useState(1);
   const { quotes, value, payoff } = refiQuotes(game, parcels, bbl);
   const cur = game.holdings[bbl]?.loan;

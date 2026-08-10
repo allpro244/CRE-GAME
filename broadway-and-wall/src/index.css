@@ -1142,6 +1142,16 @@ body {
 .staff-actions { flex: 0 1 300px; }
 .staff-cost { font-size: 11px; color: var(--ink-dim); line-height: 1.45; margin-top: 6px; font-style: italic; }
 .staff-pending { opacity: 0.75; }
+.staff-assign { margin-top: 10px; }
+.staff-assign-pick {
+  display: flex; align-items: center; gap: 8px; margin-top: 8px;
+  font-size: 12px; color: var(--ink-dim);
+}
+.staff-assign-pick select {
+  flex: 1 1 auto; min-width: 0; max-width: 320px;
+  font: inherit; color: var(--ink); background: var(--paper, #fff);
+  border: 1px solid var(--rule, #c8c0b4); border-radius: 2px; padding: 4px 6px;
+}
 
 .cand-group { margin-top: 14px; }
 .cand-group-head {

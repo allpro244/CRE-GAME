@@ -51,6 +51,18 @@ check(E.portfolioPropertyMonthlyCF(g, parcels) === 600_000 / 12,
   "portfolio property CF counts the ground rent");
 check(E.portfolioMonthlyCF(g, parcels) === 600_000 / 12,
   "header CF / yr annualises the same coupon (no other firm debt here)");
+check(!E.isVacantLandLoanCollateral(g, g.holdings[bbl], rec),
+  "a performing leased fee is not vacant land-loan collateral");
+
+const { quotes } = E.refiQuotes(g, parcels, bbl);
+const landDesk = quotes.find((q) => q.id === "land");
+const incomeOk = quotes.some((q) => q.id !== "land" && q.available && q.maxProceeds > 0);
+check(incomeOk, "an income desk will quote traditional debt against the ground rent");
+check(landDesk && !landDesk.available, "land money refuses a fee that has income to underwrite");
+check(quotes.find((q) => q.id === "savings")?.noiUw === 600_000
+  || quotes.find((q) => q.id === "harbor")?.noiUw === 600_000
+  || quotes.find((q) => q.id === "cordage")?.noiUw === 600_000,
+  "refi underwriting NOI is the ground rent");
 
 const cashFlow = E.groundLeaseExpenseBreakdown(600_000);
 check(cashFlow.grossRentYr === 600_000 && cashFlow.netRentYr === 600_000,

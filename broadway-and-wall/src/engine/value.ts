@@ -1252,6 +1252,19 @@ export function opexPsf(cls: BuiltClass, econ: Econ, systemsDone: boolean, servi
   return (OPEX_CONTROLLABLE[cls] * (systemsDone ? 0.82 : 1) * serviceSpec(service).opex + OPEX_FIXED[cls]) * econ.costIdx;
 }
 
+/** Controllable opex only — pmOpexMult applies here, not to fixed costs. */
+function controllableOpexPsf(
+  cls: BuiltClass, econ: Econ, systemsDone: boolean, service?: -1 | 0 | 1, pmMult = 1,
+): number {
+  return OPEX_CONTROLLABLE[cls] * (systemsDone ? 0.82 : 1) * serviceSpec(service).opex * econ.costIdx * pmMult;
+}
+
+function managedOpexPsf(
+  cls: BuiltClass, econ: Econ, systemsDone: boolean, service?: -1 | 0 | 1, pmMult = 1,
+): number {
+  return controllableOpexPsf(cls, econ, systemsDone, service, pmMult) + OPEX_FIXED[cls] * econ.costIdx;
+}
+
 // THE LEGACY FLAT TABLE IS GONE. It was "kept for compatibility with anything
 // still asking the old question", and the thing still asking was multifamily —
 // which billed $10.00/sf while planDevelopment, the land residual and every
@@ -1661,20 +1674,16 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
     // cannot: the service policy moving the CONTROLLABLE half only (a manager
     // cannot economise on insurance), and the systems programme.
     const systemsDone = h.programsDone?.systems !== undefined;
-    const opexBill = rec.bldgArea * opexPsf(cls, econ, systemsDone, h.service) * (h.pmOpexMult ?? 1);
+    const opexBill = rec.bldgArea * managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1);
     return egi * (1 - MGMT_FEE - APT_RESERVE) - opexBill - propertyTaxYr(rec, h);
   }
   // Rent first, then the expense stack, then what comes back through the
   // recovery clauses. Vacant space reimburses nothing and still costs money —
   // that gap is the whole reason occupancy matters more than headline rent.
   const systemsDone = h.programsDone?.systems !== undefined;
-  // YOUR MANAGEMENT, ON YOUR BUILDING. See Holding.pmOpexMult. Applied before
-  // the recovery clauses on purpose: a triple-net tenant reimburses what the
-  // building actually spent, so a manager who cuts the contract cost cuts the
-  // reimbursement with it and the owner keeps only the share they were
-  // carrying themselves. That is why good management is worth less on a
-  // net-leased shed than on a gross-leased tower, which is correct.
-  const opexNowPsf = opexPsf(cls, econ, systemsDone, h.service) * (h.pmOpexMult ?? 1);
+  // YOUR MANAGEMENT, ON YOUR BUILDING. See Holding.pmOpexMult. Applied to the
+  // controllable half only — fixed costs do not care who manages the building.
+  const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1);
   const taxBill = grossTaxYr(rec, h);
   const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
 
@@ -1734,7 +1743,7 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
     // The same opexPsf every other class reads — see holdingNOIYr, where the
     // flat legacy table used to disagree with it by 22%.
     const systemsDone = h.programsDone?.systems !== undefined;
-    const opexBill = rec.bldgArea * opexPsf("multifamily", econ, systemsDone, h.service) * (h.pmOpexMult ?? 1);
+    const opexBill = rec.bldgArea * managedOpexPsf("multifamily", econ, systemsDone, h.service, h.pmOpexMult ?? 1);
     const taxBill = grossTaxYr(rec, h);
     return {
       baseRent: egi, freeRent: 0, recoveredOpex: 0, recoveredTax: 0, egi,
@@ -1748,13 +1757,9 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   }
   const cls = rec.class as BuiltClass;
   const systemsDone = h.programsDone?.systems !== undefined;
-  // YOUR MANAGEMENT, ON YOUR BUILDING. See Holding.pmOpexMult. Applied before
-  // the recovery clauses on purpose: a triple-net tenant reimburses what the
-  // building actually spent, so a manager who cuts the contract cost cuts the
-  // reimbursement with it and the owner keeps only the share they were
-  // carrying themselves. That is why good management is worth less on a
-  // net-leased shed than on a gross-leased tower, which is correct.
-  const opexNowPsf = opexPsf(cls, econ, systemsDone, h.service) * (h.pmOpexMult ?? 1);
+  // YOUR MANAGEMENT, ON YOUR BUILDING. See Holding.pmOpexMult. Applied to the
+  // controllable half only — fixed costs do not care who manages the building.
+  const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1);
   const taxBill = grossTaxYr(rec, h);
   const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
   let baseRent = 0, leasedSf = 0, recOpex = 0, recTax = 0, free = 0;
@@ -2117,10 +2122,10 @@ export function ownedHoldingValue(
  *
  * `holdingNOIYr` correctly returns 0 on a ground-leased fee so the fee owner
  * is not billed the lessee's tax, insurance and vacancy. Cash still arrives as
- * the absolutely-net ground coupon (`tickGroundLeases`), and every player-
- * facing cash-flow figure has to count that coupon — otherwise Portfolio can
- * show a performing leased fee while the header CF / yr pretends the income
- * does not exist. Mirrors `ownedHoldingValue`.
+ * the absolutely-net ground coupon (`tickGroundLeases`). Debt, DSCR and every
+ * player-facing cash-flow figure have to count that coupon — otherwise a
+ * performing leased fee is vacant dirt to First Harbor and the header CF / yr
+ * pretends the income does not exist. Mirrors `ownedHoldingValue`.
  */
 export function ownedHoldingNoiYr(
   s: GameState, parcels: Record<string, ParcelRecord>, h: Holding,
@@ -2146,6 +2151,18 @@ export function ownedMonthlyNoi(
   s: GameState, parcels: Record<string, ParcelRecord>, h: Holding,
 ): number {
   return ownedHoldingNoiYr(s, parcels, h) / 12;
+}
+
+/**
+ * Vacant dirt with no income — the only collateral First Harbor's land loan
+ * is for. A leased fee with a coupon is not vacant dirt, even when the
+ * resolved class is still "land" before the lessee tops out.
+ */
+export function isVacantLandLoanCollateral(
+  s: GameState, h: Holding, rec: ParcelRecord,
+): boolean {
+  if (h.groundLeased && (s.groundLeases?.[h.bbl]?.rentYr ?? 0) > 0) return false;
+  return rec.class === "land" || !rec.bldgArea;
 }
 
 /** Same canonical deed value when the caller already resolved the parcel. */

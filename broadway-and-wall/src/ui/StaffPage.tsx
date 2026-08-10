@@ -53,7 +53,7 @@ import type { ParcelTable } from "@/data/types";
 import {
   ATTR_LABEL, GENERAL_ATTRS, ROLE_ATTRS, ROLE_LABEL,
   LEASING_BASE_SF, OWNER_SF, PM_BASE_SF, CONSTRUCTION_BASE_SF, POOL_REFRESH_M, SEARCH_MONTHS,
-  SEARCH_TIERS, SEVERANCE_MONTHS,
+  SEARCH_TIERS, SEVERANCE_MONTHS, ownerCapacitySf,
   leasingOddsMult, leasingRentMult, payrollMonthly, pmOpexMult, pmRenewalMult, cmRiskMult,
   readAttr, roleState, severanceFor,
   type Candidate, type RoleState, type Staff, type StaffRole,
@@ -166,7 +166,11 @@ function neutralOpexYr(game: GameState, parcels: ParcelTable): number {
 export default function StaffPage() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels);
-  const { hireStaff, fireStaff, postJob } = useStore.getState();
+  const {
+    hireStaff, fireStaff, postJob,
+    setStaffSearchTier, setStaffOwnerStyle, setStaffBenchStyle,
+    assignStaffBuilding, unassignStaffBuilding,
+  } = useStore.getState();
   // Firing is three months of somebody's pay and two months of nobody in the
   // seat. It gets the same arm-then-confirm the "new city" button gets, for
   // the same reason: an irreversible, expensive thing should cost two clicks.
@@ -183,6 +187,10 @@ export default function StaffPage() {
   const tier = SEARCH_TIERS.find((t) => t.band === band) ?? SEARCH_TIERS[0];
   const payroll = payrollMonthly(game);
   const opexBase = neutralOpexYr(game, parcels);
+  const ownerCover = ownerCapacitySf(game, "pm");
+  const ownedBbls = Object.keys(game.holdings);
+  const costIdx = game.econ.costIdx ?? 1;
+  const rep = game.hireReputation ?? 0.55;
 
   return (
     <div>
@@ -200,8 +208,8 @@ export default function StaffPage() {
         />
         <Big
           label="You cover, alone"
-          value={sf(OWNER_SF)}
-          title="The firm starts as one person who is also underwriting, financing and walking buildings. About six small buildings' worth — and you never stop counting toward the desk, whoever else is on it."
+          value={sf(ownerCover)}
+          title="How much commercial space you personally cover before the desk slips. Hands-on keeps more; delegated needs people sooner."
         />
       </div>
 
@@ -212,6 +220,47 @@ export default function StaffPage() {
         Past capacity the roof inspection slips, the renewal conversation happens two months late, and the
         vendor contract rolls over unexamined. None of that is a penalty applied to you — it is work that did
         not get done, priced below in the units it costs you.
+        {rep < 0.45 ? " The street remembers messy firings — the next shortlist will read worse." : ""}
+      </div>
+
+      <div className="page-section">
+        <div className="page-section-head">How this firm is run</div>
+        <div className="hint">
+          Owner style sets how much cover you keep yourself. Bench style sets whether you hire for stars or a flatter mid-tier.
+          Neither is a skill chip — they change capacity arithmetic.
+        </div>
+        <div className="btn-row" style={{ marginTop: 8 }}>
+          <button
+            type="button"
+            className={"btn" + ((game.ownerStyle ?? "") === "handsOn" ? " btn-on" : "")}
+            onClick={() => setStaffOwnerStyle("handsOn")}
+            title={`You cover about ${sf(OWNER_SF * 1.35)} yourself.`}
+          >
+            Hands-on
+          </button>
+          <button
+            type="button"
+            className={"btn" + (game.ownerStyle === "delegated" ? " btn-on" : "")}
+            onClick={() => setStaffOwnerStyle("delegated")}
+            title={`You cover about ${sf(OWNER_SF * 0.72)} yourself — staff sooner.`}
+          >
+            Delegated
+          </button>
+          <button
+            type="button"
+            className={"btn" + (game.benchStyle === "boutique" ? " btn-on" : "")}
+            onClick={() => setStaffBenchStyle("boutique")}
+          >
+            Boutique
+          </button>
+          <button
+            type="button"
+            className={"btn" + (game.benchStyle === "platform" ? " btn-on" : "")}
+            onClick={() => setStaffBenchStyle("platform")}
+          >
+            Platform
+          </button>
+        </div>
       </div>
 
       {ROLES.map((role) => (
@@ -223,11 +272,15 @@ export default function StaffPage() {
           staff={staff.filter((x) => x.role === role)}
           pending={pending.filter((p) => p.staff.role === role)}
           month={game.month}
+          ownedBbls={ownedBbls}
+          parcels={parcels}
           onFire={(id) => {
             if (armFire !== id) { setArmFire(id); setTimeout(() => setArmFire(null), 5000); return; }
             setArmFire(null);
             fireStaff(id);
           }}
+          onAssign={(id, bbl) => assignStaffBuilding(id, bbl)}
+          onUnassign={(id, bbl) => unassignStaffBuilding(id, bbl)}
           armed={armFire}
           severance={(st) => severanceFor(game, st)}
         />
@@ -246,13 +299,27 @@ export default function StaffPage() {
           which is the entire reason bad hires happen to careful people.
           {!stale && ` A fresh list goes up in ${POOL_REFRESH_M - poolAge} month${POOL_REFRESH_M - poolAge === 1 ? "" : "s"} — a hiring market that reshuffles on demand is a slot machine, and the decision it produces is "spin again" rather than "is this person worth the money".`}
         </div>
-        {stale && (
-          <div className="btn-row">
-            <button className="btn" onClick={() => postJob()}>
-              {game.hirePool ? "Post the job again" : "Post the job"}
-            </button>
-          </div>
-        )}
+        <div className="btn-row" style={{ marginTop: 8 }}>
+          {SEARCH_TIERS.map((t) => {
+            const cost = Math.round(t.cost * costIdx);
+            const on = tier.key === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                className={"btn" + (on ? " btn-on" : "")}
+                disabled={!stale && on}
+                title={cost ? `${usd(cost)} at today's prices · band ±${t.band}` : `Free · band ±${t.band}`}
+                onClick={() => setStaffSearchTier(t.key)}
+              >
+                {t.label}{cost ? ` · ${usd(cost)}` : ""}
+              </button>
+            );
+          })}
+          {stale && !game.hirePool && (
+            <button className="btn" onClick={() => postJob()}>Post the first list</button>
+          )}
+        </div>
         {ROLES.map((role) => {
           const cands = pool.filter((c) => c.role === role);
           return (
@@ -297,14 +364,18 @@ export default function StaffPage() {
  * multiplier, so this panel and the operating statement on the property page
  * cannot drift apart.
  */
-function RoleDesk({ role, rs, opexBase, staff, pending, month, onFire, armed, severance }: {
+function RoleDesk({ role, rs, opexBase, staff, pending, month, ownedBbls, parcels, onFire, onAssign, onUnassign, armed, severance }: {
   role: StaffRole;
   rs: RoleState;
   opexBase: number;
   staff: Staff[];
   pending: { staff: Staff; startM: number }[];
   month: number;
+  ownedBbls: string[];
+  parcels: ParcelTable;
   onFire: (id: number) => void;
+  onAssign: (id: number, bbl: string) => void;
+  onUnassign: (id: number, bbl: string) => void;
   armed: number | null;
   severance: (st: Staff) => number;
 }) {
@@ -466,7 +537,11 @@ function RoleDesk({ role, rs, opexBase, staff, pending, month, onFire, armed, se
           month={month}
           severance={severance(st)}
           armed={armed === st.id}
+          ownedBbls={ownedBbls}
+          parcels={parcels}
           onFire={() => onFire(st.id)}
+          onAssign={(bbl) => onAssign(st.id, bbl)}
+          onUnassign={(bbl) => onUnassign(st.id, bbl)}
         />
       ))}
     </div>
@@ -484,13 +559,20 @@ function RoleDesk({ role, rs, opexBase, staff, pending, month, onFire, armed, se
  * out about a person in life. Nothing here ever prints the true number,
  * because nothing in life does either.
  */
-function PersonCard({ st, month, severance, armed, onFire }: {
-  st: Staff; month: number; severance: number; armed: boolean; onFire: () => void;
+function PersonCard({ st, month, severance, armed, ownedBbls, parcels, onFire, onAssign, onUnassign }: {
+  st: Staff; month: number; severance: number; armed: boolean;
+  ownedBbls: string[]; parcels: ParcelTable;
+  onFire: () => void;
+  onAssign: (bbl: string) => void;
+  onUnassign: (bbl: string) => void;
 }) {
   const served = Math.max(0, month - st.hiredM);
   const keys = [...GENERAL_ATTRS, ...ROLE_ATTRS[st.role]];
   const widthNow = keys.reduce((a, k) => { const r = readAttr(st, k, month); return a + (r.hi - r.lo); }, 0) / keys.length;
   const widthHire = keys.reduce((a, k) => { const r = readAttr(st, k, st.hiredM); return a + (r.hi - r.lo); }, 0) / keys.length;
+  const canAssign = st.role === "pm" || st.role === "leasing";
+  const assigned = st.assignedBbls ?? [];
+  const freeBbls = ownedBbls.filter((b) => !assigned.includes(b));
   return (
     <div className="staff-row">
       <div className="staff-main">
@@ -514,6 +596,43 @@ function PersonCard({ st, month, severance, armed, onFire }: {
             ? "Too early to tell. You bought the interview; the results have not arrived yet."
             : `Your read has tightened from about ${widthHire.toFixed(0)} points wide at the interview to ${widthNow.toFixed(0)}. Twelve months of results halve the error and five years all but remove it.`}
         </div>
+        {canAssign && (
+          <div className="staff-assign">
+            <div className="hint">
+              Assign them to a building and that asset runs on their skill — the rest of the book still loads the desk.
+            </div>
+            {assigned.length > 0 && (
+              <div className="btn-row" style={{ marginTop: 6 }}>
+                {assigned.map((bbl) => {
+                  const addr = parcels[bbl]?.address ?? bbl;
+                  return (
+                    <button key={bbl} type="button" className="btn btn-on" onClick={() => onUnassign(bbl)} title="Clear this assignment">
+                      {addr} · clear
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {freeBbls.length > 0 && (
+              <label className="staff-assign-pick">
+                <span className="dim">Put on</span>
+                <select
+                  defaultValue=""
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v) onAssign(v);
+                    e.target.value = "";
+                  }}
+                >
+                  <option value="">a building…</option>
+                  {freeBbls.map((bbl) => (
+                    <option key={bbl} value={bbl}>{parcels[bbl]?.address ?? bbl}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+        )}
       </div>
       <div className="staff-actions">
         <button className={"btn btn-danger" + (armed ? " btn-on" : "")} onClick={onFire}>
@@ -523,6 +642,7 @@ function PersonCard({ st, month, severance, armed, onFire }: {
           {SEVERANCE_MONTHS} months' severance — {usd(severance)} today — and then {SEARCH_MONTHS} months before a
           replacement can start, because a search takes a search and the person you hire is working out a notice.
           Your cover falls the moment you decide it was inadequate. That gap is the real price of this button.
+          Early exits also sour the next shortlist.
         </div>
       </div>
     </div>

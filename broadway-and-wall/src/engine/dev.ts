@@ -2982,6 +2982,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class === "land" || !rec.bldgArea) continue;
     if (s.holdings[bbl] || s.developments[bbl]) continue;        // never yours
+    if (s.cityGroundLeases?.[bbl]) continue;                     // leased fee sold off-book — lessee still controls
     if (s.landmarks?.[bbl] !== undefined) continue;              // and never a landmark
     if ((s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
     if (ownerOf(s, bbl)) continue;                               // named firm path is startOwnJob
@@ -3309,6 +3310,7 @@ function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) 
     // overshoot; skip if it would cut into occupied stock.
     if (rec.bldgArea > surplus * 1.05) continue;
     if (s.holdings[bbl] || s.developments[bbl]) continue;
+    if (s.cityGroundLeases?.[bbl]) continue;
     if (s.landmarks?.[bbl] !== undefined) continue;
     if ((s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
     if (ownerOf(s, bbl)) continue;
@@ -3405,25 +3407,31 @@ export function tickCityGrowth(
       sf: j.sf,
       floors: j.floors,
       party: j.groundLease
-        ? (s.groundLeases?.[j.bbl]?.tenant ?? "Ground lessee")
+        ? (s.groundLeases?.[j.bbl]?.tenant
+          ?? s.cityGroundLeases?.[j.bbl]?.tenant
+          ?? "Ground lessee")
         : j.firmId
           ? (s.rivals.find((r) => r.id === j.firmId)?.name ?? "Developer")
           : "The city",
     });
     s.cityBuilt.push(j.bbl);
     if (j.groundLease) {
-      const gl = s.groundLeases?.[j.bbl];
+      const gl = s.groundLeases?.[j.bbl] ?? s.cityGroundLeases?.[j.bbl];
       if (gl) {
         gl.builtM = s.month;
         gl.sf = j.sf;
         gl.floors = j.floors;
         gl.use = dominantOf(cmix);
       }
-      s.news.unshift({
-        q: s.month, kind: "info",
-        text: `Your ground lessee topped out at ${rec.address}: ${j.floors} fl of ${dominantOf(cmix)} `
-          + `(${Math.round(j.sf).toLocaleString()} sf). The coupon does not change — the bones revert with the land.`,
-      });
+      // Only news when the fee is still yours — an off-book leased fee topping
+      // out is the buyer's story, not a line in your paper.
+      if (s.groundLeases?.[j.bbl]) {
+        s.news.unshift({
+          q: s.month, kind: "info",
+          text: `Your ground lessee topped out at ${rec.address}: ${j.floors} fl of ${dominantOf(cmix)} `
+            + `(${Math.round(j.sf).toLocaleString()} sf). The coupon does not change — the bones revert with the land.`,
+        });
+      }
     } else if (j.firmId) {
       // If it had a name on it, the name now owns a building.
       jobDelivered(s, parcels, j.bbl, j.firmId, j.cost ?? 0);

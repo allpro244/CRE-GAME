@@ -1868,7 +1868,8 @@ export function ListSection({ bbl, appraisal, onDone }: { bbl: string; appraisal
     <div style={{ padding: "8px 2px" }}>
       {leasedFee && (
         <div className="hint" style={{ marginBottom: 8 }}>
-          This is the leased fee — the coupon and the reversion, not free-and-clear dirt. Buyers underwrite it as a bond.
+          This is the leased fee — the coupon and the reversion, not free-and-clear dirt. Buyers underwrite it as a
+          bond, and the ground lease goes with the deed.
         </div>
       )}
       <Slider

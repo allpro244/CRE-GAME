@@ -11,7 +11,7 @@ import { assetValue, holdingNOIYr, ownedHoldingValue, ownedMonthlyNoi, monthlyNO
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLeasing, depositsOn, stampListing, loiSigningCost, exclusiveFeeRate, agentCashReserve } from "./leasing";
-import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote } from "./actions";
+import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { tickTalks } from "./acquire";
 import { tickLoan, prepayPenalty, productById } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
@@ -335,7 +335,7 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   let rejects = 0;
   while (s.listings.length < target && guard++ < 4000 && rejects < 250) {
     const bbl = bbls[Math.floor(rng(s) * bbls.length)];
-    if (listed.has(bbl) || s.holdings[bbl]) { rejects++; continue; }
+    if (listed.has(bbl) || s.holdings[bbl] || s.cityGroundLeases?.[bbl]) { rejects++; continue; }
     // A BUILDING THAT SOLD LAST YEAR IS NOT FOR SALE THIS YEAR.
     //
     // This picked a parcel at random with no memory of what had just traded,
@@ -750,7 +750,7 @@ function tickMonth(
         }
         recordComp(s, rec, gross, "a distressed buyer", firmShort(s), true, pick.condition);
         s.exits.push({ bbl: pick.bbl, address: rec.address, boughtM: pick.boughtM, soldM: s.month, price: gross, basis: pick.costBasis, gain: gross - pick.costBasis, forced: true });
-        if (s.groundLeases?.[pick.bbl]) delete s.groundLeases[pick.bbl];
+        if (s.groundLeases?.[pick.bbl]) transferGroundLeaseOffBook(s, pick.bbl);
         s.cash -= depositsOn(s.holdings[pick.bbl]);   // the deposits go with the deed
         s.lastTradeM = s.lastTradeM ?? {};
         s.lastTradeM[pick.bbl] = s.month;
@@ -841,11 +841,11 @@ function tickMonth(
   refreshListings(s, parcels, bbls);
   if (s.news.length > 120) s.news.length = 120;
 
-  // A deed that left the book takes
-  // its encumbrances with it. A creditor can seize land out from under a lease
-  // at any point in the month, and the ledger has to agree by the end of it.
+  // A deed that left the book takes its leased fee with it — the lease
+  // continues off-book, it does not evaporate. A creditor can seize land out
+  // from under a lease at any point in the month; the ledger agrees by month-end.
   for (const bbl of Object.keys(s.groundLeases ?? {})) {
-    if (!s.holdings[bbl]) delete s.groundLeases![bbl];
+    if (!s.holdings[bbl]) transferGroundLeaseOffBook(s, bbl);
   }
   for (const [child, parent] of Object.entries(s.merged ?? {})) {
     if (s.holdings[child] && s.holdings[parent]) continue;

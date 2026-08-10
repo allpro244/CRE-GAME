@@ -77,8 +77,8 @@ export function LeasingPage() {
           <div className="agent-title">{game.agent ? "Your leasing agent has the book." : "You are handling leasing yourself."}</div>
           <div className="agent-sub">
             {game.agent
-              ? `They sign inside your mandate, pick a clear winner on contested tours, refer only the real judgment calls, and pass the junk — 6% of lease value on what they sign${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
-              : "You'll be asked to sign, counter, or pass on every letter of intent. Hand it over and set the mandate below — you keep control of the policy, they work the paper."}
+              ? `They sign inside your mandate, counter soft letters toward your sign line, pick a clear winner on contested tours, and only refer expansions, dead heats, failed negotiations and capital calls — 6% of lease value on what they sign${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
+              : "Without the firm agent, an exclusive broker or an in-house leasing hire still counters on the buildings they cover. Otherwise every letter lands on you — hire the agent below to hand over the whole book."}
           </div>
         </div>
         <button className={"btn" + (game.agent ? "" : " btn-on")} onClick={() => setAgent(!game.agent)}>
@@ -160,12 +160,12 @@ export function LeasingPage() {
           marks={[{ at: 85, label: "85%" }, { at: 90, label: "usual" }, { at: 95, label: "95%" }, { at: 100, label: "par" }]}
           format={(v) => `${v}% of market, net effective`}
           hint={floor >= 0.97
-            ? "At the market or nothing. Almost everything comes back to you — a way of not letting space."
+            ? "At the market or nothing. Soft letters get a hard counter; most still come back if the tenant will not move."
             : floor >= 0.90
-              ? "Tight. Good letters clear; soft ones land on your desk for a counter."
+              ? "Tight. Good letters clear; soft ones they counter toward this line before bothering you."
               : floor <= 0.80
                 ? "Wide. They will fill space, and some of what they sign will be cheap paper for a decade."
-                : "A working mandate: a few points under market is theirs; worse comes back to you."}
+                : "A working mandate: a few points under market they close; worse they kill or bring back once."}
         />
         <Slider
           label="Auto-pass below"
@@ -176,7 +176,7 @@ export function LeasingPage() {
           onChange={(v) => setAgentPassBelow(v / 100)}
           marks={[{ at: 70, label: "70%" }, { at: 78, label: "usual" }, { at: Math.round((floor - 0.02) * 100), label: "just under sign" }]}
           format={(v) => `${v}% of market — kill it, do not bother you`}
-          hint={`Between ${Math.round(pass * 100)}% and ${Math.round(floor * 100)}% they refer the letter back — that is the band you still decide.`}
+          hint={`Between ${Math.round(pass * 100)}% and ${Math.round(floor * 100)}% they counter and negotiate — you only see the letter if the tenant's final still needs a principal.`}
         />
         <Slider
           label="Maximum fit-out they may fund"

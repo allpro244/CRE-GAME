@@ -34,7 +34,7 @@ console.log("\nLEASING MANDATE\n");
   if (Math.abs(floor - 0.90) > 0.001) fail(`default floor should be 90% (got ${(floor * 100).toFixed(0)}%)`);
   else ok(`default auto-sign floor is ${(floor * 100).toFixed(0)}% (was 82%)`);
   if (!(pass < floor - 0.015)) fail(`pass (${pass}) must sit under floor (${floor})`);
-  else ok(`default pass band ${(pass * 100).toFixed(0)}%–${(floor * 100).toFixed(0)}% is referred`);
+  else ok(`default counter band ${(pass * 100).toFixed(0)}%–${(floor * 100).toFixed(0)}% (desk negotiates)`);
 }
 
 // Total upfront cash includes commission, not only the line labelled TI.
@@ -109,14 +109,13 @@ console.log("\nLEASING MANDATE\n");
     // by calling through a month of sim if exported; else re-run via advanceQuarter.
     const after = E.advanceQuarter(mid, parcels, bbls, null);
     const still = (after.lois ?? []).find((l) => l.id === loi.id);
-    const referred = (after.lois ?? []).some((l) => l.referred);
-    if (still?.referred || referred) ok("mid-band letter was referred (still on desk)");
-    else if (!still) {
-      // May have been signed if score cleared — check news
-      const news = (after.news ?? []).slice(0, 8).map((n) => n.text).join(" ");
-      if (/referred|passed/i.test(news)) ok(`desk acted on soft letter (${/referred/i.test(news) ? "referred" : "passed"})`);
-      else console.log("  SKIP  letter resolved before mandate could refer (market/score moved)");
-    } else fail("mid-band letter neither referred nor removed");
+    const news = (after.news ?? []).slice(0, 12).map((n) => n.text).join(" ");
+    const negotiated = !still
+      || still.referred
+      || still.countered
+      || /countered|walked|referred|passed|took/i.test(news);
+    if (negotiated) ok("mid-band letter was negotiated by the desk (not left untouched)");
+    else fail("mid-band letter sat on the open pile with no desk action");
 
     // Even a permissive mandate may not choose between mutually-exclusive
     // tenants or commit adjacent space to an incumbent expansion.

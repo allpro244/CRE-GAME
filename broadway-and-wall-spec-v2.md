@@ -2,7 +2,7 @@
 
 A commercial real estate tycoon game on a real 3D map of New York City. The player buys, develops, leases, and sells actual Lower Manhattan parcels, growing net worth through honest economics. The map must feel like flying through Google Maps' 3D mode; the deal mechanics must feel like the real business.
 
-**This spec supersedes `broadway-and-wall-spec.md` (v1) entirely — use only this document.** This is a fresh build, but it inherits proven systems from the developer's previous game, **Groundwork** (React/TS/Vite, pure-function engine in `src/engine.ts`). If the Groundwork repo is available on this machine, read its engine before implementing the leasing, debt, and AI-rival systems below and port logic where it fits; where it isn't available, implement from this spec's descriptions, which match Groundwork's behavior. Explicitly do NOT carry over Groundwork's world model: no quarter-acre parcel grid, no uniform blocks, no isometric SVG renderer, no fictional city. The world is real NYC geometry.
+**This spec supersedes `broadway-and-wall-spec.md` (v1) entirely — use only this document.** Broadway & Wall is the only game in this repository. Implement leasing, debt, and AI-rival systems from this spec (and from the live code under `broadway-and-wall/`). Do not seek, restore, or port from any archived product. World model for the live game is the generated harbor city in `broadway-and-wall/src/citygen/` (the NYC pipeline below remains optional audit material).
 
 ## Design pillars
 

@@ -1,11 +1,9 @@
-# CRE Game
+# Broadway & Wall
 
-This repo contains one game: **Broadway & Wall**.
+This repository contains **one game: Broadway & Wall**.
 
-| Path | What it is |
-|---|---|
-| [`broadway-and-wall/`](broadway-and-wall/) | The game — engine, UI, pipeline, harness |
-| [`legacy/groundwork/`](legacy/groundwork/) | Archived Groundwork scaffold (not in the workspace) |
+There is no other playable product in this repo. Work only under
+[`broadway-and-wall/`](broadway-and-wall/).
 
 ## Start here
 
@@ -16,11 +14,15 @@ pnpm check          # engine harness
 pnpm gate           # conservation / invariant gates
 ```
 
-Docs for the game live under `broadway-and-wall/`:
+## Docs
 
 - [`broadway-and-wall/README.md`](broadway-and-wall/README.md) — how to run and package
 - [`broadway-and-wall/HANDOFF.md`](broadway-and-wall/HANDOFF.md) — traps, open faults, current state
 - [`broadway-and-wall/CLAUDE.md`](broadway-and-wall/CLAUDE.md) — economy / engine rules
 - [`broadway-and-wall/AGENTS.md`](broadway-and-wall/AGENTS.md) — agent brief
+- [`broadway-and-wall-spec-v2.md`](broadway-and-wall-spec-v2.md) — design reference
 
-The design spec at the repo root (`broadway-and-wall-spec-v2.md`) is reference material for Broadway & Wall.
+## Agents
+
+If you are an automated agent: read **`AGENTS.md`** at the repo root before
+doing anything else. The game lives in `broadway-and-wall/`, not at the repo root.

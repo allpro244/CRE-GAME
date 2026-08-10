@@ -1,6 +1,6 @@
 # Broadway & Wall
 
-A commercial real estate tycoon game set in **Ashport** — a compact fictional harbor city (~1,800 lots) that starts young and gets built out over the campaign. Spec: `broadway-and-wall-spec-v2.md` (originally NYC-targeted; the map pivoted to a small fictional city for play density — the NYC pipeline below still works). Inherits Groundwork's engine philosophy (pure-function simulation, honest economics); Groundwork itself is archived under `legacy/groundwork/`.
+A commercial real estate tycoon game set in **Ashport** — a compact fictional harbor city (~1,800 lots) that starts young and gets built out over the campaign. Spec: `broadway-and-wall-spec-v2.md` (originally NYC-targeted; the map pivoted to a small fictional city for play density — the NYC pipeline below still works). Pure-function simulation, honest economics; the engine stays separate from the UI.
 
 **Ashport's districts:** Old Harbor (irregular colonial core), the Exchange (office grid + height core), Northside (brownstones), Millside (industrial, ripe for redevelopment), the Point (waterfront tower pads), plus Founders Park, squares, piers, and a 13-station transit net that drives the demand map.
 
@@ -42,6 +42,6 @@ MapLibre GL, styled as a clean architectural model: near-white extrusions lit by
 
 ## Architecture notes for the next phases
 
-- Engine/UI separation is preserved from Groundwork: the coming `src/engine/` will be pure `advanceQuarter(state) → state` over the `parcels.json` table, seeded RNG in state; UI reads via the zustand store (`src/state/store.ts`).
-- `adjacency.json` replaces Groundwork's grid edge-adjacency — holdout/assemblage logic (engine `holdoutMult`, `parcelDisposition`, `approachParcelOwner`) ports onto it directly.
+- Engine/UI separation is strict: `src/engine/` is pure `advanceMonth(state) → state` (seeded RNG in state); UI reads via the zustand store (`src/state/store.ts`).
+- `adjacency.json` drives holdout/assemblage logic (`holdoutMult`, `parcelDisposition`, `approachParcelOwner`) on real parcel geometry.
 - Feature-state by BBL is the hook for ownership/rival tints, construction-growth extrusions, and the map lenses (land value, demand, ownership, lease expirations).

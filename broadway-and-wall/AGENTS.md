@@ -1,7 +1,6 @@
 # Broadway & Wall — agent brief
 
-This directory is the game. The older Groundwork scaffold is archived under
-`legacy/groundwork/` (outside the pnpm workspace); work here, not there.
+This directory is the game. There is no other game in this repository.
 
 ## Standing rules (required reading)
 
@@ -17,7 +16,7 @@ engine, or anything that moves money. Short version:
   in the commit message.
 
 Also read **`HANDOFF.md`** before engine work — traps first (RNG re-roll,
-stale bundle, frozen world, conservation blind spot, one-quantity-two-answers),
+stale bundle, ignored world, conservation blind spot, one-quantity-two-answers),
 then open faults. Re-measure before believing anything in it.
 Do not open pull requests unless the owner asks.
 
@@ -34,7 +33,5 @@ Never probe with a stale `test/.engine.mjs`. `test/fresh.mjs` guards this.
 
 ## Ownership
 
-Cursor owns the working tree. Claude Code handed off at
-`claude/phase-1-implementation-v4c2az` @ `8480967` (handoff rewrite at
-`e91fd6d`). Active work continues on `cursor/cre-game-handoff-462d` (or later
-`cursor/*-462d` branches) off that tip.
+Cursor owns the working tree. Active work continues on
+`cursor/cre-game-handoff-462d` (or later `cursor/*` branches) cut from that tip.

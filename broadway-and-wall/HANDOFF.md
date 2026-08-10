@@ -25,9 +25,8 @@ pnpm dev                      # vite, localhost:5173
 pnpm package:onefile          # dist/broadway-and-wall.html — self-contained, opens from file://
 ```
 
-Node 22, pnpm 10. The older Groundwork scaffold is archived under
-`legacy/groundwork/` (outside the pnpm workspace); point your editor at
-`broadway-and-wall/`.
+Node 22, pnpm 10. Point your editor at `broadway-and-wall/` — that is the
+entire game. Do not look for or restore any other product tree in this repo.
 
 The city is **generated at runtime** (`src/citygen/`) from a seed — there is no
 data pipeline to run for normal development. `pipeline/` is audit material and

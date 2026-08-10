@@ -2,7 +2,7 @@ import { useState } from "react";
 import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
-import { ownedHoldingValue, monthlyNOI, resolveRec, collateralAsIs, capRateFor } from "@/engine/value";
+import { ownedHoldingValue, ownedMonthlyNoi, resolveRec, collateralAsIs, capRateFor } from "@/engine/value";
 import { saleTaxQuote } from "@/engine/actions";
 import { MILESTONES } from "@/engine/sim";
 import { loiSigningCost, exclusiveFeeRate } from "@/engine/leasing";
@@ -89,10 +89,7 @@ function DefaultNoticeBody({
   // owner asked: can the other buildings carry this one while you sell it?
   const otherCF = Object.values(game.holdings)
     .filter((x) => x.bbl !== open.bbl)
-    .reduce((a, x) => {
-      const r = resolveRec(parcels, game, x.bbl);
-      return a + (r ? monthlyNOI(r, game.econ, x, game.month) : 0);
-    }, 0);
+    .reduce((a, x) => a + ownedMonthlyNoi(game, parcels, x), 0);
   const dismiss = () => setSeen({ ...seen, [`${open.bbl}:${open.stage}`]: true });
 
   return (

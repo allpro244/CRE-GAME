@@ -54,6 +54,27 @@ check(E.portfolioMonthlyCF(g, parcels) === 600_000 / 12,
 check(!E.isVacantLandLoanCollateral(g, g.holdings[bbl], rec),
   "a performing leased fee is not vacant land-loan collateral");
 
+// Debt-page style aggregate used to sum holdingNOIYr (zero on a leased fee) and
+// paint "after debt service" red while the coupon was still arriving.
+{
+  const deedNoi = E.ownedHoldingNoiYr(g, parcels, g.holdings[bbl]);
+  const ds = 120_000; // hypothetical annual debt service under the coupon
+  check(deedNoi - ds === 480_000, "NOI against debt includes the ground coupon");
+  check(deedNoi - ds > 0, "after debt service is not painted negative on a performing leased fee");
+}
+
+console.log("\nMONTH TICK BOOKS THE COUPON ONCE\n");
+{
+  const cash0 = g.cash;
+  const next = E.advanceMonth(structuredClone(g), parcels, bbls, {});
+  const gained = next.cash - cash0;
+  // Coupon arrives; no mortgage on the fixture. Overhead / GA may take a bite.
+  check(gained > 0, `month tick leaves the firm richer after the ground coupon (Δ ${Math.round(gained)})`);
+  const last = next.holdings[bbl].cfHistory[next.holdings[bbl].cfHistory.length - 1];
+  check(last === Math.round(600_000 / 12),
+    `holding cfHistory records the coupon (${last} vs ${Math.round(600_000 / 12)})`);
+}
+
 const { quotes } = E.refiQuotes(g, parcels, bbl);
 const landDesk = quotes.find((q) => q.id === "land");
 const incomeOk = quotes.some((q) => q.id !== "land" && q.available && q.maxProceeds > 0);

@@ -1065,8 +1065,9 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
     }
 
     stepGroundRent(s, parcels, bbl, gl, true);
-    s.cash += gl.rentYr / 12;
-    logBooks(s, "noi", gl.rentYr / 12);
+    // Rent is booked in the holdings loop via ownedMonthlyNoi — same path as
+    // every other deed — so a performing leased fee cannot vanish from CF / yr,
+    // cfHistory, or the debt page while still hitting the cash ledger here.
   }
 
   // Off-book leased fees: no cash to you, but the encumbrance and the lessee

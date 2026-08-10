@@ -390,6 +390,25 @@ function ParcelPanelInner({
           the account each month. Built from the same lines the appraisal
           runs (operatingStatement), divided by twelve, so this block and the
           NOI quoted above can never disagree on one building. */}
+      {on("money") && holding && holding.groundLeased && game.groundLeases?.[selectedBBL] && (() => {
+        const gl = game.groundLeases[selectedBBL]!;
+        const pmt = holding.loan?.monthlyPmt ?? 0;
+        const noiMo = gl.rentYr / 12;
+        const cfMo = noiMo - pmt;
+        return (
+          <div className="deal">
+            <div className="deal-head">Cash statement · monthly</div>
+            <div className="grid">
+              <Row k="Ground rent" v={usd(Math.round(noiMo))} strong />
+              <Row k="Property tax / opex" v="$0 · lessee pays" />
+              <Row k="NOI / mo" v={usd(Math.round(noiMo))} strong />
+              {pmt > 0 && <Row k="Debt service / mo" v={"−" + usd(Math.round(pmt))} />}
+              <Row k="Cash flow / mo" v={usd(Math.round(cfMo))} strong bad={cfMo < 0} />
+            </div>
+          </div>
+        );
+      })()}
+
       {on("money") && holding && isBuilt && !renovating && (() => {
         const os = operatingStatement(rec, game.econ, holding, game.month);
         const apt = rec.class === "multifamily";

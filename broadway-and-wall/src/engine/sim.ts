@@ -7,7 +7,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Listing } from "./types";
 import { DEFAULT_START_CASH, CENTURY_MONTHS, CASH_APY, cloneState, logBooks, monthLabel } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels } from "./market";
-import { assetValue, holdingNOIYr, ownedHoldingValue, ownedMonthlyNoi, monthlyNOI, portfolioMark, operatingStatement, physicalOcc, resolveRec } from "./value";
+import { assetValue, ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLeasing, depositsOn, stampListing, loiSigningCost, exclusiveFeeRate, agentCashReserve } from "./leasing";
@@ -482,7 +482,10 @@ function tickMonth(
       delete h.renovatingUntilM;
       s.news.unshift({ q: s.month, kind: "deal", text: `Renovation complete at ${rec.address} — space re-opens at the new rent.` });
     }
-    const noiQ = monthlyNOI(rec, s.econ, h, s.month);
+    // Deed NOI — building roll OR the absolutely-net ground coupon. holdingNOIYr
+    // is correctly zero on a leased fee (opex sits with the lessee); cash still
+    // arrives as ground rent and every CF / DSCR figure has to see it.
+    const noiQ = ownedMonthlyNoi(s, parcels, h);
     const debtCash = tickLoan(s, parcels, rec, h, noiQ); // may refi, sweep, or force a sale
     logBooks(s, "noi", noiQ);
     logBooks(s, "debtSvc", debtCash);
@@ -497,14 +500,18 @@ function tickMonth(
     // the history and the cheque can never disagree. Rent is the in-place
     // average over LET space, not over the building, because a half-empty
     // tower at $40 is a $40 building with a leasing problem, not a $20 one.
-    if (s.month % 3 === 0 && rec.bldgArea > 0) {
-      const occNow = physicalOcc(rec, h);
-      const os = operatingStatement(rec, s.econ, h, s.month);
+    // Ground-leased fees stamp the coupon (no roll of yours) so the chart does
+    // not read as a permanently empty building.
+    if (s.month % 3 === 0 && (rec.bldgArea > 0 || h.groundLeased)) {
+      const occNow = h.groundLeased ? 1 : physicalOcc(rec, h);
+      const os = h.groundLeased ? null : operatingStatement(rec, s.econ, h, s.month);
       const letSf = occNow * rec.bldgArea;
       // Contract rent on LET space — include free-rent concessions. Dividing
       // only collecting base rent by physical occupancy made a newly signed
       // abated lease look like the building had let at $0/sf.
-      const rentPsf = letSf > 0 ? (os.baseRent + os.freeRent) / letSf : 0;
+      const rentPsf = h.groundLeased
+        ? 0
+        : (letSf > 0 && os ? (os.baseRent + os.freeRent) / letSf : 0);
       (h.hist ??= []).push([
         s.month,
         Math.round(occNow * 1000),
@@ -655,7 +662,10 @@ function tickMonth(
       h.assessed = Math.round(prior + (v > prior ? 0.32 : 0.09) * (v - prior));
       // taxable income: NOI less interest less straight-line depreciation
       // (2.6%/yr on the 80% of basis that's improvements, not land)
-      const noi = rec.class === "land" ? 0 : holdingNOIYr(rec, s.econ, h, s.month);
+      // Taxable income includes the ground coupon on a leased fee — same deed
+      // NOI the header and the debt page use. Vacant freehold dirt still has
+      // no taxable NOI here (carry is not income).
+      const noi = ownedHoldingNoiYr(s, parcels, h);
       const interest = h.loan ? (h.loan.balance * h.loan.ratePct) / 100 : 0;
       // Straight-line over the statutory life, on the IMPROVEMENTS only —
       // land is never depreciable. Residential rental property runs 27.5

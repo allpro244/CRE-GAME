@@ -54,8 +54,12 @@ export function buildBalanceSheet(s: GameState, parcels: ParcelTable): BalanceSh
     const debt = h.loan?.balance ?? 0;
     propGross += v;
     mortgages += debt;
-    const cls = rec.class === "land" || !(rec.floors > 0) ? "land" : (rec.class ?? "other");
-    if (cls === "land") { landOnly += v; landCount++; }
+    // A leased fee resolves as the lessee's tower — it is still coupon paper,
+    // not a building you operate. Keep it out of the office/retail count.
+    const cls = h.groundLeased
+      ? "leased fee"
+      : (rec.class === "land" || !(rec.floors > 0) ? "land" : (rec.class ?? "other"));
+    if (cls === "land" || cls === "leased fee") { landOnly += v; landCount++; }
     else { bldgCount++; }
     if (!byClass[cls]) byClass[cls] = { n: 0, gross: 0, debt: 0 };
     byClass[cls].n++;

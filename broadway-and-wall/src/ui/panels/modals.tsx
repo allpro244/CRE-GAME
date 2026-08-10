@@ -477,7 +477,11 @@ function decisionAwake(g: ReturnType<typeof useStore.getState>["game"], popupsOf
   if (g.portfolioSale?.bids?.[0]) return true;
   // An agent suppresses routine letters, not the ones it explicitly referred
   // back to the principal. Those still expire and still require a decision.
-  if (g.lois.some((l) => !g.agent || l.referred)) return true;
+  // Ground-leased fees are the lessee's book — never wake the modal for them.
+  if (g.lois.some((l) => {
+    if (g.holdings[l.bbl]?.groundLeased) return false;
+    return !g.agent || l.referred;
+  })) return true;
   for (const h of Object.values(g.holdings)) {
     if (h.sale?.offer) return true;
     // Marketed bid lists used to be invisible here — only quiet `sale.offer`
@@ -631,7 +635,12 @@ function DecisionBody({
 
   // With an agent, only REFERRED letters interrupt — the desk already signed
   // or killed the rest. Without an agent, every letter is yours.
-  const loi = game.lois.find((l) => !deferred.has(l.id) && (!game.agent || l.referred));
+  // Never interrupt for paper on a ground-leased fee (lessee's book).
+  const loiOnDesk = (l: (typeof game.lois)[number]) =>
+    !deferred.has(l.id)
+    && !game.holdings[l.bbl]?.groundLeased
+    && (!game.agent || l.referred);
+  const loi = game.lois.find(loiOnDesk);
   const offerBbl = deferred.has(-1) ? undefined : Object.keys(game.holdings).find((b) => game.holdings[b].sale?.offer);
   if (!loi && !offerBbl) return null;
 
@@ -659,7 +668,7 @@ function DecisionBody({
     const market = loiMarketPsf(game, parcels, loi);
     const fee = exclusiveFeeRate(h);
     const cost = loiSigningCost(loi, fee);
-    const live = game.lois.filter((l) => !deferred.has(l.id) && (!game.agent || l.referred));
+    const live = game.lois.filter(loiOnDesk);
     const idx = live.findIndex((l) => l.id === loi.id) + 1;
     const short = Math.max(0, Math.ceil((cost - game.cash) / 1000) * 1000);
     const line = locAvailable(game, parcels);

@@ -90,11 +90,15 @@ export default function TopBar() {
     // Count every decision that actually lives on Deals. The badge used to
     // count only LOIs and single-building offers, so tenant relief, purchase
     // counters, contracts and portfolio bids could expire behind a clean tab.
-    const loisOnDesk = deferredGame.agent
-      ? deferredGame.lois.filter((l) => l.referred).length
-      : deferredGame.lois.length;
+    const loisOnDesk = deferredGame.lois.filter((l) => {
+      if (deferredGame.holdings[l.bbl]?.groundLeased) return false;
+      return deferredGame.agent ? !!l.referred : true;
+    }).length;
+    const asksOnDesk = (deferredGame.asks ?? []).filter(
+      (a) => !deferredGame.holdings[a.bbl]?.groundLeased,
+    ).length;
     const dealsCount = loisOnDesk
-      + (deferredGame.asks?.length ?? 0)
+      + asksOnDesk
       + Object.keys(deferredGame.talks ?? {}).length
       + (deferredGame.portfolioSale?.bids?.length ?? 0)
       + Object.values(deferredGame.holdings).filter((h) => h.sale?.offer || (h.sale?.bids?.length ?? 0) > 0).length;

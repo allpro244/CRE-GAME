@@ -2371,7 +2371,10 @@ export function tickPrograms(s: GameState, parcels: ParcelTable) {
 
 export function setStance(s: GameState, bbl: string, stance: -1 | 0 | 1): GameState {
   const next = clone(s);
-  if (next.holdings[bbl]) next.holdings[bbl].stance = stance;
+  const h = next.holdings[bbl];
+  // Lessee sets the ask on their building — stamping yours on a leased fee is a no-op.
+  if (!h || h.groundLeased) return next;
+  h.stance = stance;
   return next;
 }
 
@@ -2385,7 +2388,7 @@ export function setOps(
 ): GameState {
   const next = clone(s);
   const h = next.holdings[bbl];
-  if (!h) return next;
+  if (!h || h.groundLeased) return next;
   if (ops.service !== undefined) h.service = ops.service;
   if (ops.plan !== undefined) h.plan = ops.plan;
   return next;

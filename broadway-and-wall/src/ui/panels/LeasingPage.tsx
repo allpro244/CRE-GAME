@@ -1,7 +1,7 @@
 import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL, serviceSpec, planSpec } from "@/engine/types";
-import { marketRentPsfYr, resolveRec, useRentPsfYr, recoveryOf } from "@/engine/value";
+import { isLeasedFee, marketRentPsfYr, resolveRec, useRentPsfYr, recoveryOf } from "@/engine/value";
 import {
   isCommercial, walt, notReadySf,
   agentFloor, agentPassBelow, agentMinCredit, agentMaxTiMonths, agentMaxSigningMonths, agentCashReserve,
@@ -29,7 +29,18 @@ export function LeasingPage() {
   const go = (bbl: string) => { setPage("none"); select(bbl); };
   const q = game.month;
 
+  // Coupon-only fees: the lessee lets the tower. They must not dilute occ /
+  // rent-roll totals or offer a "hire broker" button on an empty shell.
+  const leasedFees = Object.values(game.holdings).flatMap((h) => {
+    if (!isLeasedFee(h)) return [];
+    const gl = game.groundLeases?.[h.bbl];
+    if (!gl) return [];
+    const rec = resolveRec(parcels, game, h.bbl);
+    return [{ h, gl, rec }];
+  });
+
   const rows = Object.values(game.holdings).flatMap((h) => {
+    if (isLeasedFee(h)) return [];
     const rec = resolveRec(parcels, game, h.bbl);
     if (!rec || rec.class === "land" || !rec.bldgArea) return [];
     const commercial = isCommercial(rec);
@@ -47,11 +58,41 @@ export function LeasingPage() {
 
   const ind = portfolioIndustries(game);
 
+  function LeasedFeeStrip() {
+    if (!leasedFees.length) return null;
+    return (
+      <div className="page-section">
+        <div className="page-section-head">Leased fees · coupon only</div>
+        <div className="hint" style={{ marginBottom: 8 }}>
+          Ground-leased lots pay you rent on the dirt. The lessee lets the building — there is no rent roll of yours to manage here.
+        </div>
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>Property</th><th>Lessee</th><th className="num">Ground rent / yr</th><th className="num">Reverts</th>
+            </tr>
+          </thead>
+          <tbody>
+            {leasedFees.map(({ h, gl, rec }) => (
+              <tr key={h.bbl} onClick={() => go(h.bbl)}>
+                <td>{rec?.address ?? h.bbl}</td>
+                <td className="dim">{gl.tenant}</td>
+                <td className="num">{usd(gl.rentYr)}</td>
+                <td className="num">{monthLabel(gl.endM)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
   if (!rows.length) {
     return (
       <div>
         <AgentBar />
         <RenewalBar />
+        <LeasedFeeStrip />
         <div className="hint">No buildings yet — occupancy starts when you own something with tenants in it.</div>
         <button className="btn btn-buy" onClick={() => setPage("market")}>
           Browse buildings in Marketplace →
@@ -279,6 +320,8 @@ export function LeasingPage() {
       )}
 
       <HousePolicy />
+
+      <LeasedFeeStrip />
 
       <div className="page-section">
         <div className="page-section-head">By building</div>

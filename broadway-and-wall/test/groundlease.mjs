@@ -215,6 +215,48 @@ console.log("\nFEE OWNER IS NOT THE LANDLORD\n");
   check(!!brok.err && /lessee/i.test(brok.err), "leasing exclusive refused on a leased fee");
   const spec = E.buildSpecSuites(g6, parcels, bbl, "office", 5_000);
   check(!!spec.err && /lessee/i.test(spec.err), "spec suites refused on a leased fee");
+
+  // UI-shaped filters: Leasing / Portfolio / Staff iterate "buildings you
+  // operate". A resolveRec tower on a leased fee must not pass those gates.
+  const operateRows = Object.values(g6.holdings).filter((h) => {
+    if (E.isLeasedFee(h)) return false;
+    const r = E.resolveRec(parcels, g6, h.bbl);
+    return !!r && r.class !== "land" && r.bldgArea > 0;
+  });
+  check(!operateRows.some((h) => h.bbl === bbl),
+    "leased fee is excluded from operate-buildings filters (Leasing / Staff)");
+  check(E.isLeasedFee(g6.holdings[bbl]), "isLeasedFee helper flags the ground-leased holding");
+
+  const os = E.operatingStatement(E.resolveRec(parcels, g6, bbl), g6.econ, g6.holdings[bbl], g6.month);
+  check(os.opex === 0 && os.tax === 0 && os.noi === 0,
+    "operatingStatement is empty on a leased fee (no vacant-shell fiction)");
+
+  const saleNoi = E.ownedHoldingNoiYr(g6, parcels, g6.holdings[bbl]);
+  check(saleNoi === 600_000, "sell-desk yield uses ground coupon, not vacant-building NOI");
+
+  const buyout = E.buyOutTenants(g6, parcels, bbl);
+  check(!!buyout.err && /lessee/i.test(buyout.err), "tenant buyout refused on a leased fee");
+  const blend = E.blendExtend(g6, parcels, bbl, 0);
+  check(!!blend.err && /lessee/i.test(blend.err), "blend-and-extend refused on a leased fee");
+
+  // Develop eligibility: live ground lease blocks Break ground even while class is land mid-job.
+  const mid = structuredClone(g6);
+  delete mid.built[bbl];
+  // Keep groundLeased + groundLeases — site still looks like vacant land to resolveRec.
+  const midRec = E.resolveRec(parcels, mid, bbl);
+  check(midRec?.class === "land" || !(midRec?.bldgArea > 0),
+    "pre-delivery leased fee can still resolve as land");
+  check(!!mid.holdings[bbl].groundLeased && !!mid.groundLeases?.[bbl],
+    "DevelopSection mount gate (groundLeased / groundLeases) is true while live");
+  const start = E.startDevelopment(mid, parcels, bbl, "office", 8, 0.6, "gmp", 0.6);
+  check(!!start.err && /ground-leased|ground lease/i.test(start.err),
+    "startDevelopment refused while ground lease is live");
+
+  const books = E.buildBalanceSheet(g6, parcels);
+  check((books.byClass["leased fee"]?.n ?? 0) >= 1,
+    "Books classifies the coupon as leased fee, not office");
+  check(!(books.byClass.office?.n > 0),
+    "Books does not count the lessee tower as an operated office");
 }
 
 console.log("");

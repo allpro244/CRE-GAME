@@ -90,7 +90,7 @@ function claimsNow(s: GameState, parcels: ParcelTable): Claim[] {
     if (!rec) continue;
     const v = ownedHoldingValue(s, parcels, h);
     total += v;
-    if (rec.class !== "land" && rec.bldgArea > 0) builtSf += rec.bldgArea;
+    if (!h.groundLeased && rec.class !== "land" && rec.bldgArea > 0) builtSf += rec.bldgArea;
     const d = rec.district ?? "";
     if (d) byDistrict.set(d, (byDistrict.get(d) ?? 0) + v);
     byClass.set(rec.class, (byClass.get(rec.class) ?? 0) + v);

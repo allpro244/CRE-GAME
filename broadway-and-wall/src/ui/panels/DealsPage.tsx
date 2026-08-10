@@ -310,11 +310,14 @@ export function DealsPage() {
             this desk and never pop-ups: with thirty tenants a modal per ask
             would be a fire alarm every quarter. Both buttons are the whole
             decision; the letter lapses in three months and a lapse is a no. */}
-        {!!game.asks?.length && (
+        {(() => {
+          const asks = (game.asks ?? []).filter((a) => !game.holdings[a.bbl]?.groundLeased);
+          if (!asks.length) return null;
+          return (
           <>
-            <div className="page-section">Tenants asking · {game.asks.length}</div>
+            <div className="page-section">Tenants asking · {asks.length}</div>
             <div className="mini-list">
-              {game.asks.map((a) => {
+              {asks.map((a) => {
                 const rec = resolveRec(parcels, game, a.bbl);
                 const monthsLeft = a.expiresM - game.month;
                 const yrsIn = Math.floor((game.month - a.tenantStartM) / 12);
@@ -339,11 +342,14 @@ export function DealsPage() {
               })}
             </div>
           </>
-        )}
+          );
+        })()}
         {(() => {
           // When the agent holds the book, only referred letters are yours —
           // the rest are mid-tick paper that should not look like a queue.
-          const desk = game.agent ? game.lois.filter((l) => l.referred) : game.lois;
+          // Ground-leased fees are the lessee's book — never queue them here.
+          const desk = (game.agent ? game.lois.filter((l) => l.referred) : game.lois)
+            .filter((l) => !game.holdings[l.bbl]?.groundLeased);
           return (
             <>
         <div className="page-section">

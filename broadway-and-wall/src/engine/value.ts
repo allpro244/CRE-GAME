@@ -1735,6 +1735,16 @@ export function heldOccupancy(rec: ParcelRecord, econ: Econ, h: Holding): number
 }
 
 export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, month: number) {
+  // Fee owner is not the landlord — `holdingNOIYr` already returns 0. Callers
+  // that reach for this statement on a leased fee must not invent vacant-shell
+  // tax/opex fiction against the lessee's tower.
+  if (h.groundLeased) {
+    return {
+      baseRent: 0, freeRent: 0, recoveredOpex: 0, recoveredTax: 0, egi: 0,
+      opex: 0, mgmt: 0, reserve: 0, tax: 0, noi: 0,
+      leasedSf: 0, vacantSf: 0, leakage: 0, opexPsf: 0, taxPsf: 0,
+    };
+  }
   // Apartments never ran this statement honestly: the machinery below walks a
   // rent roll, and a residential building does not keep one — its roll is an
   // occupancy (see holdingNOIYr), every lease is gross, and nothing is ever

@@ -1767,6 +1767,10 @@ export function answerAsk(
   const next: GameState = cloneState(s);
   const a = next.asks?.find((x) => x.id === id);
   if (!a) return { s, msg: "", err: "That letter is gone." };
+  const held = next.holdings[a.bbl];
+  if (held?.groundLeased) {
+    return { s, msg: "", err: "The ground lessee lets that building — this relief letter is not yours to answer." };
+  }
   next.asks = next.asks!.filter((x) => x.id !== id);
   if (!next.asks.length) delete next.asks;
   const h = next.holdings[a.bbl];
@@ -1831,6 +1835,7 @@ export function blendExtend(
   const h = s.holdings[bbl];
   const rec = h ? resolveRec(parcels, s, bbl) : null;
   if (!h || !rec) return { s, err: "You don't own that." };
+  if (h.groundLeased) return { s, err: "The ground lessee lets that building — you have no lease to reopen." };
   const q = blendExtendQuote(s, rec, h, idx);
   if (!q) return { s, err: "There is no deal to do with that tenant right now." };
   if (s.cash < q.cost) return { s, err: "You cannot cover the commission on that." };
@@ -3150,6 +3155,7 @@ export function buyOutTenants(
 ): { s: GameState; err?: string; msg?: string } {
   const h0 = s.holdings[bbl];
   if (!h0) return { s, err: "You don't own that." };
+  if (h0.groundLeased) return { s, err: "The ground lessee lets that building — there is no roll of yours to buy out." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const q = buyoutQuote(s, bbl);

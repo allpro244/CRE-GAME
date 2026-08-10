@@ -565,6 +565,13 @@ export function markStaff(s: GameState, parcels: ParcelTable) {
   s.pmRenewalMult = +pmRenewalMult(pm).toFixed(4);
   s.leasingRentMult = +leasingRentMult(lease).toFixed(4);
   for (const h of Object.values(s.holdings)) {
+    // Lessee runs the bricks — do not stamp PM/leasing multipliers onto a coupon fee.
+    if (h.groundLeased) {
+      delete h.pmOpexMult;
+      delete h.pmRenewalMult;
+      delete h.leasingRentMult;
+      continue;
+    }
     const assignedPm = assignedForBbl(s, h.bbl, "pm");
     const pmSkill = assignedPm ? roleSkill(assignedPm, "pm") : pm.skill;
     const pmRs = { ...pm, skill: pmSkill };

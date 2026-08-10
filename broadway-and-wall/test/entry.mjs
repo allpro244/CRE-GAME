@@ -16,7 +16,7 @@
 export const MODULES = [
   "sim", "leasing", "actions", "credit", "value", "dev", "debt", "demand",
   "invariants", "rivals", "sponsor", "mix", "acquire", "comps", "market",
-  "zoning", "lenders", "workout", "portfolio", "auction",
+  "zoning", "lenders", "workout", "portfolio", "portfoliosale", "auction", "notes",
   // absorption carries staleDiscount and leasingOdds — how an owner's ask falls
   // on space that will not let, which the harness bots have to read rather than
   // guess at. space carries the submarket roll-up.

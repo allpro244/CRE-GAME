@@ -72,9 +72,10 @@ export function playerDebtOn(s: GameState, bbls: string[]): number {
 }
 
 // ---------------------------------------------------------------------------
-// LISTING ONE
+// LISTING ONE (street book on game.portfolios — not portfolio.ts listPortfolio,
+// which is the player's own marketed portfolioSale).
 // ---------------------------------------------------------------------------
-export function listPortfolio(
+export function listStreetPortfolio(
   s: GameState, parcels: ParcelTable, bbls: string[], askOverride?: number,
 ): { s: GameState; err?: string; msg?: string } {
   const clean = [...new Set(bbls)].filter((b) => s.holdings[b] && !s.listings.some((l) => l.bbl === b));
@@ -373,6 +374,7 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
       body: `${take.length} buildings went to the lenders this month — everything ${r.name} still owned. `
         + `${desk} is not a landlord and does not want to be one, so the book is out whole rather than one at a time, `
         + `and the number it opens at is the loan and not the value. `
+        + `The package is on Marketplace under Books for sale — one cheque, cash, no financing at the table. `
         + `If nobody bids it comes down every quarter until somebody does.`,
       detail: p
         ? `${money(p.ask)} for the package against ${money(p.gross)} of buildings — ${((1 - p.ask / Math.max(1, p.gross)) * 100).toFixed(0)}% back from the sum of the parts.`
@@ -464,6 +466,7 @@ export function openReoPortfolio(
   s.news.unshift({
     q: s.month, kind: "warn",
     text: `${lender} has taken ${clean.length} buildings${borrower ? ` off ${borrower}` : ""} into receivership and put the book out whole at ${money(open)}. `
-      + `A bank does not want to own buildings. If nobody bids, that number comes down every quarter until somebody does.`,
+      + `A bank does not want to own buildings — the package is on Marketplace under Books for sale. `
+      + `If nobody bids, that number comes down every quarter until somebody does.`,
   });
 }

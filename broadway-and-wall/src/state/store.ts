@@ -143,6 +143,15 @@ interface AppState {
   fpsOn: boolean;
   setFpsOn: (v: boolean) => void;
   /**
+   * PREFER SMOOTHER FRAMES ON WEAK GPUS.
+   * Caps pixel density a notch further, drops scene MSAA from 4× to 2×, and
+   * lets the renderer reuse the harbour reflection a frame more often. The
+   * skyline, facades, economy and depth of the sim are untouched — this is a
+   * fill-rate dial, not a graphics preset. UI preference, not save state.
+   */
+  preferFps: boolean;
+  setPreferFps: (v: boolean) => void;
+  /**
    * MARK THE OLDEST INTERRUPTION READ.
    *
    * The engine pushes onto `game.alerts` and the UI drains it one at a time —
@@ -351,6 +360,7 @@ export const useStore = create<AppState>((set, get) => ({
   popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups") === "off",
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
+  preferFps: typeof localStorage !== "undefined" && localStorage.getItem("bw:prefer-fps") === "on",
   toast: null,
   fps: 0,
   loadError: null,
@@ -521,6 +531,11 @@ export const useStore = create<AppState>((set, get) => ({
   setFpsOn: (v) => {
     try { localStorage.setItem("bw:fps", v ? "on" : "off"); } catch { /* private mode */ }
     set({ fpsOn: v });
+  },
+
+  setPreferFps: (v) => {
+    try { localStorage.setItem("bw:prefer-fps", v ? "on" : "off"); } catch { /* private mode */ }
+    set({ preferFps: v });
   },
 
   dismissAlert: () => {

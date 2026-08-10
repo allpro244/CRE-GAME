@@ -237,6 +237,12 @@ export default function MapView() {
       // Only the width was ever read, and the height was assumed to be the
       // width — see fitZoom.
       const shot = framesOf(frame, el.current.clientWidth || 1280, el.current.clientHeight || 800);
+      // Cap device pixel ratio. Retina at 2×–3× multiplies every post pass
+      // (scene, bloom, AO, composite) by four to nine with almost nothing the
+      // eye can credit at this art scale — FXAA already softens shader grids.
+      // Prefer-FPS tightens the cap further; both leave High-looking stills.
+      const dpr = typeof window !== "undefined" ? (window.devicePixelRatio || 1) : 1;
+      const preferFps = useStore.getState().preferFps;
       const map = new maplibregl.Map({
         container: el.current,
         style: composeStyle(base, city),
@@ -245,6 +251,7 @@ export default function MapView() {
         maxPitch: 70,
         attributionControl: { compact: true },
         canvasContextAttributes: { antialias: true },
+        pixelRatio: Math.min(dpr, preferFps ? 1.25 : 1.5),
       });
       mapRef.current = map;
       // handle for automated playtests and screenshots
@@ -331,6 +338,7 @@ export default function MapView() {
                 layer.setDemandMap(dm);
               }
             }
+            layer.setPreferFps(useStore.getState().preferFps);
             threeRef.current = layer;
             // A handle for automated playtests, same as window.__map. The 3D
             // layer is the one part of this game whose correctness cannot be
@@ -765,6 +773,14 @@ export default function MapView() {
     if (!mapReady) return;
     threeRef.current?.setActivity(cityVisual.activity);
   }, [cityVisual.activity, mapReady]);
+  const preferFps = useStore((s) => s.preferFps);
+  useEffect(() => {
+    if (!mapReady) return;
+    const map = mapRef.current;
+    const dpr = typeof window !== "undefined" ? (window.devicePixelRatio || 1) : 1;
+    map?.setPixelRatio(Math.min(dpr, preferFps ? 1.25 : 1.5));
+    threeRef.current?.setPreferFps(preferFps);
+  }, [preferFps, mapReady]);
   useEffect(() => {
     if (!mapReady) return;
     threeRef.current?.setWeather(

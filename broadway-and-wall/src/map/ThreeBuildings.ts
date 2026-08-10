@@ -549,12 +549,35 @@ float shadowHash(vec2 v) {
 }
 
 // 1.0 = fully sunlit, 0.0 = fully shadowed
+//
+// SCREEN-SPACE LOD. Up close the penumbra is a real depth cue and the full
+// twenty-two taps earn their keep. At the establishing shot a soft edge is
+// smaller than a pixel on most of the frame, and the facade shader has already
+// dissolved the window grids for the same reason — paying for PCSS out there
+// is pure fill-rate. fwidth of the shadow coordinate says how many shadow
+// texels one screen pixel spans; past a couple, a hard tap is the same image.
 float sunVis(vec3 p, vec3 n) {
   if (uShadowOn < 0.5) return 1.0;
   vec4 sc = uSunVP * vec4(p + n * SHADOW_NORMAL_M, 1.0);
   vec3 ndc = sc.xyz / sc.w * 0.5 + 0.5;
   if (ndc.x < 0.0 || ndc.x > 1.0 || ndc.y < 0.0 || ndc.y > 1.0 || ndc.z > 1.0) return 1.0;
   float recv = ndc.z - SHADOW_BIAS_M / uShadowSpan;
+
+  float shadowLod = max(fwidth(ndc.x), fwidth(ndc.y)) / SHADOW_TEXEL;
+  if (shadowLod > 2.4) {
+    return step(recv, unpackDepth(texture2D(uShadow, ndc.xy)));
+  }
+  if (shadowLod > 1.1) {
+    // Four taps, fixed radius — still a soft contact, cheap enough for the
+    // mid-distance roofs that are a few pixels across.
+    float sum4 = 0.0;
+    for (int i = 0; i < 4; i++) {
+      float a = float(i) * 2.39996323;
+      float r = sqrt((float(i) + 0.5) / 4.0) * 2.2 * SHADOW_TEXEL;
+      sum4 += step(recv, unpackDepth(texture2D(uShadow, ndc.xy + vec2(cos(a), sin(a)) * r)));
+    }
+    return sum4 * 0.25;
+  }
 
   float ang = shadowHash(floor(p.xy * 4.0)) * 6.2831853;
   vec2 rc = vec2(cos(ang), sin(ang));
@@ -5351,6 +5374,18 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
   private activityUni = { value: 1 };
   private waterMat: THREE.ShaderMaterial | null = null;
   private lastFrame = 0;
+  // ---- frame budget --------------------------------------------------------
+  // The city is drawn as a photograph. Still frames keep the full post stack.
+  // While the camera is moving, and when a frame overruns its budget on a weak
+  // GPU, the most expensive passes are deferred — never deleted — so the look
+  // returns the moment the map settles and the machine catches up.
+  private camMoving = false;
+  private moveListeners = false;
+  private frameEma = 16;
+  private reflFrame = 0;
+  private preferFps = false;
+  private msaaSamples = 4;
+  private propMats = new Map<string, THREE.ShaderMaterial>();
   // ---- post stage ----
   private postOK = true;
   private sceneRT: THREE.WebGLRenderTarget | null = null;
@@ -5489,6 +5524,31 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     this.camera.matrixAutoUpdate = false;
     this.buildCity();
     this.initPost();
+    // Interaction is temporary: drop the second city draw and the lens extras
+    // for the duration of a pan/zoom/pitch, restore them on settle. The still
+    // photograph the player studies is unchanged.
+    if (!this.moveListeners) {
+      this.moveListeners = true;
+      const start = () => { this.camMoving = true; };
+      const end = () => { this.camMoving = false; this.map.triggerRepaint(); };
+      for (const e of ["movestart", "zoomstart", "rotatestart", "pitchstart"] as const) map.on(e, start);
+      for (const e of ["moveend", "zoomend", "rotateend", "pitchend"] as const) map.on(e, end);
+    }
+  }
+
+  /**
+   * Prefer smoother frames on weak GPUs. Keeps the same scene and the same
+   * post vocabulary — lowers pixel density and MSAA, and lets the frame budget
+   * skip the second city draw more readily. Off by default so a capable
+   * machine still gets the native photograph.
+   */
+  setPreferFps(on: boolean) {
+    if (this.preferFps === on) return;
+    this.preferFps = on;
+    this.msaaSamples = on ? 2 : 4;
+    // Force the post targets to rebuild at the new sample count.
+    this.postSize.set(0, 0);
+    if (this.map) this.map.triggerRepaint();
   }
 
   // ---- the post stage ------------------------------------------------------
@@ -5604,7 +5664,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     if (!this.postOK || !this.postQuad) return false;
     const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
     if (size.x < 4 || size.y < 4) return false;
-    if (this.sceneRT && size.x === this.postSize.x && size.y === this.postSize.y) return true;
+    // Prefer-FPS rebuilds with fewer samples; the sample count is part of the
+    // identity of the target, so a change here has to tear it down too.
+    if (
+      this.sceneRT
+      && size.x === this.postSize.x
+      && size.y === this.postSize.y
+      && (this.sceneRT.samples ?? 0) === this.msaaSamples
+    ) return true;
     try {
       this.sceneRT?.dispose(); this.bloomA?.dispose(); this.bloomB?.dispose();
       const opts = {
@@ -5621,7 +5688,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       // whether this implementation will resolve a multisampled depth
       // attachment back into a sampleable texture, which the occlusion, the
       // focus and the sun glare all now depend on.
-      this.sceneRT = new THREE.WebGLRenderTarget(size.x, size.y, { ...opts, samples: 4 });
+      // Prefer-FPS drops to 2x — still coverage-sampled, half the resolve cost.
+      this.sceneRT = new THREE.WebGLRenderTarget(size.x, size.y, { ...opts, samples: this.msaaSamples });
       // The occlusion pass reads this. UnsignedInt rather than the default
       // UnsignedShort: at 16 bits the reconstruction quantises into visible
       // terraces across a frame that spans kilometres.
@@ -6823,6 +6891,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
           else this.propsByBBL.set(p.b, [{ mesh, i }]);
         }
       });
+      this.finishInstances(mesh);
       this.scene.add(mesh);
     }
     this.plantStreets();
@@ -7009,7 +7078,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         cols[i * 3] = c[0]; cols[i * 3 + 1] = c[1]; cols[i * 3 + 2] = c[2];
       });
       mesh.instanceColor = new THREE.InstancedBufferAttribute(cols, 3);
-      mesh.frustumCulled = false;
+      this.finishInstances(mesh);
       this.scene.add(mesh);
     };
 
@@ -7034,7 +7103,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         cols[i * 3] = c[0]; cols[i * 3 + 1] = c[1]; cols[i * 3 + 2] = c[2];
       });
       mesh.instanceColor = new THREE.InstancedBufferAttribute(cols, 3);
-      mesh.frustumCulled = false;
+      this.finishInstances(mesh);
       this.scene.add(mesh);
     };
 
@@ -7050,12 +7119,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const walk = new Float32Array(items.length * 4);
       const walk2 = new Float32Array(items.length * 2);
       const cols = new Float32Array(items.length * 3);
-      const mat = this.propMaterial(0xffffff);
+      // Unique material: walkers rewrite the vertex stage; a shared prop mat
+      // must not be mutated out from under the parked cars.
+      const mat = this.propMaterial(0xffffff, true, 0, [0, 0], true);
       mat.vertexShader = WALKER_VERT;
       mat.uniforms.uTime = this.timeUni;
       mat.uniforms.uActivity = this.activityUni;
       const mesh = new THREE.InstancedMesh(g, mat, items.length);
       const m = new THREE.Matrix4();
+      let maxLen = 0;
       items.forEach((p, i) => {
         m.compose(
           new THREE.Vector3(p.x, p.y, 0),
@@ -7065,13 +7137,15 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         mesh.setMatrixAt(i, m);
         walk[i * 4] = p.dx; walk[i * 4 + 1] = p.dy; walk[i * 4 + 2] = p.len; walk[i * 4 + 3] = p.spd;
         walk2[i * 2] = p.ph; walk2[i * 2 + 1] = p.den;
+        if (p.len > maxLen) maxLen = p.len;
         const c = palette[Math.floor(rnd() * palette.length) % palette.length];
         cols[i * 3] = c[0]; cols[i * 3 + 1] = c[1]; cols[i * 3 + 2] = c[2];
       });
       g.setAttribute("aWalk", new THREE.InstancedBufferAttribute(walk, 4));
       g.setAttribute("aWalk2", new THREE.InstancedBufferAttribute(walk2, 2));
       mesh.instanceColor = new THREE.InstancedBufferAttribute(cols, 3);
-      mesh.frustumCulled = false;
+      // Patrol is ±len/2 from the parked instance origin.
+      this.finishInstances(mesh, maxLen * 0.5 + 2);
       // A WALKER'S SHADOW CANNOT BE BAKED, so it must not be.
       //
       // These figures are moved entirely by WALKER_VERT — the patrol along
@@ -7120,7 +7194,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       mesh.instanceColor = new THREE.InstancedBufferAttribute(
         new Float32Array(items.length * 3).fill(1), 3,
       );
-      mesh.frustumCulled = false;
+      this.finishInstances(mesh);
       this.scene.add(mesh);
     };
 
@@ -7143,7 +7217,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         cols[i * 3 + 2] = 1 - k * 0.9;
       });
       mesh.instanceColor = new THREE.InstancedBufferAttribute(cols, 3);
-      mesh.frustumCulled = false;
+      this.finishInstances(mesh);
       this.scene.add(mesh);
     };
     // the parks and the esplanade get REAL trees, not map dots: same instanced
@@ -7324,7 +7398,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute("normal", new THREE.Float32BufferAttribute(norm, 3));
     const mesh = new THREE.Mesh(g, this.propMaterial(0xb0aa99, false));
-    mesh.frustumCulled = false;
+    g.computeBoundingSphere();
+    mesh.frustumCulled = true;
     this.scene.add(mesh);
   }
 
@@ -7550,9 +7625,25 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
   // Props share the buildings' light rig so a water tower and the roof it
   // stands on are lit by the same sun.
-  private propMaterial(color: number, instanced = true, foliage = 0, fade: [number, number] = [0, 0]): THREE.ShaderMaterial {
+  //
+  // Materials are cached by look: dozens of street batches used to each own a
+  // duplicate ShaderMaterial with identical uniforms, which meant a state
+  // change per batch for no visual difference. Walkers pass `unique` because
+  // they rewrite the vertex stage onto the material after creation.
+  private propMaterial(
+    color: number,
+    instanced = true,
+    foliage = 0,
+    fade: [number, number] = [0, 0],
+    unique = false,
+  ): THREE.ShaderMaterial {
+    const key = unique ? "" : `${color}|${instanced ? 1 : 0}|${foliage}|${fade[0]}|${fade[1]}`;
+    if (key) {
+      const hit = this.propMats.get(key);
+      if (hit) return hit;
+    }
     const c = new THREE.Color(color);
-    return new THREE.ShaderMaterial({
+    const mat = new THREE.ShaderMaterial({
       vertexShader: instanced ? PROP_VERT : PROP_VERT_PLAIN,
       fragmentShader: PROP_FRAG,
       uniforms: {
@@ -7573,6 +7664,21 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       },
       side: THREE.DoubleSide,
     });
+    if (key) this.propMats.set(key, mat);
+    return mat;
+  }
+
+  /**
+   * Instanced street dressing used to set frustumCulled = false because the
+   * default sphere is the unit geometry at the origin — which culls the whole
+   * batch the moment the camera leaves downtown-zero. Compute the real sphere
+   * from the instance matrices and the GPU can skip batches behind the camera.
+   * `pad` covers vertex-shader motion (walker patrol length).
+   */
+  private finishInstances(mesh: THREE.InstancedMesh, pad = 0) {
+    mesh.computeBoundingSphere();
+    if (pad > 0 && mesh.boundingSphere) mesh.boundingSphere.radius += pad;
+    mesh.frustumCulled = true;
   }
 
   // One-time sun depth pass — the city is static, so shadows are free at
@@ -8391,6 +8497,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
   render(_gl: WebGLRenderingContext | WebGL2RenderingContext, options: maplibregl.CustomRenderMethodInput) {
     if (!this.visible) return;
+    const renderStart = performance.now();
     if (this.sunDirty) this.bakeShadows();
     // approximate camera position in city meters (for glass reflections):
     // derived from center/zoom/bearing/pitch — MapLibre has no free-camera getter
@@ -8415,6 +8522,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // only while the layer is actually visible. MapLibre repaints on demand,
     // so without this call the city would be a still photograph — and with it
     // uncapped, it would burn a core to redraw water nobody is looking at.
+    //
+    // When a frame is already over budget the animation clock backs off to
+    // ~15fps so the next paint has a chance to finish; a hidden tab does not
+    // schedule work at all.
     if (this.waterMat || this.cranes.length || this.hasWalkers || this.hasPonds) {
       const now = performance.now();
       this.timeUni.value = now / 1000;
@@ -8426,7 +8537,12 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         c.g.rotation.z = c.bear + 1.1 * Math.sin(this.timeUni.value * c.w + c.phase)
           + 0.45 * Math.sin(this.timeUni.value * c.w * 2.618 + c.phase * 3.1);
       }
-      if (now - this.lastFrame > 33) {
+      const animGap = this.frameEma > 40 ? 66 : 33;
+      if (
+        now - this.lastFrame > animGap
+        && typeof document !== "undefined"
+        && !document.hidden
+      ) {
         this.lastFrame = now;
         this.map.triggerRepaint();
       }
@@ -8441,10 +8557,17 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
 
     if (!this.ensurePostSize() || !this.sceneRT || !this.bloomA || !this.bloomB) {
       this.renderer.render(this.scene, this.camera);
+      this.noteFrame(renderStart);
       return;
     }
 
     const prevTarget = this.renderer.getRenderTarget();
+    // Budget flags. Still frames on a machine that is keeping up run every
+    // pass. Motion and overruns only defer the second city draw and the lens
+    // extras — bloom, AO contact and the composite stay, so the skyline never
+    // goes flat.
+    const heavy = this.frameEma > (this.preferFps ? 26 : 36);
+    const skipExtras = this.camMoving || heavy;
 
     // 0. THE CITY, UPSIDE DOWN, for the harbour to carry.
     //
@@ -8470,20 +8593,37 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // Faded rather than switched, so there is no frame where the harbour pops,
     // and the pass is skipped outright only once the strength has already
     // reached zero.
-    const reflStrength = smoothstep(20, 46, this.map.getPitch());
+    //
+    // Under load the last good reflection is reused for a frame or two — the
+    // harbour keeps a skyline, the second draw does not run. While the camera
+    // is moving the pass is skipped entirely (strength fades to zero for the
+    // duration) and restored on settle.
+    const reflStrength = this.camMoving ? 0 : smoothstep(20, 46, this.map.getPitch());
     if (this.waterMat) this.waterMat.uniforms.uReflectOn.value = reflStrength;
-    if (this.water && this.reflectRT && this.waterMat && reflStrength > 0.02) {
+    const wantRefl = !!(this.water && this.reflectRT && this.waterMat && reflStrength > 0.02);
+    const reflInterval = this.preferFps || heavy ? 2 : 1;
+    const refreshRefl = wantRefl && (this.reflFrame % reflInterval === 0);
+    this.reflFrame++;
+    if (refreshRefl) {
       // Everything lying ON the mirror plane is coplanar with its own
       // reflection — the same set the shadow bake excludes, for the same
       // reason it is flagged: flat ground sheets.
-      const wasWater = this.water.visible;
+      const wasWater = this.water!.visible;
       const wasCatcher = this.groundCatcher?.visible ?? false;
       const wasAo = this.aoGround?.visible ?? false;
       const wasSheen = this.groundSheen?.visible ?? false;
-      this.water.visible = false;
+      this.water!.visible = false;
       if (this.groundCatcher) this.groundCatcher.visible = false;
       if (this.aoGround) this.aoGround.visible = false;
       if (this.groundSheen) this.groundSheen.visible = false;
+
+      // Mirrored projection breaks Three's frustum planes; street batches that
+      // correctly cull in the forward pass would vanish from the harbour. Park
+      // culling for this draw only.
+      const reCull: THREE.Object3D[] = [];
+      this.scene.traverse((o) => {
+        if (o.frustumCulled) { o.frustumCulled = false; reCull.push(o); }
+      });
 
       this.camera.projectionMatrix = new THREE.Matrix4()
         .multiplyMatrices(base, new THREE.Matrix4().makeScale(1, 1, -1));
@@ -8492,12 +8632,17 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       this.renderer.clear(true, true, false);
       this.renderer.render(this.scene, this.camera);
 
-      this.water.visible = wasWater;
+      for (const o of reCull) o.frustumCulled = true;
+      this.water!.visible = wasWater;
       if (this.groundCatcher) this.groundCatcher.visible = wasCatcher;
       if (this.aoGround) this.aoGround.visible = wasAo;
       if (this.groundSheen) this.groundSheen.visible = wasSheen;
       this.camera.projectionMatrix = base;
 
+      this.waterMat!.uniforms.uReflect.value = this.reflectRT!.texture;
+      (this.waterMat!.uniforms.uResolution.value as THREE.Vector2).copy(this.postSize);
+    } else if (wantRefl && this.waterMat && this.reflectRT) {
+      // Keep sampling the last good mirror while we skip the redraw.
       this.waterMat.uniforms.uReflect.value = this.reflectRT.texture;
       (this.waterMat.uniforms.uResolution.value as THREE.Vector2).copy(this.postSize);
     }
@@ -8590,7 +8735,11 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const zoom = this.map.getZoom();
       // Keep the establishing shot photographic, but do not blur away the
       // facade and roof work at the camera where decisions are made.
-      const model = 2.25 + (0.42 - 2.25) * smoothstep(14.6, 15.3, zoom);
+      // While the camera is moving the disk samples are wasted work — the eye
+      // cannot read tilt-shift on a frame that is already in motion.
+      const model = skipExtras
+        ? 0
+        : 2.25 + (0.42 - 2.25) * smoothstep(14.6, 15.3, zoom);
       this.compMat.uniforms.uDefocus.value = model * (1 - smoothstep(16.4, 18.2, zoom));
     }
 
@@ -8617,7 +8766,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // given pixel it holds the average colour of everything around it, which
     // is exactly what bounced light IS. The first pass doubles as the
     // downsample, so the whole thing costs three quarter-res blits.
-    if (this.irrA && this.irrB) {
+    if (this.irrA && this.irrB && !skipExtras) {
       const iw = this.irrA.width, ih = this.irrA.height;
       this.blurMat.uniforms.uTex.value = this.sceneRT.texture;
       (this.blurMat.uniforms.uDir.value as THREE.Vector2).set(2.2 / iw, 0);
@@ -8637,14 +8786,14 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     //     known is a pass not worth dispatching. The composite is told to stop
     //     adding it so the last frame's shafts cannot linger.
     const sunUp = (this.compMat.uniforms.uSunScreen.value as THREE.Vector3).z > 0.5;
-    if (this.shaftRT && sunUp) {
+    if (this.shaftRT && sunUp && !skipExtras) {
       this.shaftMat.uniforms.uDepth.value = this.sceneRT.depthTexture;
       (this.shaftMat.uniforms.uSunScreen.value as THREE.Vector3)
         .copy(this.compMat.uniforms.uSunScreen.value as THREE.Vector3);
       this.blit(this.shaftMat, this.shaftRT);
       this.compMat.uniforms.uShaft.value = this.shaftRT.texture;
     }
-    this.compMat.uniforms.uShaftAmt.value = sunUp ? 0.42 : 0.0;
+    this.compMat.uniforms.uShaftAmt.value = sunUp && !skipExtras ? 0.42 : 0.0;
 
     this.renderer.setRenderTarget(prevTarget);
     this.blit(this.aoMultMat, prevTarget);
@@ -8658,6 +8807,13 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
     // Hand the context back exactly as MapLibre expects to find it — it still
     // has its own symbol layers and controls to draw after this.
     this.renderer.resetState();
+    this.noteFrame(renderStart);
+  }
+
+  /** Exponential moving average of frame cost — drives the adaptive skips. */
+  private noteFrame(start: number) {
+    const dt = performance.now() - start;
+    this.frameEma = this.frameEma * 0.9 + dt * 0.1;
   }
 
   onRemove() {

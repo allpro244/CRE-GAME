@@ -110,11 +110,12 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
  */
 export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: (bbl: string) => void }) {
   const game = useStore((s) => s.game)!;
-  const { acceptOffer, declineOffer, counterSale } = useStore.getState();
+  const { acceptOffer, declineOffer, counterSale, takeBid } = useStore.getState();
   const [counter, setCounter] = useState(0);
   const [countering, setCountering] = useState(false);
   const h = game.holdings[bbl];
   const offer = h?.sale?.offer;
+  const bids = h?.sale?.bids;
   const suggested = offer ? Math.round(offer.price * 1.06) : 0;
   return (
     <div className="loi">
@@ -142,7 +143,24 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
           );
         })()}
       </div>
-      {offer ? (
+      {bids && bids.length > 0 ? (
+        <>
+          <div className="loi-line mono">
+            <b>{bids.length} bid{bids.length === 1 ? "" : "s"}</b>
+            {" "}· best <b>{usd(bids[0].price)}</b> from {bids[0].name}
+            {bids.length > 1 ? ` · second ${usd(bids[1].price)}` : ""}
+            {" "}· {((bids[0].price / Math.max(1, ask) - 1) * 100).toFixed(1)}% against your whisper
+          </div>
+          <div className="btn-row">
+            <button className="btn btn-buy" onClick={() => takeBid(bbl, 0)}>
+              Take {bids[0].name} · {usd(bids[0].price)}
+            </button>
+            <button className="btn" onClick={() => go(bbl)} title="Best-and-final, counters and the full list live on the property">
+              Open the list…
+            </button>
+          </div>
+        </>
+      ) : offer ? (
         <>
           <div className="loi-line mono">
             {offer.retrade ? <b className="neg">retraded — </b> : null}

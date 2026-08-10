@@ -943,6 +943,16 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
   }
   for (const h of Object.values(s.holdings)) {
     if (h.sale?.offer) out.push({ key: `offer:${h.bbl}:${h.sale.offer.price}`, label: `Offer in hand — good until ${monthLabel(h.sale.offer.expiresM)}` });
+    // A marketed bid list is the same kind of decision as a quiet offer — it
+    // expires, and Year/Skip used to run straight past it because only
+    // `sale.offer` was on this list.
+    if (h.sale?.bids?.length) {
+      const top = h.sale.bids[0];
+      out.push({
+        key: `sale-bids:${h.bbl}:${top.name}:${top.price}:${h.sale.bids.length}`,
+        label: `${h.sale.bids.length} bid${h.sale.bids.length === 1 ? "" : "s"} on ${h.bbl} — best ${top.name}`,
+      });
+    }
     for (const t of h.tenants) {
       if (t.nonRenewM === s.month) {
         out.push({

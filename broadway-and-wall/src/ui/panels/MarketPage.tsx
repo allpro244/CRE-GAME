@@ -433,10 +433,17 @@ export function MarketPage() {
                       {yours && <span className="chip" style={{ marginRight: 6 }}>YOURS</span>}
                       {rec.address}
                       <span className="dim"> · Open →</span>
-                      {yours && h?.sale?.offer && (
+                      {yours && h?.sale?.bids && h.sale.bids.length > 0 && (
+                        <span className="dim mono"> · {h.sale.bids.length} bid{h.sale.bids.length === 1 ? "" : "s"} · best {usd(h.sale.bids[0].price)}</span>
+                      )}
+                      {yours && h?.sale?.offer && !(h.sale.bids && h.sale.bids.length) && (
                         <span className="dim mono"> · {usd(h.sale.offer.price)} offered</span>
                       )}
-                      {yours && h?.sale && !h.sale.offer && <span className="dim"> · no offers yet</span>}
+                      {yours && h?.sale && !h.sale.offer && !(h.sale.bids && h.sale.bids.length) && (
+                        <span className="dim">
+                          {h.sale.callM !== undefined ? " · book is out" : " · no offers yet"}
+                        </span>
+                      )}
                     </td>
                     <td>{useLabel(rec)}</td>
                     <td className="num">{built ? sf(rec.bldgArea) : sf(rec.lotArea) + " lot"}</td>

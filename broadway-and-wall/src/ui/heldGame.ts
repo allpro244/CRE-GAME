@@ -79,8 +79,18 @@ export function holdingDeskSig(g: GameState | null | undefined, bbl: string): st
     tenants,
     lois,
     listing?.ask ?? "",
+    // Off-market conversations change shape without always moving ask/q —
+    // a blind bid updates probes/lastBid, and "they finally named it" flips
+    // mode+ask while q stays put. Missing any of these left the deal desk on
+    // the previous sentence (toast said one thing; the panel another).
     ap?.ask ?? "",
     ap?.q ?? "",
+    ap?.mode ?? "",
+    ap?.reserve !== undefined ? 1 : 0,
+    ap?.probes ?? 0,
+    ap?.lastBid ?? "",
+    ap?.named ? 1 : 0,
+    ap?.countered ? 1 : 0,
     ap?.inbound ? 1 : 0,
     ap?.refused ? 1 : 0,
     // Purchase negotiation state. This was missing from the parcel signature,

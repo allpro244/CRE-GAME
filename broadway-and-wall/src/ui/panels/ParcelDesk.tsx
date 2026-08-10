@@ -520,7 +520,7 @@ function ParcelPanelInner({
                 off={false}
               />
             </>
-          ) : appr && !appr.refused && appr.ask ? (
+          ) : appr && !appr.refused && appr.ask !== undefined ? (
             <>
               {/* A NUMBER THAT ARRIVED THE HARD WAY READS DIFFERENTLY.
                   `mode` says how the conversation opened and never changes, so
@@ -1439,15 +1439,19 @@ export function OffMarketCounter({ bbl, ask }: { bbl: string; ask: number }) {
  */
 export function BlindBidDesk({ bbl, appr, value }: { bbl: string; appr: Approach; value: number }) {
   const game = useHeldGame(bbl);
+  // Live record — the prop can lag a tick behind a bid that just moved probes
+  // or drew an ask out; the desk signature now watches those fields, and we
+  // read the store copy so the numbers on screen are the ones just written.
+  const live = game.approaches[bbl] ?? appr;
   const ap = apMid(bbl, value);
   const [mult, setMult] = useState(1);
   // Round to the thousand the way approachOwner rounds its own number, so the
   // bid the player sees is the bid the engine books.
   const bid = Math.max(1000, Math.round((ap * mult) / 1000) * 1000);
-  const probes = appr.probes ?? 0;
+  const probes = live.probes ?? 0;
   // buyOffMarket kills a blind conversation at q+6 with "that has gone cold";
   // approachOwner reopens the phone at q+6 as well, so the two meet exactly.
-  const cold = game.month > appr.q + 6;
+  const cold = game.month > live.q + 6;
   if (cold) {
     return (
       <>
@@ -1457,7 +1461,7 @@ export function BlindBidDesk({ bbl, appr, value }: { bbl: string; appr: Approach
             never bid would be reading the wrong field out loud. */}
         <div className="hint">
           {probes > 0
-            ? `You bid ${appr.lastBid ? usd(appr.lastBid) : "once"} and never went back.`
+            ? `You bid ${live.lastBid ? usd(live.lastBid) : "once"} and never went back.`
             : "They asked you for a number and you never put one in."}
           {" "}That conversation is cold — six months is as long as anybody holds a door open for a buyer
           who is thinking about it.
@@ -1471,16 +1475,17 @@ export function BlindBidDesk({ bbl, appr, value }: { bbl: string; appr: Approach
   return (
     <>
       <div className="hint">
-        They took the call and would not put a price on it. <em>"Make me an offer."</em>
+        They took the call — and they will not put a price on it. <em>"Make me an offer."</em>
+        {" "}There is no asking number to display; the only move is yours.
       </div>
       <div className="grid">
-        <Row k="Their ask" v="none — they refused to name one" strong />
+        <Row k="Asking price" v="they will not name one" strong />
         <Row k="Appraisal" v={band(bbl, value)} />
-        <Row k="They will listen until" v={monthLabel(appr.q + 6)} />
+        <Row k="They will listen until" v={monthLabel(live.q + 6)} />
         {probes > 0 && (
           <Row
             k="Bids you have made"
-            v={`${probes}${appr.lastBid ? ` · last ${usd(appr.lastBid)}` : ""}`}
+            v={`${probes}${live.lastBid ? ` · last ${usd(live.lastBid)}` : ""}`}
             bad={probes >= 3}
           />
         )}

@@ -344,7 +344,7 @@ export function bidOdds(s: GameState, listing: { ask: number; distress?: boolean
 
 export function buyListing(
   s: GameState, parcels: ParcelTable, bbl: string, product: BuyProduct, lev = 1, bid?: number,
-): { s: GameState; err?: string; msg?: string } {
+): { s: GameState; err?: string; msg?: string; refused?: boolean } {
   const listing = s.listings.find((l) => l.bbl === bbl);
   if (!listing) return { s, err: "That property is no longer on the market." };
   const price = Math.round(bid ?? listing.ask);
@@ -366,14 +366,18 @@ export function buyListing(
     if (done.err) return { s, err: done.err };
     return { s: done.s, msg: `They took $${(price / 1e6).toFixed(2)}M.` };
   }
+  // Refusal is not a purchase. Callers (and the toast path) used to treat a
+  // missing `err` as "deed recorded," so a lowball that the seller waved off
+  // still printed as a closing. `refused` carries the news / listing pull
+  // without pretending the deed changed hands — same shape as approachOwner.
   if (roll < p + 0.45) {
     next.news.unshift({ q: next.month, kind: "info", text: `Your $${(price / 1e6).toFixed(2)}M on ${parcels[bbl]?.address} was refused — the ask stands.` });
-    return { s: next, msg: "Refused. The ask stands." };
+    return { s: next, msg: "Refused. The ask stands.", refused: true };
   }
   // insulted: the listing goes away
   next.listings = next.listings.filter((l) => l.bbl !== bbl);
   next.news.unshift({ q: next.month, kind: "warn", text: `The seller at ${parcels[bbl]?.address} took the listing elsewhere after your offer.` });
-  return { s: next, msg: "They walked, and pulled the listing." };
+  return { s: next, msg: "They walked, and pulled the listing.", refused: true };
 }
 
 // ---- off-market: approach the owner ---------------------------------------

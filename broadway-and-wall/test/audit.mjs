@@ -91,7 +91,11 @@ function run(stratName, seed) {
         .filter((c) => S.buyIf(c)).sort((a, b) => b.yield - a.yield);
       for (const c of cands.slice(0, 8)) {
         const r = E.buyListing(g, parcels, c.l.bbl, S.prod(c, g), S.lev, Math.round(c.l.ask * 0.96));
-        if (!r.err) { g = r.s; st.bought++; break; }
+        if (!r.err) {
+          g = r.s;
+          if (!r.refused && g.holdings[c.l.bbl]) st.bought++;
+          break;
+        }
       }
     }
 

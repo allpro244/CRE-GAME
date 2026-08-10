@@ -23,6 +23,10 @@ const NAT = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07
 
 function play(seed, verbose) {
   let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
+  // Capture the opening cheque once. A hard-coded $2.5M reserve equalled
+  // DEFAULT_START_CASH, so `cash > reserve` was false from month one on the
+  // standard bankroll — twelve century runs, twelve insolvencies, zero deeds.
+  const openCash = g.cash;
   const log = [];
   const stat = { bought: 0, sold: 0, built: 0, leases: 0, refis: 0, lowCash: 0, gain: 0 };
   let peakNW = 0, troughFrom = 0;
@@ -85,8 +89,8 @@ function play(seed, verbose) {
     }
 
     // ---- negotiate for something worth owning -------------------------------
-    // one deal at a time; keep a year of reserve back
-    const reserve = 2.5e6 + Object.keys(g.holdings).length * 4e5;
+    // one deal at a time; keep ~a third of the opening cheque as dry powder
+    const reserve = openCash * 0.35 + Object.keys(g.holdings).length * 4e5;
     if (!Object.keys(g.talks ?? {}).length && cash > reserve) {
       let best = null;
       for (const l of g.listings) {
@@ -96,10 +100,11 @@ function play(seed, verbose) {
         const isLand = rec.class === "land";
         const noi = isLand ? 0 : E.noiAfterTaxYr(rec, e, E.initialCondition(rec), l.ask);
         const yieldOn = l.ask > 0 ? noi / l.ask : 0;
-        // buy income that clears the coupon, and dirt only where demand is real
+        // Spread over the coupon, not a 140bp wall that rejects the whole tape
+        // at open (index ~8% → hurdle 9.4%, while listed yields sat at 7–9%).
         const want = isLand
           ? rec.demandScore > 62 && cash > reserve * 3
-          : yieldOn > (e.indexRate + 1.4) / 100 && !loose(rec.class);
+          : yieldOn > (e.indexRate + 0.4) / 100 && !loose(rec.class);
         if (!want) continue;
         const score = (isLand ? rec.demandScore / 900 : yieldOn) + (l.distress ? 0.01 : 0);
         if (!best || score > best.score) best = { l, score, isLand, rec };

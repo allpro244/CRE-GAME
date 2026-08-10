@@ -3164,33 +3164,21 @@ export function tickEcon(s: GameState) {
     const stPrev = e.structTightPrev[k] ?? st;
     const dSt = st - stPrev;
     e.structTightPrev[k] = st;
-<<<<<<< HEAD
     // Level scarcity scales with room above friction (`railSat`). On the pin,
-    // sat=0 → flow only. Near the pin, sat is small → mostly flow. Far from
-    // the rail (still tight vs natural), full level rations. Paying full
-    // `st×0.045` in the last points above the floor was the firm-near-rail
-    // hockey stick: +5%/yr real while vacancy sat at 4–5%.
-    const scarcity = pinned
-      ? clamp(Math.max(0, dSt) * 1.8, 0, 0.0045)
-      : clamp(st * 0.045 * railSat + Math.max(0, dSt) * 1.8 * (1 - railSat), 0, 0.006);
-=======
-    // On-rail level gain kept below the off-rail rate so a stable capacity
-    // gap rations demand without a permanent ~1%/yr real escalator on top of
-    // CPI. Flow still dominates when the shortfall is worsening. Walked
-    // 0.018→0.008 against rent-anchor + supply-answers: 0.008 let avg
-    // structTight drift to 0.083 (rations too little); ~0.010 holds both
-    // with century real office near +1%/yr on dense fabric.
+    // sat=0 → mostly flow plus a thin city-class level tax. Near the pin, sat
+    // is small → mostly flow. Far from the rail (still tight vs natural),
+    // full level rations. Paying full `st×0.045` in the last points above the
+    // floor was the firm-near-rail hockey stick: +5%/yr real at 4–5% vac.
     //
-    // SECONDARY FABRIC GETS A THINNER LEVEL TAX. The same 0.010 on every map
-    // let mid-rung procedural towns spend half a century on the rail and
-    // graduate into primary real $/sf. Dense cities still ration at the full
-    // rate; Landing/Village ration enough to clear without minting Midtown.
+    // SECONDARY FABRIC GETS A THINNER ON-RAIL LEVEL TAX. The same 0.010 on
+    // every map let mid-rung procedural towns spend half a century on the rail
+    // and graduate into primary real $/sf. Dense cities still ration at the
+    // full rate; Landing/Village ration enough to clear without minting Midtown.
     const classF = cityClassFactor(e.cityIntensity ?? e.cityIntensity0 ?? 1);
     const onRailLevel = 0.0035 + 0.0065 * classF;
     const scarcity = pinned
       ? clamp(Math.max(0, dSt) * 1.8 + st * onRailLevel, 0, 0.0045)
-      : clamp(st * 0.045, 0, 0.006);
->>>>>>> origin/cursor/century-playthroughs-9786
+      : clamp(st * 0.045 * railSat + Math.max(0, dSt) * 1.8 * (1 - railSat), 0, 0.006);
 
     // Lease-quote lag: market pressure (vacancy gap + unmet demand) forms this
     // month; landlords adjust asking rents only after it has sat on the quote

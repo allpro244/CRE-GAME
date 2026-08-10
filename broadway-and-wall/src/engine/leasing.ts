@@ -2535,12 +2535,19 @@ export function respondLOI(
       }
       const d = drawLoc(next, parcels, short);
       if (d.err) return d.err;
+      // drawLoc returns a fresh clone. Assigning it over `next` replaces every
+      // holding object — any `h` captured before this line is an orphan. The
+      // playtester failure mode: Accept / "they took your counter" toasted a
+      // signed lease (signLoi mutated the orphan, occ% was read off it) while
+      // the real rent roll stayed empty and new letters kept arriving.
       Object.assign(next, d.s);
       drawn = short;
     }
+    const holding = next.holdings[l.bbl];
+    if (!holding) return "You no longer control that building.";
     const flagged = next as GameState & { _signFailed?: string };
     delete flagged._signFailed;
-    signLoi(next, rec, h, l, fee);
+    signLoi(next, rec, holding, l, fee);
     // signLoi has one path that legitimately signs nothing — the space it was
     // written against went while the letter sat on the desk. That has to come
     // back as an ERROR the player sees, not as silence.
@@ -2574,7 +2581,8 @@ export function respondLOI(
     if (err) return { s, msg: "", err };
     sweepTour(loi);
     next.lois = next.lois.filter((l) => l.id !== id);
-    const leasedSf = h.tenants.reduce((a, t) => a + t.sf, 0);
+    const roll = next.holdings[loi.bbl] ?? h;
+    const leasedSf = roll.tenants.reduce((a, t) => a + t.sf, 0);
     const occPct = rec.bldgArea > 0 ? Math.min(100, (100 * leasedSf) / rec.bldgArea) : 0;
     const freeBit = loi.freeM
       ? ` Free rent for ${loi.freeM} month${loi.freeM === 1 ? "" : "s"} — occupancy is up; cash flow waits.`
@@ -2688,6 +2696,12 @@ export function respondLOI(
     if (rng(next) < pAccept) {
       const err = sign(loi);
       if (err) {
+        // They said yes — a funding shortfall kills the deal. A same-month
+        // space race is not a funding failure; keep the letter (and any LOC
+        // draw already on `next`) out of a false "could not fund" funeral.
+        if (/lost the space|demise|lost the expansion|no longer control/i.test(err)) {
+          return { s: next, msg: "", err };
+        }
         next.lois = next.lois.filter((l) => l.id !== id);
         next.news.unshift({ q: next.month, kind: "warn", text: `${loi.name} took your counter at ${rec.address} and you could not fund the fit-out. The deal died.` });
         return { s: next, msg: "", err };

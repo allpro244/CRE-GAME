@@ -155,6 +155,8 @@ function LoadBar({ rs }: { rs: RoleState }) {
 function neutralOpexYr(game: GameState, parcels: ParcelTable): number {
   let total = 0;
   for (const h of Object.values(game.holdings)) {
+    // Lessee carries opex on a ground-leased fee — do not invent a vacant-shell bill.
+    if (h.groundLeased) continue;
     const rec = resolveRec(parcels, game, h.bbl);
     if (!rec || rec.class === "land" || !rec.bldgArea) continue;
     const os = operatingStatement(rec, game.econ, h, game.month);
@@ -188,7 +190,8 @@ export default function StaffPage() {
   const payroll = payrollMonthly(game);
   const opexBase = neutralOpexYr(game, parcels);
   const ownerCover = ownerCapacitySf(game, "pm");
-  const ownedBbls = Object.keys(game.holdings);
+  // Buildings you operate — leased fees are coupon paper, not a desk assignment.
+  const ownedBbls = Object.keys(game.holdings).filter((b) => !game.holdings[b].groundLeased);
   const costIdx = game.econ.costIdx ?? 1;
   const rep = game.hireReputation ?? 0.55;
 

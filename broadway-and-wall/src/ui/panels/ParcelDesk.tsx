@@ -5,7 +5,7 @@ import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, START_YEAR } from "@/engine/types";
 import type { Approach, BuiltClass, Contract, DevUse } from "@/engine/types";
-import { assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, holdingNOIYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, recoveryOf, landValue, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, remainingAbatement, bareLandRec, leasedFeeValue, isVacantLandLoanCollateral } from "@/engine/value";
+import { assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, holdingNOIYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, recoveryOf, landValue, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, remainingAbatement, bareLandRec, leasedFeeValue, isVacantLandLoanCollateral, ownedHoldingNoiYr, isLeasedFee } from "@/engine/value";
 import { adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, constructionQuotes, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
 import { buyQuote, assemblagePressure, saleTaxQuote, quietFeeRate, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
@@ -217,8 +217,8 @@ function ParcelPanelInner({
             ? <Row k="Leasable spaces" v={usesOf(rec).map((u) => `${Math.max(1, Math.round(useSf(rec, u) / useSuiteSf(rec, u)))} ${USE_WORD[u]}`).join(" · ")} />
             : <Row k="Leasable spaces" v={`${unitCount(rec)} · ${sf(Math.round(suiteSf(rec)))} each`} />
         )}
-        {holding && rec.bldgArea > 0 && <Row k="Occupancy" v={(physicalOcc(rec as never, holding) * 100).toFixed(0) + "%"} />}
-        {holding && rec.bldgArea > 0 && unitStatus(rec, holding, game.month).byUse.map((u) => (
+        {holding && isBuilt && <Row k="Occupancy" v={(physicalOcc(rec as never, holding) * 100).toFixed(0) + "%"} />}
+        {holding && isBuilt && unitStatus(rec, holding, game.month).byUse.map((u) => (
           <Row
             key={u.use}
             k={u.use === "multifamily" ? "Apartments let" : `${USE_WORD[u.use][0].toUpperCase()}${USE_WORD[u.use].slice(1)} spaces let`}
@@ -232,13 +232,13 @@ function ParcelPanelInner({
             bad={u.leased < u.total * 0.6}
           />
         ))}
-        {holding && commercial && holding.tenants.length > 0 && (
+        {holding && isBuilt && commercial && holding.tenants.length > 0 && (
           <Row
             k="On the rent roll"
             v={`${holding.tenants.length} lease${holding.tenants.length === 1 ? "" : "s"} · ${sf(holding.tenants.reduce((a, t) => a + t.sf, 0))}`}
           />
         )}
-        {holding && commercial && <Row k="WALT" v={walt(holding, game.month).toFixed(1) + " yrs"} />}
+        {holding && isBuilt && commercial && <Row k="WALT" v={walt(holding, game.month).toFixed(1) + " yrs"} />}
         {/* One building must not quote two different NOIs on one panel. In
             place off the roll — yours, or the one the seller disclosed — and
             struck against the appraisal, which is the only price on offer
@@ -390,6 +390,25 @@ function ParcelPanelInner({
           the account each month. Built from the same lines the appraisal
           runs (operatingStatement), divided by twelve, so this block and the
           NOI quoted above can never disagree on one building. */}
+      {on("money") && holding && holding.groundLeased && game.groundLeases?.[selectedBBL] && (() => {
+        const gl = game.groundLeases[selectedBBL]!;
+        const pmt = holding.loan?.monthlyPmt ?? 0;
+        const noiMo = gl.rentYr / 12;
+        const cfMo = noiMo - pmt;
+        return (
+          <div className="deal">
+            <div className="deal-head">Cash statement · monthly</div>
+            <div className="grid">
+              <Row k="Ground rent" v={usd(Math.round(noiMo))} strong />
+              <Row k="Property tax / opex" v="$0 · lessee pays" />
+              <Row k="NOI / mo" v={usd(Math.round(noiMo))} strong />
+              {pmt > 0 && <Row k="Debt service / mo" v={"−" + usd(Math.round(pmt))} />}
+              <Row k="Cash flow / mo" v={usd(Math.round(cfMo))} strong bad={cfMo < 0} />
+            </div>
+          </div>
+        );
+      })()}
+
       {on("money") && holding && isBuilt && !renovating && (() => {
         const os = operatingStatement(rec, game.econ, holding, game.month);
         const apt = rec.class === "multifamily";
@@ -639,7 +658,10 @@ function ParcelPanelInner({
         </div>
       )}
 
-      {on("build") && holding && !dev && rec.class === "land" && <DevelopSection bbl={selectedBBL} />}
+      {/* Lessee builds on a live ground lease — do not offer Break ground beside the coupon desk. */}
+      {on("build") && holding && !dev && rec.class === "land"
+        && !holding.groundLeased && !game.groundLeases?.[selectedBBL]
+        && <DevelopSection bbl={selectedBBL} />}
       {on("build") && holding && !dev && isBuilt && <ReuseSection bbl={selectedBBL} />}
 
       {/* THE LAND DESK — assemble contiguous owned lots into one site.
@@ -1294,18 +1316,24 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
   const price = Number.isFinite(askNum) ? askNum : mid;
   // What the ask means as a yield — the number the buyer converts it to.
   const saleRec = resolveRec(parcels, game, bbl);
-  const saleClass = (saleRec && saleRec.class !== "land" ? saleRec.class : "office") as BuiltClass;
+  const saleH = game.holdings[bbl];
+  // A leased fee is a coupon bond — yield off ground rent, not vacant-shell NOI.
+  const fee = !!saleH && isLeasedFee(saleH);
+  const saleClass = (fee
+    ? "office"
+    : (saleRec && saleRec.class !== "land" ? saleRec.class : "office")) as BuiltClass;
   // YOUR OWN ROLL, RE-ASSESSED AT YOUR ASK. This quoted the class model, so a
   // principal pricing their own half-empty building was shown the yield a full
   // one would offer — and every buyer in town was reading the real roll. The
   // number a seller needs is what a buyer will compute: in-place income off
   // the leases actually in place, against a tax bill struck at the new price.
-  const saleH = game.holdings[bbl];
-  const saleNoi = saleRec && saleRec.class !== "land" && saleRec.bldgArea > 0 && saleH
-    ? holdingNOIYr(saleRec, game.econ,
-        asIfOwned(game, bbl, price, { roll: saleH.tenants, occ: saleH.occ, cond: saleH.condition }, saleRec),
-        game.month)
-    : 0;
+  const saleNoi = fee && saleH
+    ? ownedHoldingNoiYr(game, parcels, saleH)
+    : saleRec && saleRec.class !== "land" && saleRec.bldgArea > 0 && saleH
+      ? holdingNOIYr(saleRec, game.econ,
+          asIfOwned(game, bbl, price, { roll: saleH.tenants, occ: saleH.occ, cond: saleH.condition }, saleRec),
+          game.month)
+      : 0;
   const askCap = saleNoi > 0 && price > 0 ? (saleNoi / price) * 100 : null;
   return (
     <div className="deal">
@@ -1335,12 +1363,15 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
       {askCap !== null && (
         <div className="hint">
           At {usd(price)} you are asking a <b className="mono">{askCap.toFixed(2)}%</b> cap on
-          {" "}{usd(saleNoi)} of NOI — the market is paying about {game.econ.capRate[saleClass].toFixed(2)}% for this class today.
-          {askCap < game.econ.capRate[saleClass] - 0.4
+          {" "}{usd(saleNoi)} of {fee ? "ground rent" : "NOI"}
+          {fee
+            ? " — buyers underwrite a leased fee as a bond with a reversion, not a vacant building."
+            : ` — the market is paying about ${game.econ.capRate[saleClass].toFixed(2)}% for this class today.`}
+          {!fee && (askCap < game.econ.capRate[saleClass] - 0.4
             ? " You are asking a premium to the market; it will take a buyer who wants this building specifically."
             : askCap > game.econ.capRate[saleClass] + 0.4
               ? " That is a discount to the market — it should go quickly."
-              : " That is where the market is."}
+              : " That is where the market is.")}
         </div>
       )}
       {/* TWO WAYS TO SELL, and they are genuinely different trades. A sign on

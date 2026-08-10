@@ -3,7 +3,7 @@ import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import type { BuiltClass } from "@/engine/types";
-import { ownedHoldingValue, ownedHoldingNoiYr, managedRentPsfYr, resolveRec } from "@/engine/value";
+import { ownedHoldingValue, ownedHoldingNoiYr, managedRentPsfYr, resolveRec, isLeasedFee } from "@/engine/value";
 import { portfolioPropertyMonthlyCF } from "@/engine/sim";
 import { unitStatus, avgUnitSf } from "@/engine/leasing";
 import { payoffQuote } from "@/engine/notes";
@@ -54,27 +54,30 @@ export function PortfolioPage() {
   let totV = 0, totD = 0;
   const rows = holdings.map((h) => {
     const rec = resolveRec(parcels, game, h.bbl);
+    const fee = isLeasedFee(h);
     const v = rec ? ownedHoldingValue(game, parcels, h) : 0;
     // Deed NOI — building roll or ground coupon. Same number the header CF
     // annualises (before firm-level construction / facility / revolver).
     const noi = ownedHoldingNoiYr(game, parcels, h);
     const cf = noi / 12 - (h.loan?.monthlyPmt ?? 0);
-    const occ = rec ? physicalOcc(rec as never, h) : 0;
+    // Lessee's tower is not your occupancy — do not paint 0% on a coupon bond.
+    const occ = fee || !rec ? 0 : physicalOcc(rec as never, h);
     totV += v; totD += h.loan?.balance ?? 0;
     // EVERY COLUMN NEEDS A VALUE TO SORT ON, so the ones that used to be
     // computed inside the cell are computed here instead. That is also why
     // several of them were impossible to sort by: they did not exist until the
     // row was already being drawn.
-    const leasedSf = h.tenants.reduce((a, t) => a + t.sf, 0);
-    const rollYr = h.tenants.reduce((a, t) => a + t.rentPsf * t.sf, 0);
-    const rentPsf = rec && rec.class !== "land"
-      ? (leasedSf > 0 ? rollYr / leasedSf : managedRentPsfYr(rec, game.econ, h)) : 0;
-    const u = rec && rec.bldgArea ? unitStatus(rec, h, game.month) : null;
+    const leasedSf = fee ? 0 : h.tenants.reduce((a, t) => a + t.sf, 0);
+    const rollYr = fee ? 0 : h.tenants.reduce((a, t) => a + t.rentPsf * t.sf, 0);
+    const rentPsf = fee || !rec || rec.class === "land"
+      ? 0
+      : (leasedSf > 0 ? rollYr / leasedSf : managedRentPsfYr(rec, game.econ, h));
+    const u = !fee && rec && rec.bldgArea ? unitStatus(rec, h, game.month) : null;
     return {
       h, rec, v, noi, cf, occ,
       addr: rec?.address ?? h.bbl,
-      cls: rec ? useLabel(rec) : "",
-      area: rec?.bldgArea ?? 0,
+      cls: fee ? "leased fee" : (rec ? useLabel(rec) : ""),
+      area: fee ? 0 : (rec?.bldgArea ?? 0),
       spaces: u ? u.leased : -1,
       rentPsf,
       cost: h.costBasis,
@@ -380,8 +383,10 @@ export function PortfolioPage() {
               {ranked && <td className="num dim">{i + 1}</td>}
               <td>{rec?.address ?? h.bbl}</td>
               <td>{rec ? useLabel(rec) : "—"}</td>
-              <td className="num" title={rec && rec.bldgArea ? `${usd(v / rec.bldgArea)}/sf of value · ${usd(noi / rec.bldgArea)}/sf of NOI` : "vacant land"}>
-                {rec && rec.bldgArea ? sf(rec.bldgArea) : "—"}
+              <td className="num" title={h.groundLeased
+                ? "Lessee improvement — not your building sf"
+                : rec && rec.bldgArea ? `${usd(v / rec.bldgArea)}/sf of value · ${usd(noi / rec.bldgArea)}/sf of NOI` : "vacant land"}>
+                {h.groundLeased || !rec || !rec.bldgArea ? "—" : sf(rec.bldgArea)}
                 {/* THE SIZE OF THE PRODUCT, under the size of the building. A
                     hundred thousand feet cut into 450-foot studios and the same
                     hundred thousand cut into 1,800-foot family flats are two
@@ -390,30 +395,30 @@ export function PortfolioPage() {
                     programmed yourself it is a decision you made and can read
                     back. It hangs under the area instead of taking a column of
                     its own because half the book has no flats in it at all. */}
-                {rec && avgUnitSf(rec) > 0 && (
+                {!h.groundLeased && rec && avgUnitSf(rec) > 0 && (
                   <div className="dim" style={{ fontSize: 11 }}>{sf(avgUnitSf(rec))}/flat</div>
                 )}
               </td>
-              <td className="num">{rec && rec.bldgArea ? (() => { const u = unitStatus(rec, h, game.month); return `${u.leased} / ${u.total}`; })() : "—"}</td>
+              <td className="num">{h.groundLeased || !rec || !rec.bldgArea ? "—" : (() => { const u = unitStatus(rec, h, game.month); return `${u.leased} / ${u.total}`; })()}</td>
               <td
                 className="num"
                 title={dv
                   ? ((dv.signed?.length ?? 0)
                     ? `${dv.signed!.length} construction pre-let${dv.signed!.length === 1 ? "" : "s"} · ${dv.signed!.reduce((a, x) => a + x.sf, 0).toLocaleString()} sf spoken for — land on the rent roll at delivery`
                     : "Under construction — no rent roll until it delivers")
-                  : undefined}
+                  : h.groundLeased ? "Ground coupon — the lessee lets the building" : undefined}
               >
                 {dv
                   ? ((dv.signed?.length ?? 0) ? `${((dv.signed!.reduce((a, x) => a + x.sf, 0) / Math.max(1, dv.sf)) * 100).toFixed(0)}% pre` : "—")
-                  : rec?.class === "land" ? "—" : (occ * 100).toFixed(0) + "%"}
+                  : h.groundLeased || rec?.class === "land" ? "—" : (occ * 100).toFixed(0) + "%"}
               </td>
               {/* WHAT THE ROLL ACTUALLY COLLECTS, per foot. The rent every
                   decision in the game is denominated in, and the book quoted
                   NOI and value per foot but never the rent underneath them. */}
               {(() => {
+                if (h.groundLeased || !rec || rec.class === "land") return <td className="num">—</td>;
                 const leased = h.tenants.reduce((a, t) => a + t.sf, 0);
                 const roll = h.tenants.reduce((a, t) => a + t.rentPsf * t.sf, 0);
-                if (!rec || rec.class === "land") return <td className="num">—</td>;
                 if (leased > 0) {
                   // THE BENCHMARK HAS TO BE WEIGHTED THE WAY THE ROLL IS.
                   //
@@ -450,7 +455,7 @@ export function PortfolioPage() {
                   the cost of getting out, which is why it is not net worth. */}
               <td className="num dim">{usd(h.costBasis)}</td>
               <td className="num dim">
-                {rec && rec.bldgArea > 0 ? `$${(h.costBasis / rec.bldgArea).toFixed(0)}` : "—"}
+                {!h.groundLeased && rec && rec.bldgArea > 0 ? `$${(h.costBasis / rec.bldgArea).toFixed(0)}` : "—"}
               </td>
               {(() => {
                 const g = v - h.costBasis;

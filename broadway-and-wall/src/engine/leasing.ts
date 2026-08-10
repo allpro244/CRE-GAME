@@ -815,15 +815,27 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
   // The paper goes out on every open off-market conversation, including the
   // ones tickRivals opened earlier in this same tick. See stampApproaches.
   stampApproaches(s, parcels);
-  // expire stale LOIs and LOIs on parcels no longer owned
-  s.lois = s.lois.filter((l) => l.expiresM > q && s.holdings[l.bbl]);
+  // expire stale LOIs and LOIs on parcels no longer owned — and anything that
+  // landed on a ground-leased fee. The lessee is the landlord; fee-owner LOIs
+  // are not a soft bug, they are the game asking you to manage somebody else's
+  // building.
+  s.lois = s.lois.filter((l) => {
+    const h = s.holdings[l.bbl];
+    return l.expiresM > q && !!h && !h.groundLeased;
+  });
 
   // A RELIEF ASK YOU LET LAPSE IS AN ANSWER. The tenant asked in writing and
   // heard nothing for three months — that is a no, and it carries the same
   // strain a spoken no carries. Silence is not a way out of the decision.
   if (s.asks?.length) {
-    const lapsed = s.asks.filter((a) => a.expiresM <= q || !s.holdings[a.bbl]);
-    s.asks = s.asks.filter((a) => a.expiresM > q && s.holdings[a.bbl]);
+    const lapsed = s.asks.filter((a) => {
+      const h = s.holdings[a.bbl];
+      return a.expiresM <= q || !h || h.groundLeased;
+    });
+    s.asks = s.asks.filter((a) => {
+      const h = s.holdings[a.bbl];
+      return a.expiresM > q && !!h && !h.groundLeased;
+    });
     for (const a of lapsed) {
       const h = s.holdings[a.bbl];
       const t = h?.tenants.find((x) => x.name === a.name && x.startM === a.tenantStartM);
@@ -883,6 +895,22 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
   for (const h of Object.values(s.holdings)) {
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
+    // ABSOLUTELY NET MEANS YOU DO NOT RUN THE BUILDING. After the lessee's
+    // improvement opens, resolveRec correctly returns a tower — and without
+    // this gate every landlord path (LOIs, renewals, capital plan, make-ready)
+    // treated the fee owner as the operator. Skip the entire holding loop, and
+    // strip any operating attachments left on older saves.
+    if (h.groundLeased) {
+      delete h.broker;
+      delete h.leasingHold;
+      delete h.specSuites;
+      delete h.makeReady;
+      delete h.planCutM;
+      delete h.program;
+      if (h.tenants.length) h.tenants = [];
+      delete h.occ;
+      continue;
+    }
 
     // The flats in this building — whether it is a block of flats or a block
     // of flats with shops underneath — run on aggregate occupancy.
@@ -1696,6 +1724,7 @@ export function buildSpecSuites(
   const h = s.holdings[bbl];
   const rec = h ? resolveRec(parcels, s, bbl) : null;
   if (!h || !rec) return { s, err: "You don't own that." };
+  if (h.groundLeased) return { s, err: "The ground lessee controls the improvement — you do not fit out their space." };
   if (h.specSuites) return { s, err: "There is already pre-built space going in here." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
   const q = specSuiteQuote(s, rec, h, use, sf);
@@ -1738,6 +1767,10 @@ export function answerAsk(
   const next: GameState = cloneState(s);
   const a = next.asks?.find((x) => x.id === id);
   if (!a) return { s, msg: "", err: "That letter is gone." };
+  const held = next.holdings[a.bbl];
+  if (held?.groundLeased) {
+    return { s, msg: "", err: "The ground lessee lets that building — this relief letter is not yours to answer." };
+  }
   next.asks = next.asks!.filter((x) => x.id !== id);
   if (!next.asks.length) delete next.asks;
   const h = next.holdings[a.bbl];
@@ -1802,6 +1835,7 @@ export function blendExtend(
   const h = s.holdings[bbl];
   const rec = h ? resolveRec(parcels, s, bbl) : null;
   if (!h || !rec) return { s, err: "You don't own that." };
+  if (h.groundLeased) return { s, err: "The ground lessee lets that building — you have no lease to reopen." };
   const q = blendExtendQuote(s, rec, h, idx);
   if (!q) return { s, err: "There is no deal to do with that tenant right now." };
   if (s.cash < q.cost) return { s, err: "You cannot cover the commission on that." };
@@ -2812,6 +2846,10 @@ export function respondLOI(
   const h = next.holdings[loi.bbl];
   const rec = resolveRec(parcels, next, loi.bbl);
   if (!h || !rec) return { s, msg: "", err: "You no longer control that building." };
+  if (h.groundLeased) {
+    next.lois = next.lois.filter((l) => l.id !== id);
+    return { s: next, msg: "", err: "That fee is ground-leased — the lessee lets the building, not you." };
+  }
 
   let drawn = 0;
   // Whoever holds the file the day the letter is signed is who gets paid, and
@@ -3117,6 +3155,7 @@ export function buyOutTenants(
 ): { s: GameState; err?: string; msg?: string } {
   const h0 = s.holdings[bbl];
   if (!h0) return { s, err: "You don't own that." };
+  if (h0.groundLeased) return { s, err: "The ground lessee lets that building — there is no roll of yours to buy out." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const q = buyoutQuote(s, bbl);
@@ -3156,7 +3195,7 @@ export function buyOutTenants(
 /** Stop or restart letting a building — the switch you throw before a demolition. */
 export function setLeasingHold(s: GameState, bbl: string, on: boolean): GameState {
   const h = s.holdings[bbl];
-  if (!h) return s;
+  if (!h || h.groundLeased) return s;
   const next: GameState = cloneState(s);
   next.holdings[bbl].leasingHold = on || undefined;
   if (on) next.lois = next.lois.filter((l) => l.bbl !== bbl);

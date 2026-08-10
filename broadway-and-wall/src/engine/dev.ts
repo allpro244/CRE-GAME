@@ -2996,13 +2996,16 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   const teardownRoll = rng(s, "dev");
   const bbl = rec.bbl;
   const oldSf = rec.bldgArea;
-  const cls = rec.class as BuiltClass;
   // When the standing class is itself chronically short of housable floor and
   // still has orders on the book, densify IN KIND. useForZone's programme mix
   // was converting short office into multifamily while office structTight
   // stayed elevated — supply answering the wrong demand.
+  //
+  // Candidates above already skip vacant lots; the `!== "land"` check is kept
+  // so TypeScript narrows AssetClass → BuiltClass for the densify path.
+  const cls = rec.class;
   if (cls !== "land" && (CITY_STOCK as Record<string, number>)[cls] !== undefined) {
-    const standing = cls as BuiltClass;
+    const standing = cls;
     const stStand = e.structTight?.[standing] ?? 0;
     const owedStand = e.startOwed?.[standing] ?? 0;
     if (stStand > 0.06 && owedStand > 0

@@ -299,11 +299,17 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         paint: { "fill-color": "#b7d29f" },
       },
       {
+        // Kerbed edge of the painted green. Was a soft tint-on-tint outline
+        // that disappeared against the lawn; without a hard stop the turf and
+        // the flanking lots read as one field across the frontage road.
         id: "park-outline",
         type: "line",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "park"],
-        paint: { "line-color": "#b3cba6", "line-width": 1.2 },
+        paint: {
+          "line-color": "#6e6b64",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.8, 16.5, 2.4] as never,
+        },
       },
       {
         // the walks: crushed-gravel paths through the green

@@ -61,6 +61,7 @@
     "legmatch": "node test/legmatch.mjs",
     "inflation": "node test/inflation.mjs",
     "cityclass": "node test/cityclass-rents.mjs",
+    "parkclear": "node test/park-clearance.mjs",
     "facility": "node test/facility.mjs",
     "mixmatch": "node test/mixmatch.mjs",
     "mortality": "node test/mortality.mjs",

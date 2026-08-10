@@ -2331,6 +2331,22 @@ export interface GameState {
   // instead of the 4%/2% you'd pay doing it yourself.
   agent: boolean;
   /**
+   * WHAT THE DESK DID THIS MONTH while you were quiet.
+   *
+   * When the firm agent, an exclusive, or an in-house leasing hire holds the
+   * pen, letters stop interrupting you — only referrals do. Without a scorecard
+   * a quiet month looks identical to a desk that is turning everyone away.
+   * Counts roll with `m`; readers treat a stale month as empty.
+   */
+  deskMonth?: {
+    m: number;
+    signed: number;
+    passed: number;
+    referred: number;
+    walked: number;
+    countered: number;
+  };
+  /**
    * PROPERTY MANAGEMENT HAS THE RENEWALS, at the 2% the roll already pays.
    *
    * Narrower than `agent` above and deliberately so. The agent takes the whole

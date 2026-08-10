@@ -117,13 +117,18 @@ check(!E.attentionItems(g).some((a) => a.key.startsWith("loi:")),
 // Exclusive broker covers a building without the firm-wide agent toggle.
 {
   g.agent = false;
-  g.holdings[boughtBbl].broker = { name: "Street & Co", hiredM: g.month };
+  g.holdings[boughtBbl].broker = true;
   g.holdings[boughtBbl].tenants = [];
   g.lois = [{
     id: 401, bbl: boughtBbl, kind: "new", use, name: "Exclusive Soft Co",
     sector: "tech", credit: 1, sf: suite, rentPsf: +(market * 0.84).toFixed(2),
     termM: 84, tiPsf: 8, freeM: 2, net: true, expiresM: g.month + 3, arrivedM: g.month,
   }];
+  // Covered paper must not interrupt — exclusive holds the pen without agent toggle.
+  check(!E.loiNeedsPrincipal(g, g.lois[0]),
+    "loiNeedsPrincipal is false while an exclusive covers the building");
+  check(!E.attentionItems(g).some((a) => a.key.startsWith("loi:")),
+    "exclusive-covered unreferred LOI does not stop Skip");
   E.runLeasingAgent(g, parcels, { onlyDelegated: true });
   const still = g.lois.find((l) => l.id === 401);
   const news = (g.news ?? []).slice(0, 12).map((n) => n.text).join(" ");
@@ -132,6 +137,37 @@ check(!E.attentionItems(g).some((a) => a.key.startsWith("loi:")),
     "exclusive broker works soft paper without the firm agent toggle",
   );
   delete g.holdings[boughtBbl].broker;
+}
+
+console.log("\nQUIET DESK SCORECARD\n");
+{
+  g.agent = true;
+  g.holdings[boughtBbl].tenants = [];
+  g.deskMonth = undefined;
+  g.lois = [
+    {
+      id: 501, bbl: boughtBbl, kind: "new", use, name: "Junk Pass Co",
+      sector: "tech", credit: 0, sf: suite, rentPsf: +(market * 0.5).toFixed(2),
+      termM: 36, tiPsf: 80, freeM: 12, net: true, expiresM: g.month + 3, arrivedM: g.month,
+    },
+    {
+      id: 502, bbl: boughtBbl, kind: "new", use, name: "Clear Sign Co",
+      sector: "finance", credit: 2, sf: suite, rentPsf: +(market * 1.05).toFixed(2),
+      termM: 120, tiPsf: 2, freeM: 0, net: true, expiresM: g.month + 3, arrivedM: g.month,
+    },
+  ];
+  g.cash = Math.max(g.cash, 20_000_000);
+  E.runLeasingAgent(g, parcels);
+  const dm = E.deskMonthNow(g);
+  check(!!dm, "deskMonthNow reports activity after the desk runs");
+  check((dm?.signed ?? 0) + (dm?.passed ?? 0) + (dm?.referred ?? 0) + (dm?.walked ?? 0) > 0,
+    "scorecard recorded at least one desk action");
+  check(E.deskHoldsPen(g), "deskHoldsPen is true with the firm agent on");
+  // Unreferred leftover (if any) must not need the principal while agent is on.
+  for (const l of g.lois) {
+    if (!l.referred) check(!E.loiNeedsPrincipal(g, l), `unreferred ${l.name} stays quiet under the agent`);
+    else check(E.loiNeedsPrincipal(g, l), `referred ${l.name} still needs the principal`);
+  }
 }
 
 console.log("");

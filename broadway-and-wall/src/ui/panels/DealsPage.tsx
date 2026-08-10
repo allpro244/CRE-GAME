@@ -6,7 +6,7 @@ import type { BuiltClass } from "@/engine/types";
 import { holdingNOIYr, resolveRec, asIfOwned } from "@/engine/value";
 import { MAX_TALKS } from "@/engine/acquire";
 import { APPROACH_LIFE_M } from "@/engine/sim";
-import { bumpOf, loiSigningCost, exclusiveFeeRate, netEffectivePsf } from "@/engine/leasing";
+import { bumpOf, loiSigningCost, exclusiveFeeRate, netEffectivePsf, loiNeedsPrincipal, deskHoldsPen, deskMonthNow } from "@/engine/leasing";
 import { usd, sf } from "@/ui/format";
 import { PortfolioSaleDesk } from "@/ui/panels/PortfolioPage";
 import { liveBrokerCalls } from "@/ui/panels/broker";
@@ -345,22 +345,23 @@ export function DealsPage() {
           );
         })()}
         {(() => {
-          // When the agent holds the book, only referred letters are yours —
-          // the rest are mid-tick paper that should not look like a queue.
-          // Ground-leased fees are the lessee's book — never queue them here.
-          const desk = (game.agent ? game.lois.filter((l) => l.referred) : game.lois)
-            .filter((l) => !game.holdings[l.bbl]?.groundLeased);
+          // Only letters the principal still owns — covered / leased-fee paper is quiet.
+          const desk = game.lois.filter((l) => loiNeedsPrincipal(game, l));
+          const tally = deskMonthNow(game);
+          const quiet = deskHoldsPen(game);
           return (
             <>
         <div className="page-section">
           Letters of intent · {desk.length}
-          {game.agent ? " · referred by your desk" : ""}
+          {quiet ? " · referred by your desk" : ""}
         </div>
         {desk.length === 0 && (
           <div className="deal">
             <div className="hint">
-              {game.agent
-                ? "Your agent has the book — nothing referred back right now. They sign inside the mandate on Leasing."
+              {quiet
+                ? (tally
+                  ? `Your desk has the book — this month ${tally.signed} signed, ${tally.passed} passed, ${tally.referred} referred, ${tally.walked} walked. Nothing waiting on you right now.`
+                  : "Your desk has the book — nothing referred back right now. They sign inside the mandate on Leasing; the monthly tally lives there too.")
                 : "No live negotiations. Vacant space in high-demand buildings draws tenants."}
             </div>
             {Object.keys(game.holdings).length === 0 ? (

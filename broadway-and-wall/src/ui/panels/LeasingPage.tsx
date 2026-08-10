@@ -8,6 +8,7 @@ import {
   AGENT_FLOOR_MIN, AGENT_FLOOR_MAX, AGENT_PASS_MIN,
   AGENT_TI_MONTHS_MIN, AGENT_TI_MONTHS_MAX,
   AGENT_SIGNING_MONTHS_MIN, AGENT_SIGNING_MONTHS_MAX,
+  deskHoldsPen, deskMonthNow, loiNeedsPrincipal,
 } from "@/engine/leasing";
 import { useSf } from "@/engine/mix";
 import { portfolioIndustries } from "@/engine/comps";
@@ -92,6 +93,8 @@ export function LeasingPage() {
       <div>
         <AgentBar />
         <RenewalBar />
+        <DeskActivity />
+        <MandateBar />
         <LeasedFeeStrip />
         <div className="hint">No buildings yet — occupancy starts when you own something with tenants in it.</div>
         <button className="btn btn-buy" onClick={() => setPage("market")}>
@@ -111,20 +114,67 @@ export function LeasingPage() {
   const totRolling = rows.reduce((a, r) => a + r.rolling, 0);
 
   function AgentBar() {
-    const referred = (game.lois ?? []).filter((l) => l.referred).length;
+    const referred = (game.lois ?? []).filter((l) => loiNeedsPrincipal(game, l)).length;
     return (
       <div className="agent-bar">
         <div>
           <div className="agent-title">{game.agent ? "Your leasing agent has the book." : "You are handling leasing yourself."}</div>
           <div className="agent-sub">
             {game.agent
-              ? `They sign inside your mandate, counter soft letters toward your sign line, pick a clear winner on contested tours, and only refer expansions, dead heats, failed negotiations and capital calls — 6% of lease value on what they sign${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
-              : "Without the firm agent, an exclusive broker or an in-house leasing hire still counters on the buildings they cover. Otherwise every letter lands on you — hire the agent below to hand over the whole book."}
+              ? `They sign inside your mandate, counter soft letters toward your sign line, pick a clear winner on contested tours, and only refer expansions, dead heats, failed negotiations and capital calls — 6% of lease value on what they sign. Routine letters do not interrupt you; the scorecard below is how you know they are still closing${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
+              : "Without the firm agent, an exclusive broker or an in-house leasing hire still counters on the buildings they cover — and those letters stay quiet too. Otherwise every letter lands on you — hire the agent below to hand over the whole book."}
           </div>
         </div>
         <button className={"btn" + (game.agent ? "" : " btn-on")} onClick={() => setAgent(!game.agent)}>
           {game.agent ? "Take leasing back" : "Hire the agent · 6%"}
         </button>
+      </div>
+    );
+  }
+
+  /**
+   * QUIET ACCOUNTABILITY. When somebody else holds the pen, popups stop.
+   * Without a tally, a quiet month looks the same as a desk that is turning
+   * every tenant away. Signed / passed / referred / walked is the proof.
+   */
+  function DeskActivity() {
+    if (!deskHoldsPen(game)) return null;
+    const tally = deskMonthNow(game);
+    const referred = (game.lois ?? []).filter((l) => loiNeedsPrincipal(game, l)).length;
+    return (
+      <div className="agent-bar" style={{ display: "block" }}>
+        <div className="agent-title">Desk this month · {monthLabel(game.month)}</div>
+        {!tally ? (
+          <div className="hint">
+            No letters worked yet this month. When traffic arrives they sign, counter, pass or refer —
+            you will see the counts here instead of a popup for every LOI.
+            {referred ? ` ${referred} referred letter${referred === 1 ? "" : "s"} still need you on Deals.` : ""}
+          </div>
+        ) : (
+          <>
+            <div className="stat-strip" style={{ marginTop: 6 }}>
+              <Big label="Signed" value={String(tally.signed)}
+                title="Leases the desk closed inside your mandate" />
+              <Big label="Passed" value={String(tally.passed)}
+                title="Junk below your pass line — turned away on purpose" />
+              <Big label="Referred" value={String(tally.referred)}
+                title="Came back to you — expansions, capital calls, dead heats, failed counters" />
+              <Big label="Walked" value={String(tally.walked)}
+                title="Tenants who left after the desk countered" />
+              <Big label="Countered" value={String(tally.countered)}
+                title="Soft letters the desk pushed toward your sign line" />
+            </div>
+            <div className="hint" style={{ marginTop: 6 }}>
+              {tally.signed === 0 && tally.passed > 0 && tally.referred === 0
+                ? "They have only been passing — check the pass line on your mandate if the market is soft."
+                : tally.signed > 0
+                  ? "They are closing. Passed letters are junk under your line, not silent refusals of good paper."
+                  : referred
+                    ? `${referred} letter${referred === 1 ? "" : "s"} on Deals need a principal decision.`
+                    : "Desk is working the book quietly — activity shows up here as letters arrive."}
+            </div>
+          </>
+        )}
       </div>
     );
   }
@@ -175,7 +225,8 @@ export function LeasingPage() {
    * "good enough" means. Only shown when somebody else holds the pen.
    */
   function MandateBar() {
-    if (!game.agent && !game.renewalMgmt) return null;
+    // Firm agent, renewal desk, exclusive, or leasing hire — same mandate dials.
+    if (!deskHoldsPen(game)) return null;
     const floor = agentFloor(game);
     const pass = agentPassBelow(game);
     const minCred = agentMinCredit(game);
@@ -269,13 +320,18 @@ export function LeasingPage() {
     <div>
       <AgentBar />
       <RenewalBar />
+      <DeskActivity />
       <MandateBar />
       <div className="stat-strip">
         <Big label="Portfolio occupancy" value={totSf ? ((100 * totLeased) / totSf).toFixed(1) + "%" : "—"} bad={totSf > 0 && totLeased / totSf < 0.8} />
         <Big label="Leased" value={sf(totLeased) + " of " + sf(totSf)} />
         <Big label="Rent roll / yr" value={usd(totRoll)} />
         <Big label="Rolling in 12 mo" value={sf(totRolling)} bad={totRolling > totLeased * 0.25} />
-        <Big label="Open LOIs" value={String(game.lois.length)} />
+        <Big
+          label="On your desk"
+          value={String(game.lois.filter((l) => loiNeedsPrincipal(game, l)).length)}
+          title="Letters that still need you — desk-covered paper is quiet"
+        />
       </div>
 
       {/* WHAT YOUR RENT ROLL DOES FOR A LIVING.

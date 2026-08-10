@@ -51,14 +51,33 @@ const money = (n: number) =>
 /** How long a portfolio stays on the market before the process goes stale. */
 const RUN_M = 9;
 
-/** The desks that write institutional cheques in this town. */
+/**
+ * The desks that write portfolio cheques in this town.
+ *
+ * Ordered loosely by patience (how close to indicative they will bid). The
+ * floor used to be $6M — Bellwether — so a two-building book under that mark
+ * could sit the full nine months with a rolled die and an empty pool, while
+ * the quote lied that "1 buyer" could fund it. Riverside is the private desk
+ * that still writes smaller tickets; below its min there is simply no market
+ * for a bundle, and the desk has to say so.
+ */
 const BUYERS = [
-  { name: "Hollis Sterling Partners", min: 12_000_000, patience: 0.98 },
-  { name: "Marchpane Institutional", min: 30_000_000, patience: 1.02 },
-  { name: "The Ashgrove Trust", min: 8_000_000, patience: 0.95 },
   { name: "Kestrel Core Fund", min: 45_000_000, patience: 1.04 },
+  { name: "Marchpane Institutional", min: 30_000_000, patience: 1.02 },
+  { name: "Hollis Sterling Partners", min: 12_000_000, patience: 0.98 },
+  { name: "The Ashgrove Trust", min: 8_000_000, patience: 0.95 },
   { name: "Bellwether Opportunity", min: 6_000_000, patience: 0.88 },
+  { name: "Riverside Private Capital", min: 2_000_000, patience: 0.84 },
 ];
+
+/** How many named buyers can underwrite a book of this size. */
+export function portfolioBuyerDepth(sumOfParts: number): number {
+  const raw = BUYERS.filter((b) => sumOfParts >= b.min).length;
+  // Past a certain cheque the room thins — the same three institutions who
+  // could write $40M cannot all write $200M in the same city the same year.
+  const crowdedOut = sumOfParts > 200_000_000 ? 2 : sumOfParts > 90_000_000 ? 1 : 0;
+  return Math.max(0, raw - crowdedOut);
+}
 
 export interface PortfolioQuote {
   /** What the buildings are worth one at a time, added up. */
@@ -168,10 +187,21 @@ export function portfolioQuote(s: GameState, parcels: ParcelTable, bbls: string[
   }
 
   // --- who can actually write this cheque ----------------------------------
-  const depth = BUYERS.filter((b) => sumOfParts >= b.min).length
-    - (sumOfParts > 200_000_000 ? 2 : sumOfParts > 90_000_000 ? 1 : 0);
-  const thin = depth <= 1 ? -0.06 : depth === 2 ? -0.025 : 0;
-  if (thin < 0) why.push({ label: `Thin bidder pool — ${Math.max(1, depth)} buyer${depth === 1 ? "" : "s"} in this city can fund it`, pct: thin });
+  const depth = portfolioBuyerDepth(sumOfParts);
+  if (depth <= 0) {
+    why.push({
+      label: "No buyer in this city can fund a book this small as a portfolio — sell them one at a time",
+      pct: -0.08,
+    });
+  } else {
+    const thin = depth === 1 ? -0.06 : depth === 2 ? -0.025 : 0;
+    if (thin < 0) {
+      why.push({
+        label: `Thin bidder pool — ${depth} buyer${depth === 1 ? "" : "s"} in this city can fund it`,
+        pct: thin,
+      });
+    }
+  }
 
   // --- the cycle -----------------------------------------------------------
   // A portfolio bid is a leveraged bid. When the debt markets are shut there
@@ -224,7 +254,7 @@ export function portfolioQuote(s: GameState, parcels: ParcelTable, bbls: string[
     return a + Math.max(0, n);
   }, 0);
   return {
-    sumOfParts, indicative, spreadPct: total, why, depth: Math.max(1, depth), count: rows.length,
+    sumOfParts, indicative, spreadPct: total, why, depth, count: rows.length,
     noiYr: Math.round(noiAt(indicative)),
     capAtAsk: (ask: number) => (ask > 0 ? (noiAt(ask) / ask) * 100 : 0),
   };
@@ -252,18 +282,38 @@ export function listPortfolio(
   }
   const q = portfolioQuote(s, parcels, clean);
   if (ask <= 0) return { s, err: "Name a price." };
+  // AN EMPTY ROOM IS NOT A PROCESS. Rolling the arrival die against zero
+  // buyers used to burn nine months of silence and then call the book stale —
+  // which reads as "the market passed" when the truth is nobody was ever
+  // invited. Say so at the door.
+  if (q.depth <= 0) {
+    return {
+      s,
+      err: `No buyer in this city can underwrite a ${money(q.sumOfParts)} portfolio. `
+        + `Sell them one at a time, or bundle enough value that a private desk will take the ticket `
+        + `(roughly $2M of marks and up).`,
+    };
+  }
   const next = clone(s);
   // A building cannot be in two processes at once.
   for (const b of clean) if (next.holdings[b]?.sale) delete next.holdings[b].sale;
   next.portfolioSale = { bbls: clean, ask: Math.round(ask), listedM: next.month, sumOfParts: q.sumOfParts, bids: [] };
+  const eager = Math.min(1, q.indicative / Math.max(1, ask));
+  const richAsk = ask > q.indicative * 1.05;
   next.news.unshift({
     q: next.month, kind: "info",
     text: `Took ${clean.length} buildings to market as a portfolio at ${money(ask)} — `
       + `${money(q.sumOfParts)} of individual marks, so you are asking `
       + `${ask >= q.sumOfParts ? "a premium" : `${((1 - ask / q.sumOfParts) * 100).toFixed(0)}% under the sum of the parts`}. `
+      + `${q.depth} buyer${q.depth === 1 ? "" : "s"} can fund it. `
+      + (richAsk
+        ? `The ask sits above what a bundle is indicated at (${money(q.indicative)}) — interest will be thin until you cut it. `
+        : eager >= 0.95
+          ? `Priced at the indication — expect a call inside a quarter if the book holds. `
+          : "")
       + `Indications inside ${RUN_M} months or the process goes stale.`,
   });
-  return { s: next, msg: "In the market." };
+  return { s: next, msg: richAsk ? "In the market — ask is rich against the indication." : "In the market." };
 }
 
 export function delistPortfolio(s: GameState): GameState {
@@ -489,32 +539,40 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
       });
     } else {
       const q = portfolioQuote(s, parcels, live.bbls);
-      const eager = Math.min(1, q.indicative / Math.max(1, live.ask));
-      // Interest is a function of how far under the indicative your ask is,
-      // and it thins fast the longer it sits.
-      const arrive = 0.30 * Math.pow(eager, 3.2) * Math.max(0.25, 1 - age / (RUN_M + 3));
-      if (rng(s) < arrive && live.bids.length < 3) {
-        const pool = BUYERS.filter((b) => q.sumOfParts >= b.min && !live.bids.some((x) => x.name === b.name));
-        if (pool.length) {
+      const pool = BUYERS.filter((b) => q.sumOfParts >= b.min && !live.bids.some((x) => x.name === b.name));
+      // No desk left to call — do not burn months on a die that can never land.
+      if (!pool.length && !live.bids.length) {
+        if (age > 0 && age % 3 === 0) {
+          s.news.unshift({
+            q: s.month, kind: "warn",
+            text: `Still no desk that can fund the portfolio at ${money(q.sumOfParts)} of marks. `
+              + `Pull it and sell the deeds one at a time, or the process will go stale on an empty room.`,
+          });
+        }
+      } else {
+        const eager = Math.min(1, q.indicative / Math.max(1, live.ask));
+        // Interest is a function of how far under the indicative your ask is,
+        // and it thins fast the longer it sits.
+        const arrive = 0.30 * Math.pow(eager, 3.2) * Math.max(0.25, 1 - age / (RUN_M + 3));
+        if (pool.length && rng(s) < arrive && live.bids.length < 3) {
           const who = pool[Math.floor(rng(s) * pool.length)];
           const price = Math.round(Math.min(live.ask, q.indicative * who.patience * rrange(s, 0.88, 1.02)));
-          const first = live.bids.length === 0;
           live.bids.push({ name: who.name, price, expiresM: s.month + 3, limit: bidderLimit(s) });
           live.bids.sort((a, b) => b.price - a.price);
-          // The FIRST indication on a book you put in the market is the moment
-          // the process becomes a decision. Later ones are a list you go and
-          // read; this one is the answer to whether anybody wanted it at all.
-          if (first) {
-            raiseAlert(s, {
-              kind: "portfolio", tone: "good",
-              title: `${who.name} has indicated on your portfolio`,
-              body: `${money(price)} for the ${live.bbls.length}-building book, `
-                + `${((1 - price / Math.max(1, q.sumOfParts)) * 100).toFixed(0)}% inside the sum of the individual marks. `
-                + `That spread is what you are paying to clear ${live.bbls.length} buildings in one closing. `
-                + `It is on the Deals desk and it lapses ${monthLabel(s.month + 3)}.`,
-              detail: money(price),
-            });
-          }
+          // EVERY indication is a decision with a fuse. The first one answers
+          // whether anybody wanted the book; the second and third used to land
+          // as news only, so a player with pop-ups off (or who missed the first
+          // card) could watch three months of silence and never know a bid was
+          // sitting on Deals until it lapsed.
+          raiseAlert(s, {
+            kind: "portfolio", tone: "good",
+            title: `${who.name} has indicated on your portfolio`,
+            body: `${money(price)} for the ${live.bbls.length}-building book, `
+              + `${((1 - price / Math.max(1, q.sumOfParts)) * 100).toFixed(0)}% inside the sum of the individual marks. `
+              + `That spread is what you are paying to clear ${live.bbls.length} buildings in one closing. `
+              + `It is on the Deals desk and it lapses ${monthLabel(s.month + 3)}.`,
+            detail: money(price),
+          });
           s.news.unshift({
             q: s.month, kind: "deal",
             text: `${who.name} indicated ${money(price)} on the portfolio — `

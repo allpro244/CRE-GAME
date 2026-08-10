@@ -1,7 +1,7 @@
-commit=consolid-1
-gitTip=337a4d1
-builtAt=2026-08-10T20:43Z
-branch=cursor/consolidate-todays-work-9786
+commit=rooms-1
+gitTip=7fb4641
+builtAt=2026-08-10T21:32Z
+branch=cursor/refresh-playable-ui-9786
 rentBaseOffice=35.50
-includes=economy-#3-#5,ui-#7,prefer-smoother-frames-#8,secondary-rents-#9
-verifyInGame=start screen footer should say: build consolid-1 · office base $35.5
+includes=consolid-1,park-clearance-#11,full-detail-rooms-#12
+verifyInGame=start screen footer should say: build rooms-1 · office base $35.5

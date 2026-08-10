@@ -110,7 +110,7 @@ interface AppState {
   buy: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
   buyOff: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
   approach: (bbl: string) => void;
-  respondLoi: (id: number, action: LOIAction, fund?: boolean, counter?: { rentPsf?: number; tiPsf?: number; freeM?: number; bestFinal?: boolean }) => { ok: boolean; msg: string };
+  respondLoi: (id: number, action: LOIAction, fund?: boolean, counter?: { rentPsf?: number; tiPsf?: number; freeM?: number; bumpPct?: number; bestFinal?: boolean }) => { ok: boolean; msg: string };
   /** Answer a tenant's mid-lease relief letter. */
   answerAsk: (id: number, action: "grant" | "decline") => void;
   /**

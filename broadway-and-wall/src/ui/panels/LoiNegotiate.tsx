@@ -8,7 +8,7 @@ import type { GameState, LOI } from "@/engine/types";
 import { CREDIT_LABEL, monthLabel } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import { managedRentPsfYr, resolveRec } from "@/engine/value";
-import { loiSigningCost, netEffectivePsf } from "@/engine/leasing";
+import { bumpOf, DEFAULT_BUMP_PCT, loiSigningCost, netEffectivePsf } from "@/engine/leasing";
 import { usd, sf } from "@/ui/format";
 import { Row } from "@/ui/panels/shared";
 
@@ -41,12 +41,29 @@ export function openingNe(loi: LOI): number {
   const rent = loi.openRentPsf ?? loi.rentPsf;
   const ti = loi.openTiPsf ?? loi.tiPsf;
   const free = loi.openFreeM ?? loi.freeM;
+  const bump = loi.openBumpPct ?? bumpOf(loi);
   // Build a view of the opener so TI delta is zeroed (open vs open).
-  const view = { ...loi, tiPsf: ti, openTiPsf: ti, freeM: free };
-  return netEffectivePsf(view, rent, ti, free);
+  const view = { ...loi, tiPsf: ti, openTiPsf: ti, freeM: free, bumpPct: bump, openBumpPct: bump };
+  return netEffectivePsf(view, rent, ti, free, bump);
 }
 
-type Counter = { rentPsf: number; tiPsf: number; freeM: number; bestFinal?: boolean };
+/**
+ * TERM AND SIZE FIRST. When a letter lands, those two facts decide whether
+ * you even care about the rent — everything else is secondary ink.
+ */
+export function LoiHero({ loi }: { loi: LOI }) {
+  const yrs = loi.termM / 12;
+  const yrLabel = Number.isInteger(yrs) ? String(yrs) : yrs.toFixed(1);
+  return (
+    <div className="loi-hero" aria-label={`${sf(loi.sf)}, ${yrLabel} years`}>
+      <span className="loi-hero-sf">{sf(loi.sf)}</span>
+      <span className="loi-hero-sep">·</span>
+      <span className="loi-hero-term">{yrLabel}-year term</span>
+    </div>
+  );
+}
+
+type Counter = { rentPsf: number; tiPsf: number; freeM: number; bumpPct: number; bestFinal?: boolean };
 
 /**
  * Sliders + the live NE readout. Parent owns Accept / Pass / Decide later;
@@ -67,16 +84,18 @@ export function LoiCounterDraft({
   const [cRent, setCRent] = useState(+(loi.rentPsf * 1.05).toFixed(2));
   const [cTi, setCTi] = useState(loi.tiPsf);
   const [cFree, setCFree] = useState(loi.freeM);
+  const [cBump, setCBump] = useState(bumpOf(loi));
   const tiCap = loiTiCap(loi, market);
   const freeCap = loiFreeCap(loi);
   const theirNe = openingNe(loi);
-  const yourNe = netEffectivePsf(loi, cRent, cTi, cFree);
+  const yourNe = netEffectivePsf(loi, cRent, cTi, cFree, cBump);
   const vsMkt = (yourNe / market - 1) * 100;
   // Signing cost follows the TI on the dial — cutting fit-out has to show up
   // in the cash line before you send, or the player cannot learn the trade.
   const costNow = loiSigningCost({ ...loi, tiPsf: cTi, rentPsf: cRent, freeM: cFree }, feeRate);
   const pushy = vsMkt > 8;
   const soft = vsMkt < -2;
+  const openBump = loi.openBumpPct ?? bumpOf(loi);
 
   return (
     <div className="loi-counter">
@@ -103,12 +122,12 @@ export function LoiCounterDraft({
         max={tiCap}
         step={1}
         onChange={setCTi}
-        format={(v) => `$${v}/sf · ${usd(v * loi.sf)}`}
+        format={(v) => v > 0 ? `$${v}/sf · ${usd(v * loi.sf)}` : "none"}
         marks={[
           ...(loi.tiPsf > 0 ? [{ at: loi.tiPsf, label: "they asked" }] : [{ at: 0, label: "none" }]),
           ...(loi.tiPsf > 4 ? [{ at: Math.round(loi.tiPsf / 2), label: "half" }] : []),
         ]}
-        hint="Cut fit-out to save cash at signing, or offer more of it to buy a higher face rent."
+        hint="Cutting fit-out raises net effective the same way raising rent does."
       />
       <Slider
         label="Free rent"
@@ -117,48 +136,52 @@ export function LoiCounterDraft({
         max={freeCap}
         step={1}
         onChange={setCFree}
-        format={(v) => v === 0 ? "none" : `${v} month${v === 1 ? "" : "s"}`}
+        format={(v) => v > 0 ? `${v} months` : "none"}
         marks={[
-          ...(loi.freeM > 0 ? [{ at: loi.freeM, label: "they asked" }] : []),
-          { at: 0, label: "none" },
+          { at: loi.freeM, label: loi.freeM > 0 ? "they asked" : "none" },
         ]}
-        hint="Free months are rent by another name — cutting them raises net effective; adding them buys a harder face rent."
+        hint="Forgone rent, not a signing cheque — it still moves the net effective they judge."
       />
-
-      <div className="loi-ne" style={{ marginTop: 8 }}>
-        <div className="loi-line mono">
-          Their letter · NE ${theirNe.toFixed(2)}/sf
-          {" "}({((theirNe / market - 1) * 100).toFixed(0)}% vs market)
-        </div>
-        <div className="loi-line mono" style={{
-          color: pushy ? "#a8402e" : soft ? "#3a7d46" : undefined,
-          fontWeight: 600,
-        }}>
-          Your counter · NE ${yourNe.toFixed(2)}/sf
-          {" "}({vsMkt >= 0 ? "+" : ""}{vsMkt.toFixed(0)}% vs market)
-          {pushy ? " — they walk fast past here" : soft ? " — soft; they should take this" : " — near the indifference band"}
-        </div>
-        <div className="loi-line mono dim">
-          Cash to sign at these terms · {usd(costNow)}
-          {cTi !== loi.tiPsf ? ` (was ${usd(loiSigningCost(loi, feeRate))} on their letter)` : ""}
-        </div>
+      <Slider
+        label="Annual bump"
+        value={cBump}
+        min={0}
+        max={5}
+        step={0.25}
+        onChange={setCBump}
+        format={(v) => `${v.toFixed(2)}%/yr${Math.abs(v - DEFAULT_BUMP_PCT) < 0.01 ? " · market standard" : v > DEFAULT_BUMP_PCT ? " · steeper" : " · flatter"}`}
+        marks={[
+          { at: openBump, label: "they offered" },
+          { at: DEFAULT_BUMP_PCT, label: "2.5%" },
+        ]}
+        hint="Compounded every anniversary. Steeper than 2.5% raises net effective; flatter gives it away."
+      />
+      <div className={"loi-ne" + (pushy ? " neg" : soft ? "" : "")}>
+        Your NE ${yourNe.toFixed(2)}/sf
+        {" · "}
+        {vsMkt >= 0 ? "+" : ""}{vsMkt.toFixed(0)}% vs market
+        {Math.abs(theirNe - yourNe) > 0.05 ? ` · their opener $${theirNe.toFixed(2)}` : ""}
+        {" · "}
+        cash to sign {usd(costNow)}
+        {cTi !== loi.tiPsf ? ` (was ${usd(loiSigningCost(loi, feeRate))} on their letter)` : ""}
       </div>
-
-      <div className="btn-row" style={{ marginTop: 8 }}>
+      <div className="btn-row">
         <button
+          type="button"
           className="btn btn-buy"
-          onClick={() => onSend({ rentPsf: cRent, tiPsf: cTi, freeM: cFree })}
+          onClick={() => onSend({ rentPsf: cRent, tiPsf: cTi, freeM: cFree, bumpPct: cBump })}
         >
-          Send · ${cRent.toFixed(2)}/sf{cTi > 0 ? ` · TI $${cTi}` : ""}{cFree > 0 ? ` · ${cFree}mo free` : ""}
+          Send counter
         </button>
         <button
+          type="button"
           className="btn"
-          title="The number is firm. Some hagglers sign; everyone else walks — nobody counters back a best and final."
-          onClick={() => onSend({ rentPsf: cRent, tiPsf: cTi, freeM: cFree, bestFinal: true })}
+          title="Take-it-or-leave-it. No counter-back — they sign or they walk."
+          onClick={() => onSend({ rentPsf: cRent, tiPsf: cTi, freeM: cFree, bumpPct: cBump, bestFinal: true })}
         >
           Best &amp; final
         </button>
-        <button className="btn" onClick={onBack}>Back</button>
+        <button type="button" className="btn" onClick={onBack}>Back</button>
       </div>
       {fundShort && (
         <div className="hint dim">Signing still draws the shortfall on the line if cash is short.</div>
@@ -183,10 +206,17 @@ export function LoiTermsGrid({
     ? h?.tenants[loi.tenantIdx]?.rentPsf : undefined;
   const isFinal = loi.stage === "countered";
   const theirNe = openingNe(loi);
-  const nowNe = netEffectivePsf(loi, loi.rentPsf, loi.tiPsf, loi.freeM);
+  const nowNe = netEffectivePsf(loi, loi.rentPsf, loi.tiPsf, loi.freeM, bumpOf(loi));
+  const bump = bumpOf(loi);
 
   return (
     <div className="grid">
+      <div className="loi-hero-block">
+        <LoiHero loi={loi} />
+        <div className="loi-hero-sub mono dim">
+          to {monthLabel(game.month + loi.termM)} · {usd(annual)}/yr face
+        </div>
+      </div>
       {prevRent !== undefined && (
         <Row
           k="They pay today"
@@ -201,19 +231,27 @@ export function LoiTermsGrid({
             k="You asked"
             v={`$${loi.askedRentPsf.toFixed(2)}/sf`
               + (loi.askedTiPsf !== undefined ? ` · TI $${loi.askedTiPsf}` : "")
-              + (loi.askedFreeM ? ` · ${loi.askedFreeM}mo free` : "")}
+              + (loi.askedFreeM ? ` · ${loi.askedFreeM}mo free` : "")
+              + (loi.askedBumpPct !== undefined ? ` · ${loi.askedBumpPct.toFixed(2)}%/yr` : "")}
             strong
           />
           <Row
             k="Their final"
             v={`$${(loi.counterRentPsf ?? loi.rentPsf).toFixed(2)}/sf`
               + (loi.counterTiPsf !== undefined ? ` · TI $${loi.counterTiPsf}` : "")
-              + ((loi.counterFreeM ?? 0) > 0 ? ` · ${loi.counterFreeM}mo free` : "")}
+              + ((loi.counterFreeM ?? 0) > 0 ? ` · ${loi.counterFreeM}mo free` : "")
+              + (loi.counterBumpPct !== undefined ? ` · ${loi.counterBumpPct.toFixed(2)}%/yr` : ` · ${bump.toFixed(2)}%/yr`)}
             strong
           />
         </>
       )}
       {!isFinal && <Row k="Rent" v={`$${loi.rentPsf.toFixed(2)}/sf`} strong />}
+      {!isFinal && (
+        <Row
+          k="Annual bump"
+          v={`${bump.toFixed(2)}%/yr${Math.abs(bump - DEFAULT_BUMP_PCT) < 0.01 ? " · market standard" : bump > DEFAULT_BUMP_PCT ? " · steeper than standard" : " · flatter than standard"}`}
+        />
+      )}
       <Row
         k="Recovery"
         v={(loi.recovery ?? (loi.net ? "nnn" : "gross")) === "nnn" ? "triple net — they pay opex and taxes"
@@ -231,8 +269,6 @@ export function LoiTermsGrid({
         <Row k="Opening NE" v={`$${theirNe.toFixed(2)}/sf`} />
       )}
       <Row k="vs. face market" v={`${((loi.rentPsf / market - 1) * 100).toFixed(1)}% on face rent`} bad={loi.rentPsf < market * 0.9} />
-      <Row k="Term" v={`${(loi.termM / 12).toFixed(1)} yrs, to ${monthLabel(game.month + loi.termM)}`} />
-      <Row k="Annual face rent" v={usd(annual)} />
       <Row k="TI allowance" v={loi.tiPsf > 0 ? `$${loi.tiPsf}/sf · ${usd(loi.tiPsf * loi.sf)}` : "none"} />
       <Row k="Free rent" v={loi.freeM > 0 ? `${loi.freeM} months` : "none"} />
       <Row k="Cash to sign" v={usd(cost)} bad={cost > game.cash} strong />
@@ -250,7 +286,7 @@ export function LoiTermsGrid({
 export function LoiHeaderSub({ loi, address }: { loi: LOI; address: string }) {
   return (
     <>
-      {loi.sector} · credit {CREDIT_LABEL[loi.credit]} · wants {sf(loi.sf)} at {address}
+      {loi.sector} · credit {CREDIT_LABEL[loi.credit]} · {address}
     </>
   );
 }

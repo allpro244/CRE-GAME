@@ -76,6 +76,12 @@ export interface Tenant {
   credit: Credit;
   sf: number;
   rentPsf: number;     // $/sf/yr
+  /**
+   * ANNUAL CONTRACTUAL BUMP, percent. Applied on each lease anniversary.
+   * Optional on old saves — the engine treats a missing field as 2.5%, which
+   * is what every lease used to get in silence.
+   */
+  bumpPct?: number;
   net: boolean;        // legacy flag; `recovery` is the real answer
   recovery?: "nnn" | "base" | "gross";
   baseStopPsf?: number;   // base-year expense stop, $/sf — frozen at signing
@@ -172,6 +178,11 @@ export interface LOI {
   termM: number;
   tiPsf: number;       // tenant-improvement allowance, $/sf at signing
   freeM: number;       // free-rent months (not quarters)
+  /**
+   * ANNUAL RENT BUMP on the paper, percent. Negotiable with rent / TI / free
+   * months. Missing on old letters — treated as the market standard 2.5%.
+   */
+  bumpPct?: number;
   net: boolean;
   recovery?: "nnn" | "base" | "gross";
   expiresM: number;
@@ -181,21 +192,24 @@ export interface LOI {
   // is free does not count it as one.
   arrivedM?: number;
   countered?: boolean;
-  // The negotiation: you counter with rent, TI and free rent; they take it,
-  // walk, or counter back ONCE — and that one is final.
+  // The negotiation: you counter with rent, TI, free rent and the bump; they
+  // take it, walk, or counter back ONCE — and that one is final.
   stage?: "open" | "countered";
   counterRentPsf?: number;
   counterTiPsf?: number;
   counterFreeM?: number;
+  counterBumpPct?: number;
   tenantIdx?: number;  // renewals: index into holding.tenants
   // What YOU asked for, kept so the card can show the conversation rather than
   // silently overwriting the opening terms with the answer.
   askedRentPsf?: number;
   askedTiPsf?: number;
   askedFreeM?: number;
+  askedBumpPct?: number;
   openRentPsf?: number;   // their original number, before any of this
   openTiPsf?: number;
   openFreeM?: number;
+  openBumpPct?: number;
   /**
    * WHICH TOUR THIS PARTY IS ON.
    *
@@ -236,6 +250,8 @@ export interface LeaseReply {
   theirTiPsf: number;
   askedFreeM?: number;
   theirFreeM?: number;
+  askedBumpPct?: number;
+  theirBumpPct?: number;
   sf: number;
   marketPsf: number;
 }

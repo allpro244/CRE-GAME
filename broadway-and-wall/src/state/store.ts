@@ -7,7 +7,7 @@ import { monthLabel } from "@/engine/types";
 import { buyListing, buyOffMarket, submitBlindBid, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import {
-  respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, runLeasingAgent,
+  respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, workLeasingDesk,
   AGENT_FLOOR_MIN, AGENT_FLOOR_MAX, AGENT_PASS_MIN, AGENT_TI_MONTHS_MIN, AGENT_TI_MONTHS_MAX,
   AGENT_SIGNING_MONTHS_MIN, AGENT_SIGNING_MONTHS_MAX,
   agentFloor, agentPassBelow, type LOIAction,
@@ -739,9 +739,15 @@ export const useStore = create<AppState>((set, get) => ({
     if (!game || !parcels) return;
     const r = setBrokerAll(game, parcels, on);
     if (r.err) { toast(r.err, "err"); return; }
-    set({ game: r.s });
+    let next = r.s;
+    if (on && !next.agent) {
+      next = structuredClone(next);
+      workLeasingDesk(next, parcels);
+    }
+    set({ game: next });
     if (r.msg) toast(r.msg);
-    void persist(r.s);
+    else toast(on ? "Exclusives across the book." : "Exclusives ended.");
+    void persist(next);
   },
 
   opsPolicy: (v) => {
@@ -1087,9 +1093,16 @@ export const useStore = create<AppState>((set, get) => ({
     if (!game || !parcels) return;
     const r = setBroker(game, parcels, bbl, on);
     if (r.err) { toast(r.err, "err"); return; }
-    set({ game: r.s });
-    toast(on ? "Exclusive signed." : "Broker dismissed.");
-    void persist(r.s);
+    let next = r.s;
+    // Hiring clears live letters the same month — otherwise the exclusive is
+    // on the building and the popups still fire until the next tick.
+    if (on && !next.agent) {
+      next = structuredClone(next);
+      workLeasingDesk(next, parcels);
+    }
+    set({ game: next });
+    toast(on ? "Exclusive signed — they work that building quietly inside your mandate." : "Broker dismissed.");
+    void persist(next);
   },
 
   rateCap: (bbl) => {
@@ -1103,12 +1116,18 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setRenewalMgmt: (on) => {
-    const { game } = get();
+    const { game, parcels } = get();
     if (!game) return;
-    set({ game: { ...game, renewalMgmt: on } });
+    let next: GameState = { ...game, renewalMgmt: on };
+    if (on && parcels && !next.agent) {
+      next = structuredClone(next);
+      workLeasingDesk(next, parcels);
+    }
+    set({ game: next });
     toast(on
       ? "Management has the renewals. 2% of lease value on what they sign; new leases still come to you."
       : "You're handling your own renewals again.");
+    void persist(next);
   },
 
   openFacility: (bbls, productId, lev) => {
@@ -1202,15 +1221,16 @@ export const useStore = create<AppState>((set, get) => ({
     let next: GameState = { ...game, agent: on };
     if (on && parcels) {
       next = structuredClone(next);
-      runLeasingAgent(next, parcels);
+      workLeasingDesk(next, parcels);
       const referred = next.lois.filter((l) => l.referred).length;
+      const tally = next.deskMonth?.m === next.month ? next.deskMonth : null;
       toast(referred
-        ? `Your agent has the book — ${referred} letter${referred === 1 ? "" : "s"} referred back inside your mandate; the rest are signed or passed.`
-        : "Your agent has the book. They sign inside your mandate, refer the middle, pass the junk — 6% on what they sign.");
+        ? `Your agent has the book — ${referred} letter${referred === 1 ? "" : "s"} referred back; the rest are signed or passed. Routine LOIs no longer interrupt.`
+        : tally
+          ? `Your agent has the book — ${tally.signed} signed, ${tally.passed} passed this month. Routine LOIs no longer interrupt.`
+          : "Your agent has the book. They sign inside your mandate, counter the soft ones, pass the junk — 6% on what they sign. Routine LOIs no longer interrupt.");
     } else {
-      toast(on
-        ? "Your agent has the book. They sign inside your mandate, refer the middle, pass the junk — 6% on what they sign."
-        : "You're handling leasing yourself again.");
+      toast("You're handling leasing yourself again.");
     }
     set({ game: next });
     void persist(next);

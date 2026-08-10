@@ -6,6 +6,7 @@ import { currentCity, currentSeed } from "@/state/city";
 import { locLimit } from "@/engine/credit";
 import { netWorth } from "@/engine/value";
 import { portfolioMonthlyCF } from "@/engine/sim";
+import { loiNeedsPrincipal } from "@/engine/leasing";
 import { usd, pct } from "./format";
 import { liveBrokerCalls } from "./RightPanel";
 
@@ -90,9 +91,7 @@ export default function TopBar() {
     // Count every decision that actually lives on Deals. The badge used to
     // count only LOIs and single-building offers, so tenant relief, purchase
     // counters, contracts and portfolio bids could expire behind a clean tab.
-    const loisOnDesk = deferredGame.agent
-      ? deferredGame.lois.filter((l) => l.referred).length
-      : deferredGame.lois.length;
+    const loisOnDesk = deferredGame.lois.filter((l) => loiNeedsPrincipal(deferredGame, l)).length;
     const dealsCount = loisOnDesk
       + (deferredGame.asks?.length ?? 0)
       + Object.keys(deferredGame.talks ?? {}).length

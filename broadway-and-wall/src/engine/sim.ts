@@ -10,7 +10,7 @@ import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParc
 import { assetValue, holdingNOIYr, ownedHoldingValue, ownedMonthlyNoi, monthlyNOI, portfolioMark, operatingStatement, physicalOcc, resolveRec } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
-import { tickLeasing, depositsOn, stampListing, loiSigningCost, exclusiveFeeRate, agentCashReserve } from "./leasing";
+import { tickLeasing, depositsOn, stampListing, loiSigningCost, exclusiveFeeRate, agentCashReserve, loiNeedsPrincipal } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { tickTalks } from "./acquire";
 import { tickLoan, prepayPenalty, productById } from "./debt";
@@ -918,11 +918,11 @@ function checkMilestones(s: GameState, nw: number) {
 // Auto-advance stops when a NEW item appears on this list.
 export function attentionItems(s: GameState): { key: string; label: string }[] {
   const out: { key: string; label: string }[] = [];
-  // With an agent, only referred letters need the principal — the desk has
-  // already signed or killed the rest. Counting every LOI here is why Year/Skip
-  // kept stopping for paper the player had hired someone to handle.
+  // Only letters the principal still owns — firm agent, exclusive, staff desk
+  // or renewal management already worked the rest. Counting every LOI here is
+  // why Year/Skip kept stopping for paper somebody else was hired to handle.
   for (const l of s.lois) {
-    if (s.agent && !l.referred) continue;
+    if (!loiNeedsPrincipal(s, l)) continue;
     out.push({ key: `loi:${l.id}`, label: `LOI from ${l.name} — answer by ${monthLabel(l.expiresM)}` });
   }
   // Tenant-relief letters expire in three months and a lapse is a refusal.

@@ -3,6 +3,7 @@ import { useStore } from "@/state/store";
 import { monthLabel, START_CASH_CHOICES } from "@/engine/types";
 import { currentCity, currentSize, currentDev, currentCash0 } from "@/state/city";
 import { cityList, cityName, sizeList, developmentList } from "@/citygen/index.mjs";
+import { BUILD_STAMP } from "@/buildStamp";
 import { usd } from "./format";
 
 /**
@@ -227,6 +228,7 @@ export default function StartMenu() {
           <span className="start-foot-note">
             {usd(cash0)} and no holdings. The town is generated when you press this.
             {resume ? " Named saves stay on the Saves page." : ""}
+            {" · "}build {BUILD_STAMP.commit} · office base ${BUILD_STAMP.rentBaseOffice}
           </span>
         </div>
         <button

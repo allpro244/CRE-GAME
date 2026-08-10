@@ -1,5 +1,6 @@
-// The game's chrome: a parcel card on the map, and firm desks docked beside
-// the city — rooms you work in without burying New Alden under a wash.
+// The game's chrome: a glance card on the map, and firm desks as big rooms.
+// Detail pages are parchment sheets sized for underwriting — not a narrow
+// right-hand column that crams a rent roll into six hundred pixels.
 import { useEffect } from "react";
 import { useStore } from "@/state/store";
 import StaffPage from "@/ui/StaffPage";
@@ -30,7 +31,6 @@ export default function GamePanels() {
   const hasGame = useStore((s) => !!s.game);
   const page = useStore((s) => s.page);
   const setPage = useStore((s) => s.setPage);
-  const selectedBBL = useStore((s) => s.selectedBBL);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
@@ -100,14 +100,20 @@ export default function GamePanels() {
     : page === "settings" ? "Display, interruption and simulation controls."
     : page === "primer" ? "The quantities this game expects you to reason with."
     : "On-market listings, off-market calls and motivated sellers.";
-  // Map stays the workplace. Firm desks dock beside the city; the parcel card
-  // yields while a desk is open so two right-hand sheets do not fight.
+  // The map card is a glance. Firm desks open as rooms (~1100px parchment)
+  // so a rent roll, deal stage or debt book is readable — the narrow right
+  // dock from the map-first pass was too small for that work.
   return (
     <>
       <YearRail />
       {page === "none" && <ParcelPanel />}
       {page !== "none" && (
-        <div className={"page-dock" + (page === "property" && selectedBBL ? " page-dock-wide" : "")}>
+        <div
+          className="page-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setPage("none");
+          }}
+        >
           <div className={`page page-${page}`}>
             <div className="page-head">
               <div className="page-heading">

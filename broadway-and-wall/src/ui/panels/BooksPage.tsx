@@ -1,10 +1,14 @@
 import { useMemo, useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel, START_YEAR } from "@/engine/types";
+import type { BooksYear } from "@/engine/types";
 import { MILESTONES } from "@/engine/sim";
 import { depositsHeld } from "@/engine/leasing";
-import { collateralAsIs, ownedHoldingValue, netWorth, resolveRec } from "@/engine/value";
-import { locLimit, locRate } from "@/engine/credit";
+import { ownedHoldingValue, resolveRec } from "@/engine/value";
+import {
+  balanceSnapshotView, buildBalanceSheet, booksMonthAsYear,
+  type BalanceSheetView,
+} from "@/engine/books";
 import { taxAppealQuote } from "@/engine/tax";
 import { compFlows } from "@/engine/comps";
 import { usd, pct } from "@/ui/format";
@@ -232,125 +236,68 @@ function Row({ k, v, sub, strong, rule, note, bad }: {
  *
  * Built from the same `netWorth` / `holdingValue` the rest of the engine reads,
  * so the Books page cannot disagree with the TopBar or the lender's sizing.
+ * December of each year is frozen so you can reopen last year's close.
  */
 function BalanceSheet() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const focus = useStore((s) => s.focus);
+  const history = game.balanceHistory ?? [];
+  // Prior calendar year only — the December you just closed while still in
+  // that December is "today", not last year.
+  const curYr = Math.floor(game.month / 12);
+  const lastYear = [...history].reverse().find((b) => Math.floor(b.m / 12) < curYr) ?? null;
+  const [view, setView] = useState<"today" | "yearEnd">("today");
 
-  const sheet = useMemo(() => {
-    let propGross = 0, mortgages = 0, landOnly = 0, bldgCount = 0, landCount = 0;
-    const byClass: Record<string, { n: number; gross: number; debt: number }> = {};
-    for (const h of Object.values(game.holdings)) {
-      const rec = resolveRec(parcels, game, h.bbl);
-      if (!rec) continue;
-      const v = ownedHoldingValue(game, parcels, h);
-      const debt = h.loan?.balance ?? 0;
-      propGross += v;
-      mortgages += debt;
-      const cls = rec.class === "land" || !(rec.floors > 0) ? "land" : (rec.class ?? "other");
-      if (cls === "land") { landOnly += v; landCount++; }
-      else { bldgCount++; }
-      if (!byClass[cls]) byClass[cls] = { n: 0, gross: 0, debt: 0 };
-      byClass[cls].n++;
-      byClass[cls].gross += v;
-      byClass[cls].debt += debt;
-    }
-
-    let cip = 0, cipDebt = 0, cipN = 0;
-    for (const d of Object.values(game.developments ?? {})) {
-      const sunk = (d.equitySpent ?? 0) + (d.drawn ?? 0) - (d.reserveUsed ?? 0);
-      cip += Math.max(0, sunk);
-      cipDebt += d.loanBalance ?? 0;
-      cipN++;
-    }
-
-    let notesVal = 0;
-    for (const n of game.notes ?? []) {
-      if (n.perf === "performing") { notesVal += n.basis; continue; }
-      const rec = resolveRec(parcels, game, n.bbl);
-      if (!rec) continue;
-      const r = game.rivals?.find((x) => x.id === n.obligorId);
-      notesVal += Math.min(n.basis, Math.round(collateralAsIs(rec, game.econ, r?.occ ?? 0.5)));
-    }
-
-    const deposits = depositsHeld(game);
-    const locBal = game.loc?.balance ?? 0;
-    const locLim = locLimit(game, parcels);
-    const facility = game.facility?.balance ?? 0;
-    const cash = game.cash;
-    // Operating cash for the sheet: deposits are a liability against cash.
-    const cashOwn = cash; // deposits are still in cash; liability line nets them
-    const totalAssets = cashOwn + propGross + Math.max(0, cip - 0) + notesVal;
-    // CIP shown gross; construction loan is a liability (cipDebt may already
-    // be inside developments — netWorth nets sunk - loanBalance).
-    const totalLiab = mortgages + cipDebt + facility + locBal + deposits;
-    const equity = totalAssets - totalLiab;
-    const nwEngine = netWorth(game, parcels);
-
-    return {
-      cash, deposits, propGross, mortgages, landOnly, bldgCount, landCount,
-      byClass, cip, cipDebt, cipN, notesVal, noteCount: (game.notes ?? []).length,
-      locBal, locLim, facility, totalAssets, totalLiab, equity, nwEngine,
-      rate: locRate(game),
-    };
-  }, [game, parcels]);
-
+  const live = useMemo(() => buildBalanceSheet(game, parcels), [game, parcels]);
+  const sheet: BalanceSheetView = view === "yearEnd" && lastYear
+    ? balanceSnapshotView(lastYear)
+    : live;
   const holdings = Object.values(game.holdings);
+  const showingHistory = sheet.historical;
 
   return (
     <div>
       <div className="page-section">
-        <div className="page-section-head">Balance sheet · {monthLabel(game.month)}</div>
-        <div className="hint">
-          Assets at the same values the TopBar, the lender and the desk use — not a second set of books.
-          Engine net worth is {usd(sheet.nwEngine)}; the equity line below is assets minus liabilities from the same marks.
+        <div className="page-section-head">
+          Balance sheet · {showingHistory ? `year-end ${monthLabel(sheet.m)}` : monthLabel(game.month)}
         </div>
-        <table className="tbl tbl-stmt">
-          <thead>
-            <tr><th>Assets</th><th className="num">Amount</th></tr>
-          </thead>
-          <tbody>
-            <Row k="Cash" v={sheet.cash} note={sheet.cash < 0 ? "overdrawn — the line should have covered this" : "operating account"} bad={sheet.cash < 0} />
-            <Row k="Real estate — gross value" v={sheet.propGross} note={`${sheet.bldgCount} building${sheet.bldgCount === 1 ? "" : "s"}, ${sheet.landCount} land parcel${sheet.landCount === 1 ? "" : "s"}`} />
-            {Object.entries(sheet.byClass).sort((a, b) => b[1].gross - a[1].gross).map(([cls, x]) => (
-              <Row key={cls} k={cls === "land" ? " Land / sites" : ` ${cls}`} v={x.gross} sub note={`${x.n} deed${x.n === 1 ? "" : "s"} · ${usd(x.debt)} mortgaged`} />
-            ))}
-            {sheet.cipN > 0 && (
-              <Row k="Construction in progress" v={sheet.cip} note={`${sheet.cipN} job${sheet.cipN === 1 ? "" : "s"} — money sunk, not the full budget`} />
-            )}
-            {sheet.noteCount > 0 && (
-              <Row k="Notes receivable" v={sheet.notesVal} note={`${sheet.noteCount} note${sheet.noteCount === 1 ? "" : "s"} · lower of cost and collateral`} />
-            )}
-            <Row k="Total assets" v={sheet.totalAssets} strong rule />
-          </tbody>
-        </table>
-        <table className="tbl tbl-stmt" style={{ marginTop: 16 }}>
-          <thead>
-            <tr><th>Liabilities</th><th className="num">Amount</th></tr>
-          </thead>
-          <tbody>
-            <Row k="Mortgages" v={sheet.mortgages} note="secured by individual deeds" bad={sheet.mortgages > sheet.propGross * 0.85} />
-            {sheet.cipDebt > 0 && <Row k="Construction loans" v={sheet.cipDebt} sub />}
-            {sheet.facility > 0 && <Row k="Cross-collateral facility" v={sheet.facility} note="one loan, many deeds" bad />}
-            <Row k="Line of credit drawn" v={sheet.locBal} note={`limit ${usd(sheet.locLim)} · ${pct(sheet.rate)}`} bad={sheet.locBal > 0} />
-            {sheet.deposits > 0 && (
-              <Row k="Tenant deposits held" v={sheet.deposits} note="not yours — due when they leave" />
-            )}
-            <Row k="Total liabilities" v={sheet.totalLiab} strong rule />
-            <Row k="Equity (assets − liabilities)" v={sheet.equity} strong rule bad={sheet.equity < 0} />
-          </tbody>
-        </table>
+        <div className="btn-row" style={{ marginBottom: 10 }}>
+          <button
+            type="button"
+            className={"btn btn-sm" + (view === "today" ? " btn-on" : "")}
+            onClick={() => setView("today")}
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            className={"btn btn-sm" + (view === "yearEnd" ? " btn-on" : "")}
+            disabled={!lastYear}
+            title={lastYear
+              ? `Frozen marks from ${monthLabel(lastYear.m)}`
+              : "Closes every December — advance through your first year-end to unlock."}
+            onClick={() => lastYear && setView("yearEnd")}
+          >
+            {lastYear ? `Last year-end · ${monthLabel(lastYear.m)}` : "Last year-end"}
+          </button>
+        </div>
+        <div className="hint">
+          {showingHistory
+            ? `A December close — the same marks the TopBar used that month, frozen. Holdings detail below is today's book; only the summary sheet travels with the year-end stamp.`
+            : `Assets at the same values the TopBar, the lender and the desk use — not a second set of books. Engine net worth is ${usd(sheet.nwEngine)}; the equity line below is assets minus liabilities from the same marks.`}
+        </div>
+        <BalanceSheetTables sheet={sheet} />
         {sheet.propGross > 0 && (
           <div className="hint">
             Loan-to-value on the real-estate book: {((sheet.mortgages / sheet.propGross) * 100).toFixed(0)}%
             {sheet.locBal > 0 ? ` · Line is ${((sheet.locBal / Math.max(1, sheet.locLim)) * 100).toFixed(0)}% drawn` : ""}.
-            {" "}Draw and repay the line on Debt.
+            {!showingHistory && " Draw and repay the line on Debt."}
           </div>
         )}
       </div>
 
-      {sheet.cipN > 0 && (
+      {!showingHistory && sheet.cipN > 0 && (
         <div className="page-section">
           <div className="page-section-head">Construction in progress · {sheet.cipN} job{sheet.cipN === 1 ? "" : "s"}</div>
           <div style={{ overflowX: "auto" }}>
@@ -388,49 +335,93 @@ function BalanceSheet() {
         </div>
       )}
 
-      <div className="page-section">
-        <div className="page-section-head">Holdings detail · {holdings.length} deed{holdings.length === 1 ? "" : "s"}</div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Address</th>
-                <th>Class</th>
-                <th className="num">Value</th>
-                <th className="num">Debt</th>
-                <th className="num">Equity</th>
-                <th className="num">LTV</th>
-                <th className="num">Basis</th>
-              </tr>
-            </thead>
-            <tbody>
-              {holdings.map((h) => {
-                const rec = resolveRec(parcels, game, h.bbl);
-                if (!rec) return null;
-                const v = ownedHoldingValue(game, parcels, h);
-                const debt = h.loan?.balance ?? 0;
-                const eq = v - debt;
-                const ltv = v > 0 ? debt / v : 0;
-                return (
-                  <tr key={h.bbl} style={{ cursor: "pointer" }} onClick={() => focus(h.bbl, true)}>
-                    <td>{rec.address ?? h.bbl}</td>
-                    <td className="dim">{rec.class}</td>
-                    <td className="num">{usd(v)}</td>
-                    <td className="num">{debt ? usd(debt) : "—"}</td>
-                    <td className={"num" + (eq < 0 ? " neg" : "")}>{usd(eq)}</td>
-                    <td className={"num" + (ltv > 0.75 ? " neg" : "")}>{debt ? (ltv * 100).toFixed(0) + "%" : "—"}</td>
-                    <td className="num dim">{usd(h.costBasis ?? 0)}</td>
-                  </tr>
-                );
-              })}
-              {!holdings.length && (
-                <tr><td colSpan={7} className="dim">No deeds yet — the balance sheet is cash and whatever the line says.</td></tr>
-              )}
-            </tbody>
-          </table>
+      {!showingHistory && (
+        <div className="page-section">
+          <div className="page-section-head">Holdings detail · {holdings.length} deed{holdings.length === 1 ? "" : "s"}</div>
+          <div style={{ overflowX: "auto" }}>
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Address</th>
+                  <th>Class</th>
+                  <th className="num">Value</th>
+                  <th className="num">Debt</th>
+                  <th className="num">Equity</th>
+                  <th className="num">LTV</th>
+                  <th className="num">Basis</th>
+                </tr>
+              </thead>
+              <tbody>
+                {holdings.map((h) => {
+                  const rec = resolveRec(parcels, game, h.bbl);
+                  if (!rec) return null;
+                  const v = ownedHoldingValue(game, parcels, h);
+                  const debt = h.loan?.balance ?? 0;
+                  const eq = v - debt;
+                  const ltv = v > 0 ? debt / v : 0;
+                  return (
+                    <tr key={h.bbl} style={{ cursor: "pointer" }} onClick={() => focus(h.bbl, true)}>
+                      <td>{rec.address ?? h.bbl}</td>
+                      <td className="dim">{rec.class}</td>
+                      <td className="num">{usd(v)}</td>
+                      <td className="num">{debt ? usd(debt) : "—"}</td>
+                      <td className={"num" + (eq < 0 ? " neg" : "")}>{usd(eq)}</td>
+                      <td className={"num" + (ltv > 0.75 ? " neg" : "")}>{debt ? (ltv * 100).toFixed(0) + "%" : "—"}</td>
+                      <td className="num dim">{usd(h.costBasis ?? 0)}</td>
+                    </tr>
+                  );
+                })}
+                {!holdings.length && (
+                  <tr><td colSpan={7} className="dim">No deeds yet — the balance sheet is cash and whatever the line says.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
     </div>
+  );
+}
+
+function BalanceSheetTables({ sheet }: { sheet: BalanceSheetView }) {
+  return (
+    <>
+      <table className="tbl tbl-stmt">
+        <thead>
+          <tr><th>Assets</th><th className="num">Amount</th></tr>
+        </thead>
+        <tbody>
+          <Row k="Cash" v={sheet.cash} note={sheet.cash < 0 ? "overdrawn — the line should have covered this" : "operating account"} bad={sheet.cash < 0} />
+          <Row k="Real estate — gross value" v={sheet.propGross} note={`${sheet.bldgCount} building${sheet.bldgCount === 1 ? "" : "s"}, ${sheet.landCount} land parcel${sheet.landCount === 1 ? "" : "s"}`} />
+          {Object.entries(sheet.byClass).sort((a, b) => b[1].gross - a[1].gross).map(([cls, x]) => (
+            <Row key={cls} k={cls === "land" ? " Land / sites" : ` ${cls}`} v={x.gross} sub note={`${x.n} deed${x.n === 1 ? "" : "s"} · ${usd(x.debt)} mortgaged`} />
+          ))}
+          {sheet.cipN > 0 && (
+            <Row k="Construction in progress" v={sheet.cip} note={`${sheet.cipN} job${sheet.cipN === 1 ? "" : "s"} — money sunk, not the full budget`} />
+          )}
+          {sheet.noteCount > 0 && (
+            <Row k="Notes receivable" v={sheet.notesVal} note={`${sheet.noteCount} note${sheet.noteCount === 1 ? "" : "s"} · lower of cost and collateral`} />
+          )}
+          <Row k="Total assets" v={sheet.totalAssets} strong rule />
+        </tbody>
+      </table>
+      <table className="tbl tbl-stmt" style={{ marginTop: 16 }}>
+        <thead>
+          <tr><th>Liabilities</th><th className="num">Amount</th></tr>
+        </thead>
+        <tbody>
+          <Row k="Mortgages" v={sheet.mortgages} note="secured by individual deeds" bad={sheet.mortgages > sheet.propGross * 0.85} />
+          {sheet.cipDebt > 0 && <Row k="Construction loans" v={sheet.cipDebt} sub />}
+          {sheet.facility > 0 && <Row k="Cross-collateral facility" v={sheet.facility} note="one loan, many deeds" bad />}
+          <Row k="Line of credit drawn" v={sheet.locBal} note={`limit ${usd(sheet.locLim)} · ${pct(sheet.rate)}`} bad={sheet.locBal > 0} />
+          {sheet.deposits > 0 && (
+            <Row k="Tenant deposits held" v={sheet.deposits} note="not yours — due when they leave" />
+          )}
+          <Row k="Total liabilities" v={sheet.totalLiab} strong rule />
+          <Row k="Equity (assets − liabilities)" v={sheet.equity} strong rule bad={sheet.equity < 0} />
+        </tbody>
+      </table>
+    </>
   );
 }
 
@@ -487,12 +478,19 @@ function IncomeStatementTab() {
  * columns wide, operating flows sitting next to investing flows, no subtotals,
  * and no way to answer the two questions anybody actually asks — did the
  * BUILDINGS make money this year, and did the FIRM?
+ *
+ * Period toggle: yearly is the firm year; monthly is the same buckets for one
+ * month, so a loud December does not hide inside a quiet year.
  */
 export function IncomeStatement() {
   const game = useStore((s) => s.game)!;
   const books = game.books ?? [];
+  const months = game.booksMonthly ?? [];
+  const [period, setPeriod] = useState<"year" | "month">("year");
   const [yr, setYr] = useState<number | null>(null);
-  if (!books.length) {
+  const [mo, setMo] = useState<number | null>(null);
+
+  if (!books.length && !months.length) {
     return (
       <div className="page-section">
         <div className="page-section-head">Income statement</div>
@@ -500,15 +498,38 @@ export function IncomeStatement() {
       </div>
     );
   }
-  const cur = books.find((b) => b.yr === yr) ?? books[books.length - 1];
-  const prior = books.find((b) => b.yr === cur.yr - 1);
-  const partial = cur.yr === Math.floor(game.month / 12) && game.month % 12 !== 0;
-  const monthsIn = partial ? game.month % 12 : 12;
 
-  const opCf = (b: typeof cur) => b.noi - b.leasing - b.capex - b.ga;
-  const afterDebt = (b: typeof cur) => opCf(b) - b.debtSvc + (b.interest ?? 0) + (b.borrowed ?? 0);
-  const investing = (b: typeof cur) => b.sold - b.bought - b.dev;
-  const bottom = (b: typeof cur) => afterDebt(b) + investing(b) - b.taxes;
+  const yearCur = books.find((b) => b.yr === yr) ?? books[books.length - 1];
+  const yearPrior = yearCur ? books.find((b) => b.yr === yearCur.yr - 1) : undefined;
+  const monthCur = months.find((b) => b.m === mo) ?? months[months.length - 1];
+  // Prior month may have aged out of the keep window — fine; the vs column blanks.
+  const priorMonth = monthCur
+    ? [...months].reverse().find((b) => b.m < monthCur.m)
+    : undefined;
+
+  const usingMonth = period === "month" && !!monthCur;
+  const cur: BooksYear | undefined = usingMonth
+    ? booksMonthAsYear(monthCur)
+    : yearCur;
+  const prior: BooksYear | undefined = usingMonth
+    ? (priorMonth ? booksMonthAsYear(priorMonth) : undefined)
+    : yearPrior;
+  const partial = !usingMonth && !!yearCur
+    && yearCur.yr === Math.floor(game.month / 12) && game.month % 12 !== 0;
+  const monthsIn = partial ? game.month % 12 : 12;
+  const headLabel = usingMonth && monthCur
+    ? monthLabel(monthCur.m)
+    : yearCur
+      ? `${START_YEAR + yearCur.yr}${partial ? ` · ${monthsIn} month${monthsIn === 1 ? "" : "s"} in, not a full year` : ""}`
+      : "—";
+  const vsLabel = usingMonth
+    ? (priorMonth ? monthLabel(priorMonth.m) : "—")
+    : (yearPrior ? String(START_YEAR + yearPrior.yr) : "—");
+
+  const opCf = (b: BooksYear) => b.noi - b.leasing - b.capex - b.ga;
+  const afterDebt = (b: BooksYear) => opCf(b) - b.debtSvc + (b.interest ?? 0) + (b.borrowed ?? 0);
+  const investing = (b: BooksYear) => b.sold - b.bought - b.dev;
+  const bottom = (b: BooksYear) => afterDebt(b) + investing(b) - b.taxes;
 
   const L = ({ k, v, sub, strong, rule, note }: {
     k: string; v: number; sub?: boolean; strong?: boolean; rule?: boolean; note?: string;
@@ -540,58 +561,95 @@ export function IncomeStatement() {
     </tr>
   );
 
+  const recentMonths = months.slice(-12);
+
   return (
     <div className="page-section">
-      <div className="page-section-head">
-        Income statement · {START_YEAR + cur.yr}{partial && ` · ${monthsIn} month${monthsIn === 1 ? "" : "s"} in, not a full year`}
+      <div className="page-section-head">Income statement · {headLabel}</div>
+      <div className="btn-row" style={{ marginBottom: 10 }}>
+        <button
+          type="button"
+          className={"btn btn-sm" + (period === "year" ? " btn-on" : "")}
+          onClick={() => setPeriod("year")}
+        >
+          Yearly
+        </button>
+        <button
+          type="button"
+          className={"btn btn-sm" + (period === "month" ? " btn-on" : "")}
+          disabled={!months.length}
+          title={months.length ? "Same buckets, one month at a time" : "Advance a month to open the monthly ledger"}
+          onClick={() => months.length && setPeriod("month")}
+        >
+          Monthly
+        </button>
       </div>
       <div className="hint">
         The buildings and the firm are two different businesses. Everything above <em>property cash flow</em> is
-        what the portfolio produced; everything below it is what you did with the money. A year with a terrible
-        bottom line and a strong property line is a year you spent building — which is the good kind of terrible.
+        what the portfolio produced; everything below it is what you did with the money.
+        {usingMonth
+          ? " This is one month's cash movement — not a twelfth of the year."
+          : " A year with a terrible bottom line and a strong property line is a year you spent building — which is the good kind of terrible."}
       </div>
       <div className="btn-row">
-        {books.slice(-8).map((b) => (
-          <button key={b.yr} className={"btn btn-sm" + (b.yr === cur.yr ? " btn-on" : "")} onClick={() => setYr(b.yr)}>
-            {START_YEAR + b.yr}
-          </button>
-        ))}
+        {period === "year"
+          ? books.slice(-8).map((b) => (
+            <button key={b.yr} className={"btn btn-sm" + (yearCur && b.yr === yearCur.yr ? " btn-on" : "")} onClick={() => setYr(b.yr)}>
+              {START_YEAR + b.yr}
+            </button>
+          ))
+          : recentMonths.map((b) => (
+            <button
+              key={b.m}
+              className={"btn btn-sm" + (monthCur && b.m === monthCur.m ? " btn-on" : "")}
+              onClick={() => setMo(b.m)}
+            >
+              {monthLabel(b.m)}
+            </button>
+          ))}
       </div>
-      <table className="tbl tbl-stmt">
-        <thead>
-          <tr><th>{START_YEAR + cur.yr}</th><th className="num">Amount</th><th className="num">vs {prior ? START_YEAR - 1 + cur.yr : "—"}</th></tr>
-        </thead>
-        <tbody>
-          <L k="Net operating income" v={cur.noi} note="rent collected, less operating costs and property tax" />
-          <L k="Leasing costs" v={-cur.leasing} sub note="fit-out and commissions" />
-          <L k="Capital expenditure" v={-cur.capex} sub note="roofs, systems, make-ready" />
-          <L k="Firm overhead" v={-cur.ga} sub note="asset management, accounting, legal" />
-          <L k="Property cash flow" v={opCf(cur)} strong rule />
-          <L k="Debt service" v={-cur.debtSvc} sub note="interest, amortisation, fees, voluntary paydowns" />
-          <L k="Interest on cash" v={cur.interest ?? 0} sub note="1.0% on idle balances" />
-          <L k="Debt drawn" v={cur.borrowed ?? 0} sub note="cash-out refinance and facility draws" />
-          <L k="Cash flow after debt" v={afterDebt(cur)} strong rule />
-          <L k="Development" v={-cur.dev} sub note="equity into the ground, construction carry, overruns" />
-          <L k="Acquisitions" v={-cur.bought} sub note="equity out the door at closing" />
-          <L k="Disposition proceeds" v={cur.sold} sub note="net of loan payoff and penalties" />
-          <L k="Taxes" v={-cur.taxes} sub note="income and capital gains" />
-          <L k="Change in cash" v={bottom(cur)} strong rule />
-        </tbody>
-      </table>
-      <div className="hint">
-        {(() => {
-          const p = opCf(cur), a = afterDebt(cur), b = bottom(cur);
-          const cover = cur.debtSvc > 0 ? (cur.noi / cur.debtSvc) : null;
-          const parts: string[] = [];
-          if (p <= 0) parts.push("The portfolio did not cover its own operating costs this year — before a dollar of debt service. That is an occupancy problem or an expense problem, and neither is fixed by borrowing.");
-          else if (a < 0 && p > 0) parts.push("The buildings made money and the debt took more than they made. Every month of this comes out of cash or out of the line.");
-          else if (a > 0) parts.push(`The portfolio covered its debt with ${usd(a)} to spare.`);
-          if (cover !== null) parts.push(`Portfolio coverage ran ${cover.toFixed(2)}× — NOI over debt service, across everything you own.`);
-          if (cur.dev > 0 && b < 0 && a > 0) parts.push(`Cash fell because ${usd(cur.dev)} went into construction. That is not a loss; it is a building that is not finished.`);
-          if (cur.taxes > 0 && cur.sold > 0) parts.push(`${usd(cur.taxes)} of tax against ${usd(cur.sold)} of disposals — the price of selling rather than exchanging.`);
-          return parts.join(" ");
-        })()}
-      </div>
+      {!cur ? (
+        <div className="hint">Nothing on the books for this period yet.</div>
+      ) : (
+        <>
+          <table className="tbl tbl-stmt">
+            <thead>
+              <tr><th>{headLabel}</th><th className="num">Amount</th><th className="num">vs {vsLabel}</th></tr>
+            </thead>
+            <tbody>
+              <L k="Net operating income" v={cur.noi} note="rent collected, less operating costs and property tax" />
+              <L k="Leasing costs" v={-cur.leasing} sub note="fit-out and commissions" />
+              <L k="Capital expenditure" v={-cur.capex} sub note="roofs, systems, make-ready" />
+              <L k="Firm overhead" v={-cur.ga} sub note="asset management, accounting, legal" />
+              <L k="Property cash flow" v={opCf(cur)} strong rule />
+              <L k="Debt service" v={-cur.debtSvc} sub note="interest, amortisation, fees, voluntary paydowns" />
+              <L k="Interest on cash" v={cur.interest ?? 0} sub note="1.0% on idle balances" />
+              <L k="Debt drawn" v={cur.borrowed ?? 0} sub note="cash-out refinance and facility draws" />
+              <L k="Cash flow after debt" v={afterDebt(cur)} strong rule />
+              <L k="Development" v={-cur.dev} sub note="equity into the ground, construction carry, overruns" />
+              <L k="Acquisitions" v={-cur.bought} sub note="equity out the door at closing" />
+              <L k="Disposition proceeds" v={cur.sold} sub note="net of loan payoff and penalties" />
+              <L k="Taxes" v={-cur.taxes} sub note="income and capital gains" />
+              <L k="Change in cash" v={bottom(cur)} strong rule />
+            </tbody>
+          </table>
+          <div className="hint">
+            {(() => {
+              const p = opCf(cur), a = afterDebt(cur), b = bottom(cur);
+              const cover = cur.debtSvc > 0 ? (cur.noi / cur.debtSvc) : null;
+              const span = usingMonth ? "this month" : "this year";
+              const parts: string[] = [];
+              if (p <= 0) parts.push(`The portfolio did not cover its own operating costs ${span} — before a dollar of debt service. That is an occupancy problem or an expense problem, and neither is fixed by borrowing.`);
+              else if (a < 0 && p > 0) parts.push("The buildings made money and the debt took more than they made. Every month of this comes out of cash or out of the line.");
+              else if (a > 0) parts.push(`The portfolio covered its debt with ${usd(a)} to spare.`);
+              if (cover !== null) parts.push(`Portfolio coverage ran ${cover.toFixed(2)}× — NOI over debt service, across everything you own.`);
+              if (cur.dev > 0 && b < 0 && a > 0) parts.push(`Cash fell because ${usd(cur.dev)} went into construction. That is not a loss; it is a building that is not finished.`);
+              if (cur.taxes > 0 && cur.sold > 0) parts.push(`${usd(cur.taxes)} of tax against ${usd(cur.sold)} of disposals — the price of selling rather than exchanging.`);
+              return parts.join(" ");
+            })()}
+          </div>
+        </>
+      )}
     </div>
   );
 }

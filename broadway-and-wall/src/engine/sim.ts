@@ -20,6 +20,7 @@ import { tickFacility } from "./facility";
 import { tickHolders } from "./owners";
 import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing } from "./dev";
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
+import { maybeStampYearEndBalance } from "./books";
 import { tickDemand } from "./demand";
 import { initRivals, tickRivals, gradeOf } from "./rivals";
 import { initLenders, tickLenders, chargeLenderLoss } from "./lenders";
@@ -785,6 +786,9 @@ function tickMonth(
   const { nw, gav } = portfolioMark(s, parcels);
   s.prevGav = Math.round(gav);
   s.nwHistory.push(Math.round(nw));
+  // DECEMBER CLOSE. The live sheet is always "today"; this freezes the same
+  // marks at year-end so Books can reopen last December without a second model.
+  maybeStampYearEndBalance(s, parcels);
   checkMilestones(s, nw);
 
   // THE QUIET DESK — how long since anybody was at the door.

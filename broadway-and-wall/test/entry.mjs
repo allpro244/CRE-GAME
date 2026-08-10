@@ -25,6 +25,9 @@ export const MODULES = [
   // cannot ask what a hire is worth and has to re-derive the band — the exact
   // drift this file exists to prevent.
   "staff",
+  // books carries the balance-sheet stamp and month→year view helpers the
+  // Books page uses for monthly income and last year's close.
+  "books",
   // facility carries the portfolio loan: the quote, the pool score, the release
   // price and the tick. A harness that cannot reach it cannot test the one
   // instrument in the game that can take the whole book at once.

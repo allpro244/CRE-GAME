@@ -144,10 +144,11 @@ interface AppState {
   setFpsOn: (v: boolean) => void;
   /**
    * PREFER SMOOTHER FRAMES ON WEAK GPUS.
-   * Caps pixel density a notch further, drops scene MSAA from 4× to 2×, and
-   * lets the renderer reuse the harbour reflection a frame more often. The
-   * skyline, facades, economy and depth of the sim are untouched — this is a
-   * fill-rate dial, not a graphics preset. UI preference, not save state.
+   * Off by default: a capable machine keeps native pixel density and 4× MSAA,
+   * same as before this dial existed. On, it caps DPR, drops MSAA to 2×, and
+   * reuses the harbour reflection a frame more often. Skyline, facades,
+   * economy and sim depth are untouched — fill-rate only. UI preference, not
+   * save state.
    */
   preferFps: boolean;
   setPreferFps: (v: boolean) => void;

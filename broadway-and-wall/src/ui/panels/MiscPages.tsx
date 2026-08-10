@@ -157,10 +157,10 @@ export function SettingsPage() {
         on={preferFps}
         set={setPreferFps}
         label="Prefer smoother frames"
-        detail={"For machines without a discrete GPU. Keeps the same city and the same look — "
-          + "facades, occupancy, weather, water — and spends less fill rate on pixel density and "
-          + "multisampling so the map stays nearer sixty frames. Off by default on a capable machine; "
-          + "turn it on if the camera feels sticky."}
+        detail={"For machines without a discrete GPU. Off by default — a fast machine keeps native "
+          + "sharpness and the full photograph. On, it spends less fill rate on pixel density and "
+          + "multisampling so the map stays nearer sixty frames. Facades, occupancy, weather and "
+          + "the sim are unchanged either way."}
       />
       <Toggle
         on={!game.auctionQuiet}

@@ -237,10 +237,9 @@ export default function MapView() {
       // Only the width was ever read, and the height was assumed to be the
       // width — see fitZoom.
       const shot = framesOf(frame, el.current.clientWidth || 1280, el.current.clientHeight || 800);
-      // Cap device pixel ratio. Retina at 2×–3× multiplies every post pass
-      // (scene, bloom, AO, composite) by four to nine with almost nothing the
-      // eye can credit at this art scale — FXAA already softens shader grids.
-      // Prefer-FPS tightens the cap further; both leave High-looking stills.
+      // Native pixel density by default — a capable machine keeps the same
+      // sharpness it had before. Prefer-FPS is the only path that caps DPR,
+      // and only when the player asks for it on a weak GPU.
       const dpr = typeof window !== "undefined" ? (window.devicePixelRatio || 1) : 1;
       const preferFps = useStore.getState().preferFps;
       const map = new maplibregl.Map({
@@ -251,7 +250,7 @@ export default function MapView() {
         maxPitch: 70,
         attributionControl: { compact: true },
         canvasContextAttributes: { antialias: true },
-        pixelRatio: Math.min(dpr, preferFps ? 1.25 : 1.5),
+        pixelRatio: preferFps ? Math.min(dpr, 1.25) : dpr,
       });
       mapRef.current = map;
       // handle for automated playtests and screenshots

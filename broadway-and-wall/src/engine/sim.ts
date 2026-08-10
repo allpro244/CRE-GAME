@@ -1071,6 +1071,26 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
   for (const o of s.noteOffers ?? []) {
     out.push({ key: `note:${o.id}`, label: `${o.lender} is selling the ${o.address} loan — ${(100 * o.askPct).toFixed(0)} cents` });
   }
+  // Receiver books and fund wind-downs — buyable on Marketplace. Without this
+  // Skip runs past the best buying window in the game while rivals clear them.
+  for (const p of s.portfolios ?? []) {
+    if (p.player) continue;
+    const who = p.sellerLender ?? "A seller";
+    const disc = p.gross > 0 ? ((1 - p.ask / p.gross) * 100).toFixed(0) : "0";
+    out.push({
+      key: `street-book:${p.id}`,
+      label: p.reo
+        ? `${who} has ${p.bbls.length} buildings in receivership at $${(p.ask / 1e6).toFixed(1)}M (${disc}% back) — Marketplace`
+        : `${p.bbls.length}-building package at $${(p.ask / 1e6).toFixed(1)}M on Marketplace`,
+    });
+  }
+  // The July docket is live for one month — miss it and the lots are gone.
+  if (s.auction && s.month < s.auction.m) {
+    out.push({
+      key: `auction:${s.auction.m}`,
+      label: `County foreclosure docket — ${s.auction.lots.length} lot${s.auction.lots.length === 1 ? "" : "s"}, hammer ${monthLabel(s.auction.m)}`,
+    });
+  }
   // A note tells you it has stopped paying ONCE. The key carries the month it
   // told you, so it can never stop the clock a second time.
   for (const n of s.notes ?? []) {

@@ -216,6 +216,7 @@ export function MarketPage() {
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   // null = follow the docket (open when one is live), true/false = you decided.
   const [distressOpen, setDistressOpen] = useState<boolean | null>(null);
+  const [expandedBook, setExpandedBook] = useState<string | null>(null);
   // YOUR OWN SIGN IN THE WINDOW. A building you have listed is for sale in the
   // same town, on the same tape, and leaving it off meant the one screen that
   // answers "what is on the market" was answering it incompletely — and you
@@ -226,11 +227,18 @@ export function MarketPage() {
   const live = game.listings.length + mine.length;
   const distress = game.listings.filter((l) => l.distress).length;
   const frames = game.listings.filter((l) => l.halfBuilt).length;
+  // Street / REO packages — not the player's own portfolioSale. These are the
+  // books banks put out after a seizure; they used to raise an alert with no desk.
+  const streetBooks = (game.portfolios ?? []).filter((p) => !p.player);
+  const bankFcls = game.bankFcls ?? [];
+  const { buyStreetBook } = useStore.getState();
   return (
     <div>
       <div className="stat-strip">
         <Big label="On the market" value={String(live)} />
         <Big label="Motivated sellers" value={String(distress)} bad={distress > 0} />
+        <Big label="Books for sale" value={String(streetBooks.length)} bad={streetBooks.length > 0}
+          title="Receiver packages and fund wind-downs — one cheque for the whole book" />
         <Big label="Half-built frames" value={String(frames)} />
         <Big label="Money in the room" value={
           marketAppetite(game) < 0.6 ? "gone" : marketAppetite(game) < 0.9 ? "thin"
@@ -248,10 +256,91 @@ export function MarketPage() {
         </button>
       </div>
       <div className="hint">
-        Everything for sale in town. A motivated seller is priced under appraisal and will not last; a half-built
-        frame comes with somebody else's job attached, and you finish it. What the market is DOING — cap rates,
-        the trades, comparable sales, who has been buying — is on Research.
+        Everything for sale in town — single buildings on the tape, receiver books and fund wind-downs as packages,
+        foreclosure lots on the July docket, and distressed notes under Notes. A motivated seller is priced under
+        appraisal and will not last. What the market is DOING — cap rates, the trades, comps — is on Research.
       </div>
+
+      {/* BOOKS FOR SALE — the desk the seizure alert always pointed at and never reached.
+          Packages live on game.portfolios (REO / fund wind-down). They are pulled off the
+          single-asset tape on purpose; buying them is one cash cheque via buyStreetBook. */}
+      <div className="page-section" style={{ marginTop: 10 }}>
+        Books for sale · {streetBooks.length}
+      </div>
+      {streetBooks.length === 0 ? (
+        <div className="hint dim" style={{ marginBottom: 10 }}>
+          No receiver books on the market. When a firm fails with four or more deeds, the lead lender puts the
+          whole relationship out as one package here — priced to clear the balance sheet, walking down every quarter
+          until somebody writes the cheque. Distressed paper (claims on a building, not the deed) is on Notes.
+        </div>
+      ) : (
+        <div style={{ marginBottom: 12 }}>
+          <div className="hint" style={{ marginBottom: 8 }}>
+            One cheque, all cash, no financing at the table — that is why a package trades back from the sum of its
+            parts. Rivals are looking at the same books; a quiet month is how you lose them.
+          </div>
+          {streetBooks.map((p) => {
+            const disc = p.gross > 0 ? (1 - p.ask / p.gross) * 100 : 0;
+            const closing = Math.round(p.ask * 0.02);
+            const need = p.ask + closing;
+            const short = Math.max(0, need - game.cash);
+            const open = expandedBook === p.id;
+            const seller = p.sellerLender
+              ?? (p.sellerId ? (game.rivals?.find((r) => r.id === p.sellerId)?.name ?? "A fund") : "A seller");
+            return (
+              <div key={p.id} className="deal" style={{ marginBottom: 8 }}>
+                <div className="deal-head" style={{ cursor: "pointer" }}
+                  onClick={() => setExpandedBook(open ? null : p.id)}>
+                  <span className="dim" style={{ marginRight: 6 }}>{open ? "▾" : "▸"}</span>
+                  {p.reo ? "REO · " : ""}{p.bbls.length} buildings
+                  {p.reoBorrower ? ` off ${p.reoBorrower}` : ""} · {seller}
+                </div>
+                <div className="grid">
+                  <Row k="Ask" v={usd(p.ask)} strong />
+                  <Row k="Sum of the parts" v={usd(p.gross)} />
+                  <Row k="Inside the parts" v={`${disc.toFixed(0)}% back`} bad={disc > 8} />
+                  <Row k="On the market since" v={monthLabel(p.listedM)} />
+                  {p.cuts > 0 && <Row k="Price cuts" v={`${p.cuts} — walking down every quarter`} bad />}
+                </div>
+                <div className="hint" style={{ marginTop: 4 }}>{p.reason}</div>
+                {open && (
+                  <div className="mini-list" style={{ marginTop: 8 }}>
+                    {p.bbls.map((bbl) => {
+                      const rec = resolveRec(parcels, game, bbl);
+                      return (
+                        <button key={bbl} className="neighbor" onClick={() => go(bbl)}>
+                          <span className="neighbor-addr">{rec?.address ?? bbl}</span>
+                          <span className="neighbor-meta mono">
+                            {rec ? `${useLabel(rec)} · ${sf(rec.bldgArea)}` : bbl}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="btn-row" style={{ marginTop: 8 }}>
+                  <button
+                    className="btn btn-buy"
+                    disabled={short > 0}
+                    title={short > 0
+                      ? `Need ${usd(need)} including 2% closing — short ${usd(short)}`
+                      : `${usd(p.ask)} plus ~${usd(closing)} closing, all cash`}
+                    onClick={() => buyStreetBook(p.id)}
+                  >
+                    Buy the book · {usd(p.ask)}
+                  </button>
+                  <button className="btn" onClick={() => setExpandedBook(open ? null : p.id)}>
+                    {open ? "Hide addresses" : "See the addresses"}
+                  </button>
+                  {short > 0 && (
+                    <span className="dim">Short {usd(short)} of the {usd(need)} cheque.</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {/* THE DOCKET, WHEREVER THE CARD SETTING STANDS. Foreclosure lots are the
           one thing on the tape nobody chose to sell, and they are gone in a
           month — so they live at the TOP of the page while they are live, and
@@ -273,13 +362,10 @@ export function MarketPage() {
         const loans = Object.values(game.cityLoans ?? {});
         const inWorkout = loans.filter((l) => l.status === "workout");
         const onWatch = loans.filter((l) => l.status === "watch");
-        // COLLAPSIBLE, AND OPEN WHEN IT MATTERS. The section has to be
-        // permanent — see the note above, distress is a pipeline and not an
-        // annual event — but eleven months in twelve it is a watchlist, not a
-        // decision, and a watchlist does not deserve the top of the page every
-        // time you open the tape. It opens itself on the month there is a live
-        // docket, which is the month it is a decision.
-        const open = distressOpen ?? !!liveDocket;
+        // COLLAPSIBLE, AND OPEN WHEN IT MATTERS. Opens on a live docket, when
+        // banks have noticed sales, or when a receiver book is upstairs —
+        // otherwise eleven months of watchlist stays tucked away.
+        const open = distressOpen ?? !!(liveDocket || bankFcls.length || streetBooks.length);
         return (
           <div className="deal" style={{ marginBottom: 10 }}>
             <div className="deal-head" style={{ cursor: "pointer", userSelect: "none" }}
@@ -288,13 +374,14 @@ export function MarketPage() {
               <span className="dim" style={{ marginRight: 6 }}>{open ? "▾" : "▸"}</span>
               {liveDocket
                 ? `The county foreclosure docket · ${game.auction!.lots.length} lot${game.auction!.lots.length === 1 ? "" : "s"} · the hammer falls ${monthLabel(game.auction!.m)}`
-                : `Distress · ${inWorkout.length} in workout, ${onWatch.length} on watch · next docket called ${monthLabel(nextDocket)}`}
+                : `Distress pipeline · ${bankFcls.length} noticed for sale, ${inWorkout.length} in workout, ${onWatch.length} on watch · next docket ${monthLabel(nextDocket)}`}
             </div>
             {!open ? null : liveDocket ? (
               <>
                 <div className="hint">
                   As-is, ten per cent down the day you register, no financing and no warranty. Nobody on this list
-                  chose to sell.
+                  chose to sell. Receiver <b>books</b> (whole relationships) are under Books for sale above —
+                  this docket is single lots.
                 </div>
                 <button className="btn btn-buy" onClick={() => useStore.getState().setAuctionOpen(true)}>
                   Open the docket
@@ -304,27 +391,47 @@ export function MarketPage() {
               <>
                 <div className="hint">
                   Nothing is on the steps this month. The county calls its list every July and sells the month
-                  after — but a building does not arrive there suddenly, and these are the ones on their way:
-                  a loan goes on <b>watch</b> when the coverage slips, into <b>workout</b> when the desk has
-                  stopped pretending, and to the docket when the paperwork runs out. The lots that appear in
-                  July come off this list.
+                  after. A loan goes on <b>watch</b>, into <b>workout</b>, then a bank <b>notices a sale</b>
+                  toward the docket. Whole books seized from failed firms are under Books for sale above —
+                  not here — because a package is one cheque, not a courthouse lot.
                 </div>
-                {inWorkout.length > 0 && (
-                  <div className="mini-list">
-                    {inWorkout.slice(0, 8).map((l) => {
-                      const rec = resolveRec(parcels, game, l.bbl);
-                      return (
-                        <button key={l.bbl} className="neighbor" onClick={() => go(l.bbl)}>
-                          <span className="neighbor-addr">{rec?.address ?? l.bbl}</span>
-                          <span className="neighbor-meta mono">
-                            {l.lender} · {usd(l.balance)} against {usd(l.origValue)} at origination
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                {bankFcls.length > 0 && (
+                  <>
+                    <div className="page-section" style={{ marginTop: 8 }}>Noticed for the courthouse · {bankFcls.length}</div>
+                    <div className="mini-list">
+                      {bankFcls.slice(0, 12).map((f) => {
+                        const rec = resolveRec(parcels, game, f.bbl);
+                        return (
+                          <button key={`${f.bbl}:${f.noticedM}`} className="neighbor" onClick={() => go(f.bbl)}>
+                            <span className="neighbor-addr">{rec?.address ?? f.bbl}</span>
+                            <span className="neighbor-meta mono">
+                              {f.lender} · {f.firm} · {usd(f.debt)} debt · sale {monthLabel(f.saleM)}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
                 )}
-                {inWorkout.length === 0 && onWatch.length === 0 && (
+                {inWorkout.length > 0 && (
+                  <>
+                    <div className="page-section" style={{ marginTop: 8 }}>In workout · {inWorkout.length}</div>
+                    <div className="mini-list">
+                      {inWorkout.slice(0, 8).map((l) => {
+                        const rec = resolveRec(parcels, game, l.bbl);
+                        return (
+                          <button key={l.bbl} className="neighbor" onClick={() => go(l.bbl)}>
+                            <span className="neighbor-addr">{rec?.address ?? l.bbl}</span>
+                            <span className="neighbor-meta mono">
+                              {l.lender} · {usd(l.balance)} against {usd(l.origValue)} at origination
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+                {bankFcls.length === 0 && inWorkout.length === 0 && onWatch.length === 0 && (
                   <div className="hint dim">Nothing in town is even on watch. That is what a good market looks like, and it does not last.</div>
                 )}
               </>

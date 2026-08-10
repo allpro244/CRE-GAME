@@ -424,6 +424,7 @@ export function AlertModal() {
 function AlertBody() {
   const game = useStore((s) => s.game)!;
   const dismissAlert = useStore((s) => s.dismissAlert);
+  const setPage = useStore((s) => s.setPage);
   const a = game.alerts?.[0];
   // A dead firm gets the game-over screen and nothing else on top of it.
   // ...and a player who has asked for total silence gets it. Every alert is
@@ -442,6 +443,12 @@ function AlertBody() {
   };
   const kicker = (KICKER[a.kind] ?? ["Something has happened", "Something has happened"])[bad ? 0 : 1];
   const queued = (game.alerts?.length ?? 1) - 1;
+  // A seized rival book is inventory, not scenery — the package is on Marketplace.
+  const streetBooks = (game.portfolios ?? []).filter((p) => !p.player);
+  const goBooks = a.kind === "portfolio" && bad && streetBooks.length > 0;
+  // An indication on YOUR book belongs on Portfolio / Deals, not the tape.
+  const goOwnBook = a.kind === "portfolio" && !bad && !!game.portfolioSale;
+  const goNotes = a.kind === "bank" && bad;
   return (
     <div className={"modal-backdrop alert-back" + (bad ? " alert-tint-bad" : "")}>
       <div className={"modal alert-card " + (bad ? "alert-bad" : "alert-good")} role="dialog" aria-modal="true">
@@ -451,15 +458,34 @@ function AlertBody() {
         <div className="alert-body">{a.body}</div>
         {a.detail && <div className="alert-detail">{a.detail}</div>}
         <div className="alert-foot">
-          {bad
-            ? "This is not a decision and there is nothing on this card to accept. It has happened; "
-              + "what it does to your rents, your lenders and your book is the rest of the game."
-            : "Nobody rings a bell for one of these either. It is on the tape and in the history, and the "
-              + "people who make money on it are the ones already standing where it lands."}
+          {goBooks
+            ? "The book is for sale on Marketplace under Books for sale — one cash cheque for the whole package. Rivals are looking at it too."
+            : goOwnBook
+              ? "Open Portfolio or Deals to answer the indication. It will not wait forever."
+              : bad
+                ? "This is not a decision and there is nothing on this card to accept. It has happened; "
+                  + "what it does to your rents, your lenders and your book is the rest of the game."
+                : "Nobody rings a bell for one of these either. It is on the tape and in the history, and the "
+                  + "people who make money on it are the ones already standing where it lands."}
         </div>
         <div className="modal-actions">
-          <button className={"btn" + (bad ? "" : " btn-buy")} onClick={dismissAlert}>
-            {bad ? "Understood" : "Good."}
+          {goBooks && (
+            <button className="btn btn-buy" onClick={() => { dismissAlert(); setPage("market"); }}>
+              Open Marketplace · Books for sale
+            </button>
+          )}
+          {goOwnBook && (
+            <button className="btn btn-buy" onClick={() => { dismissAlert(); setPage("portfolio"); }}>
+              Open Portfolio
+            </button>
+          )}
+          {goNotes && (
+            <button className="btn" onClick={() => { dismissAlert(); setPage("notes"); }}>
+              Open Notes
+            </button>
+          )}
+          <button className={"btn" + (!goBooks && !goOwnBook && !bad ? " btn-buy" : "")} onClick={dismissAlert}>
+            {bad && !goBooks ? "Understood" : goBooks || goOwnBook ? "Later" : "Good."}
           </button>
         </div>
         {queued > 0 && (

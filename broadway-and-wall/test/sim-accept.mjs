@@ -373,7 +373,20 @@ function macroRunRaw(seed, months) {
       const t = [];
       for (let m = 0; m < 144; m++) {
         s2 = keepAlive(E.advanceQuarter(s2, p, bbls, adjacency));
-        t.push({ vac: s2.econ.cityVac.office, phase: s2.econ.phase, rent: s2.econ.rentIdx.office, rate: s2.econ.indexRate });
+        const policy = s2.econ.nat?.policy ?? s2.econ.indexRate;
+        const loan = s2.econ.indexRate;
+        t.push({
+          vac: s2.econ.cityVac.office,
+          phase: s2.econ.phase,
+          rent: s2.econ.rentIdx.office,
+          rate: loan,
+          policy,
+          prem: loan - policy,
+          jobs: s2.econ.jobs ?? 0,
+          unemp: s2.econ.unemployment ?? 0,
+          credit: s2.econ.creditIdx ?? 1,
+          conc: s2.econ.concIdx?.office ?? 0,
+        });
       }
       return t;
     };
@@ -389,35 +402,57 @@ function macroRunRaw(seed, months) {
     // excluded from the median and counted in the print. (Measured on this
     // build: 0 of 9 seeds land there, so this changes no number today. It is
     // the shape that is wrong, not the reading.)
-    const drift = med(t.slice(24, 96).map((x) => x.rate)) - t[0].rate;
-    const ctrlDrift = med(ctrl.slice(24, 96).map((x) => x.rate)) - ctrl[0].rate;
+    const win = (xs) => xs.slice(24, 96);
+    const mean = (xs, f) => xs.reduce((a, x) => a + f(x), 0) / Math.max(1, xs.length);
+    const dPolicy = mean(win(t), (x) => x.policy) - mean(win(ctrl), (x) => x.policy);
+    const dPrem = mean(win(t), (x) => x.prem) - mean(win(ctrl), (x) => x.prem);
+    const dLoan = mean(win(t), (x) => x.rate) - mean(win(ctrl), (x) => x.rate);
+    const dJobs = t[48].jobs - ctrl[48].jobs;
+    const dUnemp = t[48].unemp - ctrl[48].unemp;
+    const dCredit = mean(win(t), (x) => x.credit) - mean(win(ctrl), (x) => x.credit);
+    const dConc = mean(win(t), (x) => x.conc) - mean(win(ctrl), (x) => x.conc);
     return {
       peakVac: Math.max(...t.map((x) => x.vac)),
       deepMonths: deep.length,
       share: deep.length ? lying / deep.length : null,
-      drift: drift - ctrlDrift,
-      raw: drift, ctrl: ctrlDrift,
+      dPolicy, dPrem, dLoan, dJobs, dUnemp, dCredit, dConc,
       rentFall: 1 - Math.min(...t.map((x) => x.rent)) / t[0].rent,
     };
   });
   const peakVac = med(runs.map((r) => r.peakVac));
   const scored = runs.filter((r) => r.share !== null);
   const share = scored.length ? med(scored.map((r) => r.share)) : 1;
-  const drift = med(runs.map((r) => r.drift));
+  const dPolicy = med(runs.map((r) => r.dPolicy));
+  const dPrem = med(runs.map((r) => r.dPrem));
+  const dJobs = med(runs.map((r) => r.dJobs));
+  const dUnemp = med(runs.map((r) => r.dUnemp));
+  const dCredit = med(runs.map((r) => r.dCredit));
+  const dConc = med(runs.map((r) => r.dConc));
   // cityVac is clamped to 0.45 in market.ts. If the peak ever rests there the
   // vacancy clause is reading a rail rather than the market, so print the
   // headroom rather than trusting it.
   const atRail = runs.filter((r) => r.peakVac >= 0.4495).length;
+  // ECONOMY.md H: the old clause tested loan-index drift and failed whenever
+  // CRE spreads blew out into a glut — which is the documented fact, not a
+  // bug. The separable claims are: policy must not tighten on the glut, the
+  // risk premium must widen, and the space market must reach labour/credit
+  // (jobs down or unemployment up; credit soft; concessions up).
+  const labourHears = dJobs < -200 || dUnemp > 0.002;
+  const creditHears = dCredit < -0.02;
+  const concHears = dConc > 0.05;
   report("H. THE GLUT IS SEEN — 4M sf of empty office dropped on the city, 9 seeds",
-    peakVac > 0.25 && scored.length >= 5 && share <= 0.15 && drift <= 0.5,
+    peakVac > 0.25 && scored.length >= 5 && share <= 0.15
+      && dPolicy <= 0.35 && dPrem >= 0.05
+      && labourHears && creditHears && concHears,
     [`office vacancy peaked at ${(peakVac * 100).toFixed(1)}% median   (per seed ${runs.map((r) => (r.peakVac * 100).toFixed(0) + "%").join(" ")})`,
      `   ${atRail} of ${runs.length} seeds peak ON the 45% cityVac clamp (market.ts) — at the clamp this number stops being a measurement`,
      `share of a >25%-vacant market called 'expansion' or 'peak': ${(share * 100).toFixed(0)}% median of ${scored.length} seeds   (need <= 15%)`,
      `   months above 25% vacancy per seed: ${runs.map((r) => r.deepMonths).join(" ")}   (a seed with none is excluded, not scored 0%)`,
-     `loan index drift ATTRIBUTABLE TO THE GLUT: ${drift >= 0 ? "+" : ""}${drift.toFixed(2)}pp median   (need <= +0.50pp: a glut is a demand shock)`,
-     `   glut ${runs.map((r) => (r.raw >= 0 ? "+" : "") + r.raw.toFixed(1)).join(" ")}`,
-     `   control ${runs.map((r) => (r.ctrl >= 0 ? "+" : "") + r.ctrl.toFixed(1)).join(" ")}   — the same city without the 4M sf`,
-     `   net ${runs.map((r) => (r.drift >= 0 ? "+" : "") + r.drift.toFixed(1)).join(" ")}`,
+     `POLICY drift attributable to the glut: ${dPolicy >= 0 ? "+" : ""}${dPolicy.toFixed(2)}pp median   (need <= +0.35 — bank must not tighten into empty floors)`,
+     `term PREMIUM drift attributable to the glut: ${dPrem >= 0 ? "+" : ""}${dPrem.toFixed(2)}pp median   (need >= +0.05 — lenders charge for vacant collateral)`,
+     `   loan-index net (reported, not gated): ${med(runs.map((r) => r.dLoan)) >= 0 ? "+" : ""}${med(runs.map((r) => r.dLoan)).toFixed(2)}pp — premium and policy are allowed to fight`,
+     `labour hears the glut: Δjobs@48 ${Math.round(dJobs)}   ΔU@48 ${(dUnemp * 100).toFixed(2)}pp   (need jobs↓ or U↑)`,
+     `credit / concessions: Δcredit ${dCredit.toFixed(3)}   Δconc ${(dConc * 100).toFixed(1)}pp`,
      `rent fell ${(med(runs.map((r) => r.rentFall)) * 100).toFixed(0)}% from the drop to the trough, median`]);
 }
 

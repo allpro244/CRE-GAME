@@ -521,9 +521,11 @@ export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): Res
     // Same ladder replacementCostPsf and planDevelopment use.
     const fl = Math.max(1, Math.round(usable / 0.7));
     const costPsf = HARD_COST_PSF[use] * econ.costIdx * heightPremium(fl) * (1 + SOFT_COST) * (1 + CONTINGENCY);
-    // ...AND FILLING IT COSTS MONEY TOO. Fit-out and commissions are charged
-    // on the rentable feet, which is where the income is.
-    const fitPsf = (TI_PSF[use] + (use === "multifamily" ? 0 : rent * 6 * 0.045)) * econ.costIdx;
+    // ...AND FILLING IT COSTS MONEY TOO. Fit-out tracks construction cost;
+    // commissions are already a cut of today's rent and must not be scaled by
+    // costIdx a second time (same identity as leaseUpValue / planDevelopment).
+    const lcPsf = use === "multifamily" ? 0 : rent * 6 * 0.045;
+    const fitPsf = TI_PSF[use] * econ.costIdx + lcPsf;
 
     // THE MARGIN IS EARNED ON ALL THE MONEY, INCLUDING THE LAND.
     //

@@ -772,3 +772,76 @@ reading of the rail tax. Post-fix medians: real office ~1.43%/yr, rent−wage
 
 `heldOccupancy` was the other suspect and is exonerated: it has no consumers in
 `src/engine` at all.
+
+# INDUSTRIAL COMPOSITION LEFT; THE SHEDS DID NOT — fixed
+
+`industComp` declines at the NY/SF/London manufacturing floor-space half-life.
+Rezoning's `gone()` read only the price-exit ratchet on `baseStock`. Falling
+demand made space cheap, so the ratchet never fired, `gone` stayed 0, and
+M-land stayed a life sentence. Measured on six null centuries before the fix:
+stock/open ≈ 0.98, soft ≈ 84% of months, real industrial rent ≈ −2.2%/yr while
+IC → 0.35.
+
+**Shipped:** (1) `gone()` reads `industComp` for industrial; (2) `tickIndustrialExit`
+clears empty surplus sheds to land at trickle-or-ordinary rate, yielding crane
+priority when office is chronically short; own RNG channel so densify dice are
+untouched. After: stock/open ≈ 0.70, soft ≈ 52%, real ≈ −1.3%/yr. Harness:
+`test/industrial-exit.mjs`.
+
+# H'S RATE CLAUSE READ THE WRONG SERIES — harness fixed
+
+Glut transmission to labour / credit / NOI / concessions is wired (see
+`test/glut-transmission.mjs`). `sim:accept` H now asserts policy must not
+tighten into the glut and the term premium must widen — not loan-index drift,
+which correctly rises when spreads blow out.
+
+# LEASE COMMISSIONS WERE COST-INDEXED TWICE — fixed
+
+`planDevelopment` sized the lease-up reserve as `(TI + LC) × costIdx`. TI is a
+construction number and belongs under `costIdx`. LC is already `rent × months ×
+rate` — today's rent, already carrying a century of inflation. Multiplying it
+by `costIdx` again made late-century lease-up reserves larger than hard cost
+(measured: ~$770M lease-up on a $418M office job at costIdx≈21), so densify
+could not clear a structural office short even when stabilised NOI / build cost
+cleared the hurdle. `leaseUpValue`'s vacant-building fill cheque already used
+the correct split (`TI×costIdx + LC`); the residual land fit cost did not.
+
+**Shipped:** same identity in `planDevelopment` and the land residual; densify
+in-kind / extra teardown passes gate on frictional pin + `startOwed`, not only
+`structTight` (seeds with a full office book but moderate employment gap were
+still freezing the wrecking ball). Harnesses: `test/lease-up-cost.mjs`,
+`test/late-densify.mjs`.
+
+# PINNED ASKING STILL COMPOUNDED FULL CPI — fixed
+
+After soft-market mute and tightEma fade-on-rail, hot seeds still printed
+~+1.2%/yr **real** office rent in months vacancy sat on the frictional floor
+(soft months almost absent). `vacTerm` was already 0 on the rail; the twin of
+the soft escalator was still live: `firmW=1` whenever `gap≤0`, so asking kept
+full `inflExp` forever on saturated availability, and a stable `structTight`
+level term paid on top.
+
+**Shipped:** on-rail scarcity is flow-only (shortfall *worsening*); asking
+carries a lease-roll fraction of CPI while pinned (restored toward full carry
+only when rent is already cheap against pay); stronger cheap-side income
+anchor on the rail so RTI cannot death-spiral. Measured: median pin-month real
+~−0.2%/yr (was ~+1.2%); century median real office ~0.9%/yr (was ~1.3–1.5%);
+supply-answers still green. Harness: `test/rent-anchor.mjs` pin-real clause.
+
+# FIRM-NEAR-RAIL SCARCITY WAS THE HOCKEY STICK — fixed
+
+Pin-only mute left the climb in months with vacancy just above friction
+(`vac ∈ (friction, friction+2pp)`): full `st×0.045` level scarcity plus full
+CPI asking printed **+4–5%/yr real** in that band (~20% of months) and late
+soft share on hot seeds was ~0%. Same saturation economics as the pin.
+
+**Shipped:** (1) scarcity *level* scales with room above friction (`railSat`,
+same shape as vacTerm); near the rail → mostly flow; (2) rail-bound escalator /
+press bleed / lift gate extend to friction+1.2pp; (3) cheap-side pull on the
+rail targets an RTI *floor* (~0.65), not earned sustain — hard enough to track
+wages when under the floor, then stops; (4) real `costIdx` mean-reverts toward
+a ~0.4%/yr-above-CPI fair path so construction cannot compound a century boom
+from one-way rent catch-up. Measured: median rail-bound real ~+0.3%/yr (was
+firm-near +4–5%); century real office ~0.85%/yr; real construction cost
+~+0.5%/yr (was ~+0.8–1.1%). Harness: `test/rent-anchor.mjs` rail-real +
+cost-real clauses.

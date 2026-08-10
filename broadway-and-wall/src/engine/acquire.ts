@@ -639,7 +639,11 @@ function forfeitDeposit(s: GameState, t: Talks) {
  * else's tape, but nothing has moved: no deed, no cash, no loan. What you have
  * is three months and an obligation.
  */
-function strikeDeal(
+/**
+ * Put a price under contract with hard earnest money. Used by listed
+ * negotiations and by an accepted blind off-market bid — same instrument.
+ */
+export function strikeDeal(
   next: GameState, bbl: string, px: number,
   seller: { kind: SellerKind; name: string }, address: string,
 ): { s: GameState; err?: string } {

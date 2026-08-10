@@ -4,7 +4,7 @@
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import type { Bid, BuiltClass, Econ, GameState, GroundLease, GroundReview, Holding, RivalStyle } from "./types";
 import { logBooks, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState } from "./types";
-import { recentLowballs } from "./acquire";
+import { recentLowballs, sellerOf, strikeDeal } from "./acquire";
 import { firmShort, describeFirm } from "./firm";
 import { rng, rrange, newsChance, BUILD_MONTHS } from "./market";
 import { assetValue, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, worthTheCall, bareLandRec } from "./value";
@@ -1571,37 +1571,60 @@ export function approachOwner(
  * that, one honest bid at appraisal and no more buys 7.4% at exactly
  * appraisal. The search works and it is not free, which is the whole design.
  */
+/**
+ * BLIND BID — a number, and nothing else.
+ *
+ * The stack used to sit in front of this: Thesis → Structure → Commit before
+ * the seller ever saw a figure. Nobody bids that way. You name a price; if
+ * they take it you go under contract and then find the money. Probing a soft
+ * "no" never required a loan product.
+ */
+export function submitBlindBid(
+  s: GameState, parcels: ParcelTable, bbl: string, bid: number,
+): { s: GameState; err?: string; msg?: string } {
+  const a = s.approaches[bbl];
+  if (!a || a.refused || a.ask !== undefined || a.reserve === undefined) {
+    return { s, err: "There is no live 'make me an offer' conversation on that building." };
+  }
+  if (s.month > a.q + 6) return { s, err: "That conversation has gone cold." };
+  return bidBlind(s, parcels, bbl, bid);
+}
+
 function bidBlind(
-  s: GameState, parcels: ParcelTable, bbl: string, product: BuyProduct, lev: number, bid?: number,
+  s: GameState, parcels: ParcelTable, bbl: string, bid: number,
 ): { s: GameState; err?: string; msg?: string } {
   const a = s.approaches[bbl]!;
   const reserve = a.reserve!;
   const price = Math.round(bid ?? 0);
   if (!Number.isFinite(price) || price <= 0) return { s, err: "They asked you for a number. Name one." };
-  const q = buyQuote(s, parcels, bbl, price, product, lev);
-  if (s.cash < q.equity) return { s, err: `That bid needs $${(q.equity / 1e6).toFixed(2)}M of equity — you're short.` };
   const next = clone(s);
   const na = next.approaches[bbl];
   na.lastBid = price;
   na.probes = (na.probes ?? 0) + 1;
   const addr = parcels[bbl]?.address ?? bbl;
+  const rec = resolveRec(parcels, next, bbl);
 
   if (price >= reserve) {
-    const done = executePurchase(next, parcels, bbl, price, product, true, lev);
-    if (done.err) return { s, err: done.err };
-    // THE TELL, NOT THE ANSWER. How fast they said yes is the only thing a
-    // buyer ever gets, and it is genuinely how this feels: no seller tells you
-    // that you were twenty points high, and everybody who has been twenty
-    // points high remembers how quickly the paperwork came back.
+    // Handshake first — earnest money only. The capital stack is a later act,
+    // the same way a listed Offer desk works. Instant deed+loan here was what
+    // forced Structure-the-stack before the seller had even accepted a number.
+    if (!rec) return { s, err: "Unknown parcel." };
+    const seller = sellerOf(next, parcels, bbl);
+    const struck = strikeDeal(next, bbl, price, { kind: seller.kind, name: seller.name }, rec.address);
+    if (struck.err) return { s, err: struck.err };
+    delete struck.s.approaches[bbl];
     const eager = price >= reserve * 1.15;
-    done.s.news.unshift({
-      q: done.s.month, kind: eager ? "warn" : "deal",
+    struck.s.news.unshift({
+      q: struck.s.month, kind: eager ? "warn" : "deal",
       text: eager
         ? `${addr}: they took your number the same afternoon, without a counter and without a lawyer's argument. `
-          + `Nobody does that on a number that hurt.`
-        : `${addr}: they took it, after a week of thinking about it.`,
+          + `Nobody does that on a number that hurt. You are under contract — place the debt and close.`
+        : `${addr}: they took it, after a week of thinking about it. Under contract — fund it.`,
     });
-    return { s: done.s, msg: `Done at $${(price / 1e6).toFixed(2)}M, off-market.` };
+    return {
+      s: struck.s,
+      msg: `Under contract at $${(price / 1e6).toFixed(2)}M — now structure the stack and close.`,
+    };
   }
 
   const gap = 1 - price / reserve;
@@ -1675,9 +1698,10 @@ export function buyOffMarket(
 ): { s: GameState; err?: string; msg?: string } {
   const a = s.approaches[bbl];
   if (!a || a.refused) return { s, err: "No live ask — approach the owner first." };
+  // Blind "make me an offer" is a bid, not a financed close. The stack comes
+  // after they take a number (under contract → closeDeal).
   if (a.ask === undefined && a.reserve !== undefined) {
-    if (s.month > a.q + 6) return { s, err: "That conversation has gone cold." };
-    return bidBlind(s, parcels, bbl, product, lev, bid);
+    return submitBlindBid(s, parcels, bbl, bid ?? 0);
   }
   if (!a.ask) return { s, err: "No live ask — approach the owner first." };
   if (s.month > a.q + 6) return { s, err: "That number expired." };

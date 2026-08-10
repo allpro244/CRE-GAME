@@ -501,10 +501,26 @@ function ParcelPanelInner({
         );
       })()}
 
-      {on("deal") && !listing && !holding && (
+      {on("deal") && !listing && !holding && (() => {
+        const offContract = game.talks?.[selectedBBL]?.agreed ? game.talks[selectedBBL] : null;
+        return (
         <div className="deal">
           <div className="deal-head">Off-market</div>
-          {appr && !appr.refused && appr.ask ? (
+          {offContract ? (
+            <>
+              <div className="hint">{offContract.note}</div>
+              <div className="grid">
+                <Row k="Agreed price" v={usd(offContract.agreedPrice ?? offContract.theirPrice)} strong />
+                <Row k="Close by" v={monthLabel(offContract.closeByM ?? game.month)} bad />
+                <Row k="Earnest money" v={usd(offContract.deposit ?? 0)} />
+              </div>
+              <BuyButtons
+                bbl={selectedBBL}
+                price={offContract.agreedPrice ?? offContract.theirPrice}
+                off={false}
+              />
+            </>
+          ) : appr && !appr.refused && appr.ask ? (
             <>
               {/* A NUMBER THAT ARRIVED THE HARD WAY READS DIFFERENTLY.
                   `mode` says how the conversation opened and never changes, so
@@ -591,7 +607,8 @@ function ParcelPanelInner({
             </>
           )}
         </div>
-      )}
+        );
+      })()}
 
       {on("build") && holding && dev && (
         <div className="deal">
@@ -1495,7 +1512,21 @@ export function BlindBidDesk({ bbl, appr, value }: { bbl: string; appr: Approach
           by the third number you have stopped being a buyer and started being a process.
         </div>
       )}
-      <BuyButtons bbl={bbl} price={bid} off bid={bid} closeLabel={`Bid ${usd(bid)}`} />
+      {/* A NUMBER ONLY. Financing used to sit in front of this button — Thesis →
+          Structure → Commit before the seller ever saw a figure. Agree a price
+          first; if they take it you go under contract and structure the stack then. */}
+      <div className="btn-row">
+        <button
+          className="btn btn-buy"
+          onClick={() => useStore.getState().bidBlind(bbl, bid)}
+        >
+          Bid {usd(bid)}
+        </button>
+      </div>
+      <div className="hint dim">
+        No lender, no leverage, no stack — just the number. If they take it, {usd(Math.round(bid * DEPOSIT_PCT))} of
+        earnest money goes hard and you get three months to structure the debt and close.
+      </div>
     </>
   );
 }
@@ -1634,10 +1665,8 @@ export function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
  */
 export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
   bbl: string; price: number; off: boolean; closeLabel?: string;
-  /** A blind bid, which is a price nobody has agreed to yet. Passed through to
-   *  buyOffMarket so bidBlind sees a number; omitted on the named-ask path,
-   *  where the engine funds `approaches[bbl].ask` and there is nothing to
-   *  invent. */
+  /** Named off-market ask path only — funds `approaches[bbl].ask` (or this
+   *  override). Blind "make me an offer" bids no longer come through here. */
   bid?: number;
 }) {
   const game = useHeldGame(bbl);

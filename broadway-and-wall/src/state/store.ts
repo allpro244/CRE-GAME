@@ -4,7 +4,7 @@ import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment } from "@/engine/types";
 import { newGame, advanceMonth, advanceUntilAttentionAsync, attentionItems, firstListings, portfolioMonthlyCF, hangUpOnCall } from "@/engine/sim";
 import { monthLabel } from "@/engine/types";
-import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
+import { buyListing, buyOffMarket, submitBlindBid, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import {
   respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, runLeasingAgent,
@@ -113,6 +113,8 @@ interface AppState {
   counterOff: (bbl: string, px?: number) => void;
   buy: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
   buyOff: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
+  /** Blind off-market bid — a number only; financing comes after they take it. */
+  bidBlind: (bbl: string, bid: number) => void;
   approach: (bbl: string) => void;
   respondLoi: (id: number, action: LOIAction, fund?: boolean, counter?: { rentPsf?: number; tiPsf?: number; freeM?: number; bumpPct?: number; bestFinal?: boolean }) => { ok: boolean; msg: string };
   /** Answer a tenant's mid-lease relief letter. */
@@ -514,13 +516,29 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
+  bidBlind: (bbl, bid) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = submitBlindBid(game, parcels, bbl, bid);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Bid in.");
+    void persist(r.s);
+  },
+
   approach: (bbl) => {
     const { game, parcels, adjacency } = get();
     if (!game || !parcels || !adjacency) return;
     const r = approachOwner(game, parcels, adjacency, bbl);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
-    toast(r.refused ? "The owner isn't selling." : "They named a number.", r.refused ? "err" : "ok");
+    const ap = r.s.approaches[bbl];
+    const toastMsg = r.refused
+      ? "The owner isn't selling."
+      : ap?.ask !== undefined
+        ? "They named a number."
+        : "They took the call — make them an offer.";
+    toast(toastMsg, r.refused ? "err" : "ok");
     void persist(r.s);
   },
 

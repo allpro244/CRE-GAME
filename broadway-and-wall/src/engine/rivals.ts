@@ -32,7 +32,7 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, GameState, Rival, RivalStyle } from "./types";
 import { CASH_APY, monthLabel, START_YEAR } from "./types";
-import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC } from "./market";
+import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK } from "./market";
 import { assetValue, demandLinear, initialCondition, inPlace, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall } from "./value";
 import type { DevPlan } from "./dev";
 import { cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
@@ -1512,17 +1512,42 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   if (BUILD_APPETITE[r.style] <= 0) return;
   const live = (s.cityJobs ?? []).filter((j) => j.firmId === r.id).length;
   if (live >= (r.style === "developer" ? 2 : 1)) return;
-  // the best lot they own, by what the neighbourhood has become
-  let best: { bbl: string; rec: ParcelRecord } | null = null, bestScore = -1;
+  // Vacant land first; when housable floor lags employment, densify worn or
+  // obsolete stock they already own — same underwrite and order book as the
+  // city's teardown desk (ECONOMY.md §F #2 / CENTURY OPEN #6).
+  type Site = { bbl: string; rec: ParcelRecord; redev: boolean; score: number };
+  let best: Site | null = null;
+  const yrNow = START_YEAR + Math.floor(s.month / 12);
   for (const bbl of r.bbls) {
     if ((s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
+    if (s.developments[bbl] || s.holdings[bbl]) continue;
     const rec = resolveRec(parcels, s, bbl);
-    if (!rec || rec.class !== "land" || rec.lotArea < 2500) continue;
-    const score = rec.demandScore + rng(s, "rivals") * 20;
-    if (score > bestScore) { bestScore = score; best = { bbl, rec }; }
+    if (!rec || rec.lotArea < 2500) continue;
+    if (rec.class === "land") {
+      const score = rec.demandScore + rng(s, "rivals") * 20;
+      if (!best || score > best.score) best = { bbl, rec, redev: false, score };
+      continue;
+    }
+    if (!rec.bldgArea) continue;
+    const age = yrNow - (rec.yearBuilt || 1900);
+    if (age < 45) continue;
+    const cond = assetGrade(r, rec);
+    if (cond !== "obsolete" && cond !== "worn") continue;
+    let useProbe = useForZone(rec.zoneDist, rec.demandScore, rng(s, "rivals"), s.econ);
+    if (useProbe === "retail" && retailWantsMixed(rec)) useProbe = "mixed";
+    const leadProbe = dominantOf(devMix(useProbe));
+    const st = s.econ.structTight?.[leadProbe] ?? 0;
+    const vac = s.econ.cityVac?.[leadProbe] ?? NATURAL_VAC[leadProbe];
+    if (st < 0.05 && vac > frictionFloor(leadProbe) + 0.02) continue;
+    const infillProbe = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), leadProbe);
+    const targetSf = rec.lotArea * 0.62 * infillProbe;
+    if (targetSf < rec.bldgArea * 1.15) continue;
+    const densify = targetSf / rec.bldgArea;
+    const score = densify * (1 + 3 * st) * rec.demandScore + rng(s, "rivals") * 10;
+    if (!best || score > best.score) best = { bbl, rec, redev: true, score };
   }
   if (!best) return;
-  const { bbl, rec } = best;
+  const { bbl, rec, redev } = best;
   let use = useForZone(rec.zoneDist, rec.demandScore, rng(s, "rivals"), s.econ);
   // Shops do not stack, and a corner that carries twenty floors does not get a
   // two-storey shop on it — it gets shops at grade with something above.
@@ -1535,7 +1560,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   // the shared parcel pro forma.
   const startsRoll = rng(s, "rivals");
   const farMax = farMaxFor(rec);
-  const frac = Math.min(0.95, 0.4 + rng(s, "rivals") * 0.45);
+  const frac = Math.min(0.95, (redev ? 0.55 : 0.4) + rng(s, "rivals") * 0.45);
   let sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
   let floors = Math.max(1, Math.round(sf / (rec.lotArea * 0.62)));
   // A named developer reads the same comps the anonymous city does: one
@@ -1550,12 +1575,22 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
     floors = cap;
     sf = Math.max(3000, Math.round((rec.lotArea * 0.62 * floors) / 100) * 100);
   }
-  const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62);
+  if (redev && sf < rec.bldgArea * 1.12) return;
+  const opp = redev
+    ? (() => {
+      const cond = assetGrade(r, rec);
+      const hair = cond === "obsolete" ? 0.78 : cond === "worn" ? 0.86 : 0.93;
+      return Math.max(landValue(rec, s.econ), assetValue(rec, s.econ, cond) * hair);
+    })()
+    : undefined;
+  const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62, opp);
   if (!underwriting?.clears) return;
-  if (startsRoll >= 0.011 * BUILD_APPETITE[r.style] * ci * underwriting.appetite) return;
+  const startGate = redev ? 0.018 : 0.011;
+  if (startsRoll >= startGate * BUILD_APPETITE[r.style] * ci * underwriting.appetite) return;
   const plan = underwriting.plan;
   sf = plan.sf;
   floors = plan.floors;
+  if (redev && sf < rec.bldgArea * 1.08) return;
   const cost = plan.costTotal;
   if (cost > (r.aum ?? 0) * 0.75 + r.cash * 4) return;
   // the dirt is already theirs, so only the build equity has to be in the bank
@@ -1565,6 +1600,23 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   const months = plan.months;
   const deliverM = s.month + months;
   if (!s.cityJobs) s.cityJobs = [];
+  const oldSf = redev ? rec.bldgArea : 0;
+  if (redev) {
+    // Clear the standing improvement off the map and stock before replacement
+    // — same as tickTeardowns; the firm funds the job through cost/equity.
+    const oldCls = rec.class as BuiltClass;
+    s.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
+    if ((CITY_STOCK as Record<string, number>)[oldCls] !== undefined) {
+      addStock(s.econ, oldCls as keyof typeof CITY_STOCK, -oldSf);
+    }
+    s.demolished = (s.demolished ?? 0) + 1;
+    recordPropertyEvent(s, bbl, {
+      kind: "demolished",
+      sf: oldSf,
+      use: oldCls,
+      outcome: `${r.name} cleared for denser ${use}`,
+    });
+  }
   // A NAMED FIRM BUILDS THE SAME BUILDING THE CITY DOES — shops at grade where
   // the street carries them. Settled here and carried on the job so the
   // pipeline below and the delivery record cannot disagree.
@@ -1605,8 +1657,11 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   }
   s.news.unshift({
     q: s.month, kind: "event",
-    text: `${r.name} is building on their own land at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, `
-      + `$${(cost / 1e6).toFixed(1)}M. They have been sitting on that corner waiting for this market.`,
+    text: redev
+      ? `${r.name} is tearing down ${rec.address} for ${(sf / 1000).toFixed(0)}k sf of ${use} `
+        + `(was ${(oldSf / 1000).toFixed(0)}k). The book needed the floor area.`
+      : `${r.name} is building on their own land at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, `
+        + `$${(cost / 1e6).toFixed(1)}M. They have been sitting on that corner waiting for this market.`,
   });
 }
 

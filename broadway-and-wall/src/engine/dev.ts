@@ -10,7 +10,7 @@ import type { BtsCommitment, BuiltClass, Contract, DevUse, Development, Econ, Ga
 import { BUILT_CLASSES, cloneState} from "./types";
 import { logBooks, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow } from "./demand";
-import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE } from "./market";
+import { rng, rrange, NATURAL_VAC, RENT_BASE, CITY_STOCK, BUILD_MONTHS, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor } from "./market";
 import { roleState, cmRiskMult } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, capRateFor, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, plateEfficiency, physicalMaxFloors, condGrade, condCeiling,
@@ -1283,22 +1283,62 @@ export function refreshDevelopmentFeasibility(
   //
   // Local LCG, not the game's RNG stream: measuring feasibility must not
   // re-roll the economy. Month changes the sample each annual refresh.
-  const SAMPLE = 144;
+  //
+  // AND REDEVELOPMENT SITES COUNT. Macro orders used to sample vacant dirt
+  // only, so a built-out town under chronic `structTight` looked like it had
+  // nowhere to build — while worn FAR-rich lots sat unexamined. The order
+  // book must see densify candidates too — but in SEPARATE quotas. A first
+  // cut that mixed them filled all 144 slots with worn buildings (plentiful)
+  // and zeroed the office pencil because those lots only cleared as housing.
+  // Appetite is multiplicative on sitePencil; a zero pencil is a shut class.
+  const LAND_N = 96;
+  const REDEV_N = 72;
   const chosen = new Set<string>();
   let x = (s.seed ^ Math.imul(s.month + 1, 0x9e3779b1)) >>> 0;
-  const maxAttempts = Math.min(bbls.length * 2, SAMPLE * 16);
-  for (let attempt = 0; attempt < maxAttempts && chosen.size < SAMPLE; attempt++) {
+  const yrNow = START_YEAR + Math.floor(s.month / 12);
+  let landCount = 0, redevCount = 0;
+  const maxAttempts = Math.min(bbls.length * 3, (LAND_N + REDEV_N) * 24);
+  for (let attempt = 0; attempt < maxAttempts && (landCount < LAND_N || redevCount < REDEV_N); attempt++) {
     x = (Math.imul(x, 1664525) + 1013904223) >>> 0;
     const bbl = bbls[x % bbls.length];
     if (!bbl || chosen.has(bbl)) continue;
     if (s.holdings[bbl] || s.developments[bbl] || (s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
     const rec = resolveRec(parcels, s, bbl);
-    if (!rec || rec.class !== "land" || rec.lotArea < 1_500 || ownerOf(s, bbl)) continue;
+    if (!rec || rec.lotArea < 1_500 || ownerOf(s, bbl)) continue;
+    if (rec.class === "land") {
+      if (landCount >= LAND_N) continue;
+      chosen.add(bbl);
+      landCount++;
+      for (const use of BUILT_CLASSES) {
+        const floors = Math.min(14, maxFloorsFor(rec, 0.62, use));
+        const u = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62);
+        // Only clearing pencils. Pushing appetite-zero failures from densify
+        // sites diluted the P97 and zeroed whole classes (office went to 0
+        // while multifamily stayed live — the order book then starved office).
+        if (u?.clears && u.appetite > 0) scores[use].push(u.appetite);
+      }
+      continue;
+    }
+    if (redevCount >= REDEV_N) continue;
+    if (!rec.bldgArea) continue;
+    const age = yrNow - (rec.yearBuilt || 1900);
+    if (age < 45) continue;
+    const cond = gradeOf(s, rec);
+    if (cond !== "obsolete" && cond !== "worn" && cond !== "standard") continue;
+    // Only sites that can grow housable floor under today's cornice/shortage.
+    const leadGuess = rec.class as BuiltClass;
+    const infill = cityInfillCap(s, parcels, rec, Math.min(1, s.month / 780), leadGuess);
+    const targetSf = rec.lotArea * 0.62 * infill;
+    if (targetSf < rec.bldgArea * 1.12) continue;
     chosen.add(bbl);
+    redevCount++;
+    // Same basis tickTeardowns uses for unowned fabric: land (+ demo in plan).
+    const opp = landValue(rec, s.econ);
     for (const use of BUILT_CLASSES) {
-      const floors = Math.min(14, maxFloorsFor(rec, 0.62, use));
-      const u = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62);
-      if (u) scores[use].push(u.appetite);
+      const floors = Math.min(infill, maxFloorsFor(rec, 0.62, use));
+      if (rec.lotArea * 0.62 * floors < rec.bldgArea * 1.08) continue;
+      const u = underwriteDevelopment(s, parcels, bbl, use, floors, 0.62, opp);
+      if (u?.clears && u.appetite > 0) scores[use].push(u.appetite);
     }
   }
   s.econ.sitePencil = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
@@ -2428,7 +2468,9 @@ export function blockDatumFloors(s: GameState, parcels: ParcelTable, block: stri
 
 /** How high the market will speculatively build on this lot TODAY. */
 export function cityInfillCap(
-  s: GameState, parcels: ParcelTable, rec: { block: string; lotArea: number }, maturity: number,
+  s: GameState, parcels: ParcelTable,
+  rec: { block: string; lotArea: number; farMaxComm?: number; farMaxRes?: number },
+  maturity: number,
   use: BuiltClass = "office",
 ): number {
   const datum = blockDatumFloors(s, parcels, rec.block);
@@ -2471,7 +2513,25 @@ export function cityInfillCap(
   const struct = clamp(ez.structTight?.[use] ?? 0, 0, 0.45);
   const push = clamp(tight * 0.9 + rentPress * 0.5 + struct * 1.1, -0.35, 2.0);
   const step = Math.max(1, Math.round((2 + maturity * 4) * (1 + push)));
-  return Math.max(2, Math.min(Math.max(1, datum) + step, physicalMaxFloors(rec.lotArea * 0.62)));
+  const physical = physicalMaxFloors(rec.lotArea * 0.62);
+  let cap = Math.max(2, Math.min(Math.max(1, datum) + step, physical));
+  // CHRONIC EMPLOYMENT SHORTAGE BREAKS THE CORNICE. ECONOMY.md §F #2: stock
+  // grew at half the jobs rate because each crane stayed cornice-bound while
+  // `structTight` said the market needed more housable floor. Scarcity that
+  // has already saturated the vacancy rail is exactly when real cities put up
+  // the building that ignores the street — the legal envelope, not another
+  // two floors of context. Blend toward zoning/physical; do not free the
+  // friction floor or mint demand.
+  if (struct > 0.08 && tight > 0.45
+      && rec.farMaxComm !== undefined && rec.farMaxRes !== undefined) {
+    const legal = Math.ceil(farMaxFor({
+      farMaxComm: rec.farMaxComm, farMaxRes: rec.farMaxRes,
+    }) / 0.62);
+    const ceiling = Math.min(physical, Math.max(cap, legal));
+    const reach = clamp((struct - 0.08) / 0.22, 0, 1);
+    cap = Math.max(cap, Math.round(cap + (ceiling - cap) * reach));
+  }
+  return Math.max(2, Math.min(cap, physical));
 }
 
 /**
@@ -2843,8 +2903,13 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // numbers the mean building age still rose forty-one years over fifty, which
   // is a town that replaces a tenth of itself in half a century and is still
   // mostly a museum.
-  if (rng(s, "dev") > 0.85) return;
   const e = s.econ;
+  // Chronic employment shortage: examine more often. Not a vac-coefficient
+  // hike — the space market has already asked for housable floor via
+  // `structTight`, and the wrecking ball is how a built-out city answers.
+  const chronicShort = BUILT_CLASSES.some((k) => (e.structTight?.[k] ?? 0) > 0.08
+    && (e.cityVac?.[k] ?? NATURAL_VAC[k]) <= frictionFloor(k) + 0.015);
+  if (rng(s, "dev") > (chronicShort ? 0.50 : 0.85)) return;
   // A REPLACEMENT IS BUILT BY THE SAME CREWS AS EVERYTHING ELSE.
   //
   // This path is 96% of all the square footage this city builds, and it broke
@@ -2868,33 +2933,43 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // Office sd(log) of real effective rent moves 0.356 -> 0.263 with it, and
   // retail 0.497 -> 0.259.
   if ((s.cityJobs ?? []).filter((j) => !j.orphaned).length >= crewCapacity(bbls, s.econ)) return;
-  let worst: { bbl: string; rec: ReturnType<typeof resolveRec>; ratio: number } | null = null;
-  for (let i = 0; i < 26; i++) {
+  // Score by DENSIFICATION SURPLUS, not land/building alone. A cash-flowing
+  // worn walk-up on a FAR-rich corner is the real redevelopment candidate in
+  // a shortage; the old land/built ratio only found husks, and century nulls
+  // rebuilt ~zero lots while jobs outran floors (ECONOMY.md §F #2 / CENTURY #6).
+  let worst: {
+    bbl: string; rec: NonNullable<ReturnType<typeof resolveRec>>; ratio: number; score: number;
+  } | null = null;
+  const sampleN = chronicShort ? 40 : 26;
+  for (let i = 0; i < sampleN; i++) {
     const bbl = bbls[Math.floor(rng(s, "dev") * bbls.length)];
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class === "land" || !rec.bldgArea) continue;
     if (s.holdings[bbl] || s.developments[bbl]) continue;        // never yours
     if (s.landmarks?.[bbl] !== undefined) continue;              // and never a landmark
     if ((s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
+    if (ownerOf(s, bbl)) continue;                               // named firm path is startOwnJob
     const age = START_YEAR + Math.floor(s.month / 12) - (rec.yearBuilt || 1900);
     if (age < 45) continue;                                      // nobody knocks down a young building
     // `gradeOf` is the OWNER'S stewardship, not the building's birthday — a
     // shed a slumlord has milked for thirty years is a teardown at sixty and
     // the same shed in a core fund is not.
-    const cond = gradeOf(s, rec!);
+    const cond = gradeOf(s, rec);
     if (cond !== "obsolete" && cond !== "worn" && cond !== "standard") continue;
-    // THE TEST: what the dirt is worth against what is standing on it. Above
-    // one, the building is worth less than the ground it occupies and it is
-    // only there because nobody has got round to it yet.
-    // Against what the BUILDING is worth as an investment — the same
-    // assetValue every other price in this game is quoted off. The first cut
-    // of this capitalised GROSS rent, which overstates a building by about
-    // double once you take the expense stack out, so the test never fired once
-    // in fifty years and the wrecking ball stayed in the shed.
     const land = landValue(rec, e);
     const built = Math.max(1, assetValue(rec, e, cond));
     const ratio = land / built;
-    if (!worst || ratio > worst.ratio) worst = { bbl, rec, ratio };
+    const probeUse = useForZone(rec.zoneDist ?? "C", rec.demandScore, rng(s, "dev"), e);
+    const probeLead = dominantOf(devMix(probeUse));
+    const infill = cityInfillCap(s, parcels, rec, 1, probeLead);
+    const targetSf = Math.max(3000, Math.round(rec.lotArea * 0.62 * infill));
+    const densify = targetSf / Math.max(1, rec.bldgArea);
+    const st = e.structTight?.[probeLead] ?? 0;
+    const condW = cond === "obsolete" ? 1.35 : cond === "worn" ? 1.15 : 1.0;
+    // Land/built still matters (option value of dirt), but unused legal FAR
+    // under a chronic short is the densify pressure the century was missing.
+    const score = (0.35 + Math.max(0, ratio)) * densify * condW * (1 + 2.2 * st);
+    if (!worst || score > worst.score) worst = { bbl, rec, ratio, score };
   }
   if (!worst) return;
   const { rec, ratio } = worst;
@@ -2916,15 +2991,33 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // — while industrial demand fell to 0.62x with its stock sitting at 1.04x,
   // untouched, because office happened to be soft at the time.
   const yr0 = START_YEAR + Math.floor(s.month / 12);
-  const nextUse = useForZone(rec!.zoneDist ?? "C", rec!.demandScore, rng(s, "dev"), e);
-  const lead = dominantOf(devMix(nextUse));
+  let nextUse = useForZone(rec.zoneDist ?? "C", rec.demandScore, rng(s, "dev"), e);
+  let lead = dominantOf(devMix(nextUse));
   const teardownRoll = rng(s, "dev");
+  const bbl = rec.bbl;
+  const oldSf = rec.bldgArea;
+  const cls = rec.class as BuiltClass;
+  // When the standing class is itself chronically short of housable floor and
+  // still has orders on the book, densify IN KIND. useForZone's programme mix
+  // was converting short office into multifamily while office structTight
+  // stayed elevated — supply answering the wrong demand.
+  if (cls !== "land" && (CITY_STOCK as Record<string, number>)[cls] !== undefined) {
+    const standing = cls as BuiltClass;
+    const stStand = e.structTight?.[standing] ?? 0;
+    const owedStand = e.startOwed?.[standing] ?? 0;
+    if (stStand > 0.06 && owedStand > 0
+        && (e.cityVac?.[standing] ?? NATURAL_VAC[standing]) <= frictionFloor(standing) + 0.02) {
+      if (rng(s, "dev") < Math.min(0.85, 0.45 + stStand * 1.5)) {
+        nextUse = standing;
+        lead = standing;
+      }
+    }
+  }
   // A replacement is still supply. It may satisfy an existing order, but it
   // cannot create a class of space the market has not ordered at all.
   if ((e.startOwed?.[lead] ?? 0) <= 0) return;
-  const bbl = rec!.bbl;
-  const oldSf = rec!.bldgArea;
-  const cls = rec!.class as BuiltClass;
+  const leadShort = (e.structTight?.[lead] ?? 0) > 0.06
+    && (e.cityVac?.[lead] ?? NATURAL_VAC[lead]) <= frictionFloor(lead) + 0.02;
 
   // NOBODY DEMOLISHES A BUILDING AND LEAVES A HOLE.
   //
@@ -2943,7 +3036,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // cornice datum and per-use floor caps every other city job respects, so a
   // three-storey town does not sprout a tower on one cleared lot.
   const yr = yr0;
-  const farMax = farMaxFor(rec!);
+  const farMax = farMaxFor(rec);
   // A redevelopment goes bigger than what it replaced — that is the arithmetic
   // that condemned the old building — but HOW MUCH BIGGER IS A MARKET
   // QUESTION, and the first cut of this did not ask it. It took 45-80% of the
@@ -2971,33 +3064,61 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // was wrong, and the evidence is in the paragraph above.
   const slack = Math.max(0, (e.cityVac[lead] ?? NATURAL_VAC[lead]) - NATURAL_VAC[lead]);
   const appetite = Math.max(0.18, Math.min(1, 1 - slack * 7));
-  const share = 0.30 + 0.50 * appetite * (0.75 + rng(s, "dev") * 0.5);
-  let nsf = Math.max(3000, Math.round((rec!.lotArea * farMax * Math.min(0.92, share)) / 100) * 100);
-  let nfl = Math.max(1, Math.round(nsf / (rec!.lotArea * 0.62)));
-  const infill = cityInfillCap(s, parcels, rec!, 1, lead);
-  if (nfl > infill) { nfl = infill; nsf = Math.max(3000, Math.round((rec!.lotArea * 0.62 * nfl) / 100) * 100); }
+  // Shortage asks for more of the legal envelope; glut still walks small.
+  const shareFloor = leadShort ? 0.55 : 0.30;
+  const share = shareFloor + (0.80 - shareFloor) * appetite * (0.75 + rng(s, "dev") * 0.5);
+  let nsf = Math.max(3000, Math.round((rec.lotArea * farMax * Math.min(0.95, share)) / 100) * 100);
+  let nfl = Math.max(1, Math.round(nsf / (rec.lotArea * 0.62)));
+  const infill = cityInfillCap(s, parcels, rec, 1, lead);
+  if (nfl > infill) { nfl = infill; nsf = Math.max(3000, Math.round((rec.lotArea * 0.62 * nfl) / 100) * 100); }
   const ucap = MAX_FLOORS_BY_USE[nextUse];
-  if (ucap !== undefined && nfl > ucap) { nfl = ucap; nsf = Math.max(3000, Math.round((rec!.lotArea * 0.62 * nfl) / 100) * 100); }
+  if (ucap !== undefined && nfl > ucap) { nfl = ucap; nsf = Math.max(3000, Math.round((rec.lotArea * 0.62 * nfl) / 100) * 100); }
+  // When the class is short of housable floor, refuse teardowns that do not
+  // grow stock — clearing to a same-size box is how the century stayed pinned.
+  if (leadShort && nsf < oldSf * 1.12) {
+    const needFl = Math.min(
+      infill,
+      ucap ?? infill,
+      Math.ceil((oldSf * 1.15) / Math.max(1, rec.lotArea * 0.62)),
+    );
+    if (needFl > nfl) {
+      nfl = needFl;
+      nsf = Math.max(3000, Math.round((rec.lotArea * 0.62 * nfl) / 100) * 100);
+    }
+    if (nsf < oldSf * 1.08) return;
+  }
 
   // The wrecking ball does not move until the replacement clears the same full
   // site-level pro forma as every other builder. Because the existing building
   // is still resolved here, the shared plan includes demolition cost.
-  // The owner gives up whichever is worth more: the dirt or the standing
-  // income building. The old gate required land/building >= 0.85 but then put
-  // only LAND in the project basis, so the prefilter and the actual pro forma
-  // answered different questions. Let the complete opportunity-cost hurdle be
-  // the gate instead.
-  const opportunityCost = Math.max(
-    landValue(rec!, e),
-    assetValue(rec!, e, gradeOf(s, rec!)),
-  );
+  //
+  // Opportunity cost is what a REDEVELOPER must pay the owner — not full
+  // stabilized income value. A buyer who will darken and demolish the building
+  // never pays the keep-operating mark: obsolete fabric, vacancy during the
+  // wipe, and demo risk are real discounts. The old gate required land/building
+  // >= 0.85 then put only LAND in the basis (two different questions). Charging
+  // undiscounted assetValue after that fix made densify almost never clear
+  // (≈5% of FAR-rich office candidates in a shortage) while jobs outran floors
+  // for a century — ECONOMY.md §F #2. Haircut by condition; still take the
+  // max of dirt and the discounted as-is bid.
+  // Unowned fabric only on this path (player / named firms skipped above).
+  // Full assetValue was an owner's forgoing applied to a building with no
+  // owner — densify cleared on ≈5% of FAR-rich office candidates while jobs
+  // outran floors (ECONOMY.md §F #2). Land is the opportunity cost; demo is
+  // inside the shared plan. Rival-owned densify keeps the discounted as-is
+  // bid in startOwnJob.
+  const opportunityCost = landValue(rec, e);
   const underwriting = underwriteDevelopment(
     s, parcels, bbl, nextUse, nfl, 0.62, opportunityCost,
   );
-  if (!underwriting?.clears || teardownRoll > 0.62 * underwriting.appetite) return;
+  // Soften the stochastic walk under chronic shortage — still requires a
+  // clearing pro forma; does not free-build.
+  const rollGate = leadShort ? 0.88 : 0.62;
+  if (!underwriting?.clears || teardownRoll > rollGate * underwriting.appetite) return;
   const plan = underwriting.plan;
   nsf = plan.sf;
   nfl = plan.floors;
+  if (leadShort && nsf < oldSf * 1.05) return;
   const tprog = plan.mix;
   // Preserve both historical duration draws. The date itself now comes from
   // the common schedule rather than a teardown-only clock.
@@ -3016,7 +3137,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     kind: "demolished",
     sf: oldSf,
     use: cls,
-    outcome: `${rec!.yearBuilt || "Older"} building cleared for ${nextUse}`,
+    outcome: `${rec.yearBuilt || "Older"} building cleared for ${nextUse}`,
   });
 
   (s.cityJobs ??= []).push({ bbl, use: nextUse, sf: nsf, floors: nfl, startM: s.month, deliverM: s.month + months, mix: tprog });
@@ -3067,13 +3188,16 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     // truer as the player grows, which is why the paper was noisiest for the
     // busiest players. A block is about 3% of the city and is what a person
     // means by "near me".
-    const yoursHere = Object.keys(s.holdings).some((b) => parcels[b]?.block === rec!.block);
-    const why = ratio >= 0.85
-      ? `the land under it is worth ${ratio.toFixed(1)}x the standing building`
-      : `the replacement clears its full hurdle after charging $${(opportunityCost / 1e6).toFixed(1)}M for the building being sacrificed`;
+    const yoursHere = Object.keys(s.holdings).some((b) => parcels[b]?.block === rec.block);
+    const densifyX = nsf / Math.max(1, oldSf);
+    const why = densifyX >= 1.25
+      ? `the site densifies ${(densifyX).toFixed(1)}x under a ${lead} shortage`
+      : ratio >= 0.85
+        ? `the land under it is worth ${ratio.toFixed(1)}x the standing building`
+        : `the replacement clears its full hurdle after charging $${(opportunityCost / 1e6).toFixed(1)}M for the building being sacrificed`;
     s.news.unshift({
       q: s.month, kind: yoursHere ? "event" : "info",
-      text: `${rec!.address} is coming down. It went up in ${rec!.yearBuilt}, and ${why}. `
+      text: `${rec.address} is coming down. It went up in ${rec.yearBuilt}, and ${why}. `
         + `${(nsf / 1000).toFixed(0)}k sf of ${nextUse} replaces it, opening ${monthLabel(s.month + months)}.`,
     });
   }
@@ -3088,6 +3212,15 @@ export function tickCityGrowth(
   // the crew count this month reflects the queue they have been staring at.
   tickCrews(s, bbls);
   tickTeardowns(s, parcels, bbls);
+  // Extra densify passes when employment still exceeds housable floor — one
+  // wrecking ball a month cannot catch a multi-decade capacity shortfall.
+  {
+    const e2 = s.econ;
+    const shortOf = (th: number) => BUILT_CLASSES.some((k) => (e2.structTight?.[k] ?? 0) > th
+      && (e2.cityVac?.[k] ?? NATURAL_VAC[k]) <= frictionFloor(k) + 0.015);
+    if (shortOf(0.08)) tickTeardowns(s, parcels, bbls);
+    if (shortOf(0.16)) tickTeardowns(s, parcels, bbls);
+  }
 
   // ---- deliveries first: today's opening was somebody's decision years ago --
   const still: NonNullable<GameState["cityJobs"]> = [];

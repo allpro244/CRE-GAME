@@ -2278,7 +2278,15 @@ export function tickEcon(s: GameState) {
     // that vacancy; the other ordered cranes because a phase label said boom
     // even when the common pro forma said the project destroyed value.
     const credit = clamp(e.creditIdx ?? 1, 0.25, 1.25);
-    const sites = e.sitePencil?.[k] ?? 1;
+    // sitePencil is the P97 parcel pro forma. When every sampled greenfield
+    // lot is land-locked (late-century residual blowout) the pencil hits 0 and
+    // zeros the whole class order — even though densify/teardown sites can
+    // still clear on a land basis. Under chronic structural shortage keep a
+    // reduced floor so the book densify fills is not erased.
+    const rawSites = e.sitePencil?.[k];
+    const sites = rawSites === undefined ? 1
+      : rawSites > 0 ? rawSites
+      : ((e.structTight?.[k] ?? 0) > 0.10 ? 0.35 : 0);
     const appetite = devPencils(e, k) * credit * sites;
     // ONE DRAW, TWO JOBS. This month's noise sizes the order AND sets how long
     // it will take to entitle, below. Capturing it rather than calling `rng`
@@ -2287,7 +2295,15 @@ export function tickEcon(s: GameState) {
     // a different world — and it carries a fact besides: a bigger programme
     // takes longer to get through planning than a smaller one.
     const jitter = rng(s);
-    const start = stk * 0.0016 * Math.min(2.4, appetite) * (0.7 + 0.6 * jitter);
+    // SUPPLY ANSWERS EMPLOYMENT (ECONOMY.md §F #2). Sticky startOwed shelves
+    // when pinned were tried and rejected — they raised phantom crane demand
+    // without buildable envelopes. This is different: when desired demand
+    // already exceeds housable (`structTight`), the MONTHLY ORDER itself must
+    // rise so densify/teardown/infill have a book to fill. Not a vac-floor
+    // hike and not minting tenants — more floor ordered against a measured
+    // capacity shortfall.
+    const catchUp = 1 + clamp(e.structTight?.[k] ?? 0, 0, 0.45) * 4.5;
+    const start = stk * 0.0016 * Math.min(2.4, appetite) * catchUp * (0.7 + 0.6 * jitter);
     e.starts[k] = Math.round(start);
 
     // THE QUEUE. A start becomes a dated cohort; it delivers when its month

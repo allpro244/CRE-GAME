@@ -31,6 +31,7 @@ const checks = [
   ["finite demand", "demand-finite.mjs"],
   ["economy honesty", "economy-honesty.mjs"],
   ["rival intelligence", "rival-smart.mjs"],
+  ["supply answers demand", "supply-answers.mjs", { SEEDS: "550991,12007,22,7", HZ: "1200" }],
   ["seller counters", "loi-counter.mjs"],
   ["development underwriting", "underwriting.mjs"],
   ["economy plausibility", "economy-plausibility.mjs", { HZ: "120", SEEDS: "3", CITY_SEEDS: "1" }],

@@ -93,7 +93,7 @@ function ParcelPanelInner({
             <div className="panel-bbl mono">Parcel {rec.bbl}</div>
           </div>
           <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
-            <button className="btn-mini" title="Open the full property page" onClick={() => useStore.getState().setPage("property")}>full view</button>
+            <button className="btn-mini" title="Open the property as a full desk" onClick={() => useStore.getState().setPage("property")}>full view</button>
             <button className="panel-close" onClick={() => select(null)} aria-label="Close">×</button>
           </div>
         </div>

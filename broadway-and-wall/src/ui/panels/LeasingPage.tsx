@@ -77,7 +77,7 @@ export function LeasingPage() {
           <div className="agent-title">{game.agent ? "Your leasing agent has the book." : "You are handling leasing yourself."}</div>
           <div className="agent-sub">
             {game.agent
-              ? `They sign inside your mandate, refer the middle band back to you, and pass the junk — 6% of lease value on what they sign${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
+              ? `They sign inside your mandate, pick a clear winner on contested tours, refer only the real judgment calls, and pass the junk — 6% of lease value on what they sign${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
               : "You'll be asked to sign, counter, or pass on every letter of intent. Hand it over and set the mandate below — you keep control of the policy, they work the paper."}
           </div>
         </div>

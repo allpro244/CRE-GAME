@@ -914,7 +914,13 @@ function checkMilestones(s: GameState, nw: number) {
 // Auto-advance stops when a NEW item appears on this list.
 export function attentionItems(s: GameState): { key: string; label: string }[] {
   const out: { key: string; label: string }[] = [];
-  for (const l of s.lois) out.push({ key: `loi:${l.id}`, label: `LOI from ${l.name} — answer by ${monthLabel(l.expiresM)}` });
+  // With an agent, only referred letters need the principal — the desk has
+  // already signed or killed the rest. Counting every LOI here is why Year/Skip
+  // kept stopping for paper the player had hired someone to handle.
+  for (const l of s.lois) {
+    if (s.agent && !l.referred) continue;
+    out.push({ key: `loi:${l.id}`, label: `LOI from ${l.name} — answer by ${monthLabel(l.expiresM)}` });
+  }
   // Tenant-relief letters expire in three months and a lapse is a refusal.
   // They lived on Deals but not in the attention list, so Year/Skip could run
   // straight past a decision the player had explicitly asked the game to stop

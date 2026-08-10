@@ -7,7 +7,7 @@ import { monthLabel } from "@/engine/types";
 import { buyListing, buyOffMarket, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import {
-  respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold,
+  respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, runLeasingAgent,
   AGENT_FLOOR_MIN, AGENT_FLOOR_MAX, AGENT_PASS_MIN, AGENT_TI_MONTHS_MIN, AGENT_TI_MONTHS_MAX,
   AGENT_SIGNING_MONTHS_MIN, AGENT_SIGNING_MONTHS_MAX,
   agentFloor, agentPassBelow, type LOIAction,
@@ -1167,13 +1167,25 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setAgent: (on) => {
-    const { game } = get();
+    const { game, parcels } = get();
     if (!game) return;
-    const next = { ...game, agent: on };
+    // Hiring used to flip a flag and leave every live letter on the interrupt
+    // stack until the next month tick — so "hand it to the agent" still meant
+    // working the whole desk yourself for the rest of the month.
+    let next: GameState = { ...game, agent: on };
+    if (on && parcels) {
+      next = structuredClone(next);
+      runLeasingAgent(next, parcels);
+      const referred = next.lois.filter((l) => l.referred).length;
+      toast(referred
+        ? `Your agent has the book — ${referred} letter${referred === 1 ? "" : "s"} referred back inside your mandate; the rest are signed or passed.`
+        : "Your agent has the book. They sign inside your mandate, refer the middle, pass the junk — 6% on what they sign.");
+    } else {
+      toast(on
+        ? "Your agent has the book. They sign inside your mandate, refer the middle, pass the junk — 6% on what they sign."
+        : "You're handling leasing yourself again.");
+    }
     set({ game: next });
-    toast(on
-      ? "Your agent has the book. They sign inside your mandate, refer the middle, pass the junk — 6% on what they sign."
-      : "You're handling leasing yourself again.");
     void persist(next);
   },
 

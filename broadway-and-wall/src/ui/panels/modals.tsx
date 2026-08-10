@@ -610,7 +610,7 @@ function DecisionBody({
     const market = loiMarketPsf(game, parcels, loi);
     const fee = exclusiveFeeRate(h);
     const cost = loiSigningCost(loi, fee);
-    const live = game.lois.filter((l) => !deferred.has(l.id));
+    const live = game.lois.filter((l) => !deferred.has(l.id) && (!game.agent || l.referred));
     const idx = live.findIndex((l) => l.id === loi.id) + 1;
     const short = Math.max(0, Math.ceil((cost - game.cash) / 1000) * 1000);
     const line = locAvailable(game, parcels);

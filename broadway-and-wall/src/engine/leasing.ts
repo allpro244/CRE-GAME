@@ -815,15 +815,27 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
   // The paper goes out on every open off-market conversation, including the
   // ones tickRivals opened earlier in this same tick. See stampApproaches.
   stampApproaches(s, parcels);
-  // expire stale LOIs and LOIs on parcels no longer owned
-  s.lois = s.lois.filter((l) => l.expiresM > q && s.holdings[l.bbl]);
+  // expire stale LOIs and LOIs on parcels no longer owned — and anything that
+  // landed on a ground-leased fee. The lessee is the landlord; fee-owner LOIs
+  // are not a soft bug, they are the game asking you to manage somebody else's
+  // building.
+  s.lois = s.lois.filter((l) => {
+    const h = s.holdings[l.bbl];
+    return l.expiresM > q && !!h && !h.groundLeased;
+  });
 
   // A RELIEF ASK YOU LET LAPSE IS AN ANSWER. The tenant asked in writing and
   // heard nothing for three months — that is a no, and it carries the same
   // strain a spoken no carries. Silence is not a way out of the decision.
   if (s.asks?.length) {
-    const lapsed = s.asks.filter((a) => a.expiresM <= q || !s.holdings[a.bbl]);
-    s.asks = s.asks.filter((a) => a.expiresM > q && s.holdings[a.bbl]);
+    const lapsed = s.asks.filter((a) => {
+      const h = s.holdings[a.bbl];
+      return a.expiresM <= q || !h || h.groundLeased;
+    });
+    s.asks = s.asks.filter((a) => {
+      const h = s.holdings[a.bbl];
+      return a.expiresM > q && !!h && !h.groundLeased;
+    });
     for (const a of lapsed) {
       const h = s.holdings[a.bbl];
       const t = h?.tenants.find((x) => x.name === a.name && x.startM === a.tenantStartM);
@@ -883,6 +895,22 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
   for (const h of Object.values(s.holdings)) {
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
+    // ABSOLUTELY NET MEANS YOU DO NOT RUN THE BUILDING. After the lessee's
+    // improvement opens, resolveRec correctly returns a tower — and without
+    // this gate every landlord path (LOIs, renewals, capital plan, make-ready)
+    // treated the fee owner as the operator. Skip the entire holding loop, and
+    // strip any operating attachments left on older saves.
+    if (h.groundLeased) {
+      delete h.broker;
+      delete h.leasingHold;
+      delete h.specSuites;
+      delete h.makeReady;
+      delete h.planCutM;
+      delete h.program;
+      if (h.tenants.length) h.tenants = [];
+      delete h.occ;
+      continue;
+    }
 
     // The flats in this building — whether it is a block of flats or a block
     // of flats with shops underneath — run on aggregate occupancy.
@@ -1615,11 +1643,18 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           expiresM: q + 3,
         });
         }
+        const cover = s.agent
+          ? { who: "Your agent" as const }
+          : deskCoverage(s, h.bbl);
         s.news.unshift({
           q, kind: "info",
           text: nTour > 1
-            ? `${nTour} parties are chasing the same ${(sf / 1000).toFixed(1)}k sf at ${rec.address} — you can only have one of them.`
-            : `LOI in at ${rec.address} — check the Deals desk.`,
+            ? (cover
+              ? `${nTour} parties are chasing the same ${(sf / 1000).toFixed(1)}k sf at ${rec.address} — ${cover.who.toLowerCase()} is picking a winner.`
+              : `${nTour} parties are chasing the same ${(sf / 1000).toFixed(1)}k sf at ${rec.address} — you can only have one of them.`)
+            : (cover
+              ? `LOI in at ${rec.address} — ${cover.who.toLowerCase()} is working it.`
+              : `LOI in at ${rec.address} — check the Deals desk.`),
         });
       }
     }
@@ -1634,6 +1669,54 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     runDelegatedLeasing(s, parcels);
     if (s.renewalMgmt) runRenewalDesk(s, parcels);
   }
+}
+
+/**
+ * THIS MONTH'S DESK TALLY — see GameState.deskMonth.
+ * Opens a fresh card when the month rolls so last month's quiet activity is not
+ * mistaken for this month's silence.
+ */
+export function bumpDeskMonth(
+  s: GameState,
+  key: "signed" | "passed" | "referred" | "walked" | "countered",
+) {
+  if (!s.deskMonth || s.deskMonth.m !== s.month) {
+    s.deskMonth = { m: s.month, signed: 0, passed: 0, referred: 0, walked: 0, countered: 0 };
+  }
+  s.deskMonth[key]++;
+}
+
+/** Live scorecard for the current month, or null if the desk has not acted yet. */
+export function deskMonthNow(s: GameState): NonNullable<GameState["deskMonth"]> | null {
+  if (!s.deskMonth || s.deskMonth.m !== s.month) return null;
+  return s.deskMonth;
+}
+
+/**
+ * Somebody else holds the pen on at least part of the book — firm agent,
+ * exclusive, leasing hire, or renewal management. Drives mandate UI and the
+ * quiet-desk scorecard.
+ */
+export function deskHoldsPen(s: GameState): boolean {
+  if (s.agent || s.renewalMgmt) return true;
+  if ((s.staff ?? []).some((x) => x.role === "leasing")) return true;
+  return Object.values(s.holdings).some((h) => !!h.broker);
+}
+
+/**
+ * Does this letter still need the principal — popup, Deals queue, Skip stop?
+ *
+ * Referred paper always does. Otherwise the firm agent, a covering exclusive /
+ * leasing hire, or (for renewals) management already owns the decision.
+ */
+export function loiNeedsPrincipal(s: GameState, l: LOI): boolean {
+  // Fee owner is not the landlord — never interrupt for the lessee's paper.
+  if (s.holdings[l.bbl]?.groundLeased) return false;
+  if (l.referred) return true;
+  if (s.agent) return false;
+  if (deskCoverage(s, l.bbl)) return false;
+  if (s.renewalMgmt && l.kind === "renewal") return false;
+  return true;
 }
 
 // The leasing agent works the whole book for you: every LOI that clears a
@@ -1696,6 +1779,7 @@ export function buildSpecSuites(
   const h = s.holdings[bbl];
   const rec = h ? resolveRec(parcels, s, bbl) : null;
   if (!h || !rec) return { s, err: "You don't own that." };
+  if (h.groundLeased) return { s, err: "The ground lessee controls the improvement — you do not fit out their space." };
   if (h.specSuites) return { s, err: "There is already pre-built space going in here." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
   const q = specSuiteQuote(s, rec, h, use, sf);
@@ -1738,6 +1822,10 @@ export function answerAsk(
   const next: GameState = cloneState(s);
   const a = next.asks?.find((x) => x.id === id);
   if (!a) return { s, msg: "", err: "That letter is gone." };
+  const held = next.holdings[a.bbl];
+  if (held?.groundLeased) {
+    return { s, msg: "", err: "The ground lessee lets that building — this relief letter is not yours to answer." };
+  }
   next.asks = next.asks!.filter((x) => x.id !== id);
   if (!next.asks.length) delete next.asks;
   const h = next.holdings[a.bbl];
@@ -1802,6 +1890,7 @@ export function blendExtend(
   const h = s.holdings[bbl];
   const rec = h ? resolveRec(parcels, s, bbl) : null;
   if (!h || !rec) return { s, err: "You don't own that." };
+  if (h.groundLeased) return { s, err: "The ground lessee lets that building — you have no lease to reopen." };
   const q = blendExtendQuote(s, rec, h, idx);
   if (!q) return { s, err: "There is no deal to do with that tenant right now." };
   if (s.cash < q.cost) return { s, err: "You cannot cover the commission on that." };
@@ -2151,7 +2240,7 @@ export function agentCounterTerms(
  * Exclusive brokers and an in-house leasing desk both negotiate; an assigned
  * leasing hire covers their buildings, an unassigned hire covers the book.
  */
-function deskCoverage(
+export function deskCoverage(
   s: GameState, bbl: string,
 ): { kind: "agent" | "exclusive" | "staff"; who: string } | null {
   if (s.agent) return { kind: "agent", who: "Your agent" };
@@ -2252,12 +2341,14 @@ function agentNegotiateLoi(
 ): boolean {
   const target = Math.min(1.02, adjFloor + 0.01);
   const terms = agentCounterTerms(loi, market, target);
+  bumpDeskMonth(s, "countered");
   const outcome = tenantCounterOutcome(s, rec, h, loi, terms);
   if (outcome === "took") {
     if (!agentCanFund(s, loi, feeRate)) {
       agentReferLoi(s, loi, rec,
         `${who} got them to $${loi.rentPsf.toFixed(2)}/sf, but signing needs `
-        + `${money(loiSigningCost(loi, feeRate))} against the ${money(agentCashReserve(s))} treasury reserve`);
+        + `${money(loiSigningCost(loi, feeRate))} against the ${money(agentCashReserve(s))} treasury reserve`,
+        who);
       return true;
     }
     delete (s as GameState & { _signFailed?: string })._signFailed;
@@ -2267,9 +2358,10 @@ function agentNegotiateLoi(
       || (loi.kind === "new" && h.tenants.length <= before);
     delete (s as GameState & { _signFailed?: string })._signFailed;
     if (failed) {
-      agentReferLoi(s, loi, rec, `${who} got a yes and could not demise the space`);
+      agentReferLoi(s, loi, rec, `${who} got a yes and could not demise the space`, who);
       return true;
     }
+    bumpDeskMonth(s, "signed");
     s.lois = s.lois.filter((l) => l.id !== loi.id);
     s.news.unshift({
       q: s.month, kind: "deal",
@@ -2280,6 +2372,7 @@ function agentNegotiateLoi(
     return true;
   }
   if (outcome === "walked") {
+    bumpDeskMonth(s, "walked");
     s.lois = s.lois.filter((l) => l.id !== loi.id);
     s.news.unshift({
       q: s.month, kind: "info",
@@ -2301,6 +2394,7 @@ function agentNegotiateLoi(
       || (loi.kind === "new" && h.tenants.length <= before);
     delete (s as GameState & { _signFailed?: string })._signFailed;
     if (!failed) {
+      bumpDeskMonth(s, "signed");
       s.lois = s.lois.filter((l) => l.id !== loi.id);
       s.news.unshift({
         q: s.month, kind: "deal",
@@ -2312,28 +2406,32 @@ function agentNegotiateLoi(
   }
   agentReferLoi(s, loi, rec,
     `${who} countered; they came back at $${loi.rentPsf.toFixed(2)}/sf `
-    + `(${(score * 100).toFixed(0)}% of market net effective) — final, and it still needs you`);
+    + `(${(score * 100).toFixed(0)}% of market net effective) — final, and it still needs you`,
+    who);
   return true;
 }
 
 function agentPassLoi(
   s: GameState, loi: LOI, rec: { address?: string }, score: number, market: number, pass: number,
+  who = "Your agent",
 ) {
+  bumpDeskMonth(s, "passed");
   s.lois = s.lois.filter((l) => l.id !== loi.id);
   s.news.unshift({
     q: s.month, kind: "info",
-    text: `Your agent passed on ${loi.name} at ${rec.address} — net effective `
+    text: `${who} passed on ${loi.name} at ${rec.address} — net effective `
       + `${(score * 100).toFixed(0)}% of a $${market.toFixed(2)} market (pass below ${Math.round(pass * 100)}%).`,
   });
 }
 
 function agentReferLoi(
-  s: GameState, loi: LOI, rec: { address?: string }, why: string,
+  s: GameState, loi: LOI, rec: { address?: string }, why: string, who = "Your agent",
 ) {
+  bumpDeskMonth(s, "referred");
   loi.referred = true;
   s.news.unshift({
     q: s.month, kind: "warn",
-    text: `Your agent referred ${loi.name} at ${rec.address} back to you — ${why}. It is on your desk.`,
+    text: `${who} referred ${loi.name} at ${rec.address} back to you — ${why}. It is on your desk.`,
   });
 }
 
@@ -2389,19 +2487,21 @@ export function runLeasingAgent(
         || w.h.tenants.length <= before;
       delete (s as GameState & { _signFailed?: string })._signFailed;
       if (failed) {
-        agentReferLoi(s, w.loi, w.rec, "the desk tried to sign the clear winner and could not demise the space");
+        agentReferLoi(s, w.loi, w.rec, "the desk tried to sign the clear winner and could not demise the space", cover.who);
         for (const x of scored) {
           if (x.loi.id === w.loi.id) continue;
-          if (x.verdict === "pass") agentPassLoi(s, x.loi, x.rec, x.score, x.market, x.pass);
+          if (x.verdict === "pass") agentPassLoi(s, x.loi, x.rec, x.score, x.market, x.pass, cover.who);
           else if (x.verdict === "counter") {
             agentNegotiateLoi(s, parcels, x.loi, x.rec, x.h, x.market, feeRate, x.adjFloor, x.adjPass, cover.who);
           } else {
             agentReferLoi(s, x.loi, x.rec,
-              x.why ?? `net effective ${(x.score * 100).toFixed(0)}% of market, under your ${Math.round(x.floor * 100)}% sign line`);
+              x.why ?? `net effective ${(x.score * 100).toFixed(0)}% of market, under your ${Math.round(x.floor * 100)}% sign line`,
+              cover.who);
           }
         }
         continue;
       }
+      bumpDeskMonth(s, "signed");
       const lost = party.filter((l) => l.id !== w.loi.id);
       s.lois = s.lois.filter((l) => l.tourId !== tid);
       if (lost.length) {
@@ -2417,12 +2517,14 @@ export function runLeasingAgent(
       for (const x of scored) {
         if (x.fundable) {
           agentReferLoi(s, x.loi, x.rec,
-            `clears your mandate with ${x.score >= 1 ? "par-or-better" : `${(x.score * 100).toFixed(0)}% of market`} net effective, and so does another party on the same suite — you choose`);
+            `clears your mandate with ${x.score >= 1 ? "par-or-better" : `${(x.score * 100).toFixed(0)}% of market`} net effective, and so does another party on the same suite — you choose`,
+            cover.who);
         } else if (x.verdict === "pass") {
-          agentPassLoi(s, x.loi, x.rec, x.score, x.market, x.pass);
+          agentPassLoi(s, x.loi, x.rec, x.score, x.market, x.pass, cover.who);
         } else {
           agentReferLoi(s, x.loi, x.rec,
-            x.why ?? `net effective ${(x.score * 100).toFixed(0)}% of market, under your ${Math.round(x.floor * 100)}% sign line`);
+            x.why ?? `net effective ${(x.score * 100).toFixed(0)}% of market, under your ${Math.round(x.floor * 100)}% sign line`,
+            cover.who);
         }
       }
       continue;
@@ -2459,12 +2561,13 @@ export function runLeasingAgent(
     if (tourResolved) continue;
     for (const x of scored) {
       if (!s.lois.some((l) => l.id === x.loi.id) || x.loi.referred) continue;
-      if (x.verdict === "pass") agentPassLoi(s, x.loi, x.rec, x.score, x.market, x.pass);
+      if (x.verdict === "pass") agentPassLoi(s, x.loi, x.rec, x.score, x.market, x.pass, cover.who);
       else if (x.verdict === "counter") {
         // Already negotiated above and still live → referred inside negotiate.
       } else {
         agentReferLoi(s, x.loi, x.rec,
-          x.why ?? `net effective ${(x.score * 100).toFixed(0)}% of market, under your ${Math.round(x.floor * 100)}% sign line`);
+          x.why ?? `net effective ${(x.score * 100).toFixed(0)}% of market, under your ${Math.round(x.floor * 100)}% sign line`,
+          cover.who);
       }
     }
   }
@@ -2485,12 +2588,13 @@ export function runLeasingAgent(
     const { verdict, score, floor, pass, adjFloor, adjPass, why } =
       deskVerdict(s, loi, market, feeRate);
     if (verdict === "pass") {
-      agentPassLoi(s, loi, rec, score, market, pass);
+      agentPassLoi(s, loi, rec, score, market, pass, cover.who);
       continue;
     }
     if (verdict === "refer") {
       agentReferLoi(s, loi, rec,
-        why ?? `net effective ${(score * 100).toFixed(0)}% of market, under your ${Math.round(floor * 100)}% sign line`);
+        why ?? `net effective ${(score * 100).toFixed(0)}% of market, under your ${Math.round(floor * 100)}% sign line`,
+        cover.who);
       continue;
     }
     if (verdict === "counter") {
@@ -2499,10 +2603,21 @@ export function runLeasingAgent(
     }
     if (!agentCanFund(s, loi, feeRate)) {
       agentReferLoi(s, loi, rec,
-        `signing needs ${money(loiSigningCost(loi, feeRate))} and would leave less than the ${money(agentCashReserve(s))} treasury reserve`);
+        `signing needs ${money(loiSigningCost(loi, feeRate))} and would leave less than the ${money(agentCashReserve(s))} treasury reserve`,
+        cover.who);
       continue;
     }
+    const before = h.tenants.length;
+    delete (s as GameState & { _signFailed?: string })._signFailed;
     signLoi(s, rec, h, loi, feeRate);
+    const failed = (s as GameState & { _signFailed?: string })._signFailed
+      || (loi.kind === "new" && h.tenants.length <= before);
+    delete (s as GameState & { _signFailed?: string })._signFailed;
+    if (failed) {
+      agentReferLoi(s, loi, rec, "the desk tried to sign and could not demise the space", cover.who);
+      continue;
+    }
+    bumpDeskMonth(s, "signed");
     s.lois = s.lois.filter((l) => l.id !== loi.id);
   }
 }
@@ -2515,6 +2630,19 @@ function runAgent(s: GameState, parcels: ParcelTable) {
 /** Exclusives and in-house leasing — negotiate without the firm-wide agent. */
 function runDelegatedLeasing(s: GameState, parcels: ParcelTable) {
   runLeasingAgent(s, parcels, { onlyDelegated: true });
+}
+
+/**
+ * Clear live letters under whoever currently holds the pen — hire path.
+ * Same logic as the end of tickLeasing, so flipping agent / exclusive /
+ * renewal management does not leave a month of popups on the open pile.
+ */
+export function workLeasingDesk(s: GameState, parcels: ParcelTable) {
+  if (s.agent) runLeasingAgent(s, parcels);
+  else {
+    runDelegatedLeasing(s, parcels);
+    if (s.renewalMgmt) runRenewalDesk(s, parcels);
+  }
 }
 
 /**
@@ -2563,6 +2691,7 @@ function runRenewalDesk(s: GameState, parcels: ParcelTable) {
     const rate = RENEWAL_SELF_FEE + RENEWAL_MGMT_FEE;
     const { verdict, score, floor, pass, adjFloor, adjPass, why } = deskVerdict(s, loi, market, rate);
     if (verdict === "pass") {
+      bumpDeskMonth(s, "passed");
       s.lois = s.lois.filter((l) => l.id !== loi.id);
       s.news.unshift({
         q: s.month, kind: "info",
@@ -2572,6 +2701,7 @@ function runRenewalDesk(s: GameState, parcels: ParcelTable) {
       continue;
     }
     if (verdict === "refer") {
+      bumpDeskMonth(s, "referred");
       loi.referred = true;
       s.news.unshift({
         q: s.month, kind: "warn",
@@ -2589,6 +2719,7 @@ function runRenewalDesk(s: GameState, parcels: ParcelTable) {
     const cost = loiSigningCost(loi, rate);
     const reserve = agentCashReserve(s);
     if (s.cash - cost < reserve) {
+      bumpDeskMonth(s, "referred");
       loi.referred = true;
       s.news.unshift({
         q: s.month, kind: "warn",
@@ -2598,6 +2729,7 @@ function runRenewalDesk(s: GameState, parcels: ParcelTable) {
       continue;
     }
     signLoi(s, rec, h, loi, rate);
+    bumpDeskMonth(s, "signed");
     s.lois = s.lois.filter((l) => l.id !== loi.id);
   }
 }
@@ -2812,6 +2944,10 @@ export function respondLOI(
   const h = next.holdings[loi.bbl];
   const rec = resolveRec(parcels, next, loi.bbl);
   if (!h || !rec) return { s, msg: "", err: "You no longer control that building." };
+  if (h.groundLeased) {
+    next.lois = next.lois.filter((l) => l.id !== id);
+    return { s: next, msg: "", err: "That fee is ground-leased — the lessee lets the building, not you." };
+  }
 
   let drawn = 0;
   // Whoever holds the file the day the letter is signed is who gets paid, and
@@ -3117,6 +3253,7 @@ export function buyOutTenants(
 ): { s: GameState; err?: string; msg?: string } {
   const h0 = s.holdings[bbl];
   if (!h0) return { s, err: "You don't own that." };
+  if (h0.groundLeased) return { s, err: "The ground lessee lets that building — there is no roll of yours to buy out." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const q = buyoutQuote(s, bbl);
@@ -3156,7 +3293,7 @@ export function buyOutTenants(
 /** Stop or restart letting a building — the switch you throw before a demolition. */
 export function setLeasingHold(s: GameState, bbl: string, on: boolean): GameState {
   const h = s.holdings[bbl];
-  if (!h) return s;
+  if (!h || h.groundLeased) return s;
   const next: GameState = cloneState(s);
   next.holdings[bbl].leasingHold = on || undefined;
   if (on) next.lois = next.lois.filter((l) => l.bbl !== bbl);

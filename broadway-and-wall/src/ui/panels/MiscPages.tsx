@@ -138,6 +138,8 @@ export function SettingsPage() {
           + "an institution indicating on a portfolio you put in the market, and bids landing on a marketed sale. "
           + "Every one of them is written into the news feed the moment it fires, so turning "
           + "this off loses the interruption and not the event — you will read it on News / The Tape instead. "
+          + "A lender taking a rival's whole book puts the package on Marketplace under Books for sale — "
+          + "the alert card (when on) links you there. "
           + "With both switches off a sale or portfolio bid still stops Year/Skip and badges Deals, but will not take the screen — "
           + "and a quiet offer lapses in two months, a bid list in fourteen, a portfolio indication in three, if you never open the desk."}
       />

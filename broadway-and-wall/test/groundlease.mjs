@@ -54,6 +54,27 @@ check(E.portfolioMonthlyCF(g, parcels) === 600_000 / 12,
 check(!E.isVacantLandLoanCollateral(g, g.holdings[bbl], rec),
   "a performing leased fee is not vacant land-loan collateral");
 
+// Debt-page style aggregate used to sum holdingNOIYr (zero on a leased fee) and
+// paint "after debt service" red while the coupon was still arriving.
+{
+  const deedNoi = E.ownedHoldingNoiYr(g, parcels, g.holdings[bbl]);
+  const ds = 120_000; // hypothetical annual debt service under the coupon
+  check(deedNoi - ds === 480_000, "NOI against debt includes the ground coupon");
+  check(deedNoi - ds > 0, "after debt service is not painted negative on a performing leased fee");
+}
+
+console.log("\nMONTH TICK BOOKS THE COUPON ONCE\n");
+{
+  const cash0 = g.cash;
+  const next = E.advanceMonth(structuredClone(g), parcels, bbls, {});
+  const gained = next.cash - cash0;
+  // Coupon arrives; no mortgage on the fixture. Overhead / GA may take a bite.
+  check(gained > 0, `month tick leaves the firm richer after the ground coupon (Δ ${Math.round(gained)})`);
+  const last = next.holdings[bbl].cfHistory[next.holdings[bbl].cfHistory.length - 1];
+  check(last === Math.round(600_000 / 12),
+    `holding cfHistory records the coupon (${last} vs ${Math.round(600_000 / 12)})`);
+}
+
 const { quotes } = E.refiQuotes(g, parcels, bbl);
 const landDesk = quotes.find((q) => q.id === "land");
 const incomeOk = quotes.some((q) => q.id !== "land" && q.available && q.maxProceeds > 0);
@@ -146,6 +167,96 @@ console.log("\nDEFAULT STILL REVERTS CONTROL\n");
   check(g5.holdings[bbl].deliveredM === 24,
     "defaulted shell also keeps the original opening month");
   check(g5.alerts?.[0]?.kind === "ground", "default raises a player-facing popup");
+}
+
+console.log("\nFEE OWNER IS NOT THE LANDLORD\n");
+{
+  // After the lessee's tower is standing, resolveRec reads as a building —
+  // and every landlord path used to treat the fee owner as the operator.
+  let g6 = structuredClone(g);
+  g6.holdings[bbl].broker = true;
+  g6.lois = [{
+    id: 1, bbl, name: "Fake Tenant LLC", kind: "new", use: "office",
+    sf: 10_000, rentPsf: 40, tiPsf: 60, freeM: 3, termM: 120,
+    expiresM: g6.month + 3, credit: 1, stage: "open",
+  }];
+  g6.asks = [{
+    id: 1, bbl, name: "Nobody", tenantStartM: 0, askPsf: 30, currentPsf: 40,
+    addM: 36, expiresM: g6.month + 3,
+  }];
+  const cashBefore = g6.cash;
+  // Advance several months — LOIs must not regenerate, capital plan must not
+  // debit the fee owner, and attention must not stop Skip for landlord paper.
+  for (let i = 0; i < 6; i++) {
+    g6 = E.advanceMonth(g6, parcels, bbls, {});
+  }
+  check(!(g6.lois ?? []).some((l) => l.bbl === bbl),
+    "no LOIs land on a ground-leased fee after the lessee opens");
+  check(!(g6.asks ?? []).some((a) => a.bbl === bbl),
+    "no tenant-relief asks on a ground-leased fee");
+  check(!g6.holdings[bbl].broker, "leasing exclusive is cleared / not kept on a leased fee");
+  check(g6.holdings[bbl].tenants.length === 0, "fee owner has no rent roll of their own");
+  const attn = E.attentionItems(g6).filter((a) =>
+    a.key.startsWith("loi:") || a.key.startsWith("tenant-ask:")
+    || a.key.startsWith("lease-roll:") || a.key.startsWith("capital-plan:"));
+  check(attn.length === 0, "attention list has no landlord chores for the leased fee");
+  // Capital plan used to debit fee cash against the lessee's SF.
+  // Allow ordinary GA / overhead; forbid a large unexplained capex hole.
+  check(g6.cash > cashBefore - 50_000,
+    "fee owner is not drained by the lessee building's capital plan");
+
+  const demo = E.demolish(g6, parcels, bbl);
+  check(!!demo.err && /lessee/i.test(demo.err), "demolish refused while ground lease is live");
+  const reno = E.startRenovation(g6, parcels, bbl);
+  check(!!reno.err && /lessee/i.test(reno.err), "renovation refused while ground lease is live");
+  const prog = E.startProgram(g6, parcels, bbl, "lobby");
+  check(!!prog.err && /lessee/i.test(prog.err), "capital program refused while ground lease is live");
+  const brok = E.setBroker(g6, parcels, bbl, true);
+  check(!!brok.err && /lessee/i.test(brok.err), "leasing exclusive refused on a leased fee");
+  const spec = E.buildSpecSuites(g6, parcels, bbl, "office", 5_000);
+  check(!!spec.err && /lessee/i.test(spec.err), "spec suites refused on a leased fee");
+
+  // UI-shaped filters: Leasing / Portfolio / Staff iterate "buildings you
+  // operate". A resolveRec tower on a leased fee must not pass those gates.
+  const operateRows = Object.values(g6.holdings).filter((h) => {
+    if (E.isLeasedFee(h)) return false;
+    const r = E.resolveRec(parcels, g6, h.bbl);
+    return !!r && r.class !== "land" && r.bldgArea > 0;
+  });
+  check(!operateRows.some((h) => h.bbl === bbl),
+    "leased fee is excluded from operate-buildings filters (Leasing / Staff)");
+  check(E.isLeasedFee(g6.holdings[bbl]), "isLeasedFee helper flags the ground-leased holding");
+
+  const os = E.operatingStatement(E.resolveRec(parcels, g6, bbl), g6.econ, g6.holdings[bbl], g6.month);
+  check(os.opex === 0 && os.tax === 0 && os.noi === 0,
+    "operatingStatement is empty on a leased fee (no vacant-shell fiction)");
+
+  const saleNoi = E.ownedHoldingNoiYr(g6, parcels, g6.holdings[bbl]);
+  check(saleNoi === 600_000, "sell-desk yield uses ground coupon, not vacant-building NOI");
+
+  const buyout = E.buyOutTenants(g6, parcels, bbl);
+  check(!!buyout.err && /lessee/i.test(buyout.err), "tenant buyout refused on a leased fee");
+  const blend = E.blendExtend(g6, parcels, bbl, 0);
+  check(!!blend.err && /lessee/i.test(blend.err), "blend-and-extend refused on a leased fee");
+
+  // Develop eligibility: live ground lease blocks Break ground even while class is land mid-job.
+  const mid = structuredClone(g6);
+  delete mid.built[bbl];
+  // Keep groundLeased + groundLeases — site still looks like vacant land to resolveRec.
+  const midRec = E.resolveRec(parcels, mid, bbl);
+  check(midRec?.class === "land" || !(midRec?.bldgArea > 0),
+    "pre-delivery leased fee can still resolve as land");
+  check(!!mid.holdings[bbl].groundLeased && !!mid.groundLeases?.[bbl],
+    "DevelopSection mount gate (groundLeased / groundLeases) is true while live");
+  const start = E.startDevelopment(mid, parcels, bbl, "office", 8, 0.6, "gmp", 0.6);
+  check(!!start.err && /ground-leased|ground lease/i.test(start.err),
+    "startDevelopment refused while ground lease is live");
+
+  const books = E.buildBalanceSheet(g6, parcels);
+  check((books.byClass["leased fee"]?.n ?? 0) >= 1,
+    "Books classifies the coupon as leased fee, not office");
+  check(!(books.byClass.office?.n > 0),
+    "Books does not count the lessee tower as an operated office");
 }
 
 console.log("");

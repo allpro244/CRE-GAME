@@ -2,10 +2,10 @@ import { useState } from "react";
 import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
-import { ownedHoldingValue, monthlyNOI, resolveRec, collateralAsIs, capRateFor } from "@/engine/value";
+import { ownedHoldingValue, ownedMonthlyNoi, resolveRec, collateralAsIs, capRateFor } from "@/engine/value";
 import { saleTaxQuote } from "@/engine/actions";
 import { MILESTONES } from "@/engine/sim";
-import { loiSigningCost, exclusiveFeeRate } from "@/engine/leasing";
+import { loiSigningCost, exclusiveFeeRate, loiNeedsPrincipal } from "@/engine/leasing";
 import { depositFor as auctionDepositFor } from "@/engine/auction";
 import { portfolioQuote } from "@/engine/portfolio";
 import { fundableNow, locAvailable } from "@/engine/credit";
@@ -89,10 +89,7 @@ function DefaultNoticeBody({
   // owner asked: can the other buildings carry this one while you sell it?
   const otherCF = Object.values(game.holdings)
     .filter((x) => x.bbl !== open.bbl)
-    .reduce((a, x) => {
-      const r = resolveRec(parcels, game, x.bbl);
-      return a + (r ? monthlyNOI(r, game.econ, x, game.month) : 0);
-    }, 0);
+    .reduce((a, x) => a + ownedMonthlyNoi(game, parcels, x), 0);
   const dismiss = () => setSeen({ ...seen, [`${open.bbl}:${open.stage}`]: true });
 
   return (
@@ -424,6 +421,7 @@ export function AlertModal() {
 function AlertBody() {
   const game = useStore((s) => s.game)!;
   const dismissAlert = useStore((s) => s.dismissAlert);
+  const setPage = useStore((s) => s.setPage);
   const a = game.alerts?.[0];
   // A dead firm gets the game-over screen and nothing else on top of it.
   // ...and a player who has asked for total silence gets it. Every alert is
@@ -442,6 +440,12 @@ function AlertBody() {
   };
   const kicker = (KICKER[a.kind] ?? ["Something has happened", "Something has happened"])[bad ? 0 : 1];
   const queued = (game.alerts?.length ?? 1) - 1;
+  // A seized rival book is inventory, not scenery — the package is on Marketplace.
+  const streetBooks = (game.portfolios ?? []).filter((p) => !p.player);
+  const goBooks = a.kind === "portfolio" && bad && streetBooks.length > 0;
+  // An indication on YOUR book belongs on Portfolio / Deals, not the tape.
+  const goOwnBook = a.kind === "portfolio" && !bad && !!game.portfolioSale;
+  const goNotes = a.kind === "bank" && bad;
   return (
     <div className={"modal-backdrop alert-back" + (bad ? " alert-tint-bad" : "")}>
       <div className={"modal alert-card " + (bad ? "alert-bad" : "alert-good")} role="dialog" aria-modal="true">
@@ -451,15 +455,34 @@ function AlertBody() {
         <div className="alert-body">{a.body}</div>
         {a.detail && <div className="alert-detail">{a.detail}</div>}
         <div className="alert-foot">
-          {bad
-            ? "This is not a decision and there is nothing on this card to accept. It has happened; "
-              + "what it does to your rents, your lenders and your book is the rest of the game."
-            : "Nobody rings a bell for one of these either. It is on the tape and in the history, and the "
-              + "people who make money on it are the ones already standing where it lands."}
+          {goBooks
+            ? "The book is for sale on Marketplace under Books for sale — one cash cheque for the whole package. Rivals are looking at it too."
+            : goOwnBook
+              ? "Open Portfolio or Deals to answer the indication. It will not wait forever."
+              : bad
+                ? "This is not a decision and there is nothing on this card to accept. It has happened; "
+                  + "what it does to your rents, your lenders and your book is the rest of the game."
+                : "Nobody rings a bell for one of these either. It is on the tape and in the history, and the "
+                  + "people who make money on it are the ones already standing where it lands."}
         </div>
         <div className="modal-actions">
-          <button className={"btn" + (bad ? "" : " btn-buy")} onClick={dismissAlert}>
-            {bad ? "Understood" : "Good."}
+          {goBooks && (
+            <button className="btn btn-buy" onClick={() => { dismissAlert(); setPage("market"); }}>
+              Open Marketplace · Books for sale
+            </button>
+          )}
+          {goOwnBook && (
+            <button className="btn btn-buy" onClick={() => { dismissAlert(); setPage("portfolio"); }}>
+              Open Portfolio
+            </button>
+          )}
+          {goNotes && (
+            <button className="btn" onClick={() => { dismissAlert(); setPage("notes"); }}>
+              Open Notes
+            </button>
+          )}
+          <button className={"btn" + (!goBooks && !goOwnBook && !bad ? " btn-buy" : "")} onClick={dismissAlert}>
+            {bad && !goBooks ? "Understood" : goBooks || goOwnBook ? "Later" : "Good."}
           </button>
         </div>
         {queued > 0 && (
@@ -478,9 +501,9 @@ function AlertBody() {
 function decisionAwake(g: ReturnType<typeof useStore.getState>["game"], popupsOff: boolean): boolean {
   if (!g || g.gameOver || popupsOff) return false;
   if (g.portfolioSale?.bids?.[0]) return true;
-  // An agent suppresses routine letters, not the ones it explicitly referred
-  // back to the principal. Those still expire and still require a decision.
-  if (g.lois.some((l) => !g.agent || l.referred)) return true;
+  // Desk-covered letters stay quiet (agent / exclusive / staff / renewals).
+  // Ground-leased fees never wake the modal — the lessee is the landlord.
+  if (g.lois.some((l) => loiNeedsPrincipal(g, l))) return true;
   for (const h of Object.values(g.holdings)) {
     if (h.sale?.offer) return true;
     // Marketed bid lists used to be invisible here — only quiet `sale.offer`
@@ -632,9 +655,10 @@ function DecisionBody({
     );
   }
 
-  // With an agent, only REFERRED letters interrupt — the desk already signed
-  // or killed the rest. Without an agent, every letter is yours.
-  const loi = game.lois.find((l) => !deferred.has(l.id) && (!game.agent || l.referred));
+  // Only letters the principal still owns interrupt — covered / leased-fee paper is quiet.
+  const loiOnDesk = (l: (typeof game.lois)[number]) =>
+    !deferred.has(l.id) && loiNeedsPrincipal(game, l);
+  const loi = game.lois.find(loiOnDesk);
   const offerBbl = deferred.has(-1) ? undefined : Object.keys(game.holdings).find((b) => game.holdings[b].sale?.offer);
   if (!loi && !offerBbl) return null;
 
@@ -662,7 +686,7 @@ function DecisionBody({
     const market = loiMarketPsf(game, parcels, loi);
     const fee = exclusiveFeeRate(h);
     const cost = loiSigningCost(loi, fee);
-    const live = game.lois.filter((l) => !deferred.has(l.id) && (!game.agent || l.referred));
+    const live = game.lois.filter(loiOnDesk);
     const idx = live.findIndex((l) => l.id === loi.id) + 1;
     const short = Math.max(0, Math.ceil((cost - game.cash) / 1000) * 1000);
     const line = locAvailable(game, parcels);

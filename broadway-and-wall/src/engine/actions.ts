@@ -993,6 +993,18 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
     if (!prog) continue;
     delete h.groundOffer;
     h.groundLeased = true;
+    // You are no longer the landlord — drop every operating attachment that
+    // would otherwise keep firing LOIs, exclusives, capital-plan cuts, etc.
+    delete h.broker;
+    delete h.leasingHold;
+    delete h.specSuites;
+    delete h.makeReady;
+    delete h.planCutM;
+    delete h.program;
+    h.tenants = [];
+    delete h.occ;
+    s.lois = (s.lois ?? []).filter((l) => l.bbl !== h.bbl);
+    if (s.asks) s.asks = s.asks.filter((a) => a.bbl !== h.bbl);
     if (!s.groundLeases) s.groundLeases = {};
     s.groundLeases[h.bbl] = {
       bbl: h.bbl, startM: s.month, endM: s.month + offer.years * 12,
@@ -1065,8 +1077,9 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
     }
 
     stepGroundRent(s, parcels, bbl, gl, true);
-    s.cash += gl.rentYr / 12;
-    logBooks(s, "noi", gl.rentYr / 12);
+    // Rent is booked in the holdings loop via ownedMonthlyNoi — same path as
+    // every other deed — so a performing leased fee cannot vanish from CF / yr,
+    // cfHistory, or the debt page while still hitting the cash ledger here.
   }
 
   // Off-book leased fees: no cash to you, but the encumbrance and the lessee
@@ -3015,6 +3028,7 @@ export function setBroker(s: GameState, parcels: ParcelTable, bbl: string, on: b
   const h = s.holdings[bbl];
   const rec = resolveRec(parcels, s, bbl);
   if (!h || !rec) return { s, err: "You don't own that." };
+  if (h.groundLeased) return { s, err: "The ground lessee lets that building — you have no exclusive to grant." };
   if (on && !isCommercial(rec)) return { s, err: "Brokers work commercial space — multifamily leases itself." };
   const next = clone(s);
   const nh = next.holdings[bbl];
@@ -3046,6 +3060,8 @@ export function setBrokerAll(s: GameState, parcels: ParcelTable, on: boolean): {
   for (const h of Object.values(next.holdings)) {
     const rec = resolveRec(parcels, next, h.bbl);
     if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+    // Ground-leased fees look built after the lessee opens — they are not yours to let.
+    if (h.groundLeased) { skipped++; continue; }
     if (!isCommercial(rec)) { skipped++; continue; }
     if (on === !!h.broker) continue;
     if (on) h.broker = true; else delete h.broker;
@@ -3066,6 +3082,9 @@ export function startRenovation(s: GameState, parcels: ParcelTable, bbl: string)
   const h = s.holdings[bbl];
   if (!h) return { s, err: "You don't own that parcel." };
   const rec = resolveRec(parcels, s, bbl);
+  if (h.groundLeased || s.groundLeases?.[bbl]) {
+    return { s, err: "The ground lessee controls the improvement — you do not gut their building." };
+  }
   if (!rec || rec.class === "land" || !rec.bldgArea) return { s, err: "Nothing to renovate on this lot." };
   if (h.condition === "good") return { s, err: "Already in top condition." };
   if (h.renovatingUntilM !== undefined) return { s, err: "Crews are already on site." };

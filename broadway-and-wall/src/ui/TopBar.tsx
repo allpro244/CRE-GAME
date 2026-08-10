@@ -6,6 +6,7 @@ import { currentCity, currentSeed } from "@/state/city";
 import { locLimit } from "@/engine/credit";
 import { netWorth } from "@/engine/value";
 import { portfolioMonthlyCF } from "@/engine/sim";
+import { loiNeedsPrincipal } from "@/engine/leasing";
 import { usd, pct } from "./format";
 import { liveBrokerCalls } from "./RightPanel";
 
@@ -20,10 +21,9 @@ const JOBS: {
     id: "acquire",
     label: "Acquire",
     pages: [
-      { id: "market", label: "Marketplace", note: "Listings, auctions and off-market calls" },
+      { id: "market", label: "Marketplace", note: "Listings, receiver books, auctions and off-market calls" },
       { id: "deals", label: "Deals", note: "LOIs, negotiations and contracts" },
-      { id: "notes", label: "Notes", note: "Distressed paper away from the deed" },
-      { id: "research", label: "Research", note: "Comps, submarkets and underwriting" },
+      { id: "notes", label: "Notes", note: "Distressed paper — claims on buildings, not the deed" },
     ],
   },
   {
@@ -48,6 +48,7 @@ const JOBS: {
     label: "World",
     pages: [
       { id: "economy", label: "Economy", note: "Cycle, space markets and construction" },
+      { id: "research", label: "Research", note: "Comps, submarkets and underwriting" },
       { id: "news", label: "News", note: "What the city wrote this month" },
     ],
   },
@@ -80,7 +81,7 @@ export default function TopBar() {
       return {
         nw: 0, cf: 0, line: 0, dealsCount: 0, unread: 0,
         bcalls: [] as ReturnType<typeof liveBrokerCalls>, bcallSoon: 0,
-        notesLive: 0, debtHot: false, debtSwept: false, debtBal: 0, debtWall: 0,
+        notesLive: 0, booksLive: 0, debtHot: false, debtSwept: false, debtBal: 0, debtWall: 0,
       };
     }
     const parcels = useStore.getState().parcels;
@@ -90,11 +91,12 @@ export default function TopBar() {
     // Count every decision that actually lives on Deals. The badge used to
     // count only LOIs and single-building offers, so tenant relief, purchase
     // counters, contracts and portfolio bids could expire behind a clean tab.
-    const loisOnDesk = deferredGame.agent
-      ? deferredGame.lois.filter((l) => l.referred).length
-      : deferredGame.lois.length;
+    const loisOnDesk = deferredGame.lois.filter((l) => loiNeedsPrincipal(deferredGame, l)).length;
+    const asksOnDesk = (deferredGame.asks ?? []).filter(
+      (a) => !deferredGame.holdings[a.bbl]?.groundLeased,
+    ).length;
     const dealsCount = loisOnDesk
-      + (deferredGame.asks?.length ?? 0)
+      + asksOnDesk
       + Object.keys(deferredGame.talks ?? {}).length
       + (deferredGame.portfolioSale?.bids?.length ?? 0)
       + Object.values(deferredGame.holdings).filter((h) => h.sale?.offer || (h.sale?.bids?.length ?? 0) > 0).length;
@@ -116,6 +118,9 @@ export default function TopBar() {
     const bcallSoon = bcalls.length ? Math.max(0, bcalls[0].lapseM - deferredGame.month) : 0;
     const notesLive = (deferredGame.noteOffers?.length ?? 0)
       + (deferredGame.notes ?? []).filter((n) => n.perf === "nonperforming" && n.filedM === undefined).length;
+    // Receiver books / fund packages on Marketplace — the seizure alert's desk.
+    const booksLive = (deferredGame.portfolios ?? []).filter((p) => !p.player).length
+      + ((deferredGame.auction && deferredGame.month < deferredGame.auction.m) ? 1 : 0);
     let debtBal = 0, debtWall = 0;
     for (const h of Object.values(deferredGame.holdings)) {
       if (!h.loan) continue;
@@ -127,13 +132,13 @@ export default function TopBar() {
       if (deferredGame.facility.maturityM - deferredGame.month <= 36) debtWall += deferredGame.facility.balance;
     }
     return {
-      nw, cf, line, dealsCount, unread, bcalls, bcallSoon, notesLive,
+      nw, cf, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
       debtHot: debtBal > 0 && debtWall / debtBal > 0.35,
       debtSwept: !!deferredGame.facility?.breachedSince,
       debtBal, debtWall,
     };
   }, [deferredGame]);
-  const { nw, cf, line, dealsCount, unread, bcalls, bcallSoon, notesLive, debtHot, debtSwept, debtBal, debtWall } = vitals;
+  const { nw, cf, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive, debtHot, debtSwept, debtBal, debtWall } = vitals;
 
   // WHICH TOWN IS NOT ASKED HERE ANY MORE. The island, the size and the
   // build-out used to hang off the New-city button as a three-section
@@ -325,12 +330,15 @@ export default function TopBar() {
           {JOBS.map((job) => {
             const on = job.pages.some((p) => p.id === page);
             const badge = job.id === "acquire"
-              ? dealsCount + notesLive + bcalls.length
+              ? dealsCount + notesLive + bcalls.length + booksLive
               : job.id === "capital" && (debtSwept || debtHot) ? 1
               : job.id === "world" ? unread
               : 0;
-            const title = job.id === "acquire" && bcalls.length
-              ? `${bcalls.length} off-market file${bcalls.length === 1 ? "" : "s"}; soonest lapses in ${bcallSoon} mo`
+            const title = job.id === "acquire" && (bcalls.length || booksLive)
+              ? [
+                bcalls.length ? `${bcalls.length} off-market file${bcalls.length === 1 ? "" : "s"}; soonest lapses in ${bcallSoon} mo` : "",
+                booksLive ? `${booksLive} book${booksLive === 1 ? "" : "s"}/docket on Marketplace` : "",
+              ].filter(Boolean).join(" · ")
               : job.id === "capital" && debtBal > 0
                 ? `${(debtBal / 1e6).toFixed(1)}M outstanding${debtHot ? ` — ${((debtWall / debtBal) * 100).toFixed(0)}% matures inside 3y` : ""}`
                 : undefined;

@@ -29,7 +29,7 @@ import { logBooks, monthLabel, raiseAlert, cloneState} from "./types";
 import { firmShort } from "./firm";
 import { rng, rrange } from "./market";
 import { sweepLocIdleCash } from "./credit";
-import { ownedHoldingValue, resolveRec, holdingNOIYr, asIfOwned } from "./value";
+import { ownedHoldingValue, ownedHoldingNoiYr, resolveRec, holdingNOIYr, asIfOwned } from "./value";
 import { depositsOn } from "./leasing";
 import { useSf } from "./mix";
 import { prepayPenalty } from "./debt";
@@ -172,6 +172,9 @@ export function portfolioQuote(s: GameState, parcels: ParcelTable, bbls: string[
   // why it costs you on the ones that did.
   let weak = 0;
   rows.forEach((r, i) => {
+    // A performing leased fee is income paper — do not haircut it as a vacant
+    // shell just because resolveRec shows the lessee's building empty of YOUR tenants.
+    if (r.h.groundLeased) return;
     const built = r.rec.class !== "land" && r.rec.bldgArea > 0;
     const occ = built ? occOf(r.rec, r.h) : 1;
     const share = vals[i] / sumOfParts;
@@ -247,6 +250,9 @@ export function portfolioQuote(s: GameState, parcels: ParcelTable, bbls: string[
   // in a portfolio is sold on the dirt, and dividing by an ask that includes it
   // is exactly what depresses a mixed book's quoted yield in life.
   const noiAt = (ask: number) => rows.reduce((a, r, i) => {
+    // Ground coupon is deed income even when the resolved class is still land
+    // (lessee mid-build) or a vacant shell of theirs.
+    if (r.h.groundLeased) return a + Math.max(0, ownedHoldingNoiYr(s, parcels, r.h));
     if (r.rec.class === "land" || !r.rec.bldgArea) return a;
     const share = sumOfParts > 0 ? vals[i] / sumOfParts : 1 / rows.length;
     const px = Math.max(1, Math.round(ask * share));

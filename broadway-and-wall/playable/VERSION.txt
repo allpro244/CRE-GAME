@@ -1,7 +1,1 @@
-commit=rooms-1
-gitTip=12af70a
-builtAt=2026-08-10T21:32Z
-branch=cursor/refresh-playable-ui-9786
-rentBaseOffice=35.50
-includes=consolid-1,park-clearance-#11,full-detail-rooms-#12
-verifyInGame=start screen footer should say: build rooms-1 · office base $35.5
+tonight-1

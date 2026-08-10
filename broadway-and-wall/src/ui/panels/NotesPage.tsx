@@ -161,6 +161,13 @@ export function NotesPage() {
         privately, in an auction with one bidder, at a price the owner never agreed to. Nothing here is serviced
         by hand: the coupon arrives on its own, every month, and a note asks you for something exactly twice.
       </div>
+      <div className="hint" style={{ marginBottom: 8 }}>
+        Want the <b>deed</b>, not the paper? Receiver books and fund packages are on{" "}
+        <button className="news-link" onClick={() => useStore.getState().setPage("market")}>
+          Marketplace · Books for sale
+        </button>
+        ; single foreclosure lots land on the July docket there too.
+      </div>
 
       <div className="page-section">On the block</div>
       {offers.length === 0 && (

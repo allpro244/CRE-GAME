@@ -384,8 +384,24 @@ export function generateCity(cfg) {
   };
 
   // --- obstacles ------------------------------------------------------------
-  const PARK_CLEAR = 6, DIAG_CLEAR = 2;
+  // PARK FRONTAGE IS A STREET, NOT A KERB STRIP.
+  //
+  // The clearance the obstacle subtraction leaves is the carriageway that
+  // rings the green. It used to be 6 m — the comment called that "a street's
+  // width", but district streetW is 9–17 m and pushBlock still takes streetW/2
+  // outside the obstacle on top. Measured on procedural islands (Hartford
+  // Green, seed 3252): park corners sat ~12–13 m from the nearest lot, of
+  // which only six were apron asphalt. At game pitch the turf and the vacant-
+  // lot grass read as one field cutting through the road into the triangular
+  // parcels at each corner of a rotated common — the "park overlaps parcels"
+  // fault. Twelve metres is a modest two-lane frontage the eye can hold, and
+  // the drawn green is then inset by PARK_KERB so apron asphalt shows as a
+  // kerb rather than turf painted to the reservation line.
+  const PARK_CLEAR = 12, PARK_KERB = 1.0, DIAG_CLEAR = 2;
   const PARKS_M = cfg.parks.map((p) => rect(p.cx, p.cy, p.w, p.h, p.deg ?? 0));
+  // Turf the map and the 3D lawn actually paint. Kept inside the reservation
+  // so the apron ring reads as pavement, not as more park.
+  const PARK_GREEN_M = PARKS_M.map((ring) => erode(ring, PARK_KERB) ?? ring);
   const DIAG_M = (cfg.diagonals ?? []).map((d) => rect(d.cx, d.cy, d.w, d.h, d.deg));
   // Every obstacle is subtracted from any cell that meets it, so a cell never
   // has to be thrown away for touching one. The clearance the subtraction
@@ -1526,12 +1542,17 @@ export function generateCity(cfg) {
   const pathFeatures = [];
   const pondFeatures = [];
   let biggestPark = null, biggestA = 0;
-  for (const park of PARKS_M) {
-    const c = centroid(park);
+  // Design against the painted green (inset by PARK_KERB), not the full
+  // reservation — otherwise the promenade trees and corner groves sit on the
+  // kerb strip the apron is supposed to show, and the turf reads past the road.
+  for (let pi = 0; pi < PARKS_M.length; pi++) {
+    const park = PARKS_M[pi];
+    const green = PARK_GREEN_M[pi];
+    const c = centroid(green);
     const areaP = polygonArea([park]);
     if (areaP > biggestA) { biggestA = areaP; biggestPark = park; }
-    // the perimeter promenade, a walk in from the edge
-    const walk = erode(park, 7);
+    // the perimeter promenade, a walk in from the painted edge
+    const walk = erode(green, 6);
     if (walk) {
       pathFeatures.push([...walk, walk[0]]);
       // cross paths corner-to-corner through the middle
@@ -1547,13 +1568,15 @@ export function generateCity(cfg) {
           const t = d / len;
           const px = a[0] + (b[0] - a[0]) * t, py = a[1] + (b[1] - a[1]) * t;
           const nx = -(b[1] - a[1]) / len, ny = (b[0] - a[0]) / len;
-          treeFeatures.push([px + nx * 2.5, py + ny * 2.5]);
-          if (rand() < 0.6) treeFeatures.push([px - nx * 2.5, py - ny * 2.5]);
+          const tIn = [px + nx * 2.5, py + ny * 2.5];
+          const tOut = [px - nx * 2.5, py - ny * 2.5];
+          if (inRing(tIn, green)) treeFeatures.push(tIn);
+          if (rand() < 0.6 && inRing(tOut, green)) treeFeatures.push(tOut);
         }
       }
     }
     // a pond in anything big enough to hold one, offset from centre
-    const [bx0, by0, bx1, by1] = bboxOfRing(park);
+    const [bx0, by0, bx1, by1] = bboxOfRing(green);
     const pw = bx1 - bx0, ph = by1 - by0;
     if (Math.min(pw, ph) > 130) {
       const pcx = c[0] + pw * 0.14, pcy = c[1] - ph * 0.1;
@@ -1567,14 +1590,17 @@ export function generateCity(cfg) {
       }
       pondFeatures.push(pond);
       // willows at the water's edge
-      for (let k = 0; k < 18; k += 3) treeFeatures.push([pond[k][0] * 1.0 + rr(-2, 2) + (pond[k][0] - pcx) * 0.14, pond[k][1] + rr(-2, 2) + (pond[k][1] - pcy) * 0.14]);
+      for (let k = 0; k < 18; k += 3) {
+        const tw = [pond[k][0] + rr(-2, 2) + (pond[k][0] - pcx) * 0.14, pond[k][1] + rr(-2, 2) + (pond[k][1] - pcy) * 0.14];
+        if (inRing(tw, green)) treeFeatures.push(tw);
+      }
     }
     // corner groves, an open lawn in the middle
-    const [minX, minY, maxX, maxY] = bboxOfRing(park);
+    const [minX, minY, maxX, maxY] = bboxOfRing(green);
     for (let x = minX; x < maxX; x += 12) {
       for (let y = minY; y < maxY; y += 12) {
         const p = [x + rr(-4, 4), y + rr(-4, 4)];
-        if (!inRing(p, park)) continue;
+        if (!inRing(p, green)) continue;
         if (pondFeatures.some((pd) => inRing(p, pd))) continue;
         const dc = Math.hypot(p[0] - c[0], p[1] - c[1]);
         const edge = Math.min(maxX - minX, maxY - minY) / 2;
@@ -1929,19 +1955,27 @@ export function generateCity(cfg) {
         geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
         properties: { kind: "pier" },
       })),
-      ...PARKS_M.map((ring) => ({
+      // Painted turf is the kerb-inset green, not the full reservation — see
+      // PARK_KERB above. The 3D lawn reads the same rings via kind:"park".
+      ...PARK_GREEN_M.map((ring) => ({
         type: "Feature",
         geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
         properties: { kind: "park" },
       })),
       // The frontage road around each park and along the boulevard. It gets
       // its own kind because it has to be paved UNDER the park, not over it —
-      // it is only six metres wider than the park is, so drawing it with the
-      // rest of the roadway painted the green out entirely.
+      // drawing it with the rest of the roadway used to paint the green out.
       ...APRONS.map((ring) => ({
         type: "Feature",
         geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
         properties: { kind: "apron" },
+      })),
+      // Kerb line on the painted green's outer edge — same role as the block
+      // street lines, so the park stops reading as turf that runs into the lots.
+      ...PARK_GREEN_M.map((ring) => ({
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: [...ring.map(proj.toLL), proj.toLL(ring[0])] },
+        properties: { kind: "street", cls: "park" },
       })),
       ...(cfg.diagonals ?? []).map((d) => ({
         type: "Feature",

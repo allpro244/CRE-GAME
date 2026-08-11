@@ -479,20 +479,166 @@ export function ResidualRead({ bbl }: { bbl: string }) {
   );
 }
 
+/**
+ * Fold contiguous owned vacant lots into one site. Lives on the Land desk and
+ * also opens from the portfolio row — the book is where you notice two vacant
+ * addresses that share a property line, and the only other path was Property →
+ * Build buried under planning and ground lease.
+ */
+export function AssembleSection({
+  bbl, onDone, embedded,
+}: {
+  bbl: string;
+  onDone?: () => void;
+  /** Inside the Land desk — skip the outer deal chrome. */
+  embedded?: boolean;
+}) {
+  const game = useHeldGame(bbl);
+  const parcels = useStore((s) => s.parcels)!;
+  const adjacency = useStore((s) => s.adjacency);
+  const { assemble } = useStore.getState();
+  const [picked, setPicked] = useState<string[]>([]);
+  const { eligible, blocked } = useAssembleCandidates(game, parcels, adjacency, bbl);
+  const h = game.holdings[bbl];
+  const rec = h ? resolveRec(parcels, game, bbl) : null;
+  if (!h || !rec) return null;
+
+  const vacant = rec.class === "land" && rec.bldgArea === 0;
+  const children = siteDeeds(game, bbl).slice(1);
+  const selfBlocked = !vacant
+    ? `${useLabel(rec)} standing — clear this site before folding anything in`
+    : h.loan ? "mortgage outstanding on this site — pay it off first"
+    : game.facility?.bbls?.includes(bbl) ? "this site is in the portfolio facility — release it first"
+    : game.groundLeases?.[bbl] ? "ground-leased — pull it back before folding title"
+    : h.sale ? "on the market — pull the listing first"
+    : null;
+  if (!children.length && !eligible.length && !blocked.length) return null;
+
+  const farMax = Math.max(rec.farMaxComm, rec.farMaxRes);
+  const livePicked = picked.filter((n) => eligible.some((x) => x.bbl === n));
+  const pickedDeeds = livePicked.reduce((a, n) => a + siteDeeds(game, n).length, 0);
+  const cost = mergeCost(game, siteDeeds(game, bbl).length + pickedDeeds);
+  const addedArea = livePicked.reduce((a, n) => a + siteLotArea(game, parcels, n), 0);
+
+  return (
+    <div style={embedded ? undefined : { padding: "8px 2px" }}>
+      {!embedded && <div className="deal-head">Assemble contiguous lots</div>}
+      {selfBlocked && (eligible.length > 0 || blocked.length > 0) && (
+        <div className="hint">
+          You own contiguous dirt next to this parcel, but {selfBlocked.toLowerCase()}. Assembling moves the land into
+          one site — every deed in the filing has to be clear vacant ground.
+        </div>
+      )}
+      {children.length > 0 && (
+        <div className="hint">
+          Assembled site — {children.length + 1} deeds, {sf(rec.lotArea)} of land, {sf(Math.round(rec.lotArea * farMax))} buildable.
+          {eligible.length > 0 ? " Fold in more contiguous lots below to grow it." : ""}
+        </div>
+      )}
+      {(eligible.length > 0 || blocked.length > 0) && (
+        <>
+          <div className="page-section" style={{ marginTop: 2 }}>
+            Assemble contiguous lots
+            {eligible.length > 1 && vacant && !selfBlocked && (
+              <button
+                className="btn btn-sm"
+                style={{ marginLeft: 8 }}
+                onClick={() => setPicked(eligible.map((x) => x.bbl))}
+              >
+                Select all clear ({eligible.length})
+              </button>
+            )}
+          </div>
+          <div className="hint">
+            Own two or more lots that touch — including through a lot you already folded in — and you can turn them
+            into one site: one plate, one envelope, one address.
+          </div>
+          <div className="mini-list">
+            {eligible.map((x) => {
+              const on = livePicked.includes(x.bbl);
+              return (
+                <button key={x.bbl} className={"neighbor" + (on ? " neighbor-on" : "")}
+                  disabled={!!selfBlocked}
+                  onClick={() => setPicked(on ? livePicked.filter((n) => n !== x.bbl) : [...livePicked, x.bbl])}>
+                  <span className="neighbor-addr">{on ? "✓ " : ""}{x.rec?.address ?? x.bbl}</span>
+                  <span className="neighbor-meta">
+                    {sf(x.area)} of land
+                    {x.deeds > 1 ? ` · ${x.deeds} deeds already assembled` : " · vacant"}
+                  </span>
+                </button>
+              );
+            })}
+            {blocked.map((x) => (
+              <div key={x.bbl} className="neighbor" style={{ opacity: 0.55, cursor: "default" }}>
+                <span className="neighbor-addr">{x.rec?.address ?? x.bbl}</span>
+                <span className="neighbor-meta">{x.why}</span>
+              </div>
+            ))}
+          </div>
+          {livePicked.length > 0 && !selfBlocked && (
+            <>
+              <div className="grid">
+                <Row k="Site after merger" v={`${sf(rec.lotArea + addedArea)} · ${sf(Math.round((rec.lotArea + addedArea) * farMax))} buildable`} strong />
+                <Row k="Was" v={`${sf(rec.lotArea)} · ${sf(Math.round(rec.lotArea * farMax))} buildable`} />
+                {(() => {
+                  const before = plateEfficiency(rec.lotArea * 0.62);
+                  const after = plateEfficiency((rec.lotArea + addedArea) * 0.62);
+                  const gain = (after / before - 1) * 100;
+                  return gain > 0.5
+                    ? <Row k="Plate efficiency" v={`+${gain.toFixed(1)}% rentable on the same gross — one core, bigger floors`} />
+                    : null;
+                })()}
+                {(() => {
+                  const mergedRec = { ...rec, lotArea: rec.lotArea + addedArea };
+                  const now = landPsfNow(rec, game.econ);
+                  const then = landPsfNow(mergedRec, game.econ);
+                  const d = (then / Math.max(1, now) - 1) * 100;
+                  return Math.abs(d) > 0.5
+                    ? <Row k="The dirt reprices" v={`${d > 0 ? "+" : ""}${d.toFixed(1)}% $/sf across the whole site`} />
+                    : null;
+                })()}
+                <Row k="Survey, title and lawyers" v={usd(cost)} />
+              </div>
+              <button
+                className="btn"
+                onClick={() => {
+                  assemble([bbl, ...livePicked]);
+                  setPicked([]);
+                  onDone?.();
+                }}
+              >
+                Assemble into one site · {sf(rec.lotArea + addedArea)}
+              </button>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** True when the portfolio / land desk should offer an Assemble action. */
+export function canAssembleFromBook(
+  game: GameState, adjacency: Adjacency | null, bbl: string,
+): boolean {
+  if (!adjacency || !game.holdings[bbl] || game.merged?.[bbl]) return false;
+  if (game.groundLeases?.[bbl]) return false;
+  return hasOwnedSiteNeighbor(game, adjacency, bbl);
+}
+
 export function LandDesk({ bbl }: { bbl: string }) {
   const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   const adjacency = useStore((s) => s.adjacency);
   const select = useStore((s) => s.select);
   const focus = useStore((s) => s.focus);
-  const { assemble, groundLease, pullGroundOffer, applyVariance } = useStore.getState();
-  const [picked, setPicked] = useState<string[]>([]);
+  const { groundLease, pullGroundOffer, applyVariance } = useStore.getState();
   const [years, setYears] = useState(60);
   const [review, setReview] = useState<GroundReview>("fixed");
   const [farMultiple, setFarMultiple] = useState(1.5);
-  // Hooks before any return — assemble candidates are gated to a cheap
-  // neighbour check so ordinary parcel clicks do not walk the land book.
-  const { eligible, blocked } = useAssembleCandidates(game, parcels, adjacency, bbl);
+  // Cheap neighbour gate — same predicate AssembleSection uses, so the land
+  // desk does not mount the full candidate walk when there is nothing to fold.
+  const touch = !!(adjacency && hasOwnedSiteNeighbor(game, adjacency, bbl));
   const h = game.holdings[bbl];
   const rec = h ? resolveRec(parcels, game, bbl) : null;
   if (!h || !rec) return null;
@@ -636,13 +782,7 @@ export function LandDesk({ bbl }: { bbl: string }) {
     </>
   );
 
-  const selfBlocked = !vacant
-    ? `${useLabel(rec)} standing — clear this site before folding anything in`
-    : h.loan ? "mortgage outstanding on this site — pay it off first"
-    : game.facility?.bbls?.includes(bbl) ? "this site is in the portfolio facility — release it first"
-    : null;
-
-  if (!vacant && !eligible.length && !blocked.length) {
+  if (!vacant && !touch && children.length === 0) {
     return app || vq || landmarked
       ? <div className="deal"><div className="deal-head">The planning board</div>{planning}</div>
       : null;
@@ -655,100 +795,13 @@ export function LandDesk({ bbl }: { bbl: string }) {
   const oq = offer && vacant
     ? groundLeaseQuote(game, parcels, bbl, offer.years, offer.review ?? "fixed") : null;
   const q = vacant && !offer ? groundLeaseQuote(game, parcels, bbl, years, review) : null;
-  const farMax = Math.max(rec.farMaxComm, rec.farMaxRes);
-  const livePicked = picked.filter((n) => eligible.some((x) => x.bbl === n));
-  const pickedDeeds = livePicked.reduce((a, n) => a + siteDeeds(game, n).length, 0);
-  const cost = mergeCost(game, siteDeeds(game, bbl).length + pickedDeeds);
-  const addedArea = livePicked.reduce((a, n) => a + siteLotArea(game, parcels, n), 0);
 
   return (
     <div className="deal">
       <div className="deal-head">The land desk</div>
       {planning}
       {vacant && <ResidualRead bbl={bbl} />}
-      {selfBlocked && (eligible.length > 0 || blocked.length > 0) && (
-        <div className="hint">
-          You own contiguous dirt next to this parcel, but {selfBlocked.toLowerCase()}. Assembling moves the land into
-          one site — every deed in the filing has to be clear vacant ground.
-        </div>
-      )}
-      {children.length > 0 && (
-        <div className="hint">
-          Assembled site — {children.length + 1} deeds, {sf(rec.lotArea)} of land, {sf(Math.round(rec.lotArea * farMax))} buildable.
-          Fold in more contiguous lots below to grow it.
-        </div>
-      )}
-      {(eligible.length > 0 || blocked.length > 0) && (
-        <>
-          <div className="page-section" style={{ marginTop: 2 }}>
-            Assemble contiguous lots
-            {eligible.length > 1 && vacant && !selfBlocked && (
-              <button
-                className="btn btn-sm"
-                style={{ marginLeft: 8 }}
-                onClick={() => setPicked(eligible.map((x) => x.bbl))}
-              >
-                Select all clear ({eligible.length})
-              </button>
-            )}
-          </div>
-          <div className="hint">
-            Own two or more lots that touch — including through a lot you already folded in — and you can turn them
-            into one site: one plate, one envelope, one address.
-          </div>
-          <div className="mini-list">
-            {eligible.map((x) => {
-              const on = livePicked.includes(x.bbl);
-              return (
-                <button key={x.bbl} className={"neighbor" + (on ? " neighbor-on" : "")}
-                  disabled={!!selfBlocked}
-                  onClick={() => setPicked(on ? livePicked.filter((n) => n !== x.bbl) : [...livePicked, x.bbl])}>
-                  <span className="neighbor-addr">{on ? "✓ " : ""}{x.rec?.address ?? x.bbl}</span>
-                  <span className="neighbor-meta">
-                    {sf(x.area)} of land
-                    {x.deeds > 1 ? ` · ${x.deeds} deeds already assembled` : " · vacant"}
-                  </span>
-                </button>
-              );
-            })}
-            {blocked.map((x) => (
-              <div key={x.bbl} className="neighbor" style={{ opacity: 0.55, cursor: "default" }}>
-                <span className="neighbor-addr">{x.rec?.address ?? x.bbl}</span>
-                <span className="neighbor-meta">{x.why}</span>
-              </div>
-            ))}
-          </div>
-          {livePicked.length > 0 && !selfBlocked && (
-            <>
-              <div className="grid">
-                <Row k="Site after merger" v={`${sf(rec.lotArea + addedArea)} · ${sf(Math.round((rec.lotArea + addedArea) * farMax))} buildable`} strong />
-                <Row k="Was" v={`${sf(rec.lotArea)} · ${sf(Math.round(rec.lotArea * farMax))} buildable`} />
-                {(() => {
-                  const before = plateEfficiency(rec.lotArea * 0.62);
-                  const after = plateEfficiency((rec.lotArea + addedArea) * 0.62);
-                  const gain = (after / before - 1) * 100;
-                  return gain > 0.5
-                    ? <Row k="Plate efficiency" v={`+${gain.toFixed(1)}% rentable on the same gross — one core, bigger floors`} />
-                    : null;
-                })()}
-                {(() => {
-                  const mergedRec = { ...rec, lotArea: rec.lotArea + addedArea };
-                  const now = landPsfNow(rec, game.econ);
-                  const then = landPsfNow(mergedRec, game.econ);
-                  const d = (then / Math.max(1, now) - 1) * 100;
-                  return Math.abs(d) > 0.5
-                    ? <Row k="The dirt reprices" v={`${d > 0 ? "+" : ""}${d.toFixed(1)}% $/sf across the whole site`} />
-                    : null;
-                })()}
-                <Row k="Survey, title and lawyers" v={usd(cost)} />
-              </div>
-              <button className="btn" onClick={() => { assemble([bbl, ...livePicked]); setPicked([]); }}>
-                Assemble into one site · {sf(rec.lotArea + addedArea)}
-              </button>
-            </>
-          )}
-        </>
-      )}
+      <AssembleSection bbl={bbl} embedded />
       {offer && (
         <>
           <div className="page-section" style={{ marginTop: 10 }}>Offered for ground lease</div>

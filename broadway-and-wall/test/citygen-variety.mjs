@@ -28,7 +28,8 @@ for(let i=0;i<N;i++){
   let cfg; try { cfg = islandConfig(seed); } catch(e){ console.log("fail",seed,e.message); continue; }
   const parks=cfg.parks??[], dg=cfg.diagonals??[];
   const areas=parks.map(p=>p.w*p.h);
-  rows.push({seed,nPark:parks.length,areas,nDiag:dg.length,
+  const shapes=parks.map(p=>p.shape??"square");
+  rows.push({seed,nPark:parks.length,areas,shapes,nDiag:dg.length,
     boul:cfg.plan?.boulevards, kind:cfg.plan?.boulevardKind, prog:cfg.plan?.parkProgramme, seams:dg.length-(cfg.plan?.boulevards??0), dw:dg.map(d=>d.h)});
 }
 console.log(`\nPARKS AND BOULEVARDS ACROSS ${rows.length} GENERATED ISLANDS\n`);
@@ -47,6 +48,12 @@ const kc={}; for(const r of rows) kc[`${r.boul} ${r.kind}`]=(kc[`${r.boul} ${r.k
 console.log("\nboulevard COUNT x CHARACTER:", Object.entries(kc).sort().map(([k,v])=>`${k} x${v}`).join("  "));
 const pc={}; for(const r of rows) pc[r.prog]=(pc[r.prog]??0)+1;
 console.log("park PROGRAMME:", Object.entries(pc).map(([k,v])=>`${k} x${v}`).join("  "));
+const sc={}; for(const r of rows) for(const s of r.shapes??[]) sc[s]=(sc[s]??0)+1;
+console.log("park SHAPES:", Object.entries(sc).sort().map(([k,v])=>`${k} x${v}`).join("  "));
+if (!(sc.round >= Math.max(3, Math.floor(rows.length * 0.08)))) {
+  console.error(`\nFAIL  too few round parks (${sc.round ?? 0} across ${rows.length} islands — need at least ${Math.max(3, Math.floor(rows.length * 0.08))})`);
+  process.exit(1);
+}
 console.log("\nis the park programme always the same shape?");
 console.log("  city   nParks   largest/total   total area");
 for(const r of rows.slice(0,12)){

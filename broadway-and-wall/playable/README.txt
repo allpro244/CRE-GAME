@@ -1,19 +1,16 @@
-BROADWAY & WALL — PLAYABLE (tonight-2)
+BROADWAY & WALL — PLAYABLE
 ======================================
-Build id:  tonight-2
-Office:    $35.50 base (secondary market)
-Branch tip includes: consolidate tonight-2 — LOC keeps you alive while
-undrawn, Take leasing back really holds the pen, refinance card matches close.
+Build id:  procedural-only
+Office:    $35.5 base (secondary market)
 
 HOW TO KNOW YOU HAVE THIS BUILD
   On the start screen footer you should see:
-    build tonight-2 · office base $35.5
-  Research sits under World (with Economy / News), not Acquire.
-  With leasing on you, hired staff do not auto-sign LOIs.
-  A refinance quote and the close button use the same underwriting.
+    build procedural-only · office base $35.5
+  There is NO island picker — every new run is a generated island (Break ground).
+  New Alden and Kestrel Point are gone.
 
 DOWNLOAD
-  Prefer: Broadway-and-Wall-playable.zip
+  Prefer: Broadway-and-Wall-playable.zip  (from pnpm package)
   1. Unzip
   2. Double-click play.command (Mac) / play.cmd (Windows) / play.sh (Linux)
   3. Leave the small terminal open while you play (needs Python 3)

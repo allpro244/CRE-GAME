@@ -1,9 +1,8 @@
 BROADWAY & WALL
-A commercial real estate game. Two drawn harbour islands and a third the
-generator invents, a brand-new town built from scratch every time you start
-over — at whatever size and whatever stage of its life you choose — and no
-end date. One principal, one balance sheet,
-and as long as you last.
+A commercial real estate game. Every run starts on a generated harbour island —
+a brand-new town cut from a seed every time you break ground — at whatever size
+and whatever stage of its life you choose, with no end date. One principal, one
+balance sheet, and as long as you last.
 
 
 HOW TO PLAY
@@ -28,33 +27,17 @@ Note: you can't just double-click index.html. Browsers block local pages from
 loading their own modules, so the game needs the small server to run.
 
 
-THE CITIES
+THE ISLAND
 ----------
-Three choices. You pick one when you start a game, and then you are stuck
-with it — the picker is a plain label for the rest of the run. That is
-deliberate: the submarket you misread is the submarket you have to trade your
-way out of, and a town you can walk away from in two clicks is not a town you
-ever have to learn.
-
-  New Alden       A colonial landing, a numbered grid, and a Broadway cutting
-                  across both.
-  Kestrel Point   A narrow peninsula. Frontage is scarce and the only cheap
-                  land is out at the tip.
-  Somewhere else  An island nobody has drawn. The coast, the districts and
-                  every street name come out of your seed, so it is a town
-                  no one has played before — including whoever made this.
-
-They play differently on purpose. New Alden has a hinterland behind its
-harbour, so there is always somewhere cheaper to go. Kestrel Point does not —
-the whole town is within four blocks of water, and the only way to get more
-building is to buy somebody out or go up.
+There is one kind of island and it is generated. The coast, the districts, the
+parks and every street name come out of your seed when you press Break ground,
+so each new campaign is a town no one has played before. Old hand-drawn maps
+(New Alden, Kestrel Point) are gone.
 
 A NEW TOWN EVERY TIME, AND YOU SAY WHAT KIND
 -------------------------------------------
-The island is fixed. The town on it is not.
-
-Press "New city" and it asks three things before it erases anything — which
-island, how big, and how built up. Then the whole place is rebuilt from
+Every run asks three things before the ground is cut — how big, how built up,
+and how much capital you start with. Then the whole place is built from
 scratch: the block grid is re-cut, every block is subdivided into different
 lots, so parcel sizes and shapes are new; what is already built and what is
 left as vacant ground is new; heights, ages, uses and the mix inside each

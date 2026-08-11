@@ -141,10 +141,10 @@ export function drawDeathM(s: GameState, bornM: number, atMonth: number = s.mont
  * Inclusive bounds on calendar age at death. One peopleRng step.
  */
 export const PLAYER_DEATH_AGE_LO = 70;
-export const PLAYER_DEATH_AGE_HI = 90;
+export const PLAYER_DEATH_AGE_HI = 105;
 
 /**
- * Draw the player principal's death month ONCE into [70, 90].
+ * Draw the player principal's death month ONCE into [70, 105].
  * Contract: exactly one peopleRng step per call — same discipline as drawDeathM.
  * If the principal is already past the floor (should not happen on a fresh
  * start), the band begins at next birthday so diesM stays in the future.

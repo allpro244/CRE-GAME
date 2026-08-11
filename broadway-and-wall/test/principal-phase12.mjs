@@ -23,7 +23,7 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
   ok("principal has diesM in future", (g.principal?.diesM ?? -1) > 0);
   {
     const deathAge = (g.principal.diesM - g.principal.bornM) / 12;
-    ok("player death age in 70–90",
+    ok("player death age in 70–105",
       deathAge >= E.PLAYER_DEATH_AGE_LO && deathAge <= E.PLAYER_DEATH_AGE_HI,
       `age ${deathAge.toFixed(1)}`);
   }
@@ -52,7 +52,7 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
   ok("few already-dead at age 40 (<5%)", alreadyDead / deaths.length < 0.05, `${alreadyDead}/200`);
 }
 
-// 2b. Player death band — always 70–90, one peopleRng step, never mid-run.
+// 2b. Player death band — always 70–105, one peopleRng step, never mid-run.
 {
   const g = E.newGame(77, parcels, 20_000_000);
   const ages = [];
@@ -61,11 +61,11 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
     const d = E.drawPlayerDeathM(g, bornM, 0);
     ages.push((d - bornM) / 12);
   }
-  ok("player draw all in 70–90",
+  ok("player draw all in 70–105",
     ages.every((a) => a >= E.PLAYER_DEATH_AGE_LO && a <= E.PLAYER_DEATH_AGE_HI),
     `min ${Math.min(...ages).toFixed(1)} max ${Math.max(...ages).toFixed(1)}`);
   const med = [...ages].sort((a, b) => a - b)[100];
-  ok("player draw median near mid-band", med >= 75 && med <= 85, `median ${med.toFixed(1)}`);
+  ok("player draw median near mid-band", med >= 82 && med <= 93, `median ${med.toFixed(1)}`);
 }
 
 // 3. RNG isolation — people work must not move s.rng or staffRng vs a twin

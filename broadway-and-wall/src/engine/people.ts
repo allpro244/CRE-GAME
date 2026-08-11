@@ -526,8 +526,11 @@ function beginRivalEstate(
   });
 }
 
-/** Monthly people tick — careers then rival mortality. Player death is Phase 5. */
+/** Monthly people tick — careers, rival mortality, then player estate. */
 export function tickPeople(s: GameState, parcels: ParcelTable): void {
   tickCareers(s, parcels);
   tickRivalMortality(s, parcels);
+  // Player mortality lives in estate.ts so the tax spine stays one file.
+  // Imported lazily inside the call site in sim to keep people↔estate acyclic
+  // at module load; sim calls tickPlayerMortality directly after tickPeople.
 }

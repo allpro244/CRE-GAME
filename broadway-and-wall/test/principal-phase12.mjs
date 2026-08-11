@@ -19,7 +19,7 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
   const g = E.firstListings(E.newGame(4242, parcels), parcels, bbls);
   ok("v is 33", g.v === 33);
   ok("principal seat you", g.principal?.seat === "you");
-  ok("principal age ~40", E.ageYears(g.principal, 0) === 40);
+  ok("principal age matches start life (2.5M → 35)", E.ageYears(g.principal, 0) === 35);
   ok("principal has diesM in future", (g.principal?.diesM ?? -1) > 0);
   ok("peopleRng initialised", typeof g.peopleRng === "number");
   const live = (g.rivals ?? []).filter((r) => r.failedM === undefined);

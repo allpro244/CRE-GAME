@@ -20,7 +20,8 @@ import { releaseCost, tickFacility } from "./facility";
 import { tickHolders } from "./owners";
 import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing, tickBuildToSuit } from "./dev";
 import { payrollMonthly, tickStaff, NON_PAYROLL_GA_SHARE } from "./staff";
-import { ensurePeople, tickPeople } from "./people";
+import { ensurePeople, tickPeople, makePlayerPrincipal } from "./people";
+import { tickPlayerMortality, lifeForCash } from "./estate";
 import { maybeStampYearEndBalance } from "./books";
 import { tickDemand } from "./demand";
 import { initRivals, tickRivals, gradeOf } from "./rivals";
@@ -127,7 +128,13 @@ function targetListings(s: GameState, totalLots: number): number {
  * screen — see START_CASH_CHOICES. It defaults so every existing caller,
  * harness and probe keeps working unchanged.
  */
-export function newGame(seed: number, parcels?: ParcelTable, cash0: number = DEFAULT_START_CASH): GameState {
+export function newGame(
+  seed: number,
+  parcels?: ParcelTable,
+  cash0: number = DEFAULT_START_CASH,
+  age0?: number,
+): GameState {
+  const startAge = age0 ?? lifeForCash(cash0).age;
   const s: GameState = {
     v: 33,
     seed,
@@ -135,6 +142,7 @@ export function newGame(seed: number, parcels?: ParcelTable, cash0: number = DEF
     streams: initStreams(seed),
     month: 0,
     cash: cash0,
+    startAge,
     peopleRng: (seed ^ 0x50454f50) | 0,
     nextPersonId: 1,
     econ: null as never,
@@ -182,9 +190,11 @@ export function newGame(seed: number, parcels?: ParcelTable, cash0: number = DEF
     insolventMs: 0,
   };
   s.econ = initEcon(s, parcels);
+  // Player principal BEFORE rivals so start-age draws do not depend on roster
+  // size — peopleRng only; s.rng untouched.
+  s.principal = makePlayerPrincipal(s, startAge);
   if (parcels) s.rivals = initRivals(s, parcels, Object.keys(parcels));
-  // Person substrate (player + rival principals). peopleRng only — after every
-  // s.rng draw in initRivals so BASELINE stays bit-identical.
+  // Fill rival principals + staff life stamps. Player already seated.
   ensurePeople(s);
   // Make the map agree with itself before anybody looks at it: what is BUILT
   // on a block is part of what makes that block valuable, and the generator's
@@ -431,6 +441,7 @@ function tickMonth(
   // Careers accrue from the book; rival principals die on their drawn date.
   // peopleRng only for estate asks — s.rng untouched.
   tickPeople(s, parcels);
+  tickPlayerMortality(s, parcels);
   tickLenders(s);
   // Workouts run AFTER the holdings debt pass below: equity cures and this
   // month's NOI have to land before the desk decides whether to file. Running
@@ -1218,6 +1229,19 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
         label: `Open lease signing costs ${n} would breach the cash reserve`,
       });
     }
+  }
+  // Estate tax — nine-month clock, or §6166 instalments still running.
+  if (s.estateDue && (s.estateDue.remaining ?? 0) > 0) {
+    const bill = s.estateDue;
+    const left = bill.deadlineM - s.month;
+    out.push({
+      key: `estate:${bill.deathM}`,
+      label: bill.elect6166
+        ? `Estate tax instalment — $${(bill.remaining / 1e6).toFixed(2)}M remaining under §6166`
+        : left <= 0
+          ? `Estate tax of $${(bill.remaining / 1e6).toFixed(2)}M is past due`
+          : `Estate tax of $${(bill.remaining / 1e6).toFixed(2)}M due ${monthLabel(bill.deadlineM)} — ${left} month${left === 1 ? "" : "s"}`,
+    });
   }
   // Milestones stay in the news tape; they are not decisions that should stop Skip.
   if (s.gameOver) out.push({ key: "over", label: "The run is over" });

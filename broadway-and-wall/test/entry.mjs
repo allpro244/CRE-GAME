@@ -28,6 +28,8 @@ export const MODULES = [
   // people is the Person substrate (player, hires, rival principals). Missing
   // from this list once made every harness re-derive a person — silent drift.
   "people",
+  // estate is player mortality, the tax bill, §6166, continue-as-heir.
+  "estate",
   // books carries the balance-sheet stamp and month→year view helpers the
   // Books page uses for monthly income and last year's close.
   "books",

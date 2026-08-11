@@ -2084,6 +2084,22 @@ export interface GameState {
   /** Ids for non-staff persons (rival principals, heirs). Staff keep nextStaffId. */
   nextPersonId?: number;
   /**
+   * Outstanding estate tax after the principal's death. Absent while alive or
+   * once paid. See estate.ts — must never set gameOver on its own.
+   */
+  estateDue?: {
+    gross: number;
+    tax: number;
+    remaining: number;
+    deadlineM: number;
+    deathM: number;
+    decedentName: string;
+    elect6166?: boolean;
+    installmentMo?: number;
+  };
+  /** Opening age chosen on the start menu (Phase 5). */
+  startAge?: number;
+  /**
    * HOW MANY MONTHS RUNNING NOBODY HAS BEEN AT THE DOOR.
    *
    * Measured over six fifty-year runs of competent play, 69.8% of months had

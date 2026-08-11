@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel, START_YEAR } from "@/engine/types";
-import type { BuiltClass, DevUse, EconHistoryPoint } from "@/engine/types";
-import { devMix } from "@/engine/dev";
+import type { BuiltClass, EconHistoryPoint } from "@/engine/types";
 import { capitalRatio, targetCapital } from "@/engine/lenders";
 import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor } from "@/engine/market";
 import { marketRequirement } from "@/engine/absorption";
@@ -250,32 +249,32 @@ export function EconomyPage() {
   // class this page is focused on.
   const flyTo = useStore((s) => s.focus);
 
-  // THE JOBS BEHIND THE PIPELINE. The cohort queue the delivery chart reads
-  // is fed from the city's and the rivals' construction sites — s.cityJobs,
-  // pushed the month the hole is dug — so walking that same list names the
-  // buildings, and the rows reconcile to the cohort sf due in the window
-  // exactly. Your own developments never enter the queue (they land as stock
-  // on delivery), but they are coming supply all the same, so they belong
-  // here too. A mixed-use job contributes only its share of the focused
-  // class; an orphaned frame stays listed — its space is still in the queue —
-  // flagged as stalled.
+  // THE AUTHORITATIVE QUEUE. deliveryQueue is one row per physical project —
+  // player, rival, city, reuse. Cohorts/pipeline are derived views. Walk the
+  // queue so the table cannot disagree with what vacancy will receive.
   const pipeJobs = (() => {
     const rows: { bbl: string; who: string; sf: number; floors: number; deliverM: number; stalled?: boolean; mixed?: boolean }[] = [];
-    for (const j of game.cityJobs ?? []) {
-      if (j.deliverM - game.month >= 24) continue;
-      const csf = Math.round(j.sf * (devMix(j.use as DevUse)[focus] ?? 0));
+    for (const p of e.deliveryQueue ?? []) {
+      if (!p.bbl || p.deliverM - game.month >= 24) continue;
+      const csf = Math.round(p.sfByUse[focus] ?? 0);
       if (csf <= 0) continue;
+      const d = game.developments[p.bbl];
+      const j = (game.cityJobs ?? []).find((x) => x.bbl === p.bbl);
+      const who = p.source === "player" || p.source === "reuse" ? "You"
+        : j?.firmId ? (game.rivals.find((r) => r.id === j.firmId)?.name ?? "A rival")
+        : p.source === "rival" ? "A rival"
+        : "The city";
+      const floors = d?.floors ?? j?.floors ?? 0;
+      const legs = Object.values(p.sfByUse).filter((v) => (v ?? 0) > 0).length;
       rows.push({
-        bbl: j.bbl,
-        who: j.firmId ? (game.rivals.find((r) => r.id === j.firmId)?.name ?? "A rival") : "The city",
-        sf: csf, floors: j.floors, deliverM: j.deliverM, stalled: j.orphaned, mixed: j.use === "mixed",
+        bbl: p.bbl,
+        who,
+        sf: csf,
+        floors,
+        deliverM: p.deliverM,
+        stalled: p.status === "stalled" || !!j?.orphaned,
+        mixed: legs > 1,
       });
-    }
-    for (const d of Object.values(game.developments)) {
-      if (d.deliverM - game.month >= 24) continue;
-      const csf = Math.round(d.sf * (d.mix[focus] ?? 0));
-      if (csf <= 0) continue;
-      rows.push({ bbl: d.bbl, who: "You", sf: csf, floors: d.floors, deliverM: d.deliverM, mixed: d.use === "mixed" });
     }
     return rows.sort((a, b) => b.sf - a.sf);
   })();

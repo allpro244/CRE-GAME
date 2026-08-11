@@ -49,7 +49,10 @@ check(g.developments[bbl]?.mode === "reuse", "conversion uses existing developme
 check(g.econ.deliveryQueue.some((p) => p.bbl === bbl && p.source === "reuse"), "one reuse delivery is queued");
 check(g.econ.stock[oldUse] < beforeOld, "old use is retired at conversion start");
 
-for (let i = 0; i <= plan.months; i++) {
+// Site-risk can slip the schedule a few months; settle/clawback keep the
+// queue honest, so wait for the physical delivery rather than a fixed clock.
+const until = g.month + plan.months + 18;
+while (g.developments[bbl] && g.month < until) {
   if (g.gameOver) g = { ...g, gameOver: null, cash: 500_000_000 };
   g = E.advanceMonth(g, parcels, bbls, adjacency);
   g.cash = Math.max(g.cash, 500_000_000);

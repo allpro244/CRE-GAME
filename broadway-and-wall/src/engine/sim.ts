@@ -25,7 +25,7 @@ import { tickPlayerMortality, lifeForCash } from "./estate";
 import { tickFund } from "./fund";
 import { maybeStampYearEndBalance } from "./books";
 import { tickDemand } from "./demand";
-import { initRivals, tickRivals, gradeOf } from "./rivals";
+import { initRivals, tickRivals, fundJobs, gradeOf } from "./rivals";
 import { initLenders, tickLenders, chargeLenderLoss } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
@@ -36,7 +36,7 @@ import { tickNotes, maybeSellYourLoan } from "./notes";
 import { tickPrivateCredit, tickPrivateBorrow } from "./privateCredit";
 import { tickAuction } from "./auction";
 import { tickPortfolio } from "./portfolio";
-import { reconcileSupplyQueue } from "./supply";
+import { reconcileSupplyQueue, clawbackSlippedDeliveries } from "./supply";
 import { tickTaxAppeals } from "./tax";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
@@ -444,9 +444,15 @@ function tickMonth(
   if (s.gameOver) return;
   s.month++;
 
-  // Reconcile physical projects before the space market settles deliveries.
-  // Otherwise an orphaned frame or a job whose site changed hands can add
-  // ghost square feet to vacancy before its map-side record is rejected.
+  // ONE SETTLEMENT MOMENT. Physical funding can slip or orphan a job this
+  // month; those mutations used to land AFTER settleSupplyDeliveries inside
+  // tickEcon, so stock could gain square feet the map never opened.
+  //
+  // fundJobs draws no rng — only cash and schedule — so moving it ahead of
+  // tickEcon does not re-roll the century. Reconcile after it so stalled /
+  // slipped dates are what the economy settles.
+  reconcileSupplyQueue(s, parcels);
+  fundJobs(s);
   reconcileSupplyQueue(s, parcels);
   refreshDevelopmentFeasibility(s, parcels, bbls);
   tickEcon(s);
@@ -489,6 +495,9 @@ function tickMonth(
   tickPlanning(s, parcels, bbls);
   tickCityGrowth(s, parcels, bbls, adjacency);
   tickDevelopments(s, parcels);
+  // Player site-risk can slip a job after econ settled it. Put the SF back
+  // into the queue and out of stock — same identity as city funding slips.
+  clawbackSlippedDeliveries(s);
   tickConstructionLeasing(s, parcels);
   tickPrograms(s, parcels);
   tickLeasing(s, parcels);

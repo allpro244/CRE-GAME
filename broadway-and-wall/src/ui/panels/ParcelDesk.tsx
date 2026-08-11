@@ -5,7 +5,7 @@ import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, START_YEAR } from "@/engine/types";
 import type { Approach, BuiltClass, Contract, DevUse } from "@/engine/types";
-import { assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, holdingNOIYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, recoveryOf, landValue, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, remainingAbatement, bareLandRec, leasedFeeValue, isVacantLandLoanCollateral, ownedHoldingNoiYr, isLeasedFee } from "@/engine/value";
+import { assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, holdingNOIYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, recoveryOf, landValue, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, remainingAbatement, bareLandRec, leasedFeeValue, isVacantLandLoanCollateral, ownedHoldingNoiYr, isLeasedFee, landRead } from "@/engine/value";
 import { adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, constructionQuotes, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
 import { buyQuote, assemblagePressure, saleTaxQuote, quietFeeRate, hasOwnedSiteNeighbor, siteDeeds, groundLeaseQuote, GROUND_REVIEW_LABEL, GROUND_TERM_MIN, GROUND_TOWER_TERM_MIN } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
@@ -21,6 +21,7 @@ import { usd, sf, pct } from "@/ui/format";
 import { LettingOdds, LeasingDesk, ResidualRead, LandDesk } from "@/ui/panels/PropertyDesks";
 import { useLabel, devUseLabel, physicalOcc, goingIn, band, apMid, PropTab, annualPayment, openResearchOn, Neighbourhood, Row } from "@/ui/panels/shared";
 import type { GroundReview } from "@/engine/types";
+import { Gloss } from "@/ui/Glossary";
 
 
 function ParcelPanelShell({ embedded = false, tab }: { embedded?: boolean; tab?: PropTab } = {}) {
@@ -43,6 +44,8 @@ function ParcelPanelInner({
   // rather than a bare boolean so selecting a different building simply
   // dismisses the question instead of asking it about the wrong address.
   const [razeAsk, setRazeAsk] = useState<string | null>(null);
+  // Summary keeps the glance card readable; Full OM is the veteran default after year one.
+  const [omFull, setOmFull] = useState(() => useStore.getState().game!.month >= 12);
 
   if (!parcels) return null;
   const rec = resolveRec(parcels, game, selectedBBL);
@@ -112,6 +115,52 @@ function ParcelPanelInner({
         {holding?.loan?.sweep && <span className="chip chip-sweep">CASH SWEEP</span>}
         {game.landmarks?.[selectedBBL] !== undefined && <span className="chip chip-reno">LANDMARKED</span>}
       </div>}
+
+      {on("summary") && !embedded && (
+        <div className="btn-row" style={{ marginBottom: 8 }}>
+          <button
+            type="button"
+            className={"btn-mini" + (!omFull ? " on" : "")}
+            onClick={() => setOmFull(false)}
+            title="Essentials only — price, occupancy, one risk"
+          >
+            Summary
+          </button>
+          <button
+            type="button"
+            className={"btn-mini" + (omFull ? " on" : "")}
+            onClick={() => setOmFull(true)}
+            title="Full offering-memorandum detail"
+          >
+            Full OM
+          </button>
+        </div>
+      )}
+
+      {on("summary") && holding && !dev && (() => {
+        const read = landRead(rec, game.econ);
+        const room = farMax > 0 ? Math.max(0, 1 - builtFar / farMax) : 0;
+        const vacant = rec.class === "land" || room >= 0.25;
+        if (!vacant || game.landmarks?.[selectedBBL] !== undefined) return null;
+        const pencils = read.winner === "builder" && read.builder > 0;
+        return (
+          <div className="deal" style={{ marginTop: 0 }}>
+            <div className="deal-head">{pencils ? "Developable" : "Dirt — nothing pencils today"}</div>
+            <div className="hint">
+              {pencils
+                ? `Builder residual $${read.builder.toFixed(0)}/sf · ${(room * 100).toFixed(0)}% of the envelope left. Open Build to break ground.`
+                : `Holder bid $${read.holder.toFixed(0)}/sf wins the auction — wait for rents, or clear the site.`}
+            </div>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => useStore.getState().setPage("property")}
+            >
+              Open Build desk →
+            </button>
+          </div>
+        );
+      })()}
 
       {/* WHO OWNS IT. Every building in this city has an owner and for most of
           them that owner is a named firm with a balance sheet you can read —
@@ -239,7 +288,9 @@ function ParcelPanelInner({
             v={`${holding.tenants.length} lease${holding.tenants.length === 1 ? "" : "s"} · ${sf(holding.tenants.reduce((a, t) => a + t.sf, 0))}`}
           />
         )}
-        {holding && isBuilt && commercial && <Row k="WALT" v={walt(holding, game.month).toFixed(1) + " yrs"} />}
+        {holding && isBuilt && commercial && (
+          <Row k={<Gloss term="WALT">WALT</Gloss>} v={walt(holding, game.month).toFixed(1) + " yrs"} />
+        )}
         {/* One building must not quote two different NOIs on one panel. In
             place off the roll — yours, or the one the seller disclosed — and
             struck against the appraisal, which is the only price on offer
@@ -248,11 +299,16 @@ function ParcelPanelInner({
         {isBuilt && (() => {
           const ip = goingIn(game, selectedBBL, value);
           const stab = proFormaNOIYr(rec, game.econ, ip.h?.condition ?? cond, value);
-          const os = holding ? operatingStatement(rec, game.econ, holding, game.month) : null;
-          const abate = holding ? remainingAbatement(holding, game.month) : 0;
+          const os = holding && omFull ? operatingStatement(rec, game.econ, holding, game.month) : null;
+          const abate = holding && omFull ? remainingAbatement(holding, game.month) : 0;
           return (
             <>
-              <Row k={ip.disclosed ? "In-place NOI / yr" : "NOI / yr (mkt est.)"} v={usd(ip.noi)} />
+              <Row
+                k={ip.disclosed
+                  ? <><Gloss term="NOI">In-place NOI</Gloss> / yr</>
+                  : <><Gloss term="NOI">NOI</Gloss> / yr (mkt est.)</>}
+                v={usd(ip.noi)}
+              />
               {os && os.freeRent > 0 && (
                 <Row
                   k="Scheduled rent (abated)"
@@ -261,17 +317,17 @@ function ParcelPanelInner({
                 />
               )}
               {abate > 0 && <Row k="Free rent still owed" v={"−" + usd(abate)} bad />}
-              {ip.disclosed && stab > ip.noi * 1.02 && (
+              {omFull && ip.disclosed && stab > ip.noi * 1.02 && (
                 <Row k="Stabilised pro-forma" v={usd(stab)} />
               )}
             </>
           );
         })()}
-        {holding && isBuilt && <Row k="Property tax / yr" v={usd(propertyTaxYr(rec, holding)) + (commercial ? " (your share)" : "")} />}
-        <Row k="Lot area" v={sf(rec.lotArea)} />
-        {isBuilt && <Row k="Building" v={sf(rec.bldgArea) + ` · ${rec.floors} fl · ${rec.yearBuilt}`} />}
-        {isBuilt && isMixedUse(rec) && <Row k="The stack" v={mixLabel(rec)} />}
-        <Row k="FAR built / max" v={`${builtFar.toFixed(1)} / ${farMax.toFixed(1)}`} />
+        {omFull && holding && isBuilt && <Row k="Property tax / yr" v={usd(propertyTaxYr(rec, holding)) + (commercial ? " (your share)" : "")} />}
+        {omFull && <Row k="Lot area" v={sf(rec.lotArea)} />}
+        {omFull && isBuilt && <Row k="Building" v={sf(rec.bldgArea) + ` · ${rec.floors} fl · ${rec.yearBuilt}`} />}
+        {omFull && isBuilt && isMixedUse(rec) && <Row k="The stack" v={mixLabel(rec)} />}
+        <Row k={<span><Gloss term="FAR">FAR</Gloss> built / max</span>} v={`${builtFar.toFixed(1)} / ${farMax.toFixed(1)}`} />
         <Row k="Demand" v={String(Math.round(rec.demandScore)) + " / 100"} />
       </div>}
 

@@ -4,7 +4,7 @@
 import { useEffect } from "react";
 import { useStore } from "@/state/store";
 import StaffPage from "@/ui/StaffPage";
-import YearRail from "@/ui/YearRail";
+import InboxRail from "@/ui/InboxRail";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { PortfolioPage } from "@/ui/panels/PortfolioPage";
 import { DealsPage } from "@/ui/panels/DealsPage";
@@ -30,12 +30,18 @@ export default function GamePanels() {
   const gameOver = useStore((s) => !!s.game?.gameOver);
   const hasGame = useStore((s) => !!s.game);
   const page = useStore((s) => s.page);
+  const mapOnly = useStore((s) => s.mapOnly);
   const setPage = useStore((s) => s.setPage);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       if (e.key === "Escape") {
+        const st0 = useStore.getState();
+        if (st0.photoFrame) {
+          st0.setPhotoFrame(false);
+          return;
+        }
         if (document.querySelector(".modal-backdrop")) {
           useStore.setState({
             toast: { text: "Use the card’s action or defer button before closing it.", kind: "err", at: Date.now() },
@@ -45,6 +51,17 @@ export default function GamePanels() {
         return;
       }
       const st = useStore.getState();
+      if (e.code === "KeyP" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        st.setPhotoFrame(!st.photoFrame);
+        return;
+      }
+      if (e.code === "KeyM" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        if (st.photoFrame) st.setPhotoFrame(false);
+        else st.setMapOnly(!st.mapOnly);
+        return;
+      }
       if (st.advancing) return;
       const wantsTime = e.code === "Space" || e.code === "KeyY" || e.code === "KeyN";
       if (wantsTime && document.querySelector(".modal-backdrop")) {
@@ -105,9 +122,9 @@ export default function GamePanels() {
   // dock from the map-first pass was too small for that work.
   return (
     <>
-      <YearRail />
+      <InboxRail />
       {page === "none" && <ParcelPanel />}
-      {page !== "none" && (
+      {page !== "none" && !mapOnly && (
         <div
           className="page-backdrop"
           onMouseDown={(e) => {

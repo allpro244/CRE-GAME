@@ -236,9 +236,12 @@ is the obvious next move on that feature.
 
 ## 7. WHAT I WOULD DO NEXT, IN ORDER
 
-1. **Unify city-supply vs desk delivery** — `breaks→deliv` lag and dual pencils
-   / city-supply models still fight each other; a single delivery queue is the
-   mechanism, not another clamp.
+1. **~~Unify city-supply vs desk delivery~~ — CLOSED (settle moment).**
+   `fundJobs` now runs before `tickEcon` settles `deliveryQueue` (no extra
+   `rng` calls); player site-risk slips after settle are clawed back via
+   `clawbackSlippedDeliveries`. Economy / leadlag / invariants read the queue.
+   Physical stores (`cityJobs` / `developments`) remain; the queue is the
+   economic clock. See `SKYLINE_CYCLES_PLAN.md` Phase 8.
 2. **Retire load-bearing rails** (`vacGate`, `cycleDev`, jobs ceiling) once the
    dual-supply and retail-glut mechanisms stand on their own.
 3. Holder memory beyond approaches; zoning depth (#36).

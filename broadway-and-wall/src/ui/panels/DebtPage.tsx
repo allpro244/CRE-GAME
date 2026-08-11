@@ -488,14 +488,9 @@ export function TheStreet() {
   const rivals = game.rivals ?? [];
   if (!rivals.length) return null;
   const appetite = marketAppetite(game);
-  const playerEquity = (() => {
-    let v = game.cash;
-    for (const h of Object.values(game.holdings)) {
-      const rec = resolveRec(parcels, game, h.bbl);
-      if (rec) v += ownedHoldingValue(game, parcels, h) - (h.loan?.balance ?? 0);
-    }
-    return v;
-  })();
+  // Same number as TopBar / Books — a street rank that re-derives equity is
+  // one quantity with two answers (facility, loc, deposits, CIP, notes).
+  const playerEquity = netWorth(game, parcels);
   const marked = rivals.map((r) => ({ r, m: markRival(game, parcels, r) }))
     .sort((a, b) => (a.r.failedM !== undefined ? 1 : 0) - (b.r.failedM !== undefined ? 1 : 0) || b.m.aum - a.m.aum);
   return (

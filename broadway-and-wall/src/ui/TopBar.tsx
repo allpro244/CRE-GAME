@@ -328,7 +328,13 @@ export default function TopBar() {
             />
           </div>
           <div className="topbar-stats">
-          <Stat label="Net worth" value={usd(nw)} drop={2} w={96} />
+          <Stat
+            label="Net worth"
+            value={usd(nw)}
+            drop={2}
+            w={96}
+            title="Firm going-concern equity (cash + property − debt − deposits + CIP + notes). Not estate net-of-tax — that bill lives on your person card when succession is in view. Vehicle cash is separate."
+          />
           {/* Base rate / NW ride drop 2. Market phase and vacant-lot counts are
               drop 3 — only on very wide screens — so they cannot clip into
               "MA" under the Portfolio button on a normal desktop. */}

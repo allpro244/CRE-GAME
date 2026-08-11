@@ -216,6 +216,18 @@ for (const seed of SEEDS) {
       const d = E.distributeFund(g, 400_000);
       if (!d.err) g = d.s;
     }
+    // ESTATE TAX — plant a due bill so the Principal path hits `taxes` for a
+    // reason that is not property tax. Do NOT mint cash to fund it — that is
+    // a free residual. Pay only what is already on the books.
+    if (m === 140 && !g.estateDue && g.cash >= 250_000) {
+      g = structuredClone(g);
+      const bill = Math.min(500_000, Math.round(g.cash * 0.25));
+      g.estateDue = {
+        gross: 40_000_000, tax: bill, remaining: bill,
+        deadlineM: g.month, deathM: g.month - 1, decedentName: "coverage plant",
+      };
+      E.tickEstateBill(g);
+    }
 
     const nb = bookTotals(g), nl = g.loc?.balance ?? 0, nd = depositsHeld(g);
     let inflow = 0, outflow = 0;

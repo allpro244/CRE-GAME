@@ -247,7 +247,7 @@ export function newGame(
  * and will not.
  */
 function listHolderExit(s: GameState, parcels: ParcelTable) {
-  const { bbls, distress } = tickHolders(s, parcels, (gs) => rng(gs, "owners"));
+  const { bbls, distress, kind } = tickHolders(s, parcels, (gs) => rng(gs, "owners"));
   for (const bbl of bbls) {
     if (s.listings.some((l) => l.bbl === bbl) || s.holdings[bbl]) continue;
     const rec = resolveRec(parcels, s, bbl);
@@ -255,11 +255,16 @@ function listHolderExit(s: GameState, parcels: ParcelTable) {
     const value = assetValue(rec, s.econ, gradeOf(s, rec));
     if (value <= 0) continue;
     const ask = Math.round(value * (distress ? rrange(s, 0.78, 0.93) : rrange(s, 0.96, 1.08)) / 1000) * 1000;
+    // Only a true estate holder (or a rival-principal death in people.ts) may
+    // stamp reason:"estate". Partnership/fund/developer exits used to wear that
+    // badge too — Marketplace then read every book sale as an estate, and the
+    // Principal mortality signal was noise. Voluntary is the honest residual.
+    const reason: Listing["reason"] = kind === "estate" ? "estate" : "voluntary";
     const listing: Listing = {
       bbl, ask, listedM: s.month,
       expiresM: s.month + Math.round(rrange(s, ...LISTING_LIFE_M)),
       distress: distress || undefined,
-      reason: "estate",
+      reason,
     };
     if (rec.class !== "land" && rec.bldgArea > 0) stampListing(s, rec, listing);
     s.listings.push(listing);

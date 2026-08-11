@@ -864,7 +864,7 @@ function ParcelPanelInner({
             <Row k="Basis" v={usd(holding.costBasis)} />
             {(holding.deprTaken ?? 0) > 0 && <Row k="Depreciation taken" v={"−" + usd(holding.deprTaken!)} />}
             <Row k="Assessed (tax)" v={usd(holding.assessed ?? holding.costBasis)} />
-            <Row k="Equity" v={usd(value - (holding.loan?.balance ?? 0))} strong />
+            <Row k="Equity" v={usd(value - (holding.loan?.balance ?? 0) - (holding.mezz?.balance ?? 0))} strong />
           </div>
         </div>
       )}
@@ -2152,7 +2152,10 @@ export function RefiSection({ bbl }: { bbl: string }) {
         <div className="hint">Appraised at {usd(value)}; {usd(payoff)} to pay off. The banks are silent — private paper below.</div>
         {privateQuotes.map((pq) => {
           const pts = Math.round(pq.principal * pq.points);
-          const net = pq.principal - payoff - pts - existing;
+          const mezzPen = holding?.mezz && holding.mezz.balance > 0
+            ? prepayPenalty(holding.mezz, game.month) : 0;
+          // payoff from refiQuotes is already senior + mezz balance
+          const net = pq.principal - payoff - pts - existing - mezzPen;
           return (
             <div key={pq.id} className="hint" style={{ marginBottom: 8, borderLeft: "3px solid #8a5620", paddingLeft: 8 }}>
               <div>
@@ -2213,7 +2216,10 @@ export function RefiSection({ bbl }: { bbl: string }) {
       )}
       {privateQuotes.map((pq) => {
         const pts = Math.round(pq.principal * pq.points);
-        const net = pq.principal - payoff - pts - existing;
+        const mezzPen = holding?.mezz && holding.mezz.balance > 0
+          ? prepayPenalty(holding.mezz, game.month) : 0;
+        // payoff from refiQuotes is already senior + mezz balance
+        const net = pq.principal - payoff - pts - existing - mezzPen;
         return (
           <div key={pq.id} className="hint" style={{ marginBottom: 8, borderLeft: "3px solid #8a5620", paddingLeft: 8 }}>
             <div>

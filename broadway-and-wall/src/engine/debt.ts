@@ -379,6 +379,28 @@ export function prepayPenalty(loan: Loan, month: number): number {
 }
 
 /** Balance + break cost to retire a mortgage today. */
+/**
+ * SENIOR + MEZZ AT THE CLOSING TABLE. Sale, seizure, facility, private
+ * takeout and payoff all need the same stack maths — using only `h.loan`
+ * left Cordage junior unpaid and leaked conserve.
+ */
+export function stackPayoff(h: Holding, month: number): {
+  seniorBal: number; mezzBal: number; balance: number;
+  seniorPenalty: number; mezzPenalty: number; penalty: number; due: number;
+} {
+  const senior = h.loan ? payOffDue(h.loan, month) : { balance: 0, penalty: 0, due: 0 };
+  const mezz = h.mezz && h.mezz.balance > 0 ? payOffDue(h.mezz, month) : { balance: 0, penalty: 0, due: 0 };
+  return {
+    seniorBal: senior.balance,
+    mezzBal: mezz.balance,
+    balance: senior.balance + mezz.balance,
+    seniorPenalty: senior.penalty,
+    mezzPenalty: mezz.penalty,
+    penalty: senior.penalty + mezz.penalty,
+    due: senior.due + mezz.due,
+  };
+}
+
 export function payOffDue(loan: Loan, month: number): { balance: number; penalty: number; due: number } {
   const balance = Math.max(0, Math.round(loan.balance));
   if (balance <= 0) return { balance: 0, penalty: 0, due: 0 };
@@ -1431,7 +1453,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
         : undefined,
     } satisfies RefiQuote;
   });
-  return { quotes, value, payoff: h.loan?.balance ?? 0 };
+  return { quotes, value, payoff: (h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0) };
 }
 
 // Player-initiated refinance at current rates and value. `lev` scales the new

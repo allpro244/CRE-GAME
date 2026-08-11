@@ -13,7 +13,7 @@ import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifi
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult } from "./owners";
-import { originate, quote, productById, prepayPenalty, stabViewFor, monthlyPayment } from "./debt";
+import { originate, quote, productById, stabViewFor, monthlyPayment, stackPayoff } from "./debt";
 import { takeoverDevelopment, buildClimate, farMaxFor, replacementCost } from "./dev";
 import { demandNow } from "./demand";
 import { recordComp } from "./comps";
@@ -554,7 +554,7 @@ function assembleBlocker(
     if (s.developments[d]) return `Construction is already underway at ${rec.address}.`;
     if (s.holdings[d].sale) return `${rec.address} is on the market — pull the listing first.`;
     if (s.groundLeases?.[d]) return `${rec.address} is under a ground lease. It is not yours to build on.`;
-    if (s.holdings[d].loan) {
+    if (s.holdings[d].loan || (s.holdings[d].mezz?.balance ?? 0) > 0) {
       return `${rec.address} still has a mortgage. Pay it off before you fold the title.`;
     }
     if (s.facility?.bbls?.includes(d)) {
@@ -768,8 +768,10 @@ export function offerGroundLease(
   // A land loan and a ground lease cannot share the same dirt: the land desk
   // underwrites vacant carry, and the moment a coupon appears the collateral
   // is income paper. Clear the lien before you encumber the fee.
-  if (s.holdings[bbl].loan) {
-    const bal = Math.round(s.holdings[bbl].loan!.balance);
+  if (s.holdings[bbl].loan || (s.holdings[bbl].mezz?.balance ?? 0) > 0) {
+    const bal = Math.round(
+      (s.holdings[bbl].loan?.balance ?? 0) + (s.holdings[bbl].mezz?.balance ?? 0),
+    );
     return {
       s,
       err: `Pay off the mortgage first (Debt → Pay off — $${bal.toLocaleString()} left) — a land lender will not sit under a ground lease.`,
@@ -2484,9 +2486,10 @@ export function saleProceedsToSeller(
 } {
   const { net, gain, tax } = saleTaxQuote(h, price, s);
   const kick = h.loan?.kicker && gain > 0 ? Math.round(gain * h.loan.kicker) : 0;
-  const breakFee = h.loan ? prepayPenalty(h.loan, s.month) : 0;
+  const stack = stackPayoff(h, s.month);
+  const breakFee = stack.penalty;
   const release = releaseCost(s, parcels, h.bbl);
-  const loanPayoff = h.loan?.balance ?? 0;
+  const loanPayoff = stack.balance;
   const toSeller = net - loanPayoff - kick - breakFee - release;
   return { net, gain, tax, kick, breakFee, release, loanPayoff, toSeller };
 }
@@ -2498,28 +2501,19 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   if (s.month > offer.expiresM) return { s, err: "That offer lapsed." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
-  const { net, gain, tax } = saleTaxQuote(h, offer.price, s);
+  const { gain, tax } = saleTaxQuote(h, offer.price, s);
   if (exchange && s.exchange) return { s, err: "One exchange at a time — close the live 1031 first." };
   if (exchange && tax <= 0) return { s, err: "No gain to shelter — just take the cash." };
   const next = clone(s);
   // Participating paper takes its cut here, and only here. That is the whole
   // trade: you borrowed at a third of a point over the index for years, and
   // the lender collects on the way out.
-  const kick = h.loan?.kicker && gain > 0 ? Math.round(gain * h.loan.kicker) : 0;
-  // Leaving a loan inside its lockout costs the same on a sale as on a refi.
-  const breakFee = h.loan ? prepayPenalty(h.loan, next.month) : 0;
-  // THE RELEASE PRICE. A building inside a portfolio facility cannot simply be
-  // sold out from under the lien — the lender is released only against payment
-  // of the building's allocated share of the balance at a premium, and that
-  // payment comes off the top at the closing table like any other payoff.
-  //
-  // Without this the facility would be a money pump: borrow against twelve
-  // deeds, sell all twelve, keep the proceeds and the loan. It is also the
-  // cost that makes the instrument a decision — your book has become harder to
-  // take apart than it was to assemble, and you find that out on the day you
-  // want to sell one thing.
-  const release = releaseCost(next, parcels, bbl);
-  const toSeller = net - (h.loan?.balance ?? 0) - kick - breakFee - release;
+  // Same stack maths as saleProceedsToSeller — mezz comes off the table too.
+  const px = saleProceedsToSeller(next, parcels, h, offer.price);
+  const kick = px.kick;
+  const breakFee = px.breakFee;
+  const release = px.release;
+  const toSeller = px.toSeller;
   next.cash += toSeller;
   // THE FEE COMES OUT OF THE PROCEEDS ONCE, NOT TWICE.
   //

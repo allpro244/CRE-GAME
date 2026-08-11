@@ -152,9 +152,14 @@ export default function TopBar() {
       + ((deferredGame.auction && deferredGame.month < deferredGame.auction.m) ? 1 : 0);
     let debtBal = 0, debtWall = 0;
     for (const h of Object.values(deferredGame.holdings)) {
-      if (!h.loan) continue;
-      debtBal += h.loan.balance;
-      if (h.loan.maturityM - deferredGame.month <= 36) debtWall += h.loan.balance;
+      if (h.loan) {
+        debtBal += h.loan.balance;
+        if (h.loan.maturityM - deferredGame.month <= 36) debtWall += h.loan.balance;
+      }
+      if (h.mezz && h.mezz.balance > 0) {
+        debtBal += h.mezz.balance;
+        if (h.mezz.maturityM - deferredGame.month <= 36) debtWall += h.mezz.balance;
+      }
     }
     if (deferredGame.facility) {
       debtBal += deferredGame.facility.balance;

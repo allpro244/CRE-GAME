@@ -16,6 +16,7 @@ import type { Credit } from "@/engine/types";
 import { cureWorkout, requestForbearance, deedInLieu, serviceWorkout } from "@/engine/workout";
 import { fileTaxAppeal } from "@/engine/tax";
 import { buyNote, modifyNote, fileOnNote, sellNote, discountedPayoff } from "@/engine/notes";
+import { fundPrivateAsk, declinePrivateAsk } from "@/engine/privateCredit";
 import { registerAuctionBids } from "@/engine/auction";
 import { listPortfolio, repricePortfolio, counterPortfolio, acceptPortfolioBid, delistPortfolio } from "@/engine/portfolio";
 import { buyPortfolio } from "@/engine/portfoliosale";
@@ -215,6 +216,8 @@ interface AppState {
   restructureNote: (id: string) => void;
   fileNote: (id: string) => void;
   offloadNote: (id: string) => void;
+  fundPrivateAsk: (id: string) => void;
+  declinePrivateAsk: (id: string) => void;
   /** Buy a street / REO book off Marketplace — see engine/portfoliosale.buyPortfolio. */
   buyStreetBook: (id: string) => void;
   bidAuction: (bids: Record<string, number>) => void;
@@ -945,6 +948,20 @@ export const useStore = create<AppState>((set, get) => ({
     const r = sellNote(game, parcels, id);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s }); toast(r.msg ?? "Sold."); void persist(r.s);
+  },
+  fundPrivateAsk: (id) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = fundPrivateAsk(game, parcels, id);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); toast(r.msg ?? "Funded."); void persist(r.s);
+  },
+  declinePrivateAsk: (id) => {
+    const { game } = get();
+    if (!game) return;
+    const r = declinePrivateAsk(game, id);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); toast(r.msg ?? "Passed."); void persist(r.s);
   },
   // A RECEIVER'S BOOK — or a fund winding down. Lives on Marketplace; the
   // engine always put packages on game.portfolios, but nothing ever called

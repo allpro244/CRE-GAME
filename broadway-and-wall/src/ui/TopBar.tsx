@@ -144,6 +144,7 @@ export default function TopBar() {
     const bcalls = liveBrokerCalls(deferredGame);
     const bcallSoon = bcalls.length ? Math.max(0, bcalls[0].lapseM - deferredGame.month) : 0;
     const notesLive = (deferredGame.noteOffers?.length ?? 0)
+      + (deferredGame.privateAsks?.length ?? 0)
       + (deferredGame.notes ?? []).filter((n) => n.perf === "nonperforming" && n.filedM === undefined).length;
     // Receiver books / fund packages on Marketplace — the seizure alert's desk.
     const booksLive = (deferredGame.portfolios ?? []).filter((p) => !p.player).length

@@ -30,6 +30,7 @@ import { tickWorkouts, couponFundable } from "./workout";
 import { tickPortfolios } from "./portfoliosale";
 import { tickLedger } from "./ledger";
 import { tickNotes, maybeSellYourLoan } from "./notes";
+import { tickPrivateCredit } from "./privateCredit";
 import { tickAuction } from "./auction";
 import { tickPortfolio } from "./portfolio";
 import { reconcileSupplyQueue } from "./supply";
@@ -448,6 +449,9 @@ function tickMonth(
   // and the August hammer. It reads the street the banks have just had, and
   // it must settle BEFORE the note desk services anything it just resolved.
   tickAuction(s, parcels);
+  // Private credit asks spawn from the same stress the banks just revealed;
+  // funding writes Notes that tickNotes will service.
+  tickPrivateCredit(s, parcels);
   // The paper desk reads the month the banks and the street have just had:
   // whose capital ratio broke, who stopped leasing, whose building sold out
   // from under whose mortgage. It cannot run before either of them.
@@ -1200,6 +1204,13 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
   }
   for (const o of s.noteOffers ?? []) {
     out.push({ key: `note:${o.id}`, label: `${o.lender} is selling the ${o.address} loan — ${(100 * o.askPct).toFixed(0)} cents` });
+  }
+  // Private-credit asks lapse in two months — same Stop-on-new as bank paper.
+  for (const a of s.privateAsks ?? []) {
+    out.push({
+      key: `private-ask:${a.id}`,
+      label: `${a.rivalName} wants ${a.ratePct.toFixed(1)}% private money on ${a.address} — answer by ${monthLabel(a.expiresM)}`,
+    });
   }
   // Receiver books and fund wind-downs — buyable on Marketplace. Without this
   // Skip runs past the best buying window in the game while rivals clear them.

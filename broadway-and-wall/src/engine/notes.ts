@@ -55,6 +55,7 @@ import { recordComp } from "./comps";
 import { distressPrice, markSponsor } from "./sponsor";
 import { firmShort } from "./firm";
 import { productById, bumpLenderRel } from "./debt";
+import { clearPrivateOrigination, releasePrivateStreetRecord } from "./privateCredit";
 
 const clone = (s: GameState): GameState => cloneState(s);
 const money = (n: number) =>
@@ -200,6 +201,7 @@ function serviceNotes(s: GameState, parcels: ParcelTable) {
         ? n.face
         : Math.min(n.face + (n.arrears ?? 0), Math.round(collateralAsIs(rec, s.econ, ownerOcc(r))));
       s.cash += got; logBooks(s, "sold", got);
+      clearPrivateOrigination(s, n);
       s.news.unshift({
         q: s.month, kind: got >= n.basis ? "deal" : "warn",
         text: `${n.address} changed hands and your loan was paid off out of the proceeds — ${money(got)} `
@@ -219,6 +221,8 @@ function serviceNotes(s: GameState, parcels: ParcelTable) {
       if (s.month >= n.maturityM) {
         if (!dead && rng(s) < 0.55 + 0.4 * pCure(s, r, n.face)) {
           s.cash += n.face; logBooks(s, "sold", n.face);
+          if (r) r.cash = Math.max(0, r.cash - n.face);
+          clearPrivateOrigination(s, n);
           s.news.unshift({
             q: s.month, kind: "deal",
             text: `${n.obligor} repaid the loan on ${n.address} at maturity — ${money(n.face)} back against `
@@ -273,6 +277,7 @@ function serviceNotes(s: GameState, parcels: ParcelTable) {
       // they could not fund the arrears, or they went and found a refinancing
       const px = Math.round(n.face * 1.02 + (n.arrears ?? 0));
       s.cash += px; logBooks(s, "sold", px);
+      clearPrivateOrigination(s, n);
       s.news.unshift({
         q: s.month, kind: "deal",
         text: `${n.obligor} has paid you out on ${n.address} — ${money(px)} against ${money(n.basis)} in, arrears and all. `
@@ -341,6 +346,8 @@ export function takeDeed(s: GameState, parcels: ParcelTable, n: Note, how: "fore
     forgetDeed(r, n.bbl);
     r.debt = Math.max(0, r.debt - n.face);   // the debt went with the deed
   }
+  // Private-originated paper also drops the cityLoans row in your name.
+  if (n.privateOriginated && s.cityLoans?.[n.bbl]) delete s.cityLoans[n.bbl];
   clearRivalClaims(s, n.bbl);
   s.listings = s.listings.filter((l) => l.bbl !== n.bbl);
   delete s.approaches[n.bbl];
@@ -697,6 +704,9 @@ export function sellNote(s: GameState, parcels: ParcelTable, id: string): { s: G
   const b = next.rivals!.find((x) => x.name === buyer)!;
   b.cash -= px;
   next.cash += px; logBooks(next, "sold", px);
+  // Selling transfers the claim — do not forgive the obligor's debt.
+  // Street record follows the paper so the deed does not look clear.
+  releasePrivateStreetRecord(next, n, buyer);
   next.notes = next.notes!.filter((x) => x.id !== id);
   const g = px - n.basis;
   next.news.unshift({

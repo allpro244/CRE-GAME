@@ -263,6 +263,27 @@ Doing 1 and 4 alone would give the city a hill you can price and cannot see,
 which is worse than no hill: it is one quantity with two answers, which is the
 fault this whole codebase is organised against.
 
+### ✗ 4.7 · Two park worries that measurement did not support
+
+Both were mine, both sounded right, and neither survived being counted.
+
+**"The programme is drawn without asking whether the island can seat it."** A
+long peninsula cannot hold a 500 m reservation, so "one great park" ought
+sometimes to be undeliverable. Measured over 150 generated islands: the great
+park was seatable at full size on **every one**. A veto was written and then
+deleted, because a check that cannot fail is worse than no check — it looks
+like coverage.
+
+**"A park's size is an artifact of how crowded the map was."** `placePark`
+shrinks a park 14% and retries, up to four times, before giving up — which
+looked like it would make size an accident of placement order rather than a
+decision. Measured over 865 placements: **99.7% went down at full size**, 0.3%
+shrank one step, none failed. The retry is a guard that almost never fires,
+which is exactly what a guard should be.
+
+The transferable part is the same both times: a fallback path that exists in
+the code is not evidence that it runs. Count it before building on it.
+
 ### 4.5 · Candidates after that, unranked and unmeasured
 
 - **Ground floor at distance.** The shopfront band survives the dissolve as

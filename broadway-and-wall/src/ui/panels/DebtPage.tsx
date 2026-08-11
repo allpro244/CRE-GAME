@@ -16,6 +16,7 @@ import { LineChart } from "@/ui/Chart";
 import { sponsorStanding } from "@/engine/sponsor";
 import { marketAppetite, markRival, rivalCondition, gradeOf } from "@/engine/rivals";
 import { rivalPrincipalOf } from "@/engine/people";
+import { rivalTemperamentWeight } from "@/engine/rivals";
 import { PersonCard, personAgeLine } from "@/ui/PersonCard";
 import { fundRaiseQuote, fundCanBuy, FUND_PREF, FUND_PROMOTE } from "@/engine/fund";
 import { compFlows, compStats } from "@/engine/comps";
@@ -597,6 +598,17 @@ export function TheStreet() {
                     {principal && !dead && (
                       <PersonCard person={principal} game={game} showAttrs={false} title="Operating principal" />
                     )}
+                    {principal && !dead && (() => {
+                      const tw = rivalTemperamentWeight(game, r);
+                      const pace = tw > 1.12 ? "Contests the tape hard"
+                        : tw < 0.88 ? "Patient bidder — slower on contested asks"
+                          : "Ordinary pace on the tape";
+                      return (
+                        <div className="hint" style={{ marginBottom: 6 }} title="Bandwidth × Access — temperament, not their balance sheet">
+                          {pace}
+                        </div>
+                      );
+                    })()}
                     <div className="grid" style={{ margin: "8px 0" }}>
                       <Row k="Gross assets" v={usd(m.aum)} />
                       <Row k="Debt" v={usd(r.debt)} bad={m.ltv > 0.8} />

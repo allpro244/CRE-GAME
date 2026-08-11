@@ -2319,6 +2319,12 @@ export interface GameState {
   privateAsks?: PrivateCreditAsk[];
   nextPrivateAskId?: number;
   /**
+   * HARD-MONEY OFFERS TO YOU. Shortlist, expires — when banks refuse or
+   * hold-cap a takeout. See engine/privateCredit.ts Phase B.
+   */
+  privateBorrowQuotes?: PrivateBorrowQuote[];
+  nextPrivateBorrowId?: number;
+  /**
    * PAPER YOU PASSED ON.
    *
    * An offer that expires unbought is taken by somebody with money, and
@@ -2815,6 +2821,29 @@ export interface PrivateCreditAsk {
   face: number;
   ratePct: number;
   /** Origination fee as a share of face — cash to you at close. */
+  points: number;
+  termM: number;
+  ltv: number;
+  asIs: number;
+  why: string;
+  offeredM: number;
+  expiresM: number;
+}
+
+/**
+ * A RIVAL (OR CORDAGE-LIKE DESK) WILL LEND TO YOU. Mirror of PrivateCreditAsk
+ * with the obligor flipped — closes into Holding.loan so tickLoan / workouts
+ * already apply. See PRIVATE_CREDIT.md Phase B.
+ */
+export interface PrivateBorrowQuote {
+  id: string;
+  lenderId: string;
+  lenderName: string;
+  bbl: string;
+  address: string;
+  principal: number;
+  ratePct: number;
+  /** Origination fee as a share of principal — keeps with the lender. */
   points: number;
   termM: number;
   ltv: number;

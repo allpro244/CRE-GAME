@@ -52,12 +52,14 @@ months; they made the balloon — or I own a half-empty walk-up.”*
 4. Cap the book: outstanding private face ≤ sleeve limit (see §5).
 5. UI: extend **Notes** desk with “Asks” + “your book” (no new top-level job yet).
 
-### Phase B — You borrow private
+### Phase B — You borrow private (this PR)
 
 - Rival opportunistic / PE / Cordage-like desks quote **you** when bank products
-  refuse or hold-cap.
+  refuse or hold-cap (or a balloon file is open).
 - Same term sheet shape both ways (LTV, rate, points, term, balloon).
-- Funds player cash; lien on your deed; workout path if you miss.
+- Funds player cash; lien on your deed as `Holding.loan` with `holder = rival`;
+  existing `tickLoan` / workout path if you miss.
+- UI: Refinance card + Debt page rail; attention key `private-borrow:`.
 
 ### Phase C — Deeper stack (later)
 

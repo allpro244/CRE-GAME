@@ -16,7 +16,10 @@ import type { Credit } from "@/engine/types";
 import { cureWorkout, requestForbearance, deedInLieu, serviceWorkout } from "@/engine/workout";
 import { fileTaxAppeal } from "@/engine/tax";
 import { buyNote, modifyNote, fileOnNote, sellNote, discountedPayoff } from "@/engine/notes";
-import { fundPrivateAsk, declinePrivateAsk } from "@/engine/privateCredit";
+import {
+  fundPrivateAsk, declinePrivateAsk,
+  acceptPrivateBorrowQuote, declinePrivateBorrowQuote,
+} from "@/engine/privateCredit";
 import { registerAuctionBids } from "@/engine/auction";
 import { listPortfolio, repricePortfolio, counterPortfolio, acceptPortfolioBid, delistPortfolio } from "@/engine/portfolio";
 import { buyPortfolio } from "@/engine/portfoliosale";
@@ -218,6 +221,8 @@ interface AppState {
   offloadNote: (id: string) => void;
   fundPrivateAsk: (id: string) => void;
   declinePrivateAsk: (id: string) => void;
+  acceptPrivateBorrowQuote: (id: string) => void;
+  declinePrivateBorrowQuote: (id: string) => void;
   /** Buy a street / REO book off Marketplace — see engine/portfoliosale.buyPortfolio. */
   buyStreetBook: (id: string) => void;
   bidAuction: (bids: Record<string, number>) => void;
@@ -960,6 +965,20 @@ export const useStore = create<AppState>((set, get) => ({
     const { game } = get();
     if (!game) return;
     const r = declinePrivateAsk(game, id);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); toast(r.msg ?? "Passed."); void persist(r.s);
+  },
+  acceptPrivateBorrowQuote: (id) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = acceptPrivateBorrowQuote(game, parcels, id);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); toast(r.msg ?? "Borrowed."); void persist(r.s);
+  },
+  declinePrivateBorrowQuote: (id) => {
+    const { game } = get();
+    if (!game) return;
+    const r = declinePrivateBorrowQuote(game, id);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s }); toast(r.msg ?? "Passed."); void persist(r.s);
   },

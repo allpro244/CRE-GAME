@@ -146,6 +146,7 @@ export default function TopBar() {
     const notesLive = (deferredGame.noteOffers?.length ?? 0)
       + (deferredGame.privateAsks?.length ?? 0)
       + (deferredGame.notes ?? []).filter((n) => n.perf === "nonperforming" && n.filedM === undefined).length;
+    const privateBorrowLive = deferredGame.privateBorrowQuotes?.length ?? 0;
     // Receiver books / fund packages on Marketplace — the seizure alert's desk.
     const booksLive = (deferredGame.portfolios ?? []).filter((p) => !p.player).length
       + ((deferredGame.auction && deferredGame.month < deferredGame.auction.m) ? 1 : 0);
@@ -161,7 +162,7 @@ export default function TopBar() {
     }
     return {
       nw, nwReal, cf, occSf, occLeased, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
-      debtHot: debtBal > 0 && debtWall / debtBal > 0.35,
+      debtHot: privateBorrowLive > 0 || (debtBal > 0 && debtWall / debtBal > 0.35),
       debtSwept: !!deferredGame.facility?.breachedSince,
       debtBal, debtWall,
     };

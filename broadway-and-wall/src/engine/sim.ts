@@ -30,7 +30,7 @@ import { tickWorkouts, couponFundable } from "./workout";
 import { tickPortfolios } from "./portfoliosale";
 import { tickLedger } from "./ledger";
 import { tickNotes, maybeSellYourLoan } from "./notes";
-import { tickPrivateCredit } from "./privateCredit";
+import { tickPrivateCredit, tickPrivateBorrow } from "./privateCredit";
 import { tickAuction } from "./auction";
 import { tickPortfolio } from "./portfolio";
 import { reconcileSupplyQueue } from "./supply";
@@ -450,8 +450,10 @@ function tickMonth(
   // it must settle BEFORE the note desk services anything it just resolved.
   tickAuction(s, parcels);
   // Private credit asks spawn from the same stress the banks just revealed;
-  // funding writes Notes that tickNotes will service.
+  // funding writes Notes that tickNotes will service. Phase B borrow quotes
+  // read the same month — banks that just refused a takeout.
   tickPrivateCredit(s, parcels);
+  tickPrivateBorrow(s, parcels);
   // The paper desk reads the month the banks and the street have just had:
   // whose capital ratio broke, who stopped leasing, whose building sold out
   // from under whose mortgage. It cannot run before either of them.
@@ -1210,6 +1212,12 @@ export function attentionItems(s: GameState): { key: string; label: string }[] {
     out.push({
       key: `private-ask:${a.id}`,
       label: `${a.rivalName} wants ${a.ratePct.toFixed(1)}% private money on ${a.address} — answer by ${monthLabel(a.expiresM)}`,
+    });
+  }
+  for (const q of s.privateBorrowQuotes ?? []) {
+    out.push({
+      key: `private-borrow:${q.id}`,
+      label: `${q.lenderName} will lend on ${q.address} at ${q.ratePct.toFixed(1)}% — answer by ${monthLabel(q.expiresM)}`,
     });
   }
   // Receiver books and fund wind-downs — buyable on Marketplace. Without this

@@ -448,6 +448,7 @@ function ParcelPanelInner({
           <div className="grid">
             <Row k="Balance" v={usd(holding.loan.balance)} strong />
             <Row k="Coupon" v={pct(holding.loan.ratePct) + ((holding.loan.floating ?? holding.loan.product === "float") ? " (floating)" : " (fixed)")} />
+            {holding.loan.holder && <Row k="Holder" v={holding.loan.holder} />}
             {game.month < holding.loan.ioUntilM && <Row k="Interest-only" v={"until " + monthLabel(holding.loan.ioUntilM)} />}
             <Row k="Debt service / yr" v={usd(holding.loan.monthlyPmt * 12)} strong />
             <Row k="Balloon" v={monthLabel(holding.loan.maturityM)} />
@@ -2113,8 +2114,9 @@ export function ListSection({ bbl, appraisal, onDone }: { bbl: string; appraisal
 export function RefiSection({ bbl }: { bbl: string }) {
   const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
-  const { refi } = useStore.getState();
+  const { refi, acceptPrivateBorrowQuote, declinePrivateBorrowQuote } = useStore.getState();
   const holding = game.holdings[bbl];
+  const privateQuotes = (game.privateBorrowQuotes ?? []).filter((q) => q.bbl === bbl);
   // A leased fee with a ground rent is income paper, not vacant dirt — open
   // on an income desk even when the resolved class is still "land".
   const refiRec = resolveRec(parcels, game, bbl);
@@ -2124,7 +2126,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
   const { quotes, value, payoff } = refiQuotes(game, parcels, bbl);
   const cur = game.holdings[bbl]?.loan;
   const existing = cur ? prepayPenalty(cur, game.month) : 0;
-  if (!quotes.length) {
+  if (!quotes.length && !privateQuotes.length) {
     return (
       <div className="refi">
         <div className="deal-head">Refinance</div>
@@ -2132,6 +2134,37 @@ export function RefiSection({ bbl }: { bbl: string }) {
           No desk will quote against this today. Appraised at {usd(value)}{payoff > 0 ? `, ${usd(payoff)} outstanding` : ""} —
           the income is not there, or the credit window is shut.
         </div>
+      </div>
+    );
+  }
+  if (!quotes.length) {
+    return (
+      <div className="refi">
+        <div className="deal-head">Refinance</div>
+        <div className="hint">Appraised at {usd(value)}; {usd(payoff)} to pay off. The banks are silent — private paper below.</div>
+        {privateQuotes.map((pq) => {
+          const pts = Math.round(pq.principal * pq.points);
+          const net = pq.principal - payoff - pts - existing;
+          return (
+            <div key={pq.id} className="hint" style={{ marginBottom: 8, borderLeft: "3px solid #8a5620", paddingLeft: 8 }}>
+              <div>
+                <strong>{pq.lenderName}</strong> · private bridge ·{" "}
+                <b className="mono">{usd(pq.principal)}</b> at <b className="mono">{pq.ratePct.toFixed(2)}%</b>
+              </div>
+              <div className="dim" style={{ marginTop: 4 }}>{pq.why}</div>
+              <div style={{ marginTop: 4 }}>
+                After payoff and points:{" "}
+                <b className={net >= 0 ? "mono" : "mono neg"}>{net >= 0 ? "+" : ""}{usd(net)}</b>
+              </div>
+              <div className="btn-row" style={{ marginTop: 6 }}>
+                <button className="btn" onClick={() => acceptPrivateBorrowQuote(pq.id)}>
+                  Take private · {usd(pq.principal)}
+                </button>
+                <button className="btn-mini" onClick={() => declinePrivateBorrowQuote(pq.id)}>Pass</button>
+              </div>
+            </div>
+          );
+        })}
       </div>
     );
   }
@@ -2170,6 +2203,31 @@ export function RefiSection({ bbl }: { bbl: string }) {
             : ""}
         </div>
       )}
+      {privateQuotes.map((pq) => {
+        const pts = Math.round(pq.principal * pq.points);
+        const net = pq.principal - payoff - pts - existing;
+        return (
+          <div key={pq.id} className="hint" style={{ marginBottom: 8, borderLeft: "3px solid #8a5620", paddingLeft: 8 }}>
+            <div>
+              <strong>{pq.lenderName}</strong> · private bridge ·{" "}
+              <b className="mono">{usd(pq.principal)}</b> at <b className="mono">{pq.ratePct.toFixed(2)}%</b>,{" "}
+              {(pq.points * 100).toFixed(1)} points, {pq.termM} months · {(100 * pq.ltv).toFixed(0)}% of as-is
+            </div>
+            <div className="dim" style={{ marginTop: 4 }}>{pq.why}</div>
+            <div style={{ marginTop: 4 }}>
+              After payoff and points:{" "}
+              <b className={net >= 0 ? "mono" : "mono neg"}>{net >= 0 ? "+" : ""}{usd(net)}</b>
+              {" · "}lapses {monthLabel(pq.expiresM)}.
+            </div>
+            <div className="btn-row" style={{ marginTop: 6 }}>
+              <button className="btn" onClick={() => acceptPrivateBorrowQuote(pq.id)}>
+                Take private · {usd(pq.principal)}
+              </button>
+              <button className="btn-mini" onClick={() => declinePrivateBorrowQuote(pq.id)}>Pass</button>
+            </div>
+          </div>
+        );
+      })}
       <div className="btn-row">
         {quotes.map((x) => (
           <button

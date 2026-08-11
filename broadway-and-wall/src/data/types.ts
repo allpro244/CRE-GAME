@@ -46,6 +46,11 @@ export interface ParcelRecord {
    */
   buildSpec?: number;
   demandScore: number;  // 0–100
+  /** Hedonic multiplier from waterfront / corridor / corner (mean 1). Appraisal only. */
+  locPremium?: number;
+  shoreM?: number;
+  corridorM?: number;
+  corner?: boolean;
   landPsf: number;      // $/sf of land, engine-evolved in later phases
   landPsfHistory: number[];
   imputed: string[];

@@ -769,7 +769,11 @@ export function offerGroundLease(
   // underwrites vacant carry, and the moment a coupon appears the collateral
   // is income paper. Clear the lien before you encumber the fee.
   if (s.holdings[bbl].loan) {
-    return { s, err: "Pay off the mortgage first — a land lender will not sit under a ground lease." };
+    const bal = Math.round(s.holdings[bbl].loan!.balance);
+    return {
+      s,
+      err: `Pay off the mortgage first (Debt → Pay off — $${bal.toLocaleString()} left) — a land lender will not sit under a ground lease.`,
+    };
   }
   if (s.facility?.bbls?.includes(bbl)) {
     return { s, err: "Release it from the facility first — the line is secured by vacant dirt, not a leased fee." };

@@ -377,6 +377,75 @@ export function prepayPenalty(loan: Loan, month: number): number {
   return Math.round(loan.balance * (loan.ratePct / 100) * yrs * 0.62);
 }
 
+/** Balance + break cost to retire a mortgage today. */
+export function payOffDue(loan: Loan, month: number): { balance: number; penalty: number; due: number } {
+  const balance = Math.max(0, Math.round(loan.balance));
+  if (balance <= 0) return { balance: 0, penalty: 0, due: 0 };
+  const penalty = prepayPenalty({ ...loan, balance }, month);
+  return { balance, penalty, due: balance + penalty };
+}
+
+/**
+ * RETIRE A MORTGAGE WITH CASH (and the line, if needed).
+ *
+ * The Debt page only offered Refi — so a vacant site with a crumb of land-loan
+ * balance left ($26 on a $150M lot) could not be ground-leased, and the error
+ * said "pay off the mortgage first" with no button that did it. This is that
+ * button: balance plus any prepayment penalty, lien released, fee free and
+ * clear for a ground lease or a clean sale.
+ */
+export function payOffLoan(
+  s: GameState, parcels: ParcelTable, bbl: string,
+): { s: GameState; err?: string; msg?: string } {
+  const next = cloneState(s);
+  const h = next.holdings[bbl];
+  const rec = resolveRec(parcels, next, bbl);
+  if (!h?.loan) return { s, err: "Nothing to pay off on that deed." };
+  if (!rec) return { s, err: "Unknown parcel." };
+  if (next.facility?.bbls.includes(bbl)) {
+    return { s, err: "This deed is pledged to your facility. Release it there, or repay the facility — a mortgage payoff does not cut the crossed lien." };
+  }
+  const { balance, penalty, due } = payOffDue(h.loan, next.month);
+  if (balance <= 0) {
+    h.loan = null;
+    if (next.workouts?.[bbl]) delete next.workouts[bbl];
+    return { s: next, msg: "Cleared — nothing was left on the note." };
+  }
+  if (fundableNow(next, parcels) < due) {
+    const short = due - fundableNow(next, parcels);
+    return {
+      s,
+      err: penalty > 0
+        ? `Need $${due.toLocaleString()} to retire this ($${balance.toLocaleString()} balance + $${penalty.toLocaleString()} to break the paper) — short $${short.toLocaleString()}.`
+        : `Need $${due.toLocaleString()} cash to retire this loan — short $${short.toLocaleString()}.`,
+    };
+  }
+  const lender = h.loan.holder ?? productById(h.loan.product).lender;
+  const paid = fundCashNeed(next, parcels, due);
+  if (paid < due) {
+    return { s, err: `Could not raise the $${due.toLocaleString()} payoff.` };
+  }
+  logBooks(next, "debtSvc", due);
+  h.loan = null;
+  if (next.workouts?.[bbl]) delete next.workouts[bbl];
+  // Paying as agreed is the quiet good file — not a celebration, not a ding.
+  bumpLenderRel(next, lender, 0.5);
+  const addr = rec.address ?? bbl;
+  next.news.unshift({
+    q: next.month, kind: "deal",
+    text: penalty > 0
+      ? `Paid off ${addr}: $${balance.toLocaleString()} to ${lender}`
+        + ` plus $${penalty.toLocaleString()} to break the paper. The deed is free and clear.`
+      : `Paid off ${addr}: $${balance.toLocaleString()} to ${lender}. The deed is free and clear.`,
+  });
+  return {
+    s: next,
+    msg: penalty > 0
+      ? `Paid off — $${due.toLocaleString()} (incl. $${penalty.toLocaleString()} break fee).`
+      : `Paid off — $${due.toLocaleString()}.`,
+  };
+}
+
 export function monthlyPayment(principal: number, ratePct: number, years: number): number {
   const i = ratePct / 100 / 12;
   const n = years * 12;
@@ -855,6 +924,10 @@ export function tickLoan(
     });
   }
 
+  // Crumb balances from float math used to sit forever (IO land loans at a
+  // dollar a month never amortise to exact zero). Under a dollar is noise —
+  // clear the lien so a ground lease or sale is not blocked by rounding.
+  if (loan.balance > 0 && loan.balance < 1) loan.balance = 0;
   if (loan.balance === 0) { h.loan = null; return cashOut; }
 
   // the balloon. An automatic refi rolls the SAME balance — the bank isn't

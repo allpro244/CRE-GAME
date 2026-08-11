@@ -16,7 +16,19 @@
 **Do not retire a rail from this list without a paired harness run and `pnpm gate`.**  
 Phase 3.1+ is one rail per PR, measured before/after.
 
-## Top load-bearing clamps
+## Phase 3.1 — `cycleDev` rail retired ✅
+
+**Change:** `market.ts` `tickMacro` — spring `-0.048 * cycleDev` on each step instead of pinning at ±1.
+
+| Metric | Before | After |
+|--------|--------|-------|
+| `market:1527` at ceiling | 39.1% | **0%** (no longer load-bearing) |
+| Load-bearing clamps total | 45 | 41 |
+| `pnpm cycle-dev` pin rate | — | 0% at ±1 |
+
+Harness: `pnpm cycle-dev` · Gate: `pnpm gate` green on branch.
+
+## Top load-bearing clamps (remaining)
 
 These bind often enough that the number in code may not be the number doing the work.
 

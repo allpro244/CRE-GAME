@@ -118,16 +118,15 @@ sim, one rail per PR.
 **Deliverable:** `RAIL_AUDIT.md` (or section in PR) listing top binders with
 file:line, bind %, and proposed replacement.
 
-### 3.1 `cycleDev` rail (if still binding)
+### 3.1 `cycleDev` rail ✅ (this PR)
 
-| File | Likely change |
-|------|----------------|
-| `src/engine/market.ts` | Widen organic drift or tie cap to measured macro state instead of hard `[-1,1]` |
-| `src/engine/invariants.ts` | Relax only if new bound is documented |
-| `test/` | Assert `cycleDev` is not pinned >5% of months in a 100y bot |
+| File | Change |
+|------|--------|
+| `src/engine/market.ts` | Spring-loaded drift toward zero replaces hard pin at ±1 |
+| `test/cycle-dev.mjs` | Assert `cycleDev` pinned ≤5% of months in 100y bot |
 
-**Acceptance:** bind rate drops; cap rates / rent leadlag still pass existing
-harnesses; `pnpm gate`.
+**Before:** `market:1527` bound 39.1% at ceiling (RAIL_AUDIT.md).  
+**After:** re-run `pnpm rails` + `pnpm cycle-dev` on branch.
 
 ### 3.2 Development quota / `classAppetite` mirror rails
 

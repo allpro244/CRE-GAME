@@ -53,3 +53,18 @@ for(const r of rows.slice(0,12)){
   const t=r.areas.reduce((a,b)=>a+b,0);
   console.log(`  ${String(r.seed).slice(0,8).padStart(9)} ${String(r.nPark).padStart(6)} ${(Math.max(...r.areas)/t*100).toFixed(0).padStart(13)}% ${Math.round(t/1000).toString().padStart(11)}k`);
 }
+
+// District silhouettes — Exchange reads taller than Millside on the same town.
+import { makeCity } from "../src/citygen/index.mjs";
+const med = (arr) => { const s=[...arr].sort((a,b)=>a-b); return s.length?s[Math.floor(s.length/2)]:0; };
+let districtFails = 0;
+for (const seed of [20261, 481923, 550991]) {
+  const p = makeCity("newalden", seed, { size: "city", density: "development" }).parcels;
+  const ex = Object.values(p).filter((r) => r.district === "exchange" && (r.floors ?? 0) > 0).map((r) => r.floors);
+  const mi = Object.values(p).filter((r) => r.district === "millside" && (r.floors ?? 0) > 0).map((r) => r.floors);
+  const ok = ex.length >= 20 && mi.length >= 8 && med(ex) > med(mi);
+  if (!ok) districtFails++;
+  console.log(`\nDISTRICT MASSING seed ${seed}: exchange med ${med(ex)} (n=${ex.length})  millside med ${med(mi)} (n=${mi.length})  ${ok ? "OK" : "FAIL"}`);
+}
+if (districtFails) { console.log(`\nFAIL  ${districtFails} seed(s) — exchange should read taller than millside`); process.exit(1); }
+console.log("\nvariety pass (parks + district massing)");

@@ -15,6 +15,8 @@ import { locLimit, locRate } from "@/engine/credit";
 import { LineChart } from "@/ui/Chart";
 import { sponsorStanding } from "@/engine/sponsor";
 import { marketAppetite, markRival, rivalCondition, gradeOf } from "@/engine/rivals";
+import { rivalPrincipalOf } from "@/engine/people";
+import { PersonCard, personAgeLine } from "@/ui/PersonCard";
 import { compFlows, compStats } from "@/engine/comps";
 import { usd, sf, pct } from "@/ui/format";
 import { bankStatement, CapSpark } from "@/ui/panels/NotesPage";
@@ -504,7 +506,8 @@ export function TheStreet() {
         These firms bid on the same tape you do, with their own money — a firm without the equity does not
         close, and one already at its covenant cannot borrow to. When their dry powder is high your lowballs
         get refused; when their leverage runs past their covenants they sell into whatever bid exists, and
-        that bid is you. Click any firm for its balance sheet and what it owns.
+        that bid is you. The principal column is who runs the shop and how old they are — equity alone cannot
+        tell you the next thirty years. Click any firm for its balance sheet and what it owns.
       </div>
       {/* THE LEAGUE TABLE. They started where you started — five to eighteen
           million and a hundred years — so the only honest way to read your own
@@ -537,7 +540,7 @@ export function TheStreet() {
                 three expressions for one quantity is how a table comes to
                 disagree with the row it expands into, so all three now read
                 the same `eq` off `markRival` and the firm's own balance. */}
-            <th>Firm</th><th>Style</th><th className="num">Buildings</th><th className="num">Gross assets</th>
+            <th>Firm</th><th>Principal</th><th>Style</th><th className="num">Buildings</th><th className="num">Gross assets</th>
             <th className="num">Debt</th><th className="num">Net equity</th>
             <th className="num">Leverage</th><th className="num">Dry powder</th><th>Read</th>
           </tr>
@@ -547,11 +550,13 @@ export function TheStreet() {
             const dead = r.failedM !== undefined;
             const stress = (r.stressMs ?? 0) > 0;
             const isOpen = open === r.id;
+            const principal = rivalPrincipalOf(game, r.id);
             return (
               <Fragment key={r.id}>
               <tr className={dead ? "dim" : ""} style={{ cursor: "pointer" }}
                 onClick={() => setOpen(isOpen ? null : r.id)}>
                 <td>{isOpen ? "▾ " : "▸ "}{r.name}</td>
+                <td className="dim">{dead ? "—" : personAgeLine(principal, game.month)}</td>
                 <td className="dim">{STYLE_WORD[r.style]}</td>
                 <td className="num">{dead ? (r.bbls.length ? `${r.bbls.length} in workout` : "—") : r.bbls.length}</td>
                 <td className="num">{dead ? "—" : usd(m.aum)}</td>
@@ -584,12 +589,15 @@ export function TheStreet() {
               </tr>
               {isOpen && (
                 <tr>
-                  <td colSpan={9} style={{ background: "rgba(43,37,26,0.035)" }}>
+                  <td colSpan={10} style={{ background: "rgba(43,37,26,0.035)" }}>
                     {/* THE BALANCE SHEET, the same one you are judged on. Gross
                         assets less debt is their equity; NOI over assets is what
                         the book yields; distributions are what they have already
                         taken off the table, which is why a firm with modest
                         equity is not necessarily a firm that did badly. */}
+                    {principal && !dead && (
+                      <PersonCard person={principal} game={game} showAttrs={false} title="Operating principal" />
+                    )}
                     <div className="grid" style={{ margin: "8px 0" }}>
                       <Row k="Gross assets" v={usd(m.aum)} />
                       <Row k="Debt" v={usd(r.debt)} bad={m.ltv > 0.8} />

@@ -60,6 +60,7 @@ import {
   type Candidate, type RoleState, type Staff, type StaffRole,
 } from "@/engine/staff";
 import { operatingStatement, resolveRec } from "@/engine/value";
+import { PersonCard as PrincipalCard } from "./PersonCard";
 import { sf, usd } from "./format";
 
 const ROLES: StaffRole[] = ["pm", "leasing", "construction"];
@@ -239,6 +240,10 @@ export default function StaffPage() {
           Capacity arithmetic follows the org chart; there is no free dial to force it.
         </div>
       </div>
+
+      {game.principal && (
+        <PrincipalCard person={game.principal} game={game} showAttrs title="You · the principal" />
+      )}
 
       {ROLES.map((role) => (
         <RoleDesk

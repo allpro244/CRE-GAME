@@ -267,3 +267,21 @@ export function clearStyleOverrides(s: GameState): void {
   delete s.ownerStyle;
   delete s.benchStyle;
 }
+
+export function rivalPrincipalOf(s: GameState, firmId: string): Person | undefined {
+  return s.rivalPrincipals?.[firmId];
+}
+
+/** Short league-table line: "Halloran Voss, 44". Never attributes. */
+export function principalTag(s: GameState, firmId: string): string | null {
+  const p = rivalPrincipalOf(s, firmId);
+  if (!p) return null;
+  return `${p.name}, ${ageYears(p, s.month)}`;
+}
+
+export const ATTR_LABEL_PERSON: Record<string, string> = {
+  judgment: "Judgment",
+  urgency: "Sense of urgency",
+  diligence: "Detail orientation",
+  relationships: "Relationships",
+};

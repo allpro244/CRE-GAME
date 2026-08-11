@@ -299,24 +299,36 @@ To count what actually reached the scene rather than what the rules say should
 have, prop meshes are named `prop:<kind>` and the wall mesh carries `aStyle`
 per vertex. Both can be read straight off `map.getLayer("bw-three-buildings")`.
 
-### Two probes worth rebuilding, because reading the diff will not do it
+### Two probes, for the two things reading a diff will not tell you
 
-Both drive `window.__three` and `window.__store` in a headless browser, and
-both want a **fixed browser profile** so the autosave survives between runs and
-every shot is the same town — `startRun` rerolls the seed, so a fresh profile
-is a different city and nothing is comparable.
+Both are `--eval` scripts for `shoot.mjs`, in `tools/probe/`. Both want
+`--profile <dir>` — a **fixed** browser profile, so the first run cuts a town
+and every later one resumes its autosave. Without it `startRun` rerolls the
+seed and each shot is a different city, which makes every before/after
+comparison a comparison of two towns. `--verbose` prints the measurement;
+without it you get the 200-character "did the shader compile" summary.
 
-- **A geometry fingerprint** — mesh count, vertex count, the summed x and z of
-  every position, and the vertex count per style id, over the whole scene.
-  This is what makes an extraction reviewable: `Mason`, `crownTop` and
-  `roofDeck` were all lifted out of the generator's closure and all three were
-  checked to leave 164,330 vertices and 152 per-style counts *exactly* where
-  they were. A refactor of code this shape cannot be eyeballed.
-- **A player-building slate** — paint a controlled spread of classes, floors
-  and years over a block of real parcels through `setPlayerBuildings`, then
-  count `aStyle`. That is what showed 6 facade families reaching the mesh
-  where the registry offers 82, and 43 after. Nothing in the repo could see
-  that number before, because the audit only sweeps the generator.
+```bash
+P=/tmp/bw-prof
+node tools/shoot.mjs http://127.0.0.1:5173/ /tmp/fp.png --wait 12000 \
+  --profile $P --verbose --settle 6000 --eval "$(cat tools/probe/fingerprint.js)"
+node tools/shoot.mjs http://127.0.0.1:5173/ /tmp/slate.png --wait 12000 \
+  --profile $P --verbose --settle 20000 --eval "$(cat tools/probe/playerslate.js)"
+```
+
+- **`fingerprint.js`** — mesh count, vertex count, the summed x and z of every
+  position, and the vertex count per style id, over the whole scene. This is
+  what makes an extraction reviewable: `Mason`, `crownTop` and `roofDeck` were
+  all lifted out of the generator's closure and all three were checked to
+  leave 164,330 vertices and 152 per-style counts *exactly* where they were.
+  A refactor of code this shape cannot be eyeballed.
+- **`playerslate.js`** — paints a controlled spread of classes, floors and
+  years over a block of real parcels through `setPlayerBuildings`, then counts
+  facade families and roof surfaces. That is what showed 6 facade families
+  reaching the mesh where the registry offers 82. It is now 46 on the same
+  slate, and 6 roof surfaces where the private ladder could reach 4. Nothing
+  in the repo could see either number before, because `pnpm styles` only
+  sweeps the generator.
 
 **A test that cannot fail is itself a fake.** Before trusting that a number
 moved, check that it *can* move — a gate on a condition the generator never

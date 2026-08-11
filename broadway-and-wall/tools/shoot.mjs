@@ -24,10 +24,20 @@ const wait = Number(flag("wait", 9000));
 const W = Number(flag("w", 1600));
 const H = Number(flag("h", 1000));
 const evalJs = flag("eval", null);
-if (!url || !out) { console.error("usage: shoot.mjs <url> <out.png> [--wait ms] [--w px] [--h px] [--eval js]"); process.exit(1); }
+if (!url || !out) { console.error("usage: shoot.mjs <url> <out.png> [--wait ms] [--w px] [--h px] [--eval js] [--profile dir] [--verbose]"); process.exit(1); }
 
+// A FIXED PROFILE, FOR WHEN TWO SHOTS HAVE TO BE THE SAME TOWN.
+//
+// A fresh profile per run is the default and it is the right default — see
+// above. But `startRun` rerolls the city seed, so a fresh profile is a
+// DIFFERENT CITY, and every before/after comparison made across two of them
+// is comparing two towns. Point both runs at one directory and the second one
+// resumes the first one's autosave: same seed, same parcels, same camera, and
+// the only thing that changed is the code.
+const keepProfile = flag("profile", null);
+const verbose = argv.includes("--verbose");
 const port = 9300 + Math.floor((Date.now() / 7) % 400);
-const profile = mkdtempSync(join(tmpdir(), "shoot-"));
+const profile = keepProfile || mkdtempSync(join(tmpdir(), "shoot-"));
 const chrome = spawn(CHROME, [
   "--headless=new", "--no-sandbox", "--disable-dev-shm-usage",
   "--hide-scrollbars", "--disable-lcd-text",
@@ -87,13 +97,19 @@ const shot = await send("Page.captureScreenshot", { format: "png", captureBeyond
 if (!shot?.data) throw new Error("no screenshot data; console: " + errors.join(" | "));
 writeFileSync(out, Buffer.from(shot.data, "base64"));
 console.log(`${out}  ${(Buffer.from(shot.data, "base64").length / 1024).toFixed(0)} KB` +
-  (errors.length ? `  [${errors.length} console errors: ${errors.slice(0, 2).join(" | ").slice(0, 200)}]` : ""));
+  // --verbose prints every console line in full: a probe that reports its
+  // measurement through console.error is unreadable through the 200-character
+  // summary, and the summary is what you want when you are only asking
+  // whether the shader compiled.
+  (errors.length
+    ? (verbose ? `\n${errors.join("\n")}` : `  [${errors.length} console errors: ${errors.slice(0, 2).join(" | ").slice(0, 200)}]`)
+    : ""));
 
 ws.close();
 chrome.kill("SIGKILL");
 // Chromium is still flushing its profile as we delete it, so a failed rmdir
 // here is normal and must not fail the run — the screenshot is already written.
 try {
-  rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 120 });
+  if (!keepProfile) rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 120 });
 } catch { /* a temp dir; the OS will collect it */ }
 process.exit(0);

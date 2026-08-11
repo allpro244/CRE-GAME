@@ -13,7 +13,7 @@ import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifi
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult } from "./owners";
-import { originate, quote, productById, prepayPenalty, stabViewFor } from "./debt";
+import { originate, quote, productById, prepayPenalty, stabViewFor, monthlyPayment } from "./debt";
 import { takeoverDevelopment, buildClimate, farMaxFor } from "./dev";
 import { demandNow } from "./demand";
 import { recordComp } from "./comps";
@@ -59,12 +59,14 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // static one underwrote a delivered tower as the vacant lot it used to be.
   const rec = resolveRec(parcels, s, bbl);
   const closing = Math.round(price * CLOSING_PCT);
-  if (product === "cash" || !rec) return { principal: 0, ratePct: 0, equity: price + closing, capPremium: 0, bind: "none" as const, ltvCap: 0, uwDscr: 0 };
+  if (product === "cash" || !rec) {
+    return { principal: 0, ratePct: 0, equity: price + closing, capPremium: 0, pointsFee: 0, bind: "none" as const, ltvCap: 0, uwDscr: 0, appraised: 0, uwBasis: price, overpay: 0 };
+  }
   const prod = productById(product);
   // the life company will not finance a tired building, and the quote screen
   // has to say so before the closing table does
   if (prod.minCondition === "good" && gradeOf(s, rec) !== "good") {
-    return { principal: 0, ratePct: 0, equity: price + closing, capPremium: 0, bind: "condition" as const, ltvCap: prod.ltv, uwDscr: prod.uwDscr };
+    return { principal: 0, ratePct: 0, equity: price + closing, capPremium: 0, pointsFee: 0, bind: "condition" as const, ltvCap: prod.ltv, uwDscr: prod.uwDscr, appraised: 0, uwBasis: price, overpay: 0 };
   }
   // THE LESSER OF COST OR VALUE — the single most important rule in
   // acquisition underwriting, and it was entirely absent.
@@ -120,8 +122,11 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // premium is part of the equity cheque — the cheaper coupon is not free.
   const prod2 = productById(product);
   const capPremium = prod2.floating ? Math.round(principal * 0.0125) : 0;
+  // Origination points — refi and facility already charge them; acquisition
+  // used to leave 0.6–2% of principal uncharged at the table.
+  const pointsFee = Math.round(principal * prod2.points);
   return {
-    principal, ratePct: q.ratePct, equity: price - principal + closing + capPremium, capPremium,
+    principal, ratePct: q.ratePct, equity: price - principal + closing + capPremium + pointsFee, capPremium, pointsFee,
     // APPRAISAL OUTRANKS THE THREE UNDERWRITING TESTS when it is what bound,
     // because it is not a fact about the building — it is a fact about what
     // you agreed to pay. Telling somebody "advance rate" when the truth is
@@ -153,7 +158,11 @@ export function executePurchase(
   }
   const next = clone(s);
   next.cash -= bq.equity;
-  logBooks(next, "bought", bq.equity);
+  // Points are a financing cost, not purchase consideration — same split
+  // refinance and the facility use (debtSvc vs borrowed/bought).
+  const pointsFee = bq.pointsFee ?? 0;
+  logBooks(next, "bought", bq.equity - pointsFee);
+  if (pointsFee > 0) logBooks(next, "debtSvc", pointsFee);
   // If a named firm owned it, they are the seller — the money and the deed
   // both move, and their balance sheet is one building lighter.
   {
@@ -195,16 +204,24 @@ export function executePurchase(
   // closing statement; it appears eighteen months later as a roof.
   if (product !== "cash") {
     const prod = productById(product);
-    // The same in-place income buyQuote showed on the term sheet — the roll
-    // the seller disclosed, which is still on `next` at this point because the
-    // listing and the approach are not cleared until below. Sizing the loan
-    // that actually gets written off a different number from the one quoted is
-    // how a player ends up with paper they never agreed to.
-    // Same stabilised view buyQuote passed into `quote` — without it, bridge
-    // paper re-sizes on in-place income at close after showing a takeout on
-    // the term sheet.
-    const stab = stabViewFor(rec, next.econ, holding.condition, price);
-    holding.loan = originate(next, prod, price, inPlace(rec, next, bbl, price).noi, lev, holding.condition, rec.class, stab);
+    // Same underwriting buyQuote used for the term sheet — lesser of cost or
+    // value, in-place NOI on that basis, and the bridge stabilised view.
+    // Originating on full `price` (and inPlace(..., price) which reassesses
+    // tax off the deal) wrote a smaller loan than the card promised and left
+    // free equity in the deal.
+    const uwBasis = bq.uwBasis ?? price;
+    const stab = stabViewFor(rec, next.econ, holding.condition, uwBasis);
+    holding.loan = originate(
+      next, prod, uwBasis, inPlace(rec, next, bbl, uwBasis).noi, lev,
+      holding.condition, rec.class, stab,
+    );
+    // Belt: if float still drifts a dollar, the written balance is the quoted one.
+    if (holding.loan && bq.principal > 0 && holding.loan.balance !== bq.principal) {
+      holding.loan.balance = holding.loan.principal = bq.principal;
+      holding.loan.monthlyPmt = prod.ioM > 0
+        ? Math.round((bq.principal * holding.loan.ratePct) / 100 / 12)
+        : Math.round(monthlyPayment(bq.principal, holding.loan.ratePct, holding.loan.amortYears));
+    }
   }
   // a live 1031: this purchase completes the exchange if it's big enough
   if (next.exchange && price >= next.exchange.minPrice * 0.8) {
@@ -2263,6 +2280,29 @@ export function saleTaxQuote(h: Holding, price: number, s?: GameState): { net: n
   const appreciation = Math.max(0, gain - recapture);
   const tax = Math.round(recapture * RECAPTURE_RATE + appreciation * CAP_GAINS_RATE);
   return { net, gain, tax, recapture, appreciation };
+}
+
+/**
+ * WHAT REACHES THE SELLER — one helper for the offer modal and the close.
+ *
+ * The modal used to show `saleTaxQuote.net − loan − tax` and omit the
+ * participating kicker, prepayment break fee, and facility release. Accepting
+ * then took those off at the table, so "Net to you" lied by up to the release
+ * premium on a crossed deed.
+ */
+export function saleProceedsToSeller(
+  s: GameState, parcels: ParcelTable, h: Holding, price: number,
+): {
+  net: number; gain: number; tax: number; kick: number; breakFee: number;
+  release: number; loanPayoff: number; toSeller: number;
+} {
+  const { net, gain, tax } = saleTaxQuote(h, price, s);
+  const kick = h.loan?.kicker && gain > 0 ? Math.round(gain * h.loan.kicker) : 0;
+  const breakFee = h.loan ? prepayPenalty(h.loan, s.month) : 0;
+  const release = releaseCost(s, parcels, h.bbl);
+  const loanPayoff = h.loan?.balance ?? 0;
+  const toSeller = net - loanPayoff - kick - breakFee - release;
+  return { net, gain, tax, kick, breakFee, release, loanPayoff, toSeller };
 }
 
 export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string, exchange = false): { s: GameState; err?: string } {

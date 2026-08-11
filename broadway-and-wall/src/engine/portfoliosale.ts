@@ -28,8 +28,8 @@ import { assetValue, inPlace, resolveRec } from "./value";
 import { livingRivals, gradeOf, ownerOf, STYLE_OF, receiverDeskFor, forgetDeed } from "./rivals";
 import { lenderByName, lenderPressure, raiseAlert } from "./lenders";
 import { streetRefiProceeds } from "./debt";
-import { executePurchase } from "./actions";
-import { depositsOn } from "./leasing";
+import { acceptSaleOffer, executePurchase } from "./actions";
+import { cloneState } from "./types";
 import { sweepLocIdleCash } from "./credit";
 
 const money = (n: number) =>
@@ -81,6 +81,17 @@ export function listStreetPortfolio(
   const clean = [...new Set(bbls)].filter((b) => s.holdings[b] && !s.listings.some((l) => l.bbl === b));
   if (clean.length < 2) return { s, err: "A portfolio sale needs at least two buildings you own and have not already listed." };
   if ((s.portfolios ?? []).some((p) => p.player)) return { s, err: "You already have a package on the market. One at a time." };
+  // Same crossed-deed wall as portfolio.listPortfolio — a package close is one
+  // trade with no per-deed release table, so pledging facility collateral into
+  // it used to walk the deeds off and leave the facility balance behind.
+  const crossed = clean.filter((b) => s.facility?.bbls.includes(b));
+  if (crossed.length > 0) {
+    return { s, err: `${crossed.length} of these are pledged to your facility. Release them first, or sell them individually.` };
+  }
+  const inWorkout = clean.filter((b) => s.workouts?.[b]);
+  if (inWorkout.length > 0) {
+    return { s, err: `${inWorkout.length} of these are in workout. Cure or deed them back before packaging.` };
+  }
   const gross = grossOf(s, parcels, clean);
   if (gross <= 0) return { s, err: "Those parcels are not worth anything to package." };
   const disc = sizeDiscount(clean.length, s.econ.creditIdx ?? 1);
@@ -134,22 +145,32 @@ export function buyPortfolio(
     return { b, v: rec ? Math.max(1, assetValue(rec, s.econ, gradeOf(s, rec))) : 1 };
   });
   const tot = vals.reduce((a, x) => a + x.v, 0) || 1;
-  let cur = s, taken = 0;
+  // ALL OR NOTHING. Skipping a blocked deed and still dropping the package
+  // used to charge the full ask, convey a subset, and leave the rest with the
+  // seller while the listing vanished — a partial close pretending to be one.
+  let cur = s;
+  const taken: string[] = [];
   for (const { b, v } of vals) {
     const share = Math.max(1000, Math.round(p.ask * (v / tot)));
     const r = executePurchase(cur, parcels, b, share, "cash", true, 1);
-    if (r.err) continue;
-    cur = r.s; taken++;
+    if (r.err) {
+      return {
+        s,
+        err: `Could not convey every deed in the package (${r.err}). Nothing has closed — raise the cash or leave the book.`,
+      };
+    }
+    cur = r.s;
+    taken.push(b);
   }
-  if (!taken) return { s, err: "Nothing in that package could be conveyed." };
+  if (!taken.length) return { s, err: "Nothing in that package could be conveyed." };
   cur.portfolios = (cur.portfolios ?? []).filter((x) => x.id !== id);
   cur.news.unshift({
     q: cur.month, kind: "deal",
-    text: `You have bought ${taken} buildings from ${sellerName} in one transaction at ${money(p.ask)}. `
+    text: `You have bought ${taken.length} buildings from ${sellerName} in one transaction at ${money(p.ask)}. `
       + `The parts appraise at ${money(p.gross)} — ${((1 - p.ask / Math.max(1, p.gross)) * 100).toFixed(0)}% back. `
       + `Nobody else in town could write that cheque this month.`,
   });
-  return { s: cur, msg: `${taken} buildings, one closing, ${money(p.ask)}.` };
+  return { s: cur, msg: `${taken.length} buildings, one closing, ${money(p.ask)}.` };
 }
 
 // ---------------------------------------------------------------------------
@@ -205,36 +226,60 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
         const winner = hunger[0].r;
         const winDebt = packageDebt(winner);
         const winEq = p.ask - winDebt;
-        // YOUR OWN PACKAGE CLEARING. The debt on every building in it is repaid
-        // out of the proceeds at close, exactly as it would be one at a time,
-        // and what is left is yours.
-        let toYou = 0, debtOff = 0;
+        // YOUR OWN PACKAGE CLEARING. Close each deed through acceptSaleOffer so
+        // the mortgage payoff, facility release, prepay, tax, deposits and
+        // Books lines match a single-asset sale. The old path deleted holdings
+        // and credited ask − debt − 2% with no ledger and no release — a
+        // facility-backed package walked the collateral off and left the loan.
+        let toYou = 0, debtOff = 0, conveyed = 0;
         if (p.player) {
+          // ALL OR NOTHING on your own package too. Closing some deeds and
+          // leaving the rest on the listing was a partial package sale with
+          // a full-ask news line — same class of fault as buyPortfolio used
+          // to have the other direction.
+          const cash0 = s.cash;
           const totV = p.bbls.reduce((a, b) => {
             const rec = resolveRec(parcels, s, b);
             return a + (rec ? Math.max(1, assetValue(rec, s.econ, gradeOf(s, rec))) : 1);
           }, 0) || 1;
-          for (const b of p.bbls) {
-            const h = s.holdings[b];
-            if (!h) continue;
-            const rec = resolveRec(parcels, s, b);
-            const share = p.ask * ((rec ? Math.max(1, assetValue(rec, s.econ, gradeOf(s, rec))) : 1) / totV);
+          let work = cloneState(s);
+          const owned = p.bbls.filter((b) => work.holdings[b]);
+          if (!owned.length) continue;
+          let ok = true;
+          for (const b of owned) {
+            const h = work.holdings[b]!;
             debtOff += h.loan?.balance ?? 0;
-            toYou += share;
-            // The security deposits go with the deeds, the same as they do on a
-            // single-asset sale — they were the tenants' money and they are the
-            // buyer's obligation now. Selling a book as one ticket deleted every
-            // holding without handing them over, which released the liability
-            // with no entry behind it. See the identity in test/conserve.mjs:
-            // Ddeposits is part of it precisely so this cannot go unnoticed.
-            s.cash -= depositsOn(h);
-            delete s.holdings[b];
+            const rec = resolveRec(parcels, work, b);
+            const share = Math.max(1000, Math.round(p.ask * ((rec ? Math.max(1, assetValue(rec, work.econ, gradeOf(work, rec))) : 1) / totV)));
+            work.holdings[b] = {
+              ...work.holdings[b],
+              sale: {
+                ask: share, listedM: work.month,
+                offer: { price: share, expiresM: work.month + 1, from: winner.name },
+              },
+            };
+            const closed = acceptSaleOffer(work, parcels, b, false);
+            if (closed.err) { ok = false; break; }
+            work = closed.s;
+            conveyed++;
           }
-          toYou = Math.max(0, Math.round(toYou - debtOff - p.ask * 0.02));
-          s.cash += toYou;
+          if (!ok || conveyed !== owned.length) continue;
+          Object.assign(s, work);
+          toYou = Math.max(0, Math.round(s.cash - cash0));
           sweepLocIdleCash(s, { announce: true });
         }
         for (const b of p.bbls) {
+          // Player deeds already left via acceptSaleOffer; rival-to-rival still
+          // needs the register move below.
+          if (p.player && !s.holdings[b]) {
+            const rec = resolveRec(parcels, s, b);
+            if (rec) {
+              if (!winner.bbls.includes(b)) winner.bbls.push(b);
+              (winner.heldSince ??= {})[b] = s.month;
+              s.lastTradeM ??= {}; s.lastTradeM[b] = s.month;
+            }
+            continue;
+          }
           const rec = resolveRec(parcels, s, b);
           if (!rec) continue;
           const prev = ownerOf(s, b);
@@ -246,8 +291,8 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
         if (p.player) {
           s.news.unshift({
             q: s.month, kind: "deal",
-            text: `${winner.name} has bought your ${p.bbls.length}-building package at ${money(p.ask)} — one closing, `
-              + `${money(debtOff)} of debt retired out of the proceeds, ${money(toYou)} net to you. `
+            text: `${winner.name} has bought your ${conveyed}-building package at ${money(p.ask)} — one closing, `
+              + `${money(debtOff)} of debt retired out of the proceeds, ${money(toYou)} net cash movement. `
               + `You will not see those buildings on the tape again for a while.`,
           });
           winner.cash -= winEq; winner.debt += winDebt;

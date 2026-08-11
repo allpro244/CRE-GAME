@@ -67,6 +67,13 @@ export function holdingDeskSig(g: GameState | null | undefined, bbl: string): st
     h?.leasingHold ? 1 : 0,
     h?.plan,
     h?.service,
+    // Stance / capital-program toggles used to update the engine without
+    // changing this signature — the docked card looked dead until something
+    // else (cash, loan) moved and forced a re-render.
+    h?.stance,
+    h?.program ? `${h.program.id}:${h.program.untilM}` : "",
+    // programsDone is id → completed month, not an array.
+    Object.entries(h?.programsDone ?? {}).map(([k, v]) => `${k}:${v}`).join(","),
     sale?.ask,
     sale?.offer?.price,
     sale?.offer?.expiresM,

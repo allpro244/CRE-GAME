@@ -11,6 +11,7 @@ import { fundableNow } from "@/engine/credit";
 import { portfolioQuote } from "@/engine/portfolio";
 import { taxAppealQuote } from "@/engine/tax";
 import type { PortfolioQuote } from "@/engine/portfolio";
+import { allocatedAmount } from "@/engine/facility";
 import { usd, sf } from "@/ui/format";
 import { ListSection, RefiSection } from "@/ui/panels/ParcelDesk";
 import { useLabel, devUseLabel, physicalOcc, Big, Row } from "@/ui/panels/shared";
@@ -59,10 +60,13 @@ export function PortfolioPage() {
     // Deed NOI — building roll or ground coupon. Same number the header CF
     // annualises (before firm-level construction / facility / revolver).
     const noi = ownedHoldingNoiYr(game, parcels, h);
+    // Facility replaces the deed mortgage — allocated share is the lien that
+    // still sits on this row once the pool is papered.
+    const debt = (h.loan?.balance ?? 0) + allocatedAmount(game, parcels, h.bbl);
     const cf = noi / 12 - (h.loan?.monthlyPmt ?? 0);
     // Lessee's tower is not your occupancy — do not paint 0% on a coupon bond.
     const occ = fee || !rec ? 0 : physicalOcc(rec as never, h);
-    totV += v; totD += h.loan?.balance ?? 0;
+    totV += v; totD += debt;
     // EVERY COLUMN NEEDS A VALUE TO SORT ON, so the ones that used to be
     // computed inside the cell are computed here instead. That is also why
     // several of them were impossible to sort by: they did not exist until the
@@ -88,8 +92,8 @@ export function PortfolioPage() {
       // its dirt does not have a basis per foot of anything; it sorts last.
       basisPsf: rec && rec.bldgArea > 0 ? h.costBasis / rec.bldgArea : 0,
       gain: v - h.costBasis,
-      debt: h.loan?.balance ?? 0,
-      equity: v - (h.loan?.balance ?? 0),
+      debt,
+      equity: v - debt,
       ds: h.loan?.monthlyPmt ?? 0,
     };
   });
@@ -364,7 +368,7 @@ export function PortfolioPage() {
           </tr>
         </thead>
         <tbody>
-          {shown.map(({ h, rec, v, noi, cf, occ }, i) => {
+          {shown.map(({ h, rec, v, noi, cf, occ, debt }, i) => {
             const wk = game.workouts?.[h.bbl];
             // a crane on your own dirt is a status, not a secret
             const dv = game.developments[h.bbl];
@@ -466,8 +470,8 @@ export function PortfolioPage() {
                   </td>
                 );
               })()}
-              <td className="num">{usd(h.loan?.balance ?? 0)}</td>
-              <td className="num">{usd(v - (h.loan?.balance ?? 0))}</td>
+              <td className="num">{usd(debt)}</td>
+              <td className="num">{usd(v - debt)}</td>
               {/* A LEADING MINUS THAT WRAPS IS A BARE DASH. In a 62px column
                   `"−" + usd(...)` breaks after the sign, so a real payment
                   rendered as a dash over a number — visually identical to the

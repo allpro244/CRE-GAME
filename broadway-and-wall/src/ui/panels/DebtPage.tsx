@@ -831,13 +831,18 @@ export function HousePolicy() {
   const [svc, setSvc] = useState<-1 | 0 | 1>(cur.service);
   const [pln, setPln] = useState<0 | 1 | 2>(cur.plan);
   const [stn, setStn] = useState<-1 | 0 | 1>(cur.stance ?? 0);
+  // resolveRec — delivered stock lives on game.built; parcels[].class stays
+  // "land" for lots you developed, which made this card undercount the book
+  // and disable whole-book exclusives on a developer portfolio.
+  const parcels = useStore.getState().parcels;
   const built = Object.values(game.holdings).filter((h) => {
-    const rec = useStore.getState().parcels?.[h.bbl];
-    return rec && rec.class !== "land";
+    if (h.groundLeased) return false;
+    const rec = parcels ? resolveRec(parcels, game, h.bbl) : null;
+    return rec && rec.class !== "land" && (rec.bldgArea ?? 0) > 0;
   });
   const off = built.filter((h) => (h.stance ?? 0) !== stn || (h.service ?? 0) !== svc || (h.plan ?? 1) !== pln).length;
   const commercial = built.filter((h) => {
-    const rec = useStore.getState().parcels?.[h.bbl];
+    const rec = parcels ? resolveRec(parcels, game, h.bbl) : null;
     return rec && isCommercial(rec);
   });
   const commercialN = commercial.length;
@@ -1288,7 +1293,11 @@ export function DebtPage() {
                 <Row k="Diversification" v={`${(qt.quality.score * 100).toFixed(0)} of 100 — worth ${((qt.advance - PRODUCTS.find((p) => p.id === qt.productId)!.ltv) * 100).toFixed(1)} points of advance and ${(qt.spreadCut * 100).toFixed(0)}bp of coupon`} />
                 <Row k="Borrowing base" v={`${usd(qt.base)} · ${(qt.advance * 100).toFixed(0)}% advance · capped by ${qt.binding}`} strong />
                 <Row k="Mortgages repaid" v={qt.payoff > 0 ? `${usd(qt.payoff)}${qt.penalties > 0 ? ` + ${usd(qt.penalties)} to break them` : ""}` : "none — the pool is unencumbered"} bad={qt.penalties > 0} />
-                <Row k="Fees" v={usd(qt.fees)} />
+                {(() => {
+                  const draw = Math.floor(qt.base * lev);
+                  const fees = Math.round(draw * 0.01) + Math.round(draw * qt.points);
+                  return <Row k="Fees" v={usd(fees)} />;
+                })()}
                 <Row k="Covenants" v={`${qt.minDSCR.toFixed(2)}x coverage, ${(qt.advance * 100).toFixed(0)}% leverage — tested on the POOL`} />
                 <Row k="Structure" v={`${qt.ioM ? `${Math.round(qt.ioM / 12)}-yr IO, ` : ""}${qt.amortYears}-yr amort, ${Math.round(qt.termM / 12)}-yr term, recourse`} />
               </div>

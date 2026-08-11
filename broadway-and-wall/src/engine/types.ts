@@ -289,6 +289,8 @@ export interface Facility {
   breachedSince?: number;
   /** The lender is trapping the cash flow of every building in the pool. */
   sweep?: boolean;
+  /** Consecutive months the contractual coupon was not fully funded. */
+  arrearsMs?: number;
   /** The month they accelerated. A receiver sells the whole pool three months later. */
   accelM?: number;
 }

@@ -1715,9 +1715,23 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
   // competing with product chips and the underwriting grid on the same scroll.
   const [stage, setStage] = useState<"thesis" | "structure" | "commit">("thesis");
   const offerPrice = Math.round(price);
-  const max = buyQuote(game, parcels, bbl, offerPrice, product, 1);
+  // Same pattern as RefiSection: default "savings" often won't quote, while
+  // another desk will — fall through to a desk that actually writes so Commit
+  // does not silently close all-cash against a card full of loan terms.
+  const productChoices = PRODUCTS.filter((p) => !p.mezz && (isLand ? p.id === "land" : p.id !== "land"));
+  const picked = (() => {
+    const direct = buyQuote(game, parcels, bbl, offerPrice, product, 1);
+    if (product === "cash" || direct.principal > 0) return product;
+    const alt = productChoices.find((p) => buyQuote(game, parcels, bbl, offerPrice, p.id, 1).principal > 0);
+    return alt?.id ?? "cash";
+  })();
+  const max = buyQuote(game, parcels, bbl, offerPrice, picked, 1);
   const principal = Math.round(max.principal * lev);
-  const equity = offerPrice - principal + Math.round(offerPrice * 0.02);
+  const equity = max.equity > 0 && lev >= 0.999
+    ? max.equity
+    : offerPrice - principal + Math.round(offerPrice * 0.02)
+      + (max.capPremium ? Math.round(max.capPremium * lev) : 0)
+      + Math.round((max.pointsFee ?? 0) * lev);
   // THE RESOLVED RECORD, for the same reason buyQuote uses one: the static
   // table is the lot at generation, not what is standing on it today.
   const rec = resolveRec(parcels, game, bbl);
@@ -1734,7 +1748,9 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
   const stab = rec ? proFormaNOIYr(rec, game.econ, ip?.h?.condition ?? initialCondition(rec), offerPrice) : 0;
   // ACTUAL first-year debt service — amortizing payment for amortizing paper,
   // coupon-only for IO periods — not the IO approximation for everything.
-  const prodDef = PRODUCTS.find((pp) => pp.id === product);
+  // Key off `picked` (the desk the numbers describe), not the chip the player
+  // last clicked when that chip would not quote.
+  const prodDef = PRODUCTS.find((pp) => pp.id === picked);
   const annualDs = principal > 0
     ? (prodDef && prodDef.ioM > 0
       ? principal * (max.ratePct / 100)
@@ -1794,12 +1810,12 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
       {stage === "structure" && (
         <div className="deal-stage" role="tabpanel">
           <div className="btn-row" style={{ marginTop: 4 }}>
-            {PRODUCTS.filter((p) => !p.mezz && (isLand ? p.id === "land" : p.id !== "land")).map((p) => {
+            {productChoices.map((p) => {
               const pq = buyQuote(game, parcels, bbl, offerPrice, p.id, 1);
               return (
                 <button
                   key={p.id}
-                  className={"btn" + (product === p.id ? " btn-on" : "")}
+                  className={"btn" + (picked === p.id ? " btn-on" : "")}
                   disabled={pq.principal <= 0}
                   style={pq.principal <= 0 ? { opacity: 0.42, cursor: "not-allowed" } : undefined}
                   title={pq.principal <= 0
@@ -1811,7 +1827,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                 </button>
               );
             })}
-            <button className={"btn" + (product === "cash" ? " btn-on" : "")} title="No debt at all." onClick={() => setProduct("cash")}>
+            <button className={"btn" + (picked === "cash" ? " btn-on" : "")} title="No debt at all." onClick={() => setProduct("cash")}>
               All cash
             </button>
           </div>
@@ -1846,7 +1862,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
             </div>
           )}
           {max.principal <= 0 && (
-            <div className="hint">{product === "cash" ? "Buying it outright." : "No lender will size a loan against this income — all cash or nothing."}</div>
+            <div className="hint">{picked === "cash" ? "Buying it outright." : "No lender will size a loan against this income — all cash or nothing."}</div>
           )}
           <div className="btn-row" style={{ marginTop: 10 }}>
             <button type="button" className="btn" onClick={() => setStage("thesis")}>◂ Thesis</button>
@@ -1885,7 +1901,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
               className="btn btn-buy"
               disabled={equity > game.cash}
               onClick={() => {
-                const prod = principal <= 0 ? "cash" : product;
+                const prod = principal <= 0 ? "cash" : picked;
                 const l = principal <= 0 ? 1 : lev;
                 if (off) buyOff(bbl, prod as never, l, bid);
                 else useStore.getState().closeDeal(bbl, prod, l);

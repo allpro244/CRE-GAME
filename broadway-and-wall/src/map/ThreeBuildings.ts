@@ -8166,29 +8166,6 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       const nowEra = Math.max(0, Math.min(1, (yearBuilt - 1870) / 160));
       const T = mkBuf();
       const R2 = mkBuf();
-      for (const tier of tiers) {
-        const tfp = tier.fp;
-        let perim = 0;
-        for (let i = 0; i < tfp.length; i++) {
-          const a = tfp[i], b = tfp[(i + 1) % tfp.length];
-          const dx = b[0] - a[0], dy = b[1] - a[1];
-          const len = Math.hypot(dx, dy);
-          if (len < 0.05) continue;
-          const n = [dy / len, -dx / len, 0];
-          const u0 = perim, u1 = perim + len;
-          perim += len;
-          const quad = [
-            [a[0], a[1], tier.z0, u0], [b[0], b[1], tier.z0, u1], [b[0], b[1], tier.z1, u1],
-            [a[0], a[1], tier.z0, u0], [b[0], b[1], tier.z1, u1], [a[0], a[1], tier.z1, u0],
-          ];
-          for (const [x, y, z, u] of quad) {
-            T.pos.push(x, y, z); T.norm.push(n[0], n[1], n[2]); T.u.push(u);
-            T.style.push(tier.style ?? meta[0]); T.rand.push(meta[1]); T.varr.push(meta[2]); T.top.push(tier.z1); T.fh.push(meta[4]);
-            T.era.push(nowEra);
-            T.seg.push(u0, u1); T.ccv.push(1, 1);
-          }
-        }
-      }
       let hb = 2166136261;
       for (let i = 0; i < item.bbl.length; i++) { hb ^= item.bbl.charCodeAt(i); hb = Math.imul(hb, 16777619); }
       hb = hb >>> 0;
@@ -8202,21 +8179,60 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const L2 = Math.hypot(q1[0] - q0[0], q1[1] - q0[1]);
         if (L2 > bl2) { bl2 = L2; bi2 = i; }
       }
+      const bx2 = bl2 > 0 ? (fp0[(bi2 + 1) % fp0.length][0] - fp0[bi2][0]) / bl2 : 1;
+      const by2 = bl2 > 0 ? (fp0[(bi2 + 1) % fp0.length][1] - fp0[bi2][1]) / bl2 : 0;
+      // THE SAME TROWEL THE CITY WAS BUILT WITH. The walls and decks here were
+      // a private copy of `extrudeWalls` and a private copy of `capRoof`, and
+      // both had drifted: the walls declared every corner convex, so an L-plan
+      // tower got no shadow in its inside corner, and the deck wrote a constant
+      // 4 m edge distance, which is the term the roof shader uses to sink a
+      // deck into shade under its own parapet — so no player roof had any.
+      const mst2: MasonState = { era: nowEra, deck: deck2, wear: wear2, bearX: bx2, bearY: by2 };
+      const mason2 = makeMason(mst2);
       for (const tier of tiers) {
-        const tfp = tier.fp;
-        const bx2 = bl2 > 0 ? (fp0[(bi2 + 1) % fp0.length][0] - fp0[bi2][0]) / bl2 : 1;
-        const by2 = bl2 > 0 ? (fp0[(bi2 + 1) % fp0.length][1] - fp0[bi2][1]) / bl2 : 0;
-        const pts = tfp.map(([x, y]) => new THREE.Vector2(x, y));
-        let tris: number[][] = [];
-        try { tris = THREE.ShapeUtils.triangulateShape(pts, []); } catch { tris = []; }
-        for (const t of tris) {
-          for (const idx of t) {
-            R2.pos.push(tfp[idx][0], tfp[idx][1], tier.z1); R2.norm.push(0, 0, 1); R2.u.push(4);
-            R2.style.push(item.construction ? 5 : (tier.roof ?? tier.style ?? meta[0])); R2.rand.push(rnd); R2.varr.push(varr); R2.top.push(tier.z1); R2.fh.push(fh2);
-            R2.era.push(nowEra);
-            R2.seg.push(deck2, wear2); R2.ccv.push(bx2, by2);
-          }
+        const wm = [tier.style ?? meta[0], meta[1], meta[2], tier.z1, meta[4]];
+        mason2.wall(T, tier.fp as [number, number][], tier.z0, tier.z1, wm);
+        const rs = item.construction ? S_PLAIN : (tier.roof ?? tier.style ?? meta[0]);
+        mason2.cap(R2, tier.fp as [number, number][], tier.z1, [rs, rnd, varr, tier.z1, fh2]);
+      }
+      // ---- AND IT ENDS IN SOMETHING ----------------------------------------
+      //
+      // Every building the player or a rival put up stopped at a bare plane
+      // with a small grey box on it — one ending, for the whole half of the
+      // city they are responsible for, while the town's own stock had twelve.
+      // Crowns are 29% of a tower's pixels and the part of it that meets the
+      // sky, so this was the single largest thing separating the two
+      // populations by eye. Same ladder, same inputs, same hash streams.
+      //
+      // Only the top tier gets one. A lower tier of a setback building is a
+      // terrace with more building standing on it, and a cornice there would
+      // be a cornice halfway up a wall.
+      const crownProps: { kind: number; x: number; y: number; z: number; s: number; rot: number; b?: string }[] = [];
+      let crownDeck: { ring: [number, number][]; z: number } | null = null;
+      if (!item.construction) {
+        const tt = tiers[tiers.length - 1];
+        const tfp = tt.fp as [number, number][];
+        let ar2 = 0;
+        for (let i = 0; i < tfp.length; i++) {
+          const a = tfp[i], b = tfp[(i + 1) % tfp.length];
+          ar2 += a[0] * b[1] - b[0] * a[1];
         }
+        const cr = crownTop(mason2, T, R2, {
+          ring: tfp, z1: tt.z1, roof: true, deco: false, bbl: item.bbl,
+          style: tt.style ?? meta[0], rnd, varr, fh: fh2, area: ar2 / 2,
+          cs: (n) => hash01(k ^ Math.imul(n + 1, 0x9e3779b1), this.citySeed ^ 0x00c0ffee),
+          pier: (n) => hash01(k ^ Math.imul(n, 2654435761), this.citySeed),
+          props: crownProps,
+        });
+        crownDeck = cr.mechDeck;
+      }
+      // The only ornament the ladder places itself: balustrade urns along a
+      // stone cornice. They sit ON the parapet rather than a metre inside it,
+      // which is why they do not come through the roof kit.
+      if (crownProps.length) {
+        const urns = crownProps.filter((p) => p.kind === 39).map((p) =>
+          urnGeom().scale(p.s, p.s, p.s).translate(p.x, p.y, p.z));
+        if (urns.length) this.dynGroup.add(new THREE.Mesh(mergeGeoms(urns), this.propMaterial(0xa9a293, false)));
       }
       const mk = (D: typeof T) => {
         const g = new THREE.BufferGeometry();
@@ -8287,13 +8303,21 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         // tower's top tier can be a small plate even when the building is
         // tall, and a cooling tower hung off the edge of a setback is the
         // ugliest thing in the city.
-        const wants: RoofWant[] = [{ kind: 13, s: 0.9 + 0.3 * hash01(k ^ 0x43, this.citySeed), rot: bear2 }];
-        if (item.floors >= 4 && h >= 16) wants.push({ kind: 14, s: 1, rot: bear2 + 0.4 });
+        //
+        // ...and the kit now stands on whatever the crown left. A tall
+        // building grows a bulkhead up there; dropping a cooling tower on the
+        // roof BELOW it buries the plant inside the penthouse. Same rule as
+        // the static stock, including not asking for a second bulkhead when
+        // the crown has already built one.
+        const wants: RoofWant[] = [];
+        if (!crownDeck) wants.push({ kind: 13, s: 0.9 + 0.3 * hash01(k ^ 0x43, this.citySeed), rot: bear2 });
+        if (item.floors >= 4 && h >= 16 && !crownDeck) wants.push({ kind: 14, s: 1, rot: bear2 + 0.4 });
         if (h >= 34 && hash01(k ^ 0x45, this.citySeed) < 0.72) {
           wants.push({ kind: 15, s: 0.85 + 0.5 * hash01(k ^ 0x47, this.citySeed), rot: bear2 + 1.1 });
         }
         if (h >= 10 && hash01(k ^ 0x49, this.citySeed) < 0.5) wants.push({ kind: 19, s: 1, rot: bear2 });
-        for (const p of fitRoofKit(topTier.fp as [number, number][], topTier.z1, wants,
+        for (const p of fitRoofKit(crownDeck ? crownDeck.ring : (topTier.fp as [number, number][]),
+          crownDeck ? crownDeck.z : topTier.z1, wants,
           (i) => hash01(k ^ Math.imul(i + 7, 0x85ebca6b), this.citySeed), h)) {
           const m = new THREE.Mesh(GEOM[p.kind](), this.propMaterial(COL[p.kind], false));
           m.rotation.z = p.rot; m.scale.setScalar(p.s); m.position.set(p.x, p.y, p.z);

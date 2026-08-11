@@ -296,6 +296,35 @@ export interface CrownOut {
   roofZ: number;
 }
 
+/**
+ * WHAT THE FLAT ROOF IS COVERED IN.
+ *
+ * Nine surfaces — tar, EPDM, slag, terne, aluminised asphalt, PVC, white TPO,
+ * mod-bit cap sheet, gravel ballast — and which one a building has is a
+ * question about the decade it was roofed in, not about taste. Tar and gravel
+ * before the war; single-ply from the eighties; a white cool roof is a
+ * twenty-first century answer to an energy code.
+ *
+ * Shared, because it was two answers. `setPlayerBuildings` picked from a fixed
+ * six-entry list off the deed hash, era-blind — so every roof the player laid
+ * was drawn from the same handful whether the campaign was in its first year
+ * or its ninetieth, and none of them could be the tar-and-gravel that a mill
+ * conversion still has on it.
+ */
+export function roofDeck(style: number, year: number, floors: number, z1: number, roll: number): number {
+  const modernCls = has(T_MODERN, style) || style === S_PMOD;
+  const bigPlate = floors >= 6 || z1 >= 24;
+  const pool: number[] = [];
+  if (year < 1930)      pool.push(1, 1, 1, 0, 0, 0, 0, 3, 3, 4, 4, 5);
+  else if (year < 1960) pool.push(1, 1, 1, 0, 0, 0, 3, 3, 5, 5, 4, 8);
+  else if (year < 1982) pool.push(1, 1, 0, 0, 0, 3, 3, 5, 5, 8, 8, 4);
+  else if (year < 2003) pool.push(2, 2, 2, 2, 0, 3, 5, 5, 8, 8, 6, 6);
+  else                  pool.push(7, 7, 7, 6, 6, 6, 8, 8, 2, 5, 4);
+  if (modernCls && bigPlate && year >= 1982) pool.push(6, 6, 7, 7, 2, 2);
+  if (style === S_MILL && year < 1975) pool.push(0, 0, 4, 1, 1);
+  return pool[Math.min(pool.length - 1, Math.floor(roll * pool.length))];
+}
+
 export function crownTop(m: Mason, W: GeomBuf, R: GeomBuf, o: CrownIn): CrownOut {
   const { ring, z1, style, rnd, varr, fh, area } = o;
   let mechDeck: CrownOut["mechDeck"] = null;
@@ -6351,18 +6380,8 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       if (area < 0) ring = ring.slice().reverse();
 
       {
-        const yr = v.y || 1950;
-        const modernCls = has(T_MODERN, style) || style === S_PMOD;
-        const bigPlate = v.f >= 6 || v.z1 >= 24;
-        const pool: number[] = [];
-        if (yr < 1930)      pool.push(1, 1, 1, 0, 0, 0, 0, 3, 3, 4, 4, 5);
-        else if (yr < 1960) pool.push(1, 1, 1, 0, 0, 0, 3, 3, 5, 5, 4, 8);
-        else if (yr < 1982) pool.push(1, 1, 0, 0, 0, 3, 3, 5, 5, 8, 8, 4);
-        else if (yr < 2003) pool.push(2, 2, 2, 2, 0, 3, 5, 5, 8, 8, 6, 6);
-        else                pool.push(7, 7, 7, 6, 6, 6, 8, 8, 2, 5, 4);
-        if (modernCls && bigPlate && yr >= 1982) pool.push(6, 6, 7, 7, 2, 2);
-        if (style === S_MILL && yr < 1975) pool.push(0, 0, 4, 1, 1);
-        mst.deck = pool[Math.min(pool.length - 1, Math.floor(hash01(key ^ 0x2f7d3a11, this.citySeed ^ 0x5eed100f) * pool.length))];
+        mst.deck = roofDeck(style, v.y || 1950, v.f, v.z1,
+          hash01(key ^ 0x2f7d3a11, this.citySeed ^ 0x5eed100f));
         if (v.d) mst.deck = 8;
         mst.wear = hash01(key ^ 0x7a1c9d3f, this.citySeed ^ 0x0badf00d);
         let bi = 0, bl = -1;
@@ -8219,7 +8238,13 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
       let hb = 2166136261;
       for (let i = 0; i < item.bbl.length; i++) { hb ^= item.bbl.charCodeAt(i); hb = Math.imul(hb, 16777619); }
       hb = hb >>> 0;
-      const deck2 = item.construction ? 0 : [7, 7, 6, 6, 8, 5][hb % 6];
+      // ...and the roof surface off the same ladder as the stock. This was
+      // `[7, 7, 6, 6, 8, 5][hb % 6]` — a fixed six off the deed hash, blind to
+      // the year, so the roof the player laid in the campaign's ninetieth year
+      // came out of the same handful as the one they laid in its first, and a
+      // conversion of a mill could not keep its tar and gravel.
+      const deck2 = item.construction ? 0
+        : roofDeck(style, yearBuilt, item.floors, h, hash01(hb ^ 0x2f7d3a11, this.citySeed ^ 0x5eed100f));
       const wear2 = ((hb >>> 8) % 1024) / 1024;
       // seam bearing comes off the base plate's longest wall, whichever tier
       const fp0 = tiers[0].fp;

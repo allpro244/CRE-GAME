@@ -164,7 +164,7 @@ export const CONTRACT_PREMIUM: Record<Contract, number> = { gmp: 0.04, costplus:
 //
 // Credit tightens the ceiling in a downturn, and industrial and housing carry
 // more than offices and shops, because they always have.
-function constructionLtc(mix: UseMix, phase: string, creditIdx: number, appetite = 1): number {
+function constructionLtc(mix: UseMix, phase: string, creditIdx: number, appetite = 1, spaceTight = 1): number {
   const spec = specShare(mix);
   // flats and sheds are the financeable end of the market
   const safeLtc = 0.70;
@@ -177,7 +177,28 @@ function constructionLtc(mix: UseMix, phase: string, creditIdx: number, appetite
   // and a bank that has stopped lending stops financing buildings first,
   // because a half-built tower is the worst collateral there is.
   const app = Math.min(1.05, 0.5 + 0.5 * appetite);
-  return Math.max(0, Math.min(0.70, base * tight * app * Math.min(1.12, Math.max(0.55, creditIdx))));
+  // Space-market tightness (vacancy below natural / unmet structural demand)
+  // is why banks fund into a shortage — same signal classAppetite already
+  // reads. Caps keep this from becoming free leverage in a boom label alone.
+  const space = Math.max(0.9, Math.min(1.12, spaceTight));
+  return Math.max(0, Math.min(0.72, base * tight * app * space * Math.min(1.12, Math.max(0.55, creditIdx))));
+}
+
+/** Mix-weighted construction advance boost from class vacancy / structural tightness. */
+function constructionSpaceTight(e: Econ, mix: UseMix): number {
+  let w = 0, t = 0;
+  for (const u of BUILT_CLASSES) {
+    const share = mix[u] ?? 0;
+    if (share <= 0) continue;
+    const vac = e.cityVac?.[u] ?? NATURAL_VAC[u];
+    const gap = vac - NATURAL_VAC[u]; // negative = tight
+    const struct = e.structTight?.[u] ?? 0;
+    // Up to ~12% more advance when the class is short space; haircut in a glut.
+    const boost = clamp(1 - gap * 6 + struct * 1.4, 0.9, 1.12);
+    t += share * boost;
+    w += share;
+  }
+  return w > 0 ? t / w : 1;
 }
 
 /**
@@ -255,14 +276,15 @@ export function pickConstructionDesk(s: GameState, key: string): string | undefi
 export function constructionQuotes(s: GameState, mix: UseMix, costTotal: number): ConstructionQuote[] {
   const e = s.econ;
   const tight = Math.max(0, 1 - (e.creditIdx ?? 1));
+  const space = constructionSpaceTight(e, mix);
   return CONSTRUCTION_DESKS.map((d) => {
     const app = lenderAppetite(s, d.name);
     const bank = lenderByName(s, d.name);
     // The fund prices the cycle instead of leaving it: its advance rate reads
     // through a recession the way its perm sheet does, at its coupon.
     const base = d.fund
-      ? constructionLtc(mix, "expansion", Math.max(0.85, e.creditIdx ?? 1), Math.max(0.5, app))
-      : constructionLtc(mix, e.phase, e.creditIdx ?? 1, app);
+      ? constructionLtc(mix, "expansion", Math.max(0.85, e.creditIdx ?? 1), Math.max(0.5, app), space)
+      : constructionLtc(mix, e.phase, e.creditIdx ?? 1, app, space);
     const uncapped = Math.min(d.cap, base * d.scale);
     // The 1.1 approximates the interest-reserve gross-up, so the solved
     // commitment lands at the hold size rather than a tenth over it.
@@ -866,7 +888,14 @@ export function planDevelopment(
     (s.econ.cityVac?.[u] ?? NATURAL_VAC[u])
       + (s.econ.sublet?.[u] ?? 0) / Math.max(1, s.econ.stock?.[u] ?? CITY_STOCK[u]));
   const naturalAvailability = overMix(mix, (u) => NATURAL_VAC[u]);
-  const leaseUpMarket = clamp(availability / Math.max(0.001, naturalAvailability), 0.5, 2);
+  // Floor used to be 0.5 — even a bone-dry street kept half a glut's lease-up
+  // budget. Structural unmet demand shortens the curve further: the looking
+  // book is already there. Cap still 2× in a real glut.
+  const struct = overMix(mix, (u) => s.econ.structTight?.[u] ?? 0);
+  const leaseUpMarket = clamp(
+    availability / Math.max(0.001, naturalAvailability) - struct * 2.2,
+    0.35, 2,
+  );
   const carryMonths = Math.round(baseCarryMonths * leaseUpMarket);
   const opex0 = overMix(mix, (u) => opexPsf(u, s.econ, false));
   const recovery0 = overMix(mix, (u) => RECOVERY_RATE[u]);

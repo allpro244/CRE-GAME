@@ -11,7 +11,7 @@ import { buyQuote, assemblagePressure, saleTaxQuote, quietFeeRate, hasOwnedSiteN
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { isCommercial, vacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, buyoutQuote, BUYOUT_PREMIUM, leasableUses, renewalIntent } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty, payOffDue, mezzQuote } from "@/engine/debt";
-import { holderOf, holdingsOf, relOf, isCold, standingWith } from "@/engine/owners";
+import { holderOf, holdingsOf, relOf, isCold, standingWith, coldOnDeed, coldRefuseMsg } from "@/engine/owners";
 import { lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { locAvailable, fundableNow } from "@/engine/credit";
 import { isMixedUse, mixLabel, mixOf, uses as usesOf, useSf, USE_WORD } from "@/engine/mix";
@@ -1680,6 +1680,20 @@ export function OfferDesk({ bbl, price }: { bbl: string; price: number }) {
   // their floor. The price of the instrument: a no ends it, for both sides,
   // and it is only credible while the street still believes your finals.
   const [isFinal, setIsFinal] = useState(false);
+  // THE PERSON, NOT THE LISTING. A cold holder still has a number on the tape
+  // — the market can buy it — but the offer controls are a lie if they will
+  // not sell to you.
+  const cold = coldOnDeed(game, parcels, bbl);
+  if (cold) {
+    return (
+      <div className="hint neg" style={{ marginTop: 6 }}>
+        <strong>Not to you.</strong> {coldRefuseMsg(cold)}
+        <div className="dim" style={{ marginTop: 4 }}>
+          Ask stays {usd(price)}. Somebody else can buy it; you cannot until they take your call again.
+        </div>
+      </div>
+    );
+  }
   const offerPrice = Math.round(price * Math.min(1, bidFrac));
   const seller = sellerOf(game, parcels, bbl);
   const talks = game.talks?.[bbl] ?? null;

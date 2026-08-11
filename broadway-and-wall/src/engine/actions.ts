@@ -12,7 +12,7 @@ import { locAvailable, sweepLocIdleCash } from "./credit";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM } from "./facility";
-import { holderOf, offend, credit, isCold, relOf, relMult } from "./owners";
+import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg } from "./owners";
 import { originate, quote, productById, stabViewFor, monthlyPayment, stackPayoff } from "./debt";
 import { takeoverDevelopment, buildClimate, farMaxFor, replacementCost } from "./dev";
 import { demandNow } from "./demand";
@@ -399,13 +399,8 @@ export function buyListing(
 ): { s: GameState; err?: string; msg?: string; refused?: boolean } {
   const listing = s.listings.find((l) => l.bbl === bbl);
   if (!listing) return { s, err: "That property is no longer on the market." };
-  const held = holderOf(s, parcels, bbl);
-  if (held && isCold(s, held.id)) {
-    return {
-      s,
-      err: `${held.name} will not sell to you. Whatever happened between you, they have not forgotten it.`,
-    };
-  }
+  const cold = coldOnDeed(s, parcels, bbl);
+  if (cold) return { s, err: coldRefuseMsg(cold) };
   const price = Math.round(bid ?? listing.ask);
   // THE AS-IS PATH. This is a real offer — full price, no contingencies, close
   if (price >= listing.ask) {
@@ -433,8 +428,11 @@ export function buyListing(
     next.news.unshift({ q: next.month, kind: "info", text: `Your $${(price / 1e6).toFixed(2)}M on ${parcels[bbl]?.address} was refused — the ask stands.` });
     return { s: next, msg: "Refused. The ask stands.", refused: true };
   }
-  // insulted: the listing goes away
-  if (held) offend(next, held.id, 14);
+  // insulted: the listing goes away — and the person remembers across their book
+  {
+    const held = holderOf(next, parcels, bbl);
+    if (held) offend(next, held.id, 14, parcels);
+  }
   next.listings = next.listings.filter((l) => l.bbl !== bbl);
   next.news.unshift({ q: next.month, kind: "warn", text: `The seller at ${parcels[bbl]?.address} took the listing elsewhere after your offer.` });
   return { s: next, msg: "They walked, and pulled the listing.", refused: true };
@@ -1577,7 +1575,13 @@ function shutDoorWithOwner(
 ) {
   shutDoor(na, s.month, offence);
   const held = holderOf(s, parcels, bbl);
-  if (held) offend(s, held.id, Math.round(DOOR_MIN_M + (DOOR_MAX_M - DOOR_MIN_M) * Math.max(0, Math.min(1, offence))));
+  if (held) {
+    offend(
+      s, held.id,
+      Math.round(DOOR_MIN_M + (DOOR_MAX_M - DOOR_MIN_M) * Math.max(0, Math.min(1, offence))),
+      parcels,
+    );
+  }
 }
 
 export function approachOwner(
@@ -1840,6 +1844,8 @@ export function approachOwner(
 export function submitBlindBid(
   s: GameState, parcels: ParcelTable, bbl: string, bid: number,
 ): { s: GameState; err?: string; msg?: string } {
+  const cold = coldOnDeed(s, parcels, bbl);
+  if (cold) return { s, err: coldRefuseMsg(cold) };
   const a = s.approaches[bbl];
   if (!a || a.refused || a.ask !== undefined || a.reserve === undefined) {
     return { s, err: "There is no live 'make me an offer' conversation on that building." };
@@ -1954,6 +1960,8 @@ function bidBlind(
 export function buyOffMarket(
   s: GameState, parcels: ParcelTable, bbl: string, product: BuyProduct, lev = 1, bid?: number,
 ): { s: GameState; err?: string; msg?: string } {
+  const cold = coldOnDeed(s, parcels, bbl);
+  if (cold) return { s, err: coldRefuseMsg(cold) };
   const a = s.approaches[bbl];
   if (!a || a.refused) return { s, err: "No live ask — approach the owner first." };
   // Blind "make me an offer" is a bid, not a financed close. The stack comes
@@ -2001,6 +2009,8 @@ export function buyOffMarket(
 export function counterOffMarket(
   s: GameState, parcels: ParcelTable, adjacency: Adjacency, bbl: string, offerPx?: number,
 ): { s: GameState; err?: string; msg?: string } {
+  const cold = coldOnDeed(s, parcels, bbl);
+  if (cold) return { s, err: coldRefuseMsg(cold) };
   const a = s.approaches[bbl];
   const rec = resolveRec(parcels, s, bbl);
   // YOU CANNOT COUNTER A NUMBER NOBODY GAVE YOU. An owner who deflected is

@@ -22,7 +22,7 @@ import { logBooks, monthLabel, START_YEAR, cloneState} from "./types";
 import { assetValue, resolveRec } from "./value";
 import { ownerOf, gradeOf, tie } from "./rivals";
 import { describeFirm } from "./firm";
-import { holderOf, offend, isCold } from "./owners";
+import { holderOf, offend, coldOnDeed, coldRefuseMsg } from "./owners";
 import { rrange } from "./market";
 import { executePurchase } from "./actions";
 
@@ -379,13 +379,8 @@ export function negotiate(
     ? { kind: existing.sellerKind, name: existing.sellerName }
     : sellerOf(next, parcels, bbl);
   const held = holderOf(next, parcels, bbl);
-  if (held && isCold(next, held.id)) {
-    return {
-      s,
-      err: `${held.name} will not sell to you. Whatever happened between you, they have not forgotten it. `
-        + `It is still for sale — just not to you.`,
-    };
-  }
+  const cold = coldOnDeed(next, parcels, bbl);
+  if (cold) return { s, err: coldRefuseMsg(cold) };
   const { reservation, ask } = reservationOf(next, parcels, bbl, seller.kind);
   const round = (existing?.round ?? 0) + 1;
   const maxRounds = existing?.maxRounds ?? OPEN_ROUNDS[seller.kind];
@@ -479,7 +474,7 @@ export function negotiate(
     // firm remembers harder; until now the memory lived on the parcel and died
     // with the listing. A principal remembers the person, not the building.
     if (rival) tie(next, rival.id).insults++;
-    if (held) offend(next, held.id, 14);
+    if (held) offend(next, held.id, 14, parcels);
     next.lowballMs = [...(next.lowballMs ?? []).filter((m) => next.month - m < 36), next.month];
     if (recentLowballs(next) === 3) {
       next.news.unshift({
@@ -606,6 +601,8 @@ export function acceptCounter(s: GameState, parcels: ParcelTable, bbl: string): 
   const t = s.talks?.[bbl];
   if (!t) return { s, err: "There is nothing on the table." };
   if (t.agreed) return { s, err: "The price is already agreed. What is left is funding it." };
+  const cold = coldOnDeed(s, parcels, t.bbl);
+  if (cold) return { s, err: coldRefuseMsg(cold) };
   const rec = resolveRec(parcels, s, t.bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const next = clone(s);

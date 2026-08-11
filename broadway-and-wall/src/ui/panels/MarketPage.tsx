@@ -3,7 +3,7 @@ import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { assetValue, marketRentPsfYr, resolveRec, landPsfNow, inPlace } from "@/engine/value";
 import { streetBookStats } from "@/engine/portfoliosale";
-import { holderOf } from "@/engine/owners";
+import { holderOf, isCold } from "@/engine/owners";
 import { demandNow } from "@/engine/demand";
 import { LineChart } from "@/ui/Chart";
 import { marketAppetite, ownerOf, gradeOf } from "@/engine/rivals";
@@ -602,11 +602,16 @@ export function MarketPage() {
                 const goingIn = built && li.ask > 0 ? (noi / li.ask) * 100 : 0;
                 const yours = "mine" in li;
                 const h = yours ? game.holdings[li.bbl] : null;
+                const held = yours ? null : holderOf(game, parcels, li.bbl);
+                const notToYou = !!held && isCold(game, held.id);
                 return (
                   <tr key={li.bbl} onClick={() => go(li.bbl)}
                     onKeyDown={(e) => { if (e.key === "Enter") go(li.bbl); }}
-                    tabIndex={0} title={`Open the property file for ${rec.address}`}
-                    className={yours ? "row-mine" : undefined}>
+                    tabIndex={0}
+                    title={notToYou
+                      ? `${rec.address} — on the tape, but ${held!.name} will not sell to you`
+                      : `Open the property file for ${rec.address}`}
+                    className={yours ? "row-mine" : notToYou ? "row-cold" : undefined}>
                     <td>
                       {li.distress && <span className="chip chip-distress" style={{ marginRight: 6 }}>HOT</span>}
                       {li.reason && (
@@ -618,6 +623,11 @@ export function MarketPage() {
                         </span>
                       )}
                       {yours && <span className="chip" style={{ marginRight: 6 }}>YOURS</span>}
+                      {notToYou && (
+                        <span className="chip chip-cold" style={{ marginRight: 6 }} title={held!.name}>
+                          NOT TO YOU
+                        </span>
+                      )}
                       {rec.address}
                       <span className="dim"> · Open →</span>
                       {yours && h?.sale?.bids && h.sale.bids.length > 0 && (

@@ -1122,6 +1122,23 @@ export function generateCity(cfg) {
     return Math.round(rand() < p ? rr(a0, a1) : rr(b0, b1));
   }
 
+  /** Metres to the nearest arterial — a seam or a boulevard; 0 if on one. */
+  const corridorDist = (p) => {
+    let best = Infinity;
+    for (const r of DIAG_M) best = Math.min(best, inRing(p, r) ? 0 : distToRing(p, r));
+    return Number.isFinite(best) ? best : 9999;
+  };
+  /**
+   * Does this lot hold a corner of its own block?
+   *
+   * Lots exactly tile the block's inset ring, so every vertex of that ring
+   * falls in exactly one lot, and that lot is the one with two frontages. It
+   * is a cheaper and more reliable test than measuring frontage angles, and it
+   * gets chamfered blocks right for free: a Cerdà chaflán turns one corner
+   * into two, and both of them are corners.
+   */
+  const cornerLot = (lotRing, blockRing) => blockRing.some((v) => inRing(v, lotRing));
+
   const parcels = { type: "FeatureCollection", features: [] };
   const buildings = { type: "FeatureCollection", features: [] };
   const builtLots = [];   // the landmark pass picks its sites out of this
@@ -1174,6 +1191,29 @@ export function generateCity(cfg) {
     else splitLots(street, lotOptOf(d, heat), lots);
 
     let lotNo = 1;
+    // ---- THREE FACTS ABOUT A LOT THAT DECIDE WHAT IT IS WORTH ---------------
+    //
+    // The demand surface is built from gravity — stations, jobs, parks — and
+    // every one of those terms is an isotropic kernel around a point. Three of
+    // the most reliable facts in real estate are not shaped like that at all,
+    // and none of them was in the model:
+    //
+    //   THE WATER. This is a port town and the harbour was worth nothing. A
+    //   shoreline premium falls off perpendicular to the coast rather than
+    //   radially, which no sum of point kernels can produce.
+    //
+    //   THE CORRIDOR. An avenue and a mid-block side street differed only in
+    //   WIDTH. Retail follows the high street; a corner on the main road is a
+    //   different asset from the same building four hundred feet behind it.
+    //
+    //   THE CORNER. Two frontages, twice the display, and a real premium of
+    //   fifteen to forty per cent. "Which is the good corner" had no answer
+    //   beyond "closer to the middle of the blob".
+    //
+    // All three are geometry and all three are known here, at the moment the
+    // lot is cut, which is the honest place to measure them — build.mjs would
+    // have to reconstruct the block ring and the arterials to ask.
+    const blockCorners = street;
     for (const lotRing of lots) {
       const areaM2 = polygonArea([lotRing]);
       if (areaM2 < 70) continue;
@@ -1342,6 +1382,20 @@ export function generateCity(cfg) {
           lotarea: lotArea, bldgarea: bldgArea, numfloors: floors,
           yearbuilt, assessland, assesstot, unitsres,
           cd: cfg.district, district: d,
+          // metres to the water. Kept as the TRUE distance whatever the ground
+          // is used for, because topography and flooding will want it too;
+          // whether anybody pays for the view is `shoreamen`.
+          shorem: Math.round(distToRing(c, innerRing)),
+          // A WORKING DOCK IS NOT A WATERFRONT. Nobody pays a premium to
+          // overlook a container yard — the industrial shore is where the
+          // town put the things it did not want to look at. Same water, and
+          // the opposite sign on the value.
+          shoreamen: blkFl === FLAVOR.industrial ? 0 : 1,
+          // metres to the nearest arterial: the seams the plan reconciles
+          // itself along, and the boulevards driven across the grain.
+          corridorm: Math.round(corridorDist(c)),
+          // A lot holding a corner of its own block holds two frontages.
+          corner: cornerLot(lotRing, blockCorners) ? 1 : 0,
         },
       });
 

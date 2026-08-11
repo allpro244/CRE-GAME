@@ -244,17 +244,46 @@ export function buildCityData(src) {
     r: Math.max(90, Math.min(520, Math.sqrt(Math.max(1, pk.w * pk.h)) * 0.8)),
   }));
   const nearParks = bucketIndex(parkPts, 300);
+  // THE WATER AND THE HIGH STREET, measured perpendicular rather than radially.
+  //
+  // Every term above is an isotropic kernel around a point, and two of the
+  // strongest facts about urban land are not that shape: a shoreline premium
+  // falls off perpendicular to the coast and a corridor premium perpendicular
+  // to the road. No sum of point gravities makes either, which is why a port
+  // town's harbour was worth nothing and its main road was worth nothing but a
+  // wider carriageway.
+  //
+  // Decay lengths read off what people pay for: three hundred metres to the
+  // water is four or five blocks, which is about where the hedonic literature
+  // puts the half-life of a view; retail rent falls away from a high street
+  // within a block or two, so ninety. Shape parameters, calibrated, not tuned.
+  //
+  // A WORKING DOCK IS NOT A WATERFRONT — `shoreamen` is 0 on the industrial
+  // shore, because nobody pays to overlook a container yard. Same water,
+  // opposite sign.
   const raws = lots.map((l) => ({
     transit: nearStations(l.c, 1050, (s, d) => s.w * gauss(d, 350)),
     emp: nearJobs(l.c, 900, (j, d) => j.jobs * gauss(d, 300)),
     // Frontage, not proximity: the premium is on the blocks that FACE it and
     // falls away fast behind them.
     amen: nearParks(l.c, 900, (pk, d) => pk.r * gauss(d, pk.r * 0.75)),
+    shore: (l.p?.shoreamen ?? 1) ? Math.exp(-(num(l.p?.shorem) ?? 9999) / 300) : 0,
+    corridor: Math.exp(-(num(l.p?.corridorm) ?? 9999) / 90),
   }));
   const p95 = (arr) => { const s = [...arr].sort((a, b) => a - b); return s[Math.floor(s.length * 0.95)] || 1; };
   const t95 = p95(raws.map((r) => r.transit));
   const e95 = p95(raws.map((r) => r.emp));
   const a95 = p95(raws.map((r) => r.amen)) || 1;
+  // NORMALISED THE SAME WAY THE OTHER THREE ARE, and that is not a detail.
+  // Un-normalised, an exponential decay sits far higher for the median lot
+  // than a gravity term divided by its own 95th percentile does — so adding
+  // the two of them at weight 22 raised the median lot's land value 11.8%
+  // across the whole city. That is a level shift, and a level shift in land
+  // is an economy change wearing a geometry label: it moves rents, cost basis
+  // and the tax bill on every parcel. Against their own p95 they redistribute
+  // instead, which is the only thing they were ever meant to do.
+  const s95 = p95(raws.map((r) => r.shore)) || 1;
+  const c95 = p95(raws.map((r) => r.corridor)) || 1;
 
   // --- adjacency: bbox grid index + shared boundary length --------------------
   const CELL = 60; // meters
@@ -342,10 +371,16 @@ export function buildCityData(src) {
     // 38 / 44 / 18 — the two original terms keep their ratio to each other, so
     // the ground that was best is still best, and the amenity term is given the
     // weight that changes the SHAPE without rewriting the order.
+    // The original three keep their exact ratio to each other — 30:34:14 is
+    // 38:44:18 scaled — so the ground that was best is still best and the two
+    // new terms change the SHAPE rather than the order. Same principle the
+    // amenity term was added under.
     const blend = Math.min(1,
-      (38 * Math.min(1, dem.transit / t95)
-        + 44 * Math.min(1, dem.emp / e95)
-        + 18 * Math.min(1, dem.amen / a95)) / 100);
+      (30 * Math.min(1, dem.transit / t95)
+        + 34 * Math.min(1, dem.emp / e95)
+        + 14 * Math.min(1, dem.amen / a95)
+        + 12 * Math.min(1, dem.shore / s95)
+        + 10 * Math.min(1, dem.corridor / c95)) / 100);
     // AND SOME QUARTERS ARE SIMPLY BETTER ADDRESSES THAN THEIR NUMBERS SAY.
     //
     // Gravity fields cannot produce this and it is most of what a city actually
@@ -364,7 +399,14 @@ export function buildCityData(src) {
     // on its numbers; residential and old quarters vary most, because a home is
     // not.
     const cachet = districtCachet(p.district ?? p.cd ?? "—", manifest.seed ?? 1);
-    const rawDemand = Math.min(1, blend * cachet);
+    // A CORNER IS A DIFFERENT ASSET, not a better location. Two frontages,
+    // twice the display, light on two sides, and the door goes where the
+    // footfall is. It MULTIPLIES rather than blends for that reason: it is a
+    // property of the lot and not of the ground around it, so it must not move
+    // the neighbours. Real corner premia run 15-40%; 18% is the conservative
+    // end and is stated as the calibration it is.
+    const cornerK = (num(p.corner) ?? 0) === 1 ? 1.18 : 1;
+    const rawDemand = Math.min(1, blend * cachet * cornerK);
     const demandScore = Math.max(4, Math.min(100, Math.round(100 * Math.pow(rawDemand, DEMAND_GAMMA))));
     const assessedPsf = assessLand / lotArea;
     // assessed values run well below market; scale up, then blend with demand
@@ -400,7 +442,13 @@ export function buildCityData(src) {
       assessedLand: assessLand,
       assessedTotal: assessTot,
       demandScore,
-      // How exposed this ground is to the water: 0 dry, 1 on the quay. Computed
+      // The three geometric facts citygen measures at the moment the lot is
+      // cut — see the note there. Carried through because the demand blend
+      // above reads them, and because the desk and the renderer will want
+      // them: "is this a corner" is a thing a broker says out loud.
+      shoreM: num(p.shorem) ?? 9999,
+      corridorM: num(p.corridorm) ?? 9999,
+      corner: (num(p.corner) ?? 0) === 1,
       landPsf,
       landPsfHistory: [landPsf],
       imputed,

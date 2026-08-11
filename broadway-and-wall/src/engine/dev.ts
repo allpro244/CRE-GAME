@@ -1360,7 +1360,15 @@ const BTS_NAMES = [
   "Mariner Components", "Union Market", "Beacon Systems", "Drydock Supply",
 ];
 
-/** Find one bankable tenant willing to commit before groundbreak. */
+/**
+ * LIST THE SITE FOR A BUILD-TO-SUIT OCCUPIER.
+ *
+ * This used to mint a named tenant on the click — a headquarters for free, any
+ * month you wanted one. Real BTS is a listing: you put a shell on the street
+ * and wait for an anchor whose programme fits. The counterparty arrives
+ * through tickBuildToSuit at odds set by demand, climate and how much space
+ * you are asking someone to take.
+ */
 export function proposeBuildToSuit(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.62,
@@ -1370,22 +1378,67 @@ export function proposeBuildToSuit(
   }
   if (!s.holdings[bbl]) return { s, err: "Buy the site before shopping it to an occupier." };
   if (s.developments[bbl]) return { s, err: "Construction is already under way." };
+  if (s.btsProspects?.[bbl]) {
+    return { s, err: "You already have signed terms on this site. Take them or return to spec before shopping it again." };
+  }
+  if (s.holdings[bbl].sale) return { s, err: "It's on the market — pull the sale listing before you shop it to an occupier." };
+  if (s.holdings[bbl].groundOffer) return { s, err: "It is on offer for a ground lease. Pull that before you shop a build-to-suit." };
+  if (s.groundLeases?.[bbl]) return { s, err: "That site is ground-leased. Somebody else builds on it." };
+  if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage — shop the whole site." };
   const rec = resolveRec(parcels, s, bbl);
-  if (!rec || rec.class !== "land") return { s, err: "Build-to-suit starts on clear land." };
+  if (!rec || rec.class !== "land" || rec.bldgArea > 0) return { s, err: "Build-to-suit starts on clear land." };
   const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, "gmp");
   if (!plan) return { s, err: "That programme cannot be built on this site." };
   const next = clone(s);
-  const credit = (rng(next, "leasing") < 0.58 ? 2 : 1) as 1 | 2;
+  const prev = next.holdings[bbl].btsOffer;
+  const same = prev
+    && prev.use === use
+    && prev.floors === plan.floors
+    && Math.abs(prev.coverage - coverage) < 0.001;
+  next.holdings[bbl].btsOffer = {
+    use, floors: plan.floors, coverage, sinceM: same ? prev!.sinceM : next.month,
+  };
+  return {
+    s: next,
+    msg: same
+      ? "Still on the book — an anchor comes when one comes."
+      : `Listed ${plan.floors} fl of ${use} (${Math.round(plan.sf).toLocaleString()} sf) for a build-to-suit. Now you wait.`,
+  };
+}
+
+/** Withdraw the BTS listing, or decline signed terms and go back to spec. */
+export function clearBuildToSuit(s: GameState, bbl: string): GameState {
+  const hadOffer = !!s.holdings[bbl]?.btsOffer;
+  const hadProspect = !!s.btsProspects?.[bbl];
+  if (!hadOffer && !hadProspect) return s;
+  const next = clone(s);
+  if (next.holdings[bbl]?.btsOffer) delete next.holdings[bbl].btsOffer;
+  if (next.btsProspects?.[bbl]) {
+    delete next.btsProspects[bbl];
+    if (!Object.keys(next.btsProspects).length) delete next.btsProspects;
+  }
+  return next;
+}
+
+function mintBtsCommitment(
+  s: GameState, parcels: ParcelTable, bbl: string,
+  use: BuiltClass, floors: number, coverage: number,
+): BtsCommitment | null {
+  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, "gmp");
+  if (!plan) return null;
+  const rec = resolveRec(parcels, s, bbl);
+  if (!rec) return null;
+  const credit = (rng(s, "leasing") < 0.58 ? 2 : 1) as 1 | 2;
   const sector = (use === "industrial" ? "logistics"
-    : use === "retail" ? "food" : rng(next, "leasing") < 0.5 ? "tech" : "finance") as import("./types").Sector;
-  const name = BTS_NAMES[Math.floor(rng(next, "leasing") * BTS_NAMES.length)];
+    : use === "retail" ? "food" : rng(s, "leasing") < 0.5 ? "tech" : "finance") as import("./types").Sector;
+  const name = BTS_NAMES[Math.floor(rng(s, "leasing") * BTS_NAMES.length)];
   const built = {
     ...rec, class: use, mix: { [use]: 1 }, bldgArea: plan.sf, floors: plan.floors,
   } as never;
-  const market = marketRentPsfYr(built, next.econ, "good");
-  const discount = credit === 2 ? rrange(next, 0.82, 0.88, "leasing") : rrange(next, 0.78, 0.85, "leasing");
+  const market = marketRentPsfYr(built, s.econ, "good");
+  const discount = credit === 2 ? rrange(s, 0.82, 0.88, "leasing") : rrange(s, 0.78, 0.85, "leasing");
   const useSfArea = plan.sf * (plan.mix[use] ?? 1);
-  const bts: BtsCommitment = {
+  return {
     name,
     sector,
     credit,
@@ -1395,21 +1448,57 @@ export function proposeBuildToSuit(
     termM: credit === 2 ? 240 : 180,
     tiPsf: use === "office" ? 35 : use === "retail" ? 24 : 8,
     recovery: use === "office" ? "base" : "nnn",
-    signedM: next.month,
-  };
-  if (!next.btsProspects) next.btsProspects = {};
-  next.btsProspects[bbl] = bts;
-  return {
-    s: next,
-    msg: `${name} will take ${Math.round(bts.sf).toLocaleString()} sf for ${Math.round(bts.termM / 12)} years at $${bts.rentPsf.toFixed(2)}/sf.`,
+    signedM: s.month,
   };
 }
 
-export function clearBuildToSuit(s: GameState, bbl: string): GameState {
-  if (!s.btsProspects?.[bbl]) return s;
-  const next = clone(s);
-  delete next.btsProspects![bbl];
-  return next;
+/**
+ * Anchors arrive on BTS listings. Scarce on purpose — a named credit tenant
+ * committing before groundbreak is rarer than a speculative lease after delivery,
+ * and the button used to pretend otherwise.
+ */
+export function tickBuildToSuit(s: GameState, parcels: ParcelTable) {
+  for (const h of Object.values(s.holdings)) {
+    const offer = h.btsOffer;
+    if (!offer) continue;
+    const rec = resolveRec(parcels, s, h.bbl);
+    // The listing dies quietly when the lot stops being shoppable.
+    if (!rec || rec.class !== "land" || rec.bldgArea > 0
+      || s.developments[h.bbl] || s.merged?.[h.bbl] || h.sale
+      || h.groundOffer || s.groundLeases?.[h.bbl]
+      || s.btsProspects?.[h.bbl]
+      || (s.built?.[h.bbl]?.bldgArea ?? 0) > 0) {
+      delete h.btsOffer;
+      continue;
+    }
+    const plan = planDevelopment(s, parcels, h.bbl, offer.use, offer.floors, offer.coverage, "gmp");
+    if (!plan) { delete h.btsOffer; continue; }
+    const climate = buildClimate(s);
+    const demand = demandNow(s, rec) / 100;
+    // Bigger shells need rarer anchors. A 40k pad turns over; a 250k HQ does not.
+    const sizeHard = Math.max(0.55, Math.min(2.4, plan.sf / 90_000));
+    const phaseHit = s.econ.phase === "depression" ? 0.45
+      : s.econ.phase === "recession" ? 0.55
+      : s.econ.phase === "recovery" ? 0.8
+      : s.econ.phase === "peak" ? 1.1
+      : 1;
+    const p = Math.min(0.09, (0.004 + 0.045 * demand * climate) * phaseHit / sizeHard);
+    if (rng(s, "leasing") >= p) continue;
+    const bts = mintBtsCommitment(s, parcels, h.bbl, offer.use, offer.floors, offer.coverage);
+    if (!bts) continue;
+    delete h.btsOffer;
+    if (!s.btsProspects) s.btsProspects = {};
+    s.btsProspects[h.bbl] = bts;
+    const waited = Math.max(1, s.month - offer.sinceM);
+    s.news.unshift({
+      q: s.month, kind: "deal",
+      text: `Build-to-suit at last: ${bts.name} will take ${Math.round(bts.sf).toLocaleString()} sf `
+        + `of ${bts.use} at ${rec.address} for ${Math.round(bts.termM / 12)} years at $${bts.rentPsf.toFixed(2)}/sf `
+        + `(credit ${bts.credit === 2 ? "strong" : "solid"}), after `
+        + `${waited >= 24 ? `${Math.round(waited / 12)} years` : `${waited} month${waited === 1 ? "" : "s"}`} on the book. `
+        + `Break ground on their shell, or send them away and go back to spec.`,
+    });
+  }
 }
 
 export function startDevelopment(
@@ -1519,6 +1608,7 @@ export function startDevelopment(
     events: 0,
   } satisfies Development;
   if (next.btsProspects?.[bbl]) delete next.btsProspects[bbl];
+  if (next.holdings[bbl]?.btsOffer) delete next.holdings[bbl].btsOffer;
   recordPropertyEvent(next, bbl, {
     kind: "build-start",
     use,

@@ -13,11 +13,14 @@ import { taxAppealQuote } from "@/engine/tax";
 import type { PortfolioQuote } from "@/engine/portfolio";
 import { usd, sf } from "@/ui/format";
 import { ListSection, RefiSection } from "@/ui/panels/ParcelDesk";
+import { AssembleSection, canAssembleFromBook } from "@/ui/panels/PropertyDesks";
+import { siteDeeds } from "@/engine/actions";
 import { useLabel, devUseLabel, physicalOcc, Big, Row } from "@/ui/panels/shared";
 
 export function PortfolioPage() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
+  const adjacency = useStore((s) => s.adjacency);
   const select = useStore((s) => s.select);
   const setPage = useStore((s) => s.setPage);
   // Child deeds of an assemblage keep a $0 holding for title — they are not
@@ -34,6 +37,9 @@ export function PortfolioPage() {
   const [refiRow, setRefiRow] = useState<string | null>(null);
   // The ask you are about to name, per row. See ListSection.
   const [listRow, setListRow] = useState<string | null>(null);
+  // Fold contiguous vacant lots from the book — same desk as Property → Build,
+  // without leaving the portfolio when you notice two addresses that touch.
+  const [assembleRow, setAssembleRow] = useState<string | null>(null);
   // Sort the book by value or by income. "By income" is the top-earners view:
   // the fifty best income producers, ranked — the question every owner asks
   // of a big book is "what is actually carrying this firm."
@@ -489,6 +495,8 @@ export function PortfolioPage() {
                   h.loan?.sweep ? "SWEEP" : null, h.sale ? "LISTED" : null,
                   h.renovatingUntilM !== undefined && game.month < h.renovatingUntilM ? "RENO" : null,
                   h.program ? "CAPEX" : null,
+                  siteDeeds(game, h.bbl).length > 1 ? "ASSEMBLED" : null,
+                  game.btsProspects?.[h.bbl] ? "BTS TERMS" : h.btsOffer ? "BTS LISTED" : null,
                   game.groundLeases?.[h.bbl] ? "GROUND-LEASED" : h.groundOffer ? "GL OFFERED" : null].filter(Boolean).join(" · ")}
                 {(() => {
                   const g = game.groundLeases?.[h.bbl];
@@ -529,6 +537,18 @@ export function PortfolioPage() {
                   >
                     Refi
                   </button>
+                  {canAssembleFromBook(game, adjacency, h.bbl) && (
+                    <button
+                      className={"btn btn-sm" + (assembleRow === h.bbl ? " btn-on" : "")}
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        setAssembleRow(assembleRow === h.bbl ? null : h.bbl);
+                      }}
+                      title="You own contiguous vacant dirt next to this site — fold the deeds into one plate"
+                    >
+                      Assemble
+                    </button>
+                  )}
                 </div>
               </td>
             </tr>
@@ -543,6 +563,13 @@ export function PortfolioPage() {
               <tr>
                 <td colSpan={ranked ? 18 : 17} style={{ background: "rgba(43,37,26,0.035)" }}>
                   <ListSection bbl={h.bbl} appraisal={v} onDone={() => setListRow(null)} />
+                </td>
+              </tr>
+            )}
+            {assembleRow === h.bbl && (
+              <tr>
+                <td colSpan={ranked ? 18 : 17} style={{ background: "rgba(43,37,26,0.035)" }}>
+                  <AssembleSection bbl={h.bbl} onDone={() => setAssembleRow(null)} />
                 </td>
               </tr>
             )}

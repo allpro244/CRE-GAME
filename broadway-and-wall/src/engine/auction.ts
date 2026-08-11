@@ -171,8 +171,10 @@ function buildDocket(s: GameState, parcels: ParcelTable) {
     if (w.stage !== "foreclosure" || w.saleM === undefined || w.saleM > july) continue;
     const h = s.holdings[w.bbl];
     const rec = resolveRec(parcels, s, w.bbl);
-    if (!h?.loan || !rec) continue;
-    const owed = Math.round(h.loan.balance + (w.accrued ?? 0));
+    if ((!h?.loan && !(h?.mezz && h.mezz.balance > 0)) || !rec) continue;
+    const owed = Math.round(
+      (h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0) + (w.accrued ?? 0),
+    );
     push({
       id: `A${july}-${w.bbl}`, bbl: w.bbl, address: rec.address, kind: "yours",
       debt: owed, holder: w.lender,
@@ -426,8 +428,10 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
 
     if (lot.kind === "yours") {
       const h = s.holdings[lot.bbl]!;
-      const bal = Math.round(h.loan!.balance + (w?.accrued ?? 0));
-      const recourse = h.loan!.recourse;
+      const seniorBal = h.loan?.balance ?? 0;
+      const mezzBal = h.mezz?.balance ?? 0;
+      const bal = Math.round(seniorBal + mezzBal + (w?.accrued ?? 0));
+      const recourse = h.loan?.recourse ?? false;
       // the lender credit-bids `protect`; the room may or may not clear it
       const gross = room > protect ? room : Math.round(protect);
       const toREO = room <= protect;
@@ -442,7 +446,14 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       if (surplus > 0) { s.cash += surplus; logBooks(s, "sold", surplus); }
       if (shortfall > 0) {
         if (recourse) { s.cash -= shortfall; logBooks(s, "debtSvc", shortfall); }
-        else chargeLenderLoss(s, lot.holder, shortfall);
+        else {
+          const seniorHole = Math.min(shortfall, seniorBal + (w?.accrued ?? 0));
+          const mezzHole = shortfall - seniorHole;
+          if (seniorHole > 0) chargeLenderLoss(s, lot.holder, seniorHole);
+          if (mezzHole > 0) {
+            chargeLenderLoss(s, h.mezz?.holder ?? "Cordage Debt Partners", mezzHole);
+          }
+        }
       }
       s.exits.push({
         bbl: lot.bbl, address: lot.address, boughtM: h.boughtM, soldM: s.month,

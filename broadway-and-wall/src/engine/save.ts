@@ -1,6 +1,7 @@
 // IndexedDB saves: named snapshots plus one debounced `auto` crash-protection
 // slot. A save is just GameState — parcels/adjacency are deterministic city data.
 import type { GameState } from "./types";
+import { clearStyleOverrides, ensurePeople } from "./people";
 
 const DB = "broadway-and-wall";
 const STORE = "saves";
@@ -52,7 +53,7 @@ function migrateExtendedPaper(state: GameState) {
   }
 }
 
-export const SAVE_VERSION = 33 as const;
+export const SAVE_VERSION = 34 as const;
 
 /**
  * THE VERSION AT WHICH THE GENERATED ISLAND'S GROUND MOVED.
@@ -73,8 +74,17 @@ export const SAVE_VERSION = 33 as const;
  * The drawn islands are unaffected — `makeCity("newalden", 1)` is byte-identical
  * across the change, verified on the bbl set, the centroids and the lot areas —
  * so a legacy campaign on one of those is let through rather than thrown away.
+ *
+ * THIS IS 34 AND NOT 33 BECAUSE TWO BRANCHES BOTH CLAIMED 33. The Principal
+ * break (one Person type, peopleRng, no free style dials) shipped as v33 on
+ * one branch while the island generator was being rewritten on another, and
+ * they meet here. A save stamped 33 by that branch therefore has people but
+ * was still cut by the OLD generator, so its ground moved too and it must be
+ * refused on the same terms as a v32. Keying the refusal to 34 rather than 33
+ * is what makes that true; the alternative silently opens exactly the
+ * campaigns this constant exists to catch.
  */
-const ISLAND_GROUND_MOVED_AT = 33;
+const ISLAND_GROUND_MOVED_AT = 34;
 const PROCEDURAL_ISLAND = "somewhere";   // citygen's PROCEDURAL, not imported: engine does not depend on citygen
 
 /** Pure save-shape migrations, also exported for a fast round-trip harness. */
@@ -87,17 +97,28 @@ export function migrateSaveState(state: GameState): GameState {
     };
     delete state.varianceApp;
   }
+  // The Principal: one Person type, peopleRng, drop free style dials.
+  // ensurePeople synthesises a principal and rival faces from peopleRng only;
+  // s.rng / staffRng step counts are untouched (BASELINE must stay bit-identical).
+  clearStyleOverrides(state);
+  ensurePeople(state);
   // Older campaigns bump forward once shape migrations have run — EXCEPT
   // across a break the migration cannot repair. This is the "future hard
-  // break" the previous note anticipated: no rearrangement of the save's
-  // fields can put a deed back on ground the generator no longer cuts, so the
-  // save is left at its own version and the gate below refuses it. Refusing a
-  // campaign is bad; opening one whose every deed points somewhere else is
-  // worse, and it is worse quietly.
+  // break" the note above anticipated: no rearrangement of the save's fields
+  // can put a deed back on ground the generator no longer cuts, so the save is
+  // left at its own version and the gate below refuses it. Refusing a campaign
+  // is bad; opening one whose every deed points somewhere else is worse, and
+  // it is worse quietly.
+  //
+  // The bump is CONDITIONAL and must stay conditional — an unconditional
+  // `state.v = SAVE_VERSION` after this block would make the gate below
+  // unreachable and quietly restore the corruption.
   if (typeof state.v === "number" && state.v < SAVE_VERSION) {
     const groundMoved = state.v < ISLAND_GROUND_MOVED_AT
       && state.cityIsland === PROCEDURAL_ISLAND;
     if (!groundMoved) state.v = SAVE_VERSION;
+  } else {
+    state.v = SAVE_VERSION;
   }
   return state;
 }

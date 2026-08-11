@@ -62,7 +62,7 @@ import type { ParcelRecord } from "@/data/types";
 import type { BuiltClass, GameState, Holding } from "./types";
 import { logBooks, monthLabel, cloneState} from "./types";
 import { ownedHoldingNoiYr, ownedHoldingValue, ownedMonthlyNoi, resolveRec } from "./value";
-import { PRODUCTS, prepayPenalty, productById, bumpLenderRel, windowOpen, quote, advanceFactor } from "./debt";
+import { PRODUCTS, productById, bumpLenderRel, windowOpen, quote, advanceFactor, stackPayoff } from "./debt";
 import { distressPrice, sponsorStanding } from "./sponsor";
 import { recordComp } from "./comps";
 import { firmShort } from "./firm";
@@ -201,9 +201,10 @@ export function facilityQuotes(s: GameState, parcels: ParcelTable, bbls: string[
   let payoff = 0, penalties = 0;
   for (const bbl of bbls) {
     const h = s.holdings[bbl];
-    if (!h?.loan) continue;
-    payoff += h.loan.balance;
-    penalties += prepayPenalty(h.loan, s.month);
+    if (!h) continue;
+    const stack = stackPayoff(h, s.month);
+    payoff += stack.balance;
+    penalties += stack.penalty;
   }
   const st = sponsorStanding(s);
   for (const id of FACILITY_DESKS) {
@@ -297,6 +298,12 @@ export function openFacility(
     if (h?.loan) {
       bumpLenderRel(next, productById(h.loan.product).lender, 0.4);
       h.loan = null;
+    }
+    // Mezz is repaid at the same closing — a facility is a first lien on the
+    // pool and will not sit behind Cordage junior.
+    if (h?.mezz) {
+      bumpLenderRel(next, h.mezz.holder ?? "Cordage Debt Partners", 0.3);
+      h.mezz = null;
     }
     // A building cannot be in a workout and in a facility: the file is settled
     // by the payoff, because the loan it was filed against no longer exists.

@@ -51,8 +51,8 @@ import { monthLabel } from "@/engine/types";
 import type { GameState } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import {
-  ATTR_LABEL, GENERAL_ATTRS, ROLE_ATTRS, ROLE_LABEL,
-  LEASING_BASE_SF, OWNER_SF, PM_BASE_SF, CONSTRUCTION_BASE_SF, POOL_REFRESH_M, SEARCH_MONTHS,
+  ATTR_LABEL, GENERAL_ATTRS, ROLE_LABEL,
+  LEASING_BASE_SF, PM_BASE_SF, CONSTRUCTION_BASE_SF, POOL_REFRESH_M, SEARCH_MONTHS,
   SEARCH_TIERS, SEVERANCE_MONTHS, ownerCapacitySf,
   deskBacklog, firmShapeLabel, personRoleState, isFloatStaff,
   leasingOddsMult, leasingRentMult, payrollMonthly, pmOpexMult, pmRenewalMult, cmRiskMult,
@@ -60,6 +60,8 @@ import {
   type Candidate, type RoleState, type Staff, type StaffRole,
 } from "@/engine/staff";
 import { operatingStatement, resolveRec } from "@/engine/value";
+import { firmCapital, firmMilestonesHit, nextFirmMilestone } from "@/engine/firmCapital";
+import { PersonCard as PrincipalCard } from "./PersonCard";
 import { sf, usd } from "./format";
 
 const ROLES: StaffRole[] = ["pm", "leasing", "construction"];
@@ -70,6 +72,55 @@ const CAPACITY_ATTRS: Record<StaffRole, string[]> = {
   leasing: ["urgency", "relationships"],
   construction: ["urgency", "diligence"],
 };
+
+/**
+ * Firm capital — institutional standing, not XP. Pillars are already-earned
+ * quantities (hire name, lenders, exits, bench, vehicle, book).
+ */
+function FirmCapitalPanel({ game }: { game: GameState }) {
+  const fc = firmCapital(game);
+  const hit = firmMilestonesHit(game);
+  const next = nextFirmMilestone(game);
+  const pct = Math.round(fc.score * 100);
+  return (
+    <div className="page-section">
+      <div className="page-section-head">
+        Firm capital · {fc.label}
+        <span className="dim mono" style={{ marginLeft: 8 }}>tier {fc.tier}/5 · {pct}%</span>
+      </div>
+      <div className="hint">
+        What survives when a principal dies: process, name, record. Not a skill build —
+        hiring standing, lender file, clean exits, bench, vehicle, and book size.
+        Process cover on your float desk: ×{fc.processCapacityMult.toFixed(3)} (max ×1.08).
+      </div>
+      <div className="grid" style={{ margin: "8px 0" }}>
+        {fc.pillars.map((p) => (
+          <div key={p.id} style={{ display: "contents" }}>
+            <div className="k">{p.label}</div>
+            <div className="v mono" title={p.detail}>
+              <span style={{
+                display: "inline-block", width: 100, height: 6,
+                background: "rgba(43,37,26,0.12)", borderRadius: 2, verticalAlign: "middle",
+                marginRight: 8,
+              }}>
+                <span style={{
+                  display: "block", height: "100%", width: `${Math.round(p.score * 100)}%`,
+                  background: "rgba(43,37,26,0.55)", borderRadius: 2,
+                }} />
+              </span>
+              {p.detail}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="hint">
+        Milestones {fc.milestonesHit}/{fc.milestonesTotal}
+        {hit.length > 0 ? ` · last: ${hit[hit.length - 1]!.label}` : ""}
+        {next ? ` · next open: ${next.label}` : " · every chapter marked"}
+      </div>
+    </div>
+  );
+}
 
 /**
  * The stat block on every other page is a local component in RightPanel.tsx
@@ -171,7 +222,7 @@ export default function StaffPage() {
   const parcels = useStore((s) => s.parcels);
   const {
     hireStaff, fireStaff, postJob,
-    setStaffSearchTier, setStaffOwnerStyle, setStaffBenchStyle,
+    setStaffSearchTier,
     assignStaffBuilding, unassignStaffBuilding,
   } = useStore.getState();
   // Firing is three months of somebody's pay and two months of nobody in the
@@ -219,7 +270,7 @@ export default function StaffPage() {
         <Big
           label="You cover, alone"
           value={sf(ownerCover)}
-          title="How much commercial space you personally cover before the desk slips. Hands-on keeps more; delegated needs people sooner."
+          title="How much commercial space you personally cover before the desk slips. Grows or shrinks with payroll shape, not a dial."
         />
       </div>
 
@@ -235,42 +286,16 @@ export default function StaffPage() {
       <div className="page-section">
         <div className="page-section-head">Firm shape · {shape}</div>
         <div className="hint">
-          Shape emerges from headcount — a one-person shop is hands-on and boutique; a larger payroll reads as a platform —
-          unless you force it. Neither dial is a skill chip; they change capacity arithmetic.
-        </div>
-        <div className="btn-row" style={{ marginTop: 8 }}>
-          <button
-            type="button"
-            className={"btn" + ((game.ownerStyle ?? "") === "handsOn" ? " btn-on" : "")}
-            onClick={() => setStaffOwnerStyle("handsOn")}
-            title={`You cover about ${sf(OWNER_SF * 1.35)} yourself.`}
-          >
-            Hands-on
-          </button>
-          <button
-            type="button"
-            className={"btn" + (game.ownerStyle === "delegated" ? " btn-on" : "")}
-            onClick={() => setStaffOwnerStyle("delegated")}
-            title={`You cover about ${sf(OWNER_SF * 0.72)} yourself — staff sooner.`}
-          >
-            Delegated
-          </button>
-          <button
-            type="button"
-            className={"btn" + (game.benchStyle === "boutique" ? " btn-on" : "")}
-            onClick={() => setStaffBenchStyle("boutique")}
-          >
-            Boutique
-          </button>
-          <button
-            type="button"
-            className={"btn" + (game.benchStyle === "platform" ? " btn-on" : "")}
-            onClick={() => setStaffBenchStyle("platform")}
-          >
-            Platform
-          </button>
+          Shape emerges from headcount — a one-person shop is hands-on and boutique; a larger payroll reads as a platform.
+          Capacity arithmetic follows the org chart; there is no free dial to force it.
         </div>
       </div>
+
+      <FirmCapitalPanel game={game} />
+
+      {game.principal && (
+        <PrincipalCard person={game.principal} game={game} showAttrs title="You · the principal" />
+      )}
 
       {ROLES.map((role) => (
         <RoleDesk
@@ -618,9 +643,10 @@ function PersonCard({ st, month, severance, armed, ownedBbls, jobBbls, parcels, 
   onUnassign: (bbl: string) => void;
 }) {
   const served = Math.max(0, month - st.hiredM);
-  const keys = [...GENERAL_ATTRS, ...ROLE_ATTRS[st.role]];
-  const widthNow = keys.reduce((a, k) => { const r = readAttr(st, k, month); return a + (r.hi - r.lo); }, 0) / keys.length;
-  const widthHire = keys.reduce((a, k) => { const r = readAttr(st, k, st.hiredM); return a + (r.hi - r.lo); }, 0) / keys.length;
+  const keys = [...GENERAL_ATTRS];
+  const rigor = game.principal?.attrs?.diligence ?? 50;
+  const widthNow = keys.reduce((a, k) => { const r = readAttr(st, k, month, rigor); return a + (r.hi - r.lo); }, 0) / keys.length;
+  const widthHire = keys.reduce((a, k) => { const r = readAttr(st, k, st.hiredM, rigor); return a + (r.hi - r.lo); }, 0) / keys.length;
   const assignTargets = st.role === "construction" ? jobBbls : ownedBbls;
   const assigned = st.assignedBbls ?? [];
   const freeBbls = assignTargets.filter((b) => !assigned.includes(b));
@@ -644,7 +670,7 @@ function PersonCard({ st, month, severance, armed, ownedBbls, jobBbls, parcels, 
             <BandBar
               key={k}
               label={ATTR_LABEL[k] ?? k}
-              r={readAttr(st, k, month)}
+              r={readAttr(st, k, month, rigor)}
               hint="What the results so far suggest. The true figure is never stated — you infer it, the way you would."
             />
           ))}
@@ -652,7 +678,7 @@ function PersonCard({ st, month, severance, armed, ownedBbls, jobBbls, parcels, 
         <div className="hint">
           {served < 6
             ? "Too early to tell. You bought the interview; the results have not arrived yet."
-            : `Your read has tightened from about ${widthHire.toFixed(0)} points wide at the interview to ${widthNow.toFixed(0)}. Twelve months of results halve the error and five years all but remove it.`}
+            : `Your read has tightened from about ${widthHire.toFixed(0)} points wide at the interview to ${widthNow.toFixed(0)}. Rigor shortens how long that takes — twelve months of results still halve a mid read.`}
         </div>
         <div className="staff-assign">
           <div className="hint">
@@ -731,7 +757,7 @@ function CandidateCard({ c, costIdx, cash, month, onHire }: {
 }) {
   const askToday = c.askSalary * costIdx;
   const firstMonth = Math.round(askToday / 12);
-  const keys = [...GENERAL_ATTRS, ...ROLE_ATTRS[c.role]];
+  const keys = [...GENERAL_ATTRS];
   const base = c.role === "pm" ? PM_BASE_SF : c.role === "construction" ? CONSTRUCTION_BASE_SF : LEASING_BASE_SF;
   // The capacity a person adds is 0.6x-1.5x of the role's base, set by the two
   // attributes in CAPACITY_ATTRS — so the honest preview is that formula run

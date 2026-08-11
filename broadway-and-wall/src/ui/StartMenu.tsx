@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel, START_CASH_CHOICES } from "@/engine/types";
+import { lifeForCash } from "@/engine/estate";
+// `currentCity` is gone with the island column: there is one island and it is
+// generated, so the run's island is a constant rather than a stored choice.
 import { currentSize, currentDev, currentCash0 } from "@/state/city";
 import { cityList, cityName, sizeList, developmentList, PROCEDURAL } from "@/citygen/index.mjs";
 import { BUILD_STAMP } from "@/buildStamp";
@@ -35,11 +38,11 @@ import { usd } from "./format";
  * overhead alone.
  */
 const CASH_NOTE: Record<number, string> = {
-  1_000_000: "One small building outright, or two with debt, and almost no reserve. Overhead alone gives you about five years to find income.",
-  2_500_000: "The standard opening. Room for a couple of buildings and a reserve to carry a lease-up.",
-  5_000_000: "A real first fund. Enough to be wrong once and still be in business.",
-  10_000_000: "A small institutional platform. Build a diversified first book without making capital irrelevant.",
-  20_000_000: "A serious acquisition fund. Enough to shape a portfolio early, while leverage and bad cycles can still hurt.",
+  1_000_000: "Age 28. One small building outright, or two with debt, and almost no reserve — decades on the clock.",
+  2_500_000: "Age 35. The standard opening. Room for a couple of buildings and a reserve to carry a lease-up.",
+  5_000_000: "Age 42. A real first book. Enough to be wrong once and still be in business.",
+  10_000_000: "Age 48. A small institutional platform. Capital bought with years you will not get back.",
+  20_000_000: "Age 52. A serious acquisition book. The estate clock is already running.",
 };
 
 export default function StartMenu() {
@@ -141,10 +144,15 @@ export default function StartMenu() {
                     rather than a graphics setting. Land area goes as the square
                     of the scale, so this moves the lot count from a few hundred
                     to a few thousand — and with it the standing stock, the size
-                    of the banks that lend against it, and how much of the town
-                    one firm can ever be. */}
+                    of the banks that lend against it, rival dry powder, and how
+                    much of the town one firm can ever be. Your opening cheque
+                    does NOT scale: Hamlet is a concentration game, Great City
+                    is a bigger pond. */}
                 <div className="start-col">
                   <div className="start-col-head">how big</div>
+                  <div className="start-opt-note" style={{ marginBottom: 8, padding: "0 2px" }}>
+                    Same starting cash on every size. Bigger maps mean more lots, bigger banks and richer rivals — not higher rents by themselves.
+                  </div>
                   {sizes.map((s) => (
                     <button
                       key={s.id}
@@ -185,14 +193,14 @@ export default function StartMenu() {
                     trades around $0.5-2.5M, so these are five different
                     openings rather than difficulty settings. */}
                 <div className="start-col">
-                  <div className="start-col-head">what you start with</div>
+                  <div className="start-col-head">age · capital</div>
                   {START_CASH_CHOICES.map((v) => (
                     <button
                       key={v}
                       className={"start-opt" + (v === cash0 ? " start-opt-on" : "")}
                       onClick={() => setCash0(v)}
                     >
-                      <span className="start-opt-name">{usd(v)}</span>
+                      <span className="start-opt-name">{lifeForCash(v).age} · {usd(v)}</span>
                       <span className="start-opt-note">{CASH_NOTE[v]}</span>
                     </button>
                   ))}
@@ -208,9 +216,12 @@ export default function StartMenu() {
           column in a 720px window and there was no way to reach it. */}
       <div className="start-foot">
         <div className="start-foot-sum">
+          {/* No island name here: the island is generated when Break ground is
+              pressed, so there is nothing truthful to name yet. The age and the
+              bankroll are on the note line directly below rather than twice. */}
           <span className="start-foot-town">A new island · {sizeName} · {devName} · {usd(cash0)}</span>
           <span className="start-foot-note">
-            {usd(cash0)} and no holdings. The town is generated when you press this.
+            Age {lifeForCash(cash0).age} with {usd(cash0)} and no holdings. The town is generated when you press this.
             {resume ? " Named saves stay on the Saves page." : ""}
             {" · "}build {BUILD_STAMP.commit} · office base ${BUILD_STAMP.rentBaseOffice}
           </span>

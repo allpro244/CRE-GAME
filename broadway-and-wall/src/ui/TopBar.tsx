@@ -6,9 +6,10 @@ import { currentCity, currentSeed } from "@/state/city";
 import { locLimit } from "@/engine/credit";
 import { isLeasedFee, netWorth, resolveRec } from "@/engine/value";
 import { useSf } from "@/engine/mix";
-import { portfolioMonthlyCF } from "@/engine/sim";
+import { firmBookStress, portfolioMonthlyCF } from "@/engine/sim";
 import { loiNeedsPrincipal } from "@/engine/leasing";
 import { usd, pct } from "./format";
+import { real } from "@/ui/panels/shared";
 import { liveBrokerCalls } from "./RightPanel";
 
 type JobId = "acquire" | "assets" | "capital" | "world";
@@ -69,6 +70,8 @@ export default function TopBar() {
   const deferredGame = useDeferredValue(game);
   const lens = useStore((s) => s.lens);
   const setLens = useStore((s) => s.setLens);
+  const mapOnly = useStore((s) => s.mapOnly);
+  const setMapOnly = useStore((s) => s.setMapOnly);
   const advance = useStore((s) => s.advance);
   const advanceYear = useStore((s) => s.advanceYear);
   const advanceUntil = useStore((s) => s.advanceUntil);
@@ -80,15 +83,26 @@ export default function TopBar() {
   const vitals = useMemo(() => {
     if (!deferredGame) {
       return {
-        nw: 0, cf: 0, occSf: 0, occLeased: 0, line: 0, dealsCount: 0, unread: 0,
+        nw: 0, nwReal: 0, cf: 0, occSf: 0, occLeased: 0, vacDpp: null as number | null,
+        line: 0, dealsCount: 0, unread: 0,
         bcalls: [] as ReturnType<typeof liveBrokerCalls>, bcallSoon: 0,
         notesLive: 0, booksLive: 0, debtHot: false, debtSwept: false, debtBal: 0, debtWall: 0,
       };
     }
     const parcels = useStore.getState().parcels;
     const nw = parcels ? netWorth(deferredGame, parcels) : 0;
+    const nwReal = real(nw, deferredGame.econ.cpi);
     const cf = parcels ? portfolioMonthlyCF(deferredGame, parcels) : 0;
     const line = parcels ? locLimit(deferredGame, parcels, nw) : 0;
+    // Office vacancy vs twelve months ago — the tell that predicts real rent
+    // falls (~93% in century windows). Economy history already stamps vac.
+    const hist = deferredGame.econ.history ?? [];
+    let vacDpp: number | null = null;
+    if (hist.length > 12) {
+      const now = deferredGame.econ.cityVac?.office ?? 0;
+      const then = hist[hist.length - 13]?.vac?.office ?? now;
+      vacDpp = (now - then) * 100;
+    }
     // Same book Leasing totals: operated deeds only (not coupon-only ground
     // fees), commercial tenants plus multifamily physical occupancy.
     let occSf = 0, occLeased = 0;
@@ -132,28 +146,35 @@ export default function TopBar() {
     const bcalls = liveBrokerCalls(deferredGame);
     const bcallSoon = bcalls.length ? Math.max(0, bcalls[0].lapseM - deferredGame.month) : 0;
     const notesLive = (deferredGame.noteOffers?.length ?? 0)
+      + (deferredGame.privateAsks?.length ?? 0)
       + (deferredGame.notes ?? []).filter((n) => n.perf === "nonperforming" && n.filedM === undefined).length;
+    const privateBorrowLive = deferredGame.privateBorrowQuotes?.length ?? 0;
     // Receiver books / fund packages on Marketplace — the seizure alert's desk.
     const booksLive = (deferredGame.portfolios ?? []).filter((p) => !p.player).length
       + ((deferredGame.auction && deferredGame.month < deferredGame.auction.m) ? 1 : 0);
     let debtBal = 0, debtWall = 0;
     for (const h of Object.values(deferredGame.holdings)) {
-      if (!h.loan) continue;
-      debtBal += h.loan.balance;
-      if (h.loan.maturityM - deferredGame.month <= 36) debtWall += h.loan.balance;
+      if (h.loan) {
+        debtBal += h.loan.balance;
+        if (h.loan.maturityM - deferredGame.month <= 36) debtWall += h.loan.balance;
+      }
+      if (h.mezz && h.mezz.balance > 0) {
+        debtBal += h.mezz.balance;
+        if (h.mezz.maturityM - deferredGame.month <= 36) debtWall += h.mezz.balance;
+      }
     }
     if (deferredGame.facility) {
       debtBal += deferredGame.facility.balance;
       if (deferredGame.facility.maturityM - deferredGame.month <= 36) debtWall += deferredGame.facility.balance;
     }
     return {
-      nw, cf, occSf, occLeased, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
-      debtHot: debtBal > 0 && debtWall / debtBal > 0.35,
+      nw, nwReal, cf, occSf, occLeased, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive,
+      debtHot: privateBorrowLive > 0 || (debtBal > 0 && debtWall / debtBal > 0.35),
       debtSwept: !!deferredGame.facility?.breachedSince,
       debtBal, debtWall,
     };
   }, [deferredGame]);
-  const { nw, cf, occSf, occLeased, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive, debtHot, debtSwept, debtBal, debtWall } = vitals;
+  const { nw, nwReal, cf, occSf, occLeased, vacDpp, line, dealsCount, unread, bcalls, bcallSoon, notesLive, booksLive, debtHot, debtSwept, debtBal, debtWall } = vitals;
 
   // WHICH TOWN IS NOT ASKED HERE ANY MORE. The island, the size and the
   // build-out used to hang off the New-city button as a three-section
@@ -273,7 +294,17 @@ export default function TopBar() {
           <div className="topbar-summary">
           <div className="topbar-vital">
             <Stat label={monthLabel(game.month)} value={`Yr ${Math.floor(game.month / 12) + 1}`} wide w={118} keep />
-            <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} w={88} keep />
+            <Stat label="Cash" value={usd(game.cash)} bad={game.cash < 0} w={88} keep
+              title="GP liquidity — the firm's own cash. Vehicle cash, if any, is separate." />
+            {game.fund && !game.fund.settled && (
+              <Stat
+                label="Vehicle"
+                value={usd(game.fund.cash)}
+                w={88}
+                keep
+                title={`Fund vehicle cash (LP capital). Called ${(game.fund.called / 1e6).toFixed(1)}M; uncalled ${(game.fund.uncalled / 1e6).toFixed(1)}M. Not GP liquidity.`}
+              />
+            )}
             {(() => {
               const drawn = game.loc?.balance ?? 0;
               const label = drawn > 0 ? "Line drawn" : "Line";
@@ -316,9 +347,35 @@ export default function TopBar() {
                 ? `Portfolio occupancy: ${((100 * occLeased) / occSf).toFixed(1)}% leased across operated buildings (excludes ground-leased fees). Same total as Leasing.`
                 : "Portfolio occupancy — appears once you own an operated building."}
             />
+            {/* Vacancy change, not level — the single highest-EV cycle tell. */}
+            <Stat
+              label="Vac Δ / yr"
+              value={vacDpp === null ? "—" : `${vacDpp >= 0 ? "+" : ""}${vacDpp.toFixed(1)} pp`}
+              bad={vacDpp !== null && vacDpp >= 2}
+              keep
+              w={84}
+              title={vacDpp === null
+                ? "Office vacancy vs twelve months ago — appears after the first year of tape."
+                : vacDpp >= 2
+                  ? `Office vacancy is ${vacDpp.toFixed(1)} points higher than a year ago. In simulated centuries, real rents were lower three years later ~93% of the time — confirmation you are past the top, not a prophecy.`
+                  : `Office vacancy change vs a year ago: ${vacDpp >= 0 ? "+" : ""}${vacDpp.toFixed(1)} percentage points. Rising ≥2 pp is the soft-market tell.`}
+            />
           </div>
           <div className="topbar-stats">
-          <Stat label="Net worth" value={usd(nw)} drop={2} w={96} />
+          <Stat
+            label="Net worth"
+            value={usd(nw)}
+            drop={2}
+            w={96}
+            title={`Firm going-concern equity ${usd(nw)} (cash + property − debt − deposits + CIP + notes; not estate net-of-tax; vehicle cash separate). In today's dollars (÷ CPI ${(game.econ.cpi ?? 1).toFixed(2)}): ${usd(nwReal)}.`}
+          />
+          <Stat
+            label="Real NW"
+            value={usd(nwReal)}
+            drop={2}
+            w={88}
+            title={`Net worth in opening-year dollars — nominal ${usd(nw)} ÷ CPI ${(game.econ.cpi ?? 1).toFixed(2)}. Read this on long runs.`}
+          />
           {/* Base rate / NW ride drop 2. Market phase and vacant-lot counts are
               drop 3 — only on very wide screens — so they cannot clip into
               "MA" under the Portfolio button on a normal desktop. */}
@@ -334,8 +391,21 @@ export default function TopBar() {
             value={game.econ.phase}
             drop={3}
             w={84}
-            title="Cycle phase — also on the Economy page."
+            title="City cycle phase — also on the Economy page. This is the street, not your firm. Watch Vac Δ / yr; watch Book when you are the one in trouble."
           />
+          {(() => {
+            const book = firmBookStress(game);
+            return (
+              <Stat
+                label="Book"
+                value={book.label}
+                bad={book.bad}
+                keep
+                w={88}
+                title={book.title}
+              />
+            );
+          })()}
           <Stat
             drop={3}
             w={92}
@@ -434,6 +504,13 @@ export default function TopBar() {
           >
             ◫ Owners
           </button>
+          <button
+            className={"lens-btn" + (lens === "leases" ? " lens-on" : "")}
+            onClick={() => setLens(lens === "leases" ? "none" : "leases")}
+            title="Lease lens — months to next expiry on buildings you own. Bright is soon; dark is long WALT."
+          >
+            ◬ Leases
+          </button>
           </div>
           <div className="nav-cluster nav-cluster-time" role="group" aria-label="Time controls">
           <button className={"advance-btn" + (advancing ? " advance-pulse" : "")} onClick={advance} disabled={!!game.gameOver || advancing} title="One month (Space)">
@@ -451,6 +528,20 @@ export default function TopBar() {
       )}
 
       <div className="topbar-right">
+        <button
+          className={"lens-btn" + (mapOnly ? " lens-on" : "")}
+          title="Map only — hide firm pages and watch the skyline (M). Inbox and glance cards stay."
+          onClick={() => setMapOnly(!mapOnly)}
+        >
+          ◈ Map
+        </button>
+        <button
+          className="lens-btn"
+          title="Photo frame — hide all chrome for a clean skyline still (P)"
+          onClick={() => useStore.getState().setPhotoFrame(true)}
+        >
+          ◻ Frame
+        </button>
         {/* SAVES, WHERE SOMEBODY CAN FIND THEM. The whole save/load panel was
             built and then rendered only at the bottom of the Books page, under
             the ledger — which is the same as not having one. It is a top-level

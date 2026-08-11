@@ -43,7 +43,7 @@ console.log("\nCONTINUE PATH\n");
 
   const prepared = E.prepareSaveForResume(snap);
   check(prepared.ok === true, "v31 campaign prepares for resume after migration");
-  check(prepared.state?.v === 33, "prepare bumps save version to current");
+  check(prepared.state?.v === 34, "prepare bumps save version to current");
   check(!prepared.state?.varianceApp && prepared.state?.varianceApps, "prepare migrates singular variance");
 
   let resumed = prepared.state;
@@ -58,7 +58,7 @@ console.log("\nCONTINUE PATH\n");
 
 // THE HARD BREAK, AND PROOF THAT IT FIRES.
 //
-// From v33 the generated island's lot lines are cut differently — park shapes,
+// From v34 the generated island's lot lines are cut differently — park shapes,
 // the esplanade and the linear park all change what the obstacle subtraction
 // removes. A campaign cut on `somewhere` before that rebuilds onto ground its
 // deeds no longer describe: measured across three seeds, ~30% of deeds vanish
@@ -75,17 +75,28 @@ console.log("\nCONTINUE PATH\n");
 
   const gen = structuredClone(base); gen.cityIsland = "somewhere"; gen.v = 31;
   const genOut = E.prepareSaveForResume(gen);
-  check(genOut.ok === false, "a pre-v33 campaign on a GENERATED island is refused");
+  check(genOut.ok === false, "a pre-v34 campaign on a GENERATED island is refused");
   check(/older map generator/.test(genOut.reason ?? ""),
     "...and says the island moved, not just 'older build'");
 
   const drawn = structuredClone(base); drawn.cityIsland = "newalden"; drawn.v = 31;
   check(E.prepareSaveForResume(drawn).ok === true,
-    "a pre-v33 campaign on a DRAWN island still opens — that ground did not move");
+    "a pre-v34 campaign on a DRAWN island still opens — that ground did not move");
 
-  const now = structuredClone(base); now.cityIsland = "somewhere"; now.v = 33;
+  // THE VERSION COLLISION, ASSERTED. Two branches both shipped a v33: the
+  // Principal break, and this one. A save stamped 33 by the other branch has
+  // people but was still cut by the OLD generator, so its ground moved and it
+  // must be refused on exactly the same terms as a v31. If somebody ever
+  // "tidies" ISLAND_GROUND_MOVED_AT back down to 33, this is the line that
+  // notices — and what it protects is a campaign opening with every deed
+  // silently pointing at somebody else's lot.
+  const other33 = structuredClone(base); other33.cityIsland = "somewhere"; other33.v = 33;
+  check(E.prepareSaveForResume(other33).ok === false,
+    "a v33 campaign on a generated island is refused too — that 33 was the Principal break, not this one");
+
+  const now = structuredClone(base); now.cityIsland = "somewhere"; now.v = 34;
   check(E.prepareSaveForResume(now).ok === true,
-    "a v33 campaign on a generated island opens normally");
+    "a v34 campaign on a generated island opens normally");
 }
 
 {

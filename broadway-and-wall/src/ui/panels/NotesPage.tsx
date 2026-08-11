@@ -6,6 +6,7 @@ import { assetValue, ownedHoldingValue, resolveRec, collateralAsIs } from "@/eng
 import { PRODUCTS } from "@/engine/debt";
 import { capitalRatio, lenderPressure, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { noteBid } from "@/engine/notes";
+import { PRIVATE_CASH_RESERVE, privateBookFace, privateSleeveCapacity } from "@/engine/privateCredit";
 import { firmShort } from "@/engine/firm";
 import { assetGrade } from "@/engine/rivals";
 import { usd } from "@/ui/format";
@@ -148,9 +149,13 @@ export function NotesPage() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const focus = useStore((s) => s.focus);
-  const { takeNote, restructureNote, fileNote, offloadNote } = useStore.getState();
+  const { takeNote, restructureNote, fileNote, offloadNote, fundPrivateAsk, declinePrivateAsk } = useStore.getState();
   const offers = game.noteOffers ?? [];
+  const asks = game.privateAsks ?? [];
   const notes = game.notes ?? [];
+  const privateNotes = notes.filter((n) => n.privateOriginated);
+  const sleeve = privateSleeveCapacity(game, parcels);
+  const bookFace = privateBookFace(game);
 
   return (
     <div>
@@ -162,14 +167,53 @@ export function NotesPage() {
         by hand: the coupon arrives on its own, every month, and a note asks you for something exactly twice.
       </div>
       <div className="hint" style={{ marginBottom: 8 }}>
-        Want the <b>deed</b>, not the paper? Receiver books and fund packages are on{" "}
+        You can also <b>write</b> paper — hard-money bridges to rivals the banks will not clear. That is the
+        private sleeve below. Want the <b>deed</b>, not the paper? Receiver books are on{" "}
         <button className="news-link" onClick={() => useStore.getState().setPage("market")}>
           Marketplace · Books for sale
         </button>
-        ; single foreclosure lots land on the July docket there too.
+        .
       </div>
 
-      <div className="page-section">On the block</div>
+      <div className="page-section">Private asks · your sleeve</div>
+      <div className="hint" style={{ marginBottom: 8 }}>
+        Sleeve capacity {usd(sleeve)} more face · book outstanding {usd(bookFace)}.
+        Funded from cash only; leave a reserve. Expensive, short, enforceable — Cordage with your name on it.
+      </div>
+      {asks.length === 0 && (
+        <div className="hint" style={{ marginBottom: 10 }}>
+          No rival is asking you for money this month. Asks appear when somebody is stressed, dry, or staring
+          at a balloon the cheap desks will not re-paper — and they lapse in two months.
+        </div>
+      )}
+      {asks.map((a) => (
+        <div key={a.id} className="hint" style={{ marginBottom: 10 }}>
+          <div style={{ cursor: "pointer" }} onClick={() => focus(a.bbl, true)}>
+            <strong>{a.address}</strong> · {a.rivalName} wants{" "}
+            <b className="mono">{usd(a.face)}</b> at <b className="mono">{a.ratePct.toFixed(2)}%</b>,{" "}
+            {(a.points * 100).toFixed(1)} points, {a.termM} months · {(100 * a.ltv).toFixed(0)}% of as-is {usd(a.asIs)}
+          </div>
+          <div className="dim" style={{ marginTop: 4 }}>{a.why}</div>
+          <div className="btn-row" style={{ marginTop: 6 }}>
+            <button
+              className="btn"
+              disabled={a.face > sleeve || game.cash < a.face + PRIVATE_CASH_RESERVE}
+              onClick={() => fundPrivateAsk(a.id)}
+            >
+              Fund · {usd(a.face)}
+            </button>
+            <button className="btn-mini" onClick={() => declinePrivateAsk(a.id)}>Pass</button>
+            <span className="dim">Lapses {monthLabel(a.expiresM)}.</span>
+          </div>
+        </div>
+      ))}
+      {privateNotes.length > 0 && (
+        <div className="hint" style={{ marginBottom: 10 }}>
+          Your originated book: {privateNotes.map((n) => `${n.address} (${usd(n.face)})`).join(" · ")}.
+        </div>
+      )}
+
+      <div className="page-section">On the block · bank paper</div>
       {offers.length === 0 && (
         <div className="hint">
           Nobody is selling paper this month. A desk sells a loan for two reasons and neither of them is you: the

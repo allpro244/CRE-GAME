@@ -227,21 +227,29 @@ paydowns are cash-only (`fundCashNeed` / `fundableNow` with `{ allowLoc: false }
 Debt service may still draw the revolver; curing a breach with the revolver was
 the immortality path.
 
-**Holder relationships are wired to approaches only.** A holder who will not
-take your call still lists buildings to you on the open tape and still bids
-against you at auction. Extending the memory to listings and the broker's calls
-is the obvious next move on that feature.
+**~~Holder relationships are wired to approaches only~~ — CLOSED.** Cold
+holders block every acquire door (`buyListing` / `negotiate` / `buyOffMarket` /
+`counterOffMarket` / `submitBlindBid` / `acceptCounter`), hang up open talks
+and approaches across their book on `offend(..., parcels)`, and stay visible
+on the tape as **NOT TO YOU** (still for sale to the market). Broker pools
+already skipped them. Holders do not bid at auction — that HANDOFF claim was
+wrong. Harness: `pnpm holder`.
 
 ---
 
 ## 7. WHAT I WOULD DO NEXT, IN ORDER
 
-1. **Unify city-supply vs desk delivery** — `breaks→deliv` lag and dual pencils
-   / city-supply models still fight each other; a single delivery queue is the
-   mechanism, not another clamp.
-2. **Retire load-bearing rails** (`vacGate`, `cycleDev`, jobs ceiling) once the
-   dual-supply and retail-glut mechanisms stand on their own.
-3. Holder memory beyond approaches; zoning depth (#36).
+**Execution plan (no playtest required):** `NO_PLAYTEST_PLAN.md` — phases 2–7
+(CI/audits, rail retirement, #33 sellers, #36 zoning, #48/#49 firms, optional
+graphics). Phase 1 (holder memory) is closed on tip.
+
+1. **~~Unify city-supply vs desk delivery~~ — CLOSED (settle moment).**
+   See `SKYLINE_CYCLES_PLAN.md` Phase 8.
+2. **~~Holder memory beyond approaches~~ — CLOSED.** `pnpm holder`.
+3. **Retire load-bearing rails** — `NO_PLAYTEST_PLAN.md` Phase 3; measure with
+   `pnpm rails` first.
+4. **Zoning depth (#36); #33 seller predictability; #48/#49 firm entry and exit**
+   — Phases 4–6 in `NO_PLAYTEST_PLAN.md`.
 
 ---
 

@@ -5,6 +5,9 @@ is true. Companion to `ECONOMY.md`, which does the same job for the simulation,
 and to `GRAPHICS_HANDOFF.md`, which is the *brief* — scope, order of work, and
 what has already been taken. This file is the reference; that one is the plan.
 
+**Cold start for a Claude Code / Opus graphics session:** read
+`GRAPHICS_HANDOFF.md` first (paste block + ranked work list), then this file.
+
 The rule this whole document exists to serve: **a building family that is never
 drawn is dead code that compiles.** Six were found that way, and every one was
 found by counting rather than by looking. `pnpm styles` is the counter.

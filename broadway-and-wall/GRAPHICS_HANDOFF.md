@@ -48,6 +48,32 @@ pnpm dev                 # → 127.0.0.1:5173   (remote: --host 0.0.0.0 --port 5
 
 ---
 
+---
+
+## 1b · FILE OWNERSHIP — STAY IN YOUR LANE
+
+From the original brief, corrected where the code moved under it.
+
+| Path | Role | Touch? |
+|---|---|---|
+| `src/map/styles.ts` | Style registry, traits, `stylePool` / `styleFor` / `styleForBuilt` | **Yes** |
+| `src/map/volume.ts` | `BuildingVolume` record | Yes, if mass fields need extending carefully |
+| `src/map/ThreeBuildings.ts` | Shaders, crowns, roof kit, towers, player builds, light/haze/post | **Yes** |
+| `src/map/style.ts` | MapLibre style JSON, sky/atmosphere | Yes |
+| `src/map/cityVisuals.ts` | Weather/activity from month/econ (**read-only** on the sim) | Yes, for look signals |
+| `src/map/MapView.tsx` | Map mount, volumes → Three, camera fly-in | Visual wiring only |
+| `src/citygen/build.mjs` | `massing()` plan families **and** the demand blend | Silhouettes yes; the value terms are economy — measure and say so |
+| `src/citygen/citygen.mjs` · `island.mjs` · `cities.mjs` | Lots, islands, parks | Yes, but a change here moves the ground under saved deeds — see `SAVE_VERSION` |
+| `tools/styleaudit.mjs` · `tools/shoot.mjs` · `tools/probe/*` | `pnpm styles`, screenshots, the player-path slate | Run them; edit if the probe needs it |
+| `src/engine/**` | Money, markets, debt, rivals | **NO** — except `save.ts` when the generator's output changes |
+| `src/ui/TopBar.tsx`, desks, `Chart.tsx` | UI session | **NO** |
+
+The working split inside `ThreeBuildings.ts`: **buildings** are the `FRAG`
+per-style branches, `crownTop`, `roofKitWants` / `propKit`, the `*Geom()`
+props, the tower kit and `setPlayerBuildings`; **graphics** are `render()`,
+`bakeShadows()`, post, water, streets, lawns and the `LIGHT` / `HAZE` /
+`SEASON` / `SHADOW` GLSL. Keep the commits separable either way.
+
 ## 2 · AFTER EVERY `ThreeBuildings` TOUCH
 
 ```bash
@@ -360,3 +386,37 @@ of built pixels to 18.9% at 3x, which is what makes the 9.3% believable.
   and silently wrong for every id added after.
 - **Small, reviewable commits.** An extraction that is verified geometry-neutral
   is its own commit; the change that exploits it is the next one.
+
+---
+
+## 7 · HOW TO ADD A FACADE FAMILY
+
+Six edits. Miss any of 1-5 and the family is flat grey or never drawn at all.
+
+1. `export const S_THING = <next id>;` in `styles.ts`
+2. Trait membership (`T_MASONRY`, `T_GLASSY`, `T_TRADE`, `T_FLOORLINE`, ...)
+3. Palette branch in `FRAG` (`wall`, `glassA`, `glassB`, `colW`, `win`)
+4. Reveal depth and the roof-colour ladder
+5. A `stylePool` entry in the right era x class
+6. The optional signature math, which is the actual point — `BUILDINGS.md` §5
+
+Then `pnpm styles`, and **DEAD must stay empty**. If the family is meant to be
+reachable by the player and the rivals as well as by the generator, it must
+also survive `NOT_BUILT_TO_ORDER` in `styleForBuilt` — that set is the things
+nobody commissions (a garage, a substation, a bus canopy, a control tower), and
+anything else left out of the built pool is a family the player can never get.
+
+---
+
+## 8 · IF YOU GET LOST
+
+| Question | Answer |
+|---|---|
+| What makes a type read from the air? | Bay width, the shape of the hole, reveal depth — `BUILDINGS.md` §5 |
+| Why is my family never drawn? | Its gate is unreachable for this town's stock. Measure with `pnpm styles`, which now sweeps twelve generated islands rather than two drawn ones |
+| Is the player's stock still on a short ladder? | No — `styleForBuilt` puts it on the registry. Confirm with `node tools/probe/slatesweep.mjs`, which measures that path specifically |
+| Why did my change not show up? | You are probably looking at a different town. Every run generates its own island now; pin one with `tools/shoot.mjs --profile <dir>` |
+| Can I change rents so vacancy shows on the facade? | No. Derive the look from the occupancy that already exists; do not retune the economy to make a picture |
+
+When in doubt: **proportion and depth over colour; the player path over another
+dead family; crowns over another wall tint.**

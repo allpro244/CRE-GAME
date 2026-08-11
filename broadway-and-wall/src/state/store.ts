@@ -3,7 +3,9 @@ import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment } from "@/engine/types";
 import { newGame, advanceMonth, advanceUntilAttentionAsync, attentionItems, firstListings, portfolioMonthlyCF, hangUpOnCall } from "@/engine/sim";
+import { deliveriesThisMonth, cityDeliveriesThisMonth } from "@/engine/cycleDigest";
 import { monthLabel } from "@/engine/types";
+import { routeAttention } from "@/ui/attentionRoute";
 import { buyListing, buyOffMarket, submitBlindBid, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import {
@@ -16,26 +18,33 @@ import type { Credit } from "@/engine/types";
 import { cureWorkout, requestForbearance, deedInLieu, serviceWorkout } from "@/engine/workout";
 import { fileTaxAppeal } from "@/engine/tax";
 import { buyNote, modifyNote, fileOnNote, sellNote, discountedPayoff } from "@/engine/notes";
+import {
+  fundPrivateAsk, declinePrivateAsk,
+  acceptPrivateBorrowQuote, declinePrivateBorrowQuote,
+} from "@/engine/privateCredit";
 import { registerAuctionBids } from "@/engine/auction";
 import { listPortfolio, repricePortfolio, counterPortfolio, acceptPortfolioBid, delistPortfolio } from "@/engine/portfolio";
 import { buyPortfolio } from "@/engine/portfoliosale";
 import { fileVariance } from "@/engine/zoning";
-import { refinance, buyRateCap, payOffLoan } from "@/engine/debt";
+import { refinance, buyRateCap, payOffLoan, placeMezz } from "@/engine/debt";
 import { drawLoc, repayLoc } from "@/engine/credit";
 import { openFacility, repayFacility, releaseFromFacility } from "@/engine/facility";
+import { raiseFund, callFundCapital, distributeFund } from "@/engine/fund";
 import { clearBuildToSuit, proposeBuildToSuit, startAdaptiveReuse, startDevelopment, startProgram, setStance, setOps, setOpsPolicy, demolish } from "@/engine/dev";
 import {
   hire, fire, refreshPool, POOL_REFRESH_M,
-  setSearchTier, setOwnerStyle, setBenchStyle, assignStaff, unassignStaff,
+  setSearchTier, assignStaff, unassignStaff,
   type OwnerStyle, type BenchStyle,
 } from "@/engine/staff";
 import { normalizeParcels } from "@/engine/mix";
-import { netWorth } from "@/engine/value";
+import { netWorth, resolveRec } from "@/engine/value";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
 import { cityList, makeCity, type GeneratedCity } from "@/citygen/index.mjs";
 
-export type Lens = "none" | "land" | "demand" | "owners" | "zoning";
+export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases";
+/** Map emphasis filter — dims non-matching massing; never hides the city. */
+export type MapFilter = "all" | "owned" | "construction";
 export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "staff" | "primer";
 
 /**
@@ -79,7 +88,14 @@ interface AppState {
   // it fire — asking twice for the same building has to move the map twice, and
   // a bare bbl compares equal to itself.
   flyTo: { bbl: string; n: number } | null;
+  /**
+   * Fit the camera to the player's book. Counter-fired like `flyTo` so repeat
+   * clicks still move the map.
+   */
+  fitBook: number;
   lens: Lens;
+  mapFilter: MapFilter;
+  setMapFilter: (f: MapFilter) => void;
   page: Page;
   toast: { text: string; kind: "ok" | "err"; at: number } | null;
   /**
@@ -101,6 +117,15 @@ interface AppState {
   hover: (bbl: string | null) => void;
   /** Select it AND take the camera there. */
   focus: (bbl: string, closePanel?: boolean) => void;
+  /** Route an attentionItems key to the right desk / parcel. */
+  openAttention: (key: string) => void;
+  /** Prior game snapshot for cycle digest deltas (UI only, not saved). */
+  prevForDigest: GameState | null;
+  /** Non-blocking delivery ceremony payload. */
+  deliveryCeremony: {
+    bbl: string; address: string; use: string; sf: number; value?: number; rival?: boolean;
+  } | null;
+  dismissDeliveryCeremony: () => void;
   setAuctionOpen: (v: boolean) => void;
   setLens: (l: Lens) => void;
   setPage: (p: Page) => void;
@@ -161,6 +186,20 @@ interface AppState {
   preferFps: boolean;
   setPreferFps: (v: boolean) => void;
   /**
+   * Map-only mode — hide firm page sheets so the skyline is the desk.
+   * HUD, inbox, digest and decision cards stay. UI preference, not save state.
+   */
+  mapOnly: boolean;
+  setMapOnly: (v: boolean) => void;
+  /**
+   * Photo frame — hide chrome for a clean skyline still. Escape or P exits.
+   * UI preference only; not saved with the campaign.
+   */
+  photoFrame: boolean;
+  setPhotoFrame: (v: boolean) => void;
+  /** Request MapView to fit the holdings bounding box. */
+  showBookOnMap: () => void;
+  /**
    * MARK THE OLDEST INTERRUPTION READ.
    *
    * The engine pushes onto `game.alerts` and the UI drains it one at a time —
@@ -180,6 +219,8 @@ interface AppState {
    */
   hangUpCall: (bbl: string) => void;
   refi: (bbl: string, product: string, lev?: number) => void;
+  /** Cordage mezz behind a bank senior — Phase C private-credit stack. */
+  placeMezz: (bbl: string) => void;
   /** Retire a mortgage with cash (and the line if needed) — balance + prepay penalty. */
   payOffLoan: (bbl: string) => void;
   develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment }, lender?: string) => void;
@@ -215,6 +256,10 @@ interface AppState {
   restructureNote: (id: string) => void;
   fileNote: (id: string) => void;
   offloadNote: (id: string) => void;
+  fundPrivateAsk: (id: string) => void;
+  declinePrivateAsk: (id: string) => void;
+  acceptPrivateBorrowQuote: (id: string) => void;
+  declinePrivateBorrowQuote: (id: string) => void;
   /** Buy a street / REO book off Marketplace — see engine/portfoliosale.buyPortfolio. */
   buyStreetBook: (id: string) => void;
   bidAuction: (bids: Record<string, number>) => void;
@@ -251,6 +296,12 @@ interface AppState {
   repayFacility: (amount: number) => void;
   /** Buy one deed back out of the pool at the release price. */
   releaseFacility: (bbl: string) => void;
+  /** Close a player fund vintage (earned — never a menu size). */
+  raiseFund: () => void;
+  callFundCapital: (amount: number) => void;
+  distributeFund: (amount: number) => void;
+  /** When true, purchases draw equity from the live fund in its invest period. */
+  setFundPay: (on: boolean) => void;
   drawCredit: (amt: number) => void;
   repayCredit: (amt: number) => void;
   /**
@@ -278,6 +329,32 @@ interface AppState {
   dropSave: (slot: string) => Promise<void>;
   slots: SaveMeta[];
   refreshSlots: () => Promise<void>;
+}
+
+function queueDeliveryCeremony(
+  prev: GameState,
+  next: GameState,
+  parcels: ParcelTable | null,
+  set: (partial: Partial<AppState>) => void,
+) {
+  const player = deliveriesThisMonth(prev, next);
+  const rival = cityDeliveriesThisMonth(prev, next);
+  const bbl = player[0] ?? rival[0];
+  if (!bbl) return;
+  const rec = parcels ? resolveRec(parcels, next, bbl) : null;
+  const built = next.built?.[bbl];
+  set({
+    deliveryCeremony: {
+      bbl,
+      address: rec?.address ?? bbl,
+      use: built?.class ?? rec?.class ?? "building",
+      sf: built?.bldgArea ?? rec?.bldgArea ?? 0,
+      rival: !player.includes(bbl),
+    },
+  });
+  if (player.includes(bbl)) {
+    toast(`◆ Delivered — ${rec?.address ?? bbl}.`, "ok");
+  }
 }
 
 function toast(text: string, kind: "ok" | "err" = "ok") {
@@ -373,14 +450,20 @@ export const useStore = create<AppState>((set, get) => ({
   selectedBBL: null,
   hoveredBBL: null,
   flyTo: null,
+  fitBook: 0,
+  mapFilter: "all",
   lens: "none",
   page: "none",
   advancing: false,
+  prevForDigest: null,
+  deliveryCeremony: null,
   auctionOpen: false,
   popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups") === "off",
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
   preferFps: typeof localStorage !== "undefined" && localStorage.getItem("bw:prefer-fps") === "on",
+  mapOnly: typeof localStorage !== "undefined" && localStorage.getItem("bw:map-only") === "on",
+  photoFrame: false,
   toast: null,
   fps: 0,
   loadError: null,
@@ -412,10 +495,32 @@ export const useStore = create<AppState>((set, get) => ({
     flyTo: { bbl, n: (st.flyTo?.n ?? 0) + 1 },
     ...(closePanel ? { page: "none" as Page } : {}),
   })),
+  openAttention: (key) => {
+    const game = get().game;
+    const route = routeAttention(key, game);
+    if (route.bbl) {
+      set((st) => ({
+        selectedBBL: route.bbl!,
+        flyTo: { bbl: route.bbl!, n: (st.flyTo?.n ?? 0) + 1 },
+      }));
+    }
+    if (route.auction) set({ auctionOpen: true });
+    // Opening a desk leaves map-only — the skyline mode is for watching, not answering.
+    if (route.page) {
+      try { localStorage.setItem("bw:map-only", "off"); } catch { /* */ }
+      startTransition(() => set({ page: route.page!, mapOnly: false }));
+    }
+  },
+  dismissDeliveryCeremony: () => set({ deliveryCeremony: null }),
   setLens: (lens) => set({ lens }),
   setPage: (page) => {
     // Heavy pages (Books, Debt, Market) mount big trees — yield so the nav
-    // highlight paints before the page body.
+    // highlight paints before the page body. Opening a desk leaves map-only.
+    if (page !== "none" && get().mapOnly) {
+      try { localStorage.setItem("bw:map-only", "off"); } catch { /* */ }
+      startTransition(() => set({ page, mapOnly: false }));
+      return;
+    }
     startTransition(() => set({ page }));
   },
   setFps: (fps) => set({ fps }),
@@ -426,7 +531,8 @@ export const useStore = create<AppState>((set, get) => ({
     if (!game || !parcels || game.gameOver || advancing) return;
     const cash0 = game.cash;
     const next = advanceMonth(game, parcels, bbls, adjacency);
-    set({ game: next });
+    set({ game: next, prevForDigest: game });
+    queueDeliveryCeremony(game, next, parcels, set);
     // Month-close feedback: the single-month Advance used to be silent, so
     // Yr/Skip felt like the only clock that answered. Stamp the new month,
     // cash movement, and the first thing waiting — short enough to read once.
@@ -458,7 +564,8 @@ export const useStore = create<AppState>((set, get) => ({
           toast("Year advance stopped because you made another decision.");
           return;
         }
-        set({ game: r.s });
+        set({ game: r.s, prevForDigest: game });
+        queueDeliveryCeremony(game, r.s, parcels, set);
         toast(r.reason ? `Stopped after ${r.months} mo: ${r.reason}` : "A year passes.");
         void persist(r.s);
       } finally {
@@ -479,7 +586,8 @@ export const useStore = create<AppState>((set, get) => ({
           toast("Skip stopped because you made another decision.");
           return;
         }
-        set({ game: r.s });
+        set({ game: r.s, prevForDigest: game });
+        queueDeliveryCeremony(game, r.s, parcels, set);
         toast(r.reason ? `${r.months} mo later: ${r.reason}` : "Three quiet years. New Alden hums along.");
         void persist(r.s);
       } finally {
@@ -593,6 +701,32 @@ export const useStore = create<AppState>((set, get) => ({
     set({ preferFps: v });
   },
 
+  setMapOnly: (v) => {
+    try { localStorage.setItem("bw:map-only", v ? "on" : "off"); } catch { /* private mode */ }
+    set({ mapOnly: v, ...(v ? { page: "none" as Page } : {}) });
+  },
+
+  setPhotoFrame: (v) => {
+    set({
+      photoFrame: v,
+      ...(v ? { page: "none" as Page, mapOnly: true } : {}),
+    });
+  },
+
+  setMapFilter: (f) => set({ mapFilter: f }),
+
+  showBookOnMap: () => {
+    const st = get();
+    set({
+      page: "none" as Page,
+      lens: "owners" as Lens,
+      mapFilter: "owned" as MapFilter,
+      mapOnly: true,
+      fitBook: st.fitBook + 1,
+    });
+    try { localStorage.setItem("bw:map-only", "on"); } catch { /* */ }
+  },
+
   dismissAlert: () => {
     const { game } = get();
     if (!game?.alerts?.length) return;
@@ -630,6 +764,15 @@ export const useStore = create<AppState>((set, get) => ({
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("Repriced. New paper, new clock.");
+    void persist(r.s);
+  },
+  placeMezz: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = placeMezz(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Mezz closed.");
     void persist(r.s);
   },
 
@@ -946,6 +1089,34 @@ export const useStore = create<AppState>((set, get) => ({
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s }); toast(r.msg ?? "Sold."); void persist(r.s);
   },
+  fundPrivateAsk: (id) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = fundPrivateAsk(game, parcels, id);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); toast(r.msg ?? "Funded."); void persist(r.s);
+  },
+  declinePrivateAsk: (id) => {
+    const { game } = get();
+    if (!game) return;
+    const r = declinePrivateAsk(game, id);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); toast(r.msg ?? "Passed."); void persist(r.s);
+  },
+  acceptPrivateBorrowQuote: (id) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = acceptPrivateBorrowQuote(game, parcels, id);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); toast(r.msg ?? "Borrowed."); void persist(r.s);
+  },
+  declinePrivateBorrowQuote: (id) => {
+    const { game } = get();
+    if (!game) return;
+    const r = declinePrivateBorrowQuote(game, id);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s }); toast(r.msg ?? "Passed."); void persist(r.s);
+  },
   // A RECEIVER'S BOOK — or a fund winding down. Lives on Marketplace; the
   // engine always put packages on game.portfolios, but nothing ever called
   // buyPortfolio from the UI, so the seizure alert had nowhere to go.
@@ -1192,6 +1363,47 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
+  raiseFund: () => {
+    const { game } = get();
+    if (!game) return;
+    const r = raiseFund(game);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(`Fund raised — $${((r.s.fund?.size ?? 0) / 1e6).toFixed(0)}M vintage.`);
+    void persist(r.s);
+  },
+
+  callFundCapital: (amount) => {
+    const { game } = get();
+    if (!game) return;
+    const r = callFundCapital(game, amount);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(`Called $${(amount / 1e6).toFixed(2)}M into the vehicle.`);
+    void persist(r.s);
+  },
+
+  distributeFund: (amount) => {
+    const { game } = get();
+    if (!game) return;
+    const r = distributeFund(game, amount);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast("Distribution struck.");
+    void persist(r.s);
+  },
+
+  setFundPay: (on) => {
+    const { game } = get();
+    if (!game) return;
+    const next = { ...game, fundPay: on };
+    set({ game: next });
+    toast(on
+      ? "New purchases draw from the vehicle while the investment period is open."
+      : "New purchases draw from firm cash again.");
+    void persist(next);
+  },
+
   setAgentFloor: (f) => {
     const { game } = get();
     if (!game) return;
@@ -1396,26 +1608,12 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  setStaffOwnerStyle: (style) => {
-    const { game } = get();
-    if (!game) return;
-    const r = setOwnerStyle(game, style);
-    set({ game: r.s });
-    toast(style === "handsOn"
-      ? "Hands-on: you keep more cover yourself."
-      : "Delegated: you need staff sooner.");
-    void persist(r.s);
+  setStaffOwnerStyle: (_style) => {
+    // Free capacity dial removed — firm shape emerges from headcount.
   },
 
-  setStaffBenchStyle: (style) => {
-    const { game } = get();
-    if (!game) return;
-    const r = setBenchStyle(game, style);
-    set({ game: r.s });
-    toast(style === "boutique"
-      ? "Boutique: fewer stars move the needle more."
-      : "Platform: a deeper mid-tier bench.");
-    void persist(r.s);
+  setStaffBenchStyle: (_style) => {
+    // Free capacity dial removed — firm shape emerges from headcount.
   },
 
   assignStaffBuilding: (staffId, bbl) => {

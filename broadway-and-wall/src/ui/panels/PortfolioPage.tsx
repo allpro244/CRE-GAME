@@ -185,8 +185,18 @@ export function PortfolioPage() {
     };
   })();
 
+  const showAllOnMap = () => {
+    useStore.getState().showBookOnMap();
+  };
+
   return (
     <div>
+      <div className="btn-row" style={{ marginBottom: 10 }}>
+        <button type="button" className="btn" onClick={showAllOnMap}
+          title="Close the book and show your footprints on the map">
+          Show book on map →
+        </button>
+      </div>
       {assessmentWatch.length > 0 && (
         <div className="deal" style={{ marginTop: 0, marginBottom: 12 }}>
           <div className="deal-head">Assessment watch · {assessmentWatch.length} appealable</div>

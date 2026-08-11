@@ -283,6 +283,8 @@ export interface CrownIn {
   deco: boolean;              // a decorative prop rather than a building
   bbl?: string;
   style: number; rnd: number; varr: number; fh: number;
+  /** A shed, a plant or a warehouse — it ends in coping, never in a cornice. */
+  industrial: boolean;
   area: number;               // signed plan area, for the pyramid's span
   cs: (n: number) => number;  // the crown's own hash stream, independent of the wall's
   pier: (n: number) => number;// a second stream, one draw per fin
@@ -544,7 +546,14 @@ export function crownTop(m: Mason, W: GeomBuf, R: GeomBuf, o: CrownIn): CrownOut
   const stone = has(T_STONE, style);
   // WHAT THIS BUILDING'S TOP COULD PLAUSIBLY BE. Repeats are weights.
   const crowns: string[] = [];
-  if (z1 >= 12) {
+  if (o.industrial) {
+    // A WAREHOUSE DOES NOT GET A CORNICE, whatever its wall is made of. Brick
+    // is T_STONE here, so without this branch a four-storey shed drew from the
+    // prewar masonry ladder and ended in a stone cornice — a civic gesture on
+    // a loading dock. Coping, a corbelled brick band, a shed slope or a plant
+    // enclosure are the four things the top of one of these actually is.
+    crowns.push("coping", "coping", "corbel", "slope", "mech");
+  } else if (z1 >= 12) {
     if (stone) crowns.push("cornice", "cornice", "corbel", "decapitated");
     if (stone && tall) crowns.push("temple", "pyramid", "lantern");
     if (deco && tall) crowns.push("ziggurat", "ziggurat", "fin", "fin");
@@ -6782,7 +6791,7 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         // buildings had none of it.
         const cr = crownTop(mason, W, R, {
           ring: ring as [number, number][], z1: v.z1, roof: !!v.x, deco: !!v.d, bbl: v.b,
-          style, rnd, varr, fh, area,
+          style, rnd, varr, fh, area, industrial: v.c === "industrial",
           cs: (n) => hash01(key ^ Math.imul(n + 1, 0x9e3779b1), this.citySeed ^ 0x00c0ffee),
           pier: (n) => hash01(key ^ Math.imul(n, 2654435761), this.citySeed),
           props,
@@ -8429,6 +8438,10 @@ export class ThreeBuildings implements maplibregl.CustomLayerInterface {
         const cr = crownTop(mason2, T, R2, {
           ring: tfp, z1: tt.z1, roof: true, deco: false, bbl: item.bbl,
           style: tt.style ?? meta[0], rnd, varr, fh: fh2, area: ar2 / 2,
+          // The industrial gate arrived on the static path only. It belongs to
+          // the crown, not to the path, so it reaches player and rival sheds
+          // too — which is the whole reason this block was extracted.
+          industrial: item.cls === "industrial",
           cs: (n) => hash01(k ^ Math.imul(n + 1, 0x9e3779b1), this.citySeed ^ 0x00c0ffee),
           pier: (n) => hash01(k ^ Math.imul(n, 2654435761), this.citySeed),
           props: crownProps,

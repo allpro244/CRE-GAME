@@ -191,11 +191,15 @@ export function openWorkout(
 ) {
   if (s.workouts?.[bbl]) return;
   const h = s.holdings[bbl];
-  if (!h?.loan) return;
+  // Mezz can open a file even when the senior is current (or already gone).
+  if (!h?.loan && !(h?.mezz && h.mezz.balance > 0)) return;
   if (!s.workouts) s.workouts = {};
   // WHOEVER IS HOLDING IT TODAY. A loan can be sold, and the firm that bought
   // your mortgage at a discount is not the bank you signed with. See notes.ts.
-  const lender = h.loan.holder ?? productById(h.loan.product).lender;
+  // Mezz-only files name Cordage (or the junior holder).
+  const lender = h.loan
+    ? (h.loan.holder ?? productById(h.loan.product).lender)
+    : (h.mezz!.holder ?? "Cordage Debt Partners");
   s.workouts[bbl] = {
     bbl, lender, startM: s.month, stage: "notice", cause,
     cure: Math.round(cure), decideM: s.month + NOTICE_M, asks: 0, missedMs: 0,
@@ -446,18 +450,31 @@ export function deedInLieu(
 ): { s: GameState; err?: string; msg?: string } {
   const w = s.workouts?.[bbl];
   const h = s.holdings[bbl];
-  if (!w || !h?.loan) return { s, err: "There is nothing in default there." };
+  if (!w || (!h?.loan && !(h?.mezz && h.mezz.balance > 0))) {
+    return { s, err: "There is nothing in default there." };
+  }
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const next = clone(s);
   const value = ownedHoldingValue(next, parcels, h);
-  const bal = h.loan.balance;
+  // Deed in lieu settles the whole stack — senior and Cordage junior.
+  const bal = (h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0);
   const loss = Math.max(0, bal - value * 0.88);
   // A deed in lieu settles the debt in full — that is the entire consideration
   // for handing it over without a fight, and it is why it beats an auction
   // even on recourse paper.
-  chargeLenderLoss(next, w.lender, loss);
+  const seniorBal = h.loan?.balance ?? 0;
+  const seniorLoss = Math.min(loss, Math.max(0, seniorBal - value * 0.88));
+  const mezzLoss = loss - seniorLoss;
+  if (seniorLoss > 0 && h.loan) {
+    chargeLenderLoss(next, w.lender, seniorLoss);
+  }
+  if (mezzLoss > 0) {
+    chargeLenderLoss(next, h.mezz?.holder ?? "Cordage Debt Partners", mezzLoss);
+  }
+  if (loss === 0) chargeLenderLoss(next, w.lender, 0);
   bumpLenderRel(next, w.lender, -12);
+  if (h.mezz) bumpLenderRel(next, h.mezz.holder ?? "Cordage Debt Partners", -8);
   next.exits.push({
     bbl, address: rec.address, boughtM: h.boughtM, soldM: next.month,
     price: Math.round(bal), basis: h.costBasis, gain: Math.round(bal - h.costBasis), forced: true,

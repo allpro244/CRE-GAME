@@ -164,7 +164,7 @@ export const CONTRACT_PREMIUM: Record<Contract, number> = { gmp: 0.04, costplus:
 //
 // Credit tightens the ceiling in a downturn, and industrial and housing carry
 // more than offices and shops, because they always have.
-function constructionLtc(mix: UseMix, phase: string, creditIdx: number, appetite = 1): number {
+function constructionLtc(mix: UseMix, phase: string, creditIdx: number, appetite = 1, spaceTight = 1): number {
   const spec = specShare(mix);
   // flats and sheds are the financeable end of the market
   const safeLtc = 0.70;
@@ -177,7 +177,30 @@ function constructionLtc(mix: UseMix, phase: string, creditIdx: number, appetite
   // and a bank that has stopped lending stops financing buildings first,
   // because a half-built tower is the worst collateral there is.
   const app = Math.min(1.05, 0.5 + 0.5 * appetite);
-  return Math.max(0, Math.min(0.70, base * tight * app * Math.min(1.12, Math.max(0.55, creditIdx))));
+  // Space-market tightness (vacancy below natural / unmet structural demand)
+  // is why banks fund into a shortage — same signal classAppetite already
+  // reads. Caps keep this from becoming free leverage in a boom label alone.
+  const space = Math.max(0.9, Math.min(1.12, spaceTight));
+  return Math.max(0, Math.min(0.72, base * tight * app * space * Math.min(1.12, Math.max(0.55, creditIdx))));
+}
+
+/** Mix-weighted construction advance boost from class vacancy / structural tightness. */
+function constructionSpaceTight(e: Econ, mix: UseMix): number {
+  let w = 0, t = 0;
+  for (const u of BUILT_CLASSES) {
+    const share = mix[u] ?? 0;
+    if (share <= 0) continue;
+    const vac = e.cityVac?.[u] ?? NATURAL_VAC[u];
+    const gap = vac - NATURAL_VAC[u]; // negative = tight
+    const struct = e.structTight?.[u] ?? 0;
+    // Up to ~12% more advance when the class is short space; asymptotic cap
+    // replaces a hard rail that bound 73% of calls at 1.12 (pnpm rails).
+    const tightSignal = -gap * 6 + struct * 1.4;
+    const boost = Math.max(0.9, 1 + 0.12 * Math.tanh(tightSignal / 0.22));
+    t += share * boost;
+    w += share;
+  }
+  return w > 0 ? t / w : 1;
 }
 
 /**
@@ -255,14 +278,15 @@ export function pickConstructionDesk(s: GameState, key: string): string | undefi
 export function constructionQuotes(s: GameState, mix: UseMix, costTotal: number): ConstructionQuote[] {
   const e = s.econ;
   const tight = Math.max(0, 1 - (e.creditIdx ?? 1));
+  const space = constructionSpaceTight(e, mix);
   return CONSTRUCTION_DESKS.map((d) => {
     const app = lenderAppetite(s, d.name);
     const bank = lenderByName(s, d.name);
     // The fund prices the cycle instead of leaving it: its advance rate reads
     // through a recession the way its perm sheet does, at its coupon.
     const base = d.fund
-      ? constructionLtc(mix, "expansion", Math.max(0.85, e.creditIdx ?? 1), Math.max(0.5, app))
-      : constructionLtc(mix, e.phase, e.creditIdx ?? 1, app);
+      ? constructionLtc(mix, "expansion", Math.max(0.85, e.creditIdx ?? 1), Math.max(0.5, app), space)
+      : constructionLtc(mix, e.phase, e.creditIdx ?? 1, app, space);
     const uncapped = Math.min(d.cap, base * d.scale);
     // The 1.1 approximates the interest-reserve gross-up, so the solved
     // commitment lands at the hold size rather than a tenth over it.
@@ -866,7 +890,13 @@ export function planDevelopment(
     (s.econ.cityVac?.[u] ?? NATURAL_VAC[u])
       + (s.econ.sublet?.[u] ?? 0) / Math.max(1, s.econ.stock?.[u] ?? CITY_STOCK[u]));
   const naturalAvailability = overMix(mix, (u) => NATURAL_VAC[u]);
-  const leaseUpMarket = clamp(availability / Math.max(0.001, naturalAvailability), 0.5, 2);
+  // Floor used to be 0.5 — even a bone-dry street kept half a glut's lease-up
+  // budget. Structural unmet demand shortens the curve further: the looking
+  // book is already there. Cap still 2× in a real glut.
+  const struct = overMix(mix, (u) => s.econ.structTight?.[u] ?? 0);
+  const leaseRaw = availability / Math.max(0.001, naturalAvailability) - struct * 2.2;
+  // Logistic curve to ~[0.35, 2] — the old clamp pinned the floor 50% of months.
+  const leaseUpMarket = 0.35 + 1.65 / (1 + Math.exp(-(leaseRaw - 1) / 0.4));
   const carryMonths = Math.round(baseCarryMonths * leaseUpMarket);
   const opex0 = overMix(mix, (u) => opexPsf(u, s.econ, false));
   const recovery0 = overMix(mix, (u) => RECOVERY_RATE[u]);
@@ -1103,7 +1133,7 @@ export function adaptiveReuseEligibility(
   if (s.developments[bbl]) return { ok: false, why: "A project is already under way." };
   if (h.groundLeased || s.groundLeases?.[bbl]) return { ok: false, why: "The ground lessee controls the improvement." };
   if (h.sale) return { ok: false, why: "Pull the sale process before starting a conversion." };
-  if (h.loan || s.facility?.bbls.includes(bbl)) {
+  if (h.loan || (h.mezz?.balance ?? 0) > 0 || s.facility?.bbls.includes(bbl)) {
     return { ok: false, why: "Existing secured debt must be paid off or released before a conversion loan closes." };
   }
   const occupied = h.tenants.reduce((a, t) => a + t.sf, 0)
@@ -1546,15 +1576,24 @@ export function startDevelopment(
   const commitCap = plan.equity + plan.pointsCost + Math.round(plan.costTotal * 0.06);   // and a margin for change orders — origination is cash at close too
   const fundable = s.cash + locAvailable(s, parcels);
   if (fundable < commitCap) {
+    const short = commitCap - fundable;
     return {
       s,
-      err: `This job needs $${(plan.equity / 1e6).toFixed(2)}M of equity in total — $${(plan.equityAtClose / 1e6).toFixed(2)}M at close `
-        + `and the rest drawn as it goes up, plus a margin for change orders. You can fund $${(fundable / 1e6).toFixed(2)}M `
-        + `including the line. No lender closes without evidence you can finish it.`,
+      err: `Equity short $${(short / 1e6).toFixed(2)}M to finish this job. `
+        + `Needs $${(plan.equity / 1e6).toFixed(2)}M equity all-in ($${(plan.equityAtClose / 1e6).toFixed(2)}M at close) `
+        + `plus change-order margin; you can fund $${(fundable / 1e6).toFixed(2)}M including the line. `
+        + `Cut floors or coverage, buy cash-flowing buildings first, or bring more capital — no lender closes without evidence you can finish.`,
     };
   }
   if (s.cash < plan.equityAtClose + plan.pointsCost) {
-    return { s, err: `The bank funds nothing until your equity is in the ground. That is $${((plan.equityAtClose + plan.pointsCost) / 1e6).toFixed(2)}M at close — equity plus origination — of $${((plan.equity + plan.pointsCost) / 1e6).toFixed(2)}M total. You're short.` };
+    const dayOne = plan.equityAtClose + plan.pointsCost;
+    const short = dayOne - s.cash;
+    return {
+      s,
+      err: `Equity short $${(short / 1e6).toFixed(2)}M at close. `
+        + `The bank funds nothing until $${(dayOne / 1e6).toFixed(2)}M is in the ground (equity plus origination) `
+        + `of $${((plan.equity + plan.pointsCost) / 1e6).toFixed(2)}M total. Cut the massing or raise cash first.`,
+    };
   }
   const next = clone(s);
   // The origination fee is the lender's, paid at close and never part of the
@@ -1669,11 +1708,12 @@ export function takeoverDevelopment(
     ratePct: +(s.econ.indexRate + 3.2).toFixed(2),
     startM: s.month, deliverM: s.month + months, baseMonths: months,
     // the dead sponsor's start already queued this building's square feet in
-    // econ.cohorts; the market has been expecting it since their groundbreak
+    // deliveryQueue; reschedule to the takeover finish date.
     piped: true,
     signed: [],
     events: 0,
   } satisfies Development;
+  rescheduleSupplyProject(s, bbl, s.month + months);
   s.cityJobs = (s.cityJobs ?? []).filter((j) => j.bbl !== bbl);
   s.news.unshift({
     q: s.month, kind: "deal",
@@ -1701,6 +1741,9 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
   if (s.landmarks?.[bbl] !== undefined) return { s, err: "It is landmarked. Nobody knocks that down, including you." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
   if (h.sale) return { s, err: "It's on the market — pull the listing first." };
+  if (h.loan || (h.mezz?.balance ?? 0) > 0) {
+    return { s, err: "Pay off the mortgage first — nobody demolishes under a lien." };
+  }
   // OCCUPIED SPACE IS OCCUPIED SPACE — including the flats, which this used to
   // ignore entirely, so a full apartment block with no commercial roll could be
   // knocked down with people living in it.

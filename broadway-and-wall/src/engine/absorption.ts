@@ -91,17 +91,37 @@ export const MARKETED_ALPHA = 0.70;
  * building's own suite size, so a big empty tower drew big lettings by
  * definition. A firm looking for eight thousand feet is looking for eight
  * thousand feet whoever owns the floor.
+ *
+ * Office has a BODY band here and a rare WHALE band below. The body ceiling
+ * stays at 120k — that is still almost every letter. Consolidations and HQ
+ * moves that want 180k–half a million feet are real; they are not common.
  */
 export const REQ_SIZE: Record<string, [number, number, number]> = {
   office: [2_000, 120_000, 2.1], retail: [2_000, 40_000, 2.3], industrial: [10_000, 250_000, 1.9],
 };
+/**
+ * Rare office consolidator / HQ move. ~1.2% of office draws. Band starts at
+ * the body ceiling so "more than 120k in one letter" is possible; skew keeps
+ * most whales near 120–200k and a full-tower ask unusual.
+ */
+export const OFFICE_WHALE_P = 0.012;
+export const OFFICE_WHALE_SIZE: [number, number, number] = [120_000, 500_000, 1.6];
 /** The mean of the draw above, so an arrival rate can be backed out of a rate of capture. */
-export const REQ_MEAN: Record<string, number> = { office: 16_970, retail: 7_740, industrial: 50_130 };
+export const REQ_MEAN: Record<string, number> = { office: 19_450, retail: 7_740, industrial: 50_130 };
 
 /** One requirement, in square feet. */
 export function drawRequirementSf(s: GameState, use: BuiltClass): number {
+  // One stream draw. Office remaps the top slice into the whale band so a
+  // rare consolidator does not spend an extra rng (and rewrite the century).
+  const u = rng(s);
+  if (use === "office" && u < OFFICE_WHALE_P) {
+    const [lo, hi, skew] = OFFICE_WHALE_SIZE;
+    const v = u / OFFICE_WHALE_P;
+    return Math.round(lo * Math.pow(hi / lo, Math.pow(v, skew)));
+  }
   const [lo, hi, skew] = REQ_SIZE[use] ?? REQ_SIZE.office;
-  return Math.round(lo * Math.pow(hi / lo, Math.pow(rng(s), skew)));
+  const v = use === "office" ? (u - OFFICE_WHALE_P) / (1 - OFFICE_WHALE_P) : u;
+  return Math.round(lo * Math.pow(hi / lo, Math.pow(v, skew)));
 }
 
 /**

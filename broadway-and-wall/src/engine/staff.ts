@@ -52,6 +52,11 @@ import type { GameState, Holding } from "./types";
 import { logBooks, cloneState} from "./types";
 import { mulberry32Step } from "./market";
 import { resolveRec } from "./value";
+import {
+  careerLoadMult, principalTemperament, queueFounderBid, stampEmployeeLife,
+  type Person,
+} from "./people";
+import { firmCapital } from "./firmCapital";
 
 export type StaffRole = "pm" | "leasing" | "construction";
 
@@ -97,36 +102,67 @@ function srrange(s: GameState, lo: number, hi: number): number {
  */
 export const NON_PAYROLL_GA_SHARE = 0.55;
 
-/** The four everybody has, and the two each role is actually hired for. */
+/**
+ * Temperament — four attrs, every Person. Storage keys are save-stable;
+ * display names live in ATTR_LABEL / ATTR_LABEL_PERSON (ATTR_CONTRACT.md).
+ */
 export const GENERAL_ATTRS = ["judgment", "urgency", "diligence", "relationships"] as const;
+/** @deprecated Role chips retired — competence is career. Kept for old saves / harnesses. */
 export const ROLE_ATTRS: Record<StaffRole, readonly string[]> = {
   pm: ["costControl", "tenantCare"],
   leasing: ["marketKnowledge", "negotiation"],
   construction: ["scheduling", "costControl"],
 };
 export const ATTR_LABEL: Record<string, string> = {
-  judgment: "Judgment", urgency: "Sense of urgency", diligence: "Detail orientation",
-  relationships: "Relationships", costControl: "Cost control", tenantCare: "Tenant care",
-  marketKnowledge: "Market knowledge", negotiation: "Negotiation",
-  scheduling: "Scheduling",
+  judgment: "Deal sense",
+  urgency: "Bandwidth",
+  diligence: "Rigor",
+  relationships: "Access",
+  // Legacy labels — only shown if a save still carries the key in obs.
+  costControl: "Cost control (legacy)",
+  tenantCare: "Tenant care (legacy)",
+  marketKnowledge: "Market knowledge (legacy)",
+  negotiation: "Negotiation (legacy)",
+  scheduling: "Scheduling (legacy)",
 };
+
+/**
+ * Resolve an attr key against temperament, with legacy role-attr fallbacks.
+ * New hires only store the four; old saves may still have costControl etc.
+ */
+export function attrValue(attrs: Record<string, number> | undefined, key: string): number {
+  const a = attrs ?? {};
+  if (typeof a[key] === "number") return a[key]!;
+  const avg = (x: number, y: number) => (x + y) / 2;
+  switch (key) {
+    case "costControl": return a.diligence ?? 50;
+    case "tenantCare": return avg(a.diligence ?? 50, a.relationships ?? 50);
+    case "marketKnowledge": return a.judgment ?? 50;
+    case "negotiation": return avg(a.judgment ?? 50, a.relationships ?? 50);
+    case "scheduling": return avg(a.urgency ?? 50, a.diligence ?? 50);
+    default: return a[key] ?? 50;
+  }
+}
+
+export function meanAttrs(attrs: Record<string, number> | undefined, keys: readonly string[]): number {
+  if (!keys.length) return 50;
+  return keys.reduce((s, k) => s + attrValue(attrs, k), 0) / keys.length;
+}
 export const ROLE_LABEL: Record<StaffRole, string> = {
   pm: "Property Manager", leasing: "Leasing", construction: "Construction Manager",
 };
 
-export interface Staff {
-  id: number;
-  name: string;
+/**
+ * A hire is a Person with an employee seat and a payroll role. bornM / diesM
+ * are stamped from peopleRng after staffRng work so the economy stream and the
+ * hiring stream keep their step counts (see people.ts, HANDOFF_PRINCIPAL.md).
+ */
+export interface Staff extends Omit<Person, "seat" | "firmId"> {
+  seat?: "employee";
   role: StaffRole;
-  /** TRUE ability, 1-100. Never shown. */
-  attrs: Record<string, number>;
-  /** The first impression: what the interview and the references suggested. */
-  obs: Record<string, number>;
   /** Year-2000 dollars a year. Billed at costIdx. */
   salary: number;
   hiredM: number;
-  /** How wide the initial read was — narrowed at hire by paying for a search. */
-  band0: number;
   /**
    * Assets this person is on the hook for.
    * PM/leasing: operated holdings. Construction: live job BBLs (developments).
@@ -158,9 +194,9 @@ const LAST = ["Halloran", "Buckley", "Ferreira", "Okonkwo", "Vance", "Delacroix"
  * spread. The band is $55k to $210k in year-2000 dollars, which is a real
  * range for a property manager through to a senior leasing director.
  */
-function askFor(s: GameState, attrs: Record<string, number>, role: StaffRole): number {
-  const keys = [...GENERAL_ATTRS, ...ROLE_ATTRS[role]];
-  const mean = keys.reduce((a, k) => a + (attrs[k] ?? 50), 0) / keys.length;
+function askFor(s: GameState, attrs: Record<string, number>, _role: StaffRole): number {
+  void _role;
+  const mean = meanAttrs(attrs, GENERAL_ATTRS);
   const rep = s.hireReputation ?? 0.55;
   const base = 55_000 + Math.pow(mean / 100, 1.9) * 155_000;
   const repAsk = base * (1 + (0.55 - rep) * 0.08);
@@ -171,11 +207,16 @@ function drawAttrs(s: GameState, role: StaffRole): Record<string, number> {
   const rep = s.hireReputation ?? 0.55;
   const bias = (0.55 - rep) * 10;
   const out: Record<string, number> = {};
-  for (const k of [...GENERAL_ATTRS, ...ROLE_ATTRS[role]]) {
-    // Triangular-ish: most people are ordinary, a few are not. Averaging three
-    // uniforms gives a believable middle without a normal-distribution import.
+  // Temperament only — role chips retired (ATTR_CONTRACT.md).
+  for (const k of GENERAL_ATTRS) {
     const v = (srng(s) + srng(s) + srng(s)) / 3;
     out[k] = Math.round(Math.max(8, Math.min(96, 8 + v * 88 - bias)));
+  }
+  // Burn the six uniforms ROLE_ATTRS used to consume (2 keys × 3) so a hire
+  // cannot re-roll every stream that follows.
+  for (const _k of ROLE_ATTRS[role]) {
+    void _k;
+    void (srng(s) + srng(s) + srng(s));
   }
   return out;
 }
@@ -198,13 +239,22 @@ const OBS_HARDNESS: Record<string, number> = {
   urgency: 1.2, tenantCare: 1.2, costControl: 1.3, diligence: 1.4,
 };
 
-function observe(s: GameState, attrs: Record<string, number>, band0: number): Record<string, number> {
+function observe(
+  s: GameState, attrs: Record<string, number>, band0: number, role: StaffRole,
+): Record<string, number> {
   const rep = s.hireReputation ?? 0.55;
   const band = band0 * (1 + (0.55 - rep) * 0.35);
   const out: Record<string, number> = {};
-  for (const [k, v] of Object.entries(attrs)) {
+  for (const k of GENERAL_ATTRS) {
+    const v = attrs[k] ?? 50;
     const w = band * (OBS_HARDNESS[k] ?? 1);
     out[k] = Math.round(Math.max(1, Math.min(100, v + srrange(s, -w, w))));
+  }
+  // Burn two role-slot observations (legacy) without storing them.
+  for (const k of ROLE_ATTRS[role]) {
+    const v = attrValue(attrs, k);
+    const w = band * (OBS_HARDNESS[k] ?? 1);
+    void (v + srrange(s, -w, w));
   }
   return out;
 }
@@ -220,11 +270,15 @@ export function generateCandidate(s: GameState, role: StaffRole, band0: number):
   const attrs = drawAttrs(s, role);
   const name = `${FIRST[Math.floor(srng(s) * FIRST.length) % FIRST.length]} ${LAST[Math.floor(srng(s) * LAST.length) % LAST.length]}`;
   const ask = askFor(s, attrs, role);
-  return {
+  const cand = {
     id: s.nextStaffId ?? 1, name, role, attrs,
-    obs: observe(s, attrs, band0),
+    obs: observe(s, attrs, band0, role),
     salary: ask, askSalary: ask, hiredM: -1, band0,
-  };
+    seat: "employee" as const,
+  } as Candidate;
+  // peopleRng only — after every staffRng step for this candidate.
+  stampEmployeeLife(s, cand);
+  return cand;
 }
 
 /**
@@ -236,11 +290,20 @@ export function generateCandidate(s: GameState, role: StaffRole, band0: number):
  * remove it. Nothing ever states the true number, because in life nothing does
  * — you infer it from whether the opex ratio and the renewal rate came in.
  */
-export function readAttr(st: Staff, key: string, month: number): { mid: number; lo: number; hi: number } {
-  const truth = st.attrs[key] ?? 50;
+/**
+ * What you think an attr is, after months of watching. Truth stays hidden.
+ * `observerRigor` (your diligence) shortens the learning half-life — Rigor is
+ * how fast bands narrow, not a rent multiplier.
+ */
+export function readAttr(
+  st: Staff, key: string, month: number, observerRigor = 50,
+): { mid: number; lo: number; hi: number } {
+  const truth = attrValue(st.attrs, key);
   const first = st.obs[key] ?? truth;
   const served = st.hiredM < 0 ? 0 : Math.max(0, month - st.hiredM);
-  const decay = 1 / (1 + served / 12);
+  // At Rigor 50: τ = 12 months (legacy). Higher Rigor → faster learning.
+  const tau = 12 * (1.4 - 0.8 * Math.max(0, Math.min(100, observerRigor)) / 100);
+  const decay = 1 / (1 + served / Math.max(4, tau));
   const mid = truth + (first - truth) * decay;
   const w = (st.band0 * (OBS_HARDNESS[key] ?? 1)) * decay;
   return {
@@ -303,14 +366,15 @@ export type OwnerStyle = "handsOn" | "delegated";
 export type BenchStyle = "boutique" | "platform";
 
 /**
- * FIRM SHAPE EMERGES FROM THE PAYROLL unless you override it.
+ * FIRM SHAPE EMERGES FROM THE PAYROLL.
  *
- * A one-person shop is hands-on and boutique whether or not you clicked a
- * button. Four specialists and a float desk is a platform. The old sliders
- * remain as an explicit override when you want to force the arithmetic.
+ * A one-person shop is hands-on and boutique. Four specialists and a float
+ * desk is a platform. Forced ownerStyle / benchStyle overrides were free
+ * capacity dials with no offsetting cost anywhere in the engine — deleted in
+ * the Principal work (HANDOFF_PRINCIPAL.md). Inferred form stays: shape is an
+ * OUTPUT of headcount, not a button.
  */
 export function effectiveOwnerStyle(s: GameState): OwnerStyle | null {
-  if (s.ownerStyle) return s.ownerStyle;
   const n = (s.staff ?? []).length;
   if (n <= 1) return "handsOn";
   if (n >= 4) return "delegated";
@@ -318,7 +382,6 @@ export function effectiveOwnerStyle(s: GameState): OwnerStyle | null {
 }
 
 export function effectiveBenchStyle(s: GameState): BenchStyle | null {
-  if (s.benchStyle) return s.benchStyle;
   const n = (s.staff ?? []).length;
   if (n <= 2) return "boutique";
   if (n >= 5) return "platform";
@@ -330,34 +393,38 @@ export function firmShapeLabel(s: GameState): string {
   const n = (s.staff ?? []).length;
   const owner = effectiveOwnerStyle(s);
   const bench = effectiveBenchStyle(s);
-  const forced = !!(s.ownerStyle || s.benchStyle);
   const bits: string[] = [];
   if (owner === "handsOn") bits.push("hands-on");
   else if (owner === "delegated") bits.push("delegated");
   if (bench === "boutique") bits.push("boutique");
   else if (bench === "platform") bits.push("platform");
   if (!bits.length) bits.push(n === 0 ? "you alone" : "growing firm");
-  return forced ? `${bits.join(" · ")} (set)` : `${bits.join(" · ")} · ${n} on payroll`;
+  return `${bits.join(" · ")} · ${n} on payroll`;
 }
 
 /**
- * Owner desk capacity before hires. Null effective style keeps the original
- * OWNER_SF / OWNER_CONSTRUCTION_SF constants so old saves and the payroll
- * harness do not silently move the capacity line.
+ * Owner desk capacity before hires. Headcount shape (hands-on / delegated) still
+ * applies; Bandwidth (urgency) scales the line the same way staff ability does —
+ * centred at 1.0 when urgency is 50 so a mid principal matches the old constant.
  */
 export function ownerCapacitySf(s: GameState, role: StaffRole): number {
   const style = effectiveOwnerStyle(s);
   const base = role === "construction" ? OWNER_CONSTRUCTION_SF : OWNER_SF;
-  if (style === "handsOn") return base * (role === "construction" ? 1.25 : 1.35);
-  if (style === "delegated") return base * (role === "construction" ? 0.65 : 0.72);
-  return base;
+  let cap = base;
+  if (style === "handsOn") cap *= (role === "construction" ? 1.25 : 1.35);
+  else if (style === "delegated") cap *= (role === "construction" ? 0.65 : 0.72);
+  const urgency = principalTemperament(s).urgency;
+  const band = 0.55 + (urgency / 100) * 0.9; // 0.55..1.45; = 1.0 at 50
+  // Institutional process (firm capital tier) — earned, capped ≤ +8%.
+  const process = firmCapital(s).processCapacityMult;
+  return cap * band * process;
 }
 
 function abilityMult(s: GameState, st: Staff, month: number, keys: string[]): number {
   // Uses TRUE ability. The player's uncertainty is about what they can see,
   // not about what is happening to their buildings.
   void month;
-  const mean = keys.reduce((a, k) => a + (st.attrs[k] ?? 50), 0) / keys.length;
+  const mean = meanAttrs(st.attrs, keys);
   const bench = effectiveBenchStyle(s);
   if (bench === "boutique") return 0.55 + (mean / 100) * 1.05;   // star spread
   if (bench === "platform") return 0.75 + (mean / 100) * 0.65;   // flatter mid
@@ -368,10 +435,16 @@ function capacityKeys(role: StaffRole): string[] {
   return role === "leasing" ? ["urgency", "relationships"] : ["urgency", "diligence"];
 }
 
+/** Desk quality keys — temperament only (role chips retired). */
 function skillKeys(role: StaffRole): string[] {
-  return role === "pm" ? ["costControl", "diligence"]
-    : role === "construction" ? ["scheduling", "costControl"]
-      : ["marketKnowledge", "negotiation"];
+  return role === "pm" ? ["diligence", "judgment"]
+    : role === "construction" ? ["diligence", "urgency"]
+      : ["judgment", "relationships"];
+}
+
+/** Principal skill on a desk — same keys as staff, never the old hardcoded 42. */
+export function principalDeskSkill(s: GameState, role: StaffRole): number {
+  return meanAttrs(principalTemperament(s), skillKeys(role));
 }
 
 /** Personal capacity of one hire — what they can carry if that is their whole book. */
@@ -448,9 +521,15 @@ function stateOf(capacity: number, covered: number, skill: number): RoleState {
 export function personRoleState(s: GameState, parcels: ParcelTable, st: Staff): RoleState {
   const capacity = personCapacitySf(s, st);
   let covered = 0;
-  for (const bbl of st.assignedBbls ?? []) covered += workSfAt(s, parcels, bbl, st.role);
-  const keys = skillKeys(st.role);
-  const skill = keys.reduce((a, k) => a + (st.attrs[k] ?? 50), 0) / keys.length;
+  for (const bbl of st.assignedBbls ?? []) {
+    const w = workSfAt(s, parcels, bbl, st.role);
+    const rec = resolveRec(parcels, s, bbl);
+    const mult = rec
+      ? careerLoadMult((st as Person).career, rec.class, rec.district ?? "—")
+      : 1;
+    covered += w * mult;
+  }
+  const skill = meanAttrs(st.attrs, skillKeys(st.role));
   return stateOf(capacity, covered, skill);
 }
 
@@ -473,10 +552,24 @@ export function floatRoleState(s: GameState, parcels: ParcelTable, role: StaffRo
   let covered = 0;
   let uncoveredSf = 0;
   let uncoveredN = 0;
+  // Float load: each floater's career weights their share; owner uses principal.
+  const ownerCareer = s.principal?.career;
   for (const bbl of deskAssetBbls(s, parcels, role)) {
     if (pinned.has(bbl)) continue;
     const w = workSfAt(s, parcels, bbl, role);
-    covered += w;
+    const rec = resolveRec(parcels, s, bbl);
+    let mult = 1;
+    if (rec) {
+      if (floaters.length) {
+        // Average floater familiarity — the float desk is a shared beat.
+        mult = floaters.reduce((a, st) => (
+          a + careerLoadMult((st as Person).career, rec.class, rec.district ?? "—")
+        ), 0) / floaters.length;
+      } else {
+        mult = careerLoadMult(ownerCareer, rec.class, rec.district ?? "—");
+      }
+    }
+    covered += w * mult;
     // Uncovered = on the float with ZERO hired float capacity (owner only still counts as cover).
     if (!floaters.length && hired.length > 0 && hired.every((st) => !isFloatStaff(st))) {
       uncoveredSf += w;
@@ -485,8 +578,8 @@ export function floatRoleState(s: GameState, parcels: ParcelTable, role: StaffRo
   }
   const keys = skillKeys(role);
   const skill = floaters.length
-    ? floaters.reduce((a, st) => a + keys.reduce((b, k) => b + (st.attrs[k] ?? 50), 0) / keys.length, 0) / floaters.length
-    : 42;
+    ? floaters.reduce((a, st) => a + meanAttrs(st.attrs, keys), 0) / floaters.length
+    : principalDeskSkill(s, role);
   const rs = stateOf(capacity, covered, skill);
   if (uncoveredN > 0) {
     rs.uncoveredSf = uncoveredSf;
@@ -548,8 +641,8 @@ export function roleState(s: GameState, parcels: ParcelTable, role: StaffRole): 
   const skill = skillW > 0
     ? skillAcc / skillW
     : hired.length
-      ? hired.reduce((a, st) => a + keys.reduce((b, k) => b + (st.attrs[k] ?? 50), 0) / keys.length, 0) / hired.length
-      : 42;
+      ? hired.reduce((a, st) => a + meanAttrs(st.attrs, keys), 0) / hired.length
+      : principalDeskSkill(s, role);
   const rs = stateOf(capacity, covered, skill);
   // Prefer SF-weighted slip when assignment splits the book; else classic load slip.
   rs.slip = slipW > 0 ? slipAcc / slipW : slip(load);
@@ -831,23 +924,30 @@ export function tickStaff(s: GameState, parcels: ParcelTable) {
   // is mud. ALWAYS draw once per seat so a star on the payroll cannot change
   // how many staffRng steps the month takes (see the stream comment above).
   const poached: Staff[] = [];
+  const access = principalTemperament(s).relationships;
   for (const st of s.staff ?? []) {
     const roll = srng(s);
-    const keys = [...GENERAL_ATTRS, ...ROLE_ATTRS[st.role]];
-    const mean = keys.reduce((a, k) => a + (st.attrs[k] ?? 50), 0) / keys.length;
+    const mean = meanAttrs(st.attrs, GENERAL_ATTRS);
     const tenure = st.hiredM < 0 ? 0 : s.month - st.hiredM;
     if (mean < 72 || tenure < 24) continue;
     const rep = s.hireReputation ?? 0.55;
-    const chance = 0.012 * (1 + (0.55 - rep) * 1.5);
+    // Access: a principal who keeps relationships burns fewer stars to poachers.
+    const accessMult = 1.25 - 0.5 * (access / 100); // 1.0 at 50; 0.75 at 100
+    const chance = 0.012 * (1 + (0.55 - rep) * 1.5) * accessMult;
     if (roll < chance) poached.push(st);
   }
   if (poached.length) {
     const ids = new Set(poached.map((x) => x.id));
     s.staff = (s.staff ?? []).filter((x) => !ids.has(x.id));
+    // Strong people do not vanish into another payroll — they try to raise.
+    // Genealogy proposes; the product-gated raise can still refuse.
+    const house = s.firm?.name ?? "your firm";
     for (const st of poached) {
+      queueFounderBid(s, st, "you", house);
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `A rival poached ${st.name} — your ${ROLE_LABEL[st.role]} desk is empty again, and there is no severance when they choose to leave.`,
+        text: `${st.name} has left your ${ROLE_LABEL[st.role]} desk to raise. `
+          + `There is no severance when they choose to leave — and if the pitch clears, they will bid against you.`,
       });
     }
   }
@@ -863,8 +963,8 @@ export function tickStaff(s: GameState, parcels: ParcelTable) {
       st.attrs.diligence = Math.max(8, (st.attrs.diligence ?? 50) - 1);
       st.attrs.urgency = Math.max(8, (st.attrs.urgency ?? 50) - 1);
     } else if (rs.slip === 0 && tenure > 12 && roll < 0.05) {
-      st.attrs.judgment = Math.min(96, (st.attrs.judgment ?? 50) + 1);
-      for (const k of ROLE_ATTRS[st.role]) {
+      // Temperament polish — Deal sense plus the desk's quality keys (unique).
+      for (const k of new Set<string>(["judgment", ...skillKeys(st.role)])) {
         st.attrs[k] = Math.min(96, (st.attrs[k] ?? 50) + 1);
       }
     }
@@ -988,15 +1088,17 @@ export function setSearchTier(
   return { s: next };
 }
 
-export function setOwnerStyle(s: GameState, style: OwnerStyle): { s: GameState } {
+/** @deprecated Free capacity dial removed — firm shape emerges from headcount. */
+export function setOwnerStyle(s: GameState, _style: OwnerStyle): { s: GameState } {
   const next: GameState = cloneState(s);
-  next.ownerStyle = style;
+  delete next.ownerStyle;
   return { s: next };
 }
 
-export function setBenchStyle(s: GameState, style: BenchStyle): { s: GameState } {
+/** @deprecated Free capacity dial removed — firm shape emerges from headcount. */
+export function setBenchStyle(s: GameState, _style: BenchStyle): { s: GameState } {
   const next: GameState = cloneState(s);
-  next.benchStyle = style;
+  delete next.benchStyle;
   return { s: next };
 }
 
@@ -1049,11 +1151,11 @@ export function unassignStaff(s: GameState, staffId: number, bbl: string): { s: 
 export const OUTSIDE_DESK_JUDGMENT = 50;
 export const OUTSIDE_DESK_NEGOTIATION = 50;
 
-/** Mean true judgment of hired staff in a role, or 42 if the desk is empty. */
+/** Mean Deal sense on a desk — your judgment when the seat is empty. */
 export function deskJudgment(s: GameState, role: "leasing" | "pm"): number {
   const hired = (s.staff ?? []).filter((x) => x.role === role);
-  if (!hired.length) return 42;
-  return hired.reduce((a, st) => a + (st.attrs.judgment ?? 50), 0) / hired.length;
+  if (!hired.length) return principalTemperament(s).judgment;
+  return hired.reduce((a, st) => a + attrValue(st.attrs, "judgment"), 0) / hired.length;
 }
 
 /**
@@ -1075,8 +1177,11 @@ export function penJudgment(
  */
 export function deskNegotiation(s: GameState): number {
   const hired = (s.staff ?? []).filter((x) => x.role === "leasing");
-  if (!hired.length) return 50;
-  return hired.reduce((a, st) => a + (st.attrs.negotiation ?? 50), 0) / hired.length;
+  if (!hired.length) {
+    const p = principalTemperament(s);
+    return (p.judgment + p.relationships) / 2;
+  }
+  return hired.reduce((a, st) => a + attrValue(st.attrs, "negotiation"), 0) / hired.length;
 }
 
 export function penNegotiation(
@@ -1091,23 +1196,25 @@ export function penNegotiation(
 export function pmTenantCareMult(s: GameState, bbl?: string): number {
   let care: number;
   let localSlip = s.pmDeskSlip ?? 0;
+  const you = () => {
+    const p = principalTemperament(s);
+    return (p.diligence + p.relationships) / 2;
+  };
   if (bbl) {
     const assigned = assignedForBbl(s, bbl, "pm");
     if (assigned) {
-      care = assigned.attrs.tenantCare ?? 50;
-      // Approximate: assigned overload hurts care on their buildings.
-      // Full personRoleState needs parcels; slip stamp is firm-level fallback.
+      care = attrValue(assigned.attrs, "tenantCare");
     } else {
       const floaters = (s.staff ?? []).filter((x) => x.role === "pm" && isFloatStaff(x));
       care = floaters.length
-        ? floaters.reduce((a, st) => a + (st.attrs.tenantCare ?? 50), 0) / floaters.length
-        : 42;
+        ? floaters.reduce((a, st) => a + attrValue(st.attrs, "tenantCare"), 0) / floaters.length
+        : you();
     }
   } else {
     const hired = (s.staff ?? []).filter((x) => x.role === "pm");
     care = hired.length
-      ? hired.reduce((a, st) => a + (st.attrs.tenantCare ?? 50), 0) / hired.length
-      : 42;
+      ? hired.reduce((a, st) => a + attrValue(st.attrs, "tenantCare"), 0) / hired.length
+      : you();
   }
   return Math.max(0.90, Math.min(1.12, 1 + (care - 50) / 100 * 0.22 - localSlip * 0.12));
 }

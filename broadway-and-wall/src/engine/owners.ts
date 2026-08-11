@@ -403,6 +403,46 @@ export function relOf(s: GameState, id: string): HolderRel {
   return s.holderRel?.[id] ?? {};
 }
 
+/** Shared copy for every acquire door that reads holder memory. */
+export function coldRefuseMsg(held: Holder): string {
+  return `${held.name} will not sell to you. Whatever happened between you, they have not forgotten it. `
+    + `It is still for sale — just not to you.`;
+}
+
+/** Named holder of this deed who is refusing you today, or null. */
+export function coldOnDeed(s: GameState, parcels: ParcelTable, bbl: string): Holder | null {
+  const held = holderOf(s, parcels, bbl);
+  if (held && isCold(s, held.id)) return held;
+  return null;
+}
+
+/**
+ * Hang up every open conversation with this holder across their book.
+ *
+ * An insult on one corner used to leave live asks and open talks on their
+ * other deeds — so you could still buyOffMarket / acceptCounter elsewhere
+ * while the register said they would not take your call. A family that has
+ * just been lowballed does not carefully keep that opinion filed under one
+ * address. Signed contracts (`talks.agreed`) stand; everything else dies.
+ */
+export function hangUpWithHolder(s: GameState, parcels: ParcelTable, id: string) {
+  const until = relOf(s, id).coldUntilM ?? s.month + 1;
+  for (const [bbl, a] of Object.entries(s.approaches)) {
+    if (holderOf(s, parcels, bbl)?.id !== id) continue;
+    s.approaches[bbl] = {
+      ...a,
+      refused: true,
+      coldUntilM: Math.max(a.coldUntilM ?? 0, until),
+    };
+  }
+  if (!s.talks) return;
+  for (const [bbl, t] of Object.entries(s.talks)) {
+    if (t.agreed) continue;
+    if (holderOf(s, parcels, bbl)?.id !== id) continue;
+    delete s.talks[bbl];
+  }
+}
+
 /**
  * AN OFFENCE AGAINST A HOLDER IS AN OFFENCE AGAINST EVERY DEED THEY OWN.
  *
@@ -412,8 +452,11 @@ export function relOf(s: GameState, id: string): HolderRel {
  * on the HOLDER, every approach to any of their buildings reads it, and it
  * hardens with repetition — the second insult costs half again as long as the
  * first, because by then they have a view about you rather than about an offer.
+ *
+ * Pass `parcels` so the hang-up reaches every live conversation in their book;
+ * tests that only assert the cold clock may omit it.
  */
-export function offend(s: GameState, id: string, months: number) {
+export function offend(s: GameState, id: string, months: number, parcels?: ParcelTable) {
   if (!s.holderRel) s.holderRel = {};
   const rel = s.holderRel[id] ?? {};
   const n = (rel.offences ?? 0) + 1;
@@ -424,6 +467,7 @@ export function offend(s: GameState, id: string, months: number) {
     coldUntilM: Math.max(rel.coldUntilM ?? 0, s.month + cold),
     lastM: s.month,
   };
+  if (parcels) hangUpWithHolder(s, parcels, id);
 }
 
 /** ...and a deal closed is the other half. A holder who has sold to you before
@@ -532,7 +576,7 @@ function exitStory(h: Holder, n: number): string {
  */
 export function tickHolders(
   s: GameState, parcels: ParcelTable, rng: (s: GameState) => number,
-): { bbls: string[]; distress: boolean } {
+): { bbls: string[]; distress: boolean; kind?: string } {
   // ONLY THE NAMES WITH BOOKS. A one-building owner selling their one building
   // is not an event, it is a listing, and the tape already generates those
   // from the same stock — dressing it up with a headline would be the news
@@ -559,7 +603,7 @@ export function tickHolders(
   const hz = (EXIT_HAZARD[h.kind] ?? 0.03 / 12) * (h.tier === "major" ? 0.7 : 1) * reg.length;
   if (rng(s) > hz) return { bbls: [], distress: false };
   const book = holdingsOf(s, parcels, h.id).filter((b) => !s.listings.some((l) => l.bbl === b));
-  if (!book.length) return { bbls: [], distress: false };
+  if (!book.length) return { bbls: [], distress: false, kind: h.kind };
   // Not the whole book at once in every case: an estate sells everything, a
   // fund trims. What comes is enough to be a story.
   const share = h.kind === "estate" ? 1 : h.kind === "institution" ? 0.7 : h.kind === "developer" ? 0.4 : 0.8;
@@ -577,5 +621,9 @@ export function tickHolders(
   // WHO IS SELLING DECIDES WHETHER IT IS CHEAP. An estate and a split
   // partnership want it DONE and price it that way; a fund with a committee
   // and a developer recycling do not have to take a discount and will not.
-  return { bbls, distress: h.kind === "estate" || h.kind === "partnership" };
+  return {
+    bbls,
+    distress: h.kind === "estate" || h.kind === "partnership",
+    kind: h.kind,
+  };
 }

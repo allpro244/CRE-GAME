@@ -60,6 +60,10 @@ export function gameLayers(): LayerSpecification[] {
   const hovered = ["boolean", ["feature-state", "hover"], false];
   const selected = ["boolean", ["feature-state", "selected"], false];
   const neighbor = ["boolean", ["feature-state", "neighbor"], false];
+  // Assembled sites: teal join on every deed folded into a multi-lot plate.
+  // Below selection/neighbor so a pick still reads gold; above owned so the
+  // merge is visible without opening the land desk.
+  const assembled = ["boolean", ["feature-state", "assembled"], false];
   const owned = ["boolean", ["feature-state", "owned"], false];
   const listed = ["boolean", ["feature-state", "listed"], false];
   return [
@@ -72,6 +76,7 @@ export function gameLayers(): LayerSpecification[] {
           "case",
           selected, "#d9a648",
           neighbor, "#3f8f87",
+          assembled, "#2f8f86",
           hovered, "#8a8577",
           owned, "#d9a648",
           listed, "#3f8f87",
@@ -83,6 +88,7 @@ export function gameLayers(): LayerSpecification[] {
           "case",
           selected, 0.45,
           neighbor, 0.35,
+          assembled, 0.28,
           hovered, 0.2,
           owned, 0.22,
           listed, 0.16,
@@ -99,6 +105,7 @@ export function gameLayers(): LayerSpecification[] {
           "case",
           selected, "#b07f1e",
           neighbor, "#2f7a72",
+          assembled, "#1f6f68",
           hovered, "#57534a",
           owned, "#b07f1e",
           listed, "#2f7a72",
@@ -106,14 +113,14 @@ export function gameLayers(): LayerSpecification[] {
         ] as never,
         "line-width": [
           "interpolate", ["linear"], ["zoom"],
-          13, ["case", selected, 2.2, neighbor, 1.5, hovered, 1.1, ["case", owned, 1.4, listed, 1.2, 0.2]],
-          16.5, ["case", selected, 3.2, neighbor, 2.2, hovered, 1.8, ["case", owned, 2.4, listed, 2, 0.8]],
+          13, ["case", selected, 2.2, neighbor, 1.5, assembled, 1.7, hovered, 1.1, ["case", owned, 1.4, listed, 1.2, 0.2]],
+          16.5, ["case", selected, 3.2, neighbor, 2.2, assembled, 2.6, hovered, 1.8, ["case", owned, 2.4, listed, 2, 0.8]],
         ] as never,
         "line-opacity": [
           "interpolate", ["linear"], ["zoom"],
-          13, ["case", selected, 1, neighbor, 0.95, hovered, 0.9, ["case", owned, 0.9, listed, 0.8, 0.3]],
-          15, ["case", selected, 1, neighbor, 0.95, hovered, 0.9, ["case", owned, 0.95, listed, 0.85, 0.55]],
-          16.5, ["case", selected, 1, neighbor, 0.95, hovered, 0.9, ["case", owned, 1, listed, 0.9, 0.8]],
+          13, ["case", selected, 1, neighbor, 0.95, assembled, 0.95, hovered, 0.9, ["case", owned, 0.9, listed, 0.8, 0.3]],
+          15, ["case", selected, 1, neighbor, 0.95, assembled, 0.97, hovered, 0.9, ["case", owned, 0.95, listed, 0.85, 0.55]],
+          16.5, ["case", selected, 1, neighbor, 0.95, assembled, 1, hovered, 0.9, ["case", owned, 1, listed, 0.9, 0.8]],
         ] as never,
       },
     },

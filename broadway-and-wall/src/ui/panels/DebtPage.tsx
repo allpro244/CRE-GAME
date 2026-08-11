@@ -552,9 +552,9 @@ export function TheStreet() {
               <Fragment key={r.id}>
               <tr className={dead ? "dim" : ""} style={{ cursor: "pointer" }}
                 onClick={() => setOpen(isOpen ? null : r.id)}>
-                <td title={r.spawnedFrom ? `Spun out of ${r.spawnedFrom.firmName} · ${r.spawnedFrom.personName}` : undefined}>
+                <td title={r.spawnedFrom ? `Raised out of ${r.spawnedFrom.firmName} · ${r.spawnedFrom.personName}` : undefined}>
                   {isOpen ? "▾ " : "▸ "}{r.name}
-                  {r.spawnedFrom ? <span className="dim"> · spinout</span> : null}
+                  {r.spawnedFrom ? <span className="dim"> · from {r.spawnedFrom.firmName}</span> : null}
                 </td>
                 <td className="dim">{dead ? "—" : personAgeLine(principal, game.month)}</td>
                 <td className="dim">{STYLE_WORD[r.style]}</td>

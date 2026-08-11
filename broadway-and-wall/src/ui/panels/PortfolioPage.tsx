@@ -12,7 +12,7 @@ import { portfolioQuote } from "@/engine/portfolio";
 import { taxAppealQuote } from "@/engine/tax";
 import type { PortfolioQuote } from "@/engine/portfolio";
 import { usd, sf } from "@/ui/format";
-import { ListSection, RefiSection } from "@/ui/panels/ParcelDesk";
+import { ListSection, RefiSection, GroundLeaseSection } from "@/ui/panels/ParcelDesk";
 import { useLabel, devUseLabel, physicalOcc, Big, Row } from "@/ui/panels/shared";
 
 export function PortfolioPage() {
@@ -34,6 +34,8 @@ export function PortfolioPage() {
   const [refiRow, setRefiRow] = useState<string | null>(null);
   // The ask you are about to name, per row. See ListSection.
   const [listRow, setListRow] = useState<string | null>(null);
+  // Vacant dirt: offer a ground lease from the row — same reach as List / Refi.
+  const [glRow, setGlRow] = useState<string | null>(null);
   // Sort the book by value or by income. "By income" is the top-earners view:
   // the fifty best income producers, ranked — the question every owner asks
   // of a big book is "what is actually carrying this firm."
@@ -368,6 +370,14 @@ export function PortfolioPage() {
             const wk = game.workouts?.[h.bbl];
             // a crane on your own dirt is a status, not a secret
             const dv = game.developments[h.bbl];
+            // Vacant fee only — leased fees and improved sites are not this desk.
+            const canGround = !!rec
+              && rec.class === "land"
+              && (rec.bldgArea ?? 0) === 0
+              && !(game.built?.[h.bbl]?.bldgArea)
+              && !h.groundLeased
+              && !game.groundLeases?.[h.bbl]
+              && !dv;
             return (
             <Fragment key={h.bbl}>
             <tr onClick={() => go(h.bbl)}>
@@ -506,7 +516,7 @@ export function PortfolioPage() {
                 </div>}
               </td>
               <td>
-                {/* list it from the row — no need to open the record */}
+                {/* list / refi / ground-lease from the row — no need to open the record */}
                 <div className="btn-row" style={{ gap: 4, margin: 0 }}>
                   {h.sale ? (
                     <button className="btn btn-sm" onClick={(ev) => { ev.stopPropagation(); delistSale(h.bbl); }}
@@ -529,6 +539,19 @@ export function PortfolioPage() {
                   >
                     Refi
                   </button>
+                  {canGround && (
+                    <button
+                      className={"btn btn-sm" + (glRow === h.bbl || h.groundOffer ? " btn-on" : "")}
+                      onClick={(ev) => { ev.stopPropagation(); setGlRow(glRow === h.bbl ? null : h.bbl); }}
+                      title={h.groundOffer
+                        ? `Ground lease offered (${h.groundOffer.years} yr) — open to pull or review terms`
+                        : h.loan || game.facility?.bbls?.includes(h.bbl) || h.sale
+                          ? "Clear the lien or listing first, then offer a ground lease"
+                          : "Offer vacant dirt as an absolutely-net ground lease"}
+                    >
+                      {h.groundOffer ? "GL" : "Ground"}
+                    </button>
+                  )}
                 </div>
               </td>
             </tr>
@@ -543,6 +566,13 @@ export function PortfolioPage() {
               <tr>
                 <td colSpan={ranked ? 18 : 17} style={{ background: "rgba(43,37,26,0.035)" }}>
                   <ListSection bbl={h.bbl} appraisal={v} onDone={() => setListRow(null)} />
+                </td>
+              </tr>
+            )}
+            {glRow === h.bbl && canGround && (
+              <tr>
+                <td colSpan={ranked ? 18 : 17} style={{ background: "rgba(43,37,26,0.035)" }}>
+                  <GroundLeaseSection bbl={h.bbl} onDone={() => setGlRow(null)} />
                 </td>
               </tr>
             )}

@@ -7,7 +7,7 @@ import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec,
 import type { Approach, BuiltClass, Contract, DevUse } from "@/engine/types";
 import { assetValue, initialCondition, holdingValue, marketRentPsfYr, managedRentPsfYr, holdingNOIYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, recoveryOf, landValue, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, remainingAbatement, bareLandRec, leasedFeeValue, isVacantLandLoanCollateral, ownedHoldingNoiYr, isLeasedFee } from "@/engine/value";
 import { adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, constructionQuotes, PROGRAMS, programCost, farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed, demolitionCost, unitRange, suiteSfForUnits, SUITE_BOUNDS } from "@/engine/dev";
-import { buyQuote, assemblagePressure, saleTaxQuote, quietFeeRate, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
+import { buyQuote, assemblagePressure, saleTaxQuote, quietFeeRate, hasOwnedSiteNeighbor, siteDeeds, groundLeaseQuote, GROUND_REVIEW_LABEL } from "@/engine/actions";
 import { sellerOf, sellerProfile, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { isCommercial, vacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, useSuiteSf, avgUnitSf, buyoutQuote, BUYOUT_PREMIUM, leasableUses, renewalIntent } from "@/engine/leasing";
 import { dscr, ltv, rateCapCost, refiQuotes, PRODUCTS, prepayPenalty } from "@/engine/debt";
@@ -20,6 +20,7 @@ import { taxAppealQuote } from "@/engine/tax";
 import { usd, sf, pct } from "@/ui/format";
 import { LettingOdds, LeasingDesk, ResidualRead, LandDesk } from "@/ui/panels/PropertyDesks";
 import { useLabel, devUseLabel, physicalOcc, goingIn, band, apMid, PropTab, annualPayment, openResearchOn, Neighbourhood, Row } from "@/ui/panels/shared";
+import type { GroundReview } from "@/engine/types";
 
 
 function ParcelPanelShell({ embedded = false, tab }: { embedded?: boolean; tab?: PropTab } = {}) {
@@ -1922,6 +1923,108 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
  * on the record: a decision with two numbers on it is a decision, and a
  * decision with an adjective on it is a paragraph.
  */
+/**
+ * OFFER A GROUND LEASE FROM THE BOOK — same job as LandDesk's "Or ground-lease
+ * it" block, sized for a portfolio expand row so vacant dirt does not force a
+ * trip through Property → Build.
+ */
+export function GroundLeaseSection({ bbl, onDone }: { bbl: string; onDone?: () => void }) {
+  const game = useHeldGame(bbl);
+  const parcels = useStore((s) => s.parcels)!;
+  const { groundLease, pullGroundOffer } = useStore.getState();
+  const h = game.holdings[bbl];
+  const rec = resolveRec(parcels, game, bbl);
+  const [years, setYears] = useState(49);
+  const [review, setReview] = useState<GroundReview>("fixed");
+  if (!h || !rec) return null;
+  const vacant = rec.class === "land" && (rec.bldgArea ?? 0) === 0
+    && !(game.built?.[bbl]?.bldgArea) && !h.groundLeased && !game.groundLeases?.[bbl];
+  const offer = h.groundOffer;
+  const oq = offer && vacant
+    ? groundLeaseQuote(game, parcels, bbl, offer.years, offer.review ?? "fixed") : null;
+  const blocked = !vacant
+    ? "Only vacant dirt can be offered for ground lease."
+    : h.sale ? "Pull the listing first — you cannot encumber a marketed lot."
+    : game.developments[bbl] ? "Construction is already underway."
+    : game.merged?.[bbl] ? "That lot is part of an assemblage — lease the whole site."
+    : h.loan ? "Pay off the mortgage first — a land lender will not sit under a ground lease."
+    : game.facility?.bbls?.includes(bbl)
+      ? "Release it from the facility first — the line is secured by vacant dirt, not a leased fee."
+      : null;
+  const q = vacant && !offer && !blocked
+    ? groundLeaseQuote(game, parcels, bbl, years, review) : null;
+
+  if (offer) {
+    return (
+      <div style={{ padding: "8px 2px" }}>
+        <div className="deal-head">Offered for ground lease</div>
+        <div className="grid">
+          <Row k="On the book since" v={`${monthLabel(offer.sinceM)}${game.month - offer.sinceM > 0 ? ` · ${game.month - offer.sinceM} month${game.month - offer.sinceM === 1 ? "" : "s"} waiting` : ""}`} />
+          <Row k="Structure" v={GROUND_REVIEW_LABEL[offer.review ?? "fixed"]} />
+          <Row k="Terms as of today" v={oq
+            ? `${usd(oq.rentYr)} / yr · ${offer.years} years · ${oq.reviewNote}`
+            : "—"} strong />
+          {oq && <Row k="Net cash income" v={`${usd(oq.cashFlow.netRentYr)} / yr`} strong />}
+        </div>
+        <div className="hint">
+          Ground lessees are scarce. The deal signs at the terms quoted the month they arrive.
+        </div>
+        <div className="btn-row" style={{ marginTop: 6 }}>
+          <button className="btn" onClick={() => { pullGroundOffer(bbl); onDone?.(); }}>
+            Pull the offer
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (blocked || !q) {
+    return (
+      <div style={{ padding: "8px 2px" }}>
+        <div className="deal-head">Ground lease</div>
+        <div className="hint">{blocked ?? "Nobody will ground-lease that today."}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: "8px 2px" }}>
+      <div className="deal-head">Offer a ground lease</div>
+      <div className="btn-row" style={{ marginBottom: 8 }}>
+        {(["fixed", "cpi", "fmv"] as GroundReview[]).map((r) => (
+          <button key={r} className={"btn" + (review === r ? " btn-on" : "")} onClick={() => setReview(r)}>
+            {GROUND_REVIEW_LABEL[r]}
+          </button>
+        ))}
+      </div>
+      <Slider
+        label="Term"
+        value={years}
+        min={30}
+        max={99}
+        step={1}
+        onChange={setYears}
+        format={(v) => `${v} years`}
+        hint={q.reviewNote}
+      />
+      <div className="grid">
+        <Row k="Gross ground rent" v={`${usd(q.cashFlow.grossRentYr)} / yr · ${q.capPct}% of land value`} />
+        <Row k="Owner expenses" v="$0 tax · $0 opex · $0 TI · $0 signing — lessee pays" />
+        <Row k="Net cash income" v={`${usd(q.cashFlow.netRentYr)} / yr`} strong />
+        <Row k="Land + bones back" v={monthLabel(game.month + years * 12)} />
+      </div>
+      <div className="hint">
+        Absolutely-net form. You do not build on this corner for {years} years. Fixed places faster; FMV opens cheaper and slower.
+      </div>
+      <div className="btn-row" style={{ marginTop: 6 }}>
+        <button className="btn btn-buy" onClick={() => { groundLease(bbl, years, review); onDone?.(); }}>
+          Offer a {years}-year {GROUND_REVIEW_LABEL[review].toLowerCase()} ground lease
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function ListSection({ bbl, appraisal, onDone }: { bbl: string; appraisal: number; onDone: () => void }) {
   const game = useHeldGame(bbl);
   const listSale = useStore((s) => s.listSale);

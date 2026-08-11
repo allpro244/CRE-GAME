@@ -133,6 +133,40 @@ console.log("\nLAND LOAN BLOCKS THE OFFER\n");
   check(!!towerQ && !towerQ.padOnly, "75-year paper allows tower reversion");
 }
 
+console.log("\nLESSEE RESPECTS LEGAL FAR\n");
+{
+  const landBbl = bbls.find((x) =>
+    parcels[x]?.class === "land" && (parcels[x]?.lotArea ?? 0) > 2_000
+    && !g.built?.[x]);
+  if (!landBbl) throw new Error("No land parcel for FAR check.");
+  let gFar = structuredClone(g);
+  if (!gFar.holdings[landBbl]) {
+    const landPx = Math.round(E.landValue(parcels[landBbl], gFar.econ));
+    gFar.holdings[landBbl] = {
+      bbl: landBbl, boughtM: 0, costBasis: landPx, condition: "average",
+      tenants: [], loan: null, assessed: landPx, condIdx: 0.55, svcIdx: 0.55,
+      service: 0, stance: 0, plan: 1, cfHistory: [],
+    };
+  }
+  for (const use of ["office", "retail", "industrial", "multifamily"]) {
+    const prog = E.groundLesseeBuildableSf(gFar, parcels, landBbl, use);
+    if (!prog) continue;
+    const realized = prog.sf / Math.max(1, E.bareLandRec(parcels, gFar, landBbl).lotArea);
+    check(realized <= prog.far + 0.02,
+      `${use} lessee FAR ${realized.toFixed(2)} ≤ legal ${prog.far.toFixed(2)} (sf ${prog.sf}, envelope ${Math.round(prog.envelope)})`);
+    // The bug shape: coverage × ceil(FAR/cov) floors without the clamp.
+    const bare = E.bareLandRec(parcels, gFar, landBbl);
+    const cov = use === "industrial" ? 0.72 : use === "retail" ? 0.55 : 0.62;
+    const fl = Math.min(use === "retail" ? 2 : use === "industrial" ? 4 : 18,
+      Math.ceil(prog.far / cov));
+    const uncapped = bare.lotArea * cov * fl;
+    if (uncapped > prog.envelope * 1.02) {
+      check(prog.sf <= prog.envelope + 50,
+        `${use} clamp bites when uncapped plate (${Math.round(uncapped)}) exceeds envelope`);
+    }
+  }
+}
+
 console.log("\nSHORT PAPER DOES NOT GIFT THE TOWER\n");
 {
   let gShort = structuredClone(g);

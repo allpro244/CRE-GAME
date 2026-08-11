@@ -851,13 +851,15 @@ function pickGroundTenant(s: GameState, parcels: ParcelTable, bbl: string, years
   return GROUND_TENANTS[GROUND_TENANTS.length - 1]!;
 }
 
-function lesseeProgram(
-  s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass, lead: "fast" | "mid" | "slow", years: number,
-) {
+/**
+ * Gross SF a ground lessee may build under zoning — same envelope clamp as
+ * `planDevelopment`. Exported so the harness can lock the FAR bug closed.
+ */
+export function groundLesseeBuildableSf(
+  s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass,
+): { sf: number; floors: number; far: number; envelope: number } | null {
   const bare = bareLandRec(parcels, s, bbl);
   if (!bare || !bare.lotArea) return null;
-  // Tower programs refuse short paper — caller should have filtered, but belt.
-  if (years < GROUND_TOWER_TERM_MIN && isTowerGroundUse(use)) return null;
   const far = farMaxFor(bare);
   const cov = use === "industrial" ? 0.72 : use === "retail" ? 0.55 : 0.62;
   const floors = Math.max(1, Math.min(use === "retail" ? 2 : use === "industrial" ? 4 : 18,
@@ -865,12 +867,26 @@ function lesseeProgram(
   // SAME ENVELOPE CAP AS PLAYER DEVELOPMENT. Coverage × floors used to overrun
   // legal FAR whenever the top storey was a partial plate — the lessee planted
   // a bigger building than zoning allowed. Cap gross area at lot × FAR.
+  // Do NOT floor at 4,000 sf afterward: on a small lot that punched back
+  // through the envelope and recreated the bug.
   const envelope = bare.lotArea * far;
-  const sf = Math.max(4000, Math.round(Math.min(bare.lotArea * cov * floors, envelope) / 100) * 100);
+  const gsf = Math.min(bare.lotArea * cov * floors, envelope);
+  if (gsf < 2000) return null;
+  const sf = Math.round(gsf / 100) * 100;
+  return { sf, floors, far, envelope };
+}
+
+function lesseeProgram(
+  s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass, lead: "fast" | "mid" | "slow", years: number,
+) {
+  // Tower programs refuse short paper — caller should have filtered, but belt.
+  if (years < GROUND_TOWER_TERM_MIN && isTowerGroundUse(use)) return null;
+  const built = groundLesseeBuildableSf(s, parcels, bbl, use);
+  if (!built) return null;
   const [bLo, bHi] = BUILD_MONTHS[use];
   const stretch = lead === "slow" ? 1.2 : lead === "mid" ? 1.05 : 1;
   const months = Math.round((bLo + rng(s, "dev") * (bHi - bLo)) * stretch);
-  return { sf, floors, months, use };
+  return { sf: built.sf, floors: built.floors, months, use };
 }
 
 /**
